@@ -13,9 +13,11 @@ import { Server } from '@hocuspocus/server';
 import * as Y from 'yjs';
 import { AUTH_REJECTION, verifyToken } from './auth.js';
 import { CAPACITY_REJECTION, createSlotTracker } from './capacity.js';
-import { isRackspaceMember, loadSnapshot, storeSnapshot } from './db.js';
+import { isRackspaceMember, loadSnapshot, rackspaceExists, storeSnapshot } from './db.js';
+import { checkRackAccess } from './rack-access.js';
 import { SNAPSHOT_PERSISTENCE_CONFIG } from './snapshot-config.js';
 import { createHeartbeatExtension } from './heartbeat.js';
+import { createIntrospectionExtension } from './http-introspection.js';
 import { startReaper, type LiveConnectionSource } from './reaper.js';
 
 // Port choice: 1235 instead of Hocuspocus's documented default 1234,
@@ -48,6 +50,18 @@ process.on('uncaughtException', (err) => {
 // this becomes a Durable Object or Redis-backed counter.
 const slots = createSlotTracker();
 
+// HTTP introspection (/health + /metrics + memory-alarm log lines) needs
+// to read live conn/room counts from the Hocuspocus instance, but the
+// instance isn't constructed until after `Server.configure(…)` runs. We
+// build the extension with a lazy proxy that resolves to the real instance
+// the moment `extensions:` is evaluated (after the Server singleton is
+// already set up). The Hocuspocus `Server` export IS the singleton; it
+// has the count methods we need.
+const introspection = createIntrospectionExtension({
+  getConnectionsCount: () => Server.getConnectionsCount(),
+  getDocumentsCount: () => Server.getDocumentsCount(),
+});
+
 const hocuspocus = Server.configure({
   port: PORT,
   address: HOST,
@@ -55,7 +69,10 @@ const hocuspocus = Server.configure({
   // Heartbeat extension: per-doc Awareness broadcast at 1 Hz steady-state /
   // 8 Hz burst on connect. Clients use these for clock-sync (Phase 0 of the
   // shared-state-sync plan).
-  extensions: [createHeartbeatExtension()],
+  // HTTP introspection: /health + /metrics + 30-s memory alarm log lines.
+  // See ./http-introspection.ts for the rationale (relay OOM that went
+  // unalerted is the urgency; this slice surfaces the warning early).
+  extensions: [createHeartbeatExtension(), introspection],
 
   // Snapshot persistence — see ./snapshot-config.ts for the rationale.
   ...SNAPSHOT_PERSISTENCE_CONFIG,
@@ -84,29 +101,26 @@ const hocuspocus = Server.configure({
       throw err;
     }
 
-    // Membership check (the B2 promise: now that storage is shared,
-    // the WS handshake can verify Clerk users actually belong to the
-    // rack — closes the "any authed user can WS into any rack" gap
-    // documented in PR-D).
-    //
-    // Anon visitors skip the lookup: their HMAC invite is itself a
-    // sufficient proof of access (it can only be derived with
-    // INVITE_SECRET, which only the server holds). We deliberately do
-    // NOT additionally check rackspaceExists for them — orphaned
-    // snapshot writes are FK-constrained against `racks` so a connect
-    // for a non-existent rack id would succeed at WS-handshake time
-    // but fail at first persist. That's acceptable noise for the test
-    // ergonomics (Playwright tests use ephemeral rack ids without
-    // seeding rows) and isn't exploitable.
-    if (auth.role === 'member') {
-      const allowed = await isRackspaceMember(data.documentName, auth.userId!);
-      if (!allowed) {
-        // eslint-disable-next-line no-console
-        console.log(`[hocuspocus] reject (not-member): doc=${data.documentName} user=${auth.userId}`);
-        const err = new Error() as Error & { reason: string };
-        err.reason = AUTH_REJECTION.unauthorized;
-        throw err;
-      }
+    // Post-auth access gate (see ./rack-access.ts):
+    //   - clerk users: must be a member of the rack (closes the PR-D
+    //     "any authed user can WS any rack" gap)
+    //   - anon HMAC-invite users: in PROD, the rack must actually exist
+    //     (prevents empty-Yjs-doc memory pressure from attackers churning
+    //     valid invites for bogus rack ids). DEV/TEST bypass so Playwright
+    //     @collab specs can connect with ephemeral rack ids.
+    const decision = await checkRackAccess(auth, data.documentName, {
+      isRackspaceMember,
+      rackspaceExists,
+    });
+    if (decision !== 'ok') {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[hocuspocus] reject (${decision}): doc=${data.documentName}` +
+          (auth.userId ? ` user=${auth.userId}` : ''),
+      );
+      const err = new Error() as Error & { reason: string };
+      err.reason = AUTH_REJECTION.unauthorized;
+      throw err;
     }
 
     if (!slots.acquire(data.documentName, data.socketId)) {

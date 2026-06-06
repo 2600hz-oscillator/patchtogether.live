@@ -46,6 +46,14 @@ const SEQUENCERS: Array<{ type: string; nodeId: string; spawnParams: Record<stri
     spawnParams: { isPlaying: 0, length: 8 },
     cellSelector: '[data-testid="polyseqz-grid-poly-tx"]',
   },
+  {
+    // feat/seq: MACSEQ gained the same 8-slot quicksave + transport as the
+    // base Sequencer. Its step shape is {on, midi, model} (no chord lane).
+    type: 'macseq',
+    nodeId: 'macseq-tx',
+    spawnParams: { isPlaying: 0, length: 16 },
+    cellSelector: '[data-testid="macseq-grid-macseq-tx"]',
+  },
 ];
 
 for (const s of SEQUENCERS) {
@@ -96,6 +104,11 @@ for (const s of SEQUENCERS) {
               steps[0] = { on: true, root: 60, quality: 'maj7', inversion: 0, voicing: 'open' };
               steps[3] = { on: true, root: 67, quality: 'min7', inversion: 1, voicing: 'spread' };
               (t.data as Record<string, unknown>).steps = steps;
+            } else if (type === 'macseq') {
+              const steps = Array.from({ length: 16 }, () => ({ on: false, midi: null, model: null }));
+              steps[0] = { on: true, midi: 60, model: 8 };  // KICK
+              steps[4] = { on: true, midi: 64, model: 3 };  // FM 6OP
+              (t.data as Record<string, unknown>).steps = steps;
             }
             t.params.bpm = 145;
           });
@@ -131,6 +144,7 @@ for (const s of SEQUENCERS) {
             if (type === 'polyseqz') (t.data as Record<string, unknown>).steps = Array.from({ length: 32 }, () => ({
               on: false, root: 48, quality: 'maj', inversion: 0, voicing: 'closed',
             }));
+            if (type === 'macseq') (t.data as Record<string, unknown>).steps = Array.from({ length: 16 }, () => ({ on: false, midi: null, model: null }));
           });
         },
         { nodeId: s.nodeId, type: s.type },
@@ -172,6 +186,17 @@ for (const s of SEQUENCERS) {
               s3?.on === true && s3.root === 67 && s3.quality === 'min7' && s3.inversion === 1 && s3.voicing === 'spread';
             return { bpm: t.params.bpm, marker };
           }
+          if (type === 'macseq') {
+            const steps = (t.data as Record<string, unknown>).steps as Array<{ on: boolean; midi: number | null; model: number | null }>;
+            // Verify per-step on/midi/model all round-trip (the model picker
+            // is MACSEQ's signature field).
+            const s0 = steps?.[0];
+            const s4 = steps?.[4];
+            const marker =
+              s0?.on === true && s0.midi === 60 && s0.model === 8 &&
+              s4?.on === true && s4.midi === 64 && s4.model === 3;
+            return { bpm: t.params.bpm, marker };
+          }
           return { bpm: 0, marker: false };
         },
         { nodeId: s.nodeId, type: s.type },
@@ -183,6 +208,38 @@ for (const s of SEQUENCERS) {
       await expect(page.locator(`[data-testid="quicksave-slot-${s.nodeId}-1"]`)).toHaveClass(
         /last-loaded/,
       );
+    });
+
+    test(`${s.type}: saves to ALL 8 slots in sequence (regression — slot ≥2 silently failed)`, async ({
+      page,
+    }) => {
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: s.spawnParams }]);
+
+      const SLOTS = ['1', '2', '3', '4', '5', '6', '7', '8'] as const;
+      // SAVE each slot in turn. SAVE mode disarms after each click, so re-arm
+      // before every slot — exactly the user flow (save slot 1, then slot 2…).
+      // Pre-fix the 2nd save threw inside the Y.Doc transact (slots['1'] was an
+      // already-integrated Y.Map that `{ ...coerceSlots() }` re-parented), so
+      // only slot 1 ever filled. This runs across every sequencer that shares
+      // the quicksave helpers (sequencer/drumseqz/score/polyseqz/macseq).
+      for (const k of SLOTS) {
+        await page.locator(`[data-testid="quicksave-mode-save-${s.nodeId}"]`).click();
+        await page.locator(`[data-testid="quicksave-slot-${s.nodeId}-${k}"]`).click();
+      }
+      // Every slot must now report filled — pre-fix, 2..8 stayed empty.
+      for (const k of SLOTS) {
+        await expect(
+          page.locator(`[data-testid="quicksave-slot-${s.nodeId}-${k}"]`),
+        ).toHaveAttribute('data-has-data', 'true');
+      }
+      // LOAD works off a high slot too (not just slot 1).
+      await page.locator(`[data-testid="quicksave-mode-load-${s.nodeId}"]`).click();
+      await page.locator(`[data-testid="quicksave-slot-${s.nodeId}-7"]`).click();
+      await expect(
+        page.locator(`[data-testid="quicksave-slot-${s.nodeId}-7"]`),
+      ).toHaveClass(/last-loaded/);
     });
 
     test(`${s.type}: QUEUE arms queuedSlot in node.data`, async ({ page }) => {
@@ -260,6 +317,272 @@ for (const s of SEQUENCERS) {
           }, s.nodeId),
         )
         .toBeFalsy();
+    });
+  });
+}
+
+// ----------------------------------------------------------------------------
+// feat/seq — 8 slots + NEXT / PREV / RANDOM quantized nav (engine-level).
+//
+// These run the real engine tick. We save patterns into a sparse set of
+// occupied slots, then latch a NEXT/PREV/RANDOM nav (or queue a high slot)
+// and assert the engine applies it AT SEQUENCE-END (quantized, not
+// immediate) by reading node.data.lastLoadedSlot. Covered for both Sequencer
+// and MACSEQ (both now opt into the extended transport CV).
+// ----------------------------------------------------------------------------
+
+const NAV_SEQUENCERS: Array<{ type: string; nodeId: string; mkStep: (on: boolean, midi: number) => Record<string, unknown> }> = [
+  { type: 'sequencer', nodeId: 'seq-nav', mkStep: (on, midi) => ({ on, midi, chord: 'mono' }) },
+  { type: 'macseq',    nodeId: 'macseq-nav', mkStep: (on, midi) => ({ on, midi, model: null }) },
+];
+
+for (const s of NAV_SEQUENCERS) {
+  test.describe(`${s.type}: 8-slot quicksave + quantized NEXT/PREV/RANDOM nav`, () => {
+    test(`${s.type}: slots 5..8 exist + a SAVE click into slot 5 round-trips (8-slot capacity)`, async ({ page }) => {
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: { isPlaying: 0, length: 4 } }]);
+
+      // The new high slots (5..8) must render as buttons (8-slot UI capacity).
+      for (const slot of ['5', '6', '7', '8']) {
+        await expect(
+          page.locator(`[data-testid="quicksave-slot-${s.nodeId}-${slot}"]`),
+          `slot ${slot} button present`,
+        ).toBeVisible();
+      }
+
+      // A SAVE click into one of the new slots (slot 5) round-trips through
+      // the same pendingMode → save pipeline the low slots use. (The low-slot
+      // SAVE/LOAD is exercised by the per-module SAVE-then-LOAD test above; we
+      // assert the high slots are wired into the same flow.)
+      await page.locator(`[data-testid="quicksave-mode-save-${s.nodeId}"]`).click();
+      await page.locator(`[data-testid="quicksave-slot-${s.nodeId}-5"]`).click();
+      await expect(page.locator(`[data-testid="quicksave-slot-${s.nodeId}-5"]`)).toHaveAttribute(
+        'data-has-data',
+        'true',
+      );
+
+      // Seed slots 5..8 directly with FRESH plain objects (avoids the tight
+      // SAVE→click reactivity race AND Yjs's "object already in tree" guard on
+      // reusing existing slot Y.Maps) and assert all four high slots reflect
+      // has-data — pinning the 8-slot coerceSlots envelope end-to-end through
+      // the card's `slots` derived.
+      await page.evaluate((nodeId) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { data?: Record<string, unknown> } | undefined> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        const t = w.__patch.nodes[nodeId];
+        if (!t) throw new Error('node missing');
+        w.__ydoc.transact(() => {
+          if (!t.data) t.data = {};
+          (t.data as Record<string, unknown>).slots = {
+            '5': { bpm: 120 }, '6': { bpm: 120 }, '7': { bpm: 120 }, '8': { bpm: 120 },
+          };
+        });
+      }, s.nodeId);
+
+      for (const slot of ['5', '6', '7', '8']) {
+        await expect(page.locator(`[data-testid="quicksave-slot-${s.nodeId}-${slot}"]`)).toHaveAttribute(
+          'data-has-data',
+          'true',
+        );
+      }
+    });
+
+    test(`${s.type}: NEXT/PREV/RANDOM nav ports render handles + queuedNav latches`, async ({ page }) => {
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: { isPlaying: 0 } }]);
+
+      // The 3 nav gate input handles must exist on the card (per-port test
+      // also pins these registry-wide; this is the targeted assertion).
+      const card = page.locator(`.svelte-flow__node-${s.type}`);
+      for (const port of ['next_cv', 'prev_cv', 'random_cv']) {
+        await expect(
+          card.locator(`.svelte-flow__handle[data-handleid="${port}"]`),
+          `${s.type} ${port} handle present`,
+        ).toHaveCount(1);
+      }
+    });
+
+    test(`${s.type}: queued NEXT applies at sequence-end → walks occupied slots (wraps)`, async ({ page }) => {
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      // Short pattern (length 2) at fast BPM so sequence-ends come quickly.
+      await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: { isPlaying: 0, length: 2, bpm: 300 } }]);
+
+      // Seed three OCCUPIED slots (1, 3, 5) directly into node.data.slots,
+      // each carrying a distinct steps snapshot, and set lastLoadedSlot=1 so
+      // the nav anchor is deterministic. Then latch queuedNav='next' and play.
+      await page.evaluate(
+        ({ nodeId, type }) => {
+          const w = globalThis as unknown as {
+            __patch: { nodes: Record<string, { params: Record<string, number>; data?: Record<string, unknown> } | undefined> };
+            __ydoc: { transact: (fn: () => void) => void };
+          };
+          const t = w.__patch.nodes[nodeId];
+          if (!t) throw new Error('node missing');
+          const mkSteps = (midi: number) => {
+            const arr = Array.from({ length: 4 }, () =>
+              type === 'sequencer' ? { on: false, midi: null, chord: 'mono' } : { on: false, midi: null, model: null },
+            );
+            arr[0] = type === 'sequencer' ? { on: true, midi, chord: 'mono' } : { on: true, midi, model: null };
+            return arr;
+          };
+          w.__ydoc.transact(() => {
+            if (!t.data) t.data = {};
+            const d = t.data as Record<string, unknown>;
+            d.slots = {
+              '1': { steps: mkSteps(60), bpm: 300, length: 2 },
+              '3': { steps: mkSteps(64), bpm: 300, length: 2 },
+              '5': { steps: mkSteps(67), bpm: 300, length: 2 },
+            };
+            d.lastLoadedSlot = '1';
+            d.queuedNav = 'next';
+            d.queuedSlot = null;
+          });
+          t.params.isPlaying = 1;
+        },
+        { nodeId: s.nodeId, type: s.type },
+      );
+
+      // At the next sequence-end the engine should resolve NEXT over occupied
+      // {1,3,5} from current=1 → slot 3.
+      await expect
+        .poll(
+          async () =>
+            await page.evaluate((nodeId) => {
+              const w = globalThis as unknown as {
+                __patch: { nodes: Record<string, { data?: Record<string, unknown> } | undefined> };
+              };
+              return (w.__patch.nodes[nodeId]?.data as Record<string, unknown> | undefined)?.lastLoadedSlot;
+            }, s.nodeId),
+          { timeout: 8000 },
+        )
+        .toBe('3');
+
+      // queuedNav must be consumed (cleared) once applied.
+      const queuedNav = await page.evaluate((nodeId) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { data?: Record<string, unknown> } | undefined> };
+        };
+        return (w.__patch.nodes[nodeId]?.data as Record<string, unknown> | undefined)?.queuedNav ?? null;
+      }, s.nodeId);
+      expect(queuedNav).toBeFalsy();
+    });
+
+    test(`${s.type}: queued PREV from first occupied wraps to the last occupied slot`, async ({ page }) => {
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: { isPlaying: 0, length: 2, bpm: 300 } }]);
+
+      await page.evaluate(
+        ({ nodeId, type }) => {
+          const w = globalThis as unknown as {
+            __patch: { nodes: Record<string, { params: Record<string, number>; data?: Record<string, unknown> } | undefined> };
+            __ydoc: { transact: (fn: () => void) => void };
+          };
+          const t = w.__patch.nodes[nodeId];
+          if (!t) throw new Error('node missing');
+          const mkSteps = (midi: number) => {
+            const arr = Array.from({ length: 4 }, () =>
+              type === 'sequencer' ? { on: false, midi: null, chord: 'mono' } : { on: false, midi: null, model: null },
+            );
+            arr[0] = type === 'sequencer' ? { on: true, midi, chord: 'mono' } : { on: true, midi, model: null };
+            return arr;
+          };
+          w.__ydoc.transact(() => {
+            if (!t.data) t.data = {};
+            const d = t.data as Record<string, unknown>;
+            // occupied = {2, 6, 8}; currently on first (2) → PREV wraps to 8.
+            d.slots = {
+              '2': { steps: mkSteps(60), bpm: 300, length: 2 },
+              '6': { steps: mkSteps(64), bpm: 300, length: 2 },
+              '8': { steps: mkSteps(67), bpm: 300, length: 2 },
+            };
+            d.lastLoadedSlot = '2';
+            d.queuedNav = 'prev';
+            d.queuedSlot = null;
+          });
+          t.params.isPlaying = 1;
+        },
+        { nodeId: s.nodeId, type: s.type },
+      );
+
+      await expect
+        .poll(
+          async () =>
+            await page.evaluate((nodeId) => {
+              const w = globalThis as unknown as {
+                __patch: { nodes: Record<string, { data?: Record<string, unknown> } | undefined> };
+              };
+              return (w.__patch.nodes[nodeId]?.data as Record<string, unknown> | undefined)?.lastLoadedSlot;
+            }, s.nodeId),
+          { timeout: 8000 },
+        )
+        .toBe('8');
+    });
+
+    test(`${s.type}: queued RANDOM lands on an OCCUPIED slot`, async ({ page }) => {
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: { isPlaying: 0, length: 2, bpm: 300 } }]);
+
+      await page.evaluate(
+        ({ nodeId, type }) => {
+          const w = globalThis as unknown as {
+            __patch: { nodes: Record<string, { params: Record<string, number>; data?: Record<string, unknown> } | undefined> };
+            __ydoc: { transact: (fn: () => void) => void };
+          };
+          const t = w.__patch.nodes[nodeId];
+          if (!t) throw new Error('node missing');
+          const mkSteps = (midi: number) => {
+            const arr = Array.from({ length: 4 }, () =>
+              type === 'sequencer' ? { on: false, midi: null, chord: 'mono' } : { on: false, midi: null, model: null },
+            );
+            arr[0] = type === 'sequencer' ? { on: true, midi, chord: 'mono' } : { on: true, midi, model: null };
+            return arr;
+          };
+          w.__ydoc.transact(() => {
+            if (!t.data) t.data = {};
+            const d = t.data as Record<string, unknown>;
+            d.slots = {
+              '2': { steps: mkSteps(60), bpm: 300, length: 2 },
+              '4': { steps: mkSteps(64), bpm: 300, length: 2 },
+              '7': { steps: mkSteps(67), bpm: 300, length: 2 },
+            };
+            d.lastLoadedSlot = '4';
+            d.queuedNav = 'random';
+            d.queuedSlot = null;
+          });
+          t.params.isPlaying = 1;
+        },
+        { nodeId: s.nodeId, type: s.type },
+      );
+
+      // RANDOM must consume the nav (queuedNav cleared) and land on one of the
+      // occupied slots {2,4,7}.
+      await expect
+        .poll(
+          async () =>
+            await page.evaluate((nodeId) => {
+              const w = globalThis as unknown as {
+                __patch: { nodes: Record<string, { data?: Record<string, unknown> } | undefined> };
+              };
+              return (w.__patch.nodes[nodeId]?.data as Record<string, unknown> | undefined)?.queuedNav ?? null;
+            }, s.nodeId),
+          { timeout: 8000 },
+        )
+        .toBeFalsy();
+
+      const landed = await page.evaluate((nodeId) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { data?: Record<string, unknown> } | undefined> };
+        };
+        return (w.__patch.nodes[nodeId]?.data as Record<string, unknown> | undefined)?.lastLoadedSlot;
+      }, s.nodeId);
+      expect(['2', '4', '7']).toContain(landed);
     });
   });
 }

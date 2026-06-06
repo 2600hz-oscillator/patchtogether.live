@@ -144,6 +144,32 @@ simultaneous joins can't collide.</p>
   </tbody>
 </table>
 
+<h2>Cheats — IDDQD / IDKFA gate inputs</h2>
+<p>
+  The DOOM card carries two extra gate inputs in the patch panel under a
+  <strong>Cheats</strong> section:
+</p>
+<ul>
+  <li>
+    <code>IDDQD</code> — god mode. A rising edge synthesises the
+    <code>iddqd</code> keypress sequence into the WASM key queue; DOOM's
+    cheat parser flips the local player's god-mode flag on the 5th
+    character.
+  </li>
+  <li>
+    <code>IDKFA</code> — all keys, all weapons, full ammo. Same rising-edge
+    semantics, types <code>idkfa</code> into the engine.
+  </li>
+</ul>
+<p>
+  Both gates are <strong>one-shot</strong>: holding the gate HIGH does not
+  re-trigger; the gate must return LOW and rise again to re-fire. The
+  injection takes about 250 ms per cheat (50 ms per character × 5), so the
+  effect lands within ~500 ms of the rising edge. Cheats act on the
+  <em>local</em> player only (same scope as if you'd typed them on a focused
+  card) — they aren't replicated across peers.
+</p>
+
 <h2>Notes</h2>
 <ul>
   <li>Only the rack owner can add DOOM — one shared card per rack.</li>

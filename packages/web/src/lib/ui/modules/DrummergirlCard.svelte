@@ -7,6 +7,7 @@
   import { drummergirlDef } from '$lib/audio/modules/drummergirl';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -34,7 +35,7 @@
 
 <div class="mod-card drummergirl-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">DRUMMERGIRL</header>
+  <ModuleTitle {id} {data} defaultLabel="DRUMMERGIRL" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
@@ -48,6 +49,6 @@
 </div>
 
 <style>
-  .drummergirl-card { width: 320px; min-height: 240px; }
+  .drummergirl-card { width: 320px; }
   .drummergirl-card .fader-row { padding: 0 24px; margin-top: 14px; }
 </style>

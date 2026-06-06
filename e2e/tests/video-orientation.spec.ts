@@ -219,4 +219,233 @@ test.describe('video orientation — SHAPES triangle reference', () => {
     await page.screenshot({ path: 'test-results/orient-4-shapes-bb-bb-output.png' });
     expect(r.verdict, `SHAPES->BB->BB->OUTPUT verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
   });
+
+  test('7. SHAPES(triangle) -> RUTTETRA is upright (apex on top)', async ({ page }) => {
+    // RUTTETRA samples its input in a custom VERTEX shader and lays the
+    // grid out directly in NDC. With its input sample Y-flipped to match
+    // the engine's UNPACK_FLIP_Y_WEBGL convention (the same convention the
+    // fullscreen-quad modules sample under), an up-pointing triangle must
+    // render with its narrow apex in the TOP half — like every sibling.
+    // Disp params are zeroed so the raster is a clean 1:1 luma map and the
+    // verdict isolates ORIENTATION (not the luma heightmap displacement).
+    await setup(page);
+    await spawnPatch(page,
+      [
+        { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: TRIANGLE_PARAMS },
+        { id: 're', type: 'ruttetra', position: { x: 500, y: 40 }, domain: 'video', params: { xDisp: 0, yDisp: 0, xShape: 0, yShape: 0 } },
+      ],
+      [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 're', portId: 'z' }, sourceType: 'mono-video', targetType: 'video' }],
+    );
+    await page.waitForTimeout(600);
+    const r = await analyzeTriangleOrientation(page, 'ruttetra-canvas');
+    await page.screenshot({ path: 'test-results/orient-7-shapes-ruttetra.png' });
+    expect(r.verdict, `SHAPES->RUTTETRA verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PARAMETRIZED orientation lock — every video→video transform / keyer.
+//
+// Drives each module that has BOTH a video (or mono-video) INPUT and a video
+// output with the same SHAPES(triangle) asymmetric source (apex UP in vUv
+// space) used above, routes the module's output to OUTPUT, reads the displayed
+// OUTPUT canvas, and asserts the triangle's apex is still in the TOP half
+// (verdict 'up'). A vertically-mirrored module flips the apex to the bottom →
+// verdict 'down' → the test FAILS. This is the load-bearing regression lock:
+// any module that starts (or regresses to) sampling its input upside-down is
+// caught here, module-by-module, with no baseline images needed.
+//
+// The discrimination guard below proves the assertion actually distinguishes
+// up from down by injecting a vertically-INVERTED source (bright BOTTOM half)
+// through the real CAMERA upload path: a correct pipeline then reads
+// bottom-dominant, so if the analyzer ever reported 'up' for that, every
+// orientation assertion here would be vacuous.
+// ---------------------------------------------------------------------------
+
+interface TransformCase {
+  /** Registered module `type` (matches the def's `type` field). */
+  type: string;
+  /** Human label for the test title. */
+  label: string;
+  /** The module's video/mono-video INPUT port the triangle feeds into. */
+  inPort: string;
+  /** The source→input edge type pair. SHAPES emits mono-video; a video input
+   *  upcasts it (engine handles the grayscale→rgb promotion). */
+  targetType: 'video' | 'mono-video';
+  /** Optional params to neutralize the transform so the triangle passes
+   *  through 1:1 and the verdict isolates ORIENTATION. */
+  params?: Record<string, number>;
+}
+
+// Every video-output module that ALSO has a video/mono-video input. Pure
+// generators (acidwarp, doom, scope/wave3d, rasterize, warrenspectrum, …) have
+// no asymmetric input to drive and are covered by VRT baselines instead — see
+// the PR notes. BENTBOX + RUTTETRA already have dedicated tests above; the
+// remaining transforms/keyers are locked here.
+const TRANSFORM_CASES: TransformCase[] = [
+  { type: 'destructor', label: 'DESTRUCTOR', inPort: 'in',  targetType: 'video',      params: { shift: 0, scanline: 0, posterize: 0, mangle: 0 } },
+  { type: 'chroma',     label: 'CHROMA',     inPort: 'in',  targetType: 'video' },
+  { type: 'luma',       label: 'LUMA',       inPort: 'in',  targetType: 'video' },
+  { type: 'colorizer',  label: 'COLORIZER',  inPort: 'in',  targetType: 'mono-video' },
+  { type: 'monoglitch', label: 'MONOGLITCH', inPort: 'in',  targetType: 'video',      params: { hRamp: 0, vRamp: 0, intensity: 0 } },
+  { type: 'feedback',   label: 'FEEDBACK',   inPort: 'in',  targetType: 'video',      params: { wet: 1, decay: 0, zoom: 1, rotate: 0, offsetX: 0, offsetY: 0 } },
+  { type: 'vdelay',     label: 'VDELAY',     inPort: 'in',  targetType: 'video',      params: { feedback: 0, mix: 0 } },
+  { type: 'lumakey',    label: 'LUMAKEY',    inPort: 'fg',  targetType: 'video',      params: { threshold: 0.05, softness: 0.05, invert: 0 } },
+  { type: 'chromakey',  label: 'CHROMAKEY',  inPort: 'fg',  targetType: 'video' },
+  { type: 'videoMixer', label: 'MIXER',      inPort: 'in1', targetType: 'video' },
+  { type: 'reshaper',   label: 'RESHAPER',   inPort: 'z',   targetType: 'video',      params: { xDisp: 0, yDisp: 0, intensity: 1 } },
+  { type: 'backdraft',  label: 'BACKDRAFT',  inPort: 'in_a', targetType: 'video',     params: { feedback: 0, mix: 0, zoom: 1, rotate: 0 } },
+];
+
+test.describe('video orientation — parametrized transform/keyer lock', () => {
+  for (const tc of TRANSFORM_CASES) {
+    test(`SHAPES(triangle) -> ${tc.label} -> OUTPUT is upright (apex on top)`, async ({ page }) => {
+      await setup(page);
+      await spawnPatch(page,
+        [
+          { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: TRIANGLE_PARAMS },
+          { id: 'mod', type: tc.type, position: { x: 400, y: 40 }, domain: 'video', params: tc.params },
+          { id: 'out', type: 'videoOut', position: { x: 800, y: 40 }, domain: 'video' },
+        ],
+        [
+          { id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'mod', portId: tc.inPort }, sourceType: 'mono-video', targetType: tc.targetType },
+          { id: 'e2', from: { nodeId: 'mod', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+        ],
+      );
+      // Feedback/vdelay need a couple of frames for the accumulator to settle
+      // even with feedback zeroed. POLL the verdict until it settles to 'up'
+      // instead of a single read after a flat 800 ms wait: on CI's slow
+      // SwiftShader the canvas can still be mid-paint at 800 ms → an 'ambiguous'
+      // verdict → a retry-only flake. Polling absorbs the slow paint
+      // deterministically (the orientation never legitimately flips to 'down').
+      await page.waitForTimeout(300);
+      let r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+      await expect
+        .poll(
+          async () => {
+            r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+            return r.verdict;
+          },
+          { timeout: 8_000 },
+        )
+        .toBe('up');
+      await page.screenshot({ path: `test-results/orient-param-${tc.type}.png` });
+    });
+  }
+
+  // Discrimination guard: prove the assertion actually distinguishes up from
+  // down. Inject a vertically-INVERTED source (bright BOTTOM half, the mirror
+  // of test 6's bright-TOP source) through the real CAMERA upload path. A
+  // correctly-oriented pipeline must display that band at the BOTTOM — i.e.
+  // bottom-dominant. If the analyzer instead reported top-dominant here, the
+  // 'up' assertions above would be vacuous. This is the live proof that the
+  // analyzer (and thus the whole parametrized lock) discriminates orientation.
+  test('discrimination guard: bright-BOTTOM source reads bottom-dominant', async ({ page }) => {
+    await setup(page);
+    await spawnPatch(page,
+      [
+        { id: 'cam', type: 'cameraInput', position: { x: 40, y: 40 }, domain: 'video', params: { enabled: 1, mirror: 0 } },
+        { id: 'out', type: 'videoOut', position: { x: 600, y: 40 }, domain: 'video' },
+      ],
+      [{ id: 'e1', from: { nodeId: 'cam', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' }],
+    );
+    await page.waitForTimeout(600);
+    await page.evaluate(async () => {
+      const w = globalThis as unknown as {
+        __engine?: () => { getDomain: (d: string) => { attachExternalSource: (id: string, k: string, el: HTMLElement | null) => void } } | null;
+      };
+      const cv = document.createElement('canvas');
+      cv.width = 320; cv.height = 240;
+      const c = cv.getContext('2d')!;
+      const paint = () => {
+        c.fillStyle = '#141414'; c.fillRect(0, 0, 320, 240);
+        // Top-left origin: y=120..240 is the BOTTOM half. Paint it bright.
+        c.fillStyle = '#ffffff'; c.fillRect(0, 120, 320, 120);
+        requestAnimationFrame(paint);
+      };
+      paint();
+      const stream = (cv as HTMLCanvasElement).captureStream(30);
+      const vid = document.createElement('video');
+      vid.muted = true; vid.playsInline = true; vid.autoplay = true;
+      vid.srcObject = stream;
+      document.body.appendChild(vid);
+      await vid.play().catch(() => { /* autoplay fallback */ });
+      await new Promise<void>((res) => {
+        const check = () => { if (vid.readyState >= 2 && vid.videoWidth > 0) res(); else requestAnimationFrame(check); };
+        check();
+      });
+      const ve = w.__engine?.()?.getDomain('video');
+      if (!ve) throw new Error('no video engine');
+      ve.attachExternalSource('cam', 'video', vid);
+      (globalThis as unknown as { __orientVid2?: HTMLVideoElement }).__orientVid2 = vid;
+    });
+    await page.waitForTimeout(800);
+    const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+    await page.screenshot({ path: 'test-results/orient-guard-bottom.png' });
+    expect(r.bottomBright, `bright-BOTTOM source must read bottom-dominant (top=${r.topBright} bottom=${r.bottomBright}) — else the lock is vacuous`)
+      .toBeGreaterThan(r.topBright * 1.5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PICTUREBOX — image SOURCE (no video input), so it can't be driven by the
+// SHAPES triangle. We instead inject an asymmetric image (bright TOP half)
+// through the module's REAL production decode path (downscaleAndEncode ->
+// base64ToImageBitmap -> setImage) and assert OUTPUT shows the band on TOP.
+//
+// This was the module the owner reported flipped: its ImageBitmap upload path
+// rendered upside-down because Chromium ignores UNPACK_FLIP_Y_WEBGL for
+// Blob-sourced ImageBitmaps, so the bottom-up texel layout was sampled as-is.
+// Fixed by decoding with imageOrientation:'flipY' in base64ToImageBitmap so
+// the existing FLIP_Y=true upload + vUv sampling lands upright like CAMERA.
+// ---------------------------------------------------------------------------
+test.describe('video orientation — PICTUREBOX image source', () => {
+  test('PICTUREBOX(bright-top image) -> OUTPUT shows bright on top', async ({ page }) => {
+    await setup(page);
+    await spawnPatch(page,
+      [
+        { id: 'pic', type: 'picturebox', position: { x: 40, y: 40 }, domain: 'video' },
+        { id: 'out', type: 'videoOut', position: { x: 600, y: 40 }, domain: 'video' },
+      ],
+      [{ id: 'e1', from: { nodeId: 'pic', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'image', targetType: 'video' }],
+    );
+    await page.waitForTimeout(400);
+    await page.evaluate(async () => {
+      const w = globalThis as unknown as {
+        __engine?: () => { getDomain: (d: string) => { read: (id: string, key: string) => unknown } } | null;
+      };
+      const cv = document.createElement('canvas');
+      cv.width = 640; cv.height = 480;
+      const c = cv.getContext('2d')!;
+      c.fillStyle = '#141414'; c.fillRect(0, 0, 640, 480);
+      // Top-left origin: y=0..240 is the TOP half. Paint it bright.
+      c.fillStyle = '#ffffff'; c.fillRect(0, 0, 640, 240);
+      const blob: Blob = await new Promise((res) => cv.toBlob((b) => res(b!), 'image/jpeg', 0.85));
+      // Drive the REAL production encode/decode helpers (same functions the
+      // card uses) so the orientation under test is the shipped behavior.
+      // Resolved via the app-exposed test hook (gated on testHooksEnabled) so
+      // it works under the prebuilt `vite preview` bundle (E2E_USE_PREVIEW=1),
+      // where a `/src/...` dynamic import would 404.
+      const wm = globalThis as unknown as {
+        __pictureboxEncode?: () => Promise<{
+          downscaleAndEncode: (b: Blob) => Promise<string>;
+          base64ToImageBitmap: (s: string) => Promise<ImageBitmap>;
+        }>;
+      };
+      if (!wm.__pictureboxEncode) throw new Error('__pictureboxEncode missing — test-hooks build expected');
+      const mod = await wm.__pictureboxEncode();
+      const b64: string = await mod.downscaleAndEncode(blob);
+      const bmp: ImageBitmap = await mod.base64ToImageBitmap(b64);
+      const extras = w.__engine?.()?.getDomain('video')?.read('pic', 'extras') as { setImage: (b: ImageBitmap) => void } | undefined;
+      if (!extras) throw new Error('no picturebox extras');
+      extras.setImage(bmp);
+    });
+    await page.waitForTimeout(700);
+    const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+    await page.screenshot({ path: 'test-results/orient-picturebox.png' });
+    // The injected band is a solid bright TOP half (not a triangle), so we
+    // assert the TOP band dominates directly rather than the triangle verdict.
+    expect(r.topBright, `PICTUREBOX bright-top must dominate (top=${r.topBright} bottom=${r.bottomBright})`)
+      .toBeGreaterThan(r.bottomBright * 1.5);
+  });
 });

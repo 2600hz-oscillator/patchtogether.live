@@ -10,8 +10,6 @@
     Background,
     Controls,
     MiniMap,
-    NodeToolbar,
-    Position,
     type Node as FlowNode,
     type Edge as FlowEdge,
     type Connection,
@@ -21,6 +19,7 @@
   import { getDefaultSnapshotBus, type PatchSnapshot } from '$lib/graph/snapshot';
   import {
     makeEnvelope,
+    makePortableEnvelope,
     downloadEnvelope,
     pickAndLoadEnvelope,
     parseEnvelope,
@@ -30,6 +29,26 @@
     EnvelopeParseError,
     type PatchEnvelope,
   } from '$lib/graph/persistence';
+  import {
+    makePerformanceBundle,
+    validateBundle,
+    BundleParseError,
+    mergeMidiBindings,
+  } from '$lib/graph/performance-bundle';
+  import {
+    canPersistPerformances,
+    savePerformanceSlot,
+    loadPerformanceSlot,
+    listPerformanceSlots,
+    deletePerformanceSlot,
+    MAX_PERFORMANCES,
+  } from '$lib/graph/performance-store';
+  import {
+    exportBindings as exportMidiBindings,
+    importBindings as importMidiBindings,
+    connect as connectMidiLearn,
+  } from '$lib/midi/midi-learn.svelte';
+  import { getMidiClockSource } from '$lib/midi/midi-clock-source';
 
   function persistenceLoad(env: unknown, ydocArg: typeof ydoc, patchArg: typeof patch) {
     // Validate via parseEnvelope when a raw object is passed; if already typed,
@@ -58,157 +77,16 @@
   // Meta-domain registry — sticky notes etc. (no engine binding).
   import { listMetaModuleDefs, getMetaModuleDef } from '$lib/meta/module-registry';
   import '$lib/meta/modules'; // auto-registers stickyDef
-  import AnalogVcoCard from '$lib/ui/modules/AnalogVcoCard.svelte';
-  import AudioOutCard from '$lib/ui/modules/AudioOutCard.svelte';
-  import VcaCard from '$lib/ui/modules/VcaCard.svelte';
-  import MixerCard from '$lib/ui/modules/MixerCard.svelte';
-  import AdsrCard from '$lib/ui/modules/AdsrCard.svelte';
-  import FilterCard from '$lib/ui/modules/FilterCard.svelte';
-  import ReverbCard from '$lib/ui/modules/ReverbCard.svelte';
-  import DelayCard from '$lib/ui/modules/DelayCard.svelte';
-  import ScopeCard from '$lib/ui/modules/ScopeCard.svelte';
-  import RasterizeCard from '$lib/ui/modules/RasterizeCard.svelte';
-  import SequencerCard from '$lib/ui/modules/SequencerCard.svelte';
-  import WavetableVcoCard from '$lib/ui/modules/WavetableVcoCard.svelte';
-  import LfoCard from '$lib/ui/modules/LfoCard.svelte';
-  import CartesianCard from '$lib/ui/modules/CartesianCard.svelte';
-  import DestroyCard from '$lib/ui/modules/DestroyCard.svelte';
-  import QbrtCard from '$lib/ui/modules/QbrtCard.svelte';
-  import DrummergirlCard from '$lib/ui/modules/DrummergirlCard.svelte';
-  import MeowboxCard from '$lib/ui/modules/MeowboxCard.svelte';
-  import MixmstrsCard from '$lib/ui/modules/MixmstrsCard.svelte';
-  import TimelordeCard from '$lib/ui/modules/TimelordeCard.svelte';
-  import CharlottesEchosCard from '$lib/ui/modules/CharlottesEchosCard.svelte';
-  import RiotgirlsCard from '$lib/ui/modules/RiotgirlsCard.svelte';
-  import ScoreCard from '$lib/ui/modules/ScoreCard.svelte';
-  import DrumseqzCard from '$lib/ui/modules/DrumseqzCard.svelte';
-  import PolyseqzCard from '$lib/ui/modules/PolyseqzCard.svelte';
-  import GridsCard from '$lib/ui/modules/GridsCard.svelte';
-  import WavvizCard from '$lib/ui/modules/WavvizCard.svelte';
-  // SWOLEVCO — Buchla 259-style complex VCO with built-in scope output.
-  import SwolevcoCard from '$lib/ui/modules/SwolevcoCard.svelte';
-  import LinesCard from '$lib/ui/modules/LinesCard.svelte';
-  import VideoOutCard from '$lib/ui/modules/VideoOutCard.svelte';
-  import ShapesCard from '$lib/ui/modules/ShapesCard.svelte';
-  import MonoglitchCard from '$lib/ui/modules/MonoglitchCard.svelte';
-  import ReshaperCard from '$lib/ui/modules/ReshaperCard.svelte';
-  import RuttetraCard from '$lib/ui/modules/RuttetraCard.svelte';
-  import ShapedrampsCard from '$lib/ui/modules/ShapedrampsCard.svelte';
-  import VdelayCard from '$lib/ui/modules/VdelayCard.svelte';
-  import BentboxCard from '$lib/ui/modules/BentboxCard.svelte';
-  // ACIDWARP — 320×240 plasma video source with scene cycler.
-  import AcidwarpCard from '$lib/ui/modules/AcidwarpCard.svelte';
-  // Phase 1 video modules — see .myrobots/plans/video-modules-mvp.md.
-  import InwardsCard from '$lib/ui/modules/InwardsCard.svelte';
-  import PictureboxCard from '$lib/ui/modules/PictureboxCard.svelte';
-  import DestructorCard from '$lib/ui/modules/DestructorCard.svelte';
-  import ChromaCard from '$lib/ui/modules/ChromaCard.svelte';
-  import LumaCard from '$lib/ui/modules/LumaCard.svelte';
-  // CHROMAKEY / LUMAKEY — proper 2-input compositors (fg + bg). CHROMA
-  // and LUMA are now their original-spec single-input color processors.
-  import ChromakeyCard from '$lib/ui/modules/ChromakeyCard.svelte';
-  import LumakeyCard from '$lib/ui/modules/LumakeyCard.svelte';
-  import ColorizerCard from '$lib/ui/modules/ColorizerCard.svelte';
-  import FeedbackCard from '$lib/ui/modules/FeedbackCard.svelte';
-  import VideoMixerCard from '$lib/ui/modules/VideoMixerCard.svelte';
-  // CAMERA input (local-only) — see .myrobots/plans/module-camera-input.md.
-  import CameraInputCard from '$lib/ui/modules/CameraInputCard.svelte';
-  // ILLOGIC — combined attenuverter / math / logic utility (audio domain).
-  import IllogicCard from '$lib/ui/modules/IllogicCard.svelte';
-  // UNITYSCALEMATHEMATIK — bipolar CV shaper (unity scaler + 2 linear/expo
-  // attenuvert sections).
-  import UnityscalemathematikCard from '$lib/ui/modules/UnityscalemathematikCard.svelte';
-  // ANALOGLOGICMATHS — analog-logic mixer (MIN/MAX/DIFF/SUM/PRODUCT) inspired
-  // by Mystic Instruments ANA. Continuous-signal counterpart to ILLOGIC's
-  // digital boolean logic.
-  import AnalogLogicMathsCard from '$lib/ui/modules/AnalogLogicMathsCard.svelte';
-  import Dx7Card from '$lib/ui/modules/Dx7Card.svelte';
-  // NOISE — basic noise source (white / pink / brown).
-  import NoiseCard from '$lib/ui/modules/NoiseCard.svelte';
-  // BUGGLES — chaotic random voltage source (wogglebug-style).
-  import BugglesCard from '$lib/ui/modules/BugglesCard.svelte';
-  // WAVECEL — stereo wavetable VCO (E352 WAV loader, 3D viz, spread, fold).
-  import WavecelCard from '$lib/ui/modules/WavecelCard.svelte';
-  // WARRENSPECTRUM — 8-band filterbank with vactrol ping + acidwarp video viz.
-  import WarrenspectrumCard from '$lib/ui/modules/WarrenspectrumCard.svelte';
-  // STEREOVCA — stereo VCA + ring modulator.
-  import StereovcaCard from '$lib/ui/modules/StereovcaCard.svelte';
-  // SHIMMERSHINE — lush shimmer reverb (Schroeder tank + pitch-shifted feedback).
-  import ShimmershineCard from '$lib/ui/modules/ShimmershineCard.svelte';
-  // MACROOSCILLATOR — Plaits-style macro oscillator (VA + waveshape models).
-  import MacrooscillatorCard from '$lib/ui/modules/MacrooscillatorCard.svelte';
-  // SAMSLOOP — loop-based WAV sample player with varispeed + reverse.
-  import SamsloopCard from '$lib/ui/modules/SamsloopCard.svelte';
-  // CLOUDS — granular texture processor (Mutable Instruments Clouds archetype).
-  import CloudsCard from '$lib/ui/modules/CloudsCard.svelte';
-  // MACSEQ — 16-step sequencer with per-step macrooscillator voice picker.
-  import MacseqCard from '$lib/ui/modules/MacseqCard.svelte';
-  // RINGS — modal / sympathetic-string resonator (Mutable Instruments Rings port).
-  import RingsCard from '$lib/ui/modules/RingsCard.svelte';
-  import ElementsCard from '$lib/ui/modules/ElementsCard.svelte';
-  // PEAKS — dual-channel multi-mode utility (Peaks archetype, kick/snare/hihat/env/lfo).
-  import PeaksCard from '$lib/ui/modules/PeaksCard.svelte';
-  // MARBLES — random sampler / clock generator (Mutable Instruments Marbles port).
-  import MarblesCard from '$lib/ui/modules/MarblesCard.svelte';
-  // SYMBIOTE — Marbles core + Grids drums + TB-3PO acid (always-on Symbiote firmware).
-  import SymbioteCard from '$lib/ui/modules/SymbioteCard.svelte';
-  // WARPS — meta-modulator / signal masher (Mutable Instruments Warps archetype).
-  import WarpsCard from '$lib/ui/modules/WarpsCard.svelte';
-  // VEILS — quad VCA + soft-clip summing mix (Mutable Instruments archetype).
-  import VeilsCard from '$lib/ui/modules/VeilsCard.svelte';
-  // ATTENUMIX — the simple 4-channel attenuating mixer (per-channel direct outs + master + tanh soft-clip on mix).
-  import AttenumixCard from '$lib/ui/modules/AttenumixCard.svelte';
-  // BLADES — dual SVF VCF + COLOR overdrive + mix bus (Blades archetype).
-  import BladesCard from '$lib/ui/modules/BladesCard.svelte';
-  // STAGES — 6-segment cascadable function generator (Mutable Instruments Stages archetype).
-  import StagesCard from '$lib/ui/modules/StagesCard.svelte';
-  // TIDES2 — tidal modulator / poly-slope generator (Mutable Instruments Tides 2018 archetype).
-  import Tides2Card from '$lib/ui/modules/Tides2Card.svelte';
-  // CLOUDSEED — exact port of Ghost Note Audio CloudSeed reverb (MIT).
-  import CloudseedCard from '$lib/ui/modules/CloudseedCard.svelte';
-  // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port, MIT).
-  import CallsineCard from '$lib/ui/modules/CallsineCard.svelte';
-  // MIDI-CV-BUDDY — Web MIDI hardware controller → pitch + gate + velocity CV.
-  import MidiCvBuddyCard from '$lib/ui/modules/MidiCvBuddyCard.svelte';
-  // MIDICLOCK — Web MIDI transport bridge → clock + run + start + stop.
-  import MidiclockCard from '$lib/ui/modules/MidiclockCard.svelte';
-  import HelmCard from '$lib/ui/modules/HelmCard.svelte';
-  // HYDROGEN — TR-808 drum-machine module (first pass of the Hydrogen port).
-  import HydrogenCard from '$lib/ui/modules/HydrogenCard.svelte';
-  // PONG — interactive game module (research prototype).
-  import PongCard from '$lib/ui/modules/PongCard.svelte';
-  // MODTRIS — Tetris-clone game module (research prototype).
-  import ModtrisCard from '$lib/ui/modules/ModtrisCard.svelte';
-  // JOYSTICK — manual XY pad CV source.
-  import JoystickCard from '$lib/ui/modules/JoystickCard.svelte';
-  // GAMEPAD — connected USB/Bluetooth controller as CV (sticks + triggers) + gate (buttons).
-  import GamepadCard from '$lib/ui/modules/GamepadCard.svelte';
-  // NUMPAD+ — 4-layer numpad-driven step sequencer + live keyboard.
-  import NumpadPlusCard from '$lib/ui/modules/NumpadPlusCard.svelte';
-  // WAVESCULPT — hybrid 4-osc synth (audio + 3D ribbon video).
-  import WavesculptCard from '$lib/ui/modules/WavesculptCard.svelte';
-  // ATLANTIS-PATCH support trio. Each is general-purpose; together they
-  // power the Visit Atlantis demo (loadAtlantis() below).
-  import SlewSwitchCard from '$lib/ui/modules/SlewSwitchCard.svelte';
-  import AtlantisCatalystCard from '$lib/ui/modules/AtlantisCatalystCard.svelte';
-  import AquaTankCard from '$lib/ui/modules/AquaTankCard.svelte';
-  // DOOM — interactive single-instance video module; maxInstances: 1.
-  // Keyboard input on focus + 7 CV-gate inputs + stereo audio outputs
-  // (silent in v1 — slice 8 wires real PCM).
-  import DoomCard from '$lib/ui/modules/DoomCard.svelte';
-  // VIDEOBOX — local-file video player with multiplayer playhead sync.
-  import VideoboxCard from '$lib/ui/modules/VideoboxCard.svelte';
-  // VIDEOVARISPEED — local-file player with performant varispeed transport.
-  import VideoVarispeedCard from '$lib/ui/modules/VideoVarispeedCard.svelte';
-  // STICKY — meta-domain paper-style sticky note (no engine binding).
-  import StickyCard from '$lib/ui/modules/StickyCard.svelte';
-  // GROUP — meta-domain N-modules-as-one card (no engine binding).
-  import GroupCard from '$lib/ui/modules/GroupCard.svelte';
-  // LIVECODE — JS-runtime live-coding module (no audio I/O); see /docs/modules/livecode.
-  import LivecodeCard from '$lib/ui/modules/LivecodeCard.svelte';
-  // CLOCKED runner — per-clocked()-call mini-LIVECODE spawned by the main card.
-  import ClockedRunnerCard from '$lib/ui/modules/ClockedRunnerCard.svelte';
-  import ModuleNameLabel from '$lib/ui/ModuleNameLabel.svelte';
+  // Module cards are resolved GLOB-DRIVEN from $lib/ui/modules/*Card.svelte
+  // via $lib/ui/modules-card-map — no hand-maintained per-card import list
+  // (that append-edit was a top cross-PR conflict source). A new module just
+  // drops its XyzCard.svelte here (matching the PascalCase(type)+Card
+  // convention, or declaring `card` on its def) and is picked up automatically.
+  import { buildNodeTypes } from '$lib/ui/modules-card-map';
+  import { computeCabinetLayout } from '$lib/ui/canvas/cabinet-layout';
+  // ModuleNameLabel moved INTO every module card's title chrome (see
+  // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
+  // Canvas no longer renders the label directly.
   import ModulePalette from '$lib/ui/ModulePalette.svelte';
   import { canAddModule } from '$lib/doom/doom-gating';
   import SavedGroupsPicker from '$lib/ui/SavedGroupsPicker.svelte';
@@ -229,6 +107,7 @@
     type PortLookupModule,
   } from '$lib/graph/group-actions';
   import type { ExposedPort, ExposedControl, GroupData } from '$lib/graph/group-projection';
+  import { resolveExposedPort } from '$lib/graph/group-projection';
   import { listExposableControls, validateExposedControls } from '$lib/graph/group-controls';
   import {
     nextGroupNameForNewGroup,
@@ -258,6 +137,7 @@
   } from '$lib/multiplayer/group-building-presence';
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
+  import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
   import PickupCable from '$lib/ui/PickupCable.svelte';
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
   import type { CableType, Edge, PortDef, ModuleNode } from '$lib/graph/types';
@@ -277,8 +157,17 @@
     nextDefaultName,
     migrateAssignNames,
   } from '$lib/multiplayer/module-naming';
+  // TIMELORDE auto-spawn — the rack always needs a system clock, so when the
+  // patch loads (or boots empty) without one, drop a TIMELORDE in. Pure
+  // helpers; the $effect that wires them lives further down with the other
+  // snapshot-bus subscribers.
+  import {
+    shouldAutoSpawnTimelorde,
+    pickTimelordeDefaultPosition,
+  } from '$lib/audio/modules/timelorde-autospawn';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
+  import { installSimulatedMidiDevice } from '$lib/midi/midi-learn.svelte';
 
   // Stage B PR B-b: when mounted under /r/[id] (multi-user), the parent
   // passes the current user's id so per-user layouts are scoped correctly.
@@ -330,112 +219,15 @@
     presenceUser ? presenceUser.isRackOwner === true : undefined,
   );
 
-  const nodeTypes = {
-    analogVco: AnalogVcoCard,
-    audioOut: AudioOutCard,
-    vca: VcaCard,
-    mixer: MixerCard,
-    adsr: AdsrCard,
-    filter: FilterCard,
-    reverb: ReverbCard,
-    delay: DelayCard,
-    scope: ScopeCard,
-    rasterize: RasterizeCard,
-    sequencer: SequencerCard,
-    wavetableVco: WavetableVcoCard,
-    lfo: LfoCard,
-    cartesian: CartesianCard,
-    destroy: DestroyCard,
-    qbrt: QbrtCard,
-    drummergirl: DrummergirlCard,
-    meowbox: MeowboxCard,
-    mixmstrs: MixmstrsCard,
-    timelorde: TimelordeCard,
-    charlottesEchos: CharlottesEchosCard,
-    riotgirls: RiotgirlsCard,
-    score: ScoreCard,
-    drumseqz: DrumseqzCard,
-    polyseqz: PolyseqzCard,
-    wavviz: WavvizCard,
-    swolevco: SwolevcoCard,
-    // Video-domain (Phase 0):
-    lines: LinesCard,
-    videoOut: VideoOutCard,
-    shapes: ShapesCard,
-    monoglitch: MonoglitchCard,
-    reshaper: ReshaperCard,
-    ruttetra: RuttetraCard,
-    shapedramps: ShapedrampsCard,
-    vdelay: VdelayCard,
-    bentbox: BentboxCard,
-    acidwarp: AcidwarpCard,
-    // Video-domain (Phase 1):
-    inwards: InwardsCard,
-    picturebox: PictureboxCard,
-    destructor: DestructorCard,
-    chroma: ChromaCard,
-    luma: LumaCard,
-    chromakey: ChromakeyCard,
-    lumakey: LumakeyCard,
-    colorizer: ColorizerCard,
-    feedback: FeedbackCard,
-    videoMixer: VideoMixerCard,
-    // CAMERA input (local-only):
-    cameraInput: CameraInputCard,
-    illogic: IllogicCard,
-    unityscalemathematik: UnityscalemathematikCard,
-    analogLogicMaths: AnalogLogicMathsCard,
-    dx7: Dx7Card,
-    noise: NoiseCard,
-    buggles: BugglesCard,
-    wavecel: WavecelCard,
-    warrenspectrum: WarrenspectrumCard,
-    stereovca: StereovcaCard,
-    shimmershine: ShimmershineCard,
-    macrooscillator: MacrooscillatorCard,
-    samsloop: SamsloopCard,
-    clouds: CloudsCard,
-    macseq: MacseqCard,
-    rings: RingsCard,
-    elements: ElementsCard,
-    peaks: PeaksCard,
-    marbles: MarblesCard,
-    symbiote: SymbioteCard,
-    warps: WarpsCard,
-    veils: VeilsCard,
-    grids: GridsCard,
-    attenumix: AttenumixCard,
-    blades: BladesCard,
-    stages: StagesCard,
-    tides2: Tides2Card,
-    cloudseed: CloudseedCard,
-    midiCvBuddy: MidiCvBuddyCard,
-    midiclock: MidiclockCard,
-    helm: HelmCard,
-    hydrogen: HydrogenCard,
-    pong: PongCard,
-    modtris: ModtrisCard,
-    joystick: JoystickCard,
-    gamepad: GamepadCard,
-    numpadPlus: NumpadPlusCard,
-    wavesculpt: WavesculptCard,
-    slewSwitch: SlewSwitchCard,
-    atlantisCatalyst: AtlantisCatalystCard,
-    aquaTank: AquaTankCard,
-    // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
-    callsine: CallsineCard,
-    // DOOM — single-instance interactive video module.
-    doom: DoomCard,
-    // VIDEOBOX — local-file video player with multiplayer playhead sync.
-    videobox: VideoboxCard,
-    // VIDEOVARISPEED — local-file player with performant varispeed transport.
-    videovarispeed: VideoVarispeedCard,
-    // Meta-domain (no engine binding):
-    sticky: StickyCard,
-    group: GroupCard,
-    livecode: LivecodeCard,
-    clockedRunner: ClockedRunnerCard,
-  };
+  // The SvelteFlow node-component map, derived from EVERY registered def
+  // (audio + video + meta) via the glob-driven card resolver. Adding a
+  // module needs no edit here. Built once at module scope (the registries
+  // self-register on the barrel imports above, so the lists are populated).
+  const nodeTypes = buildNodeTypes([
+    ...listModuleDefs(),
+    ...listVideoModuleDefs(),
+    ...listMetaModuleDefs(),
+  ]);
 
   let audioCtx: AudioContext | null = $state(null);
   let engine: PatchEngine | null = $state(null);
@@ -494,6 +286,21 @@
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__connectDragState = connectDragState;
+      // Port hold-to-menu gesture phase, exposed as a getter so e2e reads
+      // the LIVE value. The drag-passes-to-xyflow spec polls this for the
+      // 'cancelled-move' phase — a deterministic signal that the
+      // pointermove cancelled the hold — instead of racing HOLD_FIRE_MS.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__portHoldPhase = () => holdPhase;
+      // Lets E2E tests exercise the connect-commit path directly — the
+      // same xyflow `Connection` envelope a real pointer drag would
+      // synthesize. Used by the instrument-exposed-port-patching spec
+      // to assert that dragging onto a group's exposed handle creates
+      // an edge in the patch (the bug it was added to regress against:
+      // pre-fix, group endpoints bailed before the edge was added
+      // because the def lookup returned no group def).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__handleConnect = (c: Connection) => handleConnect(c);
       // Stage-B Playwright @collab tests use these to drive the
       // multi-user provider attach + per-user layout reads without
       // routing through Clerk auth. See e2e/tests/collab.spec.ts.
@@ -607,6 +414,180 @@
     });
   });
 
+  // ---------------- TIMELORDE auto-spawn ----------------
+  //
+  // The module-def header in timelorde.ts promises: "if a rack is opened
+  // without a TIMELORDE, the auto-spawn path drops one in at a fixed
+  // position so the rack is always musically coherent." This is that
+  // path.
+  //
+  // SCOPE: only fires on RACKSPACE mounts (i.e. when a Hocuspocus
+  // provider is bound — `/r/[id]` routes + the `/`+`__attachProvider`
+  // collab-test pattern). The public `/` demo canvas (no provider) stays
+  // empty until the user clicks Load example — auto-spawning there would
+  // surprise the "demo a fresh engine" workflow and break a lot of e2e
+  // tests that depend on a literally-empty canvas at `goto('/')`.
+  // Real patching happens on `/r/[id]`, which is where the user
+  // experienced the missing-TIMELORDE pain.
+  //
+  // When the effect fires:
+  //   - After the Hocuspocus provider has fired 'synced' at least once.
+  //     Otherwise the local snapshot is the empty pre-sync state and
+  //     we'd race the server's actual state (which may already contain
+  //     a TIMELORDE), ending up with two TIMELORDE nodes that
+  //     maxInstances would then have to reconcile.
+  //
+  // Guards:
+  //   - didAutoSpawnTimelorde latches once per Canvas mount, so a
+  //     subsequent user-driven delete (impossible — undeletable: true —
+  //     but defensive) followed by snapshot churn doesn't re-spawn.
+  //   - shouldAutoSpawnTimelorde is the per-snapshot predicate.
+  //   - Inside the Yjs transact, a final scan of `patch.nodes` catches
+  //     any TIMELORDE written by a rack-mate between our snapshot read
+  //     and the transact entering (minimizes the multiplayer race
+  //     window).
+  //
+  // Multiplayer race: two clients hitting this $effect in the same
+  // moment both observe the same TIMELORDE-less snapshot. The
+  // transact-time re-check usually catches one of them; in the worst
+  // case both write distinct ids and Yjs merges both, leaving the rack
+  // momentarily with two TIMELORDE nodes. The engine's maxInstances=1
+  // refuses to materialize the second one and the orphan node is
+  // visually present but not audible — undeletable+singleton means the
+  // user can't easily clean it up, so future work: a dedupe pass in
+  // the reconciler that removes the loser by id-order. Acceptable for
+  // now since the race is narrow (one tick).
+  let didAutoSpawnTimelorde = $state(false);
+  let providerHasSynced = $state(false);
+  $effect(() => {
+    // Read the prop reactively. On `/r/[id]` this is the real provider
+    // and the $effect re-runs when it binds (which is BEFORE the user
+    // sees any patch data).
+    const fromProp = provider;
+    if (fromProp) {
+      if (fromProp.isSynced) providerHasSynced = true;
+      const onSynced = () => {
+        providerHasSynced = true;
+      };
+      fromProp.on('synced', onSynced);
+      return () => {
+        try { fromProp.off('synced', onSynced); } catch { /* */ }
+      };
+    }
+    // No prop provider — @collab tests use `/` + __attachProvider,
+    // which stashes the provider on window AFTER awaiting sync. The
+    // global isn't reactive, so we poll briefly post-mount to pick it
+    // up. 50 ms cadence × ~40 attempts = 2 s budget; after that we
+    // give up (the public `/` demo canvas legitimately has no provider).
+    let attempts = 0;
+    const POLL_MS = 50;
+    const POLL_MAX = 40;
+    const timer = setInterval(() => {
+      attempts++;
+      const g = (globalThis as unknown as {
+        __provider?: HocuspocusProvider | null;
+      }).__provider ?? null;
+      if (g) {
+        clearInterval(timer);
+        if (g.isSynced) providerHasSynced = true;
+        const onSynced = () => {
+          providerHasSynced = true;
+        };
+        g.on('synced', onSynced);
+        // No teardown beyond clearInterval — the global provider
+        // outlives the Canvas mount on `/` (tests keep it for the
+        // duration of the test run).
+        return;
+      }
+      if (attempts >= POLL_MAX) clearInterval(timer);
+    }, POLL_MS);
+    return () => {
+      clearInterval(timer);
+    };
+  });
+
+  // Pre-effect marker: written once at module-script eval time. The
+  // e2e auto-spawn spec polls for this object as the "Canvas script
+  // actually ran" signal — under parallel-worker stress an HMR
+  // reload can drop the script reload, and waiting on the marker is
+  // the cleanest way to detect it.
+  if (testHooksEnabled()) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).__timelordeAutospawnDebug = {
+      runs: 0,
+      mountedAt: Date.now(),
+      didAutoSpawnTimelorde: false,
+      providerHasSynced: false,
+      snapshotNodeCount: -1,
+      hasTimelordeInSnap: false,
+    };
+  }
+  $effect(() => {
+    if (testHooksEnabled()) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const g = globalThis as any;
+      g.__timelordeAutospawnDebug = {
+        runs: (g.__timelordeAutospawnDebug?.runs ?? 0) + 1,
+        didAutoSpawnTimelorde,
+        providerHasSynced,
+        snapshotNodeCount: snapshot.nodes.length,
+        hasTimelordeInSnap: snapshot.nodes.some((n) => n.type === 'timelorde'),
+      };
+    }
+    if (didAutoSpawnTimelorde) return;
+    if (!providerHasSynced) return;
+    if (!shouldAutoSpawnTimelorde(snapshot.nodes)) {
+      // Existing TIMELORDE present (loaded patch, or a rack-mate spawned
+      // one first). Latch so subsequent snapshot churn (e.g. cable
+      // additions) doesn't re-trigger this check pointlessly.
+      didAutoSpawnTimelorde = true;
+      return;
+    }
+    // Pick a viewport-anchored top-left position so the new card lands
+    // inside whatever the user is currently looking at (rather than at
+    // a flow-space origin that might be panned off-screen).
+    let viewportRect: { originX: number; originY: number; width: number; height: number } | undefined;
+    if (flowApi && flowEl) {
+      const rect = flowEl.getBoundingClientRect();
+      const vp = flowApi.getViewport?.();
+      const zoom = vp?.zoom && vp.zoom > 0 ? vp.zoom : 1;
+      viewportRect = {
+        originX: vp ? -vp.x / zoom : 0,
+        originY: vp ? -vp.y / zoom : 0,
+        width: rect.width / zoom,
+        height: rect.height / zoom,
+      };
+    }
+    const pos = pickTimelordeDefaultPosition(viewportRect);
+    const id = `timelorde-${crypto.randomUUID().slice(0, 8)}`;
+    // Transactional re-check inside the same Yjs op: the snapshot we
+    // read might be stale by a few ticks; a concurrent rack-mate could
+    // have spawned a TIMELORDE in the meantime. Re-check inside the
+    // transact closure to minimize the race window. (Yjs doesn't expose
+    // a true conditional-insert primitive, so this is best-effort + the
+    // engine's maxInstances=1 is the ultimate safety net.)
+    ydoc.transact(() => {
+      let alreadyHasTimelorde = false;
+      for (const node of Object.values(patch.nodes)) {
+        if (node && node.type === 'timelorde') {
+          alreadyHasTimelorde = true;
+          break;
+        }
+      }
+      if (alreadyHasTimelorde) return;
+      patch.nodes[id] = {
+        id,
+        type: 'timelorde',
+        domain: 'audio',
+        position: pos,
+        params: {},
+        data: { name: nextDefaultName(patch.nodes, 'timelorde') },
+      };
+    }, LOCAL_ORIGIN);
+    didAutoSpawnTimelorde = true;
+    trace(`auto-spawned TIMELORDE at (${pos.x}, ${pos.y}) — rack had none`);
+  });
+
   // Mirror snapshot → SvelteFlow node/edge arrays. We DROPPED bind:nodes /
   // bind:edges in favor of one-way props because the two-way bind let
   // Svelte Flow's internal cache stomp our just-computed arrays after a
@@ -666,6 +647,10 @@
       // children when data.expanded === true on the parent group.
       const parentGroupId = (n.data as { parentGroupId?: string } | undefined)?.parentGroupId;
       if (parentGroupId && collapsed.has(parentGroupId)) continue;
+      // CADILLAC renders as a roaming overlay sprite (CadillacOverlay),
+      // not as a SvelteFlow card. Filter it out of the node array so
+      // xyflow doesn't draw a fallback white box at the spawn point.
+      if (n.type === 'cadillac') continue;
       const remoteUser = remoteByNode[n.id];
       const node: FlowNode = {
         id: n.id,
@@ -802,55 +787,148 @@
     }
   }
 
-  /** Visit Atlantis — load the big generative Schrader-inspired demo
-   *  patch from packages/web/src/lib/ui/example-patches/atlantis.ts.
-   *  Mirrors loadExample()'s ensureEngine → ydoc.transact → reconcile
-   *  shape; the patch spawns SCENECHANGE in autoMode so the ecosystem
-   *  starts drifting on its own immediately. */
-  async function loadAtlantis() {
+  /** "moogafakkin System 35/55" — spawn a full Moog cabinet, positioned to
+   *  mirror the real service-manual cabinet layout (two rows, left-to-right,
+   *  non-overlapping). The geometry comes from the pure
+   *  computeCabinetLayout() helper; we filter each placement through the
+   *  live module registry (skipping any unregistered type) and write ALL
+   *  the nodes in ONE Yjs transaction so the cabinet is a single undo step
+   *  and a single multiplayer broadcast. nextDefaultName is recomputed per
+   *  node AFTER the prior insert (it scans patch.nodes, which we've already
+   *  mutated) so numbering stays unique across the batch. */
+  async function spawnCabinet(system: '35' | '55') {
     error = null;
     booting = true;
     try {
       await ensureEngine();
-      const { ATLANTIS_NODES, ATLANTIS_WIRES, atlantisEdgeId } =
-        await import('$lib/ui/example-patches/atlantis');
+      const placements = computeCabinetLayout(system);
       ydoc.transact(() => {
-        for (const [id, n] of Object.entries(ATLANTIS_NODES)) {
-          if (!patch.nodes[id]) {
-            const autoName = nextDefaultName(patch.nodes, n.type);
-            const data = { ...(n.data ?? {}), name: autoName };
-            patch.nodes[id] = {
-              id,
-              type: n.type,
-              domain: 'audio',
-              position: n.position,
-              params: n.params,
-              data,
-            };
-          }
+        for (const { type, x, y } of placements) {
+          // Skip gracefully if a type isn't registered — don't crash the
+          // whole cabinet over one missing module.
+          if (!getModuleDef(type as Parameters<typeof getModuleDef>[0])) continue;
+          const id = `${type}-${crypto.randomUUID().slice(0, 8)}`;
+          const autoName = nextDefaultName(patch.nodes, type as Parameters<typeof nextDefaultName>[1]);
+          patch.nodes[id] = {
+            id,
+            type,
+            domain: 'audio',
+            position: { x, y },
+            params: {},
+            data: { name: autoName },
+          };
         }
-        for (const w of ATLANTIS_WIRES) {
-          const id = atlantisEdgeId(w);
-          if (!patch.edges[id]) {
-            patch.edges[id] = {
-              id,
-              source: { nodeId: w.src, portId: w.srcPort },
-              target: { nodeId: w.dst, portId: w.dstPort },
-              sourceType: w.cable,
-              targetType: w.cable,
-            };
-          }
-        }
-      });
-      trace('Atlantis patch in store; reconciler instantiating');
+      }, LOCAL_ORIGIN);
+      trace(`spawned moogafakkin System ${system} cabinet (${placements.length} modules)`);
       await reconciler?.reconcile();
-      trace('Atlantis live — scenechange drifting');
     } catch (err) {
       console.error(err);
       error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
     } finally {
       booting = false;
     }
+  }
+
+  /** GLITCHES GET RICHES — load the bundled video+audio demo envelope
+   *  from packages/web/src/lib/ui/example-patches/glitches.imp.json.
+   *  Mirrors loadExample()'s ensureEngine → load → reconcile shape;
+   *  the envelope's PICTUREBOX node carries glitch.jpg as `data.imageBytes`
+   *  so it renders on mount with no extra wiring.
+   *
+   *  Unlike the retired Visit-Atlantis loader (which built nodes + edges
+   *  inline) this loader replays a real Yjs envelope through the
+   *  canonical persistence path — same code as the Load button. */
+  async function loadGlitches() {
+    error = null;
+    booting = true;
+    try {
+      await ensureEngine();
+      const { loadGlitches: doLoad } = await import('$lib/ui/example-patches/glitches');
+      const result = doLoad(ydoc, patch);
+      trace(`GLITCHES patch in store (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges); reconciler instantiating`);
+      await reconciler?.reconcile();
+      trace('GLITCHES live — picturebox showing glitch.jpg');
+    } catch (err) {
+      console.error(err);
+      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    } finally {
+      booting = false;
+    }
+  }
+
+  /** MEDIA BURN — homage to Ant Farm's 1975 piece. Loads 15 PICTUREBOX
+   *  tiles reassembling the iconic Cadillac-into-TVs photo, plus a
+   *  CADILLAC positioned to demolish the rightmost column ~1s after
+   *  load. Same shape as loadGlitches: envelope → loadEnvelopeIntoStore.
+   *
+   *  Determinism: the envelope's CADILLAC node has NO spawnedAtMs, so
+   *  the overlay's `?? Date.now()` fallback makes load-time === spawn-
+   *  time. The 1-second-to-first-hit math (see media-burn-math.ts) holds
+   *  every load, in single-user AND multiplayer modes. */
+  async function loadMediaBurn() {
+    error = null;
+    booting = true;
+    try {
+      await ensureEngine();
+      const { loadMediaBurn: doLoad } = await import('$lib/ui/example-patches/media-burn');
+      const result = doLoad(ydoc, patch);
+      trace(`MEDIA BURN patch in store (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges); reconciler instantiating`);
+      await reconciler?.reconcile();
+      trace('MEDIA BURN live — 15 PICTUREBOX tiles + CADILLAC armed');
+    } catch (err) {
+      console.error(err);
+      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    } finally {
+      booting = false;
+    }
+  }
+
+  /** GIBRIBBON game demo — load the bundled audio→video patch that drives
+   *  the GibRibbon game (PR #620) from a sequenced MACROOSCILLATOR voice
+   *  analysed by SYNESTHESIA. Same shape as loadMediaBurn: envelope →
+   *  loadEnvelopeIntoStore. TIMELORDE + MACSEQ free-run on load, so the
+   *  SYNESTHESIA slow envelopes start generating GibRibbon events
+   *  immediately (cv1..cv4 → loop/jump/imp/zombie; 1× → scroll clock;
+   *  MACSEQ gate → beat). See gibribbon-demo.ts + gibribbon-events.ts. */
+  async function loadGibribbonDemo() {
+    error = null;
+    booting = true;
+    try {
+      await ensureEngine();
+      const { loadGibribbonDemo: doLoad } = await import('$lib/ui/example-patches/gibribbon-demo');
+      const result = doLoad(ydoc, patch);
+      trace(`GIBRIBBON demo in store (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges); reconciler instantiating`);
+      await reconciler?.reconcile();
+      trace('GIBRIBBON demo live — sequenced voice → SYNESTHESIA → game events');
+    } catch (err) {
+      console.error(err);
+      error = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    } finally {
+      booting = false;
+    }
+  }
+
+  /** Identifiers for the "Load example…" topbar dropdown. Each maps to one
+   *  of the existing example loaders/spawners (kept byte-for-byte identical
+   *  to the buttons they replaced). */
+  type ExampleKey = 'sequenced-vco' | 'system-55' | 'system-35' | 'media-burn' | 'glitches' | 'gibribbon-demo';
+
+  /** Action-menu dispatcher for the "Load example…" `<select>`. It's an
+   *  action menu (not a persistent value), so we reset the bound value back
+   *  to the placeholder after dispatching, letting the user re-select the
+   *  same example to load it again. */
+  let exampleChoice = $state('');
+  async function onExampleChosen(key: ExampleKey) {
+    switch (key) {
+      case 'sequenced-vco': await loadExample(); break;
+      case 'system-55':     await spawnCabinet('55'); break;
+      case 'system-35':     await spawnCabinet('35'); break;
+      case 'media-burn':    await loadMediaBurn(); break;
+      case 'glitches':      await loadGlitches(); break;
+      case 'gibribbon-demo': await loadGibribbonDemo(); break;
+    }
+    // Reset back to the placeholder so this stays an action menu.
+    exampleChoice = '';
   }
 
   function clearPatch() {
@@ -910,6 +988,221 @@
     }
   }
 
+  // ---------------- Save / Load Local Performance ----------------
+  //
+  // A "performance slot" is a named snapshot of the WHOLE track stored in this
+  // browser's IndexedDB. The bundle is a superset of the patch envelope:
+  //   * patch graph + edges + params + module positions + INLINE PICTUREBOX
+  //     images + INLINE SAMSLOOP samples — all already in the envelope (free).
+  //   * VIDEOBOX video files — NOT inlined. Their FileSystemFileHandles already
+  //     persist in the existing video-handle IDB store (PR #102), keyed by the
+  //     `fileMeta.handleId` that's saved in the envelope. So on the SAME browser
+  //     profile, reloading the bundle re-applies the envelope, each VideoboxCard
+  //     re-acquires its handle by handleId and shows the one-click "re-allow"
+  //     (Chromium) — the video comes back. We record asset refs in the bundle
+  //     for the picker summary + future cross-profile guided re-pick.
+  //   * MIDI Learn CC maps (device-agnostic) + MIDI-CV-BUDDY device-by-NAME +
+  //     gamepad-by-id metadata — see performance-bundle.ts.
+  //
+  // Browser support: IndexedDB-gated. Degrades gracefully — the buttons show a
+  // notice (not a hard fail) where File System Access is absent (Firefox/Safari):
+  // the patch + inline assets still restore; only the video files need a manual
+  // re-pick via the existing VIDEOBOX re-link prompt.
+
+  let perfSupported = $derived(canPersistPerformances());
+
+  /** Resolve a MIDIInput.id → {name, manufacturer} from the live MIDIAccess,
+   *  if one has been granted. Best-effort: returns null when Web MIDI isn't
+   *  available / not yet granted (device metadata is then simply omitted). */
+  async function resolveMidiDevices(): Promise<(id: string) => { name: string; manufacturer?: string } | null> {
+    try {
+      const nav = navigator as unknown as { requestMIDIAccess?: (o?: unknown) => Promise<{ inputs: Map<string, { name?: string | null; manufacturer?: string | null }> }> };
+      if (typeof nav.requestMIDIAccess !== 'function') return () => null;
+      const access = await nav.requestMIDIAccess({ sysex: false });
+      return (id: string) => {
+        const inp = access.inputs.get(id);
+        if (!inp || !inp.name) return null;
+        return { name: inp.name, manufacturer: inp.manufacturer ?? undefined };
+      };
+    } catch {
+      return () => null;
+    }
+  }
+
+  /** Resolve a gamepad slot index → connected gamepad.id, or null. */
+  function resolveGamepad(slot: number): string | null {
+    try {
+      const pads = typeof navigator !== 'undefined' && typeof navigator.getGamepads === 'function'
+        ? navigator.getGamepads()
+        : [];
+      return pads?.[slot]?.id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function savePerformance() {
+    error = null;
+    if (!perfSupported) {
+      error = 'Save Local Performance needs IndexedDB (not available in this browser).';
+      return;
+    }
+    // Show how many slots are used so the user knows they're approaching the
+    // per-browser cap before they type a name. Best-effort — listing failures
+    // shouldn't block the save.
+    let usedCount = 0;
+    try { usedCount = (await listPerformanceSlots()).length; } catch { /* */ }
+    const input = window.prompt(
+      `Save Local Performance as…\n(${usedCount}/${MAX_PERFORMANCES} slots used)`,
+      'My Performance',
+    );
+    if (input === null) {
+      trace('save performance cancelled');
+      return;
+    }
+    const name = input.trim();
+    if (!name) {
+      error = 'Performance name cannot be empty.';
+      return;
+    }
+    try {
+      // Portable snapshot: bake THIS user's displayed positions into
+      // node.position + drop the per-user layouts map, so the performance loads
+      // with correct placement for any future loader (incl. a different user or
+      // single-user reload). In single-user mode currentUserId is undefined and
+      // this is equivalent to makeEnvelope (positions are already canonical).
+      const envelope = makePortableEnvelope(ydoc, currentUserId);
+      // Build the live node map (plain objects) for asset/device extraction.
+      const nodes: Record<string, { id: string; type: string; data?: Record<string, unknown> | null; params?: Record<string, unknown> | null }> = {};
+      for (const [id, n] of Object.entries(patch.nodes)) {
+        if (n) nodes[id] = { id, type: n.type, data: n.data as Record<string, unknown> | null, params: n.params as Record<string, unknown> | null };
+      }
+      const resolveMidi = await resolveMidiDevices();
+      const bundle = makePerformanceBundle({
+        envelope,
+        nodes,
+        midiBindings: exportMidiBindings(),
+        resolveMidiDevice: resolveMidi,
+        resolveGamepad,
+      });
+      const res = await savePerformanceSlot(name, bundle);
+      if (!res.ok) {
+        if (res.reason === 'cap') {
+          error = `You have reached the ${res.cap ?? MAX_PERFORMANCES}-performance cap. Delete one from the Load menu first.`;
+        } else {
+          error = 'Could not save the performance (storage unavailable or full).';
+        }
+        return;
+      }
+      const videoCount = bundle.assets.length;
+      trace(`saved performance "${name}" (${Object.keys(nodes).length} nodes, ${videoCount} video assets)`);
+      if (videoCount > 0) {
+        error = `Saved "${name}". On reload, click each VIDEOBOX's "re-allow" to bring the ${videoCount} video file${videoCount === 1 ? '' : 's'} back (same browser profile).`;
+      }
+    } catch (e) {
+      error = `Save Performance failed: ${e instanceof Error ? e.message : String(e)}`;
+      trace(`save performance failed: ${String(e)}`);
+    }
+  }
+
+  async function loadPerformance() {
+    error = null;
+    if (!perfSupported) {
+      error = 'Load Local Performance needs IndexedDB (not available in this browser).';
+      return;
+    }
+    try {
+      const slots = await listPerformanceSlots();
+      if (slots.length === 0) {
+        error = 'No saved performances found in this browser.';
+        return;
+      }
+      // Minimal picker: numbered prompt (no new modal component to keep the
+      // MVP small + testable). Newest-first. Type `N` to load, `dN` to
+      // delete slot N (e.g. `d3`). The slot cap is enforced at save time.
+      const menu = slots
+        .map((s, i) => `${i + 1}. ${s.name}${s.assetCount ? ` (${s.assetCount} video${s.assetCount === 1 ? '' : 's'})` : ''}`)
+        .join('\n');
+      const pick = window.prompt(
+        `Load which performance? (${slots.length}/${MAX_PERFORMANCES} slots used)\n\n${menu}\n\nEnter a number to LOAD, or "dN" (e.g. d3) to DELETE slot N:`,
+        '1',
+      );
+      if (pick === null) {
+        trace('load performance cancelled');
+        return;
+      }
+      const raw = pick.trim();
+      const delMatch = /^d\s*(\d+)$/i.exec(raw);
+      if (delMatch) {
+        const dIdx = Number.parseInt(delMatch[1]!, 10) - 1;
+        const target = slots[dIdx];
+        if (!target) {
+          error = `No performance #${delMatch[1]} to delete.`;
+          return;
+        }
+        const confirmed = window.confirm(`Delete performance "${target.name}"? This cannot be undone.`);
+        if (!confirmed) {
+          trace('delete performance cancelled');
+          return;
+        }
+        await deletePerformanceSlot(target.name);
+        trace(`deleted performance "${target.name}"`);
+        return;
+      }
+      const idx = Number.parseInt(raw, 10) - 1;
+      const chosen = slots[idx];
+      if (!chosen) {
+        error = `No performance #${raw}.`;
+        return;
+      }
+
+      const rec = await loadPerformanceSlot(chosen.name);
+      if (!rec) {
+        error = `Performance "${chosen.name}" could not be read.`;
+        return;
+      }
+      const bundle = validateBundle(rec.bundle);
+
+      // Bootstrap engine + reconciler inside this gesture (same reason as
+      // loadPatch): resume AudioContext + have a reconciler observe the update.
+      await ensureEngine();
+
+      // Restore MIDI Learn CC maps (device-agnostic; merge so other patches'
+      // bindings aren't clobbered). Done BEFORE applying the envelope so cards
+      // re-register their setters against the restored bindings on mount.
+      if (bundle.midiBindings.length > 0) {
+        const merged = mergeMidiBindings(exportMidiBindings(), bundle.midiBindings);
+        importMidiBindings(merged);
+      }
+
+      // Apply the patch envelope — restores nodes/edges/params/positions +
+      // inline images/samples. Each VIDEOBOX card then re-acquires its video
+      // handle by handleId (same-profile) on mount and offers the re-allow /
+      // re-link prompt automatically (PR #102 path).
+      const result = persistenceLoad(bundle.patch, ydoc, patch);
+      await reconciler?.reconcile();
+
+      trace(`loaded performance "${chosen.name}" (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
+
+      // Surface device re-bind status as a notice (not an error).
+      const notes: string[] = [];
+      if (bundle.assets.length > 0) {
+        notes.push(`${bundle.assets.length} video file${bundle.assets.length === 1 ? '' : 's'}: click each VIDEOBOX "re-allow" to relink.`);
+      }
+      if (bundle.midiDevices.length > 0) {
+        notes.push(`${bundle.midiDevices.length} MIDI device${bundle.midiDevices.length === 1 ? '' : 's'} recorded by name — open each MIDI-CV-BUDDY and pick the controller if not auto-selected.`);
+      }
+      if (result.diagnostics.length > 0) {
+        for (const d of result.diagnostics) console.warn(`[load-perf] ${d.nodeId} (${d.type}): ${d.reason}`);
+      }
+      if (notes.length > 0) error = `Loaded "${chosen.name}". ${notes.join(' ')}`;
+    } catch (e) {
+      const msg = e instanceof BundleParseError || e instanceof EnvelopeParseError ? e.message : String(e);
+      error = `Load Performance failed: ${msg}`;
+      trace(`load performance failed: ${msg}`);
+    }
+  }
+
   // ---------------- Mirror Svelte Flow events back to the patch graph ----------------
 
   /** User dragged a connection between two handles. Create an edge in the patch.
@@ -924,17 +1217,32 @@
     const srcNode = patch.nodes[connection.source];
     const dstNode = patch.nodes[connection.target];
     if (!srcNode || !dstNode) return;
+
+    // Group endpoints — exposed-port handles stand in for a child {nodeId,
+    // portId}. The Yjs edge is stored with the group node + exposed handle
+    // (so the canvas keeps rendering the cable at the group's boundary);
+    // projectGroups() rewrites the endpoints to the child before the
+    // reconciler runs. For cable-type resolution we read the exposed
+    // port's declared cableType so the engine's resolveConnection picks
+    // the correct splitter/merger/bridge plan when the underlying child
+    // is e.g. video while the cable started life as audio.
+    const srcExposed = resolveExposedPort(srcNode, connection.sourceHandle);
+    const dstExposed = resolveExposedPort(dstNode, connection.targetHandle);
+
     // Phase 0 video spike: a node may belong to either domain registry.
-    // Try audio first (the common case), fall back to video so a video
-    // module's port types resolve correctly.
+    // Try audio first (the common case), fall back to video. Meta (group)
+    // is handled above via resolveExposedPort, so a missing def here only
+    // disqualifies a non-meta non-group node — those genuinely can't host
+    // a connection.
     const srcDef = getModuleDef(srcNode.type) ?? getVideoModuleDef(srcNode.type);
     const dstDef = getModuleDef(dstNode.type) ?? getVideoModuleDef(dstNode.type);
-    if (!srcDef || !dstDef) return;
+    if (!srcExposed && !srcDef) return;
+    if (!dstExposed && !dstDef) return;
 
-    const srcPort = srcDef.outputs.find((p) => p.id === connection.sourceHandle);
-    const dstPort = dstDef.inputs.find((p) => p.id === connection.targetHandle);
-    const sourceType: CableType = srcPort?.type ?? 'audio';
-    const targetType: CableType = dstPort?.type ?? sourceType;
+    const srcPort = srcDef?.outputs.find((p) => p.id === connection.sourceHandle);
+    const dstPort = dstDef?.inputs.find((p) => p.id === connection.targetHandle);
+    const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
+    const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
 
     const id = `e-${connection.source}-${connection.sourceHandle}-${connection.target}-${connection.targetHandle}`;
     if (patch.edges[id]) return;
@@ -1166,8 +1474,31 @@
     return (n.data as { expanded?: boolean } | undefined)?.expanded === true;
   });
 
+  // SNES9X — the right-clicked node is a snes9x with a ROM loaded → offer
+  // the "see output definition for CV/GATES" menu item. The ROM-loaded check
+  // reads the engine extras; defaults to false when the engine/extras aren't
+  // available (the item just doesn't show).
+  let ctxMenuCanSeeSnesOutputDef = $derived.by<boolean>(() => {
+    void snapshot;
+    if (!ctxMenuNodeId || ctxMenuNodeType !== 'snes9x') return false;
+    const n = patch.nodes[ctxMenuNodeId];
+    if (!n || !engine) return false;
+    try {
+      const extras = engine.read(n, 'extras') as { romLoaded?: () => boolean } | undefined;
+      return extras?.romLoaded?.() === true;
+    } catch {
+      return false;
+    }
+  });
+
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
     event.preventDefault();
+    // A right-click INSIDE the TOYBOX in-card combine-graph SVG is handled by
+    // that editor's own contextual menu (ToyboxNodeMenu). Don't also open the
+    // generic module menu for it — belt-and-suspenders against the capture-phase
+    // event race (the SVG's element-level stopImmediatePropagation can't undo a
+    // document/xyflow listener that already fired earlier in the path).
+    if ((event.target as Element | null)?.closest?.('[data-testid="toybox-graph-svg"]')) return;
     const me = event as MouseEvent;
     ctxMenuPos = { x: me.clientX, y: me.clientY };
     ctxMenuNodeId = node.id;
@@ -2008,7 +2339,7 @@
   // dev-only hook flips its `open` prop directly so the visual surface can
   // be captured independently of auth state. Same pattern as the other
   // `__*` test hooks in this file.
-  if (import.meta.env.DEV) {
+  if (testHooksEnabled()) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).__openSavedGroupsPicker = () => {
       savedGroupsPickerOpen = true;
@@ -2172,6 +2503,11 @@
   }
 
   function onPortContextMenu(e: MouseEvent) {
+    // Right-clicks inside the TOYBOX combine-graph SVG are owned by that editor's
+    // own contextual menu — never resolve them to the generic port-patch cascade
+    // (the SVG's port dots are not svelte-flow handles, so handleInfoFromEvent
+    // already returns null, but guard explicitly for clarity + robustness).
+    if ((e.target as Element | null)?.closest?.('[data-testid="toybox-graph-svg"]')) return;
     const info = handleInfoFromEvent(e);
     if (!info) return;
     openPortMenu(e, info);
@@ -2278,6 +2614,18 @@
   let holdStart: { x: number; y: number } | null = null;
   let holdInfo: ReturnType<typeof handleInfoFromEvent> | null = null;
   let holdMenuConsumed = false;
+  // Observable gesture phase for deterministic e2e (dev-only hook below).
+  // 'idle'           — no port-hold gesture in flight.
+  // 'armed'          — pointerdown on a handle; hold timer running, not yet
+  //                    fired or cancelled.
+  // 'cancelled-move' — a pointermove past the drag tolerance cancelled the
+  //                    hold; xyflow's drag-to-connect now owns the gesture.
+  //                    THIS is the signal the drag-passes-to-xyflow test
+  //                    polls for, so it never has to race HOLD_FIRE_MS.
+  // 'fired'          — the hold timer elapsed and the patch menu opened.
+  // 'released'       — pointerup ended an armed (un-moved) gesture.
+  let holdPhase: 'idle' | 'armed' | 'cancelled-move' | 'fired' | 'released' =
+    'idle';
 
   function clearHold(): void {
     if (holdTimer !== null) {
@@ -2310,6 +2658,7 @@
     portMenuOpen = true;
     connectDragState.beginCascade(info.nodeId);
     holdMenuConsumed = true;
+    holdPhase = 'fired';
   }
 
   $effect(() => {
@@ -2337,6 +2686,7 @@
       holdMenuConsumed = false;
       holdStart = { x: e.clientX, y: e.clientY };
       holdInfo = info;
+      holdPhase = 'armed';
       const startX = e.clientX;
       const startY = e.clientY;
       const startedInfo = info;
@@ -2356,6 +2706,7 @@
         // User is dragging — xyflow's drag-to-connect handles it from
         // here. Cancel our hold so the timer doesn't fire.
         clearHold();
+        holdPhase = 'cancelled-move';
       }
     };
     const onPointerUp = (e: PointerEvent) => {
@@ -2371,14 +2722,18 @@
       const startY = holdStart.y;
       const timerStillLive = holdTimer !== null;
       clearHold();
-      if (moved) return; // xyflow handled the drag
+      if (moved) {
+        holdPhase = 'cancelled-move';
+        return; // xyflow handled the drag
+      }
       if (timerStillLive) {
-        // Fast click before the 50ms hold — treat as same gesture, open menu.
+        // Fast click before the hold timer — treat as same gesture, open
+        // menu. openPortMenuAt sets holdPhase = 'fired'.
         openPortMenuAt(startX, startY, info);
       }
-      // If the timer already fired, the menu is already open and
-      // holdMenuConsumed === true; the click-suppress handler below
-      // will swallow the trailing click event.
+      // If the timer already fired the menu is open, holdPhase is 'fired'
+      // and holdMenuConsumed === true — leave it; the click-suppress
+      // handler below swallows the trailing click event.
     };
     const onClick = (e: MouseEvent) => {
       // Swallow the click that follows a hold-fire so it can't propagate
@@ -2458,10 +2813,16 @@
     const srcDef = defLookup(srcNode.type);
     const dstDef = defLookup(dstNode.type);
     if (!srcDef || !dstDef) return;
+    // Group endpoints — chase the exposed-port → child handoff for the
+    // cable-type fallback; see handleConnect's matching block for the
+    // why. The edge stays addressed to the group endpoint itself; the
+    // snapshot projection rewrites it before the engine sees it.
+    const srcExposed = resolveExposedPort(srcNode, from.portId);
+    const dstExposed = resolveExposedPort(dstNode, to.portId);
     const srcPort = srcDef.outputs.find((p) => p.id === from.portId);
     const dstPort = dstDef.inputs.find((p) => p.id === to.portId);
-    const sourceType: CableType = srcPort?.type ?? 'audio';
-    const targetType: CableType = dstPort?.type ?? sourceType;
+    const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
+    const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
 
     const id = `e-${from.nodeId}-${from.portId}-${to.nodeId}-${to.portId}`;
     if (patch.edges[id]) {
@@ -2780,6 +3141,35 @@
     if ((type === PICTUREBOX_TYPE || type === SAMSLOOP_TYPE) && currentUserId) {
       initialData.creatorId = currentUserId;
     }
+    // CADILLAC — overrides the cursor-anchored pos with a viewport-relative
+    // launch point. x = right edge + ~80px so the car drives onstage from
+    // offscreen-right. y = mid-viewport-y so the car cuts through the
+    // user's current view. The overlay reads spawnedAtMs/spawnerClientId
+    // from data and computes the constant-velocity x deterministically;
+    // no awareness traffic for the car.
+    if (type === 'cadillac' && flowApi) {
+      const vp = flowApi.getViewport();
+      const containerEl: HTMLElement = flowEl ?? document.documentElement;
+      const rect = containerEl.getBoundingClientRect();
+      const rightFlow = flowApi.screenToFlowPosition({
+        x: rect.right,
+        y: rect.top,
+      });
+      const midFlow = flowApi.screenToFlowPosition({
+        x: (rect.left + rect.right) / 2,
+        y: (rect.top + rect.bottom) / 2,
+      });
+      pos.x = rightFlow.x + 80;
+      pos.y = midFlow.y;
+      initialData.spawnedAtMs = Date.now();
+      const clientId = provider?.awareness?.clientID;
+      if (typeof clientId === 'number') {
+        initialData.spawnerClientId = clientId;
+      }
+      // Reference vp to keep its read in scope (telemetry hook in the
+      // future). Suppresses a no-unused warning.
+      void vp;
+    }
 
     // Insert-on-cable (Proposal B2): if the cursor is close to an
     // existing cable's midpoint AND the new module has a compatible
@@ -3065,7 +3455,7 @@
 
   // Dev-only: expose helpers so @collab Playwright tests can drive the
   // awareness layer without wiring real Clerk auth + pointer events.
-  if (import.meta.env.DEV) {
+  if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__setLocalCursor = (x: number, y: number) => {
@@ -3086,6 +3476,50 @@
           out.push({ clientId, user: s.user, cursor: s.cursor });
         }
         return out;
+      };
+      // Simulated-MIDI injection hook for e2e: lazily installs an in-memory
+      // fake MIDIAccess and pushes a Control-Change message through the same
+      // dispatch path real hardware uses. DEV-only — stripped in prod builds.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__midiTestInject = (channel: number, cc: number, value: number) => {
+        const send = installSimulatedMidiDevice();
+        send(channel, cc, value);
+        return true;
+      };
+      // Install the fake device WITHOUT sending — so a subsequent beginLearn()
+      // resolves connect() against the sim device instead of the real
+      // navigator.requestMIDIAccess() (which prompts / can hang in headless).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__midiTestInstall = () => {
+        installSimulatedMidiDevice();
+        return true;
+      };
+      // midi-learn singleton API for e2e. The midi REGRESSION spec needs to
+      // drive exportBindings/importBindings/connect against the SAME module
+      // singleton the app uses. It previously did `import('/src/lib/midi/...')`
+      // inside page.evaluate, which only resolves under the Vite DEV server —
+      // under the prebuilt `vite preview` bundle (E2E_USE_PREVIEW=1) that
+      // /src/ path 404s. Exposing the already-bundled functions here keeps the
+      // spec working against the production-like build.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__midiLearnApi = {
+        exportBindings: () => exportMidiBindings(),
+        importBindings: (b: unknown[]) => importMidiBindings(b as Parameters<typeof importMidiBindings>[0]),
+        connect: () => connectMidiLearn(),
+      };
+      // midi-clock-source singleton accessor — same /src/-import-under-preview
+      // problem as __midiLearnApi above (the MIDI Clock BPM-derivation spec).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__midiClockSource = () => getMidiClockSource();
+      // picturebox encode/decode helpers — the video-orientation PICTUREBOX
+      // spec drives the REAL production encode→decode path to inject a test
+      // image. Lazily imported (the bundled $lib specifier, NOT a /src/ URL)
+      // so it resolves under `vite preview` too. Lazy keeps the video chunk
+      // out of the main canvas bundle for non-test prod builds.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__pictureboxEncode = async () => {
+        const m = await import('$lib/video/modules/picturebox-encode');
+        return { downscaleAndEncode: m.downscaleAndEncode, base64ToImageBitmap: m.base64ToImageBitmap };
       };
     });
   }
@@ -3155,8 +3589,9 @@
   });
 
   // Dev-only: expose undoManager so e2e tests can assert state without
-  // racing against the captureTimeout debouncer. Stripped in prod.
-  if (import.meta.env.DEV) {
+  // racing against the captureTimeout debouncer. Gated on testHooksEnabled()
+  // so it's present in the preview bundle (VITE_E2E_HOOKS=1) too.
+  if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__undoManager = undoManager;
@@ -3258,18 +3693,27 @@
     <h1>2600hz</h1>
     <div class="actions">
       <button onclick={openPaletteFromButton}>+ Add module</button>
-      <button onclick={loadExample} disabled={booting} class="primary">
-        {booting ? 'Loading…' : 'Load example'}
-      </button>
-      <button
-        onclick={loadAtlantis}
+      <!-- "Load example…" is an ACTION menu, not a persistent value: each
+           option spawns/loads its example exactly as the old standalone
+           buttons did, then onExampleChosen() resets the value back to the
+           placeholder so the same example can be re-loaded. Replaces the
+           old System 55/35, Load example, GLITCHES, and Media Burn buttons. -->
+      <select
+        class="primary load-example"
+        data-testid="load-example-select"
+        bind:value={exampleChoice}
         disabled={booting}
-        class="primary atlantis"
-        title="Generative demo patch — large self-evolving ecosystem (Schrader-inspired). SCENECHANGE drifts on its own; nudge the brain or recall scenes from its card."
-        data-testid="visit-atlantis-btn"
+        onchange={(e) => onExampleChosen(e.currentTarget.value as ExampleKey)}
+        title="Load a curated example patch or spawn a full Moog cabinet."
       >
-        {booting ? 'Loading…' : 'Visit Atlantis'}
-      </button>
+        <option value="" disabled selected>{booting ? 'Loading…' : 'Load example…'}</option>
+        <option value="sequenced-vco">Sequenced VCO</option>
+        <option value="system-55">System 55</option>
+        <option value="system-35">System 35</option>
+        <option value="media-burn">Media Burn</option>
+        <option value="glitches">Glitches Get Riches</option>
+        <option value="gibribbon-demo">GIBRIBBON (game demo)</option>
+      </select>
       <button
         onclick={savePatch}
         disabled={nodeCount === 0}
@@ -3280,6 +3724,22 @@
         title="Replace the current rack with a .imp.json file from disk."
       >Load</button>
       <button onclick={clearPatch} disabled={nodeCount === 0}>Clear</button>
+      <button
+        onclick={savePerformance}
+        disabled={nodeCount === 0 || !perfSupported}
+        data-testid="save-perf-btn"
+        title={perfSupported
+          ? 'Save the WHOLE track (patch + positions + images + samples + video handles + MIDI/gamepad maps) into a named slot in THIS browser. Reload + Load Perf brings it all back on the same profile.'
+          : 'Unavailable: needs IndexedDB (not in this browser).'}
+      >Save Perf</button>
+      <button
+        onclick={loadPerformance}
+        disabled={!perfSupported}
+        data-testid="load-perf-btn"
+        title={perfSupported
+          ? 'Restore a saved local performance. Reloads the patch + inline assets; re-acquires video files (one click to re-allow on Chromium) + re-binds MIDI/gamepad.'
+          : 'Unavailable: needs IndexedDB (not in this browser).'}
+      >Load Perf</button>
       <SkinSwitcher />
       {#if headerSignedIn}
         <a
@@ -3344,24 +3804,16 @@
         />
       {/if}
       <FlowBridge bind:api={flowApi} />
-      <!-- Per-node editable name labels. Rendered as Svelte Flow
-           NodeToolbar instances anchored at the top of every card so
-           every module — old or new — gets the click-to-rename label
-           without each card having to opt in. The label sits ABOVE the
-           card chrome (Position.Top); a small offset keeps it from
-           overlapping the patch-panel triggers in the corners. -->
-      {#each flowNodes as fn (fn.id)}
-        <NodeToolbar
-          nodeId={fn.id}
-          position={Position.Top}
-          isVisible={true}
-          offset={4}
-        >
-          <div class="node-name-toolbar nodrag">
-            <ModuleNameLabel node={(fn.data as { node: import('$lib/graph/types').ModuleNode }).node} />
-          </div>
-        </NodeToolbar>
-      {/each}
+      <CadillacOverlay {provider} />
+      <!-- 2026-05-27: the per-node editable name label moved INSIDE every
+           module card's title chrome (see ModuleTitle.svelte). The floating
+           NodeToolbar overhead label was dropped — the spec asks for the
+           user-given instance name to sit "where the module name is", not
+           hovering above the card. Removing this block also cleans up the
+           "WAVESCULPT1" orange badge that used to overlap with the card
+           title. The cards' new in-title name button keeps the same
+           data-testid hooks ('name-label-button' / 'name-label-input' /
+           'name-label-error') so existing e2e selectors still resolve. -->
     </SvelteFlow>
     <button
       type="button"
@@ -3447,6 +3899,15 @@
   isGroup={ctxMenuNodeType === 'group'}
   groupExpanded={ctxMenuGroupExpanded}
   canSaveGroup={Boolean(currentUserId) && ctxMenuNodeType === 'group'}
+  canSeeSnesOutputDef={ctxMenuCanSeeSnesOutputDef}
+  onseesnesoutputdef={() => {
+    if (!ctxMenuNodeId) return;
+    // The Snes9xCard listens for this window event keyed by node id +
+    // opens its per-ROM CV/GATE output-definition panel.
+    window.dispatchEvent(
+      new CustomEvent('snes9x:show-output-def', { detail: { nodeId: ctxMenuNodeId } }),
+    );
+  }}
   ondelete={() => {
     if (!ctxMenuNodeId) return;
     if (ctxMenuNodeType === 'group') deleteGroupAndChildren(ctxMenuNodeId);
@@ -3581,17 +4042,42 @@
     color: #1a1d23;
     border-color: var(--cable-audio);
   }
-  /* Atlantis = generative demo — distinct deep-aquatic styling so users
-     read it as "this is the big one" vs the simpler Load-example. */
-  .topbar button.primary.atlantis {
+  /* Glitches = big curated demo — distinct deep-aquatic styling so users
+     read it as "this is the big one" vs the simpler Load-example.
+     Inherited from the retired "Visit Atlantis" button (same slot, same
+     visual weight); only the type-id changed. */
+  .topbar button.primary.glitches {
     background: linear-gradient(135deg, #2c5b8f 0%, #1b3252 100%);
     color: #c5e3ff;
     border-color: #4a7daa;
     text-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
   }
-  .topbar button.primary.atlantis:hover:not(:disabled) {
+  .topbar button.primary.glitches:hover:not(:disabled) {
     background: linear-gradient(135deg, #3a6ea8 0%, #25416a 100%);
     border-color: #6ba0d4;
+  }
+  /* "Load example…" dropdown — styled to read as the primary curated-demo
+     control, mirroring the visual weight of the buttons it replaced. */
+  .topbar select.load-example {
+    background: var(--cable-audio);
+    color: #1a1d23;
+    border: 1px solid var(--cable-audio);
+    padding: 0.35rem 0.8rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .topbar select.load-example:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  /* The dropdown's expanded options render in the OS-native menu, which
+     ignores the dark control colors above; force readable contrast. */
+  .topbar select.load-example option {
+    background: #2a2f3a;
+    color: var(--text);
   }
   .topbar button:disabled {
     opacity: 0.4;
@@ -3773,16 +4259,10 @@
   .swatch.gate { background: var(--cable-gate); }
   .swatch.cv { background: var(--cable-cv); }
   .swatch.polyPitchGate { background: var(--cable-polyPitchGate); }
-  /* Per-node editable name label, rendered via NodeToolbar above each
-   * card. Mute background so the label reads as part of the card chrome
-   * without competing with the card's own title text. */
-  :global(.node-name-toolbar) {
-    background: rgba(14, 17, 22, 0.92);
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    padding: 2px 4px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-  }
+  /* (2026-05-27) `.node-name-toolbar` styles deleted — the per-node
+   * editable name label moved INSIDE each card's title chrome and is no
+   * longer rendered via NodeToolbar. ModuleNameLabel keeps its own
+   * inline styles (see ModuleNameLabel.svelte). */
   /* Video-domain swatches (Phase 0 spike). The CSS-class name shape
    * mirrors the cable-type id exactly so e.g. mono-video lines up
    * with --cable-mono-video without an extra mapping table. */

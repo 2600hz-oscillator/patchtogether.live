@@ -61,13 +61,15 @@ test('right-click on a module opens the Docs entry, which opens the per-module d
 }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: 'Load example' }).click();
+  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
   // Right-click on the analog VCO card — its module type is 'analogVco', so
   // the Docs link should resolve to /docs/modules/analogVco.
   const vco = page.locator('.svelte-flow__node-analogVco').first();
-  await vco.click({ button: 'right' });
+  // Right-click the card background (title bar) — a knob/fader right-click now
+  // opens the per-control MIDI menu instead of the module menu.
+  await vco.locator('.title').click({ button: 'right' });
 
   const menu = page.locator('[role="menu"][aria-label="Module actions"]');
   await expect(menu).toBeVisible();

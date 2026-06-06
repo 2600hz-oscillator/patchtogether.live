@@ -16,6 +16,7 @@
   import { warpsDef, WARPS_MAX_ALGORITHM, WARPS_ALGORITHM_NAMES } from '$lib/audio/modules/warps';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -58,7 +59,7 @@
 
 <div class="mod-card warps-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">WARPS</header>
+  <ModuleTitle {id} {data} defaultLabel="WARPS" />
   <div class="algo-readout" data-testid="warps-algo-name">{algoLabel}</div>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
@@ -75,7 +76,7 @@
 </div>
 
 <style>
-  .warps-card { width: 320px; min-height: 240px; }
+  .warps-card { width: 320px; }
   .warps-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

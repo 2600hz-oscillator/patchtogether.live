@@ -252,49 +252,59 @@ interface JoinRow {
 }
 
 export async function joinRackspace(rackspaceId: string, userId: string): Promise<JoinResult> {
-  // Single CTE: load rack metadata, list existing members, conditionally
-  // insert the new member (only if rack exists, user is not already a
-  // member, and capacity isn't exceeded). The boolean `inserted` tells
-  // us which case we hit.
+  // Atomicity: a single CTE handles existence + capacity + insert in one
+  // statement (the Neon HTTP API has no cross-round-trip transactions
+  // outside `sql.transaction([...])`). But the CTE alone doesn't lock —
+  // two concurrent joins on the last slot can both read `counts.n=3`,
+  // both pass `n < MAX_MEMBERS`, and both INSERT, busting the 4-user cap.
   //
-  // Race window: the capacity check (`counts.n < MAX_MEMBERS`) and
-  // the INSERT are not row-locked, so two simultaneous joins on the
-  // last slot can both succeed. Acceptable for beta (4-user max,
-  // very low concurrency); upgrade to advisory_xact_lock if it bites.
-  const rows = (await sql()`
-    WITH rack AS (
-      SELECT id, owner_user_id, name, created_at
-        FROM racks
-       WHERE id = ${rackspaceId}
-    ),
-    existing AS (
-      SELECT user_id, joined_at
-        FROM rack_members
-       WHERE rack_id = ${rackspaceId}
-    ),
-    counts AS (
-      SELECT COUNT(*)::int AS n FROM existing
-    ),
-    ins AS (
-      INSERT INTO rack_members (rack_id, user_id, role)
-      SELECT ${rackspaceId}, ${userId}, 'member'
-        FROM rack, counts
-       WHERE NOT EXISTS (SELECT 1 FROM existing WHERE user_id = ${userId})
-         AND counts.n < ${MAX_MEMBERS}
-      ON CONFLICT (rack_id, user_id) DO NOTHING
-      RETURNING user_id
-    )
-    SELECT
-      (SELECT id              FROM rack) AS id,
-      (SELECT owner_user_id   FROM rack) AS owner_user_id,
-      (SELECT name            FROM rack) AS name,
-      (SELECT created_at      FROM rack) AS created_at,
-      COALESCE(
-        (SELECT array_agg(user_id ORDER BY joined_at) FROM existing),
-        ARRAY[]::text[]
-      ) AS existing_members,
-      EXISTS (SELECT 1 FROM ins) AS inserted
-  `) as JoinRow[];
+  // Fix: wrap the CTE in `sql.transaction([advisory_lock, CTE])` and take
+  // a per-rack `pg_advisory_xact_lock` first. The lock is held for the
+  // lifetime of the transaction and released on COMMIT (the "xact" suffix
+  // — no explicit unlock needed, no leak on error). Hashing the rack id
+  // into bigint keys the lock per-rack so concurrent joins to DIFFERENT
+  // racks don't serialize.
+  //
+  // hashtext() is Postgres-internal but deterministic and 32-bit; we cast
+  // to bigint to match pg_advisory_xact_lock(bigint)'s preferred overload.
+  const txResults = (await sql().transaction([
+    sql()`SELECT pg_advisory_xact_lock(hashtext(${rackspaceId})::bigint)`,
+    sql()`
+      WITH rack AS (
+        SELECT id, owner_user_id, name, created_at
+          FROM racks
+         WHERE id = ${rackspaceId}
+      ),
+      existing AS (
+        SELECT user_id, joined_at
+          FROM rack_members
+         WHERE rack_id = ${rackspaceId}
+      ),
+      counts AS (
+        SELECT COUNT(*)::int AS n FROM existing
+      ),
+      ins AS (
+        INSERT INTO rack_members (rack_id, user_id, role)
+        SELECT ${rackspaceId}, ${userId}, 'member'
+          FROM rack, counts
+         WHERE NOT EXISTS (SELECT 1 FROM existing WHERE user_id = ${userId})
+           AND counts.n < ${MAX_MEMBERS}
+        ON CONFLICT (rack_id, user_id) DO NOTHING
+        RETURNING user_id
+      )
+      SELECT
+        (SELECT id              FROM rack) AS id,
+        (SELECT owner_user_id   FROM rack) AS owner_user_id,
+        (SELECT name            FROM rack) AS name,
+        (SELECT created_at      FROM rack) AS created_at,
+        COALESCE(
+          (SELECT array_agg(user_id ORDER BY joined_at) FROM existing),
+          ARRAY[]::text[]
+        ) AS existing_members,
+        EXISTS (SELECT 1 FROM ins) AS inserted
+    `,
+  ])) as [unknown, JoinRow[]];
+  const rows = txResults[1];
 
   const row = rows[0];
   if (row.id === null) return { status: 'not-found' };
@@ -325,3 +335,72 @@ export async function isMember(rackspaceId: string, userId: string): Promise<boo
 }
 
 export const RACKSPACE_MAX_MEMBERS = MAX_MEMBERS;
+
+// ---------------- Test-only seed helper ----------------
+//
+// `seedRackspaceForTest` bypasses the per-user owned-rack cap and the Clerk-
+// session requirement so e2e specs can spin up a fresh `/r/[id]` route in one
+// round-trip. The route handler that wraps this (see
+// routes/api/test/seed-rackspace/+server.ts) is gated on RACKSPACE_SEED_ENABLED
+// === '1' so this CANNOT be reached from prod.
+//
+// The synthetic owner id is namespaced `test_seed_<uuid>` so any leak into
+// dashboards / metrics is trivially greppable. The owner membership row is
+// inserted with role='owner' so /r/[id]/+page.server.ts sees the synthetic
+// owner as a member when needed; anon visitors with the HMAC-derived invite
+// code still flow through the unauthed-with-invite path.
+//
+// Optional `snapshot` is the raw bytes of Y.encodeStateAsUpdate(ydoc),
+// inserted into rack_snapshots so the Hocuspocus relay (and any cold
+// /r/[id] load that ends up reading the persisted doc) sees the seeded
+// patch state without the test having to drive client-side load.
+export interface SeedRackspaceInput {
+  ownerUserId: string;
+  name: string;
+  snapshot?: Uint8Array | null;
+}
+
+export async function seedRackspaceForTest(input: SeedRackspaceInput): Promise<Rackspace> {
+  const id = generateId();
+  const rows = (await sql()`
+    WITH new_rack AS (
+      INSERT INTO racks (id, owner_user_id, name)
+      VALUES (${id}, ${input.ownerUserId}, ${input.name})
+      RETURNING id, owner_user_id, name, created_at
+    ), new_member AS (
+      INSERT INTO rack_members (rack_id, user_id, role)
+      SELECT id, owner_user_id, 'owner' FROM new_rack
+    )
+    SELECT id, owner_user_id, name, created_at FROM new_rack
+  `) as Array<{
+    id: string;
+    owner_user_id: string;
+    name: string;
+    created_at: string;
+  }>;
+  const row = rows[0];
+  if (!row) {
+    // Insert failed (id collision is the only realistic case — astronomically
+    // unlikely with crypto-random ids but worth a clear error rather than a
+    // null-ref downstream).
+    throw new Error('seedRackspaceForTest: insert returned no row');
+  }
+  if (input.snapshot && input.snapshot.length > 0) {
+    // Same INSERT…ON CONFLICT shape Hocuspocus's snapshot writer uses; safe
+    // to run here because we just created the rack so there's no concurrent
+    // writer yet. Cast to Buffer for the Neon driver — Uint8Array works on
+    // the wire but bytea binding wants a Buffer-ish at the type level.
+    await sql()`
+      INSERT INTO rack_snapshots (rack_id, yjs_state, updated_at)
+      VALUES (${id}, ${input.snapshot}, now())
+      ON CONFLICT (rack_id) DO UPDATE SET yjs_state = EXCLUDED.yjs_state, updated_at = now()
+    `;
+  }
+  return rackFromRow({
+    id: row.id,
+    owner_user_id: row.owner_user_id,
+    name: row.name,
+    created_at: row.created_at,
+    member_user_ids: [row.owner_user_id],
+  });
+}

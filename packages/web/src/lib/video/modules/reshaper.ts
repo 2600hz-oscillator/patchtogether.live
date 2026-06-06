@@ -39,6 +39,20 @@
 // modules (e.g. LINES → RESHAPER → MONOGLITCH → OUTPUT). The card still
 // blits to its visible canvas the same way as before; the new port just
 // publishes the same texture for graph consumers.
+//
+// Inputs:
+//   x (mono-video): X-coordinate field (replaces the linear h ramp).
+//   y (mono-video): Y-coordinate field (replaces the linear v ramp).
+//   z (video): source video to be remapped.
+//   intensity / xDisp / yDisp (cv, linear, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (video): remapped RGB output.
+//
+// Params:
+//   intensity (linear 0..2): how strongly X/Y bend the coordinate field.
+//   xDisp / yDisp (linear -1..1): static coordinate displacement.
+//   tintR / tintG / tintB (linear 0..1): tint applied to the output.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -110,6 +124,7 @@ const DEFAULTS: ReshaperParams = {
 
 export const reshaperDef: VideoModuleDef = {
   type: 'reshaper',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'RESHAPER',
   category: 'output',

@@ -46,9 +46,17 @@ test('right-click → Duplicate creates a clone with same params, fresh id, offs
     [],
   );
 
-  // Right-click the ADSR card → "Duplicate".
+  // Right-click the ADSR card's TITLE BAR → "Duplicate". We deliberately
+  // right-click `.title` rather than the node's geometric center: a right-click
+  // that lands on a knob/fader hits the control's own contextmenu handler,
+  // which `stopPropagation()`s the event so it never reaches SvelteFlow's
+  // onnodecontextmenu — the "Control actions" menu (MIDI Learn/Forget) opens
+  // instead of the module menu, and there's no "Duplicate" item. The title bar
+  // is control-free, so the module menu opens deterministically. (See the
+  // four-modules flake write-up: a tall card's center can sit right on the
+  // fader-row, making the target intermittent.)
   const adsr = page.locator('.svelte-flow__node-adsr').first();
-  await adsr.click({ button: 'right' });
+  await adsr.locator('.title').click({ button: 'right' });
   await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
   await page.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
 
@@ -114,9 +122,19 @@ test('right-click → Duplicate deep-clones data (mutating dup does not affect s
     });
   });
 
-  // Right-click → Duplicate.
+  // Right-click the sequencer's TITLE BAR → Duplicate. The sequencer card is
+  // tall (step grid + fader-row + quicksave controls); its geometric center
+  // sits right on top of the fader-row, so `seq.click({ button: 'right' })`
+  // intermittently lands on a Fader. A fader's contextmenu handler
+  // `stopPropagation()`s the event (so SvelteFlow's onnodecontextmenu never
+  // fires) and opens the "Control actions" menu instead — which has no
+  // "Duplicate" item, so the click below would hang until the 30s test
+  // timeout. Right-clicking `.title` (control-free) opens the module menu
+  // deterministically. We also wait for the module menu to be visible before
+  // clicking, gating actionability on the menu actually being present.
   const seq = page.locator('.svelte-flow__node-sequencer').first();
-  await seq.click({ button: 'right' });
+  await seq.locator('.title').click({ button: 'right' });
+  await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
   await page.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
   await expect(page.locator('.svelte-flow__node-sequencer')).toHaveCount(2);
 
@@ -180,7 +198,10 @@ test('right-click → Duplicate does not copy edges of the source', async ({ pag
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(1);
 
   const vco = page.locator('.svelte-flow__node-analogVco').first();
-  await vco.click({ button: 'right' });
+  // Right-click the card background (title bar) — a knob/fader right-click now
+  // opens the per-control MIDI menu instead of the module menu.
+  await vco.locator('.title').click({ button: 'right' });
+  await expect(page.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
   await page.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
   await expect(page.locator('.svelte-flow__node-analogVco')).toHaveCount(2);
 
@@ -241,9 +262,13 @@ test('@collab duplicate in A appears in B within 4s', async ({ browser }) => {
       }), { timeout: 4000 })
       .toBe(true);
 
-    // A: right-click → Duplicate.
+    // A: right-click the title bar → Duplicate. (Title bar, not node center —
+    // a center right-click can land on a control whose contextmenu handler
+    // stopPropagation()s the event, opening the per-control menu instead of
+    // the module menu; see the non-collab specs above.)
     const adsr = pageA.locator('.svelte-flow__node-adsr').first();
-    await adsr.click({ button: 'right' });
+    await adsr.locator('.title').click({ button: 'right' });
+    await expect(pageA.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
     await pageA.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
     await expect(pageA.locator('.svelte-flow__node-adsr')).toHaveCount(2);
 

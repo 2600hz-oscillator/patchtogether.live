@@ -23,6 +23,16 @@
 // LEVEL knob: a single GainNode per output, all driven by the same
 // param value. CV-modulating LEVEL would be possible but the spec asks
 // for "just one knob" with no CV input — keep it simple.
+//
+// Inputs: none.
+//
+// Outputs:
+//   white (audio): full-spectrum white noise.
+//   pink (audio): 1/f pink noise (-3 dB/oct).
+//   brown (audio): 1/f² brown noise (-6 dB/oct).
+//
+// Params:
+//   level (linear 0..1, default 0.5): master gain applied to all three taps.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -112,6 +122,7 @@ const BUFFER_SECONDS = 2;
 
 export const noiseDef: AudioModuleDef = {
   type: 'noise',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'NOISE',
   category: 'sources',

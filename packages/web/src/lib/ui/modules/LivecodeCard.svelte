@@ -26,6 +26,8 @@
   import { makeLinter } from '$lib/livecode/diagnostics';
   import { looksLikeLegacy, migrateLegacyText } from '$lib/livecode/migrate';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
+  import { testHooksEnabled } from '$lib/dev/test-hooks';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -193,7 +195,11 @@
 
   // Dev-only test hook — same shape as the v1 card so existing E2E
   // tests that drive runScript via __livecode.<id>.run() keep working.
-  if (import.meta.env.DEV) {
+  // Gated on testHooksEnabled() so it's also present in the prebuilt
+  // `vite preview` bundle (VITE_E2E_HOOKS=1) the e2e shards run against —
+  // a prod build where import.meta.env.DEV is false would otherwise strip
+  // __livecode and time out all livecode.spec tests.
+  if (testHooksEnabled()) {
     $effect(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const w = globalThis as any;
@@ -221,7 +227,7 @@
   data-node-id={id}
 >
   <div class="stripe"></div>
-  <header class="title">LIVECODE</header>
+  <ModuleTitle {id} {data} defaultLabel="LIVECODE" />
 
   <div class="body" style="height: {bodyHeight}px;">
     <div class="toolbar">

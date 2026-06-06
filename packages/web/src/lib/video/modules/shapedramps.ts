@@ -41,6 +41,23 @@
 //   - All four ramps + both mixers render once per frame regardless of
 //     patch state, so downstream consumers can always sample fresh
 //     textures.
+//
+// Inputs:
+//   h_shape / v_shape / h_phase / v_phase / h_freq / v_freq (cv, linear, paramTarget=…):
+//     per-axis ramp-shape / phase / frequency CV.
+//   mix1_a / mix1_b / mix2_a / mix2_b (mono-video): A/B inputs for the two internal mixers.
+//   mix1_cv / mix2_cv (cv, linear, paramTarget=mix{N}): per-mixer crossfade CV.
+//
+// Outputs:
+//   h_lin / v_lin (mono-video): stable linear identity ramps (clean raster passthrough).
+//   h_out / v_out (mono-video): shaped ramps (morphable per the shape params).
+//   mix1_out / mix2_out (mono-video): per-mixer crossfade outputs.
+//
+// Params:
+//   h_shape / v_shape (linear 0..1): per-axis shape morph (linear / triangle / soft-fold / radial).
+//   h_phase / v_phase (linear 0..1): per-axis phase offset.
+//   h_freq / v_freq (linear 0.5..8): per-axis ramp frequency multiplier.
+//   mix1 / mix2 (linear 0..1): per-mixer crossfade amount.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -183,6 +200,7 @@ const DEFAULTS: ShapedrampsParams = {
 
 export const shapedrampsDef: VideoModuleDef = {
   type: 'shapedramps',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'SHAPEDRAMPS',
   category: 'sources',

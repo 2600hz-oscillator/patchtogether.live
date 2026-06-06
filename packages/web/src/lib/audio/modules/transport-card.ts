@@ -93,9 +93,20 @@ export function saveToSlot(deps: TransportCardDeps, slot: SlotKey): void {
   const snap = deps.snapshot();
   deps.transact(() => {
     if (!target.data) target.data = {};
-    const cur = coerceSlots((target.data as Record<string, unknown>).slots);
-    cur[slot] = snap;
-    (target.data as Record<string, unknown>).slots = { ...cur };
+    const data = target.data as Record<string, unknown>;
+    // Write the ONE slot in place. We must NOT rebuild the whole map via
+    // `{ ...coerceSlots(data.slots) }`: once `data.slots` is Y.Doc-synced,
+    // coerceSlots hands back the LIVE Y.Map nodes for already-saved slots, and
+    // re-assigning an already-integrated Y type at a new path throws "Type
+    // already integrated into a document". That threw inside the transact on
+    // the 2nd save, so only the FIRST slot ever persisted (the "can't save to
+    // slot 2" bug — shared by every sequencer using these helpers). Setting a
+    // single key leaves the other slots' Y nodes untouched, so no re-integration.
+    const existing = data.slots;
+    if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
+      data.slots = defaultSlots();
+    }
+    (data.slots as Record<string, unknown>)[slot] = snap;
   });
 }
 

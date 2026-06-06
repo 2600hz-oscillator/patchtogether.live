@@ -15,12 +15,66 @@ import { listModuleDefs } from '$lib/audio/module-registry';
 // full-musical-range mapping. New entries here MUST be justified in
 // .myrobots/plans/cv-range-standard.md.
 const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
+  // moog992 cv1..cv4: a passive CV PANEL — these inputs are the signals being
+  // attenuated + summed into cv_out (no paramTarget, not modulating a knob), so
+  // cvScale doesn't apply. The per-channel attenuator knobs scale them.
+  moog992: ['cv1', 'cv2', 'cv3', 'cv4'],
+  // moog993 env_in1/env_in2: a passive routing panel — envelope CV passes
+  // straight through to env_out1/2 (no paramTarget); not scaled.
+  moog993: ['env_in1', 'env_in2'],
+  // moog962 in1..in3: a sequential SWITCH — the inputs are the signals being
+  // routed to `out` (no paramTarget, not modulating a knob), so cvScale doesn't
+  // apply. The shift gate advances which one passes.
+  moog962: ['in1', 'in2', 'in3'],
   // filter.dsp: cutoffCv → pow(2, 5*cv) ±5 octaves; resCv: additive clamp.
   filter: ['cutoff', 'res'],
   // wavviz.wavePos: audio-rate input (no paramTarget); not subject to scaling.
   wavviz: ['wavePos'],
   // wavetableVco.wavePos: same as wavviz — audio-rate input, no paramTarget.
   wavetableVco: ['wavePos'],
+  // moog921Vco.width_cv: same shape as wavetableVco.wavePos — the worklet
+  // sums the WIDTH knob + this CV per-sample (audio-rate), NOT through the
+  // CV→AudioParam fast-path, so cvScale wouldn't apply. The width param is
+  // already bounded 0.02..0.98 and the per-sample sum is clamped to that
+  // range in the worklet, so a ±1 CV sweeps the full duty-cycle range.
+  moog921Vco: ['width_cv'],
+  // moogCp3.ext4: the 4th-input EXTERNAL jack — a raw signal (audio or cv)
+  // summed with in4 then attenuated by the attenuator4 knob, all at audio-
+  // rate inside the worklet. It's the SIGNAL being mixed, not a knob
+  // modulator routed onto an AudioParam, so cvScale doesn't apply. Same
+  // shape as slewSwitch.in1..in4 / fourplexer.in1..in4 (raw signal inputs
+  // the module itself shapes).
+  moogCp3: ['ext4'],
+  // moog904a.{cutoff_cv,reso_cv}: audio-rate summing CONTROL INPUTS. The
+  // worklet sums knob + CV per-sample (cutoff_cv via a 1V/oct exponential
+  // map, reso_cv additively, both clamped to range) — NOT through the
+  // CV→AudioParam fast-path, so cvScale wouldn't apply (same shape as the
+  // 921's width_cv).
+  moog904a: ['cutoff_cv', 'reso_cv'],
+  // moog902.{cv,fcv}: audio-rate summing CONTROL INPUTS. The worklet builds
+  // the control sum (gain knob + cvAmount*cv + fcv) per-sample and applies
+  // the LIN/EXP gain-law map + x3 clamp itself — NOT through the CV→AudioParam
+  // fast-path, so cvScale wouldn't apply (same shape as the 921's width_cv +
+  // the 904A's cutoff_cv/reso_cv).
+  moog902: ['cv', 'fcv'],
+  // moog904b.cutoff_cv: audio-rate summing 1 V/oct CONTROL INPUT. The worklet
+  // sums knob + CV per-sample, applying the 1 V/oct exponential map itself
+  // (cutoffHz *= 2^cutoff_cv, then clamped 4..20000 Hz) — NOT through the
+  // CV→AudioParam fast-path, so cvScale wouldn't apply (same shape as the
+  // 904A's cutoff_cv: a 1 V/oct jack mapped inside the DSP).
+  moog904b: ['cutoff_cv'],
+  // moog921a.width_cv: audio-rate summing WIDTH CONTROL INPUT. The worklet
+  // sums the WIDTH knob + this CV per-sample (clamped 0..1) onto width_bus —
+  // NOT through the CV→AudioParam fast-path, so cvScale wouldn't apply (same
+  // shape as the 921 VCO's width_cv). (freq_cv is `pitch`-typed → not checked.)
+  moog921a: ['width_cv'],
+  // moog921b.{freq_bus,width_bus}: audio-rate CONTROL INPUTS from a 921A driver
+  // — the slave VCO reads them per-sample as ITS pitch (freq_bus, V/oct) and
+  // pulse width (width_bus). They have NO paramTarget by design (no matching
+  // knob — they ARE the slaved pitch/width supplied by the master driver), so
+  // there's no AudioParam fast-path to scale. Same passthrough shape as the
+  // 921 VCO's width_cv / dx7.pitch_cv (a raw control signal mapped in the DSP).
+  moog921b: ['freq_bus', 'width_bus'],
   // dx7.pitch_cv: V/oct (audio-rate), not a knob param.
   dx7: ['pitch_cv'],
   // helm.{pitch_cv,gate,midi_in,seq_reset}: pitch_cv = V/oct fallback
@@ -49,7 +103,7 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // that bug — it'd modulate the wrong AudioParam. SCOPE's CV→param routing
   // needs an architectural fix (separate PR — see
   // .myrobots/plans/cv-range-standard.md "Deferred" section).
-  scope: ['timeMs', 'ch1Scale', 'ch1Offset', 'ch1Range', 'ch2Scale', 'ch2Offset', 'ch2Range', 'mode'],
+  scope: ['timeMs', 'ch1Scale', 'ch1Offset', 'ch1Range', 'ch2Scale', 'ch2Offset', 'ch2Range', 'mode', 'intensity'],
   // RASTERIZE: same architecture as SCOPE — CV inputs route through the
   // cross-domain CV bridge's setParam(portId), which writes into a JS-side
   // params record (read live by the per-frame painter). The `param`
@@ -98,6 +152,24 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // AudioParam fast path — the CV doesn't modulate any knob, it IS the
   // paddle position. Same shape as BUGGLES.clock_cv / chaos_cv above.
   pong: ['paddle_left', 'paddle_right'],
+  // SM64 stick_x_cv / stick_y_cv: bipolar CV sampled per scheduler-tick
+  // into a JS-side stepper (cvToStickValue maps -1..+1 → ±64 N64-native).
+  // No AudioParam fast path — the CV doesn't modulate any knob, it IS the
+  // analog stick position handed to the sm64js bundle's playerInput
+  // global. Same shape as PONG's paddle CVs above.
+  sm64: ['stick_x_cv', 'stick_y_cv'],
+  // SKIFREE x / y: bipolar CV sampled per scheduler-tick into the bundle
+  // controller's setCursor (cvToCanvasCoord maps -1..+1 → 0..canvas-px). No
+  // AudioParam fast path — the CV doesn't modulate any knob, it IS the mouse-
+  // cursor position the skier steers toward. Same shape as PONG's paddle CVs
+  // and SM64's stick CVs above.
+  skifree: ['x', 'y'],
+  // MIDI-OUT-BUDDY pitch / velocity: CV sampled at the gate rising edge in a
+  // JS-side scheduler-tick (AnalyserNode tap), then converted to a MIDI note
+  // number (V/oct → nearest semitone) / velocity (0..1 → 1..127). No
+  // AudioParam fast path — the CV doesn't modulate a knob, it IS the outgoing
+  // MIDI note/velocity. Same shape as PONG / SM64's stepper CVs above.
+  midiOutBuddy: ['pitch', 'velocity'],
   // ANALOGLOGICMATHS a / b: raw bipolar signal inputs consumed directly by
   // the worklet's per-sample MIN/MAX/DIFF/SUM/PRODUCT. The module IS the
   // shaper — the user attenuverts via the attA / attB knobs (which DO carry
@@ -120,6 +192,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // AudioParam fast path / cvScale would apply. The slew*_cv ports
   // (which DO target the slew{N} AudioParam) carry cvScale.
   slewSwitch: ['in1', 'in2', 'in3', 'in4'],
+  // SAMPLE & HOLD cv_in: the raw signal being sampled / quantized — consumed
+  // directly by the worklet (latched on the gate edge, snapped to the scale
+  // grid for cv_quant). It's NOT a knob modulator and has no paramTarget, so
+  // there is no AudioParam fast path / WaveShaperNode interposition that would
+  // apply. As a 1V/oct value any scaling would also corrupt the pitch
+  // quantization. Same shape as SLEWSWITCH.in1..in4 + CUBE.pitch.
+  sampleHold: ['cv_in'],
   // ATLANTISCATALYST seed_cv: bias-direction input read directly by the
   // JS orchestrator each tick (sampled into the next-scene picker).
   // Same shape as buggles.chaos_cv — no AudioParam fast path.
@@ -132,6 +211,31 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // routed through a WaveShaperNode. Same shape as cartesian's x_cv/y_cv
   // address selectors + buggles.chaos_cv.
   grids: ['mapX_cv', 'mapY_cv', 'bdDensity_cv', 'sdDensity_cv', 'hhDensity_cv', 'chaos_cv', 'swing_cv'],
+  // 4PLEXER in1..in4: raw signal inputs (audio OR cv) routed straight to
+  // the selected output by the worklet's per-output select — they are the
+  // signal being switched, NOT a knob modulator, so there is no AudioParam
+  // fast path and cvScale doesn't apply. Same shape as SLEWSWITCH.in1..in4.
+  // The gate1..gate4 advance inputs are `gate`-typed and so aren't checked.
+  fourplexer: ['in1', 'in2', 'in3', 'in4'],
+  // CHOWKICK pitch_cv: 1V/oct pitch CV consumed directly by the worklet —
+  // freq *= 2^pitch_cv applied per-sample. Same shape as dx7.pitch_cv and
+  // helm.pitch_cv: a V/oct fallback input with no paramTarget (a freq
+  // AudioParam additive cvScale would NOT be 1V/oct, so we route the
+  // pitch CV as its own audio-rate node input + apply the octave map
+  // inside the per-sample DSP).
+  chowkick: ['pitch_cv'],
+  // CUBE pitch: V/oct input consumed directly by the worklet as its own
+  // audio-rate node input (freq = C4·2^(pitch + tune/12 + fine/1200), applied
+  // per-sample). No paramTarget — same V/oct-fallback shape as dx7.pitch_cv /
+  // chowkick.pitch_cv. CUBE's OTHER cv inputs (slice_y/rx/ry/rz, morph_fc,
+  // connect, crush, tune) DO have paramTarget + cvScale:linear; only the raw
+  // V/oct pitch is passthrough-by-design.
+  cube: ['pitch'],
+  // HYPERCUBE (the 4D tesseract sibling of CUBE): identical V/oct pitch shape —
+  // pitch is the raw audio-rate node input with no paramTarget. Its OTHER cv
+  // inputs (slice_y/rx/ry/rz, morph_fc, connect, crush, fold_cv, ALPHA, tune)
+  // all carry paramTarget + cvScale:linear; only the V/oct pitch is passthrough.
+  hypercube: ['pitch'],
 };
 
 describe('cv-scale / registry coverage', () => {

@@ -18,9 +18,21 @@ name: Deploy
 #   so accidental prod deploys aren't possible from a routine merge.
 # - workflow_dispatch keeps any tier reachable manually if something goes sideways.
 #
+# Relay (Hocuspocus on Fly) deploy — mirrors the web tiers so the relay can't
+# drift from source (it had NO CD; a stale relay silently fails the live-smoke
+# /health + /metrics probes — what bit us 2026-06-01):
+#   dev + autotest  ←  push to main, ONLY when packages/server/** or fly.*.toml
+#                       changed (avoids needless WS-dropping relay restarts)
+#   prod            ←  version bump on main (each release ships the current relay)
+#   any tier        ←  workflow_dispatch (target input)
+# The relay deploy step no-ops (green) until FLY_API_TOKEN is set, so this rolls
+# out without a red pipeline.
+#
 # Required GitHub secrets:
 #   CLOUDFLARE_API_TOKEN  — Pages-deploy-scoped token
 #   CLOUDFLARE_ACCOUNT_ID — CF account id
+#   FLY_API_TOKEN         — Fly deploy token for the relay (`flyctl auth token`).
+#                           Optional: relay deploy steps skip cleanly if unset.
 #
 # Why each deploy job is self-contained (no shared build artifact):
 # wrangler's `pages deploy` re-bundles _worker.js with esbuild, so it needs
@@ -160,6 +172,17 @@ jobs:
       - name: Build DOOM WASM (emcc)
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      - name: Cache SNES9X WASM artifact
+        id: cache-snes9x-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/snes9x/snes9x.js
+            packages/web/static/snes9x/snes9x.wasm
+          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
+      - name: Build SNES9X WASM (emcc)
+        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
       # DOOM1.WAD — shareware game data, fetched from a stable mirror and
       # cached forever (~4 MB, never changes; key is bumped if we ever
       # swap source). Without this the deployed bundle 404s on
@@ -231,6 +254,17 @@ jobs:
       - name: Build DOOM WASM (emcc)
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      - name: Cache SNES9X WASM artifact
+        id: cache-snes9x-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/snes9x/snes9x.js
+            packages/web/static/snes9x/snes9x.wasm
+          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
+      - name: Build SNES9X WASM (emcc)
+        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
       # DOOM1.WAD — shareware game data, fetched from a stable mirror and
       # cached forever (~4 MB, never changes; key is bumped if we ever
       # swap source). Without this the deployed bundle 404s on
@@ -309,6 +343,17 @@ jobs:
       - name: Build DOOM WASM (emcc)
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      - name: Cache SNES9X WASM artifact
+        id: cache-snes9x-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/snes9x/snes9x.js
+            packages/web/static/snes9x/snes9x.wasm
+          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
+      - name: Build SNES9X WASM (emcc)
+        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
       # DOOM1.WAD — shareware game data, fetched from a stable mirror and
       # cached forever (~4 MB, never changes; key is bumped if we ever
       # swap source). Without this the deployed bundle 404s on
@@ -376,6 +421,17 @@ jobs:
       - name: Build DOOM WASM (emcc)
         if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      - name: Cache SNES9X WASM artifact
+        id: cache-snes9x-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/snes9x/snes9x.js
+            packages/web/static/snes9x/snes9x.wasm
+          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
+      - name: Build SNES9X WASM (emcc)
+        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
       # DOOM1.WAD — shareware game data, fetched from a stable mirror and
       # cached forever (~4 MB, never changes; key is bumped if we ever
       # swap source). Without this the deployed bundle 404s on
@@ -449,9 +505,146 @@ jobs:
       # `task setup` already installed. (Fixes #101.)
       - run: flox activate -- task test:emit-manifest
       - run: flox activate -- task ci:smoke:live
+      # Anon-invite handshake guard: opens a REAL WS to the deployed autotest
+      # relay with a freshly-minted anon invite and asserts onAuthenticate
+      # ACCEPTS. Catches INVITE_SECRET drift between the deployed web app and
+      # relay — the failure mode where every anonymous invite guest is silently
+      # rejected (red dot, `nodes 0`) while Clerk users are unaffected. SKIPS
+      # cleanly if AUTOTEST_INVITE_SECRET isn't set (e.g. before the secret is
+      # wired), so it never blocks a deploy spuriously; once set, drift fails
+      # the deploy loudly. Set AUTOTEST_INVITE_SECRET to the canonical
+      # INVITE_SECRET_AUTOTEST value (the same one `task sync-secrets -- autotest`
+      # pushes to both Fly + CF Pages).
+      - name: Anon-invite handshake smoke (autotest relay)
+        env:
+          TIER: autotest
+          INVITE_SECRET: ${{ secrets.AUTOTEST_INVITE_SECRET }}
+          # /api/health is beta-gate-exempt, but pass creds anyway so the
+          # web-fingerprint cross-check works even if that carve-out changes.
+          BETA_GATE_USER: beta
+          BETA_GATE_PASS: ${{ secrets.AUTOTEST_BETA_GATE_PASS }}
+        run: flox activate -- task smoke:anon-handshake
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: live-smoke-report
           path: e2e/playwright-report
           retention-days: 14
+
+  # ================= Relay (Hocuspocus on Fly) CD =================
+  # The relay has no CD otherwise and drifts stale (it returned plain `OK`
+  # for /health + /metrics for days while source served JSON — the live-smoke
+  # failure on 2026-06-01). These jobs keep it in lockstep with source.
+
+  # Detect whether THIS push touched the relay, so dev/autotest only redeploy
+  # the relay when its code/config actually changed (a relay redeploy briefly
+  # drops live Yjs/WS connections — don't do it on every web-only merge).
+  relay-changed:
+    name: Detect relay (packages/server) changes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.f.outputs.relay }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: dorny/paths-filter@v3
+        id: f
+        with:
+          filters: |
+            relay:
+              - 'packages/server/**'
+              - 'fly.dev.toml'
+              - 'fly.autotest.toml'
+              - 'fly.prod.toml'
+
+  # dev + autotest: redeploy on main push WHEN the relay changed, or on a
+  # manual dispatch that targets the tier.
+  # dev + autotest are two explicit jobs (not a matrix) because the per-tier
+  # dispatch gate needs the tier in the job-level `if:`, and the `matrix`
+  # context is NOT available there — referencing it makes GitHub reject the
+  # whole workflow ("workflow file issue"). These `if:`s use only `github` /
+  # `needs`, which ARE available at job level.
+  deploy-relay-dev:
+    name: Deploy relay → dev
+    needs: [relay-changed]
+    if: |
+      always()
+      && (
+        (github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
+          && needs.relay-changed.outputs.changed == 'true')
+        || (github.event_name == 'workflow_dispatch'
+          && contains(github.event.inputs.target, 'dev'))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy relay (dev)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::warning::FLY_API_TOKEN not set — skipping dev relay deploy. Wire the secret (flyctl auth token → gh secret set FLY_API_TOKEN) to enable relay CD."
+            exit 0
+          fi
+          flyctl deploy --config fly.dev.toml --remote-only
+
+  deploy-relay-autotest:
+    name: Deploy relay → autotest
+    needs: [relay-changed]
+    if: |
+      always()
+      && (
+        (github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
+          && needs.relay-changed.outputs.changed == 'true')
+        || (github.event_name == 'workflow_dispatch'
+          && contains(github.event.inputs.target, 'autotest'))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy relay (autotest)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::warning::FLY_API_TOKEN not set — skipping autotest relay deploy. Wire the secret to enable relay CD."
+            exit 0
+          fi
+          flyctl deploy --config fly.autotest.toml --remote-only
+
+  # prod: redeploy on a version bump (mirrors the web prod gate) or a manual
+  # dispatch targeting prod — so each release ships the current relay.
+  deploy-relay-prod:
+    name: Deploy relay → prod
+    needs: [detect-version-bump, verify-ci]
+    if: |
+      always()
+      && (
+        (github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
+          && needs.detect-version-bump.outputs.bumped == 'true')
+        || (github.event_name == 'workflow_dispatch'
+          && needs.verify-ci.result == 'success'
+          && contains(github.event.inputs.target, 'prod'))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy relay (prod)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::warning::FLY_API_TOKEN not set — skipping prod relay deploy. Wire the secret to enable relay CD."
+            exit 0
+          fi
+          flyctl deploy --config fly.prod.toml --remote-only

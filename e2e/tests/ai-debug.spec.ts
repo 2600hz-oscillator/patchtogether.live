@@ -55,9 +55,7 @@ test('AI debug snapshot — Load example flow', async ({ page }) => {
   // ---------- DOM (pre-click) ----------
   const preDom = await page.evaluate(() => ({
     h1: document.querySelector('h1')?.textContent ?? null,
-    spawnBtn: Array.from(document.querySelectorAll('button')).some(
-      (b) => b.textContent?.trim() === 'Load example'
-    ),
+    spawnBtn: !!document.querySelector('[data-testid="load-example-select"]'),
     allButtons: Array.from(document.querySelectorAll('button')).map((b) =>
       (b.textContent ?? '').trim().slice(0, 40)
     ),
@@ -71,7 +69,7 @@ test('AI debug snapshot — Load example flow', async ({ page }) => {
   // ---------- Click Load example ----------
   let clickError: string | null = null;
   try {
-    await page.getByRole('button', { name: 'Load example' }).click({ timeout: 5000 });
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco', { timeout: 5000 });
   } catch (err) {
     clickError = String(err);
   }

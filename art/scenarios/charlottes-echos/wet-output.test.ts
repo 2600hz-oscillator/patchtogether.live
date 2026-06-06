@@ -126,6 +126,26 @@ function peakAbs(buf: Float32Array, start = 0, end = buf.length): number {
   return p;
 }
 
+// Spectral centroid (Hz) over [start,end). A rise here ⇒ the echo energy moved
+// UP the spectrum — a real pitch shift, not a time/LFO wobble.
+function spectralCentroid(buf: Float32Array, start: number, end: number): number {
+  let num = 0;
+  let den = 0;
+  for (let f = 50; f <= 6000; f += 25) {
+    let re = 0;
+    let im = 0;
+    const w = (2 * Math.PI * f) / SAMPLE_RATE;
+    for (let n = start; n < end; n++) {
+      re += buf[n]! * Math.cos(w * n);
+      im -= buf[n]! * Math.sin(w * n);
+    }
+    const p = re * re + im * im;
+    num += f * p;
+    den += p;
+  }
+  return den > 0 ? num / den : 0;
+}
+
 describe("charlottes-echos / wet-output regression", () => {
   it("mix=1.0 produces audible wet signal (RMS > 0.05, peak < 1.0)", () => {
     const { output } = renderProcessor({
@@ -145,25 +165,33 @@ describe("charlottes-echos / wet-output regression", () => {
     expect(p, `wet peak ${p.toFixed(4)} (must be < 1.0)`).toBeLessThan(1.0);
   });
 
-  it("mix=1.0 output is delayed: silence before t=delay, signal after", () => {
+  it("mix=1.0 output is delayed: silence before the cascade delay, signal after", () => {
+    // CHARLOTTE is now FOUR Cocoa Delay stages in SERIES. At mix=1.0 each
+    // stage is pure-wet, so the dry signal only emerges after passing through
+    // all four delay lines → the first echo lands at ≈ the SUM of the stage
+    // delays (≈ 4 × delay). With delay=0.4 that's ≈1.6 s, so render long
+    // enough to capture it.
+    const delay = 0.4;
+    const cascade = 4 * delay; // ≈ first-echo arrival
     const { output } = renderProcessor({
-      delay: 0.4,
+      delay,
       feedback: 0.5,
       decay: 0.2,
       pitchUp: 0,
       mix: 1.0,
-      durationS: 1.0,
+      durationS: cascade + 0.6,
       inputAmp: 0.5,
       inputHz: 440,
     });
-    const preDelay = peakAbs(output, 0, Math.round(0.39 * SAMPLE_RATE));
+    // Silent until the signal has traversed all four stages.
+    const preDelay = peakAbs(output, 0, Math.round((cascade - 0.05) * SAMPLE_RATE));
     const postDelay = peakAbs(
       output,
-      Math.round(0.41 * SAMPLE_RATE),
-      Math.round(0.6 * SAMPLE_RATE),
+      Math.round((cascade + 0.02) * SAMPLE_RATE),
+      Math.round((cascade + 0.4) * SAMPLE_RATE),
     );
-    expect(preDelay, `pre-delay peak ${preDelay}`).toBeLessThan(0.01);
-    expect(postDelay, `post-delay peak ${postDelay}`).toBeGreaterThan(0.1);
+    expect(preDelay, `pre-cascade peak ${preDelay}`).toBeLessThan(0.01);
+    expect(postDelay, `post-cascade peak ${postDelay}`).toBeGreaterThan(0.1);
   });
 
   it("wet output differs from dry input (delay actually happened)", () => {
@@ -203,6 +231,35 @@ describe("charlottes-echos / wet-output regression", () => {
     expect(p, `3s peak ${p.toFixed(4)} (no runaway)`).toBeLessThan(1.0);
     const tail = rms(output, output.length - Math.round(0.5 * SAMPLE_RATE));
     expect(tail, `tail RMS ${tail.toFixed(4)}`).toBeGreaterThan(0.02);
+  });
+
+  it("pitchUp > 0 raises the echo spectral centroid (real ascending pitch)", () => {
+    // CHARLOTTE's signature: with pitchUp > 0 each of the 4 cascaded Cocoa
+    // stages reads its tape faster (varispeed), so the echoes climb in pitch.
+    // Drive a sustained 300 Hz tone and compare the wet tail's spectral
+    // centroid at pitchUp=0 vs pitchUp=0.2. pitchUp=0 must stay near 300 Hz;
+    // pitchUp=0.2 must rise clearly above it.
+    const common = {
+      delay: 0.06,
+      feedback: 0.5,
+      decay: 0.1,
+      mix: 1.0,
+      durationS: 1.2,
+      inputAmp: 0.5,
+      inputHz: 300,
+    } as const;
+    const flat = renderProcessor({ ...common, pitchUp: 0 });
+    const risen = renderProcessor({ ...common, pitchUp: 0.2 });
+    const w0 = Math.round(0.5 * SAMPLE_RATE);
+    const w1 = Math.round(1.1 * SAMPLE_RATE);
+    const cFlat = spectralCentroid(flat.output, w0, w1);
+    const cRisen = spectralCentroid(risen.output, w0, w1);
+    expect(cFlat, `pitchUp=0 centroid ${cFlat.toFixed(0)} Hz (≈300)`).toBeLessThan(450);
+    expect(
+      cRisen,
+      `pitchUp=0.2 centroid ${cRisen.toFixed(0)} Hz must exceed flat ${cFlat.toFixed(0)} Hz`,
+    ).toBeGreaterThan(cFlat * 1.5);
+    expect(cRisen, `pitchUp=0.2 centroid ${cRisen.toFixed(0)} Hz`).toBeGreaterThan(800);
   });
 
   it("mix=0 produces dry-equal output (no wet contribution)", () => {

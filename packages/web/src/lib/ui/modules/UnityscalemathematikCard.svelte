@@ -7,6 +7,7 @@
   import { unityscalemathematikDef } from '$lib/audio/modules/unityscalemathematik';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -40,7 +41,7 @@
 
 <div class="mod-card unity-card">
   <div class="stripe" style="background: var(--cable-cv);"></div>
-  <header class="title">UNITYSCALEMATHEMATIK</header>
+  <ModuleTitle {id} {data} defaultLabel="UNITYSCALEMATHEMATIK" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="section">
@@ -67,7 +68,7 @@
 </div>
 
 <style>
-  .unity-card { width: 240px; min-height: 360px; }
+  .unity-card { width: 240px; }
   .unity-card .section { margin-top: 10px; }
   .unity-card .section-label {
     font-size: 10px;

@@ -26,6 +26,34 @@
 //
 // Video: viz_out is a mono-video cross-domain bridge driving the same
 // acidwarp EQ-curve renderer used by the on-card canvas.
+//
+// Inputs:
+//   in_l / in_r (audio): stereo input feeding all 8 bandpass resonators.
+//   level{1..8}_cv (cv, linear, paramTarget=level{N}): per-band level CV.
+//   ping{1..8} (gate): per-band excitation gates; rising edge fires a vactrol-ping into band N (+bleed to N±2).
+//   global_ping (gate): fires ALL bands at once.
+//   viznoise_cv (cv, linear, paramTarget=viznoise): displaces the visualizer hue/noise mix.
+//   root_cv (cv, linear, paramTarget=root): displaces the harmonic-mode fundamental.
+//   spread_cv (cv, linear, paramTarget=spread): displaces the stereo pan spread.
+//   q_cv (cv, linear, paramTarget=q): displaces the resonator Q.
+//   decay_cv (cv, linear, paramTarget=ping_decay): displaces the vactrol decay.
+//   band{1..8}_in (audio): per-band SEND input — patch here to insert per-band processing.
+//
+// Outputs:
+//   out_l / out_r (audio): stereo mix bus.
+//   viz_out (mono-video): the EQ-curve visualization (acidwarp-style render).
+//   band{1..8}_out (audio): per-band RETURN tap; pair with the matching `band{N}_in` send for per-band FX.
+//
+// Params:
+//   level{1..8} (linear 0..2, default 1.0): per-band level.
+//   master (linear 0..2, default 1.0): master output gain.
+//   viznoise (linear 0..1, default 0.3): visualizer hue/noise amount.
+//   ping_decay (linear 0..1, default 0.5): vactrol envelope decay.
+//   tuning_mode (discrete 0..1, default 0): 0 = octave-spaced log bands, 1 = harmonic partials.
+//   root (linear 24..108, default 60): harmonic-mode fundamental MIDI note.
+//   q (linear 1..40, default 6): resonator Q.
+//   spread (linear 0..1, default 0): stereo-pan width.
+//   bleed (linear 0..1, default 1): per-ping cross-band bleed.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -46,6 +74,7 @@ export interface WarrenspectrumSnapshotMessage {
 
 export const warrenspectrumDef: AudioModuleDef = {
   type: 'warrenspectrum',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   // v2 adds: tuning_mode, root, q, spread, bleed params; 8 band returns
   // (band1_in..band8_in audio inputs); 8 per-band sends (band1_out..

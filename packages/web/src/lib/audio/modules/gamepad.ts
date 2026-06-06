@@ -34,6 +34,19 @@
 // `padIndex` param is exposed so the card / a future picker UI can
 // select the gamepad slot (0..3); v1 only auto-selects slot 0 of
 // whichever was most-recently connected.
+//
+// Inputs: none.
+//
+// Outputs:
+//   lx / ly / rx / ry (cv): left / right stick X-Y (-1..+1).
+//   lt / rt (cv): left / right trigger (0..1).
+//   lb / rb (gate): left / right bumper.
+//   a / b / x / y (gate): face buttons.
+//   du / dd / dl / dr (gate): D-pad up / down / left / right.
+//   start / back (gate): the standard start + back/select buttons.
+//
+// Params:
+//   padIndex (discrete 0..3, default 0): gamepad slot picker (multi-controller setups).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -81,7 +94,10 @@ const OUTPUT_DEFS = [
   { id: 'du',    type: 'gate' as const, label: '⬆'  },
   { id: 'dd',    type: 'gate' as const, label: '⬇'  },
   { id: 'dl',    type: 'gate' as const, label: '⬅'  },
-  { id: 'dr',    type: 'gate' as const, label: '➡'  },
+  // U+2B95 (⮕) matches the U+2B05/06/07 family used for ⬅⬆⬇ —
+  // U+27A1 (➡) is a different glyph family that renders much smaller
+  // in most fonts, making the right-d-pad row look broken/portless.
+  { id: 'dr',    type: 'gate' as const, label: '⮕'  },
   { id: 'start', type: 'gate' as const, label: 'STA' },
   { id: 'back',  type: 'gate' as const, label: 'SEL' },
 ] as const;
@@ -116,6 +132,7 @@ export interface GamepadSnapshot {
 
 export const gamepadDef: AudioModuleDef = {
   type: 'gamepad',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'GAMEPAD',
   category: 'utility',

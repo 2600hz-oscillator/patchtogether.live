@@ -26,6 +26,43 @@
 // module, add an override here with the specific port(s) it needs
 // driven — same as the SOURCES list pattern in
 // e2e/tests/coverage-group-2-sources.spec.ts.
+//
+// SYSTEMIC GAP this map guards against: a gate/envelope-triggered AUDIO
+// voice (drum hit, 303) with NO override gets the DEFAULT driver — its
+// first audio/cv/gate/pitch output wired to a scope, NO upstream
+// sequencer — so its gate never fires, it stays silent, and the alive
+// smoke fails peak=0. This bit TREE.oh.VOX (#446) and chowkick (#462).
+//
+// AUDIT (2026-05-30): replicated per-module.spec.ts's EXACT enrolment
+// filter — a module gets a driven output-alive test iff `hasAudioOutput`
+// && NOT on the spec's SKIP_OUTPUT_ALIVE list && it has NO `audio`-typed
+// input (audio-input "effects" are auto-skipped) — against the emitted
+// manifest (e2e/.generated/registry-manifest.json). Exactly 11 modules
+// are enrolled+driven, and all 11 pass at --workers=4:
+//   • 9 already have overrides below: buggles, chowkick, drummergirl,
+//     dx7, macrooscillator, meowbox, nibbles, treeohvox, wavesculpt.
+//   • 2 self-run on the DEFAULT driver (no override needed, correctly):
+//       - noise → first output `white` (continuous white noise).
+//       - peaks → first output `out0`; its default `mode` is LFO, which
+//         free-runs with no trigger, so the default driver suffices.
+//         (If PEAKS' default mode ever changes to a gated drum voice it
+//         would become the at-risk case — flag it then.)
+//
+// NO module had the latent gap, so this audit added NO new entries
+// (needless overrides are churn).
+//
+// NOT enrolled (correctly out of scope for the AUDIO-alive check):
+//   • CV-only modules (`hasAudioOutput=false`): self-clocked CV/gate
+//     sources (MACSEQ / STAGES / MARBLES / GRIDS / SYMBIOTE / TIDES2 /
+//     LFO) and CV math (analogLogicMaths — outputs min/max/diff/sum/
+//     product, all `cv`). The spec never enrols them for the audio-alive
+//     check; CV/gate alive checks are a deferred slice (per-module.spec
+//     header).
+//   • Audio-input processors (filter / reverb / RINGS / ELEMENTS / …) —
+//     auto-skipped by the spec's hasAudioInput branch.
+// The lesson is productized in the `module-pr-checklist` repo skill:
+// every NEW gate/envelope-triggered AUDIO-output module MUST add an entry
+// here or its output-alive smoke is silently peak=0.
 
 import type { RegistryModule } from './_registry';
 
@@ -55,6 +92,25 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   wavviz:       { outputPort: 'audio', params: { tune: 0, fine: 0, wavePos: 0.5, fmAmount: 0, foldAmount: 0 } },
   // SWOLEVCO primary out, no upstream needed.
   swolevco:     { outputPort: 'out',   params: { tune: 0, fine: 0, timbre: 0.3, symmetry: 0.5, fold: 0, ratio: 0 } },
+  // MOOG 921B — slave VCO. With freq_bus unpatched the worklet defaults to
+  // 0 V/oct → C4 and width_bus normals to 0.5 (square), so all four waveform
+  // jacks ring at default fine=0 / range=0 / level=1 with NO upstream driver
+  // (it can self-stand without a 921A). Pin the canonical out to `sine` (the
+  // alive smoke + behavioral observed tap); the audio-typed dc_mod / ac_mod /
+  // sync inputs are OPTIONAL modulation, so it's listed in the spec's
+  // NOT_EFFECT_DESPITE_AUDIO_INPUT set (like moog921Vco) to take the normal
+  // outputs-emit path.
+  moog921b:     { outputPort: 'sine',  params: { fine: 0, range: 0, modAmount: 0, syncMode: 0, level: 1 } },
+  // MOOG 921A — CV-only oscillator DRIVER (no audio ports). Its freq_bus /
+  // width_bus outputs are STEADY DC at defaults (frequency=0 → 0 V; width=0.5),
+  // which the AC-coupled SCOPE analyser can't read as a peak — so the per-port
+  // driver in _per-port-drivers.ts wires a moving BUGGLES CV into freq_cv +
+  // width_cv to make BOTH bus outputs AC. The canonical out is freq_bus.
+  moog921a:     { outputPort: 'freq_bus' },
+  // MOOG 904B — 24 dB/oct ladder HPF (effect: audio in → high-pass out). Needs
+  // an upstream source; the per-port driver wires an ANALOGVCO saw into `audio`
+  // with a low cutoff so the saw passes. Canonical out is `audio`.
+  moog904b:     { outputPort: 'audio' },
   // SAMSLOOP needs a sample loaded to sound — defer (covered by samsloop.spec.ts).
   // Stamp the spawn check only.
   samsloop:     { outputPort: 'out_l' },
@@ -82,12 +138,43 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   meowbox:      { outputPort: 'L',     gatePort: 'gate', pitchPort: 'pitch' },
   // RIOTGIRLS drives the 4-voice DRUMMERGIRL + WT-VCO bank; trig1 fires voice 1.
   riotgirls:    { outputPort: 'outL',  gatePort: 'trig1' },
+  // CHOWKICK — ChowKick (chowdsp) kick drum; gate_in rising edge fires the
+  // pulse-shaper → resonator. Gate-only (no pitch). Bump amplitude + a
+  // longer decay so the kick clears the 0.005 alive-floor within the window.
+  chowkick:     { outputPort: 'audio_out', gatePort: 'gate_in', params: { amplitude: 1, decay: 0.6, sustain: 0.5, bounce: 0.4 } },
+  // TREE.oh.VOX — TB-303 voice. pitch/gate ride on dedicated audio-rate
+  // node ports (pitch_in / gate_in), NOT AudioParams, so the sequencer
+  // gate must be wired to gate_in for the amp envelope to open. Without
+  // it the voice is silent (peak=0) even though the DSP is sound — the
+  // ART baseline drives the voice offline via renderVoiceSequence(),
+  // bypassing the live gate path, which is why it passed while this smoke
+  // failed. Open the cutoff + lengthen decay so a gated note clears the
+  // 0.005 peak floor inside the 800 ms drive window.
+  treeohvox:    {
+    outputPort: 'audio_out',
+    gatePort: 'gate_in',
+    pitchPort: 'pitch_in',
+    params: { cutoff: 2500, resonance: 0.5, envelope: 0.7, decay: 800, accent: 0.5 },
+  },
   // ────────── Modulators that need a clock ──────────
   // BUGGLES self-runs (internal RNG). LFO self-runs at default rate.
   // BUGGLES outputs cv on 'smooth'.
   buggles:      { outputPort: 'smooth' },
   // ────────── Wavetable / cluster modules ──────────
   wavesculpt:   { outputPort: 'L', gatePort: 'gate1' },
+  // NIBBLES first output is `pellet` (gate, fires only when the snake
+  // eats food — gameplay-conditional, NOT alive on idle). Pin to `snake`,
+  // the continuous square-wave audio output that's emitting at the
+  // length-derived frequency from cold start (snake length 4 → 110 Hz).
+  nibbles:      { outputPort: 'snake' },
+  // BLUEBOX — DTMF dialer. Each of its 12 keys is push-to-talk: silent
+  // until a key is held, either via pointerdown on the card OR a gate
+  // ≥0.5 into the matching `gate_<name>` input. The default driver wires
+  // no upstream gate, so `out` stays at peak=0 and the alive smoke fails
+  // (same gate-only class as chowkick / treeohvox). Wire the sequencer
+  // gate into `gate_1` so the '1' key (697 + 1209 Hz) holds and `out`
+  // sounds inside the drive window.
+  bluebox:      { outputPort: 'out', gatePort: 'gate_1' },
 };
 
 /** Resolve the canonical driver for a module. Returns the override if

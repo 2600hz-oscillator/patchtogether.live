@@ -51,6 +51,12 @@ const SKIP_DEF_VS_UI: Record<string, string> = {
   // the settings panel either inlines the ports or wires them via the
   // standard PatchPanel.
   helm: 'gear-icon settings panel hides MIDI ports; covered by e2e/tests/helm.spec.ts',
+  // CADILLAC renders as a roaming overlay sprite (CadillacOverlay), not
+  // as a SvelteFlow card — Canvas.svelte filters it out of flowNodes so
+  // xyflow doesn't paint a fallback box. spawnPatch's "wait for N cards"
+  // would hang. The def has zero ports anyway (it's meta-domain).
+  // Functional coverage: e2e/tests/cadillac.spec.ts.
+  cadillac: 'overlay sprite, not a flow card (zero ports); covered by e2e/tests/cadillac.spec.ts',
 };
 
 async function readHandleIds(
@@ -97,6 +103,10 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
   for (const mod of REGISTRY) {
     const skipReason = SKIP_DEF_VS_UI[mod.type];
     const fn = async ({ page }: { page: Page }): Promise<void> => {
+      // WebGL-heavy cards (mandelbulb/toybox/cube/quadralogical/b3ntb0x/…)
+      // paint their connection handles slowly on CI's software renderer, so the
+      // 30s default times out while handles are still mounting. Give headroom.
+      test.setTimeout(60_000);
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
@@ -110,6 +120,15 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
       ]);
 
       const cardClass = `svelte-flow__node-${mod.type}`;
+      // Wait for ALL handles to render before snapshotting their ids. A bare
+      // count() taken mid-render undercounts (or nth(i) times out) on slow GL
+      // cards → flaky id-mismatch / getAttribute timeout. Settling on the
+      // def's port total is deterministic and only costs time for slow cards.
+      const expectedHandles = mod.inputs.length + mod.outputs.length;
+      await expect(
+        page.locator(`.${cardClass}`).locator('.svelte-flow__handle'),
+        `${mod.type}: all ${expectedHandles} handles rendered before reading ids`,
+      ).toHaveCount(expectedHandles, { timeout: 45_000 });
       const { inputs: handleInputs, outputs: handleOutputs } = await readHandleIds(
         page,
         cardClass,

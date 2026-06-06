@@ -1,0 +1,223 @@
+# behavioral-flake-purge — run the behavioral input-coverage sweep 5× (manual /
+# push-triggered) to find every behavioral spec that isn't gate-stable, the same
+# way e2e-flake-purge.yml does for e2e. Phase 2 of the flake-purge → gate plan:
+# after the e2e gate lands, do the same for behavioral, then re-gate it.
+#
+# Builds DSP dist + preview bundle ONCE (same artifacts as ci.yml), then fans out
+# a `shard(1..6) × pass(1..5)` = 30-job matrix, each running the behavioral sweep
+# `per-module-per-port-behavioral.spec.ts --shard=S/6 --workers=4 --retries=2`
+# (GATE-REALISTIC retries — identical to how the ci.yml behavioral lane runs, so a
+# spec only counts as failed if retries didn't rescue it). Download all 30 blob
+# reports + merge → any spec that failed (post-retry) in ANY pass is a
+# `test.fixme()` quarantine candidate.
+#
+# Push to a `behavioral-purge/**` branch (or workflow_dispatch) to run; aggregate
+# with /tmp/aggregate-purge.sh adapted to `behavioral-blob-report-*`.
+name: behavioral-flake-purge
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: ['behavioral-purge/**']
+
+concurrency:
+  group: behavioral-flake-purge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --- DSP worklets, once (verbatim from ci.yml dsp-build) ---
+  dsp-build:
+    name: dsp-build (Faust worklets, once)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+      - name: Cache DSP dist
+        id: cache-dsp-dist
+        uses: actions/cache@v4
+        with:
+          path: packages/dsp/dist
+          key: ${{ runner.os }}-dsp-dist-${{ hashFiles('packages/dsp/src/**', 'packages/dsp/scripts/**', 'packages/dsp/package.json', '.flox/env/manifest.toml') }}
+      - name: Install workspace deps
+        run: flox activate -- task install
+      - name: Build DSP worklets (Faust + esbuild)
+        run: flox activate -- task dsp:build
+      - name: Upload DSP dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+          include-hidden-files: true
+          retention-days: 1
+
+  # --- Preview bundle, once (verbatim from ci.yml build-web) ---
+  build-web:
+    name: build-web (preview bundle, once)
+    needs: dsp-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+      - name: Install workspace deps
+        run: flox activate -- task install
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      - name: Cache SNES9X WASM artifact
+        id: cache-snes9x-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/snes9x/snes9x.js
+            packages/web/static/snes9x/snes9x.wasm
+          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
+      - name: Build SNES9X WASM (emcc)
+        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
+      - name: Build web (preview bundle, test hooks enabled)
+        env:
+          VITE_E2E_HOOKS: '1'
+        run: flox activate -- task build:web
+      - name: Upload web preview bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+          include-hidden-files: true
+          retention-days: 1
+
+  # --- The 5× fan-out: shard(1..6) × pass(1..5) = 30 jobs ---
+  behavioral-purge:
+    name: behavioral-purge (shard ${{ matrix.shard }}/6 pass ${{ matrix.pass }})
+    needs: [dsp-build, build-web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+        pass: [1, 2, 3, 4, 5]
+    services:
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      E2E_USE_PREVIEW: '1'
+    steps:
+      - name: Checkout (with LFS for ART/VRT baselines)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+      - name: Download web preview bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+      # retries=2 = GATE-REALISTIC (same as the ci.yml behavioral lane). A spec
+      # only counts as failed here if retries didn't rescue it.
+      - name: Run behavioral (shard ${{ matrix.shard }}/6 pass ${{ matrix.pass }}, 4 workers)
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            per-module-per-port-behavioral.spec.ts \
+            --shard=${{ matrix.shard }}/6 \
+            --workers=4 \
+            --retries=2 \
+            --reporter=blob
+      - name: Upload blob report (behavioral shard ${{ matrix.shard }} pass ${{ matrix.pass }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: behavioral-blob-report-${{ matrix.shard }}-${{ matrix.pass }}
+          path: e2e/blob-report
+          retention-days: 7

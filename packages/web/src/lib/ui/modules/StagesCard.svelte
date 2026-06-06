@@ -23,6 +23,7 @@
   } from '$lib/audio/modules/stages';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -79,7 +80,7 @@
 
 <div class="mod-card stages-card">
   <div class="stripe" style="background: var(--cable-cv);"></div>
-  <header class="title">STAGES</header>
+  <ModuleTitle {id} {data} defaultLabel="STAGES" />
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={420}>
     <div class="segments">
@@ -131,7 +132,7 @@
 </div>
 
 <style>
-  .stages-card { width: 460px; min-height: 280px; }
+  .stages-card { width: 460px; }
   .stages-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

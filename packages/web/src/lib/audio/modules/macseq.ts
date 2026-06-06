@@ -40,6 +40,28 @@
 // sequencer saves.
 //
 // schemaVersion: 1 — brand new module.
+//
+// Inputs:
+//   clock (gate): external clock; rising edges advance one step. Unpatched = internal BPM.
+//   play_cv / reset_cv (gate): shared transport CV (toggle isPlaying / reset to step 0).
+//   queue1..8_cv (gate): rising edge queues quicksave slot N; applied at the
+//     next sequence-end (8-slot quicksave, parity with the base Sequencer).
+//   next_cv / prev_cv / random_cv (gate): at the next pattern end, jump to the
+//     next / prior / random OCCUPIED slot (prev+next wrap among occupied slots).
+//
+// Outputs:
+//   pitch (pitch): V/oct of the current step's note.
+//   gate (gate): on-step gate.
+//   modelcv (cv): -1..+1 carrier of the current step's selected MACROOSCILLATOR
+//     model index (used with MACROOSCILLATOR's discrete model_cv input).
+//   clock (gate): chained step clock-out.
+//
+// Params:
+//   bpm (linear 30..300, default 120): internal tempo.
+//   length (discrete 1..128, default 16): step count.
+//   octave (discrete -2..2, default 0): global transposition.
+//   gateLength (linear 0.1..0.95, default 0.5): per-step gate duty.
+//   isPlaying (discrete 0..1, default 0): transport state.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -48,6 +70,22 @@ import { C3_MIDI, midiToVOct } from '$lib/audio/note-entry';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 import { createPlayheadTracker } from './playhead-tracker';
 import { MACRO_MAX_MODEL } from './macrooscillator';
+import {
+  createTransportCv,
+  pickQueuedSlotFromEvents,
+  pickNavFromEvents,
+  TRANSPORT_CV_PORT_DEFS,
+  EXTENDED_TRANSPORT_CV_PORT_DEFS,
+} from './transport-cv';
+import {
+  coerceSlots,
+  coerceSlotKey,
+  isInputPortConnected,
+  shouldSequencerRun,
+  occupiedSlots,
+  resolveNavTarget,
+  type NavDirection,
+} from './transport-helpers';
 
 /** Human-readable engine names, indexed by `modelIndex`. Must stay in
  *  lockstep with the engine table in `macrooscillatorMath.render` and the
@@ -205,6 +243,7 @@ export function mapModelIndexToCv(idx: number): number {
 
 export const macseqDef: AudioModuleDef = {
   type: 'macseq',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'MACSEQ',
   category: 'modulation',
@@ -215,6 +254,16 @@ export const macseqDef: AudioModuleDef = {
     // edges instead of the internal BPM. Matches the existing sequencer's
     // clock-in convention.
     { id: 'clock', type: 'gate' },
+    // Shared transport CV inputs (feat/seq save/load parity with Sequencer):
+    //   play_cv      → rising edge toggles isPlaying
+    //   reset_cv     → rising edge resets stepIndex to 0
+    //   queue1..4_cv → rising edge queues slot N (applied on sequence-end)
+    ...TRANSPORT_CV_PORT_DEFS,
+    // feat/seq 8-slots + quantized nav:
+    //   queue5..8_cv → queue slot 5..8
+    //   next/prev/random_cv → at the next pattern end, jump to the
+    //     next / prior / random OCCUPIED slot (prev+next wrap).
+    ...EXTENDED_TRANSPORT_CV_PORT_DEFS,
   ],
   outputs: [
     // Pitch CV (V/oct, mono `pitch` cable) — emits the current step's note.
@@ -278,6 +327,11 @@ export const macseqDef: AudioModuleDef = {
     let lastClockSampleTime = ctx.currentTime;
     const CLOCK_THRESHOLD = 0.5;
 
+    // Shared transport CV inputs (play_cv, reset_cv, queue{1..8}_cv +
+    // next/prev/random nav gates) — parity with the base Sequencer.
+    const transportCv = createTransportCv(ctx, { extended: true });
+    let lastTransportPollTime = ctx.currentTime;
+
     function emitClockPulse(atTime: number) {
       clockOutSrc.offset.setValueAtTime(1, atTime);
       clockOutSrc.offset.setValueAtTime(0, atTime + 0.01);
@@ -294,12 +348,10 @@ export const macseqDef: AudioModuleDef = {
       return typeof v === 'number' ? v : fallback;
     }
     function isClockInConnected(): boolean {
-      const edges = Object.values(livePatch.edges);
-      for (const e of edges) {
-        if (!e) continue;
-        if (e.target?.nodeId === nodeId && e.target?.portId === 'clock') return true;
-      }
-      return false;
+      return isInputPortConnected(Object.values(livePatch.edges), nodeId, 'clock');
+    }
+    function isPlayCvConnected(): boolean {
+      return isInputPortConnected(Object.values(livePatch.edges), nodeId, 'play_cv');
     }
 
     let stepIndex = 0;
@@ -318,6 +370,91 @@ export const macseqDef: AudioModuleDef = {
     // Last MODELCV value we actually wrote to modelCvSrc. Used for HOLD-LAST
     // behavior on null steps + as the read("modelCv") backing value.
     let lastEmittedModelCv = 0;
+
+    /** Drain the transport CV inputs + dispatch effects. Returns the
+     *  isPlaying value AFTER any play_cv toggle. Mirrors the base
+     *  Sequencer's pollTransportCv (minus the #224 reset-dedup, which is a
+     *  base-Sequencer-only lookahead concern). */
+    function pollTransportCv(): boolean {
+      const nowAt = ctx.currentTime;
+      const elapsed = nowAt - lastTransportPollTime;
+      lastTransportPollTime = nowAt;
+      const ev = transportCv.drain(elapsed);
+      const live = livePatch.nodes[nodeId];
+      let isPlaying = readParam('isPlaying', 0) >= 0.5;
+      // Each play_cv rising edge toggles isPlaying (XOR multiple edges).
+      if (ev.play % 2 === 1) {
+        isPlaying = !isPlaying;
+        if (live?.params) live.params.isPlaying = isPlaying ? 1 : 0;
+      }
+      if (ev.reset > 0) {
+        stepIndex = 0;
+        playhead.reset();
+        nextStepTime = ctx.currentTime + 0.05;
+        gateSrc.offset.cancelScheduledValues(ctx.currentTime);
+        gateSrc.offset.setValueAtTime(0, ctx.currentTime);
+      }
+      const queued = pickQueuedSlotFromEvents(ev);
+      if (queued !== null && live) {
+        if (!live.data) live.data = {};
+        const d = live.data as Record<string, unknown>;
+        d.queuedSlot = queued;
+        d.queuedNav = null; // explicit slot supersedes a pending nav
+      }
+      const nav = pickNavFromEvents(ev);
+      if (nav !== null && live) {
+        if (!live.data) live.data = {};
+        (live.data as Record<string, unknown>).queuedNav = nav;
+      }
+      return isPlaying;
+    }
+
+    /** Apply the queued slot's (or queued nav's) snapshot to node.data +
+     *  node.params on sequence-end, and reset the step counter. MACSEQ's
+     *  snapshot carries `steps` (per-step on/midi/model) + bpm/length/
+     *  octave/gateLength. Returns true if a snapshot was applied. */
+    function maybeApplyQueuedSlot(): boolean {
+      const live = livePatch.nodes[nodeId];
+      if (!live) return false;
+      const data = live.data as Record<string, unknown> | undefined;
+      const slots = coerceSlots(data?.slots);
+      let queued = coerceSlotKey(data?.queuedSlot);
+      if (!queued) {
+        const navRaw = data?.queuedNav;
+        const nav: NavDirection | null =
+          navRaw === 'next' || navRaw === 'prev' || navRaw === 'random' ? navRaw : null;
+        if (nav) {
+          const current = coerceSlotKey(data?.lastLoadedSlot);
+          queued = resolveNavTarget(occupiedSlots(slots), current, nav);
+          if (data) data.queuedNav = null;
+        }
+      }
+      if (!queued) return false;
+      const snap = slots[queued];
+      if (!snap) {
+        if (data) data.queuedSlot = null;
+        return false;
+      }
+      if (!live.data) live.data = {};
+      const d = live.data as Record<string, unknown>;
+      // Deep-clone steps (the snapshot still lives at slots[N] in the Y.Doc
+      // tree; Yjs forbids reassigning the same Y.Map at two paths).
+      if (Array.isArray(snap.steps)) {
+        d.steps = (snap.steps as Array<Record<string, unknown>>).map((s) => ({ ...s }));
+      }
+      if (live.params) {
+        for (const k of ['bpm', 'length', 'octave', 'gateLength'] as const) {
+          const v = snap[k];
+          if (typeof v === 'number') live.params[k] = v;
+        }
+      }
+      d.lastLoadedSlot = queued;
+      d.queuedSlot = null;
+      stepIndex = 0;
+      playhead.reset();
+      nextStepTime = ctx.currentTime + 0.005;
+      return true;
+    }
 
     function emitStep(idx: number, atTime: number, stepDurForGate: number) {
       const octave = readParam('octave', 0);
@@ -355,13 +492,14 @@ export const macseqDef: AudioModuleDef = {
     function tick() {
       if (!alive) return;
       try {
-        const isPlaying = readParam('isPlaying', 0) >= 0.5;
+        // Drain transport CV first; play_cv may have just toggled isPlaying.
+        const isPlaying = pollTransportCv();
         const externalClock = isClockInConnected();
-        // Same orthogonality fix as the other sequencers: if clock-in is
-        // patched, treat clock pulses as the play signal even when
-        // isPlaying=false. (We don't have a play_cv input, so the only
-        // alternative play-signal is clock.)
-        const shouldRun = isPlaying || externalClock;
+        // play_cv / clock orthogonality (matches the base Sequencer): if
+        // play_cv is unpatched, a patched clock's pulses ARE the play signal;
+        // a patched play_cv wins.
+        const playCvPatched = isPlayCvConnected();
+        const shouldRun = shouldSequencerRun(isPlaying, externalClock, playCvPatched);
         const nowAt = ctx.currentTime;
 
         if (shouldRun && !prevPlaying) {
@@ -372,6 +510,8 @@ export const macseqDef: AudioModuleDef = {
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
           lastClockSample = 0;
           lastClockSampleTime = ctx.currentTime;
+          transportCv.resetEdges();
+          lastTransportPollTime = ctx.currentTime;
         } else if (!shouldRun && prevPlaying) {
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
@@ -398,7 +538,15 @@ export const macseqDef: AudioModuleDef = {
             if (lastClockSample < CLOCK_THRESHOLD && cur >= CLOCK_THRESHOLD) {
               emitStep(stepIndex, nowAt + 0.005, stepDurForGate);
               const nextIdx = (stepIndex + 1) % length;
-              if (nextIdx === 0) totalSequenceEnds++;
+              if (nextIdx === 0) {
+                // Sequence end: apply any queued slot / nav before advancing.
+                totalSequenceEnds++;
+                if (maybeApplyQueuedSlot()) {
+                  // stepIndex was reset to 0 by the apply; skip the advance.
+                  lastClockSample = cur;
+                  continue;
+                }
+              }
               stepIndex = nextIdx;
               totalAdvances++;
             }
@@ -415,7 +563,15 @@ export const macseqDef: AudioModuleDef = {
             emitStep(stepIndex, nextStepTime, stepDur);
             const nextIdx = (stepIndex + 1) % length;
             const nextStartTime = nextStepTime + stepDur;
-            if (nextIdx === 0) totalSequenceEnds++;
+            if (nextIdx === 0) {
+              totalSequenceEnds++;
+              if (maybeApplyQueuedSlot()) {
+                // Snapshot applied; re-anchor the next step time to the
+                // natural boundary for the new pattern's step 0.
+                nextStepTime = nextStartTime;
+                continue;
+              }
+            }
             nextStepTime = nextStartTime;
             stepIndex = nextIdx;
             totalAdvances++;
@@ -428,11 +584,16 @@ export const macseqDef: AudioModuleDef = {
 
     unsubscribeTick = getSchedulerClock().subscribe(tick);
 
+    const inputsMap = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
+      ['clock', { node: clockInGain, input: 0 }],
+    ]);
+    for (const [id, entry] of transportCv.inputs) {
+      inputsMap.set(id, entry);
+    }
+
     return {
       domain: 'audio',
-      inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
-        ['clock', { node: clockInGain, input: 0 }],
-      ]),
+      inputs: inputsMap,
       outputs: new Map<string, { node: AudioNode; output: number }>([
         ['pitch',   { node: pitchSrc, output: 0 }],
         ['gate',    { node: gateSrc, output: 0 }],
@@ -471,6 +632,7 @@ export const macseqDef: AudioModuleDef = {
         clockInSilence.disconnect();
         clockInGain.disconnect();
         clockInAnalyser.disconnect();
+        transportCv.dispose();
       },
     };
   },

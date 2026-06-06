@@ -10,6 +10,7 @@
   import { cloudsDef } from '$lib/audio/modules/clouds';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -63,7 +64,7 @@
 
 <div class="mod-card clouds-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">CLOUDS</header>
+  <ModuleTitle {id} {data} defaultLabel="CLOUDS" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
@@ -90,7 +91,7 @@
 </div>
 
 <style>
-  .clouds-card { width: 340px; min-height: 240px; }
+  .clouds-card { width: 340px; }
   .clouds-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

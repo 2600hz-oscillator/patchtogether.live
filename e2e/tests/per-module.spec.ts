@@ -34,9 +34,9 @@
 // the new module, register an override in _drivers.ts (gatePort /
 // pitchPort / params) and the test passes automatically.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
-import { readScopeSnapshot, summarize, runFor } from './_module-coverage-helpers';
+import { runFor, readScopePeakOverWindow } from './_module-coverage-helpers';
 import { REGISTRY } from './_registry';
 import { driverFor } from './_drivers';
 
@@ -63,6 +63,8 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   // MIDI-CV-BUDDY / MIDICLOCK — depend on connected MIDI device.
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
   midiclock: 'requires MIDI device; covered by midiclock.spec.ts',
+  // AUDIO IN — captures live microphone input; no real audio device in CI.
+  audioIn: 'requires live mic input; no audio device in CI',
   // SCOPE — itself the canonical receiver. Wiring it into another
   // scope would be circular; skip.
   scope: 'is itself the canonical receiver',
@@ -78,6 +80,20 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   //   - module def shape:    doom.test.ts
   //   - video runtime:       doom-wasm.spec.ts (canvas pixel variance)
   doom: 'WASM load + game init + first sound effect exceeds 800ms smoke window; covered by doom-wasm.spec.ts',
+  // QBERT — audio_out is fed by the synthesized SFX stream which only
+  // fires when the runtime ticks a `move` event. The bare 800 ms smoke
+  // can't drive coin + start + held joystick within the window, so
+  // audio_out stays at zero. The PCM-fill path is covered by the
+  // qbert-runtime vitest (`getPcmFrames` returns non-zero after a move),
+  // and the cross-domain audio bridge is covered by the DOOM evt_kill
+  // suite — same bridge.
+  qbert: 'audio_out fires only on synthesized move events; covered by qbert-runtime.test.ts (PCM fill) + qbert-cv-joystick.spec.ts (gated by ROM presence)',
+  // SNES9X — ROM-gated emulator. audio_l/audio_r come from the SNES APU,
+  // which only produces sound once a user-provided SFC ROM is loaded; the ROM
+  // is gitignored and absent in CI, so the audio outs stay silent in the bare
+  // smoke. Dedicated coverage: snes9x-gameplay-gates.spec.ts (ROM-gated, real
+  // SMW play asserting gate1/gate2) + the snes9x unit tests.
+  snes9x: 'ROM-gated emulator; audio needs a user-provided SFC ROM (gitignored, absent in CI); covered by snes9x-gameplay-gates.spec.ts + snes9x unit tests',
   // VIDEOBOX — file-input source. Until the user picks a local video
   // file the audio outputs emit silent ConstantSourceNodes (so the
   // graph stays patchable), which by definition can't clear the
@@ -95,6 +111,15 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   // (def shape) + videovarispeed-transport.test.ts (varispeed math) +
   // videovarispeed-output.spec.ts (wired-up output path).
   videovarispeed: 'needs uploaded video file to emit non-silence; covered by videovarispeed.test.ts + videovarispeed-transport.test.ts + videovarispeed-output.spec.ts',
+  // MANDELBULB — audio_out is a CONDITIONAL output: it emits a silent
+  // ConstantSourceNode until the user enables the SLICE toggle (default off),
+  // at which point the slice→waveform→audio path posts a real wavetable. The
+  // bare 800ms smoke never toggles the slice, so audio_out stays at zero —
+  // identical reasoning to the per-module-per-port.spec.ts exemption
+  // ('mandelbulb.audio_out'). Dedicated coverage: mandelbulb.test.ts (factory
+  // slice-on wiring posts setWave) + mandelbulb-osc.test.ts (worklet) +
+  // mandelbulb-slice.test.ts (slice→waveform extraction).
+  mandelbulb: 'audio_out is gated behind the SLICE toggle (silent until slice ON + driven); covered by mandelbulb.test.ts + mandelbulb-osc.test.ts + mandelbulb-slice.test.ts',
 };
 
 // Reference list of modules that can't spawn under bare spawnPatch —
@@ -312,19 +337,27 @@ test.describe('per-module: output-alive smoke', () => {
         });
       }
 
-      // 800 ms covers wavetable-load times + several gate cycles.
-      // DOOM needs longer: WASM tic at video-rate, audio worklet pump
-      // at 60 Hz, then 50 ms scope window. 2.5 s is the minimum where
-      // the menu blip's tail clears the noise floor reliably.
-      await runFor(page, mod.type === 'doom' ? 2500 : 800);
+      // Warm-up: let wavetables load + the worklet graph settle before we
+      // start sampling. DOOM needs longer: WASM tic at video-rate, audio
+      // worklet pump at 60 Hz. 2.5 s is the minimum where the menu blip's
+      // tail clears the noise floor reliably.
+      const warmupMs = mod.type === 'doom' ? 2500 : 400;
+      await runFor(page, warmupMs);
 
-      const snap = await readScopeSnapshot(page, 'scp');
-      expect(snap, `${mod.type} scope snapshot`).not.toBeNull();
-      if (!snap) return;
-      const sum = summarize(snap.ch1);
+      // Max-hold the analyser peak across the rest of the drive window
+      // rather than reading a single end-of-window snapshot. Envelope-
+      // driven voices (e.g. TREE.oh.VOX's 303 single-decay amp env
+      // retriggered at 240 BPM) decay between gate pings, so a one-shot
+      // 50 ms snapshot can land in a decay trough and dip under the floor.
+      // Polling + max-hold answers "does this voice ever make sound?"
+      // robustly for percussive/decaying/gated sources without weakening
+      // the assert — a truly silent module never crosses 0.005.
+      const holdMs = mod.type === 'doom' ? 400 : 800;
+      const sum = await readScopePeakOverWindow(page, 'scp', holdMs);
+      expect(sum.polls, `${mod.type} scope readable (no analyser polls)`).toBeGreaterThan(0);
       expect(
         sum.peak,
-        `${mod.type}.${outputPort} peak (peak=${sum.peak.toFixed(4)}, rms=${sum.rms.toFixed(4)})`,
+        `${mod.type}.${outputPort} peak (peak=${sum.peak.toFixed(4)}, rms=${sum.rms.toFixed(4)}, polls=${sum.polls})`,
       ).toBeGreaterThan(0.005);
 
       expect(

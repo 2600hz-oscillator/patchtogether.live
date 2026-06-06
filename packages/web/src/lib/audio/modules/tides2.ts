@@ -25,6 +25,26 @@
 //     predictor; the rhythmic-pattern + constant-PW predictors are folded in.
 //   - BLEP anti-aliasing in the audio range is omitted (the slope shapes are
 //     identical; aliasing nicety deferred).
+//
+// Inputs:
+//   voct (pitch, paramTarget=frequency): V/oct, displaces FREQ.
+//   trig (gate): rising edge fires (AD / AR modes).
+//   clock (gate): external clock (TEMPO range; PLL'd into the period).
+//   freq_cv (cv, linear, paramTarget=frequency): displaces FREQ.
+//   shape_cv (cv, linear, paramTarget=shape): displaces SHAPE.
+//   slope_cv (cv, linear, paramTarget=slope): displaces SLOPE.
+//   smooth_cv (cv, linear, paramTarget=smoothness): displaces SMOOTH.
+//   shift_cv (cv, linear, paramTarget=shift): displaces SHIFT.
+//
+// Outputs:
+//   out0..out3 (cv): four related slope outputs whose relationship is set by outputMode
+//     (GATES / AMP / PHASE / FREQ).
+//
+// Params:
+//   frequency / shape / slope / smoothness / shift (linear 0..1, default 0.5): the five macros.
+//   rampMode (discrete 0..2, default 0): AD / LOOP / AR.
+//   outputMode (discrete 0..3, default 2): GATES / AMP / PHASE / FREQ.
+//   range (discrete 0..2, default 0): LFO / AUDIO / TEMPO.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -121,6 +141,7 @@ export const tides2Math = {
 
 export const tides2Def: AudioModuleDef = {
   type: 'tides2',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'TIDES2',
   category: 'modulation',

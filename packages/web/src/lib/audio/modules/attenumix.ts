@@ -32,6 +32,18 @@
 // Interposing a `linear` cvScale would compute (1-0)/2 = 0.5 and HALVE
 // the LFO's reach — strictly worse. Documented in
 // cv-scale-registry.test.ts → PASSTHROUGH_BY_DESIGN.
+//
+// Inputs:
+//   in1 / in2 / in3 / in4 (audio): four channel inputs.
+//   cv1 / cv2 / cv3 / cv4 (cv): per-channel raw bipolar CV (PASSTHROUGH).
+//
+// Outputs:
+//   out1 / out2 / out3 / out4 (audio): per-channel direct outs (post-attenuator, pre-mix).
+//   mix (audio): tanh(sum * master) — soft-clipped summing bus.
+//
+// Params:
+//   att1 / att2 / att3 / att4 (linear 0..1, default 0): per-channel attenuator (sums with CV, clamped 0..1).
+//   master (linear 0..2, default 1.0): output gain on the summed bus (>1 = boost into tanh).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -102,6 +114,7 @@ export const attenumixMath = {
 
 export const attenumixDef: AudioModuleDef = {
   type: 'attenumix',
+  palette: { top: 'Audio modules', sub: 'Mixing' },
   domain: 'audio',
   label: 'ATTENUMIX',
   category: 'utilities',

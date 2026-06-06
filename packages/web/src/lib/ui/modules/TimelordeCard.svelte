@@ -7,6 +7,7 @@
   import { timelordeDef } from '$lib/audio/modules/timelorde';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -17,6 +18,22 @@
     const h = () => { cardVersion = cardVersion + 1; };
     ydoc.on('update', h);
     return () => ydoc.off('update', h);
+  });
+
+  // Live BPM the engine is currently locked to when an external clock
+  // is patched (the worklet posts a measurement on each rising edge;
+  // 0 means "no external lock right now, fall back to internal").
+  // Polled at ~4 Hz — the worklet emits on edge so this just samples
+  // the latest cached value.
+  let measuredBpm = $state(0);
+  $effect(() => {
+    const e = engineCtx.get();
+    if (!e || !node) return;
+    const id = setInterval(() => {
+      const v = e.read?.(node, 'measuredBpm');
+      measuredBpm = typeof v === 'number' ? v : 0;
+    }, 250);
+    return () => clearInterval(id);
   });
 
   let bpm         = $derived((void cardVersion, node?.params.bpm         ?? 120));
@@ -54,7 +71,11 @@
   const SRC_LABELS = ['1x', '8x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64'];
 
   const inputs: PortDescriptor[] = [
-    { id: 'clock', label: 'CLOCK IN', cable: 'gate' },
+    { id: 'clock',    label: 'CLOCK IN', cable: 'gate' },
+    // Transport gates — rising edge mirrors the ON / MUTE button.
+    // Intended pairing: MIDICLOCK.midistart → START, MIDICLOCK.midistop → STOP.
+    { id: 'start_in', label: 'START',    cable: 'gate' },
+    { id: 'stop_in',  label: 'STOP',     cable: 'gate' },
   ];
   const outputs: PortDescriptor[] = OUT_LABELS.map((label) => ({
     id: label,
@@ -66,7 +87,7 @@
 <div class="mod-card timelorde-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
-    TIMELORDE
+    <ModuleTitle {id} {data} defaultLabel="TIMELORDE" inline />
     <!-- MUTE always shown (v2 — clock keeps running even when an
          external clock is patched; the mute only silences the gate
          outputs, not the internal phase that LIVECODE rides on). -->
@@ -83,7 +104,7 @@
     </div>
 
     <div class="footer">
-      {bpm.toFixed(0)} BPM ({hasExternalClock ? 'external' : 'internal'}) · src={SRC_LABELS[Math.round(swingSource)] ?? '1x'}
+      {(hasExternalClock && measuredBpm > 0 ? measuredBpm : bpm).toFixed(0)} BPM ({hasExternalClock ? 'external' : 'internal'}) · src={SRC_LABELS[Math.round(swingSource)] ?? '1x'}
     </div>
   </PatchPanel>
 </div>
@@ -91,7 +112,6 @@
 <style>
   .timelorde-card {
     width: 280px;
-    min-height: 180px;
     padding-bottom: 26px;
   }
   .timelorde-card > .title {

@@ -23,6 +23,19 @@
 // Why no audio worklet: identical to PONG — game logic runs at visual
 // cadence, has no per-sample DSP, benefits from being easy to test and
 // debug on the main thread. BUGGLES + PONG both use this pattern.
+//
+// Inputs:
+//   rotate_l / rotate_r (gate): rising-edge rotate piece counter / clockwise.
+//   drop_fast (gate): rising-edge fast-drop piece.
+//   move_l / move_r (gate): rising-edge horizontal move.
+//
+// Outputs:
+//   line_cleared (gate): one 5 ms pulse per cleared line (Tetris = 4 staggered pulses).
+//   overfill (gate): one 5 ms pulse when the well overfills (game over).
+//
+// Params:
+//   gravityBpm (log 30..240, default 60): drop-tick tempo.
+//   levelStep (linear 1..20, default 10): lines-per-level threshold (controls difficulty ramp).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -48,6 +61,7 @@ const SCHEDULE_CUSHION_S = 0.005;
 
 export const modtrisDef: AudioModuleDef = {
   type: 'modtris',
+  palette: { top: 'Games', sub: 'Arcade' },
   domain: 'audio',
   label: 'MODTRIS',
   category: 'games',

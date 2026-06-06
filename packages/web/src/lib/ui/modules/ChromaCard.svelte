@@ -7,6 +7,7 @@
   import { patch } from '$lib/graph/store';
   import { chromaDef } from '$lib/video/modules/chroma';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -44,7 +45,7 @@
 
 <div class="card video">
   <div class="stripe"></div>
-  <header class="title">CHROMA</header>
+  <ModuleTitle {id} {data} defaultLabel="CHROMA" />
 
   <Handle type="target" position={Position.Left} id="in"         style="top: 56px;  --handle-color: var(--cable-video);" />
   <span class="port-label left" style="top: 50px;">IN</span>

@@ -16,6 +16,7 @@
   import { stereovcaDef } from '$lib/audio/modules/stereovca';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -46,7 +47,7 @@
 
 <div class="mod-card stereovca-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">STEREOVCA</header>
+  <ModuleTitle {id} {data} defaultLabel="STEREOVCA" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
@@ -57,6 +58,6 @@
 </div>
 
 <style>
-  .stereovca-card { width: 180px; min-height: 200px; }
+  .stereovca-card { width: 180px; }
   .stereovca-card .fader-row { padding: 0 14px; display: flex; gap: 12px; }
 </style>

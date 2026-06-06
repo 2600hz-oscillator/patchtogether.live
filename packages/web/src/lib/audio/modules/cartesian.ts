@@ -13,6 +13,26 @@
 // (lfo_x, lfo_y). Patch them into x_cv + y_cv to draw circles, lissajous, etc.
 // Rate is derived from the lfo_clock input (Hz between rising edges) times
 // the lfoDiv multiplier. No auto-normaling — the user explicitly patches.
+//
+// Inputs:
+//   clock (gate): pad-advance clock; rising edges step the selected pad. Unpatched = X/Y instantly tracks.
+//   x_cv (cv): bipolar -1..+1 selecting column (4 bands across the range).
+//   y_cv (cv): bipolar -1..+1 selecting row.
+//   lfo_clock (gate): clock input for the embedded quadrature LFO; rate = measured Hz × lfoDiv.
+//
+// Outputs:
+//   pitch (polyPitchGate): selected-pad note as a poly pitch lane (mono sinks get lane 0).
+//   gate (gate): fires when the selected pad changes (or on clock tick when patched).
+//   clock (gate): chained clock-out (1 pulse / step) for daisy-chaining sequencers.
+//   lfo_x (cv): embedded LFO output, in-phase.
+//   lfo_y (cv): embedded LFO output, 90° quadrature.
+//
+// Params:
+//   mode (discrete 0..1, default 0): pad-advance mode (0 = freeform, 1 = clocked).
+//   octave (discrete -2..2, default 0): octave transposition.
+//   gateLength (linear 0.1..0.95, default 0.5): per-step gate duty.
+//   lfoDiv (discrete 0..7, default 3): clock-divider for the embedded LFO.
+//   lfoShape (linear 0..3, default 0): LFO waveform morph (sine/tri/saw/square).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -74,6 +94,7 @@ export function defaultCells(): Cell[] {
 
 export const cartesianDef: AudioModuleDef = {
   type: 'cartesian',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'Cartesian',
   category: 'modulation',

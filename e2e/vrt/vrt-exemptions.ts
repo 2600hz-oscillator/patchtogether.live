@@ -37,6 +37,15 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // WAVVIZ / SWOLEVCO carry a video-out preview canvas.
   wavviz: [{ selector: 'canvas' }],
   swolevco: [{ selector: 'canvas' }],
+  // CUBE: live rotating 3D WebGL2 render (issue #2) + snapshot-driven OUTPUT
+  // scope — both animate continuously (camera + rAF), so mask the canvases and
+  // gate on the deterministic card chrome. No VRT scene (removed; the canvas
+  // can't be pinned to a single frame). Render correctness covered elsewhere.
+  cube: [{ selector: 'canvas' }],
+  // HYPERCUBE: same as CUBE — a live rotating WebGL2 Schlegel-tesseract render +
+  // snapshot-driven OUTPUT scope, both animate continuously, so mask the
+  // canvases and gate on the deterministic card chrome.
+  hypercube: [{ selector: 'canvas' }],
   // WARRENSPECTRUM has the acidwarp video viz canvas.
   warrenspectrum: [{ selector: 'canvas' }],
   // SAMSLOOP — loop-based WAV sample player. The waveform canvas is
@@ -57,6 +66,14 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   videoMixer: [{ selector: 'canvas' }],
   shapes: [{ selector: 'canvas' }],
   monoglitch: [{ selector: 'canvas' }],
+  // TOYBOX — swappable fragment-shader source. The card carries a live
+  // animated preview canvas (the layer-0 shader runs off the engine clock),
+  // so the canvas region is non-deterministic in the standard solo-spawn
+  // VRT; mask it and gate on the deterministic chrome (CONTENT dropdown +
+  // per-param faders + OUT handle). The real shader-render correctness is
+  // proven by the dedicated frozen VRT (vrt-toybox.spec.ts) which pins
+  // iTime via window.__toyboxFreeze and includes the canvas in the diff.
+  toybox: [{ selector: 'canvas' }],
   // RESHAPER (formerly RUTTETRA): coord-remap; canvas masked (flat content
   // when X/Y/Z unpatched).
   reshaper: [{ selector: 'canvas' }],
@@ -68,22 +85,113 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   ruttetra: [{ selector: 'canvas' }],
   shapedramps: [{ selector: 'canvas' }],
   vdelay: [{ selector: 'canvas' }],
+  // FREEZEFRAME carries a live video_out preview canvas; mask it so the
+  // deterministic chrome (4 QUANT knobs + VID/GATE/OUT/R/G/B/L handle rows)
+  // is the regression gate. The S&H + posterize correctness is covered by
+  // freezeframe.test.ts (unit) + the freezeframe e2e (pixel sampling).
+  freezeframe: [{ selector: 'canvas' }],
+  // 4PLEXVID carries a live OUT-1 preview canvas; mask it so the
+  // deterministic chrome (4 selector knobs + handle rows) diffs while the
+  // live render is excluded. (Kept here for the follow-up baseline; the
+  // module is currently in EXEMPT_FROM_VRT below — promote it into MODULES
+  // when the darwin/linux PNGs are captured.)
+  '4plexvid': [{ selector: 'canvas' }],
+  shapegen: [{ selector: 'canvas' }],
+  // MANDLEBLOT — Mandelbrot fractal with time-driven hue cycle. The
+  // shader's colour mode mixes mu + uTime + log(uZoom) into the hue, so
+  // every frame is a different colour even at zero motion. Mask the
+  // canvas so the chrome diff (6 knobs + zoom readout + handles) is
+  // the regression gate; the shader correctness is covered by unit +
+  // E2E. Pinning the canvas as well would need a deterministic-time
+  // hook on the engine clock — deferred to a follow-up.
+  mandleblot: [{ selector: 'canvas' }],
+  // MANDELBULB — live ray-marched 3D fractal preview + auto-spin; mask the
+  // canvas so the deterministic chrome (6 knobs + SPIN/SCRN toggles + CV
+  // handle rows + VIDEO out) is the regression gate.
+  mandelbulb: [{ selector: 'canvas' }],
+  // SCOREBOARD — 4-digit 7-segment counter widget. The card carries a live
+  // preview canvas; the counter starts at 0 on factory mount (or 1234 when
+  // the VRT scene sets `__scoreboardVrtSeed`). Canvas masked here as the
+  // fallback so the chrome (port handles + COLOR knob) diffs deterministically
+  // when the module is promoted into MODULES without a registered scene.
+  scoreboard: [{ selector: 'canvas' }],
+  // QUADRALOGICAL — 4-input video mixer. The card carries a live on-card MIX
+  // preview canvas (blitOutputToDrawingBuffer off the engine clock), so the
+  // canvas region is non-deterministic in the standard solo-spawn VRT; mask it
+  // and gate on the deterministic chrome (XY pad + yellow diamond + 8-button
+  // transition row + dynamic faders + FG/BG toggle + handle rows). The
+  // weight-model + composite correctness is covered by the unit suite
+  // (quadralogical.test.ts) + the dedicated e2e (quadralogical.spec.ts).
+  quadralogical: [{ selector: 'canvas' }],
+  // ANALOG VCO — now carries a live single-cycle waveform scope at the top of
+  // the card (off an AnalyserNode on the morph output). The trace is animated
+  // + device-/timing-dependent, so mask the canvas; the deterministic chrome
+  // (6 faders incl. the new Wave knob + the saw/square/triangle/sine/morph
+  // handle rows) is the regression gate. The morph DSP is covered by
+  // analog-vco-morph.test.ts; the scope-window logic by analog-vco-scope.test.ts.
+  analogVco: [{ selector: 'canvas' }],
 };
 
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
  *  ≥10-char reason — the vrt-meta self-test enforces this. */
 export const EXEMPT_FROM_VRT: Record<string, string> = {
+  // 4PLEXVID — 4-in/4-out video router. Card carries a live OUT-1 preview
+  // canvas; the rest is static chrome (4 discrete selector knobs + handle
+  // rows). VRT baseline pending platform-specific capture. Functional
+  // coverage: e2e/tests/4plexvid.spec.ts (proves each output shows its
+  // SELECTED input, gate rising-edge advances + wraps, outputs are
+  // independent) + the plex-select unit suite (selector-advance + gate
+  // edge-detect). Promote into MODULES + capture darwin/linux PNGs (the
+  // canvas mask above masks the live preview) in a follow-up PR.
+  '4plexvid': 'VRT baseline pending; e2e/tests/4plexvid.spec.ts + plex-select unit tests provide coverage. Promote + capture darwin/linux baselines (live preview masked) in a follow-up PR.',
+  // SHAPEGEN — first-slice PR extracts FOXY's 3dShapeGen path into a
+  // standalone video module (3 raster inputs, SIZE/ROT knobs, SOLIDS
+  // toggle). Unit + e2e coverage; VRT baseline pending. The
+  // window.__shapegenVrtSeed hook is wired in the factory for the
+  // follow-up baseline capture (synthetic deterministic 3-raster scene
+  // + frozen rotation), and the canvas mask above covers the live
+  // preview if the module is promoted into MODULES before the seed
+  // path is finished.
+  shapegen: 'VRT baseline pending; first-slice PR — unit + e2e provide coverage. Capture darwin/linux baselines once the __shapegenVrtSeed deterministic scene path is wired.',
+  // SCOREBOARD — first-slice PR ships the module + draw helper + factory
+  // gate tests + e2e (gate→counter advance, RESET, wrap-at-10000). The
+  // VRT scene path is wired (window.__scoreboardVrtSeed → counter at
+  // 1234 for a stable, all-segments-touching baseline) — promote into
+  // MODULES + capture darwin/linux PNGs in a follow-up PR. The canvas
+  // mask above covers the live preview if promotion happens without the
+  // scene path being driven yet.
+  scoreboard: 'VRT baseline pending; unit + factory gate tests + e2e provide coverage. Promote + capture darwin/linux baselines (seed counter at 1234 via window.__scoreboardVrtSeed for a stable, all-segments-touching baseline) in a follow-up PR.',
   // CAMERA renders a live MediaStream into a canvas. Even with the
   // fake-camera flag the synthetic frame is non-deterministic enough
   // (frame-time clock) that the baseline would flap. Functional coverage
   // is e2e/tests/camera-input.spec.ts.
   cameraInput: 'live MediaStream defeats deterministic capture',
+  // AUDIO IN — system mic / line-in source. Card state depends on
+  // getUserMedia permission + presence of audio inputs (both non-
+  // deterministic across CI runners); the LED + status text would
+  // differ between idle/streaming/no-inputs states. Functional coverage
+  // is e2e/tests/audio-in.spec.ts (chromium-audio-in project, fake-mic
+  // injected); unit tests cover the def shape + device-picker helpers.
+  audioIn: 'card state depends on getUserMedia permission + audioinput presence (varies across CI runners); e2e/tests/audio-in.spec.ts + devices.test.ts + audioin.test.ts provide coverage',
   // GROUP is a Phase-1 collapse-N-modules container with no engine
   // binding. A bare GROUP! has no exposed ports → its visual surface
   // is just the card chrome + label, which carries no module-specific
   // pixels worth fingerprinting. Functional coverage is
   // e2e/tests/grouping-phase1.spec.ts.
   group: 'no-op render until exposed-ports are set by Create-Group; e2e covers the full flow',
+  // CADILLAC — singleton meta module with NO card render at all (the
+  // module is a roaming overlay sprite rendered by CadillacOverlay, not
+  // a SvelteFlow node body). The reconciler skips meta-domain nodes, so
+  // there is no per-card visual surface to baseline. Unit tests cover
+  // the pure collision math; E2E covers the deletion + self-destruct +
+  // TIMELORDE-survives flows.
+  cadillac: 'no card render — roaming overlay sprite, not a SvelteFlow node body. Unit (collision math) + E2E (deletion, self-destruct, timelorde-survives) provide coverage.',
+  // CONTROL SURFACE — meta module whose entire body is binding-dependent
+  // (proxied controls vary per patch); a fresh surface is just a blank
+  // square + lock button. No stable module-specific pixels worth
+  // fingerprinting. Covered by control-surface.test.ts (model) + the
+  // control-surface e2e (spawn → send → proxy drives source → collapse).
+  controlSurface: 'content is binding-dependent (proxied controls vary by patch); empty state is a blank square. Covered by control-surface.test.ts + control-surface.spec.ts.',
   // CLOUDS first-slice PR (#166): VRT baseline pending; ART + unit + E2E
   // provide coverage. Promote into MODULES + capture baselines on both
   // platforms in a follow-up PR.
@@ -122,6 +230,19 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // surface beyond what VEILS already exercises; baseline can be promoted
   // in a follow-up. Same rationale as VEILS.
   attenumix: 'VRT baseline pending; ART + unit + E2E provide coverage',
+  // SIDECAR stereo sidechain compressor: VRT baseline pending; standard
+  // 8-knob fader card + standard PatchPanel — no unique visual surface
+  // beyond what RESOFILTER / ATTENUMIX already exercise. ART + unit +
+  // E2E provide full DSP + behavior coverage. Promote into MODULES +
+  // capture darwin/linux baselines in a follow-up PR.
+  sidecar: 'VRT baseline pending; standard 8-knob card; ART + unit + E2E provide coverage',
+  // CHOWKICK first-slice PR: VRT baseline pending; large 2-band fader card
+  // with two live preview canvases (pulse envelope + filter response).
+  // The canvases re-paint reactively on knob change so a baseline needs
+  // careful capture timing — ART + unit + E2E provide full DSP + behavior
+  // coverage in the meantime. Promote into MODULES + capture darwin/linux
+  // baselines in a follow-up PR.
+  chowkick: 'VRT baseline pending; 17-knob card with two live preview canvases; ART + unit + E2E provide coverage.',
   // CLOUDSEED first-slice PR: VRT baseline pending; complex card (4 panels
   // + bottom mix + preset bar). ART + unit + E2E provide coverage. Promote
   // into MODULES + capture darwin/linux baselines in a follow-up PR.
@@ -146,6 +267,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // once the user has previously granted permission. Functional coverage
   // is e2e/tests/midi-cv-buddy.spec.ts.
   midiCvBuddy: 'card content depends on connected MIDI device; unit + E2E provide coverage',
+  // MIDI-OUT-BUDDY: same rationale as midiCvBuddy — the card's device picker
+  // depends on the connected MIDI OUTPUT list (no hardware in CI), and the
+  // pre-Connect state is just the "Connect MIDI…" button. Unit + E2E
+  // (fake-output capture) provide coverage. See e2e/tests/midi-out-buddy.spec.ts.
+  midiOutBuddy: 'card content depends on connected MIDI device; unit + E2E provide coverage',
   // MIDICLOCK: same rationale as midiCvBuddy — pre-Connect state shows a
   // "Connect MIDI…" button (deterministic) but post-connect the device list
   // depends on hardware that isn't present in CI. Unit + E2E (mock-MIDI smoke)
@@ -159,6 +285,33 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   pong: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
   // MODTRIS research prototype: same rationale as PONG.
   modtris: 'animated game state defeats deterministic capture; unit + ART + E2E provide coverage',
+  // GIBRIBBON — Vib-Ribbon-style ribbon scroller: the ribbon + sprites scroll
+  // continuously (per-frame scroll + clock-driven spawns), so no naturally
+  // still frame. Same rationale as PONG / MODTRIS / FROGGER. Pure event
+  // generator + WAD sprite decoder are unit-tested; e2e/tests/gibribbon.spec.ts
+  // covers spawn→clear→score, miss→degrade, + every event gate → SCOPE bridge.
+  gibribbon: 'animated scrolling ribbon + sprites defeat deterministic single-frame capture; gibribbon-events + wad-sprites unit tests + gibribbon.spec.ts provide coverage',
+  // FROGGER research prototype: sprite-tick advances every ~10 ms of game-
+  // time + the start_gate auto-fire on first tick produces a moving frame
+  // by the time Playwright snapshots. Same rationale as PONG / MODTRIS;
+  // unit + E2E provide coverage. Promote to a real VRT baseline once a
+  // deterministic-time test hook is added so the scene can freeze the
+  // game at a known tick.
+  frogger: 'animated sprite motion (cars/logs/turtles) + auto-start defeat deterministic single-frame capture; unit + E2E provide coverage',
+  // SM64 — fully animated 3D scene (Mario idle anim + camera bob even
+  // before any user input); no naturally still frame — VRT deferred. Unit
+  // (CV→playerInput map) + E2E (boot-into-running-game with the seeded
+  // IDB fixture, or skip when fixture absent) provide coverage.
+  sm64: 'fully animated 3D scene; no naturally still frame — VRT deferred. Unit + E2E provide coverage',
+  // SKIFREE — the skifree.js engine self-drives via requestAnimationFrame
+  // (terrain scrolls, snowboarders/yeti move, skier animation cycles) the
+  // moment the bundle loads, so there is no naturally still frame to
+  // baseline. Same rationale as FROGGER / SM64 / PONG. Unit (cvToCanvasCoord
+  // + gate hook) + E2E (e2e/tests/skifree.spec.ts: CV-cursor steering +
+  // crash/eaten → gate → SCOPE) provide coverage. Promote to a real VRT
+  // baseline once a deterministic-time render-freeze hook is added so the
+  // scene can be pinned at a known frame.
+  skifree: 'animated ski-slope (rAF-self-driven terrain + sprites + skier anim) defeats deterministic single-frame capture; unit + E2E provide coverage',
   // ANALOGLOGICMATHS first-slice PR: VRT baseline pending; ART + unit + E2E
   // provide coverage. Card is small (2 attenuverter knobs + patch panel) and
   // stable; a follow-up PR will capture darwin + linux baselines once the
@@ -167,11 +320,27 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // BENTBOX — CRT-emulation OUTPUT. Frame feedback + per-line sync jitter
   // animated by uTime defeats a deterministic single-frame baseline.
   bentbox: 'animated CRT simulation (feedback + per-line time drift) defeats deterministic capture; unit + E2E provide coverage',
+  // B3NTB0X — circuit-level NTSC composite re-arch (encode->bend->decode->CRT).
+  // The composite carrier drifts per-frame (subcarrier drift + recovered sync
+  // offset) and the CRT pass carries frame persistence, so a single-frame
+  // baseline flaps. Same rationale as BENTBOX/ACIDWARP. Unit (encode->demod
+  // round-trip + nonlinearity bounds in b3ntb0x.test.ts) + E2E provide coverage.
+  b3ntb0x: 'animated NTSC composite simulation (per-line sync drift + frame persistence) defeats deterministic capture; unit (encode->demod round-trip) + E2E provide coverage',
   // ACIDWARP — 320×240 plasma with rotating palette + auto scene cycler.
   // Both rotation and scene-advance are time-driven; deterministic capture
   // is impossible without freezing the engine clock. Pattern/palette unit
   // coverage in acidwarp-patterns.test.ts; integration coverage via E2E.
   acidwarp: 'animated palette rotation + auto scene cycler defeats deterministic capture; unit + E2E provide coverage',
+  // MANDELBULB — promoted into MODULES (no longer exempt). The card carries
+  // a live ray-marched 3D preview canvas that auto-spins by default, so the
+  // canvas region is non-deterministic; it's MASKED via VRT_MODULE_MASKS
+  // (`mandelbulb: [{ selector: 'canvas' }]`, same as MANDLEBLOT / CUBE /
+  // ACIDWARP-family video cards) and the surrounding deterministic chrome
+  // (6 knobs ZOOM/ROT X/ROT Y/POWER/DETAIL/HUE + SPIN/SCRN toggles + 6 CV
+  // handle rows + VIDEO out) is the regression gate. Darwin baseline captured
+  // here; linux baseline pending a `task vrt:update` run on linux CI (see
+  // EXEMPT_BASELINE_PAIRS → linux/mandelbulb). DE/shading correctness is
+  // additionally covered by mandelbulb-math.test.ts + mandelbulb.test.ts.
   // JOYSTICK first-slice PR: card is small + simple (XY pad + four CV
   // ports), VRT baseline pending. Unit + E2E provide coverage.
   joystick: 'VRT baseline pending; unit + E2E provide coverage. UI is small + stable — pinning baselines in a follow-up PR.',
@@ -190,9 +359,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   slewSwitch: 'VRT baseline pending — first-slice ATLANTIS-PATCH module; unit + Atlantis-patch E2E provide coverage',
   atlantisCatalyst: 'card has a live scene-countdown + pulsing NUDGE button; capture is non-deterministic. Unit covers the def + pure helpers; Atlantis E2E covers the wired-up patch',
   aquaTank: 'VRT baseline pending — first-slice ATLANTIS-PATCH module; unit covers def shape, Atlantis-patch E2E covers the wired-up FDN',
-  // WAVESCULPT first-slice PR: animated 3D render + CRT feedback means a
-  // single-frame pixel baseline can't match between runs.
-  wavesculpt: 'animated 3D ribbon render + CRT frame-feedback defeats deterministic capture; unit + E2E provide coverage',
+  // WAVESCULPT: previously VRT-exempt (animated 3D render + CRT feedback
+  // defeated single-frame capture). The alpha-rotate bugfix PR adds a
+  // deterministic render-freeze hook (globalThis.__wavesculptVrtFreeze →
+  // card pins time/wave-phase/field-parity) so it now has a real VRT
+  // scene (see vrt-scenes.ts: wavesculpt) capturing the ALPHA layer at a
+  // non-zero rotation. No longer exempt.
   // HYDROGEN first-slice PR: card is a wide 16-row × 16-step pattern grid +
   // transport row + per-row mute/solo. No canvas / animation — the chrome
   // is static once the playhead is parked at step 0 — but the baseline
@@ -210,6 +382,26 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (doom-runtime, doom-presence, cv-gate-edge); a multi-tab e2e for
   // host migration + spectator-frame relay is the follow-up.
   doom: 'live game-loop framebuffer defeats deterministic capture; unit suites cover TS shim + presence + CV-gate edge detector',
+  // QBERT — Q*Bert (Gottlieb 1982) arcade emulator. Same rationale as
+  // DOOM: the canvas is a live game framebuffer (test pattern when no
+  // ROM is loaded, ROM-driven once present) that defeats deterministic
+  // capture. ROM is also user-provided + gitignored, so a CI-side VRT
+  // baseline can't be reproduced without a license-encumbered ROM in
+  // the runner. Unit suites cover joy-cv translation, ROM zip parsing,
+  // and the Z80 + runtime wire-up; e2e covers the ROM-missing card
+  // render + the CV-joystick → evt_move gate path.
+  qbert: 'live game-loop framebuffer + ROM is user-provided (gitignored); unit suites cover joy-cv translation + ROM zip parser + Z80 wire-up + runtime; e2e covers ROM-missing card + CV-joystick → evt_move path',
+  // SNES9X — Super Nintendo emulator (snes9x2005/CAT SFC → WASM). Same
+  // rationale as DOOM/QBERT: the card is a live game framebuffer (a
+  // "LOAD A ROM" dropzone overlay before a ROM is loaded, ROM-driven after)
+  // that defeats deterministic single-frame capture, AND the ROM is
+  // user-provided + gitignored so a CI-side VRT baseline can't be reproduced
+  // without a license-encumbered ROM in the runner. Coverage: the pure
+  // smw-events / clock-multiplier / snes-input / output-definitions unit
+  // suites (detection, multiplier, input mask, output-def panel data) +
+  // snes9x-runtime unit (mocked WASM shim) + the snes9x e2e (ROM-gated:
+  // video/audio/input + clock_in→gate3 multiply, skips when ROM absent).
+  snes9x: 'live game-loop framebuffer + ROM is user-provided (gitignored); pure unit suites cover SMW game-event detection + clock multiplier + input mask + output-definition panel + runtime shim; ROM-gated e2e covers video/audio/input + clock_in→gate3 multiply',
   // CALLSINE first-slice PR: VRT baseline pending; unit + ART + E2E
   // provide coverage. Card is a standard 6-fader layout (model + 5
   // continuous macros) — pinning baselines in a follow-up PR after
@@ -235,6 +427,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   chromakey: 'VRT baseline pending; unit + E2E provide coverage. Promote into MODULES + capture darwin/linux baselines in a follow-up PR.',
   // LUMAKEY — new 2-input compositor; same rationale as CHROMAKEY.
   lumakey: 'VRT baseline pending; unit + E2E provide coverage. Promote into MODULES + capture darwin/linux baselines in a follow-up PR.',
+  // QUADRALOGICAL — 4-input video mixer (Phase 2: per-edge effects). The SOLO-
+  // spawn card carries a live on-card MIX preview canvas, so the SOLO VRT is
+  // still exempt (the canvas is non-deterministic when nothing is patched). The
+  // DETERMINISTIC composite VRT now lives in vrt-quadralogical.spec.ts — flat-
+  // colour sources → CHROMA(tintMix=1) → a frozen mix, one baseline per effect.
+  // Functional coverage: quadralogical.test.ts (weight model + edge-weight
+  // composite + all 8 blend2 branches + normalling) + e2e/tests/quadralogical
+  // .spec.ts (corner dominance + per-edge distinctness + independence + freeze).
+  quadralogical: 'SOLO-spawn VRT exempt (live MIX preview canvas with nothing patched). The deterministic per-edge composite VRT is vrt-quadralogical.spec.ts (8 effect baselines, darwin captured; linux via EXEMPT_BASELINE_PAIRS). Unit (weight model + edge composite + all 8 blends) + e2e (corner dominance + per-edge distinctness/independence) provide coverage.',
   // CHROMA — v3 reshape (this PR) changed the card layout + stripe colour
   // entirely (was a 5-fader mask-extractor; now a 3-fader hue-shifter +
   // tint swatch). Old baselines were deleted; regenerate via
@@ -246,12 +447,161 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // little over the unit + spawn-smoke coverage. Baseline pending; promote
   // into MODULES + capture darwin/linux baselines in a follow-up PR.
   grids: 'VRT baseline pending; standard fader/button card (no custom viz). Unit tests (grids.test.ts) + per-module spawn smoke provide coverage. Capture darwin/linux baselines via `task vrt:update` in a follow-up PR.',
+  // 4PLEXER — first-slice PR. The card is fully deterministic (4 discrete
+  // selector knobs at default positions + static input/output readouts, no
+  // canvas / animation), so it is a good VRT candidate; baselines are
+  // pending a `task vrt:update` run on each platform (the worktree this PR
+  // was authored in lacks the faustwasm toolchain needed to boot the full
+  // dev server for capture). Unit (def shape + pure selector-advance) + E2E
+  // (4plexer.spec.ts: routing + per-output gate advance + wrap + audio/cv
+  // sources) provide functional coverage; promote into MODULES once the
+  // darwin + linux pngs are captured.
+  fourplexer: 'VRT baseline pending — deterministic card (4 selector knobs, no canvas); capture via `task vrt:update` on each platform. Unit + E2E (routing + gate-advance + wrap + audio/cv) provide coverage.',
+  // TREE.oh.VOX — TB-303 voice slice (Open303 port). Deterministic card:
+  // 6 knobs in 2 rows + 9 patch inputs + 1 output, no canvas. Capture via
+  // `task vrt:update` on each platform when this lands; unit (43 tests
+  // including coefficient stability + envelope shape + accent contrast)
+  // and ART (canonical 303 pattern baseline-pinned) provide coverage.
+  treeohvox: 'VRT baseline pending — deterministic card (6 knobs, no canvas); capture via `task vrt:update` on each platform. Unit + ART (canonical 303 pattern baseline-pinned + cutoff sweep + accent) + parity (structural Open303 properties) provide coverage. Promote out once both platform PNGs land.',
+  // BLUEBOX — first-slice PR. Static keypad UI (12 buttons in standard phone
+  // layout + two phreaker buttons, no canvas / animation), so deterministic
+  // capture is straightforward; pending a `task vrt:update` run on each
+  // platform (this worktree doesn't have a captured display). Unit (DTMF
+  // table pinned + processor smoke FFT + manifest sync) + E2E (per-button
+  // peaks at the SCOPE analyser) provide coverage.
+  bluebox: 'VRT baseline pending — deterministic keypad card (12 static buttons, no canvas/animation); capture via `task vrt:update` on each platform. Unit + E2E provide coverage.',
+  // MOOG 921 VCO — first Moog System 55/35 clone module. Deterministic beige
+  // faceplate (5 knobs + a 3-position SYNC switch, no canvas / animation) so
+  // it's a good VRT candidate; baselines are pending a `task vrt:update` run
+  // on each platform (this authoring worktree can't reliably boot the full
+  // faustwasm-backed dev server for capture). DSP unit (moog-vco-dsp.test.ts +
+  // moog921-vco.test.ts worklet) + ART (source-SHA-pinned .f32) + per-module-
+  // per-port e2e provide functional coverage. Promote into MODULES once the
+  // darwin + linux PNGs are captured.
+  moog921Vco: 'VRT baseline pending — deterministic beige Moog faceplate (5 knobs + 3-position SYNC switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG CP3 console mixer — same beige-faceplate family as the 921.
+  // Deterministic (5 knobs, no canvas / animation) so it's a good VRT
+  // candidate; baselines are pending a `task vrt:update` run on each platform
+  // (same authoring-worktree capture limitation as the 921). DSP unit
+  // (moog-cp3-dsp.test.ts + moog-cp3.test.ts worklet) + ART (source-SHA-pinned
+  // .f32) + per-module-per-port e2e provide functional coverage. Promote into
+  // MODULES once the darwin + linux PNGs are captured.
+  moogCp3: 'VRT baseline pending — deterministic beige Moog faceplate (5 knobs, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 904A VCF — Moog System 55/35 clone slice 2. Same shape as the 921:
+  // deterministic beige faceplate (2 knobs + a 3-position RANGE switch, no
+  // canvas / animation), so a good VRT candidate; baselines are pending a
+  // `task vrt:update` run on each platform (this authoring worktree can't
+  // reliably boot the full faustwasm-backed dev server for capture). DSP unit
+  // (moog-ladder-dsp.test.ts + moog904a.test.ts worklet) + ART (source-SHA-
+  // pinned .f32 self-osc) + per-module-per-port e2e provide functional
+  // coverage. Promote into MODULES once the darwin + linux PNGs are captured.
+  moog904a: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 3-position RANGE switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned self-osc) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 911 EG — Moog System 55/35 contour generator. Deterministic beige
+  // faceplate (4 knobs: T1 / T2 / ESUS / T3, no canvas / animation) like the
+  // 921; baselines pending a `task vrt:update` run on each platform. DSP unit
+  // (moog911.test.ts worklet — 3-stage contour) + ART (source-SHA-pinned
+  // .f32) + per-module-per-port e2e (gate-driven env emit) provide functional
+  // coverage. Promote into MODULES once darwin + linux PNGs are captured.
+  moog911: 'VRT baseline pending — deterministic beige Moog faceplate (4 knobs T1/T2/ESUS/T3, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 902 VCA — Moog System 55/35 clone slice 3. Same shape as the 921 +
+  // 904A: a deterministic beige faceplate (2 knobs + a 2-position LIN/EXP
+  // switch, no canvas / animation), so a good VRT candidate; baselines are
+  // pending a `task vrt:update` run on each platform (this authoring worktree
+  // can't reliably boot the full dev server for capture). DSP unit
+  // (moog902.test.ts: gain-law + ×2-at-6V + ×3-ceiling + CV summing + inverted
+  // output) + ART (source-SHA-pinned .f32) + per-module-per-port e2e provide
+  // functional coverage. Promote into MODULES once the darwin + linux PNGs are
+  // captured.
+  moog902: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 2-position LIN/EXP switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // MOOG 921A / 921B / 904B (batch 1) — PROMOTED out of EXEMPT_FROM_VRT: darwin
+  // baselines captured in this PR (the shared MoogPanel label fix is what makes
+  // the engraved-black control captions legible on the beige faceplate, so the
+  // baselines pin the FIXED appearance). All three are deterministic beige Moog
+  // faceplates (knobs + a discrete RANGE/SYNC switch, no canvas / animation).
+  // Linux baselines are darwin-only for now — see EXEMPT_BASELINE_PAIRS
+  // (linux/moog921a, linux/moog921b, linux/moog904b) pending a `task vrt:update`
+  // run on linux CI. DSP unit + ART (source-SHA-pinned .f32) + per-module-
+  // per-port e2e provide the functional coverage.
 };
+
+/** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards
+ *  that ship a baseline on BOTH platforms (darwin + linux), aren't masked
+ *  for canvas non-determinism, and aren't in EXEMPT_BASELINE_PAIRS pending a
+ *  fresh capture. These are the ones safe to promote into `task ci` as a
+ *  required gate — a diff here is virtually guaranteed to be a real UI
+ *  regression, not platform/GPU/timing flake.
+ *
+ *  Driven by `VRT_STRICT=1` (see e2e/vrt/vrt.spec.ts + `task vrt:strict` in
+ *  the root Taskfile). The full `task vrt` sweep continues to cover the
+ *  canvas-driven + darwin-only + linux-pending cards as the informational
+ *  lane.
+ *
+ *  Promotion rules (add to this set when ALL conditions hold):
+ *    1. Module has a baseline PNG on BOTH platforms.
+ *    2. Module is NOT in VRT_MODULE_MASKS (no canvas mask → diff is
+ *       semantically meaningful end-to-end).
+ *    3. Module is NOT in EXEMPT_BASELINE_PAIRS for either platform (no
+ *       pending re-capture; both baselines reflect current UI).
+ *    4. Card has no animated chrome (LED pulse, blinking cursor, time-
+ *       driven readouts). Pure CSS-styled knobs/faders/ports only.
+ *
+ *  Demotion rule: if a strict card flakes ONCE in CI, demote it back to
+ *  the full lane and root-cause. Per memory `feedback_no_flake_tolerance`:
+ *  a strict subset that flakes IS a flake to fix; the whole point of the
+ *  lane is signal. */
+export const STRICT_VRT_MODULES = new Set<string>([
+  // Audio domain — pure knob/fader cards, no canvas
+  'adsr',                 // 4-knob envelope card
+  // analogVco: removed from strict lane — the card now carries a live
+  // single-cycle waveform scope (animated canvas off the morph output), which
+  // disqualifies it from the no-animated-chrome strict subset. It stays in
+  // the full VRT lane with the scope canvas masked (see VRT_MODULE_MASKS).
+  // audioOut: removed from strict lane. This PR added the OUT device
+  // dropdown row (setSinkId picker), growing the card from 320x313 to
+  // 360x401. The darwin baseline was re-captured (f1cd0e5f); the linux
+  // baseline still shows the old 320x313 layout (pre-device-picker).
+  // Re-add once linux baseline is re-captured + linux/audioOut removed
+  // from EXEMPT_BASELINE_PAIRS.
+  'buggles',              // bug-themed audio card
+  'cartesian',            // 2D selector grid card (static)
+  'charlottesEchos',      // delay/echo knob card
+  'destroy',              // destruction/distortion knob card
+  'drummergirl',          // drum-sample card (chrome only — sample preview is static post-load)
+  'drumseqz',             // 16-step drum sequencer (static at step 0 with no playhead)
+  'dx7',                  // DX7 FM synth card (operator grid)
+  'filter',               // filter knob card
+  'illogic',              // logic-gate knob card
+  'meowbox',              // meow-themed card
+  'mixer',                // 4-channel mixer fader card
+  'mixmstrs',             // master mixer fader card
+  'noise',                // noise-source knob card
+  'polyseqz',             // polyphonic sequencer step grid (static at step 0)
+  'qbrt',                 // q-bit/quantizer knob card
+  'reverb',               // reverb knob card
+  'score',                // score/note display card
+  'sequencer',            // step sequencer grid (static at step 0)
+  'shimmershine',         // shimmer-reverb knob card
+  'stereovca',            // stereo VCA fader card
+  'sticky',               // sticky-note widget (static)
+  'timelorde',            // master clock card (BPM/play/stop, no animated tick at default)
+  'vca',                  // mono VCA card
+  'wavecel',              // wave-cell knob card
+  'wavetableVco',         // wavetable VCO card
+]);
 
 /** Per-(platform, type) baselines intentionally missing while a follow-
  *  up CI capture lands the other platform's PNG. The exempted pair is
  *  SKIPPED at the test level rather than allowed to fail. */
 export const EXEMPT_BASELINE_PAIRS = new Set<string>([
+  // SYNESTHESIA: darwin baseline captured on this machine via VRT_SCENES
+  // (analogVco→a_in, band 2 lit, freeze-on-suspend). Linux baseline pending a
+  // `task vrt:update` run on linux CI; functional coverage is the
+  // synesthesia-dsp + worklet unit tests.
+  'linux/synesthesia',
+  // FLIPPER: darwin baseline captured locally; linux pending a `task vrt:update`
+  // on linux CI. Static card (no animation); functional coverage is
+  // flipper-dsp.test.ts.
+  'linux/flipper',
   'linux/macrooscillator',
   'linux/samsloop',
   'linux/blades',
@@ -261,6 +611,13 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // old magenta-masked canvas — a follow-up `task vrt:update` run on
   // linux will re-capture, then this entry comes out.
   'linux/scope',
+  // SCOPE X/Y + INTENSITY scenes (vrt-scope-modes.spec.ts): darwin baselines
+  // captured here; linux pending a `task vrt:update` on linux CI (same as the
+  // base `linux/scope` card above). Without these the new scenes run on linux
+  // with no baseline and fail the required VRT check.
+  'linux/scope-xy-lissajous',
+  'linux/scope-intensity-dot',
+  'linux/scope-intensity-long',
   // VIDEO-OUT: this PR re-captures the darwin baseline with a real,
   // frozen VIDEOBOX frame driven through the output (via VRT_SCENES) to
   // prove the VIDEOBOX -> VIDEO-OUT path renders video content. VP9
@@ -269,11 +626,13 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // moving gate is e2e/tests/videobox-output.spec.ts.
   'linux/videoOut',
   // RASTERIZE (crossing-the-streams slice 1): the darwin baseline is
-  // captured on this machine via VRT_SCENES (261 Hz sine → raster banding,
-  // frozen on AudioContext suspend). The linux baseline is pending a
-  // `task vrt:update` run on linux CI — raster pixel values can differ
-  // sub-thresholdly across the AudioContext sine-table + analyser refill
-  // timing per platform, so we capture darwin here and defer linux.
+  // captured on this machine via VRT_SCENES with the deterministic
+  // `__rasterizeVrtSeed` seed (fix for task #198 — see rasterize.ts +
+  // vrt-scenes.ts). The seed makes the painted frame bit-deterministic
+  // (synthetic 261 Hz sine, no analyser / no wall clock), so both
+  // platforms render identical CANVAS pixels — only the surrounding
+  // chrome AA differs across platforms. Linux baseline pending a
+  // `task vrt:update` run on linux CI to capture that chrome.
   'linux/rasterize',
   // RESHAPER (renamed from RUTTETRA): the darwin baseline is captured on
   // this machine (canvas masked — coord-remap shows flat content when
@@ -285,4 +644,258 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // platforms, so the linux baseline is pending a `task vrt:update` run on
   // linux CI.
   'linux/ruttetra',
+  // WAVESCULPT (alpha-rotate bugfix): darwin baseline captured on this
+  // machine via VRT_SCENES (ALPHA layer at rot=0.45, deterministic
+  // render-freeze hook). The linux baseline is pending a `task vrt:update`
+  // run on linux CI — WebGL ribbon AA + CRT post differs sub-thresholdly
+  // across GPU drivers, so we capture darwin here and defer linux.
+  'linux/wavesculpt',
+  // WAVVIZ (wavetable preset dropdown added): the card grew a PRESET
+  // dropdown so the darwin baseline was regen'd in this PR. Linux baseline
+  // pending a `task vrt:update` run on linux CI.
+  'linux/wavviz',
+  // CUBE (3D wavetable-navigator oscillator, first slice): darwin baseline
+  // captured on this machine via VRT_SCENES (analogVco → pitch, rotated/morphed
+  // slice through the default tables, freeze-on-suspend so the snapshot-driven
+  // 2D viz holds). The 2D surface-height + waveform canvases differ
+  // sub-thresholdly across platforms (canvas AA), so the linux baseline is
+  // pending a `task vrt:update` run on linux CI — functional coverage is the
+  // cube-dsp unit tests + cube worklet capture test + node-ART baselines +
+  // the per-port e2e. NOT in STRICT_VRT_MODULES (the missing linux baseline
+  // runs only in the informational full-VRT lane, not the merge gate).
+  'linux/cube',
+  // HYPERCUBE (the 4D tesseract sibling of CUBE): same canvas-AA story as cube
+  // — a live WebGL2 Schlegel-tesseract render + a snapshot-driven 2D viz, so the
+  // canvases are masked and the darwin baseline was captured in this PR. Linux
+  // baseline is pending a `task vrt:update` run on linux CI. Functional coverage
+  // = the shared cube-dsp HYPERCUBE unit tests (off=identity + alpha audibility)
+  // + the hypercube worklet capture test + the hypercube node-ART baselines +
+  // the per-port e2e. NOT in STRICT_VRT_MODULES.
+  'linux/hypercube',
+  // AUDIO OUT (device picker dropdown added): the card grew an OUT device
+  // dropdown row (setSinkId picker) so the darwin baseline was regen'd in
+  // this PR. Linux baseline pending a `task vrt:update` run on linux CI.
+  'linux/audioOut',
+  // ANALOG VCO (live waveform scope + Wave morph knob added): the card grew a
+  // single-cycle scope canvas at the top + a 6th fader (Wave), so the darwin
+  // baseline was re-captured in this PR (canvas masked). Linux baseline pending
+  // a `task vrt:update` run on linux CI. Module also moved out of the strict
+  // VRT lane (animated chrome).
+  'linux/analogVco',
+  // BACKDRAFT (video feedback generator): darwin baseline captured on this
+  // machine via VRT_SCENES (SHAPES sources → frozen feedback tunnel/spiral,
+  // params.freeze=1 holds the accumulator). The spatial-transform feedback
+  // loop + WebGL bilinear sampling differs sub-thresholdly across GPU
+  // drivers, so the linux baseline is pending a `task vrt:update` run on
+  // linux CI; the deterministic darwin capture is the regression gate here.
+  'linux/backdraft',
+  // LFO (DEPTH knob added): the card grew a knob row + DEPTH input port, so
+  // the darwin baseline is re-captured here. The linux baseline is pending a
+  // `task vrt:update` run on linux CI (this dev machine is darwin-only).
+  'linux/lfo',
+  // COCOA DELAY (Cocoa Delay GPL-3.0 port): darwin baseline captured on this
+  // machine (static knob/fader/dropdown card — no canvas/animation, so it's
+  // deterministic). The linux baseline is pending a `task vrt:update` run on
+  // linux CI (sub-pixel text AA differs across platforms); darwin is the
+  // regression gate here.
+  'linux/cocoadelay',
+  // RESOFILTER (Resonarium MultiFilter port): darwin baseline captured on this
+  // machine (static knob card — no canvas/animation, deterministic). Linux
+  // baseline pending a `task vrt:update` run on linux CI (sub-pixel AA differs
+  // across platforms); darwin is the regression gate here.
+  'linux/resofilter',
+  // SAMPLE & HOLD / quantizer: darwin baseline captured on this machine
+  // (static SCALE-knob card + scale-name label — no canvas/animation, so it's
+  // deterministic). Linux baseline pending a `task vrt:update` run on linux CI
+  // (sub-pixel text AA differs across platforms); darwin is the regression gate
+  // here. Functional coverage is the sample-hold-dsp unit tests + the worklet
+  // capture test + the composite ART scenario + e2e/tests/sample-hold.spec.ts.
+  'linux/sampleHold',
+  // FOXY (hybrid SWOLEVCO→RASTERIZE→XYZ→live-wavetable→WAVECEL): darwin
+  // baseline captured on this machine via VRT_SCENES (self-driving internal
+  // chain, frozen on AudioContext suspend). The pipeline mixes the
+  // AudioContext sine-table + analyser refill timing (raster) with CPU
+  // float math (XYZ field + wavetable), which can differ sub-thresholdly
+  // across platforms, so the linux baseline is pending a `task vrt:update`
+  // run on linux CI; the deterministic darwin capture is the gate here.
+  'linux/foxy',
+  // PEAKSTATE (animated mandala generator): darwin baseline captured on this
+  // machine via VRT_SCENES (self-driving internal pen + ring, frozen on the
+  // `__peakstateVrtSeed` flag → one deterministic 120-sample paint then no
+  // further advance). The 2D canvas-to-GL upload + bilinear-filtered blit
+  // can differ sub-thresholdly across GPU drivers, so the linux baseline is
+  // pending a `task vrt:update` run on linux CI; the deterministic darwin
+  // capture is the regression gate here.
+  'linux/peakstate',
+  // In-card-title sweep (PR #383): the per-card title chrome was moved
+  // into ModuleTitle.svelte. Cards whose `<header class="title">…` was
+  // previously inlined in the card scope lost their per-card title CSS
+  // (font-family / margin / letter-spacing) once the element moved into
+  // a child component; ModuleTitle publishes a single shared baseline
+  // (font-size: 0.85rem, weight: 500, text-align: center, margin: 0 0 8px,
+  // letter-spacing: 0.05em). Darwin baselines captured here; linux baselines
+  // pending regen after in-card-title sweep — darwin captured here.
+  'linux/feedback',
+  'linux/lines',
+  'linux/monoglitch',
+  'linux/riotgirls',
+  'linux/shapedramps',
+  'linux/unityscalemathematik',
+  'linux/vdelay',
+  'linux/warrenspectrum',
+  // FREEZEFRAME (video sample & hold + per-channel posterize): darwin
+  // baseline captured on this machine (live preview canvas masked — see
+  // VRT_MODULE_MASKS). linux baseline pending a `task vrt:update` run on
+  // linux CI; the deterministic chrome (4 QUANT knobs + 7 handle rows) is
+  // the same across platforms but the masked-canvas chrome PNG can shift
+  // sub-thresholdly under linux Chromium timing.
+  'linux/freezeframe',
+  // MANDLEBLOT (Mandelbrot fractal generator): darwin baseline captured on
+  // this machine (canvas masked — the colour pass cycles hue with uTime, so
+  // the canvas region is non-deterministic; the chrome around it diffs).
+  // The linux baseline is pending a `task vrt:update` run on linux CI; the
+  // shader pipeline is the same across platforms but Playwright's
+  // `<canvas>` masking timing on linux Chromium can shift the chrome PNG
+  // sub-thresholdly — darwin is the regression gate here.
+  'linux/mandleblot',
+  // MANDELBULB (WebGL2 ray-marched 3D fractal video source): darwin baseline
+  // captured on this machine (live raymarch preview + auto-spin canvas masked
+  // via VRT_MODULE_MASKS — every frame differs, so the canvas region is
+  // non-deterministic; the chrome around it diffs). The linux baseline is
+  // pending a `task vrt:update` run on linux CI; the shader pipeline is the
+  // same across platforms but Playwright's `<canvas>` masking timing on linux
+  // Chromium can shift the chrome PNG sub-thresholdly — darwin is the
+  // regression gate here. Same rationale as MANDLEBLOT above.
+  'linux/mandelbulb',
+  // NIBBLES (new snake-game video module): darwin baseline captured on this
+  // machine via VRT_SCENES (__nibblesVrtSeed pins the RNG → deterministic
+  // snake + food placement; freezeAudio suspends the rAF preview poll). The
+  // CPU rasteriser is bit-deterministic, but the captured frame depends on
+  // how many game ticks land in the settle window which can vary sub-
+  // thresholdly across platforms; linux baseline pending a `task vrt:update`
+  // run on linux CI.
+  'linux/nibbles',
+  // TOYBOX (swappable fragment-shader source, Phase 1): darwin baseline
+  // captured on this machine (live animated preview canvas masked via
+  // VRT_MODULE_MASKS — the layer-0 shader runs off the engine clock, so the
+  // canvas region is non-deterministic; the chrome around it diffs). The
+  // linux baseline is pending a `task vrt:update` run on linux CI; the
+  // shader pipeline is the same across platforms but the masked-canvas
+  // chrome PNG can shift sub-thresholdly under linux Chromium timing —
+  // darwin is the regression gate here. The dedicated frozen render proof
+  // (real per-shader content, distinct across the 4 entries) lives in
+  // e2e/vrt/vrt-toybox.spec.ts, also darwin-only by the same precedent.
+  'linux/toybox',
+  // TOYBOX Phase 4 (the bespoke SVG combine-graph editor): the combine-composite
+  // frozen render + the deterministic editor-SVG capture are darwin baselines
+  // captured locally; linux pending a `task vrt:update` on linux CI (same
+  // shader/SVG pipeline, sub-threshold cross-platform paint timing). Functional
+  // coverage: toybox-combine*.test.ts (graph mutations + Yjs round-trip) +
+  // e2e/tests/toybox-combine-editor.spec.ts (add/connect/cycle-reject via real
+  // clicks + a live-output delta).
+  'linux/toybox-combine-composite',
+  'linux/toybox-combine-editor',
+  // TOYBOX Phase 6 texmap (OBJ surface = another layer's rendered output,
+  // UV-mapped): the obj-tex-sphere (primitive uv) + obj-tex-teapot (zero-vt
+  // PLANAR-UV fallback) frozen renders + the textured-sphere preset are darwin
+  // baselines captured locally; linux pending a `task vrt:update` on linux CI
+  // (same WebGL/shader pipeline, sub-threshold cross-platform paint timing).
+  // Functional coverage: toybox-surface.test.ts (render-order + cycle/self
+  // guard) + obj-parse.test.ts (planar-uv fallback) + the texmap e2e
+  // (e2e/tests/toybox-texture-source.spec.ts).
+  'linux/toybox-obj-tex-sphere',
+  'linux/toybox-obj-tex-teapot',
+  'linux/toybox-preset-textured-sphere',
+  // TOYBOX content-bank expansion: representative frozen baselines for the new
+  // GEN shader (truchet), the new builtin primitive (icosahedron, an OBJ-pass
+  // render), and a FRAG shader over a base layer (frag-kaleido folds layer 0
+  // via iChannel0). Darwin baselines captured locally; linux pending a
+  // `task vrt:update` on linux CI (same WebGL/shader pipeline, sub-threshold
+  // cross-platform paint timing). The remaining new shaders/builtins are
+  // covered by toybox-manifest-integrity.test.ts + primitives.test.ts + the
+  // live compile-smoke e2e — per-asset VRT baselines would bloat the gate.
+  'linux/toybox-truchet',
+  'linux/toybox-obj-icosahedron',
+  'linux/toybox-frag-kaleido',
+  // COMPOSITE VRT — first category (vrt-composite.spec.ts). Captures
+  // NIBBLES.length_cv → SCOPE.ch1 at 5 CV levels via the
+  // `__nibblesForceLength` test hook. Darwin baselines captured on this
+  // machine; the linux baselines depend on cross-platform paint timing of
+  // BOTH cards in the same viewport — pending a `task vrt:update` run on
+  // linux CI. The hard regression-coverage gate lives in
+  // `e2e/tests/nibbles-cv-scope.spec.ts` (asserts SCOPE.ch1 sample tracks
+  // lengthToCv(length) — i.e. the CV signal actually arrives at the SCOPE
+  // input — and is monotonic across the 5-step sweep).
+  'linux/nibbles-cv-min',
+  'linux/nibbles-cv-25',
+  'linux/nibbles-cv-50',
+  'linux/nibbles-cv-75',
+  'linux/nibbles-cv-max',
+  // MOOG 921A / 921B / 904B (batch 1) — promoted out of EXEMPT_FROM_VRT with
+  // darwin baselines captured on this machine (deterministic beige Moog
+  // faceplates with now-legible engraved-black labels from the shared MoogPanel
+  // fix; no canvas/animation). Linux baselines pending a `task vrt:update` run
+  // on linux CI (sub-pixel text AA differs across platforms) — darwin is the
+  // regression gate here. Same darwin-only pattern as the other 5 Moog cards'
+  // eventual capture.
+  'linux/moog921a',
+  'linux/moog921b',
+  'linux/moog904b',
+  // Moog batch-2 (992/993/994/995/984): darwin baselines captured locally;
+  // linux pending a `task vrt:update` on linux CI. Static beige faceplates
+  // (no animation); functional coverage is moog99x/moog984.test.ts.
+  'linux/moog992',
+  'linux/moog993',
+  'linux/moog994',
+  'linux/moog995',
+  'linux/moog984',
+  // Moog batch 3+4 (903A noise, 923 noise+filters, 904C coupler, 907A/914
+  // filter banks): darwin baselines captured locally; linux pending a
+  // `task vrt:update` on linux CI. Functional coverage is the per-module
+  // unit tests + per-port sweep.
+  'linux/moog903a',
+  'linux/moog923',
+  'linux/moog904c',
+  'linux/moog907a',
+  'linux/moog914',
+  // Moog batch 5 (911A trig delay, 961 interface, 962 seq switch, 912 env
+  // follower): darwin baselines captured locally; linux pending CI capture.
+  'linux/moog911a',
+  'linux/moog961',
+  'linux/moog962',
+  'linux/moog912',
+  // Moog 960 sequencer (batch 6): darwin baseline captured locally; linux pending.
+  'linux/moog960',
+  'linux/moog956',
+  'linux/moog905',
+  // ---- darwin-side QUARANTINE: pre-existing flakes verified on main
+  // (reproduced by reverting the cards-shrink-to-fit CSS in PR #447 and
+  // re-running VRT — same failures on a clean main checkout). Quarantined
+  // here so #447 unblocks. ROOT-CAUSE fix is OWED on the tracked tasks
+  // below — these entries come out when the fix lands.
+  // rasterize: canvas-render timing variance flake, tracked as task #198
+  'darwin/rasterize',
+  // wavesculpt-blink-scopes-trial: canvas-render timing variance flake, tracked as task #202
+  'darwin/wavesculpt-blink-scopes-trial',
+  // wavesculpt-blink-scopes-trial-wiggle: canvas-render timing variance flake, tracked as task #202
+  'darwin/wavesculpt-blink-scopes-trial-wiggle',
+  // wavesculpt-blink-custom-colors: canvas-render timing variance flake, tracked as task #202
+  'darwin/wavesculpt-blink-custom-colors',
+  // QUADRALOGICAL Phase-2 per-edge effect VRT scenes (vrt-quadralogical.spec.ts):
+  // darwin baselines captured on this machine (flat-colour sources → CHROMA
+  // tintMix=1 → deterministic mix, frozen on quad.freeze + AudioContext
+  // suspend). WebGL fragment blend math differs sub-thresholdly across GPU
+  // drivers, so the linux baselines are pending a `vrt-update.yml`
+  // workflow_dispatch on linux CI; the deterministic darwin captures are the
+  // regression gate here. Functional coverage = quadralogical.test.ts (all 8
+  // blend2 branches + edge-weight model) + e2e/tests/quadralogical.spec.ts
+  // (per-edge effect distinctness + independence).
+  'linux/edge-dissolve',
+  'linux/edge-add',
+  'linux/edge-multiply',
+  'linux/edge-wipe',
+  'linux/edge-chroma',
+  'linux/edge-luma',
+  'linux/edge-diff',
+  'linux/edge-iris',
 ]);

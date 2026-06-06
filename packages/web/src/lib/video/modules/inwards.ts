@@ -16,6 +16,17 @@
 // many rings fit on screen, `thickness` controls the duty cycle.
 //
 // Output: mono-video. Cheap procedural shader; no input textures.
+//
+// Inputs:
+//   speed / density / thickness (cv, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (mono-video): the concentric-rings render.
+//
+// Params:
+//   speed (linear -2..2): zoom rate (positive = inward, negative = outward).
+//   density (linear 1..50): rings-per-screen.
+//   thickness (linear 0..1): bright-ring duty cycle.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -66,6 +77,7 @@ const DEFAULTS: InwardsParams = {
 
 export const inwardsDef: VideoModuleDef = {
   type: 'inwards',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'INWARDS',
   category: 'sources',

@@ -6,6 +6,7 @@
   import { patch } from '$lib/graph/store';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -88,7 +89,7 @@
 
 <div class="mod-card riotgirls-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">RIOTGIRLS</header>
+  <ModuleTitle {id} {data} defaultLabel="RIOTGIRLS" />
 
   <!--
     panelWidth is the total open-state popover width. RIOTGIRLS has
@@ -169,7 +170,6 @@
 <style>
   .riotgirls-card {
     width: 1100px;
-    min-height: 760px;
   }
   .grid {
     margin-top: 16px;

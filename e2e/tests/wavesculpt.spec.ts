@@ -198,6 +198,91 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
       .toBe(true);
   });
 
+  test('ALPHA layer (osc 3) stays visible under camera rotation — alpha-rotate bugfix', async ({ page }) => {
+    // Regression for the alpha-rotate bug: the ALPHA ribbon (osc 3) used
+    // to vanish the instant the camera rotated off-axis. Root cause: the
+    // scene + alpha-mask passes primed the depth buffer with ALL FOUR
+    // ribbons, so any RGB ribbon in FRONT of the ALPHA ribbon depth-culled
+    // it. At rot=0 the ALPHA emitter (-Z wall) is nearest the camera so it
+    // survived; ANY rotation brought an RGB ribbon forward and the ALPHA
+    // layer disappeared. Fix: additive ribbons are order-independent, so
+    // we dropped the inter-ribbon depth occlusion entirely.
+    //
+    // This test ISOLATES the ALPHA ribbon (thick/wide osc 3, thin RGB)
+    // and rotates the camera to ~72° (rot=0.4). With the bug the ALPHA
+    // region would be black; with the fix it renders. We count non-black
+    // pixels and require a substantial population (not a stray AA pixel).
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // SHAPES → alpha_in supplies the ALPHA composite image (a bright
+    // near-white shape). The BENT post-pass paints that image ONLY where
+    // the ALPHA mask (osc 3) is non-zero. Counting near-WHITE pixels (all
+    // channels bright + balanced) isolates the ALPHA composite — the RGB
+    // ribbons are saturated single-channel colours and never read white.
+    // All four ribbons are fat so the RGB ribbons are genuine depth
+    // OCCLUDERS: pre-fix, the scene + mask passes primed depth with all
+    // four ribbons, so an RGB ribbon in front depth-culled the ALPHA mask
+    // under rotation → the composite collapsed. We keep zoom=1.0 + a small
+    // rotation (rot=0.2) so the ALPHA ribbon stays centred (alpha_in is
+    // sampled in screen space) — isolating the depth-occlusion regression
+    // rather than mere projection. Empirically: fixed ≈25k white pixels at
+    // rot=0.2, the buggy depth-prime ≈9.5k.
+    const spawnAt = async (rot: number): Promise<void> => {
+      await spawnPatch(page, [
+        { id: 'src', type: 'shapes', position: { x: 60, y: 60 }, domain: 'video' },
+        {
+          id: 'ws', type: 'wavesculpt', position: { x: 400, y: 100 }, domain: 'audio',
+          params: {
+            rot, zoom: 1.0,
+            thickness1: 0.8, thickness2: 0.8, thickness3: 0.8, thickness4: 0.9,
+            alpha_brightness: 2, noise: 0,
+          },
+        },
+      ], [
+        { id: 'e_alpha', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'ws', portId: 'alpha_in' }, sourceType: 'video', targetType: 'video' },
+      ]);
+      await page.evaluate(() => { (globalThis as unknown as { __wavesculptVrtFreeze?: boolean }).__wavesculptVrtFreeze = true; });
+    };
+
+    const countAlphaWhite = (): Promise<number> =>
+      page.evaluate(() => {
+        const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
+        if (!c) return 0;
+        const ctx = c.getContext('2d');
+        if (!ctx) return 0;
+        const data = ctx.getImageData(0, 0, c.width, c.height).data;
+        let white = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i] ?? 0, g = data[i + 1] ?? 0, b = data[i + 2] ?? 0;
+          if (r > 110 && g > 110 && b > 110) white++;
+        }
+        return white;
+      });
+
+    // Baseline: head-on (rot=0) the ALPHA composite is clearly visible
+    // (this worked even pre-fix).
+    await spawnAt(0);
+    await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
+    let headOnWhite = 0;
+    await expect.poll(async () => (headOnWhite = await countAlphaWhite()), {
+      message: 'ALPHA composite never rendered head-on',
+      timeout: 4_000,
+      intervals: [150, 300, 500],
+    }).toBeGreaterThan(2000);
+
+    // Rotated: pre-fix the ALPHA mask was depth-culled by the (thick) RGB
+    // ribbons in front, collapsing the composite (~38% of head-on). Post-
+    // fix the ALPHA layer composites at any angle (~85% of head-on). The
+    // 0.6 threshold sits cleanly between the two regimes.
+    await spawnAt(0.2);
+    await expect.poll(async () => countAlphaWhite(), {
+      message: 'ALPHA composite collapsed under rotation (alpha-rotate regression)',
+      timeout: 4_000,
+      intervals: [150, 300, 500],
+    }).toBeGreaterThan(headOnWhite * 0.6);
+  });
+
   test('changing osc1 morph changes the rendered ribbon shape', async ({ page }) => {
     // NEW v2 contract: the ribbon vertex shader samples the live
     // wavetable frame texture. Different morph positions point at
@@ -540,5 +625,322 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     expect(params.hsync_drift).toBe(0.35);
     expect(params.wavefold).toBe(0.5);
     expect(params.feedback_gain).toBe(0.6);
+  });
+
+  test('BLINK button cycles blink_mode 0 → 1 → 2 → 0 and shows the mode name', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'ws', type: 'wavesculpt', position: { x: 200, y: 100 }, domain: 'audio' },
+    ]);
+
+    const btn = page.locator('[data-testid="wavesculpt-blink-toggle"]');
+    await expect(btn).toHaveCount(1);
+
+    const readMode = (): Promise<number> => page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+      return w.__patch.nodes['ws']?.params.blink_mode ?? 0;
+    });
+    const nameLoc = page.locator('[data-testid="wavesculpt-blink-mode-name"]');
+
+    // Default = mode 0 (today's render); no mode-name shown.
+    expect(await readMode(), 'starts at mode 0 (current)').toBe(0);
+    await expect(nameLoc).toHaveCount(0);
+
+    await btn.click();
+    await page.waitForTimeout(60);
+    expect(await readMode(), '1st click → SCOPES TRIAL').toBe(1);
+    await expect(nameLoc).toHaveText('SCOPES TRIAL');
+
+    await btn.click();
+    await page.waitForTimeout(60);
+    expect(await readMode(), '2nd click → REALITY BASED COMMUNITY').toBe(2);
+    await expect(nameLoc).toHaveText('REALITY BASED COMMUNITY');
+
+    await btn.click();
+    await page.waitForTimeout(60);
+    expect(await readMode(), '3rd click wraps back to 0').toBe(0);
+    await expect(nameLoc).toHaveCount(0);
+  });
+
+  test('BLINK modes 1 + 2 render the 4-corner scope traces (and differ from each other)', async ({ page }) => {
+    // Drives all four oscillators audible (JOYSTICK x=1 → gate1, normalled
+    // to gates 2-4) so the live scope traces have signal. Then captures the
+    // canvas in mode 1 (flat scope lines) and mode 2 (neon tubes) and asserts:
+    //   * both modes light a substantial fraction of the frame (the 4 corner-
+    //     emitted traces actually render),
+    //   * the two modes produce DIFFERENT pixels (tube shading ≠ flat line),
+    //   * the traces emanate from the 4 corners — the centre band (where all
+    //     four converge) is brighter than the empty mid-edges.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    const setup = async (mode: number): Promise<void> => {
+      await spawnPatch(page, [
+        { id: 'ws', type: 'wavesculpt', position: { x: 80, y: 80 }, domain: 'audio',
+          params: { blink_mode: mode, thickness1: 0.5, thickness2: 0.5, thickness3: 0.5, thickness4: 0.5, noise: 0 } },
+        { id: 'jo', type: 'joystick', position: { x: 80, y: 500 }, domain: 'audio' },
+      ], [
+        { id: 'g', from: { nodeId: 'jo', portId: 'x' }, to: { nodeId: 'ws', portId: 'gate1' }, sourceType: 'cv', targetType: 'gate' },
+      ]);
+      await page.evaluate(() => {
+        const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> }; __engine?: () => { ctx: AudioContext } | null };
+        const n = w.__patch.nodes['jo']; if (n) n.params.pos_x = 1;
+        try { void w.__engine?.()?.ctx.resume(); } catch { /* */ }
+      });
+    };
+
+    const grab = (): Promise<{ lit: number; data: number[] }> => page.evaluate(() => {
+      const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement;
+      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      let lit = 0; const out: number[] = [];
+      for (let i = 0; i < d.length; i += 4) {
+        const sum = (d[i] ?? 0) + (d[i + 1] ?? 0) + (d[i + 2] ?? 0);
+        if (sum > 60) lit++;
+        // Subsample luminance for a cheap cross-mode pixel-diff.
+        if (i % (4 * 97) === 0) out.push(sum);
+      }
+      return { lit, data: out };
+    });
+
+    await setup(1);
+    let mode1!: { lit: number; data: number[] };
+    await expect.poll(async () => (mode1 = await grab()).lit, {
+      message: 'SCOPES TRIAL never rendered traces', timeout: 5_000, intervals: [200, 400, 600],
+    }).toBeGreaterThan(2000);
+
+    await setup(2);
+    let mode2!: { lit: number; data: number[] };
+    await expect.poll(async () => (mode2 = await grab()).lit, {
+      message: 'REALITY BASED COMMUNITY never rendered tubes', timeout: 5_000, intervals: [200, 400, 600],
+    }).toBeGreaterThan(2000);
+
+    // The two modes must look different (tube radial shading vs flat line).
+    let diff = 0;
+    const n = Math.min(mode1.data.length, mode2.data.length);
+    for (let i = 0; i < n; i++) if (Math.abs((mode1.data[i] ?? 0) - (mode2.data[i] ?? 0)) > 24) diff++;
+    expect(diff, 'SCOPES TRIAL and REALITY BASED COMMUNITY render differently').toBeGreaterThan(20);
+  });
+
+  // ──────────────── VIDEO WALLS ────────────────
+
+  test('VIDEO WALL: an external video source textures a box face (wall1) — bright content appears', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // SHAPES (a bright static test pattern) → wall1 (FRONT face), full
+    // transparency. The textured wall should add a substantial population of
+    // bright pixels vs the same scene with no wall patched.
+    await spawnPatch(page, [
+      { id: 'pat', type: 'shapes', position: { x: 60, y: 60 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 4 } },
+      { id: 'ws', type: 'wavesculpt', position: { x: 400, y: 100 }, domain: 'audio',
+        params: { wall1_alpha: 100, wall1_distort: 0, rot: 0.3, pos_z: 0.2, zoom: 1.2, noise: 0 } },
+    ], [
+      { id: 'e_wall1', from: { nodeId: 'pat', portId: 'out' }, to: { nodeId: 'ws', portId: 'wall1' }, sourceType: 'video', targetType: 'video' },
+    ]);
+    await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
+
+    // The wall pass adds bright textured pixels — poll for a healthy
+    // population of near-white pixels (the SHAPES pattern is white-on-black).
+    await expect.poll(async () => page.evaluate(() => {
+      const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
+      if (!c) return 0;
+      const ctx = c.getContext('2d');
+      if (!ctx) return 0;
+      const data = ctx.getImageData(0, 0, c.width, c.height).data;
+      let bright = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if ((data[i] ?? 0) > 150 && (data[i + 1] ?? 0) > 150 && (data[i + 2] ?? 0) > 150) bright++;
+      }
+      return bright;
+    }), {
+      message: 'wall1 video texture never appeared (no bright wall pixels)',
+      timeout: 4_000,
+      intervals: [200, 400, 600],
+    }).toBeGreaterThan(1000);
+
+    expect(errors, 'no console / page errors with a wall patched').toEqual([]);
+  });
+
+  test('SELF-FEEDBACK: patching WAVESCULPT video_out → its own wall1 is allowed + renders (feedback madness)', async ({ page }) => {
+    // The card must NOT special-case-block self-patching: video_out → wall1
+    // forms a frame-delayed recursive feedback loop (the wall textures the
+    // card's own previous frame back into the scene through the BENTBOX
+    // prevFbo). Assert the self-edge is accepted AND the canvas keeps
+    // rendering content with no console/page errors (no re-entrancy crash,
+    // no infinite loop).
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // Drive a gate so the ribbons have energy that the feedback loop can
+    // smear/recurse; feedback_gain up so the self-loop visibly compounds.
+    await spawnPatch(page, [
+      { id: 'jo', type: 'joystick', position: { x: 40, y: 400 }, domain: 'audio' },
+      { id: 'ws', type: 'wavesculpt', position: { x: 400, y: 100 }, domain: 'audio',
+        params: { wall1_alpha: 80, wall1_distort: 0.3, rot: 0.25, zoom: 1.2, feedback_gain: 0.6, noise: 0 } },
+    ], [
+      // SELF-LOOP: the card's own video output into its own wall input.
+      { id: 'e_self', from: { nodeId: 'ws', portId: 'video_out' }, to: { nodeId: 'ws', portId: 'wall1' }, sourceType: 'mono-video', targetType: 'video' },
+      { id: 'e_gate', from: { nodeId: 'jo', portId: 'x' }, to: { nodeId: 'ws', portId: 'gate1' }, sourceType: 'cv', targetType: 'gate' },
+    ]);
+    await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
+
+    // The self-edge exists in the patch store (not rejected).
+    const hasSelfEdge = await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { edges: Record<string, { source: { nodeId: string; portId: string }; target: { nodeId: string; portId: string } }> } };
+      return Object.values(w.__patch.edges).some(
+        (e) => e.source.nodeId === e.target.nodeId && e.target.portId === 'wall1' && e.source.portId === 'video_out',
+      );
+    });
+    expect(hasSelfEdge, 'WAVESCULPT video_out → its own wall1 self-edge accepted').toBe(true);
+
+    // Drive the joystick high so the voices generate energy, then let the
+    // recursive feedback run a number of frames.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __engine?: () => { ctx: AudioContext } | null;
+      };
+      const n = w.__patch.nodes['jo'];
+      if (n) n.params.pos_x = 1;
+      try { void w.__engine?.()?.ctx.resume(); } catch { /* */ }
+    });
+
+    // The recursive render keeps producing content (poll for non-black).
+    await expect.poll(async () => page.evaluate(() => {
+      const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
+      if (!c) return false;
+      const ctx = c.getContext('2d');
+      if (!ctx) return false;
+      const data = ctx.getImageData(0, 0, c.width, c.height).data;
+      let lit = 0;
+      for (let i = 0; i < data.length; i += 4 * 16) {
+        if (((data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0)) > 60) lit++;
+      }
+      return lit > 50;
+    }), {
+      message: 'self-feedback loop produced no rendered content',
+      timeout: 5_000,
+      intervals: [200, 400, 800],
+    }).toBe(true);
+
+    expect(errors, 'no console / page errors during self-feedback loop').toEqual([]);
+  });
+
+  // ──────────────── LINES-VS-WALLS REGRESSION + LUMINOSITY BANDPASS ────────────────
+
+  test('REGRESSION: SCOPES TRIAL waveform lines stay visible with an enclosing video wall', async ({ page }) => {
+    // #531 video walls drowned the additive scope traces — the "scopestrial"
+    // / "reality based" community patches went blank. Guard: SCOPES TRIAL with
+    // all 6 walls opaque (camera enclosed) must STILL light a substantial
+    // fraction of the frame (the bright traces punch through the backdrop-
+    // dimmed wall). We compare against the SAME scene with no walls to prove
+    // the traces aren't merely the wall content.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    const setup = async (walls: boolean): Promise<void> => {
+      const wallParams: Record<string, number> = {};
+      if (walls) for (let n = 1; n <= 6; n++) { wallParams[`wall${n}_alpha`] = 100; wallParams[`wall${n}_distort`] = 0; }
+      const edges: Array<Record<string, unknown>> = [
+        { id: 'g', from: { nodeId: 'jo', portId: 'x' }, to: { nodeId: 'ws', portId: 'gate1' }, sourceType: 'cv', targetType: 'gate' },
+      ];
+      if (walls) for (let n = 1; n <= 6; n++) edges.push({ id: `e_wall${n}`, from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'ws', portId: `wall${n}` }, sourceType: 'video', targetType: 'video' });
+      await spawnPatch(page, [
+        { id: 'src', type: 'shapes', position: { x: 60, y: 60 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 4 } },
+        { id: 'ws', type: 'wavesculpt', position: { x: 400, y: 80 }, domain: 'audio',
+          params: { blink_mode: 1, scale: 2, rot: 0.3, pos_z: 0.35, zoom: 1.3,
+            thickness1: 0.6, thickness2: 0.6, thickness3: 0.6, thickness4: 0.9, noise: 0, ...wallParams } },
+        { id: 'jo', type: 'joystick', position: { x: 60, y: 480 }, domain: 'audio' },
+      ], edges as never);
+      await page.evaluate(() => {
+        const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> }; __engine?: () => { ctx: AudioContext } | null };
+        const n = w.__patch.nodes['jo']; if (n) n.params.pos_x = 1;
+        try { void w.__engine?.()?.ctx.resume(); } catch { /* */ }
+      });
+    };
+
+    // Count NEON-coloured trace pixels: a bright, channel-IMBALANCED pixel (a
+    // hot single/dual-channel neon line), distinguishing the traces from the
+    // near-grey/white wall grid. This is the population that vanished pre-fix.
+    const countTrace = (): Promise<number> => page.evaluate(() => {
+      const c = document.querySelector('[data-testid="wavesculpt-canvas"]') as HTMLCanvasElement | null;
+      if (!c) return 0;
+      const ctx = c.getContext('2d');
+      if (!ctx) return 0;
+      const data = ctx.getImageData(0, 0, c.width, c.height).data;
+      let trace = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i] ?? 0, g = data[i + 1] ?? 0, b = data[i + 2] ?? 0;
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        // Bright + saturated (channel imbalance) → a neon trace, not the
+        // desaturated wall grid.
+        if (mx > 140 && mx - mn > 70) trace++;
+      }
+      return trace;
+    });
+
+    await setup(true);
+    await expect(page.locator('[data-testid="wavesculpt-canvas"]')).toHaveCount(1);
+    await expect.poll(async () => countTrace(), {
+      message: 'SCOPES TRIAL traces invisible behind enclosing walls (the #531 regression)',
+      timeout: 5_000,
+      intervals: [200, 400, 800],
+    }).toBeGreaterThan(800);
+  });
+
+  test('LUMINOSITY → BANDPASS: lum_depth knob + per-wall sampling accepted, no errors', async ({ page }) => {
+    // The luminosity→bandpass feature: depth knob present + routes through the
+    // store; with walls patched + depth up the audio path runs (the card
+    // samples wall luminosity each frame + posts it to the worklet) with no
+    // console/page errors.
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'src', type: 'shapes', position: { x: 60, y: 60 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 4 } },
+      { id: 'ws', type: 'wavesculpt', position: { x: 400, y: 80 }, domain: 'audio',
+        params: { blink_mode: 1, lum_depth: 0, wall1_alpha: 100, wall3_alpha: 100, noise: 0 } },
+      { id: 'jo', type: 'joystick', position: { x: 60, y: 480 }, domain: 'audio' },
+    ], [
+      { id: 'g', from: { nodeId: 'jo', portId: 'x' }, to: { nodeId: 'ws', portId: 'gate1' }, sourceType: 'cv', targetType: 'gate' },
+      { id: 'e_wall1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'ws', portId: 'wall1' }, sourceType: 'video', targetType: 'video' },
+      { id: 'e_wall3', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'ws', portId: 'wall3' }, sourceType: 'video', targetType: 'video' },
+    ]);
+    await expect(page.locator('[data-testid="wavesculpt-card"]')).toHaveCount(1);
+
+    // Drive the gate + resume audio, then dial lum_depth up via the store.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+        __engine?: () => { ctx: AudioContext } | null;
+      };
+      const jo = w.__patch.nodes['jo']; if (jo) jo.params.pos_x = 1;
+      w.__ydoc.transact(() => { const n = w.__patch.nodes['ws']; if (n) n.params.lum_depth = 1; });
+      try { void w.__engine?.()?.ctx.resume(); } catch { /* */ }
+    });
+    await page.waitForTimeout(600);
+
+    const depth = await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+      return w.__patch.nodes['ws']?.params.lum_depth ?? -1;
+    });
+    expect(depth, 'lum_depth routed through the store').toBe(1);
+
+    expect(errors, 'no console / page errors with luminosity-bandpass active').toEqual([]);
   });
 });

@@ -16,6 +16,19 @@
 // This is the standard "matte the dark out / matte the bright out" knob
 // used for letterbox text overlays, bright-source compositing, and white-
 // or-black-background image plates.
+//
+// Inputs:
+//   fg (video): foreground.
+//   bg (video): background.
+//   threshold / softness / invert (cv, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (video): composited RGB.
+//
+// Params:
+//   threshold (linear 0..1): luma threshold above which FG becomes opaque.
+//   softness (linear 0..0.5): smoothstep edge softness.
+//   invert (discrete 0..1): 0 = bright = opaque, 1 = dark = opaque.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -69,6 +82,7 @@ const DEFAULTS: LumakeyParams = {
 
 export const lumakeyDef: VideoModuleDef = {
   type: 'lumakey',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'LUMAKEY',
   category: 'effects',

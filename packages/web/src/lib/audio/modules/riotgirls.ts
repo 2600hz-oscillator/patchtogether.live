@@ -6,9 +6,31 @@
 //   - Per voice:  equal-power-pan Faust worklet (mono in + pan CV -> stereo out).
 //   - Master:     stereo sum -> QBRT filter -> (outL, outR).
 //
-// MVP-A scope: voices + master + UI. Per-voice send-A / send-B amounts are
-// exposed as inputs + params but route to silence (no DESTROY / Reverb yet).
-// The FX-rack column on the card UI shows knobs marked WIP.
+// MVP-B scope: voices + master + UI + a wired aux FX bus. Each voice's
+// send-A taps a summing bus → DESTROY (bitcrush) → returnA gain → master sum;
+// send-B taps a second bus → Reverb (Faust mono_freeverb) → returnB gain →
+// master sum. The wet returns feed BOTH stereo channels (centered mono aux
+// return) so the effects land on outL/outR through the master QBRT filter.
+//
+// Inputs (built programmatically — see buildInputs() / buildParams()):
+//   trig{1..4} (gate): one-shot trigger per voice (rising-edge fires).
+//   gate{1..4} (gate): held gate per voice (drives voice 4's ADSR; voices 1-3 retrigger on edge).
+//   pitch{1..4} (pitch): V/oct pitch per voice.
+//   v{1..3}_{tone,shape,volume,decay} (cv, paramTarget=…): per-DRUMMERGIRL voice CV.
+//   v4_fm (audio), v4_{wavePos,attack,decay,sustain,release,volume} (cv, paramTarget=…):
+//     voice-4 wavetable + ADSR CV.
+//   v{1..4}_{pan,sendA,sendB} (cv, paramTarget=…): per-voice mix and aux-send CV.
+//   bc_{decimate,bits,wet} (cv, paramTarget=…): master DESTROY CV.
+//   rv_{size,damp,mix} (cv, paramTarget=…): master Reverb CV.
+//   flt_{cutoff,resonance,mode,pingDecay} (cv, paramTarget=…): master QBRT filter CV.
+//   returnA / returnB (cv, paramTarget=…): aux-return level CV.
+//
+// Outputs:
+//   outL (audio): master stereo bus, left.
+//   outR (audio): master stereo bus, right.
+//
+// Params: per-voice voicing knobs, per-voice pan + send-A/B, master DESTROY +
+//   reverb + QBRT filter; built programmatically in buildParams().
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -29,6 +51,12 @@ import qbrtWorklet from '@patchtogether.live/dsp/dist/qbrt.worklet.js?url';
 import panWasm from '@patchtogether.live/dsp/dist/equal-power-pan.wasm?url';
 import panMeta from '@patchtogether.live/dsp/dist/equal-power-pan.json?url';
 import panWorklet from '@patchtogether.live/dsp/dist/equal-power-pan.worklet.js?url';
+import destroyWasm from '@patchtogether.live/dsp/dist/destroy.wasm?url';
+import destroyMeta from '@patchtogether.live/dsp/dist/destroy.json?url';
+import destroyWorklet from '@patchtogether.live/dsp/dist/destroy.worklet.js?url';
+import reverbWasm from '@patchtogether.live/dsp/dist/reverb.wasm?url';
+import reverbMeta from '@patchtogether.live/dsp/dist/reverb.json?url';
+import reverbWorklet from '@patchtogether.live/dsp/dist/reverb.worklet.js?url';
 import wavetableVcoUrl from '@patchtogether.live/dsp/dist/wavetable-vco.js?url';
 
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
@@ -289,6 +317,7 @@ export function equalPowerPan(pan: number): { l: number; r: number } {
 
 export const riotgirlsDef: AudioModuleDef = {
   type: 'riotgirls',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'RIOTGIRLS',
   category: 'sources',
@@ -463,12 +492,11 @@ export const riotgirlsDef: AudioModuleDef = {
     fltParams.get('/QBRT/mode')     ?.setValueAtTime(initial('flt_mode', 0),       ctx.currentTime);
     fltParams.get('/QBRT/pingDecay')?.setValueAtTime(initial('flt_pingDecay', 0.15), ctx.currentTime);
 
-    // ---- Per-voice send gains (silence-routed in MVP-A) ----
-    // Wire each voice into a sendA / sendB GainNode. The gain values are
-    // owned-knobs (set from setParam dispatcher via paramSinkOwnKnob). The
-    // gain nodes' outputs are NOT connected anywhere in MVP-A — DESTROY +
-    // Reverb instantiation lands in MVP-B, at which point sendA -> bc.audio
-    // and sendB -> reverb.audio + bc/reverb -> returnA/returnB gains -> sumL/sumR.
+    // ---- Per-voice send gains (FX-bus taps, wired in MVP-B) ----
+    // Each voice's mono signal taps a sendA GainNode (DESTROY aux) and a sendB
+    // GainNode (Reverb aux). The gain values are owned-knobs (set via the
+    // setParam dispatcher / vN_sendA·sendB CV). Outputs are summed onto the two
+    // aux-send buses below.
     const sendAGains: GainNode[] = [];
     const sendBGains: GainNode[] = [];
     for (let i = 0; i < VOICE_COUNT; i++) {
@@ -479,9 +507,6 @@ export const riotgirlsDef: AudioModuleDef = {
       sendAGains.push(ga);
       sendBGains.push(gb);
     }
-    // Tap each voice's mono signal into its send gains so the gain values are
-    // observable + tests verify side-effects. Output of sendA/B gains is not
-    // connected to anything (terminates here in MVP-A).
     v1.connect(sendAGains[0]!);
     v1.connect(sendBGains[0]!);
     v2.connect(sendAGains[1]!);
@@ -491,11 +516,50 @@ export const riotgirlsDef: AudioModuleDef = {
     v4Vca.connect(sendAGains[3]!);
     v4Vca.connect(sendBGains[3]!);
 
-    // ---- Master return gains (silence in MVP-A) ----
+    // ---- Aux-send summing buses (mono) ----
+    // sendBusA collects all four sendA taps → DESTROY. sendBusB collects the
+    // sendB taps → Reverb. Both effect worklets are mono (1-in / 1-out).
+    const sendBusA = ctx.createGain();
+    const sendBusB = ctx.createGain();
+    sendBusA.gain.value = 1;
+    sendBusB.gain.value = 1;
+    for (const g of sendAGains) g.connect(sendBusA);
+    for (const g of sendBGains) g.connect(sendBusB);
+
+    // ---- DESTROY (bitcrush) effect on aux A ----
+    const bc = await instantiateFaustModule(ctx, {
+      name: 'destroy', wasmUrl: destroyWasm, metaUrl: destroyMeta, workletUrl: destroyWorklet,
+    });
+    const bcParams = bc.parameters as unknown as Map<string, AudioParam>;
+    bcParams.get('/DESTROY/decimate')?.setValueAtTime(initial('bc_decimate', 1),  ctx.currentTime);
+    bcParams.get('/DESTROY/bits')    ?.setValueAtTime(initial('bc_bits', 16),     ctx.currentTime);
+    bcParams.get('/DESTROY/wet')     ?.setValueAtTime(initial('bc_wet', 1),       ctx.currentTime);
+    sendBusA.connect(bc);
+
+    // ---- Reverb effect on aux B (Faust mono freeverb) ----
+    const rv = await instantiateFaustModule(ctx, {
+      name: 'reverb', wasmUrl: reverbWasm, metaUrl: reverbMeta, workletUrl: reverbWorklet,
+    });
+    const rvParams = rv.parameters as unknown as Map<string, AudioParam>;
+    rvParams.get('/Reverb/size')?.setValueAtTime(initial('rv_size', 0.5), ctx.currentTime);
+    rvParams.get('/Reverb/damp')?.setValueAtTime(initial('rv_damp', 0.3), ctx.currentTime);
+    rvParams.get('/Reverb/mix') ?.setValueAtTime(initial('rv_mix', 0.3),  ctx.currentTime);
+    sendBusB.connect(rv);
+
+    // ---- Master return gains (wet returns → master sum) ----
+    // Each effect's mono wet output passes through its return gain, then feeds
+    // BOTH stereo sum buses (centered mono aux return). The return level is an
+    // owned-knob modulated by the returnA / returnB CV inputs.
     const returnAGain = ctx.createGain();
     returnAGain.gain.value = initial('returnA', 0.5);
     const returnBGain = ctx.createGain();
     returnBGain.gain.value = initial('returnB', 0.5);
+    bc.connect(returnAGain);
+    rv.connect(returnBGain);
+    returnAGain.connect(sumL);
+    returnAGain.connect(sumR);
+    returnBGain.connect(sumL);
+    returnBGain.connect(sumR);
 
     // ---- Build inputs map ----
     // Trigs route to the corresponding DRUMMERGIRL voice input 0 (the gate),
@@ -554,13 +618,13 @@ export const riotgirlsDef: AudioModuleDef = {
       inputsMap.set(`v${v}_sendB`, { node: sendBGains[i]!, input: 0, param: sendBGains[i]!.gain });
     }
 
-    // FX CVs.
-    inputsMap.set('bc_decimate', { node: returnAGain, input: 0, param: returnAGain.gain }); // placeholder until MVP-B
-    inputsMap.set('bc_bits',     { node: returnAGain, input: 0, param: returnAGain.gain });
-    inputsMap.set('bc_wet',      { node: returnAGain, input: 0, param: returnAGain.gain });
-    inputsMap.set('rv_size',     { node: returnBGain, input: 0, param: returnBGain.gain });
-    inputsMap.set('rv_damp',     { node: returnBGain, input: 0, param: returnBGain.gain });
-    inputsMap.set('rv_mix',      { node: returnBGain, input: 0, param: returnBGain.gain });
+    // FX CVs — modulate the effect-worklet AudioParams directly (MVP-B).
+    inputsMap.set('bc_decimate', { node: bc, input: 0, param: bcParams.get('/DESTROY/decimate')! });
+    inputsMap.set('bc_bits',     { node: bc, input: 0, param: bcParams.get('/DESTROY/bits')! });
+    inputsMap.set('bc_wet',      { node: bc, input: 0, param: bcParams.get('/DESTROY/wet')! });
+    inputsMap.set('rv_size',     { node: rv, input: 0, param: rvParams.get('/Reverb/size')! });
+    inputsMap.set('rv_damp',     { node: rv, input: 0, param: rvParams.get('/Reverb/damp')! });
+    inputsMap.set('rv_mix',      { node: rv, input: 0, param: rvParams.get('/Reverb/mix')! });
     inputsMap.set('flt_cutoff',    { node: flt, input: 0, param: fltParams.get('/QBRT/cutoff')! });
     inputsMap.set('flt_resonance', { node: flt, input: 0, param: fltParams.get('/QBRT/resonance')! });
     inputsMap.set('flt_mode',      { node: flt, input: 0, param: fltParams.get('/QBRT/mode')! });
@@ -627,8 +691,24 @@ export const riotgirlsDef: AudioModuleDef = {
         return fltParams.get(`/QBRT/${suffix}`)?.value;
       },
     };
+    const bcHandle = {
+      setParam(suffix: string, value: number) {
+        bcParams.get(`/DESTROY/${suffix}`)?.setValueAtTime(value, ctx.currentTime);
+      },
+      readParam(suffix: string): number | undefined {
+        return bcParams.get(`/DESTROY/${suffix}`)?.value;
+      },
+    };
+    const rvHandle = {
+      setParam(suffix: string, value: number) {
+        rvParams.get(`/Reverb/${suffix}`)?.setValueAtTime(value, ctx.currentTime);
+      },
+      readParam(suffix: string): number | undefined {
+        return rvParams.get(`/Reverb/${suffix}`)?.value;
+      },
+    };
 
-    // ---- Owned-knob dispatcher (pan / send / return / FX placeholders) ----
+    // ---- Owned-knob dispatcher (pan / send / return levels) ----
     const ownedReadCache: Record<string, number> = {};
     function ownKnob(paramId: string, value: number): void {
       ownedReadCache[paramId] = value;
@@ -655,11 +735,14 @@ export const riotgirlsDef: AudioModuleDef = {
         returnBGain.gain.setValueAtTime(value, ctx.currentTime);
         return;
       }
-      // bc_*/rv_* parked here in MVP-A — value is cached for readParam below.
+      // bc_*/rv_* are routed via sink.bc / sink.rv (the effect worklets), not
+      // ownKnob — they never reach here.
     }
 
     const sink: SetParamSink = {
       voices: voiceHandles,
+      bc: bcHandle,
+      rv: rvHandle,
       flt: fltHandle,
       ownKnob,
     };
@@ -702,6 +785,12 @@ export const riotgirlsDef: AudioModuleDef = {
           }
           return voiceHandles[parseInt(m[1]!, 10) - 1]?.readParam(sub);
         }
+        if (paramId.startsWith('bc_')) {
+          return bcHandle.readParam(paramId.slice(3));
+        }
+        if (paramId.startsWith('rv_')) {
+          return rvHandle.readParam(paramId.slice(3));
+        }
         if (paramId.startsWith('flt_')) {
           return fltHandle.readParam(paramId.slice(4));
         }
@@ -719,7 +808,7 @@ export const riotgirlsDef: AudioModuleDef = {
           try { s.stop(); } catch { /* */ }
           s.disconnect();
         }
-        for (const n of [...drummergirlNodes, v4Wt, v4Adsr, v4Vca, ...pans, flt]) {
+        for (const n of [...drummergirlNodes, v4Wt, v4Adsr, v4Vca, ...pans, flt, bc, rv]) {
           try { n.disconnect(); } catch { /* */ }
         }
         for (const m of [...panMergers, fltMerger, v4VcaMerger]) {
@@ -731,7 +820,7 @@ export const riotgirlsDef: AudioModuleDef = {
         try { fltSplitter.disconnect(); } catch { /* */ }
         try { sumL.disconnect(); } catch { /* */ }
         try { sumR.disconnect(); } catch { /* */ }
-        for (const g of [...sendAGains, ...sendBGains, returnAGain, returnBGain]) {
+        for (const g of [...sendAGains, ...sendBGains, sendBusA, sendBusB, returnAGain, returnBGain]) {
           try { g.disconnect(); } catch { /* */ }
         }
       },

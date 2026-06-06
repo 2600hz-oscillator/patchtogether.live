@@ -30,6 +30,19 @@
 // unity output, strength=0 mutes; offset=+1 lifts the strength's
 // effective range so an unpatched (0V) strength still passes audio at
 // unity. Useful for "always-on with optional duck" patches.
+//
+// Inputs:
+//   in_l / in_r (audio): stereo audio in.
+//   strength_l / strength_r (cv): per-channel multiplier (CV or audio-rate carrier).
+//     Slow signals → VCA, audio-rate signals → ring modulator.
+//
+// Outputs:
+//   out_l (audio): in_l * (strength_l + offset) * level.
+//   out_r (audio): in_r * (strength_r + offset) * level.
+//
+// Params:
+//   level (linear 0..1, default 1.0): master output gain.
+//   offset (linear -1..1, default 0.0): DC offset added to each strength input.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -78,6 +91,7 @@ export const stereoVcaMath = {
 
 export const stereovcaDef: AudioModuleDef = {
   type: 'stereovca',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'STEREOVCA',
   category: 'utilities',

@@ -45,9 +45,32 @@
 // classic Blargg ntsc filter (MIT, ~2003), but no code copied — both
 // referenced for the chroma demod approach (sin/cos at carrier
 // frequency, then low-pass on Y).
+//
+// Inputs:
+//   in (video): RGB input.
+//   hsync_drift_cv / hsync_loss_cv / vsync_drift_cv (cv, linear, paramTarget=…):
+//     per-axis sync-timing CV.
+//   chroma_phase_cv / chroma_instability_cv (cv, linear, paramTarget=…): chroma CV.
+//   feedback_gain_cv / feedback_delay_cv (cv, linear, paramTarget=…): AVEmod feedback loop CV.
+//   wavefold_cv (cv, linear, paramTarget=wavefold): displaces in-line wavefolder amount.
+//   scan_wobble_cv (cv, linear, paramTarget=scan_wobble): displaces scan-line wobble.
+//   bloom_cv / noise_cv (cv, linear, paramTarget=…): CRT post CV.
+//   master_gain_cv (cv, linear, paramTarget=master_gain): displaces master gain.
+//   mirror_x_gate / mirror_y_gate (cv, paramTarget=mirror{X,Y}Gate): rising edge toggles mirror.
+//
+// Outputs:
+//   out (video): the rendered CRT field.
+//
+// Params:
+//   hsync_drift / hsync_loss / vsync_drift / scan_wobble / chroma_phase / chroma_instability /
+//     feedback_gain / feedback_delay / wavefold / bloom / noise / master_gain / mirrorX / mirrorY /
+//     mirrorXGate / mirrorYGate: 12 bending knobs + 4 mirror controls covering timing /
+//     chroma / wavefolding / recursion / CRT phosphor. Default ranges/values per the
+//     constants below; CV inputs scale around the knob position.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
 
 // ---------- pure helpers (unit-testable) ----------
 
@@ -99,6 +122,51 @@ export function softClip(v: number): number {
   return v * (27 + v2) / (27 + 9 * v2);
 }
 
+/**
+ * Pure MIRROR fold of an output UV — the exact CPU mirror of the shader's
+ * `mirrorUv()`. MIRROR X folds the LEFT half over the right (right half =
+ * mirror of left); MIRROR Y folds the TOP half over the bottom. With this
+ * repo's FBO→card-blit chain the VISUAL TOP corresponds to uv.y>=0.5 (same
+ * convention BACKDRAFT verified via e2e), so MIRROR Y KEEPS uv.y>=0.5 and
+ * reflects the low half via (1-uv.y) — the visual top mirrors into the
+ * bottom. Both on = quadrant fold (kaleidoscope). Idempotent on the kept
+ * half. Exported so the unit tests + shader share one fold definition.
+ */
+export function bentboxMirrorUv(
+  u: number,
+  v: number,
+  mirrorX: boolean,
+  mirrorY: boolean,
+): { u: number; v: number } {
+  return {
+    u: mirrorX ? (u < 0.5 ? u : 1 - u) : u,
+    v: mirrorY ? (v >= 0.5 ? v : 1 - v) : v,
+  };
+}
+
+/**
+ * Per-instance MIRROR-GATE tracker. A RISING EDGE on the mirror_x_gate /
+ * mirror_y_gate CV input FLIPS (toggles) that axis's mirror boolean — so a
+ * clock/sequencer can flip the kaleidoscope rhythmically. Hysteresis edge
+ * detection (rise>0.6 / fall<0.4), the same convention DOOM + BACKDRAFT use.
+ * (Toggle-on-edge, NOT hold-style — see report.)
+ */
+export interface BentboxMirrorGateState {
+  x: EdgeState;
+  y: EdgeState;
+}
+
+export function makeBentboxMirrorGateState(): BentboxMirrorGateState {
+  return { x: makeEdgeState(), y: makeEdgeState() };
+}
+
+/** Feed one gate sample to the edge detector; true iff it produced a RISING
+ *  edge (caller flips the matching mirror boolean). Mutates `edge` in place. */
+export function bentboxMirrorGateTick(edge: EdgeState, sample: number): boolean {
+  const ev = detectEdge(edge, sample);
+  return ev?.pressed === true;
+}
+
 // ---------- shader ----------
 
 // All-in-one fragment shader. Takes the input texture, previous-frame
@@ -135,6 +203,10 @@ uniform float uWavefold;          // 0..1
 uniform float uBloom;             // 0..1
 uniform float uNoise;             // 0..1
 uniform float uMasterGain;        // 0..2
+
+// MIRROR kaleidoscope fold on the FINAL output coordinate (1 = on).
+uniform float uMirrorX;
+uniform float uMirrorY;
 
 const float LINES = 240.0;        // 240p effective vertical resolution
 const float TWO_PI = 6.2831853;
@@ -178,6 +250,18 @@ float softClip(float v) {
   return v * (27.0 + v2) / (27.0 + 9.0 * v2);
 }
 
+// MIRROR fold on the OUTPUT coordinate. MIRROR X folds the LEFT half over the
+// right (keep uv.x<0.5, mirror the right half via 1-uv.x). MIRROR Y folds the
+// visual TOP half into the bottom. With this repo's FBO→card-blit chain the
+// VISUAL TOP corresponds to uv.y>=0.5 (same convention BACKDRAFT verified via
+// e2e), so KEEP uv.y>=0.5 and reflect the low half via (1.0-uv.y). Both =
+// kaleidoscope (quadrant fold).
+vec2 mirrorUv(vec2 uv) {
+  if (uMirrorX > 0.5) uv.x = uv.x < 0.5 ? uv.x : (1.0 - uv.x);
+  if (uMirrorY > 0.5) uv.y = uv.y >= 0.5 ? uv.y : (1.0 - uv.y);
+  return uv;
+}
+
 void main() {
   if (uHasInput < 0.5) {
     // Idle pattern when nothing is patched in: a dim sweeping color
@@ -188,11 +272,16 @@ void main() {
     return;
   }
 
+  // MIRROR kaleidoscope fold on the FINAL output coordinate — the whole CRT
+  // pipeline below renders in this folded space so the DISPLAYED image is
+  // mirrored. Identity when both mirrors are off (default).
+  vec2 uv = mirrorUv(vUv);
+
   // ---- Snap to scanline ----
-  // 240p effective vertical resolution. Round vUv.y down to the
+  // 240p effective vertical resolution. Round uv.y down to the
   // nearest scanline center so subsequent per-line distortions all
   // share the same line index.
-  float lineIdx = floor(vUv.y * LINES);
+  float lineIdx = floor(uv.y * LINES);
   float lineY = (lineIdx + 0.5) / LINES;
 
   // ---- Per-line horizontal sync drift ----
@@ -221,7 +310,7 @@ void main() {
   // vsync-drift vertical scroll effect is preserved via vOff.) Internal
   // FBO state (uPrev / scanline mask) is unaffected -- it is all in vUv
   // space.
-  vec2 sampleUv = vec2(fract(vUv.x + hOffset), fract(lineY - vOff));
+  vec2 sampleUv = vec2(fract(uv.x + hOffset), fract(lineY - vOff));
 
   // ---- Sample input ----
   vec3 srcRgb = texture(uIn, sampleUv).rgb;
@@ -274,14 +363,14 @@ void main() {
   // ---- Scanline gap mask (240p look). Field parity offsets the gap
   // by half a line so interlaced fields don't both darken the same
   // pixels. ----
-  float lineFrac = fract(vUv.y * LINES + uFieldParity * 0.5);
+  float lineFrac = fract(uv.y * LINES + uFieldParity * 0.5);
   float scanDark = 0.4 + 0.6 * smoothstep(0.0, 0.4, lineFrac) *
                                   smoothstep(1.0, 0.6, lineFrac);
   decoded *= scanDark;
 
   // ---- Phosphor RGB-triad mask. Every 3rd subpixel column favors a
   // primary, giving the soft-pixel CRT triad look at high resolutions. ----
-  float col = floor(vUv.x * 240.0 * 3.0);
+  float col = floor(uv.x * 240.0 * 3.0);
   float phase = mod(col, 3.0);
   vec3 mask = vec3(
     phase < 0.5 ? 1.15 : 0.85,
@@ -293,7 +382,7 @@ void main() {
   // ---- RF/film grain noise added LAST so it isn't soaked by the
   // feedback path (otherwise noise self-reinforces into a haze). ----
   if (uNoise > 0.0) {
-    float n = hash21(vUv * vec2(740.0, 421.0) + uTime) - 0.5;
+    float n = hash21(uv * vec2(740.0, 421.0) + uTime) - 0.5;
     decoded += vec3(n) * uNoise * 0.18;
   }
 
@@ -315,6 +404,15 @@ interface BentboxParams {
   bloom: number;
   noise: number;
   master_gain: number;
+  // MIRROR kaleidoscope fold (0/1). Buttons toggle these; a rising edge on
+  // the matching gate input also FLIPS them. Default off (identity).
+  mirrorX: number;
+  mirrorY: number;
+  // Synthetic gate params the mirror_x_gate / mirror_y_gate CV bridge writes
+  // (raw 0..1 swing). Hidden — no card knob; the module edge-detects a rising
+  // edge to FLIP mirrorX / mirrorY.
+  mirrorXGate: number;
+  mirrorYGate: number;
 }
 
 const DEFAULTS: BentboxParams = {
@@ -330,10 +428,16 @@ const DEFAULTS: BentboxParams = {
   bloom: 0.4,        // mild glow even at rest — CRTs always have some
   noise: 0.05,       // tiny baseline grain
   master_gain: 1,
+  // Mirror fold OFF by default → identity output (unchanged behaviour).
+  mirrorX: 0,
+  mirrorY: 0,
+  mirrorXGate: 0,
+  mirrorYGate: 0,
 };
 
 export const bentboxDef: VideoModuleDef = {
   type: 'bentbox',
+  palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
   label: 'BENTBOX',
   category: 'output',
@@ -352,6 +456,11 @@ export const bentboxDef: VideoModuleDef = {
     { id: 'bloom_cv',             type: 'cv', paramTarget: 'bloom',              cvScale: { mode: 'linear' } },
     { id: 'noise_cv',             type: 'cv', paramTarget: 'noise',              cvScale: { mode: 'linear' } },
     { id: 'master_gain_cv',       type: 'cv', paramTarget: 'master_gain',        cvScale: { mode: 'linear' } },
+    // MIRROR gate inputs — gate/clock style (NO cvScale => raw passthrough).
+    // A RISING edge FLIPS (toggles) the matching mirror axis, so a clock can
+    // flip the kaleidoscope rhythmically. The module edge-detects them.
+    { id: 'mirror_x_gate',        type: 'cv', paramTarget: 'mirrorXGate' },
+    { id: 'mirror_y_gate',        type: 'cv', paramTarget: 'mirrorYGate' },
   ],
   outputs: [
     // Chainable pass-through of the bent CRT image, so users can stack
@@ -371,6 +480,14 @@ export const bentboxDef: VideoModuleDef = {
     { id: 'bloom',              label: 'Bloom',     defaultValue: DEFAULTS.bloom,              min: 0,  max: 1, curve: 'linear' },
     { id: 'noise',              label: 'Noise',     defaultValue: DEFAULTS.noise,              min: 0,  max: 1, curve: 'linear' },
     { id: 'master_gain',        label: 'Gain',      defaultValue: DEFAULTS.master_gain,        min: 0,  max: 2, curve: 'linear' },
+    // MIRROR kaleidoscope toggles (0/1). Buttons on the card set these; the
+    // gate inputs flip them on a rising edge. Default off.
+    { id: 'mirrorX',            label: 'Mirror X',  defaultValue: DEFAULTS.mirrorX,            min: 0,  max: 1, curve: 'linear' },
+    { id: 'mirrorY',            label: 'Mirror Y',  defaultValue: DEFAULTS.mirrorY,            min: 0,  max: 1, curve: 'linear' },
+    // Synthetic gate params the mirror_x_gate / mirror_y_gate bridge writes —
+    // hidden (no card knob); the module edge-detects a rising edge to FLIP.
+    { id: 'mirrorXGate',        label: 'Mir X Gate', defaultValue: DEFAULTS.mirrorXGate,       min: 0, max: 1, curve: 'linear' },
+    { id: 'mirrorYGate',        label: 'Mir Y Gate', defaultValue: DEFAULTS.mirrorYGate,       min: 0, max: 1, curve: 'linear' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -396,6 +513,8 @@ export const bentboxDef: VideoModuleDef = {
     const uBloom             = gl.getUniformLocation(program, 'uBloom');
     const uNoise             = gl.getUniformLocation(program, 'uNoise');
     const uMasterGain        = gl.getUniformLocation(program, 'uMasterGain');
+    const uMirrorX           = gl.getUniformLocation(program, 'uMirrorX');
+    const uMirrorY           = gl.getUniformLocation(program, 'uMirrorY');
 
     // Ping-pong FBOs for frame feedback. Each draw writes to the
     // "back" buffer, sampling the "front" as uPrev, then swaps. The
@@ -419,6 +538,11 @@ export const bentboxDef: VideoModuleDef = {
 
     const params: BentboxParams = { ...DEFAULTS, ...(node.params as Partial<BentboxParams>) };
     let framesElapsed = 0;
+    // MIRROR gate edge trackers — a rising edge on either gate FLIPS the
+    // matching mirror boolean (toggle-on-edge; see report for the hold-style
+    // alternative). The bridge writes the raw gate sample each frame while
+    // patched, so an unpatched gate never fires.
+    const mirrorGate = makeBentboxMirrorGateState();
     const startWallMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
     const surface: VideoNodeSurface = {
@@ -434,6 +558,16 @@ export const bentboxDef: VideoModuleDef = {
         // into the back buffer. Cold-start binds the empty sentinel.
         const writeTarget = frontIsA ? fboB : fboA;
         const prevTex = framesElapsed > 0 ? (frontIsA ? fboA.texture : fboB.texture) : emptyTex;
+
+        // MIRROR gates: a rising edge on either gate FLIPS the matching mirror
+        // boolean. Mutating `params` means the card button reflects the new
+        // (gate-toggled) state.
+        if (bentboxMirrorGateTick(mirrorGate.x, params.mirrorXGate)) {
+          params.mirrorX = params.mirrorX >= 0.5 ? 0 : 1;
+        }
+        if (bentboxMirrorGateTick(mirrorGate.y, params.mirrorYGate)) {
+          params.mirrorY = params.mirrorY >= 0.5 ? 0 : 1;
+        }
 
         g.bindFramebuffer(g.FRAMEBUFFER, writeTarget.fbo);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
@@ -466,6 +600,9 @@ export const bentboxDef: VideoModuleDef = {
         g.uniform1f(uBloom,             clamp01(params.bloom));
         g.uniform1f(uNoise,             clamp01(params.noise));
         g.uniform1f(uMasterGain,        Math.max(0, Math.min(2, params.master_gain)));
+        // MIRROR kaleidoscope fold (applied to the FINAL output coordinate).
+        g.uniform1f(uMirrorX,           params.mirrorX >= 0.5 ? 1.0 : 0.0);
+        g.uniform1f(uMirrorY,           params.mirrorY >= 0.5 ? 1.0 : 0.0);
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);

@@ -37,6 +37,7 @@
     type TransportCardDeps,
   } from '$lib/audio/modules/transport-card';
   import type { PendingMode, SlotKey, Snapshot } from '$lib/audio/modules/transport-helpers';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -296,6 +297,13 @@
     { id: 'queue2_cv', label: 'PLAY QUEUE 2',  cable: 'gate' },
     { id: 'queue3_cv', label: 'PLAY QUEUE 3',  cable: 'gate' },
     { id: 'queue4_cv', label: 'PLAY QUEUE 4',  cable: 'gate' },
+    { id: 'queue5_cv', label: 'PLAY QUEUE 5',  cable: 'gate' },
+    { id: 'queue6_cv', label: 'PLAY QUEUE 6',  cable: 'gate' },
+    { id: 'queue7_cv', label: 'PLAY QUEUE 7',  cable: 'gate' },
+    { id: 'queue8_cv', label: 'PLAY QUEUE 8',  cable: 'gate' },
+    { id: 'next_cv',   label: 'NEXT',          cable: 'gate' },
+    { id: 'prev_cv',   label: 'PREV',          cable: 'gate' },
+    { id: 'random_cv', label: 'RANDOM',        cable: 'gate' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'pitch', cable: 'polyPitchGate' },
@@ -307,7 +315,7 @@
 <div class="mod-card seq-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
-    Sequencer
+    <ModuleTitle {id} {data} defaultLabel="Sequencer" inline />
     <button class="play-btn" class:playing={isPlaying} onclick={togglePlay} title={isPlaying ? 'Stop' : 'Play'}>
       {isPlaying ? '■' : '▶'}
     </button>
@@ -388,7 +396,6 @@
 <style>
   .seq-card {
     width: 540px;
-    min-height: 280px;
     padding-right: 0;
     padding-left: 0;
   }

@@ -7,6 +7,7 @@
   import { mixmstrsDef } from '$lib/audio/modules/mixmstrs';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode, PortDef } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -103,7 +104,7 @@
 <div class="mod-card mixmstrs-card" class:compact>
   <div class="stripe" style="background: var(--cable-audio);"></div>
   <header class="title">
-    MIXMSTRS
+    <ModuleTitle {id} {data} defaultLabel="MIXMSTRS" inline />
     <button class="toggle" onclick={() => (compact = !compact)} title={compact ? 'Expand' : 'Compact'}>
       {compact ? '◇' : '◆'}
     </button>
@@ -152,10 +153,6 @@
 <style>
   .mixmstrs-card {
     width: 520px;
-    min-height: 460px;
-  }
-  .mixmstrs-card.compact {
-    min-height: 200px;
   }
   .mixmstrs-card .title {
     display: flex;

@@ -11,6 +11,7 @@
 // surface (label, category, schemaVersion, optional migrate).
 
 import type { ModuleType, PortDef, ParamDef, Domain } from '$lib/graph/types';
+import type { PaletteCategory } from '$lib/audio/module-registry';
 
 export interface MetaModuleDef {
   type: ModuleType;
@@ -30,6 +31,12 @@ export interface MetaModuleDef {
    *  today; field present so Canvas's union-typed defLookup can read
    *  it uniformly. */
   undeletable?: boolean;
+  /** Palette classification — see {@link PaletteCategory}. Omitted =
+   *  Uncategorized. */
+  palette?: PaletteCategory;
+  /** Card-component basename override (no '.svelte'). Only needed when the
+   *  `PascalCase(type)+'Card'` convention doesn't match the filename. */
+  card?: string;
 }
 
 const registry = new Map<ModuleType, MetaModuleDef>();

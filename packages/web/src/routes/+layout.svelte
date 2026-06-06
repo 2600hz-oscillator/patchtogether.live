@@ -2,9 +2,11 @@
   import '@xyflow/svelte/dist/style.css';
   import './global.css';
   import '$lib/ui/modules/_module-card.css';
+  import { onMount } from 'svelte';
+  import { skinStore } from '$lib/ui/skins/skin-store.svelte';
   import { ClerkProvider } from 'svelte-clerk';
   import { page } from '$app/state';
-  import { ydoc, patch } from '$lib/graph/store';
+  import { ydoc, patch, bindRackspace } from '$lib/graph/store';
   import { attachProvider } from '$lib/multiplayer/provider';
   import { createSharedClock } from '$lib/audio/shared-clock.svelte';
   import { setActiveSharedClock } from '$lib/audio/modules/lfo';
@@ -31,8 +33,23 @@
   import { createMikeController, type MikeController } from '$lib/mike/controller';
   import { evictMikePatch } from '$lib/mike/driver';
   import { readBotSession } from '$lib/bot/session-lock';
+  import { testHooksEnabled } from '$lib/dev/test-hooks';
 
   let { data, children } = $props();
+
+  // Apply the user's saved skin (localStorage["pt.skin"]) on EVERY route.
+  // The skin-store singleton reads + applies it to <html> in its constructor,
+  // but it was previously imported ONLY by canvas components (Canvas /
+  // SkinSwitcher / Fader) — so non-canvas routes (dashboard, sign-in, docs)
+  // and any hard reload fell back to the default theme. The most visible
+  // symptom: deleting a rackspace does a full reload of the dashboard, which
+  // re-parsed <html> and dropped the imperatively-applied skin vars. Importing
+  // the store here and re-asserting on mount keeps the chosen skin applied
+  // app-wide and across reloads. setSkin(current, persist=false) re-applies
+  // the already-loaded skin without rewriting localStorage.
+  onMount(() => {
+    skinStore.setSkin(skinStore.current, false);
+  });
 
   // Stage B PR B-b: expose attachProvider as a dev global so Playwright
   // @collab + @capacity + @auth tests can wire browser contexts to the
@@ -41,9 +58,20 @@
   // via the same dev-only HMAC secret used by lib/server/invites.ts and
   // packages/server/src/auth.ts. Tests can also pass an explicit `token`
   // to drive the rejection paths (e.g. `'clerk:invalid'`).
+  //
+  // Gated on testHooksEnabled() (NOT bare import.meta.env.DEV): these hooks
+  // must also be present in the prebuilt `vite preview` bundle the e2e shards
+  // run against (E2E_USE_PREVIEW=1), which is a PROD build where
+  // import.meta.env.DEV is false. testHooksEnabled() returns true under DEV
+  // *or* when VITE_E2E_HOOKS=1 is baked in at build time (the autotest/dev
+  // deploy + the build-web CI job set it). Same gate Canvas.svelte uses for
+  // its __patch/__ydoc/__ensureEngine globals — keep them in lockstep, else
+  // every @collab/@auth/@clock-sync/livecode spec fails under preview with
+  // "__attachProvider is not a function". Plain prod (flag unset) ships this
+  // code but never installs the globals.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let _activeProviderRef: any = null;
-  if (import.meta.env.DEV && typeof window !== 'undefined') {
+  if (testHooksEnabled() && typeof window !== 'undefined') {
     // MUST stay in lockstep with the dev fallback in invites.ts and
     // auth.ts. If you change one, change all three.
     const DEV_INVITE_SECRET = 'dev-only-invite-secret-change-me-x'.padEnd(32, '_');
@@ -63,12 +91,20 @@
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (window as any).__attachProvider = async (rackspaceId: string, token?: string) => {
+      // Bind the singleton patch/ydoc to a fresh doc for this rackspace
+      // BEFORE attaching the provider. Without this, the dev-on-/ flow
+      // (used by e2e specs that simulate multi-rackspace navigation in
+      // one tab) would re-attach to the previous rackspace's leftover
+      // doc and corrupt the new room — same bug the prod /r/[id] route
+      // hits. After bindRackspace, the imported `ydoc` binding points at
+      // the freshly created Y.Doc, which is what we hand to attachProvider.
+      const bound = bindRackspace(rackspaceId);
       const effectiveToken = token ?? (await deriveAnonToken(rackspaceId));
       let onCapacityRejected: () => void = () => {};
       let onAuthRejected: (r: string) => void = () => {};
       const provider = attachProvider({
         rackspaceId,
-        ydoc,
+        ydoc: bound.ydoc,
         token: effectiveToken,
         debug: true,
         onCapacityRejected: () => onCapacityRejected(),
@@ -99,6 +135,12 @@
       // pass a `provider` prop. Dev-only path; prod /r/[id] still owns
       // the prop-based provider.
       (window as unknown as { __provider?: unknown }).__provider = provider;
+      // Refresh the __patch / __ydoc globals so tests that switched
+      // rackspaces in this tab see the FRESH proxies, not the previous
+      // rackspace's. Canvas.svelte sets these inside an $effect that only
+      // reruns on remount, which doesn't happen on `/`.
+      (window as unknown as { __patch?: unknown }).__patch = bound.patch;
+      (window as unknown as { __ydoc?: unknown }).__ydoc = bound.ydoc;
       return provider;
     };
 
@@ -318,6 +360,40 @@
       const { lfoDef } = await import('$lib/audio/modules/lfo');
       const state = lfoDef.computeStateAt(sharedTimeMs - epoch, node.params ?? { rate: 1 }, () => 0);
       return state.phase;
+    };
+
+    // Rackspace seed hook — wraps POST /api/test/seed-rackspace so e2e specs
+    // can spin up a fresh /r/[id] route without a Clerk session. Returns
+    // { id, inviteCode } the spec then uses to build /r/<id>?invite=<code>.
+    // The server endpoint is gated on RACKSPACE_SEED_ENABLED='1' OR
+    // NODE_ENV='development' — neither is set on prod, so this hook can be
+    // present even on the public bundle without risk.
+    //
+    // Optional `envelope` is a PatchEnvelope object (see lib/graph/persistence)
+    // whose base64 `update` field is stored verbatim into rack_snapshots so
+    // the Hocuspocus relay serves it on first connect. Pass `undefined` for
+    // a fresh empty rackspace.
+    interface SeedEnvelope { envelopeVersion: number; update: string }
+    interface SeedResp { id: string; inviteCode: string }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any).__seedRackspace = async (
+      envelope?: SeedEnvelope,
+      opts?: { name?: string; ownerUserId?: string },
+    ): Promise<SeedResp> => {
+      const body: Record<string, unknown> = {};
+      if (envelope !== undefined) body.envelope = envelope;
+      if (opts?.name) body.name = opts.name;
+      if (opts?.ownerUserId) body.ownerUserId = opts.ownerUserId;
+      const r = await fetch('/api/test/seed-rackspace', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) {
+        const text = await r.text().catch(() => '<no body>');
+        throw new Error(`__seedRackspace failed: ${r.status} ${text.slice(0, 200)}`);
+      }
+      return (await r.json()) as SeedResp;
     };
   }
 

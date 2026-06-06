@@ -31,6 +31,23 @@
 // up attenuator if needed; redundant on the panel. ABS_DIFF is niche enough
 // that we omitted it to keep the 5-out card readable; can ship as a follow-
 // up if user feedback asks for it.
+//
+// Inputs:
+//   a (cv): bipolar input A.
+//   b (cv): bipolar input B.
+//   attA_cv (cv, linear, paramTarget=attA): displaces the A attenuvert.
+//   attB_cv (cv, linear, paramTarget=attB): displaces the B attenuvert.
+//
+// Outputs:
+//   min (cv): min(A', B').
+//   max (cv): max(A', B').
+//   diff (cv): A' - B'.
+//   sum (cv): tanh(A' + B').
+//   product (cv): tanh(A' * B').
+//
+// Params:
+//   attA (linear -1..1, default 1): A attenuvert.
+//   attB (linear -1..1, default 1): B attenuvert.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -70,6 +87,7 @@ export const analogLogicMath = {
 
 export const analogLogicMathsDef: AudioModuleDef = {
   type: 'analogLogicMaths',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'ANALOGLOGICMATHS',
   category: 'utilities',

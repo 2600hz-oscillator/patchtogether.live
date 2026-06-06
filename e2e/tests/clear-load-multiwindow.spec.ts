@@ -162,19 +162,33 @@ test.describe('@collab B3 reconciler determinism', () => {
         });
       });
 
-      // Listener canvas MUST render the 5 module cards. This is the heart
-      // of the regression: pre-fix, the audio engine had the nodes (so
+      // Listener canvas MUST render the 5 example module cards. This is the
+      // heart of the regression: pre-fix, the audio engine had the nodes (so
       // sound played) but Svelte Flow's bind-stomp could leave the canvas
       // empty. We poll the actual DOM so we're testing what the user sees.
+      //
+      // Assert the 5 EXAMPLE ids are all rendered (not a TOTAL count === 5): a
+      // synced rackspace auto-spawns the singleton TIMELORDE clock, so the
+      // listener's total node count is 5 example + 1 timelorde = 6 (and a
+      // re-mount race can briefly show a 7th). The regression this guards is
+      // "the listener renders the loaded patch within 500 ms" — checking the
+      // exact example ids appear within that budget is both faithful to that
+      // and robust to the unrelated auto-spawn. (The per-id visibility loop
+      // below then re-confirms each card painted.)
+      const EXAMPLE_IDS = ['b3-seq', 'b3-vco', 'b3-adsr', 'b3-vca', 'b3-out'];
       await expect
         .poll(
           async () =>
-            await s.pageB
-              .locator('.svelte-flow__node')
-              .count(),
+            await s.pageB.evaluate(
+              (ids) =>
+                ids.every(
+                  (id) => document.querySelector(`.svelte-flow__node[data-id="${id}"]`) !== null,
+                ),
+              EXAMPLE_IDS,
+            ),
           { timeout: 500, intervals: [50, 100, 100, 100, 150] },
         )
-        .toBe(5);
+        .toBe(true);
 
       // Each node id we published should appear as a DOM element on the
       // listener side — id-by-id so a flake on a single missing card is
@@ -216,6 +230,14 @@ test.describe('@collab B3 reconciler determinism', () => {
 
       // What the engine sees and what the canvas renders must converge.
       // Pre-B3 they could disagree.
+      //
+      // The rack auto-spawns a TIMELORDE clock singleton ("there is always a
+      // clock" — see lib/audio/modules/timelorde-autospawn.ts). It is an audio
+      // module, so it re-appears in BOTH the engine's audio-domain node map and
+      // the canvas DOM after the clear+load, alongside the parity nodes. It is
+      // NOT part of what this reconciler-determinism check asserts, so exclude
+      // it from both sides by filtering its `timelorde-<hash>` id prefix (the
+      // engine map is keyed by node id, not type).
       await expect
         .poll(
           async () =>
@@ -228,7 +250,9 @@ test.describe('@collab B3 reconciler determinism', () => {
               const eng = w.__engine();
               if (!eng) return null;
               const audio = eng.getDomain('audio');
-              return [...audio.nodes.keys()].sort();
+              return [...audio.nodes.keys()]
+                .filter((id) => !id.startsWith('timelorde-'))
+                .sort();
             }),
           { timeout: 4000 },
         )
@@ -237,7 +261,10 @@ test.describe('@collab B3 reconciler determinism', () => {
       const domIds = await s.pageB
         .locator('.svelte-flow__node')
         .evaluateAll((nodes) =>
-          nodes.map((n) => (n as HTMLElement).dataset.id).filter(Boolean).sort(),
+          nodes
+            .map((n) => (n as HTMLElement).dataset.id)
+            .filter((id): id is string => !!id && !id.startsWith('timelorde-'))
+            .sort(),
         );
       expect(domIds).toEqual(['parity-a', 'parity-b', 'parity-c']);
     } finally {

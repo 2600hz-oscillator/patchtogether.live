@@ -21,6 +21,25 @@
 // musical-range mapping (octave-scaled via 2^x). The res / color / mode
 // CV inputs route via AudioParam with linear/discrete cvScale so an LFO
 // sweeps the full param range.
+//
+// Inputs:
+//   in1 / in2 (audio): per-filter audio inputs.
+//   voct1 / voct2 (cv): V/oct CV; ±1V → ±1 octave offset on the per-filter cutoff knob.
+//   cutoff1_cv / cutoff2_cv (cv): audio-rate cutoff CV (sums into the V/oct path).
+//   res1_cv / res2_cv (cv, linear, paramTarget=res{N}): displaces per-filter resonance.
+//   color_cv (cv, linear, paramTarget=color): displaces COLOR overdrive.
+//   mix_mode_cv (cv, discrete, paramTarget=mixMode): displaces 0=parallel / 1=serial.
+//
+// Outputs:
+//   out1 / out2 (audio): per-filter output (per-filter mode picker selects LP/BP/HP/etc).
+//   mix (audio): mix bus (depends on mixMode).
+//
+// Params:
+//   cutoff1 / cutoff2 (log 20..20000 Hz, default 1000): per-filter center frequency.
+//   res1 / res2 (linear 0..1, default 0.1): per-filter resonance.
+//   mode1 / mode2 (discrete 0..BLADES_MAX_MODE, default 0): per-filter mode picker.
+//   color (linear 0..1, default 0): COLOR overdrive amount.
+//   mixMode (discrete 0..1, default 0): 0=parallel, 1=serial routing for the MIX bus.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -167,6 +186,7 @@ export const bladesMath = {
 
 export const bladesDef: AudioModuleDef = {
   type: 'blades',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'BLADES',
   category: 'filters',

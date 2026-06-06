@@ -40,20 +40,53 @@
 //   So the slider's range is [-2, +2] with default value 1. Negative
 //   values play in reverse.
 //
-// Data shape on node.data:
-//   samples: number[]          // mono PCM as a plain JS array — Yjs-safe.
-//   sampleRate: number         // source rate; used in the waveform card.
-//   sampleLength: number       // samples.length, cached.
-//   fileName?: string          // for display.
+// Data shape on node.data (file-upload path):
+//   fileBytesB64: string       // base64-encoded ORIGINAL file bytes
+//                              // (wav/mp3/m4a/...). The single opaque
+//                              // Yjs value persisted for an upload —
+//                              // mirrors the recording-path trick
+//                              // (`sample.bytesB64`). The decoded
+//                              // Float32 buffer is NEVER persisted: it's
+//                              // produced lazily on hydrate inside the
+//                              // engine factory.
+//   fileSize: number           // bytes pre-base64 (display + cap check).
+//   fileMime?: string          // original mime type (download fidelity).
+//   sampleRate: number         // post-decode rate of the buffer pushed
+//                              // to the worklet. Used by the card to
+//                              // size start/end faders.
+//   sampleLength: number       // post-decode sample count, cached for
+//                              // the same reason.
+//   fileName?: string          // for display + download filename.
+//
+// Legacy field (read-only, no longer written):
+//   samples?: number[]         // pre-PR-#XXX patches stored the decoded
+//                              // PCM directly as a YArray. The engine
+//                              // factory still reads this so old patches
+//                              // hydrate; new uploads write fileBytesB64
+//                              // instead.
 //
 // Hard limit: 250 KB on the raw upload file. Larger files are rejected.
-// (Compressed formats at 250 KB decode to roughly 5–15 s of audio at
+// (Compressed formats at 250 KB decode to roughly 5–60 s of audio at
 // typical bitrates, which is the intended scope for a sample looper.)
+//
+// Inputs:
+//   trig (gate): rising edge restarts loop playback from `start`.
+//   rate_cv (cv, linear, paramTarget=rate): displaces the playback rate.
+//
+// Outputs:
+//   out (audio): the loop's audio.
+//
+// Params:
+//   rate (linear, default = 1.0 native rate): playback rate (negative = reverse, 1 = native).
+//   mode (discrete 0..1, default 1): 0 = one-shot, 1 = loop.
+//   start (linear 0..1e6 samples, default 0): in-buffer start sample.
+//   end (linear 0..1e6 samples, default 1e6): in-buffer end sample.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import workletUrl from '@patchtogether.live/dsp/dist/samsloop.js?url';
+import tapWorkletUrl from '@patchtogether.live/dsp/dist/samsloop-tap.js?url';
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
@@ -82,20 +115,51 @@ export const SAMSLOOP_MAX_SAMPLES = Math.floor(SAMSLOOP_MAX_FILE_BYTES / 4);
  *  it as-is. */
 export const SAMSLOOP_TARGET_SAMPLE_RATE = 24000;
 
-/** Hard cap on stored decoded samples. ~6 seconds at the target 24 kHz
- *  rate. The raw-file gate (SAMSLOOP_MAX_FILE_BYTES) passes a 43 KB
- *  8-bit 16 kHz mono WAV (the bug-report fixture), which decodes to
- *  ~21K samples at source rate but ~65K at 48 kHz native. Without
- *  this cap a contrived small file (e.g. a low-bitrate mp3) could
- *  decode to hundreds of thousands of samples and lock up the main
- *  thread when written into the syncedstore CRDT.
+/** Hard cap on stored decoded samples. Sized to accommodate the bulk of
+ *  realistic short-MP3 loads while staying inside browser-memory limits.
  *
- *  At 24 kHz target rate, 144_000 samples = 6 seconds — well within
- *  the "loop a phrase" use case the module is scoped to. */
-export const SAMSLOOP_MAX_DECODED_SAMPLES = 144_000;
+ *  At the target 24 kHz mono rate:
+ *    1_500_000 samples ≈ 62.5 seconds
+ *  At 48 kHz native (e.g. if the source was already <= 24 kHz, no
+ *  downsample applied):
+ *    1_500_000 samples ≈ 31 seconds
+ *
+ *  Why this is safe even though a 1.5M-sample number[] would obliterate
+ *  the syncedstore CRDT: we no longer PERSIST the decoded sample as a
+ *  YArray. Uploads round-trip as base64'd ORIGINAL file bytes
+ *  (`SamsloopData.fileBytesB64`, ~250 KB-bounded by the file-byte gate)
+ *  and the engine factory decodes them lazily on hydrate into a
+ *  worklet-owned Float32 buffer. The decoded buffer never touches Yjs,
+ *  so its size is bounded only by browser memory + this cap — not by
+ *  the CRDT-wrap overhead that pinned the old 144_000 ceiling.
+ *
+ *  This cap still gates the decode step itself: a contrived file that
+ *  decodes to many millions of samples (e.g. a long FLAC) would lock up
+ *  the main thread when copied + downsampled, regardless of CRDT
+ *  storage. 1.5M is the largest size we're willing to do that work for
+ *  in a single shot on the main thread. */
+export const SAMSLOOP_MAX_DECODED_SAMPLES = 1_500_000;
 
 export interface SamsloopData {
+  /** LEGACY field, read-only on new code paths. Pre-PR-#XXX patches
+   *  stored the decoded PCM directly as a YArray; the engine factory
+   *  still hydrates this if present, but new uploads write to
+   *  `fileBytesB64` below instead. See the file's header comment for
+   *  the rationale (CRDT-bloat at the new 1.5M-sample cap). */
   samples?: number[];
+  /** Base64-encoded ORIGINAL upload bytes (wav/mp3/m4a/ogg/flac/opus).
+   *  The decoded Float32 buffer is never persisted — it's regenerated
+   *  on hydrate inside the engine factory. Bounded by
+   *  SAMSLOOP_MAX_FILE_BYTES (250 KB raw, ~340 KB base64). */
+  fileBytesB64?: string;
+  /** Raw byte length pre-base64. Cached for cap checks + the card's
+   *  "loaded N kB" status line. */
+  fileSize?: number;
+  /** Original file's mime type, captured at upload. Used for the
+   *  DOWNLOAD button so the export round-trips losslessly (mp3 stays
+   *  mp3, wav stays wav). Optional because the browser doesn't always
+   *  give us one. */
+  fileMime?: string;
   sampleRate?: number;
   sampleLength?: number;
   fileName?: string;
@@ -104,16 +168,66 @@ export interface SamsloopData {
    *  legacy nodes count toward the rackspace cap only. See
    *  lib/multiplayer/samsloop-limits.ts. */
   creatorId?: string;
+
+  /** Recording settings — three discrete toggles on the card (CHAN /
+   *  BITS / RATE). Defaults from SAMSLOOP_REC_DEFAULTS. Persisted with
+   *  the rest of node.data so a loaded patch remembers the user's
+   *  encoding preferences. */
+  recRate?: 22050 | 44100;
+  recBits?: 8 | 16;
+  recChannels?: 1 | 2;
+
+  /** Most-recently-recorded sample (the recording feature, separate from
+   *  the file-upload `samples`/`sampleRate` fields above). Same persistence
+   *  trick PICTUREBOX uses for `imageBytes`: raw bytes are base64-encoded
+   *  and stored as a string so Yjs treats them as one opaque value (NO
+   *  per-byte YArray recursion — a 144 kB Array.from(uint8Array) into a
+   *  YArray slot blows the stack at insert time, and re-broadcasts a
+   *  per-byte update to every peer). Strings are flat values; one Yjs
+   *  update per recording, deserialized on every peer via atob().
+   *
+   *  The byte payload is header-less PCM — interleaved if channels === 2,
+   *  little-endian for 16-bit. The WAV header is synthesized only when
+   *  the user clicks DOWNLOAD (via makeWavBlob in samsloop-record.ts). */
+  sample?: {
+    /** base64-encoded raw PCM bytes. Length is bounded by
+     *  SAMSLOOP_RECORD_BUDGET_BYTES = 250 000 (raw bytes pre-encode;
+     *  the base64 string is ~4/3 of that). */
+    bytesB64: string;
+    rate: 22050 | 44100;
+    bits: 8 | 16;
+    channels: 1 | 2;
+    /** Raw byte length pre-base64 (useful so the card can show "8 kB"
+     *  without decoding to count). */
+    byteLength: number;
+    /** durationSec = byteLength / (channels * bytesPerSample * rate). */
+    durationSec: number;
+  };
 }
 
 /** Result of attempting to decode + size-check an audio upload. The card
  *  consumes this — `error` populated means the upload was rejected and
- *  the message is suitable for display. */
+ *  the message is suitable for display.
+ *
+ *  On success, the result carries BOTH the decoded buffer (for immediate
+ *  worklet push) AND the ORIGINAL file bytes (for persistence). The card
+ *  pushes the decoded buffer into the engine handle, then writes only
+ *  the bytes + small metadata into node.data — see the file header
+ *  comment for the no-decoded-in-Yjs invariant. */
 export interface SamsloopLoadResult {
   ok: boolean;
   error?: string;
   samples?: Float32Array;
   sampleRate?: number;
+  /** Original file bytes (unmodified). Populated on success so the
+   *  card can persist them via base64 instead of the decoded PCM. */
+  fileBytes?: Uint8Array;
+  /** Original file size in bytes. Same as fileBytes.byteLength but
+   *  exposed separately for symmetry with the file-input metadata. */
+  fileSize?: number;
+  /** Original mime type (e.g. "audio/mpeg"). May be empty on some
+   *  browser/file combos — surfaced as-is. */
+  fileMime?: string;
 }
 
 /** Downsample a mono Float32 buffer by an integer factor with a brief
@@ -262,7 +376,7 @@ export function parseWavManually(
  *  After decode this function downsamples to SAMSLOOP_TARGET_SAMPLE_RATE
  *  (24 kHz) if the decoder's native rate is higher. */
 export async function loadSamsloopWav(
-  file: { size: number; arrayBuffer(): Promise<ArrayBuffer> },
+  file: { size: number; type?: string; arrayBuffer(): Promise<ArrayBuffer> },
   ctx: BaseAudioContext,
 ): Promise<SamsloopLoadResult> {
   if (file.size > SAMSLOOP_MAX_FILE_BYTES) {
@@ -274,13 +388,20 @@ export async function loadSamsloopWav(
     };
   }
   const ab = await file.arrayBuffer();
+  // Snapshot the original bytes for persistence. We do this BEFORE the
+  // decoders run because decodeAudioData consumes (neuters) the
+  // ArrayBuffer on some browsers; the manual WAV parser is read-only but
+  // we keep the same path for symmetry. `new Uint8Array(ab)` aliases
+  // — fine here because we never mutate it.
+  const fileBytes = new Uint8Array(ab.slice(0));
+  const fileMime = typeof file.type === 'string' ? file.type : '';
 
   // Try the manual WAV parser first — it handles 8-bit PCM that Chrome
   // sometimes rejects. parseWavManually returns null for non-WAV bytes
   // or unsupported WAV variants; we fall through to decodeAudioData.
   const manual = parseWavManually(ab);
   if (manual) {
-    return finalizeSamsloopBuffer(manual.samples, manual.sampleRate);
+    return finalizeSamsloopBuffer(manual.samples, manual.sampleRate, fileBytes, fileMime);
   }
 
   let buf: AudioBuffer;
@@ -301,15 +422,19 @@ export async function loadSamsloopWav(
     const ch = buf.getChannelData(c);
     for (let i = 0; i < len; i++) mono[i]! += ch[i]! / channels;
   }
-  return finalizeSamsloopBuffer(mono, buf.sampleRate);
+  return finalizeSamsloopBuffer(mono, buf.sampleRate, fileBytes, fileMime);
 }
 
 /** Apply the integer-factor downsample to SAMSLOOP_TARGET_SAMPLE_RATE +
  *  the decoded-buffer cap. Shared by both the manual WAV path and the
- *  decodeAudioData path. */
+ *  decodeAudioData path. Threads the original file bytes through so the
+ *  caller (the card OR the engine factory's hydrate path) can both push
+ *  the decoded buffer AND persist the bytes in one shot. */
 function finalizeSamsloopBuffer(
   mono: Float32Array,
   sampleRate: number,
+  fileBytes?: Uint8Array,
+  fileMime?: string,
 ): SamsloopLoadResult {
   let outSamples: Float32Array<ArrayBuffer> = mono as Float32Array<ArrayBuffer>;
   let outRate = sampleRate;
@@ -325,12 +450,60 @@ function finalizeSamsloopBuffer(
       ok: false,
       error: `Decoded buffer too large: ${outSamples.length} samples exceeds the ${
         SAMSLOOP_MAX_DECODED_SAMPLES
-      }-sample cap (~${(SAMSLOOP_MAX_DECODED_SAMPLES / SAMSLOOP_TARGET_SAMPLE_RATE).toFixed(1)} s at ${
+      }-sample cap (~${(SAMSLOOP_MAX_DECODED_SAMPLES / SAMSLOOP_TARGET_SAMPLE_RATE).toFixed(0)} s at ${
         SAMSLOOP_TARGET_SAMPLE_RATE / 1000
-      } kHz).`,
+      } kHz mono, ~${(SAMSLOOP_MAX_DECODED_SAMPLES / 48000).toFixed(0)} s at 48 kHz). Try a shorter clip.`,
     };
   }
-  return { ok: true, samples: outSamples, sampleRate: outRate };
+  return {
+    ok: true,
+    samples: outSamples,
+    sampleRate: outRate,
+    fileBytes,
+    fileSize: fileBytes?.byteLength,
+    fileMime,
+  };
+}
+
+/** Decode a base64-encoded audio file's bytes into a mono Float32 PCM
+ *  buffer + sample rate, applying the same downsample + cap pipeline as
+ *  a fresh upload. Used by the engine factory's hydrate path so a
+ *  persisted upload (fileBytesB64 stored on node.data) re-decodes into
+ *  the worklet on patch load + on multiplayer late-join.
+ *
+ *  Errors are surfaced as null — the factory has nowhere to render an
+ *  error message, and a hydrate-time failure should NOT crash audio.
+ *  The card's upload path is the one that surfaces decode errors to
+ *  the user. */
+export async function samsloopDecodeBytesB64(
+  bytesB64: string,
+  ctx: BaseAudioContext,
+): Promise<SamsloopLoadResult | null> {
+  if (!bytesB64 || bytesB64.length === 0) return null;
+  let bytes: Uint8Array;
+  try {
+    const binary = atob(bytesB64);
+    bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  } catch {
+    return null;
+  }
+  // Wrap as a File-like for loadSamsloopWav. Slice a fresh ArrayBuffer
+  // each time since decodeAudioData can neuter it.
+  const ab = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  const fileLike = {
+    size: bytes.byteLength,
+    type: '',
+    arrayBuffer: async () => ab,
+  };
+  try {
+    return await loadSamsloopWav(fileLike, ctx);
+  } catch {
+    return null;
+  }
 }
 
 /** Slider position semantics — exported so the card AND the unit tests
@@ -532,14 +705,23 @@ const POLL_MS = 200;
 
 export const samsloopDef: AudioModuleDef = {
   type: 'samsloop',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'SAMSLOOP',
   category: 'sources',
   schemaVersion: 1,
 
   inputs: [
-    { id: 'trig',    type: 'gate' },
-    { id: 'rate_cv', type: 'cv', paramTarget: 'rate', cvScale: { mode: 'linear' } },
+    { id: 'trig',       type: 'gate' },
+    { id: 'rate_cv',    type: 'cv', paramTarget: 'rate', cvScale: { mode: 'linear' } },
+    // Stereo record inputs — patched audio is captured + quantized +
+    // downsampled into node.data.sample on STOP. `audio_r_in` normalizes
+    // to `audio_l_in` when unpatched (same rule as stereovca / cocoadelay
+    // — see the per-input `inputs[i]?.[0] === undefined` test in the
+    // tap worklet processor). Mono → stereo record without a second
+    // cable.
+    { id: 'audio_l_in', type: 'audio' },
+    { id: 'audio_r_in', type: 'audio' },
   ],
   outputs: [
     { id: 'out', type: 'audio' },
@@ -564,6 +746,10 @@ export const samsloopDef: AudioModuleDef = {
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
+      // The tap worklet is loaded once per context too. Two separate
+      // worklet modules so the playback worklet's `samsloop` registration
+      // doesn't drift each time we touch the recorder.
+      await ctx.audioWorklet.addModule(tapWorkletUrl);
       loadedContexts.add(ctx);
     }
 
@@ -575,10 +761,71 @@ export const samsloopDef: AudioModuleDef = {
       outputChannelCount: [1],
     });
 
+    // Recording tap. Two audio inputs (L + R), 1 silent output (Web Audio
+    // requires at least one output to keep the node alive in the graph;
+    // the tap doesn't drive anything downstream — record-only). Owned by
+    // the factory so it can be cleanly disposed; enable/disable is via
+    // port message from the card.
+    const tapNode = new AudioWorkletNode(ctx, 'samsloop-tap', {
+      numberOfInputs: 2,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+    });
+    // Connect the tap to a muted gain → destination so Web Audio keeps
+    // calling process() (a node with no downstream is permitted to be
+    // GC'd / paused by some implementations).
+    const tapSink = ctx.createGain();
+    tapSink.gain.value = 0;
+    try { tapNode.connect(tapSink); tapSink.connect(ctx.destination); } catch { /* */ }
+
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
     for (const def of samsloopDef.params) {
       const v = (node.params ?? {})[def.id] ?? def.defaultValue;
       params.get(def.id)?.setValueAtTime(v, ctx.currentTime);
+    }
+
+    /** Decode persisted bytes (via the shared samsloopDecodeBytesB64
+     *  helper) and push the resulting buffer to the worklet — same
+     *  postMessage shape the legacy YArray path uses. Also writes the
+     *  derived sampleLength/sampleRate back into node.data so the card's
+     *  faders + waveform reactivity pick up the loaded sample without
+     *  re-decoding it themselves.
+     *
+     *  Bails silently on failure: hydrate-time decode errors should NOT
+     *  crash audio. The interactive upload path in the card surfaces
+     *  errors to the user; this is the headless rehydrate path. */
+    async function decodeBytesAndPush(b64: string): Promise<void> {
+      const result = await samsloopDecodeBytesB64(b64, ctx);
+      if (!result || !result.ok || !result.samples) return;
+      const f32 = new Float32Array(result.samples);
+      try {
+        workletNode.port.postMessage(
+          { type: 'loadSample', samples: f32.buffer, sampleRate: result.sampleRate },
+          [f32.buffer],
+        );
+      } catch {
+        // postMessage can throw if the node was torn down between the
+        // decode promise resolving and the post. Safe to ignore — the
+        // dispose path cleared the worklet anyway.
+        return;
+      }
+      // Cache derived metadata so the card knows the sample length even
+      // before its own $effect runs. We write defensively — the node
+      // may have been removed during the decode.
+      try {
+        const live = livePatch.nodes[node.id];
+        if (!live) return;
+        if (!live.data) live.data = {} as never;
+        const ld = live.data as SamsloopData;
+        if (ld.sampleLength !== result.samples.length) {
+          ld.sampleLength = result.samples.length;
+        }
+        if (ld.sampleRate !== result.sampleRate) {
+          ld.sampleRate = result.sampleRate;
+        }
+      } catch {
+        // syncedstore writes can throw if the node was deleted; ignore.
+      }
     }
 
     // Send the initial sample (if present in node.data — typically not on
@@ -586,21 +833,51 @@ export const samsloopDef: AudioModuleDef = {
     // join). Poll-on-data-change: when the card's upload handler mutates
     // node.data, the loop picks it up within POLL_MS and reposts to the
     // worklet.
+    //
+    // Two source paths:
+    //   - `fileBytesB64` (new path, written by uploads since PR-#XXX):
+    //       base64-encoded original file bytes. The factory decodes them
+    //       to Float32 via the AudioContext, posts to the worklet, and
+    //       — crucially — caches the decoded length back into node.data
+    //       (sampleLength / sampleRate) so the card's faders re-bound
+    //       without us re-decoding on every render. Decode is async; we
+    //       guard against re-entrancy with `decodeInFlight`.
+    //   - `samples` (legacy path, pre-PR-#XXX patches): plain number[]
+    //       stored in Yjs as a YArray. Kept read-only for back-compat;
+    //       old patches still hydrate without any migration step.
     let lastSignature: string | null = null;
+    let decodeInFlight = false;
     function pushSampleIfChanged(): void {
       const live = livePatch.nodes[node.id];
       const d = live?.data as SamsloopData | undefined;
+      // New path takes precedence: if the user re-uploaded since this
+      // node hydrated, fileBytesB64 is the source of truth.
+      if (d?.fileBytesB64 && typeof d.fileBytesB64 === 'string' && d.fileBytesB64.length > 0) {
+        const sig = `bytes:${d.fileSize ?? d.fileBytesB64.length}:${d.fileName ?? ''}`;
+        if (sig === lastSignature) return;
+        if (decodeInFlight) return;
+        lastSignature = sig;
+        decodeInFlight = true;
+        const b64 = d.fileBytesB64;
+        decodeBytesAndPush(b64).finally(() => {
+          decodeInFlight = false;
+        });
+        return;
+      }
+      // Legacy path: pre-PR-#XXX patches with the decoded YArray.
       const samples = d?.samples;
-      const sig = samples ? `${samples.length}:${d?.fileName ?? ''}` : 'empty';
+      const sig = samples ? `legacy:${samples.length}:${d?.fileName ?? ''}` : 'empty';
       if (sig === lastSignature) return;
       lastSignature = sig;
       if (!samples || samples.length === 0) return;
       // Transfer the underlying buffer to the worklet (zero-copy when the
       // browser supports transferables — falls back to structuredClone
-      // otherwise).
+      // otherwise). Pass the buffer's captured sampleRate so the worklet
+      // can scale the cursor — rate=1.0 must play at the sample's natural
+      // pitch even when the AudioContext runs at a different rate.
       const f32 = new Float32Array(samples);
       workletNode.port.postMessage(
-        { type: 'loadSample', samples: f32.buffer },
+        { type: 'loadSample', samples: f32.buffer, sampleRate: d?.sampleRate },
         [f32.buffer],
       );
     }
@@ -618,8 +895,15 @@ export const samsloopDef: AudioModuleDef = {
     return {
       domain: 'audio',
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
-        ['trig',    { node: workletNode, input: 0 }],
-        ['rate_cv', { node: workletNode, input: 0, param: params.get('rate')! }],
+        ['trig',       { node: workletNode, input: 0 }],
+        ['rate_cv',    { node: workletNode, input: 0, param: params.get('rate')! }],
+        // Record-tap audio inputs. These wire user-patched audio into the
+        // samsloop-tap worklet, which forwards captured L/R blocks to the
+        // card via the tap port (subscribed via the handle's read('recTap')
+        // surface). Independent of the playback worklet — recording one
+        // sample and playing another back is fine.
+        ['audio_l_in', { node: tapNode, input: 0 }],
+        ['audio_r_in', { node: tapNode, input: 1 }],
       ]),
       outputs: new Map([
         ['out', { node: workletNode, output: 0 }],
@@ -635,12 +919,33 @@ export const samsloopDef: AudioModuleDef = {
           const live = livePatch.nodes[node.id];
           return (live?.data as SamsloopData | undefined)?.sampleLength ?? 0;
         }
+        // Expose the tap's MessagePort + a helper to enable/disable it.
+        // The card subscribes to the port's onmessage to receive captured
+        // L/R chunks during a recording. The two are surfaced together
+        // under one key so the card grabs them atomically (no race
+        // between "I subscribed" and "I enabled" — the card enables
+        // AFTER attaching its onmessage).
+        if (key === 'recTap') {
+          return {
+            port: tapNode.port,
+            setEnabled: (enabled: boolean) => {
+              try { tapNode.port.postMessage({ type: 'enable', enabled }); } catch { /* */ }
+            },
+            /** The AudioContext's native sample rate — the rate at which
+             *  the tap captures. The card uses this as `srcRate` when it
+             *  calls `encodeRecordingBytes` on STOP. */
+            sampleRate: ctx.sampleRate,
+          };
+        }
         return undefined;
       },
       dispose() {
         alive = false;
         if (pollTimer !== null) clearTimeout(pollTimer);
         try { workletNode.disconnect(); } catch { /* */ }
+        try { tapNode.port.postMessage({ type: 'enable', enabled: false }); } catch { /* */ }
+        try { tapNode.disconnect(); } catch { /* */ }
+        try { tapSink.disconnect(); } catch { /* */ }
       },
     };
   },

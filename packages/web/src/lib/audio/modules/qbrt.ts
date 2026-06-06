@@ -1,3 +1,35 @@
+// packages/web/src/lib/audio/modules/qbrt.ts
+//
+// QBRT — stereo resonant filter with vactrol-style ping excitation. The
+// "stereo big-knob" filter the project ships for the RIOTGIRLS master bus
+// and pluck-style ping-resonator voicings. Faust DSP (packages/dsp/src/
+// qbrt.dsp). Per channel: a state-variable filter with continuous LP/BP
+// (mode 0..1 crossfades the modes) and a ping gate that fires a short
+// vactrol-shaped envelope into the input — the filter rings at its
+// center frequency at the impulse moment, then continues to filter the
+// audio normally. Use it as a regular VCF by ignoring `ping`, or trigger
+// `ping` with a drum sequencer for kick / tom-style pluck-resonator
+// drum sounds (this is what RIOTGIRLS uses internally).
+//
+// Inputs:
+//   L (audio): left-channel signal.
+//   R (audio): right-channel signal.
+//   ping (gate): rising edge fires a vactrol-shaped excitation impulse.
+//   cutoff (cv, log, paramTarget=cutoff): ±5 oct sweep around the cutoff knob.
+//   resonance (cv, linear, paramTarget=resonance): displaces resonance.
+//   mode (cv, discrete, paramTarget=mode): discretely picks LP / BP.
+//   pingDecay (cv, log, paramTarget=pingDecay): scales the ping envelope decay.
+//
+// Outputs:
+//   L (audio): filtered left channel.
+//   R (audio): filtered right channel.
+//
+// Params:
+//   cutoff (log 20..20000 Hz, default 1000): center frequency.
+//   resonance (linear 0..0.99, default 0.7): filter Q.
+//   mode (linear 0..1, default 0): LP↔BP crossfade.
+//   pingDecay (log 0.005..0.5s, default 0.15): decay time of the ping envelope.
+
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -9,6 +41,7 @@ const PARAM_PREFIX = '/QBRT';
 
 export const qbrtDef: AudioModuleDef = {
   type: 'qbrt',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: 'QBRT',
   category: 'filters',

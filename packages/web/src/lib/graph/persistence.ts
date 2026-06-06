@@ -13,6 +13,7 @@
 
 import * as Y from 'yjs';
 import { syncedStore, getYjsDoc } from '@syncedstore/core';
+import { getNodePosition, type XY } from '$lib/multiplayer/layouts';
 import {
   getModuleDef as getAudioModuleDef,
   listModuleDefs as listAudioModuleDefs,
@@ -35,6 +36,10 @@ import type { ModuleNode, Edge } from './types';
 interface AnyDomainDef {
   schemaVersion: number;
   migrate?: (data: unknown, fromVersion: number) => unknown;
+  /** Optional load-time edge-port rename keyed on the saved module version.
+   *  Returns a rewritten portId, or null to leave it unchanged. See
+   *  VideoModuleDef.migrateEdgePortId (DOOM's per-slot port migration, #353). */
+  migrateEdgePortId?: (portId: string, fromVersion: number) => string | null;
 }
 
 function getAnyDomainDef(type: string): AnyDomainDef | undefined {
@@ -54,6 +59,37 @@ export type LivePatch = {
 
 /** Bumped when the envelope format itself changes (not when modules change). */
 export const ENVELOPE_VERSION = 1 as const;
+
+/** Transient runtime / lobby fields that live on a module's `node.data` ONLY
+ * so they ride the Yjs sync (every peer agrees on the host's lobby state), but
+ * which DO NOT belong in a saved patch — a patch captures the rack TOPOLOGY
+ * (which modules exist, where they sit, how they're wired, their persistent
+ * params), not a particular session's live STATE.
+ *
+ * The canonical example is DOOM: `mpMode` ('single' | 'multi') is what gates
+ * the host's start-game dialog. If a patch is saved mid-session and reloaded
+ * later, the persisted `mpMode` would suppress the start dialog forever — the
+ * host would land on "Single-user rack — you're the host." with no way to
+ * launch (Bug #1, the load-from-patch repro). Same goes for `mpLive` (a
+ * host-published "game is running right now" flag), `players` (the live
+ * per-slot roster), and `pending` (in-flight join requests). None of those
+ * have any meaning across sessions.
+ *
+ * Whitelisted by module type — adding a new module's transient fields here is
+ * a deliberate, narrow opt-in, not a global filter. */
+const TRANSIENT_DATA_FIELDS_BY_TYPE: Readonly<Record<string, readonly string[]>> = {
+  doom: ['mpMode', 'mpLive', 'players', 'pending'],
+};
+
+/** Strip transient fields from `data` for the given module type (no-op when the
+ * type has no entry). Mutates in place; only call on plain objects you own,
+ * which the loader does after `tempYdoc.getMap('nodes').toJSON()`. */
+function stripTransientDataFields(type: string, data: unknown): void {
+  const fields = TRANSIENT_DATA_FIELDS_BY_TYPE[type];
+  if (!fields || !data || typeof data !== 'object') return;
+  const obj = data as Record<string, unknown>;
+  for (const field of fields) delete obj[field];
+}
 
 export interface PatchEnvelope {
   envelopeVersion: typeof ENVELOPE_VERSION;
@@ -141,6 +177,80 @@ export function makeEnvelope(ydoc: Y.Doc): PatchEnvelope {
   };
 }
 
+/**
+ * Make a saved-performance envelope PORTABLE across loaders by baking the
+ * saving user's *displayed* positions into each node's canonical
+ * `node.position` and dropping the per-user `layouts` map.
+ *
+ * WHY: in multiplayer, drag-stop writes the moved card's position into
+ * `ydoc.getMap('layouts')[userId][nodeId]` (multiplayer/layouts.ts —
+ * setNodePosition), NOT into `node.position`, so each user sees their own
+ * layout. `makeEnvelope` snapshots the whole ydoc (including that per-user
+ * map), but on LOAD the loader is a *different* (or absent) user id, so
+ * `getNodePosition` misses the override and falls back to the stale spawn
+ * `node.position` — placements are lost. (Single-user saves are unaffected:
+ * drags fall through to `node.position` directly, and `savingUserId` is
+ * undefined here.)
+ *
+ * FIX: snapshot via `makeEnvelope`, decode the update into a THROWAWAY Y.Doc
+ * (never the live shared doc — we must not mutate the graph or broadcast to
+ * peers), rewrite every `node.position` to the saving user's resolved display
+ * position, clear the `layouts` map, and re-encode. The result reads correctly
+ * for ANY loader regardless of their user id.
+ *
+ * Pure: does not touch `ydoc`. When `savingUserId` is undefined the layouts
+ * map is empty/irrelevant, so this still produces a valid (positions already
+ * canonical) portable envelope — clearing the empty `layouts` map is a no-op.
+ */
+export function makePortableEnvelope(
+  ydoc: Y.Doc,
+  savingUserId: string | undefined,
+): PatchEnvelope {
+  const env = makeEnvelope(ydoc);
+
+  // Decode into a throwaway plain Y.Doc. We DON'T use SyncedStore here: we need
+  // to mutate the nested `position` Y.Map in place, and a raw Y.Doc traversal
+  // matches exactly how `makeEnvelope`/`loadEnvelopeIntoStore` read/write the
+  // structure (node = Y.Map, node.position = nested Y.Map with x/y).
+  const tempDoc = new Y.Doc();
+  Y.applyUpdate(tempDoc, base64ToBytes(env.update));
+
+  const nodes = tempDoc.getMap<Y.Map<unknown>>('nodes');
+  const layouts = tempDoc.getMap('layouts');
+
+  tempDoc.transact(() => {
+    for (const [nodeId, node] of nodes.entries()) {
+      if (!(node instanceof Y.Map)) continue;
+      const posMap = node.get('position');
+      // Current canonical position is the fallback when the user has no layout
+      // override for this node (matches Canvas's getNodePosition(...) call).
+      const defaultPos: XY =
+        posMap instanceof Y.Map
+          ? { x: Number(posMap.get('x')) || 0, y: Number(posMap.get('y')) || 0 }
+          : { x: 0, y: 0 };
+      const resolved = getNodePosition(tempDoc, savingUserId, nodeId, defaultPos);
+      if (posMap instanceof Y.Map) {
+        posMap.set('x', resolved.x);
+        posMap.set('y', resolved.y);
+      } else {
+        // Defensive: node had no position Y.Map (shouldn't happen for real
+        // nodes). Materialize one so the loader still gets a position.
+        const np = new Y.Map<number>();
+        np.set('x', resolved.x);
+        np.set('y', resolved.y);
+        node.set('position', np);
+      }
+    }
+    // Drop the now-baked per-user layouts so the snapshot is loader-agnostic.
+    for (const k of [...layouts.keys()]) layouts.delete(k);
+  });
+
+  return {
+    ...env,
+    update: bytesToBase64(Y.encodeStateAsUpdate(tempDoc)),
+  };
+}
+
 /** Convenience: envelope → pretty-printed JSON string. */
 export function serializeEnvelope(env: PatchEnvelope): string {
   return JSON.stringify(env, null, 2);
@@ -204,6 +314,38 @@ export interface LoadResult {
   edgesLoaded: number;
   /** Per-node migration / unknown-type diagnostics. */
   diagnostics: LoadDiagnostic[];
+}
+
+/**
+ * Rewrite an edge's source/target portIds via the endpoint nodes' module-def
+ * `migrateEdgePortId` hook, when the saved version is behind the current def.
+ * Returns the edge unchanged when no endpoint migrates. Pure (returns a new
+ * object only when something actually changed). Exported for unit tests.
+ */
+export function migrateEdgeEndpoints(
+  edge: Edge,
+  nodes: Record<string, ModuleNode>,
+  moduleSchemas: Record<string, number>,
+): Edge {
+  const rewrite = (end: { nodeId: string; portId: string }): string => {
+    const node = nodes[end.nodeId];
+    if (!node) return end.portId;
+    const def = getAnyDomainDef(node.type);
+    if (!def?.migrateEdgePortId) return end.portId;
+    const from = moduleSchemas[node.type] ?? 1;
+    if (from >= def.schemaVersion) return end.portId;
+    return def.migrateEdgePortId(end.portId, from) ?? end.portId;
+  };
+  const newSourcePort = rewrite(edge.source);
+  const newTargetPort = rewrite(edge.target);
+  if (newSourcePort === edge.source.portId && newTargetPort === edge.target.portId) {
+    return edge;
+  }
+  return {
+    ...edge,
+    source: { ...edge.source, portId: newSourcePort },
+    target: { ...edge.target, portId: newTargetPort },
+  };
 }
 
 /**
@@ -285,6 +427,12 @@ export function loadEnvelopeIntoStore(
         continue;
       }
     }
+    // Strip transient / session-state fields that persisted into the envelope
+    // (e.g. DOOM's mpMode lobby gate — see TRANSIENT_DATA_FIELDS_BY_TYPE). The
+    // toJSON() above severed Yjs proxies, so `migratedData` is a plain object
+    // we own and can safely mutate. Run AFTER migration so a per-module
+    // migrate() that touches transient fields still sees them in the input.
+    stripTransientDataFields(node.type, migratedData);
     migratedNodes[id] = { ...node, data: migratedData };
   }
 
@@ -305,7 +453,13 @@ export function loadEnvelopeIntoStore(
         });
         continue;
       }
-      livePatch.edges[edge.id] = edge;
+      // EDGE-PORT MIGRATION: when an endpoint's node is a type whose saved
+      // schemaVersion is behind the current def AND that def declares an
+      // edge-port migration, rewrite the portId. This keeps CV cables wired to
+      // DOOM's old bare gate ports (`up`/…) driving the p1 group (`p1_up`/…)
+      // after the single shared input set became four per-slot groups (#353).
+      const migrated = migrateEdgeEndpoints(edge, migratedNodes, envelope.moduleSchemas);
+      livePatch.edges[migrated.id] = migrated;
     }
   });
 

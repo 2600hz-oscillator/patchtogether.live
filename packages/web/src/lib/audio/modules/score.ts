@@ -23,6 +23,21 @@
 // (or the end of the last allocated page when no marker is set) the engine
 // either (a) stops if `loop` is false, or (b) wraps back to bar 0 if `loop`
 // is true.
+//
+// Inputs:
+//   clock (gate): external clock; rising edges advance one 16th. Unpatched = internal BPM drives.
+//   attack / decay / sustain / release (cv, log/linear, paramTarget=…): displaces the internal ADSR stage.
+//
+// Outputs:
+//   pitch (pitch): V/oct of the current note.
+//   gate (gate): held high during note duration (ties hold across notes).
+//   env (cv): the internal ADSR envelope, scaled by the active dynamic marker.
+//   clock (gate): chained 16th-rate clock-out.
+//
+// Params:
+//   bpm (linear 30..300, default 120): internal tempo.
+//   attack / decay / release (log 0.001..10 s) + sustain (linear 0..1): internal ADSR shape.
+//   isPlaying (discrete 0..1, default 0): transport state.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -88,6 +103,7 @@ function readScoreData(nodeId: string): ScoreData {
 
 export const scoreDef: AudioModuleDef = {
   type: 'score',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'Score',
   category: 'modulation',
@@ -220,6 +236,10 @@ export const scoreDef: AudioModuleDef = {
     // can survive before the next main-thread tick runs. See sequencer.ts
     // for the full rationale.
     const LOOKAHEAD_S = 0.2;
+    // #229: drop past-due slots after a stall > lookahead instead of letting
+    // Web Audio clamp+bunch them onto "now" (audible double-hit + tempo lurch
+    // when dragging). 5 ms slack keeps ordinary near-now jitter sounding.
+    const LATE_DROP_EPS = 0.005;
 
     // Scheduler lookahead vs sounding-now: tickIndex is the NEXT slot the
     // lookahead loop will queue; the trackers derive playhead state from the
@@ -234,6 +254,11 @@ export const scoreDef: AudioModuleDef = {
     let lastEmittedGate = 0;
     let lastDynamicScale = DYNAMIC_SCALE.mf;
     let totalAdvances = 0;
+    // #229 instrumentation: lateStepsDropped = past-due slots whose tick we
+    // dropped after a stall; pastDueEmits = emitTick calls with a past
+    // timestamp (BUG canary, kept at 0 by the drop guard). See sequencer.ts.
+    let lateStepsDropped = 0;
+    let pastDueEmits = 0;
     /** When >0, gate is being held high through a tied span. The value is
      *  the absolute grid tick at which the chain ends + the chain's last
      *  note's full duration — i.e. the gate-off boundary. While set we
@@ -268,6 +293,9 @@ export const scoreDef: AudioModuleDef = {
     /** Schedule the start (and gate-off) of one 16th-note slot's note (if
      *  any). `slotDur` is how long one 16th would last in seconds. */
     function emitTick(absTick: number, atTime: number, slotDur: number) {
+      // #229 canary: emitTick with a past timestamp = the drop guard failed
+      // and Web Audio is about to clamp+bunch this onto "now". Kept at 0.
+      if (atTime < ctx.currentTime - LATE_DROP_EPS) pastDueEmits++;
       emitClockPulse(atTime);
       const data = readScoreData(nodeId);
       const note = noteStartingAt(absTick, data.notes);
@@ -545,8 +573,13 @@ export const scoreDef: AudioModuleDef = {
                 break;
               }
             }
-            tickPlayhead.schedule(tickIndex, nextStepTime);
-            emitTick(tickIndex * 3, nextStepTime, slotDur);
+            // #229: drop past-due backlog instead of bunching it onto "now".
+            if (nextStepTime < ctx.currentTime - LATE_DROP_EPS) {
+              lateStepsDropped++;
+            } else {
+              tickPlayhead.schedule(tickIndex, nextStepTime);
+              emitTick(tickIndex * 3, nextStepTime, slotDur);
+            }
             nextStepTime += slotDur;
             tickIndex = (tickIndex + 1) % total16ths;
             totalAdvances++;
@@ -593,6 +626,8 @@ export const scoreDef: AudioModuleDef = {
         const now = ctx.currentTime;
         if (key === 'currentNoteId') return notePlayhead.currentAt(now, null);
         if (key === 'totalAdvances') return totalAdvances;
+        if (key === 'lateStepsDropped') return lateStepsDropped;
+        if (key === 'pastDueEmits') return pastDueEmits;
         if (key === 'totalSequenceEnds') return totalSequenceEnds;
         if (key === 'pitchVOct') return lastEmittedVOct;
         if (key === 'gateValue') return lastEmittedGate;

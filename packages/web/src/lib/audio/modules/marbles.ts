@@ -12,6 +12,34 @@
 // Outputs: t1 / t2 (Bernoulli/coin/clusters/drums/markov gates), x1 / x2 / x3
 // (random voltages → SPREAD/BIAS/STEPS + weighted-scale quantizer + déjà-vu),
 // clk (master clock). CV outputs are ±1 (= ±5V on hardware).
+//
+// Inputs:
+//   rate_cv (cv, linear, paramTarget=rate): displaces the rate knob.
+//   tmodel_cv (cv, discrete, paramTarget=t_model): displaces the T-section model.
+//   tbias_cv (cv, linear, paramTarget=t_bias): displaces T BIAS.
+//   tjitter_cv (cv, linear, paramTarget=t_jitter): displaces T JITTER.
+//   dejavu_cv (cv, linear, paramTarget=deja_vu): displaces T déjà-vu (loop probability).
+//   length_cv (cv, linear, paramTarget=length): displaces T loop length.
+//   spread_cv (cv, linear, paramTarget=spread): displaces X SPREAD.
+//   xbias_cv (cv, linear, paramTarget=x_bias): displaces X BIAS.
+//   steps_cv (cv, linear, paramTarget=steps): displaces X STEPS.
+//   xdejavu_cv (cv, linear, paramTarget=x_deja_vu): displaces X déjà-vu.
+//   scale_cv (cv, discrete, paramTarget=scale): displaces the quantizer scale.
+//
+// Outputs:
+//   t1 / t2 (gate): Bernoulli / coin / clusters / drums / Markov gate pair.
+//   x1 / x2 / x3 (cv): three quantized random voltages (per X SPREAD/BIAS/STEPS + déjà-vu).
+//   clk (gate): master clock-out.
+//
+// Params:
+//   rate (linear -60..60 st, default 0): clock rate macro.
+//   t_model (discrete 0..MARBLES_MAX_T_MODEL, default 0): T-section model.
+//   t_bias / t_jitter / deja_vu (linear 0..1): T-section tunings.
+//   length (discrete 1..16, default 8): T loop length when déjà-vu locks.
+//   pw_mean (linear 0..1, default 0.5): pulse-width macro.
+//   spread / x_bias / steps / x_deja_vu (linear 0..1): X-section macros.
+//   x_length (discrete 1..16, default 8): X loop length when X déjà-vu locks.
+//   scale (discrete 0..MARBLES_SCALE_NAMES.length, default 0): X-section quantizer scale.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -131,6 +159,7 @@ export const marblesMath = {
 
 export const marblesDef: AudioModuleDef = {
   type: 'marbles',
+  palette: { top: 'Ports', sub: 'Mutable' },
   domain: 'audio',
   label: 'MARBLES',
   category: 'sources',

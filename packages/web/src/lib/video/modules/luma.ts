@@ -13,6 +13,19 @@
 // softness, invert). Those were never the right shape for this module's
 // real job; on load we drop them and reset to processor defaults. Users
 // who actually wanted a luma key should swap in LUMAKEY.
+//
+// Inputs:
+//   in (video): RGB input.
+//   gamma / contrast / posterizeLevels / bias (cv, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (video): luma-processed RGB.
+//
+// Params:
+//   gamma (linear 0.1..3.0): gamma correction (1.0 = linear).
+//   contrast (linear 0..2): contrast scale (1.0 = pristine).
+//   posterizeLevels (discrete 2..16): luma quantization steps.
+//   bias (linear -0.5..0.5): luma additive bias (lifts/depresses midtones).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -103,6 +116,7 @@ export function migrateLuma(data: unknown, fromVersion: number): unknown {
 
 export const lumaDef: VideoModuleDef = {
   type: 'luma',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'LUMA',
   category: 'effects',

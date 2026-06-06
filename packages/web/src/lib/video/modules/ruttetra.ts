@@ -35,6 +35,22 @@
 // Z unpatched: bind a mid-grey source so luma≈0.5 → zero displacement →
 // flat scanlines are still drawn (no black void on cold-spawn), matching
 // how RESHAPER avoided a black card.
+//
+// Inputs:
+//   z (video): source video — luma drives per-grid-point displacement.
+//   xShape / yShape / xDisp / yDisp / intensity / xFreq / yFreq
+//     (cv, linear, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (video): the additive-blend scanline render.
+//
+// Params:
+//   xShape / yShape (linear 0..1): per-axis ramp shape morph.
+//   xDisp / yDisp (linear -1..1): per-axis static displacement.
+//   intensity (linear 0..2): luma-to-displacement scale.
+//   tintR / tintG / tintB (linear 0..1): scanline tint colour.
+//   xFreq / yFreq (linear 0.25..8): per-axis ramp frequency.
+//   xPhase / yPhase (linear 0..1): per-axis phase offset.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -125,8 +141,16 @@ void main() {
   float h0 = col / (cols - 1.0);
   float v0 = row / (rows - 1.0);
 
-  // Sample source at raw (h0, v0). Luma drives displacement; color
-  // comes out as-is.
+  // Sample source. Luma drives displacement; color comes out as-is.
+  //
+  // Y-FLIP: source frames are uploaded with UNPACK_FLIP_Y_WEBGL, so the
+  // input texture's v=0 is the BOTTOM of the source and v=1 the TOP — the
+  // same convention every fullscreen-quad module relies on when it samples
+  // texture(uTex, vUv) and renders upright (CHROMA, BENTBOX, etc.). Grid
+  // row 0 (v0=0) is placed at the NDC TOP (ndcY = 1 - 0), so we must read
+  // the texture TOP there: sample at (h0, 1.0 - v0). Without the flip,
+  // row 0 read texture v=0 (source bottom) and drew it at the top, i.e.
+  // the whole raster came out vertically inverted vs. every sibling.
   //
   // IMPORTANT: use textureLod(..., 0.0), NOT texture(). In GLSL ES 3.00 a
   // VERTEX-stage texture() has no implicit LOD (no fragment-quad
@@ -137,7 +161,7 @@ void main() {
   // RELIEF into a UNIFORM raster translation (the owner-reported X/Y Disp
   // bug). textureLod with an explicit LOD of 0.0 forces the base mip on
   // every driver, restoring the per-vertex heightmap.
-  vec4 src = textureLod(uZ, vec2(h0, v0), 0.0);
+  vec4 src = textureLod(uZ, vec2(h0, 1.0 - v0), 0.0);
   float lum = dot(src.rgb, vec3(0.299, 0.587, 0.114));
 
   // Shaped ramps → base H/V position. morph 0 = linear, so the unshaped
@@ -218,6 +242,7 @@ export const RUTTETRA_GRID = { cols: COLS, rows: ROWS } as const;
 
 export const ruttetraDef: VideoModuleDef = {
   type: 'ruttetra',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'RUTTETRA',
   category: 'output',

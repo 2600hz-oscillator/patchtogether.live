@@ -6,10 +6,16 @@
   // `author` is optional so callers can hand us `def.ossAttribution?.author`
   // unconditionally — non-ported modules pass undefined and the line
   // disappears.
-  let { author }: { author?: string } = $props();
+  //
+  // `text` overrides the whole disclaimer for ports whose upstream is NOT
+  // MIT (e.g. GPL-3.0 ports like COCOA DELAY) — the default wording is kept
+  // for the existing MIT ports so their committed VRT baselines don't move.
+  let { author, text }: { author?: string; text?: string } = $props();
 </script>
 
-{#if author}
+{#if text}
+  <div class="oss-attribution" data-testid="oss-attribution">{text}</div>
+{:else if author}
   <div class="oss-attribution" data-testid="oss-attribution">
     Ported from MIT-licensed OSS by {author}
   </div>

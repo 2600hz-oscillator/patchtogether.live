@@ -8,6 +8,7 @@
   import { modtrisDef, drawModtris, type ModtrisState } from '$lib/audio/modules/modtris';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   // Inputs: 5 gate inputs. Outputs: 2 gate outputs.
   const inputs: PortDescriptor[] = [
@@ -77,7 +78,7 @@
 
 <div class="mod-card modtris-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">MODTRIS</header>
+  <ModuleTitle {id} {data} defaultLabel="MODTRIS" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="game-area">

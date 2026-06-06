@@ -31,6 +31,25 @@
 //   The `comp` macro just writes ALL three downstream params; if a user
 //   patches CV into both `comp1` and `ch1_thresh` simultaneously, the comp
 //   macro wins (it overwrites on every setParam call).
+//
+// Inputs:
+//   ch{1..4}L / ch{1..4}R (audio): four stereo channel inputs (4 × stereo = 8 ports).
+//   ret1L / ret1R / ret2L / ret2R (audio): two stereo aux returns.
+//   ch{N}_{volume,low,mid,high,thresh,ratio,compEnable,send1,send2} (cv, linear or discrete,
+//     paramTarget=…): per-channel CV inputs for every param. Linear unless the param is discrete.
+//   comp{1..4} (cv, linear, paramTarget=…): per-channel compressor macro CV.
+//   master_volume (cv, linear, paramTarget=master_volume): displaces the master volume.
+//
+// Outputs:
+//   masterL / masterR (audio): main stereo mix bus.
+//   send1L / send1R (audio): stereo aux-send 1 output.
+//   send2L / send2R (audio): stereo aux-send 2 output.
+//
+// Params (41 total — built programmatically, see buildParams() below):
+//   master_volume (linear 0..1, default 0.8): bus output gain.
+//   per-channel × 4: volume / low / mid / high (linear ±12 dB) /
+//     thresh (-36..0 dB) / ratio (1..10) / compEnable (discrete) /
+//     comp (linear 0..1 macro) / send1 / send2 (linear 0..1).
 
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
@@ -124,6 +143,7 @@ function buildInputs(): PortDef[] {
 
 export const mixmstrsDef: AudioModuleDef = {
   type: 'mixmstrs',
+  palette: { top: 'Audio modules', sub: 'Mixing' },
   domain: 'audio',
   label: 'MIXMSTRS',
   category: 'utilities',

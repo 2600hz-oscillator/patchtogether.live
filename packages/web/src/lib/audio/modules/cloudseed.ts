@@ -19,6 +19,28 @@
 //     worklet's postMessage channel.
 // All 45 retain stable numerical IDs from the C++ Parameter enum so the
 // preset bank (Programs.h) maps cleanly.
+//
+// Inputs:
+//   in_l / in_r (audio): stereo input feeding the reverb tank.
+//   dry_cv / early_cv / late_cv (cv, linear, paramTarget=…_out): displaces the dry / early-reflections / late-reverb mix.
+//   input_mix_cv (cv, linear, paramTarget=input_mix): displaces input mid/side mix.
+//   low_cut_cv / high_cut_cv (cv, linear, paramTarget=…): displaces the input HPF / output LPF.
+//   cross_seed_cv (cv, linear, paramTarget=cross_seed): displaces the inter-channel seed offset.
+//
+// Outputs:
+//   out_l / out_r (audio): wet+dry stereo output.
+//
+// Params (7 AudioParam macros + 38 message-port params + preset index):
+//   dry_out (linear 0..1, default 0.87): dry-signal mix.
+//   early_out (linear 0..1, default 0): early-reflections mix.
+//   late_out (linear 0..1, default 0.66): late-tank mix.
+//   input_mix (linear 0..1, default 0.23): pre-tank mid/side mix.
+//   low_cut (linear 0..1, default 0.64): input HPF (mapped to CloudSeed's frequency curve).
+//   high_cut (linear 0..1, default 0.29): output LPF.
+//   cross_seed (linear 0..1, default 0): inter-channel seed offset (wider stereo image).
+//   preset_index (discrete 0..CLOUDSEED_PRESETS.length, default 0): preset bank picker.
+//   38 message-port params (toggles / integer counts / seeds / per-EQ-band freq + gain /
+//     modulation knobs) — mutated via port.postMessage; see the worklet header.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -398,6 +420,7 @@ export const CLOUDSEED_MESSAGE_PARAMS: ReadonlyArray<{ id: string; cppId: number
 
 export const cloudseedDef: AudioModuleDef = {
   type: 'cloudseed',
+  palette: { top: 'Ports', sub: 'Ports' },
   domain: 'audio',
   label: 'CLOUDSEED',
   category: 'effects',

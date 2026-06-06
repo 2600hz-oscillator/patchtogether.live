@@ -7,6 +7,7 @@
   import { charlottesEchosDef } from '$lib/audio/modules/charlottes-echos';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -41,7 +42,7 @@
 
 <div class="mod-card charlottes-echos-card">
   <div class="stripe" class:shimmer style="background: var(--cable-audio);"></div>
-  <header class="title">CHARLOTTE'S ECHOS</header>
+  <ModuleTitle {id} {data} defaultLabel="CHARLOTTE&#39;S ECHOS" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="knob-row">
@@ -57,7 +58,6 @@
 <style>
   .charlottes-echos-card {
     width: 320px;
-    min-height: 220px;
   }
   .charlottes-echos-card .title {
     font-family: var(--font-display, inherit);

@@ -256,6 +256,23 @@ describe('DoomRuntime — TS shim layer', () => {
     ]);
   });
 
+  // ESC + ENTER per-slot gates (2026-05-29) — menu open / select.
+  it('setKeyForCvGate translates esc → KEY_ESCAPE (27) and enter → KEY_ENTER (13)', () => {
+    rt.init(new Uint8Array([0]));
+    const before = stub.calls.length;
+    expect(rt.setKeyForCvGate('esc', true)).toBe(true);
+    expect(rt.setKeyForCvGate('enter', true)).toBe(true);
+    expect(rt.setKeyForCvGate('esc', false)).toBe(true);
+    expect(rt.setKeyForCvGate('enter', false)).toBe(true);
+    const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+    expect(calls).toEqual([
+      { name: 'dgpt_set_key', args: [27, 1] }, // KEY_ESCAPE
+      { name: 'dgpt_set_key', args: [13, 1] }, // KEY_ENTER
+      { name: 'dgpt_set_key', args: [27, 0] },
+      { name: 'dgpt_set_key', args: [13, 0] },
+    ]);
+  });
+
   // ── Bug 4: hard keyboard-inert gate (the runtime-boundary enforcement) ──
   describe('keyboard-inert gate (CV-patched ⇒ keyboard truly inert)', () => {
     it('drops keyboard-origin input while inert (no dgpt_set_key fires)', () => {
@@ -335,6 +352,86 @@ describe('DoomRuntime — TS shim layer', () => {
       rt.setKeyForKeyboardCode('ArrowUp', false); // user let go before patching
       const before = stub.calls.length;
       rt.setKeyboardInert(true);
+      expect(stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key')).toEqual([]);
+    });
+  });
+
+  // ── #353: per-player CV is SAFE under lockstep (no blunt CV gate) ──
+  //
+  // The interim #354 hotfix dropped ALL CV input while a netgame was active,
+  // because the shared CV edge fanned out to every peer's slot and sampled non-
+  // deterministically → divergent TicSets → freeze. Per-player routing replaces
+  // that: the FACTORY (doom.ts) feeds only the local consoleplayer slot's CV
+  // into the runtime, through the same gamekeydown[] → G_BuildTiccmd → ordered
+  // log → consolidated TicSet path as the keyboard. So the runtime itself no
+  // longer gates CV at all — setKeyForCvGate always forwards. Determinism +
+  // own-slot ownership are enforced one layer up; the freeze class is killed by
+  // construction. CV-origin keys are still tracked so a SLOT CHANGE can release
+  // them cleanly.
+  describe('CV-gate input is no longer gated by lockstep (#353 per-player routing)', () => {
+    it('CV-gate input flows in single-player (lockstep OFF)', () => {
+      rt.init(new Uint8Array([0]));
+      const before = stub.calls.length;
+      expect(rt.setKeyForCvGate('up', true)).toBe(true);
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([{ name: 'dgpt_set_key', args: [KEY_UPARROW, 1] }]);
+    });
+
+    it('CV-gate input STILL flows while lockstep is armed (re-enabled, per-slot upstream)', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setLockstep(true);
+      const before = stub.calls.length;
+      expect(rt.setKeyForCvGate('up', true)).toBe(true);
+      expect(rt.setKeyForCvGate('ctrl', true)).toBe(true);
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([
+        { name: 'dgpt_set_key', args: [KEY_UPARROW, 1] },
+        { name: 'dgpt_set_key', args: [KEY_FIRE, 1] },
+      ]);
+    });
+
+    it('keyboard input is NOT gated by lockstep (the local marine still moves)', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setLockstep(true);
+      const before = stub.calls.length;
+      expect(rt.setKeyForKeyboardCode('ArrowUp', true)).toBe(true);
+      expect(rt.setKeyForKeyboardCode('KeyF', true)).toBe(true); // FIRE
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([
+        { name: 'dgpt_set_key', args: [KEY_UPARROW, 1] },
+        { name: 'dgpt_set_key', args: [KEY_FIRE, 1] },
+      ]);
+    });
+
+    it('arming lockstep does NOT release held CV keys (CV stays live now)', () => {
+      rt.init(new Uint8Array([0]));
+      expect(rt.setKeyForCvGate('up', true)).toBe(true);
+      expect(rt.setKeyForCvGate('ctrl', true)).toBe(true);
+      const before = stub.calls.length;
+      rt.setLockstep(true);
+      // No key-up fires — CV is no longer dropped on lockstep arm.
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([]);
+    });
+
+    it('releaseHeldCvKeys() releases CV-origin keys (used on a slot change)', () => {
+      rt.init(new Uint8Array([0]));
+      expect(rt.setKeyForCvGate('up', true)).toBe(true);
+      expect(rt.setKeyForCvGate('ctrl', true)).toBe(true); // FIRE
+      const before = stub.calls.length;
+      rt.releaseHeldCvKeys();
+      const calls = stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key');
+      expect(calls).toEqual([
+        { name: 'dgpt_set_key', args: [KEY_UPARROW, 0] },
+        { name: 'dgpt_set_key', args: [KEY_FIRE, 0] },
+      ]);
+    });
+
+    it('releaseHeldCvKeys() does NOT release keyboard keys (keyboard owns its own set)', () => {
+      rt.init(new Uint8Array([0]));
+      rt.setKeyForKeyboardCode('ArrowUp', true);
+      const before = stub.calls.length;
+      rt.releaseHeldCvKeys();
       expect(stub.calls.slice(before).filter((c) => c.name === 'dgpt_set_key')).toEqual([]);
     });
   });
@@ -588,5 +685,156 @@ describe('DoomRuntime — slice 3 netcode bridge', () => {
     expect(injected[0]!.srcPeerId).toBe(2);
     // No malloc for the empty case.
     expect(calls.filter((c) => c.name === 'malloc').length).toBe(mallocsBefore);
+  });
+});
+
+// ---------------- Phase-1 SP event-gate drain (drainEvents) ----------------
+//
+// The C side (dgpt_evt_push from P_KillMobj / EV_Do{Door,VerticalDoor} /
+// P_FireWeapon) packs (type, slot) into a u32 ring; drainEvents() drains the
+// ring into a JS array. We stub dgpt_drain_events to emit a fixed sequence and
+// assert the decode + the "empty -> []" fast path.
+
+function encodeEvt(type: number, slot: number): number {
+  return (type & 0xf) | ((slot & 0x3) << 4);
+}
+
+function makeDrainStubModule(events: number[]): {
+  mod: DoomModule;
+  calls: CCallRec[];
+} {
+  const calls: CCallRec[] = [];
+  const heapBuffer = new ArrayBuffer(16 * 1024 * 1024);
+  let mallocOffset = 0x100000;
+  let emitted = false;
+
+  const mod: DoomModule = {
+    get HEAPU8() { return new Uint8Array(heapBuffer); },
+    get HEAPU32() { return new Uint32Array(heapBuffer); },
+    get HEAPF32() { return new Float32Array(heapBuffer); },
+    ccall(name, _ret, _argTypes, args) {
+      calls.push({ name, args });
+      switch (name) {
+        case 'dgpt_get_framebuffer': return 0;
+        case 'dgpt_get_framebuffer_size': return 0;
+        case 'dgpt_get_pcm_buffer': return 0;
+        case 'dgpt_get_pcm_buffer_size': return 0;
+        case 'dgpt_get_resx': return 640;
+        case 'dgpt_get_resy': return 400;
+        case 'malloc': {
+          const ptr = mallocOffset;
+          mallocOffset += args[0] as number;
+          return ptr;
+        }
+        case 'free': return 0;
+        case 'dgpt_drain_events': {
+          // First call writes the events array into the destination buffer +
+          // returns the count; subsequent calls return 0 (ring drained).
+          const dest = args[0] as number;
+          const max = args[1] as number;
+          if (emitted) return 0;
+          const n = Math.min(events.length, max);
+          const view = new Uint32Array(heapBuffer, dest, n);
+          for (let i = 0; i < n; i++) view[i] = events[i]!;
+          emitted = true;
+          return n;
+        }
+        default: return 0;
+      }
+    },
+    FS: {
+      writeFile() { /* */ },
+      readFile() { return new Uint8Array(0); },
+    },
+  };
+  return { mod, calls };
+}
+
+describe('DoomRuntime — Phase-1 SP event-gate drain', () => {
+  it('decodes the (type, slot) packed u32 stream into objects', () => {
+    const events = [
+      encodeEvt(1, 0), // KILL
+      encodeEvt(3, 1), // GUN slot 1
+      encodeEvt(2, 0), // DOOR
+    ];
+    const { mod } = makeDrainStubModule(events);
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    // feat/doom-per-type-death-gates: decode now includes the 12-bit payload
+    // field (bits 4..15). For events that only use the 2-bit slot field,
+    // `payload` repeats the slot bits — consumers dispatch on `type` so the
+    // extra reads are harmless.
+    expect(rt.drainEvents()).toEqual([
+      { type: 1, slot: 0, payload: 0 },
+      { type: 3, slot: 1, payload: 1 },
+      { type: 2, slot: 0, payload: 0 },
+    ]);
+  });
+
+  it('returns an empty array when the ring is empty (count == 0)', () => {
+    const { mod } = makeDrainStubModule([]);
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    expect(rt.drainEvents()).toEqual([]);
+  });
+
+  it('returns [] before init() (drain buffer not allocated yet)', () => {
+    const { mod } = makeDrainStubModule([encodeEvt(1, 0)]);
+    const rt = new DoomRuntime(mod);
+    expect(rt.drainEvents()).toEqual([]);
+  });
+
+  it('decodes GUN slot 3 correctly (top of the 2-bit slot field)', () => {
+    const { mod } = makeDrainStubModule([encodeEvt(3, 3)]);
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    expect(rt.drainEvents()).toEqual([{ type: 3, slot: 3, payload: 3 }]);
+  });
+
+  it('decodes KILL_TYPED with a 12-bit mobjtype payload (bits 4..15)', () => {
+    // type=5, payload=11 (MT_TROOP = imp). Encoding: 5 | (11 << 4) = 0xB5.
+    const word = 5 | (11 << 4);
+    const { mod } = makeDrainStubModule([word]);
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    const drained = rt.drainEvents();
+    expect(drained).toHaveLength(1);
+    expect(drained[0]!.type).toBe(5);
+    expect(drained[0]!.payload).toBe(11);
+  });
+
+  it('decodes PLAYER_DIES with slot=3 (the boundary 2-bit slot value)', () => {
+    // type=4, slot=3. Encoding: 4 | (3 << 4) = 0x34.
+    const word = 4 | (3 << 4);
+    const { mod } = makeDrainStubModule([word]);
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    const drained = rt.drainEvents();
+    expect(drained).toHaveLength(1);
+    expect(drained[0]!.type).toBe(4);
+    expect(drained[0]!.slot).toBe(3);
+  });
+
+  it('decodes KILL_TYPED with a high mobjtype value (full 12-bit range)', () => {
+    // Max 12-bit payload = 0xFFF. type=5, payload=0xFFF.
+    const word = 5 | (0xFFF << 4);
+    const { mod } = makeDrainStubModule([word]);
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    const drained = rt.drainEvents();
+    expect(drained).toHaveLength(1);
+    expect(drained[0]!.type).toBe(5);
+    expect(drained[0]!.payload).toBe(0xFFF);
+  });
+
+  it('init() allocates a 1 KB drain buffer; dispose() frees it', () => {
+    const { mod, calls } = makeDrainStubModule([]);
+    const rt = new DoomRuntime(mod);
+    rt.init(new Uint8Array([0]));
+    const mallocCall = calls.find((c) => c.name === 'malloc' && c.args[0] === 1024);
+    expect(mallocCall).toBeTruthy();
+    const freesBefore = calls.filter((c) => c.name === 'free').length;
+    rt.dispose();
+    expect(calls.filter((c) => c.name === 'free').length).toBe(freesBefore + 1);
   });
 });

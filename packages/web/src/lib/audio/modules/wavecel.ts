@@ -15,6 +15,26 @@
 // change. Frames are stored as plain JS number[][] — never Yjs proxies —
 // because structuredClone over postMessage chokes on Yjs Y.Array proxies
 // (DX7 SYX bug from PR-94).
+//
+// Inputs:
+//   pitch (pitch): V/oct pitch input, 0V = C4.
+//   fm (audio): audio-rate FM modulator.
+//   morph_cv (cv, linear, paramTarget=morph): displaces the wavetable morph position.
+//   spread_cv (cv, linear, paramTarget=spread): displaces the stereo spread (detune voices).
+//   fold_cv (cv, linear, paramTarget=fold): displaces the wavefold amount.
+//
+// Outputs:
+//   out_l (audio): left channel of the stereo wavetable.
+//   out_r (audio): right channel.
+//   scope_out (mono-video): scope-style waveform trace.
+//   wave3d_out (video): 3D wavetable surface render (animates with morph).
+//
+// Params:
+//   tune (linear -36..36 st, default 0): coarse tune semitones.
+//   fine (linear -100..100 ¢, default 0): fine tune cents.
+//   morph (linear 0..1, default 0): wavetable frame morph position.
+//   spread (linear 1..5, default 1): stereo voice spread (detune width).
+//   fold (linear 0..1, default 0): wavefolder amount.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -86,6 +106,7 @@ function resolveFrames(data: WavecelData | undefined): ResolvedFrames {
 // ScopeCard for GroupCard portal-hoisting.
 export const wavecelDef: AudioModuleDef = {
   type: 'wavecel',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'WAVECEL',
   category: 'sources',

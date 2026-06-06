@@ -1,6 +1,31 @@
 // packages/web/src/lib/audio/modules/charlottes-echos.ts
 //
-// CHARLOTTE'S ECHOS — destructive multi-head stereo delay. TS AudioWorklet.
+// CHARLOTTE'S ECHOS — destructive multi-head stereo delay.
+//
+// A stereo delay with a thicker, more abused character than the basic
+// DELAY: per-tap pitch-up grain, gradual feedback-loop decay, and high
+// feedback ratios that smear into endless tails. The "destructive" name
+// captures the intent — this is the delay you reach for when you want
+// the wet path to colour and degrade the source, not stay clean. DSP is
+// a TS AudioWorklet (packages/dsp/src/charlottes-echos.ts). Internally
+// this is the audio sibling of VDELAY in the video domain and is the
+// effect 4× COCOA DELAYs would approximate if stacked in serial.
+//
+// Inputs:
+//   L (audio): left-channel signal.
+//   R (audio): right-channel signal.
+//   delay (cv, log, paramTarget=delay): scales the delay-time knob (log).
+//
+// Outputs:
+//   L (audio): left-channel wet+dry mix.
+//   R (audio): right-channel wet+dry mix.
+//
+// Params:
+//   delay (log 0.001..1.5 s, default 0.4): tap time.
+//   feedback (linear 0..1, default 0.5): feedback ratio (high ≈ infinite tails).
+//   decay (linear 0..1, default 0.2): per-tap colour-decay (HF loss in the loop).
+//   pitchUp (linear 0..0.2, default 0): per-tap pitch-shift on the feedback path.
+//   mix (linear 0..1, default 0.5): dry/wet balance.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -10,6 +35,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const charlottesEchosDef: AudioModuleDef = {
   type: 'charlottesEchos',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: "CHARLOTTE'S ECHOS",
   category: 'effects',

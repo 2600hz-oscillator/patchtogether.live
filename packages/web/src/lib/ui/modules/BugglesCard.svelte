@@ -7,6 +7,7 @@
   import { bugglesDef } from '$lib/audio/modules/buggles';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -37,7 +38,7 @@
 
 <div class="mod-card buggles-card">
   <div class="stripe" style="background: var(--cable-cv);"></div>
-  <header class="title">BUGGLES</header>
+  <ModuleTitle {id} {data} defaultLabel="BUGGLES" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
@@ -51,6 +52,6 @@
 </div>
 
 <style>
-  .buggles-card { width: 280px; min-height: 220px; }
+  .buggles-card { width: 280px; }
   .buggles-card .fader-row { padding: 0 14px; margin-top: 18px; gap: 4px; }
 </style>

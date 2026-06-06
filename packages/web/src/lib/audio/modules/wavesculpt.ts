@@ -52,6 +52,33 @@
 // Per-osc wavetable selection rides node.data (indexed: wavetableSourceN,
 // wavetableFramesN, wavetableLabelN for N=1..4). The factory polls
 // livePatch.nodes[id].data and reposts on change.
+//
+// Inputs (per-oscillator × 4, plus camera + alpha + global):
+//   gate{1..4} (gate): per-oscillator gate.
+//   pitch_cv{1..4} (cv): per-oscillator V/oct pitch input.
+//   morph{1..4}_cv (cv, linear, paramTarget=morph{N}): per-osc wavetable morph CV.
+//   pos_x / pos_y / pos_z (cv, linear, paramTarget=…): camera position CV.
+//   zoom (cv, linear, paramTarget=zoom): camera zoom CV.
+//   rot (cv, linear, paramTarget=rot): camera rotation CV.
+//   scale (cv, linear, paramTarget=scale): ribbon scale CV.
+//   wiggle (cv, linear, paramTarget=wiggle): per-osc wiggle/wobble CV.
+//   alpha_in (video): optional video stream blended as alpha mask over the render.
+//   wall{1..6} (video): six cross-domain VIDEO INPUTS, one per face of the
+//     3D room (the camera is INSIDE the box). Each is textured onto its box
+//     face by the card, blended by a per-wall TRANSPARENCY (wall{N}_alpha,
+//     0..100%) and morphable flat→convex-dome via a per-wall DISTORT
+//     (wall{N}_distort, 0..1). Self-patching video_out → wall{N} produces
+//     recursive video feedback ("feedback madness"). Face map: 1=FRONT(−Z),
+//     2=BACK(+Z), 3=LEFT(−X), 4=RIGHT(+X), 5=FLOOR(−Y), 6=CEILING(+Y).
+//
+// Outputs:
+//   L / R (audio): stereo audio mix (per-osc summed in the worklet).
+//   out_red / out_grn / out_blu / out_alp (audio): per-channel render-mix taps for cross-domain
+//     audio analysis of the displayed image (audio-domain RGBA scopes).
+//   video_out (mono-video): the 3D ribbon render (BENTBOX-style CRT post-process baked in).
+//
+// Params: per-osc wave selectors + morph (4×), global camera (pos/zoom/rot), ribbon
+//   scale, per-osc wiggle, alpha-blend mix; built programmatically — see wavesculpt-engine.ts.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -64,6 +91,7 @@ import {
   getFactoryTable,
   DEFAULT_FACTORY_TABLE_ID,
 } from '$lib/audio/wavetable-factory-tables';
+import { detectPitch } from '$lib/audio/pitch-detect';
 
 // ---------- card → module frame-drawer registry ----------
 
@@ -89,6 +117,32 @@ export function uninstallWavesculptFrameDrawer(nodeId: string): void {
 const FRAMES_REGISTRY: Map<string, Float32Array[][]> = new Map();
 export function getWavesculptFrames(nodeId: string): Float32Array[][] | undefined {
   return FRAMES_REGISTRY.get(nodeId);
+}
+
+// ---------- per-line LUMINOSITY registry (card → factory → worklet) ----------
+//
+// LUMINOSITY → BANDPASS feature. Each waveform line crosses two walls of the
+// 3D box; the CARD (main thread, it owns the WebGL render + wall textures)
+// samples the 0..1 luminosity at the two crossing centre points each frame and
+// writes the per-osc pair here. The audio FACTORY's tick() loop reads this
+// registry and pushes the values into the engine worklet's lumA{N}/lumB{N}
+// k-rate AudioParams (with setTargetAtTime smoothing — no zipper), exactly the
+// same off-thread param-posting pattern the morph CV path uses. The worklet
+// derives a per-line morphable band-pass from the pair (bright = wide-open,
+// black = narrow-nonzero). depthDefault keeps a sensible value before the card
+// has produced its first sample.
+export interface WavesculptLuma {
+  /** Luminosity (0..1) at the first wall crossing, per osc (index 0..3). */
+  lumA: [number, number, number, number];
+  /** Luminosity (0..1) at the second wall crossing, per osc. */
+  lumB: [number, number, number, number];
+}
+const LUMA_REGISTRY: Map<string, WavesculptLuma> = new Map();
+export function setWavesculptLuma(nodeId: string, luma: WavesculptLuma): void {
+  LUMA_REGISTRY.set(nodeId, luma);
+}
+export function getWavesculptLuma(nodeId: string): WavesculptLuma | undefined {
+  return LUMA_REGISTRY.get(nodeId);
 }
 
 // ---------- pure helpers (unit-testable) ----------
@@ -132,6 +186,107 @@ export const WALL_LAYOUT: ReadonlyArray<{ src: [number, number, number]; vec: [n
   // ALPHA — -Z wall, 75% up (y=+0.5), aimed at origin.
   { src: [ 0,  0.5, -1], vec: [ 0, -0.5, 1] },
 ];
+
+/** VIDEO WALL face mapping — the 6 faces of the 3D room (unit box
+ *  [-1,+1]^3) that the cross-domain video inputs wall1..wall6 texture
+ *  onto. The camera lives INSIDE this box, so each face is seen from the
+ *  inside. Single source of truth for both the audio def's port docs and
+ *  the card's wall-geometry builder.
+ *
+ *  Per face:
+ *    wallIdx — 0-based index → port id `wall${wallIdx + 1}`.
+ *    label   — human face name.
+ *    axis    — which world axis the face is perpendicular to (0=X,1=Y,2=Z).
+ *    sign    — +1 / −1 position of the face along that axis (the plane is at
+ *              sign·1 on `axis`). The inward normal is therefore −sign on
+ *              `axis` (faces look toward the room centre).
+ *
+ *  Mapping (front is −Z = the wall in front of the camera at rot=0, matching
+ *  the ALPHA oscillator's −Z wall in WALL_LAYOUT):
+ *    wall1 → FRONT   (−Z)   wall2 → BACK    (+Z)
+ *    wall3 → LEFT    (−X)   wall4 → RIGHT   (+X)
+ *    wall5 → FLOOR   (−Y)   wall6 → CEILING (+Y)
+ */
+export const VIDEO_WALL_FACES: ReadonlyArray<{
+  wallIdx: number;
+  label: string;
+  axis: 0 | 1 | 2;
+  sign: 1 | -1;
+}> = [
+  { wallIdx: 0, label: 'FRONT',   axis: 2, sign: -1 },
+  { wallIdx: 1, label: 'BACK',    axis: 2, sign:  1 },
+  { wallIdx: 2, label: 'LEFT',    axis: 0, sign: -1 },
+  { wallIdx: 3, label: 'RIGHT',   axis: 0, sign:  1 },
+  { wallIdx: 4, label: 'FLOOR',   axis: 1, sign: -1 },
+  { wallIdx: 5, label: 'CEILING', axis: 1, sign:  1 },
+];
+
+/** One wall a line crosses: which face (by VIDEO_WALL_FACES index) + the
+ *  in-face UV (0..1 across the face) at the crossing point. The card uses this
+ *  to sample that face's wall texture luminosity for the luminosity → bandpass
+ *  feature. */
+export interface LineWallCrossing {
+  /** Index into VIDEO_WALL_FACES (0..5) → wall texture wall${idx+1}. */
+  faceIdx: number;
+  /** In-face UV of the crossing, 0..1 each. */
+  u: number;
+  v: number;
+}
+
+/** Compute the TWO box-face crossings of a line passing THROUGH the unit box
+ *  [-1,+1]^3 along an infinite ray (origin + direction). Returns the entry +
+ *  exit faces (the two walls the line passes through) with the in-face UV at
+ *  each crossing — the "centre point where the line passes through the wall"
+ *  the luminosity is sampled at.
+ *
+ *  Method: slab method. For each of the 6 face planes (axis·sign at ±1) solve
+ *  for the ray parameter t where the ray hits that plane, keep the hits whose
+ *  in-plane coords land within the face (|other coords| <= 1 + eps), then take
+ *  the two with the smallest + largest t (entry + exit). The face UV maps the
+ *  two in-plane world axes from [-1,+1] to [0,1] (matching VIDEO_WALL_FACES'
+ *  in-plane basis ax1=(axis+1)%3, ax2=(axis+2)%3 in drawWalls).
+ *
+ *  Returns null only for a degenerate (zero-length) direction. Pure +
+ *  unit-tested. */
+export function lineWallCrossings(
+  origin: readonly [number, number, number],
+  direction: readonly [number, number, number],
+): [LineWallCrossing, LineWallCrossing] | null {
+  const d = direction;
+  const dlen = Math.hypot(d[0], d[1], d[2]);
+  if (dlen < 1e-9) return null;
+  const eps = 1e-4;
+  const hits: Array<{ t: number; faceIdx: number; u: number; v: number }> = [];
+  for (let f = 0; f < VIDEO_WALL_FACES.length; f++) {
+    const face = VIDEO_WALL_FACES[f]!;
+    const axis = face.axis;
+    const plane = face.sign; // axis coord at ±1
+    const dAxis = d[axis]!;
+    if (Math.abs(dAxis) < 1e-9) continue; // parallel to this face
+    const t = (plane - origin[axis]!) / dAxis;
+    // World hit point.
+    const hx = origin[0]! + d[0]! * t;
+    const hy = origin[1]! + d[1]! * t;
+    const hz = origin[2]! + d[2]! * t;
+    const hit: [number, number, number] = [hx, hy, hz];
+    const ax1 = (axis + 1) % 3;
+    const ax2 = (axis + 2) % 3;
+    const c1 = hit[ax1]!;
+    const c2 = hit[ax2]!;
+    if (Math.abs(c1) > 1 + eps || Math.abs(c2) > 1 + eps) continue; // off the face
+    const u = (Math.max(-1, Math.min(1, c1)) + 1) / 2;
+    const v = (Math.max(-1, Math.min(1, c2)) + 1) / 2;
+    hits.push({ t, faceIdx: f, u, v });
+  }
+  if (hits.length < 2) return null;
+  hits.sort((a, b) => a.t - b.t);
+  const entry = hits[0]!;
+  const exit = hits[hits.length - 1]!;
+  return [
+    { faceIdx: entry.faceIdx, u: entry.u, v: entry.v },
+    { faceIdx: exit.faceIdx, u: exit.u, v: exit.v },
+  ];
+}
 
 /** Distance-attenuated gain for one oscillator given the user camera
  *  position. Same formula as v1; documented in WALL_LAYOUT comment.
@@ -181,9 +336,79 @@ export function eyeFromCamera(
   return [posX * 1.5 + dx, posY * 1.5, posZ * 1.5 + dz];
 }
 
+/** Vertex range (start, count) of one oscillator's ribbon inside the
+ *  single TRIANGLE_STRIP built by the card's buildRibbonGeometry().
+ *
+ *  Geometry layout (must stay in lockstep with WavesculptCard.svelte:
+ *  buildRibbonGeometry): osc 0 emits `2·segments` verts with no lead-in;
+ *  each subsequent osc is preceded by 2 degenerate "join" verts so the
+ *  whole thing is one continuous strip. To draw ONLY osc N's ribbon we
+ *  skip those join verts and return the range covering just its real
+ *  vertices.
+ *
+ *  This is the single source of truth for the per-osc sub-strip offsets.
+ *  The card uses it for the ALPHA-mask pass (which MUST draw only the
+ *  ALPHA ribbon, osc 3 — see the alpha-rotate bugfix: drawing all four
+ *  ribbons let RGB ribbons write depth that occluded the ALPHA mask under
+ *  camera rotation). Exported so a unit test can lock the arithmetic. */
+export function ribbonStripRange(oscIdx: number, segments: number): { start: number; count: number } {
+  const block = 2 * segments;     // real verts per osc ribbon
+  const join = 2;                 // degenerate verts before each osc>0
+  // buildRibbonGeometry emits, per osc>0: `join` degenerate verts then
+  // `block` real verts (osc 0 has no join). So osc N's FIRST REAL vertex
+  // sits at N·(join + block) — the join verts for osc N are the two verts
+  // immediately before that, already counted in the running sum for the
+  // prior iterations. Drawing [start, start+block) covers exactly osc N's
+  // real ribbon with no degenerate triangles.
+  let start = 0;
+  for (let i = 1; i <= oscIdx; i++) start += join + block;
+  return { start, count: block };
+}
+
 const C4_HZ = 261.626;
 export function voctToHz(voct: number): number {
   return C4_HZ * Math.pow(2, voct);
+}
+
+// ---------- per-osc CHROMA color (packed RGB, unit-tested) ----------
+//
+// Each of the three colour oscillators (RED / GRN / BLU) has a custom
+// base-colour param (`red_color` / `grn_color` / `blu_color`). A colour
+// is not a single CV-able scalar, so it's stored as ONE packed-RGB integer
+// param: value = r*65536 + g*256 + b, each channel 0..255. Persisted +
+// multiplayer-synced exactly like every other numeric param (Yjs stores it
+// as a plain number). The ALP oscillator is the alpha/mask layer and has NO
+// colour param — it stays the existing near-white mask.
+//
+// Defaults are the historical hard-coded ribbon colours (so existing
+// patches look identical): RED=#FF3333, GRN=#33FF4D, BLU=#4D80FF. These
+// match the 0..1 OSC_COLORS the card used pre-chroma-wheel, rounded to the
+// nearest 8-bit channel.
+export const DEFAULT_OSC_COLOR_PACKED = {
+  red: 0xff3333,
+  grn: 0x33ff4d,
+  blu: 0x4d80ff,
+} as const;
+
+/** Clamp + round a 0..1 float channel to an 8-bit integer (0..255). */
+function chTo8(v: number): number {
+  return Math.max(0, Math.min(255, Math.round(v * 255)));
+}
+
+/** Pack three 0..1 float channels into a single 0xRRGGBB integer. */
+export function packColor01(r: number, g: number, b: number): number {
+  return (chTo8(r) << 16) | (chTo8(g) << 8) | chTo8(b);
+}
+
+/** Unpack a 0xRRGGBB integer into three 0..1 float channels. Defensive
+ *  against NaN / out-of-range (clamped to the 24-bit RGB space) so a bad
+ *  param value can never crash the render. */
+export function unpackColor01(packed: number): [number, number, number] {
+  const p = Number.isFinite(packed) ? Math.max(0, Math.min(0xffffff, Math.round(packed))) : 0;
+  const r = (p >> 16) & 0xff;
+  const g = (p >> 8) & 0xff;
+  const b = p & 0xff;
+  return [r / 255, g / 255, b / 255];
 }
 
 export function detuneOctaveOffset(oscIdx: number, detune: number): number {
@@ -191,6 +416,55 @@ export function detuneOctaveOffset(oscIdx: number, detune: number): number {
   if (oscIdx === 1) return detune;
   if (oscIdx === 2) return detune * 0.5;
   return -detune;
+}
+
+// ---------- WIGGLE: pitch → 3D rotation mapping (pure, unit-tested) ----------
+//
+// The BLINK WIGGLE control rotates each oscillator's line/tube/ribbon
+// through 3D space. Owner spec: rotation SPEED and MAGNITUDE are both
+// proportional to that oscillator's detected PITCH (low pitch → slow +
+// small wobble, high pitch → fast + large), and the WIGGLE knob scales the
+// overall strength (0 = OFF = the existing fixed-direction behaviour).
+//
+// We map pitch via a log scale across the musical band so an octave change
+// is a roughly-uniform step in both rate and magnitude (perceptually even).
+// Below WIGGLE_MIN_HZ (or when no pitch is detected) the contribution is 0,
+// so a silent / unpitched voice doesn't wiggle.
+export const WIGGLE_MIN_HZ = 40;     // C1-ish floor
+export const WIGGLE_MAX_HZ = 4000;   // ~B7 ceiling (matches pitch-detect maxHz)
+// Rotation rate at max pitch + full WIGGLE, in radians/sec.
+export const WIGGLE_MAX_RATE = 4.5;
+// Peak rotation magnitude (radians of tilt away from the fixed aim) at max
+// pitch + full WIGGLE. ~0.9 rad ≈ 51° — visibly sweeping but never folding
+// the trace back through its own origin.
+export const WIGGLE_MAX_MAGNITUDE = 0.9;
+
+/** Normalised pitch position in [0..1] across the musical band (log scale).
+ *  Returns 0 for null / sub-floor pitch. */
+export function wigglePitchNorm(hz: number | null): number {
+  if (hz === null || !Number.isFinite(hz) || hz < WIGGLE_MIN_HZ) return 0;
+  const clamped = Math.min(WIGGLE_MAX_HZ, hz);
+  const lo = Math.log(WIGGLE_MIN_HZ);
+  const hi = Math.log(WIGGLE_MAX_HZ);
+  return (Math.log(clamped) - lo) / (hi - lo);
+}
+
+/** Map a detected pitch + the global WIGGLE knob (0..1) to a rotation
+ *  rate (rad/sec) and magnitude (rad). Both scale with pitch (low→small,
+ *  high→large) AND with the WIGGLE strength. wiggle=0 → {rate:0, magnitude:0}
+ *  i.e. OFF (the trace keeps its fixed aim direction). Pure: drives both the
+ *  card render and the unit test. */
+export function pitchToWiggle(
+  hz: number | null,
+  wiggle: number,
+): { rate: number; magnitude: number } {
+  const w = Math.max(0, Math.min(1, wiggle));
+  if (w <= 0) return { rate: 0, magnitude: 0 };
+  const n = wigglePitchNorm(hz);
+  return {
+    rate: n * WIGGLE_MAX_RATE * w,
+    magnitude: n * WIGGLE_MAX_MAGNITUDE * w,
+  };
 }
 
 // ---------- ADSR helper (unchanged from v1; tests still reference it) ----------
@@ -386,6 +660,7 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const wavesculptDef: AudioModuleDef = {
   type: 'wavesculpt',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'WAVESCULPT',
   category: 'sources',
@@ -412,11 +687,47 @@ export const wavesculptDef: AudioModuleDef = {
     { id: 'pos_z', type: 'cv', paramTarget: 'pos_z', cvScale: { mode: 'linear' } },
     { id: 'zoom',  type: 'cv', paramTarget: 'zoom',  cvScale: { mode: 'linear' } },
     { id: 'rot',   type: 'cv', paramTarget: 'rot',   cvScale: { mode: 'linear' } },
+    // BLINK scope-render controls (CV-modulatable like the camera params).
+    // scale = amplitude/zoom of the scope waveform (reuses SCOPE's scale
+    // semantics). wiggle = pitch-driven 3D rotation strength (0 = OFF).
+    { id: 'scale',  type: 'cv', paramTarget: 'scale',  cvScale: { mode: 'linear' } },
+    { id: 'wiggle', type: 'cv', paramTarget: 'wiggle', cvScale: { mode: 'linear' } },
     { id: 'alpha_in', type: 'video' },
+    // VIDEO WALLS — six cross-domain video inputs, one per face of the 3D
+    // room (the camera lives INSIDE the box). Each is textured onto its box
+    // face by the card (see WavesculptCard's wall pass), blended by a per-
+    // wall TRANSPARENCY (wall{N}_alpha) and morphable from a flat quad to a
+    // convex dome via a per-wall DISTORT (wall{N}_distort). Face mapping
+    // (single source of truth = VIDEO_WALL_FACES below):
+    //   wall1 → FRONT (−Z)   wall2 → BACK  (+Z)
+    //   wall3 → LEFT  (−X)   wall4 → RIGHT (+X)
+    //   wall5 → FLOOR (−Y)   wall6 → CEILING (+Y)
+    // Listed LITERALLY (not generated in a loop) so the module-manifest
+    // static extractor + the per-module-per-port handle-presence sweep see
+    // every port. Self-patching WAVESCULPT.video_out → any wall{N} is
+    // allowed (and intended) — it produces recursive video feedback.
+    { id: 'wall1', type: 'video' },
+    { id: 'wall2', type: 'video' },
+    { id: 'wall3', type: 'video' },
+    { id: 'wall4', type: 'video' },
+    { id: 'wall5', type: 'video' },
+    { id: 'wall6', type: 'video' },
   ],
   outputs: [
     { id: 'L', type: 'audio' },
     { id: 'R', type: 'audio' },
+    // Per-oscillator AUDIO taps — one per osc (RED/GRN/BLU/ALP). Each
+    // carries that single oscillator's post-env/dist/pan signal (the
+    // EXACT node the BLINK oscilloscope/visualizer reads, oscChains[i]
+    // .panner), so you can patch one voice out independently of the
+    // summed L/R main mix. The L/R mix is KEPT intact + backward-
+    // compatible; these four are purely additive. Index→colour mapping
+    // matches WALL_LAYOUT + the card's OSC_COLOR_LABELS: 0=RED, 1=GRN,
+    // 2=BLU, 3=ALP.
+    { id: 'out_red', type: 'audio' },
+    { id: 'out_grn', type: 'audio' },
+    { id: 'out_blu', type: 'audio' },
+    { id: 'out_alp', type: 'audio' },
     { id: 'video_out', type: 'mono-video' },
   ],
   params: (() => {
@@ -463,7 +774,45 @@ export const wavesculptDef: AudioModuleDef = {
     // 2 = SPECTROGRAPH (scrolling-column STFT of the combined audio output:
     //                   log-Hz vertical axis, time scrolling left).
     ps.push({ id: 'video_mode',    label: 'View',     defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
+    // BLINK render mode (within the 3D PROXIMITY view): cycles the way the
+    // four oscillators are visualised. Persisted + multiplayer-synced like
+    // every other param.
+    //   0 = (current) — today's wavetable-ribbon render. Default.
+    //   1 = SCOPES TRIAL — each osc's LIVE oscilloscope trace, emitted from
+    //       the 4 floor corners aimed up+inward at 45°. WIDTH thickens the
+    //       scope line (max ≈ fills the box).
+    //   2 = REALITY BASED COMMUNITY — same scope layout but the traces are
+    //       3D neon TUBES; WIDTH sets the tube radius (max ≈ fills the box).
+    ps.push({ id: 'blink_mode',    label: 'Blink',    defaultValue: 0, min: 0, max: 2, curve: 'discrete' });
+    // SCALE — amplitude/zoom of the BLINK scope waveform. Reuses SCOPE's
+    // scale semantics (multiplicative, log curve, 0.1..10, unity at 1) so
+    // the scope trace SHAPE matches the SCOPE module at equal scale.
+    // Applies in SCOPES TRIAL + REALITY BASED COMMUNITY.
+    ps.push({ id: 'scale',  label: 'Scale',  defaultValue: 1, min: 0.1, max: 10, curve: 'log' });
+    // WIGGLE — pitch-driven 3D rotation of each osc's line/tube/ribbon.
+    // 0 = OFF (fixed-direction; current behaviour). Rotation speed +
+    // magnitude scale with each osc's detected pitch; this knob scales the
+    // overall strength. Applies in ALL blink modes (incl. the ribbon mode).
+    ps.push({ id: 'wiggle', label: 'Wiggle', defaultValue: 0, min: 0, max: 1, curve: 'linear' });
     ps.push({ id: 'alpha_brightness', label: 'A.Bright', defaultValue: 1, min: 0, max: 2, curve: 'linear' });
+    // LUMINOSITY → BANDPASS depth. 0 = OFF (lines unfiltered), 1 = the
+    // luminosity at each line's two wall-crossing centre points fully shapes a
+    // morphable band-pass on that line's audio (bright = wide-open, black =
+    // narrow-nonzero). Automatic from the walls; this knob just scales the
+    // overall effect. The card samples luminosity main-thread + posts it to the
+    // worklet via the LUMA_REGISTRY → tick() → lumA{N}/lumB{N} param path.
+    ps.push({ id: 'lum_depth', label: 'LumBP', defaultValue: 0, min: 0, max: 1, curve: 'linear' });
+    // Per-oscillator CHROMA base colour (packed 0xRRGGBB). One param per
+    // colour osc — the picked colour tints that osc's ribbon (mode 0), its
+    // SCOPES-TRIAL scope line, and its REALITY-BASED-COMMUNITY neon tube.
+    // discrete curve: this is a packed integer chosen via a colour wheel,
+    // not a continuous CV-able knob (exempt from MIDI-Learn audit — the
+    // picker is a native <input type="color">, not a Knob/Fader). ALP has
+    // no colour param (it's the alpha/mask layer). Defaults = the historical
+    // red/green/blue so existing patches render unchanged.
+    ps.push({ id: 'red_color', label: 'R.Col', defaultValue: DEFAULT_OSC_COLOR_PACKED.red, min: 0, max: 0xffffff, curve: 'discrete' });
+    ps.push({ id: 'grn_color', label: 'G.Col', defaultValue: DEFAULT_OSC_COLOR_PACKED.grn, min: 0, max: 0xffffff, curve: 'discrete' });
+    ps.push({ id: 'blu_color', label: 'B.Col', defaultValue: DEFAULT_OSC_COLOR_PACKED.blu, min: 0, max: 0xffffff, curve: 'discrete' });
     ps.push({ id: 'hsync_drift',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Drift' });
     ps.push({ id: 'hsync_loss',         defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'HS Loss' });
     ps.push({ id: 'vsync_drift',        defaultValue: 0,    min: 0,  max: 1, curve: 'linear', label: 'VS Drift' });
@@ -476,6 +825,29 @@ export const wavesculptDef: AudioModuleDef = {
     ps.push({ id: 'bloom',              defaultValue: 0.4,  min: 0,  max: 1, curve: 'linear', label: 'Bloom' });
     ps.push({ id: 'noise',              defaultValue: 0.05, min: 0,  max: 1, curve: 'linear', label: 'Noise' });
     ps.push({ id: 'master_gain',        defaultValue: 1,    min: 0,  max: 2, curve: 'linear', label: 'Gain' });
+    // ---------------- VIDEO WALL controls (per face × 6) ----------------
+    // wall{N}_alpha   — TRANSPARENCY, 0..100 (%): 0 = wall invisible,
+    //                   100 = fully opaque. The card blends the wall video
+    //                   over the scene by alpha/100.
+    // wall{N}_distort — DISTORT, 0..1: 0 = flat quad on the face plane,
+    //                   1 = convex hemisphere bulging toward the room centre
+    //                   (a dome/fisheye we look up into). Continuous morph,
+    //                   implemented in the wall geometry (vertex displacement
+    //                   toward the box centre). Listed LITERALLY for the
+    //                   static manifest extractor. Defaults: alpha 100 (so a
+    //                   freshly-patched wall is visible), distort 0 (flat).
+    ps.push({ id: 'wall1_alpha',   label: 'W1 α',  defaultValue: 100, min: 0, max: 100, curve: 'linear', units: '%' });
+    ps.push({ id: 'wall1_distort', label: 'W1 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
+    ps.push({ id: 'wall2_alpha',   label: 'W2 α',  defaultValue: 100, min: 0, max: 100, curve: 'linear', units: '%' });
+    ps.push({ id: 'wall2_distort', label: 'W2 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
+    ps.push({ id: 'wall3_alpha',   label: 'W3 α',  defaultValue: 100, min: 0, max: 100, curve: 'linear', units: '%' });
+    ps.push({ id: 'wall3_distort', label: 'W3 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
+    ps.push({ id: 'wall4_alpha',   label: 'W4 α',  defaultValue: 100, min: 0, max: 100, curve: 'linear', units: '%' });
+    ps.push({ id: 'wall4_distort', label: 'W4 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
+    ps.push({ id: 'wall5_alpha',   label: 'W5 α',  defaultValue: 100, min: 0, max: 100, curve: 'linear', units: '%' });
+    ps.push({ id: 'wall5_distort', label: 'W5 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
+    ps.push({ id: 'wall6_alpha',   label: 'W6 α',  defaultValue: 100, min: 0, max: 100, curve: 'linear', units: '%' });
+    ps.push({ id: 'wall6_distort', label: 'W6 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
     return ps;
   })(),
 
@@ -527,6 +899,8 @@ export const wavesculptDef: AudioModuleDef = {
         engineParams.get(k)?.setValueAtTime(live[k] ?? 0, ctx.currentTime);
       }
     }
+    // Mirror initial luminosity-bandpass depth.
+    engineParams.get('lumDepth')?.setValueAtTime(live.lum_depth ?? 0, ctx.currentTime);
 
     // ---------------- Per-osc audio chain ----------------
     //
@@ -983,6 +1357,29 @@ export const wavesculptDef: AudioModuleDef = {
           } catch { /* */ }
         }
       }
+
+      // LUMINOSITY → BANDPASS push. The card samples the per-line wall-crossing
+      // luminosities each frame into LUMA_REGISTRY; mirror them into the
+      // worklet's lumA{N}/lumB{N} k-rate AudioParams here (setTargetAtTime
+      // smoothing on top of the in-worklet one-pole smoother → no zipper). The
+      // depth knob gates the whole effect. When no luminosity has been sampled
+      // yet (card not mounted) default to 1.0 (wide-open) so a depth>0 patch
+      // doesn't over-filter before the first video frame.
+      const lumDepth = Math.max(0, Math.min(1, live.lum_depth ?? 0));
+      try {
+        engineParams.get('lumDepth')?.setTargetAtTime(lumDepth, ctx.currentTime, 0.02);
+      } catch { /* */ }
+      const luma = LUMA_REGISTRY.get(node.id);
+      for (let i = 0; i < NUM_OSC; i++) {
+        const a = luma ? (luma.lumA[i] ?? 1) : 1;
+        const b = luma ? (luma.lumB[i] ?? 1) : 1;
+        try {
+          engineParams.get(`lumA${i + 1}`)?.setTargetAtTime(
+            Math.max(0, Math.min(1, a)), ctx.currentTime, 0.02);
+          engineParams.get(`lumB${i + 1}`)?.setTargetAtTime(
+            Math.max(0, Math.min(1, b)), ctx.currentTime, 0.02);
+        } catch { /* worklet may not have surfaced the param */ }
+      }
     }
 
     let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -1038,6 +1435,11 @@ export const wavesculptDef: AudioModuleDef = {
     const sPosZ = makeShadow(live.pos_z ?? 0);
     const sZoom = makeShadow(live.zoom ?? 1);
     const sRot  = makeShadow(live.rot  ?? 0);
+    // BLINK scope-render shadows (same CV-combine pattern as the camera
+    // params): scale + wiggle. The card reads combined (knob + CV) via
+    // read('scopeRender') so a patched LFO can sweep them per frame.
+    const sScale  = makeShadow(live.scale  ?? 1);
+    const sWiggle = makeShadow(live.wiggle ?? 0);
     // Per-osc morph shadows. Same pattern as the camera shadows:
     // CV cables connect into morph{N}_cv → shadow gain AudioParam;
     // the shadow analyser captures the combined (knob + CV) value
@@ -1090,6 +1492,40 @@ export const wavesculptDef: AudioModuleDef = {
       return a;
     }
 
+    // ---------------- Per-osc scope analysers (lazy) ----------------
+    // Used only by the BLINK render modes (SCOPES TRIAL / REALITY BASED
+    // COMMUNITY) which draw each oscillator's live output as an
+    // oscilloscope trace. We tap each osc's panner output (post
+    // env+dist+pan) so the trace reflects exactly what that voice
+    // contributes to the mix — silent voices show a flat line, loud/near
+    // voices show a tall wave. Lazy: BLINK mode 0 (default) + the
+    // PROXIMITY/BIRDSEYE/SPECTROGRAPH video modes never pay the cost.
+    let scopeAnalysers: AnalyserNode[] | null = null;
+    let scopeBufs: Float32Array<ArrayBuffer>[] | null = null;
+    // Per-osc detected pitch (Hz | null), refreshed at ~12 Hz from the
+    // scope buffers; drives the WIGGLE rotation rate + magnitude.
+    const scopePitches: Array<number | null> = [null, null, null, null];
+    let scopePitchLastMs = 0;
+    function ensureScopeAnalysers(): AnalyserNode[] {
+      if (scopeAnalysers) return scopeAnalysers;
+      const ans: AnalyserNode[] = [];
+      const bufs: Float32Array<ArrayBuffer>[] = [];
+      for (let i = 0; i < NUM_OSC; i++) {
+        const a = ctx.createAnalyser();
+        // 512-sample window: enough to show a couple of cycles of an
+        // audible-band tone without the trace turning to mush.
+        a.fftSize = 512;
+        a.smoothingTimeConstant = 0;
+        // Tap the per-osc panner (stereo) — env+dist+pan already applied.
+        oscChains[i]!.panner.connect(a);
+        ans.push(a);
+        bufs.push(new Float32Array(new ArrayBuffer(a.fftSize * 4)));
+      }
+      scopeAnalysers = ans;
+      scopeBufs = bufs;
+      return ans;
+    }
+
     function drawFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
       const fn = FRAME_DRAWERS.get(node.id);
       if (fn) {
@@ -1125,6 +1561,8 @@ export const wavesculptDef: AudioModuleDef = {
     inputsMap.set('pos_z', { node: sPosZ.gain, input: 0, param: sPosZ.gain.gain });
     inputsMap.set('zoom',  { node: sZoom.gain, input: 0, param: sZoom.gain.gain });
     inputsMap.set('rot',   { node: sRot.gain,  input: 0, param: sRot.gain.gain  });
+    inputsMap.set('scale',  { node: sScale.gain,  input: 0, param: sScale.gain.gain  });
+    inputsMap.set('wiggle', { node: sWiggle.gain, input: 0, param: sWiggle.gain.gain });
     // Per-osc morph CV → shadow gain (mirroring the camera CV path).
     // The engine connects the modulator into the shadow's gain
     // AudioParam; the analyser captures combined (knob + CV) at audio
@@ -1141,9 +1579,18 @@ export const wavesculptDef: AudioModuleDef = {
     const handle: AudioDomainNodeHandle = {
       domain: 'audio',
       inputs: inputsMap,
-      outputs: new Map([
+      outputs: new Map<string, { node: AudioNode; output: number }>([
         ['L', { node: busL, output: 0 }],
         ['R', { node: busR, output: 0 }],
+        // Per-osc audio taps. Each points at that oscillator's panner —
+        // post env+dist+pan, the SAME node the scope analysers tap (see
+        // ensureScopeAnalysers). output 0 = the panner's stereo output,
+        // i.e. that single voice's full contribution. Index→colour:
+        // 0=RED, 1=GRN, 2=BLU, 3=ALP (WALL_LAYOUT order).
+        ['out_red', { node: oscChains[0]!.panner, output: 0 }],
+        ['out_grn', { node: oscChains[1]!.panner, output: 0 }],
+        ['out_blu', { node: oscChains[2]!.panner, output: 0 }],
+        ['out_alp', { node: oscChains[3]!.panner, output: 0 }],
       ]),
       videoSources: new Map([
         ['video_out', {
@@ -1159,6 +1606,13 @@ export const wavesculptDef: AudioModuleDef = {
         if (paramId === 'pos_z') sPosZ.gain.gain.setValueAtTime(value, ctx.currentTime);
         if (paramId === 'zoom')  sZoom.gain.gain.setValueAtTime(value, ctx.currentTime);
         if (paramId === 'rot')   sRot.gain.gain.setValueAtTime(value, ctx.currentTime);
+        if (paramId === 'scale')  sScale.gain.gain.setValueAtTime(value, ctx.currentTime);
+        if (paramId === 'wiggle') sWiggle.gain.gain.setValueAtTime(value, ctx.currentTime);
+        // Luminosity-bandpass depth → worklet lumDepth (tick() also pushes it,
+        // but write immediately so a knob turn responds without a tick delay).
+        if (paramId === 'lum_depth') {
+          try { engineParams.get('lumDepth')?.setValueAtTime(Math.max(0, Math.min(1, value)), ctx.currentTime); } catch { /* */ }
+        }
         // Per-osc morph knob → corresponding shadow gain. The shadow
         // is the single source of truth: tick() reads it and pushes
         // combined (knob + CV) into the worklet's morph{N} AudioParam.
@@ -1227,12 +1681,98 @@ export const wavesculptDef: AudioModuleDef = {
           a.getFloatFrequencyData(spectrumBuf!);
           return { bins: spectrumBuf!, sampleRate: ctx.sampleRate, fftSize: a.fftSize };
         }
+        if (key === 'scopes') {
+          // Per-osc oscilloscope traces — the EXACT same data SCOPE reads:
+          // each analyser's getFloatTimeDomainData window (post-env/dist/
+          // pan), so the BLINK SCOPES-TRIAL / REALITY-BASED-COMMUNITY
+          // render draws the same waveform SHAPE the SCOPE module would
+          // draw if patched to the same signal. We additionally return:
+          //   * scale  — combined (knob + CV) SCALE; the card multiplies
+          //     the trace amplitude by it, matching SCOPE's ch1Scale.
+          //   * wiggle — combined (knob + CV) WIGGLE strength (0..1).
+          //   * pitches — per-osc detected fundamental (Hz | null) via the
+          //     SAME YIN detector SCOPE's tuner uses, throttled to ~12 Hz
+          //     (pitch is for the WIGGLE rotation rate/magnitude; frame-
+          //     rate detection would jitter and isn't worth the CPU).
+          const ans = ensureScopeAnalysers();
+          // ---- VRT determinism hook ----
+          // The live analyser buffers carry whatever the audio thread last
+          // DMA'd in — even after ctx.suspend() the contents reflect the
+          // exact JS↔audio scheduling instant at suspend (varies by tens of
+          // microseconds = many audio frames run-to-run). For VRT capture
+          // we override the trace + pitch data with fixed synthetic per-osc
+          // sines so the BLINK SCOPES-TRIAL / REALITY-BASED-COMMUNITY scope
+          // textures are byte-identical across runs. Flag is the SAME one
+          // the card render reads (globalThis.__wavesculptVrtFreeze); it's
+          // never set in production. SCOPE module + e2e/audio paths are
+          // untouched — they don't gate on this flag.
+          const frozen =
+            (globalThis as unknown as { __wavesculptVrtFreeze?: boolean })
+              .__wavesculptVrtFreeze === true;
+          if (frozen) {
+            // Per-osc fixed pseudo-pitches: 220, 330, 440, 550 Hz. Distinct
+            // cycle counts within the 512-sample window give 4 visually
+            // distinguishable traces, and the pitch values feed the WIGGLE
+            // rate/magnitude predictably.
+            //
+            // SILENT-OSC PRESERVATION: we first peek at the live analyser
+            // peak to decide which voices were genuinely silent (gate-
+            // normalling left them self-sourced → no signal → flat trace).
+            // Silent voices get a zeroed buffer + pitch=null so the card's
+            // uActive amp-gate still suppresses them (the silent-osc
+            // regression test depends on this). Loud voices get the fixed
+            // synthetic sine. Threshold is generous — analyser peaks are in
+            // 0.3+ range for any audible voice; silent voices read ~0.
+            const frozenPitches = [220, 330, 440, 550];
+            const SILENT_THRESHOLD = 0.02;
+            for (let i = 0; i < NUM_OSC; i++) ans[i]!.getFloatTimeDomainData(scopeBufs![i]!);
+            for (let i = 0; i < NUM_OSC; i++) {
+              const buf = scopeBufs![i]!;
+              let peak = 0;
+              for (let s = 0; s < buf.length; s++) {
+                const a = Math.abs(buf[s]!);
+                if (a > peak) peak = a;
+              }
+              if (peak < SILENT_THRESHOLD) {
+                // Silent voice: write a clean zero buffer (the analyser
+                // residual is itself noisy and would still show as a faint
+                // flat-line that drifts run-to-run). Pitch=null → no wiggle.
+                for (let s = 0; s < buf.length; s++) buf[s] = 0;
+                scopePitches[i] = null;
+              } else {
+                const cyclesInWindow = (i + 1) * 1.5; // 1.5 / 3 / 4.5 / 6
+                const amp = 0.85;
+                for (let s = 0; s < buf.length; s++) {
+                  buf[s] = amp * Math.sin((s / buf.length) * Math.PI * 2 * cyclesInWindow);
+                }
+                scopePitches[i] = frozenPitches[i]!;
+              }
+            }
+          } else {
+            for (let i = 0; i < NUM_OSC; i++) ans[i]!.getFloatTimeDomainData(scopeBufs![i]!);
+            const nowMs = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+            if (nowMs - scopePitchLastMs > 80) {
+              scopePitchLastMs = nowMs;
+              for (let i = 0; i < NUM_OSC; i++) {
+                scopePitches[i] = detectPitch(scopeBufs![i]!, ctx.sampleRate).hz;
+              }
+            }
+          }
+          return {
+            traces: scopeBufs!,
+            length: ans[0]!.fftSize,
+            scale:  readCamShadow(sScale,  live.scale  ?? 1),
+            wiggle: readCamShadow(sWiggle, live.wiggle ?? 0),
+            pitches: scopePitches.slice(),
+          };
+        }
         return undefined;
       },
       dispose() {
         alive = false;
         FRAME_DRAWERS.delete(node.id);
         FRAMES_REGISTRY.delete(node.id);
+        LUMA_REGISTRY.delete(node.id);
         if (intervalId !== null) clearInterval(intervalId);
         if (pollTimer !== null) clearTimeout(pollTimer);
         try { engineNode.disconnect(); } catch { /* */ }
@@ -1276,6 +1816,11 @@ export const wavesculptDef: AudioModuleDef = {
           try { spectrumAnalyser.disconnect(); } catch { /* */ }
           spectrumAnalyser = null;
           spectrumBuf = null;
+        }
+        if (scopeAnalysers) {
+          for (const a of scopeAnalysers) { try { a.disconnect(); } catch { /* */ } }
+          scopeAnalysers = null;
+          scopeBufs = null;
         }
       },
     };

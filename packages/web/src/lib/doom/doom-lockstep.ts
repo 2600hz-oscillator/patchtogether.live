@@ -91,6 +91,28 @@ export interface LockstepTransportOpts {
 // deletes (avoids CRDT delete races).
 const PRUNE_KEEP_TICS = 256;
 
+/** HARD SAFETY CAP (issue #348). The barrier-floor pruner (pruneBelowFloor) only
+ *  drops tics that EVERY live peer has already consolidated, so a slow/wedged
+ *  peer holds the floor back and the log can in principle grow without bound
+ *  while that peer is stuck. This cap is the backstop: if the log ever exceeds
+ *  this many tics of UN-pruned history (e.g. a peer wedged forever, never
+ *  advancing its consolidated tic), we drop the oldest tics anyway. A peer that
+ *  far behind cannot catch up tic-by-tic and MUST resync via the synchronized-
+ *  restart path (design §5) rather than hold the relay hostage to an OOM. In
+ *  normal play the floor advances every frame and this cap is never reached. */
+const MAX_KEEP_TICS_HARD_CAP = 35 * 30; // ~30s of 35Hz tics ≈ 1050
+
+/** Awareness field carrying a DOOM peer's HIGHEST CONSOLIDATED TIC (its engine
+ *  recvtic — the last tic it has a complete TicSet for and has advanced past).
+ *  Every joined peer publishes its own value each frame; the arbiter reads all
+ *  live peers' values, takes the MIN (the barrier floor), and prunes the shared
+ *  ticcmd log below it (pruneBelowFloor). Namespaced by module + launch
+ *  generation so a relaunch's fresh log uses a fresh field (stale values from a
+ *  previous game can't drag the new floor to 0). */
+export function consolidatedTicFieldFor(moduleId: string, generation = 0): string {
+  return `doom-ticfloor:${moduleId}:${generation}`;
+}
+
 /** Default INPUT-DELAY (in tics) for the LIVE relay transport — the standard
  *  DOOM/lockstep technique, implemented in the ENGINE (d_loop.c BuildNewTic via
  *  dgpt_set_input_delay), NOT in this transport.
@@ -214,15 +236,59 @@ export class LockstepTransport {
 
   /** Arbiter-only: prune log entries older than `gametic - PRUNE_KEEP_TICS` so
    *  the array never grows unbounded. Single pruner (the arbiter) avoids CRDT
-   *  delete races. Safe to call every frame (no-op when nothing to prune). */
+   *  delete races. Safe to call every frame (no-op when nothing to prune).
+   *
+   *  NOTE (issue #348): this LOCAL-gametic-window pruner is SUPERSEDED by the
+   *  barrier-floor pruner (pruneBelowFloor), which is correct for slow/lagging
+   *  peers: `gametic` here is the ARBITER'S OWN advanced tic, so if the arbiter
+   *  races ahead of a slow peer, this could drop tics that peer still needs once
+   *  the gap exceeds the 256-window. Kept only for the lone-arbiter / no-peer-
+   *  floor-known fallback. New callers should use pruneBelowFloor. */
   pruneBelow(gametic: number): void {
     const cutoff = gametic - PRUNE_KEEP_TICS;
     if (cutoff <= 0) return;
+    this.deletePrefixBelow(cutoff);
+  }
+
+  /** ISSUE #348 — BARRIER-FLOOR pruner (arbiter-only). Drop every log entry for
+   *  a tic STRICTLY BELOW `floor`, where `floor = min(highest-consolidated-tic)`
+   *  across ALL live peers (computed by the caller from awareness; see
+   *  consolidatedTicFieldFor). Tics below the floor have been consolidated +
+   *  advanced past by EVERY peer, so dropping them is safe + idempotent (CRDT —
+   *  all peers can delete the same consumed prefix; deleting nothing is a no-op)
+   *  and cannot change what any peer simulates (they already ran those tics).
+   *
+   *  SAFETY (correctness over aggression):
+   *   - The CALLER must pass a floor that holds back for slow/reconnecting peers:
+   *     if ANY live peer's consolidated tic is unknown/behind, the floor stays at
+   *     that peer's (low) value, so we never drop a tic a live peer still needs.
+   *   - HARD CAP: a peer wedged forever would pin the floor and let the log grow
+   *     unbounded → relay OOM. So if the log's history still exceeds
+   *     MAX_KEEP_TICS_HARD_CAP after the floor prune, drop the oldest tics down
+   *     to the cap regardless. A peer that far behind cannot catch up tic-by-tic
+   *     and must resync via the synchronized-restart path, not hold us hostage.
+   *
+   *  Single pruner (the arbiter) avoids CRDT delete races. Safe every frame. */
+  pruneBelowFloor(floor: number): void {
+    if (floor > 0) this.deletePrefixBelow(floor);
+    // Hard cap backstop: bound history even if the floor is pinned by a wedged
+    // peer. Compute the highest tic present and force-drop anything older than
+    // (newest - cap). This is the only path that can drop a not-yet-consolidated
+    // tic; it only fires far past any sane lag, forcing that peer to resync.
     const entries = this.arr.toArray();
-    // Delete a contiguous prefix of stale entries. Entries are appended in
-    // (mostly) tic order; we delete from the front while the front entry's tic
-    // is below cutoff. Conservative: stop at the first non-stale entry so we
-    // never delete a live tic out from under a slow peer.
+    if (entries.length === 0) return;
+    let newest = -1;
+    for (const e of entries) if (e && typeof e.t === 'number' && e.t > newest) newest = e.t;
+    const capCutoff = newest - MAX_KEEP_TICS_HARD_CAP;
+    if (capCutoff > floor && capCutoff > 0) this.deletePrefixBelow(capCutoff);
+  }
+
+  /** Delete the contiguous front prefix of entries whose tic is `< cutoff`.
+   *  Entries are appended in (mostly) tic order; we stop at the first non-stale
+   *  entry so we never delete a live tic out from under a peer. */
+  private deletePrefixBelow(cutoff: number): void {
+    if (cutoff <= 0) return;
+    const entries = this.arr.toArray();
     let n = 0;
     for (const e of entries) {
       if (e && typeof e.t === 'number' && e.t < cutoff) n++;
@@ -237,4 +303,41 @@ export class LockstepTransport {
   size(): number {
     return this.arr.length;
   }
+
+  /** Lowest tic still present in the log, or -1 if empty (test/diagnostic). */
+  oldestTic(): number {
+    const entries = this.arr.toArray();
+    let oldest = -1;
+    for (const e of entries) {
+      if (e && typeof e.t === 'number' && (oldest < 0 || e.t < oldest)) oldest = e.t;
+    }
+    return oldest;
+  }
+}
+
+/** Compute the BARRIER FLOOR from every live peer's published highest-
+ *  consolidated tic (issue #348). The floor is the MINIMUM across all live
+ *  slots — the tic that EVERY peer has already consolidated past, so the shared
+ *  log is safe to prune below it.
+ *
+ *  `consolidatedBySlot[slot]` = that slot's published recvtic, or `undefined`
+ *  when not yet reported. SAFETY: any live slot missing a report (a peer that
+ *  hasn't published yet, just joined, or is reconnecting) forces the floor to 0
+ *  (no pruning) — we never drop a tic a live peer might still need. Returns 0
+ *  when nothing can be safely pruned. Pure + unit-testable. */
+export function computeBarrierFloor(
+  consolidatedBySlot: ReadonlyArray<number | undefined>,
+  numPlayers: number,
+): number {
+  if (numPlayers <= 0) return 0;
+  let floor = Infinity;
+  for (let s = 0; s < numPlayers; s++) {
+    const v = consolidatedBySlot[s];
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) {
+      // A live slot with no (valid) report holds the floor down — conservative.
+      return 0;
+    }
+    if (v < floor) floor = v;
+  }
+  return Number.isFinite(floor) ? floor : 0;
 }

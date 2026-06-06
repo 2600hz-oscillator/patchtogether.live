@@ -35,6 +35,14 @@
 // OUTPUT's input). Fix: pass 2 is gone; engine.blitOutputToDrawingBuffer
 // hands ownership of the default-FB write to the card so each card can
 // request its own OUTPUT's content right before reading.
+//
+// Inputs:
+//   in (video): polymorphic video input — accepts video, mono-video (upcast), or image.
+//
+// Outputs:
+//   out (video): pass-through of the input FBO (engine reads surface.texture).
+//
+// Params: none.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -62,6 +70,7 @@ void main() {
 
 export const videoOutDef: VideoModuleDef = {
   type: 'videoOut',
+  palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
   label: 'OUTPUT',
   category: 'output',

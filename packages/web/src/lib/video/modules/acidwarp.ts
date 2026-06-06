@@ -26,6 +26,20 @@
 //   - SCENE button on the card / `scene_cv` gate input → advance scene
 //   - FREEZE button on the card → halts auto scene-change (palette still rotates)
 //   - SPEED knob (also speed_cv): 0% (still) … 50% (1×) … 100% (4×)
+//
+// Inputs:
+//   speed_cv (cv, linear, paramTarget=speed): displaces the palette-rotation speed.
+//   scene_cv (cv, paramTarget=sceneTrig): rising-edge advances to the next scene.
+//
+// Outputs:
+//   out (video): the plasma render (320×240 internal, 4:3 letterboxed).
+//
+// Params:
+//   speed (linear 0..1): palette rotation speed (0.5 = native 1× rate).
+//   freeze (discrete 0..1): pauses the palette rotation.
+//   scene (discrete 0..SCENE_COUNT): scene picker.
+//   paletteType (discrete 0..PALETTE_COUNT): palette picker.
+//   sceneTrig (linear 0..1): one-shot scene-advance trigger.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface, VideoEngineContext } from '$lib/video/engine';
@@ -103,6 +117,7 @@ export function speedKnobToMultiplier(knob: number): number {
 
 export const acidwarpDef: VideoModuleDef = {
   type: 'acidwarp',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'ACIDWARP',
   category: 'sources',

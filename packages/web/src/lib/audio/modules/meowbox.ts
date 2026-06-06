@@ -11,6 +11,23 @@
 // on top of the CV (mirrors analog-vco's `tune` knob). Old saves load
 // unchanged — the knob default (0) and CV default (silence = 0V) reproduce
 // the previous "C4 with no input" behavior.
+//
+// Inputs:
+//   gate (gate): rising edge fires one meow event.
+//   pitch (pitch): V/oct pitch input, 0V = C4. Summed with the pitch knob (transposition).
+//   morph (cv, linear, paramTarget=morph): displaces the vowel-formant morph (0..1).
+//   decay (cv, log, paramTarget=decay): scales the tail decay symmetrically.
+//   level (cv, linear, paramTarget=level): displaces the output level.
+//
+// Outputs:
+//   L (audio): left channel of the stereo-decorrelated meow.
+//   R (audio): right channel.
+//
+// Params:
+//   pitch (linear -36..36 semi, default 0): transposition added on top of pitch CV.
+//   morph (linear 0..1, default 0.25): vowel-formant macro (towards a/i/u/e/o regions).
+//   decay (log 0.05..2 s, default 0.4): tail decay time.
+//   level (linear 0..2, default 1): output level.
 
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
@@ -39,6 +56,7 @@ export function meowboxBaseFreqHz(pitchVolts: number, pitchSemis = 0): number {
 
 export const meowboxDef: AudioModuleDef = {
   type: 'meowbox',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'MEOWBOX',
   category: 'sources',

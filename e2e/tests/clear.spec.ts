@@ -5,7 +5,7 @@ test('clear after voice demo removes all nodes + edges', async ({ page }) => {
   await page.waitForLoadState('networkidle');
 
   // Load example (5 nodes / 6 edges, sequencer auto-playing)
-  await page.getByRole('button', { name: 'Load example' }).click();
+  await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
 

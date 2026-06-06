@@ -39,7 +39,7 @@
 // build hint rather than capturing blank evidence.
 
 import { test, expect, type Page, type Browser, type BrowserContext } from '@playwright/test';
-import { spawnPatch, type SpawnNode } from './_helpers';
+import { spawnPatch, claimKeyboard, type SpawnNode } from './_helpers';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 const ENABLED = process.env.DOOM_PROBE === '1';
@@ -211,9 +211,11 @@ async function displacementOverWindow(
 ): Promise<number> {
   const start = await playerPos(page, id);
   if (holdCode) {
+    // Deterministic focus-independent claim (not racy `.focus()`). When a CV
+    // gate is patched, shouldClaimKey() stays false regardless of this latch,
+    // so the patched-window measurement remains a true negative.
+    await claimKeyboard(page, id);
     await page.evaluate((code) => {
-      const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-      c?.focus();
       window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true }));
     }, holdCode);
   }
@@ -637,16 +639,14 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       // ── PHASE 04: both DRIVE movement (real keyboard events on each) ─────
       const oBefore = await playerPos(owner.page, NODE_ID);
       const gBefore = await playerPos(guest.page, NODE_ID);
-      // Owner moves.
+      // Owner moves. Deterministic focus-independent claim (not racy `.focus()`).
+      await claimKeyboard(owner.page, NODE_ID);
       await owner.page.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-        c?.focus();
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
       });
-      // Guest moves.
+      // Guest moves. Either context can be backgrounded → same deterministic claim.
+      await claimKeyboard(guest.page, NODE_ID);
       await guest.page.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-        c?.focus();
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
       });
       const ownerMoved = await owner.page
@@ -726,9 +726,9 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       const HOST_MIN_ADVANCE_UNITS = 64;
       const hostStart = await playerPos(owner.page, NODE_ID);
       // Hold forward on the OWNER for the whole window (no keyup until the end).
+      // Deterministic focus-independent claim (not racy `.focus()`).
+      await claimKeyboard(owner.page, NODE_ID);
       await owner.page.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-        c?.focus();
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
       });
       const hostSamples: Array<{ tSec: number; advance: number | null; slot: number | null; gs: number | null }> = [];
@@ -858,9 +858,9 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       // WRITE. (A perfectly steady hold produces a CONSTANT ticcmd → suppressed
       // → near-zero writes; see ticcmdWriteCount instrumentation + the REPORT.)
       const beginHold = async (page: Page) => {
+        // Deterministic focus-independent claim (not racy `.focus()`).
+        await claimKeyboard(page, NODE_ID);
         await page.evaluate(() => {
-          const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-          c?.focus();
           // Hold forward + fire for the entire window.
           window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
           window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ControlLeft', bubbles: true }));
@@ -1047,9 +1047,9 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
 
       // Owner HOLDS forward STEADY for the entire window — no turning, so the
       // ticcmd never changes and the only-on-change cap suppresses writes.
+      // Deterministic focus-independent claim (not racy `.focus()`).
+      await claimKeyboard(owner.page, NODE_ID);
       await owner.page.evaluate(() => {
-        const c = document.querySelector('[data-testid="doom-card"]') as HTMLElement | null;
-        c?.focus();
         window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
       });
 
@@ -1207,11 +1207,13 @@ test.describe('DOOM MP visual probe (manual; gated behind DOOM_PROBE=1)', () => 
       summary.unpatched_keyboardMovedMarine = unpatched.moved;
       expect(unpatched.moved, 'unpatched ⇒ a held key MUST drive the marine (control-vs-keyed differential proves the keyboard is live)').toBe(true);
 
-      // ── PATCH a CV gate into the DOOM 'up' movement port ─────────────────
+      // ── PATCH a CV gate into the DOOM slot-0 'up' movement port (#353) ───
+      // Per-player inputs: the owner is slot 0, so its OWN group is p1_*. The
+      // own-slot keyboard-inert rule only flips on the viewer's OWN slot group.
       await setEdge(owner.page, {
         id: 'cv-edge',
         from: { nodeId: CV_SRC, portId: 'phase0' },
-        to: { nodeId: NODE_ID, portId: 'up' },
+        to: { nodeId: NODE_ID, portId: 'p1_up' },
         sourceType: 'cv',
         targetType: 'cv',
       });

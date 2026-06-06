@@ -31,11 +31,32 @@ const SKIP_RENDER: Record<string, string> = {
   // rendered handle count therefore < def.inputs.length + outputs.
   // Functional coverage: e2e/tests/helm.spec.ts.
   helm: 'gear-icon settings panel hides MIDI ports; covered by e2e/tests/helm.spec.ts',
-  // WAVESCULPT — morph_cv ports added in PR #225 not surfaced in the
-  // card's PatchPanel sections; handle count mismatch. Same skip as
-  // io-spec-consistency. Follow-up to expose the ports in the per-osc
-  // section.
-  wavesculpt: 'morph_cv ports from PR #225 not yet surfaced in card sections',
+  // CADILLAC renders as a roaming overlay sprite, NOT as a SvelteFlow
+  // card — Canvas.svelte filters the type out of flowNodes so xyflow
+  // doesn't paint a fallback box at the spawn point. There is no
+  // `.svelte-flow__node-cadillac` to assert against. Functional coverage:
+  // e2e/tests/cadillac.spec.ts (drive + delete + self-destruct).
+  cadillac: 'overlay sprite, not a flow card; covered by e2e/tests/cadillac.spec.ts',
+  // QBERT fetches a user-provided ROM zip from /roms/qbert/qbert.zip at
+  // spawn time. On a clean checkout (no ROM installed) this 404s by
+  // design — the card surfaces the "ROM MISSING" overlay. The 404
+  // surfaces as a Chromium console error which this strict spec rejects.
+  // Dedicated coverage: e2e/tests/qbert-rom-missing.spec.ts (asserts
+  // overlay + handle count, filtering the expected 404). The handle
+  // count + CV path are also covered by per-module-per-port specs.
+  qbert: 'fetches user-provided ROM (404s on clean checkout); covered by e2e/tests/qbert-rom-missing.spec.ts',
+  // SNES9X auto-fetches /roms/snes9x/game.sfc at spawn (DOOM-style autoload).
+  // On a clean checkout (no user-provided ROM) that 404s by design — the card
+  // shows the "LOAD A ROM" dropzone. The 404 surfaces as a Chromium console
+  // error that this strict "no console errors" smoke rejects. Under the
+  // prebuilt `vite preview` server the static 404 is returned synchronously,
+  // so it lands before the assertion every time (under the dev server the
+  // async autoload occasionally lost the race → latent flake). Same shape as
+  // qbert. Dedicated coverage that tolerates the expected 404: the no-ROM
+  // dropzone path in e2e/tests/snes9x.spec.ts (+ snes9x-gameplay-gates.spec.ts
+  // when a ROM is installed); handle count + CV/GATE wiring also covered by
+  // the per-module-per-port specs.
+  snes9x: 'fetches user-provided ROM (404s on clean checkout); covered by e2e/tests/snes9x.spec.ts',
 };
 
 test.describe.configure({ mode: 'parallel' });
@@ -74,12 +95,34 @@ for (const mod of REGISTRY) {
     const cardClass = `svelte-flow__node-${mod.type}`;
     const card = page.locator(`.${cardClass}`);
     await expect(card, `${mod.type} card visible`).toBeVisible();
-    // Label substring — uppercased forms are common (e.g. "ANALOG VCO"
-    // on the card vs the def's "Analog VCO" label). Match the label
-    // case-insensitively so per-card styling doesn't bounce this test.
-    await expect(card, `${mod.type} contains label`).toContainText(mod.label, {
-      ignoreCase: true,
-    });
+    // Title-text assertion: nearly every card now hosts the editable
+    // name button (see ModuleNameLabel.svelte). The default auto-assigned
+    // name for the first instance is the BARE uppercased type prefix
+    // (e.g. "WAVESCULPT"); subsequent instances get "<TYPE>2", "<TYPE>3",
+    // ... — see the bare-prefix policy in $lib/multiplayer/module-naming.ts.
+    // Use a regex so the test stays valid regardless of how many instances
+    // spawned earlier in the same browser context, AND so per-card chrome
+    // (punctuation in `mod.label` like "MIDI-CV-BUDDY" or "NUMPAD+") doesn't
+    // drift this.
+    //
+    // A couple of meta-domain cards (sticky, group) intentionally render
+    // their own chrome without ModuleTitle (sticky has a static "STICKY"
+    // badge + freeform textarea; group has its own rename UX via
+    // `data.label`). For those, fall back to the legacy `mod.label`
+    // substring check — the same assertion the test made before the
+    // in-card-title sweep.
+    const nameButton = card.locator('[data-testid="name-label-button"]');
+    if (await nameButton.count() > 0) {
+      const prefix = mod.type.toUpperCase();
+      const namePattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d+)?$`);
+      await expect(nameButton, `${mod.type} name matches /<TYPE>(\\d+)?/`).toHaveText(namePattern);
+    } else {
+      // Cards without the editable name button (sticky/group) still
+      // surface SOME identifying text — the def's label.
+      await expect(card, `${mod.type} contains def label`).toContainText(mod.label, {
+        ignoreCase: true,
+      });
+    }
 
     const handles = card.locator('.svelte-flow__handle');
     await expect(handles, `${mod.type} handle count`).toHaveCount(expectedHandleCount);

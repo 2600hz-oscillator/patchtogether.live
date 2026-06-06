@@ -7,6 +7,7 @@
   import { illogicDef } from '$lib/audio/modules/illogic';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -42,7 +43,7 @@
 
 <div class="mod-card illogic-card">
   <div class="stripe" style="background: var(--cable-cv);"></div>
-  <header class="title">ILLOGIC</header>
+  <ModuleTitle {id} {data} defaultLabel="ILLOGIC" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
@@ -55,6 +56,6 @@
 </div>
 
 <style>
-  .illogic-card { width: 240px; min-height: 220px; }
+  .illogic-card { width: 240px; }
   .illogic-card .fader-row { padding: 0 14px; margin-top: 16px; }
 </style>

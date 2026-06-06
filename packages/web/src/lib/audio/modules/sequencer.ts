@@ -9,6 +9,22 @@
 //
 // Per-step state lives in node.data.steps as an array of {on, pitch}. Knob
 // params live in node.params.
+//
+// Inputs:
+//   clock (gate): external clock; rising edges advance one step. When unpatched the internal BPM drives.
+//
+// Outputs:
+//   pitch (polyPitchGate): per-step pitch (root + chord lanes). A mono pitch sink auto-receives lane 0.
+//   gate (gate): main gate per on-step (gateLength shapes the pulse width).
+//   clock (gate): chained clock-out: rising edge at the start of each step. Useful for driving downstream sequencers.
+//
+// Params:
+//   bpm (linear 30..300, default 120): internal tempo when clock is unpatched.
+//   length (discrete 1..128, default 16): number of active steps.
+//   octave (discrete -2..2, default 0): octave transposition applied to all pitches.
+//   gateLength (linear 0.1..0.95, default 0.5): per-step gate duty cycle.
+//   swing (linear 0..0.75, default 0): off-step time shift.
+//   isPlaying (discrete 0..1, default 0): transport state (1 = running).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -28,14 +44,19 @@ import {
 import {
   createTransportCv,
   pickQueuedSlotFromEvents,
+  pickNavFromEvents,
   TRANSPORT_CV_PORT_DEFS,
+  EXTENDED_TRANSPORT_CV_PORT_DEFS,
 } from './transport-cv';
 import {
   coerceSlots,
   coerceSlotKey,
   isInputPortConnected,
   shouldSequencerRun,
+  occupiedSlots,
+  resolveNavTarget,
   type SlotKey,
+  type NavDirection,
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 import { createPlayheadTracker } from './playhead-tracker';
@@ -83,6 +104,7 @@ export function defaultSteps(): Step[] {
 
 export const sequencerDef: AudioModuleDef = {
   type: 'sequencer',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'Sequencer',
   category: 'modulation',
@@ -128,6 +150,12 @@ export const sequencerDef: AudioModuleDef = {
     //   reset_cv     → rising edge resets stepIndex to 0
     //   queue1..4_cv → rising edge sets node.data.queuedSlot to N
     ...TRANSPORT_CV_PORT_DEFS,
+    // feat/seq 8-slots + quantized nav:
+    //   queue5..8_cv → rising edge queues slot 5..8 (applied on sequence-end)
+    //   next_cv      → at next pattern end, jump to the next OCCUPIED slot
+    //   prev_cv      → ... prior occupied slot (wraps)
+    //   random_cv    → ... a random occupied slot
+    ...EXTENDED_TRANSPORT_CV_PORT_DEFS,
   ],
   outputs: [
     // Stage-1 polyphony: pitch is a 10-channel polyPitchGate cable. When a
@@ -179,7 +207,18 @@ export const sequencerDef: AudioModuleDef = {
     // Latency budget: ~TICK_MS (25 ms) from upstream pulse to step advance.
     const clockInGain = ctx.createGain();
     const clockInAnalyser = ctx.createAnalyser();
-    clockInAnalyser.fftSize = 2048; // ~42 ms at 48 kHz — must exceed TICK_MS
+    // #229: the external-clock edge detector scans the analyser ring buffer
+    // for the samples that arrived since the last tick. At fftSize=2048 the
+    // ring only holds ~42 ms — so when the main thread stalls longer than that
+    // (a canvas pan/drag event-storm can block for 80–150 ms), clock edges
+    // that arrived during the stall are OVERWRITTEN before the tick gets to
+    // read them. Those edges are lost ⇒ dropped/late steps ⇒ tempo jitter on
+    // EXTERNAL clock, which is exactly #229's "drag disturbs tempo even on
+    // MIDI clock". Widen the ring to 16384 samples (~341 ms at 48 kHz) so it
+    // comfortably outlasts any plausible main-thread stall — matching the
+    // headroom the internal-clock path already gets from the Worker tick +
+    // 200 ms lookahead. fftSize must be a power of two ≤ 32768.
+    clockInAnalyser.fftSize = 16384;
     clockInGain.connect(clockInAnalyser);
     const clockInBuffer = new Float32Array(clockInAnalyser.fftSize);
 
@@ -194,8 +233,9 @@ export const sequencerDef: AudioModuleDef = {
     let lastClockSampleTime = ctx.currentTime;
     const CLOCK_THRESHOLD = 0.5;
 
-    // Shared transport CV inputs (play_cv, reset_cv, queue{1..4}_cv).
-    const transportCv = createTransportCv(ctx);
+    // Shared transport CV inputs (play_cv, reset_cv, queue{1..8}_cv +
+    // next/prev/random nav gates — opted in via { extended: true }).
+    const transportCv = createTransportCv(ctx, { extended: true });
     let lastTransportPollTime = ctx.currentTime;
     let totalSequenceEnds = 0;
 
@@ -203,6 +243,28 @@ export const sequencerDef: AudioModuleDef = {
       clockOutSrc.offset.setValueAtTime(1, atTime);
       clockOutSrc.offset.setValueAtTime(0, atTime + 0.01);
     }
+
+    // #224 reset-dedup helper ----------------------------------------------
+    // Cancel the gate / pitch / clock-out events the lookahead already queued
+    // into the audio thread's future, so a reset doesn't leave a stale step-0
+    // gate sounding ALONGSIDE the post-reset re-fire (the double-hit). This
+    // reuses the EXACT primitives the stop-transition path already ships with
+    // (gateSrc cancel+zero + polyPitch.silence), plus a clock-out cancel so a
+    // chained downstream sequencer isn't double-advanced by the same reset.
+    function clearPendingScheduledEvents(): void {
+      const now = ctx.currentTime;
+      gateSrc.offset.cancelScheduledValues(now);
+      gateSrc.offset.setValueAtTime(0, now);
+      clockOutSrc.offset.cancelScheduledValues(now);
+      clockOutSrc.offset.setValueAtTime(0, now);
+      polyPitch.silence(now);
+      // We just cancelled the (possibly future) onset that lastScheduledGateOnTime
+      // pointed at, so forget it — otherwise the #224 dedup would suppress the
+      // re-anchored step-0 of a genuine reset. After a clear, the next gate-high
+      // always sounds.
+      lastScheduledGateOnTime = -Infinity;
+    }
+    // ----------------------------------------------------------------------
 
     function isClockInConnected(): boolean {
       return isInputPortConnected(Object.values(livePatch.edges), nodeId, 'clock');
@@ -221,6 +283,10 @@ export const sequencerDef: AudioModuleDef = {
     let stepIndex = 0;
     let nextStepTime = ctx.currentTime + 0.05;
     let prevPlaying = false;
+    // #224: audio-time of the most-recent gate-high we scheduled. emitStep
+    // drops any gate-high scheduled within half a step of this, killing the
+    // clock-divided-reset double-hit at the scheduling layer (grid-independent).
+    let lastScheduledGateOnTime = -Infinity;
     let alive = true;
     let unsubscribeTick: (() => void) | null = null;
     // Lookahead 200 ms (was 100 ms) — gives the audio thread a 4x cushion
@@ -230,6 +296,15 @@ export const sequencerDef: AudioModuleDef = {
     // "audible tempo jitter when dragging" and "stable tempo".
     const LOOKAHEAD_S = 0.2;
     const TICK_MS = SCHEDULER_TICK_MS;
+    // #229: if a main-thread stall outlasts the lookahead, the scheduler
+    // resumes with `nextStepTime` already behind `ctx.currentTime`. Steps
+    // more than this tolerance in the past are DROPPED (gate skipped, phase
+    // still advances) rather than scheduled — Web Audio would clamp a past
+    // time to "now" and bunch the whole backlog onto the present (the
+    // audible double-hit + tempo lurch when dragging, #224/#229). 5 ms of
+    // slack means ordinary near-now scheduling jitter still sounds (a hair
+    // late) instead of being dropped.
+    const LATE_DROP_EPS = 0.005;
 
     function readSteps(): Step[] {
       const live = livePatch.nodes[nodeId];
@@ -265,6 +340,12 @@ export const sequencerDef: AudioModuleDef = {
     const lastEmittedLaneGate = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
 
     function emitStep(idx: number, atTime: number, stepDurForGate: number) {
+      // #229 regression canary: emitStep invoked with a timestamp already in
+      // the past means the catch-up drop guard failed and Web Audio is about
+      // to clamp this (gate + clock pulse) onto "now" → bunching. Counted at
+      // the entry (gate-agnostic) so it trips even on all-off default steps.
+      // The drop guard keeps it at 0; the tempo-stability spec asserts that.
+      if (atTime < ctx.currentTime - LATE_DROP_EPS) pastDueEmits++;
       const octave = readParam('octave', 0);
       const gateLengthFrac = readParam('gateLength', 0.5);
       const steps = readSteps();
@@ -298,10 +379,28 @@ export const sequencerDef: AudioModuleDef = {
       }
       // The mono gate output goes high if ANY lane is gated this step.
       const anyGate = lanes.some((l) => l.gate === 1);
-      if (anyGate) {
+      // RESET-DEDUP (#224): refuse to schedule a gate-high closer than half a
+      // step to the previous one. A clock-divided reset coincident with the
+      // natural wrap makes BOTH the lookahead and the post-reset re-anchor try
+      // to schedule step 0 within the same beat — the audible double-hit. The
+      // 25 ms scheduler-tick grid means we can't reliably detect that case from
+      // stepIndex alone (the lookahead may have advanced between the wrap and
+      // the reset's detection), so we dedup at the SCHEDULING layer where it's
+      // grid-independent: the second near-coincident onset is dropped. A
+      // genuine mid-bar reset re-anchors far from the previous onset and still
+      // fires. -Infinity = none scheduled yet (first gate always sounds).
+      const minGapSec = (stepDurForGate || 0.001) * 0.5;
+      const tooClose = atTime - lastScheduledGateOnTime < minGapSec;
+      if (anyGate && !tooClose) {
+        lastScheduledGateOnTime = atTime;
         gateSrc.offset.setValueAtTime(1, atTime);
         gateSrc.offset.setValueAtTime(0, atTime + gateOff);
         // Backward-compat tracking: lastEmittedVOct mirrors lane 0 (root).
+        lastEmittedVOct = lanes[0]?.pitch ?? 0;
+        lastEmittedGate = 1;
+      } else if (anyGate && tooClose) {
+        // Duplicate near-coincident onset suppressed (#224). Treat as gated for
+        // JS observers so the playhead/voicing still reflect this step.
         lastEmittedVOct = lanes[0]?.pitch ?? 0;
         lastEmittedGate = 1;
       } else {
@@ -333,15 +432,59 @@ export const sequencerDef: AudioModuleDef = {
         if (live?.params) live.params.isPlaying = isPlaying ? 1 : 0;
       }
       if (ev.reset > 0) {
-        // Reset the step counter; next clock tick starts at step 0.
-        stepIndex = 0;
-        playhead.reset();
-        nextStepTime = ctx.currentTime + 0.05;
+        // #224 (cross-module reset double-hit), snap-to-boundary dedup.
+        //
+        // In internal-BPM mode the lookahead loop has ALREADY scheduled step
+        // gates up to LOOKAHEAD_S (200 ms) into the audio thread's future. A
+        // naive reset forces stepIndex=0 and re-anchors `nextStepTime` to
+        // "now" — but when the reset is a perfect integer division of the run
+        // clock, it lands right as the sequence is ALSO naturally wrapping to
+        // step 0. The lookahead already queued step 0's gate at the natural
+        // boundary; the re-anchor then queues a SECOND step-0 gate one beat
+        // later → the audible double-hit.
+        //
+        // We make the reset a true no-op WHEN it's redundant: if step 0 was
+        // scheduled within one step-duration of "now" (the sequence just
+        // wrapped to the downbeat on its own), the natural lookahead schedule
+        // is already exactly what the reset wants, so we leave stepIndex,
+        // nextStepTime, and the queued events untouched. A genuine mid-bar
+        // reset (its last step 0 is far from now) falls through to the real
+        // reset, which cancels the not-yet-sounded lookahead events and
+        // re-anchors so exactly one step-0 gate fires.
+        const stepDurNow = 60 / Math.max(1, readParam('bpm', 120)) / 4;
+        // lastScheduledGateOnTime is the (future) audio-time of the most-recent
+        // gate-high the lookahead queued; it can sit slightly ahead of or behind
+        // ctx.currentTime when the reset is detected. Seeded to -Infinity, so
+        // Number.isFinite() screens out the "nothing scheduled yet / just
+        // stopped" case. Redundant ⇔ within one step-duration of "now" on
+        // either side.
+        const nearWrap =
+          Number.isFinite(lastScheduledGateOnTime) &&
+          Math.abs(ctx.currentTime - lastScheduledGateOnTime) < stepDurNow;
+        if (!nearWrap) {
+          // Genuine reset: drop the pending lookahead events so the re-anchored
+          // step 0 is the only one that sounds, then restart at step 0.
+          clearPendingScheduledEvents();
+          stepIndex = 0;
+          playhead.reset();
+          nextStepTime = ctx.currentTime + 0.05;
+        }
       }
       const queued = pickQueuedSlotFromEvents(ev);
       if (queued !== null && live) {
         if (!live.data) live.data = {};
-        (live.data as Record<string, unknown>).queuedSlot = queued;
+        const d = live.data as Record<string, unknown>;
+        d.queuedSlot = queued;
+        // An explicit slot queue supersedes a pending NEXT/PREV/RANDOM nav.
+        d.queuedNav = null;
+      }
+      // NEXT / PREV / RANDOM nav gates: latch the direction to apply at the
+      // next sequence-end (quantized, NOT immediate). A later explicit slot
+      // queue (above) clears it; a later nav overwrites the prior nav.
+      const nav = pickNavFromEvents(ev);
+      if (nav !== null && live) {
+        if (!live.data) live.data = {};
+        (live.data as Record<string, unknown>).queuedNav = nav;
       }
       return isPlaying;
     }
@@ -354,10 +497,25 @@ export const sequencerDef: AudioModuleDef = {
       const live = livePatch.nodes[nodeId];
       if (!live) return false;
       const data = live.data as Record<string, unknown> | undefined;
-      const queuedRaw = data?.queuedSlot;
-      const queued = coerceSlotKey(queuedRaw);
-      if (!queued) return false;
       const slots = coerceSlots(data?.slots);
+      // An explicit queued slot wins; otherwise resolve a pending NEXT/PREV/
+      // RANDOM nav into a concrete OCCUPIED slot. Both are quantized to here
+      // (sequence-end). Nav over no/one occupied slot degrades per
+      // resolveNavTarget's contract.
+      let queued = coerceSlotKey(data?.queuedSlot);
+      if (!queued) {
+        const navRaw = data?.queuedNav;
+        const nav: NavDirection | null =
+          navRaw === 'next' || navRaw === 'prev' || navRaw === 'random' ? navRaw : null;
+        if (nav) {
+          const current = coerceSlotKey(data?.lastLoadedSlot);
+          queued = resolveNavTarget(occupiedSlots(slots), current, nav);
+          // Consume the nav regardless of whether it resolved (no occupied
+          // slots → null → drop it so it doesn't re-fire every loop).
+          if (data) data.queuedNav = null;
+        }
+      }
+      if (!queued) return false;
       const snap = slots[queued];
       if (!snap) {
         // Slot is empty — drop the queue.
@@ -408,6 +566,9 @@ export const sequencerDef: AudioModuleDef = {
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
           polyPitch.silence(ctx.currentTime);
+          // Fresh play: the first step-0 gate must always sound (#224 dedup
+          // must not suppress it).
+          lastScheduledGateOnTime = -Infinity;
           // Reset clock-in detector so the first observed pulse counts.
           lastClockSample = 0;
           lastClockSampleTime = ctx.currentTime;
@@ -482,7 +643,17 @@ export const sequencerDef: AudioModuleDef = {
             const isOddStep = stepIndex % 2 === 1;
             const stepDur = isOddStep ? stepDurBase * (1 - swing * 0.5) : stepDurBase * (1 + swing * 0.5);
 
-            emitStep(stepIndex, nextStepTime, stepDur);
+            // #229: drop, don't pile up. If the main thread stalled longer
+            // than the lookahead, nextStepTime is already in the past; emitting
+            // it would clamp to "now" and bunch the backlog into an audible
+            // double-hit + tempo lurch. Skip the gate (and clock pulse) for
+            // past-due steps while still advancing phase/index below, so the
+            // sequencer resumes in-tempo from the present.
+            if (nextStepTime < ctx.currentTime - LATE_DROP_EPS) {
+              lateStepsDropped++;
+            } else {
+              emitStep(stepIndex, nextStepTime, stepDur);
+            }
 
             const nextIdx = (stepIndex + 1) % length;
             const nextStartTime = nextStepTime + stepDur;
@@ -515,6 +686,16 @@ export const sequencerDef: AudioModuleDef = {
     // playhead lag.
     const playhead = createPlayheadTracker();
     let totalAdvances = 0; // monotonic — useful for tests asserting "did we step N times"
+    // #229 instrumentation (catch-up correctness under main-thread stalls):
+    //   lateStepsDropped — steps whose scheduled time fell > LATE_DROP_EPS
+    //     behind ctx.currentTime (stall > lookahead) whose gate we dropped to
+    //     avoid bunching. Phase still advances, so tempo stays correct.
+    //   pastDueEmits — emitStep calls with a past timestamp (the BUG symptom:
+    //     Web Audio would clamp+bunch them onto "now"). The drop guard keeps
+    //     it at 0. Read by tempo-stability spec as a #224/#229 regression
+    //     canary (gate-agnostic, so it trips even on all-off default steps).
+    let lateStepsDropped = 0;
+    let pastDueEmits = 0;
     // Subscribe to the shared scheduler-clock — a Worker tick that's
     // immune to main-thread blocking. Replaces the legacy
     // `setTimeout(tick, TICK_MS)` self-loop, which would queue up behind
@@ -551,6 +732,8 @@ export const sequencerDef: AudioModuleDef = {
         if (key === 'currentStep') return playhead.currentAt(ctx.currentTime);
         if (key === 'totalAdvances') return totalAdvances;
         if (key === 'totalSequenceEnds') return totalSequenceEnds;
+        if (key === 'lateStepsDropped') return lateStepsDropped;
+        if (key === 'pastDueEmits') return pastDueEmits;
         // V/oct currently emitted on the pitch port (lane 0) — kept for
         // backward compat with existing tests / UI that didn't know about
         // polyphony.

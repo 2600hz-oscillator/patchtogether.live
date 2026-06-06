@@ -36,6 +36,11 @@ const AUTH_PREFIXES = ['/dashboard', '/r/', '/api/', '/sign-in', '/sign-up'];
 // able to probe it from anywhere, including environments where Clerk isn't
 // configured.
 const PUBLIC_API_PATHS = ['/api/health'];
+// Prefix carve-out: anything under /api/test/ is dev/test-only (handlers
+// gate themselves on env vars; see routes/api/test/seed-rackspace/+server.ts).
+// We skip Clerk on these so e2e specs running without a Clerk session don't
+// trip the rate-limit-on-anonymous path.
+const PUBLIC_API_PREFIXES = ['/api/test/'];
 
 function attachNoOpAuth(event: Parameters<Handle>[0]['event']): void {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -69,7 +74,8 @@ const conditionalClerk: Handle = async ({ event, resolve }) => {
   const path = event.url.pathname;
   const needsAuth =
     AUTH_PREFIXES.some((p) => path === p || path.startsWith(p)) &&
-    !PUBLIC_API_PATHS.some((p) => path === p);
+    !PUBLIC_API_PATHS.some((p) => path === p) &&
+    !PUBLIC_API_PREFIXES.some((p) => path.startsWith(p));
   if (!needsAuth) {
     attachNoOpAuth(event);
     return resolve(event);

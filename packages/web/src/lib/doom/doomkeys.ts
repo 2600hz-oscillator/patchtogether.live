@@ -86,11 +86,18 @@ export const KEY_FOR_KEYBOARD_CODE: Readonly<Record<string, number>> = {
 
 // ---------------- CV-gate port id → doomkey ----------------
 //
-// 7 cv-typed gate ports per the plan. The first four (up/down/left/right)
+// 9 cv-typed gate ports per the plan. The first four (up/down/left/right)
 // map to DOOM's default movement (arrow keys); space = fire, ctrl = run,
 // alt = strafe. Port ids match the keyboard the user expects to be playing
 // the game with — driving a CV gate at `up` feels identical to holding
 // ArrowUp on the keyboard.
+//
+// esc / enter were added 2026-05-29 so the menu (open / select / confirm)
+// can be driven via CV — the in-game ESCAPE key normally toggles the DOOM
+// pause menu, ENTER selects in it. (Their JS-side equivalent under the
+// card-keyboard mode is the `q`→ESCAPE intercept; see DoomCard's keyboard
+// route — pressing q routes to KEY_ESCAPE so the real Escape can still
+// release the card's keyboard latch.)
 //
 // NOTE: prior to 2026-05-24 these ports were w/a/s/d (the WASD letters).
 // Renamed to up/down/left/right because DOOM's defaults map ArrowKeys, not
@@ -105,9 +112,67 @@ export const KEY_FOR_CV_GATE: Readonly<Record<string, number>> = {
   space: KEY_USE,
   ctrl: KEY_FIRE,
   alt: KEY_RALT,
+  esc: KEY_ESCAPE,
+  enter: KEY_ENTER,
 };
 
-/** All cv-gate port ids the DOOM module declares (drives both the
- *  ModuleDef.inputs schema AND the CV→key mapping table). */
-export const CV_GATE_PORT_IDS = ['up', 'down', 'left', 'right', 'space', 'ctrl', 'alt'] as const;
+/** The 9 base cv-gate semantic ids (the CV→key mapping keys). Each maps to a
+ *  doomkey via KEY_FOR_CV_GATE. These are NOT the port ids on the module def
+ *  anymore — see PER-SLOT PORTS below. */
+export const CV_GATE_PORT_IDS = ['up', 'down', 'left', 'right', 'space', 'ctrl', 'alt', 'esc', 'enter'] as const;
 export type CvGatePortId = (typeof CV_GATE_PORT_IDS)[number];
+
+// ---------------- PER-SLOT CV-gate ports (per-player inputs, #353) ----------------
+//
+// DOOM exposes FOUR input GROUPS — p1..p4 → slots 0..3 — each carrying the 7
+// base gates. So a port id is `p{slot+1}_{base}` (e.g. `p1_up`, `p3_space`) and
+// its synthetic param is `cv_p{slot+1}_{base}` (e.g. `cv_p1_up`). The base→key
+// table (KEY_FOR_CV_GATE) is reused for every group; the slot is carried only in
+// the port/param NAME, which the factory parses to enforce the own-slot-only
+// rule (a peer applies CV for ITS OWN slot only — see doom.ts).
+//
+// Migration: schemaVersion 1 had a SINGLE group with bare ids (`up`/`down`/…).
+// Those map to group p1 (slot 0) — see persistence.ts edge-port migration.
+
+/** The four player slots DOOM supports (== MAX_DOOM_PLAYERS). Slot N → group p{N+1}. */
+export const DOOM_MP_SLOTS = [0, 1, 2, 3] as const;
+export type DoomSlot = (typeof DOOM_MP_SLOTS)[number];
+
+/** Group prefix for a slot: 0 → 'p1', 1 → 'p2', … */
+export function slotGroupPrefix(slot: number): string {
+  return `p${slot + 1}`;
+}
+
+/** Per-slot port/param id for a base gate: (0, 'up') → 'p1_up'. Used for BOTH the
+ *  input port id and (with a `cv_` prefix) the synthetic param id. */
+export function cvGatePortIdForSlot(slot: number, base: CvGatePortId): string {
+  return `${slotGroupPrefix(slot)}_${base}`;
+}
+
+/** All per-slot cv-gate port ids in declaration order (p1_up … p4_alt). Drives
+ *  the DOOM ModuleDef.inputs schema + the per-slot edge-detector map. */
+export const CV_GATE_PORT_IDS_BY_SLOT: ReadonlyArray<{ slot: number; base: CvGatePortId; portId: string }> =
+  DOOM_MP_SLOTS.flatMap((slot) =>
+    CV_GATE_PORT_IDS.map((base) => ({ slot, base, portId: cvGatePortIdForSlot(slot, base) })),
+  );
+
+/** Parse a per-slot port id back into its slot + base, or null if it isn't one.
+ *  'p2_left' → { slot: 1, base: 'left' }; 'up' (legacy bare) → null. */
+export function parseSlotPortId(portId: string): { slot: number; base: CvGatePortId } | null {
+  const m = /^p([1-4])_(.+)$/.exec(portId);
+  if (!m) return null;
+  const slot = Number(m[1]) - 1;
+  const base = m[2] as CvGatePortId;
+  if (!(CV_GATE_PORT_IDS as readonly string[]).includes(base)) return null;
+  return { slot, base };
+}
+
+/** Migrate a legacy (schemaVersion 1) bare cv-gate port id to its p1 equivalent.
+ *  'up' → 'p1_up'. Returns null for anything that isn't a bare cv-gate id (so
+ *  the caller leaves non-cv ports — out/audio_l/audio_r — untouched). */
+export function migrateLegacyCvGatePortId(portId: string): string | null {
+  if ((CV_GATE_PORT_IDS as readonly string[]).includes(portId)) {
+    return cvGatePortIdForSlot(0, portId as CvGatePortId);
+  }
+  return null;
+}

@@ -28,31 +28,37 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { GAMEPAD_OUTPUTS, type GamepadSnapshot } from '$lib/audio/modules/gamepad';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  // Live snapshot poll. ~30Hz cadence (~33ms) — twice fast enough for
-  // visual smoothness on the on-card indicators without churning
-  // Svelte's reactivity graph at engine.read() rate.
+  // Live snapshot poll. Rides requestAnimationFrame (~60Hz) so the on-card
+  // stick dots / trigger bars / button LEDs track the controller in real
+  // time. A setInterval here gets starved + coalesced behind main-thread
+  // work, making the indicators lag; rAF pins the read to the paint cadence
+  // (the same cadence the gamepad factory's own poll runs at) and is
+  // naturally suspended when the tab is backgrounded. This is a UI/visual
+  // read only — audio scheduling stays on the scheduler-clock worker tick.
   let snapshot = $state<GamepadSnapshot>({
     connected: false,
     id: '',
     values: Object.fromEntries(GAMEPAD_OUTPUTS.map((o) => [o.id, 0])),
   });
-  const POLL_MS = 33;
-  let pollId: ReturnType<typeof setInterval> | null = null;
+  let rafId: number | null = null;
   function poll() {
     const e = engineCtx.get();
-    if (!e || !node) return;
-    const s = e.read(node, 'snapshot') as GamepadSnapshot | undefined;
-    if (s) snapshot = s;
+    if (e && node) {
+      const s = e.read(node, 'snapshot') as GamepadSnapshot | undefined;
+      if (s) snapshot = s;
+    }
+    rafId = requestAnimationFrame(poll);
   }
-  onMount(() => { pollId = setInterval(poll, POLL_MS); });
+  onMount(() => { rafId = requestAnimationFrame(poll); });
   onDestroy(() => {
-    if (pollId !== null) clearInterval(pollId);
-    pollId = null;
+    if (rafId !== null) cancelAnimationFrame(rafId);
+    rafId = null;
   });
 
   // Pad-slot picker.
@@ -75,6 +81,21 @@
   }));
   const inputs: PortDescriptor[] = [];
 
+  // Button-LED indicator labels mirror the PORT labels from GAMEPAD_OUTPUTS
+  // so what you see on the button row (⬆⬇⬅⮕ for d-pad, LB/RB/A/B/X/Y for
+  // face/shoulder, STA/SEL for start/back) matches what you see on the patch
+  // jack labels. Pre-fix the LED row hard-coded uppercase ids (LB RB A B X Y
+  // DU DD DL DR START BACK) while the output ports for d-pad rendered the
+  // U+2B0x chevron family — that mismatch is the bug #1 the user reported.
+  // Ordered to match the original 12-button grid: shoulders + face + d-pad +
+  // start/back. Reading GAMEPAD_OUTPUTS so a future label edit in the engine
+  // def auto-propagates here.
+  const BUTTON_LED_IDS = ['lb','rb','a','b','x','y','du','dd','dl','dr','start','back'] as const;
+  const buttonLeds: { id: string; label: string }[] = BUTTON_LED_IDS.map((bid) => {
+    const out = GAMEPAD_OUTPUTS.find((o) => o.id === bid);
+    return { id: bid, label: out?.label ?? bid.toUpperCase() };
+  });
+
   // Stick-pad rendering: live values → dot position in a 64×64 box.
   const PAD_PX = 64;
   function dotX(v: number): number { return ((v + 1) / 2) * PAD_PX; }
@@ -87,7 +108,8 @@
 <div class="card gamepad" data-testid="gamepad-card">
   <div class="stripe"></div>
   <header class="title">
-    GAMEPAD <span class="status" class:on={snapshot.connected}>
+    <ModuleTitle {id} {data} defaultLabel="GAMEPAD" inline />
+    <span class="status" class:on={snapshot.connected}>
       {#if snapshot.connected}
         {snapshot.id.length > 24 ? snapshot.id.slice(0, 21) + '…' : snapshot.id}
       {:else}
@@ -135,8 +157,8 @@
       </div>
 
       <div class="buttons">
-        {#each ['lb','rb','a','b','x','y','du','dd','dl','dr','start','back'] as btn (btn)}
-          <div class="btn-led" class:on={(snapshot.values[btn] ?? 0) >= 0.5}>{btn.toUpperCase()}</div>
+        {#each buttonLeds as btn (btn.id)}
+          <div class="btn-led" class:on={(snapshot.values[btn.id] ?? 0) >= 0.5}>{btn.label}</div>
         {/each}
       </div>
 

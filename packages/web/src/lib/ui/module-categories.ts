@@ -1,7 +1,7 @@
 // packages/web/src/lib/ui/module-categories.ts
 //
-// Classification map for the nested "Add module" palette. The palette
-// renders a 2-level hierarchy:
+// Classification ORDERING + grouping logic for the nested "Add module"
+// palette (2-level hierarchy):
 //
 //   Top                    Sub                Items
 //   --------------------- ------------------ ------------------------
@@ -15,21 +15,24 @@
 //                         Utilities          V-MIXER, OUTPUT …
 //   Hybrid                — (flat)           SCOPE, viz-VCOs, STICKY …
 //
-// First-cut classifications are colocated here as a single
-// `Record<moduleType, {top, sub}>`. The user is expected to iterate on
-// these on dev; the categories live in one place so they're easy to
-// nudge.
+// WHERE A MODULE'S CATEGORY LIVES: on the module's OWN def, as a `palette:
+// { top, sub }` field (AudioModuleDef / VideoModuleDef / MetaModuleDef).
+// That is the single source of truth — adding a module needs NO edit here.
+// `groupDefs()` + `categorizeDef()` read `def.palette` directly. The legacy
+// `MODULE_CATEGORIES` hand-map below is now EMPTY (all entries migrated onto
+// defs); it survives only as a fallback for `categorize(type)` callers and as
+// a place a one-off override could live. The unit test next door asserts
+// every registered def declares a palette, so a new module that forgets to
+// classify itself fires loudly (and renders under Uncategorized meanwhile).
 //
-// Any registered module not present in this map falls into a top-level
-// "Uncategorized" bucket so newly-added modules from parallel agents
-// (BLADES, STAGES, etc.) never silently fall out of the palette. The
-// unit test next door asserts every *known* type is classified — new
-// modules will surface as Uncategorized in the UI, and the test will
-// nudge contributors to file them properly.
+// This file still owns the canonical TOP_ORDER + SUB_ORDER (menu ordering)
+// + the special flat-render rule (sub name == top name) — those are
+// cross-cutting layout policy, not per-module data.
 
 export type TopCategory =
   | 'Audio modules'
   | 'Video modules'
+  | 'Games'
   | 'Ports'
   | 'MIDI'
   | 'Hybrid'
@@ -53,11 +56,20 @@ export interface CategoryEntry {
 export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
   'Audio modules': ['VCOs', 'Utility', 'Effects', 'Mixing', 'End of chain'],
   'Video modules': ['Sources', 'Processors', 'Utilities'],
+  // Games = playable game modules (emulators + in-house arcade ports) that
+  // emit game-event CV/GATE. Two subs: Emulators (load an external game
+  // engine / ROM — DOOM, SNES9X, Q*Bert) + Arcade (in-house ports —
+  // NIBBLES, PONG, MODTRIS, FROGGER). SM64/SKIFREE are also games but
+  // weren't in the move list; they stay in Hybrid for now.
+  Games: ['Emulators', 'Arcade'],
   // Ports = "ports of external software / hardware synths". `Ports`
   // (matching the top name) renders flat at the top level —
   // hydrogen, helm, cloudseed are headline ports the user wants one
-  // click away. `Mutable` is the MI archetype-port sublist.
-  Ports: ['Ports', 'Mutable'],
+  // click away. `Mutable` is the MI archetype-port sublist. `moogafakkin`
+  // is the System 55 / 35 clone family (the renamed ex-"Moog" set — System
+  // 55 big modular + System 35; shared modules listed once under the single
+  // moogafakkin subfolder). Mirrors the Mutable nesting.
+  Ports: ['Ports', 'Mutable', 'moogafakkin'],
   MIDI: ['MIDI'],
   Hybrid: ['Hybrid'],
   Uncategorized: ['Uncategorized'],
@@ -67,185 +79,54 @@ export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
 export const TOP_ORDER: readonly TopCategory[] = [
   'Audio modules',
   'Video modules',
+  'Games',
   'Ports',
   'MIDI',
   'Hybrid',
   'Uncategorized',
 ];
 
-/** First-cut classification map. Keys are ModuleDef.type ids. */
-export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {
-  // ───────── Audio modules → VCOs (oscillators / audio sources) ─────────
-  analogVco: { top: 'Audio modules', sub: 'VCOs' },
-  wavetableVco: { top: 'Audio modules', sub: 'VCOs' },
-  // macrooscillator + rings → moved to Ports/Mutable.
-  dx7: { top: 'Audio modules', sub: 'VCOs' },
-  meowbox: { top: 'Audio modules', sub: 'VCOs' },
-  buggles: { top: 'Audio modules', sub: 'VCOs' },
-  noise: { top: 'Audio modules', sub: 'VCOs' },
-  drummergirl: { top: 'Audio modules', sub: 'VCOs' },
-  riotgirls: { top: 'Audio modules', sub: 'VCOs' },
-  samsloop: { top: 'Audio modules', sub: 'VCOs' },
-  // HELM + HYDROGEN moved to Ports (top-level, flat) — see the Ports
-  // block below. The MI ports (rings, clouds, peaks, stages, blades,
-  // macrooscillator, veils, warps) also moved to Ports/Mutable.
+/**
+ * Legacy hand-maintained classification map — now EMPTY. Every module
+ * classifies itself via its def's `palette` field (the single source of
+ * truth); `groupDefs()` + `categorizeDef()` read that directly. This map is
+ * kept only as a fallback for `categorize(type)` and as a spot a deliberate
+ * one-off override could be parked. Do NOT re-populate it per-module — that
+ * append-edit is the cross-PR conflict the per-def palette removed.
+ */
+export const MODULE_CATEGORIES: Record<string, CategoryEntry> = {};
 
-  // ───────── Audio modules → Utility ─────────
-  adsr: { top: 'Audio modules', sub: 'Utility' },
-  lfo: { top: 'Audio modules', sub: 'Utility' },
-  vca: { top: 'Audio modules', sub: 'Utility' },
-  stereovca: { top: 'Audio modules', sub: 'Utility' },
-  cartesian: { top: 'Audio modules', sub: 'Utility' },
-  illogic: { top: 'Audio modules', sub: 'Utility' },
-  unityscalemathematik: { top: 'Audio modules', sub: 'Utility' },
-  analogLogicMaths: { top: 'Audio modules', sub: 'Utility' },
-  // veils, peaks, stages → moved to Ports/Mutable.
-  timelorde: { top: 'Audio modules', sub: 'Utility' },
-  sequencer: { top: 'Audio modules', sub: 'Utility' },
-  drumseqz: { top: 'Audio modules', sub: 'Utility' },
-  polyseqz: { top: 'Audio modules', sub: 'Utility' },
-  macseq: { top: 'Audio modules', sub: 'Utility' },
-  score: { top: 'Audio modules', sub: 'Utility' },
-  joystick: { top: 'Audio modules', sub: 'Utility' },
-  gamepad:  { top: 'Audio modules', sub: 'Utility' },
-  numpadPlus: { top: 'Audio modules', sub: 'Utility' },
-  // ATLANTIS-PATCH support trio — see graph/types.ts for the full notes.
-  slewSwitch: { top: 'Audio modules', sub: 'Utility' },
-  atlantisCatalyst: { top: 'Audio modules', sub: 'Utility' },
-
-  // ───────── Audio modules → Effects ─────────
-  filter: { top: 'Audio modules', sub: 'Effects' },
-  aquaTank: { top: 'Audio modules', sub: 'Effects' },
-  reverb: { top: 'Audio modules', sub: 'Effects' },
-  delay: { top: 'Audio modules', sub: 'Effects' },
-  // cloudseed → moved to Ports/Ports (PR #226).
-  charlottesEchos: { top: 'Audio modules', sub: 'Effects' },
-  destroy: { top: 'Audio modules', sub: 'Effects' },
-  shimmershine: { top: 'Audio modules', sub: 'Effects' },
-  qbrt: { top: 'Audio modules', sub: 'Effects' },
-  // CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
-  // Audio-in → audio-out → fundamentally an effect, even though it can
-  // also act as a freeze-gated source when patched into its own feedback.
-  callsine: { top: 'Audio modules', sub: 'Effects' },
-  // blades, warps, clouds → moved to Ports/Mutable.
-  // cloudseed → moved to Ports (top-level).
-
-  // ───────── Audio modules → Mixing ─────────
-  mixer: { top: 'Audio modules', sub: 'Mixing' },
-  mixmstrs: { top: 'Audio modules', sub: 'Mixing' },
-  attenumix: { top: 'Audio modules', sub: 'Mixing' },
-
-  // ───────── Audio modules → End of chain ─────────
-  audioOut: { top: 'Audio modules', sub: 'End of chain' },
-
-  // ───────── Ports → top-level (helm, hydrogen, cloudseed are the
-  //          headline external-software ports — one click in the
-  //          picker. Sub matches top name so the palette renders them
-  //          flat under the Ports header). ─────────
-  helm: { top: 'Ports', sub: 'Ports' },
-  hydrogen: { top: 'Ports', sub: 'Ports' },
-  cloudseed: { top: 'Ports', sub: 'Ports' },
-
-  // ───────── Ports → Mutable (Émilie Gillet / MI archetype ports). ─────────
-  rings: { top: 'Ports', sub: 'Mutable' },
-  elements: { top: 'Ports', sub: 'Mutable' },
-  clouds: { top: 'Ports', sub: 'Mutable' },
-  peaks: { top: 'Ports', sub: 'Mutable' },
-  marbles: { top: 'Ports', sub: 'Mutable' },
-  symbiote: { top: 'Ports', sub: 'Mutable' },
-  stages: { top: 'Ports', sub: 'Mutable' },
-  tides2: { top: 'Ports', sub: 'Mutable' },
-  blades: { top: 'Ports', sub: 'Mutable' },
-  macrooscillator: { top: 'Ports', sub: 'Mutable' },
-  veils: { top: 'Ports', sub: 'Mutable' },
-  warps: { top: 'Ports', sub: 'Mutable' },
-  grids: { top: 'Ports', sub: 'Mutable' },
-
-  // ───────── MIDI (hardware-bridge modules) ─────────
-  // MIDI-CV-BUDDY emits pitch + gate + velocity CV from a hardware MIDI
-  // controller. MIDICLOCK is the transport-only sibling — clock/run/
-  // start/stop gates from an external MIDI device (drives TIMELORDE.clock).
-  midiCvBuddy: { top: 'MIDI', sub: 'MIDI' },
-  midiclock: { top: 'MIDI', sub: 'MIDI' },
-
-  // ───────── Video modules → Sources ─────────
-  cameraInput: { top: 'Video modules', sub: 'Sources' },
-  lines: { top: 'Video modules', sub: 'Sources' },
-  inwards: { top: 'Video modules', sub: 'Sources' },
-  picturebox: { top: 'Video modules', sub: 'Sources' },
-  shapes: { top: 'Video modules', sub: 'Sources' },
-  shapedramps: { top: 'Video modules', sub: 'Sources' },
-  acidwarp: { top: 'Video modules', sub: 'Sources' },
-  // DOOM — single-instance interactive video module. Cards are
-  // keyboard-driven (focus-within ring) + CV-gate-driven; one host
-  // per rack, spectators see the framebuffer over Yjs awareness.
-  doom: { top: 'Video modules', sub: 'Sources' },
-  // VIDEOBOX — local-file video player with multiplayer playhead sync.
-  videobox: { top: 'Video modules', sub: 'Sources' },
-  // VIDEOVARISPEED — local-file player with performant varispeed transport.
-  videovarispeed: { top: 'Video modules', sub: 'Sources' },
-
-  // ───────── Video modules → Processors ─────────
-  chroma: { top: 'Video modules', sub: 'Processors' },
-  luma: { top: 'Video modules', sub: 'Processors' },
-  // CHROMAKEY / LUMAKEY — proper 2-input compositors. Sit with the other
-  // processors since they sit between sources and OUTPUT in a chain.
-  chromakey: { top: 'Video modules', sub: 'Processors' },
-  lumakey: { top: 'Video modules', sub: 'Processors' },
-  colorizer: { top: 'Video modules', sub: 'Processors' },
-  destructor: { top: 'Video modules', sub: 'Processors' },
-  feedback: { top: 'Video modules', sub: 'Processors' },
-  vdelay: { top: 'Video modules', sub: 'Processors' },
-  monoglitch: { top: 'Video modules', sub: 'Processors' },
-  reshaper: { top: 'Video modules', sub: 'Processors' },
-  ruttetra: { top: 'Video modules', sub: 'Processors' },
-
-  // ───────── Video modules → Utilities ─────────
-  videoMixer: { top: 'Video modules', sub: 'Utilities' },
-  videoOut: { top: 'Video modules', sub: 'Utilities' },
-  // BENTBOX is a CRT-emulation display — sits with the other outputs even
-  // though it also functions as a destructive processor (the bending stage).
-  bentbox: { top: 'Video modules', sub: 'Utilities' },
-
-  // ───────── Hybrid (audio + video output, or cross-domain tools) ─────────
-  scope: { top: 'Hybrid', sub: 'Hybrid' },
-  // RASTERIZE — the explicit audio→video raster mapper (crossing-the-streams
-  // slice 1). Audio in, mono-video out; a cross-domain bridge module.
-  rasterize: { top: 'Hybrid', sub: 'Hybrid' },
-  wavviz: { top: 'Hybrid', sub: 'Hybrid' },
-  swolevco: { top: 'Hybrid', sub: 'Hybrid' },
-  wavecel: { top: 'Hybrid', sub: 'Hybrid' },
-  warrenspectrum: { top: 'Hybrid', sub: 'Hybrid' },
-  // PONG — research-prototype game module. CV-in paddles + gate-out scores,
-  // visual game state on the card. Sits in Hybrid alongside the other
-  // audio-engine-bound modules that also draw rich visuals.
-  pong: { top: 'Hybrid', sub: 'Hybrid' },
-  // MODTRIS — research-prototype Tetris-clone game module. Gate-in controls
-  // + gate-out events. Same bucket as PONG.
-  modtris: { top: 'Hybrid', sub: 'Hybrid' },
-  // WAVESCULPT — hybrid 4-oscillator synth: stereo audio + 3D ribbon video.
-  wavesculpt: { top: 'Hybrid', sub: 'Hybrid' },
-  // Meta-domain organizational tools live here — they don't fit
-  // cleanly under audio or video and the user can re-bucket on dev.
-  sticky: { top: 'Hybrid', sub: 'Hybrid' },
-  group: { top: 'Hybrid', sub: 'Hybrid' },
-  livecode: { top: 'Hybrid', sub: 'Hybrid' },
-  // Clocked runner — spawned programmatically by LIVECODE's clocked()
-  // call. Listed alongside LIVECODE so users browsing the palette can
-  // also spawn one manually (with an empty body) to be wired up by a
-  // parent script later.
-  clockedRunner: { top: 'Hybrid', sub: 'Hybrid' },
-};
-
-/** Look up a module's category, falling back to Uncategorized. */
+/** Look up a module's category by type id, falling back to Uncategorized.
+ *  Prefer {@link categorizeDef} where you have the def — it reads the def's
+ *  own `palette` field (the single source of truth) and only falls back to
+ *  this legacy hand-map for any def that hasn't declared one yet. */
 export function categorize(type: string): CategoryEntry {
   return MODULE_CATEGORIES[type] ?? { top: 'Uncategorized', sub: 'Uncategorized' };
 }
 
-/** Minimal def shape the palette grouping helper needs. */
+/**
+ * Resolve a def's palette category. The def's own `palette` field wins (set
+ * on the module def — no shared-file edit), then the legacy MODULE_CATEGORIES
+ * hand-map (kept only as a migration safety net), then Uncategorized.
+ *
+ * The narrowing to TopCategory/sub is a runtime cast: `palette.top` is a
+ * plain string on the def, but groupDefs + the categories test validate it
+ * against TOP_ORDER / SUB_ORDER, so a bad value surfaces loudly rather than
+ * silently mis-bucketing.
+ */
+export function categorizeDef(def: DefLike): CategoryEntry {
+  if (def.palette) {
+    return { top: def.palette.top as TopCategory, sub: def.palette.sub };
+  }
+  return categorize(def.type);
+}
+
+/** Minimal def shape the palette grouping helper needs. `palette` is the
+ *  per-def classification (preferred over the legacy MODULE_CATEGORIES map). */
 export interface DefLike {
   type: string;
   label: string;
+  palette?: { top: string; sub: string };
 }
 
 export interface GroupedTop<D extends DefLike> {
@@ -263,14 +144,18 @@ export function groupDefs<D extends DefLike>(defs: readonly D[]): GroupedTop<D>[
   const byTop: Record<TopCategory, Record<string, D[]>> = {
     'Audio modules': {},
     'Video modules': {},
+    Games: {},
     Ports: {},
     MIDI: {},
     Hybrid: {},
     Uncategorized: {},
   };
   for (const def of defs) {
-    const { top, sub } = categorize(def.type);
-    (byTop[top][sub] ??= []).push(def);
+    const { top, sub } = categorizeDef(def);
+    // Defensive: a def with a palette.top outside TOP_ORDER would index a
+    // missing bucket; fall it into Uncategorized rather than crash.
+    const bucket = byTop[top as TopCategory] ?? byTop.Uncategorized;
+    (bucket[sub] ??= []).push(def);
   }
 
   const out: GroupedTop<D>[] = [];

@@ -10,6 +10,7 @@
   import { elementsDef } from '$lib/audio/modules/elements';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -71,7 +72,7 @@
 
 <div class="mod-card elements-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">ELEMENTS</header>
+  <ModuleTitle {id} {data} defaultLabel="ELEMENTS" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="section-label">EXCITER</div>
@@ -102,7 +103,7 @@
 </div>
 
 <style>
-  .elements-card { width: 460px; min-height: 300px; }
+  .elements-card { width: 460px; }
   .elements-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

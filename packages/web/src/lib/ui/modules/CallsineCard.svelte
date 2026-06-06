@@ -25,6 +25,7 @@
   import { callsineDef, CALLSINE_MODEL_NAMES, CALLSINE_MAX_MODEL } from '$lib/audio/modules/callsine';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -70,24 +71,24 @@
 
 <div class="mod-card callsine-card" data-testid="callsine-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">CALLSINE</header>
+  <ModuleTitle {id} {data} defaultLabel="CALLSINE" />
   <div class="model-readout" data-testid="callsine-model-name">{modelLabel}</div>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
-      <Fader value={model}     min={0}   max={CALLSINE_MAX_MODEL} defaultValue={0}   label="Model"     curve="discrete" formatValue={(v) => CALLSINE_MODEL_NAMES[Math.max(0, Math.min(CALLSINE_MODEL_NAMES.length - 1, Math.round(v)))] ?? ''} onchange={set('model')}     readLive={live('model')} />
-      <Fader value={note}      min={-60} max={60} defaultValue={0}   label="Note"      units="st" curve="linear" onchange={set('note')}      readLive={live('note')} />
-      <Fader value={harmonics} min={0}   max={1}  defaultValue={0.6} label="Harmonics" curve="linear" onchange={set('harmonics')} readLive={live('harmonics')} />
-      <Fader value={timbre}    min={0}   max={1}  defaultValue={0.4} label="Timbre"    curve="linear" onchange={set('timbre')}    readLive={live('timbre')} />
-      <Fader value={morph}     min={0}   max={1}  defaultValue={0.0} label="Morph"     curve="linear" onchange={set('morph')}     readLive={live('morph')} />
-      <Fader value={level}     min={0}   max={1}  defaultValue={0.8} label="Level"     curve="linear" onchange={set('level')}     readLive={live('level')} />
+      <Fader value={model}     min={0}   max={CALLSINE_MAX_MODEL} defaultValue={0}   label="Model"     curve="discrete" formatValue={(v) => CALLSINE_MODEL_NAMES[Math.max(0, Math.min(CALLSINE_MODEL_NAMES.length - 1, Math.round(v)))] ?? ''} onchange={set('model')}     moduleId={id} paramId="model"     readLive={live('model')} />
+      <Fader value={note}      min={-60} max={60} defaultValue={0}   label="Note"      units="st" curve="linear" onchange={set('note')}      moduleId={id} paramId="note"      readLive={live('note')} />
+      <Fader value={harmonics} min={0}   max={1}  defaultValue={0.6} label="Harmonics" curve="linear" onchange={set('harmonics')} moduleId={id} paramId="harmonics" readLive={live('harmonics')} />
+      <Fader value={timbre}    min={0}   max={1}  defaultValue={0.4} label="Timbre"    curve="linear" onchange={set('timbre')}    moduleId={id} paramId="timbre"    readLive={live('timbre')} />
+      <Fader value={morph}     min={0}   max={1}  defaultValue={0.0} label="Morph"     curve="linear" onchange={set('morph')}     moduleId={id} paramId="morph"     readLive={live('morph')} />
+      <Fader value={level}     min={0}   max={1}  defaultValue={0.8} label="Level"     curve="linear" onchange={set('level')}     moduleId={id} paramId="level"     readLive={live('level')} />
     </div>
   </PatchPanel>
   <OssAttribution author={callsineDef.ossAttribution?.author} />
 </div>
 
 <style>
-  .callsine-card { width: 340px; min-height: 240px; }
+  .callsine-card { width: 340px; }
   .callsine-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

@@ -203,6 +203,23 @@ export class DoomRuntime {
    *  keyboard's keys, never a live CV gate's. */
   private heldKeyboardKeys = new Set<number>();
 
+  /**
+   * Lockstep barrier flag (drives only the engine barrier now). The interim
+   * #354 "drop all CV under lockstep" hotfix that this used to gate is GONE:
+   * per-player CV routing (#353 phases 1–3) makes CV deterministic + lockstep-
+   * safe by construction — the factory feeds only the peer's OWN slot's CV into
+   * the sim, via the same gamekeydown[] → G_BuildTiccmd → ordered log →
+   * consolidated TicSet path as the keyboard, so non-deterministic per-peer
+   * sampling can never reach a slot it doesn't own. CV is therefore re-enabled
+   * under lockstep; this flag no longer gates CV at all.
+   */
+  private lockstepArmed = false;
+  /** Doomkeys currently asserted via the CV-gate path (setKeyForCvGate).
+   *  Tracked so a SLOT CHANGE (the local peer's consoleplayer changing) can
+   *  release ONLY CV-origin keys, never the keyboard's (which the keyboard-inert
+   *  path owns). */
+  private heldCvKeys = new Set<number>();
+
   constructor(module: DoomModule) {
     this.mod = module;
   }
@@ -230,6 +247,9 @@ export class DoomRuntime {
     this.pcmSampleCount = this.mod.ccall('dgpt_get_pcm_buffer_size', 'number', [], []);
     this.resX = this.mod.ccall('dgpt_get_resx', 'number', [], []);
     this.resY = this.mod.ccall('dgpt_get_resy', 'number', [], []);
+    // Phase-1 SP event-gate drain buffer (DGPT_EVT_RING_SIZE * sizeof(u32) =
+    // 1 KB). Allocated once + reused per drain to avoid per-tic alloc churn.
+    this.drainBufPtr = this.mod.ccall('malloc', 'number', ['number'], [256 * 4]);
     this.initialized = true;
   }
 
@@ -309,12 +329,34 @@ export class DoomRuntime {
     return true;
   }
 
-  /** Convenience: CV-gate port id ('w'/'a'/.../'alt') → doomkey + push. */
+  /** Convenience: CV-gate base port id ('up'/'down'/.../'alt') → doomkey + push.
+   *
+   *  PER-PLAYER ROUTING (#353): CV is now SAFE under lockstep and is no longer
+   *  gated here. The blunt "drop all CV while a netgame is active" hotfix (#354)
+   *  is removed because the factory enforces the OWN-SLOT-ONLY rule upstream —
+   *  it only ever calls this for the peer's OWN consoleplayer slot, and that CV
+   *  flows through the SAME gamekeydown[] → G_BuildTiccmd → ordered log →
+   *  consolidated TicSet path the keyboard uses. No other slot's CV reaches the
+   *  sim locally, so there is no per-peer fan-out or non-deterministic sampling
+   *  to diverge the lockstep stream. CV-origin keys are tracked (heldCvKeys) so a
+   *  slot change can release them cleanly. */
   setKeyForCvGate(portId: CvGatePortId, pressed: boolean): boolean {
     const key = KEY_FOR_CV_GATE[portId];
     if (key === undefined) return false;
+    if (pressed) this.heldCvKeys.add(key);
+    else this.heldCvKeys.delete(key);
     this.setKey(key, pressed);
     return true;
+  }
+
+  /** Synthesise key-up for every CV-origin key still asserted. Used when the
+   *  local peer's slot CHANGES (own-slot-only routing, #353) so a gate that was
+   *  HIGH for the old slot cannot stay latched in gamekeydown[] after we stop
+   *  applying that slot's CV. */
+  releaseHeldCvKeys(): void {
+    if (this.heldCvKeys.size === 0) return;
+    for (const key of this.heldCvKeys) this.setKey(key, false);
+    this.heldCvKeys.clear();
   }
 
   /**
@@ -358,6 +400,11 @@ export class DoomRuntime {
   /** Lazy scratch ptr (allocated on first pullPcmFrames). */
   private pcmScratchPtr = 0;
   private pcmScratchFrames = 0;
+
+  /** Phase-1 SP event-gate drain buffer (256 u32 = 1 KB), preallocated once in
+   *  init() + freed in dispose(). The video factory drains this each surface
+   *  tick AFTER runTic and pulses 6 ConstantSourceNodes for KILL/DOOR/GUN_pN. */
+  private drainBufPtr: number | null = null;
 
   private ensurePcmScratch(frames: number): number {
     if (this.pcmScratchPtr !== 0 && this.pcmScratchFrames >= frames) {
@@ -415,6 +462,54 @@ export class DoomRuntime {
   getPcmSampleRate(): number {
     if (!this.initialized) return 44100;
     return this.mod.ccall('dg_get_pcm_sample_rate', 'number', [], []);
+  }
+
+  // ---------------- Phase-1 SP event-gate drain ----------------
+  //
+  // The engine pushes packed u32 events into a C-side ring (KILL/DOOR/GUN with
+  // a 2-bit slot for GUN). The video factory calls this once per surface tick,
+  // AFTER runTic, and pulses 6 ConstantSourceNodes for the 6 gate output
+  // ports. This is OUT-OF-BAND with the netgame state checksum — pulsing CSNs
+  // from JS can't alter C-side deterministic state, so MP bit-exact lockstep
+  // is preserved.
+
+  /** Drain up to 256 events from the engine event ring. Returns an array of
+   *  decoded entries; empty array if no events or not yet initialized.
+   *
+   *  `type` matches the DGPT_EVT_* constants:
+   *    KILL=1, DOOR=2, GUN=3, PLAYER_DIES=4, KILL_TYPED=5.
+   *  `slot` is meaningful for GUN (0..3) and PLAYER_DIES (0..3) — 2 bits.
+   *  `payload` carries the 12-bit value used by KILL_TYPED to encode the
+   *  C-side mobjtype_t id; zero for non-typed events. Keeping both fields
+   *  on every entry lets the JS consumer dispatch with a single switch on
+   *  `type` without re-decoding the raw word. */
+  drainEvents(): { type: number; slot: number; payload: number }[] {
+    if (!this.initialized || this.drainBufPtr === null) return [];
+    const count = this.mod.ccall(
+      'dgpt_drain_events',
+      'number',
+      ['number', 'number'],
+      [this.drainBufPtr, 256],
+    );
+    if (count <= 0) return [];
+    // Read u32 directly from HEAPU32 (re-derived per call: ALLOW_MEMORY_GROWTH
+    // means a prior grow may have swapped the backing buffer).
+    const start = this.drainBufPtr >>> 2;
+    const view = this.mod.HEAPU32.subarray(start, start + count);
+    const out: { type: number; slot: number; payload: number }[] = new Array(count);
+    for (let i = 0; i < count; i++) {
+      const e = view[i]!;
+      out[i] = {
+        type: e & 0xf,
+        slot: (e >>> 4) & 0x3,
+        // 12-bit payload (bits 4..15) — KILL_TYPED packs mobjtype_t here.
+        // For event types that use the slot field instead, this just
+        // includes the 2 slot bits as the low part; consumers dispatched
+        // on `type` won't read it.
+        payload: (e >>> 4) & 0xfff,
+      };
+    }
+    return out;
   }
 
   // ---------------- Player-state introspection ----------------
@@ -610,8 +705,14 @@ export class DoomRuntime {
   // local slot included). See d_loop.c DGPT_LoopSetLockstep / ReceiveTicSet.
 
   /** Arm/disarm the true-lockstep barrier. The card arms it for a >1-player
-   *  netgame; single-player leaves it off (byte-identical behavior). */
+   *  netgame; single-player leaves it off (byte-identical behavior).
+   *
+   *  CV is NO LONGER gated here (#353): per-player own-slot-only routing makes CV
+   *  deterministic under lockstep, so arming the barrier does not touch CV input.
+   *  The flag is tracked even before WASM init so the barrier state is applied
+   *  the instant the runtime comes up. */
   setLockstep(enabled: boolean): void {
+    this.lockstepArmed = enabled;
     if (!this.initialized) return;
     this.mod.ccall('dgpt_set_lockstep', null, ['number'], [enabled ? 1 : 0]);
   }
@@ -758,6 +859,12 @@ export class DoomRuntime {
    *  memory when the JS-side references go away (module instance,
    *  HEAPU8 view, etc.). */
   dispose(): void {
+    // Free the Phase-1 event-drain buffer (1 KB). We hold it for the runtime's
+    // lifetime; release before flipping initialized so re-init re-allocates.
+    if (this.drainBufPtr !== null) {
+      try { this.mod.ccall('free', null, ['number'], [this.drainBufPtr]); } catch { /* */ }
+      this.drainBufPtr = null;
+    }
     this.initialized = false;
   }
 }

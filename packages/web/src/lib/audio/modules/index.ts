@@ -1,178 +1,85 @@
 // packages/web/src/lib/audio/modules/index.ts
 //
-// Auto-registers all Phase 1 audio modules on first import.
+// Auto-registers EVERY audio module on first import — GLOB-DRIVEN.
+//
+// Adding a module no longer requires editing this file. Drop a new
+// `packages/web/src/lib/audio/modules/<name>.ts` that `export`s a
+// `<name>Def: AudioModuleDef` and it is picked up automatically here via
+// Vite's `import.meta.glob`. This eliminates the per-module append-edit that
+// used to collide across concurrent module PRs (the "conflict tax").
+//
+// What counts as a module def: any EXPORTED const whose name ends in `Def`
+// and whose value is an object carrying a `type` + a `factory` (or, for the
+// synced LFO base, a `computeStateAt`). Helper files that export non-def
+// symbols (shape math, draw helpers, *-engine mirrors, etc.) are ignored
+// because they don't match that shape. See `looksLikeAudioDef` below.
 
-import { registerModule } from '$lib/audio/module-registry';
-import { analogVcoDef } from './analog-vco';
-import { audioOutDef } from './audio-out';
-import { vcaDef } from './vca';
-import { mixerDef } from './mixer';
-import { adsrDef } from './adsr';
-import { filterDef } from './filter';
-import { reverbDef } from './reverb';
-import { delayDef } from './delay';
-import { scopeDef } from './scope';
-// RASTERIZE — audio → video raster mapper (crossing-the-streams slice 1).
-import { rasterizeDef } from './rasterize';
-import { sequencerDef } from './sequencer';
-import { wavetableVcoDef } from './wavetable-vco';
-import { lfoDef } from './lfo';
-import { cartesianDef } from './cartesian';
-import { destroyDef } from './destroy';
-import { qbrtDef } from './qbrt';
-import { drummergirlDef } from './drummergirl';
-import { meowboxDef } from './meowbox';
-import { mixmstrsDef } from './mixmstrs';
-import { timelordeDef } from './timelorde';
-import { charlottesEchosDef } from './charlottes-echos';
-import { riotgirlsDef, triggerVoice as riotgirlsTriggerVoice } from './riotgirls';
-import { scoreDef } from './score';
-import { drumseqzDef } from './drumseqz';
-import { polyseqzDef } from './polyseqz';
-import { gridsDef } from './grids';
-import { wavvizDef } from './wavviz';
-import { swolevcoDef } from './swolevco';
-import { illogicDef } from './illogic';
-import { unityscalemathematikDef } from './unityscalemathematik';
-import { analogLogicMathsDef } from './analog-logic-maths';
-import { dx7Def } from './dx7';
-import { noiseDef } from './noise';
-import { bugglesDef } from './buggles';
-import { wavecelDef } from './wavecel';
-import { warrenspectrumDef } from './warrenspectrum';
-import { stereovcaDef } from './stereovca';
-import { shimmershineDef } from './shimmershine';
-import { macrooscillatorDef } from './macrooscillator';
-import { samsloopDef } from './samsloop';
-import { cloudsDef } from './clouds';
-import { macseqDef } from './macseq';
-import { ringsDef } from './rings';
-import { elementsDef } from './elements';
-import { peaksDef } from './peaks';
-import { marblesDef } from './marbles';
-import { symbioteDef } from './symbiote';
-import { warpsDef } from './warps';
-import { veilsDef } from './veils';
-import { attenumixDef } from './attenumix';
-import { bladesDef } from './blades';
-import { stagesDef } from './stages';
-import { tides2Def } from './tides2';
-import { cloudseedDef } from './cloudseed';
-import { livecodeDef } from './livecode';
-import { clockedRunnerDef } from './clocked-runner';
-import { midiCvBuddyDef } from './midi-cv-buddy';
-import { midiclockDef } from './midiclock';
-import { helmDef } from './helm';
-import { hydrogenDef } from './hydrogen';
-import { pongDef } from './pong';
-import { modtrisDef } from './modtris';
-import { joystickDef } from './joystick';
-import { gamepadDef } from './gamepad';
-import { numpadPlusDef } from './numpad-plus';
-import { wavesculptDef } from './wavesculpt';
-// ATLANTIS-PATCH support trio (slew limiter / switch, slow-drift macro brain,
-// 4-channel feedback matrix). General-purpose modules — the Atlantis demo
-// patch uses them together but each is useful on its own.
-import { slewSwitchDef } from './slewswitch';
-import { atlantisCatalystDef } from './atlantis-catalyst';
-import { aquaTankDef } from './aquatank';
-// CALLSINE — spectral-analysis additive resynth (Warren's Spectrum port).
-import { callsineDef } from './callsine';
+import { registerModule, type AnyModuleDef } from '$lib/audio/module-registry';
 import { testHooksEnabled } from '$lib/dev/test-hooks';
 import { exposeModuleSpecsForTests } from '$lib/dev/module-specs';
+// RIOTGIRLS exports a per-instance trigger helper alongside its def. The def
+// itself is picked up by the glob below; this named helper is wired onto
+// `window` for Playwright. riotgirls.ts is already eagerly imported by the
+// glob, so this static import adds no extra bundle cost.
+import { triggerVoice as riotgirlsTriggerVoice } from './riotgirls';
+
+// Eagerly import every sibling module file. Vite inlines this at build time
+// (and resolves the worklet `?url` imports the def files do). The `!` patterns
+// EXCLUDE non-def siblings whose mere import side-effect would be wrong to
+// run here: `*.test.ts` (their top-level describe()/it() would register an
+// extra time, doubling + polluting shared-singleton test state) and the
+// index barrel itself (would recurse). Helper files that DON'T export a def
+// (shape math, draw helpers, *-engine mirrors) are still imported but
+// harmlessly skipped by `looksLikeAudioDef` — importing them costs nothing
+// since the real module files import them anyway.
+const MODULE_MODULES = import.meta.glob<Record<string, unknown>>(
+  ['./*.ts', '!./*.test.ts', '!./index.ts'],
+  { eager: true },
+);
+
+/**
+ * Heuristic: does this exported value look like an audio module def?
+ *
+ * The registry's `registerModule` only needs `type` + the def shape; the
+ * factory is what distinguishes a real module def from the various helper
+ * objects that also end in some `*Def`-ish name. We require a string `type`
+ * and EITHER a `factory` function (the common case) OR a `computeStateAt`
+ * function (SyncedModuleDef, e.g. lfo's base) so the synced arm is covered.
+ */
+function looksLikeAudioDef(v: unknown): v is AnyModuleDef {
+  if (!v || typeof v !== 'object') return false;
+  const o = v as Record<string, unknown>;
+  if (typeof o.type !== 'string') return false;
+  if (o.domain !== 'audio') return false;
+  return typeof o.factory === 'function';
+}
+
+/**
+ * Collect every audio def exported anywhere under ./*.ts, deduped by `type`,
+ * sorted by type id for a deterministic registration order (so console
+ * warnings / iteration order are stable across runs + machines).
+ */
+export function collectAudioDefs(): AnyModuleDef[] {
+  const byType = new Map<string, AnyModuleDef>();
+  for (const mod of Object.values(MODULE_MODULES)) {
+    for (const [exportName, value] of Object.entries(mod)) {
+      if (!exportName.endsWith('Def')) continue;
+      if (!looksLikeAudioDef(value)) continue;
+      if (!byType.has(value.type)) byType.set(value.type, value);
+    }
+  }
+  return [...byType.values()].sort((a, b) => a.type.localeCompare(b.type));
+}
 
 let registered = false;
 
 export function registerAudioModules(): void {
   if (registered) return;
   registered = true;
-  registerModule(analogVcoDef);
-  registerModule(audioOutDef);
-  registerModule(vcaDef);
-  registerModule(mixerDef);
-  registerModule(adsrDef);
-  registerModule(filterDef);
-  registerModule(reverbDef);
-  registerModule(delayDef);
-  registerModule(scopeDef);
-  // RASTERIZE — explicit audio→video raster mapper. Faithful per-frame
-  // raster (NOT a scope trace); a steady tone paints drifting horizontal
-  // bands. See .myrobots/plans/audio-video-crossing.md.
-  registerModule(rasterizeDef);
-  registerModule(sequencerDef);
-  registerModule(wavetableVcoDef);
-  registerModule(lfoDef);
-  registerModule(cartesianDef);
-  registerModule(destroyDef);
-  registerModule(qbrtDef);
-  registerModule(drummergirlDef);
-  registerModule(meowboxDef);
-  registerModule(mixmstrsDef);
-  registerModule(timelordeDef);
-  registerModule(charlottesEchosDef);
-  registerModule(riotgirlsDef);
-  registerModule(scoreDef);
-  registerModule(drumseqzDef);
-  registerModule(polyseqzDef);
-  registerModule(wavvizDef);
-  registerModule(swolevcoDef);
-  registerModule(illogicDef);
-  registerModule(unityscalemathematikDef);
-  registerModule(analogLogicMathsDef);
-  registerModule(dx7Def);
-  registerModule(noiseDef);
-  registerModule(bugglesDef);
-  registerModule(wavecelDef);
-  registerModule(warrenspectrumDef);
-  registerModule(stereovcaDef);
-  registerModule(shimmershineDef);
-  registerModule(macrooscillatorDef);
-  registerModule(samsloopDef);
-  registerModule(cloudsDef);
-  registerModule(macseqDef);
-  registerModule(ringsDef);
-  registerModule(elementsDef);
-  registerModule(peaksDef);
-  registerModule(marblesDef);
-  registerModule(symbioteDef);
-  registerModule(warpsDef);
-  registerModule(veilsDef);
-  registerModule(attenumixDef);
-  registerModule(bladesDef);
-  registerModule(stagesDef);
-  registerModule(tides2Def);
-  registerModule(cloudseedDef);
-  registerModule(livecodeDef);
-  registerModule(clockedRunnerDef);
-  registerModule(midiCvBuddyDef);
-  registerModule(midiclockDef);
-  registerModule(helmDef);
-  registerModule(hydrogenDef);
-  registerModule(pongDef);
-  registerModule(modtrisDef);
-  // JOYSTICK — manual XY pad emitting x/y + inverted nx/ny CV outputs.
-  registerModule(joystickDef);
-  // GAMEPAD — USB/Bluetooth game controller (Xbox / PS / generic HID)
-  // as CV (sticks + triggers) + gate (buttons + dpad).
-  registerModule(gamepadDef);
-  // NUMPAD+ — numpad-driven 4-layer step sequencer with live play +
-  // REC ARM + OVERDUB. Captures Numpad* keys globally.
-  registerModule(numpadPlusDef);
-  // WAVESCULPT — 4-oscillator hybrid synth: stereo audio output + 3D
-  // ribbon video render with embedded BENTBOX-style CRT post-process.
-  registerModule(wavesculptDef);
-  // SLEWSWITCH — quad slew limiter + 4→1 sequential CV switch.
-  registerModule(slewSwitchDef);
-  // ATLANTISCATALYST — 8-output slow-drift macro brain + scene transport.
-  registerModule(atlantisCatalystDef);
-  // AQUATANK — 4-channel Hadamard FDN feedback matrix (metallic resonance).
-  registerModule(aquaTankDef);
-  // CALLSINE — spectral-analysis additive resynth. audio in → STFT →
-  // tracked partials → additive bank. MIT (Warren's Spectrum port).
-  registerModule(callsineDef);
-  // GRIDS — Mutable Instruments topographic drum pattern generator.
-  // BD/SD/HH triggers + accent from a 5x5 interpolated drum map; euclidean mode.
-  registerModule(gridsDef);
+
+  for (const def of collectAudioDefs()) {
+    registerModule(def);
+  }
 
   if (testHooksEnabled() && typeof window !== 'undefined') {
     // Per-instance trigger so Playwright can drive a specific RIOTGIRLS by

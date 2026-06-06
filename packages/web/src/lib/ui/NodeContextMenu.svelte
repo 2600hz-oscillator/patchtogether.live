@@ -43,6 +43,11 @@
      *  Canvas already constrains this to signed-in users + group nodes;
      *  the menu just respects whatever the parent asserts. */
     canSaveGroup?: boolean;
+    /** SNES9X — when true (right-clicked node is a snes9x with a ROM loaded),
+     *  the menu surfaces "see output definition for CV/GATES". */
+    canSeeSnesOutputDef?: boolean;
+    /** SNES9X — open the per-ROM CV/GATE output-definition panel. */
+    onseesnesoutputdef?: () => void;
     onclose: () => void;
   }
 
@@ -64,6 +69,8 @@
     onduplicategroup,
     onsavegroup,
     canSaveGroup = false,
+    canSeeSnesOutputDef = false,
+    onseesnesoutputdef,
     onclose,
   }: Props = $props();
 
@@ -124,6 +131,10 @@
     onsavegroup?.();
     onclose();
   }
+  function pickSeeSnesOutputDef() {
+    onseesnesoutputdef?.();
+    onclose();
+  }
 </script>
 
 {#if open}
@@ -141,6 +152,16 @@
       <button class="ctx-item" onclick={pickDocs} role="menuitem">
         Docs
       </button>
+      {#if canSeeSnesOutputDef}
+        <button
+          class="ctx-item"
+          onclick={pickSeeSnesOutputDef}
+          role="menuitem"
+          data-testid="ctx-snes-output-def"
+        >
+          see output definition for CV/GATES
+        </button>
+      {/if}
       <div class="ctx-sep" role="presentation"></div>
     {/if}
     {#if isGroup}
@@ -198,9 +219,15 @@
       <button class="ctx-item" onclick={pickDuplicate} role="menuitem">
         Duplicate
       </button>
-      <button class="ctx-item" onclick={pickUnpatch} role="menuitem">
-        Unpatch all
-      </button>
+      <!-- TOYBOX is a node-map module: "Unpatch all" (remove every cable
+           touching the module) is confusing alongside the in-card combine
+           graph's own per-node disconnect, so it's hidden for type==='toybox'.
+           The combine editor's contextual menu provides node-map disconnects. -->
+      {#if nodeType !== 'toybox'}
+        <button class="ctx-item" onclick={pickUnpatch} role="menuitem">
+          Unpatch all
+        </button>
+      {/if}
     {/if}
     <button class="ctx-item danger" onclick={pickDelete} role="menuitem">
       {isGroup ? 'Delete instrument + modules' : 'Delete'}

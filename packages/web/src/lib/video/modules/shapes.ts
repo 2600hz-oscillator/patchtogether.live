@@ -7,6 +7,19 @@
 //
 // CV inputs are wired one-per-modulatable-param so the cross-domain CV
 // bridge in PatchEngine can drive each via setParam(portId).
+//
+// Inputs:
+//   shape / tile / rotate / zoom (cv, paramTarget=…): per-param CV.
+//
+// Outputs:
+//   out (mono-video): the rendered shape pattern.
+//
+// Params:
+//   shape (linear 0..2): shape picker (0=circle, 1=square, 2=triangle; lerps between).
+//   tile (linear 0..1): tile-blend amount (0 = single shape, 1 = tiled grid).
+//   tileN (linear 1..16): grid count when tiled.
+//   rotate (linear -π..π): global rotation.
+//   zoom (log 0.05..10): scale factor.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -100,6 +113,7 @@ const DEFAULTS: ShapesParams = {
 
 export const shapesDef: VideoModuleDef = {
   type: 'shapes',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'SHAPES',
   category: 'sources',

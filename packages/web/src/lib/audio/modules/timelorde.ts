@@ -5,17 +5,77 @@
 //
 // Singleton: maxInstances = 1. The whole point is "one canonical clock per
 // patch"; multiple TIMELORDEs would invite ambiguity over which is the
-// master.
+// master. TIMELORDE emits a fanout of gate outputs at standard musical
+// divisions of the master BPM (1x = quarter; 2x/4x/8x = subdivisions;
+// 1/2..1/64 = multiples of the bar) so any module that needs clocking
+// can patch the appropriate division directly without a clock-divider
+// helper in between.
+//
+// Inputs:
+//   clock (gate):    external clock-in; when patched, the master BPM is locked to its measured period.
+//   start_in (gate): rising edge STARTS the clock (running ← 1). Internal phase resumes from
+//                    wherever the last stop halted it — musical position is preserved (DAW
+//                    transport semantics).
+//                    Wire MIDICLOCK.midistart → TIMELORDE.start_in to slave transport to a hardware MIDI device.
+//   stop_in (gate):  rising edge HALTS the clock (running ← 0). Phase accumulator + sample
+//                    counter + pending pulses all freeze; outputs go low. This is DIFFERENT from
+//                    the card's MUTE button (which silences outputs but keeps the clock turning
+//                    for LIVECODE). A patched stop is a real transport stop.
+//                    Wire MIDICLOCK.midistop → TIMELORDE.stop_in for the matching stop side.
+//
+// Outputs:
+//   1x (gate): quarter-note pulse at the master BPM.
+//   2x / 4x / 8x (gate): faster subdivisions of the quarter (eighth / sixteenth / 32nd).
+//   1/2 / 1/3 / 1/4 / 1/8 / 1/12 / 1/16 / 1/32 / 1/64 (gate): multiples of the quarter (half-note .. 64-bar).
+//   swing (gate): same as 2x but offset by the swingAmount; use as a swung 8th-note clock.
+//
+// Params:
+//   bpm (log 10..300, default 120): master tempo.
+//   swingAmount (linear 0..90°, default 0): swing offset applied to the `swing` output.
+//   swingSource (discrete 0..10, default 0): which division feeds the swing tap.
+//   muteOutputs (discrete 0..1, default 0): 1 = silence every gate output but the internal
+//                clock keeps running for LIVECODE / tick subscribers. Bound to the card's
+//                MUTE button.
+//   running     (discrete 0..1, default 1): 1 = clock advances, 0 = clock HALTED (phase
+//                accumulator + sample-counter freeze). Bound to start_in / stop_in transport
+//                gates. Distinct from muteOutputs: a stopped clock has no ticks to mute.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import workletUrl from '@patchtogether.live/dsp/dist/timelorde.js?url';
+import { getSchedulerClock } from '$lib/audio/scheduler-clock';
+import { createRisingEdgeDetector } from './transport-helpers';
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
+// ---------------- Pure transport-event helper ----------------
+//
+// Given how many start_in / stop_in rising edges fired in the most recent
+// poll window and the CURRENT running value, decide the next running
+// value. This is a real transport halt/resume — NOT the card's mute. A
+// stop_in rising edge sets running ← 0 (clock phase freezes); start_in
+// sets running ← 1 (resumes from the frozen position). Pure + sync —
+// runs in vitest without an AudioContext.
+//
+// Ordering: if both edges fired inside the same poll window (unusual
+// but possible at high tick periods), stop wins — matches the
+// conservative "if a stop happened, honor it" interpretation. The
+// pulse-per-call shape means a redundant start while already running
+// is a no-op (idempotent), and likewise a stop while already halted.
+export function transportEventsToRunState(args: {
+  startEdges: number;
+  stopEdges: number;
+  prevRunning: 0 | 1;
+}): 0 | 1 {
+  if (args.stopEdges > 0) return 0;
+  if (args.startEdges > 0) return 1;
+  return args.prevRunning;
+}
+
 export const timelordeDef: AudioModuleDef = {
   type: 'timelorde',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'TIMELORDE',
   category: 'modulation',
@@ -32,6 +92,15 @@ export const timelordeDef: AudioModuleDef = {
     // measures period for multiplier prediction. Disconnect → falls back
     // to internal BPM after ~2 master periods.
     { id: 'clock', type: 'gate' },
+    // start_in / stop_in: transport gates that mirror the card's
+    // ON / MUTE button. Designed for MIDICLOCK.midistart →
+    // TIMELORDE.start_in + MIDICLOCK.midistop → TIMELORDE.stop_in so a
+    // hardware MIDI device can drive the rack's transport. Rising-edge
+    // detection runs on a scheduler-clock poll (same TICK_MS the rest
+    // of the sequencer transport uses); idempotent — a start while
+    // already running is a no-op, same for stop while already muted.
+    { id: 'start_in', type: 'gate' },
+    { id: 'stop_in',  type: 'gate' },
   ],
   outputs: [
     // Order MUST match dsp/timelorde.ts OUT_* indices.
@@ -64,6 +133,14 @@ export const timelordeDef: AudioModuleDef = {
     // converts inline (see readMuteOutputs() below) so old racks
     // start MUTED iff the user had explicitly stopped them.
     { id: 'muteOutputs',  label: 'Mute',  defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
+    // running (v3): driven exclusively by start_in / stop_in transport
+    // gate inputs. Default 1 = clock advances. When 0 the worklet
+    // freezes phase + sample-count + pending pulses; on resume the
+    // counters pick up from the halted position (musical position
+    // preserved). The card has no button for this — only the external
+    // gates can flip it. Patches save it so a stopped rack stays
+    // stopped on reload.
+    { id: 'running',      label: 'Run',   defaultValue: 1,   min: 0,  max: 1,   curve: 'discrete' },
   ],
 
   // Module-grouping Phase 4 — surface every knob (BPM / Swing / Src) so a
@@ -107,6 +184,7 @@ export const timelordeDef: AudioModuleDef = {
     const swAmt = params.get('swingAmount');
     const swSrc = params.get('swingSource');
     const muteOutputsParam = params.get('muteOutputs');
+    const runningParam = params.get('running');
     const hasExt = params.get('hasExternalClock');
 
     // v1 → v2 inline migration: existing patches saved `isPlaying`
@@ -142,10 +220,100 @@ export const timelordeDef: AudioModuleDef = {
     syncExternalFlag();
     timer = setInterval(syncExternalFlag, 250);
 
+    // The worklet posts { type: 'measuredBpm', bpm } whenever the locked
+    // external tempo drifts (>0.1 BPM) and posts bpm:0 on dropout. We
+    // cache the latest value here and surface it via read('measuredBpm')
+    // so TimelordeCard can show the tempo TIMELORDE is actually locked
+    // to, not the stale internal knob.
+    let measuredBpm = 0;
+    workletNode.port.onmessage = (e: MessageEvent) => {
+      const m = e.data as { type?: string; bpm?: number } | undefined;
+      if (m && m.type === 'measuredBpm' && typeof m.bpm === 'number') {
+        measuredBpm = m.bpm;
+      }
+    };
+
+    // -------- start_in / stop_in: transport gate inputs --------
+    //
+    // Each input is a Gain → Analyser tap (same shape transport-cv uses
+    // for play_cv / reset_cv on sequencer-style modules). A silence
+    // ConstantSource keeps the node graph-alive even when no cable is
+    // patched, so the analyser doesn't see ghost edges from a torn-down
+    // connection. A scheduler-clock subscription drains them every tick
+    // and routes rising-edge counts through transportEventsToRunState(),
+    // mirroring the result back to BOTH the engine-side `running`
+    // AudioParam (so the worklet sees the change immediately) AND the
+    // patch store (so any UI + remote rack-mates pick up the new state
+    // via Y.Doc sync). Note: these gates HALT the clock, distinct from
+    // the card's MUTE button which only silences output gates.
+    const startGain = ctx.createGain();
+    const startAna = ctx.createAnalyser();
+    startAna.fftSize = 2048;
+    startAna.smoothingTimeConstant = 0;
+    startGain.connect(startAna);
+    const startSilence = ctx.createConstantSource();
+    startSilence.offset.value = 0;
+    startSilence.start();
+    startSilence.connect(startGain);
+    const startBuf = new Float32Array(2048);
+    const startDet = createRisingEdgeDetector(0.5);
+
+    const stopGain = ctx.createGain();
+    const stopAna = ctx.createAnalyser();
+    stopAna.fftSize = 2048;
+    stopAna.smoothingTimeConstant = 0;
+    stopGain.connect(stopAna);
+    const stopSilence = ctx.createConstantSource();
+    stopSilence.offset.value = 0;
+    stopSilence.start();
+    stopSilence.connect(stopGain);
+    const stopBuf = new Float32Array(2048);
+    const stopDet = createRisingEdgeDetector(0.5);
+
+    let lastTransportPollTime = ctx.currentTime;
+    function pollTransportGates(): void {
+      const nowAt = ctx.currentTime;
+      const elapsed = Math.max(0, nowAt - lastTransportPollTime);
+      lastTransportPollTime = nowAt;
+      startAna.getFloatTimeDomainData(startBuf);
+      stopAna.getFloatTimeDomainData(stopBuf);
+      const newSamples = Math.min(
+        startBuf.length,
+        Math.max(1, Math.ceil(elapsed * ctx.sampleRate)),
+      );
+      const start = startBuf.length - newSamples;
+      const startEdges = startDet.scan(startBuf, start, startBuf.length);
+      const stopEdges  = stopDet.scan(stopBuf,  start, stopBuf.length);
+      if (startEdges === 0 && stopEdges === 0) return;
+
+      const live = livePatch.nodes[nodeId];
+      // Default running=1 if unset (matches the param's defaultValue).
+      // running is NOT muteOutputs — it actually halts the worklet's
+      // phase accumulator. muteOutputs stays untouched here.
+      const prevRaw = live?.params?.running;
+      const prevRunning: 0 | 1 =
+        typeof prevRaw === 'number' ? (prevRaw >= 0.5 ? 1 : 0) : 1;
+      const nextRunning = transportEventsToRunState({
+        startEdges,
+        stopEdges,
+        prevRunning,
+      });
+      if (nextRunning === prevRunning) return;
+      // Write through both layers: AudioParam so the worklet sees it
+      // on the next process() block (phase accumulator freezes /
+      // resumes); livePatch.params so any UI + remote rack-mates pick
+      // up the new state via Y.Doc sync.
+      runningParam?.setValueAtTime(nextRunning, ctx.currentTime);
+      if (live?.params) live.params.running = nextRunning;
+    }
+    const transportUnsub = getSchedulerClock().subscribe(pollTransportGates);
+
     return {
       domain: 'audio',
-      inputs: new Map([
-        ['clock', { node: workletNode, input: 0 }],
+      inputs: new Map<string, { node: AudioNode; input: number }>([
+        ['clock',    { node: workletNode, input: 0 }],
+        ['start_in', { node: startGain,   input: 0 }],
+        ['stop_in',  { node: stopGain,    input: 0 }],
       ]),
       outputs: new Map([
         ['1x',    { node: workletNode, output: 0 }],
@@ -172,12 +340,31 @@ export const timelordeDef: AudioModuleDef = {
         if (key === 'hasExternalClock') {
           return hasExt?.value ?? 0;
         }
+        if (key === 'measuredBpm') {
+          return measuredBpm;
+        }
+        if (key === 'running') {
+          // Reflects the transport-gate state. start_in/stop_in flip
+          // this; muteOutputs is independent (the card's mute doesn't
+          // halt the clock).
+          const v = runningParam?.value ?? 1;
+          return v >= 0.5 ? 1 : 0;
+        }
         return undefined;
       },
       dispose() {
         if (timer !== null) clearInterval(timer);
+        try { transportUnsub(); } catch { /* */ }
         try { silence.stop(); } catch { /* */ }
+        try { startSilence.stop(); } catch { /* */ }
+        try { stopSilence.stop(); } catch { /* */ }
         silence.disconnect();
+        startSilence.disconnect();
+        stopSilence.disconnect();
+        startGain.disconnect();
+        stopGain.disconnect();
+        startAna.disconnect();
+        stopAna.disconnect();
         workletNode.disconnect();
       },
     };

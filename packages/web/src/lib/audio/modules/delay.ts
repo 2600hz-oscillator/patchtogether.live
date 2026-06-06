@@ -11,11 +11,6 @@
 // (BSD-3) and the Faust stdlib `de.delay` (MIT). No code lifted —
 // the topology is generic enough that this is just "a delay".
 //
-// Cable types:
-//   in:    audio       — wet+dry source
-//   time:  cv          — time AudioParam, additive with the knob
-//   out:   audio       — dry + wet, mix-controlled
-//
 // Knob curves chosen to match the typical eurorack delay (time log
 // from 1 ms to 2 s; feedback linear 0..0.95 with hard ceiling; mix
 // linear 0..1 dry-to-wet).
@@ -25,6 +20,18 @@
 // and the WAVESCULPT FX slots want to share the SAME delay instance
 // type so the audible character matches when you pull DELAY out of an
 // FX slot and into a patch wire.
+//
+// Inputs:
+//   audio (audio): dry signal feeding the delay line.
+//   time (cv, linear, paramTarget=time): displaces the delay-time knob.
+//
+// Outputs:
+//   audio (audio): dry + wet, balance set by mix.
+//
+// Params:
+//   time (log 0.001..MAX_DELAY_S, default 0.25): delay time in seconds.
+//   feedback (linear 0..MAX_FEEDBACK, default 0.4): feedback ratio (hard-ceilinged).
+//   mix (linear 0..1, default 0.35): dry/wet balance (0 = dry, 1 = wet only).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -43,6 +50,7 @@ const MAX_FEEDBACK = 0.95;
 
 export const delayDef: AudioModuleDef = {
   type: 'delay',
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
   label: 'DELAY',
   category: 'effects',

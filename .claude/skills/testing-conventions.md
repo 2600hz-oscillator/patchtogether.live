@@ -24,6 +24,17 @@ math), update an ART baseline (if it affects DSP output), update a VRT
 baseline (if it affects the card), and may need a new E2E (if it changes
 interaction).
 
+## New/changed tests must prove non-flaky (3× locally) before an MR
+
+A green local run proves pass/fail; it does **not** prove **stability**. Any test
+you add or seriously change passes **3× in a row locally** (scoped to that test —
+not the whole suite) before it goes to CI. Use `REPEAT=3` on the `*:one` targets
+(`REPEAT=3 task e2e:one -- my-spec`); it bails on the first failing iteration so a
+flake can't hide behind a later green run. A flake that only reproduces under CI
+load (e.g. a `@collab` relay-contention timeout) is still root-caused, never
+re-run away. See the `running-tests` skill for the commands and
+`feedback_no_flake_tolerance` for the discipline.
+
 ## Always pair a fix with a regression test
 
 The user has called this out explicitly: every bug fix gets a test that

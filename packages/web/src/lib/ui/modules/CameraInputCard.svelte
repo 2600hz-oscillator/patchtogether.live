@@ -34,6 +34,7 @@
   import { cameraInputDef } from '$lib/video/modules/camera-input';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   type State =
     | 'idle'
@@ -391,7 +392,7 @@
 
 <div class="card video">
   <div class="stripe"></div>
-  <header class="title">CAMERA</header>
+  <ModuleTitle {id} {data} defaultLabel="CAMERA" />
 
   <Handle type="target" position={Position.Left} id="gain" style="top: 56px; --handle-color: var(--cable-cv);" />
   <span class="port-label left" style="top: 50px;">CV</span>

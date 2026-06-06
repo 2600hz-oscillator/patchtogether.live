@@ -13,6 +13,7 @@
   import { GRIDS_MODE_DRUMS } from '$lib/audio/modules/grids-engine';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -74,7 +75,7 @@
 
 <div class="mod-card grids-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">GRIDS</header>
+  <ModuleTitle {id} {data} defaultLabel="GRIDS" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="controls">
@@ -92,30 +93,30 @@
       <div class="fader-row">
         <Fader value={val('tempo')} min={def('tempo').min!} max={def('tempo').max!}
                defaultValue={defaultFor('tempo')} label="BPM" curve="linear"
-               onchange={set('tempo')} readLive={live('tempo')} />
+               onchange={set('tempo')} moduleId={id} paramId="tempo" readLive={live('tempo')} />
         <Fader value={val('mapX')} min={def('mapX').min!} max={def('mapX').max!}
                defaultValue={defaultFor('mapX')} label="X" curve="linear"
-               onchange={set('mapX')} readLive={live('mapX')} />
+               onchange={set('mapX')} moduleId={id} paramId="mapX" readLive={live('mapX')} />
         <Fader value={val('mapY')} min={def('mapY').min!} max={def('mapY').max!}
                defaultValue={defaultFor('mapY')} label="Y" curve="linear"
-               onchange={set('mapY')} readLive={live('mapY')} />
+               onchange={set('mapY')} moduleId={id} paramId="mapY" readLive={live('mapY')} />
       </div>
 
       <div class="fader-row">
         {#each densityFaders as f (f.pid)}
           <Fader value={val(f.pid)} min={def(f.pid).min!} max={def(f.pid).max!}
                  defaultValue={defaultFor(f.pid)} label={f.label} curve="linear"
-                 onchange={set(f.pid)} readLive={live(f.pid)} />
+                 onchange={set(f.pid)} moduleId={id} paramId={f.pid} readLive={live(f.pid)} />
         {/each}
       </div>
 
       <div class="fader-row">
         <Fader value={val('chaos')} min={def('chaos').min!} max={def('chaos').max!}
                defaultValue={defaultFor('chaos')} label="Chaos" curve="linear"
-               onchange={set('chaos')} readLive={live('chaos')} />
+               onchange={set('chaos')} moduleId={id} paramId="chaos" readLive={live('chaos')} />
         <Fader value={val('swing')} min={def('swing').min!} max={def('swing').max!}
                defaultValue={defaultFor('swing')} label="Swing" curve="linear"
-               onchange={set('swing')} readLive={live('swing')} />
+               onchange={set('swing')} moduleId={id} paramId="swing" readLive={live('swing')} />
       </div>
     </div>
   </PatchPanel>
@@ -123,7 +124,7 @@
 </div>
 
 <style>
-  .grids-card { width: 320px; min-height: 260px; }
+  .grids-card { width: 320px; }
   .grids-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

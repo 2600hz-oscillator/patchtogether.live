@@ -62,6 +62,12 @@ class LfoProcessor extends AudioWorkletProcessor {
       // 0=pure sine, 1=pure saw, 2=pure square. Linear interpolation between
       // the adjacent shapes for in-between values (e.g. 0.5 = sine ⇄ saw mix).
       { name: 'shape', defaultValue: 0, minValue: 0,    maxValue: 2,   automationRate: 'a-rate' as const },
+      // Output amplitude / depth. The emitted value is scaled by
+      // (depth * 2): depth=0 → still (flat at the resting/centre value),
+      // depth=0.5 → unity (legacy behaviour), depth=1 → 2× (deliberately
+      // out of the normal [-1,1] range, NOT clamped). depth_cv sums into
+      // this param at the engine layer like the other CV inputs.
+      { name: 'depth', defaultValue: 0.5, minValue: 0,  maxValue: 1,   automationRate: 'a-rate' as const },
     ];
   }
 
@@ -124,6 +130,7 @@ class LfoProcessor extends AudioWorkletProcessor {
     const clockIn = inputs[0]?.[0];
     const rateArr = parameters.rate;
     const shapeArr = parameters.shape;
+    const depthArr = parameters.depth;
 
     const blockLen = out0.length;
     const sr = sampleRate;
@@ -153,6 +160,12 @@ class LfoProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < blockLen; i++) {
       const rate = rateHeld;
       const shape = shapeArr.length > 1 ? (shapeArr[i] ?? 0) : (shapeArr[0] ?? 0);
+      // depth → amplitude gain. Resting/centre value of every shape is 0,
+      // so scaling the bipolar output by (depth*2) gives "still" at depth=0,
+      // unity at depth=0.5, and 2× swing at depth=1. Orthogonal to shape;
+      // do NOT clamp the result (out-of-range at depth=1 is intentional).
+      const depthRaw = depthArr.length > 1 ? (depthArr[i] ?? 0.5) : (depthArr[0] ?? 0.5);
+      const gain = Math.max(0, depthRaw) * 2;
 
       // External clock: rising edge resets phase to 0 (sync). Bypass
       // smoothing — a hard sync edge is intentional and clicks are a
@@ -189,10 +202,10 @@ class LfoProcessor extends AudioWorkletProcessor {
       const p180 = (this.phase + 0.5) % 1;
       const p270 = (this.phase + 0.75) % 1;
 
-      out0[i] = morph(p0, shape);
-      out90[i] = morph(p90, shape);
-      out180[i] = morph(p180, shape);
-      out270[i] = morph(p270, shape);
+      out0[i] = morph(p0, shape) * gain;
+      out90[i] = morph(p90, shape) * gain;
+      out180[i] = morph(p180, shape) * gain;
+      out270[i] = morph(p270, shape) * gain;
     }
     return true;
   }

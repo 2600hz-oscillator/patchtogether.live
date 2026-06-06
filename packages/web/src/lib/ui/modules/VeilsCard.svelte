@@ -15,6 +15,7 @@
   import { veilsDef } from '$lib/audio/modules/veils';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -73,7 +74,7 @@
 
 <div class="mod-card veils-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">VEILS</header>
+  <ModuleTitle {id} {data} defaultLabel="VEILS" />
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={280}>
     <div class="strips">
@@ -104,7 +105,7 @@
 </div>
 
 <style>
-  .veils-card { width: 280px; min-height: 240px; }
+  .veils-card { width: 280px; }
   .veils-card .strips {
     display: flex;
     gap: 8px;

@@ -82,13 +82,39 @@ let access: MidiAccessLike | null = null;
 let connectStarted = false;
 let connectFailed = false;
 
-/** Map of bindingKey → binding metadata + live setter (setter is registered
- *  by the Fader / Knob via `registerSetter`; if no setter is registered
- *  for a binding, CCs land silently). */
+/** Map of bindingKey → binding metadata (channel/cc/learnedAt only). The
+ *  live setter is kept in a SEPARATE map (`setters` below) so the order of
+ *  card-mount vs binding-population doesn't matter — see the comment on
+ *  `setters` for why this decoupling is required for performance load. */
 interface ActiveBinding extends MidiBinding {
+  /** @deprecated kept as `undefined` for back-compat with any external
+   *  reader; the dispatch path reads from `setters` instead. */
   setter?: { min: number; max: number; onchange: (v: number) => void };
 }
 const bindings = $state<Map<string, ActiveBinding>>(new Map());
+
+/** Map of bindingKey → live setter, populated by `registerSetter` on
+ *  Fader / Knob mount and read by the CC dispatch loop. Decoupled from
+ *  `bindings` so a card that mounts BEFORE its binding exists (the
+ *  Save/Load Local Performance order: cards mount as the patch loads,
+ *  THEN `importBindings` runs) still has its setter wired the moment the
+ *  binding is added. Without this split, registerSetter found no binding,
+ *  silently no-op'd, and the binding was created later with a missing
+ *  setter — fixing only via a manual re-learn (which went through the
+ *  applyLearn path that wrote setter + binding together). */
+const setters = new Map<string, { min: number; max: number; onchange: (v: number) => void }>();
+
+/** Monotonic version stamped on every binding add/remove. Components read it
+ *  via `bindingsRune()` inside a `$derived` so a binding captured by the
+ *  engine (e.g. when an injected/real CC completes a learn) reactively
+ *  surfaces the bound-state badge — not just bindings created by a local
+ *  click handler. Bumped by `touchBindings()`. */
+let bindingsVersion = $state(0);
+function touchBindings(): void { bindingsVersion++; }
+
+/** Reactive getter — read this inside a `$derived` to re-evaluate whenever
+ *  any binding is added or removed. */
+export function bindingsRune(): number { return bindingsVersion; }
 
 /** Currently-active learn request (null when not learning). Reactive so
  *  the Fader / Knob with `spec.moduleId/paramId` matching can show a
@@ -111,6 +137,7 @@ function loadFromStorage(): void {
         bindings.set(b.key, { ...b });
       }
     }
+    touchBindings();
   } catch {
     // Corrupt storage — ignore. A fresh learn overwrites.
   }
@@ -195,9 +222,10 @@ function handleMidi(ev: MidiEventLike): void {
       channel: parsed.channel,
       cc: parsed.cc,
       learnedAt: Date.now(),
-      setter: { min: spec.min, max: spec.max, onchange: spec.onchange },
     };
     bindings.set(key, newBinding);
+    setters.set(key, { min: spec.min, max: spec.max, onchange: spec.onchange });
+    touchBindings();
     saveToStorage();
     learnSpec = null;
     // Apply the captured value immediately so the user sees the knob jump.
@@ -205,10 +233,14 @@ function handleMidi(ev: MidiEventLike): void {
     return;
   }
 
-  // 2. Otherwise dispatch to whichever binding (if any) owns this CC.
+  // 2. Otherwise dispatch to whichever binding (if any) owns this CC. Setter
+  //    lookup goes through the SEPARATE `setters` map — see the comment on
+  //    that map. The intersection of "binding present" + "setter registered"
+  //    is what activates dispatch; either alone is silent.
   for (const b of bindings.values()) {
-    if (b.channel === parsed.channel && b.cc === parsed.cc && b.setter) {
-      b.setter.onchange(ccValueToParamValue(parsed.value, b.setter.min, b.setter.max));
+    if (b.channel === parsed.channel && b.cc === parsed.cc) {
+      const s = setters.get(b.key);
+      if (s) s.onchange(ccValueToParamValue(parsed.value, s.min, s.max));
     }
   }
 }
@@ -236,24 +268,20 @@ export function cancelLearn(): void {
 }
 
 /** Register / refresh the live setter for a knob. Called by Fader / Knob
- *  on mount so a binding that was loaded from localStorage starts driving
- *  the knob as soon as the card mounts. Idempotent. */
+ *  on mount. Stored in the `setters` map UNCONDITIONALLY (no dependence on
+ *  whether a binding for this key exists yet) so a card mounted BEFORE its
+ *  binding is loaded (Save/Load Local Performance flow) gets wired the
+ *  moment the binding arrives. Idempotent. */
 export function registerSetter(moduleId: string, paramId: string, args: {
   min: number; max: number; onchange: (v: number) => void;
 }): void {
-  const key = bindingKey(moduleId, paramId);
-  const b = bindings.get(key);
-  if (b) {
-    b.setter = { ...args };
-  }
+  setters.set(bindingKey(moduleId, paramId), { ...args });
 }
 
 /** Drop the live setter (called on Fader / Knob unmount). The persisted
  *  binding stays — re-mounting the card re-registers its setter. */
 export function unregisterSetter(moduleId: string, paramId: string): void {
-  const key = bindingKey(moduleId, paramId);
-  const b = bindings.get(key);
-  if (b) b.setter = undefined;
+  setters.delete(bindingKey(moduleId, paramId));
 }
 
 /** Look up the persisted binding for a knob (no setter info). */
@@ -265,6 +293,7 @@ export function getBinding(moduleId: string, paramId: string): MidiBinding | und
 /** Remove a binding entirely. */
 export function clearBinding(moduleId: string, paramId: string): void {
   bindings.delete(bindingKey(moduleId, paramId));
+  touchBindings();
   saveToStorage();
 }
 
@@ -278,6 +307,48 @@ export function learnSpecRune(): LearnSpec | null {
  *  "show all learned bindings" UI. */
 export function allBindings(): ReadonlyMap<string, MidiBinding> {
   return bindings;
+}
+
+// ---------------- Performance bundle export / import ----------------
+//
+// The Save/Load Local Performance feature bundles these device-agnostic CC
+// maps so a "complete track" re-binds its MIDI Learn knobs on reload. Bindings
+// are keyed by `moduleId:paramId` (not device), so importing them re-arms the
+// CCs for this performance's modules across whatever controller is connected.
+
+/** Snapshot the current bindings as plain export records (no live setters). */
+export function exportBindings(): MidiBinding[] {
+  const arr: MidiBinding[] = [];
+  for (const b of bindings.values()) {
+    arr.push({ key: b.key, channel: b.channel, cc: b.cc, learnedAt: b.learnedAt });
+  }
+  return arr;
+}
+
+/**
+ * Merge imported bindings into the live set + persist. Bundle wins per `key`
+ * (this performance's modules); other-patch bindings are preserved (design
+ * risk #6 — don't clobber the user's unrelated mappings). Existing live
+ * setters are kept where the key already had one so a mounted card keeps
+ * driving without a remount. */
+export function importBindings(incoming: MidiBinding[]): void {
+  for (const b of incoming) {
+    if (typeof b?.key !== 'string' || !Number.isFinite(b.channel) || !Number.isFinite(b.cc)) {
+      continue;
+    }
+    // No setter to preserve / restore — the `setters` map is independent of
+    // `bindings`, so a card whose setter is already registered just starts
+    // dispatching the moment this binding lands, and a card that mounts
+    // later finds the binding waiting for it.
+    bindings.set(b.key, {
+      key: b.key,
+      channel: b.channel,
+      cc: b.cc,
+      learnedAt: b.learnedAt,
+    });
+  }
+  touchBindings();
+  saveToStorage();
 }
 
 // ---------------- Test-only hooks ----------------
@@ -294,5 +365,49 @@ export function __test_setAccess(fake: MidiAccessLike | null): void {
 /** Wipe in-memory bindings (does not touch localStorage). */
 export function __test_clearBindings(): void {
   bindings.clear();
+  touchBindings();
   learnSpec = null;
+}
+
+// ---------------- Dev-only simulated-MIDI device ----------------
+//
+// Installs an in-memory fake MIDIAccess so an e2e (or manual dev poke) can
+// drive MIDI Learn + CC dispatch without real hardware or the Web MIDI
+// permission prompt. Returns a `sendCc` that pushes a Control-Change message
+// through exactly the same `handleMidi` path a real device uses, so learn
+// capture + binding dispatch are exercised end-to-end.
+//
+// Guarded behind `testHooksEnabled()` at the call site (Canvas.svelte) so
+// the window hook is absent from plain production bundles but present in the
+// preview/autotest bundle built with VITE_E2E_HOOKS=1.
+let simSender: ((channel: number, cc: number, value: number) => void) | null = null;
+
+export function installSimulatedMidiDevice(): (channel: number, cc: number, value: number) => void {
+  if (simSender) return simSender;
+  let handler: ((ev: MidiEventLike) => void) | null = null;
+  const input: MidiInputLike = {
+    id: 'pt-sim-midi-0',
+    name: 'PatchTogether Simulated MIDI',
+    manufacturer: 'patchtogether',
+    state: 'connected',
+    get onmidimessage() { return handler; },
+    set onmidimessage(h) { handler = h; },
+  };
+  const inputs = new Map<string, MidiInputLike>();
+  inputs.set(input.id, input);
+  const fake: MidiAccessLike = { inputs, onstatechange: null };
+  // Short-circuit connect() so beginLearn() resolves immediately against the
+  // fake device instead of waiting on navigator.requestMIDIAccess().
+  access = fake;
+  connectStarted = true;
+  connectFailed = false;
+  attachAllInputs();
+  simSender = (channel: number, cc: number, value: number) => {
+    if (!handler) return;
+    handler({
+      data: new Uint8Array([0xb0 | (channel & 0x0f), cc & 0x7f, value & 0x7f]),
+      timeStamp: 0,
+    });
+  };
+  return simSender;
 }

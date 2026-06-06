@@ -18,6 +18,7 @@
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -53,7 +54,7 @@
   let yShapeName = $derived(shapeName(p('yShape')));
 
   const ENGINE_W = 640;
-  const ENGINE_H = 360;
+  const ENGINE_H = 480;
   const CANVAS_W = 280;
   const CANVAS_H = 158;
 
@@ -198,7 +199,7 @@
   ondblclick={onBodyDblClick}
 >
   <div class="stripe"></div>
-  <header class="title">RUTTETRA</header>
+  <ModuleTitle {id} {data} defaultLabel="RUTTETRA" />
 
   <!-- 1 video input (z) + 7 cv inputs -->
   <Handle type="target" position={Position.Left} id="z"         style="top: 56px;  --handle-color: var(--cable-video);" />

@@ -11,17 +11,21 @@
 // shape ever silently changes, this catches it before the e2e test even runs.
 
 import { describe, it, expect, beforeAll } from 'vitest';
+import * as Y from 'yjs';
 import { syncedStore, getYjsDoc } from '@syncedstore/core';
 import {
   makeEnvelope,
+  makePortableEnvelope,
   parseEnvelope,
   serializeEnvelope,
   loadEnvelopeIntoStore,
+  migrateEdgeEndpoints,
   sanitizeFilename,
   ENVELOPE_VERSION,
   DEFAULT_FILENAME,
   type LivePatch,
 } from './persistence';
+import { setNodePosition } from '$lib/multiplayer/layouts';
 import type { ModuleNode, Edge } from './types';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { registerModule, getModuleDef } from '$lib/audio/module-registry';
@@ -320,6 +324,131 @@ describe('persistence: round-trip', () => {
         })
       )
     ).toThrow();
+  });
+});
+
+// ---------------- DOOM transient-data stripping ----------------
+//
+// DOOM persists multiplayer lobby state (mpMode / mpLive / players / pending)
+// onto its node.data so every peer in the rack converges on the host's
+// session state via Yjs sync. But that state is SESSION-scoped, not
+// TOPOLOGY: a saved patch is a rack snapshot, not a particular game's live
+// status. If those fields ride a saved envelope into a future load, the
+// host's start-game dialog is gated on `mpMode === undefined` and so it
+// never re-renders — the user lands on a stuck "Single-user rack" splash
+// with no way to launch. The loader strips a per-module whitelist of these
+// transient fields off `node.data` post-migration so the load is a clean
+// topology restore (Bug #1 — the load-from-patch repro).
+describe('persistence: DOOM transient-field stripping', () => {
+  /** Minimal DOOM def — only needed so the loader sees `doom` as a known
+   *  type and runs its migration / strip pass. We register under the audio
+   *  domain because DOOM's real registry slot is video, but persistence
+   *  doesn't care which registry as long as some lookup matches; using audio
+   *  here avoids depending on the real video registry def's evolving shape. */
+  const doomStub: AudioModuleDef = {
+    type: 'doom',
+    domain: 'audio',
+    label: 'DOOM',
+    category: 'sources',
+    schemaVersion: 2,
+    inputs: [],
+    outputs: [],
+    params: [],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    factory: throwingFactory as any,
+  };
+
+  beforeAll(() => {
+    registerModule(doomStub);
+  });
+
+  it('strips mpMode / mpLive / players / pending off a loaded DOOM node', () => {
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['d'] = {
+        id: 'd',
+        type: 'doom',
+        domain: 'audio',
+        position: { x: 10, y: 20 },
+        params: {},
+        data: {
+          name: 'DOOM',
+          mpMode: 'multi',
+          mpLive: true,
+          players: { p1: { userId: 'u-1' } },
+          pending: { p2: { userId: 'u-2' } },
+        },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+
+    const loaded = dest.store.nodes['d'];
+    expect(loaded).toBeDefined();
+    const data = loaded!.data as Record<string, unknown>;
+    expect(data.name).toBe('DOOM'); // persistent name preserved
+    expect('mpMode' in data).toBe(false);
+    expect('mpLive' in data).toBe(false);
+    expect('players' in data).toBe(false);
+    expect('pending' in data).toBe(false);
+  });
+
+  it('preserves DOOM persistent fields (position / params / data.name)', () => {
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['d'] = {
+        id: 'd',
+        type: 'doom',
+        domain: 'audio',
+        position: { x: 123, y: 456 },
+        params: { volume: 0.42 },
+        data: {
+          name: 'My DOOM',
+          mpMode: 'single', // transient — should disappear
+        },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+
+    const loaded = dest.store.nodes['d'];
+    expect(loaded).toBeDefined();
+    expect(loaded!.position).toEqual({ x: 123, y: 456 });
+    expect(loaded!.params).toEqual({ volume: 0.42 });
+    expect((loaded!.data as Record<string, unknown>).name).toBe('My DOOM');
+    expect('mpMode' in (loaded!.data as object)).toBe(false);
+  });
+
+  it('does NOT strip the same field names off other module types', () => {
+    // Confidence check: the strip is type-keyed, so a hypothetical non-DOOM
+    // module that happens to carry an `mpMode` field on its data keeps it.
+    // Uses the existing testVcoDef (analogVco). This guards against the next
+    // person turning the whitelist into a global field filter.
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['v'] = {
+        id: 'v',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 0, y: 0 },
+        params: { tune: 0, fine: 0 },
+        data: { mpMode: 'should-stay' },
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    expect(result.nodesLoaded).toBe(1);
+    const loaded = dest.store.nodes['v'];
+    expect((loaded!.data as Record<string, unknown>).mpMode).toBe('should-stay');
   });
 });
 
@@ -735,5 +864,213 @@ describe('persistence: sanitizeFilename', () => {
   it('preserves spaces and unicode in the middle of the name', () => {
     expect(sanitizeFilename('my cool patch')).toBe('my cool patch.imp.json');
     expect(sanitizeFilename('café')).toBe('café.imp.json');
+  });
+});
+
+// ---------------- Edge-port migration (#353 DOOM per-slot ports) ----------------
+//
+// loadEnvelopeIntoStore rewrites edge endpoint portIds via the endpoint node's
+// module-def `migrateEdgePortId` hook when the saved version is behind the def.
+// DOOM uses this to rewrite legacy bare cv-gate ports (`up`/…) to the p1 group
+// (`p1_up`/…) when the single shared input set became four per-slot groups.
+
+/** A video def that renames bare cv-gate ports → p1_<id> for saves below v2. */
+const doomLikeDefV2: VideoModuleDef = {
+  type: 'doomLike',
+  domain: 'video',
+  label: 'DoomLike',
+  category: 'sources',
+  schemaVersion: 2,
+  inputs: [{ id: 'p1_up', type: 'cv', paramTarget: 'cv_p1_up' }],
+  outputs: [{ id: 'out', type: 'video' }],
+  params: [],
+  migrateEdgePortId(portId) {
+    return portId === 'up' ? 'p1_up' : null;
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  factory: throwingFactory as any,
+};
+
+describe('migrateEdgeEndpoints — DOOM per-slot port migration (#353)', () => {
+  beforeAll(() => registerVideoModule(doomLikeDefV2));
+
+  const nodes: Record<string, ModuleNode> = {
+    doom: { id: 'doom', type: 'doomLike', position: { x: 0, y: 0 }, params: {} } as ModuleNode,
+    lfo: { id: 'lfo', type: 'analogVco', position: { x: 0, y: 0 }, params: {} } as ModuleNode,
+  };
+  const baseEdge: Edge = {
+    id: 'e1',
+    source: { nodeId: 'lfo', portId: 'sine' },
+    target: { nodeId: 'doom', portId: 'up' },
+    sourceType: 'cv',
+    targetType: 'cv',
+  };
+
+  it('rewrites a legacy bare cv-gate target → p1_<id> when saved below v2', () => {
+    const migrated = migrateEdgeEndpoints(baseEdge, nodes, { doomLike: 1 });
+    expect(migrated.target.portId).toBe('p1_up');
+    expect(migrated.source.portId).toBe('sine'); // source (lfo) untouched
+    expect(migrated.id).toBe('e1');
+  });
+
+  it('leaves the edge unchanged when the saved version is already current', () => {
+    const migrated = migrateEdgeEndpoints(baseEdge, nodes, { doomLike: 2 });
+    expect(migrated).toBe(baseEdge); // same reference (no rewrite)
+  });
+
+  it('leaves non-migrating ports untouched (out/audio)', () => {
+    const e: Edge = { ...baseEdge, target: { nodeId: 'doom', portId: 'out' } };
+    const migrated = migrateEdgeEndpoints(e, nodes, { doomLike: 1 });
+    expect(migrated.target.portId).toBe('out');
+  });
+
+  it('end-to-end: a saved v1 patch with an LFO→DOOM `up` edge loads onto p1_up', () => {
+    // Build a v1 save: a doomLike node + an analogVco + an edge into bare `up`.
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['doom'] = { id: 'doom', type: 'doomLike', position: { x: 0, y: 0 }, params: {} } as ModuleNode;
+      src.store.nodes['lfo'] = { id: 'lfo', type: 'analogVco', position: { x: 0, y: 0 }, params: {} } as ModuleNode;
+      src.store.edges['e1'] = {
+        id: 'e1',
+        source: { nodeId: 'lfo', portId: 'sine' },
+        target: { nodeId: 'doom', portId: 'up' },
+        sourceType: 'cv',
+        targetType: 'cv',
+      } as Edge;
+    });
+    const env = makeEnvelope(src.ydoc);
+    // Force the recorded doomLike schema to the OLD version (a real v1 save).
+    env.moduleSchemas['doomLike'] = 1;
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(parseEnvelope(serializeEnvelope(env)), dest.ydoc, dest.store);
+    expect(result.edgesLoaded).toBe(1);
+    expect(dest.store.edges['e1']!.target.portId).toBe('p1_up');
+  });
+});
+
+describe('persistence: portable performance snapshot (per-user layout baking)', () => {
+  const USER = 'user-alice';
+
+  it('bakes the saving user\'s layout override into node.position and clears layouts', () => {
+    const { ydoc, store } = freshPatch();
+    ydoc.transact(() => {
+      store.nodes['vco'] = {
+        id: 'vco',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 100, y: 200 }, // stale spawn position
+        params: { tune: 5, fine: 0 },
+      };
+      store.nodes['out'] = {
+        id: 'out',
+        type: 'audioOut',
+        domain: 'audio',
+        position: { x: 600, y: 200 }, // stale spawn position
+        params: { master: 0.5 },
+      };
+    });
+    // Multiplayer drag-stop: the user moved both cards. These writes go to the
+    // per-user layouts map, NOT node.position (the bug's root cause).
+    setNodePosition(ydoc, USER, 'vco', { x: 333, y: 444 });
+    setNodePosition(ydoc, USER, 'out', { x: 999, y: 111 });
+    // Sanity: node.position is still the stale spawn position.
+    expect(ydoc.getMap('nodes').get('vco')).toBeDefined();
+    expect((ydoc.getMap('layouts').get(USER) as Y.Map<unknown> | undefined)?.size).toBe(2);
+
+    // Produce the portable envelope as the saving user.
+    const env = makePortableEnvelope(ydoc, USER);
+
+    // Load into a brand-new doc as a DIFFERENT (or absent) user — this is where
+    // the old non-portable snapshot lost placement.
+    const dest = freshPatch();
+    loadEnvelopeIntoStore(parseEnvelope(serializeEnvelope(env)), dest.ydoc, dest.store);
+
+    // Positions are now baked into node.position so any loader sees them.
+    expect(dest.store.nodes['vco']!.position).toEqual({ x: 333, y: 444 });
+    expect(dest.store.nodes['out']!.position).toEqual({ x: 999, y: 111 });
+    // The per-user layouts map is dropped from the portable snapshot.
+    expect(dest.ydoc.getMap('layouts').size).toBe(0);
+  });
+
+  it('does not mutate the live ydoc (temp-doc approach, no peer broadcast)', () => {
+    const { ydoc, store } = freshPatch();
+    ydoc.transact(() => {
+      store.nodes['vco'] = {
+        id: 'vco',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 100, y: 200 },
+        params: { tune: 5, fine: 0 },
+      };
+    });
+    setNodePosition(ydoc, USER, 'vco', { x: 333, y: 444 });
+
+    makePortableEnvelope(ydoc, USER);
+
+    // Live doc is untouched: node.position is still the spawn value and the
+    // user's layout override is still present.
+    expect(store.nodes['vco']!.position).toEqual({ x: 100, y: 200 });
+    const mine = ydoc.getMap('layouts').get(USER) as Y.Map<{ x: number; y: number }> | undefined;
+    expect(mine?.get('vco')).toEqual({ x: 333, y: 444 });
+  });
+
+  it('keeps a node with no layout override at its canonical node.position', () => {
+    const { ydoc, store } = freshPatch();
+    ydoc.transact(() => {
+      store.nodes['vco'] = {
+        id: 'vco',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 100, y: 200 },
+        params: { tune: 5, fine: 0 },
+      };
+      store.nodes['out'] = {
+        id: 'out',
+        type: 'audioOut',
+        domain: 'audio',
+        position: { x: 600, y: 200 },
+        params: { master: 0.5 },
+      };
+    });
+    // Only 'vco' was dragged; 'out' keeps its canonical position.
+    setNodePosition(ydoc, USER, 'vco', { x: 333, y: 444 });
+
+    const env = makePortableEnvelope(ydoc, USER);
+    const dest = freshPatch();
+    loadEnvelopeIntoStore(parseEnvelope(serializeEnvelope(env)), dest.ydoc, dest.store);
+
+    expect(dest.store.nodes['vco']!.position).toEqual({ x: 333, y: 444 });
+    expect(dest.store.nodes['out']!.position).toEqual({ x: 600, y: 200 });
+  });
+
+  it('single-user mode (no userId): node.position is canonical, snapshot round-trips unchanged', () => {
+    const { ydoc, store } = freshPatch();
+    ydoc.transact(() => {
+      store.nodes['vco'] = {
+        id: 'vco',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 100, y: 200 },
+        params: { tune: 5, fine: 0 },
+      };
+    });
+    // Single-user: setNodePosition is a no-op when userId is undefined; drags
+    // mutate node.position directly. Simulate a moved card:
+    ydoc.transact(() => {
+      (ydoc.getMap('nodes').get('vco') as Y.Map<unknown>).set('position', (() => {
+        const p = new Y.Map<number>();
+        p.set('x', 50);
+        p.set('y', 60);
+        return p;
+      })());
+    });
+
+    const env = makePortableEnvelope(ydoc, undefined);
+    const dest = freshPatch();
+    loadEnvelopeIntoStore(parseEnvelope(serializeEnvelope(env)), dest.ydoc, dest.store);
+
+    expect(dest.store.nodes['vco']!.position).toEqual({ x: 50, y: 60 });
+    expect(dest.ydoc.getMap('layouts').size).toBe(0);
   });
 });

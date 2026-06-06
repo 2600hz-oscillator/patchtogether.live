@@ -11,11 +11,13 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "watch": "node scripts/watch.mjs",
+    "test": "vitest run --config vitest.config.ts",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
     "@grame/faustwasm": "^0.7.0",
     "chokidar": "^4.0.3",
-    "esbuild": "^0.27.0"
+    "esbuild": "^0.27.0",
+    "vitest": "^3.2.0"
   }
 }

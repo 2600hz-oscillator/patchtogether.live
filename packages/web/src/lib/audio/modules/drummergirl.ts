@@ -1,3 +1,32 @@
+// packages/web/src/lib/audio/modules/drummergirl.ts
+//
+// DRUMMERGIRL — gate-triggered all-in-one synth drum voice. One module,
+// one voice — fire a gate, hear a drum hit shaped by pitch / tone /
+// shape / volume / decay. Used as the per-voice DSP for voices 1-3 of
+// RIOTGIRLS and stands alone in the palette for plain drum-machine /
+// percussion-voice use. Faust-compiled DSP (packages/dsp/src/
+// drummergirl.dsp): a pitched body oscillator + a noise/transient
+// shaper crossfaded by `shape`, with `tone` modulating the body
+// timbre, gain-shaped by an internal AD envelope set by `decay`.
+//
+// Inputs:
+//   gate (gate): rising edge fires one drum hit.
+//   pitch (cv, linear, paramTarget=pitch): displaces the pitch knob (±36 semi).
+//   tone (cv, linear, paramTarget=tone): displaces tone (body timbre).
+//   shape (cv, linear, paramTarget=shape): displaces the body/noise crossfade.
+//   volume (cv, linear, paramTarget=volume): displaces the per-hit gain (0..2).
+//   decay (cv, log, paramTarget=decay): scales the envelope decay symmetrically.
+//
+// Outputs:
+//   audio (audio): the drum hit waveform.
+//
+// Params:
+//   pitch (linear -36..36 semi, default 0): body-oscillator transposition.
+//   tone (linear 0..1, default 0.3): body-timbre macro.
+//   shape (linear 0..1, default 0.3): crossfade body ↔ noise/transient.
+//   volume (linear 0..2, default 1.0): per-hit output gain.
+//   decay (log 0.001..0.5 s, default 0.15): AD envelope decay.
+
 import { instantiateFaustModule } from '$lib/audio/faust-runtime';
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -9,6 +38,7 @@ const PARAM_PREFIX = '/DRUMMERGIRL';
 
 export const drummergirlDef: AudioModuleDef = {
   type: 'drummergirl',
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   label: 'DRUMMERGIRL',
   category: 'sources',

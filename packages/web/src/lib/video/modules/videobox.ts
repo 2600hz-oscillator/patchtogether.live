@@ -22,6 +22,17 @@
 // peers without a local copy can render an informative "{user} loaded
 // {filename} — pick your own copy" message + a seekbar with the right
 // duration.
+//
+// Inputs:
+//   play_trigger (gate, paramTarget=cv_play_trigger): rising edge toggles play / pause.
+//
+// Outputs:
+//   video (video): the decoded video frames.
+//   audio_l / audio_r (audio): stereo audio extracted from the file's audio track.
+//
+// Params:
+//   gain (linear 0..2): output gain.
+//   cv_play_trigger (linear 0..1): rising edge mirrors the play_trigger gate input.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -102,6 +113,7 @@ const DEFAULTS: VideoboxParams = {
 
 export const videoboxDef: VideoModuleDef = {
   type: 'videobox',
+  palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
   label: 'VIDEOBOX',
   category: 'sources',

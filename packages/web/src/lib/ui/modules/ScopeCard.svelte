@@ -9,6 +9,7 @@
   import { drawScope } from '$lib/audio/modules/scope-draw';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   // Inputs: 2 audio channels + 1 CV per param. Port ids match SCOPE's
   // module def 1:1 (the io-spec consistency e2e test enforces this);
@@ -27,6 +28,7 @@
     { id: 'ch2Offset', label: 'CH2 OFFSET (CV)', cable: 'cv' },
     { id: 'ch2Range',  label: 'CH2 RANGE (CV)',  cable: 'cv' },
     { id: 'mode',      label: 'XY MODE (CV)',    cable: 'cv' },
+    { id: 'intensity', label: 'INTENSITY (CV)',  cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'ch1_out', label: 'CHANNEL 1 OUT', cable: 'audio' },
@@ -53,6 +55,11 @@
   let ch2Offset = $derived(node?.params.ch2Offset ?? scopeDef.params[5]!.defaultValue);
   let ch2Range  = $derived(node?.params.ch2Range  ?? scopeDef.params[6]!.defaultValue);
   let xyMode    = $derived((node?.params.mode ?? 0) >= 0.5);
+  // Phosphor INTENSITY (beam persistence). Default 0.5 (12:00) = legacy
+  // render (pixel-identical). See scope-draw.intensityToPersistScreens.
+  let intensity = $derived(
+    (node?.params.intensity as number | undefined) ?? scopeDef.params[8]!.defaultValue,
+  );
 
   function setParam(paramId: string) {
     return (v: number) => {
@@ -92,12 +99,45 @@
     ch2Color = cs.getPropertyValue('--cable-pitch').trim() || ch2Color;
   });
 
+  // VRT determinism seed. Two live oscillators driving ch1/ch2 (the X/Y
+  // Lissajous case) are NOT phase-locked, so the figure's orientation drifts
+  // run-to-run → flaky pixel diffs even after freeze-on-suspend. When the
+  // harness sets globalThis.__scopeVrtSeed, the draw loop builds a FIXED
+  // synthetic snapshot (phase-locked sines at a chosen ratio) instead of the
+  // live analyser data — identical pixels every run. Mirrors FOXY's
+  // __foxyVrtSeed / PEAKSTATE's __peakstateVrtSeed / RASTERIZE's
+  // __rasterizeVrtSeed. No-op in production (the global is never set).
+  function vrtSeed():
+    | { ch1Freq: number; ch2Freq: number; ch2Phase?: number }
+    | null {
+    const s = (globalThis as unknown as {
+      __scopeVrtSeed?: { ch1Freq?: number; ch2Freq?: number; ch2Phase?: number } | boolean;
+    }).__scopeVrtSeed;
+    if (!s) return null;
+    const cfg = typeof s === 'object' ? s : {};
+    return { ch1Freq: cfg.ch1Freq ?? 220, ch2Freq: cfg.ch2Freq ?? 330, ch2Phase: cfg.ch2Phase ?? 0 };
+  }
+  function seededSnapshot(seed: { ch1Freq: number; ch2Freq: number; ch2Phase?: number }): ScopeSnapshot {
+    const n = 2048;
+    const sampleRate = 48000;
+    const ch1 = new Float32Array(n);
+    const ch2 = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      ch1[i] = Math.sin((2 * Math.PI * seed.ch1Freq * i) / sampleRate);
+      ch2[i] = Math.sin((2 * Math.PI * seed.ch2Freq * i) / sampleRate + (seed.ch2Phase ?? 0));
+    }
+    return { ch1, ch2, sampleRate };
+  }
+
   $effect(() => {
     if (!canvasEl) return;
     function tick() {
       const eng = engineCtx.get();
       if (eng && node && canvasEl) {
-        const snap = eng.read(node, 'snapshot') as ScopeSnapshot | undefined;
+        const seed = vrtSeed();
+        const snap = seed
+          ? seededSnapshot(seed)
+          : (eng.read(node, 'snapshot') as ScopeSnapshot | undefined);
         if (snap) draw(canvasEl, snap);
       }
       raf = requestAnimationFrame(tick);
@@ -148,6 +188,7 @@
         ch1Scale, ch1Offset, ch1Range,
         ch2Scale, ch2Offset, ch2Range,
         mode: node?.params.mode ?? 0,
+        intensity,
         ch1Color, ch2Color,
       },
       c.width,
@@ -159,26 +200,44 @@
 <div class="card">
   <div class="stripe"></div>
   <header class="title">
-    Scope
+    <ModuleTitle {id} {data} defaultLabel="Scope" inline />
+    <!-- Per-channel AUDIO↔CV display-mode toggles. Mirrors the FOXY VCO
+         freeze-toggle UX (aria-pressed + named-mode label). Pressed =
+         the CV range is active (the channel-trace scales ±5V to full
+         height); unpressed = AUDIO (±1.0). The toggle ONLY affects
+         display scaling — both inputs accept signal regardless. -->
     <button
-      class="rng-btn"
+      class="mode-btn"
       class:cv={ch1Range >= 0.5}
       style="color: {ch1Color};"
+      aria-pressed={ch1Range >= 0.5}
+      data-testid="scope-ch1-mode"
       onclick={() => toggleRange(1)}
-      title={ch1Range >= 0.5 ? 'Ch1: CV range (±5)' : 'Ch1: audio range (±1)'}
+      title={ch1Range >= 0.5 ? 'Ch1: CV display (±5V) — click for AUDIO' : 'Ch1: AUDIO display (±1.0) — click for CV'}
     >
-      1{ch1Range >= 0.5 ? 'cv' : 'a'}
+      <span class="mode-ch">1</span>
+      <span class="mode-label">{ch1Range >= 0.5 ? 'CV' : 'AUDIO'}</span>
     </button>
     <button
-      class="rng-btn"
+      class="mode-btn"
       class:cv={ch2Range >= 0.5}
       style="color: {ch2Color};"
+      aria-pressed={ch2Range >= 0.5}
+      data-testid="scope-ch2-mode"
       onclick={() => toggleRange(2)}
-      title={ch2Range >= 0.5 ? 'Ch2: CV range (±5)' : 'Ch2: audio range (±1)'}
+      title={ch2Range >= 0.5 ? 'Ch2: CV display (±5V) — click for AUDIO' : 'Ch2: AUDIO display (±1.0) — click for CV'}
     >
-      2{ch2Range >= 0.5 ? 'cv' : 'a'}
+      <span class="mode-ch">2</span>
+      <span class="mode-label">{ch2Range >= 0.5 ? 'CV' : 'AUDIO'}</span>
     </button>
-    <button class="xy-btn" class:active={xyMode} onclick={toggleXY} title={xyMode ? 'Split mode' : 'XY mode'}>
+    <button
+      class="xy-btn"
+      class:active={xyMode}
+      data-testid="scope-xy-mode"
+      aria-pressed={xyMode}
+      onclick={toggleXY}
+      title={xyMode ? 'X/Y (Lissajous) mode — click for NORMAL (dual-trace)' : 'NORMAL (dual-trace) — click for X/Y (Lissajous)'}
+    >
       {xyMode ? 'XY' : '⇆'}
     </button>
   </header>
@@ -223,6 +282,10 @@
       <Fader value={ch1Offset} min={-1}   max={1}   defaultValue={0}  label="1 Y"             curve="linear" onchange={setParam('ch1Offset')} moduleId={id} paramId="ch1Offset" />
       <Fader value={ch2Scale}  min={0.1}  max={10}  defaultValue={1}  label="2 Sc"            curve="log"    onchange={setParam('ch2Scale')} moduleId={id} paramId="ch2Scale" />
       <Fader value={ch2Offset} min={-1}   max={1}   defaultValue={0}  label="2 Y"             curve="linear" onchange={setParam('ch2Offset')} moduleId={id} paramId="ch2Offset" />
+      <!-- Phosphor INTENSITY (beam persistence). 0.5 (12:00, centered) =
+           today's render; down toward 7:00 → a moving dot; up toward 5:00 →
+           a ~2-screen persistence trail. Display-only. -->
+      <Fader value={intensity} min={0}    max={1}   defaultValue={0.5} label="Inten"          curve="linear" onchange={setParam('intensity')} moduleId={id} paramId="intensity" />
     </div>
   </PatchPanel>
 </div>
@@ -283,10 +346,10 @@
     color: #1a1d23;
     border-color: var(--accent);
   }
-  .rng-btn {
+  .mode-btn {
     height: 18px;
-    min-width: 26px;
-    padding: 0 4px;
+    min-width: 48px;
+    padding: 0 5px;
     background: #14171c;
     border: 1px solid var(--border);
     border-radius: 3px;
@@ -294,10 +357,21 @@
     font-family: ui-monospace, monospace;
     cursor: pointer;
     line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
-  .rng-btn.cv {
+  .mode-btn[aria-pressed='true'] {
     background: #1c2028;
     border-color: currentColor;
+  }
+  .mode-btn .mode-ch {
+    opacity: 0.7;
+    font-weight: 600;
+  }
+  .mode-btn .mode-label {
+    font-variant: small-caps;
+    letter-spacing: 0.04em;
   }
   .screen-wrap {
     margin: 16px 30px 8px;

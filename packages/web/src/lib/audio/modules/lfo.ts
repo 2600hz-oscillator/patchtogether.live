@@ -8,6 +8,20 @@
 // epoch + rate. The factory reads epoch_ms from the active SharedClock
 // (window-global) and sends it to the worklet on `init`. A 5 s/200 ms
 // resync loop keeps the phase aligned despite hardware-clock drift.
+//
+// Inputs:
+//   clock (gate): external clock; when patched, rate is locked to the measured period.
+//   rate (cv, log, paramTarget=rate): scales the LFO rate (log).
+//   shape (cv, linear, paramTarget=shape): displaces the waveform-shape crossfade.
+//   depth_cv (cv, linear, paramTarget=depth): displaces the output depth.
+//
+// Outputs:
+//   phase0 / phase90 / phase180 / phase270 (cv): four phase-quadrature taps of the same LFO.
+//
+// Params:
+//   rate (log 0.01..100 Hz, default 1): LFO frequency.
+//   shape (linear 0..2, default 0): morph across sine ↔ tri ↔ saw.
+//   depth (linear 0..1, default 0.5): output amplitude (0..1 scales the ±1 bipolar swing).
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef, SyncedModuleDef } from '$lib/audio/module-registry';
@@ -52,6 +66,7 @@ export function _liveLfoCount(): number {
 
 const baseDef: AudioModuleDef = {
   type: 'lfo',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'LFO',
   category: 'modulation',
@@ -65,6 +80,9 @@ const baseDef: AudioModuleDef = {
     // shape: linear (0..2 morph axis).
     { id: 'rate',  type: 'cv', paramTarget: 'rate',  cvScale: { mode: 'log' } },
     { id: 'shape', type: 'cv', paramTarget: 'shape', cvScale: { mode: 'linear' } },
+    // depth: linear (0..1 amplitude axis). Sums into the depth param the
+    // same way rate/shape CV inputs do.
+    { id: 'depth_cv', type: 'cv', paramTarget: 'depth', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'phase0',   type: 'cv' },
@@ -73,8 +91,11 @@ const baseDef: AudioModuleDef = {
     { id: 'phase270', type: 'cv' },
   ],
   params: [
-    { id: 'rate',  label: 'Rate',  defaultValue: 1, min: 0.01, max: 100, curve: 'log', units: 'Hz' },
-    { id: 'shape', label: 'Shape', defaultValue: 0, min: 0,    max: 2,   curve: 'linear' },
+    { id: 'rate',  label: 'Rate',  defaultValue: 1,   min: 0.01, max: 100, curve: 'log', units: 'Hz' },
+    { id: 'shape', label: 'Shape', defaultValue: 0,   min: 0,    max: 2,   curve: 'linear' },
+    // depth: 0 = still (flat), 0.5 = unity (legacy), 1 = 2× (out of range).
+    // Default 0.5 so existing patches behave identically.
+    { id: 'depth', label: 'Depth', defaultValue: 0.5, min: 0,    max: 1,   curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -97,6 +118,7 @@ const baseDef: AudioModuleDef = {
 
     const rateParam = params.get('rate');
     const shapeParam = params.get('shape');
+    const depthParam = params.get('depth');
 
     // Wire up shared-clock anchoring. If no clock is active (e.g., the
     // public single-user `/` canvas), the worklet free-runs from phase=0
@@ -141,9 +163,10 @@ const baseDef: AudioModuleDef = {
     const handle: AudioDomainNodeHandle & { read?: (key: string) => unknown } = {
       domain: 'audio',
       inputs: new Map([
-        ['clock', { node: workletNode, input: 0 }],
-        ['rate',  { node: workletNode, input: 0, param: rateParam! }],
-        ['shape', { node: workletNode, input: 0, param: shapeParam! }],
+        ['clock',    { node: workletNode, input: 0 }],
+        ['rate',     { node: workletNode, input: 0, param: rateParam! }],
+        ['shape',    { node: workletNode, input: 0, param: shapeParam! }],
+        ['depth_cv', { node: workletNode, input: 0, param: depthParam! }],
       ]),
       outputs: new Map([
         ['phase0',   { node: workletNode, output: 0 }],

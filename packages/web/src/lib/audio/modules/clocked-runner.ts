@@ -22,6 +22,11 @@
 // LIVECODE takes effect on the next runner tick without a restart).
 // MIDI-locked tempo follows automatically once TIMELORDE's bpm param
 // reflects the locked rate.
+//
+// Inputs: none.
+// Outputs: none.
+// Params: none. (Body source + division live in node.data, mutated by the
+//   parent LIVECODE on `clocked()` invocations.)
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -39,6 +44,7 @@ export const clockedRunnerDef: AudioModuleDef = {
   // extractor in module-manifest.ts picks the field up. The constant
   // re-export above stays for runtime consumers.
   type: 'clockedRunner',
+  palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
   label: 'CLOCKED',
   category: 'utilities',

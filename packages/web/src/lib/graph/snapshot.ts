@@ -20,7 +20,11 @@
 
 import * as Y from 'yjs';
 import type { Edge, ModuleNode } from './types';
-import { patch as defaultPatch, ydoc as defaultYdoc } from './store';
+import {
+  patch as defaultPatch,
+  ydoc as defaultYdoc,
+  onBindRackspace,
+} from './store';
 
 // SyncedStore proxies expose every entry as `Partial<T[key]>` (see
 // MappedTypeDescription), but we don't depend on @syncedstore type
@@ -86,6 +90,22 @@ interface SnapshotBus {
   current(): PatchSnapshot;
   /** Subscribe; receives the current snapshot synchronously then on every update. */
   subscribe(listener: PatchSnapshotListener): () => void;
+  /**
+   * Swap the underlying (patch, ydoc) pair WITHOUT dropping existing
+   * subscribers. Used by `bindRackspace()` so that rebinding the
+   * store's singleton trio re-points the bus at the new doc and every
+   * subscriber (reconciler + Canvas UI) keeps receiving snapshots
+   * against the live rackspace. Without this the singleton bus stayed
+   * permanently attached to the FIRST rackspace's (now-destroyed) doc,
+   * so no further updates ever reached the engine or canvas.
+   *
+   * Emits a fresh snapshot to all current subscribers as part of the
+   * swap so they see the new doc's contents on the same tick.
+   *
+   * Idempotent for the same (patch, ydoc) pair — no-op if nothing
+   * actually changed.
+   */
+  rebind(patch: LivePatch, ydoc: Y.Doc): void;
   /** Tear down the doc-update listener. Idempotent. */
   dispose(): void;
 }
@@ -96,17 +116,33 @@ interface SubscribeOpts {
 }
 
 let defaultBus: SnapshotBus | null = null;
+let bindUnsubscribe: (() => void) | null = null;
 
 /**
  * Get (or create on first call) the singleton snapshot bus for the default
  * patch + ydoc. The audio reconciler and the Svelte UI both attach here,
  * guaranteeing they observe a consistent ordering.
+ *
+ * On first creation, we register with the store's `onBindRackspace` event
+ * so the bus rebinds to the fresh (patch, ydoc) pair every time a new
+ * rackspace mounts. The store's rebinding singleton + this listener are
+ * the two halves of "live import binding for the patch graph": without
+ * the listener, the singleton bus would stay attached to the FIRST
+ * rackspace's (now-destroyed) doc, and the reconciler + Canvas UI would
+ * never see any subsequent update — which manifested as the @collab
+ * `clear+load-multiwindow` regression after PR #432.
  */
 export function getDefaultSnapshotBus(): SnapshotBus {
   if (!defaultBus) {
     defaultBus = createSnapshotBus({
       patch: defaultPatch as unknown as LivePatch,
       ydoc: defaultYdoc,
+    });
+    // Refresh the bus's (patch, ydoc) refs on every bindRackspace().
+    // The unsubscribe is retained so __resetDefaultSnapshotBusForTest()
+    // can detach it cleanly between test runs.
+    bindUnsubscribe = onBindRackspace((nextPatch, nextYdoc) => {
+      defaultBus?.rebind(nextPatch as unknown as LivePatch, nextYdoc);
     });
   }
   return defaultBus;
@@ -117,11 +153,13 @@ export function getDefaultSnapshotBus(): SnapshotBus {
  * for tests where the global default isn't appropriate.
  */
 export function createSnapshotBus(opts: SubscribeOpts = {}): SnapshotBus {
-  const patch = opts.patch ?? (defaultPatch as unknown as LivePatch);
-  const doc = opts.ydoc ?? defaultYdoc;
+  // Live refs — `rebind()` reassigns these so future emits read the new
+  // doc + patch while preserving the existing listener set.
+  let patch: LivePatch = opts.patch ?? (defaultPatch as unknown as LivePatch);
+  let doc: Y.Doc = opts.ydoc ?? defaultYdoc;
 
   let cached: PatchSnapshot | null = null;
-  let listeners = new Set<PatchSnapshotListener>();
+  const listeners = new Set<PatchSnapshotListener>();
   let disposed = false;
 
   function recompute(): void {
@@ -165,10 +203,33 @@ export function createSnapshotBus(opts: SubscribeOpts = {}): SnapshotBus {
         listeners.delete(listener);
       };
     },
+    rebind(nextPatch: LivePatch, nextDoc: Y.Doc): void {
+      if (disposed) return;
+      if (nextPatch === patch && nextDoc === doc) return;
+      // Detach from the previous doc. Safe even if it was destroyed —
+      // Y.Doc.off() is defensive against missing handlers.
+      try {
+        doc.off('update', onUpdate);
+      } catch {
+        /* ignore — old doc may be destroyed */
+      }
+      patch = nextPatch;
+      doc = nextDoc;
+      doc.on('update', onUpdate);
+      // Invalidate the cached snapshot so the next `current()` recomputes
+      // against the new patch — and emit immediately so existing
+      // subscribers see the fresh state on this tick.
+      cached = null;
+      emit();
+    },
     dispose(): void {
       if (disposed) return;
       disposed = true;
-      doc.off('update', onUpdate);
+      try {
+        doc.off('update', onUpdate);
+      } catch {
+        /* ignore */
+      }
       listeners.clear();
       cached = null;
     },
@@ -177,6 +238,10 @@ export function createSnapshotBus(opts: SubscribeOpts = {}): SnapshotBus {
 
 /** Reset the default singleton — TEST ONLY. */
 export function __resetDefaultSnapshotBusForTest(): void {
+  if (bindUnsubscribe) {
+    bindUnsubscribe();
+    bindUnsubscribe = null;
+  }
   if (defaultBus) defaultBus.dispose();
   defaultBus = null;
 }

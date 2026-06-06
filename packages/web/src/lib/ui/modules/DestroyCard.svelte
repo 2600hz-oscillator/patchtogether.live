@@ -7,6 +7,7 @@
   import { destroyDef } from '$lib/audio/modules/destroy';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -30,7 +31,7 @@
 
 <div class="mod-card destroy-card">
   <div class="stripe" style="background: var(--cable-gate);"></div>
-  <header class="title">DESTROY</header>
+  <ModuleTitle {id} {data} defaultLabel="DESTROY" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
@@ -42,6 +43,6 @@
 </div>
 
 <style>
-  .destroy-card { width: 220px; min-height: 200px; }
+  .destroy-card { width: 220px; }
   .destroy-card .fader-row { padding: 0 18px; margin-top: 14px; }
 </style>

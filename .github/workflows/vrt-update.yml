@@ -1,0 +1,226 @@
+# VRT: update baselines (on demand)
+#
+# Regenerates the Playwright VRT baselines under e2e/vrt/__screenshots__/ on
+# BOTH platforms and commits them back to the chosen branch:
+#   - linux baselines  → ubuntu-latest runner (postgres via service container)
+#   - darwin baselines → macos-latest runner  (postgres via the preinstalled host install)
+# then re-validates the PR by re-firing a `pull_request` CI run (a GITHUB_TOKEN
+# push does NOT auto-trigger CI, and a workflow_dispatch run does NOT count
+# toward a PR's required-status-check gate — see the `revalidate` job below for
+# the full story). We close+reopen the PR so the `reopened` pull_request event
+# re-runs the required checks against the fresh baselines.
+#
+# This is the fast path for "update all VRTs": one dispatch regenerates every
+# scene on both platforms with --update-snapshots (no early-abort, no artifact
+# scraping). The regenerated baselines land as a commit ON the branch, so the
+# diff stays reviewable in the PR before merge.
+#
+# Usage:  gh workflow run vrt-update.yml -f ref=<branch>
+name: VRT update baselines
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch to regenerate VRT baselines for
+        required: true
+        type: string
+
+permissions:
+  contents: write        # commit + push regenerated baselines back to the branch
+  pull-requests: write   # close+reopen the PR to re-fire pull_request CI (revalidate job)
+
+concurrency:
+  group: vrt-update-${{ inputs.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # linux baselines — mirrors the ci.yml `vrt` job (postgres service container),
+  # but runs vrt:update and commits the e2e/vrt/__screenshots__/**/linux/* PNGs.
+  # ---------------------------------------------------------------------------
+  linux:
+    name: regenerate linux baselines
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+    steps:
+      - name: Checkout ${{ inputs.ref }} (LFS for VRT baseline PNGs)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          lfs: true
+          persist-credentials: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+
+      - name: Regenerate VRT baselines (linux)
+        run: flox activate -- task vrt:update
+
+      - name: Commit + push linux baselines
+        run: flox activate -- bash .github/scripts/vrt-commit-baselines.sh "${{ inputs.ref }}" "linux"
+
+  # ---------------------------------------------------------------------------
+  # darwin baselines — macos runner. Service containers can't run on macOS, so
+  # postgres comes from the preinstalled host install. Runs after `linux` so its
+  # commit rebases cleanly on top (the two platforms touch disjoint dirs).
+  # ---------------------------------------------------------------------------
+  darwin:
+    name: regenerate darwin baselines
+    runs-on: macos-latest
+    needs: linux
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+    steps:
+      - name: Checkout ${{ inputs.ref }} (LFS for VRT baseline PNGs)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          lfs: true
+          persist-credentials: true
+
+      - name: Start PostgreSQL (host install)
+        run: |
+          set -euo pipefail
+          # macos-latest ships postgresql@14 via Homebrew (arm64 prefix /opt/homebrew).
+          brew install postgresql@14 >/dev/null 2>&1 || true
+          brew services start postgresql@14
+          PGBIN="$(brew --prefix postgresql@14)/bin"
+          for i in $(seq 1 30); do "$PGBIN/pg_isready" -h localhost && break || sleep 2; done
+          "$PGBIN/createuser" -s postgres 2>/dev/null || true
+          "$PGBIN/psql" -d postgres -c "ALTER USER postgres PASSWORD 'postgres';"
+          "$PGBIN/createdb" -O postgres patchtogether_test 2>/dev/null || true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+
+      - name: Regenerate VRT baselines (darwin)
+        run: flox activate -- task vrt:update
+
+      - name: Commit + push darwin baselines
+        run: flox activate -- bash .github/scripts/vrt-commit-baselines.sh "${{ inputs.ref }}" "darwin"
+
+  # ---------------------------------------------------------------------------
+  # Re-validate: the baseline commit was pushed by GITHUB_TOKEN, which does NOT
+  # fire `push`/`pull_request` — so the PR's required VRT check never re-runs
+  # against the fresh baselines on its own.
+  #
+  # We CANNOT fix this with `gh workflow run ci.yml --ref <branch>`
+  # (workflow_dispatch). CONFIRMED on PR #524: GitHub does NOT credit
+  # workflow_dispatch-produced check-runs to a PR's required-status-check merge
+  # gate. The ruleset keeps reporting "required status checks are expected" even
+  # though the dispatched run is green, and even `gh pr merge --admin` is
+  # refused. Required checks are only counted from a `pull_request` (or push)
+  # event for the PR's head SHA.
+  #
+  # FIX: re-trigger a `pull_request` run by close+reopen of the PR for this
+  # branch. The `reopened` action fires a `pull_request` event → ci.yml runs
+  # under that event → its check-runs DO count toward the required-status gate.
+  # GH_TOKEN (the workflow GITHUB_TOKEN) can close/reopen a PR; this does NOT
+  # touch the commits, only re-fires the event. No-open-PR is handled gracefully
+  # (the baselines are already pushed; whoever opens the PR later gets a normal
+  # pull_request run).
+  # ---------------------------------------------------------------------------
+  revalidate:
+    name: re-validate CI on ${{ inputs.ref }} (close+reopen PR)
+    runs-on: ubuntu-latest
+    needs: [linux, darwin]
+    permissions:
+      pull-requests: write   # close + reopen the PR to re-fire pull_request
+    steps:
+      - name: Close + reopen the PR to re-fire pull_request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Find the open PR whose head branch is this ref.
+          PR="$(gh pr list --repo "$REPO" --head "$REF" --state open \
+                  --json number -q '.[0].number')"
+          if [ -z "$PR" ] || [ "$PR" = "null" ]; then
+            echo "No open PR with head '$REF' — nothing to re-validate."
+            echo "Fresh baselines are already pushed; opening a PR for this"
+            echo "branch will trigger a normal pull_request CI run."
+            exit 0
+          fi
+          echo "Re-firing pull_request for PR #$PR (close → reopen)…"
+          gh pr close  "$PR" --repo "$REPO"
+          gh pr reopen "$PR" --repo "$REPO"
+          echo "Reopened PR #$PR — its pull_request CI run now validates the"
+          echo "fresh baselines and counts toward the required-status gate."

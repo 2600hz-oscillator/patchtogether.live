@@ -14,10 +14,24 @@ import { defineConfig, devices } from '@playwright/test';
 const USE_PREVIEW = process.env.E2E_USE_PREVIEW === '1';
 const DEFAULT_LOCAL = USE_PREVIEW ? 'http://localhost:4173' : 'http://localhost:5173';
 const BASE_URL = process.env.E2E_BASE_URL ?? DEFAULT_LOCAL;
+
+// E2E_SWIFTSHADER=1 forces Chromium's WebGL onto the SwiftShader software
+// rasterizer (via ANGLE). Headless Linux CI runners have no GPU → they get
+// SwiftShader for free; a local Mac/desktop uses the real GPU and CANNOT
+// otherwise reproduce the CI-only software-renderer timeouts/flakes in the
+// WebGL/video specs. Set it for a faithful local flake-check.
+const SWIFTSHADER_ARGS =
+  process.env.E2E_SWIFTSHADER === '1'
+    ? ['--use-gl=angle', '--use-angle=swiftshader', '--use-cmd-decoder=passthrough']
+    : [];
 // Skip the local webServer when targeting a deployed URL (live smoke). Detected
 // by E2E_BASE_URL being set to anything non-localhost.
+// E2E_SKIP_WEBSERVER=1 also skips it — used by local dev workflows that
+// already have a dev server running on a non-default port (multi-worktree
+// agent runs that need a per-worktree dev server).
 const IS_LOCAL_TARGET =
-  BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1');
+  (BASE_URL.startsWith('http://localhost') || BASE_URL.startsWith('http://127.0.0.1'))
+  && process.env.E2E_SKIP_WEBSERVER !== '1';
 
 export default defineConfig({
   testDir: './tests',
@@ -60,10 +74,14 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      // Default project — every spec EXCEPT the camera + samsloop-mic
-      // specs lives here. Those move to their own projects so the
+      // Default project — every spec EXCEPT the camera spec + audio-in
+      // spec lives here. Those move to their own projects so the
       // fake-camera / fake-mic flags don't leak into unrelated tests.
-      testIgnore: ['**/camera-input.spec.ts', '**/samsloop-mic.spec.ts'],
+      // (SAMSLOOP's record path no longer goes through getUserMedia at
+      // all — it records from patched audio cables via an in-graph tap
+      // worklet, so the old samsloop-mic project / fake-mic flag is no
+      // longer needed.)
+      testIgnore: ['**/camera-input.spec.ts', '**/audio-in.spec.ts'],
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
@@ -71,19 +89,19 @@ export default defineConfig({
             '--autoplay-policy=no-user-gesture-required',
             // COOP/COEP isolation only matters when the headers are set;
             // Playwright doesn't need extra flags for this.
+            ...SWIFTSHADER_ARGS,
           ],
         },
       },
     },
     {
-      // SAMSLOOP mic-record path. getUserMedia({audio:true}) returns a
-      // synthetic mono beep stream from Chromium's fake audio device;
-      // good enough to exercise start → tap → samples → stop and verify
-      // node.data is populated. Lives in its own spec so other samsloop
-      // tests aren't affected by the fake-mic flag (which otherwise
-      // would make every spec's first getUserMedia call non-deterministic).
-      name: 'chromium-samsloop-mic',
-      testMatch: ['**/samsloop-mic.spec.ts'],
+      // AUDIO IN module. --use-fake-device-for-media-stream injects a
+      // synthetic 440 Hz sine for audio + microphone permission is
+      // pre-granted. Lives in its own project so the fake-mic doesn't
+      // leak into the default chromium runs, where many specs depend on
+      // getUserMedia failing predictably with NotAllowedError.
+      name: 'chromium-audio-in',
+      testMatch: ['**/audio-in.spec.ts'],
       use: {
         ...devices['Desktop Chrome'],
         permissions: ['microphone'],
@@ -92,6 +110,7 @@ export default defineConfig({
             '--autoplay-policy=no-user-gesture-required',
             '--use-fake-ui-for-media-stream',
             '--use-fake-device-for-media-stream',
+            ...SWIFTSHADER_ARGS,
           ],
         },
       },
@@ -114,6 +133,7 @@ export default defineConfig({
             '--autoplay-policy=no-user-gesture-required',
             '--use-fake-ui-for-media-stream',
             '--use-fake-device-for-media-stream',
+            ...SWIFTSHADER_ARGS,
           ],
         },
       },

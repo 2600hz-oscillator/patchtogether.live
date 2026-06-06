@@ -40,6 +40,19 @@
 // (modulator). Effective output = gate1 × (0 + gate2) = gate1 × gate2.
 // NAND/OR/NOT compose from AND + threshold gates via straight signed
 // sums (GainNode(-1) negation + a unifying sum bus).
+//
+// Inputs:
+//   in1 / in2 / in3 / in4 (cv): four signal inputs. Treated as bipolar audio/CV.
+//
+// Outputs:
+//   att1..att4 (cv): post-attenuverter passthroughs.
+//   sum (cv): att1 + att2 + att3 + att4.
+//   diff (cv): att1 + att2 - att3 - att4 (sign-aware).
+//   and / nand / or (gate): boolean combinations of in1 + in2 thresholded at 0.5.
+//   not (gate): NOT of in1 thresholded at 0.5.
+//
+// Params:
+//   att{1..4}_amount (linear -1..1, default 1): per-channel attenuverter.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -97,6 +110,7 @@ function thresholdCurve(threshold = 0.5, size = 4096): Float32Array<ArrayBuffer>
 
 export const illogicDef: AudioModuleDef = {
   type: 'illogic',
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
   label: 'ILLOGIC',
   category: 'utilities',

@@ -21,6 +21,7 @@
   import { makeLinter } from '$lib/livecode/diagnostics';
   import { CLOCKED_DIVISIONS } from '$lib/livecode/api-surface';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -63,7 +64,7 @@
   }
 
   // ───── Data ────────────────────────────────────────────────────
-  let displayName = $derived<string>((node?.data?.name as string | undefined) ?? 'clockedRunner');
+  // (displayName moved into ModuleTitle in the title chrome.)
   let division = $derived<string>((node?.data?.division as string | undefined) ?? '1/16');
   let storedSource = $derived<string>((node?.data?.source as string | undefined) ?? '');
 
@@ -171,7 +172,7 @@
 >
   <div class="stripe"></div>
   <header class="title">
-    <span class="name">{displayName}</span>
+    <ModuleTitle {id} {data} defaultLabel="clockedRunner" inline />
     <select
       class="division-select nodrag"
       value={division}

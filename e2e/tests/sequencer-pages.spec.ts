@@ -130,10 +130,31 @@ test('drumseqz: HOLD freezes visible page while playhead advances', async ({ pag
   await expect(label).toHaveText(/p1\/2/);
 
   // Toggle HOLD off. Visible page should immediately catch up to the
-  // playhead's page (which is 2 since currentStep >= 16).
+  // playhead's current page. At BPM=600 (800ms/cycle) CI interaction
+  // overhead can cause the playhead to wrap back to page 1 between the
+  // waitForFunction detection and the holdBtn.click(); read both
+  // atomically inside waitForFunction to avoid the race.
   await holdBtn.click();
-  // Allow one frame for the rAF playhead poll + the visiblePage derived.
-  await expect(label).toHaveText(/p2\/2/, { timeout: 2000 });
+  await page.waitForFunction(
+    () => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+        } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const e = w.__engine?.();
+      const n = w.__patch.nodes['drum'];
+      if (!e || !n) return false;
+      const cs = e.read(n, 'currentStep');
+      if (typeof cs !== 'number') return false;
+      const expectedPage = Math.floor(cs / 16) + 1;
+      const lbl = document.querySelector('[data-testid="drumseqz-drum-label"]');
+      return lbl?.textContent?.includes(`p${expectedPage}/2`) ?? false;
+    },
+    null,
+    { timeout: 3000 },
+  );
 
   // Sanity: HOLD did NOT affect playhead advancement — currentStep is still
   // moving. Sample twice with a 200 ms gap and assert the index changed.

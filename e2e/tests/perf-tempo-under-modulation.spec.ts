@@ -64,13 +64,22 @@ import { spawnPatch } from './_helpers';
 test.describe.configure({ mode: 'parallel' });
 
 const SEQ_BPM = 120;
-/** 120 BPM 16th-note pulses arrive at 8/sec. Over a 3 s window the
- *  scheduler advances ~24 times. Floor / ceiling generous enough to
- *  ride out CI scheduler slop while well outside what a starved
- *  scheduler would produce. */
+/** 120 BPM 16th-note pulses arrive at 8/sec → one step = 125 ms.
+ *  The scheduler queues steps up to LOOKAHEAD_S (200 ms) in advance,
+ *  so `totalAdvances` over a window of W seconds tracks
+ *  `(W + 0.2) / 0.125` plus up to 1 step of slop from the rAF tick
+ *  cadence that drives the lookahead queue. */
 const RUN_MS = 3000;
-const TEMPO_MIN = 20;
-const TEMPO_MAX = 28;
+const STEP_DUR_S = 60 / SEQ_BPM / 4; // 16th note = 0.125 s
+const LOOKAHEAD_S = 0.2; // mirrors sequencer.ts:247
+/** Per-step slop on top of the strict `(W + LOOKAHEAD) / step` ideal:
+ *  the scheduler's tick cadence can fire either side of a step
+ *  boundary, so we tolerate ±1 step. The full assertion is built
+ *  from the ACTUAL measured window (captured inside the page), not
+ *  from `RUN_MS`. Wall-clock IPC overhead between Playwright + page
+ *  used to push the unmeasured window out by 200–700 ms, which is
+ *  what made the original RUN_MS-based count exceed `TEMPO_MAX`. */
+const TEMPO_SLOP_STEPS = 2; // CI runners can slip 1-2 steps under load
 
 /** Maximum acceptable commit-to-pointerEvent ratio under high-rate
  *  drag. The fix achieves ≈ 0.085 on local hardware; the
@@ -83,30 +92,6 @@ const MAX_COMMIT_RATIO = 0.3;
  *  (defensive — see `expect(baseAfter).not.toBe(baseBefore)` below
  *  for the same idea applied to the patch store). */
 const MIN_POINTER_EVENTS = 200;
-
-/** Read the sequencer's monotonic step counter via the dev-only
- *  `__engine` global (same surface PR #90's spec uses). Diagnostic
- *  negative sentinels:
- *    -1 = __engine global missing or null
- *    -2 = patch.nodes[id] missing
- *    -3 = engine.read returned a non-number
- */
-async function readAdvances(page: Page, nodeId: string): Promise<number> {
-  return await page.evaluate((id) => {
-    const w = globalThis as unknown as {
-      __engine?: () => {
-        read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
-      } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string } | undefined> };
-    };
-    const eng = w.__engine?.();
-    if (!eng) return -1;
-    const node = w.__patch.nodes[id];
-    if (!node) return -2;
-    const v = eng.read(node, 'totalAdvances');
-    return typeof v === 'number' ? v : -3;
-  }, nodeId);
-}
 
 /** Wait until the sequencer has produced at least one step. Catches
  *  the race where the test asks for the advance count before the
@@ -136,6 +121,19 @@ async function waitForSequencerWarm(page: Page, nodeId: string): Promise<void> {
 interface StressResult {
   pointerEvents: number;
   commits: number;
+  /** `totalAdvances` of `seqNodeId` sampled INSIDE the page evaluate
+   *  immediately before the first pointermove dispatch. */
+  advancesBefore: number;
+  /** `totalAdvances` of `seqNodeId` sampled INSIDE the page evaluate
+   *  immediately after the final pointermove dispatch (i.e. without
+   *  the IPC roundtrip back into Playwright). The
+   *  `advancesAfter - advancesBefore` delta is paired with
+   *  `windowMs` to give a slop-free tempo measurement that does NOT
+   *  include Playwright/page IPC overhead in the denominator. */
+  advancesAfter: number;
+  /** Wall-time width of the in-page measurement window
+   *  (`performance.now()` capture pair around the dispatch loop). */
+  windowMs: number;
 }
 
 /** Stress the patch-store hot path by synthesizing high-rate
@@ -146,12 +144,16 @@ interface StressResult {
  *  events/sec — the realistic rate a fast hand-drag on a 240 Hz
  *  tablet produces.
  *
- *  Returns: how many pointermoves were dispatched and how many Yjs
- *  `update` events fired in response (the load-bearing measurement). */
+ *  Returns: how many pointermoves were dispatched, how many Yjs
+ *  `update` events fired (the load-bearing performance measurement),
+ *  AND the in-page-measured `totalAdvances` delta + window width
+ *  (so the tempo backstop is anchored to the real stress duration
+ *  rather than including Playwright IPC roundtrip slop). */
 async function stressFader(
   page: Page,
   cardLocator: string,
   durationMs: number,
+  seqNodeId: string,
 ): Promise<StressResult> {
   const fader = page.locator(`${cardLocator} .track`).first();
   await fader.scrollIntoViewIfNeeded();
@@ -159,7 +161,7 @@ async function stressFader(
   if (!box) throw new Error('stressFader: could not measure fader bounds');
 
   return await page.evaluate(
-    async ({ box, durationMs }) => {
+    async ({ box, durationMs, seqNodeId }) => {
       // Re-locate the precise track element by bounding-rect match
       // (defends against node-position changes between the bounding-
       // box capture above and the dispatch loop below).
@@ -189,11 +191,26 @@ async function stressFader(
           on: (e: string, cb: () => void) => void;
           off: (e: string, cb: () => void) => void;
         };
+        __engine?: () => {
+          read: (n: { id: string; type: string; domain: string }, key: string) => unknown;
+        } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string } | undefined> };
       };
       const onUpdate = () => {
         commits++;
       };
       w.__ydoc?.on('update', onUpdate);
+
+      // Helper: read the sequencer's monotonic step counter from
+      // inside the page (no IPC roundtrip → window snapshots tight).
+      const readAdvances = (): number => {
+        const eng = w.__engine?.();
+        if (!eng) return -1;
+        const node = w.__patch.nodes[seqNodeId];
+        if (!node) return -2;
+        const v = eng.read(node, 'totalAdvances');
+        return typeof v === 'number' ? v : -3;
+      };
 
       const cx = box.x + box.width / 2;
       const cy = box.y + box.height / 2;
@@ -213,6 +230,12 @@ async function stressFader(
       };
 
       dispatch('pointerdown', cx, cy);
+      // Anchor the tempo measurement to the dispatch loop itself,
+      // sampling totalAdvances + perf.now() in the same tick so the
+      // resulting (advancesAfter-advancesBefore)/windowMs ratio is
+      // free of Playwright<->page IPC overhead (which used to add
+      // 200–700 ms of unmeasured wall time to the assertion).
+      const advancesBefore = readAdvances();
       const start = performance.now();
       let i = 0;
       try {
@@ -234,12 +257,15 @@ async function stressFader(
           i++;
         }
       } finally {
+        const windowMs = performance.now() - start;
+        const advancesAfter = readAdvances();
         dispatch('pointerup', cx, cy);
         w.__ydoc?.off('update', onUpdate);
+        // eslint-disable-next-line no-unsafe-finally
+        return { pointerEvents: i, commits, advancesBefore, advancesAfter, windowMs };
       }
-      return { pointerEvents: i, commits };
     },
-    { box, durationMs },
+    { box, durationMs, seqNodeId },
   );
 }
 
@@ -263,7 +289,6 @@ test('perf-tempo-under-modulation: hand-drag coalesces patch-store commits to �
   );
 
   await waitForSequencerWarm(page, 'seq');
-  const advancesBefore = await readAdvances(page, 'seq');
   const baseBefore = await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { params: Record<string, number> } | undefined> };
@@ -271,26 +296,46 @@ test('perf-tempo-under-modulation: hand-drag coalesces patch-store commits to �
     return w.__patch.nodes['vca']?.params?.['base'];
   });
 
-  const stressResult = await stressFader(page, '[data-id="vca"]', RUN_MS).catch((err) => {
+  const stressResult = await stressFader(page, '[data-id="vca"]', RUN_MS, 'seq').catch((err) => {
     console.error('drag helper threw:', err);
-    return { pointerEvents: 0, commits: 0 } as StressResult;
+    return {
+      pointerEvents: 0,
+      commits: 0,
+      advancesBefore: 0,
+      advancesAfter: 0,
+      windowMs: 0,
+    } as StressResult;
   });
 
-  const advancesAfter = await readAdvances(page, 'seq');
   const baseAfter = await page.evaluate(() => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { params: Record<string, number> } | undefined> };
     };
     return w.__patch.nodes['vca']?.params?.['base'];
   });
-  const tempoDelta = advancesAfter - advancesBefore;
+  const tempoDelta = stressResult.advancesAfter - stressResult.advancesBefore;
   const ratio = stressResult.commits / Math.max(1, stressResult.pointerEvents);
+
+  // Expected advance count, anchored to the ACTUAL in-page window:
+  //   stepCount = (windowS + LOOKAHEAD_S) / STEP_DUR_S
+  // (the scheduler queues steps up to LOOKAHEAD_S in advance, so the
+  // counter ticks ahead of the audio clock by that much). Tolerate
+  // ±TEMPO_SLOP_STEPS for tick-cadence quantisation. Falls back to a
+  // [1, ∞) band if the in-page window measurement is bogus (shouldn't
+  // happen, but a 0 windowMs would otherwise pin the expectation to
+  // ~1.6 advances which is nonsense).
+  const windowS = stressResult.windowMs / 1000;
+  const expectedAdvances = (windowS + LOOKAHEAD_S) / STEP_DUR_S;
+  const tempoMin = Math.max(1, Math.floor(expectedAdvances) - TEMPO_SLOP_STEPS);
+  const tempoMax = Math.ceil(expectedAdvances) + TEMPO_SLOP_STEPS;
 
   // Diagnostic log so CI runs surface the actual measurement.
   // eslint-disable-next-line no-console
   console.log(
     `[perf-tempo-under-modulation] tempoDelta=${tempoDelta} ` +
-      `(${advancesBefore}→${advancesAfter}) ` +
+      `(${stressResult.advancesBefore}→${stressResult.advancesAfter}) ` +
+      `windowMs=${stressResult.windowMs.toFixed(1)} ` +
+      `expected~${expectedAdvances.toFixed(2)} band=[${tempoMin},${tempoMax}] ` +
       `base ${baseBefore}→${baseAfter} ` +
       `pointerEvents=${stressResult.pointerEvents} ` +
       `yDocCommits=${stressResult.commits} ` +
@@ -334,17 +379,31 @@ test('perf-tempo-under-modulation: hand-drag coalesces patch-store commits to �
   //    heavier graphs a broken coalescer would eventually starve the
   //    audio thread. Asserting this catches the broader user symptom
   //    even if a future change loosens the ratio assertion above.
+  //
+  //    Bounds are derived from the ACTUAL stress window (sampled
+  //    inside the page evaluate) + the scheduler's lookahead, so the
+  //    assertion stays sound even when Playwright IPC adds 200-700 ms
+  //    of overhead on a busy CI worker (which is what made the
+  //    original RUN_MS-based bounds flake — tempoDelta legitimately
+  //    landed at 29-31 when the unmeasured window stretched to ~3.7 s).
   expect(
     tempoDelta,
-    `120 BPM sequencer ran ${RUN_MS} ms under fader stress — observed ` +
-      `${tempoDelta} new advances (expected ${TEMPO_MIN}..${TEMPO_MAX}).`,
-  ).toBeGreaterThanOrEqual(TEMPO_MIN);
-  expect(tempoDelta).toBeLessThanOrEqual(TEMPO_MAX);
+    `120 BPM sequencer ran ${stressResult.windowMs.toFixed(0)} ms ` +
+      `(in-page) under fader stress — observed ${tempoDelta} new ` +
+      `advances (expected ${tempoMin}..${tempoMax}, ` +
+      `~${expectedAdvances.toFixed(2)} ideal).`,
+  ).toBeGreaterThanOrEqual(tempoMin);
+  expect(tempoDelta).toBeLessThanOrEqual(tempoMax);
 });
 
 // Baseline (no drag) — calibrates the tempo-window thresholds. If
 // this drifts outside the same window the RUN_MS math is wrong, not
 // the scheduler. Mirrors the calibration test in tempo-stability.
+//
+// Uses the same in-page window+advance snapshot pattern as the
+// stress test so the two assertions share an apples-to-apples band
+// (and so this test isn't itself vulnerable to the IPC-overhead
+// flake we just fixed in the stress variant).
 test('perf-tempo-under-modulation: baseline (no drag) advance rate matches BPM', async ({
   page,
 }) => {
@@ -359,10 +418,42 @@ test('perf-tempo-under-modulation: baseline (no drag) advance rate matches BPM',
     [],
   );
   await waitForSequencerWarm(page, 'seqB');
-  const before = await readAdvances(page, 'seqB');
-  await page.waitForTimeout(RUN_MS);
-  const after = await readAdvances(page, 'seqB');
-  const delta = after - before;
-  expect(delta).toBeGreaterThanOrEqual(TEMPO_MIN);
-  expect(delta).toBeLessThanOrEqual(TEMPO_MAX);
+
+  const baseline = await page.evaluate(async ({ seqNodeId, durationMs }) => {
+    const w = globalThis as unknown as {
+      __engine?: () => {
+        read: (n: { id: string; type: string; domain: string }, key: string) => unknown;
+      } | null;
+      __patch: { nodes: Record<string, { id: string; type: string; domain: string } | undefined> };
+    };
+    const readAdv = (): number => {
+      const eng = w.__engine?.();
+      if (!eng) return -1;
+      const node = w.__patch.nodes[seqNodeId];
+      if (!node) return -2;
+      const v = eng.read(node, 'totalAdvances');
+      return typeof v === 'number' ? v : -3;
+    };
+    const before = readAdv();
+    const start = performance.now();
+    await new Promise<void>((r) => setTimeout(r, durationMs));
+    const windowMs = performance.now() - start;
+    const after = readAdv();
+    return { before, after, windowMs };
+  }, { seqNodeId: 'seqB', durationMs: RUN_MS });
+
+  const delta = baseline.after - baseline.before;
+  const windowS = baseline.windowMs / 1000;
+  const expectedAdvances = (windowS + LOOKAHEAD_S) / STEP_DUR_S;
+  const tempoMin = Math.max(1, Math.floor(expectedAdvances) - TEMPO_SLOP_STEPS);
+  const tempoMax = Math.ceil(expectedAdvances) + TEMPO_SLOP_STEPS;
+  // eslint-disable-next-line no-console
+  console.log(
+    `[perf-tempo-under-modulation baseline] delta=${delta} ` +
+      `(${baseline.before}→${baseline.after}) ` +
+      `windowMs=${baseline.windowMs.toFixed(1)} ` +
+      `expected~${expectedAdvances.toFixed(2)} band=[${tempoMin},${tempoMax}]`,
+  );
+  expect(delta).toBeGreaterThanOrEqual(tempoMin);
+  expect(delta).toBeLessThanOrEqual(tempoMax);
 });

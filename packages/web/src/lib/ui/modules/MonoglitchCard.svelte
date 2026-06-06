@@ -13,6 +13,7 @@
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -33,7 +34,7 @@
   // Engine render resolution — matches VIDEO_RES in
   // packages/web/src/lib/video/engine.ts.
   const ENGINE_W = 640;
-  const ENGINE_H = 360;
+  const ENGINE_H = 480;
 
   const CANVAS_W = 280;
   const CANVAS_H = 158;
@@ -184,7 +185,7 @@
   ondblclick={onBodyDblClick}
 >
   <div class="stripe"></div>
-  <header class="title">MONOGLITCH</header>
+  <ModuleTitle {id} {data} defaultLabel="MONOGLITCH" />
 
   <!-- Video input + 3 CV inputs. Port id MUST match param id for the CV
        bridge (PatchEngine routes audio cv → setParam(portId)). -->

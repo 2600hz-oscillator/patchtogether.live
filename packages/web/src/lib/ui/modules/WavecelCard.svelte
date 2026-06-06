@@ -13,9 +13,14 @@
     framesFromPlain,
   } from '$lib/audio/wavetable-factory-tables';
   import { parseE352Wav } from '$lib/audio/wavetable-parser';
+  import {
+    WAVETABLE_PRESETS,
+    loadWavetablePreset,
+  } from '$lib/audio/wavetable-presets';
   import { useEngine } from '$lib/audio/engine-context';
   import { spreadTaps } from '$lib/audio/wavecel-math';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -110,6 +115,38 @@
     }
   }
 
+  // Baked-in preset loader. Fetches /wavetables/<file>.WAV, parses frames,
+  // writes node.data exactly like the file-upload path so WAVECEL's existing
+  // poll loop picks it up + posts via loadWavetable (no worklet changes).
+  // The dropdown is reset to '' on completion so re-picking the same preset
+  // re-loads it (cheap UX for "did it actually take?").
+  let presetSelection = $state('');
+  async function onPresetChange(ev: Event) {
+    const sel = ev.target as HTMLSelectElement;
+    const presetId = sel.value;
+    if (!presetId) return;
+    const preset = WAVETABLE_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    uploadError = null;
+    uploadStatus = `loading ${preset.label}...`;
+    try {
+      const parsed = await loadWavetablePreset(preset.url);
+      const target = patch.nodes[id];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      const d = target.data as WavecelData;
+      d.wavetableSource = 'user';
+      d.wavetableFrames = parsed.frames;
+      d.wavetableLabel = preset.label;
+      uploadStatus = `loaded ${parsed.frames.length} frames @ ${parsed.sampleRate} Hz`;
+    } catch (err) {
+      uploadError = err instanceof Error ? err.message : String(err);
+      uploadStatus = null;
+    } finally {
+      presetSelection = '';
+    }
+  }
+
   function selectFactory(factoryId: string) {
     const t = patch.nodes[id];
     if (!t) return;
@@ -183,7 +220,7 @@
 
 <div class="mod-card wavecel-card" data-testid="wavecel-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">WAVECEL</header>
+  <ModuleTitle {id} {data} defaultLabel="WAVECEL" />
   <div class="subtitle">STEREO WAVETABLE · MORPH · SPREAD · FOLD</div>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
@@ -197,6 +234,20 @@
           data-testid="wavecel-viz-toggle"
           aria-label="Toggle visualization"
         >{vizMode === '3d' ? '3D' : 'SCOPE'}</button>
+      </div>
+
+      <div class="wt-row preset-row">
+        <select
+          class="wt-select preset-select"
+          value={presetSelection}
+          onchange={onPresetChange}
+          data-testid="wavecel-preset-select"
+        >
+          <option value="">— pick a preset —</option>
+          {#each WAVETABLE_PRESETS as p (p.id)}
+            <option value={p.id}>{p.label}</option>
+          {/each}
+        </select>
       </div>
 
       <div class="wt-row">

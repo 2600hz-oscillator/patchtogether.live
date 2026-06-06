@@ -11,7 +11,12 @@
 
 import { describe, it, expect } from 'vitest';
 import * as Y from 'yjs';
-import { LockstepTransport, ticLogName, type TicSet } from './doom-lockstep';
+import {
+  LockstepTransport,
+  ticLogName,
+  computeBarrierFloor,
+  type TicSet,
+} from './doom-lockstep';
 
 const MID = 'doomNode1';
 
@@ -161,5 +166,128 @@ describe('LockstepTransport — pruning', () => {
     for (let t = 0; t < 50; t++) a.appendLocal(t, cmd(0));
     a.pruneBelow(50); // cutoff 50-256 < 0 → no prune
     expect(a.size()).toBe(50);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #348 — BARRIER-FLOOR pruning keeps the shared log BOUNDED over a long
+// run without ever dropping a tic a live peer still needs.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('computeBarrierFloor', () => {
+  it('floor = min consolidated tic across all live slots', () => {
+    expect(computeBarrierFloor([100, 95, 110], 3)).toBe(95);
+    expect(computeBarrierFloor([42, 42], 2)).toBe(42);
+  });
+
+  it('a live slot with NO report (undefined) forces floor to 0 (hold back)', () => {
+    // Slot 1 hasn't published its consolidated tic yet → never prune.
+    expect(computeBarrierFloor([100, undefined], 2)).toBe(0);
+    // Reported slots above numPlayers don't help if a live slot is missing.
+    expect(computeBarrierFloor([undefined, 50], 2)).toBe(0);
+  });
+
+  it('ignores reports beyond numPlayers and rejects invalid values', () => {
+    expect(computeBarrierFloor([10, 20, 5 /* slot 2 not live */], 2)).toBe(10);
+    expect(computeBarrierFloor([NaN, 5], 2)).toBe(0);
+    expect(computeBarrierFloor([-1, 5], 2)).toBe(0);
+  });
+
+  it('numPlayers<=0 → 0', () => {
+    expect(computeBarrierFloor([], 0)).toBe(0);
+  });
+});
+
+describe('LockstepTransport — barrier-floor pruning (issue #348)', () => {
+  it('pruneBelowFloor drops only tics strictly below the floor', () => {
+    const doc = new Y.Doc();
+    const a = new LockstepTransport({ doc, moduleId: MID, slot: 0, numPlayers: 1 });
+    for (let t = 0; t < 100; t++) a.appendLocal(t, cmd(t & 0x7f));
+    a.pruneBelowFloor(40); // tics 0..39 consumed by all peers
+    expect(a.oldestTic()).toBe(40);
+    expect(a.size()).toBe(60);
+  });
+
+  it('floor=0 (a slow/unknown peer) prunes NOTHING', () => {
+    const doc = new Y.Doc();
+    const a = new LockstepTransport({ doc, moduleId: MID, slot: 0, numPlayers: 1 });
+    for (let t = 0; t < 100; t++) a.appendLocal(t, cmd(0));
+    a.pruneBelowFloor(0);
+    expect(a.size()).toBe(100); // conservative: nothing dropped
+  });
+
+  it('NEVER drops a tic a slow peer still needs (floor held back by slowest)', () => {
+    const doc = new Y.Doc();
+    const fast = new LockstepTransport({ doc, moduleId: MID, slot: 0, numPlayers: 2 });
+    const slow = new LockstepTransport({ doc, moduleId: MID, slot: 1, numPlayers: 2 });
+    // Both produce inputs through tic 199, but the slow peer has only
+    // consolidated up to tic 50 (its recvtic) — so floor = 50.
+    for (let t = 0; t < 200; t++) {
+      fast.appendLocal(t, cmd(1));
+      slow.appendLocal(t, cmd(-1));
+    }
+    const floor = computeBarrierFloor([200, 50], 2);
+    expect(floor).toBe(50);
+    fast.pruneBelowFloor(floor);
+    // Tic 50 (the slow peer's next-awaited tic) MUST still be present.
+    expect(fast.oldestTic()).toBe(50);
+    // The slow peer can still consolidate tic 50 onward from the shared log.
+    const stillThere = doc.getArray(ticLogName(MID)).toArray() as { t: number; s: number }[];
+    expect(stillThere.some((e) => e.t === 50 && e.s === 1)).toBe(true);
+  });
+
+  it('log length PLATEAUS over a long 2-peer run (does not grow linearly)', () => {
+    const doc = new Y.Doc();
+    const arbiter = new LockstepTransport({ doc, moduleId: MID, slot: 0, numPlayers: 2 });
+    const peer = new LockstepTransport({ doc, moduleId: MID, slot: 1, numPlayers: 2 });
+
+    // Simulate a long game: 35Hz for ~60s = 2100 tics. Both peers consolidate
+    // in lockstep with a small fixed lag (each "recvtic" trails appended by 6,
+    // the input-delay). Every ~2s (70 tics) the arbiter prunes below the floor.
+    const TOTAL = 2100;
+    const LAG = 6;
+    let sizeAtSteadyState = -1;
+    for (let t = 0; t < TOTAL; t++) {
+      arbiter.appendLocal(t, cmd(1));
+      peer.appendLocal(t, cmd(-1));
+      // Both peers have consolidated everything up to (t - LAG): floor = t-LAG.
+      const recvtic = Math.max(0, t - LAG);
+      if (t % 70 === 0 && t > 0) {
+        const floor = computeBarrierFloor([recvtic, recvtic], 2);
+        arbiter.pruneBelowFloor(floor);
+        // Record the plateau size at a representative mid-run prune.
+        if (t === 1050) sizeAtSteadyState = arbiter.size();
+      }
+    }
+    // Final prune at the end.
+    arbiter.pruneBelowFloor(computeBarrierFloor([TOTAL - LAG, TOTAL - LAG], 2));
+
+    // If the log grew unbounded it would hold ~2 × TOTAL = 4200 entries. With
+    // floor pruning it stays a small multiple of (LAG + prune-interval) × peers.
+    expect(arbiter.size()).toBeLessThan(200);
+    // Mid-run size is the SAME order as end-of-run size (plateau, not linear).
+    expect(sizeAtSteadyState).toBeGreaterThan(0);
+    expect(sizeAtSteadyState).toBeLessThan(200);
+    // Shared state stays intact: the log still consolidates correctly for tics
+    // at/after the floor — the tic right after the last floor is reconstructable.
+    const floorTic = TOTAL - LAG;
+    const idx = arbiter.drainReady(floorTic, () => {});
+    expect(idx).toBeGreaterThanOrEqual(floorTic); // no corruption / off-by-one
+  });
+
+  it('HARD CAP bounds the log even when a wedged peer pins the floor at 0', () => {
+    const doc = new Y.Doc();
+    const a = new LockstepTransport({ doc, moduleId: MID, slot: 0, numPlayers: 2 });
+    // A peer wedged forever: floor stays 0 the whole game. Append a huge run.
+    const TOTAL = 35 * 60; // 60s at 35Hz = 2100 tics, well past the ~1050 cap.
+    for (let t = 0; t < TOTAL; t++) a.appendLocal(t, cmd(0));
+    a.pruneBelowFloor(0); // floor 0 → floor prune drops nothing, hard cap fires
+    // Hard cap keeps ≈ MAX_KEEP_TICS_HARD_CAP (1050) tics of history, not all 2100.
+    expect(a.size()).toBeLessThanOrEqual(35 * 30 + 1);
+    expect(a.size()).toBeGreaterThan(0);
+    // The most-recent tics survive (those a recovering peer would need first):
+    // newest tic is TOTAL-1, cap cutoff = newest - 1050, so oldest kept = cutoff.
+    const newest = TOTAL - 1;
+    expect(a.oldestTic()).toBe(newest - 35 * 30);
   });
 });

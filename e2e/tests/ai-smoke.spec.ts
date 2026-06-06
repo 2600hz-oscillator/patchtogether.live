@@ -36,7 +36,7 @@ test.describe('AI smoke check', () => {
     expect(isolated, 'crossOriginIsolated must be true').toBe(true);
   });
 
-  test('canvas: topbar + Load example button render', async ({ page }) => {
+  test('canvas: topbar + Load example dropdown render', async ({ page }) => {
     const cc = captureConsole(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
@@ -44,8 +44,8 @@ test.describe('AI smoke check', () => {
     const h1 = page.locator('h1', { hasText: '2600hz' });
     await expect(h1, 'topbar h1 missing').toBeVisible();
 
-    const spawnBtn = page.getByRole('button', { name: 'Load example' });
-    await expect(spawnBtn, 'Load example button missing').toBeVisible();
+    const spawnBtn = page.getByTestId('load-example-select');
+    await expect(spawnBtn, 'Load example dropdown missing').toBeVisible();
 
     const errors = cc.pageErrors.length + cc.errors.length;
     if (errors > 0) {
@@ -76,7 +76,7 @@ test.describe('AI smoke check', () => {
   test('canvas: Load example creates 5 Svelte Flow nodes @smoke', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     const nodes = page.locator('.svelte-flow__node');
     await expect(nodes, 'expected 5 module-card nodes after Load example').toHaveCount(5, {
       timeout: 10_000,
@@ -86,7 +86,7 @@ test.describe('AI smoke check', () => {
   test('canvas: spawned nodes are VISUALLY rendered (non-zero bounding rect)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     // Bounding rects: cards must be visible on screen (width × height > 0
@@ -114,7 +114,7 @@ test.describe('AI smoke check', () => {
   test('fader: dragging visibly moves the thumb (motorized state reflection)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     // First fader on the Analog VCO card = TUNE.
@@ -181,6 +181,10 @@ test.describe('AI smoke check', () => {
   });
 
   test('detach-on-grab: starting a drag from a patched input removes the existing cable', async ({ page }) => {
+    // #87: macOS-headless SvelteFlow/xyflow limitation — synthetic page.mouse drags never
+    // fire xyflow's onconnectstart, so the cable-detach never runs (fails identically under
+    // the dev server, i.e. NOT a preview regression). Runs + passes on Linux CI (the gate).
+    test.skip(process.platform === 'darwin', 'macOS-headless xyflow synthetic-mouse limit (#87); runs on Linux CI');
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
@@ -273,7 +277,7 @@ test.describe('AI smoke check', () => {
   test('clear: Clear button removes all nodes + edges from patch + DOM', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(6);
 
@@ -290,19 +294,27 @@ test.describe('AI smoke check', () => {
   test('node-drag: dragging a card persists position back to the patch graph', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
     const vco = page.locator('.svelte-flow__node-analogVco');
     const before = await vco.evaluate((el) => (el as HTMLElement).style.transform);
 
-    // Grab the card's title bar (away from handles + faders) and drag right.
-    const title = page.locator('.svelte-flow__node-analogVco header.title');
-    const box = await title.boundingBox();
-    if (!box) throw new Error('VCO title not visible');
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    // Grab the card's title bar at a HORIZONTAL offset clearly past both
+    // the patch-trigger (top-left ~22×22 px — see PatchPanel.svelte's
+    // .patch-trigger rules) AND the centered editable-name button
+    // (~70 px wide, centered in the ~210 px title — see ModuleNameLabel
+    // / ModuleTitle). The card is ~212 px wide; the band from card-x
+    // ~30 to ~70 is empty draggable header chrome (left of the centered
+    // button). Aim there, vertically at the title-bar midline.
+    const card = page.locator('.svelte-flow__node-analogVco .card');
+    const cardBox = await card.boundingBox();
+    if (!cardBox) throw new Error('VCO card not visible');
+    const startX = cardBox.x + 50; // past patch-trigger, left of centered name-button
+    const startY = cardBox.y + 24; // inside header.title (padding-top 18 + half text height)
+    await page.mouse.move(startX, startY);
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.move(startX + 80, startY, { steps: 5 });
     await page.mouse.up();
     await page.waitForTimeout(150);
 
@@ -314,7 +326,7 @@ test.describe('AI smoke check', () => {
     const cc = captureConsole(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Load example' }).click();
+    await page.getByTestId('load-example-select').selectOption('sequenced-vco');
 
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 

@@ -21,6 +21,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -73,29 +74,61 @@
    * data doesn't redundantly decode (the $derived recomputes whenever
    * the snapshot bus fires, even when our specific byte string didn't
    * actually change).
+   *
+   * IMPORTANT: when this card mounts as part of a patch LOAD (envelope
+   * already carries imageBytes, e.g. the GLITCHES GET RICHES demo or any
+   * user-saved patch), the $effect fires on first mount BEFORE the
+   * reconciler has instantiated the engine-side picturebox node. The
+   * engine context exists but `read(id, 'extras')` returns undefined.
+   * `engineCtx.get()` is a non-reactive getter — reading it does NOT
+   * subscribe the $effect to engine readiness, so there is no natural
+   * re-fire when extras becomes available. To bridge that, we RETRY
+   * (mirroring VideoboxCard.ensureAudioWired's pattern) until extras
+   * appears or we exhaust the attempt budget. ~5s @ 100ms is generous
+   * for the reconciler microtask (typical end-to-end ~150ms post-click).
    */
   let lastAppliedBytes: string | null = null;
+  let applyRetryTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     const bytes = imageBytes;
-    // Always read engineCtx fresh — the engine may not exist on first
-    // mount if the user hasn't gestured yet; we'll get a re-run when the
-    // engine context fills in via its $derived chain.
     void bytes;
     void node?.id;
     if (bytes === lastAppliedBytes) return;
     lastAppliedBytes = bytes;
-    void applyBytesToEngine(bytes);
+    if (applyRetryTimer) { clearTimeout(applyRetryTimer); applyRetryTimer = null; }
+    void applyBytesToEngine(bytes, 0);
+  });
+  // Clear any pending retry on card unmount so we don't leak setTimeout
+  // handles into the page's task queue when SvelteFlow tears down nodes
+  // (e.g., user clears the patch while extras was still pending).
+  $effect(() => {
+    return () => {
+      if (applyRetryTimer) { clearTimeout(applyRetryTimer); applyRetryTimer = null; }
+    };
   });
 
-  async function applyBytesToEngine(bytes: string | null): Promise<void> {
+  async function applyBytesToEngine(bytes: string | null, attempt: number): Promise<void> {
     const extras = getExtras();
     if (!extras) {
-      // Engine not ready yet. The $effect will re-fire when the engine
-      // context populates, at which point lastAppliedBytes (above) gets
-      // reset by the next genuine change — but to handle the "engine
-      // boots AFTER bytes arrive" race specifically, we also reset
-      // lastAppliedBytes here so the next $effect run retries.
+      // Engine hasn't materialized this card's video node yet (most
+      // common during a patch load: the reconciler microtask runs
+      // after the card mounts). Schedule a short retry — bytes are
+      // stable on node.data so we can safely close over them. Cap
+      // at ~50 attempts (5s) to bound the retry storm.
+      if (attempt >= 50) return;
+      // Reset lastAppliedBytes so a real `imageBytes` change during
+      // the retry window still kicks off a fresh attempt via the
+      // $effect (rather than getting suppressed by the equality check).
       lastAppliedBytes = null;
+      applyRetryTimer = setTimeout(() => {
+        applyRetryTimer = null;
+        // Re-check the latest bytes off `node.data` (a remote write
+        // during the wait window should win). Snapshot here so we don't
+        // touch reactive state from the timeout callback.
+        const latest = (node?.data as { imageBytes?: string | null } | undefined)?.imageBytes ?? null;
+        lastAppliedBytes = latest;
+        void applyBytesToEngine(latest, attempt + 1);
+      }, 100);
       return;
     }
     if (bytes === null) {
@@ -163,7 +196,7 @@
   data-testid="picturebox-card"
 >
   <div class="stripe"></div>
-  <header class="title">PICTUREBOX</header>
+  <ModuleTitle {id} {data} defaultLabel="PICTUREBOX" />
 
   <Handle type="target" position={Position.Left} id="gain" style="top: 56px; --handle-color: var(--cable-cv);" />
   <span class="port-label left" style="top: 50px;">G</span>

@@ -10,6 +10,7 @@
   import { marblesDef, MARBLES_T_MODEL_NAMES, MARBLES_SCALE_NAMES } from '$lib/audio/modules/marbles';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -65,7 +66,7 @@
 
 <div class="mod-card marbles-card">
   <div class="stripe" style="background: var(--cable-cv);"></div>
-  <header class="title">MARBLES</header>
+  <ModuleTitle {id} {data} defaultLabel="MARBLES" />
   <div class="btn-row">
     <button type="button" class="sel-btn" data-testid="marbles-tmodel-btn" onclick={cycleTModel}>
       <span class="sel-label">T</span>
@@ -94,7 +95,7 @@
 </div>
 
 <style>
-  .marbles-card { width: 420px; min-height: 260px; }
+  .marbles-card { width: 420px; }
   .marbles-card .title {
     font-family: var(--font-display, inherit);
     font-size: 0.85rem;

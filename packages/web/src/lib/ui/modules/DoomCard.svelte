@@ -42,15 +42,20 @@
   // real audio.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { useProvider } from '$lib/multiplayer/provider-context';
   import { patch, ydoc } from '$lib/graph/store';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
-  import { doomDef, type DoomHandleExtras } from '$lib/video/modules/doom';
-  import { CV_GATE_PORT_IDS } from '$lib/doom/doomkeys';
-  import { isCvGatePatched } from '$lib/doom/doom-input-mode';
+  import { type DoomHandleExtras } from '$lib/video/modules/doom';
+  // The per-slot CV-gate constants (CV_GATE_PORT_IDS / cvGatePortIdForSlot /
+  // DOOM_MP_SLOTS) used to drive inline <Handle> markup in this card; that
+  // markup now lives inside PatchPanel via buildDoomPatchPanelSections, so
+  // the imports here stay tight to what the script actually consumes.
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import { buildDoomPatchPanelSections } from '$lib/doom/doom-patchpanel-ports';
+  import { isOwnSlotCvGatePatched, isCvGatePatched } from '$lib/doom/doom-input-mode';
   import {
     bumpAwarenessUpdate,
     bumpElectionRecompute,
@@ -85,7 +90,12 @@
     type GameStartEnvelope,
     type TiccmdEnvelope,
   } from '$lib/doom/doom-netcode';
-  import { LockstepTransport, DEFAULT_INPUT_DELAY_TICS } from '$lib/doom/doom-lockstep';
+  import {
+    LockstepTransport,
+    DEFAULT_INPUT_DELAY_TICS,
+    consolidatedTicFieldFor,
+    computeBarrierFloor,
+  } from '$lib/doom/doom-lockstep';
   import {
     slotColorCss,
     slotLabel,
@@ -100,6 +110,7 @@
     shouldHotJoinRelaunch,
   } from '$lib/doom/doom-gating';
   import { shouldOpenMultiplayer, guestWaitingState } from '$lib/doom/doom-session';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -159,6 +170,14 @@
   let lockstepNextTic = 0;
   // Highest local tic we've appended to the shared log (gap-free append cursor).
   let lockstepAppendedThru = -1;
+  // Launch generation of the active lockstep game (== launchId). Namespaces the
+  // shared log + the per-peer consolidated-tic awareness floor field so a
+  // relaunch starts fresh (issue #348).
+  let lockstepGeneration = 0;
+  // Throttle the barrier-floor prune so we delete a stale prefix ~1–2×/sec, not
+  // every rAF (deleting an empty prefix is a no-op, but recomputing the floor +
+  // scanning the log each frame is wasted work). Wall-clock millis of last prune.
+  let lockstepLastPruneMs = 0;
   // ---- Slice 4: New Game dialog + Launch state ----
   //
   // The arbiter (rack host = lex-min member = player 0) picks mode/skill/
@@ -424,6 +443,9 @@
       if (loadStatus === 'idle') void tryLoad();
       return;
     }
+    // Own-slot-only CV routing (#353): bind the factory to this peer's slot so
+    // its CV-gate group drives the sim + other slots' CV is ignored locally.
+    extras.setOwnSlot(slot);
     extras.startNetGame(env.settings, slot);
     // P1: arm true lockstep for a >1-player game. Both peers start the level at
     // the same shared tic 0 (recvtic=gametic=0 after dgpt_start_netgame) with
@@ -454,6 +476,7 @@
       extras.setInputDelay(0);
       lockstep = null;
       lockstepActive = false;
+      clearConsolidatedTicAwareness(lockstepGeneration);
       return;
     }
     extras.setLockstep(true);
@@ -464,10 +487,15 @@
     // numbers + identical consolidated TicSet per tic). Trade-off: the marine
     // responds D tics (~171ms) later — normal netplay latency.
     extras.setInputDelay(DEFAULT_INPUT_DELAY_TICS);
+    // A relaunch uses a fresh generation; clear our stale floor field from the
+    // PREVIOUS generation so it can't linger in awareness (issue #348).
+    if (generation !== lockstepGeneration) clearConsolidatedTicAwareness(lockstepGeneration);
     lockstep = new LockstepTransport({ doc: ydoc, moduleId: id, slot, numPlayers, generation });
     lockstepActive = true;
     lockstepNextTic = 0;
     lockstepAppendedThru = -1;
+    lockstepGeneration = generation;
+    lockstepLastPruneMs = 0;
   }
 
   /** Render-loop hook: if a launch is pending (runtime wasn't ready when the
@@ -570,10 +598,81 @@
       extras.receiveTicSet(tic, numPlayers, set);
     });
 
-    // (3) Arbiter prunes consumed entries so the log never grows unbounded.
+    // (3) Publish OUR highest-consolidated tic (engine recvtic) so the arbiter
+    // can compute the barrier floor across all live peers (issue #348). recvtic
+    // is the last tic we have a complete TicSet for + have advanced past, so
+    // everything below it is consumed on our side.
+    publishConsolidatedTic(extras.getRecvtic());
+
+    // (4) Arbiter prunes consumed entries below the BARRIER FLOOR so the log
+    // never grows unbounded → relay OOM. The floor = min(consolidated tic) over
+    // ALL live peers, computed from the published awareness values: it never
+    // drops a tic any live peer still needs (a slow/reconnecting peer holds the
+    // floor back; a hopelessly-wedged peer trips the transport's hard cap +
+    // must resync via synchronized restart). Throttled to ~2/sec — pruning a
+    // consumed prefix doesn't change what any peer simulates (determinism kept).
     if (isNetArbiter) {
-      lockstep.pruneBelow(extras.getGametic());
+      const now = Date.now();
+      if (now - lockstepLastPruneMs >= LOCKSTEP_PRUNE_INTERVAL_MS) {
+        lockstepLastPruneMs = now;
+        const floor = readBarrierFloor();
+        lockstep.pruneBelowFloor(floor);
+      }
     }
+  }
+
+  /** Min interval between barrier-floor prunes (issue #348). ~2/sec keeps the
+   *  log bounded without rescanning it every rAF. */
+  const LOCKSTEP_PRUNE_INTERVAL_MS = 500;
+
+  /** Publish THIS peer's highest-consolidated tic (recvtic) onto its awareness
+   *  state, keyed by module + launch generation. Idempotent-cheap: skips the
+   *  write when the value is unchanged so an idle/paused peer doesn't churn
+   *  awareness. Read by the arbiter via readBarrierFloor (issue #348). */
+  let lastPublishedConsolidatedTic = -1;
+  function publishConsolidatedTic(recvtic: number): void {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return;
+    if (recvtic === lastPublishedConsolidatedTic) return;
+    lastPublishedConsolidatedTic = recvtic;
+    aw.setLocalStateField(consolidatedTicFieldFor(id, lockstepGeneration), { slot: mySlot, t: recvtic });
+  }
+
+  /** Clear our published consolidated-tic field for `generation` (on relaunch /
+   *  disarm) so a stale value can't drag a future floor to 0 (issue #348). */
+  function clearConsolidatedTicAwareness(generation: number): void {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return;
+    aw.setLocalStateField(consolidatedTicFieldFor(id, generation), null);
+    lastPublishedConsolidatedTic = -1;
+  }
+
+  /** Read every live peer's published consolidated tic from awareness and
+   *  compute the BARRIER FLOOR = min across all live slots (issue #348). A live
+   *  roster slot with no published value forces the floor to 0 (no prune) — the
+   *  conservative safety rule (never drop a tic a live peer might still need). */
+  function readBarrierFloor(): number {
+    const provider = providerCtx.get();
+    const aw = provider?.awareness;
+    if (!aw) return 0;
+    const numPlayers = Math.max(1, rosterSize(roster));
+    const field = consolidatedTicFieldFor(id, lockstepGeneration);
+    const bySlot: (number | undefined)[] = new Array(numPlayers).fill(undefined);
+    for (const [, state] of aw.getStates()) {
+      const v = (state as Record<string, unknown>)?.[field] as
+        | { slot?: number | null; t?: number }
+        | null
+        | undefined;
+      if (!v || typeof v.t !== 'number') continue;
+      const s = v.slot;
+      if (typeof s !== 'number' || s < 0 || s >= numPlayers) continue;
+      // Lowest report wins per slot if a slot somehow reports twice (shouldn't);
+      // conservative for the floor.
+      if (bySlot[s] === undefined || v.t < (bySlot[s] as number)) bySlot[s] = v.t;
+    }
+    return computeBarrierFloor(bySlot, numPlayers);
   }
 
   /** Local user id used for host election. Resolved lazily from the
@@ -709,6 +808,10 @@
     } else {
       loadStatus = 'ready';
       loadError = null;
+      // Own-slot-only CV routing (#353): the runtime now exists, so (re)apply
+      // this peer's slot — the $effect that tracks mySlot may have run while
+      // getExtras() was still null (WASM loading), so set it again here.
+      extras.setOwnSlot(mySlot);
     }
   }
 
@@ -1021,6 +1124,9 @@
     lockstepActive = false;
     lockstepNextTic = 0;
     lockstepAppendedThru = -1;
+    // Drop our consolidated-tic floor field so we don't pin a future floor at a
+    // stale value after we've left the game (issue #348).
+    clearConsolidatedTicAwareness(lockstepGeneration);
   }
 
   // Arbiter-side roster cleanup: when a player closes their tab they drop
@@ -1135,8 +1241,24 @@
   // (attachEdgesObserver) and key the $derived on it, so it recomputes on every
   // edge add/remove. The actual predicate is the pure `isCvGatePatched`.
   let edgesVersion = $state(0);
+  // PER-SLOT (#353): the keyboard-vs-CV precedence is now per OWN slot. The card
+  // goes keyboard-inert only when THIS viewer's own slot group (p{mySlot+1}_*)
+  // has a CV edge — another player's CV must not gate your keyboard. A spectator
+  // (mySlot null) is never CV-patched (owns no group), so it keeps its keyboard
+  // relay path. cvGatePatched depends on both the edge set and mySlot.
+  //
+  // SINGLE-PLAYER FALLBACK (2026-05-29): in SP (mpMode!=='multi' / not launched),
+  // mySlot stays null but the host IS the lone player driving slot 0. The
+  // own-slot rule has no meaning then — ANY patched gate on this DOOM node
+  // means CV is in play and the keyboard should go inert (the factory's CV
+  // path applies the p1 group automatically in SP, see doom.ts setParam).
+  // Without this, patching GAMEPAD/LFO in SP still let keyboard double-drive
+  // the marine (bug #3 in SP).
   let cvGatePatched = $derived<boolean>(
-    (void edgesVersion, isCvGatePatched(Object.values(patch.edges), id)),
+    (void edgesVersion,
+      mySlot !== null
+        ? isOwnSlotCvGatePatched(Object.values(patch.edges), id, mySlot)
+        : isCvGatePatched(Object.values(patch.edges), id)),
   );
 
   // When a CV-gate cable is plugged WHILE keyboard keys are held, the
@@ -1158,6 +1280,17 @@
     // releases any keyboard-origin key still asserted in DOOM's gamekeydown[]
     // so the marine can't keep walking), while the CV path stays live.
     getExtras()?.setKeyboardInert(cvGatePatched);
+  });
+
+  // OWN-SLOT-ONLY CV routing (#353 Phase 2): tell the factory which slot this
+  // peer drives so the CV-gate path applies ONLY this slot's input group and
+  // ignores every other slot's CV locally (the deterministic, lockstep-safe
+  // rule). A spectator/unseated peer (mySlot null) drives no slot's CV. Re-runs
+  // whenever mySlot changes (join / promotion / drop) — getExtras() is null
+  // until the runtime exists, so we also re-apply on load via ensureLoaded's
+  // render-loop re-evaluation; this effect catches the steady-state changes.
+  $effect(() => {
+    getExtras()?.setOwnSlot(mySlot);
   });
 
   function shouldClaimKey(): boolean {
@@ -1211,6 +1344,24 @@
   function routeKey(code: string, pressed: boolean): boolean {
     const extras = getExtras();
     if (!extras) return false;
+    // q → KEY_ESCAPE intercept (2026-05-29). The real Escape is the card's
+    // explicit "give back the keyboard" gesture (unlatchKeyboard in the
+    // window listener), so a real Escape never reaches the DOOM engine.
+    // We therefore rebind `q` to send KEY_ESCAPE down so the in-game pause
+    // menu is still reachable from the keyboard while the card has focus.
+    if (code === 'KeyQ') {
+      if (isHost || mySlot !== null) {
+        // Translate ourselves into the underlying doomkey (KEY_ESCAPE = 27)
+        // rather than going through setKeyForKeyboardCode — KeyQ maps to a
+        // gameplay letter by default, and we want the menu, not 'q' typed.
+        extras.pushDoomKey(27, pressed);
+        return true;
+      }
+      // Spectator relay: forward the SAME doomkey envelope so the host's
+      // marine opens its menu on our behalf. Reuse the existing relay path.
+      relayDoomKeyToHost(27, pressed);
+      return true;
+    }
     // An ACTIVE player (host OR a joined guest at its own slot) drives its OWN
     // runtime — every player runs their own WASM + POV in the per-peer instance
     // model, so the key must reach the local sim, NOT be relayed to the host.
@@ -1348,6 +1499,28 @@
       queueMicrotask(() => {
         provider.awareness?.setLocalStateField(`doom:${id}:key`, null);
       });
+    });
+  }
+
+  /** Spectator relay variant that takes a raw doomkey constant rather than a
+   *  KeyboardEvent.code. Used by the q→KEY_ESCAPE intercept so a spectator can
+   *  open the host's pause menu without sending a literal 'q' (which would
+   *  type 'q' into the engine instead of opening the menu). */
+  function relayDoomKeyToHost(doomKey: number, pressed: boolean): void {
+    const provider = providerCtx.get();
+    if (!provider) return;
+    const me = resolveLocalUserId();
+    const env = encodeKey({
+      kind: 'key',
+      moduleId: id,
+      srcUserId: me,
+      doomKey,
+      pressed,
+      ts: Date.now(),
+    });
+    provider.awareness?.setLocalStateField(`doom:${id}:key`, env);
+    queueMicrotask(() => {
+      provider.awareness?.setLocalStateField(`doom:${id}:key`, null);
     });
   }
 
@@ -1555,6 +1728,18 @@
       // enables the instant the host enters GS_LEVEL and disables at
       // intermission / game end. Cheap: one node read + an early-out.
       refreshMpLiveAsHost();
+      // Bug 3 ROBUSTNESS: re-push the keyboard-inert state into extras every
+      // frame (idempotent — extras/runtime no-op on no-change). The
+      // cvGatePatched $effect (above) fires the moment the derived flips,
+      // but its `getExtras()?.setKeyboardInert(...)` call is a no-op if
+      // extras is null at that instant — and the engine reconciler may
+      // materialize the doom node a beat AFTER the edge syncs (the order is
+      // not guaranteed under CI's slower scheduling). Without this rAF
+      // reapplication, the runtime keeps `keyboardInert=false` despite the
+      // CV gate being patched, and the e2e #3 test fails on the
+      // `isKeyboardInert()` read. Cheap: one map lookup + a boolean compare
+      // when no change (the extras + runtime setters both early-out).
+      getExtras()?.setKeyboardInert(cvGatePatched);
       if (canvasEl) {
         const ctx2d = canvasEl.getContext('2d');
         if (ctx2d) {
@@ -1565,24 +1750,50 @@
           // JOINS. There is no host-framebuffer mirror to fall back to anymore
           // (relay-OOM fix).
           const extras = getExtras();
+          const runtimeReady = extras !== null && loadStatus === 'ready';
           const fb: Uint8Array | Uint8ClampedArray | null =
-            extras ? extras.snapshotFramebuffer() : null;
-          if (fb) {
-            // Upload BGRA → RGBA via inline byte swap. 640×400 = 256k
-            // pixels = 1 MB; the swap is ~16ms on a slow laptop but
-            // tolerable at 10 Hz. The GL path inside the engine already
-            // does this swizzle at zero cost; we accept the cost here
-            // for the small CSS-pixel preview, which doesn't need to
-            // match the engine output bit-for-bit.
-            const img = ctx2d.createImageData(640, 400);
-            const out = img.data;
-            for (let i = 0; i < fb.length; i += 4) {
-              out[i]     = fb[i + 2]!; // R ← B
-              out[i + 1] = fb[i + 1]!; // G
-              out[i + 2] = fb[i]!;     // B ← R
-              out[i + 3] = 255;
+            runtimeReady ? extras.snapshotFramebuffer() : null;
+          // Pre-init canvas guard (Bug #2): snapshotFramebuffer() returns a
+          // live view into WASM linear memory at a fixed offset. Between
+          // module mount and the first I_FinishUpdate() that view points at
+          // uninitialized HEAPU8 bytes — whatever garbage happens to live
+          // there — which we used to blit straight to the canvas as the
+          // colorful pre-game corruption stripes. Two safeties:
+          //  1. Only call snapshotFramebuffer() when WASM finished loading
+          //     (loadStatus === 'ready'). Before that, paint #000 (matches
+          //     the CSS canvas background, so this is purely defensive).
+          //  2. Even when 'ready', if a three-point all-zero sample hits the
+          //     framebuffer (the post-malloc / pre-first-draw state) treat
+          //     it as not-yet-drawn and skip the blit.
+          // The three-point check is O(1) — we deliberately do NOT scan the
+          // full 1 MB framebuffer per frame.
+          if (!fb) {
+            ctx2d.fillStyle = '#000';
+            ctx2d.fillRect(0, 0, 640, 400);
+          } else {
+            const last = fb.length - 1;
+            const mid = Math.floor(fb.length / 2);
+            const allZeroSample = fb[0] === 0 && fb[last] === 0 && fb[mid] === 0;
+            if (allZeroSample) {
+              ctx2d.fillStyle = '#000';
+              ctx2d.fillRect(0, 0, 640, 400);
+            } else {
+              // Upload BGRA → RGBA via inline byte swap. 640×400 = 256k
+              // pixels = 1 MB; the swap is ~16ms on a slow laptop but
+              // tolerable at 10 Hz. The GL path inside the engine already
+              // does this swizzle at zero cost; we accept the cost here
+              // for the small CSS-pixel preview, which doesn't need to
+              // match the engine output bit-for-bit.
+              const img = ctx2d.createImageData(640, 400);
+              const out = img.data;
+              for (let i = 0; i < fb.length; i += 4) {
+                out[i]     = fb[i + 2]!; // R ← B
+                out[i + 1] = fb[i + 1]!; // G
+                out[i + 2] = fb[i]!;     // B ← R
+                out[i + 3] = 255;
+              }
+              ctx2d.putImageData(img, 0, 0);
             }
-            ctx2d.putImageData(img, 0, 0);
           }
         }
       }
@@ -1684,6 +1895,18 @@
         if (typeof opts.map === 'number') mapNum = opts.map;
       },
       launch: () => launchGame(),
+      // e2e keyboard-claim hook: invoke the SAME sticky latch the card's
+      // "Click to capture keyboard" onclick fires (latchKeyboard), WITHOUT a
+      // DOM click/focus. A real user clicks to capture; that path is unchanged.
+      // This exists because in a 2-context Playwright test only one page holds
+      // focus/activeElement — a click+focus-based capture is unreliable for the
+      // backgrounded page (shouldClaimKey()'s focus branch flickers false, the
+      // dispatched keydown is dropped, and the marine never moves). Calling the
+      // latch directly flips kbLatched=true, which shouldClaimKey() honours
+      // regardless of focus/foreground, so input routing is deterministic in
+      // BOTH contexts. Dev-only (this whole __doomCards hook is stripped in
+      // prod); does not change real input/capture behaviour.
+      forceClaimKeyboard: () => latchKeyboard(),
       // Slice 6 e2e hook: drive the running level to its end so the polled
       // gamestate transitions to GS_INTERMISSION (the card re-opens the dialog
       // there). Lets the 2-context late-join test reach the next-map seating
@@ -1792,19 +2015,19 @@
     document.removeEventListener('visibilitychange', onVisibilityChange);
   });
 
-  // ---- Param row ----
-  function setParam(paramId: string) {
-    return (v: number): void => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
-  }
-  let running = $derived<number>(
-    node?.params['running'] ?? doomDef.params.find((p) => p.id === 'running')?.defaultValue ?? 1,
-  );
-  function toggleRunning(): void {
-    setParam('running')(running > 0.5 ? 0 : 1);
-  }
+  // ---- PatchPanel port descriptors ----
+  //
+  // The card has 37 handles (28 inputs + 9 outputs) — well past the legible
+  // inline threshold. Per the canonical PatchPanel pattern used by Hydrogen,
+  // RIOTGIRLS, MIXMSTRS, Pong et al., we collapse them under a corner
+  // trigger. Inputs are split into FOUR per-player sections (P1..P4 × 7
+  // gates); outputs ride on the first section so PatchPanel's sectioned-
+  // output path picks them up. The local viewer's section is labeled
+  // "Player N (you)" so the operator can see at a glance which gates drive
+  // their own marine — this replaces the inline #353 per-slot CSS
+  // emphasis (.hidden-slot-port). Shape contract lives in
+  // doom-patchpanel-ports.ts so it's unit-testable.
+  let patchPanelSections = $derived(buildDoomPatchPanelSections(mySlot));
 </script>
 
 <!-- role="application" + tabindex="0" + onclick: the card IS an
@@ -1861,7 +2084,7 @@
       <span class="player-badge spectator" data-testid="doom-spectator-badge" title={specLabel}>{specBadge}</span>
       <span class="player-label spectating" data-testid="doom-spectator-label">{specLabel}</span>
     {:else}
-      DOOM
+      <ModuleTitle {id} {data} defaultLabel="DOOM" inline />
     {/if}
     {#if isHost}
       <span class="host-badge" title="You are running the DOOM instance for this rack">HOST</span>
@@ -1879,6 +2102,22 @@
       <span class="spec-badge" title="Spectating — host is running the game">SPEC</span>
     {/if}
   </header>
+
+  <!-- All 37 handles (28 inputs + 9 outputs) live under the canonical
+       PatchPanel corner trigger — matches Hydrogen / RIOTGIRLS / MIXMSTRS /
+       Pong / 70-odd other cards. Inputs are split per-player (P1..P4) with
+       the local viewer's section labeled " (you)"; outputs render in the
+       single right column. The previous inline #353 slot-emphasis CSS
+       (.hidden-slot-port) is superseded by the section grouping — every
+       gate is still in the DOM (so cross-peer cables resolve + the
+       io-spec invariant holds), just collapsed under the trigger until
+       hovered/clicked open. -->
+  <PatchPanel
+    nodeId={id}
+    sections={patchPanelSections}
+    groupingStrategy="sectioned"
+    panelWidth={440}
+  >
 
   <div class="game-area">
     <canvas
@@ -1913,44 +2152,6 @@
     {/if}
   </div>
 
-  {#each CV_GATE_PORT_IDS as port, idx (port)}
-    {@const top = 56 + idx * 28}
-    {@const label = port === 'up' ? '↑'
-                  : port === 'down' ? '↓'
-                  : port === 'left' ? '←'
-                  : port === 'right' ? '→'
-                  : port.toUpperCase()}
-    <Handle
-      type="target"
-      position={Position.Left}
-      id={port}
-      style="top: {top}px; --handle-color: var(--cable-cv);"
-    />
-    <span class="port-label left" style="top: {top - 6}px;">{label}</span>
-  {/each}
-
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="out"
-    style="top: 56px; --handle-color: var(--cable-video, #c33);"
-  />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="audio_l"
-    style="top: 96px; --handle-color: var(--cable-audio);"
-  />
-  <span class="port-label right" style="top: 90px;">A-L</span>
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="audio_r"
-    style="top: 124px; --handle-color: var(--cable-audio);"
-  />
-  <span class="port-label right" style="top: 118px;">A-R</span>
-
   {#if isHost && mpMode === undefined}
     <!-- Explicit host start choice (replaces the implicit "2nd member ⇒
          auto-start" detection). The host decides whether this DOOM session is
@@ -1983,13 +2184,6 @@
   {/if}
 
   <div class="controls-row">
-    <button
-      class="run-btn nodrag"
-      onclick={toggleRunning}
-      title="Pause / resume the game loop"
-    >
-      {running > 0.5 ? 'Pause' : 'Run'}
-    </button>
     {#if !isHost}
       <!-- Round 5: a non-host guest ALWAYS sees the Join button, but it is
            DISABLED unless the host is currently running a multiplayer game
@@ -2226,6 +2420,8 @@
       <small data-testid="doom-member-hint">Single-user rack — you're the host.</small>
     {/if}
   </footer>
+
+  </PatchPanel>
 </div>
 
 <style>
@@ -2392,14 +2588,6 @@
     padding: 0 10px 6px;
     flex-wrap: wrap;
   }
-  .doom-card .run-btn {
-    font-size: 11px;
-    padding: 3px 8px;
-    background: var(--cable-video, #c33);
-    color: white;
-    border: none;
-    cursor: pointer;
-  }
   .doom-card .newgame {
     padding: 0 10px 6px;
     display: flex;
@@ -2525,16 +2713,11 @@
     font-style: italic;
     opacity: 0.85;
   }
-  .doom-card .port-label {
-    position: absolute;
-    font-size: 9px;
-    letter-spacing: 0.05em;
-    opacity: 0.85;
-    font-family: ui-monospace, monospace;
-    pointer-events: none;
-  }
-  .doom-card .port-label.left  { left: 14px; }
-  .doom-card .port-label.right { right: 14px; }
+  /* port-label + .hidden-slot-port CSS removed in the PatchPanel migration:
+     handles + their labels now live inside PatchPanel rows, so the inline
+     absolute-positioned labels are gone, and the slot-emphasis hide-rule is
+     replaced by the per-player sectioned grouping (local slot section is
+     labeled " (you)"). */
   .doom-card .hint {
     padding: 0 10px 8px;
     color: color-mix(in oklab, var(--cable-video, #c33) 70%, transparent);

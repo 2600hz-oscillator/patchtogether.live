@@ -14,6 +14,19 @@
 //   - scanline: every Nth row gets darkened / shifted, controlled by mangle
 //   - posterize: quantizes the output color to N levels per channel
 // `mangle` is a master CV input that scales all three.
+//
+// Inputs:
+//   in (video): RGB video input.
+//   mangle (cv, paramTarget=mangle): master CV scaling shift+scanline+posterize.
+//
+// Outputs:
+//   out (video): mangled RGB output.
+//
+// Params:
+//   shift (linear 0..1): per-channel horizontal R/B shift amount.
+//   scanline (linear 0..1): scanline-disruption intensity.
+//   posterize (linear 0..1): per-channel quantization levels (0 = none, 1 = harshest).
+//   mangle (linear 0..1): master scale across all three effects.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -73,6 +86,7 @@ const DEFAULTS: DestructorParams = {
 
 export const destructorDef: VideoModuleDef = {
   type: 'destructor',
+  palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
   label: 'DESTRUCTOR',
   category: 'effects',

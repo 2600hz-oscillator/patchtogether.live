@@ -26,12 +26,22 @@
 //   to be inaudible on properly-leveled mixes; the design intent is "no
 //   speaker damage from a runaway patch", not "make everything sound
 //   compressed."
+//
+// Inputs:
+//   L (audio): left-channel signal to the speakers.
+//   R (audio): right-channel signal to the speakers.
+//
+// Outputs: none (terminal sink).
+//
+// Params:
+//   master (linear 0..1, default 0.7): master output gain pre-limiter.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const audioOutDef: AudioModuleDef = {
   type: 'audioOut',
+  palette: { top: 'Audio modules', sub: 'End of chain' },
   domain: 'audio',
   label: 'Audio Out',
   category: 'output',

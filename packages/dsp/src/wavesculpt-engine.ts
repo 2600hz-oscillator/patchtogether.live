@@ -25,6 +25,7 @@
 // Per-osc frames are independent — the user can load 4 different tables.
 
 import { WavetableOsc, WAVETABLE_FRAME_SIZE } from './lib/wavetable-osc';
+import { LumaBandpassChannel } from './lib/wavesculpt-luma-bandpass';
 
 declare const sampleRate: number;
 declare class AudioWorkletProcessor {
@@ -93,7 +94,18 @@ class WavesculptEngineProcessor extends AudioWorkletProcessor {
       // wall layout each tick (single source of truth, mirrored into both
       // visual + audio so they can't drift).
       desc.push({ name: `distGain${i}`, defaultValue: 0, minValue: 0,  maxValue: 1, automationRate: 'a-rate' });
+      // LUMINOSITY → BANDPASS (k-rate, posted from the card each frame). lumA
+      // / lumB are the 0..1 luminosities sampled at the centre points where
+      // this line crosses its two walls; the per-osc band-pass cutoff/width is
+      // derived from the pair (bright = wide-open, black = narrow-nonzero). See
+      // lib/wavesculpt-luma-bandpass.ts. k-rate (one value per block) — the
+      // luminosity is a per-frame video read, smoothed inside the filter.
+      desc.push({ name: `lumA${i}`, defaultValue: 1, minValue: 0, maxValue: 1, automationRate: 'k-rate' });
+      desc.push({ name: `lumB${i}`, defaultValue: 1, minValue: 0, maxValue: 1, automationRate: 'k-rate' });
     }
+    // Global LUMINOSITY-BANDPASS DEPTH (0 = OFF / lines unfiltered, 1 = the
+    // wall luminosity fully shapes each line's band). k-rate.
+    desc.push({ name: 'lumDepth', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' });
     return desc;
   }
 
@@ -103,6 +115,10 @@ class WavesculptEngineProcessor extends AudioWorkletProcessor {
   /** Pitch-input routing per osc. Identity [0,1,2,3] until the factory
    *  posts a 'setPitchRoute' message. See PitchRouteMessage above. */
   private pitchRoute: number[];
+  /** Per-osc, per-channel luminosity band-pass filters (L, R). Driven by the
+   *  lumA{N}/lumB{N}/lumDepth k-rate params. */
+  private lumaBpL: LumaBandpassChannel[];
+  private lumaBpR: LumaBandpassChannel[];
 
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
@@ -114,6 +130,18 @@ class WavesculptEngineProcessor extends AudioWorkletProcessor {
     ];
     this.pans = [panForOsc(0), panForOsc(1), panForOsc(2), panForOsc(3)];
     this.pitchRoute = [0, 1, 2, 3];
+    this.lumaBpL = [
+      new LumaBandpassChannel(sampleRate),
+      new LumaBandpassChannel(sampleRate),
+      new LumaBandpassChannel(sampleRate),
+      new LumaBandpassChannel(sampleRate),
+    ];
+    this.lumaBpR = [
+      new LumaBandpassChannel(sampleRate),
+      new LumaBandpassChannel(sampleRate),
+      new LumaBandpassChannel(sampleRate),
+      new LumaBandpassChannel(sampleRate),
+    ];
     this.port.onmessage = (e: MessageEvent) => {
       const m = e.data as IncomingMessage;
       if (!m || typeof m !== 'object') return;
@@ -209,6 +237,13 @@ class WavesculptEngineProcessor extends AudioWorkletProcessor {
       const morphArr = parameters[`morph${o + 1}`]!;
       const spreadArr = parameters[`spread${o + 1}`]!;
       const foldArr = parameters[`fold${o + 1}`]!;
+      // LUMINOSITY-BANDPASS k-rate values (one per block).
+      const lumDepth = parameters['lumDepth']![0]!;
+      const lumA = parameters[`lumA${o + 1}`]![0]!;
+      const lumB = parameters[`lumB${o + 1}`]![0]!;
+      const bpActive = lumDepth > 1e-4;
+      const bpL = this.lumaBpL[o]!;
+      const bpR = this.lumaBpR[o]!;
 
       for (let i = 0; i < block; i++) {
         const pitch = pIn ? pIn[i]! : 0;
@@ -216,7 +251,23 @@ class WavesculptEngineProcessor extends AudioWorkletProcessor {
         const spread = spreadArr.length > 1 ? spreadArr[i]! : spreadArr[0]!;
         const foldAmt = foldArr.length > 1 ? foldArr[i]! : foldArr[0]!;
         const voct = pitch + tune / 12 + fine / 1200;
-        const { l, r } = osc.step(voct, morph, spread, foldAmt);
+        let { l, r } = osc.step(voct, morph, spread, foldAmt);
+        // LUMINOSITY → BANDPASS: cutoff/width per line are derived from the
+        // two wall-crossing luminosities. depth is the dry/wet so depth=0 is a
+        // true bypass (lines unfiltered) — the filter still runs (state stays
+        // primed) but contributes nothing. Always keep the filter STATE warm
+        // so flipping depth on doesn't pop.
+        if (bpActive) {
+          const wL = bpL.step(l, lumA, lumB, lumDepth);
+          const wR = bpR.step(r, lumA, lumB, lumDepth);
+          l = l + (wL - l) * lumDepth;
+          r = r + (wR - r) * lumDepth;
+        } else {
+          // Keep state primed (centre/res track toward wide-open) without
+          // altering the dry signal.
+          bpL.step(l, lumA, lumB, 0);
+          bpR.step(r, lumA, lumB, 0);
+        }
         // Emit raw shaped stereo per osc on its own output. The JS
         // factory applies env+dist+pan+FX-slot AFTER this point.
         outL[i] = l;

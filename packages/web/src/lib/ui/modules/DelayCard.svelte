@@ -11,6 +11,7 @@
   import { delayDef } from '$lib/audio/modules/delay';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -32,7 +33,7 @@
 
 <div class="mod-card delay-card">
   <div class="stripe" style="background: var(--cable-audio);"></div>
-  <header class="title">DELAY</header>
+  <ModuleTitle {id} {data} defaultLabel="DELAY" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="fader-row">
@@ -44,6 +45,6 @@
 </div>
 
 <style>
-  .delay-card { width: 200px; min-height: 180px; }
+  .delay-card { width: 200px; }
   .delay-card .fader-row { margin-top: 14px; padding: 0 18px; }
 </style>

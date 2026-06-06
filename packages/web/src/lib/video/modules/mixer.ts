@@ -13,6 +13,16 @@
 // Future: 'multiply', 'screen', 'darken', 'lighten' — will be added once
 // users have asked for them. Single-mode for Phase 1 keeps the shader
 // trivial and the I/O surface clean.
+//
+// Inputs:
+//   in1..in4 (video): four channel inputs.
+//   amount1..amount4 (cv, paramTarget=…): per-channel amount CV.
+//
+// Outputs:
+//   out (video): summed RGB output (sum(in[i] * amount[i])).
+//
+// Params:
+//   amount1..amount4 (linear 0..1): per-channel level.
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -66,6 +76,7 @@ const DEFAULTS: MixerParams = {
 export const mixerVideoDef: VideoModuleDef = {
   // Type id is 'videoMixer' to avoid clashing with the audio 'mixer' module.
   type: 'videoMixer',
+  palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
   label: 'V-MIXER',
   category: 'utilities',
