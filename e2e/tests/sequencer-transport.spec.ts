@@ -747,6 +747,12 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
   test('user A saves slot 1 on a POLYSEQZ; user B sees the chord-step slot data sync', async ({
     browser,
   }) => {
+    // QUARANTINED from the CI @collab gate: the 5× flake-purge (run
+    // 27061332979) had this test pass only via a Playwright RETRY in 1 of 5
+    // passes. The real gate retries ONCE, so a fragile (needs-retry) test is
+    // one CI hiccup from a hard fail — keep it OUT of the to-be-required
+    // subset until the relay-sync flake is fixed. Runs locally.
+    test.skip(!!process.env.CI, '@collab POLYSEQZ slot-sync FRAGILE in 5x purge (run 27061332979) — needed a retry; quarantined from gate');
     const s = await openTwoContexts(browser);
     try {
       const NODE = 'polyseqz-collab-1';
