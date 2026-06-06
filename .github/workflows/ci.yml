@@ -19,8 +19,14 @@ name: CI
 #   e2e (× 10)    ~3-4 min | matrix shards 1..10/10, blob reporter; needs:
 #                            | [dsp-build, build-web]; runs E2E_USE_PREVIEW=1
 #                            | against the prebuilt bundle (`vite preview`,
-#                            | :4173) instead of booting `vite dev` per shard
-#   merge-reports   ~30 s  | needs: e2e — merges the blob-reports → HTML
+#                            | :4173) instead of booting `vite dev` per shard.
+#                            | E2E_WEBGL_HEAVY=exclude → no WebGL-heavy specs
+#   e2e-video     ~6-9 min | SHARD REBALANCE (#68): the WebGL-heavy specs
+#                            | (toybox-*/video-*/wavesculpt*/…) pulled OUT of the
+#                            | shard matrix + run here NON-sharded at --workers=1
+#                            | (E2E_WEBGL_HEAVY=only) so they never co-tenant /
+#                            | starve a SwiftShader context. REQUIRED gate.
+#   merge-reports   ~30 s  | needs: [e2e, e2e-video] — merges the blob-reports
 #   ci (umbrella)   ~0 s   | needs all above; gates branch protection
 #   vrt             ~3-5 min | needs: dsp-build (restores dist)
 #
@@ -234,14 +240,18 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout (LFS required for ART baselines)
+      # ART baselines (art/baselines/**/*.f32) are LFS-tracked. Check out
+      # WITHOUT LFS (lfs:false), then restore the LFS object store from an
+      # actions/cache keyed on the baseline file SHAs and `git lfs pull` — a
+      # cache HIT makes the pull a near-no-op (objects already on disk), a MISS
+      # fetches only the changed objects. This cuts repeated full-payload LFS
+      # downloads (the repo's exhausted-budget root cause) by ~95% while still
+      # giving the test the real float32 buffers (not the ~130-byte pointer
+      # files, which fail with "not a multiple of 4 — truncated or corrupt").
+      - name: Checkout (LFS objects restored from cache below)
         uses: actions/checkout@v4
         with:
-          # ART baselines (art/baselines/**/*.f32) are LFS-tracked. Without
-          # this the test reads the ~130-byte LFS pointer file instead of
-          # the real float32 buffer and fails with "not a multiple of 4 —
-          # file is truncated or corrupt".
-          lfs: true
+          lfs: false
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -255,6 +265,22 @@ jobs:
           key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-deps-
+
+      # Cache the git-LFS object store keyed on the ART baseline file contents
+      # (the pointer files' tracked SHAs change when a baseline is re-pinned).
+      # A HIT restores .git/lfs so `git lfs pull` finds the objects locally and
+      # downloads nothing; a MISS fetches only the changed objects, then this
+      # cache repopulates for the next run.
+      - name: Cache git-LFS objects (ART baselines)
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfs-art-${{ hashFiles('art/baselines/**/*.f32', 'art/baselines/**/*.wav') }}
+          restore-keys: |
+            ${{ runner.os }}-lfs-art-
+
+      - name: Fetch ART LFS objects (no-op on cache hit)
+        run: flox activate -- git lfs pull --include "art/baselines/**"
 
       # Restore the worklet dist built once by dsp-build, BEFORE `task art`
       # (whose dsp:build dep then no-ops via the .dsp-srchash status guard).
@@ -631,12 +657,32 @@ jobs:
       # flaked the video specs / broke #551 under dev). See playwright.config.ts
       # USE_PREVIEW / webServer.
       E2E_USE_PREVIEW: '1'
+      # SHARD REBALANCE (#68): pull the WebGL-heavy specs (toybox-*/video-*/
+      # wavesculpt*/multi-video/…) OUT of the sharded matrix. Playwright's
+      # default splitter sorts files alphabetically then round-robins, so the
+      # alphabetically-late heavies clustered onto the high-numbered shards and
+      # starved the single SwiftShader context (the per-target/HEADLINE/SAVE/
+      # PROJECTION/combine-editor timeout class, #621/#629/#625). They now run on
+      # the dedicated non-sharded `e2e-video` job (--workers=1) below; here the
+      # functional shards stay light/uniform. The glob list is the single source
+      # of truth in playwright.config.ts (WEBGL_HEAVY_GLOBS). 'exclude' adds it
+      # to testIgnore for the chromium project.
+      E2E_WEBGL_HEAVY: exclude
 
     steps:
-      - name: Checkout (with LFS for ART/VRT baselines)
+      # No LFS here: this shard runs the FUNCTIONAL e2e suite (the @collab /
+      # @capacity / behavioral lanes are grep-inverted out) and serves the
+      # PREBUILT web-preview-dist artifact (downloaded below), which already
+      # bakes in the LFS-tracked SM64 bundle (build-web checks out lfs:true).
+      # No functional spec reads an LFS-tracked path directly: the ART .f32 /
+      # VRT .png baselines belong to the art/vrt jobs, the SM64 IDB fixture
+      # (e2e/fixtures/sm64-idb.bin) is user-provided + gitignored so sm64.spec
+      # skips when absent, and the runtime wavetables under static/wavetables/
+      # are ordinary blobs (not LFS). So skip the LFS payload entirely.
+      - name: Checkout (no LFS — functional e2e serves the prebuilt bundle)
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -764,7 +810,10 @@ jobs:
   merge-reports:
     name: Merge Playwright reports
     if: always()
-    needs: [e2e]
+    # Also needs e2e-video (#68): it uploads blob-report-video, which the
+    # count-agnostic blob-report-* download glob below picks up — wait for it so
+    # the merged HTML report includes the WebGL-heavy lane.
+    needs: [e2e, e2e-video]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -873,10 +922,17 @@ jobs:
       E2E_USE_PREVIEW: '1'
 
     steps:
-      - name: Checkout (with LFS for ART/VRT baselines)
+      # No LFS here: the @collab specs serve the PREBUILT web-preview-dist
+      # artifact (downloaded below), which already bakes the LFS-tracked SM64
+      # bundle (build-web checks out lfs:true). No @collab spec reads an
+      # LFS-tracked path directly (ART/VRT baselines belong to the art/vrt
+      # jobs; the SM64 IDB fixture is gitignored/user-provided). So skip the
+      # LFS payload — this is the multi-context functional lane, not a
+      # baseline consumer.
+      - name: Checkout (no LFS — @collab serves the prebuilt bundle)
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -1033,6 +1089,142 @@ jobs:
           retention-days: 14
 
   # -----------------------------------------------------------------------
+  # e2e-video — the WebGL-HEAVY e2e specs, run on a SINGLE, NON-SHARDED runner
+  # with --workers=1 (SHARD REBALANCE, #68).
+  #
+  # Playwright's default shard splitter sorts spec FILES alphabetically then
+  # round-robins, so the alphabetically-late, heavy cross-domain WebGL specs
+  # (toybox-*, video-*, wavesculpt*, multi-video-playback, freezeframe,
+  # picturebox-*, b3ntb0x, …) clustered onto the high-numbered shards of the
+  # `e2e` matrix. On CI's SwiftShader (software WebGL) those co-tenant heavies
+  # starve the single GL context / main thread and overrun their per-test
+  # budgets — the toybox-node-menu / presets-io SAVE / video-projection /
+  # combine-editor timeout class (#621/#629/#625). Bumping the shard COUNT
+  # (#600, 8→10) helped wall-clock but did NOT un-cluster them.
+  #
+  # FIX (option C): pull every WebGL-heavy spec out of the sharded matrix
+  # (E2E_WEBGL_HEAVY=exclude there) and run them HERE, serialized at
+  # --workers=1 so NO two heavies ever co-tenant a SwiftShader context. The
+  # long pole is bounded + isolated instead of poisoning a functional shard, so
+  # the re-enabled de-clustered batch finishes well inside its per-test budget.
+  # The heavy-spec set is the single glob list in playwright.config.ts
+  # (WEBGL_HEAVY_GLOBS); 'only' mode runs exactly those files.
+  #
+  # @collab/@capacity heavy specs (only picturebox-sync today) are grep-inverted
+  # OUT here and run in the dedicated `collab` job — same mechanism the sharded
+  # matrix uses. blob reporter so merge-reports (globs blob-report-*) picks this
+  # up with no aggregator change. REQUIRED gate (wired into the `ci` umbrella) —
+  # coverage parity with the sharded e2e job. Same DB + DSP + preview-bundle
+  # setup as the `e2e` shards; no DOOM/SNES9X WASM (the heavy video specs don't
+  # touch the emulator bundles).
+  # -----------------------------------------------------------------------
+  e2e-video:
+    name: e2e-video (WebGL-heavy, serialized)
+    needs: [dsp-build, build-web]
+    runs-on: ubuntu-latest
+    # The WebGL-heavy specs at workers=1 on SwiftShader are the slowest lane;
+    # generous ceiling absorbs the cold software-GL warmup + retries=2.
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      E2E_USE_PREVIEW: '1'
+      # Run ONLY the WebGL-heavy glob set (WEBGL_HEAVY_GLOBS in
+      # playwright.config.ts). The sharded `e2e` job runs everything else
+      # (E2E_WEBGL_HEAVY=exclude). Together they partition the suite with no
+      # overlap and no coverage loss.
+      E2E_WEBGL_HEAVY: only
+
+    steps:
+      # No LFS — serves the prebuilt web-preview-dist artifact (build-web checks
+      # out lfs:true). Mirrors the e2e shards.
+      - name: Checkout (no LFS — serves the prebuilt bundle)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
+      - name: Download web preview bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+
+      # Serialized (--workers=1): no two WebGL-heavy specs co-tenant the single
+      # SwiftShader context, which is the whole point of this lane. retries=2 to
+      # rescue a genuinely transient cold-GL hiccup (the systemic co-tenant
+      # contention is already removed by workers=1). blob reporter → merged into
+      # the shared HTML report by merge-reports. @collab/@capacity excluded (run
+      # in the `collab` job).
+      - name: Run WebGL-heavy E2E (workers=1, retries=2, blob reporter, no @collab)
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            --grep-invert "@collab|@capacity" \
+            --workers=1 \
+            --retries=2 \
+            --reporter=blob
+
+      # Name it blob-report-video so merge-reports' count-agnostic blob-report-*
+      # glob picks it up alongside the 10 sharded blobs.
+      - name: Upload blob report (e2e-video)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blob-report-video
+          path: e2e/blob-report
+          retention-days: 7
+
+      - name: Upload Playwright test-results on failure (e2e-video)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-video
+          path: e2e/test-results
+          retention-days: 14
+
+  # -----------------------------------------------------------------------
   # behavioral-coverage — the heavy behavioral input-coverage sweep
   # (per-module-per-port-behavioral.spec.ts). ~100 module-level tests,
   # each iterating its module's inputs with 2-spawn control-vs-patched
@@ -1113,10 +1305,15 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
 
     steps:
-      - name: Checkout (with LFS for ART/VRT baselines)
+      # No LFS here: the behavioral sweep serves the PREBUILT web-preview-dist
+      # artifact (downloaded below, bakes the LFS-tracked SM64 bundle) and runs
+      # per-module-per-port-behavioral.spec.ts, which reads no LFS-tracked path
+      # directly (ART/VRT baselines belong to the art/vrt jobs). Skip the LFS
+      # payload.
+      - name: Checkout (no LFS — behavioral serves the prebuilt bundle)
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -1291,7 +1488,7 @@ jobs:
     # tests — then it gets re-gated as a RELIABLE check. Tracked by task #69.
     # collab is intentionally removed from `needs:` so the umbrella does not even
     # WAIT on it (keeps merge latency low). merge-reports/behavioral notes below.
-    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e]
+    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, e2e-video]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -1306,6 +1503,7 @@ jobs:
           ART: ${{ needs.art.result }}
           BUILD: ${{ needs.build.result }}
           E2E: ${{ needs.e2e.result }}
+          E2E_VIDEO: ${{ needs.e2e-video.result }}
         run: |
           echo "actionlint:    $ACTIONLINT"
           echo "typecheck:     $TYPECHECK"
@@ -1315,11 +1513,15 @@ jobs:
           echo "art:           $ART"
           echo "build:         $BUILD"
           echo "e2e:           $E2E"
+          echo "e2e-video:     $E2E_VIDEO"
           echo "collab:        (informational — see collab job; temporarily un-gated, task #69)"
           # `e2e` is a matrix; its aggregated result is `success` only if all
-          # shards succeeded. `collab` is TEMPORARILY UN-GATED (informational —
-          # pending the 5x collab-flake-purge; see the needs: note above). It is
-          # deliberately NOT in the failing condition below. `behavioral` is
+          # shards succeeded. `e2e-video` is the dedicated WebGL-heavy lane (#68)
+          # — REQUIRED, same coverage bar as the sharded `e2e` job (together they
+          # partition the e2e suite with no overlap / no loss). `collab` is
+          # TEMPORARILY UN-GATED (informational — pending the 5x
+          # collab-flake-purge; see the needs: note above). It is deliberately
+          # NOT in the failing condition below. `behavioral` is
           # INFORMATIONAL again — gating it on a single clean run (#562) was
           # premature; it flaked on moog911 on the very next PR. Re-gate only
           # after a proper 3x flake-purge. `merge-reports` also stays OUT.
@@ -1353,7 +1555,8 @@ jobs:
              || "$BUILD_WEB" != "success" \
              || "$ART" != "success" \
              || "$BUILD" != "success" \
-             || "$E2E" != "success" ]]; then
+             || "$E2E" != "success" \
+             || "$E2E_VIDEO" != "success" ]]; then
           # collab is UN-GATED (informational, task #69); behavioral is also
           # INFORMATIONAL (un-gated — the
           # 1x gate flaked on moog911 on the next PR). Do NOT re-add $BEHAVIORAL
@@ -1372,16 +1575,22 @@ jobs:
   # LFS-tracked under e2e/vrt/__screenshots__/**), upload test-results +
   # generated gallery as artifacts.
   #
-  # Required status check — included in the `main: green PRs only` ruleset
-  # (id 16042163). Drift here blocks merges; missing-baseline edge cases are
-  # gated by `EXEMPT_BASELINE_PAIRS` in the new VRT spec files (with linux
-  # captures pending per-spec). Renaming this job requires an accompanying
-  # ruleset update (`gh api repos/.../rulesets/16042163`) to swap the
-  # `context` in `required_status_checks` — names are matched literally.
+  # INFORMATIONAL lane (2026-06-06): ruleset 16042163 now gates `vrt-strict`
+  # (the fast, deterministic pure-DOM subset below) instead of this full canvas
+  # sweep. This job is `continue-on-error: true` and is NOT in the `ci`
+  # umbrella's needs — a baseline drift / GPU/timing flake on a canvas-driven
+  # card here can NOT block merge. It still runs on every PR for visibility
+  # (gallery + report artifacts) so regressions are reviewable; treat a red here
+  # as a signal to inspect, not a merge blocker. See retro 2026-06-06.
+  # Missing-baseline edge cases are gated by `EXEMPT_BASELINE_PAIRS` in the VRT
+  # spec files (with linux captures pending per-spec).
   # -----------------------------------------------------------------------
   vrt:
     name: VRT (visual regression)
     needs: dsp-build
+    # ruleset 16042163 now gates `vrt-strict`; full canvas vrt is informational
+    # (may flake — see retro 2026-06-06).
+    continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -1406,15 +1615,18 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
 
     steps:
-      - name: Checkout (LFS required for VRT baseline PNGs)
+      # VRT baselines live under e2e/vrt/__screenshots__/ and are LFS-tracked.
+      # Check out WITHOUT LFS, then restore the LFS object store from an
+      # actions/cache keyed on the baseline PNG SHAs and `git lfs pull` — a
+      # cache HIT makes the pull a near-no-op, a MISS fetches only the changed
+      # objects. This cuts the repeated full-payload LFS download (the
+      # exhausted-budget root cause) by ~95% while still giving
+      # `toHaveScreenshot` the real PNG bytes (not the ~130-byte pointer files,
+      # which otherwise diff as a giant failure on every card).
+      - name: Checkout (LFS objects restored from cache below)
         uses: actions/checkout@v4
         with:
-          # MUST be true — VRT baselines live under e2e/vrt/__screenshots__/
-          # and are stored as LFS pointers in the regular tree. Without
-          # this, `toHaveScreenshot` compares against the pointer-file
-          # bytes (~130 bytes of metadata) instead of the real PNG and
-          # every test "fails" with a giant diff.
-          lfs: true
+          lfs: false
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -1434,6 +1646,21 @@ jobs:
         with:
           path: packages/web/.svelte-kit
           key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      # Cache the git-LFS object store keyed on the VRT baseline PNG contents
+      # (the pointer files' tracked SHAs change when a baseline is regenerated).
+      # A HIT restores .git/lfs so `git lfs pull` downloads nothing; a MISS
+      # fetches only the changed objects, then repopulates this cache.
+      - name: Cache git-LFS objects (VRT baselines)
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfs-vrt-${{ hashFiles('e2e/vrt/__screenshots__/**/*.png') }}
+          restore-keys: |
+            ${{ runner.os }}-lfs-vrt-
+
+      - name: Fetch VRT LFS objects (no-op on cache hit)
+        run: flox activate -- git lfs pull --include "e2e/vrt/__screenshots__/**"
 
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup
@@ -1526,19 +1753,15 @@ jobs:
   # no canvas masks, and no animated chrome — a diff here is a real UI
   # regression, not platform/GPU/timing flake.
   #
-  # Intended to become the required status check for VRT (replacing the
-  # `VRT (visual regression)` job above as the gate). The full-sweep `vrt`
-  # job above stays as the informational lane for canvas-driven + animated
-  # cards (covers more surface, may flake — never blocks merge).
-  #
-  # Migration: until the `main: green PRs only` ruleset (16042163) is
-  # updated to require this job's `name` as a status check, the full `vrt`
-  # job above remains the technically-required gate (its name was the
-  # original ruleset entry). A follow-up ops PR should run
-  #   gh api -X PUT repos/:owner/:repo/rulesets/16042163 \
-  #     -F rules='...required_status_checks: contexts: ["vrt-strict (visual regression — strict subset)"]'
-  # to flip the required check, and the full `vrt` job above can then be
-  # marked `continue-on-error: true` (informational lane).
+  # REQUIRED status check for VRT (2026-06-06): the `main: green PRs only`
+  # ruleset (16042163) was flipped to require this job's name
+  # (`vrt-strict (visual regression — strict subset)`) instead of the full
+  # `VRT (visual regression)` sweep. Drift here blocks merge. The full-sweep
+  # `vrt` job above is now the INFORMATIONAL lane for canvas-driven + animated
+  # cards (`continue-on-error: true` — covers more surface, may flake, never
+  # blocks merge). Renaming THIS job now requires an accompanying ruleset PUT
+  # (`gh api -X PUT repos/:owner/:repo/rulesets/16042163`) to swap the
+  # `required_status_checks` context — names are matched literally.
   # -----------------------------------------------------------------------
   vrt-strict:
     name: vrt-strict (visual regression — strict subset)
@@ -1547,10 +1770,15 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout (LFS required for VRT baseline PNGs)
+      # VRT baselines are LFS-tracked under e2e/vrt/__screenshots__/. Check out
+      # WITHOUT LFS, then restore the LFS object store from cache + `git lfs
+      # pull` (HIT → no-op, MISS → fetch only changed objects). Same ~95%
+      # bandwidth cut as the full `vrt` job; the strict subset still needs the
+      # real PNG bytes for its pure-DOM card comparisons.
+      - name: Checkout (LFS objects restored from cache below)
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
 
       - name: Install Flox
         uses: flox/install-flox-action@v2
@@ -1570,6 +1798,20 @@ jobs:
         with:
           path: packages/web/.svelte-kit
           key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      # Cache the git-LFS object store keyed on the VRT baseline PNG contents.
+      # Shares the same cache key namespace as the full `vrt` job so whichever
+      # runs first warms the cache for the other within the cache TTL.
+      - name: Cache git-LFS objects (VRT baselines)
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfs-vrt-${{ hashFiles('e2e/vrt/__screenshots__/**/*.png') }}
+          restore-keys: |
+            ${{ runner.os }}-lfs-vrt-
+
+      - name: Fetch VRT LFS objects (no-op on cache hit)
+        run: flox activate -- git lfs pull --include "e2e/vrt/__screenshots__/**"
 
       - name: Install workspace deps + Playwright Chromium
         run: flox activate -- task setup

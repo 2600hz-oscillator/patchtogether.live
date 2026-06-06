@@ -112,12 +112,17 @@ describe('FEEDBACK fragment shader (the stateful op program)', () => {
     expect(src).toContain('uIntensity');
     expect((src.match(/uIntensity/g) ?? []).length).toBeGreaterThan(1);
   });
-  it('TUNNEL is an unrolled hall-of-mirrors loop (const-bounded, no dynamic loop)', () => {
+  it('TUNNEL drives its wet/dry mix off uIntensity (no flat-everywhere blend)', () => {
+    // The TUNNEL branch ends in the wet/dry mix `mix(src.rgb, hall, uIntensity)`
+    // (at full wet = the pure recursive hall; at full dry = the live input). The
+    // recursive Droste tap (single ring-gated feedback sample) replaced the prior
+    // unrolled HOM_LEVELS composite, which over-blended the flat full-frame source.
     const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
-    expect(src).toContain('const int HOM_LEVELS');
-    // The loop bound must be the const (constant-bounded for GLSL ES 300), and
-    // the deeper taps must read the feedback buffer (frame-within-frame).
-    expect(src).toContain('k < HOM_LEVELS');
+    const tunnel = src.slice(src.indexOf('if (uMode == 0)'), src.indexOf('} else if (uMode == 1)'));
+    expect(tunnel).toMatch(/mix\(\s*src\.rgb\s*,\s*hall\s*,\s*uIntensity\s*\)/);
+    // The prior implementation's flat-source over-composite must be GONE.
+    expect(tunnel).not.toContain('HOM_LEVELS');
+    expect(tunnel).not.toContain('0.10 + 0.35 * src.a');
   });
   it('switches on every one of the 12 modes (uMode == 0 .. 10, else = 11)', () => {
     const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
@@ -127,5 +132,25 @@ describe('FEEDBACK fragment shader (the stateful op program)', () => {
     }
     // The trailing else covers the last mode (VECTOR, id 11).
     expect(src).toContain('} else {');
+  });
+
+  it('TUNNEL (mode 0) is a ring-gated hall-of-mirrors, NOT a flat-source blend', () => {
+    // Guard the TUNNEL fix at the SHADER-SOURCE level: the live source must enter
+    // only via the new outer RING; the interior is the recursive feedback tap. The
+    // prior implementations blended the flat full-frame source into the interior —
+    // those exact shapes (`0.12 + 0.5 * src.a` and `0.10 + 0.35 * src.a`) must NOT
+    // return.
+    const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
+    const tunnel = src.slice(src.indexOf('if (uMode == 0)'), src.indexOf('} else if (uMode == 1)'));
+    // It samples the previous frame at a zoomed/rotated tap (the recursion)…
+    expect(tunnel).toMatch(/fb\(\s*fuv\s*\)/);
+    // …gates the live source to the band that leaves the previous frame (the ring),
+    expect(tunnel).toMatch(/ring/);
+    expect(tunnel).toMatch(/fuv\.x\s*<\s*0\.0|fuv\.x\s*>\s*1\.0/);
+    // …and decays the recursive interior (persistence toward the vanishing point).
+    expect(tunnel).toMatch(/uDecay/);
+    // The flat-into-interior blends from BOTH prior versions must be GONE.
+    expect(tunnel).not.toContain('0.12 + 0.5 * src.a');
+    expect(tunnel).not.toContain('0.10 + 0.35 * src.a');
   });
 });

@@ -21,7 +21,7 @@
   // matches convention). ToyboxCard owns the classify-target logic + opens this
   // with a small $state object; every action fires a callback then onclose().
 
-  import { OP_KINDS, isKeyerKind, type ToyboxNodeKind, type ToyboxOpKind, type ToyboxInPort } from '$lib/video/toybox-combine-graph';
+  import { OP_KINDS, isKeyerKind, isStatefulKind, type ToyboxNodeKind, type ToyboxOpKind, type ToyboxInPort } from '$lib/video/toybox-combine-graph';
 
   type MenuKind = 'node' | 'port' | 'edge' | 'canvas';
 
@@ -142,8 +142,11 @@
   let isOp = $derived(nodeKind !== 'source' && nodeKind !== 'output');
   // LUMAKEY / CHROMAKEY → offer "Configure keyer".
   let isKeyer = $derived(isKeyerKind(nodeKind));
-  // FEEDBACK (the stateful op) → offer "Reset feedback" (clears its ping-pong).
+  // FEEDBACK → offer the mode-specific "Configure feedback" popover.
   let isFeedback = $derived(nodeKind === 'feedback');
+  // ANY stateful op (feedback + the frame-history ops) → offer "Reset" to clear
+  // its per-node ring/ping-pong buffer (bumps the shared `_reset` token).
+  let isStateful = $derived(isStatefulKind(nodeKind));
 
   // The menu header label per target.
   let headerLabel = $derived.by<string>(() => {
@@ -224,12 +227,14 @@
           data-testid="toybox-menu-configure-feedback"
           onclick={() => pick(onconfigurefeedback)}
         >Configure feedback…</button>
+      {/if}
+      {#if isStateful}
         <button
           class="ctx-item"
           role="menuitem"
           data-testid="toybox-menu-reset-feedback"
           onclick={() => pick(onresetfeedback)}
-        >Reset feedback</button>
+        >{isFeedback ? 'Reset feedback' : 'Reset history'}</button>
       {/if}
       <button
         class="ctx-item"

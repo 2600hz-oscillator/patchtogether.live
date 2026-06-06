@@ -24,6 +24,50 @@ const SWIFTSHADER_ARGS =
   process.env.E2E_SWIFTSHADER === '1'
     ? ['--use-gl=angle', '--use-angle=swiftshader', '--use-cmd-decoder=passthrough']
     : [];
+// --------------------------------------------------------------------------
+// WebGL-HEAVY partition (shard rebalance, #68) — the SINGLE source of truth.
+//
+// Playwright's default shard splitter sorts SPEC FILES alphabetically then
+// round-robins, so the alphabetically-late, heavy cross-domain WebGL specs
+// (toybox-*, video-*, wavesculpt*, multi-video, …) all cluster onto the
+// high-numbered shards. On CI's SwiftShader (software WebGL) those co-tenant
+// heavies starve the single GL context / main thread and overrun their
+// per-test budgets — the toybox-node-menu / presets-io SAVE / video-projection
+// / combine-editor timeout class (#621/#629/#625). Spreading them by bumping
+// the shard COUNT (#600, 8→10) helped wall-clock but did NOT un-cluster them
+// (they're still adjacent alphabetically).
+//
+// FIX (option C from triage): pull every WebGL-heavy spec OUT of the sharded
+// matrix and run them on their own dedicated, NON-sharded, serialized job
+// (`e2e-video` in ci.yml: --workers=1, so no two heavies ever co-tenant a
+// SwiftShader context). The functional shards then carry a uniform, light load
+// and stop timing out on unrelated PRs.
+//
+// One glob list, two CI modes (mirrors how @collab/@capacity/behavioral are
+// partitioned into their own lanes via grep — but file-glob, not title-grep,
+// so it's robust to a spec growing extra describe blocks):
+//   E2E_WEBGL_HEAVY=only     → run ONLY these specs   (the e2e-video job)
+//   E2E_WEBGL_HEAVY=exclude  → run everything EXCEPT  (the sharded e2e matrix)
+//   unset                    → run everything         (local dev / single runner)
+//
+// To re-classify a spec, edit THIS list only — no per-describe tag to forget
+// when a heavy file gains a second describe (the fragility that sank option A).
+const WEBGL_HEAVY_GLOBS = [
+  '**/toybox-*.spec.ts',
+  '**/video-*.spec.ts',
+  '**/videobox-*.spec.ts',
+  '**/videovarispeed-*.spec.ts',
+  '**/multi-video-playback.spec.ts',
+  '**/wavesculpt*.spec.ts',
+  '**/wavecel-video-outs.spec.ts',
+  '**/scope-video-out.spec.ts',
+  '**/synesthesia-video-mode.spec.ts',
+  '**/freezeframe.spec.ts',
+  '**/picturebox-*.spec.ts',
+  '**/b3ntb0x.spec.ts',
+];
+const WEBGL_HEAVY_MODE = process.env.E2E_WEBGL_HEAVY; // 'only' | 'exclude' | undefined
+
 // Skip the local webServer when targeting a deployed URL (live smoke). Detected
 // by E2E_BASE_URL being set to anything non-localhost.
 // E2E_SKIP_WEBSERVER=1 also skips it — used by local dev workflows that
@@ -81,7 +125,17 @@ export default defineConfig({
       // all — it records from patched audio cables via an in-graph tap
       // worklet, so the old samsloop-mic project / fake-mic flag is no
       // longer needed.)
-      testIgnore: ['**/camera-input.spec.ts', '**/audio-in.spec.ts'],
+      //
+      // WebGL-heavy partition (see WEBGL_HEAVY_GLOBS above): in 'exclude' mode
+      // (the sharded e2e matrix) the heavy specs are ignored here so the
+      // functional shards stay light/uniform; in 'only' mode (the dedicated
+      // serialized e2e-video job) ONLY the heavy specs run. Camera/audio-in
+      // live in their own projects below and are unaffected.
+      testIgnore:
+        WEBGL_HEAVY_MODE === 'exclude'
+          ? ['**/camera-input.spec.ts', '**/audio-in.spec.ts', ...WEBGL_HEAVY_GLOBS]
+          : ['**/camera-input.spec.ts', '**/audio-in.spec.ts'],
+      ...(WEBGL_HEAVY_MODE === 'only' ? { testMatch: WEBGL_HEAVY_GLOBS } : {}),
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {
@@ -101,7 +155,10 @@ export default defineConfig({
       // leak into the default chromium runs, where many specs depend on
       // getUserMedia failing predictably with NotAllowedError.
       name: 'chromium-audio-in',
-      testMatch: ['**/audio-in.spec.ts'],
+      // Not WebGL-heavy → it belongs in the functional (sharded) lane, not the
+      // e2e-video lane. Disable it in 'only' mode (empty testMatch = no specs)
+      // so the dedicated video job runs ONLY the WebGL-heavy globs.
+      testMatch: WEBGL_HEAVY_MODE === 'only' ? [] : ['**/audio-in.spec.ts'],
       use: {
         ...devices['Desktop Chrome'],
         permissions: ['microphone'],
@@ -122,7 +179,9 @@ export default defineConfig({
       // device, and the permission prompt UI is auto-accepted (the
       // newContext({ permissions: ['camera'] }) call in the spec covers
       // most cases, but --use-fake-ui covers the prompt edge cases).
-      testMatch: ['**/camera-input.spec.ts'],
+      // Not WebGL-heavy → functional (sharded) lane; disabled in 'only' mode
+      // (empty testMatch) so the e2e-video job runs ONLY the heavy globs.
+      testMatch: WEBGL_HEAVY_MODE === 'only' ? [] : ['**/camera-input.spec.ts'],
       use: {
         ...devices['Desktop Chrome'],
         // Grant camera permission in this project so the spec doesn't

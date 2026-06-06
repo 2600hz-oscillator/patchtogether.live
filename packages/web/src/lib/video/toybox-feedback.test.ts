@@ -17,6 +17,8 @@ import {
   feedbackResetState,
   FEEDBACK_MODE_PARAMS,
   feedbackParamsForMode,
+  tunnelTap,
+  simulateTunnel,
 } from './toybox-feedback';
 import { OP_PARAMS } from './toybox-combine-graph';
 
@@ -255,5 +257,110 @@ describe('FEEDBACK_MODE_PARAMS — per-mode relevant param subset', () => {
     expect(feedbackParamsForMode(-5).length).toBeGreaterThan(0);
     expect(feedbackParamsForMode(NaN).length).toBeGreaterThan(0);
     expect(feedbackParamsForMode('x' as unknown as number).length).toBeGreaterThan(0);
+  });
+});
+
+// TUNNEL (mode 0) — the recursive Droste hall-of-mirrors. The bug this guards
+// against: the old TUNNEL blended a flat fraction (0.12 + 0.5·src.a, i.e. up to
+// ~62% for an opaque source) of the FULL-FRAME source into EVERY pixel, so the
+// interior was dominated by the flat source colour — never a real tunnel. The
+// fix makes the source enter ONLY at the new outer ring the zoom vacates, leaving
+// the interior to pure recursive feedback (a camera pointed at its own monitor).
+// These tests mirror the GLSL (FEEDBACK_FRAG_SRC `uMode == 0`) via the pure
+// reference (tunnelTap / simulateTunnel) — keep them in lock-step.
+describe('TUNNEL hall-of-mirrors (mode 0) — zero flat-source bleed in the interior', () => {
+  const ZOOM = 0.95;   // default; zoom factor 1/0.95 ≈ 1.0526 (recedes inward)
+  const DECAY = 0.9;   // default loop persistence
+  const SRC: [number, number, number] = [1, 0, 0]; // flat opaque RED source
+
+  it('tunnelTap: the centre samples the previous frame (interior), NOT the ring', () => {
+    // Dead centre: d = 0 → fuv = centre → never leaves [0,1] → interior tap.
+    const c = tunnelTap([0.5, 0.5], ZOOM, 0);
+    expect(c.ring, 'centre is always interior (pure feedback, no source)').toBe(false);
+    expect(c.fuv[0]).toBeCloseTo(0.5);
+    expect(c.fuv[1]).toBeCloseTo(0.5);
+  });
+
+  it('tunnelTap: the extreme edge falls OUTSIDE the prev frame → the new ring (source)', () => {
+    // Corner: d = (0.5,0.5); fuv = 0.5 + 0.5·1.0526 = 1.026 > 1 → ring.
+    const corner = tunnelTap([1, 1], ZOOM, 0);
+    expect(corner.ring, 'the zoom vacates an outer band → the live source enters there').toBe(true);
+  });
+
+  it('tunnelTap: a zoom factor > 1 sends interior taps FURTHER from centre (recede inward)', () => {
+    // A point right of centre taps even further right last frame → content shrinks
+    // toward the centre over frames (the Droste recession).
+    const p = tunnelTap([0.7, 0.5], ZOOM, 0);
+    expect(p.fuv[0]).toBeGreaterThan(0.7); // sampled further out than where it lands
+    expect(p.ring).toBe(false);
+  });
+
+  it('the ring is a THIN outer band — the interior dominates the frame area', () => {
+    // Count ring vs interior pixels over the whole grid at the default zoom.
+    const size = 64;
+    let ring = 0;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const uv: [number, number] = [(x + 0.5) / size, (y + 0.5) / size];
+        if (tunnelTap(uv, ZOOM, 0).ring) ring++;
+      }
+    }
+    const frac = ring / (size * size);
+    expect(frac, 'source enters only a thin outer ring').toBeLessThan(0.2);
+    expect(frac, 'but the ring is non-empty (the loop always gets fresh content)').toBeGreaterThan(0);
+  });
+
+  // Mean RED over the central 25% region (the interior the old bug flooded).
+  const meanInteriorRed = (uZoom: number, uDecay: number, frames = 60): number => {
+    const size = 48;
+    const buf = simulateTunnel(size, SRC, uZoom, 0, uDecay, frames);
+    const lo = Math.floor(size * 0.375);
+    const hi = Math.ceil(size * 0.625);
+    let sum = 0;
+    let n = 0;
+    for (let y = lo; y < hi; y++) {
+      for (let x = lo; x < hi; x++) {
+        sum += buf[(y * size + x) * 3]!; // red channel
+        n++;
+      }
+    }
+    return sum / n;
+  };
+
+  it('THE FIX: at full wet, the INTERIOR is NOT dominated by the flat source colour', () => {
+    // Drive the recursion with a flat opaque RED source (1,0,0) for many frames.
+    // If the old "blend the full-frame source into every pixel" bug were present,
+    // the interior would be ~flat red (R ≈ 1) everywhere. With the fix the source
+    // only ever enters via the thin outer ring and is dimmed by DECAY as it
+    // recedes, so the interior is FAR below the flat-source level — proof the flat
+    // full-frame source does NOT own the interior. (At the default zoom the deep
+    // interior is very dim recursive content; we assert it is nowhere near flat.)
+    expect(
+      meanInteriorRed(ZOOM, DECAY),
+      'default-zoom interior is not flooded by the flat source (≈0, not ≈1)',
+    ).toBeLessThan(0.3);
+
+    // At a deeper-tunnel zoom the recursive nest actually FILLS the interior with
+    // dimmed recursive content — present (>0, the hall-of-mirrors owns it) yet
+    // still clearly below the flat source level (<<1 — the bug would read ≈1).
+    const deep = meanInteriorRed(0.85, DECAY);
+    expect(deep, 'recursive content fills the interior (the hall-of-mirrors)').toBeGreaterThan(0.05);
+    expect(deep, 'but the interior is still NOT the flat full-frame source').toBeLessThan(0.85);
+  });
+
+  it('the OUTER RING does carry the live source (the source still enters somewhere)', () => {
+    // The opposite guard: the source must NOT be eliminated entirely — it enters
+    // at the ring. The top-left corner pixel is in the ring → flat source red ≈ 1.
+    const size = 48;
+    const buf = simulateTunnel(size, SRC, ZOOM, 0, DECAY, 60);
+    expect(buf[0]!, 'the new outer ring shows the live source').toBeGreaterThan(0.8);
+  });
+
+  it('DECAY governs how deep/persistent the recursion is (a meaningful knob)', () => {
+    // Higher decay → the receding nest stays brighter deeper in → a brighter
+    // interior. Lower decay → it dims to the vanishing point faster (darker
+    // interior). Proves DECAY still does something meaningful for TUNNEL. Use the
+    // deeper-tunnel zoom where the interior is well-filled so the ordering is clear.
+    expect(meanInteriorRed(0.85, 0.95)).toBeGreaterThan(meanInteriorRed(0.85, 0.6));
   });
 });

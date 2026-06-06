@@ -305,11 +305,75 @@ describe('toybox combine graph — real Y.Doc mutators', () => {
     expect(node.params!._reset).toBe(2);
   });
 
-  it('resetFeedbackNode is a no-op on a non-feedback node', () => {
+  it('resetFeedbackNode is a no-op on a non-stateful node', () => {
     makeToybox();
     const fade = addCombineNode(TID, 'fade')!;
     resetFeedbackNode(TID, fade);
     const node = readCombineGraph(patch.nodes[TID])!.nodes.find((n) => n.id === fade)!;
     expect(node.params!._reset).toBeUndefined();
+  });
+
+  // ── Batch op nodes: add-multiple / connect / param / delete / duplicate on the
+  //    new kinds (the live syncedStore catches the "Type already integrated" trap).
+  it('adds every batch op kind without throwing (multi-add on real Y types)', () => {
+    makeToybox();
+    const KINDS = [
+      'over', 'tile', 'mirror', 'displace', 'bitbend', 'biocells', 'exquisite',
+      'framedelay', 'channeldesync', 'flowsmear', 'dreammelt', 'datamosh',
+    ] as const;
+    expect(() => {
+      for (const k of KINDS) addCombineNode(TID, k);
+    }).not.toThrow();
+    const g = readCombineGraph(patch.nodes[TID])!;
+    for (const k of KINDS) expect(g.nodes.some((n) => n.kind === k)).toBe(true);
+  });
+
+  it('wires EXQUISITE up to 4 inputs (the multi-input port surgery)', () => {
+    makeToybox();
+    const a = addCombineNode(TID, 'fade')!;
+    const b = addCombineNode(TID, 'fade')!;
+    const c = addCombineNode(TID, 'fade')!;
+    const d = addCombineNode(TID, 'fade')!;
+    const x = addCombineNode(TID, 'exquisite')!;
+    expect(connectCombine(TID, a, x, 'in0').ok).toBe(true);
+    expect(connectCombine(TID, b, x, 'in1').ok).toBe(true);
+    expect(connectCombine(TID, c, x, 'in2').ok).toBe(true);
+    expect(connectCombine(TID, d, x, 'in3').ok).toBe(true);
+    const g = readCombineGraph(patch.nodes[TID])!;
+    expect(g.edges.filter((e) => e.to === x).length).toBe(4);
+  });
+
+  it('rejects in1 on a 1-input batch op (framedelay)', () => {
+    makeToybox();
+    const a = addCombineNode(TID, 'fade')!;
+    const fd = addCombineNode(TID, 'framedelay')!;
+    expect(connectCombine(TID, a, fd, 'in0').ok).toBe(true);
+    const r = connectCombine(TID, a, fd, 'in1');
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('bad-in-port');
+  });
+
+  it('sets + deletes + duplicates a batch op param in place', () => {
+    makeToybox();
+    const tile = addCombineNode(TID, 'tile')!;
+    setCombineNodeParam(TID, tile, 'tilesX', 7);
+    let g = readCombineGraph(patch.nodes[TID])!;
+    expect(g.nodes.find((n) => n.id === tile)!.params!.tilesX).toBe(7);
+    // duplicate copies the params.
+    const dup = duplicateCombineNode(TID, tile)!;
+    g = readCombineGraph(patch.nodes[TID])!;
+    expect(g.nodes.find((n) => n.id === dup)!.params!.tilesX).toBe(7);
+    // delete removes it.
+    deleteCombineNode(TID, tile);
+    g = readCombineGraph(patch.nodes[TID])!;
+    expect(g.nodes.some((n) => n.id === tile)).toBe(false);
+  });
+
+  it('resetFeedbackNode also resets the frame-history ops (datamosh)', () => {
+    makeToybox();
+    const dm = addCombineNode(TID, 'datamosh')!;
+    resetFeedbackNode(TID, dm);
+    const node = readCombineGraph(patch.nodes[TID])!.nodes.find((n) => n.id === dm)!;
+    expect(node.params!._reset).toBe(1);
   });
 });
