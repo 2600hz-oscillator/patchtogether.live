@@ -19,8 +19,14 @@ name: CI
 #   e2e (× 10)    ~3-4 min | matrix shards 1..10/10, blob reporter; needs:
 #                            | [dsp-build, build-web]; runs E2E_USE_PREVIEW=1
 #                            | against the prebuilt bundle (`vite preview`,
-#                            | :4173) instead of booting `vite dev` per shard
-#   merge-reports   ~30 s  | needs: e2e — merges the blob-reports → HTML
+#                            | :4173) instead of booting `vite dev` per shard.
+#                            | E2E_WEBGL_HEAVY=exclude → no WebGL-heavy specs
+#   e2e-video     ~6-9 min | SHARD REBALANCE (#68): the WebGL-heavy specs
+#                            | (toybox-*/video-*/wavesculpt*/…) pulled OUT of the
+#                            | shard matrix + run here NON-sharded at --workers=1
+#                            | (E2E_WEBGL_HEAVY=only) so they never co-tenant /
+#                            | starve a SwiftShader context. REQUIRED gate.
+#   merge-reports   ~30 s  | needs: [e2e, e2e-video] — merges the blob-reports
 #   ci (umbrella)   ~0 s   | needs all above; gates branch protection
 #   vrt             ~3-5 min | needs: dsp-build (restores dist)
 #
@@ -651,6 +657,17 @@ jobs:
       # flaked the video specs / broke #551 under dev). See playwright.config.ts
       # USE_PREVIEW / webServer.
       E2E_USE_PREVIEW: '1'
+      # SHARD REBALANCE (#68): pull the WebGL-heavy specs (toybox-*/video-*/
+      # wavesculpt*/multi-video/…) OUT of the sharded matrix. Playwright's
+      # default splitter sorts files alphabetically then round-robins, so the
+      # alphabetically-late heavies clustered onto the high-numbered shards and
+      # starved the single SwiftShader context (the per-target/HEADLINE/SAVE/
+      # PROJECTION/combine-editor timeout class, #621/#629/#625). They now run on
+      # the dedicated non-sharded `e2e-video` job (--workers=1) below; here the
+      # functional shards stay light/uniform. The glob list is the single source
+      # of truth in playwright.config.ts (WEBGL_HEAVY_GLOBS). 'exclude' adds it
+      # to testIgnore for the chromium project.
+      E2E_WEBGL_HEAVY: exclude
 
     steps:
       # No LFS here: this shard runs the FUNCTIONAL e2e suite (the @collab /
@@ -793,7 +810,10 @@ jobs:
   merge-reports:
     name: Merge Playwright reports
     if: always()
-    needs: [e2e]
+    # Also needs e2e-video (#68): it uploads blob-report-video, which the
+    # count-agnostic blob-report-* download glob below picks up — wait for it so
+    # the merged HTML report includes the WebGL-heavy lane.
+    needs: [e2e, e2e-video]
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -1069,6 +1089,142 @@ jobs:
           retention-days: 14
 
   # -----------------------------------------------------------------------
+  # e2e-video — the WebGL-HEAVY e2e specs, run on a SINGLE, NON-SHARDED runner
+  # with --workers=1 (SHARD REBALANCE, #68).
+  #
+  # Playwright's default shard splitter sorts spec FILES alphabetically then
+  # round-robins, so the alphabetically-late, heavy cross-domain WebGL specs
+  # (toybox-*, video-*, wavesculpt*, multi-video-playback, freezeframe,
+  # picturebox-*, b3ntb0x, …) clustered onto the high-numbered shards of the
+  # `e2e` matrix. On CI's SwiftShader (software WebGL) those co-tenant heavies
+  # starve the single GL context / main thread and overrun their per-test
+  # budgets — the toybox-node-menu / presets-io SAVE / video-projection /
+  # combine-editor timeout class (#621/#629/#625). Bumping the shard COUNT
+  # (#600, 8→10) helped wall-clock but did NOT un-cluster them.
+  #
+  # FIX (option C): pull every WebGL-heavy spec out of the sharded matrix
+  # (E2E_WEBGL_HEAVY=exclude there) and run them HERE, serialized at
+  # --workers=1 so NO two heavies ever co-tenant a SwiftShader context. The
+  # long pole is bounded + isolated instead of poisoning a functional shard, so
+  # the re-enabled de-clustered batch finishes well inside its per-test budget.
+  # The heavy-spec set is the single glob list in playwright.config.ts
+  # (WEBGL_HEAVY_GLOBS); 'only' mode runs exactly those files.
+  #
+  # @collab/@capacity heavy specs (only picturebox-sync today) are grep-inverted
+  # OUT here and run in the dedicated `collab` job — same mechanism the sharded
+  # matrix uses. blob reporter so merge-reports (globs blob-report-*) picks this
+  # up with no aggregator change. REQUIRED gate (wired into the `ci` umbrella) —
+  # coverage parity with the sharded e2e job. Same DB + DSP + preview-bundle
+  # setup as the `e2e` shards; no DOOM/SNES9X WASM (the heavy video specs don't
+  # touch the emulator bundles).
+  # -----------------------------------------------------------------------
+  e2e-video:
+    name: e2e-video (WebGL-heavy, serialized)
+    needs: [dsp-build, build-web]
+    runs-on: ubuntu-latest
+    # The WebGL-heavy specs at workers=1 on SwiftShader are the slowest lane;
+    # generous ceiling absorbs the cold software-GL warmup + retries=2.
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      E2E_USE_PREVIEW: '1'
+      # Run ONLY the WebGL-heavy glob set (WEBGL_HEAVY_GLOBS in
+      # playwright.config.ts). The sharded `e2e` job runs everything else
+      # (E2E_WEBGL_HEAVY=exclude). Together they partition the suite with no
+      # overlap and no coverage loss.
+      E2E_WEBGL_HEAVY: only
+
+    steps:
+      # No LFS — serves the prebuilt web-preview-dist artifact (build-web checks
+      # out lfs:true). Mirrors the e2e shards.
+      - name: Checkout (no LFS — serves the prebuilt bundle)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
+      - name: Download web preview bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+
+      # Serialized (--workers=1): no two WebGL-heavy specs co-tenant the single
+      # SwiftShader context, which is the whole point of this lane. retries=2 to
+      # rescue a genuinely transient cold-GL hiccup (the systemic co-tenant
+      # contention is already removed by workers=1). blob reporter → merged into
+      # the shared HTML report by merge-reports. @collab/@capacity excluded (run
+      # in the `collab` job).
+      - name: Run WebGL-heavy E2E (workers=1, retries=2, blob reporter, no @collab)
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            --grep-invert "@collab|@capacity" \
+            --workers=1 \
+            --retries=2 \
+            --reporter=blob
+
+      # Name it blob-report-video so merge-reports' count-agnostic blob-report-*
+      # glob picks it up alongside the 10 sharded blobs.
+      - name: Upload blob report (e2e-video)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blob-report-video
+          path: e2e/blob-report
+          retention-days: 7
+
+      - name: Upload Playwright test-results on failure (e2e-video)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-video
+          path: e2e/test-results
+          retention-days: 14
+
+  # -----------------------------------------------------------------------
   # behavioral-coverage — the heavy behavioral input-coverage sweep
   # (per-module-per-port-behavioral.spec.ts). ~100 module-level tests,
   # each iterating its module's inputs with 2-spawn control-vs-patched
@@ -1332,7 +1488,7 @@ jobs:
     # tests — then it gets re-gated as a RELIABLE check. Tracked by task #69.
     # collab is intentionally removed from `needs:` so the umbrella does not even
     # WAIT on it (keeps merge latency low). merge-reports/behavioral notes below.
-    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e]
+    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, e2e-video]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -1347,6 +1503,7 @@ jobs:
           ART: ${{ needs.art.result }}
           BUILD: ${{ needs.build.result }}
           E2E: ${{ needs.e2e.result }}
+          E2E_VIDEO: ${{ needs.e2e-video.result }}
         run: |
           echo "actionlint:    $ACTIONLINT"
           echo "typecheck:     $TYPECHECK"
@@ -1356,11 +1513,15 @@ jobs:
           echo "art:           $ART"
           echo "build:         $BUILD"
           echo "e2e:           $E2E"
+          echo "e2e-video:     $E2E_VIDEO"
           echo "collab:        (informational — see collab job; temporarily un-gated, task #69)"
           # `e2e` is a matrix; its aggregated result is `success` only if all
-          # shards succeeded. `collab` is TEMPORARILY UN-GATED (informational —
-          # pending the 5x collab-flake-purge; see the needs: note above). It is
-          # deliberately NOT in the failing condition below. `behavioral` is
+          # shards succeeded. `e2e-video` is the dedicated WebGL-heavy lane (#68)
+          # — REQUIRED, same coverage bar as the sharded `e2e` job (together they
+          # partition the e2e suite with no overlap / no loss). `collab` is
+          # TEMPORARILY UN-GATED (informational — pending the 5x
+          # collab-flake-purge; see the needs: note above). It is deliberately
+          # NOT in the failing condition below. `behavioral` is
           # INFORMATIONAL again — gating it on a single clean run (#562) was
           # premature; it flaked on moog911 on the very next PR. Re-gate only
           # after a proper 3x flake-purge. `merge-reports` also stays OUT.
@@ -1394,7 +1555,8 @@ jobs:
              || "$BUILD_WEB" != "success" \
              || "$ART" != "success" \
              || "$BUILD" != "success" \
-             || "$E2E" != "success" ]]; then
+             || "$E2E" != "success" \
+             || "$E2E_VIDEO" != "success" ]]; then
           # collab is UN-GATED (informational, task #69); behavioral is also
           # INFORMATIONAL (un-gated — the
           # 1x gate flaked on moog911 on the next PR). Do NOT re-add $BEHAVIORAL
