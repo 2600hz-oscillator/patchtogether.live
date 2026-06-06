@@ -1413,16 +1413,22 @@ jobs:
   # LFS-tracked under e2e/vrt/__screenshots__/**), upload test-results +
   # generated gallery as artifacts.
   #
-  # Required status check — included in the `main: green PRs only` ruleset
-  # (id 16042163). Drift here blocks merges; missing-baseline edge cases are
-  # gated by `EXEMPT_BASELINE_PAIRS` in the new VRT spec files (with linux
-  # captures pending per-spec). Renaming this job requires an accompanying
-  # ruleset update (`gh api repos/.../rulesets/16042163`) to swap the
-  # `context` in `required_status_checks` — names are matched literally.
+  # INFORMATIONAL lane (2026-06-06): ruleset 16042163 now gates `vrt-strict`
+  # (the fast, deterministic pure-DOM subset below) instead of this full canvas
+  # sweep. This job is `continue-on-error: true` and is NOT in the `ci`
+  # umbrella's needs — a baseline drift / GPU/timing flake on a canvas-driven
+  # card here can NOT block merge. It still runs on every PR for visibility
+  # (gallery + report artifacts) so regressions are reviewable; treat a red here
+  # as a signal to inspect, not a merge blocker. See retro 2026-06-06.
+  # Missing-baseline edge cases are gated by `EXEMPT_BASELINE_PAIRS` in the VRT
+  # spec files (with linux captures pending per-spec).
   # -----------------------------------------------------------------------
   vrt:
     name: VRT (visual regression)
     needs: dsp-build
+    # ruleset 16042163 now gates `vrt-strict`; full canvas vrt is informational
+    # (may flake — see retro 2026-06-06).
+    continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -1585,19 +1591,15 @@ jobs:
   # no canvas masks, and no animated chrome — a diff here is a real UI
   # regression, not platform/GPU/timing flake.
   #
-  # Intended to become the required status check for VRT (replacing the
-  # `VRT (visual regression)` job above as the gate). The full-sweep `vrt`
-  # job above stays as the informational lane for canvas-driven + animated
-  # cards (covers more surface, may flake — never blocks merge).
-  #
-  # Migration: until the `main: green PRs only` ruleset (16042163) is
-  # updated to require this job's `name` as a status check, the full `vrt`
-  # job above remains the technically-required gate (its name was the
-  # original ruleset entry). A follow-up ops PR should run
-  #   gh api -X PUT repos/:owner/:repo/rulesets/16042163 \
-  #     -F rules='...required_status_checks: contexts: ["vrt-strict (visual regression — strict subset)"]'
-  # to flip the required check, and the full `vrt` job above can then be
-  # marked `continue-on-error: true` (informational lane).
+  # REQUIRED status check for VRT (2026-06-06): the `main: green PRs only`
+  # ruleset (16042163) was flipped to require this job's name
+  # (`vrt-strict (visual regression — strict subset)`) instead of the full
+  # `VRT (visual regression)` sweep. Drift here blocks merge. The full-sweep
+  # `vrt` job above is now the INFORMATIONAL lane for canvas-driven + animated
+  # cards (`continue-on-error: true` — covers more surface, may flake, never
+  # blocks merge). Renaming THIS job now requires an accompanying ruleset PUT
+  # (`gh api -X PUT repos/:owner/:repo/rulesets/16042163`) to swap the
+  # `required_status_checks` context — names are matched literally.
   # -----------------------------------------------------------------------
   vrt-strict:
     name: vrt-strict (visual regression — strict subset)

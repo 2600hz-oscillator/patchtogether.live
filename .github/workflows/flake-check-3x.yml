@@ -10,6 +10,13 @@
 # infra ci.yml's e2e/collab lanes use, with NO retries, so a flake SHOWS rather
 # than being silently rescued by a retry.
 #
+# retries=0 here is DELIBERATELY STRICTER than the real gate (the gate retries
+# ONCE: playwright.config.ts `retries: process.env.CI ? 1 : 0`, mirrored by the
+# flake-purge workflows' --retries=1). That's correct for a re-enable PROOF: an
+# un-quarantine candidate must be stable WITHOUT leaning on the gate's retry, so
+# we require it to pass 3× clean at retries=0 — a tougher bar than the gate it's
+# being re-admitted to.
+#
 # It runs on whatever ref it is dispatched against — a re-enable campaign
 # dispatches it against a fix branch:
 #   gh workflow run flake-check-3x.yml --ref <branch> -f suite=<suite> -f grep="<sel>"
