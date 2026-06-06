@@ -281,7 +281,7 @@ export const toyboxDef: VideoModuleDef = {
   domain: 'video',
   label: 'TOYBOX',
   category: 'sources',
-  schemaVersion: 3,
+  schemaVersion: 4,
   migrate: migrateToyboxData,
   // A FIXED pool of 6 generic modulation input ports (the Structure-style
   // section). A layer's shader (and its uniforms) is chosen at runtime, so we
@@ -631,6 +631,7 @@ export const toyboxDef: VideoModuleDef = {
     const fuSlitPos = gl.getUniformLocation(feedbackProgram, 'uSlitPos');
     const fuSlitWidth = gl.getUniformLocation(feedbackProgram, 'uSlitWidth');
     const fuFlow = gl.getUniformLocation(feedbackProgram, 'uFlow');
+    const fuIntensity = gl.getUniformLocation(feedbackProgram, 'uIntensity');
 
     // ---------------- Per-feedback-node ping-pong float buffers ----------------
     //
@@ -1476,6 +1477,7 @@ export const toyboxDef: VideoModuleDef = {
       if (fuSlitPos) g.uniform1f(fuSlitPos, u.slitPos);
       if (fuSlitWidth) g.uniform1f(fuSlitWidth, u.slitWidth);
       if (fuFlow) g.uniform1f(fuFlow, u.flow);
+      if (fuIntensity) g.uniform1f(fuIntensity, u.intensity);
       ctx.drawFullscreenQuad();
       g.activeTexture(g.TEXTURE0);
       // Swap: this frame's output (front) becomes next frame's previous (back).
@@ -1743,7 +1745,7 @@ export const toyboxDef: VideoModuleDef = {
  * Pure: returns the (possibly mutated) data object.
  */
 export function migrateToyboxData(data: unknown, fromVersion: number): unknown {
-  if (fromVersion >= 3 || !data || typeof data !== 'object') return data;
+  if (fromVersion >= 4 || !data || typeof data !== 'object') return data;
   const d = data as {
     cvRoutes?: Record<string, { param?: string } | null>;
     combine?: { nodes?: Array<{ kind?: string; params?: Record<string, number> }> };
@@ -1773,6 +1775,15 @@ export function migrateToyboxData(data: unknown, fromVersion: number): unknown {
     for (const port of Object.keys(d.cvRoutes)) {
       const route = d.cvRoutes[port];
       if (route && route.param === 'key') d.cvRoutes[port] = null;
+    }
+  }
+  // v3 → v4: feedback gained an `intensity` (wet/dry mix) param. Backfill the
+  // schema default on existing feedback nodes so old saves load with a sensible
+  // half-wet mix rather than 0 (which would read as a pure dry pass-through).
+  if (fromVersion < 4 && d.combine && Array.isArray(d.combine.nodes)) {
+    for (const n of d.combine.nodes) {
+      if (n?.kind !== 'feedback' || !n.params || typeof n.params !== 'object') continue;
+      if (typeof n.params.intensity !== 'number') n.params.intensity = 0.5;
     }
   }
   return data;
@@ -1956,6 +1967,7 @@ uniform float uBlur;           // BLUR: tap radius scale (0..4)
 uniform float uSlitPos;        // SLIT: boundary x (0..1)
 uniform float uSlitWidth;      // SLIT: boundary feather (0..1)
 uniform float uFlow;           // VECTOR: advection strength (0..1)
+uniform float uIntensity;      // WET/DRY mix: 0 = dry input, 1 = full effect (0..1)
 
 vec4 fb(vec2 uv) { return texture(uFeedback, clamp(uv, 0.0, 1.0)); }
 vec4 inp(vec2 uv) { return uHasInput > 0.5 ? texture(uInput, clamp(uv, 0.0, 1.0)) : vec4(0.0); }
@@ -1981,21 +1993,57 @@ void main() {
   vec4 outc;
 
   if (uMode == 0) {
-    // TUNNEL — Droste / infinite zoom: pull the loop toward centre + spin it,
-    // inject a little input so the tunnel always has fresh content to recurse.
-    vec2 p = (uv - 0.5) * uZoom;
-    p = rot(uRotate) * p;
-    p += 0.5;
-    vec3 loop = fb(p).rgb;
-    outc = vec4(mix(loop, src.rgb, 0.12 + 0.5 * src.a), 1.0);
+    // TUNNEL — CRT "hall of mirrors": an OPAQUE recursive nesting. We sample the
+    // feedback buffer at several SUCCESSIVELY-SHRINKING, SUCCESSIVELY-ROTATED
+    // scales about centre and composite them, so you literally see
+    // frame-within-frame-within-frame receding to the middle, and the per-level
+    // spin makes the nested copies fan out into fractal patterns.
+    //
+    // Level k reads the loop magnified by 1/zoom^k about centre (zoom<1 ⇒ each
+    // deeper copy is a smaller inset) and rotated by k*uRotate. We START from the
+    // live input injected at centre so the mirrors always have fresh content to
+    // recurse, then over-composite each deeper, smaller mirror on top.
+    const int HOM_LEVELS = 6;
+    vec2 c = uv - 0.5;
+    // Base layer = the freshest mirror (level 0): the previous frame straight.
+    vec3 mirrors = fb(uv).rgb;
+    float zk = 1.0;            // zoom^k  (shrinks the read region each level)
+    float ak = 0.0;            // k*rotate (accumulated spin)
+    for (int k = 1; k < HOM_LEVELS; k++) {
+      zk *= uZoom;             // < 1 ⇒ deeper copies sample a SMALLER inset
+      ak += uRotate;
+      vec2 p = rot(ak) * (c / max(zk, 0.04)) + 0.5;
+      // Only contribute where this magnified tap is in-bounds, so the recede is
+      // a true nested frame (a window), not a smeared edge-clamp.
+      vec2 e = step(vec2(0.0), p) * step(p, vec2(1.0));
+      float inb = e.x * e.y;
+      vec3 deeper = fb(p).rgb;
+      // Each deeper mirror is dimmed slightly so the recursion reads as receding
+      // depth rather than a flat overlay; over-composite it on top.
+      float w = inb * (0.85 - 0.06 * float(k));
+      mirrors = mix(mirrors, deeper, clamp(w, 0.0, 1.0));
+    }
+    // Inject the live input at centre so the tunnel keeps refreshing; the mirrors
+    // still OWN the frame (opaque), this is just the fresh seed to recurse.
+    vec3 hall = mix(mirrors, src.rgb, 0.10 + 0.35 * src.a);
+    // INTENSITY is the wet/dry mix: fully wet = pure hall-of-mirrors (opaque,
+    // owns the output); fully dry = the live input.
+    outc = vec4(mix(src.rgb, hall, uIntensity), 1.0);
   } else if (uMode == 1) {
     // GEOMETRIC — scale + rotate + translate the loop each frame (kaleido drift).
+    // INTENSITY raises the feedback contribution (luma-weighted) so trails
+    // accumulate noticeably stronger than the old fixed-12% blend.
     vec2 p = (uv - 0.5) * uScaleP;
     p = rot(uRotate) * p;
     p += vec2(uTx, uTy) * 0.1;
     p += 0.5;
     vec3 loop = fb(p).rgb;
-    outc = vec4(mix(loop, src.rgb, 0.12 + 0.5 * src.a), 1.0);
+    // Feed back MORE the brighter the loop already is (luma-weighted persistence)
+    // and the higher INTENSITY is, so the affine drift builds up rich trails.
+    float fbAmt = mix(0.55, 0.97, uIntensity);
+    fbAmt = clamp(fbAmt + luma(loop) * 0.25 * uIntensity, 0.0, 0.985);
+    vec3 acc = loop * fbAmt + src.rgb * (1.0 - fbAmt * 0.5);
+    outc = vec4(acc, 1.0);
   } else if (uMode == 2) {
     // SLIT — slit-scan: a moving boundary; left of it holds the loop (trails),
     // right shows the live input. slitWidth feathers the seam.
@@ -2024,35 +2072,63 @@ void main() {
     b *= 0.25;
     outc = vec4(b * uDecay + src.rgb * 0.15, 1.0);
   } else if (uMode == 6) {
-    // EDGE — horizontal gradient of the loop fed back (growing line webs). Add a
-    // little input so the structure keeps regenerating.
+    // EDGE — gradient of the loop fed back (growing line webs). The old gain
+    // (e*4.0 + prev.r*decay*0.5) saturated to white static within a few frames;
+    // tame BOTH the edge gain and the feedback term so it grows thin line-webs
+    // instead of blowing to noise. The feedback is also leaked toward 0 (the
+    // (1-x) factor) so a fully-lit pixel decays rather than self-reinforcing.
     float dx = uTexel.x * (1.0 + uBlur);
     float e = abs(fb(uv + vec2(dx, 0.0)).r - fb(uv - vec2(dx, 0.0)).r) +
               abs(fb(uv + vec2(0.0, dx)).r - fb(uv - vec2(0.0, dx)).r);
-    float v = clamp(e * 4.0 + prev.r * uDecay * 0.5 + luma(src.rgb) * 0.1, 0.0, 1.0);
+    float edge = clamp(e * 1.1, 0.0, 1.0);
+    // Leaky feedback: bright pixels lose energy (1.0 - prev.r), so the web stays
+    // sparse. uGain trims the edge contribution further (default 1 ⇒ ~0.45).
+    float keep = prev.r * uDecay * 0.6 * (1.0 - prev.r);
+    float v = clamp(edge * 0.45 * uGain + keep + luma(src.rgb) * 0.05, 0.0, 1.0);
     outc = vec4(vec3(v), 1.0);
   } else if (uMode == 7) {
-    // COLOR — hue-rotate the loop by uHue each frame (channel cycling). Blend a
-    // little input so the colours have a source to cycle.
-    vec3 c = hueRotate(prev.rgb, uHue * 0.1);
-    outc = vec4(mix(c, src.rgb, 0.1 + 0.4 * src.a), 1.0);
+    // COLOR — hue-rotate the loop each frame (channel cycling). The old
+    // uHue*0.1 was barely visible; bump the per-frame rotation rate ~6× so the
+    // channel cycling is clearly visible. INTENSITY is the wet/dry mix.
+    vec3 c = hueRotate(prev.rgb, uHue * 0.6);
+    vec3 wet = mix(c, src.rgb, 0.1 + 0.4 * src.a);
+    outc = vec4(mix(src.rgb, wet, uIntensity), 1.0);
   } else if (uMode == 8) {
-    // DISPLACE — self-displacement by the loop's RG (liquid / turbulence). Drive
-    // the field with the input so it doesn't freeze.
+    // DISPLACE — self-displacement by the loop's RG (liquid / turbulence). The
+    // old *0.02 step was too small to read as motion; bump it ~6× (and let uFlow
+    // scale it, matching the popover knob) so the liquid/turbulence is visible.
+    // INTENSITY is the wet/dry mix.
     vec2 disp = fb(uv).rg - 0.5;
-    vec3 d = fb(uv + disp * 0.02 * uGain).rgb;
-    outc = vec4(mix(d, src.rgb, 0.08 + 0.4 * src.a), 1.0);
+    vec3 d = fb(uv + disp * 0.12 * (0.5 + uFlow)).rgb;
+    vec3 wet = mix(d, src.rgb, 0.08 + 0.4 * src.a);
+    outc = vec4(mix(src.rgb, wet, uIntensity), 1.0);
   } else if (uMode == 9) {
-    // REACTION — logistic reaction-diffusion of a blurred channel (cells/spots).
+    // REACTION — reaction-diffusion (cells/spots). The old logistic
+    // (b + gain*0.5*b*(1-b)) had no decay, so every cell ratcheted up to b=1 and
+    // the whole field went uniform — and the colour map vec3(v,v*0.7,1-v) reads
+    // as a flat YELLOW wash at that fixed point. Fix BOTH:
+    //  1. Add a Laplacian-driven diffusion + a small DECAY so activity settles
+    //     into stable spots instead of saturating everywhere.
+    //  2. Map the value through hueRotate (varied colour), not the yellowing
+    //     vec3(v, v*0.7, 1-v).
     float r = 1.0 + uBlur;
-    float b =
+    float c0 = fb(uv).r;
+    float lap =
       (fb(uv + uTexel * vec2( r, 0.0)).r +
        fb(uv + uTexel * vec2(-r, 0.0)).r +
        fb(uv + uTexel * vec2(0.0,  r)).r +
-       fb(uv + uTexel * vec2(0.0, -r)).r) * 0.25;
-    float v = b + uGain * 0.5 * b * (1.0 - b);
-    v = clamp(v + luma(src.rgb) * 0.05, 0.0, 1.0);
-    outc = vec4(vec3(v, v * 0.7, 1.0 - v), 1.0);
+       fb(uv + uTexel * vec2(0.0, -r)).r) * 0.25 - c0;
+    // Bounded reaction: a gentle nonlinear bump that PUSHES AWAY from the 0.5
+    // mid-point (so cells separate into hi/lo) but is damped by uGain and a small
+    // leak toward 0, so it can't run away to a uniform field.
+    float react = uGain * 0.18 * (c0 - 0.5) * (1.0 - c0) * c0 * 6.0;
+    float v = c0 + lap * 0.35 + react - 0.02 * c0; // diffuse + react − leak
+    v = clamp(v + luma(src.rgb) * 0.06, 0.0, 1.0);
+    // Varied colour: rotate a teal/magenta base by the value + the THRESH knob so
+    // spots read as distinct colours, never a flat yellow.
+    vec3 baseCol = vec3(0.2, 0.85, 0.7);
+    vec3 col = hueRotate(baseCol, v * 0.5 + uThresh * 0.5) * (0.25 + 0.9 * v);
+    outc = vec4(col, 1.0);
   } else if (uMode == 10) {
     // LUMAGATE — keep only bright structure (luma-key persistence). Feed input
     // into the kept region so new bright pixels can join.
@@ -2061,10 +2137,13 @@ void main() {
     outc = vec4(max(kept, src.rgb * step(uThresh, luma(src.rgb))), 1.0);
   } else {
     // VECTOR (11) — LZX-style flow-field advection: the input's RG is a velocity
-    // field that advects the loop. flow scales the step.
+    // field that advects the loop. The old *0.02 step barely moved the image;
+    // bump it ~8× (with a flow floor so there's always some drift) so the
+    // advection visibly transports the picture. INTENSITY is the wet/dry mix.
     vec2 flowv = src.rg - 0.5;
-    vec3 advected = fb(uv + flowv * 0.02 * uFlow).rgb;
-    outc = vec4(mix(advected, src.rgb, 0.06 + 0.3 * src.a), 1.0);
+    vec3 advected = fb(uv + flowv * 0.16 * (0.25 + uFlow)).rgb;
+    vec3 wet = mix(advected, src.rgb, 0.06 + 0.3 * src.a);
+    outc = vec4(mix(src.rgb, wet, uIntensity), 1.0);
   }
 
   outColor = vec4(clamp(outc.rgb, 0.0, 8.0), 1.0);

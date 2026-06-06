@@ -128,10 +128,12 @@ test.describe('TOYBOX Configure-feedback popover', () => {
     await setup(page);
     await addFeedbackAndOpen(page);
 
-    // MODE select present; default mode 0 (TUNNEL) → zoom/rotate/decay knobs, NOT blur.
+    // MODE select present; default mode 0 (TUNNEL) → zoom/rotate/intensity/decay
+    // knobs, NOT blur. (intensity = the wet/dry mix, added in schemaVersion 4.)
     await expect(page.locator('[data-testid="toybox-feedback-config-mode-select"]')).toBeVisible();
     await expect(knob(page, 'zoom')).toBeVisible();
     await expect(knob(page, 'rotate')).toBeVisible();
+    await expect(knob(page, 'intensity')).toBeVisible();
     await expect(knob(page, 'decay')).toBeVisible();
     await expect(knob(page, 'blur')).toHaveCount(0);
 

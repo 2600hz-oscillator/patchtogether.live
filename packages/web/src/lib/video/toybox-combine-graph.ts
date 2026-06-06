@@ -167,6 +167,11 @@ export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
     { id: 'slitPos', label: 'SLIT POS', min: 0, max: 1, default: 0.5 },
     { id: 'slitWidth', label: 'SLIT W', min: 0, max: 1, default: 0.1 },
     { id: 'flow', label: 'FLOW', min: 0, max: 1, default: 0 },
+    // INTENSITY — wet/dry mix between the live input (dry) and the recursive
+    // feedback result (wet). At 1 the effect OWNS the output (opaque mirrors /
+    // strong accumulation); at 0 it passes the input through. Added in
+    // schemaVersion 4 (migrateToyboxData backfills the default for old saves).
+    { id: 'intensity', label: 'INTENSITY', min: 0, max: 1, default: 0.5 },
   ],
 };
 

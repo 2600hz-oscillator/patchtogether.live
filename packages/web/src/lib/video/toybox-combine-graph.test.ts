@@ -149,6 +149,8 @@ describe('FEEDBACK op (the first STATEFUL combine node)', () => {
     expect(byId.slitPos).toMatchObject({ min: 0, max: 1, default: 0.5 });
     expect(byId.slitWidth).toMatchObject({ min: 0, max: 1, default: 0.1 });
     expect(byId.flow).toMatchObject({ min: 0, max: 1, default: 0 });
+    // intensity = the wet/dry mix (schemaVersion 4); 0..1, half-wet default.
+    expect(byId.intensity).toMatchObject({ min: 0, max: 1, default: 0.5 });
     // tx/ty/rotate/hue present.
     for (const k of ['tx', 'ty', 'rotate', 'hue']) expect(byId[k]).toBeDefined();
   });

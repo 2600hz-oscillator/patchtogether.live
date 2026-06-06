@@ -57,10 +57,11 @@ describe('toyboxDef shape', () => {
     expect(toyboxDef.params).toEqual([]);
   });
 
-  it('is schemaVersion 3 with a migrate hook', () => {
+  it('is schemaVersion 4 with a migrate hook', () => {
+    // v4 = feedback gained the `intensity` (wet/dry mix) param (backfilled).
     // v3 = chromakey single `key` channel-select → keyR/keyG/keyB HSV key
     // (v2 was the 8→6 cv7/cv8 route strip).
-    expect(toyboxDef.schemaVersion).toBe(3);
+    expect(toyboxDef.schemaVersion).toBe(4);
     expect(typeof toyboxDef.migrate).toBe('function');
   });
 });
@@ -100,9 +101,23 @@ describe('FEEDBACK fragment shader (the stateful op program)', () => {
     expect(src).toContain('uniform sampler2D uFeedback'); // previous frame
     expect(src).toContain('uniform sampler2D uInput'); // upstream in0
     expect(src).toContain('uniform int   uMode');
-    for (const u of ['uZoom', 'uRotate', 'uScaleP', 'uTx', 'uTy', 'uDecay', 'uGain', 'uThresh', 'uHue', 'uBlur', 'uSlitPos', 'uSlitWidth', 'uFlow']) {
+    for (const u of ['uZoom', 'uRotate', 'uScaleP', 'uTx', 'uTy', 'uDecay', 'uGain', 'uThresh', 'uHue', 'uBlur', 'uSlitPos', 'uSlitWidth', 'uFlow', 'uIntensity']) {
       expect(src, `declares ${u}`).toContain(u);
     }
+  });
+  it('declares + reads the wet/dry uIntensity uniform', () => {
+    const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
+    expect(src).toContain('uniform float uIntensity;');
+    // It is actually consumed (not just declared): the wet/dry mix references it.
+    expect(src).toContain('uIntensity');
+    expect((src.match(/uIntensity/g) ?? []).length).toBeGreaterThan(1);
+  });
+  it('TUNNEL is an unrolled hall-of-mirrors loop (const-bounded, no dynamic loop)', () => {
+    const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
+    expect(src).toContain('const int HOM_LEVELS');
+    // The loop bound must be the const (constant-bounded for GLSL ES 300), and
+    // the deeper taps must read the feedback buffer (frame-within-frame).
+    expect(src).toContain('k < HOM_LEVELS');
   });
   it('switches on every one of the 12 modes (uMode == 0 .. 10, else = 11)', () => {
     const src = __FEEDBACK_FRAG_SRC_FOR_TEST;
