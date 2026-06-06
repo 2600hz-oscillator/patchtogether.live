@@ -181,12 +181,7 @@ test('adsr: env_inv is the 1-env complement', async ({ page }) => {
   expect(envInv.peak, `env_inv should be high without gate (peak=${envInv.peak})`).toBeGreaterThan(0.3);
 });
 
-// FIXME: chronically flaky on CI — chaotic random-walk RMS occasionally
-// undershoots the 0.05 threshold (saw 0.0425 on a recent run). Threshold
-// is too tight for the test window, OR the random walk's seed varies and
-// hits a stuck zone. Quarantined to unblock CI sharding; proper fix needs
-// threshold loosening backed by chaos-distribution analysis.
-test.fixme('buggles: smooth/stepped CV outputs emit chaotic non-constant signals', async ({ page }) => {
+test('buggles: smooth/stepped CV outputs emit chaotic non-constant signals', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -206,17 +201,46 @@ test.fixme('buggles: smooth/stepped CV outputs emit chaotic non-constant signals
     ],
   );
 
-  await runFor(page, 800);
+  // ROOT CAUSE of the old flake: BUGGLES is a slow random-event generator
+  // (woggle period ~0.2–0.3s at rate=0.6) whose stepped/smooth CV outputs
+  // hold a single value between events. A one-shot readScopeSnapshot only
+  // captures the ~50–200ms analyser buffer at ONE instant, so if the
+  // capture happened to land on a near-zero stepped value (the random
+  // walk genuinely passes through ~0 every few steps — see the seeded
+  // sequence: events at ~0.34s/0.83s/1.97s sit under 0.05), the one-shot
+  // peak undershot the 0.05 floor and the test flaked. The PRNG is seeded
+  // deterministically from the node id ('bug'), so the VALUE sequence is
+  // fixed — only the wall-clock TIMING of the capture drifts under CI
+  // load. Fix = max-hold the peak across the whole drive window (the
+  // documented robust pattern in readScopePeakOverWindow), which reliably
+  // catches the deterministic large excursions (|stepped|·level reaches
+  // ~0.39 within the first ~0.6s, then repeatedly) while staying just as
+  // meaningful: a truly silent/constant-zero module never crosses the
+  // floor. Window is ~1.6s so several large excursions land even if early
+  // woggle timers fire late.
+  let smoothPeak = 0;
+  let steppedPeak = 0;
+  const deadline = Date.now() + 1600;
+  let polls = 0;
+  while (Date.now() < deadline) {
+    const s = await readScopeSnapshot(page, 'scp');
+    if (s) {
+      const sm = summarize(s.ch1).peak;
+      const st = summarize(s.ch2).peak;
+      if (sm > smoothPeak) smoothPeak = sm;
+      if (st > steppedPeak) steppedPeak = st;
+      polls++;
+    }
+    await runFor(page, 60);
+  }
 
-  const snap = await readScopeSnapshot(page, 'scp');
-  expect(snap).not.toBeNull();
-  const smooth = summarize(snap!.ch1);
-  const stepped = summarize(snap!.ch2);
+  expect(polls, 'buggles scope was readable at least once').toBeGreaterThan(0);
 
-  // Both should emit non-zero magnitude (chaotic random walk drives both
-  // significantly off zero).
-  expect(smooth.peak,  `buggles smooth peak=${smooth.peak.toFixed(4)}`).toBeGreaterThan(0.05);
-  expect(stepped.peak, `buggles stepped peak=${stepped.peak.toFixed(4)}`).toBeGreaterThan(0.05);
+  // Both outputs swing well off zero over the window (chaotic random walk
+  // drives both). Max-hold makes this robust to capture-timing drift
+  // without weakening the "is this non-constant / non-silent?" assertion.
+  expect(smoothPeak,  `buggles smooth max-peak=${smoothPeak.toFixed(4)}`).toBeGreaterThan(0.05);
+  expect(steppedPeak, `buggles stepped max-peak=${steppedPeak.toFixed(4)}`).toBeGreaterThan(0.05);
 
   expect(errors, errors.join('; ')).toEqual([]);
 });
