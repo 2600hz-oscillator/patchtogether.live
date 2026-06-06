@@ -5,11 +5,11 @@
 #
 # Builds DSP dist + preview bundle ONCE (same artifacts as ci.yml), then fans out
 # a `shard(1..6) × pass(1..5)` = 30-job matrix, each running the behavioral sweep
-# `per-module-per-port-behavioral.spec.ts --shard=S/6 --workers=4 --retries=2`
-# (GATE-REALISTIC retries — identical to how the ci.yml behavioral lane runs, so a
-# spec only counts as failed if retries didn't rescue it). Download all 30 blob
-# reports + merge → any spec that failed (post-retry) in ANY pass is a
-# `test.fixme()` quarantine candidate.
+# `per-module-per-port-behavioral.spec.ts --shard=S/6 --workers=4 --retries=1`
+# (GATE-REALISTIC retries — retries=1 matches the real gate: playwright.config.ts
+# uses `retries: process.env.CI ? 1 : 0`, so a spec only counts as failed if its
+# ONE retry didn't rescue it). Download all 30 blob reports + merge → any spec that
+# failed (post-retry) in ANY pass is a `test.fixme()` quarantine candidate.
 #
 # Push to a `behavioral-purge/**` branch (or workflow_dispatch) to run; aggregate
 # with /tmp/aggregate-purge.sh adapted to `behavioral-blob-report-*`.
@@ -204,15 +204,17 @@ jobs:
         run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
       - name: Emit registry manifest for E2E
         run: flox activate -- task test:emit-manifest
-      # retries=2 = GATE-REALISTIC (same as the ci.yml behavioral lane). A spec
-      # only counts as failed here if retries didn't rescue it.
+      # retries=1 = GATE-REALISTIC: matches the real gate (playwright.config.ts:
+      # `retries: process.env.CI ? 1 : 0` → ONE retry, same for the behavioral
+      # lane in ci.yml). A spec only counts as failed here if its one retry didn't
+      # rescue it. (Was --retries=2, which over-rescued vs the real 1-retry gate.)
       - name: Run behavioral (shard ${{ matrix.shard }}/6 pass ${{ matrix.pass }}, 4 workers)
         run: |
           flox activate -- npx --workspace e2e playwright test \
             per-module-per-port-behavioral.spec.ts \
             --shard=${{ matrix.shard }}/6 \
             --workers=4 \
-            --retries=2 \
+            --retries=1 \
             --reporter=blob
       - name: Upload blob report (behavioral shard ${{ matrix.shard }} pass ${{ matrix.pass }})
         if: always()

@@ -6,10 +6,11 @@
 # SwiftShader gives FALSE interaction failures and the dev port may be occupied.
 # This builds the DSP dist + preview bundle ONCE (same artifacts as ci.yml) then
 # fans out a `shard(1..10) × pass(1..5)` = 50-job matrix, each running the normal
-# `--shard=S/10` ONCE with `--retries=2` (GATE-REALISTIC — identical to how the
-# ci.yml e2e gate runs, so a spec only counts as failed if retries didn't rescue
-# it). Download all 50 blob reports + merge → any test that failed (post-retry) in
-# ANY pass is a quarantine (`test.fixme`) candidate.
+# `--shard=S/10` ONCE with `--retries=1` (GATE-REALISTIC — retries=1 matches the
+# real e2e gate: playwright.config.ts uses `retries: process.env.CI ? 1 : 0`, so a
+# spec only counts as failed if its ONE retry didn't rescue it). Download all 50
+# blob reports + merge → any test that failed (post-retry) in ANY pass is a
+# quarantine (`test.fixme`) candidate.
 #
 # Dispatch:  gh workflow run e2e-flake-purge.yml --ref <branch>
 # Each job is a normal ~8-12 min shard run (well within the 20 min timeout); the
@@ -210,18 +211,20 @@ jobs:
         run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
       - name: Emit registry manifest for E2E
         run: flox activate -- task test:emit-manifest
-      # retries=2 = GATE-REALISTIC: identical to how the ci.yml e2e gate runs on
-      # CI (playwright.config retries on CI = 2). A spec only counts as a failure
-      # here if it fails ALL retries in a pass — i.e. it would actually turn the
-      # gate red. This is the bar chosen for the quarantine: don't fixme tests
-      # that a normal retry would have rescued (that just guts coverage); fixme
-      # only the ones that break the gate even with retries.
+      # retries=1 = GATE-REALISTIC: identical to how the ci.yml e2e gate runs on
+      # CI (playwright.config.ts: `retries: process.env.CI ? 1 : 0` → ONE retry).
+      # A spec only counts as a failure here if it fails its one retry in a pass —
+      # i.e. it would actually turn the gate red. This is the bar chosen for the
+      # quarantine: don't fixme tests that the gate's single retry would have
+      # rescued (that just guts coverage); fixme only the ones that break the gate
+      # even with the retry. (Was --retries=2, which over-rescued vs the real
+      # 1-retry gate and mis-calibrated quarantine decisions.)
       - name: Run E2E (shard ${{ matrix.shard }}/10 pass ${{ matrix.pass }}, no @collab/@capacity/behavioral)
         run: |
           flox activate -- npx --workspace e2e playwright test \
             --grep-invert "@collab|@capacity|BEHAVIORAL input coverage" \
             --shard=${{ matrix.shard }}/10 \
-            --retries=2 \
+            --retries=1 \
             --reporter=blob
       - name: Upload blob report (shard ${{ matrix.shard }} pass ${{ matrix.pass }})
         if: always()
