@@ -55,6 +55,19 @@ async function pulse(page: Page, nodeId: string, paramId: string): Promise<void>
   await page.waitForTimeout(8);
 }
 
+/** Advance the game clock PAST the opening count-in (GIB_TUNING.countInTicks)
+ *  with all CV low so nothing spawns — so a subsequent controlled spawn pulse
+ *  actually lands an event. Without this, the first couple of clock ticks fall
+ *  inside the count-in window and chooseSpawn() suppresses them by design. */
+async function warmUpPastCountIn(page: Page, nodeId: string): Promise<void> {
+  await setParam(page, nodeId, 'cv1', 0);
+  await setParam(page, nodeId, 'cv2', 0);
+  await setParam(page, nodeId, 'cv3', 0);
+  await setParam(page, nodeId, 'cv4', 0);
+  // countInTicks is 2; pulse 3× to be safely past it.
+  for (let i = 0; i < 3; i++) await pulse(page, nodeId, 'clock');
+}
+
 async function readNum(page: Page, nodeId: string, key: string): Promise<number | null> {
   return await page.evaluate(
     ({ id, k }) => {
@@ -117,6 +130,27 @@ async function forcePulse(page: Page, nodeId: string, port: string, repeats = 6)
     },
     { id: nodeId, p: port, n: repeats },
   );
+}
+
+/** Read the lookahead-lane queue (array of {button,kind,pos,hot}) via the
+ *  engine read path — the readable upcoming-buttons queue the player reacts to. */
+async function readLane(
+  page: Page,
+  nodeId: string,
+): Promise<{ button: string; kind: string; pos: number; hot: boolean }[]> {
+  return await page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __engine?: () => {
+        read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+      } | null;
+      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+    };
+    const eng = w.__engine?.();
+    const node = w.__patch.nodes[id];
+    if (!eng || !node) return [];
+    const lane = eng.read(node, 'lane') as { button: string; kind: string; pos: number; hot: boolean }[] | undefined;
+    return Array.isArray(lane) ? lane : [];
+  }, nodeId);
 }
 
 async function readScopePeak(page: Page, scopeNodeId: string): Promise<{ peak: number; rms: number } | null> {
@@ -221,6 +255,140 @@ test('gibribbon: AUTOPLAY — a bare card (no clock/CV patched) self-plays', asy
     .toBe(true);
 });
 
+test('gibribbon: AUTOPLAY shows a VARIED, READABLE stream — ≥3 distinct kinds approach in the first ~5s', async ({ page }) => {
+  // DROP-AND-PLAY (gap #1) + READABLE LOOKAHEAD (gap #2): a bare card must not
+  // just "degrade health" — it must show a varied stream of distinct event
+  // kinds the player can READ in the lookahead lane. We accumulate the distinct
+  // kinds visible in the lane over the opening seconds and assert ≥3 of the four
+  // kinds (loop/jump/imp/zombie) appear, AND that the lane is actually populated
+  // (a non-empty readable queue), within ~5s.
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
+  ]);
+  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+
+  const seenKinds = new Set<string>();
+  let sawNonEmptyLane = false;
+  await expect
+    .poll(
+      async () => {
+        const lane = await readLane(page, 'g');
+        if (lane.length > 0) sawNonEmptyLane = true;
+        for (const slot of lane) seenKinds.add(slot.kind);
+        return seenKinds.size;
+      },
+      { timeout: 12_000, intervals: [250, 250, 250, 500] },
+    )
+    .toBeGreaterThanOrEqual(3);
+
+  expect(sawNonEmptyLane, 'the lookahead lane must show a readable upcoming-button queue').toBe(true);
+  // Every lane button is a valid ABXY mapping (the queue is meaningful).
+  const finalLane = await readLane(page, 'g');
+  for (const slot of finalLane) expect(['a', 'b', 'x', 'y']).toContain(slot.button);
+});
+
+test('gibribbon: joystick X/Y axes are consumed (no dead ports) — aim engaged, game stays playable', async ({ page }) => {
+  // NO DEAD IO (gap #1): the `x`/`y` axes must DO something and not break play.
+  // The PRECISE re-centring behaviour (aimX shifts the judgement point; aimY
+  // moves the marine) is locked deterministically in gibribbon-events.test.ts
+  // (setAim + judgePress aim-shift unit tests). Here we prove the axes are
+  // genuinely WIRED through the engine setParam path: with both sticks pushed,
+  // a deterministically-spawned imp still clears on a correct X press (the aim
+  // path consumes the values without throwing or dropping the press).
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
+  ]);
+  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await setParam(page, 'g', 'autoplay', 0); // deterministic control
+
+  // Push BOTH axes (the formerly-dead ports) — these now feed setAim() every
+  // frame. axis_y moves the marine vertically; axis_x re-centres the window.
+  // Keep axis_x modest so it nudges (not maxes) the window centre.
+  await setParam(page, 'g', 'axis_x', 0.3);
+  await setParam(page, 'g', 'axis_y', -0.8);
+
+  // Advance past the opening count-in so the spawn pulse below actually lands.
+  await warmUpPastCountIn(page, 'g');
+
+  // Spawn an imp + clear it under aim (proves the press path still works while
+  // the axes are live).
+  await setParam(page, 'g', 'cv3', 0.95);
+  await setParam(page, 'g', 'gate', 1);
+  await pulse(page, 'g', 'clock');
+  await setParam(page, 'g', 'cv3', 0.0);
+
+  const cleared = await page.waitForFunction(
+    ({ id }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+          setParam: (n: { id: string; type: string; domain: string; params: Record<string, number> }, k: string, v: number) => void;
+        } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string; params: Record<string, number> }> };
+      };
+      const eng = w.__engine?.();
+      const node = w.__patch.nodes[id];
+      if (!eng || !node) return false;
+      eng.setParam(node, 'btn_x', 1);
+      eng.setParam(node, 'btn_x', 0);
+      const s = eng.read(node, 'score');
+      return typeof s === 'number' && s > 0;
+    },
+    { id: 'g' },
+    { timeout: 8000, polling: 60 },
+  ).catch(() => null);
+
+  expect(cleared, 'with X/Y axes engaged a correct press should still clear the imp').toBeTruthy();
+  // No exceptions from the aim path.
+  expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
+});
+
+test('gibribbon: GAME OVER overlay + in-card RESTART returns to a fresh healthy game', async ({ page }) => {
+  // GAME-OVER + RESTART from the play surface (gap #3/#5): drive the marine to
+  // death (autoplay off, three controlled misses), assert the on-canvas GAME
+  // OVER overlay appears, then RESTART in-card → health 'healthy', score 0,
+  // game live again.
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
+  ]);
+  await expect(page.locator('.svelte-flow__node-gibribbon')).toBeVisible();
+  await setParam(page, 'g', 'autoplay', 0);
+
+  // Advance past the opening count-in so the first spawn below actually lands.
+  await warmUpPastCountIn(page, 'g');
+
+  // Drive three misses (healthy → wounded → critical → dead). Each: spawn an
+  // obstacle then tick well past the miss line with no press.
+  for (let m = 0; m < 3; m++) {
+    await setParam(page, 'g', 'cv1', 0.95);
+    await setParam(page, 'g', 'gate', 1);
+    await pulse(page, 'g', 'clock');
+    await setParam(page, 'g', 'cv1', 0.0);
+    for (let i = 0; i < 10; i++) await pulse(page, 'g', 'clock');
+  }
+
+  await expect.poll(async () => readStr(page, 'g', 'health'), { timeout: 8000 }).toBe('dead');
+
+  // The on-canvas GAME OVER overlay (DOM) must be visible.
+  const overlay = page.locator('[data-testid="gibribbon-gameover"]');
+  await expect(overlay).toBeVisible();
+  await expect(overlay).toContainText('GAME OVER');
+
+  // RESTART from the play surface → fresh healthy game.
+  await page.locator('[data-testid="gibribbon-restart"]').click();
+  await expect.poll(async () => readStr(page, 'g', 'health'), { timeout: 4000 }).toBe('healthy');
+  expect(await readNum(page, 'g', 'score')).toBe(0);
+  await expect(overlay).toBeHidden();
+});
+
 test('gibribbon: clock+gate+CV spawns an imp → a correct ABXY press clears it (score up)', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
@@ -234,6 +402,9 @@ test('gibribbon: clock+gate+CV spawns an imp → a correct ABXY press clears it 
   await setParam(page, 'g', 'autoplay', 0);
 
   expect(await readNum(page, 'g', 'score')).toBe(0);
+
+  // Advance past the opening count-in so the spawn pulse below actually lands.
+  await warmUpPastCountIn(page, 'g');
 
   // cv3 → 'imp' (default cvEventMap = [loop, jump, imp, zombie]). Hold cv3 HIGH
   // + gate HIGH, then tick the clock to spawn an imp on the beat, then keep
@@ -293,6 +464,9 @@ test('gibribbon: a missed event degrades the marine (health drops below healthy)
   await setParam(page, 'g', 'autoplay', 0);
 
   expect(await readStr(page, 'g', 'health')).toBe('healthy');
+
+  // Advance past the opening count-in so the spawn pulse below actually lands.
+  await warmUpPastCountIn(page, 'g');
 
   // Spawn a loop event (cv1) and let the clock scroll it PAST the marine with
   // NO button press → a miss → degrade healthy → wounded.

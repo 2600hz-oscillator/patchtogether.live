@@ -79,6 +79,14 @@
   }
   function onKeyDown(e: KeyboardEvent) {
     if (!hasFocus) return;
+    // R restarts a finished game from the play surface (no need to reach for the
+    // off-canvas RESET button on game over).
+    if (e.key.toLowerCase() === 'r') {
+      e.preventDefault();
+      e.stopPropagation();
+      getExtras()?.reset();
+      return;
+    }
     const btn = keyToButton(e);
     if (!btn) return;
     e.preventDefault();
@@ -160,6 +168,13 @@
 
   <div class="screen-wrap">
     <canvas bind:this={canvasEl} class="screen" data-testid="gibribbon-screen"></canvas>
+    {#if health === 'dead'}
+      <div class="gameover-overlay" data-testid="gibribbon-gameover">
+        <div class="go-title">GAME OVER</div>
+        <div class="go-sub">press R or RESET to play again</div>
+        <button type="button" class="go-btn" onclick={resetGame} data-testid="gibribbon-restart">RESTART</button>
+      </div>
+    {/if}
   </div>
 
   <div class="row">
@@ -169,7 +184,7 @@
     {/if}
   </div>
 
-  <div class="tip">Click to focus → F/D/J/K (or arrows) = A/B/X/Y. Patch CV1-4 + CLOCK + GATE to auto-generate.</div>
+  <div class="tip">Click to focus → F/D/J/K (or arrows) = A/B/X/Y, R = restart. Read the top lane for the next buttons. Patch X/Y to aim, CV1-4 + CLOCK + GATE to auto-generate.</div>
 </div>
 
 <style>
@@ -213,9 +228,23 @@
     margin: 4px auto 10px; border: 1px solid #000;
     box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6), 0 0 4px rgba(0, 0, 0, 0.3);
     background: #000; border-radius: 3px; overflow: hidden; display: block;
+    position: relative; /* anchor the GAME OVER overlay */
     width: 480px; height: 270px; /* 640×360 scaled to fit the card */
   }
   .screen { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+  .gameover-overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px;
+    background: rgba(0, 0, 0, 0.55); font-family: ui-monospace, monospace;
+  }
+  .go-title { color: #e05050; font-size: 1.6rem; letter-spacing: 0.18em; font-weight: 700; }
+  .go-sub { color: var(--text-dim); font-size: 0.62rem; letter-spacing: 0.06em; }
+  .go-btn {
+    margin-top: 4px; background: #e05050; color: #000; border: none; border-radius: 3px;
+    font-size: 0.72rem; letter-spacing: 0.1em; padding: 6px 16px; cursor: pointer;
+    font-family: ui-monospace, monospace; font-weight: 700;
+  }
+  .go-btn:hover { background: #ff6868; }
   .row { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 0 12px; }
   .btn {
     background: var(--module-bg); color: var(--text); border: 1px solid var(--border);

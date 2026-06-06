@@ -33,8 +33,15 @@
 //             edge advances the ribbon one beat + runs spawn generation.
 //   gate      (gate)      — the beat (e.g. a sequencer's gate out). Biases
 //             which CV channel spawns on each beat (strongest-on-beat).
-//   x, y      (modsignal) — joystick axes (player aim / marine vertical
-//             position on the ribbon). Bipolar ±1.
+//   x, y      (modsignal) — joystick axes, bipolar ±1, both genuinely consumed
+//             by the pure state machine each frame via setAim():
+//               x → AIM: re-centres the judgement point by up to ±1 hit-window
+//                   (lead the beat left / lag it right) — judgePress measures
+//                   distance to (pos − aimX·hitWindow). A timing aid, not a
+//                   free wider window (the half-width is unchanged).
+//               y → the marine's VERTICAL position on the ribbon (push up to
+//                   raise/aim high, down to crouch) — rendered via
+//                   marineAimOffset(). No longer a dead port.
 //   a, b, x_btn, y_btn (gate) — the ABXY player presses. A rising edge judges
 //             the nearest in-window event whose required button matches.
 //             (Named x_btn / y_btn to disambiguate from the x / y AXES.)
@@ -61,6 +68,8 @@ import {
   drainOutEvents,
   healthToCv,
   autoplayCv,
+  setAim,
+  upcomingLane,
   EVENT_BUTTON,
   GIB_TUNING,
   type GibState,
@@ -128,6 +137,11 @@ export interface GibribbonHandleExtras {
   /** Push an ABXY press from a keyboard event (card-driven; returns true if the
    *  key mapped). */
   pushButton(button: GibButton): boolean;
+  /** The fixed lookahead lane (next-N upcoming buttons, nearest first) so the
+   *  card HUD + e2e can read/assert the readable queue. */
+  getLane(): { button: GibButton; kind: GibEventKind; pos: number; hot: boolean }[];
+  /** Whether the game is over (death overlay shown, restart available). */
+  isDead(): boolean;
   /** Force-restart the game. */
   reset(): void;
   /** Test-only: force-pulse a gate output WITHOUT a game event, so the e2e +
@@ -143,6 +157,8 @@ const COL_BG = [0x00, 0x00, 0x00];           // black
 const COL_RIBBON = [0xff, 0xff, 0xff];       // the white vector ground line
 const COL_PROMPT = [0xa0, 0xa0, 0xa0];       // dim glyphs for upcoming prompts
 const COL_PROMPT_HOT = [0xff, 0xff, 0xff];   // the imminent prompt (in-window)
+const COL_LANE = [0x30, 0x30, 0x30];         // the fixed lookahead-lane frame
+const COL_LANE_TICK = [0x60, 0x60, 0x60];    // the lane's "now" marker
 const BTN_COLORS: Record<GibButton, number[]> = {
   a: [0x6c, 0xc0, 0x4a], // green (Vib-Ribbon-ish ABXY tints)
   b: [0xe0, 0x50, 0x50], // red
@@ -255,6 +271,9 @@ export const gibribbonDef: VideoModuleDef = {
     let lastDrawTimeS = -1;
     /** Animation clock (frames) for sprite-cycle stepping. */
     let animTick = 0;
+    /** Hit-flash level (0..1), bumped on every HIT, decays per frame, drives the
+     *  full-screen reward flash so a correct press is unmistakable. */
+    let flashLevel = 0;
 
     // ── Sprites (loaded async from DOOM1.WAD; line-art fallback until/if not) ─
     let sprites: GibSprites | null = null;
@@ -335,7 +354,7 @@ export const gibribbonDef: VideoModuleDef = {
       const out = drainOutEvents(state);
       let healthChanged = false;
       for (const e of out) {
-        if (e.type === 'hit') pulseGate(hitGate, 'evt_hit');
+        if (e.type === 'hit') { pulseGate(hitGate, 'evt_hit'); flashLevel = 1; }
         else if (e.type === 'miss') pulseGate(missGate, 'evt_miss');
         else if (e.type === 'fire') pulseGate(fireGate, 'evt_fire');
         else if (e.type === 'kill') pulseGate(killGate, 'evt_kill');
@@ -460,9 +479,12 @@ export const gibribbonDef: VideoModuleDef = {
     }
 
     function paintFrame(): void {
-      // 1. Clear to black.
+      // 1. Clear to black. A bright recent HIT flashes the background dim white
+      //    for one beat so a correct press is UNMISTAKABLE (the "feels good"
+      //    reward feedback). flashLevel decays each frame in draw().
+      const bg = flashLevel > 0.02 ? Math.round(flashLevel * 36) : 0;
       for (let i = 0; i < fbBytes.length; i += 4) {
-        fbBytes[i] = COL_BG[0]!; fbBytes[i + 1] = COL_BG[1]!; fbBytes[i + 2] = COL_BG[2]!;
+        fbBytes[i] = bg; fbBytes[i + 1] = bg; fbBytes[i + 2] = bg;
       }
 
       // 2. The white ribbon ground line, deformed by nearby loop/jump events.
@@ -495,15 +517,82 @@ export const gibribbonDef: VideoModuleDef = {
       //    firing on a recent enemy clear, pain on a recent miss, else run.
       paintMarine();
 
-      // 5. Overhead ABXY prompt strip — glyphs for the upcoming events, placed
-      //    above each event so the player reads which button it needs.
-      for (const ev of ordered) {
-        if (ev.resolved) continue;
-        if (ev.pos < 0 || ev.pos > 1) continue;
-        const sx = posToX(ev.pos);
-        const hot = Math.abs(ev.pos) <= GIB_TUNING.hitWindow;
-        drawButtonGlyph(EVENT_BUTTON[ev.kind], sx, 30, hot);
+      // 5. The FIXED LOOKAHEAD LANE — a stable strip across the top showing the
+      //    next few buttons left-to-right in fixed slots (nearest the marine on
+      //    the LEFT, like a rhythm-game note highway read-out), so the player
+      //    can READ the queue instead of chasing glyphs riding each obstacle.
+      paintLookaheadLane();
+
+      // 6. Overlays: count-in "GET READY" at the start, GAME OVER on death.
+      if (state.health === 'dead') {
+        paintGameOver();
+      } else if (state.tick <= GIB_TUNING.countInTicks) {
+        paintCountIn();
       }
+    }
+
+    // ── the fixed lookahead lane (gap item #2) ──────────────────────────────
+    const LANE_Y = 22;            // vertical centre of the lane strip
+    const LANE_X0 = 60;           // first (nearest) slot's centre x
+    const LANE_DX = 56;           // spacing between slots
+    const LANE_SLOTS = 4;         // how many upcoming buttons we show
+
+    function paintLookaheadLane(): void {
+      // The lane frame: a faint horizontal guide + a "NOW" tick under slot 0 so
+      // the read order is unambiguous (slot 0 = the next thing to press).
+      drawLine(LANE_X0 - 26, LANE_Y + 18, LANE_X0 + (LANE_SLOTS - 1) * LANE_DX + 26, LANE_Y + 18, COL_LANE);
+      drawLine(LANE_X0 - 14, LANE_Y + 18, LANE_X0 - 14, LANE_Y + 24, COL_LANE_TICK);
+      drawLine(LANE_X0 + 14, LANE_Y + 18, LANE_X0 + 14, LANE_Y + 24, COL_LANE_TICK);
+
+      const lane = upcomingLane(state, LANE_SLOTS);
+      for (let i = 0; i < lane.length; i++) {
+        const slot = lane[i]!;
+        const cx = LANE_X0 + i * LANE_DX;
+        // The nearest slot (i===0) that is HOT pulses a filled glyph; others are
+        // outline. This makes the imminent press visually distinct.
+        drawButtonGlyph(slot.button, cx, LANE_Y, slot.hot, /*filled*/ i === 0 && slot.hot);
+        // A small approach bar under each slot encodes how soon it arrives
+        // (full = right at the marine, empty = just spawned) so timing reads.
+        const frac = Math.max(0, Math.min(1, 1 - slot.pos));
+        const barW = Math.round(frac * 22);
+        drawLine(cx - 11, LANE_Y + 16, cx - 11 + barW, LANE_Y + 16, slot.hot ? COL_PROMPT_HOT : COL_PROMPT);
+      }
+    }
+
+    function paintCountIn(): void {
+      // A simple shrinking countdown ring centred on the ribbon: 3 large
+      // diamonds that drop one per count-in tick. Pure line-art so it works
+      // with or without the WAD.
+      const remaining = Math.max(0, GIB_TUNING.countInTicks - state.tick);
+      const cx = Math.round(INTERNAL_W * 0.62);
+      const cy = Math.round(INTERNAL_H * 0.34);
+      for (let i = 0; i < remaining; i++) {
+        drawDiamond(cx, cy, 16 + i * 9, COL_PROMPT);
+      }
+    }
+
+    function paintGameOver(): void {
+      // A bold GAME OVER banner: a framed box with a big X, drawn in the marine
+      // damage-red so the death state is unmistakable on the play surface, plus
+      // a restart prompt rendered as a row of marker pips ("press R / RESET").
+      const cx = Math.round(INTERNAL_W * 0.5);
+      const cy = Math.round(INTERNAL_H * 0.40);
+      const w = 150, h = 50;
+      drawBox(cx - w, cy - h, cx + w, cy + h, BTN_COLORS.b);
+      drawBox(cx - w + 4, cy - h + 4, cx + w - 4, cy + h - 4, BTN_COLORS.b);
+      // big X inside
+      drawLine(cx - 40, cy - 22, cx + 40, cy + 22, BTN_COLORS.b);
+      drawLine(cx - 40, cy + 22, cx + 40, cy - 22, BTN_COLORS.b);
+      // restart prompt strip below the banner (3 pips → "press R to restart")
+      const py = cy + h + 24;
+      for (let i = 0; i < 3; i++) drawDiamond(cx - 20 + i * 20, py, 5, COL_PROMPT_HOT);
+    }
+
+    function drawBox(x0: number, y0: number, x1: number, y1: number, rgb: number[]): void {
+      drawLine(x0, y0, x1, y0, rgb);
+      drawLine(x1, y0, x1, y1, rgb);
+      drawLine(x1, y1, x0, y1, rgb);
+      drawLine(x0, y1, x0, y0, rgb);
     }
 
     /** The ribbon's y at screen-x — baseline, deformed into a pit V (jump) or a
@@ -529,9 +618,20 @@ export const gibribbonDef: VideoModuleDef = {
       return y;
     }
 
+    /** The marine's vertical aim offset from the `y` axis input (−1..1): push
+     *  the stick UP (positive) to RAISE the marine off the ribbon (aim high at
+     *  flying imps), DOWN to crouch. Consumed here so the `y` port visibly
+     *  moves the character — it is no longer a dead input. */
+    function marineAimOffset(): number {
+      return Math.round(-state.aimY * 26); // up to ±26 px
+    }
+
     function paintMarine(): void {
-      const sy = ribbonY(MARINE_X);
-      // recent-event-driven pose
+      const baseY = ribbonY(MARINE_X);
+      const sy = baseY + marineAimOffset();
+      // recent-event-driven pose: fire on an enemy clear, a loop/jump HOP on an
+      // obstacle clear, pain on a miss. The hop makes a correct loop/jump press
+      // visibly rewarding (the marine jumps), not just a silent ribbon deform.
       const recentFire = state.events.some(
         (e) => e.resolved && e.outcome === 'hit' && (e.kind === 'imp' || e.kind === 'zombie')
           && e.resolvedTick !== null && state.tick - e.resolvedTick <= 1,
@@ -539,6 +639,12 @@ export const gibribbonDef: VideoModuleDef = {
       const recentMiss = state.events.some(
         (e) => e.resolved && e.outcome === 'miss' && e.resolvedTick !== null && state.tick - e.resolvedTick <= 1,
       );
+      const recentHop = state.events.some(
+        (e) => e.resolved && e.outcome === 'hit' && (e.kind === 'loop' || e.kind === 'jump')
+          && e.resolvedTick !== null && state.tick - e.resolvedTick <= 1,
+      );
+      // A recent obstacle clear lifts the marine in a visible hop arc.
+      const hopY = recentHop ? -22 : 0;
       let f: SpriteFrame | null = null;
       if (sprites) {
         if (state.health === 'dead' && sprites.marineDie.length) {
@@ -551,11 +657,20 @@ export const gibribbonDef: VideoModuleDef = {
           f = sprites.marineRun[Math.floor(animTick / 6) % sprites.marineRun.length]!;
         }
       }
+      const my = sy + hopY;
       if (f) {
-        blitSprite(f, MARINE_X, sy, 1.6);
+        blitSprite(f, MARINE_X, my, 1.6);
+        // A muzzle-flash streak when firing makes the enemy clear unmistakable.
+        if (recentFire) drawLine(MARINE_X + 12, my - 30, MARINE_X + 40, my - 30, COL_PROMPT_HOT);
       } else {
         // Line-art marine placeholder: a simple stick figure on the ribbon.
-        drawStickFigure(MARINE_X, sy, state.health === 'dead' ? BTN_COLORS.b : COL_RIBBON);
+        const col = state.health === 'dead' ? BTN_COLORS.b
+          : recentFire ? BTN_COLORS.x
+          : recentHop ? BTN_COLORS.a
+          : recentMiss ? BTN_COLORS.b
+          : COL_RIBBON;
+        drawStickFigure(MARINE_X, my, col);
+        if (recentFire) drawLine(MARINE_X + 9, my - 28, MARINE_X + 34, my - 28, COL_PROMPT_HOT);
       }
     }
 
@@ -581,19 +696,29 @@ export const gibribbonDef: VideoModuleDef = {
       drawLine(cx, top + 14, cx + 9, top + 22, rgb);
     }
     /** A small wireframe ABXY prompt glyph (a coloured ring + letter-ish mark).
-     *  `hot` = the event is in the timing window → brighter + a tick mark. */
-    function drawButtonGlyph(btn: GibButton, cx: number, cy: number, hot: boolean): void {
+     *  `hot` = the event is in the timing window → brighter + a tick mark.
+     *  `filled` = the imminent slot → fill the diamond with the button tint so
+     *  the next-to-press button reads at a glance even at the 480px card scale. */
+    function drawButtonGlyph(btn: GibButton, cx: number, cy: number, hot: boolean, filled = false): void {
       const col = hot ? COL_PROMPT_HOT : COL_PROMPT;
       const tint = BTN_COLORS[btn];
       const r = hot ? 11 : 9;
+      if (filled) {
+        // Scanline-fill the diamond with the button tint.
+        for (let dy = -r; dy <= r; dy++) {
+          const span = r - Math.abs(dy);
+          for (let dx = -span; dx <= span; dx++) setPx(cx + dx, cy + dy, tint);
+        }
+      }
       // ring
       drawDiamond(cx, cy, r, tint);
       drawDiamond(cx, cy, r + 2, col);
       // an inner mark per button so the four are distinguishable in mono:
-      if (btn === 'a') drawLine(cx - 3, cy + 3, cx + 3, cy - 3, tint); // /
-      else if (btn === 'b') drawLine(cx - 3, cy - 3, cx + 3, cy + 3, tint); // \
-      else if (btn === 'x') { drawLine(cx - 3, cy - 3, cx + 3, cy + 3, tint); drawLine(cx - 3, cy + 3, cx + 3, cy - 3, tint); } // X
-      else { drawLine(cx, cy - 3, cx, cy + 3, tint); drawLine(cx, cy, cx - 3, cy - 3, tint); drawLine(cx, cy, cx + 3, cy - 3, tint); } // Y
+      const mark = filled ? COL_BG : tint;
+      if (btn === 'a') drawLine(cx - 3, cy + 3, cx + 3, cy - 3, mark); // /
+      else if (btn === 'b') drawLine(cx - 3, cy - 3, cx + 3, cy + 3, mark); // \
+      else if (btn === 'x') { drawLine(cx - 3, cy - 3, cx + 3, cy + 3, mark); drawLine(cx - 3, cy + 3, cx + 3, cy - 3, mark); } // X
+      else { drawLine(cx, cy - 3, cx, cy + 3, mark); drawLine(cx, cy, cx - 3, cy - 3, mark); drawLine(cx, cy, cx + 3, cy - 3, mark); } // Y
     }
 
     function uploadFramebuffer(): void {
@@ -616,6 +741,11 @@ export const gibribbonDef: VideoModuleDef = {
         const dt = lastDrawTimeS < 0 ? 0 : Math.max(0, tNow - lastDrawTimeS);
         lastDrawTimeS = tNow;
         animTick += 1;
+        // Decay the hit-flash (dt-based so it fades the same at 30 vs 60 fps).
+        if (flashLevel > 0) flashLevel = Math.max(0, flashLevel - (dt > 0 ? dt * 4 : 0.12));
+        // AIM: feed the live joystick axes into the pure state every frame so
+        // judgePress (aimX) + the marine render (aimY) actually consume them.
+        setAim(state, params.axis_x, params.axis_y);
 
         // AUTOPLAY: drive an INTERNAL clock when no external clock is patched, so
         // a freshly-dropped card actually plays (spawns events) instead of just
@@ -676,6 +806,13 @@ export const gibribbonDef: VideoModuleDef = {
 
     function reset(): void {
       state = newGame(seed());
+      setAim(state, params.axis_x, params.axis_y);
+      // Reset the autoplay/internal-clock bookkeeping so a fresh game's count-in
+      // + first spawn time the same as on initial drop (not carried over from
+      // the previous run), and clear any lingering hit-flash.
+      internalBeatAccS = 0;
+      autoBeat = 0;
+      flashLevel = 0;
       updateHealthCv();
       paintFrame();
       uploadFramebuffer();
@@ -688,6 +825,8 @@ export const gibribbonDef: VideoModuleDef = {
       getCombo: () => state.combo,
       loadError: () => loadErr,
       pushButton(button) { judgeButton(button); return true; },
+      getLane: () => upcomingLane(state).map((s) => ({ button: s.button, kind: s.kind, pos: s.pos, hot: s.hot })),
+      isDead: () => state.health === 'dead',
       reset,
       forcePulse(port) { pulseGate(gateFor(port), port); },
     };
@@ -732,6 +871,8 @@ export const gibribbonDef: VideoModuleDef = {
         if (key === 'health') return state.health;
         if (key === 'combo') return state.combo;
         if (key === 'loadError') return loadErr;
+        if (key === 'lane') return upcomingLane(state).map((s) => ({ button: s.button, kind: s.kind, pos: s.pos, hot: s.hot }));
+        if (key === 'dead') return state.health === 'dead';
         return undefined;
       },
       subscribePulse(portId, cb) {
