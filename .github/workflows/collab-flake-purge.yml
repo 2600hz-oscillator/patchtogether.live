@@ -1,0 +1,380 @@
+# collab-flake-purge — run the @collab (+ @capacity) Playwright suite 5×
+# INDEPENDENTLY on CI to identify every @collab spec that is not 5×-stable on
+# CI's Linux SwiftShader, so the unstable ones can be quarantined/disabled.
+#
+# WHY this exists: the @collab lane was promoted to a gate WITHOUT first running
+# this kind of 5× flake-purge (that omission is the bug we're fixing). "Run the
+# whole @collab suite 5×, quarantine anything that fails any pass" can't be done
+# faithfully locally — local Mac runs give FALSE interaction failures, the relay
+# is in-process and drifts, and @collab is multi-context (two browser contexts +
+# DOOM WASM) which is exactly the load profile that only reproduces on CI.
+#
+# This mirrors e2e-flake-purge.yml's STRUCTURE: build the DSP dist + preview
+# bundle ONCE (same artifacts as ci.yml), then fan out a `pass(1..5)` matrix.
+# Each pass reproduces ci.yml's dedicated `collab` job setup EXACTLY (postgres
+# service, DATABASE_URL + COLLAB_JOB=1 + E2E_USE_PREVIEW=1, LFS checkout, DB
+# schema, DOOM/SNES9X WASM + DOOM1.WAD, manifest emit) and runs the @collab/
+# @capacity grep at 2 workers with --retries=2 (GATE-REALISTIC — identical to
+# how the ci.yml collab gate runs, so a spec only counts as failed if retries
+# didn't rescue it). Each pass writes a UNIQUELY-named blob report; a final
+# merge job downloads all 5 blobs and merges them into one browsable HTML report
+# → any @collab test that failed (post-retry) in ANY pass is a quarantine
+# candidate.
+#
+# Dispatch:  gh workflow run collab-flake-purge.yml --ref <branch>
+# Or push to a `collab-purge/**` branch to fire it from the pushed branch's own
+# workflow file (no need for this file to live on the default branch yet).
+name: collab-flake-purge
+
+on:
+  workflow_dispatch: {}
+  # Push-triggered on a dedicated branch prefix so the purge runs from the
+  # PUSHED branch's own workflow file. `git push origin <work>:collab-purge/run-N`
+  # fires it without this file needing to be on the default branch.
+  push:
+    branches: ['collab-purge/**']
+
+# Don't let two purge runs (or a purge + its own re-dispatch on the same ref)
+# collide.
+concurrency:
+  group: collab-flake-purge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --- DSP worklets, once (verbatim from e2e-flake-purge.yml / ci.yml) ---
+  dsp-build:
+    name: dsp-build (Faust worklets, once)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+      - name: Cache DSP dist
+        id: cache-dsp-dist
+        uses: actions/cache@v4
+        with:
+          path: packages/dsp/dist
+          key: ${{ runner.os }}-dsp-dist-${{ hashFiles('packages/dsp/src/**', 'packages/dsp/scripts/**', 'packages/dsp/package.json', '.flox/env/manifest.toml') }}
+      - name: Install workspace deps
+        run: flox activate -- task install
+      - name: Build DSP worklets (Faust + esbuild)
+        run: flox activate -- task dsp:build
+      - name: Upload DSP dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+          include-hidden-files: true
+          retention-days: 1
+
+  # --- Preview bundle, once (verbatim from e2e-flake-purge.yml / ci.yml) ---
+  build-web:
+    name: build-web (preview bundle, once)
+    needs: dsp-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+      - name: Install workspace deps
+        run: flox activate -- task install
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      - name: Cache SNES9X WASM artifact
+        id: cache-snes9x-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/snes9x/snes9x.js
+            packages/web/static/snes9x/snes9x.wasm
+          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
+      - name: Build SNES9X WASM (emcc)
+        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
+      - name: Build web (preview bundle, test hooks enabled)
+        env:
+          VITE_E2E_HOOKS: '1'
+        run: flox activate -- task build:web
+      - name: Upload web preview bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+          include-hidden-files: true
+          retention-days: 1
+
+  # --- The 5× fan-out: pass(1..5) = 5 independent full @collab runs ---
+  # Reproduces ci.yml's dedicated `collab` job setup EXACTLY (postgres service,
+  # COLLAB_JOB=1 + E2E_USE_PREVIEW=1 env, LFS checkout, DB schema, DOOM/SNES9X
+  # WASM + DOOM1.WAD, manifest emit), then runs the @collab/@capacity grep at
+  # 2 workers with --retries=2 + blob reporter.
+  collab:
+    name: collab-purge (pass ${{ matrix.pass }}/5)
+    needs: [dsp-build, build-web]
+    runs-on: ubuntu-latest
+    # Generous ceiling per pass — the full @collab suite (cold DOOM WASM + many
+    # 2-context boots) at 2 workers with retries=2 must fit; matches/exceeds the
+    # 40-min ci.yml collab gate to absorb a retry-heavy pass.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        pass: [1, 2, 3, 4, 5]
+
+    services:
+      postgres:
+        # AWS ECR Public mirror — avoids the flaky Docker Hub service-container
+        # pull (same as ci.yml).
+        image: public.ecr.aws/docker/library/postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      # Opt the quarantined @collab DOOM specs back IN (same as ci.yml collab).
+      COLLAB_JOB: '1'
+      # @collab runs against `vite preview` (built bundle), not the dev server —
+      # the dev server's HMR client websocket drops under 2-context + DOOM WASM
+      # CPU pressure and triggers a full reload mid-evaluate (the residual flake
+      # this lane fights). Preview serves static files (no HMR client).
+      E2E_USE_PREVIEW: '1'
+
+    steps:
+      - name: Checkout (with LFS for ART/VRT baselines)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      # Restore the worklet dist built once by dsp-build — needed at runtime
+      # alongside the downloaded preview bundle, exactly like the e2e shards.
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+
+      - name: Cache SNES9X WASM artifact
+        id: cache-snes9x-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/snes9x/snes9x.js
+            packages/web/static/snes9x/snes9x.wasm
+          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
+
+      - name: Build SNES9X WASM (emcc)
+        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
+
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
+
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+
+      # DOWNLOAD the prebuilt preview bundle the `build-web` job produced (the
+      # @collab specs run under `vite preview`). Same as ci.yml collab — avoids
+      # a per-pass `task build:web` that would blow the timeout.
+      - name: Download web preview bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+
+      # The full @collab/@capacity suite, ONCE per pass, at 2 workers with
+      # --retries=2 (GATE-REALISTIC — same grep + workers as the ci.yml collab
+      # gate). Blob reporter writes a UNIQUELY-named archive per pass so the
+      # merge job can ingest all 5 without collision.
+      - name: Run @collab specs (pass ${{ matrix.pass }}/5, blob report)
+        env:
+          PLAYWRIGHT_BLOB_OUTPUT_FILE: blob-report/collab-${{ matrix.pass }}.zip
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            --grep "@collab|@capacity" \
+            --workers=2 \
+            --retries=2 \
+            --reporter=blob
+
+      - name: Upload blob report (collab pass ${{ matrix.pass }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blob-report-collab-${{ matrix.pass }}
+          # PLAYWRIGHT_BLOB_OUTPUT_FILE is relative to the playwright cwd
+          # (e2e/, via --workspace e2e), so the archive lands at
+          # e2e/blob-report/collab-<pass>.zip.
+          path: e2e/blob-report
+          retention-days: 7
+
+  # --- Merge: download all 5 pass blobs → one browsable HTML report ---
+  # Mirrors ci.yml's `merge-reports` job (download blob-report-* by pattern,
+  # merge-multiple into one dir, `playwright merge-reports --reporter html`).
+  # The merged report makes "which @collab test failed (post-retry) in which
+  # pass" inspectable in one place → the quarantine candidate list.
+  merge:
+    name: Merge @collab purge reports
+    if: always()
+    needs: [collab]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps
+        run: flox activate -- task install
+
+      - name: Download all collab blob reports
+        uses: actions/download-artifact@v4
+        with:
+          # Download into e2e/all-blob-reports so the merge-reports step below
+          # (cwd=e2e/ via --workspace e2e) finds them at ./all-blob-reports.
+          path: e2e/all-blob-reports
+          pattern: blob-report-collab-*
+          merge-multiple: true
+
+      - name: Merge into HTML report
+        run: |
+          flox activate -- npx --workspace e2e playwright merge-reports \
+            --reporter html \
+            ./all-blob-reports
+
+      - name: Upload merged HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: collab-purge-merged-report
+          # `playwright merge-reports --reporter html` writes to
+          # playwright-report/ in the cwd. We ran with --workspace e2e so
+          # that's e2e/playwright-report/.
+          path: e2e/playwright-report
+          retention-days: 30
