@@ -148,7 +148,11 @@ function buildToyboxZip(opts: {
 }
 
 test.describe('TOYBOX preset SAVE + zip EXPORT/IMPORT', () => {
-  test.fixme('SAVE adds a user preset to the dropdown + selecting it re-applies node.data', async ({ page }) => {
+  // Re-enabled (shard rebalance #68): the WebGL compositor + zip/preset IO is
+  // heavy on software GL, so it timed out only under shard co-tenancy. Now on
+  // the dedicated non-sharded `e2e-video` job (--workers=1) it finishes inside
+  // the 120s budget (#629).
+  test('SAVE adds a user preset to the dropdown + selecting it re-applies node.data', async ({ page }) => {
     test.setTimeout(120_000);
     const errors = await setup(page);
     await clearRegistry(page);
