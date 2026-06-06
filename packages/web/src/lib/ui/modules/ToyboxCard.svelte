@@ -72,6 +72,7 @@
   import {
     OP_KINDS,
     OP_PARAMS,
+    TOYBOX_SCHEMA_VERSION,
     inPortsFor,
     hasOutPort,
     isCombineGraph,
@@ -100,9 +101,11 @@
     resetFeedbackNode,
   } from '$lib/graph/toybox-combine';
   import { FEEDBACK_MODES } from '$lib/video/toybox-feedback';
+  import { clearBinding } from '$lib/midi/midi-learn.svelte';
   import ToyboxNodeMenu from './ToyboxNodeMenu.svelte';
   import ToyboxKeyerConfig from './ToyboxKeyerConfig.svelte';
   import ToyboxFeedbackConfig from './ToyboxFeedbackConfig.svelte';
+  import ToyboxOpConfig from './ToyboxOpConfig.svelte';
   import {
     CV_PORT_IDS,
     listCvTargets,
@@ -371,6 +374,16 @@
     setLayerParam(id, activeLayer, pid, v);
     bumpRev();
   };
+
+  /** Audit M4: namespace a per-layer knob's MIDI / control-surface paramId by the
+   *  ACTIVE layer index (`layer:<idx>:<param>`) so a learned binding sticks to the
+   *  layer it was learned on. With a bare id, switching the active layer remounts
+   *  the knob onto the new layer's setter under the SAME key → an incoming CC
+   *  drove whichever layer was active at write time, not the learned one.
+   *  resolveToyboxParam parses the index back out (mirrors combine:<id>:<p>). */
+  function layerParamId(pid: string): string {
+    return `layer:${activeLayer}:${pid}`;
+  }
 
   // ───────────────────── IMAGE / VIDEO INPUT LAYERS (#39) ─────────────────────
   //
@@ -936,6 +949,16 @@
   }
 
   function onDeleteNode(gid: string): void {
+    // Audit M3: drop the deleted op's MIDI bindings (keyed combine:<id>:<param>)
+    // BEFORE deleting it. nextNodeId is now monotonic so a freed id is never
+    // reused, but we still prune so the binding doesn't linger in localStorage
+    // forever (and a re-imported graph reusing the id can't inherit a stale CC).
+    const deleted = nodeById(gid);
+    if (deleted && deleted.kind !== 'source' && deleted.kind !== 'output') {
+      for (const p of OP_PARAMS[deleted.kind as ToyboxOpKind] ?? []) {
+        clearBinding(id, `combine:${gid}:${p.id}`);
+      }
+    }
     deleteCombineNode(id, gid);
     if (selectedNodeId === gid) selectedNodeId = null;
     bumpRev(); // #60: refresh node names + CV lists
@@ -1107,6 +1130,49 @@
   $effect(() => {
     if (feedbackConfig && (!feedbackConfigNode || feedbackConfigNode.kind !== 'feedback')) {
       feedbackConfig = null;
+    }
+  });
+
+  // ── GENERIC OP CONFIG popover ("Configure…" for any non-keyer/non-feedback op) ──
+  // The #82 follow-up: every batch op gets a discoverable right-click Configure
+  // popover exposing its OP_PARAMS (knobs + enum <select>s). MIDI/CONTROLSURFACE
+  // sync rides the SAME `combine:<nodeId>:<param>` paramId the side strip uses, so
+  // right-click → MIDI-map + → Send to control surface already work for all ops.
+  interface OpConfigState {
+    open: boolean;
+    x: number;
+    y: number;
+    nodeId: string;
+  }
+  let opConfig = $state<OpConfigState | null>(null);
+
+  /** Open the generic op-config popover (no-op for keyer/feedback/source/output —
+   *  those have bespoke handling). */
+  function doConfigureOp(gid: string, x: number, y: number): void {
+    const n = nodeById(gid);
+    if (!n || n.kind === 'source' || n.kind === 'output') return;
+    if (isKeyerKind(n.kind) || n.kind === 'feedback') return;
+    opConfig = { open: true, x, y, nodeId: gid };
+  }
+
+  function closeOpConfig(): void {
+    opConfig = null;
+  }
+
+  // Fresh SNAPSHOT keyed on layersRev (same reasoning as feedbackConfigNode: an
+  // enum <select> swap is an in-place Yjs mutation; a same-reference proxy would
+  // not re-run the child's deriveds).
+  let opConfigNode = $derived.by<ToyboxGraphNode | undefined>(() => {
+    void layersRev;
+    if (!opConfig) return undefined;
+    const n = nodeById(opConfig.nodeId);
+    return n ? { id: n.id, kind: n.kind, x: n.x, y: n.y, params: { ...(n.params ?? {}) } } : undefined;
+  });
+  // Close if its node disappears or becomes a keyer/feedback/source/output.
+  $effect(() => {
+    if (opConfig && (!opConfigNode || opConfigNode.kind === 'source' || opConfigNode.kind === 'output'
+      || isKeyerKind(opConfigNode.kind) || opConfigNode.kind === 'feedback')) {
+      opConfig = null;
     }
   });
 
@@ -1630,7 +1696,13 @@
     const live = patch.nodes[id]?.data ?? node?.data;
     if (!live || typeof live !== 'object') return null;
     try {
-      return JSON.parse(JSON.stringify(live)) as Record<string, unknown>;
+      const blob = JSON.parse(JSON.stringify(live)) as Record<string, unknown>;
+      // Audit M5: stamp the CURRENT schema version into every saved/exported blob
+      // so a later RESTORE (across a schema bump) can migrate it forward via
+      // migrateToyboxData (mirrors the rack-load path). Without this a preset
+      // saved at vN restores verbatim at v(N+1), silently skipping the migration.
+      blob.schemaVersion = TOYBOX_SCHEMA_VERSION;
+      return blob;
     } catch {
       return null;
     }
@@ -2364,19 +2436,19 @@
         {#if !projUseCamera}
           <div class="knob-grid" data-testid="toybox-proj-controls">
             <Knob value={matVal('projPosX')} min={-5} max={5} defaultValue={0}
-              label="POS X" curve="linear" onchange={setMat('projPosX')} moduleId={id} paramId="projPosX" />
+              label="POS X" curve="linear" onchange={setMat('projPosX')} moduleId={id} paramId={layerParamId('projPosX')} />
             <Knob value={matVal('projPosY')} min={-5} max={5} defaultValue={0}
-              label="POS Y" curve="linear" onchange={setMat('projPosY')} moduleId={id} paramId="projPosY" />
+              label="POS Y" curve="linear" onchange={setMat('projPosY')} moduleId={id} paramId={layerParamId('projPosY')} />
             <Knob value={matVal('projPosZ')} min={-5} max={5} defaultValue={2.5}
-              label="POS Z" curve="linear" onchange={setMat('projPosZ')} moduleId={id} paramId="projPosZ" />
+              label="POS Z" curve="linear" onchange={setMat('projPosZ')} moduleId={id} paramId={layerParamId('projPosZ')} />
             <Knob value={matVal('projDirX')} min={-1} max={1} defaultValue={0}
-              label="DIR X" curve="linear" onchange={setMat('projDirX')} moduleId={id} paramId="projDirX" />
+              label="DIR X" curve="linear" onchange={setMat('projDirX')} moduleId={id} paramId={layerParamId('projDirX')} />
             <Knob value={matVal('projDirY')} min={-1} max={1} defaultValue={0}
-              label="DIR Y" curve="linear" onchange={setMat('projDirY')} moduleId={id} paramId="projDirY" />
+              label="DIR Y" curve="linear" onchange={setMat('projDirY')} moduleId={id} paramId={layerParamId('projDirY')} />
             <Knob value={matVal('projDirZ')} min={-1} max={1} defaultValue={-1}
-              label="DIR Z" curve="linear" onchange={setMat('projDirZ')} moduleId={id} paramId="projDirZ" />
+              label="DIR Z" curve="linear" onchange={setMat('projDirZ')} moduleId={id} paramId={layerParamId('projDirZ')} />
             <Knob value={matVal('projFov') || 0.8726646} min={0.2} max={2.6} defaultValue={0.8726646}
-              label="FOV" curve="linear" onchange={setMat('projFov')} moduleId={id} paramId="projFov" />
+              label="FOV" curve="linear" onchange={setMat('projFov')} moduleId={id} paramId={layerParamId('projFov')} />
           </div>
         {/if}
       {/if}
@@ -2384,23 +2456,23 @@
 
     <div class="knob-grid" data-testid="toybox-controls">
       <Knob value={matVal('rotX')} min={-3.14159} max={3.14159} defaultValue={0.3}
-        label="ROT X" curve="linear" onchange={setMat('rotX')} moduleId={id} paramId="rotX" />
+        label="ROT X" curve="linear" onchange={setMat('rotX')} moduleId={id} paramId={layerParamId('rotX')} />
       <Knob value={matVal('rotY')} min={-3.14159} max={3.14159} defaultValue={0.6}
-        label="ROT Y" curve="linear" onchange={setMat('rotY')} moduleId={id} paramId="rotY" />
+        label="ROT Y" curve="linear" onchange={setMat('rotY')} moduleId={id} paramId={layerParamId('rotY')} />
       <Knob value={matVal('rotZ')} min={-3.14159} max={3.14159} defaultValue={0}
-        label="ROT Z" curve="linear" onchange={setMat('rotZ')} moduleId={id} paramId="rotZ" />
+        label="ROT Z" curve="linear" onchange={setMat('rotZ')} moduleId={id} paramId={layerParamId('rotZ')} />
       <Knob value={matVal('scale')} min={0.25} max={3} defaultValue={1}
-        label="SCALE" curve="linear" onchange={setMat('scale')} moduleId={id} paramId="scale" />
+        label="SCALE" curve="linear" onchange={setMat('scale')} moduleId={id} paramId={layerParamId('scale')} />
       <Knob value={matVal('spin')} min={0} max={3} defaultValue={0.4}
-        label="SPIN" curve="linear" onchange={setMat('spin')} moduleId={id} paramId="spin" />
+        label="SPIN" curve="linear" onchange={setMat('spin')} moduleId={id} paramId={layerParamId('spin')} />
       <Knob value={matVal('tintR')} min={0} max={1} defaultValue={1}
-        label="TINT R" curve="linear" onchange={setMat('tintR')} moduleId={id} paramId="tintR" />
+        label="TINT R" curve="linear" onchange={setMat('tintR')} moduleId={id} paramId={layerParamId('tintR')} />
       <Knob value={matVal('tintG')} min={0} max={1} defaultValue={1}
-        label="TINT G" curve="linear" onchange={setMat('tintG')} moduleId={id} paramId="tintG" />
+        label="TINT G" curve="linear" onchange={setMat('tintG')} moduleId={id} paramId={layerParamId('tintG')} />
       <Knob value={matVal('tintB')} min={0} max={1} defaultValue={1}
-        label="TINT B" curve="linear" onchange={setMat('tintB')} moduleId={id} paramId="tintB" />
+        label="TINT B" curve="linear" onchange={setMat('tintB')} moduleId={id} paramId={layerParamId('tintB')} />
       <Knob value={surfaceMixVal()} min={0} max={1} defaultValue={1}
-        label="SURF MIX" curve="linear" onchange={setMat('surfaceMix')} moduleId={id} paramId="surfaceMix" />
+        label="SURF MIX" curve="linear" onchange={setMat('surfaceMix')} moduleId={id} paramId={layerParamId('surfaceMix')} />
     </div>
   {:else if currentKind === 'gen' || currentKind === 'shader' || currentKind === 'frag'}
     <div class="content-row">
@@ -2460,7 +2532,7 @@
             value={paramVal(p.id)}
             min={p.min} max={p.max} defaultValue={p.default}
             label={p.label} curve={p.curve}
-            onchange={setParam(p.id)} moduleId={id} paramId={p.id}
+            onchange={setParam(p.id)} moduleId={id} paramId={layerParamId(p.id)}
           />
         {/each}
       {/if}
@@ -2749,6 +2821,7 @@
     onpatchtooutput={() => { if (toyboxMenu?.nodeId) doPatchToOutput(toyboxMenu.nodeId); }}
     onconfigure={() => { if (toyboxMenu?.nodeId) doConfigureKeyer(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
     onconfigurefeedback={() => { if (toyboxMenu?.nodeId) doConfigureFeedback(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
+    onconfigureop={() => { if (toyboxMenu?.nodeId) doConfigureOp(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
     onresetfeedback={() => { if (toyboxMenu?.nodeId) doResetFeedback(toyboxMenu.nodeId); }}
     ondisconnect={() => { if (toyboxMenu?.nodeId) doDisconnect(toyboxMenu.nodeId); }}
     onduplicate={() => { if (toyboxMenu?.nodeId) doDuplicate(toyboxMenu.nodeId); }}
@@ -2785,6 +2858,18 @@
     onparam={(pid, v) => { if (feedbackConfig) { setCombineNodeParam(id, feedbackConfig.nodeId, pid, v); bumpRev(); } }}
     moduleId={id}
     onclose={closeFeedbackConfig}
+  />
+
+  <!-- Generic op-config popover ("Configure…" for the 12 batch ops). -->
+  <ToyboxOpConfig
+    open={!!opConfig?.open && !!opConfigNode}
+    x={opConfig?.x ?? 0}
+    y={opConfig?.y ?? 0}
+    node={opConfigNode}
+    displayName={opConfig ? nodeLabel(opConfigNode ?? ({ id: opConfig.nodeId } as ToyboxGraphNode)) : ''}
+    onparam={(pid, v) => { if (opConfig) { setCombineNodeParam(id, opConfig.nodeId, pid, v); bumpRev(); } }}
+    moduleId={id}
+    onclose={closeOpConfig}
   />
   </div><!-- /toybox-col-center -->
 

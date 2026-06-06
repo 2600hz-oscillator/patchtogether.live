@@ -20,6 +20,10 @@ import {
   isKeyerKind,
   isCombineOpKind,
   isStatefulKind,
+  isMeltStateKind,
+  propagateFreshness,
+  videoLayerFresh,
+  TOYBOX_SCHEMA_VERSION,
   opHistoryDepth,
   combineExtraFor,
   opParamVal,
@@ -386,6 +390,116 @@ describe('id generators', () => {
     const g = defGraph();
     expect(g.nodes.some((n) => n.id === nextNodeId(g))).toBe(false);
     expect(g.edges.some((e) => e.id === nextEdgeId(g))).toBe(false);
+  });
+
+  // ── Audit M3: nextNodeId is MONOTONIC — a freed id is NEVER reused, so a new
+  //    op can't inherit a deleted op's stale MIDI/control-surface bindings
+  //    (keyed combine:<id>:<param>). The old lowest-free scheme re-minted op2
+  //    after deleting op2 from {op1,op2,op3}.
+  it('nextNodeId is monotonic — deleting a middle op then adding does NOT reuse its id', () => {
+    const g: ToyboxCombineGraph = {
+      nodes: [
+        { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+        { id: 'op1', kind: 'fade', x: 0, y: 0, params: {} },
+        { id: 'op3', kind: 'fade', x: 0, y: 0, params: {} }, // op2 was deleted
+        { id: 'out', kind: 'output', x: 286, y: 66 },
+      ],
+      edges: [],
+    };
+    // The freed id 'op2' must NOT come back; the next id is past the max suffix.
+    const next = nextNodeId(g, 'op');
+    expect(next).not.toBe('op2');
+    expect(next).toBe('op4');
+  });
+
+  it('nextNodeId on the default graph (op1..op3) mints op4, not a reused lower id', () => {
+    const g = defGraph();
+    expect(nextNodeId(g, 'op')).toBe(`op${LAYER_COUNT}`); // op4 for LAYER_COUNT=4
+  });
+});
+
+describe('isMeltStateKind (audit C1 — alpha-as-state ring clear)', () => {
+  it('only DREAMMELT stores melt-state in the ring alpha channel', () => {
+    expect(isMeltStateKind('dreammelt')).toBe(true);
+    for (const k of ['datamosh', 'flowsmear', 'framedelay', 'channeldesync', 'feedback', 'fade']) {
+      expect(isMeltStateKind(k)).toBe(false);
+    }
+  });
+});
+
+describe('TOYBOX_SCHEMA_VERSION', () => {
+  it('is the current schema version (4) — the single source of truth', () => {
+    expect(TOYBOX_SCHEMA_VERSION).toBe(4);
+  });
+});
+
+describe('propagateFreshness (audit M2b — history-ring dedup decision)', () => {
+  // src0 → mosh → out. mosh is a stateful datamosh; its ring should only advance
+  // when its upstream (layer 0) presented a new decoded frame.
+  function chain(): ToyboxCombineGraph {
+    return {
+      nodes: [
+        { id: 'src0', kind: 'source', layer: 0, x: 0, y: 0 },
+        { id: 'mosh', kind: 'datamosh', x: 1, y: 0, params: {} },
+        { id: 'out', kind: 'output', x: 2, y: 0 },
+      ],
+      edges: [
+        { id: 'e0', from: 'src0', to: 'mosh', toPort: 'in0' },
+        { id: 'e1', from: 'mosh', to: 'out', toPort: 'in0' },
+      ],
+    };
+  }
+
+  it('a stale (no-new-frame) video layer marks its downstream op NOT fresh', () => {
+    const g = chain();
+    const fresh = propagateFreshness(g, [false, true, true, true]); // layer 0 stalled
+    expect(fresh.get('src0')).toBe(false);
+    expect(fresh.get('mosh')).toBe(false); // → ring HOLDS this frame (no dup store)
+  });
+
+  it('a fresh video layer marks its downstream op fresh (ring advances)', () => {
+    const g = chain();
+    const fresh = propagateFreshness(g, [true, true, true, true]);
+    expect(fresh.get('src0')).toBe(true);
+    expect(fresh.get('mosh')).toBe(true);
+  });
+
+  it('an op is fresh if ANY wired input is fresh (a 2-input op with one live feed)', () => {
+    const g: ToyboxCombineGraph = {
+      nodes: [
+        { id: 'src0', kind: 'source', layer: 0, x: 0, y: 0 },
+        { id: 'src1', kind: 'source', layer: 1, x: 0, y: 1 },
+        { id: 'melt', kind: 'dreammelt', x: 1, y: 0, params: {} },
+        { id: 'out', kind: 'output', x: 2, y: 0 },
+      ],
+      edges: [
+        { id: 'e0', from: 'src0', to: 'melt', toPort: 'in0' },
+        { id: 'e1', from: 'src1', to: 'melt', toPort: 'in1' },
+        { id: 'e2', from: 'melt', to: 'out', toPort: 'in0' },
+      ],
+    };
+    // layer 0 stalled but layer 1 live → the op is still fresh.
+    const fresh = propagateFreshness(g, [false, true, false, false]);
+    expect(fresh.get('melt')).toBe(true);
+  });
+
+  it('videoLayerFresh: fresh iff the uploadCount advanced', () => {
+    expect(videoLayerFresh(5, 4)).toBe(true);  // new frame uploaded
+    expect(videoLayerFresh(5, 5)).toBe(false); // same count → no new frame (dup)
+    expect(videoLayerFresh(0, -1)).toBe(true); // first frame
+  });
+});
+
+describe('history op M2d "visible out of the box" defaults', () => {
+  it('framedelay defaults to a VISIBLE crossfade (mix < 1) + a longer delay', () => {
+    const fd = Object.fromEntries(OP_PARAMS.framedelay.map((p) => [p.id, p.default]));
+    expect(fd.mix).toBeLessThan(1);
+    expect(fd.delay).toBeGreaterThanOrEqual(8);
+  });
+  it('datamosh defaults are stronger (higher flow, lower hold gate)', () => {
+    const dm = Object.fromEntries(OP_PARAMS.datamosh.map((p) => [p.id, p.default]));
+    expect(dm.flowScale).toBeGreaterThanOrEqual(0.7);
+    expect(dm.holdGate).toBeLessThanOrEqual(0.4);
   });
 });
 

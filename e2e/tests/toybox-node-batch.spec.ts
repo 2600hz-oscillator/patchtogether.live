@@ -133,6 +133,53 @@ async function advance(page: Page, time: number, steps: number): Promise<void> {
   }
 }
 
+/** VIVID, fast-compiling, strongly-distinct layers so a band/feed reroute moves
+ *  the average UNMISTAKABLY (noise-fbm/worley render near the idle grey, which
+ *  is too subtle to assert a feed change on). src0/src3 = synthwave (purple),
+ *  src1/src2 = star-field (near-black w/ bright dots). */
+function vividLayers(): unknown[] {
+  return [
+    { kind: 'gen', contentId: 'synthwave-sunset', params: {} },
+    { kind: 'gen', contentId: 'star-field', params: {} },
+    { kind: 'gen', contentId: 'star-field', params: {} },
+    { kind: 'gen', contentId: 'synthwave-sunset', params: {} },
+  ] as unknown[];
+}
+
+/** Seed a graph with VIVID layers (above), bypassing the grey default content. */
+async function seedVivid(page: Page, nodes: GNode[], edges: GEdge[]): Promise<void> {
+  await page.evaluate(
+    ({ nodes, edges, layers }) => {
+      const w = globalThis as unknown as PatchGlobal;
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['tb'];
+        if (!n) return;
+        if (!n.data) n.data = {};
+        n.data.layers = layers as unknown[];
+        n.data.combine = { nodes, edges } as { nodes: GNode[]; edges: GEdge[] };
+      });
+    },
+    { nodes, edges, layers: vividLayers() },
+  );
+}
+
+/** Wait until the LIVE preview is non-idle (gen content has actually compiled,
+ *  not the dark-teal idle pattern ~[124,84,64]) AND stable across two reads,
+ *  THEN pin the freeze. freezeUntilLit alone can lock onto the idle frame before
+ *  async content compiles, which then reads as "no change" between graphs. */
+async function settleFreeze(page: Page, time: number): Promise<void> {
+  let prev: [number, number, number] = [-9, -9, -9];
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(200);
+    const a = await average(page);
+    // stable (≈prev) + clearly off the idle grey red-channel (~124).
+    if (Math.abs(a[0] - prev[0]) < 3 && Math.abs(a[0] - 124) > 8) break;
+    prev = a;
+  }
+  await page.evaluate(({ time }) => (globalThis as unknown as PatchGlobal).__toyboxFreeze?.(time), { time });
+  await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+}
+
 /** Average RGB of the on-card preview canvas. */
 async function average(page: Page): Promise<[number, number, number]> {
   return page.evaluate(() => {
@@ -276,6 +323,59 @@ test.describe('TOYBOX batch op nodes — registry + menu', () => {
 
     expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
   });
+
+  // ── #82 follow-up: every batch op has a right-click "Configure…" popover that
+  //    exposes its OP_PARAMS (knobs + enum <select>s). DISCRETE-enum params
+  //    (mirror.mode, bitbend.op) render as a <select> (not an opaque knob).
+  test('every batch op has a Configure popover; enum params render as a <select>', async ({ page }) => {
+    test.setTimeout(180_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
+    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
+    await pinViewport(page);
+    await ensureCombineOpen(page);
+
+    // Seed a MIRROR (has an enum 'mode') + a TILE (continuous only) op.
+    await seed(page, [
+      ...sources(),
+      { id: 'mir', kind: 'mirror', x: 120, y: 14, params: {} },
+      { id: 'til', kind: 'tile', x: 196, y: 14, params: {} },
+      { id: 'out', kind: 'output', x: 286, y: 66 },
+    ], [
+      { id: 'e0', from: 'src0', to: 'mir', toPort: 'in0' },
+      { id: 'e1', from: 'mir', to: 'out', toPort: 'in0' },
+    ]);
+
+    // Right-click the MIRROR node → Configure… → popover with a MODE <select>.
+    await page.locator('[data-testid="toybox-gnode-mir"]').click({ button: 'right', force: true, noWaitAfter: true });
+    const cfg = page.locator('[data-testid="toybox-menu-configure-op"]');
+    await expect(cfg).toBeVisible({ timeout: 5_000 });
+    await cfg.click({ noWaitAfter: true });
+    await expect(page.locator('[data-testid="toybox-op-config"]')).toBeVisible({ timeout: 5_000 });
+    // mirror.mode is an enum → rendered as a <select>, not a knob.
+    const modeSelect = page.locator('[data-testid="toybox-op-config-select-mode"]');
+    await expect(modeSelect).toBeVisible();
+    // Pick KALEIDO (value 3) → writes the live param.
+    await modeSelect.selectOption('3');
+    await expect
+      .poll(() => page.evaluate(() => {
+        const w = globalThis as unknown as PatchGlobal;
+        return w.__patch.nodes['tb']?.data?.combine?.nodes?.find((n) => n.id === 'mir')?.params?.mode;
+      }))
+      .toBe(3);
+    // Dismiss + open TILE's Configure (continuous params → knobs).
+    await page.locator('[data-testid="toybox-op-config-done"]').click({ noWaitAfter: true });
+    await page.locator('[data-testid="toybox-gnode-til"]').click({ button: 'right', force: true, noWaitAfter: true });
+    await page.locator('[data-testid="toybox-menu-configure-op"]').click({ noWaitAfter: true });
+    await expect(page.locator('[data-testid="toybox-op-config-knob-tilesX"]')).toBeVisible({ timeout: 5_000 });
+
+    expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
+  });
 });
 
 test.describe('TOYBOX batch op nodes — render + output delta', () => {
@@ -405,6 +505,113 @@ test.describe('TOYBOX batch op nodes — multi-input exercise', () => {
     const three = await average(page);
 
     expect(dist(two, three), 'exquisite reads the 3rd input').toBeGreaterThan(2);
+    expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
+  });
+
+  // ── Audit M1: EXQUISITE must show NON-CONTIGUOUSLY wired feeds. Wiring in0+in2
+  //    (in1 empty) used to drop in2 entirely (the count-space idx 1 hit the empty
+  //    in1 → fell back to in0); in3-only used to render solid black (idx 0 hit the
+  //    unbound in0 dummy). The wiredSlot() mapping fixes both.
+  test('exquisite: shows non-contiguously wired feeds (in0+in2 ≠ in0-only; in3-only not black)', async ({ page }) => {
+    test.setTimeout(180_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
+    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
+    await pinViewport(page);
+
+    const out: GNode = { id: 'out', kind: 'output', x: 286, y: 66 };
+    const op: GNode = { id: 'op', kind: 'exquisite', x: 120, y: 14, params: { bands: 4, seamBlend: 0 } };
+
+    // VIVID, distinct layers (src0/src3 = synthwave purple, src2 = star-field):
+    // a band reroute moves the average UNMISTAKABLY. settleFreeze waits for the
+    // gen content to compile (not the idle frame) before pinning the freeze.
+
+    // in0 ONLY (baseline).
+    await seedVivid(page, [...sources(), op, out], [
+      { id: 'e0', from: 'src0', to: 'op', toPort: 'in0' },
+      { id: 'eo', from: 'op', to: 'out', toPort: 'in0' },
+    ]);
+    await settleFreeze(page, 2.0);
+    const in0only = await average(page);
+
+    // in0 + in2 (in1 EMPTY — the non-contiguous gap). src2 = star-field, very
+    // distinct from src0 = synthwave, so half the bands must now show star-field
+    // → the composite moves a LOT. Pre-fix: idx 1 hit empty in1 → fell back to
+    // in0 → no change (the M1 bug).
+    await seedVivid(page, [...sources(), op, out], [
+      { id: 'e0', from: 'src0', to: 'op', toPort: 'in0' },
+      { id: 'e2', from: 'src2', to: 'op', toPort: 'in2' },
+      { id: 'eo', from: 'op', to: 'out', toPort: 'in0' },
+    ]);
+    await settleFreeze(page, 2.0);
+    const in0in2 = await average(page);
+    expect(dist(in0only, in0in2), 'in0+in2 shows in2 (≠ in0-only)').toBeGreaterThan(15);
+
+    // in3 ONLY (in0/in1/in2 empty). Must NOT be solid black (pre-fix idx 0 hit
+    // the unbound in0 dummy → black). wiredSlot maps slot 0 → in3.
+    await seedVivid(page, [...sources(), op, out], [
+      { id: 'e3', from: 'src3', to: 'op', toPort: 'in3' },
+      { id: 'eo', from: 'op', to: 'out', toPort: 'in0' },
+    ]);
+    await settleFreeze(page, 2.0);
+    const in3only = await average(page);
+    expect(lum(in3only), 'in3-only is not a black frame').toBeGreaterThan(40);
+
+    expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
+  });
+
+  // ── Audit C1: DREAMMELT melts IN from in0 — at the start the interior shows in0
+  //    (melt seeds at 0), NOT in1 (which would mean the ring cleared alpha=1 →
+  //    melt=1 → fully melted from frame 1). We solo-render in0 + in1 as references,
+  //    then assert the early dreammelt frame is CLOSER to in0 than to in1.
+  test('dreammelt: starts as in0 (melts IN), not in1, at the first frames', async ({ page }) => {
+    test.setTimeout(180_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
+    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
+    await pinViewport(page);
+
+    const out: GNode = { id: 'out', kind: 'output', x: 286, y: 66 };
+
+    // Solo references: src0 (synthwave purple) → out, and src1 (star-field dark)
+    // → out. VIVID + distinct so "closer to in0" is unambiguous.
+    await seedVivid(page, [...sources(), out], [{ id: 'eo', from: 'src0', to: 'out', toPort: 'in0' }]);
+    await settleFreeze(page, 2.0);
+    const in0ref = await average(page);
+    await seedVivid(page, [...sources(), out], [{ id: 'eo', from: 'src1', to: 'out', toPort: 'in0' }]);
+    await settleFreeze(page, 2.0);
+    const in1ref = await average(page);
+    // Sanity: the two references are visibly distinct (else the test is vacuous).
+    expect(dist(in0ref, in1ref), 'in0 vs in1 references are distinct').toBeGreaterThan(15);
+
+    // DREAMMELT: in0 = src0 (purple), in1 = src1 (dark). A FRESH graph resets the
+    // ring → clearColor MUST seed melt=0 (alpha=0) → the early frames read in0
+    // (mix(in0,in1,0)=in0). Pre-fix the ring cleared alpha=1 → melt=1 →
+    // mix=in1 → fully melted (dark) from frame 1. Low dripSpeed + high threshold
+    // keep melt near 0 for the first frames.
+    const op: GNode = { id: 'op', kind: 'dreammelt', x: 120, y: 14, params: { meltAmount: 0.9, dripSpeed: 0.05, threshold: 0.95 } };
+    await seedVivid(page, [...sources(), op, out], [
+      { id: 'e0', from: 'src0', to: 'op', toPort: 'in0' },
+      { id: 'e1', from: 'src1', to: 'op', toPort: 'in1' },
+      { id: 'eo', from: 'op', to: 'out', toPort: 'in0' },
+    ]);
+    await settleFreeze(page, 2.0);
+    const early = await average(page);
+
+    const dToIn0 = dist(early, in0ref);
+    const dToIn1 = dist(early, in1ref);
+    expect(dToIn0, `early dreammelt is CLOSER to in0 (${dToIn0.toFixed(1)}) than in1 (${dToIn1.toFixed(1)}) — melts IN from in0`)
+      .toBeLessThan(dToIn1);
     expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
   });
 });

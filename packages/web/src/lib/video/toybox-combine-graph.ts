@@ -165,6 +165,16 @@ export function isStatefulKind(kind: ToyboxNodeKind | string | undefined): boole
   return kind === 'feedback' || (HISTORY_OP_KINDS as readonly string[]).includes(kind as string);
 }
 
+/** True if `kind` stores its accumulating state in the ring's ALPHA channel
+ *  (DREAMMELT keeps per-pixel melt-progress in `prev.a`). Such a ring MUST be
+ *  cleared with alpha=0 (seed melt=0 → melts IN from in0) rather than the
+ *  default opaque clearColor(0,0,0,1), which would seed melt=1 (fully melted to
+ *  in1) from the very first frame (#82 / audit C1). Only DREAMMELT does this;
+ *  the other history ops store state in RGB and want the opaque clear. */
+export function isMeltStateKind(kind: ToyboxNodeKind | string | undefined): boolean {
+  return kind === 'dreammelt';
+}
+
 /** How many frames of history a stateful op keeps (ring depth). feedback +
  *  flowsmear/dreammelt/datamosh need only the single previous frame (1-deep
  *  ping-pong). framedelay/channeldesync read a DELAYED tap, so they need an
@@ -179,6 +189,13 @@ export function opHistoryDepth(kind: ToyboxNodeKind | string | undefined): numbe
  *  modest so the per-node float-FBO ring stays cheap (33 RGBA32F targets at
  *  engine res). The delay params clamp to MAX_HISTORY_FRAMES-1. */
 export const MAX_HISTORY_FRAMES = 33;
+
+/** The TOYBOX node.data schema version. The SINGLE source of truth — toyboxDef
+ *  (modules/toybox.ts) references it, the preset SAVE/EXPORT stamps it into the
+ *  blob, and the preset RESTORE path migrates a blob saved at an older version
+ *  forward (audit M5). Lives here (a light, engine-free module the card already
+ *  imports) so the card can stamp it without pulling the whole video engine. */
+export const TOYBOX_SCHEMA_VERSION = 4;
 
 /** A node in the combine graph. `params` holds the op's float params keyed by
  *  id (op nodes only); `layer` is the layer index a SOURCE node emits. */
@@ -225,6 +242,12 @@ export interface ToyboxOpParamDef {
   min: number;
   max: number;
   default: number;
+  /** DISCRETE-enum params (e.g. mirror.mode 0..3): the labels for each integer
+   *  value, index = value. When present the Configure popover renders a <select>
+   *  instead of a continuous knob (a knob can't land cleanly on "OR"). Omitted
+   *  for continuous params. The value still round-trips + is CV/MIDI-addressable
+   *  identically (it's the same float param). */
+  options?: readonly string[];
 }
 
 export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
@@ -256,7 +279,7 @@ export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
   // MAP: top modulates base (multiply), mixed in by mix.
   map: [
     { id: 'amount', label: 'MIX', min: 0, max: 1, default: 1 },
-    { id: 'mode', label: 'MODE', min: 0, max: 1, default: 0 },
+    { id: 'mode', label: 'MODE', min: 0, max: 1, default: 0, options: ['MULTIPLY', 'SCREEN'] },
   ],
   // FEEDBACK (the first STATEFUL op): a discrete MODE selector (0..11; rendered
   // as a <select>, NOT a knob — but exposed here so it round-trips + is a CV
@@ -303,7 +326,7 @@ export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
   ],
   // MIRROR (1-input): MODE 0 H-flip, 1 V-flip, 2 quad-fold, 3 kaleidoscope.
   mirror: [
-    { id: 'mode', label: 'MODE', min: 0, max: 3, default: 2 },
+    { id: 'mode', label: 'MODE', min: 0, max: 3, default: 2, options: ['H-FLIP', 'V-FLIP', 'QUAD', 'KALEIDO'] },
     { id: 'segments', label: 'SEGMENTS', min: 2, max: 16, default: 6 },
     { id: 'rotation', label: 'ROTATION', min: -Math.PI, max: Math.PI, default: 0 },
   ],
@@ -311,12 +334,12 @@ export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
   // channel 0 = luma-displace, 1 = RG-vector displace.
   displace: [
     { id: 'amount', label: 'AMOUNT', min: -0.5, max: 0.5, default: 0.1 },
-    { id: 'channel', label: 'CHANNEL', min: 0, max: 1, default: 1 },
+    { id: 'channel', label: 'CHANNEL', min: 0, max: 1, default: 1, options: ['LUMA', 'RG-VEC'] },
   ],
   // BITBEND (1-input): per-channel integer bit-op vs a mask (0..255). op 0 XOR,
   // 1 AND, 2 OR, 3 bit-rotate. perR/perG/perB gate which channels are bent.
   bitbend: [
-    { id: 'op', label: 'OP', min: 0, max: 3, default: 0 },
+    { id: 'op', label: 'OP', min: 0, max: 3, default: 0, options: ['XOR', 'AND', 'OR', 'ROTATE'] },
     { id: 'mask', label: 'MASK', min: 0, max: 255, default: 85 },
     { id: 'perR', label: 'R', min: 0, max: 1, default: 1 },
     { id: 'perG', label: 'G', min: 0, max: 1, default: 1 },
@@ -340,9 +363,12 @@ export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
     { id: 'hueShift', label: 'HUE', min: 0, max: 1, default: 0 },
   ],
   // FRAMEDELAY (1-input): output = history[now - delay] mixed with current.
+  // Default MIX < 1 (audit M2d): mix=1 is a PURE delay/echo that is invisible on
+  // static / slow content (the delayed frame == the live frame); 0.7 crossfades
+  // the live input with the delayed tap so the echo reads out of the box.
   framedelay: [
-    { id: 'delay', label: 'DELAY', min: 0, max: MAX_HISTORY_FRAMES - 1, default: 8 },
-    { id: 'mix', label: 'MIX', min: 0, max: 1, default: 1 },
+    { id: 'delay', label: 'DELAY', min: 0, max: MAX_HISTORY_FRAMES - 1, default: 12 },
+    { id: 'mix', label: 'MIX', min: 0, max: 1, default: 0.7 },
   ],
   // CHANNELDESYNC (1-input): per-channel frame-delay + spatial offset (RGB drift).
   channeldesync: [
@@ -367,10 +393,14 @@ export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
   ],
   // DATAMOSH (1-input): approximate optical-flow advection of the previous
   // output + a HOLD gate that withholds new input (P-frame smear) + decay.
+  // Stronger DEFAULTS (audit M2d): a HIGHER flow scale advects further per
+  // frame, and a LOWER hold gate (gate = step(holdGate*0.5, motion)) trips the
+  // P-frame smear at less motion → the mosh reads out of the box instead of
+  // mostly accepting the live input.
   datamosh: [
-    { id: 'flowScale', label: 'FLOW', min: 0, max: 1, default: 0.5 },
-    { id: 'holdGate', label: 'HOLD', min: 0, max: 1, default: 0.5 },
-    { id: 'decay', label: 'DECAY', min: 0, max: 1, default: 0.9 },
+    { id: 'flowScale', label: 'FLOW', min: 0, max: 1, default: 0.8 },
+    { id: 'holdGate', label: 'HOLD', min: 0, max: 1, default: 0.3 },
+    { id: 'decay', label: 'DECAY', min: 0, max: 1, default: 0.95 },
   ],
 };
 
@@ -650,12 +680,27 @@ export function outputNode(g: ToyboxCombineGraph): ToyboxGraphNode | undefined {
   return g.nodes.find((n) => n.kind === 'output');
 }
 
-/** Generate a fresh node id not already used in `g`. */
+/** Generate a fresh node id not already used in `g`. MONOTONIC (audit M3): the
+ *  new id is one past the HIGHEST `<prefix><n>` suffix ever seen in the graph,
+ *  NOT the lowest free one. A lowest-free id reuses a DELETED node's id
+ *  (delete op2 from op1,op2,op3 → next add mints op2 again), which makes the new
+ *  op silently INHERIT the deleted op's stale MIDI / control-surface bindings
+ *  (keyed `…:combine:op2:<param>`). A monotonic id is never reused, so a freed
+ *  id's stale bindings resolve to a non-existent node and are dropped — the new
+ *  op gets a clean id. (Still guaranteed-unique: it's strictly above every
+ *  existing suffix; a non-matching id, e.g. a hand-authored one, is ignored for
+ *  the max but the final uniqueness loop still skips any collision.) */
 export function nextNodeId(g: ToyboxCombineGraph, prefix = 'n'): string {
-  let i = 1;
-  let id = `${prefix}${i}`;
   const used = new Set(g.nodes.map((n) => n.id));
-  while (used.has(id)) id = `${prefix}${++i}`;
+  let max = 0;
+  const re = new RegExp(`^${prefix}(\\d+)$`);
+  for (const n of g.nodes) {
+    const m = re.exec(n.id);
+    if (m) max = Math.max(max, parseInt(m[1]!, 10));
+  }
+  let i = max + 1;
+  let id = `${prefix}${i}`;
+  while (used.has(id)) id = `${prefix}${++i}`; // defensive: skip any odd collision
   return id;
 }
 
@@ -715,6 +760,63 @@ export function topoSort(g: ToyboxCombineGraph): { order: string[]; ok: boolean 
 
 function nodeOrderIndex(g: ToyboxCombineGraph, id: string): number {
   return g.nodes.findIndex((n) => n.id === id);
+}
+
+/**
+ * Per-node FRESHNESS propagation for the M2b history-ring dedup (PURE — the
+ * engine-free decision the engine's evalGraph applies to gate the ring store).
+ *
+ * A SOURCE node is fresh iff its layer presented a new frame this engine frame
+ * (`layerFresh[layer]` — true for animated/gen/shader/obj/image/patched layers;
+ * false for a live VIDEO layer whose decode is slower than the engine rAF). An OP
+ * node is fresh iff ANY wired input is fresh; an op with NO wired inputs is fresh
+ * (it animates itself). A stateful history op only advances its ring when fresh,
+ * so ring delays count DECODED frames, not engine frames (kills the ~50%
+ * duplicate-slot aliasing live video otherwise produces). Returns a map id→fresh
+ * over every node, computed in topo order (so an input is resolved before its op).
+ */
+export function propagateFreshness(
+  g: ToyboxCombineGraph,
+  layerFresh: readonly boolean[] | ((layer: number) => boolean),
+): Map<string, boolean> {
+  const layerFreshFn =
+    typeof layerFresh === 'function' ? layerFresh : (l: number) => layerFresh[l] ?? true;
+  const fresh = new Map<string, boolean>();
+  const { order } = topoSort(g);
+  for (const id of order) {
+    const n = g.nodes.find((x) => x.id === id);
+    if (!n) continue;
+    if (n.kind === 'source') {
+      const li = typeof n.layer === 'number' ? n.layer : -1;
+      fresh.set(id, li >= 0 ? layerFreshFn(li) : true);
+      continue;
+    }
+    if (n.kind === 'output') {
+      const e = g.edges.find((ed) => ed.to === id);
+      fresh.set(id, e ? fresh.get(e.from) ?? true : true);
+      continue;
+    }
+    // op: fresh iff any wired input is fresh (unwired → fresh, animates itself).
+    let any = false;
+    let wired = false;
+    for (const e of g.edges) {
+      if (e.to !== id) continue;
+      wired = true;
+      if (fresh.get(e.from) ?? true) { any = true; break; }
+    }
+    fresh.set(id, wired ? any : true);
+  }
+  return fresh;
+}
+
+/**
+ * A live VIDEO layer is FRESH this engine frame iff its frame uploader actually
+ * uploaded a NEW decoded frame (its uploadCount advanced since last frame). PURE
+ * (the engine threads the live uploadCount + the prior count). Extracted so the
+ * M2b dedup decision is unit-testable without a WebGL context.
+ */
+export function videoLayerFresh(uploadCount: number, lastUploadCount: number): boolean {
+  return uploadCount !== lastUploadCount;
 }
 
 /**

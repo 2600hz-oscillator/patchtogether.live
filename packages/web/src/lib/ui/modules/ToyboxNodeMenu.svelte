@@ -45,6 +45,9 @@
     onconfigure: () => void;
     /** NODE (feedback op) only: open the feedback-config popover (mode + params). */
     onconfigurefeedback: () => void;
+    /** NODE (any non-keyer/non-feedback op) only: open the generic op-config
+     *  popover (its OP_PARAMS as knobs / enum selects). */
+    onconfigureop: () => void;
     /** NODE (feedback op) only: clear this feedback node's ping-pong buffers. */
     onresetfeedback: () => void;
     ondisconnect: () => void;
@@ -70,6 +73,7 @@
     onpatchtooutput,
     onconfigure,
     onconfigurefeedback,
+    onconfigureop,
     onresetfeedback,
     ondisconnect,
     onduplicate,
@@ -147,6 +151,10 @@
   // ANY stateful op (feedback + the frame-history ops) → offer "Reset" to clear
   // its per-node ring/ping-pong buffer (bumps the shared `_reset` token).
   let isStateful = $derived(isStatefulKind(nodeKind));
+  // ANY op that is NOT a keyer and NOT feedback → offer the GENERIC "Configure…"
+  // popover (its OP_PARAMS as knobs / enum selects). Keyer + feedback have their
+  // own bespoke popovers above, so they're excluded to avoid two Configure rows.
+  let isPlainOp = $derived(isOp && !isKeyer && !isFeedback);
 
   // The menu header label per target.
   let headerLabel = $derived.by<string>(() => {
@@ -227,6 +235,14 @@
           data-testid="toybox-menu-configure-feedback"
           onclick={() => pick(onconfigurefeedback)}
         >Configure feedback…</button>
+      {/if}
+      {#if isPlainOp}
+        <button
+          class="ctx-item"
+          role="menuitem"
+          data-testid="toybox-menu-configure-op"
+          onclick={() => pick(onconfigureop)}
+        >Configure…</button>
       {/if}
       {#if isStateful}
         <button
