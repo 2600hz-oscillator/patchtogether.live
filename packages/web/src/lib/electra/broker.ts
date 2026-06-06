@@ -252,6 +252,23 @@ export class ElectraBroker {
       pool.find((o) => /ctrl|port\s*2/i.test(o.name ?? '')) ?? pool[1] ?? pool[0] ?? null;
     this.playOut =
       pool.find((o) => /play|port\s*1/i.test(o.name ?? '')) ?? pool[0] ?? null;
+    // Hardware-bring-up diagnostic: the CTRL/PLAY split is a name-heuristic
+    // (/electra/i then /ctrl|port 2/i, /play|port 1/i) that has never seen a
+    // real device's port names. Log the enumeration + the resolved choice so a
+    // first-run mis-resolve (wrong/swapped port → uploads go nowhere) is
+    // debuggable from the console instead of silent. Cheap; only on (re)connect.
+    try {
+      // eslint-disable-next-line no-console
+      console.info('[electra] MIDI ports', {
+        outputs: outs.map((o) => o.name ?? '(unnamed)'),
+        inputs: [...this.access.inputs.values()].map((i) => i.name ?? '(unnamed)'),
+        matchedElectra: electra.map((o) => o.name ?? '(unnamed)'),
+        chosenCtrl: this.ctrlOut?.name ?? null,
+        chosenPlay: this.playOut?.name ?? null,
+      });
+    } catch {
+      /* console may be absent in non-DOM test envs */
+    }
   }
 
   /** Send raw SysEx on a port role ('ctrl' default). */
