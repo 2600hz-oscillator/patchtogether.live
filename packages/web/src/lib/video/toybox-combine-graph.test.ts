@@ -11,8 +11,19 @@ import {
   OP_PARAMS,
   OP_SHADER_INDEX,
   FEEDBACK_SHADER_INDEX,
+  EXQUISITE_SHADER_INDEX,
+  HISTORY_SHADER_INDEX,
+  COMBINE_OP_KINDS,
+  HISTORY_OP_KINDS,
+  MAX_HISTORY_FRAMES,
   KEYER_OP_KINDS,
   isKeyerKind,
+  isCombineOpKind,
+  isStatefulKind,
+  opHistoryDepth,
+  combineExtraFor,
+  opParamVal,
+  exquisiteUniforms,
   combineDisplayNames,
   combineNodeDisplayName,
   defaultOpParams,
@@ -32,6 +43,7 @@ import {
   nextEdgeId,
   type ToyboxCombineGraph,
   type ToyboxGraphNode,
+  type ToyboxOpKind,
 } from './toybox-combine-graph';
 
 /** A clone so mutations in one test never leak into another. */
@@ -97,15 +109,18 @@ describe('ports', () => {
     expect(inPortsFor('source')).toEqual([]);
     expect(hasOutPort('source')).toBe(true);
   });
-  it('blend op nodes have in0 + in1 + an output; FEEDBACK has only in0', () => {
+  it('the classic blend ops have in0 + in1 + an output; FEEDBACK has only in0', () => {
+    for (const k of ['fade', 'lumakey', 'chromakey', 'map'] as const) {
+      expect(hasOutPort(k)).toBe(true);
+      expect(inPortsFor(k)).toEqual(['in0', 'in1']);
+    }
+    // FEEDBACK's loop is INTERNAL (its own previous frame) — a single input.
+    expect(inPortsFor('feedback')).toEqual(['in0']);
+  });
+  it('every op kind has an output port + at least one input port', () => {
     for (const k of OP_KINDS) {
       expect(hasOutPort(k)).toBe(true);
-      if (k === 'feedback') {
-        // FEEDBACK's loop is INTERNAL (its own previous frame) — a single input.
-        expect(inPortsFor(k)).toEqual(['in0']);
-      } else {
-        expect(inPortsFor(k)).toEqual(['in0', 'in1']);
-      }
+      expect(inPortsFor(k).length).toBeGreaterThanOrEqual(1);
     }
   });
   it('output has a single input + no output port', () => {
@@ -453,5 +468,207 @@ describe('combineDisplayNames (#56 1-based sources + #58 unique ops)', () => {
     const g = makeDefaultCombineGraph();
     expect(combineNodeDisplayName(g, 'op2')).toBe('FADE 2');
     expect(combineNodeDisplayName(g, 'ghost')).toBe('ghost');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch op nodes (#node-batch): 12 new combine ops. The SHADER itself is
+// e2e/VRT-only (jsdom can't render); these cover the pure DATA MODEL — every op
+// is registered, has params, a unique non-colliding shader index, the right port
+// shape, default params, a unique ordinal name, and topo-sorts into a valid DAG.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The 12 batch ops added in this PR + their expected port count + statefulness. */
+const BATCH_OPS: Array<{
+  kind: ToyboxOpKind;
+  ports: number;
+  stateful: boolean;
+  combineStep: boolean;
+  shaderIndex: number;
+}> = [
+  { kind: 'over', ports: 2, stateful: false, combineStep: true, shaderIndex: 4 },
+  { kind: 'tile', ports: 1, stateful: false, combineStep: true, shaderIndex: 5 },
+  { kind: 'mirror', ports: 1, stateful: false, combineStep: true, shaderIndex: 6 },
+  { kind: 'displace', ports: 2, stateful: false, combineStep: true, shaderIndex: 7 },
+  { kind: 'bitbend', ports: 1, stateful: false, combineStep: true, shaderIndex: 8 },
+  { kind: 'biocells', ports: 1, stateful: false, combineStep: true, shaderIndex: 9 },
+  { kind: 'exquisite', ports: 4, stateful: false, combineStep: false, shaderIndex: EXQUISITE_SHADER_INDEX },
+  { kind: 'framedelay', ports: 1, stateful: true, combineStep: false, shaderIndex: HISTORY_SHADER_INDEX },
+  { kind: 'channeldesync', ports: 1, stateful: true, combineStep: false, shaderIndex: HISTORY_SHADER_INDEX },
+  { kind: 'flowsmear', ports: 1, stateful: true, combineStep: false, shaderIndex: HISTORY_SHADER_INDEX },
+  { kind: 'dreammelt', ports: 2, stateful: true, combineStep: false, shaderIndex: HISTORY_SHADER_INDEX },
+  { kind: 'datamosh', ports: 1, stateful: true, combineStep: false, shaderIndex: HISTORY_SHADER_INDEX },
+];
+
+describe('batch op nodes (12 new combine ops)', () => {
+  it('registers exactly the expected 17 op kinds in OP_KINDS (no dupes)', () => {
+    expect(OP_KINDS.length).toBe(17);
+    expect(new Set(OP_KINDS).size).toBe(OP_KINDS.length);
+    for (const { kind } of BATCH_OPS) expect(OP_KINDS).toContain(kind);
+  });
+
+  it('OP_SHADER_INDEX is a total map with the stateless single-pass ops on 0..9', () => {
+    // Stateless single-pass ops occupy contiguous uOp indices 0..9; the
+    // feedback/exquisite/history ops are sentinels (>=100).
+    const stateless = OP_KINDS.filter((k) => isCombineOpKind(k)).map((k) => OP_SHADER_INDEX[k]);
+    expect([...stateless].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(OP_SHADER_INDEX.exquisite).toBe(EXQUISITE_SHADER_INDEX);
+    for (const k of HISTORY_OP_KINDS) expect(OP_SHADER_INDEX[k]).toBe(HISTORY_SHADER_INDEX);
+    // sentinels never collide with a real uOp.
+    for (const s of [FEEDBACK_SHADER_INDEX, EXQUISITE_SHADER_INDEX, HISTORY_SHADER_INDEX]) {
+      expect(s).toBeGreaterThanOrEqual(100);
+    }
+  });
+
+  for (const { kind, ports, stateful, combineStep, shaderIndex } of BATCH_OPS) {
+    describe(kind, () => {
+      it(`is registered with shader index ${shaderIndex} + classified correctly`, () => {
+        expect(OP_KINDS).toContain(kind);
+        expect(OP_SHADER_INDEX[kind]).toBe(shaderIndex);
+        expect(isCombineOpKind(kind)).toBe(combineStep);
+        expect(isStatefulKind(kind)).toBe(stateful);
+      });
+
+      it(`exposes ${ports} input port(s)`, () => {
+        expect(inPortsFor(kind)).toHaveLength(ports);
+        expect(hasOutPort(kind)).toBe(true);
+        // exactly the canonical in0..inN ids.
+        expect(inPortsFor(kind)).toEqual(['in0', 'in1', 'in2', 'in3'].slice(0, ports));
+      });
+
+      it('has at least one declared param, all seeded by defaultOpParams', () => {
+        expect(OP_PARAMS[kind].length).toBeGreaterThan(0);
+        const p = defaultOpParams(kind);
+        for (const def of OP_PARAMS[kind]) {
+          expect(p[def.id]).toBe(def.default);
+          expect(def.default).toBeGreaterThanOrEqual(def.min);
+          expect(def.default).toBeLessThanOrEqual(def.max);
+        }
+      });
+
+      it('makeOpNode mints a node with default params + a unique ordinal name', () => {
+        const g = defGraph();
+        const a = makeOpNode(g, kind); g.nodes.push(a);
+        const b = makeOpNode(g, kind); g.nodes.push(b);
+        expect(a.kind).toBe(kind);
+        expect(a.params).toEqual(defaultOpParams(kind));
+        const names = combineDisplayNames(g);
+        // two same-kind nodes get distinct ordinals.
+        expect(names.get(a.id)).not.toBe(names.get(b.id));
+        expect(canDeleteNode(g, a.id)).toBe(true);
+      });
+
+      it('connect rules match the port shape', () => {
+        const g = defGraph();
+        const n = makeOpNode(g, kind); g.nodes.push(n);
+        expect(validateConnect(g, 'src0', n.id, 'in0').ok).toBe(true);
+        if (ports >= 2) {
+          expect(validateConnect(g, 'src1', n.id, 'in1').ok).toBe(true);
+        } else {
+          // a 1-input op rejects in1 as a bad port (like FEEDBACK).
+          const bad = validateConnect(g, 'src1', n.id, 'in1');
+          expect(bad.ok).toBe(false);
+          expect(bad.error).toBe('bad-in-port');
+        }
+        if (ports >= 4) {
+          expect(validateConnect(g, 'src2', n.id, 'in2').ok).toBe(true);
+          expect(validateConnect(g, 'src3', n.id, 'in3').ok).toBe(true);
+        }
+      });
+
+      it('topo-sorts into a valid DAG when wired to the output', () => {
+        const g = defGraph();
+        const n = makeOpNode(g, kind); g.nodes.push(n);
+        g.edges.push({ id: 'eb', from: 'src0', to: n.id, toPort: 'in0' });
+        const { ok } = topoSort(g);
+        expect(ok).toBe(true);
+      });
+    });
+  }
+});
+
+describe('opParamVal / combineExtraFor (the engine slot mapping)', () => {
+  it('opParamVal reads a value or falls back to the schema default', () => {
+    expect(opParamVal('tile', { tilesX: 7 }, 'tilesX')).toBe(7);
+    expect(opParamVal('tile', {}, 'tilesX')).toBe(3); // default
+    expect(opParamVal('tile', { tilesX: NaN }, 'tilesX')).toBe(3); // NaN → default
+  });
+
+  it('packs each stateless op param into the right uP slot', () => {
+    // TILE: uP0 tilesX, uP1 tilesY, uP2 mirror, uP3 offX, uP4 offY, uP5 rotate.
+    const tile = combineExtraFor('tile', { tilesX: 4, tilesY: 5, mirror: 1, offX: 0.2, offY: -0.3, rotate: 1 });
+    expect(tile).toMatchObject({ p0: 4, p1: 5, p2: 1, p3: 0.2, p4: -0.3, p5: 1 });
+    // MIRROR: uMode = mode, uP0 = segments, uP1 = rotation.
+    expect(combineExtraFor('mirror', { mode: 3, segments: 8, rotation: 0.5 }))
+      .toMatchObject({ mode: 3, p0: 8, p1: 0.5 });
+    // DISPLACE: amount = amount, uMode = channel.
+    expect(combineExtraFor('displace', { amount: 0.25, channel: 1 }))
+      .toMatchObject({ amount: 0.25, mode: 1 });
+    // BITBEND: uMode = op, uP0 = mask, uP3/4/5 = perR/G/B.
+    expect(combineExtraFor('bitbend', { op: 2, mask: 170, perR: 1, perG: 0, perB: 1 }))
+      .toMatchObject({ mode: 2, p0: 170, p3: 1, p4: 0, p5: 1 });
+    // BIOCELLS: uP0 cellCount, uP1 lumaJitter, uP2 edgeWidth, uP3 edgeColor.
+    expect(combineExtraFor('biocells', { cellCount: 32, lumaJitter: 0.5, edgeWidth: 0.2, edgeColor: 0.1 }))
+      .toMatchObject({ p0: 32, p1: 0.5, p2: 0.2, p3: 0.1 });
+    // OVER: amount = OPACITY.
+    expect(combineExtraFor('over', { amount: 0.7 })).toMatchObject({ amount: 0.7 });
+  });
+
+  it('keeps the legacy ops on their historical channels', () => {
+    expect(combineExtraFor('chromakey', { amount: 0.3, soft: 0.1, keyR: 0, keyG: 1, keyB: 0 }))
+      .toMatchObject({ amount: 0.3, soft: 0.1, keyR: 0, keyG: 1, keyB: 0 });
+    expect(combineExtraFor('lumakey', { amount: 0.5, soft: 0.2, invert: 1 }))
+      .toMatchObject({ amount: 0.5, soft: 0.2, invert: 1 });
+  });
+});
+
+describe('exquisiteUniforms', () => {
+  it('clamps + rounds + defaults', () => {
+    expect(exquisiteUniforms(undefined)).toEqual({ bands: 4, boundaryWarp: 0.2, seamBlend: 0.1, hueShift: 0 });
+    expect(exquisiteUniforms({ bands: 99, boundaryWarp: 2, seamBlend: -1, hueShift: 0.5 }))
+      .toEqual({ bands: 8, boundaryWarp: 1, seamBlend: 0, hueShift: 0.5 });
+    expect(exquisiteUniforms({ bands: 3.7 }).bands).toBe(4); // rounded
+  });
+});
+
+describe('history op classification + ring depth', () => {
+  it('COMBINE_OP_KINDS = the 10 stateless single-pass ops', () => {
+    expect([...COMBINE_OP_KINDS].sort()).toEqual(
+      ['biocells', 'bitbend', 'chromakey', 'displace', 'fade', 'lumakey', 'map', 'mirror', 'over', 'tile'].sort(),
+    );
+  });
+  it('feedback + the 5 history ops are stateful; the rest are not', () => {
+    expect(isStatefulKind('feedback')).toBe(true);
+    for (const k of HISTORY_OP_KINDS) expect(isStatefulKind(k)).toBe(true);
+    expect(isStatefulKind('fade')).toBe(false);
+    expect(isStatefulKind('exquisite')).toBe(false);
+    expect(isStatefulKind('source')).toBe(false);
+  });
+  it('framedelay/channeldesync need an N-frame ring; the others are 1-deep', () => {
+    expect(opHistoryDepth('framedelay')).toBe(MAX_HISTORY_FRAMES);
+    expect(opHistoryDepth('channeldesync')).toBe(MAX_HISTORY_FRAMES);
+    expect(opHistoryDepth('feedback')).toBe(1);
+    expect(opHistoryDepth('flowsmear')).toBe(1);
+    expect(opHistoryDepth('dreammelt')).toBe(1);
+    expect(opHistoryDepth('datamosh')).toBe(1);
+    expect(opHistoryDepth('fade')).toBe(0); // not stateful
+  });
+  it('frame-delay params clamp to a valid ring tap (< MAX_HISTORY_FRAMES)', () => {
+    const byId = Object.fromEntries(OP_PARAMS.framedelay.map((p) => [p.id, p]));
+    expect(byId.delay!.max).toBe(MAX_HISTORY_FRAMES - 1);
+  });
+});
+
+describe('EXQUISITE multi-input (the 4-port surgery)', () => {
+  it('exposes in0..in3 + lays out 4 distinct input ports', () => {
+    expect(inPortsFor('exquisite')).toEqual(['in0', 'in1', 'in2', 'in3']);
+  });
+  it('a partially-wired exquisite (2 of 4) still topo-sorts', () => {
+    const g = defGraph();
+    const n = makeOpNode(g, 'exquisite'); g.nodes.push(n);
+    g.edges.push({ id: 'x0', from: 'src0', to: n.id, toPort: 'in0' });
+    g.edges.push({ id: 'x1', from: 'src1', to: n.id, toPort: 'in1' });
+    const { ok } = topoSort(g);
+    expect(ok).toBe(true);
   });
 });

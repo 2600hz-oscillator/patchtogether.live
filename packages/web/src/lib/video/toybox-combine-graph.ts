@@ -40,33 +40,145 @@ export type ToyboxNodeKind =
   | 'chromakey'
   | 'map'
   | 'feedback'
+  // ── Batch op nodes (#node-batch) ──────────────────────────────────────────
+  // STATELESS single-pass (share COMBINE_FRAG_SRC uOp branches):
+  | 'over'        // 2-input premultiplied source-over
+  | 'tile'        // 1-input NxM (mirror/offset/rotate) tiler
+  | 'mirror'      // 1-input flip / quad-fold / kaleidoscope
+  | 'displace'    // 2-input UV displacement (in1 drives in0)
+  | 'bitbend'     // 1-input per-channel integer bit-op vs mask
+  | 'biocells'    // 1-input Voronoi cell quantiser
+  // STATELESS multi-input (own program, up to 4 feeds):
+  | 'exquisite'   // 2..4-input banded "exquisite corpse" splicer
+  // STATEFUL frame-history (own program + per-node ring buffer):
+  | 'framedelay'      // 1-input N-frame delay line + mix
+  | 'channeldesync'   // 1-input per-channel frame-delay + offset
+  | 'flowsmear'       // 1-input curl-noise flow smear (1-deep history)
+  | 'dreammelt'       // 2-input melt-state dissolve (1-deep history)
+  | 'datamosh'        // 1-input optical-flow advection + hold gate (1-deep history)
   | 'output';
 
-/** The op-node kinds. The four STATELESS blends map 1:1 to the combine shader's
- *  uOp index (fade 0, lumakey 1, chromakey 2, map 3). FEEDBACK is the first
- *  STATEFUL op — it runs its OWN program (sampling its previous frame), so it
- *  uses a SENTINEL shader index (FEEDBACK_SHADER_INDEX) and is never fed through
- *  combineStep. It is still an "op" everywhere else (deletable, has params, is a
- *  CV target, appears in the ADD menu). */
-export type ToyboxOpKind = 'fade' | 'lumakey' | 'chromakey' | 'map' | 'feedback';
+/** The op-node kinds. The STATELESS single-pass blends map 1:1 to the combine
+ *  shader's uOp index (fade 0, lumakey 1, chromakey 2, map 3, over 4, tile 5,
+ *  mirror 6, displace 7, bitbend 8, biocells 9). FEEDBACK + the multi-input
+ *  (exquisite) + the frame-history ops run their OWN program(s), so they use
+ *  SENTINEL shader indices (>=100) and are never fed through combineStep. They
+ *  are still "ops" everywhere else (deletable, have params, are CV targets,
+ *  appear in the ADD menu). */
+export type ToyboxOpKind =
+  | 'fade'
+  | 'lumakey'
+  | 'chromakey'
+  | 'map'
+  | 'feedback'
+  | 'over'
+  | 'tile'
+  | 'mirror'
+  | 'displace'
+  | 'bitbend'
+  | 'biocells'
+  | 'exquisite'
+  | 'framedelay'
+  | 'channeldesync'
+  | 'flowsmear'
+  | 'dreammelt'
+  | 'datamosh';
 
-export const OP_KINDS: readonly ToyboxOpKind[] = ['fade', 'lumakey', 'chromakey', 'map', 'feedback'];
+export const OP_KINDS: readonly ToyboxOpKind[] = [
+  'fade',
+  'lumakey',
+  'chromakey',
+  'map',
+  'over',
+  'tile',
+  'mirror',
+  'displace',
+  'bitbend',
+  'biocells',
+  'feedback',
+  'exquisite',
+  'framedelay',
+  'channeldesync',
+  'flowsmear',
+  'dreammelt',
+  'datamosh',
+];
 
 /** Sentinel uOp index for FEEDBACK: it never runs combineStep (it has its OWN
- *  program), so this index must NOT collide with a real COMBINE_FRAG_SRC case
- *  (0..3). The engine branches on the node KIND before any shader index lookup;
- *  the index exists only so OP_SHADER_INDEX stays a total map over OP_KINDS. */
+ *  program), so this index must NOT collide with a real COMBINE_FRAG_SRC case.
+ *  The engine branches on the node KIND before any shader index lookup; the
+ *  index exists only so OP_SHADER_INDEX stays a total map over OP_KINDS. */
 export const FEEDBACK_SHADER_INDEX = 100;
 
-/** Combine-shader op index per op kind. fade/lumakey/chromakey/map match
- *  COMBINE_FRAG_SRC uOp; feedback is the sentinel (own program). */
+/** Sentinel uOp index for EXQUISITE (own multi-input program). */
+export const EXQUISITE_SHADER_INDEX = 101;
+
+/** Sentinel uOp index shared by the STATEFUL frame-history ops (each runs its
+ *  own program / ring buffer; the engine branches on KIND before any index). */
+export const HISTORY_SHADER_INDEX = 102;
+
+/** Combine-shader op index per op kind. The STATELESS single-pass ops match a
+ *  COMBINE_FRAG_SRC uOp branch (0..9); feedback/exquisite/history ops are
+ *  sentinels (their own programs). */
 export const OP_SHADER_INDEX: Record<ToyboxOpKind, number> = {
   fade: 0,
   lumakey: 1,
   chromakey: 2,
   map: 3,
+  over: 4,
+  tile: 5,
+  mirror: 6,
+  displace: 7,
+  bitbend: 8,
+  biocells: 9,
   feedback: FEEDBACK_SHADER_INDEX,
+  exquisite: EXQUISITE_SHADER_INDEX,
+  framedelay: HISTORY_SHADER_INDEX,
+  channeldesync: HISTORY_SHADER_INDEX,
+  flowsmear: HISTORY_SHADER_INDEX,
+  dreammelt: HISTORY_SHADER_INDEX,
+  datamosh: HISTORY_SHADER_INDEX,
 };
+
+/** The STATELESS single-pass ops that run through combineStep (a uOp branch in
+ *  COMBINE_FRAG_SRC). Used by the engine's opOf whitelist. */
+export const COMBINE_OP_KINDS: readonly ToyboxOpKind[] = [
+  'fade', 'lumakey', 'chromakey', 'map', 'over', 'tile', 'mirror', 'displace', 'bitbend', 'biocells',
+];
+
+/** True if `kind` is a STATELESS single-pass op (runs combineStep). */
+export function isCombineOpKind(kind: ToyboxNodeKind | undefined): kind is ToyboxOpKind {
+  return (COMBINE_OP_KINDS as readonly string[]).includes(kind as string);
+}
+
+/** The STATEFUL frame-history ops (each owns a per-node history ring buffer +
+ *  its own program). Reset/reconcile keying widens over this SET (not just
+ *  'feedback'). */
+export const HISTORY_OP_KINDS: readonly ToyboxOpKind[] = [
+  'framedelay', 'channeldesync', 'flowsmear', 'dreammelt', 'datamosh',
+];
+
+/** True if `kind` is a STATEFUL op needing a per-node frame-history buffer
+ *  (feedback + the batch history ops). The engine reconciles a ping-pong/ring
+ *  buffer for exactly these (keyed on kind, so no hard-coded name list in GL). */
+export function isStatefulKind(kind: ToyboxNodeKind | string | undefined): boolean {
+  return kind === 'feedback' || (HISTORY_OP_KINDS as readonly string[]).includes(kind as string);
+}
+
+/** How many frames of history a stateful op keeps (ring depth). feedback +
+ *  flowsmear/dreammelt/datamosh need only the single previous frame (1-deep
+ *  ping-pong). framedelay/channeldesync read a DELAYED tap, so they need an
+ *  N-frame ring (its max `delay`-style param's max + 1, rounded up). */
+export function opHistoryDepth(kind: ToyboxNodeKind | string | undefined): number {
+  if (kind === 'framedelay' || kind === 'channeldesync') return MAX_HISTORY_FRAMES;
+  if (isStatefulKind(kind)) return 1; // 1-deep ping-pong (feedback/flowsmear/dreammelt/datamosh)
+  return 0;
+}
+
+/** Maximum frames an N-frame history ring holds (framedelay/channeldesync). Kept
+ *  modest so the per-node float-FBO ring stays cheap (33 RGBA32F targets at
+ *  engine res). The delay params clamp to MAX_HISTORY_FRAMES-1. */
+export const MAX_HISTORY_FRAMES = 33;
 
 /** A node in the combine graph. `params` holds the op's float params keyed by
  *  id (op nodes only); `layer` is the layer index a SOURCE node emits. */
@@ -92,8 +204,9 @@ export interface ToyboxGraphEdge {
   toPort: ToyboxInPort;
 }
 
-/** Input port ids. Op nodes have 'in0' (base) + 'in1' (top); OUTPUT has 'in0'. */
-export type ToyboxInPort = 'in0' | 'in1';
+/** Input port ids. Blend ops have 'in0' (base) + 'in1' (top); 1-input ops + the
+ *  OUTPUT have 'in0'; EXQUISITE has up to 'in0'..'in3' (4 feeds). */
+export type ToyboxInPort = 'in0' | 'in1' | 'in2' | 'in3';
 
 export interface ToyboxCombineGraph {
   nodes: ToyboxGraphNode[];
@@ -168,6 +281,92 @@ export const OP_PARAMS: Record<ToyboxOpKind, ToyboxOpParamDef[]> = {
     { id: 'slitWidth', label: 'SLIT W', min: 0, max: 1, default: 0.1 },
     { id: 'flow', label: 'FLOW', min: 0, max: 1, default: 0 },
   ],
+
+  // ── Batch op nodes ──────────────────────────────────────────────────────
+  // OVER (2-input): premultiplied source-over. amount scales the source (in1)
+  // alpha — at 0 only the dest (in0) shows; at 1 a full over-composite.
+  over: [{ id: 'amount', label: 'OPACITY', min: 0, max: 1, default: 1 }],
+  // TILE (1-input): repeat across an NxM grid with offset + per-cell rotation;
+  // mirror>0.5 reflects alternating cells instead of wrapping.
+  tile: [
+    { id: 'tilesX', label: 'TILES X', min: 1, max: 16, default: 3 },
+    { id: 'tilesY', label: 'TILES Y', min: 1, max: 16, default: 3 },
+    { id: 'mirror', label: 'MIRROR', min: 0, max: 1, default: 0 },
+    { id: 'offX', label: 'OFFSET X', min: -1, max: 1, default: 0 },
+    { id: 'offY', label: 'OFFSET Y', min: -1, max: 1, default: 0 },
+    { id: 'rotate', label: 'ROTATE', min: -Math.PI, max: Math.PI, default: 0 },
+  ],
+  // MIRROR (1-input): MODE 0 H-flip, 1 V-flip, 2 quad-fold, 3 kaleidoscope.
+  mirror: [
+    { id: 'mode', label: 'MODE', min: 0, max: 3, default: 2 },
+    { id: 'segments', label: 'SEGMENTS', min: 2, max: 16, default: 6 },
+    { id: 'rotation', label: 'ROTATION', min: -Math.PI, max: Math.PI, default: 0 },
+  ],
+  // DISPLACE (2-input): in1 displaces in0's UVs. amount = displacement scale;
+  // channel 0 = luma-displace, 1 = RG-vector displace.
+  displace: [
+    { id: 'amount', label: 'AMOUNT', min: -0.5, max: 0.5, default: 0.1 },
+    { id: 'channel', label: 'CHANNEL', min: 0, max: 1, default: 1 },
+  ],
+  // BITBEND (1-input): per-channel integer bit-op vs a mask (0..255). op 0 XOR,
+  // 1 AND, 2 OR, 3 bit-rotate. perR/perG/perB gate which channels are bent.
+  bitbend: [
+    { id: 'op', label: 'OP', min: 0, max: 3, default: 0 },
+    { id: 'mask', label: 'MASK', min: 0, max: 255, default: 85 },
+    { id: 'perR', label: 'R', min: 0, max: 1, default: 1 },
+    { id: 'perG', label: 'G', min: 0, max: 1, default: 1 },
+    { id: 'perB', label: 'B', min: 0, max: 1, default: 1 },
+  ],
+  // BIOCELLS (1-input): Voronoi cell quantiser; cells jittered by hash + input
+  // luma, filled with the input colour at the cell centre, edges drawn dark.
+  biocells: [
+    { id: 'cellCount', label: 'CELLS', min: 4, max: 64, default: 16 },
+    { id: 'lumaJitter', label: 'LUMA JIT', min: 0, max: 1, default: 0.4 },
+    { id: 'edgeWidth', label: 'EDGE', min: 0, max: 1, default: 0.3 },
+    { id: 'edgeColor', label: 'EDGE COL', min: 0, max: 1, default: 0 },
+  ],
+  // EXQUISITE (2..4-input): split the frame into N bands; band i shows
+  // input (i mod #inputs). boundaryWarp wobbles the seams; seamBlend feathers
+  // them; hueShift tints alternating bands.
+  exquisite: [
+    { id: 'bands', label: 'BANDS', min: 2, max: 8, default: 4 },
+    { id: 'boundaryWarp', label: 'WARP', min: 0, max: 1, default: 0.2 },
+    { id: 'seamBlend', label: 'SEAM', min: 0, max: 1, default: 0.1 },
+    { id: 'hueShift', label: 'HUE', min: 0, max: 1, default: 0 },
+  ],
+  // FRAMEDELAY (1-input): output = history[now - delay] mixed with current.
+  framedelay: [
+    { id: 'delay', label: 'DELAY', min: 0, max: MAX_HISTORY_FRAMES - 1, default: 8 },
+    { id: 'mix', label: 'MIX', min: 0, max: 1, default: 1 },
+  ],
+  // CHANNELDESYNC (1-input): per-channel frame-delay + spatial offset (RGB drift).
+  channeldesync: [
+    { id: 'rDelay', label: 'R DELAY', min: 0, max: MAX_HISTORY_FRAMES - 1, default: 0 },
+    { id: 'gDelay', label: 'G DELAY', min: 0, max: MAX_HISTORY_FRAMES - 1, default: 6 },
+    { id: 'bDelay', label: 'B DELAY', min: 0, max: MAX_HISTORY_FRAMES - 1, default: 12 },
+    { id: 'offsetMag', label: 'OFFSET', min: 0, max: 1, default: 0.05 },
+  ],
+  // FLOWSMEAR (1-input): curl-noise flow advects the previous output; persistence
+  // mixes it with the live input (1-deep history).
+  flowsmear: [
+    { id: 'flowStrength', label: 'FLOW', min: 0, max: 1, default: 0.5 },
+    { id: 'noiseScale', label: 'SCALE', min: 0.5, max: 8, default: 3 },
+    { id: 'persistence', label: 'PERSIST', min: 0, max: 1, default: 0.85 },
+  ],
+  // DREAMMELT (2-input): per-pixel melt-state accumulates; pixels drip downward +
+  // dissolve in0→in1 as melt progresses (1-deep history).
+  dreammelt: [
+    { id: 'meltAmount', label: 'MELT', min: 0, max: 1, default: 0.5 },
+    { id: 'dripSpeed', label: 'DRIP', min: 0, max: 1, default: 0.3 },
+    { id: 'threshold', label: 'THRESH', min: 0, max: 1, default: 0.5 },
+  ],
+  // DATAMOSH (1-input): approximate optical-flow advection of the previous
+  // output + a HOLD gate that withholds new input (P-frame smear) + decay.
+  datamosh: [
+    { id: 'flowScale', label: 'FLOW', min: 0, max: 1, default: 0.5 },
+    { id: 'holdGate', label: 'HOLD', min: 0, max: 1, default: 0.5 },
+    { id: 'decay', label: 'DECAY', min: 0, max: 1, default: 0.9 },
+  ],
 };
 
 /** Op kinds that are KEYERS (have a "Configure keyer" popover): lumakey +
@@ -195,6 +394,18 @@ const OP_DISPLAY_PREFIX: Record<ToyboxOpKind, string> = {
   chromakey: 'CHROMA',
   map: 'MAP',
   feedback: 'FBK',
+  over: 'OVER',
+  tile: 'TILE',
+  mirror: 'MIRR',
+  displace: 'DISP',
+  bitbend: 'BITB',
+  biocells: 'BIO',
+  exquisite: 'EXQ',
+  framedelay: 'FDLY',
+  channeldesync: 'DSYNC',
+  flowsmear: 'FLOW',
+  dreammelt: 'MELT',
+  datamosh: 'MOSH',
 };
 
 /**
@@ -237,15 +448,125 @@ export function defaultOpParams(kind: ToyboxOpKind): Record<string, number> {
   return out;
 }
 
+/** A param value read off a node's params Record, defaulting to the schema
+ *  default for `kind`.`id` when absent / non-finite. Pure. */
+export function opParamVal(
+  kind: ToyboxOpKind,
+  params: Record<string, number> | undefined | null,
+  id: string,
+): number {
+  const v = params && typeof params === 'object' ? params[id] : undefined;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  const def = OP_PARAMS[kind]?.find((p) => p.id === id);
+  return def?.default ?? 0;
+}
+
+/** The generic combineStep "extra" channel for a STATELESS single-pass op: which
+ *  of that op's params land in amount/mode/uP0..uP5. PURE (no GL) so the slot
+ *  mapping is unit-testable and shared by the engine. Returns the amount + a
+ *  CombineExtra-shaped record. fade/lumakey/chromakey/map keep their historical
+ *  channels (soft/invert/keyR/G/B/mode); the batch ops pack their floats into
+ *  uP0..uP5 (+ mode for the op/channel selector). */
+export interface CombineStepExtra {
+  amount: number;
+  soft?: number;
+  invert?: number;
+  keyR?: number;
+  keyG?: number;
+  keyB?: number;
+  mode?: number;
+  p0?: number;
+  p1?: number;
+  p2?: number;
+  p3?: number;
+  p4?: number;
+  p5?: number;
+}
+
+export function combineExtraFor(
+  kind: ToyboxOpKind,
+  params: Record<string, number> | undefined | null,
+): CombineStepExtra {
+  const v = (id: string) => opParamVal(kind, params, id);
+  switch (kind) {
+    case 'fade':
+      return { amount: v('amount') };
+    case 'lumakey':
+      return { amount: v('amount'), soft: v('soft'), invert: v('invert') };
+    case 'chromakey':
+      return { amount: v('amount'), soft: v('soft'), keyR: v('keyR'), keyG: v('keyG'), keyB: v('keyB') };
+    case 'map':
+      return { amount: v('amount'), mode: v('mode') };
+    case 'over':
+      return { amount: v('amount') };
+    case 'tile':
+      // uP0 tilesX, uP1 tilesY, uP2 mirror, uP3 offX, uP4 offY, uP5 rotate.
+      return {
+        amount: 1,
+        p0: v('tilesX'), p1: v('tilesY'), p2: v('mirror'),
+        p3: v('offX'), p4: v('offY'), p5: v('rotate'),
+      };
+    case 'mirror':
+      // uMode = mode, uP0 = segments, uP1 = rotation.
+      return { amount: 1, mode: v('mode'), p0: v('segments'), p1: v('rotation') };
+    case 'displace':
+      // amount = displacement scale, uMode = channel.
+      return { amount: v('amount'), mode: v('channel') };
+    case 'bitbend':
+      // uMode = op, uP0 = mask, uP3/uP4/uP5 = perR/perG/perB.
+      return { amount: 1, mode: v('op'), p0: v('mask'), p3: v('perR'), p4: v('perG'), p5: v('perB') };
+    case 'biocells':
+      // uP0 cellCount, uP1 lumaJitter, uP2 edgeWidth, uP3 edgeColor.
+      return { amount: 1, p0: v('cellCount'), p1: v('lumaJitter'), p2: v('edgeWidth'), p3: v('edgeColor') };
+    default:
+      // Non-combineStep ops (feedback/exquisite/history) never call this.
+      return { amount: 1 };
+  }
+}
+
+/** The 1-input op kinds: a SINGLE cable. FEEDBACK's loop is internal; tile/
+ *  mirror/bitbend/biocells transform one feed; the 1-input history ops
+ *  (framedelay/channeldesync/flowsmear/datamosh) carry their own frame ring. */
+const ONE_INPUT_OP_KINDS: readonly ToyboxNodeKind[] = [
+  'feedback', 'tile', 'mirror', 'bitbend', 'biocells',
+  'framedelay', 'channeldesync', 'flowsmear', 'datamosh',
+];
+
+/** The clamped uniform set the EXQUISITE program reads, derived from a node's
+ *  raw params. PURE (no GL) so the clamp is unit-testable. */
+export interface ExquisiteUniforms {
+  bands: number;
+  boundaryWarp: number;
+  seamBlend: number;
+  hueShift: number;
+}
+export function exquisiteUniforms(
+  params: Record<string, number> | undefined | null,
+): ExquisiteUniforms {
+  const clamp = (v: unknown, min: number, max: number, def: number) => {
+    const n = typeof v === 'number' && Number.isFinite(v) ? v : def;
+    return n < min ? min : n > max ? max : n;
+  };
+  const p = params && typeof params === 'object' ? params : {};
+  return {
+    bands: Math.round(clamp(p.bands, 2, 8, 4)),
+    boundaryWarp: clamp(p.boundaryWarp, 0, 1, 0.2),
+    seamBlend: clamp(p.seamBlend, 0, 1, 0.1),
+    hueShift: clamp(p.hueShift, 0, 1, 0),
+  };
+}
+
 /** The input ports a node of `kind` exposes (left-side dots in the editor). */
 export function inPortsFor(kind: ToyboxNodeKind): ToyboxInPort[] {
   if (kind === 'source') return [];
   if (kind === 'output') return ['in0'];
-  // FEEDBACK has a SINGLE input: the feedback loop is INTERNAL (its own previous
-  // frame), NOT a second cable. The blend ops (fade/lumakey/chromakey/map) take
-  // a base + top.
-  if (kind === 'feedback') return ['in0'];
-  return ['in0', 'in1']; // blend op nodes
+  // EXQUISITE splices up to FOUR feeds (band i shows input i mod #wired).
+  if (kind === 'exquisite') return ['in0', 'in1', 'in2', 'in3'];
+  // The 1-input ops (FEEDBACK loop is internal; the others transform one feed).
+  if (ONE_INPUT_OP_KINDS.includes(kind)) return ['in0'];
+  // The remaining blend ops (fade/lumakey/chromakey/map/over/displace/dreammelt)
+  // take a base + top.
+  return ['in0', 'in1'];
 }
 
 /** Whether a node of `kind` has an output port (right-side dot). */

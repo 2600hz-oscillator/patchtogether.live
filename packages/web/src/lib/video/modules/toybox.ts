@@ -75,11 +75,17 @@ import { createVideoFrameUploader } from '$lib/video/video-frame-upload';
 import {
   OP_SHADER_INDEX,
   isCombineGraph,
+  isCombineOpKind,
+  isStatefulKind,
+  opHistoryDepth,
+  combineExtraFor,
+  exquisiteUniforms,
   makeDefaultCombineGraph,
   topoSort,
   type ToyboxCombineGraph,
   type ToyboxOpKind,
 } from '$lib/video/toybox-combine-graph';
+import { historyUniforms } from '$lib/video/toybox-history';
 import { feedbackUniforms, feedbackResetState } from '$lib/video/toybox-feedback';
 import {
   CV_PORT_IDS,
@@ -607,6 +613,12 @@ export const toyboxDef: VideoModuleDef = {
     const cuKeyG = gl.getUniformLocation(combineProgram, 'uKeyG');
     const cuKeyB = gl.getUniformLocation(combineProgram, 'uKeyB');
     const cuMode = gl.getUniformLocation(combineProgram, 'uMode');
+    const cuP0 = gl.getUniformLocation(combineProgram, 'uP0');
+    const cuP1 = gl.getUniformLocation(combineProgram, 'uP1');
+    const cuP2 = gl.getUniformLocation(combineProgram, 'uP2');
+    const cuP3 = gl.getUniformLocation(combineProgram, 'uP3');
+    const cuP4 = gl.getUniformLocation(combineProgram, 'uP4');
+    const cuP5 = gl.getUniformLocation(combineProgram, 'uP5');
 
     // ---------------- FEEDBACK program (the first STATEFUL combine op) --------
     // Its own fullscreen-quad program: samples this node's PREVIOUS frame
@@ -632,6 +644,44 @@ export const toyboxDef: VideoModuleDef = {
     const fuSlitWidth = gl.getUniformLocation(feedbackProgram, 'uSlitWidth');
     const fuFlow = gl.getUniformLocation(feedbackProgram, 'uFlow');
 
+    // ---------------- EXQUISITE program (multi-input, up to 4 feeds) -----------
+    const exqProgram = compileExquisiteProgram(gl);
+    const xuIn = [0, 1, 2, 3].map((i) => gl.getUniformLocation(exqProgram, `uIn${i}`));
+    const xuHas = [0, 1, 2, 3].map((i) => gl.getUniformLocation(exqProgram, `uHas${i}`));
+    const xuBands = gl.getUniformLocation(exqProgram, 'uBands');
+    const xuWarp = gl.getUniformLocation(exqProgram, 'uWarp');
+    const xuSeam = gl.getUniformLocation(exqProgram, 'uSeam');
+    const xuHue = gl.getUniformLocation(exqProgram, 'uHue');
+
+    // ---------------- FRAME-HISTORY program (framedelay/channeldesync/…) -------
+    // One shared program for the 5 history ops: samples the upstream in0 (+ in1
+    // for dreammelt) + up to THREE delayed taps out of the node's ring + the most-
+    // recent prev frame, branching on uOp. See HISTORY_FRAG_SRC + toybox-history.ts.
+    const histProgram = compileHistoryProgram(gl);
+    const huPrev = gl.getUniformLocation(histProgram, 'uPrev');
+    const huTapR = gl.getUniformLocation(histProgram, 'uTapR');
+    const huTapG = gl.getUniformLocation(histProgram, 'uTapG');
+    const huTapB = gl.getUniformLocation(histProgram, 'uTapB');
+    const huIn = gl.getUniformLocation(histProgram, 'uInput');
+    const huIn1 = gl.getUniformLocation(histProgram, 'uInput1');
+    const huHasIn = gl.getUniformLocation(histProgram, 'uHasInput');
+    const huHasIn1 = gl.getUniformLocation(histProgram, 'uHasInput1');
+    const huTexel = gl.getUniformLocation(histProgram, 'uTexel');
+    const huTime = gl.getUniformLocation(histProgram, 'uTime');
+    const huOp = gl.getUniformLocation(histProgram, 'uOp');
+    const huMix = gl.getUniformLocation(histProgram, 'uMix');
+    const huOffset = gl.getUniformLocation(histProgram, 'uOffsetMag');
+    const huFlowStr = gl.getUniformLocation(histProgram, 'uFlowStrength');
+    const huNoiseScale = gl.getUniformLocation(histProgram, 'uNoiseScale');
+    const huPersist = gl.getUniformLocation(histProgram, 'uPersistence');
+    const huMelt = gl.getUniformLocation(histProgram, 'uMeltAmount');
+    const huDrip = gl.getUniformLocation(histProgram, 'uDripSpeed');
+    const huThresh = gl.getUniformLocation(histProgram, 'uThreshold');
+    const huFlowScale = gl.getUniformLocation(histProgram, 'uFlowScale');
+    const huHold = gl.getUniformLocation(histProgram, 'uHoldGate');
+    const huDecay = gl.getUniformLocation(histProgram, 'uDecay');
+    const huStorePass = gl.getUniformLocation(histProgram, 'uStorePass');
+
     // ---------------- Per-feedback-node ping-pong float buffers ----------------
     //
     // Each FEEDBACK node in the combine graph owns a PING-PONG pair of float FBOs
@@ -642,71 +692,98 @@ export const toyboxDef: VideoModuleDef = {
     // live graph). `clearPending` forces both buffers cleared to black next
     // render (the "Reset feedback" menu action bumps the reset counter the card
     // writes to node.data; we diff it per node id).
+    interface FloatTarget { fbo: WebGLFramebuffer; texture: WebGLTexture }
     interface FeedbackBuf {
-      front: { fbo: WebGLFramebuffer; texture: WebGLTexture };
-      back: { fbo: WebGLFramebuffer; texture: WebGLTexture };
-      /** True until both ping-pong textures have been cleared once (fresh alloc
-       *  or an explicit reset) — a fresh float texture's contents are undefined. */
+      /** The frame-history ring. `ring[head]` is the slot rendered NEXT;
+       *  ring[(head-1+N)%N] is the most-recent frame; ring[(head-1-d+N)%N] is the
+       *  frame `d` frames ago. A FEEDBACK/1-deep op uses N=2 (classic ping-pong:
+       *  render into head, sample the other). framedelay/channeldesync use a
+       *  deeper ring so a DELAYED tap reads a frame from `delay` frames back. */
+      ring: FloatTarget[];
+      /** Next slot to render into (advances mod ring.length each step). */
+      head: number;
+      /** A dedicated OUTPUT target for the DELAY-LINE ops (framedelay/
+       *  channeldesync), whose ring holds the LIVE INPUT history (a store pass)
+       *  and whose visible output is rendered here (a read pass) so downstream
+       *  samples the delayed result, not the just-stored input. Absent for the
+       *  recursive 1-deep ops (their ring slot IS the output). */
+      out?: FloatTarget;
+      /** The op KIND this buffer serves (so a kind change re-allocs the ring). */
+      kind: string;
+      /** True until the ring has been cleared once (fresh alloc / explicit
+       *  reset) — a fresh float texture's contents are undefined. */
       clearPending: boolean;
-      /** Last-seen reset token for this node (node.data.combine node param
-       *  `_reset`); when it changes we re-arm clearPending. */
+      /** Last-seen reset token for this node (`_reset` param); when it changes we
+       *  re-arm clearPending. */
       resetToken: number;
     }
     const feedbackBufs = new Map<string, FeedbackBuf>();
 
-    /** Allocate a ping-pong float-FBO pair for a feedback node. Guards
-     *  createFloatFbo being absent (test-mock contexts) → falls back to the
-     *  RGBA8 createFbo (degrade, never crash). */
-    function makeFeedbackBuf(): FeedbackBuf {
-      const alloc = () => {
-        if (ctx.createFloatFbo) {
-          // NEAREST filter: LINEAR on a float colour attachment silently reads
-          // 0.0 without OES_texture_float_linear (see engine.ts createFloatFbo /
-          // waveform-video.ts) — which made the whole feedback loop render black.
-          // The shader's spatial taps (tunnel/blur/displace) are fine on NEAREST
-          // at engine resolution; any smoothing is done in-shader.
-          const r = ctx.createFloatFbo(ctx.res.width, ctx.res.height, { filter: 'nearest', precision: 'full' });
-          return { fbo: r.fbo, texture: r.texture };
-        }
-        return ctx.createFbo();
-      };
-      return { front: alloc(), back: alloc(), clearPending: true, resetToken: 0 };
+    function allocFloatTarget(): FloatTarget {
+      if (ctx.createFloatFbo) {
+        // NEAREST filter: LINEAR on a float colour attachment silently reads 0.0
+        // without OES_texture_float_linear (see engine.ts) — which made the whole
+        // loop render black. Spatial taps are fine on NEAREST at engine res.
+        const r = ctx.createFloatFbo(ctx.res.width, ctx.res.height, { filter: 'nearest', precision: 'full' });
+        return { fbo: r.fbo, texture: r.texture };
+      }
+      return ctx.createFbo();
+    }
+
+    /** Allocate a frame-history ring for a stateful node of `kind`. depth=1 →
+     *  N=2 (classic ping-pong); depth=D → N=D+1 (so a tap `D` frames back exists
+     *  alongside the slot being written this frame). */
+    function makeFeedbackBuf(kind: string): FeedbackBuf {
+      const depth = opHistoryDepth(kind);
+      const n = Math.max(2, depth + 1);
+      const ring: FloatTarget[] = [];
+      for (let i = 0; i < n; i++) ring.push(allocFloatTarget());
+      // Delay-line ops (depth > 1) need a separate visible-output target (their
+      // ring holds the live-input history; the read pass renders the delay here).
+      const out = depth > 1 ? allocFloatTarget() : undefined;
+      return { ring, head: 0, out, kind, clearPending: true, resetToken: 0 };
     }
 
     function freeFeedbackBuf(b: FeedbackBuf): void {
-      gl.deleteFramebuffer(b.front.fbo);
-      gl.deleteTexture(b.front.texture);
-      gl.deleteFramebuffer(b.back.fbo);
-      gl.deleteTexture(b.back.texture);
+      for (const t of b.ring) {
+        gl.deleteFramebuffer(t.fbo);
+        gl.deleteTexture(t.texture);
+      }
+      if (b.out) {
+        gl.deleteFramebuffer(b.out.fbo);
+        gl.deleteTexture(b.out.texture);
+      }
     }
 
-    /** Reconcile the feedbackBufs map against the live graph's feedback node ids:
-     *  alloc a pair for any new feedback node, free + drop pairs whose node is
-     *  gone. Called once per frame from evalGraph before rendering. Returns the
-     *  set of live feedback ids (so the caller can look them up). */
+    /** Reconcile the feedbackBufs map against the live graph's STATEFUL node ids
+     *  (feedback + the frame-history ops): alloc a ring for any new stateful node
+     *  (or one whose KIND changed → different ring depth), free + drop rings whose
+     *  node is gone. Called once per frame from evalGraph before rendering. */
     function reconcileFeedbackBufs(graph: ToyboxCombineGraph): Set<string> {
-      const live = new Set<string>();
-      for (const n of graph.nodes) if (n.kind === 'feedback') live.add(n.id);
-      // Free buffers for removed feedback nodes.
+      const liveKind = new Map<string, string>();
+      for (const n of graph.nodes) if (isStatefulKind(n.kind)) liveKind.set(n.id, n.kind);
+      // Free buffers for removed stateful nodes (or ones whose kind changed).
       for (const [nid, buf] of feedbackBufs) {
-        if (!live.has(nid)) {
+        const k = liveKind.get(nid);
+        if (k === undefined || k !== buf.kind) {
           freeFeedbackBuf(buf);
           feedbackBufs.delete(nid);
         }
       }
-      // Alloc buffers for new feedback nodes.
-      for (const nid of live) {
-        if (!feedbackBufs.has(nid)) feedbackBufs.set(nid, makeFeedbackBuf());
+      // Alloc buffers for new stateful nodes.
+      for (const [nid, k] of liveKind) {
+        if (!feedbackBufs.has(nid)) feedbackBufs.set(nid, makeFeedbackBuf(k));
       }
-      return live;
+      return new Set(liveKind.keys());
     }
 
-    /** Clear both of a feedback buffer's textures to black (fresh alloc / reset).
-     *  A freshly-created float texture has undefined contents, so we MUST clear
-     *  before the first sample to avoid reading garbage as the "previous frame". */
+    /** Clear a buffer's whole ring to black (fresh alloc / reset). A freshly-
+     *  created float texture has undefined contents, so we MUST clear before the
+     *  first sample to avoid reading garbage as a "previous frame". */
     function clearFeedbackBuf(b: FeedbackBuf): void {
       const g = gl;
-      for (const t of [b.front, b.back]) {
+      const targets = b.out ? [...b.ring, b.out] : b.ring;
+      for (const t of targets) {
         g.bindFramebuffer(g.FRAMEBUFFER, t.fbo);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.clearColor(0, 0, 0, 1);
@@ -1388,7 +1465,8 @@ export const toyboxDef: VideoModuleDef = {
       return drew;
     }
 
-    /** Extra (op-dependent) combine params beyond `amount`. */
+    /** Extra (op-dependent) combine params beyond `amount`. uP0..uP5 are the
+     *  generic batch-op param slots (tile/mirror/displace/bitbend/biocells). */
     interface CombineExtra {
       soft?: number;
       invert?: number;
@@ -1396,6 +1474,12 @@ export const toyboxDef: VideoModuleDef = {
       keyG?: number;
       keyB?: number;
       mode?: number;
+      p0?: number;
+      p1?: number;
+      p2?: number;
+      p3?: number;
+      p4?: number;
+      p5?: number;
     }
 
     /** Run one combine step: blend `topTex` over `baseTex` into `dstFbo`. */
@@ -1427,6 +1511,12 @@ export const toyboxDef: VideoModuleDef = {
       if (cuKeyG) g.uniform1f(cuKeyG, extra?.keyG ?? 1);
       if (cuKeyB) g.uniform1f(cuKeyB, extra?.keyB ?? 0);
       if (cuMode) g.uniform1f(cuMode, extra?.mode ?? 0);
+      if (cuP0) g.uniform1f(cuP0, extra?.p0 ?? 0);
+      if (cuP1) g.uniform1f(cuP1, extra?.p1 ?? 0);
+      if (cuP2) g.uniform1f(cuP2, extra?.p2 ?? 0);
+      if (cuP3) g.uniform1f(cuP3, extra?.p3 ?? 0);
+      if (cuP4) g.uniform1f(cuP4, extra?.p4 ?? 0);
+      if (cuP5) g.uniform1f(cuP5, extra?.p5 ?? 0);
       ctx.drawFullscreenQuad();
       g.activeTexture(g.TEXTURE0);
     }
@@ -1450,12 +1540,17 @@ export const toyboxDef: VideoModuleDef = {
       const g = gl;
       if (buf.clearPending) clearFeedbackBuf(buf);
       const u = feedbackUniforms(params);
-      g.bindFramebuffer(g.FRAMEBUFFER, buf.front.fbo);
+      const N = buf.ring.length;
+      // Classic ping-pong over the ring: render into `head`, sample the previous
+      // slot (head-1). prev = most-recent rendered frame.
+      const dst = buf.ring[buf.head]!;
+      const prev = buf.ring[(buf.head - 1 + N) % N]!;
+      g.bindFramebuffer(g.FRAMEBUFFER, dst.fbo);
       g.viewport(0, 0, ctx.res.width, ctx.res.height);
       g.useProgram(feedbackProgram);
-      // uFeedback = previous frame (back), uInput = upstream in0.
+      // uFeedback = previous frame, uInput = upstream in0.
       g.activeTexture(g.TEXTURE0);
-      g.bindTexture(g.TEXTURE_2D, buf.back.texture);
+      g.bindTexture(g.TEXTURE_2D, prev.texture);
       if (fuFeedback) g.uniform1i(fuFeedback, 0);
       g.activeTexture(g.TEXTURE1);
       g.bindTexture(g.TEXTURE_2D, inputTex ?? dummyTex);
@@ -1478,12 +1573,127 @@ export const toyboxDef: VideoModuleDef = {
       if (fuFlow) g.uniform1f(fuFlow, u.flow);
       ctx.drawFullscreenQuad();
       g.activeTexture(g.TEXTURE0);
-      // Swap: this frame's output (front) becomes next frame's previous (back).
-      const t = buf.front;
-      buf.front = buf.back;
-      buf.back = t;
-      // Downstream nodes sample the JUST-RENDERED texture, now in `back`.
-      return buf.back.texture;
+      // Advance the ring head; downstream samples the JUST-RENDERED slot.
+      const out = dst.texture;
+      buf.head = (buf.head + 1) % N;
+      return out;
+    }
+
+    /**
+     * Run the EXQUISITE multi-input band-splicer into `slot`. `ins` are the (up
+     * to 4) wired input textures (null = unwired). Renders into a plain scratch
+     * FBO (stateless), returns its texture. Uses its OWN program so it can read
+     * 4 samplers (combineStep only binds 2).
+     */
+    function runExquisiteStep(
+      slot: { fbo: WebGLFramebuffer; texture: WebGLTexture },
+      ins: (WebGLTexture | null)[],
+      params: Record<string, number> | undefined,
+    ): WebGLTexture {
+      const g = gl;
+      const u = exquisiteUniforms(params);
+      g.bindFramebuffer(g.FRAMEBUFFER, slot.fbo);
+      g.viewport(0, 0, ctx.res.width, ctx.res.height);
+      g.useProgram(exqProgram);
+      for (let i = 0; i < 4; i++) {
+        g.activeTexture(g.TEXTURE0 + i);
+        g.bindTexture(g.TEXTURE_2D, ins[i] ?? dummyTex);
+        if (xuIn[i]) g.uniform1i(xuIn[i]!, i);
+        if (xuHas[i]) g.uniform1f(xuHas[i]!, ins[i] ? 1 : 0);
+      }
+      if (xuBands) g.uniform1f(xuBands, u.bands);
+      if (xuWarp) g.uniform1f(xuWarp, u.boundaryWarp);
+      if (xuSeam) g.uniform1f(xuSeam, u.seamBlend);
+      if (xuHue) g.uniform1f(xuHue, u.hueShift);
+      ctx.drawFullscreenQuad();
+      g.activeTexture(g.TEXTURE0);
+      return slot.texture;
+    }
+
+    /**
+     * Run ONE step of a FRAME-HISTORY op (framedelay/channeldesync/flowsmear/
+     * dreammelt/datamosh) into the node's ring. Reads the upstream in0 (+ in1 for
+     * dreammelt), the most-recent prev frame, and up to 3 DELAYED taps out of the
+     * ring (for framedelay/channeldesync), branching on uOp. Renders into the ring
+     * head, advances head, returns the just-rendered texture.
+     */
+    function runHistoryStep(
+      buf: FeedbackBuf,
+      kind: string,
+      inputTex: WebGLTexture | null,
+      inputTex1: WebGLTexture | null,
+      params: Record<string, number> | undefined,
+    ): WebGLTexture {
+      const g = gl;
+      if (buf.clearPending) clearFeedbackBuf(buf);
+      const u = historyUniforms(kind, params);
+      const N = buf.ring.length;
+      const dst = buf.ring[buf.head]!;
+      const delayLine = !!buf.out; // framedelay / channeldesync (ring = input history)
+      // For DELAY-LINE ops we STORE the live input at ring[head] this frame, so a
+      // delay of `d` reads ring[head-d] (delay 0 = the just-stored input). For
+      // RECURSIVE ops the most-recent rendered slot is ring[head-1], so prev =
+      // tap(0) = ring[head-1].
+      const tapBase = delayLine ? buf.head : buf.head - 1;
+      const tap = (d: number) => buf.ring[(tapBase - d + 100 * N) % N]!;
+      const prev = buf.ring[(buf.head - 1 + N) % N]!;
+      const bind = (unit: number, tex: WebGLTexture, loc: WebGLUniformLocation | null) => {
+        g.activeTexture(g.TEXTURE0 + unit);
+        g.bindTexture(g.TEXTURE_2D, tex);
+        if (loc) g.uniform1i(loc, unit);
+      };
+      g.useProgram(histProgram);
+
+      // ── Pass A (delay-line only): STORE the live input into the ring slot, so
+      //    the per-channel/frame taps read a TRUE history of the input. ──
+      if (delayLine) {
+        g.bindFramebuffer(g.FRAMEBUFFER, dst.fbo);
+        g.viewport(0, 0, ctx.res.width, ctx.res.height);
+        bind(4, inputTex ?? dummyTex, huIn);
+        if (huHasIn) g.uniform1f(huHasIn, inputTex ? 1 : 0);
+        if (huStorePass) g.uniform1f(huStorePass, 1);
+        ctx.drawFullscreenQuad();
+      }
+
+      // ── Render pass: the visible output. Delay-line ops read the now-current
+      //    ring taps into buf.out; recursive ops render into the ring slot
+      //    sampling prev (and that slot IS the output). ──
+      const target = delayLine ? buf.out! : dst;
+      g.bindFramebuffer(g.FRAMEBUFFER, target.fbo);
+      g.viewport(0, 0, ctx.res.width, ctx.res.height);
+      // FRAMEDELAY reads its single delay off uTapB; CHANNELDESYNC reads per-
+      // channel taps off uTapR/G/B. (flowsmear/dreammelt/datamosh use uPrev only.)
+      const rD = kind === 'channeldesync' ? u.rDelay : 0;
+      const gD = kind === 'channeldesync' ? u.gDelay : 0;
+      const bD = kind === 'framedelay' ? u.delay : kind === 'channeldesync' ? u.bDelay : 0;
+      bind(0, prev.texture, huPrev);
+      bind(1, tap(rD).texture, huTapR);
+      bind(2, tap(gD).texture, huTapG);
+      bind(3, tap(bD).texture, huTapB);
+      bind(4, inputTex ?? dummyTex, huIn);
+      bind(5, inputTex1 ?? dummyTex, huIn1);
+      if (huHasIn) g.uniform1f(huHasIn, inputTex ? 1 : 0);
+      if (huHasIn1) g.uniform1f(huHasIn1, inputTex1 ? 1 : 0);
+      if (huStorePass) g.uniform1f(huStorePass, 0);
+      if (huTexel) g.uniform2f(huTexel, 1 / ctx.res.width, 1 / ctx.res.height);
+      if (huTime) g.uniform1f(huTime, frozenTime() ?? (typeof performance !== 'undefined' ? performance.now() / 1000 : 0));
+      if (huOp) g.uniform1i(huOp, u.op);
+      if (huMix) g.uniform1f(huMix, u.mix);
+      if (huOffset) g.uniform1f(huOffset, u.offsetMag);
+      if (huFlowStr) g.uniform1f(huFlowStr, u.flowStrength);
+      if (huNoiseScale) g.uniform1f(huNoiseScale, u.noiseScale);
+      if (huPersist) g.uniform1f(huPersist, u.persistence);
+      if (huMelt) g.uniform1f(huMelt, u.meltAmount);
+      if (huDrip) g.uniform1f(huDrip, u.dripSpeed);
+      if (huThresh) g.uniform1f(huThresh, u.threshold);
+      if (huFlowScale) g.uniform1f(huFlowScale, u.flowScale);
+      if (huHold) g.uniform1f(huHold, u.holdGate);
+      if (huDecay) g.uniform1f(huDecay, u.decay);
+      ctx.drawFullscreenQuad();
+      g.activeTexture(g.TEXTURE0);
+      const out = target.texture;
+      buf.head = (buf.head + 1) % N;
+      return out;
     }
 
     /**
@@ -1528,12 +1738,11 @@ export const toyboxDef: VideoModuleDef = {
       // starting past the two reserved ping-pong slots so they don't collide
       // if some future caller mixes paths in one frame.
       let scratchSlot = 0;
-      // Only the STATELESS blend ops have a combineStep uOp index; FEEDBACK runs
-      // its own program (handled separately below).
+      // Only the STATELESS single-pass ops have a combineStep uOp index; FEEDBACK
+      // / EXQUISITE / the frame-history ops run their own programs (handled
+      // separately below). isCombineOpKind is the shared whitelist.
       const opOf = (kind: string): number | null =>
-        kind === 'fade' || kind === 'lumakey' || kind === 'chromakey' || kind === 'map'
-          ? OP_SHADER_INDEX[kind as ToyboxOpKind]
-          : null;
+        isCombineOpKind(kind as ToyboxOpKind) ? OP_SHADER_INDEX[kind as ToyboxOpKind] : null;
 
       for (const id of order) {
         const n = graph.nodes.find((x) => x.id === id);
@@ -1548,17 +1757,16 @@ export const toyboxDef: VideoModuleDef = {
           // Resolved when step 3 copies; nothing to compute here.
           continue;
         }
-        if (n.kind === 'feedback') {
-          // STATEFUL: run the feedback program against this node's ping-pong
-          // buffer, sampling its own previous frame + the upstream in0. The loop
-          // is INTERNAL (in0 only); a missing in0 → input reads black. The buffer
-          // is guaranteed allocated by reconcileFeedbackBufs above.
+        if (isStatefulKind(n.kind)) {
+          // STATEFUL: run the feedback OR a frame-history program against this
+          // node's per-node buffer (ping-pong / N-frame ring), sampling its own
+          // previous frame(s) + the upstream in0 (+ in1 for dreammelt). The
+          // buffer is guaranteed allocated by reconcileFeedbackBufs above.
           const buf = feedbackBufs.get(id);
           if (!buf) { texForNode.set(id, null); continue; }
           const p = n.params ?? {};
-          // "Reset feedback" bumps `_reset`; re-arm the clear when it changes.
-          // Decision extracted to the pure feedbackResetState() so it's
-          // deterministically unit-tested (the GL clear is e2e/VRT-only).
+          // "Reset" bumps `_reset`; re-arm the clear when it changes (the GL
+          // clear is e2e/VRT-only; the *decision* is the pure feedbackResetState).
           const reset = feedbackResetState(buf.resetToken, p);
           if (reset.clear) {
             buf.resetToken = reset.token;
@@ -1566,15 +1774,37 @@ export const toyboxDef: VideoModuleDef = {
           }
           const inEdge0 = graph.edges.find((e) => e.to === id && e.toPort === 'in0');
           const inputTex = inEdge0 ? texForNode.get(inEdge0.from) ?? null : null;
-          texForNode.set(id, runFeedbackStep(buf, inputTex, p));
+          if (n.kind === 'feedback') {
+            texForNode.set(id, runFeedbackStep(buf, inputTex, p));
+          } else {
+            // A frame-history op (framedelay/channeldesync/flowsmear/dreammelt/
+            // datamosh). dreammelt is 2-input (in1 = the dissolve target).
+            const inEdge1 = graph.edges.find((e) => e.to === id && e.toPort === 'in1');
+            const inputTex1 = inEdge1 ? texForNode.get(inEdge1.from) ?? null : null;
+            texForNode.set(id, runHistoryStep(buf, n.kind, inputTex, inputTex1, p));
+          }
           continue;
         }
+        // EXQUISITE: own multi-input program (up to 4 feeds, in0..in3).
+        if (n.kind === 'exquisite') {
+          const inEdge = (port: string) => graph.edges.find((e) => e.to === id && e.toPort === port);
+          const texOf = (port: string): WebGLTexture | null => {
+            const e = inEdge(port);
+            return e ? texForNode.get(e.from) ?? null : null;
+          };
+          const ins = (['in0', 'in1', 'in2', 'in3'] as const).map(texOf);
+          if (!ins.some((t) => t)) { texForNode.set(id, null); continue; }
+          const slot = scratch(2 + scratchSlot++);
+          texForNode.set(id, runExquisiteStep(slot, ins, n.params));
+          continue;
+        }
+
         const op = opOf(n.kind);
         if (op === null) {
           texForNode.set(id, null);
           continue;
         }
-        // Gather this op's two inputs from incoming edges.
+        // Gather this op's inputs from incoming edges.
         const inEdge = (port: string) => graph.edges.find((e) => e.to === id && e.toPort === port);
         const baseE = inEdge('in0');
         const topE = inEdge('in1');
@@ -1585,19 +1815,22 @@ export const toyboxDef: VideoModuleDef = {
           texForNode.set(id, null);
           continue;
         }
-        // A missing base behaves as black; a missing top means "just the base".
         const slot = scratch(2 + scratchSlot++); // past the 2 ping-pong slots
-        const p = n.params ?? {};
-        const amount = typeof p.amount === 'number' ? p.amount : 1;
-        const extra = { soft: p.soft, invert: p.invert, keyR: p.keyR, keyG: p.keyG, keyB: p.keyB, mode: p.mode };
-        if (baseTex && !topTex) {
-          // Top unwired → pass the base through (copy: fade at amount 0).
+        const ex = combineExtraFor(n.kind as ToyboxOpKind, n.params);
+        // 1-input ops (tile/mirror/bitbend/biocells) transform their single in0:
+        // base = top = the single feed. The shader reads uBase for these.
+        const oneInput = topE === undefined && n.kind !== 'fade' && n.kind !== 'lumakey'
+          && n.kind !== 'chromakey' && n.kind !== 'map' && n.kind !== 'over' && n.kind !== 'displace';
+        if (oneInput && baseTex) {
+          combineStep(baseTex, baseTex, slot.fbo, op, ex.amount, ex);
+        } else if (baseTex && !topTex) {
+          // 2-input op, top unwired → pass the base through (copy: fade at 0).
           combineStep(baseTex, baseTex, slot.fbo, 0, 0);
         } else if (!baseTex && topTex) {
           // Base unwired → the top IS the result (copy).
           combineStep(topTex, topTex, slot.fbo, 0, 0);
         } else {
-          combineStep(baseTex!, topTex!, slot.fbo, op, amount, extra);
+          combineStep(baseTex!, topTex!, slot.fbo, op, ex.amount, ex);
         }
         texForNode.set(id, slot.texture);
       }
@@ -1683,6 +1916,8 @@ export const toyboxDef: VideoModuleDef = {
         gl.deleteProgram(objProgram);
         gl.deleteProgram(combineProgram);
         gl.deleteProgram(feedbackProgram);
+        gl.deleteProgram(exqProgram);
+        gl.deleteProgram(histProgram);
         gl.deleteProgram(inputProgram);
         for (const m of meshes.values()) {
           gl.deleteVertexArray(m.vao);
@@ -1841,9 +2076,24 @@ uniform float uInvert;  // lumakey: >0.5 flips the keep test
 uniform float uKeyR;    // chromakey: key colour R (0..1)
 uniform float uKeyG;    // chromakey: key colour G (0..1)
 uniform float uKeyB;    // chromakey: key colour B (0..1)
-uniform float uMode;    // map: 0 = multiply, 1 = screen
+uniform float uMode;    // map: 0 = multiply, 1 = screen / mirror: mode / bitbend: op
+// ── batch op uniforms (tile/mirror/displace/bitbend/biocells) ──────────────
+uniform float uP0;      // generic op param 0 (tilesX / segments / channel / mask / cellCount)
+uniform float uP1;      // generic op param 1 (tilesY / rotation / —      / —    / lumaJitter)
+uniform float uP2;      // generic op param 2 (mirror / —        / —      / —    / edgeWidth)
+uniform float uP3;      // generic op param 3 (offX   / —        / —      / perR / edgeColor)
+uniform float uP4;      // generic op param 4 (offY   / —        / —      / perG / —)
+uniform float uP5;      // generic op param 5 (rotate / —        / —      / perB / —)
 
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+// Cheap 2D hash → [0,1]. Used by BIOCELLS for per-cell jitter.
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+mat2 rot2(float a) { float s = sin(a), c = cos(a); return mat2(c, -s, s, c); }
 
 // HSV conversion + hue distance, PORTED VERBATIM from modules/chromakey.ts so
 // the in-card chromakey op matches the standalone CHROMAKEY module's keying.
@@ -1908,12 +2158,113 @@ void main() {
     // pixels (low saturation) are kept regardless of hue noise.
     float keep = mix(1.0, hueAlpha, satGate);
     outc = mix(b.rgb, t.rgb, keep * t.a);
-  } else {
+  } else if (uOp == 3) {
     // MAP: top modulates base (MULTIPLY or SCREEN by uMode), mixed by amount.
     vec3 m = uMode > 0.5
       ? (1.0 - (1.0 - b.rgb) * (1.0 - t.rgb))  // screen
       : b.rgb * t.rgb;                          // multiply
     outc = mix(b.rgb, m, a * t.a);
+  } else if (uOp == 4) {
+    // OVER (2-input): premultiplied source-over. in1 (top) over in0 (base).
+    // amount scales the source alpha (OPACITY). Premultiplied:
+    //   out.rgb = s.rgb + d.rgb*(1-s.a);  out.a = s.a + d.a*(1-s.a)
+    float sa = clamp(t.a * a, 0.0, 1.0);
+    vec3 sp = t.rgb * sa;          // premultiply source
+    vec3 dp = b.rgb * b.a;         // premultiply dest
+    vec3 op = sp + dp * (1.0 - sa);
+    float oa = sa + b.a * (1.0 - sa);
+    outc = oa > 0.0001 ? op / oa : op;  // un-premultiply for the RGBA8 store
+  } else if (uOp == 5) {
+    // TILE (1-input): repeat across uP0 x uP1 cells with offset + per-cell
+    // rotation; uP2 (mirror) reflects alternating cells instead of wrapping.
+    vec2 tiles = max(vec2(uP0, uP1), vec2(1.0));
+    vec2 off = vec2(uP3, uP4);
+    vec2 tc = vUv * tiles + off;
+    vec2 cell = floor(tc);
+    vec2 f = fract(tc);
+    if (uP2 > 0.5) {
+      // mirror: flip f on odd cells so the tiling reflects (seamless).
+      vec2 odd = mod(cell, 2.0);
+      f = mix(f, 1.0 - f, odd);
+    }
+    // per-cell rotation about the cell centre.
+    f = rot2(uP5) * (f - 0.5) + 0.5;
+    outc = texture(uBase, clamp(f, 0.0, 1.0)).rgb;
+  } else if (uOp == 6) {
+    // MIRROR (1-input): uMode 0 H-flip, 1 V-flip, 2 quad-fold, 3 kaleidoscope.
+    int mm = int(uMode + 0.5);
+    vec2 muv = vUv;
+    if (mm == 0) {
+      muv = vec2(vUv.x < 0.5 ? vUv.x * 2.0 : (1.0 - vUv.x) * 2.0, vUv.y);
+    } else if (mm == 1) {
+      muv = vec2(vUv.x, vUv.y < 0.5 ? vUv.y * 2.0 : (1.0 - vUv.y) * 2.0);
+    } else if (mm == 2) {
+      // quad-fold: mirror both axes into the lower-left quadrant.
+      muv = abs(vUv - 0.5) * 2.0;
+    } else {
+      // kaleidoscope: fold the polar angle into uP0 wedges + reflect.
+      vec2 p = vUv - 0.5;
+      float ang = atan(p.y, p.x) + uP1;   // uP1 = rotation
+      float rad = length(p);
+      float seg = 6.2831853 / max(uP0, 2.0);  // uP0 = segments
+      ang = mod(ang, seg);
+      ang = abs(ang - seg * 0.5);
+      muv = vec2(cos(ang), sin(ang)) * rad + 0.5;
+    }
+    outc = texture(uBase, clamp(muv, 0.0, 1.0)).rgb;
+  } else if (uOp == 7) {
+    // DISPLACE (2-input): in1 (top) displaces in0's (base) UVs by uAmount.
+    // uMode (channel): 0 = luma scalar displace, 1 = RG vector displace.
+    vec2 d = uMode > 0.5 ? (t.rg - 0.5) : vec2(luma(t.rgb) - 0.5);
+    vec2 duv = vUv + d * uAmount;
+    outc = texture(uBase, clamp(duv, 0.0, 1.0)).rgb;
+  } else if (uOp == 8) {
+    // BITBEND (1-input): per-channel integer bit-op vs uP0 (mask, 0..255).
+    // uMode (op): 0 XOR, 1 AND, 2 OR, 3 bit-rotate. uP3/uP4/uP5 gate R/G/B.
+    int mask = int(clamp(uP0, 0.0, 255.0) + 0.5);
+    ivec3 ci = ivec3(clamp(b.rgb, 0.0, 1.0) * 255.0 + 0.5);
+    int oo = int(uMode + 0.5);
+    ivec3 r3 = ci;
+    if (oo == 0) r3 = ci ^ ivec3(mask);
+    else if (oo == 1) r3 = ci & ivec3(mask);
+    else if (oo == 2) r3 = ci | ivec3(mask);
+    else {
+      // bit-rotate left by (mask & 7) within 8 bits.
+      int sh = mask & 7;
+      r3 = ((ci << sh) | (ci >> (8 - sh))) & ivec3(255);
+    }
+    vec3 bent = vec3(r3) / 255.0;
+    outc = vec3(
+      uP3 > 0.5 ? bent.r : b.r,
+      uP4 > 0.5 ? bent.g : b.g,
+      uP5 > 0.5 ? bent.b : b.b
+    );
+  } else {
+    // BIOCELLS (1-input, uOp 9): Voronoi cell quantiser. uP0 = cellCount (grid
+    // density), uP1 = lumaJitter, uP2 = edgeWidth, uP3 = edgeColor.
+    float n = clamp(uP0, 2.0, 64.0);
+    vec2 gc = vUv * n;
+    vec2 gi = floor(gc);
+    vec2 gf = fract(gc);
+    float d1 = 8.0, d2 = 8.0;     // nearest + 2nd-nearest
+    vec2 bestCell = gi;
+    for (int j = -1; j <= 1; j++) {
+      for (int i = -1; i <= 1; i++) {
+        vec2 nb = vec2(float(i), float(j));
+        vec2 cellId = gi + nb;
+        // jitter the cell centre by a hash + the input luma at that cell.
+        vec2 jit = vec2(hash21(cellId), hash21(cellId + vec2(13.7, 7.3)));
+        float lj = luma(texture(uBase, (cellId + 0.5) / n).rgb);
+        jit += (lj - 0.5) * uP1;
+        vec2 cp = nb + clamp(jit, 0.0, 1.0) - gf;
+        float dd = dot(cp, cp);
+        if (dd < d1) { d2 = d1; d1 = dd; bestCell = cellId; }
+        else if (dd < d2) { d2 = dd; }
+      }
+    }
+    vec3 cellCol = texture(uBase, (bestCell + 0.5) / n).rgb;
+    float edge = smoothstep(0.0, uP2 * 0.5 + 0.001, sqrt(d2) - sqrt(d1));
+    outc = mix(vec3(uP3), cellCol, edge);
   }
   outColor = vec4(outc, 1.0);
 }`;
@@ -2074,6 +2425,218 @@ function compileFeedbackProgram(gl: WebGL2RenderingContext): WebGLProgram {
   return linkProgram(gl, COMBINE_VERT_SRC, FEEDBACK_FRAG_SRC);
 }
 
+// ---------------- EXQUISITE shader (multi-input band splicer) ----------------
+//
+// Splits the frame into uBands horizontal bands; band i shows input (i mod
+// #wired). Boundaries are wobbled by uWarp (a per-band sine of the band index +
+// uv.x), feathered by uSeam, and alternating bands are hue-shifted by uHue. Reads
+// up to 4 input samplers (combineStep only binds 2, so this needs its own
+// program). Stateless — rendered into a plain scratch FBO.
+const EXQUISITE_FRAG_SRC = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uIn0;
+uniform sampler2D uIn1;
+uniform sampler2D uIn2;
+uniform sampler2D uIn3;
+uniform float uHas0;
+uniform float uHas1;
+uniform float uHas2;
+uniform float uHas3;
+uniform float uBands;   // 2..8 band count
+uniform float uWarp;    // 0..1 boundary wobble
+uniform float uSeam;    // 0..1 seam feather
+uniform float uHue;     // 0..1 alternating-band hue shift
+
+vec3 hueRotate(vec3 col, float t) {
+  float a = t * 6.2831853;
+  vec3 k = vec3(0.57735);
+  float cs = cos(a), sn = sin(a);
+  return col * cs + cross(k, col) * sn + k * dot(k, col) * (1.0 - cs);
+}
+
+// Sample input n (0..3); falls back to in0 when n's feed is unwired so a band
+// always shows SOMETHING (an exquisite-corpse with a missing limb reuses in0).
+vec3 sampleIn(int n, vec2 uv) {
+  if (n == 1 && uHas1 > 0.5) return texture(uIn1, uv).rgb;
+  if (n == 2 && uHas2 > 0.5) return texture(uIn2, uv).rgb;
+  if (n == 3 && uHas3 > 0.5) return texture(uIn3, uv).rgb;
+  return texture(uIn0, uv).rgb;
+}
+
+// How many inputs are wired (for the i mod #wired band assignment). At least 1.
+int wiredCount() {
+  int c = 0;
+  if (uHas0 > 0.5) c++;
+  if (uHas1 > 0.5) c++;
+  if (uHas2 > 0.5) c++;
+  if (uHas3 > 0.5) c++;
+  return max(c, 1);
+}
+
+void main() {
+  float bands = max(uBands, 2.0);
+  // warp the vertical band coordinate by a sine so seams aren't dead-straight.
+  float warp = sin(vUv.x * 6.2831853 * 2.0) * uWarp * 0.5 / bands;
+  float by = clamp(vUv.y + warp, 0.0, 0.99999);
+  float bf = by * bands;
+  int band = int(floor(bf));
+  int wired = wiredCount();
+  int idx = band - (band / wired) * wired;  // band mod wired
+  vec3 col = sampleIn(idx, vUv);
+  // feather the seam to the next band.
+  float frac = fract(bf);
+  float seam = uSeam * 0.5;
+  if (seam > 0.001 && frac > 1.0 - seam) {
+    int nb = band + 1;
+    int nidx = nb - (nb / wired) * wired;
+    vec3 nc = sampleIn(nidx, vUv);
+    float t = (frac - (1.0 - seam)) / seam * 0.5;
+    col = mix(col, nc, t);
+  }
+  // hue-shift alternating bands.
+  if (uHue > 0.001 && (band - (band / 2) * 2) == 1) col = hueRotate(col, uHue);
+  outColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+}`;
+
+function compileExquisiteProgram(gl: WebGL2RenderingContext): WebGLProgram {
+  return linkProgram(gl, COMBINE_VERT_SRC, EXQUISITE_FRAG_SRC);
+}
+
+// ---------------- FRAME-HISTORY shader (the 5 stateful batch ops) ------------
+//
+// ONE program for framedelay/channeldesync/flowsmear/dreammelt/datamosh (uOp
+// 0..4). Reads the upstream in0 (+ in1 for dreammelt), the most-recent prev
+// frame, and up to 3 DELAYED ring taps (uTapR/G/B = the per-channel / frame-delay
+// taps the engine bound from the node's ring). Each op branches on uOp; ranges
+// match toybox-history.ts historyUniforms(). Float buffer so delayed taps /
+// melt-state / decay don't quantise.
+const HISTORY_FRAG_SRC = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 outColor;
+uniform sampler2D uPrev;     // most-recent rendered frame (tap 0)
+uniform sampler2D uTapR;     // delayed tap (channeldesync R / —)
+uniform sampler2D uTapG;     // delayed tap (channeldesync G / —)
+uniform sampler2D uTapB;     // delayed tap (framedelay delay / channeldesync B)
+uniform sampler2D uInput;    // upstream in0 (live)
+uniform sampler2D uInput1;   // upstream in1 (dreammelt dissolve target)
+uniform float uHasInput;
+uniform float uHasInput1;
+uniform vec2  uTexel;
+uniform float uTime;
+uniform int   uOp;            // 0 framedelay,1 channeldesync,2 flowsmear,3 dreammelt,4 datamosh
+uniform float uMix;           // framedelay
+uniform float uOffsetMag;     // channeldesync
+uniform float uFlowStrength;  // flowsmear
+uniform float uNoiseScale;    // flowsmear
+uniform float uPersistence;   // flowsmear
+uniform float uMeltAmount;    // dreammelt
+uniform float uDripSpeed;     // dreammelt
+uniform float uThreshold;     // dreammelt
+uniform float uFlowScale;     // datamosh
+uniform float uHoldGate;      // datamosh
+uniform float uDecay;         // datamosh
+uniform float uStorePass;     // 1 = STORE the live input into the ring (delay-line
+                              //     ops, pass A); 0 = render the visible output.
+
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+// value noise for the flow field.
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i), b = hash21(i + vec2(1, 0));
+  float c = hash21(i + vec2(0, 1)), d = hash21(i + vec2(1, 1));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+vec2 curl(vec2 p) {
+  float e = 0.01;
+  float n1 = vnoise(p + vec2(0.0, e));
+  float n2 = vnoise(p - vec2(0.0, e));
+  float n3 = vnoise(p + vec2(e, 0.0));
+  float n4 = vnoise(p - vec2(e, 0.0));
+  return vec2((n1 - n2), -(n3 - n4)) / (2.0 * e);
+}
+vec4 src(vec2 uv) { return uHasInput > 0.5 ? texture(uInput, clamp(uv, 0.0, 1.0)) : vec4(0.0); }
+vec4 src1(vec2 uv) { return uHasInput1 > 0.5 ? texture(uInput1, clamp(uv, 0.0, 1.0)) : vec4(0.0); }
+
+void main() {
+  vec2 uv = vUv;
+  vec4 outc;
+  // STORE pass (delay-line ops): just copy the live input into the ring slot so
+  // the per-channel/frame taps read a TRUE history of the input (not feedback).
+  if (uStorePass > 0.5) {
+    outColor = vec4(clamp(src(uv).rgb, 0.0, 8.0), 1.0);
+    return;
+  }
+  if (uOp == 0) {
+    // FRAMEDELAY: uTapB is the ring slot delay-frames back (a true input delay).
+    // Output = the live input crossfaded with that delayed tap by uMix (mix=1 =
+    // pure delay/echo).
+    vec3 delayed = texture(uTapB, uv).rgb;
+    vec3 live = src(uv).rgb;
+    outc = vec4(mix(live, delayed, uMix), 1.0);
+  } else if (uOp == 1) {
+    // CHANNELDESYNC: each channel reads a DIFFERENT delayed input tap (uTapR/G/B
+    // = rDelay/gDelay/bDelay frames back) at its own spatial offset → RGB drift.
+    vec2 o = vec2(uOffsetMag, 0.0);
+    float r = texture(uTapR, clamp(uv + o, 0.0, 1.0)).r;
+    float g = texture(uTapG, clamp(uv, 0.0, 1.0)).g;
+    float b = texture(uTapB, clamp(uv - o, 0.0, 1.0)).b;
+    outc = vec4(r, g, b, 1.0);
+  } else if (uOp == 2) {
+    // FLOWSMEAR: curl-noise flow advects the prev frame; persistence mixes with
+    // the live input.
+    vec2 flow = curl(uv * uNoiseScale + uTime * 0.1);
+    vec3 prev = texture(uPrev, clamp(uv - flow * uFlowStrength * 0.02, 0.0, 1.0)).rgb;
+    vec3 live = src(uv).rgb;
+    outc = vec4(mix(live, prev, uPersistence), 1.0);
+  } else if (uOp == 3) {
+    // DREAMMELT: pixels drip downward proportional to a melt-state accumulated in
+    // the prev frame's alpha; dissolve in0 -> in1 as melt progresses.
+    float meltPrev = texture(uPrev, uv).a;
+    // accumulate melt where the input is bright enough.
+    float lum = luma(src(uv).rgb);
+    float grow = step(uThreshold, lum) * uDripSpeed * 0.1;
+    float melt = clamp(meltPrev + grow * uMeltAmount, 0.0, 1.0);
+    // sample from ABOVE proportional to melt (the drip).
+    vec2 drip = vec2(0.0, melt * uMeltAmount * 0.3);
+    vec3 a = src(uv + drip).rgb;
+    vec3 b = src1(uv + drip).rgb;
+    vec3 col = mix(a, b, melt);
+    outc = vec4(col, melt);
+  } else {
+    // DATAMOSH: estimate flow from luma gradient + temporal diff, advect prev
+    // OUTPUT by it, withhold new input while the HOLD gate is active, decay.
+    vec3 cur = src(uv).rgb;
+    vec3 pv = texture(uPrev, uv).rgb;
+    float It = luma(cur) - luma(pv);
+    vec2 gI = vec2(
+      luma(src(uv + vec2(uTexel.x, 0.0)).rgb) - luma(src(uv - vec2(uTexel.x, 0.0)).rgb),
+      luma(src(uv + vec2(0.0, uTexel.y)).rgb) - luma(src(uv - vec2(0.0, uTexel.y)).rgb)
+    );
+    vec2 flow = -(It * gI) / (dot(gI, gI) + 0.001);
+    vec3 advected = texture(uPrev, clamp(uv - flow * uFlowScale * 0.05, 0.0, 1.0)).rgb;
+    // HOLD gate: when the per-pixel motion exceeds the gate, KEEP the smear
+    // (P-frame) instead of accepting the new input (I-frame); else accept input.
+    float motion = abs(It);
+    float hold = step(uHoldGate * 0.5, motion);
+    vec3 moshed = mix(cur, advected * uDecay, hold);
+    outc = vec4(moshed, 1.0);
+  }
+  outColor = vec4(clamp(outc.rgb, 0.0, 8.0), outc.a);
+}`;
+
+function compileHistoryProgram(gl: WebGL2RenderingContext): WebGLProgram {
+  return linkProgram(gl, COMBINE_VERT_SRC, HISTORY_FRAG_SRC);
+}
+
 /** TEST-ONLY: the feedback fragment GLSL, exposed so a unit test can assert the
  *  shader switches on every one of the 12 modes (it is GLSL, not extractable as
  *  a pure JS helper). Not used by the engine. */
@@ -2083,6 +2646,11 @@ export const __FEEDBACK_FRAG_SRC_FOR_TEST = FEEDBACK_FRAG_SRC;
  *  chromakey HSV keying was ported from chromakey.ts verbatim (it is GLSL, not
  *  extractable as a pure JS helper). Not used by the engine. */
 export const __COMBINE_FRAG_SRC_FOR_TEST = COMBINE_FRAG_SRC;
+
+/** TEST-ONLY: the EXQUISITE + FRAME-HISTORY fragment GLSL, exposed so a unit test
+ *  can assert each program declares its inputs + branches on every op. */
+export const __EXQUISITE_FRAG_SRC_FOR_TEST = EXQUISITE_FRAG_SRC;
+export const __HISTORY_FRAG_SRC_FOR_TEST = HISTORY_FRAG_SRC;
 
 // Input-source (image / video) pass: a fullscreen-quad passthrough that samples
 // a source texture into the layer FBO. When no source is bound it paints the
