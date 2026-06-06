@@ -28,19 +28,30 @@ async function isRomPresent(page: Page): Promise<boolean> {
 }
 
 test('qbert: ROM missing → "ROM MISSING" overlay renders, no console errors', async ({ page }) => {
+  // Video-domain test: the WebGL engine spin-up runs on CI's SwiftShader
+  // software renderer, which is several times slower than a real GPU. Give
+  // the whole test generous headroom over the 30s default so the bounded
+  // overlay wait (20s) can't collide with the per-test deadline under load.
+  test.setTimeout(90_000);
+
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
   await page.goto('/');
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState('domcontentloaded');
 
-  // Skip cleanly when the local box happens to have the ROM installed —
-  // this spec asserts the MISSING path; the present path is covered by
-  // qbert-cv-joystick.spec.ts.
-  if (await isRomPresent(page)) {
-    test.skip(true, 'ROM is locally installed; this spec covers the MISSING path');
-  }
+  // Conditional skip — this spec asserts the ROM-MISSING path, which is the
+  // CI / clean-checkout / cloud-deploy state (no `qbert.zip` on the static
+  // server). It RUNS whenever the ROM is ABSENT and SKIPs only when a
+  // contributor's local box happens to have the ROM installed via
+  // `task setup:qbert` (the present path is covered by
+  // qbert-cv-joystick.spec.ts). On CI the HEAD fetch 404s → `isRomPresent`
+  // is false → the test runs.
+  test.skip(
+    await isRomPresent(page),
+    'ROM is locally installed; this spec covers the MISSING path',
+  );
 
   await spawnPatch(page, [
     { id: 'q', type: 'qbert', position: { x: 200, y: 200 }, domain: 'video' },
@@ -50,12 +61,16 @@ test('qbert: ROM missing → "ROM MISSING" overlay renders, no console errors', 
   await expect(card).toBeVisible();
   await expect(card).toContainText('QBERT');
 
-  // The "ROM MISSING" overlay appears asynchronously — the runtime
-  // factory fires the fetch, the fetch 404s, the runtime swaps to the
-  // "ROM missing" state, the card's 100 ms poll picks it up. Give it
-  // ~3s on a slow CI runner.
+  // The "ROM MISSING" overlay appears asynchronously: the video engine
+  // materializes the node + runs the factory, the factory fires the ROM
+  // fetch, the fetch 404s, the runtime swaps to the "ROM missing" state,
+  // and the card's 100 ms poll picks it up. On CI's SwiftShader software
+  // renderer the WebGL engine spin-up alone can lag several seconds under
+  // load (see ci-swiftshader-video-e2e-timeouts), so give the overlay a
+  // generous window — it's gated on a bounded `toBeVisible`, not a fixed
+  // sleep, so a fast runner still finishes in ~1s.
   const overlay = card.locator('[data-testid="qbert-rom-missing"]');
-  await expect(overlay).toBeVisible({ timeout: 5000 });
+  await expect(overlay).toBeVisible({ timeout: 20000 });
   await expect(overlay).toContainText('ROM MISSING');
   await expect(overlay).toContainText('task setup:qbert');
 
