@@ -128,6 +128,31 @@ export const GIB_TUNING: GibTuning = {
   cvEventMap: ['loop', 'jump', 'imp', 'zombie'],
 };
 
+/**
+ * AUTOPLAY CV — the synthesized 4-channel CV the module feeds its INTERNAL clock
+ * when NO external clock/CV rig is patched, so a freshly-dropped GibRibbon card
+ * SELF-PLAYS. A game should play on drop, not sit inert until you hand-wire a
+ * timelorde→macseq→synesthesia chain (that chain is the OPTIONAL "musical mode"
+ * override; without it the card was previously dead — marine running in place,
+ * zero events). Each beat raises ONE channel above cvSpawnThreshold, rotating
+ * across the four event kinds (loop/jump/imp/zombie) so all four appear, with
+ * periodic rests for breathing room; chooseSpawn's rate-limit sets the final
+ * cadence. PURE + deterministic in `beat` (no Math.random) so it's unit-testable
+ * and identical across collaborators.
+ */
+export function autoplayCv(beat: number, tuning: GibTuning = GIB_TUNING): number[] {
+  const cv = [0, 0, 0, 0];
+  // Deterministic hash of the beat → ~1 in 3 beats is a REST (no channel hot),
+  // so events don't arrive as an unbroken metronome.
+  const h = (Math.imul(beat >>> 0, 2654435761) >>> 0);
+  const rest = h % 3 === 0;
+  if (!rest) {
+    const ch = beat % 4; // rotate loop→jump→imp→zombie so every kind shows up
+    cv[ch] = Math.max(0.85, tuning.cvSpawnThreshold + 0.3);
+  }
+  return cv;
+}
+
 // ── Game state ─────────────────────────────────────────────────────────────
 
 export interface GibState {

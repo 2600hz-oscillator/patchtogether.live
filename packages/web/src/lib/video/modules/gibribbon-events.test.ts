@@ -13,6 +13,7 @@ import {
   judgePress,
   drainOutEvents,
   healthToCv,
+  autoplayCv,
   isGameOver,
   EVENT_BUTTON,
   GIB_TUNING,
@@ -229,5 +230,42 @@ describe('EVENT_BUTTON mapping', () => {
     const buttons = kinds.map((k) => EVENT_BUTTON[k]);
     expect(new Set(buttons).size).toBe(4); // all distinct
     expect(buttons).toEqual(['a', 'b', 'x', 'y']);
+  });
+});
+
+describe('GibRibbon AUTOPLAY cv (self-play when no external clock/CV patched)', () => {
+  it('returns 4 channels; non-rest beats raise exactly one above the spawn threshold', () => {
+    let hotBeats = 0;
+    let restBeats = 0;
+    for (let b = 1; b <= 60; b++) {
+      const cv = autoplayCv(b);
+      expect(cv).toHaveLength(4);
+      const hot = cv.filter((v) => v > GIB_TUNING.cvSpawnThreshold);
+      if (hot.length === 0) restBeats++;
+      else {
+        hotBeats++;
+        expect(hot).toHaveLength(1); // exactly one channel hot per active beat
+      }
+    }
+    expect(hotBeats).toBeGreaterThan(0);
+    expect(restBeats).toBeGreaterThan(0); // there ARE rests (not a metronome)
+  });
+
+  it('is deterministic in beat (same beat → same cv)', () => {
+    expect(autoplayCv(17)).toEqual(autoplayCv(17));
+    expect(autoplayCv(18)).not.toEqual(autoplayCv(17)); // rotates / rests vary
+  });
+
+  it('driving clockTick with autoplayCv self-plays: all 4 event kinds spawn, no input', () => {
+    // Mirrors the module's INTERNAL clock: tick the game purely from autoplayCv
+    // (no external clock/CV). The card must produce a live, varied event stream.
+    const s = newGame(3);
+    const seen = new Set<GibEventKind>();
+    for (let b = 1; b <= 200; b++) {
+      clockTick(s, autoplayCv(b), true);
+      for (const ev of s.events) seen.add(ev.kind);
+    }
+    expect(s.events.length + s.score).toBeGreaterThan(0); // events actually spawned
+    expect(seen).toEqual(new Set<GibEventKind>(['loop', 'jump', 'imp', 'zombie']));
   });
 });
