@@ -261,18 +261,73 @@ test.describe('AI smoke check', () => {
     await expect(page.locator('.svelte-flow__edge'), 'edge should be detached').toHaveCount(0);
   });
 
-  test.fixme(
-    'delete: clicking an edge + Backspace removes it from the patch',
-    async () => {
-      // Headless Playwright struggles to register a click on Svelte Flow's
-      // SVG edge layer (visible stroke is 3px tall; the wider invisible
-      // interaction band has subtle pointer-events semantics). Backspace-on-
-      // selected-edge works fine in real browsers via Svelte Flow's default
-      // deleteKey handler. The engine-side teardown is covered by the Clear
-      // test below. TODO: figure out a Playwright-friendly way to select an
-      // edge — likely via the SvelteFlow store API exposed in dev.
-    }
-  );
+  test('delete: selecting an edge + Backspace removes it from the patch', async ({ page }) => {
+    // Headless Playwright can't reliably click Svelte Flow's thin SVG edge
+    // (the visible stroke is 3 px; the wider invisible interaction band has
+    // subtle pointer-events semantics). Instead of a brittle SVG click, we
+    // select the edge the way the app's own runtime does — by setting xyflow's
+    // real `selected` flag via the dev-mode `__flow.setEdgeSelected` hook
+    // (which calls useSvelteFlow().updateEdge under the hood) — then press the
+    // REAL Backspace deleteKey. That exercises xyflow's genuine KeyHandler →
+    // deleteElements → ondelete path, which Canvas's handleDelete mirrors back
+    // into the patch graph. So this asserts the full select→Backspace→teardown
+    // behaviour, just with a deterministic selection step.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [
+        { id: 'vco', type: 'analogVco', position: { x: 100, y: 100 } },
+        { id: 'out', type: 'audioOut',  position: { x: 500, y: 100 }, params: { master: 0.2 } },
+      ],
+      [
+        { id: 'e1', from: { nodeId: 'vco', portId: 'saw' }, to: { nodeId: 'out', portId: 'L' } },
+      ]
+    );
+    await expect(page.locator('.svelte-flow__node')).toHaveCount(2);
+    const edge = page.locator('.svelte-flow__edge[data-id="e1"]');
+    await expect(edge, 'edge e1 should render').toHaveCount(1);
+
+    // Move keyboard focus onto the canvas pane so the Backspace keydown reaches
+    // xyflow's window-level KeyHandler and is NOT swallowed by isInputDOMNode
+    // (e.g. if an editable card title held focus). Click empty pane space.
+    await page.locator('.svelte-flow__pane').click({ position: { x: 5, y: 5 } });
+
+    // Select the edge through xyflow's real `selected` mutation. Retry the
+    // (select → assert .selected) pair: under HMR/CPU stress Canvas can
+    // re-derive flowEdges from the snapshot right after spawn, momentarily
+    // dropping the just-set selection, so a single set can race the rebuild.
+    await expect(async () => {
+      await page.evaluate(() => {
+        (globalThis as unknown as {
+          __flow: { setEdgeSelected: (id: string, sel: boolean) => void };
+        }).__flow.setEdgeSelected('e1', true);
+      });
+      await expect(edge, 'edge should reflect selected state').toHaveClass(/selected/, {
+        timeout: 1000,
+      });
+    }, 'edge e1 should become selected').toPass({ timeout: 10_000 });
+
+    // Real Backspace → xyflow KeyHandler deletes the selected edge.
+    await page.keyboard.press('Backspace');
+
+    // Edge gone from the DOM…
+    await expect(edge, 'edge should be removed from DOM after Backspace').toHaveCount(0);
+    // …AND from the underlying patch graph (handleDelete mirrored the teardown).
+    await expect
+      .poll(
+        () =>
+          page.evaluate(
+            () =>
+              Object.keys(
+                (globalThis as unknown as { __patch: { edges: Record<string, unknown> } })
+                  .__patch.edges,
+              ).length,
+          ),
+        { message: 'patch.edges should be empty after edge delete' },
+      )
+      .toBe(0);
+  });
 
   test('clear: Clear button removes all nodes + edges from patch + DOM', async ({ page }) => {
     await page.goto('/');
