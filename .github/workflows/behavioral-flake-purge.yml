@@ -173,10 +173,16 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
       E2E_USE_PREVIEW: '1'
     steps:
-      - name: Checkout (with LFS for ART/VRT baselines)
+      # No LFS: this purge job runs the behavioral sweep
+      # (per-module-per-port-behavioral.spec.ts) against the PREBUILT
+      # web-preview-dist artifact (downloaded below, bakes the LFS-tracked SM64
+      # bundle). The behavioral spec reads no LFS-tracked path directly, so skip
+      # the payload — mirrors the ci.yml behavioral-coverage lane's lfs:false
+      # (cuts LFS budget across the 30-job fan-out).
+      - name: Checkout (no LFS — behavioral serves the prebuilt bundle)
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
       - name: Install Flox
         uses: flox/install-flox-action@v2
       - name: Cache npm + Playwright browsers

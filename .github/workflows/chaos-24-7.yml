@@ -44,8 +44,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # No LFS: this hourly chaos run drives the bot against the LIVE deployed
+      # autotest URL (E2E_BASE_URL) — it builds nothing and reads no
+      # LFS-tracked path (no `task build`, no ART/VRT baselines, no SM64
+      # bundle). Skipping the LFS payload here saves the most bandwidth of any
+      # single change: this fires every hour via cron.
       - uses: actions/checkout@v4
-        with: { lfs: true }
+        with: { lfs: false }
       - uses: flox/install-flox-action@v2
       - uses: actions/cache@v4
         with:
