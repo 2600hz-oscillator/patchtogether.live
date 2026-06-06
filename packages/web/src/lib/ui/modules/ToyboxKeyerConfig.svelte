@@ -50,6 +50,15 @@
   }: Props = $props();
 
   let isChroma = $derived(node?.kind === 'chromakey');
+  // INVERT is a LUMAKEY-only control: the combine shader flips the keep-test
+  // (keep BELOW the threshold instead of above) only for the lumakey op. The
+  // `invert` param + shader already exist; this surfaces the toggle in the
+  // popover the way the standalone LUMAKEY module exposes its `invert` knob.
+  let isLumakey = $derived(node?.kind === 'lumakey');
+  let invertOn = $derived(paramVal('invert') > 0.5);
+  function toggleInvert(): void {
+    onparam('invert', invertOn ? 0 : 1);
+  }
 
   /** Read a live param value off the node, falling back to the schema default. */
   function paramVal(id: string): number {
@@ -206,6 +215,25 @@
       </div>
     {/if}
 
+    {#if isLumakey}
+      <!-- INVERT (lumakey only): flips the keep-test so the keyer keeps where
+           luma is BELOW the threshold instead of above — same as the standalone
+           LUMAKEY module's `invert`. Writes the node's `invert` combine param
+           in place (CV/MIDI-addressable like the other combine params). -->
+      <div class="keyer-invert">
+        <span class="keyer-color-label">INVERT</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={invertOn}
+          class="keyer-toggle"
+          class:on={invertOn}
+          data-testid="toybox-keyer-invert"
+          onclick={toggleInvert}
+        >{invertOn ? 'ON' : 'OFF'}</button>
+      </div>
+    {/if}
+
     <button
       type="button"
       class="keyer-done"
@@ -275,6 +303,34 @@
     font-family: monospace;
     font-size: 0.7rem;
     color: var(--text);
+  }
+  .keyer-invert {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .keyer-toggle {
+    min-width: 44px;
+    padding: 3px 10px;
+    border: 1px solid #404652;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+  .keyer-toggle.on {
+    background: rgba(96, 165, 250, 0.22);
+    border-color: rgba(96, 165, 250, 0.6);
+    color: var(--text);
+  }
+  .keyer-toggle:hover,
+  .keyer-toggle:focus-visible {
+    border-color: rgba(96, 165, 250, 0.6);
+    outline: none;
   }
   .keyer-done {
     display: block;

@@ -168,6 +168,16 @@ test.describe('TOYBOX keyer-config + CV refinements', () => {
     await expect(page.locator('[data-testid="toybox-keyer-sharpness"]')).toBeVisible();
     await expect(page.locator('[data-testid="toybox-keyer-color"]')).toHaveCount(0); // lumakey: no colour
 
+    // INVERT toggle (lumakey only): clicking it flips the node's `invert` param
+    // 0 → 1 (the combine shader keeps BELOW the threshold instead of above).
+    const invertBtn = page.locator('[data-testid="toybox-keyer-invert"]');
+    await expect(invertBtn).toBeVisible();
+    expect((await nodeParam(page, lk, 'invert')) ?? 0).toBe(0);
+    await invertBtn.click({ noWaitAfter: true });
+    await expect
+      .poll(async () => (await nodeParam(page, lk, 'invert')) ?? 0, { timeout: 10_000 })
+      .toBe(1);
+
     // Drag the THRESHOLD knob up → its `amount` param moves.
     const amtBefore = (await nodeParam(page, lk, 'amount')) ?? 0.5;
     const knob = page.locator('[data-testid="toybox-keyer-threshold"]').locator('canvas, svg, [role="slider"]').first();
@@ -210,6 +220,8 @@ test.describe('TOYBOX keyer-config + CV refinements', () => {
     await expect(keyerPop(page)).toBeVisible();
     const colorInput = page.locator('[data-testid="toybox-keyer-color"]');
     await expect(colorInput).toBeVisible();
+    // INVERT is lumakey-only — the chromakey popover does NOT show it.
+    await expect(page.locator('[data-testid="toybox-keyer-invert"]')).toHaveCount(0);
 
     // Default key colour = green (0,1,0). Set it to pure red via the picker.
     await colorInput.evaluate((el: HTMLInputElement) => {
