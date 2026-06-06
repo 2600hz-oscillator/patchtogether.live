@@ -68,24 +68,29 @@ test('lfo: phase0 emits a non-trivial AC waveform at the configured rate', async
   expect(stats.peak).toBeLessThan(1.5);
 });
 
-// SKIPPED: AudioParam.value (what engine.readParam reads) returns the intrinsic
-// value set via setValueAtTime — NOT the per-sample computed value that
-// includes summed-in audio-rate modulation. So even though the CV → AudioParam
-// connection IS established and IS audible (verified by the lfo-emits-AC test
-// above + by the audible behavior in the browser), polling .value from the
-// main thread returns 5.000 forever.
+// CV → AudioParam modulation is now OBSERVABLE from the main thread via the
+// per-param AnalyserNode tap the engine wires up in addEdge: the (cv-scaled)
+// modulator signal is tee'd into a small fftSize=32 AnalyserNode alongside the
+// AudioParam, and AudioEngine.readParam returns `intrinsic + tap.lastSample`
+// (engine.ts readParam / getOrCreateParamTap). So polling readParam DOES see
+// the audio-rate modulation — the motorized fader's readLive() callback tracks
+// the LFO. (The old skip predated the param-tap infra; AudioParam.value alone
+// would indeed read constant, but readParam no longer relies on it.)
 //
-// The "motorized fader visibly tracks an LFO modulating it" feature the user
-// asked for needs a different mechanism: tap the modulated value via an
-// AnalyserNode-equivalent on the param's effective signal, or have the engine
-// expose a per-param running sum from a custom worklet. Tracked as a follow-up.
-test.skip('cv-to-fader-sync: LFO modulating ADSR.attack varies the AudioParam reading', async ({ page }) => {
+// Stability note: we don't assume a fixed phase of the LFO when we sample —
+// we poll readParam many times across several full LFO cycles and assert the
+// observed RANGE (max-min) is non-trivial. That's robust to scheduler jitter,
+// the exact moment the worklet starts, and analyser block-boundary timing.
+test('cv-to-fader-sync: LFO modulating ADSR.attack varies the AudioParam reading', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
-  // LFO at high rate (10 Hz, square for max swing) → ADSR.attack CV input.
-  // The intrinsic attack is ~5; LFO output [-1..+1] sums in, so the observed
-  // AudioParam.value should swing between roughly 4 and 6.
+  // LFO at 10 Hz, shape=2 (saw on the 0=sine↔1=tri↔2=saw morph axis) → a full
+  // ±1 sweep into ADSR.attack's CV input. attack is a log-scaled param (knob 5,
+  // range 0.001..10s); a ±1 CV sweep multiplies it by sqrt(10/0.001)=±100×, so
+  // the cv-scale delta tee'd into the param tap swings the *observed* readParam
+  // value across most of 0.05..10. We only need a non-trivial range to prove the
+  // tap sees the modulation; the exact bounds don't matter (and are clamped).
   //
   // We also patch the LFO into a silenced Audio Out: AudioWorkletNodes only
   // process() when they have a path to AudioContext.destination, so without
@@ -103,30 +108,57 @@ test.skip('cv-to-fader-sync: LFO modulating ADSR.attack varies the AudioParam re
     ],
   );
 
-  // Sample the engine's readParam value at intervals — what the motorized
-  // fader's readLive() callback sees on each rAF tick.
-  const samples: number[] = [];
-  for (let i = 0; i < 12; i++) {
-    const v = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __engine?: () => {
-          readParam: (node: { id: string; type: string; domain: string }, paramId: string) => number | undefined;
-        } | null;
-        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-      };
-      const eng = w.__engine?.();
-      if (!eng) return -1;
-      const node = w.__patch.nodes['adsr'];
-      return eng.readParam(node, 'attack') ?? -1;
-    });
-    samples.push(v);
-    await page.waitForTimeout(70); // ~7 reads per LFO cycle at 10 Hz
-  }
+  // Sample readParam (what the motorized fader's readLive() callback polls)
+  // across several full LFO cycles, entirely page-side. Doing the loop in one
+  // page.evaluate (rather than 12 cross-process round-trips) lets us sample
+  // densely over a long window — robust to (a) the worklet taking a beat to
+  // start emitting after the graph is built, (b) the analyser block-boundary
+  // timing, and (c) scheduler jitter. We poll until we've SEEN a non-trivial
+  // swing (early-out) or the budget elapses, so a slow start can't fail us.
+  const result = await page.evaluate(async () => {
+    const w = globalThis as unknown as {
+      __engine?: () => {
+        readParam: (node: { id: string; type: string; domain: string }, paramId: string) => number | undefined;
+      } | null;
+      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+    };
+    const eng = w.__engine?.();
+    if (!eng) return { ok: false, reason: 'no engine', samples: [] as number[] };
+    const node = w.__patch.nodes['adsr'];
+    if (!node) return { ok: false, reason: 'no adsr node', samples: [] as number[] };
 
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    const samples: number[] = [];
+    let min = Infinity;
+    let max = -Infinity;
+    // Budget: up to ~3s of polling at ~15ms cadence (~200 samples ≈ 30 LFO
+    // cycles at 10Hz) — far more than enough to catch the swing; early-out the
+    // moment the range clears the threshold so the happy path is fast.
+    const TARGET_SWING = 0.5;
+    const start = performance.now();
+    while (performance.now() - start < 3000) {
+      const v = eng.readParam(node, 'attack');
+      if (typeof v === 'number') {
+        samples.push(v);
+        if (v < min) min = v;
+        if (v > max) max = v;
+        if (max - min > TARGET_SWING) break;
+      }
+      await sleep(15);
+    }
+    return { ok: true, reason: '', samples, swing: max - min };
+  });
+
+  expect(result.ok, `setup failed: ${result.reason}`).toBe(true);
+  const samples = result.samples;
   const min = Math.min(...samples);
   const max = Math.max(...samples);
   const swing = max - min;
-  // Square wave at ±1 around an intrinsic of 5 → expect >>0 swing in readParam.
-  // Even with rate jitter the readings should span at least ~0.5 (half of ±1).
-  expect(swing, `readParam values: ${samples.map((s) => s.toFixed(3)).join(', ')}`).toBeGreaterThan(0.5);
+  // A ±1 saw into a log-scaled param gives a large readParam swing; assert the
+  // tap sees a clearly non-trivial range. The threshold (0.5) is well below the
+  // expected multi-unit swing, leaving generous margin for jitter / clamping.
+  expect(
+    swing,
+    `readParam values (n=${samples.length}): [${samples.slice(0, 24).map((s) => s.toFixed(3)).join(', ')}${samples.length > 24 ? ', …' : ''}]`,
+  ).toBeGreaterThan(0.5);
 });
