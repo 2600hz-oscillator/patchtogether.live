@@ -120,13 +120,27 @@ with {
 //   8,9   return1 L/R
 //  10,11  return2 L/R
 //
-// 6 audio outputs:
+// 10 audio outputs:
 //   0,1  master L/R
 //   2,3  send1 L/R
 //   4,5  send2 L/R
+//   6    ch1 POST-FADER level tap (mono (L+R)/2, post EQ→comp→fader)
+//   7    ch2 POST-FADER level tap
+//   8    ch3 POST-FADER level tap
+//   9    ch4 POST-FADER level tap
+//
+// The 4 trailing outputs are ACCURATE per-channel post-fader meter taps for the
+// Electra MIXMASTER VU row + any on-card meter. They carry the channel's mixed-
+// down signal AFTER EQ, compression, and the volume fader — so the VU reflects
+// what the channel actually contributes to the master bus (the JS input-tap
+// approximation this replaces ignored EQ/comp gain). The module factory taps
+// these with AnalyserNodes and exposes the RMS as `read('levels') → number[4]`;
+// they are NOT patchable module ports. v1 is mono per channel; a future option
+// is to emit stereo L/R taps (+8 outputs total) for an L/R-split VU.
 
 process(c1l, c1r, c2l, c2r, c3l, c3r, c4l, c4r, r1l, r1r, r2l, r2r) =
-  outL, outR, s1OutL, s1OutR, s2OutL, s2OutR
+  outL, outR, s1OutL, s1OutR, s2OutL, s2OutR,
+  ch1Level, ch2Level, ch3Level, ch4Level
 with {
   // Per-channel chains.
   ch1Out = channelChain(ch1Low, ch1Mid, ch1High, ch1Thr, ch1Rat, ch1En, ch1Vol, ch1S1, ch1S2, c1l, c1r);
@@ -161,4 +175,14 @@ with {
 
   outL = masterL;
   outR = masterR;
+
+  // Per-channel POST-FADER level taps (mono (L+R)/2 of each channel's main
+  // output — i.e. AFTER EQ → comp → volume fader, BEFORE master-bus summing /
+  // master volume). The factory runs each through an AnalyserNode and reports
+  // the RMS as read('levels'). Mixing L+R to mono here keeps the VU one value
+  // per channel; a stereo VU would split these into 8 outputs (future option).
+  ch1Level = (ch1ML + ch1MR) * 0.5;
+  ch2Level = (ch2ML + ch2MR) * 0.5;
+  ch3Level = (ch3ML + ch3MR) * 0.5;
+  ch4Level = (ch4ML + ch4MR) * 0.5;
 };

@@ -4,9 +4,11 @@
 // two stereo returns. Multiple instances are allowed (submixes / parallel
 // master buses); each instance sums its inputs to the destination additively.
 //
-// 12 audio inputs (4 ch × stereo + 2 returns × stereo) + 6 audio outputs
-// (master L/R + send1 L/R + send2 L/R). 41 AudioParams (37 original + 4
-// new per-channel `comp` macro knobs).
+// 12 audio inputs (4 ch × stereo + 2 returns × stereo) + 10 worklet audio
+// outputs: 6 patchable module ports (master L/R + send1 L/R + send2 L/R) plus
+// 4 internal POST-FADER per-channel level taps (NOT module ports) feeding the
+// VU read('levels'). 41 AudioParams (37 original + 4 new per-channel `comp`
+// macro knobs).
 //
 // Per-channel `comp` macro (added in feat/audio-fidelity-mixmstrs-comp-swolevco):
 //
@@ -87,6 +89,20 @@ export function mapCompMacro(comp: number): {
     thresh: 0 + (-20 - 0) * c,
     ratio: 1 + (4 - 1) * c,
   };
+}
+
+// ---------------- Post-fader meter helper ----------------
+//
+// Pure RMS over a time-domain sample window — the same math scope.ts /
+// engine RMS use. Extracted so the unit test can assert level ordering/scale
+// deterministically (feed known buffers, read the levels) without spinning up
+// Web Audio. `read('levels')` runs this over each channel's post-fader tap
+// analyser buffer (see the factory below).
+export function rmsLevel(buf: Float32Array): number {
+  if (buf.length === 0) return 0;
+  let s = 0;
+  for (let i = 0; i < buf.length; i++) s += buf[i]! * buf[i]!;
+  return Math.sqrt(s / buf.length);
 }
 
 // Build the 41-param schema programmatically — 9 controls + 1 comp macro per
@@ -185,8 +201,11 @@ export const mixmstrsDef: AudioModuleDef = {
       silenceSources.push(sil);
     }
 
-    // Output splitter: 6 outputs (masterL/R, send1L/R, send2L/R).
-    const splitter = ctx.createChannelSplitter(6);
+    // Output splitter: 10 channels. 0..5 are the patchable module outputs
+    // (masterL/R, send1L/R, send2L/R); 6..9 are the per-channel POST-FADER
+    // meter taps the DSP now emits (post EQ → comp → fader). The meter taps
+    // are NOT exposed as module ports — they only feed the VU analysers below.
+    const splitter = ctx.createChannelSplitter(10);
     f.connect(splitter);
 
     const params = f.parameters as unknown as Map<string, AudioParam>;
@@ -213,6 +232,41 @@ export const mixmstrsDef: AudioModuleDef = {
       params.get(`${PARAM_PREFIX}/ch${ch}_compEnable`)?.setValueAtTime(m.enable, ctx.currentTime);
       params.get(`${PARAM_PREFIX}/ch${ch}_thresh`)?.setValueAtTime(m.thresh, ctx.currentTime);
       params.get(`${PARAM_PREFIX}/ch${ch}_ratio`)?.setValueAtTime(m.ratio, ctx.currentTime);
+    }
+
+    // ── Per-channel POST-FADER meter taps — read('levels') → number[4] ──
+    //
+    // ACCURATE VU for the Electra MIXMASTER meter row (and any on-card meter):
+    // the Faust DSP now emits one mono POST-FADER level per channel (post EQ →
+    // comp → volume fader) on worklet outputs 6..9. We split those off and run
+    // each through an AnalyserNode; read('levels') returns their RMS. Unlike the
+    // prior JS input-tap approximation (input-RMS × live chN_volume, which
+    // ignored EQ + comp gain), this reflects exactly what the channel feeds the
+    // master bus. (Master VU stays separate via audioOut.read('outputSnapshot').)
+    // The analysers are passive sinks — never connected onward — so they add no
+    // audible signal and can't alter the mix.
+    //
+    // splitter channels 6,7,8,9 = ch1,ch2,ch3,ch4 post-fader level taps.
+    const meterAnalysers: AnalyserNode[] = [];
+    const meterBufs: Float32Array<ArrayBuffer>[] = [];
+    const METER_TAP_OFFSET = 6; // outputs 0..5 are master+sends; 6..9 are taps
+    for (let ch = 0; ch < 4; ch++) {
+      const ana = ctx.createAnalyser();
+      ana.fftSize = 1024;
+      ana.smoothingTimeConstant = 0.3;
+      splitter.connect(ana, METER_TAP_OFFSET + ch);
+      meterAnalysers.push(ana);
+      meterBufs.push(new Float32Array(ana.fftSize));
+    }
+    function readChannelLevels(): number[] {
+      const out: number[] = [];
+      for (let ch = 0; ch < 4; ch++) {
+        const ana = meterAnalysers[ch]!;
+        const buf = meterBufs[ch]!;
+        ana.getFloatTimeDomainData(buf);
+        out.push(rmsLevel(buf));
+      }
+      return out;
     }
 
     // Build inputs map: 12 audio at fixed indices, 41 CV-targets per param
@@ -281,12 +335,21 @@ export const mixmstrsDef: AudioModuleDef = {
         if (paramId.startsWith('comp')) return compMacro[paramId];
         return params.get(`${PARAM_PREFIX}/${paramId}`)?.value;
       },
+      read(key) {
+        // Per-channel POST-FADER VU for the Electra MIXMASTER meter row + any
+        // on-card meters. Returns number[4] of linear RMS levels (~0..1), one
+        // per channel, read off the DSP's post-fader taps. See
+        // readChannelLevels() above.
+        if (key === 'levels') return readChannelLevels();
+        return undefined;
+      },
       dispose() {
         for (const s of silenceSources) {
           try { s.stop(); } catch { /* */ }
           s.disconnect();
         }
         for (const g of Object.values(compShadow)) g.disconnect();
+        for (const ana of meterAnalysers) ana.disconnect();
         merger.disconnect();
         splitter.disconnect();
         f.disconnect();
