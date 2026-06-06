@@ -100,11 +100,18 @@ export class ElectraAutoconfig {
     this.tap = new TapTempo();
     this.attachInbound(gen);
 
-    // Start feedback pump (writable feedback + 30Hz meter stream).
+    // Start feedback pump (writable feedback + 30Hz meter stream). Route each
+    // control's CC to the USB-DEVICE port matching its preset device.port (NOT
+    // the CTRL management port): the Electra listens for control values on the
+    // numbered bus the control is bound to. PT-CTRL → port 2, PT-PLAY → port 1.
+    const portByDeviceId = new Map<number, number>(
+      gen.preset.devices.map((d) => [d.id, d.port]),
+    );
     const deps: FeedbackDeps = {
       readParamValue: (k) => this.host.readParamValue(k),
       readMeterAmp: (k) => this.host.readMeterAmp(k),
-      sendCc: (_deviceId, cc, value) => this.broker.sendCc(cc, value, 'ctrl'),
+      sendCc: (deviceId, cc, value) =>
+        this.broker.sendCcOnPort(portByDeviceId.get(deviceId) ?? 2, cc, value),
     };
     this.pump = new FeedbackPump(gen.allocations, deps);
     this.pump.start(33);
