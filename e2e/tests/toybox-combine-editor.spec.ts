@@ -130,26 +130,130 @@ async function clickEd(page: Page, testid: string): Promise<void> {
   await page.locator(`[data-testid="${testid}"]`).click({ force: true, noWaitAfter: true });
 }
 
+/** Read the currently-armed connect source ("pendingFrom") from the on-card
+ *  status line, which renders ONLY while a wire is armed
+ *  (`<div data-testid="toybox-pending">armed: {id} → …</div>`). Returns the
+ *  armed node id, or null when nothing is armed. This is the observable that
+ *  makes the wiring protocol deterministic under CI starvation. */
+async function armedFrom(page: Page): Promise<string | null> {
+  const el = page.locator('[data-testid="toybox-pending"]');
+  if ((await el.count()) === 0) return null;
+  const txt = (await el.first().textContent()) ?? '';
+  const m = txt.match(/armed:\s*(\S+)/);
+  return m ? m[1]! : null;
+}
+
+/** Does node.data.combine already contain the edge from → to:toPort ? */
+async function hasEdge(
+  page: Page,
+  from: string,
+  to: string,
+  toPort: string,
+): Promise<boolean> {
+  return page.evaluate(
+    ({ from, to, toPort }) => {
+      const w = globalThis as unknown as PatchGlobal;
+      const c = w.__patch.nodes['tb']?.data?.combine as
+        | { edges?: Array<{ from: string; to: string; toPort: string }> }
+        | undefined;
+      return (c?.edges ?? []).some(
+        (e) => e.from === from && e.to === to && e.toPort === toPort,
+      );
+    },
+    { from, to, toPort },
+  );
+}
+
+/**
+ * Per-pair re-click-until-edge-appears harness (#68 / #621).
+ *
+ * The two-click wire protocol (arm an OUTPUT dot → click an INPUT dot) was the
+ * deterministic CI failure: under SwiftShader main-thread starvation a click
+ * gets dropped, so either the arm never lands (input click then no-ops with
+ * "pick an output dot first") or the commit click is lost — and because
+ * onOutPortClick TOGGLES `pendingFrom`, a naive re-click can disarm instead of
+ * arm. This harness drives the state machine to a KNOWN state each attempt
+ * using the observable `toybox-pending` status line:
+ *   1. if anything is armed, click that armed output to clear it (→ disarmed);
+ *   2. click our OUTPUT dot and CONFIRM it armed to `from` (retry if dropped);
+ *   3. click the INPUT dot and CONFIRM the edge formed in node.data.combine.
+ * Bounded retries so a persistently-failing wire still fails the test loudly
+ * (no infinite loop), rather than silently leaving a missing edge for the
+ * downstream persistence poll to time out on.
+ */
+async function wireEdge(
+  page: Page,
+  from: string,
+  to: string,
+  toPort: string,
+): Promise<void> {
+  // Already wired (e.g. a prior attempt's commit landed late)? Done.
+  if (await hasEdge(page, from, to, toPort)) return;
+
+  const attempts = 6;
+  for (let i = 0; i < attempts; i++) {
+    // (1) Drive to a disarmed state: clear any stale arm by toggling it off.
+    const stale = await armedFrom(page);
+    if (stale) {
+      await clickEd(page, `toybox-outport-${stale}`);
+      await expect(page.locator('[data-testid="toybox-pending"]')).toHaveCount(0, {
+        timeout: 3_000,
+      });
+    }
+
+    // (2) Arm our output dot; confirm the arm actually landed on `from`.
+    await clickEd(page, `toybox-outport-${from}`);
+    try {
+      await expect
+        .poll(() => armedFrom(page), { timeout: 4_000, intervals: [100, 250, 500] })
+        .toBe(from);
+    } catch {
+      continue; // arm click dropped (or toggled the wrong way) — retry the pair
+    }
+
+    // (3) Commit: click the input dot; confirm the edge persisted.
+    await clickEd(page, `toybox-inport-${to}-${toPort}`);
+    try {
+      await expect
+        .poll(() => hasEdge(page, from, to, toPort), {
+          timeout: 4_000,
+          intervals: [100, 250, 500, 1000],
+        })
+        .toBe(true);
+      return; // edge formed
+    } catch {
+      // Commit click dropped, or the connect was rejected this frame; loop.
+    }
+  }
+
+  throw new Error(
+    `wireEdge: edge ${from} → ${to}:${toPort} never formed after ${attempts} attempts ` +
+      `(CI SwiftShader click-drop class #621)`,
+  );
+}
+
 test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
-  // QUARANTINE(ci-toybox-e2e-flake): the multi-step click-to-wire flow (6 chained
-  // port clicks) drops a click under CI SwiftShader main-thread starvation, so the
-  // final edge set never forms and the 15s persistence poll exhausts — a
-  // DETERMINISTIC CI failure (shard 9, failed both attempts on run 27040200981).
-  // The underlying combine-graph wiring → node.data logic is covered by
-  // toybox-combine-graph.test.ts (44) + toybox-combine-ydoc.test.ts (18) unit
-  // tests. Quarantined per the flake-purge directive (get CI green, triage the
-  // disabled set after): re-enable with a per-pair re-click-until-edge-appears
-  // harness for the click-to-wire protocol. See also toybox-node-menu canvas-menu
-  // (geometry-fixed this PR) — same toybox-graph-SVG-interaction fragility class.
-  test.fixme('add a node + wire it via clicks; persists to node.data + changes the output', async ({
+  // Re-enabled (shard rebalance #68). Was a DETERMINISTIC CI failure (shard 9,
+  // both attempts, run 27040200981): the multi-step click-to-wire flow (chained
+  // port-pair clicks) DROPPED a click under SwiftShader main-thread starvation,
+  // so the final edge never formed and the persistence poll exhausted. TWO
+  // changes fix it: (1) this spec now runs on the dedicated non-sharded
+  // `e2e-video` job (--workers=1), so no co-tenant heavy starves the GL context;
+  // (2) each wire goes through the `wireEdge` per-pair re-click-until-edge
+  // harness (above) — it drives the arm→commit state machine to a KNOWN state
+  // each attempt via the observable `toybox-pending` line and retries a dropped
+  // click, instead of firing 6 fire-and-forget clicks and hoping. The
+  // wiring → node.data logic itself stays unit-covered (toybox-combine-graph.ts
+  // 44 + toybox-combine-ydoc.ts 18); this e2e is the click-protocol layer.
+  test('add a node + wire it via clicks; persists to node.data + changes the output', async ({
     page,
   }) => {
     // TOYBOX runs a WebGL rAF compositor; on CI's software renderer the main
     // thread is slow enough that the multi-step wiring UI flow needs headroom
     // beyond the 30s default (mirrors the heavy-video specs e.g. freezeframe /
-    // picturebox-limits). noWaitAfter on clicks already removes the bulk of the
-    // CI inflation; this is belt-and-suspenders.
-    test.setTimeout(60_000);
+    // picturebox-limits). On the serialized e2e-video job it finishes well
+    // inside this budget; kept generous as belt-and-suspenders.
+    test.setTimeout(120_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -193,11 +297,10 @@ test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
     expect(opId, 'a MAP op node was added to node.data.combine').toBeTruthy();
 
     // Wire src0 → newOp.in0, src1 → newOp.in1, then re-point OUTPUT.in0 to newOp.
-    // Click the output dot of src0, then the in0 dot of the new op.
-    await clickEd(page, 'toybox-outport-src0');
-    await clickEd(page, `toybox-inport-${opId}-in0`);
-    await clickEd(page, 'toybox-outport-src1');
-    await clickEd(page, `toybox-inport-${opId}-in1`);
+    // Each wire goes through wireEdge (per-pair re-click-until-edge harness) so a
+    // dropped arm/commit click under CI starvation is retried, not lost (#621).
+    await wireEdge(page, 'src0', opId!, 'in0');
+    await wireEdge(page, 'src1', opId!, 'in1');
 
     // Re-route OUTPUT to the new op: delete OUTPUT's existing in0 edge, then
     // wire newOp → OUTPUT.in0.
@@ -221,9 +324,34 @@ test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
       { outId },
     );
     expect(outEdgeId).toBeTruthy();
-    await clickEd(page, `toybox-edge-${outEdgeId}`);
-    await clickEd(page, `toybox-outport-${opId}`);
-    await clickEd(page, `toybox-inport-${outId}-in0`);
+    // Delete OUTPUT's existing in0 edge, then re-poll until the slot is free —
+    // a dropped delete-click would otherwise leave wireEdge unable to commit
+    // (the input shows 'occupied'). Re-click the edge until it's gone.
+    await expect
+      .poll(
+        async () => {
+          if (
+            !(await page.evaluate(
+              ({ outId }) => {
+                const w = globalThis as unknown as PatchGlobal;
+                const c = w.__patch.nodes['tb']?.data?.combine as
+                  | { edges?: Array<{ to: string; toPort: string }> }
+                  | undefined;
+                return (c?.edges ?? []).some((e) => e.to === outId && e.toPort === 'in0');
+              },
+              { outId },
+            ))
+          ) {
+            return false; // edge gone
+          }
+          await clickEd(page, `toybox-edge-${outEdgeId}`);
+          return true; // still present this tick
+        },
+        { timeout: 10_000, intervals: [200, 400, 800, 1500] },
+      )
+      .toBe(false);
+    // Now wire newOp → OUTPUT.in0 via the same retrying harness.
+    await wireEdge(page, opId!, outId!, 'in0');
 
     // (a) PERSISTENCE: node.data.combine reflects the user's nodes + edges.
     // POLL rather than assert-once: the wiring clicks use noWaitAfter (load-
@@ -316,11 +444,32 @@ test.describe('TOYBOX combine-graph editor (Phase 4)', () => {
     });
     expect(a && b).toBeTruthy();
 
-    // a → b (legal)
-    await clickEd(page, `toybox-outport-${a}`);
-    await clickEd(page, `toybox-inport-${b}-in0`);
-    // b → a (would close a cycle)
-    await clickEd(page, `toybox-outport-${b}`);
+    // a → b (legal) — via the per-pair re-click-until-edge harness so a dropped
+    // arm/commit click under SwiftShader starvation is retried, not lost (#621).
+    await wireEdge(page, a!, b!, 'in0');
+
+    // b → a (would close a cycle). This is REJECTED, so no edge forms — wireEdge
+    // (which waits for an edge) can't be used. Drive the arm→commit state machine
+    // to a KNOWN state deterministically: clear any stale arm, arm b + CONFIRM it
+    // landed (so the failure isn't a dropped arm click masquerading as "pick an
+    // output first"), then click a's input to attempt the cycle.
+    const stale = await armedFrom(page);
+    if (stale) {
+      await clickEd(page, `toybox-outport-${stale}`);
+      await expect(page.locator('[data-testid="toybox-pending"]')).toHaveCount(0, {
+        timeout: 3_000,
+      });
+    }
+    await expect
+      .poll(
+        async () => {
+          if ((await armedFrom(page)) === b) return true;
+          await clickEd(page, `toybox-outport-${b}`);
+          return false;
+        },
+        { timeout: 6_000, intervals: [150, 300, 600, 1200] },
+      )
+      .toBe(true);
     await clickEd(page, `toybox-inport-${a}-in0`);
 
     // The rejection message shows + no back-edge was written.
