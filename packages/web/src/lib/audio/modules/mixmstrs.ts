@@ -215,6 +215,54 @@ export const mixmstrsDef: AudioModuleDef = {
       params.get(`${PARAM_PREFIX}/ch${ch}_ratio`)?.setValueAtTime(m.ratio, ctx.currentTime);
     }
 
+    // ── Per-channel meter taps — read('levels') → number[4] ──
+    //
+    // JS-approx VU for the Electra MIXMASTER meter row (and any on-card meter):
+    // tap each channel's stereo INPUT with an AnalyserNode and report the
+    // post-fader level as input-RMS × the live chN_volume. This needs NO Faust
+    // recompile — the alternative (+4/+8 dedicated post-fader Faust outputs) is
+    // the "most accurate" path but bumps the worklet output count, deferred to a
+    // follow-up. The approximation ignores EQ + comp gain, which is acceptable
+    // for a moving VU. (Master VU is read separately via
+    // audioOut.read('outputSnapshot').) The taps are passive sinks — never
+    // connected onward — so they cost nothing audible and can't alter the mix.
+    //
+    // Channel input indices into the merger: ch1=0/1, ch2=2/3, ch3=4/5, ch4=6/7.
+    const meterAnalysers: AnalyserNode[] = [];
+    const meterBufs: Float32Array<ArrayBuffer>[] = [];
+    const meterSums: GainNode[] = [];
+    const channelInputPairs: Array<[number, number]> = [[0, 1], [2, 3], [4, 5], [6, 7]];
+    const meterSplitter = ctx.createChannelSplitter(12);
+    merger.connect(meterSplitter); // passive fan-out; never connected onward
+    for (let ch = 0; ch < 4; ch++) {
+      const [li, ri] = channelInputPairs[ch]!;
+      const sum = ctx.createGain();
+      sum.gain.value = 0.5; // average L + R into one mono level tap
+      meterSplitter.connect(sum, li);
+      meterSplitter.connect(sum, ri);
+      const ana = ctx.createAnalyser();
+      ana.fftSize = 1024;
+      ana.smoothingTimeConstant = 0.3;
+      sum.connect(ana);
+      meterSums.push(sum);
+      meterAnalysers.push(ana);
+      meterBufs.push(new Float32Array(ana.fftSize));
+    }
+    function readChannelLevels(): number[] {
+      const out: number[] = [];
+      for (let ch = 0; ch < 4; ch++) {
+        const ana = meterAnalysers[ch]!;
+        const buf = meterBufs[ch]!;
+        ana.getFloatTimeDomainData(buf);
+        let s = 0;
+        for (let i = 0; i < buf.length; i++) s += buf[i]! * buf[i]!;
+        const rms = Math.sqrt(s / buf.length);
+        const vol = params.get(`${PARAM_PREFIX}/ch${ch + 1}_volume`)?.value ?? 1;
+        out.push(rms * vol);
+      }
+      return out;
+    }
+
     // Build inputs map: 12 audio at fixed indices, 41 CV-targets per param
     // (37 Faust-backed + 4 comp macros).
     //
@@ -281,12 +329,22 @@ export const mixmstrsDef: AudioModuleDef = {
         if (paramId.startsWith('comp')) return compMacro[paramId];
         return params.get(`${PARAM_PREFIX}/${paramId}`)?.value;
       },
+      read(key) {
+        // Per-channel post-fader VU approximation for the Electra MIXMASTER
+        // meter row + any on-card meters. Returns number[4] of linear RMS
+        // levels (~0..1), one per channel. See readChannelLevels() above.
+        if (key === 'levels') return readChannelLevels();
+        return undefined;
+      },
       dispose() {
         for (const s of silenceSources) {
           try { s.stop(); } catch { /* */ }
           s.disconnect();
         }
         for (const g of Object.values(compShadow)) g.disconnect();
+        for (const sum of meterSums) sum.disconnect();
+        for (const ana of meterAnalysers) ana.disconnect();
+        meterSplitter.disconnect();
         merger.disconnect();
         splitter.disconnect();
         f.disconnect();

@@ -65,6 +65,7 @@
   import { attachReconciler } from '$lib/audio/reconciler';
   import { getModuleDef, listModuleDefs } from '$lib/audio/module-registry';
   import { provideEngineContext } from '$lib/audio/engine-context';
+  import { setActiveEngine } from '$lib/audio/engine-ref';
   import { provideProviderContext } from '$lib/multiplayer/provider-context';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
   import '$lib/audio/modules'; // auto-registers analogVcoDef + audioOutDef
@@ -3346,6 +3347,7 @@
         }
         reconciler = attachReconciler(e);
         engine = e;
+        setActiveEngine(e); // expose to non-context consumers (Electra bar button)
         trace(`engine + reconciler attached (sr=${audioCtx.sampleRate})`);
         return e;
       } catch (err) {
@@ -3685,6 +3687,7 @@
   onDestroy(() => {
     reconciler?.dispose();
     engine?.dispose();
+    setActiveEngine(null); // clear the non-context engine ref on unmount
     audioGate?.bind(null);
   });
 

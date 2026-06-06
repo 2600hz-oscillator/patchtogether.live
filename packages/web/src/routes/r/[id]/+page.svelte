@@ -5,6 +5,7 @@
   import Canvas from '$lib/ui/Canvas.svelte';
   import AudioGate from '$lib/ui/AudioGate.svelte';
   import FeedbackBox from '$lib/ui/FeedbackBox.svelte';
+  import ElectraConnectButton from '$lib/ui/ElectraConnectButton.svelte';
   import { createAudioGate } from '$lib/audio/audio-gate.svelte';
   import { ydoc, patch, bindRackspace, unbindRackspace } from '$lib/graph/store';
   import { makeEnvelope } from '$lib/graph/persistence';
@@ -519,6 +520,10 @@
         </span>
       {/if}
       <span class="bar-spacer"></span>
+      <!-- Gated MIDI-device affordance: generates + pushes a 3-page Electra One
+           preset from this rack. On-demand only (asks for MIDI on first click);
+           no eager prompt. Sits with the other device/session actions. -->
+      <ElectraConnectButton />
       {#if !data.isAnon}
         {#if !carlSession}
           <button
