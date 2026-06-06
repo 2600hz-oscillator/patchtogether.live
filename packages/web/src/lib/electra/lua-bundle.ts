@@ -14,6 +14,11 @@ function fmtDb(vo, v) return string.format("%+.1f dB", v) end
 function fmtRatio(vo, v) return string.format("%.1f:1", v) end
 function fmtBpm(vo, v) return string.format("%d BPM", math.floor(v + 0.5)) end
 function fmtBpmDisplay(vo, v) return string.format("%d", math.floor(v + 0.5)) end
+-- VU meter dBFS readout (host streams a -60..0 dBFS-mapped CC 0..127)
+function fmtMeterDb(vo, v)
+  if v <= 0 then return "-inf dB" end
+  return string.format("%.0f dB", -60.0 + (v / 127.0) * 60.0)
+end
 
 -- source banner (host pushes text via info.setText / Execute-Lua)
 function pt_setBanner(text) info.setText(text) end

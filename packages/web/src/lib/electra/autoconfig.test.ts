@@ -2,14 +2,16 @@
 //
 // Drives the orchestrator against a fake broker + fake host: assert that a
 // generated control's inbound CC writes the right param, meters/banners are
-// app→device only (inbound ignored), tap notes converge BPM via the helper, and
-// an external-clock edge greys the tap path.
-import { describe, it, expect } from 'vitest';
+// app→device only (inbound ignored), tap notes converge BPM via the helper, an
+// external-clock edge greys the tap path, and the 30Hz per-channel VU meter
+// stream emits the right meter CCs (the MIXMASTER meter view wiring).
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ElectraAutoconfig, type AutoconfigHost } from './autoconfig';
 import { ElectraBroker, type MidiFullAccessLike } from './broker';
 import type { MidiOutputLike } from '$lib/audio/modules/midi-out-buddy';
 import type { MidiInputLike, MidiEventLike } from '$lib/audio/modules/midi-cv-buddy';
 import type { GenParamDef } from './preset';
+import { ampToMeterCc } from './curve';
 
 function makeFakeBroker() {
   const sentCtrl: number[][] = [];
@@ -153,5 +155,84 @@ describe('tap-tempo routing', () => {
       String.fromCharCode(...m.slice(6, m.length - 1)),
     );
     expect(decoded.some((s) => s.includes('pt_setExternal(true)'))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// MIXMASTER meter view — the per-channel VU feedback stream. The orchestrator
+// starts a FeedbackPump that, on every ~33ms tick, reads each channel's level
+// (host.readMeterAmp('mx:meter:N') → engine.read(mx,'levels')[N-1]) and sends a
+// dBFS-mapped meter CC on CTRL to the read-only meter controls. These tests
+// drive that pump on a fake clock and assert the right meter CCs land — the
+// channel-VU half of View 2 now has data (post-fader Faust taps in mixmstrs).
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Parse a plain CC message [0xB0|ch, cc, val] from a captured CTRL send. */
+function asCc(m: number[]): { cc: number; value: number } | null {
+  if (m.length === 3 && (m[0]! & 0xf0) === 0xb0) return { cc: m[1]!, value: m[2]! };
+  return null;
+}
+
+describe('MIXMASTER meter feedback stream', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('streams per-channel + master meter CCs (dBFS-mapped) on the CTRL port at 30Hz', async () => {
+    vi.useFakeTimers();
+    const fake = makeFakeBroker();
+    // Per-channel post-fader levels the engine would report via read('levels'),
+    // plus a master level. Distinct + ordered so we can assert ordering/scale.
+    const amps: Record<string, number> = {
+      'mx:meter:1': 0.1,
+      'mx:meter:2': 0.25,
+      'mx:meter:3': 0.5,
+      'mx:meter:4': 1.0,
+      'mx:meter:master': 0.5,
+    };
+    const { host } = makeHost({ readMeterAmp: (k) => amps[k] });
+    const auto = new ElectraAutoconfig(host, fake.broker, { identifyTimeoutMs: 0 });
+    const runP = auto.run();
+    await vi.advanceTimersByTimeAsync(1); // fire identify's 0ms timeout
+    await runP;
+
+    // Drain the upload/banner/page CCs sent during run(), isolate the pump.
+    fake.sentCtrl.length = 0;
+    // One pump tick (33ms = ~30Hz).
+    await vi.advanceTimersByTimeAsync(34);
+    auto.stop();
+
+    const meters = auto.allocations.filter((a) => a.role === 'meter');
+    expect(meters.length).toBe(5); // 4 channels + master
+    const ccs = fake.sentCtrl.map(asCc).filter((x): x is { cc: number; value: number } => !!x);
+    const byNum = new Map(ccs.map((c) => [c.cc, c.value]));
+
+    for (const m of meters) {
+      const expected = ampToMeterCc(amps[m.key]!);
+      expect(byNum.get(m.number), `meter ${m.key} (cc ${m.number})`).toBe(expected);
+    }
+    // Louder channel → higher meter CC (ordering preserved end-to-end).
+    const ch = (n: number) => byNum.get(meters.find((m) => m.key === `mx:meter:${n}`)!.number)!;
+    expect(ch(4)).toBeGreaterThan(ch(3));
+    expect(ch(3)).toBeGreaterThan(ch(2));
+    expect(ch(2)).toBeGreaterThan(ch(1));
+  });
+
+  it('does not re-send an unchanged meter level (deltaed — silent channels do not spam)', async () => {
+    vi.useFakeTimers();
+    const fake = makeFakeBroker();
+    const { host } = makeHost({ readMeterAmp: () => 0.5 }); // constant level
+    const auto = new ElectraAutoconfig(host, fake.broker, { identifyTimeoutMs: 0 });
+    const runP = auto.run();
+    await vi.advanceTimersByTimeAsync(1); // fire identify's 0ms timeout
+    await runP;
+    fake.sentCtrl.length = 0;
+
+    await vi.advanceTimersByTimeAsync(34); // tick 1 — sends each meter once
+    const afterFirst = fake.sentCtrl.filter((m) => asCc(m)).length;
+    expect(afterFirst).toBeGreaterThan(0);
+
+    await vi.advanceTimersByTimeAsync(34); // tick 2 — same level → no resend
+    const afterSecond = fake.sentCtrl.filter((m) => asCc(m)).length;
+    auto.stop();
+    expect(afterSecond).toBe(afterFirst);
   });
 });

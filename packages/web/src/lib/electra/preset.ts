@@ -287,6 +287,10 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
         name: m.label,
         values: [{
           message: { deviceId: DEVICE_CTRL, type: 'cc7', parameterNumber: meterCc, min: 0, max: 127 },
+          // dBFS readout for the VU; the bar fill animates off the same CC. The
+          // app streams an already-dBFS-mapped meter CC (ampToMeterCc), so the
+          // formatter just reverses that linear -60..0 dB map for the display.
+          formatter: 'fmtMeterDb',
         }],
       });
       allocations.push({

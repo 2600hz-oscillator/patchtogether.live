@@ -43,6 +43,17 @@ function fmtBpmDisplay(valueObject, value)
   return string.format("%d", math.floor(value + 0.5))
 end
 
+-- VU METER dBFS readout for the MIXMASTER per-channel + master meter row.
+-- The host streams an already-dBFS-mapped meter CC (0..127 ↔ -60..0 dBFS; see
+-- electra/curve.ts ampToMeterCc → dbToMeterCc, floor -60 dB). This formatter
+-- reverses that linear map so the read-only vfader shows the level in dB
+-- (the bar fill animates from the same CC). "value" arrives 0..127.
+function fmtMeterDb(valueObject, value)
+  local db = -60.0 + (value / 127.0) * 60.0
+  if value <= 0 then return "-inf dB" end
+  return string.format("%.0f dB", db)
+end
+
 -- ───────────────────────── source banner ─────────────────────────
 --
 -- The host calls info.setText("INT 120") / ("EXT 128") via Execute-Lua (08 0D).

@@ -1499,6 +1499,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
         "type": "vfader",
         "values": [
           {
+            "formatter": "fmtMeterDb",
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1520,6 +1521,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
         "type": "vfader",
         "values": [
           {
+            "formatter": "fmtMeterDb",
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1541,6 +1543,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
         "type": "vfader",
         "values": [
           {
+            "formatter": "fmtMeterDb",
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1562,6 +1565,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
         "type": "vfader",
         "values": [
           {
+            "formatter": "fmtMeterDb",
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1583,6 +1587,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
         "type": "vfader",
         "values": [
           {
+            "formatter": "fmtMeterDb",
             "message": {
               "deviceId": 1,
               "max": 127,

@@ -68,24 +68,35 @@ law). MUTE is *emulated* Electra-side: a pad `onChange` writes `chN_volume = 0`
 with a saved restore; SOLO zeroes the other channels. True pan needs new DSP +
 a Faust recompile (out of v1 scope).
 
-**METERS — the hard part.** Per-channel VU is not readable today. Two ways to
-get a level tap:
+**METERS — the hard part.** Per-channel VU was not readable on the foundation
+spike. Two ways to get a level tap:
 
-1. **Faust post-fader taps (most accurate, needs recompile):** add +4 (or +8
-   stereo) outputs to `mixmstrs.dsp`, split to AnalyserNodes, bump the output
-   count. Deferred.
-2. **JS approx (no rebuild — shipped here):** tap each channel's *input* with an
-   AnalyserNode and report `inputRMS × live chN_volume`. Ignores EQ/comp gain;
-   fine for a moving VU. Exposed as `handle.read('levels') → number[4]` in
-   `mixmstrs.ts` (mirrors `scope.ts:161` + engine RMS at `engine.ts:1142`).
+1. **Faust post-fader taps (most accurate — SHIPPED).** `mixmstrs.dsp` now emits
+   4 extra mono outputs (worklet outputs 6..9): each channel's POST-fader level
+   (post EQ → comp → volume fader, `(mainL+mainR)/2`). The output count went 6 →
+   10; the factory splits 6..9 off to AnalyserNodes and reports their RMS as
+   `handle.read('levels') → number[4]` (mirrors `scope.ts` + the engine RMS).
+   These 4 taps are NOT patchable module ports. The VU reflects exactly what each
+   channel contributes to the master bus. v1 is mono per channel; a stereo VU
+   would add 4 more outputs for L/R (a future option, noted in the .dsp).
+2. **JS approx (no rebuild — the original spike).** Tapped each channel's *input*
+   and reported `inputRMS × live chN_volume`; ignored EQ/comp gain. Replaced by
+   the accurate Faust path above.
 
 **Master VU is free** via `audioOut.read('outputSnapshot')`.
 
+**Feeding the device.** The feedback pump samples `read('levels')` (per channel)
++ `outputSnapshot` (master) on every ~33 Hz tick via the host's `readMeterAmp`,
+maps each to a dBFS meter CC (`ampToMeterCc`, floor −60 dB), and streams it on
+CTRL to the read-only meter controls. Deltaed (a steady channel doesn't re-spam)
+and echo-safe (meters are app→device only — inbound meter CCs are ignored).
+
 **Rendering the meter on the device** — two options:
 
-- **Option 1 (recommended):** a read-only `vfader` (variant thin/outline) bound
-  to a unique `cc7`; the app streams the level CC at ~30 Hz and the fill animates
-  as a VU. One small CC per update, no Lua. *(This is what the generator emits.)*
+- **Option 1 (recommended — SHIPPED):** a read-only `vfader` (variant thin/outline)
+  bound to a unique `cc7`; the app streams the level CC at ~30 Hz and the fill
+  animates as a VU. One small CC per update; a `fmtMeterDb` Lua formatter labels
+  the level in dBFS. *(This is what the generator + sample.epr emit.)*
 - **Option 2 (advanced):** a custom Lua VU tile (`type:custom`, FW 3.6+) drawing
   bar + dB + peak-hold via `setPaintCallback`, fed by `parameterMap.set` / a
   bespoke meter SysEx then `control:repaint()`. One narrow tile per channel due
@@ -144,8 +155,9 @@ outside the Svelte context tree goes through `audio/engine-ref.ts`
 (`setActiveEngine` in `Canvas.svelte` / `getActiveEngine` in the button).
 
 **One unavoidable non-Electra change:** the MIXMSTRS per-channel meter tap —
-`read('levels')` in `mixmstrs.ts` (JS approx, no recompile). Master VU reuses the
-existing `audioOut.read('outputSnapshot')`.
+`read('levels')` in `mixmstrs.ts`, fed by 4 new POST-fader outputs added to
+`mixmstrs.dsp` (accurate post-EQ/comp/fader levels; a Faust recompile). Master VU
+reuses the existing `audioOut.read('outputSnapshot')`.
 
 ### Reused as-is
 
@@ -291,13 +303,15 @@ tap-pad/BPM gating, MIXMASTER mute/solo) and [`lua/custom-vu.lua`](./lua/custom-
 
 **Built + tested here:** preset generator, tap-tempo, feedback (value + meter)
 with echo-suppression, curve mapping, SysEx framing + Web MIDI broker, the
-orchestrator, the gated UI button, the MIXMSTRS `read('levels')` tap, the sample
-`.epr` + Lua templates.
+orchestrator, the gated UI button, the sample `.epr` + Lua templates, and the
+**accurate per-channel VU**: 4 POST-fader outputs in `mixmstrs.dsp` →
+`read('levels')` → the 30 Hz meter stream → the MIXMASTER meter row
+(`fmtMeterDb` dBFS readout).
 
 **Follow-ups (not in this spike):**
 
 - Hardware bring-up (real port-name resolution, ACK/NACK handling, retry).
-- Faust post-fader meter outputs (Option-1-accurate metering) + true pan
+- Stereo (L/R-split) per-channel VU (+4 more Faust outputs) + true pan
   (DSP + recompile).
 - Discrete `node.data` params (MIDI-CV-BUDDY etc.) → bespoke list+overlay.
 - `cc14`/NRPN ingest + curve-aware `ccValueToParamValue` in midi-learn.
