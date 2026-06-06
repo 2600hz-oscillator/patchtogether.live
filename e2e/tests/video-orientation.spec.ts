@@ -313,11 +313,23 @@ test.describe('video orientation — parametrized transform/keyer lock', () => {
         ],
       );
       // Feedback/vdelay need a couple of frames for the accumulator to settle
-      // even with feedback zeroed; give all cases the same generous settle.
-      await page.waitForTimeout(800);
-      const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+      // even with feedback zeroed. POLL the verdict until it settles to 'up'
+      // instead of a single read after a flat 800 ms wait: on CI's slow
+      // SwiftShader the canvas can still be mid-paint at 800 ms → an 'ambiguous'
+      // verdict → a retry-only flake. Polling absorbs the slow paint
+      // deterministically (the orientation never legitimately flips to 'down').
+      await page.waitForTimeout(300);
+      let r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+      await expect
+        .poll(
+          async () => {
+            r = await analyzeTriangleOrientation(page, 'video-out-canvas');
+            return r.verdict;
+          },
+          { timeout: 8_000 },
+        )
+        .toBe('up');
       await page.screenshot({ path: `test-results/orient-param-${tc.type}.png` });
-      expect(r.verdict, `SHAPES->${tc.label}->OUTPUT verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
     });
   }
 

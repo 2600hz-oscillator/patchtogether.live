@@ -472,7 +472,24 @@ export function validateConnect(
  *  lowest existing op (cosmetic). */
 export function makeOpNode(g: ToyboxCombineGraph, kind: ToyboxOpKind): ToyboxGraphNode {
   const ops = g.nodes.filter((n) => n.kind !== 'source' && n.kind !== 'output');
-  const xy = opSlotXY(ops.length);
+  // Place the new node in the first grid slot whose (x,y) is NOT already taken
+  // by an existing op node. Using `opSlotXY(ops.length)` directly was a bug:
+  // slot positions are assigned at create time by the then-current op count, so
+  // after a delete (or any non-contiguous occupancy) the count no longer maps to
+  // a free slot. A graph with a single op at slot 1 (e.g. `op2` left after `op1`
+  // was deleted) made `opSlotXY(1)` return slot 1's position again — stacking the
+  // new node EXACTLY on top of the existing one ("Add LUMAKEY lands on the
+  // existing CHROMA"). The new node is still independent (fresh id), it was just
+  // drawn on top. Scan for the first unoccupied slot instead.
+  const occupied = new Set(ops.map((n) => `${n.x},${n.y}`));
+  const maxSlots = OP_COLS_X.length * OP_ROWS;
+  let slot = 0;
+  while (slot < maxSlots) {
+    const p = opSlotXY(slot);
+    if (!occupied.has(`${p.x},${p.y}`)) break;
+    slot++;
+  }
+  const xy = opSlotXY(slot); // all slots full (>8 ops) → wraps to slot 0; acceptable
   return {
     id: nextNodeId(g, 'op'),
     kind,
