@@ -154,6 +154,15 @@ export const BACKDRAFT_CLOCK_BPM_AT_MAX = 120;
 /** FEEDBACK knob ceiling (>1 = runaway trails). */
 export const BACKDRAFT_MAX_FEEDBACK = 2.0;
 
+/** Normalised FEEDBACK (feedback / BACKDRAFT_MAX_FEEDBACK) at which the
+ *  hall-of-mirrors blend begins. Below it the composite is the classic
+ *  additive accumulator (trails/echoes) unchanged; from here up to 1.0
+ *  (max FEEDBACK) it ramps to a PURE recursive hall of mirrors — the live
+ *  source confined to the new ring, the interior pure feedback (mirrors the
+ *  TUNNEL fix in toybox.ts). 0.7 → the top ~third of the slider ramps in;
+ *  the default feedback (0.85 → norm 0.425) stays fully additive. */
+export const BACKDRAFT_HALL_LO = 0.7;
+
 /** Spatial-transform knob ranges (per feedback iteration). A small
  *  deviation compounds over the loop into a strong tunnel/spiral/trail. */
 export const BACKDRAFT_ZOOM_MIN = 0.8;
@@ -295,8 +304,47 @@ void main() {
     1.0 + uLightenKnob * lm - uDarkenKnob * dm,
     0.0, MAX_EFFECT_SCALE);
 
+  // ── ADDITIVE accumulator — the classic trail/echo generator. The live
+  // SOURCE is re-injected at full strength on EVERY pixel, so for the bulk of
+  // the FEEDBACK range you get bright building trails. The drawback at the TOP
+  // of the range: the flat source floods the whole interior, so you never get a
+  // true recursive hall of mirrors (the same problem TUNNEL had before its
+  // ring-gated rewrite).
   vec3 contribution = fb * uFeedback * effectScale;
-  vec3 outc = source + contribution;
+  vec3 additive = source + contribution;
+
+  // ── HALL OF MIRRORS — engaged as FEEDBACK approaches its max. Source enters
+  // ONLY in the new ring (the band the spatial transform vacates — exactly
+  // where the feedback tap reads OUTSIDE the previous frame); the interior is
+  // PURE recursive feedback (previous frame re-sampled through the transform at
+  // near-unity persistence). Zero flat source in the interior → a complete
+  // hall of mirrors at full FEEDBACK. This mirrors toybox.ts's TUNNEL fix
+  // (ring ? src : mirror), generalised to BACKDRAFT's full affine tap.
+  //
+  // GUARD: a hall of mirrors needs a recursive geometry. With the default
+  // IDENTITY transform (zoom 1, no rotate/offset) the tap covers the whole
+  // frame so NO ring exists; squeezing the source out would just decay to
+  // black. So the hall only engages when a spatial transform is present — at
+  // identity we keep the additive accumulator regardless of FEEDBACK.
+  bool hasTransform =
+    abs(uZoom - 1.0) > 1e-3 || abs(uOffX) > 1e-4 ||
+    abs(uOffY) > 1e-4 || abs(uSin) > 1e-4;
+  float fbNorm = clamp(uFeedback / ${BACKDRAFT_MAX_FEEDBACK.toFixed(1)}, 0.0, 1.0);
+  // Ramp the hall in over the TOP of the slider (smoothstep from BACKDRAFT_HALL_LO
+  // to 1.0); full hall exactly at max FEEDBACK, additive untouched below.
+  float hallAmt = hasTransform
+    ? smoothstep(${BACKDRAFT_HALL_LO.toFixed(2)}, 1.0, fbNorm)
+    : 0.0;
+
+  // Ring = the feedback tap left the previous frame.
+  bool inRing = fbUv.x < 0.0 || fbUv.x > 1.0 || fbUv.y < 0.0 || fbUv.y > 1.0;
+  // Persistence < 1 so the nest recedes into depth without blowing out (TUNNEL
+  // uses uDecay for this). Masks (effectScale) still modulate it — darken can
+  // blank a region of the hall, lighten deepens it — but it's clamped < 1.
+  float hallGain = clamp(mix(0.90, 0.985, fbNorm) * effectScale, 0.0, 0.985);
+  vec3 hall = inRing ? source : fb * hallGain;
+
+  vec3 outc = mix(additive, hall, hallAmt);
   outColor = vec4(clamp(outc, 0.0, 1.0), 1.0);
 }`;
 
@@ -402,6 +450,63 @@ export function backdraftEffectScale(
 ): number {
   const raw = 1 + lightenKnob * lightenMask - darkenKnob * darkenMask;
   return Math.max(0, Math.min(maxScale, raw));
+}
+
+/**
+ * Pure CPU mirror of the shader's final composite — the blend between the
+ * classic ADDITIVE accumulator (source + fb·feedback·effectScale) and the
+ * ring-gated recursive HALL OF MIRRORS the top of the FEEDBACK range ramps
+ * into. Exported so the hall math is unit-tested in lock-step with the shader
+ * (the TUNNEL precedent: tunnelTap() in toybox-feedback.ts).
+ *
+ * The hall engages only when a spatial transform is present (`hasTransform`) —
+ * with the identity transform there is no ring to gate the source into, so the
+ * additive accumulator is kept regardless of FEEDBACK (squeezing the source out
+ * would just decay the frame to black). At full FEEDBACK with a transform the
+ * interior is PURE feedback (zero flat source); source enters only in the ring.
+ *
+ * @returns one pixel's output RGB, each channel clamped to [0,1].
+ */
+export function backdraftHallComposite(args: {
+  /** Live source (crossfaded in_a/in_b), already pixelate-snapped. */
+  source: readonly [number, number, number];
+  /** Feedback tap, ALREADY colour-processed (per-channel/luma/chroma gain). */
+  fb: readonly [number, number, number];
+  /** Feedback-tap UV (from backdraftFeedbackUv). Outside [0,1]² ⇒ the ring. */
+  fbUv: { u: number; v: number };
+  /** FEEDBACK knob, 0..maxFeedback. */
+  feedback: number;
+  /** Mask effect scale (from backdraftEffectScale). */
+  effectScale: number;
+  /** Whether any spatial transform is active (zoom≠1 || rotate≠0 || offset≠0). */
+  hasTransform: boolean;
+  maxFeedback?: number;
+  hallLo?: number;
+}): [number, number, number] {
+  const { source, fb, fbUv, feedback, effectScale, hasTransform } = args;
+  const maxFb = args.maxFeedback ?? BACKDRAFT_MAX_FEEDBACK;
+  const hallLo = args.hallLo ?? BACKDRAFT_HALL_LO;
+
+  const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
+  const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
+  // GLSL smoothstep(e0, e1, x).
+  const smoothstep = (e0: number, e1: number, x: number): number => {
+    const t = clamp01((x - e0) / (e1 - e0 || 1e-9));
+    return t * t * (3 - 2 * t);
+  };
+
+  const fbNorm = clamp01(feedback / maxFb);
+  const hallAmt = hasTransform ? smoothstep(hallLo, 1, fbNorm) : 0;
+  const inRing = fbUv.u < 0 || fbUv.u > 1 || fbUv.v < 0 || fbUv.v > 1;
+  const hallGain = Math.max(0, Math.min(0.985, lerp(0.9, 0.985, fbNorm) * effectScale));
+
+  const out: [number, number, number] = [0, 0, 0];
+  for (let i = 0; i < 3; i++) {
+    const additive = source[i] + fb[i] * feedback * effectScale;
+    const hall = inRing ? source[i] : fb[i] * hallGain;
+    out[i] = clamp01(lerp(additive, hall, hallAmt));
+  }
+  return out;
 }
 
 /**
