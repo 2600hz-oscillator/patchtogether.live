@@ -207,7 +207,11 @@ async function setup(page: Page): Promise<void> {
 }
 
 test.describe('TOYBOX node-map contextual menu', () => {
-  test.fixme('per-target menu items are correct + Escape closes', async ({ page }) => {
+  // Re-enabled (shard rebalance #68): now runs in the dedicated, non-sharded
+  // `e2e-video` job at --workers=1, so no co-tenant heavy spec starves the
+  // SwiftShader context — it finishes well inside the 120s budget (the timeout
+  // was co-tenant contention, not a per-test bug; #629/#625).
+  test('per-target menu items are correct + Escape closes', async ({ page }) => {
     test.setTimeout(120_000); // menu + chain-build + patch is heavier than combine-editor; CI WebGL starvation needs the headroom
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -289,7 +293,10 @@ test.describe('TOYBOX node-map contextual menu', () => {
     expect(errors.filter((e) => !e.includes('AudioContext')), 'no console / page errors').toEqual([]);
   });
 
-  test.fixme('HEADLINE: build a 2-op chain, then right-click the final node → Patch to output', async ({ page }) => {
+  // Re-enabled (shard rebalance #68): de-clustered onto the serialized
+  // `e2e-video` job (--workers=1). The heaviest toybox-graph path, but with no
+  // co-tenant on the SwiftShader context it stays inside the 120s budget (#629).
+  test('HEADLINE: build a 2-op chain, then right-click the final node → Patch to output', async ({ page }) => {
     test.setTimeout(120_000); // menu + chain-build + patch is heavier than combine-editor; CI WebGL starvation needs the headroom
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
@@ -350,14 +357,14 @@ test.describe('TOYBOX node-map contextual menu', () => {
     expect(errors.filter((e) => !e.includes('AudioContext')), 'no console / page errors').toEqual([]);
   });
 
-  // QUARANTINE(e2e-flake-purge): the ONLY spec that breaks the gate even with
-  // retries — 5/5 passes failed ALL retries (gate-realistic run 27046147747):
-  // it deterministically exceeds the 120s budget on CI (the heaviest toybox-graph
-  // path). The empty-point geometry fix in this PR's helpers is correct + kept,
-  // but the test is timeout-bound; re-enable with a SwiftShader perf/budget pass.
-  // (Its siblings per-target/HEADLINE flake but retries rescue them — left
-  // enabled per the gate-realistic bar; see .myrobots/e2e-quarantine.md.)
-  test.fixme('canvas menu: Clear node map empties edges, Reset to default restores them', async ({ page }) => {
+  // Re-enabled (shard rebalance #68). This was the ONLY spec that broke the
+  // gate even with retries — 5/5 passes failed ALL retries (run 27046147747):
+  // it deterministically exceeded the 120s budget under shard pile-up (the
+  // heaviest toybox-graph path). The geometry bug was already fixed; the
+  // remaining failure was pure SwiftShader budget exhaustion from co-tenant
+  // heavies. Moving it to the dedicated, non-sharded `e2e-video` job
+  // (--workers=1) removes the co-tenant contention so it finishes inside 120s.
+  test('canvas menu: Clear node map empties edges, Reset to default restores them', async ({ page }) => {
     test.setTimeout(120_000); // menu + chain-build + patch is heavier than combine-editor; CI WebGL starvation needs the headroom
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));

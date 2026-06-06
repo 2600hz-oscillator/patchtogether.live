@@ -31,6 +31,18 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { REGISTRY, type RegistryModule } from './_registry';
 
+// Suppress the VideoEngine's heavy per-frame GL draw for video-domain cards.
+// Set via addInitScript (document_start, every navigation) so it covers
+// spawnPatch's navigation. The card still mounts (handles render); only the
+// SwiftShader-bound per-frame draw passes are skipped. Mirrors the helper in
+// per-module-per-port.spec.ts; kept local because that one isn't exported.
+async function freezeVideoRender(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    (globalThis as unknown as { __videoEngineFreezeRender?: boolean })
+      .__videoEngineFreezeRender = true;
+  });
+}
+
 // Modules whose UI is intentionally lagging the def — skipped with a
 // TODO + a pointer at the dedicated coverage. Each entry MUST cite an
 // alternative spec so we don't lose coverage by hiding the failure.
@@ -107,6 +119,15 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
       // paint their connection handles slowly on CI's software renderer, so the
       // 30s default times out while handles are still mounting. Give headroom.
       test.setTimeout(60_000);
+      // Suppress the heavy per-frame video GL render for the whole iteration
+      // (same mechanism as per-module-per-port's handle sweeps). This spec
+      // asserts only DOM-level handle ids; the engine still mounts the card
+      // (shaders compiled, FBOs allocated → handles render) but skips the
+      // SwiftShader-bound per-frame draw passes that otherwise starve out the
+      // sequential getAttribute loop on a 19-handle card like b3ntb0x. See
+      // VideoEngine.step()'s __videoEngineFreezeRender branch. No-op for
+      // non-video modules (only the video engine reads the flag).
+      if (mod.domain === 'video') await freezeVideoRender(page);
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 

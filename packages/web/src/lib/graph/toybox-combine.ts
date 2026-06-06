@@ -40,6 +40,7 @@ import {
   outputNode,
   nextNodeId,
   defaultOpParams,
+  isStatefulKind,
 } from '$lib/video/toybox-combine-graph';
 
 /** Read a node's combine field as a GRAPH. Returns undefined for absent or
@@ -150,20 +151,47 @@ export function setCombineNodeParam(
 }
 
 /**
- * Reset a FEEDBACK node's ping-pong buffers: bump its `_reset` token param (in
- * place) so the engine clears both float buffers to black on the next render.
- * The token is a monotonically-increasing counter persisted on the node's params
- * (so a reset propagates to every collaborator + survives reload). No-op for a
- * non-feedback / unknown node. The contextual menu's "Reset feedback" action.
+ * Reset a STATEFUL op node's history buffer: bump its `_reset` token param (in
+ * place) so the engine clears its per-node ring / ping-pong float buffers to
+ * black on the next render. Works for FEEDBACK and the frame-history ops
+ * (framedelay/channeldesync/flowsmear/dreammelt/datamosh) — anything
+ * isStatefulKind. The token is a monotonically-increasing counter persisted on
+ * the node's params (so a reset propagates to every collaborator + survives
+ * reload). No-op for a non-stateful / unknown node. The contextual menu's
+ * "Reset feedback" / "Reset history" action.
  */
 export function resetFeedbackNode(nodeId: string, targetNodeId: string): void {
   mutateCombine(nodeId, (g) => {
     const n = findNode(g, targetNodeId);
-    if (!n || n.kind !== 'feedback') return;
+    if (!n || !isStatefulKind(n.kind)) return;
     if (!n.params) n.params = {};
     const prev = typeof n.params._reset === 'number' ? n.params._reset : 0;
     n.params._reset = prev + 1; // set a single key in place (never spread params)
   });
+}
+
+/**
+ * Persist the combine-editor VIEW SIZE (the resizable node-graph panel's
+ * height, in CSS px). Stored on node.data.combineView = { h } IN PLACE (a single
+ * key set under a Yjs transaction — never reassign a live object), mirroring the
+ * setCombineNodePosition cosmetic-persist template. Round-trips through save/load
+ * + preset round-trip + multiplayer exactly like node positions do. Reads back
+ * via node.data.combineView in the card.
+ */
+export function setCombineViewSize(nodeId: string, h: number): void {
+  ydoc.transact(() => {
+    const target = patch.nodes[nodeId];
+    if (!target) return;
+    if (!target.data) (target as { data: Record<string, unknown> }).data = {};
+    const data = target.data as { combineView?: { h?: number } };
+    // Set/replace a single primitive key in place; combineView is a plain
+    // {h:number} (no nested live Y types), so writing the key is safe.
+    if (!data.combineView || typeof data.combineView !== 'object') {
+      (data as { combineView: { h: number } }).combineView = { h };
+    } else {
+      data.combineView.h = h;
+    }
+  }, LOCAL_ORIGIN);
 }
 
 /** Move a node's editor position (in place) — cosmetic, but persisted so the
