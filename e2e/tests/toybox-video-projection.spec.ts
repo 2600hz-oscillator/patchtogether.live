@@ -298,8 +298,12 @@ test.describe('TOYBOX projective surface mode (#45)', () => {
     expect(errors.filter((e) => !e.includes('AudioContext')), 'no console / page errors').toEqual([]);
   });
 
-  test.fixme('the PROJECTION MAP preset loads + renders non-black', async ({ page }) => {
-    test.setTimeout(60_000);
+  // Re-enabled (shard rebalance #68): the projective-surface WebGL render
+  // starves on SwiftShader and overran 60s only under shard co-tenancy. Now on
+  // the dedicated non-sharded `e2e-video` job (--workers=1); bumped to the 120s
+  // budget the sibling toybox specs use for SwiftShader headroom (#629).
+  test('the PROJECTION MAP preset loads + renders non-black', async ({ page }) => {
+    test.setTimeout(120_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
