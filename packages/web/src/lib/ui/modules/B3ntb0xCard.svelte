@@ -31,6 +31,8 @@
   import type { ModuleNode } from '$lib/graph/types';
   import { b3ntb0xDef } from '$lib/video/modules/b3ntb0x';
   import ModuleTitle from './ModuleTitle.svelte';
+  import HdBufferResSelect from '$lib/ui/modules/HdBufferResSelect.svelte';
+  import { BUFFER_RES_SD } from '$lib/video/buffer-res';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -330,6 +332,14 @@
         title="MIRROR Y — fold the top half over the bottom (kaleidoscope)"
         onclick={toggleMirror('mirrorY')}
       >MIRROR Y</button>
+    </div>
+
+    <div class="hd-res-row" data-testid="b3ntb0x-hd-res-row">
+      <HdBufferResSelect
+        moduleId={id}
+        value={node?.params?.bufferRes ?? BUFFER_RES_SD}
+        onchange={set('bufferRes')}
+      />
     </div>
   </PatchPanel>
 

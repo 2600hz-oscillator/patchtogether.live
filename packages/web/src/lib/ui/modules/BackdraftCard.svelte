@@ -25,6 +25,8 @@
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
+  import HdBufferResSelect from '$lib/ui/modules/HdBufferResSelect.svelte';
+  import { BUFFER_RES_SD } from '$lib/video/buffer-res';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -382,6 +384,13 @@
       <Fader value={p('rotate')}   min={BACKDRAFT_ROTATE_MIN} max={BACKDRAFT_ROTATE_MAX} units="°" defaultValue={pdef('rotate')} label="Rot"  curve="linear" onchange={setParam('rotate')}  moduleId={id} paramId="rotate" />
       <Fader value={p('offsetX')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetX')} label="OffX" curve="linear" onchange={setParam('offsetX')} moduleId={id} paramId="offsetX" />
       <Fader value={p('offsetY')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetY')} label="OffY" curve="linear" onchange={setParam('offsetY')} moduleId={id} paramId="offsetY" />
+    </div>
+    <div class="hd-res-row" data-testid="backdraft-hd-res-row">
+      <HdBufferResSelect
+        moduleId={id}
+        value={node?.params?.bufferRes ?? BUFFER_RES_SD}
+        onchange={setParam('bufferRes')}
+      />
     </div>
   {/if}
 </div>

@@ -3454,10 +3454,16 @@
       reconciler = null;
       bootPromise = null;
       // Rebuild at the new res + re-add every node/edge from the live snapshot.
-      // ensureEngine reassigns the `audioCtx` $state, which the audioGate.bind
-      // $effect reacts to — no manual rebinding needed here.
+      // ensureEngine reassigns the `audioCtx` + `reconciler` $state vars; the
+      // audioGate.bind $effect reacts to audioCtx — no manual rebinding needed.
       await ensureEngine();
-      await reconciler?.reconcile();
+      // ensureEngine attached a fresh reconciler; force a reconcile so the new
+      // engine re-adds every node + edge from the live snapshot. (Read through
+      // an untyped indirection so TS doesn't keep the `= null` narrowing above.)
+      const freshReconciler = reconciler as
+        | { reconcile: () => Promise<void> }
+        | null;
+      await freshReconciler?.reconcile();
       trace(`HD rebuild complete (on=${hdStore.on})`);
     } finally {
       hdRebuilding = false;

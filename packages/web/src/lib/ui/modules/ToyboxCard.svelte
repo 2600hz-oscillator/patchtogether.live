@@ -60,6 +60,8 @@
   } from '$lib/video/toybox-content';
   import type { VideoEngine } from '$lib/video/engine';
   import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
+  import HdBufferResSelect from '$lib/ui/modules/HdBufferResSelect.svelte';
+  import { BUFFER_RES_SD } from '$lib/video/buffer-res';
   import {
     canvasToEnginePx,
     makeMouseState,
@@ -370,6 +372,14 @@
 
   const setParam = (pid: string) => (v: number) => {
     setLayerParam(id, activeLayer, pid, v);
+    bumpRev();
+  };
+
+  // Node-level param setter (NOT per-layer) — used by the HD bufferRes dropdown,
+  // which is a single module param sizing the float feedback/history rings.
+  const setNodeParam = (pid: string) => (v: number) => {
+    const t = patch.nodes[id];
+    if (t) t.params[pid] = v;
     bumpRev();
   };
 
@@ -2219,6 +2229,13 @@
         {/each}
       </ul>
     {/if}
+    <div class="hd-res-row" data-testid="toybox-hd-res-row">
+      <HdBufferResSelect
+        moduleId={id}
+        value={node?.params?.bufferRes ?? BUFFER_RES_SD}
+        onchange={setNodeParam('bufferRes')}
+      />
+    </div>
   </div>
 
   <!-- LAYER-INDEX selector: a tab per layer (1-indexed labels, 0-indexed state).

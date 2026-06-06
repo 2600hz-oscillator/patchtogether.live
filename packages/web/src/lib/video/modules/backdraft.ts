@@ -125,6 +125,12 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import {
+  BUFFER_RES_SD,
+  BUFFER_RES_1080,
+  clampBufferResValue,
+  effectiveBufferDims,
+} from '$lib/video/buffer-res';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
 
 /** Assumed engine frame rate for the ms→frames delay mapping. The engine
@@ -780,6 +786,9 @@ export const backdraftDef: VideoModuleDef = {
     { id: 'mirrorYGate', label: 'Mir Y Gate', defaultValue: DEFAULTS.mirrorYGate, min: 0, max: 1, curve: 'linear' },
     // freeze is a hidden VRT/determinism toggle — no card control.
     { id: 'freeze',   label: 'Freeze',   defaultValue: DEFAULTS.freeze,   min: 0,  max: 1,                     curve: 'linear' },
+    // HD per-module heavy-buffer res (0=SD/1=720p/2=1080p). Default SD even in
+    // HD; 720/1080 only honored when global HD is on locally (hd-toggle §4.5).
+    { id: 'bufferRes', label: 'Res',     defaultValue: BUFFER_RES_SD,     min: BUFFER_RES_SD, max: BUFFER_RES_1080, curve: 'linear' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -821,8 +830,19 @@ export const backdraftDef: VideoModuleDef = {
     // and publish ring[head].texture downstream. The feedback tap reads
     // ring[head - delayFrames] — a frame we wrote on a PAST step, so we
     // never sample the texture being written this frame.
+    // Heavy-buffer res: the 31-frame ring (the VRAM-hungry part — and ALSO this
+    // module's output, since we publish ring[head] downstream) is sized at the
+    // per-module bufferRes, clamped to SD when global HD is off locally
+    // (hd-toggle §4.5). Downstream samples by UV, so a bufferRes output upscales
+    // cleanly into the engine-res pipeline. createSizedFbo is optional on the
+    // interface; a test mock without it falls back to engine-res createFbo.
+    const bufferRes = clampBufferResValue(node.params?.bufferRes);
+    const bufDims = effectiveBufferDims(bufferRes, ctx.hdActive ?? false, ctx.res);
+    const makeRingFbo = ctx.createSizedFbo
+      ? () => ctx.createSizedFbo!(bufDims.width, bufDims.height)
+      : () => ctx.createFbo();
     const ring: { fbo: WebGLFramebuffer; texture: WebGLTexture }[] = [];
-    for (let i = 0; i < BACKDRAFT_BUFFER_FRAMES; i++) ring.push(ctx.createFbo());
+    for (let i = 0; i < BACKDRAFT_BUFFER_FRAMES; i++) ring.push(makeRingFbo());
 
     // 1×1 black sentinel for unbound inputs / cold-start tap. Black =
     // no-effect (zero source, zero feedback, zero mask). Same pattern as
@@ -910,7 +930,7 @@ export const backdraftDef: VideoModuleDef = {
 
         const dst = ring[head]!;
         g.bindFramebuffer(g.FRAMEBUFFER, dst.fbo);
-        g.viewport(0, 0, ctx.res.width, ctx.res.height);
+        g.viewport(0, 0, bufDims.width, bufDims.height);
         g.useProgram(program);
 
         g.activeTexture(g.TEXTURE0);
@@ -969,7 +989,7 @@ export const backdraftDef: VideoModuleDef = {
         // FBO width so pixelate≈0 ≈ 1:1, and the shader's `if (uPixelate>0)`
         // gate keeps pixelate=0 bit-identical. At 1 → 1 cell → flat colour.
         g.uniform1f(uPixelate, Math.max(0, Math.min(1, params.pixelate)));
-        g.uniform1f(uRes, ctx.res.width);
+        g.uniform1f(uRes, bufDims.width);
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);
