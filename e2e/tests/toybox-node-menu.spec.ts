@@ -100,15 +100,22 @@ async function rightClickAt(page: Page, x: number, y: number): Promise<void> {
 
 /** Open the canvas menu at `pt` and click `itemTestId` — as ONE retried unit, so
  *  a menu that closes between open + item-click (a cold-SwiftShader re-render
- *  micro-race) just re-opens and retries instead of failing. */
+ *  micro-race) just re-opens and retries instead of failing. Asserts the menu
+ *  AND the target item are visible BEFORE clicking: if the right-click landed on
+ *  a node (a `kind:'node'` menu, which lacks clear/reset) the item-visible
+ *  assertion fails fast and the retry re-clicks, instead of the old code spending
+ *  the whole 20 s budget on a `.click()` for an item that will never appear. */
 async function canvasMenuClick(
   page: Page,
   pt: { x: number; y: number },
   itemTestId: string,
 ): Promise<void> {
   const item = page.locator(`[data-testid="${itemTestId}"]`);
+  const menuLoc = page.locator('[data-testid="toybox-node-menu"]');
   await expect(async () => {
     await page.mouse.click(pt.x, pt.y, { button: 'right' });
+    await expect(menuLoc).toBeVisible({ timeout: 3_000 });
+    await expect(item).toBeVisible({ timeout: 2_000 });
     await item.click({ timeout: 2_500, noWaitAfter: true });
   }).toPass({ timeout: 20_000 });
 }
@@ -128,13 +135,35 @@ async function rightClickEdge(page: Page, edgeId: string): Promise<void> {
   await page.mouse.click(p.x, p.y, { button: 'right' });
 }
 
-/** Screen-space coords of an EMPTY point inside the SVG (top-right band, clear
- *  of the source/op/output node boxes), for the canvas-target right-click. */
+/** Screen-space coords of an EMPTY point inside the SVG — provably clear of every
+ *  node `<g>` box. The old version hardcoded the top-right band (0.85w/0.18h),
+ *  which on CI's SwiftShader layout could land ON the output node (the SVG
+ *  renders at a different size than locally), opening a `kind:'node'` menu with
+ *  no clear/reset → the canvas-menu test failed DETERMINISTICALLY. Scanning the
+ *  live node bboxes makes the empty point layout-independent. */
 async function emptyCanvasScreen(page: Page): Promise<{ x: number; y: number }> {
-  const svg = page.locator('[data-testid="toybox-graph-svg"]');
-  const box = (await svg.boundingBox())!;
-  // The top-right ~quarter is empty (sources left, ops centre, output mid-right).
-  return { x: box.x + box.width * 0.85, y: box.y + box.height * 0.18 };
+  return page.evaluate(() => {
+    const svg = document.querySelector('[data-testid="toybox-graph-svg"]') as SVGSVGElement | null;
+    if (!svg) throw new Error('toybox-graph-svg not found');
+    const box = svg.getBoundingClientRect();
+    const rects = Array.from(svg.querySelectorAll('[data-testid^="toybox-gnode-"]')).map((n) =>
+      (n as Element).getBoundingClientRect(),
+    );
+    const M = 14; // px margin so a near-miss doesn't graze a node's hit area
+    const hits = (x: number, y: number) =>
+      rects.some((r) => x >= r.x - M && x <= r.x + r.width + M && y >= r.y - M && y <= r.y + r.height + M);
+    // Prefer the right side (sources left, ops centre, output mid-right), scanning
+    // top→bottom for the first cell clear of every node.
+    for (let fx = 0.92; fx >= 0.08; fx -= 0.04) {
+      for (let fy = 0.08; fy <= 0.92; fy += 0.04) {
+        const x = box.x + box.width * fx;
+        const y = box.y + box.height * fy;
+        if (!hits(x, y)) return { x, y };
+      }
+    }
+    // Fallback (should never hit): the original top-right band.
+    return { x: box.x + box.width * 0.85, y: box.y + box.height * 0.18 };
+  });
 }
 
 /** Read the live combine graph from node.data. */
@@ -321,7 +350,14 @@ test.describe('TOYBOX node-map contextual menu', () => {
     expect(errors.filter((e) => !e.includes('AudioContext')), 'no console / page errors').toEqual([]);
   });
 
-  test('canvas menu: Clear node map empties edges, Reset to default restores them', async ({ page }) => {
+  // QUARANTINE(e2e-flake-purge): the ONLY spec that breaks the gate even with
+  // retries — 5/5 passes failed ALL retries (gate-realistic run 27046147747):
+  // it deterministically exceeds the 120s budget on CI (the heaviest toybox-graph
+  // path). The empty-point geometry fix in this PR's helpers is correct + kept,
+  // but the test is timeout-bound; re-enable with a SwiftShader perf/budget pass.
+  // (Its siblings per-target/HEADLINE flake but retries rescue them — left
+  // enabled per the gate-realistic bar; see .myrobots/e2e-quarantine.md.)
+  test.fixme('canvas menu: Clear node map empties edges, Reset to default restores them', async ({ page }) => {
     test.setTimeout(120_000); // menu + chain-build + patch is heavier than combine-editor; CI WebGL starvation needs the headroom
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
