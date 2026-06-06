@@ -251,9 +251,14 @@ test('SNES9X: spawns + shows LOAD A ROM dropzone (no autoload ROM)', async ({ pa
   await expect(card).toBeVisible();
   await expect(card).toContainText('SNES9X');
 
-  // The core loads (no ROM) → the dropzone appears within a few seconds.
+  // The WASM core loads (no ROM) → the "LOADING CORE…" overlay clears and the
+  // LOAD A ROM dropzone appears. The cold emcc-compiled core can take several
+  // seconds to instantiate under CI's software renderer (SwiftShader), so wait
+  // up to 20s — same budget the ROM-present boot above uses. (The card polls
+  // extras.isLoaded() every 100ms, so the dropzone appears one poll after the
+  // core resolves; the generous timeout absorbs that + a slow cold compile.)
   const dropzone = card.locator('[data-testid="snes9x-load-rom"]');
-  await expect(dropzone).toBeVisible({ timeout: 10000 });
+  await expect(dropzone).toBeVisible({ timeout: 20000 });
   await expect(dropzone).toContainText('LOAD A ROM');
 
   // clock_in → gate3 ×1 passthrough is deterministic even WITHOUT a ROM

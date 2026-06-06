@@ -3,12 +3,11 @@
 // @collab tests for Rackspace Carl — approach B (Leader-Elected).
 //
 // Covers:
-//   (a) UI: spawn/86 buttons are hidden for anon users on /r/[id]
-//   (b) Spawn writes a session record (active=true) visible to peers
-//   (c) Only one Carl can be active at a time (exclusivity)
-//   (d) Any participant can 86 — eviction clears session + carl-* nodes
-//   (e) Leader election: lowest awareness clientId among candidates wins
-//   (f) Leader migration: when current leader withdraws, the next-lowest
+//   (a) Spawn writes a session record (active=true) visible to peers
+//   (b) Only one Carl can be active at a time (exclusivity)
+//   (c) Any participant can 86 — eviction clears session + carl-* nodes
+//   (d) Leader election: lowest awareness clientId among candidates wins
+//   (e) Leader migration: when current leader withdraws, the next-lowest
 //       takes over.
 //
 // Run only these tests:
@@ -30,17 +29,6 @@ import {
 } from './carl-rackspace.helpers';
 
 test.describe('@collab carl leader-elected', () => {
-  test('UI: anon visitors do not see spawn/86 buttons on /r/[id]', async () => {
-    test.skip(
-      !process.env.CARL_AUTH_FIXTURE,
-      'Requires Clerk test fixture (CARL_AUTH_FIXTURE=1 + test user creds)',
-    );
-    // The carl-spawn-button testid is gated behind `!data.isAnon` in
-    // +page.svelte. Real assertion would visit /r/<id>?invite=<code>
-    // and expect getByTestId('carl-spawn-button') to be hidden.
-    expect(true).toBe(true);
-  });
-
   test('spawn writes an active session record visible to all peers within 2s', async ({
     browser,
   }) => {

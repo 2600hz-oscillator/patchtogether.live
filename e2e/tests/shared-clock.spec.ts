@@ -200,12 +200,32 @@ test.describe('@clock-sync', () => {
     }
   });
 
-  // FIXME: 2-tab clock-sync test, timing-sensitive — the cross-context
-  // resetEpoch broadcast + phase resync occasionally exceeds the 5s
-  // predicate window under the 8-shard split's concurrent dev-server load.
-  // Quarantined; needs a deterministic resync-complete signal to await on
-  // instead of a phase-≈0 poll.
-  test.fixme('resetEpoch on one tab snaps the other tab to phase ≈ 0', async ({ browser }) => {
+  // ROOT-CAUSE FIX (June 2026): this test used to sample each tab's
+  // `__lfoPhase()` (which reads `clock.sharedTimeNow()` per-tab) and poll
+  // for phase ≈ 0 within a 5 s window. But after a resetEpoch the new
+  // epoch == "now in shared-time", so the phase is only WITHIN 0.05 of
+  // zero for the first 100 ms (rate=0.5 Hz → 0.05/0.5 = 0.1 s). The test
+  // was racing a ~100 ms phase window against cross-context Yjs
+  // propagation + a per-tab CDP-jittered "now" sample — under the 8-shard
+  // split's concurrent dev-server load that window routinely closed
+  // before the poll caught it, so the test was effectively measuring
+  // propagation latency, not the snap-to-zero behaviour. It was
+  // quarantined as flaky.
+  //
+  // The deterministic fix mirrors `__lfoPhaseAt` (used by the sibling
+  // test above): instead of polling a fleeting timing window, we (1)
+  // trigger the reset on A and capture the fresh epoch it anchored to,
+  // (2) AWAIT a deterministic resync-complete signal — B's reactive
+  // `epoch_ms` adopting A's new epoch via the Yjs meta-map observer
+  // (this is the "epoch reset propagated" state flag, not a clock-time
+  // poll), then (3) evaluate the LFO phase on BOTH tabs AT the epoch
+  // instant itself. By construction `computeStateAt(epoch - epoch) =
+  // computeStateAt(0)` is phase EXACTLY 0, with zero dependence on
+  // sample-time or propagation latency. We additionally assert the epoch
+  // actually changed, so a regression where resetEpoch no-ops is caught
+  // (a constant-epoch impl would never propagate the new value to B and
+  // the resync-complete await would time out).
+  test('resetEpoch on one tab snaps the other tab to phase ≈ 0', async ({ browser }) => {
     const s = await openTwoContextsWithClock(browser);
     try {
       await s.pageA.evaluate(() => {
@@ -234,35 +254,93 @@ test.describe('@clock-sync', () => {
         )
         .toBe(true);
 
-      // Let phases run forward a bit so a snap-to-zero is meaningful.
-      await s.pageA.waitForTimeout(1500);
-
-      // A triggers reset; both clients should observe a fresh epoch.
-      await s.pageA.evaluate(() => {
-        const w = window as unknown as { __sharedClock?: () => { resetEpoch: () => void } | null };
-        w.__sharedClock?.()?.resetEpoch();
-      });
-
-      // Both clients should see their LFO phase ≈ 0 (within the resync
-      // smoothing window — give it 500 ms slack).
+      // Wait for both clocks to converge + publish an epoch before we
+      // reset — otherwise resetEpoch() bails early (effectiveOffset null).
       await expect
         .poll(
-          async () => {
-            const [a, b] = await Promise.all(
+          async () =>
+            Promise.all(
               [s.pageA, s.pageB].map((p) =>
-                p.evaluate(async () => {
-                  const w = window as unknown as { __lfoPhase: (id: string) => Promise<number | null> };
-                  return await w.__lfoPhase('reset-lfo');
+                p.evaluate(() => {
+                  const w = window as unknown as {
+                    __sharedClock?: () => { snapshot?: { converged?: boolean }; epoch_ms?: number | null } | null;
+                  };
+                  const c = w.__sharedClock?.();
+                  return !!c && !!c.snapshot?.converged && c.epoch_ms !== null;
                 }),
               ),
-            );
-            if (a === null || b === null) return false;
-            const near = (v: number) => v < 0.05 || v > 0.95; // ≈ 0 wrapped
-            return near(a) && near(b);
-          },
-          { timeout: 5000 },
+            ).then((res) => res.every((v) => v)),
+          { timeout: 10_000 },
         )
         .toBe(true);
+
+      // Record the epoch both tabs share BEFORE the reset, so we can prove
+      // the reset actually moved it (a no-op resetEpoch would be a silent
+      // regression the phase-0 assertion alone wouldn't catch).
+      const epochBefore = await s.pageA.evaluate(() => {
+        const w = window as unknown as { __sharedClock?: () => { epoch_ms: number | null } | null };
+        return w.__sharedClock?.()?.epoch_ms ?? null;
+      });
+      expect(epochBefore, 'epoch before reset').not.toBeNull();
+
+      // Let phases run forward a bit so a snap-to-zero is meaningful — the
+      // pre-reset LFO is mid-cycle, so re-anchoring to phase 0 is a real
+      // observable change rather than a no-op.
+      await s.pageA.waitForTimeout(1500);
+
+      // A triggers reset; it anchors a fresh epoch in the Yjs meta map.
+      const newEpoch = await s.pageA.evaluate(() => {
+        const w = window as unknown as {
+          __sharedClock?: () => { resetEpoch: () => void; epoch_ms: number | null } | null;
+        };
+        const c = w.__sharedClock?.();
+        c?.resetEpoch();
+        return c?.epoch_ms ?? null;
+      });
+      expect(newEpoch, 'epoch after reset').not.toBeNull();
+      expect(newEpoch, 'reset must advance the epoch').not.toBe(epochBefore);
+
+      // DETERMINISTIC resync-complete signal: await B's reactive epoch_ms
+      // adopting A's new epoch through the Yjs meta-map observer. This is
+      // the cross-context "the reset propagated" state flag — no clock-time
+      // poll, no phase window. Once it's true on both tabs, the snap is
+      // fully realized on both clients.
+      await expect
+        .poll(
+          async () =>
+            Promise.all(
+              [s.pageA, s.pageB].map((p) =>
+                p.evaluate((expected) => {
+                  const w = window as unknown as { __sharedClock?: () => { epoch_ms: number | null } | null };
+                  return w.__sharedClock?.()?.epoch_ms === expected;
+                }, newEpoch),
+              ),
+            ).then((res) => res.every((v) => v)),
+          { timeout: 10_000 },
+        )
+        .toBe(true);
+
+      // Now evaluate each tab's LFO phase AT the new epoch instant. Both
+      // tabs agree on epoch_ms (just asserted), so each computes
+      // computeStateAt(newEpoch - newEpoch) = computeStateAt(0) = phase 0
+      // deterministically — independent of sample-time, CDP jitter, or
+      // propagation latency.
+      const [a, b] = await Promise.all(
+        [s.pageA, s.pageB].map((p) =>
+          p.evaluate(async (t) => {
+            const w = window as unknown as {
+              __lfoPhaseAt: (id: string, sharedTimeMs: number) => Promise<number | null>;
+            };
+            return await w.__lfoPhaseAt('reset-lfo', t as number);
+          }, newEpoch),
+        ),
+      );
+
+      expect(a, 'phase A at epoch instant').not.toBeNull();
+      expect(b, 'phase B at epoch instant').not.toBeNull();
+      const near = (v: number) => v < 0.05 || v > 0.95; // ≈ 0 wrapped
+      expect(near(a as number), `phase A snapped to 0 (got ${a})`).toBe(true);
+      expect(near(b as number), `phase B snapped to 0 (got ${b})`).toBe(true);
     } finally {
       await s.close();
     }
