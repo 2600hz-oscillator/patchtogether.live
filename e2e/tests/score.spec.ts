@@ -563,11 +563,17 @@ test('score: stop-bar + loop=off stops playback at end of sequence', async ({ pa
   expect(isPlaying).toBe(false);
 });
 
-// TODO(#score-tied-gate): flaky — the tied-note held-gate window search returns
-// the -1 "not found" sentinel intermittently (a scheduling race / off-by-one in
-// the search window, not a renderer issue). Disabled to unblock CI stability;
-// re-enable once the window is widened/realigned + it flake-checks 5× green.
-test.fixme('score: tied notes produce a single sustained envelope (engine-level held gate)', async ({ page }) => {
+// #score-tied-gate (re-enabled, wave-3): the tied-note held-gate read used a FLAT
+// waitForTimeout(400) + a single read, so under CI load the read could land BEFORE
+// the scheduler had emitted the tie-start note A — at which point
+// `tiedGateHoldUntilTick` is still its -1 "not yet armed" sentinel (set to the
+// chain-end tick only inside emitTick for the tied-start role) and `gateValue`
+// is still 0. That's the intermittent -1 the old comment chased; it's a timing
+// race, not an off-by-one in any search window. The fix awaits the held-gate
+// signal deterministically: poll `tiedGateHoldUntilTick` until it arms to 36
+// (the chain-end grid tick), then read the gate — which is guaranteed high once
+// the hold tick is set, since both are written together in the tied-start branch.
+test('score: tied notes produce a single sustained envelope (engine-level held gate)', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
@@ -603,21 +609,31 @@ test.fixme('score: tied notes produce a single sustained envelope (engine-level 
     });
   });
 
-  // Wait long enough for note A to start (a few hundred ms at 120 BPM).
-  await page.waitForTimeout(400);
-  // The engine should have set tiedGateHoldUntilTick to 36 (chain end).
-  const hold = await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __engine?: () => { read: (node: unknown, key: string) => unknown } | null;
-      __patch: { nodes: Record<string, unknown> };
-    };
-    const e = w.__engine?.();
-    if (!e) return -999;
-    const v = e.read(w.__patch.nodes['score'], 'tiedGateHoldUntilTick');
-    return typeof v === 'number' ? v : -999;
-  });
-  expect(hold).toBe(36);
-  // Gate should be high (1) during the tied span.
+  // Await the engine arming the held-gate hold-tick instead of a flat wait. The
+  // tied-start branch sets tiedGateHoldUntilTick = 36 (chain-end grid tick) only
+  // once note A is actually emitted; before that it's the -1 sentinel. Polling
+  // for 36 makes the test deterministic regardless of how long the scheduler
+  // takes to fire A's emitTick under CI load (backed-off intervals so we don't
+  // hammer engine.read while the audio thread catches up).
+  await expect
+    .poll(
+      async () =>
+        await page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __engine?: () => { read: (node: unknown, key: string) => unknown } | null;
+            __patch: { nodes: Record<string, unknown> };
+          };
+          const e = w.__engine?.();
+          if (!e) return -999;
+          const v = e.read(w.__patch.nodes['score'], 'tiedGateHoldUntilTick');
+          return typeof v === 'number' ? v : -999;
+        }),
+      { timeout: 10_000, intervals: [125, 250, 500] },
+    )
+    .toBe(36);
+  // Gate is high (1) during the tied span. The tied-start branch writes
+  // lastEmittedGate = 1 together with the hold tick above, so once the poll
+  // sees 36 the gate read is guaranteed high — no separate race window.
   const gate = await page.evaluate(() => {
     const w = globalThis as unknown as {
       __engine?: () => { read: (node: unknown, key: string) => unknown } | null;
