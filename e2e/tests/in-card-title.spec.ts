@@ -107,12 +107,19 @@ test.describe('@collab', () => {
     // opened) is also fixed below with an explicit bounded editor-visible wait,
     // so a genuine failure surfaces fast rather than burning the full budget.
     //
-    // QUARANTINED from the CI @collab gate: the 5× flake-purge (run
-    // 27061332979) had this test pass only via a Playwright RETRY in 2 of 5
-    // passes. The real gate retries ONCE, so a fragile (needs-retry) test is
-    // one CI hiccup from a hard fail — keep it OUT of the to-be-required
-    // subset until the relay-sync flake is fixed. Runs locally.
-    test.skip(!!process.env.CI, '@collab in-card-title rename-sync FRAGILE in 5x purge (run 27061332979) — needed a retry; quarantined from gate');
+    // Re-enabled (wave-3, #636): runs on the dedicated @collab job (COLLAB_JOB=1,
+    // with DATABASE_URL + the live relay) and the flake-check-3x lane; still
+    // skipped in the sharded matrix where there's no DB/relay, matching the
+    // doom-* @collab specs. The fragility flagged in the 5× purge (needed a
+    // retry) was relay-sync timing — the rename-sync now awaits the UNDERLYING
+    // peer-synced Y.Doc value with a 25s backed-off poll (see below) before
+    // asserting the DOM, and the inline editor is gated by a bounded
+    // toBeVisible (no unbounded fill), so a slow A→relay→B converge no longer
+    // needs a Playwright retry. Proven 3× green at retries=0 via flake-check-3x.
+    test.skip(
+      !!process.env.CI && !process.env.COLLAB_JOB,
+      '@collab in-card-title rename-sync needs the relay + DB — runs on the dedicated COLLAB_JOB lane, not the sharded matrix',
+    );
     test.setTimeout(120_000);
     const rackspaceId = `title-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const ctxA = await browser.newContext();

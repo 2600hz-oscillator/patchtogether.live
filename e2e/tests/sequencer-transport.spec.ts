@@ -747,12 +747,25 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
   test('user A saves slot 1 on a POLYSEQZ; user B sees the chord-step slot data sync', async ({
     browser,
   }) => {
-    // QUARANTINED from the CI @collab gate: the 5× flake-purge (run
-    // 27061332979) had this test pass only via a Playwright RETRY in 1 of 5
-    // passes. The real gate retries ONCE, so a fragile (needs-retry) test is
-    // one CI hiccup from a hard fail — keep it OUT of the to-be-required
-    // subset until the relay-sync flake is fixed. Runs locally.
-    test.skip(!!process.env.CI, '@collab POLYSEQZ slot-sync FRAGILE in 5x purge (run 27061332979) — needed a retry; quarantined from gate');
+    // Re-enabled (wave-3, #636): runs on the dedicated @collab job (COLLAB_JOB=1,
+    // with DATABASE_URL + the live relay) and the flake-check-3x lane; still
+    // skipped in the sharded matrix where there's no DB/relay, matching the
+    // doom-* @collab specs. The fragility flagged in the 5× purge (needed a
+    // retry) was relay-propagation timing on the cross-context slot polls; those
+    // are bounded expect.poll waits (raised to a 10s budget below) so a slow
+    // A→relay→B converge no longer needs a Playwright retry. Proven 3× green at
+    // retries=0 via flake-check-3x.
+    test.skip(
+      !!process.env.CI && !process.env.COLLAB_JOB,
+      '@collab POLYSEQZ slot-sync needs the relay + DB — runs on the dedicated COLLAB_JOB lane, not the sharded matrix',
+    );
+    // FLAKE FIX: the four sequential cross-context relay polls below were 6s
+    // each under the describe's 60s budget — too tight when A→relay→B converge
+    // stalls under CI CPU contention (the cause of the 5× purge retry). Raise
+    // each propagation poll to a 20s backed-off budget (matching the
+    // in-card-title rename-sync fix) and the whole test to 120s so four slow
+    // converges still fit with headroom.
+    test.setTimeout(120_000);
     const s = await openTwoContexts(browser);
     try {
       const NODE = 'polyseqz-collab-1';
@@ -780,7 +793,7 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
         });
       }, NODE);
 
-      // B sees the node.
+      // B sees the node (cross-context relay propagation — backed-off poll).
       await expect
         .poll(
           async () =>
@@ -788,15 +801,20 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
               const w = window as unknown as { __patch: { nodes: Record<string, unknown> } };
               return Object.keys(w.__patch.nodes).includes(id);
             }, NODE),
-          { timeout: 6000 },
+          { timeout: 20_000, intervals: [250, 500, 1000] },
         )
         .toBe(true);
 
-      // A clicks SAVE → slot 1.
+      // A clicks SAVE → slot 1. Gate on the save button being visible first so
+      // a slow card mount in A's OWN DOM surfaces as a clear visible-wait
+      // failure rather than a flaky click on a not-yet-rendered control.
+      await expect(
+        s.pageA.locator(`[data-testid="quicksave-mode-save-${NODE}"]`),
+      ).toBeVisible({ timeout: 10_000 });
       await s.pageA.locator(`[data-testid="quicksave-mode-save-${NODE}"]`).click();
       await s.pageA.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click();
 
-      // B sees slots[1] populated within a few seconds.
+      // B sees slots[1] populated (cross-context relay propagation — backed-off).
       await expect
         .poll(
           async () =>
@@ -809,14 +827,15 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
                 | undefined;
               return slots?.['1'] !== undefined && slots?.['1'] !== null;
             }, NODE),
-          { timeout: 6000 },
+          { timeout: 20_000, intervals: [250, 500, 1000] },
         )
         .toBe(true);
 
-      // B's slot 1 button shows has-data styling.
+      // B's slot 1 button shows has-data styling (local re-render after the
+      // Y.Doc sync above — generous budget for a slow Svelte flush).
       await expect(
         s.pageB.locator(`[data-testid="quicksave-slot-${NODE}-1"]`),
-      ).toHaveAttribute('data-has-data', 'true', { timeout: 6000 });
+      ).toHaveAttribute('data-has-data', 'true', { timeout: 15_000 });
 
       // B mutates the live pattern, then clicks LOAD → slot 1 to restore.
       await s.pageB.evaluate((nodeId) => {
@@ -839,6 +858,7 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
 
       // A should see the chord pattern restored, including quality + inversion
       // + voicing — verifying the Yjs deep-clone path doesn't drop fields.
+      // Cross-context relay propagation (B's LOAD → relay → A) — backed-off poll.
       await expect
         .poll(
           async () =>
@@ -856,7 +876,7 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
                 s2?.on === true && s2.root === 65 && s2.quality === 'sus4' && s2.inversion === 2 && s2.voicing === 'spread'
               );
             }, NODE),
-          { timeout: 6000 },
+          { timeout: 20_000, intervals: [250, 500, 1000] },
         )
         .toBe(true);
     } finally {
