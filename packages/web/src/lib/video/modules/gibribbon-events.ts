@@ -113,13 +113,30 @@ export interface GibTuning {
 /** Default tuning. Chosen so a 1× clock at a musical tempo gives a playable
  *  ~2-3 second approach per obstacle, and the four cv channels map 1:1 to the
  *  four event kinds in declaration order (cv1→loop, cv2→jump, cv3→imp,
- *  cv4→zombie). */
+ *  cv4→zombie).
+ *
+ *  Phase-2 (the bundled GIBRIBBON demo, gibribbon-demo.imp.json) calibration:
+ *  the demo drives cv1..cv4 from SYNESTHESIA copy-A's four SLOW (500 ms)
+ *  envelope-followers, which track the per-band energy of a sequenced
+ *  MACROOSCILLATOR voice. On that patch the four slow envelopes settle in the
+ *  ~0.3..0.9 range on energetic steps. With the old 0.5 threshold the two
+ *  quieter mid/high bands rarely crossed it, so imp/zombie almost never
+ *  spawned and the ribbon read as half-empty. Dropping cvSpawnThreshold to
+ *  0.42 lets all four bands become eligible while staying ABOVE the resting
+ *  floor (so silence still spawns nothing), and minSpawnIntervalTicks=2 caps
+ *  the rate at one spawn per two scroll ticks — a game-appropriate ~1 event
+ *  every 1–3 ticks, never an unplayable wall. Verified deterministically in
+ *  gibribbon-events.test.ts ("Phase-2 demo CV calibration") by feeding the
+ *  synthetic 4-slow-envelope streams this rhythm produces through
+ *  clockTick/chooseSpawn and asserting the rate + that all four kinds appear.
+ *  See the matching SYNESTHESIA copy-A master/band-gain lift in the envelope
+ *  generator (scripts/build-gibribbon-demo-envelope.mjs). */
 export const GIB_TUNING: GibTuning = {
   scrollPerClock: 0.18,
   scrollPerSecond: 0.22,
   hitWindow: 0.09,
   missPos: -0.12,
-  cvSpawnThreshold: 0.5,
+  cvSpawnThreshold: 0.42,
   minSpawnIntervalTicks: 2,
   superStreak: 8,
   healStreak: 4,
