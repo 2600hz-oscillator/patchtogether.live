@@ -88,22 +88,23 @@ describe('FOXY module def shape', () => {
   });
 
   it('carries every WAVECEL VCO param (tune/fine/morph/spread/fold) with matching ranges', () => {
-    // FOXY mirrors WAVECEL's VCO/timbre controls only. The per-voice ADSR params
-    // (attack/decay/sustain/release) are deliberately NOT surfaced — FOXY's
-    // internal WAVECEL is a single-voice VCO with no external gate, so its env
-    // stays at the ~pass-through default (gated off). Scope: standalone WAVECEL.
-    const ADSR = new Set(['attack', 'decay', 'sustain', 'release']);
+    // FOXY mirrors WAVECEL's VCO/timbre controls only. The per-voice ENVELOPE /
+    // VCA params (attack/decay/sustain/release + base_vol) are deliberately NOT
+    // surfaced — FOXY's internal WAVECEL is a single-voice VCO with no external
+    // gate, so it free-runs as a raw VCO at base_vol's default (1 = full) with the
+    // env idle (~pass-through). Scope: standalone WAVECEL.
+    const ENV_VCA = new Set(['attack', 'decay', 'sustain', 'release', 'base_vol']);
     const fParams = new Map(foxyDef.params.map((p) => [p.id, p]));
     for (const wp of wavecelDef.params) {
-      if (ADSR.has(wp.id)) continue;
+      if (ENV_VCA.has(wp.id)) continue;
       const fp = fParams.get(wp.id);
       expect(fp, `param ${wp.id}`).toBeDefined();
       expect(fp!.min).toBe(wp.min);
       expect(fp!.max).toBe(wp.max);
       expect(fp!.defaultValue).toBe(wp.defaultValue);
     }
-    // Sanity: FOXY does NOT expose the per-voice ADSR params.
-    for (const id of ADSR) {
+    // Sanity: FOXY does NOT expose the per-voice envelope / VCA params.
+    for (const id of ENV_VCA) {
       expect(fParams.has(id), `FOXY should NOT expose ${id}`).toBe(false);
     }
   });
