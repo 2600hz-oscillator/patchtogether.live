@@ -75,7 +75,6 @@
     inPortsFor,
     hasOutPort,
     isCombineGraph,
-    isKeyerKind,
     makeDefaultCombineGraph,
     combineDisplayNames,
     edgesTouching,
@@ -101,8 +100,6 @@
   } from '$lib/graph/toybox-combine';
   import { FEEDBACK_MODES } from '$lib/video/toybox-feedback';
   import ToyboxNodeMenu from './ToyboxNodeMenu.svelte';
-  import ToyboxKeyerConfig from './ToyboxKeyerConfig.svelte';
-  import ToyboxFeedbackConfig from './ToyboxFeedbackConfig.svelte';
   import {
     CV_PORT_IDS,
     listCvTargets,
@@ -836,6 +833,26 @@
     return graph.nodes.find((n) => n.id === gid);
   }
 
+  /** The live combine graph's nodes (post-mutation): reads the LIVE patch proxy
+   *  so it reflects an in-place node splice the INSTANT it lands (the `graph`
+   *  derived lags until its reactive trigger re-runs). Used by the delete
+   *  auto-select so it picks from the graph AFTER the deletion, not before. */
+  function liveNodes(): ToyboxGraphNode[] {
+    const c = readLiveCombine();
+    return isCombineGraph(c) ? (c as ToyboxCombineGraph).nodes : graph.nodes;
+  }
+  /** True if a node id still exists in the live graph. */
+  function liveNodeExists(gid: string): boolean {
+    return liveNodes().some((n) => n.id === gid);
+  }
+  /** The first OP node (not source/output) in the live graph, or null. The
+   *  delete auto-select target so the bottom control pane keeps showing a node's
+   *  controls after a delete. */
+  function firstOpNodeId(): string | null {
+    const n = liveNodes().find((x) => x.kind !== 'source' && x.kind !== 'output');
+    return n?.id ?? null;
+  }
+
   /** Layout: SOURCE col on the left, ops in the middle (their own x/y), OUTPUT
    *  on the right. We honour each node's stored x/y for ops; source/output get a
    *  fixed column so they're always findable. */
@@ -936,9 +953,18 @@
   }
 
   function onDeleteNode(gid: string): void {
+    const wasSelected = selectedNodeId === gid;
     deleteCombineNode(id, gid);
-    if (selectedNodeId === gid) selectedNodeId = null;
-    bumpRev(); // #60: refresh node names + CV lists
+    bumpRev(); // #60: refresh node names + CV lists (also re-runs `graph`/liveNodes)
+    // AUTO-SELECT after a delete so the bottom control pane keeps showing a
+    // node's controls (an empty pane after a delete reads as "the controls just
+    // vanished"). Re-target only when the DELETED node was the selection (or the
+    // current selection is now stale) → the first remaining OP node, else null
+    // (no op nodes left → the pane hides, as intended). An unrelated delete
+    // leaves the selection untouched.
+    if (wasSelected || (selectedNodeId !== null && !liveNodeExists(selectedNodeId))) {
+      selectedNodeId = firstOpNodeId();
+    }
     pruneOrphanRoutes(); // #60: unmap any CV route to the deleted node
     clearConnectMsg();
   }
@@ -1036,79 +1062,14 @@
     toyboxMenu = null;
   }
 
-  // ── KEYER CONFIG popover (LUMAKEY / CHROMAKEY "Configure keyer…") ──
-  interface KeyerConfigState {
-    open: boolean;
-    x: number;
-    y: number;
-    nodeId: string;
-  }
-  let keyerConfig = $state<KeyerConfigState | null>(null);
-
-  /** Open the keyer-config popover for a node (no-op for non-keyer nodes). */
-  function doConfigureKeyer(gid: string, x: number, y: number): void {
-    const n = nodeById(gid);
-    if (!n || !isKeyerKind(n.kind)) return;
-    keyerConfig = { open: true, x, y, nodeId: gid };
-  }
-
-  function closeKeyerConfig(): void {
-    keyerConfig = null;
-  }
-
-  /** The live node the keyer popover edits (re-derived so its knobs/colour
-   *  reflect external edits + a retype/delete closes it). */
-  let keyerNode = $derived(keyerConfig ? nodeById(keyerConfig.nodeId) : undefined);
-  // Close the popover if its node disappears or stops being a keyer.
-  $effect(() => {
-    if (keyerConfig && (!keyerNode || !isKeyerKind(keyerNode.kind))) {
-      keyerConfig = null;
-    }
-  });
-
-  // ── FEEDBACK CONFIG popover (FEEDBACK "Configure feedback…") ──
-  // Same shape as the keyer popover: an explicit, discoverable right-click entry
-  // for picking the feedback MODE + its relevant params (the per-node knob strip
-  // still exposes everything when the node is selected). MIDI/CONTROLSURFACE
-  // sync rides the `combine:<nodeId>:<param>` paramId convention in the Knob.
-  interface FeedbackConfigState {
-    open: boolean;
-    x: number;
-    y: number;
-    nodeId: string;
-  }
-  let feedbackConfig = $state<FeedbackConfigState | null>(null);
-
-  /** Open the feedback-config popover for a node (no-op for non-feedback nodes). */
-  function doConfigureFeedback(gid: string, x: number, y: number): void {
-    const n = nodeById(gid);
-    if (!n || n.kind !== 'feedback') return;
-    feedbackConfig = { open: true, x, y, nodeId: gid };
-  }
-
-  function closeFeedbackConfig(): void {
-    feedbackConfig = null;
-  }
-
-  // A fresh SNAPSHOT (not the live proxy) keyed on layersRev: the popover swaps
-  // its visible knob set when the MODE changes, which is an IN-PLACE Yjs param
-  // mutation — a $derived returning the same proxy reference would not re-run the
-  // child's deriveds (the #60 stale-derived-on-syncedStore gotcha). Spreading
-  // params into a new object + reading layersRev makes the prop reference change
-  // on every edit so the popover re-renders. (The side strip dodged this by
-  // showing ALL feedback knobs; the popover filters per mode, so it must react.)
-  let feedbackConfigNode = $derived.by<ToyboxGraphNode | undefined>(() => {
-    void layersRev;
-    if (!feedbackConfig) return undefined;
-    const n = nodeById(feedbackConfig.nodeId);
-    return n ? { id: n.id, kind: n.kind, x: n.x, y: n.y, params: { ...(n.params ?? {}) } } : undefined;
-  });
-  // Close the popover if its node disappears or stops being a feedback node.
-  $effect(() => {
-    if (feedbackConfig && (!feedbackConfigNode || feedbackConfigNode.kind !== 'feedback')) {
-      feedbackConfig = null;
-    }
-  });
+  // NOTE: the per-op CONTROL surface is the card's always-visible bottom pane
+  // (select a node → its knobs/selectors show — see selectedNode + the
+  // .combine-params block below). The old right-click "Configure keyer…" /
+  // "Configure feedback…" popovers were removed in favour of that single,
+  // consistent surface so EVERY node type is edited the same way (the keyer
+  // colour is now its keyR/keyG/keyB knobs; the feedback MODE is the bottom
+  // pane's <select>). setFeedbackMode / doResetFeedback below still serve the
+  // bottom pane + the structural Reset menu action.
 
   /** Surface a connect/patch rejection through the existing connectMsg banner. */
   function showConnectError(error: string | undefined): void {
@@ -1204,7 +1165,25 @@
     bumpRev(); // refresh the side-strip / keyer-popover live readback
   };
 
-  let selectedNode = $derived(selectedNodeId ? nodeById(selectedNodeId) : undefined);
+  // A fresh SNAPSHOT (not the live proxy) keyed on layersRev + node — the SAME
+  // trap the feedback-config popover already dodged. The bottom-pane control
+  // strip below feeds `combineParamVal(selectedNode, p.id)` into each Knob's
+  // `value` prop. A param edit mutates node.params IN PLACE, so `graph`'s derived
+  // returns the SAME proxy reference (=== unchanged) and Svelte short-circuits —
+  // `selectedNode` (and thus the Knob's value) would NEVER re-read the write. On
+  // pointer-up the Knob syncs its visible tick back to the stale `value` prop, so
+  // the knob SNAPS BACK to the old value ("knobs don't stick when turned"). By
+  // reading both reactive triggers + returning a fresh object whose reference
+  // changes on every bump, the value prop re-reads the live write and the knob
+  // sticks. (Spread params into a new object so a per-key read is fresh too.)
+  let selectedNode = $derived.by<ToyboxGraphNode | undefined>(() => {
+    void layersRev; void node;
+    if (!selectedNodeId) return undefined;
+    const n = nodeById(selectedNodeId);
+    return n
+      ? { id: n.id, kind: n.kind, x: n.x, y: n.y, layer: n.layer, params: { ...(n.params ?? {}) } }
+      : undefined;
+  });
   let selectedParams = $derived(
     selectedNode && selectedNode.kind !== 'source' && selectedNode.kind !== 'output'
       ? OP_PARAMS[selectedNode.kind as ToyboxOpKind] ?? []
@@ -2699,10 +2678,17 @@
         </svg>
       </div>
 
-      <!-- Selected op node → its params in a side strip. -->
+      <!-- Selected op node → its params in a side strip. EVERY `selectedNode.`
+           deref below is OPTIONAL-CHAINED: when the selected node is DELETED,
+           `selectedNode` becomes undefined and Svelte re-evaluates this block's
+           child expressions (incl. each Knob's `paramId`/`value`) ONE more time
+           during teardown — a raw `selectedNode.id` there threw "reading 'id' of
+           undefined" and crashed the whole card (the reported delete crash). The
+           `selId` const + the guards make teardown a harmless no-op. -->
       {#if selectedNode && selectedParams.length > 0}
-        <div class="combine-params" data-testid="toybox-combine-params" data-node={selectedNode.id}>
-          <div class="combine-params-title">{selectedNode.kind.toUpperCase()} · {selectedNode.id}</div>
+        {@const selId = selectedNode?.id ?? ''}
+        <div class="combine-params" data-testid="toybox-combine-params" data-node={selId}>
+          <div class="combine-params-title" data-testid="toybox-combine-params-title">{(selectedNode?.kind ?? '').toUpperCase()} · {selectedNode ? nodeLabel(selectedNode) : ''}</div>
           <!-- FEEDBACK: a discrete MODE selector (12 labelled modes). The other
                floats auto-render as knobs below (the `mode` knob is filtered out
                via selectedKnobParams). -->
@@ -2713,7 +2699,7 @@
                 class="fb-mode-select"
                 data-testid="toybox-feedback-mode-select"
                 value={selectedFeedbackMode}
-                onchange={(e) => setFeedbackMode(selectedNode!.id, Number((e.currentTarget as HTMLSelectElement).value))}
+                onchange={(e) => { if (selId) setFeedbackMode(selId, Number((e.currentTarget as HTMLSelectElement).value)); }}
               >
                 {#each FEEDBACK_MODES as m (m.id)}
                   <option value={m.id}>{m.id}. {m.label}</option>
@@ -2723,13 +2709,17 @@
           {/if}
           <div class="knob-grid">
             {#each selectedKnobParams as p (p.id)}
-              <Knob
-                value={combineParamVal(selectedNode, p.id)}
-                min={p.min} max={p.max} defaultValue={p.default}
-                label={p.label} curve="linear"
-                onchange={setCombineParam(selectedNode.id, p.id)}
-                moduleId={id} paramId={`combine:${selectedNode.id}:${p.id}`}
-              />
+              <!-- Wrapper carries a per-param testid so e2e can target + drive
+                   THIS node's THIS param's knob (the controls-persistence test). -->
+              <span class="combine-knob-cell" data-testid={`toybox-combine-knob-${p.id}`} data-param={p.id}>
+                <Knob
+                  value={selectedNode ? combineParamVal(selectedNode, p.id) : p.default}
+                  min={p.min} max={p.max} defaultValue={p.default}
+                  label={p.label} curve="linear"
+                  onchange={setCombineParam(selId, p.id)}
+                  moduleId={id} paramId={`combine:${selId}:${p.id}`}
+                />
+              </span>
             {/each}
           </div>
         </div>
@@ -2747,8 +2737,6 @@
     dir={toyboxMenu?.dir}
     port={toyboxMenu?.port}
     onpatchtooutput={() => { if (toyboxMenu?.nodeId) doPatchToOutput(toyboxMenu.nodeId); }}
-    onconfigure={() => { if (toyboxMenu?.nodeId) doConfigureKeyer(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
-    onconfigurefeedback={() => { if (toyboxMenu?.nodeId) doConfigureFeedback(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
     onresetfeedback={() => { if (toyboxMenu?.nodeId) doResetFeedback(toyboxMenu.nodeId); }}
     ondisconnect={() => { if (toyboxMenu?.nodeId) doDisconnect(toyboxMenu.nodeId); }}
     onduplicate={() => { if (toyboxMenu?.nodeId) doDuplicate(toyboxMenu.nodeId); }}
@@ -2760,31 +2748,6 @@
     onclear={doClearNodeMap}
     onreset={doResetToDefault}
     onclose={closeToyboxMenu}
-  />
-
-  <!-- Keyer-config popover (LUMAKEY / CHROMAKEY "Configure keyer…"). -->
-  <ToyboxKeyerConfig
-    open={!!keyerConfig?.open && !!keyerNode}
-    x={keyerConfig?.x ?? 0}
-    y={keyerConfig?.y ?? 0}
-    node={keyerNode}
-    displayName={keyerConfig ? nodeLabel(keyerNode ?? ({ id: keyerConfig.nodeId } as ToyboxGraphNode)) : ''}
-    onparam={(pid, v) => { if (keyerConfig) { setCombineNodeParam(id, keyerConfig.nodeId, pid, v); bumpRev(); } }}
-    moduleId={id}
-    onclose={closeKeyerConfig}
-  />
-
-  <!-- Feedback-config popover (FEEDBACK "Configure feedback…"). -->
-  <ToyboxFeedbackConfig
-    open={!!feedbackConfig?.open && !!feedbackConfigNode}
-    x={feedbackConfig?.x ?? 0}
-    y={feedbackConfig?.y ?? 0}
-    node={feedbackConfigNode}
-    displayName={feedbackConfig ? nodeLabel(feedbackConfigNode ?? ({ id: feedbackConfig.nodeId } as ToyboxGraphNode)) : ''}
-    onmode={(m) => { if (feedbackConfig) { setFeedbackMode(feedbackConfig.nodeId, m); bumpRev(); } }}
-    onparam={(pid, v) => { if (feedbackConfig) { setCombineNodeParam(id, feedbackConfig.nodeId, pid, v); bumpRev(); } }}
-    moduleId={id}
-    onclose={closeFeedbackConfig}
   />
   </div><!-- /toybox-col-center -->
 
