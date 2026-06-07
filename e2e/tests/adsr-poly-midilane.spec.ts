@@ -6,11 +6,11 @@
 //   - DX7 master-ADSR swell: a gated note through the master VCA carries audio.
 //   - CUBE/WAVECEL mono TRIGGER gates the per-voice envelope (audio opens when
 //     the TRIGGER fires).
-//   - back-compat: an UNPATCHED TRIGGER (never gated) keeps CUBE/WAVECEL droning
-//     (env skipped → legacy free-run).
-//   - the everGated reset-on-reload case: a TRIGGER patched but NEVER gated (the
-//     sequencer parked, isPlaying=0) still drones — proving gated-amp mode does
-//     not engage on a patched-but-low gate.
+//   - back-compat: a TRULY-UNPATCHED TRIGGER (no poly either) keeps CUBE/WAVECEL
+//     droning as a continuous raw VCO (env idle, base_vol=1 → byte-identical).
+//   - no-stray-drone (Bug 1): a TRIGGER patched but NEVER gated (sequencer parked,
+//     isPlaying=0) is SILENT — patching poly/trigger puts the module into GATED
+//     mode, so a never-gated voice does NOT fall through to the legacy drone.
 //   - a poly chord (POLYSEQZ) into `poly` drives the per-voice envelopes → the
 //     stereo OUT carries audio.
 //
@@ -146,7 +146,7 @@ test('cube back-compat: an unpatched TRIGGER keeps CUBE droning (env skipped)', 
   expect(errors, 'no console / page errors').toEqual([]);
 });
 
-test('cube everGated: a TRIGGER patched but NEVER gated still drones (no gated-amp engage)', async ({ page }) => {
+test('cube no-stray-drone: a TRIGGER patched but NEVER gated is SILENT (gated, not droning)', async ({ page }) => {
   test.setTimeout(timeoutFor(1));
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -156,8 +156,11 @@ test('cube everGated: a TRIGGER patched but NEVER gated still drones (no gated-a
   await page.waitForLoadState('networkidle');
 
   // TRIGGER patched from a sequencer that is NOT playing (gate stays 0) → the
-  // gate is patched but NEVER goes high, so everGated stays false and CUBE keeps
-  // droning. This is the patched-but-never-gated / reset-on-reload case (R3).
+  // gate is PATCHED but NEVER goes high. Per the no-stray-drone fix, a patched
+  // TRIGGER puts CUBE into GATED mode: a voice sounds only while gated-or-
+  // releasing, so a never-gated TRIGGER is SILENT (it does NOT fall through to
+  // the legacy drone — that was the bug). The continuous raw VCO is only the
+  // truly-unpatched case (covered by the back-compat test above).
   await spawnPatch(
     page,
     [
@@ -172,7 +175,7 @@ test('cube everGated: a TRIGGER patched but NEVER gated still drones (no gated-a
   );
 
   const { peak } = await readScopePeakOverWindow(page, 'sc', CAPTURE_MS);
-  expect(peak, 'CUBE drones while a patched TRIGGER has never gone high').toBeGreaterThan(0.01);
+  expect(peak, 'a patched-but-never-gated TRIGGER must keep CUBE SILENT (no stray drone)').toBeLessThan(0.01);
   expect(errors, 'no console / page errors').toEqual([]);
 });
 

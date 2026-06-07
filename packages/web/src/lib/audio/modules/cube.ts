@@ -243,6 +243,12 @@ export const cubeDef: AudioModuleDef = {
     { id: 'decay',   label: 'D', defaultValue: 0.1,   min: 0.001, max: 5, curve: 'log', units: 's' },
     { id: 'sustain', label: 'S', defaultValue: 1,     min: 0,     max: 1, curve: 'linear' },
     { id: 'release', label: 'R', defaultValue: 0.005, min: 0.001, max: 5, curve: 'log', units: 's' },
+    // BASE VOL — per-voice VCA FLOOR the ADSR rides on top of: gain =
+    // base + (1-base)*env per ACTIVE voice. Sits next to the ADSR. Default 1 →
+    // gain=1, the env does nothing → the raw-VCO drone (nothing patched) is
+    // byte-identical (back-compat / unchanged ART+VRT baselines). 0 → pure ADSR
+    // (silent between notes); 0.5 → floors at 0.5, rises to 1.0 as the env peaks.
+    { id: 'base_vol', label: 'Base', defaultValue: 1, min: 0, max: 1, curve: 'linear' },
     // Toggles (discrete). wrap: 0=silent-outside, 1=mirror-fold. material:
     // 0=SMOOTH (continuous density), 1=HARD (binary solid).
     { id: 'wrap',     label: 'Wrap',     defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
@@ -316,12 +322,38 @@ export const cubeDef: AudioModuleDef = {
     silence.connect(workletNode, 0, 0);
 
     // Per-voice-ADSR: a 0-offset keep-alive on the TRIGGER input (input 2) so it
-    // schedules when unpatched (0 gate = "no note" → the env multiply is skipped,
-    // legacy drone). Feeds ONLY the trigger input, never pitch.
+    // schedules when unpatched (0 gate = "no note"). Feeds ONLY the trigger input,
+    // never pitch. NOTE: because this ConstantSource is always connected, the
+    // worklet CANNOT tell from bus presence whether the TRIGGER is actually
+    // patched — so connectedness is pushed explicitly via the params below.
     const trigSilence = ctx.createConstantSource();
     trigSilence.offset.value = 0;
     trigSilence.start();
     trigSilence.connect(workletNode, 0, 2);
+
+    // ── CONNECTEDNESS (no-stray-drone fix) ──
+    // The GATING MODE (gated vs. continuous raw VCO) is decided by whether the
+    // `poly` / `trigger` ports are PATCHED — read from the live patch EDGES (the
+    // engine's source of truth), NOT from bus presence (the trigger keep-alive
+    // above masks it). Push the two flags as k-rate worklet params; refreshed on
+    // init + every poll so connecting / disconnecting a cable flips the mode.
+    const pPolyConn = params.get('poly_connected');
+    const pTrigConn = params.get('trigger_connected');
+    let lastPolyConn = -1;
+    let lastTrigConn = -1;
+    function pushConnectedness(): void {
+      let poly = 0;
+      let trig = 0;
+      for (const id in livePatch.edges) {
+        const e = livePatch.edges[id];
+        if (!e || e.target.nodeId !== node.id) continue;
+        if (e.target.portId === 'poly') poly = 1;
+        else if (e.target.portId === 'trigger') trig = 1;
+      }
+      if (poly !== lastPolyConn) { lastPolyConn = poly; pPolyConn?.setValueAtTime(poly, ctx.currentTime); }
+      if (trig !== lastTrigConn) { lastTrigConn = trig; pTrigConn?.setValueAtTime(trig, ctx.currentTime); }
+    }
+    pushConnectedness();
 
     // ---------------- per-slot wavetable resolution + poll ----------------
     const resolvedSigs: Record<CubeSlot, string> = { floor: '', wall: '', ceiling: '' };
@@ -431,6 +463,7 @@ export const cubeDef: AudioModuleDef = {
     function poll(): void {
       if (!alive) return;
       resolveAndPostAll();
+      pushConnectedness();
       pollTimer = setTimeout(poll, POLL_MS);
     }
     pollTimer = setTimeout(poll, POLL_MS);

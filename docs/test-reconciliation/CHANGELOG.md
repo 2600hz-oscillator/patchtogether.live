@@ -66,6 +66,83 @@ row.
 
 ## Entries
 
+### 2026-06-07 — behavioral reconciliation #3 (subtle-CV class head: adsr + peaks, via per-port threshold calibration)
+
+Third PR of the behavioral reconciliation leg. Re-enables the first two of the
+subtle-CV threshold class (`adsr` + `peaks`) and adds the per-port/per-module
+calibrated delta-threshold mechanism that mechanism the rest of the class will
+use. **behavioral disabled 61 → 59; reconcilable 9 → 7.**
+
+| block | kind | total | disabled | %disabled |
+|---|---|---:|---:|---:|
+| unit | raw | 6043 | 2 | 0.0% |
+| e2e | raw | 907 | 1 | 0.1% |
+| art | raw | 463 | 0 | 0.0% |
+| vrt | parametrized | 152 | 0 | 0.0% |
+| behavioral | parametrized | 99 | 59 | 59.6% |
+| @collab | raw (e2e subset) | 108 | 0 | 0.0% |
+
+The **behavioral disabled 59** splits into:
+
+| bucket | count | meaning |
+|---|---:|---|
+| **intentional** (architecture-gated) | 52 | unchanged — hardware / MIDI / ROM-gameplay / file-input / sinks / MI state machines / animated-video / heavy-mount / per-channel multiplexers. |
+| **reconcilable** (the fixable backlog) | 7 | `buggles` / `backdraft` / `treeohvox` / `mixmstrs` (this batch's deferrals, now with MEASURED notes) + `aquaTank` / `moog911a` / `moog960` (prior batches). **The number to drive down.** |
+
+**Harness improvement** — a per-port / per-module calibrated delta threshold:
+`computeDelta()` keyed on a single set of UNIVERSAL floors, which is a
+compromise — too coarse for a subtle CV effect on a quiet output, too loose for
+a noisy output whose own jitter trips a metric. The new
+`BEHAVIORAL_DELTA_THRESHOLDS` map + `thresholdsFor()` (wired into `computeDelta`)
+lets a specific port (or whole module) override ONLY the floors that matter for
+it, sized to that port's measured unperturbed-jitter floor, **without** touching
+the universal floor every other module relies on. It's empty today (adsr + peaks
+clear the universal floors with margin) — it's the systemic-fix infrastructure
+the BEHAVIORAL_SWEEP_EXEMPT header TODO calls for, ready for the next batch.
+
+What changed:
+- **Re-enabled `adsr`.** The `decay` + `release` CV scalers were near-threshold
+  because the default high `sustain=0.7` left the decay barely dropping the level
+  (Δ dipped to ~1.05-1.65× the floor). A `BEHAVIORAL_PARAMS.adsr` boost
+  (`decay=0.1`/`release=0.2`/`sustain=0.2`) makes the DECAY phase a big 1→0.2
+  excursion the log-scaled CV swings across two decades (**Δrange ≈ 0.20-0.29 RMS,
+  ~10-14× the 0.02 floor**), and a per-port
+  `BEHAVIORAL_PORT_PARAMS['adsr.release']={sustain:0.6}` gives the RELEASE tail a
+  tall start so its CV swings robustly (**Δμrms ≈ 0.033-0.054, ~3-5× the 0.01
+  floor**). The `gate` input is the dominant silent→~0.8 pass; `attack`/`sustain`/
+  `retrig` remain per-port-exempt. **Verified 4× stable.**
+- **Re-enabled `peaks`.** It IS a dual-INDEPENDENT-channel module (Émilie Gillet's
+  dual Peaks): `gate0`/`mode0_cv`/`k1_0_cv`/`k2_0_cv` → worklet `out0` (the
+  observed output), `gate1`/`mode1_cv`/`k1_1_cv`/`k2_1_cv` → the SEPARATE `out1`.
+  The channel-0 ports clear `out0` with a big margin (`mode0_cv` switches the
+  free-running LFO→a triggered drum so **Δzc ≈ 600 / Δcent ≈ 3300 Hz**;
+  `k1_0_cv`/`k2_0_cv` widen `out0`'s per-snapshot RMS range **Δrange ≈ 0.6/0.8**;
+  `gate0` silences the LFO with a triggered drum **Δμrms ≈ 0.34**). The four
+  channel-1 ports are now per-port-exempt as independent-output (cf.
+  `synesthesia.b_in` / `moog921a.width_cv`) — they were only "passing" on the
+  chaotic LFO's crest-metric noise. **Verified 3× stable.**
+- **Deferred (kept exempt, tagged reconcilable) with MEASURED notes:**
+  - `buggles` — self-noise: `external_clock` gives a clean delta but `clock_cv`
+    lands AT the 0.01 floor and `chaos_cv` reads a genuine ~0 delta (Δμrms ≈
+    0.004) in the 1.5 s window — the rate/chaos change is buried in the `smooth`
+    output's own slow-random-walk noise. A longer window + a per-channel
+    `clock`-gate sink (where the rate change is clean) re-enables.
+  - `backdraft` — animated-video variance-floor class (cf. `bentbox`): the `out`
+    luma-variance baseline ~7700 with a ±4000-6000 per-frame range swamps every
+    input (Δμvar runs 37→1750 with NO correlation to the driven port). A longer
+    settle window + spawn-once-perturb (cf. `backdraft.spec.ts`) re-enables.
+  - `treeohvox` — noisy spectrum: the 4-note driver sequence into `pitch_in`
+    swings the observed centroid baseline ±600-2800 Hz, hiding the real CV
+    scalers under the sequence's own jitter (`accent_cv` is a genuine 0-delta). A
+    held single-note driver + a per-port-calibrated cent/RMS floor re-enables.
+  - `mixmstrs` — 77 drivable inputs → 154 spawns ≈ 28 min for one test (blows the
+    wall-clock, foxy class) + each per-channel CV scales ONE channel into the
+    summed `masterL`. A per-channel sink driver + a representative-subset run
+    under budget re-enables.
+
+Verified `adsr` 4× + `peaks` 3× locally clean, with healthy stable margins (not
+near-threshold).
+
 ### 2026-06-07 — behavioral reconciliation #2 (Moog router batch + honest exempt split)
 
 Second PR of the behavioral reconciliation leg. Re-enables two more Moog

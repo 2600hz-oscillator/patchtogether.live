@@ -68,7 +68,12 @@ class FakeConstantSourceNode {
   offset = makeParam(0);
   start = vi.fn();
   stop = vi.fn();
-  connect = vi.fn();
+  /** Records (target, srcChannel, dstChannel) so the poly-sender's per-lane
+   *  merger wiring (pitch→even input, gate→odd input) is recoverable. */
+  connections: Array<{ target: unknown; srcCh?: number; dstCh?: number }> = [];
+  connect = vi.fn((target: unknown, srcCh?: number, dstCh?: number) => {
+    this.connections.push({ target, srcCh, dstCh });
+  });
   disconnect = vi.fn();
 }
 
@@ -82,15 +87,48 @@ interface FakeAudioCtx {
   sampleRate: number;
   createConstantSource: () => FakeConstantSourceNode;
   createChannelMerger: (n: number) => FakeChannelMergerNode;
+  /** All ConstantSources created by this ctx (mono outs + the 10 poly-sender
+   *  sources), in creation order — so tests can find the poly gate sources. */
+  __allSources: FakeConstantSourceNode[];
+  __mergers: FakeChannelMergerNode[];
 }
 
 function makeMockCtx(): FakeAudioCtx {
+  const __allSources: FakeConstantSourceNode[] = [];
+  const __mergers: FakeChannelMergerNode[] = [];
   return {
     currentTime: 0,
     sampleRate: 48000,
-    createConstantSource: () => new FakeConstantSourceNode(),
-    createChannelMerger: () => new FakeChannelMergerNode(),
+    createConstantSource: () => {
+      const s = new FakeConstantSourceNode();
+      __allSources.push(s);
+      return s;
+    },
+    createChannelMerger: () => {
+      const m = new FakeChannelMergerNode();
+      __mergers.push(m);
+      return m;
+    },
+    __allSources,
+    __mergers,
   };
+}
+
+/** Find the poly-sender's gate ConstantSources: those connected to the poly
+ *  merger at an ODD input channel (gate lanes are at merger inputs 1,3,5,7,9).
+ *  Returned in lane order (input 1 → lane 0, …). */
+function polyGateSources(ctx: FakeAudioCtx): FakeConstantSourceNode[] {
+  const merger = ctx.__mergers[0];
+  const found: Array<{ lane: number; src: FakeConstantSourceNode }> = [];
+  for (const s of ctx.__allSources) {
+    for (const c of s.connections) {
+      if (c.target === merger && typeof c.dstCh === 'number' && c.dstCh % 2 === 1) {
+        found.push({ lane: (c.dstCh - 1) / 2, src: s });
+      }
+    }
+  }
+  found.sort((a, b) => a.lane - b.lane);
+  return found.map((f) => f.src);
 }
 
 function makeNode(data?: Record<string, unknown>): ModuleNode {
@@ -391,13 +429,9 @@ describe('midiLaneDef.factory — MIDI demux → ConstantSourceNode automation',
   });
 
   it('poly mode: a triad lights three poly voices (mono gate stays low)', async () => {
-    const { input, handle } = await setupConnected({ mode: 'poly' });
+    const { input, ctx, handle } = await setupConnected({ mode: 'poly' });
     try {
       const polyMerger = handle.outputs.get('poly')!.node;
-      // The poly output's source node is the channel merger (mocked); we can't
-      // read per-lane offsets through it directly, so assert via the mono gate
-      // staying low (poly mode routes voices to `poly`, not the mono gate) AND
-      // that no crash occurred dispatching a chord.
       const gateSrc = handle.outputs.get('gate')!.node as unknown as FakeConstantSourceNode;
       expect(polyMerger).toBeDefined();
 
@@ -405,8 +439,44 @@ describe('midiLaneDef.factory — MIDI demux → ConstantSourceNode automation',
       input.fire({ data: new Uint8Array([0x90, 64, 100]), timeStamp: 0 });
       input.fire({ data: new Uint8Array([0x90, 67, 100]), timeStamp: 0 });
 
+      // The poly bus raises 3 lane gates (the triad).
+      const gates = polyGateSources(ctx);
+      expect(gates.length).toBe(5);
+      const high = gates.filter((g) => g.offset.events.some((e) => e.kind === 'set' && e.value === 1));
+      expect(high.length, 'three poly lane gates raised for the triad').toBe(3);
+
       // In poly mode the MONO gate output is never raised (chord drives poly).
       expect(gateSrc.offset.events.some((e) => e.kind === 'set' && e.value === 1)).toBe(false);
+    } finally {
+      restoreMidi();
+    }
+  });
+
+  it('REGRESSION (#674): the POLY port carries the chord in DEFAULT MONO mode too', async () => {
+    // The "POLYHELM produces no audio" bug: a user wires MIDI LANE.poly → a
+    // poly synth and plays notes, but the lane is in its DEFAULT mono mode, so
+    // the poly bus fed silent gates → the synth never received a note-on. The
+    // fix makes the dedicated POLY port ALWAYS live (mode only governs the MONO
+    // outputs). This is the unit-level guard; the live worklet chain is covered
+    // by e2e/tests/polyhelm-poly-chain.spec.ts.
+    const { input, ctx, handle } = await setupConnected(); // no data → DEFAULT mono mode
+    try {
+      const gateSrc = handle.outputs.get('gate')!.node as unknown as FakeConstantSourceNode;
+
+      input.fire({ data: new Uint8Array([0x90, 60, 100]), timeStamp: 0 }); // C
+      input.fire({ data: new Uint8Array([0x90, 64, 100]), timeStamp: 0 }); // E
+      input.fire({ data: new Uint8Array([0x90, 67, 100]), timeStamp: 0 }); // G
+
+      // The POLY port raises all three lane gates EVEN in mono mode (the bug
+      // was that these stayed at 0, so the downstream poly synth was silent).
+      const gates = polyGateSources(ctx);
+      expect(gates.length).toBe(5);
+      const high = gates.filter((g) => g.offset.events.some((e) => e.kind === 'set' && e.value === 1));
+      expect(high.length, 'poly lane gates raised in DEFAULT mono mode').toBe(3);
+
+      // Mono mode STILL drives the MONO gate too (the mono synth path is intact
+      // — the poly port being live is additive, not a replacement).
+      expect(gateSrc.offset.events.some((e) => e.kind === 'set' && e.value === 1)).toBe(true);
     } finally {
       restoreMidi();
     }
