@@ -16,7 +16,7 @@ describe('videoboxDef — module def shape', () => {
   it('registers under type "videobox" with the right metadata', () => {
     expect(videoboxDef.type).toBe('videobox');
     expect(videoboxDef.domain).toBe('video');
-    expect(videoboxDef.label).toBe('VIDEOBOX');
+    expect(videoboxDef.label).toBe('videobox');
     expect(videoboxDef.category).toBe('sources');
     expect(videoboxDef.schemaVersion).toBe(1);
   });

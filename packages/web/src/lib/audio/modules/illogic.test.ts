@@ -103,7 +103,7 @@ describe('illogicMath: logic truth tables', () => {
 describe('illogicDef: module-def shape', () => {
   it('declares type=illogic, label=ILLOGIC, category=utilities', () => {
     expect(illogicDef.type).toBe('illogic');
-    expect(illogicDef.label).toBe('ILLOGIC');
+    expect(illogicDef.label).toBe('illogic');
     expect(illogicDef.category).toBe('utilities');
     expect(illogicDef.domain).toBe('audio');
   });

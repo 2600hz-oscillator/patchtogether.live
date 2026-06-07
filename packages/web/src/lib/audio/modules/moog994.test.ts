@@ -21,13 +21,13 @@ import type { ModuleNode } from '$lib/graph/types';
 describe('moog994Def: module def shape', () => {
   it('declares type=moog994, label="994 Mult", category=utilities, schemaVersion=1', () => {
     expect(moog994Def.type).toBe('moog994');
-    expect(moog994Def.label).toBe('994 Mult');
+    expect(moog994Def.label).toBe('994 mult');
     expect(moog994Def.category).toBe('utilities');
     expect(moog994Def.schemaVersion).toBe(1);
   });
 
-  it('classifies under the Ports → moogafakkin palette bucket', () => {
-    expect(moog994Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('classifies under the Moog System 35/55 Clones palette bucket', () => {
+    expect(moog994Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
   });
 
   it('exposes the two group inputs: a_in + b_in (both audio)', () => {

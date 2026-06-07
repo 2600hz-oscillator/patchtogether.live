@@ -24,7 +24,7 @@ import {
 describe('numpadPlus: module def shape', () => {
   it('declares the expected type/label/domain/category', () => {
     expect(numpadPlusDef.type).toBe('numpadPlus');
-    expect(numpadPlusDef.label).toBe('NUMPAD+');
+    expect(numpadPlusDef.label).toBe('numpad+');
     expect(numpadPlusDef.domain).toBe('audio');
     expect(numpadPlusDef.category).toBe('sources');
   });

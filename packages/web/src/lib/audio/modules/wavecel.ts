@@ -108,7 +108,7 @@ export const wavecelDef: AudioModuleDef = {
   type: 'wavecel',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
-  label: 'WAVECEL',
+  label: 'wavecel',
   category: 'sources',
   schemaVersion: 1,
   stereoPairs: [['out_l', 'out_r']],

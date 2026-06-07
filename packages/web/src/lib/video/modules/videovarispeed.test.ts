@@ -14,7 +14,7 @@ describe('videoVarispeedDef — module def shape', () => {
   it('registers under type "videovarispeed" with the right metadata', () => {
     expect(videoVarispeedDef.type).toBe('videovarispeed');
     expect(videoVarispeedDef.domain).toBe('video');
-    expect(videoVarispeedDef.label).toBe('VIDEOVARISPEED');
+    expect(videoVarispeedDef.label).toBe('videovarispeed');
     expect(videoVarispeedDef.category).toBe('sources');
     expect(videoVarispeedDef.schemaVersion).toBe(1);
   });

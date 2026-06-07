@@ -61,10 +61,10 @@ export function cutoffToHz(norm: number): number {
 
 export const moog923Def: AudioModuleDef = {
   type: 'moog923',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   card: 'Moog923Card',
   domain: 'audio',
-  label: '923 Filters / Noise Source',
+  label: '923 filters / noise source',
   category: 'filter',
   schemaVersion: 1,
 

@@ -116,7 +116,7 @@ export const attenumixDef: AudioModuleDef = {
   type: 'attenumix',
   palette: { top: 'Audio modules', sub: 'Mixing' },
   domain: 'audio',
-  label: 'ATTENUMIX',
+  label: 'attenumix',
   category: 'utilities',
   schemaVersion: 1,
 

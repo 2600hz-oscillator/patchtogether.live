@@ -32,10 +32,10 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const moog994Def: AudioModuleDef = {
   type: 'moog994',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   card: 'Moog994Card',
   domain: 'audio',
-  label: '994 Mult',
+  label: '994 mult',
   category: 'utilities',
   schemaVersion: 1,
 

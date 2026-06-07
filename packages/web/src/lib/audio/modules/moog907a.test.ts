@@ -34,13 +34,13 @@ const ALL_PARAM_IDS = ['hp', ...BAND_IDS, 'lp'];
 describe('moog907aDef: module def shape', () => {
   it('declares type=moog907a, label, category=filters, schemaVersion=1', () => {
     expect(moog907aDef.type).toBe('moog907a');
-    expect(moog907aDef.label).toBe('907A Fixed Filter Bank');
+    expect(moog907aDef.label).toBe('907a fixed filter bank');
     expect(moog907aDef.category).toBe('filters');
     expect(moog907aDef.schemaVersion).toBe(1);
   });
 
-  it('lives in the Ports → moogafakkin palette bucket and uses the Moog907aCard', () => {
-    expect(moog907aDef.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog907aCard', () => {
+    expect(moog907aDef.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
     expect(moog907aDef.card).toBe('Moog907aCard');
   });
 

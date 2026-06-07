@@ -31,7 +31,7 @@ describe('midiOutBuddyDef: module shape', () => {
     expect(midiOutBuddyDef.type).toBe('midiOutBuddy');
     expect(midiOutBuddyDef.type).not.toBe('midiCvBuddy');
     expect(midiOutBuddyDef.category).toBe('output');
-    expect(midiOutBuddyDef.label).toBe('MIDI CV BUDDY OUT');
+    expect(midiOutBuddyDef.label).toBe('midi cv buddy out');
   });
 
   it('has no AudioParam-style knobs (channel + device live on node.data)', () => {

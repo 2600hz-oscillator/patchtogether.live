@@ -44,7 +44,7 @@ function sineStereo(n: number, freq: number): { L: Float32Array; R: Float32Array
 describe('cloudsDef shape', () => {
   it('declares type=clouds, label=CLOUDS, category=effects', () => {
     expect(cloudsDef.type).toBe('clouds');
-    expect(cloudsDef.label).toBe('CLOUDS');
+    expect(cloudsDef.label).toBe('clouds');
     expect(cloudsDef.category).toBe('effects');
   });
 

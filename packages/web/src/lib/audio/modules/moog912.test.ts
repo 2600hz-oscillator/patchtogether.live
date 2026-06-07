@@ -77,13 +77,13 @@ describe('moog912 DSP helpers', () => {
 describe('moog912Def: module def shape', () => {
   it('declares type=moog912, label="912 Envelope Follower", category=modulation, schemaVersion=1', () => {
     expect(moog912Def.type).toBe('moog912');
-    expect(moog912Def.label).toBe('912 Envelope Follower');
+    expect(moog912Def.label).toBe('912 envelope follower');
     expect(moog912Def.category).toBe('modulation');
     expect(moog912Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Ports → moogafakkin palette bucket and uses the Moog912Card', () => {
-    expect(moog912Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog912Card', () => {
+    expect(moog912Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
     expect(moog912Def.card).toBe('Moog912Card');
     expect(moog912Def.domain).toBe('audio');
   });

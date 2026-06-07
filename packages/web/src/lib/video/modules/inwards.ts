@@ -79,7 +79,7 @@ export const inwardsDef: VideoModuleDef = {
   type: 'inwards',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
-  label: 'INWARDS',
+  label: 'inwards',
   category: 'sources',
   schemaVersion: 1,
   inputs: [

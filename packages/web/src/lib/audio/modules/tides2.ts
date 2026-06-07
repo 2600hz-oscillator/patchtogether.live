@@ -141,9 +141,9 @@ export const tides2Math = {
 
 export const tides2Def: AudioModuleDef = {
   type: 'tides2',
-  palette: { top: 'Ports', sub: 'Mutable' },
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: 'TIDES2',
+  label: 'tides2',
   category: 'modulation',
   schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },

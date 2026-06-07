@@ -36,7 +36,7 @@ describe('shapegenDef — module shape', () => {
   it('is a video-domain module called SHAPEGEN', () => {
     expect(shapegenDef.type).toBe('shapegen');
     expect(shapegenDef.domain).toBe('video');
-    expect(shapegenDef.label).toBe('SHAPEGEN');
+    expect(shapegenDef.label).toBe('shapegen');
     expect(shapegenDef.schemaVersion).toBe(1);
   });
 

@@ -146,7 +146,7 @@ export const snes9xDef: VideoModuleDef = {
   type: 'snes9x',
   palette: { top: 'Games', sub: 'Emulators' },
   domain: 'video',
-  label: 'SNES9X',
+  label: 'snes9x',
   // "games" category — same value the SM64 audio def uses. The palette
   // bucketing in module-categories.ts places it in the games group.
   category: 'games',

@@ -24,7 +24,7 @@ describe('CAMERA — module def shape', () => {
     expect(def).toBeDefined();
     if (!def) return;
     expect(def.domain).toBe('video');
-    expect(def.label).toBe('CAMERA');
+    expect(def.label).toBe('camera');
     expect(def.category).toBe('sources');
     expect(def.schemaVersion).toBe(1);
   });

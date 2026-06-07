@@ -77,7 +77,7 @@ export const timelordeDef: AudioModuleDef = {
   type: 'timelorde',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'TIMELORDE',
+  label: 'timelorde',
   category: 'modulation',
   schemaVersion: 2,
   maxInstances: 1,

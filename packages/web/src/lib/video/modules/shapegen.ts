@@ -146,7 +146,7 @@ export const shapegenDef: VideoModuleDef = {
   type: 'shapegen',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'SHAPEGEN',
+  label: 'shapegen',
   category: 'video-effects',
   schemaVersion: 1,
   inputs: [

@@ -199,7 +199,7 @@ export const shimmershineDef: AudioModuleDef = {
   type: 'shimmershine',
   palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: 'SHIMMERSHINE',
+  label: 'shimmershine',
   category: 'effects',
   schemaVersion: 1,
   stereoPairs: [['in_l', 'in_r'], ['out_l', 'out_r']],

@@ -87,7 +87,7 @@ export const peakstateDef: VideoModuleDef = {
   type: 'peakstate',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
-  label: 'PEAKSTATE',
+  label: 'peakstate',
   // No 'video-effects' category in this registry (verified at write
   // time); 'sources' is the closest fit — PEAKSTATE generates a video
   // signal from internal state, with no input ports.

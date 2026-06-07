@@ -17,7 +17,7 @@ describe('fourPlexVidDef — module def shape', () => {
   it('registers under type "4plexvid" with the right metadata', () => {
     expect(fourPlexVidDef.type).toBe('4plexvid');
     expect(fourPlexVidDef.domain).toBe('video');
-    expect(fourPlexVidDef.label).toBe('4PLEXVID');
+    expect(fourPlexVidDef.label).toBe('4plexvid');
     expect(fourPlexVidDef.category).toBe('utilities');
     expect(fourPlexVidDef.schemaVersion).toBe(1);
   });

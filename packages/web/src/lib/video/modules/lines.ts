@@ -101,7 +101,7 @@ export const linesDef: VideoModuleDef = {
   type: 'lines',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
-  label: 'LINES',
+  label: 'lines',
   category: 'sources',
   schemaVersion: 1,
   inputs: [

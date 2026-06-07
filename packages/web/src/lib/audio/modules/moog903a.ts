@@ -39,10 +39,10 @@ const BUFFER_SECONDS = 2;
 
 export const moog903aDef: AudioModuleDef = {
   type: 'moog903a',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   card: 'Moog903aCard',
   domain: 'audio',
-  label: '903A Random Signal Generator',
+  label: '903a random signal generator',
   category: 'sources',
   schemaVersion: 1,
 

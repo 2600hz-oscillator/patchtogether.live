@@ -172,7 +172,7 @@ export const gibribbonDef: VideoModuleDef = {
   // alongside NIBBLES / PONG / FROGGER / MODTRIS.
   palette: { top: 'Games', sub: 'Arcade' },
   domain: 'video',
-  label: 'GIBRIBBON',
+  label: 'gibribbon',
   category: 'sources',
   schemaVersion: 1,
   inputs: [

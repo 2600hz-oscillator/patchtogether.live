@@ -19,9 +19,9 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const livecodeDef: AudioModuleDef = {
   type: 'livecode',
-  palette: { top: 'Hybrid', sub: 'Hybrid' },
+  palette: { top: 'livecode', sub: 'livecode' },
   domain: 'audio',
-  label: 'LIVECODE',
+  label: 'livecode',
   category: 'utilities',
   schemaVersion: 1,
 

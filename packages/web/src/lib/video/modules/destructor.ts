@@ -88,7 +88,7 @@ export const destructorDef: VideoModuleDef = {
   type: 'destructor',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'DESTRUCTOR',
+  label: 'destructor',
   category: 'effects',
   schemaVersion: 1,
   inputs: [

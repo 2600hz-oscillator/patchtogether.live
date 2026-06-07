@@ -104,7 +104,7 @@ export const pictureboxDef: VideoModuleDef = {
   type: 'picturebox',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
-  label: 'PICTUREBOX',
+  label: 'picturebox',
   category: 'sources',
   schemaVersion: 2,
   // Workspace cap (8 per rack). Mirrored from

@@ -38,14 +38,14 @@ beforeAll(() => {
 describe('moog911aDef — module def shape', () => {
   it('declares type=moog911a, label, modulation category, schemaVersion=1', () => {
     expect(moog911aDef.type).toBe('moog911a');
-    expect(moog911aDef.label).toBe('911A Trig Delay');
+    expect(moog911aDef.label).toBe('911a trig delay');
     expect(moog911aDef.category).toBe('modulation');
     expect(moog911aDef.schemaVersion).toBe(1);
     expect(moog911aDef.domain).toBe('audio');
   });
 
-  it('lives in the Ports → moogafakkin palette bucket and uses the Moog911aCard', () => {
-    expect(moog911aDef.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog911aCard', () => {
+    expect(moog911aDef.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
     expect(moog911aDef.card).toBe('Moog911aCard');
   });
 

@@ -30,7 +30,7 @@ export const cadillacDef: MetaModuleDef = {
   type: 'cadillac',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'meta',
-  label: 'CADILLAC',
+  label: 'cadillac',
   category: 'tools',
   inputs: [],
   outputs: [],

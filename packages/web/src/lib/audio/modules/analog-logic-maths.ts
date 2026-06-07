@@ -89,7 +89,7 @@ export const analogLogicMathsDef: AudioModuleDef = {
   type: 'analogLogicMaths',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'ANALOGLOGICMATHS',
+  label: 'analoglogicmaths',
   category: 'utilities',
   schemaVersion: 1,
 

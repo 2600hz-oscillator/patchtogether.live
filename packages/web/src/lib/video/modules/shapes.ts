@@ -115,7 +115,7 @@ export const shapesDef: VideoModuleDef = {
   type: 'shapes',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
-  label: 'SHAPES',
+  label: 'shapes',
   category: 'sources',
   schemaVersion: 1,
   inputs: [

@@ -27,7 +27,7 @@ import { KITS, KIT_COUNT, DEFAULT_KIT_INDEX, kitByIndex, kitById, allSampleUrls 
 describe('hydrogen module def shape', () => {
   it('declares type/label/domain/category', () => {
     expect(hydrogenDef.type).toBe('hydrogen');
-    expect(hydrogenDef.label).toBe('HYDROGEN');
+    expect(hydrogenDef.label).toBe('hydrogen');
     expect(hydrogenDef.domain).toBe('audio');
     expect(hydrogenDef.category).toBe('sources');
   });

@@ -228,7 +228,7 @@ export const writeseqDef: AudioModuleDef = {
   type: 'writeseq',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'WRITESEQ',
+  label: 'writeseq',
   category: 'modulation',
   schemaVersion: 1,
 

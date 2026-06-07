@@ -39,7 +39,7 @@ export const filterDef: AudioModuleDef = {
   type: 'filter',
   palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: 'Filter',
+  label: 'filter',
   category: 'filters',
   schemaVersion: 1,
   inputs: [

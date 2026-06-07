@@ -490,11 +490,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # REQUIRED: large static game bundles (e.g. static/sm64js/sm64js.bundle.js,
-          # ~12 MB) are stored in git-LFS. Without lfs:true the build bakes the LFS
-          # *pointer* (text starting `version https://git-lfs...`) into the preview
-          # artifact; loading it as a <script> throws "Unexpected identifier 'https'"
-          # and breaks the sm64 e2e shards. Every other job already checks out lfs:true.
+          # REQUIRED: large LFS-tracked static assets (game/WASM bundles, etc.)
+          # must be materialized at build time. Without lfs:true the build bakes
+          # the LFS *pointer* (text starting `version https://git-lfs...`) into
+          # the preview artifact; loading it as a <script> throws "Unexpected
+          # identifier 'https'". Every other job already checks out lfs:true.
           lfs: true
 
       - name: Install Flox
@@ -673,12 +673,11 @@ jobs:
       # No LFS here: this shard runs the FUNCTIONAL e2e suite (the @collab /
       # @capacity / behavioral lanes are grep-inverted out) and serves the
       # PREBUILT web-preview-dist artifact (downloaded below), which already
-      # bakes in the LFS-tracked SM64 bundle (build-web checks out lfs:true).
+      # bakes in any LFS-tracked static bundles (build-web checks out lfs:true).
       # No functional spec reads an LFS-tracked path directly: the ART .f32 /
-      # VRT .png baselines belong to the art/vrt jobs, the SM64 IDB fixture
-      # (e2e/fixtures/sm64-idb.bin) is user-provided + gitignored so sm64.spec
-      # skips when absent, and the runtime wavetables under static/wavetables/
-      # are ordinary blobs (not LFS). So skip the LFS payload entirely.
+      # VRT .png baselines belong to the art/vrt jobs, and the runtime
+      # wavetables under static/wavetables/ are ordinary blobs (not LFS). So
+      # skip the LFS payload entirely.
       - name: Checkout (no LFS — functional e2e serves the prebuilt bundle)
         uses: actions/checkout@v4
         with:

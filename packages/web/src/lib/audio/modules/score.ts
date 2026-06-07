@@ -103,9 +103,9 @@ function readScoreData(nodeId: string): ScoreData {
 
 export const scoreDef: AudioModuleDef = {
   type: 'score',
-  palette: { top: 'Audio modules', sub: 'Utility' },
+  palette: { top: 'Audio modules', sub: 'sequencers' },
   domain: 'audio',
-  label: 'Score',
+  label: 'score',
   category: 'modulation',
   schemaVersion: 2,
   migrate(data, fromVersion) {

@@ -24,7 +24,7 @@ export const groupDef: MetaModuleDef = {
   type: 'group',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'meta',
-  label: 'GROUP',
+  label: 'group',
   category: 'tools',
   inputs: [],
   outputs: [],

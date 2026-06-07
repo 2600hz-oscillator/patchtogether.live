@@ -13,7 +13,7 @@
 //   - noise — free-running white/pink/brown
 //   - dx7 — pure-TS FM synth; gate-ping triggers a tone
 //   - macrooscillator — Plaits-style; trig + default params yield a tone
-//   - wavviz, swolevco — extra video-out VCOs (audio side only here)
+//   - swolevco — extra video-out VCO (audio side only here)
 //
 // We deliberately don't test multiple shape outputs on the analog VCO
 // (saw/square/triangle/sine) — that's covered by ART. Here we just
@@ -50,8 +50,6 @@ const SOURCES: SourceCase[] = [
   { type: 'analogVco',     outputPort: 'sine',  params: { tune: 0, fine: 0, pmAmount: 0, fmAmount: 0 } },
   // Wavetable VCO same — 0V pitch -> default frequency.
   { type: 'wavetableVco',  outputPort: 'audio', params: { tune: 0, fine: 0, wavePos: 0.5, fmAmount: 0, pmAmount: 0 } },
-  // WAVVIZ wavetable VCO with built-in wavefolder; 0V pitch -> default.
-  { type: 'wavviz',        outputPort: 'audio', params: { tune: 0, fine: 0, wavePos: 0.5, fmAmount: 0, foldAmount: 0 } },
   // SWOLEVCO (Buchla 259-style); `out` is the primary; 0V pitch -> default.
   { type: 'swolevco',      outputPort: 'out',   params: { tune: 0, fine: 0, timbre: 0.3, symmetry: 0.5, fold: 0, ratio: 0 } },
   // DX7 + MACROOSCILLATOR need a gate/trig to sound. Drive with a fast

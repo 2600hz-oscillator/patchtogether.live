@@ -72,7 +72,7 @@ export const videoOutDef: VideoModuleDef = {
   type: 'videoOut',
   palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
-  label: 'OUTPUT',
+  label: 'output',
   category: 'output',
   schemaVersion: 1,
   inputs: [

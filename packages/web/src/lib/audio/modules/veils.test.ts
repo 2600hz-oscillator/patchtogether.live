@@ -194,7 +194,7 @@ describe('veilsMath.softClip: tanh saturation onset', () => {
 describe('veilsDef: module-def shape', () => {
   it('declares type=veils, label=VEILS, category=utilities, domain=audio', () => {
     expect(veilsDef.type).toBe('veils');
-    expect(veilsDef.label).toBe('VEILS');
+    expect(veilsDef.label).toBe('veils');
     expect(veilsDef.category).toBe('utilities');
     expect(veilsDef.domain).toBe('audio');
   });

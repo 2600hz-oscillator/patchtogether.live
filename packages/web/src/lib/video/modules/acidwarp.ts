@@ -119,7 +119,7 @@ export const acidwarpDef: VideoModuleDef = {
   type: 'acidwarp',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
-  label: 'ACIDWARP',
+  label: 'acidwarp',
   category: 'sources',
   schemaVersion: 1,
   inputs: [

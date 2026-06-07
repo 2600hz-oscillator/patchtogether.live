@@ -10,8 +10,8 @@
 // `moogladder` opcodes, NOT the CC-BY-SA musicdsp.org "Moog VCF" model,
 // NOT any Moog schematic. Per .myrobots/MOOG/LICENSING.md (permissive /
 // own-code DSP only). It deliberately mirrors the repo's existing TPT
-// idiom — lib/resofilter-dsp.ts (Cytomic/Zavalishin SVF) + blades.ts —
-// so all the VA filters in the codebase stay consistent.
+// idiom — lib/resofilter-dsp.ts (Cytomic/Zavalishin SVF) — so all the
+// VA filters in the codebase stay consistent.
 //
 // Lives in `lib/` so the dist build (packages/dsp/scripts/build.mjs) does
 // NOT treat it as a worklet entry (that script reads top-level .ts files

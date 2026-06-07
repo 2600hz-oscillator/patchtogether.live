@@ -81,7 +81,7 @@ export const unityscalemathematikDef: AudioModuleDef = {
   type: 'unityscalemathematik',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'UNITYSCALEMATHEMATIK',
+  label: 'unityscalemathematik',
   category: 'utilities',
   schemaVersion: 1,
 

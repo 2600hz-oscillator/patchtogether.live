@@ -17,7 +17,7 @@ describe('snes9xDef — module shape', () => {
   it('is a single-instance games video module', () => {
     expect(snes9xDef.type).toBe('snes9x');
     expect(snes9xDef.domain).toBe('video');
-    expect(snes9xDef.label).toBe('SNES9X');
+    expect(snes9xDef.label).toBe('snes9x');
     expect(snes9xDef.category).toBe('games');
     expect(snes9xDef.maxInstances).toBe(1);
   });

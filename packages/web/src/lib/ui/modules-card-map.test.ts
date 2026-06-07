@@ -31,7 +31,7 @@ import { buildNodeTypes, conventionalCardName, type CardDefLike } from './module
 const EXPECTED_NODE_TYPES = [
   '4plexvid', 'acidwarp', 'adsr', 'analogLogicMaths', 'analogVco', 'aquaTank',
   'atlantisCatalyst', 'attenumix', 'audioIn', 'audioOut', 'backdraft', 'bentbox',
-  'blades', 'bluebox', 'buggles', 'callsine', 'cameraInput', 'cartesian',
+  'bluebox', 'buggles', 'callsine', 'cameraInput', 'cartesian',
   'charlottesEchos', 'chowkick', 'chroma', 'chromakey', 'clockedRunner', 'clouds',
   'cloudseed', 'cocoadelay', 'colorizer', 'cube', 'delay', 'destroy', 'destructor',
   'doom', 'drummergirl', 'drumseqz', 'dx7', 'elements', 'feedback', 'filter',
@@ -44,11 +44,21 @@ const EXPECTED_NODE_TYPES = [
   'qbert', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'rings',
   'riotgirls', 'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
   'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar',
-  'skifree', 'slewSwitch', 'sm64', 'snes9x', 'stages', 'stereovca', 'sticky',
+  'skifree', 'slewSwitch', 'snes9x', 'stages', 'stereovca', 'sticky',
   'swolevco', 'symbiote', 'synesthesia', 'tides2', 'timelorde', 'treeohvox',
   'unityscalemathematik', 'vca', 'vdelay', 'veils', 'videoMixer', 'videoOut',
   'videobox', 'videovarispeed', 'warps', 'warrenspectrum', 'wavecel', 'wavesculpt',
-  'wavetableVco', 'wavviz', 'writeseq',
+  'wavetableVco', 'writeseq',
+
+
+
+
+
+
+
+
+
+
 
 
 

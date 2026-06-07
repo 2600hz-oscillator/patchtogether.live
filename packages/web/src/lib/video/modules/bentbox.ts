@@ -439,7 +439,7 @@ export const bentboxDef: VideoModuleDef = {
   type: 'bentbox',
   palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
-  label: 'BENTBOX',
+  label: 'bentbox',
   category: 'output',
   schemaVersion: 1,
   inputs: [

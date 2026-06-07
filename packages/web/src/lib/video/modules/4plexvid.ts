@@ -105,7 +105,7 @@ export const fourPlexVidDef: VideoModuleDef = {
   palette: { top: 'Video modules', sub: 'Utilities' },
   card: 'FourPlexVidCard',
   domain: 'video',
-  label: '4PLEXVID',
+  label: '4plexvid',
   category: 'utilities',
   schemaVersion: 1,
   inputs: [

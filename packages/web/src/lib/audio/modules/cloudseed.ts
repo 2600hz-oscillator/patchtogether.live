@@ -420,9 +420,9 @@ export const CLOUDSEED_MESSAGE_PARAMS: ReadonlyArray<{ id: string; cppId: number
 
 export const cloudseedDef: AudioModuleDef = {
   type: 'cloudseed',
-  palette: { top: 'Ports', sub: 'Ports' },
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: 'CLOUDSEED',
+  label: 'cloudseed',
   category: 'effects',
   schemaVersion: 1,
   stereoPairs: [['in_l', 'in_r'], ['out_l', 'out_r']],

@@ -319,7 +319,7 @@ export const riotgirlsDef: AudioModuleDef = {
   type: 'riotgirls',
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
-  label: 'RIOTGIRLS',
+  label: 'riotgirls',
   category: 'sources',
   schemaVersion: 1,
 

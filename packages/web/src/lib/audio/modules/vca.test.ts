@@ -9,7 +9,7 @@ import { vcaDef } from './vca';
 describe('vcaDef: module-def shape', () => {
   it('declares type=vca, label=VCA, category=utilities', () => {
     expect(vcaDef.type).toBe('vca');
-    expect(vcaDef.label).toBe('VCA');
+    expect(vcaDef.label).toBe('vca');
     expect(vcaDef.category).toBe('utilities');
   });
 

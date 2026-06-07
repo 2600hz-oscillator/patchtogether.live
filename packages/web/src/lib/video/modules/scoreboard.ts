@@ -103,7 +103,7 @@ export const scoreboardDef: VideoModuleDef = {
   type: 'scoreboard',
   palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
-  label: 'SCOREBOARD',
+  label: 'scoreboard',
   category: 'utilities',
   schemaVersion: 1,
   inputs: [

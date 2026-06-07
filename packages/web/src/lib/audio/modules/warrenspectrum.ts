@@ -80,7 +80,7 @@ export const warrenspectrumDef: AudioModuleDef = {
   // (band1_in..band8_in audio inputs); 8 per-band sends (band1_out..
   // band8_out audio outputs); root_cv / spread_cv / q_cv CV inputs;
   // global_ping gate input.
-  label: 'WARRENSPECTRUM',
+  label: 'warrenspectrum',
   category: 'effects',
   schemaVersion: 2,
   stereoPairs: [

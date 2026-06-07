@@ -272,9 +272,9 @@ export const ringsMath = {
 
 export const ringsDef: AudioModuleDef = {
   type: 'rings',
-  palette: { top: 'Ports', sub: 'Mutable' },
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: 'RINGS',
+  label: 'rings',
   category: 'sources',
   schemaVersion: 1,
   stereoPairs: [

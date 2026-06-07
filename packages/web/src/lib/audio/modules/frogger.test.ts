@@ -12,7 +12,7 @@ describe('froggerDef — registry shape', () => {
   it('declares the project canonical fields', () => {
     expect(froggerDef.type).toBe('frogger');
     expect(froggerDef.domain).toBe('audio');
-    expect(froggerDef.label).toBe('FROGGER');
+    expect(froggerDef.label).toBe('frogger');
     expect(froggerDef.category).toBe('games');
     expect(froggerDef.schemaVersion).toBe(1);
     expect(froggerDef.vizPassthrough).toBe(true);

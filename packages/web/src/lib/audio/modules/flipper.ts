@@ -15,7 +15,7 @@ export const flipperDef: AudioModuleDef = {
   type: 'flipper',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'FLIPPER',
+  label: 'flipper',
   category: 'utilities',
   schemaVersion: 1,
   card: 'FlipperCard',

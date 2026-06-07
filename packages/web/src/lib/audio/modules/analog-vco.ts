@@ -59,7 +59,7 @@ export const analogVcoDef: AudioModuleDef = {
   type: 'analogVco',
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
-  label: 'Analog VCO',
+  label: 'analog vco',
   category: 'sources',
   schemaVersion: 5,
   migrate(data, fromVersion) {

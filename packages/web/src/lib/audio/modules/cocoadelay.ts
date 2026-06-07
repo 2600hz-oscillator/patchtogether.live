@@ -120,10 +120,10 @@ export const COCOA_FILTER_MODE_OPTIONS: readonly string[] = ['1-pole', '2-pole',
 
 export const cocoaDelayDef: AudioModuleDef = {
   type: 'cocoadelay',
-  palette: { top: 'Ports', sub: 'Ports' },
+  palette: { top: 'Audio modules', sub: 'Effects' },
   card: 'CocoaDelayCard',
   domain: 'audio',
-  label: 'COCOA DELAY',
+  label: 'cocoa delay',
   category: 'effects',
   schemaVersion: 1,
   stereoPairs: [['inL', 'inR'], ['outL', 'outR']],

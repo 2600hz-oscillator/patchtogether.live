@@ -33,7 +33,7 @@ describe('FOXY module def shape', () => {
   it('is an audio-domain module in the Hybrid bucket category', () => {
     expect(foxyDef.type).toBe('foxy');
     expect(foxyDef.domain).toBe('audio');
-    expect(foxyDef.label).toBe('FOXY');
+    expect(foxyDef.label).toBe('foxy');
   });
 
   it('exposes WAVECEL\'s exact input IDs + types', () => {

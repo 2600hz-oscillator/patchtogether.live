@@ -53,7 +53,7 @@ describe('sampleHold / module def', () => {
   it('is registered in the utility category as type sampleHold', () => {
     expect(sampleHoldDef.type).toBe('sampleHold');
     expect(sampleHoldDef.category).toBe('utility');
-    expect(sampleHoldDef.label).toBe('SAMPLE & HOLD');
+    expect(sampleHoldDef.label).toBe('sample & hold');
   });
 });
 

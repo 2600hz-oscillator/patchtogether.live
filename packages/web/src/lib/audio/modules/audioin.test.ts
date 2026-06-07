@@ -11,7 +11,7 @@ import { audioInDef } from './audioin';
 describe('audioInDef: module-def shape', () => {
   it('declares type=audioIn, label=AUDIO IN, category=sources', () => {
     expect(audioInDef.type).toBe('audioIn');
-    expect(audioInDef.label).toBe('AUDIO IN');
+    expect(audioInDef.label).toBe('audio in');
     expect(audioInDef.category).toBe('sources');
   });
 

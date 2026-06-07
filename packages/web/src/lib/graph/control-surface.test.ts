@@ -148,7 +148,7 @@ describe('controlSurfaceDef: meta def shape', () => {
   it('is a meta module with no ports/params and the right card + palette', () => {
     expect(controlSurfaceDef.type).toBe('controlSurface');
     expect(controlSurfaceDef.domain).toBe('meta');
-    expect(controlSurfaceDef.label).toBe('CONTROL SURFACE');
+    expect(controlSurfaceDef.label).toBe('control surface');
     expect(controlSurfaceDef.card).toBe('ControlSurfaceCard');
     expect(controlSurfaceDef.inputs).toEqual([]);
     expect(controlSurfaceDef.outputs).toEqual([]);

@@ -35,7 +35,7 @@ export const destroyDef: AudioModuleDef = {
   type: 'destroy',
   palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: 'DESTROY',
+  label: 'destroy',
   category: 'effects',
   schemaVersion: 1,
   inputs: [

@@ -202,7 +202,7 @@ export const shapedrampsDef: VideoModuleDef = {
   type: 'shapedramps',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
-  label: 'SHAPEDRAMPS',
+  label: 'shapedramps',
   category: 'sources',
   schemaVersion: 1,
   inputs: [

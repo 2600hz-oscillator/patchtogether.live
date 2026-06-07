@@ -170,9 +170,9 @@ export const warpsMath = {
 
 export const warpsDef: AudioModuleDef = {
   type: 'warps',
-  palette: { top: 'Ports', sub: 'Mutable' },
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'WARPS',
+  label: 'warps',
   category: 'effects',
   schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },

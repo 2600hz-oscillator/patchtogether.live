@@ -83,7 +83,6 @@ MODULE_BLURB: dict[str, str] = {
     "drumseqz": "4-channel drum sequencer.",
     "polyseqz": "Polyphonic step sequencer.",
     "vizvco": "VIZVCO — VCO + wavefolder + waveform video out.",
-    "wavviz": "WAVVIZ — sister VCO with video out.",
     "swolevco": "SWOLEVCO — Buchla-259-style complex VCO.",
     "illogic": "Attenuverter + math + logic.",
     "unityscalemathematik": "Bipolar CV-shaper.",
