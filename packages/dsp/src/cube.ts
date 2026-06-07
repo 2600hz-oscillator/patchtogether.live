@@ -88,6 +88,12 @@ import {
   type SliceParams,
   type Material,
 } from './lib/cube-dsp';
+import { Envelope } from './lib/adsr-env';
+import {
+  polyEnvSum,
+  monoEnvSample,
+  type AdsrParams,
+} from './lib/poly-osc-sum';
 
 declare const sampleRate: number;
 declare class AudioWorkletProcessor {
@@ -185,6 +191,25 @@ class CubeProcessor extends AudioWorkletProcessor {
   // Each is an independent [0,1) accumulator reading the SAME posted slice
   // waves at its own pitch. Only used while the poly bus carries a gate.
   private polyPhase: Float64Array = new Float64Array(POLY_VOICES);
+
+  // ── Per-voice amplitude ADSR (per-voice-ADSR feature) ──
+  // One Envelope per lane. The poly path gate-edges drive env[lane]; the mono
+  // TRIGGER input drives env[0]. Gated-amp mode engages on the FIRST rising edge
+  // ever seen (everGated) — before that (and when nothing drives a gate) the env
+  // multiply is skipped so the legacy drone stays byte-identical.
+  private env: Envelope[] = Array.from({ length: POLY_VOICES }, () => new Envelope());
+  // Previous-block gate per poly lane (rising/falling edge detection).
+  private prevGate: Uint8Array = new Uint8Array(POLY_VOICES);
+  // Previous-block state of the mono TRIGGER input.
+  private prevTrigGate = 0;
+  // Latch: true once ANY gate (poly lane OR mono TRIGGER) has gone high. Stays
+  // true thereafter so a patched-but-currently-low gate keeps the voice gated.
+  // A save/reload that restores a patched-but-never-gated TRIGGER resets this to
+  // false (fresh processor instance) so the drone returns.
+  private everGated = false;
+  // Reused per-sample scratch for the per-lane (L,R) reads handed to polyEnvSum.
+  private laneScratchL = new Float64Array(POLY_VOICES);
+  private laneScratchR = new Float64Array(POLY_VOICES);
 
   // Per-channel slice waveforms (recomputed on param/table change).
   // Slice waveforms. Typed with ArrayBufferLike so `sampleSlice`'s return
@@ -342,6 +367,14 @@ class CubeProcessor extends AudioWorkletProcessor {
       { name: 'material', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
       // Output level.
       { name: 'level',    defaultValue: 1, minValue: 0, maxValue: 2, automationRate: 'a-rate' as const },
+      // Per-voice amplitude ADSR (per-voice-ADSR feature). A single shared
+      // A/D/S/R set feeds all 5 lane envelopes; defaults are ~pass-through so an
+      // untouched ADSR + an ungated/unpatched TRIGGER keeps the legacy drone
+      // byte-identical. k-rate (read once per block, fed to every lane tick).
+      { name: 'attack',  defaultValue: 0.001, minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
+      { name: 'decay',   defaultValue: 0.1,   minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
+      { name: 'sustain', defaultValue: 1,     minValue: 0,     maxValue: 1, automationRate: 'k-rate' as const },
+      { name: 'release', defaultValue: 0.005, minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
     ];
   }
 
@@ -510,18 +543,30 @@ class CubeProcessor extends AudioWorkletProcessor {
 
     const pIn = inputs[0]?.[0];
     const levelArr = parameters.level;
+    const sr = sampleRate;
+
+    // ── Per-voice ADSR params (k-rate; read once, fed to every lane env) ──
+    const adsr: AdsrParams = {
+      attack:  this.kval(parameters, 'attack', 0.001),
+      decay:   this.kval(parameters, 'decay', 0.1),
+      sustain: this.kval(parameters, 'sustain', 1),
+      release: this.kval(parameters, 'release', 0.005),
+    };
 
     // ── Poly bus (inputs[1], 10-channel polyPitchGate) ──
     // Sample gate + pitch once at the first sample of the block (sequencer /
     // MIDI LANE write setValueAtTime at block boundaries → first-sample reads
-    // are exact). polyActive ⇒ render the per-lane sum; else the mono path runs
-    // BYTE-IDENTICAL (lane 0 uses the same `this.phase` + freq, summing nothing
-    // extra). The shared timbre offset (tune/fine) applies to every lane.
+    // are exact). The shared timbre offset (tune/fine) applies to every lane.
+    //
+    // NOTE on retrigger granularity (CRITIQUE C4): edges are detected ONCE at
+    // sample 0, so a sub-block 1→0→1 re-strike (faster than ~one block, ≈2.67 ms
+    // @ 48 k) is missed. The retrig floor is ≈one block; this is not "exact" for
+    // sub-block events. An intra-block gate scan is a documented follow-up.
     const polyIn = inputs[1];
     const trim = tune / 12 + fine / 1200;
-    let polyActive = false;
     const laneGate: boolean[] = [false, false, false, false, false];
     const laneVOct: number[] = [0, 0, 0, 0, 0];
+    let anyPolyGate = false;
     if (polyIn) {
       for (let lane = 0; lane < POLY_VOICES; lane++) {
         const gateCh = polyIn[lane * 2 + 1];
@@ -530,15 +575,44 @@ class CubeProcessor extends AudioWorkletProcessor {
         if (g > 0.5) {
           laneGate[lane] = true;
           laneVOct[lane] = pitchCh && pitchCh.length > 0 ? (pitchCh[0] ?? 0) : 0;
-          polyActive = true;
+          anyPolyGate = true;
         }
       }
     }
-    let activeCount = 0;
-    for (let lane = 0; lane < POLY_VOICES; lane++) if (laneGate[lane]) activeCount++;
-    const polyNorm = activeCount > 0 ? 1 / Math.sqrt(activeCount) : 1;
 
-    const sr = sampleRate;
+    // ── Mono TRIGGER input (inputs[2], 1-channel gate) → lane-0 envelope ──
+    const trigIn = inputs[2]?.[0];
+    const trigGate = trigIn && trigIn.length > 0 ? ((trigIn[0] ?? 0) > 0.5 ? 1 : 0) : 0;
+
+    // Gate-edge detection per poly lane → soft (click-safe) retrigger. Every
+    // rising edge latches everGated (gated-amp mode engages thenceforth).
+    for (let lane = 0; lane < POLY_VOICES; lane++) {
+      const now = laneGate[lane] ? 1 : 0;
+      if (now && !this.prevGate[lane]) { this.env[lane]!.triggerSoft(true); this.everGated = true; }
+      else if (!now && this.prevGate[lane]) this.env[lane]!.triggerSoft(false);
+      this.prevGate[lane] = now as number;
+    }
+    // Mono TRIGGER edge → lane-0 envelope (only meaningful in the mono path; in
+    // poly mode the poly lane-0 edges own env[0], and a patched poly bus takes
+    // priority). Tracked every block so a save/reload starts everGated=false.
+    if (!anyPolyGate) {
+      if (trigGate && !this.prevTrigGate) { this.env[0]!.triggerSoft(true); this.everGated = true; }
+      else if (!trigGate && this.prevTrigGate) this.env[0]!.triggerSoft(false);
+    }
+    this.prevTrigGate = trigGate;
+
+    // A voice is env-audible (still sounding) when its envelope hasn't decayed to
+    // idle. The poly path stays engaged while ANY lane is gated OR still audible
+    // (so a released note's tail finishes); the mono gated path engages once
+    // everGated and the trigger has fired. polyActive routes the per-lane env sum;
+    // gatedMono routes lane-0's env over the mono oscillator; otherwise the legacy
+    // byte-identical drone runs.
+    let anyEnvAudible = false;
+    for (let lane = 0; lane < POLY_VOICES; lane++) {
+      if (this.env[lane]!.value > 0) { anyEnvAudible = true; break; }
+    }
+    const polyActive = anyPolyGate || (this.everGated && polyIn != null && anyEnvAudible);
+    const gatedMono = !polyActive && this.everGated;
 
     /** Advance a [0,1) phase accumulator by one sample at a V/oct pitch. */
     const advance = (ph: number, voct: number): number => {
@@ -552,43 +626,62 @@ class CubeProcessor extends AudioWorkletProcessor {
     };
 
     const frameLen = this.waveCenter.length || CUBE_SLICE_SIZE;
+    // Scratch per-lane sample buffers for the poly env sum (reused per sample).
+    const laneL = this.laneScratchL;
+    const laneR = this.laneScratchR;
     for (let i = 0; i < n; i++) {
       const level = levelArr
         ? (levelArr.length > 1 ? (levelArr[i] as number) : (levelArr[0] as number))
         : 1;
 
       if (polyActive) {
-        // Polyphonic: SUM each gated lane's read of the shared slice waves at
-        // its own pitch. Lane 0 reuses `this.phase` (so SYNC + a single held
-        // poly note line up with the mono path); lanes 1..4 use polyPhase[].
-        // Silent lanes still advance (tracked at lane-0 pitch) so opening a
-        // lane mid-cycle doesn't pop, but contribute nothing.
-        let sumL = 0;
-        let sumR = 0;
-        // Lane 0 (always at its own pitch — it's the SYNC / mono accumulator).
+        // Polyphonic: read each lane's shared slice waves at its own pitch, then
+        // hand the per-lane (L,R) samples to polyEnvSum which ticks every lane
+        // envelope, multiplies the env value in, sums the env-AUDIBLE lanes, and
+        // returns the env-audible-count normalization (decision #6). A lane in
+        // RELEASE keeps sounding (env>0) until it decays — so the SUM is gated on
+        // env-audibility, not the raw gate. Lane 0 reuses `this.phase` (SYNC +
+        // single held poly note line up with the mono path); lanes 1..4 use
+        // polyPhase[]. Silent lanes still advance (tracked at lane-0 pitch) so a
+        // re-opened lane doesn't pop.
+        // Lane 0.
         this.phase = advance(this.phase, laneVOct[0]! + trim);
-        if (laneGate[0]) {
-          sumL += readFrame(this.waveL, this.phase);
-          sumR += readFrame(this.waveR, this.phase);
-        }
+        laneL[0] = readFrame(this.waveL, this.phase);
+        laneR[0] = readFrame(this.waveR, this.phase);
         // Lanes 1..4.
         for (let lane = 1; lane < POLY_VOICES; lane++) {
-          const v = laneGate[lane] ? laneVOct[lane]! : laneVOct[0]!;
+          // Use the lane's own pitch when it's gated OR still releasing (env>0);
+          // otherwise track lane-0's pitch so a re-open doesn't pop.
+          const ownPitch = laneGate[lane] || this.env[lane]!.value > 0;
+          const v = ownPitch ? laneVOct[lane]! : laneVOct[0]!;
           this.polyPhase[lane] = advance(this.polyPhase[lane]!, v + trim);
-          if (laneGate[lane]) {
-            sumL += readFrame(this.waveL, this.polyPhase[lane]!);
-            sumR += readFrame(this.waveR, this.polyPhase[lane]!);
-          }
+          laneL[lane] = readFrame(this.waveL, this.polyPhase[lane]!);
+          laneR[lane] = readFrame(this.waveR, this.polyPhase[lane]!);
         }
+        const { sumL, sumR, polyNorm } = polyEnvSum(laneL, laneR, this.env, adsr, sr);
         const l = sumL * polyNorm * level;
         const r = sumR * polyNorm * level;
         if (outL) outL[i] = clampRange(l, -4, 4);
         if (outR && outR !== outL) outR[i] = clampRange(r, -4, 4);
         // SYNC tracks lane 0 (the mono phase accumulator).
         if (outSync) outSync[i] = Math.sin(2 * Math.PI * this.phase);
+      } else if (gatedMono) {
+        // Gated mono (TRIGGER drove lane-0's envelope; poly unpatched). The mono
+        // oscillator output is multiplied by lane-0's envelope — CUBE is a gated
+        // voice (attack/release on the TRIGGER gate).
+        const pitch = pIn ? (pIn[i] ?? 0) : 0;
+        this.phase = advance(this.phase, pitch + trim);
+        const phaseN = this.phase;
+        const { l: el, r: er } = monoEnvSample(
+          readFrame(this.waveL, phaseN), readFrame(this.waveR, phaseN), this.env[0]!, adsr, sr,
+        );
+        if (outL) outL[i] = clampRange(el * level, -4, 4);
+        if (outR && outR !== outL) outR[i] = clampRange(er * level, -4, 4);
+        if (outSync) outSync[i] = Math.sin(2 * Math.PI * phaseN);
       } else {
-        // Mono (poly unpatched / all gates closed): the original single-phase
-        // path, byte-identical (SYNC + spread + fold baselines unaffected).
+        // Mono drone (poly unpatched / never gated AND TRIGGER never gated): the
+        // original single-phase path, BYTE-IDENTICAL (SYNC + spread + fold
+        // baselines unaffected — no env multiply at all).
         const pitch = pIn ? (pIn[i] ?? 0) : 0;
         this.phase = advance(this.phase, pitch + trim);
         // Phase maps to a fractional column index across the 256-sample frame.

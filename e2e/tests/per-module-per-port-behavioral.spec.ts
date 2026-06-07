@@ -621,6 +621,26 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'pentemelodica.fm4': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
   'pentemelodica.fm5': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
 
+  // ── CUBE / WAVECEL per-voice ADSR ports (poly + trigger). The behavioral
+  //    sweep drives ONE input at a time against an idle, ungated control. CUBE /
+  //    WAVECEL run a free-running DRONE when ungated (decision #4: env skipped →
+  //    byte-identical legacy output). When the sweep gates a SINGLE voice (one
+  //    poly lane, or the mono TRIGGER) the default ~pass-through ADSR (attack
+  //    0.001 / sustain 1) attacks the lane-0 envelope to ≈1 over the SAME phase
+  //    accumulator the drone uses, with 1/sqrt(1)=1 normalization → the gated
+  //    output is ≈ the drone waveform → no observable delta against the drone
+  //    control. This is correct: a single voice at unity envelope over the drone
+  //    accumulator is the drone. The real per-voice ADSR behavior (attack ramp,
+  //    release tail, chord normalization, soft-retrigger, env-audible count) is
+  //    covered by adsr-env.test.ts + poly-osc-sum.test.ts + the worklet
+  //    byte-identical/poly tests (cube/wavecel.test.ts) + the bespoke e2e
+  //    (adsr-poly-midilane.spec.ts: TRIGGER gates the env, drone back-compat,
+  //    everGated, poly chord).
+  'cube.poly': 'single gated voice at default ~pass-through ADSR ≈ the lane-0 drone (same phase accumulator, env→1, 1/sqrt(1) norm) → no delta vs the drone control; per-voice ADSR + chord behavior covered by adsr-env/poly-osc-sum unit tests + cube.test.ts + adsr-poly-midilane.spec.ts',
+  'cube.trigger': 'gating the mono TRIGGER opens lane-0\'s env to ≈1 over the SAME drone accumulator → ≈ the drone waveform → no delta vs the drone control; gate→env→release covered by adsr-env.test.ts + adsr-poly-midilane.spec.ts (TRIGGER gates env / drone back-compat / everGated)',
+  'wavecel.poly': 'single gated voice at default ~pass-through ADSR ≈ the lane-0 drone (env→1, 1/sqrt(1) norm) → no delta vs the drone control; per-voice ADSR + chord behavior covered by adsr-env/poly-osc-sum unit tests + wavecel.test.ts + adsr-poly-midilane.spec.ts',
+  'wavecel.trigger': 'gating the mono TRIGGER opens lane-0\'s env to ≈1 over the drone oscillator → ≈ the drone waveform → no delta vs the drone control; gate→env→release covered by adsr-env.test.ts + adsr-poly-midilane.spec.ts',
+
   // ── SYNESTHESIA copy B input. The sweep drives each input then watches a
   //    SINGLE canonical output (a_band1_audio, copy A). SYNESTHESIA is two
   //    INDEPENDENT copies by design — b_in feeds copy B's b_* outputs and has
