@@ -71,6 +71,7 @@
     loadWavetablePreset,
   } from '$lib/audio/wavetable-presets';
   import type { VideoEngine } from '$lib/video/engine';
+  import { VIDEO_RES } from '$lib/video/engine';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -83,8 +84,8 @@
   const DEFAULT_HEIGHT = 880;
   const MIN_WIDTH = 1024;
   const MIN_HEIGHT = 720;
-  const ENGINE_W = 640;
-  const ENGINE_H = 480;
+  const ENGINE_W = VIDEO_RES.width;
+  const ENGINE_H = VIDEO_RES.height;
 
   let cardWidth = $derived<number>(
     (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH,

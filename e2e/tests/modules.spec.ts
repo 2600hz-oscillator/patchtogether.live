@@ -59,6 +59,20 @@ const SKIP_RENDER: Record<string, string> = {
   snes9x: 'fetches user-provided ROM (404s on clean checkout); covered by e2e/tests/snes9x.spec.ts',
 };
 
+// WebGL-heavy modules whose FIRST-paint is slow on CI's SwiftShader software
+// renderer — markedly slower at 1024×768 (#662, 2.56× the pixels of the old
+// 640×480). The generic 5s spawn-readiness wait + 30s default test timeout
+// aren't enough to mount + measure them on CI (b3ntb0x's 8×-oversampled NTSC
+// chain, mandleblot's per-pixel GPU fractal). We still assert presence +
+// handle-count + non-zero box for these (their cheap, structural coverage);
+// we only grant a longer budget so the heavy first-paint can complete. Their
+// DEEP render behaviour is covered by dedicated heavy-lane specs
+// (b3ntb0x.spec.ts; mandleblot.spec.ts — both routed to the serialized
+// e2e-video lane via WEBGL_HEAVY_GLOBS in playwright.config.ts).
+const HEAVY_RENDER = new Set(['b3ntb0x', 'mandleblot']);
+const HEAVY_MOUNT_TIMEOUT = 30_000;
+const HEAVY_TEST_TIMEOUT = 90_000;
+
 test.describe.configure({ mode: 'parallel' });
 
 for (const mod of REGISTRY) {
@@ -71,9 +85,13 @@ for (const mod of REGISTRY) {
     );
     continue;
   }
+  const isHeavy = HEAVY_RENDER.has(mod.type);
   test(`module ${mod.type} renders + has ${expectedHandleCount} handles + no console errors`, async ({
     page,
   }) => {
+    // Heavy WebGL cards first-paint slowly on CI SwiftShader at 1024×768 —
+    // give them headroom before the (cheap, structural) assertions below.
+    if (isHeavy) test.setTimeout(HEAVY_TEST_TIMEOUT);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -83,14 +101,19 @@ for (const mod of REGISTRY) {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    await spawnPatch(page, [
-      {
-        id: 'm-1',
-        type: mod.type,
-        position: { x: 100, y: 100 },
-        domain: mod.domain,
-      },
-    ]);
+    await spawnPatch(
+      page,
+      [
+        {
+          id: 'm-1',
+          type: mod.type,
+          position: { x: 100, y: 100 },
+          domain: mod.domain,
+        },
+      ],
+      [],
+      isHeavy ? { mountTimeout: HEAVY_MOUNT_TIMEOUT } : undefined,
+    );
 
     const cardClass = `svelte-flow__node-${mod.type}`;
     const card = page.locator(`.${cardClass}`);

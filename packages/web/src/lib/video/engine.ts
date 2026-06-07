@@ -19,11 +19,12 @@
 //     without retrofits.
 //
 // Design notes:
-//   - VIDEO_RES is fixed at instantiate time. We render at 640×480 (4:3,
-//     NTSC/PAL CRT aesthetic) — matches the LZX analog-video heritage,
-//     PICTUREBOX's 640×480 encoder, and gives SM64 an integer 2× scale
-//     (320×240 → 640×480). 4:3 is also DOOM's native viewport ratio
-//     above the status bar; widescreen sources letterbox left/right.
+//   - VIDEO_RES is fixed at instantiate time. We render at 1024×768 (4:3,
+//     "768p" — same NTSC/PAL CRT 4:3 aspect, higher backing resolution).
+//     The 4:3 ratio matches the LZX analog-video heritage and DOOM's native
+//     viewport ratio above the status bar; lower-res native sources (SM64's
+//     320×240, DOOM's 640×400) aspect-fit/letterbox into it via ctx.res, so
+//     the axis math is res-adaptive; widescreen sources letterbox left/right.
 //   - We share ONE WebGL2 context + OffscreenCanvas across all video
 //     nodes. Each node has its own FBO + texture. OUTPUT modules
 //     subscribe to a downstream visible <canvas> by exposing a
@@ -41,10 +42,13 @@ import {
   type EnvelopeFollower,
 } from './toybox-cv-math';
 
-/** Resolution of every per-module FBO. 640×480 (4:3) matches the LZX
- *  analog-video heritage, aligns with PICTUREBOX's encoder, and gives
- *  SM64's 320×240 native an integer 2× scale. */
-export const VIDEO_RES = { width: 640, height: 480 } as const;
+/** Resolution of every per-module FBO. 1024×768 (4:3, "768p") keeps the LZX
+ *  analog-video 4:3 aspect while rendering the whole pipeline at a sharper
+ *  backing resolution (640×480 previously). The 4:3 ratio is unchanged, so
+ *  every aspect-fit/letterbox path (DOOM, SM64, widescreen sources) is
+ *  identical. Module thumbnails keep their on-card CSS display size — only the
+ *  drawing-buffer resolution goes up (the card <canvas> CSS px is pinned). */
+export const VIDEO_RES = { width: 1024, height: 768 } as const;
 
 /** Per-module surface — FBO + texture. Output modules can leave `fbo` null
  *  and consume their input textures directly. */

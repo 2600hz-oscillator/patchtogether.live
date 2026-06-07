@@ -56,13 +56,20 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { VIDEO_RES } from '$lib/video/engine';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
+
+/** Active-line pixel count used in the NTSC carrier + texel math below. Equals
+ *  the engine FBO width (the encode/bend FBOs are allocated at this width ×
+ *  OVERSAMPLE; the decode/CRT FBOs at this width), so the shader-side texel
+ *  steps + subcarrier column count track the live resolution. */
+const ENGINE_W = VIDEO_RES.width;
 
 // ---------- knobs / constants ----------
 
 /** Horizontal oversample factor for the composite carrier. The real NTSC
- *  line holds 227.5 subcarrier cycles; 8× oversample over a 640px engine
- *  width gives tens of cycles per active line — enough for visible dot-crawl
+ *  line holds 227.5 subcarrier cycles; 8× oversample over the engine width
+ *  gives tens of cycles per active line — enough for visible dot-crawl
  *  without exploding cost. This is the deliberate fidelity↔cost knob (raise
  *  in Phase 2 for higher subcarrier fidelity). */
 export const OVERSAMPLE = 8;
@@ -166,7 +173,7 @@ void main() {
   // Oversampled column index along the ACTIVE region (for the carrier phase).
   // Map the active span [ACTIVE_START,1) to oversampled column indices.
   float activeFrac = (lineFrac - ACTIVE_START) / (1.0 - ACTIVE_START);
-  float activeColIdx = activeFrac * (1.0 - ACTIVE_START) * 640.0 * OVERSAMPLE / SUBCARRIER_PERIOD;
+  float activeColIdx = activeFrac * (1.0 - ACTIVE_START) * ${ENGINE_W}.0 * OVERSAMPLE / SUBCARRIER_PERIOD;
   float phase = activeColIdx * TWO_PI + burstPhase;
 
   float comp;   // R: composite voltage
@@ -243,7 +250,7 @@ void main() {
 
   // --- 2. TRANSISTOR GAIN + ENHANCE (HF peaking). ---
   // Neighbour average for the HF high-pass (one oversampled px each side).
-  float dx = 1.0 / (640.0 * OVERSAMPLE);
+  float dx = 1.0 / (${ENGINE_W}.0 * OVERSAMPLE);
   float vl = texture(uEncode, vec2(vUv.x - dx, vUv.y)).r;
   float vr = texture(uEncode, vec2(vUv.x + dx, vUv.y)).r;
   float neighborAvg = (vl + vr) * 0.5;
@@ -311,7 +318,7 @@ vec3 yiq2rgb(vec3 c) {
 // Recover the line-start x-offset by searching the bent sync near line start
 // for the sync-tip -> blanking rising edge in R (threshold crossing).
 float recoverLineOffset(float y) {
-  float dx = 1.0 / (640.0 * OVERSAMPLE);
+  float dx = 1.0 / (${ENGINE_W}.0 * OVERSAMPLE);
   float nominalEdge = 0.075; // SYNC_TIP_END
   float detected = nominalEdge;
   // Scan a small window around the nominal sync-tip end.
@@ -336,7 +343,7 @@ void main() {
   // Output x in [0,1) -> active fraction -> oversampled center column.
   float activeFrac = vUv.x;
   float centerLineFrac = ACTIVE_START + activeFrac * (1.0 - ACTIVE_START) - offset;
-  float dx = 1.0 / (640.0 * OVERSAMPLE);
+  float dx = 1.0 / (${ENGINE_W}.0 * OVERSAMPLE);
 
   float ySum = 0.0;
   float iSum = 0.0;
@@ -455,7 +462,7 @@ void main() {
   }
 
   // --- BEAM BLUR: small horizontal-biased gaussian (beam wider than a px). ---
-  float dx = 1.0 / 640.0;
+  float dx = 1.0 / ${ENGINE_W}.0;
   vec3 col = texture(uDecode, a).rgb * 0.5;
   col += texture(uDecode, a + vec2(dx, 0.0)).rgb * 0.2;
   col += texture(uDecode, a - vec2(dx, 0.0)).rgb * 0.2;

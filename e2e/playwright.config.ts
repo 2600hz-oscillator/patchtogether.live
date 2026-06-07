@@ -65,6 +65,14 @@ const WEBGL_HEAVY_GLOBS = [
   '**/freezeframe.spec.ts',
   '**/picturebox-*.spec.ts',
   '**/b3ntb0x.spec.ts',
+  // 1024×768 bump (#662): these three are GPU-fractal / multi-input video
+  // mixers + routers whose page.screenshot/evaluate budgets blow on CI's
+  // SwiftShader at 2.56× the old pixel count (they pass on a real GPU). Same
+  // class as the toybox/video heavies above — run them in the serialized
+  // e2e-video lane, not the sharded matrix.
+  '**/4plexvid.spec.ts', // 4×4 video router — heavy WebGL screenshot
+  '**/quadralogical.spec.ts', // 4-input video mixer — heavy WebGL evaluate
+  '**/mandleblot.spec.ts', // GPU Mandelbrot fractal
 ];
 const WEBGL_HEAVY_MODE = process.env.E2E_WEBGL_HEAVY; // 'only' | 'exclude' | undefined
 

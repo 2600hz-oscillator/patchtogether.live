@@ -36,7 +36,7 @@
 //   out (mono-video): the painted raster frame.
 //
 // Params:
-//   cursor (linear 0..307200 px, default 0): start position of the scan cursor.
+//   cursor (linear 0..VIDEO_RES.width*height px, default 0): start position of the scan cursor.
 //   samplesPerFrame (log 16..8000, default 800): how many samples paint per frame.
 //   gain (log 0..8, default 1): input gain pre-luminance map.
 //   wrap (discrete 0..1, default 0): 0 = scan wraps + accumulates, 1 = clear-on-wrap.
@@ -71,10 +71,10 @@ export const rasterizeDef: AudioModuleDef = {
     { id: 'out', type: 'mono-video' },
   ],
   params: [
-    // Scan cursor start offset, in pixels into the 640×480 = 307200-pixel
-    // frame. Moving it scrubs the running cursor; otherwise the cursor
-    // drifts on its own.
-    { id: 'cursor',          label: 'Scan',   defaultValue: 0,   min: 0,   max: 307200, curve: 'linear', units: 'px' },
+    // Scan cursor start offset, in pixels into the engine-res frame
+    // (VIDEO_RES.width × VIDEO_RES.height pixels). Moving it scrubs the running
+    // cursor; otherwise the cursor drifts on its own.
+    { id: 'cursor',          label: 'Scan',   defaultValue: 0,   min: 0,   max: VIDEO_RES.width * VIDEO_RES.height, curve: 'linear', units: 'px' },
     // Samples painted per frame. Default 800 ≈ 48k/60fps ≈ 1.25 scanlines.
     { id: 'samplesPerFrame', label: 'Samp/F', defaultValue: 800, min: 16,  max: 8000,   curve: 'log' },
     // Linear gain applied to each sample before the luminance map.

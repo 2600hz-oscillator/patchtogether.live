@@ -45,8 +45,10 @@
   import { startCornerResize } from './card-resize';
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
+  import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import type { VideoEngine } from '$lib/video/engine';
+  import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -65,12 +67,11 @@
   const DEFAULT_HEIGHT = 240;
   const MIN_WIDTH = 240;
   const MIN_HEIGHT = 160;
-  // Engine render resolution — must match VIDEO_RES in
-  // packages/web/src/lib/video/engine.ts. Hardcoded here so we don't
-  // need to import the engine module just for this constant (it
-  // pulls in WebGL boot code).
-  const ENGINE_W = 640;
-  const ENGINE_H = 480;
+  // Engine render resolution — derived from VIDEO_RES so the preview's
+  // fitRect aspect (and the fullscreen buffer-size derive below) always
+  // tracks the live engine resolution.
+  const ENGINE_W = VIDEO_RES.width;
+  const ENGINE_H = VIDEO_RES.height;
 
   let cardWidth = $derived<number>(
     (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH,
@@ -91,6 +92,13 @@
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
+
+  // Live engine canvas dims, mirrored each rAF in draw() (the engine isn't a
+  // reactive store — engineCtx.get() is a plain getter — so we copy its dims
+  // into $state for the fullscreen buffer-size derive below). Defaults to the
+  // engine constants until the engine reports real dims.
+  let engineW = $state<number>(ENGINE_W);
+  let engineH = $state<number>(ENGINE_H);
 
   // ---------- True fullscreen ----------
   // The canvas-wrap is the element we fullscreen; it contains the live
@@ -124,6 +132,20 @@
   let cardEl: HTMLDivElement | null = $state(null);
   // Double-click a full-frame card exits back to normal chrome.
   $effect(() => ff.attach(cardEl, () => fullFrame));
+
+  // Canvas drawing-buffer dims. In the rack: the card's inner dims (card
+  // aspect). In TRUE fullscreen: the live ENGINE dims so the buffer carries the
+  // ENGINE aspect — fitRect then fills it edge-to-edge (no baked bars) and the
+  // CSS object-fit:contain pillarboxes the true source aspect into the screen
+  // (height-fill, side pillarbox only for 4:3 — no top/bottom letterbox). See
+  // fullscreen-canvas-dims.ts for the full rationale.
+  let bufferDims = $derived(
+    fullscreenCanvasDims(
+      fs.isFullscreen,
+      { canvas: { width: engineW, height: engineH } },
+      { width: innerWidth, height: innerHeight },
+    ),
+  );
 
   // Right-click-on-canvas context menu (Fullscreen / Full Frame).
   let ctxOpen = $state(false);
@@ -191,6 +213,13 @@
         // OUTPUT card to nuke its own rAF loop on an unexpected error.
       }
       const src = videoEngine.canvas as CanvasImageSource;
+      // Mirror the live engine dims into $state so the fullscreen buffer-size
+      // derive (bufferDims) follows the engine resolution. Cheap guard so we
+      // don't churn reactivity every frame when nothing changed.
+      const ew = videoEngine.canvas.width || ENGINE_W;
+      const eh = videoEngine.canvas.height || ENGINE_H;
+      if (ew !== engineW) engineW = ew;
+      if (eh !== engineH) engineH = eh;
       const cw = canvasEl.width;
       const ch = canvasEl.height;
       // Black background, then aspect-fit blit with Y-flip.
@@ -277,9 +306,9 @@
   >
     <canvas
       bind:this={canvasEl}
-      width={innerWidth}
-      height={innerHeight}
-      style="aspect-ratio: {innerWidth} / {innerHeight};"
+      width={bufferDims.width}
+      height={bufferDims.height}
+      style="aspect-ratio: {bufferDims.aspectRatio};"
       data-testid="video-out-canvas"
       data-node-id={id}
     ></canvas>

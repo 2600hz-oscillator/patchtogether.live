@@ -31,6 +31,8 @@
   import {
     downscaleAndEncode,
     base64ToImageBitmap,
+    TARGET_W as SYNC_IMG_W,
+    TARGET_H as SYNC_IMG_H,
   } from '$lib/video/modules/picturebox-encode';
   import type { ToyboxHandleExtras } from '$lib/video/modules/toybox';
   import {
@@ -59,6 +61,7 @@
     type ToyboxVideoSource,
   } from '$lib/video/toybox-content';
   import type { VideoEngine } from '$lib/video/engine';
+  import { VIDEO_RES } from '$lib/video/engine';
   import {
     canvasToEnginePx,
     makeMouseState,
@@ -164,8 +167,8 @@
   const engineCtx = useEngine();
 
   // Engine render resolution (VIDEO_RES) — letterbox the 4:3 render.
-  const ENGINE_W = 640;
-  const ENGINE_H = 480;
+  const ENGINE_W = VIDEO_RES.width;
+  const ENGINE_H = VIDEO_RES.height;
   const CANVAS_W = 200;
   const CANVAS_H = Math.round(CANVAS_W * (ENGINE_H / ENGINE_W)); // 150
 
@@ -2461,7 +2464,7 @@
         <div class="filename" title={currentImageName} data-testid="toybox-image-filename">{currentImageName}</div>
       {/if}
       {#if currentImageBytes}
-        <div class="sync-hint" data-testid="toybox-image-synced">synced (640×480)</div>
+        <div class="sync-hint" data-testid="toybox-image-synced">synced ({SYNC_IMG_W}×{SYNC_IMG_H})</div>
       {/if}
       {#if inputError}
         <div class="input-error" data-testid="toybox-input-error">{inputError}</div>

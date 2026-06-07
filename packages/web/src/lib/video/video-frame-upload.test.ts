@@ -16,8 +16,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createVideoFrameUploader } from './video-frame-upload';
 
-const W = 640;
-const H = 480;
+// Engine resolution (VIDEO_RES) the uploader downscales to.
+const W = 1024;
+const H = 768;
 
 // --- Fakes ---------------------------------------------------------------
 
@@ -126,7 +127,7 @@ describe('createVideoFrameUploader — rVFC path', () => {
     const { v } = makeVideo(true);
     up.attach(v);
     up.uploadIfReady();
-    // Drew the 1920x1080 source into the 640x480 canvas (~6.75x less pixel data).
+    // Drew the 1920x1080 source into the engine-res (1024x768) canvas.
     expect(drawSizes[0]).toEqual([W, H]);
   });
 

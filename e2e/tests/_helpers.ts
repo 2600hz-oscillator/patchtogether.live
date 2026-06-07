@@ -66,8 +66,17 @@ function isTransientPageError(err: unknown): boolean {
 export async function spawnPatch(
   page: Page,
   nodes: SpawnNode[],
-  edges: SpawnEdge[] = []
+  edges: SpawnEdge[] = [],
+  /** Override the post-transact "node mounted in the DOM" wait. Defaults to
+   *  5000ms. WebGL-heavy cards (b3ntb0x's 8×-oversampled NTSC chain,
+   *  mandleblot's GPU fractal) FIRST-paint far slower on CI's SwiftShader
+   *  software renderer — even slower at 1024×768 (#662, 2.56× the pixels) —
+   *  so the generic 5s readiness wait isn't enough to mount them. Callers
+   *  iterating every module (modules.spec.ts) bump this for known-heavy types
+   *  whose deep render is covered by a dedicated heavy-lane spec. */
+  opts?: { mountTimeout?: number }
 ): Promise<void> {
+  const mountTimeout = opts?.mountTimeout ?? 5000;
   const MAX_ATTEMPTS = 3;
   let lastErr: unknown = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -138,7 +147,7 @@ export async function spawnPatch(
         (ids) =>
           ids.every((id) => document.querySelector(`.svelte-flow__node[data-id="${id}"]`) !== null),
         nodes.map((n) => n.id),
-        { timeout: 5000 }
+        { timeout: mountTimeout }
       );
       return;
     } catch (err) {
