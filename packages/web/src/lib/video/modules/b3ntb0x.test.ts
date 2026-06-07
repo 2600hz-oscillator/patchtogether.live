@@ -14,6 +14,8 @@ import {
   b3ntb0xDef,
   b3ntb0xMirrorGateTick,
   makeB3ntb0xMirrorGateState,
+  b3ntb0xOsWidth,
+  OVERSAMPLE,
 } from './b3ntb0x';
 import {
   rgbToYiq,
@@ -282,6 +284,45 @@ describe('B3NTB0X burst starve (decode colour-killer + subcarrier crawl)', () =>
     expect(r.i).toBeCloseTo(0, 6);
     expect(r.q).toBeCloseTo(0, 6);
     expect(r.lumaCrawl).toBeCloseTo(0, 6);
+  });
+});
+
+describe('B3NTB0X osWidth MAX_TEXTURE_SIZE clamp (HD safety, plan §3/§7.2)', () => {
+  it('SD base (640) → 5120, unclamped on any reasonable GPU', () => {
+    expect(b3ntb0xOsWidth(640, 16384)).toBe(640 * OVERSAMPLE);
+    expect(b3ntb0xOsWidth(640, 8192)).toBe(640 * OVERSAMPLE); // 5120 < 8192
+  });
+
+  it('1080p base (1920) → 15360 unclamped at 16384, but CLAMPED at 8192', () => {
+    expect(b3ntb0xOsWidth(1920, 16384)).toBe(1920 * OVERSAMPLE); // 15360 < 16384
+    // 1920*8 = 15360 > 8192 → clamped to the GPU max (the #1 HD correctness risk).
+    expect(b3ntb0xOsWidth(1920, 8192)).toBe(8192);
+  });
+
+  it('720p base (1280) → 10240, clamped at 8192', () => {
+    expect(b3ntb0xOsWidth(1280, 16384)).toBe(1280 * OVERSAMPLE);
+    expect(b3ntb0xOsWidth(1280, 8192)).toBe(8192);
+  });
+
+  it('the result never exceeds the supplied MAX_TEXTURE_SIZE', () => {
+    for (const base of [640, 854, 1280, 1440, 1920]) {
+      for (const cap of [4096, 8192, 16384]) {
+        expect(b3ntb0xOsWidth(base, cap)).toBeLessThanOrEqual(cap);
+      }
+    }
+  });
+
+  it('a degenerate (0 / negative) max falls back to 4096 so we never alloc 0-wide', () => {
+    expect(b3ntb0xOsWidth(1920, 0)).toBe(4096);
+    expect(b3ntb0xOsWidth(1920, -1)).toBe(4096);
+  });
+
+  it('declares the HD bufferRes param (0=SD default, 0..2 range)', () => {
+    const p = b3ntb0xDef.params.find((x) => x.id === 'bufferRes');
+    expect(p).toBeDefined();
+    expect(p!.defaultValue).toBe(0);
+    expect(p!.min).toBe(0);
+    expect(p!.max).toBe(2);
   });
 });
 

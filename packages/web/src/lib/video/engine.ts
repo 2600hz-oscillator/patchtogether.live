@@ -196,6 +196,15 @@ export type VideoModuleFactory = (
 export interface VideoEngineContext {
   gl: WebGL2RenderingContext;
   res: { readonly width: number; readonly height: number };
+  /**
+   * Whether the engine is running an HD render res (res > VIDEO_RES). Hungry
+   * modules (TOYBOX/b3ntb0x/VDELAY/BACKDRAFT) read this to decide whether to
+   * honor their per-module `bufferRes` dropdown: 720p/1080p heavy buffers are
+   * only allocated when HD is active locally; otherwise they clamp to SD so a
+   * saved 1080p node never OOMs a weak / HD-off peer (hd-toggle plan §4.5).
+   * OPTIONAL so test-mock contexts (which never set it) read as false = SD.
+   */
+  hdActive?: boolean;
   /** Compile + link a fragment-shader program. The vertex shader is
    *  shared across modules — every video module is a fullscreen quad, so
    *  the vertex shader is fixed. Throws on compile/link failure with the
@@ -204,6 +213,19 @@ export interface VideoEngineContext {
   /** Allocate an RGBA8 framebuffer + texture at engine resolution.
    *  Returns both so the caller can both render-into and sample-from. */
   createFbo(): { fbo: WebGLFramebuffer; texture: WebGLTexture };
+  /**
+   * Allocate an RGBA8 framebuffer + texture at a CALLER-CHOSEN size (LINEAR
+   * filter so the upscale-on-read into the engine-res pipeline is smooth).
+   * Used by the hungry modules to size their heavy internal buffers (rings,
+   * oversample targets) at `effectiveBufferDims(...)` — independent of the
+   * global engine res — per the hd-toggle plan §4.5. OPTIONAL on the interface
+   * so hand-built test mocks don't have to stub it; the real engine always
+   * provides it (a module that needs it asserts presence).
+   */
+  createSizedFbo?(
+    width: number,
+    height: number,
+  ): { fbo: WebGLFramebuffer; texture: WebGLTexture };
   /**
    * Allocate a FLOAT (RGBA16F / RGBA32F) framebuffer + texture at the
    * given size (defaults to engine resolution). Used by modules that need
@@ -285,7 +307,12 @@ export class VideoEngine implements DomainEngine {
    *  context is WebGL2; modules never see the surface type. */
   readonly canvas: OffscreenCanvas | HTMLCanvasElement;
   readonly gl: WebGL2RenderingContext;
-  readonly res = VIDEO_RES;
+  /** Internal render resolution of every per-module FBO. Defaults to
+   *  VIDEO_RES (640×480) but can be overridden via the constructor `res`
+   *  option (HD mode passes a viewport-derived ~1080-line target). Fixed for
+   *  the lifetime of the engine — HD toggles rebuild a fresh VideoEngine at
+   *  the new res rather than mutating this in place (see hd-toggle plan §2). */
+  readonly res: { readonly width: number; readonly height: number };
 
   private nodes = new Map<string, VideoNodeHandle>();
   private nodeMeta = new Map<string, ModuleNode>();
@@ -415,7 +442,20 @@ export class VideoEngine implements DomainEngine {
   private copyProgram: WebGLProgram | null = null;
   private copyUTex: WebGLUniformLocation | null = null;
 
-  constructor(opts: { canvas?: OffscreenCanvas | HTMLCanvasElement } = {}) {
+  constructor(
+    opts: {
+      canvas?: OffscreenCanvas | HTMLCanvasElement;
+      /** Internal render resolution. Defaults to VIDEO_RES (640×480). HD mode
+       *  passes a viewport-derived target (see hd-toggle plan §3). Even-width/
+       *  height is assumed by the caller (computeHdRes rounds to even). */
+      res?: { width: number; height: number };
+    } = {},
+  ) {
+    // Assign res BEFORE any `this.res.*` read below (OffscreenCanvas sizing).
+    this.res =
+      opts.res && opts.res.width > 0 && opts.res.height > 0
+        ? { width: opts.res.width, height: opts.res.height }
+        : VIDEO_RES;
     if (opts.canvas) {
       this.canvas = opts.canvas;
     } else if (typeof OffscreenCanvas !== 'undefined') {
@@ -1146,12 +1186,20 @@ void main() {
 
   // -------- Shared GL helpers exposed to module factories --------
 
+  /** True when the engine is rendering at an HD res (larger than VIDEO_RES on
+   *  either axis). Hungry modules gate their 720p/1080p bufferRes on this. */
+  get hdActive(): boolean {
+    return this.res.width > VIDEO_RES.width || this.res.height > VIDEO_RES.height;
+  }
+
   context(): VideoEngineContext {
     return {
       gl: this.gl,
       res: this.res,
+      hdActive: this.hdActive,
       compileFragment: (src) => this.compileFragmentImpl(src),
       createFbo: () => this.createFboImpl(),
+      createSizedFbo: (w, h) => this.createFboImpl(w, h),
       createFloatFbo: (w, h, o) => this.createFloatFboImpl(w, h, o),
       drawFullscreenQuad: () => this.drawFullscreenQuadImpl(),
       audioCtx: this.audioCtx ?? undefined,
@@ -1281,7 +1329,10 @@ void main() {
     return prog;
   }
 
-  private createFboImpl(): { fbo: WebGLFramebuffer; texture: WebGLTexture } {
+  private createFboImpl(
+    width: number = this.res.width,
+    height: number = this.res.height,
+  ): { fbo: WebGLFramebuffer; texture: WebGLTexture } {
     const gl = this.gl;
     const tex = gl.createTexture();
     if (!tex) throw new Error('VideoEngine: createTexture failed');
@@ -1290,8 +1341,8 @@ void main() {
       gl.TEXTURE_2D,
       0,
       gl.RGBA8,
-      this.res.width,
-      this.res.height,
+      width,
+      height,
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
