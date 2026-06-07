@@ -35,6 +35,19 @@
 //   attaching; we don't need to expose a knob since the upstream device
 //   tells us.
 //
+//   The card REQUESTS a 2-channel capture (getUserMedia
+//   `channelCount: 2`, via devices.buildAudioInConstraints) so a
+//   multichannel USB interface (e.g. Expert Sleepers ES-9) hands us a
+//   true L/R pair instead of a browser-downmixed mono signal. This gives
+//   the device's FIRST stereo pair (inputs 1/2). getUserMedia cannot
+//   address an arbitrary pair (3/4, 5/6, …) — that's the native track;
+//   see .myrobots/plans/es9-stereo-io.md. The WIRING decision still
+//   trusts the track's reported channelCount: >=2 takes the splitter
+//   (true L/R), 1 or UNREPORTED takes the mono fan-out (L=R) — the safe
+//   default, since a mono source through the stereo splitter would leave
+//   R silent (discrete interpretation, no up-mix). A genuine stereo
+//   device reports channelCount: 2.
+//
 //   To avoid the "shape changes mid-life" problem, we ALWAYS build the
 //   splitter path + always wire both gain nodes; the attach hook just
 //   connects the source node to either (a) both L + R gains directly

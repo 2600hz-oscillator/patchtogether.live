@@ -25,6 +25,7 @@
   import { patch } from '$lib/graph/store';
   import { audioInDef, audioInAttach } from '$lib/audio/modules/audioin';
   import {
+    buildAudioInConstraints,
     findDefaultInputDevice,
     formatDeviceLabel,
     type MinimalDevice,
@@ -125,18 +126,12 @@
     stopStream();
 
     const targetId = selectedDeviceId ?? findDefaultInputDevice(devices);
-    const constraints: MediaStreamConstraints = {
-      audio: targetId && targetId !== 'default'
-        ? {
-            deviceId: { exact: targetId },
-            // Don't fight the user's hardware echo cancellation by default.
-            // Standard knobs left to browser defaults (echoCancellation /
-            // noiseSuppression / autoGainControl); future work could
-            // expose these as card toggles for users routing music gear.
-          }
-        : {},
-      video: false,
-    };
+    // Always ASK for a stereo (2-channel) capture — see
+    // buildAudioInConstraints. Multichannel USB interfaces (e.g. Expert
+    // Sleepers ES-9) hand us the device's FIRST stereo pair (inputs 1/2);
+    // Bitwig-style per-pair addressing (3/4, 5/6, …) is the native track
+    // (see .myrobots/plans/es9-stereo-io.md).
+    const constraints = buildAudioInConstraints(targetId);
 
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -171,6 +166,19 @@
       return;
     }
     const settings = track.getSettings();
+    // Resolve the delivered channel layout for the engine's mono-vs-stereo
+    // wiring. We ALWAYS request a stereo pair (channelCount: 2, above), but
+    // the WIRING decision trusts what the track actually reports:
+    //   - reported >= 2  → splitter path (true L/R separation).
+    //   - reported 1     → fan-out path (L = R).
+    //   - UNREPORTED     → fan-out (mono), the SAFE default. A mono device
+    //     fed through the stereo splitter lands signal only on channel 0
+    //     (discrete interpretation, no up-mix) so R would be silent;
+    //     fan-out instead duplicates the single channel to both outs.
+    //     A genuine stereo device reports channelCount: 2 and gets the
+    //     splitter. (Chromium reports channelCount reliably for real
+    //     multichannel USB interfaces; the unreported case is the
+    //     built-in / fake mono mic, which we want fanned-out anyway.)
     const channelCount = settings.channelCount ?? 1;
     const realDeviceId = settings.deviceId ?? selectedDeviceId ?? null;
     if (realDeviceId && realDeviceId !== selectedDeviceId) {
