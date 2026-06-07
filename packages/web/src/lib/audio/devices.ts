@@ -60,6 +60,46 @@ export function findDefaultOutputDevice(devices: readonly MinimalDevice[]): stri
 }
 
 /**
+ * Build the `MediaStreamConstraints` for AUDIO IN's getUserMedia call.
+ *
+ * We always REQUEST a stereo (2-channel) capture so a multichannel USB
+ * interface (e.g. Expert Sleepers ES-9) hands us a true L/R pair rather
+ * than a browser-downmixed mono signal. `channelCount` is an IDEAL
+ * constraint (no `exact:`), so a mono-only device still streams — the card
+ * keys the engine's mono-vs-stereo wiring off the delivered
+ * `track.getSettings().channelCount`, not off this request.
+ *
+ *   - `targetId` null / 'default'  → no deviceId constraint (OS default).
+ *   - otherwise                    → `deviceId: { exact: targetId }` so
+ *     the user's pick is honoured (and getUserMedia rejects with
+ *     OverconstrainedError if that device vanished, which the card
+ *     surfaces).
+ *
+ * NOTE on browser DSP: we deliberately DON'T force echoCancellation /
+ * noiseSuppression / autoGainControl off here. They'd be the "right"
+ * choice for a clean line-level music feed, but (a) Chromium already
+ * leaves them off for non-default-communications inputs like a USB
+ * interface, and (b) forcing AGC off measurably drops capture level for
+ * built-in mics — a behavior change for every existing AUDIO IN user, out
+ * of scope for the stereo-pair first step. A future per-card "music mode"
+ * toggle can expose these (see .myrobots/plans/es9-stereo-io.md).
+ *
+ * NOTE on addressing: getUserMedia can only ever expose the device's
+ * FIRST stereo pair (channels 1/2). Bitwig-style per-pair addressing
+ * (3/4, 5/6, …) is not reachable through the Web Audio / getUserMedia API
+ * and is the native track — see .myrobots/plans/es9-stereo-io.md.
+ */
+export function buildAudioInConstraints(targetId: string | null): MediaStreamConstraints {
+  const stereo: MediaTrackConstraints = { channelCount: 2 };
+  return {
+    audio: targetId && targetId !== 'default'
+      ? { deviceId: { exact: targetId }, ...stereo }
+      : { ...stereo },
+    video: false,
+  };
+}
+
+/**
  * Render-time label for a device entry. When the browser's privacy gate
  * is in effect, `device.label` is the empty string — we fall back to a
  * positional label ("Input #2") so the dropdown still shows distinct
