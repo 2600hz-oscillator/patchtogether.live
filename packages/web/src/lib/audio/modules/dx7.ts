@@ -87,6 +87,13 @@ export const dx7Def: AudioModuleDef = {
     { id: 'voiceCount', label: 'Voices',      defaultValue: 5,   min: 1,   max: 5,  curve: 'discrete' },
     { id: 'level',      label: 'Level',       defaultValue: 0.7, min: 0,   max: 2,  curve: 'linear' },
     { id: 'transpose',  label: 'Transpose',   defaultValue: 0,   min: -24, max: 24, curve: 'linear', units: 'st' },
+    // Per-voice master OUTPUT-VCA ADSR (per-voice-ADSR feature) — a player-dialable
+    // amplitude swell/long-release on top of the SYX operator EGs. Defaults are
+    // ~pass-through so loaded patches sound identical until you touch these.
+    { id: 'attack',  label: 'Atk', defaultValue: 0.001, min: 0.001, max: 5, curve: 'log', units: 's' },
+    { id: 'decay',   label: 'Dec', defaultValue: 0.1,   min: 0.001, max: 5, curve: 'log', units: 's' },
+    { id: 'sustain', label: 'Sus', defaultValue: 1,     min: 0,     max: 1, curve: 'linear' },
+    { id: 'release', label: 'Rel', defaultValue: 0.005, min: 0.001, max: 5, curve: 'log', units: 's' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

@@ -44,6 +44,7 @@ const FULL_MATCH = [
   'vrt-composite-coverage.spec.ts',
   'vrt-synesthesia-composite.spec.ts',
   'pentemelodica-composite.spec.ts',
+  'cube-adsr-composite.spec.ts',
   'vrt-synesthesia-video.spec.ts',
   'vrt-quadralogical.spec.ts',
   'vrt-toybox.spec.ts',

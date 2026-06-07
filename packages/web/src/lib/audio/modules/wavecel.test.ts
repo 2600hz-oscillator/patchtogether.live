@@ -42,17 +42,35 @@ describe('WAVECEL module def shape', () => {
     expect(p?.type).toBe('video');
   });
 
-  it('has 6 inputs (pitch, fm, 3×cv, poly) + 4 outputs', () => {
-    expect(wavecelDef.inputs.length).toBe(6);
+  it('has 7 inputs (pitch, fm, 3×cv, poly, trigger) + 4 outputs', () => {
+    expect(wavecelDef.inputs.length).toBe(7);
     expect(wavecelDef.outputs.length).toBe(4);
   });
 
-  it('declares a poly input (polyPitchGate, 5-voice chord bus)', () => {
+  it('declares a poly input (polyPitchGate, 5-voice chord bus) — still at index 5', () => {
     const poly = wavecelDef.inputs.find((i) => i.id === 'poly');
     expect(poly, 'WAVECEL must expose a `poly` input port').toBeTruthy();
     expect(poly!.type).toBe('polyPitchGate');
     // Node connection (no paramTarget — it carries audio-rate pitch+gate).
     expect(poly!.paramTarget).toBeUndefined();
+    // Poly STAYS at input index 5 (the new trigger is APPENDED at 6).
+    expect(wavecelDef.inputs.findIndex((i) => i.id === 'poly')).toBe(5);
+  });
+
+  it('declares a mono trigger gate input (per-voice ADSR) appended at index 6', () => {
+    const trig = wavecelDef.inputs.find((i) => i.id === 'trigger');
+    expect(trig, 'WAVECEL must expose a `trigger` input port').toBeTruthy();
+    expect(trig!.type).toBe('gate');
+    expect(trig!.paramTarget).toBeUndefined();
+    expect(wavecelDef.inputs.findIndex((i) => i.id === 'trigger')).toBe(6);
+  });
+
+  it('declares the 4 per-voice ADSR params (attack/decay/sustain/release)', () => {
+    const byId = Object.fromEntries(wavecelDef.params.map((p) => [p.id, p] as const));
+    expect(byId.attack).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.001, curve: 'log' });
+    expect(byId.decay).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.1, curve: 'log' });
+    expect(byId.sustain).toMatchObject({ min: 0, max: 1, defaultValue: 1, curve: 'linear' });
+    expect(byId.release).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.005, curve: 'log' });
   });
 
   it('preserves the stereoPairs metadata for the audio outs', () => {

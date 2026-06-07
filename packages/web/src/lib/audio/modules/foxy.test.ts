@@ -36,18 +36,22 @@ describe('FOXY module def shape', () => {
     expect(foxyDef.label).toBe('foxy');
   });
 
-  it('exposes WAVECEL\'s exact input IDs + types (except the poly chord bus)', () => {
+  it('exposes WAVECEL\'s exact input IDs + types (except the poly + trigger gate inputs)', () => {
     const fIn = new Map(foxyDef.inputs.map((p) => [p.id, p.type]));
     for (const wIn of wavecelDef.inputs) {
       // FOXY deliberately does NOT expose WAVECEL's `poly` (polyPitchGate) chord
-      // bus: FOXY drives its internal WAVECEL from its own mini-SWOLEVCO → XYZ
-      // pipeline, so a multi-voice chord cable has no meaning here. The poly-in
-      // feature (feat/poly-in-wavcel-cube) is scoped to standalone WAVECEL + CUBE.
-      if (wIn.id === 'poly') continue;
+      // bus NOR its `trigger` (per-voice-ADSR gate): FOXY drives its internal
+      // WAVECEL from its own mini-SWOLEVCO → XYZ pipeline, so a multi-voice chord
+      // cable + an external amp-envelope gate have no meaning here. The poly-in
+      // feature + the per-voice ADSR are scoped to standalone WAVECEL + CUBE; the
+      // shared worklet's env is gated off (everGated=false) → FOXY's internal
+      // WAVECEL stays byte-identical (same class as the HYPERCUBE/CUBE gating).
+      if (wIn.id === 'poly' || wIn.id === 'trigger') continue;
       expect(fIn.get(wIn.id), `input ${wIn.id}`).toBe(wIn.type);
     }
-    // Sanity: FOXY itself has no poly input (it's a single-voice internal VCO).
+    // Sanity: FOXY itself has no poly / trigger input (single-voice internal VCO).
     expect(fIn.has('poly'), 'FOXY should NOT expose a poly input').toBe(false);
+    expect(fIn.has('trigger'), 'FOXY should NOT expose a trigger input').toBe(false);
   });
 
   it('exposes WAVECEL\'s exact output IDs + types (out_l/out_r/scope_out/wave3d_out)', () => {
@@ -83,14 +87,24 @@ describe('FOXY module def shape', () => {
     expect(foxyDef.stereoPairs).toEqual([['out_l', 'out_r']]);
   });
 
-  it('carries every WAVECEL param (tune/fine/morph/spread/fold) with matching ranges', () => {
+  it('carries every WAVECEL VCO param (tune/fine/morph/spread/fold) with matching ranges', () => {
+    // FOXY mirrors WAVECEL's VCO/timbre controls only. The per-voice ADSR params
+    // (attack/decay/sustain/release) are deliberately NOT surfaced — FOXY's
+    // internal WAVECEL is a single-voice VCO with no external gate, so its env
+    // stays at the ~pass-through default (gated off). Scope: standalone WAVECEL.
+    const ADSR = new Set(['attack', 'decay', 'sustain', 'release']);
     const fParams = new Map(foxyDef.params.map((p) => [p.id, p]));
     for (const wp of wavecelDef.params) {
+      if (ADSR.has(wp.id)) continue;
       const fp = fParams.get(wp.id);
       expect(fp, `param ${wp.id}`).toBeDefined();
       expect(fp!.min).toBe(wp.min);
       expect(fp!.max).toBe(wp.max);
       expect(fp!.defaultValue).toBe(wp.defaultValue);
+    }
+    // Sanity: FOXY does NOT expose the per-voice ADSR params.
+    for (const id of ADSR) {
+      expect(fParams.has(id), `FOXY should NOT expose ${id}`).toBe(false);
     }
   });
 

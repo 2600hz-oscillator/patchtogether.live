@@ -947,6 +947,9 @@
     // Polyphonic chord bus (MIDI LANE mode=poly / POLYSEQZ). Gated lanes play
     // simultaneously; unpatched → the mono PITCH path. cable: 'polyPitchGate'.
     { id: 'poly',     label: 'POLY',    cable: 'polyPitchGate' },
+    // Mono TRIGGER gate for the per-voice amplitude ADSR. The FIRST note turns
+    // CUBE into a gated voice; before any note (and when unpatched) it drones.
+    { id: 'trigger',  label: 'TRIG',    cable: 'gate' },
     { id: 'slice_y',  label: 'Y',       cable: 'cv' },
     { id: 'slice_rx', label: 'ROT X',   cable: 'cv' },
     { id: 'slice_ry', label: 'ROT Y',   cable: 'cv' },
@@ -995,6 +998,15 @@
     { pid: 'view_rot_x', label: 'View X' },
     { pid: 'view_rot_y', label: 'View Y' },
     { pid: 'view_rot_z', label: 'View Z' },
+  ];
+  // Per-voice amplitude ADSR (per-voice-ADSR feature). A/D/R use a log curve
+  // (units s); S is linear 0..1. Driven by the poly lane gates (one envelope per
+  // voice) or by the mono TRIG input (lane-0 envelope).
+  const ADSR_KNOBS: Array<{ pid: string; label: string; units?: string; curve: 'log' | 'linear' }> = [
+    { pid: 'attack',  label: 'A', units: 's', curve: 'log' },
+    { pid: 'decay',   label: 'D', units: 's', curve: 'log' },
+    { pid: 'sustain', label: 'S', curve: 'linear' },
+    { pid: 'release', label: 'R', units: 's', curve: 'log' },
   ];
 </script>
 
@@ -1128,6 +1140,28 @@
         {/each}
       </div>
 
+      <!-- Per-voice amplitude ADSR (poly lane gates / mono TRIG) -->
+      <div class="adsr-section">
+        <div class="adsr-head">AMP ADSR</div>
+        <div class="knobs adsr-knobs">
+          {#each ADSR_KNOBS as k (k.pid)}
+            <Knob
+              value={paramVal(k.pid)}
+              min={minFor(k.pid)}
+              max={maxFor(k.pid)}
+              defaultValue={defaultFor(k.pid)}
+              label={k.label}
+              units={k.units}
+              curve={k.curve}
+              onchange={set(k.pid)}
+              moduleId={id}
+              paramId={k.pid}
+              readLive={live(k.pid)}
+            />
+          {/each}
+        </div>
+      </div>
+
       <!-- View-only camera controls -->
       <div class="view-section">
         <div class="view-head">VIEW (visualization only)</div>
@@ -1197,4 +1231,7 @@
   .view-section { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px; }
   .view-head { font-family: var(--font-mono, monospace); font-size: 0.55rem; letter-spacing: 0.04em; color: #8294a4; margin-bottom: 4px; }
   .view-knobs { gap: 12px; }
+  .adsr-section { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px; }
+  .adsr-head { font-family: var(--font-mono, monospace); font-size: 0.55rem; letter-spacing: 0.04em; color: #8294a4; margin-bottom: 4px; }
+  .adsr-knobs { gap: 12px; }
 </style>

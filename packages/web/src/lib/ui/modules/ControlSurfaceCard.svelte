@@ -37,6 +37,10 @@
   } from '$lib/graph/control-surface';
   import {
     BOX_W,
+    KNOB_CELL_W,
+    KNOBS_PER_ROW,
+    KNOB_ROW_H,
+    KNOB_GRID_GAP,
     posFor as layoutPosFor,
     unlockedCanvasSize,
   } from '$lib/graph/control-surface-layout';
@@ -293,7 +297,14 @@
           onpointerdown={(e) => startDrag(e, g.moduleId, pos)}
         >
           <div class="cs-group-label" data-testid="control-surface-group-label">{g.label}</div>
-          <div class="cs-group-body">
+          <div
+            class="cs-group-body"
+            style:--cs-cols={KNOBS_PER_ROW}
+            style:--cs-cell-w="{KNOB_CELL_W}px"
+            style:--cs-row-h="{KNOB_ROW_H}px"
+            style:--cs-gap="{KNOB_GRID_GAP}px"
+            style:--cs-dial-h="48px"
+          >
             {#each g.controls as c (c.paramId)}
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
@@ -315,6 +326,7 @@
                   moduleId={g.moduleId}
                   paramId={c.paramId}
                 />
+                <div class="cs-knob-label" title={c.label}>{c.label}</div>
                 {#if isEditing(g.moduleId, c.paramId)}
                   <!-- svelte-ignore a11y_autofocus -->
                   <input
@@ -449,35 +461,70 @@
     text-overflow: ellipsis;
     pointer-events: none;
   }
+  /* DETERMINISTIC GRID (the resize fix): a FIXED 2-column grid with a fixed row
+     height, NOT flex-wrap. flex-wrap's wrap point drifted with label width, so
+     the lib (which assumed 3/row) under-counted rows and tall groups spilled
+     below the card frame. The column count, cell width, row height + gap are the
+     SAME constants control-surface-layout.ts uses for groupBoxHeight() /
+     unlockedCanvasSize(), so the card is guaranteed to contain its content. */
   .cs-group-body {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(var(--cs-cols), var(--cs-cell-w));
+    grid-auto-rows: var(--cs-row-h);
+    gap: var(--cs-gap);
     justify-content: flex-start;
   }
-  /* Each proxied knob gets a fixed min footprint matching dial(36px)+label so
-     2-3 knobs in a group lay out evenly and their (now-ellipsized) labels don't
-     collide. Column-centered so the dial + label stack tidily. */
+  /* One knob cell: a fixed-height DIAL SLOT (dial + room for its overhanging
+     "CC n" MIDI badge), then the ellipsized param-name LABEL row, then the ✎
+     rename-button row. Fixed track heights so the centered label can never
+     collide with the badge and the box height is stable across lock/unlock. */
   .cs-knob {
     touch-action: none;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    min-width: 48px;
-    max-width: 48px;
+    width: var(--cs-cell-w);
+    display: grid;
+    grid-template-rows: var(--cs-dial-h) auto auto;
+    justify-items: center;
+    align-content: start;
+    row-gap: 2px;
+    overflow: hidden;
   }
-  /* Defensive belt-and-braces with the Knob.svelte .label clamp: any knob
-     hosted on a surface ellipsizes a too-long label instead of overflowing. */
-  .cs-knob :global(.label) {
-    max-width: 100%;
+  /* The Knob unit (dial + label + badge) lives in the dial slot. We hide the
+     Knob's OWN flow `.label` and render the name in the surface's dedicated
+     label row below (so a long name truncates without ever overlapping the
+     absolutely-positioned "CC n" badge that hangs off the dial). */
+  .cs-knob :global(.knob-wrap) {
+    position: relative;
+  }
+  .cs-knob :global(.knob-wrap > .label) {
+    display: none;
+  }
+  /* Move the surface-hosted "CC n" MIDI badge to the dial's TOP-right corner so
+     it sits clear of the param-name label beneath the dial (was bottom-right,
+     overlapping the label → "W CC 0", "INPUT CC 7" collisions). */
+  .cs-knob :global(.midi-badge) {
+    top: -2px;
+    bottom: auto;
+    right: -2px;
+  }
+  /* The param-name label: its own clear row, centered + ellipsized. */
+  .cs-knob-label {
+    width: 100%;
+    text-align: center;
+    font-size: 0.62rem;
+    line-height: 1.1;
+    color: var(--text-dim, #97a3bd);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    pointer-events: none;
   }
   /* Rename affordance: a tiny pencil button (unlocked only) opens an inline
      input that writes the Electra custom name. */
   .cs-rename-btn {
-    margin-top: 2px;
+    /* In the grid cell the row-gap already spaces it from the label; no
+       margin-top (kept the height inside the fixed KNOB_ROW_H budget). */
     font-size: 0.6rem;
     line-height: 1;
     padding: 1px 4px;
@@ -489,9 +536,8 @@
   }
   .cs-rename-btn:hover { background: rgba(96, 165, 250, 0.22); }
   .cs-rename {
-    margin-top: 2px;
     width: 100%;
-    max-width: 46px;
+    max-width: var(--cs-cell-w, 76px);
     box-sizing: border-box;
     font-size: 0.6rem;
     padding: 1px 3px;

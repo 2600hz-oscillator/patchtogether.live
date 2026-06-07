@@ -35,6 +35,8 @@
 // Sample rate: works at any rate (44.1k or 48k); pitch is internally
 // converted to Hz before phase accumulation.
 
+import { Envelope } from './lib/adsr-env';
+
 declare const sampleRate: number;
 declare class AudioWorkletProcessor {
   port: MessagePort;
@@ -263,6 +265,11 @@ interface Voice {
   opOut: Float32Array;
   /** Lane index currently owning this voice (0..NUM_VOICES-1) or -1 if free. */
   laneOwner: number;
+  /** Per-voice OUTPUT-VCA amplitude envelope (per-voice-ADSR feature). Multiplies
+   *  the summed-carrier voiceOut on top of the six operator EGs; defaults are
+   *  ~pass-through so the SYX-defined sound is unchanged until the player touches
+   *  the master ADSR. */
+  ampEnv: Envelope;
 }
 
 function makeVoice(): Voice {
@@ -278,6 +285,7 @@ function makeVoice(): Voice {
     fbMem: 0,
     opOut: new Float32Array(NUM_OPS),
     laneOwner: -1,
+    ampEnv: new Envelope(),
   };
 }
 
@@ -309,6 +317,14 @@ class Dx7Processor extends AudioWorkletProcessor {
       { name: 'level',      defaultValue: 0.7, minValue: 0, maxValue: 2, automationRate: 'k-rate' as const },
       // Pitch transpose in semitones (offsets every voice's pitch).
       { name: 'transpose',  defaultValue: 0, minValue: -24, maxValue: 24, automationRate: 'k-rate' as const },
+      // Per-voice master OUTPUT-VCA ADSR (per-voice-ADSR feature). One envelope
+      // per voice multiplies the summed-carrier voiceOut, on top of the six DX7
+      // operator EGs. Defaults are ~pass-through (fast attack, full sustain, fast
+      // release) so existing patches sound identical until the player dials it.
+      { name: 'attack',  defaultValue: 0.001, minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
+      { name: 'decay',   defaultValue: 0.1,   minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
+      { name: 'sustain', defaultValue: 1,     minValue: 0,     maxValue: 1, automationRate: 'k-rate' as const },
+      { name: 'release', defaultValue: 0.005, minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
     ];
   }
 
@@ -371,6 +387,8 @@ class Dx7Processor extends AudioWorkletProcessor {
       voice.releasing = false;
       voice.laneOwner = -1;
       voice.fbMem = 0;
+      voice.ampEnv.state = 0; // EnvState.Idle
+      voice.ampEnv.value = 0;
       for (let i = 0; i < NUM_OPS; i++) {
         voice.envValue[i] = 0;
         voice.envSeg[i] = 0;
@@ -415,6 +433,9 @@ class Dx7Processor extends AudioWorkletProcessor {
       voice.envSeg[i] = 0; // start in attack
       voice.opOut[i] = 0;
     }
+    // Master output-VCA: soft (click-safe) retrigger — attacks from the current
+    // value, so re-gating a still-releasing voice never pops.
+    voice.ampEnv.triggerSoft(true);
   }
 
   private noteOff(voice: Voice): void {
@@ -422,6 +443,7 @@ class Dx7Processor extends AudioWorkletProcessor {
     for (let i = 0; i < NUM_OPS; i++) {
       voice.envSeg[i] = 3; // jump to release segment
     }
+    voice.ampEnv.triggerSoft(false);
   }
 
   process(
@@ -439,6 +461,13 @@ class Dx7Processor extends AudioWorkletProcessor {
     const voiceCount = Math.max(1, Math.min(NUM_VOICES, parameters.voiceCount[0]! | 0));
     const level = parameters.level[0]!;
     const transpose = parameters.transpose[0]!;
+    // Per-voice master OUTPUT-VCA ADSR (k-rate; shared across voices, ticked
+    // per-sample per voice). Read defensively (older constructions may omit them).
+    const ampAttack  = parameters.attack  ? parameters.attack[0]!  : 0.001;
+    const ampDecay   = parameters.decay   ? parameters.decay[0]!   : 0.1;
+    const ampSustain = parameters.sustain ? parameters.sustain[0]! : 1;
+    const ampRelease = parameters.release ? parameters.release[0]! : 0.005;
+    const sr = sampleRate;
 
     const algo = this.algorithms[Math.max(0, Math.min(31, this.patch.algorithm - 1))]!;
     const ops = this.patch.operators;
@@ -549,13 +578,20 @@ class Dx7Processor extends AudioWorkletProcessor {
         for (const c of algo.carriers) {
           voiceOut += v.opOut[c]!;
         }
-        sum += voiceOut;
+        // Per-voice master OUTPUT VCA — multiply the summed-carrier voiceOut by
+        // the amp envelope BEFORE summing into the bus, on top of the operator
+        // EGs. Defaults (~1) leave the SYX sound unchanged.
+        const ampEnvVal = v.ampEnv.tick(ampAttack, ampDecay, ampSustain, ampRelease, sr);
+        sum += voiceOut * ampEnvVal;
 
-        // Auto-deactivate when fully released (all envs decayed).
+        // Auto-deactivate when fully released. CRITIQUE C3: require op-EG silence
+        // AND the master amp envelope having faded (ampEnv.value < ε) so (a) a
+        // long master release isn't cut short by op-EG silence, and (b) a
+        // fully-faded-but-not-formally-idle voice still frees (CPU bound).
         if (v.releasing) {
           let totalEnv = 0;
           for (let k = 0; k < NUM_OPS; k++) totalEnv += v.envValue[k]!;
-          if (totalEnv < 0.0001) {
+          if (totalEnv < 0.0001 && v.ampEnv.value < 1e-4) {
             v.active = false;
             v.laneOwner = -1;
           }

@@ -110,13 +110,28 @@ function rms(b: Float32Array): number { let s = 0; for (let i = 0; i < b.length;
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('cubeDef — module def shape', () => {
-  it('declares pitch + poly + the documented CV inputs (incl. fold_cv + space/connect_strength)', () => {
+  it('declares pitch + poly + trigger + the documented CV inputs (incl. fold_cv + space/connect_strength)', () => {
     expect(cubeDef.inputs.map((i) => i.id)).toEqual([
-      'pitch', 'poly',
+      'pitch', 'poly', 'trigger',
       'slice_y', 'slice_rx', 'slice_ry', 'slice_rz',
       'morph_fc', 'connect', 'connect_strength', 'crush',
       'space_crush', 'space_diffuse', 'fold_cv', 'tune',
     ]);
+  });
+
+  it('declares a mono trigger gate input (per-voice ADSR)', () => {
+    const trig = cubeDef.inputs.find((i) => i.id === 'trigger');
+    expect(trig, 'CUBE must expose a `trigger` input port').toBeTruthy();
+    expect(trig!.type).toBe('gate');
+    expect(trig!.paramTarget).toBeUndefined();
+  });
+
+  it('declares the 4 per-voice ADSR params (attack/decay/sustain/release)', () => {
+    const byId = Object.fromEntries(cubeDef.params.map((p) => [p.id, p] as const));
+    expect(byId.attack).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.001, curve: 'log' });
+    expect(byId.decay).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.1, curve: 'log' });
+    expect(byId.sustain).toMatchObject({ min: 0, max: 1, defaultValue: 1, curve: 'linear' });
+    expect(byId.release).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.005, curve: 'log' });
   });
 
   it('declares a poly input (polyPitchGate, 5-voice chord bus)', () => {

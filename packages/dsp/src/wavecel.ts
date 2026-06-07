@@ -25,6 +25,14 @@
 //   mono path (input[0] pitch). Back-compat + ART/VRT baselines preserved.
 
 import { WavetableOsc, WAVETABLE_FRAME_SIZE, WtParamSmoother } from './lib/wavetable-osc';
+import { Envelope } from './lib/adsr-env';
+import {
+  polyEnvSum,
+  monoEnvSample,
+  updateHeldPitch,
+  laneRenderVOct,
+  type AdsrParams,
+} from './lib/poly-osc-sum';
 
 /** Poly bus shape (mirrors packages/web/src/lib/audio/poly.ts): 5 voice lanes,
  *  10 channels (ch 2i = lane-i pitch V/oct, ch 2i+1 = lane-i gate). */
@@ -74,6 +82,14 @@ class WavecelProcessor extends AudioWorkletProcessor {
       { name: 'morph',  defaultValue: 0,   minValue: 0,   maxValue: 1,  automationRate: 'a-rate' as const },
       { name: 'spread', defaultValue: 1,   minValue: 1,   maxValue: 5,  automationRate: 'a-rate' as const },
       { name: 'fold',   defaultValue: 0,   minValue: 0,   maxValue: 1,  automationRate: 'a-rate' as const },
+      // Per-voice amplitude ADSR (per-voice-ADSR feature). A single shared
+      // A/D/S/R set feeds all 5 lane envelopes (poly) + lane-0 (mono TRIGGER).
+      // Defaults ~pass-through so an untouched ADSR + an ungated/unpatched
+      // TRIGGER keeps the legacy mono drone byte-identical. k-rate.
+      { name: 'attack',  defaultValue: 0.001, minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
+      { name: 'decay',   defaultValue: 0.1,   minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
+      { name: 'sustain', defaultValue: 1,     minValue: 0,     maxValue: 1, automationRate: 'k-rate' as const },
+      { name: 'release', defaultValue: 0.005, minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
     ];
   }
 
@@ -95,6 +111,23 @@ class WavecelProcessor extends AudioWorkletProcessor {
   private smMorph: WtParamSmoother;
   private smSpread: WtParamSmoother;
   private smFold: WtParamSmoother;
+
+  // ── Per-voice amplitude ADSR (per-voice-ADSR feature) ──
+  // One Envelope per lane; poly lane edges drive env[lane], the mono TRIGGER
+  // drives env[0]. everGated latches on the first rising edge (gated-amp mode);
+  // before that (and unpatched) the env multiply is skipped → byte-identical
+  // legacy drone. Scratch arrays feed the per-lane (L,R) reads to polyEnvSum.
+  private env: Envelope[] = Array.from({ length: POLY_VOICES }, () => new Envelope());
+  private prevGate: Uint8Array = new Uint8Array(POLY_VOICES);
+  private prevTrigGate = 0;
+  private everGated = false;
+  private laneScratchL = new Float64Array(POLY_VOICES);
+  private laneScratchR = new Float64Array(POLY_VOICES);
+  // PERSISTENT per-lane held V/oct — UPDATED while a lane is gated, HELD (never
+  // reset) when it's not, so a releasing voice (gate low, env>0) keeps advancing
+  // at the played pitch instead of snapping to 0 V/oct (C4). See updateHeldPitch
+  // / laneRenderVOct in lib/poly-osc-sum.ts (the release-tail pitch fix).
+  private heldVOct: Float64Array = new Float64Array(POLY_VOICES);
 
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
@@ -167,40 +200,81 @@ class WavecelProcessor extends AudioWorkletProcessor {
     const spreadCv = inputs[3]?.[0];
     const foldCv = inputs[4]?.[0];
     // Poly bus (10-channel polyPitchGate, see file header). May be absent
-    // (poly unpatched) — the engine connects all 10 channels to ONE input.
+    // (poly unpatched) — the engine connects all 10 channels to ONE input. Poly
+    // STAYS at input 5; the new mono TRIGGER is appended at input 6 (do NOT
+    // renumber poly or #664 routing breaks).
     const polyIn = inputs[5];
+    const trigIn = inputs[6]?.[0];
 
     const tune = parameters.tune[0] ?? 0;
     const fine = parameters.fine[0] ?? 0;
     const morphArr = parameters.morph;
     const spreadArr = parameters.spread;
     const foldArr = parameters.fold;
+    const sr = sampleRate;
+
+    // ── Per-voice ADSR params (k-rate; read once, fed to every lane env) ──
+    const adsr: AdsrParams = {
+      attack:  parameters.attack ? (parameters.attack[0] ?? 0.001) : 0.001,
+      decay:   parameters.decay ? (parameters.decay[0] ?? 0.1) : 0.1,
+      sustain: parameters.sustain ? (parameters.sustain[0] ?? 1) : 1,
+      release: parameters.release ? (parameters.release[0] ?? 0.005) : 0.005,
+    };
 
     // Decide once per block which poly lanes are GATED. We sample the gate +
     // pitch at the FIRST sample of the block (the sequencer / MIDI LANE write
     // setValueAtTime at block boundaries, so first-sample reads are exact).
-    // `polyActive` = at least one lane gated ⇒ render the poly sum; otherwise
-    // the render falls through to the existing mono path (byte-identical).
-    let polyActive = false;
+    // NOTE on retrigger granularity (CRITIQUE C4): edges are detected once at
+    // sample 0, so a sub-block 1→0→1 re-strike (faster than ~one block) is
+    // missed. An intra-block scan is a documented follow-up.
     const laneGate: boolean[] = [false, false, false, false, false];
-    const laneVOct: number[] = [0, 0, 0, 0, 0];
+    let anyPolyGate = false;
     if (polyIn) {
       for (let lane = 0; lane < POLY_VOICES; lane++) {
         const gateCh = polyIn[lane * 2 + 1];
         const pitchCh = polyIn[lane * 2];
         const g = gateCh && gateCh.length > 0 ? (gateCh[0] ?? 0) : 0;
-        if (g > 0.5) {
+        const gated = g > 0.5;
+        if (gated) {
           laneGate[lane] = true;
-          laneVOct[lane] = pitchCh && pitchCh.length > 0 ? (pitchCh[0] ?? 0) : 0;
-          polyActive = true;
+          anyPolyGate = true;
         }
+        // Track this lane's pitch while gated; HOLD it through release so a
+        // releasing voice (gate low, env still audible) advances at the held
+        // (played) pitch, not 0 V/oct = C4 — the release-tail pitch fix.
+        const lanePitch = pitchCh && pitchCh.length > 0 ? (pitchCh[0] ?? 0) : 0;
+        this.heldVOct[lane] = updateHeldPitch(this.heldVOct[lane]!, gated, lanePitch);
       }
     }
-    // Equal-RMS-ish attenuation so a 4-note chord doesn't clip vs a single
-    // note. sqrt(activeCount) keeps a held single poly note at ~mono level.
-    let activeCount = 0;
-    for (let lane = 0; lane < POLY_VOICES; lane++) if (laneGate[lane]) activeCount++;
-    const polyNorm = activeCount > 0 ? 1 / Math.sqrt(activeCount) : 1;
+
+    // Mono TRIGGER edge state.
+    const trigGate = trigIn && trigIn.length > 0 ? ((trigIn[0] ?? 0) > 0.5 ? 1 : 0) : 0;
+
+    // Gate-edge detection → soft (click-safe) retrigger. Every rising edge
+    // latches everGated (gated-amp mode engages thenceforth).
+    for (let lane = 0; lane < POLY_VOICES; lane++) {
+      const now = laneGate[lane] ? 1 : 0;
+      if (now && !this.prevGate[lane]) { this.env[lane]!.triggerSoft(true); this.everGated = true; }
+      else if (!now && this.prevGate[lane]) this.env[lane]!.triggerSoft(false);
+      this.prevGate[lane] = now as number;
+    }
+    if (!anyPolyGate) {
+      if (trigGate && !this.prevTrigGate) { this.env[0]!.triggerSoft(true); this.everGated = true; }
+      else if (!trigGate && this.prevTrigGate) this.env[0]!.triggerSoft(false);
+    }
+    this.prevTrigGate = trigGate;
+
+    // polyActive while ANY lane is gated OR still releasing (env audible); the
+    // mono gated path engages once everGated and poly is unpatched. Otherwise the
+    // legacy byte-identical mono drone runs.
+    let anyEnvAudible = false;
+    for (let lane = 0; lane < POLY_VOICES; lane++) {
+      if (this.env[lane]!.value > 0) { anyEnvAudible = true; break; }
+    }
+    const polyActive = anyPolyGate || (this.everGated && polyIn != null && anyEnvAudible);
+    const gatedMono = !polyActive && this.everGated;
+    const laneL = this.laneScratchL;
+    const laneR = this.laneScratchR;
 
     for (let i = 0; i < outL.length; i++) {
       const pitch = pitchIn ? pitchIn[i] : 0;
@@ -236,25 +310,35 @@ class WavecelProcessor extends AudioWorkletProcessor {
       const trim = tune / 12 + fine / 1200 + fm;
 
       if (polyActive) {
-        // Polyphonic: SUM the gated lanes. Each lane's voice tracks its own
-        // V/oct (+ shared trim). The morph / spread / fold timbre is shared,
-        // matching how a single oscillator's controls shape a whole chord.
-        let sumL = 0;
-        let sumR = 0;
+        // Polyphonic: step each lane's voice (its own V/oct + shared trim) then
+        // hand the per-lane (L,R) samples to polyEnvSum, which ticks every lane
+        // envelope, multiplies the env value in, sums the env-AUDIBLE lanes, and
+        // returns the env-audible-count normalization (decision #6). A lane in
+        // RELEASE keeps sounding (env>0) until it decays. The morph / spread /
+        // fold timbre is shared across voices. Silent lanes still advance (at
+        // lane-0's pitch) so a re-opened lane doesn't pop.
         for (let lane = 0; lane < POLY_VOICES; lane++) {
           const v = this.polyVoices[lane]!;
-          if (!laneGate[lane]) {
-            // Silent lane: advance its phase at lane-0's pitch so a newly-
-            // opened lane doesn't pop in mid-cycle, but contribute nothing.
-            v.step(laneVOct[0]! + trim, morph, spread, foldAmt);
-            continue;
-          }
-          const { l, r } = v.step(laneVOct[lane]! + trim, morph, spread, foldAmt);
-          sumL += l;
-          sumR += r;
+          // Held pitch: gated OR still releasing (env>0) → the lane's OWN held
+          // (played) pitch; silent/never-gated → lane-0's held pitch (no pop).
+          const voct = laneRenderVOct(
+            this.heldVOct, lane, laneGate[lane]!, this.env[lane]!.value > 0,
+          ) + trim;
+          const { l, r } = v.step(voct, morph, spread, foldAmt);
+          laneL[lane] = l;
+          laneR[lane] = r;
         }
+        const { sumL, sumR, polyNorm } = polyEnvSum(laneL, laneR, this.env, adsr, sr);
         outL[i] = sumL * polyNorm;
         outR[i] = sumR * polyNorm;
+      } else if (gatedMono) {
+        // Gated mono (TRIGGER drove lane-0's envelope; poly unpatched). The mono
+        // oscillator output is multiplied by lane-0's envelope.
+        const voct = pitch + trim;
+        const { l, r } = this.osc.step(voct, morph, spread, foldAmt);
+        const { l: el, r: er } = monoEnvSample(l, r, this.env[0]!, adsr, sr);
+        outL[i] = el;
+        outR[i] = er;
       } else {
         // Mono (poly unpatched / all gates closed): the original path,
         // byte-identical. Only voice 0 (the mono `osc`) advances + sounds.
