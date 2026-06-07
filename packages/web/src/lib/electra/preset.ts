@@ -48,6 +48,17 @@ export interface SurfaceBinding {
   /** Optional user-set CUSTOM name for this control on the Control Surface.
    *  When present it overrides the auto-generated abbreviation (clamped to 14). */
   name?: string;
+  /** OPTIONAL explicit page-1 position (ElectraControl path) — a 0-based
+   *  page-local slot index, `(controlSetId-1)*12 + (potId-1)` with
+   *  controlSetId 1..3 / potId 1..12. When present, the page-1 builder places
+   *  THIS control at that exact (controlSetId, potId) instead of the running
+   *  first-seen counter, and emits NO per-module group header (ElectraControl is
+   *  a flat positional grid, not module-grouped). The caller (electra/host.ts)
+   *  derives it via electraPosOfSlot(storageSlot) so the row-major STORAGE order
+   *  is translated to the firmware's control-set-then-pot order. When absent
+   *  (CONTROL SURFACE path) the existing first-seen + group-header behavior is
+   *  unchanged. */
+  slot?: number;
 }
 
 /** Minimal ParamDef the generator needs (a subset of graph/types ParamDef). */
@@ -183,15 +194,25 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
     .filter((x): x is { b: SurfaceBinding; def: GenParamDef } => x.def !== null)
     .slice(0, MAX_CONTROLS_PER_PAGE); // surface has no ordering beyond first-seen
 
+  // POSITIONAL mode (ElectraControl path): if ANY binding carries an explicit
+  // `slot`, the page is a FIXED positional grid — each control lands at its own
+  // (controlSetId, potId) and NO per-module group headers are emitted (the grid
+  // isn't module-grouped). When no binding carries a slot (CONTROL SURFACE path)
+  // the existing first-seen running-counter + group-header behavior is unchanged.
+  const positional = page1Resolved.some((x) => typeof x.b.slot === 'number');
+
   let lastModule: string | null = null;
   let groupStartSlot = 0;
-  let slot = 0; // 0-based running control index on page 1
+  let slot = 0; // 0-based running control index on page 1 (first-seen path)
   for (const { b, def } of page1Resolved) {
-    const csId = Math.floor(slot / POTS_PER_SET) + 1; // 1..3
-    const potId = (slot % POTS_PER_SET) + 1; // 1..12
+    // Position: explicit page-local slot in positional mode, else the running
+    // counter. The page-local slot encodes (controlSetId-1)*12 + (potId-1).
+    const pageSlot = positional && typeof b.slot === 'number' ? b.slot : slot;
+    const csId = Math.floor(pageSlot / POTS_PER_SET) + 1; // 1..3
+    const potId = (pageSlot % POTS_PER_SET) + 1; // 1..12
 
-    // Group header at each new source module.
-    if (b.moduleId !== lastModule) {
+    // Group header at each new source module — SKIPPED in positional mode.
+    if (!positional && b.moduleId !== lastModule) {
       if (lastModule !== null) {
         groups.push({
           pageId: PAGE_CONTROL,
@@ -254,8 +275,9 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
     });
     slot++;
   }
-  // Close the final group on page 1.
-  if (lastModule !== null && slot > groupStartSlot) {
+  // Close the final group on page 1 (first-seen path only — positional mode
+  // emits no group headers).
+  if (!positional && lastModule !== null && slot > groupStartSlot) {
     groups.push({
       pageId: PAGE_CONTROL,
       name: input.moduleLabel(lastModule),

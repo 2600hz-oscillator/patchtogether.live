@@ -877,6 +877,16 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/moog960',
   'linux/moog956',
   'linux/moog905',
+  // ELECTRA CONTROL — fixed 6×6 Electra-laid-out control surface. Unlike CONTROL
+  // SURFACE (binding-dependent body → VRT-exempt), the empty grid is fully
+  // DETERMINISTIC (fixed chrome + 3 bank groups + 36 dim placeholder dials, no
+  // canvas/animation), so it ships a REAL baseline (not exempt). Darwin baseline
+  // captured on this machine; linux baseline pending a `vrt-update.yml`
+  // workflow_dispatch on this branch (sub-pixel text AA differs across
+  // platforms) — darwin is the regression gate here. Functional coverage:
+  // electra-control.test.ts (geometry + real-Y.Doc mutators) + the bespoke
+  // electra-control.spec.ts (assign → grid → label → flash).
+  'linux/electraControl',
   // ---- darwin-side QUARANTINE: pre-existing flakes verified on main
   // (reproduced by reverting the cards-shrink-to-fit CSS in PR #447 and
   // re-running VRT — same failures on a clean main checkout). Quarantined
