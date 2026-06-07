@@ -147,29 +147,43 @@ describe('generatePreset — control bounds (render placement)', () => {
 });
 
 describe('generatePreset — MIXMASTER page', () => {
-  it('emits 29 writable controls + a 5-meter read-only row', () => {
+  it('emits a per-channel grid (vol/low/high/send1/send2 × 6 ch) on the 3 control sets', () => {
     const { preset, allocations } = generatePreset(baseInput());
     const mixAll = allocations.filter((a) => a.pageId === PAGE_MIXMASTER);
     const rw = mixAll.filter((a) => a.role === 'rw');
-    const meters = mixAll.filter((a) => a.role === 'meter');
-    expect(rw.length).toBe(29); // 4 vol + 4 s1 + 4 s2 + 4 lo + 4 mid + 4 hi + 4 comp + master
-    expect(meters.length).toBe(5); // 4 channels + master
-    // Meter controls are read-only thin vfaders.
-    const meterControls = preset.controls.filter((c) => c.pageId === PAGE_MIXMASTER && c.readOnly);
-    expect(meterControls.every((c) => c.type === 'vfader' && c.variant === 'thin')).toBe(true);
-    // Meter keys + master key shape.
-    expect(meters.map((a) => a.key)).toEqual([
-      'mx:meter:1', 'mx:meter:2', 'mx:meter:3', 'mx:meter:4', 'mx:meter:master',
-    ]);
-    // EQ controls carry the fmtDb formatter.
-    const lo = preset.controls.find((c) => c.name === 'Lo1')!;
-    expect(lo.values[0]!.formatter).toBe('fmtDb');
+    expect(rw.length).toBe(30); // 6 ch × (vol + low + high + send1 + send2)
+    // Meters live on SYSTEM now, not the mix page.
+    expect(mixAll.filter((a) => a.role === 'meter')).toHaveLength(0);
+    // Grid placement: vol → set1 (pots 1-6); low → set2 top, high → set2 bottom;
+    // send1 → set3 top, send2 → set3 bottom (the N leftmost pots = ch 1..N).
+    const byKey = Object.fromEntries(rw.map((a) => [a.key, a]));
+    expect(byKey['mx:ch1_volume']).toMatchObject({ controlSetId: 1, potId: 1 });
+    expect(byKey['mx:ch4_volume']).toMatchObject({ controlSetId: 1, potId: 4 });
+    expect(byKey['mx:ch1_low']).toMatchObject({ controlSetId: 2, potId: 1 });
+    expect(byKey['mx:ch1_high']).toMatchObject({ controlSetId: 2, potId: 7 });
+    expect(byKey['mx:ch1_send1']).toMatchObject({ controlSetId: 3, potId: 1 });
+    expect(byKey['mx:ch1_send2']).toMatchObject({ controlSetId: 3, potId: 7 });
+    // EQ controls carry the fmtDb formatter; MID EQ + COMP are NOT on this page.
+    expect(preset.controls.find((c) => c.name === 'Lo1')!.values[0]!.formatter).toBe('fmtDb');
+    expect(rw.some((a) => /_mid$/.test(a.key) || /:comp/.test(a.key))).toBe(false);
   });
 
   it('omits MixMaster controls when no mixer is present (page shell only)', () => {
     const { preset } = generatePreset(baseInput({ mixmstrsId: null }));
     expect(preset.controls.filter((c) => c.pageId === PAGE_MIXMASTER)).toHaveLength(0);
     expect(preset.pages.find((p) => p.id === PAGE_MIXMASTER)).toBeDefined();
+  });
+
+  it('puts master volume + the VU meters on the SYSTEM page (master is the odd duck)', () => {
+    const { allocations } = generatePreset(baseInput());
+    const sys = allocations.filter((a) => a.pageId === PAGE_SYSTEM);
+    expect(sys.find((a) => a.key === 'mx:master_volume')).toMatchObject({ role: 'rw', controlSetId: 2 });
+    const meters = sys.filter((a) => a.role === 'meter');
+    expect(meters.map((a) => a.key)).toEqual([
+      'mx:meter:master', 'mx:meter:1', 'mx:meter:2', 'mx:meter:3',
+      'mx:meter:4', 'mx:meter:5', 'mx:meter:6',
+    ]);
+    expect(meters.every((a) => a.controlSetId === 3)).toBe(true);
   });
 });
 

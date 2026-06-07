@@ -66,6 +66,10 @@ export interface ElectraGroup {
   /** On-screen rectangle [x, y, width, height] — like controls, the firmware
    *  needs this to draw the group's header box. */
   bounds?: [number, number, number, number];
+  /** Unique id (shares the control id space). Real presets always set it. */
+  id?: number;
+  /** Header style; real presets use 'highlighted'. */
+  variant?: string;
 }
 
 /** The MIDI message a control input/value binds to. */
