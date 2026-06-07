@@ -26,7 +26,7 @@ beforeAll(() => {
 describe('moogCp3Def: module def shape', () => {
   it('declares type=moogCp3, label="CP3 Mixer", category=utilities, schemaVersion=1', () => {
     expect(moogCp3Def.type).toBe('moogCp3');
-    expect(moogCp3Def.label).toBe('CP3 Mixer');
+    expect(moogCp3Def.label).toBe('cp3 mixer');
     expect(moogCp3Def.category).toBe('utilities');
     expect(moogCp3Def.schemaVersion).toBe(1);
   });

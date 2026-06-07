@@ -1,6 +1,6 @@
 // e2e/tests/snes9x.spec.ts
 //
-// SNES9X end-to-end (ROM-gated, mirrors the SM64 / QBERT pattern):
+// SNES9X end-to-end (ROM-gated, mirrors the QBERT pattern):
 //
 //   * SKIPS gracefully unless the autoload ROM is present at
 //     /roms/snes9x/game.sfc (it's gitignored + user-provided, so CI runs

@@ -244,7 +244,7 @@ export const ruttetraDef: VideoModuleDef = {
   type: 'ruttetra',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'RUTTETRA',
+  label: 'ruttetra',
   category: 'output',
   // schemaVersion 2: the type id `ruttetra` previously belonged to the
   // coord-remap (now RESHAPER, schemaVersion 1). Patches saved before the

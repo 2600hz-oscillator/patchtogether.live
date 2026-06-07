@@ -8,7 +8,7 @@ import { ringsDef, ringsMath, RINGS_MAX_MODEL, RINGS_MODEL_NAMES, type RingsPara
 describe('ringsDef shape', () => {
   it('declares type=rings, label=RINGS, category=sources', () => {
     expect(ringsDef.type).toBe('rings');
-    expect(ringsDef.label).toBe('RINGS');
+    expect(ringsDef.label).toBe('rings');
     expect(ringsDef.category).toBe('sources');
   });
 

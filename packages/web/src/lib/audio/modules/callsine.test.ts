@@ -30,7 +30,7 @@ import {
 describe('callsineDef shape', () => {
   it('declares type=callsine, label=CALLSINE, category=effects', () => {
     expect(callsineDef.type).toBe('callsine');
-    expect(callsineDef.label).toBe('CALLSINE');
+    expect(callsineDef.label).toBe('callsine');
     expect(callsineDef.category).toBe('effects');
   });
 

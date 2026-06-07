@@ -63,7 +63,7 @@ export const modtrisDef: AudioModuleDef = {
   type: 'modtris',
   palette: { top: 'Games', sub: 'Arcade' },
   domain: 'audio',
-  label: 'MODTRIS',
+  label: 'modtris',
   category: 'games',
   schemaVersion: 1,
   vizPassthrough: true,

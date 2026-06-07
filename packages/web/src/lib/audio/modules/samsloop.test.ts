@@ -36,7 +36,7 @@ import {
 describe('samsloopDef shape', () => {
   it('declares type=samsloop, label=SAMSLOOP, category=sources', () => {
     expect(samsloopDef.type).toBe('samsloop');
-    expect(samsloopDef.label).toBe('SAMSLOOP');
+    expect(samsloopDef.label).toBe('samsloop');
     expect(samsloopDef.category).toBe('sources');
   });
 

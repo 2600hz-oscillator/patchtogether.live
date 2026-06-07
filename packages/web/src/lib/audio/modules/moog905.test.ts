@@ -25,14 +25,14 @@ import type { ModuleNode } from '$lib/graph/types';
 describe('moog905Def: module def shape', () => {
   it('declares type=moog905, label="905 Spring Reverb", category=processors, schemaVersion=1', () => {
     expect(moog905Def.type).toBe('moog905');
-    expect(moog905Def.label).toBe('905 Spring Reverb');
+    expect(moog905Def.label).toBe('905 spring reverb');
     expect(moog905Def.category).toBe('processors');
     expect(moog905Def.schemaVersion).toBe(1);
     expect(moog905Def.domain).toBe('audio');
   });
 
-  it('lives in the Ports → moogafakkin palette bucket and uses the Moog905Card', () => {
-    expect(moog905Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog905Card', () => {
+    expect(moog905Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
     expect(moog905Def.card).toBe('Moog905Card');
   });
 

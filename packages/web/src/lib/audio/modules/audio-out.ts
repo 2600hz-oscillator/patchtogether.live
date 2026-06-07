@@ -41,9 +41,9 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const audioOutDef: AudioModuleDef = {
   type: 'audioOut',
-  palette: { top: 'Audio modules', sub: 'End of chain' },
+  palette: { top: 'Audio modules', sub: 'I/O' },
   domain: 'audio',
-  label: 'Audio Out',
+  label: 'audio out',
   category: 'output',
   schemaVersion: 2, // bumped: previously had a single 'audio' input
 

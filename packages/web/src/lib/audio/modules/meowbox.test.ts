@@ -20,7 +20,7 @@ import { MEOWBOX_C4_HZ, meowboxBaseFreqHz, meowboxDef } from './meowbox';
 describe('meowboxDef: module-def shape', () => {
   it('declares type=meowbox, label=MEOWBOX, category=sources', () => {
     expect(meowboxDef.type).toBe('meowbox');
-    expect(meowboxDef.label).toBe('MEOWBOX');
+    expect(meowboxDef.label).toBe('meowbox');
     expect(meowboxDef.category).toBe('sources');
   });
 

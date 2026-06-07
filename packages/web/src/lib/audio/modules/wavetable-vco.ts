@@ -81,7 +81,7 @@ export const wavetableVcoDef: AudioModuleDef = {
   type: 'wavetableVco',
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
-  label: 'Wavetable VCO',
+  label: 'wavetable vco',
   category: 'sources',
   schemaVersion: 3,
   migrate(data, fromVersion) {

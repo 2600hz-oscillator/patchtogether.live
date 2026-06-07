@@ -151,7 +151,7 @@ export const nibblesDef: VideoModuleDef = {
   type: 'nibbles',
   palette: { top: 'Games', sub: 'Arcade' },
   domain: 'video',
-  label: 'NIBBLES',
+  label: 'nibbles',
   category: 'sources',
   schemaVersion: 1,
   inputs: [],

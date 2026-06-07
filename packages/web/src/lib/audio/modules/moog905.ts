@@ -38,10 +38,10 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog905Def: AudioModuleDef = {
   type: 'moog905',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   card: 'Moog905Card',
   domain: 'audio',
-  label: '905 Spring Reverb',
+  label: '905 spring reverb',
   category: 'processors',
   schemaVersion: 1,
 

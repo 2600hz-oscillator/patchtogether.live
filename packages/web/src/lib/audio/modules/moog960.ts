@@ -100,10 +100,10 @@ const MODE_PARAMS = Array.from({ length: SEQ960_COLUMNS }, (_, i) => ({
 
 export const moog960Def: AudioModuleDef = {
   type: 'moog960',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   card: 'Moog960Card',
   domain: 'audio',
-  label: '960 Sequencer',
+  label: '960 sequencer',
   // Matches the existing `sequencer` module's category (no dedicated
   // 'sequencers' category exists in the registry).
   category: 'modulation',

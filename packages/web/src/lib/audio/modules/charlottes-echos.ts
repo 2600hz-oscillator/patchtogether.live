@@ -37,7 +37,7 @@ export const charlottesEchosDef: AudioModuleDef = {
   type: 'charlottesEchos',
   palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: "CHARLOTTE'S ECHOS",
+  label: "charlotte's echos",
   category: 'effects',
   schemaVersion: 1,
   stereoPairs: [['L', 'R']],

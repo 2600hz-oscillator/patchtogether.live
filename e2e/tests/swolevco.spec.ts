@@ -48,8 +48,7 @@ test('SWOLEVCO renders + scope feeds OUTPUT canvas', async ({ page }) => {
   await expect(canvas).toHaveCount(1);
   await page.waitForTimeout(900);
 
-  // Scope render — non-trivial pixel content (matches the WAVVIZ pattern
-  // at art/scenarios/.../waveform-trace gates).
+  // Scope render — non-trivial pixel content (waveform-trace gate pattern).
   const variance = await canvas.evaluate((el) => {
     const c = el as HTMLCanvasElement;
     const ctx = c.getContext('2d');

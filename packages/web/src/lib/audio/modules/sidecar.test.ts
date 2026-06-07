@@ -129,7 +129,7 @@ describe('sidecarDef — module def shape', () => {
 
   it('module id is "sidecar" + label "SIDECAR"', () => {
     expect(sidecarDef.type).toBe('sidecar');
-    expect(sidecarDef.label).toBe('SIDECAR');
+    expect(sidecarDef.label).toBe('sidecar');
   });
 });
 

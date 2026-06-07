@@ -93,7 +93,7 @@ export const stereovcaDef: AudioModuleDef = {
   type: 'stereovca',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'STEREOVCA',
+  label: 'stereovca',
   category: 'utilities',
   schemaVersion: 1,
 

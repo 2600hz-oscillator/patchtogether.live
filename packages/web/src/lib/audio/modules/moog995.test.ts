@@ -21,14 +21,14 @@ import type { ModuleNode } from '$lib/graph/types';
 describe('moog995Def: module def shape', () => {
   it('declares type=moog995, label="995 Atten", category=utilities, domain=audio, schemaVersion=1', () => {
     expect(moog995Def.type).toBe('moog995');
-    expect(moog995Def.label).toBe('995 Atten');
+    expect(moog995Def.label).toBe('995 atten');
     expect(moog995Def.category).toBe('utilities');
     expect(moog995Def.domain).toBe('audio');
     expect(moog995Def.schemaVersion).toBe(1);
   });
 
-  it('is filed under the Ports → moogafakkin palette bucket', () => {
-    expect(moog995Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('is filed under the Moog System 35/55 Clones palette bucket', () => {
+    expect(moog995Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
   });
 
   it('exposes the three audio inputs: in1..in3', () => {

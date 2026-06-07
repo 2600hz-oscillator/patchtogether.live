@@ -168,15 +168,6 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // specs simulate full games + drive scoring deterministically.
   modtris: 'line_cleared/overfill only fire after ~10 piece drops; covered by modtris-related specs (simulated)',
   pong:    'score_left/score_right only fire on ball-miss after bounces; covered by pong-related specs',
-  // ── SM64: the upstream sm64js bundle needs a US sm64.z64 ROM
-  // extracted into IDB before it renders ANYTHING — until then the
-  // #gameCanvas is a blank cleared surface, so the sweep would assert
-  // "no signal" on a module whose IO is wired correctly. (Note: SM64
-  // is also currently absent from the auto-generated registry-manifest
-  // because its outputs declaration is read by a regex that the SM64
-  // def doesn't match — sm64 is invisible to this sweep regardless.
-  // Kept here for documentation of the underlying blocker.)
-  sm64: 'video out blank until US ROM is extracted into IDB; covered by sm64-related specs (post-extract render)',
   // ── SNES9X: the snes9x2005 WASM core renders nothing until a ROM is
   // loaded, and the ROM is user-provided + gitignored (absent in CI), so
   // the card shows the "LOAD A ROM" dropzone + every output is inert. The
@@ -748,8 +739,8 @@ test.describe('per-module per-port: outputs emit signal', () => {
     // in per-module.spec.ts.
     //
     // Heuristic: `audio` or `video` typed input present → effect shape.
-    // (Many MI Eurorack ports — RINGS, ELEMENTS, BLADES, WARPS — also
-    // fall in this bucket.)
+    // (Many MI Eurorack ports — RINGS, ELEMENTS, WARPS — also fall in
+    // this bucket.)
     //
     // Exception: a module that has an `audio` input AND self-running
     // outputs (FOXY's out_l/out_r ring even with no upstream because the
@@ -758,7 +749,6 @@ test.describe('per-module per-port: outputs emit signal', () => {
     // so they go through the normal output-emit path.
     const NOT_EFFECT_DESPITE_AUDIO_INPUT = new Set([
       'foxy',     // out_l/out_r ring at default tune=0
-      'wavviz',   // wavetable VCO with optional FM
       'wavetableVco',
       'swolevco',
       // MOOG 921 VCO — a self-running oscillator: its four waveform jacks

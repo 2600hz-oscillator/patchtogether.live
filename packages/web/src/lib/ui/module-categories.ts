@@ -3,17 +3,20 @@
 // Classification ORDERING + grouping logic for the nested "Add module"
 // palette (2-level hierarchy):
 //
-//   Top                    Sub                Items
-//   --------------------- ------------------ ------------------------
-//   Audio modules         VCOs               ANALOGVCO, WAVETABLEVCO …
-//                         Utility            ADSR, VCA, CARTESIAN …
-//                         Effects            REVERB, CHARLOTTESECHOS …
-//                         Mixing             MIXER, MIXMSTRS …
-//                         End of chain       AUDIOOUT
-//   Video modules         Sources            LINES, CAMERA, SHAPES …
-//                         Processors         CHROMA, LUMA, COLORIZER …
-//                         Utilities          V-MIXER, OUTPUT …
-//   Hybrid                — (flat)           SCOPE, viz-VCOs, STICKY …
+//   Top                          Sub                Items
+//   --------------------------- ------------------ ------------------------
+//   Audio modules               VCOs               ANALOGVCO, WAVETABLEVCO …
+//                               Utility            ADSR, VCA, SIDECAR …
+//                               Effects            REVERB, CHARLOTTESECHOS …
+//                               Mixing             MIXER, MIXMSTRS …
+//                               sequencers         CARTESIAN, DRUMSEQZ …
+//                               I/O                AUDIO IN, AUDIO OUT …
+//   Video modules               Sources            LINES, CAMERA, SHAPES …
+//                               Processors         CHROMA, LUMA, COLORIZER …
+//                               Utilities          V-MIXER, OUTPUT …
+//   Moog System 35/55 Clones    — (flat)           MOOG 921, MOOG 904A …
+//   livecode                    — (flat)           LIVECODE, CLOCKED
+//   Hybrid                      — (flat)           SCOPE, viz-VCOs, STICKY …
 //
 // WHERE A MODULE'S CATEGORY LIVES: on the module's OWN def, as a `palette:
 // { top, sub }` field (AudioModuleDef / VideoModuleDef / MetaModuleDef).
@@ -33,7 +36,8 @@ export type TopCategory =
   | 'Audio modules'
   | 'Video modules'
   | 'Games'
-  | 'Ports'
+  | 'Moog System 35/55 Clones'
+  | 'livecode'
   | 'MIDI'
   | 'Hybrid'
   | 'Uncategorized';
@@ -44,32 +48,31 @@ export interface CategoryEntry {
    *  set it to 'Hybrid' for the schema's shape uniformity.
    *
    *  Special rendering rule (ModulePalette): when a sub's name matches
-   *  the top's name (e.g. Ports/Ports, Hybrid/Hybrid) those items
-   *  render flat directly under the top-level row — no sub-header
-   *  indirection. This lets a top-level group like Ports show
-   *  high-profile entries (helm, hydrogen, cloudseed) at the top
-   *  level alongside a labelled Mutable subfolder for the rest. */
+   *  the top's name (e.g. Hybrid/Hybrid, livecode/livecode, the Moog
+   *  clone group) those items render flat directly under the top-level
+   *  row — no sub-header indirection. */
   sub: string;
 }
 
 /** Canonical sub-category order per top category (drives menu order). */
 export const SUB_ORDER: Record<TopCategory, readonly string[]> = {
-  'Audio modules': ['VCOs', 'Utility', 'Effects', 'Mixing', 'End of chain'],
+  // 'sequencers' = clocked step/pattern sources (CARTESIAN, DRUMSEQZ, MACSEQ,
+  // POLYSEQZ, SCORE). 'I/O' (formerly "End of chain") = signal in/out of the
+  // rack (AUDIO IN, AUDIO OUT, GAMEPAD).
+  'Audio modules': ['VCOs', 'Utility', 'Effects', 'Mixing', 'sequencers', 'I/O'],
   'Video modules': ['Sources', 'Processors', 'Utilities'],
   // Games = playable game modules (emulators + in-house arcade ports) that
   // emit game-event CV/GATE. Two subs: Emulators (load an external game
   // engine / ROM — DOOM, SNES9X, Q*Bert) + Arcade (in-house ports —
-  // NIBBLES, PONG, MODTRIS, FROGGER). SM64/SKIFREE are also games but
-  // weren't in the move list; they stay in Hybrid for now.
+  // NIBBLES, PONG, MODTRIS, FROGGER, SKIFREE).
   Games: ['Emulators', 'Arcade'],
-  // Ports = "ports of external software / hardware synths". `Ports`
-  // (matching the top name) renders flat at the top level —
-  // hydrogen, helm, cloudseed are headline ports the user wants one
-  // click away. `Mutable` is the MI archetype-port sublist. `moogafakkin`
-  // is the System 55 / 35 clone family (the renamed ex-"Moog" set — System
-  // 55 big modular + System 35; shared modules listed once under the single
-  // moogafakkin subfolder). Mirrors the Mutable nesting.
-  Ports: ['Ports', 'Mutable', 'moogafakkin'],
+  // Moog System 35/55 Clones = the moogafakkin family (System 55 big modular
+  // + System 35 small modular; shared modules listed once). Renders flat at
+  // the top level (sub name matches top name).
+  'Moog System 35/55 Clones': ['Moog System 35/55 Clones'],
+  // livecode = the live-coding modules (LIVECODE editor + CLOCKED runner).
+  // Renders flat at the top level (sub name matches top name).
+  livecode: ['livecode'],
   MIDI: ['MIDI'],
   Hybrid: ['Hybrid'],
   Uncategorized: ['Uncategorized'],
@@ -80,7 +83,8 @@ export const TOP_ORDER: readonly TopCategory[] = [
   'Audio modules',
   'Video modules',
   'Games',
-  'Ports',
+  'Moog System 35/55 Clones',
+  'livecode',
   'MIDI',
   'Hybrid',
   'Uncategorized',
@@ -145,7 +149,8 @@ export function groupDefs<D extends DefLike>(defs: readonly D[]): GroupedTop<D>[
     'Audio modules': {},
     'Video modules': {},
     Games: {},
-    Ports: {},
+    'Moog System 35/55 Clones': {},
+    livecode: {},
     MIDI: {},
     Hybrid: {},
     Uncategorized: {},

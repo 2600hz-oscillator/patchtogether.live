@@ -65,7 +65,7 @@ export const colorizerDef: VideoModuleDef = {
   type: 'colorizer',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'COLORIZER',
+  label: 'colorizer',
   category: 'effects',
   schemaVersion: 1,
   inputs: [

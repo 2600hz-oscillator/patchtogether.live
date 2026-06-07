@@ -94,9 +94,9 @@ export function defaultCells(): Cell[] {
 
 export const cartesianDef: AudioModuleDef = {
   type: 'cartesian',
-  palette: { top: 'Audio modules', sub: 'Utility' },
+  palette: { top: 'Audio modules', sub: 'sequencers' },
   domain: 'audio',
-  label: 'Cartesian',
+  label: 'cartesian',
   category: 'modulation',
   // v2: per-cell pitch encoding changed from `pitch: semitones` to `midi: int|null`.
   //     See sequencer.ts for the matching change.

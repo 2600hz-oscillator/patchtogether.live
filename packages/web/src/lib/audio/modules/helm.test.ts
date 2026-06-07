@@ -17,7 +17,7 @@ describe('helm module def', () => {
   it('declares the expected I/O surface', () => {
     expect(helmDef.type).toBe('helm');
     expect(helmDef.domain).toBe('audio');
-    expect(helmDef.label).toBe('HELM');
+    expect(helmDef.label).toBe('helm');
     // 4 inputs: pitch_cv fallback, gate fallback, midi_in marker, seq_reset.
     expect(helmDef.inputs.map((p) => p.id).sort()).toEqual(['gate', 'midi_in', 'pitch_cv', 'seq_reset']);
     // Stereo audio output

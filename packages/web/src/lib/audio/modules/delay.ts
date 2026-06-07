@@ -52,7 +52,7 @@ export const delayDef: AudioModuleDef = {
   type: 'delay',
   palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: 'DELAY',
+  label: 'delay',
   category: 'effects',
   schemaVersion: 1,
   inputs: [

@@ -45,7 +45,7 @@ import {
 describe('wavesculpt v2: module-def shape', () => {
   it('declares type/label/domain/category', () => {
     expect(wavesculptDef.type).toBe('wavesculpt');
-    expect(wavesculptDef.label).toBe('WAVESCULPT');
+    expect(wavesculptDef.label).toBe('wavesculpt');
     expect(wavesculptDef.domain).toBe('audio');
     expect(wavesculptDef.category).toBe('sources');
   });

@@ -136,7 +136,7 @@ describe('analogLogicMath: attenuverter applies before the math', () => {
 describe('analogLogicMathsDef: module-def shape', () => {
   it('declares type=analogLogicMaths, label=ANALOGLOGICMATHS, category=utilities, domain=audio', () => {
     expect(analogLogicMathsDef.type).toBe('analogLogicMaths');
-    expect(analogLogicMathsDef.label).toBe('ANALOGLOGICMATHS');
+    expect(analogLogicMathsDef.label).toBe('analoglogicmaths');
     expect(analogLogicMathsDef.category).toBe('utilities');
     expect(analogLogicMathsDef.domain).toBe('audio');
   });

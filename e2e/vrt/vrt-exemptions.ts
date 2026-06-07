@@ -34,8 +34,7 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // then freezes the audio so the trace is pixel-stable. Mask entry
   // intentionally absent (vrt.spec.ts ignores the mask map for
   // scene-driven modules anyway, but keeping the table accurate).
-  // WAVVIZ / SWOLEVCO carry a video-out preview canvas.
-  wavviz: [{ selector: 'canvas' }],
+  // SWOLEVCO carries a video-out preview canvas.
   swolevco: [{ selector: 'canvas' }],
   // CUBE: live rotating 3D WebGL2 render (issue #2) + snapshot-driven OUTPUT
   // scope — both animate continuously (camera + rAF), so mask the canvases and
@@ -312,11 +311,6 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // deterministic-time test hook is added so the scene can freeze the
   // game at a known tick.
   frogger: 'animated sprite motion (cars/logs/turtles) + auto-start defeat deterministic single-frame capture; unit + E2E provide coverage',
-  // SM64 — fully animated 3D scene (Mario idle anim + camera bob even
-  // before any user input); no naturally still frame — VRT deferred. Unit
-  // (CV→playerInput map) + E2E (boot-into-running-game with the seeded
-  // IDB fixture, or skip when fixture absent) provide coverage.
-  sm64: 'fully animated 3D scene; no naturally still frame — VRT deferred. Unit + E2E provide coverage',
   // SKIFREE — the skifree.js engine self-drives via requestAnimationFrame
   // (terrain scrolls, snowboarders/yeti move, skier animation cycles) the
   // moment the bundle loads, so there is no naturally still frame to
@@ -617,8 +611,13 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // flipper-dsp.test.ts.
   'linux/flipper',
   'linux/macrooscillator',
+  // PENTEMELODICA: darwin baseline (the 5-voice card: 5 strips + mixer +
+  // filter, static computed waveform previews — no animated canvas) captured
+  // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on
+  // this branch. Functional coverage is pentemelodica-dsp.test.ts +
+  // pentemelodica.test.ts + the per-port sweep + the bespoke e2e.
+  'linux/pentemelodica',
   'linux/samsloop',
-  'linux/blades',
   'linux/stages',
   // SCOPE: this PR re-captures the darwin baseline with deterministic
   // audio content (via VRT_SCENES). The linux baseline still shows the
@@ -664,10 +663,6 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // run on linux CI — WebGL ribbon AA + CRT post differs sub-thresholdly
   // across GPU drivers, so we capture darwin here and defer linux.
   'linux/wavesculpt',
-  // WAVVIZ (wavetable preset dropdown added): the card grew a PRESET
-  // dropdown so the darwin baseline was regen'd in this PR. Linux baseline
-  // pending a `task vrt:update` run on linux CI.
-  'linux/wavviz',
   // CUBE (3D wavetable-navigator oscillator, first slice): darwin baseline
   // captured on this machine via VRT_SCENES (analogVco → pitch, rotated/morphed
   // slice through the default tables, freeze-on-suspend so the snapshot-driven

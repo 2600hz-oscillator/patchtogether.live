@@ -10,7 +10,7 @@ import { adsrDef } from './adsr';
 describe('adsrDef: module-def shape', () => {
   it('declares type=adsr, label=ADSR, category=modulation', () => {
     expect(adsrDef.type).toBe('adsr');
-    expect(adsrDef.label).toBe('ADSR');
+    expect(adsrDef.label).toBe('adsr');
     expect(adsrDef.category).toBe('modulation');
   });
 

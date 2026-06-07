@@ -600,7 +600,7 @@ export const b3ntb0xDef: VideoModuleDef = {
   type: 'b3ntb0x',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'B3NTB0X',
+  label: 'b3ntb0x',
   category: 'output',
   schemaVersion: 1,
   inputs: [

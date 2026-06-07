@@ -106,7 +106,7 @@ export const sequencerDef: AudioModuleDef = {
   type: 'sequencer',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'Sequencer',
+  label: 'sequencer',
   category: 'modulation',
   // v2: each step's pitch encoding changed from `pitch: <semitones from C4>`
   //     (free-running ±24 slider) to `midi: <int 33..114> | null` (text-entry).

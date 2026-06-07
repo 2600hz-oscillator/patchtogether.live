@@ -34,7 +34,7 @@ export const slewSwitchDef: AudioModuleDef = {
   type: 'slewSwitch',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'SLEWSWITCH',
+  label: 'slewswitch',
   category: 'utility',
   schemaVersion: 1,
   inputs: [

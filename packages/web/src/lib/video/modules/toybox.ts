@@ -290,7 +290,7 @@ export const toyboxDef: VideoModuleDef = {
   type: 'toybox',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
-  label: 'TOYBOX',
+  label: 'toybox',
   category: 'sources',
   schemaVersion: TOYBOX_SCHEMA_VERSION,
   migrate: migrateToyboxData,

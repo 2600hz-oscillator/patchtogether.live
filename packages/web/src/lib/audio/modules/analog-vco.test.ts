@@ -12,7 +12,7 @@ import { analogVcoDef } from './analog-vco';
 describe('analogVcoDef: module def shape', () => {
   it('declares type=analogVco, label="Analog VCO", category=sources', () => {
     expect(analogVcoDef.type).toBe('analogVco');
-    expect(analogVcoDef.label).toBe('Analog VCO');
+    expect(analogVcoDef.label).toBe('analog vco');
     expect(analogVcoDef.category).toBe('sources');
   });
 

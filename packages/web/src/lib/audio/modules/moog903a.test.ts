@@ -23,13 +23,13 @@ import type { ModuleNode } from '$lib/graph/types';
 describe('moog903aDef: module def shape', () => {
   it('declares type=moog903a, label="903A Random Signal Generator", category=sources, schemaVersion=1', () => {
     expect(moog903aDef.type).toBe('moog903a');
-    expect(moog903aDef.label).toBe('903A Random Signal Generator');
+    expect(moog903aDef.label).toBe('903a random signal generator');
     expect(moog903aDef.category).toBe('sources');
     expect(moog903aDef.schemaVersion).toBe(1);
   });
 
-  it('lives in the Ports → moogafakkin palette bucket and uses the Moog903aCard', () => {
-    expect(moog903aDef.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog903aCard', () => {
+    expect(moog903aDef.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
     expect(moog903aDef.card).toBe('Moog903aCard');
     expect(moog903aDef.domain).toBe('audio');
   });

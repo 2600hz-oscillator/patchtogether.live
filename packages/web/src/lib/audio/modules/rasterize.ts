@@ -50,7 +50,7 @@ export const rasterizeDef: AudioModuleDef = {
   type: 'rasterize',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
-  label: 'Rasterize',
+  label: 'rasterize',
   category: 'utilities',
   schemaVersion: 1,
 

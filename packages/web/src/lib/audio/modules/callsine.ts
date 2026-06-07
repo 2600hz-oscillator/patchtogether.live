@@ -517,7 +517,7 @@ export const callsineDef: AudioModuleDef = {
   type: 'callsine',
   palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: 'CALLSINE',
+  label: 'callsine',
   // CallSine is fundamentally audio-in → audio-out (a resynth, not a
   // synth), so the category is 'effects' for sub-classification under
   // module-categories.ts (we put it in Hybrid → Hybrid because it also

@@ -40,7 +40,7 @@ async function loadProcessor(): Promise<ProcCtor> {
 describe('chowkickDef — module def shape', () => {
   it('module id is "chowkick" + label "CHOWKICK"', () => {
     expect(chowkickDef.type).toBe('chowkick');
-    expect(chowkickDef.label).toBe('CHOWKICK');
+    expect(chowkickDef.label).toBe('chowkick');
   });
 
   it('declares gate_in + pitch_cv + 15 per-knob CV inputs (17 total)', () => {

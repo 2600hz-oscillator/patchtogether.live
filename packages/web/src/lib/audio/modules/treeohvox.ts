@@ -38,9 +38,9 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const treeohvoxDef: AudioModuleDef = {
   type: 'treeohvox',
-  palette: { top: 'Ports', sub: 'Ports' },
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
-  label: 'TREE.oh.VOX',
+  label: 'tree.oh.vox',
   category: 'sources',
   schemaVersion: 1,
   ossAttribution: { author: 'Robin Schmidt (Open303, MIT)' },

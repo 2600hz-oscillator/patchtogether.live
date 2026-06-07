@@ -130,7 +130,6 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   nibbles:  'gameplay-conditional outputs (snake/pellet/etc); covered by nibbles + video-audio-cvgate-coverage',
   pong:     'gameplay-conditional outputs; covered by pong-related specs',
   modtris:  'gameplay-conditional outputs; covered by modtris-related specs',
-  sm64:     'video output blank until US ROM extracted into IDB; covered by sm64-related specs',
   snes9x:   'ROM-gated emulator: all outputs (incl. measured audio_l) need a loaded ROM (user-provided, gitignored, absent in CI) so control + patched both read silence; covered by snes9x.spec.ts + snes9x-gameplay-gates.spec.ts (skip when ROM absent) + snes-input/clock-multiplier/smw-events unit tests',
   frogger:  'gameplay-conditional outputs; covered by frogger specs',
   skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts',
@@ -327,7 +326,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // conditional (player_cv, score_cv, sfx) and the test browser
   // doesn't have the ROM fixture (404s on /roms/qbert/qbert.zip in
   // the failing run). Same exemption shape as `doom`/`nibbles`/
-  // `frogger`/`sm64` above. Covered by qbert-rom-missing.spec.ts
+  // `frogger` above. Covered by qbert-rom-missing.spec.ts
   // (ROM-absence behavior) + qbert-cv-joystick.spec.ts (input wiring
   // when ROM is present) + qbert-runtime.test.ts (game-loop unit).
   qbert: 'arcade ROM gameplay-conditional outputs (ROM not fetched in test env); covered by qbert-*.spec.ts + qbert-runtime.test.ts',
@@ -472,8 +471,6 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   analogVco: { fmAmount: 0.5, pmAmount: 0.5 },
   // wavetableVco: same shape as analogVco (fmAmount/pmAmount gating).
   wavetableVco: { fmAmount: 0.5, pmAmount: 0.5, wavePos: 0.5 },
-  // wavviz: similar (fmAmount/foldAmount gating).
-  wavviz: { fmAmount: 0.5, foldAmount: 0.4, wavePos: 0.5 },
   // swolevco: timbre/symmetry/fold/ratio default tuned for clean; boost.
   swolevco: { timbre: 0.5, symmetry: 0.5, fold: 0.4, ratio: 0.3 },
   // moog921Vco: the sync input is gated by the 3-way `sync` switch (default 0
@@ -605,6 +602,25 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
 // Each entry must cite the dedicated test that DOES cover the port's
 // downstream effect — otherwise we're hiding a coverage gap.
 const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
+  // ── PENTEMELODICA per-voice FM jacks. fm1..fm5 are audio-rate FM/PM
+  //    modulators that only affect a voice that is SOUNDING — i.e. whose ADSR
+  //    has been gated open by its poly lane. The behavioral sweep drives ONE
+  //    input at a time against an idle control (it imports driverFor from
+  //    _drivers.ts, NOT the polyseqz upstream from _per-port-drivers.ts), so
+  //    when it drives fmN there is no concurrent gated poly → the voice's
+  //    envelope is at 0 → the FM modulates silence → no delta on out_l. This
+  //    is correct: FM is a no-op on a gated-off voice. The `poly` input IS
+  //    exercised here (it gates + pitches the voices → perturbs out_l).
+  //    FM/PM audibility-when-gated is covered by pentemelodica-dsp.test.ts
+  //    (renderPentemelodica with an FM input) + the bespoke e2e (poly chord
+  //    drives the OUT) + the per-port emit sweep (the polyseqz driver gates
+  //    all 5 voices so out_l/out_r + voice1..5 all emit).
+  'pentemelodica.fm1': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; behavioral sweep drives it without a concurrent gated poly → modulates a silent voice → no delta (correct). Covered by pentemelodica-dsp.test.ts + pentemelodica.spec.ts + the per-port emit sweep (polyseqz-gated).',
+  'pentemelodica.fm2': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
+  'pentemelodica.fm3': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
+  'pentemelodica.fm4': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
+  'pentemelodica.fm5': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
+
   // ── SYNESTHESIA copy B input. The sweep drives each input then watches a
   //    SINGLE canonical output (a_band1_audio, copy A). SYNESTHESIA is two
   //    INDEPENDENT copies by design — b_in feeds copy B's b_* outputs and has
@@ -675,8 +691,8 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    in stop state (no output), with it driven the SUT plays.
   //    But SCORE is exempt at the module level already.
 
-  // ── SCOPE / WAVVIZ ch2 input: trace overlay only, no audio path,
-  //    sink sees no delta. SCOPE.ch2 covered by scope-ch2-related specs.
+  // ── SCOPE ch2 input: trace overlay only, no audio path, sink sees no
+  //    delta. Covered by scope-ch2-related specs.
   'scope.ch2':  'overlay-only input; covered by dedicated scope ch2 specs',
 
   // ── ADSR retrigger semantics: depends on prior gate state; the
@@ -1047,27 +1063,12 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //  (an AUDIO input) jitter too, so the per-port fb{1..4}_cv approach
   //  doesn't converge. Module-level exempt is the reliable fix.)
 
-  // ── blades voct1 / voct2 (per-filter V/oct CV): BLADES is a dual ZDF-SVF
-  //    VCF whose observed `mix` bus sums both filters' (noise-driven) outputs.
-  //    voct{N} offsets filter N's cutoff in OCTAVES as knob·2^(voctN) — a UNITY
-  //    (×1) octave scaler — whereas the cutoff{N}_cv inputs enter as knob·2^(cv·5),
-  //    a ×5 scaler. With BUGGLES.smooth's modest swing the ×1 octave offset moves
-  //    the LP-filtered-noise spectral centroid only a few Hz (run 26945471026:
-  //    voct1 Δμrms=0.002, Δcent=4Hz against a control centroid noise-band of
-  //    ±85Hz — i.e. the shift is buried in the noise-driven output's OWN
-  //    per-snapshot centroid jitter), while the ×5 cutoff{N}_cv inputs DO clear
-  //    the metric (they pass). voct1 hard-failed + voct2 (identical structural
-  //    class on filter 2) straddles, so both are exempted together. The V/oct →
-  //    cutoff octave mapping is pinned directly by blades.test.ts (cutoffHz:
-  //    knob·2^(voct+cv·5)) + the blades DSP/ART coverage.
-  'blades.voct1': 'V/oct CV on filter-1 cutoff is a ×1 octave scaler (vs cutoff1_cv\'s ×5); the centroid shift of LP-filtered noise is buried in the output\'s own ±85Hz per-snapshot centroid jitter (Δcent≈4Hz); cutoff1_cv passes — covered by blades.test.ts (cutoffHz octave mapping)',
-  'blades.voct2': 'V/oct CV on filter-2 cutoff is a ×1 octave scaler (vs cutoff2_cv\'s ×5); same buried-in-noise-band class as blades.voct1; cutoff2_cv passes — covered by blades.test.ts (cutoffHz octave mapping)',
 };
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the
 // behavioral-coverage TODO in .github/workflows/ci.yml): the Class-A
 // near-threshold entries above (cube*/hypercube.*, chowkick.q_cv/decay_cv,
-// dx7.poly, blades.voct{1,2}, the module-level aquaTank quiet-tank exempt, and
+// dx7.poly, the module-level aquaTank quiet-tank exempt, and
 // the existing swolevco/elements/rings/warrenspectrum families) all straddle a SINGLE universal delta threshold
 // that is too coarse for subtle CV→audio effects. The right long-term fix is a
 // MORE SENSITIVE / per-port-CALIBRATED metric (e.g. a pitch/zc-keyed metric for

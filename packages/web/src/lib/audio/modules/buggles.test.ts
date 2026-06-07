@@ -126,7 +126,7 @@ describe('bugglesMath: rollBurst', () => {
 describe('bugglesDef: module-def shape', () => {
   it('declares type=buggles, label=BUGGLES, category=modulation, domain=audio', () => {
     expect(bugglesDef.type).toBe('buggles');
-    expect(bugglesDef.label).toBe('BUGGLES');
+    expect(bugglesDef.label).toBe('buggles');
     expect(bugglesDef.category).toBe('modulation');
     expect(bugglesDef.domain).toBe('audio');
   });

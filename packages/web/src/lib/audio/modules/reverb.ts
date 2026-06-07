@@ -34,7 +34,7 @@ export const reverbDef: AudioModuleDef = {
   type: 'reverb',
   palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: 'Reverb',
+  label: 'reverb',
   category: 'effects',
   schemaVersion: 1,
   inputs: [{ id: 'audio', type: 'audio' }],

@@ -45,10 +45,10 @@ const CENTERS = FILTERBANK_914_CENTERS;
 
 export const moog914Def: AudioModuleDef = {
   type: 'moog914',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   card: 'Moog914Card',
   domain: 'audio',
-  label: '914 Extended Fixed Filter Bank',
+  label: '914 extended fixed filter bank',
   category: 'filters',
   schemaVersion: 1,
 

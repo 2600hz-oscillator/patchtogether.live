@@ -56,10 +56,10 @@ const CENTERS = FILTERBANK_907A_CENTERS;
 
 export const moog907aDef: AudioModuleDef = {
   type: 'moog907a',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   card: 'Moog907aCard',
   domain: 'audio',
-  label: '907A Fixed Filter Bank',
+  label: '907a fixed filter bank',
   category: 'filters',
   schemaVersion: 1,
 

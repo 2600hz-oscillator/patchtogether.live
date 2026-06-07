@@ -14,7 +14,7 @@ export const stickyDef: MetaModuleDef = {
   type: 'sticky',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'meta',
-  label: 'STICKY',
+  label: 'sticky',
   category: 'tools',
   inputs: [],
   outputs: [],
