@@ -25,12 +25,13 @@
     return e.readParam(node, k);
   };
 
-  const CH = [1, 2, 3, 4] as const;
+  const CH = [1, 2, 3, 4, 5, 6] as const;
+  type Channel = (typeof CH)[number];
 
-  // Sectioned grouping: Ch1..Ch4 + Master, so the patch panel's
+  // Sectioned grouping: Ch1..Ch6 + Master, so the patch panel's
   // click-to-expand UX kicks in (each section's row list collapses by
   // default; user clicks a header to fan out the channel's handles).
-  // Without this the 49-input column overflows even a 1366×768 viewport
+  // Without this the 73-input column overflows even a 1366×768 viewport
   // when every section is expanded simultaneously.
   //
   // The audio + CV ports for each channel live in the same section so
@@ -61,7 +62,7 @@
       .filter((p): p is PortDescriptor => p !== undefined);
   }
 
-  function chSection(ch: 1 | 2 | 3 | 4) {
+  function chSection(ch: Channel) {
     return {
       label: `Ch${ch}`,
       inputs: pickInputs([
@@ -82,10 +83,7 @@
   }
 
   const sections = [
-    chSection(1),
-    chSection(2),
-    chSection(3),
-    chSection(4),
+    ...CH.map((ch) => chSection(ch)),
     {
       label: 'Master',
       inputs: pickInputs([
@@ -114,8 +112,8 @@
     panelWidth is the total open-state popover width. With the
     two-column open layout (inputs left, outputs right), 560 gives
     each column ~265px — wide enough for verbose labels like
-    "ch1 SEND 1" without truncation. MIXMSTRS has 49 inputs + 6
-    outputs across 5 sections (Ch1..Ch4 + Master); sections
+    "ch1 SEND 1" without truncation. MIXMSTRS has 73 inputs + 6
+    outputs across 7 sections (Ch1..Ch6 + Master); sections
     collapse by default via PatchPanel's click-to-expand UX so the
     panel fits on a 1366×768 laptop viewport even with one or two
     sections open.
@@ -152,7 +150,7 @@
 
 <style>
   .mixmstrs-card {
-    width: 520px;
+    width: 720px;
   }
   .mixmstrs-card .title {
     display: flex;
@@ -175,7 +173,7 @@
   .grid {
     margin-top: 16px;
     display: grid;
-    grid-template-columns: repeat(4, 1fr) 80px;
+    grid-template-columns: repeat(6, 1fr) 80px;
     gap: 8px;
     padding: 0 18px;
   }

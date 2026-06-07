@@ -41,11 +41,12 @@ import {
   drawScoreboard,
 } from './scoreboard-draw';
 
-/** Source-texture resolution. Shorter-than-engine height (240 vs 480) so the
- *  digits sit on a band; the shader letterboxes onto the FBO. 8:3 is the
- *  natural shape of a 4-digit numeric display. */
-const SOURCE_W = 640;
-const SOURCE_H = 240;
+/** Source-texture resolution. Shorter-than-engine height so the digits sit on
+ *  a band; the shader letterboxes onto the FBO. 8:3 is the natural shape of a
+ *  4-digit numeric display. Scaled up from 640×240 to match the higher-res
+ *  engine FBO (the 8:3 ratio is unchanged — layout is derived from (W,H)). */
+const SOURCE_W = 1024;
+const SOURCE_H = 384;
 
 /** Default hue ≈ 0.333 (≈120° in HSL = pure green). The neon-green
  *  scoreboard look. */

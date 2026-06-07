@@ -44,6 +44,9 @@
     { id: 'morph_cv',  label: 'MORPH (CV)',  cable: 'cv' },
     { id: 'spread_cv', label: 'SPREAD (CV)', cable: 'cv' },
     { id: 'fold_cv',   label: 'FOLD (CV)',   cable: 'cv' },
+    // Polyphonic chord bus (MIDI LANE mode=poly / POLYSEQZ). Gated lanes play
+    // simultaneously; unpatched → the mono PITCH path. cable: 'polyPitchGate'.
+    { id: 'poly',      label: 'POLY',        cable: 'polyPitchGate' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'out_l', label: 'OUT L', cable: 'audio' },

@@ -18,6 +18,7 @@
   import { patch } from '$lib/graph/store';
   import { freezeframeDef } from '$lib/video/modules/freezeframe';
   import type { VideoEngine } from '$lib/video/engine';
+  import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -54,8 +55,8 @@
   ];
 
   // --- Live preview of video_out (the canonical surface.texture). ---
-  const ENGINE_W = 640;
-  const ENGINE_H = 480;
+  const ENGINE_W = VIDEO_RES.width;
+  const ENGINE_H = VIDEO_RES.height;
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 

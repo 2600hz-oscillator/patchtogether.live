@@ -17,6 +17,7 @@ import {
   canPersistVideoHandles,
   newVideoFileId,
   putVideoFileHandle,
+  putVideoFileBlob,
   getVideoFileHandle,
   deleteVideoFileHandle,
   queryHandleReadPermission,
@@ -203,6 +204,27 @@ describe('video-file-store: with a fake IndexedDB', () => {
     expect(await getVideoFileHandle('id-2')).not.toBeNull();
     await deleteVideoFileHandle('id-2');
     expect(await getVideoFileHandle('id-2')).toBeNull();
+  });
+
+  it('seeds a portable BLOB handle (putVideoFileBlob) that reads back as a granted, byte-faithful handle', async () => {
+    // The portable "Load performance" path: bytes (not a FileSystemFileHandle)
+    // come from the zip. The card's tryReloadFromHandle must find a granted
+    // handle that yields exactly those bytes.
+    const bytes = new Uint8Array([9, 8, 7, 6, 5]);
+    const blob = new Blob([bytes], { type: 'video/webm' });
+    await putVideoFileBlob('bundle-v1', blob, 'restored.webm');
+    const got = await getVideoFileHandle('bundle-v1');
+    expect(got).not.toBeNull();
+    expect(got?.kind).toBe('file');
+    expect(got?.name).toBe('restored.webm');
+    // Already-granted so the card auto-loads (no re-allow click).
+    expect(await queryHandleReadPermission(got!)).toBe('granted');
+    expect(await requestHandleReadPermission(got!)).toBe('granted');
+    const file = await got!.getFile();
+    expect(file.name).toBe('restored.webm');
+    expect(file.type.startsWith('video/')).toBe(true); // passes the card's video-type guard
+    const back = new Uint8Array(await file.arrayBuffer());
+    expect(Array.from(back)).toEqual(Array.from(bytes));
   });
 
   it('rejects a stored value that is not handle-shaped (no getFile)', async () => {

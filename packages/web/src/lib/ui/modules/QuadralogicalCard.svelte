@@ -29,6 +29,7 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { ModuleNode } from '$lib/graph/types';
   import type { VideoEngine } from '$lib/video/engine';
+  import { VIDEO_RES } from '$lib/video/engine';
   import {
     quadralogicalDef,
     quadWeights,
@@ -202,8 +203,8 @@
   }
 
   // ---- on-card MIX preview canvas ----
-  const ENGINE_W = 640;
-  const ENGINE_H = 480;
+  const ENGINE_W = VIDEO_RES.width;
+  const ENGINE_H = VIDEO_RES.height;
   const CANVAS_W = 280;
   const CANVAS_H = 158;
   let canvasEl: HTMLCanvasElement | null = $state(null);

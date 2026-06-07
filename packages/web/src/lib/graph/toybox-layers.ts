@@ -33,12 +33,14 @@ import {
   type ToyboxLayer,
   type ToyboxLayerKind,
   type ToyboxObjMaterial,
+  type ToyboxSceneInputSource,
   type ToyboxSurfaceMode,
   type ToyboxVideoSource,
 } from '$lib/video/toybox-content';
+import { LAYER_INPUT_SOURCE } from '$lib/video/toybox-combine-graph';
 
 /** The valid VIDEO-source values (kept in sync with ToyboxVideoSource). */
-const VIDEO_SOURCES: readonly ToyboxVideoSource[] = ['inA', 'inB', 'file', 'camera'];
+const VIDEO_SOURCES: readonly ToyboxVideoSource[] = ['inA', 'inB', 'file', 'camera', 'layerIn'];
 
 /** Map a content family tag to the layer kind it materialises as. */
 function kindForFamily(family: string | undefined): ToyboxLayerKind {
@@ -173,14 +175,44 @@ export function setLayerMatcap(nodeId: string, index: number, matcap: number): v
 }
 
 /**
- * Pick the OBJ SURFACE source: -1 (MATCAP) or a layer INDEX (0..LAYER_COUNT-1)
- * whose rendered output UV-maps onto the mesh. Scalar in-place set.
+ * Pick the OBJ SURFACE source: -1 (MATCAP), the LAYER_INPUT_SOURCE sentinel (-2,
+ * "sample the node output wired into this layer's combine in0 — prev-frame OUT"),
+ * or a layer INDEX (0..LAYER_COUNT-1) whose rendered output UV-maps onto the
+ * mesh. Scalar in-place set. We PRESERVE the -2 sentinel (don't floor negatives
+ * to -1): -2 is a real, meaningful selection, and the engine resolves it via
+ * layerInputWanted; any OTHER negative / non-finite value still normalises to -1
+ * (MATCAP).
  */
 export function setLayerSurfaceSource(nodeId: string, index: number, source: number): void {
   ydoc.transact(() => {
     const mat = ensureMaterial(nodeId, index);
     if (!mat) return;
-    mat.surfaceSource = Number.isFinite(source) && source >= 0 ? source : -1;
+    if (!Number.isFinite(source)) {
+      mat.surfaceSource = -1;
+    } else if (source === LAYER_INPUT_SOURCE) {
+      mat.surfaceSource = LAYER_INPUT_SOURCE; // preserve the named sentinel (-2)
+    } else {
+      mat.surfaceSource = source >= 0 ? source : -1;
+    }
+  }, LOCAL_ORIGIN);
+}
+
+/**
+ * Set a FRAG (scene-input) layer's iChannel0 SOURCE: 'below' (the composited
+ * layer below — the #603 default) or 'layer-input' (the LAYER INPUT feedback tap;
+ * Phase 1 resolves it to the prev-frame OUT). Scalar in-place set; an
+ * unrecognised value falls back to 'below'.
+ */
+export function setLayerSceneInputSource(
+  nodeId: string,
+  index: number,
+  source: ToyboxSceneInputSource,
+): void {
+  const next: ToyboxSceneInputSource = source === 'layer-input' ? 'layer-input' : 'below';
+  ydoc.transact(() => {
+    const layer = ensureLayer(nodeId, index);
+    if (!layer) return;
+    layer.sceneInputSource = next;
   }, LOCAL_ORIGIN);
 }
 

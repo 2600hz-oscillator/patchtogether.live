@@ -1,9 +1,9 @@
 // e2e/tests/doom-aspect.spec.ts
 //
-// PR #472 flipped the engine FBO from 640×360 (16:9) → 640×480 (4:3).
-// DOOM is natively 640×400 (1.6:1), so the engine's letterbox math
-// swapped axes — old pipeline had thin side bars (DOOM narrower than
-// 16:9), new pipeline has thin top + bottom bars (DOOM wider than 4:3).
+// The engine FBO is 4:3 (VIDEO_RES, currently 1024×768). DOOM is natively
+// 640×400 (1.6:1), so the engine's letterbox math gives thin top + bottom
+// bars (DOOM is WIDER than 4:3). The bar fractions are aspect-derived, so
+// they're identical at any 4:3 backing resolution.
 //
 // This spec catches a future regression to the letterbox formula by
 // wiring DOOM into a VideoOut and asserting the actual on-screen pixel
@@ -19,12 +19,11 @@
 // off the top/bottom by a bad shader letterbox.
 //
 // The DOOM letterbox math:
-//   fboAspect = 640 / 480 = 1.333
+//   fboAspect = 4 / 3 = 1.333
 //   doomAspect = 640 / 400 = 1.6
 //   letterboxU = min(1, 1.6 / 1.333) = 1.0          → full width
 //   letterboxV = min(1, 1.333 / 1.6) = 0.8333        → V shrinks
-//   bar fraction per side = (1 - 0.8333) / 2 ≈ 8.3%  → ~40px each
-//                                                       (in a 480px FBO)
+//   bar fraction per side = (1 - 0.8333) / 2 ≈ 8.3%
 //
 // The unit test pins the uniform values directly (doom.test.ts —
 // "aspect-rendering / letterbox math"). This e2e covers the end-to-end
@@ -33,13 +32,13 @@
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-test.describe('DOOM — aspect / letterbox shape in the 4:3 (640×480) engine pipeline', () => {
+test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', () => {
   // Cold WASM init + 4 MB WAD fetch is ~10–20 s on CI; matches doom-wasm
   // spec's budget. We add a few extra seconds for the DOOM → VideoOut
   // blit pipeline to settle.
   test.setTimeout(90_000);
 
-  test('DOOM letterboxed into 640×480 FBO: top + bottom bands BLACK, middle band has gameplay content', async ({ page }) => {
+  test('DOOM letterboxed into the 4:3 FBO: top + bottom bands BLACK, middle band has gameplay content', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
     page.on('console', (m) => {
@@ -69,9 +68,9 @@ test.describe('DOOM — aspect / letterbox shape in the 4:3 (640×480) engine pi
       return;
     }
 
-    // Wire DOOM → VideoOut. The VideoOut card's inner canvas is 4:3
-    // (matches the FBO at 640×480), so the aspect-fit blit is 1:1 and
-    // the engine's letterbox bars carry through to the canvas unaltered.
+    // Wire DOOM → VideoOut. The VideoOut card aspect-fits the 4:3 engine FBO
+    // into its canvas, so the engine's letterbox bars carry through to the
+    // canvas (within the fitted 4:3 region).
     await spawnPatch(
       page,
       [

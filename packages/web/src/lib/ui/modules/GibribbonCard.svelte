@@ -13,7 +13,12 @@
   import { onMount, onDestroy } from 'svelte';
   import { Handle, Position } from '@xyflow/svelte';
   import { patch } from '$lib/graph/store';
-  import { gibribbonDef, type GibribbonHandleExtras } from '$lib/video/modules/gibribbon';
+  import {
+    gibribbonDef,
+    INTERNAL_W as GIB_W,
+    INTERNAL_H as GIB_H,
+    type GibribbonHandleExtras,
+  } from '$lib/video/modules/gibribbon';
   import type { GibButton } from '$lib/video/modules/gibribbon-events';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -56,8 +61,11 @@
 
   onMount(() => {
     if (canvasEl) {
-      canvasEl.width = 640;
-      canvasEl.height = 360;
+      // Buffer must match the snapshot ImageData dims (putImageData does NOT
+      // scale); CSS pins the on-card DISPLAY size, so the preview stays the same
+      // visual size — only the backing buffer gets sharper.
+      canvasEl.width = GIB_W;
+      canvasEl.height = GIB_H;
       ctx2d = canvasEl.getContext('2d');
     }
     pollTimer = setInterval(pollStatus, 33);
@@ -229,7 +237,8 @@
     box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6), 0 0 4px rgba(0, 0, 0, 0.3);
     background: #000; border-radius: 3px; overflow: hidden; display: block;
     position: relative; /* anchor the GAME OVER overlay */
-    width: 480px; height: 270px; /* 640×360 scaled to fit the card */
+    width: 480px; height: 270px; /* fixed 16:9 display size (the 1024×576 buffer
+                                    scales down to fit — preview stays same size) */
   }
   .screen { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
   .gameover-overlay {

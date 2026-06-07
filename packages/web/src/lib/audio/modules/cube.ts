@@ -20,7 +20,11 @@
 // computed/spread arrays): see `params` below + PLAN §6.
 //
 // Inputs:  pitch (V/oct node) + CV→AudioParam for slice_y/rx/ry/rz, morph_fc,
-//          connect, crush, tune.
+//          connect, crush, tune + poly (10-channel polyPitchGate chord bus).
+//          When the poly bus carries any gate, CUBE renders one phase
+//          accumulator per gated lane through the SAME posted slice waves at
+//          that lane's pitch and SUMS them — polyphonic. Unpatched (or no gate)
+//          → the mono `pitch` path runs unchanged (back-compat).
 // Outputs: SEPARATE L and R audio ports (issue #1) — the worklet's 2-channel
 //          output 0 is fanned out through a ChannelSplitter(2) so the ±SPREAD
 //          stereo width survives downstream (a single stereo port downmixes to
@@ -156,8 +160,14 @@ export const cubeDef: AudioModuleDef = {
   schemaVersion: 1,
 
   inputs: [
-    // V/oct pitch — the only audio-rate node input the worklet reads directly.
+    // V/oct pitch — the only audio-rate MONO node input the worklet reads directly.
     { id: 'pitch', type: 'cv' },
+    // Polyphonic chord bus (5 voice pairs of pitch+gate over 10 channels). When
+    // gated, CUBE renders one phase accumulator per lane → polyphonic; the mono
+    // `pitch` input is the fallback when nothing is patched here. Engine routes
+    // this 10-channel cable to ONE worklet input (index 1) — same shape as
+    // DX7.poly. Listed right after `pitch` so it reads as the pitch family.
+    { id: 'poly', type: 'polyPitchGate' },
     // CV → AudioParam (summed into the worklet param by the engine).
     { id: 'slice_y',  type: 'cv', paramTarget: 'slice_y',  cvScale: { mode: 'linear' } },
     { id: 'slice_rx', type: 'cv', paramTarget: 'slice_rx', cvScale: { mode: 'linear' } },
@@ -249,11 +259,13 @@ export const cubeDef: AudioModuleDef = {
 
     // Two outputs: output 0 = the stereo L/R slice audio (fanned into separate
     // L/R ports via the ChannelSplitter below), output 1 = the mono SYNC sine
-    // (a phase-locked reference, exposed directly as the `sync` port). pitch is
-    // the only node input (input 0); the rest of the CV inputs sum into
-    // AudioParams.
+    // (a phase-locked reference, exposed directly as the `sync` port). Node
+    // inputs: input 0 = mono pitch (the CV→AudioParam inputs also sum into
+    // input 0's AudioParams via the engine), input 1 = the 10-channel poly bus.
+    // channelCountMode defaults to 'max', so the 10-channel poly source passes
+    // through to the worklet intact.
     const workletNode = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
-      numberOfInputs: 1,
+      numberOfInputs: 2,
       numberOfOutputs: 2,
       outputChannelCount: [2, 1],
     });
@@ -402,6 +414,8 @@ export const cubeDef: AudioModuleDef = {
       domain: 'audio',
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
         ['pitch',    { node: workletNode, input: 0 }],
+        // Poly bus → worklet input 1 (a node connection, not an AudioParam).
+        ['poly',     { node: workletNode, input: 1 }],
         ['slice_y',  { node: workletNode, input: 0, param: params.get('slice_y')! }],
         ['slice_rx', { node: workletNode, input: 0, param: params.get('slice_rx')! }],
         ['slice_ry', { node: workletNode, input: 0, param: params.get('slice_ry')! }],

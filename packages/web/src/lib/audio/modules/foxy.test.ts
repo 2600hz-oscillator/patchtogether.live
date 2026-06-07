@@ -36,11 +36,18 @@ describe('FOXY module def shape', () => {
     expect(foxyDef.label).toBe('foxy');
   });
 
-  it('exposes WAVECEL\'s exact input IDs + types', () => {
+  it('exposes WAVECEL\'s exact input IDs + types (except the poly chord bus)', () => {
     const fIn = new Map(foxyDef.inputs.map((p) => [p.id, p.type]));
     for (const wIn of wavecelDef.inputs) {
+      // FOXY deliberately does NOT expose WAVECEL's `poly` (polyPitchGate) chord
+      // bus: FOXY drives its internal WAVECEL from its own mini-SWOLEVCO → XYZ
+      // pipeline, so a multi-voice chord cable has no meaning here. The poly-in
+      // feature (feat/poly-in-wavcel-cube) is scoped to standalone WAVECEL + CUBE.
+      if (wIn.id === 'poly') continue;
       expect(fIn.get(wIn.id), `input ${wIn.id}`).toBe(wIn.type);
     }
+    // Sanity: FOXY itself has no poly input (it's a single-voice internal VCO).
+    expect(fIn.has('poly'), 'FOXY should NOT expose a poly input').toBe(false);
   });
 
   it('exposes WAVECEL\'s exact output IDs + types (out_l/out_r/scope_out/wave3d_out)', () => {

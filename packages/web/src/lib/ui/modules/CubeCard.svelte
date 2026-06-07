@@ -944,6 +944,9 @@
   // ───────────────── patch panel ports ─────────────────
   const inputs: PortDescriptor[] = [
     { id: 'pitch',    label: 'PITCH',   cable: 'cv' },
+    // Polyphonic chord bus (MIDI LANE mode=poly / POLYSEQZ). Gated lanes play
+    // simultaneously; unpatched → the mono PITCH path. cable: 'polyPitchGate'.
+    { id: 'poly',     label: 'POLY',    cable: 'polyPitchGate' },
     { id: 'slice_y',  label: 'Y',       cable: 'cv' },
     { id: 'slice_rx', label: 'ROT X',   cable: 'cv' },
     { id: 'slice_ry', label: 'ROT Y',   cable: 'cv' },

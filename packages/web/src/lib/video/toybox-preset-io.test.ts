@@ -94,10 +94,10 @@ describe('toybox-preset-io — export/import round-trip', () => {
     // Forge a bundle whose video exceeds the cap, export, then import → throws.
     const huge = new Uint8Array(MAX_VIDEO_BYTES + 1);
     const z = exportToyboxPreset(bundle({ videos: [{ layer: 0, name: 'big.mp4', bytes: huge }] }));
-    expect(() => importToyboxPreset(z)).toThrow(/50 MB|exceeds/i);
+    expect(() => importToyboxPreset(z)).toThrow(/100 MB|exceeds/i);
   });
 
-  it('MAX_VIDEO_BYTES is 50 MB', () => {
-    expect(MAX_VIDEO_BYTES).toBe(50 * 1024 * 1024);
+  it('MAX_VIDEO_BYTES is 100 MB', () => {
+    expect(MAX_VIDEO_BYTES).toBe(100 * 1024 * 1024);
   });
 });

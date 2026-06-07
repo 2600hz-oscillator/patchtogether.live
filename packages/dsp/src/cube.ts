@@ -42,11 +42,24 @@
 // side-effect; tests capture it through a registerProcessor shim (see
 // packages/web/src/lib/audio/modules/cube.test.ts).
 //
+// POLYPHONY (poly input — feat/poly-in-wavcel-cube):
+//   inputs[1] is a 10-channel `polyPitchGate` bus (5 voice lanes of pitch+gate;
+//   ch 2i = lane-i V/oct, ch 2i+1 = lane-i gate). It's the SAME cable MIDI LANE
+//   (mode='poly') + POLYSEQZ emit (see packages/web/src/lib/audio/poly.ts).
+//   CUBE phase-accumulates through the posted slice waveforms (waveL/waveR);
+//   that slice is a TIMBRE shared by all voices, so polyphony = N independent
+//   phase accumulators reading the SAME posted waves at per-lane pitch, summed.
+//   When NO lane is gated (poly unpatched / all gates closed) the render falls
+//   through to the original single-phase mono path — BYTE-IDENTICAL, so the
+//   SYNC output, spread, fold, and ART/VRT baselines are untouched. SYNC tracks
+//   the mono `phase` accumulator (lane-0 in poly mode).
+//
 // Inputs (single-channel CV node connections; CV→AudioParam summing is done by
 // the web factory, so the worklet just reads the resulting AudioParam):
 //   inputs[0] = pitch  — V/oct pitch CV (0V = C4). The ONLY audio-rate node
 //                        input the worklet reads directly; the rest of the CV
 //                        inputs are summed into AudioParams by the factory.
+//   inputs[1] = poly   — 10-channel polyPitchGate bus (see POLYPHONY above).
 //
 // Outputs:
 //   outputs[0] = [L, R] — the slice audio (one stereo output, 2 channels; the
@@ -106,6 +119,10 @@ if (typeof G.registerProcessor === 'undefined') {
 
 const C4_HZ = 261.626;
 
+// Poly bus shape (mirrors packages/web/src/lib/audio/poly.ts): 5 voice lanes,
+// 10 channels (ch 2i = lane-i pitch V/oct, ch 2i+1 = lane-i gate).
+const POLY_VOICES = 5;
+
 type Slot = 'floor' | 'wall' | 'ceiling';
 const SLOTS: readonly Slot[] = ['floor', 'wall', 'ceiling'];
 
@@ -161,8 +178,13 @@ class CubeProcessor extends AudioWorkletProcessor {
   private wall: Float32Array[] = [];
   private ceiling: Float32Array[] = [];
 
-  // Phase accumulator (normalized [0,1)).
+  // Phase accumulator (normalized [0,1)). Doubles as poly lane 0 + the SYNC /
+  // mono phase, so the mono path is byte-identical when no poly lane is gated.
   private phase = 0;
+  // Per-poly-lane phase accumulators for lanes 1..4 (lane 0 reuses `phase`).
+  // Each is an independent [0,1) accumulator reading the SAME posted slice
+  // waves at its own pitch. Only used while the poly bus carries a gate.
+  private polyPhase: Float64Array = new Float64Array(POLY_VOICES);
 
   // Per-channel slice waveforms (recomputed on param/table change).
   // Slice waveforms. Typed with ArrayBufferLike so `sampleSlice`'s return
@@ -489,32 +511,98 @@ class CubeProcessor extends AudioWorkletProcessor {
     const pIn = inputs[0]?.[0];
     const levelArr = parameters.level;
 
+    // ── Poly bus (inputs[1], 10-channel polyPitchGate) ──
+    // Sample gate + pitch once at the first sample of the block (sequencer /
+    // MIDI LANE write setValueAtTime at block boundaries → first-sample reads
+    // are exact). polyActive ⇒ render the per-lane sum; else the mono path runs
+    // BYTE-IDENTICAL (lane 0 uses the same `this.phase` + freq, summing nothing
+    // extra). The shared timbre offset (tune/fine) applies to every lane.
+    const polyIn = inputs[1];
+    const trim = tune / 12 + fine / 1200;
+    let polyActive = false;
+    const laneGate: boolean[] = [false, false, false, false, false];
+    const laneVOct: number[] = [0, 0, 0, 0, 0];
+    if (polyIn) {
+      for (let lane = 0; lane < POLY_VOICES; lane++) {
+        const gateCh = polyIn[lane * 2 + 1];
+        const pitchCh = polyIn[lane * 2];
+        const g = gateCh && gateCh.length > 0 ? (gateCh[0] ?? 0) : 0;
+        if (g > 0.5) {
+          laneGate[lane] = true;
+          laneVOct[lane] = pitchCh && pitchCh.length > 0 ? (pitchCh[0] ?? 0) : 0;
+          polyActive = true;
+        }
+      }
+    }
+    let activeCount = 0;
+    for (let lane = 0; lane < POLY_VOICES; lane++) if (laneGate[lane]) activeCount++;
+    const polyNorm = activeCount > 0 ? 1 / Math.sqrt(activeCount) : 1;
+
     const sr = sampleRate;
-    const frameLen = this.waveCenter.length || CUBE_SLICE_SIZE;
-    for (let i = 0; i < n; i++) {
-      const pitch = pIn ? (pIn[i] ?? 0) : 0;
-      const voct = pitch + tune / 12 + fine / 1200;
+
+    /** Advance a [0,1) phase accumulator by one sample at a V/oct pitch. */
+    const advance = (ph: number, voct: number): number => {
       let freq = C4_HZ * Math.pow(2, voct);
       if (freq < 1) freq = 1;
       else if (freq > sr * 0.5) freq = sr * 0.5;
-      this.phase += freq / sr;
-      while (this.phase >= 1) this.phase -= 1;
-      while (this.phase < 0) this.phase += 1;
+      ph += freq / sr;
+      while (ph >= 1) ph -= 1;
+      while (ph < 0) ph += 1;
+      return ph;
+    };
 
+    const frameLen = this.waveCenter.length || CUBE_SLICE_SIZE;
+    for (let i = 0; i < n; i++) {
       const level = levelArr
         ? (levelArr.length > 1 ? (levelArr[i] as number) : (levelArr[0] as number))
         : 1;
-      // Phase maps to a fractional column index across the 256-sample frame.
-      const phaseN = this.phase;
-      const l = readFrame(this.waveL, phaseN) * level;
-      const r = readFrame(this.waveR, phaseN) * level;
-      if (outL) outL[i] = clampRange(l, -4, 4);
-      if (outR && outR !== outL) outR[i] = clampRange(r, -4, 4);
-      // SYNC: a pure SINE at the playback fundamental, read from the SAME phase
-      // accumulator as the slice → automatically PHASE-LOCKED to the main output
-      // (it advances by the identical freq/sr step per sample). Not gain-scaled
-      // by LEVEL — it's a clean ±1 reference / sub for hard-syncing downstream.
-      if (outSync) outSync[i] = Math.sin(2 * Math.PI * phaseN);
+
+      if (polyActive) {
+        // Polyphonic: SUM each gated lane's read of the shared slice waves at
+        // its own pitch. Lane 0 reuses `this.phase` (so SYNC + a single held
+        // poly note line up with the mono path); lanes 1..4 use polyPhase[].
+        // Silent lanes still advance (tracked at lane-0 pitch) so opening a
+        // lane mid-cycle doesn't pop, but contribute nothing.
+        let sumL = 0;
+        let sumR = 0;
+        // Lane 0 (always at its own pitch — it's the SYNC / mono accumulator).
+        this.phase = advance(this.phase, laneVOct[0]! + trim);
+        if (laneGate[0]) {
+          sumL += readFrame(this.waveL, this.phase);
+          sumR += readFrame(this.waveR, this.phase);
+        }
+        // Lanes 1..4.
+        for (let lane = 1; lane < POLY_VOICES; lane++) {
+          const v = laneGate[lane] ? laneVOct[lane]! : laneVOct[0]!;
+          this.polyPhase[lane] = advance(this.polyPhase[lane]!, v + trim);
+          if (laneGate[lane]) {
+            sumL += readFrame(this.waveL, this.polyPhase[lane]!);
+            sumR += readFrame(this.waveR, this.polyPhase[lane]!);
+          }
+        }
+        const l = sumL * polyNorm * level;
+        const r = sumR * polyNorm * level;
+        if (outL) outL[i] = clampRange(l, -4, 4);
+        if (outR && outR !== outL) outR[i] = clampRange(r, -4, 4);
+        // SYNC tracks lane 0 (the mono phase accumulator).
+        if (outSync) outSync[i] = Math.sin(2 * Math.PI * this.phase);
+      } else {
+        // Mono (poly unpatched / all gates closed): the original single-phase
+        // path, byte-identical (SYNC + spread + fold baselines unaffected).
+        const pitch = pIn ? (pIn[i] ?? 0) : 0;
+        this.phase = advance(this.phase, pitch + trim);
+        // Phase maps to a fractional column index across the 256-sample frame.
+        const phaseN = this.phase;
+        const l = readFrame(this.waveL, phaseN) * level;
+        const r = readFrame(this.waveR, phaseN) * level;
+        if (outL) outL[i] = clampRange(l, -4, 4);
+        if (outR && outR !== outL) outR[i] = clampRange(r, -4, 4);
+        // SYNC: a pure SINE at the playback fundamental, read from the SAME phase
+        // accumulator as the slice → automatically PHASE-LOCKED to the main output
+        // (it advances by the identical freq/sr step per sample). Not gain-scaled
+        // by LEVEL — it's a clean ±1 reference / sub for hard-syncing downstream.
+        if (outSync) outSync[i] = Math.sin(2 * Math.PI * phaseN);
+      }
     }
     void frameLen;
 

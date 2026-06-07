@@ -14,7 +14,8 @@
 // drives its own runtime (joined player) or renders nothing (spectator).
 // The engine here just exposes:
 //   - the GL surface that displays the 640×400 BGRA framebuffer (with
-//     aspect-correct letterboxing into the engine's 640×480 FBO);
+//     aspect-correct letterboxing into the engine's 4:3 FBO — VIDEO_RES,
+//     currently 1024×768; the DOOM native framebuffer stays 640×400);
 //   - the 9 CV-gate inputs (up/down/left/right/space/ctrl/alt/esc/enter)
 //     edge-detected into dgpt_set_key calls on the runtime, replicated
 //     across 4 per-slot groups (p1..p4) — 36 inputs total;
@@ -34,7 +35,7 @@
 //   declared per slice.
 //
 // Outputs:
-//   out (video): the 640×400 BGRA framebuffer (aspect-correct letterboxed into 640×480).
+//   out (video): the 640×400 BGRA framebuffer (aspect-correct letterboxed into the 4:3 engine FBO).
 //   audio_l / audio_r (audio): stereo bridges from the WASM SFX stream.
 //   evt_kill (gate): one-pulse gate on every enemy kill.
 //   evt_door (gate): one-pulse gate when the player opens a door.
@@ -90,8 +91,8 @@ async function ensureDoomPcmWorklet(ac: BaseAudioContext): Promise<void> {
 }
 
 // Fragment shader: sample the 640×400 BGRA framebuffer and letterbox it
-// into the engine's 640×480 FBO. DOOM is 1.6:1 (640:400 = 8:5); the
-// engine's FBO is 4:3 (640:480 ≈ 1.33:1). DOOM is wider than the FBO,
+// into the engine's 4:3 FBO (VIDEO_RES, currently 1024×768). DOOM is 1.6:1
+// (640:400 = 8:5); the engine's FBO is 4:3 (≈ 1.33:1). DOOM is wider than the FBO,
 // so we keep WIDTH + letterbox vertically — thin black bars top + bottom
 // (active V ≈ 0.833). Was 16:9 (active U ≈ 0.9, side bars) prior to the
 // 4:3 pipeline switch — the letterbox math is res-adaptive (uses
@@ -382,7 +383,8 @@ export const doomDef: VideoModuleDef = {
 
     // FBO at engine resolution + a "source texture" sized for the
     // DOOM framebuffer (640×400 BGRA8). Two textures because the FBO is
-    // 640×480 (engine.res) — we don't want to resize FBOs per-module.
+    // engine.res (VIDEO_RES, currently 1024×768) — we don't want to resize
+    // FBOs per-module.
     const { fbo, texture } = ctx.createFbo();
 
     // Letterbox math: engine FBO is res.width×res.height, DOOM is

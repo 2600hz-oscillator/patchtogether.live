@@ -20,12 +20,12 @@
 //     unchanged frame).
 //
 //  2. Downscale to engine resolution. The whole video pipeline runs at a
-//     fixed VIDEO_RES (640x480) — every module FBO is that size and the
+//     fixed VIDEO_RES (1024x768) — every module FBO is that size and the
 //     `out` texture is consumed at engine res downstream. Uploading a
 //     1920x1080 frame just to have the GPU minify it during the fullscreen
 //     quad is pure waste. We draw the decoded frame into an OffscreenCanvas
 //     sized to the engine resolution once per new frame and upload THAT
-//     (~6.75x less pixel data for 1080p -> 640x480). As a side benefit the
+//     (less pixel data for 1080p -> 1024x768). As a side benefit the
 //     upload source becomes a <canvas>, which tolerates texSubImage2D in
 //     this WebGL2 context (the <video> source is what raised
 //     GL_INVALID_OPERATION in PR #288), so after the first allocate we use

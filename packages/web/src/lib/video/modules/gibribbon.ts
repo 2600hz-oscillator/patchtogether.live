@@ -78,8 +78,12 @@ import {
   type GibEventKind,
 } from './gibribbon-events';
 
-const INTERNAL_W = 640;
-const INTERNAL_H = 360; // 16:9 internal canvas for the side-scroller
+/** 16:9 internal canvas for the side-scroller (scaled up from 640×360 to match
+ *  the higher-res engine FBO; the 16:9 ratio is unchanged so gameplay/layout is
+ *  identical). Exported so the on-card preview sizes its buffer to the snapshot
+ *  ImageData these dims produce (putImageData does NOT scale). */
+export const INTERNAL_W = 1024;
+export const INTERNAL_H = 576;
 const GATE_PULSE_S = 0.01;
 
 // Fragment shader: sample the CPU framebuffer and letterbox into the engine's

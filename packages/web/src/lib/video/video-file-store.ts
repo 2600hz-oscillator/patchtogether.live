@@ -118,6 +118,61 @@ export async function putVideoFileHandle(id: string, handle: StoredFileHandle): 
 }
 
 /**
+ * Seed a BLOB-backed handle under `id` from raw video bytes — the cross-machine
+ * restore path for a portable Performance Bundle (graph/performance-zip.ts).
+ *
+ * The card's reload path (VideoboxCard.tryReloadFromHandle) only depends on the
+ * StoredFileHandle surface: `kind:'file'`, `name`, `getFile()`, and the
+ * permission probes. A FileSystemFileHandle can't cross machines, but the zip
+ * carried the actual bytes — so we wrap them in a synthetic handle that reports
+ * read permission already 'granted' and yields the bytes as a File. On mount,
+ * the card finds this handle by the node's fileMeta.handleId, sees 'granted',
+ * and auto-loads the video with NO re-pick. ZERO card changes required.
+ *
+ * Structured-clone NOTE: a plain object with method properties can't be cloned
+ * into IDB. We therefore store the inert DATA (a Blob + name) and reconstruct
+ * the StoredFileHandle wrapper on read (see getVideoFileHandle). No-op when
+ * IndexedDB is absent (Firefox/Safari fall back to the re-link prompt).
+ */
+export async function putVideoFileBlob(id: string, blob: Blob, name: string): Promise<void> {
+  if (!hasIndexedDB()) return;
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      // A tagged record (Blob + name) — clonable, unlike a method-bearing
+      // handle. getVideoFileHandle detects the tag and wraps it.
+      tx.objectStore(STORE).put({ __blobHandle: true, blob, name }, id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error('put blob failed'));
+      tx.onabort = () => reject(tx.error ?? new Error('put blob aborted'));
+    });
+    db.close();
+  } catch {
+    // Quota / clone failure → degrade to the re-link prompt next load.
+  }
+}
+
+/** Wrap a stored {blob,name} record as a granted, blob-backed StoredFileHandle. */
+function blobHandleFrom(blob: Blob, name: string): StoredFileHandle {
+  return {
+    kind: 'file',
+    name,
+    async getFile(): Promise<File> {
+      // Carry the blob's MIME so VideoboxCard's `file.type.startsWith('video/')`
+      // guard passes (the card rejects non-video files).
+      return new File([blob], name, { type: blob.type || 'video/mp4' });
+    },
+    async queryPermission(): Promise<PermissionState> {
+      return 'granted';
+    },
+    async requestPermission(): Promise<PermissionState> {
+      return 'granted';
+    },
+  };
+}
+
+/**
  * Look up a handle by `id`. Returns `null` when IndexedDB is unavailable,
  * the id isn't present in THIS browser, or any read error occurs. A null
  * result is the signal for the card to show the re-link prompt.
@@ -134,7 +189,13 @@ export async function getVideoFileHandle(id: string): Promise<StoredFileHandle |
     });
     db.close();
     if (!result || typeof result !== 'object') return null;
-    // Structural sanity check — a persisted handle exposes getFile().
+    // A portable-bundle BLOB record (putVideoFileBlob): reconstruct the
+    // method-bearing handle around the stored Blob + name.
+    const rec = result as { __blobHandle?: unknown; blob?: unknown; name?: unknown };
+    if (rec.__blobHandle === true && rec.blob instanceof Blob) {
+      return blobHandleFrom(rec.blob, typeof rec.name === 'string' ? rec.name : 'video');
+    }
+    // Structural sanity check — a persisted FileSystemFileHandle exposes getFile().
     if (typeof (result as StoredFileHandle).getFile !== 'function') return null;
     return result as StoredFileHandle;
   } catch {

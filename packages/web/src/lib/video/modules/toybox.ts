@@ -72,15 +72,20 @@ import {
 } from '$lib/video/toybox-content';
 import { buildProjectorViewProj, projectorFromMaterial } from '$lib/video/toybox-projective';
 import { createVideoFrameUploader } from '$lib/video/video-frame-upload';
+import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
 import {
   OP_SHADER_INDEX,
   isCombineGraph,
   isCombineOpKind,
   isStatefulKind,
+  isMeltStateKind,
   opHistoryDepth,
+  TOYBOX_SCHEMA_VERSION,
   combineExtraFor,
   exquisiteUniforms,
   makeDefaultCombineGraph,
+  propagateFreshness,
+  videoLayerFresh,
   topoSort,
   type ToyboxCombineGraph,
   type ToyboxOpKind,
@@ -100,7 +105,7 @@ import {
   type CvInputs,
 } from '$lib/video/toybox-cv-routes';
 import { parseObj } from '$lib/video/obj-parse';
-import { resolveRenderOrder } from '$lib/video/toybox-surface';
+import { resolveRenderOrder, layerInputWanted } from '$lib/video/toybox-surface';
 import {
   wrapShadertoySource,
   isShadertoySource,
@@ -287,7 +292,7 @@ export const toyboxDef: VideoModuleDef = {
   domain: 'video',
   label: 'toybox',
   category: 'sources',
-  schemaVersion: 4,
+  schemaVersion: TOYBOX_SCHEMA_VERSION,
   migrate: migrateToyboxData,
   // A FIXED pool of 6 generic modulation input ports (the Structure-style
   // section). A layer's shader (and its uniforms) is chosen at runtime, so we
@@ -720,12 +725,36 @@ export const toyboxDef: VideoModuleDef = {
     }
     const feedbackBufs = new Map<string, FeedbackBuf>();
 
+    // LINEAR-on-float safety probe (audit M2c). The advection ops
+    // (datamosh/flowsmear/channeldesync) sample the ring at FRACTIONAL UVs, so
+    // NEAREST quantises the tap to a texel → no sub-pixel motion (advection that
+    // "looks dead"). LINEAR fixes that, BUT linear filtering of a FLOAT colour
+    // attachment silently reads 0.0 without OES_texture_float_linear (which once
+    // rendered the whole loop black — see engine.ts). LINEAR is therefore safe
+    // iff EITHER that extension is present OR the engine is NOT using a real
+    // float attachment (EXT_color_buffer_float absent → createFloatFbo degrades
+    // to RGBA8, where LINEAR is always fine). Probe both once.
+    const floatLinearOk = (() => {
+      try {
+        const g = gl as WebGL2RenderingContext;
+        if (g.getExtension('OES_texture_float_linear')) return true;
+        // No float-linear ext → only safe if the engine isn't really float.
+        return g.getExtension('EXT_color_buffer_float') == null;
+      } catch {
+        return false;
+      }
+    })();
+    const ringFilter: 'nearest' | 'linear' = floatLinearOk ? 'linear' : 'nearest';
+
     function allocFloatTarget(): FloatTarget {
       if (ctx.createFloatFbo) {
-        // NEAREST filter: LINEAR on a float colour attachment silently reads 0.0
-        // without OES_texture_float_linear (see engine.ts) — which made the whole
-        // loop render black. Spatial taps are fine on NEAREST at engine res.
-        const r = ctx.createFloatFbo(ctx.res.width, ctx.res.height, { filter: 'nearest', precision: 'full' });
+        // Allocated at ENGINE res (the HD per-module ring res was reverted on
+        // main, #659). Filter: LINEAR when it's safe (floatLinearOk) so the
+        // advection ops (datamosh/flowsmear/channeldesync) get sub-pixel motion
+        // (audit M2c); NEAREST otherwise — LINEAR on a float colour attachment
+        // silently reads 0.0 without OES_texture_float_linear, which once made
+        // the whole loop render black (see engine.ts).
+        const r = ctx.createFloatFbo(ctx.res.width, ctx.res.height, { filter: ringFilter, precision: 'full' });
         return { fbo: r.fbo, texture: r.texture };
       }
       return ctx.createFbo();
@@ -784,10 +813,17 @@ export const toyboxDef: VideoModuleDef = {
     function clearFeedbackBuf(b: FeedbackBuf): void {
       const g = gl;
       const targets = b.out ? [...b.ring, b.out] : b.ring;
+      // DREAMMELT stores its accumulating melt-state in the ring's ALPHA channel
+      // and reads `meltPrev = texture(uPrev,uv).a`. The default opaque clear
+      // (alpha=1) would seed melt=1 → fully melted to in1 from frame 1 (audit
+      // C1). Clear melt-state rings with alpha=0 so melt seeds at 0 and melts IN
+      // from in0. RGB-state ops (datamosh/flowsmear/delay) keep the opaque clear.
+      const a = isMeltStateKind(b.kind) ? 0 : 1;
       for (const t of targets) {
         g.bindFramebuffer(g.FRAMEBUFFER, t.fbo);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
-        g.clearColor(0, 0, 0, 1);
+        // `a` = 0 for melt-state rings (DREAMMELT, audit C1), 1 (opaque) otherwise.
+        g.clearColor(0, 0, 0, a);
         g.clear(g.COLOR_BUFFER_BIT);
       }
       b.clearPending = false;
@@ -850,6 +886,15 @@ export const toyboxDef: VideoModuleDef = {
     // Per-layer VIDEO frame uploaders (VIDEOBOX-style rVFC-driven pump). The
     // card attaches its own card-owned <video> element per video layer.
     const videoUploaders = new Map<number, ReturnType<typeof createVideoFrameUploader>>();
+    // Per-layer "did this layer present a NEW frame this engine frame?" (audit
+    // M2b). Used to GATE the stateful history ring so it stores once per decoded
+    // VIDEO frame, not once per (often-faster) engine frame — killing the ~50%
+    // duplicate-slot aliasing on live video. Non-video layers are always fresh
+    // (they animate / sample a live patched feed every engine frame). Reset to
+    // true each frame, then renderVideoLayer pins a FILE/CAMERA video layer to
+    // its uploader's new-frame signal (uploadCount delta).
+    const layerFresh: boolean[] = new Array(LAYER_COUNT).fill(true);
+    const lastUploadCount: number[] = new Array(LAYER_COUNT).fill(-1);
     function ensureVideoUploader(i: number): ReturnType<typeof createVideoFrameUploader> {
       let up = videoUploaders.get(i);
       if (!up) {
@@ -858,13 +903,49 @@ export const toyboxDef: VideoModuleDef = {
       }
       return up;
     }
+    // Per-layer silent audio keep-alive (audit M2a). Chromium throttles a muted
+    // offscreen <video>'s decode to ~1fps unless its audio is being PULLED by the
+    // AudioContext in real time — sampling it into a GL texture does NOT count.
+    // So multiple TOYBOX video layers (or one alongside another video source)
+    // regress to ~1fps decode (the bug PR #301 fixed for VIDEOBOX). Wire a
+    // src→gain(0)→destination keep-alive per layer on attach (mirrors
+    // videobox.ts wireAudio) + tear it down on detach/swap/dispose. Best-effort:
+    // a context-less engine (jsdom tests) or a createMediaElementSource failure
+    // (already-attached element after HMR) silently degrades to no keep-alive.
+    const videoKeepAlives = new Map<number, VideoAudioKeepAlive>();
+    const keepAliveEls = new Map<number, HTMLVideoElement>();
+    function releaseKeepAlive(idx: number): void {
+      const ka = videoKeepAlives.get(idx);
+      if (ka) { try { ka.disconnect(); } catch { /* */ } videoKeepAlives.delete(idx); }
+      keepAliveEls.delete(idx);
+    }
+    function wireKeepAlive(idx: number, el: HTMLVideoElement): void {
+      // Same element already wired → no-op (idempotent across re-attach).
+      if (keepAliveEls.get(idx) === el && videoKeepAlives.has(idx)) return;
+      releaseKeepAlive(idx);
+      const ac = ctx.audioCtx;
+      if (!ac) return; // no AudioContext (jsdom / non-audio engine) → skip
+      try {
+        videoKeepAlives.set(idx, createVideoAudioKeepAlive(ac, el));
+        keepAliveEls.set(idx, el);
+      } catch {
+        // createMediaElementSource can throw if the element already has a source
+        // (HMR re-attach). The decode-throttle defeat is best-effort.
+      }
+    }
+
     /** Attach (or detach with null) a card-owned <video> element to layer `i`. */
     function attachLayerVideo(i: number, el: HTMLVideoElement | null): void {
       const idx = Math.trunc(i);
       if (idx < 0 || idx >= LAYER_COUNT) return;
       const up = ensureVideoUploader(idx);
-      if (el) up.attach(el);
-      else up.detach();
+      if (el) {
+        up.attach(el);
+        wireKeepAlive(idx, el);
+      } else {
+        up.detach();
+        releaseKeepAlive(idx);
+      }
     }
 
     // Handle extras — the card drives per-layer image/video uploads through
@@ -1115,8 +1196,20 @@ export const toyboxDef: VideoModuleDef = {
      * texture, or -1 = matcap-only. It is guaranteed (by resolveRenderOrder) to
      * be in-range, non-self, non-cyclic, and rendered BEFORE this layer this
      * frame — so binding it can never create a WebGL feedback loop.
+     *
+     * `wantLayerIn` (LAYER INPUT, material.surfaceSource === LAYER_INPUT_SOURCE +
+     * a wired src.in0 edge): bind the PREV-FRAME OUT composite (outTexture, still
+     * holding last frame's result during STEP 1) as the surface texture instead
+     * of a sibling layer FBO. A stable 1-frame feedback tap — never the live,
+     * still-being-computed OUT.
      */
-    function renderObjLayer(i: number, layer: ToyboxLayer, time: number, safeSource: number): boolean {
+    function renderObjLayer(
+      i: number,
+      layer: ToyboxLayer,
+      time: number,
+      safeSource: number,
+      wantLayerIn: boolean,
+    ): boolean {
       const mat: ToyboxObjMaterial = layer.material ?? makeDefaultObjMaterial();
       // A custom disk-loaded OBJ (layer.objSrc) takes precedence over the bundled
       // material.modelId: parse THAT directly under a synthetic mesh-cache key.
@@ -1173,9 +1266,18 @@ export const toyboxDef: VideoModuleDef = {
       // TEXTURE0 is safe: combineStep re-binds TEXTURE0/1 + resets
       // activeTexture(TEXTURE0), so the unit state self-heals before the
       // fullscreen-quad combine passes.
-      const useSurf = safeSource >= 0 && safeSource < LAYER_COUNT && safeSource !== i;
+      // LAYER INPUT takes precedence over a sibling-layer texmap: bind the retained
+      // prev-frame OUT (outTexture) as the surface texture. Safe vs a WebGL feedback
+      // loop because STEP 3 hasn't overwritten outTexture yet (it holds LAST frame's
+      // OUT), and we're writing into THIS layer's FBO (a different target).
+      const useLayerIn = wantLayerIn;
+      const useSurf =
+        useLayerIn || (safeSource >= 0 && safeSource < LAYER_COUNT && safeSource !== i);
       g.activeTexture(g.TEXTURE0);
-      g.bindTexture(g.TEXTURE_2D, useSurf ? layerTargets[safeSource]!.texture : dummyTex);
+      g.bindTexture(
+        g.TEXTURE_2D,
+        useLayerIn ? outTexture : useSurf ? layerTargets[safeSource]!.texture : dummyTex,
+      );
       if (uSurface) g.uniform1i(uSurface, 0);
       if (uUseSurface) g.uniform1i(uUseSurface, useSurf ? 1 : 0);
       if (uSurfaceMix) {
@@ -1226,6 +1328,11 @@ export const toyboxDef: VideoModuleDef = {
      *
      * `frame` carries iFrame/iMouse/dt; `safeSource` is the resolved
      * below/texmap layer index (or -1) for a FRAG/scene-input layer.
+     *
+     * `wantLayerIn` (LAYER INPUT, sceneInputSource === 'layer-input' + a wired
+     * src.in0 edge): override the scene input (iChannel0 / a project's 'scene'
+     * channel) with the retained PREV-FRAME OUT (outTexture) instead of the
+     * below-layer FBO — a stable 1-frame feedback tap.
      */
     function renderShaderLayer(
       i: number,
@@ -1233,11 +1340,15 @@ export const toyboxDef: VideoModuleDef = {
       time: number,
       frame: VideoFrameContext,
       safeSource: number,
+      wantLayerIn: boolean,
     ): boolean {
       const g = gl;
       const target = layerTargets[i]!;
-      const sceneTex =
-        safeSource >= 0 && safeSource < LAYER_COUNT && safeSource !== i
+      // LAYER INPUT overrides the below-layer scene source with the retained
+      // prev-frame OUT (safe: STEP 3 hasn't overwritten outTexture yet).
+      const sceneTex = wantLayerIn
+        ? outTexture
+        : safeSource >= 0 && safeSource < LAYER_COUNT && safeSource !== i
           ? layerTargets[safeSource]!.texture
           : null;
 
@@ -1250,6 +1361,9 @@ export const toyboxDef: VideoModuleDef = {
           time,
           frame,
           sceneTex,
+          // LAYER INPUT channel ('layer-input'): always the retained prev-frame
+          // OUT (outTexture), independent of the scene override above.
+          outTexture,
         );
       }
 
@@ -1405,16 +1519,29 @@ export const toyboxDef: VideoModuleDef = {
      * frame degrades to the file/camera path with no patched-input lookup,
      * rather than crashing. The live draw() always passes it.
      */
-    function renderVideoLayer(i: number, layer: ToyboxLayer, frame?: VideoFrameContext): boolean {
+    function renderVideoLayer(
+      i: number,
+      layer: ToyboxLayer,
+      frame?: VideoFrameContext,
+      wantLayerIn = false,
+    ): boolean {
       const g = gl;
       const target = layerTargets[i]!;
 
       // Resolve the source texture for the layer's videoSource.
       let srcTex: WebGLTexture | null = null;
       const source = layer.videoSource;
-      if (source === 'inA' || source === 'inB') {
+      if (wantLayerIn) {
+        // LAYER INPUT (videoSource === 'layerIn' + a wired src.in0 edge): bind the
+        // retained prev-frame OUT (outTexture, still LAST frame's during STEP 1) —
+        // a stable 1-frame feedback tap. A patched feed is assumed live each frame,
+        // so layerFresh[i] stays true (default).
+        srcTex = outTexture;
+      } else if (source === 'inA' || source === 'inB') {
         // PATCHED FEED: bind the texture on this node's video input port. Null
-        // (no cable / source has no texture) → idle pattern (uHasInput=0).
+        // (no cable / source has no texture) → idle pattern (uHasInput=0). A
+        // patched feed is assumed live every engine frame (its upstream owns the
+        // cadence), so layerFresh[i] stays true.
         srcTex = frame ? frame.getInputTexture(node.id, source) : null;
       } else {
         // FILE / CAMERA (#603 path): pump the card-owned <video> uploader. Only
@@ -1423,6 +1550,14 @@ export const toyboxDef: VideoModuleDef = {
         const up = videoUploaders.get(i);
         const ready = up ? up.uploadIfReady() : false;
         srcTex = ready && up ? up.texture : null;
+        // M2b: a FILE/CAMERA video layer is FRESH only when the uploader actually
+        // uploaded a new decoded frame this engine frame (uploadCount advanced).
+        // The engine frame rate typically exceeds the decode rate, so most engine
+        // frames see NO new video frame → layerFresh[i]=false → the downstream
+        // history ring holds instead of storing a duplicate (kills the aliasing).
+        const cnt = up ? up.uploadCount : 0;
+        layerFresh[i] = up ? videoLayerFresh(cnt, lastUploadCount[i]!) : true;
+        if (up) lastUploadCount[i] = cnt;
       }
 
       g.bindFramebuffer(g.FRAMEBUFFER, target.fbo);
@@ -1442,25 +1577,32 @@ export const toyboxDef: VideoModuleDef = {
 
     /** Render layer `i` into its FBO; returns whether it produced content.
      *  `safeSource` is the per-frame texmap source index for an OBJ layer (or
-     *  -1; ignored for non-OBJ layers). */
+     *  -1; ignored for non-OBJ layers). `combine` is the live combine graph, used
+     *  to resolve the LAYER INPUT feedback tap (layerInputWanted) per layer. */
     function renderLayer(
       i: number,
       layers: ToyboxLayer[],
       time: number,
       safeSource: number,
       frame: VideoFrameContext,
+      combine: ToyboxCombineGraph | ToyboxCombine,
     ): boolean {
       const layer = layers[i];
       if (!layer) {
         clearLayer(i);
         return false;
       }
+      // LAYER INPUT: this layer's texture source is the prev-frame OUT tap (when
+      // the sentinel is selected AND the layer's SOURCE node has a wired in0
+      // edge). outTexture STILL holds the previous frame's OUT here (STEP 3 only
+      // overwrites it later), so binding it is a stable 1-frame feedback tap.
+      const wantLayerIn = layerInputWanted(layers, combine, i);
       let drew = false;
-      if (layer.kind === 'obj') drew = renderObjLayer(i, layer, time, safeSource);
+      if (layer.kind === 'obj') drew = renderObjLayer(i, layer, time, safeSource, wantLayerIn);
       else if (layer.kind === 'shader' || layer.kind === 'gen' || layer.kind === 'frag')
-        drew = renderShaderLayer(i, layer, time, frame, safeSource);
+        drew = renderShaderLayer(i, layer, time, frame, safeSource, wantLayerIn);
       else if (layer.kind === 'image') drew = renderImageLayer(i, layer);
-      else if (layer.kind === 'video') drew = renderVideoLayer(i, layer, frame);
+      else if (layer.kind === 'video') drew = renderVideoLayer(i, layer, frame, wantLayerIn);
       // 'off' → nothing.
       if (!drew) clearLayer(i);
       return drew;
@@ -1618,6 +1760,12 @@ export const toyboxDef: VideoModuleDef = {
      * dreammelt), the most-recent prev frame, and up to 3 DELAYED taps out of the
      * ring (for framedelay/channeldesync), branching on uOp. Renders into the ring
      * head, advances head, returns the just-rendered texture.
+     *
+     * `fresh` (audit M2b): when false the upstream presented NO new content this
+     * engine frame (a live video layer whose decode is slower than the engine
+     * rAF), so we DON'T store/advance the ring — we re-return the last visible
+     * output. This makes ring delays count DECODED frames, not engine frames, so
+     * a video source stops aliasing ~50% duplicate slots into the history.
      */
     function runHistoryStep(
       buf: FeedbackBuf,
@@ -1625,9 +1773,17 @@ export const toyboxDef: VideoModuleDef = {
       inputTex: WebGLTexture | null,
       inputTex1: WebGLTexture | null,
       params: Record<string, number> | undefined,
+      fresh = true,
     ): WebGLTexture {
       const g = gl;
       if (buf.clearPending) clearFeedbackBuf(buf);
+      // Not fresh → hold: skip the store + advance, re-return the last output.
+      // (clearPending above still runs so a reset on a stalled source clears.)
+      if (!fresh) {
+        const Nh = buf.ring.length;
+        if (buf.out) return buf.out.texture; // delay-line ops render into buf.out
+        return buf.ring[(buf.head - 1 + Nh) % Nh]!.texture; // recursive: last slot
+      }
       const u = historyUniforms(kind, params);
       const N = buf.ring.length;
       const dst = buf.ring[buf.head]!;
@@ -1736,6 +1892,14 @@ export const toyboxDef: VideoModuleDef = {
       // ops → their scratch result; feedback → its ping-pong result). undefined =
       // unresolved (no/missing input).
       const texForNode = new Map<string, WebGLTexture | null>();
+      // freshForNode[id] (audit M2b): did this node present NEW content this
+      // engine frame? Computed by the PURE propagateFreshness over the live
+      // per-layer fresh flags (the SAME logic the unit test exercises): a SOURCE
+      // is fresh per layerFresh (video layers gate on a decoded frame; everything
+      // else animates every frame), an OP is fresh if any wired input is fresh.
+      // A stateful history op only advances its ring when fresh, so ring delays
+      // count decoded frames (no duplicate-slot aliasing on live video).
+      const freshForNode = propagateFreshness(graph, layerFresh);
       // Assign a scratch slot to each op node (deterministic by topo order),
       // starting past the two reserved ping-pong slots so they don't collide
       // if some future caller mixes paths in one frame.
@@ -1776,6 +1940,7 @@ export const toyboxDef: VideoModuleDef = {
           }
           const inEdge0 = graph.edges.find((e) => e.to === id && e.toPort === 'in0');
           const inputTex = inEdge0 ? texForNode.get(inEdge0.from) ?? null : null;
+          const fresh = freshForNode.get(id) ?? true;
           if (n.kind === 'feedback') {
             texForNode.set(id, runFeedbackStep(buf, inputTex, p));
           } else {
@@ -1783,7 +1948,7 @@ export const toyboxDef: VideoModuleDef = {
             // datamosh). dreammelt is 2-input (in1 = the dissolve target).
             const inEdge1 = graph.edges.find((e) => e.to === id && e.toPort === 'in1');
             const inputTex1 = inEdge1 ? texForNode.get(inEdge1.from) ?? null : null;
-            texForNode.set(id, runHistoryStep(buf, n.kind, inputTex, inputTex1, p));
+            texForNode.set(id, runHistoryStep(buf, n.kind, inputTex, inputTex1, p, fresh));
           }
           continue;
         }
@@ -1867,11 +2032,22 @@ export const toyboxDef: VideoModuleDef = {
         //    cyclic / self / out-of-range surfaceSource degrades to matcap-only
         //    (safeSource = -1) — never a WebGL feedback loop.
         const produced: boolean[] = new Array(LAYER_COUNT).fill(false);
+        // M2b: default every layer FRESH each frame; renderVideoLayer pins a
+        // file/camera VIDEO layer to its uploader's new-frame signal below.
+        layerFresh.fill(true);
+        // Read the live combine ONCE before STEP 1: a layer can source its
+        // texture from the LAYER INPUT feedback tap (prev-frame OUT), which is
+        // resolved against the live graph (layerInputWanted). It is a pure getter
+        // (no GL side-effects), so reading it here (vs only in STEP 2) is free.
+        // CRITICAL ORDERING: STEP 1 runs BEFORE STEP 3 overwrites outTexture, so
+        // binding outTexture during STEP 1 samples the PREVIOUS frame's OUT — the
+        // stable 1-frame tap, never the live still-being-computed result.
+        const combine = liveCombineRaw();
         const { order, safeSource } = resolveRenderOrder(layers);
-        for (const i of order) produced[i] = renderLayer(i, layers, time, safeSource[i] ?? -1, frame);
+        for (const i of order)
+          produced[i] = renderLayer(i, layers, time, safeSource[i] ?? -1, frame, combine);
 
         // 2) Combine: evaluate the live combine (Phase-4 GRAPH or legacy chain).
-        const combine = liveCombineRaw();
         const accTex = isCombineGraph(combine)
           ? evalGraph(combine as ToyboxCombineGraph, produced)
           : evalLinear(combine as ToyboxCombine, produced);
@@ -1909,6 +2085,11 @@ export const toyboxDef: VideoModuleDef = {
         imageSources.clear();
         for (const up of videoUploaders.values()) up.dispose();
         videoUploaders.clear();
+        // Tear down every per-layer silent audio keep-alive (M2a) so no
+        // MediaElementSource/gain node leaks when the card is removed.
+        for (const ka of videoKeepAlives.values()) { try { ka.disconnect(); } catch { /* */ } }
+        videoKeepAlives.clear();
+        keepAliveEls.clear();
         for (const c of programs.values()) gl.deleteProgram(c.program);
         programs.clear();
         shadertoyRt.dispose();
@@ -2554,6 +2735,20 @@ int wiredCount() {
   return max(c, 1);
 }
 
+// The PORT index of the k-th WIRED feed (0-based, in port order in0<in1<in2<in3).
+// Maps a count-space slot k∈[0,wiredCount) to the actual port a sampleIn() reads,
+// so a band assigned slot k shows the k-th PRESENT feed regardless of which ports
+// are wired (audit M1: in0+in2 with in1 empty must show in2 for slot 1, not fall
+// back to in0). k is taken mod wiredCount by the caller. Defaults to 0 (in0).
+int wiredSlot(int k) {
+  int seen = 0;
+  if (uHas0 > 0.5) { if (seen == k) return 0; seen++; }
+  if (uHas1 > 0.5) { if (seen == k) return 1; seen++; }
+  if (uHas2 > 0.5) { if (seen == k) return 2; seen++; }
+  if (uHas3 > 0.5) { if (seen == k) return 3; seen++; }
+  return 0;
+}
+
 void main() {
   float bands = max(uBands, 2.0);
   // warp the vertical band coordinate by a sine so seams aren't dead-straight.
@@ -2562,14 +2757,16 @@ void main() {
   float bf = by * bands;
   int band = int(floor(bf));
   int wired = wiredCount();
-  int idx = band - (band / wired) * wired;  // band mod wired
+  int slot = band - (band / wired) * wired;  // band mod wired (count-space)
+  int idx = wiredSlot(slot);                 // → the slot-th WIRED port (M1)
   vec3 col = sampleIn(idx, vUv);
   // feather the seam to the next band.
   float frac = fract(bf);
   float seam = uSeam * 0.5;
   if (seam > 0.001 && frac > 1.0 - seam) {
     int nb = band + 1;
-    int nidx = nb - (nb / wired) * wired;
+    int nslot = nb - (nb / wired) * wired;
+    int nidx = wiredSlot(nslot);
     vec3 nc = sampleIn(nidx, vUv);
     float t = (frac - (1.0 - seam)) / seam * 0.5;
     col = mix(col, nc, t);
@@ -2846,6 +3043,7 @@ interface ShadertoyRuntime {
     time: number,
     frame: VideoFrameContext,
     sceneTex: WebGLTexture | null,
+    layerInTex?: WebGLTexture | null,
   ): boolean;
   dispose(): void;
 }
@@ -2946,12 +3144,15 @@ function makeShadertoyRuntime(
    *   - self:   THIS pass's PREVIOUS frame (back).
    *   - keyboard: the 1×1 stub.
    *   - scene:  the composited layer below (or dummy when absent).
+   *   - layer-input: the LAYER INPUT feedback tap (Phase 1: prev-frame OUT, a
+   *           one-frame-late tap like `self`; dummy when absent).
    *   - none:   inert dummy. */
   function channelTexture(
     ch: ReturnType<typeof resolveChannels>[number],
     selfPass: CompiledStPass,
     byId: Map<string, CompiledStPass>,
     sceneTex: WebGLTexture | null,
+    layerInTex: WebGLTexture | null,
   ): WebGLTexture {
     switch (ch.type) {
       case 'buffer': {
@@ -2964,6 +3165,8 @@ function makeShadertoyRuntime(
         return keyboardTex;
       case 'scene':
         return sceneTex ?? dummyTex;
+      case 'layer-input':
+        return layerInTex ?? dummyTex;
       default:
         return dummyTex;
     }
@@ -2976,6 +3179,7 @@ function makeShadertoyRuntime(
     time: number,
     frame: VideoFrameContext,
     sceneTex: WebGLTexture | null,
+    layerInTex: WebGLTexture | null = null,
   ): boolean {
     // (Re)compile on first sight or when the source signature changes.
     let cp = compiled.get(layerIndex);
@@ -3016,7 +3220,7 @@ function makeShadertoyRuntime(
       if (p.u.uDate) gl.uniform4f(p.u.uDate, date.getFullYear(), date.getMonth(), date.getDate(), dateSecs);
       // Channels → textures + iChannelResolution.
       for (let s = 0; s < SHADERTOY_CHANNELS; s++) {
-        const tex = channelTexture(p.channels[s]!, p, cp.passes, sceneTex);
+        const tex = channelTexture(p.channels[s]!, p, cp.passes, sceneTex, layerInTex);
         gl.activeTexture(gl.TEXTURE0 + s);
         gl.bindTexture(gl.TEXTURE_2D, tex);
         if (p.u.uChannel[s]) gl.uniform1i(p.u.uChannel[s]!, s);

@@ -2,7 +2,7 @@
 //
 // GibRibbon module smoke + full-play integration + gate-bridge coverage.
 //
-//   1. The card mounts cleanly with a visible 640×360 canvas that renders
+//   1. The card mounts cleanly with a visible 1024×576 canvas that renders
 //      non-black (the white vector ribbon).
 //   2. Full play: drive clock+gate+CV to SPAWN an imp event, scroll it into
 //      the timing window with clock ticks, then a correct ABXY press (X for an
@@ -177,7 +177,7 @@ async function readScopePeak(page: Page, scopeNodeId: string): Promise<{ peak: n
   }, scopeNodeId);
 }
 
-test('gibribbon: card mounts cleanly + 640×360 canvas renders the white ribbon', async ({ page }) => {
+test('gibribbon: card mounts cleanly + 1024×576 canvas renders the white ribbon', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -198,8 +198,9 @@ test('gibribbon: card mounts cleanly + 640×360 canvas renders the white ribbon'
     const c = el as HTMLCanvasElement;
     return { w: c.width, h: c.height };
   });
-  expect(size.w).toBe(640);
-  expect(size.h).toBe(360);
+  // 16:9 internal canvas, scaled up to match the higher-res engine FBO.
+  expect(size.w).toBe(1024);
+  expect(size.h).toBe(576);
 
   // The card polls the framebuffer at 30 Hz; give it a few frames, then assert
   // the canvas has the white ribbon (non-black pixels). ONE coarse pixel check.

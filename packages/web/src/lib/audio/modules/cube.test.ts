@@ -110,13 +110,21 @@ function rms(b: Float32Array): number { let s = 0; for (let i = 0; i < b.length;
 // ─────────────────────────────────────────────────────────────────────────
 
 describe('cubeDef — module def shape', () => {
-  it('declares pitch + the documented CV inputs (incl. fold_cv + space/connect_strength)', () => {
+  it('declares pitch + poly + the documented CV inputs (incl. fold_cv + space/connect_strength)', () => {
     expect(cubeDef.inputs.map((i) => i.id)).toEqual([
-      'pitch',
+      'pitch', 'poly',
       'slice_y', 'slice_rx', 'slice_ry', 'slice_rz',
       'morph_fc', 'connect', 'connect_strength', 'crush',
       'space_crush', 'space_diffuse', 'fold_cv', 'tune',
     ]);
+  });
+
+  it('declares a poly input (polyPitchGate, 5-voice chord bus)', () => {
+    const poly = cubeDef.inputs.find((i) => i.id === 'poly');
+    expect(poly, 'CUBE must expose a `poly` input port').toBeTruthy();
+    expect(poly!.type).toBe('polyPitchGate');
+    // It is a node connection (no paramTarget — it carries audio-rate pitch+gate).
+    expect(poly!.paramTarget).toBeUndefined();
   });
 
   it('CV inputs target the right params with linear cvScale', () => {
@@ -580,6 +588,160 @@ describe('CUBE worklet — capture + audible output', () => {
       expect(d!.maxValue, name).toBe(1);
       expect(d!.automationRate, name).toBe('a-rate');
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 2b) POLYPHONY — the `poly` input (10-channel polyPitchGate bus).
+//
+// Drives process() with a hand-built inputs[1] poly bus (5 lanes × pitch+gate
+// over 10 channels, ch 2i = lane-i V/oct, ch 2i+1 = lane-i gate — see
+// packages/web/src/lib/audio/poly.ts). Asserts: (a) a chord (multiple gated
+// lanes at distinct pitches) sums to audible output; (b) two gated lanes ≠ one
+// gated lane (the chord is genuinely additive, not just lane 0); (c) all gates
+// closed → silent on the poly path (mono fallback owns the sound); (d) the mono
+// path is BYTE-IDENTICAL whether inputs[1] is absent or present-but-all-zero.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('CUBE worklet — poly input (polyPitchGate)', () => {
+  const POLY_CH = 10;
+
+  /** Build a 10-channel poly bus block. `lanes` = [{voct, gate}] for lanes 0..4
+   *  (missing lanes default gate=0). Every channel is a `len`-sample constant. */
+  function makePolyInput(
+    len: number,
+    lanes: Array<{ voct: number; gate: 0 | 1 } | undefined>,
+  ): Float32Array[] {
+    const ch: Float32Array[] = [];
+    for (let lane = 0; lane < 5; lane++) {
+      const l = lanes[lane];
+      ch.push(new Float32Array(len).fill(l ? l.voct : 0)); // pitch
+      ch.push(new Float32Array(len).fill(l ? l.gate : 0));  // gate
+    }
+    return ch; // length 10
+  }
+
+  /** Run with a poly bus on inputs[1] (and a silent mono pitch on inputs[0]). */
+  function runProcPoly(
+    proc: ProcInstance,
+    params: Record<string, Float32Array>,
+    seconds: number,
+    lanes: Array<{ voct: number; gate: 0 | 1 } | undefined>,
+  ): { L: Float32Array; R: Float32Array } {
+    const total = Math.round(SR * seconds);
+    const L = new Float32Array(total);
+    const R = new Float32Array(total);
+    let g = 0;
+    while (g < total) {
+      const len = Math.min(BLOCK, total - g);
+      const pitch = new Float32Array(len); // mono pitch silent (poly drives)
+      const poly = makePolyInput(len, lanes);
+      const outL = new Float32Array(len);
+      const outR = new Float32Array(len);
+      proc.process([[pitch], poly], [[outL, outR]], params);
+      for (let i = 0; i < len; i++) { L[g + i] = outL[i] as number; R[g + i] = outR[i] as number; }
+      g += len;
+    }
+    return { L, R };
+  }
+
+  const C2 = Math.log2(65.41 / 261.626);
+  const E2 = Math.log2(82.41 / 261.626);
+  const G2 = Math.log2(98.0 / 261.626);
+
+  it('a gated poly lane produces audible output (mono pitch input is silent)', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc();
+    loadAllTables(p);
+    const { L } = runProcPoly(p, makeParams({ level: 1, spread: 0 }), 0.25, [
+      { voct: C2, gate: 1 },
+    ]);
+    expect(peak(L)).toBeGreaterThan(1e-3);
+    expect(L.findIndex((v) => !Number.isFinite(v))).toBe(-1);
+  });
+
+  it('a 3-note chord (3 gated lanes) differs from a single gated lane', async () => {
+    const Proc = await loadProcessor();
+    const ps = makeParams({ level: 1, spread: 0, morph_fc: 0.5 });
+
+    const pOne = new Proc(); loadAllTables(pOne);
+    const one = runProcPoly(pOne, ps, 0.3, [{ voct: C2, gate: 1 }]);
+
+    const pChord = new Proc(); loadAllTables(pChord);
+    const chord = runProcPoly(pChord, ps, 0.3, [
+      { voct: C2, gate: 1 }, { voct: E2, gate: 1 }, { voct: G2, gate: 1 },
+    ]);
+
+    expect(peak(chord.L)).toBeGreaterThan(1e-3);
+    // The chord must be a genuinely different waveform than the single note —
+    // the upper lanes contribute their own pitched reads.
+    let differs = false;
+    for (let i = 0; i < one.L.length; i++) {
+      if (Math.abs(one.L[i]! - chord.L[i]!) > 1e-4) { differs = true; break; }
+    }
+    expect(differs, 'a 3-note chord must differ from one note').toBe(true);
+  });
+
+  it('all poly gates closed → poly path is silent (mono fallback owns sound)', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc();
+    loadAllTables(p);
+    // Lanes present but all gate=0 → polyActive false → mono path; mono pitch
+    // here is silent (0 V = C4 still sounds, so assert via the mono test below).
+    // Drive a poly bus of all-zero gates AND a silent mono pitch: lane reads
+    // contribute nothing; mono path plays C4. We assert the poly SUM doesn't
+    // add an extra voice — compare to the pure mono render at the same pitch.
+    const ps = makeParams({ level: 1, spread: 0 });
+    const polyAllClosed = runProcPoly(p, ps, 0.1, [
+      { voct: C2, gate: 0 }, { voct: E2, gate: 0 },
+    ]);
+    // With all gates closed the mono path runs on inputs[0] (silent here → C4).
+    // The point: output is the MONO render, not a sum of lanes. Re-run a pure
+    // mono render (no poly bus) at the same 0 V mono pitch and compare.
+    const pMono = new Proc(); loadAllTables(pMono);
+    const mono = runProc(pMono, ps, 0.1, 0); // 0 V mono pitch
+    let maxDiff = 0;
+    for (let i = 0; i < mono.L.length; i++) {
+      maxDiff = Math.max(maxDiff, Math.abs(mono.L[i]! - polyAllClosed.L[i]!));
+    }
+    expect(maxDiff, 'all-gates-closed must equal the pure mono render').toBe(0);
+  });
+
+  it('BACKWARDS-COMPAT: mono render is byte-identical with vs without a present (all-zero) poly bus', async () => {
+    const Proc = await loadProcessor();
+    const voct = Math.log2(98 / 261.626); // G2
+    const ps = makeParams({ morph_fc: 0.5, slice_rx: 0.4, spread: 0.6, level: 1 });
+
+    // (a) no poly bus at all (inputs[1] absent).
+    const pNoPoly = new Proc(); loadAllTables(pNoPoly);
+    const noPoly = runProc(pNoPoly, ps, 0.2, voct);
+
+    // (b) poly bus present but all-zero (no gate) — must NOT change the mono path.
+    const pZeroPoly = new Proc(); loadAllTables(pZeroPoly);
+    const zeroPoly = (() => {
+      const total = Math.round(SR * 0.2);
+      const L = new Float32Array(total);
+      const R = new Float32Array(total);
+      let g = 0;
+      while (g < total) {
+        const len = Math.min(BLOCK, total - g);
+        const pitch = new Float32Array(len).fill(voct);
+        const poly: Float32Array[] = [];
+        for (let c = 0; c < POLY_CH; c++) poly.push(new Float32Array(len)); // all zero
+        const outL = new Float32Array(len);
+        const outR = new Float32Array(len);
+        pZeroPoly.process([[pitch], poly], [[outL, outR]], ps);
+        for (let i = 0; i < len; i++) { L[g + i] = outL[i] as number; R[g + i] = outR[i] as number; }
+        g += len;
+      }
+      return { L, R };
+    })();
+
+    let maxDiff = 0;
+    for (let i = 0; i < noPoly.L.length; i++) {
+      maxDiff = Math.max(maxDiff, Math.abs(noPoly.L[i]! - zeroPoly.L[i]!), Math.abs(noPoly.R[i]! - zeroPoly.R[i]!));
+    }
+    expect(maxDiff, 'a present-but-silent poly bus changed the mono render').toBe(0);
   });
 });
 

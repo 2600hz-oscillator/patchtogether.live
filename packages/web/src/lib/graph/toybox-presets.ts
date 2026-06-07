@@ -29,6 +29,8 @@ import {
   type ToyboxLayer,
   type ToyboxPreset,
 } from '$lib/video/toybox-content';
+import { TOYBOX_SCHEMA_VERSION } from '$lib/video/toybox-combine-graph';
+import { migrateToyboxData } from '$lib/video/modules/toybox';
 
 /** Deep-clone plain JSON (presets are plain JSON, so this is total + safe). */
 function clone<T>(v: T): T {
@@ -141,6 +143,18 @@ export function applyPresetToData(
   for (const [port, target] of Object.entries(preset.cvRoutes ?? {})) {
     routes[port] = clone(target);
   }
+
+  // --- cvInputs (per-input SCALE/OFFSET) — CLEAR in place (audit M6) ---
+  // ToyboxPreset carries no cvInputs, but a bundled-preset load must NOT inherit
+  // the PRIOR patch's attenuverters: cvInputs is keyed by cv port id, and the
+  // engine applies effectiveCvValue(signal, scale, offset) to whatever param the
+  // NEW preset's cvRoute targets — so a stale cv1 scale=3/offset=0.2 would
+  // modulate the new preset's re-routed target at the wrong depth. Reset to the
+  // defaults (scale +1 / offset 0 = neutral passthrough) by clearing the map.
+  if (data.cvInputs && typeof data.cvInputs === 'object') {
+    const inputs = data.cvInputs as Record<string, unknown>;
+    for (const k of Object.keys(inputs)) delete inputs[k];
+  }
 }
 
 /**
@@ -158,6 +172,21 @@ export function applyDataBlobToData(
   blob: Record<string, unknown>,
 ): void {
   const src = clone(blob);
+
+  // Audit M5: run schema migration BEFORE applying, mirroring the rack-load
+  // path (persistence.ts calls def.migrate). The blob's `schemaVersion` (stamped
+  // at save/export time) is the FROM version; a blob with no version is a
+  // legacy/pre-M5 save → migrate from 0 (every migration step is guarded +
+  // idempotent, so running them on already-current data is a no-op). After
+  // migrating we drop the marker so it doesn't linger as a node.data field.
+  const savedVersion =
+    typeof src.schemaVersion === 'number' && Number.isFinite(src.schemaVersion)
+      ? src.schemaVersion
+      : 0;
+  delete src.schemaVersion;
+  if (savedVersion < TOYBOX_SCHEMA_VERSION) {
+    migrateToyboxData(src, savedVersion); // mutates src in place
+  }
 
   // --- layers (array of live Y types) ---
   if (Array.isArray(src.layers)) {
