@@ -320,6 +320,32 @@ tasks:
     cmds:
       - npx vitest run src/lib/dev/registry-manifest.test.ts
 
+  test:recon:
+    desc: |
+      Test Reconciliation — per-block TOTAL + DISABLED test counts (the
+      "watch disabled fall over time" report). Prints a human table by
+      default; pass `--json` for machine output or `--date YYYY-MM-DD` to
+      override the entry date. Depends on test:emit-manifest so the
+      parametrized (vrt/behavioral) counts reflect the live registry.
+      Examples:
+        task test:recon
+        task test:recon -- --json
+        task test:recon -- --date 2026-06-07
+    deps: [test:emit-manifest]
+    cmds:
+      - node scripts/test-reconciliation.mjs {{.CLI_ARGS}}
+
+  test:recon:page:
+    desc: |
+      Render the Test Reconciliation GitHub Pages page
+      (docs/test-reconciliation/index.html) from the committed changelog
+      history + a freshly-computed live snapshot. Used by the pages.yml
+      deploy; run locally to preview the page. Depends on test:emit-manifest
+      so the live parametrized counts are accurate.
+    deps: [test:emit-manifest]
+    cmds:
+      - node scripts/build-test-reconciliation-page.mjs {{.CLI_ARGS}}
+
   # ---------------- Audio Regression Tests ----------------
   art:
     desc: Run Audio Regression Tests
