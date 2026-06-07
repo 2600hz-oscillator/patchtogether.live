@@ -18,6 +18,9 @@ import { describe, it, expect } from 'vitest';
 import {
   BOX_W,
   ORIGIN,
+  KNOBS_PER_ROW,
+  KNOB_CELL_W,
+  KNOB_GRID_GAP,
   groupBoxHeight,
   defaultPos,
   posFor,
@@ -36,14 +39,38 @@ function boxRect(pos: Pos, knobCount: number) {
 }
 
 describe('control-surface-layout geometry', () => {
-  it('groupBoxHeight grows with knob count (rows of 3) and is never < one row', () => {
+  // The card lays out knobs on a FIXED 2-column grid (KNOBS_PER_ROW), so a
+  // group's rendered height steps every 2 knobs. The lib constants mirror that
+  // grid exactly so groupBoxHeight() is the TRUE rendered height (the resize-
+  // overflow fix: the old geometry assumed 3/row but the cells — dial + "CC n"
+  // badge + ✎ — only fit 2 across, under-counting rows so tall groups spilled).
+  it('KNOBS_PER_ROW is the fixed grid column count (2)', () => {
+    expect(KNOBS_PER_ROW).toBe(2);
+  });
+
+  it('BOX_W is derived from the grid (KNOBS_PER_ROW cells + gaps + box padding)', () => {
+    // BOX_W must hold every cell across plus the inter-cell gaps, else a row of
+    // KNOBS_PER_ROW cells would overflow the box (the card-contains-content
+    // guarantee). The 14px is the .cs-group horizontal padding + border budget.
+    expect(BOX_W).toBeGreaterThanOrEqual(
+      KNOBS_PER_ROW * KNOB_CELL_W + (KNOBS_PER_ROW - 1) * KNOB_GRID_GAP,
+    );
+  });
+
+  it('groupBoxHeight grows every KNOBS_PER_ROW knobs (rows of 2) and never < one row', () => {
     const h1 = groupBoxHeight(1);
-    const h3 = groupBoxHeight(3);
-    const h4 = groupBoxHeight(4); // wraps to a 2nd row
+    const h2 = groupBoxHeight(2); // still one row (KNOBS_PER_ROW = 2)
+    const h3 = groupBoxHeight(3); // wraps to a 2nd row
+    const h5 = groupBoxHeight(5); // 3 rows
     expect(h1).toBeGreaterThan(0);
-    expect(h3).toBe(h1); // 1..3 knobs = one row
-    expect(h4).toBeGreaterThan(h3); // 4 knobs = taller box
+    expect(h2).toBe(h1); // 1..2 knobs = one row
+    expect(h3).toBeGreaterThan(h2); // 3 knobs = a 2nd row → taller
+    expect(h5).toBeGreaterThan(h3); // 5 knobs = a 3rd row → taller again
     expect(groupBoxHeight(0)).toBe(h1); // empty still reserves a row
+    // Monotonic non-decreasing across the realistic 1..8 range.
+    for (let n = 1; n < 8; n++) {
+      expect(groupBoxHeight(n + 1)).toBeGreaterThanOrEqual(groupBoxHeight(n));
+    }
   });
 
   it('defaultPos tiles in rows of 2', () => {
