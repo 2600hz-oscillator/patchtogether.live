@@ -137,8 +137,6 @@
     type RemoteGroupBuilding,
   } from '$lib/multiplayer/group-building-presence';
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
-  import HdToggle from '$lib/ui/HdToggle.svelte';
-  import { hdStore } from '$lib/ui/hd-store.svelte';
   import ElectraConnectButton from '$lib/ui/ElectraConnectButton.svelte';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
@@ -239,19 +237,6 @@
   let booting = $state(false);
   let error = $state<string | null>(null);
   let log = $state<string[]>([]);
-
-  // ---------------- HD render toggle ----------------
-  // Drives a full engine rebuild at a new internal resolution when hdStore.on
-  // flips. `hdReverted` surfaces a badge on the HD pill when a WebGL context
-  // loss forced HD back OFF (GPU OOM guardrail). `hdRebuilding` debounces the
-  // rebuild $effect from racing itself + guards the very first run (initial
-  // engine boot already used hdStore.engineRes, so we don't rebuild on mount).
-  let hdReverted = $state(false);
-  let hdRebuilding = $state(false);
-  // The HD on-state the live engine was actually built at. Initialized to the
-  // store's current value so the rebuild $effect's first run is a no-op (the
-  // cold-boot ensureEngine already honored hdStore.engineRes).
-  let hdBuiltOn: boolean | null = null;
 
   // Provide the engine to descendant module-card components (motorized faders
   // use this to read live AudioParam values).
@@ -3355,23 +3340,14 @@
         // but keep the audio path alive — this lets the existing audio
         // demo run on browsers that lack WebGL2.
         try {
-          // HD mode renders the video engine at a viewport-derived ~1080-line
-          // res; default (OFF) is VIDEO_RES 640×480 — byte-for-byte today. The
-          // store returns VIDEO_RES whenever HD is off, so the OFF path is
-          // identical to construction with no opts.
-          const ve = new VideoEngine({ res: hdStore.engineRes });
-          attachVideoContextLossGuard(ve);
-          e.registerDomain(ve);
-          trace(`video engine registered (res=${ve.res.width}x${ve.res.height})`);
+          e.registerDomain(new VideoEngine());
+          trace('video engine registered');
         } catch (videoErr) {
           console.warn('[canvas] video engine unavailable:', videoErr);
           trace(`video engine unavailable: ${videoErr instanceof Error ? videoErr.message : videoErr}`);
         }
         reconciler = attachReconciler(e);
         engine = e;
-        // Record the HD state this engine was built at so the rebuild $effect
-        // can tell a real toggle apart from its own first (no-op) run.
-        hdBuiltOn = hdStore.on;
         setActiveEngine(e); // expose to non-context consumers (Electra bar button)
         trace(`engine + reconciler attached (sr=${audioCtx.sampleRate})`);
         return e;
@@ -3382,114 +3358,6 @@
     })();
     return bootPromise;
   }
-
-  // ---------------- HD rebuild + context-loss guard ----------------
-
-  /**
-   * Attach a `webglcontextlost` listener to the VideoEngine's canvas. On a
-   * context loss (the GPU ran out of memory — the chief HD risk per the
-   * hd-toggle plan §7), preventDefault() the event and auto-revert HD → OFF +
-   * raise the `hdReverted` badge. The hdStore.on=false then drives the rebuild
-   * $effect, which reconstructs the engine at the safe 640×480 SD resolution.
-   * When HD is already OFF, a context loss still surfaces a console warning but
-   * we don't loop a rebuild (there's nothing safer to drop to).
-   */
-  function attachVideoContextLossGuard(ve: VideoEngine): void {
-    const canvas = ve.canvas as unknown as {
-      addEventListener?: (t: string, cb: (e: Event) => void) => void;
-    };
-    if (typeof canvas.addEventListener !== 'function') return;
-    canvas.addEventListener('webglcontextlost', (event: Event) => {
-      // Prevent the default so the browser keeps the context recoverable.
-      try {
-        event.preventDefault();
-      } catch {
-        /* OffscreenCanvas event may not support it — non-fatal */
-      }
-      console.warn('[canvas] WebGL context lost on video engine');
-      trace('video engine WebGL context lost');
-      if (hdStore.on) {
-        // Auto-revert to SD — the only automatic GPU-OOM backstop.
-        hdReverted = true;
-        hdStore.set(false);
-        trace('HD auto-reverted to OFF after context loss');
-      }
-    });
-  }
-
-  /**
-   * Rebuild the whole PatchEngine + reconciler at the current HD resolution.
-   * The hd-toggle plan §2 recommends rebuild-not-resize: every size-dependent
-   * GL resource is allocated once in each module's factory from `ctx.res`, so a
-   * fresh engine re-allocates everything at the new size with zero per-module
-   * resize code. We tear down the existing engine + reconciler, null the boot
-   * memo, then re-run ensureEngine (which reads hdStore.engineRes) and let the
-   * fresh reconciler re-add every node + edge from the live snapshot.
-   *
-   * Cost: a sub-second blip on a deliberate, rare user toggle. DOOM/SM64/etc.
-   * emulator sessions restart (their GPU-only frame state is lost) — acceptable
-   * per plan §7.6.
-   */
-  async function rebuildEngineForHd(): Promise<void> {
-    if (hdRebuilding) return;
-    hdRebuilding = true;
-    try {
-      // Tear down the live engine + reconciler. The reconciler unsubscribes;
-      // the engine disposes every domain (audio + video) + bridges.
-      try {
-        reconciler?.dispose();
-      } catch (e) {
-        console.warn('[canvas] reconciler dispose during HD rebuild failed:', e);
-      }
-      try {
-        engine?.dispose();
-      } catch (e) {
-        console.warn('[canvas] engine dispose during HD rebuild failed:', e);
-      }
-      // Close the old AudioContext so we don't leak one per toggle.
-      try {
-        await audioCtx?.close();
-      } catch {
-        /* already closed / unsupported — non-fatal */
-      }
-      audioCtx = null;
-      engine = null;
-      reconciler = null;
-      bootPromise = null;
-      // Rebuild at the new res + re-add every node/edge from the live snapshot.
-      // ensureEngine reassigns the `audioCtx` + `reconciler` $state vars; the
-      // audioGate.bind $effect reacts to audioCtx — no manual rebinding needed.
-      await ensureEngine();
-      // ensureEngine attached a fresh reconciler; force a reconcile so the new
-      // engine re-adds every node + edge from the live snapshot. (Read through
-      // an untyped indirection so TS doesn't keep the `= null` narrowing above.)
-      const freshReconciler = reconciler as
-        | { reconcile: () => Promise<void> }
-        | null;
-      await freshReconciler?.reconcile();
-      trace(`HD rebuild complete (on=${hdStore.on})`);
-    } finally {
-      hdRebuilding = false;
-    }
-  }
-
-  // Rebuild the engine whenever the global HD toggle flips. The first run is a
-  // no-op: the cold-boot ensureEngine already built at hdStore.engineRes, and
-  // hdBuiltOn is seeded to match on boot. We also skip when no engine exists
-  // yet (boot is gesture-gated — the next ensureEngine will pick up the res).
-  $effect(() => {
-    const wantOn = hdStore.on;
-    if (!engine) {
-      // No live engine — the next ensureEngine reads hdStore.engineRes anyway.
-      hdBuiltOn = wantOn;
-      return;
-    }
-    if (hdBuiltOn === wantOn) return;
-    hdBuiltOn = wantOn;
-    // Clear the revert badge on any deliberate re-enable.
-    if (wantOn) hdReverted = false;
-    void rebuildEngineForHd();
-  });
 
   // ---------------- Awareness wiring (B4) ----------------
   //
@@ -3881,7 +3749,6 @@
           ? 'Restore a saved local performance. Reloads the patch + inline assets; re-acquires video files (one click to re-allow on Chromium) + re-binds MIDI/gamepad.'
           : 'Unavailable: needs IndexedDB (not in this browser).'}
       >Load Perf</button>
-      <HdToggle reverted={hdReverted} />
       <SkinSwitcher />
       <!-- Electra One on EVERY rack (incl. the anonymous `/` scratch canvas) —
            the flow only needs the patch store + active engine, both present on

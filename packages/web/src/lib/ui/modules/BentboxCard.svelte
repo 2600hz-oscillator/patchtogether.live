@@ -25,7 +25,6 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { VideoEngine } from '$lib/video/engine';
-  import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
   import type { ModuleNode } from '$lib/graph/types';
   import { bentboxDef } from '$lib/video/modules/bentbox';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -121,11 +120,8 @@
    *  look (scanlines, phosphor mask, NTSC bend) lives in the BENTBOX shader
    *  and is unaffected — we only fix the display-rect aspect so the engine
    *  frame isn't distorted on the way to the visible canvas. */
-  function fitRect(
-    cw: number,
-    ch: number,
-    SRC: number = ENGINE_W / ENGINE_H,
-  ): { x: number; y: number; w: number; h: number } {
+  function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
+    const SRC = ENGINE_W / ENGINE_H;
     const dstAspect = cw / ch;
     if (dstAspect > SRC) {
       const h = ch;
@@ -159,7 +155,7 @@
       const ch = canvasEl.height;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
-      const r = fitRect(cw, ch, liveEngineAspect(videoEngine));
+      const r = fitRect(cw, ch);
       // drawImage() from a WebGL canvas already presents upright (the
       // browser accounts for GL's bottom-left origin). A straight blit is
       // correct — the manual scale(1,-1) that used to be here flipped the

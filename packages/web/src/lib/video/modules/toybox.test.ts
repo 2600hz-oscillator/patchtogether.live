@@ -53,15 +53,8 @@ describe('toyboxDef shape', () => {
     expect(inB?.type).toBe('video');
   });
 
-  it('exposes ONLY the HD bufferRes param statically (content/material/combine live in node.data)', () => {
-    // All the layer/combine/material params live in node.data; the single
-    // static numeric param is the HD heavy-buffer-res dropdown (hd-toggle §4.5),
-    // which must be a real module param so it persists + is e2e-addressable.
-    expect(toyboxDef.params.map((p) => p.id)).toEqual(['bufferRes']);
-    const br = toyboxDef.params.find((p) => p.id === 'bufferRes')!;
-    expect(br.defaultValue).toBe(0); // SD default even in HD
-    expect(br.min).toBe(0);
-    expect(br.max).toBe(2);
+  it('has no static numeric engine params (content/material/combine live in node.data)', () => {
+    expect(toyboxDef.params).toEqual([]);
   });
 
   it('is schemaVersion 4 with a migrate hook', () => {

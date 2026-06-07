@@ -18,7 +18,6 @@
   import { patch } from '$lib/graph/store';
   import { freezeframeDef } from '$lib/video/modules/freezeframe';
   import type { VideoEngine } from '$lib/video/engine';
-  import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -76,7 +75,7 @@
       const ch = canvasEl.height;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
-      const srcAspect = liveEngineAspect(videoEngine);
+      const srcAspect = ENGINE_W / ENGINE_H;
       const dstAspect = cw / ch;
       let w = cw, h = ch, x = 0, y = 0;
       if (dstAspect > srcAspect) { h = ch; w = Math.round(h * srcAspect); x = Math.round((cw - w) / 2); }
