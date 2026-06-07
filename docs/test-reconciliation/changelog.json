@@ -24,6 +24,18 @@
         { "block": "behavioral", "kind": "parametrized", "total": 93, "disabled": 63 },
         { "block": "@collab", "kind": "raw (e2e subset)", "total": 108, "disabled": 0 }
       ]
+    },
+    {
+      "date": "2026-06-07",
+      "note": "behavioral reconciliation #2 — re-enable the Moog router batch (moog993 + moog961) + honest exempt split. moog993: default route1=1 makes trig_from1→trig_out1 a unity passthrough (Δμrms≈0.68, ~68× the 0.01 floor); trig_from2 (route1 ignores src2) + env_in1/env_in2 (separate CV outputs) are per-port-exempt. moog961: s_in→v_out1 format passthrough against a silent control (Δμrms≈0.72) with sensitivity pinned high so the audio_in context noise can not muddy it; audio_in (masked by the s_in context gate) + v_in_a/v_in_b (separate s_out_* outputs) are per-port-exempt. moog911a (~1ms one-shot pulse the RMS-over-windows metric misses — needs a per-transient peak metric) + moog960 (constant 0.5 row CV / re-phases the free-running sweep — needs a held-CV driver) stay exempt with precise notes, tagged RECONCILABLE. Verified 993+961 3× locally clean. Honest split added: the 61 module-exemptions are now reported as 52 intentional (architecture-gated: hardware/ROM/file/sinks/MI-state-machines/animated-video/heavy-mount/multiplexers — correct skips) + 9 reconcilable-disabled (the fixable backlog: adsr/buggles/backdraft/peaks/treeohvox/mixmstrs/aquaTank/moog911a/moog960). behavioral disabled 63→61.",
+      "blocks": [
+        { "block": "unit", "kind": "raw", "total": 5985, "disabled": 2 },
+        { "block": "e2e", "kind": "raw", "total": 904, "disabled": 1 },
+        { "block": "art", "kind": "raw", "total": 457, "disabled": 0 },
+        { "block": "vrt", "kind": "parametrized", "total": 151, "disabled": 0 },
+        { "block": "behavioral", "kind": "parametrized", "total": 96, "disabled": 61, "intentional": 52, "reconcilable": 9 },
+        { "block": "@collab", "kind": "raw (e2e subset)", "total": 108, "disabled": 0 }
+      ]
     }
   ]
 }

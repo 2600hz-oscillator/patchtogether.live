@@ -7,8 +7,9 @@
 // exact + don't drift with the real repo's test count.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 // Runtime helpers from the plain .mjs counter (no .d.ts; vitest resolves the
 // .mjs at runtime). Typed loosely on purpose — these are the load-bearing
@@ -163,6 +164,52 @@ describe('extractRecordKeys — exemption map parsing', () => {
     `;
     const keys = extractRecordKeys(src, 'M');
     expect([...keys].sort()).toEqual(['k1', 'k2']);
+  });
+});
+
+describe('behavioral exempt split — honest reconcilable vs intentional', () => {
+  // The reconciliation counter splits BEHAVIORAL_MODULE_EXEMPT into
+  // architecture-gated (intentional) and fixable (reconcilable) buckets so the
+  // headline number reflects real reconcilable coverage, not the raw total.
+  // These tests lock the split's invariants against the LIVE spec source.
+  const specPath = fileURLToPath(
+    new URL('../e2e/tests/per-module-per-port-behavioral.spec.ts', import.meta.url),
+  );
+  const specSrc = readFileSync(specPath, 'utf8');
+
+  it('reconcilable keys are a strict SUBSET of the module exemptions', () => {
+    const moduleExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_MODULE_EXEMPT');
+    const reconcilable = extractRecordKeys(specSrc, 'BEHAVIORAL_RECONCILABLE_EXEMPT');
+    expect(reconcilable.size).toBeGreaterThan(0);
+    const dangling = [...reconcilable].filter((k) => !moduleExempt.has(k));
+    expect(dangling).toEqual([]); // a key here that's been re-enabled would dangle
+  });
+
+  it('re-enabled Moog routers are in NEITHER exempt map; deferred ones stay module-exempt + reconcilable', () => {
+    const moduleExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_MODULE_EXEMPT');
+    const reconcilable = extractRecordKeys(specSrc, 'BEHAVIORAL_RECONCILABLE_EXEMPT');
+    // Re-enabled in behavioral-recon #1/#2 — must be fully out.
+    for (const m of ['moog984', 'moog993', 'moog961']) {
+      expect(moduleExempt.has(m)).toBe(false);
+      expect(reconcilable.has(m)).toBe(false);
+    }
+    // Deferred (subtle-transient / sequencer-state) — module-exempt AND tagged
+    // reconcilable so they count as the fixable backlog, not intentional.
+    for (const m of ['moog911a', 'moog960']) {
+      expect(moduleExempt.has(m)).toBe(true);
+      expect(reconcilable.has(m)).toBe(true);
+    }
+  });
+
+  it('architecture-gated modules are module-exempt but NOT reconcilable', () => {
+    const reconcilable = extractRecordKeys(specSrc, 'BEHAVIORAL_RECONCILABLE_EXEMPT');
+    const moduleExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_MODULE_EXEMPT');
+    // A representative slice of the intentional/architecture-gated class:
+    // hardware, ROM/gameplay, sinks, MI state machines, animated video.
+    for (const m of ['gamepad', 'doom', 'audioOut', 'marbles', 'mandelbulb']) {
+      expect(moduleExempt.has(m)).toBe(true);
+      expect(reconcilable.has(m)).toBe(false);
+    }
   });
 });
 

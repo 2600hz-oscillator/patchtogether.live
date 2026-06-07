@@ -66,6 +66,64 @@ row.
 
 ## Entries
 
+### 2026-06-07 — behavioral reconciliation #2 (Moog router batch + honest exempt split)
+
+Second PR of the behavioral reconciliation leg. Re-enables two more Moog
+routers and splits the module-exempt count into an honest **intentional vs
+reconcilable** breakdown. **behavioral disabled 63 → 61.**
+
+| block | kind | total | disabled | %disabled |
+|---|---|---:|---:|---:|
+| unit | raw | 5985 | 2 | 0.0% |
+| e2e | raw | 904 | 1 | 0.1% |
+| art | raw | 457 | 0 | 0.0% |
+| vrt | parametrized | 151 | 0 | 0.0% |
+| behavioral | parametrized | 96 | 61 | 63.5% |
+| @collab | raw (e2e subset) | 108 | 0 | 0.0% |
+
+The **behavioral disabled 61** now splits into:
+
+| bucket | count | meaning |
+|---|---:|---|
+| **intentional** (architecture-gated) | 52 | hardware / MIDI / ROM-gameplay / file-input / sinks / MI state machines / animated-video / heavy-mount / per-channel multiplexers — these *cannot* be re-enabled in this sweep and are CORRECT skips (covered by dedicated specs). |
+| **reconcilable** (the fixable backlog) | 9 | a real input→output path the *current universal harness* can't yet see: `adsr` / `buggles` / `backdraft` / `peaks` / `treeohvox` / `mixmstrs` / `aquaTank` (subtle-CV / per-channel / quiet-exciter) + `moog911a` / `moog960` (this batch's deferrals). Per-port threshold tuning, a per-transient peak metric, a louder/sustained driver, or a held-CV driver re-enables these. **This is the number to drive down.** |
+
+What changed:
+- **Re-enabled `moog993`** (trigger/envelope patch-bay). The default `route1=1`
+  makes `trig_from1 → trig_out1` a **unity passthrough** — the 4-Hz gate-train
+  source on `trig_from1` reaches the observed (first, gate-typed) output against
+  a clean silent control (**Δμrms ≈ 0.68, ~68× the 0.01 floor**). `trig_from2`
+  (route1 selects source 1 only), `env_in1`, `env_in2` (unity passthroughs to
+  the *separate* `env_out*` CV outputs the gate-typed observed output can't see)
+  are per-port-exempt in `BEHAVIORAL_SWEEP_EXEMPT`.
+- **Re-enabled `moog961`** (S/V-trigger format converter). `s_in → v_out1` is a
+  format passthrough; its 4-Hz gate train drives the observed `v_out1` against a
+  clean silent control (**Δμrms ≈ 0.72**). `BEHAVIORAL_PARAMS.moog961` pins
+  `sensitivity` high (0.95) so the level-0.4 **context** noise on `audio_in`
+  stays below the audio→trigger detector, keeping the `s_in` control silent.
+  `audio_in` (it DOES drive `v_out1`, but the `s_in` context gate fires in both
+  runs so the added transients only shift Δμrms ≈ 0.01 — near-threshold jitter),
+  `v_in_a`, `v_in_b` (feed the *separate* `s_out_a`/`s_out_b` outputs) are
+  per-port-exempt.
+- **Deferred (kept exempt, tagged reconcilable) with precise notes:**
+  - `moog911a` — `out1` is a **~1 ms one-shot pulse** (0.4% duty at the 4-Hz
+    gate source); whether any of the five 50 ms scope windows lands on a pulse
+    is a non-deterministic scheduler race (C=P=0.000 when none align — the
+    `grids` / chowkick-ping sparse-transient class). A per-transient PEAK metric
+    (or a fast dense gate source) would gate it. `trig1→out1` delay + coupling
+    is pinned deterministically by `moog911a.test.ts`.
+  - `moog960` — auto-runs on spawn, but all 24 step pots default to 0.5 so the
+    observed `row1` CV holds a **constant 0.5** (C=P) regardless of the driven
+    transport input; with distinct pots BOTH the free-running control AND the
+    patched run sweep, so a clock/start/stop gate only re-phases the same sweep
+    — a subtle variance/timing shift that straddles the RMS-over-windows
+    threshold (verified: `clock` Δμrms dipped to 0.021 across a 3× check —
+    near-threshold, not shipped). A held-CV / distinct-pot driver re-enables it.
+    Per-step/range/mode logic is pinned by `moog960.test.ts` + `seq960-dsp.test.ts`.
+
+Verified `moog993` + `moog961` 3× locally clean (the behavioral signal is
+dead-clean: control = 0.000, patched ≈ 0.7).
+
 ### 2026-06-07 — behavioral reconciliation #1 (moog984 re-enabled)
 
 First PR of the behavioral reconciliation leg (driving the behavioral

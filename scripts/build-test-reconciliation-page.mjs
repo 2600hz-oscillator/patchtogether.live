@@ -66,13 +66,29 @@ function renderTable(blocks) {
     .map((b) => {
       const p = pct(b.disabled, b.total);
       const hot = b.disabled > 0 ? ' class="has-disabled"' : '';
-      return `      <tr${hot}>
+      const row = `      <tr${hot}>
         <td class="block">${esc(b.block)}</td>
         <td class="kind">${esc(b.kind)}</td>
         <td class="num">${b.total}</td>
         <td class="num">${b.disabled}</td>
         <td class="num">${p}%</td>
       </tr>`;
+      // Honest split sub-row for the behavioral block: the `disabled` total is
+      // split into architecture-gated (intentional, correct skips) vs the
+      // fixable backlog (reconcilable) — the latter is the number to drive down.
+      if (
+        typeof b.intentional === 'number' &&
+        typeof b.reconcilable === 'number'
+      ) {
+        const rp = pct(b.reconcilable, b.total);
+        return `${row}
+      <tr class="split-row">
+        <td></td><td></td><td></td>
+        <td class="num split">${b.intentional} intentional · <b>${b.reconcilable} reconcilable</b></td>
+        <td class="num split">${rp}% reconcilable</td>
+      </tr>`;
+      }
+      return row;
     })
     .join('\n');
   return `    <table class="recon">
@@ -128,7 +144,16 @@ function main() {
     const r = reconcile();
     live = {
       date: history.entries.length ? history.entries[history.entries.length - 1].date : 'now',
-      blocks: r.blocks.map((b) => ({ block: b.block, kind: b.kind, total: b.total, disabled: b.disabled })),
+      blocks: r.blocks.map((b) => ({
+        block: b.block,
+        kind: b.kind,
+        total: b.total,
+        disabled: b.disabled,
+        // Carry the behavioral honest split through to the live row so the
+        // published page shows reconcilable-vs-intentional, not just the raw total.
+        ...(typeof b.intentional === 'number' ? { intentional: b.intentional } : {}),
+        ...(typeof b.reconcilable === 'number' ? { reconcilable: b.reconcilable } : {}),
+      })),
     };
     // Use the latest committed date for the live row label only if it differs;
     // otherwise mark it explicitly as a recompute of the current tree.
@@ -179,6 +204,9 @@ function main() {
     table.recon td.block { color: #ffd479; }
     table.recon td.kind { color: #889; font-size: .82rem; }
     tr.has-disabled td.num:nth-child(4) { color: #f88; font-weight: bold; }
+    tr.split-row td { border-bottom: 1px solid #2a2a2a; padding-top: .1rem; padding-bottom: .45rem; }
+    tr.split-row td.split { color: #9aa; font-size: .8rem; font-weight: normal; }
+    tr.split-row td.split b { color: #ffb86c; }
     .ok { color: #8d8; }
     .alert { background: #2a1818; border-left: 3px solid #f55; padding: .9rem 1.1rem; border-radius: 4px; }
     .warn { color: #ec8; }
