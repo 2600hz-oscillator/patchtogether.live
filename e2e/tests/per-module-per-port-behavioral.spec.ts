@@ -1202,6 +1202,21 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    see the systemic-fix TODO at the BEHAVIORAL_SWEEP_EXEMPT header below.)
   'dx7.poly': 'poly note/gate retriggers the FM voice (zc/centroid wobble) but mean-RMS delta straddles the ~0.01 floor under the overlapping context-gate voice (jitter); covered by dx7.test.ts + dx7 ART/specs',
 
+  // ── POLYHELM midi_in / seq_reset: two intrinsically non-perturbing inputs.
+  //    * midi_in is a VISUAL-ONLY marker port (Web MIDI flows via the gear
+  //      panel / message port, NOT a cable) — a cabled CV into it is a correct
+  //      no-op on out_l by design (the worklet's inputs[3] is unused; see
+  //      polyhelm.ts header). Same shape as the helm whole-module MIDI exempt.
+  //    * seq_reset only does anything while the internal step sequencer is ON
+  //      (default OFF, and the sweep doesn't enable it via the card), so a
+  //      reset edge is a no-op on the observed audio. The seq-reset edge logic
+  //      is unit-tested in packages/dsp/src/lib/helm-engine.test.ts
+  //      (tickSequencerEdges). The headline poly/pitch_cv/gate paths PASS and
+  //      the live MIDI-LANE→poly→audio chain is covered by
+  //      e2e/tests/polyhelm-poly-chain.spec.ts.
+  'polyhelm.midi_in':   'visual-only MIDI marker port (Web MIDI flows via the gear panel/message port, not a cable) → correct no-op on out_l; same class as the helm MIDI exempt',
+  'polyhelm.seq_reset': 'no-op while the internal step sequencer is OFF (default; sweep does not enable it); seq-reset edge logic covered by helm-engine.test.ts (tickSequencerEdges)',
+
   // (aquaTank moved to BEHAVIORAL_MODULE_EXEMPT — its observed out1 is
   //  intrinsically near-silent (~0.005 RMS) so MANY ports straddle the
   //  floor, NOT just the fb*_cv sends: a 3× local flake-check showed in3
