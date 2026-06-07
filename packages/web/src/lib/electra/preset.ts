@@ -457,17 +457,29 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
   // pot/control-set position. Without bounds the device builds the controls but
   // draws nothing (the pages render empty) — this is the single field whose
   // omission caused the blank-page bug on real hardware.
+  // Per-page accent colours (valid Electra palette hex). Every control in a
+  // real preset carries a colour; a colorless control can fail to render.
+  const PAGE_COLOR: Record<number, string> = {
+    [PAGE_CONTROL]: '529DEC',   // blue
+    [PAGE_MIXMASTER]: '03A598', // teal
+    [PAGE_SYSTEM]: 'F49500',    // orange
+  };
   for (const c of controls) {
     if (!c.bounds && c.potId) c.bounds = boundsForPotSet(c.potId, c.controlSetId);
     if (c.visible === undefined) c.visible = true;
+    if (c.color === undefined) c.color = PAGE_COLOR[c.pageId] ?? 'FFFFFF';
     // Each value's `id` must match the input's `valueId` ('value') or the pot
     // won't drive the control — confirmed against a real exported .epr.
     for (const v of c.values) if (v.id === undefined) v.id = 'value';
+    // Interactive controls (incl. pads) need an `inputs` pot binding; real
+    // pads carry it too. Read-only meters/banner stay input-less (app→device).
+    if (!c.readOnly && c.potId && !c.inputs) c.inputs = [{ potId: c.potId, valueId: 'value' }];
   }
   for (const g of groups) {
     if (!g.bounds) g.bounds = boundsForSlotRange(g.from, g.to);
     if (g.id === undefined) g.id = nextControlId(); // unique in the shared id space
     if (g.variant === undefined) g.variant = 'highlighted';
+    if (g.color === undefined) g.color = 'FFFFFF';
   }
 
   const pages: ElectraPage[] = [
