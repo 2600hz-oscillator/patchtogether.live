@@ -28,23 +28,28 @@ import {
   type PenteVoiceParams,
   type PenteFilterParams,
   type PenteParams,
+  type AdsrParams,
 } from './pentemelodica-dsp';
 
 const SR = 48000;
 
 function defVoice(over: Partial<PenteVoiceParams> = {}): PenteVoiceParams {
   return {
-    tune: 0, fine: 0, fm: 0, pm: 0, pw: 0.5, wave: 0,
-    attack: 0.005, decay: 0.1, sustain: 0.7, release: 0.2, level: 0.8, pan: 0,
+    tune: 0, fine: 0, fm: 0, pm: 0, pw: 0.5, wave: 0, level: 0.8, pan: 0,
     ...over,
   };
 }
 function defFilter(over: Partial<PenteFilterParams> = {}): PenteFilterParams {
   return { cutoff: 1000, resonance: 0.2, mode: 0, wetdry: 1, ...over };
 }
+function defAdsr(over: Partial<AdsrParams> = {}): AdsrParams {
+  // The ONE shared A/D/S/R every voice envelope reads.
+  return { attack: 0.005, decay: 0.1, sustain: 0.7, release: 0.2, ...over };
+}
 function defParams(over: Partial<PenteVoiceParams>[] = []): PenteParams {
   return {
     voices: Array.from({ length: PENTE_VOICES }, (_, i) => defVoice(over[i] ?? {})),
+    adsr: defAdsr(),
     filter: defFilter(),
   };
 }
@@ -276,5 +281,112 @@ describe('pentemelodica-dsp / renderPentemelodica', () => {
 
     const center = panOut(0);
     expect(center.l).toBeCloseTo(center.r, 4);
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Release-tail pitch fix (the cube #669 bug, reproduced + fixed in PENTEMELODICA).
+//
+// The poly bus zeroes a released lane's pitch channel. A voice still RINGING in
+// its release tail (gate low, env > 0) must keep advancing at the PLAYED pitch
+// — not snap to 0 V/oct = C4. We render gate-ON (one block to latch the held
+// pitch + ring up) then gate-OFF (the poly bus drops pitch to 0) and measure the
+// release tail's dominant frequency by its zero-crossing rate on the per-voice
+// pre-mixer tap. Before the fix the tail rings at C4 (≈262 Hz); after, at the
+// played pitch. Long release + high sustain keep the tail loud + clean.
+// ----------------------------------------------------------------------------
+describe('pentemelodica-dsp / release-tail pitch (release-tail pitch fix)', () => {
+  const MOOG_C4 = MOOG_C4_HZ;
+
+  /** Estimate the fundamental Hz of a buffer via its zero-crossing rate. A
+   *  band-limited triangle (wave=0) has exactly TWO zero crossings per cycle, so
+   *  freq ≈ (crossings / 2) / (n / sr). */
+  function zeroCrossHz(buf: Float32Array): number {
+    let crossings = 0;
+    for (let i = 1; i < buf.length; i++) {
+      const a = buf[i - 1]!;
+      const b = buf[i]!;
+      if ((a < 0 && b >= 0) || (a >= 0 && b < 0)) crossings++;
+    }
+    const seconds = buf.length / SR;
+    return crossings / 2 / seconds;
+  }
+
+  it('a released voice rings its release tail at the PLAYED pitch, not C4', () => {
+    // Voice 0 plays +1 V/oct = C5 (≈523 Hz), triangle, long release + sustain 1.
+    const params = defParams();
+    const adsr: AdsrParams = defAdsr({ attack: 0.001, sustain: 1, release: 1.5 });
+    params.adsr = adsr;
+    // Triangle (clean zero crossings) + no filter coloring of the tap (we read
+    // the pre-mixer per-voice tap, which is pre-filter anyway).
+    params.voices[0]!.wave = 0;
+    const PLAYED = 1.0; // +1 V/oct → C5
+    const state = makePenteState();
+    const fm = new Array(PENTE_VOICES).fill(0);
+
+    // ── Block 1: gate ON at C5. Ring up past attack. ──
+    const onBus = polyBus([{ voct: PLAYED, gate: true }]);
+    const ringN = Math.round(SR * 0.05); // 50 ms
+    const ringOut = makeRenderOut(ringN);
+    renderPentemelodica(params, onBus, fm, ringN, SR, state, ringOut);
+    // Sanity: the held note rings at C5 while gated (zero-crossing estimate is
+    // granular over a 50 ms window → assert within ~3 % of C5).
+    const C5 = MOOG_C4 * 2;
+    const gatedHz = zeroCrossHz(ringOut.voices[0]!);
+    expect(Math.abs(gatedHz - C5) / C5).toBeLessThan(0.03);
+
+    // ── Block 2: gate OFF. The poly bus zeroes voice 0's PITCH channel (the
+    // exact production behavior that triggered the bug) — only the gate flips,
+    // pitch reads 0. Render the release tail. ──
+    const offBus = polyBus([{ voct: 0, gate: false }]); // pitch zeroed on release
+    const tailN = Math.round(SR * 0.05); // 50 ms of the (still-loud) tail
+    const tailOut = makeRenderOut(tailN);
+    renderPentemelodica(params, offBus, fm, tailN, SR, state, tailOut);
+
+    // The tail must still be audible (release 1.5 s → barely decayed in 50 ms).
+    expect(rms(tailOut.voices[0]!)).toBeGreaterThan(1e-2);
+
+    // THE FIX: the release tail rings at the PLAYED pitch (C5 ≈523 Hz), NOT C4.
+    const tailHz = zeroCrossHz(tailOut.voices[0]!);
+    expect(Math.abs(tailHz - C5) / C5).toBeLessThan(0.03); // ≈C5, the played note
+    // And it is clearly NOT C4 — the bug would land here (a full octave off).
+    expect(Math.abs(tailHz - MOOG_C4)).toBeGreaterThan(150);
+  });
+
+  it('a higher lane (voice 3) holds its OWN played pitch through release', () => {
+    // Voice 0 holds C4 (root); voice 3 plays +1 V/oct = C5 then releases. The
+    // releasing voice 3 must ring at C5, not fall back to lane-0 (C4).
+    const params = defParams();
+    params.adsr = defAdsr({ attack: 0.001, sustain: 1, release: 1.5 });
+    params.voices[3]!.wave = 0;
+    const state = makePenteState();
+    const fm = new Array(PENTE_VOICES).fill(0);
+
+    // Block 1: voice 0 @ C4 + voice 3 @ C5, both gated.
+    const onBus = polyBus([
+      { voct: 0, gate: true },
+      { voct: 0, gate: false },
+      { voct: 0, gate: false },
+      { voct: 1.0, gate: true }, // C5
+    ]);
+    const ringN = Math.round(SR * 0.05);
+    renderPentemelodica(params, onBus, fm, ringN, SR, state, makeRenderOut(ringN));
+
+    // Block 2: release voice 3 ONLY (gate low, pitch zeroed); voice 0 stays held.
+    const offBus = polyBus([
+      { voct: 0, gate: true },   // voice 0 still held @ C4
+      { voct: 0, gate: false },
+      { voct: 0, gate: false },
+      { voct: 0, gate: false },  // voice 3 released, pitch zeroed
+    ]);
+    const tailN = Math.round(SR * 0.05);
+    const tailOut = makeRenderOut(tailN);
+    renderPentemelodica(params, offBus, fm, tailN, SR, state, tailOut);
+
+    expect(rms(tailOut.voices[3]!)).toBeGreaterThan(1e-2);
+    const C5 = MOOG_C4_HZ * 2;
+    const tailHz = zeroCrossHz(tailOut.voices[3]!);
+    expect(Math.abs(tailHz - C5) / C5).toBeLessThan(0.03); // C5, NOT C4 (lane-0) / 0
+    expect(Math.abs(tailHz - MOOG_C4_HZ)).toBeGreaterThan(150);
   });
 });

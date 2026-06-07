@@ -4,8 +4,10 @@
 //
 // A POLY input drives five band-limited VCO voices (each with TUNE / FINE /
 // exponential-FM / phase-mod / pulse-width and a continuous tri→saw→square
-// WAVE morph), each gated by its own ADSR, summed through a per-voice level /
-// equal-power-pan stereo mixer, then through an embedded multimode
+// WAVE morph), each gated by an envelope that reads ONE shared device-level
+// A/D/S/R (poly-adsr alignment with CUBE / WAVECEL / DX7), summed through a
+// per-voice level / equal-power-pan stereo mixer, then through an embedded
+// multimode
 // (LP→BP→HP→Notch) filter with a wet/dry bypass. Per-voice pre-mixer mono taps
 // and per-voice FM inputs are exposed.
 //
@@ -57,8 +59,9 @@ class PentemelodicaProcessor extends AudioWorkletProcessor {
       maxValue: number;
       automationRate: 'k-rate';
     }> = [];
-    // Per-voice (×5): tune, fine, fm, pm, pw, wave, attack, decay, sustain,
-    // release, level, pan.
+    // Per-voice (×5): tune, fine, fm, pm, pw, wave, level, pan. The amplitude
+    // ADSR is NOT per-voice — ONE shared A/D/S/R (below) feeds every voice's
+    // envelope (poly-adsr alignment with CUBE / WAVECEL / DX7).
     for (let v = 1; v <= PENTE_VOICES; v++) {
       descs.push(
         { name: `v${v}_tune`,    defaultValue: 0,     minValue: -36,  maxValue: 36,  automationRate: 'k-rate' },
@@ -67,14 +70,17 @@ class PentemelodicaProcessor extends AudioWorkletProcessor {
         { name: `v${v}_pm`,      defaultValue: 0,     minValue: -1,   maxValue: 1,   automationRate: 'k-rate' },
         { name: `v${v}_pw`,      defaultValue: 0.5,   minValue: 0.05, maxValue: 0.95, automationRate: 'k-rate' },
         { name: `v${v}_wave`,    defaultValue: 0,     minValue: 0,    maxValue: 1,   automationRate: 'k-rate' },
-        { name: `v${v}_attack`,  defaultValue: 0.005, minValue: 0.001, maxValue: 5,  automationRate: 'k-rate' },
-        { name: `v${v}_decay`,   defaultValue: 0.1,   minValue: 0.001, maxValue: 5,  automationRate: 'k-rate' },
-        { name: `v${v}_sustain`, defaultValue: 0.7,   minValue: 0,    maxValue: 1,   automationRate: 'k-rate' },
-        { name: `v${v}_release`, defaultValue: 0.2,   minValue: 0.001, maxValue: 5,  automationRate: 'k-rate' },
         { name: `v${v}_level`,   defaultValue: 0.8,   minValue: 0,    maxValue: 1,   automationRate: 'k-rate' },
         { name: `v${v}_pan`,     defaultValue: 0,     minValue: -1,   maxValue: 1,   automationRate: 'k-rate' },
       );
     }
+    // Shared amplitude ADSR (×1) — same ids/ranges/defaults as CUBE's.
+    descs.push(
+      { name: 'attack',  defaultValue: 0.001, minValue: 0.001, maxValue: 5, automationRate: 'k-rate' },
+      { name: 'decay',   defaultValue: 0.1,   minValue: 0.001, maxValue: 5, automationRate: 'k-rate' },
+      { name: 'sustain', defaultValue: 1,     minValue: 0,     maxValue: 1, automationRate: 'k-rate' },
+      { name: 'release', defaultValue: 0.005, minValue: 0.001, maxValue: 5, automationRate: 'k-rate' },
+    );
     // Filter (×1).
     descs.push(
       { name: 'cutoff',    defaultValue: 1000, minValue: 20, maxValue: 20000, automationRate: 'k-rate' },
@@ -90,9 +96,10 @@ class PentemelodicaProcessor extends AudioWorkletProcessor {
   // Scratch param object reused each block (avoid per-block allocation).
   private params: PenteParams = {
     voices: Array.from({ length: PENTE_VOICES }, () => ({
-      tune: 0, fine: 0, fm: 0, pm: 0, pw: 0.5, wave: 0,
-      attack: 0.005, decay: 0.1, sustain: 0.7, release: 0.2, level: 0.8, pan: 0,
+      tune: 0, fine: 0, fm: 0, pm: 0, pw: 0.5, wave: 0, level: 0.8, pan: 0,
     })),
+    // ONE shared A/D/S/R fed into every voice envelope (poly-adsr alignment).
+    adsr: { attack: 0.001, decay: 0.1, sustain: 1, release: 0.005 },
     filter: { cutoff: 1000, resonance: 0.2, mode: 0, wetdry: 1 },
   };
   private polyScratch = new Float32Array(PENTE_VOICES * 2);
@@ -126,13 +133,14 @@ class PentemelodicaProcessor extends AudioWorkletProcessor {
       vp.pm      = p0(parameters[`v${i}_pm`]);
       vp.pw      = p0(parameters[`v${i}_pw`]);
       vp.wave    = p0(parameters[`v${i}_wave`]);
-      vp.attack  = p0(parameters[`v${i}_attack`]);
-      vp.decay   = p0(parameters[`v${i}_decay`]);
-      vp.sustain = p0(parameters[`v${i}_sustain`]);
-      vp.release = p0(parameters[`v${i}_release`]);
       vp.level   = p0(parameters[`v${i}_level`]);
       vp.pan     = p0(parameters[`v${i}_pan`]);
     }
+    // Shared A/D/S/R (read once; fed into every voice envelope).
+    this.params.adsr.attack  = p0(parameters.attack);
+    this.params.adsr.decay   = p0(parameters.decay);
+    this.params.adsr.sustain = p0(parameters.sustain);
+    this.params.adsr.release = p0(parameters.release);
     this.params.filter.cutoff    = p0(parameters.cutoff);
     this.params.filter.resonance = p0(parameters.resonance);
     this.params.filter.mode      = p0(parameters.mode);

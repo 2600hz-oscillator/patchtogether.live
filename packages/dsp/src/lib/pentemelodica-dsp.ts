@@ -27,10 +27,23 @@
 //   poly lane i (pitch V/oct + gate)
 //     → per-voice VCO (tune/fine/exp-FM + phase-mod off the fmN jack)
 //     → WAVE morph (tri→saw→square)
-//     → per-voice ADSR (gate edge → Attack / Release)   ── tapped pre-mixer
+//     → per-voice envelope, gated by lane i's edge, reading the ONE SHARED
+//       device A/D/S/R (gate edge → Attack / Release)    ── tapped pre-mixer
 //     → mixer (level + equal-power pan)  → stereo bus L/R
 //     → embedded multimode filter (cutoff/resonance/MODE) with wet/dry
 //     → stereo out L/R
+//
+// SHARED A/D/S/R (poly-adsr alignment): every voice has its OWN Envelope +
+// gate edge, but they ALL read ONE device-level attack/decay/sustain/release
+// (PenteParams.adsr) — matching CUBE / WAVECEL / DX7. (Previously each voice
+// carried its own a/d/s/r in PenteVoiceParams — 20 params; now 4 shared.)
+//
+// HELD PITCH THROUGH RELEASE (release-tail pitch fix, #669 pattern): the poly
+// bus zeroes a released lane's pitch channel, so a voice still RINGING in its
+// release tail (gate low, env > 0) used to read 0 V/oct = C4 and snap to that
+// constant pitch. Each voice now keeps a PERSISTENT held V/oct — updated only
+// while gated, HELD through release — via updateHeldPitch / laneRenderVOct
+// (lib/poly-osc-sum.ts), so the tail rings at the played note's pitch.
 //
 // Both the worklet inner loop AND the web module's render mirror call the same
 // helpers below, so the audio is defined in exactly one place.
@@ -43,6 +56,13 @@ import {
   makeSvfState,
   type SvfState,
 } from './resofilter-dsp';
+import {
+  updateHeldPitch,
+  laneRenderVOct,
+  type AdsrParams,
+} from './poly-osc-sum';
+
+export type { AdsrParams };
 
 export const PENTE_VOICES = 5;
 
@@ -182,7 +202,9 @@ export function modeMorph(
 // successive render() calls stay phase- and envelope-coherent.
 // ----------------------------------------------------------------------------
 
-/** Per-voice parameter set for one render. */
+/** Per-voice parameter set for one render. The amplitude envelope's A/D/S/R is
+ *  NOT per-voice — it lives in the shared PenteParams.adsr (poly-adsr alignment
+ *  with CUBE / WAVECEL / DX7). Only the OSC + level/pan are per-voice. */
 export interface PenteVoiceParams {
   tune: number;     // coarse semitones
   fine: number;     // cents
@@ -190,10 +212,6 @@ export interface PenteVoiceParams {
   pm: number;       // phase-mod index (bipolar), × the fmN input
   pw: number;       // pulse width for the rectangular tap
   wave: number;     // tri→saw→square morph 0..1
-  attack: number;   // s
-  decay: number;    // s
-  sustain: number;  // 0..1
-  release: number;  // s
   level: number;    // 0..1 mixer level
   pan: number;      // -1..1 equal-power pan
 }
@@ -207,15 +225,24 @@ export interface PenteFilterParams {
 
 export interface PenteParams {
   voices: PenteVoiceParams[]; // length PENTE_VOICES
+  /** ONE shared amplitude A/D/S/R fed identically into every voice envelope
+   *  (poly-adsr alignment with CUBE / WAVECEL / DX7). */
+  adsr: AdsrParams;
   filter: PenteFilterParams;
 }
 
 /** Mutable per-instance state — five phase accumulators, five envelopes, five
- *  gate-edge latches, and one SVF state per stereo channel. */
+ *  gate-edge latches, five PERSISTENT held V/octs (the release-tail pitch fix),
+ *  and one SVF state per stereo channel. */
 export interface PenteState {
   phase: Float64Array;       // [PENTE_VOICES]
   env: Envelope[];           // [PENTE_VOICES]
   prevGate: Uint8Array;      // [PENTE_VOICES]
+  // PERSISTENT per-lane held V/oct — UPDATED while a lane is gated, HELD (never
+  // reset) when it isn't, so a releasing voice (gate low, env > 0) keeps
+  // advancing at the played pitch instead of snapping to 0 V/oct (C4). See
+  // updateHeldPitch / laneRenderVOct in ./poly-osc-sum.
+  heldVOct: Float64Array;    // [PENTE_VOICES]
   svfL: SvfState;
   svfR: SvfState;
 }
@@ -227,6 +254,7 @@ export function makePenteState(): PenteState {
     phase: new Float64Array(PENTE_VOICES),
     env,
     prevGate: new Uint8Array(PENTE_VOICES),
+    heldVOct: new Float64Array(PENTE_VOICES),
     svfL: makeSvfState(),
     svfR: makeSvfState(),
   };
@@ -253,8 +281,9 @@ export function makeRenderOut(n: number): PenteRenderOut {
 /**
  * Render `numFrames` samples.
  *
- * @param params        per-voice + filter params (read once per call; the
- *                      worklet calls this once per 128-frame block at k-rate).
+ * @param params        per-voice OSC/mix params + the ONE shared A/D/S/R +
+ *                      filter params (read once per call; the worklet calls
+ *                      this once per 128-frame block at k-rate).
  * @param polyPitchGate length-2*PENTE_VOICES; [pitchV0, gate0, pitchV1, …].
  *                      gate > 0.5 = on. Lane i → voice i (fixed mapping).
  * @param fmInputs      length PENTE_VOICES; per-voice FM/PM modulator value
@@ -275,18 +304,23 @@ export function renderPentemelodica(
   fmInputArrs?: (Float32Array | undefined)[],
 ): void {
   const f = params.filter;
+  const a = params.adsr; // ONE shared A/D/S/R for every voice envelope.
   const g = cutoffToG(f.cutoff, sr);
   const k = resToK(f.resonance);
   const wetdry = f.wetdry < 0 ? 0 : f.wetdry > 1 ? 1 : f.wetdry;
 
   // Gate edge detection — once per render (block boundary). MIDI/sequencers
   // write param/gate changes at block boundaries, so the first-sample read is
-  // exact.
+  // exact. Also update each lane's PERSISTENT held V/oct: track the live pitch
+  // while gated, HOLD it through release (the release-tail pitch fix).
   for (let v = 0; v < PENTE_VOICES; v++) {
-    const gateNow = (polyPitchGate[v * 2 + 1] ?? 0) > 0.5 ? 1 : 0;
+    const gated = (polyPitchGate[v * 2 + 1] ?? 0) > 0.5;
+    const gateNow = gated ? 1 : 0;
     if (gateNow && !state.prevGate[v]) state.env[v]!.trigger(true);
     else if (!gateNow && state.prevGate[v]) state.env[v]!.trigger(false);
     state.prevGate[v] = gateNow as number;
+    const lanePitch = polyPitchGate[v * 2] ?? 0;
+    state.heldVOct[v] = updateHeldPitch(state.heldVOct[v]!, gated, lanePitch);
   }
 
   for (let i = 0; i < numFrames; i++) {
@@ -295,7 +329,13 @@ export function renderPentemelodica(
 
     for (let v = 0; v < PENTE_VOICES; v++) {
       const vp = params.voices[v]!;
-      const voct = polyPitchGate[v * 2] ?? 0;
+      // Pitch the voice should advance at: its OWN held pitch while gated OR
+      // still env-audible (releasing tail → played pitch, not 0 V/oct = C4);
+      // lane-0's held pitch when silent so a re-open doesn't pop.
+      const gated = state.prevGate[v] === 1;
+      const voct = laneRenderVOct(
+        state.heldVOct, v, gated, state.env[v]!.value > 0,
+      );
 
       // Per-voice FM/PM modulator sample (shared jack drives both).
       const arr = fmInputArrs ? fmInputArrs[v] : undefined;
@@ -319,7 +359,7 @@ export function renderPentemelodica(
       ph -= Math.floor(ph);
       state.phase[v] = ph;
 
-      const e = state.env[v]!.tick(vp.attack, vp.decay, vp.sustain, vp.release, sr);
+      const e = state.env[v]!.tick(a.attack, a.decay, a.sustain, a.release, sr);
       const voiceSample = osc * e;
 
       // Pre-mixer mono tap (before level/pan).

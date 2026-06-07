@@ -16,7 +16,9 @@ const SR = 48000;
 describe('pentemelodicaDef shape', () => {
   it('declares type/label/category/domain/palette/stereoPairs', () => {
     expect(pentemelodicaDef.type).toBe('pentemelodica');
-    expect(pentemelodicaDef.label).toBe('PENTEMELODICA');
+    // #658 module-rename convention: the def label is lowercase (the card's
+    // displayed defaultLabel stays uppercase, matching cube/wavecel/dx7).
+    expect(pentemelodicaDef.label).toBe('pentemelodica');
     expect(pentemelodicaDef.category).toBe('sources');
     expect(pentemelodicaDef.domain).toBe('audio');
     expect(pentemelodicaDef.palette).toEqual({ top: 'Audio modules', sub: 'VCOs' });
@@ -45,11 +47,11 @@ describe('pentemelodicaDef shape', () => {
     for (const p of pentemelodicaDef.outputs) expect(p.type).toBe('audio');
   });
 
-  it('declares 60 params: 5 voices × 12 + 4 filter', () => {
-    expect(pentemelodicaDef.params.length).toBe(PENTE_VOICES * 12 + 4);
+  it('declares 48 params: 5 voices × 8 + 4 shared ADSR + 4 filter', () => {
+    expect(pentemelodicaDef.params.length).toBe(PENTE_VOICES * 8 + 4 + 4);
   });
 
-  it('every voice has the full 12-param set with the documented ranges', () => {
+  it('every voice has the 8-param OSC/mix set with the documented ranges (NO per-voice ADSR)', () => {
     const want: Array<{ suffix: string; min: number; max: number; def: number; curve: string }> = [
       { suffix: 'tune', min: -36, max: 36, def: 0, curve: 'linear' },
       { suffix: 'fine', min: -100, max: 100, def: 0, curve: 'linear' },
@@ -57,10 +59,6 @@ describe('pentemelodicaDef shape', () => {
       { suffix: 'pm', min: -1, max: 1, def: 0, curve: 'linear' },
       { suffix: 'pw', min: 0.05, max: 0.95, def: 0.5, curve: 'linear' },
       { suffix: 'wave', min: 0, max: 1, def: 0, curve: 'linear' },
-      { suffix: 'attack', min: 0.001, max: 5, def: 0.005, curve: 'log' },
-      { suffix: 'decay', min: 0.001, max: 5, def: 0.1, curve: 'log' },
-      { suffix: 'sustain', min: 0, max: 1, def: 0.7, curve: 'linear' },
-      { suffix: 'release', min: 0.001, max: 5, def: 0.2, curve: 'log' },
       { suffix: 'level', min: 0, max: 1, def: 0.8, curve: 'linear' },
       { suffix: 'pan', min: -1, max: 1, def: 0, curve: 'linear' },
     ];
@@ -73,6 +71,31 @@ describe('pentemelodicaDef shape', () => {
         expect(p!.defaultValue).toBe(w.def);
         expect(p!.curve).toBe(w.curve);
       }
+      // The per-voice ADSR params are GONE (collapsed to one shared ADSR).
+      for (const suffix of ['attack', 'decay', 'sustain', 'release']) {
+        expect(
+          pentemelodicaDef.params.find((x) => x.id === `v${v}_${suffix}`),
+          `v${v}_${suffix} should NOT exist (ADSR is shared)`,
+        ).toBeUndefined();
+      }
+    }
+  });
+
+  it('declares ONE shared ADSR (attack/decay/sustain/release) matching cube\'s shape', () => {
+    const want: Array<{ id: string; min: number; max: number; def: number; curve: string }> = [
+      { id: 'attack',  min: 0.001, max: 5, def: 0.001, curve: 'log' },
+      { id: 'decay',   min: 0.001, max: 5, def: 0.1,   curve: 'log' },
+      { id: 'sustain', min: 0,     max: 1, def: 1,     curve: 'linear' },
+      { id: 'release', min: 0.001, max: 5, def: 0.005, curve: 'log' },
+    ];
+    for (const w of want) {
+      const matches = pentemelodicaDef.params.filter((p) => p.id === w.id);
+      expect(matches.length, `exactly one shared ${w.id}`).toBe(1);
+      const p = matches[0]!;
+      expect(p.min).toBe(w.min);
+      expect(p.max).toBe(w.max);
+      expect(p.defaultValue).toBe(w.def);
+      expect(p.curve).toBe(w.curve);
     }
   });
 
@@ -97,8 +120,7 @@ describe('pentemelodicaDef shape', () => {
 
 function defVoices() {
   return Array.from({ length: PENTE_VOICES }, () => ({
-    tune: 0, fine: 0, fm: 0, pm: 0, pw: 0.5, wave: 0,
-    attack: 0.005, decay: 0.1, sustain: 0.7, release: 0.2, level: 0.8, pan: 0,
+    tune: 0, fine: 0, fm: 0, pm: 0, pw: 0.5, wave: 0, level: 0.8, pan: 0,
   }));
 }
 function defFilter() {

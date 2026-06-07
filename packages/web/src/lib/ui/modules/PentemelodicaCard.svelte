@@ -39,6 +39,22 @@
 
   const voices = Array.from({ length: PENTE_VOICES }, (_, i) => i + 1);
 
+  // ONE shared amplitude ADSR (poly-adsr alignment with cube/wavecel/dx7): a
+  // single A/D/S/R feeds every voice's gated envelope. A/D/R are log (units s);
+  // S is linear 0..1 — same shape as CubeCard's AMP ADSR.
+  const ADSR_FADERS: Array<{ pid: string; label: string; units?: string; curve: 'log' | 'linear' }> = [
+    { pid: 'attack',  label: 'A', units: 's', curve: 'log' },
+    { pid: 'decay',   label: 'D', units: 's', curve: 'log' },
+    { pid: 'sustain', label: 'S', curve: 'linear' },
+    { pid: 'release', label: 'R', units: 's', curve: 'log' },
+  ];
+  function pmin(pid: string): number {
+    return pentemelodicaDef.params.find((p) => p.id === pid)!.min;
+  }
+  function pmax(pid: string): number {
+    return pentemelodicaDef.params.find((p) => p.id === pid)!.max;
+  }
+
   // ── Static single-cycle waveform preview per voice ──
   // Drawn from the SAME waveMorph()/moogWaves() the DSP uses, so the trace
   // tracks the voice's WAVE morph + pulse width. No rAF / no engine read →
@@ -138,12 +154,6 @@
             <Fader value={pval(`v${v}_pw`)} min={0.05} max={0.95} defaultValue={0.5} label="PW" curve="linear" onchange={setParam(`v${v}_pw`)} moduleId={id} paramId={`v${v}_pw`} readLive={readLive(`v${v}_pw`)} />
             <Fader value={pval(`v${v}_wave`)} min={0} max={1} defaultValue={0} label="WAVE" curve="linear" onchange={setParam(`v${v}_wave`)} moduleId={id} paramId={`v${v}_wave`} readLive={readLive(`v${v}_wave`)} glyphs={[{ frac: 0, kind: 'tri' }, { frac: 0.5, kind: 'saw' }, { frac: 1, kind: 'square' }]} />
           </div>
-          <div class="strip adsr">
-            <Fader value={pval(`v${v}_attack`)} min={0.001} max={5} defaultValue={0.005} label="A" units="s" curve="log" onchange={setParam(`v${v}_attack`)} moduleId={id} paramId={`v${v}_attack`} readLive={readLive(`v${v}_attack`)} />
-            <Fader value={pval(`v${v}_decay`)} min={0.001} max={5} defaultValue={0.1} label="D" units="s" curve="log" onchange={setParam(`v${v}_decay`)} moduleId={id} paramId={`v${v}_decay`} readLive={readLive(`v${v}_decay`)} />
-            <Fader value={pval(`v${v}_sustain`)} min={0} max={1} defaultValue={0.7} label="S" curve="linear" onchange={setParam(`v${v}_sustain`)} moduleId={id} paramId={`v${v}_sustain`} readLive={readLive(`v${v}_sustain`)} />
-            <Fader value={pval(`v${v}_release`)} min={0.001} max={5} defaultValue={0.2} label="R" units="s" curve="log" onchange={setParam(`v${v}_release`)} moduleId={id} paramId={`v${v}_release`} readLive={readLive(`v${v}_release`)} />
-          </div>
         </div>
       {/each}
     </div>
@@ -157,6 +167,27 @@
               <Fader value={pval(`v${v}_level`)} min={0} max={1} defaultValue={0.8} label={`L${v}`} curve="linear" onchange={setParam(`v${v}_level`)} moduleId={id} paramId={`v${v}_level`} readLive={readLive(`v${v}_level`)} />
               <Knob value={pval(`v${v}_pan`)} min={-1} max={1} defaultValue={0} label={`P${v}`} curve="linear" onchange={setParam(`v${v}_pan`)} moduleId={id} paramId={`v${v}_pan`} readLive={readLive(`v${v}_pan`)} />
             </div>
+          {/each}
+        </div>
+      </div>
+
+      <div class="block" data-testid="pentemelodica-adsr">
+        <div class="block-title">AMP ADSR</div>
+        <div class="adsr-row">
+          {#each ADSR_FADERS as k (k.pid)}
+            <Fader
+              value={pval(k.pid)}
+              min={pmin(k.pid)}
+              max={pmax(k.pid)}
+              defaultValue={def(k.pid)}
+              label={k.label}
+              units={k.units}
+              curve={k.curve}
+              onchange={setParam(k.pid)}
+              moduleId={id}
+              paramId={k.pid}
+              readLive={readLive(k.pid)}
+            />
           {/each}
         </div>
       </div>
@@ -244,11 +275,6 @@
     gap: 2px;
     justify-content: center;
   }
-  .strip.adsr {
-    border-top: 1px dashed var(--border);
-    padding-top: 4px;
-    margin-top: 2px;
-  }
   .side {
     display: flex;
     flex-direction: column;
@@ -278,6 +304,11 @@
     flex-direction: column;
     align-items: center;
     gap: 4px;
+  }
+  .adsr-row {
+    display: flex;
+    gap: 8px;
+    justify-content: space-around;
   }
   .filter-row {
     display: flex;
