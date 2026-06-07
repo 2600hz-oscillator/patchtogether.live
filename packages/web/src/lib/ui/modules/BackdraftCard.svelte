@@ -24,9 +24,6 @@
   } from '$lib/video/modules/backdraft';
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
-  import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
-  import HdBufferResSelect from '$lib/ui/modules/HdBufferResSelect.svelte';
-  import { BUFFER_RES_SD } from '$lib/video/buffer-res';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -102,11 +99,8 @@
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
-  function fitRect(
-    cw: number,
-    ch: number,
-    srcAspect: number = ENGINE_W / ENGINE_H,
-  ): { x: number; y: number; w: number; h: number } {
+  function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
+    const srcAspect = ENGINE_W / ENGINE_H;
     const dstAspect = cw / ch;
     if (dstAspect > srcAspect) {
       const h = ch;
@@ -149,7 +143,7 @@
       const ch = canvasEl.height;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
-      const r = fitRect(cw, ch, liveEngineAspect(videoEngine));
+      const r = fitRect(cw, ch);
       ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
     }
     // A rising edge on a mirror gate flips the param INSIDE the engine
@@ -384,13 +378,6 @@
       <Fader value={p('rotate')}   min={BACKDRAFT_ROTATE_MIN} max={BACKDRAFT_ROTATE_MAX} units="°" defaultValue={pdef('rotate')} label="Rot"  curve="linear" onchange={setParam('rotate')}  moduleId={id} paramId="rotate" />
       <Fader value={p('offsetX')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetX')} label="OffX" curve="linear" onchange={setParam('offsetX')} moduleId={id} paramId="offsetX" />
       <Fader value={p('offsetY')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetY')} label="OffY" curve="linear" onchange={setParam('offsetY')} moduleId={id} paramId="offsetY" />
-    </div>
-    <div class="hd-res-row" data-testid="backdraft-hd-res-row">
-      <HdBufferResSelect
-        moduleId={id}
-        value={node?.params?.bufferRes ?? BUFFER_RES_SD}
-        onchange={setParam('bufferRes')}
-      />
     </div>
   {/if}
 </div>

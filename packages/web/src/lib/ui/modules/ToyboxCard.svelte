@@ -59,9 +59,6 @@
     type ToyboxVideoSource,
   } from '$lib/video/toybox-content';
   import type { VideoEngine } from '$lib/video/engine';
-  import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
-  import HdBufferResSelect from '$lib/ui/modules/HdBufferResSelect.svelte';
-  import { BUFFER_RES_SD } from '$lib/video/buffer-res';
   import {
     canvasToEnginePx,
     makeMouseState,
@@ -372,14 +369,6 @@
 
   const setParam = (pid: string) => (v: number) => {
     setLayerParam(id, activeLayer, pid, v);
-    bumpRev();
-  };
-
-  // Node-level param setter (NOT per-layer) — used by the HD bufferRes dropdown,
-  // which is a single module param sizing the float feedback/history rings.
-  const setNodeParam = (pid: string) => (v: number) => {
-    const t = patch.nodes[id];
-    if (t) t.params[pid] = v;
     bumpRev();
   };
 
@@ -1875,29 +1864,8 @@
   // engine's pinned-iTime FBO exactly.
   let frozen = false;
 
-  /** Live video-engine render res (follows HD mode). Falls back to the SD
-   *  ENGINE_W×ENGINE_H constant when the engine isn't up yet. Used both for the
-   *  letterbox aspect and the iMouse canvas→engine-px mapping. */
-  function liveEngineRes(): { width: number; height: number } {
-    const e = engineCtx.get();
-    if (e) {
-      try {
-        const ve = e.getDomain<VideoEngine>('video');
-        const w = ve?.canvas?.width ?? 0;
-        const h = ve?.canvas?.height ?? 0;
-        if (w > 0 && h > 0) return { width: w, height: h };
-      } catch {
-        /* engine not ready — fall through to SD default */
-      }
-    }
-    return { width: ENGINE_W, height: ENGINE_H };
-  }
-
-  function fitRect(
-    cw: number,
-    ch: number,
-    srcAspect: number = ENGINE_W / ENGINE_H,
-  ): { x: number; y: number; w: number; h: number } {
+  function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
+    const srcAspect = ENGINE_W / ENGINE_H;
     const dstAspect = cw / ch;
     if (dstAspect > srcAspect) {
       const h = ch;
@@ -1925,11 +1893,8 @@
     // Pointer in the canvas's INTRINSIC pixel space (CANVAS_W × CANVAS_H).
     const cx = ((ev.clientX - box.left) / box.width) * canvasEl.width;
     const cy = ((ev.clientY - box.top) / box.height) * canvasEl.height;
-    // Use the LIVE engine res so iMouse maps correctly in HD (the FBO may be
-    // 1920×1080 etc., not the SD 640×480 constant).
-    const eng = liveEngineRes();
-    const rect = fitRect(canvasEl.width, canvasEl.height, eng.width / eng.height);
-    return canvasToEnginePx(cx, cy, rect, eng.width, eng.height);
+    const rect = fitRect(canvasEl.width, canvasEl.height);
+    return canvasToEnginePx(cx, cy, rect, ENGINE_W, ENGINE_H);
   }
 
   /** Push the current iMouse vec4 to the engine for THIS node (called each rAF
@@ -1985,7 +1950,7 @@
     const ch = canvasEl.height;
     ctx2d.fillStyle = '#050608';
     ctx2d.fillRect(0, 0, cw, ch);
-    const r = fitRect(cw, ch, liveEngineAspect(videoEngine));
+    const r = fitRect(cw, ch);
     ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
   }
 
@@ -2229,13 +2194,6 @@
         {/each}
       </ul>
     {/if}
-    <div class="hd-res-row" data-testid="toybox-hd-res-row">
-      <HdBufferResSelect
-        moduleId={id}
-        value={node?.params?.bufferRes ?? BUFFER_RES_SD}
-        onchange={setNodeParam('bufferRes')}
-      />
-    </div>
   </div>
 
   <!-- LAYER-INDEX selector: a tab per layer (1-indexed labels, 0-indexed state).

@@ -14,7 +14,6 @@
   import { reshaperDef } from '$lib/video/modules/reshaper';
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
-  import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -65,11 +64,8 @@
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
-  function fitRect(
-    cw: number,
-    ch: number,
-    srcAspect: number = ENGINE_W / ENGINE_H,
-  ): { x: number; y: number; w: number; h: number } {
+  function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
+    const srcAspect = ENGINE_W / ENGINE_H;
     const dstAspect = cw / ch;
     if (dstAspect > srcAspect) {
       const h = ch;
@@ -112,7 +108,7 @@
       const ch = canvasEl.height;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
-      const r = fitRect(cw, ch, liveEngineAspect(videoEngine));
+      const r = fitRect(cw, ch);
       // drawImage() from a WebGL canvas already presents upright; a
       // straight blit is correct. The old scale(1,-1) flipped it upside
       // down. See VideoOutCard for the full rationale.

@@ -20,7 +20,6 @@
   import { patch } from '$lib/graph/store';
   import { fourPlexVidDef } from '$lib/video/modules/4plexvid';
   import type { VideoEngine } from '$lib/video/engine';
-  import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -89,9 +88,8 @@
       const ch = canvasEl.height;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
-      // Aspect-fit the LIVE engine surface (4:3 by default, wider in HD) into
-      // the small preview.
-      const srcAspect = liveEngineAspect(videoEngine);
+      // Aspect-fit the engine surface (4:3) into the small preview.
+      const srcAspect = ENGINE_W / ENGINE_H;
       const dstAspect = cw / ch;
       let w = cw, h = ch, x = 0, y = 0;
       if (dstAspect > srcAspect) { h = ch; w = Math.round(h * srcAspect); x = Math.round((cw - w) / 2); }
