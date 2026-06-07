@@ -155,7 +155,7 @@ export const cubeDef: AudioModuleDef = {
   type: 'cube',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
-  label: 'CUBE',
+  label: 'cube',
   category: 'sources',
   schemaVersion: 1,
 

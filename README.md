@@ -110,9 +110,8 @@ Doesn't work offline (visible but harmlessly inert):
   underlying asset is missing from `packages/web/static/`. For DOOM:
   run `setup:standalone` while online, or follow
   `packages/web/static/doom/DOWNLOAD_INSTRUCTIONS.md` manually. For
-  SM64: the bundle is LFS-tracked at
-  `packages/web/static/sm64js/sm64js.bundle.js`; re-run `git lfs pull`
-  while online if it's still a pointer.
+  LFS-tracked bundles that still show a pointer, re-run `git lfs pull`
+  while online.
 - **Console warns about a failed WebSocket / `wss://...`**: only
   happens on `/r/[id]`, which you can't reach offline anyway. The
   public canvas at `/` doesn't open a WebSocket at all.
@@ -135,7 +134,7 @@ Doesn't work offline (visible but harmlessly inert):
 
 | category   | modules |
 |------------|---------|
-| sources    | analogVco, wavetableVco, vizvco, wavviz, swolevco, drummergirl, meowbox, riotgirls, dx7, noise |
+| sources    | analogVco, wavetableVco, vizvco, swolevco, drummergirl, meowbox, riotgirls, dx7, noise |
 | modulation | adsr, lfo, sequencer, cartesian, score, drumseqz, polyseqz, timelorde, buggles |
 | filters    | filter, qbrt |
 | effects    | reverb, charlottesEchos, destroy |

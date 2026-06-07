@@ -43,7 +43,7 @@ export const qbrtDef: AudioModuleDef = {
   type: 'qbrt',
   palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: 'QBRT',
+  label: 'qbrt',
   category: 'filters',
   // v2: added `pingDecay` param + reworked the ping path to vactrol-style
   // (Q boost + click excitation). Loading a v1 save populates pingDecay

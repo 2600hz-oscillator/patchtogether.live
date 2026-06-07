@@ -184,9 +184,9 @@ export const symbioteMath = {
 
 export const symbioteDef: AudioModuleDef = {
   type: 'symbiote',
-  palette: { top: 'Ports', sub: 'Mutable' },
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'SYMBIOTE',
+  label: 'symbiote',
   category: 'sources',
   schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },

@@ -32,7 +32,7 @@ export const mixerDef: AudioModuleDef = {
   type: 'mixer',
   palette: { top: 'Audio modules', sub: 'Mixing' },
   domain: 'audio',
-  label: 'Mixer',
+  label: 'mixer',
   category: 'utilities',
   schemaVersion: 1,
   inputs: [

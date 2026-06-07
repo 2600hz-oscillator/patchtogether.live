@@ -159,9 +159,9 @@ export const marblesMath = {
 
 export const marblesDef: AudioModuleDef = {
   type: 'marbles',
-  palette: { top: 'Ports', sub: 'Mutable' },
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'MARBLES',
+  label: 'marbles',
   category: 'sources',
   schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },

@@ -145,9 +145,9 @@ export function coerceToChordStep(raw: unknown): ChordStep {
 
 export const polyseqzDef: AudioModuleDef = {
   type: 'polyseqz',
-  palette: { top: 'Audio modules', sub: 'Utility' },
+  palette: { top: 'Audio modules', sub: 'sequencers' },
   domain: 'audio',
-  label: 'POLYSEQZ',
+  label: 'polyseqz',
   category: 'modulation',
   schemaVersion: 1,
 

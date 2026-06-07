@@ -124,7 +124,7 @@ export const noiseDef: AudioModuleDef = {
   type: 'noise',
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
-  label: 'NOISE',
+  label: 'noise',
   category: 'sources',
   schemaVersion: 1,
 

@@ -154,7 +154,7 @@ export const vdelayDef: VideoModuleDef = {
   type: 'vdelay',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'VDELAY',
+  label: 'vdelay',
   category: 'effects',
   schemaVersion: 1,
   inputs: [

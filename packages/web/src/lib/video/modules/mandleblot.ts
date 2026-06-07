@@ -218,7 +218,7 @@ export const mandleblotDef: VideoModuleDef = {
   type: 'mandleblot',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
-  label: 'MANDLEBLOT',
+  label: 'mandleblot',
   category: 'video-effects',
   schemaVersion: 1,
   inputs: [

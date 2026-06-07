@@ -65,7 +65,7 @@ export const synesthesiaDef: AudioModuleDef = {
   type: 'synesthesia',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
-  label: 'SYNESTHESIA',
+  label: 'synesthesia',
   category: 'hybrid',
   schemaVersion: 1,
 

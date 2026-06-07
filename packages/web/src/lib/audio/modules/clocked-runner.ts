@@ -44,9 +44,9 @@ export const clockedRunnerDef: AudioModuleDef = {
   // extractor in module-manifest.ts picks the field up. The constant
   // re-export above stays for runtime consumers.
   type: 'clockedRunner',
-  palette: { top: 'Hybrid', sub: 'Hybrid' },
+  palette: { top: 'livecode', sub: 'livecode' },
   domain: 'audio',
-  label: 'CLOCKED',
+  label: 'clocked',
   category: 'utilities',
   schemaVersion: 1,
   inputs: [],

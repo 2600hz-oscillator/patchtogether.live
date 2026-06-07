@@ -25,7 +25,6 @@ import { stagesDef } from './stages';
 import { warpsDef } from './warps';
 import { meowboxDef } from './meowbox';
 import { drummergirlDef } from './drummergirl';
-import { bladesDef } from './blades';
 import { veilsDef } from './veils';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 
@@ -58,15 +57,13 @@ const EXPECTED_PORTS: PortExpectation[] = [
 //   1. From-scratch Faust DSP (MEOWBOX, DRUMMERGIRL) — never had an
 //      upstream; their packages/dsp/src/*.dsp headers carry no attribution.
 //   2. From-spec implementations of Mutable Instruments analog hardware
-//      (BLADES, VEILS) — eurorack/{blades,veils}/ upstream contains only
-//      hardware_design, no firmware DSP to port. The header in
-//      packages/dsp/src/{blades,veils}.ts explicitly says "from-spec, not
-//      a port", so per the user's wording these are "inspired by", not
-//      "ported from".
+//      (VEILS) — eurorack/veils/ upstream contains only hardware_design, no
+//      firmware DSP to port. The header in packages/dsp/src/veils.ts
+//      explicitly says "from-spec, not a port", so per the user's wording
+//      these are "inspired by", not "ported from".
 const EXPECTED_NOT_PORTS: { type: string; def: AudioModuleDef }[] = [
   { type: 'meowbox',     def: meowboxDef },
   { type: 'drummergirl', def: drummergirlDef },
-  { type: 'blades',      def: bladesDef },
   { type: 'veils',       def: veilsDef },
 ];
 

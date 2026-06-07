@@ -20,7 +20,7 @@ describe('skifree module def', () => {
   it('exposes the expected IO surface', () => {
     expect(skifreeDef.type).toBe('skifree');
     expect(skifreeDef.domain).toBe('audio');
-    expect(skifreeDef.label).toBe('SKIFREE');
+    expect(skifreeDef.label).toBe('skifree');
     expect(skifreeDef.category).toBe('games');
     expect(skifreeDef.maxInstances).toBe(1);
     expect(skifreeDef.vizPassthrough).toBe(true);

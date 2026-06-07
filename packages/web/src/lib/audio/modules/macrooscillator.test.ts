@@ -14,7 +14,7 @@ import { macrooscillatorDef, macrooscillatorMath, MACRO_MAX_MODEL, type MacroPar
 describe('macrooscillatorDef shape', () => {
   it('declares type=macrooscillator, label=MACROOSCILLATOR, category=sources', () => {
     expect(macrooscillatorDef.type).toBe('macrooscillator');
-    expect(macrooscillatorDef.label).toBe('MACROOSCILLATOR');
+    expect(macrooscillatorDef.label).toBe('macrooscillator');
     expect(macrooscillatorDef.category).toBe('sources');
   });
 

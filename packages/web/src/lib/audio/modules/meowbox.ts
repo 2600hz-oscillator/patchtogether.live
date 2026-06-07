@@ -58,7 +58,7 @@ export const meowboxDef: AudioModuleDef = {
   type: 'meowbox',
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
-  label: 'MEOWBOX',
+  label: 'meowbox',
   category: 'sources',
   // v2: `pitch` input port type changed from 'cv' (semis-as-AudioParam) to
   //     'pitch' (V/oct audio-rate); DSP gained an audio-rate `pitch` channel.

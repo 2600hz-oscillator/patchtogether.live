@@ -165,7 +165,7 @@ export const chromakeyDef: VideoModuleDef = {
   type: 'chromakey',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'CHROMAKEY',
+  label: 'chromakey',
   category: 'effects',
   schemaVersion: 1,
   inputs: [

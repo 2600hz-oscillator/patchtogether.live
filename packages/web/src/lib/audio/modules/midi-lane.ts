@@ -255,7 +255,7 @@ export const midiLaneDef: AudioModuleDef = {
   type: 'midiLane',
   palette: { top: 'MIDI', sub: 'MIDI' },
   domain: 'audio',
-  label: 'MIDI LANE',
+  label: 'midi lane',
   category: 'sources',
   schemaVersion: 1,
 

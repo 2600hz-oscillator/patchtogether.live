@@ -98,7 +98,7 @@ export const blueboxDef: AudioModuleDef = {
   type: 'bluebox',
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
-  label: 'BLUEBOX',
+  label: 'bluebox',
   // BLUEBOX is a sound source (12 audio-rate gate ins → 1 audio out), so
   // it lives in the "VCOs" sub-bucket alongside the other gate-triggered
   // pitched voices (drummergirl, meowbox, dx7).

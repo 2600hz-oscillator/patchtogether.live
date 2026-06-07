@@ -75,9 +75,9 @@ export function unitToByte(knob: number, cv: number): number {
 
 export const gridsDef: AudioModuleDef = {
   type: 'grids',
-  palette: { top: 'Ports', sub: 'Mutable' },
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'GRIDS',
+  label: 'grids',
   category: 'modulation',
   schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },

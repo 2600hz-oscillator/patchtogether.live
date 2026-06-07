@@ -24,13 +24,13 @@ beforeAll(() => {
 describe('moog904bDef: module def shape', () => {
   it('declares type=moog904b, label="904B VCF", category=filters, schemaVersion=1', () => {
     expect(moog904bDef.type).toBe('moog904b');
-    expect(moog904bDef.label).toBe('904B VCF');
+    expect(moog904bDef.label).toBe('904b vcf');
     expect(moog904bDef.category).toBe('filters');
     expect(moog904bDef.schemaVersion).toBe(1);
   });
 
-  it('is categorized under Ports → moogafakkin and uses the Moog904bVcfCard', () => {
-    expect(moog904bDef.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('is categorized under Moog System 35/55 Clones and uses the Moog904bVcfCard', () => {
+    expect(moog904bDef.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
     expect(moog904bDef.card).toBe('Moog904bVcfCard');
   });
 

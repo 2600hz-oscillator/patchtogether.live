@@ -26,7 +26,7 @@ beforeAll(() => {
 describe('moog902Def: module def shape', () => {
   it('declares type=moog902, label="902 VCA", category=utilities, schemaVersion=1', () => {
     expect(moog902Def.type).toBe('moog902');
-    expect(moog902Def.label).toBe('902 VCA');
+    expect(moog902Def.label).toBe('902 vca');
     expect(moog902Def.category).toBe('utilities');
     expect(moog902Def.schemaVersion).toBe(1);
   });

@@ -11,7 +11,7 @@ describe('nibblesDef — module def shape', () => {
     expect(nibblesDef.type).toBe('nibbles');
     expect(nibblesDef.domain).toBe('video');
     expect(nibblesDef.category).toBe('sources');
-    expect(nibblesDef.label).toBe('NIBBLES');
+    expect(nibblesDef.label).toBe('nibbles');
   });
 
   it('declares the video output, 3 gate outputs, length CV, and 2 audio outputs', () => {

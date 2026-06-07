@@ -14,7 +14,7 @@ test('palette: + Add module button opens palette and spawns the chosen module', 
   await expect(page.locator('.module-palette')).toBeVisible();
   // The palette has the search field focused — type to filter.
   await page.keyboard.type('Reverb');
-  await page.getByRole('button', { name: 'Reverb', exact: true }).click();
+  await page.getByRole('button', { name: 'reverb', exact: true }).click();
   await expect(page.locator('.svelte-flow__node-reverb')).toHaveCount(1);
   await expect(page.locator('.module-palette')).not.toBeVisible();
 });

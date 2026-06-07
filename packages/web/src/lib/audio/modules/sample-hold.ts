@@ -69,7 +69,7 @@ export const sampleHoldDef: AudioModuleDef = {
   type: 'sampleHold',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'SAMPLE & HOLD',
+  label: 'sample & hold',
   category: 'utility',
   schemaVersion: 1,
   inputs: [

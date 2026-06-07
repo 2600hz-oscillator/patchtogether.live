@@ -44,9 +44,9 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog921bDef: AudioModuleDef = {
   type: 'moog921b',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   domain: 'audio',
-  label: '921B Osc',
+  label: '921b osc',
   category: 'sources',
   schemaVersion: 1,
 

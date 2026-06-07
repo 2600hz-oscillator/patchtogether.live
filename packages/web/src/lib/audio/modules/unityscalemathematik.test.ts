@@ -102,7 +102,7 @@ describe('unityScaleMath: bipolar sign preservation', () => {
 describe('unityscalemathematikDef: module-def shape', () => {
   it('declares type=unityscalemathematik, label=UNITYSCALEMATHEMATIK, category=utilities', () => {
     expect(unityscalemathematikDef.type).toBe('unityscalemathematik');
-    expect(unityscalemathematikDef.label).toBe('UNITYSCALEMATHEMATIK');
+    expect(unityscalemathematikDef.label).toBe('unityscalemathematik');
     expect(unityscalemathematikDef.category).toBe('utilities');
     expect(unityscalemathematikDef.domain).toBe('audio');
   });

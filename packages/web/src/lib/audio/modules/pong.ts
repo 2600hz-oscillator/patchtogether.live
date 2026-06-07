@@ -65,7 +65,7 @@ export const pongDef: AudioModuleDef = {
   type: 'pong',
   palette: { top: 'Games', sub: 'Arcade' },
   domain: 'audio',
-  label: 'PONG',
+  label: 'pong',
   category: 'games',
   schemaVersion: 1,
   vizPassthrough: true,

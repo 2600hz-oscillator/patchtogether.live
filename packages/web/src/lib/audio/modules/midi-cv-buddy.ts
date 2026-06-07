@@ -290,7 +290,7 @@ export const midiCvBuddyDef: AudioModuleDef = {
   type: 'midiCvBuddy',
   palette: { top: 'MIDI', sub: 'MIDI' },
   domain: 'audio',
-  label: 'MIDI-CV-BUDDY',
+  label: 'midi-cv-buddy',
   category: 'sources',
   schemaVersion: 1,
 

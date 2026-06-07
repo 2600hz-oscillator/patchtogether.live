@@ -103,9 +103,9 @@ function peakIndex(buf: Float32Array, from = 0): number {
 }
 
 describe('cocoaDelayDef shape', () => {
-  it('is a Ports-section effect with id cocoadelay', () => {
+  it('is an effects-section module with id cocoadelay', () => {
     expect(cocoaDelayDef.type).toBe('cocoadelay');
-    expect(cocoaDelayDef.label).toBe('COCOA DELAY');
+    expect(cocoaDelayDef.label).toBe('cocoa delay');
     expect(cocoaDelayDef.domain).toBe('audio');
   });
 

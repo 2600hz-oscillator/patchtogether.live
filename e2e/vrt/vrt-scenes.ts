@@ -6,7 +6,7 @@
 //
 // The default vrt.spec.ts behaviour spawns just the module and snaps a
 // screenshot. For modules with a canvas that's only interesting once
-// driven by an upstream signal (SCOPE, WAVVIZ — when patched, etc.),
+// driven by an upstream signal (SCOPE — when patched, etc.),
 // we register a scene here describing the auxiliary patch (extra
 // modules + cables) and an optional pre-screenshot pause.
 //

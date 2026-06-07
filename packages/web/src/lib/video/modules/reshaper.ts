@@ -126,7 +126,7 @@ export const reshaperDef: VideoModuleDef = {
   type: 'reshaper',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'RESHAPER',
+  label: 'reshaper',
   category: 'output',
   schemaVersion: 1,
   inputs: [

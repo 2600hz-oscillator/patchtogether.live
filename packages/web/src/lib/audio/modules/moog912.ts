@@ -102,10 +102,10 @@ export function buildGateCurve(threshold = GATE_THRESHOLD, len = 1024): Float32A
 
 export const moog912Def: AudioModuleDef = {
   type: 'moog912',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   card: 'Moog912Card',
   domain: 'audio',
-  label: '912 Envelope Follower',
+  label: '912 envelope follower',
   category: 'modulation',
   schemaVersion: 1,
 

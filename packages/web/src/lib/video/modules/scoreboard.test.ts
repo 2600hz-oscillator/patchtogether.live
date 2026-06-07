@@ -26,7 +26,7 @@ describe('scoreboardDef — module def shape', () => {
   it('registers under type "scoreboard" with the right metadata', () => {
     expect(scoreboardDef.type).toBe('scoreboard');
     expect(scoreboardDef.domain).toBe('video');
-    expect(scoreboardDef.label).toBe('SCOREBOARD');
+    expect(scoreboardDef.label).toBe('scoreboard');
     expect(scoreboardDef.category).toBe('utilities');
     expect(scoreboardDef.schemaVersion).toBe(1);
   });

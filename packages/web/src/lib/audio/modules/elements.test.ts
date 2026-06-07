@@ -9,7 +9,7 @@ import { elementsDef, elementsMath, type ElementsParams } from './elements';
 describe('elementsDef shape', () => {
   it('declares type=elements, label=ELEMENTS, category=sources', () => {
     expect(elementsDef.type).toBe('elements');
-    expect(elementsDef.label).toBe('ELEMENTS');
+    expect(elementsDef.label).toBe('elements');
     expect(elementsDef.category).toBe('sources');
   });
 

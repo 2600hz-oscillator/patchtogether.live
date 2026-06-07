@@ -68,7 +68,7 @@ const baseDef: AudioModuleDef = {
   type: 'lfo',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'LFO',
+  label: 'lfo',
   category: 'modulation',
   schemaVersion: 1,
 

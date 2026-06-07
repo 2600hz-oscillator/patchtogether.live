@@ -340,7 +340,7 @@ export const mandelbulbDef: VideoModuleDef = {
   type: 'mandelbulb',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
-  label: 'MANDELBULB',
+  label: 'mandelbulb',
   category: 'sources',
   schemaVersion: 1,
   inputs: [

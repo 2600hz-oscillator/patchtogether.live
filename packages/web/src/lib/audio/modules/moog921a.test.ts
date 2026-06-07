@@ -27,13 +27,13 @@ beforeAll(() => {
 describe('moog921aDef: module def shape', () => {
   it('declares type=moog921a, label="921A Driver", category=modulation, schemaVersion=1', () => {
     expect(moog921aDef.type).toBe('moog921a');
-    expect(moog921aDef.label).toBe('921A Driver');
+    expect(moog921aDef.label).toBe('921a driver');
     expect(moog921aDef.category).toBe('modulation');
     expect(moog921aDef.schemaVersion).toBe(1);
   });
 
-  it('is categorized under Ports → moogafakkin', () => {
-    expect(moog921aDef.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('is categorized under Moog System 35/55 Clones', () => {
+    expect(moog921aDef.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
   });
 
   it('exposes the 921A inputs: freq_cv (pitch) + width_cv (cv)', () => {

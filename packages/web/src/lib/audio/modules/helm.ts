@@ -263,9 +263,9 @@ export interface HelmCardApi {
 
 export const helmDef: AudioModuleDef = {
   type: 'helm',
-  palette: { top: 'Ports', sub: 'Ports' },
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
-  label: 'HELM',
+  label: 'helm',
   category: 'sources',
   schemaVersion: 1,
   ossAttribution: { author: 'Matt Tytel' },

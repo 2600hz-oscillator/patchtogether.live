@@ -42,7 +42,7 @@ export const adsrDef: AudioModuleDef = {
   type: 'adsr',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'ADSR',
+  label: 'adsr',
   category: 'modulation',
   schemaVersion: 1,
   inputs: [

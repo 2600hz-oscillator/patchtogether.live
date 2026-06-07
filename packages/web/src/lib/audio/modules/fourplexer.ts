@@ -48,7 +48,7 @@ export const fourplexerDef: AudioModuleDef = {
   palette: { top: 'Audio modules', sub: 'Utility' },
   card: 'FourPlexerCard',
   domain: 'audio',
-  label: '4PLEXER',
+  label: '4plexer',
   category: 'utility',
   schemaVersion: 1,
   inputs: [

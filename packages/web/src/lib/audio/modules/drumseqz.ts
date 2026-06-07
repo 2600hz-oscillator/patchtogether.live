@@ -196,9 +196,9 @@ export function resolveStepVOct(
 
 export const drumseqzDef: AudioModuleDef = {
   type: 'drumseqz',
-  palette: { top: 'Audio modules', sub: 'Utility' },
+  palette: { top: 'Audio modules', sub: 'sequencers' },
   domain: 'audio',
-  label: 'DRUMSEQZ',
+  label: 'drumseqz',
   category: 'modulation',
   schemaVersion: 1,
 

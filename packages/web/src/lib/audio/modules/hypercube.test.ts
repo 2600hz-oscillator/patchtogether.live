@@ -140,7 +140,7 @@ describe('hypercubeDef — module def shape', () => {
   it('claims sources category + type hypercube', () => {
     expect(hypercubeDef.category).toBe('sources');
     expect(hypercubeDef.type).toBe('hypercube');
-    expect(hypercubeDef.label).toBe('HYPERCUBE');
+    expect(hypercubeDef.label).toBe('hypercube');
   });
 });
 

@@ -12,7 +12,7 @@ import { joystickDef, clampJoy } from './joystick';
 describe('joystick: module-def shape', () => {
   it('declares type=joystick, label=JOYSTICK, audio domain', () => {
     expect(joystickDef.type).toBe('joystick');
-    expect(joystickDef.label).toBe('JOYSTICK');
+    expect(joystickDef.label).toBe('joystick');
     expect(joystickDef.domain).toBe('audio');
   });
 

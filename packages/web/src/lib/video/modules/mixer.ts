@@ -78,7 +78,7 @@ export const mixerVideoDef: VideoModuleDef = {
   type: 'videoMixer',
   palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
-  label: 'V-MIXER',
+  label: 'v-mixer',
   category: 'utilities',
   schemaVersion: 1,
   inputs: [

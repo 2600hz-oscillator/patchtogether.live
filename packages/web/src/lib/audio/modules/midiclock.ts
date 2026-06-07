@@ -250,7 +250,7 @@ export const midiclockDef: AudioModuleDef = {
   type: 'midiclock',
   palette: { top: 'MIDI', sub: 'MIDI' },
   domain: 'audio',
-  label: 'MIDICLOCK',
+  label: 'midiclock',
   category: 'sources',
   schemaVersion: 1,
 

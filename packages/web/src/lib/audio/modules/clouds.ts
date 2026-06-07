@@ -254,9 +254,9 @@ export const cloudsMath = {
 
 export const cloudsDef: AudioModuleDef = {
   type: 'clouds',
-  palette: { top: 'Ports', sub: 'Mutable' },
+  palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: 'CLOUDS',
+  label: 'clouds',
   category: 'effects',
   schemaVersion: 1,
   stereoPairs: [['in_l', 'in_r'], ['out_l', 'out_r']],

@@ -157,7 +157,7 @@ describe('noiseGenerators: brown noise', () => {
 describe('noiseDef: module-def shape', () => {
   it('declares type=noise, label=NOISE, category=sources', () => {
     expect(noiseDef.type).toBe('noise');
-    expect(noiseDef.label).toBe('NOISE');
+    expect(noiseDef.label).toBe('noise');
     expect(noiseDef.category).toBe('sources');
     expect(noiseDef.domain).toBe('audio');
   });

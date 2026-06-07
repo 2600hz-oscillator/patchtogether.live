@@ -30,9 +30,9 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const moog995Def: AudioModuleDef = {
   type: 'moog995',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   domain: 'audio',
-  label: '995 Atten',
+  label: '995 atten',
   category: 'utilities',
   schemaVersion: 1,
 

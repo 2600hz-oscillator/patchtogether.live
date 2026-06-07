@@ -55,9 +55,9 @@ export function ribbonToVOct(pos: number, scale: number, offset: number): number
 
 export const moog956Def: AudioModuleDef = {
   type: 'moog956',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   domain: 'audio',
-  label: '956 Ribbon',
+  label: '956 ribbon',
   category: 'utility',
   schemaVersion: 1,
   card: 'Moog956Card',

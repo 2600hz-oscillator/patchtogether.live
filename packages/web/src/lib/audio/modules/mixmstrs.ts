@@ -169,7 +169,7 @@ export const mixmstrsDef: AudioModuleDef = {
   type: 'mixmstrs',
   palette: { top: 'Audio modules', sub: 'Mixing' },
   domain: 'audio',
-  label: 'MIXMSTRS',
+  label: 'mixmstrs',
   category: 'utilities',
   schemaVersion: 1,
   stereoPairs: [

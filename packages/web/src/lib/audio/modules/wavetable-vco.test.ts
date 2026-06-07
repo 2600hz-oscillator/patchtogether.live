@@ -11,7 +11,7 @@ import { wavetableVcoDef } from './wavetable-vco';
 describe('wavetableVcoDef: module def shape', () => {
   it('declares type=wavetableVco, label="Wavetable VCO", category=sources', () => {
     expect(wavetableVcoDef.type).toBe('wavetableVco');
-    expect(wavetableVcoDef.label).toBe('Wavetable VCO');
+    expect(wavetableVcoDef.label).toBe('wavetable vco');
     expect(wavetableVcoDef.category).toBe('sources');
   });
 

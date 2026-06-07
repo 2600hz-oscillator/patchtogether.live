@@ -54,7 +54,7 @@ export const joystickDef: AudioModuleDef = {
   type: 'joystick',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'JOYSTICK',
+  label: 'joystick',
   category: 'utility',
   schemaVersion: 1,
 

@@ -707,7 +707,7 @@ export const samsloopDef: AudioModuleDef = {
   type: 'samsloop',
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
-  label: 'SAMSLOOP',
+  label: 'samsloop',
   category: 'sources',
   schemaVersion: 1,
 

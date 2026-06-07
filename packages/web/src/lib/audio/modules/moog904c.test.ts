@@ -35,14 +35,14 @@ beforeAll(() => {
 describe('moog904cDef: module def shape', () => {
   it('declares type=moog904c, label="904C Voltage Controlled Filter Coupler", category=filters, schemaVersion=1', () => {
     expect(moog904cDef.type).toBe('moog904c');
-    expect(moog904cDef.label).toBe('904C Voltage Controlled Filter Coupler');
+    expect(moog904cDef.label).toBe('904c voltage controlled filter coupler');
     expect(moog904cDef.category).toBe('filters');
     expect(moog904cDef.schemaVersion).toBe(1);
     expect(moog904cDef.domain).toBe('audio');
   });
 
-  it('lives in the Ports → moogafakkin palette bucket and uses the Moog904cCard', () => {
-    expect(moog904cDef.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog904cCard', () => {
+    expect(moog904cDef.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
     expect(moog904cDef.card).toBe('Moog904cCard');
   });
 

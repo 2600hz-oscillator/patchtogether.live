@@ -19,7 +19,7 @@ export const controlSurfaceDef: MetaModuleDef = {
   type: 'controlSurface',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'meta',
-  label: 'CONTROL SURFACE',
+  label: 'control surface',
   category: 'tools',
   card: 'ControlSurfaceCard',
   inputs: [],
