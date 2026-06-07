@@ -40,7 +40,7 @@
     posFor as layoutPosFor,
     unlockedCanvasSize,
   } from '$lib/graph/control-surface-layout';
-  import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
+  import { resolveSurfaceParam, pruneSurfaceDangling } from '$lib/graph/control-surface-params';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -53,6 +53,19 @@
     const h = () => { cardVersion = cardVersion + 1; };
     ydoc.on('update', h);
     return () => ydoc.off('update', h);
+  });
+
+  // AUTO-PRUNE dangling proxied controls: when a bound source disappears (a
+  // mapped module deleted, or a mapped TOYBOX op node deleted when the toybox is
+  // reconfigured) the control already stops RENDERING (groups skips an
+  // unresolvable binding), but the BINDING lingers in node.data — so the next
+  // Electra flash would emit a dead control. On every Yjs update, drop any
+  // DEFINITELY-gone binding from the surface's data. pruneSurfaceDangling is
+  // conservative (never prunes a not-yet-loaded source) and a no-op when nothing
+  // dangles, so the follow-on update it triggers settles in one extra cycle.
+  $effect(() => {
+    void cardVersion;
+    pruneSurfaceDangling(id);
   });
 
   let surfaceData = $derived.by(() => {
