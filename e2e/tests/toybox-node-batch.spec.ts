@@ -323,59 +323,6 @@ test.describe('TOYBOX batch op nodes — registry + menu', () => {
 
     expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
   });
-
-  // ── #82 follow-up: every batch op has a right-click "Configure…" popover that
-  //    exposes its OP_PARAMS (knobs + enum <select>s). DISCRETE-enum params
-  //    (mirror.mode, bitbend.op) render as a <select> (not an opaque knob).
-  test('every batch op has a Configure popover; enum params render as a <select>', async ({ page }) => {
-    test.setTimeout(180_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-    await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
-    await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-    await pinViewport(page);
-    await ensureCombineOpen(page);
-
-    // Seed a MIRROR (has an enum 'mode') + a TILE (continuous only) op.
-    await seed(page, [
-      ...sources(),
-      { id: 'mir', kind: 'mirror', x: 120, y: 14, params: {} },
-      { id: 'til', kind: 'tile', x: 196, y: 14, params: {} },
-      { id: 'out', kind: 'output', x: 286, y: 66 },
-    ], [
-      { id: 'e0', from: 'src0', to: 'mir', toPort: 'in0' },
-      { id: 'e1', from: 'mir', to: 'out', toPort: 'in0' },
-    ]);
-
-    // Right-click the MIRROR node → Configure… → popover with a MODE <select>.
-    await page.locator('[data-testid="toybox-gnode-mir"]').click({ button: 'right', force: true, noWaitAfter: true });
-    const cfg = page.locator('[data-testid="toybox-menu-configure-op"]');
-    await expect(cfg).toBeVisible({ timeout: 5_000 });
-    await cfg.click({ noWaitAfter: true });
-    await expect(page.locator('[data-testid="toybox-op-config"]')).toBeVisible({ timeout: 5_000 });
-    // mirror.mode is an enum → rendered as a <select>, not a knob.
-    const modeSelect = page.locator('[data-testid="toybox-op-config-select-mode"]');
-    await expect(modeSelect).toBeVisible();
-    // Pick KALEIDO (value 3) → writes the live param.
-    await modeSelect.selectOption('3');
-    await expect
-      .poll(() => page.evaluate(() => {
-        const w = globalThis as unknown as PatchGlobal;
-        return w.__patch.nodes['tb']?.data?.combine?.nodes?.find((n) => n.id === 'mir')?.params?.mode;
-      }))
-      .toBe(3);
-    // Dismiss + open TILE's Configure (continuous params → knobs).
-    await page.locator('[data-testid="toybox-op-config-done"]').click({ noWaitAfter: true });
-    await page.locator('[data-testid="toybox-gnode-til"]').click({ button: 'right', force: true, noWaitAfter: true });
-    await page.locator('[data-testid="toybox-menu-configure-op"]').click({ noWaitAfter: true });
-    await expect(page.locator('[data-testid="toybox-op-config-knob-tilesX"]')).toBeVisible({ timeout: 5_000 });
-
-    expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
-  });
 });
 
 test.describe('TOYBOX batch op nodes — render + output delta', () => {

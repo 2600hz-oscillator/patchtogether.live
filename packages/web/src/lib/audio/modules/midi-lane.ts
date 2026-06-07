@@ -1,0 +1,677 @@
+// packages/web/src/lib/audio/modules/midi-lane.ts
+//
+// MIDI LANE — a per-channel "instrument bus" demux for a hardware MIDI
+// sequencer (or any class-compliant USB-MIDI device).
+//
+// THE WHY (Phase 1 of the hardware-sequencers integration plan):
+//   A DAW-style workflow is "1 MIDI channel = 1 instrument". You assign
+//   each track of your external sequencer (Reliq, Cre8audio Programm,
+//   Empress ZOIA, …) to its own MIDI channel, then drop one MIDI LANE per
+//   instrument and point each at that track's channel. The lane demuxes
+//   that channel into the CV/gate the rest of the rack speaks — notes,
+//   gate, pitch CV, velocity, plus a couple of learn-assignable CC taps
+//   for modulation, plus ONE by-note-number gate (the Programm/Reliq
+//   drum-router pattern). The SAME outputs drive VIDEO modules for free
+//   via the existing cross-domain CV/gate→video bridge (a `gate`/`cv`
+//   ConstantSource output cabled into ACIDWARP.scene_cv / DOOM.cv_pN just
+//   works — no synth voice required).
+//
+// DESIGN: this is deliberately NOT a 16-lane mega-module (which would
+//   blow up to ~80 ports, a heavy card, and a VRT/CI burden — most lanes
+//   idle for any real device). Instead it is a LIGHT, instantiable
+//   per-lane bus: drop one per instrument, multi-timbral = drop several.
+//   It is the spiritual successor of MIDI-CV-BUDDY (whose note logic it
+//   reuses verbatim) but channel-aware (multi-select, like HELM), with a
+//   CC tap bank and a by-note gate built in.
+//
+// WHAT'S DIFFERENT FROM MIDI-CV-BUDDY:
+//   * Channel filter is a multi-SELECT Set (0..15 | null=all), not a
+//     single channel — so a lane can collect a few tracks (e.g. the bass
+//     + its CC automation arriving on the same channel set).
+//   * Two learn-assignable CC taps (cc_a, cc_b) → continuous 0..1 CV.
+//     These subsume the per-track CC-modulation lane the plan wants. They
+//     can drive audio params directly or video params via the bridge.
+//   * One by-note-number gate (note_gate) → fires when a SPECIFIC MIDI
+//     note arrives on the lane's channel(s). Generalizes the per-device
+//     drum router (Programm ch10 by-note) via configuration, not 8 fixed
+//     ports. Defaults to GM kick (MIDI 36).
+//   * Optional polyphonic output (poly, a 10-channel polyPitchGate via
+//     createPolySender) when mode='poly', so a chord on the lane plays a
+//     poly synth. OFF by default → mono cards stay at a low port count.
+//
+// PORTS (default mono: 5 outputs; +1 when poly enabled = 6):
+//   pitch_cv     (cv):   V/oct (0V = C4 = MIDI 60). Pitch-bend summed in.
+//   gate         (gate): HIGH while any key on the lane is held; retrig dip.
+//   velocity_cv  (cv):   0..1 (MIDI velocity / 127). Latched.
+//   cc_a         (cv):   learn-assignable CC tap A, 0..1.
+//   cc_b         (cv):   learn-assignable CC tap B, 0..1.
+//   note_gate    (gate): fires on the card-selected MIDI note number.
+//   poly         (polyPitchGate): present ONLY when mode='poly'.
+//
+// Inputs: none — the MIDI source is the external device (card dropdown).
+//
+// IMPLEMENTATION: main-thread, no worklet (exactly like MIDI-CV-BUDDY /
+//   MIDICLOCK). One MIDI handler updates a held-keys stack + the CC/note
+//   state and writes ConstantSourceNode offsets via setValueAtTime at a
+//   small lookahead so values land at the start of the next audio block.
+//   We reuse the pure, tested helpers from midi-cv-buddy (parseNoteEvent /
+//   parsePitchBend / pickWinner / velocityToCv / bendToVOct / pushHeld /
+//   removeHeld / SCHED_LOOKAHEAD_S / DEFAULT_BEND_SEMITONES) and the
+//   HELM-style multi-channel Set filter (expandChannelSet pattern,
+//   re-implemented locally so the module is self-contained + testable).
+//
+// PERMISSION UX: like MIDI-CV-BUDDY, we DON'T request Web MIDI on mount.
+//   The card calls connect() once ("Connect MIDI…"); Chrome remembers the
+//   origin grant.
+//
+// CONFIG-ONLY Reliq note: the Reliq is a class-compliant USB-MIDI device,
+//   so it appears directly in the Web MIDI device dropdown — no driver, no
+//   native bridge. Assign each Reliq track to its own MIDI channel, drop
+//   one MIDI LANE per track, and set each lane's channel to match. Nothing
+//   in this module is Reliq-specific; it is the same path for the Programm
+//   and ZOIA.
+//
+// (Inputs / Outputs / Params block — IO surface restated for the docs manifest)
+//
+// Inputs: none.
+//
+// Outputs:
+//   pitch_cv (cv): V/oct (0V = C4 = MIDI 60). Includes pitch-bend.
+//   gate (gate): HIGH while any key on the lane is held; brief retrigger dip.
+//   velocity_cv (cv): 0..1 (MIDI velocity / 127). Latched.
+//   cc_a (cv): learn-assignable CC tap A → 0..1.
+//   cc_b (cv): learn-assignable CC tap B → 0..1.
+//   note_gate (gate): fires on the card-selected MIDI note number.
+//   poly (polyPitchGate): present only when mode='poly'.
+//
+// Params: none on the engine side. (Device + channel set + voice priority +
+//   retrigger + mode + CC# assignments + note# live in node.data; the card
+//   writes them.)
+
+import type { AudioDomainNodeHandle } from '$lib/audio/engine';
+import type { AudioModuleDef } from '$lib/audio/module-registry';
+import { midiToVOct } from '$lib/audio/note-entry';
+import { createPolySender, type PolySender } from '$lib/audio/poly';
+import type {
+  MidiAccessLike,
+  MidiEventLike,
+  VoicePriority,
+} from './midi-cv-buddy';
+import {
+  bendToVOct,
+  channelMatches,
+  DEFAULT_BEND_SEMITONES,
+  parseNoteEvent,
+  parsePitchBend,
+  pickWinner,
+  pushHeld,
+  removeHeld,
+  SCHED_LOOKAHEAD_S,
+  velocityToCv,
+  webMidiAvailable,
+} from './midi-cv-buddy';
+
+// ---------------- Pure helpers (testable) ----------------
+
+/** Returns a Set of channels (0-indexed, 0..15) selected; null = all.
+ *  Mirrors HELM's `expandChannelSet` so a lane can collect a subset of
+ *  channels — the bass track + any CC automation on the same channel
+ *  group, say. Invalid entries are dropped. An empty array collapses to
+ *  an empty Set (matches nothing) — distinct from null (matches all). */
+export function expandLaneChannels(channels: number[] | null): Set<number> | null {
+  if (channels === null) return null;
+  const s = new Set<number>();
+  for (const c of channels) {
+    if (Number.isInteger(c) && c >= 0 && c < 16) s.add(c);
+  }
+  return s;
+}
+
+/** True if a raw MIDI status byte's channel matches the lane's channel set
+ *  (null = all). Applies to channel-voice messages only; the caller gates
+ *  on whether the status is a channel-voice message first. */
+export function laneChannelMatches(statusByte: number, channelSet: Set<number> | null): boolean {
+  if (channelSet === null) return true;
+  return channelSet.has(statusByte & 0x0f);
+}
+
+/** Parse a Control Change message into { cc, value } or null. CC value is
+ *  the raw 7-bit 0..127; the lane maps to 0..1 with `ccToCv`. */
+export function parseCc(data: Uint8Array): { cc: number; value: number } | null {
+  if (data.length < 3) return null;
+  if ((data[0]! & 0xf0) !== 0xb0) return null;
+  return { cc: data[1]! & 0x7f, value: data[2]! & 0x7f };
+}
+
+/** Map a 7-bit CC value (0..127) to a 0..1 CV value. */
+export function ccToCv(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  const v = Math.max(0, Math.min(127, Math.round(value)));
+  return v / 127;
+}
+
+/** Cap on poly voices the lane allocates (the polyPitchGate carries 5
+ *  pitch/gate pairs across 10 channels). */
+export const MAX_POLY_VOICES = 5;
+
+/** Build the poly "lanes" array (pitch V/oct + gate 0/1) from a held-keys
+ *  stack under a given voice priority. Newest-held voices win when more
+ *  than MAX_POLY_VOICES keys are down (steal-oldest). `bendVOct` is summed
+ *  into every voice's pitch. Pure so the poly allocation is unit-testable
+ *  without an AudioContext. */
+export function buildPolyLanes(
+  heldKeysInPressOrder: readonly number[],
+  bendVOct: number,
+): Array<{ pitch: number; gate: 0 | 1 }> {
+  const lanes: Array<{ pitch: number; gate: 0 | 1 }> = [];
+  // Take the most-recent MAX_POLY_VOICES (steal-oldest under voice pressure).
+  const recent = heldKeysInPressOrder.slice(-MAX_POLY_VOICES);
+  for (let i = 0; i < MAX_POLY_VOICES; i++) {
+    const note = recent[i];
+    if (note === undefined) {
+      lanes.push({ pitch: 0, gate: 0 });
+    } else {
+      lanes.push({ pitch: midiToVOct(note) + bendVOct, gate: 1 });
+    }
+  }
+  return lanes;
+}
+
+// ---------------- Types / data shape ----------------
+
+export type LaneMode = 'mono' | 'poly';
+
+/** Card-readable state surfaced via `handle.read('state')`. */
+export interface MidiLaneCardState {
+  connected: boolean;
+  permissionDenied: boolean;
+  devices: Array<{ id: string; name: string; state: string }>;
+  selectedDeviceId: string | null;
+  /** Last note received on the lane (MIDI int) for the readout. */
+  lastNote: number | null;
+  lastVelocity: number;
+  /** Last CC VALUE (0..127) seen for cc_a / cc_b (live readout). */
+  lastCcA: number | null;
+  lastCcB: number | null;
+  /** Currently-ASSIGNED CC# for cc_a / cc_b (null = unassigned). The card
+   *  reads these back to persist a learned binding into node.data. */
+  ccANum: number | null;
+  ccBNum: number | null;
+  /** True while waiting to capture the next CC for cc_a / cc_b. */
+  learningCcA: boolean;
+  learningCcB: boolean;
+}
+
+/** Saved per-instance data on the patch node (`node.data`, Yjs-synced). */
+export interface MidiLaneData {
+  /** Channel set: array of 0..15, or null for "all". */
+  channels: number[] | null;
+  priority: VoicePriority;
+  retrig: boolean;
+  mode: LaneMode;
+  /** CC numbers tapped by cc_a / cc_b (null = unassigned / no CC drives it). */
+  ccA: number | null;
+  ccB: number | null;
+  /** MIDI note number the note_gate fires on (default GM kick = 36). */
+  noteGateNote: number;
+  lastDeviceId: string | null;
+}
+
+export const DEFAULT_DATA: MidiLaneData = {
+  channels: null,
+  priority: 'last',
+  retrig: true,
+  mode: 'mono',
+  ccA: 1, // CC1 = mod wheel — the most common "give me some modulation" CC
+  ccB: null,
+  noteGateNote: 36, // GM kick
+  lastDeviceId: null,
+};
+
+/** GATE_PULSE_S — how long the note_gate stays high for a one-shot note
+ *  trigger before falling. ~6 ms is long enough to clear a downstream
+ *  edge detector + an ADSR's first block, short enough to retrigger fast
+ *  drum patterns. */
+export const NOTE_GATE_PULSE_S = 0.006;
+
+export interface MidiLaneApi {
+  connect(): Promise<boolean>;
+  selectDevice(deviceId: string | null): void;
+  setChannels(channels: number[] | null): void;
+  setPriority(priority: VoicePriority): void;
+  setRetrig(retrig: boolean): void;
+  setMode(mode: LaneMode): void;
+  /** Begin "learn" — bind the next CC# seen to cc_a / cc_b. */
+  learnCcA(): void;
+  learnCcB(): void;
+  setCcA(cc: number | null): void;
+  setCcB(cc: number | null): void;
+  setNoteGateNote(note: number): void;
+  getState(): MidiLaneCardState;
+  subscribe(cb: (s: MidiLaneCardState) => void): () => void;
+}
+
+export const midiLaneDef: AudioModuleDef = {
+  type: 'midiLane',
+  palette: { top: 'MIDI', sub: 'MIDI' },
+  domain: 'audio',
+  label: 'MIDI LANE',
+  category: 'sources',
+  schemaVersion: 1,
+
+  inputs: [],
+  outputs: [
+    { id: 'pitch_cv',    type: 'cv' },
+    { id: 'gate',        type: 'gate' },
+    { id: 'velocity_cv', type: 'cv' },
+    { id: 'cc_a',        type: 'cv' },
+    { id: 'cc_b',        type: 'cv' },
+    { id: 'note_gate',   type: 'gate' },
+    // Polyphonic chord output. Always declared (so the handle/registry is
+    // stable), but only carries signal when mode='poly'. In mono mode it
+    // sits at neutral (all gates 0). A poly synth (cartesian / dx7) reads it.
+    { id: 'poly',        type: 'polyPitchGate' },
+  ],
+  params: [],
+
+  async factory(ctx, node): Promise<AudioDomainNodeHandle> {
+    // ---------------- ConstantSource outputs ----------------
+    const pitchSrc = ctx.createConstantSource();
+    pitchSrc.offset.value = 0;
+    pitchSrc.start();
+    const gateSrc = ctx.createConstantSource();
+    gateSrc.offset.value = 0;
+    gateSrc.start();
+    const velSrc = ctx.createConstantSource();
+    velSrc.offset.value = 0;
+    velSrc.start();
+    const ccASrc = ctx.createConstantSource();
+    ccASrc.offset.value = 0;
+    ccASrc.start();
+    const ccBSrc = ctx.createConstantSource();
+    ccBSrc.offset.value = 0;
+    ccBSrc.start();
+    const noteGateSrc = ctx.createConstantSource();
+    noteGateSrc.offset.value = 0;
+    noteGateSrc.start();
+
+    // Poly sender (10-channel polyPitchGate merger). Always created so the
+    // `poly` output handle exists; only fed when mode='poly'.
+    const poly: PolySender = createPolySender(ctx);
+
+    // ---------------- Saved data (with defaults) ----------------
+    const savedData = (node.data ?? {}) as Partial<MidiLaneData>;
+    let channelSet: Set<number> | null = expandLaneChannels(
+      savedData.channels ?? DEFAULT_DATA.channels,
+    );
+    let priority: VoicePriority = savedData.priority ?? DEFAULT_DATA.priority;
+    let retrig: boolean = savedData.retrig ?? DEFAULT_DATA.retrig;
+    let mode: LaneMode = savedData.mode ?? DEFAULT_DATA.mode;
+    let ccA: number | null = savedData.ccA ?? DEFAULT_DATA.ccA;
+    let ccB: number | null = savedData.ccB ?? DEFAULT_DATA.ccB;
+    let noteGateNote: number = savedData.noteGateNote ?? DEFAULT_DATA.noteGateNote;
+    let selectedDeviceId: string | null = savedData.lastDeviceId ?? DEFAULT_DATA.lastDeviceId;
+
+    // ---------------- Internal mutable state ----------------
+    let heldStack: number[] = [];
+    let currentBendVOct = 0;
+    let lastNote: number | null = null;
+    let lastVelocity = 0;
+    let lastCcA: number | null = null;
+    let lastCcB: number | null = null;
+    let learningCcA = false;
+    let learningCcB = false;
+    let access: MidiAccessLike | null = null;
+    let permissionDenied = false;
+    let subscriber: ((s: MidiLaneCardState) => void) | null = null;
+
+    function snapshotState(): MidiLaneCardState {
+      const devices: MidiLaneCardState['devices'] = [];
+      if (access) {
+        for (const [id, inp] of access.inputs) {
+          devices.push({ id, name: inp.name ?? id, state: inp.state });
+        }
+      }
+      return {
+        connected: access !== null,
+        permissionDenied,
+        devices,
+        selectedDeviceId,
+        lastNote,
+        lastVelocity,
+        lastCcA,
+        lastCcB,
+        ccANum: ccA,
+        ccBNum: ccB,
+        learningCcA,
+        learningCcB,
+      };
+    }
+
+    function notify(): void {
+      subscriber?.(snapshotState());
+    }
+
+    function schedAt(eventTimeStamp: number): number {
+      const now = ctx.currentTime;
+      const perfNow = typeof performance !== 'undefined' ? performance.now() : eventTimeStamp;
+      const delta = (eventTimeStamp - perfNow) / 1000;
+      return Math.max(now + SCHED_LOOKAHEAD_S, now + delta + SCHED_LOOKAHEAD_S);
+    }
+
+    /** Repaint the mono pitch/gate outputs from the held-keys stack. */
+    function applyMono(eventTime: number): void {
+      const winner = pickWinner(heldStack, priority);
+      if (winner === null) {
+        gateSrc.offset.cancelScheduledValues(eventTime);
+        gateSrc.offset.setValueAtTime(0, eventTime);
+        return;
+      }
+      const vOct = midiToVOct(winner) + currentBendVOct;
+      pitchSrc.offset.cancelScheduledValues(eventTime);
+      pitchSrc.offset.setValueAtTime(vOct, eventTime);
+      gateSrc.offset.cancelScheduledValues(eventTime);
+      gateSrc.offset.setValueAtTime(1, eventTime);
+    }
+
+    function applyPitchBendOnly(eventTime: number): void {
+      const winner = pickWinner(heldStack, priority);
+      if (winner !== null) {
+        const vOct = midiToVOct(winner) + currentBendVOct;
+        pitchSrc.offset.cancelScheduledValues(eventTime);
+        pitchSrc.offset.setValueAtTime(vOct, eventTime);
+      }
+      // Poly: re-paint every held voice's pitch with the new bend.
+      if (mode === 'poly') applyPoly(eventTime);
+    }
+
+    /** Repaint the poly output from the held-keys stack. Sustained (gates
+     *  stay high until release). */
+    function applyPoly(eventTime: number): void {
+      const lanes = buildPolyLanes(heldStack, currentBendVOct);
+      poly.scheduleStep(eventTime, lanes, 0);
+    }
+
+    function handleMidiMessage(ev: MidiEventLike): void {
+      const data = ev.data;
+      if (data.length < 1) return;
+      const status = data[0]!;
+      // Channel filter applies to channel-voice messages (0x80..0xE0).
+      if ((status & 0x80) && (status & 0xf0) <= 0xe0) {
+        if (!laneChannelMatches(status, channelSet)) return;
+      } else if (status >= 0xf0) {
+        // System messages — not a lane note/CC. Ignore.
+        return;
+      }
+      const t = schedAt(ev.timeStamp);
+
+      // ---- CC ----
+      const cc = parseCc(data);
+      if (cc !== null) {
+        // Learn mode: capture the next CC# for whichever tap is learning.
+        if (learningCcA) {
+          ccA = cc.cc;
+          learningCcA = false;
+        }
+        if (learningCcB) {
+          ccB = cc.cc;
+          learningCcB = false;
+        }
+        if (ccA !== null && cc.cc === ccA) {
+          lastCcA = cc.value;
+          ccASrc.offset.cancelScheduledValues(t);
+          ccASrc.offset.setValueAtTime(ccToCv(cc.value), t);
+        }
+        if (ccB !== null && cc.cc === ccB) {
+          lastCcB = cc.value;
+          ccBSrc.offset.cancelScheduledValues(t);
+          ccBSrc.offset.setValueAtTime(ccToCv(cc.value), t);
+        }
+        notify();
+        return;
+      }
+
+      // ---- Pitch bend ----
+      const bend = parsePitchBend(data);
+      if (bend !== null) {
+        currentBendVOct = bendToVOct(bend, DEFAULT_BEND_SEMITONES);
+        applyPitchBendOnly(t);
+        return;
+      }
+
+      // ---- Notes ----
+      const note = parseNoteEvent(data);
+      if (!note || note.note === undefined) return;
+
+      if (note.kind === 'note-on') {
+        // by-note-number gate: fire a one-shot pulse on the selected note.
+        if (note.note === noteGateNote) {
+          noteGateSrc.offset.cancelScheduledValues(t);
+          noteGateSrc.offset.setValueAtTime(1, t);
+          noteGateSrc.offset.setValueAtTime(0, t + NOTE_GATE_PULSE_S);
+        }
+
+        const prevWinner = pickWinner(heldStack, priority);
+        heldStack = pushHeld(heldStack, note.note);
+        lastNote = note.note;
+        lastVelocity = note.velocity ?? 0;
+        velSrc.offset.cancelScheduledValues(t);
+        velSrc.offset.setValueAtTime(velocityToCv(lastVelocity), t);
+
+        if (mode === 'poly') {
+          applyPoly(t);
+        } else if (retrig && prevWinner !== null) {
+          // Mono retrigger: drop the gate for one block so a downstream
+          // ADSR re-fires.
+          gateSrc.offset.cancelScheduledValues(t);
+          gateSrc.offset.setValueAtTime(0, t);
+          gateSrc.offset.setValueAtTime(1, t + 0.003);
+          const winner = pickWinner(heldStack, priority);
+          if (winner !== null) {
+            const vOct = midiToVOct(winner) + currentBendVOct;
+            pitchSrc.offset.cancelScheduledValues(t);
+            pitchSrc.offset.setValueAtTime(vOct, t);
+          }
+        } else {
+          applyMono(t);
+        }
+        notify();
+        return;
+      }
+
+      if (note.kind === 'note-off') {
+        heldStack = removeHeld(heldStack, note.note);
+        if (mode === 'poly') applyPoly(t);
+        else applyMono(t);
+        notify();
+        return;
+      }
+    }
+
+    function attachToDevice(deviceId: string | null): void {
+      if (!access) return;
+      for (const inp of access.inputs.values()) {
+        inp.onmidimessage = null;
+      }
+      if (deviceId === null) return;
+      const inp = access.inputs.get(deviceId);
+      if (!inp) return;
+      inp.onmidimessage = handleMidiMessage;
+    }
+
+    function pickDefaultDevice(): string | null {
+      if (!access) return null;
+      if (selectedDeviceId && access.inputs.has(selectedDeviceId)) return selectedDeviceId;
+      const first = access.inputs.values().next();
+      if (first.done) return null;
+      return first.value.id;
+    }
+
+    async function connect(): Promise<boolean> {
+      if (access) return true;
+      if (!webMidiAvailable()) {
+        permissionDenied = true;
+        notify();
+        return false;
+      }
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const a = await (navigator as any).requestMIDIAccess({ sysex: false });
+        access = a as MidiAccessLike;
+        access.onstatechange = () => {
+          if (!selectedDeviceId) {
+            selectedDeviceId = pickDefaultDevice();
+            attachToDevice(selectedDeviceId);
+          }
+          notify();
+        };
+        selectedDeviceId = pickDefaultDevice();
+        attachToDevice(selectedDeviceId);
+        notify();
+        return true;
+      } catch {
+        permissionDenied = true;
+        notify();
+        return false;
+      }
+    }
+
+    function selectDevice(deviceId: string | null): void {
+      selectedDeviceId = deviceId;
+      attachToDevice(deviceId);
+      notify();
+    }
+
+    function panic(): void {
+      // Clear held notes + drop gates so a settings change can't strand a
+      // gate or poly voice high.
+      heldStack = [];
+      const t = ctx.currentTime + SCHED_LOOKAHEAD_S;
+      gateSrc.offset.cancelScheduledValues(t);
+      gateSrc.offset.setValueAtTime(0, t);
+      poly.silence(t);
+    }
+
+    function setChannels(c: number[] | null): void {
+      channelSet = expandLaneChannels(c);
+      panic();
+      notify();
+    }
+
+    function setPriority(p: VoicePriority): void {
+      priority = p;
+      const winner = pickWinner(heldStack, priority);
+      if (winner !== null && mode === 'mono') {
+        const t = ctx.currentTime + SCHED_LOOKAHEAD_S;
+        const vOct = midiToVOct(winner) + currentBendVOct;
+        pitchSrc.offset.cancelScheduledValues(t);
+        pitchSrc.offset.setValueAtTime(vOct, t);
+      }
+      notify();
+    }
+
+    function setRetrig(r: boolean): void {
+      retrig = r;
+      notify();
+    }
+
+    function setMode(m: LaneMode): void {
+      if (m === mode) return;
+      mode = m;
+      // Switching modes: clear voices so the inactive output bank goes
+      // quiet (poly→mono leaves no stranded poly gates; mono→poly drops
+      // the mono gate so only poly speaks).
+      panic();
+      notify();
+    }
+
+    function learnCcA(): void {
+      learningCcA = true;
+      learningCcB = false; // only learn one at a time
+      notify();
+    }
+
+    function learnCcB(): void {
+      learningCcB = true;
+      learningCcA = false;
+      notify();
+    }
+
+    function setCcA(cc: number | null): void {
+      ccA = cc;
+      learningCcA = false;
+      notify();
+    }
+
+    function setCcB(cc: number | null): void {
+      ccB = cc;
+      learningCcB = false;
+      notify();
+    }
+
+    function setNoteGateNote(n: number): void {
+      noteGateNote = Math.max(0, Math.min(127, Math.round(n)));
+      notify();
+    }
+
+    const cardApi: MidiLaneApi = {
+      connect,
+      selectDevice,
+      setChannels,
+      setPriority,
+      setRetrig,
+      setMode,
+      learnCcA,
+      learnCcB,
+      setCcA,
+      setCcB,
+      setNoteGateNote,
+      getState: snapshotState,
+      subscribe(cb) {
+        subscriber = cb;
+        cb(snapshotState());
+        return () => {
+          if (subscriber === cb) subscriber = null;
+        };
+      },
+    };
+
+    return {
+      domain: 'audio',
+      inputs: new Map(),
+      outputs: new Map([
+        ['pitch_cv',    { node: pitchSrc,    output: 0 }],
+        ['gate',        { node: gateSrc,     output: 0 }],
+        ['velocity_cv', { node: velSrc,      output: 0 }],
+        ['cc_a',        { node: ccASrc,      output: 0 }],
+        ['cc_b',        { node: ccBSrc,      output: 0 }],
+        ['note_gate',   { node: noteGateSrc, output: 0 }],
+        ['poly',        { node: poly.output, output: 0 }],
+      ]),
+      setParam() {
+        // No AudioParam-style knobs.
+      },
+      readParam() {
+        return undefined;
+      },
+      read(key) {
+        if (key === 'card-api') return cardApi;
+        if (key === 'state') return snapshotState();
+        return undefined;
+      },
+      dispose() {
+        if (access) {
+          for (const inp of access.inputs.values()) inp.onmidimessage = null;
+          access.onstatechange = null;
+          access = null;
+        }
+        subscriber = null;
+        for (const s of [pitchSrc, gateSrc, velSrc, ccASrc, ccBSrc, noteGateSrc]) {
+          try { s.stop(); } catch { /* */ }
+          s.disconnect();
+        }
+        poly.dispose();
+      },
+    };
+  },
+};

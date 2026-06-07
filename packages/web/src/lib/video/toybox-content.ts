@@ -312,7 +312,7 @@ export async function getContent(id: string): Promise<{ meta: ToyboxContent; gls
 
 /** Max byte size we accept for a disk-loaded shader/OBJ text source (sanity cap;
  *  the source rides the Y.Doc so it must stay small — this is NOT the separate
- *  50MB video cap). 2 MB of GLSL/OBJ text is enormous for either format. */
+ *  100MB video cap). 2 MB of GLSL/OBJ text is enormous for either format. */
 export const MAX_CUSTOM_SOURCE_BYTES = 2 * 1024 * 1024;
 
 /** djb2 string hash → unsigned 32-bit, base-36. Cheap, stable, dependency-free —

@@ -480,10 +480,16 @@ for (const seq of [
   });
 }
 
-// QUARANTINED (task #12): SCORE-playhead currentNoteId is timing-nondeterministic
-// under CI load — read after runFor(200) lands on a tick before/after n0 (env-amplitude
-// /noteId nondeterminism). Fails even with gate retries=2 (shard-1 run 27047780743).
-test.fixme('score: tickIndex advances + currentNoteId resolves to laid-down note', async ({ page }) => {
+// task #12 (re-enabled, wave-3): SCORE-playhead `currentNoteId` was read after a
+// FLAT runFor(200) + a single read, so under CI load the read could land on a
+// tick before the scheduler had emitted n0 at all (emitTick reads the score data
+// live, and the playhead only reports a note once its scheduled atTime has passed
+// in audio time). The fix is to AWAIT the deterministic playhead signal: poll
+// `currentNoteId` until it resolves to the laid-down note, with a bounded budget.
+// Once n0 has sounded the playhead latches it (createPlayheadTrackerOf keeps the
+// last-sounding value), so this is monotonic — no before/after race remains. The
+// poll backs off (250→500→1000ms) so we don't hammer engine.read under contention.
+test('score: tickIndex advances + currentNoteId resolves to laid-down note', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
@@ -504,18 +510,23 @@ test.fixme('score: tickIndex advances + currentNoteId resolves to laid-down note
     });
   });
 
-  await runFor(page, 200);
-
-  const noteId = await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const eng = w.__engine?.();
-    return eng?.read(w.__patch.nodes['sc'], 'currentNoteId') ?? null;
-  });
-
-  expect(noteId).toBe('n0');
+  // Await the playhead reaching n0 instead of a flat wait + single read. The
+  // playhead latches the last-sounding note id, so once n0 has been emitted the
+  // value stays 'n0' — polling for it is deterministic regardless of CI timing.
+  await expect
+    .poll(
+      async () =>
+        await page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __engine?: () => { read: (n: { id: string; type: string; domain: string }, k: string) => unknown } | null;
+            __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+          };
+          const eng = w.__engine?.();
+          return eng?.read(w.__patch.nodes['sc'], 'currentNoteId') ?? null;
+        }),
+      { timeout: 10_000, intervals: [250, 500, 1000] },
+    )
+    .toBe('n0');
 });
 
 test('cartesian: external clock drives pitch output (poly cable, lane 0 = pitch)', async ({ page }) => {

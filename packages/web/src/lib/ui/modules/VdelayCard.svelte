@@ -10,6 +10,8 @@
   import { vdelayDef, VDELAY_MAX_DELAY } from '$lib/video/modules/vdelay';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import HdBufferResSelect from '$lib/ui/modules/HdBufferResSelect.svelte';
+  import { BUFFER_RES_SD } from '$lib/video/buffer-res';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -47,6 +49,13 @@
     <Fader value={p('feedback')}   min={0} max={0.95}             defaultValue={vdelayDef.params.find((x) => x.id === 'feedback')!.defaultValue}   label="FB"    curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" />
     <Fader value={p('mix')}        min={0} max={1}                defaultValue={vdelayDef.params.find((x) => x.id === 'mix')!.defaultValue}        label="Mix"   curve="linear" onchange={setParam('mix')} moduleId={id} paramId="mix" />
     <Fader value={p('colorShift')} min={0} max={1}                defaultValue={vdelayDef.params.find((x) => x.id === 'colorShift')!.defaultValue} label="Color" curve="linear" onchange={setParam('colorShift')} moduleId={id} paramId="colorShift" />
+  </div>
+  <div class="hd-res-row" data-testid="vdelay-hd-res-row">
+    <HdBufferResSelect
+      moduleId={id}
+      value={node?.params?.bufferRes ?? BUFFER_RES_SD}
+      onchange={setParam('bufferRes')}
+    />
   </div>
 </div>
 

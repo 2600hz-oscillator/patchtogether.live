@@ -286,7 +286,7 @@ test.describe('TOYBOX preset SAVE + zip EXPORT/IMPORT', () => {
     await expect(page.locator('[data-testid="toybox-preset-error"]')).toContainText(/preset\.json|TOYBOX/i, { timeout: 10_000 });
   });
 
-  test('a >50 MB video upload is rejected inline before attaching', async ({ page }) => {
+  test('a >100 MB video upload is rejected inline before attaching', async ({ page }) => {
     test.setTimeout(120_000);
     await setup(page);
 
@@ -303,12 +303,13 @@ test.describe('TOYBOX preset SAVE + zip EXPORT/IMPORT', () => {
     // works on a hidden input, so wait for ATTACHED rather than VISIBLE.
     await expect(page.locator('[data-testid="toybox-video-input"]')).toHaveCount(1, { timeout: 15_000 });
 
-    // Playwright caps an in-memory setInputFiles buffer at 50 MB, so write a 51 MB
-    // (sparse) file to a temp path and pass that — exercises the real .size check.
-    const dir = mkdtempSync(join(tmpdir(), 'toybox-50mb-'));
+    // Write a 101 MB (sparse) file to a temp path + pass that — exercises the real
+    // .size check against the 100 MB cap (MAX_VIDEO_BYTES). (setInputFiles streams
+    // a path, so this isn't bound by Playwright's in-memory buffer limit.)
+    const dir = mkdtempSync(join(tmpdir(), 'toybox-bigvid-'));
     const bigPath = join(dir, 'huge.mp4');
     try {
-      writeFileSync(bigPath, Buffer.alloc(51 * 1024 * 1024));
+      writeFileSync(bigPath, Buffer.alloc(101 * 1024 * 1024));
       await page.locator('[data-testid="toybox-video-input"]').setInputFiles(bigPath);
 
       // Rejected inline; the layer's videoName never gets set.

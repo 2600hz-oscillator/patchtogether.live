@@ -297,6 +297,19 @@ const DRIVERS: Record<string, PerPortDriver> = {
     ] },
     note: 'MACSEQ: 4 steps on + isPlaying=1; pitch/gate/modelcv/clock pulse',
   },
+  writeseq: {
+    // Recording step-sequencer. Seed 4 on-steps + isPlaying=1 so the internal
+    // clock plays them and pitch/gate/clock emit (record/pass-through are
+    // additive — the seeded grid alone produces output). midi 60/64/67/72.
+    params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.5 },
+    data: { steps: [
+      { on: true, midi: 60 },
+      { on: true, midi: 64 },
+      { on: true, midi: 67 },
+      { on: true, midi: 72 },
+    ] },
+    note: 'WRITESEQ: 4 steps on + isPlaying=1; pitch/gate/clock pulse',
+  },
   hydrogen: {
     // Toggle every cell on track 0 (BD) so the kick fires on every step.
     params: { isPlaying: 1, bpm: 240, gain: 1 },
@@ -820,6 +833,80 @@ const DRIVERS: Record<string, PerPortDriver> = {
       }, sutId);
     },
     note: 'MIDICVBUDDY: mock requestMIDIAccess + send note-on; pitch_cv/gate/velocity_cv emit',
+  },
+
+  // ───── MIDI LANE — mock requestMIDIAccess + send note-on + CCs ─────
+  //
+  // Drives pitch_cv / gate / velocity_cv (sustained note-on) + cc_a (CC1)
+  // + cc_b (CC7, assigned via seeded data). note_gate + poly are exempt
+  // (single brief pulse / poly-mode-only) — see EXEMPT_OUTPUT_EMIT.
+  midiLane: {
+    pageSetup: async (page) => {
+      await page.addInitScript(() => {
+        const handlers: Array<(ev: { data: Uint8Array; timeStamp: number }) => void> = [];
+        const input = {
+          id: 'fake-midi-input-0',
+          name: 'Synthetic MIDI (Playwright)',
+          state: 'connected',
+          set onmidimessage(fn: ((ev: { data: Uint8Array; timeStamp: number }) => void) | null) {
+            handlers.length = 0;
+            if (fn) handlers.push(fn);
+          },
+          get onmidimessage() { return handlers[0] ?? null; },
+        };
+        const inputsMap = new Map([[input.id, input]]);
+        const access = {
+          inputs: inputsMap,
+          outputs: new Map(),
+          onstatechange: null as (() => void) | null,
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (navigator as any).requestMIDIAccess = async () => access;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).__fakeMidiSend = (bytes: number[]) => {
+          const ev = { data: new Uint8Array(bytes), timeStamp: performance.now() };
+          for (const h of handlers) h(ev);
+        };
+      });
+    },
+    postSpawn: async (page, sutId) => {
+      await page.evaluate(async (id) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+          } | null;
+          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+          __fakeMidiSend?: (bytes: number[]) => void;
+        };
+        const eng = w.__engine?.();
+        const node = w.__patch.nodes[id];
+        if (!eng || !node) return;
+        const api = eng.read(node, 'card-api') as
+          | {
+              connect: () => Promise<boolean>;
+              setCcB: (cc: number | null) => void;
+            }
+          | undefined;
+        if (api) {
+          await api.connect();
+          // cc_a defaults to CC1 (mod wheel). Assign cc_b to CC7 via the
+          // card API — the factory captured ccB at construction, so a
+          // post-spawn node.data write wouldn't reach it; the API setter
+          // does. (cc_b is unassigned by default.)
+          api.setCcB(7);
+        }
+        const send = w.__fakeMidiSend;
+        if (!send) return;
+        // Note-on, channel 1, MIDI 72 (C5 = +1.0 V/oct), velocity 100 —
+        // held for the sample window so gate stays high + pitch_cv +
+        // velocity_cv latch above the 0.005 floor.
+        send([0x90, 72, 100]);
+        // CC1 (mod wheel) = 127 → cc_a = 1.0. CC7 (volume) = 127 → cc_b = 1.0.
+        send([0xb0, 1, 127]);
+        send([0xb0, 7, 127]);
+      }, sutId);
+    },
+    note: 'MIDI LANE: mock requestMIDIAccess + send note-on (pitch/gate/vel) + CC1/CC7 (cc_a/cc_b); note_gate/poly exempt',
   },
 
   // ───── VIDEOOUT — wire ACIDWARP.out into .in so .out passes through ─────

@@ -32,6 +32,7 @@
   import { patch } from '$lib/graph/store';
   import { mandelbulbDef, MB_SLICE_Y_RANGE } from '$lib/video/modules/mandelbulb';
   import type { VideoEngine } from '$lib/video/engine';
+  import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
   // Pure bulb-slice readout — the IDENTICAL fn the engine factory + worklet run,
@@ -88,8 +89,11 @@
   function toggleSpin(): void { set('autospin')(spinOn ? 0 : 1); }
   function toggleSlice(): void { set('slice')(sliceOn ? 0 : 1); }
 
-  function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
-    const srcAspect = ENGINE_W / ENGINE_H;
+  function fitRect(
+    cw: number,
+    ch: number,
+    srcAspect: number = ENGINE_W / ENGINE_H,
+  ): { x: number; y: number; w: number; h: number } {
     const dstAspect = cw / ch;
     if (dstAspect > srcAspect) {
       const h = ch;
@@ -227,7 +231,7 @@
     const ch = canvasEl.height;
     ctx2d.fillStyle = '#050608';
     ctx2d.fillRect(0, 0, cw, ch);
-    const r = fitRect(cw, ch);
+    const r = fitRect(cw, ch, liveEngineAspect(videoEngine));
     ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
     // The 2D slice readout (display #2) only renders while SLICE is ON.
     if (sliceOn) drawSliceReadout();

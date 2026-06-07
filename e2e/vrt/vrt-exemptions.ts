@@ -200,6 +200,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // which proves the headline MACSEQ→MACROOSCILLATOR MODELCV wiring works.
   // A follow-up PR will capture the darwin + linux pixel baselines.
   macseq: 'VRT baseline pending; e2e/tests/macseq.spec.ts covers MODELCV wiring',
+  // WRITESEQ — recording step-sequencer. VRT baseline pending (the card is a
+  // standard grid + fader card with a pulsing REC indicator + animated
+  // playhead, like MACSEQ, which would need masking before a stable pixel
+  // baseline). Functional coverage is the deterministic alignment +
+  // transport-rule unit tests (writeseq.test.ts / writeseq-alignment.test.ts /
+  // writeseq-transport.test.ts) + e2e/tests/writeseq.spec.ts. A follow-up PR
+  // captures the darwin + linux baselines via the vrt-update.yml workflow.
+  writeseq: 'VRT baseline pending; unit (alignment + transport) + e2e/tests/writeseq.spec.ts provide coverage. Capture darwin/linux baselines via vrt-update.yml in a follow-up.',
   // RINGS first-slice PR: VRT baseline pending; ART + unit + E2E
   // provide coverage. Linux baseline is darwin-only for v1; a
   // follow-up PR will capture both platforms and promote into MODULES.
@@ -277,6 +285,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // depends on hardware that isn't present in CI. Unit + E2E (mock-MIDI smoke)
   // provide coverage.
   midiclock: 'card content depends on connected MIDI device; unit + E2E provide coverage',
+  // MIDI LANE: same rationale as midiCvBuddy — the rich card UI (device
+  // picker, channel/mode/CC/note controls, live readout) only appears AFTER
+  // Connect, which depends on hardware absent in CI; the pre-Connect state is
+  // just the "Connect MIDI…" button + hint. Unit (midi-lane.test.ts) + E2E
+  // (midi-lane.spec.ts + per-port driver) provide coverage.
+  midiLane: 'card content depends on connected MIDI device; unit + E2E provide coverage',
   // PONG research prototype: animated game state (ball moving) defeats a
   // deterministic single-frame baseline. Unit + ART + E2E provide coverage
   // until either (a) a deterministic-time test harness is added so VRT can

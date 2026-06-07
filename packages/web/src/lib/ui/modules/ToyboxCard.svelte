@@ -60,6 +60,9 @@
     type ToyboxVideoSource,
   } from '$lib/video/toybox-content';
   import type { VideoEngine } from '$lib/video/engine';
+  import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
+  import HdBufferResSelect from '$lib/ui/modules/HdBufferResSelect.svelte';
+  import { BUFFER_RES_SD } from '$lib/video/buffer-res';
   import {
     canvasToEnginePx,
     makeMouseState,
@@ -107,7 +110,6 @@
   import ToyboxNodeMenu from './ToyboxNodeMenu.svelte';
   import ToyboxKeyerConfig from './ToyboxKeyerConfig.svelte';
   import ToyboxFeedbackConfig from './ToyboxFeedbackConfig.svelte';
-  import ToyboxOpConfig from './ToyboxOpConfig.svelte';
   import {
     CV_PORT_IDS,
     listCvTargets,
@@ -387,6 +389,14 @@
   function layerParamId(pid: string): string {
     return `layer:${activeLayer}:${pid}`;
   }
+
+  // Node-level param setter (NOT per-layer) — used by the HD bufferRes dropdown,
+  // which is a single module param sizing the float feedback/history rings.
+  const setNodeParam = (pid: string) => (v: number) => {
+    const t = patch.nodes[id];
+    if (t) t.params[pid] = v;
+    bumpRev();
+  };
 
   // ───────────────────── IMAGE / VIDEO INPUT LAYERS (#39) ─────────────────────
   //
@@ -1157,49 +1167,6 @@
     }
   });
 
-  // ── GENERIC OP CONFIG popover ("Configure…" for any non-keyer/non-feedback op) ──
-  // The #82 follow-up: every batch op gets a discoverable right-click Configure
-  // popover exposing its OP_PARAMS (knobs + enum <select>s). MIDI/CONTROLSURFACE
-  // sync rides the SAME `combine:<nodeId>:<param>` paramId the side strip uses, so
-  // right-click → MIDI-map + → Send to control surface already work for all ops.
-  interface OpConfigState {
-    open: boolean;
-    x: number;
-    y: number;
-    nodeId: string;
-  }
-  let opConfig = $state<OpConfigState | null>(null);
-
-  /** Open the generic op-config popover (no-op for keyer/feedback/source/output —
-   *  those have bespoke handling). */
-  function doConfigureOp(gid: string, x: number, y: number): void {
-    const n = nodeById(gid);
-    if (!n || n.kind === 'source' || n.kind === 'output') return;
-    if (isKeyerKind(n.kind) || n.kind === 'feedback') return;
-    opConfig = { open: true, x, y, nodeId: gid };
-  }
-
-  function closeOpConfig(): void {
-    opConfig = null;
-  }
-
-  // Fresh SNAPSHOT keyed on layersRev (same reasoning as feedbackConfigNode: an
-  // enum <select> swap is an in-place Yjs mutation; a same-reference proxy would
-  // not re-run the child's deriveds).
-  let opConfigNode = $derived.by<ToyboxGraphNode | undefined>(() => {
-    void layersRev;
-    if (!opConfig) return undefined;
-    const n = nodeById(opConfig.nodeId);
-    return n ? { id: n.id, kind: n.kind, x: n.x, y: n.y, params: { ...(n.params ?? {}) } } : undefined;
-  });
-  // Close if its node disappears or becomes a keyer/feedback/source/output.
-  $effect(() => {
-    if (opConfig && (!opConfigNode || opConfigNode.kind === 'source' || opConfigNode.kind === 'output'
-      || isKeyerKind(opConfigNode.kind) || opConfigNode.kind === 'feedback')) {
-      opConfig = null;
-    }
-  });
-
   /** Surface a connect/patch rejection through the existing connectMsg banner. */
   function showConnectError(error: string | undefined): void {
     connectMsg =
@@ -1960,8 +1927,29 @@
   // engine's pinned-iTime FBO exactly.
   let frozen = false;
 
-  function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
-    const srcAspect = ENGINE_W / ENGINE_H;
+  /** Live video-engine render res (follows HD mode). Falls back to the SD
+   *  ENGINE_W×ENGINE_H constant when the engine isn't up yet. Used both for the
+   *  letterbox aspect and the iMouse canvas→engine-px mapping. */
+  function liveEngineRes(): { width: number; height: number } {
+    const e = engineCtx.get();
+    if (e) {
+      try {
+        const ve = e.getDomain<VideoEngine>('video');
+        const w = ve?.canvas?.width ?? 0;
+        const h = ve?.canvas?.height ?? 0;
+        if (w > 0 && h > 0) return { width: w, height: h };
+      } catch {
+        /* engine not ready — fall through to SD default */
+      }
+    }
+    return { width: ENGINE_W, height: ENGINE_H };
+  }
+
+  function fitRect(
+    cw: number,
+    ch: number,
+    srcAspect: number = ENGINE_W / ENGINE_H,
+  ): { x: number; y: number; w: number; h: number } {
     const dstAspect = cw / ch;
     if (dstAspect > srcAspect) {
       const h = ch;
@@ -1989,8 +1977,11 @@
     // Pointer in the canvas's INTRINSIC pixel space (CANVAS_W × CANVAS_H).
     const cx = ((ev.clientX - box.left) / box.width) * canvasEl.width;
     const cy = ((ev.clientY - box.top) / box.height) * canvasEl.height;
-    const rect = fitRect(canvasEl.width, canvasEl.height);
-    return canvasToEnginePx(cx, cy, rect, ENGINE_W, ENGINE_H);
+    // Use the LIVE engine res so iMouse maps correctly in HD (the FBO may be
+    // 1920×1080 etc., not the SD 640×480 constant).
+    const eng = liveEngineRes();
+    const rect = fitRect(canvasEl.width, canvasEl.height, eng.width / eng.height);
+    return canvasToEnginePx(cx, cy, rect, eng.width, eng.height);
   }
 
   /** Push the current iMouse vec4 to the engine for THIS node (called each rAF
@@ -2046,7 +2037,7 @@
     const ch = canvasEl.height;
     ctx2d.fillStyle = '#050608';
     ctx2d.fillRect(0, 0, cw, ch);
-    const r = fitRect(cw, ch);
+    const r = fitRect(cw, ch, liveEngineAspect(videoEngine));
     ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
   }
 
@@ -2290,6 +2281,13 @@
         {/each}
       </ul>
     {/if}
+    <div class="hd-res-row" data-testid="toybox-hd-res-row">
+      <HdBufferResSelect
+        moduleId={id}
+        value={node?.params?.bufferRes ?? BUFFER_RES_SD}
+        onchange={setNodeParam('bufferRes')}
+      />
+    </div>
   </div>
 
   <!-- LAYER-INDEX selector: a tab per layer (1-indexed labels, 0-indexed state).
@@ -2869,7 +2867,6 @@
     onpatchtooutput={() => { if (toyboxMenu?.nodeId) doPatchToOutput(toyboxMenu.nodeId); }}
     onconfigure={() => { if (toyboxMenu?.nodeId) doConfigureKeyer(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
     onconfigurefeedback={() => { if (toyboxMenu?.nodeId) doConfigureFeedback(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
-    onconfigureop={() => { if (toyboxMenu?.nodeId) doConfigureOp(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
     onresetfeedback={() => { if (toyboxMenu?.nodeId) doResetFeedback(toyboxMenu.nodeId); }}
     ondisconnect={() => { if (toyboxMenu?.nodeId) doDisconnect(toyboxMenu.nodeId); }}
     onduplicate={() => { if (toyboxMenu?.nodeId) doDuplicate(toyboxMenu.nodeId); }}
@@ -2906,18 +2903,6 @@
     onparam={(pid, v) => { if (feedbackConfig) { setCombineNodeParam(id, feedbackConfig.nodeId, pid, v); bumpRev(); } }}
     moduleId={id}
     onclose={closeFeedbackConfig}
-  />
-
-  <!-- Generic op-config popover ("Configure…" for the 12 batch ops). -->
-  <ToyboxOpConfig
-    open={!!opConfig?.open && !!opConfigNode}
-    x={opConfig?.x ?? 0}
-    y={opConfig?.y ?? 0}
-    node={opConfigNode}
-    displayName={opConfig ? nodeLabel(opConfigNode ?? ({ id: opConfig.nodeId } as ToyboxGraphNode)) : ''}
-    onparam={(pid, v) => { if (opConfig) { setCombineNodeParam(id, opConfig.nodeId, pid, v); bumpRev(); } }}
-    moduleId={id}
-    onclose={closeOpConfig}
   />
   </div><!-- /toybox-col-center -->
 

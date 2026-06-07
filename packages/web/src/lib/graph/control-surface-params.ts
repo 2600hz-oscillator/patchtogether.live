@@ -25,11 +25,17 @@ import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
 import type { ModuleNode, ParamDef } from '$lib/graph/types';
 import { getModuleDef } from '$lib/audio/module-registry';
 import { getVideoModuleDef } from '$lib/video/module-registry';
-import { CONTROL_SURFACE_TYPE } from '$lib/graph/control-surface';
+import {
+  CONTROL_SURFACE_TYPE,
+  readSurfaceData,
+  type ControlSurfaceData,
+} from '$lib/graph/control-surface';
 import {
   resolveToyboxParam,
+  parseCombineParamId,
   type ResolvedToyboxParam,
 } from '$lib/video/toybox-control-params';
+import { isCombineGraph } from '$lib/video/toybox-combine-graph';
 
 /** Module types whose params are namespaced/nested in node.data and so resolve
  *  through a bespoke adapter rather than the flat node.params path. */
@@ -117,4 +123,77 @@ export function paramDefForBinding(
   paramId: string,
 ): ParamDef | null {
   return resolveSurfaceParam(node, paramId)?.def ?? null;
+}
+
+// ───────────────────── auto-prune dangling proxied controls ─────────────────────
+//
+// When the SOURCE of a proxied control disappears, the control must leave the
+// surface (it already renders nothing — groups skip an unresolvable binding —
+// but the BINDING lingers in node.data, so the next Electra flash would emit a
+// dead control). pruneSurfaceDangling removes such bindings from the surface's
+// data. It is deliberately CONSERVATIVE: it deletes a binding ONLY when we are
+// CERTAIN the target is gone, never on a transient "source not loaded yet" state
+// (which would wrongly nuke valid bindings on page load / mid remote-sync).
+
+/**
+ * High-confidence "this binding's source no longer exists" test. Returns true
+ * ONLY for the two cases the user named, both unambiguous:
+ *   1. the source MODULE is absent from the patch (a mapped non-toybox control
+ *      whose module was deleted), or
+ *   2. a TOYBOX `combine:<nodeId>:<param>` binding whose combine graph IS loaded
+ *      (isCombineGraph) but no longer contains `<nodeId>` (the toybox was
+ *      reconfigured / that op node was deleted).
+ * Everything else returns false — a not-yet-loaded toybox (combine absent) is
+ * NOT pruned, so a valid binding is never lost to a transient null.
+ */
+export function bindingDefinitelyDangling(
+  node: ModuleNode | undefined,
+  paramId: string,
+): boolean {
+  if (!node) return true; // (1) source module deleted
+  if (node.type === 'toybox') {
+    const parsed = parseCombineParamId(paramId);
+    if (parsed) {
+      const combine = (node.data as { combine?: unknown } | undefined)?.combine;
+      if (!isCombineGraph(combine)) return false; // combine not loaded → not confident
+      return !combine.nodes.some((n) => n.id === parsed.nodeId); // (2) op node gone
+    }
+  }
+  return false;
+}
+
+/**
+ * Drop every binding/screen on surface `surfaceId` whose source is DEFINITELY
+ * gone (see bindingDefinitelyDangling). Splices the live arrays IN PLACE inside
+ * one LOCAL_ORIGIN transaction (never spreads an already-integrated array — the
+ * [[yjs-save-load-real-ydoc]] trap), so the change rides the Y.Doc to rack-mates
+ * + the undo stack. No-op (and NO transaction, so no churn) when nothing dangles.
+ * Returns the number of entries removed. Safe to call on every graph change.
+ */
+export function pruneSurfaceDangling(surfaceId: string): number {
+  const data = readSurfaceData(patch.nodes[surfaceId]);
+  const dropB = (data.bindings ?? []).filter((b) =>
+    bindingDefinitelyDangling(patch.nodes[b.moduleId] as ModuleNode | undefined, b.paramId),
+  ).length;
+  const dropS = (data.screens ?? []).filter((s) => !patch.nodes[s.moduleId]).length;
+  if (dropB === 0 && dropS === 0) return 0;
+  ydoc.transact(() => {
+    const live = patch.nodes[surfaceId];
+    if (!live?.data) return;
+    const d = live.data as ControlSurfaceData;
+    if (Array.isArray(d.bindings)) {
+      for (let i = d.bindings.length - 1; i >= 0; i--) {
+        const b = d.bindings[i]!;
+        if (bindingDefinitelyDangling(patch.nodes[b.moduleId] as ModuleNode | undefined, b.paramId)) {
+          d.bindings.splice(i, 1); // remove in place
+        }
+      }
+    }
+    if (Array.isArray(d.screens)) {
+      for (let i = d.screens.length - 1; i >= 0; i--) {
+        if (!patch.nodes[d.screens[i]!.moduleId]) d.screens.splice(i, 1); // remove in place
+      }
+    }
+  }, LOCAL_ORIGIN);
+  return dropB + dropS;
 }

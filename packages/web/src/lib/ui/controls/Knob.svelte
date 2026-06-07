@@ -367,6 +367,14 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     pointer-events: none;
+    /* Keep long param labels (e.g. "CUTOFF", "RES 2") from spilling past the
+       knob and colliding with a sibling knob's label in a cramped host (the
+       Control Surface group box). Clamp to the wrap width + ellipsize. */
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
   }
   /* MIDI Learn visual states (mirror Fader.svelte). */
   .knob-wrap.midi-learning {

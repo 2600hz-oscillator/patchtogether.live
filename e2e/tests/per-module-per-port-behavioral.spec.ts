@@ -534,6 +534,21 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   //                the patched run advances on the external clock → delta.
   // bpm=240 keeps the internal fallback fast for the play_cv toggle case.
   sequencer: { isPlaying: 0, bpm: 240, length: 4, gateLength: 0.5 },
+  // writeseq: same shape as sequencer. isPlaying=0 so the CONTROL (test input
+  // unpatched) is SILENT, and the only drivable inputs that perturb the output
+  // are the ones that START the run:
+  //   * clock    : shouldSequencerRun(playing=0, clockConnected, playCv=0) =
+  //                clockConnected → the patched run advances on the external
+  //                clock + plays the seeded steps; control is silent → delta.
+  //   * play_cv  : a rising edge toggles isPlaying → the patched run plays the
+  //                seeded grid; control is silent → delta.
+  //   * cv       : pass-through to PITCH engages while the context-gate (fired
+  //                on `gate` for the cv test) is high → pitch follows cv → delta.
+  // gate/rec/reset_cv/queue1..4_cv can't perturb the observed output in this
+  // isolated, isPlaying=0 harness — see BEHAVIORAL_SWEEP_EXEMPT. recArm stays 0
+  // so a context-gate on `gate` (fired for the cv test) doesn't start recording
+  // and muddy the control. populateAllSequencerSteps seeds the SUT's grid.
+  writeseq: { isPlaying: 0, recArm: 0, overdub: 0, bpm: 240, length: 4, gateLength: 0.5 },
   // elements — MI Elements modal/string resonator. The DEFAULT exciter mix
   // is strikeLevel=0.8, bowLevel=0, blowLevel=0 (see elements.ts params), so
   // the bow/blow CV scalers (bowlvl_cv / blowlvl_cv / blowmeta_cv) modulate
@@ -643,6 +658,18 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'sequencer.next_cv':   'latches queuedNav=next, resolved at sequence-end to an OCCUPIED slot (none in spawn harness) → no-op; covered by sequencer slot/nav specs',
   'sequencer.prev_cv':   'latches queuedNav=prev, resolved at sequence-end to an OCCUPIED slot (none in spawn harness) → no-op; covered by sequencer slot/nav specs',
   'sequencer.random_cv': 'latches queuedNav=random, resolved at sequence-end to an OCCUPIED slot (none in spawn harness) → no-op; covered by sequencer slot/nav specs',
+
+  // ── WRITESEQ — recording step-sequencer. Behaviorally, cv (pass-through),
+  //    clock + play_cv (start the run + play the seeded grid) all perturb the
+  //    output (verified locally). The remaining gate-type inputs can't perturb
+  //    the observed output in the isolated, isPlaying=0 behavioral harness:
+  'writeseq.gate':      'with isPlaying=0 + recArm=0 (the behavioral context), a held gate only pass-throughs the CV input to PITCH — but the cv input is unpatched (0V) during the gate test, so PITCH stays 0 → no delta. The gate→record + pass-through paths are covered by writeseq.spec.ts (pass-through + record) + the alignment/transport unit tests.',
+  'writeseq.rec':       'rec toggles recArm, but with isPlaying=0 + no clock there is nothing to record/play → no observable delta. Covered by writeseq-transport.test.ts (T1: rec-gate toggles recArm) + writeseq.spec.ts.',
+  'writeseq.reset_cv':  'reset_cv snaps the playhead to step 0 silently (same class as sequencer.reset_cv); with isPlaying=0 the control is already at step 0 → no delta. Covered by writeseq-transport.test.ts + the shared transport-cv reset path.',
+  'writeseq.queue1_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op (same class as sequencer.queue1_cv); covered by the shared quicksave path.',
+  'writeseq.queue2_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by the shared quicksave path.',
+  'writeseq.queue3_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by the shared quicksave path.',
+  'writeseq.queue4_cv': 'sets queuedSlot, applied at sequence-end with a POPULATED slot (none in spawn harness) → no-op; covered by the shared quicksave path.',
 
   // ── SCORE.play_cv toggles transport. With it un-driven the SUT is
   //    in stop state (no output), with it driven the SUT plays.
@@ -1894,7 +1921,10 @@ async function populateAllSequencerSteps(page: Page): Promise<void> {
     w.__ydoc.transact(() => {
       for (const id of Object.keys(w.__patch.nodes)) {
         const node = w.__patch.nodes[id];
-        if (!node || node.type !== 'sequencer') continue;
+        // WRITESEQ shares the {on, midi} step shape with SEQUENCER, so seed it
+        // too — otherwise an isPlaying=0 control + a clock/play_cv patched run
+        // both emit silence (empty grid) and the behavioral sweep sees no delta.
+        if (!node || (node.type !== 'sequencer' && node.type !== 'writeseq')) continue;
         if (!node.data) node.data = {};
         node.data.steps = [
           { on: true, midi: 60 },
