@@ -667,7 +667,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
             "defaultValue": 0.8,
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -783,7 +783,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -894,7 +894,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -931,7 +931,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -968,7 +968,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1079,7 +1079,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1116,7 +1116,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1153,7 +1153,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1264,7 +1264,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1301,7 +1301,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1338,7 +1338,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1449,7 +1449,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1486,7 +1486,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1523,7 +1523,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1634,7 +1634,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1671,7 +1671,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1708,7 +1708,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1819,7 +1819,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -1856,7 +1856,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
@@ -2104,7 +2104,7 @@ exports[`emitPresetJson > full preset matches the committed snapshot 1`] = `
           {
             "formatter": undefined,
             "id": "value",
-            "max": 1,
+            "max": 100,
             "message": {
               "deviceId": 1,
               "max": 127,
