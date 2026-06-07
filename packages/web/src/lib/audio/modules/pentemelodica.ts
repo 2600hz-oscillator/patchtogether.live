@@ -13,7 +13,9 @@
 //   * exponential FM and through-phase PM, both driven by the voice's own
 //     audio-rate FM jack (fm1..fm5),
 //   * a pulse-width control for the square end of the morph,
-//   * its own ADSR envelope (gate edge from the poly lane).
+//   * its own gated amplitude envelope — but the A/D/S/R is SHARED across all
+//     five voices (one device-level ADSR; poly-adsr alignment with CUBE /
+//     WAVECEL / DX7). The gate edge comes from the poly lane.
 //
 // The five post-ADSR voices are summed through a stereo mixer (per-voice LEVEL
 // + equal-power PAN), then through an embedded multimode filter — a continuous
@@ -35,21 +37,22 @@
 //   voice1..voice5(audio): per-voice pre-mixer mono tap (post-ADSR, BEFORE
 //                          level/pan) — patch into your own VCA / filter / FX.
 //
-// ── Params (60: 5 voices × 12 + 4 filter) ──────────────────────────────────
-//   per voice vN_: tune(st) fine(¢) fm pm pw wave attack(s) decay(s) sustain
-//                  release(s) level pan
+// ── Params (48: 5 voices × 8 + 4 shared ADSR + 4 filter) ───────────────────
+//   per voice vN_: tune(st) fine(¢) fm pm pw wave level pan
+//   shared ADSR:   attack(s) decay(s) sustain release(s)   (feeds all voices)
 //   filter:        cutoff(Hz) resonance mode wetdry
 //
 // ── CV / patching ──────────────────────────────────────────────────────────
 //   This first slice exposes the poly chord bus + five per-voice FM jacks. The
-//   60 voice/filter params are panel controls (k-rate AudioParams); LFO-able
-//   cutoff / per-voice CV jacks are a deliberate follow-up — keep the v1
-//   surface to the six declared input buses.
+//   48 voice/ADSR/filter params are panel controls (k-rate AudioParams);
+//   LFO-able cutoff / per-voice CV jacks are a deliberate follow-up — keep the
+//   v1 surface to the six declared input buses.
 //
 // ── Usage ────────────────────────────────────────────────────────────────
 //   Patch MIDI LANE (mode=poly) or POLYSEQZ → poly to play chords; dial each
-//   voice's TUNE/FINE for unison/detune/spread, set per-voice ADSR + WAVE for
-//   the timbre, then sculpt the whole stack with the embedded filter. Tap a
+//   voice's TUNE/FINE for unison/detune/spread, set the shared ADSR + per-voice
+//   WAVE for the timbre, then sculpt the whole stack with the embedded filter.
+//   Tap a
 //   voiceN out to send one voice somewhere else (e.g. a reverb on the top
 //   voice only). The stereo OUT keeps the per-voice PAN spread.
 //
@@ -71,6 +74,7 @@ import {
   type PenteParams,
   type PenteVoiceParams,
   type PenteFilterParams,
+  type AdsrParams,
   // The shared DSP lib (node-importable IDENTICAL source the worklet bundles).
 } from '../../../../../dsp/src/lib/pentemelodica-dsp';
 
@@ -91,6 +95,10 @@ export interface PentemelodicaRenderInput {
   /** per-voice FM/PM modulator (constant). length PENTE_VOICES, default 0s. */
   fmInputs?: number[];
   voices: PenteVoiceParams[];
+  /** ONE shared amplitude A/D/S/R fed into every voice envelope. Defaults to
+   *  the param defaults (attack 0.001 / decay 0.1 / sustain 1 / release 0.005)
+   *  when omitted. */
+  adsr?: AdsrParams;
   filter: PenteFilterParams;
 }
 
@@ -100,7 +108,10 @@ export const pentemelodicaMath = {
   render(n: number, sr: number, input: PentemelodicaRenderInput) {
     const state = makePenteState();
     const out = makeRenderOut(n);
-    const params: PenteParams = { voices: input.voices, filter: input.filter };
+    const adsr: AdsrParams = input.adsr ?? {
+      attack: 0.001, decay: 0.1, sustain: 1, release: 0.005,
+    };
+    const params: PenteParams = { voices: input.voices, adsr, filter: input.filter };
     const fm = input.fmInputs ?? new Array(PENTE_VOICES).fill(0);
     renderPentemelodica(params, input.polyPitchGate, fm, n, sr, state, out);
     return out;
@@ -113,7 +124,8 @@ export const pentemelodicaMath = {
 
 type ParamDef = AudioModuleDef['params'][number];
 
-/** Build the per-voice param list (×5). */
+/** Build the per-voice param list (×5). The amplitude ADSR is NOT per-voice —
+ *  one shared A/D/S/R (added separately below) feeds every voice envelope. */
 function voiceParams(): ParamDef[] {
   const ps: ParamDef[] = [];
   for (let v = 1; v <= PENTE_VOICES; v++) {
@@ -124,10 +136,6 @@ function voiceParams(): ParamDef[] {
       { id: `v${v}_pm`,      label: 'PM',      defaultValue: 0,     min: -1,   max: 1,   curve: 'linear' },
       { id: `v${v}_pw`,      label: 'PW',      defaultValue: 0.5,   min: 0.05, max: 0.95, curve: 'linear' },
       { id: `v${v}_wave`,    label: 'Wave',    defaultValue: 0,     min: 0,    max: 1,   curve: 'linear' },
-      { id: `v${v}_attack`,  label: 'Atk',     defaultValue: 0.005, min: 0.001, max: 5,  curve: 'log', units: 's' },
-      { id: `v${v}_decay`,   label: 'Dec',     defaultValue: 0.1,   min: 0.001, max: 5,  curve: 'log', units: 's' },
-      { id: `v${v}_sustain`, label: 'Sus',     defaultValue: 0.7,   min: 0,    max: 1,   curve: 'linear' },
-      { id: `v${v}_release`, label: 'Rel',     defaultValue: 0.2,   min: 0.001, max: 5,  curve: 'log', units: 's' },
       { id: `v${v}_level`,   label: 'Level',   defaultValue: 0.8,   min: 0,    max: 1,   curve: 'linear' },
       { id: `v${v}_pan`,     label: 'Pan',     defaultValue: 0,     min: -1,   max: 1,   curve: 'linear' },
     );
@@ -139,7 +147,7 @@ export const pentemelodicaDef: AudioModuleDef = {
   type: 'pentemelodica',
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
-  label: 'PENTEMELODICA',
+  label: 'pentemelodica',
   category: 'sources',
   schemaVersion: 1,
   stereoPairs: [['out_l', 'out_r']],
@@ -166,6 +174,12 @@ export const pentemelodicaDef: AudioModuleDef = {
   ],
   params: [
     ...voiceParams(),
+    // ONE shared amplitude ADSR (poly-adsr alignment) — same ids/ranges/curves/
+    // defaults as CUBE's. Every voice envelope reads these (gated per-lane).
+    { id: 'attack',  label: 'A', defaultValue: 0.001, min: 0.001, max: 5, curve: 'log', units: 's' },
+    { id: 'decay',   label: 'D', defaultValue: 0.1,   min: 0.001, max: 5, curve: 'log', units: 's' },
+    { id: 'sustain', label: 'S', defaultValue: 1,     min: 0,     max: 1, curve: 'linear' },
+    { id: 'release', label: 'R', defaultValue: 0.005, min: 0.001, max: 5, curve: 'log', units: 's' },
     { id: 'cutoff',    label: 'Cutoff', defaultValue: 1000, min: 20, max: 20000, curve: 'log', units: 'Hz' },
     { id: 'resonance', label: 'Reso',   defaultValue: 0.2,  min: 0,  max: 0.99,  curve: 'linear' },
     { id: 'mode',      label: 'Mode',   defaultValue: 0,    min: 0,  max: 1,     curve: 'linear' },
