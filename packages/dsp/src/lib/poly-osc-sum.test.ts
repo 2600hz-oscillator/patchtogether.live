@@ -17,6 +17,8 @@ import { Envelope } from './adsr-env';
 import {
   polyEnvSum,
   monoEnvSample,
+  updateHeldPitch,
+  laneRenderVOct,
   POLY_SUM_VOICES,
   ENV_AUDIBLE_EPS,
   type AdsrParams,
@@ -158,5 +160,122 @@ describe('poly-osc-sum / monoEnvSample (gated mono path)', () => {
     const out = monoEnvSample(1, 1, e, adsr(), SR);
     expect(out.l).toBe(0);
     expect(out.r).toBe(0);
+  });
+});
+
+// ----------------------------------------------------------------------------
+// Held-pitch through ADSR release (the user-reported release-tail pitch bug).
+//
+// A poly VCO lane gated at pitch P, then released, must keep advancing its phase
+// at P (the played note) while its envelope is still audible — NOT snap to
+// 0 V/oct = C4. The two pure helpers (updateHeldPitch / laneRenderVOct) own that
+// logic; these tests model the worklet's exact structure (block-rate held-pitch
+// update, then per-sample phase advance at laneRenderVOct's chosen V/oct) and
+// measure the release-tail's effective frequency.
+//
+// FAILS before the fix / passes after: the `BUGGY_*` baselines below reproduce
+// the old block-local "laneVOct reset to 0, assigned only when gated" array, and
+// the assertions show the fixed helpers diverge from it on the release tail.
+// ----------------------------------------------------------------------------
+describe('poly-osc-sum / held pitch through release (release-tail pitch fix)', () => {
+  const C4_HZ = 261.626;
+
+  /** Hz of a [0,1) phase accumulator advanced once per sample at `voct`. */
+  function voctToHz(voct: number): number {
+    return C4_HZ * Math.pow(2, voct);
+  }
+
+  /** Measure the average per-sample phase increment (≡ freq/sr) over a window by
+   *  advancing a phase accumulator at the V/oct laneRenderVOct picks each sample.
+   *  `held`/`gated`/`envAudible` are block constants (the worklet samples them at
+   *  block boundaries) so this faithfully mirrors the render loop. */
+  function tailHz(
+    held: number[],
+    lane: number,
+    gated: boolean,
+    envAudible: boolean,
+    windowSamples = 256,
+  ): number {
+    const v = laneRenderVOct(held, lane, gated, envAudible);
+    let ph = 0;
+    let advTotal = 0;
+    const freq = voctToHz(v);
+    for (let i = 0; i < windowSamples; i++) {
+      const inc = freq / SR;
+      ph += inc;
+      while (ph >= 1) ph -= 1;
+      advTotal += inc;
+    }
+    return (advTotal / windowSamples) * SR;
+  }
+
+  it('lane 0 (single note): a released voice advances at the PLAYED pitch, not C4', () => {
+    // Play +1 V/oct (one octave up = C5 ≈ 523 Hz) on lane 0, then release.
+    const P = 1.0;
+    let held = 0; // fresh voice → 0
+    // Block while gated: held tracks the played pitch.
+    held = updateHeldPitch(held, true, P);
+    expect(held).toBe(P);
+    // Release: gate low, env still audible. held must NOT reset.
+    held = updateHeldPitch(held, false, /*lanePitch ignored when !gated*/ 0);
+    expect(held).toBe(P); // held through release — the core of the fix
+
+    // Render the release tail (gate low, envAudible true) at the chosen V/oct.
+    const releaseHz = tailHz([held, 0, 0, 0, 0], 0, false, true);
+    expect(releaseHz).toBeCloseTo(voctToHz(P), 1); // ≈ 523 Hz (C5), NOT 261 Hz
+
+    // ── before/after proof ──
+    // OLD buggy model: a block-local laneVOct reset to 0 each block, assigned
+    // ONLY when gated → on release lane-0's pitch reads 0 V/oct = C4.
+    const BUGGY_laneVOct = [0, 0, 0, 0, 0]; // reset every block (not held)
+    // gate is low on release, so the gated-only assignment never runs → stays 0.
+    const buggyReleaseHz = voctToHz(BUGGY_laneVOct[0]!); // = C4
+    expect(buggyReleaseHz).toBeCloseTo(C4_HZ, 1);
+    // The fix diverges from the bug by a full octave on the release tail.
+    expect(Math.abs(releaseHz - buggyReleaseHz)).toBeGreaterThan(200);
+  });
+
+  it('a higher lane (lane 3): release tail keeps its OWN played pitch, not lane-0 / C4', () => {
+    // Lane 0 holds a different pitch (root); lane 3 plays +0.5 V/oct then releases.
+    const root = 0.0;       // lane 0 root @ C4
+    const laneP = 0.5;      // lane 3 @ +6 semitones ≈ 370 Hz
+    const held = [root, 0, 0, 0, 0];
+    held[0] = updateHeldPitch(held[0]!, true, root);
+    held[3] = updateHeldPitch(held[3]!, true, laneP);
+    expect(held[3]).toBe(laneP);
+    // Release lane 3 (gate low, env still audible). Held survives.
+    held[3] = updateHeldPitch(held[3]!, false, 0);
+    expect(held[3]).toBe(laneP);
+
+    // Releasing lane 3 advances at its OWN held pitch (not lane-0's root, not C4).
+    const releaseHz = tailHz(held, 3, false, true);
+    expect(releaseHz).toBeCloseTo(voctToHz(laneP), 1);
+
+    // OLD buggy model: laneVOct reset to 0 each block → releasing lane 3 reads 0,
+    // and the old render fell back to laneVOct[0] (also 0) for non-own-pitch → C4.
+    const BUGGY_laneVOct = [0, 0, 0, 0, 0];
+    const buggyReleaseHz = voctToHz(BUGGY_laneVOct[3] || BUGGY_laneVOct[0]!);
+    expect(buggyReleaseHz).toBeCloseTo(C4_HZ, 1);
+    expect(Math.abs(releaseHz - buggyReleaseHz)).toBeGreaterThan(50);
+  });
+
+  it('a silent / never-gated lane tracks lane-0\'s held pitch (no pop on re-open)', () => {
+    // Lane 0 holds +1 V/oct; lane 2 never gated (held stays 0, env idle).
+    const held = [1.0, 0, 0, 0, 0];
+    // Not gated, not env-audible → laneRenderVOct returns lane-0's held pitch so a
+    // future re-open doesn't pop (preserves the existing silent-lane behavior).
+    const v = laneRenderVOct(held, 2, false, false);
+    expect(v).toBe(held[0]); // tracks lane 0, NOT its own (0) held value
+  });
+
+  it('held pitch tracks pitch-bend while the gate stays high', () => {
+    // While gated, held follows the live lane pitch (so a bend during the note is
+    // reflected); the held value is whatever was last seen gated when released.
+    let held = 0;
+    held = updateHeldPitch(held, true, 0.0);
+    held = updateHeldPitch(held, true, 0.25); // bend up a quarter octave
+    expect(held).toBe(0.25);
+    held = updateHeldPitch(held, false, 0); // release holds the bent pitch
+    expect(held).toBe(0.25);
   });
 });

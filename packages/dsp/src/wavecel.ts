@@ -26,7 +26,13 @@
 
 import { WavetableOsc, WAVETABLE_FRAME_SIZE, WtParamSmoother } from './lib/wavetable-osc';
 import { Envelope } from './lib/adsr-env';
-import { polyEnvSum, monoEnvSample, type AdsrParams } from './lib/poly-osc-sum';
+import {
+  polyEnvSum,
+  monoEnvSample,
+  updateHeldPitch,
+  laneRenderVOct,
+  type AdsrParams,
+} from './lib/poly-osc-sum';
 
 /** Poly bus shape (mirrors packages/web/src/lib/audio/poly.ts): 5 voice lanes,
  *  10 channels (ch 2i = lane-i pitch V/oct, ch 2i+1 = lane-i gate). */
@@ -117,6 +123,11 @@ class WavecelProcessor extends AudioWorkletProcessor {
   private everGated = false;
   private laneScratchL = new Float64Array(POLY_VOICES);
   private laneScratchR = new Float64Array(POLY_VOICES);
+  // PERSISTENT per-lane held V/oct — UPDATED while a lane is gated, HELD (never
+  // reset) when it's not, so a releasing voice (gate low, env>0) keeps advancing
+  // at the played pitch instead of snapping to 0 V/oct (C4). See updateHeldPitch
+  // / laneRenderVOct in lib/poly-osc-sum.ts (the release-tail pitch fix).
+  private heldVOct: Float64Array = new Float64Array(POLY_VOICES);
 
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
@@ -217,18 +228,22 @@ class WavecelProcessor extends AudioWorkletProcessor {
     // sample 0, so a sub-block 1→0→1 re-strike (faster than ~one block) is
     // missed. An intra-block scan is a documented follow-up.
     const laneGate: boolean[] = [false, false, false, false, false];
-    const laneVOct: number[] = [0, 0, 0, 0, 0];
     let anyPolyGate = false;
     if (polyIn) {
       for (let lane = 0; lane < POLY_VOICES; lane++) {
         const gateCh = polyIn[lane * 2 + 1];
         const pitchCh = polyIn[lane * 2];
         const g = gateCh && gateCh.length > 0 ? (gateCh[0] ?? 0) : 0;
-        if (g > 0.5) {
+        const gated = g > 0.5;
+        if (gated) {
           laneGate[lane] = true;
-          laneVOct[lane] = pitchCh && pitchCh.length > 0 ? (pitchCh[0] ?? 0) : 0;
           anyPolyGate = true;
         }
+        // Track this lane's pitch while gated; HOLD it through release so a
+        // releasing voice (gate low, env still audible) advances at the held
+        // (played) pitch, not 0 V/oct = C4 — the release-tail pitch fix.
+        const lanePitch = pitchCh && pitchCh.length > 0 ? (pitchCh[0] ?? 0) : 0;
+        this.heldVOct[lane] = updateHeldPitch(this.heldVOct[lane]!, gated, lanePitch);
       }
     }
 
@@ -304,8 +319,11 @@ class WavecelProcessor extends AudioWorkletProcessor {
         // lane-0's pitch) so a re-opened lane doesn't pop.
         for (let lane = 0; lane < POLY_VOICES; lane++) {
           const v = this.polyVoices[lane]!;
-          const ownPitch = laneGate[lane] || this.env[lane]!.value > 0;
-          const voct = (ownPitch ? laneVOct[lane]! : laneVOct[0]!) + trim;
+          // Held pitch: gated OR still releasing (env>0) → the lane's OWN held
+          // (played) pitch; silent/never-gated → lane-0's held pitch (no pop).
+          const voct = laneRenderVOct(
+            this.heldVOct, lane, laneGate[lane]!, this.env[lane]!.value > 0,
+          ) + trim;
           const { l, r } = v.step(voct, morph, spread, foldAmt);
           laneL[lane] = l;
           laneR[lane] = r;
