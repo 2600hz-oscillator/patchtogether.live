@@ -11,7 +11,7 @@ import { audioOutDef } from './audio-out';
 describe('audioOutDef: module-def shape', () => {
   it('declares type=audioOut, label=Audio Out, category=output', () => {
     expect(audioOutDef.type).toBe('audioOut');
-    expect(audioOutDef.label).toBe('Audio Out');
+    expect(audioOutDef.label).toBe('audio out');
     expect(audioOutDef.category).toBe('output');
   });
 

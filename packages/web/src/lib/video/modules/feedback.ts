@@ -96,7 +96,7 @@ export const feedbackDef: VideoModuleDef = {
   type: 'feedback',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'FEEDBACK',
+  label: 'feedback',
   category: 'effects',
   schemaVersion: 1,
   inputs: [

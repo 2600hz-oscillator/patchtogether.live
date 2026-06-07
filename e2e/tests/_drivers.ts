@@ -88,8 +88,6 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   analogVco:    { outputPort: 'sine', params: { tune: 0, fine: 0, pmAmount: 0, fmAmount: 0 } },
   // wavetableVco needs default wavePos to mid for an audible signal.
   wavetableVco: { outputPort: 'audio', params: { tune: 0, fine: 0, wavePos: 0.5, fmAmount: 0, pmAmount: 0 } },
-  // WAVVIZ same shape as wavetableVco.
-  wavviz:       { outputPort: 'audio', params: { tune: 0, fine: 0, wavePos: 0.5, fmAmount: 0, foldAmount: 0 } },
   // SWOLEVCO primary out, no upstream needed.
   swolevco:     { outputPort: 'out',   params: { tune: 0, fine: 0, timbre: 0.3, symmetry: 0.5, fold: 0, ratio: 0 } },
   // MOOG 921B — slave VCO. With freq_bus unpatched the worklet defaults to

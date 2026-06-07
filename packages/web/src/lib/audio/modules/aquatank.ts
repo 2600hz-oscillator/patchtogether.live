@@ -33,7 +33,7 @@ export const aquaTankDef: AudioModuleDef = {
   type: 'aquaTank',
   palette: { top: 'Audio modules', sub: 'Effects' },
   domain: 'audio',
-  label: 'AQUATANK',
+  label: 'aquatank',
   category: 'effects',
   schemaVersion: 1,
   inputs: [

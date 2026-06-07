@@ -177,7 +177,7 @@ describe('ruttetra param set (matches XYZState.swift defaults)', () => {
 describe('both modules register with the correct type ids', () => {
   it('reshaper = coord-remap (schemaVersion 1)', () => {
     const def = getVideoModuleDef('reshaper');
-    expect(def?.label).toBe('RESHAPER');
+    expect(def?.label).toBe('reshaper');
     expect(def?.schemaVersion).toBe(1);
     // RESHAPER keeps the X/Y mono-video coordinate-field inputs.
     expect(def?.inputs.find((p) => p.id === 'x')?.type).toBe('mono-video');
@@ -185,7 +185,7 @@ describe('both modules register with the correct type ids', () => {
 
   it('ruttetra = authentic scope (schemaVersion 2)', () => {
     const def = getVideoModuleDef('ruttetra');
-    expect(def?.label).toBe('RUTTETRA');
+    expect(def?.label).toBe('ruttetra');
     expect(def?.schemaVersion).toBe(2);
     expect(def?.inputs.find((p) => p.id === 'z')?.type).toBe('video');
   });

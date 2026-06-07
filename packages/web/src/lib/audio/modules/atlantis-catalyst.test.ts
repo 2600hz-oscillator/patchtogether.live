@@ -19,7 +19,7 @@ import {
 
 describe('atlantisCatalystDef shape', () => {
   it('display label is SCENECHANGE (type id kept atlantisCatalyst for back-compat)', () => {
-    expect(atlantisCatalystDef.label).toBe('SCENECHANGE');
+    expect(atlantisCatalystDef.label).toBe('scenechange');
     expect(atlantisCatalystDef.type).toBe('atlantisCatalyst');
   });
 

@@ -128,7 +128,7 @@ export const cameraInputDef: VideoModuleDef = {
   type: 'cameraInput',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
-  label: 'CAMERA',
+  label: 'camera',
   category: 'sources',
   schemaVersion: 1,
   inputs: [

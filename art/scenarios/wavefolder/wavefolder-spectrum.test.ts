@@ -1,7 +1,7 @@
 // art/scenarios/wavefolder/wavefolder-spectrum.test.ts
 //
-// ART-tier check on the wavefolder spectrum behaviour shared by WAVVIZ
-// and SWOLEVCO. Same shape as art/scenarios/video/phase1-defs.test.ts —
+// ART-tier check on the wavefolder spectrum behaviour shared by SWOLEVCO
+// (and other wavefolder modules). Same shape as art/scenarios/video/phase1-defs.test.ts —
 // math-only assertions that nail down the curve's mathematical
 // behaviour so a regression touching the curve helper is caught here
 // rather than during subjective listening.

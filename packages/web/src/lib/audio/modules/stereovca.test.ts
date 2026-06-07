@@ -201,7 +201,7 @@ describe('stereoVcaMath.render: ring modulation produces sum + difference freque
 describe('stereovcaDef: module-def shape', () => {
   it('declares type=stereovca, label=STEREOVCA, category=utilities, domain=audio', () => {
     expect(stereovcaDef.type).toBe('stereovca');
-    expect(stereovcaDef.label).toBe('STEREOVCA');
+    expect(stereovcaDef.label).toBe('stereovca');
     expect(stereovcaDef.category).toBe('utilities');
     expect(stereovcaDef.domain).toBe('audio');
   });

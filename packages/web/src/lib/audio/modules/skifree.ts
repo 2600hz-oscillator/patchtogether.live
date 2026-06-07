@@ -4,7 +4,7 @@
 // chased + EATEN by the yeti). Black-box wrapper around the upstream
 // skifree.js engine (MIT — Daniel Hough 2013).
 //
-// Like SM64/FROGGER this is an AUDIO-domain "Hybrid" game module: the
+// Like FROGGER this is an AUDIO-domain game module (Games palette group): the
 // game's own pure JS classes drive the canvas, and we expose a
 // synth-native IO surface around it:
 //
@@ -131,9 +131,9 @@ export interface SkifreeController {
 
 export const skifreeDef: AudioModuleDef = {
   type: 'skifree',
-  palette: { top: 'Hybrid', sub: 'Hybrid' },
+  palette: { top: 'Games', sub: 'Arcade' },
   domain: 'audio',
-  label: 'SKIFREE',
+  label: 'skifree',
   category: 'games',
   schemaVersion: 1,
   vizPassthrough: true,

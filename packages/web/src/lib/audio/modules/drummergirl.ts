@@ -40,7 +40,7 @@ export const drummergirlDef: AudioModuleDef = {
   type: 'drummergirl',
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
-  label: 'DRUMMERGIRL',
+  label: 'drummergirl',
   category: 'sources',
   // v2: added `volume` (0-2.0) and `decay` (0.001-0.5s, log) params. Loading a
   // v1 save will populate these from defaults — no migration callback needed.

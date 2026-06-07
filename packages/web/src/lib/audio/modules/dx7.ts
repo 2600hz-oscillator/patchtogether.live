@@ -67,7 +67,7 @@ export const dx7Def: AudioModuleDef = {
   type: 'dx7',
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
-  label: 'DX7',
+  label: 'dx7',
   category: 'sources',
   schemaVersion: 1,
 

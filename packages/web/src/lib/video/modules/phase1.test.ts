@@ -142,7 +142,7 @@ describe('video — CHROMAKEY (proper 2-input chroma-key compositor)', () => {
   it('is registered with 2 video inputs (fg + bg)', () => {
     const def = getVideoModuleDef('chromakey')!;
     expect(def).toBeDefined();
-    expect(def.label).toBe('CHROMAKEY');
+    expect(def.label).toBe('chromakey');
     const videoInputs = def.inputs.filter((p) => p.type === 'video');
     expect(videoInputs.map((p) => p.id).sort()).toEqual(['bg', 'fg']);
   });
@@ -157,7 +157,7 @@ describe('video — LUMAKEY (proper 2-input luma-key compositor)', () => {
   it('is registered with 2 video inputs (fg + bg)', () => {
     const def = getVideoModuleDef('lumakey')!;
     expect(def).toBeDefined();
-    expect(def.label).toBe('LUMAKEY');
+    expect(def.label).toBe('lumakey');
     const videoInputs = def.inputs.filter((p) => p.type === 'video');
     expect(videoInputs.map((p) => p.id).sort()).toEqual(['bg', 'fg']);
   });
@@ -244,7 +244,7 @@ describe('video — SHAPES geometry source', () => {
   it('exposes 4 cv inputs (shape/tile/rotate/zoom) plus mono-video out', () => {
     const def = getVideoModuleDef('shapes')!;
     expect(def).toBeDefined();
-    expect(def.label).toBe('SHAPES');
+    expect(def.label).toBe('shapes');
     expect(def.category).toBe('sources');
     const inIds = def.inputs.map((p) => p.id).sort();
     expect(inIds).toEqual(['rotate', 'shape', 'tile', 'zoom']);
@@ -275,7 +275,7 @@ describe('video — MONOGLITCH scanline-displacement output', () => {
   it('is a chainable OUTPUT (1 video output) with video in + 3 cv', () => {
     const def = getVideoModuleDef('monoglitch')!;
     expect(def).toBeDefined();
-    expect(def.label).toBe('MONOGLITCH');
+    expect(def.label).toBe('monoglitch');
     expect(def.category).toBe('output');
     expect(def.outputs).toHaveLength(1);
     expect(def.outputs[0]?.id).toBe('out');
@@ -307,7 +307,7 @@ describe('video — RESHAPER raster-scan-coordinate REMAP (formerly RUTTETRA)', 
   it('is a chainable OUTPUT (1 video output) with 3 video + 3 cv inputs', () => {
     const def = getVideoModuleDef('reshaper')!;
     expect(def).toBeDefined();
-    expect(def.label).toBe('RESHAPER');
+    expect(def.label).toBe('reshaper');
     expect(def.category).toBe('output');
     expect(def.outputs).toHaveLength(1);
     expect(def.outputs[0]?.id).toBe('out');
@@ -341,7 +341,7 @@ describe('video — SHAPEDRAMPS sync-locked ramp generator', () => {
   it('exposes 8 cv inputs + 4 mono-video mixer inputs and 6 mono-video outputs', () => {
     const def = getVideoModuleDef('shapedramps')!;
     expect(def).toBeDefined();
-    expect(def.label).toBe('SHAPEDRAMPS');
+    expect(def.label).toBe('shapedramps');
     expect(def.category).toBe('sources');
     const inIds = def.inputs.map((p) => p.id).sort();
     expect(inIds).toEqual([

@@ -26,7 +26,7 @@ describe('doomDef — module def shape', () => {
     expect(doomDef.domain).toBe('video');
     expect(doomDef.category).toBe('sources');
     expect(doomDef.maxInstances).toBe(1);
-    expect(doomDef.label).toBe('DOOM');
+    expect(doomDef.label).toBe('doom');
   });
 
   it('is owner-only (round 5: host-only widget — only the rack owner may add it)', () => {

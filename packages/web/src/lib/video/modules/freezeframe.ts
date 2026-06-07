@@ -272,7 +272,7 @@ export const freezeframeDef: VideoModuleDef = {
   type: 'freezeframe',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'FREEZEFRAME',
+  label: 'freezeframe',
   category: 'effects',
   schemaVersion: 1,
   inputs: [

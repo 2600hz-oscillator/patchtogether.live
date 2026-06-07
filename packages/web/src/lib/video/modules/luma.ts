@@ -118,7 +118,7 @@ export const lumaDef: VideoModuleDef = {
   type: 'luma',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'LUMA',
+  label: 'luma',
   category: 'effects',
   schemaVersion: 2,
   migrate: migrateLuma,

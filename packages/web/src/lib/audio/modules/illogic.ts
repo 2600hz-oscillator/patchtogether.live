@@ -112,7 +112,7 @@ export const illogicDef: AudioModuleDef = {
   type: 'illogic',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'ILLOGIC',
+  label: 'illogic',
   category: 'utilities',
   schemaVersion: 1,
 

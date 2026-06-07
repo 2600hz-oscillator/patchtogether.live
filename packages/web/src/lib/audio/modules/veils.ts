@@ -118,9 +118,9 @@ export const veilsMath = {
 
 export const veilsDef: AudioModuleDef = {
   type: 'veils',
-  palette: { top: 'Ports', sub: 'Mutable' },
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'VEILS',
+  label: 'veils',
   category: 'utilities',
   schemaVersion: 1,
 

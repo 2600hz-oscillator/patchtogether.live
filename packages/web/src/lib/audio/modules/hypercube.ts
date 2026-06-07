@@ -128,7 +128,7 @@ export const hypercubeDef: AudioModuleDef = {
   type: 'hypercube',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
-  label: 'HYPERCUBE',
+  label: 'hypercube',
   category: 'sources',
   schemaVersion: 1,
 

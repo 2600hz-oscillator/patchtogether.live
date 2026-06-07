@@ -659,7 +659,7 @@ export const quadralogicalDef: VideoModuleDef = {
   type: 'quadralogical',
   palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
-  label: 'QUADRALOGICAL',
+  label: 'quadralogical',
   category: 'utilities',
   schemaVersion: 1,
   inputs: [

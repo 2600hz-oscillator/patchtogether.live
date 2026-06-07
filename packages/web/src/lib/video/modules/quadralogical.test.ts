@@ -55,7 +55,7 @@ describe('quadralogicalDef shape', () => {
     expect(quadralogicalDef.type).toBe('quadralogical');
     expect(quadralogicalDef.domain).toBe('video');
     expect(quadralogicalDef.category).toBe('utilities');
-    expect(quadralogicalDef.label).toBe('QUADRALOGICAL');
+    expect(quadralogicalDef.label).toBe('quadralogical');
   });
 
   it('palette = Video modules / Utilities (firing unit gate for new video modules)', () => {

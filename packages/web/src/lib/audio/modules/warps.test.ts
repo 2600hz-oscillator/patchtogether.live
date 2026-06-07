@@ -32,7 +32,7 @@ function defaults(): WarpsParams {
 describe('warpsDef shape', () => {
   it('declares type=warps, label=WARPS, category=effects', () => {
     expect(warpsDef.type).toBe('warps');
-    expect(warpsDef.label).toBe('WARPS');
+    expect(warpsDef.label).toBe('warps');
     expect(warpsDef.category).toBe('effects');
   });
 

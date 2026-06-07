@@ -21,7 +21,7 @@ describe('polyseqz: module def', () => {
   it('registers as audio-domain module type "polyseqz"', () => {
     expect(polyseqzDef.type).toBe('polyseqz');
     expect(polyseqzDef.domain).toBe('audio');
-    expect(polyseqzDef.label).toBe('POLYSEQZ');
+    expect(polyseqzDef.label).toBe('polyseqz');
     expect(polyseqzDef.category).toBe('modulation');
   });
 

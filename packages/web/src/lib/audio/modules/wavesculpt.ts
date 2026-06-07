@@ -662,7 +662,7 @@ export const wavesculptDef: AudioModuleDef = {
   type: 'wavesculpt',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
-  label: 'WAVESCULPT',
+  label: 'wavesculpt',
   category: 'sources',
   schemaVersion: 2,
 

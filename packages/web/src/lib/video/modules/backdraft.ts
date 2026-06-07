@@ -706,7 +706,7 @@ export const backdraftDef: VideoModuleDef = {
   type: 'backdraft',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'BACKDRAFT',
+  label: 'backdraft',
   category: 'effects',
   schemaVersion: 1,
   inputs: [

@@ -281,7 +281,7 @@ describe('video — module def shape sanity', () => {
     const def = getVideoModuleDef('lines');
     expect(def).toBeDefined();
     if (!def) return;
-    expect(def.label).toBe('LINES');
+    expect(def.label).toBe('lines');
     expect(def.category).toBe('sources');
     // FM input is mono-video (per spec §3.7); this assertion will
     // catch port-type drift between def and shader expectations.
@@ -298,7 +298,7 @@ describe('video — module def shape sanity', () => {
     const def = getVideoModuleDef('videoOut');
     expect(def).toBeDefined();
     if (!def) return;
-    expect(def.label).toBe('OUTPUT');
+    expect(def.label).toBe('output');
     expect(def.category).toBe('output');
     expect(def.inputs).toHaveLength(1);
     expect(def.inputs[0]?.id).toBe('in');

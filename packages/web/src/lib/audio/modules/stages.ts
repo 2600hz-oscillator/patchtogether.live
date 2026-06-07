@@ -148,9 +148,9 @@ export const stagesMath = {
 
 export const stagesDef: AudioModuleDef = {
   type: 'stages',
-  palette: { top: 'Ports', sub: 'Mutable' },
+  palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'STAGES',
+  label: 'stages',
   category: 'modulation',
   schemaVersion: 1,
   ossAttribution: { author: 'Émilie Gillet' },

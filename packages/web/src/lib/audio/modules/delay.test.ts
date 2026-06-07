@@ -11,7 +11,7 @@ import { delayDef } from './delay';
 describe('delay: module-def shape', () => {
   it('declares type/label/domain/category', () => {
     expect(delayDef.type).toBe('delay');
-    expect(delayDef.label).toBe('DELAY');
+    expect(delayDef.label).toBe('delay');
     expect(delayDef.domain).toBe('audio');
     expect(delayDef.category).toBe('effects');
   });

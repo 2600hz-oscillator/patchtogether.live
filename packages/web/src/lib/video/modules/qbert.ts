@@ -126,7 +126,7 @@ export const qbertDef: VideoModuleDef = {
   type: 'qbert',
   palette: { top: 'Games', sub: 'Emulators' },
   domain: 'video',
-  label: 'QBERT',
+  label: 'qbert',
   category: 'sources',
   schemaVersion: 1,
   inputs: [

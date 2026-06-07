@@ -234,7 +234,7 @@ describe('Preset bank', () => {
 describe('cloudseedDef: module-def shape', () => {
   it('declares type=cloudseed, label=CLOUDSEED, category=effects, domain=audio', () => {
     expect(cloudseedDef.type).toBe('cloudseed');
-    expect(cloudseedDef.label).toBe('CLOUDSEED');
+    expect(cloudseedDef.label).toBe('cloudseed');
     expect(cloudseedDef.category).toBe('effects');
     expect(cloudseedDef.domain).toBe('audio');
   });

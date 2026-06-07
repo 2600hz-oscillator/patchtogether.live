@@ -15,7 +15,7 @@ import {
 describe('swolevcoDef: module-def shape', () => {
   it('declares type=swolevco, label=SWOLEVCO, category=sources', () => {
     expect(swolevcoDef.type).toBe('swolevco');
-    expect(swolevcoDef.label).toBe('SWOLEVCO');
+    expect(swolevcoDef.label).toBe('swolevco');
     expect(swolevcoDef.category).toBe('sources');
   });
 

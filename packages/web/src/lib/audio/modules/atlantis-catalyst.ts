@@ -206,7 +206,7 @@ export const atlantisCatalystDef: AudioModuleDef = {
   type: 'atlantisCatalyst',
   palette: { top: 'Audio modules', sub: 'Utility' },
   domain: 'audio',
-  label: 'SCENECHANGE',
+  label: 'scenechange',
   category: 'modulation',
   schemaVersion: 1,
   inputs: [

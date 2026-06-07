@@ -66,41 +66,6 @@ test.describe('waveform video trace shape (Bug-2 regression)', () => {
     await page.waitForLoadState('networkidle');
   });
 
-  test('WAVVIZ -> OUTPUT renders waveform across many rows (not a flat line)', async ({ page }) => {
-    await spawnPatch(
-      page,
-      [
-        { id: 'a-viz',  type: 'wavviz',   position: { x: 60,  y: 60 },  domain: 'audio', params: { foldAmount: 0 } },
-        { id: 'v-out',  type: 'videoOut', position: { x: 460, y: 60 },  domain: 'video' },
-      ],
-      [
-        {
-          id: 'e-viz-out',
-          from: { nodeId: 'a-viz', portId: 'scope' },
-          to:   { nodeId: 'v-out', portId: 'in' },
-          sourceType: 'mono-video',
-          targetType: 'video',
-        },
-      ],
-    );
-
-    await page.waitForTimeout(1000);
-    const stats = await readTraceStats(page);
-    expect(stats).not.toBeNull();
-    if (!stats) return;
-
-    // Real audio waveform → many distinct y-rows. A flat trace at center
-    // touches at most ~4 rows (the smoothstep band half-width). Asserting
-    // ≥ 20 distinct bright rows comfortably catches the regression.
-    expect(
-      stats.brightRows,
-      `WAVVIZ trace should span many rows (got ${stats.brightRows}/${stats.height}); flat trace ≈ 4`,
-    ).toBeGreaterThanOrEqual(20);
-    // Sanity: the trace is also spread across most of the canvas width
-    // (one bright column per audio sample column).
-    expect(stats.brightCols, `trace covers most columns`).toBeGreaterThan(stats.width * 0.5);
-  });
-
   test('SCOPE -> OUTPUT renders waveform across many rows (not a flat line)', async ({ page }) => {
     await spawnPatch(
       page,

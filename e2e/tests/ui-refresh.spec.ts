@@ -135,7 +135,7 @@ test.describe('Undo / redo', () => {
     await page.getByRole('button', { name: '+ Add module' }).click();
     await expect(page.locator('.module-palette')).toBeVisible();
     await page.keyboard.type('Reverb');
-    await page.getByRole('button', { name: 'Reverb', exact: true }).click();
+    await page.getByRole('button', { name: 'reverb', exact: true }).click();
     await expect(page.locator('.svelte-flow__node-reverb')).toHaveCount(1);
 
     // Click somewhere on the canvas pane to drop focus from the palette

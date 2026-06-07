@@ -40,10 +40,10 @@ const loadedContexts = new WeakSet<BaseAudioContext>();
 
 export const moog911aDef: AudioModuleDef = {
   type: 'moog911a',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   card: 'Moog911aCard',
   domain: 'audio',
-  label: '911A Trig Delay',
+  label: '911a trig delay',
   category: 'modulation',
   schemaVersion: 1,
 

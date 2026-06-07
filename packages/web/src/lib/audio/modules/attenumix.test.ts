@@ -203,7 +203,7 @@ describe('attenumixMath.render: per-channel independence + mix sum', () => {
 describe('attenumixDef: module-def shape', () => {
   it('declares type=attenumix, label=ATTENUMIX, category=utilities, domain=audio', () => {
     expect(attenumixDef.type).toBe('attenumix');
-    expect(attenumixDef.label).toBe('ATTENUMIX');
+    expect(attenumixDef.label).toBe('attenumix');
     expect(attenumixDef.category).toBe('utilities');
     expect(attenumixDef.domain).toBe('audio');
   });

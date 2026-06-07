@@ -80,13 +80,13 @@ async function build(params: Record<string, number> = {}) {
 describe('moog984Def: module def shape', () => {
   it('declares type=moog984, label="984 Matrix", category=utilities, schemaVersion=1', () => {
     expect(moog984Def.type).toBe('moog984');
-    expect(moog984Def.label).toBe('984 Matrix');
+    expect(moog984Def.label).toBe('984 matrix');
     expect(moog984Def.category).toBe('utilities');
     expect(moog984Def.schemaVersion).toBe(1);
   });
 
-  it('is in the Ports → moogafakkin palette bucket', () => {
-    expect(moog984Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('is in the Moog System 35/55 Clones palette bucket', () => {
+    expect(moog984Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
   });
 
   it('exposes the four audio inputs in1..in4', () => {

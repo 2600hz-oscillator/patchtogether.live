@@ -23,13 +23,13 @@ import type { ModuleNode } from '$lib/graph/types';
 describe('moog923Def: module def shape', () => {
   it('declares type=moog923, label="923 Filters / Noise Source", category=filter, schemaVersion=1', () => {
     expect(moog923Def.type).toBe('moog923');
-    expect(moog923Def.label).toBe('923 Filters / Noise Source');
+    expect(moog923Def.label).toBe('923 filters / noise source');
     expect(moog923Def.category).toBe('filter');
     expect(moog923Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Ports → moogafakkin palette bucket and uses the Moog923Card', () => {
-    expect(moog923Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog923Card', () => {
+    expect(moog923Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
     expect(moog923Def.card).toBe('Moog923Card');
   });
 

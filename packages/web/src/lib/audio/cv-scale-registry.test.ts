@@ -28,9 +28,7 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   moog962: ['in1', 'in2', 'in3'],
   // filter.dsp: cutoffCv → pow(2, 5*cv) ±5 octaves; resCv: additive clamp.
   filter: ['cutoff', 'res'],
-  // wavviz.wavePos: audio-rate input (no paramTarget); not subject to scaling.
-  wavviz: ['wavePos'],
-  // wavetableVco.wavePos: same as wavviz — audio-rate input, no paramTarget.
+  // wavetableVco.wavePos: audio-rate input (no paramTarget); not subject to scaling.
   wavetableVco: ['wavePos'],
   // moog921Vco.width_cv: same shape as wavetableVco.wavePos — the worklet
   // sums the WIDTH knob + this CV per-sample (audio-rate), NOT through the
@@ -140,35 +138,21 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // opens the channel). A `linear` cvScale would compute (1-0)/2 = 0.5
   // and HALVE the LFO's reach — strictly worse than passthrough.
   attenumix: ['cv1', 'cv2', 'cv3', 'cv4'],
-  // BLADES voct1/voct2 + cutoff1_cv/cutoff2_cv: these are audio-rate
-  // node inputs that the worklet itself maps onto octaves via
-  // pow(2, voct + cv*5). Interposing a WaveShaperNode here would
-  // double-process the signal (the worklet already applies a musical
-  // octave mapping). The res_cv / color_cv / mix_mode_cv ports DO carry
-  // cvScale because they route via the AudioParam fast path.
-  blades: ['voct1', 'voct2', 'cutoff1_cv', 'cutoff2_cv'],
   // PONG paddle_left / paddle_right: CV is sampled per scheduler-tick into
   // a JS-side stepper (paddleCvToY maps -1..+1 → 0..1 paddle Y). No
   // AudioParam fast path — the CV doesn't modulate any knob, it IS the
   // paddle position. Same shape as BUGGLES.clock_cv / chaos_cv above.
   pong: ['paddle_left', 'paddle_right'],
-  // SM64 stick_x_cv / stick_y_cv: bipolar CV sampled per scheduler-tick
-  // into a JS-side stepper (cvToStickValue maps -1..+1 → ±64 N64-native).
-  // No AudioParam fast path — the CV doesn't modulate any knob, it IS the
-  // analog stick position handed to the sm64js bundle's playerInput
-  // global. Same shape as PONG's paddle CVs above.
-  sm64: ['stick_x_cv', 'stick_y_cv'],
   // SKIFREE x / y: bipolar CV sampled per scheduler-tick into the bundle
   // controller's setCursor (cvToCanvasCoord maps -1..+1 → 0..canvas-px). No
   // AudioParam fast path — the CV doesn't modulate any knob, it IS the mouse-
-  // cursor position the skier steers toward. Same shape as PONG's paddle CVs
-  // and SM64's stick CVs above.
+  // cursor position the skier steers toward. Same shape as PONG's paddle CVs.
   skifree: ['x', 'y'],
   // MIDI-OUT-BUDDY pitch / velocity: CV sampled at the gate rising edge in a
   // JS-side scheduler-tick (AnalyserNode tap), then converted to a MIDI note
   // number (V/oct → nearest semitone) / velocity (0..1 → 1..127). No
   // AudioParam fast path — the CV doesn't modulate a knob, it IS the outgoing
-  // MIDI note/velocity. Same shape as PONG / SM64's stepper CVs above.
+  // MIDI note/velocity. Same shape as PONG's stepper CVs above.
   midiOutBuddy: ['pitch', 'velocity'],
   // ANALOGLOGICMATHS a / b: raw bipolar signal inputs consumed directly by
   // the worklet's per-sample MIN/MAX/DIFF/SUM/PRODUCT. The module IS the

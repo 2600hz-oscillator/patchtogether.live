@@ -56,7 +56,7 @@ export const scopeDef: AudioModuleDef = {
   type: 'scope',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
-  label: 'Scope',
+  label: 'scope',
   category: 'utilities',
   schemaVersion: 1,
   // Module-grouping Phase 3B: SCOPE's on-card 2D canvas is hoisted into

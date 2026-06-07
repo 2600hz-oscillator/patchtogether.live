@@ -38,10 +38,10 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const moog992Def: AudioModuleDef = {
   type: 'moog992',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   card: 'Moog992Card',
   domain: 'audio',
-  label: '992 Control Voltage Panel',
+  label: '992 control voltage panel',
   category: 'modulation',
   schemaVersion: 1,
 

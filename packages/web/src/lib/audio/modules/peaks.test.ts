@@ -36,7 +36,7 @@ function zeroCrossings(buf: Float32Array): number {
 describe('peaksDef shape', () => {
   it('declares type=peaks, label=PEAKS, category=modulation', () => {
     expect(peaksDef.type).toBe('peaks');
-    expect(peaksDef.label).toBe('PEAKS');
+    expect(peaksDef.label).toBe('peaks');
     expect(peaksDef.category).toBe('modulation');
   });
 

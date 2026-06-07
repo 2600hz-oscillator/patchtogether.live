@@ -33,10 +33,10 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 
 export const moog993Def: AudioModuleDef = {
   type: 'moog993',
-  palette: { top: 'Ports', sub: 'moogafakkin' },
+  palette: { top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' },
   card: 'Moog993Card',
   domain: 'audio',
-  label: '993 Trig',
+  label: '993 trig',
   category: 'modulation',
   schemaVersion: 1,
 

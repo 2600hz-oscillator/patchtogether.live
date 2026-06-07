@@ -77,7 +77,7 @@ export const froggerDef: AudioModuleDef = {
   type: 'frogger',
   palette: { top: 'Games', sub: 'Arcade' },
   domain: 'audio',
-  label: 'FROGGER',
+  label: 'frogger',
   category: 'games',
   schemaVersion: 1,
   vizPassthrough: true,

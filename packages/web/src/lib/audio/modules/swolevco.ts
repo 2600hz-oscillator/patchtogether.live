@@ -160,7 +160,7 @@ export const swolevcoDef: AudioModuleDef = {
   type: 'swolevco',
   palette: { top: 'Hybrid', sub: 'Hybrid' },
   domain: 'audio',
-  label: 'SWOLEVCO',
+  label: 'swolevco',
   category: 'sources',
   schemaVersion: 1,
   inputs: [

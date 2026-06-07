@@ -84,7 +84,7 @@ export const lumakeyDef: VideoModuleDef = {
   type: 'lumakey',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'LUMAKEY',
+  label: 'lumakey',
   category: 'effects',
   schemaVersion: 1,
   inputs: [

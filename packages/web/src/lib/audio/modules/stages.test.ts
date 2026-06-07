@@ -36,7 +36,7 @@ const NO_LINKS = new Array(STAGES_NUM_LINKS).fill(false);
 describe('stagesDef shape', () => {
   it('declares type=stages, label=STAGES, category=modulation', () => {
     expect(stagesDef.type).toBe('stages');
-    expect(stagesDef.label).toBe('STAGES');
+    expect(stagesDef.label).toBe('stages');
     expect(stagesDef.category).toBe('modulation');
   });
 

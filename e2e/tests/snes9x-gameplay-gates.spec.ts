@@ -29,7 +29,7 @@
 //
 // ROM-GATED: skips cleanly when /roms/snes9x/game.sfc is absent (CI runs
 // without the user-provided, gitignored ROM — same pattern as the snes9x /
-// SM64 / QBERT ROM-gated specs). Locally: `task setup:snes9x ROM=...` +
+// QBERT ROM-gated specs). Locally: `task setup:snes9x ROM=...` +
 // `task setup:snes9x:build`.
 
 import { test, expect, type Page } from '@playwright/test';

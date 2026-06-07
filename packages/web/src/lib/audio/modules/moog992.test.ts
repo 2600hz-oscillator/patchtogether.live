@@ -22,13 +22,13 @@ import type { ModuleNode } from '$lib/graph/types';
 describe('moog992Def: module def shape', () => {
   it('declares type=moog992, label="992 Control Voltage Panel", category=modulation, schemaVersion=1', () => {
     expect(moog992Def.type).toBe('moog992');
-    expect(moog992Def.label).toBe('992 Control Voltage Panel');
+    expect(moog992Def.label).toBe('992 control voltage panel');
     expect(moog992Def.category).toBe('modulation');
     expect(moog992Def.schemaVersion).toBe(1);
   });
 
-  it('lives in the Ports → moogafakkin palette bucket and uses the Moog992Card', () => {
-    expect(moog992Def.palette).toEqual({ top: 'Ports', sub: 'moogafakkin' });
+  it('lives in the Moog System 35/55 Clones palette bucket and uses the Moog992Card', () => {
+    expect(moog992Def.palette).toEqual({ top: 'Moog System 35/55 Clones', sub: 'Moog System 35/55 Clones' });
     expect(moog992Def.card).toBe('Moog992Card');
   });
 

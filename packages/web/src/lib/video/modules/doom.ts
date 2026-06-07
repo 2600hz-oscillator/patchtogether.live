@@ -272,7 +272,7 @@ export const doomDef: VideoModuleDef = {
   type: 'doom',
   palette: { top: 'Games', sub: 'Emulators' },
   domain: 'video',
-  label: 'DOOM',
+  label: 'doom',
   category: 'sources',
   // schemaVersion 2 (#353): the single shared CV-gate input set became four
   // per-slot input GROUPS (p1..p4 → slots 0..3). Old (v1) patches wired CV to

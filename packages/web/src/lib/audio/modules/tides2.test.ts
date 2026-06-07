@@ -63,7 +63,7 @@ function countCycles(buf: Float32Array): number {
 describe('tides2Def shape', () => {
   it('declares type/label/category/attribution', () => {
     expect(tides2Def.type).toBe('tides2');
-    expect(tides2Def.label).toBe('TIDES2');
+    expect(tides2Def.label).toBe('tides2');
     expect(tides2Def.category).toBe('modulation');
     expect(tides2Def.ossAttribution?.author).toBe('Émilie Gillet');
   });

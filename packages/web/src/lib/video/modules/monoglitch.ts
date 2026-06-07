@@ -143,7 +143,7 @@ export const monoglitchDef: VideoModuleDef = {
   type: 'monoglitch',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'MONOGLITCH',
+  label: 'monoglitch',
   category: 'output',
   schemaVersion: 1,
   inputs: [
