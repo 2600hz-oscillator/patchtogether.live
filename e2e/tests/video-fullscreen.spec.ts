@@ -116,6 +116,98 @@ test.describe('true-fullscreen — VIDEO OUT + BENTBOX', () => {
     expect(errors).toEqual([]);
   });
 
+  // Regression: the fullscreen letterbox bug. The card preview blits the
+  // engine frame into a CARD-aspect canvas buffer; on fullscreen the buffer
+  // must SWAP to the live ENGINE aspect so object-fit:contain pillarboxes the
+  // true source (height-fill, side bars only) instead of double-letterboxing
+  // the card aspect (which added top/bottom black bars). We assert the buffer
+  // aspect == engine aspect (and != the card aspect) while fullscreen — robust
+  // whether or not headless chromium grants real OS fullscreen, since the buffer
+  // dims swap on the `.fullscreen` STATE, not on the OS grant.
+  test('VIDEO OUT fullscreen: canvas buffer takes the ENGINE aspect (no top/bottom letterbox)', async ({ page }) => {
+    const errors = await setup(page);
+    await spawnPatch(
+      page,
+      [
+        { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: TRIANGLE_PARAMS },
+        { id: 'out', type: 'videoOut', position: { x: 500, y: 40 }, domain: 'video' },
+      ],
+      [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
+    );
+    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+
+    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+    const wrap = page.locator('[data-testid="video-out-fs-wrap"]');
+    await expect(canvas).toHaveCount(1);
+
+    // Let the rAF blit tick so the card has captured live engine dims.
+    await page.waitForTimeout(400);
+
+    // The live engine source aspect (VIDEO_RES = 1024×768 = 4:3).
+    const engineAspect = await page.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const eng = (window as any).__engine?.();
+      const vid = eng?.getDomain?.('video');
+      const w = vid?.canvas?.width ?? 0;
+      const h = vid?.canvas?.height ?? 0;
+      return w > 0 && h > 0 ? w / h : 4 / 3;
+    });
+
+    // In-rack: the buffer carries the CARD aspect (a wide preview area).
+    const beforeW = Number(await canvas.getAttribute('width'));
+    const beforeH = Number(await canvas.getAttribute('height'));
+    const cardAspect = beforeW / beforeH;
+
+    // Enter fullscreen via the context menu (real user-gesture click).
+    await canvas.click({ button: 'right' });
+    await expect(page.locator('[data-testid="ctx-fullscreen"]')).toBeVisible();
+    await page.locator('[data-testid="ctx-fullscreen"]').click();
+    await expect(wrap, 'wrap entered fullscreen state').toHaveClass(/fullscreen/);
+
+    // The buffer must now carry the ENGINE aspect, not the card aspect.
+    const afterW = Number(await canvas.getAttribute('width'));
+    const afterH = Number(await canvas.getAttribute('height'));
+    const fsAspect = afterW / afterH;
+    expect(Math.abs(fsAspect - engineAspect)).toBeLessThan(0.02);
+    // The default card preview is wider than 4:3, so the bug's card-aspect
+    // buffer differed from the engine aspect — assert we actually swapped.
+    expect(Math.abs(cardAspect - engineAspect)).toBeGreaterThan(0.05);
+    expect(Math.abs(fsAspect - cardAspect)).toBeGreaterThan(0.05);
+
+    // If real OS-fullscreen engaged (it does headless on chromium here), prove
+    // the RENDERED content HEIGHT-FILLS the viewport with NO top/bottom bars:
+    // with object-fit:contain on an engine-aspect buffer narrower than the
+    // screen, the visible content height == the viewport height (only side
+    // pillarbox). The buggy card-aspect buffer would NOT height-fill.
+    const fill = await page.evaluate(() => {
+      if (!document.fullscreenElement) return null;
+      const cv = document.querySelector(
+        'canvas[data-testid="video-out-canvas"]',
+      ) as HTMLCanvasElement | null;
+      if (!cv) return null;
+      const box = cv.getBoundingClientRect();
+      const bufAspect = cv.width / cv.height;
+      const boxAspect = box.width / box.height;
+      // object-fit:contain → content fills height when content is NARROWER than
+      // the box (4:3 in a wide screen), else fills width.
+      const contentH = bufAspect < boxAspect ? box.height : box.width / bufAspect;
+      return { viewportH: window.innerHeight, contentH, boxH: box.height };
+    });
+    if (fill) {
+      // Content height == viewport height (within a px of rounding) → no
+      // top/bottom letterbox. The card-aspect bug would leave a visible gap.
+      expect(Math.abs(fill.contentH - fill.viewportH)).toBeLessThanOrEqual(2);
+    } else {
+      console.log('[fullscreen] OS fullscreen not granted — buffer-aspect check stands alone');
+    }
+
+    // Clean up: exit fullscreen.
+    await page.evaluate(() => {
+      if (document.fullscreenElement) void document.exitFullscreen();
+    });
+    expect(errors).toEqual([]);
+  });
+
   test('right-click on canvas does NOT open the node menu (claimed)', async ({ page }) => {
     await setup(page);
     await spawnPatch(page, [

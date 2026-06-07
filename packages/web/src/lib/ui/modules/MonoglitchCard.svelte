@@ -12,6 +12,7 @@
   import { monoglitchDef } from '$lib/video/modules/monoglitch';
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
+  import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -33,8 +34,8 @@
 
   // Engine render resolution — matches VIDEO_RES in
   // packages/web/src/lib/video/engine.ts.
-  const ENGINE_W = 640;
-  const ENGINE_H = 480;
+  const ENGINE_W = VIDEO_RES.width;
+  const ENGINE_H = VIDEO_RES.height;
 
   const CANVAS_W = 280;
   const CANVAS_H = 158;

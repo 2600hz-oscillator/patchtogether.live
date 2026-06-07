@@ -19,6 +19,7 @@
   import { patch } from '$lib/graph/store';
   import { mandleblotDef, jsZoomFromKnob } from '$lib/video/modules/mandleblot';
   import type { VideoEngine } from '$lib/video/engine';
+  import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -39,8 +40,8 @@
 
   // Engine render resolution (VIDEO_RES). Used to letterbox the preview
   // so a 4:3 fractal render fits the card's preview rect without skew.
-  const ENGINE_W = 640;
-  const ENGINE_H = 480;
+  const ENGINE_W = VIDEO_RES.width;
+  const ENGINE_H = VIDEO_RES.height;
 
   // Preview canvas — small, fixed. The card stays compact per spec.
   const CANVAS_W = 200;

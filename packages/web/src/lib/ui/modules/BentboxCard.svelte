@@ -25,8 +25,10 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { VideoEngine } from '$lib/video/engine';
+  import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import { bentboxDef } from '$lib/video/modules/bentbox';
+  import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -47,8 +49,8 @@
   // Engine render resolution — matches VIDEO_RES in video/engine.ts.
   // We always letterbox 4:3 inside the canvas so the CRT aspect ratio
   // is preserved even as the user resizes.
-  const ENGINE_W = 640;
-  const ENGINE_H = 480;
+  const ENGINE_W = VIDEO_RES.width;
+  const ENGINE_H = VIDEO_RES.height;
 
   let cardWidth = $derived<number>(
     (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH,
@@ -69,6 +71,11 @@
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
+
+  // Live engine canvas dims, mirrored each rAF in draw() (the engine isn't a
+  // reactive store), used by the fullscreen buffer-size derive below.
+  let engineW = $state<number>(ENGINE_W);
+  let engineH = $state<number>(ENGINE_H);
 
   // ---------- True fullscreen (mirrors VideoOutCard) ----------
   // The screen-wrap is the fullscreen element; it holds the live <canvas>.
@@ -99,6 +106,18 @@
   });
   let cardEl: HTMLDivElement | null = $state(null);
   $effect(() => ff.attach(cardEl, () => fullFrame));
+
+  // Canvas drawing-buffer dims. Rack: card inner dims. TRUE fullscreen: the
+  // live ENGINE dims so fitRect fills the buffer edge-to-edge + object-fit:
+  // contain height-fills the screen (side pillarbox only). See
+  // fullscreen-canvas-dims.ts.
+  let bufferDims = $derived(
+    fullscreenCanvasDims(
+      fs.isFullscreen,
+      { canvas: { width: engineW, height: engineH } },
+      { width: innerWidth, height: screenAreaH },
+    ),
+  );
 
   let ctxOpen = $state(false);
   let ctxX = $state(0);
@@ -151,6 +170,12 @@
     if (ctx2d) {
       try { videoEngine.blitOutputToDrawingBuffer(id); } catch { /* defensive */ }
       const src = videoEngine.canvas as CanvasImageSource;
+      // Mirror the live engine dims so the fullscreen buffer-size derive follows
+      // the engine resolution. Cheap change-guard.
+      const ew = videoEngine.canvas.width || ENGINE_W;
+      const eh = videoEngine.canvas.height || ENGINE_H;
+      if (ew !== engineW) engineW = ew;
+      if (eh !== engineH) engineH = eh;
       const cw = canvasEl.width;
       const ch = canvasEl.height;
       ctx2d.fillStyle = '#050608';
@@ -294,9 +319,9 @@
     >
       <canvas
         bind:this={canvasEl}
-        width={innerWidth}
-        height={screenAreaH}
-        style="aspect-ratio: {innerWidth} / {screenAreaH};"
+        width={bufferDims.width}
+        height={bufferDims.height}
+        style="aspect-ratio: {bufferDims.aspectRatio};"
         data-testid="bentbox-canvas"
         data-node-id={id}
       ></canvas>

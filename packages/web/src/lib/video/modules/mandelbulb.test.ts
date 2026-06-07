@@ -179,7 +179,7 @@ function makeFakeAudioCtx(): FakeAudioBits {
 function makeCtx(audio: FakeAudioBits | null): VideoEngineContext {
   return {
     gl: makeFakeGl(),
-    res: { width: 640, height: 480 },
+    res: { width: 1024, height: 768 },
     compileFragment: () => ({}) as WebGLProgram,
     createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
     drawFullscreenQuad: () => undefined,

@@ -20,6 +20,7 @@
   import { patch } from '$lib/graph/store';
   import { fourPlexVidDef } from '$lib/video/modules/4plexvid';
   import type { VideoEngine } from '$lib/video/engine';
+  import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -67,8 +68,8 @@
   // --- Live preview of OUT 1 (the canonical surface.texture). Mirrors the
   // VideoOutCard blit: ask the engine to render this node's surface FBO
   // into its drawing buffer, then drawImage it into our small canvas. ---
-  const ENGINE_W = 640;
-  const ENGINE_H = 480;
+  const ENGINE_W = VIDEO_RES.width;
+  const ENGINE_H = VIDEO_RES.height;
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 

@@ -14,52 +14,50 @@ import {
 } from './picturebox-encode';
 
 describe('picturebox-encode — TARGET dimensions', () => {
-  it('matches the spec (640 x 480, 4:3)', () => {
-    expect(TARGET_W).toBe(640);
-    expect(TARGET_H).toBe(480);
+  it('matches the engine resolution (1024 x 768, 4:3)', () => {
+    expect(TARGET_W).toBe(1024);
+    expect(TARGET_H).toBe(768);
     expect(TARGET_W / TARGET_H).toBeCloseTo(4 / 3, 5);
   });
 });
 
 describe('picturebox-encode — computeZoomFitCrop', () => {
   it('exactly-sized source maps 1:1 with no offset', () => {
-    const r = computeZoomFitCrop(640, 480);
+    const r = computeZoomFitCrop(TARGET_W, TARGET_H);
     expect(r.dx).toBe(0);
     expect(r.dy).toBe(0);
-    expect(r.dw).toBe(640);
-    expect(r.dh).toBe(480);
+    expect(r.dw).toBe(TARGET_W);
+    expect(r.dh).toBe(TARGET_H);
   });
 
   it('wider source (16:9 1280x720) crops left+right (negative dx)', () => {
-    // scale = max(640/1280, 480/720) = max(0.5, 0.667) = 0.667
-    // dw = 1280 * 0.667 = 853.3, dh = 720 * 0.667 = 480
-    // dx = (640 - 853.3) / 2 = -106.7 (cropped sides)
+    // 4:3 target: scale = max(TW/1280, TH/720) = TH/720 (the height limits),
+    // so dh fills the target height exactly and dw overhangs (cropped sides).
     const r = computeZoomFitCrop(1280, 720);
-    expect(r.dh).toBeCloseTo(480, 1);
-    expect(r.dw).toBeCloseTo(853.33, 1);
+    expect(r.dh).toBeCloseTo(TARGET_H, 1);
+    expect(r.dw).toBeCloseTo((1280 / 720) * TARGET_H, 1);
     expect(r.dx).toBeLessThan(0);
     expect(r.dy).toBeCloseTo(0, 1);
   });
 
-  it('taller source (3:4 480x640) crops top+bottom (negative dy)', () => {
-    // scale = max(640/480, 480/640) = max(1.333, 0.75) = 1.333
-    // dw = 480 * 1.333 = 640, dh = 640 * 1.333 = 853.3
-    // dy = (480 - 853.3) / 2 = -186.7 (cropped top+bottom)
-    const r = computeZoomFitCrop(480, 640);
-    expect(r.dw).toBeCloseTo(640, 1);
-    expect(r.dh).toBeCloseTo(853.33, 1);
+  it('taller source (3:4) crops top+bottom (negative dy)', () => {
+    // 4:3 target vs a 3:4 portrait source: the WIDTH limits, so dw fills the
+    // target width and dh overhangs (cropped top+bottom).
+    const r = computeZoomFitCrop(TARGET_H, TARGET_W); // portrait 3:4
+    expect(r.dw).toBeCloseTo(TARGET_W, 1);
+    expect(r.dh).toBeCloseTo((TARGET_W / TARGET_H) * TARGET_W, 1);
     expect(r.dx).toBeCloseTo(0, 1);
     expect(r.dy).toBeLessThan(0);
   });
 
-  it('square source maps to a centered square that fills the height', () => {
-    // 1000x1000: scale = max(0.64, 0.48) = 0.64 → 640x640
-    // dx = 0, dy = (480 - 640) / 2 = -80
+  it('square source maps to a centered square that fills the width', () => {
+    // 4:3 target, square source: scale = max(TW/s, TH/s) = TW/s (width limits)
+    // → a TARGET_W × TARGET_W square, centered vertically (dy negative).
     const r = computeZoomFitCrop(1000, 1000);
-    expect(r.dw).toBeCloseTo(640, 1);
-    expect(r.dh).toBeCloseTo(640, 1);
+    expect(r.dw).toBeCloseTo(TARGET_W, 1);
+    expect(r.dh).toBeCloseTo(TARGET_W, 1);
     expect(r.dx).toBeCloseTo(0, 1);
-    expect(r.dy).toBeCloseTo(-80, 1);
+    expect(r.dy).toBeCloseTo((TARGET_H - TARGET_W) / 2, 1);
   });
 
   it('respects custom target dimensions', () => {

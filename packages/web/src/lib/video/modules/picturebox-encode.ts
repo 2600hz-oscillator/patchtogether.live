@@ -1,7 +1,7 @@
 // packages/web/src/lib/video/modules/picturebox-encode.ts
 //
 // Pure helpers for the PICTUREBOX multiplayer-sync pipeline:
-//   1. zoom-fit-crop math (640x480 4:3 cover) — node-testable.
+//   1. zoom-fit-crop math (4:3 cover, at the engine VIDEO_RES) — node-testable.
 //   2. Uint8Array <-> base64 (browser + jsdom safe).
 //   3. browser-side downscaleAndEncode() that turns a File / Blob into a
 //      base64 JPEG q=85 string sized to TARGET_W x TARGET_H.
@@ -9,8 +9,12 @@
 // See .myrobots/plans/picturebox-multiplayer-sync.md for the rationale
 // behind the codec + size choice.
 
-export const TARGET_W = 640;
-export const TARGET_H = 480;
+import { VIDEO_RES } from '../engine';
+
+// Encode at the engine resolution (1024×768, 4:3) so the synced image matches
+// the FBO it's rendered into — same 4:3 aspect as the old 640×480, sharper.
+export const TARGET_W = VIDEO_RES.width;
+export const TARGET_H = VIDEO_RES.height;
 export const JPEG_QUALITY = 0.85;
 export const IMAGE_MIME = 'image/jpeg';
 
@@ -33,8 +37,8 @@ export interface CropRect {
 export function computeZoomFitCrop(
   srcW: number,
   srcH: number,
-  targetW = TARGET_W,
-  targetH = TARGET_H,
+  targetW: number = TARGET_W,
+  targetH: number = TARGET_H,
 ): CropRect {
   if (srcW <= 0 || srcH <= 0) {
     // Defensive fallback: degenerate source draws nothing meaningful.
