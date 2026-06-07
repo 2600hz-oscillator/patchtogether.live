@@ -36,6 +36,18 @@
         { "block": "behavioral", "kind": "parametrized", "total": 96, "disabled": 61, "intentional": 52, "reconcilable": 9 },
         { "block": "@collab", "kind": "raw (e2e subset)", "total": 108, "disabled": 0 }
       ]
+    },
+    {
+      "date": "2026-06-07",
+      "note": "behavioral reconciliation #3 — re-enable the subtle-CV threshold class head: adsr + peaks, via a per-port threshold mechanism + leverage boosts. adsr: the decay/release CV scalers were near-threshold because the default high sustain (0.7) left the decay barely dropping the level. A BEHAVIORAL_PARAMS boost (decay=0.1/release=0.2/sustain=0.2) makes the DECAY phase a big 1→0.2 excursion that the log-scaled CV swings across two decades (Δrange≈0.20-0.29 RMS, ~10-14× the 0.02 floor), and a per-port BEHAVIORAL_PORT_PARAMS['adsr.release']={sustain:0.6} gives the RELEASE tail enough amplitude to swing robustly (Δμrms≈0.033-0.054, ~3-5× the 0.01 floor); verified 4× stable. peaks: it IS a dual-INDEPENDENT-channel module — the channel-0 ports (gate0/mode0_cv/k1_0_cv/k2_0_cv) clear the observed out0 with a big margin (mode0_cv switches the LFO→drum so Δzc≈600/Δcent≈3300Hz; k1_0/k2_0 widen out0's RMS range Δrange≈0.6/0.8), while the channel-1 ports (gate1/mode1_cv/k1_1_cv/k2_1_cv) feed the SEPARATE out1 and are now per-port-exempt as independent-output (cf. synesthesia.b_in); verified 3×. HARNESS IMPROVEMENT: added a per-port/per-module calibrated delta-threshold mechanism (BEHAVIORAL_DELTA_THRESHOLDS + thresholdsFor() wired into computeDelta) so a future port can override ONLY the floors that matter for it, sized to its measured jitter — the systemic-fix infrastructure for the next batch. buggles/backdraft/treeohvox/mixmstrs stay exempt with sharpened, MEASURED notes (buggles self-noise: chaos_cv ~0 delta; backdraft animated-video ±5000 variance floor swamps every input; treeohvox 4-note driver sequence buries the CV scalers in centroid noise; mixmstrs 77 inputs → 28-min wall-time foxy-class + per-channel-on-summed-mix), each with a concrete re-enable path; they stay tagged RECONCILABLE. behavioral disabled 61→59; reconcilable 9→7.",
+      "blocks": [
+        { "block": "unit", "kind": "raw", "total": 6043, "disabled": 2 },
+        { "block": "e2e", "kind": "raw", "total": 907, "disabled": 1 },
+        { "block": "art", "kind": "raw", "total": 463, "disabled": 0 },
+        { "block": "vrt", "kind": "parametrized", "total": 152, "disabled": 0 },
+        { "block": "behavioral", "kind": "parametrized", "total": 99, "disabled": 59, "intentional": 52, "reconcilable": 7 },
+        { "block": "@collab", "kind": "raw (e2e subset)", "total": 108, "disabled": 0 }
+      ]
     }
   ]
 }

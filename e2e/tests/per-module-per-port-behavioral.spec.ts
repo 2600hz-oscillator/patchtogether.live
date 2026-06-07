@@ -273,44 +273,28 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
 
   // ── PR #471 land-now quarantine (subtle-CV-effect modules) ──
   //
-  // These 7 modules each have AT LEAST ONE declared input whose
-  // CV→audio/video effect is too subtle to clear PR #471's universal
-  // behavioral delta thresholds within the 1.5s test window — and
-  // currently fail the behavioral-coverage sweep (flaking on retry
-  // for some, hard-failing for others). They are blocking 7+ open
-  // PRs from merging.
+  // These modules each have AT LEAST ONE declared input whose CV→audio/video
+  // effect was too subtle to clear the universal behavioral delta threshold
+  // within the test window when PR #471 quarantined them. The behavioral-
+  // reconciliation leg drives this set down one module per PR — see the dated
+  // CHANGELOG at docs/test-reconciliation/CHANGELOG.md. Each entry cites the
+  // dedicated unit + spec coverage that DOES pin the module's behaviour, so a
+  // quarantine is NOT a silent skip — it's a "covered elsewhere with stronger
+  // signal" pointer + a concrete re-enable path. The `inputs-accept` dim in
+  // per-module-per-port.spec.ts STILL pins wire-up for every port below.
   //
-  // TODO(behavioral-coverage): the proper fix is to tune the per-
-  // module delta thresholds (or expand the observation window / use
-  // a DC-biased modulator on subtle params like adsr.release,
-  // mixmstrs.cv channels, etc.) so the SUT's actual CV response is
-  // observable. That's bigger work — tracked for post-prod. Each
-  // entry below cites the dedicated unit + spec coverage that DOES
-  // pin the module's behavior properly, so this quarantine is NOT a
-  // silent skip — it's a "covered elsewhere with stronger signal"
-  // pointer. Re-enable here once thresholds are tuned per module.
-  //
-  // The `inputs-accept` dim in per-module-per-port.spec.ts STILL
-  // pins wire-up for every port on every module below.
-  //
-  // adsr — envelope-shape CV (attack/decay/sustain/release) all
-  // shift the envelope subtly during a single 1.5s gate cycle; the
-  // per-port exempts above already quarantine attack/sustain/retrig
-  // but decay + release land at the threshold edge too. The gate
-  // input PASSes consistently, but the module fails as a whole.
-  // Covered by adsr.test.ts (DSP-level envelope-shape parity) +
-  // adsr-vca-invert.spec.ts (gate+env+env_inv end-to-end).
-  adsr: 'CV shape inputs (decay/release) land near delta threshold; covered by adsr.test.ts + adsr-vca-invert.spec.ts',
+  // (adsr + peaks RE-ENABLED — behavioral-recon #3. adsr's decay/release CV
+  //  scalers are now real-coverage passes via a BEHAVIORAL_PARAMS leverage boost
+  //  — see BEHAVIORAL_PARAMS.adsr; peaks' channel-0 ports clear out0 with a big
+  //  margin while its channel-1 ports are per-port-exempt as independent-output —
+  //  see the peaks.* entries in BEHAVIORAL_SWEEP_EXEMPT. Verified 3-4× locally.)
 
-  // buggles — self-clocking random-CV source. The CV inputs
-  // (rate_cv, smoothness_cv, chaos_cv, clock_cv) modulate a sample-
-  // and-hold's STEP RATE / SHAPE, not its amplitude. Because the
-  // output is itself a slow random walk, both the control and
-  // patched runs read large baseline variance — the perturbation is
-  // hidden in BUGGLES's own noise floor across a 1.5s window.
-  // Covered by buggles.test.ts (DSP-level rate/chaos response) +
-  // buggles.spec.ts (E2E CV-driven rate sweep).
-  buggles: 'random-CV output baseline variance masks input perturbation in 1.5s window; covered by buggles.test.ts + buggles.spec.ts',
+  // buggles — self-clocking random-CV source. The CV inputs modulate the woggle
+  // STEP RATE / CHAOS, not the output amplitude. Because the observed `smooth`
+  // output is itself a slow random walk, both the control + patched runs read
+  // large baseline variance — the perturbation is hidden in BUGGLES's own noise
+  // floor across the 1.5s window. (Measured behavioral-recon #3.)
+  buggles: 'self-noise class: the observed `smooth` output is a slow random walk with a low RMS (~0.015) + high RELATIVE jitter, and the CV inputs modulate its STEP RATE / CHAOS, not its amplitude. external_clock gives a clean delta (Δμrms≈0.14), but clock_cv lands AT the 0.01 floor and chaos_cv reads a genuine ~0 delta (Δμrms≈0.004, Δrange≈0.017) in the 1.5s window — the rate/chaos change is buried in the walk\'s own noise. Re-enterable with a LONGER observation window (so the rate change accumulates) + a per-channel clock-output sink (the `clock` gate carries the rate change cleanly); covered by buggles.test.ts (DSP rate/chaos response) + buggles.spec.ts (E2E CV-driven rate sweep)',
 
   // backdraft — video feedback / motion-trail effect. The HDR
   // accumulation buffer needs many frames of input motion before
@@ -320,7 +304,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // statistic. Same shape as the `bentbox` exemption above.
   // Covered by backdraft.test.ts (per-frame trail-buffer math) +
   // backdraft.spec.ts (E2E trail-persistence assertion).
-  backdraft: 'HDR feedback-trail variance dominated by upstream motion; covered by backdraft.test.ts + backdraft.spec.ts',
+  backdraft: 'animated-video VARIANCE-FLOOR class (cf. bentbox / b3ntb0x): the HDR feedback-trail `out` has a per-frame luma-variance baseline of ~7700 with a HUGE ±4000-6000 per-frame RANGE driven by the ACIDWARP context motion + trail accumulation. Across 3 video snapshots × 2 spawns the mean-of-3 standard error (±several thousand) SWAMPS every input\'s footprint — Δμvar runs 37→1750 and ΔRvar runs 2.7→4060 with NO correlation to which port is driven, so the variance metric can\'t attribute a delta to ANY input (the 22 ports all "passed" once but only on the animation\'s own noise). Whole-module exempt (same class as bentbox). Covered by backdraft.test.ts (per-frame trail-buffer math) + backdraft.spec.ts (E2E trail-persistence with a longer window + spawn-once-perturb pattern)',
 
   // qbert — arcade ROM game (qbert.zip). Outputs are gameplay-
   // conditional (player_cv, score_cv, sfx) and the test browser
@@ -331,37 +315,23 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // when ROM is present) + qbert-runtime.test.ts (game-loop unit).
   qbert: 'arcade ROM gameplay-conditional outputs (ROM not fetched in test env); covered by qbert-*.spec.ts + qbert-runtime.test.ts',
 
-  // peaks — MI Peaks port: dual-channel drum / envelope / sequencer.
-  // gate0/gate1 each fire a SEPARATE channel (out0/out1) so the
-  // universal "first audio output" sink only sees half the modulation;
-  // the cv inputs (knob1/knob2/knob3/knob4) are MODE-dependent (their
-  // effect depends on which Peaks mode is selected, none of which the
-  // universal driver sets). Same shape as `4plexvid` + `marbles`
-  // exemptions above. Covered by peaks.test.ts (per-mode DSP parity)
-  // + peaks.spec.ts (E2E gate→envelope shape per mode).
-  peaks: 'multi-channel + mode-dependent inputs; per-channel/per-mode sinks needed; covered by peaks.test.ts + peaks.spec.ts',
+  // (peaks RE-ENABLED — behavioral-recon #3. It IS a dual-INDEPENDENT-channel
+  //  module — gate0/mode0/k1_0/k2_0 → out0, gate1/mode1/k1_1/k2_1 → out1 — but
+  //  the channel-0 ports DO clear the observed out0 with a big margin, and the
+  //  channel-1 ports are now per-port-exempt as independent-output, not whole-
+  //  module exempt. See the peaks.* entries in BEHAVIORAL_SWEEP_EXEMPT.)
 
-  // treeohvox — TB-303 voice (Open303 port). Default envelope/decay
-  // is so short (decay=600ms, accent transients) that the per-input
-  // CV perturbations (tune_cv, cutoff_cv, res_cv, env_cv, decay_cv,
-  // accent_cv) need a STEADY gate pattern AND mode-specific knob
-  // setup to be visible in the universal sink window. The pitch+gate
-  // inputs PASS, but the 6 CV scalers land at threshold. Covered by
-  // treeohvox-dsp.test.ts + treeohvox-parity.test.ts (DSP-level
-  // CV→filter+envelope response, parity with Open303) + the ART
-  // baseline at art/baselines/treeohvox/.
-  treeohvox: 'short-envelope 303 voice; CV scalers need stable gate train + mode setup; covered by treeohvox-dsp.test.ts + treeohvox-parity.test.ts + ART scenario',
+  // treeohvox — TB-303 voice (Open303 port). The 4-note driver sequence into
+  // pitch_in swings the observed audio_out's spectral-centroid baseline so wide
+  // that the real CV scalers' footprint is hidden under the pitch-sequence noise.
+  // (Measured behavioral-recon #3.)
+  treeohvox: 'noisy-spectrum class: the driver plays a FOUR-note (60/64/67/72) sequence into pitch_in, so the observed `audio_out` spectral-centroid baseline swings ±600-2800 Hz run-to-run from the pitch sequence itself (NOT the test CV). Against that the real CV scalers (cutoff_cv/res_cv/waveform_cv/…) DO shape the filtered output but their centroid/RMS footprint sits UNDER the pitch-sequence noise — they "pass" only via the loose cent metric tripping on the sequence\'s own jitter, while accent_cv reads a GENUINE ~0 delta (Δμ all 0.000; control≈patched). Re-enterable with a HELD single-note driver (stable centroid baseline) + a per-port-calibrated cent/RMS floor sized to that stable baseline — tracked as the held-CV/stable-gate driver follow-up. Covered by treeohvox-dsp.test.ts + treeohvox-parity.test.ts (DSP-level CV→filter/envelope response, Open303 parity) + the treeohvox ART baseline',
 
-  // mixmstrs — multi-channel mixer with subtle CV-controlled gain /
-  // pan per channel. Each ch*_cv input attenuates ONE channel's
-  // contribution to the summed `mix` output; a single channel's CV
-  // perturbation rarely shifts the summed RMS enough to clear the
-  // delta threshold when other channels carry full signal. Same
-  // shape as `attenumix` (which is covered via BEHAVIORAL_PARAMS
-  // boost) but the per-channel CV scalers still sit near threshold.
-  // Covered by mixmstrs.test.ts (per-channel gain/pan unit math) +
-  // VRT baseline (mixmstrs.png) for visual regression.
-  mixmstrs: 'per-channel CV scalers near delta threshold on summed mix; covered by mixmstrs.test.ts + VRT baseline',
+  // mixmstrs — 6-channel stereo mixer. 77 drivable inputs (16 audio + 61 CV)
+  // BLOW the per-test wall-clock at 2 spawns/input (foxy class), and each
+  // per-channel CV scales ONE channel into the SUMMED masterL the sweep observes.
+  // (Measured behavioral-recon #3: the read times out mid-run.)
+  mixmstrs: 'heavy-fan-out + per-channel-on-summed-mix class: mixmstrs declares 77 drivable inputs (16 audio + 61 paramTarget CV), so the sweep\'s 2-spawn-per-input loop = 154 spawns ≈ 28 min for ONE test — it BLOWS the per-test wall-clock budget (the read times out mid-run; same heavy-budget class as foxy/mandelbulb). On TOP of that, each ch{N}_{eq,comp,send,…}_cv scales ONE channel\'s contribution to the SUMMED masterL the sweep observes, so most single-channel CVs shift the summed RMS below the universal floor (the per-channel-on-mix class, cf. warrenspectrum.level*_cv). Re-enterable only with BOTH a per-channel sink driver (observe the channel under test, not the sum) AND a way to test a SUBSET of representative ports under budget. Covered by mixmstrs.test.ts (per-channel gain/pan/comp-macro unit math) + the mixmstrs VRT baseline',
 
   // ── FOXY — SwoleVCO + RasterPainter heavy-mount chain. The module
   //    mounts 3 SwoleBlocks + 3 RasterPainters + WAVECEL worklet + 4-page
@@ -519,12 +489,19 @@ const BEHAVIORAL_RECONCILABLE_EXEMPT: Record<string, string> = {
   // PR #471 "land-now" quarantine — subtle-CV / near-threshold / per-channel
   // class, explicitly marked "re-enable once the universal delta threshold is
   // tuned per-port".
-  adsr:      'CV shape inputs (decay/release) land near the delta threshold — per-port threshold tuning re-enables',
-  buggles:   'random-CV output baseline variance masks input perturbation in the 1.5s window — a longer window / DC-biased modulator re-enables',
-  backdraft: 'HDR feedback-trail variance dominated by upstream motion — a settle window + steady aux driver re-enables',
-  peaks:     'multi-channel + mode-dependent inputs need per-channel/per-mode sink selection — a per-channel sink driver re-enables',
-  treeohvox: 'short-envelope 303 CV scalers need a stable gate train + mode setup — a sustained-gate driver + threshold tuning re-enables',
-  mixmstrs:  'per-channel CV scalers near the delta threshold on the summed mix — per-port threshold tuning re-enables',
+  // (adsr + peaks RE-ENABLED — behavioral-recon #3. adsr: a BEHAVIORAL_PARAMS
+  //  boost (decay=0.1/release=0.2/sustain=0.2) gives the DECAY scaler a big env
+  //  excursion (Δrange≈0.20-0.29, ~10-14× the floor), and a per-port boost
+  //  BEHAVIORAL_PORT_PARAMS['adsr.release']={sustain:0.6} gives the RELEASE scaler
+  //  a tall tail to swing (Δμrms≈0.033-0.054, ~3-5× the floor) — verified 4×
+  //  stable. peaks: the channel-1 ports (gate1/mode1_cv/k1_1_cv/k2_1_cv) feed the
+  //  SEPARATE out1 and are now per-port-exempt; the channel-0 ports clear out0
+  //  with a big, stable margin (mode0_cv Δzc≈600/Δcent≈3300Hz, k1_0/k2_0
+  //  Δrange≈0.6/0.8), verified 3×.)
+  buggles:   'self-noise: clock_cv lands at the 0.01 floor + chaos_cv reads ~0 delta in the 1.5s window — a longer observation window + a per-channel clock-output sink (the rate change is clean on the `clock` gate) re-enables',
+  backdraft: 'animated-video variance-floor (bentbox class): the ±4000-6000 per-frame luma-variance range swamps every input — a longer settle window + spawn-once-perturb (cf. backdraft.spec.ts) re-enables, not this universal harness',
+  treeohvox: 'noisy spectrum: the 4-note driver sequence swings the centroid baseline ±600-2800 Hz, hiding the real CV scalers (accent_cv is a genuine 0-delta) — a held single-note driver + a per-port-calibrated cent/RMS floor re-enables',
+  mixmstrs:  '77 inputs → 28-min wall-time (foxy class) + per-channel CV on the summed masterL — a per-channel sink driver + a representative-subset run under budget re-enables',
   // Intrinsically-quiet feedback tank — the note explicitly says a louder/
   // sustained driver source + per-port calibrated thresholds would re-enable.
   aquaTank:  'observed out1 is intrinsically near-silent on a transient excitation so many ports straddle the floor — a sustained driver + per-port thresholds re-enable',
@@ -550,6 +527,26 @@ const BEHAVIORAL_RECONCILABLE_EXEMPT: Record<string, string> = {
 //   * cite which inputs each knob unlocks (so the reason is auditable)
 //   * NOT push knobs into clipping / NaN territory (test stability)
 const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
+  // adsr (re-enabled, behavioral-recon #3): the `decay` + `release` CV scalers
+  // are the two drivable shape inputs (gate is the dominant silent→~0.8 pass;
+  // attack/sustain/retrig are per-port-exempt). At the DEFAULT decay=0.1 /
+  // release=0.3 with the HIGH default sustain=0.7 the decay barely drops the
+  // level (1→0.7), so a BUGGLES ±1V CV on decay/release only nudged the
+  // per-snapshot RMS by ~1.05-1.65× the floor across a 3× check → near-threshold.
+  // The fix MAXIMISES each scaler's leverage on the observed env RMS:
+  //   • sustain=0.2 makes the DECAY phase a big 1→0.2 excursion, and decay=0.1 s ≈
+  //     the 4-Hz context gate's 125 ms on-window — so within that window the level
+  //     depends STEEPLY on the decay time, and the log-scaled CV (knob ×
+  //     100^(cv/2)) sweeps the decay constant across two decades → the env
+  //     amplitude at any fixed scope phase swings widely (Δrange≈0.20-0.29 RMS).
+  //   • release=0.2 s > the 125 ms gate-off window so the release tail is CUT
+  //     (sampled mid-fall) → the CV changes how much tail survives each off-window.
+  //     The RELEASE test ALSO carries a per-port BEHAVIORAL_PORT_PARAMS override
+  //     (sustain:0.6) so the tail starts TALLER and the swing is robust
+  //     (Δμrms≈0.033-0.054); see BEHAVIORAL_PORT_PARAMS['adsr.release'].
+  // Both clear with a stable margin; verified 4×. All values stay inside the
+  // params' native ranges (decay/release 0.001-10 s, sustain 0-1).
+  adsr: { decay: 0.1, release: 0.2, sustain: 0.2 },
   // analogVco: fmAmount/pmAmount = 0 by default → fm/pm audio inputs
   // produce no audible change. Boost both to 0.5 so both audio inputs
   // AND their CV scalers (fmAmount/pmAmount inputs) perturb the sine.
@@ -1024,6 +1021,23 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'moog961.v_in_a': 'v_in_a → s_out_a only (column-A width-matched passthrough), never the observed v_out1; the v_in_a → s_out_a path is pinned by moog961.test.ts',
   'moog961.v_in_b': 'v_in_b → s_out_b only (column-B fixed-width one-shot), never the observed v_out1; the v_in_b → s_out_b path is pinned by moog961.test.ts',
 
+  // ── PEAKS channel-1 inputs (re-enabled module, behavioral-recon #3). PEAKS is
+  //    TWO INDEPENDENT channels (Émilie Gillet's dual-mode Peaks): gate0/mode0/
+  //    k1_0/k2_0 drive worklet output 0 (out0), and gate1/mode1/k1_1/k2_1 drive
+  //    the SEPARATE worklet output 1 (out1) — see the factory's inputs/outputs
+  //    map (input 1 → ch1 → output 1). The behavioral sweep observes out0 (the
+  //    first output), so the channel-1 ports correctly show NO delta on out0 —
+  //    the IDENTICAL independent-output shape as synesthesia.b_in / moog921a.
+  //    width_cv. The channel-0 ports (gate0/mode0_cv/k1_0_cv/k2_0_cv) ARE real-
+  //    coverage passes with healthy margins (gate0 Δμrms≈0.36; mode0_cv switches
+  //    out0 LFO→drum so Δzc≈530 + Δcent≈3000Hz; k1_0_cv/k2_0_cv Δrange≈0.6/0.8 —
+  //    the LFO rate/wave knobs widen out0's per-snapshot RMS range). The per-
+  //    channel/per-mode DSP is pinned by peaks.test.ts + peaks.spec.ts.
+  'peaks.gate1':    'channel-1 trigger → worklet out1 ONLY, never the observed out0 (two independent channels by design, like synesthesia.b_in); ch1 path pinned by peaks.test.ts + peaks.spec.ts',
+  'peaks.mode1_cv': 'channel-1 mode selector → out1 ONLY, never the observed out0 (independent channel); per-mode ch1 path pinned by peaks.test.ts',
+  'peaks.k1_1_cv':  'channel-1 knob1 → out1 ONLY, never the observed out0 (independent channel); ch1 knob math pinned by peaks.test.ts',
+  'peaks.k2_1_cv':  'channel-1 knob2 → out1 ONLY, never the observed out0 (independent channel); ch1 knob math pinned by peaks.test.ts',
+
   // ── wavetableVco mirrors analogVco's FM/PM gating shape. Same set
   //    of fundamentally-gated inputs that need DC-biased modulators
   //    or non-default knob state. Covered by wavetable-vco.test.ts.
@@ -1385,7 +1399,95 @@ const BEHAVIORAL_PORT_CONTEXT_SOURCE: Record<string, ContextCvOverride> = {
 //     fragile single-pulse-toggle approach), so it's robust across spawns.
 const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
   'sequencer.play_cv': { isPlaying: 1 },
+  // adsr.release — the module-wide BEHAVIORAL_PARAMS keeps sustain LOW (0.2) to
+  // give the DECAY scaler a big 1→0.2 excursion, but that leaves the RELEASE tail
+  // (which starts FROM the sustain level) only 0.2 tall, so the release-time CV's
+  // effect on the 125 ms gate-off window's energy was thin (Δμrms dipped to
+  // ~1.2× the floor across a 3× check → near-threshold). RAISE sustain to 0.6 for
+  // the release test ONLY: the release tail now starts from 0.6 (3× taller), so
+  // the log-scaled release-time CV (knob × 100^(cv/2)) swings how much of that
+  // taller tail survives each off-window — a robust mean+range RMS delta. (decay's
+  // test keeps the module-wide sustain=0.2; this per-port override touches release
+  // alone.) Verified 3× stable with margin.
+  'adsr.release': { sustain: 0.6 },
 };
+
+// ────────── Per-PORT / per-MODULE calibrated delta thresholds ──────────
+//
+// computeDelta() keys on a set of UNIVERSAL floors (rmsMean>0.01, centMean>30Hz,
+// …) sized 2-3× above the typical unperturbed-jitter floor across ALL modules.
+// That single universal floor is necessarily a COMPROMISE: it's too coarse for a
+// genuine-but-subtle CV effect on a QUIET output (the signal falls under the
+// floor) and — read the other way — too LOOSE for a noisy output whose intrinsic
+// jitter already swings a metric past the floor (a no-delta port passes on
+// noise). This is the systemic gap the BEHAVIORAL_SWEEP_EXEMPT header TODO calls
+// out (cube*/chowkick/dx7/treeohvox/… all straddle the single universal floor).
+//
+// This map lets a SPECIFIC port (or whole module) override ONLY the floors that
+// matter for it — sized to THAT port's measured unperturbed-jitter floor — WITHOUT
+// touching the universal floor every other module relies on. Two legitimate
+// directions, both honest:
+//
+//   • TIGHTEN a floor (lower it) ONLY when the port's control-run jitter on that
+//     metric is provably small (measure it 3× first): a real-but-small signal
+//     then registers without lowering the bar for unrelated modules. Pair every
+//     tightened floor with the measured control jitter in the comment so the
+//     margin is auditable.
+//   • RAISE a floor when a noisy output's intrinsic jitter is what's tripping the
+//     universal floor (so a no-delta port stops passing on noise) — pair it with
+//     a different, port-appropriate metric that DOES carry the real signal.
+//
+// NEVER tighten a floor to rescue a port whose measured signal genuinely sits in
+// the jitter (that ships a flake — exactly what quarantined the subtle-CV class).
+// Root-cause with BEHAVIORAL_PARAMS (open a gating knob so the effect is BIG) or
+// a per-port driver FIRST; reach for a calibrated threshold only when the signal
+// is real + stable but the universal floor is the wrong size for this port.
+//
+// Keyed `<moduleType>.<portId>` (per-port) OR `<moduleType>` (whole-module,
+// applies to every non-overridden port). Per-port wins over per-module. Each
+// field defaults to the universal floor when omitted.
+//
+// (Empty today: adsr + peaks — this batch's re-enables — clear the UNIVERSAL
+// floors with a healthy 2.4-13× margin via BEHAVIORAL_PARAMS / per-port exempts,
+// so they need NO threshold override. The mechanism is the systemic-fix
+// infrastructure that lets the NEXT batch — the noisy-output / quiet-exciter
+// class still in BEHAVIORAL_SWEEP_EXEMPT + BEHAVIORAL_RECONCILABLE_EXEMPT — be
+// re-enabled with a per-port-calibrated floor instead of growing the exempt list.)
+interface AudioThresholds {
+  rmsMean: number;
+  rmsRange: number;
+  peakMean: number;
+  crestMean: number;
+  crestRange: number;
+  zcMean: number;
+  zcRange: number;
+  centMean: number;
+  centRange: number;
+}
+const UNIVERSAL_AUDIO_THRESHOLDS: AudioThresholds = {
+  rmsMean: 0.01,
+  rmsRange: 0.02,
+  peakMean: 0.02,
+  crestMean: 0.15,
+  crestRange: 0.2,
+  zcMean: 8,
+  zcRange: 20,
+  centMean: 30,
+  centRange: 60,
+};
+const BEHAVIORAL_DELTA_THRESHOLDS: Record<string, Partial<AudioThresholds>> = {
+  // (No entries yet — see the note above. Example of the intended shape, for the
+  // next reconciliation batch:
+  //   'somemod.subtle_cv': { rmsMean: 0.004, rmsRange: 0.008 },  // ctrl jitter ±0.002, measured 3×
+  // )
+};
+
+function thresholdsFor(modType: string, portId: string): AudioThresholds {
+  const override =
+    BEHAVIORAL_DELTA_THRESHOLDS[`${modType}.${portId}`] ??
+    BEHAVIORAL_DELTA_THRESHOLDS[modType];
+  return override ? { ...UNIVERSAL_AUDIO_THRESHOLDS, ...override } : UNIVERSAL_AUDIO_THRESHOLDS;
+}
 
 // ────────── Sink picker for SUT's primary output ──────────
 //
@@ -1681,7 +1783,11 @@ interface DeltaResult {
   description: string;
 }
 
-function computeDelta(control: AggregatedSample, patched: AggregatedSample): DeltaResult {
+function computeDelta(
+  control: AggregatedSample,
+  patched: AggregatedSample,
+  thresholds: AudioThresholds = UNIVERSAL_AUDIO_THRESHOLDS,
+): DeltaResult {
   if (control.kind === 'audio' && patched.kind === 'audio') {
     const c = control.audio!;
     const p = patched.audio!;
@@ -1725,16 +1831,20 @@ function computeDelta(control: AggregatedSample, patched: AggregatedSample): Del
     // Thresholds calibrated from observed run-to-run jitter floors on
     // unperturbed signals (typical jitter: rms ~±0.005, zc ~±3,
     // centroid ~±10Hz). Floors set 2-3x above jitter to leave margin.
+    // `thresholds` defaults to UNIVERSAL_AUDIO_THRESHOLDS; a per-port /
+    // per-module entry in BEHAVIORAL_DELTA_THRESHOLDS overrides only the
+    // floors that need recalibrating for that specific port.
+    const t = thresholds;
     const exceeded =
-      rmsMeanΔ > 0.01 ||
-      rmsRangeΔ > 0.02 ||
-      peakMeanΔ > 0.02 ||
-      crestMeanΔ > 0.15 ||
-      crestRangeΔ > 0.2 ||
-      zcMeanΔ > 8 ||
-      zcRangeΔ > 20 ||
-      centMeanΔ > 30 ||
-      centRangeΔ > 60 ||
+      rmsMeanΔ > t.rmsMean ||
+      rmsRangeΔ > t.rmsRange ||
+      peakMeanΔ > t.peakMean ||
+      crestMeanΔ > t.crestMean ||
+      crestRangeΔ > t.crestRange ||
+      zcMeanΔ > t.zcMean ||
+      zcRangeΔ > t.zcRange ||
+      centMeanΔ > t.centMean ||
+      centRangeΔ > t.centRange ||
       (centMeanRatio > 1.15 && Math.max(c.spectralCentroid.mean, p.spectralCentroid.mean) > 50) ||
       // Range-ratio gates: control's range must be small enough that
       // expansion is meaningful, and patched's range must clear an
@@ -2273,7 +2383,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
           continue;
         }
 
-        const delta = computeDelta(controlSample, patchedSample);
+        const delta = computeDelta(controlSample, patchedSample, thresholdsFor(mod.type, port.id));
         if (delta.exceeded) {
           passes.push(`${mod.type}.${port.id} (type=${port.type}) → ${observed.outPort} (type=${observed.outType}): ${delta.description}`);
         } else {
