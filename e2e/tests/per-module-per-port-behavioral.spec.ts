@@ -425,24 +425,53 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //  noise source on ANY of in1..in4 reach the observed out1 → all 4 inputs are
   //  real-coverage passes. Verified 3× locally.)
   //
-  // moog993 — trigger & envelope voltages patch-bay panel. trig_out mirrors
-  // an upstream trigger; with no upstream trigger on trig_from2 both runs
-  // read silence (C=P=0.000). Covered by moog993.test.ts.
-  moog993:  'trigger/envelope patch-bay panel; trig_out is silent (C=P=0.000) until an upstream trigger feeds the observed channel (driver supplies none on trig_from2); routing pinned by moog993.test.ts',
-  // moog961 — S-trig ↔ V-trig format CONVERTER. v_out mirrors an upstream
-  // gate; with no upstream gate on v_in_a/v_in_b both runs read silence
-  // (C=P=0.000). Covered by moog961.test.ts.
-  moog961:  'S-trig/V-trig format converter; v_out is silent (C=P=0.000) until an upstream gate feeds v_in_a/v_in_b (driver supplies none on those channels); conversion pinned by moog961.test.ts',
-  // moog911a — dual trigger DELAY. out mirrors a delayed upstream trigger;
-  // with no upstream trigger on trig1/trig2 both runs read silence
-  // (C=P=0.000). Covered by moog911a.test.ts.
-  moog911a: 'dual trigger-delay utility; out is silent (C=P=0.000) until an upstream trigger feeds trig1/trig2 (driver supplies none); delay/coupling pinned by moog911a.test.ts',
-  // moog960 — sequential CONTROLLER (analog step sequencer). The row CV
-  // outputs hold a CONSTANT idle value (C=P=0.500) until an upstream clock
-  // advances the column pointer; the driver supplies no clock on the
-  // observed row, so clock/start/stop never perturb the constant. Covered
-  // by moog960.test.ts.
-  moog960:  'analog step-sequencer (sequential controller); row CV outputs hold a constant idle value (C=P=0.500) until an upstream clock advances the column pointer (driver supplies none on the observed row); step/clock logic pinned by moog960.test.ts',
+  // (moog993 RE-ENABLED — behavioral-recon #2. NOT a "no-upstream-source"
+  //  case: the default `route1=1` makes `trig_from1 → trig_out1` a UNITY
+  //  passthrough (the observed first output is trig_out1, gate), so the 4-Hz
+  //  gate-train source on trig_from1 reaches trig_out1 → a clean silent-vs-
+  //  gated delta. trig_from2 / env_in1 / env_in2 are per-port-exempt in
+  //  BEHAVIORAL_SWEEP_EXEMPT — route1 ignores source 2, and the env CVs feed
+  //  the SEPARATE env_out* CV outputs the gate-typed observed trig_out1 can't
+  //  see. Verified 3× locally.)
+  //
+  // (moog961 RE-ENABLED — behavioral-recon #2. NOT a "no-upstream-source"
+  //  case: the observed first output v_out1 = `s_in held high OR audio→trigger
+  //  rising-edge` (trigger-convert-dsp.ts). The 4-Hz gate-train source on s_in
+  //  reaches v_out1 (format passthrough) against a clean SILENT control → a
+  //  real-coverage pass (Δμrms≈0.72). BEHAVIORAL_PARAMS pins sensitivity high
+  //  so the noise *context* on audio_in can't muddy the s_in control.
+  //  audio_in / v_in_a / v_in_b are per-port-exempt; see BEHAVIORAL_SWEEP_EXEMPT
+  //  for why. Verified 3× locally.)
+  //
+  // moog911a — dual trigger DELAY. The default `mode=0` (OFF) routes
+  // trig1 → out1, BUT out1 is a ~1 ms ONE-SHOT pulse (TRIGGER_DELAY_PULSE_S,
+  // not a held gate). At the harness's 4-Hz (240-BPM) gate source that's a
+  // 1 ms pulse every 250 ms = a 0.4% duty cycle; the universal sink reads five
+  // 50 ms scope windows (spaced 150 ms), so whether ANY window's phase lands on
+  // a 1 ms pulse is a non-deterministic AudioContext-scheduler race (C=P=0.000
+  // when none align — the SAME sparse-transient / scheduler-phase class as the
+  // `grids` module exempt + the chowkick/warrenspectrum percussion-ping port
+  // exempts). The bulk-energy RMS-over-windows metric cannot reliably observe a
+  // sub-ms transient; a per-transient PEAK metric (or a fast dense gate source)
+  // would gate it — tracked as the same behavioral-harness follow-up as the
+  // percussion-transient class. The trig1 → out1 delay timing + OFF/PARALLEL/
+  // SERIES coupling is pinned deterministically by moog911a.test.ts.
+  moog911a: 'dual trigger-delay; out1 is a ~1 ms one-shot pulse (0.4% duty at the 4-Hz gate source) whose phase-vs-50ms-scope-window alignment is a non-deterministic scheduler race (C=P=0.000 when none align — grids / chowkick-ping sparse-transient class); the universal RMS-over-windows metric can\'t observe a sub-ms transient (a per-transient peak metric would); trig1→out1 delay + coupling pinned by moog911a.test.ts',
+  // moog960 — sequential CONTROLLER (analog step sequencer). It AUTO-RUNS on
+  // spawn (startTransport() — like the repo `sequencer`) at the internal rate
+  // (2 Hz), sweeping its 8 columns; but ALL 24 step pots default to 0.5 and the
+  // ranges to ×1, so every column emits the SAME 0.5 on the observed row1 CV —
+  // a CONSTANT 0.5 in BOTH the control AND patched runs regardless of which
+  // transport input (clock/start/stop) is driven. Opening differing pots would
+  // make row1 sweep, but then the FREE-RUNNING control already sweeps too, so a
+  // 4-Hz clock/start/stop gate only RE-PHASES that same sweep — a subtle
+  // variance/timing shift that straddles the universal RMS-over-windows
+  // threshold (the SAME subtle-sequencer-state class as sequencer.reset /
+  // atlantisCatalyst.reset_cv). Deterministic per-step CV, range scaling, and
+  // mode (SKIP/STOP) logic is pinned by moog960.test.ts (Seq960Stepper) +
+  // seq960-dsp.test.ts. (Re-enterable once the harness supports a held-CV /
+  // per-column-distinct-pots driver that makes the clock advance observable.)
+  moog960:  'analog step-sequencer; auto-runs at the internal rate but all 24 pots default to 0.5 so the observed row1 CV holds a CONSTANT 0.5 (C=P) regardless of the driven transport input; differing pots make BOTH the free-running control AND patched sweep, so a clock/start/stop gate only re-phases the same sweep — a subtle variance/timing shift below the RMS-over-windows threshold (subtle-sequencer-state class, cf sequencer.reset); per-step/range/mode logic pinned by moog960.test.ts + seq960-dsp.test.ts',
 
   // ── MANDELBULB — heavy ray-marched 3D fractal video source. Each frame
   //    is a full GPU ray-march; the behavioral sweep's 2-spawn × per-input
@@ -453,6 +482,56 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    class as the `foxy` exemption above. Covered by mandelbulb-related
   //    VRT/specs which screenshot the fractal at distinct parameter values.
   mandelbulb: 'heavy ray-marched 3D fractal; 2-spawn × per-input sweep exceeds the 162s CI test budget (times out, not a per-port delta failure — same class as foxy); covered by mandelbulb VRT/specs',
+};
+
+// ────────── Honest exempt split: reconcilable vs intentional ──────────
+//
+// BEHAVIORAL_MODULE_EXEMPT mixes two fundamentally different kinds of skip, and
+// lumping them into one "N disabled" number is misleading — it makes the
+// coverage gap look ~2× bigger than the part we can actually close.
+//
+//   • INTENTIONAL (architecture-gated) — CANNOT be re-enabled in this sweep by
+//     any amount of param/driver/threshold tuning, because the observable
+//     behaviour fundamentally lives outside the harness: hardware IO, MIDI,
+//     file/ROM input, gameplay-conditional outputs, pure sinks, MI state
+//     machines that need multi-second windows, animated-video with a variance
+//     floor that swamps every input, heavy mounts that blow the CI wall-clock,
+//     and per-channel multiplexers with no mix output. These are CORRECT skips
+//     and stay skipped — they're covered by dedicated specs. They are NOT the
+//     backlog; counting them as "disabled coverage to drive down" is dishonest.
+//
+//   • RECONCILABLE (the fixable backlog) — DOES have a real observable input→
+//     output path that the *current universal harness* can't yet see: ports
+//     near the delta threshold (subtle CV), sparse percussion transients the
+//     RMS-over-windows metric misses, per-channel scalers on a summed sink,
+//     intrinsically-quiet exciters, sequencer state that needs a held-CV /
+//     distinct-pot driver. A per-transient peak metric, per-port threshold
+//     tuning, a louder/sustained driver, or per-channel sink selection would
+//     re-enable these — that's the work this reconciliation leg drives down.
+//
+// The set below lists EXACTLY the reconcilable keys; everything else in
+// BEHAVIORAL_MODULE_EXEMPT is intentional. The reconciliation counter
+// (scripts/test-reconciliation.mjs) reads this set to report the split, so the
+// number we watch fall reflects real reconcilable coverage — not the raw total.
+// As a router/CV module is genuinely re-enabled it leaves BOTH maps; if one is
+// proven architecture-gated it leaves this set (becomes intentional).
+const BEHAVIORAL_RECONCILABLE_EXEMPT: Record<string, string> = {
+  // PR #471 "land-now" quarantine — subtle-CV / near-threshold / per-channel
+  // class, explicitly marked "re-enable once the universal delta threshold is
+  // tuned per-port".
+  adsr:      'CV shape inputs (decay/release) land near the delta threshold — per-port threshold tuning re-enables',
+  buggles:   'random-CV output baseline variance masks input perturbation in the 1.5s window — a longer window / DC-biased modulator re-enables',
+  backdraft: 'HDR feedback-trail variance dominated by upstream motion — a settle window + steady aux driver re-enables',
+  peaks:     'multi-channel + mode-dependent inputs need per-channel/per-mode sink selection — a per-channel sink driver re-enables',
+  treeohvox: 'short-envelope 303 CV scalers need a stable gate train + mode setup — a sustained-gate driver + threshold tuning re-enables',
+  mixmstrs:  'per-channel CV scalers near the delta threshold on the summed mix — per-port threshold tuning re-enables',
+  // Intrinsically-quiet feedback tank — the note explicitly says a louder/
+  // sustained driver source + per-port calibrated thresholds would re-enable.
+  aquaTank:  'observed out1 is intrinsically near-silent on a transient excitation so many ports straddle the floor — a sustained driver + per-port thresholds re-enable',
+  // Moog router batch deferred this leg (behavioral-recon #2) — both have a real
+  // input→output path the universal metric/driver can't yet observe.
+  moog911a:  'out1 is a ~1 ms one-shot pulse the RMS-over-windows metric can\'t catch — a per-transient PEAK metric (or a dense fast gate source) re-enables',
+  moog960:   'row CV holds a constant 0.5 (default pots) / re-phases the free-running sweep (distinct pots) — a held-CV / distinct-pot driver that makes the clock advance observable re-enables',
 };
 
 // ────────── Per-module behavioral PARAMS override ──────────
@@ -491,6 +570,19 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // observed sine output. (Verified locally: makes dc_mod / ac_mod / sync real-
   // coverage passes; width_bus is exempt — it shapes the rect/saw, not the sine.)
   moog921b: { modAmount: 0.7, syncMode: 1 },
+  // moog961: S/V-trigger format converter. The observed v_out1 = `s_in held
+  // high OR audio→trigger rising-edge` (trigger-convert-dsp.ts). moog961 is a
+  // `utilities`-category module, so buildContextEdges feeds NOISE (level 0.4)
+  // into the non-test audio input (audio_in) in BOTH the control + patched
+  // runs — at the default sensitivity=0.5 that context noise would cross the
+  // detector and pulse v_out1 in the CONTROL too, muddying the s_in test. Pin
+  // sensitivity HIGH (0.95) so the level-0.4 context noise stays BELOW the
+  // detector (its rectified peaks rarely reach 0.95) → the s_in control reads a
+  // clean SILENT 0.000 and the gate-train-driven v_out1 is the only variable
+  // (s_in is a real-coverage pass with Δμrms≈0.72, ~70× the floor). The
+  // column-A/B V inputs (and audio_in itself) are per-port-exempt; see
+  // BEHAVIORAL_SWEEP_EXEMPT for why.
+  moog961: { sensitivity: 0.95 },
   // macrooscillator: harmonics/timbre/morph default tuned for clean; boost.
   macrooscillator: { harmonics: 0.5, timbre: 0.5, morph: 0.5, level: 0.8 },
   // vca: default base=0 means the VCA is silent until CV opens it.
@@ -914,6 +1006,23 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   // width_bus shapes the rectangular/saw duty cycle, NOT the sine tap — the
   // identical legit no-op as moog921Vco.width_cv. Pinned by moog921b.test.ts.
   'moog921b.width_bus': 'pulse-width sets the rect/saw duty cycle, not the measured sine tap (same shape as moog921Vco.width_cv); covered by moog921b.test.ts',
+
+  // ── MOOG 993 trigger/envelope patch-bay (re-enabled, behavioral-recon #2).
+  //    Observed first output is trig_out1 (gate). The default `route1=1` makes
+  //    trig_from1 → trig_out1 a unity passthrough (real coverage). The other
+  //    inputs are legit no-ops on the observed trig_out1:
+  'moog993.trig_from2': 'route1=1 (default) selects SOURCE 1 only, so trig_from2 is muted into trig_out1; the from-2 routing (route1=2) is pinned by moog993.test.ts',
+  'moog993.env_in1':    'env_in1 is a unity passthrough to the SEPARATE env_out1 CV output, not the observed gate-typed trig_out1 (independent buses by design, like moog921a.width_cv); env passthrough pinned by moog993.test.ts',
+  'moog993.env_in2':    'env_in2 is a unity passthrough to the SEPARATE env_out2 CV output, not the observed gate-typed trig_out1 (independent buses by design); env passthrough pinned by moog993.test.ts',
+
+  // ── MOOG 961 S/V-trigger format converter (re-enabled, behavioral-recon #2).
+  //    Observed first output is v_out1 (gate). s_in (format passthrough) is the
+  //    real-coverage input: its 4-Hz gate train drives v_out1 against a clean
+  //    SILENT control (Δμrms≈0.72; see BEHAVIORAL_PARAMS.moog961). The other
+  //    three inputs are legit no-ops / masked on the observed v_out1:
+  'moog961.audio_in': 'audio_in DOES drive v_out1 (level→trigger detector), but the behavioral harness fires the s_in CONTEXT gate at 240 BPM in BOTH runs — so v_out1 is already pulsing at rms≈0.7 and audio_in\'s added transients shift it by only Δμrms≈0.01 (straddles the threshold → near-threshold jitter). The audio→trigger detector path is pinned by moog961.test.ts (rectified-level crossing fires v_out1/v_out2)',
+  'moog961.v_in_a': 'v_in_a → s_out_a only (column-A width-matched passthrough), never the observed v_out1; the v_in_a → s_out_a path is pinned by moog961.test.ts',
+  'moog961.v_in_b': 'v_in_b → s_out_b only (column-B fixed-width one-shot), never the observed v_out1; the v_in_b → s_out_b path is pinned by moog961.test.ts',
 
   // ── wavetableVco mirrors analogVco's FM/PM gating shape. Same set
   //    of fundamentally-gated inputs that need DC-biased modulators
@@ -1985,6 +2094,24 @@ function filterErrors(errors: string[]): string[] {
     && !e.includes('Failed to load resource')
     && !(e.includes('[reconciler] reconcile failed') && e.includes('disconnect')),
   );
+}
+
+// ────────── Exempt-split integrity check ──────────
+// Every RECONCILABLE key must be an actual module exemption (the reconcilable
+// backlog is a SUBSET of what's disabled — a key here that isn't in
+// BEHAVIORAL_MODULE_EXEMPT means a module was re-enabled but left dangling in
+// the reconcilable list, which would make the reconciliation counter's split
+// wrong). Fail loudly at load so the two maps can't drift apart silently.
+{
+  const dangling = Object.keys(BEHAVIORAL_RECONCILABLE_EXEMPT).filter(
+    (k) => !(k in BEHAVIORAL_MODULE_EXEMPT),
+  );
+  if (dangling.length > 0) {
+    throw new Error(
+      `BEHAVIORAL_RECONCILABLE_EXEMPT has key(s) not in BEHAVIORAL_MODULE_EXEMPT ` +
+      `(re-enabled but not dropped from the reconcilable list): ${dangling.join(', ')}`,
+    );
+  }
 }
 
 // ────────── Tests ──────────
