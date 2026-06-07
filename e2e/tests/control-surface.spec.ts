@@ -228,6 +228,131 @@ test('multiple controls from multiple modules: grouped, lock/unlock + move, MIDI
   if (beforeLocked && afterLocked) expect(Math.abs(afterLocked.x - beforeLocked.x)).toBeLessThan(4);
 });
 
+// ── CARD-LAYOUT RESIZE: the surface grows to show ALL groups (no clipping) ──
+//
+// REGRESSION (the resize bug): the card was a fixed 360px wide with a fixed-
+// height (~150px), overflow:hidden `.cs-canvas`, while group boxes are tiled in
+// rows of 2. Groups past the first row (or in the right column) were
+// added-to-the-Y.Doc-but-CLIPPED → "can't add more than ~2 controls". The fix:
+// LOCKED renders boxes in a wrap layout + the card grows to fit; UNLOCKED sizes
+// the canvas from the box positions. Either way EVERY group + knob must render
+// AND sit within the card's bounding box.
+
+async function bindControls(page: Page, surfaceId: string): Promise<void> {
+  // Bind one control from each of 4 distinct source modules straight onto the
+  // surface node's data (the add path is covered above; here we exercise the
+  // RENDER/clip path with 4 groups deterministically, no per-send menu dance).
+  await page.evaluate((sid) => {
+    const w = window as unknown as {
+      __patch: { nodes: Record<string, PatchNode> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const cs = w.__patch.nodes[sid];
+      if (!cs.data) cs.data = {};
+      (cs.data as Record<string, unknown>).bindings = [
+        { moduleId: 'adsr-1', paramId: 'attack' },
+        { moduleId: 'adsr-2', paramId: 'decay' },
+        { moduleId: 'filter-1', paramId: 'cutoff' },
+        { moduleId: 'lfo-1', paramId: 'rate' },
+      ];
+    });
+  }, surfaceId);
+}
+
+test('card grows so ALL groups + knobs render within bounds (locked + unlocked)', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'cs-1', type: 'controlSurface', position: { x: 900, y: 40 }, domain: 'meta' },
+    { id: 'adsr-1', type: 'adsr', position: { x: 40, y: 40 }, domain: 'audio' },
+    { id: 'adsr-2', type: 'adsr', position: { x: 40, y: 360 }, domain: 'audio' },
+    { id: 'filter-1', type: 'filter', position: { x: 400, y: 40 }, domain: 'audio' },
+    { id: 'lfo-1', type: 'lfo', position: { x: 400, y: 360 }, domain: 'audio' },
+  ]);
+
+  const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
+  await expect(surface).toBeVisible();
+  await bindControls(page, 'cs-1');
+
+  const groupSel = '[data-testid="control-surface-group"]';
+  const knobSel = '[data-testid^="control-surface-knob-"]';
+
+  // Assert every group + every knob renders and is fully inside the card box.
+  async function expectAllWithinBounds(label: string): Promise<void> {
+    await expect(surface.locator(groupSel), label).toHaveCount(4);
+    await expect(surface.locator(knobSel), label).toHaveCount(4);
+    const cardBox = await surface.boundingBox();
+    expect(cardBox, `${label}: card has a box`).toBeTruthy();
+    const eps = 2; // sub-pixel tolerance
+    const n = await surface.locator(groupSel).count();
+    for (let i = 0; i < n; i++) {
+      const gb = await surface.locator(groupSel).nth(i).boundingBox();
+      expect(gb, `${label}: group ${i} visible`).toBeTruthy();
+      if (gb && cardBox) {
+        // Each group box sits within the card's bounds (not clipped off-card).
+        expect(gb.x + gb.width, `${label}: group ${i} right edge within card`)
+          .toBeLessThanOrEqual(cardBox.x + cardBox.width + eps);
+        expect(gb.y + gb.height, `${label}: group ${i} bottom edge within card`)
+          .toBeLessThanOrEqual(cardBox.y + cardBox.height + eps);
+        expect(gb.x, `${label}: group ${i} left edge within card`)
+          .toBeGreaterThanOrEqual(cardBox.x - eps);
+        expect(gb.y, `${label}: group ${i} top edge within card`)
+          .toBeGreaterThanOrEqual(cardBox.y - eps);
+      }
+    }
+    // Every knob is non-zero-size + visible (not collapsed/hidden by clipping).
+    const kn = await surface.locator(knobSel).count();
+    for (let i = 0; i < kn; i++) {
+      const kb = await surface.locator(knobSel).nth(i).boundingBox();
+      expect(kb && kb.width > 0 && kb.height > 0, `${label}: knob ${i} has size`).toBeTruthy();
+    }
+  }
+
+  // Toggling lock changes the button label + the card layout (so the button can
+  // shift/reflow). Click then wait for the attribute to settle to the target,
+  // re-locating + retrying once if the first click landed mid-reflow.
+  async function setLocked(want: 'true' | 'false'): Promise<void> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if ((await surface.getAttribute('data-locked')) === want) return;
+      await surface.locator('[data-testid="control-surface-lock"]').click();
+      try {
+        await expect(surface).toHaveAttribute('data-locked', want, { timeout: 1500 });
+        return;
+      } catch {
+        /* reflow may have moved the button; loop re-reads + retries */
+      }
+    }
+    await expect(surface).toHaveAttribute('data-locked', want);
+  }
+
+  // Default state is UNLOCKED → absolute layout sized from box positions.
+  await expect(surface).toHaveAttribute('data-locked', 'false');
+  await expectAllWithinBounds('unlocked');
+
+  // LOCKED (the normal display) → flow/wrap layout, card grows to fit.
+  await setLocked('true');
+  await expectAllWithinBounds('locked');
+
+  // Drag-when-unlocked still works: unlock, drag a group, position persists.
+  await setLocked('false');
+  const dragBox = surface.locator(`${groupSel}[data-source-id="filter-1"]`);
+  const b = await dragBox.boundingBox();
+  if (b) {
+    await page.mouse.move(b.x + 18, b.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(b.x + 90, b.y + 70, { steps: 6 });
+    await page.mouse.up();
+  }
+  const layout = await page.evaluate(() => {
+    const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
+    return (w.__patch.nodes['cs-1']?.data as { layout?: Record<string, { x: number; y: number }> })?.layout ?? null;
+  });
+  expect(layout && layout['filter-1'], 'unlocked drag persisted a position').toBeTruthy();
+  // ...and after the drag the canvas still contains every group (grew to fit).
+  await expectAllWithinBounds('unlocked-after-drag');
+});
+
 // ── TOYBOX (nested node.data params) → control surface ──
 //
 // REGRESSION (this PR): TOYBOX controls do NOT live on node.params — material
