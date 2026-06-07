@@ -1,14 +1,24 @@
-name: Deploy VRT gallery (GitHub Pages)
+name: Deploy GitHub Pages (VRT gallery + Test Reconciliation)
 
-# Builds + publishes the VRT gallery (e2e/vrt/build_gallery.py renders
-# docs/vrt/index.html from e2e/vrt/__screenshots__/**) on every push to
-# main. Modeled on doomviz's pages.yml — see the LFS checkout for why
-# `lfs: true` is required (otherwise the gallery embeds pointer-file PNGs
-# that render as broken images).
+# Builds + publishes the GitHub Pages site on every push to main. There is ONE
+# Pages site per repo, so this single workflow owns the whole `docs/` tree:
 #
-# Idempotent: a green run just rewrites docs/vrt/index.html with the same
-# baselines + an updated commit short-SHA. No state on the runner survives
-# between runs.
+#   docs/vrt/                  — VRT gallery (e2e/vrt/build_gallery.py renders
+#                                docs/vrt/index.html from
+#                                e2e/vrt/__screenshots__/**). LFS checkout is
+#                                required or the gallery embeds pointer-file PNGs
+#                                that render as broken images.
+#   docs/test-reconciliation/  — Test Reconciliation report
+#                                (scripts/build-test-reconciliation-page.mjs
+#                                renders index.html from the committed
+#                                changelog.json history + a FRESH live snapshot
+#                                computed at deploy time so the counts stay
+#                                honest). The committed history is tracked;
+#                                only the generated index.html is .gitignored.
+#   docs/index.html            — landing page linking both.
+#
+# Idempotent: a green run just rewrites the generated HTML with the same inputs +
+# an updated commit short-SHA. No state on the runner survives between runs.
 
 on:
   push:
@@ -16,6 +26,9 @@ on:
     paths:
       - 'e2e/vrt/__screenshots__/**'
       - 'e2e/vrt/build_gallery.py'
+      - 'docs/test-reconciliation/changelog.json'
+      - 'scripts/test-reconciliation.mjs'
+      - 'scripts/build-test-reconciliation-page.mjs'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -48,36 +61,70 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install deps (npm only — no Playwright browser needed for the page build)
+        run: flox activate -- npm install
+
+      - name: Emit the registry manifest (for live parametrized counts)
+        # Non-fatal: the page builder degrades gracefully (warns + parametrized
+        # counts shown as 0) if the manifest is unavailable, so a hiccup here
+        # never breaks the deploy. svelte-kit sync runs via `npm install`'s
+        # prepare hook so tsconfig resolves.
+        continue-on-error: true
+        run: flox activate -- task test:emit-manifest
+
       - name: Build VRT gallery
         run: |
           mkdir -p docs/vrt
           python3 e2e/vrt/build_gallery.py \
             --baseline-dir e2e/vrt/__screenshots__ \
             --output-dir   docs/vrt
-          # Land an index.html at the docs/ root that just redirects into
-          # docs/vrt/ — saves reviewers a click + future-proofs the path.
-          # Banner header + footer match the gallery treatment for a
-          # consistent landing page even though most viewers redirect through.
+
+      - name: Build Test Reconciliation page (committed history + live snapshot)
+        run: flox activate -- node scripts/build-test-reconciliation-page.mjs --out docs/test-reconciliation
+
+      - name: Write the docs/ landing page
+        run: |
+          # Landing page links both sub-sites. Banner header + footer match the
+          # gallery/report treatment for a consistent landing page.
           cat > docs/index.html <<'HTML'
           <!doctype html>
           <html lang="en">
           <head>
             <meta charset="utf-8">
-            <title>patchtogether.live — VRT gallery</title>
-            <meta http-equiv="refresh" content="0; url=vrt/">
-            <link rel="canonical" href="vrt/">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>patchtogether.live — test reports</title>
             <style>
               body { margin: 0; background: #1a1a1a; color: #e0e0e0; font-family: 'Courier New', monospace; }
               .banner { display: block; width: 100%; height: auto; }
               .banner-header { margin-bottom: 2rem; }
               .banner-footer { margin-top: 2rem; }
-              main { max-width: 1400px; margin: 0 auto; padding: 0 20px; text-align: center; }
+              main { max-width: 900px; margin: 0 auto; padding: 0 20px; text-align: center; }
+              h1 { letter-spacing: 2px; }
+              ul { list-style: none; padding: 0; line-height: 2.2; font-size: 1.1rem; }
               a { color: #66bbff; }
+              .desc { color: #9aa; font-size: .85rem; }
             </style>
           </head>
           <body>
             <img class="banner banner-header" src="assets/header.png" alt="patchtogether.live header banner">
-            <main><p><a href="vrt/">VRT gallery</a></p></main>
+            <main>
+              <h1>TEST REPORTS</h1>
+              <ul>
+                <li><a href="vrt/">VRT gallery</a><br><span class="desc">per-card Playwright screenshot baselines</span></li>
+                <li><a href="test-reconciliation/">Test Reconciliation</a><br><span class="desc">per-block total / disabled test counts over time</span></li>
+              </ul>
+            </main>
             <img class="banner banner-footer" src="assets/footer.png" alt="patchtogether.live footer banner" loading="lazy">
           </body>
           </html>

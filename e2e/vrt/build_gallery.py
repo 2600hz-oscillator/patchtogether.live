@@ -456,7 +456,7 @@ def render_html(
             {('<div class="grid">' + composite_html + '</div>') if composite_html else '<div class="empty-state">No composite-state baselines yet — capture some via `task vrt:update`.</div>'}
         </section>
         <footer>
-            <p><a href="../">&laquo; back</a> &middot; <a href="https://github.com/2600hz-oscillator/patchtogether.live">repo</a></p>
+            <p><a href="../">&laquo; back</a> &middot; <a href="../test-reconciliation/">Test Reconciliation</a> &middot; <a href="https://github.com/2600hz-oscillator/patchtogether.live">repo</a></p>
         </footer>
     </div>
     <img class="banner banner-footer" src="../assets/footer.png" alt="patchtogether.live footer banner" loading="lazy">

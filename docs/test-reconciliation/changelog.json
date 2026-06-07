@@ -1,0 +1,17 @@
+{
+  "_comment": "Test Reconciliation history — append-only, committed. Each entry is a dated snapshot of per-block {total, disabled} produced by `node scripts/test-reconciliation.mjs --json`. The GitHub Pages build (scripts/build-test-reconciliation-page.mjs) renders these committed entries PLUS a freshly-computed 'live' entry so the page stays honest at deploy time. To add an entry: run `flox activate -- task test:recon -- --append` (or paste the --json `blocks` under a new dated key). Watch the disabled count fall over time. Do NOT edit past entries.",
+  "entries": [
+    {
+      "date": "2026-06-07",
+      "note": "Seed entry — first Test Reconciliation snapshot (test-stability restoration program, Area 1).",
+      "blocks": [
+        { "block": "unit", "kind": "raw", "total": 5934, "disabled": 2 },
+        { "block": "e2e", "kind": "raw", "total": 896, "disabled": 1 },
+        { "block": "art", "kind": "raw", "total": 457, "disabled": 0 },
+        { "block": "vrt", "kind": "parametrized", "total": 150, "disabled": 0 },
+        { "block": "behavioral", "kind": "parametrized", "total": 92, "disabled": 64 },
+        { "block": "@collab", "kind": "raw (e2e subset)", "total": 108, "disabled": 0 }
+      ]
+    }
+  ]
+}
