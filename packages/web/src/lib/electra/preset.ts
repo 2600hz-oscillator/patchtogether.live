@@ -89,6 +89,44 @@ export const PAGE_CONTROL = 1;
 export const PAGE_MIXMASTER = 2;
 export const PAGE_SYSTEM = 3;
 
+// ── Control LAYOUT grid (FW 3.0.5+, 1024x600 mk2 display) ──────────────────
+// Every control + group REQUIRES an on-screen `bounds` [x,y,w,h]; the firmware
+// does NO auto-positioning, so a control with no bounds renders nothing (the
+// page appears but is empty). These are the canonical Electra grid constants
+// (cross-confirmed by docs.electra.one preset format + the xot/ElectraOne
+// reference dumper): 6 columns x 6 rows of 146x56 cells. A page holds 3 control
+// sets stacked as 2-row bands; potId 1..6 = a band's top row, 7..12 = bottom.
+const CTRL_W = 146;
+const CTRL_H = 56;
+const COL_X = [20, 187, 354, 521, 688, 855] as const; // 6 column origins (pitch 167)
+const ROW_Y = [28, 118, 208, 298, 388, 478] as const; // 6 row origins (pitch 90)
+
+/** Bounds for a control at potId (1..12) within controlSetId (1..3). */
+function boundsForPotSet(potId: number, controlSetId: number): [number, number, number, number] {
+  const col = (potId - 1) % 6;
+  const row = (controlSetId - 1) * 2 + Math.floor((potId - 1) / 6);
+  return [COL_X[col] ?? 20, ROW_Y[Math.min(row, 5)] ?? 28, CTRL_W, CTRL_H];
+}
+
+/** Bounding box for a group spanning page-local slots [from..to] (1-based). */
+function boundsForSlotRange(from: number, to: number): [number, number, number, number] {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let s = from; s <= to; s++) {
+    const csId = Math.floor((s - 1) / POTS_PER_SET) + 1;
+    const potId = ((s - 1) % POTS_PER_SET) + 1;
+    const [x, y, w, h] = boundsForPotSet(potId, csId);
+    minX = Math.min(minX, x); minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + h);
+  }
+  return [minX, minY, maxX - minX, maxY - minY];
+}
+
+/** MIXMSTRS channel count surfaced on the Electra mixer page. The N leftmost
+ *  pots of each row map to channels 1..N. NOTE: the audio module is still 4
+ *  channels until the 6-channel expansion lands — ch5/ch6 controls render but
+ *  are inert (read/write no-op) until then. */
+const MIX_CHANNELS = [1, 2, 3, 4, 5, 6] as const;
+
 // ──────────────────────────── formatter selection ────────────────────────────
 
 /** Pick the Lua formatter fn name for a param def (uploaded in the Lua layer). */
@@ -220,23 +258,22 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
   // ── Page 2: MIXMASTER ──
   if (input.mixmstrsId) {
     const mx = input.mixmstrsId;
-    // Control set 1: 4× channel fader + 4× send1 + 4× send2 (12).
-    // Control set 2: 4× EQ-low + 4× EQ-mid + 4× EQ-hi (12).
-    // Control set 3: 4× comp macro + master + a meter row (read-only vfaders).
-    // (The exact 29 writable controls; meters fill the rest as read-only.)
-    let s = 0;
-    const pushMix = (paramId: string, label: string, min: number, max: number, curve: KnobCurve, units?: string) => {
-      const csId = Math.floor(s / POTS_PER_SET) + 1;
-      const potId = (s % POTS_PER_SET) + 1;
+    // Per-channel mixer grid mapped to the Electra's 3 control sets (2 rows
+    // each). The N LEFTMOST pots of every row = channels 1..N; pots 1-6 = the
+    // top row, 7-12 = the bottom row. MID EQ + COMP are intentionally NOT on
+    // this page; master volume + the VU meters live on the SYSTEM page.
+    //   Set 1: VOL (top, pots 1-6)  | PAN (bottom, pots 7-12) — RESERVED
+    //   Set 2: LOW EQ (top)         | HIGH EQ (bottom)
+    //   Set 3: SEND1 (top)          | SEND2 (bottom)
+    const pushMixAt = (
+      paramId: string, label: string, csId: number, potId: number,
+      min: number, max: number, curve: KnobCurve, units?: string,
+    ) => {
       const cc = alloc.nextCc();
       const def: GenParamDef = { id: paramId, label, min, max, defaultValue: 0, curve, units };
       controls.push({
-        id: nextControlId(),
-        pageId: PAGE_MIXMASTER,
-        controlSetId: csId,
-        potId,
-        type: 'fader',
-        name: label,
+        id: nextControlId(), pageId: PAGE_MIXMASTER, controlSetId: csId, potId,
+        type: 'fader', name: label,
         inputs: [{ potId, valueId: 'value' }],
         values: [{
           message: { deviceId: DEVICE_CTRL, type: 'cc7', parameterNumber: cc, min: 0, max: 127 },
@@ -244,62 +281,17 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
         }],
       });
       allocations.push({
-        key: `${mx}:${paramId}`,
-        pageId: PAGE_MIXMASTER, controlSetId: csId, potId,
-        deviceId: DEVICE_CTRL, messageType: 'cc7', number: cc,
-        min, max, curve, role: 'rw',
+        key: `${mx}:${paramId}`, pageId: PAGE_MIXMASTER, controlSetId: csId, potId,
+        deviceId: DEVICE_CTRL, messageType: 'cc7', number: cc, min, max, curve, role: 'rw',
       });
-      s++;
     };
-    // CS1 — faders + sends.
-    for (const ch of [1, 2, 3, 4]) pushMix(`ch${ch}_volume`, `Ch${ch}`, 0, 1, 'linear');
-    for (const ch of [1, 2, 3, 4]) pushMix(`ch${ch}_send1`, `S1.${ch}`, 0, 1, 'linear');
-    for (const ch of [1, 2, 3, 4]) pushMix(`ch${ch}_send2`, `S2.${ch}`, 0, 1, 'linear');
-    // CS2 — EQ.
-    for (const ch of [1, 2, 3, 4]) pushMix(`ch${ch}_low`, `Lo${ch}`, -12, 12, 'linear', 'dB');
-    for (const ch of [1, 2, 3, 4]) pushMix(`ch${ch}_mid`, `Md${ch}`, -12, 12, 'linear', 'dB');
-    for (const ch of [1, 2, 3, 4]) pushMix(`ch${ch}_high`, `Hi${ch}`, -12, 12, 'linear', 'dB');
-    // CS3 — comp macros + master.
-    for (const ch of [1, 2, 3, 4]) pushMix(`comp${ch}`, `Cmp${ch}`, 0, 1, 'linear');
-    pushMix('master_volume', 'Master', 0, 1, 'linear');
-
-    // Meter row — per-channel + master read-only VU vfaders (app→device only).
-    // These occupy the remaining CS3 slots; inbound CC is NOT routed to a param.
-    const meterKeys: Array<{ key: string; label: string }> = [
-      { key: `${mx}:meter:1`, label: 'VU1' },
-      { key: `${mx}:meter:2`, label: 'VU2' },
-      { key: `${mx}:meter:3`, label: 'VU3' },
-      { key: `${mx}:meter:4`, label: 'VU4' },
-      { key: `${mx}:meter:master`, label: 'VUM' },
-    ];
-    for (const m of meterKeys) {
-      const csId = Math.floor(s / POTS_PER_SET) + 1;
-      const potId = (s % POTS_PER_SET) + 1;
-      const meterCc = alloc.nextCc();
-      controls.push({
-        id: nextControlId(),
-        pageId: PAGE_MIXMASTER,
-        controlSetId: csId,
-        potId,
-        type: 'vfader',
-        variant: 'thin',
-        readOnly: true,
-        name: m.label,
-        values: [{
-          message: { deviceId: DEVICE_CTRL, type: 'cc7', parameterNumber: meterCc, min: 0, max: 127 },
-          // dBFS readout for the VU; the bar fill animates off the same CC. The
-          // app streams an already-dBFS-mapped meter CC (ampToMeterCc), so the
-          // formatter just reverses that linear -60..0 dB map for the display.
-          formatter: 'fmtMeterDb',
-        }],
-      });
-      allocations.push({
-        key: m.key,
-        pageId: PAGE_MIXMASTER, controlSetId: csId, potId,
-        deviceId: DEVICE_CTRL, messageType: 'cc7', number: meterCc,
-        role: 'meter',
-      });
-      s++;
+    for (const ch of MIX_CHANNELS) {
+      pushMixAt(`ch${ch}_volume`, `Ch${ch}`, 1, ch, 0, 1, 'linear');            // set 1 top: VOL
+      // PAN → set 1 bottom (pot 6+ch) RESERVED until the module has a pan param.
+      pushMixAt(`ch${ch}_low`, `Lo${ch}`, 2, ch, -12, 12, 'linear', 'dB');       // set 2 top: LOW EQ
+      pushMixAt(`ch${ch}_high`, `Hi${ch}`, 2, 6 + ch, -12, 12, 'linear', 'dB');  // set 2 bottom: HIGH EQ
+      pushMixAt(`ch${ch}_send1`, `S1.${ch}`, 3, ch, 0, 1, 'linear');             // set 3 top: SEND1
+      pushMixAt(`ch${ch}_send2`, `S2.${ch}`, 3, 6 + ch, 0, 1, 'linear');         // set 3 bottom: SEND2
     }
   }
 
@@ -417,6 +409,77 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
       });
       s++;
     }
+  }
+
+  // ── Page 3 (cont.): master volume + the mix-bus VU meters ──
+  // Master is the "odd duck" that doesn't fit the per-channel mixer grid, so it
+  // lives on SYSTEM next to the master tempo; the per-channel + master VU meters
+  // ride along here (read-only). Placed in control sets 2 (master) + 3 (meters)
+  // so the timelorde controls keep control set 1. Independent of the timelorde
+  // gate above so master/meters still show on a rack with no clock.
+  if (input.mixmstrsId) {
+    const mx = input.mixmstrsId;
+    {
+      const cc = alloc.nextCc();
+      const def: GenParamDef = { id: 'master_volume', label: 'Master', min: 0, max: 1, defaultValue: 0, curve: 'linear' };
+      controls.push({
+        id: nextControlId(), pageId: PAGE_SYSTEM, controlSetId: 2, potId: 1,
+        type: 'fader', name: 'Master',
+        inputs: [{ potId: 1, valueId: 'value' }],
+        values: [{ message: { deviceId: DEVICE_CTRL, type: 'cc7', parameterNumber: cc, min: 0, max: 127 }, min: 0, max: 1, formatter: formatterFor(def) }],
+      });
+      allocations.push({
+        key: `${mx}:master_volume`, pageId: PAGE_SYSTEM, controlSetId: 2, potId: 1,
+        deviceId: DEVICE_CTRL, messageType: 'cc7', number: cc, min: 0, max: 1, curve: 'linear', role: 'rw',
+      });
+    }
+    // Master VU + per-channel VUs on control set 3 (read-only; app→device only).
+    const meterRow = [
+      { key: `${mx}:meter:master`, label: 'VUM' },
+      ...MIX_CHANNELS.map((ch) => ({ key: `${mx}:meter:${ch}`, label: `VU${ch}` })),
+    ];
+    meterRow.forEach((m, i) => {
+      const potId = i + 1; // cs3 pots 1..7
+      const meterCc = alloc.nextCc();
+      controls.push({
+        id: nextControlId(), pageId: PAGE_SYSTEM, controlSetId: 3, potId,
+        type: 'vfader', variant: 'thin', readOnly: true, name: m.label,
+        values: [{ message: { deviceId: DEVICE_CTRL, type: 'cc7', parameterNumber: meterCc, min: 0, max: 127 }, formatter: 'fmtMeterDb' }],
+      });
+      allocations.push({
+        key: m.key, pageId: PAGE_SYSTEM, controlSetId: 3, potId,
+        deviceId: DEVICE_CTRL, messageType: 'cc7', number: meterCc, role: 'meter',
+      });
+    });
+  }
+
+  // Fill the REQUIRED on-screen rectangle for every control + group from its
+  // pot/control-set position. Without bounds the device builds the controls but
+  // draws nothing (the pages render empty) — this is the single field whose
+  // omission caused the blank-page bug on real hardware.
+  // Per-page accent colours (valid Electra palette hex). Every control in a
+  // real preset carries a colour; a colorless control can fail to render.
+  const PAGE_COLOR: Record<number, string> = {
+    [PAGE_CONTROL]: '529DEC',   // blue
+    [PAGE_MIXMASTER]: '03A598', // teal
+    [PAGE_SYSTEM]: 'F49500',    // orange
+  };
+  for (const c of controls) {
+    if (!c.bounds && c.potId) c.bounds = boundsForPotSet(c.potId, c.controlSetId);
+    if (c.visible === undefined) c.visible = true;
+    if (c.color === undefined) c.color = PAGE_COLOR[c.pageId] ?? 'FFFFFF';
+    // Each value's `id` must match the input's `valueId` ('value') or the pot
+    // won't drive the control — confirmed against a real exported .epr.
+    for (const v of c.values) if (v.id === undefined) v.id = 'value';
+    // Interactive controls (incl. pads) need an `inputs` pot binding; real
+    // pads carry it too. Read-only meters/banner stay input-less (app→device).
+    if (!c.readOnly && c.potId && !c.inputs) c.inputs = [{ potId: c.potId, valueId: 'value' }];
+  }
+  for (const g of groups) {
+    if (!g.bounds) g.bounds = boundsForSlotRange(g.from, g.to);
+    if (g.id === undefined) g.id = nextControlId(); // unique in the shared id space
+    if (g.variant === undefined) g.variant = 'highlighted';
+    if (g.color === undefined) g.color = 'FFFFFF';
   }
 
   const pages: ElectraPage[] = [

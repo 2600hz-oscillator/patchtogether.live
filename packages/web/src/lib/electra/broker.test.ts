@@ -117,6 +117,34 @@ describe('ElectraBroker with a fake device', () => {
     expect(fake.sentPlay[0]).toEqual([0x90, 60, 127]);
   });
 
+  it('routes management SysEx to CTRL and per-control CC to numbered ports', () => {
+    const sent: { p1: number[][]; p2: number[][]; ctrl: number[][] } = { p1: [], p2: [], ctrl: [] };
+    const mk = (id: string, name: string, bucket: number[][]): MidiOutputLike => ({
+      id, name, state: 'connected',
+      send: (d) => bucket.push([...(d as number[] | Uint8Array)]),
+    });
+    const p1 = mk('e1', 'Electra Controller Port 1', sent.p1);
+    const p2 = mk('e2', 'Electra Controller Port 2', sent.p2);
+    const ctrl = mk('e3', 'Electra Controller CTRL', sent.ctrl);
+    const access: MidiFullAccessLike = {
+      inputs: new Map(),
+      // Port 2 enumerated FIRST so a port-2 name match can't masquerade as mgmt.
+      outputs: new Map([[p2.id, p2], [p1.id, p1], [ctrl.id, ctrl]]),
+      onstatechange: null,
+    };
+    const b = new ElectraBroker();
+    b.__test_setAccess(access);
+    b.uploadPreset('AB'); // management → CTRL, NOT Port 2
+    expect(sent.ctrl.length).toBe(1);
+    expect(sent.ctrl[0]![0]).toBe(0xf0);
+    expect(sent.p2.length).toBe(0);
+    b.sendCcOnPort(2, 7, 100); // PT-CTRL device.port=2 → Port 2
+    b.sendCcOnPort(1, 9, 64); //  PT-PLAY device.port=1 → Port 1
+    expect(sent.p2).toEqual([[0xb0, 7, 100]]);
+    expect(sent.p1).toEqual([[0xb0, 9, 64]]);
+    expect(sent.ctrl.length).toBe(1); // CC never leaks onto the mgmt port
+  });
+
   it('fans out inbound CC to onCC listeners', () => {
     const fake = makeFakeAccess();
     const b = new ElectraBroker();

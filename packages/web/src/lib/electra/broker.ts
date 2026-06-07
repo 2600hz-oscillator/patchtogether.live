@@ -144,9 +144,15 @@ export class ElectraBroker {
   private connectStarted = false;
   private connectFailed = false;
 
-  /** Resolved Electra output ports keyed by role (after fingerprint). */
+  /** Resolved Electra output ports keyed by role (after fingerprint).
+   *  ctrlOut = the management/CTRL port (preset/Lua/page/identity SysEx);
+   *  playOut = the tap-note port (port 1, mostly inbound). */
   private ctrlOut: MidiOutputLike | null = null;
   private playOut: MidiOutputLike | null = null;
+  /** Numbered USB-DEVICE routing ports (1/2) for per-control CC — a control's
+   *  CC must go to the USB port matching its preset device.port (the Electra
+   *  routes/forwards by these), NOT the CTRL management port. */
+  private portOut: Record<number, MidiOutputLike | null> = { 1: null, 2: null };
 
   private sysexListeners = new Set<(data: Uint8Array) => void>();
   private ccListeners = new Set<(ev: CcEvent) => void>();
@@ -248,33 +254,63 @@ export class ElectraBroker {
     const outs = [...this.access.outputs.values()];
     const electra = outs.filter((o) => /electra/i.test(o.name ?? ''));
     const pool = electra.length ? electra : outs;
-    this.ctrlOut =
-      pool.find((o) => /ctrl|port\s*2/i.test(o.name ?? '')) ?? pool[1] ?? pool[0] ?? null;
-    this.playOut =
-      pool.find((o) => /play|port\s*1/i.test(o.name ?? '')) ?? pool[0] ?? null;
-    // Hardware-bring-up diagnostic: the CTRL/PLAY split is a name-heuristic
-    // (/electra/i then /ctrl|port 2/i, /play|port 1/i) that has never seen a
-    // real device's port names. Log the enumeration + the resolved choice so a
-    // first-run mis-resolve (wrong/swapped port → uploads go nowhere) is
-    // debuggable from the console instead of silent. Cheap; only on (re)connect.
+    const nm = (o: MidiOutputLike): string => o.name ?? '';
+
+    // The Electra exposes THREE USB-DEVICE ports: "… Port 1", "… Port 2", and
+    // the management "… CTRL" port (per docs.electra.one v3 routing). They have
+    // DISTINCT jobs and must not be conflated:
+    //   • CTRL  → management SysEx (preset/Lua/page-switch/identity). It is the
+    //     editor port; it does NOT forward to the hardware MIDI jacks and the
+    //     device replies (ACK/events) on the same port. Editor SysEx belongs here.
+    //   • Port 1 / Port 2 → general MIDI buses; a control's CC flows on the port
+    //     matching its preset device.port, and Port N FORWARDS to MIDI-OUT N — so
+    //     blasting a preset-upload SysEx down Port 2 also spews it out the DIN jack.
+    // (/ctrl/i deliberately does NOT match the device-name prefix "Controller" —
+    // it only matches the dedicated "CTRL" port. Some OSes surface CTRL as a
+    // generic "Port 3"/"MIDIOUT3", hence the port-3 fallback.)
+    const byNum = (n: number): MidiOutputLike | null =>
+      pool.find((o) => new RegExp(`port\\s*${n}|midi\\s*(out\\s*)?${n}`, 'i').test(nm(o))) ?? null;
+    const mgmt =
+      pool.find((o) => /ctrl/i.test(nm(o)) && !/port\s*\d/i.test(nm(o))) ?? byNum(3);
+
+    this.portOut = { 1: byNum(1), 2: byNum(2) };
+    // Management/'ctrl' role → the dedicated CTRL port, falling back to Port 2,
+    // then Port 1, then the first output if the device exposes no discrete CTRL.
+    this.ctrlOut = mgmt ?? this.portOut[2] ?? this.portOut[1] ?? pool[0] ?? null;
+    // 'play' role → Port 1 (the tap-note bus; mostly inbound).
+    this.playOut = this.portOut[1] ?? pool[0] ?? null;
+
+    // Hardware-bring-up diagnostic: this is a name-heuristic that has to cope
+    // with per-OS port-name quirks. Log the enumeration + the resolved choice so
+    // a first-run mis-resolve is debuggable from the console instead of silent.
     try {
       // eslint-disable-next-line no-console
       console.info('[electra] MIDI ports', {
-        outputs: outs.map((o) => o.name ?? '(unnamed)'),
+        outputs: outs.map(nm),
         inputs: [...this.access.inputs.values()].map((i) => i.name ?? '(unnamed)'),
-        matchedElectra: electra.map((o) => o.name ?? '(unnamed)'),
-        chosenCtrl: this.ctrlOut?.name ?? null,
-        chosenPlay: this.playOut?.name ?? null,
+        matchedElectra: electra.map(nm),
+        chosenMgmt: this.ctrlOut?.name ?? null,
+        port1: this.portOut[1]?.name ?? null,
+        port2: this.portOut[2]?.name ?? null,
       });
     } catch {
       /* console may be absent in non-DOM test envs */
     }
   }
 
-  /** Send raw SysEx on a port role ('ctrl' default). */
+  /** Send raw SysEx on a port role ('ctrl' = management/CTRL by default). */
   sendSysex(bytes: Uint8Array, role: 'ctrl' | 'play' = 'ctrl'): void {
     const out = role === 'play' ? this.playOut : this.ctrlOut;
     out?.send(bytes);
+  }
+
+  /** Send a plain CC on a specific USB-DEVICE port NUMBER (the control's preset
+   *  device.port). Falls back to the management port if that numbered port isn't
+   *  exposed (single-port OS naming). This is how the feedback/meter pump reaches
+   *  each control on the bus the Electra actually listens on. */
+  sendCcOnPort(usbPort: number, cc: number, value: number, channel = 0): void {
+    const out = this.portOut[usbPort] ?? this.ctrlOut;
+    out?.send(ccMessage(channel, cc, value));
   }
 
   /** Send a plain CC on a port role. (Values stream as parameter-map auto-sync.) */

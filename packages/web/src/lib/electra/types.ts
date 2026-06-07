@@ -63,6 +63,15 @@ export interface ElectraGroup {
   /** Lowest pot/slot index covered (1-based, page-local). */
   from: number;
   to: number;
+  /** On-screen rectangle [x, y, width, height] — like controls, the firmware
+   *  needs this to draw the group's header box. */
+  bounds?: [number, number, number, number];
+  /** Unique id (shares the control id space). Real presets always set it. */
+  id?: number;
+  /** Header style; real presets use 'highlighted'. */
+  variant?: string;
+  /** 6-digit hex RGB string (real presets set it, e.g. "FFFFFF"). */
+  color?: string;
 }
 
 /** The MIDI message a control input/value binds to. */
@@ -112,8 +121,17 @@ export interface ElectraControl {
   readOnly?: boolean;
   inputs?: Array<{ potId: number; valueId: string }>;
   values: ElectraValue[];
-  /** RGB-ish color index the device renders (0..5). */
-  color?: number;
+  /** Accent colour as a 6-digit hex RGB string (e.g. "529DEC"), matching the
+   *  Electra preset format. Every control in a real preset has one; a colorless
+   *  control can fail to render. */
+  color?: string;
+  /** On-screen rectangle [x, y, width, height] in the 1024x600 layout space.
+   *  REQUIRED by the firmware — a control with no bounds has no position and
+   *  the device draws nothing for it (the page renders but is empty). */
+  bounds?: [number, number, number, number];
+  /** Explicit visibility (default true). Emitted so the firmware never
+   *  defaults a control to hidden. */
+  visible?: boolean;
 }
 
 /** The whole preset document. */
