@@ -468,9 +468,26 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
     if (!c.bounds && c.potId) c.bounds = boundsForPotSet(c.potId, c.controlSetId);
     if (c.visible === undefined) c.visible = true;
     if (c.color === undefined) c.color = PAGE_COLOR[c.pageId] ?? 'FFFFFF';
-    // Each value's `id` must match the input's `valueId` ('value') or the pot
-    // won't drive the control — confirmed against a real exported .epr.
-    for (const v of c.values) if (v.id === undefined) v.id = 'value';
+    for (const v of c.values) {
+      // Each value's `id` must match the input's `valueId` ('value') or the pot
+      // won't drive the control — confirmed against a real exported .epr.
+      if (v.id === undefined) v.id = 'value';
+      // FADER RESOLUTION: the Electra fader's step count = its display value
+      // range's integer span. A unit-less 0..1 level therefore collapses to ~2
+      // detents (on/off) on the device. Rescale such small-span, formatter-less
+      // continuous faders to a smooth 0..100 DISPLAY range; the real CC->param
+      // mapping is independent (it lives in the allocation's min/max/curve, and
+      // the device always sends the full 0..127 CC). Params with a unit
+      // formatter (dB/BPM/…) or an already-wide range keep their real range.
+      if (
+        c.type === 'fader' && !v.formatter &&
+        typeof v.min === 'number' && typeof v.max === 'number' &&
+        Math.abs(v.max - v.min) < 24
+      ) {
+        v.min = 0;
+        v.max = 100;
+      }
+    }
     // Interactive controls (incl. pads) need an `inputs` pot binding; real
     // pads carry it too. Read-only meters/banner stay input-less (app→device).
     if (!c.readOnly && c.potId && !c.inputs) c.inputs = [{ potId: c.potId, valueId: 'value' }];

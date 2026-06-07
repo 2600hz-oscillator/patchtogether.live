@@ -187,6 +187,22 @@ describe('generatePreset — MIXMASTER page', () => {
   });
 });
 
+describe('generatePreset — fader resolution', () => {
+  it('rescales unit-less 0..1 faders to a smooth 0-100 display (not on/off)', () => {
+    const { preset } = generatePreset(baseInput());
+    // master volume + channel volume are 0..1 with no unit formatter → rescaled.
+    const master = preset.controls.find((c) => c.name === 'Master')!;
+    expect(master.values[0]).toMatchObject({ min: 0, max: 100 });
+    const vol = preset.controls.find((c) => c.name === 'Ch1' && c.pageId === PAGE_MIXMASTER)!;
+    expect(vol.values[0]).toMatchObject({ min: 0, max: 100 });
+    // EQ keeps its real dB range + formatter (already has enough integer steps).
+    const lo = preset.controls.find((c) => c.name === 'Lo1')!;
+    expect(lo.values[0]!.formatter).toBe('fmtDb');
+    expect(lo.values[0]!.min).toBe(-12);
+    expect(lo.values[0]!.max).toBe(12);
+  });
+});
+
 describe('generatePreset — SYSTEM page', () => {
   it('BPM encoder (log, fmtBpm), TAP pad (note on PLAY), SRC banner, swing/mute', () => {
     const { preset, allocations } = generatePreset(baseInput());
