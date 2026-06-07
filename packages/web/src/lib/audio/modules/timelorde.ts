@@ -230,6 +230,33 @@ export const timelordeDef: AudioModuleDef = {
       const m = e.data as { type?: string; bpm?: number } | undefined;
       if (m && m.type === 'measuredBpm' && typeof m.bpm === 'number') {
         measuredBpm = m.bpm;
+        // ── External-clock BPM follow (Phase-2 gap-fill) ──
+        //
+        // Before this, the worklet's measured external tempo was DISPLAY-
+        // ONLY (read('measuredBpm') for the card); the `bpm` param stayed at
+        // the stale internal knob. So while the GATE OUTPUTS followed the
+        // hardware clock, anything reading the bpm param — most importantly
+        // LIVECODE's clock.bpm() / clocked() period derivation — kept using
+        // the internal knob value, diverging from the rack.
+        //
+        // Fix: when a POSITIVE measured BPM arrives (i.e. an external clock
+        // is locked — the worklet only measures while externalActive), write
+        // it into BOTH the `bpm` AudioParam (so the internal phase, the card,
+        // and any param reader agree) AND livePatch.params.bpm (so the patch
+        // store + LIVECODE's clock.bpm() getter + remote rack-mates pick it
+        // up via Y.Doc sync). This mirrors the existing start_in/stop_in
+        // write-back pattern in pollTransportGates(). On dropout the worklet
+        // posts bpm:0; we DON'T clobber the param then — the last followed
+        // tempo is the most sensible value to hold (and the internal knob
+        // resumes governing the worklet phase via the worklet's own logic).
+        if (measuredBpm > 0 && bpmParam) {
+          // Clamp to the param's declared range so a glitchy measurement
+          // can't push it out of bounds.
+          const clamped = Math.max(10, Math.min(300, measuredBpm));
+          bpmParam.setValueAtTime(clamped, ctx.currentTime);
+          const live = livePatch.nodes[nodeId];
+          if (live?.params) live.params.bpm = clamped;
+        }
       }
     };
 
