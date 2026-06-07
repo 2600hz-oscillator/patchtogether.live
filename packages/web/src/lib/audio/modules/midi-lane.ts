@@ -35,18 +35,22 @@
 //     note arrives on the lane's channel(s). Generalizes the per-device
 //     drum router (Programm ch10 by-note) via configuration, not 8 fixed
 //     ports. Defaults to GM kick (MIDI 36).
-//   * Optional polyphonic output (poly, a 10-channel polyPitchGate via
-//     createPolySender) when mode='poly', so a chord on the lane plays a
-//     poly synth. OFF by default → mono cards stay at a low port count.
+//   * A polyphonic output (poly, a 10-channel polyPitchGate via
+//     createPolySender) that ALWAYS carries the held chord — wire it to a poly
+//     synth (POLYHELM / DX7 / CUBE) and it just plays, no mode toggle needed.
+//     The `mode` setting governs only the MONO outputs (pitch_cv/gate):
+//     collapse-the-chord-to-one-winner ('mono') vs. leave-them-quiet ('poly').
 //
-// PORTS (default mono: 5 outputs; +1 when poly enabled = 6):
+// PORTS (7 outputs, all always present):
 //   pitch_cv     (cv):   V/oct (0V = C4 = MIDI 60). Pitch-bend summed in.
+//                        Driven only in mode='mono' (winner of the held stack).
 //   gate         (gate): HIGH while any key on the lane is held; retrig dip.
+//                        Driven only in mode='mono'.
 //   velocity_cv  (cv):   0..1 (MIDI velocity / 127). Latched.
 //   cc_a         (cv):   learn-assignable CC tap A, 0..1.
 //   cc_b         (cv):   learn-assignable CC tap B, 0..1.
 //   note_gate    (gate): fires on the card-selected MIDI note number.
-//   poly         (polyPitchGate): present ONLY when mode='poly'.
+//   poly         (polyPitchGate): ALWAYS carries the held chord (both modes).
 //
 // Inputs: none — the MIDI source is the external device (card dropdown).
 //
@@ -82,7 +86,7 @@
 //   cc_a (cv): learn-assignable CC tap A → 0..1.
 //   cc_b (cv): learn-assignable CC tap B → 0..1.
 //   note_gate (gate): fires on the card-selected MIDI note number.
-//   poly (polyPitchGate): present only when mode='poly'.
+//   poly (polyPitchGate): always carries the held chord (mode-independent).
 //
 // Params: none on the engine side. (Device + channel set + voice priority +
 //   retrigger + mode + CC# assignments + note# live in node.data; the card
@@ -267,9 +271,10 @@ export const midiLaneDef: AudioModuleDef = {
     { id: 'cc_a',        type: 'cv' },
     { id: 'cc_b',        type: 'cv' },
     { id: 'note_gate',   type: 'gate' },
-    // Polyphonic chord output. Always declared (so the handle/registry is
-    // stable), but only carries signal when mode='poly'. In mono mode it
-    // sits at neutral (all gates 0). A poly synth (cartesian / dx7) reads it.
+    // Polyphonic chord output. Always declared AND always live: it carries the
+    // held chord in BOTH modes, so wiring it to a poly synth (POLYHELM / DX7 /
+    // CUBE / cartesian) plays straight away. `mode` only affects the MONO
+    // outputs above. (#674: poly used to be silent in the default mono mode.)
     { id: 'poly',        type: 'polyPitchGate' },
   ],
   params: [],
@@ -295,8 +300,9 @@ export const midiLaneDef: AudioModuleDef = {
     noteGateSrc.offset.value = 0;
     noteGateSrc.start();
 
-    // Poly sender (10-channel polyPitchGate merger). Always created so the
-    // `poly` output handle exists; only fed when mode='poly'.
+    // Poly sender (10-channel polyPitchGate merger). Always created AND always
+    // fed (in both modes) so the `poly` output carries the held chord whenever
+    // it's patched — see applyPoly.
     const poly: PolySender = createPolySender(ctx);
 
     // ---------------- Saved data (with defaults) ----------------
@@ -381,12 +387,25 @@ export const midiLaneDef: AudioModuleDef = {
         pitchSrc.offset.cancelScheduledValues(eventTime);
         pitchSrc.offset.setValueAtTime(vOct, eventTime);
       }
-      // Poly: re-paint every held voice's pitch with the new bend.
-      if (mode === 'poly') applyPoly(eventTime);
+      // The POLY port always tracks the held chord (see applyPoly) — re-paint
+      // every held voice's pitch with the new bend regardless of mode.
+      applyPoly(eventTime);
     }
 
-    /** Repaint the poly output from the held-keys stack. Sustained (gates
-     *  stay high until release). */
+    /** Repaint the dedicated POLY output from the held-keys stack. Sustained
+     *  (gates stay high until release).
+     *
+     *  ALWAYS driven, in BOTH modes. The `poly` port is a distinct, always-
+     *  present output: a user who wires it to a poly synth (POLYHELM / DX7 /
+     *  CUBE) expects "wire poly → hear notes" to work straight away, without
+     *  first hunting down a MONO→POLY toggle that is itself hidden until MIDI
+     *  is connected. Driving it unconditionally is harmless to the MONO outputs
+     *  (separate ConstantSource nodes) and only matters when the POLY port is
+     *  actually patched. The `mode` setting now governs ONLY the MONO outputs
+     *  (pitch_cv/gate: collapse-to-winner vs. silent) — NOT whether the POLY
+     *  port carries signal. (Was: poly only ran in mode='poly', so a freshly-
+     *  dropped lane left in its default MONO mode fed silent gates to the poly
+     *  synth — the "POLYHELM produces no audio" bug, #674.) */
     function applyPoly(eventTime: number): void {
       const lanes = buildPolyLanes(heldStack, currentBendVOct);
       poly.scheduleStep(eventTime, lanes, 0);
@@ -458,8 +477,12 @@ export const midiLaneDef: AudioModuleDef = {
         velSrc.offset.cancelScheduledValues(t);
         velSrc.offset.setValueAtTime(velocityToCv(lastVelocity), t);
 
+        // The POLY port always tracks the held chord (mode-independent — see
+        // applyPoly). The `mode` setting only governs the MONO outputs below.
+        applyPoly(t);
+
         if (mode === 'poly') {
-          applyPoly(t);
+          // Poly mode: MONO outputs stay quiet (the poly bus carries the chord).
         } else if (retrig && prevWinner !== null) {
           // Mono retrigger: drop the gate for one block so a downstream
           // ADSR re-fires.
@@ -481,8 +504,9 @@ export const midiLaneDef: AudioModuleDef = {
 
       if (note.kind === 'note-off') {
         heldStack = removeHeld(heldStack, note.note);
-        if (mode === 'poly') applyPoly(t);
-        else applyMono(t);
+        // POLY port always tracks the held chord; MONO outputs only in mono mode.
+        applyPoly(t);
+        if (mode !== 'poly') applyMono(t);
         notify();
         return;
       }

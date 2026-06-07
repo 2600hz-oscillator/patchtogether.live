@@ -336,12 +336,15 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   //     brief pulse sent once at postSpawn is below the scope poll window's
   //     resolution. The by-note → gate logic is asserted in the bespoke
   //     unit spec (midi-lane.test.ts: note 36 → note_gate pulse).
-  //   * poly carries signal ONLY in mode='poly' (default mono → all poly
-  //     gates 0). The chord allocation (buildPolyLanes) is unit-tested in
-  //     midi-lane.test.ts. Switching the driver to poly would silence the
-  //     mono pitch_cv/gate emit, so we keep the driver mono + exempt poly.
+  //   * poly NOW carries the held chord in BOTH modes (#674 fix — the dedicated
+  //     POLY port is always live). But a polyPitchGate→SCOPE edge routes lane-0
+  //     PITCH (a steady DC V/oct from the sustained note), which the AC-coupled
+  //     scope peak-floor can't read (same DC-rail shape as moogCp3 references).
+  //     The chord allocation + always-live poly is unit-tested in
+  //     midi-lane.test.ts, and the live POLY→synth→audio chain in
+  //     polyhelm-poly-chain.spec.ts, so we keep the driver mono + exempt poly.
   'midiLane.note_gate': 'single ~6 ms one-shot pulse below the scope poll resolution (like midiclock sub-frame gates); by-note→gate logic covered by midi-lane.test.ts',
-  'midiLane.poly':      'polyPitchGate carries signal only in mode=poly (default mono); chord allocation covered by midi-lane.test.ts',
+  'midiLane.poly':      'poly is always live (#674) but a poly→SCOPE edge reads lane-0 PITCH (steady DC, AC-scope can\'t peak it); always-live behavior covered by midi-lane.test.ts + polyhelm-poly-chain.spec.ts',
   // ── SKIFREE partial: the `gate` output fires ONLY on a crash / eaten-by-
   // yeti event, which requires the skier to actually hit terrain — random
   // obstacle spawns won't reliably land inside the sweep window. The `out`
