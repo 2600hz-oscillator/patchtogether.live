@@ -285,6 +285,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // depends on hardware that isn't present in CI. Unit + E2E (mock-MIDI smoke)
   // provide coverage.
   midiclock: 'card content depends on connected MIDI device; unit + E2E provide coverage',
+  // MIDI LANE: same rationale as midiCvBuddy — the rich card UI (device
+  // picker, channel/mode/CC/note controls, live readout) only appears AFTER
+  // Connect, which depends on hardware absent in CI; the pre-Connect state is
+  // just the "Connect MIDI…" button + hint. Unit (midi-lane.test.ts) + E2E
+  // (midi-lane.spec.ts + per-port driver) provide coverage.
+  midiLane: 'card content depends on connected MIDI device; unit + E2E provide coverage',
   // PONG research prototype: animated game state (ball moving) defeats a
   // deterministic single-frame baseline. Unit + ART + E2E provide coverage
   // until either (a) a deterministic-time test harness is added so VRT can
