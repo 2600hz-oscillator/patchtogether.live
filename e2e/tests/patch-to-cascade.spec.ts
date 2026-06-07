@@ -167,7 +167,7 @@ test('destructive overwrite: cutoff already patched → "!" prefix + replaces ed
   await expect(cutoff).toHaveAttribute('data-occupied', 'true');
   // Tooltip mentions LFO #1 (since both LFOs exist, indexed) + the source port.
   const title = await cutoff.getAttribute('title');
-  expect(title).toContain('LFO #1');
+  expect(title).toContain('lfo #1');
 
   // Visible "!" glyph.
   await expect(cutoff.locator('.warn-glyph')).toHaveText('!');
@@ -587,7 +587,7 @@ test('real-gesture: page.mouse.dblclick at handle center opens cascade', async (
   // Source label confirms the dblclick was recognised as LFO.phase0, not
   // some accidental click on a panel row or label.
   await expect(page.locator('[data-testid="port-context-menu"] .ctx-header')).toHaveText(
-    'LFO.phase0',
+    'lfo.phase0',
   );
 });
 
@@ -617,7 +617,7 @@ test('real-gesture: dblclick on direct-render handle (LINES card)', async ({ pag
 
   await expect(page.locator('[data-testid="port-context-menu"]')).toBeVisible();
   await expect(page.locator('[data-testid="port-context-menu"] .ctx-header')).toHaveText(
-    'LINES.out',
+    'lines.out',
   );
 });
 
@@ -652,7 +652,7 @@ test('corner-trigger dblclick: opens cascade sourced from first declared output'
   await expect(menu).toBeVisible();
   // LFO's first output is phase0 — confirms we selected the first declared
   // entry from the def's outputs array, not some other rule.
-  await expect(menu.locator('.ctx-header')).toHaveText('LFO.phase0');
+  await expect(menu.locator('.ctx-header')).toHaveText('lfo.phase0');
 
   // Cascade behaves identically to the handle dblclick path from here on:
   // pick FILTER, get its cv-accepting inputs.
@@ -683,7 +683,7 @@ test('corner-trigger dblclick: right-side trigger also opens cascade', async ({ 
 
   await expect(page.locator('[data-testid="port-context-menu"]')).toBeVisible();
   await expect(page.locator('[data-testid="port-context-menu"] .ctx-header')).toHaveText(
-    'LFO.phase0',
+    'lfo.phase0',
   );
 });
 
