@@ -35,9 +35,19 @@ describe('dx7Def: shape', () => {
     expect(algo?.defaultValue).toBe(5);
   });
 
-  it('declares 4 params (algorithm, voiceCount, level, transpose)', () => {
+  it('declares the control params + the 4 master-ADSR params', () => {
     const ids = dx7Def.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['algorithm', 'level', 'transpose', 'voiceCount']);
+    expect(ids).toEqual([
+      'algorithm', 'attack', 'decay', 'level', 'release', 'sustain', 'transpose', 'voiceCount',
+    ]);
+  });
+
+  it('declares the 4 master-ADSR params with documented ranges + ~pass-through defaults', () => {
+    const byId = Object.fromEntries(dx7Def.params.map((p) => [p.id, p] as const));
+    expect(byId.attack).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.001, curve: 'log' });
+    expect(byId.decay).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.1, curve: 'log' });
+    expect(byId.sustain).toMatchObject({ min: 0, max: 1, defaultValue: 1, curve: 'linear' });
+    expect(byId.release).toMatchObject({ min: 0.001, max: 5, defaultValue: 0.005, curve: 'log' });
   });
 });
 

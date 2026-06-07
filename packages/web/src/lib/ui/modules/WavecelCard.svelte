@@ -26,11 +26,17 @@
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
-  let tune   = $derived(node?.params.tune   ?? wavecelDef.params[0]!.defaultValue);
-  let fine   = $derived(node?.params.fine   ?? wavecelDef.params[1]!.defaultValue);
-  let morph  = $derived(node?.params.morph  ?? wavecelDef.params[2]!.defaultValue);
-  let spread = $derived(node?.params.spread ?? wavecelDef.params[3]!.defaultValue);
-  let fold   = $derived(node?.params.fold   ?? wavecelDef.params[4]!.defaultValue);
+  const defFor = (pid: string): number => wavecelDef.params.find((p) => p.id === pid)!.defaultValue;
+  let tune    = $derived(node?.params.tune    ?? defFor('tune'));
+  let fine    = $derived(node?.params.fine    ?? defFor('fine'));
+  let morph   = $derived(node?.params.morph   ?? defFor('morph'));
+  let spread  = $derived(node?.params.spread  ?? defFor('spread'));
+  let fold    = $derived(node?.params.fold    ?? defFor('fold'));
+  // Per-voice amplitude ADSR (per-voice-ADSR feature).
+  let attack  = $derived(node?.params.attack  ?? defFor('attack'));
+  let decay   = $derived(node?.params.decay   ?? defFor('decay'));
+  let sustain = $derived(node?.params.sustain ?? defFor('sustain'));
+  let release = $derived(node?.params.release ?? defFor('release'));
 
   const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
   const live = (k: string) => () => {
@@ -47,6 +53,9 @@
     // Polyphonic chord bus (MIDI LANE mode=poly / POLYSEQZ). Gated lanes play
     // simultaneously; unpatched → the mono PITCH path. cable: 'polyPitchGate'.
     { id: 'poly',      label: 'POLY',        cable: 'polyPitchGate' },
+    // Mono TRIGGER gate for the per-voice amplitude ADSR. The FIRST note turns
+    // WAVECEL into a gated voice; before any note (and unpatched) it drones.
+    { id: 'trigger',   label: 'TRIG',        cable: 'gate' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'out_l', label: 'OUT L', cable: 'audio' },
@@ -296,6 +305,14 @@
         <Knob value={spread} min={1}   max={5}   defaultValue={1} label="Sprd"             curve="linear" onchange={set('spread')} moduleId={id} paramId="spread" readLive={live('spread')} />
         <Knob value={fold}   min={0}   max={1}   defaultValue={0} label="Fold"             curve="linear" onchange={set('fold')} moduleId={id} paramId="fold"   readLive={live('fold')} />
       </div>
+
+      <div class="adsr-label">AMP ADSR</div>
+      <div class="knob-row adsr-row">
+        <Knob value={attack}  min={0.001} max={5} defaultValue={defFor('attack')}  label="A" units="s" curve="log"    onchange={set('attack')}  moduleId={id} paramId="attack"  readLive={live('attack')} />
+        <Knob value={decay}   min={0.001} max={5} defaultValue={defFor('decay')}   label="D" units="s" curve="log"    onchange={set('decay')}   moduleId={id} paramId="decay"   readLive={live('decay')} />
+        <Knob value={sustain} min={0}     max={1} defaultValue={defFor('sustain')} label="S"           curve="linear" onchange={set('sustain')} moduleId={id} paramId="sustain" readLive={live('sustain')} />
+        <Knob value={release} min={0.001} max={5} defaultValue={defFor('release')} label="R" units="s" curve="log"    onchange={set('release')} moduleId={id} paramId="release" readLive={live('release')} />
+      </div>
     </div>
   </PatchPanel>
 </div>
@@ -398,5 +415,12 @@
     justify-content: center;
     gap: 12px;
     flex-wrap: wrap;
+  }
+  .wavecel-card .adsr-label {
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    text-align: center;
+    letter-spacing: 0.08em;
+    margin-top: 4px;
   }
 </style>

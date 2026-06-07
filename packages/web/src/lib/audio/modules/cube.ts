@@ -168,6 +168,12 @@ export const cubeDef: AudioModuleDef = {
     // this 10-channel cable to ONE worklet input (index 1) — same shape as
     // DX7.poly. Listed right after `pitch` so it reads as the pitch family.
     { id: 'poly', type: 'polyPitchGate' },
+    // Mono TRIGGER gate (per-voice-ADSR feature). A level gate (not a pulse) so
+    // note-off→release is expressible. The FIRST rising edge ever seen turns CUBE
+    // into a gated voice (lane-0 envelope shapes the mono oscillator); before any
+    // note (and when unpatched) CUBE free-runs as a drone. Routes to worklet
+    // input 2 (a node connection, not a CV→AudioParam target).
+    { id: 'trigger', type: 'gate' },
     // CV → AudioParam (summed into the worklet param by the engine).
     { id: 'slice_y',  type: 'cv', paramTarget: 'slice_y',  cvScale: { mode: 'linear' } },
     { id: 'slice_rx', type: 'cv', paramTarget: 'slice_rx', cvScale: { mode: 'linear' } },
@@ -228,6 +234,15 @@ export const cubeDef: AudioModuleDef = {
     { id: 'slice_ry', label: 'Rot Y',   defaultValue: 0,   min: -3.1416, max: 3.1416, curve: 'linear' },
     { id: 'slice_rz', label: 'Rot Z',   defaultValue: 0,   min: -3.1416, max: 3.1416, curve: 'linear' },
     { id: 'level',    label: 'Level',   defaultValue: 1,   min: 0,    max: 2,   curve: 'linear' },
+    // Per-voice amplitude ADSR (per-voice-ADSR feature). A single A/D/S/R set
+    // feeds all 5 lane envelopes (poly) + lane-0 (mono TRIGGER). Defaults are
+    // ~pass-through so an untouched ADSR + an ungated/unpatched TRIGGER keeps
+    // CUBE's legacy free-running drone byte-identical. The envelope only shapes
+    // amplitude once a poly lane or the TRIGGER fires.
+    { id: 'attack',  label: 'A', defaultValue: 0.001, min: 0.001, max: 5, curve: 'log', units: 's' },
+    { id: 'decay',   label: 'D', defaultValue: 0.1,   min: 0.001, max: 5, curve: 'log', units: 's' },
+    { id: 'sustain', label: 'S', defaultValue: 1,     min: 0,     max: 1, curve: 'linear' },
+    { id: 'release', label: 'R', defaultValue: 0.005, min: 0.001, max: 5, curve: 'log', units: 's' },
     // Toggles (discrete). wrap: 0=silent-outside, 1=mirror-fold. material:
     // 0=SMOOTH (continuous density), 1=HARD (binary solid).
     { id: 'wrap',     label: 'Wrap',     defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
@@ -265,7 +280,9 @@ export const cubeDef: AudioModuleDef = {
     // channelCountMode defaults to 'max', so the 10-channel poly source passes
     // through to the worklet intact.
     const workletNode = new AudioWorkletNode(ctx, PROCESSOR_NAME, {
-      numberOfInputs: 2,
+      // 3 inputs: pitch (input 0, also CV→AudioParam sum target), poly (input 1,
+      // 10-channel bus), trigger (input 2, mono gate for the per-voice ADSR).
+      numberOfInputs: 3,
       numberOfOutputs: 2,
       outputChannelCount: [2, 1],
     });
@@ -297,6 +314,14 @@ export const cubeDef: AudioModuleDef = {
     silence.offset.value = 0;
     silence.start();
     silence.connect(workletNode, 0, 0);
+
+    // Per-voice-ADSR: a 0-offset keep-alive on the TRIGGER input (input 2) so it
+    // schedules when unpatched (0 gate = "no note" → the env multiply is skipped,
+    // legacy drone). Feeds ONLY the trigger input, never pitch.
+    const trigSilence = ctx.createConstantSource();
+    trigSilence.offset.value = 0;
+    trigSilence.start();
+    trigSilence.connect(workletNode, 0, 2);
 
     // ---------------- per-slot wavetable resolution + poll ----------------
     const resolvedSigs: Record<CubeSlot, string> = { floor: '', wall: '', ceiling: '' };
@@ -416,6 +441,8 @@ export const cubeDef: AudioModuleDef = {
         ['pitch',    { node: workletNode, input: 0 }],
         // Poly bus → worklet input 1 (a node connection, not an AudioParam).
         ['poly',     { node: workletNode, input: 1 }],
+        // Mono TRIGGER gate → worklet input 2 (a node connection).
+        ['trigger',  { node: workletNode, input: 2 }],
         ['slice_y',  { node: workletNode, input: 0, param: params.get('slice_y')! }],
         ['slice_rx', { node: workletNode, input: 0, param: params.get('slice_rx')! }],
         ['slice_ry', { node: workletNode, input: 0, param: params.get('slice_ry')! }],
@@ -485,6 +512,8 @@ export const cubeDef: AudioModuleDef = {
         if (pollTimer !== null) clearTimeout(pollTimer);
         try { silence.stop(); } catch { /* */ }
         try { silence.disconnect(); } catch { /* */ }
+        try { trigSilence.stop(); } catch { /* */ }
+        try { trigSilence.disconnect(); } catch { /* */ }
         try { workletNode.port.onmessage = null; } catch { /* */ }
         try { workletNode.disconnect(); } catch { /* */ }
         try { splitter.disconnect(); } catch { /* */ }

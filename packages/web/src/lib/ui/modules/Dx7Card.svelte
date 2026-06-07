@@ -139,6 +139,15 @@
         <Knob value={paramVal('transpose', 0)}  min={-24} max={24} defaultValue={0}   label="Trans" curve="linear"   onchange={set('transpose')} moduleId={id} paramId="transpose"  readLive={live('transpose')} />
       </div>
 
+      <!-- Master output-VCA ADSR (per-voice; on top of the SYX operator EGs) -->
+      <div class="adsr-label">MASTER ADSR</div>
+      <div class="knob-row adsr-row">
+        <Knob value={paramVal('attack', 0.001)}  min={0.001} max={5} defaultValue={0.001} label="Atk" units="s" curve="log"    onchange={set('attack')}  moduleId={id} paramId="attack"  readLive={live('attack')} />
+        <Knob value={paramVal('decay', 0.1)}     min={0.001} max={5} defaultValue={0.1}   label="Dec" units="s" curve="log"    onchange={set('decay')}   moduleId={id} paramId="decay"   readLive={live('decay')} />
+        <Knob value={paramVal('sustain', 1)}     min={0}     max={1} defaultValue={1}     label="Sus"           curve="linear" onchange={set('sustain')} moduleId={id} paramId="sustain" readLive={live('sustain')} />
+        <Knob value={paramVal('release', 0.005)} min={0.001} max={5} defaultValue={0.005} label="Rel" units="s" curve="log"    onchange={set('release')} moduleId={id} paramId="release" readLive={live('release')} />
+      </div>
+
       <!-- SYX upload -->
       <div class="syx-row">
         <label class="syx-btn">
@@ -214,6 +223,13 @@
     justify-content: center;
     gap: 14px;
     flex-wrap: wrap;
+  }
+  .adsr-label {
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    text-align: center;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
   }
   .syx-row {
     display: flex;

@@ -133,6 +133,11 @@ export const wavecelDef: AudioModuleDef = {
     // `pitch` is the fallback when nothing is patched here. Engine routes this
     // 10-channel cable to ONE worklet input (index 5) — same shape as DX7.poly.
     { id: 'poly',      type: 'polyPitchGate' },
+    // Mono TRIGGER gate for the per-voice amplitude ADSR (input 6). A level gate
+    // so note-off→release is expressible. The FIRST rising edge turns WAVECEL
+    // into a gated voice (lane-0 envelope); before any note (and when unpatched)
+    // it free-runs as a drone.
+    { id: 'trigger',   type: 'gate' },
   ],
   outputs: [
     { id: 'out_l', type: 'audio' },
@@ -153,6 +158,15 @@ export const wavecelDef: AudioModuleDef = {
     { id: 'morph',  label: 'Morph', defaultValue: 0, min: 0,    max: 1,   curve: 'linear' },
     { id: 'spread', label: 'Sprd',  defaultValue: 1, min: 1,    max: 5,   curve: 'linear' },
     { id: 'fold',   label: 'Fold',  defaultValue: 0, min: 0,    max: 1,   curve: 'linear' },
+    // Per-voice amplitude ADSR (per-voice-ADSR feature). A single A/D/S/R set
+    // feeds all 5 lane envelopes (poly) + lane-0 (mono TRIGGER). Defaults
+    // ~pass-through so an untouched ADSR + an ungated/unpatched TRIGGER keeps
+    // WAVECEL's legacy mono drone byte-identical; the env only shapes amplitude
+    // once a poly lane or the TRIGGER fires.
+    { id: 'attack',  label: 'A', defaultValue: 0.001, min: 0.001, max: 5, curve: 'log', units: 's' },
+    { id: 'decay',   label: 'D', defaultValue: 0.1,   min: 0.001, max: 5, curve: 'log', units: 's' },
+    { id: 'sustain', label: 'S', defaultValue: 1,     min: 0,     max: 1, curve: 'linear' },
+    { id: 'release', label: 'R', defaultValue: 0.005, min: 0.001, max: 5, curve: 'log', units: 's' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -162,13 +176,22 @@ export const wavecelDef: AudioModuleDef = {
     }
 
     const workletNode = new AudioWorkletNode(ctx, 'wavecel', {
-      // 6 inputs: pitch, fm, morph_cv, spread_cv, fold_cv, + poly (10-channel
-      // polyPitchGate at index 5). channelCountMode defaults to 'max', so the
-      // 10-channel poly source passes through to the worklet intact.
-      numberOfInputs: 6,
+      // 7 inputs: pitch, fm, morph_cv, spread_cv, fold_cv, poly (10-channel
+      // polyPitchGate at index 5), trigger (mono gate at index 6). poly STAYS at
+      // 5 — the new trigger is APPENDED so #664 routing is unchanged.
+      // channelCountMode defaults to 'max', so the 10-channel poly source passes
+      // through to the worklet intact.
+      numberOfInputs: 7,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],
     });
+
+    // Per-voice-ADSR: a 0-offset keep-alive on the TRIGGER input (input 6) so it
+    // schedules when unpatched (0 gate = "no note"). Feeds ONLY the trigger input.
+    const trigSilence = ctx.createConstantSource();
+    trigSilence.offset.value = 0;
+    trigSilence.start();
+    trigSilence.connect(workletNode, 0, 6);
 
     const initialData = (node.data ?? {}) as WavecelData;
     let resolved = resolveFrames(initialData);
@@ -255,6 +278,8 @@ export const wavecelDef: AudioModuleDef = {
         ['fold_cv',   { node: workletNode, input: 4, param: pFold }],
         // Poly bus → worklet input 5 (a node connection, not an AudioParam).
         ['poly',      { node: workletNode, input: 5 }],
+        // Mono TRIGGER gate → worklet input 6 (a node connection).
+        ['trigger',   { node: workletNode, input: 6 }],
       ]),
       outputs: new Map([
         ['out_l', { node: workletNode, output: 0 }],
@@ -278,6 +303,8 @@ export const wavecelDef: AudioModuleDef = {
       dispose() {
         alive = false;
         if (pollTimer !== null) clearTimeout(pollTimer);
+        try { trigSilence.stop(); } catch { /* */ }
+        try { trigSilence.disconnect(); } catch { /* */ }
         try { workletNode.disconnect(vizAnalyser); } catch { /* */ }
         try { vizAnalyser.disconnect(); } catch { /* */ }
         workletNode.disconnect();
