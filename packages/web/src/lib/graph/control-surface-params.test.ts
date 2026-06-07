@@ -19,10 +19,17 @@ import {
   resolveSurfaceParam,
   paramDefForBinding,
   hasNestedParams,
+  bindingDefinitelyDangling,
+  pruneSurfaceDangling,
 } from './control-surface-params';
-import { CONTROL_SURFACE_TYPE } from './control-surface';
+import {
+  CONTROL_SURFACE_TYPE,
+  addBindingToSurface,
+  addScreenToSurface,
+  readSurfaceData,
+} from './control-surface';
 import { setLayerMaterialField } from './toybox-layers';
-import { setCombineNodeParam } from './toybox-combine';
+import { setCombineNodeParam, deleteCombineNode } from './toybox-combine';
 import { makeDefaultObjMaterial, type ToyboxLayer } from '$lib/video/toybox-content';
 import { makeDefaultCombineGraph } from '$lib/video/toybox-combine-graph';
 
@@ -141,5 +148,81 @@ describe('resolveSurfaceParam — guards', () => {
     makeSurface();
     expect(resolveSurfaceParam(undefined, 'scale')).toBeNull();
     expect(resolveSurfaceParam(patch.nodes[SID] as ModuleNode, 'anything')).toBeNull();
+  });
+});
+
+// ───────────────────── #86: auto-prune dangling proxied controls ─────────────────────
+
+function toyboxNoCombine(): void {
+  patch.nodes[TID] = {
+    id: TID, type: 'toybox', domain: 'video', position: { x: 0, y: 0 },
+    params: {}, data: {}, // combine NOT loaded yet
+  } as unknown as ModuleNode;
+}
+
+describe('bindingDefinitelyDangling — conservative source-gone test', () => {
+  it('absent source MODULE → dangling (case 1: mapped module deleted)', () => {
+    expect(bindingDefinitelyDangling(undefined, 'attack')).toBe(true);
+  });
+  it('present flat module → NOT dangling', () => {
+    makeAdsr();
+    expect(bindingDefinitelyDangling(patch.nodes[ADSR] as ModuleNode, 'attack')).toBe(false);
+  });
+  it('toybox combine: node PRESENT → not dangling; node ABSENT (graph loaded) → dangling (case 2)', () => {
+    makeToybox();
+    const tb = patch.nodes[TID] as ModuleNode;
+    expect(bindingDefinitelyDangling(tb, 'combine:op1:amount')).toBe(false);
+    expect(bindingDefinitelyDangling(tb, 'combine:ghost:amount')).toBe(true);
+  });
+  it('toybox combine NOT loaded → NOT dangling (never false-prune a not-yet-synced source)', () => {
+    toyboxNoCombine();
+    expect(bindingDefinitelyDangling(patch.nodes[TID] as ModuleNode, 'combine:op1:amount')).toBe(false);
+  });
+});
+
+describe('pruneSurfaceDangling — real Y.Doc', () => {
+  it('drops every binding when its source MODULE is deleted', () => {
+    makeSurface();
+    makeAdsr();
+    addBindingToSurface(SID, ADSR, 'attack');
+    addBindingToSurface(SID, ADSR, 'decay');
+    expect(pruneSurfaceDangling(SID), 'nothing dangles while the source exists').toBe(0);
+    delete patch.nodes[ADSR];
+    expect(pruneSurfaceDangling(SID)).toBe(2);
+    expect(readSurfaceData(patch.nodes[SID]).bindings ?? []).toHaveLength(0);
+    // idempotent — a second prune is a no-op
+    expect(pruneSurfaceDangling(SID)).toBe(0);
+  });
+
+  it('drops a TOYBOX combine binding when its op node is deleted, keeps the valid ones', () => {
+    makeSurface();
+    makeToybox();
+    makeAdsr();
+    addBindingToSurface(SID, ADSR, 'attack'); // stays (source alive)
+    addBindingToSurface(SID, TID, 'combine:op1:amount'); // dropped after the node delete
+    expect(pruneSurfaceDangling(SID)).toBe(0);
+    // Reconfigure the toybox: delete the op node the surface points at.
+    deleteCombineNode(TID, 'op1');
+    expect(pruneSurfaceDangling(SID)).toBe(1);
+    const ids = (readSurfaceData(patch.nodes[SID]).bindings ?? []).map((b) => b.paramId);
+    expect(ids).toEqual(['attack']);
+  });
+
+  it('does NOT prune a toybox binding while the combine graph has not loaded', () => {
+    makeSurface();
+    toyboxNoCombine();
+    addBindingToSurface(SID, TID, 'combine:op1:amount');
+    expect(pruneSurfaceDangling(SID)).toBe(0);
+    expect(readSurfaceData(patch.nodes[SID]).bindings ?? []).toHaveLength(1);
+  });
+
+  it('drops a dangling SCREEN when its module is deleted', () => {
+    makeSurface();
+    makeAdsr();
+    addScreenToSurface(SID, ADSR);
+    expect(pruneSurfaceDangling(SID)).toBe(0);
+    delete patch.nodes[ADSR];
+    expect(pruneSurfaceDangling(SID)).toBe(1);
+    expect(readSurfaceData(patch.nodes[SID]).screens ?? []).toHaveLength(0);
   });
 });
