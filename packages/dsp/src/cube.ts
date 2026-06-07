@@ -92,6 +92,8 @@ import { Envelope } from './lib/adsr-env';
 import {
   polyEnvSum,
   monoEnvSample,
+  updateHeldPitch,
+  laneRenderVOct,
   type AdsrParams,
 } from './lib/poly-osc-sum';
 
@@ -191,6 +193,12 @@ class CubeProcessor extends AudioWorkletProcessor {
   // Each is an independent [0,1) accumulator reading the SAME posted slice
   // waves at its own pitch. Only used while the poly bus carries a gate.
   private polyPhase: Float64Array = new Float64Array(POLY_VOICES);
+  // PERSISTENT per-lane held V/oct — UPDATED while a lane is gated, HELD (never
+  // reset) when it's not, so a releasing voice (gate low, env>0) keeps advancing
+  // at the played pitch instead of snapping to 0 V/oct (C4). See updateHeldPitch
+  // / laneRenderVOct in lib/poly-osc-sum.ts. Starts at 0 (= C4) for never-played
+  // lanes, which matches the legacy behavior for a lane that has never gated.
+  private heldVOct: Float64Array = new Float64Array(POLY_VOICES);
 
   // ── Per-voice amplitude ADSR (per-voice-ADSR feature) ──
   // One Envelope per lane. The poly path gate-edges drive env[lane]; the mono
@@ -565,18 +573,22 @@ class CubeProcessor extends AudioWorkletProcessor {
     const polyIn = inputs[1];
     const trim = tune / 12 + fine / 1200;
     const laneGate: boolean[] = [false, false, false, false, false];
-    const laneVOct: number[] = [0, 0, 0, 0, 0];
     let anyPolyGate = false;
     if (polyIn) {
       for (let lane = 0; lane < POLY_VOICES; lane++) {
         const gateCh = polyIn[lane * 2 + 1];
         const pitchCh = polyIn[lane * 2];
         const g = gateCh && gateCh.length > 0 ? (gateCh[0] ?? 0) : 0;
-        if (g > 0.5) {
+        const gated = g > 0.5;
+        if (gated) {
           laneGate[lane] = true;
-          laneVOct[lane] = pitchCh && pitchCh.length > 0 ? (pitchCh[0] ?? 0) : 0;
           anyPolyGate = true;
         }
+        // Track this lane's pitch while gated; HOLD it through release. A
+        // releasing voice (gate low, env still audible) advances at the held
+        // (played) pitch, not 0 V/oct = C4 — the release-tail pitch fix.
+        const lanePitch = pitchCh && pitchCh.length > 0 ? (pitchCh[0] ?? 0) : 0;
+        this.heldVOct[lane] = updateHeldPitch(this.heldVOct[lane]!, gated, lanePitch);
       }
     }
 
@@ -644,16 +656,21 @@ class CubeProcessor extends AudioWorkletProcessor {
         // single held poly note line up with the mono path); lanes 1..4 use
         // polyPhase[]. Silent lanes still advance (tracked at lane-0 pitch) so a
         // re-opened lane doesn't pop.
-        // Lane 0.
-        this.phase = advance(this.phase, laneVOct[0]! + trim);
+        // Lane 0. Held pitch (gated OR releasing → own pitch; else lane-0's).
+        const v0 = laneRenderVOct(
+          this.heldVOct, 0, laneGate[0]!, this.env[0]!.value > 0,
+        );
+        this.phase = advance(this.phase, v0 + trim);
         laneL[0] = readFrame(this.waveL, this.phase);
         laneR[0] = readFrame(this.waveR, this.phase);
         // Lanes 1..4.
         for (let lane = 1; lane < POLY_VOICES; lane++) {
-          // Use the lane's own pitch when it's gated OR still releasing (env>0);
-          // otherwise track lane-0's pitch so a re-open doesn't pop.
-          const ownPitch = laneGate[lane] || this.env[lane]!.value > 0;
-          const v = ownPitch ? laneVOct[lane]! : laneVOct[0]!;
+          // Use the lane's own HELD pitch when it's gated OR still releasing
+          // (env>0) — so a released note's tail keeps its played pitch; otherwise
+          // track lane-0's held pitch so a re-open doesn't pop.
+          const v = laneRenderVOct(
+            this.heldVOct, lane, laneGate[lane]!, this.env[lane]!.value > 0,
+          );
           this.polyPhase[lane] = advance(this.polyPhase[lane]!, v + trim);
           laneL[lane] = readFrame(this.waveL, this.polyPhase[lane]!);
           laneR[lane] = readFrame(this.waveR, this.polyPhase[lane]!);

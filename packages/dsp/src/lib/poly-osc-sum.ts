@@ -28,6 +28,53 @@ export const POLY_SUM_VOICES = 5;
  *  envelope value exceeds this epsilon. Matches the spec's env.value > ε rule. */
 export const ENV_AUDIBLE_EPS = 1e-4;
 
+// ── Held per-voice pitch (release-tail pitch fix) ──
+//
+// The poly VCOs (CUBE / WAVECEL) used to sample each lane's V/oct ONCE per block
+// and ONLY while that lane was currently GATED, into a block-local array reset to
+// 0 every block. A released note keeps SOUNDING while its envelope decays
+// (env.value > 0) but its gate is already low — so the releasing lane's pitch
+// read back as 0 V/oct (= C4), and the release tail snapped to C4 instead of the
+// played note's pitch (the user-reported bug; reproduced mono + poly).
+//
+// Fix: each voice keeps a PERSISTENT held V/oct that is UPDATED while the lane is
+// gated and HELD (not reset) when it isn't, so a releasing voice advances at the
+// last played pitch until its envelope decays. These two pure helpers own that
+// logic so it's unit-testable without an AudioWorklet (the ART render() is a
+// stub — see the file header above).
+
+/**
+ * Update one voice's held V/oct for this block.
+ *   gated  → track the live lane pitch (so held pitch follows pitch-bend while
+ *            the note is held).
+ *   !gated → HOLD the previous value (do NOT reset to 0) so a releasing voice's
+ *            tail keeps advancing at the played pitch.
+ */
+export function updateHeldPitch(held: number, gated: boolean, lanePitch: number): number {
+  return gated ? lanePitch : held;
+}
+
+/**
+ * Pick the V/oct a lane's oscillator should advance at this block:
+ *   - gated OR still env-audible (releasing tail) → its OWN held pitch (the
+ *     played note — this is the bug fix: a releasing voice keeps its pitch).
+ *   - silent / never-gated → lane-0's held pitch, so a later re-open doesn't pop
+ *     (a never-played lane has held=0 and tracks lane 0's phase region).
+ *
+ * @param held       per-lane held V/oct (length POLY_SUM_VOICES)
+ * @param lane       lane index
+ * @param gated      whether the lane is currently gated this block
+ * @param envAudible whether the lane's envelope is still audible (env.value > 0)
+ */
+export function laneRenderVOct(
+  held: ArrayLike<number>,
+  lane: number,
+  gated: boolean,
+  envAudible: boolean,
+): number {
+  return gated || envAudible ? (held[lane] ?? 0) : (held[0] ?? 0);
+}
+
 /** Shared single A/D/S/R param block (read once per worklet block at k-rate and
  *  fed identically into every lane's env tick — NOT a per-voice scheme). */
 export interface AdsrParams {
