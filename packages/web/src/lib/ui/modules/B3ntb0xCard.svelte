@@ -28,6 +28,7 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { VideoEngine } from '$lib/video/engine';
   import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
+  import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
   import type { ModuleNode } from '$lib/graph/types';
   import { b3ntb0xDef } from '$lib/video/modules/b3ntb0x';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -64,6 +65,11 @@
   // Reduced-precision badge — true when the GPU couldn't allocate float FBOs.
   let reducedPrecision = $state(false);
 
+  // Live engine canvas dims, mirrored into $state from draw() (engineCtx.get()
+  // is not reactive) so the fullscreen buffer-size derive follows HD mode.
+  let engineW = $state(ENGINE_W);
+  let engineH = $state(ENGINE_H);
+
   // ---------- True fullscreen ----------
   const fs = createFullscreen();
   let wrapEl: HTMLDivElement | null = $state(null);
@@ -84,6 +90,17 @@
   });
   let cardEl: HTMLDivElement | null = $state(null);
   $effect(() => ff.attach(cardEl, () => fullFrame));
+
+  // Canvas buffer dims: card-aspect in the rack; live ENGINE-aspect in TRUE
+  // fullscreen so the source height-fills the screen (side pillarbox only, no
+  // top/bottom letterbox). See fullscreen-canvas-dims.ts.
+  let bufferDims = $derived(
+    fullscreenCanvasDims(
+      fs.isFullscreen,
+      { canvas: { width: engineW, height: engineH } },
+      { width: innerWidth, height: screenAreaH },
+    ),
+  );
 
   let ctxOpen = $state(false);
   let ctxX = $state(0);
@@ -135,6 +152,11 @@
       const src = videoEngine.canvas as CanvasImageSource;
       const cw = canvasEl.width;
       const ch = canvasEl.height;
+      // Mirror live engine dims into $state so bufferDims follows HD mode.
+      const ew = videoEngine.canvas.width || ENGINE_W;
+      const eh = videoEngine.canvas.height || ENGINE_H;
+      if (ew !== engineW) engineW = ew;
+      if (eh !== engineH) engineH = eh;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
       const r = fitRect(cw, ch, liveEngineAspect(videoEngine));
@@ -280,9 +302,9 @@
     >
       <canvas
         bind:this={canvasEl}
-        width={innerWidth}
-        height={screenAreaH}
-        style="aspect-ratio: {innerWidth} / {screenAreaH};"
+        width={bufferDims.width}
+        height={bufferDims.height}
+        style="aspect-ratio: {bufferDims.aspectRatio};"
         data-testid="b3ntb0x-canvas"
         data-node-id={id}
       ></canvas>

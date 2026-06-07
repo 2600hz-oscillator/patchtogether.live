@@ -26,6 +26,7 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { VideoEngine } from '$lib/video/engine';
   import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
+  import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
   import type { ModuleNode } from '$lib/graph/types';
   import { bentboxDef } from '$lib/video/modules/bentbox';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -71,6 +72,11 @@
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
+  // Live engine canvas dims, mirrored into $state from draw() (engineCtx.get()
+  // is not reactive) so the fullscreen buffer-size derive follows HD mode.
+  let engineW = $state(ENGINE_W);
+  let engineH = $state(ENGINE_H);
+
   // ---------- True fullscreen (mirrors VideoOutCard) ----------
   // The screen-wrap is the fullscreen element; it holds the live <canvas>.
   // CSS scales the canvas to fill the viewport aspect-fit while fullscreen;
@@ -100,6 +106,17 @@
   });
   let cardEl: HTMLDivElement | null = $state(null);
   $effect(() => ff.attach(cardEl, () => fullFrame));
+
+  // Canvas buffer dims: card-aspect in the rack; live ENGINE-aspect in TRUE
+  // fullscreen so the source height-fills the screen (side pillarbox only, no
+  // top/bottom letterbox). See fullscreen-canvas-dims.ts.
+  let bufferDims = $derived(
+    fullscreenCanvasDims(
+      fs.isFullscreen,
+      { canvas: { width: engineW, height: engineH } },
+      { width: innerWidth, height: screenAreaH },
+    ),
+  );
 
   let ctxOpen = $state(false);
   let ctxX = $state(0);
@@ -157,6 +174,11 @@
       const src = videoEngine.canvas as CanvasImageSource;
       const cw = canvasEl.width;
       const ch = canvasEl.height;
+      // Mirror live engine dims into $state so bufferDims follows HD mode.
+      const ew = videoEngine.canvas.width || ENGINE_W;
+      const eh = videoEngine.canvas.height || ENGINE_H;
+      if (ew !== engineW) engineW = ew;
+      if (eh !== engineH) engineH = eh;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
       const r = fitRect(cw, ch, liveEngineAspect(videoEngine));
@@ -298,9 +320,9 @@
     >
       <canvas
         bind:this={canvasEl}
-        width={innerWidth}
-        height={screenAreaH}
-        style="aspect-ratio: {innerWidth} / {screenAreaH};"
+        width={bufferDims.width}
+        height={bufferDims.height}
+        style="aspect-ratio: {bufferDims.aspectRatio};"
         data-testid="bentbox-canvas"
         data-node-id={id}
       ></canvas>

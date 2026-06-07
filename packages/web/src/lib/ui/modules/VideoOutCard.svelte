@@ -45,6 +45,7 @@
   import { startCornerResize } from './card-resize';
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
+  import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -93,6 +94,13 @@
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
+  // Live engine canvas dims, captured each rAF in draw() (the engine isn't a
+  // reactive store — engineCtx.get() is a plain getter — so we mirror its dims
+  // into $state for the fullscreen buffer-size derive below). Defaults to the
+  // SD 4:3 constants until the engine reports real dims.
+  let engineW = $state(ENGINE_W);
+  let engineH = $state(ENGINE_H);
+
   // ---------- True fullscreen ----------
   // The canvas-wrap is the element we fullscreen; it contains the live
   // <canvas>. While fullscreen, CSS scales the canvas to fill the viewport
@@ -125,6 +133,20 @@
   let cardEl: HTMLDivElement | null = $state(null);
   // Double-click a full-frame card exits back to normal chrome.
   $effect(() => ff.attach(cardEl, () => fullFrame));
+
+  // Canvas drawing-buffer dims. In the rack: the card's inner dims (card
+  // aspect). In TRUE fullscreen: the live ENGINE dims so the buffer carries the
+  // ENGINE aspect — fitRect then fills it edge-to-edge (no baked bars) and the
+  // CSS object-fit:contain pillarboxes the true source aspect into the screen
+  // (height-fill, side pillarbox only for 4:3 — no top/bottom letterbox). See
+  // fullscreen-canvas-dims.ts for the full rationale + HD composition.
+  let bufferDims = $derived(
+    fullscreenCanvasDims(
+      fs.isFullscreen,
+      { canvas: { width: engineW, height: engineH } },
+      { width: innerWidth, height: innerHeight },
+    ),
+  );
 
   // Right-click-on-canvas context menu (Fullscreen / Full Frame).
   let ctxOpen = $state(false);
@@ -204,6 +226,11 @@
       const ew = videoEngine.canvas.width || ENGINE_W;
       const eh = videoEngine.canvas.height || ENGINE_H;
       const srcAspect = ew / eh;
+      // Mirror the live engine dims into $state so the fullscreen buffer-size
+      // derive (bufferDims) follows HD-mode aspect changes. Cheap guard so we
+      // don't churn reactivity every frame when nothing changed.
+      if (ew !== engineW) engineW = ew;
+      if (eh !== engineH) engineH = eh;
       // Black background, then aspect-fit blit with Y-flip.
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
@@ -288,9 +315,9 @@
   >
     <canvas
       bind:this={canvasEl}
-      width={innerWidth}
-      height={innerHeight}
-      style="aspect-ratio: {innerWidth} / {innerHeight};"
+      width={bufferDims.width}
+      height={bufferDims.height}
+      style="aspect-ratio: {bufferDims.aspectRatio};"
       data-testid="video-out-canvas"
       data-node-id={id}
     ></canvas>
