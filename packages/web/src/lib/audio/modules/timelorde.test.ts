@@ -166,12 +166,21 @@ class FakeConstantSourceNode {
   disconnect = vi.fn();
 }
 
+// Capture every worklet node the factory constructs so a test can reach
+// its `.port.onmessage` (the path the worklet posts measuredBpm on).
+const constructedWorklets: FakeAudioWorkletNode[] = [];
+
 class FakeAudioWorkletNode {
   parameters: { get: (k: string) => FakeParam | undefined };
-  port = { onmessage: null as unknown, postMessage: vi.fn(), close: vi.fn() };
+  port = {
+    onmessage: null as ((e: { data: unknown }) => void) | null,
+    postMessage: vi.fn(),
+    close: vi.fn(),
+  };
   disconnect = vi.fn();
   _paramMap: Map<string, FakeParam>;
   constructor(_ctx: unknown, _name: string, _opts?: unknown) {
+    constructedWorklets.push(this);
     this._paramMap = new Map([
       ['bpm', makeParam(120)],
       ['swingAmount', makeParam(0)],
@@ -434,5 +443,69 @@ describe('timelordeDef.factory: start_in / stop_in transport gates', () => {
     expect(fakeSchedulerSubs.length).toBe(1);
     handle.dispose();
     expect(fakeSchedulerSubs.length).toBe(0);
+  });
+});
+
+describe('timelordeDef.factory: external-clock BPM follow (measuredBpm → bpm)', () => {
+  beforeEach(() => {
+    fakeSchedulerSubs.length = 0;
+    constructedWorklets.length = 0;
+    for (const k of Object.keys(livePatch.nodes)) delete livePatch.nodes[k];
+    livePatch.nodes['timelorde-test'] = {
+      id: 'timelorde-test',
+      type: 'timelorde',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: { bpm: 120 },
+      data: {},
+    } as ModuleNode;
+    (globalThis as unknown as { AudioWorkletNode: typeof FakeAudioWorkletNode }).AudioWorkletNode =
+      FakeAudioWorkletNode;
+  });
+
+  function fireMeasuredBpm(bpm: number): void {
+    // The factory assigns workletNode.port.onmessage; the worklet posts
+    // { type: 'measuredBpm', bpm } when it locks to / drifts on an external
+    // clock (bpm:0 on dropout).
+    const w = constructedWorklets[constructedWorklets.length - 1];
+    w?.port.onmessage?.({ data: { type: 'measuredBpm', bpm } });
+  }
+
+  it('a positive measuredBpm writes through to the bpm param AND livePatch.params.bpm', async () => {
+    // THE GAP-FILL: before this, a measured external tempo was display-only
+    // (read('measuredBpm')); the bpm param stayed at the internal knob, so
+    // LIVECODE's clock.bpm() / clocked() kept deriving the wrong period
+    // while the gate outputs followed the hardware. Now an external lock
+    // propagates into bpm everywhere.
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode({ bpm: 120 }));
+    // The card still surfaces the measured value too.
+    fireMeasuredBpm(140);
+    expect(handle.read?.('measuredBpm')).toBe(140);
+    // …and now the bpm param + the patch store follow it.
+    expect(handle.readParam?.('bpm')).toBe(140);
+    expect(livePatch.nodes['timelorde-test']!.params.bpm).toBe(140);
+  });
+
+  it('measured BPM is clamped to the param range (10..300)', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode({ bpm: 120 }));
+    fireMeasuredBpm(5000); // absurd glitch reading
+    expect(handle.readParam?.('bpm')).toBe(300);
+    fireMeasuredBpm(2); // below floor
+    expect(handle.readParam?.('bpm')).toBe(10);
+  });
+
+  it('a dropout (bpm:0) does NOT clobber the bpm param — holds the last followed tempo', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode({ bpm: 120 }));
+    fireMeasuredBpm(132);
+    expect(handle.readParam?.('bpm')).toBe(132);
+    // Clock unplugged → worklet posts bpm:0. We hold 132 (NOT reset to 120).
+    fireMeasuredBpm(0);
+    expect(handle.readParam?.('bpm')).toBe(132);
+    expect(livePatch.nodes['timelorde-test']!.params.bpm).toBe(132);
+    // measuredBpm read still reflects the dropout for the card display.
+    expect(handle.read?.('measuredBpm')).toBe(0);
   });
 });

@@ -65,6 +65,7 @@
   import { attachReconciler } from '$lib/audio/reconciler';
   import { getModuleDef, listModuleDefs } from '$lib/audio/module-registry';
   import { provideEngineContext } from '$lib/audio/engine-context';
+  import { setActiveEngine } from '$lib/audio/engine-ref';
   import { provideProviderContext } from '$lib/multiplayer/provider-context';
   import { testHooksEnabled } from '$lib/dev/test-hooks';
   import '$lib/audio/modules'; // auto-registers analogVcoDef + audioOutDef
@@ -138,6 +139,7 @@
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
   import HdToggle from '$lib/ui/HdToggle.svelte';
   import { hdStore } from '$lib/ui/hd-store.svelte';
+  import ElectraConnectButton from '$lib/ui/ElectraConnectButton.svelte';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
   import PickupCable from '$lib/ui/PickupCable.svelte';
@@ -3370,6 +3372,7 @@
         // Record the HD state this engine was built at so the rebuild $effect
         // can tell a real toggle apart from its own first (no-op) run.
         hdBuiltOn = hdStore.on;
+        setActiveEngine(e); // expose to non-context consumers (Electra bar button)
         trace(`engine + reconciler attached (sr=${audioCtx.sampleRate})`);
         return e;
       } catch (err) {
@@ -3817,6 +3820,7 @@
   onDestroy(() => {
     reconciler?.dispose();
     engine?.dispose();
+    setActiveEngine(null); // clear the non-context engine ref on unmount
     audioGate?.bind(null);
   });
 
@@ -3879,6 +3883,11 @@
       >Load Perf</button>
       <HdToggle reverted={hdReverted} />
       <SkinSwitcher />
+      <!-- Electra One on EVERY rack (incl. the anonymous `/` scratch canvas) —
+           the flow only needs the patch store + active engine, both present on
+           any Canvas mount, so it isn't tied to a named rackspace. Gated /
+           on-demand (asks for MIDI on first click). -->
+      <ElectraConnectButton />
       {#if headerSignedIn}
         <a
           class="account-link"

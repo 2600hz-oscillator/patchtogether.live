@@ -519,6 +519,9 @@
         </span>
       {/if}
       <span class="bar-spacer"></span>
+      <!-- Electra One affordance now lives in Canvas's topbar so it appears on
+           EVERY rack (incl. the anonymous `/` scratch canvas), not just saved
+           rackspaces. -->
       {#if !data.isAnon}
         {#if !carlSession}
           <button

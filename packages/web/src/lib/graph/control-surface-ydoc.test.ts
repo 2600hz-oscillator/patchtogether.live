@@ -16,6 +16,7 @@ import {
   removeBindingFromSurface,
   setSurfaceGroupPosition,
   setSurfaceLocked,
+  setBindingName,
   readSurfaceData,
   groupBindingsByModule,
 } from './control-surface';
@@ -93,6 +94,34 @@ describe('control surface — real Y.Doc binding mutators', () => {
     const layout = readSurfaceData(patch.nodes[SID]).layout ?? {};
     expect(layout['adsr-1']).toEqual({ x: 15, y: 25 });
     expect(layout['vco-1']).toEqual({ x: 200, y: 40 });
+  });
+
+  it('sets + updates + clears a binding custom name IN PLACE without throwing', () => {
+    makeSurface();
+    addBindingToSurface(SID, 'macro-1', 'timbre');
+    addBindingToSurface(SID, 'macro-1', 'harmonics');
+    // Set a custom name on the SECOND binding (the one whose Y.Map is already
+    // integrated) — the in-place mutator must not spread/reassign the array.
+    expect(() => setBindingName(SID, 'macro-1', 'harmonics', 'Color')).not.toThrow();
+    let data = readSurfaceData(patch.nodes[SID]);
+    expect(data.bindings?.find((b) => b.paramId === 'harmonics')?.name).toBe('Color');
+    expect(data.bindings?.find((b) => b.paramId === 'timbre')?.name).toBeUndefined();
+    // Re-naming the same binding updates in place.
+    expect(() => setBindingName(SID, 'macro-1', 'harmonics', 'Tone')).not.toThrow();
+    data = readSurfaceData(patch.nodes[SID]);
+    expect(data.bindings?.find((b) => b.paramId === 'harmonics')?.name).toBe('Tone');
+    // Trims whitespace.
+    setBindingName(SID, 'macro-1', 'harmonics', '  Spaced  ');
+    expect(readSurfaceData(patch.nodes[SID]).bindings?.find((b) => b.paramId === 'harmonics')?.name).toBe('Spaced');
+    // An empty/blank value CLEARS the custom name (reverts to the abbreviation).
+    expect(() => setBindingName(SID, 'macro-1', 'harmonics', '   ')).not.toThrow();
+    expect(readSurfaceData(patch.nodes[SID]).bindings?.find((b) => b.paramId === 'harmonics')?.name).toBeUndefined();
+    // Naming an unknown binding is a no-op (does not throw / add).
+    expect(() => setBindingName(SID, 'macro-1', 'nope', 'X')).not.toThrow();
+    expect(readSurfaceData(patch.nodes[SID]).bindings?.length).toBe(2);
+    // ...and adding more bindings afterward still works (array stays healthy).
+    expect(() => addBindingToSurface(SID, 'macro-1', 'morph')).not.toThrow();
+    expect(readSurfaceData(patch.nodes[SID]).bindings?.length).toBe(3);
   });
 
   it('toggles locked', () => {

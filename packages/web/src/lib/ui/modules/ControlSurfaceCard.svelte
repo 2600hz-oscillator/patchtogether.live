@@ -32,8 +32,14 @@
     groupBindingsByModule,
     setSurfaceLocked,
     setSurfaceGroupPosition,
+    setBindingName,
     type ControlBinding,
   } from '$lib/graph/control-surface';
+  import {
+    BOX_W,
+    posFor as layoutPosFor,
+    unlockedCanvasSize,
+  } from '$lib/graph/control-surface-layout';
   import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
 
   let { id, data }: NodeProps = $props();
@@ -53,7 +59,16 @@
     void cardVersion;
     return readSurfaceData(patch.nodes[id]);
   });
-  let locked = $derived(surfaceData.locked ?? false);
+  // Read `locked` THROUGH cardVersion, not off `surfaceData`: setSurfaceLocked
+  // mutates node.data.locked IN PLACE, so surfaceData returns the SAME object
+  // reference and Svelte's $derived equality short-circuit would skip re-running
+  // a `$derived(surfaceData.locked)` (the unlock click then appeared to do
+  // nothing — locked→unlocked never reflected). Touching cardVersion forces a
+  // re-read on every ydoc update.
+  let locked = $derived.by(() => {
+    void cardVersion;
+    return readSurfaceData(patch.nodes[id]).locked ?? false;
+  });
 
   // Display name for a source module (its renamed name, else def label, else type).
   function sourceLabel(sourceId: string): string {
@@ -67,7 +82,11 @@
 
   interface RenderControl {
     paramId: string;
+    /** The label shown on the knob: the user's custom name if set, else the
+     *  param's own label. */
     label: string;
+    /** The user-set custom name (empty when none) — seeds the rename input. */
+    customName: string;
     def: ParamDef;
   }
   interface RenderGroup {
@@ -92,7 +111,14 @@
       for (const b of g.bindings) {
         const resolved = resolveSurfaceParam(sourceNode, b.paramId);
         if (!resolved) continue;
-        controls.push({ paramId: b.paramId, label: resolved.def.label ?? b.paramId, def: resolved.def });
+        const custom = typeof b.name === 'string' ? b.name.trim() : '';
+        const baseLabel = resolved.def.label ?? b.paramId;
+        controls.push({
+          paramId: b.paramId,
+          label: custom.length > 0 ? custom : baseLabel,
+          customName: custom,
+          def: resolved.def,
+        });
       }
       if (controls.length === 0) continue;
       out.push({ moduleId: g.moduleId, label: sourceLabel(g.moduleId), controls });
@@ -135,19 +161,25 @@
     };
   }
 
-  // ── layout: tile groups that have no saved position; drag when unlocked ──
-  const BOX_W = 168;
-  const GAP = 12;
-  const ORIGIN = 10;
-  function defaultPos(index: number): { x: number; y: number } {
-    // Tile across in rows of 2 so a fresh surface lays out tidily.
-    const col = index % 2;
-    const row = Math.floor(index / 2);
-    return { x: ORIGIN + col * (BOX_W + GAP), y: ORIGIN + row * 150 };
-  }
+  // ── layout ──
+  // LOCKED (normal display): boxes flow in a wrap layout and the card grows to
+  //   fit them (CSS handles it) — nothing is clipped.
+  // UNLOCKED (drag-to-rearrange): boxes are absolutely positioned at their
+  //   saved layout (or a default tile), and we size the `.cs-canvas` from those
+  //   box positions so even the absolute layout grows to contain every box.
+  // The geometry lives in control-surface-layout.ts (pure + unit-tested).
   function posFor(moduleId: string, index: number): { x: number; y: number } {
-    return surfaceData.layout?.[moduleId] ?? defaultPos(index);
+    return layoutPosFor(surfaceData.layout, moduleId, index);
   }
+  // Drive the unlocked canvas size off the live group set (knob counts vary the
+  // box height) + saved layout. Recomputes whenever bindings/layout change.
+  let unlockedSize = $derived.by(() => {
+    void cardVersion;
+    return unlockedCanvasSize(
+      groups.map((g) => ({ moduleId: g.moduleId, knobCount: g.controls.length })),
+      surfaceData.layout,
+    );
+  });
 
   interface DragSession { moduleId: string; startX: number; startY: number; initX: number; initY: number; pointerId: number; }
   let drag: DragSession | null = $state(null);
@@ -172,6 +204,35 @@
 
   let surfaceTitle = $derived(surfaceData.name ?? 'this surface');
   function toggleLock() { setSurfaceLocked(id, !locked); }
+
+  // ── per-knob rename (only when UNLOCKED, matching the card's edit model) ──
+  // Double-click a knob's label to edit its custom name; Enter / blur commits,
+  // Escape cancels. An empty value clears the custom name (reverts to the param
+  // label + the Electra auto-abbreviation). Writes via the in-place setBindingName.
+  let editing: { moduleId: string; paramId: string } | null = $state(null);
+  let editValue = $state('');
+
+  function startRename(e: Event, moduleId: string, paramId: string, current: string) {
+    if (locked) return;
+    e.stopPropagation();
+    editing = { moduleId, paramId };
+    editValue = current;
+  }
+  function commitRename() {
+    if (!editing) return;
+    setBindingName(id, editing.moduleId, editing.paramId, editValue);
+    editing = null;
+  }
+  function cancelRename() {
+    editing = null;
+  }
+  function onRenameKey(e: KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+  }
+  function isEditing(moduleId: string, paramId: string): boolean {
+    return editing?.moduleId === moduleId && editing?.paramId === paramId;
+  }
 </script>
 
 <svelte:window onpointermove={onPointerMove} onpointerup={onPointerUp} onpointercancel={onPointerUp} />
@@ -196,7 +257,14 @@
       <span>Right-click a control → “Send to {readSurfaceData(patch.nodes[id]).name ?? 'Control Surface'}”.</span>
     </div>
   {:else}
-    <div class="cs-canvas" data-testid="control-surface-canvas">
+    <div
+      class="cs-canvas"
+      class:flowing={locked}
+      data-testid="control-surface-canvas"
+      data-locked={locked ? 'true' : 'false'}
+      style:width={locked ? null : `${unlockedSize.width}px`}
+      style:height={locked ? null : `${unlockedSize.height}px`}
+    >
       {#each groups as g, i (g.moduleId)}
         {@const pos = posFor(g.moduleId, i)}
         <div
@@ -206,8 +274,8 @@
           data-source-id={g.moduleId}
           role="group"
           aria-label={`${g.label} controls`}
-          style:left="{pos.x}px"
-          style:top="{pos.y}px"
+          style:left={locked ? null : `${pos.x}px`}
+          style:top={locked ? null : `${pos.y}px`}
           style:width="{BOX_W}px"
           onpointerdown={(e) => startDrag(e, g.moduleId, pos)}
         >
@@ -234,6 +302,34 @@
                   moduleId={g.moduleId}
                   paramId={c.paramId}
                 />
+                {#if isEditing(g.moduleId, c.paramId)}
+                  <!-- svelte-ignore a11y_autofocus -->
+                  <input
+                    class="cs-rename nodrag"
+                    data-testid={`control-surface-rename-input-${g.moduleId}-${c.paramId}`}
+                    type="text"
+                    bind:value={editValue}
+                    maxlength="14"
+                    aria-label={`Rename ${c.label}`}
+                    autofocus
+                    onpointerdown={(e) => e.stopPropagation()}
+                    onkeydown={onRenameKey}
+                    onblur={commitRename}
+                  />
+                {:else if !locked}
+                  <button
+                    type="button"
+                    class="cs-rename-btn nodrag"
+                    data-testid={`control-surface-rename-${g.moduleId}-${c.paramId}`}
+                    title={`Rename “${c.label}” for the Electra`}
+                    aria-label={`Rename ${c.label}`}
+                    onpointerdown={(e) => e.stopPropagation()}
+                    ondblclick={(e) => startRename(e, g.moduleId, c.paramId, c.customName)}
+                    onclick={(e) => startRename(e, g.moduleId, c.paramId, c.customName)}
+                  >
+                    ✎
+                  </button>
+                {/if}
               </div>
             {/each}
           </div>
@@ -245,7 +341,12 @@
 
 <style>
   .control-surface-card {
-    width: 360px;
+    /* Grow to fit all groups (the SvelteFlow node auto-sizes to the card), with
+       a sane floor so an empty/one-group surface stays card-shaped. Was a fixed
+       360px, which clipped every group past the first row. */
+    width: max-content;
+    min-width: 360px;
+    max-width: 760px;
     min-height: 140px;
     background: var(--module-bg, #1a1d24);
     border-radius: 6px;
@@ -287,12 +388,27 @@
     padding: 8px;
   }
   .cs-canvas {
+    /* UNLOCKED (default of this rule): absolute box layout. Width/height are set
+       inline from unlockedCanvasSize() so the canvas GROWS to contain every box
+       — overflow visible (no clipping). */
     position: relative;
     min-height: 150px;
+    min-width: 344px;
     border: 1px solid #2a2f3a;
     border-radius: 5px;
     background: #0e1015;
-    overflow: hidden;
+    overflow: visible;
+    box-sizing: border-box;
+  }
+  /* LOCKED (normal display): boxes flow + wrap; canvas + card auto-size. */
+  .cs-canvas.flowing {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 12px;
+    padding: 10px;
+    width: auto;
+    height: auto;
   }
   .cs-group {
     position: absolute;
@@ -301,6 +417,11 @@
     background: rgba(20, 24, 32, 0.7);
     padding: 4px 6px 6px;
     box-sizing: border-box;
+  }
+  /* In the flowing (locked) layout the boxes are static — the wrap container
+     places them, so they never fall outside a fixed-height canvas. */
+  .cs-canvas.flowing .cs-group {
+    position: static;
   }
   .cs-group.draggable { cursor: grab; border-color: #6f8bd0; }
   .cs-group.draggable:active { cursor: grabbing; }
@@ -321,5 +442,49 @@
     gap: 8px;
     justify-content: flex-start;
   }
-  .cs-knob { touch-action: none; }
+  /* Each proxied knob gets a fixed min footprint matching dial(36px)+label so
+     2-3 knobs in a group lay out evenly and their (now-ellipsized) labels don't
+     collide. Column-centered so the dial + label stack tidily. */
+  .cs-knob {
+    touch-action: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 48px;
+    max-width: 48px;
+  }
+  /* Defensive belt-and-braces with the Knob.svelte .label clamp: any knob
+     hosted on a surface ellipsizes a too-long label instead of overflowing. */
+  .cs-knob :global(.label) {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Rename affordance: a tiny pencil button (unlocked only) opens an inline
+     input that writes the Electra custom name. */
+  .cs-rename-btn {
+    margin-top: 2px;
+    font-size: 0.6rem;
+    line-height: 1;
+    padding: 1px 4px;
+    border-radius: 3px;
+    border: 1px solid #404652;
+    background: rgba(96, 165, 250, 0.1);
+    color: var(--text-dim, #aab);
+    cursor: pointer;
+  }
+  .cs-rename-btn:hover { background: rgba(96, 165, 250, 0.22); }
+  .cs-rename {
+    margin-top: 2px;
+    width: 100%;
+    max-width: 46px;
+    box-sizing: border-box;
+    font-size: 0.6rem;
+    padding: 1px 3px;
+    border-radius: 3px;
+    border: 1px solid #6f8bd0;
+    background: #0e1015;
+    color: var(--text, #e8eaed);
+  }
 </style>
