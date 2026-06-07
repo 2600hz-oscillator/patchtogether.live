@@ -1,13 +1,13 @@
 // packages/web/src/lib/audio/modules/mixmstrs.ts
 //
-// MIXMSTRS — 4-channel stereo mixer with EQ, compressor, two stereo aux sends,
+// MIXMSTRS — 6-channel stereo mixer with EQ, compressor, two stereo aux sends,
 // two stereo returns. Multiple instances are allowed (submixes / parallel
 // master buses); each instance sums its inputs to the destination additively.
 //
-// 12 audio inputs (4 ch × stereo + 2 returns × stereo) + 10 worklet audio
+// 16 audio inputs (6 ch × stereo + 2 returns × stereo) + 12 worklet audio
 // outputs: 6 patchable module ports (master L/R + send1 L/R + send2 L/R) plus
-// 4 internal POST-FADER per-channel level taps (NOT module ports) feeding the
-// VU read('levels'). 41 AudioParams (37 original + 4 new per-channel `comp`
+// 6 internal POST-FADER per-channel level taps (NOT module ports) feeding the
+// VU read('levels'). 61 AudioParams (55 original + 6 per-channel `comp`
 // macro knobs).
 //
 // Per-channel `comp` macro (added in feat/audio-fidelity-mixmstrs-comp-swolevco):
@@ -35,11 +35,11 @@
 //   macro wins (it overwrites on every setParam call).
 //
 // Inputs:
-//   ch{1..4}L / ch{1..4}R (audio): four stereo channel inputs (4 × stereo = 8 ports).
+//   ch{1..6}L / ch{1..6}R (audio): six stereo channel inputs (6 × stereo = 12 ports).
 //   ret1L / ret1R / ret2L / ret2R (audio): two stereo aux returns.
 //   ch{N}_{volume,low,mid,high,thresh,ratio,compEnable,send1,send2} (cv, linear or discrete,
 //     paramTarget=…): per-channel CV inputs for every param. Linear unless the param is discrete.
-//   comp{1..4} (cv, linear, paramTarget=…): per-channel compressor macro CV.
+//   comp{1..6} (cv, linear, paramTarget=…): per-channel compressor macro CV.
 //   master_volume (cv, linear, paramTarget=master_volume): displaces the master volume.
 //
 // Outputs:
@@ -47,9 +47,9 @@
 //   send1L / send1R (audio): stereo aux-send 1 output.
 //   send2L / send2R (audio): stereo aux-send 2 output.
 //
-// Params (41 total — built programmatically, see buildParams() below):
+// Params (61 total — built programmatically, see buildParams() below):
 //   master_volume (linear 0..1, default 0.8): bus output gain.
-//   per-channel × 4: volume / low / mid / high (linear ±12 dB) /
+//   per-channel × 6: volume / low / mid / high (linear ±12 dB) /
 //     thresh (-36..0 dB) / ratio (1..10) / compEnable (discrete) /
 //     comp (linear 0..1 macro) / send1 / send2 (linear 0..1).
 
@@ -62,6 +62,11 @@ import metaUrl from '@patchtogether.live/dsp/dist/mixmstrs.json?url';
 import workletUrl from '@patchtogether.live/dsp/dist/mixmstrs.worklet.js?url';
 
 const PARAM_PREFIX = '/MIXMSTRS';
+
+// Channel count — single source of truth for the 6-channel layout. The Faust
+// process() declares channels in this order, then the two stereo returns.
+export const MIXMSTRS_CHANNELS = [1, 2, 3, 4, 5, 6] as const;
+const NUM_CHANNELS = MIXMSTRS_CHANNELS.length;
 
 // ---------------- Comp macro mapping ----------------
 //
@@ -105,11 +110,11 @@ export function rmsLevel(buf: Float32Array): number {
   return Math.sqrt(s / buf.length);
 }
 
-// Build the 41-param schema programmatically — 9 controls + 1 comp macro per
-// channel × 4 channels + 1 master.
+// Build the 61-param schema programmatically — 9 controls + 1 comp macro per
+// channel × 6 channels + 1 master.
 function buildParams(): readonly ParamDef[] {
   const params: ParamDef[] = [];
-  for (const ch of [1, 2, 3, 4]) {
+  for (const ch of MIXMSTRS_CHANNELS) {
     params.push({ id: `ch${ch}_volume`,      label: `${ch}V`,   defaultValue: 0.8, min: 0,    max: 1,   curve: 'linear' });
     params.push({ id: `ch${ch}_low`,         label: `${ch}Lo`,  defaultValue: 0,   min: -12,  max: 12,  curve: 'linear', units: 'dB' });
     params.push({ id: `ch${ch}_mid`,         label: `${ch}Md`,  defaultValue: 0,   min: -12,  max: 12,  curve: 'linear', units: 'dB' });
@@ -129,7 +134,17 @@ function buildParams(): readonly ParamDef[] {
 
 const PARAMS = buildParams();
 
-// Inputs: 12 audio + 41 paramTarget CV inputs (37 originals + 4 comp macros).
+// Audio input port ids in the exact order the Faust process() declares them:
+// 12 channel ports (ch1L..ch6R) then the 4 return ports.
+const AUDIO_IN_PORTS: readonly string[] = [
+  ...MIXMSTRS_CHANNELS.flatMap((ch) => [`ch${ch}L`, `ch${ch}R`]),
+  'ret1L', 'ret1R', 'ret2L', 'ret2R',
+];
+
+// Comp-macro ids, derived from the channel list so they never drift apart.
+const COMP_MACRO_IDS: readonly string[] = MIXMSTRS_CHANNELS.map((ch) => `comp${ch}`);
+
+// Inputs: 16 audio + 61 paramTarget CV inputs (55 originals + 6 comp macros).
 //
 // Every CV input gets a `cvScale: linear` hint per
 // .myrobots/plans/cv-range-standard.md so an LFO at ±1 sweeps the param's
@@ -138,14 +153,7 @@ const PARAMS = buildParams();
 // ratio, send amounts); none use log scaling natively, so linear here is
 // the right match.
 function buildInputs(): PortDef[] {
-  const inputs: PortDef[] = [
-    { id: 'ch1L', type: 'audio' }, { id: 'ch1R', type: 'audio' },
-    { id: 'ch2L', type: 'audio' }, { id: 'ch2R', type: 'audio' },
-    { id: 'ch3L', type: 'audio' }, { id: 'ch3R', type: 'audio' },
-    { id: 'ch4L', type: 'audio' }, { id: 'ch4R', type: 'audio' },
-    { id: 'ret1L', type: 'audio' }, { id: 'ret1R', type: 'audio' },
-    { id: 'ret2L', type: 'audio' }, { id: 'ret2R', type: 'audio' },
-  ];
+  const inputs: PortDef[] = AUDIO_IN_PORTS.map((id) => ({ id, type: 'audio' as const }));
   for (const p of PARAMS) {
     inputs.push({
       id: p.id,
@@ -165,10 +173,7 @@ export const mixmstrsDef: AudioModuleDef = {
   category: 'utilities',
   schemaVersion: 1,
   stereoPairs: [
-    ['ch1L', 'ch1R'],
-    ['ch2L', 'ch2R'],
-    ['ch3L', 'ch3R'],
-    ['ch4L', 'ch4R'],
+    ...MIXMSTRS_CHANNELS.map((ch) => [`ch${ch}L`, `ch${ch}R`] as [string, string]),
     ['ret1L', 'ret1R'],
     ['ret2L', 'ret2R'],
   ],
@@ -187,13 +192,14 @@ export const mixmstrsDef: AudioModuleDef = {
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const f = await instantiateFaustModule(ctx, { name: 'mixmstrs', wasmUrl, metaUrl, workletUrl });
 
-    // 12 mono audio inputs into the Faust worklet (channel-merger of 12).
-    // The Faust process() takes 12 args in the same order our inputs declare.
-    const merger = ctx.createChannelMerger(12);
+    // 16 mono audio inputs into the Faust worklet (channel-merger of 16).
+    // The Faust process() takes 16 args in the same order our inputs declare.
+    const NUM_AUDIO_IN = AUDIO_IN_PORTS.length; // 16
+    const merger = ctx.createChannelMerger(NUM_AUDIO_IN);
     merger.connect(f);
     // Silence keeps each channel active even with nothing patched in.
     const silenceSources: ConstantSourceNode[] = [];
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < NUM_AUDIO_IN; i++) {
       const sil = ctx.createConstantSource();
       sil.offset.value = 0;
       sil.start();
@@ -201,19 +207,19 @@ export const mixmstrsDef: AudioModuleDef = {
       silenceSources.push(sil);
     }
 
-    // Output splitter: 10 channels. 0..5 are the patchable module outputs
-    // (masterL/R, send1L/R, send2L/R); 6..9 are the per-channel POST-FADER
+    // Output splitter: 12 channels. 0..5 are the patchable module outputs
+    // (masterL/R, send1L/R, send2L/R); 6..11 are the per-channel POST-FADER
     // meter taps the DSP now emits (post EQ → comp → fader). The meter taps
     // are NOT exposed as module ports — they only feed the VU analysers below.
-    const splitter = ctx.createChannelSplitter(10);
+    const NUM_OUT = 6 + NUM_CHANNELS; // 12
+    const splitter = ctx.createChannelSplitter(NUM_OUT);
     f.connect(splitter);
 
     const params = f.parameters as unknown as Map<string, AudioParam>;
     // Track comp macro values JS-side (they don't have a backing Faust param;
     // they fan out to the existing thresh/ratio/compEnable triple via setParam).
-    const compMacro: Record<string, number> = {
-      comp1: 0, comp2: 0, comp3: 0, comp4: 0,
-    };
+    const compMacro: Record<string, number> = {};
+    for (const id of COMP_MACRO_IDS) compMacro[id] = 0;
     for (const def of PARAMS) {
       const v = (node.params ?? {})[def.id] ?? def.defaultValue;
       if (def.id.startsWith('comp')) {
@@ -226,7 +232,7 @@ export const mixmstrsDef: AudioModuleDef = {
     }
 
     function applyCompMacro(macroId: string, value: number) {
-      // macroId is one of 'comp1'..'comp4'. The N is the channel number.
+      // macroId is one of 'comp1'..'comp6'. The N is the channel number.
       const ch = macroId.slice('comp'.length);
       const m = mapCompMacro(value);
       params.get(`${PARAM_PREFIX}/ch${ch}_compEnable`)?.setValueAtTime(m.enable, ctx.currentTime);
@@ -234,11 +240,11 @@ export const mixmstrsDef: AudioModuleDef = {
       params.get(`${PARAM_PREFIX}/ch${ch}_ratio`)?.setValueAtTime(m.ratio, ctx.currentTime);
     }
 
-    // ── Per-channel POST-FADER meter taps — read('levels') → number[4] ──
+    // ── Per-channel POST-FADER meter taps — read('levels') → number[6] ──
     //
     // ACCURATE VU for the Electra MIXMASTER meter row (and any on-card meter):
-    // the Faust DSP now emits one mono POST-FADER level per channel (post EQ →
-    // comp → volume fader) on worklet outputs 6..9. We split those off and run
+    // the Faust DSP emits one mono POST-FADER level per channel (post EQ →
+    // comp → volume fader) on worklet outputs 6..11. We split those off and run
     // each through an AnalyserNode; read('levels') returns their RMS. Unlike the
     // prior JS input-tap approximation (input-RMS × live chN_volume, which
     // ignored EQ + comp gain), this reflects exactly what the channel feeds the
@@ -246,11 +252,11 @@ export const mixmstrsDef: AudioModuleDef = {
     // The analysers are passive sinks — never connected onward — so they add no
     // audible signal and can't alter the mix.
     //
-    // splitter channels 6,7,8,9 = ch1,ch2,ch3,ch4 post-fader level taps.
+    // splitter channels 6..11 = ch1..ch6 post-fader level taps.
     const meterAnalysers: AnalyserNode[] = [];
     const meterBufs: Float32Array<ArrayBuffer>[] = [];
-    const METER_TAP_OFFSET = 6; // outputs 0..5 are master+sends; 6..9 are taps
-    for (let ch = 0; ch < 4; ch++) {
+    const METER_TAP_OFFSET = 6; // outputs 0..5 are master+sends; 6..11 are taps
+    for (let ch = 0; ch < NUM_CHANNELS; ch++) {
       const ana = ctx.createAnalyser();
       ana.fftSize = 1024;
       ana.smoothingTimeConstant = 0.3;
@@ -260,7 +266,7 @@ export const mixmstrsDef: AudioModuleDef = {
     }
     function readChannelLevels(): number[] {
       const out: number[] = [];
-      for (let ch = 0; ch < 4; ch++) {
+      for (let ch = 0; ch < NUM_CHANNELS; ch++) {
         const ana = meterAnalysers[ch]!;
         const buf = meterBufs[ch]!;
         ana.getFloatTimeDomainData(buf);
@@ -269,8 +275,8 @@ export const mixmstrsDef: AudioModuleDef = {
       return out;
     }
 
-    // Build inputs map: 12 audio at fixed indices, 41 CV-targets per param
-    // (37 Faust-backed + 4 comp macros).
+    // Build inputs map: 16 audio at fixed indices, 61 CV-targets per param
+    // (55 Faust-backed + 6 comp macros).
     //
     // For comp macros we still need a backing AudioParam so the engine's
     // CV → AudioParam tap analyser works (motorized fader feedback). We
@@ -278,7 +284,7 @@ export const mixmstrsDef: AudioModuleDef = {
     // setParam reads the shadow's `.value` and applies the macro mapping
     // each time. This mirrors how wavviz handles its foldAmount macro.
     const compShadow: Record<string, GainNode> = {};
-    for (const macroId of ['comp1', 'comp2', 'comp3', 'comp4']) {
+    for (const macroId of COMP_MACRO_IDS) {
       const g = ctx.createGain();
       g.gain.setValueAtTime(compMacro[macroId] ?? 0, ctx.currentTime);
       // Connect to a sink ConstantSource(0) so the shadow stays in the
@@ -295,8 +301,7 @@ export const mixmstrsDef: AudioModuleDef = {
     }
 
     const inputsMap = new Map<string, { node: AudioNode; input: number; param?: AudioParam }>();
-    const audioInPorts = ['ch1L','ch1R','ch2L','ch2R','ch3L','ch3R','ch4L','ch4R','ret1L','ret1R','ret2L','ret2R'];
-    audioInPorts.forEach((id, i) => {
+    AUDIO_IN_PORTS.forEach((id, i) => {
       inputsMap.set(id, { node: merger, input: i });
     });
     for (const p of PARAMS) {
@@ -337,7 +342,7 @@ export const mixmstrsDef: AudioModuleDef = {
       },
       read(key) {
         // Per-channel POST-FADER VU for the Electra MIXMASTER meter row + any
-        // on-card meters. Returns number[4] of linear RMS levels (~0..1), one
+        // on-card meters. Returns number[6] of linear RMS levels (~0..1), one
         // per channel, read off the DSP's post-fader taps. See
         // readChannelLevels() above.
         if (key === 'levels') return readChannelLevels();

@@ -3,14 +3,19 @@
   // combine-graph editor (the SVG node map inside ToyboxCard). It is AWARE of
   // what was right-clicked and offers only the relevant actions:
   //
-  //   NODE (op)     Patch to output · [Configure keyer] · [Reset feedback] · Disconnect · Duplicate node · Delete node
+  //   NODE (op)     Patch to output · [Reset history/feedback] · Disconnect · Duplicate node · Delete node
   //   NODE (source) Patch to output · Disconnect            (no Delete/Duplicate)
   //   NODE (output) Disconnect                              (structural endpoint)
   //
-  //   "Configure keyer" shows ONLY for a LUMAKEY / CHROMAKEY node (isKeyerKind);
-  //   it opens the keyer-config popover (ToyboxKeyerConfig) via onconfigure.
-  //   "Reset feedback" shows ONLY for a FEEDBACK node; it clears that node's
-  //   ping-pong float buffers (onresetfeedback → resetFeedbackNode mutator).
+  //   Per-op CONTROLS are NOT here — every op's params live in the card's always-
+  //   visible bottom control pane (select a node → its knobs show). The old
+  //   right-click "Configure keyer/feedback" popovers were removed in favour of
+  //   that single, consistent control surface (every node type editable the same
+  //   way). This menu now carries only STRUCTURAL actions (wire / reset-buffer /
+  //   duplicate / delete).
+  //   "Reset feedback/history" shows for any STATEFUL node (feedback + the frame-
+  //   history ops); it clears that node's ping-pong/ring float buffers
+  //   (onresetfeedback → resetFeedbackNode mutator).
   //   PORT (output) Patch to output · Disconnect this port · Begin wire
   //   PORT (input)  Disconnect this port
   //   EDGE          Delete edge
@@ -21,7 +26,7 @@
   // matches convention). ToyboxCard owns the classify-target logic + opens this
   // with a small $state object; every action fires a callback then onclose().
 
-  import { OP_KINDS, isKeyerKind, isStatefulKind, type ToyboxNodeKind, type ToyboxOpKind, type ToyboxInPort } from '$lib/video/toybox-combine-graph';
+  import { OP_KINDS, isStatefulKind, type ToyboxNodeKind, type ToyboxOpKind, type ToyboxInPort } from '$lib/video/toybox-combine-graph';
 
   type MenuKind = 'node' | 'port' | 'edge' | 'canvas';
 
@@ -41,11 +46,7 @@
     port?: ToyboxInPort;
     // ---- action callbacks (ToyboxCard wires these to the mutators) ----
     onpatchtooutput: () => void;
-    /** NODE (keyer op) only: open the keyer-config popover for this node. */
-    onconfigure: () => void;
-    /** NODE (feedback op) only: open the feedback-config popover (mode + params). */
-    onconfigurefeedback: () => void;
-    /** NODE (feedback op) only: clear this feedback node's ping-pong buffers. */
+    /** NODE (stateful op) only: clear this node's ping-pong / ring buffers. */
     onresetfeedback: () => void;
     ondisconnect: () => void;
     onduplicate: () => void;
@@ -68,8 +69,6 @@
     dir,
     port,
     onpatchtooutput,
-    onconfigure,
-    onconfigurefeedback,
     onresetfeedback,
     ondisconnect,
     onduplicate,
@@ -140,9 +139,7 @@
   let isSource = $derived(nodeKind === 'source');
   let isOutput = $derived(nodeKind === 'output');
   let isOp = $derived(nodeKind !== 'source' && nodeKind !== 'output');
-  // LUMAKEY / CHROMAKEY → offer "Configure keyer".
-  let isKeyer = $derived(isKeyerKind(nodeKind));
-  // FEEDBACK → offer the mode-specific "Configure feedback" popover.
+  // FEEDBACK → the Reset action reads "Reset feedback" (vs "Reset history").
   let isFeedback = $derived(nodeKind === 'feedback');
   // ANY stateful op (feedback + the frame-history ops) → offer "Reset" to clear
   // its per-node ring/ping-pong buffer (bumps the shared `_reset` token).
@@ -211,22 +208,6 @@
           data-testid="toybox-menu-patch-output"
           onclick={() => pick(onpatchtooutput)}
         >Patch to output</button>
-      {/if}
-      {#if isKeyer}
-        <button
-          class="ctx-item"
-          role="menuitem"
-          data-testid="toybox-menu-configure-keyer"
-          onclick={() => pick(onconfigure)}
-        >Configure keyer…</button>
-      {/if}
-      {#if isFeedback}
-        <button
-          class="ctx-item"
-          role="menuitem"
-          data-testid="toybox-menu-configure-feedback"
-          onclick={() => pick(onconfigurefeedback)}
-        >Configure feedback…</button>
       {/if}
       {#if isStateful}
         <button

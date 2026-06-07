@@ -134,12 +134,6 @@ import {
   translation,
   type Mat4,
 } from '$lib/video/mat4';
-import {
-  BUFFER_RES_SD,
-  BUFFER_RES_1080,
-  clampBufferResValue,
-  effectiveBufferDims,
-} from '$lib/video/buffer-res';
 
 // ---------------- OBJ matcap shader (GLSL ES 300) ----------------
 //
@@ -335,22 +329,10 @@ export const toyboxDef: VideoModuleDef = {
   outputs: [
     { id: 'out', type: 'video' },
   ],
-  params: [
-    // HD per-module heavy-buffer res (0=SD/1=720p/2=1080p) for the frame-history
-    // / feedback float rings (RGBA32F, up to 33-deep → the headline VRAM hog,
-    // ~1 GB/node at 1080p). Default SD even in HD; 720/1080 only honored when
-    // global HD is on locally (hd-toggle §4.5). The rings upscale on read into
-    // the engine-res layer pipeline.
-    { id: 'bufferRes', label: 'Res', defaultValue: BUFFER_RES_SD, min: BUFFER_RES_SD, max: BUFFER_RES_1080, curve: 'linear' },
-  ],
+  params: [],
 
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
-    // Heavy-buffer res for the float feedback/history rings (the VRAM hogs).
-    // Clamped to SD when global HD is off locally (hd-toggle §4.5). Read once at
-    // construction; a change re-adds the node (like any ring-size change).
-    const bufferRes = clampBufferResValue(node.params?.bufferRes);
-    const ringDims = effectiveBufferDims(bufferRes, ctx.hdActive ?? false, ctx.res);
     // The module's OUTPUT fbo (combine result + chainable `out` texture).
     const { fbo: outFbo, texture: outTexture } = ctx.createFbo();
 
@@ -766,18 +748,16 @@ export const toyboxDef: VideoModuleDef = {
 
     function allocFloatTarget(): FloatTarget {
       if (ctx.createFloatFbo) {
-        // Allocate at the per-module ring res (bufferRes), NOT engine res — this
-        // is the VRAM-hungry float ring; it upscales on read into the pipeline.
-        // Filter: LINEAR when it's safe (floatLinearOk) so the advection ops get
-        // sub-pixel motion; NEAREST otherwise (LINEAR on a float attachment
-        // without OES_texture_float_linear reads 0.0 → black loop — see engine.ts).
-        const r = ctx.createFloatFbo(ringDims.width, ringDims.height, { filter: ringFilter, precision: 'full' });
+        // Allocated at ENGINE res (the HD per-module ring res was reverted on
+        // main, #659). Filter: LINEAR when it's safe (floatLinearOk) so the
+        // advection ops (datamosh/flowsmear/channeldesync) get sub-pixel motion
+        // (audit M2c); NEAREST otherwise — LINEAR on a float colour attachment
+        // silently reads 0.0 without OES_texture_float_linear, which once made
+        // the whole loop render black (see engine.ts).
+        const r = ctx.createFloatFbo(ctx.res.width, ctx.res.height, { filter: ringFilter, precision: 'full' });
         return { fbo: r.fbo, texture: r.texture };
       }
-      // RGBA8 fallback at ring res (createSizedFbo when present, else engine res).
-      return ctx.createSizedFbo
-        ? ctx.createSizedFbo(ringDims.width, ringDims.height)
-        : ctx.createFbo();
+      return ctx.createFbo();
     }
 
     /** Allocate a frame-history ring for a stateful node of `kind`. depth=1 →
@@ -841,8 +821,7 @@ export const toyboxDef: VideoModuleDef = {
       const a = isMeltStateKind(b.kind) ? 0 : 1;
       for (const t of targets) {
         g.bindFramebuffer(g.FRAMEBUFFER, t.fbo);
-        // Ring targets are ringDims-sized (bufferRes), not engine res.
-        g.viewport(0, 0, ringDims.width, ringDims.height);
+        g.viewport(0, 0, ctx.res.width, ctx.res.height);
         // `a` = 0 for melt-state rings (DREAMMELT, audit C1), 1 (opaque) otherwise.
         g.clearColor(0, 0, 0, a);
         g.clear(g.COLOR_BUFFER_BIT);
@@ -1710,9 +1689,7 @@ export const toyboxDef: VideoModuleDef = {
       const dst = buf.ring[buf.head]!;
       const prev = buf.ring[(buf.head - 1 + N) % N]!;
       g.bindFramebuffer(g.FRAMEBUFFER, dst.fbo);
-      // Ring targets are ringDims-sized (bufferRes); render + texel-step at that
-      // res. The output texture upscales on read into the engine-res pipeline.
-      g.viewport(0, 0, ringDims.width, ringDims.height);
+      g.viewport(0, 0, ctx.res.width, ctx.res.height);
       g.useProgram(feedbackProgram);
       // uFeedback = previous frame, uInput = upstream in0.
       g.activeTexture(g.TEXTURE0);
@@ -1722,7 +1699,7 @@ export const toyboxDef: VideoModuleDef = {
       g.bindTexture(g.TEXTURE_2D, inputTex ?? dummyTex);
       if (fuInput) g.uniform1i(fuInput, 1);
       if (fuHasInput) g.uniform1f(fuHasInput, inputTex ? 1 : 0);
-      if (fuTexel) g.uniform2f(fuTexel, 1 / ringDims.width, 1 / ringDims.height);
+      if (fuTexel) g.uniform2f(fuTexel, 1 / ctx.res.width, 1 / ctx.res.height);
       if (fuMode) g.uniform1i(fuMode, u.mode);
       if (fuZoom) g.uniform1f(fuZoom, u.zoom);
       if (fuRotate) g.uniform1f(fuRotate, u.rotate);
@@ -1829,8 +1806,7 @@ export const toyboxDef: VideoModuleDef = {
       //    the per-channel/frame taps read a TRUE history of the input. ──
       if (delayLine) {
         g.bindFramebuffer(g.FRAMEBUFFER, dst.fbo);
-        // Ring targets are ringDims-sized (bufferRes).
-        g.viewport(0, 0, ringDims.width, ringDims.height);
+        g.viewport(0, 0, ctx.res.width, ctx.res.height);
         bind(4, inputTex ?? dummyTex, huIn);
         if (huHasIn) g.uniform1f(huHasIn, inputTex ? 1 : 0);
         if (huStorePass) g.uniform1f(huStorePass, 1);
@@ -1842,8 +1818,7 @@ export const toyboxDef: VideoModuleDef = {
       //    sampling prev (and that slot IS the output). ──
       const target = delayLine ? buf.out! : dst;
       g.bindFramebuffer(g.FRAMEBUFFER, target.fbo);
-      // Both dst + buf.out are ringDims-sized (bufferRes).
-      g.viewport(0, 0, ringDims.width, ringDims.height);
+      g.viewport(0, 0, ctx.res.width, ctx.res.height);
       // FRAMEDELAY reads its single delay off uTapB; CHANNELDESYNC reads per-
       // channel taps off uTapR/G/B. (flowsmear/dreammelt/datamosh use uPrev only.)
       const rD = kind === 'channeldesync' ? u.rDelay : 0;
@@ -1858,7 +1833,7 @@ export const toyboxDef: VideoModuleDef = {
       if (huHasIn) g.uniform1f(huHasIn, inputTex ? 1 : 0);
       if (huHasIn1) g.uniform1f(huHasIn1, inputTex1 ? 1 : 0);
       if (huStorePass) g.uniform1f(huStorePass, 0);
-      if (huTexel) g.uniform2f(huTexel, 1 / ringDims.width, 1 / ringDims.height);
+      if (huTexel) g.uniform2f(huTexel, 1 / ctx.res.width, 1 / ctx.res.height);
       if (huTime) g.uniform1f(huTime, frozenTime() ?? (typeof performance !== 'undefined' ? performance.now() / 1000 : 0));
       if (huOp) g.uniform1i(huOp, u.op);
       if (huMix) g.uniform1f(huMix, u.mix);

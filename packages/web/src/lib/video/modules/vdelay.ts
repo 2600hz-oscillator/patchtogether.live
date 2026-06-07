@@ -52,12 +52,6 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
-import {
-  BUFFER_RES_SD,
-  BUFFER_RES_1080,
-  clampBufferResValue,
-  effectiveBufferDims,
-} from '$lib/video/buffer-res';
 
 /** Ring buffer depth. 32 frames at 60fps = ~533ms max delay. Fits on a
  *  modest GPU at 640×480 (≈ 40 MB total — see header). */
@@ -177,9 +171,6 @@ export const vdelayDef: VideoModuleDef = {
     { id: 'feedback',   label: 'Feedback', defaultValue: DEFAULTS.feedback,   min: 0, max: 0.95,             curve: 'linear' },
     { id: 'mix',        label: 'Mix',      defaultValue: DEFAULTS.mix,        min: 0, max: 1,                curve: 'linear' },
     { id: 'colorShift', label: 'Color',    defaultValue: DEFAULTS.colorShift, min: 0, max: 1,                curve: 'linear' },
-    // HD per-module heavy-buffer res (0=SD/1=720p/2=1080p). Default SD even in
-    // HD; 720/1080 only honored when global HD is on locally (hd-toggle §4.5).
-    { id: 'bufferRes',  label: 'Res',      defaultValue: BUFFER_RES_SD,       min: BUFFER_RES_SD, max: BUFFER_RES_1080, curve: 'linear' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -198,21 +189,9 @@ export const vdelayDef: VideoModuleDef = {
     const cHas = gl.getUniformLocation(composeProgram, 'uHasInput');
     const cMix = gl.getUniformLocation(composeProgram, 'uMix');
 
-    // Heavy-buffer res: the ring (the VRAM-hungry part — 32 RGBA8 frames) is
-    // sized at the per-module bufferRes, clamped to SD whenever global HD is off
-    // locally (hd-toggle §4.5). Output stays engine-res; the ring is upscaled on
-    // read via UV sampling. Read once at construction (a change re-adds the node,
-    // like any ring-size change). createSizedFbo is optional on the interface —
-    // a test mock without it falls back to engine-res createFbo.
-    const bufferRes = clampBufferResValue(node.params?.bufferRes);
-    const bufDims = effectiveBufferDims(bufferRes, ctx.hdActive ?? false, ctx.res);
-    const makeRingFbo = ctx.createSizedFbo
-      ? () => ctx.createSizedFbo!(bufDims.width, bufDims.height)
-      : () => ctx.createFbo();
-
-    // Ring buffer of FBOs (at bufferRes).
+    // Ring buffer of FBOs.
     const ring: { fbo: WebGLFramebuffer; texture: WebGLTexture }[] = [];
-    for (let i = 0; i < VDELAY_BUFFER_FRAMES; i++) ring.push(makeRingFbo());
+    for (let i = 0; i < VDELAY_BUFFER_FRAMES; i++) ring.push(ctx.createFbo());
 
     // Output FBO — what surface.texture publishes to downstream modules.
     const out = ctx.createFbo();
@@ -252,12 +231,9 @@ export const vdelayDef: VideoModuleDef = {
         const tapTexture = framesElapsed > 0 ? ring[tapIdx]!.texture : emptyTex;
 
         // ---- WRITE pass: ring[head] = input + feedback*tap ----
-        // Rendered at the ring's bufferRes (not engine res) — the ring slots are
-        // bufDims-sized; the input/tap textures are sampled by UV so size
-        // differences upscale/downscale cleanly.
         const writeSlot = ring[head]!;
         g.bindFramebuffer(g.FRAMEBUFFER, writeSlot.fbo);
-        g.viewport(0, 0, bufDims.width, bufDims.height);
+        g.viewport(0, 0, ctx.res.width, ctx.res.height);
         g.useProgram(writeProgram);
 
         g.activeTexture(g.TEXTURE0);

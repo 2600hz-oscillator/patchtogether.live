@@ -55,6 +55,10 @@
     formatFileSize,
     type StoredFileHandle,
   } from '$lib/video/video-file-store';
+  import {
+    registerVideoExport,
+    unregisterVideoExport,
+  } from '$lib/video/video-export-registry';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -204,6 +208,17 @@
     }
     objectUrl = URL.createObjectURL(file);
     localFileName = file.name;
+    // Register this node's bytes resolver for the portable "Export performance"
+    // (.zip) path: the exporter (Canvas) collects loaded video bytes across all
+    // VIDEOBOX cards via the registry. Capture the URL + name now (the closure
+    // re-reads `objectUrl`/`localFileName` so a later swap is reflected).
+    registerVideoExport(id, async () => {
+      const url = objectUrl;
+      if (!url) return null;
+      const resp = await fetch(url);
+      const ab = await (await resp.blob()).arrayBuffer();
+      return { bytes: new Uint8Array(ab), name: localFileName ?? file.name };
+    });
     if (!videoEl) return;
     videoEl.src = objectUrl;
     // muted=false so audio plays through MediaElementSource (which IS
@@ -564,6 +579,7 @@
     try { ve?.attachExternalSource(id, 'video', null); } catch { /* */ }
     const extras = getExtras();
     extras?.unwireAudio();
+    unregisterVideoExport(id);
     if (objectUrl) {
       try { URL.revokeObjectURL(objectUrl); } catch { /* */ }
       objectUrl = null;

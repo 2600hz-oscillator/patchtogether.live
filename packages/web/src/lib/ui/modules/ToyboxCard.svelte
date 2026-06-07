@@ -55,14 +55,10 @@
     type ToyboxModel,
     type ToyboxObjMaterial,
     type ToyboxPreset,
-    type ToyboxSceneInputSource,
     type ToyboxSurfaceMode,
     type ToyboxVideoSource,
   } from '$lib/video/toybox-content';
   import type { VideoEngine } from '$lib/video/engine';
-  import { liveEngineAspect } from '$lib/ui/modules/video-card-aspect';
-  import HdBufferResSelect from '$lib/ui/modules/HdBufferResSelect.svelte';
-  import { BUFFER_RES_SD } from '$lib/video/buffer-res';
   import {
     canvasToEnginePx,
     makeMouseState,
@@ -76,12 +72,9 @@
   import {
     OP_KINDS,
     OP_PARAMS,
-    TOYBOX_SCHEMA_VERSION,
-    LAYER_INPUT_SOURCE,
     inPortsFor,
     hasOutPort,
     isCombineGraph,
-    isKeyerKind,
     makeDefaultCombineGraph,
     combineDisplayNames,
     edgesTouching,
@@ -106,10 +99,7 @@
     resetFeedbackNode,
   } from '$lib/graph/toybox-combine';
   import { FEEDBACK_MODES } from '$lib/video/toybox-feedback';
-  import { clearBinding } from '$lib/midi/midi-learn.svelte';
   import ToyboxNodeMenu from './ToyboxNodeMenu.svelte';
-  import ToyboxKeyerConfig from './ToyboxKeyerConfig.svelte';
-  import ToyboxFeedbackConfig from './ToyboxFeedbackConfig.svelte';
   import {
     CV_PORT_IDS,
     listCvTargets,
@@ -160,7 +150,6 @@
     setLayerObjSource,
     setLayerVideoName,
     setLayerVideoSource,
-    setLayerSceneInputSource,
   } from '$lib/graph/toybox-layers';
 
   // The two VIDEO input ports (handles on the card's left edge). Ids match the
@@ -380,24 +369,6 @@
     bumpRev();
   };
 
-  /** Audit M4: namespace a per-layer knob's MIDI / control-surface paramId by the
-   *  ACTIVE layer index (`layer:<idx>:<param>`) so a learned binding sticks to the
-   *  layer it was learned on. With a bare id, switching the active layer remounts
-   *  the knob onto the new layer's setter under the SAME key → an incoming CC
-   *  drove whichever layer was active at write time, not the learned one.
-   *  resolveToyboxParam parses the index back out (mirrors combine:<id>:<p>). */
-  function layerParamId(pid: string): string {
-    return `layer:${activeLayer}:${pid}`;
-  }
-
-  // Node-level param setter (NOT per-layer) — used by the HD bufferRes dropdown,
-  // which is a single module param sizing the float feedback/history rings.
-  const setNodeParam = (pid: string) => (v: number) => {
-    const t = patch.nodes[id];
-    if (t) t.params[pid] = v;
-    bumpRev();
-  };
-
   // ───────────────────── IMAGE / VIDEO INPUT LAYERS (#39) ─────────────────────
   //
   // An IMAGE layer is PICTUREBOX-style: the picked file is downscaled + JPEG-
@@ -457,37 +428,19 @@
     () => readLiveLayers()?.[activeLayer]?.videoSource ?? 'file',
   );
 
-  /** Change the active VIDEO layer's source. Selecting a non-local feed
-   *  ('inA'/'inB'/'layerIn') tears down any local <video>/webcam for the layer so
-   *  we don't hold a camera/decoder open while the texture comes off the cable /
-   *  the internal LAYER INPUT tap. */
+  /** Change the active VIDEO layer's source. Selecting a patched feed
+   *  ('inA'/'inB') tears down any local <video>/webcam for the layer so we
+   *  don't hold a camera/decoder open while the feed comes off the cable. */
   function onVideoSourceChange(ev: Event): void {
     const next = (ev.target as HTMLSelectElement).value as ToyboxVideoSource;
     const i = activeLayer;
     setLayerVideoSource(id, i, next);
     bumpRev();
-    if (next === 'inA' || next === 'inB' || next === 'layerIn') {
+    if (next === 'inA' || next === 'inB') {
       releaseVideoLayer(i);
     } else if (next === 'camera') {
       void startCamera(i);
     }
-  }
-
-  // The active FRAG layer's scene-input source ('below'|'layer-input'). Absent →
-  // 'below' (the #603 default: iChannel0 = the composited layer below).
-  let currentSceneInputSource = $derived.by<ToyboxSceneInputSource>(
-    () => (readLiveLayers()?.[activeLayer]?.sceneInputSource === 'layer-input' ? 'layer-input' : 'below'),
-  );
-
-  /** Change the active FRAG layer's scene-input (iChannel0) source: the layer
-   *  below ('below') or the LAYER INPUT feedback tap ('layer-input'). */
-  function onSceneInputSourceChange(ev: Event): void {
-    setLayerSceneInputSource(
-      id,
-      activeLayer,
-      (ev.target as HTMLSelectElement).value as ToyboxSceneInputSource,
-    );
-    bumpRev();
   }
 
   // ---- IMAGE: decode persisted bytes → upload into the engine per layer ----
@@ -771,13 +724,10 @@
   // projector either rides the render camera (projUseCamera) or uses an explicit
   // pos/dir/fov. All material fields ride the Y.Doc + are read live by the engine.
 
-  /** True iff the active OBJ layer has a valid surface source — a sibling LAYER
-   *  index OR the LAYER INPUT sentinel (prev-frame OUT). Projective mode + the
-   *  SURF MIX knob are only meaningful then (with no source there is nothing to
-   *  project / mix over the matcap). */
+  /** True iff the active OBJ layer has a valid surface source (projective mode is
+   *  only meaningful then — with no source there is nothing to project). */
   let hasSurfaceSource = $derived.by<boolean>(() => {
     const s = currentMaterial.surfaceSource;
-    if (s === LAYER_INPUT_SOURCE) return true;
     return typeof s === 'number' && s >= 0 && s < LAYER_COUNT && s !== activeLayer;
   });
   let surfaceMode = $derived.by<ToyboxSurfaceMode>(
@@ -883,6 +833,26 @@
     return graph.nodes.find((n) => n.id === gid);
   }
 
+  /** The live combine graph's nodes (post-mutation): reads the LIVE patch proxy
+   *  so it reflects an in-place node splice the INSTANT it lands (the `graph`
+   *  derived lags until its reactive trigger re-runs). Used by the delete
+   *  auto-select so it picks from the graph AFTER the deletion, not before. */
+  function liveNodes(): ToyboxGraphNode[] {
+    const c = readLiveCombine();
+    return isCombineGraph(c) ? (c as ToyboxCombineGraph).nodes : graph.nodes;
+  }
+  /** True if a node id still exists in the live graph. */
+  function liveNodeExists(gid: string): boolean {
+    return liveNodes().some((n) => n.id === gid);
+  }
+  /** The first OP node (not source/output) in the live graph, or null. The
+   *  delete auto-select target so the bottom control pane keeps showing a node's
+   *  controls after a delete. */
+  function firstOpNodeId(): string | null {
+    const n = liveNodes().find((x) => x.kind !== 'source' && x.kind !== 'output');
+    return n?.id ?? null;
+  }
+
   /** Layout: SOURCE col on the left, ops in the middle (their own x/y), OUTPUT
    *  on the right. We honour each node's stored x/y for ops; source/output get a
    *  fixed column so they're always findable. */
@@ -983,19 +953,18 @@
   }
 
   function onDeleteNode(gid: string): void {
-    // Audit M3: drop the deleted op's MIDI bindings (keyed combine:<id>:<param>)
-    // BEFORE deleting it. nextNodeId is now monotonic so a freed id is never
-    // reused, but we still prune so the binding doesn't linger in localStorage
-    // forever (and a re-imported graph reusing the id can't inherit a stale CC).
-    const deleted = nodeById(gid);
-    if (deleted && deleted.kind !== 'source' && deleted.kind !== 'output') {
-      for (const p of OP_PARAMS[deleted.kind as ToyboxOpKind] ?? []) {
-        clearBinding(id, `combine:${gid}:${p.id}`);
-      }
-    }
+    const wasSelected = selectedNodeId === gid;
     deleteCombineNode(id, gid);
-    if (selectedNodeId === gid) selectedNodeId = null;
-    bumpRev(); // #60: refresh node names + CV lists
+    bumpRev(); // #60: refresh node names + CV lists (also re-runs `graph`/liveNodes)
+    // AUTO-SELECT after a delete so the bottom control pane keeps showing a
+    // node's controls (an empty pane after a delete reads as "the controls just
+    // vanished"). Re-target only when the DELETED node was the selection (or the
+    // current selection is now stale) → the first remaining OP node, else null
+    // (no op nodes left → the pane hides, as intended). An unrelated delete
+    // leaves the selection untouched.
+    if (wasSelected || (selectedNodeId !== null && !liveNodeExists(selectedNodeId))) {
+      selectedNodeId = firstOpNodeId();
+    }
     pruneOrphanRoutes(); // #60: unmap any CV route to the deleted node
     clearConnectMsg();
   }
@@ -1093,79 +1062,14 @@
     toyboxMenu = null;
   }
 
-  // ── KEYER CONFIG popover (LUMAKEY / CHROMAKEY "Configure keyer…") ──
-  interface KeyerConfigState {
-    open: boolean;
-    x: number;
-    y: number;
-    nodeId: string;
-  }
-  let keyerConfig = $state<KeyerConfigState | null>(null);
-
-  /** Open the keyer-config popover for a node (no-op for non-keyer nodes). */
-  function doConfigureKeyer(gid: string, x: number, y: number): void {
-    const n = nodeById(gid);
-    if (!n || !isKeyerKind(n.kind)) return;
-    keyerConfig = { open: true, x, y, nodeId: gid };
-  }
-
-  function closeKeyerConfig(): void {
-    keyerConfig = null;
-  }
-
-  /** The live node the keyer popover edits (re-derived so its knobs/colour
-   *  reflect external edits + a retype/delete closes it). */
-  let keyerNode = $derived(keyerConfig ? nodeById(keyerConfig.nodeId) : undefined);
-  // Close the popover if its node disappears or stops being a keyer.
-  $effect(() => {
-    if (keyerConfig && (!keyerNode || !isKeyerKind(keyerNode.kind))) {
-      keyerConfig = null;
-    }
-  });
-
-  // ── FEEDBACK CONFIG popover (FEEDBACK "Configure feedback…") ──
-  // Same shape as the keyer popover: an explicit, discoverable right-click entry
-  // for picking the feedback MODE + its relevant params (the per-node knob strip
-  // still exposes everything when the node is selected). MIDI/CONTROLSURFACE
-  // sync rides the `combine:<nodeId>:<param>` paramId convention in the Knob.
-  interface FeedbackConfigState {
-    open: boolean;
-    x: number;
-    y: number;
-    nodeId: string;
-  }
-  let feedbackConfig = $state<FeedbackConfigState | null>(null);
-
-  /** Open the feedback-config popover for a node (no-op for non-feedback nodes). */
-  function doConfigureFeedback(gid: string, x: number, y: number): void {
-    const n = nodeById(gid);
-    if (!n || n.kind !== 'feedback') return;
-    feedbackConfig = { open: true, x, y, nodeId: gid };
-  }
-
-  function closeFeedbackConfig(): void {
-    feedbackConfig = null;
-  }
-
-  // A fresh SNAPSHOT (not the live proxy) keyed on layersRev: the popover swaps
-  // its visible knob set when the MODE changes, which is an IN-PLACE Yjs param
-  // mutation — a $derived returning the same proxy reference would not re-run the
-  // child's deriveds (the #60 stale-derived-on-syncedStore gotcha). Spreading
-  // params into a new object + reading layersRev makes the prop reference change
-  // on every edit so the popover re-renders. (The side strip dodged this by
-  // showing ALL feedback knobs; the popover filters per mode, so it must react.)
-  let feedbackConfigNode = $derived.by<ToyboxGraphNode | undefined>(() => {
-    void layersRev;
-    if (!feedbackConfig) return undefined;
-    const n = nodeById(feedbackConfig.nodeId);
-    return n ? { id: n.id, kind: n.kind, x: n.x, y: n.y, params: { ...(n.params ?? {}) } } : undefined;
-  });
-  // Close the popover if its node disappears or stops being a feedback node.
-  $effect(() => {
-    if (feedbackConfig && (!feedbackConfigNode || feedbackConfigNode.kind !== 'feedback')) {
-      feedbackConfig = null;
-    }
-  });
+  // NOTE: the per-op CONTROL surface is the card's always-visible bottom pane
+  // (select a node → its knobs/selectors show — see selectedNode + the
+  // .combine-params block below). The old right-click "Configure keyer…" /
+  // "Configure feedback…" popovers were removed in favour of that single,
+  // consistent surface so EVERY node type is edited the same way (the keyer
+  // colour is now its keyR/keyG/keyB knobs; the feedback MODE is the bottom
+  // pane's <select>). setFeedbackMode / doResetFeedback below still serve the
+  // bottom pane + the structural Reset menu action.
 
   /** Surface a connect/patch rejection through the existing connectMsg banner. */
   function showConnectError(error: string | undefined): void {
@@ -1261,7 +1165,25 @@
     bumpRev(); // refresh the side-strip / keyer-popover live readback
   };
 
-  let selectedNode = $derived(selectedNodeId ? nodeById(selectedNodeId) : undefined);
+  // A fresh SNAPSHOT (not the live proxy) keyed on layersRev + node — the SAME
+  // trap the feedback-config popover already dodged. The bottom-pane control
+  // strip below feeds `combineParamVal(selectedNode, p.id)` into each Knob's
+  // `value` prop. A param edit mutates node.params IN PLACE, so `graph`'s derived
+  // returns the SAME proxy reference (=== unchanged) and Svelte short-circuits —
+  // `selectedNode` (and thus the Knob's value) would NEVER re-read the write. On
+  // pointer-up the Knob syncs its visible tick back to the stale `value` prop, so
+  // the knob SNAPS BACK to the old value ("knobs don't stick when turned"). By
+  // reading both reactive triggers + returning a fresh object whose reference
+  // changes on every bump, the value prop re-reads the live write and the knob
+  // sticks. (Spread params into a new object so a per-key read is fresh too.)
+  let selectedNode = $derived.by<ToyboxGraphNode | undefined>(() => {
+    void layersRev; void node;
+    if (!selectedNodeId) return undefined;
+    const n = nodeById(selectedNodeId);
+    return n
+      ? { id: n.id, kind: n.kind, x: n.x, y: n.y, layer: n.layer, params: { ...(n.params ?? {}) } }
+      : undefined;
+  });
   let selectedParams = $derived(
     selectedNode && selectedNode.kind !== 'source' && selectedNode.kind !== 'output'
       ? OP_PARAMS[selectedNode.kind as ToyboxOpKind] ?? []
@@ -1687,13 +1609,7 @@
     const live = patch.nodes[id]?.data ?? node?.data;
     if (!live || typeof live !== 'object') return null;
     try {
-      const blob = JSON.parse(JSON.stringify(live)) as Record<string, unknown>;
-      // Audit M5: stamp the CURRENT schema version into every saved/exported blob
-      // so a later RESTORE (across a schema bump) can migrate it forward via
-      // migrateToyboxData (mirrors the rack-load path). Without this a preset
-      // saved at vN restores verbatim at v(N+1), silently skipping the migration.
-      blob.schemaVersion = TOYBOX_SCHEMA_VERSION;
-      return blob;
+      return JSON.parse(JSON.stringify(live)) as Record<string, unknown>;
     } catch {
       return null;
     }
@@ -1927,29 +1843,8 @@
   // engine's pinned-iTime FBO exactly.
   let frozen = false;
 
-  /** Live video-engine render res (follows HD mode). Falls back to the SD
-   *  ENGINE_W×ENGINE_H constant when the engine isn't up yet. Used both for the
-   *  letterbox aspect and the iMouse canvas→engine-px mapping. */
-  function liveEngineRes(): { width: number; height: number } {
-    const e = engineCtx.get();
-    if (e) {
-      try {
-        const ve = e.getDomain<VideoEngine>('video');
-        const w = ve?.canvas?.width ?? 0;
-        const h = ve?.canvas?.height ?? 0;
-        if (w > 0 && h > 0) return { width: w, height: h };
-      } catch {
-        /* engine not ready — fall through to SD default */
-      }
-    }
-    return { width: ENGINE_W, height: ENGINE_H };
-  }
-
-  function fitRect(
-    cw: number,
-    ch: number,
-    srcAspect: number = ENGINE_W / ENGINE_H,
-  ): { x: number; y: number; w: number; h: number } {
+  function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
+    const srcAspect = ENGINE_W / ENGINE_H;
     const dstAspect = cw / ch;
     if (dstAspect > srcAspect) {
       const h = ch;
@@ -1977,11 +1872,8 @@
     // Pointer in the canvas's INTRINSIC pixel space (CANVAS_W × CANVAS_H).
     const cx = ((ev.clientX - box.left) / box.width) * canvasEl.width;
     const cy = ((ev.clientY - box.top) / box.height) * canvasEl.height;
-    // Use the LIVE engine res so iMouse maps correctly in HD (the FBO may be
-    // 1920×1080 etc., not the SD 640×480 constant).
-    const eng = liveEngineRes();
-    const rect = fitRect(canvasEl.width, canvasEl.height, eng.width / eng.height);
-    return canvasToEnginePx(cx, cy, rect, eng.width, eng.height);
+    const rect = fitRect(canvasEl.width, canvasEl.height);
+    return canvasToEnginePx(cx, cy, rect, ENGINE_W, ENGINE_H);
   }
 
   /** Push the current iMouse vec4 to the engine for THIS node (called each rAF
@@ -2037,7 +1929,7 @@
     const ch = canvasEl.height;
     ctx2d.fillStyle = '#050608';
     ctx2d.fillRect(0, 0, cw, ch);
-    const r = fitRect(cw, ch, liveEngineAspect(videoEngine));
+    const r = fitRect(cw, ch);
     ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
   }
 
@@ -2281,13 +2173,6 @@
         {/each}
       </ul>
     {/if}
-    <div class="hd-res-row" data-testid="toybox-hd-res-row">
-      <HdBufferResSelect
-        moduleId={id}
-        value={node?.params?.bufferRes ?? BUFFER_RES_SD}
-        onchange={setNodeParam('bufferRes')}
-      />
-    </div>
   </div>
 
   <!-- LAYER-INDEX selector: a tab per layer (1-indexed labels, 0-indexed state).
@@ -2399,14 +2284,11 @@
         {/each}
       </select>
     </div>
-    <!-- SURFACE source: MATCAP (default), another layer's rendered output
-         UV-mapped onto the mesh, or LAYER INPUT (sample whatever node output is
-         wired into this layer's SOURCE-node in0 port in the combine graph —
-         Phase 1: the prev-frame OUT composite, a stable 1-frame feedback tap).
-         We offer every sibling layer EXCEPT the active one (a layer can't texture
-         itself — the engine guards self/cycle anyway). The sibling option VALUE
-         is the 0-indexed layer index; the LABEL is 1-indexed to match the LAYER
-         tabs. LAYER INPUT's value is the LAYER_INPUT_SOURCE sentinel (-2). -->
+    <!-- SURFACE source: MATCAP (default) or another layer's rendered output
+         UV-mapped onto the mesh. We offer every layer EXCEPT the active one (a
+         layer can't texture itself — the engine guards self/cycle anyway). The
+         option VALUE is the 0-indexed layer index; the LABEL is 1-indexed to
+         match the LAYER tabs. -->
     <div class="content-row">
       <label class="content-label" for={`toybox-surface-${id}`}>SURFACE</label>
       <select
@@ -2417,7 +2299,6 @@
         onchange={onSurfaceChange}
       >
         <option value="-1">MATCAP</option>
-        <option value={String(LAYER_INPUT_SOURCE)}>LAYER INPUT</option>
         {#each Array(LAYER_COUNT) as _, i (i)}
           {#if i !== activeLayer}
             <option value={String(i)}>LAYER {i + 1}</option>
@@ -2462,19 +2343,19 @@
         {#if !projUseCamera}
           <div class="knob-grid" data-testid="toybox-proj-controls">
             <Knob value={matVal('projPosX')} min={-5} max={5} defaultValue={0}
-              label="POS X" curve="linear" onchange={setMat('projPosX')} moduleId={id} paramId={layerParamId('projPosX')} />
+              label="POS X" curve="linear" onchange={setMat('projPosX')} moduleId={id} paramId="projPosX" />
             <Knob value={matVal('projPosY')} min={-5} max={5} defaultValue={0}
-              label="POS Y" curve="linear" onchange={setMat('projPosY')} moduleId={id} paramId={layerParamId('projPosY')} />
+              label="POS Y" curve="linear" onchange={setMat('projPosY')} moduleId={id} paramId="projPosY" />
             <Knob value={matVal('projPosZ')} min={-5} max={5} defaultValue={2.5}
-              label="POS Z" curve="linear" onchange={setMat('projPosZ')} moduleId={id} paramId={layerParamId('projPosZ')} />
+              label="POS Z" curve="linear" onchange={setMat('projPosZ')} moduleId={id} paramId="projPosZ" />
             <Knob value={matVal('projDirX')} min={-1} max={1} defaultValue={0}
-              label="DIR X" curve="linear" onchange={setMat('projDirX')} moduleId={id} paramId={layerParamId('projDirX')} />
+              label="DIR X" curve="linear" onchange={setMat('projDirX')} moduleId={id} paramId="projDirX" />
             <Knob value={matVal('projDirY')} min={-1} max={1} defaultValue={0}
-              label="DIR Y" curve="linear" onchange={setMat('projDirY')} moduleId={id} paramId={layerParamId('projDirY')} />
+              label="DIR Y" curve="linear" onchange={setMat('projDirY')} moduleId={id} paramId="projDirY" />
             <Knob value={matVal('projDirZ')} min={-1} max={1} defaultValue={-1}
-              label="DIR Z" curve="linear" onchange={setMat('projDirZ')} moduleId={id} paramId={layerParamId('projDirZ')} />
+              label="DIR Z" curve="linear" onchange={setMat('projDirZ')} moduleId={id} paramId="projDirZ" />
             <Knob value={matVal('projFov') || 0.8726646} min={0.2} max={2.6} defaultValue={0.8726646}
-              label="FOV" curve="linear" onchange={setMat('projFov')} moduleId={id} paramId={layerParamId('projFov')} />
+              label="FOV" curve="linear" onchange={setMat('projFov')} moduleId={id} paramId="projFov" />
           </div>
         {/if}
       {/if}
@@ -2482,23 +2363,23 @@
 
     <div class="knob-grid" data-testid="toybox-controls">
       <Knob value={matVal('rotX')} min={-3.14159} max={3.14159} defaultValue={0.3}
-        label="ROT X" curve="linear" onchange={setMat('rotX')} moduleId={id} paramId={layerParamId('rotX')} />
+        label="ROT X" curve="linear" onchange={setMat('rotX')} moduleId={id} paramId="rotX" />
       <Knob value={matVal('rotY')} min={-3.14159} max={3.14159} defaultValue={0.6}
-        label="ROT Y" curve="linear" onchange={setMat('rotY')} moduleId={id} paramId={layerParamId('rotY')} />
+        label="ROT Y" curve="linear" onchange={setMat('rotY')} moduleId={id} paramId="rotY" />
       <Knob value={matVal('rotZ')} min={-3.14159} max={3.14159} defaultValue={0}
-        label="ROT Z" curve="linear" onchange={setMat('rotZ')} moduleId={id} paramId={layerParamId('rotZ')} />
+        label="ROT Z" curve="linear" onchange={setMat('rotZ')} moduleId={id} paramId="rotZ" />
       <Knob value={matVal('scale')} min={0.25} max={3} defaultValue={1}
-        label="SCALE" curve="linear" onchange={setMat('scale')} moduleId={id} paramId={layerParamId('scale')} />
+        label="SCALE" curve="linear" onchange={setMat('scale')} moduleId={id} paramId="scale" />
       <Knob value={matVal('spin')} min={0} max={3} defaultValue={0.4}
-        label="SPIN" curve="linear" onchange={setMat('spin')} moduleId={id} paramId={layerParamId('spin')} />
+        label="SPIN" curve="linear" onchange={setMat('spin')} moduleId={id} paramId="spin" />
       <Knob value={matVal('tintR')} min={0} max={1} defaultValue={1}
-        label="TINT R" curve="linear" onchange={setMat('tintR')} moduleId={id} paramId={layerParamId('tintR')} />
+        label="TINT R" curve="linear" onchange={setMat('tintR')} moduleId={id} paramId="tintR" />
       <Knob value={matVal('tintG')} min={0} max={1} defaultValue={1}
-        label="TINT G" curve="linear" onchange={setMat('tintG')} moduleId={id} paramId={layerParamId('tintG')} />
+        label="TINT G" curve="linear" onchange={setMat('tintG')} moduleId={id} paramId="tintG" />
       <Knob value={matVal('tintB')} min={0} max={1} defaultValue={1}
-        label="TINT B" curve="linear" onchange={setMat('tintB')} moduleId={id} paramId={layerParamId('tintB')} />
+        label="TINT B" curve="linear" onchange={setMat('tintB')} moduleId={id} paramId="tintB" />
       <Knob value={surfaceMixVal()} min={0} max={1} defaultValue={1}
-        label="SURF MIX" curve="linear" onchange={setMat('surfaceMix')} moduleId={id} paramId={layerParamId('surfaceMix')} />
+        label="SURF MIX" curve="linear" onchange={setMat('surfaceMix')} moduleId={id} paramId="surfaceMix" />
     </div>
   {:else if currentKind === 'gen' || currentKind === 'shader' || currentKind === 'frag'}
     <div class="content-row">
@@ -2516,27 +2397,8 @@
       </select>
     </div>
     {#if currentKind === 'frag'}
-      <!-- SCENE source: where the FRAG's iChannel0 comes from — the layer BELOW
-           (the #603 default) or LAYER INPUT (the node output wired into this
-           layer's combine in0 port; Phase 1: the prev-frame OUT composite, a
-           stable 1-frame feedback tap). -->
-      <div class="content-row">
-        <label class="content-label" for={`toybox-scene-src-${id}`}>SCENE</label>
-        <select
-          id={`toybox-scene-src-${id}`}
-          class="content-select"
-          data-testid="toybox-scene-source-select"
-          value={currentSceneInputSource}
-          onchange={onSceneInputSourceChange}
-        >
-          <option value="below">LAYER BELOW</option>
-          <option value="layer-input">LAYER INPUT</option>
-        </select>
-      </div>
       <div class="frag-hint" data-testid="toybox-frag-hint">
-        {currentSceneInputSource === 'layer-input'
-          ? 'FRAG receives the LAYER INPUT tap (prev-frame OUT) as iChannel0'
-          : 'FRAG receives the layer below as iChannel0'}
+        FRAG receives the layer below as iChannel0
       </div>
     {/if}
 
@@ -2577,7 +2439,7 @@
             value={paramVal(p.id)}
             min={p.min} max={p.max} defaultValue={p.default}
             label={p.label} curve={p.curve}
-            onchange={setParam(p.id)} moduleId={id} paramId={layerParamId(p.id)}
+            onchange={setParam(p.id)} moduleId={id} paramId={p.id}
           />
         {/each}
       {/if}
@@ -2625,7 +2487,6 @@
           <option value="inB">In B</option>
           <option value="file">File</option>
           <option value="camera">Camera</option>
-          <option value="layerIn">Layer Input</option>
         </select>
       </div>
 
@@ -2817,10 +2678,17 @@
         </svg>
       </div>
 
-      <!-- Selected op node → its params in a side strip. -->
+      <!-- Selected op node → its params in a side strip. EVERY `selectedNode.`
+           deref below is OPTIONAL-CHAINED: when the selected node is DELETED,
+           `selectedNode` becomes undefined and Svelte re-evaluates this block's
+           child expressions (incl. each Knob's `paramId`/`value`) ONE more time
+           during teardown — a raw `selectedNode.id` there threw "reading 'id' of
+           undefined" and crashed the whole card (the reported delete crash). The
+           `selId` const + the guards make teardown a harmless no-op. -->
       {#if selectedNode && selectedParams.length > 0}
-        <div class="combine-params" data-testid="toybox-combine-params" data-node={selectedNode.id}>
-          <div class="combine-params-title">{selectedNode.kind.toUpperCase()} · {selectedNode.id}</div>
+        {@const selId = selectedNode?.id ?? ''}
+        <div class="combine-params" data-testid="toybox-combine-params" data-node={selId}>
+          <div class="combine-params-title" data-testid="toybox-combine-params-title">{(selectedNode?.kind ?? '').toUpperCase()} · {selectedNode ? nodeLabel(selectedNode) : ''}</div>
           <!-- FEEDBACK: a discrete MODE selector (12 labelled modes). The other
                floats auto-render as knobs below (the `mode` knob is filtered out
                via selectedKnobParams). -->
@@ -2831,7 +2699,7 @@
                 class="fb-mode-select"
                 data-testid="toybox-feedback-mode-select"
                 value={selectedFeedbackMode}
-                onchange={(e) => setFeedbackMode(selectedNode!.id, Number((e.currentTarget as HTMLSelectElement).value))}
+                onchange={(e) => { if (selId) setFeedbackMode(selId, Number((e.currentTarget as HTMLSelectElement).value)); }}
               >
                 {#each FEEDBACK_MODES as m (m.id)}
                   <option value={m.id}>{m.id}. {m.label}</option>
@@ -2839,15 +2707,26 @@
               </select>
             </label>
           {/if}
+          <!-- EVERY `p.` deref below is OPTIONAL-CHAINED: when the selected node is
+               deleted this {#each} tears down, and Svelte 5 re-evaluates each
+               child's reactive props (the Knob's `paramId`/`value` getters) ONE
+               more time with the item `p` already set to `undefined` (the each-
+               item-undefined-on-teardown footgun). A raw `p.id` there threw
+               "reading 'id' of undefined" and crashed the card under load — the
+               (intermittent) reported delete crash. `p?.…` makes teardown a no-op. -->
           <div class="knob-grid">
             {#each selectedKnobParams as p (p.id)}
-              <Knob
-                value={combineParamVal(selectedNode, p.id)}
-                min={p.min} max={p.max} defaultValue={p.default}
-                label={p.label} curve="linear"
-                onchange={setCombineParam(selectedNode.id, p.id)}
-                moduleId={id} paramId={`combine:${selectedNode.id}:${p.id}`}
-              />
+              <!-- Wrapper carries a per-param testid so e2e can target + drive
+                   THIS node's THIS param's knob (the controls-persistence test). -->
+              <span class="combine-knob-cell" data-testid={`toybox-combine-knob-${p?.id ?? ''}`} data-param={p?.id}>
+                <Knob
+                  value={selectedNode && p ? combineParamVal(selectedNode, p.id) : (p?.default ?? 0)}
+                  min={p?.min ?? 0} max={p?.max ?? 1} defaultValue={p?.default ?? 0}
+                  label={p?.label ?? ''} curve="linear"
+                  onchange={setCombineParam(selId, p?.id ?? '')}
+                  moduleId={id} paramId={`combine:${selId}:${p?.id ?? ''}`}
+                />
+              </span>
             {/each}
           </div>
         </div>
@@ -2865,8 +2744,6 @@
     dir={toyboxMenu?.dir}
     port={toyboxMenu?.port}
     onpatchtooutput={() => { if (toyboxMenu?.nodeId) doPatchToOutput(toyboxMenu.nodeId); }}
-    onconfigure={() => { if (toyboxMenu?.nodeId) doConfigureKeyer(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
-    onconfigurefeedback={() => { if (toyboxMenu?.nodeId) doConfigureFeedback(toyboxMenu.nodeId, toyboxMenu.x, toyboxMenu.y); }}
     onresetfeedback={() => { if (toyboxMenu?.nodeId) doResetFeedback(toyboxMenu.nodeId); }}
     ondisconnect={() => { if (toyboxMenu?.nodeId) doDisconnect(toyboxMenu.nodeId); }}
     onduplicate={() => { if (toyboxMenu?.nodeId) doDuplicate(toyboxMenu.nodeId); }}
@@ -2878,31 +2755,6 @@
     onclear={doClearNodeMap}
     onreset={doResetToDefault}
     onclose={closeToyboxMenu}
-  />
-
-  <!-- Keyer-config popover (LUMAKEY / CHROMAKEY "Configure keyer…"). -->
-  <ToyboxKeyerConfig
-    open={!!keyerConfig?.open && !!keyerNode}
-    x={keyerConfig?.x ?? 0}
-    y={keyerConfig?.y ?? 0}
-    node={keyerNode}
-    displayName={keyerConfig ? nodeLabel(keyerNode ?? ({ id: keyerConfig.nodeId } as ToyboxGraphNode)) : ''}
-    onparam={(pid, v) => { if (keyerConfig) { setCombineNodeParam(id, keyerConfig.nodeId, pid, v); bumpRev(); } }}
-    moduleId={id}
-    onclose={closeKeyerConfig}
-  />
-
-  <!-- Feedback-config popover (FEEDBACK "Configure feedback…"). -->
-  <ToyboxFeedbackConfig
-    open={!!feedbackConfig?.open && !!feedbackConfigNode}
-    x={feedbackConfig?.x ?? 0}
-    y={feedbackConfig?.y ?? 0}
-    node={feedbackConfigNode}
-    displayName={feedbackConfig ? nodeLabel(feedbackConfigNode ?? ({ id: feedbackConfig.nodeId } as ToyboxGraphNode)) : ''}
-    onmode={(m) => { if (feedbackConfig) { setFeedbackMode(feedbackConfig.nodeId, m); bumpRev(); } }}
-    onparam={(pid, v) => { if (feedbackConfig) { setCombineNodeParam(id, feedbackConfig.nodeId, pid, v); bumpRev(); } }}
-    moduleId={id}
-    onclose={closeFeedbackConfig}
   />
   </div><!-- /toybox-col-center -->
 

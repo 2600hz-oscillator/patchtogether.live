@@ -57,12 +57,6 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
-import {
-  BUFFER_RES_SD,
-  BUFFER_RES_1080,
-  clampBufferResValue,
-  effectiveBufferDims,
-} from '$lib/video/buffer-res';
 
 // ---------- knobs / constants ----------
 
@@ -72,20 +66,6 @@ import {
  *  without exploding cost. This is the deliberate fidelity↔cost knob (raise
  *  in Phase 2 for higher subcarrier fidelity). */
 export const OVERSAMPLE = 8;
-
-/**
- * The oversampled-width of the encode/bend FLOAT FBOs, given a base width and
- * the GPU's MAX_TEXTURE_SIZE. `baseWidth * OVERSAMPLE`, clamped to maxTexSize so
- * a wide HD base (e.g. 1920×8 = 15360) never exceeds an 8192/16384-cap GPU —
- * the #1 correctness risk of the HD feature (hd-toggle plan §3/§7.2). The clamp
- * is ALWAYS applied, including at the 1080p bufferRes dropdown setting. Pure +
- * GL-free for deterministic unit testing.
- */
-export function b3ntb0xOsWidth(baseWidth: number, maxTexSize: number): number {
-  const want = Math.max(1, Math.round(baseWidth)) * OVERSAMPLE;
-  const cap = maxTexSize > 0 ? maxTexSize : 4096;
-  return Math.min(want, cap);
-}
 
 /** Oversampled pixels per subcarrier cycle. With OVERSAMPLE=8 a 4-px period
  *  packs 2 cycles per engine pixel of active width — plenty of carrier for
@@ -650,10 +630,6 @@ export const b3ntb0xDef: VideoModuleDef = {
     { id: 'mirrorY',      label: 'Mirror Y',    defaultValue: DEFAULTS.mirrorY,      min: 0,  max: 1, curve: 'linear' },
     { id: 'mirrorXGate',  label: 'Mir X Gate',  defaultValue: DEFAULTS.mirrorXGate,  min: 0,  max: 1, curve: 'linear' },
     { id: 'mirrorYGate',  label: 'Mir Y Gate',  defaultValue: DEFAULTS.mirrorYGate,  min: 0,  max: 1, curve: 'linear' },
-    // HD per-module heavy-buffer res (0=SD/1=720p/2=1080p) for the oversampled
-    // float encode/bend passes. Default SD even in HD; 720/1080 only honored when
-    // global HD is on locally; osWidth is ALWAYS MAX_TEXTURE_SIZE-clamped (§4.5).
-    { id: 'bufferRes',    label: 'Res',         defaultValue: BUFFER_RES_SD,         min: BUFFER_RES_SD, max: BUFFER_RES_1080, curve: 'linear' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -668,24 +644,10 @@ export const b3ntb0xDef: VideoModuleDef = {
     // provides it; assert here rather than degrade silently.
     if (!ctx.createFloatFbo) throw new Error('B3NTB0X: engine ctx lacks createFloatFbo');
     const createFloatFbo = ctx.createFloatFbo.bind(ctx);
-    // Heavy-buffer res: the 8× oversampled FLOAT encode/bend passes are the
-    // VRAM hogs (~265 MB at 1080p). Size them at the per-module bufferRes,
-    // clamped to SD when global HD is off locally (hd-toggle §4.5). Default SD
-    // keeps the base width at 640 — exactly the value the shaders' texel-step
-    // math (`640.0 * OVERSAMPLE`) assumes — so the common path is unchanged.
-    const bufferRes = clampBufferResValue(node.params?.bufferRes);
-    const bufDims = effectiveBufferDims(bufferRes, ctx.hdActive ?? false, ctx.res);
-    // MANDATORY clamp (hd-toggle plan §3/§7.2): the 8× oversample makes the
-    // float FBOs bufDims.width×8 wide. At 1920 base that's 15360 px, exceeding
-    // MAX_TEXTURE_SIZE on 8192-cap GPUs and approaching the common 16384 limit →
-    // framebuffer-incomplete / context loss. ALWAYS clamp osWidth to the GPU's
-    // MAX_TEXTURE_SIZE (applied even at the 1080p dropdown setting).
-    const maxTex = (gl.getParameter(gl.MAX_TEXTURE_SIZE) as number) || 4096;
-    const osWidth = b3ntb0xOsWidth(bufDims.width, maxTex);
-    const osHeight = bufDims.height;
-    const fboEncode = createFloatFbo(osWidth, osHeight, { filter: 'nearest' });
-    const fboBendA = createFloatFbo(osWidth, osHeight, { filter: 'nearest' });
-    const fboBendB = createFloatFbo(osWidth, osHeight, { filter: 'nearest' });
+    const osWidth = ctx.res.width * OVERSAMPLE;
+    const fboEncode = createFloatFbo(osWidth, ctx.res.height, { filter: 'nearest' });
+    const fboBendA = createFloatFbo(osWidth, ctx.res.height, { filter: 'nearest' });
+    const fboBendB = createFloatFbo(osWidth, ctx.res.height, { filter: 'nearest' });
     // True iff the GPU could give us real float targets (else reduced precision).
     const isFloat = fboEncode.isFloat && fboBendA.isFloat && fboBendB.isFloat;
 
@@ -777,7 +739,7 @@ export const b3ntb0xDef: VideoModuleDef = {
 
         // ---- PASS 1: EncodeComposite -> fboEncode (oversampled float) ----
         g.bindFramebuffer(g.FRAMEBUFFER, fboEncode.fbo);
-        g.viewport(0, 0, osWidth, osHeight);
+        g.viewport(0, 0, osWidth, ctx.res.height);
         g.useProgram(encodeProgram);
         g.activeTexture(g.TEXTURE0);
         g.bindTexture(g.TEXTURE_2D, inputTex ?? emptyTex);
@@ -793,7 +755,7 @@ export const b3ntb0xDef: VideoModuleDef = {
         const bendWrite = bendFrontIsA ? fboBendB : fboBendA;
         const bendPrev = framesElapsed > 0 ? (bendFrontIsA ? fboBendA.texture : fboBendB.texture) : null;
         g.bindFramebuffer(g.FRAMEBUFFER, bendWrite.fbo);
-        g.viewport(0, 0, osWidth, osHeight);
+        g.viewport(0, 0, osWidth, ctx.res.height);
         g.useProgram(bendProgram);
         g.activeTexture(g.TEXTURE0);
         g.bindTexture(g.TEXTURE_2D, fboEncode.texture);
