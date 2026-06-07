@@ -83,6 +83,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // step 0). All four are stuck-without-paramTarget by design — same
   // shape as dx7's fallback inputs.
   helm: ['pitch_cv', 'gate', 'midi_in', 'seq_reset'],
+  // polyhelm.{pitch_cv,gate,midi_in,seq_reset}: same fallback/visual ports as
+  // HELM (POLYHELM = HELM + a poly bus). pitch_cv = V/oct fallback; gate =
+  // trigger fallback; midi_in = visual-only Web-MIDI placeholder; seq_reset =
+  // step-pointer reset gate. The `poly` input is polyPitchGate (not cv), so it
+  // isn't in this cv-passthrough list. All four cv/gate ports are stuck-without-
+  // paramTarget by design — identical shape to HELM's fallback inputs.
+  polyhelm: ['pitch_cv', 'gate', 'midi_in', 'seq_reset'],
   // illogic in1..in4: passthrough attenuverter inputs (the module IS the attenuverter).
   illogic: ['in1', 'in2', 'in3', 'in4'],
   // unityscalemathematik u_in / a_in / b_in: signal inputs that the module

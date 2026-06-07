@@ -131,6 +131,18 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   // HELM is MIDI-driven primarily; pitch_cv + gate are fallbacks.
   // Output-alive is covered by helm.spec.ts; per-module stamper does spawn only.
   helm:         { outputPort: 'out_l' },
+  // POLYHELM — HELM + a poly-bus input. Unlike HELM (which is SKIP_SPAWN), this
+  // module is in the per-port sweep, so the outputs-emit dim needs it to sound:
+  // drive the mono pitch_cv + gate fallback (SEQUENCER → those ports) to play a
+  // single voice, exactly like DX7. The headline `poly` input's signal-flow is
+  // covered by the inputs-accept dim (SEQUENCER.pitch → polyhelm.poly) + the
+  // engine/ART poly→voices tests.
+  polyhelm: {
+    outputPort: 'out_l',
+    gatePort: 'gate',
+    pitchPort: 'pitch_cv',
+    params: { voiceCount: 1 },
+  },
   // ────────── Drum voices — gate-only triggered. ──────────
   drummergirl:  { outputPort: 'audio', gatePort: 'gate' },
   meowbox:      { outputPort: 'L',     gatePort: 'gate', pitchPort: 'pitch' },
