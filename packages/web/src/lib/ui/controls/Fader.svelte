@@ -37,6 +37,13 @@
     addBindingToSurface,
     removeBindingFromSurface,
   } from '$lib/graph/control-surface';
+  import {
+    listElectraControls,
+    readElectraData,
+    slotForBinding,
+    assignSlotToElectra,
+    clearSlot,
+  } from '$lib/graph/electra-control';
 
   /** A single inline glyph anchored at a normalized [0,1] fraction along the
    *  fader track. Used by the LFO-shape sliders to render sine/tri/saw/square
@@ -127,6 +134,9 @@
   let ctxX = $state(0);
   let ctxY = $state(0);
   let ctxSurfaces = $state<Array<{ id: string; name: string; bound: boolean }>>([]);
+  // ElectraControl surfaces this fader can be sent to a fixed (row, knob) slot
+  // on — snapshotted alongside ctxSurfaces when the menu opens.
+  let ctxElectras = $state<Array<{ id: string; name: string; assignedSlot: number | null }>>([]);
 
   function refreshSurfaces() {
     if (!moduleId || !paramId) { ctxSurfaces = []; return; }
@@ -137,9 +147,19 @@
     }));
   }
 
+  function refreshElectras() {
+    if (!moduleId || !paramId) { ctxElectras = []; return; }
+    ctxElectras = listElectraControls(patch.nodes).map((e) => ({
+      id: e.id,
+      name: e.name,
+      assignedSlot: slotForBinding(readElectraData(patch.nodes[e.id]), moduleId!, paramId!),
+    }));
+  }
+
   function openContextMenu(e: MouseEvent) {
     if (!moduleId || !paramId) return; // feature off when not addressable
     refreshSurfaces();
+    refreshElectras();
     // Plain right-click on a wired fader opens the control menu (MIDI Learn /
     // Forget). stopPropagation keeps the event off the node menu; the node
     // menu (Docs / Duplicate / Unpatch all / Delete) is still reachable by
@@ -167,6 +187,13 @@
   function onRemoveFromSurface(surfaceId: string) {
     if (!moduleId || !paramId) return;
     removeBindingFromSurface(surfaceId, moduleId, paramId);
+  }
+  function onAssignElectra(electraId: string, slot: number) {
+    if (!moduleId || !paramId) return;
+    assignSlotToElectra(electraId, slot, moduleId, paramId);
+  }
+  function onClearElectra(electraId: string, slot: number) {
+    clearSlot(electraId, slot);
   }
 
   // Register / unregister this fader's setter so a binding loaded from
@@ -514,6 +541,9 @@
     surfaces={ctxSurfaces}
     onsendtosurface={onSendToSurface}
     onremovefromsurface={onRemoveFromSurface}
+    electras={ctxElectras}
+    onassignelectra={onAssignElectra}
+    onclearelectra={onClearElectra}
   />
 {/if}
 

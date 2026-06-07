@@ -19,9 +19,37 @@ import {
   groupBindingsByModule,
   type ControlBinding,
 } from '$lib/graph/control-surface';
+import {
+  listElectraControls,
+  readElectraData,
+  electraPosOfSlot,
+  ELECTRA_SLOT_COUNT,
+} from '$lib/graph/electra-control';
 import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
 import type { AutoconfigHost } from './autoconfig';
 import type { PresetGenInput, GenParamDef, SurfaceBinding } from './preset';
+
+/** The first ElectraControl's bindings in slotIndex order (0..35), skipping
+ *  empties, each carrying its EXPLICIT generator page-local slot through so the
+ *  positional emit places it at the exact (controlSetId, potId). Returns null
+ *  when there is no ElectraControl node (so the caller falls back to the CONTROL
+ *  SURFACE path). The generator page-local slot is `(controlSetId-1)*12 +
+ *  (potId-1)` derived via electraPosOfSlot — NOT the raw row-major storage slot,
+ *  because storage order ≠ the firmware's control-set-then-pot walk. */
+function electraControlBindings(): SurfaceBinding[] | null {
+  const electras = listElectraControls(patch.nodes);
+  if (electras.length === 0) return null;
+  const data = readElectraData(patch.nodes[electras[0]!.id]);
+  const out: SurfaceBinding[] = [];
+  for (let storageSlot = 0; storageSlot < ELECTRA_SLOT_COUNT; storageSlot++) {
+    const b = data.slots?.[String(storageSlot)];
+    if (!b) continue; // empty slot emits nothing
+    const { controlSetId, potId } = electraPosOfSlot(storageSlot);
+    const genSlot = (controlSetId - 1) * 12 + (potId - 1);
+    out.push({ moduleId: b.moduleId, paramId: b.paramId, name: b.name, slot: genSlot });
+  }
+  return out;
+}
 
 /** Find the first control surface's flattened bindings (first-seen module
  *  order). Falls back to an empty list (the page is still generated). */
@@ -36,6 +64,14 @@ function firstSurfaceBindings(): SurfaceBinding[] {
     for (const b of g.bindings)
       out.push({ moduleId: b.moduleId, paramId: b.paramId, name: b.name });
   return out;
+}
+
+/** The page-1 binding list. PREFERS an ElectraControl (the explicit, fixed-
+ *  layout surface) over a CONTROL SURFACE — if both are present in the patch the
+ *  ElectraControl's positional grid drives page 1. Falls back to the first
+ *  CONTROL SURFACE's first-seen bindings, then to an empty list. */
+function page1Bindings(): SurfaceBinding[] {
+  return electraControlBindings() ?? firstSurfaceBindings();
 }
 
 function findSingleton(type: string): string | null {
@@ -54,7 +90,7 @@ function moduleLabel(moduleId: string): string {
 /** Build the generator input from the live patch. */
 export function buildLiveGenInput(): PresetGenInput {
   return {
-    surfaceBindings: firstSurfaceBindings(),
+    surfaceBindings: page1Bindings(),
     moduleLabel,
     resolveParamDef: (moduleId, paramId): GenParamDef | null => {
       const node = patch.nodes[moduleId] as ModuleNode | undefined;
