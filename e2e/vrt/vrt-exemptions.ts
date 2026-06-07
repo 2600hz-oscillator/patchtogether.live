@@ -617,6 +617,15 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // this branch. Functional coverage is pentemelodica-dsp.test.ts +
   // pentemelodica.test.ts + the per-port sweep + the bespoke e2e.
   'linux/pentemelodica',
+  // POLYHELM: darwin baseline (the dense Helm-style panel — osc / filter / 3
+  // envelopes / LFOs / step sequencer + a POLY input port; static CSS knobs, no
+  // animated canvas) captured locally; linux baseline pending a
+  // `vrt-update.yml` workflow_dispatch on this branch. Functional coverage is
+  // the shared helm-engine.test.ts (poly→voices, chord, release-holds-pitch) +
+  // polyhelm.test.ts (def + bridge) + the per-port sweep + the polyhelm ART
+  // scenario. (HELM itself is fully VRT-exempt for the same dense-card reason;
+  // POLYHELM ships a darwin baseline like the comparable PENTEMELODICA poly card.)
+  'linux/polyhelm',
   'linux/samsloop',
   'linux/stages',
   // SCOPE: this PR re-captures the darwin baseline with deterministic
