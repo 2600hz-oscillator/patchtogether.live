@@ -184,82 +184,95 @@ async function boot(page: Page): Promise<string[]> {
 const noErrors = (errors: string[]) =>
   expect(errors.filter((e) => !e.includes('AudioContext')), 'no page/console errors').toEqual([]);
 
-// ───────────────────────── (A)+(B) per-kind: render + STICK ─────────────────────────
-test.describe('TOYBOX node controls — every kind renders + every knob sticks', () => {
-  for (const kind of OP_KINDS) {
-    test(`${kind}: controls render + each knob persists (no snap-back)`, async ({ page }) => {
-      test.setTimeout(120_000);
-      const errors = await boot(page);
+/** Drag a node's `param` knob + assert it (a) persists to node.data AND (b) the
+ *  displayed tick tracks the write — i.e. does NOT snap back to the default on
+ *  pointer-up (the bug this whole PR fixes). Reused by the per-kind loop + the
+ *  exhaustive feedback test. `label` just tags assertion messages. */
+async function assertKnobSticks(page: Page, nodeId: string, param: string, label: string): Promise<void> {
+  const slider = page
+    .locator(`[data-testid="toybox-combine-knob-${param}"]`)
+    .locator('[role="slider"]');
+  await expect(slider).toBeVisible();
+  const before = Number(await slider.getAttribute('aria-valuenow'));
+  const min = Number(await slider.getAttribute('aria-valuemin'));
+  const max = Number(await slider.getAttribute('aria-valuemax'));
+  const tol = Math.max(1e-3, (max - min) * 0.02);
+  // Pan the canvas so THIS knob is centred + on-screen (feedback's 14 knobs push
+  // lower ones off the viewport inside svelte-flow's transform), then hover()
+  // parks the cursor on it. Pointer CAPTURE on pointerdown keeps the drag flowing
+  // to this knob even as the cursor leaves it.
+  await panToElement(page, slider);
+  await slider.hover();
+  const box = (await slider.boundingBox())!;
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  // Drag toward the side that CHANGES the value: up (cy-) = increase, so values
+  // at/under mid drag up, values over mid drag down (a param whose default is the
+  // max, e.g. fade T=1, can't increase further).
+  const mid = (min + max) / 2;
+  const dy = before <= mid ? -55 : 55;
+  await page.mouse.down();
+  await page.mouse.move(cx, cy + dy, { steps: 8 });
+  await page.mouse.up();
 
+  // the committed value moved off the default…
+  let persisted = before;
+  await expect
+    .poll(async () => {
+      persisted = (await paramVal(page, nodeId, param)) ?? before;
+      return Math.abs(persisted - before);
+    }, { timeout: 6_000, intervals: [100, 200, 400], message: `${label}.${param} committed a change (before=${before}, min=${min}, max=${max}, dy=${dy})` })
+    .toBeGreaterThan(tol);
+
+  // …and the KNOB keeps displaying it (the snap-back regression reset the tick to
+  // `before` on pointer-up; poll so the idle-sync settles).
+  await expect
+    .poll(async () => Math.abs(Number(await slider.getAttribute('aria-valuenow')) - persisted),
+      { timeout: 6_000, intervals: [100, 200, 400], message: `${label}.${param} knob displays the persisted value (no snap-back)` })
+    .toBeLessThan(tol);
+  expect(Math.abs(Number(await slider.getAttribute('aria-valuenow')) - before),
+    `${label}.${param} knob stuck (off default)`).toBeGreaterThan(tol);
+}
+
+// ───────────────────────── (A)+(B) render + STICK ─────────────────────────
+// ONE boot loops every op kind (re-seeding in place): proves each kind's controls
+// RENDER + its FIRST knob STICKS (the snap-back fix is one structural change, so
+// one knob per kind proves it per kind). The EXHAUSTIVE every-knob coverage is the
+// feedback test below (the 14-knob worst case). Collapsed to two boots because the
+// WebGL-heavy serialized `e2e-video` job is near its 30-min cap and booting 17
+// toyboxes (the old per-kind tests) blew it.
+test.describe('TOYBOX node controls — every kind renders + knobs stick', () => {
+  test('all op kinds: controls render + first knob sticks (no snap-back)', async ({ page }) => {
+    test.setTimeout(240_000);
+    const errors = await boot(page);
+    for (const kind of OP_KINDS) {
       const g = opGraph(kind);
       await seed(page, g.nodes, g.edges);
       await selectNode(page, 'op');
-
-      // (A) the pane title names the kind, and ≥1 knob renders.
-      await expect(page.locator('[data-testid="toybox-combine-params-title"]'))
-        .toContainText(kind.toUpperCase());
+      await expect(page.locator('[data-testid="toybox-combine-params-title"]'),
+        `${kind} pane title`).toContainText(kind.toUpperCase());
       const params = await renderedKnobParams(page);
       expect(params.length, `${kind} renders ≥1 control knob`).toBeGreaterThan(0);
-
-      // FEEDBACK additionally exposes its MODE as a <select> (not a knob).
       if (kind === 'feedback') {
         await expect(page.locator('[data-testid="toybox-feedback-mode-select"]')).toBeVisible();
         expect(params, 'feedback MODE is the <select>, not a knob').not.toContain('mode');
       }
+      await assertKnobSticks(page, 'op', params[0]!, kind);
+    }
+    noErrors(errors);
+  });
 
-      // (B) drag EACH knob → it persists to node.data AND the displayed value
-      //     tracks the write (does NOT snap back to the default on release).
-      for (const param of params) {
-        const slider = page
-          .locator(`[data-testid="toybox-combine-knob-${param}"]`)
-          .locator('[role="slider"]');
-        await expect(slider).toBeVisible();
-        const before = Number(await slider.getAttribute('aria-valuenow'));
-        const min = Number(await slider.getAttribute('aria-valuemin'));
-        const max = Number(await slider.getAttribute('aria-valuemax'));
-        const tol = Math.max(1e-3, (max - min) * 0.02);
-        // Pan the canvas so THIS knob is centred + on-screen (feedback's 14 knobs
-        // push lower ones off the viewport inside svelte-flow's transform), then
-        // hover() parks the cursor on it. Pointer CAPTURE on pointerdown keeps the
-        // drag flowing to this knob even as the cursor leaves it.
-        await panToElement(page, slider);
-        await slider.hover();
-        const box = (await slider.boundingBox())!;
-        const cx = box.x + box.width / 2;
-        const cy = box.y + box.height / 2;
-        // Drag toward the side that CHANGES the value: up (cy-) = increase, so
-        // values at/under mid drag up, values over mid drag down (a param whose
-        // default is the max, e.g. fade T=1, can't increase further).
-        const mid = (min + max) / 2;
-        const dy = before <= mid ? -55 : 55;
-        await page.mouse.down();
-        await page.mouse.move(cx, cy + dy, { steps: 8 });
-        await page.mouse.up();
-
-        // the committed value moved off the default…
-        let persisted = before;
-        await expect
-          .poll(async () => {
-            persisted = (await paramVal(page, 'op', param)) ?? before;
-            return Math.abs(persisted - before);
-          }, { timeout: 6_000, intervals: [100, 200, 400], message: `${kind}.${param} (before=${before}, min=${min}, max=${max}, dy=${dy}) committed a change` })
-          .toBeGreaterThan(tol);
-
-        // …and the KNOB keeps displaying it (the snap-back regression reset the
-        // tick to `before` on pointer-up; poll so the idle-sync settles).
-        await expect
-          .poll(async () => {
-            const now = Number(await slider.getAttribute('aria-valuenow'));
-            return Math.abs(now - persisted);
-          }, { timeout: 6_000, intervals: [100, 200, 400] })
-          .toBeLessThan(tol);
-        const finalNow = Number(await slider.getAttribute('aria-valuenow'));
-        expect(Math.abs(finalNow - before), `${kind}.${param} knob stuck (off default)`).toBeGreaterThan(tol);
-      }
-
-      noErrors(errors);
-    });
-  }
+  test('feedback: EVERY one of its knobs sticks (no snap-back)', async ({ page }) => {
+    test.setTimeout(180_000);
+    const errors = await boot(page);
+    const g = opGraph('feedback');
+    await seed(page, g.nodes, g.edges);
+    await selectNode(page, 'op');
+    const params = await renderedKnobParams(page);
+    expect(params.length, 'feedback exposes many knobs').toBeGreaterThan(5);
+    for (const param of params) await assertKnobSticks(page, 'op', param, 'feedback');
+    noErrors(errors);
+  });
 });
 
 // ───────────────────────── (A') selection switches the pane ─────────────────────────

@@ -2707,17 +2707,24 @@
               </select>
             </label>
           {/if}
+          <!-- EVERY `p.` deref below is OPTIONAL-CHAINED: when the selected node is
+               deleted this {#each} tears down, and Svelte 5 re-evaluates each
+               child's reactive props (the Knob's `paramId`/`value` getters) ONE
+               more time with the item `p` already set to `undefined` (the each-
+               item-undefined-on-teardown footgun). A raw `p.id` there threw
+               "reading 'id' of undefined" and crashed the card under load — the
+               (intermittent) reported delete crash. `p?.…` makes teardown a no-op. -->
           <div class="knob-grid">
             {#each selectedKnobParams as p (p.id)}
               <!-- Wrapper carries a per-param testid so e2e can target + drive
                    THIS node's THIS param's knob (the controls-persistence test). -->
-              <span class="combine-knob-cell" data-testid={`toybox-combine-knob-${p.id}`} data-param={p.id}>
+              <span class="combine-knob-cell" data-testid={`toybox-combine-knob-${p?.id ?? ''}`} data-param={p?.id}>
                 <Knob
-                  value={selectedNode ? combineParamVal(selectedNode, p.id) : p.default}
-                  min={p.min} max={p.max} defaultValue={p.default}
-                  label={p.label} curve="linear"
-                  onchange={setCombineParam(selId, p.id)}
-                  moduleId={id} paramId={`combine:${selId}:${p.id}`}
+                  value={selectedNode && p ? combineParamVal(selectedNode, p.id) : (p?.default ?? 0)}
+                  min={p?.min ?? 0} max={p?.max ?? 1} defaultValue={p?.default ?? 0}
+                  label={p?.label ?? ''} curve="linear"
+                  onchange={setCombineParam(selId, p?.id ?? '')}
+                  moduleId={id} paramId={`combine:${selId}:${p?.id ?? ''}`}
                 />
               </span>
             {/each}
