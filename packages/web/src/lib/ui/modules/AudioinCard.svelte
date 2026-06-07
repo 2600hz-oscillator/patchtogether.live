@@ -53,6 +53,15 @@
   let selectedDeviceId = $state<string | null>(null);
   let inState: State = $state('idle');
   let errorMsg = $state<string | null>(null);
+  // "Music mode" — force the browser capture DSP (echo-cancel / noise-
+  // suppress / auto-gain) OFF for a clean line-level feed. Persisted to
+  // Yjs (node.data.musicMode) so it restores on reload + syncs to peers.
+  // Default OFF (browser-default DSP) — forcing AGC off drops built-in-mic
+  // level, so it's opt-in for users routing line-level gear.
+  let musicMode = $state(false);
+  // The channelCount the live track actually delivered (for the status
+  // display: "stereo" vs "mono"). 0 until a stream attaches.
+  let liveChannels = $state(0);
   // Held so we can stop tracks on detach. The actual MediaStreamSource
   // lives engine-side (created in the factory's attach handler).
   let stream: MediaStream | null = null;
@@ -70,6 +79,18 @@
     if (!target.data) target.data = {};
     if (deviceId === null) delete target.data['deviceId'];
     else target.data['deviceId'] = deviceId;
+  }
+
+  function readSavedMusicMode(): boolean {
+    const d = node?.data;
+    return !!(d && d['musicMode'] === true);
+  }
+  function setSavedMusicMode(on: boolean): void {
+    const target = patch.nodes[id];
+    if (!target) return;
+    if (!target.data) target.data = {};
+    if (on) target.data['musicMode'] = true;
+    else delete target.data['musicMode'];
   }
 
   function pGain(): number {
@@ -126,12 +147,18 @@
     stopStream();
 
     const targetId = selectedDeviceId ?? findDefaultInputDevice(devices);
-    // Always ASK for a stereo (2-channel) capture — see
-    // buildAudioInConstraints. Multichannel USB interfaces (e.g. Expert
-    // Sleepers ES-9) hand us the device's FIRST stereo pair (inputs 1/2);
-    // Bitwig-style per-pair addressing (3/4, 5/6, …) is the native track
-    // (see .myrobots/plans/es9-stereo-io.md).
-    const constraints = buildAudioInConstraints(targetId);
+    // ASK for a stereo pair — see buildAudioInConstraints. It's an IDEAL
+    // constraint (channelCount: 2, no `exact:`), so a mono device still
+    // streams (and the wiring below keys off the DELIVERED channelCount,
+    // not this request). A multichannel USB interface (e.g. Expert
+    // Sleepers ES-9) hands us a true L/R pair (its FIRST stereo pair,
+    // device inputs 1/2) instead of a browser-downmixed mono signal.
+    // EMPIRICAL: the browser caps ES-9 capture at 2 channels
+    // (getCapabilities max=2; channelCount:{exact:4} → OverconstrainedError),
+    // so 4-in / per-channel is native-only (the native track; see the
+    // es9-stereo-io plan).
+    // `musicMode` forces the browser capture DSP off for a clean line feed.
+    const constraints = buildAudioInConstraints(targetId, { musicMode });
 
     try {
       stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -180,6 +207,7 @@
     //     multichannel USB interfaces; the unreported case is the
     //     built-in / fake mono mic, which we want fanned-out anyway.)
     const channelCount = settings.channelCount ?? 1;
+    liveChannels = channelCount;
     const realDeviceId = settings.deviceId ?? selectedDeviceId ?? null;
     if (realDeviceId && realDeviceId !== selectedDeviceId) {
       selectedDeviceId = realDeviceId;
@@ -229,6 +257,7 @@
       for (const t of stream.getTracks()) t.stop();
       stream = null;
     }
+    liveChannels = 0;
     const e = engineCtx.get();
     if (e) audioInAttach(e, id, null);
   }
@@ -238,6 +267,16 @@
     setSavedDeviceId(deviceId);
     // If we were already streaming, re-acquire on the new device.
     if (inState === 'streaming' || inState === 'device-in-use' || inState === 'error') {
+      requestStream();
+    }
+  }
+
+  function onToggleMusicMode(on: boolean): void {
+    musicMode = on;
+    setSavedMusicMode(on);
+    // Capture DSP constraints can't be changed on a live track without a
+    // re-acquire, so re-run getUserMedia if we're already streaming.
+    if (inState === 'streaming') {
       requestStream();
     }
   }
@@ -262,6 +301,7 @@
 
     untrack(() => {
       selectedDeviceId = readSavedDeviceId();
+      musicMode = readSavedMusicMode();
     });
 
     // Initial enumerate. Empty labels at this point = no prior
@@ -358,7 +398,22 @@
           aria-hidden="true"
         ></span>
         <span class="status-label">{STATE_LABEL[inState]}</span>
+        {#if inState === 'streaming' && liveChannels > 0}
+          <span class="ch-badge" data-testid="audioin-channels">
+            {liveChannels >= 2 ? 'stereo' : 'mono'}
+          </span>
+        {/if}
       </div>
+
+      <label class="row music-row" title="Force browser echo-cancel / noise-suppress / auto-gain OFF for a clean line-level feed">
+        <input
+          type="checkbox"
+          data-testid="audioin-music-mode"
+          checked={musicMode}
+          onchange={(e) => onToggleMusicMode((e.currentTarget as HTMLInputElement).checked)}
+        />
+        <span class="row-label music-label">music mode</span>
+      </label>
 
       {#if errorMsg}
         <div class="error" role="alert" data-testid="audioin-error">{errorMsg}</div>
@@ -475,6 +530,19 @@
   .led.warn { background: #ca8a04; }
   .led.err { background: #dc2626; }
   .status-label { font-family: ui-monospace, monospace; font-size: 0.65rem; }
+  .ch-badge {
+    margin-left: auto;
+    font-family: ui-monospace, monospace;
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 0 4px;
+  }
+
+  .music-row { gap: 6px; cursor: pointer; }
+  .music-row input { margin: 0; accent-color: var(--cable-audio, #22c55e); }
+  .music-label { min-width: 0; }
 
   .error {
     font-size: 0.65rem;

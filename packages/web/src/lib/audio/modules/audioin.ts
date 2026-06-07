@@ -39,9 +39,13 @@
 //   `channelCount: 2`, via devices.buildAudioInConstraints) so a
 //   multichannel USB interface (e.g. Expert Sleepers ES-9) hands us a
 //   true L/R pair instead of a browser-downmixed mono signal. This gives
-//   the device's FIRST stereo pair (inputs 1/2). getUserMedia cannot
-//   address an arbitrary pair (3/4, 5/6, …) — that's the native track;
-//   see .myrobots/plans/es9-stereo-io.md. The WIRING decision still
+//   the device's FIRST stereo pair (inputs 1/2). EMPIRICAL FINDING
+//   (DevTools console probe vs. a real ES-9 in Chrome): the browser caps
+//   ES-9 capture at 2 channels — `track.getCapabilities().channelCount`
+//   returns `{ max: 2, min: 1 }` and `getUserMedia({ channelCount:
+//   { exact: 4 } })` throws OverconstrainedError. So 4-in / per-channel
+//   (3/4, 5/6, …) is NOT reachable in-browser — that's the native track
+//   (`patchtogether.es9`); see .myrobots/plans/es9-stereo-io.md. The WIRING decision still
 //   trusts the track's reported channelCount: >=2 takes the splitter
 //   (true L/R), 1 or UNREPORTED takes the mono fan-out (L=R) — the safe
 //   default, since a mono source through the stereo splitter would leave
@@ -67,14 +71,24 @@
 // Inputs: none.
 //
 // Outputs:
-//   audio_l_out (audio): left channel from the attached input device.
-//   audio_r_out (audio): right channel — duplicated from L if the source
-//     is mono.
+//   audio_l_out (audio): channel 1 from the attached input device.
+//   audio_r_out (audio): channel 2 — duplicated from L if the source is
+//     mono.
+//
+//   Only a stereo PAIR is exposed. EMPIRICAL FINDING (DevTools console
+//   probe vs. a real ES-9 in Chrome): the browser caps ES-9 capture at 2
+//   channels — `track.getCapabilities().channelCount` returns
+//   `{ max: 2, min: 1 }`, and `getUserMedia({ channelCount:{exact:4} })`
+//   throws OverconstrainedError. So 4-in / per-channel capture is NOT
+//   reachable in-browser; it's the NATIVE track (`patchtogether.es9`).
+//   The earlier audio_3_out/audio_4_out ports were a phantom feature (they
+//   could never carry signal) and were removed. See
+//   .myrobots/plans/es9-stereo-io.md.
 //
 // Params:
 //   gain (linear 0..2, default 1.0): post-source gain. Useful for hot
 //     line-ins (turn down) + quiet condenser mics (turn up). Symmetric
-//     on L+R; we don't expose per-channel trim.
+//     across both channels; we don't expose per-channel trim.
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -108,6 +122,10 @@ export const audioInDef: AudioModuleDef = {
   // getUserMedia call typically fails with NotReadableError, which the
   // card surfaces in its status LED.
   inputs: [],
+  // The stereo pair (L/R = device channels 1/2) — the hard browser ceiling
+  // for ES-9 capture (getCapabilities().channelCount max=2; an exact:4
+  // request throws OverconstrainedError). >2-in / per-channel is native-
+  // only (patchtogether.es9); see .myrobots/plans/es9-stereo-io.md.
   outputs: [
     { id: 'audio_l_out', type: 'audio' },
     { id: 'audio_r_out', type: 'audio' },
@@ -130,65 +148,72 @@ export const audioInDef: AudioModuleDef = {
     //
     //   sourceNode (MediaStreamSource)            ← attached lazily by card
     //        │
-    //   ┌────┴─────┐ (mono path: same node → both gains)
+    //   ┌────┴─────┐ (mono path: same node → L + R gains directly)
     //   │          │
-    //   │   ┌──────┴─ splitter (only used when source is stereo)
-    //   │   │     │
-    //   gainL    gainR
-    //   │         │
-    //  audio_l    audio_r   (the two declared output ports)
+    //   │   ┌──────┴─ splitter(2) (used for the stereo source)
+    //   │   │  │
+    //  gainL gainR
+    //   │     │
+    //  L_out  R_out   (the two declared output ports)
     //
-    // gainL/R + splitter are PERSISTENT (built once at factory time).
-    // The source node is swapped on each attach() — connections from
-    // gain → outputs never move.
+    // The two gain nodes + the splitter are PERSISTENT (built once at
+    // factory time). The source node is swapped on each attach() —
+    // connections from gain → outputs never move.
+    //
+    // Only the stereo pair (L/R = device channels 1/2) is exposed: the
+    // browser caps ES-9 capture at 2 channels (getCapabilities max=2;
+    // channelCount:{exact:4} → OverconstrainedError), so 4-in / per-channel
+    // is native-only (the native track; see .myrobots/plans/es9-stereo-io.md).
     const initialGain = (node.params ?? {}).gain ?? 1.0;
 
     const gainL = ctx.createGain();
     gainL.gain.value = initialGain;
     const gainR = ctx.createGain();
     gainR.gain.value = initialGain;
+    // Stereo splitter — ch0 → L, ch1 → R for a 2-channel source.
     const splitter = ctx.createChannelSplitter(2);
 
-    // Keep the output gain nodes in the active graph even when no
-    // stream is attached yet. Without this, downstream modules see no
-    // audio activity at all and some (e.g. mixers feeding into
-    // analyzers) skip processing. Same trick as audio-out + faust modules.
-    const silenceL = ctx.createConstantSource();
-    silenceL.offset.value = 0;
-    silenceL.start();
-    silenceL.connect(gainL);
-    const silenceR = ctx.createConstantSource();
-    silenceR.offset.value = 0;
-    silenceR.start();
-    silenceR.connect(gainR);
+    // Keep the output gain nodes in the active graph even when no stream
+    // is attached yet. Without this, downstream modules see no audio
+    // activity and some (e.g. mixers feeding analyzers) skip processing.
+    // Same trick as audio-out + faust modules. One per output channel.
+    const silences: ConstantSourceNode[] = [];
+    for (const g of [gainL, gainR]) {
+      const s = ctx.createConstantSource();
+      s.offset.value = 0;
+      s.start();
+      s.connect(g);
+      silences.push(s);
+    }
 
     // Current attached source (mutable; null when not yet attached or
     // after detach). The card swaps this via the attach() hook below.
     let attachedSource: MediaStreamAudioSourceNode | null = null;
     let attachedStream: MediaStream | null = null;
-    // Whether the current attachment used the splitter (true = stereo)
-    // or fed mono to both gains directly (false = mono). Tracked so
-    // detach() disconnects exactly the connections we made.
-    let attachedAsStereo = false;
+    // How the current attachment was wired, so detach() disconnects
+    // exactly what attach() connected:
+    //   'mono'   → source → gainL + gainR directly (L=R)
+    //   'stereo' → source → splitter; ch0→L, ch1→R
+    let attachedAs: 'none' | 'mono' | 'stereo' = 'none';
 
     function detachInternal(): void {
       if (attachedSource) {
         try {
-          if (attachedAsStereo) {
-            attachedSource.disconnect(splitter);
-          } else {
+          if (attachedAs === 'mono') {
             attachedSource.disconnect(gainL);
             attachedSource.disconnect(gainR);
+          } else if (attachedAs === 'stereo') {
+            attachedSource.disconnect(splitter);
           }
         } catch { /* already disconnected */ }
         try { attachedSource.disconnect(); } catch { /* defensive */ }
         attachedSource = null;
       }
-      if (attachedAsStereo) {
+      if (attachedAs === 'stereo') {
         try { splitter.disconnect(gainL); } catch { /* defensive */ }
         try { splitter.disconnect(gainR); } catch { /* defensive */ }
       }
-      attachedAsStereo = false;
+      attachedAs = 'none';
       // The card owns the MediaStream lifecycle (it called getUserMedia,
       // it stops the tracks). We just drop our reference.
       attachedStream = null;
@@ -215,12 +240,12 @@ export const audioInDef: AudioModuleDef = {
         attachedSource.connect(splitter);
         splitter.connect(gainL, 0);
         splitter.connect(gainR, 1);
-        attachedAsStereo = true;
+        attachedAs = 'stereo';
       } else {
         // Mono source: fan-out to both L + R.
         attachedSource.connect(gainL);
         attachedSource.connect(gainR);
-        attachedAsStereo = false;
+        attachedAs = 'mono';
       }
     }
 
@@ -233,6 +258,7 @@ export const audioInDef: AudioModuleDef = {
       ]),
       setParam(paramId, value) {
         if (paramId === 'gain') {
+          // Single gain knob trims both channels symmetrically.
           gainL.gain.setValueAtTime(value, ctx.currentTime);
           gainR.gain.setValueAtTime(value, ctx.currentTime);
         }
@@ -267,10 +293,10 @@ export const audioInDef: AudioModuleDef = {
       },
       dispose() {
         detachInternal();
-        try { silenceL.stop(); } catch { /* */ }
-        try { silenceR.stop(); } catch { /* */ }
-        silenceL.disconnect();
-        silenceR.disconnect();
+        for (const s of silences) {
+          try { s.stop(); } catch { /* */ }
+          try { s.disconnect(); } catch { /* */ }
+        }
         gainL.disconnect();
         gainR.disconnect();
         try { splitter.disconnect(); } catch { /* defensive */ }

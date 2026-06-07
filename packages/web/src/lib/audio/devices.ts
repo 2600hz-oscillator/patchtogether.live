@@ -59,14 +59,42 @@ export function findDefaultOutputDevice(devices: readonly MinimalDevice[]): stri
   return findDefaultInputDevice(devices);
 }
 
+/** Options for {@link buildAudioInConstraints}. All optional — the
+ *  zero-opts call `buildAudioInConstraints(targetId)` is byte-identical to
+ *  the original stereo-pair request (channelCount: 2, browser-default DSP).
+ *
+ *  NOTE — there is deliberately NO `channels` option: the browser caps
+ *  ES-9 capture at 2 channels. Empirically (DevTools console probe vs. a
+ *  real ES-9 in Chrome): `track.getCapabilities().channelCount` →
+ *  `{ max: 2, min: 1 }`, and `getUserMedia({ channelCount: { exact: 4 } })`
+ *  → OverconstrainedError. So >2-in / per-channel capture is the NATIVE
+ *  track (`patchtogether.es9`), not reachable in-browser. We always
+ *  request a stereo pair. */
+export interface AudioInConstraintOpts {
+  /**
+   * "Music mode" — force the browser's capture DSP OFF for a clean,
+   * line-level feed: `echoCancellation`, `noiseSuppression`, and
+   * `autoGainControl` all set to `false`.
+   *
+   * Default false (browser default DSP) because forcing AGC off
+   * measurably DROPS capture level for built-in mics — a regression for
+   * the casual mic user. The toggle exists for users routing line-level
+   * gear (a USB interface / mixer) who want zero browser processing.
+   * Chromium already leaves this DSP off for most non-communications USB
+   * interfaces, so for the ES-9 this is mostly belt-and-suspenders, but
+   * it makes the intent explicit + covers the OS-default-device path.
+   */
+  musicMode?: boolean;
+}
+
 /**
  * Build the `MediaStreamConstraints` for AUDIO IN's getUserMedia call.
  *
- * We always REQUEST a stereo (2-channel) capture so a multichannel USB
- * interface (e.g. Expert Sleepers ES-9) hands us a true L/R pair rather
- * than a browser-downmixed mono signal. `channelCount` is an IDEAL
- * constraint (no `exact:`), so a mono-only device still streams — the card
- * keys the engine's mono-vs-stereo wiring off the delivered
+ * We REQUEST a stereo (2-channel) capture so a multichannel USB interface
+ * (e.g. Expert Sleepers ES-9) hands us a true L/R pair rather than a
+ * browser-downmixed mono signal. `channelCount` is an IDEAL constraint
+ * (no `exact:`), so a mono-only device still streams — the card keys the
+ * engine's mono-vs-stereo wiring off the delivered
  * `track.getSettings().channelCount`, not off this request.
  *
  *   - `targetId` null / 'default'  → no deviceId constraint (OS default).
@@ -75,26 +103,36 @@ export function findDefaultOutputDevice(devices: readonly MinimalDevice[]): stri
  *     OverconstrainedError if that device vanished, which the card
  *     surfaces).
  *
- * NOTE on browser DSP: we deliberately DON'T force echoCancellation /
- * noiseSuppression / autoGainControl off here. They'd be the "right"
- * choice for a clean line-level music feed, but (a) Chromium already
- * leaves them off for non-default-communications inputs like a USB
- * interface, and (b) forcing AGC off measurably drops capture level for
- * built-in mics — a behavior change for every existing AUDIO IN user, out
- * of scope for the stereo-pair first step. A future per-card "music mode"
- * toggle can expose these (see .myrobots/plans/es9-stereo-io.md).
+ * We always request 2 channels — the browser hard-caps ES-9 capture at 2
+ * (`getCapabilities().channelCount` max=2; `channelCount:{exact:4}` →
+ * OverconstrainedError). >2-in / per-channel is the native track
+ * (`patchtogether.es9`); see .myrobots/plans/es9-stereo-io.md.
  *
- * NOTE on addressing: getUserMedia can only ever expose the device's
- * FIRST stereo pair (channels 1/2). Bitwig-style per-pair addressing
- * (3/4, 5/6, …) is not reachable through the Web Audio / getUserMedia API
- * and is the native track — see .myrobots/plans/es9-stereo-io.md.
+ * `opts.musicMode` (default false) forces echoCancellation /
+ * noiseSuppression / autoGainControl OFF for a clean line-level feed.
+ * Off by default because forcing AGC off drops built-in-mic level.
+ *
+ * Back-compat: `buildAudioInConstraints(id)` === the original stereo-pair,
+ * browser-default-DSP request.
  */
-export function buildAudioInConstraints(targetId: string | null): MediaStreamConstraints {
-  const stereo: MediaTrackConstraints = { channelCount: 2 };
+export function buildAudioInConstraints(
+  targetId: string | null,
+  opts: AudioInConstraintOpts = {},
+): MediaStreamConstraints {
+  const track: MediaTrackConstraints = { channelCount: 2 };
+  if (opts.musicMode) {
+    // Force the capture DSP chain off (clean line-level feed). Only set
+    // when explicitly asked — the default path stays byte-identical to
+    // the original (browser-default DSP) so existing mic users are
+    // unaffected.
+    track.echoCancellation = false;
+    track.noiseSuppression = false;
+    track.autoGainControl = false;
+  }
   return {
     audio: targetId && targetId !== 'default'
-      ? { deviceId: { exact: targetId }, ...stereo }
-      : { ...stereo },
+      ? { deviceId: { exact: targetId }, ...track }
+      : { ...track },
     video: false,
   };
 }
