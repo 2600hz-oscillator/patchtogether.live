@@ -22,8 +22,9 @@
 
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 
-/** Arbitrarily reject videos larger than this on upload/import (per spec). */
-export const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // 50 MB
+/** Reject videos larger than this on upload/import. 100 MB (per spec) — the
+ *  source rides the Y.Doc, so this is a sanity ceiling, not a hard storage cap. */
+export const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100 MB
 
 const FORMAT = 'toybox-preset-v1';
 const PRESET_JSON = 'preset.json';
@@ -124,7 +125,7 @@ export function importToyboxPreset(zip: ArrayBuffer | Uint8Array): ToyboxPresetB
     const vbytes = entries[v.path];
     if (!vbytes) continue; // referenced media missing → skip (layer falls back to empty)
     if (vbytes.length > MAX_VIDEO_BYTES) {
-      throw new Error(`TOYBOX preset video '${v.name}' is ${(vbytes.length / 1048576).toFixed(0)} MB — exceeds the 50 MB limit`);
+      throw new Error(`TOYBOX preset video '${v.name}' is ${(vbytes.length / 1048576).toFixed(0)} MB — exceeds the ${(MAX_VIDEO_BYTES / 1048576).toFixed(0)} MB limit`);
     }
     videos.push({ layer: v.layer, name: v.name, bytes: vbytes });
   }
