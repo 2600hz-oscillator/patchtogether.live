@@ -36,6 +36,13 @@
     mergeMidiBindings,
   } from '$lib/graph/performance-bundle';
   import {
+    buildPerformanceZip,
+    parsePerformanceZip,
+    type PerformanceMedia,
+  } from '$lib/graph/performance-zip';
+  import { resolveAllVideoExports } from '$lib/video/video-export-registry';
+  import { putVideoFileBlob } from '$lib/video/video-file-store';
+  import {
     canPersistPerformances,
     savePerformanceSlot,
     loadPerformanceSlot,
@@ -325,6 +332,14 @@
           }
           return loadEnvelopeFromObject(env);
         },
+      };
+      // Portable performance .zip round-trip hook (e2e): export captures the zip
+      // bytes WITHOUT a download dialog; load restores from captured bytes
+      // WITHOUT a file picker. Mirrors the real button handlers exactly.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__perfZip = {
+        export: async (): Promise<Uint8Array> => buildPerformanceZipBytes(),
+        load: async (bytes: Uint8Array): Promise<void> => loadPerformanceZipBytes(bytes),
       };
       // Right-click + Organize tests need flow-space coords + the same
       // spawn path as the in-app palette (collision offset + maxInstances
@@ -1208,6 +1223,173 @@
       error = `Load Performance failed: ${msg}`;
       trace(`load performance failed: ${msg}`);
     }
+  }
+
+  // ---------------- Export / Load PORTABLE Performance (.zip) ----------------
+  //
+  // The cross-machine sibling of Save/Load Local Performance: a single .zip that
+  // carries the WHOLE rack — the patch envelope (graph + positions + INLINE
+  // PICTUREBOX images / TOYBOX layer images-shaders-OBJs / SAMSLOOP samples / CV
+  // routes / control-surface bindings / module names) PLUS the actual VIDEOBOX
+  // video BYTES (the one asset the envelope can't inline) PLUS the MIDI/gamepad
+  // mappings. Reloads on any machine: no FileSystemFileHandle, no re-pick.
+  //
+  // Build: makePortableEnvelope → makePerformanceBundle (existing manifest) →
+  //        resolve loaded VIDEOBOX bytes via the export registry → buildPerformanceZip.
+  // Load:  parsePerformanceZip → seed each video's bytes into the IDB handle store
+  //        under its handleId (putVideoFileBlob) → import MIDI bindings → apply the
+  //        envelope → reconcile. Each VIDEOBOX card's tryReloadFromHandle then
+  //        finds its seeded (granted) blob handle on mount and auto-loads the clip.
+
+  let perfZipBusy = $state(false);
+
+  /** Build the portable performance .zip bytes for the current rack. Pure-ish:
+   *  reads the live store + resolves loaded video bytes. Exposed for the e2e
+   *  hook so the round-trip test can capture the bytes without a download. */
+  async function buildPerformanceZipBytes(): Promise<Uint8Array> {
+    // Resolve loaded video bytes across all VIDEOBOX cards FIRST (registry), so
+    // we know which nodes carry out-of-band video before snapshotting the graph.
+    const resolved = await resolveAllVideoExports();
+
+    // Ensure every exported video node has a STABLE fileMeta.handleId baked into
+    // its data BEFORE we snapshot the envelope: on reload the restored card's
+    // tryReloadFromHandle looks the seeded blob handle up by THIS id. A file
+    // picked via the plain <input> (no File System Access) never got a handleId,
+    // so we mint a deterministic `bundle-<nodeId>` and write it into the live
+    // node (rides the Yjs snapshot). Done in one transact, before makeEnvelope.
+    const handleIdFor = new Map<string, string>();
+    ydoc.transact(() => {
+      for (const r of resolved) {
+        const node = patch.nodes[r.nodeId];
+        if (!node) continue;
+        if (!node.data) node.data = {} as Record<string, unknown>;
+        const d = node.data as Record<string, unknown>;
+        const fm = (d.fileMeta as { handleId?: unknown; name?: unknown; size?: unknown; duration?: unknown } | null | undefined) ?? null;
+        const existing = typeof fm?.handleId === 'string' && fm.handleId.length > 0 ? fm.handleId : null;
+        const handleId = existing ?? `bundle-${r.nodeId}`;
+        handleIdFor.set(r.nodeId, handleId);
+        if (!existing) {
+          d.fileMeta = { ...(fm ?? {}), handleId, name: r.name, size: r.bytes.length };
+        }
+      }
+    });
+
+    const envelope = makePortableEnvelope(ydoc, currentUserId);
+    const nodes: Record<string, { id: string; type: string; data?: Record<string, unknown> | null; params?: Record<string, unknown> | null }> = {};
+    for (const [nid, n] of Object.entries(patch.nodes)) {
+      if (n) nodes[nid] = { id: nid, type: n.type, data: n.data as Record<string, unknown> | null, params: n.params as Record<string, unknown> | null };
+    }
+    const resolveMidi = await resolveMidiDevices();
+    const bundle = makePerformanceBundle({
+      envelope,
+      nodes,
+      midiBindings: exportMidiBindings(),
+      resolveMidiDevice: resolveMidi,
+      resolveGamepad,
+    });
+    // Map each resolved video to the handleId now stamped on its node, so the
+    // loader seeds the bytes under the SAME id the restored card looks up.
+    const media: PerformanceMedia[] = resolved.map((r) => ({
+      nodeId: r.nodeId,
+      handleId: handleIdFor.get(r.nodeId) ?? `bundle-${r.nodeId}`,
+      role: 'video' as const,
+      name: r.name,
+      bytes: r.bytes,
+    }));
+    return buildPerformanceZip({ bundle, media, savedAt: Date.now() });
+  }
+
+  async function exportPerformanceZip(): Promise<void> {
+    error = null;
+    if (perfZipBusy) return;
+    perfZipBusy = true;
+    try {
+      const bytes = await buildPerformanceZipBytes();
+      const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/zip' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'performance.ptperf.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch { /* */ } }, 60_000);
+      const vids = bytes.length;
+      trace(`exported performance .zip (${(vids / 1024).toFixed(0)} KB)`);
+    } catch (e) {
+      error = `Export performance failed: ${e instanceof Error ? e.message : String(e)}`;
+      trace(`export performance failed: ${String(e)}`);
+    } finally {
+      perfZipBusy = false;
+    }
+  }
+
+  /** Restore a parsed performance .zip into the live rack. Shared by the file
+   *  picker + the e2e hook (which passes captured bytes). */
+  async function loadPerformanceZipBytes(zipBytes: Uint8Array): Promise<void> {
+    const parsed = parsePerformanceZip(zipBytes);
+    const bundle = validateBundle(parsed.bundle);
+
+    await ensureEngine();
+
+    // Seed each out-of-band video's bytes into the IDB handle store under its
+    // handleId BEFORE applying the envelope, so each VIDEOBOX card mounting from
+    // the load finds a granted blob handle and auto-reloads (no re-pick).
+    for (const m of parsed.media) {
+      if (!m.handleId) continue;
+      const blob = new Blob([m.bytes as unknown as BlobPart], { type: 'video/mp4' });
+      await putVideoFileBlob(m.handleId, blob, m.name);
+    }
+
+    // Restore MIDI Learn CC maps (merge so other patches' bindings survive),
+    // before the envelope so cards re-register their setters on mount.
+    if (bundle.midiBindings.length > 0) {
+      const merged = mergeMidiBindings(exportMidiBindings(), bundle.midiBindings);
+      importMidiBindings(merged);
+    }
+
+    const result = persistenceLoad(bundle.patch, ydoc, patch);
+    await reconciler?.reconcile();
+    trace(`loaded performance .zip (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges, ${parsed.media.length} video assets)`);
+    if (result.diagnostics.length > 0) {
+      for (const d of result.diagnostics) console.warn(`[load-perf-zip] ${d.nodeId} (${d.type}): ${d.reason}`);
+    }
+  }
+
+  async function loadPerformanceZip(): Promise<void> {
+    error = null;
+    if (perfZipBusy) return;
+    perfZipBusy = true;
+    try {
+      const file = await pickPerformanceZipFile();
+      if (!file) { trace('load performance .zip cancelled'); return; }
+      const ab = await file.arrayBuffer();
+      await loadPerformanceZipBytes(new Uint8Array(ab));
+    } catch (e) {
+      const msg = e instanceof BundleParseError || e instanceof EnvelopeParseError ? e.message : (e instanceof Error ? e.message : String(e));
+      error = `Load performance failed: ${msg}`;
+      trace(`load performance .zip failed: ${msg}`);
+    } finally {
+      perfZipBusy = false;
+    }
+  }
+
+  /** Open the system file picker for a .zip; resolves null on cancel. */
+  function pickPerformanceZipFile(): Promise<File | null> {
+    return new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.zip,application/zip';
+      input.style.display = 'none';
+      input.addEventListener('change', () => {
+        const f = input.files?.[0] ?? null;
+        input.remove();
+        resolve(f);
+      });
+      input.addEventListener('cancel', () => { input.remove(); resolve(null); });
+      document.body.appendChild(input);
+      input.click();
+    });
   }
 
   // ---------------- Mirror Svelte Flow events back to the patch graph ----------------
@@ -3749,6 +3931,18 @@
           ? 'Restore a saved local performance. Reloads the patch + inline assets; re-acquires video files (one click to re-allow on Chromium) + re-binds MIDI/gamepad.'
           : 'Unavailable: needs IndexedDB (not in this browser).'}
       >Load Perf</button>
+      <button
+        onclick={exportPerformanceZip}
+        disabled={nodeCount === 0 || perfZipBusy}
+        data-testid="export-perf-zip-btn"
+        title="Export the WHOLE rack as a portable .zip (patch + ALL embedded images/videos/samples + CV routes + control-surface + MIDI/gamepad maps). Move it to another machine and Load performance to reproduce the show exactly."
+      >Export Perf (.zip)</button>
+      <button
+        onclick={loadPerformanceZip}
+        disabled={perfZipBusy}
+        data-testid="load-perf-zip-btn"
+        title="Load a portable performance .zip into a fresh rack — restores the patch + ALL embedded media + mappings on any machine (no re-pick needed)."
+      >Load Perf (.zip)</button>
       <SkinSwitcher />
       <!-- Electra One on EVERY rack (incl. the anonymous `/` scratch canvas) —
            the flow only needs the patch store + active engine, both present on

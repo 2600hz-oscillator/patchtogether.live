@@ -20,6 +20,10 @@ import {
   isKeyerKind,
   isCombineOpKind,
   isStatefulKind,
+  isMeltStateKind,
+  propagateFreshness,
+  videoLayerFresh,
+  TOYBOX_SCHEMA_VERSION,
   opHistoryDepth,
   combineExtraFor,
   opParamVal,
@@ -30,6 +34,8 @@ import {
   inPortsFor,
   hasOutPort,
   isCombineGraph,
+  isLayerInputEdge,
+  LAYER_INPUT_SOURCE,
   makeDefaultCombineGraph,
   makeOpNode,
   opSlotXY,
@@ -105,8 +111,10 @@ describe('isCombineGraph', () => {
 });
 
 describe('ports', () => {
-  it('sources have no input port + have an output', () => {
-    expect(inPortsFor('source')).toEqual([]);
+  it('sources have a single in0 (LAYER-INPUT tap) port + still have an output', () => {
+    // SOURCE nodes gained an in0 input port for the LAYER INPUT feedback tap.
+    // hasOutPort stays true — a source still EMITS its layer FBO downstream.
+    expect(inPortsFor('source')).toEqual(['in0']);
     expect(hasOutPort('source')).toBe(true);
   });
   it('the classic blend ops have in0 + in1 + an output; FEEDBACK has only in0', () => {
@@ -325,6 +333,77 @@ describe('validateConnect', () => {
   });
 });
 
+describe('LAYER INPUT (feedback-tap) edges', () => {
+  it('LAYER_INPUT_SOURCE is a distinct negative sentinel (-2)', () => {
+    // Distinct from -1 (MATCAP / none) and 0..3 (a sibling layer index).
+    expect(LAYER_INPUT_SOURCE).toBe(-2);
+    expect(LAYER_INPUT_SOURCE).toBeLessThan(-1);
+  });
+
+  it('isLayerInputEdge: only an in0 wire into a SOURCE node is a tap', () => {
+    const g = defGraph();
+    // src0 IS a source — in0 into it is a tap.
+    expect(isLayerInputEdge(g, 'src0', 'in0')).toBe(true);
+    // in1 (sources have no in1) is not a tap; an op/output destination is not.
+    expect(isLayerInputEdge(g, 'src0', 'in1')).toBe(false);
+    expect(isLayerInputEdge(g, 'op1', 'in0')).toBe(false);
+    expect(isLayerInputEdge(g, outputNode(g)!.id, 'in0')).toBe(false);
+    expect(isLayerInputEdge(g, 'nope', 'in0')).toBe(false);
+  });
+
+  it('validateConnect ACCEPTS OUT -> src0.in0 even though it is a graph cycle', () => {
+    // Default graph: OUTPUT.in0 is fed by the last fade. Wiring the OUTPUT's
+    // FEEDER's output back into a source closes a loop — but a SOURCE-in0 tap is
+    // exempt from cycle rejection (it's a 1-frame feedback tap resolved at render).
+    const g = defGraph();
+    // Use the OUTPUT's upstream node (op3 in the default chain) as the "from"; it
+    // reaches the output, and wiring it into src0 would normally be a cycle since
+    // src0 -> ... -> that node already exists. Find a node that reaches src0.
+    // Simplest: src0 -> op1 -> ... ; wiring op1's output into src0.in0 is a cycle.
+    const r = validateConnect(g, 'op1', 'src0', 'in0');
+    expect(r.ok).toBe(true);
+    expect(r.edge).toMatchObject({ from: 'op1', to: 'src0', toPort: 'in0' });
+  });
+
+  it('a NON-source destination still rejects a cycle exactly as before', () => {
+    const g: ToyboxCombineGraph = {
+      nodes: [
+        { id: 'a', kind: 'fade', x: 0, y: 0, params: {} },
+        { id: 'b', kind: 'fade', x: 0, y: 0, params: {} },
+      ],
+      edges: [{ id: 'e1', from: 'a', to: 'b', toPort: 'in0' }],
+    };
+    // b -> a closes a loop; a is not a source → still rejected.
+    expect(validateConnect(g, 'b', 'a', 'in0').error).toBe('cycle');
+  });
+
+  it('still rejects a self-loop / occupied source-in0 port', () => {
+    const g = defGraph();
+    // self-loop guard precedes the cycle exemption.
+    expect(validateConnect(g, 'src0', 'src0', 'in0').error).toBe('self-loop');
+    // Wire op1 -> src0.in0, then a second wire is rejected as occupied.
+    const ok = validateConnect(g, 'op1', 'src0', 'in0');
+    expect(ok.ok).toBe(true);
+    g.edges.push(ok.edge!);
+    expect(validateConnect(g, 'op2', 'src0', 'in0').error).toBe('occupied');
+  });
+
+  it('topoSort DROPS a layer-input edge: the source stays a root + the eval is acyclic', () => {
+    const g = defGraph();
+    // Wire op1's output back into src0.in0 (a feedback tap). Without the drop this
+    // closes a cycle (src0 -> op1 -> src0) that would strand the graph.
+    const v = validateConnect(g, 'op1', 'src0', 'in0');
+    expect(v.ok).toBe(true);
+    g.edges.push(v.edge!);
+    const { order, ok } = topoSort(g);
+    // Every node is still ordered (no node stranded by the would-be cycle).
+    expect(ok).toBe(true);
+    expect(order).toHaveLength(g.nodes.length);
+    // src0 still orders before op1 (the tap edge added no same-frame dependency).
+    expect(order.indexOf('src0')).toBeLessThan(order.indexOf('op1'));
+  });
+});
+
 describe('makeOpNode', () => {
   it('returns a node with a fresh unique id + default params', () => {
     const g = defGraph();
@@ -386,6 +465,116 @@ describe('id generators', () => {
     const g = defGraph();
     expect(g.nodes.some((n) => n.id === nextNodeId(g))).toBe(false);
     expect(g.edges.some((e) => e.id === nextEdgeId(g))).toBe(false);
+  });
+
+  // ── Audit M3: nextNodeId is MONOTONIC — a freed id is NEVER reused, so a new
+  //    op can't inherit a deleted op's stale MIDI/control-surface bindings
+  //    (keyed combine:<id>:<param>). The old lowest-free scheme re-minted op2
+  //    after deleting op2 from {op1,op2,op3}.
+  it('nextNodeId is monotonic — deleting a middle op then adding does NOT reuse its id', () => {
+    const g: ToyboxCombineGraph = {
+      nodes: [
+        { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+        { id: 'op1', kind: 'fade', x: 0, y: 0, params: {} },
+        { id: 'op3', kind: 'fade', x: 0, y: 0, params: {} }, // op2 was deleted
+        { id: 'out', kind: 'output', x: 286, y: 66 },
+      ],
+      edges: [],
+    };
+    // The freed id 'op2' must NOT come back; the next id is past the max suffix.
+    const next = nextNodeId(g, 'op');
+    expect(next).not.toBe('op2');
+    expect(next).toBe('op4');
+  });
+
+  it('nextNodeId on the default graph (op1..op3) mints op4, not a reused lower id', () => {
+    const g = defGraph();
+    expect(nextNodeId(g, 'op')).toBe(`op${LAYER_COUNT}`); // op4 for LAYER_COUNT=4
+  });
+});
+
+describe('isMeltStateKind (audit C1 — alpha-as-state ring clear)', () => {
+  it('only DREAMMELT stores melt-state in the ring alpha channel', () => {
+    expect(isMeltStateKind('dreammelt')).toBe(true);
+    for (const k of ['datamosh', 'flowsmear', 'framedelay', 'channeldesync', 'feedback', 'fade']) {
+      expect(isMeltStateKind(k)).toBe(false);
+    }
+  });
+});
+
+describe('TOYBOX_SCHEMA_VERSION', () => {
+  it('is the current schema version (4) — the single source of truth', () => {
+    expect(TOYBOX_SCHEMA_VERSION).toBe(4);
+  });
+});
+
+describe('propagateFreshness (audit M2b — history-ring dedup decision)', () => {
+  // src0 → mosh → out. mosh is a stateful datamosh; its ring should only advance
+  // when its upstream (layer 0) presented a new decoded frame.
+  function chain(): ToyboxCombineGraph {
+    return {
+      nodes: [
+        { id: 'src0', kind: 'source', layer: 0, x: 0, y: 0 },
+        { id: 'mosh', kind: 'datamosh', x: 1, y: 0, params: {} },
+        { id: 'out', kind: 'output', x: 2, y: 0 },
+      ],
+      edges: [
+        { id: 'e0', from: 'src0', to: 'mosh', toPort: 'in0' },
+        { id: 'e1', from: 'mosh', to: 'out', toPort: 'in0' },
+      ],
+    };
+  }
+
+  it('a stale (no-new-frame) video layer marks its downstream op NOT fresh', () => {
+    const g = chain();
+    const fresh = propagateFreshness(g, [false, true, true, true]); // layer 0 stalled
+    expect(fresh.get('src0')).toBe(false);
+    expect(fresh.get('mosh')).toBe(false); // → ring HOLDS this frame (no dup store)
+  });
+
+  it('a fresh video layer marks its downstream op fresh (ring advances)', () => {
+    const g = chain();
+    const fresh = propagateFreshness(g, [true, true, true, true]);
+    expect(fresh.get('src0')).toBe(true);
+    expect(fresh.get('mosh')).toBe(true);
+  });
+
+  it('an op is fresh if ANY wired input is fresh (a 2-input op with one live feed)', () => {
+    const g: ToyboxCombineGraph = {
+      nodes: [
+        { id: 'src0', kind: 'source', layer: 0, x: 0, y: 0 },
+        { id: 'src1', kind: 'source', layer: 1, x: 0, y: 1 },
+        { id: 'melt', kind: 'dreammelt', x: 1, y: 0, params: {} },
+        { id: 'out', kind: 'output', x: 2, y: 0 },
+      ],
+      edges: [
+        { id: 'e0', from: 'src0', to: 'melt', toPort: 'in0' },
+        { id: 'e1', from: 'src1', to: 'melt', toPort: 'in1' },
+        { id: 'e2', from: 'melt', to: 'out', toPort: 'in0' },
+      ],
+    };
+    // layer 0 stalled but layer 1 live → the op is still fresh.
+    const fresh = propagateFreshness(g, [false, true, false, false]);
+    expect(fresh.get('melt')).toBe(true);
+  });
+
+  it('videoLayerFresh: fresh iff the uploadCount advanced', () => {
+    expect(videoLayerFresh(5, 4)).toBe(true);  // new frame uploaded
+    expect(videoLayerFresh(5, 5)).toBe(false); // same count → no new frame (dup)
+    expect(videoLayerFresh(0, -1)).toBe(true); // first frame
+  });
+});
+
+describe('history op M2d "visible out of the box" defaults', () => {
+  it('framedelay defaults to a VISIBLE crossfade (mix < 1) + a longer delay', () => {
+    const fd = Object.fromEntries(OP_PARAMS.framedelay.map((p) => [p.id, p.default]));
+    expect(fd.mix).toBeLessThan(1);
+    expect(fd.delay).toBeGreaterThanOrEqual(8);
+  });
+  it('datamosh defaults are stronger (higher flow, lower hold gate)', () => {
+    const dm = Object.fromEntries(OP_PARAMS.datamosh.map((p) => [p.id, p.default]));
+    expect(dm.flowScale).toBeGreaterThanOrEqual(0.7);
+    expect(dm.holdGate).toBeLessThanOrEqual(0.4);
   });
 });
 

@@ -42,9 +42,10 @@ uniform sampler2D uTex;
 uniform float uHasInput;     // 0 = idle pattern, 1 = sample texture
 uniform float uGain;         // post-multiplier on RGB
 uniform float uMirror;       // 0 = passthrough, 1 = horizontal flip
-// (sx, sy) — UV scale that fits the camera's native aspect into the
-// engine's 4:3 FBO without stretching. Computed adaptively per ctx.res
-// so a 16:9 webcam gets sy<1 (letterbox top/bottom).
+// (sx, sy) — UV scale that ZOOM-FITS (cover) the camera's native aspect
+// into the engine's 4:3 FBO without stretching. Computed adaptively per
+// ctx.res so a 16:9 webcam gets sx>1 (zoom in + crop the sides) and FILLS
+// the 4:3 frame edge-to-edge — no black bars. See cameraCoverScale().
 uniform vec2 uLetterbox;
 
 void main() {
@@ -56,13 +57,11 @@ void main() {
     outColor = vec4(0.04, 0.06, 0.10 + v, 1.0);
     return;
   }
-  // Centre + scale the active region so the camera frame keeps its native
-  // aspect inside the FBO; outside the active region renders black bars.
+  // Centre + zoom-fit (cover) the active region so the camera frame keeps
+  // its native aspect and FILLS the FBO; the off-axis is cropped (sampled
+  // from the centre), never letterboxed. With cover scaling (sx,sy >= 1)
+  // the centered coord always stays within [0,1], so there are no bars.
   vec2 centered = (vUv - 0.5) / uLetterbox + 0.5;
-  if (centered.x < 0.0 || centered.x > 1.0 || centered.y < 0.0 || centered.y > 1.0) {
-    outColor = vec4(0.0, 0.0, 0.0, 1.0);
-    return;
-  }
   // Sample with optional horizontal mirror. The webcam frame comes in
   // upside-down relative to GL clip space, but we use UNPACK_FLIP_Y_WEBGL
   // at upload time to fix that — so vUv here is already top-left-origin
@@ -73,6 +72,45 @@ void main() {
   vec4 src = texture(uTex, uv);
   outColor = vec4(src.rgb * uGain, 1.0);
 }`;
+
+/**
+ * Zoom-fit ("cover") UV scale that fits a camera frame of native size
+ * (srcW × srcH) into the engine FBO (fboW × fboH) WITHOUT stretching,
+ * filling the frame edge-to-edge and cropping the overflow on the off-axis.
+ *
+ * Returned (sx, sy) are >= 1 and feed the shader's
+ *   centered = (vUv - 0.5) / (sx, sy) + 0.5
+ * which zooms IN (shrinks the sampled region) on the cropped axis so the
+ * camera always fills the FBO — no black bars. This is the inverse of the
+ * old "contain"/letterbox math (Math.min, scale <= 1) that shrank the feed
+ * and produced top/bottom bars once the pipeline FBO flipped 16:9 → 4:3
+ * while the camera kept requesting a 16:9 stream (regression #270a4441).
+ *
+ * Examples (fbo = 4:3, aspect 1.333):
+ *   16:9 src (1.778) → (1.333, 1.0): crop sides, full height (the webcam case)
+ *    4:3 src (1.333) → (1.0,   1.0): exact fit, no crop
+ *    1:1 src (1.000) → (1.0,   1.333): crop top/bottom, full width
+ *
+ * Degenerate inputs (zero/NaN dimension) fall back to (1, 1) — no scaling.
+ */
+export function cameraCoverScale(
+  srcW: number,
+  srcH: number,
+  fboW: number,
+  fboH: number,
+): { sx: number; sy: number } {
+  if (!(srcW > 0) || !(srcH > 0) || !(fboW > 0) || !(fboH > 0)) {
+    return { sx: 1, sy: 1 };
+  }
+  const fboAspect = fboW / fboH;
+  const srcAspect = srcW / srcH;
+  // Cover: scale the SMALLER-relative axis up so the larger one overflows
+  // and gets cropped. Both factors are >= 1; exactly one is > 1 (or both
+  // equal 1 when the aspects match).
+  const sx = Math.max(1, srcAspect / fboAspect);
+  const sy = Math.max(1, fboAspect / srcAspect);
+  return { sx, sy };
+}
 
 interface CameraParams {
   gain: number;
@@ -284,19 +322,18 @@ export const cameraInputDef: VideoModuleDef = {
         g.uniform1f(uGain,     params.gain);
         g.uniform1f(uMirror,   params.mirror);
 
-        // Aspect-preserving letterbox: fit the camera's native aspect into
-        // the engine FBO (currently 4:3) so a non-4:3 webcam isn't stretched.
-        // Math adapts to ctx.res. Defaults to (1,1) when dimensions are
-        // unknown (idle / pre-stream).
-        let lbX = 1.0;
-        let lbY = 1.0;
-        if (videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
-          const fboAspect = ctx.res.width / ctx.res.height;
-          const srcAspect = videoEl.videoWidth / videoEl.videoHeight;
-          lbX = Math.min(1.0, srcAspect / fboAspect);
-          lbY = Math.min(1.0, fboAspect / srcAspect);
-        }
-        g.uniform2f(uLetterbox, lbX, lbY);
+        // Aspect-preserving ZOOM-FIT (cover): fill the engine FBO (currently
+        // 4:3) with the camera's native aspect, cropping the overflow so a
+        // non-4:3 webcam isn't stretched AND isn't letterboxed with black
+        // bars. Math adapts to ctx.res. Defaults to (1,1) when dimensions
+        // are unknown (idle / pre-stream) — see cameraCoverScale().
+        const { sx, sy } = cameraCoverScale(
+          videoEl?.videoWidth ?? 0,
+          videoEl?.videoHeight ?? 0,
+          ctx.res.width,
+          ctx.res.height,
+        );
+        g.uniform2f(uLetterbox, sx, sy);
 
         if (hasInput && sourceTexture) {
           g.activeTexture(g.TEXTURE0);

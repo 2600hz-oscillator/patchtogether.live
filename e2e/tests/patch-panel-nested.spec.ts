@@ -32,6 +32,7 @@
 
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { REGISTRY } from './_registry';
 
 async function openPanel(page: Page, nodeId: string): Promise<Locator> {
   const trigger = page.locator(
@@ -211,7 +212,7 @@ test.describe('PatchPanel: click-to-expand nested sections', () => {
     await expect(v4Header).toContainText('(13)');
   });
 
-  test('MIXMSTRS: 5 section headers (Ch1..Ch4 + Master) with same expand/collapse behaviour', async ({
+  test('MIXMSTRS: 7 section headers (Ch1..Ch6 + Master) with same expand/collapse behaviour', async ({
     page,
   }) => {
     await page.goto('/');
@@ -226,15 +227,15 @@ test.describe('PatchPanel: click-to-expand nested sections', () => {
     const headers = page.locator(
       `.svelte-flow__node[data-id="mm"] [data-testid="patch-panel-section-toggle"]`,
     );
-    await expect(headers).toHaveCount(5);
+    await expect(headers).toHaveCount(7);
 
     const labels = (await headers.allTextContents()).map((s) => s.trim()).join(' | ');
-    for (const expected of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Master']) {
+    for (const expected of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Ch5', 'Ch6', 'Master']) {
       expect(labels, `header for "${expected}" present`).toContain(expected);
     }
 
     // Default state: every channel collapsed, zero visible rows.
-    for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Master']) {
+    for (const label of ['Ch1', 'Ch2', 'Ch3', 'Ch4', 'Ch5', 'Ch6', 'Master']) {
       expect(await sectionExpanded(page, 'mm', label)).toBe(false);
       expect(await visibleRowCountInSection(page, 'mm', label)).toBe(0);
     }
@@ -340,9 +341,12 @@ test.describe('PatchPanel: click-to-expand nested sections', () => {
       'RIOTGIRLS exposes all 57 handles in the DOM with sections collapsed',
     ).toBe(57);
 
-    // Same check for MIXMSTRS: 12 audio inputs (6 stereo pairs) + 41 CV
-    // inputs (10 params × 4 channels + master_volume) + 6 audio outputs
-    // (master L/R + send1 L/R + send2 L/R) = 59 handle elements.
+    // Same check for MIXMSTRS — every declared port stays in the DOM under
+    // collapsed sections. Derive the expected count from the registry so it
+    // tracks the def (it grew from 4 → 6 channels; hard-coding the number
+    // broke this on that change).
+    const mmDef = REGISTRY.find((m) => m.type === 'mixmstrs')!;
+    const mmExpected = mmDef.inputs.length + mmDef.outputs.length;
     await spawnPatch(page, [
       { id: 'mm', type: 'mixmstrs', position: { x: 200, y: 200 } },
     ]);
@@ -354,8 +358,8 @@ test.describe('PatchPanel: click-to-expand nested sections', () => {
       .count();
     expect(
       mmHandleCount,
-      'MIXMSTRS exposes all 59 handles in the DOM with sections collapsed',
-    ).toBe(59);
+      `MIXMSTRS exposes all ${mmExpected} handles in the DOM with sections collapsed`,
+    ).toBe(mmExpected);
   });
 });
 

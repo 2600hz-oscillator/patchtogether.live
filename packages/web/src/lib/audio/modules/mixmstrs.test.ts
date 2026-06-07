@@ -3,7 +3,8 @@
 // Unit tests for MIXMSTRS:
 //   - the comp macro mapping (added in feat/audio-fidelity-mixmstrs-comp-swolevco),
 //   - the per-channel POST-FADER VU: rmsLevel() + read('levels') (added with the
-//     Electra MIXMASTER meter view — accurate post-fader Faust taps).
+//     Electra MIXMASTER meter view — accurate post-fader Faust taps),
+//   - the 6-channel expansion (ch5/ch6 + 6 VU taps).
 // Spectral / RMS behavior of the actual Faust DSP is covered under
 // art/scenarios/mixmstrs/.
 
@@ -66,23 +67,23 @@ describe('mapCompMacro: per-channel comp knob → (enable, thresh, ratio)', () =
   });
 });
 
-describe('mixmstrsDef: shape adds 4 comp macros + 4 cv ports', () => {
-  it('exposes comp1..comp4 params', () => {
+describe('mixmstrsDef: 6 channels, each with a comp macro + cv port', () => {
+  it('exposes comp1..comp6 params', () => {
     const ids = mixmstrsDef.params.map((p) => p.id);
-    for (const ch of [1, 2, 3, 4]) {
+    for (const ch of [1, 2, 3, 4, 5, 6]) {
       expect(ids, `comp${ch} param exists`).toContain(`comp${ch}`);
     }
   });
 
   it('comp params default to 0 (bypass — preserves existing patches)', () => {
-    for (const ch of [1, 2, 3, 4]) {
+    for (const ch of [1, 2, 3, 4, 5, 6]) {
       const p = mixmstrsDef.params.find((q) => q.id === `comp${ch}`);
       expect(p?.defaultValue, `comp${ch} default`).toBe(0);
     }
   });
 
-  it('exposes comp1..comp4 cv input ports with paramTarget', () => {
-    for (const ch of [1, 2, 3, 4]) {
+  it('exposes comp1..comp6 cv input ports with paramTarget', () => {
+    for (const ch of [1, 2, 3, 4, 5, 6]) {
       const port = mixmstrsDef.inputs.find((p) => p.id === `comp${ch}`);
       expect(port, `comp${ch} input port exists`).toBeDefined();
       expect(port?.type).toBe('cv');
@@ -90,10 +91,10 @@ describe('mixmstrsDef: shape adds 4 comp macros + 4 cv ports', () => {
     }
   });
 
-  it('preserves the original 37 underlying params (existing patches still work)', () => {
+  it('preserves the original ch1..ch4 params (existing patches still work)', () => {
     const ids = mixmstrsDef.params.map((p) => p.id);
     // Spot-check the originals: per-channel thresh/ratio/compEnable,
-    // master_volume.
+    // master_volume. ch1..ch4 ids must NOT change (saved patches reference them).
     for (const ch of [1, 2, 3, 4]) {
       expect(ids).toContain(`ch${ch}_thresh`);
       expect(ids).toContain(`ch${ch}_ratio`);
@@ -102,8 +103,30 @@ describe('mixmstrsDef: shape adds 4 comp macros + 4 cv ports', () => {
     expect(ids).toContain('master_volume');
   });
 
-  it('total param count = 41 (37 originals + 4 comp macros)', () => {
-    expect(mixmstrsDef.params.length).toBe(41);
+  it('adds channels 5 + 6 with the full per-channel chain', () => {
+    const ids = mixmstrsDef.params.map((p) => p.id);
+    for (const ch of [5, 6]) {
+      for (const k of ['volume', 'low', 'mid', 'high', 'thresh', 'ratio', 'compEnable', 'send1', 'send2']) {
+        expect(ids, `ch${ch}_${k}`).toContain(`ch${ch}_${k}`);
+      }
+      expect(ids, `comp${ch}`).toContain(`comp${ch}`);
+    }
+    // ch5/ch6 stereo audio inputs.
+    const inIds = mixmstrsDef.inputs.map((p) => p.id);
+    for (const ch of [5, 6]) {
+      expect(inIds).toContain(`ch${ch}L`);
+      expect(inIds).toContain(`ch${ch}R`);
+    }
+  });
+
+  it('total param count = 61 (55 underlying + 6 comp macros)', () => {
+    expect(mixmstrsDef.params.length).toBe(61);
+  });
+
+  it('exposes exactly 6 patchable outputs (master + sends; VU taps are not ports)', () => {
+    expect(mixmstrsDef.outputs.map((o) => o.id)).toEqual([
+      'masterL', 'masterR', 'send1L', 'send1R', 'send2L', 'send2R',
+    ]);
   });
 });
 
@@ -127,9 +150,9 @@ describe('rmsLevel: pure RMS over a sample window', () => {
 
 // ─────────────────────────────────────────────────────────────────────────
 // read('levels') — drives mixmstrsDef.factory() against a mock Web Audio env.
-// Each of the 4 post-fader meter AnalyserNodes (created in channel order) is
+// Each of the 6 post-fader meter AnalyserNodes (created in channel order) is
 // fed a KNOWN constant buffer, so read('levels') returns a deterministic,
-// ordered number[4] we can assert on (ordering + scale).
+// ordered number[6] we can assert on (ordering + scale).
 // ─────────────────────────────────────────────────────────────────────────
 
 interface FakeAnalyser {
@@ -168,7 +191,7 @@ function makeMockCtx(levels: number[]): unknown {
       disconnect: vi.fn(),
     }),
     createAnalyser: (): FakeAnalyser => {
-      // The factory creates the 4 meter analysers in ch0..ch3 order — tag each
+      // The factory creates the 6 meter analysers in ch0..ch5 order — tag each
       // with its creation index so its buffer carries that channel's level.
       const ch = analyserCount++;
       return {
@@ -202,43 +225,49 @@ describe("mixmstrs factory: read('levels') — post-fader per-channel VU", () =>
   });
   afterEach(() => vi.clearAllMocks());
 
-  it('returns number[4] of the per-channel post-fader RMS levels', async () => {
-    const ctx = makeMockCtx([0.1, 0.2, 0.3, 0.4]);
+  it('returns number[6] of the per-channel post-fader RMS levels', async () => {
+    const ctx = makeMockCtx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     const levels = handle.read?.('levels') as number[];
     expect(Array.isArray(levels)).toBe(true);
-    expect(levels).toHaveLength(4);
+    expect(levels).toHaveLength(6);
     expect(levels[0]).toBeCloseTo(0.1, 6);
     expect(levels[1]).toBeCloseTo(0.2, 6);
     expect(levels[2]).toBeCloseTo(0.3, 6);
     expect(levels[3]).toBeCloseTo(0.4, 6);
+    expect(levels[4]).toBeCloseTo(0.5, 6);
+    expect(levels[5]).toBeCloseTo(0.6, 6);
     handle.dispose?.();
   });
 
   it('preserves channel ORDER (louder channel → higher level at its index)', async () => {
-    // ch3 loudest, ch1 quietest — the returned array must keep that ordering.
-    const ctx = makeMockCtx([0.05, 0.5, 0.9, 0.2]);
+    // ch5 loudest, ch1 quietest — the returned array must keep that ordering.
+    const ctx = makeMockCtx([0.05, 0.5, 0.9, 0.2, 0.95, 0.1]);
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     const levels = handle.read?.('levels') as number[];
+    expect(levels[4]).toBeGreaterThan(levels[2]!); // ch5 > ch3
     expect(levels[2]).toBeGreaterThan(levels[1]!); // ch3 > ch2
     expect(levels[1]).toBeGreaterThan(levels[3]!); // ch2 > ch4
-    expect(levels[3]).toBeGreaterThan(levels[0]!); // ch4 > ch1
+    expect(levels[3]).toBeGreaterThan(levels[5]!); // ch4 > ch6
+    expect(levels[5]).toBeGreaterThan(levels[0]!); // ch6 > ch1
     handle.dispose?.();
   });
 
   it('a silent channel reads 0 (no floor / no leakage from neighbors)', async () => {
-    const ctx = makeMockCtx([0, 0.5, 0, 0.5]);
+    const ctx = makeMockCtx([0, 0.5, 0, 0.5, 0, 0.5]);
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     const levels = handle.read?.('levels') as number[];
     expect(levels[0]).toBe(0);
     expect(levels[2]).toBe(0);
+    expect(levels[4]).toBe(0);
     expect(levels[1]).toBeCloseTo(0.5, 6);
     expect(levels[3]).toBeCloseTo(0.5, 6);
+    expect(levels[5]).toBeCloseTo(0.5, 6);
     handle.dispose?.();
   });
 
-  it('does NOT expose the 4 meter taps as patchable module ports (still 6 outputs)', async () => {
-    const ctx = makeMockCtx([0, 0, 0, 0]);
+  it('does NOT expose the 6 meter taps as patchable module ports (still 6 outputs)', async () => {
+    const ctx = makeMockCtx([0, 0, 0, 0, 0, 0]);
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     const outs = handle.outputs as Map<string, unknown>;
     expect([...outs.keys()].sort()).toEqual(
@@ -248,7 +277,7 @@ describe("mixmstrs factory: read('levels') — post-fader per-channel VU", () =>
   });
 
   it("read() of an unknown key is undefined", async () => {
-    const ctx = makeMockCtx([0, 0, 0, 0]);
+    const ctx = makeMockCtx([0, 0, 0, 0, 0, 0]);
     const handle = await mixmstrsDef.factory(ctx as never, makeMixNode() as never);
     expect(handle.read?.('nope')).toBeUndefined();
     handle.dispose?.();
