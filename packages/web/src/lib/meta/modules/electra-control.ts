@@ -53,7 +53,7 @@ export const electraControlDef: MetaModuleDef = {
   type: ELECTRA_CONTROL_TYPE,
   palette: { top: 'Hybrid', sub: 'Hybrid' }, // sits beside CONTROL SURFACE
   domain: 'meta',
-  label: 'ELECTRA CONTROL',
+  label: 'electra control',
   category: 'tools',
   card: 'ElectraControlCard',
   inputs: [],
