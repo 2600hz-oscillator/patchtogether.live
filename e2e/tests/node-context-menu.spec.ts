@@ -72,6 +72,14 @@ test('node context menu: Unpatch all keeps the node, removes only edges touching
 test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps Docs/Duplicate/Delete', async ({ page }) => {
   // TOYBOX is a node-map module — its in-card combine editor owns disconnects,
   // so the generic card menu's "Unpatch all" is hidden for type==='toybox'.
+  //
+  // TOYBOX is itself a WebGL-heavy card (live video layers + combine editor).
+  // On CI's SwiftShader software renderer at 1024×768 (#662, 2.56× the pixels
+  // of 640×480) its first-paint + menu interaction overruns the default 30s
+  // test budget: the menu DOES open + render correctly (the Unpatch-absent /
+  // Docs / Duplicate assertions pass), but the slow heavy page burns the clock
+  // before the final assertion settles. Give the heavy card headroom.
+  test.setTimeout(90_000);
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
