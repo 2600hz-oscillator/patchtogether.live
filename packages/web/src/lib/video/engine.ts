@@ -19,12 +19,14 @@
 //     without retrofits.
 //
 // Design notes:
-//   - VIDEO_RES is fixed at instantiate time. We render at 1024×768 (4:3,
-//     "768p" — same NTSC/PAL CRT 4:3 aspect, higher backing resolution).
-//     The 4:3 ratio matches the LZX analog-video heritage and DOOM's native
-//     viewport ratio above the status bar; lower-res native sources (SM64's
-//     320×240, DOOM's 640×400) aspect-fit/letterbox into it via ctx.res, so
-//     the axis math is res-adaptive; widescreen sources letterbox left/right.
+//   - The engine renders at a LIVE resolution (`res`, mutable). It defaults to
+//     VIDEO_RES = 1024×768 (4:3, "768p"); the OUTPUT aspect switch flips it
+//     IN PLACE to 1366×768 (16:9) via setResolution() — same height, wider —
+//     without tearing down the engine (the patched OUTPUT survives). 4:3 is the
+//     default + the LZX analog-video heritage / DOOM viewport ratio; lower-res
+//     native sources (SM64's 320×240, DOOM's 640×400) aspect-fit/letterbox into
+//     it via ctx.res, so the axis math is res-adaptive; in 16:9 a 4:3-native
+//     source side-pillarboxes, a 16:9 source fills edge-to-edge.
 //   - We share ONE WebGL2 context + OffscreenCanvas across all video
 //     nodes. Each node has its own FBO + texture. OUTPUT modules
 //     subscribe to a downstream visible <canvas> by exposing a
@@ -41,14 +43,13 @@ import {
   makeEnvelopeFollower,
   type EnvelopeFollower,
 } from './toybox-cv-math';
+import { VIDEO_RES } from './video-res';
 
-/** Resolution of every per-module FBO. 1024×768 (4:3, "768p") keeps the LZX
- *  analog-video 4:3 aspect while rendering the whole pipeline at a sharper
- *  backing resolution (640×480 previously). The 4:3 ratio is unchanged, so
- *  every aspect-fit/letterbox path (DOOM, SM64, widescreen sources) is
- *  identical. Module thumbnails keep their on-card CSS display size — only the
- *  drawing-buffer resolution goes up (the card <canvas> CSS px is pinned). */
-export const VIDEO_RES = { width: 1024, height: 768 } as const;
+/** The 4:3 default render resolution (1024×768, "768p"). Re-exported from
+ *  video-res.ts (the single aspect→res source of truth) so every importer that
+ *  reads `VIDEO_RES` from the engine keeps working; the OUTPUT aspect switch
+ *  flips the LIVE engine res to 1366×768 (16:9) via setResolution. */
+export { VIDEO_RES };
 
 /** Per-module surface — FBO + texture. Output modules can leave `fbo` null
  *  and consume their input textures directly. */
@@ -62,6 +63,29 @@ export interface VideoNodeSurface {
    *  Modules read uniforms + bind any input textures (looked up from the
    *  edge graph) and render a fullscreen quad into `fbo`. */
   draw(ctx: VideoFrameContext): void;
+  /**
+   * Optional: reallocate any size-dependent GL resources the module owns
+   * itself — i.e. EVERYTHING the engine's FBO registry can't resize for it.
+   *
+   * The OUTPUT aspect switch calls VideoEngine.setResolution(w,h) which mutates
+   * the live `ctx.res` in place (so the module's per-frame `ctx.res.*` reads
+   * pick up the new size automatically) and resizes every RGBA8 FBO it minted
+   * via `ctx.createFbo()` (the common case — ~all procedural modules + colour
+   * rings). A module that ALSO owns special buffers the engine doesn't know
+   * about — depth renderbuffers, FLOAT FBOs (createFloatFbo), the video-frame
+   * uploader's downscale canvas, multi-pass oversample targets — implements
+   * this hook to reallocate those at the new (w,h). Mirrors p10entrancer's
+   * per-renderer `(w,h) != lastSize` realloc (../p10entrancer
+   * Mixer/MasterMixerOffscreen.swift). The module is NOT torn down — its
+   * programs, uniform caches, ring head, etc. all survive; only the
+   * size-dependent textures/renderbuffers re-spec. Called AFTER the engine
+   * resizes its registry FBOs (so a depth-RB resize lands on an already-colour-
+   * resized FBO, keeping it complete). Idempotent on the same size.
+   *
+   * Modules with no size-dependent state beyond their `ctx.createFbo()` outputs
+   * omit it entirely.
+   */
+  resize?(width: number, height: number): void;
   /** Tear-down hook. Should release GL resources (textures, framebuffers,
    *  programs the module owns) and any non-GL resources (e.g. `<video>`
    *  elements for INWARDS, `Image` decode buffers for PICTUREBOX). */
@@ -199,15 +223,42 @@ export type VideoModuleFactory = (
  *  basics. */
 export interface VideoEngineContext {
   gl: WebGL2RenderingContext;
+  /**
+   * The engine's LIVE render resolution. Mutated IN PLACE by
+   * VideoEngine.setResolution on an OUTPUT aspect switch (the same object
+   * identity is kept), so a module's per-frame `ctx.res.width/height` reads
+   * always see the current size with no re-plumbing — exactly how the
+   * reference's renderers read `mixer.canvasSize` fresh each frame
+   * (../p10entrancer). Modules MUST read it per-draw, not cache it at
+   * construction, for size-dependent uniforms/viewports.
+   */
   res: { readonly width: number; readonly height: number };
+  /**
+   * Whether the engine is rendering WIDER than the 4:3 default (i.e. the 16:9
+   * aspect). Hungry modules (b3ntb0x's oversampled float passes) read this to
+   * gate heavy-buffer guardrails. OPTIONAL so test-mock contexts (which never
+   * set it) read as false = the default 4:3.
+   */
+  wideActive?: boolean;
   /** Compile + link a fragment-shader program. The vertex shader is
    *  shared across modules — every video module is a fullscreen quad, so
    *  the vertex shader is fixed. Throws on compile/link failure with the
    *  shader log + source for debug. */
   compileFragment(fragSource: string): WebGLProgram;
-  /** Allocate an RGBA8 framebuffer + texture at engine resolution.
-   *  Returns both so the caller can both render-into and sample-from. */
-  createFbo(): { fbo: WebGLFramebuffer; texture: WebGLTexture };
+  /**
+   * Allocate an RGBA8 framebuffer + texture at the engine resolution. Returns
+   * both so the caller can render-into AND sample-from it.
+   *
+   * By default the engine REGISTERS the FBO so it auto-resizes the colour
+   * texture when the aspect switch changes the engine res — the common case for
+   * procedural sources, effects, and colour rings (no per-module resize code
+   * needed). A module that attaches its OWN depth renderbuffer to the FBO (so
+   * the engine resizing only the colour texture would leave the FBO
+   * size-mismatched/incomplete) passes `{ managed: false }` and resizes the
+   * whole FBO itself via its `resize` hook. OPTIONAL `opts` so existing
+   * zero-arg callers are unchanged.
+   */
+  createFbo(opts?: { managed?: boolean }): { fbo: WebGLFramebuffer; texture: WebGLTexture };
   /**
    * Allocate a FLOAT (RGBA16F / RGBA32F) framebuffer + texture at the
    * given size (defaults to engine resolution). Used by modules that need
@@ -289,7 +340,20 @@ export class VideoEngine implements DomainEngine {
    *  context is WebGL2; modules never see the surface type. */
   readonly canvas: OffscreenCanvas | HTMLCanvasElement;
   readonly gl: WebGL2RenderingContext;
-  readonly res = VIDEO_RES;
+  /**
+   * The engine's LIVE render resolution — every per-module FBO + the drawing
+   * buffer. Defaults to VIDEO_RES (1024×768, 4:3) but the OUTPUT aspect switch
+   * mutates it IN PLACE via setResolution (the object identity is preserved so
+   * the VideoEngineContext.res handed to every module factory tracks it for
+   * free). Internally `_res` is mutable; `res` is the (read-only-typed) view
+   * modules see. NOT readonly-rebuilt per toggle — that was the reverted #653
+   * bug (full PatchEngine teardown broke the patched OUTPUT); we reallocate
+   * buffers in place like the reference (../p10entrancer).
+   */
+  private _res: { width: number; height: number };
+  get res(): { readonly width: number; readonly height: number } {
+    return this._res;
+  }
 
   private nodes = new Map<string, VideoNodeHandle>();
   private nodeMeta = new Map<string, ModuleNode>();
@@ -419,7 +483,28 @@ export class VideoEngine implements DomainEngine {
   private copyProgram: WebGLProgram | null = null;
   private copyUTex: WebGLUniformLocation | null = null;
 
-  constructor(opts: { canvas?: OffscreenCanvas | HTMLCanvasElement } = {}) {
+  /**
+   * Registry of engine-minted RGBA8 FBOs (the common `ctx.createFbo()` case),
+   * keyed by the node that owns them, so setResolution can re-spec their colour
+   * textures at the new engine res WITHOUT each procedural module writing its
+   * own resize hook. Unmanaged FBOs (`createFbo({managed:false})` — those with
+   * a module-owned depth renderbuffer) are excluded; their owner resizes them
+   * via the `resize` surface hook. Entries are dropped on removeNode/dispose.
+   */
+  private managedFbos = new Map<string, Array<{ fbo: WebGLFramebuffer; texture: WebGLTexture }>>();
+  /** The node id whose factory is currently running — set in addNode so
+   *  createFboImpl can attribute managed FBOs to the right node. */
+  private currentFactoryNodeId: string | null = null;
+
+  constructor(opts: { canvas?: OffscreenCanvas | HTMLCanvasElement; res?: { width: number; height: number } } = {}) {
+    // Assign _res BEFORE any `this.res.*` read below (the OffscreenCanvas
+    // sizing). Degenerate (0-dim) res falls back to the 4:3 VIDEO_RES so a
+    // caller passing a glitched viewport never produces a 0-sized drawing
+    // buffer.
+    this._res =
+      opts.res && opts.res.width > 0 && opts.res.height > 0
+        ? { width: opts.res.width, height: opts.res.height }
+        : { width: VIDEO_RES.width, height: VIDEO_RES.height };
     if (opts.canvas) {
       this.canvas = opts.canvas;
     } else if (typeof OffscreenCanvas !== 'undefined') {
@@ -463,7 +548,16 @@ export class VideoEngine implements DomainEngine {
         `VideoEngine.addNode: ${String(node.type)} has domain '${def.domain}', not 'video'`,
       );
     }
-    const handle = (def as VideoModuleDef).factory(this.context(), node);
+    // Mark which node's factory is running so createFboImpl attributes its
+    // managed FBOs to it (for setResolution to resize later). Cleared in a
+    // finally so a throwing factory never strands the attribution.
+    this.currentFactoryNodeId = node.id;
+    let handle: VideoNodeHandle;
+    try {
+      handle = (def as VideoModuleDef).factory(this.context(node.id), node);
+    } finally {
+      this.currentFactoryNodeId = null;
+    }
     this.nodes.set(node.id, handle);
     this.nodeMeta.set(node.id, node);
     this.topoStale = true;
@@ -477,6 +571,7 @@ export class VideoEngine implements DomainEngine {
     this.nodes.delete(nodeId);
     this.nodeMeta.delete(nodeId);
     this.mouseState.delete(nodeId);
+    this.managedFbos.delete(nodeId);
     this.topoStale = true;
   }
 
@@ -568,6 +663,92 @@ export class VideoEngine implements DomainEngine {
     h?.attachExternalSource?.(kind, el);
   }
 
+  /** True when the engine is rendering WIDER than the 4:3 default (the 16:9
+   *  aspect). Surfaced to module factories via VideoEngineContext.wideActive so
+   *  hungry modules can gate heavy-buffer guardrails. */
+  get wideActive(): boolean {
+    return this._res.width > VIDEO_RES.width;
+  }
+
+  /**
+   * Switch the engine's internal render resolution IN PLACE — the OUTPUT aspect
+   * switch (4:3 1024×768 ↔ 16:9 1366×768). This is the deliberate alternative to
+   * the reverted #653 approach (which tore down + rebuilt the whole PatchEngine
+   * on every toggle and broke the patched OUTPUT): here the one engine stays
+   * alive — no node re-add, no AudioContext churn, no DOOM/SM64 restart. Mirrors
+   * the reference's per-renderer realloc on a `canvasSize` change
+   * (../p10entrancer).
+   *
+   * Steps (no-op if w/h unchanged):
+   *   1. Mutate `_res` in place — every module's `ctx.res` is the same object,
+   *      so per-frame `ctx.res.*` reads instantly see the new size.
+   *   2. Resize the OffscreenCanvas drawing buffer (the OUTPUT cards blit from
+   *      it, and blitOutputToDrawingBuffer viewports at `res`).
+   *   3. Re-spec every ENGINE-MANAGED RGBA8 FBO's colour texture (the common
+   *      procedural/effect/colour-ring case — auto, no per-module code).
+   *   4. Resize every cross-domain audio→video texture-bridge surface so a
+   *      patched waveform/scope source still fills the new canvas.
+   *   5. Call each module's optional `surface.resize(w,h)` so it reallocates
+   *      its OWN special buffers (depth RBs, FLOAT FBOs, the video-frame
+   *      uploader canvas, oversample passes). Called AFTER (3) so a depth-RB
+   *      resize lands on an already-colour-resized FBO → stays complete.
+   *
+   * Loaded video / images keep playing — their SOURCE textures are untouched;
+   * the next uploaded frame lands at the new res (sharp). Returns true if a
+   * resize happened.
+   */
+  setResolution(width: number, height: number): boolean {
+    const w = Math.max(2, Math.round(width));
+    const h = Math.max(2, Math.round(height));
+    if (w === this._res.width && h === this._res.height) return false;
+
+    // 1. Mutate in place (preserve object identity for ctx.res consumers).
+    this._res.width = w;
+    this._res.height = h;
+
+    // 2. Resize the drawing buffer.
+    try {
+      this.canvas.width = w;
+      this.canvas.height = h;
+    } catch {
+      /* OffscreenCanvas in some jsdom builds is read-only — non-fatal */
+    }
+
+    const gl = this.gl;
+
+    // 3. Re-spec every managed RGBA8 colour texture to the new res. texImage2D
+    //    with null data re-allocates the texture storage; the FBO keeps the
+    //    same texture object so its attachment stays valid.
+    for (const list of this.managedFbos.values()) {
+      for (const { texture } of list) {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, null);
+
+    // 4. Resize cross-domain texture-bridge surfaces (waveform/scope sources).
+    for (const b of this.videoTextureBridges.values()) {
+      if (b.customTexture) {
+        if (b.customCanvas) {
+          try { b.customCanvas.width = w; b.customCanvas.height = h; } catch { /* */ }
+        }
+        gl.bindTexture(gl.TEXTURE_2D, b.customTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      }
+      b.renderer?.resize?.(w, h);
+    }
+    gl.bindTexture(gl.TEXTURE_2D, null);
+
+    // 5. Let each module reallocate its own special buffers at the new res.
+    for (const handle of this.nodes.values()) {
+      try { handle.surface.resize?.(w, h); } catch (e) {
+        console.warn('[VideoEngine] module resize failed during setResolution:', e);
+      }
+    }
+    return true;
+  }
+
   dispose(): void {
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
@@ -588,6 +769,7 @@ export class VideoEngine implements DomainEngine {
     this.nodes.clear();
     this.nodeMeta.clear();
     this.edges.clear();
+    this.managedFbos.clear();
     this.topoOrder = [];
 
     const gl = this.gl;
@@ -1150,12 +1332,21 @@ void main() {
 
   // -------- Shared GL helpers exposed to module factories --------
 
-  context(): VideoEngineContext {
+  /**
+   * Build the per-factory context handed to a module. `ownerNodeId` (set in
+   * addNode while the factory runs) attributes managed `createFbo()` outputs to
+   * the right node so setResolution can resize them. The `res` object is the
+   * engine's LIVE `_res` (same identity), so a module's per-frame reads track
+   * the aspect switch automatically.
+   */
+  context(ownerNodeId?: string | null): VideoEngineContext {
+    const owner = ownerNodeId ?? this.currentFactoryNodeId ?? null;
     return {
       gl: this.gl,
       res: this.res,
+      wideActive: this.wideActive,
       compileFragment: (src) => this.compileFragmentImpl(src),
-      createFbo: () => this.createFboImpl(),
+      createFbo: (opts) => this.createFboImpl(undefined, undefined, opts?.managed ?? true, owner),
       createFloatFbo: (w, h, o) => this.createFloatFboImpl(w, h, o),
       drawFullscreenQuad: () => this.drawFullscreenQuadImpl(),
       audioCtx: this.audioCtx ?? undefined,
@@ -1285,7 +1476,18 @@ void main() {
     return prog;
   }
 
-  private createFboImpl(): { fbo: WebGLFramebuffer; texture: WebGLTexture } {
+  /**
+   * Allocate an RGBA8 FBO + texture. Defaults to the engine res; `managed`
+   * (default true) registers it under `owner` so setResolution re-specs its
+   * colour texture on an aspect switch. `owner` is the node whose factory is
+   * minting it (createFbo passes the addNode-set current node id).
+   */
+  private createFboImpl(
+    width: number = this.res.width,
+    height: number = this.res.height,
+    managed = true,
+    owner: string | null = null,
+  ): { fbo: WebGLFramebuffer; texture: WebGLTexture } {
     const gl = this.gl;
     const tex = gl.createTexture();
     if (!tex) throw new Error('VideoEngine: createTexture failed');
@@ -1294,8 +1496,8 @@ void main() {
       gl.TEXTURE_2D,
       0,
       gl.RGBA8,
-      this.res.width,
-      this.res.height,
+      width,
+      height,
       0,
       gl.RGBA,
       gl.UNSIGNED_BYTE,
@@ -1319,6 +1521,14 @@ void main() {
       gl.deleteTexture(tex);
       gl.deleteFramebuffer(fbo);
       throw new Error(`VideoEngine: framebuffer incomplete: 0x${status.toString(16)}`);
+    }
+    // Register a managed FBO at engine res so setResolution can resize it. We
+    // only register engine-res FBOs (the default w/h path): a managed FBO with
+    // a non-engine size makes no sense (its size wouldn't track the switch).
+    if (managed && owner && width === this.res.width && height === this.res.height) {
+      let list = this.managedFbos.get(owner);
+      if (!list) { list = []; this.managedFbos.set(owner, list); }
+      list.push({ fbo, texture: tex });
     }
     return { fbo, texture: tex };
   }

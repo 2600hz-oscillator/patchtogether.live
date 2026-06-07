@@ -46,10 +46,20 @@
     shouldAutoDownsample,
     type Sm64Snapshot,
   } from '$lib/audio/modules/sm64';
+  import { patch } from '$lib/graph/store';
+  import NativeFillToggle from './NativeFillToggle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+
+  // Per-source fit/fill: SM64 renders 4:3, so the Native badge shows in 4:3 +
+  // the fit/fill toggle appears in 16:9 (Mario pillarboxes by default).
+  let fillMode = $derived<number>((node?.params?.fillMode as number | undefined) ?? 0);
+  function setFillMode(v: number): void {
+    const target = patch.nodes[id];
+    if (target) target.params.fillMode = v;
+  }
 
   const inputs: PortDescriptor[] = [
     { id: 'stick_x_cv',   label: 'STICK X',     cable: 'cv' },
@@ -564,6 +574,11 @@
       {/if}
     </div>
 
+    <div class="sm64-fit-row" data-testid="sm64-fit-row">
+      <span class="sm64-fit-label">OUTPUT FIT</span>
+      <NativeFillToggle {fillMode} srcAspect={4 / 3} onchange={setFillMode} />
+    </div>
+
     <!-- Off-screen scaffolding the bundle's index.js touches but the user
          never sees. Kept hidden inside the card (rather than the global
          <body>) so multiple SM64 cards in dev hot-reload don't dup the
@@ -582,6 +597,20 @@
 
 <style>
   .sm64-card { width: 320px; min-height: 420px; }
+  .sm64-fit-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 6px 0 2px;
+  }
+  .sm64-fit-label {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-family: ui-monospace, monospace;
+  }
   .sm64-card .game-area {
     position: relative;
     display: flex;

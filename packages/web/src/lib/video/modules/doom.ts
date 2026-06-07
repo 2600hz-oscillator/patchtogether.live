@@ -47,6 +47,7 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { aspectFitScale } from '$lib/video/video-res';
 import { DoomRuntime, type DoomTiccmd } from '$lib/doom/doom-runtime';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
 import {
@@ -145,10 +146,14 @@ void main() {
 // deterministic.
 interface DoomParams {
   audioGain: number;   // 0..2, multiplier applied at the audio bridge (PCM zero-clipped under stereo PCM stub)
+  fillMode: number;    // 0 = letterbox/pillarbox (DEFAULT — preserves aspect), 1 = fill (cover-crop)
 }
 
 const DEFAULTS: DoomParams = {
   audioGain: 1.0,
+  // Letterbox by default — a fixed-native 8:5 source pillarboxes in a wider
+  // 16:9 canvas (the aspect-preserving choice). Per-source toggle to fill.
+  fillMode: 0,
 };
 
 /** Handle-extras: card-facing handle for the runtime + input feedback.
@@ -354,6 +359,7 @@ export const doomDef: VideoModuleDef = {
   ],
   params: [
     { id: 'audioGain', label: 'Gain', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
+    { id: 'fillMode', label: 'Fill', defaultValue: DEFAULTS.fillMode, min: 0, max: 1, curve: 'discrete' },
     // Synthetic params for the CV edge detector — one per (slot, gate) port.
     // Hidden from the card (the gate inputs render as cv-jacks via the standard
     // port-row, and only the local viewer's own group is shown). curve='linear'
@@ -393,10 +399,10 @@ export const doomDef: VideoModuleDef = {
     // fitting 1.6:1 DOOM content: width fills (U=1.0), height shrinks to
     // fboAspect/doomAspect ≈ 0.833 (thin black bars top + bottom). For a
     // 16:9 FBO (fboAspect=1.78) the axes swap — U≈0.9, V=1.0 (side bars).
-    const fboAspect = ctx.res.width / ctx.res.height;
+    // DOOM's native viewport aspect (8:5). The (sx,sy) fit scale is computed
+    // LIVE in draw() from ctx.res + the fillMode param so it tracks the OUTPUT
+    // aspect switch (a 4:3-vs-16:9 canvas swaps which axis bars).
     const doomAspect = 640 / 400;
-    const letterboxU = Math.min(1.0, doomAspect / fboAspect);
-    const letterboxV = Math.min(1.0, fboAspect / doomAspect);
 
     const sourceTex = gl.createTexture();
     if (!sourceTex) throw new Error('DOOM: createTexture failed');
@@ -821,7 +827,14 @@ export const doomDef: VideoModuleDef = {
         g.bindTexture(g.TEXTURE_2D, sourceTex);
         g.uniform1i(uTex, 0);
         g.uniform1f(uHasFrame, hasFrame ? 1.0 : 0.0);
-        g.uniform2f(uLetterbox, letterboxU, letterboxV);
+        // Live aspect fit: letterbox/pillarbox (default) or fill (cover-crop),
+        // tracking the OUTPUT aspect (ctx.res) + the per-source fillMode param.
+        const { sx, sy } = aspectFitScale(
+          doomAspect,
+          ctx.res.width / ctx.res.height,
+          params.fillMode >= 0.5 ? 'fill' : 'letterbox',
+        );
+        g.uniform2f(uLetterbox, sx, sy);
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);
       },

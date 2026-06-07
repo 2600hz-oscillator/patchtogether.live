@@ -111,11 +111,21 @@
   } from '$lib/doom/doom-gating';
   import { shouldOpenMultiplayer, guestWaitingState } from '$lib/doom/doom-session';
   import ModuleTitle from './ModuleTitle.svelte';
+  import NativeFillToggle from './NativeFillToggle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
   const providerCtx = useProvider();
+
+  // Per-source fit/fill: DOOM's viewport is fixed 8:5; the Native badge never
+  // matches the output, so the fit/fill toggle is always shown (letterbox by
+  // default — Mario-style pillarbox in 16:9).
+  let fillMode = $derived<number>((node?.params?.fillMode as number | undefined) ?? 0);
+  function setFillMode(v: number): void {
+    const target = patch.nodes[id];
+    if (target) target.params.fillMode = v;
+  }
 
   // ---- UI / lifecycle state ----
   let cardEl: HTMLDivElement | null = $state(null);
@@ -2400,6 +2410,11 @@
     </div>
   {/if}
 
+  <div class="doom-fit-row" data-testid="doom-fit-row">
+    <span class="doom-fit-label">OUTPUT FIT</span>
+    <NativeFillToggle {fillMode} srcAspect={640 / 400} onchange={setFillMode} />
+  </div>
+
   <footer class="hint">
     {#if memberIds.length > 1}
       <small data-testid="doom-member-hint">
@@ -2425,6 +2440,20 @@
 </div>
 
 <style>
+  .doom-fit-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 4px 0 2px;
+  }
+  .doom-fit-label {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-family: ui-monospace, monospace;
+  }
   .doom-card {
     width: 360px;
     min-height: 320px;

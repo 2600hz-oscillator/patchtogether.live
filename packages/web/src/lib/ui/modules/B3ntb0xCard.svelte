@@ -31,6 +31,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import { b3ntb0xDef } from '$lib/video/modules/b3ntb0x';
   import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
+  import { liveEngineAspect } from './video-card-aspect';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -116,7 +117,10 @@
    *  Do NOT re-impose any other aspect — the 4:3 active area + overscan +
    *  barrel live inside the CRT shader. */
   function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
-    const SRC = ENGINE_W / ENGINE_H;
+    // Letterbox at the LIVE engine aspect (mirrored into engineW/engineH each
+    // rAF) so the in-rack thumbnail tracks a 4:3 ↔ 16:9 OUTPUT switch — not the
+    // stale compile-time VIDEO_RES constant.
+    const SRC = liveEngineAspect({ canvas: { width: engineW, height: engineH } });
     const dstAspect = cw / ch;
     if (dstAspect > SRC) {
       const h = ch;

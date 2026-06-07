@@ -30,7 +30,11 @@ describe('sm64 module def', () => {
     const outPort = sm64Def.outputs.find((p) => p.id === 'out');
     expect(outPort, 'sm64 must expose an `out` video output port').toBeDefined();
     expect(outPort!.type).toBe('video');
-    expect(sm64Def.params.length).toBe(0);
+    // One param: the per-source OUTPUT fit/fill toggle (0 = letterbox default).
+    expect(sm64Def.params.map((p) => p.id)).toEqual(['fillMode']);
+    const fillMode = sm64Def.params.find((p) => p.id === 'fillMode')!;
+    expect(fillMode.defaultValue).toBe(0);
+    expect(fillMode.curve).toBe('discrete');
 
     const inputIds = sm64Def.inputs.map((p) => p.id).sort();
     expect(inputIds).toEqual(

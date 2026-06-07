@@ -216,9 +216,20 @@ export const sm64Def: AudioModuleDef = {
   outputs: [
     { id: 'out', type: 'video' },
   ],
-  params: [],
+  params: [
+    // Per-source fit into the OUTPUT canvas: 0 = letterbox/pillarbox (DEFAULT,
+    // aspect-preserving — Mario stays 4:3), 1 = fill (cover-crop). Persists in
+    // the Y.Doc + rides the performance bundle via the standard param path.
+    { id: 'fillMode', label: 'Fill', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+  ],
 
   async factory(_ctx, _node): Promise<AudioDomainNodeHandle> {
+    // Live param store (only fillMode today). Seeded from the node + driven by
+    // setParam, read by drawFrame for the per-source fit decision.
+    const params: Record<string, number> = {
+      fillMode: 0,
+      ...(_node.params as Record<string, number>),
+    };
     // ---- CV-stick analyser taps ----------------------------------------
     // Two AnalyserNodes (one per axis) read the latest sample at scheduler-
     // tick rate. Same fftSize:32 / smoothingTimeConstant:0 pattern as
@@ -320,14 +331,19 @@ export const sm64Def: AudioModuleDef = {
       c2d.fillRect(0, 0, tw, th);
       const srcAspect = sw / sh;
       const dstAspect = tw / th;
+      const fill = params.fillMode >= 0.5;
       let drawW: number;
       let drawH: number;
-      if (srcAspect > dstAspect) {
-        // Source wider than target → fit width, letterbox top/bottom.
+      // LETTERBOX (default): the smaller-fitting axis wins → bars on the other.
+      // FILL (cover): the larger-fitting axis wins → the off-axis overflows +
+      // is cropped (drawImage clips to the canvas), so the source covers the
+      // whole canvas with no bars, aspect preserved.
+      if ((srcAspect > dstAspect) !== fill) {
+        // letterbox+wider OR fill+taller → fit WIDTH.
         drawW = tw;
         drawH = Math.round(tw / srcAspect);
       } else {
-        // Source taller than target → fit height, letterbox left/right.
+        // letterbox+taller OR fill+wider → fit HEIGHT.
         drawH = th;
         drawW = Math.round(th * srcAspect);
       }
@@ -468,8 +484,12 @@ export const sm64Def: AudioModuleDef = {
       videoSources: new Map([
         ['out', { analyser: vidAnalyser, sampleRate: _ctx.sampleRate, drawFrame }],
       ]),
-      setParam(_paramId, _value) { /* no params */ },
-      readParam(_paramId) { return undefined; },
+      setParam(paramId, value) {
+        if (paramId in params) params[paramId] = value;
+      },
+      readParam(paramId) {
+        return params[paramId];
+      },
       read(key) {
         if (key === 'snapshot') {
           const w = globalThis as unknown as {

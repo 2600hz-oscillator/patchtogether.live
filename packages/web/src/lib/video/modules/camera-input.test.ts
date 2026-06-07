@@ -44,10 +44,18 @@ describe('CAMERA — module def shape', () => {
     expect(out?.type).toBe('video');
   });
 
-  it('declares the three documented params with documented ranges', () => {
+  it('declares the documented params with documented ranges', () => {
     const def = getVideoModuleDef('cameraInput')!;
     const ids = def.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['enabled', 'gain', 'mirror']);
+    expect(ids).toEqual(['enabled', 'fillMode', 'gain', 'mirror']);
+
+    // Per-source fit/fill: discrete, defaults to FILL (1 = cover-crop, the
+    // existing camera behaviour — never letterbox the live feed by default).
+    const fillMode = def.params.find((p) => p.id === 'fillMode')!;
+    expect(fillMode.curve).toBe('discrete');
+    expect(fillMode.defaultValue).toBe(1);
+    expect(fillMode.min).toBe(0);
+    expect(fillMode.max).toBe(1);
 
     const gain = def.params.find((p) => p.id === 'gain')!;
     expect(gain.min).toBe(0);

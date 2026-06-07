@@ -166,6 +166,9 @@ export interface WaveformRenderer {
    *  they were using a different one — the engine's per-module draw()
    *  contract already restores after each module's pass. */
   draw(width: number, height: number): void;
+  /** Re-spec the output texture to (width, height) — the OUTPUT aspect switch.
+   *  The next draw() viewports + re-renders the trace at the new size. */
+  resize(width: number, height: number): void;
   /** Tear down GL objects. Idempotent. */
   dispose(): void;
 }
@@ -316,6 +319,16 @@ export function createWaveformRenderer(
       gl.bindVertexArray(null);
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    },
+    resize(width: number, height: number): void {
+      const w = Math.max(2, Math.round(width));
+      const h = Math.max(2, Math.round(height));
+      // Re-spec the output colour texture; the FBO keeps the same texture
+      // object so its attachment stays valid. The next draw() viewports at the
+      // new dims and re-renders the trace.
+      gl.bindTexture(gl.TEXTURE_2D, outTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
     },
     dispose(): void {
       try { gl.deleteVertexArray(vao); } catch { /* */ }

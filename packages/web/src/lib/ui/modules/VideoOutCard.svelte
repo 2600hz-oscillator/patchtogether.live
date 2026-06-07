@@ -46,6 +46,7 @@
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
   import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
+  import { liveEngineAspect } from './video-card-aspect';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -166,7 +167,10 @@
    *  source drawn into a (cw, ch) canvas. Returns top-left (x, y) and
    *  width/height of the letterbox-fit area. */
   function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
-    const srcAspect = ENGINE_W / ENGINE_H;
+    // Letterbox at the LIVE engine aspect (mirrored into engineW/engineH each
+    // rAF) so the in-rack thumbnail tracks a 4:3 ↔ 16:9 OUTPUT switch — not the
+    // stale compile-time VIDEO_RES constant.
+    const srcAspect = liveEngineAspect({ canvas: { width: engineW, height: engineH } });
     const dstAspect = cw / ch;
     if (dstAspect > srcAspect) {
       // Destination is wider than source: letterbox left/right.

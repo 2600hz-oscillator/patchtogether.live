@@ -23,6 +23,10 @@ import {
   sanitizeFilename,
   ENVELOPE_VERSION,
   DEFAULT_FILENAME,
+  readVideoAspectFromDoc,
+  writeVideoAspectToDoc,
+  SETTINGS_MAP_KEY,
+  SETTINGS_VIDEO_ASPECT,
   type LivePatch,
 } from './persistence';
 import { setNodePosition } from '$lib/multiplayer/layouts';
@@ -1072,5 +1076,59 @@ describe('persistence: portable performance snapshot (per-user layout baking)', 
 
     expect(dest.store.nodes['vco']!.position).toEqual({ x: 50, y: 60 });
     expect(dest.ydoc.getMap('layouts').size).toBe(0);
+  });
+});
+
+describe('persistence: OUTPUT aspect (videoAspect settings entry)', () => {
+  it('read/write round-trips through the settings map', () => {
+    const { ydoc } = freshPatch();
+    expect(readVideoAspectFromDoc(ydoc)).toBeUndefined();
+    writeVideoAspectToDoc(ydoc, '16:9');
+    expect(readVideoAspectFromDoc(ydoc)).toBe('16:9');
+    expect(ydoc.getMap(SETTINGS_MAP_KEY).get(SETTINGS_VIDEO_ASPECT)).toBe('16:9');
+    writeVideoAspectToDoc(ydoc, '4:3');
+    expect(readVideoAspectFromDoc(ydoc)).toBe('4:3');
+  });
+
+  it('coerces garbage / missing values to undefined (caller defaults 4:3)', () => {
+    const { ydoc } = freshPatch();
+    ydoc.getMap(SETTINGS_MAP_KEY).set(SETTINGS_VIDEO_ASPECT, 'banana');
+    expect(readVideoAspectFromDoc(ydoc)).toBeUndefined();
+  });
+
+  it('save@16:9 → reload restores videoAspect into the loaded doc + result', () => {
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['out'] = {
+        id: 'out', type: 'analogVco', domain: 'audio',
+        position: { x: 0, y: 0 }, params: { tune: 0 },
+      };
+    });
+    writeVideoAspectToDoc(src.ydoc, '16:9');
+
+    const env = makeEnvelope(src.ydoc);
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(parseEnvelope(serializeEnvelope(env)), dest.ydoc, dest.store);
+
+    // The load result surfaces the aspect for the caller (Canvas → store/engine).
+    expect(result.videoAspect).toBe('16:9');
+    // …and it's restored into the live doc (re-syncs + persists on next save).
+    expect(readVideoAspectFromDoc(dest.ydoc)).toBe('16:9');
+  });
+
+  it('legacy patch (no settings) → result.videoAspect undefined (load → 4:3)', () => {
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['out'] = {
+        id: 'out', type: 'analogVco', domain: 'audio',
+        position: { x: 0, y: 0 }, params: { tune: 0 },
+      };
+    });
+    // No writeVideoAspectToDoc — a pre-aspect-switch patch.
+    const env = makeEnvelope(src.ydoc);
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(parseEnvelope(serializeEnvelope(env)), dest.ydoc, dest.store);
+    expect(result.videoAspect).toBeUndefined();
+    expect(readVideoAspectFromDoc(dest.ydoc)).toBeUndefined();
   });
 });

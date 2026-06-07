@@ -19,17 +19,19 @@
 //     per-tick check gated on `currentTime` advancing (don't re-upload an
 //     unchanged frame).
 //
-//  2. Downscale to engine resolution. The whole video pipeline runs at a
-//     fixed VIDEO_RES (1024x768) — every module FBO is that size and the
-//     `out` texture is consumed at engine res downstream. Uploading a
-//     1920x1080 frame just to have the GPU minify it during the fullscreen
-//     quad is pure waste. We draw the decoded frame into an OffscreenCanvas
-//     sized to the engine resolution once per new frame and upload THAT
-//     (less pixel data for 1080p -> 1024x768). As a side benefit the
-//     upload source becomes a <canvas>, which tolerates texSubImage2D in
-//     this WebGL2 context (the <video> source is what raised
-//     GL_INVALID_OPERATION in PR #288), so after the first allocate we use
-//     texSubImage2D — same texture object, no re-spec.
+//  2. Scale to the UPLOAD target res. The pipeline runs at the engine res; we
+//     draw the decoded frame into an OffscreenCanvas sized to the upload
+//     target and upload THAT (a <canvas> source tolerates texSubImage2D in
+//     this WebGL2 context — the <video> source is what raised
+//     GL_INVALID_OPERATION in PR #288 — so after the first allocate we
+//     texSubImage2D the same texture object, no re-spec).
+//
+//     OUTPUT aspect switch + the "video looks pixelly" fix: the upload target
+//     tracks the engine res (resizable via setSize). At 4:3 it's 1024×768; at
+//     16:9 it's 1366×768 so a loaded video/webcam uploads at the wider res and
+//     the output stays sharp — not an upscale. We never upscale ABOVE the
+//     source frame's own resolution — uploading more pixels than the source has
+//     buys nothing — so the target is min(target, sourceRes).
 //
 // The helper is DOM-light: it only touches the <video> element it's handed
 // and an OffscreenCanvas it owns. No engine internals beyond the GL context
@@ -68,6 +70,10 @@ export interface VideoFrameUploader {
   readonly rvfcSupported: boolean;
   /** Total number of GPU texture uploads performed (instrumentation). */
   readonly uploadCount: number;
+  /** Change the upload target resolution (the OUTPUT aspect switch). The next
+   *  upload re-allocates the downscale canvas + re-specs the texture at the new
+   *  size (capped at the source frame's own res). Idempotent on the same size. */
+  setSize(width: number, height: number): void;
   /** Bind a <video> element + start tracking new decoded frames. Replaces
    *  any previously attached element. */
   attach(videoEl: HTMLVideoElement): void;
@@ -84,7 +90,17 @@ export interface VideoFrameUploader {
 export function createVideoFrameUploader(
   opts: VideoFrameUploaderOpts,
 ): VideoFrameUploader {
-  const { gl, width, height } = opts;
+  const { gl } = opts;
+  // The TARGET (engine-derived) upload res — mutable so the aspect switch can
+  // re-target it via setSize. The ACTUAL per-frame upload dims are the min of
+  // this and the source frame's own res (never upscale above the source).
+  let targetWidth = Math.max(2, Math.round(opts.width));
+  let targetHeight = Math.max(2, Math.round(opts.height));
+  // The dims the downscale canvas + texture are currently allocated at; tracked
+  // so we re-spec only when they actually change (a setSize, or a source whose
+  // res caps below the target).
+  let canvasWidth = 0;
+  let canvasHeight = 0;
 
   let videoEl: HTMLVideoElement | null = null;
   let texture: WebGLTexture | null = null;
@@ -109,26 +125,45 @@ export function createVideoFrameUploader(
     | CanvasRenderingContext2D
     | null = null;
 
-  function ensureCanvas(): boolean {
-    if (canvas2d) return true;
+  /** Ensure the downscale canvas exists + is sized to (w, h). Re-sizes an
+   *  existing canvas in place when the upload dims change (setSize / a smaller
+   *  source). Sets `canvasWidth/Height` to the live dims; returns false only
+   *  when no canvas surface is available in this runtime. */
+  function ensureCanvas(w: number, h: number): boolean {
+    if (canvas2d && canvas) {
+      if (canvasWidth !== w || canvasHeight !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        canvasWidth = w;
+        canvasHeight = h;
+        // Texture must re-spec to the new size on the next upload (texSubImage2D
+        // can't change dims) — drop the allocated flag so we texImage2D again.
+        texAllocated = false;
+      }
+      return true;
+    }
     if (typeof OffscreenCanvas !== 'undefined') {
-      const c = new OffscreenCanvas(width, height);
+      const c = new OffscreenCanvas(w, h);
       const ctx = c.getContext('2d');
       if (!ctx) return false;
       canvas = c;
       canvas2d = ctx;
+      canvasWidth = w;
+      canvasHeight = h;
       return true;
     }
     // No OffscreenCanvas (very old runtime / certain jsdom). Fall back to a
     // DOM canvas if a document exists; otherwise we can't downscale.
     if (typeof document !== 'undefined') {
       const c = document.createElement('canvas');
-      c.width = width;
-      c.height = height;
+      c.width = w;
+      c.height = h;
       const ctx = c.getContext('2d');
       if (!ctx) return false;
       canvas = c;
       canvas2d = ctx;
+      canvasWidth = w;
+      canvasHeight = h;
       return true;
     }
     return false;
@@ -188,6 +223,20 @@ export function createVideoFrameUploader(
       return uploadCount;
     },
 
+    setSize(w: number, h: number): void {
+      const nw = Math.max(2, Math.round(w));
+      const nh = Math.max(2, Math.round(h));
+      if (nw === targetWidth && nh === targetHeight) return;
+      targetWidth = nw;
+      targetHeight = nh;
+      // Force the next ready frame to re-upload at the new target (the canvas +
+      // texture re-spec lazily in ensureCanvas/uploadIfReady). A paused source
+      // (currentTime unchanged, no rVFC tick) wouldn't otherwise re-upload, so
+      // arm BOTH the rVFC dirty flag and the fallback's currentTime sentinel.
+      frameDirty = true;
+      lastUploadedTime = -1;
+    },
+
     attach(el: HTMLVideoElement): void {
       detachRvfc();
       videoEl = el ?? null;
@@ -227,18 +276,27 @@ export function createVideoFrameUploader(
       // ever uploaded one (otherwise there's nothing valid to sample).
       if (!isNewFrame) return texAllocated;
 
-      if (!ensureCanvas() || !canvas2d || !canvas) {
+      // Upload dims = the target res, CAPPED at the source frame's own res
+      // (uploading more pixels than the source has buys nothing). For a small
+      // source it's the source's own size. Even-rounded ≥ 2.
+      const srcW = videoEl.videoWidth;
+      const srcH = videoEl.videoHeight;
+      let upW = Math.min(targetWidth, srcW);
+      let upH = Math.min(targetHeight, srcH);
+      upW = Math.max(2, upW - (upW & 1));
+      upH = Math.max(2, upH - (upH & 1));
+
+      if (!ensureCanvas(upW, upH) || !canvas2d || !canvas) {
         // Can't downscale (no canvas surface). Bail to idle rather than
         // re-introducing the full-res per-frame texImage2D(<video>) path.
         return texAllocated;
       }
 
-      // Downscale the decoded frame into the engine-resolution canvas. The
-      // video frame is drawn flipped here? No — we keep the canvas the same
-      // orientation as the source and use UNPACK_FLIP_Y_WEBGL on upload, so
-      // the shader's top-left-origin sampling stays upright (#282).
+      // Scale the decoded frame into the upload-res canvas. We keep the canvas
+      // the same orientation as the source and use UNPACK_FLIP_Y_WEBGL on
+      // upload so the shader's top-left-origin sampling stays upright (#282).
       try {
-        canvas2d.drawImage(videoEl, 0, 0, width, height);
+        canvas2d.drawImage(videoEl, 0, 0, canvasWidth, canvasHeight);
       } catch (err) {
         // drawImage can throw if the element briefly has no current frame
         // (mid-seek). Skip this tick; keep the last good texture.

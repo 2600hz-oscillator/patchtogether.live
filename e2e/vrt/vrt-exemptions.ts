@@ -912,4 +912,11 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/edge-luma',
   'linux/edge-diff',
   'linux/edge-iris',
+  // OUTPUT aspect 16:9 preview card (vrt-aspect-16x9.spec.ts): darwin baseline
+  // captured locally; linux pending a `vrt-update.yml` workflow_dispatch on
+  // linux CI. WebGL blit/AA differs sub-thresholdly across GPU drivers. The
+  // in-place engine realloc + LINES→OUTPUT survival is covered functionally by
+  // e2e/tests/video-aspect-switch.spec.ts; the geometry math by
+  // video-res.test.ts.
+  'linux/aspect16x9-output',
 ]);

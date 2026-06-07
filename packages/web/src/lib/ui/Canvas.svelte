@@ -4,7 +4,7 @@
   // Click "Load example" → patch graph populates → Svelte Flow renders cards →
   // reconciler instantiates engine nodes → audio plays. Twiddle a knob →
   // patch graph mutates → reconciler calls engine.setParam → audible change.
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import {
     SvelteFlow,
     Background,
@@ -27,6 +27,9 @@
     sanitizeFilename,
     DEFAULT_FILENAME,
     EnvelopeParseError,
+    readVideoAspectFromDoc,
+    writeVideoAspectToDoc,
+    SETTINGS_MAP_KEY,
     type PatchEnvelope,
   } from '$lib/graph/persistence';
   import {
@@ -144,6 +147,8 @@
     type RemoteGroupBuilding,
   } from '$lib/multiplayer/group-building-presence';
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
+  import AspectToggle from '$lib/ui/AspectToggle.svelte';
+  import { videoAspectStore } from '$lib/ui/video-aspect-store.svelte';
   import ElectraConnectButton from '$lib/ui/ElectraConnectButton.svelte';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
@@ -3522,8 +3527,16 @@
         // but keep the audio path alive — this lets the existing audio
         // demo run on browsers that lack WebGL2.
         try {
-          e.registerDomain(new VideoEngine());
-          trace('video engine registered');
+          // Construct at the aspect store's current res — so an aspect picked
+          // before boot (e.g. restored from a loaded patch via the doc) lands
+          // at the right size from the first frame. 4:3 by default.
+          const ve = new VideoEngine({ res: videoAspectStore.engineRes });
+          e.registerDomain(ve);
+          // Wire the store ↔ engine: set() drives an IN-PLACE realloc (NOT a
+          // teardown — the patched OUTPUT survives the switch). The applier
+          // also runs once now to apply the boot res.
+          videoAspectStore.setEngineApplier((res) => ve.setResolution(res.width, res.height));
+          trace(`video engine registered (res=${ve.res.width}x${ve.res.height})`);
         } catch (videoErr) {
           console.warn('[canvas] video engine unavailable:', videoErr);
           trace(`video engine unavailable: ${videoErr instanceof Error ? videoErr.message : videoErr}`);
@@ -3867,7 +3880,37 @@
   // ---------------- MiniMap toggle ----------------
   let minimapOpen = $state(true);
 
+  // ---------------- OUTPUT aspect (4:3/16:9) ↔ Y.Doc sync ----------------
+  //
+  // The canonical persisted value lives in the patch Y.Doc settings map (rides
+  // save/load + perf export + multiplayer). The videoAspectStore is the reactive
+  // reflection the topbar pill binds to + the bridge to VideoEngine. Here we:
+  //   - register the persister (store.set → write the doc),
+  //   - observe the doc settings map (remote edit / patch load) → reflect into
+  //     the store WITHOUT re-persisting (avoids a write loop),
+  //   - seed the store from the doc on mount (a rack that already has an aspect).
+  let videoAspectObserver: (() => void) | null = null;
+  onMount(() => {
+    const settings = ydoc.getMap(SETTINGS_MAP_KEY);
+    // Persister: store.set(aspect) writes it into the doc under LOCAL_ORIGIN.
+    videoAspectStore.setPersist((aspect) => writeVideoAspectToDoc(ydoc, aspect, LOCAL_ORIGIN));
+    // Reflect the doc → store (no re-persist) on any settings change.
+    const onSettings = () => {
+      const a = readVideoAspectFromDoc(ydoc);
+      if (a && a !== videoAspectStore.aspect) videoAspectStore.set(a, /*persist*/ false);
+    };
+    settings.observe(onSettings);
+    videoAspectObserver = () => settings.unobserve(onSettings);
+    // Seed from the doc (a rack that already carries an aspect, e.g. a
+    // collaborator joining a 16:9 rack). Legacy / fresh racks stay 4:3.
+    onSettings();
+  });
+
   onDestroy(() => {
+    videoAspectObserver?.();
+    videoAspectObserver = null;
+    videoAspectStore.setEngineApplier(null);
+    videoAspectStore.setPersist(null);
     reconciler?.dispose();
     engine?.dispose();
     setActiveEngine(null); // clear the non-context engine ref on unmount
@@ -3943,6 +3986,7 @@
         data-testid="load-perf-zip-btn"
         title="Load a portable performance .zip into a fresh rack — restores the patch + ALL embedded media + mappings on any machine (no re-pick needed)."
       >Load Perf (.zip)</button>
+      <AspectToggle />
       <SkinSwitcher />
       <!-- Electra One on EVERY rack (incl. the anonymous `/` scratch canvas) —
            the flow only needs the patch store + active engine, both present on

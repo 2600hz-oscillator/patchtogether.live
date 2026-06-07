@@ -79,6 +79,20 @@ export const OVERSAMPLE = 8;
  *  the demod loop to integrate over while staying cheap. */
 export const SUBCARRIER_PERIOD = 4;
 
+/**
+ * The oversampled-width of the encode/bend FLOAT FBOs, given a base width and
+ * the GPU's MAX_TEXTURE_SIZE. `baseWidth · OVERSAMPLE`, clamped to maxTexSize so
+ * a wide base never exceeds the GPU's cap: in 16:9 the base is 1366, so
+ * 1366·8 = 10928 px exceeds an 8192-cap GPU (and approaches the common 16384
+ * limit) → framebuffer-incomplete / context loss. This clamp is the #1 wide-
+ * aspect correctness guardrail and is ALWAYS applied. Pure + GL-free for unit
+ * testing. */
+export function b3ntb0xOsWidth(baseWidth: number, maxTexSize: number): number {
+  const want = Math.max(1, Math.round(baseWidth)) * OVERSAMPLE;
+  const cap = maxTexSize > 0 ? maxTexSize : 4096;
+  return Math.min(want, cap);
+}
+
 // ---------- pure mirror re-exports (shared with the unit test) ----------
 
 export {
@@ -651,12 +665,19 @@ export const b3ntb0xDef: VideoModuleDef = {
     // provides it; assert here rather than degrade silently.
     if (!ctx.createFloatFbo) throw new Error('B3NTB0X: engine ctx lacks createFloatFbo');
     const createFloatFbo = ctx.createFloatFbo.bind(ctx);
-    const osWidth = ctx.res.width * OVERSAMPLE;
-    const fboEncode = createFloatFbo(osWidth, ctx.res.height, { filter: 'nearest' });
-    const fboBendA = createFloatFbo(osWidth, ctx.res.height, { filter: 'nearest' });
-    const fboBendB = createFloatFbo(osWidth, ctx.res.height, { filter: 'nearest' });
+    // The 8× oversampled float passes are the VRAM hogs + the wide-aspect risk.
+    // osWidth is ALWAYS clamped to the GPU's MAX_TEXTURE_SIZE (1366·8 = 10928 >
+    // 8192 on a cap'd GPU in 16:9). osWidth/osHeight are MUTABLE so the OUTPUT
+    // aspect switch (surface.resize) can rebuild the float FBOs at the new size;
+    // draw() reads them live for the viewport.
+    const maxTex = (gl.getParameter(gl.MAX_TEXTURE_SIZE) as number) || 4096;
+    let osWidth = b3ntb0xOsWidth(ctx.res.width, maxTex);
+    let osHeight = ctx.res.height;
+    let fboEncode = createFloatFbo(osWidth, osHeight, { filter: 'nearest' });
+    let fboBendA = createFloatFbo(osWidth, osHeight, { filter: 'nearest' });
+    let fboBendB = createFloatFbo(osWidth, osHeight, { filter: 'nearest' });
     // True iff the GPU could give us real float targets (else reduced precision).
-    const isFloat = fboEncode.isFloat && fboBendA.isFloat && fboBendB.isFloat;
+    let isFloat = fboEncode.isFloat && fboBendA.isFloat && fboBendB.isFloat;
 
     // Engine-res RGBA8 for decode + CRT ping-pong.
     const fboDecode = ctx.createFbo();
@@ -746,7 +767,7 @@ export const b3ntb0xDef: VideoModuleDef = {
 
         // ---- PASS 1: EncodeComposite -> fboEncode (oversampled float) ----
         g.bindFramebuffer(g.FRAMEBUFFER, fboEncode.fbo);
-        g.viewport(0, 0, osWidth, ctx.res.height);
+        g.viewport(0, 0, osWidth, osHeight);
         g.useProgram(encodeProgram);
         g.activeTexture(g.TEXTURE0);
         g.bindTexture(g.TEXTURE_2D, inputTex ?? emptyTex);
@@ -762,7 +783,7 @@ export const b3ntb0xDef: VideoModuleDef = {
         const bendWrite = bendFrontIsA ? fboBendB : fboBendA;
         const bendPrev = framesElapsed > 0 ? (bendFrontIsA ? fboBendA.texture : fboBendB.texture) : null;
         g.bindFramebuffer(g.FRAMEBUFFER, bendWrite.fbo);
-        g.viewport(0, 0, osWidth, ctx.res.height);
+        g.viewport(0, 0, osWidth, osHeight);
         g.useProgram(bendProgram);
         g.activeTexture(g.TEXTURE0);
         g.bindTexture(g.TEXTURE_2D, fboEncode.texture);
@@ -826,6 +847,26 @@ export const b3ntb0xDef: VideoModuleDef = {
         bendFrontIsA = !bendFrontIsA;
         crtFrontIsA = !crtFrontIsA;
         framesElapsed++;
+      },
+      resize(w, h) {
+        // OUTPUT aspect switch. The RGBA8 passes (fboDecode, fboCrtA/B) are
+        // engine-managed (auto-resized). Here we rebuild the OVERSAMPLED FLOAT
+        // encode/bend passes at the new base width — createFloatFbo returns
+        // fresh objects, so delete the old ones + recreate. osWidth is always
+        // MAX_TEXTURE_SIZE-clamped (the wide-aspect guardrail). Persistence/
+        // ping-pong history is reset (framesElapsed back to a cold start) — the
+        // accepted cost of a deliberate mode switch.
+        osWidth = b3ntb0xOsWidth(Math.max(2, Math.round(w)), maxTex);
+        osHeight = Math.max(2, Math.round(h));
+        for (const f of [fboEncode, fboBendA, fboBendB]) {
+          gl.deleteFramebuffer(f.fbo);
+          gl.deleteTexture(f.texture);
+        }
+        fboEncode = createFloatFbo(osWidth, osHeight, { filter: 'nearest' });
+        fboBendA = createFloatFbo(osWidth, osHeight, { filter: 'nearest' });
+        fboBendB = createFloatFbo(osWidth, osHeight, { filter: 'nearest' });
+        isFloat = fboEncode.isFloat && fboBendA.isFloat && fboBendB.isFloat;
+        framesElapsed = 0;
       },
       dispose() {
         for (const f of [fboEncode, fboBendA, fboBendB, fboDecode, fboCrtA, fboCrtB]) {
