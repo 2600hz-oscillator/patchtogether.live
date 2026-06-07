@@ -605,6 +605,25 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
 // Each entry must cite the dedicated test that DOES cover the port's
 // downstream effect — otherwise we're hiding a coverage gap.
 const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
+  // ── PENTEMELODICA per-voice FM jacks. fm1..fm5 are audio-rate FM/PM
+  //    modulators that only affect a voice that is SOUNDING — i.e. whose ADSR
+  //    has been gated open by its poly lane. The behavioral sweep drives ONE
+  //    input at a time against an idle control (it imports driverFor from
+  //    _drivers.ts, NOT the polyseqz upstream from _per-port-drivers.ts), so
+  //    when it drives fmN there is no concurrent gated poly → the voice's
+  //    envelope is at 0 → the FM modulates silence → no delta on out_l. This
+  //    is correct: FM is a no-op on a gated-off voice. The `poly` input IS
+  //    exercised here (it gates + pitches the voices → perturbs out_l).
+  //    FM/PM audibility-when-gated is covered by pentemelodica-dsp.test.ts
+  //    (renderPentemelodica with an FM input) + the bespoke e2e (poly chord
+  //    drives the OUT) + the per-port emit sweep (the polyseqz driver gates
+  //    all 5 voices so out_l/out_r + voice1..5 all emit).
+  'pentemelodica.fm1': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; behavioral sweep drives it without a concurrent gated poly → modulates a silent voice → no delta (correct). Covered by pentemelodica-dsp.test.ts + pentemelodica.spec.ts + the per-port emit sweep (polyseqz-gated).',
+  'pentemelodica.fm2': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
+  'pentemelodica.fm3': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
+  'pentemelodica.fm4': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
+  'pentemelodica.fm5': 'audio-rate FM/PM jack — only modulates a SOUNDING (gated) voice; no concurrent gate in the behavioral harness → no delta (correct). Covered by pentemelodica-dsp.test.ts + the per-port emit sweep.',
+
   // ── SYNESTHESIA copy B input. The sweep drives each input then watches a
   //    SINGLE canonical output (a_band1_audio, copy A). SYNESTHESIA is two
   //    INDEPENDENT copies by design — b_in feeds copy B's b_* outputs and has

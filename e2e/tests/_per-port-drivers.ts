@@ -1055,6 +1055,53 @@ const DRIVERS: Record<string, PerPortDriver> = {
     }),
     note: 'MOOG 921A: drive freq_cv + width_cv with BUGGLES.smooth so both CV bus outputs (freq_bus/width_bus) are AC (DC at defaults → scope reads no peak)',
   },
+
+  // ───── PENTEMELODICA — drive the poly bus so all 5 voices + the stereo
+  //        OUT emit ─────
+  //
+  // PENTEMELODICA is silent until a poly lane GATES a voice (each voice is
+  // gated by its own ADSR). Wire a self-running POLYSEQZ (4 maj-chord steps,
+  // isPlaying=1) into `poly` so the chord gates all 5 lanes → out_l / out_r +
+  // voice1..voice5 all carry signal in the bare emit harness. The default
+  // sequencer→poly source (pickInputSource) only gates lane 0, which would
+  // leave voice2..voice5 silent.
+  pentemelodica: {
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-pseq', type: 'polyseqz', position: { x: 60, y: 60 }, domain: 'audio', params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.6 } },
+      ],
+      edges: [
+        {
+          id: 'e-drv-poly',
+          from: { nodeId: 'drv-pseq', portId: 'poly' },
+          to:   { nodeId: 'sut',      portId: 'poly' },
+          sourceType: 'polyPitchGate', targetType: 'polyPitchGate',
+        },
+      ],
+    }),
+    postSpawn: async (page) => {
+      // Seed the POLYSEQZ steps so it actually gates a chord (default steps
+      // are off). 5-note maj chords → all five PENTEMELODICA voices fire.
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['drv-pseq'];
+          if (!n) return;
+          if (!n.data) n.data = {};
+          n.data.steps = [
+            { on: true, root: 60, quality: 'maj', inversion: 0, voicing: 'closed' },
+            { on: true, root: 65, quality: 'maj', inversion: 0, voicing: 'closed' },
+            { on: true, root: 67, quality: 'maj', inversion: 0, voicing: 'closed' },
+            { on: true, root: 72, quality: 'maj', inversion: 0, voicing: 'closed' },
+          ];
+        });
+      });
+    },
+    note: 'PENTEMELODICA: drive `poly` from a self-running POLYSEQZ (4 maj-chord steps) so all 5 voices + out_l/out_r emit (voices are ADSR-gated → silent without a gated poly lane)',
+  },
 };
 
 /** Look up a driver for a module. Returns null when no override
