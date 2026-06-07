@@ -37,6 +37,9 @@
   let decay   = $derived(node?.params.decay   ?? defFor('decay'));
   let sustain = $derived(node?.params.sustain ?? defFor('sustain'));
   let release = $derived(node?.params.release ?? defFor('release'));
+  // BASE VOL — per-voice VCA floor the ADSR rides on top of (gain =
+  // base + (1-base)*env). Default 1 = full (env does nothing → raw-VCO drone).
+  let baseVol = $derived(node?.params.base_vol ?? defFor('base_vol'));
 
   const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
   const live = (k: string) => () => {
@@ -312,6 +315,7 @@
         <Knob value={decay}   min={0.001} max={5} defaultValue={defFor('decay')}   label="D" units="s" curve="log"    onchange={set('decay')}   moduleId={id} paramId="decay"   readLive={live('decay')} />
         <Knob value={sustain} min={0}     max={1} defaultValue={defFor('sustain')} label="S"           curve="linear" onchange={set('sustain')} moduleId={id} paramId="sustain" readLive={live('sustain')} />
         <Knob value={release} min={0.001} max={5} defaultValue={defFor('release')} label="R" units="s" curve="log"    onchange={set('release')} moduleId={id} paramId="release" readLive={live('release')} />
+        <Knob value={baseVol} min={0}     max={1} defaultValue={defFor('base_vol')} label="Base"        curve="linear" onchange={set('base_vol')} moduleId={id} paramId="base_vol" readLive={live('base_vol')} />
       </div>
     </div>
   </PatchPanel>

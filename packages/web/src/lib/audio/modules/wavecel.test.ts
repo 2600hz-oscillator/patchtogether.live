@@ -274,3 +274,135 @@ describe('WAVECEL worklet — poly input (polyPitchGate)', () => {
     expect(maxDiff, 'a present-but-silent poly bus changed the mono render').toBe(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// no-stray-drone gating (Bug 1) + BASE VOL per-voice VCA floor (Bug-fix 2).
+//
+// Connectedness is a k-rate param (poly_connected / trigger_connected) pushed by
+// the factory from the live patch edges — NOT bus presence (the trigger
+// keep-alive ConstantSource masks it). When poly OR trigger is CONNECTED the
+// module is GATED: a voice sounds only while gated-or-releasing; a never-gated
+// voice is SILENT (patching poly never auto-drones). Nothing connected → a raw
+// VCO whose level IS base_vol (env idle). gain = base + (1-base)*env per ACTIVE
+// voice; default base=1 keeps the raw-VCO drone byte-identical.
+// ─────────────────────────────────────────────────────────────────────────
+describe('WAVECEL worklet — no-stray-drone gating + BASE VOL floor', () => {
+  const C2 = Math.log2(65.41 / 261.626);
+
+  /** Run with a poly bus on inputs[5] + an explicit gate input on inputs[6]
+   *  (the TRIGGER) and the supplied params (set poly_connected / trigger_connected
+   *  to simulate a patched-but-ungated cable). */
+  function runWith(
+    proc: ProcInstance,
+    params: Record<string, Float32Array>,
+    seconds: number,
+    opts: { lanes?: Array<{ voct: number; gate: 0 | 1 } | undefined>; trig?: 0 | 1; pitchV?: number },
+  ): { L: Float32Array; R: Float32Array } {
+    const total = Math.round(SR * seconds);
+    const L = new Float32Array(total);
+    const R = new Float32Array(total);
+    let g = 0;
+    while (g < total) {
+      const len = Math.min(BLOCK, total - g);
+      const pitch = new Float32Array(len).fill(opts.pitchV ?? 0);
+      const poly = opts.lanes ? makePoly(len, opts.lanes) : [];
+      const trig = new Float32Array(len).fill(opts.trig ?? 0);
+      const outL = new Float32Array(len);
+      const outR = new Float32Array(len);
+      // inputs: [pitch],[fm],[morphCv],[spreadCv],[foldCv],poly(5),trigger(6)
+      proc.process([[pitch], [], [], [], [], poly, [trig]], [[outL], [outR]], params);
+      for (let i = 0; i < len; i++) { L[g + i] = outL[i] as number; R[g + i] = outR[i] as number; }
+      g += len;
+    }
+    return { L, R };
+  }
+
+  it('Bug 1: poly CONNECTED but never gated → SILENT (no stray drone)', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc(); loadTable(p);
+    // poly_connected=1 (a patched cable) + all gates 0 → gated mode, no active
+    // voice → silence. The OLD bug fell through to the mono drone here.
+    const out = runWith(p, makeParams({ poly_connected: 1, spread: 1 }), 0.1, {
+      lanes: [{ voct: C2, gate: 0 }, { voct: C2, gate: 0 }],
+    });
+    expect(peak(out.L)).toBe(0);
+    expect(peak(out.R)).toBe(0);
+  });
+
+  it('Bug 1: TRIGGER connected but never gated → SILENT (no stray drone)', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc(); loadTable(p);
+    const out = runWith(p, makeParams({ trigger_connected: 1, spread: 1, base_vol: 1 }), 0.1, {
+      trig: 0, pitchV: C2,
+    });
+    expect(peak(out.L)).toBe(0);
+  });
+
+  it('base=0 → pure ADSR: a poly voice gated then the floor is 0 (silent before/after)', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc(); loadTable(p);
+    // poly connected, base=0, lane gated, fast attack → audible while gated.
+    const gated = runWith(p, makeParams({ poly_connected: 1, base_vol: 0, attack: 0.001, sustain: 1, spread: 1 }), 0.1, {
+      lanes: [{ voct: C2, gate: 1 }],
+    });
+    expect(peak(gated.L)).toBeGreaterThan(1e-3);
+    // Same patch but never gated → base=0 floor → silent (pure ADSR, no drone).
+    const p2 = new Proc(); loadTable(p2);
+    const ungated = runWith(p2, makeParams({ poly_connected: 1, base_vol: 0, spread: 1 }), 0.1, {
+      lanes: [{ voct: C2, gate: 0 }],
+    });
+    expect(peak(ungated.L)).toBe(0);
+  });
+
+  it('base=1 raw VCO (nothing connected) is BYTE-IDENTICAL to the legacy drone (level path)', async () => {
+    const Proc = await loadProcessor();
+    const voct = Math.log2(98 / 261.626);
+    const ps = makeParams({ morph: 0.5, spread: 2, fold: 0.3 });
+    // Legacy reference: a pure mono render (no poly/trigger, base_vol default 1).
+    const pRef = new Proc(); loadTable(pRef);
+    const ref = runMono(pRef, ps, 0.2, voct);
+    // base=1 explicit, nothing connected → raw VCO at gain 1 → byte-identical.
+    const pBase1 = new Proc(); loadTable(pBase1);
+    const base1 = runWith(pBase1, makeParams({ morph: 0.5, spread: 2, fold: 0.3, base_vol: 1 }), 0.2, {
+      pitchV: voct,
+    });
+    let maxDiff = 0;
+    for (let i = 0; i < ref.L.length; i++) {
+      maxDiff = Math.max(maxDiff, Math.abs(ref.L[i]! - base1.L[i]!), Math.abs(ref.R[i]! - base1.R[i]!));
+    }
+    expect(maxDiff, 'base=1 raw VCO must equal the legacy drone byte-for-byte').toBe(0);
+  });
+
+  it('base=0 raw VCO (nothing connected) is SILENT', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc(); loadTable(p);
+    const out = runWith(p, makeParams({ base_vol: 0, spread: 1 }), 0.1, { pitchV: C2 });
+    expect(peak(out.L)).toBe(0);
+  });
+
+  it('base=0.5 gated mono floors at ~0.5× the full-env output and rises with the env', async () => {
+    const Proc = await loadProcessor();
+    const voct = C2;
+    // Full-env reference (base=0, sustain=1, fast attack) — the env reaches ~1.
+    const pFull = new Proc(); loadTable(pFull);
+    const full = runWith(pFull, makeParams({ trigger_connected: 1, base_vol: 0, attack: 0.001, sustain: 1, spread: 1 }), 0.1, {
+      trig: 1, pitchV: voct,
+    });
+    // base=0.5 with the gate LOW the whole time but env idle → voice inactive →
+    // silent (not floored — a never-hit trigger doesn't drone). Then with the gate
+    // HIGH, the floor lifts the output to at least ~0.5× the full-env peak.
+    const pFloorOff = new Proc(); loadTable(pFloorOff);
+    const floorOff = runWith(pFloorOff, makeParams({ trigger_connected: 1, base_vol: 0.5, spread: 1 }), 0.1, {
+      trig: 0, pitchV: voct,
+    });
+    expect(peak(floorOff.L), 'a never-hit gated voice stays silent even at base=0.5').toBe(0);
+
+    const pFloorOn = new Proc(); loadTable(pFloorOn);
+    const floorOn = runWith(pFloorOn, makeParams({ trigger_connected: 1, base_vol: 0.5, attack: 0.001, sustain: 1, spread: 1 }), 0.1, {
+      trig: 1, pitchV: voct,
+    });
+    // At full env (≈1) base=0.5 → gain = 0.5 + 0.5*1 = 1 → same peak as base=0 full.
+    expect(peak(floorOn.L)).toBeGreaterThan(peak(full.L) * 0.9);
+    expect(peak(floorOn.L)).toBeGreaterThan(1e-3);
+  });
+});
