@@ -208,6 +208,55 @@ test.describe('true-fullscreen — VIDEO OUT + BENTBOX', () => {
     expect(errors).toEqual([]);
   });
 
+  // OUTPUT aspect switch: after flipping to 16:9 the fullscreen buffer must
+  // carry the 16:9 ENGINE aspect (1366×768 ≈ 1.78), so object-fit:contain
+  // pillarboxes the wider source — never double-letterboxes. Drives the switch
+  // via the dev __videoAspectStore hook.
+  test('VIDEO OUT fullscreen at 16:9: buffer takes the 16:9 engine aspect', async ({ page }) => {
+    const errors = await setup(page);
+    await spawnPatch(
+      page,
+      [
+        { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: TRIANGLE_PARAMS },
+        { id: 'out', type: 'videoOut', position: { x: 500, y: 40 }, domain: 'video' },
+      ],
+      [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
+    );
+    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+
+    // Flip the OUTPUT aspect to 16:9 — in-place engine realloc to 1366×768.
+    await page.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__videoAspectStore.set('16:9');
+    });
+    await expect
+      .poll(async () => page.evaluate(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const vid = (window as any).__engine?.()?.getDomain?.('video');
+        return vid?.canvas?.width ?? 0;
+      }), { timeout: 8000, message: 'engine resized to 16:9 width' })
+      .toBe(1366);
+
+    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+    const wrap = page.locator('[data-testid="video-out-fs-wrap"]');
+    await page.waitForTimeout(400); // let the rAF mirror the 16:9 engine dims
+
+    await canvas.click({ button: 'right' });
+    await expect(page.locator('[data-testid="ctx-fullscreen"]')).toBeVisible();
+    await page.locator('[data-testid="ctx-fullscreen"]').click();
+    await expect(wrap, 'wrap entered fullscreen state').toHaveClass(/fullscreen/);
+
+    // The fullscreen buffer must carry the 16:9 engine aspect (~1.78).
+    const afterW = Number(await canvas.getAttribute('width'));
+    const afterH = Number(await canvas.getAttribute('height'));
+    expect(Math.abs(afterW / afterH - 16 / 9)).toBeLessThan(0.02);
+
+    await page.evaluate(() => {
+      if (document.fullscreenElement) void document.exitFullscreen();
+    });
+    expect(errors).toEqual([]);
+  });
+
   test('right-click on canvas does NOT open the node menu (claimed)', async ({ page }) => {
     await setup(page);
     await spawnPatch(page, [

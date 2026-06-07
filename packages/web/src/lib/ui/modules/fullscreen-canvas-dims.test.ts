@@ -54,6 +54,16 @@ describe('fullscreenCanvasDims', () => {
       expect(d.width / d.height).toBeCloseTo(16 / 9, 5);
     });
 
+    it('mirrors the 16:9 OUTPUT switch res (1366×768) → 16:9 buffer (no double-letterbox)', () => {
+      // After aspectRes('16:9') the engine canvas is 1366×768. The fullscreen
+      // buffer must carry that 16:9 aspect so object-fit:contain only side-
+      // pillarboxes (on a taller display) — never adds top/bottom bars on top.
+      const d = fullscreenCanvasDims(true, engine(1366, 768), { width: 340, height: 184 });
+      expect(d.width).toBe(1366);
+      expect(d.height).toBe(768);
+      expect(d.width / d.height).toBeCloseTo(16 / 9, 2);
+    });
+
     it('mirrors a 4:3 engine at any size (side pillarbox on a wide screen)', () => {
       const d = fullscreenCanvasDims(true, engine(1440, 1080), { width: 340, height: 184 });
       expect(d.width).toBe(1440);

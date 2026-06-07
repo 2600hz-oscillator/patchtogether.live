@@ -35,6 +35,7 @@
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import NativeFillToggle from './NativeFillToggle.svelte';
 
   type State =
     | 'idle'
@@ -274,6 +275,24 @@
     setBoolParam('mirror', next);
   }
 
+  // Live native aspect of the webcam stream (intrinsic <video> dims once a
+  // frame has decoded), feeding the per-source fit/fill toggle's Native badge.
+  // Falls back to 16:9 (the requested ideal 640×360) before the stream lands.
+  let srcAspect = $state(16 / 9);
+  $effect(() => {
+    if (camState !== 'streaming') return;
+    let raf: number;
+    const tick = (): void => {
+      if (videoEl && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+        const a = videoEl.videoWidth / videoEl.videoHeight;
+        if (Math.abs(a - srcAspect) > 0.001) srcAspect = a;
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  });
+
   // ---- Lifecycle ----
   onMount(() => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
@@ -502,6 +521,11 @@
       >
         Mirror{p('mirror') > 0.5 ? ': on' : ': off'}
       </button>
+      <NativeFillToggle
+        fillMode={p('fillMode')}
+        {srcAspect}
+        onchange={setParam('fillMode')}
+      />
     </div>
 
     <div class="fader-grid">

@@ -29,6 +29,7 @@
   import type { ModuleNode } from '$lib/graph/types';
   import { bentboxDef } from '$lib/video/modules/bentbox';
   import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
+  import { liveEngineAspect } from './video-card-aspect';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -140,7 +141,10 @@
    *  and is unaffected — we only fix the display-rect aspect so the engine
    *  frame isn't distorted on the way to the visible canvas. */
   function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
-    const SRC = ENGINE_W / ENGINE_H;
+    // Letterbox at the LIVE engine aspect (mirrored into engineW/engineH each
+    // rAF) so the in-rack thumbnail tracks a 4:3 ↔ 16:9 OUTPUT switch — not the
+    // stale compile-time VIDEO_RES constant.
+    const SRC = liveEngineAspect({ canvas: { width: engineW, height: engineH } });
     const dstAspect = cw / ch;
     if (dstAspect > SRC) {
       const h = ch;

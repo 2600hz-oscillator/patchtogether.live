@@ -290,6 +290,13 @@ export const videoboxDef: VideoModuleDef = {
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);
       },
+      resize(w, h) {
+        // OUTPUT aspect switch: the output FBO is engine-managed (auto-resized);
+        // we just re-target the frame uploader so a loaded clip uploads at the
+        // new res — 16:9 stays sharp, not a 4:3 upscale. Capped at the source's
+        // own res inside the uploader.
+        uploader.setSize(w, h);
+      },
       dispose() {
         unwireAudio();
         if (silentLeft) try { silentLeft.disconnect(); } catch { /* */ }

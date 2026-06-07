@@ -23,11 +23,21 @@
   import type { Snes9xHandleExtras } from '$lib/video/modules/snes9x';
   import type { GameOutputDef } from '$lib/snes9x/output-definitions';
   import { SNES_BUTTONS } from '$lib/snes9x/snes-input';
+  import { patch } from '$lib/graph/store';
   import ModuleTitle from './ModuleTitle.svelte';
+  import NativeFillToggle from './NativeFillToggle.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+
+  // Per-source fit/fill: SNES is fixed-native 4:3, so the Native badge shows in
+  // 4:3 + the fit/fill toggle appears in 16:9.
+  let fillMode = $derived<number>((node?.params?.fillMode as number | undefined) ?? 0);
+  function setFillMode(v: number): void {
+    const target = patch.nodes[id];
+    if (target) target.params.fillMode = v;
+  }
 
   let cardEl: HTMLDivElement | null = $state(null);
   let canvasEl: HTMLCanvasElement | null = $state(null);
@@ -213,6 +223,11 @@
     {/if}
   </div>
 
+  <div class="fit-row" data-testid="snes9x-fit-row">
+    <span class="fit-label">OUTPUT FIT</span>
+    <NativeFillToggle {fillMode} srcAspect={4 / 3} onchange={setFillMode} />
+  </div>
+
   <div class="tip">
     Right-click → “see output definition for CV/GATES”. Patch clock_in + a GAMEPAD’s gates.
   </div>
@@ -231,6 +246,20 @@
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     outline: none;
+  }
+  .fit-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .fit-label {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-family: ui-monospace, monospace;
   }
   :global(.svelte-flow__node:hover) .mod-card { border-color: var(--accent-dim); }
   :global(.svelte-flow__node.selected) .mod-card {

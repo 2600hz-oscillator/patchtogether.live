@@ -31,6 +31,7 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
+import { aspectFitScale } from '$lib/video/video-res';
 
 const FRAG_SRC = `#version 300 es
 precision highp float;
@@ -57,10 +58,10 @@ void main() {
     outColor = vec4(0.04, 0.06, 0.10 + v, 1.0);
     return;
   }
-  // Centre + zoom-fit (cover) the active region so the camera frame keeps
-  // its native aspect and FILLS the FBO; the off-axis is cropped (sampled
-  // from the centre), never letterboxed. With cover scaling (sx,sy >= 1)
-  // the centered coord always stays within [0,1], so there are no bars.
+  // Centre + aspect-fit the active region so the camera frame keeps its native
+  // aspect. uLetterbox is (sx,sy) from aspectFitScale: FILL/cover (sx,sy >= 1)
+  // zooms IN + crops the off-axis (no bars — the default); LETTERBOX/contain
+  // (sx,sy <= 1) shrinks so the whole frame fits with black bars.
   vec2 centered = (vUv - 0.5) / uLetterbox + 0.5;
   // Sample with optional horizontal mirror. The webcam frame comes in
   // upside-down relative to GL clip space, but we use UNPACK_FLIP_Y_WEBGL
@@ -68,6 +69,13 @@ void main() {
   // for the camera frame.
   vec2 uv = centered;
   if (uMirror > 0.5) uv.x = 1.0 - uv.x;
+  // In LETTERBOX mode the centered UV can fall outside [0,1] — render those
+  // bar pixels black (CLAMP_TO_EDGE would smear the edge). In FILL mode the UV
+  // is always in range by construction so this is a no-op.
+  if (any(lessThan(centered, vec2(0.0))) || any(greaterThan(centered, vec2(1.0)))) {
+    outColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
   // 'sample' is a reserved word in GLSL ES 3.00 — use 'src' instead.
   vec4 src = texture(uTex, uv);
   outColor = vec4(src.rgb * uGain, 1.0);
@@ -116,12 +124,16 @@ interface CameraParams {
   gain: number;
   enabled: number;   // 0 | 1
   mirror: number;    // 0 | 1
+  fillMode: number;  // 0 = letterbox, 1 = fill (cover-crop) — DEFAULT
 }
 
 const DEFAULTS: CameraParams = {
   gain: 1.0,
   enabled: 1,
   mirror: 1,
+  // Cover-crop by default (the existing camera behaviour — never letterbox the
+  // live feed). Per-source toggle to letterbox via the card's fit/fill control.
+  fillMode: 1,
 };
 
 export const cameraInputDef: VideoModuleDef = {
@@ -141,9 +153,10 @@ export const cameraInputDef: VideoModuleDef = {
     { id: 'out', type: 'video' },
   ],
   params: [
-    { id: 'gain',    label: 'Gain',   defaultValue: DEFAULTS.gain,    min: 0, max: 2, curve: 'linear' },
-    { id: 'enabled', label: 'On',     defaultValue: DEFAULTS.enabled, min: 0, max: 1, curve: 'discrete' },
-    { id: 'mirror',  label: 'Mirror', defaultValue: DEFAULTS.mirror,  min: 0, max: 1, curve: 'discrete' },
+    { id: 'gain',     label: 'Gain',   defaultValue: DEFAULTS.gain,     min: 0, max: 2, curve: 'linear' },
+    { id: 'enabled',  label: 'On',     defaultValue: DEFAULTS.enabled,  min: 0, max: 1, curve: 'discrete' },
+    { id: 'mirror',   label: 'Mirror', defaultValue: DEFAULTS.mirror,   min: 0, max: 1, curve: 'discrete' },
+    { id: 'fillMode', label: 'Fill',   defaultValue: DEFAULTS.fillMode, min: 0, max: 1, curve: 'discrete' },
   ],
   // Soft cap mirroring the multiplayer per-rackspace user limit. The
   // browser will fail extra getUserMedia calls anyway with NotReadableError
@@ -322,16 +335,19 @@ export const cameraInputDef: VideoModuleDef = {
         g.uniform1f(uGain,     params.gain);
         g.uniform1f(uMirror,   params.mirror);
 
-        // Aspect-preserving ZOOM-FIT (cover): fill the engine FBO (currently
-        // 4:3) with the camera's native aspect, cropping the overflow so a
-        // non-4:3 webcam isn't stretched AND isn't letterboxed with black
-        // bars. Math adapts to ctx.res. Defaults to (1,1) when dimensions
-        // are unknown (idle / pre-stream) — see cameraCoverScale().
-        const { sx, sy } = cameraCoverScale(
-          videoEl?.videoWidth ?? 0,
-          videoEl?.videoHeight ?? 0,
-          ctx.res.width,
-          ctx.res.height,
+        // Aspect-preserving fit into the live engine FBO (4:3 or 16:9). Per the
+        // fillMode param: FILL/cover (default) crops the off-axis so a non-
+        // matching webcam isn't stretched AND isn't letterboxed; LETTERBOX
+        // shrinks to fit with black bars. Math adapts to ctx.res (so a 16:9
+        // webcam cover-fills a 16:9 canvas edge-to-edge with no crop). Falls
+        // back to (1,1) when dims are unknown (idle / pre-stream).
+        const srcW = videoEl?.videoWidth ?? 0;
+        const srcH = videoEl?.videoHeight ?? 0;
+        const srcAspect = srcW > 0 && srcH > 0 ? srcW / srcH : ctx.res.width / ctx.res.height;
+        const { sx, sy } = aspectFitScale(
+          srcAspect,
+          ctx.res.width / ctx.res.height,
+          params.fillMode >= 0.5 ? 'fill' : 'letterbox',
         );
         g.uniform2f(uLetterbox, sx, sy);
 

@@ -348,7 +348,11 @@ export const toyboxDef: VideoModuleDef = {
     }
     const layerTargets: LayerTarget[] = [];
     for (let i = 0; i < LAYER_COUNT; i++) {
-      const { fbo, texture } = ctx.createFbo();
+      // UNMANAGED: these FBOs carry a module-owned depth renderbuffer, so the
+      // engine can't resize them in isolation (resizing only the colour texture
+      // would size-mismatch the depth RB → incomplete). TOYBOX resizes the
+      // whole layer target itself in `surface.resize` on an aspect switch.
+      const { fbo, texture } = ctx.createFbo({ managed: false });
       const depth = gl.createRenderbuffer();
       if (!depth) throw new Error('TOYBOX: createRenderbuffer (depth) failed');
       gl.bindRenderbuffer(gl.RENDERBUFFER, depth);
@@ -966,7 +970,10 @@ export const toyboxDef: VideoModuleDef = {
     // fresh target) + every entry is freed in dispose().
     const scratchPool: { fbo: WebGLFramebuffer; texture: WebGLTexture }[] = [];
     function scratch(i: number): { fbo: WebGLFramebuffer; texture: WebGLTexture } {
-      while (scratchPool.length <= i) scratchPool.push(ctx.createFbo());
+      // UNMANAGED: scratch FBOs are allocated lazily during draw() (after the
+      // factory ran), so the engine's per-node FBO registry can't attribute
+      // them. TOYBOX re-specs them itself in `surface.resize` on an aspect switch.
+      while (scratchPool.length <= i) scratchPool.push(ctx.createFbo({ managed: false }));
       return scratchPool[i]!;
     }
     // Seed two (the linear-chain ping-pong minimum).
@@ -2066,6 +2073,42 @@ export const toyboxDef: VideoModuleDef = {
 
         g.bindFramebuffer(g.FRAMEBUFFER, null);
       },
+      resize(w, h) {
+        // OUTPUT aspect switch. The engine already re-specced the MANAGED FBOs
+        // (outFbo + the factory-time scratchA/B). Here we reallocate everything
+        // TOYBOX owns that the engine can't: the depth-RB-carrying layer FBOs,
+        // the lazily-grown scratch pool, the per-layer video uploaders, the
+        // float feedback/history rings, and the shadertoy project render targets.
+        const W = Math.max(2, Math.round(w));
+        const H = Math.max(2, Math.round(h));
+        // Layer FBOs (colour texture + depth renderbuffer) — re-spec both so the
+        // FBO stays complete at the new size.
+        for (const t of layerTargets) {
+          gl.bindTexture(gl.TEXTURE_2D, t.texture);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+          gl.bindRenderbuffer(gl.RENDERBUFFER, t.depth);
+          gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, W, H);
+        }
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+        // Scratch pool (plain RGBA8 working buffers; unmanaged).
+        for (const s of scratchPool) {
+          gl.bindTexture(gl.TEXTURE_2D, s.texture);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        }
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        // Per-layer video uploaders re-target their downscale canvas → a loaded
+        // video layer now uploads at the new res (16:9 = sharp; the fix).
+        for (const up of videoUploaders.values()) up.setSize(W, H);
+        // Float feedback/history rings: free them so the per-frame reconcile
+        // re-allocates each at the new res next draw (history is lost — the
+        // accepted cost of a deliberate switch, like the reference restarting
+        // per-renderer state on a canvas-size change).
+        for (const b of feedbackBufs.values()) freeFeedbackBuf(b);
+        feedbackBufs.clear();
+        // Shadertoy multi-pass project targets re-target + recompile next frame.
+        shadertoyRt.resize(W, H);
+      },
       dispose() {
         gl.deleteFramebuffer(outFbo);
         gl.deleteTexture(outTexture);
@@ -3045,6 +3088,10 @@ interface ShadertoyRuntime {
     sceneTex: WebGLTexture | null,
     layerInTex?: WebGLTexture | null,
   ): boolean;
+  /** OUTPUT aspect switch: update the project render-target size + drop the
+   *  compiled projects so they re-allocate their ping-pong FBOs at the new res
+   *  on the next renderProject. The source shaders recompile unchanged. */
+  resize(width: number, height: number): void;
   dispose(): void;
 }
 
@@ -3065,8 +3112,11 @@ function makeShadertoyRuntime(
   nodeId: string,
 ): ShadertoyRuntime {
   const gl = ctx.gl;
-  const W = ctx.res.width;
-  const H = ctx.res.height;
+  // MUTABLE so the OUTPUT aspect switch can re-target the project render buffers
+  // (resize() updates these + drops compiled projects → they realloc at the new
+  // res). Read live in renderProject for viewport + iResolution.
+  let W = ctx.res.width;
+  let H = ctx.res.height;
 
   // One keyboard stub (1×1 black) — Shadertoy's keyboard texture; we don't wire
   // real keys yet, so texelFetch returns 0 (no reset / no toggles).
@@ -3251,11 +3301,21 @@ function makeShadertoyRuntime(
     return true;
   }
 
+  function resize(width: number, height: number): void {
+    W = Math.max(2, Math.round(width));
+    H = Math.max(2, Math.round(height));
+    // Drop compiled projects so renderProject re-compiles + reallocs their
+    // ping-pong FBOs at the new W/H next frame. Buffer history is lost — the
+    // accepted cost of a deliberate, rare mode switch.
+    for (const cp of compiled.values()) disposeProject(cp);
+    compiled.clear();
+  }
+
   function dispose(): void {
     for (const cp of compiled.values()) disposeProject(cp);
     compiled.clear();
     gl.deleteTexture(keyboardTex);
   }
 
-  return { renderProject, dispose };
+  return { renderProject, resize, dispose };
 }

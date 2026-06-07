@@ -44,6 +44,7 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoEngineContext, VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+import { aspectFitScale } from '$lib/video/video-res';
 import {
   Snes9xRuntime,
   loadAutoloadRom,
@@ -172,6 +173,9 @@ export const snes9xDef: VideoModuleDef = {
   ],
   params: [
     { id: 'cv_clock_in', label: 'CLOCK', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
+    // Per-source fit: 0 = letterbox/pillarbox (DEFAULT, aspect-preserving),
+    // 1 = fill (cover-crop). Tracks the OUTPUT aspect switch.
+    { id: 'fillMode', label: 'Fill', defaultValue: 0, min: 0, max: 1, curve: 'discrete' as const },
     ...SNES_BUTTONS.map((b) => ({
       id: `cv_${b}`,
       label: b.toUpperCase(),
@@ -191,11 +195,10 @@ export const snes9xDef: VideoModuleDef = {
 
     const { fbo, texture } = ctx.createFbo();
 
-    // SNES is 256:224 ≈ 8:7 (≈1.143); 4:3 on a CRT. Letterbox into the FBO.
-    const fboAspect = ctx.res.width / ctx.res.height;
+    // SNES is 256:224 ≈ 8:7 (≈1.143); 4:3 on a CRT. The (sx,sy) fit scale is
+    // computed LIVE in draw() from ctx.res + the fillMode param so it tracks
+    // the OUTPUT aspect switch (4:3 vs 16:9 swaps which axis bars).
     const srcAspect = 4 / 3;
-    const letterboxU = Math.min(1.0, srcAspect / fboAspect);
-    const letterboxV = Math.min(1.0, fboAspect / srcAspect);
 
     const sourceTex = gl.createTexture();
     if (!sourceTex) throw new Error('SNES9X: createTexture failed');
@@ -462,7 +465,14 @@ export const snes9xDef: VideoModuleDef = {
         g.bindTexture(g.TEXTURE_2D, sourceTex);
         g.uniform1i(uTex, 0);
         g.uniform1f(uHasFrame, hasFrame ? 1.0 : 0.0);
-        g.uniform2f(uLetterbox, letterboxU, letterboxV);
+        // Live aspect fit: letterbox/pillarbox (default) or fill (cover-crop),
+        // tracking the OUTPUT aspect (ctx.res) + the per-source fillMode param.
+        const { sx, sy } = aspectFitScale(
+          srcAspect,
+          ctx.res.width / ctx.res.height,
+          params.fillMode >= 0.5 ? 'fill' : 'letterbox',
+        );
+        g.uniform2f(uLetterbox, sx, sy);
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);
       },

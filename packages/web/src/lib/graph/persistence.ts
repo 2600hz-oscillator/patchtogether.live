@@ -314,6 +314,37 @@ export interface LoadResult {
   edgesLoaded: number;
   /** Per-node migration / unknown-type diagnostics. */
   diagnostics: LoadDiagnostic[];
+  /**
+   * The persisted OUTPUT aspect ('4:3' | '16:9') from the envelope's `settings`
+   * map, or undefined for a legacy patch that predates the aspect switch (caller
+   * defaults to '4:3'). The caller (Canvas) applies it to the live VideoEngine +
+   * the video-aspect store after the graph swaps in.
+   */
+  videoAspect?: '4:3' | '16:9';
+}
+
+/** The Y.Doc map key holding cross-cutting rack settings (video aspect, …). It's
+ *  part of the doc so it rides save (makeEnvelope encodes the whole doc),
+ *  performance export, AND multiplayer sync with no extra plumbing. */
+export const SETTINGS_MAP_KEY = 'settings';
+/** Settings entry: the OUTPUT aspect ('4:3' | '16:9'). */
+export const SETTINGS_VIDEO_ASPECT = 'videoAspect';
+
+/** Read the persisted OUTPUT aspect off a live Y.Doc's settings map (undefined
+ *  if unset / legacy). Coerces to the '4:3'|'16:9' union; anything else →
+ *  undefined. */
+export function readVideoAspectFromDoc(ydoc: Y.Doc): '4:3' | '16:9' | undefined {
+  const v = ydoc.getMap(SETTINGS_MAP_KEY).get(SETTINGS_VIDEO_ASPECT);
+  return v === '16:9' ? '16:9' : v === '4:3' ? '4:3' : undefined;
+}
+
+/** Write the OUTPUT aspect into a live Y.Doc's settings map (synced +
+ *  persisted). Uses the supplied transaction origin so it threads through the
+ *  host's UndoManager origin convention. */
+export function writeVideoAspectToDoc(ydoc: Y.Doc, aspect: '4:3' | '16:9', origin?: unknown): void {
+  ydoc.transact(() => {
+    ydoc.getMap(SETTINGS_MAP_KEY).set(SETTINGS_VIDEO_ASPECT, aspect);
+  }, origin);
 }
 
 /**
@@ -373,6 +404,10 @@ export function loadEnvelopeIntoStore(
   // toJSON() returns plain objects, severing Yjs proxies — safe to mutate.
   const loadedNodes = tempYdoc.getMap('nodes').toJSON() as Record<string, ModuleNode>;
   const loadedEdges = tempYdoc.getMap('edges').toJSON() as Record<string, Edge>;
+  // Cross-cutting settings (OUTPUT aspect). Read off the throwaway doc — the
+  // whole doc was encoded in the envelope, so it's present iff the patch was
+  // saved after the aspect switch shipped.
+  const loadedVideoAspect = readVideoAspectFromDoc(tempYdoc);
 
   // 2. Run per-node migrations.
   const diagnostics: LoadDiagnostic[] = [];
@@ -438,6 +473,12 @@ export function loadEnvelopeIntoStore(
 
   // 3. Atomically swap the live store.
   liveYdoc.transact(() => {
+    // Restore the persisted OUTPUT aspect into the live settings map (so it
+    // re-syncs to collaborators + persists on the next save). Legacy patches
+    // leave it unset → the caller defaults to '4:3'.
+    if (loadedVideoAspect) {
+      liveYdoc.getMap(SETTINGS_MAP_KEY).set(SETTINGS_VIDEO_ASPECT, loadedVideoAspect);
+    }
     for (const id of Object.keys(livePatch.edges)) delete livePatch.edges[id];
     for (const id of Object.keys(livePatch.nodes)) delete livePatch.nodes[id];
     for (const node of Object.values(migratedNodes)) {
@@ -467,6 +508,7 @@ export function loadEnvelopeIntoStore(
     nodesLoaded: Object.keys(migratedNodes).length,
     edgesLoaded: Object.keys(loadedEdges).length - diagnostics.filter((d) => d.type === 'edge').length,
     diagnostics,
+    videoAspect: loadedVideoAspect,
   };
 }
 
