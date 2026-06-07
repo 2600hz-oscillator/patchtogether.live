@@ -66,6 +66,38 @@ row.
 
 ## Entries
 
+### 2026-06-07 — behavioral reconciliation #1 (moog984 re-enabled)
+
+First PR of the behavioral reconciliation leg (driving the behavioral
+disabled count down one PR at a time). **behavioral disabled 64 → 63.**
+
+| block | kind | total | disabled | %disabled |
+|---|---|---:|---:|---:|
+| unit | raw | 5963 | 2 | 0.0% |
+| e2e | raw | 903 | 1 | 0.1% |
+| art | raw | 457 | 0 | 0.0% |
+| vrt | parametrized | 150 | 0 | 0.0% |
+| behavioral | parametrized | 93 | 63 | 67.7% |
+| @collab | raw (e2e subset) | 108 | 0 | 0.0% |
+
+What changed:
+- **Re-enabled `moog984`** (4×4 matrix mixer) in the behavioral input sweep.
+  The whole-module exemption claimed the output was "silent until an upstream
+  audio source feeds the channels", but the real cause was that all 16
+  cross-points (`m11..m44`) default to **0** — the *identical* default-0-levels
+  passive-mixer class as `attenumix` / `veils` / `videoMixer`, which are NOT
+  exempt precisely because they carry a `BEHAVIORAL_PARAMS` boost opening their
+  gating knobs.
+- The fix is one `BEHAVIORAL_PARAMS.moog984 = { m11:1, m21:1, m31:1, m41:1 }`
+  entry (open column 1, the observed `out1`). Driving any of `in1..in4` with the
+  harness's noise source now reaches `out1`. All 4 inputs are real-coverage
+  passes with a large, stable margin (Δμrms ≈ 0.18, ~18× the 0.01 floor),
+  verified 3× locally with no flakes.
+
+The other Moog routers (993/961/911a/960) stay exempt — they need per-port
+exemptions + output-bus reasoning (gate-typed/independent buses, clock-driven
+sequencer), the natural NEXT batch.
+
 ### 2026-06-07 — seed
 
 First snapshot (test-stability restoration program, Area 1).
