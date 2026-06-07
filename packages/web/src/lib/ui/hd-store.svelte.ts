@@ -18,6 +18,7 @@
 
 import { computeHdResFromViewport, type Res } from '$lib/video/hd-res';
 import { VIDEO_RES } from '$lib/video/engine';
+import { testHooksEnabled } from '$lib/dev/test-hooks';
 
 const STORAGE_KEY = 'pt.hd';
 
@@ -116,14 +117,13 @@ class HdStore {
 export const hdStore = new HdStore();
 
 // Dev-only: expose on window so e2e tests can drive HD without clicking the
-// pill. Stripped in prod builds. Optional-chained `import.meta.env` so vitest's
-// node runner (no Vite import-meta replacement) doesn't crash on module eval.
-if (
-  typeof import.meta !== 'undefined' &&
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (import.meta as any).env?.DEV &&
-  typeof window !== 'undefined'
-) {
+// pill. Stripped in prod builds. Gated on testHooksEnabled() (DEV ||
+// VITE_E2E_HOOKS==='1') so it matches the peer hooks (__patch / __engine /
+// __ydoc in Canvas.svelte) and is present in the autotest/e2e PREVIEW build —
+// which is built with VITE_E2E_HOOKS=1 but has import.meta.env.DEV === false,
+// so a DEV-only gate would tree-shake __hdStore out of the very build the
+// e2e shards run against (PR #653 / hd-toggle.spec.ts).
+if (testHooksEnabled() && typeof window !== 'undefined') {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (window as any).__hdStore = hdStore;
 }
