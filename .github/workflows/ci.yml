@@ -1124,7 +1124,10 @@ jobs:
     # an intermittent whole-lane wall-clock timeout. It is SKIPPED + removed from
     # the required umbrella gate until the 3-way shard lands (task #65). Re-enable
     # (sharded) in the shard PR. See .myrobots/plans/e2e-video-analysis.md.
-    if: false
+    # Non-constant guard (actionlint rejects a literal `if: false`): on PR/push
+    # event_name is 'pull_request'/'push' → false → job skipped; still runnable
+    # via manual workflow_dispatch.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
     # The WebGL-heavy specs at workers=1 on SwiftShader are the slowest lane;
