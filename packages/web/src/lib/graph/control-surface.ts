@@ -31,6 +31,10 @@ export const CONTROL_SURFACE_TYPE = 'controlSurface';
 export interface ControlBinding {
   moduleId: string;
   paramId: string;
+  /** Optional user-set CUSTOM display name for this control (used on the
+   *  Electra preset, clamped to 14 chars there; falls back to the param label
+   *  in the on-card UI). */
+  name?: string;
 }
 
 export interface ScreenBinding {
@@ -183,6 +187,29 @@ export function removeBindingFromSurface(surfaceId: string, moduleId: string, pa
     if (!arr) return;
     const idx = arr.findIndex((b) => b.moduleId === moduleId && b.paramId === paramId);
     if (idx >= 0) arr.splice(idx, 1); // remove in place
+  });
+}
+
+/** Set (or clear, with an empty string) a binding's CUSTOM display name in
+ *  place. Mutates the existing binding object's `name` key — NEVER spreads or
+ *  reassigns the live `bindings` array (see the CRITICAL note above). */
+export function setBindingName(
+  surfaceId: string,
+  moduleId: string,
+  paramId: string,
+  name: string,
+): void {
+  mutateSurface(surfaceId, (data) => {
+    const arr = data.bindings;
+    if (!arr) return;
+    const target = arr.find((b) => b.moduleId === moduleId && b.paramId === paramId);
+    if (!target) return;
+    const trimmed = name.trim();
+    if (trimmed.length > 0) {
+      target.name = trimmed; // set a single key on the existing (live) binding
+    } else {
+      delete target.name; // clearing the name reverts to the auto abbreviation
+    }
   });
 }
 

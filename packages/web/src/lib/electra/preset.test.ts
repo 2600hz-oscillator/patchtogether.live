@@ -9,6 +9,9 @@ import {
   generatePreset,
   emitPresetJson,
   formatterFor,
+  electraControlName,
+  clampName,
+  ELECTRA_NAME_MAX,
   POTS_PER_SET,
   MAX_CONTROLS_PER_PAGE,
   DEVICE_CTRL,
@@ -53,6 +56,81 @@ describe('formatterFor', () => {
   });
 });
 
+describe('electraControlName — xxxxxx.yyyyyyy abbreviation', () => {
+  it('takes first 6 of module + "." + first 7 of param, lowercased', () => {
+    expect(electraControlName('MACROOSCILLATOR', 'TIMBRE')).toBe('macroo.timbre');
+  });
+
+  it('uses what is there when a part is shorter than its budget (no padding)', () => {
+    expect(electraControlName('OSC', 'Freq')).toBe('osc.freq');
+    expect(electraControlName('LFO', 'Rate')).toBe('lfo.rate');
+    expect(electraControlName('A', 'B')).toBe('a.b');
+  });
+
+  it('result is always ≤ 14 chars (6 + "." + 7)', () => {
+    const cases: Array<[string, string]> = [
+      ['MACROOSCILLATOR', 'TIMBRE'],
+      ['SUPERLONGMODULENAME', 'SUPERLONGPARAMNAME'],
+      ['FILTER', 'CUTOFF'],
+    ];
+    for (const [m, p] of cases) {
+      const name = electraControlName(m, p);
+      expect(name.length).toBeLessThanOrEqual(ELECTRA_NAME_MAX);
+    }
+    // The worst case fills exactly 14: "superl" + "." + "superlo" = 14.
+    expect(electraControlName('SUPERLONGMODULENAME', 'SUPERLONGPARAMNAME')).toBe('superl.superlo');
+    expect(electraControlName('SUPERLONGMODULENAME', 'SUPERLONGPARAMNAME')).toHaveLength(14);
+  });
+
+  it('trims whitespace on each part before slicing', () => {
+    expect(electraControlName('  OSC  ', '  Freq  ')).toBe('osc.freq');
+  });
+});
+
+describe('clampName', () => {
+  it('truncates names longer than 14 chars, leaves short ones untouched', () => {
+    expect(clampName('short')).toBe('short');
+    expect(clampName('0123456789ABCD')).toBe('0123456789ABCD'); // exactly 14
+    expect(clampName('0123456789ABCDEFG')).toBe('0123456789ABCD'); // > 14 → 14
+    expect(clampName('0123456789ABCDEFG')).toHaveLength(14);
+  });
+});
+
+describe('generatePreset — CONTROL page control naming', () => {
+  it('uses the auto abbreviation when no custom name is set', () => {
+    const { preset } = generatePreset(baseInput());
+    const page1 = preset.controls.filter((c) => c.pageId === PAGE_CONTROL);
+    expect(page1.map((c) => c.name)).toEqual(['osc.freq', 'osc.lvl', 'filter.cut', 'filter.mode']);
+  });
+
+  it('a binding CUSTOM name WINS over the abbreviation (clamped to 14)', () => {
+    const { preset } = generatePreset(
+      baseInput({
+        surfaceBindings: [
+          { moduleId: 'osc1', paramId: 'freq', name: 'Pitch' },
+          { moduleId: 'osc1', paramId: 'level' }, // no custom → abbreviation
+          { moduleId: 'flt1', paramId: 'cutoff', name: 'A VERY LONG CUSTOM NAME' },
+          { moduleId: 'flt1', paramId: 'mode', name: '   ' }, // blank → abbreviation
+        ],
+      }),
+    );
+    const page1 = preset.controls.filter((c) => c.pageId === PAGE_CONTROL);
+    expect(page1.map((c) => c.name)).toEqual([
+      'Pitch', // custom wins
+      'osc.lvl', // no custom → abbreviation
+      'A VERY LONG CU', // custom, clamped to 14
+      'filter.mode', // blank custom → abbreviation
+    ]);
+  });
+
+  it('clamps EVERY emitted control name to 14 chars (defensive)', () => {
+    const { preset } = generatePreset(baseInput());
+    for (const c of preset.controls) {
+      expect(c.name.length, `${c.name} ≤ 14`).toBeLessThanOrEqual(ELECTRA_NAME_MAX);
+    }
+  });
+});
+
 describe('generatePreset — pages + devices', () => {
   it('emits version 2, three pages, two devices', () => {
     const { preset } = generatePreset(baseInput());
@@ -71,7 +149,8 @@ describe('generatePreset — CONTROL page', () => {
   it('lays out surface bindings as faders/lists in first-seen order, grouped', () => {
     const { preset, allocations } = generatePreset(baseInput());
     const page1 = preset.controls.filter((c) => c.pageId === PAGE_CONTROL);
-    expect(page1.map((c) => c.name)).toEqual(['OSC Freq', 'OSC Lvl', 'FILTER Cut', 'FILTER Mode']);
+    // Auto abbreviation: first 6 of module + "." + first 7 of param, lowercased.
+    expect(page1.map((c) => c.name)).toEqual(['osc.freq', 'osc.lvl', 'filter.cut', 'filter.mode']);
     // freq/cutoff are faders; mode (discrete) is a list with an overlay.
     expect(page1[0]!.type).toBe('fader');
     expect(page1[3]!.type).toBe('list');

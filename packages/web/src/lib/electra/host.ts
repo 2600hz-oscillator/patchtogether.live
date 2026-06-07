@@ -32,7 +32,9 @@ function firstSurfaceBindings(): SurfaceBinding[] {
   const data = readSurfaceData(node);
   const grouped = groupBindingsByModule((data.bindings ?? []) as ControlBinding[]);
   const out: SurfaceBinding[] = [];
-  for (const g of grouped) for (const b of g.bindings) out.push({ moduleId: b.moduleId, paramId: b.paramId });
+  for (const g of grouped)
+    for (const b of g.bindings)
+      out.push({ moduleId: b.moduleId, paramId: b.paramId, name: b.name });
   return out;
 }
 

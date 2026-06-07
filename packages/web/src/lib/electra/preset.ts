@@ -45,6 +45,9 @@ import type {
 export interface SurfaceBinding {
   moduleId: string;
   paramId: string;
+  /** Optional user-set CUSTOM name for this control on the Control Surface.
+   *  When present it overrides the auto-generated abbreviation (clamped to 14). */
+  name?: string;
 }
 
 /** Minimal ParamDef the generator needs (a subset of graph/types ParamDef). */
@@ -220,13 +223,19 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
       formatter: formatterFor(def),
       overlayId: ovId,
     };
+    // A user CUSTOM name on the Control Surface binding WINS (clamped to 14);
+    // otherwise fall back to the auto `xxxxxx.yyyyyyy` abbreviation.
+    const name =
+      b.name && b.name.trim().length > 0
+        ? clampName(b.name)
+        : electraControlName(input.moduleLabel(b.moduleId), def.label);
     controls.push({
       id: nextControlId(),
       pageId: PAGE_CONTROL,
       controlSetId: csId,
       potId,
       type: isDiscrete ? 'list' : 'fader',
-      name: controlName(input.moduleLabel(b.moduleId), def.label),
+      name,
       inputs: [{ potId, valueId: 'value' }],
       values: [value],
     });
@@ -465,6 +474,10 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
     [PAGE_SYSTEM]: 'F49500',    // orange
   };
   for (const c of controls) {
+    // Defensively clamp EVERY emitted control name to the device's ~14-char
+    // render width (mixer/system names are already short, but clamp anyway so a
+    // future long fixed name can never overflow on the device).
+    c.name = clampName(c.name);
     if (!c.bounds && c.potId) c.bounds = boundsForPotSet(c.potId, c.controlSetId);
     if (c.visible === undefined) c.visible = true;
     if (c.color === undefined) c.color = PAGE_COLOR[c.pageId] ?? 'FFFFFF';
@@ -525,10 +538,26 @@ export function emitPresetJson(preset: ElectraPreset): string {
 
 // ──────────────────────────── helpers ────────────────────────────
 
-function controlName(moduleLabel: string, paramLabel: string): string {
-  // Keep names short — the device renders ~14 chars.
-  const name = `${moduleLabel} ${paramLabel}`.trim();
-  return name.length > 14 ? name.slice(0, 14) : name;
+/** Max chars the Electra One display renders for a control name. */
+export const ELECTRA_NAME_MAX = 14;
+
+/** Clamp ANY control name to the device's render width (no padding). */
+export function clampName(name: string): string {
+  const n = name ?? '';
+  return n.length > ELECTRA_NAME_MAX ? n.slice(0, ELECTRA_NAME_MAX) : n;
+}
+
+/**
+ * Default auto abbreviation for an Electra control name: the first 6 chars of
+ * the MODULE name + "." + the first 7 chars of the PARAM label, lowercased
+ * (total ≤ 14, e.g. MACROOSCILLATOR + TIMBRE → "macroo.timbre"). Parts shorter
+ * than their budget are used as-is (NOT padded). Pure + exported for unit tests.
+ */
+export function electraControlName(moduleName: string, paramLabel: string): string {
+  const mod = (moduleName ?? '').trim().slice(0, 6).toLowerCase();
+  const param = (paramLabel ?? '').trim().slice(0, 7).toLowerCase();
+  // Defensive clamp (mod.6 + "." + param.7 = 14, but stay safe).
+  return clampName(`${mod}.${param}`);
 }
 
 function discreteItems(def: GenParamDef): Array<{ value: number; label: string }> {
