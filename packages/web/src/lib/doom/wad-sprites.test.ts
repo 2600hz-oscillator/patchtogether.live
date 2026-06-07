@@ -12,6 +12,7 @@ import {
   decodePicture,
   flipSpriteFrame,
   resolveSpriteFrame,
+  extractGibSprites,
   type WadLump,
 } from './wad-sprites';
 
@@ -280,5 +281,47 @@ describe('resolveSpriteFrame', () => {
     const wad = buildWad([{ name: 'PLAYPAL', data: PAL }]);
     const lumps = parseWadDirectory(wad);
     expect(resolveSpriteFrame(wad, lumps, readPlaypal(wad, lumps), 'TROO', 'A', 1)).toBeNull();
+  });
+});
+
+describe('extractGibSprites — runner faces forward (right)', () => {
+  // The marine RUNS to the RIGHT (toward the upcoming obstacles); enemies ride
+  // IN from the right toward the marine. DOOM's side rotation (3) is the
+  // LEFT-facing profile, so the marine must be flipped (face right) while the
+  // enemies stay as-authored (face left, toward the marine). We build a WAD
+  // whose rot-3 lumps are LEFT-half-opaque and assert the opaque half lands on
+  // the RIGHT for the marine (flipped) and on the LEFT for the enemies (not).
+  const opaqueHalf = (frame: ReturnType<typeof decodePicture>): 'left' | 'right' => {
+    const { width, height, rgba } = frame;
+    const alphaAt = (x: number, y: number) => rgba[(y * width + x) * 4 + 3]!;
+    const yMid = Math.floor(height / 2);
+    return alphaAt(0, yMid) >= 128 ? 'left' : 'right';
+  };
+
+  it('flips the marine run cycle to face right; leaves enemies facing left', () => {
+    const W = 6, H = 4;
+    const wad = buildWad([
+      { name: 'PLAYPAL', data: PAL },
+      // Marine run cycle A..D at side rotation 3 (left-half-opaque source).
+      { name: 'PLAYA3', data: buildLeftHalfPicture(W, H, 30) },
+      { name: 'PLAYB3', data: buildLeftHalfPicture(W, H, 31) },
+      { name: 'PLAYC3', data: buildLeftHalfPicture(W, H, 32) },
+      { name: 'PLAYD3', data: buildLeftHalfPicture(W, H, 33) },
+      // Enemy walk frame at rotation 3 (left-half-opaque source).
+      { name: 'TROOA3', data: buildLeftHalfPicture(W, H, 40) },
+      { name: 'POSSA3', data: buildLeftHalfPicture(W, H, 50) },
+    ]);
+    const sprites = extractGibSprites(wad);
+
+    // The marine run cycle exists and EVERY frame faces right (opaque RIGHT).
+    expect(sprites.marineRun.length).toBe(4);
+    for (const f of sprites.marineRun) expect(opaqueHalf(f)).toBe('right');
+
+    // Enemies are NOT flipped — they still face left (opaque LEFT), toward the
+    // marine / their own direction of travel.
+    expect(sprites.impWalk.length).toBeGreaterThan(0);
+    expect(opaqueHalf(sprites.impWalk[0]!)).toBe('left');
+    expect(sprites.zombieWalk.length).toBeGreaterThan(0);
+    expect(opaqueHalf(sprites.zombieWalk[0]!)).toBe('left');
   });
 });

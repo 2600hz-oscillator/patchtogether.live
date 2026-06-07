@@ -384,11 +384,19 @@ export function extractGibSprites(bytes: Uint8Array): GibSprites {
   const lumps = parseWadDirectory(bytes);
   const palette = readPlaypal(bytes, lumps);
   const { MARINE, IMP, ZOMBIE } = GIB_ACTORS;
+  // SIDE_ROTATION (3) is the actor's LEFT-facing profile in screen terms. The
+  // enemies (imp/zombie) ride IN from the right edge toward the marine, so a
+  // left-facing profile already points them in their direction of travel — keep
+  // them as-is. The MARINE, however, RUNS to the RIGHT (toward the upcoming
+  // obstacles/markers), so its left-facing profile reads backwards. Flip every
+  // marine animation horizontally (run cycle + fire/pain/death) so the runner
+  // faces FORWARD in its direction of travel. Pure flip via flipSpriteFrame.
+  const flipAll = (anim: SpriteAnimation): SpriteAnimation => anim.map(flipSpriteFrame);
   return {
-    marineRun: decodeAnimation(bytes, lumps, palette, MARINE, GIB_FRAMES.marineRun),
-    marineFire: decodeAnimation(bytes, lumps, palette, MARINE, GIB_FRAMES.marineFire),
-    marinePain: decodeAnimation(bytes, lumps, palette, MARINE, GIB_FRAMES.marinePain),
-    marineDie: decodeAnimation(bytes, lumps, palette, MARINE, GIB_FRAMES.marineDie),
+    marineRun: flipAll(decodeAnimation(bytes, lumps, palette, MARINE, GIB_FRAMES.marineRun)),
+    marineFire: flipAll(decodeAnimation(bytes, lumps, palette, MARINE, GIB_FRAMES.marineFire)),
+    marinePain: flipAll(decodeAnimation(bytes, lumps, palette, MARINE, GIB_FRAMES.marinePain)),
+    marineDie: flipAll(decodeAnimation(bytes, lumps, palette, MARINE, GIB_FRAMES.marineDie)),
     impWalk: decodeAnimation(bytes, lumps, palette, IMP, GIB_FRAMES.impWalk),
     impDie: decodeAnimation(bytes, lumps, palette, IMP, GIB_FRAMES.impDie),
     zombieWalk: decodeAnimation(bytes, lumps, palette, ZOMBIE, GIB_FRAMES.zombieWalk),
