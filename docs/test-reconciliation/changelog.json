@@ -12,6 +12,18 @@
         { "block": "behavioral", "kind": "parametrized", "total": 92, "disabled": 64 },
         { "block": "@collab", "kind": "raw (e2e subset)", "total": 108, "disabled": 0 }
       ]
+    },
+    {
+      "date": "2026-06-07",
+      "note": "behavioral reconciliation #1 — re-enable moog984 (4×4 matrix mixer). It was NOT a no-upstream-source case: out1 = Σ in_i × m_i1 with all 16 cross-points defaulting to 0 (the attenumix/veils/videoMixer passive-mixer class). Opening column-1 cross-points via BEHAVIORAL_PARAMS lets the noise source on any of in1..in4 reach out1 — all 4 inputs are real-coverage passes (Δμrms≈0.18, ~18× the 0.01 floor). Verified 3× locally clean. behavioral disabled 64→63.",
+      "blocks": [
+        { "block": "unit", "kind": "raw", "total": 5963, "disabled": 2 },
+        { "block": "e2e", "kind": "raw", "total": 903, "disabled": 1 },
+        { "block": "art", "kind": "raw", "total": 457, "disabled": 0 },
+        { "block": "vrt", "kind": "parametrized", "total": 150, "disabled": 0 },
+        { "block": "behavioral", "kind": "parametrized", "total": 93, "disabled": 63 },
+        { "block": "@collab", "kind": "raw (e2e subset)", "total": 108, "disabled": 0 }
+      ]
     }
   ]
 }

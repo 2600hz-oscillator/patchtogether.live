@@ -415,10 +415,16 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    supplied). Same intrinsic-no-observable-delta class as the
   //    audioOut / videoOut passthrough sinks above.
   //
-  // moog984 — 4-channel matrix MIXER (passive routing/mix). out1 sums its
-  // in1..in4 audio inputs; with no upstream audio source on the OTHER
-  // channels both runs read silence (C=P=0.000). Covered by moog984.test.ts.
-  moog984:  'passive 4-ch matrix mixer; out is silent (C=P=0.000) until an upstream audio source feeds the channels the sink observes (driver supplies none); pure-gain math pinned by moog984.test.ts',
+  // (moog984 RE-ENABLED — behavioral-recon #1. It was NOT actually a
+  //  "no-upstream-source" case: out1 = Σ in_i × m_i1 and ALL 16 cross-points
+  //  default to 0, so the matrix is silent until a cross-point is dialled in —
+  //  the IDENTICAL passive-mixer-with-default-0-levels class as attenumix /
+  //  veils / videoMixer, which are NOT exempt because they carry a
+  //  BEHAVIORAL_PARAMS boost opening their gating knobs. Opening column-1
+  //  cross-points (m11=m21=m31=m41=1, see BEHAVIORAL_PARAMS.moog984) lets the
+  //  noise source on ANY of in1..in4 reach the observed out1 → all 4 inputs are
+  //  real-coverage passes. Verified 3× locally.)
+  //
   // moog993 — trigger & envelope voltages patch-bay panel. trig_out mirrors
   // an upstream trigger; with no upstream trigger on trig_from2 both runs
   // read silence (C=P=0.000). Covered by moog993.test.ts.
@@ -504,6 +510,16 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   attenumix: { att1: 0.5, att2: 0.5, att3: 0.5, att4: 0.5, master: 1 },
   // veils: 4-channel VCA; gain1-4 default to 0 (channels closed).
   veils: { gain1: 0.6, gain2: 0.6, gain3: 0.6, gain4: 0.6 },
+  // moog984: 4×4 cross-point matrix mixer. out_j = Σ_i in_i × m_ij; ALL 16
+  // cross-points (m11..m44) default to 0 so the matrix is silent until a
+  // connection is dialled in — the SAME default-0-levels passive-mixer class as
+  // attenumix / veils. The behavioral sweep observes out1 (first audio output),
+  // so open COLUMN 1 (m11/m21/m31/m41 = 1) — then driving ANY of in1..in4 with
+  // the noise source reaches out1 and perturbs it (the context-noise on the
+  // other channels is the SAME in both control + patched, so the test input is
+  // the only variable). The remaining columns stay at 0; out2..out4 aren't
+  // observed by the sweep. Per-cross-point gain math is pinned by moog984.test.ts.
+  moog984: { m11: 1, m21: 1, m31: 1, m41: 1 },
   // videoMixer: amount2-4 default to 0 (channel 1 only by default).
   // Open all four so each video input + amount CV perturbs the mix.
   videoMixer: { amount1: 0.4, amount2: 0.4, amount3: 0.4, amount4: 0.4 },
