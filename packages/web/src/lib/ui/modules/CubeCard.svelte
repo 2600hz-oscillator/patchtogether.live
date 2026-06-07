@@ -1007,6 +1007,10 @@
     { pid: 'decay',   label: 'D', units: 's', curve: 'log' },
     { pid: 'sustain', label: 'S', curve: 'linear' },
     { pid: 'release', label: 'R', units: 's', curve: 'log' },
+    // BASE VOL — per-voice VCA floor the ADSR rides on top of (gain =
+    // base + (1-base)*env). Default 1 = full (env does nothing → raw-VCO drone);
+    // 0 = pure ADSR. Sits right next to the ADSR knobs.
+    { pid: 'base_vol', label: 'Base', curve: 'linear' },
   ];
 </script>
 

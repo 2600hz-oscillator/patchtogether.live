@@ -761,6 +761,140 @@ describe('CUBE worklet — poly input (polyPitchGate)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// 2c) no-stray-drone gating (Bug 1) + BASE VOL per-voice VCA floor (Bug-fix 2).
+//
+// Connectedness is a k-rate param (poly_connected / trigger_connected) pushed by
+// the factory from the live patch EDGES — NOT bus presence (the trigger keep-alive
+// ConstantSource masks it). When poly OR trigger is CONNECTED, CUBE is GATED: a
+// voice sounds only while gated-or-releasing; a never-gated voice is SILENT
+// (patching poly never auto-drones). Nothing connected → a raw VCO whose level IS
+// base_vol (env idle). gain = base + (1-base)*env per ACTIVE voice; default base=1
+// keeps the raw-VCO drone byte-identical.
+// ─────────────────────────────────────────────────────────────────────────
+describe('CUBE worklet — no-stray-drone gating + BASE VOL floor', () => {
+  const C2 = Math.log2(65.41 / 261.626);
+
+  /** Build the 10-channel poly bus block (ch 2i = lane-i pitch, ch 2i+1 = gate). */
+  function makePoly(
+    len: number,
+    lanes: Array<{ voct: number; gate: 0 | 1 } | undefined>,
+  ): Float32Array[] {
+    const ch: Float32Array[] = [];
+    for (let lane = 0; lane < 5; lane++) {
+      const l = lanes[lane];
+      ch.push(new Float32Array(len).fill(l ? l.voct : 0)); // pitch
+      ch.push(new Float32Array(len).fill(l ? l.gate : 0));  // gate
+    }
+    return ch;
+  }
+
+  /** Run with pitch (input 0), poly (input 1), trigger (input 2) + params. */
+  function runWith(
+    proc: ProcInstance,
+    params: Record<string, Float32Array>,
+    seconds: number,
+    opts: { lanes?: Array<{ voct: number; gate: 0 | 1 } | undefined>; trig?: 0 | 1; pitchV?: number },
+  ): { L: Float32Array; R: Float32Array } {
+    const total = Math.round(SR * seconds);
+    const L = new Float32Array(total);
+    const R = new Float32Array(total);
+    let g = 0;
+    while (g < total) {
+      const len = Math.min(BLOCK, total - g);
+      const pitch = new Float32Array(len).fill(opts.pitchV ?? 0);
+      const poly = opts.lanes ? makePoly(len, opts.lanes) : [];
+      const trig = new Float32Array(len).fill(opts.trig ?? 0);
+      const outL = new Float32Array(len);
+      const outR = new Float32Array(len);
+      proc.process([[pitch], poly, [trig]], [[outL, outR]], params);
+      for (let i = 0; i < len; i++) { L[g + i] = outL[i] as number; R[g + i] = outR[i] as number; }
+      g += len;
+    }
+    return { L, R };
+  }
+
+  it('Bug 1: poly CONNECTED but never gated → SILENT (no stray drone)', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc(); loadAllTables(p);
+    const out = runWith(p, makeParams({ poly_connected: 1, level: 1, spread: 0 }), 0.1, {
+      lanes: [{ voct: C2, gate: 0 }, { voct: C2, gate: 0 }],
+    });
+    expect(peak(out.L)).toBe(0);
+    expect(peak(out.R)).toBe(0);
+  });
+
+  it('Bug 1: TRIGGER connected but never gated → SILENT (no stray drone)', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc(); loadAllTables(p);
+    const out = runWith(p, makeParams({ trigger_connected: 1, level: 1, base_vol: 1 }), 0.1, {
+      trig: 0, pitchV: C2,
+    });
+    expect(peak(out.L)).toBe(0);
+  });
+
+  it('base=0 → pure ADSR: a poly voice gated is audible; never-gated is silent', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc(); loadAllTables(p);
+    const gated = runWith(p, makeParams({ poly_connected: 1, base_vol: 0, attack: 0.001, sustain: 1, level: 1, spread: 0 }), 0.1, {
+      lanes: [{ voct: C2, gate: 1 }],
+    });
+    expect(peak(gated.L)).toBeGreaterThan(1e-3);
+    const p2 = new Proc(); loadAllTables(p2);
+    const ungated = runWith(p2, makeParams({ poly_connected: 1, base_vol: 0, level: 1, spread: 0 }), 0.1, {
+      lanes: [{ voct: C2, gate: 0 }],
+    });
+    expect(peak(ungated.L)).toBe(0);
+  });
+
+  it('base=1 raw VCO (nothing connected) is BYTE-IDENTICAL to the legacy drone', async () => {
+    const Proc = await loadProcessor();
+    const voct = Math.log2(98 / 261.626);
+    const ps = makeParams({ morph_fc: 0.5, slice_rx: 0.4, spread: 0.6, level: 1 });
+    const pRef = new Proc(); loadAllTables(pRef);
+    const ref = runProc(pRef, ps, 0.2, voct); // legacy mono drone (base_vol default 1)
+    const pBase1 = new Proc(); loadAllTables(pBase1);
+    const base1 = runWith(pBase1, makeParams({ morph_fc: 0.5, slice_rx: 0.4, spread: 0.6, level: 1, base_vol: 1 }), 0.2, {
+      pitchV: voct,
+    });
+    let maxDiff = 0;
+    for (let i = 0; i < ref.L.length; i++) {
+      maxDiff = Math.max(maxDiff, Math.abs(ref.L[i]! - base1.L[i]!), Math.abs(ref.R[i]! - base1.R[i]!));
+    }
+    expect(maxDiff, 'base=1 raw VCO must equal the legacy drone byte-for-byte').toBe(0);
+  });
+
+  it('base=0 raw VCO (nothing connected) is SILENT', async () => {
+    const Proc = await loadProcessor();
+    const p = new Proc(); loadAllTables(p);
+    const out = runWith(p, makeParams({ base_vol: 0, level: 1, spread: 0 }), 0.1, { pitchV: C2 });
+    expect(peak(out.L)).toBe(0);
+  });
+
+  it('base=0.5 gated mono: silent until the gate, then lifts to ~full at env peak', async () => {
+    const Proc = await loadProcessor();
+    const voct = C2;
+    // Full-env reference (base=0, fast attack, sustain=1).
+    const pFull = new Proc(); loadAllTables(pFull);
+    const full = runWith(pFull, makeParams({ trigger_connected: 1, base_vol: 0, attack: 0.001, sustain: 1, level: 1, spread: 0 }), 0.1, {
+      trig: 1, pitchV: voct,
+    });
+    // base=0.5 but gate LOW + env idle → inactive → silent (no drone).
+    const pOff = new Proc(); loadAllTables(pOff);
+    const off = runWith(pOff, makeParams({ trigger_connected: 1, base_vol: 0.5, level: 1, spread: 0 }), 0.1, {
+      trig: 0, pitchV: voct,
+    });
+    expect(peak(off.L), 'a never-hit gated voice stays silent even at base=0.5').toBe(0);
+    // base=0.5 gated: at env≈1, gain = 0.5 + 0.5*1 = 1 → ~same peak as base=0 full.
+    const pOn = new Proc(); loadAllTables(pOn);
+    const on = runWith(pOn, makeParams({ trigger_connected: 1, base_vol: 0.5, attack: 0.001, sustain: 1, level: 1, spread: 0 }), 0.1, {
+      trig: 1, pitchV: voct,
+    });
+    expect(peak(on.L)).toBeGreaterThan(peak(full.L) * 0.9);
+    expect(peak(on.L)).toBeGreaterThan(1e-3);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // 3) Wavetable RELOAD (issue: loading a DIFFERENT table after one is loaded).
 //
 // Drives cubeDef.factory() against a mock Web Audio env that records every

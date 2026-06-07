@@ -19,6 +19,7 @@ import {
   monoEnvSample,
   updateHeldPitch,
   laneRenderVOct,
+  vcaGain,
   POLY_SUM_VOICES,
   ENV_AUDIBLE_EPS,
   type AdsrParams,
@@ -143,6 +144,68 @@ describe('poly-osc-sum / env-audible normalization (CRITIQUE C2)', () => {
   });
 });
 
+describe('poly-osc-sum / vcaGain (per-voice VCA floor)', () => {
+  it('base=0 → pure ADSR (gain = env)', () => {
+    expect(vcaGain(0, 0)).toBe(0);
+    expect(vcaGain(0, 1)).toBe(1);
+    expect(vcaGain(0, 0.37)).toBeCloseTo(0.37, 12);
+  });
+  it('base=1 → gain = 1 always (env does nothing)', () => {
+    expect(vcaGain(1, 0)).toBe(1);
+    expect(vcaGain(1, 0.5)).toBe(1);
+    expect(vcaGain(1, 1)).toBe(1);
+  });
+  it('base=0.5 → floors at 0.5, rises to 1.0 at the env peak', () => {
+    expect(vcaGain(0.5, 0)).toBeCloseTo(0.5, 12);
+    expect(vcaGain(0.5, 0.5)).toBeCloseTo(0.75, 12);
+    expect(vcaGain(0.5, 1)).toBeCloseTo(1, 12);
+  });
+});
+
+describe('poly-osc-sum / polyEnvSum BASE VOL floor + active gating', () => {
+  it('a never-gated lane (gate low, env idle) is SILENT even at base=1 (no auto-drone)', () => {
+    const env = mkEnvs(); // all idle, value 0
+    const L = new Float64Array(POLY_SUM_VOICES).fill(1);
+    const R = new Float64Array(POLY_SUM_VOICES).fill(1);
+    const laneGate = [false, false, false, false, false];
+    const r = polyEnvSum(L, R, env, adsr(), SR, laneGate, /*baseVol*/ 1);
+    expect(r.sumL).toBe(0);
+    expect(r.sumR).toBe(0);
+    expect(r.polyNorm).toBe(1);
+  });
+
+  it('a gated lane at base=1 contributes its FULL sample (env does nothing)', () => {
+    const env = mkEnvs();
+    env[2]!.triggerSoft(true);
+    const L = new Float64Array(POLY_SUM_VOICES); L[2] = 0.5;
+    const R = new Float64Array(POLY_SUM_VOICES); R[2] = -0.5;
+    const laneGate = [false, false, true, false, false];
+    // First tick: env is near 0 (attack just started) but base=1 → gain ≈ 1, and
+    // the lane is gated → ACTIVE → it contributes the full sample immediately.
+    const r = polyEnvSum(L, R, env, adsr({ attack: 0.05 }), SR, laneGate, 1);
+    expect(r.polyNorm).toBe(1); // one active voice
+    expect(r.sumL).toBeCloseTo(0.5, 6);
+    expect(r.sumR).toBeCloseTo(-0.5, 6);
+  });
+
+  it('a gated lane at base=0.5 floors at ~0.5× then rises with the env', () => {
+    const env = mkEnvs();
+    env[0]!.triggerSoft(true);
+    const L = new Float64Array(POLY_SUM_VOICES); L[0] = 1;
+    const R = new Float64Array(POLY_SUM_VOICES); R[0] = 1;
+    const laneGate = [true, false, false, false, false];
+    const a = adsr({ attack: 0.001, sustain: 1 });
+    // First sample: env≈0 → gain≈0.5.
+    const first = polyEnvSum(L, R, env, a, SR, laneGate, 0.5);
+    expect(first.sumL).toBeGreaterThan(0.4);
+    expect(first.sumL).toBeLessThan(0.6);
+    // After attack: env≈1 → gain≈1.
+    let last = first;
+    for (let i = 0; i < SR * 0.02; i++) last = polyEnvSum(L, R, env, a, SR, laneGate, 0.5);
+    expect(last.sumL).toBeCloseTo(1, 2);
+  });
+});
+
 describe('poly-osc-sum / monoEnvSample (gated mono path)', () => {
   it('multiplies the sample by the lane-0 envelope value', () => {
     const e = new Envelope();
@@ -160,6 +223,34 @@ describe('poly-osc-sum / monoEnvSample (gated mono path)', () => {
     const out = monoEnvSample(1, 1, e, adsr(), SR);
     expect(out.l).toBe(0);
     expect(out.r).toBe(0);
+  });
+
+  it('base=1 + ACTIVE → gain 1 (env does nothing), passes the sample through', () => {
+    const e = new Envelope();
+    e.triggerSoft(true);
+    // Even at the very first sample (env≈0), base=1 → gain 1 → full sample.
+    const out = monoEnvSample(0.5, -0.5, e, adsr({ attack: 0.5 }), SR, /*base*/ 1, /*active*/ true);
+    expect(out.l).toBeCloseTo(0.5, 6);
+    expect(out.r).toBeCloseTo(-0.5, 6);
+  });
+
+  it('INACTIVE (gate low + env idle) → SILENT even at base=0.5 (no never-hit drone)', () => {
+    const e = new Envelope(); // idle
+    const out = monoEnvSample(1, 1, e, adsr(), SR, /*base*/ 0.5, /*active*/ false);
+    expect(out.l).toBe(0);
+    expect(out.r).toBe(0);
+  });
+
+  it('base=0.5 + ACTIVE: floors at ~0.5 then rises to ~1 as the env peaks', () => {
+    const e = new Envelope();
+    e.triggerSoft(true);
+    const a = adsr({ attack: 0.001, sustain: 1 });
+    const first = monoEnvSample(1, 1, e, a, SR, 0.5, true);
+    expect(first.l).toBeGreaterThan(0.4);
+    expect(first.l).toBeLessThan(0.6);
+    let last = first;
+    for (let i = 0; i < SR * 0.02; i++) last = monoEnvSample(1, 1, e, a, SR, 0.5, true);
+    expect(last.l).toBeCloseTo(1, 2);
   });
 });
 

@@ -90,6 +90,18 @@ class WavecelProcessor extends AudioWorkletProcessor {
       { name: 'decay',   defaultValue: 0.1,   minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
       { name: 'sustain', defaultValue: 1,     minValue: 0,     maxValue: 1, automationRate: 'k-rate' as const },
       { name: 'release', defaultValue: 0.005, minValue: 0.001, maxValue: 5, automationRate: 'k-rate' as const },
+      // Per-voice VCA FLOOR the envelope rides on top of: gain = base+(1-base)*env
+      // per ACTIVE voice. base=1 (default) → gain=1, the env does nothing → the
+      // raw-VCO drone is byte-identical (back-compat). base=0 → pure ADSR. k-rate.
+      { name: 'base_vol', defaultValue: 1, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
+      // CONNECTEDNESS flags (k-rate, 0/1) pushed by the web factory from the live
+      // patch edges — NOT bus presence, which the trigger keep-alive ConstantSource
+      // masks. When poly OR trigger is connected the module is GATED (a voice sounds
+      // only while gated-or-releasing); neither connected → a continuous raw VCO.
+      // The no-stray-drone fix: a patched-but-ungated poly/trigger no longer falls
+      // through to the mono drone.
+      { name: 'poly_connected',    defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
+      { name: 'trigger_connected', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
     ];
   }
 
@@ -114,13 +126,14 @@ class WavecelProcessor extends AudioWorkletProcessor {
 
   // ── Per-voice amplitude ADSR (per-voice-ADSR feature) ──
   // One Envelope per lane; poly lane edges drive env[lane], the mono TRIGGER
-  // drives env[0]. everGated latches on the first rising edge (gated-amp mode);
-  // before that (and unpatched) the env multiply is skipped → byte-identical
-  // legacy drone. Scratch arrays feed the per-lane (L,R) reads to polyEnvSum.
+  // drives env[0]. The GATING MODE is decided by connectedness (poly_connected /
+  // trigger_connected params), NOT a first-edge latch: when poly OR trigger is
+  // connected the module is GATED (a voice sounds only while gated-or-releasing);
+  // neither connected → a continuous raw VCO. Scratch arrays feed the per-lane
+  // (L,R) reads to polyEnvSum.
   private env: Envelope[] = Array.from({ length: POLY_VOICES }, () => new Envelope());
   private prevGate: Uint8Array = new Uint8Array(POLY_VOICES);
   private prevTrigGate = 0;
-  private everGated = false;
   private laneScratchL = new Float64Array(POLY_VOICES);
   private laneScratchR = new Float64Array(POLY_VOICES);
   // PERSISTENT per-lane held V/oct — UPDATED while a lane is gated, HELD (never
@@ -220,6 +233,11 @@ class WavecelProcessor extends AudioWorkletProcessor {
       sustain: parameters.sustain ? (parameters.sustain[0] ?? 1) : 1,
       release: parameters.release ? (parameters.release[0] ?? 0.005) : 0.005,
     };
+    // Per-voice VCA floor (gain = base + (1-base)*env per ACTIVE voice).
+    const baseVol = parameters.base_vol ? (parameters.base_vol[0] ?? 1) : 1;
+    // CONNECTEDNESS (from the factory via k-rate params, not bus presence).
+    const polyConnParam = (parameters.poly_connected ? (parameters.poly_connected[0] ?? 0) : 0) >= 0.5;
+    const trigConnParam = (parameters.trigger_connected ? (parameters.trigger_connected[0] ?? 0) : 0) >= 0.5;
 
     // Decide once per block which poly lanes are GATED. We sample the gate +
     // pitch at the FIRST sample of the block (the sequencer / MIDI LANE write
@@ -250,29 +268,36 @@ class WavecelProcessor extends AudioWorkletProcessor {
     // Mono TRIGGER edge state.
     const trigGate = trigIn && trigIn.length > 0 ? ((trigIn[0] ?? 0) > 0.5 ? 1 : 0) : 0;
 
-    // Gate-edge detection → soft (click-safe) retrigger. Every rising edge
-    // latches everGated (gated-amp mode engages thenceforth).
+    // Gate-edge detection → soft (click-safe) retrigger.
     for (let lane = 0; lane < POLY_VOICES; lane++) {
       const now = laneGate[lane] ? 1 : 0;
-      if (now && !this.prevGate[lane]) { this.env[lane]!.triggerSoft(true); this.everGated = true; }
+      if (now && !this.prevGate[lane]) this.env[lane]!.triggerSoft(true);
       else if (!now && this.prevGate[lane]) this.env[lane]!.triggerSoft(false);
       this.prevGate[lane] = now as number;
     }
-    if (!anyPolyGate) {
-      if (trigGate && !this.prevTrigGate) { this.env[0]!.triggerSoft(true); this.everGated = true; }
+    // Mono TRIGGER edge → lane-0 envelope (only meaningful in the gated-MONO path).
+    // Suppressed whenever poly is connected or a poly gate is live — poly owns env[0].
+    if (!polyConnParam && !anyPolyGate) {
+      if (trigGate && !this.prevTrigGate) this.env[0]!.triggerSoft(true);
       else if (!trigGate && this.prevTrigGate) this.env[0]!.triggerSoft(false);
     }
     this.prevTrigGate = trigGate;
 
-    // polyActive while ANY lane is gated OR still releasing (env audible); the
-    // mono gated path engages once everGated and poly is unpatched. Otherwise the
-    // legacy byte-identical mono drone runs.
-    let anyEnvAudible = false;
-    for (let lane = 0; lane < POLY_VOICES; lane++) {
-      if (this.env[lane]!.value > 0) { anyEnvAudible = true; break; }
-    }
-    const polyActive = anyPolyGate || (this.everGated && polyIn != null && anyEnvAudible);
-    const gatedMono = !polyActive && this.everGated;
+    // ── GATING MODE (no-stray-drone fix) ──
+    // CONNECTEDNESS drives the mode, NOT bus presence (the trigger keep-alive
+    // ConstantSource always makes its input present, masking it). A live gate also
+    // implies connectedness (covers the unit-test path that drives a poly bus
+    // directly without the connectedness param).
+    const polyConn = polyConnParam || anyPolyGate;
+    const trigConn = trigConnParam || trigGate === 1;
+    // POLY mode: poly connected → per-lane env sum. A never-gated lane stays silent
+    // (polyEnvSum excludes inactive lanes) → patching poly no longer auto-drones.
+    const polyActive = polyConn;
+    // GATED-MONO mode: trigger connected (poly not) → lane-0 env shapes the mono
+    // oscillator; silent until the first hit, base-floored once active.
+    const gatedMono = !polyActive && trigConn;
+    // Otherwise (NOTHING connected): the continuous raw VCO at baseVol (default 1
+    // → byte-identical legacy drone).
     const laneL = this.laneScratchL;
     const laneR = this.laneScratchR;
 
@@ -312,11 +337,13 @@ class WavecelProcessor extends AudioWorkletProcessor {
       if (polyActive) {
         // Polyphonic: step each lane's voice (its own V/oct + shared trim) then
         // hand the per-lane (L,R) samples to polyEnvSum, which ticks every lane
-        // envelope, multiplies the env value in, sums the env-AUDIBLE lanes, and
-        // returns the env-audible-count normalization (decision #6). A lane in
-        // RELEASE keeps sounding (env>0) until it decays. The morph / spread /
-        // fold timbre is shared across voices. Silent lanes still advance (at
-        // lane-0's pitch) so a re-opened lane doesn't pop.
+        // envelope, applies the per-voice VCA gain (base + (1-base)*env) to each
+        // ACTIVE (gated-or-releasing) lane, sums them, and returns the active-voice
+        // normalization. A NEVER-gated lane stays SILENT regardless of baseVol —
+        // patching poly never auto-drones (the no-stray-drone fix). A lane in
+        // RELEASE keeps sounding (env>0). The morph / spread / fold timbre is shared
+        // across voices. Silent lanes still advance (at lane-0's pitch) so a
+        // re-opened lane doesn't pop.
         for (let lane = 0; lane < POLY_VOICES; lane++) {
           const v = this.polyVoices[lane]!;
           // Held pitch: gated OR still releasing (env>0) → the lane's OWN held
@@ -328,24 +355,31 @@ class WavecelProcessor extends AudioWorkletProcessor {
           laneL[lane] = l;
           laneR[lane] = r;
         }
-        const { sumL, sumR, polyNorm } = polyEnvSum(laneL, laneR, this.env, adsr, sr);
+        const { sumL, sumR, polyNorm } = polyEnvSum(
+          laneL, laneR, this.env, adsr, sr, laneGate, baseVol,
+        );
         outL[i] = sumL * polyNorm;
         outR[i] = sumR * polyNorm;
       } else if (gatedMono) {
-        // Gated mono (TRIGGER drove lane-0's envelope; poly unpatched). The mono
-        // oscillator output is multiplied by lane-0's envelope.
+        // Gated mono (TRIGGER connected; poly unpatched). The mono oscillator is
+        // scaled by lane-0's per-voice VCA gain (base + (1-base)*env). The voice
+        // is ACTIVE only while gated-or-releasing → silent until the first hit,
+        // base-floored once active (a patched-but-never-hit TRIGGER does not drone).
         const voct = pitch + trim;
         const { l, r } = this.osc.step(voct, morph, spread, foldAmt);
-        const { l: el, r: er } = monoEnvSample(l, r, this.env[0]!, adsr, sr);
+        const active = trigGate === 1 || this.env[0]!.value > 0;
+        const { l: el, r: er } = monoEnvSample(l, r, this.env[0]!, adsr, sr, baseVol, active);
         outL[i] = el;
         outR[i] = er;
       } else {
-        // Mono (poly unpatched / all gates closed): the original path,
-        // byte-identical. Only voice 0 (the mono `osc`) advances + sounds.
+        // Raw VCO (NOTHING connected to poly or trigger): the single mono voice is
+        // "always active". With no gate the env is idle (0), so its VCA gain is
+        // baseVol — baseVol=1 (default) reproduces the legacy continuous drone
+        // BYTE-IDENTICALLY (× 1.0 is exact in IEEE-754), baseVol=0 is silent.
         const voct = pitch + trim;
         const { l, r } = this.osc.step(voct, morph, spread, foldAmt);
-        outL[i] = l;
-        outR[i] = r;
+        outL[i] = l * baseVol;
+        outR[i] = r * baseVol;
       }
     }
 

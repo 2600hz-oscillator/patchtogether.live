@@ -87,28 +87,50 @@ export interface AdsrParams {
 export interface PolySumResult {
   sumL: number;
   sumR: number;
-  /** 1/sqrt(env-audible voice count); 1 when none are audible. */
+  /** 1/sqrt(active voice count); 1 when none are active. */
   polyNorm: number;
+}
+
+/**
+ * Per-voice VCA gain = `base + (1 - base) * env` — a "VCA floor / env depth"
+ * control. The envelope rides ON TOP of a base level:
+ *   - base = 0 → pure ADSR (gain = env; silent between notes).
+ *   - base = 1 → gain = 1 always; the envelope does nothing (full on while
+ *                the voice is active).
+ *   - base = 0.5 → gain floors at 0.5 and rises to 1.0 as the env peaks.
+ * Applied ONLY to ACTIVE voices (gated or still env-audible). A never-gated
+ * lane is NOT active → it stays silent regardless of base (so patching poly
+ * never auto-drones — the no-stray-drone fix). Shared by CUBE + WAVECEL.
+ */
+export function vcaGain(base: number, env: number): number {
+  return base + (1 - base) * env;
 }
 
 /**
  * One-sample poly env+sum for the gated-poly path. Ticks each lane's envelope
  * (every lane ticks ALWAYS so a silent lane's release tail keeps decaying and a
- * re-opened lane doesn't pop), multiplies each lane's pre-read (L,R) oscillator
- * sample by its env value, sums the GATED-OR-STILL-AUDIBLE lanes, and returns
- * the env-audible-count normalization.
+ * re-opened lane doesn't pop), multiplies each ACTIVE lane's pre-read (L,R)
+ * oscillator sample by its per-voice VCA gain (`vcaGain(baseVol, env)`), sums the
+ * active lanes, and returns the active-voice-count normalization.
  *
- * A lane contributes its env-scaled sample whenever its envelope is non-idle
- * (env.value > 0): a lane whose gate just fell is in Release and must keep
- * sounding until it decays — so we gate the SUM on env-audibility, not the raw
- * gate. The caller is responsible for having called env[lane].triggerSoft() on
- * the lane's gate edges before this loop (block-rate edge detection).
+ * ACTIVE = gated OR still env-audible (env.value > EPS). A lane whose gate just
+ * fell is in Release and must keep sounding until it decays — so it stays active
+ * through the release tail. A NEVER-gated lane (gate low, env idle at 0) is NOT
+ * active and contributes nothing (even with baseVol > 0): patching poly never
+ * auto-drones. The caller is responsible for having called env[lane].triggerSoft()
+ * on the lane's gate edges before this loop (block-rate edge detection).
  *
  * @param perLaneL  pre-read left  oscillator sample per lane (length 5)
  * @param perLaneR  pre-read right oscillator sample per lane (length 5)
  * @param env       per-lane Envelope instances (length 5; state owned by caller)
  * @param adsr      the single shared A/D/S/R block
  * @param sr        sample rate
+ * @param laneGate  per-lane currently-gated flag (length 5). Optional — when
+ *                  omitted, "active" falls back to env-audibility alone (the
+ *                  pre-base-vol behavior, so the existing helper tests still
+ *                  pin the same arithmetic).
+ * @param baseVol   per-voice VCA floor [0..1]. Optional — defaults to 0 (pure
+ *                  ADSR, the pre-base-vol behavior).
  */
 export function polyEnvSum(
   perLaneL: ArrayLike<number>,
@@ -116,33 +138,47 @@ export function polyEnvSum(
   env: Envelope[],
   adsr: AdsrParams,
   sr: number,
+  laneGate?: ArrayLike<boolean>,
+  baseVol = 0,
 ): PolySumResult {
   let sumL = 0;
   let sumR = 0;
-  let audibleCount = 0;
+  let activeCount = 0;
   for (let lane = 0; lane < POLY_SUM_VOICES; lane++) {
     const e = env[lane]!;
     const ev = e.tick(adsr.attack, adsr.decay, adsr.sustain, adsr.release, sr);
-    if (ev > ENV_AUDIBLE_EPS) {
-      audibleCount++;
-      sumL += (perLaneL[lane] ?? 0) * ev;
-      sumR += (perLaneR[lane] ?? 0) * ev;
+    const gated = laneGate ? !!laneGate[lane] : false;
+    // ACTIVE = gated now OR still ringing out a release tail. A never-gated lane
+    // (gate low, env idle) is excluded so baseVol can't make it drone.
+    const active = gated || ev > ENV_AUDIBLE_EPS;
+    if (active) {
+      activeCount++;
+      const g = vcaGain(baseVol, ev);
+      sumL += (perLaneL[lane] ?? 0) * g;
+      sumR += (perLaneR[lane] ?? 0) * g;
     }
   }
-  const polyNorm = audibleCount > 0 ? 1 / Math.sqrt(audibleCount) : 1;
+  const polyNorm = activeCount > 0 ? 1 / Math.sqrt(activeCount) : 1;
   return { sumL, sumR, polyNorm };
 }
 
 /**
  * One-sample env multiply for the gated-MONO path (TRIGGER input drives lane-0's
- * envelope; poly bus unpatched). Returns the lane-0 (L,R) sample scaled by
- * lane-0's envelope. No normalization (a single voice). The caller ticks/triggers
- * the envelope identically to the poly path so retrigger stays click-safe.
+ * envelope; poly bus unpatched but the TRIGGER is patched). Returns the lane-0
+ * (L,R) sample scaled by the per-voice VCA gain `vcaGain(baseVol, env)`. No
+ * normalization (a single voice). The caller ticks/triggers the envelope
+ * identically to the poly path so retrigger stays click-safe.
  *
- * NOTE: this is ONLY called once the TRIGGER has been gated at least once
- * (everGated latch) — before any note (and when the TRIGGER is unpatched) the
- * caller skips the env entirely and emits the raw oscillator → byte-identical
- * legacy drone.
+ * ACTIVE gating: the floor (and any output) applies ONLY while the voice is
+ * active — gated now OR still env-audible (releasing tail). Before the first
+ * trigger (env idle, gate low) the voice is INACTIVE → silent (gain 0), so a
+ * patched-but-never-hit TRIGGER does not drone even with baseVol > 0. The
+ * caller passes `active = trigGate || env.value > EPS`.
+ *
+ * @param baseVol per-voice VCA floor [0..1]. Default 0 = pure ADSR (gain = env),
+ *                the pre-base-vol behavior the existing helper tests pin.
+ * @param active  whether the voice is gated-or-releasing this sample. Default
+ *                true (pre-base-vol callers always had a live envelope).
  */
 export function monoEnvSample(
   sampleL: number,
@@ -150,7 +186,10 @@ export function monoEnvSample(
   env: Envelope,
   adsr: AdsrParams,
   sr: number,
+  baseVol = 0,
+  active = true,
 ): { l: number; r: number } {
   const ev = env.tick(adsr.attack, adsr.decay, adsr.sustain, adsr.release, sr);
-  return { l: sampleL * ev, r: sampleR * ev };
+  const g = active ? vcaGain(baseVol, ev) : 0;
+  return { l: sampleL * g, r: sampleR * g };
 }
