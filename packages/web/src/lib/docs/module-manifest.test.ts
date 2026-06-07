@@ -88,12 +88,13 @@ describe('buildModuleManifest', () => {
     const mix = m.modules.find((x) => x.type === 'mixmstrs');
     expect(mix).toBeDefined();
     if (!mix) return;
-    // Channel inputs L+R per channel = 8 audio inputs at minimum
+    // 6 channels L+R + 2 stereo returns = 16 audio inputs; assert >= 12
+    // (6 channel pairs) to leave room if the helper grows.
     const audioIn = mix.inputs.filter((p) => p.type === 'audio');
-    expect(audioIn.length).toBeGreaterThanOrEqual(8);
-    // 37 params (per the description string) — assert >= 30 to leave room
-    // if the helper grows
-    expect(mix.params.length).toBeGreaterThanOrEqual(30);
+    expect(audioIn.length).toBeGreaterThanOrEqual(12);
+    // 61 params (per the description string) — assert >= 55 to leave room
+    // if the helper grows.
+    expect(mix.params.length).toBeGreaterThanOrEqual(55);
   });
 
   it('audioOut is a terminal output with two mono inputs and zero outputs', () => {
