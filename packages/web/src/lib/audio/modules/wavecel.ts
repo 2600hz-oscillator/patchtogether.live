@@ -22,6 +22,11 @@
 //   morph_cv (cv, linear, paramTarget=morph): displaces the wavetable morph position.
 //   spread_cv (cv, linear, paramTarget=spread): displaces the stereo spread (detune voices).
 //   fold_cv (cv, linear, paramTarget=fold): displaces the wavefold amount.
+//   poly (polyPitchGate): 5-voice chord bus from MIDI LANE (mode='poly') /
+//     POLYSEQZ. When ANY lane is gated WAVECEL renders one wavetable voice per
+//     gated lane at that lane's pitch and SUMS them — polyphonic. The morph /
+//     spread / fold timbre is shared across all voices. Unpatched (or no gate) →
+//     the mono `pitch` path runs unchanged (back-compat).
 //
 // Outputs:
 //   out_l (audio): left channel of the stereo wavetable.
@@ -123,6 +128,11 @@ export const wavecelDef: AudioModuleDef = {
     { id: 'morph_cv',  type: 'cv',    paramTarget: 'morph',  cvScale: { mode: 'linear' } },
     { id: 'spread_cv', type: 'cv',    paramTarget: 'spread', cvScale: { mode: 'linear' } },
     { id: 'fold_cv',   type: 'cv',    paramTarget: 'fold',   cvScale: { mode: 'linear' } },
+    // Polyphonic chord bus (5 voice pairs of pitch+gate over 10 channels). When
+    // gated, WAVECEL renders one wavetable voice per lane → polyphonic; mono
+    // `pitch` is the fallback when nothing is patched here. Engine routes this
+    // 10-channel cable to ONE worklet input (index 5) — same shape as DX7.poly.
+    { id: 'poly',      type: 'polyPitchGate' },
   ],
   outputs: [
     { id: 'out_l', type: 'audio' },
@@ -152,7 +162,10 @@ export const wavecelDef: AudioModuleDef = {
     }
 
     const workletNode = new AudioWorkletNode(ctx, 'wavecel', {
-      numberOfInputs: 5,
+      // 6 inputs: pitch, fm, morph_cv, spread_cv, fold_cv, + poly (10-channel
+      // polyPitchGate at index 5). channelCountMode defaults to 'max', so the
+      // 10-channel poly source passes through to the worklet intact.
+      numberOfInputs: 6,
       numberOfOutputs: 2,
       outputChannelCount: [1, 1],
     });
@@ -240,6 +253,8 @@ export const wavecelDef: AudioModuleDef = {
         ['morph_cv',  { node: workletNode, input: 2, param: pMorph }],
         ['spread_cv', { node: workletNode, input: 3, param: pSpread }],
         ['fold_cv',   { node: workletNode, input: 4, param: pFold }],
+        // Poly bus → worklet input 5 (a node connection, not an AudioParam).
+        ['poly',      { node: workletNode, input: 5 }],
       ]),
       outputs: new Map([
         ['out_l', { node: workletNode, output: 0 }],
