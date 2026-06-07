@@ -46,10 +46,15 @@ describe('historyUniforms', () => {
   it('defaults every field when params are absent', () => {
     const u = historyUniforms('framedelay', undefined);
     expect(u.op).toBe(0);
-    expect(u.delay).toBe(8);
-    expect(u.mix).toBe(1);
+    // Audit M2d "visible out of the box" defaults: framedelay mix < 1 (a visible
+    // crossfade, not an invisible pure delay) + a longer default delay.
+    expect(u.delay).toBe(12);
+    expect(u.mix).toBe(0.7);
     expect(u.persistence).toBe(0.85);
-    expect(u.decay).toBe(0.9);
+    const dm = historyUniforms('datamosh', undefined);
+    expect(dm.flowScale).toBe(0.8);
+    expect(dm.holdGate).toBe(0.3);
+    expect(dm.decay).toBe(0.95);
   });
 
   it('rounds delays + clamps floats to their OP_PARAMS ranges', () => {
@@ -131,5 +136,17 @@ describe('EXQUISITE_FRAG_SRC content (4 input samplers)', () => {
     expect(src).toContain('uniform float uBands;');
     expect(src).toContain('uniform float uWarp;');
     expect(src).toContain('uniform float uSeam;');
+  });
+
+  // ── Audit M1: a band's count-space slot must map to the k-th WIRED port via
+  //    wiredSlot(), NOT be used as a literal port index (which dropped a feed
+  //    when inputs were wired non-contiguously, e.g. in0+in2). The mapping
+  //    function must exist + the main path must route the slot through it.
+  it('maps a band slot through wiredSlot() (k-th wired port), not a raw index', () => {
+    const src = __EXQUISITE_FRAG_SRC_FOR_TEST;
+    expect(src).toContain('int wiredSlot(int k)');
+    // the slot from `band mod wired` is fed THROUGH wiredSlot before sampling.
+    expect(src).toContain('wiredSlot(slot)');
+    expect(src).toContain('sampleIn(idx, vUv)');
   });
 });

@@ -81,6 +81,28 @@ describe('toybox combine graph — real Y.Doc mutators', () => {
     expect(g.edges.some((e) => e.from === b && e.to === a)).toBe(false);
   });
 
+  it('wires a LAYER INPUT feedback tap (OUT-feeding node → src0.in0) despite the cycle', () => {
+    makeToybox();
+    ensureCombineGraph(TID); // seed the default graph (src0..src3, op chain, out)
+    const before = readCombineGraph(patch.nodes[TID])!;
+    // The node feeding the OUTPUT (the last fade) — wiring its output back into a
+    // SOURCE's in0 is a graph cycle, but a SOURCE-in0 edge is an exempt feedback
+    // tap, so connectCombine ACCEPTS it + persists a plain edge in place.
+    const out = outputNode(before)!;
+    const outFeeder = before.edges.find((e) => e.to === out.id && e.toPort === 'in0')!.from;
+    const r = connectCombine(TID, outFeeder, 'src0', 'in0');
+    expect(r.ok).toBe(true);
+    const g = readCombineGraph(patch.nodes[TID])!;
+    // The tap edge persisted as one more entry whose `to` is the source id.
+    const tap = g.edges.find((e) => e.to === 'src0' && e.toPort === 'in0');
+    expect(tap).toBeDefined();
+    expect(tap!.from).toBe(outFeeder);
+    // deleteCombineEdge removes the tap identically (no special path).
+    deleteCombineEdge(TID, tap!.id);
+    const g2 = readCombineGraph(patch.nodes[TID])!;
+    expect(g2.edges.some((e) => e.to === 'src0' && e.toPort === 'in0')).toBe(false);
+  });
+
   it('rejects wiring into an already-occupied input port', () => {
     makeToybox();
     const a = addCombineNode(TID, 'fade')!;

@@ -148,6 +148,21 @@ describe('applyPresetToData (pure)', () => {
     expect(layers).toHaveLength(LAYER_COUNT);
     for (let i = 1; i < LAYER_COUNT; i++) expect(layers[i]!.kind).toBe('off');
   });
+
+  // ── Audit M6: a bundled-preset load must CLEAR the prior patch's cvInputs
+  //    (per-input SCALE/OFFSET), else a stale attenuverter modulates the new
+  //    preset's re-routed target at the wrong depth.
+  it('clears stale cvInputs in place when loading a bundled preset', () => {
+    // Prior patch had a non-default cv1 attenuverter (scale 3, offset 0.2).
+    const data: Record<string, unknown> = {
+      cvInputs: { cv1: { scale: 3, offset: 0.2 }, cv2: { scale: -1, offset: 0.5 } },
+    };
+    const before = data.cvInputs; // capture the reference (must NOT be reassigned)
+    applyPresetToData(data, PRESET_A);
+    expect(Object.keys(data.cvInputs as Record<string, unknown>)).toEqual([]);
+    // Cleared IN PLACE (same map reference) — never reassigned (the Yjs trap).
+    expect(data.cvInputs).toBe(before);
+  });
 });
 
 /** A full node.data blob (USER preset / imported bundle shape) — like a preset
@@ -196,6 +211,70 @@ describe('applyDataBlobToData (pure, full-blob restore)', () => {
     applyDataBlobToData(data, blob);
     (data.layers as Array<Record<string, unknown>>)[1]!.contentId = 'CHANGED';
     expect((blob.layers as Array<Record<string, unknown>>)[1]!.contentId).toBe('worley-cells');
+  });
+
+  // ── Audit M5: preset RESTORE runs schema migration (mirrors the rack-load
+  //    path). A blob saved at an OLDER schemaVersion is migrated FORWARD before
+  //    applying — without this a v3 save restores verbatim at v4, silently
+  //    skipping the feedback `intensity` backfill + the chromakey key→keyR/G/B map.
+  it('migrates a blob saved at an older schemaVersion forward on restore (round-trip across a bump)', () => {
+    // A v2 blob: a chromakey node still using the legacy `key` scalar (v2→v3
+    // maps it to keyR/G/B) + a feedback node missing the v4 `intensity` param
+    // (v3→v4 backfills it). Restoring it must run BOTH steps forward to v4.
+    const v2blob: Record<string, unknown> = {
+      schemaVersion: 2,
+      combine: {
+        nodes: [
+          { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+          { id: 'ck', kind: 'chromakey', x: 120, y: 14, params: { amount: 0.3, key: 0.4 } },
+          { id: 'fb', kind: 'feedback', x: 120, y: 66, params: { mode: 1 } },
+          { id: 'out', kind: 'output', x: 286, y: 40 },
+        ],
+        edges: [{ id: 'e0', from: 'src0', to: 'out', toPort: 'in0' }],
+      },
+    };
+    const data: Record<string, unknown> = {};
+    applyDataBlobToData(data, v2blob);
+
+    const nodes = (data.combine as { nodes: Array<{ id: string; params?: Record<string, number> }> }).nodes;
+    const ck = nodes.find((n) => n.id === 'ck')!;
+    const fb = nodes.find((n) => n.id === 'fb')!;
+    // v2→v3 chromakey: `key` (0.4 → green) became keyR/keyG/keyB, key dropped.
+    expect(ck.params!.key).toBeUndefined();
+    expect(ck.params!.keyG).toBe(1);
+    // v3→v4 feedback: `intensity` backfilled to the schema default.
+    expect(fb.params!.intensity).toBe(0.5);
+    // The schemaVersion marker is consumed (not left as a node.data field).
+    expect(data.schemaVersion).toBeUndefined();
+  });
+
+  it('a blob with NO schemaVersion is treated as legacy (migrate from 0, idempotent)', () => {
+    // No schemaVersion → migrate-from-0. The migrations are guarded/idempotent,
+    // so an already-current blob is unchanged; a feedback node still gets the
+    // intensity backfill (a pre-M5 save predating that param).
+    const legacy: Record<string, unknown> = {
+      combine: {
+        nodes: [
+          { id: 'fb', kind: 'feedback', x: 0, y: 0, params: { mode: 0 } },
+          { id: 'out', kind: 'output', x: 1, y: 1 },
+        ],
+        edges: [],
+      },
+    };
+    const data: Record<string, unknown> = {};
+    applyDataBlobToData(data, legacy);
+    const fb = (data.combine as { nodes: Array<{ id: string; params?: Record<string, number> }> })
+      .nodes.find((n) => n.id === 'fb')!;
+    expect(fb.params!.intensity).toBe(0.5);
+  });
+
+  it('a blob saved at the CURRENT version is applied verbatim (no migration)', () => {
+    const cur = fullBlob();
+    cur.schemaVersion = 4;
+    const data: Record<string, unknown> = {};
+    applyDataBlobToData(data, cur);
+    expect(data.schemaVersion).toBeUndefined(); // marker consumed
+    expect((data.cvInputs as Record<string, { scale: number }>).cv1.scale).toBe(3);
   });
 });
 

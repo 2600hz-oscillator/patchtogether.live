@@ -18,6 +18,9 @@ import {
   resolveToyboxParam,
   isToyboxCombineParamId,
   parseCombineParamId,
+  isToyboxLayerParamId,
+  parseLayerParamId,
+  isToyboxCvInputParamId,
 } from './toybox-control-params';
 import {
   ensureToyboxCatalog,
@@ -216,5 +219,88 @@ describe('resolveToyboxParam — guards', () => {
     expect(resolveToyboxParam(undefined, 'scale')).toBeNull();
     expect(resolveToyboxParam(node([objLayer()]), '')).toBeNull();
     expect(resolveToyboxParam({ data: {} }, 'scale')).toBeNull();
+  });
+});
+
+// ── Audit M4: layer-qualified per-layer paramIds ('layer:<idx>:<param>') bind
+//    to a SPECIFIC layer index, so two layers' bindings don't collide (a bare
+//    'scale' resolved to the first-owning layer; switching the active layer
+//    remounted the knob under the same key onto a different layer's setter).
+describe('layer-qualified per-layer params (audit M4)', () => {
+  it('isToyboxLayerParamId + parseLayerParamId', () => {
+    expect(isToyboxLayerParamId('layer:2:rotX')).toBe(true);
+    expect(isToyboxLayerParamId('combine:op1:amount')).toBe(false);
+    expect(isToyboxLayerParamId('rotX')).toBe(false);
+    expect(parseLayerParamId('layer:0:scale')).toEqual({ layer: 0, param: 'scale' });
+    expect(parseLayerParamId('layer:3:speed')).toEqual({ layer: 3, param: 'speed' });
+    expect(parseLayerParamId('layer::scale')).toBeNull();
+    expect(parseLayerParamId('layer:99:scale')).toBeNull(); // out of range
+    expect(parseLayerParamId('layer:1:')).toBeNull();
+  });
+
+  it('resolves to the EXACT layer index — two OBJ layers do NOT cross-collide', () => {
+    // layer 0 + layer 1 are BOTH OBJ with distinct scales. A bare 'scale' would
+    // resolve to layer 0 for both bindings; the layer-qualified id pins each.
+    const n = node([objLayer({ scale: 1.1 }), objLayer({ scale: 2.2 }), offLayer(), offLayer()]);
+    const r0 = resolveToyboxParam(n, 'layer:0:scale')!;
+    const r1 = resolveToyboxParam(n, 'layer:1:scale')!;
+    expect(r0.get()).toBe(1.1);
+    expect(r1.get()).toBe(2.2);
+    // Writing layer 1 must NOT touch layer 0 (the M4 collision).
+    r1.set(2.9);
+    expect(r1.get()).toBe(2.9);
+    expect(r0.get()).toBe(1.1);
+    // And the def id carries the qualified paramId (so the surface/MIDI key sticks).
+    expect(r1.def.id).toBe('layer:1:scale');
+  });
+
+  it('resolves a content uniform on a specific shader layer index', () => {
+    const n = node([offLayer(), shaderLayer('noise-fbm', { speed: 0.9 }), offLayer(), offLayer()]);
+    const r = resolveToyboxParam(n, 'layer:1:speed')!;
+    expect(r.get()).toBe(0.9);
+    r.set(1.5);
+    expect(r.get()).toBe(1.5);
+  });
+
+  it('returns null when the indexed layer does not own the param', () => {
+    const n = node([objLayer(), offLayer(), offLayer(), offLayer()]);
+    expect(resolveToyboxParam(n, 'layer:1:scale')).toBeNull(); // layer 1 is off
+    expect(resolveToyboxParam(n, 'layer:0:speed')).toBeNull(); // obj has no 'speed'
+  });
+});
+
+// ── Audit M6: cvN:scale / cvN:offset (the per-input attenuverter knobs) resolve
+//    against node.data.cvInputs so the Control Surface no longer silently drops
+//    the binding (MIDI-learn already worked, so they DISAGREED before this).
+describe('cvInputs SCALE/OFFSET params (audit M6)', () => {
+  it('isToyboxCvInputParamId detects cvN:scale / cvN:offset', () => {
+    expect(isToyboxCvInputParamId('cv1:scale')).toBe(true);
+    expect(isToyboxCvInputParamId('cv6:offset')).toBe(true);
+    expect(isToyboxCvInputParamId('cv7:scale')).toBe(false); // only cv1..cv6 exist
+    expect(isToyboxCvInputParamId('cv1:bogus')).toBe(false);
+    expect(isToyboxCvInputParamId('combine:op1:amount')).toBe(false);
+  });
+
+  it('resolves cv1:scale with the bipolar attenuverter range + round-trips', () => {
+    const n: { data: Record<string, unknown> } = {
+      data: { layers: [offLayer()], cvInputs: { cv1: { scale: 0.5, offset: 0.1 } } },
+    };
+    const r = resolveToyboxParam(n, 'cv1:scale')!;
+    expect(r.def).toMatchObject({ id: 'cv1:scale', min: -1, max: 1 });
+    expect(r.get()).toBe(0.5);
+    r.set(-0.75);
+    expect(r.get()).toBe(-0.75);
+    // The live cvInputs map was mutated in place.
+    expect((n.data.cvInputs as Record<string, { scale: number }>).cv1.scale).toBe(-0.75);
+  });
+
+  it('resolves cv2:offset (0..1) and seeds the cvInputs entry when absent', () => {
+    const n: { data: Record<string, unknown> } = { data: { layers: [offLayer()] } };
+    const r = resolveToyboxParam(n, 'cv2:offset')!;
+    expect(r.def).toMatchObject({ id: 'cv2:offset', min: 0, max: 1 });
+    expect(r.get()).toBe(0); // default offset
+    r.set(0.6);
+    expect(r.get()).toBe(0.6);
+    expect((n.data.cvInputs as Record<string, { offset: number }>).cv2.offset).toBe(0.6);
   });
 });

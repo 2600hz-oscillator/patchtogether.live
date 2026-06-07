@@ -29,7 +29,9 @@ import {
   setLayerImage,
   setLayerVideoName,
   setLayerVideoSource,
+  setLayerSceneInputSource,
 } from './toybox-layers';
+import { LAYER_INPUT_SOURCE } from '$lib/video/toybox-combine-graph';
 import {
   DEFAULT_CONTENT_ID,
   DEFAULT_MODEL_ID,
@@ -219,6 +221,26 @@ describe('per-layer mutators retarget to layers[activeLayer]', () => {
     setLayerMaterialField(TID, 2, 'spin', 1.25);
     expect(layers()[2]!.material!.spin).toBe(1.25);
   });
+
+  it('setLayerSurfaceSource PRESERVES the LAYER INPUT sentinel (-2); other negatives → -1', () => {
+    makeToybox();
+    setLayerKind(TID, 0, 'obj');
+    // The sentinel survives (not floored to -1) — it's a real selection.
+    setLayerSurfaceSource(TID, 0, LAYER_INPUT_SOURCE);
+    expect(layers()[0]!.material!.surfaceSource).toBe(LAYER_INPUT_SOURCE);
+    // A round-trip back to MATCAP still normalises.
+    setLayerSurfaceSource(TID, 0, -1);
+    expect(layers()[0]!.material!.surfaceSource).toBe(-1);
+    // Any OTHER negative is still floored to -1 (only -2 is meaningful).
+    setLayerSurfaceSource(TID, 0, -7);
+    expect(layers()[0]!.material!.surfaceSource).toBe(-1);
+    // Non-finite → -1.
+    setLayerSurfaceSource(TID, 0, NaN);
+    expect(layers()[0]!.material!.surfaceSource).toBe(-1);
+    // Re-selecting the sentinel after MATCAP still preserves it (in-place, no throw).
+    expect(() => setLayerSurfaceSource(TID, 0, LAYER_INPUT_SOURCE)).not.toThrow();
+    expect(layers()[0]!.material!.surfaceSource).toBe(LAYER_INPUT_SOURCE);
+  });
 });
 
 describe('real-Y.Doc in-place trap (second write to a synced layer)', () => {
@@ -311,6 +333,9 @@ describe('video source selector — setLayerVideoSource (patched feed vs file/ca
     expect(layers()[1]!.videoSource).toBe('camera');
     setLayerVideoSource(TID, 1, 'file');
     expect(layers()[1]!.videoSource).toBe('file');
+    // LAYER INPUT (the prev-frame OUT feedback tap).
+    setLayerVideoSource(TID, 1, 'layerIn');
+    expect(layers()[1]!.videoSource).toBe('layerIn');
   });
 
   it('an unrecognised value falls back to file', () => {
@@ -329,6 +354,37 @@ describe('video source selector — setLayerVideoSource (patched feed vs file/ca
     expect(layers()[1]!.videoSource).toBe('inA');
     expect(layers()[2]!.videoSource).toBe('inB');
     expect(layers()[0]!.videoSource).toBeUndefined();
+  });
+});
+
+describe('FRAG scene-input source selector — setLayerSceneInputSource (LAYER INPUT tap)', () => {
+  it('flips the layer sceneInputSource between below + layer-input; round-trips on a synced layer', () => {
+    makeToybox();
+    setLayerKind(TID, 1, 'frag');
+    // Default (unset) — the factory treats absent as 'below' (the layer below).
+    expect(layers()[1]!.sceneInputSource).toBeUndefined();
+
+    setLayerSceneInputSource(TID, 1, 'layer-input');
+    expect(layers()[1]!.sceneInputSource).toBe('layer-input');
+    // Second write to the now-synced layer must not throw (scalar in-place set).
+    expect(() => setLayerSceneInputSource(TID, 1, 'below')).not.toThrow();
+    expect(layers()[1]!.sceneInputSource).toBe('below');
+  });
+
+  it('an unrecognised value falls back to below', () => {
+    makeToybox();
+    setLayerKind(TID, 0, 'frag');
+    setLayerSceneInputSource(TID, 0, 'bogus' as unknown as 'below');
+    expect(layers()[0]!.sceneInputSource).toBe('below');
+  });
+
+  it('targets only the active layer', () => {
+    makeToybox();
+    setLayerKind(TID, 1, 'frag');
+    setLayerKind(TID, 2, 'frag');
+    setLayerSceneInputSource(TID, 1, 'layer-input');
+    expect(layers()[1]!.sceneInputSource).toBe('layer-input');
+    expect(layers()[2]!.sceneInputSource).toBeUndefined();
   });
 });
 

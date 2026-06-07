@@ -79,8 +79,11 @@ export function historyUniforms(
   const p = params && typeof params === 'object' ? params : {};
   return {
     op: HISTORY_OP_INDEX[kind] ?? 0,
-    delay: clampDelay(p.delay, 8),
-    mix: clamp(p.mix, 0, 1, 1),
+    // Defaults MUST match OP_PARAMS (toybox-combine-graph.ts) so a node with no
+    // explicit params renders the same as a freshly-added one. The M2d "visible
+    // out of the box" defaults (framedelay mix<1, stronger datamosh) live here too.
+    delay: clampDelay(p.delay, 12),
+    mix: clamp(p.mix, 0, 1, 0.7),
     rDelay: clampDelay(p.rDelay, 0),
     gDelay: clampDelay(p.gDelay, 6),
     bDelay: clampDelay(p.bDelay, 12),
@@ -91,9 +94,9 @@ export function historyUniforms(
     meltAmount: clamp(p.meltAmount, 0, 1, 0.5),
     dripSpeed: clamp(p.dripSpeed, 0, 1, 0.3),
     threshold: clamp(p.threshold, 0, 1, 0.5),
-    flowScale: clamp(p.flowScale, 0, 1, 0.5),
-    holdGate: clamp(p.holdGate, 0, 1, 0.5),
-    decay: clamp(p.decay, 0, 1, 0.9),
+    flowScale: clamp(p.flowScale, 0, 1, 0.8),
+    holdGate: clamp(p.holdGate, 0, 1, 0.3),
+    decay: clamp(p.decay, 0, 1, 0.95),
   };
 }
 
