@@ -617,6 +617,12 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // flipper-dsp.test.ts.
   'linux/flipper',
   'linux/macrooscillator',
+  // PENTEMELODICA: darwin baseline (the 5-voice card: 5 strips + mixer +
+  // filter, static computed waveform previews — no animated canvas) captured
+  // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on
+  // this branch. Functional coverage is pentemelodica-dsp.test.ts +
+  // pentemelodica.test.ts + the per-port sweep + the bespoke e2e.
+  'linux/pentemelodica',
   'linux/samsloop',
   'linux/blades',
   'linux/stages',

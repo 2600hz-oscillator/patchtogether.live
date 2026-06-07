@@ -76,6 +76,8 @@ const SRC_BASE =
 
 const DESCRIPTIONS: Record<string, string> = {
   analogVco: 'Analog-style oscillator with saw / square / triangle / sine outputs and FM input.',
+  pentemelodica:
+    'Five-voice polyphonic analog-style synth. A POLY input (the polyPitchGate chord bus from MIDI LANE / POLYSEQZ / a chord sequencer) drives five band-limited VCO voices — lane i → voice i — each with TUNE (±36 st) / FINE (±100 ¢) / exponential FM / through-phase PM / pulse width and a continuous tri→saw→square WAVE morph, plus its own ADSR gated by that lane. The five post-ADSR voices sum through a stereo mixer (per-voice LEVEL + equal-power PAN) and an embedded multimode filter — a continuous LP→BP→HP→Notch MODE dial on a TPT state-variable filter (CUTOFF / RESONANCE) with a WET/DRY bypass — to the stereo OUT_L / OUT_R pair. Each voice is also tapped pre-mixer (post-ADSR) to a VOICE1..VOICE5 mono output, and each voice has its own audio-rate FM jack (fm1..fm5) that feeds both its FM and PM depths. 60 panel params (5 voices × 12 + 4 filter). DSP is own-code: a clean-room polyBLEP band-limited oscillator, a Cytomic/Zavalishin TPT state-variable filter, and a helm-style envelope — not a port of any copyleft source (permissive only).',
   moog905:
     '905 Spring Reverberation (moogafakkin System 55 clone — categorized under Ports -> moogafakkin). The classic spring-tank reverb: metallic, dispersive, with the characteristic "boing"/chirp on transients. In-house dispersive-allpass spring model — a cascaded all-pass chain (the dispersion) feeding a modulated feedback delay with damping. MIX blends dry/wet, DECAY sets the tail length, SIZE the spring length/character. Own-code (clean-room; feedback-clamped for stability). Beige moogafakkin faceplate (the intrinsic always-on look shared by the moogafakkin module family).',
   moog960:
@@ -300,6 +302,19 @@ const DESCRIPTIONS: Record<string, string> = {
 };
 
 const PORT_NOTES: Record<string, string> = {
+  'pentemelodica.poly': '5-lane poly pitch/gate chord bus (from MIDI LANE / POLYSEQZ / a chord sequencer). Lane i drives voice i (fixed 1:1 mapping); each lane gates that voice\'s ADSR.',
+  'pentemelodica.fm1': 'Audio-rate FM/PM modulator for voice 1 (drives both the exponential FM and through-phase PM depths set by voice 1\'s FM / PM faders).',
+  'pentemelodica.fm2': 'Audio-rate FM/PM modulator for voice 2 (depths set by voice 2\'s FM / PM faders).',
+  'pentemelodica.fm3': 'Audio-rate FM/PM modulator for voice 3 (depths set by voice 3\'s FM / PM faders).',
+  'pentemelodica.fm4': 'Audio-rate FM/PM modulator for voice 4 (depths set by voice 4\'s FM / PM faders).',
+  'pentemelodica.fm5': 'Audio-rate FM/PM modulator for voice 5 (depths set by voice 5\'s FM / PM faders).',
+  'pentemelodica.out_l': 'Stereo mix output, left (post-mixer, post-filter, post-master-gain).',
+  'pentemelodica.out_r': 'Stereo mix output, right (post-mixer, post-filter, post-master-gain).',
+  'pentemelodica.voice1': 'Voice 1 pre-mixer mono tap (post-ADSR, before LEVEL/PAN).',
+  'pentemelodica.voice2': 'Voice 2 pre-mixer mono tap (post-ADSR, before LEVEL/PAN).',
+  'pentemelodica.voice3': 'Voice 3 pre-mixer mono tap (post-ADSR, before LEVEL/PAN).',
+  'pentemelodica.voice4': 'Voice 4 pre-mixer mono tap (post-ADSR, before LEVEL/PAN).',
+  'pentemelodica.voice5': 'Voice 5 pre-mixer mono tap (post-ADSR, before LEVEL/PAN).',
   'analogVco.pitch': 'V/oct pitch input.',
   'analogVco.fm': 'Audio-rate FM input (depth set by FM param).',
   'analogVco.saw': 'Sawtooth output.',
