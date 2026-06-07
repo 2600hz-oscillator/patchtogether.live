@@ -32,6 +32,7 @@
     groupBindingsByModule,
     setSurfaceLocked,
     setSurfaceGroupPosition,
+    setBindingName,
     type ControlBinding,
   } from '$lib/graph/control-surface';
   import {
@@ -81,7 +82,11 @@
 
   interface RenderControl {
     paramId: string;
+    /** The label shown on the knob: the user's custom name if set, else the
+     *  param's own label. */
     label: string;
+    /** The user-set custom name (empty when none) — seeds the rename input. */
+    customName: string;
     def: ParamDef;
   }
   interface RenderGroup {
@@ -106,7 +111,14 @@
       for (const b of g.bindings) {
         const resolved = resolveSurfaceParam(sourceNode, b.paramId);
         if (!resolved) continue;
-        controls.push({ paramId: b.paramId, label: resolved.def.label ?? b.paramId, def: resolved.def });
+        const custom = typeof b.name === 'string' ? b.name.trim() : '';
+        const baseLabel = resolved.def.label ?? b.paramId;
+        controls.push({
+          paramId: b.paramId,
+          label: custom.length > 0 ? custom : baseLabel,
+          customName: custom,
+          def: resolved.def,
+        });
       }
       if (controls.length === 0) continue;
       out.push({ moduleId: g.moduleId, label: sourceLabel(g.moduleId), controls });
@@ -192,6 +204,35 @@
 
   let surfaceTitle = $derived(surfaceData.name ?? 'this surface');
   function toggleLock() { setSurfaceLocked(id, !locked); }
+
+  // ── per-knob rename (only when UNLOCKED, matching the card's edit model) ──
+  // Double-click a knob's label to edit its custom name; Enter / blur commits,
+  // Escape cancels. An empty value clears the custom name (reverts to the param
+  // label + the Electra auto-abbreviation). Writes via the in-place setBindingName.
+  let editing: { moduleId: string; paramId: string } | null = $state(null);
+  let editValue = $state('');
+
+  function startRename(e: Event, moduleId: string, paramId: string, current: string) {
+    if (locked) return;
+    e.stopPropagation();
+    editing = { moduleId, paramId };
+    editValue = current;
+  }
+  function commitRename() {
+    if (!editing) return;
+    setBindingName(id, editing.moduleId, editing.paramId, editValue);
+    editing = null;
+  }
+  function cancelRename() {
+    editing = null;
+  }
+  function onRenameKey(e: KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+  }
+  function isEditing(moduleId: string, paramId: string): boolean {
+    return editing?.moduleId === moduleId && editing?.paramId === paramId;
+  }
 </script>
 
 <svelte:window onpointermove={onPointerMove} onpointerup={onPointerUp} onpointercancel={onPointerUp} />
@@ -261,6 +302,34 @@
                   moduleId={g.moduleId}
                   paramId={c.paramId}
                 />
+                {#if isEditing(g.moduleId, c.paramId)}
+                  <!-- svelte-ignore a11y_autofocus -->
+                  <input
+                    class="cs-rename nodrag"
+                    data-testid={`control-surface-rename-input-${g.moduleId}-${c.paramId}`}
+                    type="text"
+                    bind:value={editValue}
+                    maxlength="14"
+                    aria-label={`Rename ${c.label}`}
+                    autofocus
+                    onpointerdown={(e) => e.stopPropagation()}
+                    onkeydown={onRenameKey}
+                    onblur={commitRename}
+                  />
+                {:else if !locked}
+                  <button
+                    type="button"
+                    class="cs-rename-btn nodrag"
+                    data-testid={`control-surface-rename-${g.moduleId}-${c.paramId}`}
+                    title={`Rename “${c.label}” for the Electra`}
+                    aria-label={`Rename ${c.label}`}
+                    onpointerdown={(e) => e.stopPropagation()}
+                    ondblclick={(e) => startRename(e, g.moduleId, c.paramId, c.customName)}
+                    onclick={(e) => startRename(e, g.moduleId, c.paramId, c.customName)}
+                  >
+                    ✎
+                  </button>
+                {/if}
               </div>
             {/each}
           </div>
@@ -391,5 +460,31 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* Rename affordance: a tiny pencil button (unlocked only) opens an inline
+     input that writes the Electra custom name. */
+  .cs-rename-btn {
+    margin-top: 2px;
+    font-size: 0.6rem;
+    line-height: 1;
+    padding: 1px 4px;
+    border-radius: 3px;
+    border: 1px solid #404652;
+    background: rgba(96, 165, 250, 0.1);
+    color: var(--text-dim, #aab);
+    cursor: pointer;
+  }
+  .cs-rename-btn:hover { background: rgba(96, 165, 250, 0.22); }
+  .cs-rename {
+    margin-top: 2px;
+    width: 100%;
+    max-width: 46px;
+    box-sizing: border-box;
+    font-size: 0.6rem;
+    padding: 1px 3px;
+    border-radius: 3px;
+    border: 1px solid #6f8bd0;
+    background: #0e1015;
+    color: var(--text, #e8eaed);
   }
 </style>

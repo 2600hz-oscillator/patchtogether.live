@@ -132,6 +132,49 @@ test('send a control to a surface → proxy appears, drives the source, survives
   await expect(surface.locator('[data-testid="control-surface-empty"]')).toBeVisible();
 });
 
+test('rename a bound control on the surface → custom name persists in node.data (Electra naming)', async ({ page }) => {
+  await setup(page);
+
+  const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
+  await expect(surface).toBeVisible();
+
+  // Bind ADSR Attack onto the surface.
+  const adsr = page.locator('.svelte-flow__node-adsr');
+  const attack = adsr.locator('[role="slider"][aria-label="Attack"]');
+  await attack.click({ button: 'right' });
+  await page.locator('[data-testid="control-context-menu"] [data-testid="ctx-surface-cs-1"]').click();
+  const proxy = surface.locator('[data-testid="control-surface-knob-adsr-1-attack"]');
+  await expect(proxy).toBeVisible();
+
+  // The surface defaults to UNLOCKED → the per-knob rename affordance shows.
+  await expect(surface).toHaveAttribute('data-locked', 'false');
+  const renameBtn = surface.locator('[data-testid="control-surface-rename-adsr-1-attack"]');
+  await expect(renameBtn).toBeVisible();
+  await renameBtn.click();
+
+  // Type a custom name + commit with Enter.
+  const renameInput = surface.locator('[data-testid="control-surface-rename-input-adsr-1-attack"]');
+  await expect(renameInput).toBeVisible();
+  await renameInput.fill('Punch');
+  await renameInput.press('Enter');
+
+  // The custom name persists on the binding in node.data.
+  await expect
+    .poll(async () => await readSurfaceBindings(page, 'cs-1'))
+    .toEqual([{ moduleId: 'adsr-1', paramId: 'attack', name: 'Punch' }]);
+
+  // And the on-card label reflects the custom name (the proxy knob shows it).
+  await expect(proxy).toContainText('Punch');
+
+  // Clearing the name reverts the binding to the auto abbreviation (no name key).
+  await renameBtn.click();
+  await renameInput.fill('');
+  await renameInput.press('Enter');
+  await expect
+    .poll(async () => await readSurfaceBindings(page, 'cs-1'))
+    .toEqual([{ moduleId: 'adsr-1', paramId: 'attack' }]);
+});
+
 // ── helpers reused from midi-learn.spec for the MIDI-mapped check ──
 async function installSimMidi(page: Page): Promise<void> {
   await page.waitForFunction(() => typeof (globalThis as unknown as {
