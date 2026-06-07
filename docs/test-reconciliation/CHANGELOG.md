@@ -66,6 +66,91 @@ row.
 
 ## Entries
 
+### 2026-06-07 — behavioral reconciliation #4 (moog960 distinct-pot sweep + treeohvox held-note driver)
+
+Fourth PR of the behavioral reconciliation leg. Re-enables `moog960` and
+`treeohvox`, downgrades `aquaTank` from "deferred" to a sharper MEASURED note,
+and sharpens `moog911a` with the exact source-density math.
+**behavioral disabled 59 → 57; reconcilable 7 → 5.**
+
+| block | kind | total | disabled | %disabled |
+|---|---|---:|---:|---:|
+| unit | raw | 6065 | 2 | 0.0% |
+| e2e | raw | 911 | 1 | 0.1% |
+| art | raw | 463 | 0 | 0.0% |
+| vrt | parametrized | 152 | 0 | 0.0% |
+| behavioral | parametrized | 101 | 57 | 56.4% |
+| @collab | raw (e2e subset) | 108 | 0 | 0.0% |
+
+The **behavioral disabled 57** splits into:
+
+| bucket | count | meaning |
+|---|---:|---|
+| **intentional** (architecture-gated) | 52 | unchanged. |
+| **reconcilable** (the fixable backlog) | 5 | `buggles` / `backdraft` / `mixmstrs` / `aquaTank` / `moog911a` — each with a concrete, measured re-enable path. **The number to drive down.** |
+
+**Harness improvement** — a **held-note driver** mechanism. The driver sequencer
+normally plays a 60/64/67/72 arpeggio; for a module whose observed output's
+spectrum tracks the driven pitch, that injects a centroid baseline swing that
+hides the CV scalers under test. `BEHAVIORAL_HELD_NOTE_DRIVER` (a module set) +
+`populateAllSequencerSteps(page, heldNoteDriver)` make the `driver-seq` node play
+ONE constant note (the ctx-gate + test-source sequencers keep the arpeggio), so a
+pitch-tracking module gets a STABLE centroid baseline against which its
+filter/envelope CV is the only variable. Generic infra for any future
+pitch-tracking voice (dx7-family, other 303/synth ports).
+
+What changed:
+- **Re-enabled `moog960`** (analog step sequencer). At the default `r1s*=0.5`
+  every column emits the same `0.5`, so the observed `row1` CV was a CONSTANT
+  `0.5` in both runs (C=P — the original exempt reason). A `BEHAVIORAL_PARAMS
+  .moog960` distinct 0→1 row-1 pot ramp (`r1s1=0 … r1s8=1`) makes the free-running
+  CONTROL sweep `row1` across all 8 columns, so the transport gates now produce
+  clean, deterministic deltas: **stop** halts the sweep (patched `row1` frozen →
+  **Δμrms ≈ 0.234 / Δrms.range ≈ 0.140, 7-23× floor**), **start** re-zeroes every
+  250 ms (**Δμrms ≈ 0.374 / Δcent ≈ 96 Hz**), **clock** switches to external-rate
+  (**Δμrms ≈ 0.28-0.31 / Δrms.range ≈ 0.59-0.62, ~30× floor**). **Verified 3×
+  byte-stable.**
+- **Re-enabled `treeohvox`** (TB-303 / Open303 voice) via the held-note driver.
+  The constant-C3 driver replaces the ±600-2800 Hz pitch-sequence centroid swing
+  with a stable ~150 Hz baseline, so `gate_in` (silent→sounding, **Δμrms ≈ 0.234,
+  ~23× floor**), `accent_in` (**Δμrms ≈ 0.12, ~12× floor**) + `waveform_cv`
+  (saw↔square morph, **Δμrms ≈ 0.024 + Δrms.range ≈ 0.04, ~2-3× floor**) are
+  real-coverage passes. **Verified 3×.** The 7 subtle 303 filter/envelope/tune/
+  pitch CVs (`pitch_in`/`tune_cv`/`cutoff_cv`/`res_cv`/`env_cv`/`decay_cv`/
+  `accent_cv`) are now per-port-exempt with MEASURED deltas + `treeohvox-dsp
+  .test.ts` citations — a genuine sub-floor footprint (a zero-mean BUGGLES CV on a
+  subtle timbral shaper averages out over the 50 ms window), NOT a held-note
+  regression.
+- **`aquaTank` — investigated + DOWNGRADED to a sharper measured note** (stays
+  reconcilable). The earlier "observe out1, near-silent" was only half the story:
+  observing the loud SUMMED `mix_l` + exciting all 4 channels makes the output
+  loud, but the per-channel CV footprint is still genuinely tiny. A DETERMINISTIC
+  110 Hz tone fanned into all inputs (identical both spawns) gives a stable C≈P
+  with `in3`/`in4`/`fb1-4_cv`/`tilt_cv` ALL at **Δμrms ≈ 0.000** (the tanh + damp
+  + cross-mix average out one channel's contribution to the sum), while NOISE
+  excitation only "passes" on per-spawn RNG ring jitter (`fb3_cv` read Δμrms=0.006
+  below floor the same run others passed — a flake). Re-enterable only with a
+  per-CHANNEL sink (observe `out{N}` for `fb{N}_cv`, not the sum) — the same
+  per-channel-sink follow-up `mixmstrs` needs.
+- **`moog911a` — sharpened with source-density math** (stays reconcilable). `out1`
+  is a ~1 ms one-shot pulse; for the RMS-over-windows metric to RELIABLY catch it,
+  the trig source must fire `> 20 Hz` (every 50 ms window must hold a pulse). The
+  harness gate is a SEQUENCER whose rate = `bpm/60/4` (16th notes) with bpm capped
+  at 300 → a MAX of exactly **20 Hz** — right AT the boundary, so it stays a
+  scheduler race (C=P=0.000 when no window aligns). Concrete re-enable path: a
+  per-port LFO-SQUARE fast gate (≥40 Hz → `out1` reads ~0.14-0.20 RMS vs a silent
+  control) OR a per-transient peak metric paired with that dense source.
+- **Unchanged (reconcilable):** `buggles` (self-noise — `clock_cv` at floor /
+  `chaos_cv` ~0 delta; needs a longer window + a `clock`-gate sink), `backdraft`
+  (animated-video variance floor; needs a longer settle window + spawn-once-
+  perturb), `mixmstrs` (77 inputs / 28-min wall-time + per-channel-on-summed-mix;
+  needs a per-channel sink + subset run).
+
+No `UNIVERSAL_AUDIO_THRESHOLDS` change; no `BEHAVIORAL_DELTA_THRESHOLDS` entry
+needed (both re-enables clear the universal floors with 2-30× margin via the
+distinct-pot / held-note drivers). The exempt-split integrity check + the
+no-`test.only` check stay green.
+
 ### 2026-06-07 — behavioral reconciliation #3 (subtle-CV class head: adsr + peaks, via per-port threshold calibration)
 
 Third PR of the behavioral reconciliation leg. Re-enables the first two of the

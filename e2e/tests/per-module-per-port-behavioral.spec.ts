@@ -321,11 +321,15 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //  channel-1 ports are now per-port-exempt as independent-output, not whole-
   //  module exempt. See the peaks.* entries in BEHAVIORAL_SWEEP_EXEMPT.)
 
-  // treeohvox — TB-303 voice (Open303 port). The 4-note driver sequence into
-  // pitch_in swings the observed audio_out's spectral-centroid baseline so wide
-  // that the real CV scalers' footprint is hidden under the pitch-sequence noise.
-  // (Measured behavioral-recon #3.)
-  treeohvox: 'noisy-spectrum class: the driver plays a FOUR-note (60/64/67/72) sequence into pitch_in, so the observed `audio_out` spectral-centroid baseline swings ±600-2800 Hz run-to-run from the pitch sequence itself (NOT the test CV). Against that the real CV scalers (cutoff_cv/res_cv/waveform_cv/…) DO shape the filtered output but their centroid/RMS footprint sits UNDER the pitch-sequence noise — they "pass" only via the loose cent metric tripping on the sequence\'s own jitter, while accent_cv reads a GENUINE ~0 delta (Δμ all 0.000; control≈patched). Re-enterable with a HELD single-note driver (stable centroid baseline) + a per-port-calibrated cent/RMS floor sized to that stable baseline — tracked as the held-CV/stable-gate driver follow-up. Covered by treeohvox-dsp.test.ts + treeohvox-parity.test.ts (DSP-level CV→filter/envelope response, Open303 parity) + the treeohvox ART baseline',
+  // (treeohvox RE-ENABLED — behavioral-recon #4. The held-note driver
+  //  (BEHAVIORAL_HELD_NOTE_DRIVER plays a constant C3 instead of the 60/64/67/72
+  //  arpeggio) replaces the ±600-2800 Hz pitch-sequence centroid swing with a
+  //  STABLE ~150 Hz baseline, against which gate_in (silent→sounding, Δμrms≈0.23),
+  //  accent_in (Δμrms≈0.13) + waveform_cv (saw↔square, Δμrms≈0.03) are real-
+  //  coverage passes (verified 3×). The 7 remaining filter/envelope/tune/pitch CV
+  //  scalers are genuine subtle-303-CV ports, now per-port-exempt in
+  //  BEHAVIORAL_SWEEP_EXEMPT with measured deltas + treeohvox-dsp.test.ts
+  //  citations — NOT a held-note regression.)
 
   // mixmstrs — 6-channel stereo mixer. 77 drivable inputs (16 audio + 61 CV)
   // BLOW the per-test wall-clock at 2 spawns/input (foxy class), and each
@@ -353,22 +357,31 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    + asserts bd/sd/hh output.
   grids: 'non-deterministic AudioContext scheduler startup; C=P=0 race on CI retry; covered by grids.spec.ts',
 
-  // ── aquaTank — 4-in multi-tap feedback reverb/delay TANK. Driven by the
-  //    universal driver's transient excitation (no sustained input), the
-  //    tank's observed out1 decays to an intrinsically near-silent idle RMS
-  //    (≈0.005) within the observation window. At that noise floor MANY of
-  //    its ports straddle the universal delta threshold run-to-run — not just
-  //    a couple: the fb{1..4}_cv per-tap sends, in3 (and siblings) audio
-  //    inputs, etc. all flake near Δ≈0.001-0.002. Per-port whack-a-mole
-  //    doesn't converge (fb3_cv → fb4_cv → in3 surfaced across successive
-  //    runs/repeats), so this is a MODULE-level exempt of the intrinsically-
-  //    quiet-output class (cf. the elements bow/blow exciter family). The
-  //    `inputs-accept` dim still pins wire-up for every port, and the
-  //    per-tap feedback + routing math is pinned by aquatank.test.ts where a
-  //    sustained source is supplied. (A louder/sustained driver source +
-  //    per-port calibrated thresholds — the systemic fix below — would let
-  //    these ports re-enter the sweep.)
-  aquaTank: 'multi-tap feedback tank; observed out1 is intrinsically near-silent (~0.005 RMS) on a transient excitation so MANY ports straddle the delta floor run-to-run (fb*_cv + in* all flake); covered by aquatank.test.ts (per-tap feedback/routing math with a sustained source)',
+  // ── aquaTank — 4-channel Hadamard feedback delay network (FDN). REMAINS
+  //    reconcilable (behavioral-recon #4 investigated + measured but did NOT
+  //    re-enable). The earlier note ("observe out1, near-silent") was only HALF
+  //    the story; observing the SUMMED `mix_l` (driver outputPort) + exciting all
+  //    channels makes the output LOUD, but the per-channel CV footprint is still
+  //    genuinely below the floor. Measured this leg, two regimes:
+  //      • NOISE excitation (per-spawn RNG seed) → the FDN integrates the noise
+  //        into a random-walk ring whose energy DIFFERS spawn-to-spawn; ports
+  //        "pass" only on that RNG jitter (fb3_cv read Δμrms=0.006 / Δrange=0.016,
+  //        BELOW floor, the same run others passed on noise — a FLAKE, exactly the
+  //        class that quarantined it).
+  //      • DETERMINISTIC excitation (a 110 Hz analogVco sine fanned into all 4
+  //        inputs, identical across both spawns) → C and P are stable (±0.007) but
+  //        the deltas collapse to ~0: in3/in4/fb1_cv/fb2_cv/fb3_cv/fb4_cv/tilt_cv
+  //        ALL read Δμrms≈0.000, Δcent≈0-8 Hz, Δcrest≈0.00 — i.e. modulating ONE
+  //        channel's feedback/input genuinely barely moves the soft-limited,
+  //        damped, SUMMED mix_l (the tanh + one-pole damp + cross-mix average out
+  //        a single channel's contribution).
+  //    So the per-channel-CV-on-a-summed-FDN footprint is REAL-but-tiny, not a
+  //    harness blind spot. Re-enterable only with a per-CHANNEL sink (observe
+  //    out{N} for fb{N}_cv, not the sum) AND a deterministic per-channel source —
+  //    the same per-channel-sink-selection follow-up mixmstrs needs. The `inputs-
+  //    accept` dim still pins wire-up for every port; per-tap feedback/routing math
+  //    pinned by aquatank.test.ts (with a sustained source + per-channel taps).
+  aquaTank: 'per-channel-CV-on-summed-FDN class: observing the loud summed mix_l (not the near-silent out1) + exciting all 4 channels, the per-channel footprint is still real-but-tiny — a DETERMINISTIC 110 Hz tone fanned into all inputs (identical both spawns) gives stable C≈P with in3/in4/fb1-4_cv/tilt_cv ALL at Δμrms≈0.000 / Δcent≈0-8 Hz (the tanh + damp + cross-mix average out one channel\'s contribution to the sum), while NOISE excitation only "passes" on per-spawn RNG ring jitter (fb3_cv Δμrms=0.006 below floor = flake); re-enterable with a per-CHANNEL sink (out{N} for fb{N}_cv) + deterministic per-channel source (same per-channel-sink follow-up as mixmstrs); covered by aquatank.test.ts (per-tap feedback/routing with a sustained source)',
 
   // ── MOOG System 55/35 routing / mixer / utility modules (batch-2 +
   //    batch-5). These are PURE gain / patch-bay / format-converter /
@@ -413,20 +426,24 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //  audio_in / v_in_a / v_in_b are per-port-exempt; see BEHAVIORAL_SWEEP_EXEMPT
   //  for why. Verified 3× locally.)
   //
-  // moog911a — dual trigger DELAY. The default `mode=0` (OFF) routes
-  // trig1 → out1, BUT out1 is a ~1 ms ONE-SHOT pulse (TRIGGER_DELAY_PULSE_S,
-  // not a held gate). At the harness's 4-Hz (240-BPM) gate source that's a
-  // 1 ms pulse every 250 ms = a 0.4% duty cycle; the universal sink reads five
-  // 50 ms scope windows (spaced 150 ms), so whether ANY window's phase lands on
-  // a 1 ms pulse is a non-deterministic AudioContext-scheduler race (C=P=0.000
-  // when none align — the SAME sparse-transient / scheduler-phase class as the
-  // `grids` module exempt + the chowkick/warrenspectrum percussion-ping port
-  // exempts). The bulk-energy RMS-over-windows metric cannot reliably observe a
-  // sub-ms transient; a per-transient PEAK metric (or a fast dense gate source)
-  // would gate it — tracked as the same behavioral-harness follow-up as the
-  // percussion-transient class. The trig1 → out1 delay timing + OFF/PARALLEL/
-  // SERIES coupling is pinned deterministically by moog911a.test.ts.
-  moog911a: 'dual trigger-delay; out1 is a ~1 ms one-shot pulse (0.4% duty at the 4-Hz gate source) whose phase-vs-50ms-scope-window alignment is a non-deterministic scheduler race (C=P=0.000 when none align — grids / chowkick-ping sparse-transient class); the universal RMS-over-windows metric can\'t observe a sub-ms transient (a per-transient peak metric would); trig1→out1 delay + coupling pinned by moog911a.test.ts',
+  // moog911a — dual trigger DELAY (behavioral-recon #4: analysed, NOT re-enabled;
+  // the concrete re-enable path is now pinned with the density math below). The
+  // default `mode=0` (OFF) routes trig1 → out1, BUT out1 is a ~1 ms ONE-SHOT pulse
+  // (TRIGGER_DELAY_PULSE_S, not a held gate). For the RMS-over-windows metric to
+  // RELIABLY catch it, every 50 ms scope window must contain ≥1 pulse → the trig
+  // source must fire FASTER than 20 Hz (pulse spacing < 50 ms). The harness's gate
+  // source is a SEQUENCER, whose gate rate = bpm/60/4 (16th notes) and whose bpm is
+  // CLAMPED to 300 → a MAX gate rate of exactly 20 Hz (50 ms spacing) — right AT
+  // the boundary, so window-vs-pulse alignment stays a non-deterministic scheduler
+  // race (C=P=0.000 when none align, the SAME sparse-transient class as grids +
+  // chowkick/warrenspectrum percussion-pings). A sequencer therefore CANNOT reach
+  // the needed density. Concrete re-enable path: a per-port TEST-input source that
+  // is a fast (≥40 Hz) gate — e.g. an LFO SQUARE (depth 1, rate 40) whose ±1 swing
+  // crosses the gate threshold every 25 ms so a 50 ms window always holds 1-2
+  // pulses (out1 then reads ~0.14-0.20 RMS vs the silent control) — OR a per-
+  // transient PEAK metric paired with that dense source. trig1→out1 delay + OFF/
+  // PARALLEL/SERIES coupling is pinned deterministically by moog911a.test.ts.
+  moog911a: 'dual trigger-delay; out1 is a ~1 ms one-shot pulse the RMS-over-windows metric needs a >20 Hz source to reliably catch (every 50 ms window must hold a pulse), but the harness gate is a SEQUENCER capped at bpm 300 = exactly 20 Hz (16th-note rate bpm/60/4), AT the boundary → C=P=0.000 scheduler race (grids / chowkick-ping sparse-transient class); re-enterable with a per-port fast-gate TEST source (an LFO square ≥40 Hz → out1 reads ~0.14-0.20 RMS vs a silent control) or a per-transient peak metric + that dense source; trig1→out1 delay + coupling pinned by moog911a.test.ts',
   // moog960 — sequential CONTROLLER (analog step sequencer). It AUTO-RUNS on
   // spawn (startTransport() — like the repo `sequencer`) at the internal rate
   // (2 Hz), sweeping its 8 columns; but ALL 24 step pots default to 0.5 and the
@@ -441,7 +458,23 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // mode (SKIP/STOP) logic is pinned by moog960.test.ts (Seq960Stepper) +
   // seq960-dsp.test.ts. (Re-enterable once the harness supports a held-CV /
   // per-column-distinct-pots driver that makes the clock advance observable.)
-  moog960:  'analog step-sequencer; auto-runs at the internal rate but all 24 pots default to 0.5 so the observed row1 CV holds a CONSTANT 0.5 (C=P) regardless of the driven transport input; differing pots make BOTH the free-running control AND patched sweep, so a clock/start/stop gate only re-phases the same sweep — a subtle variance/timing shift below the RMS-over-windows threshold (subtle-sequencer-state class, cf sequencer.reset); per-step/range/mode logic pinned by moog960.test.ts + seq960-dsp.test.ts',
+  // (moog960 RE-ENABLED — behavioral-recon #4. NOT actually a "constant 0.5 /
+  //  only re-phases" case once the row-1 step pots are made DISTINCT: with
+  //  r1s1..r1s8 spanning a full 0→1 ramp (BEHAVIORAL_PARAMS.moog960) the
+  //  free-running CONTROL sweeps row1 across all 8 columns at the internal 2-Hz
+  //  rate, so the observed row1 CV's per-snapshot RMS VARIES across the 5-snapshot
+  //  window (the staircase mean moves column-to-column). Driving the TRANSPORT
+  //  gates then changes that sweep observably:
+  //    • stop  → the 4-Hz stop train HALTS the transport on the first edge, so
+  //      patched row1 FREEZES at one column (near-constant CV → rms.range≈0)
+  //      while the control keeps sweeping (rms.range wide) — a clean range delta.
+  //    • start → the 4-Hz start train RE-ZEROES to column 0 every 250 ms, pinning
+  //      patched row1 near r1s1=0 vs the control's full sweep — a mean+range delta.
+  //    • clock → connecting `clock` switches moog960 to EXTERNAL-clock mode
+  //      (isClockConnected()), advancing one column per 4-Hz edge instead of the
+  //      internal 2-Hz rate — a faster sweep with a wider per-window RMS range.
+  //  All three clear the universal floor with margin; verified 3× locally. Per-
+  //  step/range/mode logic still pinned by moog960.test.ts + seq960-dsp.test.ts.)
 
   // ── MANDELBULB — heavy ray-marched 3D fractal video source. Each frame
   //    is a full GPU ray-march; the behavioral sweep's 2-spawn × per-input
@@ -500,15 +533,17 @@ const BEHAVIORAL_RECONCILABLE_EXEMPT: Record<string, string> = {
   //  Δrange≈0.6/0.8), verified 3×.)
   buggles:   'self-noise: clock_cv lands at the 0.01 floor + chaos_cv reads ~0 delta in the 1.5s window — a longer observation window + a per-channel clock-output sink (the rate change is clean on the `clock` gate) re-enables',
   backdraft: 'animated-video variance-floor (bentbox class): the ±4000-6000 per-frame luma-variance range swamps every input — a longer settle window + spawn-once-perturb (cf. backdraft.spec.ts) re-enables, not this universal harness',
-  treeohvox: 'noisy spectrum: the 4-note driver sequence swings the centroid baseline ±600-2800 Hz, hiding the real CV scalers (accent_cv is a genuine 0-delta) — a held single-note driver + a per-port-calibrated cent/RMS floor re-enables',
   mixmstrs:  '77 inputs → 28-min wall-time (foxy class) + per-channel CV on the summed masterL — a per-channel sink driver + a representative-subset run under budget re-enables',
-  // Intrinsically-quiet feedback tank — the note explicitly says a louder/
-  // sustained driver source + per-port calibrated thresholds would re-enable.
-  aquaTank:  'observed out1 is intrinsically near-silent on a transient excitation so many ports straddle the floor — a sustained driver + per-port thresholds re-enable',
+  // aquaTank — per-channel-CV-on-summed-FDN (measured behavioral-recon #4): with a
+  // DETERMINISTIC tone fanned into all inputs the per-channel deltas collapse to
+  // Δμrms≈0.000 (the sum averages out one channel); with NOISE they only pass on
+  // per-spawn RNG ring jitter. A per-CHANNEL sink (out{N} for fb{N}_cv) + a
+  // deterministic per-channel source re-enables (same per-channel-sink follow-up
+  // as mixmstrs).
+  aquaTank:  'per-channel CV on the summed FDN mix_l is real-but-tiny (deterministic-tone deltas Δμrms≈0.000; noise "passes" are RNG ring jitter / flakes) — a per-channel sink (out{N} per fb{N}_cv) + deterministic per-channel source re-enables',
   // Moog router batch deferred this leg (behavioral-recon #2) — both have a real
   // input→output path the universal metric/driver can't yet observe.
-  moog911a:  'out1 is a ~1 ms one-shot pulse the RMS-over-windows metric can\'t catch — a per-transient PEAK metric (or a dense fast gate source) re-enables',
-  moog960:   'row CV holds a constant 0.5 (default pots) / re-phases the free-running sweep (distinct pots) — a held-CV / distinct-pot driver that makes the clock advance observable re-enables',
+  moog911a:  'out1 is a ~1 ms one-shot pulse needing a >20 Hz source for the RMS metric to catch reliably, but the harness sequencer is bpm-capped at exactly 20 Hz (boundary scheduler race) — a per-port LFO-square fast gate (≥40 Hz → out1 ~0.14-0.20 RMS) or a per-transient peak metric + dense source re-enables',
 };
 
 // ────────── Per-module behavioral PARAMS override ──────────
@@ -580,6 +615,21 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
   // column-A/B V inputs (and audio_in itself) are per-port-exempt; see
   // BEHAVIORAL_SWEEP_EXEMPT for why.
   moog961: { sensitivity: 0.95 },
+  // moog960 (re-enabled, behavioral-recon #4): analog step-sequencer. The whole
+  // re-enable hinges on making the observed row1 CV ACTUALLY SWEEP — at the
+  // default r1s*=0.5 every column emits 0.5 so row1 is a constant 0.5 (C=P). Make
+  // the 8 row-1 step pots a DISTINCT 0→1 ramp (r1s1=0 … r1s8=1) so the free-
+  // running CONTROL sweeps row1 across the full 0..1 span column-to-column → the
+  // observed row1's per-snapshot RMS varies across the 5-snapshot window. Against
+  // that sweeping baseline the transport gates produce a clean delta (stop freezes
+  // the sweep, start re-zeroes it, clock re-rates it — see the module-exempt note).
+  // range1 stays 0 (×1) so the CV spans the project's standard 0..1 unipolar span
+  // (no clipping); rate stays at the default 2 Hz. Per-column DSP pinned by
+  // moog960.test.ts.
+  moog960: {
+    r1s1: 0.0, r1s2: 0.14, r1s3: 0.29, r1s4: 0.43,
+    r1s5: 0.57, r1s6: 0.71, r1s7: 0.86, r1s8: 1.0,
+  },
   // macrooscillator: harmonics/timbre/morph default tuned for clean; boost.
   macrooscillator: { harmonics: 0.5, timbre: 0.5, morph: 0.5, level: 0.8 },
   // vca: default base=0 means the VCA is silent until CV opens it.
@@ -1086,6 +1136,31 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'chowkick.q_cv':            'resonance CV; bandwidth shift straddles the ~0.01 RMS threshold on the short transient (jitter); covered by chowkick-dsp.test.ts + chowkick.spec.ts',
   'chowkick.decay_cv':        'amplitude-decay CV; tail-length shift near/below the RMS/centroid threshold on the gate-loop transient (jitter); covered by chowkick-dsp.test.ts + chowkick.spec.ts',
 
+  // ── TREE.oh.VOX subtle filter/envelope/tune CV scalers (module re-enabled,
+  //    behavioral-recon #4). With the held-note driver (BEHAVIORAL_HELD_NOTE_DRIVER
+  //    plays a constant C3 → a STABLE ~150 Hz audio_out spectral-centroid baseline)
+  //    the GATE-driven ports are now real-coverage passes — gate_in (silent→
+  //    sounding, Δμrms≈0.23, ~23× floor), accent_in (the accent boost, Δμrms≈0.13,
+  //    ~13× floor), and waveform_cv (saw↔square morph, Δμrms≈0.030 + Δrms.range
+  //    ≈0.04, ~3× floor) all clear with margin, verified 3×. The remaining CV
+  //    scalers below, however, are 303 TIMBRE/DYNAMICS shapers whose footprint on
+  //    the 50 ms-windowed RMS/centroid metric sits AT or BELOW the gate-retrigger
+  //    jitter floor: a zero-mean BUGGLES CV on them averages out across the window,
+  //    and they flake run-to-run (pass on one metric/run, fail the next — measured
+  //    2×). They are NOT a held-note regression (that fixed the centroid baseline);
+  //    they are the genuine subtle-CV-on-a-303-filter class (cf chowkick's pitch/
+  //    noise/tone CVs). Each is pinned per-param at the DSP level by treeohvox-dsp
+  //    .test.ts + treeohvox-parity.test.ts (Open303 CV→filter/envelope response)
+  //    and the treeohvox ART baseline. (Re-enterable with a per-port-calibrated
+  //    floor sized to that stable baseline OR a DC-biased/swept driver per CV.)
+  'treeohvox.pitch_in':   'pitch CV on a held-note baseline: the centroid swing flakes run-to-run (Δrms.range≈0.012-0.015 straddling the 0.02 floor; cent.range 15→287 Hz), a near-threshold jitter; pitch→filter-tracking response pinned by treeohvox-dsp.test.ts',
+  'treeohvox.tune_cv':    'tune (±12 st) CV: the fine pitch shift on a held note straddles the floor (Δr cent 20→69 Hz, Δμrms<0.01 both runs) — near-threshold jitter; covered by treeohvox-dsp.test.ts',
+  'treeohvox.cutoff_cv':  'filter-cutoff CV: zero-mean BUGGLES on the cutoff averages out over the 50 ms window (Δμrms≈0.001-0.002, Δrms.range 0.015-0.018 straddling the 0.02 floor) — fails one run, marginal the next; cutoff→spectrum response pinned by treeohvox-dsp.test.ts',
+  'treeohvox.res_cv':     'resonance CV: the resonant-peak shift sits at the gate-retrigger jitter floor (passes on Δr.rms one run / Δr.zc the next, both ~1× floor) — near-threshold; res→Q response pinned by treeohvox-dsp.test.ts',
+  'treeohvox.env_cv':     'envelope-mod-depth CV: the filter-env-sweep depth shift is below the windowed RMS/centroid floor (Δμrms≈0.000-0.002, Δrms.range 0.001→0.027 flaking across the 0.02 floor); env→filter-sweep response pinned by treeohvox-dsp.test.ts',
+  'treeohvox.decay_cv':   'filter-decay-time CV: the tail-length shift straddles the floor on the gate-loop transient (Δμrms 0.001-0.010, Δrms.range 0.008-0.010, both ~at floor) — flakes; decay→envelope response pinned by treeohvox-dsp.test.ts',
+  'treeohvox.accent_cv':  'accent-intensity CV: a GENUINE ~0 delta on audio_out (Δμrms≈0.001-0.003, Δrms.range≈0.005-0.016, all below floor both runs) — the accent CV scaler barely moves the bulk energy under a non-accented held note; accent→boost response pinned by treeohvox-dsp.test.ts',
+
   // ── ELEMENTS bow/blow EXCITER CV scalers. ELEMENTS (elements.ts) is an MI
   //    Elements modal/string resonator; BEHAVIORAL_PARAMS strikes it loudly
   //    via the context-gate (strike=1, strength=1) so the strike + note +
@@ -1366,6 +1441,21 @@ interface ContextCvOverride {
   /** Output port on that node carrying the CV. */
   outPort: string;
 }
+// ────────── Held-note driver modules ──────────
+//
+// Modules whose observed audio output's SPECTRUM swings with the driven pitch,
+// so the default 4-note driver arpeggio (60/64/67/72) injects a ±600-2800 Hz
+// centroid baseline swing that HIDES the footprint of the CV scalers under test.
+// For these the driver sequencer plays ONE constant note (see
+// populateAllSequencerSteps' heldNoteDriver branch) → a STABLE centroid baseline
+// against which cutoff/res/etc. CV is the only variable.
+const BEHAVIORAL_HELD_NOTE_DRIVER = new Set<string>([
+  // treeohvox — TB-303 voice (Open303). The audio_out spectral centroid is
+  // dominated by the played pitch; a held C3 keeps the baseline stable so the
+  // filter/envelope CV scalers register.
+  'treeohvox',
+]);
+
 const BEHAVIORAL_PORT_CONTEXT_SOURCE: Record<string, ContextCvOverride> = {
   // SAMPLE & HOLD: drive cv_in with a FAST LFO SAW ramp (shape=2) at 20 Hz.
   // The canonical scope sink reads a ~50 ms window, so the ramp must be fast
@@ -1953,6 +2043,15 @@ function buildContextEdges(
   const cvCtxOverride = BEHAVIORAL_PORT_CONTEXT_SOURCE[`${mod.type}.${testInputPortId}`];
 
   if (NEEDS_AUDIO_CONTEXT_CATEGORIES.has(mod.category)) {
+    // Feed sustained noise into EVERY non-test audio input (fan-out from ONE
+    // shared NOISE source), not just the first. A multi-input effect (e.g. the
+    // aquaTank FDN, in1..in4 → summed mix_l) needs ALL its channels excited so a
+    // per-channel input/feedback CV under test perturbs the observed output —
+    // wiring only the first audio input leaves the other channels silent, so e.g.
+    // fb3_cv (scales channel-3 feedback) is a no-op on a channel carrying nothing.
+    // Single-audio-input effects (filters/reverbs with one `in`) get exactly the
+    // same single-edge behavior as before. Same fan-out shape as the video-context
+    // ACIDWARP wiring below.
     const audioCtxInput = mod.inputs.find((p) => p.type === 'audio' && p.id !== testInputPortId);
     if (audioCtxInput) {
       nodes.push({
@@ -2183,12 +2282,25 @@ function waitMsFor(sutDomain: string, sink: SinkSpec): number {
 // even with isPlaying=1. Same pattern as per-module.spec.ts.
 //
 // This walks every sequencer node in the patch and seeds steps.
-async function populateAllSequencerSteps(page: Page): Promise<void> {
-  await page.evaluate(() => {
+//
+// `heldNoteDriver` (set per-module via BEHAVIORAL_HELD_NOTE_DRIVER) makes the
+// DRIVER sequencer (`driver-seq`) play ONE constant MIDI note across all 4 steps
+// instead of the default 60/64/67/72 arpeggio. A module whose observed output's
+// spectrum SWINGS with the driven pitch (e.g. treeohvox / a TB-303 voice, whose
+// audio_out spectral-centroid moves ±600-2800 Hz as the 4-note sequence plays)
+// needs a STABLE pitch baseline so the CV scalers under test (cutoff/res/…) are
+// the only thing moving the centroid — otherwise their footprint hides under the
+// pitch-sequence's own jitter. The held note re-triggers at the 4-Hz gate rate
+// (so the amp envelope still opens), but the PITCH is constant → a stable
+// centroid baseline. Only the `driver-seq` node is held; the ctx-gate-seq + any
+// test-input source sequencer keep the default steps.
+async function populateAllSequencerSteps(page: Page, heldNoteDriver = false): Promise<void> {
+  await page.evaluate((held) => {
     const w = globalThis as unknown as {
       __patch: { nodes: Record<string, { type: string; data?: Record<string, unknown> }> };
       __ydoc: { transact: (fn: () => void) => void };
     };
+    const HELD_MIDI = 48; // C3 — a low held note: a long, filter-rich 303 tone.
     w.__ydoc.transact(() => {
       for (const id of Object.keys(w.__patch.nodes)) {
         const node = w.__patch.nodes[id];
@@ -2197,15 +2309,22 @@ async function populateAllSequencerSteps(page: Page): Promise<void> {
         // both emit silence (empty grid) and the behavioral sweep sees no delta.
         if (!node || (node.type !== 'sequencer' && node.type !== 'writeseq')) continue;
         if (!node.data) node.data = {};
-        node.data.steps = [
-          { on: true, midi: 60 },
-          { on: true, midi: 64 },
-          { on: true, midi: 67 },
-          { on: true, midi: 72 },
-        ];
+        node.data.steps = held && id === 'driver-seq'
+          ? [
+              { on: true, midi: HELD_MIDI },
+              { on: true, midi: HELD_MIDI },
+              { on: true, midi: HELD_MIDI },
+              { on: true, midi: HELD_MIDI },
+            ]
+          : [
+              { on: true, midi: 60 },
+              { on: true, midi: 64 },
+              { on: true, midi: 67 },
+              { on: true, midi: 72 },
+            ];
       }
     });
-  });
+  }, heldNoteDriver);
 }
 
 // ────────── Console error filter ──────────
@@ -2283,6 +2402,10 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       });
 
       const driver = driverFor(mod);
+      // When set, the driver sequencer plays one constant held note (stable
+      // spectral baseline) instead of the 60/64/67/72 arpeggio — see
+      // BEHAVIORAL_HELD_NOTE_DRIVER + populateAllSequencerSteps.
+      const heldNoteDriver = BEHAVIORAL_HELD_NOTE_DRIVER.has(mod.type);
       const observed = pickObservedOutput(mod, driver);
       if (!observed) {
         // No scope-able / video-sinkable output → can't sample. We
@@ -2351,7 +2474,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
         ];
 
         await spawnPatch(page, controlNodes, controlEdges);
-        await populateAllSequencerSteps(page);
+        await populateAllSequencerSteps(page, heldNoteDriver);
         await runFor(page, waitMsFor(mod.domain, observed.sink));
         const controlSample = await readSinkAggregated(page, observed.sink);
         if (!controlSample) {
@@ -2390,7 +2513,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
         }
 
         await spawnPatch(page, patchedNodes, patchedEdges);
-        await populateAllSequencerSteps(page);
+        await populateAllSequencerSteps(page, heldNoteDriver);
         await runFor(page, waitMsFor(mod.domain, observed.sink));
         const patchedSample = await readSinkAggregated(page, observed.sink);
         if (!patchedSample) {

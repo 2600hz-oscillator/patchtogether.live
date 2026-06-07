@@ -48,6 +48,18 @@
         { "block": "behavioral", "kind": "parametrized", "total": 99, "disabled": 59, "intentional": 52, "reconcilable": 7 },
         { "block": "@collab", "kind": "raw (e2e subset)", "total": 108, "disabled": 0 }
       ]
+    },
+    {
+      "date": "2026-06-07",
+      "note": "behavioral reconciliation #4 — re-enable moog960 (distinct-pot sweep + transport-gate deltas) + treeohvox (held-note driver). moog960: at the default r1s*=0.5 every column emits the same 0.5 so the observed row1 CV was a constant 0.5 (C=P). A BEHAVIORAL_PARAMS.moog960 distinct 0→1 row-1 pot ramp (r1s1=0..r1s8=1) makes the free-running CONTROL sweep row1 across all 8 columns, so the transport gates produce clean deltas: stop HALTS the sweep (patched row1 frozen, Δμrms≈0.234 / Δrms.range≈0.140, 7-23× floor), start RE-ZEROES it every 250ms (Δμrms≈0.374, Δcent≈96Hz), clock switches to external-rate (Δμrms≈0.28-0.31, Δrms.range≈0.59-0.62); verified 3× byte-stable. treeohvox (TB-303): the 4-note driver arpeggio swung the audio_out centroid ±600-2800Hz, hiding the CV scalers; a NEW held-note driver mechanism (BEHAVIORAL_HELD_NOTE_DRIVER + populateAllSequencerSteps heldNoteDriver branch plays a constant C3 into driver-seq) gives a STABLE ~150Hz baseline so gate_in (silent→sounding, Δμrms≈0.234), accent_in (Δμrms≈0.12) + waveform_cv (saw↔square, Δμrms≈0.024 + Δrms.range≈0.04) are real-coverage passes; verified 3×. The 7 subtle 303 filter/envelope/tune/pitch CVs (pitch_in/tune_cv/cutoff_cv/res_cv/env_cv/decay_cv/accent_cv) are now per-port-exempt with measured deltas + treeohvox-dsp.test.ts citations (genuine sub-floor footprint, NOT a held-note regression). aquaTank investigated + DOWNGRADED to a sharper measured note (stays reconcilable): observing the loud summed mix_l + exciting all channels, a DETERMINISTIC tone gives stable C≈P with all per-channel CVs at Δμrms≈0.000 (the tanh+damp+cross-mix average out one channel's contribution to the sum), while NOISE only 'passes' on per-spawn RNG ring jitter (flake) — re-enterable with a per-channel sink (same follow-up as mixmstrs). moog911a sharpened with density math: out1's 1ms pulse needs a >20Hz source but the harness sequencer is bpm-capped at exactly 20Hz (boundary scheduler race) — a per-port LFO-square fast gate (≥40Hz) or peak metric + dense source re-enables. buggles/backdraft/mixmstrs unchanged (reconcilable). behavioral disabled 59→57; reconcilable 7→5.",
+      "blocks": [
+        { "block": "unit", "kind": "raw", "total": 6065, "disabled": 2 },
+        { "block": "e2e", "kind": "raw", "total": 911, "disabled": 1 },
+        { "block": "art", "kind": "raw", "total": 463, "disabled": 0 },
+        { "block": "vrt", "kind": "parametrized", "total": 152, "disabled": 0 },
+        { "block": "behavioral", "kind": "parametrized", "total": 101, "disabled": 57, "intentional": 52, "reconcilable": 5 },
+        { "block": "@collab", "kind": "raw (e2e subset)", "total": 108, "disabled": 0 }
+      ]
     }
   ]
 }
