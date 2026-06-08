@@ -208,11 +208,30 @@ export function removeHeld(stack: readonly number[], note: number): number[] {
 
 // ---------------- Module def ----------------
 
-/** Lookahead added to event.timeStamp when scheduling AudioParam updates.
- *  2 ms is empirically enough to land at the start of the NEXT audio block
- *  (~128 samples @ 48 kHz = 2.67 ms) rather than mid-block (which causes a
- *  click on a step value). */
-export const SCHED_LOOKAHEAD_S = 0.002;
+/** Lookahead added to event.timeStamp when scheduling AudioParam updates
+ *  (shared by MIDI-CV-BUDDY + MIDI LANE; MIDICLOCK has its own larger
+ *  TIMESTAMP_LOOKAHEAD_S).
+ *
+ *  One render quantum is ~128 samples @ 48 kHz = 2.67 ms. The old 2 ms
+ *  value was UNDER one quantum, so the moment the main-thread MIDI handler
+ *  jittered even slightly the schedAt() clamp (Math.max(now + lookahead,…))
+ *  landed the gate/pitch step INSIDE the current block — exactly the
+ *  mid-block discontinuity (a click) we're trying to avoid. Under UI load
+ *  (the ES-9 duplex "clicks worse when interacting" report) that jitter is
+ *  routine.
+ *
+ *  Raise to 8 ms (~3 render quanta) so a jittery callback still lands at a
+ *  block boundary in the FUTURE. The added latency (~6 ms over the old
+ *  value) is inaudible for a clocked rig and well under the perceptual
+ *  ~10 ms note-onset threshold. Kept < 10 ms so live MIDI still feels
+ *  immediate. */
+export const SCHED_LOOKAHEAD_S = 0.008;
+
+/** One Web Audio render quantum in seconds at 48 kHz (128 frames).
+ *  SCHED_LOOKAHEAD_S must be ≥ this so a clamped schedule still lands at
+ *  the START of a future block, not mid-block. Exported for the lookahead
+ *  regression test. */
+export const RENDER_QUANTUM_S = 128 / 48000;
 
 /** Default pitch-bend range in semitones each side (MIDI standard).
  *  Most controllers default to ±2 unless a Patch SysEx tells them otherwise.

@@ -71,11 +71,24 @@ class FakeConstantSourceNode {
 }
 
 class FakeAnalyserNode {
-  fftSize = 2048;
+  // buf is (re)sized off fftSize whenever the factory assigns it, so this
+  // mock tracks the real widened ring (16384) the production factory now
+  // requests for the start_in/stop_in edge detectors rather than a
+  // hard-coded 2048. The production scan reads the LAST `newSamples` of the
+  // ring, so the mock buffer width must match or pushed edges land outside
+  // the scanned window.
   smoothingTimeConstant = 0;
   buf: Float32Array = new Float32Array(2048);
   connect = vi.fn();
   disconnect = vi.fn();
+  #fftSize = 2048;
+  get fftSize(): number {
+    return this.#fftSize;
+  }
+  set fftSize(n: number) {
+    this.#fftSize = n;
+    this.buf = new Float32Array(n);
+  }
   getFloatTimeDomainData(out: Float32Array): void {
     out.set(this.buf);
   }
@@ -474,10 +487,13 @@ describe('MIDICLOCK → TIMELORDE start/stop bridge integration', () => {
         const windowEnd = pulseStart + 0.025;
         ctx.currentTime = windowEnd;
         ana.pushSamples(renderPulseBuffer(newEvents, windowStart, windowEnd, ctx.sampleRate));
-        // Push 25 ms of silence into the OTHER analyser to keep its
+        // Flush the OTHER analyser's ENTIRE ring with silence to keep its
         // cross-tick detector state honest (so a trailing pulse from a
-        // previous phase doesn't get re-counted).
-        silentAna.pushSamples(new Array(1200).fill(0));
+        // previous phase isn't still sitting in the ring to be re-counted).
+        // Sized off the ring width (now 16384, ~341 ms @ 48 kHz) rather than
+        // a fixed 1200 so a wider ring is still fully cleared — a fixed-1200
+        // flush only zeroes the tail and leaves a stale pulse mid-ring.
+        silentAna.pushSamples(new Array(silentAna.buf.length).fill(0));
         tickAllSchedulers();
       }
 
