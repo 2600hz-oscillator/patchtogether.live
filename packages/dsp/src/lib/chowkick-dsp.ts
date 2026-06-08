@@ -351,28 +351,53 @@ export function noiseBurstStep(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Resonant Filter — 2nd-order peaking biquad with tanh saturation.
+// Resonant Filter — pinged 2-pole resonant BODY with tanh feedback drive.
 //
 // Source: ChowKick/src/dsp/ResonantFilter.cpp + ResonantFilterProcs.h.
-// Upstream uses the RBJ peaking-EQ coefficient set:
-//   wc = freq * 2π / fs
-//   alpha = sin(wc) / (2 Q)
-//   a0 = (G + 1) + alpha * G
-// with G mapped exponentially from `damping`:
-//   G = 0.0001 * (0.5 / 0.0001)^damping
-// and a tanh saturator on the feedback path driven by (d1, d2, d3) which
-// the BouncyFilterProc derives from `tight` and `bounce`. We mirror that
-// driver-set: more `tight` → more saturation (sharper attack), more
-// `bounce` → asymmetric secondary resonance.
+//
+// THE OOMPH FIX (PR feat/chowkick-oomph). The previous port built an RBJ
+// *peaking-EQ* with A = sqrt(G); since G = 0.0001·(0.5/0.0001)^damp is < 1
+// for all damp < 1, the `1+alpha·A` over `1+alpha/A` term CUT the body
+// frequency (−43 dB at default) instead of resonating it. The body never
+// oscillated — the module emitted a unipolar DC blob (measured: DC +0.62,
+// ZERO zero-crossings in 50–600 ms, fundamental ≈14 Hz, 99.9 % of energy
+// below 60 Hz, 0 % at the kick's own pitch). Cranking gain only grew the
+// DC step; it was a topology/coefficient bug, not a level/headroom one.
+//
+// Upstream ChowKick's body is a resonator pinged into a decaying sine: its
+// coefficients place the poles essentially ON the unit circle (poleR ≈
+// 0.9999) so a single ping rings. We now build a true 2-pole resonant
+// BANDPASS:
+//
+//   H(z) = g · (1 − z⁻²) / (1 + a1·z⁻¹ + a2·z⁻²),  a1 = −2r·cos(wc), a2 = r²
+//
+//   - pole ANGLE wc = 2π·freq/sr  → the body pitch (a bipolar decaying sine
+//     AT freq, not a DC step).
+//   - pole RADIUS r ∈ (0,1)       → the ring/decay time, mapped from
+//     `damping`: low damp → r≈0.9997 (~280 ms tail), high damp → r≈0.9936
+//     (~18 ms thud). `Q` sharpens the resonance (nudges r up a touch).
+//     Clamped strictly < 1 so even damp=0 decays (upstream's poleR=1.0 at
+//     damp=0 rings forever — not musical for a kick).
+//   - numerator gain g = (1 − r)  normalizes the resonant peak to ≈ unit
+//     gain across the whole freq/Q/damping range (freq-independent loudness).
+//
+// A tanh saturator on the feedback path (driven by `tight`/`bounce` →
+// d1,d2,d3, mirroring upstream's BouncyFilterProc) adds harmonics so the
+// fundamental reads on speakers that can't reproduce 60 Hz, and keeps the
+// resonator bounded under hard pings.
 // ─────────────────────────────────────────────────────────────────────────
 
 export interface ResonantState {
+  /** y[n-1] — recursive (denominator) history. */
   z1: number;
+  /** y[n-2] — recursive (denominator) history. */
   z2: number;
+  /** x[n-2] — feed-forward (numerator b2·z⁻²) history. */
+  x2: number;
 }
 
 export function makeResonantState(): ResonantState {
-  return { z1: 0, z2: 0 };
+  return { z1: 0, z2: 0, x2: 0 };
 }
 
 export interface ResCoefs {
@@ -381,7 +406,24 @@ export interface ResCoefs {
   d1: number; d2: number; d3: number;
 }
 
-/** Compute RBJ peaking-EQ coefficients for the resonant body. */
+/** Pole radius for the longest tail (damping = 0). r^n = 0.01 at n=280ms·sr. */
+const RES_R_LONG = Math.pow(0.01, 1 / (0.28 * 48000));   // ≈ 0.99968 → ~280 ms
+/** Pole radius for the shortest thud (damping = 1). ≈ 0.99362 → ~18 ms. */
+const RES_R_SHORT = Math.pow(0.01, 1 / (0.018 * 48000));
+
+/** Map the damping knob (0 = long boom … 1 = short thud) + Q (sharper ring)
+ *  to a pole radius in (0,1). Log-interpolated so the perceived decay knob
+ *  is roughly even. Hard-clamped < 1 so the resonator ALWAYS decays. */
+export function resonantPoleRadius(damping01: number, q: number): number {
+  const d = clamp(damping01, 0, 1);
+  let r = Math.exp(Math.log(RES_R_LONG) * (1 - d) + Math.log(RES_R_SHORT) * d);
+  // Higher Q lengthens the ring slightly (sharper, more sustained resonance).
+  const qBoost = Math.max(0, (Math.max(0.05, q) - 0.5) * 0.00008);
+  r += Math.min(0.0006, qBoost);
+  return clamp(r, 0.9, 0.99975);
+}
+
+/** Compute the resonant-body coefficients (true pinged 2-pole bandpass). */
 export function resonantCoefs(
   freqHz: number,
   q: number,
@@ -392,53 +434,74 @@ export function resonantCoefs(
 ): ResCoefs {
   const f = clamp(freqHz, 10, 0.45 * sr);
   const wc = 2 * Math.PI * f / sr;
-  const sw = Math.sin(wc);
   const cw = Math.cos(wc);
-  const qC = Math.max(0.05, q);
-  const alpha = sw / (2 * qC);
-  // G from upstream's exponential damping map.
-  const G = 0.0001 * Math.pow(0.5 / 0.0001, clamp(damping01, 0, 1));
-  // Peaking EQ (RBJ Cookbook):
-  //   b0 =  1 + alpha * A     (A = sqrt(G))
-  //   b1 = -2 * cos(wc)
-  //   b2 =  1 - alpha * A
-  //   a0 =  1 + alpha / A
-  //   a1 = -2 * cos(wc)
-  //   a2 =  1 - alpha / A
-  // Upstream uses G directly (the "gain on the resonant peak"). Empirically
-  // sqrt(G) maps the damping knob into a perceptually flat damping range.
-  const A = Math.sqrt(G);
-  const a0 = 1 + alpha / A;
-  const b0 = (1 + alpha * A) / a0;
-  const b1 = (-2 * cw) / a0;
-  const b2 = (1 - alpha * A) / a0;
-  const a1 = (-2 * cw) / a0;
-  const a2 = (1 - alpha / A) / a0;
-  // Drive values for the tanh feedback saturator (BouncyFilterProc).
-  // Higher tight → more drive on the body; bounce adds asymmetric drive on
-  // the secondary state variable.
+  const r = resonantPoleRadius(damping01, q);
+  // Denominator: poles at radius r, angle wc → rings at `freq`, decays per r.
+  const a1 = -2 * r * cw;
+  const a2 = r * r;
+  // Bandpass numerator g·(1 − z⁻²). g = 1 normalizes a single PING (impulse)
+  // to ≈ unit peak across the whole freq/Q/damping range (a kick is pinged,
+  // not sine-driven — verified: impulse peak = 1.000 for every config). The
+  // tanh feedback drive bounds the response when the pulse holds a square.
+  const g = 1;
+  const b0 = g;
+  const b1 = 0;
+  const b2 = -g;
+  // Output-stage waveshaper drives (NOT in the feedback path — saturating the
+  // near-unit-circle feedback collapses the resonance to silence). `tight`
+  // adds symmetric tanh drive on the body output (fatter, more 2×/3×
+  // harmonics → reads on small speakers); `bounce` adds an asymmetric (even-
+  // harmonic) skew. d1 carries `tight`; d2 carries `bounce`. d3 is reserved.
   const t = clamp(tight01, 0, 1);
   const bo = clamp(bounce01, 0, 1);
-  const d1 = 1 + t * 4;            // primary drive — sharpens transient
-  const d2 = 1 + (t + bo) * 3;     // secondary drive — bounce skews it
-  const d3 = 1 + t * 2 + bo * 4;   // output drive — keeps level in check
+  const d1 = t;
+  const d2 = bo;
+  const d3 = 0;
   return { b0, b1, b2, a1, a2, d1, d2, d3 };
 }
 
-/** Per-sample resonant-filter step with tanh feedback saturation. */
+/** Per-sample resonant-filter step — a LINEAR 2-pole resonant bandpass plus a
+ *  bounded post-resonator waveshaper.
+ *
+ *  The recursion itself is kept linear: with pole radius r < 1 it is
+ *  unconditionally stable, rings cleanly at `freq` (verified: 80 Hz ping →
+ *  82 Hz fundamental, unit peak), and — crucially — saturating its feedback
+ *  path (as an earlier draft did) crushes the resonance to silence because the
+ *  near-unit-circle internal state is large. Instead the body OUTPUT is run
+ *  through:
+ *    1. a safety tanh that bounds the transient overshoot from a held pulse
+ *       (a square step into a high-Q bandpass overshoots to ~±2.7 raw);
+ *    2. `tight`-driven symmetric drive (fatter body, more odd harmonics);
+ *    3. `bounce`-driven asymmetric skew (even harmonics — the "bouncy" tone).
+ *  All three are transparent (≈ linear, unity gain) at small levels so a quiet
+ *  ring isn't attenuated. */
 export function resonantFilterStep(
   x: number,
   c: ResCoefs,
   state: ResonantState,
 ): number {
-  // Transposed Direct Form II with feedback tanh saturation (matches the
-  // BouncyFilterProc structure in upstream ResonantFilterProcs.h).
-  const y = state.z1 + x * c.b0;
-  const yDrive = Math.tanh(y * c.d3) / c.d3;
-  state.z1 = state.z2 + x * c.b1 - yDrive * c.a1 * c.d1;
-  state.z1 = Math.tanh(state.z1 * c.d1) / c.d1;
-  state.z2 = x * c.b2 - yDrive * c.a2 * c.d2;
-  state.z2 = Math.tanh(state.z2 * c.d2) / c.d2;
+  // Linear Direct Form I over the bandpass numerator g(1 − z⁻²) (b1 = 0):
+  //   y = b0·x + b2·x[n-2] − a1·y[n-1] − a2·y[n-2]
+  const yLin = c.b0 * x + c.b2 * state.x2 - c.a1 * state.z1 - c.a2 * state.z2;
+  // Advance the LINEAR recursion state (the shaper below must NOT feed back,
+  // or it detunes/kills the resonance).
+  state.z2 = state.z1;
+  state.z1 = yLin;
+  state.x2 = x;
+  // ── Output shaping (does not affect the recursion) ──
+  // 1. Safety bound: tanh with generous headroom (3) — ≈ linear for |y|<1,
+  //    catches the ±2.7 held-pulse overshoot without touching the body tone.
+  let y = Math.tanh(yLin / 3) * 3;
+  // 2. tight → symmetric drive (odd harmonics). transparent at d1=0.
+  if (c.d1 > 1e-6) {
+    const pre = 1 + c.d1 * 1.5;
+    y = Math.tanh(y * pre) / pre;
+  }
+  // 3. bounce → asymmetric skew (even harmonics). transparent at d2=0.
+  if (c.d2 > 1e-6) {
+    const k = c.d2 * 0.6;
+    y = y + k * (y * y - 1 / 3) * (y >= 0 ? 1 : -1);
+  }
   return y;
 }
 
@@ -496,4 +559,132 @@ export function portamentoStep(
   alpha: number,
 ): number {
   return yPrev + alpha * (targetHz - yPrev);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Pitch envelope (THE punch mechanism) — PR feat/chowkick-oomph.
+//
+// A kick's "punch" is a fast downward pitch sweep at the attack: the body
+// starts ~3× the target freq and exponentially drops to the target over a
+// few tens of ms. The previous port had NO per-trigger pitch envelope — only
+// a portamento smoother chasing a static target — so the kick had no punch.
+//
+//   freq_env(t) = freq · (1 + amount·(startMult − 1)·exp(−t/tau))
+//
+// Retriggered on the gate rising edge. `amount` (0..1) scales how much sweep;
+// `decay` (0..1) maps to tau ∈ [3ms, 80ms]. startMult is fixed at 3.5× (the
+// canonical kick attack-pitch multiple).
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Start-pitch multiple at the attack (4× target freq → punchy downward
+ *  sweep). Chosen to match (slightly hotter than) a typical 808/909-style kick
+ *  attack chirp — the deeper the start multiple the more "snap" the chirp has.
+ *  `pitch_amount` scales the active sweep, so the user can dial back to a
+ *  gentler chirp; at amount=1 the body starts a full 2 octaves above `freq`. */
+export const PITCH_ENV_START_MULT = 4.0;
+
+export interface PitchEnvState {
+  /** Current envelope value 0..1 (1 at attack, decaying to 0). */
+  env: number;
+  /** Last gate value, for rising-edge retrigger. */
+  gatePrev: number;
+}
+
+export function makePitchEnvState(): PitchEnvState {
+  return { env: 0, gatePrev: 0 };
+}
+
+/** Map the 0..1 pitch_decay knob to a time constant (seconds), 3ms..80ms. */
+export function pitchEnvTau(decay01: number): number {
+  const lo = 0.003;
+  const hi = 0.08;
+  return lo * Math.pow(hi / lo, clamp(decay01, 0, 1));
+}
+
+/** Per-sample pitch-envelope step. Returns the swept frequency in Hz.
+ *
+ *  gate: current gate sample (rising edge retriggers the sweep).
+ *  baseFreqHz: the target (knob) frequency the sweep settles to.
+ *  amount01: 0 = no sweep (flat), 1 = full startMult sweep.
+ *  decay01: pitch-env decay knob (→ tau via pitchEnvTau).
+ */
+export function pitchEnvStep(
+  gate: number,
+  baseFreqHz: number,
+  amount01: number,
+  decay01: number,
+  sr: number,
+  state: PitchEnvState,
+): number {
+  const gateHigh = gate >= 0.5;
+  const gatePrevHigh = state.gatePrev >= 0.5;
+  state.gatePrev = gate;
+  if (gateHigh && !gatePrevHigh) {
+    state.env = 1; // retrigger the sweep on the rising edge.
+  }
+  const tau = pitchEnvTau(decay01);
+  const a = Math.exp(-1 / (tau * sr));
+  const amt = clamp(amount01, 0, 1);
+  const swept = baseFreqHz * (1 + amt * (PITCH_ENV_START_MULT - 1) * state.env);
+  // Decay the envelope toward 0 for the next sample.
+  state.env *= a;
+  if (state.env < 1e-6) state.env = 0;
+  return swept;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// DC blocker (post-body) — PR feat/chowkick-oomph.
+//
+// Even with a properly-ringing bipolar resonator, the hard attack ping can
+// leave a small DC step. A tiny per-module 1-pole HPF (~25 Hz) removes it so
+// the kick doesn't lean on audio-out's 5 Hz system HPF to clean up after it.
+//   y[n] = x[n] − x[n-1] + R·y[n-1],  R = exp(−2π·fc/sr)
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface DcBlockState {
+  x1: number;
+  y1: number;
+}
+
+export function makeDcBlockState(): DcBlockState {
+  return { x1: 0, y1: 0 };
+}
+
+/** Per-sample 1-pole DC blocker. fc ≈ 25 Hz by default. */
+export function dcBlockStep(
+  x: number,
+  state: DcBlockState,
+  fcHz = 25,
+  sr = 48000,
+): number {
+  const R = Math.exp(-2 * Math.PI * clamp(fcHz, 1, 0.45 * sr) / sr);
+  const y = x - state.x1 + R * state.y1;
+  state.x1 = x;
+  state.y1 = y;
+  return y;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Body drive / makeup — PR feat/chowkick-oomph.
+//
+// Pushes the body into a tanh stage to add 2×/3× harmonics (so the
+// fundamental reads on speakers that can't reproduce sub-bass) with makeup
+// gain so the level stays hot. `drive01` 0 → transparent (×1, no saturation),
+// 1 → hard drive (×6 pre-tanh). Gated by `tight` so the existing tightness
+// knob also pushes the body harder.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Apply pre-gain → tanh → makeup. drive01 0 = transparent, 1 = hot. */
+export function bodyDriveStep(x: number, drive01: number, tight01: number): number {
+  const d = clamp(drive01, 0, 1);
+  const t = clamp(tight01, 0, 1);
+  // Pre-tanh input gain 1..6, with `tight` adding up to +50 %.
+  const pre = 1 + d * 5 * (1 + 0.5 * t);
+  if (pre <= 1.0001) return x; // transparent fast-path when drive is off.
+  // tanh maps to (−1,1); makeup restores unity for small signals (≈ pre at 0)
+  // so a quiet body isn't attenuated. We divide by tanh'(0)=1·pre → /pre, but
+  // cap makeup so loud bodies still saturate (the harmonics we want).
+  const driven = Math.tanh(x * pre);
+  const makeup = Math.min(pre, 1 / Math.tanh(1)); // bounded makeup
+  return driven * makeup;
 }

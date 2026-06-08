@@ -271,7 +271,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // careful capture timing — ART + unit + E2E provide full DSP + behavior
   // coverage in the meantime. Promote into MODULES + capture darwin/linux
   // baselines in a follow-up PR.
-  chowkick: 'VRT baseline pending; 17-knob card with two live preview canvases; ART + unit + E2E provide coverage.',
+  chowkick: 'VRT baseline pending; 20-knob card (PULSE SHAPE + RESONANT FILTER bands + a PUNCH fader row) with two live preview canvases; ART + unit + E2E provide coverage.',
   // CLOUDSEED first-slice PR: VRT baseline pending; complex card (4 panels
   // + bottom mix + preset bar). ART + unit + E2E provide coverage. Promote
   // into MODULES + capture darwin/linux baselines in a follow-up PR.

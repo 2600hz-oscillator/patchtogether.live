@@ -43,7 +43,7 @@ describe('chowkickDef — module def shape', () => {
     expect(chowkickDef.label).toBe('chowkick');
   });
 
-  it('declares gate_in + pitch_cv + 15 per-knob CV inputs (17 total)', () => {
+  it('declares gate_in + pitch_cv + 18 per-knob CV inputs (20 total)', () => {
     const ids = chowkickDef.inputs.map((i) => i.id);
     expect(ids).toEqual([
       'gate_in', 'pitch_cv',
@@ -51,8 +51,9 @@ describe('chowkickDef — module def shape', () => {
       'noise_amount_cv', 'noise_decay_cv', 'noise_cutoff_cv',
       'freq_cv', 'q_cv', 'damping_cv', 'tight_cv', 'bounce_cv',
       'tone_cv', 'portamento_cv', 'level_cv',
+      'pitch_amount_cv', 'pitch_decay_cv', 'drive_cv',
     ]);
-    expect(ids).toHaveLength(17);
+    expect(ids).toHaveLength(20);
   });
 
   it('declares a single audio_out output', () => {
@@ -87,6 +88,9 @@ describe('chowkickDef — module def shape', () => {
       ['tone_cv',         'tone'],
       ['portamento_cv',   'portamento'],
       ['level_cv',        'level'],
+      ['pitch_amount_cv', 'pitch_amount'],
+      ['pitch_decay_cv',  'pitch_decay'],
+      ['drive_cv',        'drive'],
     ];
     for (const [portId, paramId] of pairs) {
       const port = chowkickDef.inputs.find((p) => p.id === portId);
@@ -96,26 +100,33 @@ describe('chowkickDef — module def shape', () => {
     }
   });
 
-  it('declares all 17 params with the spec\'s ranges + defaults + curves', () => {
+  it('declares all 20 params with the spec\'s ranges + (punch) defaults + curves', () => {
     const byId = Object.fromEntries(chowkickDef.params.map((p) => [p.id, p] as const));
-    expect(byId.width).toMatchObject({         min: 0.1, max: 50,   curve: 'log',      defaultValue: 1 });
+    // PUNCH DEFAULTS (PR feat/chowkick-oomph, tuning pass 2): a loud bright snap
+    // (noise 0.5 @ 5.5 kHz), deep fast chirp (pitch 0.9 / 0.28), sharper body
+    // (q 1.6), hotter drive (0.5). See the worklet header for the measured
+    // before/after punch proxies. noise_cutoff + tone ranges pushed (8k / 4k).
+    expect(byId.width).toMatchObject({         min: 0.1, max: 50,   curve: 'log',      defaultValue: 0.5 });
     expect(byId.amplitude).toMatchObject({     min: 0,   max: 2,    curve: 'linear',   defaultValue: 1 });
-    expect(byId.decay).toMatchObject({         min: 0,   max: 1,    curve: 'linear',   defaultValue: 1 });
-    expect(byId.sustain).toMatchObject({       min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.5 });
-    expect(byId.noise_amount).toMatchObject({  min: 0,   max: 1,    curve: 'linear',   defaultValue: 0 });
-    expect(byId.noise_decay).toMatchObject({   min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.5 });
-    expect(byId.noise_cutoff).toMatchObject({  min: 20,  max: 5000, curve: 'log',      defaultValue: 500 });
+    expect(byId.decay).toMatchObject({         min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.3 });
+    expect(byId.sustain).toMatchObject({       min: 0,   max: 1,    curve: 'linear',   defaultValue: 0 });
+    expect(byId.noise_amount).toMatchObject({  min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.5 });
+    expect(byId.noise_decay).toMatchObject({   min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.07 });
+    expect(byId.noise_cutoff).toMatchObject({  min: 20,  max: 8000, curve: 'log',      defaultValue: 5500 });
     expect(byId.noise_type).toMatchObject({    min: 0,   max: 3,    curve: 'discrete', defaultValue: 0 });
     expect(byId.freq).toMatchObject({          min: 20,  max: 500,  curve: 'log',      defaultValue: 80 });
-    expect(byId.q).toMatchObject({             min: 0.1, max: 10,   curve: 'log',      defaultValue: 0.5 });
-    expect(byId.damping).toMatchObject({       min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.5 });
-    expect(byId.tight).toMatchObject({         min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.5 });
+    expect(byId.q).toMatchObject({             min: 0.1, max: 10,   curve: 'log',      defaultValue: 1.6 });
+    expect(byId.damping).toMatchObject({       min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.4 });
+    expect(byId.tight).toMatchObject({         min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.6 });
     expect(byId.bounce).toMatchObject({        min: 0,   max: 1,    curve: 'linear',   defaultValue: 0 });
-    expect(byId.tone).toMatchObject({          min: 50,  max: 2000, curve: 'log',      defaultValue: 800 });
+    expect(byId.tone).toMatchObject({          min: 50,  max: 4000, curve: 'log',      defaultValue: 3200 });
     expect(byId.portamento).toMatchObject({    min: 0,   max: 100,  curve: 'log',      defaultValue: 0.5 });
     expect(byId.level).toMatchObject({         min: -60, max: 0,    curve: 'linear',   defaultValue: 0 });
     expect(byId.link).toMatchObject({          min: 0,   max: 1,    curve: 'discrete', defaultValue: 0 });
-    expect(Object.keys(byId)).toHaveLength(17);
+    expect(byId.pitch_amount).toMatchObject({  min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.9 });
+    expect(byId.pitch_decay).toMatchObject({   min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.28 });
+    expect(byId.drive).toMatchObject({         min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.5 });
+    expect(Object.keys(byId)).toHaveLength(20);
   });
 
   it('claims BSD-3-Clause ChowKick attribution', () => {
@@ -195,6 +206,37 @@ describe('CHOWKICK worklet — load + smoke', () => {
     }
     expect(bad, `non-finite sample at ${bad}`).toBe(-1);
     expect(peak).toBeGreaterThan(0.001);
+  });
+
+  it('DEFAULT patch is a PITCHED bipolar kick, not a DC blob (oomph regression)', async () => {
+    // PR feat/chowkick-oomph: the previous default produced a unipolar DC blob
+    // (DC ≈ +0.6, ZERO zero-crossings, fundamental ≈14 Hz). The fixed default
+    // must ring bipolar at ~80 Hz. Drive the worklet at its real defaults.
+    const Proc = await loadProcessor();
+    const p = new Proc();
+    // 10 ms gate at sample 100.
+    const audio = runProc(p, makeParams(), 0.4,
+      (n) => (n >= 100 && n < 100 + Math.round(0.01 * SR)) ? 1 : 0);
+    // DC offset must be ≈ 0 (the bug left ~+0.6).
+    let sum = 0; for (let i = 0; i < audio.length; i++) sum += audio[i] ?? 0;
+    const dc = sum / audio.length;
+    expect(Math.abs(dc), `DC offset ${dc}`).toBeLessThan(0.03);
+    // Must OSCILLATE: many zero-crossings over the body decay (bug had 0).
+    let zc = 0; const s0 = 100 + Math.round(0.005 * SR), s1 = 100 + Math.round(0.12 * SR);
+    for (let i = s0 + 1; i < s1; i++) if (((audio[i - 1] ?? 0) >= 0) !== ((audio[i] ?? 0) >= 0)) zc++;
+    expect(zc, `zero-crossings 5–120 ms`).toBeGreaterThan(8);
+    // Dominant frequency near the 80 Hz body (allow for the pitch sweep + the
+    // 25 Hz DC-block — argmax over 40–400 Hz on the steady tail).
+    const w0 = 100 + Math.round(0.04 * SR), w1 = 100 + Math.round(0.2 * SR);
+    let best = 0, bestMag = 0;
+    for (let f = 40; f <= 400; f += 1) {
+      let re = 0, im = 0;
+      for (let i = w0; i < w1; i += 2) { const a = 2 * Math.PI * f * i / SR; re += (audio[i] ?? 0) * Math.cos(a); im -= (audio[i] ?? 0) * Math.sin(a); }
+      const m = re * re + im * im;
+      if (m > bestMag) { bestMag = m; best = f; }
+    }
+    expect(best, `dominant freq ${best}Hz`).toBeGreaterThan(50);
+    expect(best, `dominant freq ${best}Hz`).toBeLessThan(160);
   });
 
   it('changing noise_type by parameter does not blow up the worklet', async () => {
