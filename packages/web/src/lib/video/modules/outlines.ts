@@ -77,9 +77,12 @@ import {
   OUTLINES_FIELD,
   MAX_CIRCLES,
   ROT_CENTER,
-  combineRgbAt,
   ringWidth,
   shapeVertices,
+  makeOutlinesField,
+  deriveOutlinesField,
+  combineRgbFromField,
+  type OutlinesField,
   type Circle,
 } from './outlines-sim';
 
@@ -386,9 +389,13 @@ export const outlinesDef: VideoModuleDef = {
       // combine — overlap region colorized by COUNT via the hue ramp. We can't
       // cheaply do per-pixel count in canvas2D for the exact ramp, so we paint a
       // coarse count grid: sample the count at a downsampled grid + fill cells.
-      // The downsample keeps it cheap (a 160×160 grid) while the colour matches
-      // combineRgbAt at the cell center (passing the same live `rot` so the
-      // coloured stack spins with the geometry).
+      // The downsample keeps it cheap (a 160×160 grid). The COVERAGE for that
+      // grid is derived ONCE per frame (deriveOutlinesField: AABB iteration +
+      // circumradius pre-reject + cached polygon normals → ZERO per-cell trig),
+      // then each non-empty cell is coloured exactly as combineRgbAt did at the
+      // cell center (same live `rot`, so the coloured stack spins with the
+      // geometry). This is the #699 per-pixel-trig hot-path fix: byte-identical
+      // colour, far fewer ops.
       if (combineScene.ctx2d) {
         const c = combineScene.ctx2d;
         c.fillStyle = '#000';
@@ -396,12 +403,15 @@ export const outlinesDef: VideoModuleDef = {
         if (circles.length > 0) {
           const GRID = 160;
           const cell = OUTLINES_FIELD / GRID;
+          combineField = makeOutlinesField(GRID, combineField);
+          deriveOutlinesField(circles, combineField, rot);
+          const cnt = combineField.count;
           for (let gy = 0; gy < GRID; gy++) {
-            const py = (gy + 0.5) * cell;
+            const rowBase = gy * GRID;
             for (let gx = 0; gx < GRID; gx++) {
-              const px = (gx + 0.5) * cell;
-              const [r, g, b] = combineRgbAt(circles, px, py, rot);
-              if (r === 0 && g === 0 && b === 0) continue;
+              const idx = rowBase + gx;
+              if (cnt[idx] === 0) continue; // black cell → leave the cleared bg
+              const [r, g, b] = combineRgbFromField(combineField, idx, combineRgbScratch);
               c.fillStyle = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
               c.fillRect(gx * cell, gy * cell, Math.ceil(cell), Math.ceil(cell));
             }
@@ -430,6 +440,11 @@ export const outlinesDef: VideoModuleDef = {
 
     let lastTime = -1;
     let framesElapsed = 0;
+
+    // Reused across frames so the combine derive-once path allocates nothing
+    // per frame (the coverage buffers + a single RGB scratch triple).
+    let combineField: OutlinesField | undefined;
+    const combineRgbScratch: [number, number, number] = [0, 0, 0];
 
     // Snapshot the CURRENT live knob+CV params into the shape the sim latches at
     // spawn. Used both by draw() (every frame) AND by the gate handler (so a
