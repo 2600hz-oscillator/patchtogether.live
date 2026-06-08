@@ -349,14 +349,20 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // NOTE: `edges` (Sobel edge-detection video processor) was RE-ENABLED in the
   // behavioral video-timeout-scaling leg. It was exempt PURELY for the
   // CI-SwiftShader heavy-WebGL-video flat-96s-budget timeout (its re-enable
-  // note literally called for "a video-domain per-frame-scaled timeout"). That
-  // budget now exists (VIDEO_TEST_BASE_MS + n×VIDEO_PER_INPUT_MS, see the
-  // per-test setTimeout below: 3 inputs → 195s), so `edges` is back in the
-  // sweep with no per-port exemptions. cellshade / chromakey / outlines were
-  // never exempt — they timed out IN the lane and the scaled budget fixes them
-  // the same way. (foxy / mandelbulb stay exempt — their observed sink is the
-  // AUDIO scope, not the video canvas; they're exempt for heavy-mount /
-  // ray-march reasons, NOT the video-sink per-frame timeout.)
+  // note literally called for "a video-domain per-frame-scaled timeout"). The
+  // fix is THREE-fold for the whole video-sink class (edges + the never-exempt
+  // cellshade / chromakey / outlines that timed out IN the lane on CI):
+  //   1. a video-domain per-test budget (VIDEO_TEST_BASE_MS + n×VIDEO_PER_INPUT_MS);
+  //   2. a video-domain spawnPatch MOUNT budget (VIDEO_MOUNT_TIMEOUT_MS, 30s) —
+  //      the ACTUAL cellshade shard-1 failure was spawnPatch's 5s DOM-mount
+  //      wait, not the per-test budget; and
+  //   3. reduced per-frame capture WORK (2 canvas readbacks/spawn at half-res)
+  //      so the per-frame readback that dominates SwiftShader cost shrinks and a
+  //      4-worker shard stops starving its co-tenant tests (cube/hypercube).
+  // So `edges` is back in the sweep with no per-port exemptions. (foxy /
+  // mandelbulb stay exempt — their observed sink is the AUDIO scope, not the
+  // video canvas; they're exempt for heavy-mount / ray-march reasons, NOT the
+  // video-sink per-frame timeout.)
 
   // ── GRIDS — Mutable Instruments Grids (pattern-based drum trigger).
   //    Internal BPM clock is non-deterministic under CI scheduling:
@@ -1906,12 +1912,18 @@ async function readSinkAggregated(page: Page, sink: SinkSpec, n = 5, intervalMs 
     if (fps.length === 0) return null;
     return aggregateAudio(fps);
   }
-  // video: 3 samples spaced 200ms.
+  // video: 2 samples spaced 200ms. Each sample is a full-canvas getImageData,
+  // which forces a GL→CPU pipeline readback — the dominant per-frame cost on
+  // CI's SwiftShader software renderer (~10-30× a real GPU) when 4 workers
+  // contend the single GL pipeline. Two samples still give the aggregate its
+  // mean + a (control-vs-patched) range without paying the third readback +
+  // its 200ms settle on EVERY video spawn (2 spawns/port), the per-test work
+  // reduction that keeps the contended SwiftShader shard under budget.
   const vfs: { variance: number; nonBlackFrac: number }[] = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 2; i++) {
     const s = await readSink(page, sink);
     if (s?.video) vfs.push(s.video);
-    if (i < 2) await runFor(page, 200);
+    if (i < 1) await runFor(page, 200);
   }
   if (vfs.length === 0) return null;
   const meanRange = (vals: number[]) => {
@@ -1943,8 +1955,14 @@ async function readSink(page: Page, sink: SinkSpec): Promise<SinkSample | null> 
     const img = ctx.getImageData(0, 0, c.width, c.height);
     const w = c.width, h = c.height;
     let n = 0, sum = 0, sumSq = 0, nonBlack = 0;
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
+    // Subsample every 2nd pixel per axis (1/4 the iterations). variance +
+    // nonBlackFrac are statistical aggregates over the frame — a half-res grid
+    // preserves them while cutting the in-page reduction loop (786K px at
+    // 1024×768) that runs on EVERY video readback under the contended
+    // SwiftShader shard.
+    const STEP = 2;
+    for (let y = 0; y < h; y += STEP) {
+      for (let x = 0; x < w; x += STEP) {
         const i = (y * w + x) * 4;
         const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
         sum += v; sumSq += v * v;
@@ -2434,15 +2452,31 @@ function filterErrors(errors: string[]): string[] {
 // (the #64 heavy-video fix / mapper.spec.ts HEAVY_MOUNT_TIMEOUT convention):
 //   * BASE  — fixed cushion (page boot + first WebGL-context warm-up).
 //   * PER-INPUT — each port = 2 spawns (control + patched), each a full
-//     mount + GL warm-up + settle + 5×readPixels; sized for SwiftShader's
+//     mount + GL warm-up + settle + 2×canvas-readback; sized for SwiftShader's
 //     ~20-25s-per-video-spawn worst case (2 spawns ≈ 45s/input).
 //   * CEIL  — a video-domain ceiling so a pathologically-wide video module
 //     can't single-handedly blow the 20-min behavioral-coverage job. The
 //     widest enrolled video-sink module (outlines, 9 drivable inputs) lands
-//     at 60 + 9×45 = 465s = 7.75 min, well under the ceiling AND the job cap.
+//     at 60 + 9×55 = 555s = 9.25 min, under the ceiling AND the job cap.
+//
+// PER_INPUT was 45s in the first video-scaling leg, but edges (3 inputs → 195s)
+// still timed out on CI — its per-frame Sobel pass + the contended 4-worker
+// SwiftShader pipeline ran right at the budget edge. Bumped to 55s (edges → 225s)
+// for genuine headroom, paired with the capture-WORK reduction (2 half-res
+// readbacks/spawn instead of 3 full-res) + the video mount budget below, so the
+// budget isn't carrying the fix alone.
 const VIDEO_TEST_BASE_MS = 60_000;
-const VIDEO_PER_INPUT_MS = 45_000;
+const VIDEO_PER_INPUT_MS = 55_000;
 const VIDEO_TEST_TIMEOUT_CEIL = 600_000; // 10 min hard cap (< 20-min job budget)
+
+// Video-sink card FIRST-PAINT mount budget. spawnPatch's default 5s
+// "node mounted in the DOM" wait is the WRONG budget for a WebGL video card:
+// VIDEOOUT + the SUT's GL pipeline first-paint under CI's SwiftShader software
+// renderer — at 1024×768 and contended by 4 parallel workers on a single GL
+// pipeline — routinely exceeds 5s, so spawnPatch threw a 5s waitForFunction
+// timeout (the cellshade shard-1 failure) BEFORE the per-test budget above ever
+// mattered. Mirror modules.spec.ts's HEAVY_MOUNT_TIMEOUT (30s) for these cards.
+const VIDEO_MOUNT_TIMEOUT_MS = 30_000;
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -2509,6 +2543,11 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
           )
         : Math.max(90_000, drivableInputs.length * 22_000 + 30_000);
       test.setTimeout(timeoutMs);
+
+      // Video cards need a longer per-spawn DOM-mount budget than spawnPatch's
+      // 5s default (see VIDEO_MOUNT_TIMEOUT_MS) — the actual cellshade shard-1
+      // failure was this inner mount wait, not the per-test budget above.
+      const spawnOpts = usesVideoSink ? { mountTimeout: VIDEO_MOUNT_TIMEOUT_MS } : undefined;
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -2587,7 +2626,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
           ...ctxWiring.edges,
         ];
 
-        await spawnPatch(page, controlNodes, controlEdges);
+        await spawnPatch(page, controlNodes, controlEdges, spawnOpts);
         await populateAllSequencerSteps(page, heldNoteDriver);
         await runFor(page, waitMsFor(mod.domain, observed.sink));
         const controlSample = await readSinkAggregated(page, observed.sink);
@@ -2626,7 +2665,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
           });
         }
 
-        await spawnPatch(page, patchedNodes, patchedEdges);
+        await spawnPatch(page, patchedNodes, patchedEdges, spawnOpts);
         await populateAllSequencerSteps(page, heldNoteDriver);
         await runFor(page, waitMsFor(mod.domain, observed.sink));
         const patchedSample = await readSinkAggregated(page, observed.sink);

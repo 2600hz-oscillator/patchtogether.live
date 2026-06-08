@@ -225,6 +225,11 @@ describe('behavioral exemptions are ALL reconciliation backlog (no permanent-exe
     expect(/\bVIDEO_PER_INPUT_MS\b/.test(specSrc)).toBe(true);
     expect(/\bVIDEO_TEST_BASE_MS\b/.test(specSrc)).toBe(true);
     expect(/sink\.targetType === 'video'/.test(specSrc)).toBe(true);
+    // The ACTUAL cellshade shard-1 failure was spawnPatch's 5s DOM-mount wait,
+    // not the per-test budget — the video re-enable also needs the longer
+    // per-spawn mount budget threaded into spawnPatch (VIDEO_MOUNT_TIMEOUT_MS)
+    // for the WebGL card's SwiftShader first-paint. Lock that token too.
+    expect(/\bVIDEO_MOUNT_TIMEOUT_MS\b/.test(specSrc)).toBe(true);
     // edges has no per-port sweep exemptions — all 3 ports drive the sweep.
     const sweepExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_SWEEP_EXEMPT');
     expect([...sweepExempt].some((k) => k.startsWith('edges.'))).toBe(false);
