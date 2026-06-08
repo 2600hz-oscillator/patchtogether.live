@@ -26,6 +26,15 @@ interface SaveBody {
   payload?: unknown;
 }
 
+/** Byte length of a string under UTF-8 — the encoding the DB column and
+ *  the Workers request-body limit actually count in. `String.length`
+ *  counts UTF-16 code units, so a payload full of multi-byte chars
+ *  (emoji, CJK) can be UNDER the cap by `.length` yet OVER it on the
+ *  wire; cap checks must use this, not `.length`. */
+function utf8ByteLength(s: string): number {
+  return new TextEncoder().encode(s).byteLength;
+}
+
 function validatePayload(value: unknown): SavedGroupPayload | string {
   if (!value || typeof value !== 'object') return 'payload must be an object';
   const p = value as Partial<SavedGroupPayload>;
@@ -71,8 +80,9 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   }
 
   const serialized = JSON.stringify(validated);
-  if (serialized.length > SAVED_GROUP_MAX_PAYLOAD_BYTES) {
-    const actualKB = Math.ceil(serialized.length / 1024);
+  const serializedBytes = utf8ByteLength(serialized);
+  if (serializedBytes > SAVED_GROUP_MAX_PAYLOAD_BYTES) {
+    const actualKB = Math.ceil(serializedBytes / 1024);
     const capMB = Math.round((SAVED_GROUP_MAX_PAYLOAD_BYTES / (1024 * 1024)) * 10) / 10;
     throw error(
       413,

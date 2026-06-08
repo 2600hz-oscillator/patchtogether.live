@@ -83,16 +83,12 @@ concept, rename every use. Leaving "renamed-to-X" old names as exports for
 
 ## Module registry pattern
 
-When you add a new audio/video module, every shared registry file gets one
-add. See `module-development` skill — these adds get auto-merge-eaten if you
-let a stale PR linger, so know the list:
-
-- `packages/web/src/lib/audio/modules/index.ts` (import + register)
-- `packages/web/src/lib/ui/Canvas.svelte` (Card import + switch case)
-- `packages/web/src/lib/ui/module-categories.ts` (palette category)
-- `packages/web/src/lib/graph/types.ts` (cable-type compatibility)
-- `packages/web/src/lib/audio/modules/vrt-meta.test.ts` (VRT coverage assertion)
-- `packages/web/src/lib/audio/cv-scale-registry.test.ts` (CV intrinsic vs. AudioParam)
+Module registration is **glob + palette-driven** (PR #551) — adding a module
+needs **no edit to a shared registry file**. The def auto-registers via
+`import.meta.glob`, its `palette: { top, sub }` field places it in the menu, and
+its card resolves by `PascalCase(type) + 'Card'`. See `module-development` for
+the small set of files still hand-maintained (manifest `DESCRIPTIONS`, VRT
+exemptions, `modules-card-map.test.ts EXPECTED_NODE_TYPES`, per-port lists).
 
 ## Tone in PRs and commits
 

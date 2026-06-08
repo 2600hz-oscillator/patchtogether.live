@@ -1,6 +1,6 @@
 ---
 name: module-development
-description: How to add a new audio or video module. The 6 shared registry files that need an entry, the def + Card + DSP structure, what tests to add.
+description: How to add a new audio or video module. Glob+palette-driven registration (no shared-registry edits), the def + Card + DSP structure, what tests to add, and the few files still hand-maintained.
 ---
 
 # Module development
@@ -28,22 +28,55 @@ Per-module files:
   by the standard VRT iterator (no per-module spec needed unless your module
   is on the exempt list).
 
-## The 6 shared registry files — one entry each
+## Registration is glob + palette-driven — NO shared-registry edits
 
-This is the critical list. **Auto-merge will silently drop entries here if
-your branch is stale** (see `pr-workflow` skill, silent-drop section).
+**This is the current model as of PR #551 (`976d1846`).** You no longer hand-edit
+a list of shared registry files; the codegen auto-discovers your module. The old
+"edit 6 shared files" process is dead — the registry files literally say so in
+their headers (`audio/modules/index.ts`: *"GLOB-DRIVEN… Adding a module no longer
+requires editing this file."*).
+
+How discovery works:
+
+- **Def auto-registration** — drop `packages/web/src/lib/audio/modules/<name>.ts`
+  that `export`s a `<name>Def` (an object carrying `type` + `factory`). It is
+  picked up via `import.meta.glob` in `audio/modules/index.ts` (and the parallel
+  `meta/modules/index.ts` / `video/modules/index.ts`). **No `import` + no
+  `registerModule()` edit.**
+- **Palette placement** — the def carries `palette: { top, sub }` (e.g.
+  `{ top: 'Audio modules', sub: 'VCOs' }`). `module-categories.ts` reads
+  `def.palette` directly; its legacy `MODULE_CATEGORIES` hand-map is now `{}`. A
+  unit test asserts every registered def declares a palette, so a forgotten
+  palette fails loudly (and the module renders under Uncategorized meanwhile).
+- **Card auto-resolution** — `Canvas.svelte` builds `nodeTypes` via
+  `buildNodeTypes` from `$lib/ui/modules-card-map`, which globs
+  `./modules/*Card.svelte`. By convention `PascalCase(type) + 'Card'` resolves
+  the component (e.g. `analogVco → AnalogVcoCard`); for an off-convention name,
+  set a `card: 'XyzCard'` field on the def itself (still zero shared-file edits).
+  There is **no** `{:else if node.type === 'foo'}` switch — only a `timelorde`
+  auto-spawn special-case remains.
+- **`graph/types.ts ModuleType`** is an **open branded string**
+  (`CoreModuleType | (string & {})`) — every registered module type is valid
+  with **no edit** to this file. Only touch it if you introduce a genuinely new
+  cable type (the port-compatibility surface).
+
+Run `scripts/new-module.ts` — it already encodes this scaffold.
+
+## The few files still hand-maintained
+
+These are NOT auto-generated; a new module still needs an entry here, and they
+remain the cross-PR conflict surface (see `pr-workflow` silent-drop section):
 
 | File | What to add |
 |------|-------------|
-| `packages/web/src/lib/audio/modules/index.ts` | `import { fooDef } from './foo';` + `registerModule(fooDef);` |
-| `packages/web/src/lib/ui/Canvas.svelte` | `import FooCard from '$lib/ui/modules/FooCard.svelte';` + a `{:else if node.type === 'foo'}` case |
-| `packages/web/src/lib/ui/module-categories.ts` | An entry in the appropriate category array (`AUDIO_VCOS`, `UTILITIES`, etc.) |
-| `packages/web/src/lib/graph/types.ts` | If your module introduces a new cable type, add it. Otherwise add the module's id to the right port-compatibility set. |
-| `packages/web/src/lib/audio/modules/vrt-meta.test.ts` | Either an entry confirming VRT coverage, OR an exempt-list entry if your module's render isn't deterministic |
-| `packages/web/src/lib/audio/cv-scale-registry.test.ts` | If any of your ports are CV-typed but bypass the standard scale (e.g., V/oct intrinsic), add a `PASSTHROUGH_BY_DESIGN` entry |
+| `packages/web/src/lib/docs/module-manifest.ts` | A one-line `DESCRIPTIONS[<type>]` entry — **gated by its own unit test**; a new module fails `unit` without it. (Ship real, robust module docs too — not just this one-liner.) |
+| `e2e/vrt/vrt-exemptions.ts` | Only if your module's render is non-deterministic (animated 3D, CRT feedback): add `EXEMPT_FROM_VRT` with a reason, or an `EXEMPT_BASELINE_PAIRS` entry for a per-platform baseline that's still pending. |
+| `packages/web/src/lib/ui/modules-card-map.test.ts` | Add the new type to `EXPECTED_NODE_TYPES` (the coverage self-test's expected set). |
+| `e2e/tests/per-module-per-port*.spec.ts` + the per-port driver lists | Only if your module needs a bespoke driver or a per-port exemption; most modules are auto-enrolled. |
 
-If you forget one, things compile but the module won't spawn / render / show
-in palette / pass type-checks.
+`label:` strings on the def **MUST be lowercase** (the card CSS uppercases for
+display) — a guard in `packages/web/src/lib/dev/registry-manifest.test.ts` fails
+CI on any uppercase label.
 
 ## Adding the module def
 

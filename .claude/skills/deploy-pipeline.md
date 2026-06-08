@@ -27,7 +27,7 @@ Defined in `.github/workflows/deploy.yml`:
 
 | Job | Trigger |
 |-----|---------|
-| `deploy-prod` | Manual `workflow_dispatch` with `target: prod`, gated on `verify-ci` success |
+| `deploy-prod` | **Push to `main` with a `package.json:.version` bump** (auto — `detect-version-bump.outputs.bumped == 'true'`) **OR** manual `workflow_dispatch` with `target: prod` (gated on `verify-ci` success). Prod is gated by an explicit version bump — a normal main push does NOT deploy prod. |
 | `deploy-pr-preview` | Every PR event (open, sync) |
 | `deploy-autotest` | Every push to `main` (auto) OR manual dispatch with `target: autotest` |
 | `deploy-dev` | Every push to `main` (auto) OR manual dispatch with `target: dev` |

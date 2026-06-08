@@ -102,6 +102,22 @@ describe('POST /api/feedback validation', () => {
     expect(r.status).toBe(413);
   });
 
+  it('413 when patchJson is UTF-16-UNDER but UTF-8-OVER the 64 KB cap', async () => {
+    // Regression for the String.length (UTF-16 code units) vs UTF-8-bytes
+    // cap bug. '中' is 1 UTF-16 unit but 3 UTF-8 bytes, so ~23K of them is
+    // ~23K `.length` (under the 65536-byte cap) yet ~69K bytes (over). A
+    // `.length`-based check would 200 this; the byte-accurate check 413s.
+    const cjkBlob = '中'.repeat(23 * 1024);
+    const serialized = JSON.stringify({ blob: cjkBlob });
+    expect(serialized.length).toBeLessThan(64 * 1024); // UTF-16 units: under
+    expect(new TextEncoder().encode(serialized).byteLength).toBeGreaterThan(64 * 1024); // bytes: over
+    const r = await runPost(makeEvent({
+      body: { kind: 'bug', message: 'multibyte patch', patchJson: { blob: cjkBlob } },
+    }));
+    expect(r.status).toBe(413);
+    expect(recordFeedbackMock).not.toHaveBeenCalled();
+  });
+
   it('400 when rackId is not a string', async () => {
     const r = await runPost(makeEvent({
       body: { kind: 'bug', message: 'help', rackId: 12345 },

@@ -77,10 +77,12 @@ function rowToSavedGroup(row: SavedGroupRow): SavedGroup {
 
 function generateId(): string {
   // Saved-group ids are not bearer tokens (every read is auth-checked
-  // against the owning user), so the entropy bar is lower than rackspace
-  // ids — Math.random + base36 is fine. Prefix `sg_` so they sort
-  // distinctly in logs.
-  return `sg_${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 6)}`;
+  // against the owning user), so this is ergonomics, not security:
+  // `crypto.randomUUID()` is a global on both the Workers runtime and
+  // Node, has no collision-in-practice concern (no retry needed), and
+  // drops the old Math.random + base36 hand-roll. Keep the `sg_` prefix
+  // so the ids sort distinctly in logs.
+  return `sg_${crypto.randomUUID()}`;
 }
 
 export type SaveResult =

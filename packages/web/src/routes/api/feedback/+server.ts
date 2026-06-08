@@ -18,13 +18,21 @@
 //     verify membership, deliberately. Any authed user can attach any
 //     rackId to feedback; worst case is a row pointing at a rack they
 //     don't own, which is fine for our reporting use case.)
-//   - patchJson: optional; capped at 64 KB (JSON.stringify length)
+//   - patchJson: optional; capped at 64 KB (UTF-8 bytes of JSON.stringify)
 
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { recordFeedback, FEEDBACK_MAX_LENGTH, type FeedbackKind } from '$lib/server/feedback';
 
 const MAX_PATCH_JSON_BYTES = 64 * 1024;
+
+/** Byte length of a string under UTF-8 — the encoding the wire/DB count
+ *  in. `String.length` counts UTF-16 code units, so a payload full of
+ *  multi-byte chars (emoji, CJK) can be UNDER the cap by `.length` yet
+ *  OVER it in bytes; byte caps must use this, not `.length`. */
+function utf8ByteLength(s: string): number {
+  return new TextEncoder().encode(s).byteLength;
+}
 
 interface FeedbackBody {
   kind?: unknown;
@@ -80,8 +88,9 @@ export const POST: RequestHandler = async ({ locals, request }) => {
     } catch {
       throw error(400, 'patchJson is not serializable');
     }
-    if (serialized.length > MAX_PATCH_JSON_BYTES) {
-      throw error(413, `patchJson exceeds ${MAX_PATCH_JSON_BYTES} bytes`);
+    const serializedBytes = utf8ByteLength(serialized);
+    if (serializedBytes > MAX_PATCH_JSON_BYTES) {
+      throw error(413, `patchJson exceeds ${MAX_PATCH_JSON_BYTES} bytes (${serializedBytes} bytes)`);
     }
     patchJson = body.patchJson;
   }
