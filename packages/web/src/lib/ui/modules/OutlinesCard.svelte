@@ -1,18 +1,23 @@
 <script lang="ts">
-  // CirclesCard — UI for the CIRCLES stateful particle video generator.
+  // OutlinesCard — UI for the OUTLINES stateful particle video generator.
   //
-  // Left rail: GATE (spawn trigger) + COLLIDE (live inter-circle elastic-bounce
-  // gate) + D/V/SPD/DECAY CV inputs + the VIDEO input (used by the `mapped`
-  // output). Right rail: the four outputs (OVERLAP / CONTOUR / COMBINE /
-  // MAPPED). Five knobs (D/V/SPD/DECAY/RATE) + a live preview of the COMBINE
-  // output (blitted from the factory's scene canvas, same pattern ShapegenCard
-  // uses).
+  // (Was CirclesCard — renamed when the SHAPE selector landed: a spawned shape
+  // can be a circle OR a regular N-gon, plus a live-global ROTATION.)
+  //
+  // Left rail: GATE (spawn trigger) + COLLIDE (live inter-shape elastic-bounce
+  // gate) + D/V/SPD/DECAY/SHAPE/ROT CV inputs + the VIDEO input (used by the
+  // `mapped` output). Right rail: the four outputs (OVERLAP / CONTOUR / COMBINE
+  // / MAPPED). Seven knobs (D/V/SPD/DECAY/SHAPE/ROT/RATE) + a live preview of
+  // the COMBINE output (blitted from the factory's scene canvas, same pattern
+  // ShapegenCard uses). SHAPE shows its current shape name; ROT shows its spin
+  // direction (CCW / · / CW).
 
   import type { NodeProps } from '@xyflow/svelte';
   import { Handle, Position } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { patch } from '$lib/graph/store';
-  import { circlesDef, CIRCLES_GATE_PORT_ID, CIRCLES_COLLIDE_PORT_ID } from '$lib/video/modules/circles';
+  import { outlinesDef, OUTLINES_GATE_PORT_ID, OUTLINES_COLLIDE_PORT_ID } from '$lib/video/modules/outlines';
+  import { mapShape, ROT_CENTER } from '$lib/video/modules/outlines-sim';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import { onMount, onDestroy } from 'svelte';
@@ -23,7 +28,7 @@
   const engineCtx = useEngine();
 
   function defaultFor(k: string): number {
-    return circlesDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
+    return outlinesDef.params.find((p) => p.id === k)?.defaultValue ?? 0;
   }
   function paramVal(k: string): number {
     const v = node?.params?.[k];
@@ -32,6 +37,17 @@
   const set = (k: string) => (v: number) => {
     const t = patch.nodes[id]; if (t) t.params[k] = v;
   };
+
+  // SHAPE readout: the discrete shape NAME for the current `shape` knob value.
+  const SHAPE_NAMES = ['CIRCLE', 'TRI', 'SQUARE', 'PENTA', 'HEXA', 'OCTA'];
+  let shapeName = $derived(SHAPE_NAMES[mapShape(paramVal('shape'))] ?? 'CIRCLE');
+  // ROT readout: spin DIRECTION from the bipolar knob (center = no spin).
+  let rotDir = $derived.by(() => {
+    const r = paramVal('rotation');
+    if (r > ROT_CENTER + 0.02) return 'CW';
+    if (r < ROT_CENTER - 0.02) return 'CCW';
+    return '·';
+  });
 
   // ----- Preview canvas: blit the engine's COMBINE scene canvas -----
   let previewEl: HTMLCanvasElement | null = $state(null);
@@ -57,30 +73,34 @@
   // [GATED] hint: lights when the gate input is the target of any edge.
   let gatePatched = $derived<boolean>(
     Object.values(patch.edges ?? {}).some(
-      (e) => e?.target?.nodeId === id && e?.target?.portId === CIRCLES_GATE_PORT_ID,
+      (e) => e?.target?.nodeId === id && e?.target?.portId === OUTLINES_GATE_PORT_ID,
     ),
   );
 </script>
 
-<div class="mod-card circles-card" data-testid="circles-card">
+<div class="mod-card outlines-card" data-testid="outlines-card">
   <div class="stripe" style="background: var(--cable-video);"></div>
-  <ModuleTitle {id} {data} defaultLabel="circles" />
+  <ModuleTitle {id} {data} defaultLabel="outlines" />
 
-  <!-- Left rail: gate spawn + collide gate + D/V/SPD/DECAY CV + video input. -->
-  <Handle type="target" position={Position.Left} id={CIRCLES_GATE_PORT_ID} style="top: 56px; --handle-color: var(--cable-cv);" />
+  <!-- Left rail: gate spawn + collide gate + D/V/SPD/DECAY/SHAPE/ROT CV + video input. -->
+  <Handle type="target" position={Position.Left} id={OUTLINES_GATE_PORT_ID} style="top: 56px; --handle-color: var(--cable-cv);" />
   <span class="port-label left" style="top: 50px;">GATE</span>
-  <Handle type="target" position={Position.Left} id={CIRCLES_COLLIDE_PORT_ID} style="top: 88px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 82px;">COL</span>
-  <Handle type="target" position={Position.Left} id="d"   style="top: 120px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 114px;">D</span>
-  <Handle type="target" position={Position.Left} id="v"   style="top: 152px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 146px;">V</span>
-  <Handle type="target" position={Position.Left} id="spd" style="top: 184px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 178px;">SPD</span>
-  <Handle type="target" position={Position.Left} id="decay" style="top: 216px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 210px;">DEC</span>
-  <Handle type="target" position={Position.Left} id="video" style="top: 248px; --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 242px;">VID</span>
+  <Handle type="target" position={Position.Left} id={OUTLINES_COLLIDE_PORT_ID} style="top: 84px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 78px;">COL</span>
+  <Handle type="target" position={Position.Left} id="d"   style="top: 112px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 106px;">D</span>
+  <Handle type="target" position={Position.Left} id="v"   style="top: 140px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 134px;">V</span>
+  <Handle type="target" position={Position.Left} id="spd" style="top: 168px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 162px;">SPD</span>
+  <Handle type="target" position={Position.Left} id="decay" style="top: 196px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 190px;">DEC</span>
+  <Handle type="target" position={Position.Left} id="shape" style="top: 224px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 218px;">SHP</span>
+  <Handle type="target" position={Position.Left} id="rotation" style="top: 252px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 246px;">ROT</span>
+  <Handle type="target" position={Position.Left} id="video" style="top: 280px; --handle-color: var(--cable-video);" />
+  <span class="port-label left" style="top: 274px;">VID</span>
 
   <!-- Right rail: the four outputs. -->
   <Handle type="source" position={Position.Right} id="overlap" style="top: 56px;  --handle-color: var(--cable-mono-video);" />
@@ -94,9 +114,9 @@
 
   <div class="screen-wrap">
     {#if gatePatched}
-      <span class="gated-badge" data-testid="circles-gated-badge">[GATED]</span>
+      <span class="gated-badge" data-testid="outlines-gated-badge">[GATED]</span>
     {/if}
-    <canvas bind:this={previewEl} class="screen" data-testid="circles-screen"></canvas>
+    <canvas bind:this={previewEl} class="screen" data-testid="outlines-screen"></canvas>
   </div>
 
   <div class="row">
@@ -104,6 +124,16 @@
     <Knob value={paramVal('v')}     min={0} max={1} defaultValue={defaultFor('v')}     label="V"    curve="linear" onchange={set('v')}     moduleId={id} paramId="v" />
     <Knob value={paramVal('spd')}   min={0} max={1} defaultValue={defaultFor('spd')}   label="SPD"  curve="linear" onchange={set('spd')}   moduleId={id} paramId="spd" />
     <Knob value={paramVal('decay')} min={0} max={1} defaultValue={defaultFor('decay')} label="DEC"  curve="linear" onchange={set('decay')} moduleId={id} paramId="decay" />
+  </div>
+  <div class="row second">
+    <div class="knob-with-readout">
+      <Knob value={paramVal('shape')} min={0} max={1} defaultValue={defaultFor('shape')} label="SHP" curve="linear" onchange={set('shape')} moduleId={id} paramId="shape" />
+      <span class="readout" data-testid="outlines-shape-readout">{shapeName}</span>
+    </div>
+    <div class="knob-with-readout">
+      <Knob value={paramVal('rotation')} min={0} max={1} defaultValue={defaultFor('rotation')} label="ROT" curve="linear" onchange={set('rotation')} moduleId={id} paramId="rotation" />
+      <span class="readout" data-testid="outlines-rot-readout">{rotDir}</span>
+    </div>
     <Knob value={paramVal('rate')}  min={0} max={1} defaultValue={defaultFor('rate')}  label="RATE" curve="linear" onchange={set('rate')}  moduleId={id} paramId="rate" />
   </div>
 </div>
@@ -111,7 +141,7 @@
 <style>
   .mod-card {
     width: 260px;
-    min-height: 360px;
+    min-height: 420px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -131,7 +161,7 @@
   .port-label.left { left: 14px; }
   .port-label.right { right: 14px; }
   .screen-wrap {
-    margin: 12px auto 12px;
+    margin: 28px auto 12px;
     width: 168px;
     height: 168px;
     border: 1px solid #000;
@@ -159,9 +189,23 @@
   .screen { width: 168px; height: 168px; display: block; }
   .row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     gap: 6px;
     padding: 0 8px;
+  }
+  .row.second { margin-top: 10px; }
+  .knob-with-readout {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .readout {
+    font-size: 0.5rem;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    pointer-events: none;
   }
 </style>

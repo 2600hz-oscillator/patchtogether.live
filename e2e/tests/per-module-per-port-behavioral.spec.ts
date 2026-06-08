@@ -1520,17 +1520,28 @@ const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
   // test keeps the module-wide sustain=0.2; this per-port override touches release
   // alone.) Verified 3× stable with margin.
   'adsr.release': { sustain: 0.6 },
-  // circles.collide — the COLLIDE gate is a LIVE inter-circle ELASTIC-bounce
-  // mode: HIGH → circles knock each other around, LOW → they pass through. For
+  // outlines.collide — the COLLIDE gate is a LIVE inter-shape ELASTIC-bounce
+  // mode: HIGH → shapes knock each other around, LOW → they pass through. For
   // the behavioral sweep to see a delta, collisions must actually HAPPEN in the
-  // settle window, which needs a DENSE field of BIG circles. Force rate=1 (the
-  // internal clock fills the field at 1/500ms), d=1 (270 px discs → guaranteed
+  // settle window, which needs a DENSE field of BIG shapes. Force rate=1 (the
+  // internal clock fills the field at 1/500ms), d=1 (270 px shapes → guaranteed
   // overlaps in the 1024 field), spd=0.35 (moving so pairs keep meeting) and
   // decay=0 (persist, so the field accumulates). With the gate driver pulsing
-  // HIGH (240 BPM sequencer = 4 Hz), the COMBINE output's circle layout
+  // HIGH (240 BPM sequencer = 4 Hz), the COMBINE output's shape layout
   // diverges from the pass-through control as soon as the first pair collides —
   // a robust, deterministic (seeded RNG) video delta. Verified 3× stable.
-  'circles.collide': { rate: 1, d: 1, spd: 0.35, decay: 0 },
+  'outlines.collide': { rate: 1, d: 1, spd: 0.35, decay: 0 },
+  // outlines.shape — the SHAPE selector is LATCHED at spawn, so the behavioral
+  // sweep's CV delta needs new spawns within the settle window to show. Force
+  // rate=1 so the internal clock spawns fresh shapes (which latch the perturbed
+  // SHAPE value) + d=1 so they're big enough to move the per-output metric, and
+  // decay=0 so the field accumulates rather than fading before the read.
+  'outlines.shape': { rate: 1, d: 1, decay: 0 },
+  // outlines.rotation — ROTATION is a LIVE GLOBAL spin; with a dense static-ish
+  // field the spun polygon edges shift the overlap/contour layout vs the
+  // unspun control. Force rate=1 + d=1 so there's a dense field to spin, spd
+  // low so the spin (not the drift) dominates the delta, decay=0 to persist.
+  'outlines.rotation': { rate: 1, d: 1, spd: 0.1, decay: 0 },
 };
 
 // ────────── Per-PORT / per-MODULE calibrated delta thresholds ──────────

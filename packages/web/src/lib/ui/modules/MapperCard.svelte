@@ -2,7 +2,7 @@
   // MapperCard — UI for MAPPER (video keyer / matte processor).
   //
   // Shows the VIDEO input only where the KEY input is active (key luma ≥
-  // threshold), black elsewhere — generalises CIRCLES' `mapped` output to
+  // threshold), black elsewhere — generalises OUTLINES' `mapped` output to
   // an arbitrary key. Two video inputs (VID + KEY) → one video output
   // (OUT). One THRESHOLD knob with a matching per-param CV input. Mirrors
   // the EdgesCard / LumakeyCard processor-card layout (handles on the

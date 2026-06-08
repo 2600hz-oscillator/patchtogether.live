@@ -3,9 +3,9 @@
 // MAPPER — per-frame video KEYER / MATTE processor.
 //
 // Shows a `video` input ONLY where a `key` input is active, BLACK
-// everywhere else. This GENERALISES the CIRCLES module's `mapped` output
-// (which showed the video input only where ≥2 circles overlapped) to an
-// ARBITRARY key input: instead of "≥2 circles overlap" the gate is "key
+// everywhere else. This GENERALISES the OUTLINES module's `mapped` output
+// (which showed the video input only where ≥2 shapes overlapped) to an
+// ARBITRARY key input: instead of "≥2 shapes overlap" the gate is "key
 // LUMINANCE ≥ threshold".
 //
 // MAPPER is STATELESS per frame — the keyed region moves/transforms live
@@ -31,12 +31,12 @@
 //   * THRESHOLD (0..1, default 0.5): the key cutoff. RAISING it shrinks
 //     the keyed area (only the brightest parts of the key pass); LOWERING
 //     it grows it (dimmer key regions pass too). This is the exact knob
-//     CIRCLES.mapped hard-coded to "≥2 overlaps".
+//     OUTLINES.mapped hard-coded to "≥2 overlaps".
 //
 // ── Half-patched behaviour ────────────────────────────────────────────
 //   * No video input  → black (nothing to show).
 //   * No key input    → black (no key region → matte everything out). This
-//     mirrors CIRCLES.mapped (unpatched video → black) — a MAPPER with
+//     mirrors OUTLINES.mapped (unpatched video → black) — a MAPPER with
 //     only one of the two inputs patched is intentionally a black hole, so
 //     a half-built chain reads as "not done yet" rather than passing the
 //     raw video through unkeyed.
@@ -89,7 +89,7 @@ const float EDGE   = ${MAPPER_EDGE.toFixed(4)};
 
 void main() {
   // A half-patched MAPPER (missing video OR key) is black — same as
-  // CIRCLES.mapped's unpatched-video behaviour.
+  // OUTLINES.mapped's unpatched-video behaviour.
   if (uHasVideo < 0.5 || uHasKey < 0.5) {
     outColor = vec4(0.0, 0.0, 0.0, 1.0);
     return;

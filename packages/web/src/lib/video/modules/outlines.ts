@@ -1,53 +1,70 @@
-// packages/web/src/lib/video/modules/circles.ts
+// packages/web/src/lib/video/modules/outlines.ts
 //
-// CIRCLES — stateful particle video generator (LZX-style primitive source).
+// OUTLINES — stateful particle video generator (LZX-style primitive source).
 //
-// A gate event (or the internal rate clock) spawns a circle at a seeded-
-// random position; circles move in a latched direction at a latched speed
+// (Was CIRCLES — renamed when the SHAPE selector landed: a spawned shape can
+// now be a CIRCLE or a regular N-gon — triangle / square / pentagon / hexagon /
+// octagon — inscribed in the diameter, plus a live-global ROTATION that spins
+// every shape coherently.)
+//
+// A gate event (or the internal rate clock) spawns a shape at a seeded-
+// random position; shapes move in a latched direction at a latched speed
 // and BOUNCE when their CENTER hits a wall, accumulating into a 1024-px
 // field. Four outputs derive from a per-pixel overlap-COUNT of the active
-// circles:
+// shapes:
 //
-//   overlap (mono-video): white where ≥1 circle covers the pixel.
-//   contour (mono-video): circle OUTLINES only (ring lw = 10% of d, min 2 px)
-//                         → "ripples in a pond" as many circles stack.
+//   overlap (mono-video): white where ≥1 shape covers the pixel.
+//   contour (mono-video): shape OUTLINES only (ring lw = 10% of d, min 2 px)
+//                         → "ripples in a pond" as many shapes stack.
 //   combine (video):      the overlap region colorized by overlap COUNT via a
 //                         hue ramp (1 = first hue; 2,3,4… cycle the spectrum)
 //                         with brightness + saturation rising with stack depth.
-//   mapped  (video):      the `video` INPUT's contents wherever ≥2 circles
+//   mapped  (video):      the `video` INPUT's contents wherever ≥2 shapes
 //                         overlap, black elsewhere.
 //
 // Inputs:
-//   gate    (gate):  a rising edge spawns one circle.
-//   collide (gate):  LIVE GLOBAL mode (NOT spawn-latched). While HIGH, circles
-//                    bounce off EACH OTHER (elastic, EDGE detection — discs
-//                    touch when center distance ≤ r1+r2); LOW/unpatched =
-//                    pass-through (the original behaviour).
-//   d / v / spd / decay (cv, paramTarget=…): per-param CV (diameter / vector /
-//                 speed / fade-out time).
+//   gate    (gate):  a rising edge spawns one shape.
+//   collide (gate):  LIVE GLOBAL mode (NOT spawn-latched). While HIGH, shapes
+//                    bounce off EACH OTHER (elastic, bounding-circle detection —
+//                    circumcircles touch when center distance ≤ r1+r2);
+//                    LOW/unpatched = pass-through (the original behaviour).
+//   d / v / spd / decay / shape / rotation (cv, paramTarget=…): per-param CV
+//                 (diameter / vector / speed / fade-out time / shape selector /
+//                 bipolar spin).
 //   video (video): sampled by the `mapped` output.
 //
 // Params (knobs):
-//   d   (0..1 → 5..270 px)       circle DIAMETER, latched per circle at spawn.
-//   v   (0..1 → 0..360°)         spawn VECTOR ANGLE, latched per circle.
-//   spd (0..1 → 0..300 px/s)     SPEED, latched per circle (0 = static). The
+//   d   (0..1 → 5..270 px)       shape DIAMETER (circumdiameter), latched per
+//                                shape at spawn.
+//   v   (0..1 → 0..360°)         spawn VECTOR ANGLE, latched per shape.
+//   spd (0..1 → 0..300 px/s)     SPEED, latched per shape (0 = static). The
 //                                LATCHED velocity drives integration, so a
-//                                later spd change affects ONLY new circles.
-//   decay (0..1 → 0..10 s)       FADE-OUT time, latched per circle. 0 = persist
+//                                later spd change affects ONLY new shapes.
+//   decay (0..1 → 0..10 s)       FADE-OUT time, latched per shape. 0 = persist
 //                                (FIFO-culled); >0 fades alpha→0 + removes the
-//                                circle over that many seconds.
+//                                shape over that many seconds.
+//   shape (0..1 → 6 shapes)      SHAPE SELECTOR (circle / triangle / square /
+//                                pentagon / hexagon / octagon), quantised +
+//                                latched per shape at spawn. A polygon is
+//                                inscribed in the diameter (circumradius = d/2),
+//                                so COLLIDE's bounding-circle test is unchanged.
+//   rotation (0..1 bipolar)      LIVE GLOBAL spin: center (0.5) = no rotation,
+//                                left = fast CCW, right = fast CW. Every live
+//                                shape shares one rotation angle (NOT latched),
+//                                reflected in the geometry AND every output.
 //   rate (0..1, KNOB ONLY)       internal spawn clock. 0 = gate-only; turning
-//                                up engages a clock capped at 1 circle/500 ms.
+//                                up engages a clock capped at 1 shape/500 ms.
 //
 // All the numeric behavior (seeded spawn, integration, center-bounce, latch,
-// rate-clock cadence, the max-circle cull, and the per-output derivation) is
-// in circles-sim.ts — WebGL-free + unit-tested. This file owns ONLY the GL
-// plumbing: a 2D scene canvas painted per frame (overlap / contour / combine
-// + a mask) uploaded into per-output textures, plus a small shader that
-// multiplies the `video` input by the mask for `mapped`.
+// SHAPE geometry, ROTATION accumulation, the rate-clock cadence, the
+// max-shape cull, and the per-output derivation) is in outlines-sim.ts —
+// WebGL-free + unit-tested. This file owns ONLY the GL plumbing: a 2D scene
+// canvas painted per frame (overlap / contour / combine + a mask) uploaded
+// into per-output textures, plus a small shader that multiplies the `video`
+// input by the mask for `mapped`.
 //
 // Determinism (VRT / per-port / behavioral): the spawn RNG is seeded. When
-// `globalThis.__circlesVrtSeed` is set BEFORE the module mounts, the sim is
+// `globalThis.__outlinesVrtSeed` is set BEFORE the module mounts, the sim is
 // constructed with that fixed seed (so the painted frame is reproducible);
 // otherwise a fixed default seed is used (still deterministic — never
 // Math.random()).
@@ -56,50 +73,64 @@ import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { gateEdge, makeGateState, type GateState } from '$lib/video/plex-select';
 import {
-  CirclesSim,
-  CIRCLES_FIELD,
+  OutlinesSim,
+  OUTLINES_FIELD,
   MAX_CIRCLES,
+  ROT_CENTER,
   combineRgbAt,
   ringWidth,
+  shapeVertices,
   type Circle,
-} from './circles-sim';
+} from './outlines-sim';
 
 /** The synthetic param the engine's CV-bridge writes the gate value into
  *  (mirrors SHAPEGEN's cv_clock). The port id is the human-readable `gate`;
  *  the param id carries the `cv_` prefix. */
-export const CIRCLES_GATE_PARAM_ID = 'cv_gate';
+export const OUTLINES_GATE_PARAM_ID = 'cv_gate';
 /** The gate input port id. */
-export const CIRCLES_GATE_PORT_ID = 'gate';
+export const OUTLINES_GATE_PORT_ID = 'gate';
 
 /** The synthetic param the CV-bridge writes the COLLIDE gate LEVEL into. Unlike
  *  the spawn gate (rising-edge → spawn), this is read as a LIVE LEVEL each frame:
- *  HIGH → inter-circle elastic collision ON, LOW → pass-through. */
-export const CIRCLES_COLLIDE_PARAM_ID = 'cv_collide';
+ *  HIGH → inter-shape elastic collision ON, LOW → pass-through. */
+export const OUTLINES_COLLIDE_PARAM_ID = 'cv_collide';
 /** The collide gate input port id. */
-export const CIRCLES_COLLIDE_PORT_ID = 'collide';
+export const OUTLINES_COLLIDE_PORT_ID = 'collide';
 
 /** A gate LEVEL ≥ this counts as HIGH (matches the rising-edge detector's
  *  high threshold; the engine writes 0/1 but CV can arrive analog). */
 export const COLLIDE_GATE_HIGH = 0.5;
 
-interface CirclesParams {
+// ── Back-compat aliases for the pre-rename constant names (was CIRCLES_*).
+// New code uses the OUTLINES_* names above; these keep any straggling importer
+// resolving (there are no production saved patches referencing them).
+export const CIRCLES_GATE_PARAM_ID = OUTLINES_GATE_PARAM_ID;
+export const CIRCLES_GATE_PORT_ID = OUTLINES_GATE_PORT_ID;
+export const CIRCLES_COLLIDE_PARAM_ID = OUTLINES_COLLIDE_PARAM_ID;
+export const CIRCLES_COLLIDE_PORT_ID = OUTLINES_COLLIDE_PORT_ID;
+
+interface OutlinesParams {
   d: number;
   v: number;
   spd: number;
   decay: number;
+  shape: number;
+  rotation: number;
   rate: number;
   // Synthetic gate param — written by the CV-bridge; hidden from the card.
   cv_gate: number;
   // Synthetic COLLIDE gate LEVEL — written by the CV-bridge; hidden from the
-  // card. Read live each frame as the inter-circle collision on/off switch.
+  // card. Read live each frame as the inter-shape collision on/off switch.
   cv_collide: number;
 }
 
-const DEFAULTS: CirclesParams = {
-  d: 0.3,    // ~85 px circles by default (0.3 × the new 5..270 range)
+const DEFAULTS: OutlinesParams = {
+  d: 0.3,    // ~85 px shapes by default (0.3 × the new 5..270 range)
   v: 0.125,  // 45° drift
   spd: 0.4,  // ~120 px/s — visibly moving
   decay: 0,  // 0 = persist (preserve the static-field default; FIFO-capped)
+  shape: 0,  // circle by default (the legacy look)
+  rotation: ROT_CENTER, // center = no spin by default
   rate: 0.5, // internal clock on by default so the source is alive on spawn
   cv_gate: 0,
   cv_collide: 0, // collide OFF by default (pass-through) until the gate goes HIGH
@@ -119,7 +150,7 @@ void main() {
 }`;
 
 // `mapped` shader: multiply the video INPUT texture by the mask texture
-// (white where ≥2 circles overlap). Both sampled in GL UV space; the mask is
+// (white where ≥2 shapes overlap). Both sampled in GL UV space; the mask is
 // uploaded from a top-left-origin 2D canvas so it's flipped to match.
 const MAPPED_FRAG_SRC = `#version 300 es
 precision highp float;
@@ -134,27 +165,31 @@ void main() {
   outColor = vec4(vid * mask, 1.0);
 }`;
 
-export const circlesDef: VideoModuleDef = {
-  type: 'circles',
+export const outlinesDef: VideoModuleDef = {
+  type: 'outlines',
   palette: { top: 'Video modules', sub: 'Sources' },
   domain: 'video',
-  label: 'circles',
+  label: 'outlines',
   category: 'sources',
   schemaVersion: 1,
   inputs: [
-    // A gate event spawns a new circle. The CV-bridge routes the gate sample
-    // into setParam(cv_gate, value); a rising-edge detector spawns one circle.
-    { id: CIRCLES_GATE_PORT_ID, type: 'gate', paramTarget: CIRCLES_GATE_PARAM_ID },
-    // LIVE inter-circle COLLIDE mode. The CV-bridge routes this gate's LEVEL
+    // A gate event spawns a new shape. The CV-bridge routes the gate sample
+    // into setParam(cv_gate, value); a rising-edge detector spawns one shape.
+    { id: OUTLINES_GATE_PORT_ID, type: 'gate', paramTarget: OUTLINES_GATE_PARAM_ID },
+    // LIVE inter-shape COLLIDE mode. The CV-bridge routes this gate's LEVEL
     // into setParam(cv_collide, value); the sim reads it each frame (HIGH →
-    // circles bounce off each other elastically, LOW → pass through).
-    { id: CIRCLES_COLLIDE_PORT_ID, type: 'gate', paramTarget: CIRCLES_COLLIDE_PARAM_ID },
+    // shapes bounce off each other elastically, LOW → pass through).
+    { id: OUTLINES_COLLIDE_PORT_ID, type: 'gate', paramTarget: OUTLINES_COLLIDE_PARAM_ID },
     // Per-param CV — port id MUST equal the param id (the cross-domain CV
     // bridge routes onto setParam(portId)). `rate` is knob-only (no port).
-    { id: 'd',     type: 'cv', paramTarget: 'd' },
-    { id: 'v',     type: 'cv', paramTarget: 'v' },
-    { id: 'spd',   type: 'cv', paramTarget: 'spd' },
-    { id: 'decay', type: 'cv', paramTarget: 'decay' },
+    { id: 'd',        type: 'cv', paramTarget: 'd' },
+    { id: 'v',        type: 'cv', paramTarget: 'v' },
+    { id: 'spd',      type: 'cv', paramTarget: 'spd' },
+    { id: 'decay',    type: 'cv', paramTarget: 'decay' },
+    // SHAPE selector CV — latched per shape at spawn (like d/v/spd/decay).
+    { id: 'shape',    type: 'cv', paramTarget: 'shape' },
+    // ROTATION CV — a LIVE GLOBAL bipolar angular velocity (NOT latched).
+    { id: 'rotation', type: 'cv', paramTarget: 'rotation' },
     // The video source for the `mapped` output.
     { id: 'video', type: 'video' },
   ],
@@ -165,16 +200,20 @@ export const circlesDef: VideoModuleDef = {
     { id: 'mapped',  type: 'video' },
   ],
   params: [
-    { id: 'd',     label: 'D',     defaultValue: DEFAULTS.d,     min: 0, max: 1, curve: 'linear' },
-    { id: 'v',     label: 'V',     defaultValue: DEFAULTS.v,     min: 0, max: 1, curve: 'linear' },
-    { id: 'spd',   label: 'Spd',   defaultValue: DEFAULTS.spd,   min: 0, max: 1, curve: 'linear' },
-    { id: 'decay', label: 'Decay', defaultValue: DEFAULTS.decay, min: 0, max: 1, curve: 'linear' },
-    { id: 'rate',  label: 'Rate',  defaultValue: DEFAULTS.rate,  min: 0, max: 1, curve: 'linear' },
+    { id: 'd',        label: 'D',     defaultValue: DEFAULTS.d,        min: 0, max: 1, curve: 'linear' },
+    { id: 'v',        label: 'V',     defaultValue: DEFAULTS.v,        min: 0, max: 1, curve: 'linear' },
+    { id: 'spd',      label: 'Spd',   defaultValue: DEFAULTS.spd,      min: 0, max: 1, curve: 'linear' },
+    { id: 'decay',    label: 'Decay', defaultValue: DEFAULTS.decay,    min: 0, max: 1, curve: 'linear' },
+    // SHAPE selector knob — 0..1 quantised to 6 discrete shapes at spawn.
+    { id: 'shape',    label: 'Shape', defaultValue: DEFAULTS.shape,    min: 0, max: 1, curve: 'linear' },
+    // ROTATION knob — BIPOLAR around 0.5 (center = no spin, ± = CW/CCW). Live.
+    { id: 'rotation', label: 'Rot',   defaultValue: DEFAULTS.rotation, min: 0, max: 1, curve: 'linear' },
+    { id: 'rate',     label: 'Rate',  defaultValue: DEFAULTS.rate,     min: 0, max: 1, curve: 'linear' },
     // Synthetic gate param — hidden from the card; rendered as the gate jack.
-    { id: CIRCLES_GATE_PARAM_ID, label: 'GATE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
+    { id: OUTLINES_GATE_PARAM_ID, label: 'GATE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     // Synthetic COLLIDE gate param — hidden from the card; rendered as the
-    // collide jack. Read live as the inter-circle collision on/off level.
-    { id: CIRCLES_COLLIDE_PARAM_ID, label: 'COLLIDE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
+    // collide jack. Read live as the inter-shape collision on/off level.
+    { id: OUTLINES_COLLIDE_PARAM_ID, label: 'COLLIDE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -192,11 +231,11 @@ export const circlesDef: VideoModuleDef = {
     const fboCombine = ctx.createFbo();
     const fboMapped = ctx.createFbo();
 
-    const params: CirclesParams = { ...DEFAULTS, ...(node.params as Partial<CirclesParams>) };
+    const params: OutlinesParams = { ...DEFAULTS, ...(node.params as Partial<OutlinesParams>) };
 
     // ---- Seeded sim ----
-    const vrtSeed = (globalThis as unknown as { __circlesVrtSeed?: number }).__circlesVrtSeed;
-    const sim = new CirclesSim(typeof vrtSeed === 'number' ? vrtSeed >>> 0 : undefined);
+    const vrtSeed = (globalThis as unknown as { __outlinesVrtSeed?: number }).__outlinesVrtSeed;
+    const sim = new OutlinesSim(typeof vrtSeed === 'number' ? vrtSeed >>> 0 : undefined);
     const gateState: GateState = makeGateState();
 
     // ---- 2D scene canvases (one for the colour combine + per-mono outputs +
@@ -209,11 +248,11 @@ export const circlesDef: VideoModuleDef = {
       let canvas: OffscreenCanvas | HTMLCanvasElement | null = null;
       try {
         if (typeof OffscreenCanvas !== 'undefined') {
-          canvas = new OffscreenCanvas(CIRCLES_FIELD, CIRCLES_FIELD);
+          canvas = new OffscreenCanvas(OUTLINES_FIELD, OUTLINES_FIELD);
         } else if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
           const c = document.createElement('canvas');
-          c.width = CIRCLES_FIELD;
-          c.height = CIRCLES_FIELD;
+          c.width = OUTLINES_FIELD;
+          c.height = OUTLINES_FIELD;
           canvas = c;
         }
       } catch {
@@ -233,7 +272,7 @@ export const circlesDef: VideoModuleDef = {
     // Reusable upload texture: re-bound + re-filled per output per frame.
     function makeUploadTex(): WebGLTexture {
       const t = gl.createTexture();
-      if (!t) throw new Error('CIRCLES: createTexture failed');
+      if (!t) throw new Error('OUTLINES: createTexture failed');
       gl.bindTexture(gl.TEXTURE_2D, t);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -247,89 +286,121 @@ export const circlesDef: VideoModuleDef = {
     const texCombine = makeUploadTex();
     const texMask = makeUploadTex();
 
-    // ---- 2D paint of one frame's circles into the four scene canvases. ----
-    function paintScenes(circles: readonly Circle[]): void {
-      // overlap — white discs on black (count≥1), each dimmed by its fade alpha.
+    // Trace one shape's PATH on a 2D context: a circle → arc; a polygon → the
+    // rotated vertex polyline (closed). `rot` is the live-global rotation angle
+    // (added to each shape's seeded baseAngle), so the painted geometry spins
+    // exactly like the derivation math reads it. For the polygon contour we
+    // shrink the path by `inset` (so a stroke band sits inside the edge, like
+    // the disc contour does).
+    function traceShapePath(
+      c2d: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+      ci: Circle,
+      rot: number,
+      inset: number,
+    ): void {
+      const verts = shapeVertices(ci, rot);
+      if (verts.length === 0) {
+        // Circle.
+        c2d.arc(ci.x, ci.y, Math.max(0, ci.diameter * 0.5 - inset), 0, Math.PI * 2);
+        return;
+      }
+      if (inset === 0) {
+        c2d.moveTo(verts[0]![0], verts[0]![1]);
+        for (let i = 1; i < verts.length; i++) c2d.lineTo(verts[i]![0], verts[i]![1]);
+        c2d.closePath();
+        return;
+      }
+      // Inset the polygon by pulling each vertex toward the center by `inset`
+      // along its radius (approximate — for a thin stroke band this is fine).
+      const r = ci.diameter * 0.5;
+      const shrink = r > 0 ? Math.max(0, r - inset) / r : 0;
+      const v0x = ci.x + (verts[0]![0] - ci.x) * shrink;
+      const v0y = ci.y + (verts[0]![1] - ci.y) * shrink;
+      c2d.moveTo(v0x, v0y);
+      for (let i = 1; i < verts.length; i++) {
+        c2d.lineTo(ci.x + (verts[i]![0] - ci.x) * shrink, ci.y + (verts[i]![1] - ci.y) * shrink);
+      }
+      c2d.closePath();
+    }
+
+    // ---- 2D paint of one frame's shapes into the four scene canvases. ----
+    function paintScenes(circles: readonly Circle[], rot: number): void {
+      // overlap — white shapes on black (count≥1), each dimmed by its fade alpha.
       if (overlapScene.ctx2d) {
         const c = overlapScene.ctx2d;
         c.globalAlpha = 1;
         c.fillStyle = '#000';
-        c.fillRect(0, 0, CIRCLES_FIELD, CIRCLES_FIELD);
+        c.fillRect(0, 0, OUTLINES_FIELD, OUTLINES_FIELD);
         c.fillStyle = '#fff';
         for (const ci of circles) {
           c.globalAlpha = ci.alpha ?? 1;
           c.beginPath();
-          c.arc(ci.x, ci.y, ci.diameter * 0.5, 0, Math.PI * 2);
+          traceShapePath(c, ci, rot, 0);
           c.fill();
         }
         c.globalAlpha = 1;
       }
-      // contour — white rings (lw = 10% of d, min 2px) on black, dimmed by fade.
+      // contour — white outlines (lw = 10% of d, min 2px) on black, dimmed by
+      // fade. The stroke is inset by lw/2 so the band sits inside the shape (the
+      // sim's ring test is the [edge − lw, edge] band).
       if (contourScene.ctx2d) {
         const c = contourScene.ctx2d;
         c.globalAlpha = 1;
         c.fillStyle = '#000';
-        c.fillRect(0, 0, CIRCLES_FIELD, CIRCLES_FIELD);
+        c.fillRect(0, 0, OUTLINES_FIELD, OUTLINES_FIELD);
         c.strokeStyle = '#fff';
+        c.lineJoin = 'round';
         for (const ci of circles) {
           c.globalAlpha = ci.alpha ?? 1;
           const lw = ringWidth(ci.diameter);
           c.lineWidth = lw;
-          // Stroke centered on the path; the sim's ring test is [r−lw, r], so
-          // stroke a circle of radius r − lw/2 so the band sits inside the disc.
-          const rStroke = Math.max(0, ci.diameter * 0.5 - lw * 0.5);
           c.beginPath();
-          c.arc(ci.x, ci.y, rStroke, 0, Math.PI * 2);
+          traceShapePath(c, ci, rot, lw * 0.5);
           c.stroke();
         }
         c.globalAlpha = 1;
       }
-      // mask — white where ≥2 circles overlap. We additively accumulate disc
-      // coverage (each disc adds a small constant), then any pixel touched by
-      // ≥2 discs reads ≥ the 2-disc threshold. Using 'lighter' compositing
-      // sums alpha so overlaps brighten; we then threshold in the shader is
-      // overkill — instead draw each disc at a fixed grey and rely on additive
-      // sum: 1 disc = ~0.4, 2 discs = ~0.8 (clamped). We pick a level so the
-      // shader's mask>0.5 test = "≥2 overlaps". 2-disc additive ≈ 0.8 > 0.5;
-      // 1-disc ≈ 0.4 < 0.5. (The unit suite pins the exact ≥2 rule on the sim;
-      // this canvas path is the GL approximation the shader reads.)
+      // mask — white where ≥2 shapes overlap. We additively accumulate shape
+      // coverage (each shape adds a small constant), then any pixel touched by
+      // ≥2 shapes reads ≥ the 2-shape threshold. Using 'lighter' compositing
+      // sums alpha so overlaps brighten; 1 shape ≈ 0.42 (<0.5), 2 shapes ≈ 0.84
+      // (>0.5) → the shader's mask>0.5 test = "≥2 overlaps". (The unit suite
+      // pins the exact ≥2 rule on the sim; this canvas path is the GL
+      // approximation the shader reads.)
       if (maskScene.ctx2d) {
         const c = maskScene.ctx2d;
         c.globalCompositeOperation = 'source-over';
         c.fillStyle = '#000';
-        c.fillRect(0, 0, CIRCLES_FIELD, CIRCLES_FIELD);
+        c.fillRect(0, 0, OUTLINES_FIELD, OUTLINES_FIELD);
         c.globalCompositeOperation = 'lighter';
         for (const ci of circles) {
-          // Each disc adds ~0.42 × its fade alpha → a fully-faded circle stops
+          // Each shape adds ~0.42 × its fade alpha → a fully-faded shape stops
           // contributing to the ≥2-overlap (>0.5) mask threshold.
           c.fillStyle = `rgba(255,255,255,${0.42 * (ci.alpha ?? 1)})`;
           c.beginPath();
-          c.arc(ci.x, ci.y, ci.diameter * 0.5, 0, Math.PI * 2);
+          traceShapePath(c, ci, rot, 0);
           c.fill();
         }
         c.globalCompositeOperation = 'source-over';
       }
       // combine — overlap region colorized by COUNT via the hue ramp. We can't
-      // cheaply do per-pixel count in canvas2D for the exact ramp, so we
-      // approximate the user-visible effect by drawing each disc with additive
-      // HSV-stepped fills: base hue advances with painted order which on
-      // overlap stacks toward brighter/whiter — close to the count ramp. For
-      // an EXACT count→hue (matching the unit-tested combineRgbAt), we paint a
+      // cheaply do per-pixel count in canvas2D for the exact ramp, so we paint a
       // coarse count grid: sample the count at a downsampled grid + fill cells.
-      // The downsample keeps it cheap (a 128×128 grid = 16k cells) while the
-      // colour matches combineRgbAt at the cell center.
+      // The downsample keeps it cheap (a 160×160 grid) while the colour matches
+      // combineRgbAt at the cell center (passing the same live `rot` so the
+      // coloured stack spins with the geometry).
       if (combineScene.ctx2d) {
         const c = combineScene.ctx2d;
         c.fillStyle = '#000';
-        c.fillRect(0, 0, CIRCLES_FIELD, CIRCLES_FIELD);
+        c.fillRect(0, 0, OUTLINES_FIELD, OUTLINES_FIELD);
         if (circles.length > 0) {
           const GRID = 160;
-          const cell = CIRCLES_FIELD / GRID;
+          const cell = OUTLINES_FIELD / GRID;
           for (let gy = 0; gy < GRID; gy++) {
             const py = (gy + 0.5) * cell;
             for (let gx = 0; gx < GRID; gx++) {
               const px = (gx + 0.5) * cell;
-              const [r, g, b] = combineRgbAt(circles, px, py);
+              const [r, g, b] = combineRgbAt(circles, px, py, rot);
               if (r === 0 && g === 0 && b === 0) continue;
               c.fillStyle = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
               c.fillRect(gx * cell, gy * cell, Math.ceil(cell), Math.ceil(cell));
@@ -362,15 +433,18 @@ export const circlesDef: VideoModuleDef = {
 
     // Snapshot the CURRENT live knob+CV params into the shape the sim latches at
     // spawn. Used both by draw() (every frame) AND by the gate handler (so a
-    // gate-spawned circle latches the LIVE spd/v/d/decay at the moment of the
-    // edge — not whatever stale params the last draw() happened to push, or the
-    // sim's constructor defaults before the first draw ever ran).
+    // gate-spawned shape latches the LIVE spd/v/d/decay/SHAPE at the moment of
+    // the edge — not whatever stale params the last draw() happened to push, or
+    // the sim's constructor defaults before the first draw ever ran). ROTATION is
+    // included too (a LIVE GLOBAL the sim advances each step).
     function liveSpawnParams() {
       return {
         d: params.d,
         v: params.v,
         spd: params.spd,
         decay: params.decay,
+        shape: params.shape,
+        rotation: params.rotation,
         rate: params.rate,
         collide: params.cv_collide >= COLLIDE_GATE_HIGH,
       };
@@ -390,16 +464,18 @@ export const circlesDef: VideoModuleDef = {
         const dtMs = lastTime < 0 ? 1000 / 60 : Math.max(0, (t - lastTime) * 1000);
         lastTime = t;
 
-        // Push live params into the sim. d/v/spd/decay/rate latch per-circle at
-        // spawn; `collide` is a LIVE GLOBAL mode (gate LEVEL ≥ HIGH → on).
+        // Push live params into the sim. d/v/spd/decay/shape latch per-shape at
+        // spawn; `collide` + `rotation` are LIVE GLOBALS (collide = gate LEVEL ≥
+        // HIGH → on; rotation = a bipolar spin advanced each step).
         sim.setParams(liveSpawnParams());
-        // Advance the sim (internal rate clock spawns + integration + bounce).
+        // Advance the sim (rate-clock spawns + rotation + integration + bounce).
         sim.step(dtMs);
 
         const circles = sim.circles;
+        const rot = sim.rotationAngle;
 
-        // Paint + upload the four scene canvases.
-        paintScenes(circles);
+        // Paint + upload the four scene canvases (with the live rotation).
+        paintScenes(circles, rot);
         uploadCanvas(texOverlap, overlapScene.canvas);
         uploadCanvas(texContour, contourScene.canvas);
         uploadCanvas(texCombine, combineScene.canvas);
@@ -443,16 +519,17 @@ export const circlesDef: VideoModuleDef = {
       domain: 'video',
       surface,
       setParam(paramId, value) {
-        if (paramId === CIRCLES_GATE_PARAM_ID) {
+        if (paramId === OUTLINES_GATE_PARAM_ID) {
           params.cv_gate = value;
-          // Rising edge → spawn one circle. Push the CURRENT live params into the
-          // sim FIRST so the gate-spawned circle latches the live spd/v/d/decay
-          // at the moment of the edge. The gate handler runs on the CV-bridge's
-          // cadence, which can fire BEFORE the first draw() (sim still on its
-          // constructor defaults) or between draws after a knob change — without
-          // this the circle would latch stale params (notably decay=0 → never
-          // fades, spd → wrong/zero velocity → doesn't move). draw() still pushes
-          // params every frame for the rate-clock spawns + the live collide mode.
+          // Rising edge → spawn one shape. Push the CURRENT live params into the
+          // sim FIRST so the gate-spawned shape latches the live spd/v/d/decay/
+          // SHAPE at the moment of the edge. The gate handler runs on the
+          // CV-bridge's cadence, which can fire BEFORE the first draw() (sim
+          // still on its constructor defaults) or between draws after a knob
+          // change — without this the shape would latch stale params (notably
+          // decay=0 → never fades, spd → wrong/zero velocity → doesn't move).
+          // draw() still pushes params every frame for the rate-clock spawns +
+          // the live collide/rotation modes.
           if (gateEdge(gateState, value)) {
             sim.setParams(liveSpawnParams());
             sim.spawnFromGate();
@@ -473,15 +550,17 @@ export const circlesDef: VideoModuleDef = {
         // Card preview blits the combine scene.
         if (key === 'sceneCanvas') return combineScene.canvas;
         // Test/telemetry hooks.
-        // The live circle list (latched vx/vy/diameter/decayS) — lets tests
-        // assert what a gate-/clock-spawned circle latched at spawn through the
-        // real module path (e.g. the gate-spawn live-param regression).
+        // The live shape list (latched vx/vy/diameter/decayS/shape/baseAngle) —
+        // lets tests assert what a gate-/clock-spawned shape latched at spawn
+        // through the real module path (e.g. the gate-spawn live-param
+        // regression + the SHAPE latch).
         if (key === 'circles') return sim.circles;
         if (key === 'circleCount') return sim.count;
         if (key === 'spawnCount') return sim.spawnCount;
         if (key === 'cullCount') return sim.cullCount;
         if (key === 'decayCount') return sim.decayCount;
         if (key === 'collisionCount') return sim.collisionCount;
+        if (key === 'rotationAngle') return sim.rotationAngle;
         if (key === 'framesElapsed') return framesElapsed;
         if (key === 'maxCircles') return MAX_CIRCLES;
         return undefined;
@@ -490,3 +569,9 @@ export const circlesDef: VideoModuleDef = {
     };
   },
 };
+
+// Back-compat alias for the pre-rename export name (was circlesDef). The glob
+// registry collects exports ending in 'Def'; outlinesDef is the live one. This
+// alias keeps any straggling `circlesDef` import resolving but is the SAME def
+// object (same type:'outlines'), so it does NOT double-register in the palette.
+export const circlesDef = outlinesDef;
