@@ -378,13 +378,20 @@ describe('EVENT_BUTTON mapping', () => {
 //
 // The bundled GIBRIBBON demo (gibribbon-demo.imp.json) drives cv1..cv4 from
 // SYNESTHESIA copy-A's four SLOW (500 ms) envelope-followers tracking a
-// sequenced MACROOSCILLATOR voice. We can't run the real DSP in vitest, so we
-// model the four slow envelopes ANALYTICALLY as the demo's rhythm produces
-// them, then push them through the SAME pure pipeline the factory uses
-// (clockTick → chooseSpawn → scroll) and assert the resulting event RATE is
-// game-appropriate and that all four event kinds appear. This is the
-// deterministic guard for GIB_TUNING.cvSpawnThreshold / minSpawnIntervalTicks
-// (and, indirectly, the SYNESTHESIA gain lift in the envelope generator).
+// sequenced MACROOSCILLATOR voice. Here we model the four slow envelopes
+// ANALYTICALLY (idealized raised-cosines) as the demo's rhythm produces them,
+// then push them through the SAME pure pipeline the factory uses (clockTick →
+// chooseSpawn → scroll) and assert the resulting event RATE is game-appropriate
+// and that all four event kinds appear. This is the deterministic guard for
+// GIB_TUNING.cvSpawnThreshold / minSpawnIntervalTicks.
+//
+// SCOPE: this test is SYNTHETIC — it does NOT call renderSynesthesia and does
+// NOT read the demo's actual SYNESTHESIA gains, so it does NOT guard those gains
+// (it stayed green through both the #698 refactor that killed jump+imp AND the
+// #701 retune that revived them). The REAL-CHAIN gain guard — rendering the
+// demo's exact voice through renderSynesthesia at the real gains and asserting
+// all four channels stay alive — lives in
+// packages/web/src/lib/ui/example-patches/gibribbon-demo-calibration.test.ts.
 describe('GibRibbon — Phase-2 demo CV calibration (synthetic slow envelopes)', () => {
   // Demo transport math (see gibribbon-demo.ts / build-gibribbon-demo-envelope.mjs):
   //   TIMELORDE bpm=120 → 2× (8th) = 0.25 s clocks MACSEQ (1 step = 0.25 s),
