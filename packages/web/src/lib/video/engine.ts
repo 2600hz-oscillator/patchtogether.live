@@ -164,6 +164,26 @@ export interface VideoNodeHandle {
    * may not even be present if no audio engine is registered).
    */
   audioSources?: Map<string, { node: AudioNode; output: number }>;
+  /**
+   * Optional: per-port AudioNode SINKS that surface an `audio`-typed INPUT
+   * port on this video module as an audio-domain destination (cross-domain
+   * handoff, audio → video). The INVERSE of `audioSources`.
+   *
+   * A video module that CONSUMES PCM audio (RECORDERBOX's `audio_l` /
+   * `audio_r` soundtrack capture) populates this map with one entry per
+   * declared `audio`-typed INPUT port — typically a
+   * `MediaStreamAudioDestinationNode` created via `ctx.audioCtx`. The
+   * PatchEngine reads it via `VideoEngine.getAudioInput(nodeId, portId)`
+   * when materializing an audio→video edge whose target port type is
+   * `audio`; it then connects the upstream audio source's output
+   * (AudioEngine.getOutputNode) straight into this sink node.
+   *
+   * Lifecycle: the module owns the AudioNode sink and disposes it. The
+   * bridge disconnects the upstream source on edge removal (its own
+   * teardown). Modules with no audio input omit the field entirely (the
+   * AudioContext may not even be present if no audio engine is registered).
+   */
+  audioInputs?: Map<string, { node: AudioNode; input: number }>;
   /** Apply a param value (fader change). Routes to a uniform or internal
    *  state that `draw()` reads next frame. */
   setParam(paramId: string, value: number): void;
@@ -1396,6 +1416,27 @@ void main() {
     if (!handle) return null;
     const src = handle.audioSources?.get(portId);
     return src ?? null;
+  }
+
+  /**
+   * Cross-domain bridge support (audio → video AUDIO INPUT). The INVERSE of
+   * getAudioSource. Returns the AudioNode SINK + input index a video module
+   * has published for the named `audio`-typed INPUT port (via
+   * VideoNodeHandle.audioInputs), or null when the node isn't materialized
+   * or doesn't declare an audio input for the port.
+   *
+   * The PatchEngine reads this when adding an audio→video edge whose target
+   * port type is `audio` (RECORDERBOX's soundtrack capture) and connects the
+   * upstream AudioEngine source's output into this sink.
+   */
+  getAudioInput(
+    nodeId: string,
+    portId: string,
+  ): { node: AudioNode; input: number } | null {
+    const handle = this.nodes.get(nodeId);
+    if (!handle) return null;
+    const dst = handle.audioInputs?.get(portId);
+    return dst ?? null;
   }
 
   /** Look up the live VideoNodeHandle for a given node id, or null if the
