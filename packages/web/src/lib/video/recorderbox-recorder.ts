@@ -15,7 +15,9 @@
 //        ▼
 //   WritableStream → recorderbox-opfs-worker → FileSystemSyncAccessHandle
 //        │                                       (real disk, survives crash)
-//   On stop: output.finalize() → close handle → read OPFS bytes → Save-As.
+//   On stop: output.finalize() → close handle → STREAM OPFS scratch (chunked)
+//            into the destination handle the user chose AT START (Chromium), or
+//            read+download the bytes where no handle exists (Firefox/Safari).
 //
 // fastStart:'fragmented' is the CRASH-RECOVERY guarantee: a fragmented MP4 is
 // playable from whatever fragments made it to disk even if finalize() never
@@ -44,8 +46,10 @@ import {
   putManifest,
   markManifestDone,
   deleteManifest,
+  streamOpfsToWritable,
   hasOpfs,
   type RecorderboxManifest,
+  type ChunkSink,
 } from './recorderbox-store';
 
 // Mediabunny is a real dependency (MPL-2.0). We import its high-level
@@ -239,15 +243,27 @@ export interface RecorderboxRecorderOptions {
   /** The merged L+R MediaStream audio track (from the module's
    *  MediaStreamAudioDestinationNode). Null = record video only (silent). */
   audioTrack: MediaStreamTrack | null;
-  /** User-chosen base filename (sanitized at save time). */
+  /** User-chosen base filename (sanitized at save time + baked into the OPFS
+   *  scratch path so a recovered/partial file carries the intended name). */
   filename: string;
+  /**
+   * The destination the user chose AT START via showSaveFilePicker (Chromium).
+   * When present, stop() STREAMS the OPFS scratch straight into this handle in
+   * chunks (correct name, never a full in-memory read) instead of calling
+   * saveBytes. Persisted to the manifest so crash-recovery can restore to the
+   * same path. Absent on Firefox/Safari (no picker) → stop() falls back to
+   * saveBytes (the <a download> blob path).
+   */
+  destHandle?: FileSystemFileHandle | null;
   /** Video bitrate override (defaults to 14 Mbps). */
   videoBitrate?: number;
   /** Recording-resolution width/height (the encoder's first-frame box). */
   width: number;
   height: number;
-  /** Save the finalized bytes to disk. Injectable so the card supplies the
-   *  showSaveFilePicker / <a download> flow and tests supply a capture sink. */
+  /** Save the finalized bytes to disk — the FALLBACK path used only when no
+   *  destHandle was provided (Firefox/Safari download, or a test capture).
+   *  Injectable so the card supplies the <a download> flow and tests supply a
+   *  capture sink. */
   saveBytes: (bytes: Uint8Array, filename: string, mime: string) => Promise<void>;
   /** OPFS-writer factory. Defaults to the real Worker-backed writer; tests
    *  inject an in-memory sink. */
@@ -314,13 +330,17 @@ export class RecorderboxRecorder {
   async start(): Promise<void> {
     this.startEpoch = Date.now();
     this.t0 = performance.now();
-    this.opfsPath = opfsScratchPath(this.opts.nodeId, this.startEpoch);
+    // Bake the user's intended name into the scratch path (+ a .partial marker)
+    // so the recovery UI + any recovered file carry it, not just nodeId+epoch.
+    this.opfsPath = opfsScratchPath(this.opts.nodeId, this.startEpoch, this.opts.filename);
 
     // OPFS scratch writer (Worker-backed by default).
     this.writer = (this.opts.makeWriter ?? defaultMakeWriter)(this.opfsPath);
 
     // Recovery manifest — written BEFORE the first byte so a crash 100ms in
     // still leaves a recover candidate pointing at the (possibly tiny) file.
+    // The destHandle (the path the user picked at START) rides along so
+    // recovery can restore to the original chosen location with the right name.
     const manifest: RecorderboxManifest = {
       nodeId: this.opts.nodeId,
       filename: this.opts.filename,
@@ -328,6 +348,7 @@ export class RecorderboxRecorder {
       mime: CONTAINER_MIME,
       opfsPath: this.opfsPath,
       status: 'recording',
+      ...(this.opts.destHandle ? { destHandle: this.opts.destHandle } : {}),
     };
     await putManifest(manifest);
 
@@ -406,9 +427,17 @@ export class RecorderboxRecorder {
 
   /**
    * Finalize the recording: flush + finalize the muxer (writes the final
-   * fragment), close the OPFS writer, read the bytes back, hand them to
-   * saveBytes (Save-As), then mark the manifest done + delete the scratch on
-   * success. Returns the saved filename, or null if nothing was recorded.
+   * fragment), close the OPFS writer, then deliver the take to its destination:
+   *
+   *   * destHandle present (Chromium, the user picked a path at START) — STREAM
+   *     the OPFS scratch straight into the handle in chunks (correct name at the
+   *     chosen path; never reads the whole GB-scale file into memory).
+   *   * no destHandle (Firefox/Safari, or a test capture) — read the bytes back
+   *     and hand them to saveBytes (the <a download> blob fallback).
+   *
+   * On success, mark the manifest done + delete the scratch. On a failed save
+   * (picker cancel / permission revoked), KEEP the scratch + manifest as a
+   * recover candidate. Returns the saved filename, or null if nothing landed.
    */
   async stop(): Promise<string | null> {
     if (this.state !== 'recording' || !this.output) {
@@ -420,12 +449,37 @@ export class RecorderboxRecorder {
       await this.output.finalize();
     } catch {
       // Even a failed finalize leaves the fragmented file recoverable; press on
-      // to read whatever fragments landed.
+      // to deliver whatever fragments landed.
     }
     try { await this.writer?.close(); } catch { /* */ }
 
-    // Read the bytes back from OPFS scratch + save. (Reading OPFS is allowed on
-    // the main thread; only the SyncAccessHandle WRITE is worker-only.)
+    const savedName = this.opts.filename;
+
+    // ── Streaming save to the chosen handle (Chromium) ──
+    if (this.opts.destHandle) {
+      try {
+        const sink = await createWritableSink(this.opts.destHandle);
+        const written = await streamOpfsToWritable(this.opfsPath, sink);
+        if (written > 0) {
+          await this.retire();
+          this.setState('idle');
+          return savedName;
+        }
+        // Nothing landed — fall through to cleanup (empty take).
+      } catch {
+        // Permission revoked / write failed — KEEP the scratch + manifest so the
+        // user can retry via recovery.
+        this.setState('idle');
+        return null;
+      }
+      await this.retire();
+      this.setState('idle');
+      return null;
+    }
+
+    // ── Fallback: full read → saveBytes (<a download> blob) ──
+    // Reading OPFS is allowed on the main thread; only the SyncAccessHandle
+    // WRITE is worker-only. This path has no streaming-to-disk API anyway.
     let bytes: Uint8Array | null = null;
     try {
       const { readOpfsBytes } = await import('./recorderbox-store');
@@ -433,18 +487,23 @@ export class RecorderboxRecorder {
     } catch {
       bytes = null;
     }
-    const savedName = this.opts.filename;
     if (bytes && bytes.byteLength > 0) {
       try {
         await this.opts.saveBytes(bytes, savedName, CONTAINER_MIME);
       } catch {
-        // User cancelled the picker or save failed — KEEP the scratch + leave
-        // the manifest as a recover candidate so they can try again.
+        // Save failed — KEEP the scratch + leave the manifest as a recover
+        // candidate so they can try again.
         this.setState('idle');
         return null;
       }
     }
-    // Saved (or nothing to save): retire the recovery state + scratch file.
+    await this.retire();
+    this.setState('idle');
+    return bytes && bytes.byteLength > 0 ? savedName : null;
+  }
+
+  /** Retire the recovery state + delete the OPFS scratch (best-effort). */
+  private async retire(): Promise<void> {
     await markManifestDone(this.opfsPath);
     try {
       const { deleteOpfsFile } = await import('./recorderbox-store');
@@ -453,8 +512,6 @@ export class RecorderboxRecorder {
     } catch {
       /* best-effort cleanup */
     }
-    this.setState('idle');
-    return bytes && bytes.byteLength > 0 ? savedName : null;
   }
 
   /** Hard cancel (card destroyed mid-record): finalize best-effort + leave the
@@ -472,6 +529,26 @@ export class RecorderboxRecorder {
   getFrameCount(): number {
     return this.frameCount;
   }
+}
+
+/**
+ * Open a `FileSystemWritableFileStream` on the user's chosen destination handle
+ * and adapt it to the narrow `ChunkSink` the streaming copy writes into. Writing
+ * to a user-picked file goes through the browser's swap file (so it is NOT
+ * crash-safe mid-stream — that's why OPFS remains the real partial); this stream
+ * is only opened at STOP, once the take is finalized.
+ */
+async function createWritableSink(handle: FileSystemFileHandle): Promise<ChunkSink> {
+  const writable = await (handle as unknown as {
+    createWritable: (o?: { keepExistingData?: boolean }) => Promise<{
+      write: (d: BufferSource | Blob) => Promise<void>;
+      close: () => Promise<void>;
+    }>;
+  }).createWritable();
+  return {
+    write: (chunk: BufferSource | Blob) => writable.write(chunk),
+    close: () => writable.close(),
+  };
 }
 
 // ---------------------------------------------------------------------------
