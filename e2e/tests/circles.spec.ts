@@ -130,7 +130,7 @@ test.describe('CIRCLES — stateful particle video generator', () => {
     expect(ovr.ok, `OVERLAP non-black after spawns (mean=${ovr.last.toFixed(2)})`).toBe(true);
 
     // CONTOUR: rings only → non-black (lower than the filled overlap, but the
-    // 10%-of-diameter rings on 90px circles are thick enough to register).
+    // 10%-of-diameter rings on 270px circles are thick enough to register).
     const cnt = await waitForLuma(page, 'o_cnt', (m) => m > 1.5);
     expect(cnt.ok, `CONTOUR non-black after spawns (mean=${cnt.last.toFixed(2)})`).toBe(true);
 
@@ -138,7 +138,7 @@ test.describe('CIRCLES — stateful particle video generator', () => {
     const cmb = await waitForLuma(page, 'o_cmb', (m) => m > 4);
     expect(cmb.ok, `COMBINE non-black after spawns (mean=${cmb.last.toFixed(2)})`).toBe(true);
 
-    // MAPPED: the SHAPES source punched through the ≥2-overlap region. With 90px
+    // MAPPED: the SHAPES source punched through the ≥2-overlap region. With 270px
     // circles + many spawns, a ≥2-overlap region forms and shows source pixels →
     // non-black. (The raw source is far brighter / fills the whole frame; MAPPED
     // is masked to the overlap region, so it's dimmer than the source but
