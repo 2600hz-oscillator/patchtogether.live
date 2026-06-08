@@ -927,6 +927,29 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'VIDEOOUT: drive .in with ACIDWARP.out; .out passes through with non-blank frames',
   },
 
+  // ───── RECORDERBOX — wire ACIDWARP.out into .in so .out passes through ─────
+  // RECORDERBOX is an OUTPUT-style passthrough sink (in → FBO → out). Like
+  // VIDEOOUT, drive .in with a self-running video source so the `out`
+  // passthrough port emits non-blank frames for the outputs-emit sweep. (The
+  // record/encode path is gated on a real H.264 encoder + covered by the
+  // dedicated recorderbox specs, NOT this structural sweep.)
+  recorderbox: {
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-acid', type: 'acidwarp', position: { x: 60, y: 60 }, domain: 'video' },
+      ],
+      edges: [
+        {
+          id: 'e-drv-acid',
+          from: { nodeId: 'drv-acid', portId: 'out' },
+          to:   { nodeId: 'sut',      portId: 'in' },
+          sourceType: 'video', targetType: 'video',
+        },
+      ],
+    }),
+    note: 'RECORDERBOX: drive .in with ACIDWARP.out; .out passes through with non-blank frames',
+  },
+
   // ───── MOOG 904A VCF — self-oscillate so the audio out is driven ─────
   //
   // The 904A is an effect (audio in → low-pass out), but at REGENERATION=1

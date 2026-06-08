@@ -28,6 +28,7 @@
     "@xyflow/svelte": "^1.0.0",
     "codemirror": "^6.0.2",
     "fflate": "^0.8.2",
+    "mediabunny": "^1.46.0",
     "svelte-clerk": "^1.1.6",
     "yjs": "^13.6.0"
   },
