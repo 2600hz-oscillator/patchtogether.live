@@ -138,32 +138,42 @@ test.describe('CELLSHADE — cel-shader video processor', () => {
     expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('lowering BITS reduces the number of distinct colours', async ({ page }) => {
-    // 1-bit (idx 0 = 2 colours / luma-band) vs 16-bit (idx 4 = 65536 / 565).
-    // Edges held off (threshold high) so the ink doesn't dominate the count.
-    const lowBits  = await captureCell(page, { threshold: 0.95, thickness: 1, bits: 0 });
-    const highBits = await captureCell(page, { threshold: 0.95, thickness: 1, bits: 4 });
+  // NOTE on BITS/THRESHOLD MONOTONICITY: the EXACT "lower BITS → fewer distinct
+  // colours" and "higher THRESHOLD → fewer/equal inked pixels" relations are
+  // proven pixel-deterministically by the pure CPU mirror in
+  // packages/web/src/lib/video/modules/cellshade.test.ts
+  // ("lower BITS yields FEWER distinct tones" / "raising THRESHOLD inks FEWER
+  // pixels"). We do NOT re-assert that monotonicity across two LIVE renders
+  // here: each captureCell re-spawns and samples an INDEPENDENT frame of the
+  // self-running, animated ACIDWARP source, so the only-the-param-changed
+  // premise doesn't hold — the moving frame content confounds the comparison,
+  // and on CI's SwiftShader software renderer it flips the inequality (a real
+  // pre-#695-era flake, not a regression). Instead this spec asserts the
+  // renderer-tolerant invariants the live chain CAN guarantee frame-to-frame:
+  // a LOW-bit render is still colourful, and BOTH a low- and a high-threshold
+  // render produce a sane (non-all-black, non-blank) cel frame.
 
+  test('BITS sweep: a low-bit live render is still colourful (posterized)', async ({ page }) => {
+    // 1-bit (idx 0 = 2 colours / luma-band): the coarsest depth still shows
+    // colour through (it's posterized, not crushed to grey/black). Exact band
+    // counts are the CPU mirror's job (see note above).
+    const lowBits = await captureCell(page, { threshold: 0.95, thickness: 1, bits: 0 });
     expect(lowBits.distinctColours, 'low-bit render has colours').toBeGreaterThan(0);
-    expect(
-      highBits.distinctColours,
-      'higher BITS yields MORE distinct colours than lower BITS',
-    ).toBeGreaterThan(lowBits.distinctColours);
+    expect(lowBits.colourFrac, 'low-bit render is colourful, not crushed').toBeGreaterThan(0.01);
   });
 
-  test('raising THRESHOLD reduces edge-ink pixels', async ({ page }) => {
-    // Same source + bits + thickness; only the edge gate changes. A LOW
-    // threshold inks more contours → more black pixels; a HIGH threshold inks
-    // only the strongest → fewer. Use a fixed bit depth so the colour count
-    // doesn't move under us.
+  test('THRESHOLD sweep: low and high gates both yield a sane cel frame', async ({ page }) => {
+    // Same source + bits + thickness; only the edge gate changes. The exact
+    // "higher threshold → fewer ink" ordering is the CPU mirror's job (see note
+    // above — cross-frame on a moving source it's not deterministic). Here we
+    // assert each render is a valid cel frame: a LOW threshold inks SOME edges,
+    // and a HIGH threshold doesn't flood the frame to all-black.
     const lowThresh  = await captureCell(page, { threshold: 0.08, thickness: 2, bits: 3 });
     const highThresh = await captureCell(page, { threshold: 0.9,  thickness: 2, bits: 3 });
 
-    expect(lowThresh.inkFrac, 'low threshold inks edges').toBeGreaterThan(0);
-    expect(
-      highThresh.inkFrac,
-      'higher threshold yields fewer (or equal) inked pixels',
-    ).toBeLessThanOrEqual(lowThresh.inkFrac);
+    expect(lowThresh.inkFrac, 'low threshold inks some edges').toBeGreaterThan(0);
+    expect(highThresh.inkFrac, 'high threshold is not all-black ink').toBeLessThan(0.9);
+    expect(highThresh.colourFrac, 'high-threshold frame still shows colour').toBeGreaterThan(0.01);
   });
 
   test('CV params route through the patch store (incl. discrete BITS)', async ({ page }) => {

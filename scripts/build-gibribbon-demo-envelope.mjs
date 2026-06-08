@@ -205,9 +205,49 @@ ydoc.transact(() => {
 
   // 4) SYNESTHESIA — analyses MACROOSCILLATOR on copy/channel A. Copy A in
   //    AUDIO mode (a_mode=0 → spectral bands). The 4 SLOW env-followers on A
-  //    (a_band{1..4}_env_slow) become cv1..cv4 for GIBRIBBON. A small master
-  //    + per-band lift so the slow envelopes reach GIB's spawn threshold on
-  //    energetic steps (tuned against GIB_TUNING in gibribbon-events.ts).
+  //    (a_band{1..4}_env_slow) become cv1..cv4 for GIBRIBBON. A master floor
+  //    + per-band lift balances the 4 slow envelopes so EACH of cv1..cv4
+  //    drives its game event (loop/jump/imp/zombie) at a playable rate (tuned
+  //    against GIB_TUNING in gibribbon-events.ts).
+  //
+  //    RETUNED for the SYNESTHESIA #698 refactor (musical band edges
+  //    200/1000/4000 Hz + a real envelope attack). The new wider band 2
+  //    (200–1 kHz) and the steeper musical splits redistributed the voice's
+  //    spectral energy: the kick/bass band (band1→cv1 loop) ran hot while the
+  //    low-mid (band2→cv2 jump) and high-mid (band3→cv3 imp) bands fell well
+  //    below GIB's 0.42 spawn threshold AND lost the per-tick "strongest
+  //    channel" contest in chooseSpawn — so jump + imp went DEAD (0 spawns)
+  //    while only loop + zombie fired. The old gains (master 1.35, gains
+  //    [1.5,1.6,1.7,1.8]) were calibrated against the OLD (pre-#698) bands.
+  //
+  //    These gains were derived by rendering the demo's sequenced
+  //    MACROOSCILLATOR voice through the REAL refactored synesthesia-dsp
+  //    (renderSynesthesia) and balancing the four slow-env peaks (p90 ≈
+  //    0.59/0.88/0.95/0.98) so the per-tick winner contest is near-even and
+  //    ALL FOUR event kinds spawn at a playable ~0.39 spawns/tick
+  //    (loop/jump/imp/zombie all alive over a 64-tick bar — vs the old
+  //    13/0/0/10 where jump+imp were DEAD). band1 (kick) is pulled down and
+  //    band2/band3 are lifted hardest because the kick band's energy is broadly
+  //    present (high mean) while the low-mid/high-mid bands only peak
+  //    transiently. cvSpawnThreshold in gibribbon-events.ts is left UNCHANGED —
+  //    the gains alone re-balanced it.
+  //
+  //    NOTE (cv1/loop is beat-locked, BY DESIGN — do NOT raise a_gain1): cv1's
+  //    slow-env p90 (≈0.59) sits below the off-beat gate margin
+  //    ((cvSpawnThreshold+1)/2 = 0.71), so loop spawns only on gate-HIGH
+  //    (on-beat) ticks. That's the intended "kick → loop on the beat" feel, and
+  //    loop is still the most-spawned kind (not dead). Lifting a_gain1 to make
+  //    loop spawn off-beat too would over-trigger it and starve the mids.
+  //
+  //    The REAL-CHAIN guard for all this is
+  //    packages/web/src/lib/ui/example-patches/gibribbon-demo-calibration.test.ts:
+  //    it renders this exact sequenced voice through renderSynesthesia at these
+  //    gains, pushes the slow-env CV through the real GIBRIBBON pipeline, and
+  //    asserts all four channels stay alive + the rate stays playable (with a
+  //    negative-guard proving the OLD gains leave jump+imp dead). The
+  //    "Phase-2 demo CV calibration" test in gibribbon-events.test.ts is a
+  //    separate SYNTHETIC sanity check of GIB_TUNING and does NOT exercise these
+  //    gains. The blob↔script gain match is guarded in gibribbon-demo.test.ts.
   store.nodes[ID.synesthesia] = {
     id: ID.synesthesia,
     type: 'synesthesia',
@@ -215,11 +255,11 @@ ydoc.transact(() => {
     position: POS.synesthesia,
     params: {
       a_mode: 0,
-      a_master: 1.35,
-      a_gain1: 1.5,
-      a_gain2: 1.6,
-      a_gain3: 1.7,
-      a_gain4: 1.8,
+      a_master: 1.2,
+      a_gain1: 1.4,
+      a_gain2: 2.35,
+      a_gain3: 3.9,
+      a_gain4: 1.9,
     },
     data: {},
   };
