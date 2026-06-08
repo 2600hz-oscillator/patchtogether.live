@@ -36,6 +36,11 @@ export const GET: RequestHandler = async () => {
   return json({
     ok: true,
     auth: hasSecret && hasPublishable ? 'configured' : 'missing',
+    // Presence-only signal that the web tier has a Postgres connection string
+    // (Phase 2a / FW1). We do NOT connect here — this just lets a deploy smoke
+    // catch a web tier missing DATABASE_URL before it 503s on the first query.
+    // The actual throw-on-missing in the web db layer lands in Phase 2b.
+    db: privateEnv.DATABASE_URL ? 'configured' : 'missing',
     env: {
       CLERK_SECRET_KEY: hasSecret,
       PUBLIC_CLERK_PUBLISHABLE_KEY: hasPublishable,

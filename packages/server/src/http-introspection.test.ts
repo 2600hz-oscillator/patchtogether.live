@@ -70,14 +70,17 @@ function makeExt(opts?: {
   thresholds?: { warnMb: number; critMb: number };
   conns?: number;
   rooms?: number;
+  persist?: 'postgres' | 'memory';
 }) {
   const clock = new MockClock();
   let conns = opts?.conns ?? 0;
   let rooms = opts?.rooms ?? 0;
+  const persist = opts?.persist ?? 'postgres';
   const ext = createIntrospectionExtension(
     {
       getConnectionsCount: () => conns,
       getDocumentsCount: () => rooms,
+      getPersistenceMode: () => persist,
     },
     {
       deps: {
@@ -158,6 +161,7 @@ describe('createIntrospectionExtension — snapshot shape', () => {
       'conns',
       'rooms',
       'persist_writes_per_min',
+      'persist_mode',
     ];
     expect(Object.keys(snap).sort()).toEqual([...keys].sort());
     expect(snap.uptime_s).toBe(42);
@@ -170,8 +174,14 @@ describe('createIntrospectionExtension — snapshot shape', () => {
     expect(snap.conns).toBe(3);
     expect(snap.rooms).toBe(2);
     expect(snap.persist_writes_per_min).toBe(0);
+    expect(snap.persist_mode).toBe('postgres');
     expect(typeof snap.boot_id).toBe('string');
     expect(snap.boot_id.length).toBeGreaterThan(2);
+  });
+
+  it('reflects the injected persistence mode (memory)', () => {
+    const { ext } = makeExt({ persist: 'memory' });
+    expect(ext._snapshot().persist_mode).toBe('memory');
   });
 
   it('boot_id is stable across snapshots from the same extension', () => {
@@ -230,7 +240,7 @@ describe('memory alarm logic', () => {
     const clock = new MockClock();
     clock.setMem({ rss: 400 });
     const ext = createIntrospectionExtension(
-      { getConnectionsCount: () => 0, getDocumentsCount: () => 0 },
+      { getConnectionsCount: () => 0, getDocumentsCount: () => 0, getPersistenceMode: () => 'postgres' },
       {
         deps: {
           now: clock.now,
@@ -280,7 +290,7 @@ function makeRes() {
 
 describe('onRequest routing', () => {
   it('replies to GET /health with 200 + {ok:true}', async () => {
-    const { ext } = makeExt();
+    const { ext } = makeExt({ persist: 'memory' });
     const req = makeReq('/health');
     const res = makeRes();
     let threw = false;
@@ -301,10 +311,13 @@ describe('onRequest routing', () => {
     const body = JSON.parse(res.captured.body!);
     expect(body.ok).toBe(true);
     expect(typeof body.boot_id).toBe('string');
+    // Phase 2a / FW1: /health surfaces the persistence mode so a misconfigured
+    // prod relay serving a non-persistent rack is observable.
+    expect(body.persist).toBe('memory');
   });
 
   it('replies to GET /metrics with the documented JSON shape', async () => {
-    const { clock, ext } = makeExt({ conns: 7, rooms: 4 });
+    const { clock, ext } = makeExt({ conns: 7, rooms: 4, persist: 'memory' });
     clock.setMem({ rss: 123, heapUsed: 64, heapTotal: 80, ext: 8 });
     clock.setUptime(99);
     const req = makeReq('/metrics');
@@ -320,6 +333,7 @@ describe('onRequest routing', () => {
     expect(body.conns).toBe(7);
     expect(body.rooms).toBe(4);
     expect(body.uptime_s).toBe(99);
+    expect(body.persist_mode).toBe('memory');
   });
 
   it('matches /metrics?fresh=1 as the metrics route (query is ignored)', async () => {
@@ -357,6 +371,7 @@ describe('snapshot integration smoke', () => {
     const ext = createIntrospectionExtension({
       getConnectionsCount: () => 0,
       getDocumentsCount: () => 0,
+      getPersistenceMode: () => 'postgres',
     });
     const snap = ext._snapshot();
     expect(snap.rss_mb).toBeGreaterThan(0);

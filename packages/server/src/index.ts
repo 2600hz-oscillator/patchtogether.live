@@ -13,7 +13,14 @@ import { Server } from '@hocuspocus/server';
 import * as Y from 'yjs';
 import { AUTH_REJECTION, verifyToken } from './auth.js';
 import { CAPACITY_REJECTION, createSlotTracker } from './capacity.js';
-import { isRackspaceMember, loadSnapshot, rackspaceExists, storeSnapshot } from './db.js';
+import {
+  isRackspaceMember,
+  loadSnapshot,
+  persistenceMode,
+  rackspaceExists,
+  shouldFailFast,
+  storeSnapshot,
+} from './db.js';
 import { checkRackAccess } from './rack-access.js';
 import { SNAPSHOT_PERSISTENCE_CONFIG } from './snapshot-config.js';
 import { createHeartbeatExtension } from './heartbeat.js';
@@ -60,6 +67,7 @@ const slots = createSlotTracker();
 const introspection = createIntrospectionExtension({
   getConnectionsCount: () => Server.getConnectionsCount(),
   getDocumentsCount: () => Server.getDocumentsCount(),
+  getPersistenceMode: () => persistenceMode(),
 });
 
 const hocuspocus = Server.configure({
@@ -186,9 +194,33 @@ const reaper = startReaper(slots, hocuspocus as unknown as LiveConnectionSource,
   log: (msg) => console.log(msg),
 });
 
+// ── Prod persistence fail-fast guard (Phase 2a / FW1) ───────────────────────
+//
+// A prod relay that boots into the in-memory snapshot store (no DATABASE_URL)
+// serves racks whose state silently vanishes on the next deploy/restart. That
+// looks healthy — clients connect + sync — but every edit is durably lost.
+// Refuse to start in that configuration so a misconfigured deploy FAILS LOUD
+// (and Fly health checks flag the crash-loop) instead of quietly serving a
+// non-persistent rack. The in-memory fallback (PR #310) stays fully intact for
+// local dev + the @collab e2e suite, which do NOT set NODE_ENV=production, so
+// shouldFailFast() returns false there. ALLOW_MEMORY_STORE=1 is the escape
+// hatch for a deliberate ephemeral prod-memory run. See db.ts:shouldFailFast.
+if (shouldFailFast()) {
+  // eslint-disable-next-line no-console
+  console.error(
+    'event=relay_no_database_url level=fatal ' +
+      'msg="NODE_ENV=production but DATABASE_URL is unset — refusing to boot the ' +
+      'relay into the in-memory snapshot store (rack state would be silently lost ' +
+      'on restart). Set DATABASE_URL (flyctl postgres attach) for a persistent ' +
+      'deploy, or set ALLOW_MEMORY_STORE=1 to allow a deliberate ephemeral run." ' +
+      `persist=${persistenceMode()}`,
+  );
+  process.exit(1);
+}
+
 Server.listen().then(() => {
   // eslint-disable-next-line no-console
-  console.log(`[hocuspocus] listening ws://${HOST}:${PORT}`);
+  console.log(`[hocuspocus] listening ws://${HOST}:${PORT} (persist=${persistenceMode()})`);
 });
 
 // Clean shutdown on SIGTERM (Fly.io sends this on deploys).
