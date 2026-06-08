@@ -233,6 +233,71 @@ export interface Circle {
    *  is rotation-invariant, so this is irrelevant for shape 0. Optional;
    *  absent = 0. */
   baseAngle?: number;
+  /** PERF cache (not persisted / not part of the behavioural state): the N
+   *  edge-normal unit vectors {nx_k, ny_k} of this polygon AT a specific total
+   *  angle, plus the apothem, precomputed ONCE so the per-pixel coverage test is
+   *  N cheap dot products with ZERO trig. The polygon's total angle (baseAngle +
+   *  global rot) is CONSTANT for a whole frame, so this cache is valid for the
+   *  whole field × that frame; it is rebuilt only when sides/angle/diameter
+   *  change. See ensurePolyCache(). Untyped-optional so it never affects the
+   *  Circle equality/serialization the tests rely on. */
+  _nc?: PolyNormalCache;
+}
+
+/** Precomputed polygon edge-normal cache for one shape at one total angle.
+ *  Hoists the per-pixel trig out of the coverage test: a point is inside the
+ *  N-gon iff max_k(lx·nx_k + ly·ny_k) ≤ apothem. */
+interface PolyNormalCache {
+  /** The (sides, angle, circumR) this cache was built for — a cheap revalidate. */
+  sides: number;
+  angle: number;
+  circumR: number;
+  /** Edge-normal unit-vector components (length === sides). */
+  nx: Float64Array;
+  ny: Float64Array;
+  /** Apothem (inradius) = circumR·cos(π/sides) — the inside threshold. */
+  apothem: number;
+}
+
+/** Build (or revalidate) the polygon edge-normal cache on a shape for the given
+ *  total `angle` (baseAngle + global rot) and circumradius. The N edge normals
+ *  sit HALFWAY between consecutive vertices: n_k = (cos φ_k, sin φ_k),
+ *  φ_k = angle + step·k + step/2, step = 2π/sides. Trig runs ONCE here per shape
+ *  per frame — never per pixel. Returns the cache (also stored on c._nc). */
+function ensurePolyCache(c: Circle, sides: number, angle: number, circumR: number): PolyNormalCache {
+  const cached = c._nc;
+  if (
+    cached !== undefined &&
+    cached.sides === sides &&
+    cached.angle === angle &&
+    cached.circumR === circumR
+  ) {
+    return cached;
+  }
+  const nx = cached !== undefined && cached.nx.length === sides ? cached.nx : new Float64Array(sides);
+  const ny = cached !== undefined && cached.ny.length === sides ? cached.ny : new Float64Array(sides);
+  const step = (Math.PI * 2) / sides;
+  const half = step * 0.5;
+  for (let k = 0; k < sides; k++) {
+    const phi = angle + step * k + half;
+    nx[k] = Math.cos(phi);
+    ny[k] = Math.sin(phi);
+  }
+  const nc: PolyNormalCache = { sides, angle, circumR, nx, ny, apothem: circumR * Math.cos(Math.PI / sides) };
+  c._nc = nc;
+  return nc;
+}
+
+/** Max projection of (lx,ly) onto the cached edge normals — the polygon radial
+ *  distance, computed with N dot products and ZERO trig. */
+function polyRadiusCached(lx: number, ly: number, nc: PolyNormalCache): number {
+  let maxProj = -Infinity;
+  const { nx, ny, sides } = nc;
+  for (let k = 0; k < sides; k++) {
+    const proj = lx * nx[k]! + ly * ny[k]!;
+    if (proj > maxProj) maxProj = proj;
+  }
+  return maxProj;
 }
 
 /** Per-frame param snapshot the sim reads when it spawns. These are the
@@ -359,27 +424,14 @@ export function resolveElasticPair(a: Circle, b: Circle): boolean {
 // ≤ apothem; the polygon "radial distance" (for the contour ring band) is the
 // MAX of those projections — it equals `apothem` exactly on an edge, less
 // inside, more outside — i.e. a polygon analogue of the circle's |p-center|.
+//
+// PERF: the N edge normals depend only on (sides, total angle) — CONSTANT for a
+// shape across a whole frame — and the apothem only on (sides, circumR). They
+// are precomputed ONCE per shape per frame in ensurePolyCache() (see Circle._nc)
+// so the per-pixel test (polyRadiusCached) is N dot products with ZERO trig.
+// This replaced an earlier per-pixel polyRadius()/apothemOf() that called
+// Math.cos/Math.sin per edge per pixel per shape per frame — the #699 regression.
 // ---------------------------------------------------------------------------
-
-/** Max projection of the point (lx,ly) — RELATIVE TO THE SHAPE CENTER — onto
- *  the N edge normals of a regular N-gon rotated by `angle`. A point is inside
- *  iff this ≤ apothem; on an edge when == apothem. (Only meaningful for
- *  sides ≥ 3; callers use the disc test for the circle case.) */
-function polyRadius(lx: number, ly: number, sides: number, angle: number): number {
-  let maxProj = -Infinity;
-  const step = (Math.PI * 2) / sides;
-  for (let k = 0; k < sides; k++) {
-    const phi = angle + step * k + step * 0.5; // edge normal halfway between verts
-    const proj = lx * Math.cos(phi) + ly * Math.sin(phi);
-    if (proj > maxProj) maxProj = proj;
-  }
-  return maxProj;
-}
-
-/** Apothem (inradius) of a regular N-gon whose circumradius is `circumR`. */
-function apothemOf(sides: number, circumR: number): number {
-  return circumR * Math.cos(Math.PI / sides);
-}
 
 /** Is the point (px,py) inside the shape `c` (rotated by the global `rot` plus
  *  the shape's seeded baseAngle)? Circle (sides 0) → the disc test; polygon →
@@ -389,13 +441,19 @@ export function pointInShape(c: Circle, px: number, py: number, rot = 0): boolea
   const dx = px - c.x;
   const dy = py - c.y;
   const sides = c.sides ?? sidesForShape(c.shape ?? 0);
+  const d2 = dx * dx + dy * dy;
   if (sides < 3) {
     // Circle: |p - center| ≤ r.
-    return dx * dx + dy * dy <= r * r;
+    return d2 <= r * r;
   }
+  // Cheap circumradius PRE-REJECT: every polygon vertex lies on the circle of
+  // radius r, so a point outside that circle is definitely outside the polygon —
+  // skip the N-normal loop. (The apothem ≤ r ≤ vertex, so a point inside the
+  // polygon is always inside the circumcircle; this never changes the result.)
+  if (d2 > r * r) return false;
   const angle = (c.baseAngle ?? 0) + rot;
-  const apo = apothemOf(sides, r);
-  return polyRadius(dx, dy, sides, angle) <= apo;
+  const nc = ensurePolyCache(c, sides, angle, r);
+  return polyRadiusCached(dx, dy, nc) <= nc.apothem;
 }
 
 /** Is the point on the shape's CONTOUR ring band (radial distance in
@@ -408,15 +466,20 @@ export function pointOnShapeRing(c: Circle, px: number, py: number, lw: number, 
   const dx = px - c.x;
   const dy = py - c.y;
   const sides = c.sides ?? sidesForShape(c.shape ?? 0);
+  const d2 = dx * dx + dy * dy;
   if (sides < 3) {
     // Circle ring: dist in [r − lw, r].
-    const dist = Math.sqrt(dx * dx + dy * dy);
+    const dist = Math.sqrt(d2);
     return dist <= r && dist >= r - lw;
   }
+  // Cheap circumradius PRE-REJECT: the ring band lies at radial distance
+  // [apothem − lw, apothem] ≤ apothem ≤ r, so a point outside the circumcircle
+  // (d > r) is past the band → off the ring. Skips the N-normal loop.
+  if (d2 > r * r) return false;
   const angle = (c.baseAngle ?? 0) + rot;
-  const apo = apothemOf(sides, r);
-  const pr = polyRadius(dx, dy, sides, angle);
-  return pr <= apo && pr >= apo - lw;
+  const nc = ensurePolyCache(c, sides, angle, r);
+  const pr = polyRadiusCached(dx, dy, nc);
+  return pr <= nc.apothem && pr >= nc.apothem - lw;
 }
 
 /** The N vertex positions of a polygon shape (absolute field coords), rotated
@@ -802,4 +865,167 @@ export function combineRgbAt(circles: readonly Circle[], px: number, py: number,
  *  texture by this mask in the shader. */
 export function mappedMaskAt(circles: readonly Circle[], px: number, py: number, rot = 0): number {
   return overlapCountAt(circles, px, py, rot) >= 2 ? 1 : 0;
+}
+
+// ---------------------------------------------------------------------------
+// DERIVE-ONCE field — the hot-path optimization. Instead of independently
+// scanning the whole field × every shape for EACH of the four outputs (the
+// #699 regression compounded that with per-pixel polygon trig), compute the
+// coverage fields ONCE per frame and let all four outputs read from them:
+//
+//   count[i]    — integer overlap COUNT at cell i (drives combine hue/sat/val,
+//                 overlap presence, the ≥2 mapped mask).
+//   softAlpha[i]— summed fade ALPHA of the covering shapes (drives combine's
+//                 soft-dim factor; == overlapAlphaAt).
+//   maxAlpha[i] — strongest covering shape's alpha (== overlapValueAt → the
+//                 `overlap` output).
+//
+// Each shape is accumulated only within its own AXIS-ALIGNED BOUNDING BOX
+// (center ± circumradius) — most of the field is far from any given shape, so
+// scanning only the AABB instead of the whole field is the big structural win.
+// Inside the AABB we use the SAME per-point coverage test as pointInShape: a
+// circumradius pre-reject (cheap d²>r² compare) then, for polygons, the cached
+// edge-normal dot products (ZERO per-pixel trig); the circle index-0 fast-path
+// stays a single distance compare. Scratch buffers are reused across frames.
+//
+// The result is byte-for-byte identical to calling overlapCountAt /
+// overlapAlphaAt / overlapValueAt at each cell center — it's purely a different
+// iteration order — so every output is VISUALLY IDENTICAL.
+// ---------------------------------------------------------------------------
+
+/** Reusable coverage fields for a downsampled grid. Allocated lazily + reused
+ *  across frames (no per-frame allocation). */
+export interface OutlinesField {
+  /** Grid resolution (cells per side; the field is square). */
+  grid: number;
+  /** Integer overlap count per cell (row-major, length grid*grid). */
+  count: Int32Array;
+  /** Summed fade alpha per cell (the soft overlap weight). */
+  softAlpha: Float32Array;
+  /** Strongest covering alpha per cell (the `overlap` output value). */
+  maxAlpha: Float32Array;
+}
+
+/** Allocate (or reuse) an OutlinesField for a `grid`×`grid` downsample over the
+ *  OUTLINES_FIELD square. Pass the previous field back in to reuse its buffers. */
+export function makeOutlinesField(grid: number, reuse?: OutlinesField): OutlinesField {
+  const n = grid * grid;
+  if (reuse && reuse.grid === grid && reuse.count.length === n) return reuse;
+  return {
+    grid,
+    count: new Int32Array(n),
+    softAlpha: new Float32Array(n),
+    maxAlpha: new Float32Array(n),
+  };
+}
+
+/**
+ * Compute the overlap COUNT / softAlpha / maxAlpha fields for `circles` over the
+ * `field`'s grid (cell centers), ONCE. Clears then accumulates each shape into
+ * only the cells inside its AABB (center ± circumradius). Mutates + returns the
+ * field. `rot` is the live-global rotation angle (added to each shape's
+ * baseAngle), exactly as the per-point derivation uses it.
+ *
+ * Field grid maps cell (gx,gy) → world center ((gx+0.5)·cell, (gy+0.5)·cell),
+ * cell = OUTLINES_FIELD / grid — identical to the module's combine grid sampling
+ * so the derived colour is unchanged.
+ */
+export function deriveOutlinesField(circles: readonly Circle[], field: OutlinesField, rot = 0): OutlinesField {
+  const grid = field.grid;
+  const { count, softAlpha, maxAlpha } = field;
+  count.fill(0);
+  softAlpha.fill(0);
+  maxAlpha.fill(0);
+  const cell = OUTLINES_FIELD / grid;
+  const invCell = 1 / cell;
+
+  for (let ci = 0; ci < circles.length; ci++) {
+    const c = circles[ci]!;
+    const a = typeof c.alpha === 'number' ? c.alpha : 1;
+    if (a <= 0) continue; // fully decayed → contributes nothing (matches alphaOf gate)
+    const r = c.diameter * 0.5;
+    const r2 = r * r;
+    const cx = c.x;
+    const cy = c.y;
+    const sides = c.sides ?? sidesForShape(c.shape ?? 0);
+
+    // AABB in grid coords (center ± circumradius), clamped to the grid. A cell
+    // center at world w is covered only if it is within the shape, and every
+    // covered point is within the circumcircle (|p-center| ≤ r), so cells whose
+    // center lies outside [cx-r, cx+r]×[cy-r, cy+r] can be skipped wholesale.
+    let gx0 = Math.floor((cx - r) * invCell);
+    let gx1 = Math.floor((cx + r) * invCell);
+    let gy0 = Math.floor((cy - r) * invCell);
+    let gy1 = Math.floor((cy + r) * invCell);
+    if (gx0 < 0) gx0 = 0;
+    if (gy0 < 0) gy0 = 0;
+    if (gx1 > grid - 1) gx1 = grid - 1;
+    if (gy1 > grid - 1) gy1 = grid - 1;
+    if (gx0 > gx1 || gy0 > gy1) continue;
+
+    if (sides < 3) {
+      // CIRCLE fast-path: single distance compare per cell, no polygon math.
+      for (let gy = gy0; gy <= gy1; gy++) {
+        const py = (gy + 0.5) * cell;
+        const dy = py - cy;
+        const rowBase = gy * grid;
+        for (let gx = gx0; gx <= gx1; gx++) {
+          const px = (gx + 0.5) * cell;
+          const dx = px - cx;
+          if (dx * dx + dy * dy <= r2) {
+            const idx = rowBase + gx;
+            count[idx]++;
+            softAlpha[idx] += a;
+            if (a > maxAlpha[idx]!) maxAlpha[idx] = a;
+          }
+        }
+      }
+    } else {
+      // POLYGON: precompute the edge normals + apothem ONCE for this shape/frame
+      // (ZERO per-cell trig), then a circumradius pre-reject + the cached
+      // dot-product inside-all-edges test per cell.
+      const angle = (c.baseAngle ?? 0) + rot;
+      const nc = ensurePolyCache(c, sides, angle, r);
+      const nx = nc.nx;
+      const ny = nc.ny;
+      const apo = nc.apothem;
+      for (let gy = gy0; gy <= gy1; gy++) {
+        const py = (gy + 0.5) * cell;
+        const dy = py - cy;
+        const rowBase = gy * grid;
+        for (let gx = gx0; gx <= gx1; gx++) {
+          const px = (gx + 0.5) * cell;
+          const dx = px - cx;
+          if (dx * dx + dy * dy > r2) continue; // outside circumcircle → outside polygon
+          let maxProj = -Infinity;
+          for (let k = 0; k < sides; k++) {
+            const proj = dx * nx[k]! + dy * ny[k]!;
+            if (proj > maxProj) maxProj = proj;
+          }
+          if (maxProj <= apo) {
+            const idx = rowBase + gx;
+            count[idx]++;
+            softAlpha[idx] += a;
+            if (a > maxAlpha[idx]!) maxAlpha[idx] = a;
+          }
+        }
+      }
+    }
+  }
+  return field;
+}
+
+/** combine RGB at one cell of a derived field — same math as combineRgbAt but
+ *  reading the precomputed count + softAlpha (no per-pixel shape scan). Writes
+ *  into `out` (length-3) to avoid per-cell allocation; returns it. */
+export function combineRgbFromField(field: OutlinesField, idx: number, out: [number, number, number]): [number, number, number] {
+  const count = field.count[idx]!;
+  if (count < 1) {
+    out[0] = 0; out[1] = 0; out[2] = 0;
+    return out;
+  }
+  const softFrac = Math.min(1, field.softAlpha[idx]! / count);
+  const [r, g, b] = hsvToRgb(combineHueAt(count), combineSaturationAt(count), combineBrightnessAt(count));
+  out[0] = r * softFrac; out[1] = g * softFrac; out[2] = b * softFrac;
+  return out;
 }
