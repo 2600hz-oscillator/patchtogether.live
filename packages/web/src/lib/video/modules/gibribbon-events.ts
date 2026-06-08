@@ -136,7 +136,15 @@ export interface GibTuning {
  *  synthetic 4-slow-envelope streams this rhythm produces through
  *  clockTick/chooseSpawn and asserting the rate + that all four kinds appear.
  *  See the matching SYNESTHESIA copy-A master/band-gain lift in the envelope
- *  generator (scripts/build-gibribbon-demo-envelope.mjs). */
+ *  generator (scripts/build-gibribbon-demo-envelope.mjs).
+ *
+ *  RE-CALIBRATION for SYNESTHESIA #698 (musical band edges 200/1000/4000 Hz +
+ *  real envelope attack): the refactor redistributed the demo voice's spectral
+ *  energy, leaving band2 (jump) + band3 (imp) below threshold and losing the
+ *  per-tick strongest-channel contest, so those two channels went dead. The fix
+ *  lives ENTIRELY in the envelope generator's per-band gains — these THRESHOLDS
+ *  (cvSpawnThreshold 0.42, minSpawnIntervalTicks 2) are deliberately UNCHANGED:
+ *  the gains alone re-balanced all four channels. */
 export const GIB_TUNING: GibTuning = {
   scrollPerClock: 0.18,
   scrollPerSecond: 0.22,
