@@ -18,6 +18,16 @@ is actionable rather than alarming:
   the run permanently — `test.skip('name', …)`, `it.skip(…)`,
   `test.fixme('name', …)`, `describe.skip`/`describe.fixme`, `test.todo`. These
   are the backlog: tests someone turned off and owes a fix or a deletion.
+- **The reconciliation law: every disabled test is backlog.** There is **no**
+  permanent "intentional / correct-by-design" exempt bucket. An entry leaves the
+  `disabled` count **only** by being **re-enabled-and-asserting** (driven in a
+  context where the port genuinely affects the observed output, with a healthy
+  margin and a 3× flake-check) **or DELETED** (a port that can never affect output
+  under any patching — a pure terminal sink / passthrough — with a one-line
+  rationale). The headline metric of this whole report is **`disabled → 0`** for
+  every block. *(The old intentional-vs-reconcilable split — which let
+  architecture-gated skips sit in a "fine forever" pile — was retired on
+  2026-06-08.)*
 - **NOT disabled — runtime guards.** `test.skip(cond, 'reason')` /
   `test.skip(true, 'reason')` *inside a test body* are environment gates (is the
   DB / WAD / ROM / relay present?), not a test the author switched off. They run
@@ -65,6 +75,50 @@ row.
 ---
 
 ## Entries
+
+### 2026-06-08 — report REFRAME: every disabled test is backlog (retire the intentional/reconcilable split)
+
+The reconciliation program's headline metric was lying. The behavioral block
+reported its `disabled` total **split** into "52 intentional (architecture-gated,
+correct-by-design)" + "5 reconcilable (the fixable backlog)", and only the
+**5** was framed as the number to drive down. Under the corrected law **every
+disabled test is backlog** — there is no permanent-exempt bucket — so this PR
+retires the two-bucket framing across the whole tooling.
+
+**No test was re-enabled or deleted this PR** (that's the next batches). The
+counts are unchanged in number, but the headline now reflects the honest **57**
+behavioral-disabled (plus **156** per-port exemptions, the same backlog at port
+granularity) instead of the misleading **5**.
+
+| block | kind | total | disabled | %disabled |
+|---|---|---:|---:|---:|
+| unit | raw | 6219 | 2 | 0.0% |
+| e2e | raw | 928 | 4 | 0.4% |
+| art | raw | 463 | 0 | 0.0% |
+| vrt | parametrized | 156 | 0 | 0.0% |
+| behavioral | parametrized | 105 | **57** | 54.3% |
+| @collab | raw (e2e subset) | 108 | 1 | 0.9% |
+
+What changed:
+- **`scripts/test-reconciliation.mjs`** — `countBehavioral` no longer reads
+  `BEHAVIORAL_RECONCILABLE_EXEMPT` and no longer emits `{intentional,
+  reconcilable}`; `disabled` is the full module-exempt count. The file-header
+  docblock now states the law (re-enable-and-assert OR delete; the per-entry note
+  is a "how to fix", not a "permanently fine").
+- **`e2e/tests/per-module-per-port-behavioral.spec.ts`** — deleted the
+  `BEHAVIORAL_RECONCILABLE_EXEMPT` map + its load-time integrity check, and
+  replaced the "honest split: reconcilable vs intentional" header with the
+  reconciliation law. **No re-enable path was lost** — every entry's measured
+  re-enable note already lives inside `BEHAVIORAL_MODULE_EXEMPT`.
+- **`scripts/test-reconciliation.test.ts`** — the meta-test now LOCKS the law:
+  the split maps must not be re-declared, the re-enabled Moog routers must stay
+  out of the exempt map, and remaining exempts must carry a backlog note.
+- **`scripts/build-test-reconciliation-page.mjs`** — the live row carries no
+  split; old committed entries that still have `{intentional, reconcilable}`
+  render as a greyed *"historical split (retired) — all backlog now"* line.
+
+Next batches resume **fixing or deleting** concrete entries (the disabled count
+falling for real), now measured against the honest total.
 
 ### 2026-06-07 — behavioral reconciliation #4 (moog960 distinct-pot sweep + treeohvox held-note driver)
 

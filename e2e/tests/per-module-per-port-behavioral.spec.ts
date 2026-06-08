@@ -487,64 +487,34 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   mandelbulb: 'heavy ray-marched 3D fractal; 2-spawn × per-input sweep exceeds the 162s CI test budget (times out, not a per-port delta failure — same class as foxy); covered by mandelbulb VRT/specs',
 };
 
-// ────────── Honest exempt split: reconcilable vs intentional ──────────
+// ────────── Reconciliation law: every exemption is BACKLOG ──────────
 //
-// BEHAVIORAL_MODULE_EXEMPT mixes two fundamentally different kinds of skip, and
-// lumping them into one "N disabled" number is misleading — it makes the
-// coverage gap look ~2× bigger than the part we can actually close.
+// EVERY entry in BEHAVIORAL_MODULE_EXEMPT (and every per-port entry in
+// BEHAVIORAL_SWEEP_EXEMPT) is reconciliation BACKLOG. There is NO permanent
+// "intentional / correct-by-design" exempt bucket — the old reconcilable-vs-
+// intentional split (a separate BEHAVIORAL_RECONCILABLE_EXEMPT map the counter
+// read to report a smaller "fixable" number) was RETIRED, because lumping
+// architecture-gated skips into a "this is fine forever" pile let the disabled
+// count plateau instead of trending to 0.
 //
-//   • INTENTIONAL (architecture-gated) — CANNOT be re-enabled in this sweep by
-//     any amount of param/driver/threshold tuning, because the observable
-//     behaviour fundamentally lives outside the harness: hardware IO, MIDI,
-//     file/ROM input, gameplay-conditional outputs, pure sinks, MI state
-//     machines that need multi-second windows, animated-video with a variance
-//     floor that swamps every input, heavy mounts that blow the CI wall-clock,
-//     and per-channel multiplexers with no mix output. These are CORRECT skips
-//     and stay skipped — they're covered by dedicated specs. They are NOT the
-//     backlog; counting them as "disabled coverage to drive down" is dishonest.
+// An entry leaves the backlog ONLY one of two ways:
+//   • RE-ENABLED — driven in a context where the port genuinely affects the
+//     observed output (provide the base signal, then perturb; use a metric that
+//     fits the output shape — held-note/cent for pitch voices, per-transient
+//     PEAK for one-shot pulses, per-channel sink for summed mixers), re-enabled
+//     with a healthy ≥3× floor margin and flake-checked 3×. It then drops out of
+//     BEHAVIORAL_MODULE_EXEMPT entirely.
+//   • DELETED — if the port can NEVER affect output under any patching (a pure
+//     terminal sink, a passthrough whose output equals its input by
+//     construction), DELETE its auto-enrolled assertion with a one-line
+//     rationale rather than parking it as exempt.
 //
-//   • RECONCILABLE (the fixable backlog) — DOES have a real observable input→
-//     output path that the *current universal harness* can't yet see: ports
-//     near the delta threshold (subtle CV), sparse percussion transients the
-//     RMS-over-windows metric misses, per-channel scalers on a summed sink,
-//     intrinsically-quiet exciters, sequencer state that needs a held-CV /
-//     distinct-pot driver. A per-transient peak metric, per-port threshold
-//     tuning, a louder/sustained driver, or per-channel sink selection would
-//     re-enable these — that's the work this reconciliation leg drives down.
-//
-// The set below lists EXACTLY the reconcilable keys; everything else in
-// BEHAVIORAL_MODULE_EXEMPT is intentional. The reconciliation counter
-// (scripts/test-reconciliation.mjs) reads this set to report the split, so the
-// number we watch fall reflects real reconcilable coverage — not the raw total.
-// As a router/CV module is genuinely re-enabled it leaves BOTH maps; if one is
-// proven architecture-gated it leaves this set (becomes intentional).
-const BEHAVIORAL_RECONCILABLE_EXEMPT: Record<string, string> = {
-  // PR #471 "land-now" quarantine — subtle-CV / near-threshold / per-channel
-  // class, explicitly marked "re-enable once the universal delta threshold is
-  // tuned per-port".
-  // (adsr + peaks RE-ENABLED — behavioral-recon #3. adsr: a BEHAVIORAL_PARAMS
-  //  boost (decay=0.1/release=0.2/sustain=0.2) gives the DECAY scaler a big env
-  //  excursion (Δrange≈0.20-0.29, ~10-14× the floor), and a per-port boost
-  //  BEHAVIORAL_PORT_PARAMS['adsr.release']={sustain:0.6} gives the RELEASE scaler
-  //  a tall tail to swing (Δμrms≈0.033-0.054, ~3-5× the floor) — verified 4×
-  //  stable. peaks: the channel-1 ports (gate1/mode1_cv/k1_1_cv/k2_1_cv) feed the
-  //  SEPARATE out1 and are now per-port-exempt; the channel-0 ports clear out0
-  //  with a big, stable margin (mode0_cv Δzc≈600/Δcent≈3300Hz, k1_0/k2_0
-  //  Δrange≈0.6/0.8), verified 3×.)
-  buggles:   'self-noise: clock_cv lands at the 0.01 floor + chaos_cv reads ~0 delta in the 1.5s window — a longer observation window + a per-channel clock-output sink (the rate change is clean on the `clock` gate) re-enables',
-  backdraft: 'animated-video variance-floor (bentbox class): the ±4000-6000 per-frame luma-variance range swamps every input — a longer settle window + spawn-once-perturb (cf. backdraft.spec.ts) re-enables, not this universal harness',
-  mixmstrs:  '77 inputs → 28-min wall-time (foxy class) + per-channel CV on the summed masterL — a per-channel sink driver + a representative-subset run under budget re-enables',
-  // aquaTank — per-channel-CV-on-summed-FDN (measured behavioral-recon #4): with a
-  // DETERMINISTIC tone fanned into all inputs the per-channel deltas collapse to
-  // Δμrms≈0.000 (the sum averages out one channel); with NOISE they only pass on
-  // per-spawn RNG ring jitter. A per-CHANNEL sink (out{N} for fb{N}_cv) + a
-  // deterministic per-channel source re-enables (same per-channel-sink follow-up
-  // as mixmstrs).
-  aquaTank:  'per-channel CV on the summed FDN mix_l is real-but-tiny (deterministic-tone deltas Δμrms≈0.000; noise "passes" are RNG ring jitter / flakes) — a per-channel sink (out{N} per fb{N}_cv) + deterministic per-channel source re-enables',
-  // Moog router batch deferred this leg (behavioral-recon #2) — both have a real
-  // input→output path the universal metric/driver can't yet observe.
-  moog911a:  'out1 is a ~1 ms one-shot pulse needing a >20 Hz source for the RMS metric to catch reliably, but the harness sequencer is bpm-capped at exactly 20 Hz (boundary scheduler race) — a per-port LFO-square fast gate (≥40 Hz → out1 ~0.14-0.20 RMS) or a per-transient peak metric + dense source re-enables',
-};
+// Each remaining entry's note is therefore a CONCRETE re-enable path (or a
+// delete rationale), not a "permanently exempt" justification. The harder cases
+// (animated-video variance floors, heavy-mount wall-clock, MI multi-second state
+// machines) need new harness capability (longer/spawn-once windows, per-channel
+// sinks, a subset-under-budget runner) — that capability IS the backlog work,
+// the entries are not waived.
 
 // ────────── Per-module behavioral PARAMS override ──────────
 //
@@ -1576,11 +1546,11 @@ const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
 // applies to every non-overridden port). Per-port wins over per-module. Each
 // field defaults to the universal floor when omitted.
 //
-// (Empty today: adsr + peaks — this batch's re-enables — clear the UNIVERSAL
-// floors with a healthy 2.4-13× margin via BEHAVIORAL_PARAMS / per-port exempts,
-// so they need NO threshold override. The mechanism is the systemic-fix
+// (Empty today: adsr + peaks — earlier re-enables — clear the UNIVERSAL floors
+// with a healthy 2.4-13× margin via BEHAVIORAL_PARAMS / per-port exempts, so
+// they need NO threshold override. The mechanism is the systemic-fix
 // infrastructure that lets the NEXT batch — the noisy-output / quiet-exciter
-// class still in BEHAVIORAL_SWEEP_EXEMPT + BEHAVIORAL_RECONCILABLE_EXEMPT — be
+// class still in BEHAVIORAL_SWEEP_EXEMPT / BEHAVIORAL_MODULE_EXEMPT backlog — be
 // re-enabled with a per-port-calibrated floor instead of growing the exempt list.)
 interface AudioThresholds {
   rmsMean: number;
@@ -2362,24 +2332,6 @@ function filterErrors(errors: string[]): string[] {
     && !e.includes('Failed to load resource')
     && !(e.includes('[reconciler] reconcile failed') && e.includes('disconnect')),
   );
-}
-
-// ────────── Exempt-split integrity check ──────────
-// Every RECONCILABLE key must be an actual module exemption (the reconcilable
-// backlog is a SUBSET of what's disabled — a key here that isn't in
-// BEHAVIORAL_MODULE_EXEMPT means a module was re-enabled but left dangling in
-// the reconcilable list, which would make the reconciliation counter's split
-// wrong). Fail loudly at load so the two maps can't drift apart silently.
-{
-  const dangling = Object.keys(BEHAVIORAL_RECONCILABLE_EXEMPT).filter(
-    (k) => !(k in BEHAVIORAL_MODULE_EXEMPT),
-  );
-  if (dangling.length > 0) {
-    throw new Error(
-      `BEHAVIORAL_RECONCILABLE_EXEMPT has key(s) not in BEHAVIORAL_MODULE_EXEMPT ` +
-      `(re-enabled but not dropped from the reconcilable list): ${dangling.join(', ')}`,
-    );
-  }
 }
 
 // ────────── Tests ──────────
