@@ -38,10 +38,12 @@
     deleteOpfsFile,
     deleteManifest,
     markManifestDone,
+    ensureHandleWritePermission,
     sanitizeRecordingFilename,
     canSaveViaPicker,
     type RecorderboxManifest,
   } from '$lib/video/recorderbox-store';
+  import { promptSaveDestination, streamToHandle } from '$lib/video/recorderbox-save-flow';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -90,28 +92,20 @@
     setData('recording', !recording);
   }
 
-  // ── Save flow: showSaveFilePicker (Chromium) → <a download> fallback ──
+  // Prompt the user for the OUTPUT location at the START of recording (the
+  // Record toggle is a valid user gesture). The returned FileSystemFileHandle
+  // is structured-cloneable, so the recorder persists it to the IndexedDB
+  // manifest → on crash-recovery we restore to the SAME chosen path with the
+  // SAME name, no re-picking. (promptSaveDestination + streamToHandle live in
+  // recorderbox-save-flow.ts so they're unit-testable without a Svelte harness.)
+  //   * a handle  → start recording, stream to it on stop.
+  //   * null      → no picker (Firefox/Safari): record to OPFS, download on stop.
+  //   * 'cancel'  → user dismissed the picker: do NOT record.
+
+  // ── Download fallback (Firefox/Safari, or a recovery handle that's gone) ──
+  // The recorder's saveBytes contract: used ONLY when no destHandle exists.
   async function saveBytes(bytes: Uint8Array, name: string, mime: string): Promise<void> {
     const safeName = sanitizeRecordingFilename(name, 'mp4');
-    if (canSaveViaPicker()) {
-      const picker = (globalThis as unknown as {
-        showSaveFilePicker: (o: {
-          suggestedName?: string;
-          types?: { description: string; accept: Record<string, string[]> }[];
-        }) => Promise<{ createWritable: () => Promise<{
-          write: (d: BufferSource) => Promise<void>; close: () => Promise<void>;
-        }> }>;
-      }).showSaveFilePicker;
-      const handle = await picker({
-        suggestedName: safeName,
-        types: [{ description: 'MPEG-4 video', accept: { 'video/mp4': ['.mp4'] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(bytes as unknown as BufferSource);
-      await writable.close();
-      return;
-    }
-    // Fallback: <a download> blob (Firefox/Safari), mirroring VIDEOBOX export.
     const blob = new Blob([bytes as BlobPart], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -178,39 +172,61 @@
     }
   });
 
+  // Guards against the $effect re-entering startRecording while the START
+  // save-location picker is open (an async user-gesture dialog).
+  let starting = false;
+
   async function startRecording() {
+    if (starting) return;
     const ve = getVideoEngine();
     if (!ve || !captureEl) { setData('recording', false); return; }
-    const ew = ve.canvas.width || ENGINE_W;
-    const eh = ve.canvas.height || ENGINE_H;
-    captureEl.width = ew;
-    captureEl.height = eh;
 
-    // Pull the live capture MediaStream the module published (null = audio off
-    // → record video only / silent).
-    const e = engineCtx.get();
-    let audioTrack: MediaStreamTrack | null = null;
-    if (e && node) {
-      const stream = e.read(node, 'audioStream') as MediaStream | null | undefined;
-      audioTrack = stream?.getAudioTracks?.()[0] ?? null;
-    }
-
-    recorder = new RecorderboxRecorder({
-      nodeId: id,
-      canvas: captureEl,
-      audioTrack,
-      filename,
-      width: ew,
-      height: eh,
-      saveBytes,
-      onStateChange: (s) => { recState = s; },
-    });
+    starting = true;
     try {
-      await recorder.start();
-    } catch {
-      recorder = null;
-      recState = 'error';
-      setData('recording', false);
+      // PROMPT for the destination FIRST — the Record toggle is the user gesture.
+      // 'cancel' → user dismissed the picker → do NOT start; revert the toggle.
+      const dest = await promptSaveDestination(filename);
+      if (dest === 'cancel') {
+        setData('recording', false);
+        return;
+      }
+      // The user may have flipped Record OFF while the picker was open.
+      if (!recording) return;
+
+      const ew = ve.canvas.width || ENGINE_W;
+      const eh = ve.canvas.height || ENGINE_H;
+      captureEl.width = ew;
+      captureEl.height = eh;
+
+      // Pull the live capture MediaStream the module published (null = audio off
+      // → record video only / silent).
+      const e = engineCtx.get();
+      let audioTrack: MediaStreamTrack | null = null;
+      if (e && node) {
+        const stream = e.read(node, 'audioStream') as MediaStream | null | undefined;
+        audioTrack = stream?.getAudioTracks?.()[0] ?? null;
+      }
+
+      recorder = new RecorderboxRecorder({
+        nodeId: id,
+        canvas: captureEl,
+        audioTrack,
+        filename,
+        destHandle: dest, // null on Firefox/Safari → stop() downloads instead.
+        width: ew,
+        height: eh,
+        saveBytes,
+        onStateChange: (s) => { recState = s; },
+      });
+      try {
+        await recorder.start();
+      } catch {
+        recorder = null;
+        recState = 'error';
+        setData('recording', false);
+      }
+    } finally {
+      starting = false;
     }
   }
 
@@ -233,15 +249,48 @@
     }
   }
 
+  async function retireRecovery(opfsPath: string) {
+    await markManifestDone(opfsPath);
+    await deleteOpfsFile(opfsPath);
+    await deleteManifest(opfsPath);
+  }
+
   async function recoverOne(m: RecorderboxManifest) {
     try {
-      const bytes = await readOpfsBytes(m.opfsPath);
-      if (bytes && bytes.byteLength > 0) {
-        await saveBytes(bytes, m.filename, m.mime);
+      // 1) Persisted destination handle (Chromium): re-acquire write permission
+      //    and STREAM the partial straight back to the ORIGINAL chosen path with
+      //    the correct name — no re-picking. (requestPermission needs a user
+      //    gesture: this runs from the recovery Save button.)
+      if (m.destHandle && (await ensureHandleWritePermission(m.destHandle))) {
+        const written = await streamToHandle(m.opfsPath, m.destHandle);
+        if (written > 0) {
+          await retireRecovery(m.opfsPath);
+          await scanRecoverable();
+          return;
+        }
+        // Nothing written — fall through to the picker/download fallback.
       }
-      await markManifestDone(m.opfsPath);
-      await deleteOpfsFile(m.opfsPath);
-      await deleteManifest(m.opfsPath);
+
+      // 2) Fallback (handle gone / permission denied / Firefox/Safari): prompt
+      //    for a NEW destination if the picker is available + stream to it; else
+      //    download the bytes. Either way the suggested name is the right one.
+      const dest =
+        m.destHandle == null && canSaveViaPicker()
+          ? await promptSaveDestination(m.filename)
+          : null;
+      if (dest && dest !== 'cancel') {
+        await streamToHandle(m.opfsPath, dest);
+      } else if (dest === 'cancel') {
+        // User dismissed the picker — keep the candidate.
+        await scanRecoverable();
+        return;
+      } else {
+        const bytes = await readOpfsBytes(m.opfsPath);
+        if (bytes && bytes.byteLength > 0) {
+          await saveBytes(bytes, m.filename, m.mime);
+        }
+      }
+      await retireRecovery(m.opfsPath);
     } catch {
       // Keep the candidate if the save was cancelled / failed.
     }

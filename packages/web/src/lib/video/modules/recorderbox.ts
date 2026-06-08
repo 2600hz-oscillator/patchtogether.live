@@ -16,17 +16,32 @@
 //
 // ── Controls (card) ─────────────────────────────────────────────────────────
 //   * Filename  — editable text field (node.data.filename); the suggested
-//                 name in the Save dialog. Synced to rack-mates via Y.Doc.
+//                 name in the Save dialog + baked into the OPFS scratch path.
+//                 Synced to rack-mates via Y.Doc.
 //   * Record    — ON/OFF toggle styled like every other module button.
-//                 ON  = begin streaming frames+audio to OPFS scratch.
-//                 OFF = finalize the MP4, then Save-As to disk.
+//                 ON  = (Chromium) PROMPT for the output location up front via
+//                       showSaveFilePicker — the Record press is the user
+//                       gesture — then begin streaming frames+audio to OPFS
+//                       scratch. Cancelling the picker does NOT start recording
+//                       (the toggle reverts). The chosen FileSystemFileHandle is
+//                       persisted to the recovery manifest. (Firefox/Safari with
+//                       no picker: record straight to OPFS, no prompt.)
+//                 OFF = finalize the MP4, then STREAM the OPFS scratch into the
+//                       chosen handle in chunks (correct name at the chosen
+//                       path; never a full in-memory read). No-handle browsers
+//                       download the bytes via <a download> with the right name.
 //   * (badge)   — "no H.264 encoder available" when the runtime can't encode
 //                 H.264 (headless CI, some OSes); Record is disabled, never
 //                 crashes.
 //   * Recover   — on mount, if a previous recording was left mid-flight
 //                 (tab crash before stop), the card offers "recover unsaved
 //                 recording?" — a fragmented MP4 is playable from whatever
-//                 fragments reached disk, so the take is not lost.
+//                 fragments reached disk, so the take is not lost. If a
+//                 destination handle was persisted at start, Save re-requests
+//                 write permission and streams the partial straight back to the
+//                 ORIGINAL chosen path with the correct name (no re-picking);
+//                 otherwise it falls back to a picker/download with the right
+//                 suggested filename.
 //
 // ── I/O ─────────────────────────────────────────────────────────────────────
 //   Inputs:
