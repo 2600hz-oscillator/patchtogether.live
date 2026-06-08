@@ -78,28 +78,38 @@ export const chowkickDef: AudioModuleDef = {
     { id: 'tone_cv',          type: 'cv', paramTarget: 'tone',         cvScale: { mode: 'log' } },
     { id: 'portamento_cv',    type: 'cv', paramTarget: 'portamento',   cvScale: { mode: 'log' } },
     { id: 'level_cv',         type: 'cv', paramTarget: 'level',        cvScale: { mode: 'linear' } },
+    // PUNCH params (PR feat/chowkick-oomph): pitch-sweep depth/decay + body drive.
+    { id: 'pitch_amount_cv',  type: 'cv', paramTarget: 'pitch_amount', cvScale: { mode: 'linear' } },
+    { id: 'pitch_decay_cv',   type: 'cv', paramTarget: 'pitch_decay',  cvScale: { mode: 'linear' } },
+    { id: 'drive_cv',         type: 'cv', paramTarget: 'drive',        cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'audio_out', type: 'audio' },
   ],
   params: [
-    { id: 'width',         label: 'Width',     defaultValue: 1,     min: 0.1, max: 50,   curve: 'log',      units: 'ms' },
+    // PUNCH DEFAULTS (PR feat/chowkick-oomph) — see the worklet header. The
+    // pulse fires a short impulse (not a held DC plateau) into a body that now
+    // actually rings, with a per-trigger pitch sweep + drive for kick punch.
+    { id: 'width',         label: 'Width',     defaultValue: 0.5,   min: 0.1, max: 50,   curve: 'log',      units: 'ms' },
     { id: 'amplitude',     label: 'Amp',       defaultValue: 1,     min: 0,   max: 2,    curve: 'linear' },
-    { id: 'decay',         label: 'Decay',     defaultValue: 1,     min: 0,   max: 1,    curve: 'linear' },
-    { id: 'sustain',       label: 'Sustain',   defaultValue: 0.5,   min: 0,   max: 1,    curve: 'linear' },
-    { id: 'noise_amount',  label: 'N Amt',     defaultValue: 0,     min: 0,   max: 1,    curve: 'linear' },
-    { id: 'noise_decay',   label: 'N Dec',     defaultValue: 0.5,   min: 0,   max: 1,    curve: 'linear' },
-    { id: 'noise_cutoff',  label: 'N Cut',     defaultValue: 500,   min: 20,  max: 5000, curve: 'log',      units: 'Hz' },
+    { id: 'decay',         label: 'Decay',     defaultValue: 0.35,  min: 0,   max: 1,    curve: 'linear' },
+    { id: 'sustain',       label: 'Sustain',   defaultValue: 0,     min: 0,   max: 1,    curve: 'linear' },
+    { id: 'noise_amount',  label: 'N Amt',     defaultValue: 0.2,   min: 0,   max: 1,    curve: 'linear' },
+    { id: 'noise_decay',   label: 'N Dec',     defaultValue: 0.1,   min: 0,   max: 1,    curve: 'linear' },
+    { id: 'noise_cutoff',  label: 'N Cut',     defaultValue: 3000,  min: 20,  max: 5000, curve: 'log',      units: 'Hz' },
     { id: 'noise_type',    label: 'N Type',    defaultValue: 0,     min: 0,   max: 3,    curve: 'discrete' },
     { id: 'freq',          label: 'Freq',      defaultValue: 80,    min: 20,  max: 500,  curve: 'log',      units: 'Hz' },
-    { id: 'q',             label: 'Q',         defaultValue: 0.5,   min: 0.1, max: 10,   curve: 'log' },
-    { id: 'damping',       label: 'Damp',      defaultValue: 0.5,   min: 0,   max: 1,    curve: 'linear' },
+    { id: 'q',             label: 'Q',         defaultValue: 0.7,   min: 0.1, max: 10,   curve: 'log' },
+    { id: 'damping',       label: 'Damp',      defaultValue: 0.4,   min: 0,   max: 1,    curve: 'linear' },
     { id: 'tight',         label: 'Tight',     defaultValue: 0.5,   min: 0,   max: 1,    curve: 'linear' },
     { id: 'bounce',        label: 'Bounce',    defaultValue: 0,     min: 0,   max: 1,    curve: 'linear' },
-    { id: 'tone',          label: 'Tone',      defaultValue: 800,   min: 50,  max: 2000, curve: 'log',      units: 'Hz' },
+    { id: 'tone',          label: 'Tone',      defaultValue: 2000,  min: 50,  max: 2000, curve: 'log',      units: 'Hz' },
     { id: 'portamento',    label: 'Porta',     defaultValue: 0.5,   min: 0,   max: 100,  curve: 'log',      units: 'ms' },
     { id: 'level',         label: 'Level',     defaultValue: 0,     min: -60, max: 0,    curve: 'linear',   units: 'dB' },
     { id: 'link',          label: 'Link',      defaultValue: 0,     min: 0,   max: 1,    curve: 'discrete' },
+    { id: 'pitch_amount',  label: 'P Amt',     defaultValue: 0.6,   min: 0,   max: 1,    curve: 'linear' },
+    { id: 'pitch_decay',   label: 'P Dec',     defaultValue: 0.4,   min: 0,   max: 1,    curve: 'linear' },
+    { id: 'drive',         label: 'Drive',     defaultValue: 0.3,   min: 0,   max: 1,    curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -162,6 +172,9 @@ export const chowkickDef: AudioModuleDef = {
       ['tone_cv',         'tone'],
       ['portamento_cv',   'portamento'],
       ['level_cv',        'level'],
+      ['pitch_amount_cv', 'pitch_amount'],
+      ['pitch_decay_cv',  'pitch_decay'],
+      ['drive_cv',        'drive'],
     ];
     for (const [portId, paramId] of paramCv) {
       const p = params.get(paramId);

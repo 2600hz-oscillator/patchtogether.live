@@ -1085,6 +1085,20 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   // per-param response is pinned at the DSP level by chowkick-dsp.test.ts.
   'chowkick.q_cv':            'resonance CV; bandwidth shift straddles the ~0.01 RMS threshold on the short transient (jitter); covered by chowkick-dsp.test.ts + chowkick.spec.ts',
   'chowkick.decay_cv':        'amplitude-decay CV; tail-length shift near/below the RMS/centroid threshold on the gate-loop transient (jitter); covered by chowkick-dsp.test.ts + chowkick.spec.ts',
+  // pitch_amount/pitch_decay/drive (PR feat/chowkick-oomph) all shape the kick
+  // CHARACTER, not its bulk energy: pitch_amount/pitch_decay set the per-trigger
+  // downward PITCH SWEEP (attack frequency contour → 2-7 Hz centroid wobble,
+  // pitch_cv class) and drive sets the body waveshaper drive (harmonic content
+  // + weight, mostly absorbed by the body's safety tanh at the unity-gain kick
+  // the driver fires). All three straddle the universal RMS/centroid threshold
+  // on the short percussive transient (Δrms≈0.001-0.04, jitters pass/fail run-
+  // to-run) — same subtle percussion-transient class as the chowkick CVs above.
+  // Wiring + per-param response pinned deterministically at the DSP level by
+  // chowkick-dsp.test.ts (pitchEnvStep sweeps down + retriggers; bodyDriveStep
+  // saturates loud / passes quiet) and end-to-end by chowkick.spec.ts.
+  'chowkick.pitch_amount_cv': 'pitch-sweep DEPTH CV; modulates attack pitch contour not bulk energy → 2-7 Hz centroid wobble straddles the RMS/centroid threshold (jitter, pitch_cv class); covered by chowkick-dsp.test.ts + chowkick.spec.ts',
+  'chowkick.pitch_decay_cv':  'pitch-sweep TIME CV; modulates attack pitch contour not bulk energy → sub-threshold centroid shift on the short transient (jitter, pitch_cv class); covered by chowkick-dsp.test.ts + chowkick.spec.ts',
+  'chowkick.drive_cv':        'body-waveshaper DRIVE CV; adds harmonics/weight largely absorbed by the body safety tanh on the unity-gain kick → Δrms straddles the ~0.01 threshold on the short transient (jitter, percussion class); covered by chowkick-dsp.test.ts (bodyDriveStep) + chowkick.spec.ts',
 
   // ── ELEMENTS bow/blow EXCITER CV scalers. ELEMENTS (elements.ts) is an MI
   //    Elements modal/string resonator; BEHAVIORAL_PARAMS strikes it loudly

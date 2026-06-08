@@ -67,6 +67,9 @@
   let portamento   = $derived(paramVal('portamento'));
   let level        = $derived(paramVal('level'));
   let link         = $derived(paramVal('link'));
+  let pitchAmount  = $derived(paramVal('pitch_amount'));
+  let pitchDecay   = $derived(paramVal('pitch_decay'));
+  let drive        = $derived(paramVal('drive'));
 
   const NOISE_TYPE_NAMES = ['Uniform', 'Gaussian', 'Pink', 'Velvet'] as const;
   let noiseTypeName = $derived(NOISE_TYPE_NAMES[Math.max(0, Math.min(3, Math.round(noiseType)))] ?? 'Uniform');
@@ -89,6 +92,9 @@
     { id: 'tone_cv',         label: 'TON CV',  cable: 'cv' },
     { id: 'portamento_cv',   label: 'PRT CV',  cable: 'cv' },
     { id: 'level_cv',        label: 'LVL CV',  cable: 'cv' },
+    { id: 'pitch_amount_cv', label: 'PA CV',   cable: 'cv' },
+    { id: 'pitch_decay_cv',  label: 'PD CV',   cable: 'cv' },
+    { id: 'drive_cv',        label: 'DRV CV',  cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'audio_out', label: 'OUT', cable: 'audio' },
@@ -157,24 +163,29 @@
     ctx2.clearRect(0, 0, w, h);
     ctx2.fillStyle = '#0d0d10';
     ctx2.fillRect(0, 0, w, h);
-    // Peaking IIR mag response: |H(z)| at z=e^{jω}, ω = 2π f / sr_viz.
-    // Pure math (no state) — we re-derive the coefs the way the worklet
-    // does so the displayed peak matches the audible peak.
+    // Resonant-body mag response: |H(z)| at z=e^{jω}, ω = 2π f / sr_viz.
+    // Pure math (no state) — mirrors the worklet's resonantCoefs() so the
+    // displayed peak matches the audible peak. The body is now a true pinged
+    // 2-pole resonant BANDPASS: g·(1−z⁻²) / (1 + a1 z⁻¹ + a2 z⁻²) with the
+    // pole RADIUS set by `damping` (the ring-time control) and the pole ANGLE
+    // by `freq`. (Old: an inverted peaking-EQ that NOTCHED the body — the
+    // weak-kick bug. See packages/dsp/src/lib/chowkick-dsp.ts.)
     const sr_viz = 48000;
     const f_lo = 20, f_hi = 5000;
     const fc = Math.max(20, Math.min(0.45 * sr_viz, freq));
-    const qC = Math.max(0.05, q);
     const wc = 2 * Math.PI * fc / sr_viz;
-    const sw = Math.sin(wc), cw = Math.cos(wc);
-    const alpha = sw / (2 * qC);
-    const G = 0.0001 * Math.pow(0.5 / 0.0001, Math.max(0, Math.min(1, damping)));
-    const A = Math.sqrt(G);
-    const a0 = 1 + alpha / A;
-    const b0 = (1 + alpha * A) / a0;
-    const b1 = (-2 * cw) / a0;
-    const b2 = (1 - alpha * A) / a0;
-    const a1 = (-2 * cw) / a0;
-    const a2 = (1 - alpha / A) / a0;
+    const cw = Math.cos(wc);
+    // Pole radius from damping (long boom → short thud), nudged by Q. Matches
+    // resonantPoleRadius() in the DSP lib (RES_R_LONG / RES_R_SHORT @ 48k).
+    const R_LONG = Math.pow(0.01, 1 / (0.28 * sr_viz));
+    const R_SHORT = Math.pow(0.01, 1 / (0.018 * sr_viz));
+    const dC = Math.max(0, Math.min(1, damping));
+    let r = Math.exp(Math.log(R_LONG) * (1 - dC) + Math.log(R_SHORT) * dC);
+    r += Math.min(0.0006, Math.max(0, (Math.max(0.05, q) - 0.5) * 0.00008));
+    r = Math.max(0.9, Math.min(0.99975, r));
+    const a1 = -2 * r * cw;
+    const a2 = r * r;
+    const b0 = 1, b1 = 0, b2 = -1;
     // Trace |H(ω)| in dB; -36..+24 dB → 0..h.
     let maxDb = -120, minDb = 120;
     const mags: number[] = [];
@@ -266,6 +277,11 @@
         <Fader value={portamento} min={0}   max={100}  defaultValue={defaultFor('portamento')}  label="Prt"  units="ms" curve="log"      onchange={set('portamento')} moduleId={id} paramId="portamento" readLive={live('portamento')} />
         <Fader value={link}       min={0}   max={1}    defaultValue={defaultFor('link')}        label={`Lnk ${link >= 0.5 ? 'ON' : 'OFF'}`} curve="linear" onchange={set('link')}       moduleId={id} paramId="link"       readLive={live('link')} />
         <Fader value={level}      min={-60} max={0}    defaultValue={defaultFor('level')}       label="Lvl"  units="dB" curve="linear"  onchange={set('level')}      moduleId={id} paramId="level"      readLive={live('level')} />
+      </div>
+      <div class="fader-row punch-row">
+        <Fader value={pitchAmount} min={0} max={1} defaultValue={defaultFor('pitch_amount')} label="PAmt" curve="linear" onchange={set('pitch_amount')} moduleId={id} paramId="pitch_amount" readLive={live('pitch_amount')} />
+        <Fader value={pitchDecay}  min={0} max={1} defaultValue={defaultFor('pitch_decay')}  label="PDec" curve="linear" onchange={set('pitch_decay')}  moduleId={id} paramId="pitch_decay"  readLive={live('pitch_decay')} />
+        <Fader value={drive}       min={0} max={1} defaultValue={defaultFor('drive')}        label="Drv"  curve="linear" onchange={set('drive')}        moduleId={id} paramId="drive"        readLive={live('drive')} />
       </div>
     </section>
   </PatchPanel>
