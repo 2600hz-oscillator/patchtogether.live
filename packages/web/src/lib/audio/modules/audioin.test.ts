@@ -15,9 +15,12 @@ describe('audioInDef: module-def shape', () => {
     expect(audioInDef.category).toBe('sources');
   });
 
-  it('has no inputs (terminal source) + L+R audio outputs', () => {
+  it('has no inputs (terminal source) + a stereo pair of audio outputs (L/R)', () => {
     expect(audioInDef.inputs).toEqual([]);
     const outIds = audioInDef.outputs.map((p) => p.id).sort();
+    // L/R = device channels 1/2. Only a stereo pair: the browser caps ES-9
+    // capture at 2 channels (getCapabilities max=2; channelCount:{exact:4} →
+    // OverconstrainedError), so 4-in / per-channel is native-only.
     expect(outIds).toEqual(['audio_l_out', 'audio_r_out']);
     for (const p of audioInDef.outputs) {
       expect(p.type, `${p.id} type`).toBe('audio');
