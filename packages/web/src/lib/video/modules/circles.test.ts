@@ -14,6 +14,8 @@ import {
   CIRCLES_COLLIDE_PORT_ID,
   CIRCLES_COLLIDE_PARAM_ID,
 } from './circles';
+import type { VideoEngineContext, VideoFrameContext } from '$lib/video/engine';
+import type { ModuleNode } from '$lib/graph/types';
 import {
   CirclesSim,
   CIRCLES_FIELD,
@@ -713,5 +715,179 @@ describe('output derivation', () => {
     expect(mappedMaskAt(circles, 105, 100)).toBe(1); // 2 overlap
     expect(mappedMaskAt(circles, 88, 100)).toBe(0);  // only 1 disc (well left)
     expect(mappedMaskAt(circles, 500, 500)).toBe(0); // none
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GATE-spawn latches the LIVE params — the headline bug fix.
+//
+// Regression for: a circle spawned via the GATE input didn't move + didn't
+// decay, while rate-clock-spawned circles did. ROOT CAUSE: the module only
+// pushed live knob/CV params into the sim inside surface.draw() (per render
+// frame), but the gate spawn fired in the setParam(cv_gate) handler — which
+// runs on the CV-bridge's cadence, BEFORE the first draw() or between draws
+// after a knob change. So a gate-spawned circle latched the sim's STALE params
+// (its constructor default decay=0 → never fades, and whatever spd the last
+// draw happened to push → wrong/zero velocity). The fix pushes the CURRENT
+// live params into the sim in the gate handler, immediately before spawnFromGate().
+//
+// These tests drive the REAL module factory's setParam('cv_gate', …) gate path
+// (not the sim in isolation) and inspect the spawned circle via read('circles').
+// ---------------------------------------------------------------------------
+
+/** A minimal fake WebGL2 context: factory only needs non-null texture / fbo /
+ *  uniform-location handles; every draw call no-ops. */
+function makeFakeGl(): WebGL2RenderingContext {
+  return new Proxy(
+    {},
+    {
+      get: (_t, prop) => {
+        if (prop === 'createTexture' || prop === 'createFramebuffer') return () => ({});
+        if (prop === 'getUniformLocation') return () => ({});
+        return () => 0;
+      },
+    },
+  ) as unknown as WebGL2RenderingContext;
+}
+
+function makeCirclesCtx(): VideoEngineContext {
+  return {
+    gl: makeFakeGl(),
+    res: { width: 1024, height: 768 },
+    compileFragment: () => ({}) as WebGLProgram,
+    createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+    drawFullscreenQuad: () => undefined,
+  };
+}
+
+function makeFrameCtx(frameNo: number): VideoFrameContext {
+  return { gl: makeFakeGl(), time: frameNo / 60, frame: frameNo, getInputTexture: () => null };
+}
+
+function spawnCircles() {
+  const node = { id: 'c', type: 'circles', domain: 'video', params: {}, position: { x: 0, y: 0 } } as ModuleNode;
+  return circlesDef.factory(makeCirclesCtx(), node);
+}
+
+/** Fire one rising-edge gate pulse through the real CV-bridge entry point. */
+function fireGate(h: ReturnType<typeof spawnCircles>): void {
+  h.setParam(CIRCLES_GATE_PARAM_ID, 1); // rising edge → spawn
+  h.setParam(CIRCLES_GATE_PARAM_ID, 0); // release → re-arm
+}
+
+/** The most-recently-spawned circle (the gate-spawn under test). */
+function lastCircle(h: ReturnType<typeof spawnCircles>): Circle {
+  const cs = h.read?.('circles') as readonly Circle[];
+  expect(cs.length).toBeGreaterThan(0);
+  return cs[cs.length - 1]!;
+}
+
+describe('CIRCLES module — gate-spawned circle latches the LIVE params', () => {
+  it('BEFORE the first draw(): gate spawn latches live spd (MOVES) + live decay (DECAYS)', () => {
+    const h = spawnCircles();
+    h.setParam('rate', 0); // gate-only — no rate-clock spawns
+    h.setParam('spd', 0.6); // ~180 px/s → must move
+    h.setParam('decay', 0.5); // 5 s decay → must fade
+
+    // Fire the gate with NO draw() in between (the before-first-draw ordering
+    // that the old code latched the sim's constructor defaults on).
+    fireGate(h);
+    expect(h.read?.('circleCount')).toBe(1);
+
+    const c = lastCircle(h);
+    // MOVES: latched velocity is nonzero (≈ live spd 0.6 → 0.6×300 = 180 px/s).
+    const speed = Math.hypot(c.vx, c.vy);
+    expect(speed).toBeGreaterThan(0);
+    expect(speed).toBeCloseTo(0.6 * 300, 0);
+    // DECAYS: latched decay is the live 5 s (0.5 × 10), not the stale 0 (persist).
+    expect(c.decayS).toBeCloseTo(5);
+  });
+
+  it('STEADY-STATE: knob change then gate fires before the next draw() still latches the live params', () => {
+    const h = spawnCircles();
+    h.setParam('rate', 0);
+    // Establish steady state — a draw() that synced the OLD params (default
+    // spd 0.4, decay 0) into the sim.
+    h.surface.draw(makeFrameCtx(0));
+
+    // Now turn spd + decay up and fire the gate BEFORE the next draw().
+    h.setParam('spd', 0.7);
+    h.setParam('decay', 0.3);
+    fireGate(h);
+
+    const c = lastCircle(h);
+    expect(Math.hypot(c.vx, c.vy)).toBeCloseTo(0.7 * 300, 0); // live spd, not stale 0.4
+    expect(c.decayS).toBeCloseTo(3); // live decay (0.3 × 10), not stale 0
+  });
+
+  it('the gate-spawned circle ACTUALLY fades + is removed over its decay window', () => {
+    const h = spawnCircles();
+    h.setParam('rate', 0);
+    h.setParam('spd', 0.5);
+    h.setParam('decay', 0.2); // 2 s decay
+    fireGate(h);
+    expect(h.read?.('circleCount')).toBe(1);
+    expect(h.read?.('decayCount')).toBe(0);
+    // Run ~4 s of 60fps frames — well past the 2 s decay window.
+    for (let i = 0; i < 250; i++) h.surface.draw(makeFrameCtx(i));
+    // The gate-spawned circle faded to alpha 0 + was removed (the bug left it
+    // persisting forever with a stale decay of 0).
+    expect(h.read?.('decayCount')).toBe(1);
+    expect(h.read?.('circleCount')).toBe(0);
+  });
+
+  it('the gate-spawned circle ACTUALLY moves across frames', () => {
+    const h = spawnCircles();
+    h.setParam('rate', 0);
+    h.setParam('v', 0); // angle 0 → +x drift (deterministic axis)
+    h.setParam('spd', 0.6); // ~180 px/s
+    h.setParam('decay', 0); // persist so we can track it
+    fireGate(h);
+    const c = lastCircle(h);
+    const x0 = c.x;
+    const y0 = c.y;
+    for (let i = 0; i < 30; i++) h.surface.draw(makeFrameCtx(i)); // ~0.5 s
+    // Same object reference (persist, no decay) — it MOVED from its spawn point.
+    const moved = Math.hypot(c.x - x0, c.y - y0);
+    expect(moved).toBeGreaterThan(10);
+  });
+
+  it('spd=0 at the gate edge → a STATIC gate-spawned circle (correct, not the bug)', () => {
+    const h = spawnCircles();
+    h.setParam('rate', 0);
+    h.setParam('spd', 0); // static is a valid, intended state
+    h.setParam('decay', 0);
+    fireGate(h);
+    const c = lastCircle(h);
+    expect(Math.abs(c.vx)).toBe(0);
+    expect(Math.abs(c.vy)).toBe(0);
+  });
+
+  it('decay=0 at the gate edge → the gate-spawned circle PERSISTS (correct default)', () => {
+    const h = spawnCircles();
+    h.setParam('rate', 0);
+    h.setParam('spd', 0.5);
+    h.setParam('decay', 0); // persist is the correct default
+    fireGate(h);
+    const c = lastCircle(h);
+    expect(c.decayS).toBe(0);
+    for (let i = 0; i < 250; i++) h.surface.draw(makeFrameCtx(i)); // ~4 s
+    expect(h.read?.('decayCount')).toBe(0);
+    expect(h.read?.('circleCount')).toBe(1);
+  });
+
+  it('rate-clock-spawned circles still latch the live params (no regression)', () => {
+    const h = spawnCircles();
+    h.setParam('rate', 1); // clock at the 1/500ms cap
+    h.setParam('spd', 0.6);
+    h.setParam('decay', 0.5);
+    // Drive ~1.5 s of frames so the rate clock spawns a few circles.
+    for (let i = 0; i < 95; i++) h.surface.draw(makeFrameCtx(i));
+    const cs = h.read?.('circles') as readonly Circle[];
+    expect(cs.length).toBeGreaterThan(0);
+    for (const c of cs) {
+      expect(Math.hypot(c.vx, c.vy)).toBeCloseTo(0.6 * 300, 0);
+      expect(c.decayS).toBeCloseTo(5);
+    }
   });
 });
