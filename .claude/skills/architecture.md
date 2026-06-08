@@ -93,10 +93,12 @@ See `running-tests` and `testing-conventions` skills. Brief:
 
 ## Module registry pattern
 
-Modules are eagerly registered at app start. The 6 shared registry files
-that must accept an entry for each module are listed in `coding-conventions`
-and `module-development`. The eager-load pattern is filed as a perf issue
-(#213) — phase 2 candidate for lazy-loading work.
+Modules are eagerly registered at app start, but registration is **glob +
+palette-driven** (PR #551) — adding a module needs **no edit to a shared
+registry file** (the def auto-registers via `import.meta.glob`, `def.palette`
+places it in the menu, and the card resolves by `PascalCase(type) + 'Card'`).
+See `module-development` for the few files still hand-maintained. The eager-load
+pattern is filed as a perf issue (#213) — phase 2 candidate for lazy-loading.
 
 ## Key non-obvious constraints
 

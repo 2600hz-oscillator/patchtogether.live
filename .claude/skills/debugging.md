@@ -7,22 +7,33 @@ description: Practical patterns for debugging CI failures, local repro, REST-API
 
 ## Reading a failed CI run
 
-The fastest path to "what failed and why":
+> **NEVER use `gh run view --log` or `gh run view --log-failed`** (with or
+> without `--job=`). They stream the entire log buffer and **wedge this
+> session's shell** — you lose the terminal. This is a hard rule. Use the
+> non-wedging paths below instead.
+
+The fastest path to "which job failed" — list jobs + conclusions via the API
+(never wedges):
 
 ```sh
-flox activate -- gh run view <RUN_ID> --log-failed 2>&1 | \
-  grep -E '(Error|FAIL|✗|✘|error TS|Expected|Received|at /home|chromium\] ›)' | head -50
+flox activate -- gh api repos/2600hz-oscillator/patchtogether.live/actions/runs/<RUN_ID>/jobs \
+  --jq '.jobs[] | {id, name, conclusion}'
 ```
 
-That filter catches Playwright assertion failures, TS errors, Vitest
-failures, and stack frame markers. `--log-failed` only emits the failed-step
-chunks (vs `--log` for the whole run).
-
-For a specific job within a multi-job run:
+To block on a PR's checks and get the failing detail printed for you, use the
+Taskfile wrappers (they fetch logs safely, not via `--log`):
 
 ```sh
-flox activate -- gh api repos/2600hz-oscillator/patchtogether.live/actions/runs/<RUN_ID>/jobs --jq '.jobs[] | {id, name, conclusion}'
-flox activate -- gh run view --job=<JOB_ID> --log 2>&1 | <filter>
+flox activate -- task pr:watch -- <pr#>   # block until checks resolve, print failing detail
+flox activate -- task ci:health           # every open PR + its check status + failing test lines
+```
+
+If you must read a specific failing step's text, fetch the job's annotations via
+the API (still no `--log`):
+
+```sh
+flox activate -- gh api repos/2600hz-oscillator/patchtogether.live/actions/runs/<RUN_ID>/jobs \
+  --jq '.jobs[] | select(.conclusion=="failure") | {name, steps:[.steps[]|select(.conclusion=="failure")|.name]}'
 ```
 
 ## Find which PR/branch a run belongs to
