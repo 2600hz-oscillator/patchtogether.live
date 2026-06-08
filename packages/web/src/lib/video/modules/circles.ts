@@ -19,13 +19,19 @@
 //
 // Inputs:
 //   gate  (gate):  a rising edge spawns one circle.
-//   d / v / spd (cv, paramTarget=…): per-param CV (diameter / vector / speed).
+//   d / v / spd / decay (cv, paramTarget=…): per-param CV (diameter / vector /
+//                 speed / fade-out time).
 //   video (video): sampled by the `mapped` output.
 //
 // Params (knobs):
-//   d   (0..1 → 5..90 px)        circle DIAMETER, latched per circle at spawn.
+//   d   (0..1 → 5..270 px)       circle DIAMETER, latched per circle at spawn.
 //   v   (0..1 → 0..360°)         spawn VECTOR ANGLE, latched per circle.
-//   spd (0..1 → 0..300 px/s)     SPEED, latched per circle (0 = static).
+//   spd (0..1 → 0..300 px/s)     SPEED, latched per circle (0 = static). The
+//                                LATCHED velocity drives integration, so a
+//                                later spd change affects ONLY new circles.
+//   decay (0..1 → 0..10 s)       FADE-OUT time, latched per circle. 0 = persist
+//                                (FIFO-culled); >0 fades alpha→0 + removes the
+//                                circle over that many seconds.
 //   rate (0..1, KNOB ONLY)       internal spawn clock. 0 = gate-only; turning
 //                                up engages a clock capped at 1 circle/500 ms.
 //
@@ -65,15 +71,17 @@ interface CirclesParams {
   d: number;
   v: number;
   spd: number;
+  decay: number;
   rate: number;
   // Synthetic gate param — written by the CV-bridge; hidden from the card.
   cv_gate: number;
 }
 
 const DEFAULTS: CirclesParams = {
-  d: 0.3,    // ~30 px circles by default
+  d: 0.3,    // ~85 px circles by default (0.3 × the new 5..270 range)
   v: 0.125,  // 45° drift
   spd: 0.4,  // ~120 px/s — visibly moving
+  decay: 0,  // 0 = persist (preserve the static-field default; FIFO-capped)
   rate: 0.5, // internal clock on by default so the source is alive on spawn
   cv_gate: 0,
 };
@@ -120,9 +128,10 @@ export const circlesDef: VideoModuleDef = {
     { id: CIRCLES_GATE_PORT_ID, type: 'gate', paramTarget: CIRCLES_GATE_PARAM_ID },
     // Per-param CV — port id MUST equal the param id (the cross-domain CV
     // bridge routes onto setParam(portId)). `rate` is knob-only (no port).
-    { id: 'd',   type: 'cv', paramTarget: 'd' },
-    { id: 'v',   type: 'cv', paramTarget: 'v' },
-    { id: 'spd', type: 'cv', paramTarget: 'spd' },
+    { id: 'd',     type: 'cv', paramTarget: 'd' },
+    { id: 'v',     type: 'cv', paramTarget: 'v' },
+    { id: 'spd',   type: 'cv', paramTarget: 'spd' },
+    { id: 'decay', type: 'cv', paramTarget: 'decay' },
     // The video source for the `mapped` output.
     { id: 'video', type: 'video' },
   ],
@@ -133,10 +142,11 @@ export const circlesDef: VideoModuleDef = {
     { id: 'mapped',  type: 'video' },
   ],
   params: [
-    { id: 'd',    label: 'D',    defaultValue: DEFAULTS.d,    min: 0, max: 1, curve: 'linear' },
-    { id: 'v',    label: 'V',    defaultValue: DEFAULTS.v,    min: 0, max: 1, curve: 'linear' },
-    { id: 'spd',  label: 'Spd',  defaultValue: DEFAULTS.spd,  min: 0, max: 1, curve: 'linear' },
-    { id: 'rate', label: 'Rate', defaultValue: DEFAULTS.rate, min: 0, max: 1, curve: 'linear' },
+    { id: 'd',     label: 'D',     defaultValue: DEFAULTS.d,     min: 0, max: 1, curve: 'linear' },
+    { id: 'v',     label: 'V',     defaultValue: DEFAULTS.v,     min: 0, max: 1, curve: 'linear' },
+    { id: 'spd',   label: 'Spd',   defaultValue: DEFAULTS.spd,   min: 0, max: 1, curve: 'linear' },
+    { id: 'decay', label: 'Decay', defaultValue: DEFAULTS.decay, min: 0, max: 1, curve: 'linear' },
+    { id: 'rate',  label: 'Rate',  defaultValue: DEFAULTS.rate,  min: 0, max: 1, curve: 'linear' },
     // Synthetic gate param — hidden from the card; rendered as the gate jack.
     { id: CIRCLES_GATE_PARAM_ID, label: 'GATE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
@@ -213,25 +223,30 @@ export const circlesDef: VideoModuleDef = {
 
     // ---- 2D paint of one frame's circles into the four scene canvases. ----
     function paintScenes(circles: readonly Circle[]): void {
-      // overlap — white discs on black (count≥1).
+      // overlap — white discs on black (count≥1), each dimmed by its fade alpha.
       if (overlapScene.ctx2d) {
         const c = overlapScene.ctx2d;
+        c.globalAlpha = 1;
         c.fillStyle = '#000';
         c.fillRect(0, 0, CIRCLES_FIELD, CIRCLES_FIELD);
         c.fillStyle = '#fff';
         for (const ci of circles) {
+          c.globalAlpha = ci.alpha ?? 1;
           c.beginPath();
           c.arc(ci.x, ci.y, ci.diameter * 0.5, 0, Math.PI * 2);
           c.fill();
         }
+        c.globalAlpha = 1;
       }
-      // contour — white rings (lw = 10% of d, min 2px) on black.
+      // contour — white rings (lw = 10% of d, min 2px) on black, dimmed by fade.
       if (contourScene.ctx2d) {
         const c = contourScene.ctx2d;
+        c.globalAlpha = 1;
         c.fillStyle = '#000';
         c.fillRect(0, 0, CIRCLES_FIELD, CIRCLES_FIELD);
         c.strokeStyle = '#fff';
         for (const ci of circles) {
+          c.globalAlpha = ci.alpha ?? 1;
           const lw = ringWidth(ci.diameter);
           c.lineWidth = lw;
           // Stroke centered on the path; the sim's ring test is [r−lw, r], so
@@ -241,6 +256,7 @@ export const circlesDef: VideoModuleDef = {
           c.arc(ci.x, ci.y, rStroke, 0, Math.PI * 2);
           c.stroke();
         }
+        c.globalAlpha = 1;
       }
       // mask — white where ≥2 circles overlap. We additively accumulate disc
       // coverage (each disc adds a small constant), then any pixel touched by
@@ -257,8 +273,10 @@ export const circlesDef: VideoModuleDef = {
         c.fillStyle = '#000';
         c.fillRect(0, 0, CIRCLES_FIELD, CIRCLES_FIELD);
         c.globalCompositeOperation = 'lighter';
-        c.fillStyle = 'rgba(255,255,255,0.42)';
         for (const ci of circles) {
+          // Each disc adds ~0.42 × its fade alpha → a fully-faded circle stops
+          // contributing to the ≥2-overlap (>0.5) mask threshold.
+          c.fillStyle = `rgba(255,255,255,${0.42 * (ci.alpha ?? 1)})`;
           c.beginPath();
           c.arc(ci.x, ci.y, ci.diameter * 0.5, 0, Math.PI * 2);
           c.fill();
@@ -331,7 +349,7 @@ export const circlesDef: VideoModuleDef = {
         lastTime = t;
 
         // Push live params into the sim (latched per-circle at spawn).
-        sim.setParams({ d: params.d, v: params.v, spd: params.spd, rate: params.rate });
+        sim.setParams({ d: params.d, v: params.v, spd: params.spd, decay: params.decay, rate: params.rate });
         // Advance the sim (internal rate clock spawns + integration + bounce).
         sim.step(dtMs);
 
@@ -405,6 +423,7 @@ export const circlesDef: VideoModuleDef = {
         if (key === 'circleCount') return sim.count;
         if (key === 'spawnCount') return sim.spawnCount;
         if (key === 'cullCount') return sim.cullCount;
+        if (key === 'decayCount') return sim.decayCount;
         if (key === 'framesElapsed') return framesElapsed;
         if (key === 'maxCircles') return MAX_CIRCLES;
         return undefined;
