@@ -149,6 +149,7 @@
   import SkinSwitcher from '$lib/ui/SkinSwitcher.svelte';
   import AspectToggle from '$lib/ui/AspectToggle.svelte';
   import { videoAspectStore } from '$lib/ui/video-aspect-store.svelte';
+  import { audioLatencyStore, type AudioLatencyMode } from '$lib/ui/audio-latency-store.svelte';
   import ElectraConnectButton from '$lib/ui/ElectraConnectButton.svelte';
   import FlowBridge, { type FlowBridgeApi, type InternalFlowNode } from '$lib/ui/FlowBridge.svelte';
   import CadillacOverlay from '$lib/ui/CadillacOverlay.svelte';
@@ -3516,7 +3517,15 @@
     if (bootPromise) return bootPromise;
     bootPromise = (async () => {
       try {
-        audioCtx = new AudioContext();
+        // R-1: construct the context with the user's chosen buffer/latency
+        // hint. `latencyHint` is only honoured at CONSTRUCTION — a bigger
+        // buffer gives the render thread slack under main-thread CPU load
+        // (the "clicks get worse when I touch the UI" symptom). The chosen
+        // mode is persisted per-machine; a mid-session change applies on the
+        // next reload (the footer selector shows a "reload to apply" hint).
+        const chosenLatencyMode = audioLatencyStore.current;
+        audioCtx = new AudioContext({ latencyHint: audioLatencyStore.latencyHint });
+        audioLatencyStore.bootedWith(chosenLatencyMode);
         if (audioCtx.state === 'suspended') await audioCtx.resume();
         const e = new PatchEngine();
         e.registerDomain(new AudioEngine(audioCtx));
@@ -3544,7 +3553,7 @@
         reconciler = attachReconciler(e);
         engine = e;
         setActiveEngine(e); // expose to non-context consumers (Electra bar button)
-        trace(`engine + reconciler attached (sr=${audioCtx.sampleRate})`);
+        trace(`engine + reconciler attached (sr=${audioCtx.sampleRate}, latency=${chosenLatencyMode})`);
         return e;
       } catch (err) {
         bootPromise = null; // allow retry on next call
@@ -4106,8 +4115,25 @@
       <span title="Number of distinct module types in the registry (catalog size, not live instance count)">catalog <b>{availableModules}</b></span>
       <span>ctx <b>{audioCtx?.state ?? '—'}</b></span>
       <span>sr <b>{audioCtx?.sampleRate ?? '—'}</b></span>
-      <span title="AudioContext latency. base = render/processing latency (fixed); out = full output-pipeline latency to the speakers (Chromium; 0 elsewhere). The context is created with the browser-default 'interactive' latencyHint — lowest latency. Web Audio has no buffer-size knob (fixed 128-frame render quantum); a user buffer-size control is a native-only capability.">
+      <span title="AudioContext latency. base = render/processing latency (fixed by the buffer); out = full output-pipeline latency to the speakers (Chromium; 0 elsewhere). The buffer size is set by the Buffer selector below (latencyHint) — a bigger buffer trades latency for slack against clicks under UI load.">
         lat <b>{audioCtx ? `${(audioCtx.baseLatency * 1000).toFixed(1)}ms` : '—'}</b>{#if audioCtx && audioCtx.outputLatency > 0}<b> / {(audioCtx.outputLatency * 1000).toFixed(1)}ms out</b>{/if}
+      </span>
+      <span class="audio-buffer-ctl" title={`Audio buffer / latency. A BIGGER buffer gives the audio render thread slack under main-thread CPU load (canvas pan, knob drag, video) so it doesn't underrun → fewer clicks/pops. A SMALLER buffer = lower latency for tight live jamming. ${audioLatencyStore.currentOption.hint} latencyHint is fixed at context creation, so a change applies on the next page reload.`}>
+        buffer
+        <select
+          class="audio-buffer-select"
+          data-testid="audio-buffer-select"
+          aria-label="Audio buffer / latency"
+          value={audioLatencyStore.current}
+          onchange={(e) => audioLatencyStore.set(e.currentTarget.value as AudioLatencyMode)}
+        >
+          {#each audioLatencyStore.list() as opt (opt.id)}
+            <option value={opt.id}>{opt.label}</option>
+          {/each}
+        </select>
+        {#if audioLatencyStore.reloadPending}
+          <span class="audio-buffer-reload" title="The new buffer setting applies on the next page reload — latencyHint can only be set when the AudioContext is created.">⟳ reload to apply</span>
+        {/if}
       </span>
     </div>
     <ul class="cable-legend">
@@ -4491,6 +4517,31 @@
   .status b {
     color: var(--text);
     font-weight: 500;
+  }
+  /* R-1 audio buffer / latency selector — sits in the footer status row,
+   * styled to match the load-example dropdown chrome. */
+  .audio-buffer-ctl {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .audio-buffer-select {
+    background: #11151b;
+    color: var(--text);
+    border: 1px solid #2a313b;
+    border-radius: 4px;
+    padding: 0.05rem 0.25rem;
+    font-family: ui-monospace, monospace;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .audio-buffer-select:hover {
+    border-color: var(--accent);
+  }
+  .audio-buffer-reload {
+    color: var(--accent);
+    font-size: 0.68rem;
+    white-space: nowrap;
   }
   .cable-legend {
     list-style: none;
