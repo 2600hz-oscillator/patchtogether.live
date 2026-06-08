@@ -167,6 +167,36 @@ describe('POST /api/saved-groups validation', () => {
     expect(r.message).toMatch(/SAMSLOOP|CLOUDSEED/);
   });
 
+  it('413 when payload is UTF-16-UNDER but UTF-8-OVER the cap (byte-accurate)', async () => {
+    // Regression for the String.length (UTF-16 code units) vs UTF-8-bytes
+    // cap bug: a blob of multi-byte chars can be comfortably UNDER the cap
+    // by `.length` yet OVER it in real wire bytes. '中' is 1 UTF-16 unit
+    // but 3 UTF-8 bytes, so ~3.2M of them is ~3.2M `.length` (well under
+    // the 8 MB == 8388608 number) but ~9.6M bytes (over). A `.length`-based
+    // check would 200 this; the byte-accurate check must 413 it.
+    const cjkBlob = '中'.repeat(3_200_000);
+    expect(cjkBlob.length).toBeLessThan(8 * 1024 * 1024); // UTF-16 units: under
+    expect(new TextEncoder().encode(cjkBlob).byteLength).toBeGreaterThan(8 * 1024 * 1024); // bytes: over
+    const r = await runPost(
+      makePostEvent({
+        body: {
+          label: 'multibyte',
+          payload: {
+            ...validPayload,
+            children: [
+              { id: 'n-0', type: 'samsloop', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data: { blob: cjkBlob } },
+            ],
+          },
+        },
+      }),
+    );
+    expect(r.status).toBe(413);
+    expect(saveGroupMock).not.toHaveBeenCalled();
+    // The over-cap message reports REAL bytes (KB), not UTF-16 length.
+    expect(r.message).toMatch(/\d+\s*KB/);
+    expect(r.message).toMatch(/8\s*MB/);
+  });
+
   it('409 when the per-user cap is reached', async () => {
     saveGroupMock.mockResolvedValueOnce({ status: 'cap-reached', count: 100 });
     const r = await runPost(makePostEvent({ body: { label: 'ok', payload: validPayload } }));

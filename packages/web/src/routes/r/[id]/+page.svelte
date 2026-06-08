@@ -98,9 +98,14 @@
   });
 
   // Hocuspocus provider wires the existing Yjs doc to the collaboration
-  // server so updates flow between participants. Stage B PR B: no auth
-  // verification yet (server stub-accepts any token), no layout split (so
-  // dragging on one client moves on the other — PR B-b fixes).
+  // server so updates flow between participants. Auth IS verified
+  // server-side: the server's onAuthenticate (packages/server) validates
+  // the token on every (re)connect — a Clerk session JWT for authed users,
+  // the HMAC-derived invite code for anon — and rejects bad tokens. And
+  // per-user layouts ARE enforced: Canvas keys node positions on
+  // currentUserId, so dragging on one client does NOT move the card on
+  // another (anon users, with a null currentUserId, share the default
+  // single-user layout).
   //
   // Only attach for members; non-members see the join page and shouldn't
   // hold an open WebSocket.
