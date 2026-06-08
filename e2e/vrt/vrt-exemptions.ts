@@ -102,6 +102,12 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // is the regression gate. The S&H + posterize correctness is covered by
   // freezeframe.test.ts (unit) + the freezeframe e2e (pixel sampling).
   freezeframe: [{ selector: 'canvas' }],
+  // CELLSHADE (cel-shader video processor) carries a live OUT preview
+  // canvas; mask it so the deterministic chrome (THRESH/THICK/BITS faders +
+  // IN/T/W/B/OUT handle rows + the BITS readout) is the regression gate.
+  // The quantize + edge-ink correctness is covered by cellshade.test.ts
+  // (CPU mirror of the shader) + the bespoke cellshade e2e (pixel sampling).
+  cellshade: [{ selector: 'canvas' }],
   // 4PLEXVID carries a live OUT-1 preview canvas; mask it so the
   // deterministic chrome (4 selector knobs + handle rows) diffs while the
   // live render is excluded. (Kept here for the follow-up baseline; the
@@ -818,6 +824,15 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // the same across platforms but the masked-canvas chrome PNG can shift
   // sub-thresholdly under linux Chromium timing.
   'linux/freezeframe',
+  // CELLSHADE (cel-shader video processor): darwin baseline captured on this
+  // machine (live OUT preview canvas masked — see VRT_MODULE_MASKS). linux
+  // baseline pending a `vrt-update.yml` workflow_dispatch on this branch;
+  // the deterministic chrome (THRESH/THICK/BITS faders + 5 handle rows + the
+  // BITS readout) is the same across platforms but the masked-canvas chrome
+  // PNG can shift sub-thresholdly under linux Chromium timing. The quantize +
+  // edge-ink correctness is proven by cellshade.test.ts (CPU mirror) + the
+  // bespoke e2e/tests/cellshade.spec.ts (posterize + ink + BITS/THRESH sweeps).
+  'linux/cellshade',
   // MANDLEBLOT (Mandelbrot fractal generator): darwin baseline captured on
   // this machine (canvas masked — the colour pass cycles hue with uTime, so
   // the canvas region is non-deterministic; the chrome around it diffs).
