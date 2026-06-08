@@ -192,10 +192,23 @@ describe('behavioral exemptions are ALL reconciliation backlog (no permanent-exe
 
   it('re-enabled Moog routers are OUT of the module-exempt map (count fell)', () => {
     const moduleExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_MODULE_EXEMPT');
-    // Re-enabled in behavioral-recon #1/#2/#4 — must be fully out.
-    for (const m of ['moog984', 'moog993', 'moog961', 'moog960']) {
+    // Re-enabled in behavioral-recon #1/#2/#4/#5 — must be fully out.
+    // moog911a (#5): re-enabled via a per-port fast-gate LFO-square TEST source
+    // (BEHAVIORAL_PORT_TEST_SOURCE) + a 2 ms-delay SUT param override
+    // (BEHAVIORAL_PORT_PARAMS) so its one-shot out1 pulse train clears the floor.
+    for (const m of ['moog984', 'moog993', 'moog961', 'moog960', 'moog911a']) {
       expect(moduleExempt.has(m)).toBe(false);
     }
+  });
+
+  it('the re-enabled moog911a carries its per-port test-source + trig2 no-op exemption', () => {
+    // moog911a left the WHOLE-module exempt map (above), but trig1 needed a
+    // fast-gate TEST source and trig2 is a per-channel no-op on the observed
+    // out1 — both must be present so the re-enable is honest (real coverage on
+    // trig1, a one-line rationale on trig2), not a silent drop.
+    expect(/'moog911a\.trig1'\s*:/.test(specSrc)).toBe(true); // BEHAVIORAL_PORT_TEST_SOURCE / _PORT_PARAMS
+    const sweepExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_SWEEP_EXEMPT');
+    expect(sweepExempt.has('moog911a.trig2')).toBe(true);
   });
 
   it('still-disabled modules carry a module-exempt note (backlog, not silent)', () => {
@@ -203,7 +216,7 @@ describe('behavioral exemptions are ALL reconciliation backlog (no permanent-exe
     // Whatever remains disabled is ALL backlog — fix or delete. A representative
     // slice that's still exempt this leg (each a backlog item with a re-enable
     // path or a delete rationale in its note).
-    for (const m of ['moog911a', 'buggles', 'mixmstrs', 'audioOut']) {
+    for (const m of ['buggles', 'mixmstrs', 'audioOut']) {
       expect(moduleExempt.has(m)).toBe(true);
     }
   });

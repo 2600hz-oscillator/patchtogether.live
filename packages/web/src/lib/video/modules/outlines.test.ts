@@ -12,11 +12,17 @@
 import { describe, it, expect } from 'vitest';
 import {
   outlinesDef,
+  circlesDef,
   OUTLINES_GATE_PORT_ID,
   OUTLINES_GATE_PARAM_ID,
   OUTLINES_COLLIDE_PORT_ID,
   OUTLINES_COLLIDE_PARAM_ID,
 } from './outlines';
+import {
+  getVideoModuleDef,
+  canonicalizeVideoType,
+} from '$lib/video/module-registry';
+import { registerVideoModules } from './index';
 import type { VideoEngineContext, VideoFrameContext } from '$lib/video/engine';
 import type { ModuleNode } from '$lib/graph/types';
 import {
@@ -121,6 +127,52 @@ describe('outlinesDef — shape', () => {
   it('SHAPE knob defaults to the circle (index 0)', () => {
     const shape = outlinesDef.params.find((p) => p.id === 'shape')!;
     expect(mapShape(shape.defaultValue)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CIRCLES → OUTLINES back-compat (REAL runtime type alias).
+//
+// OUTLINES was named CIRCLES until this rework. A node saved before the rename
+// (localStorage / a live collab Y.Doc / a hand-exported .json) still carries
+// type 'circles'. The runtime registry must remap that legacy id to the
+// `outlines` def — otherwise the patch loader drops the node to a placeholder
+// error card, losing its wiring + params. (The TS `circlesDef = outlinesDef`
+// export alias only helps straggling IMPORTERS; it does NOT register a
+// `circles` type in the runtime registry.)
+// ---------------------------------------------------------------------------
+
+describe('circles → outlines back-compat', () => {
+  // Populate the live video registry (idempotent — registerVideoModules guards).
+  registerVideoModules();
+
+  it('the TS export alias circlesDef IS the same def object as outlinesDef', () => {
+    expect(circlesDef).toBe(outlinesDef);
+    expect(circlesDef.type).toBe('outlines');
+  });
+
+  it("getVideoModuleDef('circles') resolves to the outlines def (legacy runtime alias)", () => {
+    const viaLegacy = getVideoModuleDef('circles');
+    const viaCurrent = getVideoModuleDef('outlines');
+    expect(viaCurrent).toBeDefined();
+    expect(viaCurrent!.type).toBe('outlines');
+    // The legacy lookup must hit the SAME registered def (not a placeholder/miss).
+    expect(viaLegacy).toBe(viaCurrent);
+  });
+
+  it("a direct lookup for the current 'outlines' id is unaffected by the alias", () => {
+    expect(getVideoModuleDef('outlines')!.type).toBe('outlines');
+  });
+
+  it('an unknown video type still returns undefined (alias map is not a catch-all)', () => {
+    expect(getVideoModuleDef('definitely-not-a-module' as never)).toBeUndefined();
+  });
+
+  it("canonicalizeVideoType rewrites 'circles' → 'outlines' and leaves others alone", () => {
+    expect(canonicalizeVideoType('circles')).toBe('outlines');
+    expect(canonicalizeVideoType('outlines')).toBe('outlines');
+    expect(canonicalizeVideoType('camera')).toBe('camera');
+    expect(canonicalizeVideoType('whatever')).toBe('whatever');
   });
 });
 

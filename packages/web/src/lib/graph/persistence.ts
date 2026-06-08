@@ -21,6 +21,7 @@ import {
 import {
   getVideoModuleDef,
   listVideoModuleDefs,
+  canonicalizeVideoType,
 } from '$lib/video/module-registry';
 import { getMetaModuleDef, listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ModuleNode, Edge } from './types';
@@ -431,6 +432,23 @@ export function loadEnvelopeIntoStore(
     // in the current build) are left as the new RUTTETRA.
     if (node.type === 'ruttetra' && (envelope.moduleSchemas['ruttetra'] ?? 1) < 2) {
       (node as { type: string }).type = 'reshaper';
+    }
+
+    // ---- LEGACY VIDEO TYPE ALIAS: circles → outlines (and any future
+    //      renamed video module) ----
+    //
+    // OUTLINES was named CIRCLES until the SHAPE/ROTATION rework (#699). Nodes
+    // saved before the rename (localStorage / a live collab Y.Doc / a hand-
+    // exported .json) still carry `type: 'circles'`. canonicalizeVideoType()
+    // rewrites the node's type to the current registry id IN PLACE so it (a)
+    // resolves a def (else it'd drop to a placeholder), AND (b) renders the
+    // right card — SvelteFlow's nodeTypes map is keyed strictly on the current
+    // def.type, so a node left as `circles` would render with the default
+    // placeholder card even though getVideoModuleDef('circles') resolves the
+    // def via the alias. Re-saving then persists the canonical `outlines` type.
+    {
+      const canonical = canonicalizeVideoType(node.type);
+      if (canonical !== node.type) (node as { type: string }).type = canonical;
     }
 
     // Look up across both per-domain registries — video modules

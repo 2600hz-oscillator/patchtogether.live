@@ -60,8 +60,10 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // and gate on the deterministic chrome (7 knobs D/V/SPD/DEC/SHP/ROT/RATE +
   // GATE/COL/D/V/SPD/DEC/SHP/ROT/VID input rows + OVR/CNT/CMB/MAP output rows +
   // the SHAPE/ROT readouts). Promoted into the VRT baseline set (the canvas mask
-  // covers the live preview); darwin + linux baselines regenerated via
-  // vrt-update.yml after the SHAPE+ROTATION card change.
+  // covers the live preview). Only the DARWIN baseline was regenerated via
+  // vrt-update.yml after the SHAPE+ROTATION card change; the LINUX baseline is
+  // still pending a workflow_dispatch, so `linux/outlines` stays in
+  // EXEMPT_BASELINE_PAIRS below (the recorderbox/cellshade new-module pattern).
   outlines: [{ selector: 'canvas' }],
   videoOut: [{ selector: 'canvas' }],
   // RECORDERBOX — live preview canvas (+ a hidden full-res capture canvas,
