@@ -346,6 +346,28 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    Covered by foxy.spec.ts which uses a single-spawn + settle pattern.
   foxy: 'heavy mount (SwoleBlocks + RasterPainters); 5 inputs × 2 spawns exceed 140s CI budget; covered by foxy.spec.ts',
 
+  // ── EDGES — Sobel edge-detection VIDEO processor. Each frame is a full
+  //    WebGL Sobel convolution pass; on CI's SwiftShader SOFTWARE renderer
+  //    that per-frame GPU cost is ~10-30× a real GPU, so the per-input
+  //    spawn→settle→frame-poll loop blows the flat universal budget. With 3
+  //    drivable inputs the timeout is max(90s, 3×22+30)=96s, and the
+  //    `locator.evaluate` / `page.waitForFunction` video-frame poll on `in`
+  //    (a live ACIDWARP source fed through the Sobel pass) does not complete
+  //    within it — REPRODUCIBLY (96s timeout on `edges`, twice, while the
+  //    sibling `cube` only flaky-passes its 162s budget). This is the
+  //    documented CI-SwiftShader heavy-WebGL-video timeout class (cf. the
+  //    foxy / mandelbulb heavy-mount-exceeds-budget exemptions above), NOT a
+  //    per-port delta failure — it passes on a real local GPU. EDGES is fully
+  //    covered with stronger, GPU-aware signal by edges.spec.ts (SHAPES→EDGES
+  //    renders white edges on black + THRESHOLD reduces/raises edge-pixel
+  //    count + CV params route through the patch store) and edges.test.ts
+  //    (Sobel kernel / threshold / thickness unit math). The `inputs-accept`
+  //    dim in per-module-per-port.spec.ts still pins wire-up for all 3 ports.
+  //    Re-enable path: a video-domain per-input budget (scale the SwiftShader
+  //    timeout by frame-poll count, not the flat 22s/input) OR a real-GPU CI
+  //    lane — the same GPU-aware-budget follow-up the heavy-video class needs.
+  edges: 'heavy-WebGL video Sobel pass; the per-frame convolution on CI SwiftShader blows the flat 96s (3-input) budget — the `in` frame-poll times out reproducibly (twice), CI-SwiftShader heavy-WebGL-video class (cf. foxy/mandelbulb), passes on a real GPU; covered with stronger GPU-aware signal by edges.spec.ts (white-edges render + THRESHOLD edge-pixel delta + CV routing) + edges.test.ts (Sobel/threshold/thickness math); re-enable with a video-domain per-frame-scaled timeout or a real-GPU CI lane',
+
   // ── GRIDS — Mutable Instruments Grids (pattern-based drum trigger).
   //    Internal BPM clock is non-deterministic under CI scheduling:
   //    sometimes bd/sd/hh fire within the 800ms window, sometimes the
