@@ -29,13 +29,21 @@ import { mulberry32 } from '$lib/sync/prng';
  *  it). Keeping the sim square means the bounce math is symmetric. */
 export const CIRCLES_FIELD = 1024;
 
-/** Circle DIAMETER range (px). `d` knob/CV 0..1 → [MIN, MAX]. */
+/** Circle DIAMETER range (px). `d` knob/CV 0..1 → [MIN, MAX]. MAX is 270 px
+ *  (3× the original 90) so circles can grow large enough to dominate the
+ *  1024-px field. */
 export const D_MIN = 5;
-export const D_MAX = 90;
+export const D_MAX = 270;
 
 /** SPEED range (px/s). `spd` knob/CV 0..1 → [0, MAX]. 300  px/s crosses the
  *  1024 field in ~3.4 s. */
 export const SPD_MAX = 300;
+
+/** DECAY range (seconds). `decay` knob/CV 0..1 → [0, MAX]. 0 s = NO decay
+ *  (the circle persists until the FIFO cap culls it — the static-field use
+ *  case); up to 10 s means the circle fades (alpha 1 → 0) and is removed over
+ *  that many seconds after spawn. */
+export const DECAY_MAX_S = 10;
 
 /** The internal rate clock is capped at 1 spawn per this many ms. At rate=1
  *  (max) the clock fires every 500 ms. */
@@ -80,6 +88,25 @@ export function mapSpeed(spd01: number): number {
   return clamp01(spd01) * SPD_MAX;
 }
 
+/** `decay` 0..1 → fade-out duration in seconds in [0, DECAY_MAX_S].
+ *  0 = no decay (persist until the FIFO cap culls). */
+export function mapDecay(decay01: number): number {
+  return clamp01(decay01) * DECAY_MAX_S;
+}
+
+/**
+ * A circle's fade alpha in [0,1] from its age + LATCHED decay duration (both
+ * seconds). `decayS <= 0` → no decay (always 1, the persist case). Otherwise a
+ * linear ramp: alpha = 1 at spawn, 0 once age ≥ decayS. The circle is removed
+ * when this hits 0; the four outputs scale their contribution by it while alive
+ * (a fading disc adds less to the overlap COUNT / draws a lighter contour).
+ */
+export function alphaFor(ageS: number, decayS: number): number {
+  if (decayS <= 0) return 1;
+  const a = 1 - ageS / decayS;
+  return a < 0 ? 0 : a > 1 ? 1 : a;
+}
+
 /**
  * `rate` 0..1 → internal-clock spawn interval in ms, or null when the clock
  * is OFF (rate at/below the engage threshold → spawn ONLY on gate events).
@@ -105,11 +132,25 @@ export interface Circle {
   x: number;
   /** Center y in [0, CIRCLES_FIELD]. */
   y: number;
-  /** Velocity px/s. */
+  /** Velocity px/s. LATCHED at spawn (cos/sin of the spawn angle × the spawn
+   *  speed); integration reads ONLY this stored velocity, so a later `spd`/`v`
+   *  knob change affects NEW circles only — never this one. */
   vx: number;
   vy: number;
   /** LATCHED diameter px (snapshot of `d` at spawn). */
   diameter: number;
+  /** LATCHED decay duration in SECONDS (snapshot of `decay` at spawn).
+   *  0 = no decay (persist until FIFO-culled). Optional so plain test discs
+   *  (and any legacy {x,y,vx,vy,diameter}) remain valid; the sim always sets it
+   *  + treats an absent value as 0 (persist). */
+  decayS?: number;
+  /** Seconds since this circle spawned (advanced by step). Optional; absent = 0. */
+  ageS?: number;
+  /** Current alpha in [0,1]: 1 while alive, ramping to 0 over `decayS` seconds.
+   *  Always 1 when decayS===0. All four outputs scale their contribution by
+   *  this (a fading circle counts less toward overlap / draws a lighter ring).
+   *  Recomputed each step from ageS/decayS. Optional; absent = 1 (alive). */
+  alpha?: number;
 }
 
 /** Per-frame param snapshot the sim reads when it spawns. These are the
@@ -124,6 +165,8 @@ export interface CirclesSpawnParams {
   spd: number;
   /** 0..1 — internal-clock rate (0 = gate-only). */
   rate: number;
+  /** 0..1 — fade-out duration (0 / omitted = persist, no decay). */
+  decay?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,7 +178,7 @@ export class CirclesSim {
   readonly circles: Circle[] = [];
 
   /** Live spawn params (the module pushes knob/CV changes here each frame). */
-  private params: CirclesSpawnParams = { d: 0.5, v: 0, spd: 0.5, rate: 0 };
+  private params: CirclesSpawnParams = { d: 0.5, v: 0, spd: 0.5, rate: 0, decay: 0 };
 
   /** Seeded PRNG — drives spawn position ONLY. Deterministic per seed. */
   private rng: () => number;
@@ -148,6 +191,9 @@ export class CirclesSim {
 
   /** Total circles culled by the cap (monotonic; for tests/telemetry). */
   cullCount = 0;
+
+  /** Total circles removed by decay (alpha→0) (monotonic; tests/telemetry). */
+  decayCount = 0;
 
   constructor(seed = 0x0c1c1e5) {
     this.rng = mulberry32(seed | 0);
@@ -170,12 +216,19 @@ export class CirclesSim {
     const diameter = mapDiameter(this.params.d);
     const angle = mapAngle(this.params.v);
     const speed = mapSpeed(this.params.spd);
+    const decayS = mapDecay(this.params.decay ?? 0);
+    // Latch EVERYTHING at spawn (d, v→angle, spd→velocity, decay). Integration
+    // reads only the stored velocity, so a later spd/v change can't retro-affect
+    // an existing circle — it moves at its own latched speed for its whole life.
     const c: Circle = {
       x: this.rng() * CIRCLES_FIELD,
       y: this.rng() * CIRCLES_FIELD,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       diameter,
+      decayS,
+      ageS: 0,
+      alpha: 1,
     };
     // Cull-oldest BEFORE pushing so the list never exceeds the cap.
     while (this.circles.length >= MAX_CIRCLES) {
@@ -200,10 +253,14 @@ export class CirclesSim {
    * Advance the sim by `dtMs` milliseconds:
    *   1. Run the internal rate clock (rate>0): accumulate time, spawn each
    *      time the (capped) interval elapses. rate=0 → no internal spawns.
-   *   2. Integrate every circle's position; bounce when its CENTER crosses a
-   *      wall (reflect the matching velocity component, clamp center into the
-   *      field). No edge/radius collision math — the spec is explicit: the
-   *      CENTER bounces, the visible disc may briefly overhang the wall.
+   *   2. Integrate every circle's position from its LATCHED velocity (never the
+   *      live `spd`), bounce when its CENTER crosses a wall (reflect the
+   *      matching velocity component, clamp center into the field). No
+   *      edge/radius collision math — the CENTER bounces, the visible disc may
+   *      briefly overhang the wall. Then age each circle + recompute its fade
+   *      alpha from its LATCHED decay.
+   *   3. Remove circles whose alpha has hit 0 (fully decayed). decay=0 circles
+   *      never decay (they persist until the FIFO cap culls the oldest).
    *
    * Returns the number of circles spawned by the internal clock this step.
    */
@@ -232,15 +289,28 @@ export class CirclesSim {
       if (this.rateAccumMs >= interval) this.rateAccumMs = 0;
     }
 
-    // 2. Integrate + center-bounce.
+    // 2. Integrate + center-bounce + age/decay.
     const dts = dt / 1000;
     for (const c of this.circles) {
+      // Position integration reads ONLY c.vx/c.vy (latched at spawn) — never
+      // the live `spd` param — so each circle keeps its own independent speed.
       c.x += c.vx * dts;
       c.y += c.vy * dts;
       if (c.x < 0) { c.x = 0; c.vx = -c.vx; }
       else if (c.x > CIRCLES_FIELD) { c.x = CIRCLES_FIELD; c.vx = -c.vx; }
       if (c.y < 0) { c.y = 0; c.vy = -c.vy; }
       else if (c.y > CIRCLES_FIELD) { c.y = CIRCLES_FIELD; c.vy = -c.vy; }
+      // Age + recompute fade alpha from the LATCHED decay.
+      c.ageS = (c.ageS ?? 0) + dts;
+      c.alpha = alphaFor(c.ageS, c.decayS ?? 0);
+    }
+
+    // 3. Remove fully-decayed circles (alpha hit 0). decayS===0 never decays.
+    for (let i = this.circles.length - 1; i >= 0; i--) {
+      if ((this.circles[i]!.alpha ?? 1) <= 0) {
+        this.circles.splice(i, 1);
+        this.decayCount++;
+      }
     }
 
     return clockSpawns;
@@ -258,11 +328,20 @@ export class CirclesSim {
 // unit suite asserts them point-wise without a canvas.
 // ---------------------------------------------------------------------------
 
+/** A circle's fade alpha, defaulting to 1 for plain {x,y,vx,vy,diameter} test
+ *  discs that predate the decay fields (so all the derivation math degrades
+ *  gracefully when alpha is absent). */
+function alphaOf(c: Circle): number {
+  return typeof c.alpha === 'number' ? c.alpha : 1;
+}
+
 /** How many circles cover the point (px,py)? A circle covers the point when
- *  the point is within its RADIUS of its center (filled disc). */
+ *  the point is within its RADIUS of its center (filled disc). Fully-decayed
+ *  circles (alpha 0) don't count. */
 export function overlapCountAt(circles: readonly Circle[], px: number, py: number): number {
   let n = 0;
   for (const c of circles) {
+    if (alphaOf(c) <= 0) continue;
     const r = c.diameter * 0.5;
     const dx = px - c.x;
     const dy = py - c.y;
@@ -271,9 +350,38 @@ export function overlapCountAt(circles: readonly Circle[], px: number, py: numbe
   return n;
 }
 
-/** `overlap` output: white where ≥1 circle covers the pixel, else black. */
+/** Summed fade ALPHA of every circle covering the point — the "soft" overlap
+ *  weight. A fully-alive disc adds 1; a half-faded one adds 0.5. Used to scale
+ *  output INTENSITY by decay so a fading circle contributes less (and a lone
+ *  fading circle visibly dims) while `overlapCountAt` still gives the integer
+ *  stack depth that drives the hue ramp / the ≥2 mask rule. */
+export function overlapAlphaAt(circles: readonly Circle[], px: number, py: number): number {
+  let a = 0;
+  for (const c of circles) {
+    const ca = alphaOf(c);
+    if (ca <= 0) continue;
+    const r = c.diameter * 0.5;
+    const dx = px - c.x;
+    const dy = py - c.y;
+    if (dx * dx + dy * dy <= r * r) a += ca;
+  }
+  return a;
+}
+
+/** `overlap` output value in [0,1]: the strongest covering circle's alpha
+ *  (white where a full circle covers, fading to black as the only covering
+ *  circle decays), 0 where nothing covers. */
 export function overlapValueAt(circles: readonly Circle[], px: number, py: number): number {
-  return overlapCountAt(circles, px, py) >= 1 ? 1 : 0;
+  let best = 0;
+  for (const c of circles) {
+    const ca = alphaOf(c);
+    if (ca <= best) continue;
+    const r = c.diameter * 0.5;
+    const dx = px - c.x;
+    const dy = py - c.y;
+    if (dx * dx + dy * dy <= r * r) best = ca;
+  }
+  return best;
 }
 
 /** Ring line-width for a circle's contour: 10% of its diameter, min 2 px. */
@@ -281,19 +389,23 @@ export function ringWidth(diameter: number): number {
   return Math.max(2, diameter * 0.1);
 }
 
-/** `contour` output: 1 where the point lies on ANY circle's outline ring
- *  (radial distance within [r − lw, r] of a center), else 0. Outlines only —
- *  many circles produce "ripples in a pond". */
+/** `contour` output value in [0,1]: the strongest (highest-alpha) circle whose
+ *  outline ring (radial distance in [r − lw, r]) passes through the point —
+ *  rings lighten as their circle decays. 0 off every ring. Outlines only — many
+ *  circles produce "ripples in a pond". */
 export function contourValueAt(circles: readonly Circle[], px: number, py: number): number {
+  let best = 0;
   for (const c of circles) {
+    const ca = alphaOf(c);
+    if (ca <= best) continue;
     const r = c.diameter * 0.5;
     const lw = ringWidth(c.diameter);
     const dx = px - c.x;
     const dy = py - c.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist <= r && dist >= r - lw) return 1;
+    if (dist <= r && dist >= r - lw) best = ca;
   }
-  return 0;
+  return best;
 }
 
 /**
@@ -349,7 +461,11 @@ export function hsvToRgb(h: number, s: number, v: number): [number, number, numb
 export function combineRgbAt(circles: readonly Circle[], px: number, py: number): [number, number, number] {
   const count = overlapCountAt(circles, px, py);
   if (count < 1) return [0, 0, 0];
-  return hsvToRgb(combineHueAt(count), combineSaturationAt(count), combineBrightnessAt(count));
+  // Hue/sat come from the integer stack depth; brightness is additionally
+  // scaled by the soft alpha weight (≤ count) so a fading stack visibly dims.
+  const softFrac = Math.min(1, overlapAlphaAt(circles, px, py) / count);
+  const [r, g, b] = hsvToRgb(combineHueAt(count), combineSaturationAt(count), combineBrightnessAt(count));
+  return [r * softFrac, g * softFrac, b * softFrac];
 }
 
 /** `mapped` mask at a point: 1 where ≥2 circles overlap (show the video

@@ -14,14 +14,18 @@ import {
   D_MIN,
   D_MAX,
   SPD_MAX,
+  DECAY_MAX_S,
   MAX_CIRCLES,
   RATE_MIN_INTERVAL_MS,
   mapDiameter,
   mapAngle,
   mapSpeed,
+  mapDecay,
   mapRateIntervalMs,
+  alphaFor,
   clamp01,
   overlapCountAt,
+  overlapAlphaAt,
   overlapValueAt,
   contourValueAt,
   ringWidth,
@@ -44,12 +48,12 @@ describe('circlesDef — shape', () => {
     expect(circlesDef.category).toBe('sources');
   });
 
-  it('declares gate / d / v / spd / video inputs', () => {
+  it('declares gate / d / v / spd / decay / video inputs', () => {
     const byId = Object.fromEntries(circlesDef.inputs.map((p) => [p.id, p]));
     expect(byId[CIRCLES_GATE_PORT_ID].type).toBe('gate');
     expect(byId[CIRCLES_GATE_PORT_ID].paramTarget).toBe(CIRCLES_GATE_PARAM_ID);
     // Per-param CV ports: id == param id (the CV-bridge routes onto setParam).
-    for (const id of ['d', 'v', 'spd']) {
+    for (const id of ['d', 'v', 'spd', 'decay']) {
       expect(byId[id].type).toBe('cv');
       expect(byId[id].paramTarget).toBe(id);
     }
@@ -68,10 +72,10 @@ describe('circlesDef — shape', () => {
     expect(byId['mapped'].type).toBe('video');
   });
 
-  it('exposes d / v / spd / rate knobs (+ a hidden synthetic gate param)', () => {
+  it('exposes d / v / spd / decay / rate knobs (+ a hidden synthetic gate param)', () => {
     const ids = circlesDef.params.map((p) => p.id);
-    expect(ids).toEqual(expect.arrayContaining(['d', 'v', 'spd', 'rate', CIRCLES_GATE_PARAM_ID]));
-    for (const id of ['d', 'v', 'spd', 'rate']) {
+    expect(ids).toEqual(expect.arrayContaining(['d', 'v', 'spd', 'decay', 'rate', CIRCLES_GATE_PARAM_ID]));
+    for (const id of ['d', 'v', 'spd', 'decay', 'rate']) {
       const p = circlesDef.params.find((x) => x.id === id)!;
       expect(p.min).toBe(0);
       expect(p.max).toBe(1);
@@ -84,7 +88,9 @@ describe('circlesDef — shape', () => {
 // ---------------------------------------------------------------------------
 
 describe('param mapping ranges', () => {
-  it('d 0..1 → 5..90 px', () => {
+  it('d 0..1 → 5..270 px (MAX bumped 90 → 270, 3×; MIN unchanged)', () => {
+    expect(D_MIN).toBe(5);
+    expect(D_MAX).toBe(270);
     expect(mapDiameter(0)).toBe(D_MIN);
     expect(mapDiameter(1)).toBe(D_MAX);
     expect(mapDiameter(0.5)).toBeCloseTo((D_MIN + D_MAX) / 2);
@@ -99,6 +105,15 @@ describe('param mapping ranges', () => {
   it('spd 0..1 → 0..300 px/s', () => {
     expect(mapSpeed(0)).toBe(0);
     expect(mapSpeed(1)).toBe(SPD_MAX);
+  });
+
+  it('decay 0..1 → 0..10 s (0 = persist)', () => {
+    expect(DECAY_MAX_S).toBe(10);
+    expect(mapDecay(0)).toBe(0);
+    expect(mapDecay(1)).toBe(DECAY_MAX_S);
+    expect(mapDecay(0.5)).toBeCloseTo(5);
+    expect(mapDecay(-1)).toBe(0); // clamped
+    expect(mapDecay(2)).toBe(DECAY_MAX_S); // clamped
   });
 
   it('clamps out-of-range CV', () => {
@@ -165,26 +180,29 @@ describe('CirclesSim — spawn', () => {
     }
   });
 
-  it('latches d/v/spd at spawn — later param changes affect only NEW circles', () => {
+  it('latches d/v/spd/decay at spawn — later param changes affect only NEW circles', () => {
     const sim = new CirclesSim(7);
-    sim.setParams({ d: 0, v: 0, spd: 1, rate: 0 }); // d=5px, spd=300, angle 0 (+x)
+    sim.setParams({ d: 0, v: 0, spd: 1, decay: 0, rate: 0 }); // d=5px, spd=300, angle 0 (+x), persist
     sim.spawn();
     const first = sim.circles[0]!;
     expect(first.diameter).toBe(D_MIN);
     expect(first.vx).toBeCloseTo(SPD_MAX);
     expect(first.vy).toBeCloseTo(0);
+    expect(first.decayS).toBe(0);
 
     // Change every param, spawn again.
-    sim.setParams({ d: 1, v: 0.25, spd: 0.5, rate: 0 }); // d=90, angle 90° (+y)
+    sim.setParams({ d: 1, v: 0.25, spd: 0.5, decay: 0.5, rate: 0 }); // d=270, angle 90° (+y), 5s decay
     sim.spawn();
     const second = sim.circles[1]!;
     expect(second.diameter).toBe(D_MAX);
     expect(second.vx).toBeCloseTo(0, 5);
     expect(second.vy).toBeCloseTo(SPD_MAX * 0.5);
+    expect(second.decayS).toBeCloseTo(5);
 
     // The FIRST circle is unchanged by the param change.
     expect(first.diameter).toBe(D_MIN);
     expect(first.vx).toBeCloseTo(SPD_MAX);
+    expect(first.decayS).toBe(0);
   });
 
   it('spd=0 spawns a STATIC circle (zero velocity)', () => {
@@ -196,6 +214,132 @@ describe('CirclesSim — spawn', () => {
     // circle is static.)
     expect(Math.abs(c.vx)).toBe(0);
     expect(Math.abs(c.vy)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DECAY — per-circle latched fade-out (0 = persist → up to 10 s fade).
+// ---------------------------------------------------------------------------
+
+describe('alphaFor — fade ramp', () => {
+  it('decay=0 → always alpha 1 (no decay / persist)', () => {
+    expect(alphaFor(0, 0)).toBe(1);
+    expect(alphaFor(100, 0)).toBe(1);
+  });
+  it('linear ramp 1 → 0 over the latched decay seconds', () => {
+    expect(alphaFor(0, 4)).toBe(1);
+    expect(alphaFor(2, 4)).toBeCloseTo(0.5);
+    expect(alphaFor(4, 4)).toBe(0);
+    expect(alphaFor(8, 4)).toBe(0); // clamped, never negative
+  });
+});
+
+describe('CirclesSim — decay (latched at spawn)', () => {
+  it('latches decay at spawn; later decay changes affect only NEW circles', () => {
+    const sim = new CirclesSim(7);
+    sim.setParams({ d: 0.5, v: 0, spd: 0, decay: 0.5, rate: 0 }); // 5 s decay
+    sim.spawn();
+    const first = sim.circles[0]!;
+    expect(first.decayS).toBeCloseTo(5);
+    // Change decay, spawn again.
+    sim.setParams({ d: 0.5, v: 0, spd: 0, decay: 1, rate: 0 }); // 10 s decay
+    sim.spawn();
+    expect(sim.circles[1]!.decayS).toBeCloseTo(10);
+    // The first circle's latched decay is untouched.
+    expect(first.decayS).toBeCloseTo(5);
+  });
+
+  it('decay=0 circle PERSISTS — never removed by decay (FIFO is the only cap)', () => {
+    const sim = new CirclesSim(7);
+    sim.setParams({ d: 0.5, v: 0, spd: 0, decay: 0, rate: 0 });
+    sim.spawn();
+    const c = sim.circles[0]!;
+    for (let i = 0; i < 2000; i++) sim.step(16); // ~32 s
+    expect(sim.count).toBe(1);
+    expect(c.alpha).toBe(1);
+    expect(sim.decayCount).toBe(0);
+  });
+
+  it('a decaying circle fades (alpha → 0) and VANISHES after its decay time', () => {
+    const sim = new CirclesSim(7);
+    sim.setParams({ d: 0.5, v: 0, spd: 0, decay: 0.2, rate: 0 }); // 2 s decay
+    sim.spawn();
+    const c = sim.circles[0]!;
+    expect(c.alpha).toBe(1);
+    // Halfway (1 s): alpha ~0.5, still present.
+    for (let i = 0; i < 62; i++) sim.step(16); // ~0.99 s
+    expect(sim.count).toBe(1);
+    expect(c.alpha).toBeGreaterThan(0.4);
+    expect(c.alpha).toBeLessThan(0.6);
+    // Past the full decay window: removed.
+    for (let i = 0; i < 80; i++) sim.step(16); // +~1.28 s → past 2 s total
+    expect(sim.count).toBe(0);
+    expect(sim.decayCount).toBe(1);
+  });
+
+  it('a fading circle contributes LESS to the overlap weight + a lighter output', () => {
+    // Two stacked circles, one fully alive + one half-faded.
+    const full: Circle = { x: 100, y: 100, vx: 0, vy: 0, diameter: 80, decayS: 2, ageS: 0, alpha: 1 };
+    const half: Circle = { x: 100, y: 100, vx: 0, vy: 0, diameter: 80, decayS: 2, ageS: 1, alpha: 0.5 };
+    // Both still cover the point → integer count 2.
+    expect(overlapCountAt([full, half], 100, 100)).toBe(2);
+    // …but the soft alpha weight is 1.5 (1 + 0.5), not 2.
+    expect(overlapAlphaAt([full, half], 100, 100)).toBeCloseTo(1.5);
+    // overlapValueAt = the strongest covering alpha → 1 here (the full circle).
+    expect(overlapValueAt([full, half], 100, 100)).toBe(1);
+    // A lone half-faded circle dims its overlap value to ~0.5.
+    expect(overlapValueAt([half], 100, 100)).toBeCloseTo(0.5);
+    // combine RGB of the faded stack is dimmer than the all-full stack.
+    const lum = ([r, g, b]: number[]) => r! + g! + b!;
+    const faded = combineRgbAt([full, half], 100, 100);
+    const allFull = combineRgbAt([full, { ...half, ageS: 0, alpha: 1 }], 100, 100);
+    expect(lum(faded)).toBeLessThan(lum(allFull));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// INDEPENDENT per-circle SPEED — the headline fix. Each circle integrates from
+// its OWN latched velocity; changing `spd` after spawn affects only NEW circles.
+// ---------------------------------------------------------------------------
+
+describe('CirclesSim — independent per-circle speed', () => {
+  it('circle A keeps spd=X after spd is changed to Y for circle B', () => {
+    const sim = new CirclesSim(11);
+    // Spawn A at spd=X (1 → 300 px/s, +x).
+    sim.setParams({ d: 0.5, v: 0, spd: 1, decay: 0, rate: 0 });
+    sim.spawn();
+    const a = sim.circles[0]!;
+    a.x = 200; a.y = 200; // park A away from any wall
+
+    // Change spd to Y (0.2 → 60 px/s, +x) and spawn B.
+    sim.setParams({ d: 0.5, v: 0, spd: 0.2, decay: 0, rate: 0 });
+    sim.spawn();
+    const b = sim.circles[1]!;
+    b.x = 200; b.y = 500; // park B away from any wall
+
+    // A latched 300 px/s, B latched 60 px/s — independent of the live param.
+    expect(a.vx).toBeCloseTo(300);
+    expect(b.vx).toBeCloseTo(60);
+
+    // Step 0.5 s: A moves 150 px, B moves 30 px — each at ITS OWN latched speed.
+    sim.step(500);
+    expect(a.x).toBeCloseTo(200 + 150, 0); // 300 px/s × 0.5 s
+    expect(b.x).toBeCloseTo(200 + 30, 0);  // 60 px/s × 0.5 s
+  });
+
+  it('changing spd AFTER a circle spawned does NOT change that circle\'s motion', () => {
+    const sim = new CirclesSim(13);
+    sim.setParams({ d: 0.5, v: 0, spd: 1, decay: 0, rate: 0 }); // 300 px/s
+    sim.spawn();
+    const a = sim.circles[0]!;
+    a.x = 100; a.y = 100;
+
+    // Drop the live spd to 0 — a static field — AFTER A exists.
+    sim.setParams({ d: 0.5, v: 0, spd: 0, decay: 0, rate: 0 });
+    sim.step(100); // 0.1 s
+    // A still moves at its latched 300 px/s (+30 px), unaffected by spd=0.
+    expect(a.x).toBeCloseTo(130, 0);
+    expect(a.vx).toBeCloseTo(300);
   });
 });
 

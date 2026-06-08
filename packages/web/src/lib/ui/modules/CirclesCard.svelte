@@ -1,11 +1,11 @@
 <script lang="ts">
   // CirclesCard — UI for the CIRCLES stateful particle video generator.
   //
-  // Left rail: GATE (spawn trigger) + D/V/SPD CV inputs + the VIDEO input
-  // (used by the `mapped` output). Right rail: the four outputs (OVERLAP /
-  // CONTOUR / COMBINE / MAPPED). Four knobs (D/V/SPD/RATE) + a live preview
-  // of the COMBINE output (blitted from the factory's scene canvas, same
-  // pattern ShapegenCard uses).
+  // Left rail: GATE (spawn trigger) + D/V/SPD/DECAY CV inputs + the VIDEO
+  // input (used by the `mapped` output). Right rail: the four outputs (OVERLAP
+  // / CONTOUR / COMBINE / MAPPED). Five knobs (D/V/SPD/DECAY/RATE) + a live
+  // preview of the COMBINE output (blitted from the factory's scene canvas,
+  // same pattern ShapegenCard uses).
 
   import type { NodeProps } from '@xyflow/svelte';
   import { Handle, Position } from '@xyflow/svelte';
@@ -65,7 +65,7 @@
   <div class="stripe" style="background: var(--cable-video);"></div>
   <ModuleTitle {id} {data} defaultLabel="circles" />
 
-  <!-- Left rail: gate spawn + D/V/SPD CV + video input. -->
+  <!-- Left rail: gate spawn + D/V/SPD/DECAY CV + video input. -->
   <Handle type="target" position={Position.Left} id={CIRCLES_GATE_PORT_ID} style="top: 56px; --handle-color: var(--cable-cv);" />
   <span class="port-label left" style="top: 50px;">GATE</span>
   <Handle type="target" position={Position.Left} id="d"   style="top: 88px;  --handle-color: var(--cable-cv);" />
@@ -74,8 +74,10 @@
   <span class="port-label left" style="top: 114px;">V</span>
   <Handle type="target" position={Position.Left} id="spd" style="top: 152px; --handle-color: var(--cable-cv);" />
   <span class="port-label left" style="top: 146px;">SPD</span>
-  <Handle type="target" position={Position.Left} id="video" style="top: 184px; --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 178px;">VID</span>
+  <Handle type="target" position={Position.Left} id="decay" style="top: 184px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 178px;">DEC</span>
+  <Handle type="target" position={Position.Left} id="video" style="top: 216px; --handle-color: var(--cable-video);" />
+  <span class="port-label left" style="top: 210px;">VID</span>
 
   <!-- Right rail: the four outputs. -->
   <Handle type="source" position={Position.Right} id="overlap" style="top: 56px;  --handle-color: var(--cable-mono-video);" />
@@ -95,17 +97,18 @@
   </div>
 
   <div class="row">
-    <Knob value={paramVal('d')}    min={0} max={1} defaultValue={defaultFor('d')}    label="D"    curve="linear" onchange={set('d')}    moduleId={id} paramId="d" />
-    <Knob value={paramVal('v')}    min={0} max={1} defaultValue={defaultFor('v')}    label="V"    curve="linear" onchange={set('v')}    moduleId={id} paramId="v" />
-    <Knob value={paramVal('spd')}  min={0} max={1} defaultValue={defaultFor('spd')}  label="SPD"  curve="linear" onchange={set('spd')}  moduleId={id} paramId="spd" />
-    <Knob value={paramVal('rate')} min={0} max={1} defaultValue={defaultFor('rate')} label="RATE" curve="linear" onchange={set('rate')} moduleId={id} paramId="rate" />
+    <Knob value={paramVal('d')}     min={0} max={1} defaultValue={defaultFor('d')}     label="D"    curve="linear" onchange={set('d')}     moduleId={id} paramId="d" />
+    <Knob value={paramVal('v')}     min={0} max={1} defaultValue={defaultFor('v')}     label="V"    curve="linear" onchange={set('v')}     moduleId={id} paramId="v" />
+    <Knob value={paramVal('spd')}   min={0} max={1} defaultValue={defaultFor('spd')}   label="SPD"  curve="linear" onchange={set('spd')}   moduleId={id} paramId="spd" />
+    <Knob value={paramVal('decay')} min={0} max={1} defaultValue={defaultFor('decay')} label="DEC"  curve="linear" onchange={set('decay')} moduleId={id} paramId="decay" />
+    <Knob value={paramVal('rate')}  min={0} max={1} defaultValue={defaultFor('rate')}  label="RATE" curve="linear" onchange={set('rate')}  moduleId={id} paramId="rate" />
   </div>
 </div>
 
 <style>
   .mod-card {
     width: 260px;
-    min-height: 332px;
+    min-height: 360px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -155,7 +158,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
-    padding: 0 12px;
+    gap: 6px;
+    padding: 0 8px;
   }
 </style>
