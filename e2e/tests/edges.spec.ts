@@ -24,6 +24,18 @@
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
+// SHAPES + EDGES + videoOut are WebGL canvas cards whose FIRST-paint is slow on
+// CI's SwiftShader software renderer (markedly slower at 1024×768 — see the
+// ci-swiftshader-video-e2e-timeouts memory). spawnPatch's generic 5s
+// node-mount-readiness wait is enough on a real GPU but times out on a loaded
+// CI shard — exactly the failure this spec hit (the THICKNESS sweep does two
+// full re-spawns, so it's the last/most-loaded spawn and was the first to trip
+// the 5s mount wait). Grant the established WebGL-heavy headroom (matches
+// modules.spec.ts's HEAVY_MOUNT_TIMEOUT). This is a setup-timing fix, NOT a
+// shader/behaviour change: the dilation correctly widens edges across renderers
+// (verified under --use-angle=swiftshader: whiteFrac thin≈0.010 → thick≈0.037).
+const HEAVY_MOUNT_TIMEOUT = 30_000;
+
 // We do FIVE full re-spawn + render + freeze-read cycles in the
 // threshold/thickness sweeps (2 spawns each for the two monotone sweeps +
 // 1 for the headline render). On CI's software renderer each spawn+settle is
@@ -78,6 +90,7 @@ async function captureEdges(
       { id: 'e_in',  from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'edg',  portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
       { id: 'e_out', from: { nodeId: 'edg', portId: 'out' }, to: { nodeId: 'vout', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
     ],
+    { mountTimeout: HEAVY_MOUNT_TIMEOUT },
   );
   await expect(page.locator('.svelte-flow__node-edges'), 'EDGES visible').toBeVisible();
   await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
@@ -134,9 +147,12 @@ test.describe('EDGES — Sobel edge-detection processor', () => {
   test('CV params route through the patch store', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    await spawnPatch(page, [
-      { id: 'edg', type: 'edges', position: { x: 200, y: 100 }, domain: 'video' },
-    ]);
+    await spawnPatch(
+      page,
+      [{ id: 'edg', type: 'edges', position: { x: 200, y: 100 }, domain: 'video' }],
+      [],
+      { mountTimeout: HEAVY_MOUNT_TIMEOUT },
+    );
     await expect(page.locator('[data-testid="edges-card"]')).toHaveCount(1);
 
     await page.evaluate(() => {
