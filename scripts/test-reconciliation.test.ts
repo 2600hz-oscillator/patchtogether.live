@@ -167,49 +167,44 @@ describe('extractRecordKeys — exemption map parsing', () => {
   });
 });
 
-describe('behavioral exempt split — honest reconcilable vs intentional', () => {
-  // The reconciliation counter splits BEHAVIORAL_MODULE_EXEMPT into
-  // architecture-gated (intentional) and fixable (reconcilable) buckets so the
-  // headline number reflects real reconcilable coverage, not the raw total.
-  // These tests lock the split's invariants against the LIVE spec source.
+describe('behavioral exemptions are ALL reconciliation backlog (no permanent-exempt bucket)', () => {
+  // The reconciliation law: EVERY disabled test is backlog. There is NO
+  // "intentional / correct-by-design" permanent-exempt bucket — the old
+  // intentional-vs-reconcilable split was retired. A module leaves the disabled
+  // count ONLY by being re-enabled-and-asserting or by having its assertion
+  // deleted. These tests lock that against the LIVE spec source so the split
+  // can't silently creep back.
   const specPath = fileURLToPath(
     new URL('../e2e/tests/per-module-per-port-behavioral.spec.ts', import.meta.url),
   );
   const specSrc = readFileSync(specPath, 'utf8');
 
-  it('reconcilable keys are a strict SUBSET of the module exemptions', () => {
-    const moduleExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_MODULE_EXEMPT');
-    const reconcilable = extractRecordKeys(specSrc, 'BEHAVIORAL_RECONCILABLE_EXEMPT');
-    expect(reconcilable.size).toBeGreaterThan(0);
-    const dangling = [...reconcilable].filter((k) => !moduleExempt.has(k));
-    expect(dangling).toEqual([]); // a key here that's been re-enabled would dangle
+  it('the retired RECONCILABLE/INTENTIONAL split maps are GONE from the spec', () => {
+    // Guard against the two-bucket framing creeping back: neither the split
+    // constant nor an "intentional" partner constant should be DECLARED.
+    // (A passing prose mention of the retired name in a comment is fine —
+    // extractRecordKeys / a const-declaration check ignore comments.)
+    expect(extractRecordKeys(specSrc, 'BEHAVIORAL_RECONCILABLE_EXEMPT').size).toBe(0);
+    expect(extractRecordKeys(specSrc, 'BEHAVIORAL_INTENTIONAL_EXEMPT').size).toBe(0);
+    expect(/\bconst\s+BEHAVIORAL_RECONCILABLE_EXEMPT\b/.test(specSrc)).toBe(false);
+    expect(/\bconst\s+BEHAVIORAL_INTENTIONAL_EXEMPT\b/.test(specSrc)).toBe(false);
   });
 
-  it('re-enabled Moog routers are in NEITHER exempt map; deferred ones stay module-exempt + reconcilable', () => {
+  it('re-enabled Moog routers are OUT of the module-exempt map (count fell)', () => {
     const moduleExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_MODULE_EXEMPT');
-    const reconcilable = extractRecordKeys(specSrc, 'BEHAVIORAL_RECONCILABLE_EXEMPT');
     // Re-enabled in behavioral-recon #1/#2/#4 — must be fully out.
     for (const m of ['moog984', 'moog993', 'moog961', 'moog960']) {
       expect(moduleExempt.has(m)).toBe(false);
-      expect(reconcilable.has(m)).toBe(false);
-    }
-    // Deferred (subtle-transient) — module-exempt AND tagged reconcilable so it
-    // counts as the fixable backlog, not intentional. (moog960 was re-enabled in
-    // recon #4 → moved to the re-enabled group above.)
-    for (const m of ['moog911a']) {
-      expect(moduleExempt.has(m)).toBe(true);
-      expect(reconcilable.has(m)).toBe(true);
     }
   });
 
-  it('architecture-gated modules are module-exempt but NOT reconcilable', () => {
-    const reconcilable = extractRecordKeys(specSrc, 'BEHAVIORAL_RECONCILABLE_EXEMPT');
+  it('still-disabled modules carry a module-exempt note (backlog, not silent)', () => {
     const moduleExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_MODULE_EXEMPT');
-    // A representative slice of the intentional/architecture-gated class:
-    // hardware, ROM/gameplay, sinks, MI state machines, animated video.
-    for (const m of ['gamepad', 'doom', 'audioOut', 'marbles', 'mandelbulb']) {
+    // Whatever remains disabled is ALL backlog — fix or delete. A representative
+    // slice that's still exempt this leg (each a backlog item with a re-enable
+    // path or a delete rationale in its note).
+    for (const m of ['moog911a', 'buggles', 'mixmstrs', 'audioOut']) {
       expect(moduleExempt.has(m)).toBe(true);
-      expect(reconcilable.has(m)).toBe(false);
     }
   });
 });

@@ -73,19 +73,21 @@ function renderTable(blocks) {
         <td class="num">${b.disabled}</td>
         <td class="num">${p}%</td>
       </tr>`;
-      // Honest split sub-row for the behavioral block: the `disabled` total is
-      // split into architecture-gated (intentional, correct skips) vs the
-      // fixable backlog (reconcilable) — the latter is the number to drive down.
+      // Historical-only sub-row: OLD committed entries (pre-2026-06-08) carry an
+      // `intentional`/`reconcilable` split from the retired two-bucket framing.
+      // We render it greyed as a historical breakdown for those archived rows
+      // ONLY — the reconciliation law has since dropped the "intentional /
+      // permanent-exempt" bucket: EVERY disabled test is backlog (fix or delete),
+      // so the live row + all new entries carry no split and `disabled` is THE
+      // number to drive to 0.
       if (
         typeof b.intentional === 'number' &&
         typeof b.reconcilable === 'number'
       ) {
-        const rp = pct(b.reconcilable, b.total);
         return `${row}
       <tr class="split-row">
         <td></td><td></td><td></td>
-        <td class="num split">${b.intentional} intentional · <b>${b.reconcilable} reconcilable</b></td>
-        <td class="num split">${rp}% reconcilable</td>
+        <td class="num split" colspan="2">historical split (retired): ${b.intentional} then-"intentional" · ${b.reconcilable} then-"reconcilable" — all backlog now</td>
       </tr>`;
       }
       return row;
@@ -149,10 +151,9 @@ function main() {
         kind: b.kind,
         total: b.total,
         disabled: b.disabled,
-        // Carry the behavioral honest split through to the live row so the
-        // published page shows reconcilable-vs-intentional, not just the raw total.
-        ...(typeof b.intentional === 'number' ? { intentional: b.intentional } : {}),
-        ...(typeof b.reconcilable === 'number' ? { reconcilable: b.reconcilable } : {}),
+        // No intentional/reconcilable split on the live row anymore — the
+        // two-bucket framing was retired. EVERY disabled test is backlog;
+        // `disabled` is the headline number to drive to 0.
       })),
     };
     // Use the latest committed date for the live row label only if it differs;

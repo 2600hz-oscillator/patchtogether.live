@@ -36,6 +36,16 @@
 // reads (e2e/.generated/registry-manifest.json + the exemption files), so they
 // track the real enrolment.
 //
+// EVERY disabled test is reconciliation BACKLOG — there is NO permanent
+// "intentional / correct-by-design" exempt bucket. A module/port leaves the
+// `disabled` count ONLY by being re-enabled-and-asserting (drive the port in a
+// context where it genuinely affects the observed output) or by having its
+// auto-enrolled assertion DELETED (a port that can never affect output under any
+// patching, with a one-line rationale). The headline metric of this entire
+// report is `disabled → 0` across every block. The exemption maps keep a
+// per-entry note with a concrete re-enable path, but that note is a "how to fix
+// this backlog item", NOT a "this is permanently fine".
+//
 // Determinism: NO Date.now()/new Date() — the entry date is passed via --date
 // or read from `git log -1 --format=%cd`. The counts are pure functions of the
 // committed source tree, so repeated runs on the same tree are byte-identical.
@@ -328,18 +338,14 @@ function countVrt(manifest) {
  *  (BEHAVIORAL_SWEEP_EXEMPT) skip ONE port's signal check, not the module's
  *  enrolment, so they're reported separately (`portExemptions`).
  *
- *  The whole-module exemptions are split into two honest buckets so the number
- *  we drive down reflects REAL reconcilable coverage, not the misleading raw
- *  total (see BEHAVIORAL_RECONCILABLE_EXEMPT's header in the spec):
- *    • intentional  — architecture-gated (hardware/ROM/file/sinks/MI-state-
- *                     machines/animated-video/heavy-mount/multiplexers). These
- *                     CANNOT be re-enabled in this sweep and are CORRECT skips.
- *    • reconcilable — the fixable backlog (subtle-CV / sparse-transient / per-
- *                     channel / quiet-exciter / sequencer-state) that per-port
- *                     threshold tuning, a per-transient metric, or a richer
- *                     driver would re-enable. This is the count to watch fall.
- *  `disabled` stays the FULL module-exempt count (back-compat with the seed
- *  entry); the split is reported alongside as {intentional, reconcilable}. */
+ *  EVERY whole-module exemption is reconciliation BACKLOG — there is NO
+ *  permanent "intentional / correct-by-design" bucket. An exempt module leaves
+ *  the count ONLY by being re-enabled-and-asserting (drive the port in a context
+ *  where it genuinely affects the observed output) or by having its
+ *  auto-enrolled assertion DELETED (a port that can never affect output under
+ *  any patching). `disabled` is the full module-exempt count, and the headline
+ *  metric of this whole report is driving it to 0. The per-port exemptions are
+ *  the SAME kind of backlog at port granularity (reported as `portExemptions`). */
 function countBehavioral(manifest) {
   const src = readFileSync(
     join(ROOT, 'e2e', 'tests', 'per-module-per-port-behavioral.spec.ts'),
@@ -347,7 +353,6 @@ function countBehavioral(manifest) {
   );
   const moduleExempt = extractRecordKeys(src, 'BEHAVIORAL_MODULE_EXEMPT');
   const sweepExempt = extractRecordKeys(src, 'BEHAVIORAL_SWEEP_EXEMPT');
-  const reconcilable = extractRecordKeys(src, 'BEHAVIORAL_RECONCILABLE_EXEMPT');
 
   let enrolled = 0;
   let exempt = 0;
@@ -358,22 +363,11 @@ function countBehavioral(manifest) {
     }
   }
 
-  // Split the module-exemptions: a key tagged reconcilable counts as the
-  // fixable backlog, everything else is intentional (architecture-gated).
-  // Count only keys that are ACTUALLY module-exempt (the integrity check in the
-  // spec guarantees reconcilable ⊆ moduleExempt, but guard anyway so a stale
-  // tag can't inflate the count).
-  let reconcilableCount = 0;
-  for (const k of reconcilable) if (moduleExempt.has(k)) reconcilableCount++;
-  const intentionalCount = exempt - reconcilableCount;
-
   return {
     total: enrolled,
     disabled: exempt,
     enrolledModules: enrolled,
     exempt,
-    intentional: intentionalCount,
-    reconcilable: reconcilableCount,
     portExemptions: sweepExempt.size,
     kind: 'parametrized',
   };
@@ -426,7 +420,7 @@ export function reconcile() {
     { block: 'e2e', kind: 'raw', total: e2e.total, disabled: e2e.disabled, note: `${e2e.files} files; static skip ${e2e.skip}, fixme ${e2e.fixme}, only ${e2e.only}, describe.skip ${e2e.describeSkip}; ${e2e.parametrized} loop-generated cases counted in parametrized blocks` },
     { block: 'art', kind: 'raw', total: art.total, disabled: art.disabled, note: `${art.files} scenario files; static skip ${art.skip}, fixme ${art.fixme}` },
     { block: 'vrt', kind: 'parametrized', total: vrt.total, disabled: vrt.disabled, note: `${vrt.enrolledModules} module cards + ${vrt.sceneSnapshots} scene shots; ${vrt.exempt} modules exempt` },
-    { block: 'behavioral', kind: 'parametrized', total: behavioral.total, disabled: behavioral.disabled, intentional: behavioral.intentional, reconcilable: behavioral.reconcilable, note: `${behavioral.enrolledModules} modules enrolled; ${behavioral.exempt} module-exempt (${behavioral.intentional} intentional/architecture-gated + ${behavioral.reconcilable} reconcilable-disabled), ${behavioral.portExemptions} port-exemptions` },
+    { block: 'behavioral', kind: 'parametrized', total: behavioral.total, disabled: behavioral.disabled, note: `${behavioral.enrolledModules} modules enrolled; ${behavioral.exempt} module-exempt (all reconciliation backlog — fix or delete), ${behavioral.portExemptions} port-exemptions (same backlog at port granularity)` },
     { block: '@collab', kind: 'raw (e2e subset)', total: collab.total, disabled: collab.disabled, note: `${collab.files} files; skip ${collab.skip}, fixme ${collab.fixme}` },
   ];
 
