@@ -1,0 +1,211 @@
+// e2e/tests/cellshade.spec.ts
+//
+// CELLSHADE (cel-shader video processor) functional e2e — the REAL
+// source → module → audible-output chain.
+//
+// Graph:
+//   ACIDWARP (colour video, self-running) --> CELLSHADE.in --> CELLSHADE.out --> OUTPUT
+//
+// CELLSHADE quantizes the colour to an N-bit retro palette and inks the
+// Sobel edges as black lines. ACIDWARP is a self-running COLOURFUL source
+// with high-contrast moving structure — a clean probe for both the
+// posterize (colourful output) AND the edge-ink (some black-line pixels).
+// We assert, on the live render:
+//   1. all cards spawn + the OUTPUT preview canvas mounts,
+//   2. CELLSHADE.out shows POSTERIZED COLOUR (colourful pixels) PLUS some
+//      BLACK INK pixels (the inked Sobel edges) — the cel signature vs. a
+//      passthrough,
+//   3. LOWERING BITS reduces the count of DISTINCT colours,
+//   4. RAISING THRESHOLD reduces the edge-ink (black) pixels,
+//   5. CV params route through the patch store,
+//   6. no console / page errors.
+//
+// Pixel determinism for a baseline lives in the VRT card chrome capture +
+// the pure cellshade.test.ts CPU mirror; this spec is the behavioural gate
+// over the live render. Timeout scales by the per-step capture count (CI's
+// SwiftShader software renderer is far slower than a real GPU — see the
+// ci-swiftshader-video-e2e-timeouts memory: don't use a flat 90s).
+
+import { test, expect, type Page } from '@playwright/test';
+import { spawnPatch } from './_helpers';
+
+// ACIDWARP + CELLSHADE + videoOut are WebGL canvas cards whose FIRST-paint is
+// slow on CI's SwiftShader software renderer (markedly slower at 1024×768 —
+// see the ci-swiftshader-video-e2e-timeouts memory). spawnPatch's generic 5s
+// node-mount-readiness wait is enough on a real GPU but times out on a loaded
+// CI shard. Grant the established WebGL-heavy headroom (matches
+// modules.spec.ts / edges.spec.ts / mapper.spec.ts HEAVY_MOUNT_TIMEOUT). This
+// is a setup-timing fix, NOT a shader/behaviour change.
+const HEAVY_MOUNT_TIMEOUT = 30_000;
+
+// We do FOUR full re-spawn + render + read cycles (headline render + a BITS
+// hi/lo pair + a THRESHOLD hi/lo pair, reusing the headline for one arm). On
+// CI's software renderer each spawn+settle is ~6-10s; budget generously so the
+// suite isn't flaky under load.
+test.setTimeout(180_000);
+
+interface CellStats {
+  /** fraction of sampled pixels that are colourful (channels spread apart). */
+  colourFrac: number;
+  /** fraction of sampled pixels that are near-black (the inked edges). */
+  inkFrac: number;
+  /** count of DISTINCT quantized colours seen (coarse 5-bit bucket per ch). */
+  distinctColours: number;
+  n: number;
+}
+
+/** Sample the OUTPUT canvas interior and return cel-shade stats. We sample
+ *  the centre 70% so the video-out 4:3 letterbox bars can't inflate counts. */
+async function readCellStats(page: Page): Promise<CellStats> {
+  const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
+  await expect(canvas).toHaveCount(1);
+  const stats = await canvas.evaluate((el) => {
+    const c = el as HTMLCanvasElement;
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+    const x0 = Math.floor(c.width * 0.15), x1 = Math.ceil(c.width * 0.85);
+    const y0 = Math.floor(c.height * 0.15), y1 = Math.ceil(c.height * 0.85);
+    const d = ctx.getImageData(x0, y0, x1 - x0, y1 - y0).data;
+    let n = 0, colour = 0, ink = 0;
+    const buckets = new Set<number>();
+    for (let i = 0; i < d.length; i += 16) {
+      const r = d[i]!, g = d[i + 1]!, b = d[i + 2]!;
+      const v = (r + g + b) / 3;
+      n++;
+      // near-black = an inked edge pixel (or a true-black region).
+      if (v < 12) ink++;
+      // colourful = channels spread apart (a posterized colour, not grey/black).
+      const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
+      if (v > 12 && maxC - minC > 20) colour++;
+      // coarse colour bucket (5 bits/channel) to COUNT distinct colours.
+      if (v > 12) {
+        const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+        buckets.add(key);
+      }
+    }
+    return { colourFrac: colour / n, inkFrac: ink / n, distinctColours: buckets.size, n };
+  });
+  expect(stats, 'canvas readable').not.toBeNull();
+  return stats!;
+}
+
+/** Spawn ACIDWARP -> CELLSHADE -> OUTPUT with the given CELLSHADE params, let
+ *  the render settle, and return cel-shade stats. */
+async function captureCell(
+  page: Page,
+  params: { threshold?: number; thickness?: number; bits?: number },
+): Promise<CellStats> {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      // Self-running colour video source with high-contrast structure.
+      { id: 'vid',  type: 'acidwarp',  position: { x: 40,  y: 40 }, domain: 'video' },
+      { id: 'cel',  type: 'cellshade', position: { x: 460, y: 80 }, domain: 'video', params },
+      { id: 'vout', type: 'videoOut',  position: { x: 900, y: 80 }, domain: 'video' },
+    ],
+    [
+      { id: 'e_in',  from: { nodeId: 'vid', portId: 'out' }, to: { nodeId: 'cel',  portId: 'in' }, sourceType: 'video', targetType: 'video' },
+      { id: 'e_out', from: { nodeId: 'cel', portId: 'out' }, to: { nodeId: 'vout', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+    ],
+    { mountTimeout: HEAVY_MOUNT_TIMEOUT },
+  );
+  await expect(page.locator('.svelte-flow__node-cellshade'), 'CELLSHADE visible').toBeVisible();
+  await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
+  // A handful of rAFs so the ACIDWARP -> CELLSHADE -> OUTPUT chain renders.
+  await page.waitForTimeout(800);
+  return readCellStats(page);
+}
+
+test.describe('CELLSHADE — cel-shader video processor', () => {
+  test('ACIDWARP -> CELLSHADE -> OUTPUT shows posterized colour + edge ink', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    // 4-bit (idx 2) default + a thicker ink so the edges read clearly.
+    const stats = await captureCell(page, { threshold: 0.18, thickness: 3, bits: 2 });
+
+    // Colourful posterized pixels show through (renderer-tolerant: assert
+    // "some colour" not an exact count — SwiftShader vs a real GPU differ).
+    expect(stats.colourFrac, 'CELLSHADE renders posterized colour').toBeGreaterThan(0.01);
+    // Some black-ink edge pixels exist (the inked Sobel contours over a
+    // high-contrast moving source). Not all-black, not edge-free.
+    expect(stats.inkFrac, 'CELLSHADE inks some edges (black lines)').toBeGreaterThan(0.001);
+    expect(stats.inkFrac, 'frame is not all-black ink').toBeLessThan(0.9);
+
+    expect(errors, 'no console / page errors').toEqual([]);
+  });
+
+  test('lowering BITS reduces the number of distinct colours', async ({ page }) => {
+    // 1-bit (idx 0 = 2 colours / luma-band) vs 16-bit (idx 4 = 65536 / 565).
+    // Edges held off (threshold high) so the ink doesn't dominate the count.
+    const lowBits  = await captureCell(page, { threshold: 0.95, thickness: 1, bits: 0 });
+    const highBits = await captureCell(page, { threshold: 0.95, thickness: 1, bits: 4 });
+
+    expect(lowBits.distinctColours, 'low-bit render has colours').toBeGreaterThan(0);
+    expect(
+      highBits.distinctColours,
+      'higher BITS yields MORE distinct colours than lower BITS',
+    ).toBeGreaterThan(lowBits.distinctColours);
+  });
+
+  test('raising THRESHOLD reduces edge-ink pixels', async ({ page }) => {
+    // Same source + bits + thickness; only the edge gate changes. A LOW
+    // threshold inks more contours → more black pixels; a HIGH threshold inks
+    // only the strongest → fewer. Use a fixed bit depth so the colour count
+    // doesn't move under us.
+    const lowThresh  = await captureCell(page, { threshold: 0.08, thickness: 2, bits: 3 });
+    const highThresh = await captureCell(page, { threshold: 0.9,  thickness: 2, bits: 3 });
+
+    expect(lowThresh.inkFrac, 'low threshold inks edges').toBeGreaterThan(0);
+    expect(
+      highThresh.inkFrac,
+      'higher threshold yields fewer (or equal) inked pixels',
+    ).toBeLessThanOrEqual(lowThresh.inkFrac);
+  });
+
+  test('CV params route through the patch store (incl. discrete BITS)', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [{ id: 'cel', type: 'cellshade', position: { x: 200, y: 100 }, domain: 'video' }],
+      [],
+      { mountTimeout: HEAVY_MOUNT_TIMEOUT },
+    );
+    await expect(page.locator('[data-testid="cellshade-card"]')).toHaveCount(1);
+
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['cel'];
+        if (!n) return;
+        n.params.threshold = 0.42;
+        n.params.thickness = 5;
+        n.params.bits = 3; // 8-bit step index
+      });
+    });
+    await page.waitForTimeout(120);
+
+    const params = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+      };
+      const n = w.__patch.nodes['cel'];
+      return { th: n?.params.threshold, wk: n?.params.thickness, bits: n?.params.bits };
+    });
+    expect(params.th).toBe(0.42);
+    expect(params.wk).toBe(5);
+    expect(params.bits).toBe(3);
+
+    // The card's BITS readout reflects the 8-bit step (data-testid set on the
+    // readout). Renderer-agnostic DOM assertion (no canvas read needed).
+    await expect(page.locator('[data-testid="cellshade-bits-readout"]'))
+      .toContainText('8-BIT');
+  });
+});

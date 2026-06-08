@@ -1,0 +1,195 @@
+<script lang="ts">
+  // CellshadeCard — UI for CELLSHADE (cel-shader video processor).
+  //
+  // Single video input (in) → video output (out). Three knobs:
+  //   THRESH (edge gate, from EDGES) + THICK (ink stroke width, from EDGES)
+  //   + BITS (a 5-step DISCRETE knob snapping to 1/2/4/8/16-bit colour
+  //   depth). BITS displays its current bit value (1/2/4/8/16) on the card.
+  // Each knob has a matching per-param CV input. A live preview of the
+  // cel-shaded OUT is shown (mirrors FreezeframeCard's blit).
+  import { onMount, onDestroy } from 'svelte';
+  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import Fader from '$lib/ui/controls/Fader.svelte';
+  import { useEngine } from '$lib/audio/engine-context';
+  import { patch } from '$lib/graph/store';
+  import {
+    cellshadeDef,
+    cellshadeBitDepth,
+    cellshadeColorCount,
+    CELLSHADE_BIT_STEPS,
+  } from '$lib/video/modules/cellshade';
+  import { EDGES_MAX_THICKNESS } from '$lib/video/modules/edges';
+  import type { VideoEngine } from '$lib/video/engine';
+  import { VIDEO_RES } from '$lib/video/engine';
+  import type { ModuleNode } from '$lib/graph/types';
+  import ModuleTitle from './ModuleTitle.svelte';
+
+  let { id, data }: NodeProps = $props();
+  let node = $derived(data?.node as ModuleNode);
+  const engineCtx = useEngine();
+
+  function p(name: string): number {
+    const def = cellshadeDef.params.find((d) => d.id === name);
+    return node?.params[name] ?? def?.defaultValue ?? 0;
+  }
+  function pdef(name: string): number {
+    return cellshadeDef.params.find((d) => d.id === name)!.defaultValue;
+  }
+  function setParam(paramId: string) {
+    return (v: number) => {
+      const target = patch.nodes[id];
+      if (target) target.params[paramId] = v;
+    };
+  }
+
+  // --- BITS discrete display: the knob value is a step INDEX 0..4; show the
+  // bit value (1/2/4/8/16) + colour count below it. ---
+  const BITS_MAX_INDEX = CELLSHADE_BIT_STEPS.length - 1;
+  // Tick rail: one mark per step, labelled with the bit value.
+  const BITS_TICKS = CELLSHADE_BIT_STEPS.map((s, i) => ({
+    frac: BITS_MAX_INDEX > 0 ? i / BITS_MAX_INDEX : 0,
+    label: String(s.bits),
+  }));
+  function formatBits(v: number): string {
+    return String(cellshadeBitDepth(v));
+  }
+  let bitDepth = $derived(cellshadeBitDepth(p('bits')));
+  let colorCount = $derived(cellshadeColorCount(p('bits')));
+
+  // --- Live preview of OUT (the canonical surface.texture). ---
+  const ENGINE_W = VIDEO_RES.width;
+  const ENGINE_H = VIDEO_RES.height;
+  let canvasEl: HTMLCanvasElement | null = $state(null);
+  let rafId: number | null = null;
+
+  function draw() {
+    rafId = null;
+    const e = engineCtx.get();
+    if (!e || !canvasEl) { rafId = requestAnimationFrame(draw); return; }
+    let videoEngine: VideoEngine | undefined;
+    try { videoEngine = e.getDomain<VideoEngine>('video'); }
+    catch { rafId = requestAnimationFrame(draw); return; }
+    if (!videoEngine) { rafId = requestAnimationFrame(draw); return; }
+    const ctx2d = canvasEl.getContext('2d', { alpha: false });
+    if (ctx2d) {
+      try { videoEngine.blitOutputToDrawingBuffer(id); } catch { /* never nuke the rAF loop */ }
+      const src = videoEngine.canvas as CanvasImageSource;
+      const cw = canvasEl.width;
+      const ch = canvasEl.height;
+      ctx2d.fillStyle = '#050608';
+      ctx2d.fillRect(0, 0, cw, ch);
+      const srcAspect = ENGINE_W / ENGINE_H;
+      const dstAspect = cw / ch;
+      let w = cw, h = ch, x = 0, y = 0;
+      if (dstAspect > srcAspect) { h = ch; w = Math.round(h * srcAspect); x = Math.round((cw - w) / 2); }
+      else { w = cw; h = Math.round(w / srcAspect); y = Math.round((ch - h) / 2); }
+      ctx2d.drawImage(src, x, y, w, h);
+    }
+    rafId = requestAnimationFrame(draw);
+  }
+
+  onMount(() => { rafId = requestAnimationFrame(draw); });
+  onDestroy(() => { if (rafId !== null) cancelAnimationFrame(rafId); });
+</script>
+
+<div class="card video" data-testid="cellshade-card" data-node-id={id}>
+  <div class="stripe"></div>
+  <ModuleTitle {id} {data} defaultLabel="CELLSHADE" />
+
+  <Handle type="target" position={Position.Left} id="in"        style="top: 56px;  --handle-color: var(--cable-video);" />
+  <span class="port-label left" style="top: 50px;">IN</span>
+  <!-- CV inputs — one per modulatable param. handle id MUST match the param
+       id (the cross-domain CV bridge routes cv onto setParam(portId)). -->
+  <Handle type="target" position={Position.Left} id="threshold" style="top: 92px;  --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 86px;">T</span>
+  <Handle type="target" position={Position.Left} id="thickness" style="top: 124px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 118px;">W</span>
+  <Handle type="target" position={Position.Left} id="bits"      style="top: 156px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 150px;">B</span>
+
+  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
+  <span class="port-label right" style="top: 50px;">OUT</span>
+
+  <!-- OUT live preview -->
+  <div class="preview-wrap">
+    <canvas
+      bind:this={canvasEl}
+      width={160}
+      height={120}
+      data-testid="cellshade-preview"
+      data-node-id={id}
+    ></canvas>
+    <span class="preview-label" data-testid="cellshade-bits-readout">{bitDepth}-BIT · {colorCount} COL</span>
+  </div>
+
+  <div class="fader-grid">
+    <Fader value={p('threshold')} min={0} max={1}                  defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
+    <Fader value={p('thickness')} min={1} max={EDGES_MAX_THICKNESS} units="px" defaultValue={pdef('thickness')} label="Thick"  curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
+    <Fader
+      value={p('bits')}
+      min={0}
+      max={BITS_MAX_INDEX}
+      defaultValue={pdef('bits')}
+      label="Bits"
+      curve="discrete"
+      formatValue={formatBits}
+      ticks={BITS_TICKS}
+      onchange={setParam('bits')}
+      moduleId={id}
+      paramId="bits"
+    />
+  </div>
+</div>
+
+<style>
+  .card {
+    width: 220px;
+    min-height: 360px;
+    background: var(--module-bg);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text);
+    padding-top: 18px;
+    padding-bottom: 14px;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
+  }
+  :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
+  :global(.svelte-flow__node.selected) .card {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  /* Video stripe — same accent the OUT handle uses. */
+  .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
+  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
+  .port-label.left { left: 14px; }
+  .port-label.right { right: 14px; }
+  .preview-wrap {
+    /* Clear the lowest CV-input handle (top: 156px). */
+    margin: 78px auto 0;
+    width: 160px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+  }
+  .preview-wrap canvas {
+    width: 160px;
+    height: 120px;
+    background: #050608;
+    border: 1px solid var(--cable-video);
+    border-radius: 1px;
+    image-rendering: pixelated;
+    display: block;
+  }
+  .preview-label { font-size: 0.55rem; color: var(--text-dim); letter-spacing: 0.08em; font-family: ui-monospace, monospace; }
+  .fader-grid {
+    margin-top: 14px;
+    padding: 0 14px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px 6px;
+    justify-items: center;
+  }
+</style>
