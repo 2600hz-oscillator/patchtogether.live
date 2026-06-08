@@ -11,9 +11,14 @@
 //     no page errors; the card's encoder probe resolves; Record disabled +
 //     "no H.264 encoder available" badge where the runtime can't encode.
 //
-//   * REAL ENCODING (gated on VideoEncoder.isConfigSupported — CI runners
-//     lack an OS H.264 encoder, so these run only where H.264 is available,
-//     e.g. a dev Mac with a hardware encoder):
+//   * REAL ENCODING (gated on an ACTUAL H.264 encode producing chunks — NOT on
+//     VideoEncoder.isConfigSupported alone. CI's headless software runner
+//     REPORTS avc as config-supported yet its encoder emits ZERO chunks for
+//     real frames, so isConfigSupported is a false-positive gate there: it
+//     would arm the recording → write only an `ftyp` → produce 0 `moof`
+//     fragments → fail. We therefore run a tiny real encode-and-flush probe and
+//     gate on chunks-actually-emitted, so these run only where H.264 truly
+//     encodes — e.g. a dev Mac with a hardware encoder):
 //       (a) a non-empty MP4 lands in OPFS scratch + is a parseable
 //           FRAGMENTED MP4 (ftyp + moof boxes present);
 //       (b) a TRUNCATED copy of the OPFS fragment file is STILL parseable
@@ -32,18 +37,68 @@ test.describe.configure({ mode: 'serial' });
 // workloads + a ~2.5s record window → generous budget.
 test.setTimeout(120_000);
 
-/** Does this runtime have an OS H.264 encoder? Gates the real-encoding asserts.
- *  Probes the EXACT config the recorder uses (High profile at engine res). */
+/** Can this runtime ACTUALLY encode H.264 video — i.e. does a real encode
+ *  produce output chunks? Gates the real-encoding asserts.
+ *
+ *  We do NOT trust VideoEncoder.isConfigSupported here: CI's headless software
+ *  runner reports avc as config-supported but its encoder emits ZERO chunks for
+ *  real frames (so the recording writes an `ftyp` but never a `moof`). Instead
+ *  we run a tiny end-to-end probe — configure a VideoEncoder, draw + encode a
+ *  couple of real frames off a canvas, flush, and require ≥1 chunk emitted.
+ *  That is the true "this runtime really encodes H.264" signal. Probes the
+ *  EXACT codecs/profile the recorder uses, at a small size (fast everywhere). */
 async function h264EncodeSupported(page: Page): Promise<boolean> {
   return await page.evaluate(async () => {
-    const VE = (globalThis as { VideoEncoder?: { isConfigSupported?: (c: unknown) => Promise<{ supported?: boolean }> } }).VideoEncoder;
-    if (!VE || typeof VE.isConfigSupported !== 'function') return false;
+    interface MiniVideoEncoder {
+      configure: (c: unknown) => void;
+      encode: (frame: unknown, opts?: unknown) => void;
+      flush: () => Promise<void>;
+      close: () => void;
+    }
+    const g = globalThis as {
+      VideoEncoder?: new (init: { output: (chunk: unknown) => void; error: (e: unknown) => void }) => MiniVideoEncoder;
+      VideoFrame?: new (src: CanvasImageSource, init: { timestamp: number; duration?: number }) => { close: () => void };
+    };
+    const VE = g.VideoEncoder;
+    const VF = g.VideoFrame;
+    if (typeof VE !== 'function' || typeof VF !== 'function') return false;
+
+    // A small canvas with non-trivial content (a solid-color encode can be a
+    // degenerate fast path; draw a gradient so the encoder does real work).
+    const W = 64, H = 64;
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return false;
+
     const codecs = ['avc1.640028', 'avc1.42E01E'];
     for (const codec of codecs) {
+      let chunks = 0;
+      let errored = false;
+      let enc: MiniVideoEncoder | null = null;
       try {
-        const r = await VE.isConfigSupported({ codec, width: 1024, height: 768, bitrate: 14_000_000, framerate: 30 });
-        if (r?.supported) return true;
-      } catch { /* try next */ }
+        enc = new VE({
+          output: () => { chunks++; },
+          error: () => { errored = true; },
+        });
+        enc.configure({ codec, width: W, height: H, bitrate: 1_000_000, framerate: 30 });
+        // Encode a few real frames (key + delta) so even a lazy encoder flushes.
+        for (let i = 0; i < 4 && !errored; i++) {
+          ctx.fillStyle = `rgb(${(i * 60) % 256},${(i * 30) % 256},${(i * 90) % 256})`;
+          ctx.fillRect(0, 0, W, H);
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(i * 8, i * 8, 24, 24);
+          const frame = new VF(cv, { timestamp: i * 33_333, duration: 33_333 });
+          enc.encode(frame, { keyFrame: i === 0 });
+          frame.close();
+        }
+        await enc.flush();
+      } catch {
+        errored = true;
+      } finally {
+        try { enc?.close(); } catch { /* */ }
+      }
+      if (!errored && chunks > 0) return true;
     }
     return false;
   });

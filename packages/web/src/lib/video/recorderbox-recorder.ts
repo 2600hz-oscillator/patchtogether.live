@@ -94,12 +94,115 @@ export interface ProbeDeps {
 }
 
 /**
+ * The DEFAULT real H.264 video probe. `canEncodeVideo` (→
+ * VideoEncoder.isConfigSupported) is NOT trustworthy on its own: headless
+ * software runners (CI) report avc as config-supported yet their encoder emits
+ * ZERO chunks for real frames — so a recording there writes only an `ftyp` and
+ * never a `moof` fragment (an unplayable take). We therefore AND the config
+ * check with a tiny end-to-end encode-and-flush smoke test (encode a few real
+ * canvas frames, require ≥1 output chunk). Only a runtime that genuinely
+ * produces encoded bitstream passes → the card enables Record only where a take
+ * will actually be playable; everywhere else it shows the "no encoder" badge.
+ *
+ * Falls back to the config check alone if the WebCodecs primitives (or a 2D
+ * canvas) aren't available, so non-CI environments aren't gated by a probe that
+ * can't run.
+ */
+async function defaultCanEncodeVideo(
+  codec: typeof VIDEO_CODEC,
+  opts: { width: number; height: number; bitrate: number },
+): Promise<boolean> {
+  // 1) Config support (Mediabunny → VideoEncoder.isConfigSupported).
+  let configOk = false;
+  try {
+    configOk = await canEncodeVideo(codec, opts);
+  } catch {
+    configOk = false;
+  }
+  if (!configOk) return false;
+
+  // 2) Real encode-and-flush smoke test (the false-positive guard).
+  interface MiniVideoEncoder {
+    configure: (c: unknown) => void;
+    encode: (frame: unknown, o?: unknown) => void;
+    flush: () => Promise<void>;
+    close: () => void;
+  }
+  const g = globalThis as unknown as {
+    VideoEncoder?: new (init: { output: (c: unknown) => void; error: (e: unknown) => void }) => MiniVideoEncoder;
+    VideoFrame?: new (src: CanvasImageSource, init: { timestamp: number; duration?: number }) => { close: () => void };
+    document?: { createElement: (t: string) => HTMLCanvasElement };
+    OffscreenCanvas?: new (w: number, h: number) => OffscreenCanvas;
+  };
+  const VE = g.VideoEncoder;
+  const VF = g.VideoFrame;
+  if (typeof VE !== 'function' || typeof VF !== 'function') {
+    // No WebCodecs primitives to smoke-test with — trust the config check.
+    return configOk;
+  }
+
+  // A small canvas; gradient content so the encoder does real work.
+  const W = 64, H = 64;
+  let cv: HTMLCanvasElement | OffscreenCanvas | null = null;
+  let ctx: (CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D) | null = null;
+  try {
+    if (g.document?.createElement) {
+      const el = g.document.createElement('canvas');
+      el.width = W; el.height = H;
+      cv = el;
+      ctx = el.getContext('2d');
+    } else if (typeof g.OffscreenCanvas === 'function') {
+      const oc = new g.OffscreenCanvas(W, H);
+      cv = oc;
+      ctx = oc.getContext('2d') as OffscreenCanvasRenderingContext2D | null;
+    }
+  } catch {
+    cv = null;
+  }
+  if (!cv || !ctx) return configOk; // can't smoke-test → trust config.
+
+  // The raw WebCodecs VideoEncoder.configure needs a FULL codec string
+  // (avc1.PPCCLL) — the short Mediabunny name ('avc') is not valid there. Try
+  // High then Baseline; a runtime that emits chunks for either really encodes.
+  const fullCodecs = ['avc1.640028', 'avc1.42E01E'];
+  for (const fullCodec of fullCodecs) {
+    let chunks = 0;
+    let errored = false;
+    let enc: MiniVideoEncoder | null = null;
+    try {
+      enc = new VE({ output: () => { chunks++; }, error: () => { errored = true; } });
+      enc.configure({ codec: fullCodec, width: W, height: H, bitrate: 1_000_000, framerate: 30 });
+      for (let i = 0; i < 4 && !errored; i++) {
+        ctx.fillStyle = `rgb(${(i * 60) % 256},${(i * 30) % 256},${(i * 90) % 256})`;
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(i * 8, i * 8, 24, 24);
+        const frame = new VF(cv as CanvasImageSource, { timestamp: i * 33_333, duration: 33_333 });
+        enc.encode(frame, { keyFrame: i === 0 });
+        frame.close();
+      }
+      await enc.flush();
+    } catch {
+      errored = true;
+    } finally {
+      try { enc?.close(); } catch { /* */ }
+    }
+    if (!errored && chunks > 0) return true;
+  }
+  return false;
+}
+
+/**
  * Probe the runtime's encoder support. Pure w.r.t. the injected deps — the
  * card calls it with no args (real Mediabunny probes); tests inject stubs.
  *
  * H.264 (avc) is OS-encoder-dependent, so we probe at the ACTUAL recording
- * resolution (canEncodeVideo internally calls VideoEncoder.isConfigSupported
- * with the right avc profile string). AAC is near-universal but probed too.
+ * resolution. The default video probe (defaultCanEncodeVideo) does NOT trust
+ * VideoEncoder.isConfigSupported alone — that returns a false positive on
+ * headless software runners (CI), which then write an `ftyp` but never a `moof`
+ * fragment. It ANDs the config check with a tiny real encode-and-flush smoke
+ * test, so canRecord is true only where a take will actually be playable. AAC
+ * is near-universal but probed too. (Injected stubs bypass the smoke test.)
  */
 export async function probeEncoders(
   width: number,
@@ -107,7 +210,7 @@ export async function probeEncoders(
   sampleRate = 48_000,
   deps: ProbeDeps = {},
 ): Promise<EncoderSupport> {
-  const cev = deps.canEncodeVideo ?? canEncodeVideo;
+  const cev = deps.canEncodeVideo ?? defaultCanEncodeVideo;
   const cea = deps.canEncodeAudio ?? canEncodeAudio;
   const opfsFn = deps.hasOpfs ?? hasOpfs;
   let video = false;
