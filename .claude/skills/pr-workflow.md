@@ -1,6 +1,6 @@
 ---
 name: pr-workflow
-description: How PRs work on this repo. Branch protection ruleset, required status checks, strict-up-to-date, merge ordering, the auto-merge silent-drop pattern.
+description: How PRs work on this repo. Branch protection ruleset, the 2 required status checks (vrt-strict + the umbrella job), merge ordering with strict-up-to-date OFF, the gh pr update-branch silent-drop pattern (never use it).
 ---
 
 # PR workflow
@@ -13,11 +13,18 @@ Ruleset id **16042163** ("main: green PRs only") enforces:
 - **No force-push**. No deletion.
 - **PR is required** — the `pull_request` rule. Zero required approvers
   (single-author repo), but a PR object must exist.
-- **2 required status checks** must be SUCCESS:
-  1. `typecheck + unit + ART + E2E` — the main CI job
-  2. `VRT (visual regression)` — the visual regression job
-- **strict-up-to-date** — the PR's base SHA must equal current `main`. Every
-  merge invalidates other open PRs' bases.
+- **2 required status checks** must be SUCCESS (verified against the live
+  ruleset — `required_status_checks[].context`):
+  1. `typecheck + unit + ART + E2E` — the umbrella CI job
+  2. `vrt-strict (visual regression — strict subset)` — the strict VRT subset.
+     The full-canvas `VRT (visual regression)` job exists but is **informational**,
+     NOT the required context (ci.yml: *"ruleset now gates vrt-strict; full canvas
+     vrt is informational"*).
+- **strict-up-to-date is OFF.** `strict_required_status_checks_policy` is
+  **false** on this ruleset — a PR's base does **not** have to equal current
+  `main` to merge, and a merge does **not** auto-invalidate other open PRs'
+  bases. (You still rebase to pick up real conflicts — see the conflict-sweep
+  discipline in CLAUDE.md — but GitHub won't force it.)
 
 To inspect/edit the ruleset:
 
@@ -29,61 +36,71 @@ flox activate -- gh api repos/2600hz-oscillator/patchtogether.live/rulesets/1604
 JSON
 ```
 
-## The strict-up-to-date consequence: merge ordering
+## Merge ordering when several PRs are open
 
-When several PRs are open, every merge invalidates the rest. Standard play:
+Strict-up-to-date is OFF, so merging one PR does NOT auto-invalidate the others'
+bases. But concurrent PRs that touch the **same hand-maintained file** (manifest
+`DESCRIPTIONS`, VRT exemptions, `modules-card-map.test.ts EXPECTED_NODE_TYPES`,
+per-port lists — see `module-development`) will conflict after a merge. The play:
 
-1. Pick the smallest / safest PR.
-2. Merge it.
-3. `gh pr update-branch <other-pr>` on each remaining PR — this triggers a
-   merge of `main` into the PR branch.
-4. Watch CI on each rebased PR.
-5. Pick the next-smallest, repeat.
+1. Pick the smallest / safest PR and merge it.
+2. Run `flox activate -- task pr:conflict-sweep` to find PRs the merge just
+   turned conflicting (GitHub recomputes mergeability async, so it polls).
+3. For each conflicting PR, rebase it LOCALLY and verify your additions survived:
+   ```sh
+   flox activate -- git fetch origin && git checkout <branch> && git merge origin/main
+   # resolve as union (main + your PR's additions), then:
+   flox activate -- git grep <your-symbol>   # confirm YOUR adds are still present
+   flox activate -- git push
+   ```
+4. Repeat.
 
-If many PRs are open, this can take hours of CI-cycle waiting; budget
-accordingly.
+**NEVER use `gh pr update-branch`** to do step 3 — see the silent-drop hazard
+below. Always merge `main` in locally and diff.
 
 ## The `gh pr update-branch` silent-drop pattern
 
-**Important — bit us hard during phase 1.** When you `gh pr update-branch` on
-a PR that's many commits stale and touches **shared registry files**
-(`audio/modules/index.ts`, `Canvas.svelte`, `module-categories.ts`,
-`graph/types.ts`, `vrt-meta.test.ts`, `cv-scale-registry.test.ts`), the
-auto-merge can silently take the PR's version of those files — dropping
-entries that `main` added but the PR didn't see. No conflict marker.
+**Important — bit us hard, repeatedly.** When you `gh pr update-branch` on a PR
+that's stale and touches a **hand-maintained list file** that other PRs also
+appended to, the auto-merge can silently take the PR's version of that file —
+dropping entries that `main` added but the PR didn't see. **No conflict marker.**
+
+> **NEVER use `gh pr update-branch` on a PR touching a hand-maintained list
+> file.** Always `git fetch origin && git merge origin/main` locally and diff
+> that your additions survived. This is a hard CLAUDE.md rule.
+
+Module *registration* is now glob+palette-driven (PR #551), so `index.ts` /
+`Canvas.svelte` / `module-categories.ts` / `graph/types.ts` no longer collect
+per-module appends and are no longer the conflict surface. The remaining
+hand-maintained list files that this hazard applies to are:
+
+- `packages/web/src/lib/docs/module-manifest.ts` (`DESCRIPTIONS`)
+- `e2e/vrt/vrt-exemptions.ts` (`EXEMPT_FROM_VRT` / `EXEMPT_BASELINE_PAIRS`)
+- `packages/web/src/lib/ui/modules-card-map.test.ts` (`EXPECTED_NODE_TYPES`)
+- the per-port spec lists (`e2e/tests/per-module-per-port*.spec.ts`)
 
 CI then fails with mysterious "module not found" / "Received: 0 elements"
 errors that look unrelated to your PR.
 
-**Mitigation after any update-branch on a multi-PR-stale branch:**
+**Mitigation — always rebase locally and diff your adds survived:**
 
 ```sh
-flox activate -- bash -c '
-for f in packages/web/src/lib/audio/modules/index.ts \
-         packages/web/src/lib/ui/Canvas.svelte \
-         packages/web/src/lib/ui/module-categories.ts \
-         packages/web/src/lib/graph/types.ts \
-         packages/web/src/lib/audio/modules/vrt-meta.test.ts \
-         packages/web/src/lib/audio/cv-scale-registry.test.ts; do
-  echo "=== $f ==="
-  echo -n "main: "; gh api repos/2600hz-oscillator/patchtogether.live/contents/${f}?ref=main \
-    --jq ".content" | base64 -d | grep -cE "registerModule\\(" 2>/dev/null
-  echo -n "this branch: "; gh api repos/2600hz-oscillator/patchtogether.live/contents/${f}?ref=<branch> \
-    --jq ".content" | base64 -d | grep -cE "registerModule\\(" 2>/dev/null
-done
-'
+flox activate -- git fetch origin && git checkout <branch> && git merge origin/main
+# resolve any conflict as a UNION (main's entries + your PR's), then:
+flox activate -- git grep <your-module-type>   # confirm YOUR entries are present in each list file
+flox activate -- git push
 ```
 
-If counts mismatch in favor of `main`, the update silently dropped content.
-Fix: do a real `git merge origin/main` in a fresh shallow clone, resolve as
-union (`main` plus your PR's additions), push.
+If your entry is missing after a merge, the resolution dropped it — re-add it
+as union, never let auto-merge pick one side.
 
 ## Required checks naming
 
-The renamed job (`VRT (visual regression)`, formerly `VRT (visual regression,
-advisory)`) means any PR opened BEFORE the rename has the old name in its
-checks rollup. Those PRs cannot merge under the new ruleset until they pick
-up the new job name — which requires a rebase that re-runs CI.
+The required VRT context is `vrt-strict (visual regression — strict subset)`,
+NOT the full-canvas `VRT (visual regression)` job (which is informational). A PR
+whose checks rollup predates a check rename carries the OLD name and cannot merge
+under the current ruleset until it picks up the current job names — which needs a
+local `git merge origin/main` rebase that re-runs CI (never `gh pr update-branch`).
 
 ## Merging
 
@@ -114,7 +131,8 @@ on substantial PRs.
 ## When you can't merge: typical causes
 
 - `mergeStateStatus=BLOCKED` + a FAILURE check → fix CI first.
-- `state=BEHIND` → `gh pr update-branch` then re-watch.
+- `state=BEHIND` → `git fetch origin && git merge origin/main` locally, diff
+  that your additions survived, push, re-watch. **NOT `gh pr update-branch`.**
 - `state=DIRTY` → real merge conflict; resolve in your worktree, push.
 - `state=CLEAN` but merge button is greyed → check branch protection allows
   the merge method (`merge | squash | rebase` are all allowed currently).
