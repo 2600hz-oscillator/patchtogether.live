@@ -32,6 +32,11 @@ import type { Extension } from '@hocuspocus/server';
 interface HocuspocusLike {
   getConnectionsCount(): number;
   getDocumentsCount(): number;
+  /** Snapshot-store mode the relay resolved at boot — 'postgres' (durable) or
+   *  'memory' (process-local, lost on restart). Surfaced on /health + /metrics
+   *  so a misconfigured prod relay serving a non-persistent rack is observable.
+   *  See packages/server/src/db.ts:persistenceMode. */
+  getPersistenceMode(): 'postgres' | 'memory';
 }
 
 /** Process-level numbers that change at sub-second cadence. */
@@ -48,6 +53,9 @@ export interface MetricsSnapshot {
   conns: number;
   rooms: number;
   persist_writes_per_min: number;
+  /** Snapshot-store mode: 'postgres' (durable) or 'memory' (lost on restart).
+   *  A prod relay reporting 'memory' is serving a non-persistent rack. */
+  persist_mode: 'postgres' | 'memory';
 }
 
 /** Pluggable deps so tests can pin the clock + memory readings. */
@@ -169,6 +177,7 @@ export function createIntrospectionExtension(
       conns: hocuspocus.getConnectionsCount(),
       rooms: hocuspocus.getDocumentsCount(),
       persist_writes_per_min: persistWrites.length,
+      persist_mode: hocuspocus.getPersistenceMode(),
     };
   }
 
@@ -224,7 +233,9 @@ export function createIntrospectionExtension(
           'Content-Type': 'application/json',
           'Cache-Control': 'no-store',
         });
-        payload.response.end(JSON.stringify({ ok: true, boot_id: bootId }));
+        payload.response.end(
+          JSON.stringify({ ok: true, boot_id: bootId, persist: hocuspocus.getPersistenceMode() }),
+        );
         // Throw an empty error: Hocuspocus's Server.requestHandler treats
         // this as "an extension already replied, skip the default 200 OK".
         // (See the dist/hocuspocus-server.esm.js requestHandler: `if (error) throw error`

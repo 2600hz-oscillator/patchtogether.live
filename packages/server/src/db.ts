@@ -40,6 +40,40 @@ if (USE_MEMORY) {
   );
 }
 
+/** Which snapshot store the relay is currently using.
+ *  'postgres' = durable (DATABASE_URL set); 'memory' = process-local + lost on
+ *  restart (the local-dev/e2e fallback). Surfaced on /health + /metrics so a
+ *  misconfigured prod relay serving a NON-persistent rack is observable instead
+ *  of silently lossy. */
+export function persistenceMode(): 'postgres' | 'memory' {
+  return USE_MEMORY ? 'memory' : 'postgres';
+}
+
+/** Pure decision for the prod startup fail-fast guard (kept side-effect-free so
+ *  vitest can exercise it without actually `process.exit`-ing).
+ *
+ *  The in-memory snapshot store (PR #310) is INTENTIONAL for local dev + the
+ *  @collab e2e suite (it lets two browser contexts join the same rack without
+ *  standing up Postgres). But a PROD relay that boots into memory mode silently
+ *  serves a rack whose state vanishes on the next deploy/restart — exactly the
+ *  "looks fine, loses everything" footgun this guard exists to prevent.
+ *
+ *  Fire ONLY when ALL hold:
+ *    - NODE_ENV === 'production'  (all three fly.tomls set it; local + the
+ *      @collab CI/test env do NOT → the in-memory @collab path stays untouched)
+ *    - we resolved to memory mode (no DATABASE_URL)
+ *    - the operator did NOT set the ALLOW_MEMORY_STORE=1 escape hatch (for a
+ *      deliberate ephemeral prod-memory run)
+ *
+ *  `usingMemory` is injectable so the test doesn't depend on the module-load-time
+ *  USE_MEMORY snapshot; it defaults to the live persistence mode. */
+export function shouldFailFast(
+  env: Record<string, string | undefined> = process.env,
+  usingMemory: boolean = persistenceMode() === 'memory',
+): boolean {
+  return env.NODE_ENV === 'production' && usingMemory && env.ALLOW_MEMORY_STORE !== '1';
+}
+
 function getPool(): pg.Pool {
   if (pool) return pool;
   const connectionString = process.env.DATABASE_URL;

@@ -85,3 +85,80 @@ describe('storeSnapshot — never crashes the relay on a persist failure', () =>
     expect(() => handler(Object.assign(new Error('idle client died'), { code: '57P01' }))).not.toThrow();
   });
 });
+
+// ── Phase 2a / FW1: persistence mode + prod fail-fast guard ─────────────────
+//
+// USE_MEMORY (and thus persistenceMode()) is captured at module LOAD from
+// DATABASE_URL, so we vi.resetModules() and set/unset the env before each
+// import to exercise both branches. shouldFailFast is a PURE function so the
+// guard can be tested without ever calling process.exit().
+describe('persistenceMode — flips on DATABASE_URL presence at module load', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    queryMock.mockReset();
+    poolOn.mockReset();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.DATABASE_URL;
+  });
+
+  it("returns 'postgres' when DATABASE_URL is set", async () => {
+    process.env.DATABASE_URL = 'postgresql://u:p@localhost:5432/test';
+    const { persistenceMode } = await import('./db.js');
+    expect(persistenceMode()).toBe('postgres');
+  });
+
+  it("returns 'memory' when DATABASE_URL is unset", async () => {
+    delete process.env.DATABASE_URL;
+    const { persistenceMode } = await import('./db.js');
+    expect(persistenceMode()).toBe('memory');
+  });
+});
+
+describe('shouldFailFast — prod fail-fast guard (pure, no process.exit)', () => {
+  // Module-load env is irrelevant: shouldFailFast takes env + usingMemory as
+  // explicit args, so we drive the truth table directly.
+  let shouldFailFast: typeof import('./db.js').shouldFailFast;
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    // Pin a known load-time state; every assertion passes usingMemory explicitly.
+    process.env.DATABASE_URL = 'postgresql://u:p@localhost:5432/test';
+    ({ shouldFailFast } = await import('./db.js'));
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.DATABASE_URL;
+  });
+
+  it('FIRES in production + memory mode + no escape hatch', () => {
+    expect(shouldFailFast({ NODE_ENV: 'production' }, true)).toBe(true);
+  });
+
+  it('does NOT fire in dev/test even in memory mode (the @collab CI/test path)', () => {
+    expect(shouldFailFast({ NODE_ENV: 'test' }, true)).toBe(false);
+    expect(shouldFailFast({ NODE_ENV: 'development' }, true)).toBe(false);
+    expect(shouldFailFast({}, true)).toBe(false); // NODE_ENV unset (local + CI default)
+  });
+
+  it('does NOT fire in production when DATABASE_URL is configured (postgres mode)', () => {
+    expect(shouldFailFast({ NODE_ENV: 'production' }, false)).toBe(false);
+  });
+
+  it('does NOT fire when the ALLOW_MEMORY_STORE=1 escape hatch is set', () => {
+    expect(shouldFailFast({ NODE_ENV: 'production', ALLOW_MEMORY_STORE: '1' }, true)).toBe(false);
+  });
+
+  it('STILL fires when ALLOW_MEMORY_STORE is set to a non-"1" value', () => {
+    expect(shouldFailFast({ NODE_ENV: 'production', ALLOW_MEMORY_STORE: '0' }, true)).toBe(true);
+    expect(shouldFailFast({ NODE_ENV: 'production', ALLOW_MEMORY_STORE: 'true' }, true)).toBe(true);
+  });
+
+  it('defaults usingMemory to the live persistence mode (postgres here → no fire)', () => {
+    // Loaded with DATABASE_URL set above → persistenceMode() === 'postgres'.
+    expect(shouldFailFast({ NODE_ENV: 'production' })).toBe(false);
+  });
+});
