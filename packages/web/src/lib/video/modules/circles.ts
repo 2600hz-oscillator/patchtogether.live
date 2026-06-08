@@ -18,7 +18,11 @@
 //                         overlap, black elsewhere.
 //
 // Inputs:
-//   gate  (gate):  a rising edge spawns one circle.
+//   gate    (gate):  a rising edge spawns one circle.
+//   collide (gate):  LIVE GLOBAL mode (NOT spawn-latched). While HIGH, circles
+//                    bounce off EACH OTHER (elastic, EDGE detection — discs
+//                    touch when center distance ≤ r1+r2); LOW/unpatched =
+//                    pass-through (the original behaviour).
 //   d / v / spd / decay (cv, paramTarget=…): per-param CV (diameter / vector /
 //                 speed / fade-out time).
 //   video (video): sampled by the `mapped` output.
@@ -67,6 +71,17 @@ export const CIRCLES_GATE_PARAM_ID = 'cv_gate';
 /** The gate input port id. */
 export const CIRCLES_GATE_PORT_ID = 'gate';
 
+/** The synthetic param the CV-bridge writes the COLLIDE gate LEVEL into. Unlike
+ *  the spawn gate (rising-edge → spawn), this is read as a LIVE LEVEL each frame:
+ *  HIGH → inter-circle elastic collision ON, LOW → pass-through. */
+export const CIRCLES_COLLIDE_PARAM_ID = 'cv_collide';
+/** The collide gate input port id. */
+export const CIRCLES_COLLIDE_PORT_ID = 'collide';
+
+/** A gate LEVEL ≥ this counts as HIGH (matches the rising-edge detector's
+ *  high threshold; the engine writes 0/1 but CV can arrive analog). */
+export const COLLIDE_GATE_HIGH = 0.5;
+
 interface CirclesParams {
   d: number;
   v: number;
@@ -75,6 +90,9 @@ interface CirclesParams {
   rate: number;
   // Synthetic gate param — written by the CV-bridge; hidden from the card.
   cv_gate: number;
+  // Synthetic COLLIDE gate LEVEL — written by the CV-bridge; hidden from the
+  // card. Read live each frame as the inter-circle collision on/off switch.
+  cv_collide: number;
 }
 
 const DEFAULTS: CirclesParams = {
@@ -84,6 +102,7 @@ const DEFAULTS: CirclesParams = {
   decay: 0,  // 0 = persist (preserve the static-field default; FIFO-capped)
   rate: 0.5, // internal clock on by default so the source is alive on spawn
   cv_gate: 0,
+  cv_collide: 0, // collide OFF by default (pass-through) until the gate goes HIGH
 };
 
 // Fullscreen-quad shader: sample the scene texture (top-left-origin canvas →
@@ -126,6 +145,10 @@ export const circlesDef: VideoModuleDef = {
     // A gate event spawns a new circle. The CV-bridge routes the gate sample
     // into setParam(cv_gate, value); a rising-edge detector spawns one circle.
     { id: CIRCLES_GATE_PORT_ID, type: 'gate', paramTarget: CIRCLES_GATE_PARAM_ID },
+    // LIVE inter-circle COLLIDE mode. The CV-bridge routes this gate's LEVEL
+    // into setParam(cv_collide, value); the sim reads it each frame (HIGH →
+    // circles bounce off each other elastically, LOW → pass through).
+    { id: CIRCLES_COLLIDE_PORT_ID, type: 'gate', paramTarget: CIRCLES_COLLIDE_PARAM_ID },
     // Per-param CV — port id MUST equal the param id (the cross-domain CV
     // bridge routes onto setParam(portId)). `rate` is knob-only (no port).
     { id: 'd',     type: 'cv', paramTarget: 'd' },
@@ -149,6 +172,9 @@ export const circlesDef: VideoModuleDef = {
     { id: 'rate',  label: 'Rate',  defaultValue: DEFAULTS.rate,  min: 0, max: 1, curve: 'linear' },
     // Synthetic gate param — hidden from the card; rendered as the gate jack.
     { id: CIRCLES_GATE_PARAM_ID, label: 'GATE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
+    // Synthetic COLLIDE gate param — hidden from the card; rendered as the
+    // collide jack. Read live as the inter-circle collision on/off level.
+    { id: CIRCLES_COLLIDE_PARAM_ID, label: 'COLLIDE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -348,8 +374,16 @@ export const circlesDef: VideoModuleDef = {
         const dtMs = lastTime < 0 ? 1000 / 60 : Math.max(0, (t - lastTime) * 1000);
         lastTime = t;
 
-        // Push live params into the sim (latched per-circle at spawn).
-        sim.setParams({ d: params.d, v: params.v, spd: params.spd, decay: params.decay, rate: params.rate });
+        // Push live params into the sim. d/v/spd/decay/rate latch per-circle at
+        // spawn; `collide` is a LIVE GLOBAL mode (gate LEVEL ≥ HIGH → on).
+        sim.setParams({
+          d: params.d,
+          v: params.v,
+          spd: params.spd,
+          decay: params.decay,
+          rate: params.rate,
+          collide: params.cv_collide >= COLLIDE_GATE_HIGH,
+        });
         // Advance the sim (internal rate clock spawns + integration + bounce).
         sim.step(dtMs);
 
@@ -424,6 +458,7 @@ export const circlesDef: VideoModuleDef = {
         if (key === 'spawnCount') return sim.spawnCount;
         if (key === 'cullCount') return sim.cullCount;
         if (key === 'decayCount') return sim.decayCount;
+        if (key === 'collisionCount') return sim.collisionCount;
         if (key === 'framesElapsed') return framesElapsed;
         if (key === 'maxCircles') return MAX_CIRCLES;
         return undefined;

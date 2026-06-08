@@ -7,7 +7,13 @@
 // All WebGL-free: the sim + derivation live in circles-sim.ts.
 
 import { describe, it, expect } from 'vitest';
-import { circlesDef, CIRCLES_GATE_PORT_ID, CIRCLES_GATE_PARAM_ID } from './circles';
+import {
+  circlesDef,
+  CIRCLES_GATE_PORT_ID,
+  CIRCLES_GATE_PARAM_ID,
+  CIRCLES_COLLIDE_PORT_ID,
+  CIRCLES_COLLIDE_PARAM_ID,
+} from './circles';
 import {
   CirclesSim,
   CIRCLES_FIELD,
@@ -33,6 +39,8 @@ import {
   combineRgbAt,
   mappedMaskAt,
   hsvToRgb,
+  circlesCollide,
+  resolveElasticPair,
   type Circle,
 } from './circles-sim';
 
@@ -48,10 +56,13 @@ describe('circlesDef — shape', () => {
     expect(circlesDef.category).toBe('sources');
   });
 
-  it('declares gate / d / v / spd / decay / video inputs', () => {
+  it('declares gate / collide / d / v / spd / decay / video inputs', () => {
     const byId = Object.fromEntries(circlesDef.inputs.map((p) => [p.id, p]));
     expect(byId[CIRCLES_GATE_PORT_ID].type).toBe('gate');
     expect(byId[CIRCLES_GATE_PORT_ID].paramTarget).toBe(CIRCLES_GATE_PARAM_ID);
+    // The COLLIDE gate is a second gate input routed to a separate synthetic param.
+    expect(byId[CIRCLES_COLLIDE_PORT_ID].type).toBe('gate');
+    expect(byId[CIRCLES_COLLIDE_PORT_ID].paramTarget).toBe(CIRCLES_COLLIDE_PARAM_ID);
     // Per-param CV ports: id == param id (the CV-bridge routes onto setParam).
     for (const id of ['d', 'v', 'spd', 'decay']) {
       expect(byId[id].type).toBe('cv');
@@ -72,9 +83,11 @@ describe('circlesDef — shape', () => {
     expect(byId['mapped'].type).toBe('video');
   });
 
-  it('exposes d / v / spd / decay / rate knobs (+ a hidden synthetic gate param)', () => {
+  it('exposes d / v / spd / decay / rate knobs (+ hidden synthetic gate + collide params)', () => {
     const ids = circlesDef.params.map((p) => p.id);
-    expect(ids).toEqual(expect.arrayContaining(['d', 'v', 'spd', 'decay', 'rate', CIRCLES_GATE_PARAM_ID]));
+    expect(ids).toEqual(
+      expect.arrayContaining(['d', 'v', 'spd', 'decay', 'rate', CIRCLES_GATE_PARAM_ID, CIRCLES_COLLIDE_PARAM_ID]),
+    );
     for (const id of ['d', 'v', 'spd', 'decay', 'rate']) {
       const p = circlesDef.params.find((x) => x.id === id)!;
       expect(p.min).toBe(0);
@@ -432,6 +445,178 @@ describe('CirclesSim — motion + center-bounce', () => {
       expect(c.y).toBeGreaterThanOrEqual(0);
       expect(c.y).toBeLessThanOrEqual(CIRCLES_FIELD);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// COLLIDE gate — live inter-circle ELASTIC bounce via EDGE detection.
+// The headline behaviour: gate ON → two head-on circles bounce APART (don't
+// pass through); gate OFF → they pass through unaffected.
+// ---------------------------------------------------------------------------
+
+describe('circlesCollide — EDGE detection (uses radii, not centers)', () => {
+  it('two discs collide when center distance ≤ r1 + r2', () => {
+    // r1 = r2 = 50 (d=100). Centers 90 px apart → distance 90 ≤ 100 → collide.
+    const a: Circle = { x: 0, y: 0, vx: 0, vy: 0, diameter: 100 };
+    const b: Circle = { x: 90, y: 0, vx: 0, vy: 0, diameter: 100 };
+    expect(circlesCollide(a, b)).toBe(true);
+    // 110 px apart → distance 110 > 100 → no collision.
+    const far: Circle = { x: 110, y: 0, vx: 0, vy: 0, diameter: 100 };
+    expect(circlesCollide(a, far)).toBe(false);
+    // EXACTLY touching (distance == r1+r2 == 100) counts as colliding.
+    const touch: Circle = { x: 100, y: 0, vx: 0, vy: 0, diameter: 100 };
+    expect(circlesCollide(a, touch)).toBe(true);
+  });
+
+  it('the EDGE test uses RADII — centers far apart still collide if the discs are big', () => {
+    // Centers 150 px apart but each disc has r=100 (d=200) → r1+r2=200 > 150 →
+    // collide. A CENTER-based test (like the wall bounce) would miss this; the
+    // edge test catches it.
+    const a: Circle = { x: 0, y: 0, vx: 0, vy: 0, diameter: 200 };
+    const b: Circle = { x: 150, y: 0, vx: 0, vy: 0, diameter: 200 };
+    expect(circlesCollide(a, b)).toBe(true);
+  });
+});
+
+describe('resolveElasticPair — equal-mass elastic bounce + separation', () => {
+  it('head-on equal/opposite velocities → swap (each reverses)', () => {
+    // A moving +x, B moving -x, overlapping on the x axis.
+    const a: Circle = { x: 0, y: 0, vx: 100, vy: 0, diameter: 100 };
+    const b: Circle = { x: 80, y: 0, vx: -100, vy: 0, diameter: 100 };
+    const hit = resolveElasticPair(a, b);
+    expect(hit).toBe(true);
+    // Equal-mass head-on swap: A now moves -x, B now moves +x.
+    expect(a.vx).toBeCloseTo(-100);
+    expect(b.vx).toBeCloseTo(100);
+    // Separated so they no longer overlap (center distance ≥ r1+r2 = 100).
+    const dx = b.x - a.x;
+    expect(Math.abs(dx)).toBeGreaterThanOrEqual(100 - 1e-6);
+  });
+
+  it('only exchanges the NORMAL component; the tangential component is untouched', () => {
+    // A has a tangential (y) velocity that must survive a head-on (x-normal) hit.
+    const a: Circle = { x: 0, y: 0, vx: 100, vy: 40, diameter: 100 };
+    const b: Circle = { x: 80, y: 0, vx: -100, vy: 0, diameter: 100 };
+    resolveElasticPair(a, b);
+    // The x (normal) components swapped; A keeps its y (tangential) velocity.
+    expect(a.vx).toBeCloseTo(-100);
+    expect(a.vy).toBeCloseTo(40);
+    expect(b.vx).toBeCloseTo(100);
+  });
+
+  it('returns false (no-op) when the discs do NOT overlap', () => {
+    const a: Circle = { x: 0, y: 0, vx: 100, vy: 0, diameter: 100 };
+    const b: Circle = { x: 300, y: 0, vx: -100, vy: 0, diameter: 100 };
+    const before = { ...a };
+    expect(resolveElasticPair(a, b)).toBe(false);
+    expect([a.vx, a.vy, a.x, a.y]).toEqual([before.vx, before.vy, before.x, before.y]);
+  });
+
+  it('coincident centers separate deterministically (no NaN / no RNG)', () => {
+    const a: Circle = { x: 100, y: 100, vx: 0, vy: 0, diameter: 100 };
+    const b: Circle = { x: 100, y: 100, vx: 0, vy: 0, diameter: 100 };
+    expect(resolveElasticPair(a, b)).toBe(true);
+    expect(Number.isFinite(a.x)).toBe(true);
+    expect(Number.isFinite(b.x)).toBe(true);
+    expect(a.x).not.toBe(b.x); // pushed apart
+  });
+
+  it('conserves total kinetic energy + momentum (equal mass)', () => {
+    const a: Circle = { x: 0, y: 0, vx: 70, vy: 25, diameter: 100 };
+    const b: Circle = { x: 60, y: 30, vx: -10, vy: 50, diameter: 100 };
+    const ke = (c: Circle) => c.vx * c.vx + c.vy * c.vy;
+    const keBefore = ke(a) + ke(b);
+    const pxBefore = a.vx + b.vx;
+    const pyBefore = a.vy + b.vy;
+    resolveElasticPair(a, b);
+    expect(ke(a) + ke(b)).toBeCloseTo(keBefore, 3);
+    expect(a.vx + b.vx).toBeCloseTo(pxBefore, 6);
+    expect(a.vy + b.vy).toBeCloseTo(pyBefore, 6);
+  });
+});
+
+describe('CirclesSim — COLLIDE gate (live global mode)', () => {
+  /** Place exactly two circles on a head-on course on the x-axis, away from
+   *  walls, with collide set to `on`. Returns the two circles + the sim. */
+  function headOnPair(on: boolean): { sim: CirclesSim; a: Circle; b: Circle } {
+    const sim = new CirclesSim(1);
+    // spawn two static circles, then hand-place + hand-velocity them.
+    sim.setParams({ d: 0.5, v: 0, spd: 0, rate: 0, collide: on });
+    sim.spawn();
+    sim.spawn();
+    const a = sim.circles[0]!;
+    const b = sim.circles[1]!;
+    // Diameter 100 (override the spawn diameter for clean radius math).
+    a.diameter = 100; b.diameter = 100;
+    // A at x=400 moving +x; B at x=460 moving -x → centers 60 < 100 = on a
+    // collision course (already overlapping). Both at y=500 (mid-field).
+    a.x = 400; a.y = 500; a.vx = 120; a.vy = 0;
+    b.x = 460; b.y = 500; b.vx = -120; b.vy = 0;
+    return { sim, a, b };
+  }
+
+  it('GATE ON → the two circles BOUNCE APART (velocities reverse, no pass-through)', () => {
+    const { sim, a, b } = headOnPair(true);
+    // One small step: they're overlapping → elastic swap fires.
+    sim.step(16);
+    // Head-on equal-mass swap: A reverses to -x, B reverses to +x.
+    expect(a.vx).toBeLessThan(0);
+    expect(b.vx).toBeGreaterThan(0);
+    // …and at least one collision was registered.
+    expect(sim.collisionCount).toBeGreaterThanOrEqual(1);
+
+    // Keep stepping: because they bounced apart, A drifts LEFT and B drifts
+    // RIGHT — they never swap order (no pass-through).
+    for (let i = 0; i < 40; i++) sim.step(16);
+    expect(a.x).toBeLessThan(b.x); // A still left of B
+    expect(a.x).toBeLessThan(400); // A moved left of its start
+    expect(b.x).toBeGreaterThan(460); // B moved right of its start
+  });
+
+  it('GATE OFF → the two circles PASS THROUGH each other (unaffected)', () => {
+    const { sim, a, b } = headOnPair(false);
+    // Step long enough for A (moving +x) to cross past B (moving -x).
+    for (let i = 0; i < 40; i++) sim.step(16);
+    // No collision was ever resolved.
+    expect(sim.collisionCount).toBe(0);
+    // Velocities never reversed from the collision (still their original signs,
+    // unless they hit a wall — but they're mid-field with this short run).
+    expect(a.vx).toBeGreaterThan(0); // still +x (passed through, not bounced)
+    expect(b.vx).toBeLessThan(0);    // still -x
+    // They CROSSED: A (started left, +x) is now RIGHT of B (started right, -x).
+    expect(a.x).toBeGreaterThan(b.x);
+  });
+
+  it('collide is a LIVE GLOBAL toggle (not latched): flips with the gate frame-to-frame', () => {
+    const { sim, a, b } = headOnPair(false);
+    // Gate LOW: one step, no collision even though they overlap.
+    sim.step(16);
+    expect(sim.collisionCount).toBe(0);
+    // Flip the gate HIGH (live) — re-place them overlapping + head-on.
+    a.x = 400; a.vx = 120; b.x = 460; b.vx = -120;
+    sim.setParams({ d: 0.5, v: 0, spd: 0, rate: 0, collide: true });
+    sim.step(16);
+    expect(sim.collisionCount).toBeGreaterThanOrEqual(1);
+    expect(a.vx).toBeLessThan(0); // now bounced
+  });
+
+  it('a colliding circle keeps its independent latched SPEED magnitude (head-on swap)', () => {
+    const sim = new CirclesSim(2);
+    sim.setParams({ d: 0.5, v: 0, spd: 0, rate: 0, collide: true });
+    sim.spawn(); sim.spawn();
+    const a = sim.circles[0]!;
+    const b = sim.circles[1]!;
+    a.diameter = 100; b.diameter = 100;
+    // A fast (200 px/s +x), B slow (50 px/s -x), head-on overlapping.
+    a.x = 400; a.y = 500; a.vx = 200; a.vy = 0;
+    b.x = 460; b.y = 500; b.vx = -50; b.vy = 0;
+    const spdA = Math.hypot(a.vx, a.vy);
+    const spdB = Math.hypot(b.vx, b.vy);
+    sim.step(16);
+    // Head-on equal-mass elastic swap exchanges the speeds: A now carries B's
+    // old speed and vice-versa — the SET of speed magnitudes is conserved.
+    expect([Math.hypot(a.vx, a.vy), Math.hypot(b.vx, b.vy)].sort((p, q) => p - q))
+      .toEqual([spdB, spdA].sort((p, q) => p - q));
   });
 });
 
