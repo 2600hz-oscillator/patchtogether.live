@@ -448,24 +448,22 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //  audio_in / v_in_a / v_in_b are per-port-exempt; see BEHAVIORAL_SWEEP_EXEMPT
   //  for why. Verified 3× locally.)
   //
-  // moog911a — dual trigger DELAY (behavioral-recon #4: analysed, NOT re-enabled;
-  // the concrete re-enable path is now pinned with the density math below). The
-  // default `mode=0` (OFF) routes trig1 → out1, BUT out1 is a ~1 ms ONE-SHOT pulse
-  // (TRIGGER_DELAY_PULSE_S, not a held gate). For the RMS-over-windows metric to
-  // RELIABLY catch it, every 50 ms scope window must contain ≥1 pulse → the trig
-  // source must fire FASTER than 20 Hz (pulse spacing < 50 ms). The harness's gate
-  // source is a SEQUENCER, whose gate rate = bpm/60/4 (16th notes) and whose bpm is
-  // CLAMPED to 300 → a MAX gate rate of exactly 20 Hz (50 ms spacing) — right AT
-  // the boundary, so window-vs-pulse alignment stays a non-deterministic scheduler
-  // race (C=P=0.000 when none align, the SAME sparse-transient class as grids +
-  // chowkick/warrenspectrum percussion-pings). A sequencer therefore CANNOT reach
-  // the needed density. Concrete re-enable path: a per-port TEST-input source that
-  // is a fast (≥40 Hz) gate — e.g. an LFO SQUARE (depth 1, rate 40) whose ±1 swing
-  // crosses the gate threshold every 25 ms so a 50 ms window always holds 1-2
-  // pulses (out1 then reads ~0.14-0.20 RMS vs the silent control) — OR a per-
-  // transient PEAK metric paired with that dense source. trig1→out1 delay + OFF/
-  // PARALLEL/SERIES coupling is pinned deterministically by moog911a.test.ts.
-  moog911a: 'dual trigger-delay; out1 is a ~1 ms one-shot pulse the RMS-over-windows metric needs a >20 Hz source to reliably catch (every 50 ms window must hold a pulse), but the harness gate is a SEQUENCER capped at bpm 300 = exactly 20 Hz (16th-note rate bpm/60/4), AT the boundary → C=P=0.000 scheduler race (grids / chowkick-ping sparse-transient class); re-enterable with a per-port fast-gate TEST source (an LFO square ≥40 Hz → out1 reads ~0.14-0.20 RMS vs a silent control) or a per-transient peak metric + that dense source; trig1→out1 delay + coupling pinned by moog911a.test.ts',
+  // (moog911a RE-ENABLED — behavioral-recon #5. The diagnosis from #4 held:
+  //  out1 is a ~1 ms ONE-SHOT pulse (TRIGGER_DELAY_PULSE_S), so the RMS-over-
+  //  windows metric needs every 50 ms scope window to hold ≥1 pulse → the trig
+  //  source must fire FASTER than 20 Hz, which the harness's bpm-300-capped 4-Hz
+  //  SEQUENCER can't do (a C=P=0.000 boundary race). The concrete re-enable path
+  //  that #4 pinned is now IMPLEMENTED: a per-port TEST source (an LFO SQUARE,
+  //  shape=2 + depth=1 → ±2 swing crossing the 0.5 gate threshold, rate=50 Hz —
+  //  see BEHAVIORAL_PORT_TEST_SOURCE) fires a rising edge every 20 ms, and a
+  //  per-port SUT param override pins BOTH delays to the 2 ms minimum (see
+  //  BEHAVIORAL_PORT_PARAMS) so each edge's out1 pulse fires before the next edge
+  //  re-arms the countdown. out1 then reads ~0.14-0.22 RMS against a SILENT
+  //  control (trig1 unpatched → out1 = 0) — a dense, deterministic silent-vs-
+  //  pulsing delta. trig1 is a real-coverage pass; trig2 → out2 only (the first-
+  //  output sink can't see out2 in OFF mode) → per-port exempt in
+  //  BEHAVIORAL_SWEEP_EXEMPT. OFF/PARALLEL/SERIES coupling + the trig→out delay
+  //  remain pinned deterministically by moog911a.test.ts. Verified 3× locally.)
   // moog960 — sequential CONTROLLER (analog step sequencer). It AUTO-RUNS on
   // spawn (startTransport() — like the repo `sequencer`) at the internal rate
   // (2 Hz), sweeping its 8 columns; but ALL 24 step pots default to 0.5 and the
@@ -1076,6 +1074,13 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'moog961.v_in_a': 'v_in_a → s_out_a only (column-A width-matched passthrough), never the observed v_out1; the v_in_a → s_out_a path is pinned by moog961.test.ts',
   'moog961.v_in_b': 'v_in_b → s_out_b only (column-B fixed-width one-shot), never the observed v_out1; the v_in_b → s_out_b path is pinned by moog961.test.ts',
 
+  // ── MOOG 911A dual trigger DELAY (re-enabled, behavioral-recon #5). Observed
+  //    first output is out1 (gate). trig1 is the real-coverage input: the
+  //    50-Hz LFO-square test source + the 2 ms delay override (see
+  //    BEHAVIORAL_PORT_TEST_SOURCE + BEHAVIORAL_PORT_PARAMS) turn out1 into a
+  //    dense pulse train vs a silent control. trig2 is the legit no-op:
+  'moog911a.trig2': 'in the default OFF mode trig2 → out2 ONLY (independent channels: trig1→out1, trig2→out2), and the behavioral sink observes the FIRST output out1 — so trig2 can never perturb out1 (the same per-channel-isolation no-op as moog993.trig_from2 / shapedramps); the trig2→out2 delay path is pinned by moog911a.test.ts',
+
   // ── PEAKS channel-1 inputs (re-enabled module, behavioral-recon #3). PEAKS is
   //    TWO INDEPENDENT channels (Émilie Gillet's dual-mode Peaks): gate0/mode0/
   //    k1_0/k2_0 drive worklet output 0 (out0), and gate1/mode1/k1_1/k2_1 drive
@@ -1411,6 +1416,42 @@ function pickInputSource(inputType: string, idPrefix: string): InputSource | nul
   }
 }
 
+// ────────── Per-PORT TEST-input source override ──────────
+//
+// `pickInputSource(port.type, …)` picks a GENERIC type-appropriate source for
+// the port under test (NOISE for audio, BUGGLES for cv, a 4-Hz SEQUENCER for
+// gate, …). For a few ports that generic source can't expose the test-input's
+// effect on the observed output — keyed `<moduleType>.<testPortId>`, an entry
+// here REPLACES the generic test-input source for that one port:
+//
+//   moog911a.trig1 — the 911A is a TRIGGER DELAY: a rising edge on trig1 emits
+//     a ~1 ms ONE-SHOT pulse on out1 (TRIGGER_DELAY_PULSE_S), NOT a held gate.
+//     The generic gate source is a 4-Hz SEQUENCER (and the harness caps the
+//     sequencer at bpm 300 = exactly 20 Hz), so the resulting out1 pulses sit
+//     AT/BELOW the 50 ms scope-window's pulse-density boundary → a C=P=0.000
+//     scheduler race (the BEHAVIORAL_SWEEP_EXEMPT note diagnosed this). A FAST
+//     LFO SQUARE (shape=2 = pure square per lfo.ts's morph(); depth=1 → ±2
+//     swing crossing the 0.5 gate threshold; rate=50 Hz) fires a rising edge
+//     every 20 ms, so with delay1 pinned to the 2 ms minimum (see
+//     BEHAVIORAL_PORT_PARAMS) out1 becomes a 50-Hz train of 1 ms pulses —
+//     EVERY 50 ms scope window holds 2-3 pulses → out1 reads ~0.14-0.22 RMS
+//     against a SILENT control (trig1 unpatched → out1 = 0). A clean, dense,
+//     deterministic silent-vs-pulsing delta. (trig2 → out2 only, which the
+//     first-output sink can't see → per-port exempt; see BEHAVIORAL_SWEEP_EXEMPT.)
+const BEHAVIORAL_PORT_TEST_SOURCE: Record<string, InputSource> = {
+  'moog911a.trig1': {
+    node: {
+      id: 'up-trig1-lfosq',
+      type: 'lfo',
+      position: { x: 60, y: 60 },
+      domain: 'audio',
+      params: { rate: 50, shape: 2, depth: 1 },
+    },
+    outPort: 'phase0',
+    sourceType: 'gate',
+  },
+};
+
 // ────────── Per-PORT context-source override ──────────
 //
 // `buildContextEdges` feeds a generic context source (BUGGLES.smooth for
@@ -1531,6 +1572,15 @@ const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
   // diverges from the pass-through control as soon as the first pair collides —
   // a robust, deterministic (seeded RNG) video delta. Verified 3× stable.
   'circles.collide': { rate: 1, d: 1, spd: 0.35, decay: 0 },
+  // moog911a.trig1 — pin BOTH delays to the 2 ms MINIMUM (def 0.002) so each
+  // trig1 rising edge from the 50-Hz LFO-square test source (see
+  // BEHAVIORAL_PORT_TEST_SOURCE) fires its out1 pulse 2 ms later — i.e. WELL
+  // before the next edge 20 ms away. At the DEFAULT 100 ms delay a 50-Hz edge
+  // train would RE-ARM the countdown (TriggerDelay re-triggers on every rising
+  // edge) before it ever elapses, so out1 would never pulse. The short delay
+  // turns trig1 into a dense 50-Hz out1 pulse train. mode stays 0 (OFF):
+  // trig1 → out1, the observed first output.
+  'moog911a.trig1': { delay1: 0.002, delay2: 0.002 },
 };
 
 // ────────── Per-PORT / per-MODULE calibrated delta thresholds ──────────
@@ -2429,7 +2479,12 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       const passes: string[] = [];
 
       for (const port of drivableInputs) {
-        const source = pickInputSource(port.type, `up-${port.id}`);
+        // Per-port TEST-input source override (e.g. moog911a.trig1 needs a
+        // fast LFO square, not the generic 4-Hz sequencer) — falls back to the
+        // generic type-appropriate source when no override is registered.
+        const source =
+          BEHAVIORAL_PORT_TEST_SOURCE[`${mod.type}.${port.id}`] ??
+          pickInputSource(port.type, `up-${port.id}`);
         // pickInputSource null-checked at filter time, but TS doesn't
         // see that. Belt-and-suspender check.
         if (!source) continue;
