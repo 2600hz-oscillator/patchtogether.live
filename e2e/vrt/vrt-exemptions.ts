@@ -63,6 +63,11 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // baseline capture (deterministic frozen frame).
   circles: [{ selector: 'canvas' }],
   videoOut: [{ selector: 'canvas' }],
+  // RECORDERBOX — live preview canvas (+ a hidden full-res capture canvas,
+  // off-screen at left:-9999px so its mask rect lands outside the captured
+  // card box). Mask the canvas + gate on the deterministic chrome (title,
+  // IN/OUT/A·L/A·R handles, FILE field, RECORD button).
+  recorderbox: [{ selector: 'canvas' }],
   inwards: [{ selector: 'canvas' }],
   picturebox: [{ selector: 'canvas' }],
   destructor: [{ selector: 'canvas' }],
@@ -621,6 +626,14 @@ export const STRICT_VRT_MODULES = new Set<string>([
  *  up CI capture lands the other platform's PNG. The exempted pair is
  *  SKIPPED at the test level rather than allowed to fail. */
 export const EXEMPT_BASELINE_PAIRS = new Set<string>([
+  // RECORDERBOX: darwin baseline (the recorder sink card — preview canvas
+  // masked, deterministic chrome: title + IN/OUT/A·L/A·R handles + FILE field
+  // + RECORD button) captured locally; linux baseline pending a
+  // `vrt-update.yml` workflow_dispatch on this branch. Functional coverage is
+  // recorderbox.test.ts + recorderbox-recorder.test.ts + the per-port sweep +
+  // the bespoke recorderbox.spec.ts (real VCO + ACIDWARP → finalized MP4 +
+  // crash-recovery).
+  'linux/recorderbox',
   // SYNESTHESIA: darwin baseline captured on this machine via VRT_SCENES
   // (analogVco→a_in, band 2 lit, freeze-on-suspend). Linux baseline pending a
   // `task vrt:update` run on linux CI; functional coverage is the
