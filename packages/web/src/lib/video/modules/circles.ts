@@ -360,6 +360,22 @@ export const circlesDef: VideoModuleDef = {
     let lastTime = -1;
     let framesElapsed = 0;
 
+    // Snapshot the CURRENT live knob+CV params into the shape the sim latches at
+    // spawn. Used both by draw() (every frame) AND by the gate handler (so a
+    // gate-spawned circle latches the LIVE spd/v/d/decay at the moment of the
+    // edge — not whatever stale params the last draw() happened to push, or the
+    // sim's constructor defaults before the first draw ever ran).
+    function liveSpawnParams() {
+      return {
+        d: params.d,
+        v: params.v,
+        spd: params.spd,
+        decay: params.decay,
+        rate: params.rate,
+        collide: params.cv_collide >= COLLIDE_GATE_HIGH,
+      };
+    }
+
     const surface: VideoNodeSurface = {
       // Surface.texture is the `combine` output (the default single-output
       // convention + the card preview). Per-output textures are resolved by
@@ -376,14 +392,7 @@ export const circlesDef: VideoModuleDef = {
 
         // Push live params into the sim. d/v/spd/decay/rate latch per-circle at
         // spawn; `collide` is a LIVE GLOBAL mode (gate LEVEL ≥ HIGH → on).
-        sim.setParams({
-          d: params.d,
-          v: params.v,
-          spd: params.spd,
-          decay: params.decay,
-          rate: params.rate,
-          collide: params.cv_collide >= COLLIDE_GATE_HIGH,
-        });
+        sim.setParams(liveSpawnParams());
         // Advance the sim (internal rate clock spawns + integration + bounce).
         sim.step(dtMs);
 
@@ -436,8 +445,18 @@ export const circlesDef: VideoModuleDef = {
       setParam(paramId, value) {
         if (paramId === CIRCLES_GATE_PARAM_ID) {
           params.cv_gate = value;
-          // Rising edge → spawn one circle.
-          if (gateEdge(gateState, value)) sim.spawnFromGate();
+          // Rising edge → spawn one circle. Push the CURRENT live params into the
+          // sim FIRST so the gate-spawned circle latches the live spd/v/d/decay
+          // at the moment of the edge. The gate handler runs on the CV-bridge's
+          // cadence, which can fire BEFORE the first draw() (sim still on its
+          // constructor defaults) or between draws after a knob change — without
+          // this the circle would latch stale params (notably decay=0 → never
+          // fades, spd → wrong/zero velocity → doesn't move). draw() still pushes
+          // params every frame for the rate-clock spawns + the live collide mode.
+          if (gateEdge(gateState, value)) {
+            sim.setParams(liveSpawnParams());
+            sim.spawnFromGate();
+          }
           return;
         }
         if (paramId in params) (params as unknown as Record<string, number>)[paramId] = value;
@@ -454,6 +473,10 @@ export const circlesDef: VideoModuleDef = {
         // Card preview blits the combine scene.
         if (key === 'sceneCanvas') return combineScene.canvas;
         // Test/telemetry hooks.
+        // The live circle list (latched vx/vy/diameter/decayS) — lets tests
+        // assert what a gate-/clock-spawned circle latched at spawn through the
+        // real module path (e.g. the gate-spawn live-param regression).
+        if (key === 'circles') return sim.circles;
         if (key === 'circleCount') return sim.count;
         if (key === 'spawnCount') return sim.spawnCount;
         if (key === 'cullCount') return sim.cullCount;
