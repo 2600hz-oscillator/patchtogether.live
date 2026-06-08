@@ -755,6 +755,16 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // pending regen after in-card-title sweep — darwin captured here.
   'linux/feedback',
   'linux/lines',
+  // EDGES (Sobel edge-detection video processor): deterministic card chrome
+  // (IN/threshold/thickness handles + 2 faders, no canvas/animation), so it
+  // ships a REAL solo-spawn baseline. Darwin baseline captured on this
+  // machine; linux baseline pending a `vrt-update.yml` workflow_dispatch on
+  // this branch (sub-pixel text AA differs across platforms) — darwin is the
+  // regression gate here. The edge-render correctness is proven by the pure
+  // Sobel/threshold/thickness unit suite (edges.test.ts) + the bespoke
+  // e2e/tests/edges.spec.ts (SHAPES → EDGES → OUTPUT shows edges; raising
+  // threshold drops edge pixels; raising thickness adds them).
+  'linux/edges',
   'linux/monoglitch',
   'linux/riotgirls',
   'linux/shapedramps',
