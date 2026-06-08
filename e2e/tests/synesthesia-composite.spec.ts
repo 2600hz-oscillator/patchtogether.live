@@ -7,12 +7,20 @@
 //
 // Scenario A — single VCO sweep (the env-gated trigger path):
 //   analogVco → vca ; sequencer → adsr → vca(cv) ; vca → scope + synesthesia
-//   For each of 65 / 261 / 1046 / 4186 Hz (VCO tune in semitones from C4) we
-//   assert the matching MUSICAL band (1–4) is the most-energized VU band on
-//   copy A, and that SCOPE sees the source frequency.
+//   For each fundamental (VCO tune in semitones from C4) we assert the matching
+//   MUSICAL band (1–4) is the most-energized VU band on copy A, and SCOPE sees
+//   the source frequency.
+//
+//   IMPORTANT — fundamentals sit in the LOWER HALF of each band so the analogVco
+//   sine's (non-trivial) 2nd HARMONIC (2·f) stays INSIDE the same band rather
+//   than landing in — and lighting — the band above. (A fundamental near a
+//   band's upper edge puts 2f in the next band, whose VU meter then wins the
+//   strict-max check: C5=523 in b2 puts 1046 in b3, C7=2093 in b3 puts 4186 in
+//   b4 — both observed to flip the dominant band on CI's meter ballistics.)
+//   So: f < upperEdge/2 ⇒ 2f < upperEdge ⇒ harmonic stays in-band.
 //
 // Scenario B — two VCOs into a mixer:
-//   vco1@130 + vco2@4186 → vca's → mixer → synesthesia. Assert bands 1 AND 4
+//   vco1@130 + vco2@~5993 → vca's → mixer → synesthesia. Assert bands 1 AND 4
 //   are the two lit bands; bands 2 & 3 stay quiet.
 
 import { test, expect, type Page } from '@playwright/test';
@@ -20,12 +28,13 @@ import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
 import { readScopePeakOverWindow, setNodeParams, runFor } from './_module-coverage-helpers';
 
 // VCO tune is in semitones from C4 (261.63 Hz). 0=C4, ±12 = octave. MUSICAL
-// bands: b1 20–200, b2 200–1k, b3 1k–4k, b4 4k+.
+// bands: b1 20–200, b2 200–1k, b3 1k–4k, b4 4k+. Each fundamental is in the
+// lower half of its band so its 2nd harmonic stays in-band (see header).
 const TONES = [
-  { freq: 65, tune: -24, band: 1, idx: 0 }, // C2  → band 1 (20–200)
-  { freq: 261, tune: 0, band: 2, idx: 1 }, // C4  → band 2 (200–1k)
-  { freq: 1046, tune: 24, band: 3, idx: 2 }, // C6 ≈1046 → band 3 (1k–4k)
-  { freq: 4186, tune: 48, band: 4, idx: 3 }, // C8 ≈4186 → band 4 (4k+)
+  { freq: 65, tune: -24, band: 1, idx: 0 }, // C2 ≈65    → b1; 2f=131 still b1
+  { freq: 350, tune: 5, band: 2, idx: 1 }, //  F4 ≈350   → b2; 2f=700 still b2
+  { freq: 1397, tune: 29, band: 3, idx: 2 }, // F6 ≈1397 → b3; 2f=2794 still b3
+  { freq: 5993, tune: 54, band: 4, idx: 3 }, // F8 ≈5993 → b4 (4k+; harmonics stay b4)
 ] as const;
 
 /** Read SYNESTHESIA's VU snapshot ({levelsA, levelsB}) via the dev engine hook. */
@@ -124,7 +133,7 @@ test.describe('SYNESTHESIA composite — correct bands trigger from a live patch
     });
   }
 
-  test('two VCOs (130 + 4186 Hz) → mixer → synesthesia light bands 1 & 4', async ({ page }) => {
+  test('two VCOs (130 + 5993 Hz) → mixer → synesthesia light bands 1 & 4', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
@@ -133,7 +142,7 @@ test.describe('SYNESTHESIA composite — correct bands trigger from a live patch
 
     const nodes: SpawnNode[] = [
       { id: 'vco1', type: 'analogVco', position: { x: 40, y: 40 }, domain: 'audio', params: { tune: -12 } }, // C3 ≈130 → band 1
-      { id: 'vco2', type: 'analogVco', position: { x: 40, y: 280 }, domain: 'audio', params: { tune: 48 } }, // C8 ≈4186 → band 4
+      { id: 'vco2', type: 'analogVco', position: { x: 40, y: 280 }, domain: 'audio', params: { tune: 54 } }, // F8 ≈5993 → band 4
       { id: 'vca1', type: 'vca', position: { x: 300, y: 40 }, domain: 'audio', params: { base: 1, cvAmount: 0 } },
       { id: 'vca2', type: 'vca', position: { x: 300, y: 280 }, domain: 'audio', params: { base: 1, cvAmount: 0 } },
       { id: 'mix', type: 'mixer', position: { x: 560, y: 160 }, domain: 'audio' },
