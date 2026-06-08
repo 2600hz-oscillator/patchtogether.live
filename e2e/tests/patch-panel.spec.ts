@@ -745,29 +745,36 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     await expect(panel).toHaveAttribute('aria-hidden', 'false');
   });
 
-  test('top-right click anchors panel to right corner; top-left click anchors to left', async ({
+  test('left trigger anchors panel left (opens rightward from card-left); right trigger anchors panel to the card RIGHT edge (opens rightward into free space)', async ({
     page,
   }) => {
-    // The popover should pop down from whichever corner the user
-    // activated. The previous behavior (always anchored top-left) made
-    // the right trigger feel disconnected — clicking it spawned the
-    // panel under the OPPOSITE corner.
+    // Anchor behaviour (user-requested rework, this PR):
+    //
+    //   * LEFT trigger  → panel's LEFT edge sits at the card's top-left
+    //     trigger; the panel grows rightward + down (historical default).
+    //   * RIGHT trigger → panel's TOP-LEFT corner pins to the card's
+    //     upper-RIGHT corner, so the panel opens RIGHTWARD into the free
+    //     screen space BESIDE the module (it does NOT overlap the card).
+    //     The old behaviour pinned the panel's RIGHT edge to the right
+    //     trigger (opening leftward, overlapping the card) — that's what
+    //     this assertion now guards against.
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // RIOTGIRLS is wide (panelWidth: 600) — the gap between left and
-    // right anchors is dramatic enough to assert with confidence on
-    // any viewport.
-    await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', position: { x: 100, y: 100 } }]);
+    // ADSR is a compact card, so a rightward-opening panel (panelWidth
+    // 280) stays comfortably on a 1280px viewport when the card starts
+    // near the left edge.
+    await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 120, y: 120 } }]);
 
+    const card = page.locator(`.svelte-flow__node[data-id="adsr"] .mod-card`);
     const leftTrigger = page.locator(
-      `.svelte-flow__node[data-id="rg"] [data-testid="patch-trigger"]`,
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger"]`,
     );
     const rightTrigger = page.locator(
-      `.svelte-flow__node[data-id="rg"] [data-testid="patch-trigger-right"]`,
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-trigger-right"]`,
     );
     const panel = page.locator(
-      `.svelte-flow__node[data-id="rg"] [data-testid="patch-panel"]`,
+      `.svelte-flow__node[data-id="adsr"] [data-testid="patch-panel"]`,
     );
 
     // Click left → panel anchors top-left (its LEFT edge sits under
@@ -777,9 +784,10 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     await expect(panel).toHaveAttribute('data-anchor-corner', 'topLeft');
 
     const leftBox = await leftTrigger.boundingBox();
+    const cardBox = await card.boundingBox();
     const panelBoxLeftAnchor = await panel.boundingBox();
-    expect(leftBox && panelBoxLeftAnchor, 'have boxes').toBeTruthy();
-    if (!leftBox || !panelBoxLeftAnchor) return;
+    expect(leftBox && cardBox && panelBoxLeftAnchor, 'have boxes').toBeTruthy();
+    if (!leftBox || !cardBox || !panelBoxLeftAnchor) return;
     // Panel's left edge must be near the left trigger's left edge.
     expect(
       Math.abs(panelBoxLeftAnchor.x - leftBox.x),
@@ -792,30 +800,68 @@ test.describe('PatchPanel: hover-reveal + verbose labels', () => {
     await page.waitForTimeout(100);
     await expect(panel).toHaveAttribute('aria-hidden', 'true');
 
-    // Click right → panel anchors top-right (its RIGHT edge sits
-    // under the right trigger; the panel grows leftward).
+    // Click right → panel anchors to the card's upper-RIGHT corner; the
+    // panel's LEFT edge sits at (≈) the card's RIGHT edge and opens
+    // rightward into the free space beside the module.
     await rightTrigger.click();
     await expect(panel).toHaveAttribute('aria-hidden', 'false');
     await expect(panel).toHaveAttribute('data-anchor-corner', 'topRight');
 
-    const rightBox = await rightTrigger.boundingBox();
+    const cardBoxRightAnchor = await card.boundingBox();
+    expect(cardBoxRightAnchor, 'have card box').toBeTruthy();
+    if (!cardBoxRightAnchor) return;
+    const cardRight = cardBoxRightAnchor.x + cardBoxRightAnchor.width;
+
+    // Re-anchoring from left → right swaps the .anchor-left/.anchor-right
+    // CSS class AND re-runs the 120ms left/transform transition, so the
+    // panel's box slides from the left anchor (~card.left) over to the
+    // right anchor (~card.right). Poll the measured left edge until it
+    // settles at the right anchor before asserting — measuring the moment
+    // data-anchor-corner flips would catch a mid-transition (or pre-paint)
+    // box that's still near the left anchor. The poll converges in a few
+    // RAFs locally and stays robust under --repeat-each load.
+    await expect
+      .poll(
+        async () => {
+          const b = await panel.boundingBox();
+          return b ? Math.round(b.x) : -1;
+        },
+        {
+          message: `panel.left must settle at card.right (~${cardRight})`,
+          timeout: 4000,
+        },
+      )
+      .toBeGreaterThan(cardRight - 20);
+
     const panelBoxRightAnchor = await panel.boundingBox();
-    expect(rightBox && panelBoxRightAnchor, 'have boxes').toBeTruthy();
-    if (!rightBox || !panelBoxRightAnchor) return;
-    // Panel's RIGHT edge must be near the right trigger's right edge.
-    const panelRight = panelBoxRightAnchor.x + panelBoxRightAnchor.width;
-    const triggerRight = rightBox.x + rightBox.width;
+    expect(panelBoxRightAnchor, 'have panel box').toBeTruthy();
+    if (!panelBoxRightAnchor) return;
+    // Panel's LEFT edge must sit at (≈) the card's RIGHT edge — the panel
+    // opens into the space to the right of the card, not over it. (The
+    // CSS offset is `left: calc(100% + 6px)`, so allow a small slack.)
     expect(
-      Math.abs(panelRight - triggerRight),
-      `topRight anchor: panel.right ~= rightTrigger.right (panel.right=${panelRight}, trigger.right=${triggerRight})`,
+      Math.abs(panelBoxRightAnchor.x - cardRight),
+      `topRight anchor: panel.left ~= card.right (panel.left=${panelBoxRightAnchor.x}, card.right=${cardRight})`,
     ).toBeLessThan(20);
 
-    // And the panel should now sit further to the right than when it
-    // was anchored from the left trigger — concrete evidence the
-    // anchor point shifted.
+    // The panel's left edge sits essentially AT the card's right edge —
+    // it opens rightward into the space beside the module, NOT leftward
+    // over it. (The screen-space measurement is taken through the canvas
+    // viewport transform, which at the default fit-zoom is slightly < 1×,
+    // so the unscaled `left: calc(100% + 6px)` offset can render a couple
+    // px shy of the measured card-right; a small slack absorbs that
+    // sub-pixel zoom rounding while still proving the panel doesn't open
+    // leftward over the card.)
     expect(
       panelBoxRightAnchor.x,
-      `right-anchored panel must start to the right of left-anchored panel (right=${panelBoxRightAnchor.x}, left=${panelBoxLeftAnchor.x})`,
+      `right-anchored panel must open to the right of the card (panel.left=${panelBoxRightAnchor.x}, card.right=${cardRight})`,
+    ).toBeGreaterThanOrEqual(cardRight - 8);
+
+    // And it sits well to the right of where the LEFT-anchored panel
+    // started — the anchor point genuinely shifted across the card.
+    expect(
+      panelBoxRightAnchor.x,
+      `right-anchored panel must start far right of left-anchored panel (right.left=${panelBoxRightAnchor.x}, left.left=${panelBoxLeftAnchor.x})`,
     ).toBeGreaterThan(panelBoxLeftAnchor.x + 50);
   });
 

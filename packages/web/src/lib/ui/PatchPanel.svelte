@@ -780,9 +780,29 @@
 
   /* ---------------- Trigger affordance (top-left + top-right) ---------------- */
 
+  /* Corner-clip fix (generic, all themes):
+   *
+   * The two trigger glyphs are pinned a few px in from each top corner.
+   * On themes with rounded card corners (--module-radius — LCARS 22px,
+   * DINER 14px) the card's curved edge sweeps diagonally across the
+   * corner, so an 18px square sitting at a flat 4px inset pokes past the
+   * rounded boundary and reads as "clipped" by the corner curve.
+   *
+   * Rather than patch each rounded theme, we derive the trigger inset
+   * from the card radius so the glyph always sits fully INSIDE the curve.
+   * Geometry: for an 18px square's outer corner to stay within a corner
+   * arc of radius R, the inset I must satisfy I ≥ R·(1 − 1/√2) ≈ 0.293·R.
+   * We use 0.42·R for comfortable margin, floored at the legacy 4px so
+   * every non-rounded skin (default/vaporwave/brutalist/…, radius 2px →
+   * 0.84px, floored to 4px) keeps its exact previous position + VRT
+   * baseline. Only the rounded themes shift the glyph inward. */
+  .patch-panel-host {
+    --patch-trigger-inset: max(4px, calc(var(--module-radius, 2px) * 0.42));
+  }
+
   .patch-trigger {
     position: absolute;
-    top: 4px;
+    top: var(--patch-trigger-inset, 4px);
     width: 18px;
     height: 18px;
     /* Skin-aware: --module-bg-deep is the lifted version of the literal
@@ -801,10 +821,10 @@
     transition: border-color 80ms ease-out, background 80ms ease-out;
   }
   .patch-trigger.left {
-    left: 4px;
+    left: var(--patch-trigger-inset, 4px);
   }
   .patch-trigger.right {
-    right: 4px;
+    right: var(--patch-trigger-inset, 4px);
   }
   .patch-trigger:hover,
   .patch-trigger[aria-expanded='true'] {
@@ -853,8 +873,13 @@
     /* Default anchor: top-left corner. Overridden by .anchor-right
      * below when the user opened the panel via the top-right trigger.
      * Either way the panel pops down from beneath the trigger that
-     * fired; the panel content (input/output 2-col grid) is unchanged. */
-    left: 4px;
+     * fired; the panel content (input/output 2-col grid) is unchanged.
+     * Tracks --patch-trigger-inset so the open panel + the closed-state
+     * cable-anchor handles (which collapse to the panel's left edge) stay
+     * aligned with the trigger glyph even when a rounded theme pushes the
+     * glyph inward. Falls back to 4px (the legacy value) when the inset
+     * var is absent. */
+    left: var(--patch-trigger-inset, 4px);
     background: rgba(14, 17, 22, 0.97);
     border: 1px solid var(--accent-dim);
     border-radius: 3px;
@@ -882,17 +907,28 @@
     z-index: 10;
   }
   /* Anchor variants — pick which corner of the card the popover
-   * pops down from. The topRight variant clears `left` and pins to
-   * `right: 4px` so the panel's right edge sits under the right
-   * trigger and the panel grows leftward. */
+   * pops down from.
+   *
+   * anchor-left (historical default): the panel's LEFT edge sits at the
+   * card's top-left trigger and the panel grows rightward + down.
+   *
+   * anchor-right (user-requested, this PR): clicking the RIGHT trigger
+   * signals "the useful real estate is on that side", so the panel's
+   * TOP-LEFT corner pins to the card's upper-RIGHT corner and the panel
+   * opens RIGHTWARD into the free screen space beside the module — it
+   * does NOT overlap the card (the old behaviour pinned `right: 4px`,
+   * opening leftward over the card, which is what we're replacing).
+   * `left: 100%` puts the panel's left edge at the host's right edge;
+   * the small +6px offset lifts the panel clear of the card border so
+   * the gap reads as "next to" rather than "fused to" the card. */
   .patch-panel.anchor-left {
-    left: 4px;
+    left: var(--patch-trigger-inset, 4px);
     right: auto;
     transform: translateX(-8px);
   }
   .patch-panel.anchor-right {
-    left: auto;
-    right: 4px;
+    left: calc(100% + 6px);
+    right: auto;
     transform: translateX(8px);
   }
   .patch-panel.open {
@@ -1190,10 +1226,12 @@
    *
    * The trick: when closed, drop `position: relative` on .panel-row so
    * the absolutely-positioned handle resolves against .patch-panel
-   * itself (which sits at top:28px;left:4px of the card). Then a single
-   * pair of absolute top/left values lifts every handle up to the card
-   * top-left, regardless of which row it lives in or whether the row
-   * is .right (output) or default (input).
+   * itself (which sits at top:28px;left:var(--patch-trigger-inset) of the
+   * card — 4px on flat-corner skins, inset further on rounded ones so it
+   * stays under the moved trigger glyph). Then a single pair of absolute
+   * top/left values lifts every handle up to the card top-left,
+   * regardless of which row it lives in or whether the row is .right
+   * (output) or default (input).
    *
    * Without this, handles instead anchored at each row's top-left —
    * which for inputs landed near (but not on) the affordance, and for
@@ -1215,9 +1253,14 @@
     position: absolute !important;
     /* Lift the handle from the panel's interior up to the card's top-
      * left corner. The panel's box top-edge sits at card y=28px; the
-     * trigger sits at card y=4px and is 18px tall. -22px puts the
-     * handle's top edge at card y=6px, which is on top of the trigger
-     * (and therefore the visual cable terminus the user sees). */
+     * trigger sits at card y=var(--patch-trigger-inset) (4px on flat
+     * skins, ~9px on LCARS) and is 18px tall. -22px puts the handle's
+     * top edge at card y=6px; combined with the handle's own 12px height
+     * the centre lands at ~y=12px, which is on the trigger glyph for
+     * every skin (the visual cable terminus the user sees). The handle's
+     * horizontal position tracks the panel's left edge (which also uses
+     * --patch-trigger-inset), so the closed cable anchors under the
+     * trigger regardless of corner radius. */
     top: -22px !important;
     left: 0 !important;
     right: auto !important;
