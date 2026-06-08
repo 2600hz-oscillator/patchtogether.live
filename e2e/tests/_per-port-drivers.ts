@@ -989,6 +989,36 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'FREEZEFRAME: drive video_in with ACIDWARP.out (gate unpatched = live passthrough); all 5 video outs ring',
   },
 
+  // ───── CIRCLES — engage the internal clock + a video source ─────
+  //
+  // CIRCLES is a generator: at rate=0 it spawns ONLY on a gate event, so it
+  // would render black in the bare-spawn sweep. Seed rate=1 → the internal
+  // clock self-spawns (capped at 1 circle/500ms), and d=1 → 90px circles so
+  // they overlap heavily (drives OVERLAP / CONTOUR / COMBINE non-black). Also
+  // wire ACIDWARP.out into the `video` input so the MAPPED output (video input
+  // where ≥2 circles overlap) can ring once circles stack. The driver's
+  // presence routes the module through the normal per-output emit path (each
+  // out → VIDEOOUT.in by the sweep). MAPPED is additionally sub-port-exempt in
+  // the spec (it's doubly input-conditional: needs BOTH a video source AND a
+  // ≥2-overlap region within the window) — covered by circles.spec.ts.
+  circles: {
+    params: { rate: 1, d: 1, spd: 0.3 },
+    upstream: () => ({
+      nodes: [
+        { id: 'drv-acid', type: 'acidwarp', position: { x: 60, y: 60 }, domain: 'video' },
+      ],
+      edges: [
+        {
+          id: 'e-drv-acid',
+          from: { nodeId: 'drv-acid', portId: 'out' },
+          to:   { nodeId: 'sut',      portId: 'video' },
+          sourceType: 'video', targetType: 'video',
+        },
+      ],
+    }),
+    note: 'CIRCLES: rate=1 (internal clock self-spawns) + d=1 (90px, heavy overlap) + ACIDWARP.out → video; OVERLAP/CONTOUR/COMBINE ring (MAPPED sub-port-exempt — doubly input-conditional)',
+  },
+
   // ───── MOOG 902 VCA — drive the SIGNAL input so both outs emit ─────
   //
   // The 902 is an effect (signal in → amplified out), so it needs an
