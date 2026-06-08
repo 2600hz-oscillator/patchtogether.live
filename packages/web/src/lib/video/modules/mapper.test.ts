@@ -4,7 +4,7 @@
 // functions (mapperLuma / mapperMask / mapperPixel) are the EXACT CPU
 // mirror of the GLSL shader's math — testing them here is the same source
 // of truth EDGES / BACKDRAFT use for their shader logic. MAPPER generalises
-// CIRCLES' `mapped` output: show the video input only where the key is
+// OUTLINES' `mapped` output: show the video input only where the key is
 // active (key luma ≥ threshold), black elsewhere.
 
 import { describe, it, expect } from 'vitest';
@@ -121,7 +121,7 @@ describe('mapperMask — smoothstep key around the threshold', () => {
 // ---------------------------------------------------------------------------
 // Full per-texel decision: a synthetic VIDEO + KEY → the output shows the
 // video only where the key is active; the threshold raises/lowers the keyed
-// area. (The headline spec assertions — the CPU mirror of CIRCLES.mapped
+// area. (The headline spec assertions — the CPU mirror of OUTLINES.mapped
 // generalised to an arbitrary key.)
 // ---------------------------------------------------------------------------
 describe('mapperPixel — video × key-mask on a synthetic source', () => {

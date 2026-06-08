@@ -1,9 +1,9 @@
-// e2e/tests/circles.spec.ts
+// e2e/tests/outlines.spec.ts
 //
-// CIRCLES — end-to-end coverage for the stateful particle video generator.
+// OUTLINES — end-to-end coverage for the stateful particle video generator.
 // Proves the real source → module → audible-output chain for all four
 // outputs:
-//   1. A real GATE source (SEQUENCER.gate, cross-domain → CIRCLES.gate)
+//   1. A real GATE source (SEQUENCER.gate, cross-domain → OUTLINES.gate)
 //      spawns circles; with rate up too, the field fills.
 //   2. OVERLAP + CONTOUR render non-black once circles exist (mono outs).
 //   3. COMBINE renders non-black colour once circles overlap.
@@ -11,7 +11,7 @@
 //      (a bright SHAPES source punches through), and is darker than the raw
 //      source (it's masked to the overlap region, not the whole frame).
 //
-// We route each CIRCLES output into its OWN VIDEO-OUT sink so we read the
+// We route each OUTLINES output into its OWN VIDEO-OUT sink so we read the
 // real downstream signal (the multi-output read('outputTexture:<port>') path),
 // not the card's single-output preview. Canvas reads use windowed polling
 // (sample until the predicate holds or a deadline passes) — robust under
@@ -71,7 +71,7 @@ async function waitForLuma(
   return { ok: false, last };
 }
 
-/** Fire a gate pulse on CIRCLES' gate input via the video engine's setParam
+/** Fire a gate pulse on OUTLINES' gate input via the video engine's setParam
  *  (the cross-domain CV-bridge entry point — the param id is the synthetic
  *  `cv_gate`). Rising edge → one spawn. */
 async function fireGate(page: Page, nodeId: string): Promise<void> {
@@ -104,19 +104,19 @@ async function setCollide(page: Page, nodeId: string, level: number): Promise<vo
   );
 }
 
-test.describe('CIRCLES — stateful particle video generator', () => {
+test.describe('OUTLINES — stateful particle video generator', () => {
   test('gate spawns circles; OVERLAP / CONTOUR / COMBINE all ring; MAPPED shows the video input where overlapped', async ({ page }) => {
     const errors = await setup(page);
 
     // A bright tiled SHAPES source for the `video` input (so MAPPED has
-    // visible content to punch through). CIRCLES with rate up so the internal
+    // visible content to punch through). OUTLINES with rate up so the internal
     // clock fills the field fast + big diameter so circles overlap (≥2).
     // Each output → its own VIDEO-OUT sink.
     await spawnPatch(
       page,
       [
         { id: 'src',  type: 'shapes',  position: { x: 40, y: 40 },  domain: 'video', params: { shape: 1, tile: 1, tileN: 6, zoom: 8 } },
-        { id: 'circ', type: 'circles', position: { x: 360, y: 40 }, domain: 'video', params: { rate: 1, d: 1, spd: 0.25 } },
+        { id: 'circ', type: 'outlines', position: { x: 360, y: 40 }, domain: 'video', params: { rate: 1, d: 1, spd: 0.25 } },
         { id: 'o_ovr', type: 'videoOut', position: { x: 760, y: 0 },   domain: 'video' },
         { id: 'o_cnt', type: 'videoOut', position: { x: 760, y: 220 }, domain: 'video' },
         { id: 'o_cmb', type: 'videoOut', position: { x: 760, y: 440 }, domain: 'video' },
@@ -133,7 +133,7 @@ test.describe('CIRCLES — stateful particle video generator', () => {
       ],
     );
 
-    await expect(page.locator('[data-testid="circles-card"]'), 'CIRCLES card present').toHaveCount(1);
+    await expect(page.locator('[data-testid="outlines-card"]'), 'OUTLINES card present').toHaveCount(1);
 
     // Fire a few real gate pulses on top of the internal clock so the field
     // fills quickly + deterministically.
@@ -163,7 +163,7 @@ test.describe('CIRCLES — stateful particle video generator', () => {
     const map = await waitForLuma(page, 'o_map', (m) => m > 2);
     expect(map.ok, `MAPPED shows video input where overlapped (mean=${map.last.toFixed(2)})`).toBe(true);
 
-    expect(errors, 'no console / page errors during CIRCLES render').toEqual([]);
+    expect(errors, 'no console / page errors during OUTLINES render').toEqual([]);
   });
 
   test('rate=0 stays black until a GATE fires (gate-only spawn)', async ({ page }) => {
@@ -172,7 +172,7 @@ test.describe('CIRCLES — stateful particle video generator', () => {
     await spawnPatch(
       page,
       [
-        { id: 'circ',  type: 'circles', position: { x: 200, y: 40 }, domain: 'video', params: { rate: 0, d: 1, spd: 0 } },
+        { id: 'circ',  type: 'outlines', position: { x: 200, y: 40 }, domain: 'video', params: { rate: 0, d: 1, spd: 0 } },
         { id: 'o_ovr', type: 'videoOut', position: { x: 620, y: 40 }, domain: 'video' },
       ],
       [
@@ -180,7 +180,7 @@ test.describe('CIRCLES — stateful particle video generator', () => {
       ],
     );
 
-    await expect(page.locator('[data-testid="circles-card"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="outlines-card"]')).toHaveCount(1);
 
     // Let it run with NO gate — rate=0 means no internal clock → stays black.
     const stillBlack = await waitForLuma(page, 'o_ovr', (m) => m > 3, 2500);
@@ -204,12 +204,12 @@ test.describe('CIRCLES — stateful particle video generator', () => {
     // and the COLLIDE gate has pairs to bounce. We hold the gate HIGH and assert
     // the field STILL renders (collisions don't break the chain / throw) — the
     // renderer-tolerant proof that the live collide gate flows end-to-end. (The
-    // exact bounced layout is pinned deterministically in circles.test.ts; here
+    // exact bounced layout is pinned deterministically in outlines.test.ts; here
     // we just prove the gated path is alive on SwiftShader without errors.)
     await spawnPatch(
       page,
       [
-        { id: 'circ',  type: 'circles', position: { x: 200, y: 40 }, domain: 'video', params: { rate: 1, d: 1, spd: 0.35, decay: 0 } },
+        { id: 'circ',  type: 'outlines', position: { x: 200, y: 40 }, domain: 'video', params: { rate: 1, d: 1, spd: 0.35, decay: 0 } },
         { id: 'o_ovr', type: 'videoOut', position: { x: 620, y: 40 }, domain: 'video' },
       ],
       [
@@ -217,7 +217,7 @@ test.describe('CIRCLES — stateful particle video generator', () => {
       ],
     );
 
-    await expect(page.locator('[data-testid="circles-card"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="outlines-card"]')).toHaveCount(1);
 
     // Hold the COLLIDE gate HIGH (live level), then seed extra spawns so the
     // field is dense and pairs collide.

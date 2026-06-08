@@ -54,14 +54,17 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // ----- video domain — every video module renders a preview canvas;
   // mask it and assert the chrome around it.
   lines: [{ selector: 'canvas' }],
-  // CIRCLES — stateful particle generator; the card carries a live COMBINE
-  // preview canvas (circles spawn + move off the engine rAF), so the canvas
-  // region is non-deterministic in the standard solo-spawn VRT. Mask it and
-  // gate on the deterministic chrome (5 knobs D/V/SPD/DEC/RATE +
-  // GATE/D/V/SPD/DEC/VID input rows + OVR/CNT/CMB/MAP output rows). Promoted
-  // into the VRT baseline set (the canvas mask covers the live preview);
-  // darwin baseline captured locally, linux pending via EXEMPT_BASELINE_PAIRS.
-  circles: [{ selector: 'canvas' }],
+  // OUTLINES — stateful particle generator; the card carries a live COMBINE
+  // preview canvas (shapes spawn + move + spin off the engine rAF), so the
+  // canvas region is non-deterministic in the standard solo-spawn VRT. Mask it
+  // and gate on the deterministic chrome (7 knobs D/V/SPD/DEC/SHP/ROT/RATE +
+  // GATE/COL/D/V/SPD/DEC/SHP/ROT/VID input rows + OVR/CNT/CMB/MAP output rows +
+  // the SHAPE/ROT readouts). Promoted into the VRT baseline set (the canvas mask
+  // covers the live preview). Only the DARWIN baseline was regenerated via
+  // vrt-update.yml after the SHAPE+ROTATION card change; the LINUX baseline is
+  // still pending a workflow_dispatch, so `linux/outlines` stays in
+  // EXEMPT_BASELINE_PAIRS below (the recorderbox/cellshade new-module pattern).
+  outlines: [{ selector: 'canvas' }],
   videoOut: [{ selector: 'canvas' }],
   // RECORDERBOX — live preview canvas (+ a hidden full-res capture canvas,
   // off-screen at left:-9999px so its mask rect lands outside the captured
@@ -620,14 +623,16 @@ export const STRICT_VRT_MODULES = new Set<string>([
  *  up CI capture lands the other platform's PNG. The exempted pair is
  *  SKIPPED at the test level rather than allowed to fail. */
 export const EXEMPT_BASELINE_PAIRS = new Set<string>([
-  // CIRCLES: promoted into the VRT baseline set this PR (DECAY knob + DEC CV
-  // input added; D max bumped to 270px). The live COMBINE preview canvas is
-  // masked, so the deterministic chrome (5 knobs D/V/SPD/DEC/RATE +
-  // GATE/D/V/SPD/DEC/VID input rows + OVR/CNT/CMB/MAP output rows) is the gate.
-  // Darwin baseline captured locally; linux pending a `vrt-update.yml`
-  // workflow_dispatch on this branch. Functional coverage is circles.test.ts +
-  // circles.spec.ts + the per-module-per-port + behavioral sweeps.
-  'linux/circles',
+  // OUTLINES (was CIRCLES): the card gained a SHAPE selector + ROTATION knob
+  // (+ their CV input rows + small readouts), so the deterministic chrome
+  // changed and the baseline was regenerated. The live COMBINE preview canvas
+  // is masked, so the chrome (7 knobs D/V/SPD/DEC/SHP/ROT/RATE +
+  // GATE/COL/D/V/SPD/DEC/SHP/ROT/VID input rows + OVR/CNT/CMB/MAP output rows)
+  // is the gate. Darwin baseline regenerated locally; linux pending a
+  // `vrt-update.yml` workflow_dispatch on this branch. Functional coverage is
+  // outlines.test.ts + outlines.spec.ts + the per-module-per-port + behavioral
+  // sweeps.
+  'linux/outlines',
   // RECORDERBOX: darwin baseline (the recorder sink card — preview canvas
   // masked, deterministic chrome: title + IN/OUT/A·L/A·R handles + FILE field
   // + RECORD button) captured locally; linux baseline pending a
@@ -800,7 +805,7 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // e2e/tests/edges.spec.ts (SHAPES → EDGES → OUTPUT shows edges; raising
   // threshold drops edge pixels; raising thickness adds them).
   'linux/edges',
-  // MAPPER (video keyer / matte processor — generalises CIRCLES' `mapped`
+  // MAPPER (video keyer / matte processor — generalises OUTLINES' `mapped`
   // output to an arbitrary key): deterministic card chrome (VID/KEY/threshold
   // handles + 1 fader, no canvas/animation), so it ships a REAL solo-spawn
   // baseline. Darwin baseline captured on this machine; linux baseline pending

@@ -202,16 +202,16 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
 //
 // Keep this list tight too (~10-15 entries).
 const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
-  // ── CIRCLES.mapped is doubly input-conditional: it shows the `video` INPUT
-  // wherever ≥2 circles overlap, so it needs BOTH a patched video source AND a
+  // ── OUTLINES.mapped is doubly input-conditional: it shows the `video` INPUT
+  // wherever ≥2 shapes overlap, so it needs BOTH a patched video source AND a
   // ≥2-overlap region to land in the same sweep window. The driver wires
   // ACIDWARP → video + maxes diameter so overlap forms, but the exact ≥2 region
   // lining up with non-black source pixels inside the budget is timing-fragile.
   // OVERLAP / CONTOUR / COMBINE DO emit from the same driver (rate-clock spawns
-  // overlapping discs). The mapped path is covered deterministically by
-  // e2e/tests/circles.spec.ts (drives the video input + asserts mapped shows it
+  // overlapping shapes). The mapped path is covered deterministically by
+  // e2e/tests/outlines.spec.ts (drives the video input + asserts mapped shows it
   // where overlapped) + the mappedMaskAt unit test (≥2 rule).
-  'circles.mapped': 'doubly input-conditional (video input AND a ≥2-overlap region within the window); covered by circles.spec.ts + mappedMaskAt unit test',
+  'outlines.mapped': 'doubly input-conditional (video input AND a ≥2-overlap region within the window); covered by outlines.spec.ts + mappedMaskAt unit test',
   // ── MANDELBULB: audio_out is silent UNLESS the SLICE toggle is ON (default
   // OFF — the backwards-compat video-identity guarantee), and bringing it up
   // needs a worklet load + an off-thread bulb-slice scan that exceeds the

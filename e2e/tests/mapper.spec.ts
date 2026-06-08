@@ -9,7 +9,7 @@
 //   MAPPER.out --> OUTPUT
 //
 // MAPPER shows the VIDEO input only where the KEY input's luminance is
-// ≥ threshold, black elsewhere — generalising CIRCLES' `mapped` output to
+// ≥ threshold, black elsewhere — generalising OUTLINES' `mapped` output to
 // an arbitrary key. SHAPES paints a high-contrast filled WHITE circle on
 // BLACK: a clean key region (circle interior keyed, background matted out).
 // We assert, on the live render:

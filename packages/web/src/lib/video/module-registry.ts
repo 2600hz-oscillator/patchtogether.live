@@ -69,6 +69,22 @@ export interface VideoModuleDef {
 
 const registry = new Map<ModuleType, VideoModuleDef>();
 
+/** RUNTIME type aliases for RENAMED modules. When a module type is renamed we
+ *  register it under the NEW id only (one def, one palette entry), but nodes
+ *  saved before the rename — in a user's localStorage, a live collab Y.Doc, or
+ *  a hand-exported .json — still carry the OLD type string. Without a remap the
+ *  patch loader can't resolve the def and drops the node to a placeholder error
+ *  card, LOSING that node's wiring + params. This map remaps a legacy type to
+ *  its current id on lookup (consulted only when a DIRECT registry hit misses),
+ *  so a `circles` node loads as `outlines`.
+ *
+ *  This is the REAL back-compat layer — the TypeScript `export const circlesDef
+ *  = outlinesDef` aliases in the module file only help straggling IMPORTERS; they
+ *  do NOT register a `circles` type in this runtime registry. */
+const LEGACY_TYPE_ALIASES: Readonly<Record<string, ModuleType>> = {
+  circles: 'outlines', // renamed when SHAPE/ROTATION landed (#699)
+};
+
 export function registerVideoModule(def: VideoModuleDef): void {
   if (registry.has(def.type)) {
     console.warn(`[video module-registry] re-registering ${String(def.type)}`);
@@ -77,7 +93,24 @@ export function registerVideoModule(def: VideoModuleDef): void {
 }
 
 export function getVideoModuleDef(type: ModuleType): VideoModuleDef | undefined {
-  return registry.get(type);
+  const direct = registry.get(type);
+  if (direct) return direct;
+  // Legacy-type fallback: a renamed module's OLD id resolves to its current def
+  // (e.g. a saved `circles` node → the `outlines` def), so the patch loader
+  // doesn't drop it to a placeholder error card.
+  const alias = LEGACY_TYPE_ALIASES[type as string];
+  return alias ? registry.get(alias) : undefined;
+}
+
+/** Canonicalize a possibly-legacy module type to its CURRENT registry id.
+ *  Returns the input unchanged when it isn't a known legacy alias. The patch
+ *  loader calls this so a saved `circles` node is rewritten to `outlines`
+ *  BEFORE it lands in the live store — otherwise SvelteFlow's nodeTypes map
+ *  (keyed strictly on the current def.type) has no `circles` entry and renders
+ *  the node with its default/placeholder card even though the engine resolves
+ *  the def via the alias above. Mirrors the in-loader ruttetra→reshaper remap. */
+export function canonicalizeVideoType(type: string): string {
+  return LEGACY_TYPE_ALIASES[type] ?? type;
 }
 
 export function listVideoModuleDefs(): VideoModuleDef[] {

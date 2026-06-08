@@ -565,6 +565,70 @@ describe('persistence: ruttetra → reshaper breaking-change remap', () => {
   });
 });
 
+// ---------------- circles → outlines legacy-type alias ----------------
+//
+// The video module formerly named CIRCLES was renamed OUTLINES (#699) when the
+// SHAPE/ROTATION rework landed. Unlike the ruttetra case, the id was NOT reused
+// for a different module — it's a pure rename. A node saved before the rename
+// (localStorage / a live collab Y.Doc / a hand-exported .json) still carries
+// `type: 'circles'`. The loader's canonicalizeVideoType() rewrites it to
+// `outlines` so (a) getAnyDomainDef resolves a def — the node isn't dropped to a
+// placeholder — AND (b) the node lands in the live store with the CURRENT type
+// so SvelteFlow's type-keyed nodeTypes map renders OutlinesCard (not the default
+// placeholder card) and a re-save persists the canonical id. This pins that the
+// rename never silently drops a user's existing CIRCLES node.
+
+describe('persistence: circles → outlines legacy-type rename', () => {
+  // Stub the real OUTLINES def (factory never called — only type/schemaVersion
+  // are read). We don't import the video modules barrel (it pulls shader ?url
+  // imports that only resolve under the SvelteKit vite plugin).
+  const outlinesStub: VideoModuleDef = {
+    type: 'outlines',
+    domain: 'video',
+    label: 'outlines',
+    category: 'sources',
+    schemaVersion: 1,
+    inputs: [],
+    outputs: [{ id: 'combine', type: 'video' }],
+    params: [],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    factory: throwingFactory as any,
+  };
+
+  beforeAll(() => {
+    registerVideoModule(outlinesStub);
+  });
+
+  /** Hand-build an envelope carrying a single legacy `circles` node. */
+  function circlesEnvelope() {
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['cn'] = {
+        id: 'cn',
+        type: 'circles',
+        domain: 'video',
+        position: { x: 10, y: 20 },
+        params: { d: 0.4, rate: 0.5 },
+      };
+    });
+    return makeEnvelope(src.ydoc);
+  }
+
+  it('loads a saved CIRCLES node as OUTLINES (not dropped to a placeholder)', () => {
+    const env = circlesEnvelope();
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+    // The node survives — NOT in diagnostics as an unknown type.
+    expect(result.nodesLoaded).toBe(1);
+    expect(result.diagnostics).toEqual([]);
+    // And it's stored with the CURRENT type so the type-keyed card map renders it.
+    expect(dest.store.nodes['cn']).toBeDefined();
+    expect(dest.store.nodes['cn']!.type).toBe('outlines');
+    // Params ride along unchanged (pure rename — no param migration).
+    expect(dest.store.nodes['cn']!.params).toMatchObject({ d: 0.4, rate: 0.5 });
+  });
+});
+
 // ---------------- Asset-bytes round-trip ----------------
 //
 // Regression net for the rackspace-persistence audit (see
