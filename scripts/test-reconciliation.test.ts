@@ -211,28 +211,30 @@ describe('behavioral exemptions are ALL reconciliation backlog (no permanent-exe
     expect(sweepExempt.has('moog911a.trig2')).toBe(true);
   });
 
-  it('re-enabled video-sink `edges` is OUT of the module-exempt map (count fell)', () => {
-    // behavioral video-timeout-scaling leg: `edges` was exempt PURELY for the
-    // CI-SwiftShader heavy-WebGL-video flat-timeout (its own re-enable note
-    // asked for "a video-domain per-frame-scaled timeout"). That budget now
-    // exists in the spec, so `edges` is back in the sweep with no per-port
-    // exemptions — it must be fully out of the whole-module exempt map.
+  it('the video-sink SwiftShader class (cellshade/chromakey/outlines/edges) is module-exempt (count ROSE)', () => {
+    // LOWER-WALL-TIME decision (this leg): the per-frame WebGL video-sink
+    // modules are too slow to VERIFY on CI's SwiftShader software renderer
+    // (they PASS on a real GPU). The behavioral video-timeout-scaling leg tried
+    // SCALING the per-test timeout to cover them, but that pushed the lane from
+    // its ~15-min baseline to ~18-19 min — the user decided against it. So we
+    // SKIP these instead: the honest "reconcile = document-as-backlog" outcome
+    // raises the exempt count by these four (that's correct, not fudged). They
+    // re-enter only with a real-GPU CI lane or a reduced-capture behavioral path.
     const moduleExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_MODULE_EXEMPT');
-    expect(moduleExempt.has('edges')).toBe(false);
-    // The re-enable is honest only if the scaled video budget actually backs it:
-    // the per-test setTimeout must branch on the video sink + scale by input
-    // count (not the flat 22s/input that timed `edges` out). Lock those tokens.
-    expect(/\bVIDEO_PER_INPUT_MS\b/.test(specSrc)).toBe(true);
-    expect(/\bVIDEO_TEST_BASE_MS\b/.test(specSrc)).toBe(true);
-    expect(/sink\.targetType === 'video'/.test(specSrc)).toBe(true);
-    // The ACTUAL cellshade shard-1 failure was spawnPatch's 5s DOM-mount wait,
-    // not the per-test budget — the video re-enable also needs the longer
-    // per-spawn mount budget threaded into spawnPatch (VIDEO_MOUNT_TIMEOUT_MS)
-    // for the WebGL card's SwiftShader first-paint. Lock that token too.
-    expect(/\bVIDEO_MOUNT_TIMEOUT_MS\b/.test(specSrc)).toBe(true);
-    // edges has no per-port sweep exemptions — all 3 ports drive the sweep.
-    const sweepExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_SWEEP_EXEMPT');
-    expect([...sweepExempt].some((k) => k.startsWith('edges.'))).toBe(false);
+    for (const m of ['cellshade', 'chromakey', 'outlines', 'edges']) {
+      expect(moduleExempt.has(m)).toBe(true);
+    }
+    // They all share ONE backlog note (a single source-of-truth string).
+    expect(/const\s+VIDEO_SINK_SWIFTSHADER_NOTE\b/.test(specSrc)).toBe(true);
+    for (const m of ['cellshade', 'chromakey', 'outlines', 'edges']) {
+      expect(new RegExp(`\\b${m}:\\s*VIDEO_SINK_SWIFTSHADER_NOTE`).test(specSrc)).toBe(true);
+    }
+    // And the per-test timeout is back to BASELINE — the video-scaling tokens
+    // (the ~3-4 added CI minutes) must be GONE so the lane returns to ~15 min.
+    expect(/\bVIDEO_PER_INPUT_MS\b/.test(specSrc)).toBe(false);
+    expect(/\bVIDEO_TEST_BASE_MS\b/.test(specSrc)).toBe(false);
+    expect(/\bVIDEO_MOUNT_TIMEOUT_MS\b/.test(specSrc)).toBe(false);
+    expect(/setTimeout\(Math\.max\(90_000, drivableInputs\.length \* 22000 \+ 30_000\)\)/.test(specSrc)).toBe(true);
   });
 
   it('still-disabled modules carry a module-exempt note (backlog, not silent)', () => {
@@ -242,7 +244,19 @@ describe('behavioral exemptions are ALL reconciliation backlog (no permanent-exe
     // path or a delete rationale in its note). foxy/mandelbulb stay exempt: their
     // observed sink is the AUDIO scope (not the video canvas), exempt for
     // heavy-mount/ray-march reasons, NOT the video-sink per-frame timeout.
-    for (const m of ['buggles', 'mixmstrs', 'audioOut', 'foxy', 'mandelbulb']) {
+    // cellshade/chromakey/outlines/edges are the video-sink SwiftShader class
+    // (see the dedicated test above) — all backlog with a real-GPU re-enable path.
+    for (const m of [
+      'buggles',
+      'mixmstrs',
+      'audioOut',
+      'foxy',
+      'mandelbulb',
+      'cellshade',
+      'chromakey',
+      'outlines',
+      'edges',
+    ]) {
       expect(moduleExempt.has(m)).toBe(true);
     }
   });

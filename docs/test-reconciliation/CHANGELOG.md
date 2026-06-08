@@ -76,57 +76,65 @@ row.
 
 ## Entries
 
-### 2026-06-08 — behavioral video-timeout scaling: re-enable `edges` (per-frame-scaled video budget)
+### 2026-06-08 — behavioral video-sink SwiftShader EXEMPTIONS (lower-wall-time path)
 
-Delivered the **exact re-enable path** the REFRAME entry's `edges` exempt note
-called for — *"a video-domain per-frame-scaled timeout"* — and re-enabled
-`edges` (Sobel edge-detection **video** processor) in the behavioral sweep.
+**Exempt the per-frame-WebGL video-sink modules instead of scaling the timeout.**
+This PR's first leg scaled the per-test budget up for video-sink modules to keep
+them in the lane; that worked but added ~3-4 min to behavioral CI wall-time (runs
+went ~18-19 min vs the ~15-min baseline). The decision (user) is to **not pay the
+wall-time**: REVERT the timeout scaling and SKIP the modules CI can't honestly
+verify.
 
-**Root cause.** The sweep set a **flat** per-test budget — `max(90s, n×22s+30s)`
-— for *every* module. But **video-sink** modules (those whose
-`pickObservedOutput` routes to the `video-out-canvas` sink) render a per-frame
-WebGL pipeline **and** `readPixels` a full canvas every snapshot, both ~10-30×
-slower under CI's **SwiftShader** software renderer than a real GPU (the
-`ci-swiftshader-video-e2e-timeouts` class). So `edges` (3 inputs → 96s) timed out
-its `in` frame-poll **reproducibly** on CI shard 1 while passing on a real local
-GPU, and `cellshade` / `chromakey` / `outlines` sat on the same knife-edge.
+**The class.** **Video-sink** modules — those whose `pickObservedOutput` routes
+to the `video-out-canvas` sink — render a per-frame WebGL pipeline **and**
+`readPixels` a full canvas every snapshot, both ~10-30× slower under CI's
+**SwiftShader** software renderer than a real GPU (the
+`ci-swiftshader-video-e2e-timeouts` class). They time out **reproducibly** on CI
+while **passing on a real local GPU**. Four modules are in this class:
+`cellshade`, `chromakey`, `outlines`, `edges`.
 
-**Fix (systemic, not per-module exemptions).** Mirroring the #64 heavy-video e2e
-fix + the `mapper.spec` / `modules.spec` `HEAVY_MOUNT_TIMEOUT` convention, the
-per-test `setTimeout` now **branches on the video sink and scales by
-input/capture count**: `VIDEO_TEST_BASE_MS` (60s) + n × `VIDEO_PER_INPUT_MS`
-(45s ≈ 2 spawns/input under SwiftShader), capped at `VIDEO_TEST_TIMEOUT_CEIL`
-(600s, well under the 20-min behavioral job). **Audio** modules keep the existing
-fast flat budget unchanged (verified: `vca`/`stereovca` still pass in ~36s).
-`edges` (3 inputs) now gets **195s**; the widest enrolled video-sink module
-`outlines` (9) gets 465s.
+**Reverted (back to baseline, ~0 added CI minutes).** The per-test `setTimeout`
+is back to the flat `max(90s, n×22s+30s)` for *every* module; the video read is
+back to 3 full-res samples; the `VIDEO_TEST_BASE_MS` / `VIDEO_PER_INPUT_MS` /
+`VIDEO_TEST_TIMEOUT_CEIL` / `VIDEO_MOUNT_TIMEOUT_MS` constants and the
+`spawnPatch` mount-budget thread are all gone. Behavioral CI wall-time returns to
+~15 min.
 
-**Re-enabled.** `edges` was exempt **purely** for this SwiftShader video timeout
-and had **no** per-port exemptions, so removing it from `BEHAVIORAL_MODULE_EXEMPT`
-puts all 3 ports (`in` / `threshold` / `thickness`) back in the sweep (verified
-locally on a real GPU: all PASS, Δμvar 219–3298). `cellshade` / `chromakey` /
-`outlines` were never exempt — the scaled budget keeps them green. `foxy` /
-`mandelbulb` **stay** exempt: their observed sink is the **audio** scope (not the
-video canvas), exempt for heavy-mount / ray-march reasons, **not** the video-sink
-per-frame timeout.
+**Exempted (the honest backlog).** `cellshade` / `chromakey` / `outlines` join
+`BEHAVIORAL_MODULE_EXEMPT`, and `edges` **stays** exempt — all four sharing
+**one** backlog note (`VIDEO_SINK_SWIFTSHADER_NOTE`):
 
-Net: **behavioral disabled 57 → 56** (live counter on this branch base; the
-REFRAME entry below recorded 58 on a slightly different tree). The meta-test
-(`scripts/test-reconciliation.test.ts`) now LOCKS `edges`-out + the presence of
-the video-scaling tokens (`VIDEO_PER_INPUT_MS` / `VIDEO_TEST_BASE_MS` /
-`sink.targetType === 'video'`).
+> *video-out-canvas per-frame WebGL is too slow to verify on CI's SwiftShader
+> software renderer (passes on real GPU); real behavioral coverage for these
+> lives in each module's VRT + bespoke e2e spec; re-enable needs a real-GPU CI
+> lane or a reduced-capture behavioral path.*
+
+This is the honest **reconcile = document-as-backlog** outcome — the exempt count
+**goes up**, which is correct, not fudged. Real behavioral coverage for each
+lives in its VRT baseline + bespoke spec (`cellshade.spec.ts` / `chromakey.spec.ts`
+/ `outlines.spec.ts` / `edges.spec.ts`), and `per-module-per-port.spec.ts` still
+pins each port's wire-up via the `inputs-accept` dim. `foxy` / `mandelbulb` stay
+exempt for **audio**-scope / heavy-mount / ray-march reasons (unrelated to this
+class).
+
+Net: **behavioral disabled 57 → 60** (+3: `cellshade` / `chromakey` / `outlines`;
+`edges` was already +1 in the REFRAME entry below). The meta-test
+(`scripts/test-reconciliation.test.ts`) now LOCKS all four video-sink modules
+**in** the exempt map sharing the single note **and** that the video-scaling
+tokens are **gone** (timeout reverted to baseline).
 
 | block | kind | total | disabled | %disabled |
 |---|---|---:|---:|---:|
-| unit | raw | 6316 | 2 | 0.0% |
+| unit | raw | 6341 | 2 | 0.0% |
 | e2e | raw | 933 | 4 | 0.4% |
-| art | raw | 463 | 0 | 0.0% |
+| art | raw | 475 | 0 | 0.0% |
 | vrt | parametrized | 157 | 0 | 0.0% |
-| behavioral | parametrized | 107 | **56** | 52.3% |
+| behavioral | parametrized | 103 | **60** | 58.3% |
 | @collab | raw (e2e subset) | 108 | 1 | 0.9% |
 
-This unblocks re-gating `behavioral` as a REQUIRED check (separate follow-up,
-standing goal #42) once the lane is verified green on CI.
+**End state:** behavioral lane GREEN on CI at the ~15-min baseline (slow video
+modules SKIPPED, not given more time) — gateable as a REQUIRED check (standing
+goal #42, a separate follow-up).
 
 ### 2026-06-08 — report REFRAME: every disabled test is backlog (retire the intentional/reconcilable split)
 
