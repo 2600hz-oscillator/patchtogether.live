@@ -794,6 +794,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // e2e/tests/edges.spec.ts (SHAPES → EDGES → OUTPUT shows edges; raising
   // threshold drops edge pixels; raising thickness adds them).
   'linux/edges',
+  // MAPPER (video keyer / matte processor — generalises CIRCLES' `mapped`
+  // output to an arbitrary key): deterministic card chrome (VID/KEY/threshold
+  // handles + 1 fader, no canvas/animation), so it ships a REAL solo-spawn
+  // baseline. Darwin baseline captured on this machine; linux baseline pending
+  // a `vrt-update.yml` workflow_dispatch on this branch (sub-pixel text AA
+  // differs across platforms) — darwin is the regression gate here. The keyer
+  // correctness is proven by the pure luma/mask/pixel unit suite
+  // (mapper.test.ts) + the bespoke e2e/tests/mapper.spec.ts (SHAPES key +
+  // ACIDWARP video → MAPPER → OUTPUT shows the video only in the keyed region;
+  // raising threshold shrinks the keyed area).
+  'linux/mapper',
   'linux/monoglitch',
   'linux/riotgirls',
   'linux/shapedramps',
