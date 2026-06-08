@@ -243,7 +243,7 @@ export const edgesDef: VideoModuleDef = {
   type: 'edges',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'EDGES',
+  label: 'edges',
   category: 'effects',
   schemaVersion: 1,
   inputs: [
