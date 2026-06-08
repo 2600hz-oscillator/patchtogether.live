@@ -215,18 +215,16 @@ export class AudioEngine implements DomainEngine {
     // we drop it and the reconciler retries no-op next tick.
     const ad = def as AudioModuleDef;
     if (ad.maxInstances !== undefined) {
+      // Exact type count via the engine's own `nodeTypes` map (nodeId → type),
+      // which addNode populates and removeNode/eviction keep in sync. This
+      // replaces the old `id.startsWith(`${type}-`)` prefix heuristic, which
+      // miscounted any node whose id didn't follow the palette's
+      // `${type}-...` naming convention (custom/renamed ids): such a node was
+      // not counted, so a singleton could be exceeded. The map yields the
+      // type exactly, so a custom-id instance is now capped correctly.
       const sameType: string[] = [];
-      for (const [id, h] of this.nodes) {
-        if (h.domain === 'audio') {
-          // The engine doesn't track type directly; cross-reference by node id.
-          // Naming convention from spawnFromPalette is `${type}-...` and saved
-          // patches retain that, but we should look at the live patch instead
-          // for correctness — but that creates a graph-store dep here. Use
-          // the engine's node-id prefix heuristic, which matches the spawn
-          // convention 100%; if a custom id is assigned, the palette + spawn
-          // guards still cover it and this is a defensive last line.
-          if (id.startsWith(`${node.type}-`)) sameType.push(id);
-        }
+      for (const [id, t] of this.nodeTypes) {
+        if (t === node.type) sameType.push(id);
       }
       if (sameType.length >= ad.maxInstances) {
         // Lex-tiebreak: if our id sorts LATER than every existing id, drop
@@ -243,6 +241,9 @@ export class AudioEngine implements DomainEngine {
           evictHandle.dispose();
           this.nodes.delete(evictId);
         }
+        // Keep `nodeTypes` in sync with the eviction so a subsequent exact
+        // count doesn't see the dropped instance (removeNode does the same).
+        this.nodeTypes.delete(evictId);
       }
     }
     const handle = await (def.factory as AudioModuleFactory)(this.ctx, node);
