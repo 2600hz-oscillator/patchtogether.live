@@ -83,6 +83,11 @@ const SKIP_SPAWN: Record<string, string> = {
 // the behavioral delta check is skipped.
 //
 // Keep tight; the design constraint is ~25 entries upper bound.
+//
+// Shared note for the VIDEO-SINK SwiftShader timeout class (cellshade /
+// chromakey / outlines / edges) — see the block where these are exempted below.
+const VIDEO_SINK_SWIFTSHADER_NOTE =
+  "video-out-canvas per-frame WebGL is too slow to verify on CI's SwiftShader software renderer (passes on real GPU); real behavioral coverage for these lives in each module's VRT + bespoke e2e spec; re-enable needs a real-GPU CI lane or a reduced-capture behavioral path";
 const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // ── Hardware-input sources: their outputs depend on physical IO that
   //    isn't present in the test browser, so the unpatched control reads
@@ -346,27 +351,33 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    Covered by foxy.spec.ts which uses a single-spawn + settle pattern.
   foxy: 'heavy mount (SwoleBlocks + RasterPainters); 5 inputs × 2 spawns exceed 140s CI budget; covered by foxy.spec.ts',
 
-  // ── EDGES — Sobel edge-detection VIDEO processor. Each frame is a full
-  //    WebGL Sobel convolution pass; on CI's SwiftShader SOFTWARE renderer
-  //    that per-frame GPU cost is ~10-30× a real GPU, so the per-input
-  //    spawn→settle→frame-poll loop blows the flat universal budget. With 3
-  //    drivable inputs the timeout is max(90s, 3×22+30)=96s, and the
-  //    `locator.evaluate` / `page.waitForFunction` video-frame poll on `in`
-  //    (a live ACIDWARP source fed through the Sobel pass) does not complete
-  //    within it — REPRODUCIBLY (96s timeout on `edges`, twice, while the
-  //    sibling `cube` only flaky-passes its 162s budget). This is the
-  //    documented CI-SwiftShader heavy-WebGL-video timeout class (cf. the
-  //    foxy / mandelbulb heavy-mount-exceeds-budget exemptions above), NOT a
-  //    per-port delta failure — it passes on a real local GPU. EDGES is fully
-  //    covered with stronger, GPU-aware signal by edges.spec.ts (SHAPES→EDGES
-  //    renders white edges on black + THRESHOLD reduces/raises edge-pixel
-  //    count + CV params route through the patch store) and edges.test.ts
-  //    (Sobel kernel / threshold / thickness unit math). The `inputs-accept`
-  //    dim in per-module-per-port.spec.ts still pins wire-up for all 3 ports.
-  //    Re-enable path: a video-domain per-input budget (scale the SwiftShader
-  //    timeout by frame-poll count, not the flat 22s/input) OR a real-GPU CI
-  //    lane — the same GPU-aware-budget follow-up the heavy-video class needs.
-  edges: 'heavy-WebGL video Sobel pass; the per-frame convolution on CI SwiftShader blows the flat 96s (3-input) budget — the `in` frame-poll times out reproducibly (twice), CI-SwiftShader heavy-WebGL-video class (cf. foxy/mandelbulb), passes on a real GPU; covered with stronger GPU-aware signal by edges.spec.ts (white-edges render + THRESHOLD edge-pixel delta + CV routing) + edges.test.ts (Sobel/threshold/thickness math); re-enable with a video-domain per-frame-scaled timeout or a real-GPU CI lane',
+  // ── VIDEO-SINK SwiftShader timeout class — cellshade / chromakey / outlines
+  //    / edges. These VIDEO-domain processors route their observed output to
+  //    the `video-out-canvas` sink. Every snapshot the SUT renders a per-frame
+  //    WebGL pipeline (cel-shade / chroma-key / outline / Sobel pass) AND the
+  //    sink read does a full-canvas readPixels — both ~10-30× slower under CI's
+  //    SwiftShader SOFTWARE renderer than a real GPU, with the parallel workers
+  //    contending a single GL pipeline. The per-input spawn→settle→frame-poll
+  //    loop blows the per-test wall-clock budget REPRODUCIBLY on CI while
+  //    PASSING on a real local GPU (the ci-swiftshader-video-e2e-timeouts
+  //    class; cf. the foxy / mandelbulb heavy-mount exemptions above — same
+  //    "exceeds the CI budget", NOT a per-port delta failure).
+  //
+  //    LOWER-WALL-TIME decision: SKIP these here (keeping the behavioral lane
+  //    at its ~15-min baseline) rather than scaling the per-test timeout —
+  //    the timeout-scaling leg pushed the lane to ~18-19 min, which the user
+  //    decided against. The disabled/exempt count goes UP by these — that's
+  //    the honest "reconcile = document-as-backlog" outcome, not fudged.
+  //
+  //    Real behavioral coverage for each lives in its VRT baseline + bespoke
+  //    e2e spec (cellshade.spec.ts / chromakey.spec.ts / outlines.spec.ts /
+  //    edges.spec.ts), and per-module-per-port.spec.ts still pins each port's
+  //    wire-up via the `inputs-accept` dim. Re-enable needs a real-GPU CI lane
+  //    or a reduced-capture behavioral path. One shared note for all four:
+  edges: VIDEO_SINK_SWIFTSHADER_NOTE,
+  cellshade: VIDEO_SINK_SWIFTSHADER_NOTE,
+  chromakey: VIDEO_SINK_SWIFTSHADER_NOTE,
+  outlines: VIDEO_SINK_SWIFTSHADER_NOTE,
 
   // ── GRIDS — Mutable Instruments Grids (pattern-based drum trigger).
   //    Internal BPM clock is non-deterministic under CI scheduling:

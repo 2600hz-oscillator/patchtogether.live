@@ -76,6 +76,66 @@ row.
 
 ## Entries
 
+### 2026-06-08 — behavioral video-sink SwiftShader EXEMPTIONS (lower-wall-time path)
+
+**Exempt the per-frame-WebGL video-sink modules instead of scaling the timeout.**
+This PR's first leg scaled the per-test budget up for video-sink modules to keep
+them in the lane; that worked but added ~3-4 min to behavioral CI wall-time (runs
+went ~18-19 min vs the ~15-min baseline). The decision (user) is to **not pay the
+wall-time**: REVERT the timeout scaling and SKIP the modules CI can't honestly
+verify.
+
+**The class.** **Video-sink** modules — those whose `pickObservedOutput` routes
+to the `video-out-canvas` sink — render a per-frame WebGL pipeline **and**
+`readPixels` a full canvas every snapshot, both ~10-30× slower under CI's
+**SwiftShader** software renderer than a real GPU (the
+`ci-swiftshader-video-e2e-timeouts` class). They time out **reproducibly** on CI
+while **passing on a real local GPU**. Four modules are in this class:
+`cellshade`, `chromakey`, `outlines`, `edges`.
+
+**Reverted (back to baseline, ~0 added CI minutes).** The per-test `setTimeout`
+is back to the flat `max(90s, n×22s+30s)` for *every* module; the video read is
+back to 3 full-res samples; the `VIDEO_TEST_BASE_MS` / `VIDEO_PER_INPUT_MS` /
+`VIDEO_TEST_TIMEOUT_CEIL` / `VIDEO_MOUNT_TIMEOUT_MS` constants and the
+`spawnPatch` mount-budget thread are all gone. Behavioral CI wall-time returns to
+~15 min.
+
+**Exempted (the honest backlog).** `cellshade` / `chromakey` / `outlines` join
+`BEHAVIORAL_MODULE_EXEMPT`, and `edges` **stays** exempt — all four sharing
+**one** backlog note (`VIDEO_SINK_SWIFTSHADER_NOTE`):
+
+> *video-out-canvas per-frame WebGL is too slow to verify on CI's SwiftShader
+> software renderer (passes on real GPU); real behavioral coverage for these
+> lives in each module's VRT + bespoke e2e spec; re-enable needs a real-GPU CI
+> lane or a reduced-capture behavioral path.*
+
+This is the honest **reconcile = document-as-backlog** outcome — the exempt count
+**goes up**, which is correct, not fudged. Real behavioral coverage for each
+lives in its VRT baseline + bespoke spec (`cellshade.spec.ts` / `chromakey.spec.ts`
+/ `outlines.spec.ts` / `edges.spec.ts`), and `per-module-per-port.spec.ts` still
+pins each port's wire-up via the `inputs-accept` dim. `foxy` / `mandelbulb` stay
+exempt for **audio**-scope / heavy-mount / ray-march reasons (unrelated to this
+class).
+
+Net: **behavioral disabled 57 → 60** (+3: `cellshade` / `chromakey` / `outlines`;
+`edges` was already +1 in the REFRAME entry below). The meta-test
+(`scripts/test-reconciliation.test.ts`) now LOCKS all four video-sink modules
+**in** the exempt map sharing the single note **and** that the video-scaling
+tokens are **gone** (timeout reverted to baseline).
+
+| block | kind | total | disabled | %disabled |
+|---|---|---:|---:|---:|
+| unit | raw | 6341 | 2 | 0.0% |
+| e2e | raw | 933 | 4 | 0.4% |
+| art | raw | 475 | 0 | 0.0% |
+| vrt | parametrized | 157 | 0 | 0.0% |
+| behavioral | parametrized | 103 | **60** | 58.3% |
+| @collab | raw (e2e subset) | 108 | 1 | 0.9% |
+
+**End state:** behavioral lane GREEN on CI at the ~15-min baseline (slow video
+modules SKIPPED, not given more time) — gateable as a REQUIRED check (standing
+goal #42, a separate follow-up).
+
 ### 2026-06-08 — report REFRAME: every disabled test is backlog (retire the intentional/reconcilable split)
 
 The reconciliation program's headline metric was lying. The behavioral block

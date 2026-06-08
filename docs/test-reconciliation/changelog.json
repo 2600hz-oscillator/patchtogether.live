@@ -72,6 +72,18 @@
         { "block": "behavioral", "kind": "parametrized", "total": 104, "disabled": 58 },
         { "block": "@collab", "kind": "raw (e2e subset)", "total": 108, "disabled": 1 }
       ]
+    },
+    {
+      "date": "2026-06-08",
+      "note": "behavioral video-sink SwiftShader EXEMPTIONS (lower-wall-time path) — EXEMPT cellshade/chromakey/outlines and KEEP edges exempt, instead of scaling the per-test timeout. CONTEXT: the per-frame WebGL video-sink modules (those whose pickObservedOutput routes to the video-out-canvas sink) render a per-frame pipeline AND readPixels a full canvas every snapshot, both ~10-30× slower under CI's SwiftShader SOFTWARE renderer than a real GPU (the ci-swiftshader-video-e2e-timeouts class) — they time out REPRODUCIBLY on CI while PASSING on a real local GPU. The FIRST attempt at this PR scaled the per-test timeout up (VIDEO_TEST_BASE_MS + n×VIDEO_PER_INPUT_MS + a video mount budget); that worked but added ~3-4 min to the behavioral lane (runs went ~18-19 min vs the ~15-min baseline). DECISION (user): do NOT pay the wall-time — REVERT all timeout scaling (per-test setTimeout back to the flat max(90s, n×22+30); video read back to 3 full-res samples; no VIDEO_*_MS constants; no spawnPatch mount-budget) and SKIP the unverifiable video-sink modules instead. So cellshade/chromakey/outlines join BEHAVIORAL_MODULE_EXEMPT and edges STAYS exempt, all four sharing ONE backlog note (VIDEO_SINK_SWIFTSHADER_NOTE): 'video-out-canvas per-frame WebGL is too slow to verify on CI's SwiftShader software renderer (passes on real GPU); real behavioral coverage for these lives in each module's VRT + bespoke e2e spec; re-enable needs a real-GPU CI lane or a reduced-capture behavioral path.' This is the honest reconcile=document-as-backlog outcome — the exempt count GOES UP (not fudged). Real behavioral coverage for each lives in its VRT baseline + bespoke spec (cellshade.spec.ts/chromakey.spec.ts/outlines.spec.ts/edges.spec.ts); per-module-per-port.spec.ts still pins each port's wire-up via inputs-accept. foxy/mandelbulb stay exempt for AUDIO-scope/heavy-mount/ray-march reasons (unrelated). Net behavioral disabled 57->60 (+3: cellshade/chromakey/outlines; edges was already +1 in the REFRAME entry). The meta-test (scripts/test-reconciliation.test.ts) now LOCKS all four video-sink modules IN the exempt map sharing the single note AND that the video-scaling tokens are GONE (timeout reverted to baseline). END STATE: behavioral lane GREEN on CI at ~15-min baseline wall-time (slow video modules SKIPPED, not given more time) — gateable as a REQUIRED check (standing goal #42, separate follow-up).",
+      "blocks": [
+        { "block": "unit", "kind": "raw", "total": 6341, "disabled": 2 },
+        { "block": "e2e", "kind": "raw", "total": 933, "disabled": 4 },
+        { "block": "art", "kind": "raw", "total": 475, "disabled": 0 },
+        { "block": "vrt", "kind": "parametrized", "total": 157, "disabled": 0 },
+        { "block": "behavioral", "kind": "parametrized", "total": 103, "disabled": 60 },
+        { "block": "@collab", "kind": "raw (e2e subset)", "total": 108, "disabled": 1 }
+      ]
     }
   ]
 }
