@@ -17,6 +17,7 @@ import {
   pushHeld,
   removeHeld,
   SCHED_LOOKAHEAD_S,
+  RENDER_QUANTUM_S,
   DEFAULT_BEND_SEMITONES,
 } from './midi-cv-buddy';
 import { midiToVOct } from '$lib/audio/note-entry';
@@ -36,8 +37,14 @@ describe('midiCvBuddyDef: module shape', () => {
     expect(midiCvBuddyDef.params).toEqual([]);
   });
 
-  it('lookahead is a small positive number (~ one audio block)', () => {
-    expect(SCHED_LOOKAHEAD_S).toBeGreaterThan(0);
+  it('lookahead is ≥ one render quantum and < 10 ms (jitter-safe but still immediate)', () => {
+    // Must be AT LEAST one 128-frame render quantum (~2.67 ms @ 48 kHz) so a
+    // jittery main-thread MIDI callback, after the schedAt() clamp, still
+    // lands at the start of a FUTURE block instead of mid-block (a click).
+    // The old 2 ms value was UNDER one quantum — the ES-9 duplex
+    // "clicks worse when interacting" regression. Kept < 10 ms so live MIDI
+    // stays perceptually immediate.
+    expect(SCHED_LOOKAHEAD_S).toBeGreaterThanOrEqual(RENDER_QUANTUM_S);
     expect(SCHED_LOOKAHEAD_S).toBeLessThan(0.01);
   });
 });

@@ -273,28 +273,38 @@ export const timelordeDef: AudioModuleDef = {
     // patch store (so any UI + remote rack-mates pick up the new state
     // via Y.Doc sync). Note: these gates HALT the clock, distinct from
     // the card's MUTE button which only silences output gates.
+    // Edge-detector ring buffers: at fftSize=2048 the analyser ring only
+    // holds ~42 ms, so a main-thread stall longer than that (a canvas
+    // pan/drag event-storm can block 80–150 ms) OVERWRITES start/stop
+    // rising edges before this poll reads them ⇒ a dropped/late transport
+    // edge (a missed start or stop). Widen to 16384 samples (~341 ms @
+    // 48 kHz) so the ring outlasts any plausible UI stall — matching the
+    // headroom the sequencer's external-clock detector already got in #229.
+    // fftSize must be a power of two ≤ 32768; the scan buffer is sized off
+    // it so the two never drift apart.
+    const EDGE_DETECTOR_FFT_SIZE = 16384;
     const startGain = ctx.createGain();
     const startAna = ctx.createAnalyser();
-    startAna.fftSize = 2048;
+    startAna.fftSize = EDGE_DETECTOR_FFT_SIZE;
     startAna.smoothingTimeConstant = 0;
     startGain.connect(startAna);
     const startSilence = ctx.createConstantSource();
     startSilence.offset.value = 0;
     startSilence.start();
     startSilence.connect(startGain);
-    const startBuf = new Float32Array(2048);
+    const startBuf = new Float32Array(startAna.fftSize);
     const startDet = createRisingEdgeDetector(0.5);
 
     const stopGain = ctx.createGain();
     const stopAna = ctx.createAnalyser();
-    stopAna.fftSize = 2048;
+    stopAna.fftSize = EDGE_DETECTOR_FFT_SIZE;
     stopAna.smoothingTimeConstant = 0;
     stopGain.connect(stopAna);
     const stopSilence = ctx.createConstantSource();
     stopSilence.offset.value = 0;
     stopSilence.start();
     stopSilence.connect(stopGain);
-    const stopBuf = new Float32Array(2048);
+    const stopBuf = new Float32Array(stopAna.fftSize);
     const stopDet = createRisingEdgeDetector(0.5);
 
     let lastTransportPollTime = ctx.currentTime;

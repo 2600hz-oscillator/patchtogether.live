@@ -124,15 +124,24 @@ function makeParam(initial = 0): FakeParam {
   return p;
 }
 
-// Each AnalyserNode keeps a 2048-sample ring buffer of the most-recent
+// Each AnalyserNode keeps an `fftSize`-sample ring buffer of the most-recent
 // samples written into its connected gain. Tests use pushSamples(...) to
-// stuff edges in directly.
+// stuff edges in directly. The buffer is (re)sized off `fftSize` whenever the
+// factory assigns it, so this mock tracks the real widened ring (16384) the
+// production factory now requests rather than a hard-coded 2048.
 class FakeAnalyserNode {
-  fftSize = 2048;
   smoothingTimeConstant = 0;
   buf: Float32Array = new Float32Array(2048);
   connect = vi.fn();
   disconnect = vi.fn();
+  #fftSize = 2048;
+  get fftSize(): number {
+    return this.#fftSize;
+  }
+  set fftSize(n: number) {
+    this.#fftSize = n;
+    this.buf = new Float32Array(n);
+  }
   getFloatTimeDomainData(out: Float32Array): void {
     out.set(this.buf);
   }
@@ -291,6 +300,33 @@ describe('timelordeDef.factory: start_in / stop_in transport gates', () => {
     expect(handle.inputs.has('start_in')).toBe(true);
     expect(handle.inputs.has('stop_in')).toBe(true);
     expect(handle.inputs.has('clock')).toBe(true);
+  });
+
+  // #229-style regression: the start_in / stop_in edge-detector analysers
+  // must use a wide ring (≥16384 samples, ~341 ms @ 48 kHz) so a long
+  // main-thread stall (canvas pan/drag event-storm, 80–150 ms) can't
+  // overwrite a transport edge before pollTransportGates() reads it. A
+  // narrow 2048-sample ring (~42 ms) drops those edges ⇒ a missed start/stop
+  // under UI load. We assert the analyser fftSize the factory requested,
+  // pulled off the gain → analyser wiring.
+  it('widens the start_in / stop_in edge-detector ring to ≥16384 (no dropped transport edge under UI stall)', async () => {
+    const ctx = makeMockCtx();
+    const node = makeNode({ running: 0 });
+    const handle = await timelordeDef.factory(
+      ctx as unknown as AudioContext,
+      node,
+    );
+    for (const port of ['start_in', 'stop_in'] as const) {
+      const gain = handle.inputs.get(port)!.node as unknown as FakeGainNode;
+      const ana = gain.connect.mock.calls[0]?.[0] as FakeAnalyserNode;
+      expect(ana, `${port} gain connected to an analyser`).toBeDefined();
+      expect(ana.fftSize).toBeGreaterThanOrEqual(16384);
+      // fftSize must be a power of two for WebAudio to accept it.
+      expect(Number.isInteger(Math.log2(ana.fftSize))).toBe(true);
+      // The scan buffer the factory reads into must match the ring width,
+      // else widening the ring buys no extra lookback.
+      expect(ana.buf.length).toBe(ana.fftSize);
+    }
   });
 
   it('rising edge on start_in while stopped sets running ← 1 (and leaves muteOutputs alone)', async () => {

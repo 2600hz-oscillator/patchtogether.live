@@ -108,6 +108,20 @@ export default defineConfig({
       // 0.01 once baselines settle on each platform.
       threshold: 0.2,
       maxDiffPixelRatio: 0.05,
+      // Per-screenshot settle/capture timeout. Playwright's default is
+      // 5000ms, which the heavy WebGL/animated cards (MANDLEBLOT,
+      // MANDELBULB, WAVESCULPT-BLINK, …) intermittently blow on the CI
+      // macOS runner — most visibly during `--update-snapshots`, where
+      // "Failed to re-generate expected. Timeout 5000ms exceeded" aborts
+      // the WHOLE darwin baseline regen (vrt-update.yml) before it can
+      // commit, so a single heavy-card render stall (a different card
+      // each dispatch — wavesculpt-blink, then mandleblot) repeatedly
+      // wedges the baseline refresh. The per-spec budget is already
+      // 30_000ms (above); raise the screenshot op to match so a slow
+      // GPU-bound settle has room instead of tripping the 5s default.
+      // This only ADDS settle headroom — it cannot turn a passing
+      // comparison into a failure (threshold/maxDiffPixelRatio unchanged).
+      timeout: 15_000,
       // Disable animations so on-card LEDs / hover effects / running
       // visualizers don't bake non-deterministic frames into the
       // baseline. Note: this is on top of the prefers-reduced-motion
