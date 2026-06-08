@@ -71,16 +71,22 @@ function makeExt(opts?: {
   conns?: number;
   rooms?: number;
   persist?: 'postgres' | 'memory';
+  uncaught?: number;
+  unhandled?: number;
 }) {
   const clock = new MockClock();
   let conns = opts?.conns ?? 0;
   let rooms = opts?.rooms ?? 0;
+  let uncaught = opts?.uncaught ?? 0;
+  let unhandled = opts?.unhandled ?? 0;
   const persist = opts?.persist ?? 'postgres';
   const ext = createIntrospectionExtension(
     {
       getConnectionsCount: () => conns,
       getDocumentsCount: () => rooms,
       getPersistenceMode: () => persist,
+      getUncaughtExceptions: () => uncaught,
+      getUnhandledRejections: () => unhandled,
     },
     {
       deps: {
@@ -103,6 +109,12 @@ function makeExt(opts?: {
     },
     setRooms: (n: number) => {
       rooms = n;
+    },
+    setUncaught: (n: number) => {
+      uncaught = n;
+    },
+    setUnhandled: (n: number) => {
+      unhandled = n;
     },
   };
 }
@@ -162,6 +174,8 @@ describe('createIntrospectionExtension — snapshot shape', () => {
       'rooms',
       'persist_writes_per_min',
       'persist_mode',
+      'relay_uncaught_exceptions',
+      'relay_unhandled_rejections',
     ];
     expect(Object.keys(snap).sort()).toEqual([...keys].sort());
     expect(snap.uptime_s).toBe(42);
@@ -175,6 +189,8 @@ describe('createIntrospectionExtension — snapshot shape', () => {
     expect(snap.rooms).toBe(2);
     expect(snap.persist_writes_per_min).toBe(0);
     expect(snap.persist_mode).toBe('postgres');
+    expect(snap.relay_uncaught_exceptions).toBe(0);
+    expect(snap.relay_unhandled_rejections).toBe(0);
     expect(typeof snap.boot_id).toBe('string');
     expect(snap.boot_id.length).toBeGreaterThan(2);
   });
@@ -182,6 +198,29 @@ describe('createIntrospectionExtension — snapshot shape', () => {
   it('reflects the injected persistence mode (memory)', () => {
     const { ext } = makeExt({ persist: 'memory' });
     expect(ext._snapshot().persist_mode).toBe('memory');
+  });
+
+  it('surfaces the injected relay error counters', () => {
+    const { ext, setUncaught, setUnhandled } = makeExt();
+    expect(ext._snapshot().relay_uncaught_exceptions).toBe(0);
+    setUncaught(3);
+    setUnhandled(5);
+    const snap = ext._snapshot();
+    expect(snap.relay_uncaught_exceptions).toBe(3);
+    expect(snap.relay_unhandled_rejections).toBe(5);
+  });
+
+  it('defaults the relay error counters to 0 when the getters are absent', () => {
+    // Existing callers that predate the optional getters still produce a valid
+    // snapshot (the ?? 0 fallback) — this is what keeps the change additive.
+    const ext = createIntrospectionExtension({
+      getConnectionsCount: () => 0,
+      getDocumentsCount: () => 0,
+      getPersistenceMode: () => 'postgres',
+    });
+    const snap = ext._snapshot();
+    expect(snap.relay_uncaught_exceptions).toBe(0);
+    expect(snap.relay_unhandled_rejections).toBe(0);
   });
 
   it('boot_id is stable across snapshots from the same extension', () => {

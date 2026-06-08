@@ -37,6 +37,12 @@ interface HocuspocusLike {
    *  so a misconfigured prod relay serving a non-persistent rack is observable.
    *  See packages/server/src/db.ts:persistenceMode. */
   getPersistenceMode(): 'postgres' | 'memory';
+  /** Count of uncaught exceptions the relay caught + stayed up through since
+   *  boot. Optional so existing callers/tests need no change; absent → 0.
+   *  See packages/server/src/relay-error-handlers.ts. */
+  getUncaughtExceptions?(): number;
+  /** Count of unhandled promise rejections caught since boot (see above). */
+  getUnhandledRejections?(): number;
 }
 
 /** Process-level numbers that change at sub-second cadence. */
@@ -56,6 +62,12 @@ export interface MetricsSnapshot {
   /** Snapshot-store mode: 'postgres' (durable) or 'memory' (lost on restart).
    *  A prod relay reporting 'memory' is serving a non-persistent rack. */
   persist_mode: 'postgres' | 'memory';
+  /** Uncaught exceptions the relay caught + stayed up through since boot.
+   *  Non-zero → pair with the tagged `event=relay_uncaught_exception` log line. */
+  relay_uncaught_exceptions: number;
+  /** Unhandled promise rejections caught since boot (see above; tag
+   *  `event=relay_unhandled_rejection`). */
+  relay_unhandled_rejections: number;
 }
 
 /** Pluggable deps so tests can pin the clock + memory readings. */
@@ -140,6 +152,11 @@ export function createIntrospectionExtension(
     deps?: Partial<IntrospectionDeps>;
     thresholdOverride?: { warnMb: number; critMb: number };
     env?: Record<string, string | undefined>;
+    /** Reuse a process-wide boot id (so /health + /metrics agree with the
+     *  tagged error-handler log lines). Falls back to a fresh per-instance id
+     *  when omitted — that fallback keeps each independently-constructed
+     *  extension distinct, which the unit tests rely on. */
+    bootId?: string;
   } = {},
 ): IntrospectionExtension {
   const deps: IntrospectionDeps = { ...realDeps, ...(options.deps ?? {}) };
@@ -147,7 +164,7 @@ export function createIntrospectionExtension(
 
   // Persisted across the process lifetime — a fresh boot gets a new id,
   // so a downstream watcher can detect "the relay restarted" by id flip.
-  const bootId = newBootId(deps);
+  const bootId = options.bootId ?? newBootId(deps);
 
   // Ring of persist-write timestamps inside the last PERSIST_WINDOW_MS.
   // Bounded by the persist cadence so memory usage stays trivial.
@@ -178,6 +195,8 @@ export function createIntrospectionExtension(
       rooms: hocuspocus.getDocumentsCount(),
       persist_writes_per_min: persistWrites.length,
       persist_mode: hocuspocus.getPersistenceMode(),
+      relay_uncaught_exceptions: hocuspocus.getUncaughtExceptions?.() ?? 0,
+      relay_unhandled_rejections: hocuspocus.getUnhandledRejections?.() ?? 0,
     };
   }
 

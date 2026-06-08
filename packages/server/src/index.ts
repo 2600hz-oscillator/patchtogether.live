@@ -26,6 +26,12 @@ import { SNAPSHOT_PERSISTENCE_CONFIG } from './snapshot-config.js';
 import { createHeartbeatExtension } from './heartbeat.js';
 import { createIntrospectionExtension } from './http-introspection.js';
 import { startReaper, type LiveConnectionSource } from './reaper.js';
+import { RELAY_BOOT_ID } from './boot-id.js';
+import {
+  getUncaughtExceptionCount,
+  getUnhandledRejectionCount,
+  installRelayProcessGuards,
+} from './relay-error-handlers.js';
 
 // Port choice: 1235 instead of Hocuspocus's documented default 1234,
 // because BitwigStudio (and likely other DAWs) reserve 1234 for OSC.
@@ -43,14 +49,13 @@ const HOST = process.env.HOST ?? '0.0.0.0';
 // 'error' listener), but a long-running collab server must never crash on a
 // background async failure. Log loudly + stay up; Fly health checks + the
 // reaper keep the process honest.
-process.on('unhandledRejection', (reason) => {
-  // eslint-disable-next-line no-console
-  console.error('[hocuspocus] unhandledRejection (relay stays up):', reason);
-});
-process.on('uncaughtException', (err) => {
-  // eslint-disable-next-line no-console
-  console.error('[hocuspocus] uncaughtException (relay stays up):', err);
-});
+//
+// Phase 2c: each handler now emits a single-line, machine-parseable tagged log
+// (`event=relay_uncaught_exception` / `event=relay_unhandled_rejection`, with the
+// error msg/stack + the relay boot_id) so log-based alerting (PR #74) can page on
+// any occurrence, and bumps a per-process counter surfaced on /metrics. The
+// stays-up semantics are unchanged. See ./relay-error-handlers.ts.
+installRelayProcessGuards();
 
 // In-memory slot tracker; one process serves all rackspaces, so a single
 // tracker is correct. When the server scales horizontally (post-Stage-B),
@@ -64,11 +69,22 @@ const slots = createSlotTracker();
 // the moment `extensions:` is evaluated (after the Server singleton is
 // already set up). The Hocuspocus `Server` export IS the singleton; it
 // has the count methods we need.
-const introspection = createIntrospectionExtension({
-  getConnectionsCount: () => Server.getConnectionsCount(),
-  getDocumentsCount: () => Server.getDocumentsCount(),
-  getPersistenceMode: () => persistenceMode(),
-});
+const introspection = createIntrospectionExtension(
+  {
+    getConnectionsCount: () => Server.getConnectionsCount(),
+    getDocumentsCount: () => Server.getDocumentsCount(),
+    getPersistenceMode: () => persistenceMode(),
+    // Phase 2c: surface the process-level error counters on /metrics so a
+    // log-alert can be paired with a scrape-side count of how many times the
+    // relay caught (and stayed up through) an uncaught exception / unhandled
+    // rejection since boot. See ./relay-error-handlers.ts.
+    getUncaughtExceptions: getUncaughtExceptionCount,
+    getUnhandledRejections: getUnhandledRejectionCount,
+  },
+  // Reuse the single process-wide boot id so the boot_id on /health + /metrics
+  // matches the boot_id stamped on the tagged error log lines for correlation.
+  { bootId: RELAY_BOOT_ID },
+);
 
 const hocuspocus = Server.configure({
   port: PORT,
