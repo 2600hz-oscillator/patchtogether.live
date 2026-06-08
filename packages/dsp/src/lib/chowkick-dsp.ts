@@ -576,9 +576,12 @@ export function portamentoStep(
 // canonical kick attack-pitch multiple).
 // ─────────────────────────────────────────────────────────────────────────
 
-/** Start-pitch multiple at the attack (3.5× target freq → punchy downward
- *  sweep). Chosen to match a typical 808/909-style kick attack chirp. */
-export const PITCH_ENV_START_MULT = 3.5;
+/** Start-pitch multiple at the attack (4× target freq → punchy downward
+ *  sweep). Chosen to match (slightly hotter than) a typical 808/909-style kick
+ *  attack chirp — the deeper the start multiple the more "snap" the chirp has.
+ *  `pitch_amount` scales the active sweep, so the user can dial back to a
+ *  gentler chirp; at amount=1 the body starts a full 2 octaves above `freq`. */
+export const PITCH_ENV_START_MULT = 4.0;
 
 export interface PitchEnvState {
   /** Current envelope value 0..1 (1 at attack, decaying to 0). */

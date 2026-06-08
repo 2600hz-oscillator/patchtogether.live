@@ -102,28 +102,30 @@ describe('chowkickDef — module def shape', () => {
 
   it('declares all 20 params with the spec\'s ranges + (punch) defaults + curves', () => {
     const byId = Object.fromEntries(chowkickDef.params.map((p) => [p.id, p] as const));
-    // PUNCH DEFAULTS (PR feat/chowkick-oomph): short impulse into a ringing
-    // body + pitch sweep + drive. See the worklet header for rationale.
+    // PUNCH DEFAULTS (PR feat/chowkick-oomph, tuning pass 2): a loud bright snap
+    // (noise 0.5 @ 5.5 kHz), deep fast chirp (pitch 0.9 / 0.28), sharper body
+    // (q 1.6), hotter drive (0.5). See the worklet header for the measured
+    // before/after punch proxies. noise_cutoff + tone ranges pushed (8k / 4k).
     expect(byId.width).toMatchObject({         min: 0.1, max: 50,   curve: 'log',      defaultValue: 0.5 });
     expect(byId.amplitude).toMatchObject({     min: 0,   max: 2,    curve: 'linear',   defaultValue: 1 });
-    expect(byId.decay).toMatchObject({         min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.35 });
+    expect(byId.decay).toMatchObject({         min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.3 });
     expect(byId.sustain).toMatchObject({       min: 0,   max: 1,    curve: 'linear',   defaultValue: 0 });
-    expect(byId.noise_amount).toMatchObject({  min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.2 });
-    expect(byId.noise_decay).toMatchObject({   min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.1 });
-    expect(byId.noise_cutoff).toMatchObject({  min: 20,  max: 5000, curve: 'log',      defaultValue: 3000 });
+    expect(byId.noise_amount).toMatchObject({  min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.5 });
+    expect(byId.noise_decay).toMatchObject({   min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.07 });
+    expect(byId.noise_cutoff).toMatchObject({  min: 20,  max: 8000, curve: 'log',      defaultValue: 5500 });
     expect(byId.noise_type).toMatchObject({    min: 0,   max: 3,    curve: 'discrete', defaultValue: 0 });
     expect(byId.freq).toMatchObject({          min: 20,  max: 500,  curve: 'log',      defaultValue: 80 });
-    expect(byId.q).toMatchObject({             min: 0.1, max: 10,   curve: 'log',      defaultValue: 0.7 });
+    expect(byId.q).toMatchObject({             min: 0.1, max: 10,   curve: 'log',      defaultValue: 1.6 });
     expect(byId.damping).toMatchObject({       min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.4 });
-    expect(byId.tight).toMatchObject({         min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.5 });
+    expect(byId.tight).toMatchObject({         min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.6 });
     expect(byId.bounce).toMatchObject({        min: 0,   max: 1,    curve: 'linear',   defaultValue: 0 });
-    expect(byId.tone).toMatchObject({          min: 50,  max: 2000, curve: 'log',      defaultValue: 2000 });
+    expect(byId.tone).toMatchObject({          min: 50,  max: 4000, curve: 'log',      defaultValue: 3200 });
     expect(byId.portamento).toMatchObject({    min: 0,   max: 100,  curve: 'log',      defaultValue: 0.5 });
     expect(byId.level).toMatchObject({         min: -60, max: 0,    curve: 'linear',   defaultValue: 0 });
     expect(byId.link).toMatchObject({          min: 0,   max: 1,    curve: 'discrete', defaultValue: 0 });
-    expect(byId.pitch_amount).toMatchObject({  min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.6 });
-    expect(byId.pitch_decay).toMatchObject({   min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.4 });
-    expect(byId.drive).toMatchObject({         min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.3 });
+    expect(byId.pitch_amount).toMatchObject({  min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.9 });
+    expect(byId.pitch_decay).toMatchObject({   min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.28 });
+    expect(byId.drive).toMatchObject({         min: 0,   max: 1,    curve: 'linear',   defaultValue: 0.5 });
     expect(Object.keys(byId)).toHaveLength(20);
   });
 

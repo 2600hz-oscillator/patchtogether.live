@@ -158,63 +158,75 @@ class ChowkickProcessor extends AudioWorkletProcessor {
     // (Must match parameterDescriptors' defaultValue for each param.)
     this.smWidth.prime(0.5);
     this.smAmp.prime(1);
-    this.smDecay.prime(0.35);
+    this.smDecay.prime(0.3);
     this.smSustain.prime(0);
-    this.smNoiseAmt.prime(0.2);
-    this.smNoiseDec.prime(0.1);
-    this.smNoiseCut.prime(3000);
+    this.smNoiseAmt.prime(0.5);
+    this.smNoiseDec.prime(0.07);
+    this.smNoiseCut.prime(5500);
     this.smFreq.prime(80);
-    this.smQ.prime(0.7);
+    this.smQ.prime(1.6);
     this.smDamping.prime(0.4);
-    this.smTight.prime(0.5);
+    this.smTight.prime(0.6);
     this.smBounce.prime(0);
-    this.smTone.prime(2000);
+    this.smTone.prime(3200);
     this.smLevel.prime(0);
-    this.smPitchAmt.prime(0.6);
-    this.smPitchDec.prime(0.4);
-    this.smDrive.prime(0.3);
+    this.smPitchAmt.prime(0.9);
+    this.smPitchDec.prime(0.28);
+    this.smDrive.prime(0.5);
     this.freqSmoothed = 80;
   }
 
   static get parameterDescriptors() {
     return [
       // a-rate so CV reaches the DSP per-sample.
-      // PUNCH DEFAULTS (PR feat/chowkick-oomph): the pulse now fires a short
-      // IMPULSE (width 0.5 ms, decay 0.35 ≈ 7 ms tau, sustain 0) into a body
-      // that actually rings — instead of the old held-DC plateau (decay 1 =
-      // 200 ms, sustain 0.5) that made the kick a DC blob.
+      // PUNCH DEFAULTS (PR feat/chowkick-oomph, tuning pass 2): the first fix
+      // made a real pitched ~80 Hz kick but the defaults were too polite. This
+      // pass leans into perceptual PUNCH — a loud bright SNAP (noise 0.5 @
+      // 5.5 kHz, ~1.5 ms), a deep FAST chirp (pitch_amount 0.9, decay 0.28 ≈
+      // 8 ms, start mult 4×), a sharper body (q 1.6) and hotter drive (0.5).
+      // Measured vs the previous defaults on the stock patch: attack slope
+      // +73 %, 0–10 ms click energy +33 %, sub (<120 Hz) energy +56 %, pitch-
+      // drop ratio 2.0×→2.7×, 0–2 ms transient peak +32 %. Still bipolar +
+      // pitched (DC≈0, 25 zero-crossings 5–150 ms, settles at ~78 Hz).
       { name: 'width',         defaultValue: 0.5,  minValue: 0.1, maxValue: 50,   automationRate: 'a-rate' as const },
       { name: 'amplitude',     defaultValue: 1,    minValue: 0,   maxValue: 2,    automationRate: 'a-rate' as const },
-      { name: 'decay',         defaultValue: 0.35, minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
+      { name: 'decay',         defaultValue: 0.3,  minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
       { name: 'sustain',       defaultValue: 0,    minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
-      // Transient click ON by default — broadband attack snap that reads on
-      // small speakers.
-      { name: 'noise_amount',  defaultValue: 0.2,  minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
-      { name: 'noise_decay',   defaultValue: 0.1,  minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
-      { name: 'noise_cutoff',  defaultValue: 3000, minValue: 20,  maxValue: 5000, automationRate: 'a-rate' as const },
+      // Transient click LOUD + bright by default — the #1 thing the ear reads
+      // as "punch". noise_cutoff range pushed to 8 kHz so the user can dial an
+      // even brighter snap.
+      { name: 'noise_amount',  defaultValue: 0.5,  minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
+      { name: 'noise_decay',   defaultValue: 0.07, minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
+      { name: 'noise_cutoff',  defaultValue: 5500, minValue: 20,  maxValue: 8000, automationRate: 'a-rate' as const },
       // discrete; 0..3 = Uniform/Gaussian/Pink/Velvet. k-rate (won't smooth).
       { name: 'noise_type',    defaultValue: 0,    minValue: 0,   maxValue: 3,    automationRate: 'k-rate' as const },
       { name: 'freq',          defaultValue: 80,   minValue: 20,  maxValue: 500,  automationRate: 'a-rate' as const },
-      { name: 'q',             defaultValue: 0.7,  minValue: 0.1, maxValue: 10,   automationRate: 'a-rate' as const },
+      // Sharper body resonance (1.6) → the body responds harder + faster per
+      // ping (more punch). Range up to 10 for a near-sine boom when wanted.
+      { name: 'q',             defaultValue: 1.6,  minValue: 0.1, maxValue: 10,   automationRate: 'a-rate' as const },
       // damping now controls RING TIME (0 = long boom … 1 = short thud); 0.4
       // gives a punchy, medium-length tail.
       { name: 'damping',       defaultValue: 0.4,  minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
-      { name: 'tight',         defaultValue: 0.5,  minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
+      { name: 'tight',         defaultValue: 0.6,  minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
       { name: 'bounce',        defaultValue: 0,    minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
-      // Higher tone LPF default so the new transient click survives.
-      { name: 'tone',          defaultValue: 2000, minValue: 50,  maxValue: 2000, automationRate: 'a-rate' as const },
+      // Higher tone LPF default (3.2 kHz) so the bright transient click
+      // survives; range up to 4 kHz to push the snap even further.
+      { name: 'tone',          defaultValue: 3200, minValue: 50,  maxValue: 4000, automationRate: 'a-rate' as const },
       { name: 'portamento',    defaultValue: 0.5,  minValue: 0,   maxValue: 100,  automationRate: 'k-rate' as const },
       { name: 'level',         defaultValue: 0,    minValue: -60, maxValue: 0,    automationRate: 'a-rate' as const },
       // 0 = off, 1 = on. LINK couples Q + Damping (per upstream: when LINK
       // is on, dragging Q also nudges damping so the body+ring stay glued).
       // Currently k-rate; we apply the coupling per-block in process().
       { name: 'link',          defaultValue: 0,    minValue: 0,   maxValue: 1,    automationRate: 'k-rate' as const },
-      // PUNCH params (new). pitch_amount = depth of the per-trigger downward
-      // pitch sweep (THE punch); pitch_decay = how fast it settles; drive =
-      // body waveshaper drive for small-speaker translation + extra weight.
-      { name: 'pitch_amount',  defaultValue: 0.6,  minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
-      { name: 'pitch_decay',   defaultValue: 0.4,  minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
-      { name: 'drive',         defaultValue: 0.3,  minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
+      // PUNCH params. pitch_amount = depth of the per-trigger downward pitch
+      // sweep (THE punch — the kick "chirp"); pitch_decay = how fast it snaps
+      // down; drive = body waveshaper drive for small-speaker translation +
+      // extra weight. Defaults leaned hot (0.9 / 0.28 / 0.5); the full 0..1
+      // range lets the user push to a deeper/faster chirp + harder drive, or
+      // dial back toward a gentle thump.
+      { name: 'pitch_amount',  defaultValue: 0.9,  minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
+      { name: 'pitch_decay',   defaultValue: 0.28, minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
+      { name: 'drive',         defaultValue: 0.5,  minValue: 0,   maxValue: 1,    automationRate: 'a-rate' as const },
     ];
   }
 
@@ -249,21 +261,21 @@ class ChowkickProcessor extends AudioWorkletProcessor {
       // Per-sample params (CV-summed + smoothed at 80 Hz).
       const widthRaw   = this.aval(parameters, 'width', s, 0.5);
       const ampRaw     = this.aval(parameters, 'amplitude', s, 1);
-      const decayRaw   = clamp(this.aval(parameters, 'decay', s, 0.35), 0, 1);
+      const decayRaw   = clamp(this.aval(parameters, 'decay', s, 0.3), 0, 1);
       const sustainRaw = clamp(this.aval(parameters, 'sustain', s, 0), 0, 1);
-      const nAmtRaw    = clamp(this.aval(parameters, 'noise_amount', s, 0.2), 0, 1);
-      const nDecRaw    = clamp(this.aval(parameters, 'noise_decay', s, 0.1), 0, 1);
-      const nCutRaw    = clamp(this.aval(parameters, 'noise_cutoff', s, 3000), 20, 5000);
+      const nAmtRaw    = clamp(this.aval(parameters, 'noise_amount', s, 0.5), 0, 1);
+      const nDecRaw    = clamp(this.aval(parameters, 'noise_decay', s, 0.07), 0, 1);
+      const nCutRaw    = clamp(this.aval(parameters, 'noise_cutoff', s, 5500), 20, 8000);
       const freqRaw    = clamp(this.aval(parameters, 'freq', s, 80), 20, 500);
-      const qRaw       = clamp(this.aval(parameters, 'q', s, 0.7), 0.1, 10);
+      const qRaw       = clamp(this.aval(parameters, 'q', s, 1.6), 0.1, 10);
       const dampRaw    = clamp(this.aval(parameters, 'damping', s, 0.4), 0, 1);
-      const tightRaw   = clamp(this.aval(parameters, 'tight', s, 0.5), 0, 1);
+      const tightRaw   = clamp(this.aval(parameters, 'tight', s, 0.6), 0, 1);
       const bounceRaw  = clamp(this.aval(parameters, 'bounce', s, 0), 0, 1);
-      const toneRaw    = clamp(this.aval(parameters, 'tone', s, 2000), 50, 2000);
+      const toneRaw    = clamp(this.aval(parameters, 'tone', s, 3200), 50, 4000);
       const levelRaw   = clamp(this.aval(parameters, 'level', s, 0), -60, 0);
-      const pAmtRaw    = clamp(this.aval(parameters, 'pitch_amount', s, 0.6), 0, 1);
-      const pDecRaw    = clamp(this.aval(parameters, 'pitch_decay', s, 0.4), 0, 1);
-      const driveRaw   = clamp(this.aval(parameters, 'drive', s, 0.3), 0, 1);
+      const pAmtRaw    = clamp(this.aval(parameters, 'pitch_amount', s, 0.9), 0, 1);
+      const pDecRaw    = clamp(this.aval(parameters, 'pitch_decay', s, 0.28), 0, 1);
+      const driveRaw   = clamp(this.aval(parameters, 'drive', s, 0.5), 0, 1);
 
       const width   = this.smWidth.step(widthRaw);
       const amp     = this.smAmp.step(ampRaw);

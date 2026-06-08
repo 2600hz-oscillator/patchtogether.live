@@ -249,13 +249,15 @@ describe('ART chowkick / noisy canonical envelope', () => {
 // > 0.05, tail < attack, finite) all PASSED on that pitchless blob.
 
 describe('ART chowkick / oomph: default patch is a punchy PITCHED kick', () => {
-  // The module's shipping defaults (post-fix). Mirrors chowkick.ts descriptors.
+  // The module's shipping defaults (post tuning-pass-2). Mirrors the
+  // chowkick.ts descriptors: a loud bright snap + deep fast chirp + sharper
+  // body + hotter drive.
   const def: KickPatch = {
-    width_ms: 0.5, amp: 1.0, decay01: 0.35, sustain01: 0,
-    noiseAmount: 0.2, noiseDecay01: 0.1, noiseCutoff: 3000, noiseType: 0,
-    freqHz: 80, q: 0.7, damping01: 0.4, tight01: 0.5, bounce01: 0,
-    toneHz: 2000, levelDb: 0,
-    pitchAmount: 0.6, pitchDecay01: 0.4, drive01: 0.3,
+    width_ms: 0.5, amp: 1.0, decay01: 0.3, sustain01: 0,
+    noiseAmount: 0.5, noiseDecay01: 0.07, noiseCutoff: 5500, noiseType: 0,
+    freqHz: 80, q: 1.6, damping01: 0.4, tight01: 0.6, bounce01: 0,
+    toneHz: 3200, levelDb: 0,
+    pitchAmount: 0.9, pitchDecay01: 0.28, drive01: 0.5,
   };
 
   it('DC offset ≈ 0 (bipolar kick, NOT a +0.5 DC blob)', () => {
@@ -303,5 +305,122 @@ describe('ART chowkick / oomph: default patch is a punchy PITCHED kick', () => {
     const longTail = rms(renderKick({ ...def, damping01: 0.1 }), Math.round(0.2 * SR), Math.round(0.3 * SR));
     const shortTail = rms(renderKick({ ...def, damping01: 0.9 }), Math.round(0.2 * SR), Math.round(0.3 * SR));
     expect(longTail).toBeGreaterThan(shortTail);
+  });
+});
+
+// ─── PUNCH pins (PR feat/chowkick-oomph tuning pass 2) ───────────────────────
+//
+// Pass 1 shipped a real pitched kick but the user reported the defaults were
+// "not any punchier" — too polite. Pass 2 leans into perceptual PUNCH. These
+// pins guard the *measurable* punch proxies vs the previous polite defaults so
+// a future regression back to a soft kick is caught:
+//   - sharper attack (max per-sample slope in the first 20 ms),
+//   - louder/brighter transient SNAP (>800 Hz energy in the first 10 ms),
+//   - more low-end weight (<120 Hz body energy),
+//   - a deeper pitch chirp (early-window dominant freq sits higher above `freq`),
+//   - a hotter 0–2 ms transient peak.
+describe('ART chowkick / punch: shipping defaults are measurably punchier than the polite pass-1 defaults', () => {
+  // The previous (pass-1, too-polite) defaults — the reference to beat.
+  const polite: KickPatch = {
+    width_ms: 0.5, amp: 1.0, decay01: 0.35, sustain01: 0,
+    noiseAmount: 0.2, noiseDecay01: 0.1, noiseCutoff: 3000, noiseType: 0,
+    freqHz: 80, q: 0.7, damping01: 0.4, tight01: 0.5, bounce01: 0,
+    toneHz: 2000, levelDb: 0,
+    pitchAmount: 0.6, pitchDecay01: 0.4, drive01: 0.3,
+  };
+  // Current shipping defaults (mirrors chowkick.ts).
+  const punchy: KickPatch = {
+    width_ms: 0.5, amp: 1.0, decay01: 0.3, sustain01: 0,
+    noiseAmount: 0.5, noiseDecay01: 0.07, noiseCutoff: 5500, noiseType: 0,
+    freqHz: 80, q: 1.6, damping01: 0.4, tight01: 0.6, bounce01: 0,
+    toneHz: 3200, levelDb: 0,
+    pitchAmount: 0.9, pitchDecay01: 0.28, drive01: 0.5,
+  };
+
+  // Note: pass-1 used PITCH_ENV_START_MULT=3.5; this build uses 4.0. The
+  // `polite` patch above renders under the CURRENT start-mult, so these are a
+  // controlled A/B of the *knob* defaults at constant code — a conservative
+  // lower bound on the real (knobs + start-mult) perceptual delta the user hears.
+
+  function maxAttackSlope(b: Float32Array, ms = 20): number {
+    const end = Math.round(SR * ms / 1000);
+    let m = 0;
+    for (let i = 1; i < end; i++) { const d = Math.abs((b[i] ?? 0) - (b[i - 1] ?? 0)); if (d > m) m = d; }
+    return m;
+  }
+  function bandEnergy(b: Float32Array, s: number, e: number, loF: number, hiF: number, step: number): number {
+    const W = e - s;
+    const win = new Float32Array(W);
+    for (let i = 0; i < W; i++) win[i] = (b[s + i] ?? 0) * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (W - 1)));
+    let energy = 0;
+    for (let f = loF; f < hiF; f += step) {
+      let re = 0, im = 0;
+      for (let i = 0; i < W; i++) { const a = 2 * Math.PI * f * i / SR; re += (win[i] ?? 0) * Math.cos(a); im -= (win[i] ?? 0) * Math.sin(a); }
+      energy += re * re + im * im;
+    }
+    return energy;
+  }
+  function clickEnergy(b: Float32Array): number { return bandEnergy(b, 0, Math.round(SR * 0.01), 800, 8000, 50); }
+  function subEnergy(b: Float32Array): number { return bandEnergy(b, 0, Math.round(SR * 0.3), 20, 120, 2); }
+  function transientPeak(b: Float32Array): number { return peakAbs(b.subarray(0, Math.round(SR * 0.002))); }
+  function earlyDominantHz(b: Float32Array): number {
+    // dominant body freq over the first 8 ms (the chirp start).
+    const e = Math.round(SR * 0.008);
+    let best = 0, bestMag = 0;
+    for (let f = 60; f <= 600; f += 1) {
+      let re = 0, im = 0;
+      for (let i = 0; i < e; i++) { const a = 2 * Math.PI * f * i / SR; re += (b[i] ?? 0) * Math.cos(a); im -= (b[i] ?? 0) * Math.sin(a); }
+      const m = re * re + im * im;
+      if (m > bestMag) { bestMag = m; best = f; }
+    }
+    return best;
+  }
+
+  it('sharper attack: max attack slope is at least 1.4× the polite default', () => {
+    const sp = maxAttackSlope(renderKick(punchy));
+    const sl = maxAttackSlope(renderKick(polite));
+    expect(sp / sl, `slope punchy=${sp.toFixed(4)} polite=${sl.toFixed(4)}`).toBeGreaterThan(1.4);
+  });
+
+  it('louder/brighter transient SNAP: >800 Hz energy in first 10 ms exceeds the polite default', () => {
+    const cp = clickEnergy(renderKick(punchy));
+    const cl = clickEnergy(renderKick(polite));
+    expect(cp, `click punchy=${cp.toExponential(2)} polite=${cl.toExponential(2)}`).toBeGreaterThan(cl);
+  });
+
+  it('more low-end weight: <120 Hz body energy exceeds the polite default', () => {
+    const sp = subEnergy(renderKick(punchy));
+    const sl = subEnergy(renderKick(polite));
+    expect(sp, `sub punchy=${sp.toExponential(2)} polite=${sl.toExponential(2)}`).toBeGreaterThan(sl);
+  });
+
+  it('deeper chirp: early-window dominant freq sits higher above the 80 Hz body', () => {
+    const fp = earlyDominantHz(renderKick(punchy));
+    const fl = earlyDominantHz(renderKick(polite));
+    // The chirp starts well above the body freq; the punchy default starts higher.
+    expect(fp, `start punchy=${fp}Hz polite=${fl}Hz`).toBeGreaterThan(fl);
+    expect(fp).toBeGreaterThan(80 * 1.5); // a real, audible chirp start
+  });
+
+  it('hotter transient: 0–2 ms peak exceeds the polite default', () => {
+    const tp = transientPeak(renderKick(punchy));
+    const tl = transientPeak(renderKick(polite));
+    expect(tp, `transient punchy=${tp.toFixed(3)} polite=${tl.toFixed(3)}`).toBeGreaterThan(tl);
+  });
+
+  it('still a tasteful kick, not a noise burst: settled body still pitched near 80 Hz', () => {
+    // Punch must not destroy the pitched body — the steady tail must still ring
+    // near the body freq (guards against cranking noise so hard it becomes a hat).
+    const b = renderKick(punchy);
+    let best = 0, bestMag = 0;
+    const s0 = Math.round(SR * 0.06), s1 = Math.round(SR * 0.2);
+    for (let f = 30; f <= 300; f += 1) {
+      let re = 0, im = 0;
+      for (let i = s0; i < s1; i++) { const a = 2 * Math.PI * f * i / SR; re += (b[i] ?? 0) * Math.cos(a); im -= (b[i] ?? 0) * Math.sin(a); }
+      const m = re * re + im * im;
+      if (m > bestMag) { bestMag = m; best = f; }
+    }
+    expect(best, `settled dominant ${best}Hz`).toBeGreaterThan(55);
+    expect(best, `settled dominant ${best}Hz`).toBeLessThan(160);
   });
 });

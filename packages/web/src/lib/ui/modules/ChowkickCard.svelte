@@ -257,7 +257,7 @@
       <div class="fader-row">
         <Fader value={noiseAmount}  min={0}   max={1}    defaultValue={defaultFor('noise_amount')} label="NAmt"            curve="linear" onchange={set('noise_amount')} moduleId={id} paramId="noise_amount" readLive={live('noise_amount')} />
         <Fader value={noiseDecay}   min={0}   max={1}    defaultValue={defaultFor('noise_decay')}  label="NDec"            curve="linear" onchange={set('noise_decay')}  moduleId={id} paramId="noise_decay"  readLive={live('noise_decay')} />
-        <Fader value={noiseCutoff}  min={20}  max={5000} defaultValue={defaultFor('noise_cutoff')} label="NCut" units="Hz" curve="log"    onchange={set('noise_cutoff')} moduleId={id} paramId="noise_cutoff" readLive={live('noise_cutoff')} />
+        <Fader value={noiseCutoff}  min={20}  max={8000} defaultValue={defaultFor('noise_cutoff')} label="NCut" units="Hz" curve="log"    onchange={set('noise_cutoff')} moduleId={id} paramId="noise_cutoff" readLive={live('noise_cutoff')} />
         <Fader value={noiseType}    min={0}   max={3}    defaultValue={defaultFor('noise_type')}   label={`NTyp ${noiseTypeName}`} curve="linear" onchange={set('noise_type')}   moduleId={id} paramId="noise_type"   readLive={live('noise_type')} />
       </div>
     </section>
@@ -273,7 +273,7 @@
         <Fader value={bounce}    min={0}   max={1}    defaultValue={defaultFor('bounce')}  label="Bnc"             curve="linear" onchange={set('bounce')}  moduleId={id} paramId="bounce"  readLive={live('bounce')} />
       </div>
       <div class="fader-row">
-        <Fader value={tone}       min={50}  max={2000} defaultValue={defaultFor('tone')}        label="Tone" units="Hz" curve="log"      onchange={set('tone')}       moduleId={id} paramId="tone"       readLive={live('tone')} />
+        <Fader value={tone}       min={50}  max={4000} defaultValue={defaultFor('tone')}        label="Tone" units="Hz" curve="log"      onchange={set('tone')}       moduleId={id} paramId="tone"       readLive={live('tone')} />
         <Fader value={portamento} min={0}   max={100}  defaultValue={defaultFor('portamento')}  label="Prt"  units="ms" curve="log"      onchange={set('portamento')} moduleId={id} paramId="portamento" readLive={live('portamento')} />
         <Fader value={link}       min={0}   max={1}    defaultValue={defaultFor('link')}        label={`Lnk ${link >= 0.5 ? 'ON' : 'OFF'}`} curve="linear" onchange={set('link')}       moduleId={id} paramId="link"       readLive={live('link')} />
         <Fader value={level}      min={-60} max={0}    defaultValue={defaultFor('level')}       label="Lvl"  units="dB" curve="linear"  onchange={set('level')}      moduleId={id} paramId="level"      readLive={live('level')} />
