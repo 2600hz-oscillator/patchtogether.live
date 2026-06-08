@@ -1,8 +1,9 @@
 // packages/dsp/src/synesthesia.ts
 //
 // SYNESTHESIA — two independent copies (A/B) of a 4-band audio-analysis
-// circuit. Each copy: mono in → 4 spectral bands (0–200 / 200–500 / 500–2000 /
-// 2000+) → per-band gain (master floor + band gain) → band audio, fast (50 ms)
+// circuit. Each copy: mono in → 4 MUSICAL spectral bands (20–200 / 200–1000 /
+// 1000–4000 / 4000+, i.e. SYN_BAND_EDGES = [200, 1000, 4000]) → per-band gain
+// (master floor + band gain) → band audio, fast (50 ms)
 // + slow (500 ms) envelope followers, a gate, and a VU level. The DSP maths
 // live in ./lib/synesthesia-dsp.ts (inlined by esbuild); this file is the thin
 // AudioWorkletProcessor wrapper.

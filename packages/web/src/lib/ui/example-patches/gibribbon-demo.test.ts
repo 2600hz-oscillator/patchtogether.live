@@ -166,6 +166,38 @@ describe('gibribbon-demo: envelope shape', () => {
     expect(Object.keys(nodes).length).toBe(5);
     expect(Object.keys(edges).length).toBe(11);
   });
+
+  it('the SYNESTHESIA gains in the blob match the build script (no drift)', () => {
+    // Guard against script↔blob drift: build-gibribbon-demo-envelope.mjs writes
+    // these SYNESTHESIA copy-A gains, and gibribbon-demo-calibration.test.ts
+    // proves they keep all four GIBRIBBON channels alive. If someone edits the
+    // gains in the script but forgets to regenerate the committed .imp.json (or
+    // vice-versa), the live demo silently diverges from the calibration this PR
+    // (#701) locked in — fail CI here so the two can never drift apart.
+    const env = parseEnvelope(JSON.stringify(GIBRIBBON_DEMO_ENVELOPE_RAW));
+    const doc = new Y.Doc();
+    Y.applyUpdate(
+      doc,
+      Uint8Array.from(atob(env.update), (c) => c.charCodeAt(0)),
+    );
+    const nodes = doc.getMap('nodes').toJSON();
+    const syn = Object.values(nodes).find(
+      (n): n is { params?: Record<string, number> } =>
+        (n as { type?: string })?.type === 'synesthesia',
+    );
+    expect(syn, 'synesthesia node present in blob').toBeTruthy();
+    // These are the retuned (#698) gains the build script writes; keep this
+    // object in lock-step with the `params` block in
+    // scripts/build-gibribbon-demo-envelope.mjs.
+    expect(syn!.params).toMatchObject({
+      a_mode: 0,
+      a_master: 1.2,
+      a_gain1: 1.4,
+      a_gain2: 2.35,
+      a_gain3: 3.9,
+      a_gain4: 1.9,
+    });
+  });
 });
 
 describe('gibribbon-demo: loadGibribbonDemo against a fake store', () => {
