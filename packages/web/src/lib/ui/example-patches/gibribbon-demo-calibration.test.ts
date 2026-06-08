@@ -28,7 +28,7 @@
 // the macrooscillator unit tests + ART use); renderSynesthesia is the same DSP
 // the synesthesia unit tests import. No AudioWorklet / WebGL needed.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import * as Y from 'yjs';
 import { macrooscillatorMath, type MacroParams } from '$lib/audio/modules/macrooscillator';
 import { renderSynesthesia } from '../../../../../dsp/src/lib/synesthesia-dsp';
@@ -191,8 +191,21 @@ describe('GIBRIBBON demo — real-chain SYNESTHESIA calibration (#698 retune gua
   const steps = demoSteps(doc);
   const macro = demoMacroParams(doc);
 
+  // The real-chain renders (renderDemoVoice over 128 steps → renderSynesthesia
+  // over 32 s of audio) cost ~2 s EACH and are IDENTICAL across the tests below
+  // (same demo doc, same params). Compute them ONCE here — re-rendering per
+  // `it()` blew vitest's 5 s per-test timeout under flake-check/CI load. The
+  // assertions are now near-instant reads over the precomputed results.
+  let voice: Float32Array;
+  let demoRun: PipelineResult; // demo (new) gains
+  let oldRun: PipelineResult; // OLD pre-#698 gains (negative guard)
+  beforeAll(() => {
+    voice = renderDemoVoice(steps, macro);
+    demoRun = runDemoPipeline(steps, macro, DEMO_MASTER, DEMO_GAINS);
+    oldRun = runDemoPipeline(steps, macro, OLD_MASTER, OLD_GAINS);
+  }, 60_000);
+
   it('renders a non-silent sequenced voice and a non-trivial number of ticks', () => {
-    const voice = renderDemoVoice(steps, macro);
     expect(voice.length).toBe(steps.length * STEP_SAMPLES);
     // The voice carries real energy (not all-zero) so renderSynesthesia has
     // something to analyse.
@@ -207,7 +220,7 @@ describe('GIBRIBBON demo — real-chain SYNESTHESIA calibration (#698 retune gua
   });
 
   it('ALL FOUR event kinds spawn at the demo gains — none dead', () => {
-    const { counts } = runDemoPipeline(steps, macro, DEMO_MASTER, DEMO_GAINS);
+    const { counts } = demoRun;
     expect(counts.loop, 'loop (cv1) must spawn').toBeGreaterThanOrEqual(1);
     expect(counts.jump, 'jump (cv2) must spawn').toBeGreaterThanOrEqual(1);
     expect(counts.imp, 'imp (cv3) must spawn').toBeGreaterThanOrEqual(1);
@@ -215,7 +228,7 @@ describe('GIBRIBBON demo — real-chain SYNESTHESIA calibration (#698 retune gua
   });
 
   it('no single channel floods (per-kind spawn share is bounded)', () => {
-    const { counts, spawned } = runDemoPipeline(steps, macro, DEMO_MASTER, DEMO_GAINS);
+    const { counts, spawned } = demoRun;
     const total = spawned.length;
     expect(total).toBeGreaterThan(0);
     // No one kind may own more than half the spawns (a flooded channel starves
@@ -226,7 +239,7 @@ describe('GIBRIBBON demo — real-chain SYNESTHESIA calibration (#698 retune gua
   });
 
   it('the total spawn rate is playable (~0.39 spawns/tick, band 0.3–0.5)', () => {
-    const { spawned, nTicks } = runDemoPipeline(steps, macro, DEMO_MASTER, DEMO_GAINS);
+    const { spawned, nTicks } = demoRun;
     const perTick = spawned.length / nTicks;
     expect(perTick).toBeGreaterThanOrEqual(0.3);
     expect(perTick).toBeLessThanOrEqual(0.5);
@@ -237,7 +250,7 @@ describe('GIBRIBBON demo — real-chain SYNESTHESIA calibration (#698 retune gua
   // the bug the retune fixed. If a future edit reverts to a calibration that
   // kills a channel, the "ALL FOUR" assertion above fails the same way.
   it('FAILS-SAFE: the OLD pre-#698 gains leave jump + imp dead (the bug)', () => {
-    const { counts } = runDemoPipeline(steps, macro, OLD_MASTER, OLD_GAINS);
+    const { counts } = oldRun;
     // Demonstrates the regression the new gains fix: at least one mid band dead.
     expect(counts.jump + counts.imp).toBe(0);
     // loop + zombie still fired under the old gains (only the mids died).
