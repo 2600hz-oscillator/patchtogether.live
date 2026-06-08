@@ -55,7 +55,7 @@ const LOBBY_CLIP = fileURLToPath(new URL('../fixtures/lobby-clip.webm', import.m
  *  alone, no extra setup). */
 export const VRT_SCENES: Record<string, VrtScene> = {
   // SYNESTHESIA: drive copy A's input with a 261 Hz sine (analogVco default
-  // 'sine' out, pitch 0 V/oct ≈ C4) so band 2 (200–500 Hz) lights its VU
+  // 'sine' out, pitch 0 V/oct ≈ C4) so band 2 (low-mid 200–1k Hz) lights its VU
   // meter deterministically; copy B is left dark. After settle we freeze the
   // AudioContext — the worklet stops posting snapshots, so the last meter
   // levels hold and the two VU canvases are pixel-stable across runs.

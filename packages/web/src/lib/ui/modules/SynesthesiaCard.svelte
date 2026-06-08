@@ -32,7 +32,8 @@
   };
 
   const BANDS = [1, 2, 3, 4] as const;
-  const BAND_LABELS = ['0–200', '200–500', '500–2k', '2k+'] as const;
+  // Musical band edges: bass 20–200, low-mid 200–1k, high-mid 1k–4k, treble 4k+.
+  const BAND_LABELS = ['20–200', '200–1k', '1k–4k', '4k+'] as const;
   // In VIDEO mode the 4 lanes are the R/G/B/Luma channels of the patched frame.
   const VIDEO_LABELS = ['R', 'G', 'B', 'L'] as const;
 
@@ -57,6 +58,7 @@
         { id: `${c}_band${b}_env_slow`, label: `B${b} SLOW ENV`,             cable: 'cv' as const },
         { id: `${c}_band${b}_env_fast`, label: `B${b} FAST ENV`,             cable: 'cv' as const },
         { id: `${c}_band${b}_gate`,     label: `B${b} GATE`,                 cable: 'gate' as const },
+        { id: `${c}_band${b}_trig`,     label: `B${b} BEAT TRIG`,            cable: 'gate' as const },
         { id: `${c}_band${b}_raster`,   label: `B${b} RASTER`,               cable: 'mono-video' as const },
       ]),
     };

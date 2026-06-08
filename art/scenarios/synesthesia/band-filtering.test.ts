@@ -41,12 +41,14 @@ function rmsTail(buf: Float32Array): number {
   return Math.sqrt(s / (buf.length - start));
 }
 
-// 65→band1(0-200), 261→band2(200-500), 1061→band3(500-2000), 2093→band4(2000+)
+// MUSICAL bands: 65→band1(20-200), 400→band2(200-1k), 2000→band3(1k-4k),
+// 8000→band4(4k+). Tones sit well inside each band so the 24 dB/oct slopes
+// keep the target band dominant.
 const BANDS = [
   { n: 1, idx: 0, freq: 65 },
-  { n: 2, idx: 1, freq: 261 },
-  { n: 3, idx: 2, freq: 1061 },
-  { n: 4, idx: 3, freq: 2093 },
+  { n: 2, idx: 1, freq: 400 },
+  { n: 3, idx: 2, freq: 2000 },
+  { n: 4, idx: 3, freq: 8000 },
 ] as const;
 
 describe('synesthesia / band-filtering', () => {

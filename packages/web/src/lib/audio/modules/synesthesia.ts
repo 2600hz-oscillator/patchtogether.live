@@ -1,16 +1,18 @@
 // packages/web/src/lib/audio/modules/synesthesia.ts
 //
 // SYNESTHESIA — web module def + factory. Two independent copies (A/B) of a
-// 4-band audio-analysis circuit. Each copy: mono in → 4 spectral bands
-// (0–200 / 200–500 / 500–2000 / 2000+) → per-band gain (master floor + band) →
-// per-band audio, slow (500 ms) + fast (50 ms) envelope-follower CV, and a
-// gate. A 10-bar VU meter per band is driven by a `snapshot` posted from the
-// worklet. DSP lives in packages/dsp/src/synesthesia.ts.
+// 4-band audio-analysis circuit. Each copy: mono in → 4 MUSICAL bands
+// (bass 20–200 / low-mid 200–1k / high-mid 1k–4k / treble 4k+) → per-band gain
+// (master floor + band) → per-band audio, slow (500 ms) + fast (50 ms)
+// envelope-follower CV, a hysteresis gate, and a per-band BEAT TRIGGER
+// (spectral-flux onset → ~10 ms pulse, LZX-Sensory-Translator style). A 10-bar
+// VU meter per band is driven by a `snapshot` posted from the worklet. DSP
+// lives in packages/dsp/src/synesthesia.ts.
 //
 // Worklet I/O (see packages/dsp/src/synesthesia.ts):
 //   inputs:  0 = copy A in, 1 = copy B in   (mono)
 //   outputs: 0=audioA 1=audioB 2=slowA 3=slowB 4=fastA 5=fastB 6=gateA 7=gateB
-//            (each 4 channels = the 4 bands)
+//            8=trigA 9=trigB   (each 4 channels = the 4 bands)
 //
 // VIDEO mode (per copy, independent): a_mode/b_mode params (0=AUDIO, 1=VIDEO).
 // In VIDEO mode the 4 lanes become R/G/B/Luma of the patched frame: the CARD
@@ -45,6 +47,10 @@ const OUT_STREAMS: Array<{ outIndex: number; copy: 'a' | 'b'; kind: string; type
   { outIndex: 5, copy: 'b', kind: 'env_fast', type: 'cv' },
   { outIndex: 6, copy: 'a', kind: 'gate',     type: 'gate' },
   { outIndex: 7, copy: 'b', kind: 'gate',     type: 'gate' },
+  // Per-band beat triggers (spectral-flux onset; ~10 ms pulse). Worklet
+  // outputs 8/9; fanned into 4 per-band gate ports each, same as `gate`.
+  { outIndex: 8, copy: 'a', kind: 'trig',     type: 'gate' },
+  { outIndex: 9, copy: 'b', kind: 'trig',     type: 'gate' },
 ];
 
 const PARAM_DEFAULTS: Record<string, number> = {};
@@ -80,51 +86,60 @@ export const synesthesiaDef: AudioModuleDef = {
     { id: 'a_video_in', type: 'video' },
     { id: 'b_video_in', type: 'video' },
   ],
-  // 2 copies × 4 bands × {audio, env_slow, env_fast, gate, raster} = 40 outputs.
-  // Written as a literal list (not a flatMap) so the docs module-manifest's
-  // static literal-array port extractor stays in sync (see module-manifest.ts).
+  // 2 copies × 4 bands × {audio, env_slow, env_fast, gate, trig, raster} = 48
+  // outputs. Written as a literal list (not a flatMap) so the docs
+  // module-manifest's static literal-array port extractor stays in sync (see
+  // module-manifest.ts). `trig` is the per-band beat trigger (spectral-flux onset).
   outputs: [
     // ---- Copy A ----
     { id: 'a_band1_audio',    type: 'audio' },
     { id: 'a_band1_env_slow', type: 'cv' },
     { id: 'a_band1_env_fast', type: 'cv' },
     { id: 'a_band1_gate',     type: 'gate' },
+    { id: 'a_band1_trig',     type: 'gate' },
     { id: 'a_band1_raster',   type: 'mono-video' },
     { id: 'a_band2_audio',    type: 'audio' },
     { id: 'a_band2_env_slow', type: 'cv' },
     { id: 'a_band2_env_fast', type: 'cv' },
     { id: 'a_band2_gate',     type: 'gate' },
+    { id: 'a_band2_trig',     type: 'gate' },
     { id: 'a_band2_raster',   type: 'mono-video' },
     { id: 'a_band3_audio',    type: 'audio' },
     { id: 'a_band3_env_slow', type: 'cv' },
     { id: 'a_band3_env_fast', type: 'cv' },
     { id: 'a_band3_gate',     type: 'gate' },
+    { id: 'a_band3_trig',     type: 'gate' },
     { id: 'a_band3_raster',   type: 'mono-video' },
     { id: 'a_band4_audio',    type: 'audio' },
     { id: 'a_band4_env_slow', type: 'cv' },
     { id: 'a_band4_env_fast', type: 'cv' },
     { id: 'a_band4_gate',     type: 'gate' },
+    { id: 'a_band4_trig',     type: 'gate' },
     { id: 'a_band4_raster',   type: 'mono-video' },
     // ---- Copy B ----
     { id: 'b_band1_audio',    type: 'audio' },
     { id: 'b_band1_env_slow', type: 'cv' },
     { id: 'b_band1_env_fast', type: 'cv' },
     { id: 'b_band1_gate',     type: 'gate' },
+    { id: 'b_band1_trig',     type: 'gate' },
     { id: 'b_band1_raster',   type: 'mono-video' },
     { id: 'b_band2_audio',    type: 'audio' },
     { id: 'b_band2_env_slow', type: 'cv' },
     { id: 'b_band2_env_fast', type: 'cv' },
     { id: 'b_band2_gate',     type: 'gate' },
+    { id: 'b_band2_trig',     type: 'gate' },
     { id: 'b_band2_raster',   type: 'mono-video' },
     { id: 'b_band3_audio',    type: 'audio' },
     { id: 'b_band3_env_slow', type: 'cv' },
     { id: 'b_band3_env_fast', type: 'cv' },
     { id: 'b_band3_gate',     type: 'gate' },
+    { id: 'b_band3_trig',     type: 'gate' },
     { id: 'b_band3_raster',   type: 'mono-video' },
     { id: 'b_band4_audio',    type: 'audio' },
     { id: 'b_band4_env_slow', type: 'cv' },
     { id: 'b_band4_env_fast', type: 'cv' },
     { id: 'b_band4_gate',     type: 'gate' },
+    { id: 'b_band4_trig',     type: 'gate' },
     { id: 'b_band4_raster',   type: 'mono-video' },
   ],
   params: [
@@ -154,16 +169,19 @@ export const synesthesiaDef: AudioModuleDef = {
 
     const workletNode = new AudioWorkletNode(ctx, 'synesthesia', {
       numberOfInputs: 2,
-      numberOfOutputs: 8,
-      outputChannelCount: [4, 4, 4, 4, 4, 4, 4, 4],
+      numberOfOutputs: 10, // +2: per-band beat-trigger streams (trig A / trig B)
+      outputChannelCount: [4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
     });
 
     // Keep-alive: an AudioWorkletNode only runs process() while it has a path
     // to ctx.destination. SYNESTHESIA is an analyser — its outputs are often
     // unpatched — so without this the worklet would never process: no VU
-    // levels, envelopes, or gates (the DOOM audio_l/audio_r orphan-silent
-    // class of bug; same fix samsloop's record tap uses). Route through a
-    // muted gain so it always runs but is inaudible.
+    // levels, envelopes, gates, OR per-band beat triggers (the DOOM
+    // audio_l/audio_r orphan-silent class of bug; same fix samsloop's record
+    // tap uses). connect() with no output index pulls worklet output 0, which
+    // keeps the WHOLE processor (all 10 outputs incl. the new trig 8/9)
+    // running every quantum even while their fan-out ports sit unpatched.
+    // Route through a muted gain so it always runs but is inaudible.
     const keepAlive = ctx.createGain();
     keepAlive.gain.value = 0;
     workletNode.connect(keepAlive);
