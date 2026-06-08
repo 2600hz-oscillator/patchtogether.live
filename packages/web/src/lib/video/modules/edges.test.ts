@@ -68,7 +68,7 @@ describe('edgesDef shape', () => {
     expect(edgesDef.domain).toBe('video');
     expect(edgesDef.type).toBe('edges');
     expect(edgesDef.category).toBe('effects');
-    expect(edgesDef.label).toBe('EDGES');
+    expect(edgesDef.label).toBe('edges');
   });
 });
 
