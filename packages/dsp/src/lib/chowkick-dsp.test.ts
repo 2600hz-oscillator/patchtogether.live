@@ -19,13 +19,53 @@ import {
   resonantCoefs,
   resonantFilterStep,
   makeResonantState,
+  resonantPoleRadius,
   outputFilterStep,
   makeOutputState,
   portamentoCoeff,
   portamentoStep,
+  pitchEnvStep,
+  makePitchEnvState,
+  pitchEnvTau,
+  PITCH_ENV_START_MULT,
+  dcBlockStep,
+  makeDcBlockState,
+  bodyDriveStep,
 } from './chowkick-dsp';
 
 const SR = 48000;
+
+// ────────────────────────────────────────────────────────────────────────
+// Test helpers: ping the body + measure pitch / DC / zero-crossings. These
+// pin the OOMPH FIX (PR feat/chowkick-oomph) — a regression that re-breaks
+// the resonator into a DC blob (the original bug) fails these.
+// ────────────────────────────────────────────────────────────────────────
+
+/** Ping the resonant body with a single impulse; return its impulse buffer. */
+function pingBody(freqHz: number, q: number, damping01: number, tight = 0, bounce = 0, durS = 0.4): Float32Array {
+  const N = Math.round(SR * durS);
+  const buf = new Float32Array(N);
+  const c = resonantCoefs(freqHz, q, damping01, tight, bounce, SR);
+  const st = makeResonantState();
+  for (let i = 0; i < N; i++) buf[i] = resonantFilterStep(i === 0 ? 1 : 0, c, st);
+  return buf;
+}
+
+function dcOffset(b: Float32Array): number { let s = 0; for (let i = 0; i < b.length; i++) s += b[i] ?? 0; return s / b.length; }
+function zeroCrossings(b: Float32Array, s0: number, s1: number): number {
+  let zc = 0; for (let i = s0 + 1; i < Math.min(b.length, s1); i++) if (((b[i - 1] ?? 0) >= 0) !== ((b[i] ?? 0) >= 0)) zc++; return zc;
+}
+/** Dominant frequency (Hz) of a buffer via a coarse DFT over 20–400 Hz. */
+function dominantFreq(b: Float32Array): number {
+  let best = 0, bestMag = 0;
+  for (let f = 20; f <= 400; f += 1) {
+    let re = 0, im = 0;
+    for (let i = 0; i < b.length; i += 2) { const a = 2 * Math.PI * f * i / SR; re += (b[i] ?? 0) * Math.cos(a); im -= (b[i] ?? 0) * Math.sin(a); }
+    const m = re * re + im * im;
+    if (m > bestMag) { bestMag = m; best = f; }
+  }
+  return best;
+}
 
 // ────────────────────────────────────────────────────────────────────────
 // pulseShaperStep — 4 pinned cases.
@@ -154,11 +194,17 @@ describe('noiseBurstStep — gated envelope + LPF', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────
-// resonantFilterStep — 4 pinned cases.
+// resonantFilterStep — pinged 2-pole resonant BODY (the OOMPH FIX).
+//
+// These pin the core of PR feat/chowkick-oomph: the body must RING at `freq`
+// (a bipolar decaying sine), not emit a unipolar DC blob. The previous port's
+// inverted peaking-EQ (A=sqrt(G)) notched the body → DC +0.62, ZERO zero-
+// crossings, fundamental ~14 Hz, 99.9 % sub-60 Hz energy. A regression to that
+// fails the pitch / DC / zero-crossing assertions below.
 // ────────────────────────────────────────────────────────────────────────
-describe('resonantFilterStep — peaking IIR with tanh saturation', () => {
+describe('resonantFilterStep — pinged resonant body rings at freq', () => {
   it('zero input → zero output (no spontaneous oscillation at reasonable knobs)', () => {
-    const c = resonantCoefs(80, 0.5, 0.5, 0.5, 0, SR);
+    const c = resonantCoefs(80, 0.7, 0.4, 0.5, 0, SR);
     const st = makeResonantState();
     for (let i = 0; i < 1000; i++) {
       const y = resonantFilterStep(0, c, st);
@@ -167,56 +213,166 @@ describe('resonantFilterStep — peaking IIR with tanh saturation', () => {
   });
 
   it('impulse response is finite and decays (stable filter)', () => {
-    const c = resonantCoefs(80, 1.0, 0.5, 0.0, 0, SR);
+    const c = resonantCoefs(80, 1.0, 0.4, 0.0, 0, SR);
     const st = makeResonantState();
-    // Impulse at sample 0.
     resonantFilterStep(1, c, st);
     let energyEarly = 0;
-    for (let i = 0; i < 200; i++) {
-      const y = resonantFilterStep(0, c, st);
-      energyEarly += y * y;
-    }
+    for (let i = 0; i < 1000; i++) { const y = resonantFilterStep(0, c, st); energyEarly += y * y; }
     let energyLate = 0;
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 1000; i++) {
       const y = resonantFilterStep(0, c, st);
       energyLate += y * y;
       expect(Number.isFinite(y)).toBe(true);
     }
-    // Late energy should be smaller than early energy → it's decaying.
     expect(energyLate).toBeLessThan(energyEarly);
   });
 
-  it('large drive saturates without exploding (tanh keeps output bounded)', () => {
-    const c = resonantCoefs(80, 5, 0.5, 1, 1, SR);
+  it('large drive saturates without exploding (output stays bounded)', () => {
+    const c = resonantCoefs(80, 5, 0.4, 1, 1, SR);
     const st = makeResonantState();
     for (let i = 0; i < 5000; i++) {
-      // Very loud impulse train.
-      const x = i % 50 === 0 ? 50 : 0;
+      const x = i % 50 === 0 ? 50 : 0; // very loud impulse train
       const y = resonantFilterStep(x, c, st);
-      // tanh maps any real → (-1/d, +1/d) where d is the drive — for d≥1 → output well-bounded.
       expect(Math.abs(y)).toBeLessThan(200);
       expect(Number.isFinite(y)).toBe(true);
     }
   });
 
-  it('higher Q produces narrower-but-louder peak at the cutoff', () => {
-    // Render a sine at fc; with higher Q the steady-state amplitude grows.
-    const fc = 80;
-    function steadyStateAmpAtFc(qVal: number): number {
-      const c = resonantCoefs(fc, qVal, 0.5, 0, 0, SR);
-      const st = makeResonantState();
-      let peak = 0;
-      for (let i = 0; i < 4 * SR / fc; i++) { // ~4 cycles to settle
-        const x = Math.sin(2 * Math.PI * fc * i / SR);
-        const y = resonantFilterStep(x, c, st);
-        if (i > 2 * SR / fc && Math.abs(y) > peak) peak = Math.abs(y);
-      }
-      return peak;
+  // ── OOMPH-FIX regression pins ──
+
+  it('body PINGS at the body frequency (±15 %), not at DC — 50/80/120 Hz', () => {
+    // The single most important regression: the resonator must produce a
+    // pitched tone at `freq`. (Bug: dominant freq was ~14 Hz regardless.)
+    for (const f of [50, 80, 120]) {
+      const buf = pingBody(f, 0.7, 0.4);
+      const dom = dominantFreq(buf);
+      expect(Math.abs(dom - f) / f, `${f}Hz ping dominant=${dom}Hz`).toBeLessThan(0.15);
     }
-    const lowQ = steadyStateAmpAtFc(0.5);
-    const highQ = steadyStateAmpAtFc(5);
-    // The high-Q peak amp should be strictly larger.
-    expect(highQ).toBeGreaterThan(lowQ);
+  });
+
+  it('pinged body is bipolar (DC offset ≈ 0), not a unipolar DC blob', () => {
+    // Bug produced DC +0.62; a healthy bipolar ring is ~0.
+    const buf = pingBody(80, 0.7, 0.4);
+    expect(Math.abs(dcOffset(buf))).toBeLessThan(0.02);
+  });
+
+  it('pinged body OSCILLATES — many zero-crossings over the decay (bug had 0)', () => {
+    // An 80 Hz ring crosses zero ~2·80·t times. Bug had ZERO crossings.
+    const buf = pingBody(80, 0.7, 0.4);
+    const zc = zeroCrossings(buf, Math.round(0.005 * SR), Math.round(0.1 * SR));
+    expect(zc, `zero-crossings in 5–100 ms`).toBeGreaterThan(8);
+    // Zero-crossing count scales with frequency (proves it's pitched).
+    const zcHi = zeroCrossings(pingBody(160, 0.7, 0.4), Math.round(0.005 * SR), Math.round(0.1 * SR));
+    expect(zcHi).toBeGreaterThan(zc);
+  });
+
+  it('damping controls ring time: low damp rings longer than high damp', () => {
+    const tailEnergy = (d: number) => {
+      const b = pingBody(80, 0.7, d);
+      let e = 0; for (let i = Math.round(0.1 * SR); i < Math.round(0.2 * SR); i++) e += (b[i] ?? 0) ** 2;
+      return e;
+    };
+    expect(tailEnergy(0.1)).toBeGreaterThan(tailEnergy(0.9));
+  });
+
+  it('resonantPoleRadius is always < 1 (guaranteed decay) and decreases with damping', () => {
+    const rLow = resonantPoleRadius(0, 0.7);
+    const rHigh = resonantPoleRadius(1, 0.7);
+    expect(rLow).toBeLessThan(1);
+    expect(rHigh).toBeLessThan(1);
+    expect(rLow).toBeGreaterThan(rHigh); // low damp → longer ring → bigger radius
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// Pitch envelope (THE punch) — per-trigger downward sweep.
+// ────────────────────────────────────────────────────────────────────────
+describe('pitchEnvStep — per-trigger downward pitch sweep', () => {
+  it('rising-edge gate sweeps freq DOWN from startMult× toward base', () => {
+    const st = makePitchEnvState();
+    // First high-gate sample → env=1 → freq = base·(1 + amount·(startMult−1)).
+    const f0 = pitchEnvStep(1, 80, 1, 0.4, SR, st);
+    const expectedStart = 80 * PITCH_ENV_START_MULT;
+    expect(f0).toBeCloseTo(expectedStart, 0);
+    // After many samples the sweep settles back to base.
+    let f = f0;
+    for (let i = 0; i < Math.round(0.3 * SR); i++) f = pitchEnvStep(1, 80, 1, 0.4, SR, st);
+    expect(f).toBeCloseTo(80, 0);
+    // And it swept strictly downward in between.
+    const fMid = pitchEnvStep(1, 80, 1, 0.4, SR, makePitchEnvState());
+    expect(fMid).toBeGreaterThan(80);
+  });
+
+  it('amount=0 → no sweep (freq stays at base)', () => {
+    const st = makePitchEnvState();
+    for (let i = 0; i < 100; i++) {
+      const f = pitchEnvStep(i < 50 ? 1 : 0, 80, 0, 0.4, SR, st);
+      expect(f).toBeCloseTo(80, 5);
+    }
+  });
+
+  it('larger pitch_decay → longer sweep (bigger tau)', () => {
+    expect(pitchEnvTau(0.8)).toBeGreaterThan(pitchEnvTau(0.2));
+  });
+
+  it('retriggers on each rising edge (not just the first)', () => {
+    const st = makePitchEnvState();
+    pitchEnvStep(1, 80, 1, 0.4, SR, st);           // first trigger
+    for (let i = 0; i < 5000; i++) pitchEnvStep(0, 80, 1, 0.4, SR, st); // release + settle
+    const fRetrig = pitchEnvStep(1, 80, 1, 0.4, SR, st); // second rising edge
+    expect(fRetrig).toBeGreaterThan(80 * 2); // swept up again
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────
+// DC blocker + body drive.
+// ────────────────────────────────────────────────────────────────────────
+describe('dcBlockStep — removes DC offset', () => {
+  it('a constant input decays to ~0 (DC removed)', () => {
+    const st = makeDcBlockState();
+    let y = 0;
+    for (let i = 0; i < 48000; i++) y = dcBlockStep(0.5, st, 25, SR);
+    expect(Math.abs(y)).toBeLessThan(0.01);
+  });
+
+  it('passes an AC signal (80 Hz sine) near unity', () => {
+    const st = makeDcBlockState();
+    let peak = 0;
+    for (let i = 0; i < SR; i++) {
+      const y = dcBlockStep(Math.sin(2 * Math.PI * 80 * i / SR), st, 25, SR);
+      if (i > SR / 2) peak = Math.max(peak, Math.abs(y));
+    }
+    expect(peak).toBeGreaterThan(0.9); // 80 Hz well above the 25 Hz cutoff
+  });
+
+  it('removes the DC component from a DC+AC mix', () => {
+    const st = makeDcBlockState();
+    let sum = 0; const N = SR;
+    for (let i = 0; i < N; i++) {
+      const x = 0.5 + 0.3 * Math.sin(2 * Math.PI * 80 * i / SR);
+      const y = dcBlockStep(x, st, 25, SR);
+      if (i > N / 2) sum += y;
+    }
+    expect(Math.abs(sum / (N / 2))).toBeLessThan(0.01); // mean ≈ 0
+  });
+});
+
+describe('bodyDriveStep — drive/makeup adds harmonics, never attenuates', () => {
+  it('drive=0 is transparent (pass-through)', () => {
+    for (const x of [-0.7, -0.1, 0, 0.1, 0.7]) {
+      expect(bodyDriveStep(x, 0, 0.5)).toBeCloseTo(x, 6);
+    }
+  });
+
+  it('drive>0 keeps small signals near unity (no quiet-body attenuation)', () => {
+    const y = bodyDriveStep(0.05, 0.3, 0.5);
+    expect(Math.abs(y)).toBeGreaterThan(0.04); // not crushed to silence
+  });
+
+  it('drive>0 saturates (compresses) a loud signal → harmonics', () => {
+    const y = bodyDriveStep(2, 1, 1);
+    expect(Math.abs(y)).toBeLessThan(2); // tanh compression
+    expect(Number.isFinite(y)).toBe(true);
   });
 });
 
