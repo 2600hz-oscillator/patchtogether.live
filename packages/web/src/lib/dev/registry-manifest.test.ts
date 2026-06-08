@@ -107,6 +107,24 @@ describe('registry manifest emitter', () => {
     expect(types.length, 'no duplicate type ids').toBe(unique.size);
   });
 
+  // The card UI uppercases the label for DISPLAY via CSS, so the stored
+  // `label:` string itself must be lowercase for consistency (the #658
+  // convention). Iterating the full registry here both ENUMERATES every
+  // offender and PREVENTS recurrence — any new module that lands with an
+  // uppercase label (or a stray uppercase letter in a multi-word label
+  // like 'audio in') fails CI here. Multi-word labels keep their spaces;
+  // only letter-casing is constrained.
+  it('every module label is lowercase', () => {
+    const offenders = specs
+      .filter((m) => m.label !== m.label.toLowerCase())
+      .map((m) => `${m.type}: ${JSON.stringify(m.label)}`);
+    expect(
+      offenders,
+      `module labels must be lowercase (card CSS uppercases for display); ` +
+        `offenders:\n  ${offenders.join('\n  ')}`,
+    ).toEqual([]);
+  });
+
   it('emits the manifest JSON to disk', () => {
     const path = manifestPath();
     mkdirSync(dirname(path), { recursive: true });

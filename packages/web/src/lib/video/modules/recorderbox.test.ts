@@ -27,7 +27,7 @@ describe('RECORDERBOX — module def shape', () => {
     expect(def).toBeDefined();
     if (!def) return;
     expect(def.domain).toBe('video');
-    expect(def.label).toBe('RECORDERBOX');
+    expect(def.label).toBe('recorderbox');
     expect(def.category).toBe('output');
     expect(def.schemaVersion).toBe(1);
   });

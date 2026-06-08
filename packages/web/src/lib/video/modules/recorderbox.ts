@@ -89,7 +89,7 @@ export const recorderboxDef: VideoModuleDef = {
   type: 'recorderbox',
   palette: { top: 'Video modules', sub: 'Utilities' },
   domain: 'video',
-  label: 'RECORDERBOX',
+  label: 'recorderbox',
   category: 'output',
   schemaVersion: 1,
   inputs: [
