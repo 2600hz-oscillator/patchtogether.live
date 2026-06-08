@@ -175,12 +175,51 @@ hardware. The user should, in **Chrome**, on the preview build:
 
 ## Next steps
 
-- **This PR:** stereo-request enhancement + unit coverage. Merge after the
-  user's on-device check. (Opened, NOT auto-merged.)
-- **Follow-up (web, optional):** a per-card "music mode" toggle exposing
-  echoCancellation / noiseSuppression / autoGainControl (and maybe a
-  "force mono" fallback) for users routing line-level gear who want the
-  browser DSP off. Low priority — the stereo `channelCount: 2` request is
-  what the ES-9 needs; the default DSP should be fine for most.
-- **Native (separate repo):** per-pair addressing — ES-9 tasks #38/#40 in
-  `patchtogether.native`.
+- **#679 (merged):** stereo-request enhancement (`channelCount: 2`) + unit
+  coverage. Merged to main as squash `8e5e1a9a`.
+- **Follow-up PR (this branch) — music mode + latency readout:**
+  - **Music mode:** `buildAudioInConstraints({ musicMode })` forces
+    echoCancellation / noiseSuppression / autoGainControl OFF for a clean
+    line-level feed; a per-card checkbox (persisted to Yjs) drives it.
+    Default OFF — forcing AGC off drops built-in-mic level. (The user may
+    later decide to default it ON for line-level interfaces; that's a
+    separate call, decided after an on-device A/B.)
+  - **Latency readout:** the canvas status bar now shows the AudioContext
+    `baseLatency` (+ `outputLatency` where Chromium reports it). The
+    context uses the browser-default `'interactive'` latencyHint (lowest
+    latency). Web Audio has **no buffer-size API** (fixed 128-frame render
+    quantum) — a buffer-size knob is native-only.
+  - Audio change → **opened, auto-merge OFF**, pending the user's on-device
+    A/B sign-off on music mode (steps below).
+
+### EMPIRICAL FINDING — the browser caps ES-9 capture at 2 channels
+
+A DevTools-console probe against a **real ES-9 in Chrome** confirmed that
+the earlier "4-channel input" path was a **phantom feature** — those ports
+could never carry signal in a browser:
+
+- `getUserMedia({ audio: { channelCount: { exact: 4 } } })` →
+  **OverconstrainedError**.
+- `track.getCapabilities().channelCount` → **`{ max: 2, min: 1 }`**.
+
+So `getUserMedia` only ever hands us a **stereo pair** (the device's first
+two channels). The `channels:4` request, the `audio_3_out` / `audio_4_out`
+ports, the 4-output ChannelSplitter, and the `4-ch` badge were **removed**
+in the rework — AUDIO IN is back to a clean stereo pair (L/R). **4-in /
+per-channel / >2-out routing is native-only** — `patchtogether.es9`
+(CoreAudio) is the track that delivers it.
+
+- **Native (separate repo):** per-pair addressing (3/4, 5/6, …), >2-channel
+  capture, a buffer-size control, and >2-out routing — ES-9 tasks #38/#40 in
+  `patchtogether.native` (the `patchtogether.es9` CoreAudio spike already
+  proves all three).
+
+### On-device verification for the music-mode follow-up (Chrome + real ES-9)
+
+5. Spawn AUDIO IN, pick the ES-9, enable → status badge should read
+   **`stereo`** (it keys off the delivered `track.getSettings().channelCount`).
+6. Tick **music mode** → the stream re-acquires; A/B against the default
+   (DSP-on) capture and confirm the feed is clean line-level (no auto-gain
+   pumping / noise-gate on quiet passages). Decide whether to default it ON.
+7. Read the status bar **lat** readout — sanity-check baseLatency (and
+   outputLatency, if shown) are in a low single/low-double-digit-ms range.

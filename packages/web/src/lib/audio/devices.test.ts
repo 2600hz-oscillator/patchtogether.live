@@ -65,20 +65,40 @@ describe('buildAudioInConstraints', () => {
     return c.audio as MediaTrackConstraints;
   }
 
-  it('always requests a stereo (2-channel) pair', () => {
+  it('always requests a stereo (2-channel) pair (no channels opt — browser caps ES-9 at 2)', () => {
+    // The browser hard-caps ES-9 capture at 2 channels (getCapabilities
+    // max=2; channelCount:{exact:4} → OverconstrainedError), so we always
+    // request a stereo pair — 4-in / per-channel is native-only. The opts
+    // (musicMode) must NOT change the requested channelCount.
     expect(audioOf(buildAudioInConstraints(null)).channelCount).toBe(2);
     expect(audioOf(buildAudioInConstraints('usb-es9')).channelCount).toBe(2);
+    expect(audioOf(buildAudioInConstraints('usb-es9', { musicMode: true })).channelCount).toBe(2);
+    expect(audioOf(buildAudioInConstraints('usb-es9', { musicMode: false })).channelCount).toBe(2);
   });
 
-  it('leaves browser DSP at the browser default (no forced toggles)', () => {
-    // We deliberately don't force echoCancellation/noiseSuppression/
+  it('leaves browser DSP at the browser default when musicMode is off (default)', () => {
+    // Default path must NOT force echoCancellation/noiseSuppression/
     // autoGainControl — forcing AGC off drops built-in-mic capture level
-    // for every existing AUDIO IN user (out of scope for the stereo-pair
-    // first step; a future "music mode" toggle can expose these).
+    // for casual mic users.
     const a = audioOf(buildAudioInConstraints('usb-es9'));
     expect(a.echoCancellation).toBeUndefined();
     expect(a.noiseSuppression).toBeUndefined();
     expect(a.autoGainControl).toBeUndefined();
+    // Explicit musicMode:false is the same as omitting it.
+    const b = audioOf(buildAudioInConstraints('usb-es9', { musicMode: false }));
+    expect(b.echoCancellation).toBeUndefined();
+    expect(b.noiseSuppression).toBeUndefined();
+    expect(b.autoGainControl).toBeUndefined();
+  });
+
+  it('forces all capture DSP OFF when musicMode is true', () => {
+    // Clean line-level feed for users routing a USB interface / mixer.
+    const a = audioOf(buildAudioInConstraints('usb-es9', { musicMode: true }));
+    expect(a.echoCancellation).toBe(false);
+    expect(a.noiseSuppression).toBe(false);
+    expect(a.autoGainControl).toBe(false);
+    // musicMode leaves the stereo-pair request intact.
+    expect(a.channelCount).toBe(2);
   });
 
   it('pins the picked device with an EXACT deviceId constraint', () => {

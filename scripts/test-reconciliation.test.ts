@@ -188,14 +188,15 @@ describe('behavioral exempt split — honest reconcilable vs intentional', () =>
   it('re-enabled Moog routers are in NEITHER exempt map; deferred ones stay module-exempt + reconcilable', () => {
     const moduleExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_MODULE_EXEMPT');
     const reconcilable = extractRecordKeys(specSrc, 'BEHAVIORAL_RECONCILABLE_EXEMPT');
-    // Re-enabled in behavioral-recon #1/#2 — must be fully out.
-    for (const m of ['moog984', 'moog993', 'moog961']) {
+    // Re-enabled in behavioral-recon #1/#2/#4 — must be fully out.
+    for (const m of ['moog984', 'moog993', 'moog961', 'moog960']) {
       expect(moduleExempt.has(m)).toBe(false);
       expect(reconcilable.has(m)).toBe(false);
     }
-    // Deferred (subtle-transient / sequencer-state) — module-exempt AND tagged
-    // reconcilable so they count as the fixable backlog, not intentional.
-    for (const m of ['moog911a', 'moog960']) {
+    // Deferred (subtle-transient) — module-exempt AND tagged reconcilable so it
+    // counts as the fixable backlog, not intentional. (moog960 was re-enabled in
+    // recon #4 → moved to the re-enabled group above.)
+    for (const m of ['moog911a']) {
       expect(moduleExempt.has(m)).toBe(true);
       expect(reconcilable.has(m)).toBe(true);
     }

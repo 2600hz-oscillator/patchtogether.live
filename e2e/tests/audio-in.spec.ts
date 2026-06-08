@@ -235,6 +235,34 @@ test.describe('AUDIO IN → SCOPE (fake mic)', () => {
     // engine singleton guard shouldn't kick in.
     await expect(page.locator('.svelte-flow__node-audioIn')).toHaveCount(2);
   });
+
+  test('music-mode toggle re-acquires the stream without error', async ({ page }) => {
+    // Music mode forces the browser capture DSP (echo-cancel / noise-
+    // suppress / auto-gain) OFF for a clean line-level feed. Toggling it
+    // re-runs getUserMedia (constraints can't change on a live track). The
+    // fake device honours the constraints fine; this gate proves the toggle
+    // is wired + the re-acquire returns to `streaming` with no fatal error.
+    const errors = await setupPage(page);
+
+    await spawnPatch(page, [
+      { id: 'ai', type: 'audioIn', position: { x: 80, y: 60 } },
+    ]);
+    await expect(page.locator('.svelte-flow__node-audioIn')).toBeVisible();
+    await ensureAudioInStreaming(page);
+
+    const toggle = page.locator('[data-testid="audioin-music-mode"]');
+    await expect(toggle).toBeVisible();
+    await expect(toggle).not.toBeChecked();
+
+    await toggle.check();
+    await expect(toggle).toBeChecked();
+
+    // Re-acquire should settle back to streaming.
+    const status = page.locator('[data-testid="audioin-status"]');
+    await expect(status).toHaveAttribute('data-state', 'streaming', { timeout: 10_000 });
+
+    expect(errors.filter((e) => !/getUserMedia|audio/i.test(e)), errors.join('; ')).toEqual([]);
+  });
 });
 
 test.describe('AUDIO OUT device dropdown', () => {

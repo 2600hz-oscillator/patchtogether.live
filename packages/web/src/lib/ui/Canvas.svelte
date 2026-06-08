@@ -4106,6 +4106,9 @@
       <span title="Number of distinct module types in the registry (catalog size, not live instance count)">catalog <b>{availableModules}</b></span>
       <span>ctx <b>{audioCtx?.state ?? '—'}</b></span>
       <span>sr <b>{audioCtx?.sampleRate ?? '—'}</b></span>
+      <span title="AudioContext latency. base = render/processing latency (fixed); out = full output-pipeline latency to the speakers (Chromium; 0 elsewhere). The context is created with the browser-default 'interactive' latencyHint — lowest latency. Web Audio has no buffer-size knob (fixed 128-frame render quantum); a user buffer-size control is a native-only capability.">
+        lat <b>{audioCtx ? `${(audioCtx.baseLatency * 1000).toFixed(1)}ms` : '—'}</b>{#if audioCtx && audioCtx.outputLatency > 0}<b> / {(audioCtx.outputLatency * 1000).toFixed(1)}ms out</b>{/if}
+      </span>
     </div>
     <ul class="cable-legend">
       <li><span class="swatch audio"></span> audio</li>

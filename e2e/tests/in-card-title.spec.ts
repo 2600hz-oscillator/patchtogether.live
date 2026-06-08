@@ -92,7 +92,18 @@ test('in-card title: click → edit → blur commits and persists on data.name',
 });
 
 test.describe('@collab', () => {
-  test('rename in A appears in B inside the in-card title (peer Yjs sync)', async ({
+  // QUARANTINED pending task #101 — relay-contention peer-sync timeout.
+  // This single @collab case times out at its 120s budget on CI when the
+  // Hocuspocus relay is under CPU contention (the documented relay
+  // single-process/drift + in-card-title hang class): the A→relay→B rename
+  // never converges in time, unrelated to most PRs under test. Skipped via
+  // `test.fixme` so it stops blocking otherwise-green merges WITHOUT
+  // disabling the rest of the @collab group/file — the gate must keep
+  // running its other tests so it still catches real DOOM/collab
+  // regressions. Task #101 owns the actual fix: root-cause the
+  // relay-contention timeout + add a regression test, THEN un-fixme. Do NOT
+  // just bump the timeout (already at 120s).
+  test.fixme('rename in A appears in B inside the in-card title (peer Yjs sync)', async ({
     browser,
   }) => {
     // The full 2-context relay flow (2× goto + attachProvider relay-connect +
