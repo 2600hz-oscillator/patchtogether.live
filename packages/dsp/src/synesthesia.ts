@@ -15,11 +15,12 @@
 // Inputs (2 mono audio connections):
 //   inputs[0] = copy A in
 //   inputs[1] = copy B in
-// Outputs (8 outputs × 4 channels = per copy × per band):
+// Outputs (10 outputs × 4 channels = per copy × per band):
 //   0 = audioA    1 = audioB
 //   2 = envSlowA  3 = envSlowB
 //   4 = envFastA  5 = envFastB
 //   6 = gateA     7 = gateB
+//   8 = trigA     9 = trigB     ← per-band BEAT TRIGGER (spectral-flux onset)
 // VU levels are posted to the host via port.postMessage({type:'snapshot', ...}),
 // not as an audio output.
 // Params (k-rate): a_master/b_master (0.5..1.5); a_gain1..4 / b_gain1..4 (1..2);
@@ -38,12 +39,15 @@ import {
   makeBandSplitter,
   EnvFollower,
   GateDetector,
+  OnsetDetector,
   MeterBallistics,
   SynesthesiaVideoCopy,
   combinedGain,
   SYN_NUM_BANDS,
-  ENV_FAST_MS,
-  ENV_SLOW_MS,
+  ENV_FAST_REL_MS,
+  ENV_FAST_ATK_MS,
+  ENV_SLOW_REL_MS,
+  ENV_SLOW_ATK_MS,
   type BandSplitter,
 } from './lib/synesthesia-dsp';
 
@@ -74,6 +78,7 @@ interface Copy {
   fast: EnvFollower[];
   slow: EnvFollower[];
   gate: GateDetector[];
+  onset: OnsetDetector[];
   meter: MeterBallistics[];
   // Video-mode stage (independent state so switching modes never cross-talks).
   video: SynesthesiaVideoCopy;
@@ -84,9 +89,10 @@ function makeCopy(sr: number): Copy {
   const idx = [0, 1, 2, 3];
   return {
     splitter: makeBandSplitter(sr),
-    fast: idx.map(() => new EnvFollower(sr, ENV_FAST_MS)),
-    slow: idx.map(() => new EnvFollower(sr, ENV_SLOW_MS)),
+    fast: idx.map(() => new EnvFollower(sr, ENV_FAST_REL_MS, ENV_FAST_ATK_MS)),
+    slow: idx.map(() => new EnvFollower(sr, ENV_SLOW_REL_MS, ENV_SLOW_ATK_MS)),
     gate: idx.map(() => new GateDetector()),
+    onset: idx.map(() => new OnsetDetector(sr)),
     meter: idx.map(() => new MeterBallistics(sr)),
     video: new SynesthesiaVideoCopy(sr),
     videoLevels: new Float32Array(SYN_NUM_BANDS),
@@ -159,6 +165,7 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
     slow?: Float32Array[],
     fast?: Float32Array[],
     gate?: Float32Array[],
+    trig?: Float32Array[],
     levels?: Float32Array,
   ): void {
     const peak = [0, 0, 0, 0];
@@ -170,11 +177,13 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
         const ef = copy.fast[b]!.step(a);
         const es = copy.slow[b]!.step(a);
         const gt = copy.gate[b]!.step(ef);
+        const tr = copy.onset[b]!.step(a);
         const lv = copy.meter[b]!.step(a);
         if (audio?.[b]) audio[b]![s] = a;
         if (slow?.[b]) slow[b]![s] = es;
         if (fast?.[b]) fast[b]![s] = ef;
         if (gate?.[b]) gate[b]![s] = gt;
+        if (trig?.[b]) trig[b]![s] = tr;
         if (lv > peak[b]!) peak[b] = lv;
       }
     }
@@ -197,6 +206,7 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
     slow?: Float32Array[],
     fast?: Float32Array[],
     gate?: Float32Array[],
+    trig?: Float32Array[],
     levels?: Float32Array,
   ): void {
     const peak = [0, 0, 0, 0];
@@ -207,6 +217,7 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
         if (slow?.[b]) slow[b]![s] = out.envSlow[b]!;
         if (fast?.[b]) fast[b]![s] = out.envFast[b]!;
         if (gate?.[b]) gate[b]![s] = out.gate[b]!;
+        if (trig?.[b]) trig[b]![s] = out.trig[b]!;
         if (out.level[b]! > peak[b]!) peak[b] = out.level[b]!;
       }
     }
@@ -224,27 +235,28 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
     const aVideo = this.kval(parameters, 'a_mode', 0) >= 0.5;
     const bVideo = this.kval(parameters, 'b_mode', 0) >= 0.5;
 
-    // Output index map: 0/1=audio, 2/3=envSlow, 4/5=envFast, 6/7=gate (A/B).
+    // Output index map: 0/1=audio, 2/3=envSlow, 4/5=envFast, 6/7=gate,
+    // 8/9=trig (A/B).
     if (aVideo) {
       this.runVideoCopy(
         this.a, this.kval(parameters, 'a_master', 1), gainsOf('a'), n,
-        outputs[0], outputs[2], outputs[4], outputs[6], this.levelsA,
+        outputs[0], outputs[2], outputs[4], outputs[6], outputs[8], this.levelsA,
       );
     } else {
       this.runCopy(
         this.a, inputs[0]?.[0] ?? null, this.kval(parameters, 'a_master', 1), gainsOf('a'), n,
-        outputs[0], outputs[2], outputs[4], outputs[6], this.levelsA,
+        outputs[0], outputs[2], outputs[4], outputs[6], outputs[8], this.levelsA,
       );
     }
     if (bVideo) {
       this.runVideoCopy(
         this.b, this.kval(parameters, 'b_master', 1), gainsOf('b'), n,
-        outputs[1], outputs[3], outputs[5], outputs[7], this.levelsB,
+        outputs[1], outputs[3], outputs[5], outputs[7], outputs[9], this.levelsB,
       );
     } else {
       this.runCopy(
         this.b, inputs[1]?.[0] ?? null, this.kval(parameters, 'b_master', 1), gainsOf('b'), n,
-        outputs[1], outputs[3], outputs[5], outputs[7], this.levelsB,
+        outputs[1], outputs[3], outputs[5], outputs[7], outputs[9], this.levelsB,
       );
     }
 

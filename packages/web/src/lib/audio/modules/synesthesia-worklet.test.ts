@@ -24,10 +24,11 @@ beforeAll(async () => {
 });
 
 const QUANTUM = 128;
+const NUM_OUT = 10; // 0/1 audio, 2/3 slow, 4/5 fast, 6/7 gate, 8/9 trig (A/B)
 
 function mkOutputs(): Float32Array[][] {
-  // 8 outputs × 4 channels × 128 samples.
-  return Array.from({ length: 8 }, () =>
+  // 10 outputs × 4 channels × 128 samples.
+  return Array.from({ length: NUM_OUT }, () =>
     Array.from({ length: 4 }, () => new Float32Array(QUANTUM)),
   );
 }
@@ -36,7 +37,7 @@ function mkOutputs(): Float32Array[][] {
  *  Returns summed |x| energy per (output, band). */
 function run(freqA: number, blocks: number): { out: number[][] } {
   const proc = new Processor();
-  const energy: number[][] = Array.from({ length: 8 }, () => [0, 0, 0, 0]);
+  const energy: number[][] = Array.from({ length: NUM_OUT }, () => [0, 0, 0, 0]);
   let phase = 0;
   for (let blk = 0; blk < blocks; blk++) {
     const inA = new Float32Array(QUANTUM);
@@ -47,7 +48,7 @@ function run(freqA: number, blocks: number): { out: number[][] } {
     const inputs: Float32Array[][] = [[inA], []]; // input 0 = copy A; input 1 = none
     const outputs = mkOutputs();
     proc.process(inputs, outputs, {});
-    for (let o = 0; o < 8; o++) {
+    for (let o = 0; o < NUM_OUT; o++) {
       for (let b = 0; b < 4; b++) {
         let s = 0;
         const ch = outputs[o]![b]!;
@@ -80,16 +81,20 @@ describe('synesthesia worklet — copy independence + band routing', () => {
     expect(audioA[1]!).toBeGreaterThan(1.1 * Math.max(audioA[0]!, audioA[2]!, audioA[3]!));
   });
 
-  it('drives copy A envelope/gate outputs, leaves copy B outputs silent', () => {
+  it('drives copy A envelope/gate/trig outputs, leaves copy B outputs silent', () => {
     const { out } = run(261, 150);
-    // Outputs: 2=slowA 3=slowB 4=fastA 5=fastB 6=gateA 7=gateB.
+    // Outputs: 2=slowA 3=slowB 4=fastA 5=fastB 6=gateA 7=gateB 8=trigA 9=trigB.
     const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
     expect(sum(out[2]!)).toBeGreaterThan(0); // env_slow A
     expect(sum(out[4]!)).toBeGreaterThan(0); // env_fast A
     expect(sum(out[6]!)).toBeGreaterThan(0); // gate A (band 2 crosses threshold)
+    // trig A: the tone's leading edge fires a band-2 beat trigger (output 8).
+    expect(sum(out[8]!)).toBeGreaterThan(0); // trig A fired at the onset
+    expect(out[8]![1]!).toBeGreaterThan(0); // specifically band 2 (index 1)
     expect(sum(out[3]!)).toBe(0); // env_slow B
     expect(sum(out[5]!)).toBe(0); // env_fast B
     expect(sum(out[7]!)).toBe(0); // gate B
+    expect(sum(out[9]!)).toBe(0); // trig B (no input)
   });
 });
 

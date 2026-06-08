@@ -6,20 +6,37 @@
 // so band-filtering / envelope / gate behaviour is verifiable without spinning
 // up an AudioWorklet (the same pattern as renderResofilter()).
 //
-// Splits a mono signal into 4 spectral bands (0–200, 201–500, 501–2000, 2000+),
-// applies a per-band gain combined with a master "floor" gain, and derives a
-// fast + slow envelope follower, a gate, and a VU meter level per band. All
-// state is per-instance so two independent copies (A/B) never share state.
+// Splits a mono signal into 4 MUSICAL spectral bands (bass 20–200, low-mid
+// 200–1k, high-mid 1k–4k, treble 4k+), applies a per-band gain combined with a
+// master "floor" gain, and derives a fast + slow envelope follower, a gate, a
+// VU meter level, and a per-band BEAT TRIGGER (spectral-flux onset) per band.
+// All state is per-instance so two independent copies (A/B) never share state.
+//
+// Modeled on the LZX Sensory Translator: split audio into musical bands → turn
+// each band's energy into video EVENTS. The per-band onset detector converts a
+// kick / snare / hat transient into a clean ~10 ms trigger pulse for driving
+// video switches/flashes, instead of just a continuous envelope.
 
 import { svfStep, cutoffToG, makeSvfState, type SvfState } from './resofilter-dsp';
 
-/** Crossover frequencies (Hz). 4 bands: [0,200] (200,500] (500,2000] (2000,∞). */
-export const SYN_BAND_EDGES = [200, 500, 2000] as const;
+/** Crossover frequencies (Hz). 4 MUSICAL bands: bass [20,200], low-mid
+ *  (200,1000], high-mid (1000,4000], treble (4000,∞). Tuned for turning a
+ *  drum kit into video events (kick→band1, snare→band2/3, hats→band4). */
+export const SYN_BAND_EDGES = [200, 1000, 4000] as const;
 export const SYN_NUM_BANDS = 4;
 
-/** Envelope-follower release times (ms) — see module spec. */
-export const ENV_FAST_MS = 50;
-export const ENV_SLOW_MS = 500;
+/** Envelope-follower attack + release times (ms) — see module spec.
+ *  A REAL attack stage (was instant-attack, which strobes on video). Releases
+ *  are kept at the original 50 / 500 ms so gibribbon's slow-env game feel
+ *  barely shifts; only the rising edge is now ramped instead of instant. */
+export const ENV_FAST_ATK_MS = 5;
+export const ENV_FAST_REL_MS = 50;
+export const ENV_SLOW_ATK_MS = 40;
+export const ENV_SLOW_REL_MS = 500;
+// Back-compat aliases (the release time is the dominant "decay" the gate +
+// downstream CV key off; kept so existing call-sites/tests read unchanged).
+export const ENV_FAST_MS = ENV_FAST_REL_MS;
+export const ENV_SLOW_MS = ENV_SLOW_REL_MS;
 
 // Butterworth damping (Q≈0.707 → k = 1/Q = √2). Cascading two such 2nd-order
 // SVF stages per crossover edge gives a ~24 dB/oct Linkwitz-Riley-style slope —
@@ -59,17 +76,17 @@ export interface BandSplitter {
 }
 
 /**
- * Build a 4-band splitter for the given sample rate. Bands:
- *   b1 = LP 200            (0–200 Hz)
- *   b2 = HP 200 → LP 500   (200–500 Hz)
- *   b3 = HP 500 → LP 2000  (500–2000 Hz)
- *   b4 = HP 2000           (2000+ Hz)
- * Each LP/HP is a 24 dB/oct two-stage SVF cascade.
+ * Build a 4-band splitter for the given sample rate. MUSICAL bands:
+ *   b1 = LP 200             (bass     20–200 Hz)
+ *   b2 = HP 200  → LP 1000  (low-mid  200–1000 Hz)
+ *   b3 = HP 1000 → LP 4000  (high-mid 1000–4000 Hz)
+ *   b4 = HP 4000            (treble   4000+ Hz)
+ * Each LP/HP is a 24 dB/oct two-stage SVF cascade (Linkwitz-Riley topology).
  */
 export function makeBandSplitter(sr: number): BandSplitter {
   const g200 = cutoffToG(SYN_BAND_EDGES[0], sr);
-  const g500 = cutoffToG(SYN_BAND_EDGES[1], sr);
-  const g2000 = cutoffToG(SYN_BAND_EDGES[2], sr);
+  const g1000 = cutoffToG(SYN_BAND_EDGES[1], sr);
+  const g4000 = cutoffToG(SYN_BAND_EDGES[2], sr);
   const b1lp = makeTwoStage();
   const b2hp = makeTwoStage();
   const b2lp = makeTwoStage();
@@ -79,27 +96,40 @@ export function makeBandSplitter(sr: number): BandSplitter {
   return {
     split(x: number): [number, number, number, number] {
       const b1 = lp2(x, g200, b1lp);
-      const b2 = lp2(hp2(x, g200, b2hp), g500, b2lp);
-      const b3 = lp2(hp2(x, g500, b3hp), g2000, b3lp);
-      const b4 = hp2(x, g2000, b4hp);
+      const b2 = lp2(hp2(x, g200, b2hp), g1000, b2lp);
+      const b3 = lp2(hp2(x, g1000, b3hp), g4000, b3lp);
+      const b4 = hp2(x, g4000, b4hp);
       return [b1, b2, b3, b4];
     },
   };
 }
 
 /**
- * Peak envelope follower: instant attack, exponential release over `releaseMs`.
- * After `releaseMs` of silence the envelope decays to 1/e (~0.368) of its peak.
+ * Two-coefficient one-pole envelope follower: ramps UP over `attackMs` toward a
+ * rising target and DOWN over `releaseMs` toward a falling one. Per sample:
+ *   coef = exp(-1/(tau_s·sr))   // tau_s = (atk|rel)/1000
+ *   env  = target + coef·(env − target)   // pick atk-coef when target>env
+ * A real attack stage replaces the old INSTANT attack — instant-attack strobes
+ * downstream video on every transient. After `releaseMs` of silence the
+ * envelope still decays to ~1/e (0.368) of its peak (release unchanged), so the
+ * gate + slow-CV behaviour gibribbon depends on is preserved.
+ *
+ * Single-arg constructor (legacy) treats the one value as the release time and
+ * keeps instant attack — used nowhere now but kept so old call-sites compile.
  */
 export class EnvFollower {
   private env = 0;
-  private readonly decay: number;
-  constructor(sr: number, releaseMs: number) {
-    this.decay = Math.exp(-1 / ((releaseMs / 1000) * sr));
+  private readonly atkCoef: number;
+  private readonly relCoef: number;
+  constructor(sr: number, releaseMs: number, attackMs?: number) {
+    this.relCoef = Math.exp(-1 / ((releaseMs / 1000) * sr));
+    // attackMs omitted ⇒ instant attack (coef 0 ⇒ env jumps straight to target).
+    this.atkCoef = attackMs === undefined ? 0 : Math.exp(-1 / ((attackMs / 1000) * sr));
   }
   step(x: number): number {
-    const a = x < 0 ? -x : x;
-    this.env = a > this.env ? a : this.env * this.decay;
+    const target = x < 0 ? -x : x;
+    const coef = target > this.env ? this.atkCoef : this.relCoef;
+    this.env = target + coef * (this.env - target);
     return this.env;
   }
 }
@@ -118,6 +148,101 @@ export class GateDetector {
     if (!this.on && env >= this.thrHigh) this.on = true;
     else if (this.on && env < this.thrLow) this.on = false;
     return this.on ? 1 : 0;
+  }
+}
+
+/** Per-band beat-trigger constants (LZX-Sensory-Translator-style onsets). */
+export const ONSET_AVG_WIN_MS = 200; // moving-mean window for the adaptive threshold
+export const ONSET_THRESH_MULT = 1.4; // flux must exceed moving-mean·this to fire
+export const ONSET_DEBOUNCE_MS = 80; // min inter-onset gap (ignore double-triggers)
+export const ONSET_PULSE_MS = 10; // emitted trigger pulse width
+// Fast / slow energy envelopes (ms). The "flux" is how far the FAST energy has
+// risen above the SLOW baseline, NORMALIZED by the baseline → a scale-invariant
+// relative-rise onset measure (fraction, ~0 at steady state, large on a fresh
+// transient). Normalizing kills the residual-carrier-ripple re-fire a raw delta
+// suffers: the ripple scales with the level, so the RATIO stays small. The fast
+// envelope is long enough (15 ms) to average out the per-cycle |x| ripple of a
+// musical-band tone while still catching a ~ms transient edge.
+const ONSET_FAST_MS = 15; // tracks the leading edge; ≥ a couple carrier cycles
+const ONSET_SLOW_MS = 150; // the slow baseline the rise is measured against
+const ONSET_FLOOR_LEVEL = 5e-3; // baseline level below which a band is "silent"
+const ONSET_FLOOR = 0.15; // min normalized rise (15%) so idle ripple never fires
+
+/**
+ * Per-band BEAT TRIGGER via spectral-flux / peak-picking, computed in the WORKLET
+ * on a single band's time-domain energy (deterministic + headless-safe — CI does
+ * headless capture and a background-tab rAF FFT would throttle, so the bass-band
+ * onset ESPECIALLY must come from the worklet band energy where FFT sub-bass
+ * resolution is too coarse). One instance per band per copy.
+ *
+ * Algorithm (sample-rate, no FFT):
+ *   1. Rectify the sample and track TWO energy envelopes: a FAST one (15 ms) and
+ *      a SLOW baseline (150 ms).
+ *   2. "Flux" = NORMALIZED relative rise = max(0, fast − slow) / (slow + floor).
+ *      A sustained tone settles to fast≈slow → flux≈0 regardless of carrier
+ *      frequency/level (the normalization makes it scale-invariant, so the
+ *      per-cycle ripple — which scales with the level — never re-fires). A fresh
+ *      amplitude step pushes fast well above slow → a large flux burst. This is
+ *      the spectral-flux analogue for a single band's time-domain energy.
+ *   3. Adaptive threshold = moving-mean(flux, ~ONSET_AVG_WIN_MS) · ONSET_THRESH_MULT
+ *      + an absolute floor (a minimum relative rise) — peak-picking above the
+ *      recent average so only a NEW transient that spikes above baseline crosses.
+ *   4. A rising cross fires a trigger, then a ONSET_DEBOUNCE_MS lockout blocks
+ *      re-triggers (kills the double-trigger on a transient's ringing tail).
+ *   5. Each fire latches a ONSET_PULSE_MS high pulse on the output (so a downstream
+ *      gate-input sees a real edge, not a 1-sample spike that aliases away).
+ *
+ * Returns 1 while the pulse is high, else 0.
+ */
+export class OnsetDetector {
+  private fast = 0; // fast band-energy envelope
+  private slow = 0; // slow baseline band-energy envelope
+  private avgFlux = 0; // moving-mean of the (normalized) flux
+  private pulseLeft = 0; // samples remaining in the current output pulse
+  private lockLeft = 0; // samples remaining in the debounce lockout
+  private readonly fastCoef: number;
+  private readonly slowCoef: number;
+  private readonly avgCoef: number;
+  private readonly pulseSamples: number;
+  private readonly debounceSamples: number;
+  private readonly threshMult: number;
+  constructor(sr: number, opts?: { threshMult?: number }) {
+    this.fastCoef = Math.exp(-1 / ((ONSET_FAST_MS / 1000) * sr));
+    this.slowCoef = Math.exp(-1 / ((ONSET_SLOW_MS / 1000) * sr));
+    this.avgCoef = Math.exp(-1 / ((ONSET_AVG_WIN_MS / 1000) * sr));
+    this.pulseSamples = Math.max(1, Math.round((ONSET_PULSE_MS / 1000) * sr));
+    this.debounceSamples = Math.max(1, Math.round((ONSET_DEBOUNCE_MS / 1000) * sr));
+    this.threshMult = opts?.threshMult ?? ONSET_THRESH_MULT;
+  }
+  step(x: number): number {
+    const a = x < 0 ? -x : x;
+    // 1. Two energy envelopes.
+    this.fast = a + this.fastCoef * (this.fast - a);
+    this.slow = a + this.slowCoef * (this.slow - a);
+    // 2. Normalized relative-rise flux (scale-invariant). Gate on an absolute
+    //    level floor so a band that's essentially silent (numeric ε / idle hum)
+    //    never produces a huge ratio off near-zero.
+    const flux =
+      this.fast > this.slow && this.slow > ONSET_FLOOR_LEVEL
+        ? (this.fast - this.slow) / (this.slow + ONSET_FLOOR_LEVEL)
+        : 0;
+    // 3. Adaptive threshold from the moving-mean flux.
+    const threshold = this.avgFlux * this.threshMult + ONSET_FLOOR;
+    // 4. Peak-pick with debounce lockout.
+    if (this.lockLeft > 0) this.lockLeft--;
+    else if (flux > threshold) {
+      this.pulseLeft = this.pulseSamples;
+      this.lockLeft = this.debounceSamples;
+    }
+    // Update the moving-mean AFTER thresholding so a transient doesn't instantly
+    // raise its own bar (the mean follows the recent baseline, not the spike).
+    this.avgFlux = flux + this.avgCoef * (this.avgFlux - flux);
+    // 5. Latch the output pulse.
+    if (this.pulseLeft > 0) {
+      this.pulseLeft--;
+      return 1;
+    }
+    return 0;
   }
 }
 
@@ -146,6 +271,8 @@ export interface SynesthesiaRender {
   envSlow: Float32Array[];
   envFast: Float32Array[];
   gate: Float32Array[];
+  /** Per-band beat-trigger pulse (0/1), spectral-flux onset. */
+  trig: Float32Array[];
   level: Float32Array[];
 }
 
@@ -204,6 +331,8 @@ export interface SynesthesiaVideoFrameOut {
   envSlow: [number, number, number, number];
   envFast: [number, number, number, number];
   gate: [number, number, number, number];
+  /** Per-channel beat-trigger pulse (0/1) — onset on the channel energy. */
+  trig: [number, number, number, number];
   /** Meter level (0..1) for the VU display. */
   level: [number, number, number, number];
 }
@@ -219,18 +348,20 @@ export class SynesthesiaVideoCopy {
   private fast: EnvFollower[];
   private slow: EnvFollower[];
   private gate: GateDetector[];
+  private onset: OnsetDetector[];
   private meter: MeterBallistics[];
   constructor(sr: number) {
     const idx = [0, 1, 2, 3];
-    this.fast = idx.map(() => new EnvFollower(sr, ENV_FAST_MS));
-    this.slow = idx.map(() => new EnvFollower(sr, ENV_SLOW_MS));
+    this.fast = idx.map(() => new EnvFollower(sr, ENV_FAST_REL_MS, ENV_FAST_ATK_MS));
+    this.slow = idx.map(() => new EnvFollower(sr, ENV_SLOW_REL_MS, ENV_SLOW_ATK_MS));
     this.gate = idx.map(() => new GateDetector());
+    this.onset = idx.map(() => new OnsetDetector(sr));
     this.meter = idx.map(() => new MeterBallistics(sr));
   }
   /**
    * Advance one sample. `levels` are the held R/G/B/Luma channel levels (0..1);
    * `master`/`gains` apply the same gain law as audio mode. Returns the
-   * per-channel audio/env/gate/level scalars for this sample.
+   * per-channel audio/env/gate/trig/level scalars for this sample.
    */
   step(
     levels: ArrayLike<number>,
@@ -241,6 +372,7 @@ export class SynesthesiaVideoCopy {
     const envSlow: [number, number, number, number] = [0, 0, 0, 0];
     const envFast: [number, number, number, number] = [0, 0, 0, 0];
     const gate: [number, number, number, number] = [0, 0, 0, 0];
+    const trig: [number, number, number, number] = [0, 0, 0, 0];
     const level: [number, number, number, number] = [0, 0, 0, 0];
     for (let c = 0; c < SYN_NUM_BANDS; c++) {
       const g = combinedGain(master, gains[c] ?? 1);
@@ -249,9 +381,10 @@ export class SynesthesiaVideoCopy {
       envFast[c] = this.fast[c]!.step(a);
       envSlow[c] = this.slow[c]!.step(a);
       gate[c] = this.gate[c]!.step(envFast[c]!);
+      trig[c] = this.onset[c]!.step(a);
       level[c] = this.meter[c]!.step(a);
     }
-    return { audio, envSlow, envFast, gate, level };
+    return { audio, envSlow, envFast, gate, trig, level };
   }
 }
 
@@ -272,7 +405,7 @@ export function renderSynesthesiaVideo(
   const n = levels.length * hold;
   const idx = [0, 1, 2, 3];
   const mk = (): Float32Array[] => idx.map(() => new Float32Array(n));
-  const audio = mk(), envSlow = mk(), envFast = mk(), gate = mk(), level = mk();
+  const audio = mk(), envSlow = mk(), envFast = mk(), gate = mk(), trig = mk(), level = mk();
   const copy = new SynesthesiaVideoCopy(sr);
   let s = 0;
   for (const frame of levels) {
@@ -283,12 +416,13 @@ export function renderSynesthesiaVideo(
         envFast[c]![s] = out.envFast[c]!;
         envSlow[c]![s] = out.envSlow[c]!;
         gate[c]![s] = out.gate[c]!;
+        trig[c]![s] = out.trig[c]!;
         level[c]![s] = out.level[c]!;
       }
       s++;
     }
   }
-  return { audio, envSlow, envFast, gate, level };
+  return { audio, envSlow, envFast, gate, trig, level };
 }
 
 /**
@@ -306,10 +440,11 @@ export function renderSynesthesia(
   const splitter = makeBandSplitter(sr);
   const idx = [0, 1, 2, 3];
   const mk = (): Float32Array[] => idx.map(() => new Float32Array(n));
-  const audio = mk(), envSlow = mk(), envFast = mk(), gate = mk(), level = mk();
-  const fast = idx.map(() => new EnvFollower(sr, ENV_FAST_MS));
-  const slow = idx.map(() => new EnvFollower(sr, ENV_SLOW_MS));
+  const audio = mk(), envSlow = mk(), envFast = mk(), gate = mk(), trig = mk(), level = mk();
+  const fast = idx.map(() => new EnvFollower(sr, ENV_FAST_REL_MS, ENV_FAST_ATK_MS));
+  const slow = idx.map(() => new EnvFollower(sr, ENV_SLOW_REL_MS, ENV_SLOW_ATK_MS));
   const gates = idx.map(() => new GateDetector());
+  const onsets = idx.map(() => new OnsetDetector(sr));
   const meters = idx.map(() => new MeterBallistics(sr));
   for (let i = 0; i < n; i++) {
     const bands = splitter.split(input[i] ?? 0);
@@ -321,8 +456,9 @@ export function renderSynesthesia(
       envFast[b]![i] = ef;
       envSlow[b]![i] = slow[b]!.step(a);
       gate[b]![i] = gates[b]!.step(ef);
+      trig[b]![i] = onsets[b]!.step(a);
       level[b]![i] = meters[b]!.step(a);
     }
   }
-  return { audio, envSlow, envFast, gate, level };
+  return { audio, envSlow, envFast, gate, trig, level };
 }
