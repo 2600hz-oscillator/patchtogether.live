@@ -699,6 +699,15 @@ export class PatchEngine {
   private audioBridgeEdgeIds = new Set<string>();
   /** Per-edge teardown for video→audio bridges. */
   private audioBridgeTeardowns = new Map<string, () => void>();
+  /** Edges that became cross-domain AUDIO → video AUDIO-INPUT bridges
+   *  (RECORDERBOX's audio_l/audio_r soundtrack capture). The inverse of
+   *  audioBridgeEdgeIds: an audio source connects straight into an
+   *  AudioNode SINK the video module owns (via VideoNodeHandle.audioInputs).
+   *  Bookkept so removeEdge can tear down symmetrically; neither domain
+   *  engine sees the edge in its own `edges` map. */
+  private audioInputBridgeEdgeIds = new Set<string>();
+  /** Per-edge teardown for audio→video audio-input bridges. */
+  private audioInputBridgeTeardowns = new Map<string, () => void>();
   /** The Edge objects for video→audio bridges, kept so we can RE-RESOLVE a
    *  bridge when its video source swaps the AudioNode published for a port
    *  (e.g. VIDEOBOX/VIDEOVARISPEED's wireAudio replaces the silent placeholder
@@ -746,7 +755,7 @@ export class PatchEngine {
    */
   private pendingBridges = new Map<
     string,
-    { edge: Edge; kind: 'cv' | 'video-texture' | 'audio' | 'same-domain-video-cv'; sourceDomain?: string; targetDomain?: string }
+    { edge: Edge; kind: 'cv' | 'video-texture' | 'audio' | 'audio-input' | 'same-domain-video-cv'; sourceDomain?: string; targetDomain?: string }
   >();
 
   /**
@@ -768,6 +777,7 @@ export class PatchEngine {
       this.cvBridgeEdgeIds.size
       + this.videoTextureBridgeEdgeIds.size
       + this.audioBridgeEdgeIds.size
+      + this.audioInputBridgeEdgeIds.size
       + this.sameDomainVideoCvBridgeEdgeIds.size
     );
   }
@@ -879,7 +889,7 @@ export class PatchEngine {
    * on continued failure), which makes for-of over the live Map unsafe.
    */
   private drainPendingForNode(nodeId: string): void {
-    const entries: Array<{ edge: Edge; kind: 'cv' | 'video-texture' | 'audio' | 'same-domain-video-cv'; sourceDomain?: string; targetDomain?: string }> = [];
+    const entries: Array<{ edge: Edge; kind: 'cv' | 'video-texture' | 'audio' | 'audio-input' | 'same-domain-video-cv'; sourceDomain?: string; targetDomain?: string }> = [];
     for (const entry of this.pendingBridges.values()) {
       if (
         entry.edge.source.nodeId === nodeId
@@ -902,6 +912,9 @@ export class PatchEngine {
           break;
         case 'audio':
           this.addCrossDomainAudioBridge(entry.edge);
+          break;
+        case 'audio-input':
+          this.addCrossDomainAudioInputBridge(entry.edge);
           break;
         case 'same-domain-video-cv':
           this.addSameDomainVideoCvBridge(entry.edge);
@@ -1009,6 +1022,33 @@ export class PatchEngine {
       this.addCrossDomainAudioBridge(edge);
       return;
     }
+    // Cross-domain audio → video AUDIO-INPUT bridge (RECORDERBOX). The
+    // INVERSE of the video→audio bridge above: an AUDIO-domain source
+    // (a VCO, mixer, etc.) wired into an `audio`-TYPED INPUT port on a
+    // VIDEO module. RECORDERBOX is the first consumer — it captures the
+    // live audio (alongside its video input) into an MP4 soundtrack, so
+    // its `audio_l` / `audio_r` ports are real audio sinks, not the
+    // cv/gate sample-and-hold the first branch handles.
+    //
+    // The video module owns a MediaStreamAudioDestinationNode (or any
+    // AudioNode sink) per audio input port and publishes it via
+    // VideoNodeHandle.audioInputs; we look up the audio SOURCE's output
+    // (AudioEngine.getOutputNode) and .connect() it straight into that
+    // sink. Both live on the shared AudioContext graph, so it's a plain
+    // node→node connect — no analyser, no per-frame tick.
+    //
+    // Scoped to targetType==='audio' so a cv/gate audio source into a
+    // video param still routes through addCrossDomainCvBridge (the first
+    // branch), and audio→video TEXTURE edges still hit the texture bridge.
+    if (
+      targetDomain !== undefined
+      && sourceDomain === 'audio'
+      && targetDomain === 'video'
+      && edge.targetType === 'audio'
+    ) {
+      this.addCrossDomainAudioInputBridge(edge);
+      return;
+    }
     // SAME-DOMAIN video CV/gate bridge (2026-05-29). A video module emitting
     // a CV/gate via `audioSources` (DOOM's evt_kill / evt_door / evt_gun_*,
     // NIBBLES's length_cv etc.) wired to ANOTHER video module's CV input
@@ -1078,6 +1118,10 @@ export class PatchEngine {
     }
     if (this.audioBridgeEdgeIds.has(edge.id)) {
       this.removeCrossDomainAudioBridge(edge);
+      return;
+    }
+    if (this.audioInputBridgeEdgeIds.has(edge.id)) {
+      this.removeCrossDomainAudioInputBridge(edge);
       return;
     }
     if (this.sameDomainVideoCvBridgeEdgeIds.has(edge.id)) {
@@ -1316,6 +1360,67 @@ export class PatchEngine {
   }
 
   /**
+   * Establish an AUDIO → video AUDIO-INPUT bridge (RECORDERBOX). The
+   * inverse of addCrossDomainAudioBridge: an AUDIO-domain source's output
+   * (looked up via AudioEngine.getOutputNode) is `.connect()`'d straight
+   * into an AudioNode SINK the video module owns for the named INPUT port
+   * (looked up via VideoEngine.getAudioInput). Both ends live on the shared
+   * AudioContext graph, so it's a plain node→node connection — RECORDERBOX
+   * feeds its L/R MediaStreamAudioDestinationNodes that become the MP4's
+   * AAC soundtrack.
+   *
+   * The bridge owns the connection lifetime — neither domain engine sees
+   * the edge in its own `edges` map. removeEdge fires the stored teardown.
+   *
+   * Failure modes (mirror addCrossDomainAudioBridge):
+   *  - either domain engine missing: fall back to source-domain dispatch.
+   *  - bridge API missing on either engine: fall back to source dispatch.
+   *  - source AudioNode not yet materialized OR target video node doesn't
+   *    declare an audioInput for the port: defer (park in pendingBridges).
+   */
+  private addCrossDomainAudioInputBridge(edge: Edge): void {
+    const audioEngine = this.domains.get('audio');
+    const videoEngine = this.domains.get('video');
+    if (!audioEngine || !videoEngine) {
+      audioEngine?.addEdge(edge);
+      return;
+    }
+    const ae = audioEngine as AudioEngine;
+    const ve = videoEngine as DomainEngine & {
+      getAudioInput?: (nodeId: string, portId: string) =>
+        | { node: AudioNode; input: number } | null;
+    };
+    if (typeof ae.getOutputNode !== 'function' || typeof ve.getAudioInput !== 'function') {
+      audioEngine.addEdge(edge);
+      return;
+    }
+    const src = ae.getOutputNode(edge.source.nodeId, edge.source.portId);
+    const dst = ve.getAudioInput(edge.target.nodeId, edge.target.portId);
+    if (!src || !dst) {
+      // Defer — a later addNode (RECORDERBOX materializes its destination
+      // node) or the audio source surfacing its output drains + retries.
+      // Do NOT mark audioInputBridgeEdgeIds here (that's the applied set).
+      this.pendingBridges.set(edge.id, { edge, kind: 'audio-input' });
+      return;
+    }
+    src.node.connect(dst.node, src.output, dst.input);
+    this.audioInputBridgeTeardowns.set(edge.id, () => {
+      try { src.node.disconnect(dst.node, src.output, dst.input); } catch { /* */ }
+    });
+    this.audioInputBridgeEdgeIds.add(edge.id);
+    this.pendingBridges.delete(edge.id);
+  }
+
+  private removeCrossDomainAudioInputBridge(edge: Edge): void {
+    this.audioInputBridgeEdgeIds.delete(edge.id);
+    const teardown = this.audioInputBridgeTeardowns.get(edge.id);
+    if (teardown) {
+      try { teardown(); } catch { /* */ }
+      this.audioInputBridgeTeardowns.delete(edge.id);
+    }
+  }
+
+  /**
    * Establish a SAME-DOMAIN video → video CV/gate bridge (DOOM.evt_kill →
    * SCOREBOARD.score, etc.). The source video module publishes the gate as
    * an AudioNode via its audioSources map; the target video module declares
@@ -1496,6 +1601,11 @@ export class PatchEngine {
     }
     this.audioBridgeTeardowns.clear();
     this.audioBridgeEdges.clear();
+    this.audioInputBridgeEdgeIds.clear();
+    for (const teardown of this.audioInputBridgeTeardowns.values()) {
+      try { teardown(); } catch { /* */ }
+    }
+    this.audioInputBridgeTeardowns.clear();
     for (const teardown of this.sameDomainPulseSubTeardowns.values()) {
       try { teardown(); } catch { /* */ }
     }

@@ -757,6 +757,19 @@ const BEHAVIORAL_PARAMS: Record<string, Record<string, number>> = {
 // Each entry must cite the dedicated test that DOES cover the port's
 // downstream effect — otherwise we're hiding a coverage gap.
 const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
+  // ── RECORDERBOX audio inputs. audio_l / audio_r are RECORDED into the MP4
+  //    soundtrack — they do NOT render into the module's VIDEO `out` (which is
+  //    a pure passthrough of the `in` video). So driving an audio input
+  //    produces ZERO change in the observable video output, by design: the
+  //    only "delta" the sweep could ever see is the ACIDWARP context
+  //    animation's own per-frame variance noise (the same animated-video
+  //    variance-floor class as b3ntb0x / backdraft / bentbox). A pass would be
+  //    on noise, not a real effect → flaky. Exempt these two ports; the `in`
+  //    port IS exercised here (it drives the passthrough `out`). The audio
+  //    capture → MP4 path is covered by the dedicated recorderbox.spec.ts
+  //    (real VCO → audio_l → finalized MP4 + crash-recovery assertions).
+  'recorderbox.audio_l': 'audio is recorded into the MP4 soundtrack, not rendered into the video out (a pure passthrough of in) → no observable video-output delta; covered by recorderbox.spec.ts (real VCO → audio_l → finalized MP4)',
+  'recorderbox.audio_r': 'audio is recorded into the MP4 soundtrack, not rendered into the video out → no observable video-output delta; covered by recorderbox.spec.ts',
   // ── PENTEMELODICA per-voice FM jacks. fm1..fm5 are audio-rate FM/PM
   //    modulators that only affect a voice that is SOUNDING — i.e. whose ADSR
   //    has been gated open by its poly lane. The behavioral sweep drives ONE

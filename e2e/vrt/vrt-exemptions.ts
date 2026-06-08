@@ -54,7 +54,20 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // ----- video domain — every video module renders a preview canvas;
   // mask it and assert the chrome around it.
   lines: [{ selector: 'canvas' }],
+  // CIRCLES — stateful particle generator; the card carries a live COMBINE
+  // preview canvas (circles spawn + move off the engine rAF), so the canvas
+  // region is non-deterministic in the standard solo-spawn VRT. Mask it and
+  // gate on the deterministic chrome (4 knobs D/V/SPD/RATE + GATE/D/V/SPD/VID
+  // input rows + OVR/CNT/CMB/MAP output rows). The seeded spawn RNG +
+  // window.__circlesVrtSeed hook are wired in the factory for the follow-up
+  // baseline capture (deterministic frozen frame).
+  circles: [{ selector: 'canvas' }],
   videoOut: [{ selector: 'canvas' }],
+  // RECORDERBOX — live preview canvas (+ a hidden full-res capture canvas,
+  // off-screen at left:-9999px so its mask rect lands outside the captured
+  // card box). Mask the canvas + gate on the deterministic chrome (title,
+  // IN/OUT/A·L/A·R handles, FILE field, RECORD button).
+  recorderbox: [{ selector: 'canvas' }],
   inwards: [{ selector: 'canvas' }],
   picturebox: [{ selector: 'canvas' }],
   destructor: [{ selector: 'canvas' }],
@@ -143,6 +156,18 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // edge-detect). Promote into MODULES + capture darwin/linux PNGs (the
   // canvas mask above masks the live preview) in a follow-up PR.
   '4plexvid': 'VRT baseline pending; e2e/tests/4plexvid.spec.ts + plex-select unit tests provide coverage. Promote + capture darwin/linux baselines (live preview masked) in a follow-up PR.',
+  // CIRCLES — first-slice stateful particle video generator (gate/clock-
+  // spawned bouncing circles → 4 derived outputs). The card carries a live
+  // COMBINE preview canvas (particles spawn + move off the engine rAF), so
+  // the solo-spawn frame is non-deterministic; the seeded spawn RNG +
+  // window.__circlesVrtSeed hook are wired in the factory for the follow-up
+  // deterministic baseline capture, and the canvas mask above covers the live
+  // preview if the module is promoted into MODULES first. Functional coverage:
+  // circles.test.ts (sim: seeded spawn, rate-clock 1/500ms cap, center-bounce,
+  // d/v/spd latch + ranges, max-circle cull; output derivation: overlap /
+  // contour / combine-hue / mapped) + e2e/tests/circles.spec.ts (gate-driven
+  // spawn + the 4 outputs ring + mapped shows the video input where overlapped).
+  circles: 'VRT baseline pending; first-slice particle generator — unit (circles.test.ts sim + output derivation) + e2e (circles.spec.ts) provide coverage. Capture darwin/linux baselines once the __circlesVrtSeed deterministic frozen-frame path is wired.',
   // SHAPEGEN — first-slice PR extracts FOXY's 3dShapeGen path into a
   // standalone video module (3 raster inputs, SIZE/ROT knobs, SOLIDS
   // toggle). Unit + e2e coverage; VRT baseline pending. The
@@ -601,6 +626,14 @@ export const STRICT_VRT_MODULES = new Set<string>([
  *  up CI capture lands the other platform's PNG. The exempted pair is
  *  SKIPPED at the test level rather than allowed to fail. */
 export const EXEMPT_BASELINE_PAIRS = new Set<string>([
+  // RECORDERBOX: darwin baseline (the recorder sink card — preview canvas
+  // masked, deterministic chrome: title + IN/OUT/A·L/A·R handles + FILE field
+  // + RECORD button) captured locally; linux baseline pending a
+  // `vrt-update.yml` workflow_dispatch on this branch. Functional coverage is
+  // recorderbox.test.ts + recorderbox-recorder.test.ts + the per-port sweep +
+  // the bespoke recorderbox.spec.ts (real VCO + ACIDWARP → finalized MP4 +
+  // crash-recovery).
+  'linux/recorderbox',
   // SYNESTHESIA: darwin baseline captured on this machine via VRT_SCENES
   // (analogVco→a_in, band 2 lit, freeze-on-suspend). Linux baseline pending a
   // `task vrt:update` run on linux CI; functional coverage is the
@@ -755,6 +788,16 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // pending regen after in-card-title sweep — darwin captured here.
   'linux/feedback',
   'linux/lines',
+  // EDGES (Sobel edge-detection video processor): deterministic card chrome
+  // (IN/threshold/thickness handles + 2 faders, no canvas/animation), so it
+  // ships a REAL solo-spawn baseline. Darwin baseline captured on this
+  // machine; linux baseline pending a `vrt-update.yml` workflow_dispatch on
+  // this branch (sub-pixel text AA differs across platforms) — darwin is the
+  // regression gate here. The edge-render correctness is proven by the pure
+  // Sobel/threshold/thickness unit suite (edges.test.ts) + the bespoke
+  // e2e/tests/edges.spec.ts (SHAPES → EDGES → OUTPUT shows edges; raising
+  // threshold drops edge pixels; raising thickness adds them).
+  'linux/edges',
   'linux/monoglitch',
   'linux/riotgirls',
   'linux/shapedramps',
