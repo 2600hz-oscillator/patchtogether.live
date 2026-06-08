@@ -76,6 +76,58 @@ row.
 
 ## Entries
 
+### 2026-06-08 — behavioral video-timeout scaling: re-enable `edges` (per-frame-scaled video budget)
+
+Delivered the **exact re-enable path** the REFRAME entry's `edges` exempt note
+called for — *"a video-domain per-frame-scaled timeout"* — and re-enabled
+`edges` (Sobel edge-detection **video** processor) in the behavioral sweep.
+
+**Root cause.** The sweep set a **flat** per-test budget — `max(90s, n×22s+30s)`
+— for *every* module. But **video-sink** modules (those whose
+`pickObservedOutput` routes to the `video-out-canvas` sink) render a per-frame
+WebGL pipeline **and** `readPixels` a full canvas every snapshot, both ~10-30×
+slower under CI's **SwiftShader** software renderer than a real GPU (the
+`ci-swiftshader-video-e2e-timeouts` class). So `edges` (3 inputs → 96s) timed out
+its `in` frame-poll **reproducibly** on CI shard 1 while passing on a real local
+GPU, and `cellshade` / `chromakey` / `outlines` sat on the same knife-edge.
+
+**Fix (systemic, not per-module exemptions).** Mirroring the #64 heavy-video e2e
+fix + the `mapper.spec` / `modules.spec` `HEAVY_MOUNT_TIMEOUT` convention, the
+per-test `setTimeout` now **branches on the video sink and scales by
+input/capture count**: `VIDEO_TEST_BASE_MS` (60s) + n × `VIDEO_PER_INPUT_MS`
+(45s ≈ 2 spawns/input under SwiftShader), capped at `VIDEO_TEST_TIMEOUT_CEIL`
+(600s, well under the 20-min behavioral job). **Audio** modules keep the existing
+fast flat budget unchanged (verified: `vca`/`stereovca` still pass in ~36s).
+`edges` (3 inputs) now gets **195s**; the widest enrolled video-sink module
+`outlines` (9) gets 465s.
+
+**Re-enabled.** `edges` was exempt **purely** for this SwiftShader video timeout
+and had **no** per-port exemptions, so removing it from `BEHAVIORAL_MODULE_EXEMPT`
+puts all 3 ports (`in` / `threshold` / `thickness`) back in the sweep (verified
+locally on a real GPU: all PASS, Δμvar 219–3298). `cellshade` / `chromakey` /
+`outlines` were never exempt — the scaled budget keeps them green. `foxy` /
+`mandelbulb` **stay** exempt: their observed sink is the **audio** scope (not the
+video canvas), exempt for heavy-mount / ray-march reasons, **not** the video-sink
+per-frame timeout.
+
+Net: **behavioral disabled 57 → 56** (live counter on this branch base; the
+REFRAME entry below recorded 58 on a slightly different tree). The meta-test
+(`scripts/test-reconciliation.test.ts`) now LOCKS `edges`-out + the presence of
+the video-scaling tokens (`VIDEO_PER_INPUT_MS` / `VIDEO_TEST_BASE_MS` /
+`sink.targetType === 'video'`).
+
+| block | kind | total | disabled | %disabled |
+|---|---|---:|---:|---:|
+| unit | raw | 6316 | 2 | 0.0% |
+| e2e | raw | 933 | 4 | 0.4% |
+| art | raw | 463 | 0 | 0.0% |
+| vrt | parametrized | 157 | 0 | 0.0% |
+| behavioral | parametrized | 107 | **56** | 52.3% |
+| @collab | raw (e2e subset) | 108 | 1 | 0.9% |
+
+This unblocks re-gating `behavioral` as a REQUIRED check (separate follow-up,
+standing goal #42) once the lane is verified green on CI.
+
 ### 2026-06-08 — report REFRAME: every disabled test is backlog (retire the intentional/reconcilable split)
 
 The reconciliation program's headline metric was lying. The behavioral block

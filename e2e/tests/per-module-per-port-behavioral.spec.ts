@@ -346,27 +346,17 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    Covered by foxy.spec.ts which uses a single-spawn + settle pattern.
   foxy: 'heavy mount (SwoleBlocks + RasterPainters); 5 inputs × 2 spawns exceed 140s CI budget; covered by foxy.spec.ts',
 
-  // ── EDGES — Sobel edge-detection VIDEO processor. Each frame is a full
-  //    WebGL Sobel convolution pass; on CI's SwiftShader SOFTWARE renderer
-  //    that per-frame GPU cost is ~10-30× a real GPU, so the per-input
-  //    spawn→settle→frame-poll loop blows the flat universal budget. With 3
-  //    drivable inputs the timeout is max(90s, 3×22+30)=96s, and the
-  //    `locator.evaluate` / `page.waitForFunction` video-frame poll on `in`
-  //    (a live ACIDWARP source fed through the Sobel pass) does not complete
-  //    within it — REPRODUCIBLY (96s timeout on `edges`, twice, while the
-  //    sibling `cube` only flaky-passes its 162s budget). This is the
-  //    documented CI-SwiftShader heavy-WebGL-video timeout class (cf. the
-  //    foxy / mandelbulb heavy-mount-exceeds-budget exemptions above), NOT a
-  //    per-port delta failure — it passes on a real local GPU. EDGES is fully
-  //    covered with stronger, GPU-aware signal by edges.spec.ts (SHAPES→EDGES
-  //    renders white edges on black + THRESHOLD reduces/raises edge-pixel
-  //    count + CV params route through the patch store) and edges.test.ts
-  //    (Sobel kernel / threshold / thickness unit math). The `inputs-accept`
-  //    dim in per-module-per-port.spec.ts still pins wire-up for all 3 ports.
-  //    Re-enable path: a video-domain per-input budget (scale the SwiftShader
-  //    timeout by frame-poll count, not the flat 22s/input) OR a real-GPU CI
-  //    lane — the same GPU-aware-budget follow-up the heavy-video class needs.
-  edges: 'heavy-WebGL video Sobel pass; the per-frame convolution on CI SwiftShader blows the flat 96s (3-input) budget — the `in` frame-poll times out reproducibly (twice), CI-SwiftShader heavy-WebGL-video class (cf. foxy/mandelbulb), passes on a real GPU; covered with stronger GPU-aware signal by edges.spec.ts (white-edges render + THRESHOLD edge-pixel delta + CV routing) + edges.test.ts (Sobel/threshold/thickness math); re-enable with a video-domain per-frame-scaled timeout or a real-GPU CI lane',
+  // NOTE: `edges` (Sobel edge-detection video processor) was RE-ENABLED in the
+  // behavioral video-timeout-scaling leg. It was exempt PURELY for the
+  // CI-SwiftShader heavy-WebGL-video flat-96s-budget timeout (its re-enable
+  // note literally called for "a video-domain per-frame-scaled timeout"). That
+  // budget now exists (VIDEO_TEST_BASE_MS + n×VIDEO_PER_INPUT_MS, see the
+  // per-test setTimeout below: 3 inputs → 195s), so `edges` is back in the
+  // sweep with no per-port exemptions. cellshade / chromakey / outlines were
+  // never exempt — they timed out IN the lane and the scaled budget fixes them
+  // the same way. (foxy / mandelbulb stay exempt — their observed sink is the
+  // AUDIO scope, not the video canvas; they're exempt for heavy-mount /
+  // ray-march reasons, NOT the video-sink per-frame timeout.)
 
   // ── GRIDS — Mutable Instruments Grids (pattern-based drum trigger).
   //    Internal BPM clock is non-deterministic under CI scheduling:
@@ -2419,6 +2409,27 @@ function filterErrors(errors: string[]): string[] {
 
 // ────────── Tests ──────────
 
+// Video-domain per-test wall-clock budget (CI SwiftShader-aware).
+//
+// VIDEO-sink modules (those whose `pickObservedOutput` routes to the
+// video-out-canvas sink) render a per-frame WebGL pipeline AND read a full
+// canvas every snapshot, both ~10-30× slower under CI's SwiftShader software
+// renderer than a real GPU (the ci-swiftshader-video-e2e-timeouts class). The
+// flat 22s/input budget times out the per-frame poll on CI reproducibly while
+// passing locally on a real GPU. Scale the budget by the input/capture count
+// (the #64 heavy-video fix / mapper.spec.ts HEAVY_MOUNT_TIMEOUT convention):
+//   * BASE  — fixed cushion (page boot + first WebGL-context warm-up).
+//   * PER-INPUT — each port = 2 spawns (control + patched), each a full
+//     mount + GL warm-up + settle + 5×readPixels; sized for SwiftShader's
+//     ~20-25s-per-video-spawn worst case (2 spawns ≈ 45s/input).
+//   * CEIL  — a video-domain ceiling so a pathologically-wide video module
+//     can't single-handedly blow the 20-min behavioral-coverage job. The
+//     widest enrolled video-sink module (outlines, 9 drivable inputs) lands
+//     at 60 + 9×45 = 465s = 7.75 min, well under the ceiling AND the job cap.
+const VIDEO_TEST_BASE_MS = 60_000;
+const VIDEO_PER_INPUT_MS = 45_000;
+const VIDEO_TEST_TIMEOUT_CEIL = 600_000; // 10 min hard cap (< 20-min job budget)
+
 test.describe.configure({ mode: 'parallel' });
 
 test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on driven input vs unpatched)', () => {
@@ -2447,12 +2458,43 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
     }
 
     test(title, async ({ page }) => {
-      // Per input: 2× (goto ~3s + spawnPatch ~3s + settle 0.8-2s
-      //              + aggregated read 5×150ms ~0.8s).
-      // Budget ~22s per input + 30s baseline cushion. We pay this for
-      // determinism — each spawn starts from a fresh AudioContext, and
-      // the aggregated read averages out modulator jitter.
-      test.setTimeout(Math.max(90_000, drivableInputs.length * 22000 + 30_000));
+      const driver = driverFor(mod);
+      // When set, the driver sequencer plays one constant held note (stable
+      // spectral baseline) instead of the 60/64/67/72 arpeggio — see
+      // BEHAVIORAL_HELD_NOTE_DRIVER + populateAllSequencerSteps.
+      const heldNoteDriver = BEHAVIORAL_HELD_NOTE_DRIVER.has(mod.type);
+      const observed = pickObservedOutput(mod, driver);
+
+      // ── Per-test wall-clock budget ──
+      // Each port does 2 spawns (control + patched); per spawn:
+      //   goto + spawnPatch (mount) + settle + aggregated read (5×150ms).
+      //
+      // AUDIO sink (scope): on the default real/cooperative scheduler each
+      // spawn+settle+read is ~11s, so ~22s/input + a 30s baseline cushion
+      // (floored at 90s) holds.
+      //
+      // VIDEO sink (video-out-canvas): the SUT renders a per-frame WebGL
+      // pipeline (Sobel / chroma-key / cel-shade / outline passes) AND the
+      // canvas-read evaluate()s a full readPixels every snapshot. On CI's
+      // SwiftShader SOFTWARE renderer each of those frames is ~10-30× a real
+      // GPU, so the flat 22s/input budget times out the per-frame poll
+      // REPRODUCIBLY (cellshade/chromakey/outlines/edges — the
+      // ci-swiftshader-video-e2e-timeouts class; they PASS on a real local
+      // GPU). Mirror the heavy-video e2e fix (#64) + the mapper.spec.ts /
+      // modules.spec.ts HEAVY_MOUNT_TIMEOUT convention: SCALE the budget by
+      // the input/capture count instead of a flat figure — a generous video
+      // base + per-input increment, capped at a video-domain ceiling so a
+      // pathologically-wide module can't blow the 20-min job. Audio modules
+      // keep the existing fast budget unchanged.
+      const usesVideoSink =
+        observed?.sink.targetType === 'video' || observed?.sink.node.type === 'videoOut';
+      const timeoutMs = usesVideoSink
+        ? Math.min(
+            VIDEO_TEST_TIMEOUT_CEIL,
+            VIDEO_TEST_BASE_MS + drivableInputs.length * VIDEO_PER_INPUT_MS,
+          )
+        : Math.max(90_000, drivableInputs.length * 22_000 + 30_000);
+      test.setTimeout(timeoutMs);
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -2460,12 +2502,6 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
         if (m.type() === 'error') errors.push(`console: ${m.text()}`);
       });
 
-      const driver = driverFor(mod);
-      // When set, the driver sequencer plays one constant held note (stable
-      // spectral baseline) instead of the 60/64/67/72 arpeggio — see
-      // BEHAVIORAL_HELD_NOTE_DRIVER + populateAllSequencerSteps.
-      const heldNoteDriver = BEHAVIORAL_HELD_NOTE_DRIVER.has(mod.type);
-      const observed = pickObservedOutput(mod, driver);
       if (!observed) {
         // No scope-able / video-sinkable output → can't sample. We
         // shouldn't have gotten here (modules without outputs are

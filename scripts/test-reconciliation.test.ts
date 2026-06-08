@@ -211,12 +211,33 @@ describe('behavioral exemptions are ALL reconciliation backlog (no permanent-exe
     expect(sweepExempt.has('moog911a.trig2')).toBe(true);
   });
 
+  it('re-enabled video-sink `edges` is OUT of the module-exempt map (count fell)', () => {
+    // behavioral video-timeout-scaling leg: `edges` was exempt PURELY for the
+    // CI-SwiftShader heavy-WebGL-video flat-timeout (its own re-enable note
+    // asked for "a video-domain per-frame-scaled timeout"). That budget now
+    // exists in the spec, so `edges` is back in the sweep with no per-port
+    // exemptions — it must be fully out of the whole-module exempt map.
+    const moduleExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_MODULE_EXEMPT');
+    expect(moduleExempt.has('edges')).toBe(false);
+    // The re-enable is honest only if the scaled video budget actually backs it:
+    // the per-test setTimeout must branch on the video sink + scale by input
+    // count (not the flat 22s/input that timed `edges` out). Lock those tokens.
+    expect(/\bVIDEO_PER_INPUT_MS\b/.test(specSrc)).toBe(true);
+    expect(/\bVIDEO_TEST_BASE_MS\b/.test(specSrc)).toBe(true);
+    expect(/sink\.targetType === 'video'/.test(specSrc)).toBe(true);
+    // edges has no per-port sweep exemptions — all 3 ports drive the sweep.
+    const sweepExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_SWEEP_EXEMPT');
+    expect([...sweepExempt].some((k) => k.startsWith('edges.'))).toBe(false);
+  });
+
   it('still-disabled modules carry a module-exempt note (backlog, not silent)', () => {
     const moduleExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_MODULE_EXEMPT');
     // Whatever remains disabled is ALL backlog — fix or delete. A representative
     // slice that's still exempt this leg (each a backlog item with a re-enable
-    // path or a delete rationale in its note).
-    for (const m of ['buggles', 'mixmstrs', 'audioOut']) {
+    // path or a delete rationale in its note). foxy/mandelbulb stay exempt: their
+    // observed sink is the AUDIO scope (not the video canvas), exempt for
+    // heavy-mount/ray-march reasons, NOT the video-sink per-frame timeout.
+    for (const m of ['buggles', 'mixmstrs', 'audioOut', 'foxy', 'mandelbulb']) {
       expect(moduleExempt.has(m)).toBe(true);
     }
   });
