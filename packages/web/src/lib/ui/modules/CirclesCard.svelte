@@ -1,17 +1,18 @@
 <script lang="ts">
   // CirclesCard — UI for the CIRCLES stateful particle video generator.
   //
-  // Left rail: GATE (spawn trigger) + D/V/SPD/DECAY CV inputs + the VIDEO
-  // input (used by the `mapped` output). Right rail: the four outputs (OVERLAP
-  // / CONTOUR / COMBINE / MAPPED). Five knobs (D/V/SPD/DECAY/RATE) + a live
-  // preview of the COMBINE output (blitted from the factory's scene canvas,
-  // same pattern ShapegenCard uses).
+  // Left rail: GATE (spawn trigger) + COLLIDE (live inter-circle elastic-bounce
+  // gate) + D/V/SPD/DECAY CV inputs + the VIDEO input (used by the `mapped`
+  // output). Right rail: the four outputs (OVERLAP / CONTOUR / COMBINE /
+  // MAPPED). Five knobs (D/V/SPD/DECAY/RATE) + a live preview of the COMBINE
+  // output (blitted from the factory's scene canvas, same pattern ShapegenCard
+  // uses).
 
   import type { NodeProps } from '@xyflow/svelte';
   import { Handle, Position } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { patch } from '$lib/graph/store';
-  import { circlesDef, CIRCLES_GATE_PORT_ID } from '$lib/video/modules/circles';
+  import { circlesDef, CIRCLES_GATE_PORT_ID, CIRCLES_COLLIDE_PORT_ID } from '$lib/video/modules/circles';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import { onMount, onDestroy } from 'svelte';
@@ -65,19 +66,21 @@
   <div class="stripe" style="background: var(--cable-video);"></div>
   <ModuleTitle {id} {data} defaultLabel="circles" />
 
-  <!-- Left rail: gate spawn + D/V/SPD/DECAY CV + video input. -->
+  <!-- Left rail: gate spawn + collide gate + D/V/SPD/DECAY CV + video input. -->
   <Handle type="target" position={Position.Left} id={CIRCLES_GATE_PORT_ID} style="top: 56px; --handle-color: var(--cable-cv);" />
   <span class="port-label left" style="top: 50px;">GATE</span>
-  <Handle type="target" position={Position.Left} id="d"   style="top: 88px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 82px;">D</span>
-  <Handle type="target" position={Position.Left} id="v"   style="top: 120px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 114px;">V</span>
-  <Handle type="target" position={Position.Left} id="spd" style="top: 152px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 146px;">SPD</span>
-  <Handle type="target" position={Position.Left} id="decay" style="top: 184px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 178px;">DEC</span>
-  <Handle type="target" position={Position.Left} id="video" style="top: 216px; --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 210px;">VID</span>
+  <Handle type="target" position={Position.Left} id={CIRCLES_COLLIDE_PORT_ID} style="top: 88px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 82px;">COL</span>
+  <Handle type="target" position={Position.Left} id="d"   style="top: 120px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 114px;">D</span>
+  <Handle type="target" position={Position.Left} id="v"   style="top: 152px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 146px;">V</span>
+  <Handle type="target" position={Position.Left} id="spd" style="top: 184px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 178px;">SPD</span>
+  <Handle type="target" position={Position.Left} id="decay" style="top: 216px; --handle-color: var(--cable-cv);" />
+  <span class="port-label left" style="top: 210px;">DEC</span>
+  <Handle type="target" position={Position.Left} id="video" style="top: 248px; --handle-color: var(--cable-video);" />
+  <span class="port-label left" style="top: 242px;">VID</span>
 
   <!-- Right rail: the four outputs. -->
   <Handle type="source" position={Position.Right} id="overlap" style="top: 56px;  --handle-color: var(--cable-mono-video);" />

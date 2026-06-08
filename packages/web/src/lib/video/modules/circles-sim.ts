@@ -61,7 +61,9 @@ export const RATE_ENGAGE_THRESHOLD = 0.001;
  *  so under continuous spawning they accumulate unbounded; we cap the active
  *  list and cull the OLDEST when a spawn would exceed it, keeping per-frame
  *  cost bounded. 200 keeps the "ripples in a pond" contour look dense while
- *  the per-pixel count buffer stays cheap. */
+ *  the per-pixel count buffer stays cheap. It also BOUNDS the COLLIDE mode's
+ *  O(n²) pairwise check: 200² ≈ 20k distance tests/frame (the inner half is
+ *  ~10k) — cheap enough to run inline without spatial hashing. */
 export const MAX_CIRCLES = 200;
 
 // ---------------------------------------------------------------------------
@@ -167,6 +169,87 @@ export interface CirclesSpawnParams {
   rate: number;
   /** 0..1 — fade-out duration (0 / omitted = persist, no decay). */
   decay?: number;
+  /** LIVE GLOBAL inter-circle collision mode (NOT latched per circle). When
+   *  truthy, every pair of circles that overlaps (center distance ≤ r1+r2)
+   *  this frame does an equal-mass ELASTIC bounce; when falsy (the default,
+   *  unpatched / gate LOW) circles pass through each other. Toggled live each
+   *  frame from the COLLIDE gate. */
+  collide?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Inter-circle ELASTIC collision (the COLLIDE gate mode).
+// ---------------------------------------------------------------------------
+
+/**
+ * EDGE-based pair test: two circles collide when the distance between their
+ * CENTERS is ≤ (r1 + r2) — i.e. their painted DISCS touch/overlap. This is the
+ * key difference from the existing WALL bounce, which is purely center-based
+ * (the center crossing the wall). Returns true when the two discs intersect.
+ */
+export function circlesCollide(a: Circle, b: Circle): boolean {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const rsum = (a.diameter + b.diameter) * 0.5;
+  return dx * dx + dy * dy <= rsum * rsum;
+}
+
+/**
+ * Resolve ONE elastic collision between an overlapping pair IN PLACE.
+ *
+ * Equal-mass elastic collision: along the center-to-center NORMAL, the two
+ * circles exchange the velocity component projected onto that normal; the
+ * tangential components are untouched. (For equal masses this is the standard
+ * result — the normal-velocity components swap.) Each circle therefore keeps
+ * its independent latched SPEED magnitude as far as elastic physics allows
+ * (a head-on pair simply swaps velocities; a glancing pair exchanges only the
+ * normal share).
+ *
+ * We also POSITIONALLY SEPARATE the pair by half the overlap each along the
+ * normal so they don't stick/re-trigger every frame. Coincident centers (a
+ * zero normal) are nudged apart along +x deterministically (no RNG) so the
+ * math never divides by zero.
+ *
+ * Returns true if a collision was resolved (the discs overlapped), else false.
+ */
+export function resolveElasticPair(a: Circle, b: Circle): boolean {
+  let nx = b.x - a.x;
+  let ny = b.y - a.y;
+  let dist = Math.sqrt(nx * nx + ny * ny);
+  const rsum = (a.diameter + b.diameter) * 0.5;
+  if (dist > rsum) return false; // not touching → nothing to do
+  if (dist === 0) {
+    // Perfectly coincident centers — pick a deterministic +x normal.
+    nx = 1;
+    ny = 0;
+    dist = 0.0001;
+  }
+  // Unit normal from a → b.
+  const ux = nx / dist;
+  const uy = ny / dist;
+
+  // Velocity components along the normal.
+  const va = a.vx * ux + a.vy * uy;
+  const vb = b.vx * ux + b.vy * uy;
+  // Equal-mass elastic: swap the normal components. The exchange (vb - va)
+  // is applied to each circle's normal-projected velocity.
+  const exchange = vb - va;
+  a.vx += exchange * ux;
+  a.vy += exchange * uy;
+  b.vx -= exchange * ux;
+  b.vy -= exchange * uy;
+
+  // Positional de-overlap: push each circle half the penetration along the
+  // normal so they separate (no sticking / per-frame re-trigger).
+  const overlap = rsum - dist;
+  if (overlap > 0) {
+    const push = overlap * 0.5;
+    a.x -= ux * push;
+    a.y -= uy * push;
+    b.x += ux * push;
+    b.y += uy * push;
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +261,10 @@ export class CirclesSim {
   readonly circles: Circle[] = [];
 
   /** Live spawn params (the module pushes knob/CV changes here each frame). */
-  private params: CirclesSpawnParams = { d: 0.5, v: 0, spd: 0.5, rate: 0, decay: 0 };
+  private params: CirclesSpawnParams = { d: 0.5, v: 0, spd: 0.5, rate: 0, decay: 0, collide: false };
+
+  /** Total pair-collisions resolved (monotonic; for tests/telemetry). */
+  collisionCount = 0;
 
   /** Seeded PRNG — drives spawn position ONLY. Deterministic per seed. */
   private rng: () => number;
@@ -256,10 +342,17 @@ export class CirclesSim {
    *   2. Integrate every circle's position from its LATCHED velocity (never the
    *      live `spd`), bounce when its CENTER crosses a wall (reflect the
    *      matching velocity component, clamp center into the field). No
-   *      edge/radius collision math — the CENTER bounces, the visible disc may
-   *      briefly overhang the wall. Then age each circle + recompute its fade
-   *      alpha from its LATCHED decay.
-   *   3. Remove circles whose alpha has hit 0 (fully decayed). decay=0 circles
+   *      edge/radius collision math for the WALL — the CENTER bounces, the
+   *      visible disc may briefly overhang the wall. Then age each circle +
+   *      recompute its fade alpha from its LATCHED decay.
+   *   3. (LIVE COLLIDE mode only — gate HIGH) Resolve inter-circle collisions:
+   *      every pair whose DISCS overlap (EDGE detection, center distance ≤
+   *      r1+r2 — unlike the center-based wall bounce) does an equal-mass
+   *      ELASTIC bounce (swap the velocity components along the center-to-center
+   *      normal) and is separated so they don't stick. This is an O(n²)
+   *      pairwise pass, bounded by the 200-circle FIFO cap (~10k tests/frame).
+   *      Gate LOW / unpatched → skipped entirely (circles pass through).
+   *   4. Remove circles whose alpha has hit 0 (fully decayed). decay=0 circles
    *      never decay (they persist until the FIFO cap culls the oldest).
    *
    * Returns the number of circles spawned by the internal clock this step.
@@ -305,7 +398,22 @@ export class CirclesSim {
       c.alpha = alphaFor(c.ageS, c.decayS ?? 0);
     }
 
-    // 3. Remove fully-decayed circles (alpha hit 0). decayS===0 never decays.
+    // 3. LIVE inter-circle collisions (COLLIDE gate HIGH only). O(n²) over the
+    //    FIFO-capped list: each unordered pair whose DISCS overlap (EDGE test,
+    //    center distance ≤ r1+r2) does an equal-mass elastic bounce + is
+    //    separated. Skipped entirely when the gate is LOW/unpatched, so the
+    //    pass-through behaviour (and its zero cost) is the default.
+    if (this.params.collide) {
+      const cs = this.circles;
+      for (let i = 0; i < cs.length; i++) {
+        const a = cs[i]!;
+        for (let j = i + 1; j < cs.length; j++) {
+          if (resolveElasticPair(a, cs[j]!)) this.collisionCount++;
+        }
+      }
+    }
+
+    // 4. Remove fully-decayed circles (alpha hit 0). decayS===0 never decays.
     for (let i = this.circles.length - 1; i >= 0; i--) {
       if ((this.circles[i]!.alpha ?? 1) <= 0) {
         this.circles.splice(i, 1);

@@ -87,6 +87,23 @@ async function fireGate(page: Page, nodeId: string): Promise<void> {
   }, nodeId);
 }
 
+/** HOLD the COLLIDE gate at `level` (1 = HIGH = inter-circle collision ON, 0 =
+ *  LOW = pass-through). Unlike the spawn gate this is read as a LIVE LEVEL each
+ *  frame, so we set it and leave it. */
+async function setCollide(page: Page, nodeId: string, level: number): Promise<void> {
+  await page.evaluate(
+    ({ nodeId, level }) => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          getDomain?: (d: string) => { setParam?: (n: string, p: string, v: number) => void } | null;
+        } | null;
+      };
+      w.__engine?.()?.getDomain?.('video')?.setParam?.(nodeId, 'cv_collide', level);
+    },
+    { nodeId, level },
+  );
+}
+
 test.describe('CIRCLES — stateful particle video generator', () => {
   test('gate spawns circles; OVERLAP / CONTOUR / COMBINE all ring; MAPPED shows the video input where overlapped', async ({ page }) => {
     const errors = await setup(page);
@@ -178,5 +195,52 @@ test.describe('CIRCLES — stateful particle video generator', () => {
     expect(lit.ok, `OVERLAP non-black after gates (mean=${lit.last.toFixed(2)})`).toBe(true);
 
     expect(errors, 'no console / page errors').toEqual([]);
+  });
+
+  test('COLLIDE gate HIGH keeps the dense field rendering (live inter-circle bounce wires through)', async ({ page }) => {
+    const errors = await setup(page);
+
+    // A dense field of BIG circles (rate up + d=1 + moving) so circles overlap
+    // and the COLLIDE gate has pairs to bounce. We hold the gate HIGH and assert
+    // the field STILL renders (collisions don't break the chain / throw) — the
+    // renderer-tolerant proof that the live collide gate flows end-to-end. (The
+    // exact bounced layout is pinned deterministically in circles.test.ts; here
+    // we just prove the gated path is alive on SwiftShader without errors.)
+    await spawnPatch(
+      page,
+      [
+        { id: 'circ',  type: 'circles', position: { x: 200, y: 40 }, domain: 'video', params: { rate: 1, d: 1, spd: 0.35, decay: 0 } },
+        { id: 'o_ovr', type: 'videoOut', position: { x: 620, y: 40 }, domain: 'video' },
+      ],
+      [
+        { id: 'e_ovr', from: { nodeId: 'circ', portId: 'overlap' }, to: { nodeId: 'o_ovr', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
+      ],
+    );
+
+    await expect(page.locator('[data-testid="circles-card"]')).toHaveCount(1);
+
+    // Hold the COLLIDE gate HIGH (live level), then seed extra spawns so the
+    // field is dense and pairs collide.
+    await setCollide(page, 'circ', 1);
+    for (let i = 0; i < 8; i++) {
+      await fireGate(page, 'circ');
+      await page.waitForTimeout(70);
+    }
+
+    // The field renders non-black WITH collisions engaged.
+    const litHigh = await waitForLuma(page, 'o_ovr', (m) => m > 4);
+    expect(litHigh.ok, `OVERLAP renders with COLLIDE HIGH (mean=${litHigh.last.toFixed(2)})`).toBe(true);
+
+    // Drop the gate LOW (pass-through) — the field keeps rendering (the live
+    // toggle is non-destructive either way).
+    await setCollide(page, 'circ', 0);
+    for (let i = 0; i < 4; i++) {
+      await fireGate(page, 'circ');
+      await page.waitForTimeout(70);
+    }
+    const litLow = await waitForLuma(page, 'o_ovr', (m) => m > 4);
+    expect(litLow.ok, `OVERLAP still renders with COLLIDE LOW (mean=${litLow.last.toFixed(2)})`).toBe(true);
+
+    expect(errors, 'no console / page errors with COLLIDE gated').toEqual([]);
   });
 });

@@ -1528,6 +1528,17 @@ const BEHAVIORAL_PORT_PARAMS: Record<string, Record<string, number>> = {
   // test keeps the module-wide sustain=0.2; this per-port override touches release
   // alone.) Verified 3× stable with margin.
   'adsr.release': { sustain: 0.6 },
+  // circles.collide — the COLLIDE gate is a LIVE inter-circle ELASTIC-bounce
+  // mode: HIGH → circles knock each other around, LOW → they pass through. For
+  // the behavioral sweep to see a delta, collisions must actually HAPPEN in the
+  // settle window, which needs a DENSE field of BIG circles. Force rate=1 (the
+  // internal clock fills the field at 1/500ms), d=1 (270 px discs → guaranteed
+  // overlaps in the 1024 field), spd=0.35 (moving so pairs keep meeting) and
+  // decay=0 (persist, so the field accumulates). With the gate driver pulsing
+  // HIGH (240 BPM sequencer = 4 Hz), the COMBINE output's circle layout
+  // diverges from the pass-through control as soon as the first pair collides —
+  // a robust, deterministic (seeded RNG) video delta. Verified 3× stable.
+  'circles.collide': { rate: 1, d: 1, spd: 0.35, decay: 0 },
 };
 
 // ────────── Per-PORT / per-MODULE calibrated delta thresholds ──────────
