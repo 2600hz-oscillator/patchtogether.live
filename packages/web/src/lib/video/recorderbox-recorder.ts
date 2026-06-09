@@ -269,6 +269,11 @@ export interface RecorderboxRecorderOptions {
    *  inject an in-memory sink. */
   makeWriter?: (opfsPath: string) => OpfsWriter;
   onStateChange?: (state: RecorderState) => void;
+  /** Called if the AUDIO track fails to add / encode (e.g. an unsupported AAC
+   *  profile from a low-rate capture). The video recording still proceeds
+   *  (silent); the card can surface a "audio not recorded" note. Observability
+   *  for the historical silent-recording bug. */
+  onAudioError?: (err: Error) => void;
 }
 
 /** The OPFS scratch writer the StreamTarget pipes fragments into. The real
@@ -294,6 +299,9 @@ export class RecorderboxRecorder {
   private opfsPath = '';
   private writer: OpfsWriter | null = null;
   private frameCount = 0;
+  /** Set if the audio track failed to add/encode (e.g. an unsupported AAC
+   *  profile). The video keeps recording; this records WHY audio was dropped. */
+  private audioEncodeError: Error | null = null;
   /** Backpressure guard: skip a frame if the previous .add() hasn't resolved
    *  (Mediabunny's add() returns a promise we should await, but per-rAF we
    *  don't want to stall the loop — drop instead). */
@@ -385,10 +393,28 @@ export class RecorderboxRecorder {
           this.opts.audioTrack as MediaStreamAudioTrack,
           { codec: AUDIO_CODEC, bitrate: DEFAULT_AUDIO_BITRATE },
         );
+        // IMPORTANT: Mediabunny surfaces internal encode errors via
+        // `errorPromise`, NOT the constructor — and warns (in console) if you
+        // never access it. The historical "silent recording on a low-rate
+        // (Bluetooth/HFP 16 kHz) machine" bug came from Mediabunny selecting an
+        // HE-AAC profile (mp4a.40.29) the browser can't encode; the error fired
+        // here, asynchronously, and was previously dropped. The capture stream
+        // is now resampled to 48 kHz upstream (recorderbox.ts) so AAC-LC is
+        // chosen + this never fires, but we OBSERVE the promise so any future
+        // config mismatch is recorded (onAudioError) instead of going silent.
+        try {
+          const ep = (audioSource as unknown as { errorPromise?: Promise<unknown> }).errorPromise;
+          void ep?.catch((e) => {
+            this.audioEncodeError = e instanceof Error ? e : new Error(String(e));
+            this.opts.onAudioError?.(this.audioEncodeError);
+          });
+        } catch { /* older mediabunny without errorPromise — ignore */ }
         output.addAudioTrack(audioSource);
-      } catch {
+      } catch (e) {
         // Audio encode unavailable / track invalid — record video only rather
-        // than failing the whole recording.
+        // than failing the whole recording. Surface it so it isn't fully silent.
+        this.audioEncodeError = e instanceof Error ? e : new Error(String(e));
+        this.opts.onAudioError?.(this.audioEncodeError);
       }
     }
 
@@ -528,6 +554,12 @@ export class RecorderboxRecorder {
   /** Frames encoded so far (test/observability). */
   getFrameCount(): number {
     return this.frameCount;
+  }
+
+  /** The audio-track add/encode error, if the soundtrack was dropped (else
+   *  null). Lets the card / tests detect a silent-audio recording. */
+  getAudioEncodeError(): Error | null {
+    return this.audioEncodeError;
   }
 }
 
