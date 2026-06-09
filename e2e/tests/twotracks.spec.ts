@@ -1,6 +1,6 @@
 // e2e/tests/twotracks.spec.ts
 //
-// TWOTRACKS end-to-end coverage (Phase 1 + Phase 2 + Phase 3).
+// TWOTRACKS end-to-end coverage (Phase 1 + Phase 2 + Phase 3 + Phase 4).
 //
 // Phase 1 tests:
 //   1. Module spawns with no console errors — card renders with correct
