@@ -1,7 +1,7 @@
 // packages/web/src/lib/audio/modules/samsloop.ts
 //
-// SAMSLOOP — loop-based sample player. User uploads a small audio file
-// (≤250 KB) — anything the browser's AudioContext.decodeAudioData accepts:
+// SAMSLOOP — loop-based sample player. User uploads an audio file
+// (≤2 MB) — anything the browser's AudioContext.decodeAudioData accepts:
 // wav, mp3, m4a/aac, ogg, flac, opus, weba — OR records from the
 // microphone in-place. The source audio is decoded (uploads) or captured
 // (mic) into a Float32Array, mono-mixed if stereo, and posted into the
@@ -21,10 +21,24 @@
 // the worklet so varispeed (including reverse) doesn't need a separate
 // playback path.
 //
+// IDLE-BY-DEFAULT (no autoplay): after a sample loads SAMSLOOP sits SILENT
+// — it does NOT auto-play. A TRIGGER starts playback and is MODE-AWARE:
+//   - one-shot mode (mode=0): a trigger plays the sample through ONCE, then
+//     returns to idle/silent.
+//   - loop mode (mode=1): a trigger STARTS looping and keeps looping; a
+//     re-trigger restarts the loop from the window edge.
+// The trigger comes from BOTH the `trig` gate input (a rising edge) AND the
+// on-card TRIGGER button (a `{ type: 'trigger' }` port message — works
+// whether or not a cable is patched into `trig`). The `playing` state is
+// worklet-private and is NOT persisted: a loaded patch hydrates the sample
+// but stays idle until the user (or a patched gate) triggers it.
+//
 // I/O surface:
 //   inputs:
-//     trig      Gate. Rising edge retriggers the sample at the window edge
-//               (start for forward playback, end-1 for reverse).
+//     trig      Gate. A rising edge STARTS playback per the current mode
+//               (one-shot = play once; loop = start/restart the loop) from
+//               the window edge (start for forward playback, end-1 for
+//               reverse).
 //     rate_cv   CV → rate AudioParam. ±1 V CV maps to ±1 in rate units, so
 //               a ±1V LFO swings the rate by ±100% — combined with the
 //               slider this can run between −2 (full-left slider + −1 V CV)
@@ -65,12 +79,15 @@
 //                              // hydrate; new uploads write fileBytesB64
 //                              // instead.
 //
-// Hard limit: 250 KB on the raw upload file. Larger files are rejected.
-// (Compressed formats at 250 KB decode to roughly 5–60 s of audio at
-// typical bitrates, which is the intended scope for a sample looper.)
+// Hard limit: 2 MB on the raw upload file. Larger files are rejected.
+// (Compressed formats at 2 MB decode to roughly a minute of audio at
+// typical bitrates, which is the intended scope for a sample looper. The
+// decoded-buffer backstop SAMSLOOP_MAX_DECODED_SAMPLES still caps the
+// in-memory PCM regardless of how a small source file decodes.)
 //
 // Inputs:
-//   trig (gate): rising edge restarts loop playback from `start`.
+//   trig (gate): rising edge STARTS playback per the current mode (one-shot
+//                = play once; loop = start/restart the loop) from `start`.
 //   rate_cv (cv, linear, paramTarget=rate): displaces the playback rate.
 //
 // Outputs:
@@ -90,18 +107,23 @@ import tapWorkletUrl from '@patchtogether.live/dsp/dist/samsloop-tap.js?url';
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
-/** Hard size cap on the uploaded audio file. 250 KB — see card UI.
+/** Hard size cap on the uploaded audio file. 2 MB — see card UI.
  *  This is the RAW file-size gate (cheap reject before we touch the
  *  decoder). The decoded-buffer gate (SAMSLOOP_MAX_DECODED_SAMPLES)
  *  fires AFTER decode + downsample to catch the case where a small
  *  source file decodes to a large in-memory buffer (8-bit 16 kHz WAV
- *  upsampled to 48 kHz Float32 = 12× memory expansion). */
-export const SAMSLOOP_MAX_FILE_BYTES = 250 * 1024;
+ *  upsampled to 48 kHz Float32 = 12× memory expansion) — so even at the
+ *  raised 2 MB file cap the in-memory PCM stays bounded by the 1.5M-sample
+ *  decoded backstop. Collab cost: a 2 MB upload persists as ~2.7 MB of
+ *  base64 in node.data, synced through the single-process relay as one
+ *  opaque Yjs value (see lib/multiplayer/samsloop-limits.ts). */
+export const SAMSLOOP_MAX_FILE_BYTES = 2 * 1024 * 1024;
 
-/** Maximum recorded PCM length in samples. Matches the file-upload byte
- *  cap divided by sizeof(Float32). At 22050 Hz that's ~2.84 seconds; at
- *  44100 Hz ~1.42 seconds — short enough to feel like a loop, long enough
- *  to capture a phrase. The mic-record path enforces this hard cap by
+/** Maximum recorded PCM length in samples. Derived from the file-upload
+ *  byte cap divided by sizeof(Float32) so it scales with the cap, but the
+ *  mic-record path is independently bounded by the much tighter
+ *  SAMSLOOP_RECORD_BUDGET_BYTES (see samsloop-record.ts) — recordings stay
+ *  short regardless of this ceiling. The record machine enforces its cap by
  *  auto-stopping when it would be exceeded. */
 export const SAMSLOOP_MAX_SAMPLES = Math.floor(SAMSLOOP_MAX_FILE_BYTES / 4);
 
@@ -150,7 +172,7 @@ export interface SamsloopData {
   /** Base64-encoded ORIGINAL upload bytes (wav/mp3/m4a/ogg/flac/opus).
    *  The decoded Float32 buffer is never persisted — it's regenerated
    *  on hydrate inside the engine factory. Bounded by
-   *  SAMSLOOP_MAX_FILE_BYTES (250 KB raw, ~340 KB base64). */
+   *  SAMSLOOP_MAX_FILE_BYTES (2 MB raw, ~2.7 MB base64). */
   fileBytesB64?: string;
   /** Raw byte length pre-base64. Cached for cap checks + the card's
    *  "loaded N kB" status line. */
@@ -382,9 +404,9 @@ export async function loadSamsloopWav(
   if (file.size > SAMSLOOP_MAX_FILE_BYTES) {
     return {
       ok: false,
-      error: `File too large: ${(file.size / 1024).toFixed(1)} KB exceeds the ${
-        SAMSLOOP_MAX_FILE_BYTES / 1024
-      } KB limit.`,
+      error: `File too large: ${(file.size / (1024 * 1024)).toFixed(2)} MB exceeds the ${
+        SAMSLOOP_MAX_FILE_BYTES / (1024 * 1024)
+      } MB limit.`,
     };
   }
   const ab = await file.arrayBuffer();
@@ -626,8 +648,11 @@ export function samsloopRecFail(m: SamsloopRecMachine, error: string): SamsloopR
 
 /** Pure-math helpers — call site is unit tests + the card. Mirrors the
  *  worklet's playback logic (cursor with linear interpolation, wrap on
- *  loop, silence on one-shot exit). Keep in sync with the worklet at
- *  packages/dsp/src/samsloop.ts. */
+ *  loop, silence on one-shot exit). `render` models the always-playing
+ *  steady state (used by the spectral ART tests); `renderWithTriggers`
+ *  models the IDLE-BY-DEFAULT play-state machine (no autoplay until a trig
+ *  edge / manual TRIGGER, mode-aware stop). Keep both in sync with the
+ *  worklet at packages/dsp/src/samsloop.ts. */
 export const samsloopMath = {
   /** Convert the slider value to a playback rate. Slider center = 1.0
    *  forward; full left = −2 (reverse 2×); full right = +2 (forward 2×).
@@ -698,6 +723,78 @@ export const samsloopMath = {
       }
     }
     return { out, finalCursor: cursor, active };
+  },
+
+  /** Render `n` output samples modelling the worklet's IDLE-BY-DEFAULT
+   *  play-state machine — the mirror used to test the no-autoplay +
+   *  mode-aware-trigger behavior without a real AudioContext.
+   *
+   *  Starts IDLE (silent). At each sample index present in `trigSamples`
+   *  (a set of rising-edge indices — the trig gate AND the manual TRIGGER
+   *  button both surface as one of these) playback (re)starts: `playing`
+   *  flips true and the cursor resets to the window edge (start forward,
+   *  end-1 reverse). While !playing the output is silence. Mode-aware stop:
+   *  in one-shot, the cursor running off the window flips playing=false
+   *  (and the run goes silent again, exactly like the worklet); in loop it
+   *  wraps and stays playing.
+   *
+   *  Keep in sync with packages/dsp/src/samsloop.ts process(). */
+  renderWithTriggers(
+    buf: Float32Array,
+    n: number,
+    rate: number,
+    start: number,
+    end: number,
+    mode: 'loop' | 'one-shot',
+    trigSamples: Iterable<number>,
+  ): { out: Float32Array; finalCursor: number; playing: boolean } {
+    const out = new Float32Array(n);
+    if (buf.length === 0) return { out, finalCursor: 0, playing: false };
+    const trigs = new Set<number>(trigSamples);
+    const { start: s, end: e } = samsloopMath.clampWindow(start, end, buf.length);
+    let cursor = rate >= 0 ? s : e - 1;
+    let playing = false; // IDLE-BY-DEFAULT: no autoplay.
+    for (let i = 0; i < n; i++) {
+      // A trigger at this index STARTS / restarts playback from the window
+      // edge — checked before emission so the first sample of the burst
+      // lands in this same frame (mirrors the worklet's pre-emit edge test).
+      if (trigs.has(i)) {
+        cursor = rate >= 0 ? s : e - 1;
+        playing = true;
+      }
+      if (!playing) { out[i] = 0; continue; }
+      const ipos = Math.floor(cursor);
+      const f = cursor - ipos;
+      if (ipos >= 0 && ipos < buf.length - 1) {
+        const a = buf[ipos] ?? 0;
+        const b = buf[ipos + 1] ?? 0;
+        out[i] = a + (b - a) * f;
+      } else if (ipos === buf.length - 1) {
+        out[i] = buf[ipos] ?? 0;
+      } else {
+        out[i] = 0;
+      }
+      cursor += rate;
+      if (cursor >= e) {
+        if (mode === 'loop') {
+          const winLen = e - s;
+          cursor = s + ((cursor - s) % winLen);
+        } else {
+          cursor = e;
+          playing = false; // one-shot pass complete → idle/silent.
+        }
+      } else if (cursor < s) {
+        if (mode === 'loop') {
+          const winLen = e - s;
+          const overshoot = s - cursor;
+          cursor = e - (overshoot % winLen);
+        } else {
+          cursor = s;
+          playing = false;
+        }
+      }
+    }
+    return { out, finalCursor: cursor, playing };
   },
 };
 
@@ -918,6 +1015,18 @@ export const samsloopDef: AudioModuleDef = {
         if (key === 'sampleLength') {
           const live = livePatch.nodes[node.id];
           return (live?.data as SamsloopData | undefined)?.sampleLength ?? 0;
+        }
+        // Manual TRIGGER (the on-card button). Returns a function that posts
+        // a `{ type: 'trigger' }` message to the playback worklet — the same
+        // effect as a `trig` gate rising edge, so it STARTS playback per the
+        // current mode and works whether or not a cable is patched into the
+        // `trig` input. Idle-by-default means nothing plays until this (or a
+        // gate edge) fires; the play-state is worklet-private and never
+        // persisted, so a patch load stays silent.
+        if (key === 'manualTrigger') {
+          return () => {
+            try { workletNode.port.postMessage({ type: 'trigger' }); } catch { /* */ }
+          };
         }
         // Expose the tap's MessagePort + a helper to enable/disable it.
         // The card subscribes to the port's onmessage to receive captured

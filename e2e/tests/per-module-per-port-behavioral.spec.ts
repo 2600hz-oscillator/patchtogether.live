@@ -111,7 +111,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
 
   // ── File-input sources: output is silent until a file is uploaded.
   //    No upstream signal can perturb that.
-  samsloop:       'needs uploaded sample to emit; covered by samsloop.spec.ts',
+  samsloop:       'needs an uploaded sample AND a trigger to emit (idle-by-default, no autoplay); covered by samsloop.spec.ts',
   videobox:       'needs uploaded video file to emit; covered by videobox.test.ts + videobox-sync.test.ts',
   videovarispeed: 'needs uploaded video file to emit; covered by videovarispeed-output.spec.ts',
   picturebox:     'needs uploaded image file to emit; covered by picturebox-related specs',

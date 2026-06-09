@@ -2,8 +2,11 @@
 //
 // Unit tests for SAMSLOOP:
 //   - module-def shape (ports, params, registry)
-//   - WAV size rejection (>250 KB returns a clear error, no decode attempted)
+//   - WAV size rejection (>2 MB returns a clear error, no decode attempted)
 //   - loop vs one-shot semantics in samsloopMath.render
+//   - idle-by-default + mode-aware trigger semantics in
+//     samsloopMath.renderWithTriggers (no autoplay; one-shot plays once;
+//     loop keeps looping; re-trigger restarts; both gate + manual paths)
 //   - varispeed mapping (slider → playback rate) covering ±2 × forward / reverse
 //   - start/end clamp logic enforces start < end inside the buffer
 //
@@ -108,8 +111,16 @@ describe('loadSamsloopWav size limit', () => {
     const result = await loadSamsloopWav(oversized, ctx);
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/too large/i);
-    expect(result.error).toMatch(/250 KB/i);
+    // Cap is now 2 MB (raised from 250 KB) — message reports the MB limit.
+    expect(result.error).toMatch(/2 MB/i);
     expect(result.samples).toBeUndefined();
+  });
+
+  it('pins SAMSLOOP_MAX_FILE_BYTES at 2 MB (the raised cap)', () => {
+    // Load-bearing constant. The raise (250 KB → 2 MB) lets full short
+    // songs / field recordings load. The decoded-buffer backstop
+    // (SAMSLOOP_MAX_DECODED_SAMPLES) still bounds the in-memory PCM.
+    expect(SAMSLOOP_MAX_FILE_BYTES).toBe(2 * 1024 * 1024);
   });
 
   it('does NOT attempt to decode oversize files (early bail)', async () => {
@@ -741,6 +752,14 @@ function rampBuffer(n: number): Float32Array {
   return buf;
 }
 
+function sine440ish(n: number): Float32Array {
+  // A non-trivial oscillating buffer (RMS clearly > 0) for "is there audio?"
+  // assertions in the trigger tests. ~10 cycles across the window.
+  const buf = new Float32Array(n);
+  for (let i = 0; i < n; i++) buf[i] = Math.sin((2 * Math.PI * 10 * i) / n) * 0.8;
+  return buf;
+}
+
 describe('samsloopMath.render — loop mode', () => {
   it('forward playback inside the window produces non-zero samples', () => {
     const buf = rampBuffer(100);
@@ -866,6 +885,125 @@ describe('samsloopMath.render — empty buffer', () => {
     const { out, active } = samsloopMath.render(empty, 50, 1, 0, 100, 'loop');
     expect(active).toBe(false);
     for (let i = 0; i < out.length; i++) expect(out[i]).toBe(0);
+  });
+});
+
+// ---------- idle-by-default + mode-aware trigger ----------
+//
+// The play-state machine the worklet implements (packages/dsp/src/samsloop.ts):
+//   - starts IDLE (silent) — NO autoplay, even with a sample loaded
+//   - a trigger (trig gate rising edge OR manual TRIGGER button) starts
+//     playback from the window edge
+//   - one-shot: plays through ONCE, then returns to silence
+//   - loop: keeps looping; a re-trigger restarts from the window edge
+// samsloopMath.renderWithTriggers mirrors this exactly (`trigSamples` is the
+// set of rising-edge indices — the gate AND the button both surface there).
+
+function rmsOf(buf: Float32Array, from = 0, to = buf.length): number {
+  let s = 0;
+  let n = 0;
+  for (let i = from; i < to; i++) { s += (buf[i] ?? 0) ** 2; n++; }
+  return n > 0 ? Math.sqrt(s / n) : 0;
+}
+
+describe('samsloopMath.renderWithTriggers — idle by default (no autoplay)', () => {
+  it('emits PURE SILENCE until the first trigger, even with a sample loaded', () => {
+    const buf = rampBuffer(100);
+    // No triggers at all → idle the whole time → all silence.
+    const { out, playing } = samsloopMath.renderWithTriggers(
+      buf, 200, 1, 0, 100, 'loop', [],
+    );
+    expect(playing).toBe(false);
+    for (let i = 0; i < out.length; i++) expect(out[i]).toBe(0);
+  });
+
+  it('a loaded buffer does not sound on its own — loop mode stays silent without a trigger', () => {
+    const buf = sine440ish(500);
+    const { out } = samsloopMath.renderWithTriggers(buf, 500, 1, 0, 500, 'loop', []);
+    expect(rmsOf(out)).toBe(0);
+  });
+});
+
+describe('samsloopMath.renderWithTriggers — one-shot mode', () => {
+  it('a trigger plays the sample through ONCE then returns to silence', () => {
+    const buf = rampBuffer(100);
+    // Trigger at sample 0. Window length 100 at rate 1 → audible for ~100
+    // samples, then silent for the rest (one-shot pass complete).
+    const { out, playing } = samsloopMath.renderWithTriggers(
+      buf, 300, 1, 0, 100, 'one-shot', [0],
+    );
+    // Early region (during the single pass) carries the ramp.
+    expect(out[10]).toBeCloseTo(10 / 100, 5);
+    expect(out[50]).toBeCloseTo(50 / 100, 5);
+    // After one pass the machine is idle → silent.
+    expect(playing).toBe(false);
+    expect(out[150]).toBe(0);
+    expect(out[299]).toBe(0);
+    // Exactly one pass: the tail RMS must be zero.
+    expect(rmsOf(out, 120, 300)).toBe(0);
+  });
+
+  it('idle before the trigger: silence up to the trigger index', () => {
+    const buf = rampBuffer(100);
+    // Trigger delayed to sample 40 → silent for [0,40), then the pass.
+    const { out } = samsloopMath.renderWithTriggers(buf, 300, 1, 0, 100, 'one-shot', [40]);
+    for (let i = 0; i < 40; i++) expect(out[i]).toBe(0);
+    // First audible sample is at the trigger index (cursor reset to start).
+    expect(out[40]).toBeCloseTo(0 / 100, 5);
+    expect(out[50]).toBeCloseTo(10 / 100, 5);
+  });
+});
+
+describe('samsloopMath.renderWithTriggers — loop mode', () => {
+  it('a trigger starts CONTINUOUS playback that keeps producing audio across wraps', () => {
+    const buf = sine440ish(50);
+    const { out, playing } = samsloopMath.renderWithTriggers(
+      buf, 1000, 1, 0, 50, 'loop', [0],
+    );
+    expect(playing).toBe(true);
+    // Audio is present both early and late (it keeps looping, unlike one-shot).
+    const early = rmsOf(out, 0, 50);
+    const late = rmsOf(out, 900, 1000);
+    expect(early).toBeGreaterThan(0.01);
+    expect(late).toBeGreaterThan(early * 0.5);
+  });
+
+  it('re-trigger RESTARTS the loop from the window edge (cursor resets to start)', () => {
+    const buf = rampBuffer(100);
+    // Trigger at 0, then re-trigger at 250. After the re-trigger the cursor
+    // jumps back to start, so out[250] is buf[start] = 0 and out[260] = 10/100,
+    // regardless of where the loop had wandered to.
+    const { out } = samsloopMath.renderWithTriggers(
+      buf, 400, 1, 0, 100, 'loop', [0, 250],
+    );
+    expect(out[250]).toBeCloseTo(0 / 100, 5);
+    expect(out[260]).toBeCloseTo(10 / 100, 5);
+  });
+});
+
+describe('samsloopMath.renderWithTriggers — both trigger paths start playback', () => {
+  // The gate input AND the manual TRIGGER button both surface as a rising-
+  // edge index in trigSamples (the worklet treats them identically: trig
+  // edge in process() vs a {type:'trigger'} port message applied at the top
+  // of the next block). These two cases prove either source alone starts it.
+  it('GATE-path trigger (mid-stream rising edge) starts playback', () => {
+    const buf = rampBuffer(100);
+    const { out, playing } = samsloopMath.renderWithTriggers(
+      buf, 200, 1, 0, 100, 'one-shot', [30], // a gate edge at 30
+    );
+    for (let i = 0; i < 30; i++) expect(out[i]).toBe(0); // idle before
+    expect(out[30]).toBeCloseTo(0, 5);                   // starts at start
+    expect(playing).toBe(false);                          // one-shot finished
+  });
+
+  it('MANUAL-button trigger (modelled identically) starts playback the same way', () => {
+    const buf = rampBuffer(100);
+    // The button posts {type:'trigger'} → applied at a block boundary →
+    // here modelled as a rising-edge index (5). Same start-from-edge effect.
+    const { out } = samsloopMath.renderWithTriggers(buf, 200, 1, 0, 100, 'loop', [5]);
+    for (let i = 0; i < 5; i++) expect(out[i]).toBe(0);
+    expect(out[5]).toBeCloseTo(0 / 100, 5);
+    expect(out[15]).toBeCloseTo(10 / 100, 5);
   });
 });
 
