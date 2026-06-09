@@ -722,7 +722,7 @@ export const hydrogenDef: AudioModuleDef = {
       if (live.params) {
         for (const k of ['bpm', 'swing', 'gain'] as const) {
           const v = snap[k];
-          if (typeof v === 'number') live.params[k] = v;
+          if (typeof v === 'number') live.params[k] = v; // guard:allow-raw-write — sequencer slot-restore during the playback tick, not a user edit
         }
       }
       d.lastLoadedSlot = queued;

@@ -441,13 +441,13 @@ export const drumseqzDef: AudioModuleDef = {
       if (live.params) {
         for (const k of ['bpm', 'length', 'octave', 'gateLength', 'swing'] as const) {
           const v = snap[k];
-          if (typeof v === 'number') live.params[k] = v;
+          if (typeof v === 'number') live.params[k] = v; // guard:allow-raw-write — sequencer slot-restore during the playback tick, not a user edit
         }
         for (let t = 1; t <= TRACK_COUNT; t++) {
           for (const suffix of ['_euclid', '_root', '_octave'] as const) {
             const k = `trk${t}${suffix}`;
             const v = snap[k];
-            if (typeof v === 'number') live.params[k] = v;
+            if (typeof v === 'number') live.params[k] = v; // guard:allow-raw-write — sequencer slot-restore during the playback tick, not a user edit
           }
         }
       }

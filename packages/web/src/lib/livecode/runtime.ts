@@ -437,7 +437,7 @@ class Runtime {
       throw new Error(`set: value must be a finite number (got ${value})`);
     }
     this.mutations.push({ kind: 'setParam', nodeId: node.id, paramId, value });
-    node.params[paramId] = value;
+    node.params[paramId] = value; // guard:allow-raw-write — mutates the livecode WORKING-COPY clone (this.workingNodes), not the live Y.Doc; the live write is the queued mutation applied later
     this.log.push({ message: `set ${readName(node)}.${paramId} = ${value}` });
   }
 

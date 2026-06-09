@@ -105,7 +105,7 @@ export const fourplexerDef: AudioModuleDef = {
       const key = `sel${m.out + 1}`;
       const target = livePatch.nodes[node.id];
       if (target && target.params[key] !== m.idx) {
-        target.params[key] = fourplexerClampSelector(m.idx);
+        target.params[key] = fourplexerClampSelector(m.idx); // guard:allow-raw-write — worklet posts back the gate-advanced selector index every advance during playback, not a user edit
       }
     };
 
