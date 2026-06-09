@@ -19,6 +19,16 @@
   // can't reuse it for two axes. pos_x + pos_y are DISTINCT paramIds so their
   // midi-learn localStorage keys never clobber each other. The pad stays a
   // <div> (not a Knob/Fader) so midi-learn-wiring-audit exempts it.
+  //
+  // Per-axis SURFACE / ELECTRA: the same menu also exposes pos_x / pos_y as
+  // assignable controls — "Send X/Y to <Control Surface>" and a "Send X/Y to
+  // <Electra> ▸ Row ▸ knob" cascade — wired through the SAME registration the
+  // standard ControlContextMenu uses (addBindingToSurface / assignSlotToElectra),
+  // with a friendly "QUAD X" / "QUAD Y" preset name. The surface/Electra resolve
+  // min/max/curve from the def's pos_x/pos_y descriptors and write back to
+  // node.params.pos_x/pos_y — the same param the existing live-CV poll already
+  // reads to move the dot, so driving the surface/Electra control moves the
+  // joystick exactly like MIDI/CV does.
 
   import { onMount, onDestroy } from 'svelte';
   import { useStore, type NodeProps } from '@xyflow/svelte';
@@ -48,6 +58,22 @@
     learnSpecRune,
     bindingsRune,
   } from '$lib/midi/midi-learn.svelte';
+  import {
+    listControlSurfaces,
+    readSurfaceData,
+    hasBinding as surfaceHasBinding,
+    addBindingToSurface,
+    removeBindingFromSurface,
+    setBindingName,
+  } from '$lib/graph/control-surface';
+  import {
+    listElectraControls,
+    readElectraData,
+    slotForBinding,
+    assignSlotToElectra,
+    clearSlot,
+    setSlotName,
+  } from '$lib/graph/electra-control';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -175,17 +201,61 @@
   let menuX = $state(0);
   let menuY = $state(0);
 
+  // Per-axis assignable-control metadata. pos_x / pos_y are DISTINCT paramIds,
+  // each [-1, 1], with a sensible display name on the Control Surface / Electra
+  // preset ("QUAD X" / "QUAD Y") — the surface/Electra resolve min/max/curve
+  // from the QUADRALOGICAL def's pos_x/pos_y param descriptors automatically
+  // (they exist in quadralogicalDef.params), so the only thing we set here is
+  // the friendly custom name.
+  const AXIS_NAME: Record<'pos_x' | 'pos_y', string> = { pos_x: 'QUAD X', pos_y: 'QUAD Y' };
+
+  // Snapshots of available Control Surfaces / Electra Controls + whether each
+  // axis is already bound on them. Recomputed each time the pad menu opens
+  // (surfaces rarely change mid-menu; mirrors Knob.svelte's refreshSurfaces/
+  // refreshElectras). `bound`/`assignedSlot` are PER AXIS, so the X column and
+  // the Y column can differ.
+  interface SurfaceRow { id: string; name: string; xBound: boolean; yBound: boolean; }
+  interface ElectraRow { id: string; name: string; xSlot: number | null; ySlot: number | null; }
+  let ctxSurfaces = $state<SurfaceRow[]>([]);
+  let ctxElectras = $state<ElectraRow[]>([]);
+
+  function refreshTargets(): void {
+    ctxSurfaces = listControlSurfaces(patch.nodes).map((s) => {
+      const d = readSurfaceData(patch.nodes[s.id]);
+      return {
+        id: s.id,
+        name: s.name,
+        xBound: surfaceHasBinding(d, id, 'pos_x'),
+        yBound: surfaceHasBinding(d, id, 'pos_y'),
+      };
+    });
+    ctxElectras = listElectraControls(patch.nodes).map((e) => {
+      const d = readElectraData(patch.nodes[e.id]);
+      return {
+        id: e.id,
+        name: e.name,
+        xSlot: slotForBinding(d, id, 'pos_x'),
+        ySlot: slotForBinding(d, id, 'pos_y'),
+      };
+    });
+  }
+
   function openMenu(ev: MouseEvent): void {
     // The dot has pointer-events:none, so a dot right-click lands here on the
     // pad. preventDefault + stopPropagation so SvelteFlow's node menu doesn't
     // also open.
     ev.preventDefault();
     ev.stopPropagation();
+    refreshTargets();
     menuX = ev.clientX;
     menuY = ev.clientY;
     menuOpen = true;
   }
-  function closeMenu(): void { menuOpen = false; }
+  function closeMenu(): void {
+    menuOpen = false;
+    electraCascade = null;
+    electraCascadeRow = null;
+  }
   function assignAxis(axis: 'pos_x' | 'pos_y'): void {
     beginLearn({ moduleId: id, paramId: axis, min: -1, max: 1, onchange: set(axis) });
     closeMenu();
@@ -193,6 +263,46 @@
   function forgetAxis(axis: 'pos_x' | 'pos_y'): void {
     clearBinding(id, axis);
     closeMenu();
+  }
+
+  // ── Control Surface send / remove (per axis) ──
+  // Sends pos_x / pos_y as assignable controls through the SAME registration the
+  // standard ControlContextMenu uses (addBindingToSurface), then stamps the
+  // friendly name so the surface + Electra preset read "QUAD X" / "QUAD Y".
+  function sendAxisToSurface(axis: 'pos_x' | 'pos_y', surfaceId: string): void {
+    addBindingToSurface(surfaceId, id, axis);
+    setBindingName(surfaceId, id, axis, AXIS_NAME[axis]);
+    closeMenu();
+  }
+  function removeAxisFromSurface(axis: 'pos_x' | 'pos_y', surfaceId: string): void {
+    removeBindingFromSurface(surfaceId, id, axis);
+    closeMenu();
+  }
+
+  // ── Electra Control send / remove (per axis, fixed Row × knob slot) ──
+  // electraCascade = which (axis, electraId) "Send to …" is expanded;
+  // electraCascadeRow = which Row column is open inside it. slot = (row-1)*6 + (knob-1).
+  let electraCascade = $state<{ axis: 'pos_x' | 'pos_y'; electraId: string } | null>(null);
+  let electraCascadeRow = $state<number | null>(null);
+  const ELECTRA_ROWS = [1, 2, 3, 4, 5, 6] as const;
+  const ELECTRA_KNOBS = [1, 2, 3, 4, 5, 6] as const;
+  function electraSlot(row: number, knob: number): number { return (row - 1) * 6 + (knob - 1); }
+  function openElectraCascade(axis: 'pos_x' | 'pos_y', electraId: string): void {
+    electraCascade = { axis, electraId };
+    electraCascadeRow = null;
+  }
+  function assignAxisToElectra(axis: 'pos_x' | 'pos_y', electraId: string, row: number, knob: number): void {
+    const slot = electraSlot(row, knob);
+    assignSlotToElectra(electraId, slot, id, axis);
+    setSlotName(electraId, slot, AXIS_NAME[axis]);
+    closeMenu();
+  }
+  function removeAxisFromElectra(axis: 'pos_x' | 'pos_y', electraId: string, slot: number): void {
+    clearSlot(electraId, slot);
+    closeMenu();
+  }
+  function isElectraCascade(axis: 'pos_x' | 'pos_y', electraId: string): boolean {
+    return electraCascade?.axis === axis && electraCascade?.electraId === electraId;
   }
 
   // Portal the menu to <body> so position:fixed resolves against the viewport,
@@ -475,6 +585,103 @@
       {#if bindY}
         <button class="ctx-item subtle" role="menuitem" data-testid="quadralogical-forget-y" onclick={() => forgetAxis('pos_y')}>Forget Y (CH {bindY.channel + 1} · CC {bindY.cc})</button>
       {/if}
+
+      <!-- ── Control Surface: send each axis as an assignable control. Mirrors
+           ControlContextMenu's surface section, but per-axis (X + Y). ── -->
+      {#if ctxSurfaces.length > 0}
+        <div class="ctx-divider" role="separator"></div>
+        {#each ctxSurfaces as s (s.id)}
+          <button
+            class="ctx-item"
+            class:subtle={s.xBound}
+            role="menuitem"
+            data-testid={`quadralogical-surface-x-${s.id}`}
+            data-bound={s.xBound ? 'true' : 'false'}
+            onclick={() => (s.xBound ? removeAxisFromSurface('pos_x', s.id) : sendAxisToSurface('pos_x', s.id))}
+          >{s.xBound ? `Remove X from ${s.name}` : `Send X to ${s.name}`}</button>
+          <button
+            class="ctx-item"
+            class:subtle={s.yBound}
+            role="menuitem"
+            data-testid={`quadralogical-surface-y-${s.id}`}
+            data-bound={s.yBound ? 'true' : 'false'}
+            onclick={() => (s.yBound ? removeAxisFromSurface('pos_y', s.id) : sendAxisToSurface('pos_y', s.id))}
+          >{s.yBound ? `Remove Y from ${s.name}` : `Send Y to ${s.name}`}</button>
+        {/each}
+      {/if}
+
+      <!-- ── Electra Control: each axis → fixed (Row, knob) slot, 3-level
+           Send ▸ Row ▸ knob cascade (mirrors ControlContextMenu's electra
+           section). ── -->
+      {#if ctxElectras.length > 0}
+        <div class="ctx-divider" role="separator"></div>
+        {#each ctxElectras as e (e.id)}
+          {#each (['pos_x', 'pos_y'] as const) as axis (axis)}
+            {@const slot = axis === 'pos_x' ? e.xSlot : e.ySlot}
+            {@const axisLetter = axis === 'pos_x' ? 'X' : 'Y'}
+            <div class="cascade-row">
+              <div class="cascade-col">
+                <button
+                  class="ctx-item cascade-trigger"
+                  class:active={isElectraCascade(axis, e.id)}
+                  type="button"
+                  role="menuitem"
+                  aria-haspopup="menu"
+                  aria-expanded={isElectraCascade(axis, e.id)}
+                  data-testid={`quadralogical-electra-${axisLetter.toLowerCase()}-${e.id}`}
+                  onmouseenter={() => openElectraCascade(axis, e.id)}
+                  onfocus={() => openElectraCascade(axis, e.id)}
+                  onclick={() => openElectraCascade(axis, e.id)}
+                >Send {axisLetter} to {e.name} <span class="chev" aria-hidden="true">▸</span></button>
+                {#if slot !== null}
+                  <button
+                    class="ctx-item subtle"
+                    type="button"
+                    role="menuitem"
+                    data-testid={`quadralogical-electra-${axisLetter.toLowerCase()}-${e.id}-clear`}
+                    onclick={() => removeAxisFromElectra(axis, e.id, slot)}
+                  >Remove {axisLetter} from {e.name}</button>
+                {/if}
+              </div>
+              {#if isElectraCascade(axis, e.id)}
+                <ul class="submenu submenu-rows" role="menu" aria-label="Rows" data-testid={`quadralogical-electra-${axisLetter.toLowerCase()}-${e.id}-rows`}>
+                  {#each ELECTRA_ROWS as row (row)}
+                    <li>
+                      <button
+                        type="button"
+                        class="ctx-item cascade-trigger"
+                        class:active={electraCascadeRow === row}
+                        role="menuitem"
+                        aria-haspopup="menu"
+                        aria-expanded={electraCascadeRow === row}
+                        data-testid={`quadralogical-electra-${axisLetter.toLowerCase()}-${e.id}-row-${row}`}
+                        onmouseenter={() => { electraCascadeRow = row; }}
+                        onfocus={() => { electraCascadeRow = row; }}
+                        onclick={() => { electraCascadeRow = row; }}
+                      >Row{row} <span class="chev" aria-hidden="true">▸</span></button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+              {#if isElectraCascade(axis, e.id) && electraCascadeRow !== null}
+                <ul class="submenu submenu-knobs" role="menu" aria-label="Knobs" data-testid={`quadralogical-electra-${axisLetter.toLowerCase()}-${e.id}-row-${electraCascadeRow}-knobs`}>
+                  {#each ELECTRA_KNOBS as knob (knob)}
+                    <li>
+                      <button
+                        type="button"
+                        class="ctx-item"
+                        role="menuitem"
+                        data-testid={`quadralogical-electra-${axisLetter.toLowerCase()}-${e.id}-row-${electraCascadeRow}-knob-${knob}`}
+                        onclick={() => assignAxisToElectra(axis, e.id, electraCascadeRow!, knob)}
+                      >{knob}</button>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          {/each}
+        {/each}
+      {/if}
     </div>
   </div>
 {/if}
@@ -666,7 +873,10 @@
     border: 1px solid #404652;
     border-radius: 6px;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
-    overflow: hidden;
+    /* visible (not hidden) so the Electra Row/knob cascade columns — flex-row
+       siblings inside the menu — aren't clipped when they extend past the main
+       column (same rationale as ControlContextMenu). */
+    overflow: visible;
     font-size: 0.85rem;
     padding: 4px 0;
   }
@@ -677,6 +887,11 @@
     color: var(--text-dim);
     padding: 6px 12px 4px;
     pointer-events: none;
+  }
+  .ctx-divider {
+    height: 1px;
+    margin: 4px 0;
+    background: #353b46;
   }
   .ctx-item {
     display: block;
@@ -691,8 +906,39 @@
     cursor: pointer;
   }
   .ctx-item.subtle { color: var(--text-dim); font-size: 0.78rem; }
-  .ctx-item:hover, .ctx-item:focus-visible {
+  .ctx-item:hover, .ctx-item:focus-visible, .ctx-item.active {
     background: rgba(96, 165, 250, 0.1);
     outline: none;
   }
+  /* Electra "Send … ▸ Row ▸ knob" 3-level cascade (cribbed from
+     ControlContextMenu). The three columns lay out as flex-row siblings so the
+     parent grows horizontally to fit them (no absolute positioning → no clip). */
+  .cascade-row {
+    display: flex;
+    align-items: stretch;
+  }
+  .cascade-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 200px;
+  }
+  .cascade-trigger {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+  }
+  .chev { color: var(--text-dim); }
+  .submenu {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+    border-left: 1px solid #2a2f3a;
+    max-height: 60vh;
+    overflow-y: auto;
+    background: var(--module-bg);
+  }
+  .submenu-rows { min-width: 96px; }
+  .submenu-knobs { min-width: 64px; }
+  .submenu .ctx-item { white-space: nowrap; }
 </style>

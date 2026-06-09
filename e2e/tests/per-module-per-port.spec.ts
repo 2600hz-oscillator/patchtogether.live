@@ -604,6 +604,39 @@ function filterErrors(errors: string[]): string[] {
   );
 }
 
+// ────────── Heavy-WebGL module predicate ──────────
+//
+// "Heavy WebGL" = the module mounts the VideoEngine's GL pipeline, which is
+// the thing that's brutally slow on CI's SwiftShader software renderer and
+// drives the recurring per-port shard flake class (mandleblot/mandelbulb
+// timeouts, wavesculpt "peak=0, polls=1" — the heavy 3D mount eats the
+// wall-clock budget so the emit poll is cancelled mid-sample).
+//
+// A module touches the video pipeline if it has ANY video output OR ANY
+// video / mono-video INPUT port — NOT just if `domain === 'video'`. This
+// distinction is load-bearing: WAVESCULPT is registered `domain: 'audio'`
+// (its primary L/R taps are audio) yet mounts a full 3D cube GL viewport via
+// its wall1..wall6 video inputs + video_out output, so a `domain === 'video'`
+// gate would miss it (and any future audio-domain module with a viewport).
+// Keying on the actual video PORTS catches every current + future heavy-GL
+// card generically — no per-module allow-list to keep in sync.
+function touchesVideo(mod: RegistryModule): boolean {
+  return (
+    mod.hasVideoOutput ||
+    mod.outputs.some((p) => p.type === 'video' || p.type === 'mono-video') ||
+    mod.inputs.some((p) => p.type === 'video' || p.type === 'mono-video')
+  );
+}
+
+// Heavy floor for any video-touching module's per-port test. The default
+// 30s (or output/input-scaled) budget leaves cold-SwiftShader GL mounts
+// short — lift to a uniform 90s heavy tier (matches the old foxy/doom
+// special-case), still scaling UP for many-port modules so the per-iteration
+// budget never shrinks below the generic scaling.
+function heavyVideoTimeout(perPortScaled: number): number {
+  return Math.max(90_000, perPortScaled);
+}
+
 // ────────── Heavy-WebGL render suppression ──────────
 //
 // The handle-presence + inputs-accept sweeps assert at the graph/DOM level
@@ -674,8 +707,10 @@ test.describe('per-module per-port: handle presence', () => {
       // it just skips the (SwiftShader-bound) per-frame draw passes that
       // otherwise dominate the wall-time of heavy WebGL cards. See
       // VideoEngine.step()'s __videoEngineFreezeRender branch. No-op for
-      // non-video modules (only the video engine reads the flag).
-      if (mod.domain === 'video') await freezeVideoRender(page);
+      // non-video modules (only the video engine reads the flag). Keyed on
+      // touchesVideo (any video port), NOT domain — so audio-domain modules
+      // with a GL viewport (WAVESCULPT) also skip the per-frame draw.
+      if (touchesVideo(mod)) await freezeVideoRender(page);
 
       await page.goto('/');
       await page.waitForLoadState('networkidle');
@@ -851,20 +886,18 @@ test.describe('per-module per-port: outputs emit signal', () => {
     }
 
     test(title, async ({ page }) => {
-      // DOOM's first-frame WASM load is ~6-12s; only relevant if a DOOM
-      // output is NOT exempt (today all are, so this branch is defensive).
-      if (mod.type === 'doom') test.setTimeout(90_000);
-      // FOXY mounts a heavy chain (3 SwoleBlocks + 3 RasterPainters +
-      // WAVECEL worklet + 4-page card render). On cold CI Linux this
-      // routinely takes >30s for the waitForLoadState alone.
-      // atlantisCatalyst has a similar heavy-mount profile.
-      if (mod.type === 'foxy' || mod.type === 'atlantisCatalyst') test.setTimeout(90_000);
+      // Build the per-test budget in a single `scaled` accumulator, then set it
+      // ONCE at the end (Playwright's test.setTimeout is last-call-wins, so a
+      // single authoritative call avoids an earlier call being silently
+      // clobbered by a later default).
+      let scaled = 30_000;
+
       // Per-output iteration costs ~3-4 s (goto + spawn + wait + read).
       // Modules with many outputs (GAMEPAD has 18, TIMELORDE has 13,
       // DRUMSEQZ has 9) need a scaled timeout. The default 30 s only
       // covers ~8 outputs. Scale to 5s per output + 30s baseline.
       if (mod.outputs.length > 8) {
-        test.setTimeout(Math.max(30_000, mod.outputs.length * 5_000 + 30_000));
+        scaled = Math.max(scaled, mod.outputs.length * 5_000 + 30_000);
       }
 
       // Per-iteration budget: each non-exempt output drives a FULL fresh
@@ -883,21 +916,42 @@ test.describe('per-module per-port: outputs emit signal', () => {
         (p) => !EXEMPT_OUTPUT_EMIT[`${mod.type}.${p.id}`],
       ).length;
       if (nonExemptOutputs >= 2) {
-        test.setTimeout(Math.max(30_000, nonExemptOutputs * 20_000 + 10_000));
+        scaled = Math.max(scaled, nonExemptOutputs * 20_000 + 10_000);
       }
-      // MANDLEBLOT / MANDELBULB are heavy fractal / raymarched WebGL video
-      // modules whose per-pixel GPU first-paint is far slower on CI's
-      // SwiftShader software renderer than on a real GPU (the
-      // ci-swiftshader-video-e2e-timeouts class). The output-scaled budget
-      // above leaves them short: mandleblot's 2 non-exempt outputs get only
-      // 50s (2*20s+10s) and mandelbulb's single non-exempt output
-      // (audio_out is emit-exempt) gets just the 30s default — neither
-      // covers a cold SwiftShader fractal mount + per-output sink readout,
-      // so the mandleblot emit test timed out at 50s on shard-7 (#709's run
-      // 27176012257). Lift both to the same 90s heavy tier as foxy. This
-      // runs LAST so it wins over the output-scaled `setTimeout` above
-      // (Playwright's test.setTimeout is last-call-wins).
-      if (mod.type === 'mandleblot' || mod.type === 'mandelbulb') test.setTimeout(90_000);
+
+      // GENERIC heavy-WebGL floor (replaces the old per-module allow-list of
+      // foxy / mandleblot / mandelbulb — all now caught by touchesVideo). ANY
+      // module that mounts the VideoEngine GL pipeline (touchesVideo: a video
+      // port on either side, NOT just domain==='video') gets the 90s heavy
+      // tier — its per-pixel first-paint on CI's SwiftShader software renderer
+      // is far slower than a real GPU (ci-swiftshader-video-e2e-timeouts), so
+      // the output-scaled budget above falls short and the test times out
+      // mid-poll (the recurring shard flake: mandleblot 50s timeout #709,
+      // WAVESCULPT "peak=0, polls=1" — the emit poll cancelled before the
+      // signal ramped). Keying on the video PORT, not the domain field,
+      // catches WAVESCULPT (domain:'audio' + a 3D cube viewport) and every
+      // future heavy-GL card with zero per-module maintenance.
+      //
+      // NOTE: we do NOT freezeVideoRender here — unlike the handle-presence /
+      // inputs-accept sweeps (DOM-only asserts), the EMIT test reads real
+      // pixels from the VIDEOOUT canvas for video-typed outputs, so the GL
+      // draw must keep running. The extra wall-clock budget is the whole fix
+      // for the timeout class; the per-port emit poll has its own widened
+      // settle/poll window below for the slow-ramp ("peak=0") symptom.
+      if (touchesVideo(mod)) {
+        scaled = heavyVideoTimeout(scaled);
+      }
+      // DOOM's first-frame WASM load is ~6-12s; it IS touchesVideo (so it's
+      // already at the 90s heavy tier above), but keep an explicit floor as a
+      // belt-and-suspenders guard in case its def ever loses its video output.
+      // (Today all DOOM outputs are emit-exempt, so this whole test is skipped.)
+      if (mod.type === 'doom') scaled = Math.max(scaled, 90_000);
+      // atlantisCatalyst is a NON-video heavy mount (it spins up an internal
+      // scene engine + worklet chain), so touchesVideo doesn't catch it; keep
+      // its explicit 90s floor (was in the old per-module heavy list).
+      if (mod.type === 'atlantisCatalyst') scaled = Math.max(scaled, 90_000);
+
+      test.setTimeout(scaled);
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -1092,7 +1146,17 @@ test.describe('per-module per-port: outputs emit signal', () => {
           // ms period). Budget 1.2 s of poll window for gate ports; the
           // 800 ms `waitMs` baseline isn't enough on the 1x port.
           const isGate = port.type === 'gate';
-          const totalMs = isGate ? Math.max(waitMs, 1200) : waitMs;
+          let totalMs = isGate ? Math.max(waitMs, 1200) : waitMs;
+          // Heavy-WebGL modules (touchesVideo): on CI's SwiftShader the GL
+          // mount + audio-graph warm-up is slower, so a continuous audio/CV
+          // tap (e.g. WAVESCULPT.L) can still be ramping when the default
+          // window's first polls sample it ("peak=0, polls=1"). Give the poll
+          // budget a ≥3s floor so a heavy module's signal is actually observed
+          // after it ramps. The assertion stays MEANINGFUL — a genuinely
+          // silent output still polls the whole budget and fails at 0 — and
+          // the early-out keeps the happy path fast (it bails the instant the
+          // tap crosses the floor, usually within the first poll or two).
+          if (touchesVideo(mod)) totalMs = Math.max(totalMs, 3_000);
           const polls = Math.max(1, Math.ceil(totalMs / pollMs));
           let maxPeak = 0;
           let lastRms = 0;
@@ -1232,9 +1296,12 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
       // headroom on top of the base scaling covers CI contention with ~2×
       // margin. (Pixel-asserting coverage of these inputs lives in the
       // bespoke video specs + the behavioral lane, which keep rendering.)
-      if (mod.domain === 'video') {
+      // Keyed on touchesVideo (any video port), NOT domain — so audio-domain
+      // GL cards (WAVESCULPT: wall1..6 video ins + video_out) also freeze the
+      // render + get the heavy budget instead of timing out wiring inputs.
+      if (touchesVideo(mod)) {
         await freezeVideoRender(page);
-        test.setTimeout(Math.max(45_000, mod.inputs.length * 2_000 + 30_000));
+        test.setTimeout(heavyVideoTimeout(Math.max(45_000, mod.inputs.length * 2_000 + 30_000)));
       }
 
       const errors: string[] = [];
