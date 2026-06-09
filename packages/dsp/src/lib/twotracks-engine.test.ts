@@ -15,6 +15,7 @@ import {
   recordSpan,
   advanceCursor,
   playheadNorm,
+  transportButton,
   type TapeState,
 } from './twotracks-engine';
 
@@ -197,6 +198,40 @@ describe('full record→stop→play simulation (synthetic sine)', () => {
     const { state, bufLen } = simulateRecord({ input, rate: 1, tapeLen: TWOTRACKS_TAPE_LEN });
     expect(state).toBe('play');          // stopped on its own
     expect(bufLen).toBe(TWOTRACKS_TAPE_LEN);
+  });
+});
+
+describe('transportButton (tape-deck REC/PLAY/STOP)', () => {
+  it('REC when stopped ARMS (nothing records yet)', () => {
+    expect(transportButton('rec', 'idle', false)).toEqual({ state: 'armed', seekToStart: false });
+  });
+  it('PLAY when armed rolls + records from the top (overwrite)', () => {
+    expect(transportButton('play', 'armed', false)).toEqual({ state: 'rec', seekToStart: true });
+  });
+  it('PLAY when armed + overdub flag records as overdub from the top', () => {
+    expect(transportButton('play', 'armed', true)).toEqual({ state: 'overdub', seekToStart: true });
+  });
+  it('PLAY when stopped plays the tape from the top', () => {
+    expect(transportButton('play', 'idle', false)).toEqual({ state: 'play', seekToStart: true });
+  });
+  it('REC while playing PUNCHES IN at the current playhead (no rewind)', () => {
+    expect(transportButton('rec', 'play', false)).toEqual({ state: 'rec', seekToStart: false });
+    expect(transportButton('rec', 'play', true)).toEqual({ state: 'overdub', seekToStart: false });
+  });
+  it('REC while recording PUNCHES OUT back to play (keeps rolling)', () => {
+    expect(transportButton('rec', 'rec', false)).toEqual({ state: 'play', seekToStart: false });
+    expect(transportButton('rec', 'overdub', false)).toEqual({ state: 'play', seekToStart: false });
+  });
+  it('REC while armed disarms', () => {
+    expect(transportButton('rec', 'armed', false)).toEqual({ state: 'idle', seekToStart: false });
+  });
+  it('STOP always idles', () => {
+    for (const s of ['idle', 'armed', 'play', 'rec', 'overdub'] as TapeState[]) {
+      expect(transportButton('stop', s, false)).toEqual({ state: 'idle', seekToStart: false });
+    }
+  });
+  it('PLAY while already recording is a no-op (keeps rolling, no rewind)', () => {
+    expect(transportButton('play', 'rec', false)).toEqual({ state: 'rec', seekToStart: false });
   });
 });
 

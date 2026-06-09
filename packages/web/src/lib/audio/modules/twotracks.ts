@@ -172,6 +172,7 @@ export const twotracksDef: AudioModuleDef = {
     // ---- Global ----
     { id: 'ab',             label: 'A/B',       defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
     { id: 'lofi',           label: 'Lofi',      defaultValue: 0,     min: 0,   max: 3,     curve: 'discrete' },
+    { id: 'monitor',        label: 'Monitor',   defaultValue: 0,     min: 0,   max: 1,     curve: 'discrete' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -279,8 +280,11 @@ export const twotracksDef: AudioModuleDef = {
     };
 
     // Poll node.params for changes (overdub flags + all continuous params)
-    let lastOverdubFlagA = -1;
-    let lastOverdubFlagB = -1;
+    // Seed from the node's initial flags (NOT -1) — otherwise the first poll
+    // sees a change (0 ≠ -1) and fires a spurious overdub_toggle pulse on spawn,
+    // flipping the reel into overdub before the user touches anything.
+    let lastOverdubFlagA = (node.params ?? {})['overdub_flag_a'] ?? 0;
+    let lastOverdubFlagB = (node.params ?? {})['overdub_flag_b'] ?? 0;
     let alive = true;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -321,6 +325,9 @@ export const twotracksDef: AudioModuleDef = {
 
         // Global Lofi
         params.get('lofi')?.setValueAtTime(p.lofi ?? 0, ctx.currentTime);
+
+        // Global Monitor (input passthrough)
+        params.get('monitor')?.setValueAtTime(p.monitor ?? 0, ctx.currentTime);
 
         // Overdub toggle pulses (rising-edge driven)
         const ovFlagA = p.overdub_flag_a ?? 0;
@@ -442,6 +449,7 @@ function cardParamToWorkletParam(cardId: string): string | null {
     // Global
     ab:              'ab',
     lofi:            'lofi',
+    monitor:         'monitor',
     // Transient scrub-velocity params (not in def.params, not persisted)
     scrubVelocity_a: 'scrubVelocity_a',
     scrubVelocity_b: 'scrubVelocity_b',

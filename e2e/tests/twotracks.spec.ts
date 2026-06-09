@@ -712,5 +712,36 @@ test.describe('TWOTRACKS module', () => {
       });
       expect(rate).toBe(1);
     });
+
+    test('MONITOR button toggles input-passthrough state', async ({ page }) => {
+      await setupPage(page);
+
+      await spawnPatch(page, [
+        { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
+      ]);
+      await waitForCard(page);
+
+      const card = page.locator('[data-testid="twotracks-card"]');
+      const monitor = card.locator('[data-testid="twotracks-monitor"]');
+
+      // Off by default.
+      await expect(monitor).toBeVisible();
+      await expect(monitor).toHaveAttribute('aria-pressed', 'false');
+
+      // Click → monitor engages (param + pressed state).
+      await monitor.evaluate((el: HTMLElement) => el.click());
+      await expect(monitor).toHaveAttribute('aria-pressed', 'true');
+      const on = await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        };
+        return w.__patch.nodes['tt']?.params['monitor'];
+      });
+      expect(on).toBe(1);
+
+      // Click again → off.
+      await monitor.evaluate((el: HTMLElement) => el.click());
+      await expect(monitor).toHaveAttribute('aria-pressed', 'false');
+    });
   });
 });

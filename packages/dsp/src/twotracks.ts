@@ -78,6 +78,7 @@ import {
   recordSpan,
   advanceCursor,
   playheadNorm,
+  transportButton,
 } from './lib/twotracks-engine';
 
 // ---------------------------------------------------------------------------
@@ -396,6 +397,8 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       // ==================== GLOBAL ====================
       /** A/B crossfade: 0=A only, 0.5=both unity, 1=B only */
       { name: 'ab',               defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
+      /** Monitor: 1 = pass live input through to output (input monitoring). */
+      { name: 'monitor',          defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
       // Lofi tape degradation (applied to combined output)
       { name: 'lofi',             defaultValue: 0,      minValue: 0,  maxValue: 3,     automationRate: 'k-rate' as const },
       { name: 'lofiSeed',         defaultValue: 12345,  minValue: 0,  maxValue: 4294967295, automationRate: 'k-rate' as const },
@@ -430,18 +433,13 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     } else if (msg.type === 'seek') {
       reel.pendingSeek = Math.max(0, Math.min(1, msg.pos));
     } else if (msg.type === 'transport') {
-      // Manual REC / PLAY / STOP from the card buttons. Mirrors the gate-driven
-      // transitions but is triggered directly by the UI.
-      if (msg.action === 'rec') {
-        reel.state = reel.overdubFlag ? 'overdub' : 'rec';
-        reel.pendingDecay = true;
-        reel.pendingSeek = 0; // start recording from the window start
-      } else if (msg.action === 'play') {
-        reel.state = 'play';
-        reel.pendingSeek = 0; // (re)start playback from the window start
-      } else if (msg.action === 'stop') {
-        reel.state = 'idle';
-      }
+      // Tape-deck REC / PLAY / STOP from the card buttons — pure state machine
+      // (lib/twotracks-engine.ts, unit-tested). REC arms / punches; PLAY rolls
+      // (records if armed, else plays); STOP idles.
+      const r = transportButton(msg.action, reel.state, reel.overdubFlag);
+      reel.state = r.state;
+      if (r.seekToStart) reel.pendingSeek = 0;
+      if (r.state === 'overdub') reel.pendingDecay = true;
     } else if (msg.type === 'dump-tape') {
       const len = Math.min(reel.bufLen, TWOTRACKS_MAX_SAMPLES);
       if (len > 0) {
@@ -556,6 +554,11 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     // ECHOES (1..5) → per-overdub-pass decay factor.
     const decayFactor = echoesToDecay(echoesParam);
 
+    // MONITOR (global): when on, the live input is passed through to the output
+    // (input monitoring), regardless of transport — so you hear what you're
+    // about to record. Off = pure tape-deck (you hear the tape head only).
+    const monitorOn = Math.round(kv('monitor', 0)) === 1;
+
     // Apply pending seek
     if (reel.pendingSeek !== null) {
       reel.cursor = windowStart + reel.pendingSeek * windowLen;
@@ -613,17 +616,9 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       }
       reel.lastOverdubToggle = overdubTogVal;
 
-      // ---- ARMED: wait for cursor to cross windowStart ----
-      if (reel.state === 'armed') {
-        const rate0 = av(pRate, i, 1);
-        if (modeVal === 0 || Math.abs(reel.cursor - windowStart) < Math.abs(rate0) + 1) {
-          reel.state = reel.overdubFlag ? 'overdub' : 'rec';
-          reel.pendingDecay = true;
-          if (modeVal === 0) {
-            reel.cursor = windowStart;
-          }
-        }
-      }
+      // ARMED is a frozen pre-roll state: the tape holds still until PLAY (or a
+      // rec_start gate) engages recording. No auto-transition here — that would
+      // start recording the instant you ARM on an empty tape.
 
       // ---- Decay application ----
       if (reel.pendingDecay && (reel.state === 'rec' || reel.state === 'overdub')) {
@@ -636,6 +631,10 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       // ---- Transport speed for this sample (tape varispeed: same speed for
       //      record + playback head) ----
       const rate = av(pRate, i, 1);
+
+      // ---- Live input for this sample (used by record + monitor passthrough) ----
+      const srcL = inL ? (inL[i] ?? 0) : 0;
+      const srcR = inR ? (inR[i] ?? 0) : srcL;
 
       // ---- Ring buffer read (linear interp) ----
       let sL = readInterp(reel.bufL, reel.cursor);
@@ -656,8 +655,6 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       // sample, so |rate|>1 records "stretched" and |rate|<1 records
       // "compressed" — true tape varispeed. See lib/twotracks-engine.ts.
       if (reel.state === 'rec' || reel.state === 'overdub') {
-        const srcL = inL ? (inL[i] ?? 0) : 0;
-        const srcR = inR ? (inR[i] ?? 0) : srcL;
         reel.bufLen = recordSpan(
           reel.bufL, reel.bufR,
           reel.cursor, reel.cursor + rate,
@@ -696,16 +693,19 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
         }
       }
 
-      // ---- Output: accumulate scaled into the shared output buffers ----
-      const isActive = reel.state !== 'idle';
-      outL[i] += gain * (isActive ? sL : 0);
-      outR[i] += gain * (isActive ? sR : 0);
+      // ---- Output: tape head (when rolling) + live input (when monitoring) ----
+      // Rolling = play/rec/overdub. ARMED + IDLE are silent on the tape side
+      // (frozen pre-roll / stopped), but monitor passthrough still sounds so you
+      // can audition the input before/while arming.
+      const rolling = reel.state === 'play' || reel.state === 'rec' || reel.state === 'overdub';
+      outL[i] += gain * ((rolling ? sL : 0) + (monitorOn ? srcL : 0));
+      outR[i] += gain * ((rolling ? sR : 0) + (monitorOn ? srcR : 0));
 
-      // ---- Advance cursor + resolve boundary (ONLY while transport is active).
-      // A fully idle reel holds its playhead still (no free-running sweep on a
-      // stopped module). Mechanics live in the pure engine (advanceCursor):
-      // fresh-record stops at the tape end → play; loop wraps; one-shot ends.
-      if (reel.state !== 'idle') {
+      // ---- Advance cursor + resolve boundary (ONLY while rolling).
+      // IDLE and ARMED hold the playhead still (no free-running sweep; ARMED is a
+      // frozen pre-roll waiting for PLAY). Mechanics live in the pure engine
+      // (advanceCursor): fresh-record stops at the tape end → play; loop wraps.
+      if (rolling) {
         const adv = advanceCursor(reel.cursor, rate, reel.state, modeVal, windowStart, windowEnd);
         reel.cursor = adv.cursor;
         reel.state = adv.state;

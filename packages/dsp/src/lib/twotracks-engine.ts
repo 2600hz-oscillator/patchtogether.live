@@ -162,6 +162,48 @@ export function advanceCursor(
   return { cursor: c, state: s, decayPass };
 }
 
+export interface TransportResult {
+  /** New transport state. */
+  state: TapeState;
+  /** Whether the cursor should rewind to the window start (fresh record / play
+   *  from the top). False = act at the current playhead (punch-in / punch-out). */
+  seekToStart: boolean;
+}
+
+/**
+ * Tape-deck transport-button state machine (REC / PLAY / STOP):
+ *
+ *  - REC when stopped → ARM (nothing records until PLAY).
+ *  - PLAY when armed → roll + record from the top (overwrite, or overdub if the
+ *    overdub flag is set).
+ *  - PLAY when stopped/idle → play the tape from the top.
+ *  - REC while playing → PUNCH IN at the current playhead (overwrite/overdub),
+ *    no rewind.
+ *  - REC while recording → PUNCH OUT back to play (keep rolling).
+ *  - REC while armed → disarm.
+ *  - STOP → idle.
+ */
+export function transportButton(
+  action: 'rec' | 'play' | 'stop',
+  state: TapeState,
+  overdubFlag: boolean,
+): TransportResult {
+  const recState: TapeState = overdubFlag ? 'overdub' : 'rec';
+  if (action === 'stop') return { state: 'idle', seekToStart: false };
+
+  if (action === 'rec') {
+    if (state === 'play') return { state: recState, seekToStart: false };   // punch in
+    if (state === 'rec' || state === 'overdub') return { state: 'play', seekToStart: false }; // punch out
+    if (state === 'armed') return { state: 'idle', seekToStart: false };     // disarm
+    return { state: 'armed', seekToStart: false };                           // idle → arm
+  }
+
+  // action === 'play'
+  if (state === 'armed') return { state: recState, seekToStart: true };      // engage armed record from top
+  if (state === 'rec' || state === 'overdub') return { state, seekToStart: false }; // already rolling
+  return { state: 'play', seekToStart: true };                              // (re)start playback from top
+}
+
 /** Reported playhead position 0..1 = cursor within the WHOLE tape (the card
  *  draws the full blank tape and fills the recorded region into it). */
 export function playheadNorm(cursor: number, tapeLen: number = TWOTRACKS_TAPE_LEN): number {

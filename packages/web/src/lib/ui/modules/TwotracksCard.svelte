@@ -54,6 +54,9 @@
   let lofiParam = $derived(node?.params.lofi ?? 0);
   const LOFI_LABELS = ['OFF', 'LOW', 'HIGH', 'ERROR'] as const;
 
+  // ─── Global Monitor (input passthrough) ───
+  let monitorOn = $derived(Math.round(node?.params.monitor ?? 0) === 1);
+
   // ─── Worklet data ───
   let transportStateA = $derived.by(() => {
     const d = node?.data as TwoTracksData | undefined;
@@ -378,11 +381,11 @@
 
         <!-- Transport trigger buttons -->
         <div class="transport-row">
-          <button type="button" class="transport-btn rec nodrag" class:active={ledRecA}
-            onclick={() => sendTransport('a', ledRecA ? 'stop' : 'rec')}
+          <button type="button" class="transport-btn rec nodrag" class:active={ledArmA || ledRecA}
+            onclick={() => sendTransport('a', 'rec')}
             data-testid="twotracks-rec" aria-label="Record reel A">● REC</button>
           <button type="button" class="transport-btn play nodrag" class:active={ledPlayA}
-            onclick={() => sendTransport('a', transportStateA === 'play' ? 'stop' : 'play')}
+            onclick={() => sendTransport('a', 'play')}
             data-testid="twotracks-play" aria-label="Play reel A">▶ PLAY</button>
           <button type="button" class="transport-btn stop nodrag"
             onclick={() => sendTransport('a', 'stop')}
@@ -470,6 +473,12 @@
           </div>
         </div>
 
+        <!-- Monitor (input passthrough) -->
+        <button type="button" class="monitor-btn nodrag" class:active={monitorOn}
+          onclick={() => setNodeParam(id, 'monitor', monitorOn ? 0 : 1)}
+          data-testid="twotracks-monitor" aria-label="Toggle input monitoring"
+          aria-pressed={monitorOn}>MONITOR</button>
+
         <!-- Lofi strip -->
         <div class="lofi-strip" data-testid="twotracks-lofi">
           <span class="strip-label">LOFI</span>
@@ -521,11 +530,11 @@
 
         <!-- Transport trigger buttons reel B -->
         <div class="transport-row">
-          <button type="button" class="transport-btn rec nodrag" class:active={ledRecB}
-            onclick={() => sendTransport('b', ledRecB ? 'stop' : 'rec')}
+          <button type="button" class="transport-btn rec nodrag" class:active={ledArmB || ledRecB}
+            onclick={() => sendTransport('b', 'rec')}
             data-testid="twotracks-rec-b" aria-label="Record reel B">● REC</button>
           <button type="button" class="transport-btn play nodrag" class:active={ledPlayB}
-            onclick={() => sendTransport('b', transportStateB === 'play' ? 'stop' : 'play')}
+            onclick={() => sendTransport('b', 'play')}
             data-testid="twotracks-play-b" aria-label="Play reel B">▶ PLAY</button>
           <button type="button" class="transport-btn stop nodrag"
             onclick={() => sendTransport('b', 'stop')}
@@ -860,6 +869,27 @@
     color: rgba(200, 180, 255, 0.7);
     font-family: ui-monospace, monospace;
     letter-spacing: 0.06em;
+  }
+
+  /* ─── Monitor button ─── */
+  .twotracks-card .monitor-btn {
+    background: #111520;
+    color: var(--text-dim, #8b94a5);
+    border: 1px solid #2a3045;
+    border-radius: 3px;
+    padding: 4px 8px;
+    font-size: 0.52rem;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    font-family: ui-monospace, monospace;
+    text-align: center;
+  }
+  .twotracks-card .monitor-btn:hover { border-color: #5a6275; }
+  .twotracks-card .monitor-btn.active {
+    color: rgb(120, 220, 160);
+    border-color: rgb(80, 200, 130);
+    background: #112218;
+    box-shadow: 0 0 5px rgba(80, 200, 130, 0.35);
   }
 
   /* ─── Lofi strip ─── */
