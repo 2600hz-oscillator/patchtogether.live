@@ -24,6 +24,19 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 import { runFor } from './_module-coverage-helpers';
 
+// xyflow keeps the node wrapper visibility:hidden until ResizeObserver fires.
+// On CI's production preview bundle TwotracksCard (580px wide, complex layout
+// with dual-reel structure + RAF waveform polling) can take longer than
+// Playwright's default 5s — wait explicitly before making visibility assertions.
+const CARD_VISIBLE_MS = 15_000;
+
+async function waitForCard(page: Page) {
+  await page.locator('[data-testid="twotracks-card"]').waitFor({
+    state: 'visible',
+    timeout: CARD_VISIBLE_MS,
+  });
+}
+
 async function setupPage(page: Page) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -44,6 +57,7 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
+    await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
     await expect(card).toBeVisible();
@@ -90,6 +104,7 @@ test.describe('TWOTRACKS module', () => {
       { id: 'e1', from: { nodeId: 'vco', portId: 'saw' }, to: { nodeId: 'tt', portId: 'audio_l_in_a' } },
       { id: 'e2', from: { nodeId: 'tt', portId: 'out_l' }, to: { nodeId: 'scope', portId: 'ch1' } },
     ]);
+    await waitForCard(page);
 
     await runFor(page, 600);
 
@@ -125,6 +140,7 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
+    await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
     const modeBtn = card.locator('[data-testid="twotracks-mode-toggle"]');
@@ -145,6 +161,7 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
+    await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
     const overdubBtn = card.locator('[data-testid="twotracks-overdub-toggle"]');
@@ -165,6 +182,7 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
+    await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
     const decaySlider = card.locator('[data-testid="twotracks-decay"]');
@@ -189,6 +207,7 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
+    await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
 
@@ -233,6 +252,7 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
+    await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
     const abStrip = card.locator('[data-testid="twotracks-ab-knob"]');
@@ -258,6 +278,7 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
+    await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
     const abStrip = card.locator('[data-testid="twotracks-ab-knob"]');
@@ -292,6 +313,7 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
+    await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
     const modeBtn = card.locator('[data-testid="twotracks-mode-toggle-b"]');
@@ -312,6 +334,7 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
+    await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
     const overdubBtnA = card.locator('[data-testid="twotracks-overdub-toggle"]');
@@ -340,6 +363,7 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
+    await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
 
@@ -363,6 +387,7 @@ test.describe('TWOTRACKS module', () => {
     await spawnPatch(page, [
       { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
     ]);
+    await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
 
@@ -398,6 +423,7 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
+      await waitForCard(page);
 
       const card = page.locator('[data-testid="twotracks-card"]');
       const lofiStrip = card.locator('[data-testid="twotracks-lofi"]');
@@ -428,6 +454,7 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
+      await waitForCard(page);
 
       const card = page.locator('[data-testid="twotracks-card"]');
       const lofiStrip = card.locator('[data-testid="twotracks-lofi"]');
@@ -463,6 +490,7 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
+      await waitForCard(page);
 
       const card = page.locator('[data-testid="twotracks-card"]');
       const lofiStrip = card.locator('[data-testid="twotracks-lofi"]');
@@ -491,6 +519,7 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
+      await waitForCard(page);
 
       const card = page.locator('[data-testid="twotracks-card"]');
 
@@ -509,6 +538,7 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
+      await waitForCard(page);
 
       const card = page.locator('[data-testid="twotracks-card"]');
 
@@ -531,6 +561,7 @@ test.describe('TWOTRACKS module', () => {
       await spawnPatch(page, [
         { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
       ]);
+      await waitForCard(page);
 
       const card = page.locator('[data-testid="twotracks-card"]');
       const saveA = card.locator('[data-testid="twotracks-save"]');

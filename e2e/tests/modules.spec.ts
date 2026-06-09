@@ -69,7 +69,10 @@ const SKIP_RENDER: Record<string, string> = {
 // DEEP render behaviour is covered by dedicated heavy-lane specs
 // (b3ntb0x.spec.ts; mandleblot.spec.ts — both routed to the serialized
 // e2e-video lane via WEBGL_HEAVY_GLOBS in playwright.config.ts).
-const HEAVY_RENDER = new Set(['b3ntb0x', 'mandleblot']);
+// Also includes 'twotracks': xyflow keeps the node wrapper visibility:hidden
+// until ResizeObserver fires; on CI's production preview bundle TwotracksCard
+// (580px wide, complex layout) can take longer than the default 5s.
+const HEAVY_RENDER = new Set(['b3ntb0x', 'mandleblot', 'twotracks']);
 const HEAVY_MOUNT_TIMEOUT = 30_000;
 const HEAVY_TEST_TIMEOUT = 90_000;
 
@@ -141,7 +144,9 @@ for (const mod of REGISTRY) {
 
     const cardClass = `svelte-flow__node-${mod.type}`;
     const card = page.locator(`.${cardClass}`);
-    await expect(card, `${mod.type} card visible`).toBeVisible();
+    await expect(card, `${mod.type} card visible`).toBeVisible(
+      isHeavy ? { timeout: HEAVY_MOUNT_TIMEOUT } : undefined,
+    );
     // Title-text assertion: nearly every card now hosts the editable
     // name button (see ModuleNameLabel.svelte). The default auto-assigned
     // name for the first instance is the BARE uppercased type prefix
