@@ -89,17 +89,21 @@ export async function runFor(page: Page, ms: number): Promise<void> {
  * flakes. Max-holding across the whole drive window makes "does this
  * voice ever make sound?" robust for percussive/decaying/gated sources
  * without weakening the assertion (a truly silent module never crosses
- * the floor). Returns running max peak/rms + the snapshot count.
+ * the floor). Returns running max peak/rms + the max single-window
+ * nonzero-sample count (the most-structured window seen, so an "is this a
+ * sustained signal not a one-off glitch?" check stays meaningful under
+ * max-hold) + the snapshot count.
  */
 export async function readScopePeakOverWindow(
   page: Page,
   scopeNodeId: string,
   windowMs: number,
   pollMs = 60,
-): Promise<{ peak: number; rms: number; polls: number }> {
+): Promise<{ peak: number; rms: number; nonzeroSamples: number; polls: number }> {
   const deadline = Date.now() + windowMs;
   let peak = 0;
   let rms = 0;
+  let nonzeroSamples = 0;
   let polls = 0;
   while (Date.now() < deadline) {
     const snap = await readScopeSnapshot(page, scopeNodeId);
@@ -107,11 +111,12 @@ export async function readScopePeakOverWindow(
       const s = summarize(snap.ch1);
       if (s.peak > peak) peak = s.peak;
       if (s.rms > rms) rms = s.rms;
+      if (s.nonzeroSamples > nonzeroSamples) nonzeroSamples = s.nonzeroSamples;
       polls++;
     }
     await page.waitForTimeout(pollMs);
   }
-  return { peak, rms, polls };
+  return { peak, rms, nonzeroSamples, polls };
 }
 
 /**
