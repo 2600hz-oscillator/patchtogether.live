@@ -44,6 +44,8 @@ import {
   type EnvelopeFollower,
 } from './toybox-cv-math';
 import { VIDEO_RES } from './video-res';
+import { RenderWorkerBridge, isWorkerFlagOn } from './worker/worker-bridge';
+import { WorkerProxyHandle } from './worker/worker-proxy-handle';
 
 /** The 4:3 default render resolution (1024×768, "768p"). Re-exported from
  *  video-res.ts (the single aspect→res source of truth) so every importer that
@@ -516,6 +518,16 @@ export class VideoEngine implements DomainEngine {
    *  createFboImpl can attribute managed FBOs to the right node. */
   private currentFactoryNodeId: string | null = null;
 
+  /**
+   * Fix E (offscreen-canvas render worker) — the main-thread side of the render
+   * worker. Lazily constructed the first time a `renderLocus:'worker'` node is
+   * added WHILE the flag is on. null when the flag is off or no worker-locus
+   * node has been added (the common case — the worker is never spawned, and the
+   * engine renders everything in this thread exactly as before). Disposed in
+   * dispose(). See worker/worker-bridge.ts.
+   */
+  private workerBridge: RenderWorkerBridge | null = null;
+
   constructor(opts: { canvas?: OffscreenCanvas | HTMLCanvasElement; res?: { width: number; height: number } } = {}) {
     // Assign _res BEFORE any `this.res.*` read below (the OffscreenCanvas
     // sizing). Degenerate (0-dim) res falls back to the 4:3 VIDEO_RES so a
@@ -568,20 +580,65 @@ export class VideoEngine implements DomainEngine {
         `VideoEngine.addNode: ${String(node.type)} has domain '${def.domain}', not 'video'`,
       );
     }
-    // Mark which node's factory is running so createFboImpl attributes its
-    // managed FBOs to it (for setResolution to resize later). Cleared in a
-    // finally so a throwing factory never strands the attribution.
-    this.currentFactoryNodeId = node.id;
+    const vdef = def as VideoModuleDef;
     let handle: VideoNodeHandle;
-    try {
-      handle = (def as VideoModuleDef).factory(this.context(node.id), node);
-    } finally {
-      this.currentFactoryNodeId = null;
+    // Fix E — if this module is opted into the render worker AND the flag is on
+    // AND the worker is usable, install a WorkerProxyHandle: the node renders in
+    // the worker and finished frames copy back into a main-GL texture. Otherwise
+    // the normal main-thread factory path below runs (byte-identical to today).
+    const bridge = this.maybeWorkerBridge(vdef);
+    if (bridge) {
+      handle = new WorkerProxyHandle({
+        gl: this.gl,
+        bridge,
+        node,
+        factory: vdef.factory,
+        // The fallback factory needs a context attributed to this node so its
+        // managed FBOs resize on an aspect switch, exactly like the main path.
+        context: () => this.context(node.id),
+      });
+    } else {
+      // Mark which node's factory is running so createFboImpl attributes its
+      // managed FBOs to it (for setResolution to resize later). Cleared in a
+      // finally so a throwing factory never strands the attribution.
+      this.currentFactoryNodeId = node.id;
+      try {
+        handle = vdef.factory(this.context(node.id), node);
+      } finally {
+        this.currentFactoryNodeId = null;
+      }
     }
     this.nodes.set(node.id, handle);
     this.nodeMeta.set(node.id, node);
     this.topoStale = true;
     this.ensureLoop();
+  }
+
+  /**
+   * Fix E — return the render-worker bridge to use for a module, or null to
+   * render it on the main thread. Null when: the flag is off, the module isn't
+   * `renderLocus:'worker'`, or the worker isn't supported in this runtime. The
+   * bridge is constructed lazily (only the first worker-locus add spawns it),
+   * so a rack with no worker modules never pays for a worker. Even when a bridge
+   * is returned, the WorkerProxyHandle renders on the main thread until the
+   * worker confirms a live WebGL2 context (bridge.ready()), so a worker that
+   * fails to init degrades to the main path with no blank frames.
+   */
+  private maybeWorkerBridge(def: VideoModuleDef): RenderWorkerBridge | null {
+    if (def.renderLocus !== 'worker') return null;
+    if (!isWorkerFlagOn()) return null;
+    if (!this.workerBridge) {
+      const b = new RenderWorkerBridge({
+        res: { width: this._res.width, height: this._res.height },
+      });
+      if (!b.supported) {
+        // Unsupported runtime — never use the worker for this engine instance.
+        b.dispose();
+        return null;
+      }
+      this.workerBridge = b;
+    }
+    return this.workerBridge.supported ? this.workerBridge : null;
   }
 
   removeNode(nodeId: string): void {
@@ -761,6 +818,9 @@ export class VideoEngine implements DomainEngine {
     gl.bindTexture(gl.TEXTURE_2D, null);
 
     // 5. Let each module reallocate its own special buffers at the new res.
+    //    A WorkerProxyHandle's resize forwards the new res to the worker AND
+    //    re-specs its main-GL copy-back texture (see worker-proxy-handle.ts), so
+    //    the off-thread render tracks the aspect switch with no extra plumbing.
     for (const handle of this.nodes.values()) {
       try { handle.surface.resize?.(w, h); } catch (e) {
         console.warn('[VideoEngine] module resize failed during setResolution:', e);
@@ -791,6 +851,14 @@ export class VideoEngine implements DomainEngine {
     this.edges.clear();
     this.managedFbos.clear();
     this.topoOrder = [];
+
+    // Fix E — tear down the render worker (if one was spawned). Each proxy
+    // handle already told the worker to removeNode in its dispose() above; this
+    // terminates the worker + closes any pending bitmaps.
+    if (this.workerBridge) {
+      try { this.workerBridge.dispose(); } catch { /* */ }
+      this.workerBridge = null;
+    }
 
     const gl = this.gl;
     if (this.fullscreenVao) gl.deleteVertexArray(this.fullscreenVao);

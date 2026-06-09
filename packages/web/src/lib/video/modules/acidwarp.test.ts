@@ -22,6 +22,14 @@ describe('acidwarpDef shape', () => {
     expect(acidwarpDef.outputs[0]!.type).toBe('video');
   });
 
+  it('is opted into the Fix E render worker (renderLocus: worker)', () => {
+    // acidwarp is the Phase-1 vehicle for the off-main-thread render worker.
+    // The flag is OFF by default, so this only changes behavior when
+    // VITE_VIDEO_WORKER / __videoWorkerEnabled is set; the def field is what
+    // the engine consults to pick the WorkerProxyHandle path.
+    expect(acidwarpDef.renderLocus).toBe('worker');
+  });
+
   it('declares speed + scene CV inputs', () => {
     const ids = acidwarpDef.inputs.map((p) => p.id).sort();
     expect(ids).toEqual(['scene_cv', 'speed_cv']);

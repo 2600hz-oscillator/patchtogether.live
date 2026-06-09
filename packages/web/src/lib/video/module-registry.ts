@@ -65,6 +65,23 @@ export interface VideoModuleDef {
   /** Card-component basename override (no '.svelte'). Only needed when the
    *  `PascalCase(type)+'Card'` convention doesn't match the filename. */
   card?: string;
+  /**
+   * Fix E (offscreen-canvas render worker) — where this module's GL compute
+   * runs. Defaults to `'main'` (the existing in-thread VideoEngine path, used
+   * by every module). A module marked `'worker'` is a candidate to render in
+   * the off-main-thread render worker as a *texture co-processor*: when the
+   * `VITE_VIDEO_WORKER` flag is on AND the runtime supports worker WebGL2, the
+   * VideoEngine installs a {@link WorkerProxyHandle} for it instead of running
+   * the factory in the main GL context — the worker renders the node into its
+   * own FBO and copies finished frames back as transferred ImageBitmaps into a
+   * main-GL texture, so downstream + previews sample it exactly like a normal
+   * node. With the flag OFF (the prod default) OR worker-unsupported, the
+   * module renders on the main engine exactly as today — byte-identical.
+   *
+   * ONLY pure-GL, DOM-free factories are eligible (the worker has no DOM and
+   * no AudioContext). See `.myrobots/plans/fixe-offscreen-canvas-plan-*.md`.
+   */
+  renderLocus?: 'main' | 'worker';
 }
 
 const registry = new Map<ModuleType, VideoModuleDef>();
