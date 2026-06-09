@@ -16,6 +16,7 @@
   import { Handle, Position } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { shapegenDef, SHAPEGEN_CLOCK_PORT_ID } from '$lib/video/modules/shapegen';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -34,7 +35,7 @@
     return typeof v === 'number' ? v : defaultFor(k);
   }
   const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[k] = v;
+    setNodeParam(id, k, v);
   };
 
   // ----- Preview canvas: blit the engine's OffscreenCanvas scene -----

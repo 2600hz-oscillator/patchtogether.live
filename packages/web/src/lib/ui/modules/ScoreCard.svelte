@@ -6,6 +6,7 @@
   import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import {
     handleSlotClick,
@@ -115,7 +116,7 @@
   });
 
   const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[k] = v;
+    setNodeParam(id, k, v);
   };
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;

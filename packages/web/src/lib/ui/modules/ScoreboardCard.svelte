@@ -16,7 +16,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import { scoreboardDef } from '$lib/video/modules/scoreboard';
   import { drawScoreboard } from '$lib/video/modules/scoreboard-draw';
@@ -35,7 +35,7 @@
     return typeof v === 'number' ? v : defaultFor(k);
   }
   const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[k] = v;
+    setNodeParam(id, k, v);
   };
 
   // -------- Live preview canvas (200×80) --------

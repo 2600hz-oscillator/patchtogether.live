@@ -8,7 +8,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import {
     tides2Def,
     TIDES2_RAMP_MODE_NAMES,
@@ -30,7 +30,7 @@
     return typeof v === 'number' ? v : defaultFor(pid);
   };
   const set = (pid: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[pid] = v;
+    setNodeParam(id, pid, v);
   };
   const live = (pid: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
@@ -39,7 +39,7 @@
 
   function cycle(pid: string, count: number): void {
     const cur = Math.max(0, Math.min(count - 1, Math.round(paramVal(pid))));
-    const t = patch.nodes[id]; if (t) t.params[pid] = (cur + 1) % count;
+    setNodeParam(id, pid, (cur + 1) % count);
   }
 
   let rampModeLabel = $derived(

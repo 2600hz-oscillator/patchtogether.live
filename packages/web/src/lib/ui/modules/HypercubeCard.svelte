@@ -24,6 +24,7 @@
   import ModuleTitle from './ModuleTitle.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { hypercubeDef, HYPERCUBE_SLOTS, HYPERCUBE_DEFAULT_TABLES, installHypercubeFrameDrawer, uninstallHypercubeFrameDrawer, type HypercubeSlot, type HypercubeData, type HypercubeSlotData } from '$lib/audio/modules/hypercube';
   import { getFactoryTables, framesToPlain } from '$lib/audio/wavetable-factory-tables';
   import { WAVETABLE_PRESETS, loadWavetablePreset } from '$lib/audio/wavetable-presets';
@@ -53,7 +54,7 @@
     return typeof v === 'number' ? v : defaultFor(k);
   }
   const set = (pid: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[pid] = v;
+    setNodeParam(id, pid, v);
   };
   const live = (pid: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;

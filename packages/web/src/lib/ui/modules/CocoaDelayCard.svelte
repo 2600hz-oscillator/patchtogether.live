@@ -18,7 +18,6 @@
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import {
     cocoaDelayDef,
@@ -47,7 +46,7 @@
     return e.readParam(node, k);
   };
   function setDiscrete(k: string, v: number): void {
-    const t = patch.nodes[id]; if (t) t.params[k] = v;
+    setNodeParam(id, k, v);
   }
 
   let tempoSync   = $derived(Math.round(paramVal('tempoSync')));

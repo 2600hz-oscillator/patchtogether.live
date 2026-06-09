@@ -25,6 +25,7 @@
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -80,7 +81,7 @@
     return typeof v === 'number' ? v : defaultFor(k);
   }
   const setParamFn = (k: string) => (v: number): void => {
-    const t = patch.nodes[id]; if (t) t.params[k] = v;
+    setNodeParam(id, k, v);
   };
 
   // ---- CV-connection detection (CACHED) ----

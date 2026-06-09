@@ -13,6 +13,7 @@
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import {
     stagesDef,
     stagesMath,
@@ -38,7 +39,7 @@
     return fallback ?? defaultFor(k);
   }
   const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[k] = v;
+    setNodeParam(id, k, v);
   };
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
@@ -52,7 +53,7 @@
     const k = `type${seg}`;
     const cur = clampType(paramVal(k));
     const next = (cur + 1) % STAGES_NUM_TYPES;
-    const t = patch.nodes[id]; if (t) t.params[k] = next;
+    setNodeParam(id, k, next);
   }
   function toggleLink(idx: number): void {
     const k = `link${idx}`;
