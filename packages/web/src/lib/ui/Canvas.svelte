@@ -963,7 +963,7 @@
     ydoc.transact(() => {
       for (const id of Object.keys(patch.edges)) delete patch.edges[id];
       for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
-    });
+    }, LOCAL_ORIGIN);
     // No defensive flowNodes=[] anymore: B3's snapshot bus pushes the
     // empty snapshot to this $effect synchronously on the same Yjs
     // update, and SvelteFlow now consumes a one-way `nodes` prop so it
