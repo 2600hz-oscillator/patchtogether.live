@@ -1,42 +1,27 @@
 // packages/web/src/lib/audio/modules/twotracks.ts
 //
-// TWOTRACKS — two-reel tape loop emulator. Phase 1: reel A only.
+// TWOTRACKS — two-reel tape loop emulator. Phase 4: live waveform + WAV export.
 //
-// A tape-style record/play/overdub looper. Records live audio into an
-// internal ring buffer with destructive or additive write, varispeed
-// playback, draggable playhead scrub, and WAV export.
+// Phase 1 surface (reel A):
+//   inputs:  audio_l_in_a, audio_r_in_a, rec_start_a, rec_arm_a, overdub_a
+//   outputs: out_l, out_r
+//   params:  rate_a, mode_a, decay_a, start_a, end_a, overdub_flag_a, playhead_a
 //
-// Phase 1 surface (reel A only):
-//   inputs:
-//     audio_l_in_a  — left audio input
-//     audio_r_in_a  — right audio input (normalizes to L when unpatched)
-//     rec_start_a   — gate: rising edge begins recording (REC or OVERDUB)
-//     rec_arm_a     — gate: rising edge arms (waits for loop-start crossing)
-//     overdub_a     — gate: rising edge toggles overdub flag
-//   outputs:
-//     out_l         — left audio output
-//     out_r         — right audio output
+// Phase 2 additions:
+//   inputs (reel B): audio_l_in_b, audio_r_in_b, rec_start_b, rec_arm_b, overdub_b
+//   params (reel B): rate_b, mode_b, decay_b, start_b, end_b, overdub_flag_b,
+//                    playhead_b
+//   per-reel EQ (both reels):
+//     eqLow_a, eqMid_a, eqHigh_a  — reel A 3-band EQ (dB ±12, default 0)
+//     eqLow_b, eqMid_b, eqHigh_b  — reel B 3-band EQ
+//   per-reel filter (both reels):
+//     filterMode_a, cutoff_a, reso_a — reel A HP/LP/BP filter
+//     filterMode_b, cutoff_b, reso_b — reel B HP/LP/BP filter
+//   global:
+//     ab — A/B crossfade: 0=A only, 0.5=both unity, 1=B only
 //
-//   params:
-//     rate_a        — varispeed rate (–3..+3, default 1.0 = forward unity)
-//     mode_a        — 0=one-shot, 1=loop tape (default 1)
-//     decay_a       — overdub decay amount (0..1, maps to 0.90..0.50 factor)
-//     start_a       — normalized window start (0..1, default 0)
-//     end_a         — normalized window end (0..1, default 1)
-//     playhead_a    — read-only: worklet posts playhead position back to host
-//     overdub_flag_a — 0/1 toggle: 0=destructive REC, 1=additive OVERDUB
-//
-// The worklet (`twotracks.ts` processor) handles both play and record.
-// No separate tap worklet needed for P1.
-//
-// Data shape on node.data:
-//   tapeA?: {
-//     bufL: number[]; // Float32 PCM for display waveform (L channel)
-//     bufR: number[]; // Float32 PCM for display waveform (R channel)
-//     bufLen: number; // active sample count
-//   }
-//   transportState_a?: 'idle'|'play'|'armed'|'rec'|'overdub'
-//   playhead_a?: number; // 0..1 normalized, updated from worklet postMessage
+// Single worklet node handles both reels.
+// Playhead messages: { type:'playhead', reel:'a'|'b', pos:0..1, state }
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
@@ -52,21 +37,63 @@ export const TWOTRACKS_MAX_SAMPLES = 1_440_000;
 const POLL_MS = 100;
 
 export interface TwoTracksData {
-  /** Tape buffer for display (waveform canvas). Populated by the card
-   *  on recording stop — NOT written per-frame by the worklet (to avoid
-   *  the Y.Doc write-storm trap). The card copies samples out via a
-   *  port message from the worklet when needed. */
-  tapeA?: {
-    bufL: number[];
-    bufR: number[];
-    bufLen: number;
-  };
-  /** Most recent transport state, posted back from the worklet. Read by
-   *  the card to show REC / ARM / PLAY LEDs. */
+  /** Reel A transport state (posted from worklet). */
   transportState_a?: 'idle' | 'play' | 'armed' | 'rec' | 'overdub';
-  /** Most recent normalized playhead position (0..1 within the window).
-   *  Posted from the worklet; read by the card to position the line. */
+  /** Reel B transport state (posted from worklet). */
+  transportState_b?: 'idle' | 'play' | 'armed' | 'rec' | 'overdub';
+  /** Reel A normalized playhead position 0..1. */
   playhead_a?: number;
+  /** Reel B normalized playhead position 0..1. */
+  playhead_b?: number;
+  /** How many samples reel A's ring buffer holds (for duration display + SAVE enabled). */
+  bufLenA?: number;
+  /** How many samples reel B's ring buffer holds. */
+  bufLenB?: number;
+}
+
+/** Exported pure A/B gain law — used by the card and unit tests. */
+export function abGains(ab: number): { gainA: number; gainB: number } {
+  const t = ab < 0 ? 0 : ab > 1 ? 1 : ab;
+  if (t <= 0.5) {
+    return { gainA: 1.0, gainB: t * 2 };
+  } else {
+    return { gainA: (1 - t) * 2, gainB: 1.0 };
+  }
+}
+
+/** Download a stereo WAV file from raw Float32Array buffers. */
+function downloadWav(bufL: Float32Array, bufR: Float32Array, bufLen: number, label: string): void {
+  const sr = 48000;
+  const numChannels = 2;
+  const bitsPerSample = 16;
+  const numFrames = Math.min(bufLen, bufL.length, bufR.length);
+  const byteRate = sr * numChannels * (bitsPerSample / 8);
+  const blockAlign = numChannels * (bitsPerSample / 8);
+  const dataBytes = numFrames * blockAlign;
+  const ab = new ArrayBuffer(44 + dataBytes);
+  const view = new DataView(ab);
+  const enc = new TextEncoder();
+  const w4 = (offset: number, str: string) => {
+    const bytes = enc.encode(str);
+    for (let i = 0; i < 4; i++) view.setUint8(offset + i, bytes[i] ?? 0);
+  };
+  w4(0, 'RIFF'); view.setUint32(4, 36 + dataBytes, true);
+  w4(8, 'WAVE'); w4(12, 'fmt '); view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); view.setUint16(22, numChannels, true);
+  view.setUint32(24, sr, true); view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true); view.setUint16(34, bitsPerSample, true);
+  w4(36, 'data'); view.setUint32(40, dataBytes, true);
+  let off = 44;
+  for (let i = 0; i < numFrames; i++) {
+    view.setInt16(off, Math.round(Math.max(-1, Math.min(1, bufL[i] ?? 0)) * 0x7fff), true); off += 2;
+    view.setInt16(off, Math.round(Math.max(-1, Math.min(1, bufR[i] ?? 0)) * 0x7fff), true); off += 2;
+  }
+  const blob = new Blob([ab], { type: 'audio/wav' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${label}-${Date.now()}.wav`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 export const twotracksDef: AudioModuleDef = {
@@ -75,14 +102,21 @@ export const twotracksDef: AudioModuleDef = {
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   category: 'effects',
-  schemaVersion: 1,
+  schemaVersion: 4,
 
   inputs: [
+    // Reel A
     { id: 'audio_l_in_a', type: 'audio' },
     { id: 'audio_r_in_a', type: 'audio' },
     { id: 'rec_start_a',  type: 'gate' },
     { id: 'rec_arm_a',    type: 'gate' },
     { id: 'overdub_a',    type: 'gate' },
+    // Reel B
+    { id: 'audio_l_in_b', type: 'audio' },
+    { id: 'audio_r_in_b', type: 'audio' },
+    { id: 'rec_start_b',  type: 'gate' },
+    { id: 'rec_arm_b',    type: 'gate' },
+    { id: 'overdub_b',    type: 'gate' },
   ],
 
   outputs: [
@@ -91,18 +125,43 @@ export const twotracksDef: AudioModuleDef = {
   ],
 
   params: [
-    { id: 'rate_a',        label: 'Rate',    defaultValue: 1,   min: -3, max: 3, curve: 'linear' },
-    { id: 'mode_a',        label: 'Mode',    defaultValue: 1,   min: 0,  max: 1, curve: 'discrete' },
-    { id: 'decay_a',       label: 'Decay',   defaultValue: 0,   min: 0,  max: 1, curve: 'linear' },
-    { id: 'start_a',       label: 'Start',   defaultValue: 0,   min: 0,  max: 1, curve: 'linear' },
-    { id: 'end_a',         label: 'End',     defaultValue: 1,   min: 0,  max: 1, curve: 'linear' },
-    // overdub_flag_a: 0 = destructive REC, 1 = additive OVERDUB.
-    // Written by the card's overdub toggle button via setNodeParam.
-    { id: 'overdub_flag_a', label: 'Overdub', defaultValue: 0,  min: 0,  max: 1, curve: 'discrete' },
-    // playhead_a: read-only display param (0..1 normalized cursor position).
-    // Updated via worklet postMessage → node.data.playhead_a (NOT via AudioParam
-    // writes per-frame — avoids the Y.Doc write-storm, see cv-modulation memory).
-    { id: 'playhead_a',    label: 'Playhead', defaultValue: 0,  min: 0,  max: 1, curve: 'linear' },
+    // ---- Reel A ----
+    { id: 'rate_a',         label: 'Rate A',    defaultValue: 1,     min: -3,  max: 3,     curve: 'linear' },
+    { id: 'mode_a',         label: 'Mode A',    defaultValue: 1,     min: 0,   max: 1,     curve: 'discrete' },
+    { id: 'decay_a',        label: 'Decay A',   defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+    { id: 'start_a',        label: 'Start A',   defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+    { id: 'end_a',          label: 'End A',     defaultValue: 1,     min: 0,   max: 1,     curve: 'linear' },
+    { id: 'overdub_flag_a', label: 'Overdub A', defaultValue: 0,     min: 0,   max: 1,     curve: 'discrete' },
+    { id: 'playhead_a',     label: 'Playhead A',defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+    // EQ reel A
+    { id: 'eqLow_a',        label: 'EQ Low A',  defaultValue: 0,     min: -12, max: 12,    curve: 'linear', units: 'dB' },
+    { id: 'eqMid_a',        label: 'EQ Mid A',  defaultValue: 0,     min: -12, max: 12,    curve: 'linear', units: 'dB' },
+    { id: 'eqHigh_a',       label: 'EQ Hi A',   defaultValue: 0,     min: -12, max: 12,    curve: 'linear', units: 'dB' },
+    // Filter reel A
+    { id: 'filterMode_a',   label: 'Flt Mode A',defaultValue: 0,     min: 0,   max: 3,     curve: 'discrete' },
+    { id: 'cutoff_a',       label: 'Cutoff A',  defaultValue: 20000, min: 20,  max: 20000, curve: 'log', units: 'Hz' },
+    { id: 'reso_a',         label: 'Reso A',    defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+
+    // ---- Reel B ----
+    { id: 'rate_b',         label: 'Rate B',    defaultValue: 1,     min: -3,  max: 3,     curve: 'linear' },
+    { id: 'mode_b',         label: 'Mode B',    defaultValue: 1,     min: 0,   max: 1,     curve: 'discrete' },
+    { id: 'decay_b',        label: 'Decay B',   defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+    { id: 'start_b',        label: 'Start B',   defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+    { id: 'end_b',          label: 'End B',     defaultValue: 1,     min: 0,   max: 1,     curve: 'linear' },
+    { id: 'overdub_flag_b', label: 'Overdub B', defaultValue: 0,     min: 0,   max: 1,     curve: 'discrete' },
+    { id: 'playhead_b',     label: 'Playhead B',defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+    // EQ reel B
+    { id: 'eqLow_b',        label: 'EQ Low B',  defaultValue: 0,     min: -12, max: 12,    curve: 'linear', units: 'dB' },
+    { id: 'eqMid_b',        label: 'EQ Mid B',  defaultValue: 0,     min: -12, max: 12,    curve: 'linear', units: 'dB' },
+    { id: 'eqHigh_b',       label: 'EQ Hi B',   defaultValue: 0,     min: -12, max: 12,    curve: 'linear', units: 'dB' },
+    // Filter reel B
+    { id: 'filterMode_b',   label: 'Flt Mode B',defaultValue: 0,     min: 0,   max: 3,     curve: 'discrete' },
+    { id: 'cutoff_b',       label: 'Cutoff B',  defaultValue: 20000, min: 20,  max: 20000, curve: 'log', units: 'Hz' },
+    { id: 'reso_b',         label: 'Reso B',    defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+
+    // ---- Global ----
+    { id: 'ab',             label: 'A/B',       defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+    { id: 'lofi',           label: 'Lofi',      defaultValue: 0,     min: 0,   max: 3,     curve: 'discrete' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -111,19 +170,15 @@ export const twotracksDef: AudioModuleDef = {
       loadedContexts.add(ctx);
     }
 
-    // Two audio inputs (L + R) + three gate inputs as separate worklet inputs.
-    // We map the gate inputs as AudioParams (rec_start, rec_arm, overdub_toggle)
-    // because gates route as audio-rate connections to AudioParams in the engine.
-    // The worklet detects rising edges on those params.
+    // 4 audio inputs: [0]=A-L, [1]=A-R, [2]=B-L, [3]=B-R
+    // Gate inputs route as AudioParams (rec_start, rec_arm, overdub_toggle per reel).
     const workletNode = new AudioWorkletNode(ctx, 'twotracks', {
-      numberOfInputs: 2, // [0] = L audio, [1] = R audio
+      numberOfInputs: 4, // [0]=A-L, [1]=A-R, [2]=B-L, [3]=B-R
       numberOfOutputs: 1,
-      outputChannelCount: [2], // stereo: [0]=L, [1]=R in the buffer
+      outputChannelCount: [2], // stereo
     });
 
-    // Muted keep-alive: connect output to a 0-gain destination so the worklet
-    // process() is always called (a node with no downstream may be paused by
-    // some browser implementations).
+    // Muted keep-alive
     const sink = ctx.createGain();
     sink.gain.value = 0;
     try {
@@ -133,41 +188,77 @@ export const twotracksDef: AudioModuleDef = {
 
     const params = workletNode.parameters as unknown as Map<string, AudioParam>;
 
-    // Apply initial param values from node.params.
+    // Apply initial param values
     for (const def of twotracksDef.params) {
       const v = (node.params ?? {})[def.id] ?? def.defaultValue;
-      // Map twotracks card params → worklet AudioParam names.
-      const wParamId = cardParamToWorkletParam(def.id);
-      if (wParamId) {
-        params.get(wParamId)?.setValueAtTime(v, ctx.currentTime);
-      }
+      const wId = cardParamToWorkletParam(def.id);
+      if (wId) params.get(wId)?.setValueAtTime(v, ctx.currentTime);
     }
 
-    // Handle worklet → host messages (playhead updates, state).
+    // Local volatile render state — Float32Array must NOT go through Y.Doc
+    // (Y.Doc can't encode typed arrays; peaks are per-frame, not synced state).
+    // Card polls these via eng.read(node, 'peaksA'/'peaksB'), same pattern as SCOPE.
+    let localPeaksA: Float32Array | null = null;
+    let localPeaksB: Float32Array | null = null;
+
+    // Handle worklet → host messages (playhead + peaks; tape-data for WAV export)
     workletNode.port.onmessage = (e: MessageEvent) => {
-      const msg = e.data as { type: string; pos?: number; state?: string } | null;
+      const msg = e.data as {
+        type: string;
+        reel?: 'a' | 'b';
+        pos?: number;
+        state?: string;
+        bufLen?: number;
+        peaks?: Float32Array;
+        // tape-data fields (transferred buffers arrive as ArrayBuffer)
+      } | null;
       if (!msg) return;
+
       if (msg.type === 'playhead') {
-        // Update node.data.playhead_a and transportState_a — local writes
-        // via livePatch (NOT per-frame Y.Doc transact) to avoid write-storm.
-        // The card reads these via $derived(node?.data) reactive bindings.
+        const reelId = msg.reel ?? 'a';
+        // Peaks stay local — never written to Y.Doc to avoid Float32Array encoding
+        // issues and write-storm on every 11ms playhead interval.
+        if (msg.peaks instanceof Float32Array) {
+          if (reelId === 'a') localPeaksA = msg.peaks;
+          else localPeaksB = msg.peaks;
+        }
         try {
           const live = livePatch.nodes[node.id];
           if (!live) return;
           if (!live.data) (live as { data: TwoTracksData }).data = {} as TwoTracksData;
           const d = live.data as TwoTracksData;
-          if (typeof msg.pos === 'number' && d.playhead_a !== msg.pos) {
-            d.playhead_a = msg.pos;
-          }
-          if (typeof msg.state === 'string' && d.transportState_a !== msg.state) {
-            d.transportState_a = msg.state as TwoTracksData['transportState_a'];
+          if (reelId === 'a') {
+            if (typeof msg.pos === 'number' && d.playhead_a !== msg.pos) d.playhead_a = msg.pos;
+            if (typeof msg.state === 'string' && d.transportState_a !== msg.state) {
+              d.transportState_a = msg.state as TwoTracksData['transportState_a'];
+            }
+            if (typeof msg.bufLen === 'number' && d.bufLenA !== msg.bufLen) d.bufLenA = msg.bufLen;
+          } else {
+            if (typeof msg.pos === 'number' && d.playhead_b !== msg.pos) d.playhead_b = msg.pos;
+            if (typeof msg.state === 'string' && d.transportState_b !== msg.state) {
+              d.transportState_b = msg.state as TwoTracksData['transportState_b'];
+            }
+            if (typeof msg.bufLen === 'number' && d.bufLenB !== msg.bufLen) d.bufLenB = msg.bufLen;
           }
         } catch { /* node may be deleted */ }
+
+      } else if (msg.type === 'tape-data') {
+        // Transferred buffers arrive as plain objects with array data after structured clone
+        const raw = e.data as { type: string; reel: 'a' | 'b'; bufLen: number; bufL?: ArrayBuffer; bufR?: ArrayBuffer };
+        if (raw.bufL && raw.bufR) {
+          downloadWav(
+            new Float32Array(raw.bufL),
+            new Float32Array(raw.bufR),
+            raw.bufLen,
+            `twotracks-reel-${raw.reel}`,
+          );
+        }
       }
     };
 
-    // Poll node.data for overdub_flag_a changes from the card UI toggle.
-    let lastOverdubFlag = -1;
+    // Poll node.params for changes (overdub flags + all continuous params)
+    let lastOverdubFlagA = -1;
+    let lastOverdubFlagB = -1;
     let alive = true;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -176,26 +267,54 @@ export const twotracksDef: AudioModuleDef = {
       const live = livePatch.nodes[node.id];
       if (live) {
         const p = live.params as Record<string, number>;
-        const rate    = p.rate_a    ?? 1;
-        const mode    = p.mode_a    ?? 1;
-        const decay   = p.decay_a   ?? 0;
-        const start   = p.start_a   ?? 0;
-        const end     = p.end_a     ?? 1;
-        const ovFlag  = p.overdub_flag_a ?? 0;
 
-        params.get('rate')?. setValueAtTime(rate,  ctx.currentTime);
-        params.get('mode')?. setValueAtTime(mode,  ctx.currentTime);
-        params.get('decay')?.setValueAtTime(decay, ctx.currentTime);
-        params.get('start')?.setValueAtTime(start, ctx.currentTime);
-        params.get('end')?. setValueAtTime(end,   ctx.currentTime);
+        // Reel A continuous params
+        params.get('rate')?.setValueAtTime(p.rate_a ?? 1, ctx.currentTime);
+        params.get('mode')?.setValueAtTime(p.mode_a ?? 1, ctx.currentTime);
+        params.get('decay')?.setValueAtTime(p.decay_a ?? 0, ctx.currentTime);
+        params.get('start')?.setValueAtTime(p.start_a ?? 0, ctx.currentTime);
+        params.get('end')?.setValueAtTime(p.end_a ?? 1, ctx.currentTime);
+        params.get('eqLow_a')?.setValueAtTime(p.eqLow_a ?? 0, ctx.currentTime);
+        params.get('eqMid_a')?.setValueAtTime(p.eqMid_a ?? 0, ctx.currentTime);
+        params.get('eqHigh_a')?.setValueAtTime(p.eqHigh_a ?? 0, ctx.currentTime);
+        params.get('filterMode_a')?.setValueAtTime(p.filterMode_a ?? 0, ctx.currentTime);
+        params.get('cutoff_a')?.setValueAtTime(p.cutoff_a ?? 20000, ctx.currentTime);
+        params.get('reso_a')?.setValueAtTime(p.reso_a ?? 0, ctx.currentTime);
 
-        // Only post overdub toggle message when flag changes.
-        if (ovFlag !== lastOverdubFlag) {
-          lastOverdubFlag = ovFlag;
-          // Post a brief "1" pulse to the worklet's overdub_toggle param
-          // by scheduling a value change. The worklet detects rising edge.
-          // Use a short AudioParam ramp so the edge is clean.
+        // Reel B continuous params
+        params.get('rate_b')?.setValueAtTime(p.rate_b ?? 1, ctx.currentTime);
+        params.get('mode_b')?.setValueAtTime(p.mode_b ?? 1, ctx.currentTime);
+        params.get('decay_b')?.setValueAtTime(p.decay_b ?? 0, ctx.currentTime);
+        params.get('start_b')?.setValueAtTime(p.start_b ?? 0, ctx.currentTime);
+        params.get('end_b')?.setValueAtTime(p.end_b ?? 1, ctx.currentTime);
+        params.get('eqLow_b')?.setValueAtTime(p.eqLow_b ?? 0, ctx.currentTime);
+        params.get('eqMid_b')?.setValueAtTime(p.eqMid_b ?? 0, ctx.currentTime);
+        params.get('eqHigh_b')?.setValueAtTime(p.eqHigh_b ?? 0, ctx.currentTime);
+        params.get('filterMode_b')?.setValueAtTime(p.filterMode_b ?? 0, ctx.currentTime);
+        params.get('cutoff_b')?.setValueAtTime(p.cutoff_b ?? 20000, ctx.currentTime);
+        params.get('reso_b')?.setValueAtTime(p.reso_b ?? 0, ctx.currentTime);
+
+        // Global A/B
+        params.get('ab')?.setValueAtTime(p.ab ?? 0, ctx.currentTime);
+
+        // Global Lofi
+        params.get('lofi')?.setValueAtTime(p.lofi ?? 0, ctx.currentTime);
+
+        // Overdub toggle pulses (rising-edge driven)
+        const ovFlagA = p.overdub_flag_a ?? 0;
+        if (ovFlagA !== lastOverdubFlagA) {
+          lastOverdubFlagA = ovFlagA;
           const tp = params.get('overdub_toggle');
+          if (tp) {
+            tp.setValueAtTime(0, ctx.currentTime);
+            tp.setValueAtTime(1, ctx.currentTime + 0.001);
+            tp.setValueAtTime(0, ctx.currentTime + 0.002);
+          }
+        }
+        const ovFlagB = p.overdub_flag_b ?? 0;
+        if (ovFlagB !== lastOverdubFlagB) {
+          lastOverdubFlagB = ovFlagB;
+          const tp = params.get('overdub_toggle_b');
           if (tp) {
             tp.setValueAtTime(0, ctx.currentTime);
             tp.setValueAtTime(1, ctx.currentTime + 0.001);
@@ -211,13 +330,18 @@ export const twotracksDef: AudioModuleDef = {
       domain: 'audio',
 
       inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
-        // Audio L + R go to the worklet's two audio inputs.
+        // Reel A audio + gates
         ['audio_l_in_a', { node: workletNode, input: 0 }],
         ['audio_r_in_a', { node: workletNode, input: 1 }],
-        // Gate inputs route to AudioParams on the worklet.
-        ['rec_start_a', { node: workletNode, input: 0, param: params.get('rec_start')! }],
-        ['rec_arm_a',   { node: workletNode, input: 0, param: params.get('rec_arm')! }],
-        ['overdub_a',   { node: workletNode, input: 0, param: params.get('overdub_toggle')! }],
+        ['rec_start_a',  { node: workletNode, input: 0, param: params.get('rec_start')! }],
+        ['rec_arm_a',    { node: workletNode, input: 0, param: params.get('rec_arm')! }],
+        ['overdub_a',    { node: workletNode, input: 0, param: params.get('overdub_toggle')! }],
+        // Reel B audio + gates
+        ['audio_l_in_b', { node: workletNode, input: 2 }],
+        ['audio_r_in_b', { node: workletNode, input: 3 }],
+        ['rec_start_b',  { node: workletNode, input: 0, param: params.get('rec_start_b')! }],
+        ['rec_arm_b',    { node: workletNode, input: 0, param: params.get('rec_arm_b')! }],
+        ['overdub_b',    { node: workletNode, input: 0, param: params.get('overdub_toggle_b')! }],
       ]),
 
       outputs: new Map([
@@ -239,11 +363,15 @@ export const twotracksDef: AudioModuleDef = {
       read(key: string) {
         if (key === 'workletPort') return workletNode.port;
         if (key === 'sampleRate') return ctx.sampleRate;
+        if (key === 'peaksA') return localPeaksA;
+        if (key === 'peaksB') return localPeaksB;
         return undefined;
       },
 
       dispose() {
         alive = false;
+        localPeaksA = null;
+        localPeaksB = null;
         if (pollTimer !== null) clearTimeout(pollTimer);
         try { workletNode.port.onmessage = null; } catch { /* */ }
         try { workletNode.disconnect(); } catch { /* */ }
@@ -254,19 +382,48 @@ export const twotracksDef: AudioModuleDef = {
 };
 
 /**
- * Map a card-side param ID (e.g. 'rate_a') to the worklet AudioParam name
- * (e.g. 'rate'). Returns null for display-only params like 'playhead_a'
- * that are NOT backed by a worklet AudioParam.
+ * Map a card-side param ID to the worklet AudioParam name.
+ * Returns null for display-only params (playhead_{a,b}).
  */
 function cardParamToWorkletParam(cardId: string): string | null {
   const MAP: Record<string, string> = {
-    rate_a:   'rate',
-    mode_a:   'mode',
-    decay_a:  'decay',
-    start_a:  'start',
-    end_a:    'end',
-    // overdub_flag_a is handled via a toggling pulse, not a steady AudioParam value.
-    // playhead_a is display-only — no worklet AudioParam.
+    // Reel A — core (keep backward-compat worklet param names)
+    rate_a:          'rate',
+    mode_a:          'mode',
+    decay_a:         'decay',
+    start_a:         'start',
+    end_a:           'end',
+    // EQ reel A (worklet param names match card IDs)
+    eqLow_a:         'eqLow_a',
+    eqMid_a:         'eqMid_a',
+    eqHigh_a:        'eqHigh_a',
+    // Filter reel A
+    filterMode_a:    'filterMode_a',
+    cutoff_a:        'cutoff_a',
+    reso_a:          'reso_a',
+    // Reel B — all params use _b suffix in worklet too
+    rate_b:          'rate_b',
+    mode_b:          'mode_b',
+    decay_b:         'decay_b',
+    start_b:         'start_b',
+    end_b:           'end_b',
+    eqLow_b:         'eqLow_b',
+    eqMid_b:         'eqMid_b',
+    eqHigh_b:        'eqHigh_b',
+    filterMode_b:    'filterMode_b',
+    cutoff_b:        'cutoff_b',
+    reso_b:          'reso_b',
+    // Global
+    ab:              'ab',
+    lofi:            'lofi',
+    // Transient scrub-velocity params (not in def.params, not persisted)
+    scrubVelocity_a: 'scrubVelocity_a',
+    scrubVelocity_b: 'scrubVelocity_b',
+    // Display-only / toggle-handled params — no direct AudioParam
+    // overdub_flag_a: handled via pulsed overdub_toggle
+    // overdub_flag_b: handled via pulsed overdub_toggle_b
+    // playhead_a: display-only
+    // playhead_b: display-only
   };
   return MAP[cardId] ?? null;
 }
