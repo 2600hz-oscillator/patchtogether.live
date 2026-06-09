@@ -97,6 +97,65 @@ export const DEFAULT_KEYMAP: Readonly<Record<string, number>> = {
 export const OCTAVE_UP_KEY = 'NumpadAdd';     // numpad +
 export const OCTAVE_DOWN_KEY = 'NumpadSubtract'; // numpad -
 
+/** Note names by semitone-in-octave (0=C … 11=B). */
+export const SEMITONE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'] as const;
+
+/**
+ * Human-readable label for a KeyboardEvent.code — the symbol shown on a remapped
+ * key. Handles numpad, digit-row, letters, and the common punctuation codes;
+ * falls back to the code with its noise prefix stripped. Pure for testability.
+ */
+export function keyCodeLabel(code: string): string {
+  if (code.startsWith('Numpad')) {
+    const rest = code.slice('Numpad'.length);
+    const map: Record<string, string> = {
+      Divide: '/', Multiply: '*', Subtract: '−', Add: '+', Decimal: '.', Enter: '⏎', Equal: '=',
+    };
+    return map[rest] ?? rest; // Numpad0..9 → "0".."9"
+  }
+  if (/^Digit[0-9]$/.test(code)) return code.slice('Digit'.length);
+  if (/^Key[A-Z]$/.test(code)) return code.slice('Key'.length);
+  if (/^F[0-9]{1,2}$/.test(code)) return code; // F1..F12
+  const punct: Record<string, string> = {
+    Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+    Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backquote: '`',
+    Space: '␣', Enter: '⏎', Tab: '⇥', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
+  };
+  return punct[code] ?? code;
+}
+
+/** Find the physical key code currently mapped to a semitone, or null. */
+export function codeForSemitone(
+  keymap: Readonly<Record<string, number>>,
+  semitone: number,
+): string | null {
+  for (const [code, st] of Object.entries(keymap)) {
+    if (st === semitone) return code;
+  }
+  return null;
+}
+
+/**
+ * Remap a physical key to a semitone, returning a NEW keymap (pure):
+ *  - drops any existing key that mapped to this semitone (one key per note), and
+ *  - drops this key's previous mapping (one note per key),
+ * then binds code → semitone. Keeps the keymap a clean bijection.
+ */
+export function remapKeymap(
+  keymap: Readonly<Record<string, number>>,
+  code: string,
+  semitone: number,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, st] of Object.entries(keymap)) {
+    if (st === semitone) continue; // free the note's old key
+    if (k === code) continue;      // free the key's old note
+    out[k] = st;
+  }
+  out[code] = semitone;
+  return out;
+}
+
 /** Compute the MIDI note from a numpad key event, the module's
  *  current octave, and held octave-modifier state. Returns null when
  *  the key is not in the keymap. Pure for testability. */
@@ -425,14 +484,13 @@ export const numpadPlusDef: AudioModuleDef = {
     let teardownKeys: (() => void) | null = null;
     if (typeof document !== 'undefined') {
       const onDown = (ev: KeyboardEvent) => {
-        if (!ev.code.startsWith('Numpad')) return;
-        // Defensive: when a DOOM card has focus, give it first dibs on
-        // Numpad codes. NUMPAD+'s collision surface is the +/- octave
-        // keys (most numpad keys are notes Doom defaults don't use),
-        // but skipping the whole NUMPAD+ handler while a DOOM card is
-        // focused keeps the interaction model simple ("focus the card
-        // = card owns the keyboard"). See docs/design/game-modules.md.
-        if (document.activeElement?.closest('[data-card-type="doom"]')) return;
+        // Keys are now remappable to ANY physical key (not just Numpad*), so
+        // never steal keystrokes while the user is typing in a text field or
+        // editing a card title — only act when nothing text-like is focused.
+        const ae = document.activeElement as HTMLElement | null;
+        if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+        // When a DOOM card has focus, it owns the keyboard.
+        if (ae?.closest('[data-card-type="doom"]')) return;
         if (ev.code === OCTAVE_UP_KEY)   { octaveModifier =  1; ev.preventDefault(); return; }
         if (ev.code === OCTAVE_DOWN_KEY) { octaveModifier = -1; ev.preventDefault(); return; }
         const live = livePatch.nodes[nodeId];

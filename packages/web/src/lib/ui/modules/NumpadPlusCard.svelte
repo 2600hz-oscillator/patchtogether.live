@@ -27,6 +27,10 @@
     NUMPAD_PLUS_LAYERS,
     NUMPAD_PLUS_STEPS,
     DEFAULT_KEYMAP,
+    SEMITONE_NAMES,
+    keyCodeLabel,
+    codeForSemitone,
+    remapKeymap,
   } from '$lib/audio/modules/numpad-plus';
   import { noteNameForMidi } from '$lib/audio/note-entry';
   import type { ModuleNode } from '$lib/graph/types';
@@ -117,20 +121,65 @@
     return stepIdx === stepIndexLive && pget('isPlaying', 0) >= 0.5;
   }
 
-  // ─── Keymap legend (compact) ─────────────────────────────────────
-  // Build "Numpad1=C, Numpad2=C#, …" from the default keymap, shown
-  // as a compact "1:C 2:C# 3:D 4:D# 5:E 6:F 7:F# 8:G 9:G# 0:A /:A# *:B" line.
-  const KEYMAP_LEGEND = (() => {
-    const labels: { key: string; note: string }[] = [];
-    const order = ['Numpad1','Numpad2','Numpad3','Numpad4','Numpad5','Numpad6',
-                   'Numpad7','Numpad8','Numpad9','Numpad0','NumpadDivide','NumpadMultiply'];
-    const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-    for (let i = 0; i < order.length; i++) {
-      const display = order[i]!.replace('Numpad', '').replace('Divide', '/').replace('Multiply', '*');
-      labels.push({ key: display, note: noteNames[i]! });
-    }
-    return labels;
-  })();
+  // ─── Keymap (node.data.keymap: physical event.code → semitone 0..11) ──
+  // Reactive view of the live keymap, falling back to the default layout.
+  let keymap = $derived.by(() => {
+    const raw = (node?.data as { keymap?: Record<string, number> } | undefined)?.keymap;
+    return raw && typeof raw === 'object' ? raw : { ...DEFAULT_KEYMAP };
+  });
+
+  // Remap interaction state.
+  let remapSemitone = $state<number | null>(null);          // note currently "listening" for a key
+  let menuSemitone = $state<number | null>(null);           // note whose right-click menu is open
+  let menuX = $state(0);
+  let menuY = $state(0);
+
+  function writeKeymap(next: Record<string, number>) {
+    const t = patch.nodes[id];
+    if (!t) return;
+    ydoc.transact(() => {
+      if (!t.data) t.data = {};
+      (t.data as Record<string, unknown>).keymap = { ...next };
+    });
+  }
+  function openKeyMenu(e: MouseEvent, semitone: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    menuSemitone = semitone;
+    menuX = e.clientX;
+    menuY = e.clientY;
+  }
+  function beginRemap(semitone: number) {
+    menuSemitone = null;
+    remapSemitone = semitone;
+  }
+  function resetKey(semitone: number) {
+    menuSemitone = null;
+    const defCode = codeForSemitone(DEFAULT_KEYMAP, semitone);
+    if (defCode) writeKeymap(remapKeymap(keymap, defCode, semitone));
+  }
+  function physLabelFor(semitone: number): string {
+    if (remapSemitone === semitone) return '…';
+    const code = codeForSemitone(keymap, semitone);
+    return code ? keyCodeLabel(code) : '—';
+  }
+
+  // While listening, capture the next physical keydown (ANY key) and bind it to
+  // the target note. ESC cancels. Capture-phase + stopImmediatePropagation so
+  // the keystroke binds instead of (also) playing/typing elsewhere.
+  $effect(() => {
+    if (remapSemitone === null) return;
+    const target = remapSemitone;
+    const onKey = (ev: KeyboardEvent) => {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      if (ev.code === 'Escape') { remapSemitone = null; return; }
+      writeKeymap(remapKeymap(keymap, ev.code, target));
+      remapSemitone = null;
+    };
+    document.addEventListener('keydown', onKey, { capture: true });
+    return () => document.removeEventListener('keydown', onKey, { capture: true });
+  });
 
   // ─── isPlaying / REC / OVD toggles ───────────────────────────────
   let isPlaying = $derived(pget('isPlaying', 0) >= 0.5);
@@ -139,10 +188,6 @@
   function togglePlay() { set('isPlaying')(isPlaying ? 0 : 1); }
   function toggleRecArm() { set('recArm')(recArm ? 0 : 1); }
   function toggleOverdub() { set('overdub')(overdub ? 0 : 1); }
-
-  // Reference the keymap so the unused-import lint stays quiet — we
-  // export DEFAULT_KEYMAP from the module so users can extend it.
-  void DEFAULT_KEYMAP;
 </script>
 
 <div class="card numpad-plus" data-testid="numpad-plus-card" data-node-id={id}>
@@ -216,21 +261,57 @@
         {/each}
       </div>
 
-      <!-- Keymap legend -->
-      <div class="legend" title="Press these numpad keys to play the active layer">
-        {#each KEYMAP_LEGEND as e (e.key)}
-          <span class="legend-pair"><b>{e.key}</b>:{e.note}</span>
+      <!-- Keymap: 12 remappable note-keys. Each shows the physical key bound to
+           that note. Right-click → remap (press any key) or reset. -->
+      <div class="keymap" data-testid="numpad-keymap"
+           title="Right-click a key to remap it, then press any keyboard/numpad key">
+        {#each Array(12) as _, st (st)}
+          <button
+            type="button"
+            class="kmap-key nodrag"
+            class:listening={remapSemitone === st}
+            oncontextmenu={(e) => openKeyMenu(e, st)}
+            data-testid={`numpad-key-${st}`}
+            data-note={SEMITONE_NAMES[st]}
+            aria-label={`${SEMITONE_NAMES[st]} — key ${physLabelFor(st)} (right-click to remap)`}
+          >
+            <span class="kmap-phys">{physLabelFor(st)}</span>
+            <span class="kmap-note">{SEMITONE_NAMES[st]}</span>
+          </button>
         {/each}
         <span class="legend-mod"><b>+</b>oct↑ <b>−</b>oct↓</span>
       </div>
 
+      {#if remapSemitone !== null}
+        <div class="remap-hint" data-testid="numpad-remap-hint">
+          Press any key to map it to <b>{SEMITONE_NAMES[remapSemitone]}</b> · Esc to cancel
+        </div>
+      {/if}
+
       <div class="hint">
-        Numpad keys captured globally while this card exists; recordings need REC ARM + play-from-start OR OVD toggle on.
+        Mapped keys captured globally while this card exists (any physical key);
+        recordings need REC ARM + play-from-start OR OVD toggle on.
         Layers used: {NUMPAD_PLUS_LAYERS} · steps/layer: {NUMPAD_PLUS_STEPS}.
       </div>
     </div>
   </PatchPanel>
 </div>
+
+{#if menuSemitone !== null}
+  <!-- Click-away backdrop + floating remap menu -->
+  <div
+    class="kmap-menu-backdrop"
+    role="presentation"
+    onpointerdown={() => (menuSemitone = null)}
+    oncontextmenu={(e) => { e.preventDefault(); menuSemitone = null; }}
+  ></div>
+  <div class="kmap-menu nodrag" role="menu" style="left:{menuX}px; top:{menuY}px;" data-testid="numpad-key-menu">
+    <button type="button" role="menuitem" class="kmap-menu-item"
+      onclick={() => beginRemap(menuSemitone!)} data-testid="numpad-remap-item">Remap…</button>
+    <button type="button" role="menuitem" class="kmap-menu-item"
+      onclick={() => resetKey(menuSemitone!)} data-testid="numpad-reset-item">Reset to default</button>
+  </div>
+{/if}
 
 <style>
   .card {
@@ -349,15 +430,69 @@
     outline-offset: -1px;
   }
 
-  .legend {
-    display: flex; flex-wrap: wrap; gap: 6px;
-    font-size: 0.62rem;
-    font-family: ui-monospace, monospace;
-    color: var(--text-dim);
+  /* Remappable note-keys */
+  .keymap {
+    display: flex; flex-wrap: wrap; gap: 3px; align-items: center;
     padding: 4px 0;
     border-top: 1px dashed rgba(255,255,255,0.05);
   }
-  .legend-pair b, .legend-mod b { color: var(--accent, #00f0ff); margin-right: 2px; }
+  .kmap-key {
+    appearance: none;
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    background: rgba(10,12,16,0.7);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text);
+    width: 26px; padding: 3px 0;
+    cursor: pointer;
+    font-family: ui-monospace, monospace;
+  }
+  .kmap-key:hover { border-color: var(--accent, #00f0ff); }
+  .kmap-key.listening {
+    border-color: #f5c248;
+    box-shadow: 0 0 0 2px rgba(245,194,72,0.5);
+    animation: pulse-remap 1s ease-in-out infinite;
+  }
+  @keyframes pulse-remap { 0%,100% { border-color:#f5c248; } 50% { border-color:rgba(245,194,72,0.3); } }
+  .kmap-phys { font-size: 0.72rem; font-weight: 700; color: var(--accent, #00f0ff); line-height: 1; }
+  .kmap-note { font-size: 0.5rem; color: var(--text-dim); line-height: 1; }
+  .legend-mod { font-size: 0.55rem; color: var(--text-dim); font-family: ui-monospace, monospace; margin-left: 4px; }
+  .legend-mod b { color: var(--accent, #00f0ff); margin-right: 2px; }
+
+  .remap-hint {
+    font-size: 0.62rem;
+    color: #f5c248;
+    font-family: ui-monospace, monospace;
+    padding: 2px 0;
+  }
+  .remap-hint b { color: var(--accent, #00f0ff); }
+
+  /* Floating remap context menu */
+  .kmap-menu-backdrop {
+    position: fixed; inset: 0; z-index: 999;
+  }
+  .kmap-menu {
+    position: fixed; z-index: 1000;
+    background: #14171c;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+    padding: 3px;
+    display: flex; flex-direction: column;
+    min-width: 130px;
+  }
+  .kmap-menu-item {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    text-align: left;
+    padding: 5px 8px;
+    font-size: 0.72rem;
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .kmap-menu-item:hover { background: rgba(255,255,255,0.08); color: var(--accent, #00f0ff); }
 
   .hint {
     font-size: 0.6rem;
