@@ -284,6 +284,9 @@
     applySnapshot: (snap: Snapshot) => {
       const t = patch.nodes[id];
       if (!t) return;
+      // guard:allow-raw-write — deliberate BULK quicksave restore inside one
+      // untagged ydoc.transact; restoring N params + the tracks grid as a single
+      // non-undoable op (not a per-param user edit), so it stays off the undo stack.
       ydoc.transact(() => {
         if (Array.isArray(snap.tracks)) {
           if (!t.data) t.data = {};
@@ -293,13 +296,13 @@
         }
         for (const k of ['bpm', 'length', 'octave', 'gateLength', 'swing'] as const) {
           const v = snap[k];
-          if (typeof v === 'number') t.params[k] = v;
+          if (typeof v === 'number') t.params[k] = v; // guard:allow-raw-write
         }
         for (let i = 1; i <= TRACK_COUNT; i++) {
           for (const suffix of ['_euclid', '_root', '_octave'] as const) {
             const k = `trk${i}${suffix}`;
             const v = snap[k];
-            if (typeof v === 'number') t.params[k] = v;
+            if (typeof v === 'number') t.params[k] = v; // guard:allow-raw-write
           }
         }
       });

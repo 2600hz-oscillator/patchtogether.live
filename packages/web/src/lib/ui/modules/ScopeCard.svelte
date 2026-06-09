@@ -70,10 +70,8 @@
     if (target) target.params.mode = xyMode ? 0 : 1;
   }
   function toggleRange(channel: 1 | 2) {
-    const target = patch.nodes[id];
-    if (!target) return;
     const key = channel === 1 ? 'ch1Range' : 'ch2Range';
-    target.params[key] = (target.params[key] ?? 0) >= 0.5 ? 0 : 1;
+    setNodeParam(id, key, (node?.params[key] ?? 0) >= 0.5 ? 0 : 1);
   }
 
   let canvasEl: HTMLCanvasElement | null = $state(null);

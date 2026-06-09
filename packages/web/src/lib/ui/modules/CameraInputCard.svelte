@@ -30,8 +30,7 @@
     type RemoteCameraPresence,
   } from '$lib/multiplayer/camera-presence';
   import type { PresenceUser } from '$lib/multiplayer/presence';
-  import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
+  import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import { cameraInputDef } from '$lib/video/modules/camera-input';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -83,15 +82,14 @@
     return (v: number): void => setNodeParam(id, paramId, v);
   }
   function setBoolParam(paramId: string, v: boolean): void {
-    const target = patch.nodes[id];
-    if (target) target.params[paramId] = v ? 1 : 0;
+    setNodeParam(id, paramId, v ? 1 : 0);
   }
   function setSavedDeviceId(deviceId: string | null): void {
-    const target = patch.nodes[id];
-    if (!target) return;
-    if (!target.data) target.data = {};
-    if (deviceId === null) delete target.data['deviceId'];
-    else target.data['deviceId'] = deviceId;
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      if (deviceId === null) delete live.data['deviceId'];
+      else live.data['deviceId'] = deviceId;
+    });
   }
 
   function videoEngine(): VideoEngine | null {

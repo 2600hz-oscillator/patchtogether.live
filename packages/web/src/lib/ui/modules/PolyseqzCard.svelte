@@ -342,7 +342,7 @@
         }
         for (const k of ['bpm', 'length', 'octave', 'gateLength', 'humanize'] as const) {
           const v = snap[k];
-          if (typeof v === 'number') t.params[k] = v;
+          if (typeof v === 'number') t.params[k] = v; // guard:allow-raw-write
         }
       });
     },

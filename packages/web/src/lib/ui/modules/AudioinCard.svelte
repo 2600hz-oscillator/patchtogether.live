@@ -23,6 +23,7 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { audioInDef, audioInAttach } from '$lib/audio/modules/audioin';
   import {
     buildAudioInConstraints,
@@ -97,8 +98,7 @@
     return node?.params['gain'] ?? audioInDef.params[0]!.defaultValue;
   }
   function setGain(v: number): void {
-    const target = patch.nodes[id];
-    if (target) target.params['gain'] = v;
+    setNodeParam(id, 'gain', v);
   }
   function readLiveGain(): number | undefined {
     const e = engineCtx.get();

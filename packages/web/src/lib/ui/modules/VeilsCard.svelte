@@ -44,8 +44,7 @@
   // Toggle the resp{N} param between 0 (LIN) and 1 (EXP).
   function toggleResp(ch: number): void {
     const k = `resp${ch}`;
-    const t = patch.nodes[id]; if (!t) return;
-    t.params[k] = (paramVal(k) >= 0.5) ? 0 : 1;
+    setNodeParam(id, k, (paramVal(k) >= 0.5) ? 0 : 1);
   }
 
   // Ports — generated channel-by-channel so we keep the L→R reading order

@@ -371,8 +371,7 @@
 
   // ---- per-edge effect selection ----
   function selectEdgeFx(edgeId: string, fx: number): void {
-    const t = patch.nodes[id];
-    if (t) t.params[`${edgeId}_fx`] = fx;
+    setNodeParam(id, `${edgeId}_fx`, fx);
   }
   // The two control labels for an edge given its selected effect (null = hide
   // that fader for this effect — e.g. DISSOLVE is pure ratio).

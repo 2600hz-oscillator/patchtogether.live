@@ -17,7 +17,7 @@
   import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
+  import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import { startCornerResize } from './card-resize';
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
@@ -98,11 +98,10 @@
   let fullFrame = $derived<boolean>((node?.data?.fullFrame as boolean | undefined) ?? false);
   const ff = createFullFrame({
     setFullFrame: (on) => {
-      const target = patch.nodes[id];
-      if (target) {
-        if (!target.data) target.data = {};
-        target.data.fullFrame = on;
-      }
+      mutateNode(id, (live) => {
+        if (!live.data) live.data = {};
+        live.data.fullFrame = on;
+      });
     },
     exitFullscreen: () => void fs.exit(),
   });
@@ -202,7 +201,7 @@
         const stored = patch.nodes[id]?.params[k] ?? 0;
         if ((live >= 0.5) !== (stored >= 0.5)) {
           const t = patch.nodes[id];
-          if (t) t.params[k] = live >= 0.5 ? 1 : 0;
+          if (t) t.params[k] = live >= 0.5 ? 1 : 0; // guard:allow-raw-write — per-frame engine→store reflect, must NOT pollute undo
         }
       }
     } catch { /* defensive */ }
@@ -225,6 +224,8 @@
       minHeight: MIN_HEIGHT,
       getStartSize: () => ({ width: cardWidth, height: cardHeight }),
       apply: (w, h) => {
+        // guard:allow-raw-write — fires per pointermove during a resize drag;
+        // a tracked write per frame would storm the doc + flood the undo stack.
         const target = patch.nodes[id];
         if (target) {
           if (!target.data) target.data = {};
@@ -270,9 +271,7 @@
   let mirrorY = $derived((node?.params.mirrorY ?? defaultFor('mirrorY')) >= 0.5);
   function toggleMirror(paramId: 'mirrorX' | 'mirrorY') {
     return () => {
-      const t = patch.nodes[id];
-      if (!t) return;
-      t.params[paramId] = (t.params[paramId] ?? 0) >= 0.5 ? 0 : 1;
+      setNodeParam(id, paramId, (node?.params[paramId] ?? 0) >= 0.5 ? 0 : 1);
     };
   }
 

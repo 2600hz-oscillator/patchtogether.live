@@ -22,8 +22,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
+  import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import {
     cloudseedDef,
     CLOUDSEED_PRESETS,
@@ -51,8 +50,7 @@
     return e.readParam(node, k);
   };
   function toggle(k: string): void {
-    const t = patch.nodes[id]; if (!t) return;
-    t.params[k] = paramVal(k) >= 0.5 ? 0 : 1;
+    setNodeParam(id, k, paramVal(k) >= 0.5 ? 0 : 1);
   }
 
   // Preset footer plumbing — applyPreset writes all preset values into the
@@ -64,21 +62,23 @@
     const idx = Math.max(0, Math.min(CLOUDSEED_PRESETS.length - 1, slot));
     const preset = CLOUDSEED_PRESETS[idx];
     if (!preset) return;
-    const t = patch.nodes[id]; if (!t) return;
-    // Map C++ cppId → our string id, then write into patch.params.
-    for (const [cppIdStr, v] of Object.entries(preset.values)) {
-      const cppId = Number(cppIdStr);
-      const def = cloudseedDef.params.find((p) => {
-        // Find the param whose default index matches the cppId, by name.
-        // Macro AudioParams use string names that don't directly include
-        // the cppId; the message-port params do (see CLOUDSEED_MESSAGE_PARAMS).
-        // For correctness we look up by name → cppId mapping table.
-        return cppIdToParamId(cppId) === p.id;
-      });
-      if (!def) continue;
-      t.params[def.id] = v;
-    }
-    t.params.preset_index = idx;
+    // Apply the whole preset as ONE undoable transaction (multi-field user edit).
+    mutateNode(id, (live) => {
+      // Map C++ cppId → our string id, then write into the live node params.
+      for (const [cppIdStr, v] of Object.entries(preset.values)) {
+        const cppId = Number(cppIdStr);
+        const def = cloudseedDef.params.find((p) => {
+          // Find the param whose default index matches the cppId, by name.
+          // Macro AudioParams use string names that don't directly include
+          // the cppId; the message-port params do (see CLOUDSEED_MESSAGE_PARAMS).
+          // For correctness we look up by name → cppId mapping table.
+          return cppIdToParamId(cppId) === p.id;
+        });
+        if (!def) continue;
+        live.params[def.id] = v;
+      }
+      live.params.preset_index = idx;
+    });
   }
 
   // C++ cppId → string-id mapping. Macros first, then message-port params.
