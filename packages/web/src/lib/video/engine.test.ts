@@ -245,6 +245,72 @@ describe('video — e2e render-suppression freeze (step() short-circuit)', () =>
   });
 });
 
+describe('video — Fix E render-worker install decision (engine seam)', () => {
+  // The engine installs a WorkerProxyHandle for a renderLocus:'worker' module
+  // ONLY when the flag is on AND the runtime supports a worker
+  // (OffscreenCanvas+Worker+createImageBitmap). vitest runs under node with none
+  // of those, so the worker path is unreachable here — which is exactly the
+  // FALLBACK we assert: even with the flag forced ON, the engine renders the
+  // node on the main thread via the real factory (no WorkerProxyHandle, no
+  // blank node). The real worker round-trip is covered by the e2e.
+
+  afterEach(() => {
+    delete (globalThis as unknown as { __videoWorkerEnabled?: boolean }).__videoWorkerEnabled;
+  });
+
+  function makeEngineWithWorkerLocusNode(): { engine: VideoEngine; mainDraw: ReturnType<typeof vi.fn>; nodeId: string } {
+    const glStub = {} as unknown as WebGL2RenderingContext;
+    const canvas = { width: 1, height: 1, getContext: () => glStub } as unknown as HTMLCanvasElement;
+    const engine = new VideoEngine({ canvas });
+
+    const mainDraw = vi.fn();
+    const handle: VideoNodeHandle = {
+      domain: 'video',
+      surface: { fbo: null, texture: null, draw: mainDraw, dispose: () => {} },
+      setParam: () => {},
+      readParam: () => undefined,
+      dispose: () => {},
+    };
+    const stubType = ('worker-locus-' + Math.random().toString(36).slice(2)) as ModuleNode['type'];
+    registerVideoModule({
+      type: stubType,
+      domain: 'video',
+      label: 'worker-locus-spy',
+      category: 'sources',
+      schemaVersion: 1,
+      inputs: [],
+      outputs: [{ id: 'out', type: 'video' }],
+      params: [],
+      renderLocus: 'worker',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      factory: (() => handle) as any,
+    });
+    const nodeId = 'wl';
+    void engine.addNode({ id: nodeId, type: stubType, domain: 'video', position: { x: 0, y: 0 }, params: {} } as ModuleNode);
+    return { engine, mainDraw, nodeId };
+  }
+
+  it('flag OFF: a worker-locus module renders on the main thread (normal factory handle)', () => {
+    const { engine, mainDraw, nodeId } = makeEngineWithWorkerLocusNode();
+    // The installed handle is the real factory handle, not a proxy — its draw()
+    // fires on step().
+    engine.step();
+    expect(mainDraw, 'main-thread factory draw runs with flag off').toHaveBeenCalledTimes(1);
+    expect(engine.getNodeHandle(nodeId)?.constructor.name).not.toBe('WorkerProxyHandle');
+    engine.dispose();
+  });
+
+  it('flag ON but worker-unsupported runtime: falls back to the main factory handle', () => {
+    (globalThis as unknown as { __videoWorkerEnabled?: boolean }).__videoWorkerEnabled = true;
+    const { engine, mainDraw, nodeId } = makeEngineWithWorkerLocusNode();
+    // node has no OffscreenCanvas/Worker → maybeWorkerBridge returns null → main.
+    engine.step();
+    expect(mainDraw, 'fallback to main-thread factory when worker unsupported').toHaveBeenCalledTimes(1);
+    expect(engine.getNodeHandle(nodeId)?.constructor.name).not.toBe('WorkerProxyHandle');
+    engine.dispose();
+  });
+});
+
 describe('video — VideoEngine constructor surfaces the right error in headless node', () => {
   it('refuses to start without a canvas/OffscreenCanvas surface', async () => {
     // We DON'T instantiate VideoEngine here in the happy path because

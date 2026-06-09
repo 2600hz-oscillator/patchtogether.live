@@ -122,6 +122,16 @@ export const acidwarpDef: VideoModuleDef = {
   label: 'acidwarp',
   category: 'sources',
   schemaVersion: 1,
+  // Fix E Phase 1 — acidwarp is the first module opted into the off-main-thread
+  // render worker (flag-gated; default OFF → byte-identical to today). It's a
+  // pure-GL plasma SOURCE with a DOM-free factory; its only inputs are CV
+  // (speed_cv → speed, scene_cv → sceneTrig), which flow through setParam — the
+  // proxy handle forwards those over the worker RPC channel, so no SAB CV
+  // ingress is needed for Phase 1. The on-card preview uses a CPU snapshot
+  // (`read('snapshot')`), independent of where GL runs, so the card is
+  // unaffected; the worker only relocates the FBO render that downstream +
+  // OUTPUT cards sample. See module-registry.ts `renderLocus`.
+  renderLocus: 'worker',
   inputs: [
     { id: 'speed_cv', type: 'cv', paramTarget: 'speed',     cvScale: { mode: 'linear' } },
     // scene_cv is a gate; the engine's cv-bridge writes its value into
