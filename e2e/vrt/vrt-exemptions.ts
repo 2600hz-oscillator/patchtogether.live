@@ -51,6 +51,10 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // static after upload, but unloaded shows "NO SAMPLE LOADED" text —
   // mask the canvas so the chrome diffs deterministically.
   samsloop: [{ selector: 'canvas' }],
+  // TWOTRACKS — 2-reel tape-loop emulator. Each reel has a waveform
+  // canvas (empty on fresh spawn); mask both canvases so the card chrome
+  // diffs deterministically.
+  twotracks: [{ selector: 'canvas' }],
   // ----- video domain — every video module renders a preview canvas;
   // mask it and assert the chrome around it.
   lines: [{ selector: 'canvas' }],
@@ -552,6 +556,13 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (linux/moog921a, linux/moog921b, linux/moog904b) pending a `task vrt:update`
   // run on linux CI. DSP unit + ART (source-SHA-pinned .f32) + per-module-
   // per-port e2e provide the functional coverage.
+  // TWOTRACKS — 2-reel tape-loop emulator (P1). Waveform canvases are masked
+  // (see MODULES canvas entry above). The card chrome (buttons/knobs/LEDs/labels)
+  // is deterministic but VRT baselines are pending a `task vrt:update` run on
+  // each platform. Unit (transport state machine) + e2e (record→play RMS assert)
+  // + per-module-per-port provide functional coverage. Promote + capture baselines
+  // once darwin + linux PNGs are captured via vrt-update.yml workflow_dispatch.
+  twotracks: 'VRT baseline pending — 2-reel tape-loop emulator P1. Waveform canvas masked in MODULES. Unit (transport) + e2e (record→play→SCOPE RMS) + per-module-per-port cover function. Promote once darwin + linux baselines captured via vrt-update.yml.',
 };
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards

@@ -159,6 +159,7 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // dedicated specs build a small fixture file + seed via the card's
   // upload handler; signal-flow assertion lives there.
   samsloop:       'needs a decoded sample buffer AND a trigger to emit (idle-by-default, no autoplay); both covered by samsloop.spec.ts (upload + TRIGGER button → SCOPE)',
+  twotracks:      'needs a recorded buffer to emit (idle until first record pass); signal-flow covered by twotracks.spec.ts (record → play → SCOPE RMS assert)',
   videobox:       'needs decoded video file (Web Codecs pipeline); covered by videobox.test.ts',
   videovarispeed: 'needs decoded video file + varispeed scrubber; covered by videovarispeed-output.spec.ts',
   // ── Game modules whose outputs ONLY fire on rare in-game events ──
