@@ -545,8 +545,20 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     const recArmArr      = parameters[pRecArm]!;
     const overdubTogArr  = parameters[pOverdubTog]!;
 
-    // Compute absolute window
-    const maxLen      = reel.bufLen > 0 ? reel.bufLen : TWOTRACKS_MAX_SAMPLES;
+    // Compute absolute window.
+    //
+    // While FRESH-recording ('rec'), the window must span the full physical
+    // buffer so the cursor advances linearly to the end — recording continues
+    // until STOP or the buffer fills. Clamping to the still-growing bufLen here
+    // would collapse the window to a few ms each block and make the cursor loop
+    // over the last fragment ("chopped" record / stops after a moment).
+    // Overdub + playback loop over the recorded region (bufLen).
+    // MIRROR of twotracksRecordSpan() in $lib/audio/modules/twotracks.ts — keep
+    // in sync (that pure copy is the unit-test surface; this worklet isn't
+    // importable under vitest).
+    const maxLen = reel.state === 'rec'
+      ? TWOTRACKS_MAX_SAMPLES
+      : (reel.bufLen > 0 ? reel.bufLen : TWOTRACKS_MAX_SAMPLES);
     const windowStart = Math.max(0, Math.min(maxLen - 1, startNorm * maxLen));
     const windowEnd   = Math.max(windowStart + 1, Math.min(maxLen, endNorm * maxLen));
     const windowLen   = windowEnd - windowStart;
@@ -706,15 +718,23 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
 
         // ---- Window boundary handling ----
         if (reel.cursor >= windowEnd) {
-          if (modeVal === 1) {
+          if (reel.state === 'rec') {
+            // Fresh recording reached the end of the physical buffer → stop
+            // recording and play the captured loop back from the start.
+            // (Recording otherwise runs continuously until STOP.)
+            reel.state = 'play';
+            reel.cursor = windowStart;
+          } else if (modeVal === 1) {
+            // Loop mode: wrap. Overdub layers + decays each pass.
             const ov = (reel.cursor - windowStart) % windowLen;
             reel.cursor = windowStart + ov;
             if (reel.state === 'overdub') {
               this.applyDecay(reel, windowStart, windowEnd, decayFactor);
             }
           } else {
+            // One-shot playback / overdub.
             reel.cursor = windowEnd;
-            if (reel.state === 'rec' || reel.state === 'overdub') {
+            if (reel.state === 'overdub') {
               reel.state = 'play';
               reel.cursor = windowStart;
             } else if (reel.state === 'play') {
@@ -723,12 +743,16 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
             }
           }
         } else if (reel.cursor < windowStart) {
-          if (modeVal === 1) {
+          if (reel.state === 'rec') {
+            // Reverse-rate recording hit the buffer start → stop + play.
+            reel.state = 'play';
+            reel.cursor = windowStart;
+          } else if (modeVal === 1) {
             const ov = (windowStart - reel.cursor) % windowLen;
             reel.cursor = windowEnd - ov;
           } else {
             reel.cursor = windowStart;
-            if (reel.state === 'rec' || reel.state === 'overdub') {
+            if (reel.state === 'overdub') {
               reel.state = 'play';
             } else if (reel.state === 'play') {
               reel.state = 'idle';
@@ -742,8 +766,13 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     reel.playheadFrameCount++;
     if (reel.playheadFrameCount >= this.PLAYHEAD_INTERVAL) {
       reel.playheadFrameCount = 0;
-      const normalized = windowLen > 0
-        ? Math.max(0, Math.min(1, (reel.cursor - windowStart) / windowLen))
+      // The card draws the waveform over the RECORDED region (bufLen), so report
+      // the playhead relative to bufLen while recording (the window then spans
+      // the full physical buffer, which would otherwise make the head crawl out
+      // of sync with the drawn waveform). Playback already loops over bufLen.
+      const normDen = reel.state === 'rec' ? reel.bufLen : windowLen;
+      const normalized = normDen > 0
+        ? Math.max(0, Math.min(1, (reel.cursor - windowStart) / normDen))
         : 0;
       const posQ = Math.round(normalized * 1024); // quantize so micro-jitter doesn't churn
 

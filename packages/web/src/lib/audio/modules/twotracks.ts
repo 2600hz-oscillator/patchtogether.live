@@ -51,6 +51,31 @@ export interface TwoTracksData {
   bufLenB?: number;
 }
 
+/**
+ * Length (in samples) of the transport window the worklet records / plays over,
+ * given the reel's transport state and current recorded length.
+ *
+ * While FRESH-recording ('rec') the window spans the full physical buffer so the
+ * cursor advances linearly to the end — recording runs until STOP or the buffer
+ * fills. Clamping to the still-growing `bufLen` (the bug fixed alongside this
+ * helper) collapses the window to a few ms each block, making the cursor loop
+ * over the last fragment ("chopped" record / stops after a moment). Playback and
+ * overdub loop over the recorded region (`bufLen`).
+ *
+ * The AudioWorkletProcessor (packages/dsp/src/twotracks.ts, processReel) mirrors
+ * this exact rule — keep them in sync. (The worklet isn't importable under
+ * vitest, same constraint as samsloopMath, so this pure mirror is the unit-test
+ * surface.)
+ */
+export function twotracksRecordSpan(
+  state: 'idle' | 'play' | 'armed' | 'rec' | 'overdub',
+  bufLen: number,
+): number {
+  return state === 'rec'
+    ? TWOTRACKS_MAX_SAMPLES
+    : (bufLen > 0 ? bufLen : TWOTRACKS_MAX_SAMPLES);
+}
+
 /** Exported pure A/B gain law — used by the card and unit tests. */
 export function abGains(ab: number): { gainA: number; gainB: number } {
   const t = ab < 0 ? 0 : ab > 1 ? 1 : ab;
