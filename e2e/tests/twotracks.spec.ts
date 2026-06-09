@@ -667,9 +667,10 @@ test.describe('TWOTRACKS module', () => {
       const card = page.locator('[data-testid="twotracks-card"]');
 
       // Every continuous control is now an assignable Knob (role="slider").
-      // Per reel: 3 EQ + cutoff + reso + echoes + rate = 7; ×2 reels = 14; + A/B = 15.
+      // Per reel: 3 EQ + cutoff + reso + echoes + rate = 7; ×2 reels = 14;
+      // + A/B + A→B + B→A = 17.
       const knobs = card.locator('[role="slider"]');
-      await expect(knobs).toHaveCount(15);
+      await expect(knobs).toHaveCount(17);
 
       // Right-clicking a knob opens the control context menu whose entries are
       // the MIDI-Learn + Send-to-control-surface actions — i.e. the control is
@@ -856,6 +857,58 @@ test.describe('TWOTRACKS module', () => {
       await dragWaveform(page, 'twotracks-waveform', 0.5, 0.55);
       expect(await effStart(page)).toBe(0);
       expect(await effEnd(page)).toBe(1);
+    });
+  });
+
+  // ═══════════════════════════ Phase 7 ═══════════════════════════
+  // Cross-feed knobs A→B / B→A (default off). The DSP (cross-feed into the input
+  // path, dry gating, monitor mix) is unit-tested in twotracks-engine.test.ts —
+  // headless Playwright can't run the worklet audio thread — so these assert the
+  // UI surface: the knobs render, default to 0 (off → no signal-path change),
+  // are MIDI/control-surface assignable, and write their params.
+
+  test.describe('TWOTRACKS P7 cross-feed knobs', () => {
+    test('A→B and B→A knobs render in the center, default off (0)', async ({ page }) => {
+      await setupPage(page);
+      await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
+      await waitForCard(page);
+
+      const cross = page.locator('[data-testid="twotracks-crossfeed"]');
+      await expect(cross).toBeVisible();
+      const knobs = cross.locator('[role="slider"]');
+      await expect(knobs).toHaveCount(2);
+      // Both default to 0 (off → byte-for-byte the prior signal path).
+      await expect(knobs.nth(0)).toHaveAttribute('aria-valuenow', '0');
+      await expect(knobs.nth(1)).toHaveAttribute('aria-valuenow', '0');
+    });
+
+    test('cross-feed knobs reflect the a2b / b2a params (assignable + synced)', async ({ page }) => {
+      await setupPage(page);
+      await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
+      await waitForCard(page);
+
+      const cross = page.locator('[data-testid="twotracks-crossfeed"]');
+      const a2b = cross.locator('[role="slider"]').nth(0);
+      const b2a = cross.locator('[role="slider"]').nth(1);
+
+      // Drive both via the dev Y.Doc; the knobs must reflect them.
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __ydoc: { transact: (fn: () => void) => void };
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        };
+        w.__ydoc.transact(() => {
+          const tt = w.__patch.nodes['tt'];
+          if (tt) { tt.params['a2b'] = 1; tt.params['b2a'] = 0.5; }
+        });
+      });
+      await expect(a2b).toHaveAttribute('aria-valuenow', '1');
+      await expect(b2a).toHaveAttribute('aria-valuenow', '0.5');
+
+      // Right-click → control context menu (MIDI-learn + send-to-surface).
+      await a2b.click({ button: 'right' });
+      await expect(page.locator('[data-testid="control-context-menu"]')).toBeVisible();
+      await expect(page.locator('[data-testid="ctx-midi-learn"]')).toBeVisible();
     });
   });
 });

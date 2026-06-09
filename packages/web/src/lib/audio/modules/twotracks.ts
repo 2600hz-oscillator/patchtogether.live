@@ -121,7 +121,7 @@ export const twotracksDef: AudioModuleDef = {
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   category: 'effects',
-  schemaVersion: 5,
+  schemaVersion: 6,
 
   inputs: [
     // Reel A
@@ -180,6 +180,9 @@ export const twotracksDef: AudioModuleDef = {
 
     // ---- Global ----
     { id: 'ab',             label: 'A/B',       defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+    // Cross-feed: A's playback → B's input path (a2b) and B → A (b2a). Off = 0.
+    { id: 'a2b',            label: 'A→B',       defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+    { id: 'b2a',            label: 'B→A',       defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
     { id: 'lofi',           label: 'Lofi',      defaultValue: 0,     min: 0,   max: 3,     curve: 'discrete' },
     { id: 'monitor',        label: 'Monitor',   defaultValue: 0,     min: 0,   max: 1,     curve: 'discrete' },
   ],
@@ -332,6 +335,10 @@ export const twotracksDef: AudioModuleDef = {
         // Global A/B
         params.get('ab')?.setValueAtTime(p.ab ?? 0, ctx.currentTime);
 
+        // Global cross-feed (A→B / B→A)
+        params.get('a2b')?.setValueAtTime(p.a2b ?? 0, ctx.currentTime);
+        params.get('b2a')?.setValueAtTime(p.b2a ?? 0, ctx.currentTime);
+
         // Global Lofi
         params.get('lofi')?.setValueAtTime(p.lofi ?? 0, ctx.currentTime);
 
@@ -457,6 +464,8 @@ function cardParamToWorkletParam(cardId: string): string | null {
     reso_b:          'reso_b',
     // Global
     ab:              'ab',
+    a2b:             'a2b',
+    b2a:             'b2a',
     lofi:            'lofi',
     monitor:         'monitor',
     // Transient scrub-velocity params (not in def.params, not persisted)

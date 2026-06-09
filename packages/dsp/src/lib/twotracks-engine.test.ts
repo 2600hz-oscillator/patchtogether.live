@@ -20,6 +20,8 @@ import {
   clampLoopStart,
   clampLoopEnd,
   MIN_LOOP_GAP,
+  crossfeedInput,
+  reelOutSample,
   type TapeState,
 } from './twotracks-engine';
 
@@ -290,5 +292,42 @@ describe('playheadNorm', () => {
     expect(playheadNorm(0, 100)).toBe(0);
     expect(playheadNorm(50, 100)).toBe(0.5);
     expect(playheadNorm(150, 100)).toBe(1);
+  });
+});
+
+describe('crossfeedInput (A→B / B→A bleed)', () => {
+  it('crossGain 0 is identity — byte-for-byte today\'s behavior', () => {
+    expect(crossfeedInput(0.5, 0, 0.9)).toBe(0.5);
+    expect(crossfeedInput(-0.3, 0, 1.0)).toBe(-0.3);
+  });
+  it('scales the other reel\'s playback into the input path', () => {
+    expect(crossfeedInput(0.2, 0.5, 0.8)).toBeCloseTo(0.2 + 0.4);
+    expect(crossfeedInput(0, 1, 0.7)).toBeCloseTo(0.7); // full bleed, no own input
+    expect(crossfeedInput(0, 0.25, 1)).toBeCloseTo(0.25);
+  });
+  it('is additive so A→B and B→A are symmetric in form', () => {
+    // A's input gets b2a*B_play; B's input gets a2b*A_play — same function.
+    expect(crossfeedInput(0.1, 0.3, 0.5)).toBe(crossfeedInput(0.1, 0.3, 0.5));
+  });
+});
+
+describe('reelOutSample (dry gating + monitor mix)', () => {
+  it('monitor OFF → ONLY the tape under the head (no dry, no live cross-feed)', () => {
+    expect(reelOutSample(0.4, 0.9, false)).toBe(0.4);
+    // even with a big input path (dry + cross), nothing leaks live when not monitoring
+    expect(reelOutSample(0, 1.5, false)).toBe(0);
+  });
+  it('monitor ON → input path mixed INTO the play/record mix (input + tape)', () => {
+    expect(reelOutSample(0.4, 0.3, true)).toBeCloseTo(0.7);
+    // fresh record on blank tape (tape=0) + monitor → you hear the input
+    expect(reelOutSample(0, 0.6, true)).toBeCloseTo(0.6);
+  });
+  it('not rolling (tapePlay=0) + monitor off → silence', () => {
+    expect(reelOutSample(0, 0.5, false)).toBe(0);
+  });
+  it('composes with crossfeedInput: monitoring hears A bleed; not monitoring does not', () => {
+    const inputPath = crossfeedInput(0.0, 0.5, 0.8); // B has no own input, A bleeds in
+    expect(reelOutSample(0.2, inputPath, true)).toBeCloseTo(0.2 + 0.4);  // heard while monitoring
+    expect(reelOutSample(0.2, inputPath, false)).toBe(0.2);              // only tape when not
   });
 });

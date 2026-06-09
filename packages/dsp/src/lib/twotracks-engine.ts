@@ -255,3 +255,38 @@ export function clampLoopEnd(value: number, startNorm: number, playheadNorm: num
   if (playheadNorm !== null) lo = Math.max(lo, playheadNorm);
   return Math.min(1, Math.max(value, lo));
 }
+
+// ─── Signal path: cross-feed + output mix ──────────────────────────────────
+//
+// The per-reel signal path (mirrored sample-by-sample in processReel):
+//   inputPath = crossfeedInput(dryIn, crossGain, otherReelPlayback)
+//   if recording → the tape RECORDS inputPath (cross-feed captured to tape)
+//   output       = reelOutSample(tapePlayback, inputPath, monitorOn)
+// so the cross-feed behaves EXACTLY like the live input — recorded when this
+// reel records, heard when it monitors, silent (live) on pure playback.
+
+/**
+ * Cross-feed: blend a fraction of the OTHER reel's playback into THIS reel's
+ * input path. `crossGain` 0 = OFF (identity → byte-for-byte today's behavior);
+ * 1 = the other reel's playback at full level summed onto the input. The result
+ * is treated like the live input: captured to tape while recording and audible
+ * while monitoring (that's why A→B is "heard in the B stream, or in what B is
+ * recording"). Used for A→B (crossGain=a2b, other=A) and B→A (crossGain=b2a).
+ */
+export function crossfeedInput(dryIn: number, crossGain: number, otherPlay: number): number {
+  return dryIn + crossGain * otherPlay;
+}
+
+/**
+ * One reel's audible output sample (BEFORE the A/B crossfade gain):
+ *   tape playback (what's under the head; pass 0 when not rolling)
+ *   + the input path (dry + cross-feed) ONLY when monitoring.
+ *
+ * With monitor OFF you hear ONLY the tape under the head — no dry signal and no
+ * live cross-feed bleed (the cross-feed is still captured to tape while
+ * recording, via the record source = inputPath). With monitor ON the input is
+ * mixed INTO the play/record mix (input + tape), not instead of it.
+ */
+export function reelOutSample(tapePlay: number, inputPath: number, monitorOn: boolean): number {
+  return tapePlay + (monitorOn ? inputPath : 0);
+}
