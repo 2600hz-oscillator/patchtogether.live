@@ -5,7 +5,7 @@
 // manipulation, MIDI status parsing). Live AudioContext + the
 // requestMIDIAccess permission path are covered by the E2E spec.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   midiCvBuddyDef,
   pickWinner,
@@ -19,8 +19,13 @@ import {
   SCHED_LOOKAHEAD_S,
   RENDER_QUANTUM_S,
   DEFAULT_BEND_SEMITONES,
+  type MidiCvBuddyApi,
+  type MidiAccessLike,
+  type MidiEventLike,
+  type MidiInputLike,
 } from './midi-cv-buddy';
 import { midiToVOct } from '$lib/audio/note-entry';
+import type { ModuleNode } from '$lib/graph/types';
 
 describe('midiCvBuddyDef: module shape', () => {
   it('declares no inputs and three outputs (pitch / gate / velocity)', () => {
@@ -46,6 +51,101 @@ describe('midiCvBuddyDef: module shape', () => {
     // stays perceptually immediate.
     expect(SCHED_LOOKAHEAD_S).toBeGreaterThanOrEqual(RENDER_QUANTUM_S);
     expect(SCHED_LOOKAHEAD_S).toBeLessThan(0.01);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════
+// Factory wiring: the note path must schedule via timestamp projection,
+// NOT handler-dispatch time. (Root cause of MIDI jitter: this fix had
+// landed only in MIDICLOCK, not here.) Minimal mock AudioContext + MIDI.
+// ════════════════════════════════════════════════════════════════════
+
+interface RecordedSchedule { kind: 'cancel' | 'set'; value?: number; time: number }
+
+function makeParam() {
+  const events: RecordedSchedule[] = [];
+  const p = {
+    value: 0,
+    setValueAtTime(v: number, t: number) { p.value = v; events.push({ kind: 'set', value: v, time: t }); },
+    cancelScheduledValues(t: number) { events.push({ kind: 'cancel', time: t }); },
+    events,
+  };
+  return p;
+}
+
+class FakeConstantSourceNode {
+  offset = makeParam();
+  start = vi.fn();
+  stop = vi.fn();
+  connect = vi.fn();
+  disconnect = vi.fn();
+}
+
+function makeMockCtx() {
+  return {
+    currentTime: 0,
+    sampleRate: 48000,
+    createConstantSource: () => new FakeConstantSourceNode(),
+  };
+}
+
+function makeNode(data?: Record<string, unknown>): ModuleNode {
+  return { id: 'midi-cv-buddy-test', type: 'midiCvBuddy', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data: data ?? {} };
+}
+
+function makeMidiInput(id: string): MidiInputLike & { fire: (ev: MidiEventLike) => void } {
+  let handler: ((ev: MidiEventLike) => void) | null = null;
+  return {
+    id, name: id, state: 'connected',
+    get onmidimessage() { return handler; },
+    set onmidimessage(fn) { handler = fn as ((ev: MidiEventLike) => void) | null; },
+    fire(ev) { if (handler) handler(ev); },
+  };
+}
+
+function makeMidiAccess(...inputs: ReturnType<typeof makeMidiInput>[]): MidiAccessLike {
+  const map = new Map<string, MidiInputLike>();
+  for (const i of inputs) map.set(i.id, i);
+  return { inputs: map, onstatechange: null };
+}
+
+describe('midiCvBuddy factory: note scheduling uses timestamp projection', () => {
+  it('preserves inter-note spacing under handler-dispatch jitter', async () => {
+    // Two note-ons whose timeStamps are 20 ms apart but whose handlers
+    // dispatch in the SAME main-thread turn (a burst after a stall — what
+    // heavy main-thread/video load causes). The pre-fix floored scheduler
+    // collapsed both to currentTime + 8 ms (spacing → 0). The projection
+    // keeps them 20 ms apart on the audio clock.
+    const perfSpy = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    const nav = globalThis as unknown as { navigator?: Record<string, unknown> };
+    const original = nav.navigator?.requestMIDIAccess;
+    try {
+      const input = makeMidiInput('test-port');
+      const access = makeMidiAccess(input);
+      if (!nav.navigator) nav.navigator = {};
+      nav.navigator.requestMIDIAccess = vi.fn(async () => access);
+
+      const ctx = makeMockCtx();
+      const handle = await midiCvBuddyDef.factory(ctx as unknown as AudioContext, makeNode());
+      const api = handle.read?.('card-api') as MidiCvBuddyApi;
+      expect(await api.connect()).toBe(true);
+
+      const pitchSrc = handle.outputs.get('pitch_cv')!.node as unknown as FakeConstantSourceNode;
+      input.fire({ data: new Uint8Array([0x90, 60, 100]), timeStamp: 980 }); // 20 ms lag
+      input.fire({ data: new Uint8Array([0x90, 72, 100]), timeStamp: 1000 }); // 0 ms lag
+
+      const setTimes = [
+        ...new Set(pitchSrc.offset.events.filter((e) => e.kind === 'set').map((e) => e.time)),
+      ].sort((a, b) => a - b);
+      expect(setTimes.length, 'two distinct schedule times').toBeGreaterThanOrEqual(2);
+      expect(setTimes[1]! - setTimes[0]!).toBeCloseTo(0.02, 6);
+    } finally {
+      perfSpy.mockRestore();
+      if (nav.navigator) {
+        if (original === undefined) delete nav.navigator.requestMIDIAccess;
+        else nav.navigator.requestMIDIAccess = original;
+      }
+    }
   });
 });
 

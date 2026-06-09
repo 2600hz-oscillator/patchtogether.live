@@ -357,6 +357,34 @@ describe('midiLaneDef.factory — MIDI demux → ConstantSourceNode automation',
     }
   });
 
+  it('preserves inter-note spacing under handler-dispatch jitter (regression: timestamp projection, not dispatch-time)', async () => {
+    // The dominant MIDI-jitter bug: notes were scheduled to handler-dispatch
+    // time (currentTime + 8 ms), discarding event.timeStamp. Two note-ons
+    // whose timeStamps are 20 ms apart but whose handlers dispatch in the
+    // SAME main-thread turn (a burst after a stall — what heavy video load
+    // causes) collapsed to the SAME audio time (spacing → 0). The shared
+    // timestamp projection keeps them 20 ms apart on the audio clock.
+    const perfSpy = vi.spyOn(performance, 'now').mockReturnValue(1000);
+    try {
+      const { input, handle } = await setupConnected({ channels: [0] });
+      const pitchSrc = handle.outputs.get('pitch_cv')!.node as unknown as FakeConstantSourceNode;
+      // ctx.currentTime stays 0 across both synchronous fires, so any spacing
+      // in the schedule comes ONLY from the projected timestamps.
+      input.fire({ data: new Uint8Array([0x90, 60, 100]), timeStamp: 980 }); // 20 ms lag
+      input.fire({ data: new Uint8Array([0x90, 72, 100]), timeStamp: 1000 }); // 0 ms lag
+      const setTimes = [
+        ...new Set(pitchSrc.offset.events.filter((e) => e.kind === 'set').map((e) => e.time)),
+      ].sort((a, b) => a - b);
+      // Pre-fix: both notes scheduled at the same time → a single distinct
+      // time. Post-fix: two distinct times 20 ms apart.
+      expect(setTimes.length, 'two distinct schedule times').toBeGreaterThanOrEqual(2);
+      expect(setTimes[1]! - setTimes[0]!).toBeCloseTo(0.02, 6);
+    } finally {
+      perfSpy.mockRestore();
+      restoreMidi();
+    }
+  });
+
   it('cc_a tracks the assigned CC (default CC1); cc_b tracks its assigned CC', async () => {
     const { input, handle } = await setupConnected({ ccA: 1, ccB: 7 });
     try {

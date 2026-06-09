@@ -38,15 +38,25 @@ import {
   type MidiAccessLike,
   type MidiEventLike,
 } from './midi-cv-buddy';
+// Timestamp-projection scheduling lives in ONE shared place so all three MIDI
+// bridges (MIDICLOCK, MIDI-CV-BUDDY, MIDI LANE) use the same proven math and it
+// can't silently drift into "fixed in 1 of 3" again (the original root cause of
+// note-jitter under load). See packages/web/src/lib/audio/midi-timing.ts.
+import { createMidiScheduler } from '$lib/audio/midi-timing';
+// Re-exported for callers/tests that historically imported these from midiclock.
+export {
+  MIDI_PPQN,
+  TIMESTAMP_LOOKAHEAD_S,
+  MAX_TIMESTAMP_LAG_MS,
+  measureCtxOffset,
+  eventTimeStampToAudioTime,
+} from '$lib/audio/midi-timing';
 
 // ---------------- MIDI System Real-Time status bytes ----------------
 const STATUS_CLOCK = 0xf8;
 const STATUS_START = 0xfa;
 const STATUS_CONT  = 0xfb;
 const STATUS_STOP  = 0xfc;
-
-/** MIDI clock is fixed at 24 PPQN (pulses per quarter note). */
-export const MIDI_PPQN = 24;
 
 /** One-shot gate-pulse width. Wide enough that downstream gate-input
  *  modules audio-block-align onto a clean rising edge; narrow enough
@@ -81,135 +91,16 @@ export function divisorLabel(d: ClockDivisor): string {
   return 'raw';
 }
 
-// ---------------- Tempo-stability helpers (pure, testable) ----------------
+// ---------------- Tempo-stability helpers ----------------
 //
-// Web MIDI delivers events on the main thread with `event.timeStamp` set to
-// the performance.now()-relative time at which the message arrived. The
-// main-thread handler runs LATER (event-loop scheduling, GC pauses, paint
-// frames), so `performance.now()` inside the handler is always >= eventTs.
+// The timestamp-projection scheduling (measureCtxOffset /
+// eventTimeStampToAudioTime / createMidiScheduler) now lives in the shared
+// $lib/audio/midi-timing module so MIDICLOCK, MIDI-CV-BUDDY and MIDI LANE all
+// use one proven implementation. The pure helpers are re-exported from this
+// module (see the export block above) for back-compat with existing importers.
 //
-// Naively scheduling at `audioCtx.currentTime + lookahead` discards the
-// message's own timestamp, so any main-thread jitter (1–10ms is normal,
-// 50ms+ under load) becomes audible jitter on the downstream gate. MIDI
-// Clock is 24 PPQN, so at 120 BPM a tick is ~20.8 ms — even a few-ms
-// scheduling slop sounds like swing.
-//
-// The fix: anchor scheduling to the message's `timeStamp`, NOT to the
-// handler-dispatch time. Two clocks are involved:
-//
-//   * `performance.now()` — DOMHighResTimestamp ms; what `event.timeStamp`
-//     is measured against.
-//   * `AudioContext.currentTime` — seconds since context creation; what
-//     `setValueAtTime` consumes.
-//
-// Both tick at real-time, so `ctxOffset := currentTimeS - performanceNowMs/1000`
-// is a CONSTANT (modulo small drift from clock-source skew over minutes).
-// Measure it once (or periodically), then any event's target audio time is
-// `eventTimeStampMs/1000 + ctxOffset + lookahead`. Inter-event Δ on the
-// audio clock equals Δ between their `timeStamp`s — to floating-point
-// precision — regardless of when their handlers ran.
-
-/** Scheduling lookahead applied to every projected event time. Web Audio
- *  silently coerces "schedule in the past" → currentTime, which is the
- *  exact source of audible swing this helper is designed to avoid. We
- *  add a fixed offset so every projected target sits comfortably in the
- *  future even when the main-thread handler is dispatched well after the
- *  message arrived (event-loop stalls, paint frames, GC pauses).
- *
- *  WHY 25ms (not 2-3ms): the floor must dominate the worst-case
- *  main-thread lag, otherwise events with lag > lookahead get clamped
- *  to the floor and re-introduce ctxNow-spacing (== event-loop jitter
- *  == the bug). 25ms covers a stalled event-loop "for the duration of
- *  one MIDI tick at 120 BPM" — a worst-realistic case. The user
- *  perceives this as a CONSTANT 25ms latency on every clock pulse,
- *  which is inaudible (any MIDI host already runs 5–15ms of buffer);
- *  what they DON'T perceive is jitter, because the same 25ms is added
- *  to every event. */
-export const TIMESTAMP_LOOKAHEAD_S = 0.025;
-
-/** Maximum lag we'll honor from event.timeStamp before we treat it as
- *  bogus and re-anchor at "now + lookahead". A real Web MIDI event lags
- *  the handler by a few ms at most; >100 ms means either the tab was
- *  backgrounded (and a burst arrived at once on resume) or the timestamp
- *  is from a different clock domain (some platforms have shipped MIDI
- *  timestamps with the wrong origin). Honoring such a stale timestamp
- *  would project the schedule far in the past — Web Audio coerces that
- *  to currentTime but ALSO loses the relative spacing of the burst.
- *  Clamping here means a burst gets re-anchored at the floor, which is
- *  the lesser audible evil. */
-export const MAX_TIMESTAMP_LAG_MS = 100;
-
-/**
- * Compute the calibrated offset between `AudioContext.currentTime` (s)
- * and `performance.now()` (ms). Both clocks tick at real-time so this
- * value is constant up to a small per-platform drift (~ppm). The MIDI
- * handler uses it to project an `event.timeStamp` directly onto the
- * audio clock without re-reading either clock per-event.
- *
- * Re-measure periodically (every few seconds) to absorb drift; calling
- * cheaper than once per MIDI message.
- */
-export function measureCtxOffset(
-  currentTimeS: number,
-  performanceNowMs: number,
-): number {
-  return currentTimeS - performanceNowMs / 1000;
-}
-
-/**
- * Project a Web-MIDI `event.timeStamp` (a `performance.now()`-relative
- * DOMHighResTimestamp, in milliseconds) onto the AudioContext's
- * `currentTime` clock (in seconds), with a fixed lookahead budget.
- *
- *   eventTimeStampMs   — `event.timeStamp` from the MIDIMessageEvent.
- *   currentTimeS       — `audioContext.currentTime` at handler-dispatch.
- *   performanceNowMs   — `performance.now()` at handler-dispatch.
- *   ctxOffsetS         — calibrated `currentTimeS - performanceNowMs/1000`,
- *                        measured once at MIDI init + refreshed every few
- *                        seconds. Passed in so the helper stays pure.
- *
- * Returns the audio-context time (seconds) at which the message's
- * scheduled value-change should land. Properties:
- *
- *   1. Two messages whose `timeStamp`s differ by `Δms` are scheduled
- *      `Δms / 1000` seconds apart on the audio clock — independent of
- *      when their handlers actually ran. (THIS is what was broken in the
- *      pre-fix code: the old `Math.max(now + lookahead, ...)` floor
- *      clamped every event to "now + lookahead", erasing the spacing.)
- *   2. Every schedule is at least `TIMESTAMP_LOOKAHEAD_S * 0.5` in the
- *      future, so Web Audio never coerces the schedule into the past.
- *   3. If the timestamp lag exceeds `MAX_TIMESTAMP_LAG_MS` (stale burst
- *      e.g. after tab-resume), we re-anchor at "now + lookahead" — the
- *      burst loses its embedded spacing but doesn't pollute the schedule.
- *
- * Pure. Tests pin the math directly.
- */
-export function eventTimeStampToAudioTime(
-  eventTimeStampMs: number,
-  currentTimeS: number,
-  performanceNowMs: number,
-  ctxOffsetS: number,
-): number {
-  const lagMs = performanceNowMs - eventTimeStampMs;
-  // Defense in depth: stale or future-skewed timestamps re-anchor at the
-  // floor so a misbehaving driver can't push the schedule arbitrarily
-  // forward or backward.
-  if (lagMs < 0 || lagMs > MAX_TIMESTAMP_LAG_MS) {
-    return currentTimeS + TIMESTAMP_LOOKAHEAD_S;
-  }
-  const target = eventTimeStampMs / 1000 + ctxOffsetS + TIMESTAMP_LOOKAHEAD_S;
-  // Floor: an event with lag > TIMESTAMP_LOOKAHEAD_S would produce a
-  // target in the past on the audio clock. The lookahead is sized so
-  // this only happens for outliers (event-loop stall > 25 ms). When it
-  // does, clamp to one audio block ahead — Web Audio honors the
-  // schedule, but the affected event loses its projected spacing.
-  // This is INTENTIONALLY a tiny floor (not lookahead/2) so that the
-  // CLAMP only catches genuine outliers; events with normal lag pass
-  // through the projection and keep their inter-pulse spacing.
-  const FLOOR_EPSILON_S = 128 / 48000; // one 48 kHz audio block
-  const floor = currentTimeS + FLOOR_EPSILON_S;
-  return target > floor ? target : floor;
-}
+// NOTE: the projection constants/helpers that used to live here were hoisted
+// verbatim into $lib/audio/midi-timing.ts and are re-exported above.
 
 // ---------------- Card-visible state + saved data ----------------
 
@@ -306,35 +197,13 @@ export const midiclockDef: AudioModuleDef = {
       subscriber?.(snapshotState());
     }
 
-    // Calibrated offset between perf.now() and audioCtx.currentTime.
-    // Refreshed every ~CTX_OFFSET_REFRESH_MS to absorb sub-ppm clock
-    // drift between the two reference clocks. Re-reading both clocks per
-    // MIDI message would itself add jitter (each call ~µs but the order
-    // of operations matters for tight inter-message spacing).
-    let ctxOffsetS = typeof performance !== 'undefined'
-      ? measureCtxOffset(ctx.currentTime, performance.now())
-      : 0;
-    let lastOffsetRefreshMs = typeof performance !== 'undefined' ? performance.now() : 0;
-    const CTX_OFFSET_REFRESH_MS = 2000;
-
+    // Project event.timeStamp onto the audio clock (preserves inter-message
+    // spacing under main-thread dispatch jitter) via the shared scheduler.
+    // The scheduler owns the calibrated perf↔ctx offset + its periodic
+    // refresh, so all three MIDI bridges share one implementation.
+    const scheduler = createMidiScheduler(ctx);
     function schedAt(eventTimeStamp: number): number {
-      // Preserve inter-message spacing by projecting event.timeStamp onto
-      // the audio-context clock using the calibrated offset. The old
-      // implementation floored every event at `currentTime + lookahead`,
-      // which threw away the message's own arrival time and made downstream
-      // jitter == main-thread event-loop jitter. At 24 PPQN that is
-      // audible swing. See eventTimeStampToAudioTime() docs.
-      const now = ctx.currentTime;
-      const perfNow = typeof performance !== 'undefined' ? performance.now() : eventTimeStamp;
-      // Refresh the offset periodically. Drift between perf.now() and
-      // currentTime is typically <1 ppm but accumulates over long sessions;
-      // 2s refresh is way under the audibility threshold (drift across 2s
-      // ≈ 2 µs, four orders of magnitude below the MIDI tick period).
-      if (perfNow - lastOffsetRefreshMs > CTX_OFFSET_REFRESH_MS) {
-        ctxOffsetS = measureCtxOffset(now, perfNow);
-        lastOffsetRefreshMs = perfNow;
-      }
-      return eventTimeStampToAudioTime(eventTimeStamp, now, perfNow, ctxOffsetS);
+      return scheduler.schedAt(eventTimeStamp);
     }
 
     function pulse(src: ConstantSourceNode, t: number): void {
