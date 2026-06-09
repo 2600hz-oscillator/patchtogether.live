@@ -176,4 +176,85 @@ test.describe('@collab timelorde auto-spawn', () => {
       await ctxA.close().catch(() => {});
     }
   });
+
+  // Phase 4c — post-merge singleton cleanup. A merge-race can leave the
+  // converged doc with TWO TIMELORDE nodes (each peer inserted one before
+  // seeing the other's write). TIMELORDE is undeletable, so without the
+  // cleanup the duplicate is an unrecoverable ghost. We reproduce the
+  // CONVERGED end-state deterministically — inject a second TIMELORDE
+  // straight into the live Yjs doc (what the merge would produce) — and
+  // assert the Canvas cleanup $effect deletes the lex-larger duplicate,
+  // converging back to EXACTLY ONE (never zero, never two).
+  test('post-merge cleanup removes a duplicate TIMELORDE, converging to exactly one', async ({ browser }) => {
+    const rackspaceId = `timelorde-dedupe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    try {
+      await attachFreshRackspace(page, rackspaceId);
+
+      // Wait for the auto-spawn to land the canonical TIMELORDE.
+      await page.waitForFunction(
+        () => {
+          const w = window as unknown as { __patch?: { nodes?: Record<string, { type?: string } | undefined> } };
+          for (const n of Object.values(w.__patch?.nodes ?? {})) {
+            if (n?.type === 'timelorde') return true;
+          }
+          return false;
+        },
+        undefined,
+        { timeout: 4000 },
+      );
+
+      // Inject a SECOND TIMELORDE with a deterministically lex-LARGER id than
+      // any auto-spawned one (the auto id is `timelorde-<8 hex>`; "zzzzzzzz"
+      // sorts after every lowercase-hex suffix). This is exactly what a
+      // merged-in remote duplicate looks like in the converged doc. Written
+      // through the live Yjs doc so the snapshot bus + Canvas cleanup $effect
+      // observe it.
+      await page.evaluate(() => {
+        const w = window as unknown as {
+          __ydoc: { transact: (fn: () => void) => void };
+          __patch: { nodes: Record<string, unknown> };
+        };
+        w.__ydoc.transact(() => {
+          w.__patch.nodes['timelorde-zzzzzzzz'] = {
+            id: 'timelorde-zzzzzzzz',
+            type: 'timelorde',
+            domain: 'audio',
+            position: { x: 999, y: 999 },
+            params: {},
+            data: {},
+          };
+        });
+      });
+
+      // The cleanup $effect should fire on the next snapshot and delete the
+      // lex-larger duplicate. Wait for the count to return to exactly one.
+      await page.waitForFunction(
+        () => {
+          const w = window as unknown as { __patch?: { nodes?: Record<string, { type?: string } | undefined> } };
+          const count = Object.values(w.__patch?.nodes ?? {}).filter((n) => n?.type === 'timelorde').length;
+          return count === 1;
+        },
+        undefined,
+        { timeout: 4000 },
+      );
+
+      const types = await readPatchNodes(page);
+      const count = types.filter((t) => t === 'timelorde').length;
+      expect(count, 'exactly one TIMELORDE after cleanup (duplicate removed)').toBe(1);
+
+      // The survivor must NOT be the injected lex-larger one — the deterministic
+      // lex-survivor keeps the lex-smallest id.
+      const survived = await page.evaluate(() => {
+        const w = window as unknown as { __patch: { nodes: Record<string, { id?: string; type?: string } | undefined> } };
+        return Object.values(w.__patch.nodes)
+          .filter((n) => n?.type === 'timelorde')
+          .map((n) => n?.id ?? null);
+      });
+      expect(survived).not.toContain('timelorde-zzzzzzzz');
+    } finally {
+      await ctx.close().catch(() => {});
+    }
+  });
 });
