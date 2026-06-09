@@ -16,6 +16,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -33,7 +34,7 @@
     const v = node?.params?.[key];
     return typeof v === 'number' ? v : fb;
   }
-  const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
+  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
     return e.readParam(node, k);

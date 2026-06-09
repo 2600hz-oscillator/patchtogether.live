@@ -4,7 +4,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { analogVcoDef, type VcoWaveformSnapshot } from '$lib/audio/modules/analog-vco';
   import { drawVcoCycle } from '$lib/audio/modules/analog-vco-scope';
   import { useEngine } from '$lib/audio/engine-context';
@@ -24,10 +24,7 @@
   let shape    = $derived(node?.params.shape    ?? analogVcoDef.params.find((p) => p.id === 'shape')!.defaultValue);
 
   function setParam(paramId: string) {
-    return (v: number) => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
+    return (v: number) => setNodeParam(id, paramId, v);
   }
   function readLive(paramId: string) {
     return () => {

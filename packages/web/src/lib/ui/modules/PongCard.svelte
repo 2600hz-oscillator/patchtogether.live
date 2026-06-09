@@ -4,7 +4,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { pongDef, drawPong, type PongState, type PongParams } from '$lib/audio/modules/pong';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -31,10 +31,7 @@
   let paddleH    = $derived(node?.params.paddleH    ?? pongDef.params[1]!.defaultValue);
   let serveAngle = $derived(node?.params.serveAngle ?? pongDef.params[2]!.defaultValue);
 
-  const setParam = (paramId: string) => (v: number) => {
-    const target = patch.nodes[id];
-    if (target) target.params[paramId] = v;
-  };
+  const setParam = (paramId: string) => (v: number) => setNodeParam(id, paramId, v);
   const readLive = (paramId: string) => () => {
     const eng = engineCtx.get();
     if (!eng || !node) return undefined;

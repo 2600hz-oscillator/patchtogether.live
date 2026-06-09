@@ -9,6 +9,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { monoglitchDef } from '$lib/video/modules/monoglitch';
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
@@ -26,10 +27,7 @@
     return node?.params[name] ?? def?.defaultValue ?? 0;
   }
   function setParam(paramId: string) {
-    return (v: number) => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
+    return (v: number) => setNodeParam(id, paramId, v);
   }
 
   // Engine render resolution — matches VIDEO_RES in

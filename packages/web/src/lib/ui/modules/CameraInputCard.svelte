@@ -31,6 +31,7 @@
   } from '$lib/multiplayer/camera-presence';
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { cameraInputDef } from '$lib/video/modules/camera-input';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -79,10 +80,7 @@
     return node?.params[name] ?? def?.defaultValue ?? 0;
   }
   function setParam(paramId: string) {
-    return (v: number): void => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
+    return (v: number): void => setNodeParam(id, paramId, v);
   }
   function setBoolParam(paramId: string, v: boolean): void {
     const target = patch.nodes[id];

@@ -4,7 +4,7 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { pentemelodicaDef, PENTE_VOICES } from '$lib/audio/modules/pentemelodica';
   import { moogWaves } from '../../../../../dsp/src/lib/moog-vco-dsp';
   import { waveMorph } from '../../../../../dsp/src/lib/pentemelodica-dsp';
@@ -24,10 +24,7 @@
     return node?.params?.[paramId] ?? def(paramId);
   }
   function setParam(paramId: string) {
-    return (v: number) => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
+    return (v: number) => setNodeParam(id, paramId, v);
   }
   function readLive(paramId: string) {
     return () => {

@@ -9,7 +9,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { macrooscillatorDef } from '$lib/audio/modules/macrooscillator';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -37,7 +37,7 @@
   const MAX_MODEL = MODEL_NAMES.length - 1;
   let modelLabel = $derived(MODEL_NAMES[Math.max(0, Math.min(MODEL_NAMES.length - 1, Math.round(model)))]);
 
-  const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
+  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
     return e.readParam(node, k);

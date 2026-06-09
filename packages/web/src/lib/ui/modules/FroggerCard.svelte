@@ -12,7 +12,7 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { froggerDef, drawFrogger, type FroggerState } from '$lib/audio/modules/frogger';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -38,10 +38,7 @@
     node?.params.initialTime ?? froggerDef.params[0]!.defaultValue,
   );
 
-  const setParam = (paramId: string) => (v: number) => {
-    const target = patch.nodes[id];
-    if (target) target.params[paramId] = v;
-  };
+  const setParam = (paramId: string) => (v: number) => setNodeParam(id, paramId, v);
   const readLive = (paramId: string) => () => {
     const eng = engineCtx.get();
     if (!eng || !node) return undefined;

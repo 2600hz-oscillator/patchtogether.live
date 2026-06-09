@@ -4,6 +4,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { filterDef } from '$lib/audio/modules/filter';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -17,7 +18,7 @@
   let resonance = $derived(node?.params.resonance ?? filterDef.params[1]!.defaultValue);
   let mode      = $derived(node?.params.mode      ?? 0);
 
-  const set = (id_: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[id_] = v; };
+  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
   const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
   const MODES = ['LP', 'HP', 'BP'] as const;

@@ -11,7 +11,7 @@
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import {
     cellshadeDef,
     cellshadeBitDepth,
@@ -36,10 +36,7 @@
     return cellshadeDef.params.find((d) => d.id === name)!.defaultValue;
   }
   function setParam(paramId: string) {
-    return (v: number) => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
+    return (v: number) => setNodeParam(id, paramId, v);
   }
 
   // --- BITS discrete display: the knob value is a step INDEX 0..4; show the

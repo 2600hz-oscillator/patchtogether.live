@@ -19,6 +19,7 @@
   import ModuleTitle from './ModuleTitle.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import {
     cocoaDelayDef,
     COCOA_TEMPO_SYNC_OPTIONS,
@@ -40,7 +41,7 @@
     const v = node?.params?.[k];
     return typeof v === 'number' ? v : defaultFor(k);
   }
-  const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
+  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
     return e.readParam(node, k);

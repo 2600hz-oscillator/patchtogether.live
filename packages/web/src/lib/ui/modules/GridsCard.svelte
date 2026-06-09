@@ -9,6 +9,7 @@
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { gridsDef } from '$lib/audio/modules/grids';
   import { GRIDS_MODE_DRUMS } from '$lib/audio/modules/grids-engine';
   import { useEngine } from '$lib/audio/engine-context';
@@ -26,7 +27,7 @@
   let isPlaying = $derived((node?.params.isPlaying ?? defaultFor('isPlaying')) >= 0.5);
   let modeLabel = $derived(Math.round(mode) === GRIDS_MODE_DRUMS ? 'DRUMS' : 'EUCLID');
 
-  const set = (pid: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[pid] = v; };
+  const set = (pid: string) => (v: number) => setNodeParam(id, pid, v);
   const live = (pid: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
     return e.readParam(node, pid);

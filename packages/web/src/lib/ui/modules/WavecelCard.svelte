@@ -4,6 +4,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { wavecelDef, type WavecelData } from '$lib/audio/modules/wavecel';
   import { drawWave3D, drawWaveScope } from '$lib/audio/modules/wavecel-draw';
   import {
@@ -41,7 +42,7 @@
   // base + (1-base)*env). Default 1 = full (env does nothing → raw-VCO drone).
   let baseVol = $derived(node?.params.base_vol ?? defFor('base_vol'));
 
-  const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
+  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
     return e.readParam(node, k);

@@ -11,6 +11,7 @@
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { pictureboxDef, type PictureboxHandleExtras } from '$lib/video/modules/picturebox';
   import {
     downscaleAndEncode,
@@ -45,10 +46,7 @@
     return node?.params[name] ?? def?.defaultValue ?? 0;
   }
   function setParam(paramId: string) {
-    return (v: number) => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
+    return (v: number) => setNodeParam(id, paramId, v);
   }
 
   function getExtras(): PictureboxHandleExtras | null {

@@ -19,6 +19,7 @@
   import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { startCornerResize } from './card-resize';
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
@@ -213,7 +214,7 @@
   // ---------------- Knob plumbing ----------------
   const defaultFor = (key: string): number =>
     b3ntb0xDef.params.find((p) => p.id === key)!.defaultValue;
-  const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
+  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
     return e.readParam(node, k);
