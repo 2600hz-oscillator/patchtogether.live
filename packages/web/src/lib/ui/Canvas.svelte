@@ -16,6 +16,7 @@
   } from '@xyflow/svelte';
   import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
   import { buildDuplicate } from '$lib/graph/duplicate';
+  import { instanceCount, wouldExceedCap } from '$lib/graph/cap';
   import { getDefaultSnapshotBus, type PatchSnapshot } from '$lib/graph/snapshot';
   import {
     makeEnvelope,
@@ -2395,17 +2396,16 @@
       const n = patch.nodes[id];
       if (n) children.push(n as unknown as ModuleNode);
     }
-    // maxInstances preflight: count each type that's at/over cap.
+    // maxInstances preflight: walk the children, running each capped type's
+    // count up from its current patch total (graph/cap.instanceCount) so a
+    // group that adds several of the same type is gated correctly.
     const typeCounts = new Map<string, number>();
-    for (const node of Object.values(patch.nodes)) {
-      if (!node) continue;
-      typeCounts.set(node.type, (typeCounts.get(node.type) ?? 0) + 1);
-    }
     for (const child of children) {
       const def = defLookup(child.type);
       const cap = def?.maxInstances;
       if (cap === undefined) continue;
-      const willBe = (typeCounts.get(child.type) ?? 0) + 1; // +1 because we're about to add one more
+      const current = typeCounts.get(child.type) ?? instanceCount(patch.nodes, child.type);
+      const willBe = current + 1; // +1 because we're about to add one more
       if (willBe > cap) {
         const msg = `${def?.label ?? child.type}: duplicating this group would exceed instance cap (${willBe}/${cap})`;
         trace(`duplicate-group refused: ${child.type} would exceed cap (${willBe}/${cap})`);
@@ -2494,16 +2494,15 @@
       existingEdgeIds: Object.keys(patch.edges),
       groupPosition: { ...spawnFlowPos },
     });
+    // maxInstances preflight (see duplicateGroupAction): run each capped
+    // type's count up from its current patch total via graph/cap.instanceCount.
     const typeCounts = new Map<string, number>();
-    for (const node of Object.values(patch.nodes)) {
-      if (!node) continue;
-      typeCounts.set(node.type, (typeCounts.get(node.type) ?? 0) + 1);
-    }
     for (const child of plan.newChildren) {
       const def = defLookup(child.type);
       const cap = def?.maxInstances;
       if (cap === undefined) continue;
-      const willBe = (typeCounts.get(child.type) ?? 0) + 1;
+      const current = typeCounts.get(child.type) ?? instanceCount(patch.nodes, child.type);
+      const willBe = current + 1;
       if (willBe > cap) {
         const msg = `${def?.label ?? child.type}: inserting this saved group would exceed instance cap (${willBe}/${cap})`;
         error = msg;
@@ -3104,20 +3103,15 @@
     const videoDef = !audioDef ? getVideoModuleDef(source.type) : undefined;
     const metaDef = !audioDef && !videoDef ? getMetaModuleDef(source.type) : undefined;
     const def = audioDef ?? videoDef ?? metaDef;
-    if (def?.maxInstances !== undefined) {
-      let existing = 0;
-      for (const node of Object.values(patch.nodes)) {
-        if (node && node.type === source.type) existing++;
-      }
-      if (existing >= def.maxInstances) {
-        const msg = `${def.label ?? source.type}: at instance cap (${existing}/${def.maxInstances})`;
-        trace(`duplicate refused: ${source.type} at cap (${existing}/${def.maxInstances})`);
-        error = msg;
-        setTimeout(() => {
-          if (error === msg) error = null;
-        }, 4000);
-        return;
-      }
+    if (def?.maxInstances !== undefined && wouldExceedCap(patch.nodes, def)) {
+      const existing = instanceCount(patch.nodes, source.type);
+      const msg = `${def.label ?? source.type}: at instance cap (${existing}/${def.maxInstances})`;
+      trace(`duplicate refused: ${source.type} at cap (${existing}/${def.maxInstances})`);
+      error = msg;
+      setTimeout(() => {
+        if (error === msg) error = null;
+      }, 4000);
+      return;
     }
     if (source.type === PICTUREBOX_TYPE) {
       const decision = pictureboxSpawnDecision(
@@ -3255,15 +3249,10 @@
       trace(`refused spawn ${type}: owner-only module (local user is not the rack owner)`);
       return;
     }
-    if (def?.maxInstances !== undefined) {
-      let existing = 0;
-      for (const node of Object.values(patch.nodes)) {
-        if (node && node.type === type) existing++;
-      }
-      if (existing >= def.maxInstances) {
-        trace(`refused spawn ${type}: at cap (${existing}/${def.maxInstances})`);
-        return;
-      }
+    if (def?.maxInstances !== undefined && wouldExceedCap(patch.nodes, def)) {
+      const existing = instanceCount(patch.nodes, type);
+      trace(`refused spawn ${type}: at cap (${existing}/${def.maxInstances})`);
+      return;
     }
     // PICTUREBOX has its OWN per-user cap on top of the shared
     // maxInstances workspace cap (see picturebox-limits.ts). Per-user
