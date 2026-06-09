@@ -667,6 +667,18 @@ export class VideoEngine implements DomainEngine {
   }
 
   /**
+   * Fix E Phase 2 — forward a TOYBOX node.data snapshot to the render worker
+   * so the worker-side TOYBOX handle can update its layer/combine state without
+   * touching the Yjs store. Called by ToyboxCard whenever node.data changes
+   * (reactive $effect on patch.nodes[id]?.data). A no-op when the worker is
+   * not active for this node (the flag is off, the worker failed, or this node
+   * is rendering on the main thread).
+   */
+  syncNodeData(nodeId: string, data: unknown): void {
+    this.workerBridge?.sendToyboxSync(nodeId, data);
+  }
+
+  /**
    * Push the latest iMouse vec4 for a node (Shadertoy semantics, ENGINE pixel
    * space — bottom-origin y). The card's preview-canvas pointer handlers compute
    * this (client px → engine px via the letterbox inverse + the .z/.w press

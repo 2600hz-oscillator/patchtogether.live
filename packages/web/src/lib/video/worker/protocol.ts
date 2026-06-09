@@ -39,6 +39,25 @@ export interface MsgSetResolution {
 export interface MsgDispose {
   type: 'dispose';
 }
+/**
+ * Fix E Phase 2 — TOYBOX state sync: main → worker.
+ *
+ * Carries a plain-JSON snapshot of the TOYBOX node's live state (layers +
+ * combine graph + cvRoutes), sent from the main thread whenever node.data
+ * changes. The worker-side TOYBOX renderer replaces its internal state from
+ * this snapshot before the next draw cycle, so GL output reflects the user's
+ * latest edits without needing Yjs or the SvelteKit store in the worker.
+ *
+ * `state` is deliberately `unknown` here (typed as ToyboxNodeData in the
+ * main-thread sender + worker receiver) so this protocol file stays free of
+ * the TOYBOX-specific type imports.
+ */
+export interface MsgToyboxSync {
+  type: 'toybox-sync';
+  nodeId: string;
+  /** Serialized ToyboxNodeData as plain JSON (layers + combine + cvRoutes). */
+  state: unknown;
+}
 
 export type WorkerInboundMsg =
   | MsgInit
@@ -46,7 +65,8 @@ export type WorkerInboundMsg =
   | MsgRemoveNode
   | MsgSetParam
   | MsgSetResolution
-  | MsgDispose;
+  | MsgDispose
+  | MsgToyboxSync;
 
 // ---- worker → main ----
 

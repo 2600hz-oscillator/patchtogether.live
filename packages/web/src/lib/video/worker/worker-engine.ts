@@ -147,6 +147,20 @@ export class WorkerRenderEngine {
     this.nodes.get(nodeId)?.handle.setParam(paramId, value);
   }
 
+  /**
+   * Fix E Phase 2 — forward a TOYBOX state snapshot to the worker-side
+   * TOYBOX handler. Called by the render-worker when a MsgToyboxSync arrives.
+   * The handle must expose a `syncState(data)` method (added by
+   * createToyboxWorkerHandle). No-op if the node doesn't exist or doesn't
+   * implement syncState.
+   */
+  syncToyboxState(nodeId: string, data: unknown): void {
+    const n = this.nodes.get(nodeId);
+    if (!n) return;
+    const h = n.handle as VideoNodeHandle & { syncState?: (d: unknown) => void };
+    h.syncState?.(data);
+  }
+
   setResolution(width: number, height: number): boolean {
     const w = Math.max(2, Math.round(width));
     const h = Math.max(2, Math.round(height));

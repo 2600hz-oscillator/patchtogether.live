@@ -294,6 +294,13 @@ export const toyboxDef: VideoModuleDef = {
   category: 'sources',
   schemaVersion: TOYBOX_SCHEMA_VERSION,
   migrate: migrateToyboxData,
+  // Fix E Phase 2 — TOYBOX's pure-GL layers (shader/gen/frag/obj) run in the
+  // render worker when the flag is on. The worker-side createToyboxWorkerHandle
+  // receives serialized node.data snapshots via MsgToyboxSync (sent by
+  // VideoEngine.syncNodeData on every data change from ToyboxCard's $effect),
+  // so the worker renderer stays current without accessing the Yjs store.
+  // Video/image layers render black in Phase 2A (DOM/cross-thread limitation).
+  renderLocus: 'worker',
   // A FIXED pool of 6 generic modulation input ports (the Structure-style
   // section). A layer's shader (and its uniforms) is chosen at runtime, so we
   // can't declare a port per possible uniform; instead the card routes each

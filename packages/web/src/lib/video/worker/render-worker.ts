@@ -19,14 +19,23 @@
 
 import type { VideoModuleFactory } from '$lib/video/engine';
 import { acidwarpDef } from '$lib/video/modules/acidwarp';
+import { createToyboxWorkerHandle } from './toybox-worker-handle';
 import { WorkerRenderEngine, type WorkerFactoryRegistry } from './worker-engine';
 import type { WorkerInboundMsg, WorkerOutboundMsg } from './protocol';
 
 // The factories the worker may instantiate. Importing the def (NOT the card)
 // keeps the worker bundle DOM-free. Add more entries here as additional pure-GL
 // modules opt into renderLocus:'worker' (Phase 2).
+//
+// TOYBOX uses a bespoke worker handle (createToyboxWorkerHandle) rather than
+// its main-thread factory: the main-thread factory reads livePatch.nodes[id]
+// on every frame (DOM-coupled); the worker handle instead receives serialized
+// state via MsgToyboxSync (sent by VideoEngine.syncNodeData on every data
+// change) and renders the eligible pure-GL layers. Video/image layers render
+// black in Phase 2A.
 const WORKER_FACTORIES: WorkerFactoryRegistry = {
   [acidwarpDef.type as string]: acidwarpDef.factory as VideoModuleFactory,
+  toybox: createToyboxWorkerHandle as VideoModuleFactory,
 };
 
 // Minimal worker-global surface. The project tsconfig uses the DOM lib (not
@@ -110,6 +119,10 @@ ctx.onmessage = (e: MessageEvent<WorkerInboundMsg>) => {
     }
     case 'setResolution': {
       engine?.setResolution(m.width, m.height);
+      break;
+    }
+    case 'toybox-sync': {
+      engine?.syncToyboxState(m.nodeId, m.state);
       break;
     }
     case 'dispose': {
