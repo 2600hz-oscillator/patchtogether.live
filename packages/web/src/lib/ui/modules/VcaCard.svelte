@@ -3,7 +3,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { vcaDef } from '$lib/audio/modules/vca';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -17,7 +17,7 @@
   let cvAmount = $derived(node?.params.cvAmount ?? vcaDef.params[1]!.defaultValue);
 
   const set = (id_: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[id_] = v;
+    setNodeParam(id, id_, v);
   };
   const live = (id_: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;

@@ -17,7 +17,7 @@
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { fourPlexVidDef } from '$lib/video/modules/4plexvid';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -33,10 +33,7 @@
     return node?.params[name] ?? def?.defaultValue ?? 0;
   }
   function setParam(paramId: string) {
-    return (v: number) => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
+    return (v: number) => setNodeParam(id, paramId, v);
   }
 
   // Selector value-tag: show 1-based input number (IN1..IN4) instead of

@@ -169,7 +169,10 @@ export function buildLiveHost(args: {
     writeParam(moduleId, paramId, value) {
       const live = patch.nodes[moduleId];
       if (!live) return;
-      live.params[paramId] = value; // proxy setter transacts (Yjs-synced)
+      // Driven by streaming Electra One hardware CC (MIDI-rate); a tracked
+      // LOCAL_ORIGIN write per CC would flood the undo stack. Synced via the
+      // bare proxy transact, deliberately non-undoable.
+      live.params[paramId] = value; // guard:allow-raw-write — streaming hardware CC
     },
 
     hasExternalClock() {

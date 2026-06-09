@@ -18,7 +18,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { peakstateDef } from '$lib/video/modules/peakstate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -36,7 +36,7 @@
     return typeof v === 'number' ? v : defaultFor(k);
   }
   const setP = (k: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[k] = v;
+    setNodeParam(id, k, v);
   };
 
   // ---- Preview canvas: poll the engine for the RGB output canvas + blit ----

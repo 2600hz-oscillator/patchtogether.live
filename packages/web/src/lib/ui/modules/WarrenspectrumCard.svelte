@@ -6,6 +6,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { drawWarrenspectrum, type WarrenspectrumSnapshot } from '$lib/audio/modules/warrenspectrum-draw';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -19,10 +20,7 @@
     const v = node?.params?.[id_];
     return typeof v === 'number' ? v : fallback;
   }
-  const set = (id_: string) => (v: number) => {
-    const t = patch.nodes[id];
-    if (t) t.params[id_] = v;
-  };
+  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
   const live = (id_: string) => () => {
     const e = engineCtx.get();
     if (!e || !node) return undefined;

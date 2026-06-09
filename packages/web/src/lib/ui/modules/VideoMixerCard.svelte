@@ -3,7 +3,7 @@
   // video input with an `amount{N}` CV input + corresponding fader.
   import { Handle, Position, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { mixerVideoDef } from '$lib/video/modules/mixer';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -16,10 +16,7 @@
     return node?.params[name] ?? def?.defaultValue ?? 0;
   }
   function setParam(paramId: string) {
-    return (v: number) => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
+    return (v: number) => setNodeParam(id, paramId, v);
   }
 
   // Channel rows: one per input. ~36px between handles for visual

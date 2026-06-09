@@ -16,6 +16,7 @@
   import { Handle, Position } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { outlinesDef, OUTLINES_GATE_PORT_ID, OUTLINES_COLLIDE_PORT_ID } from '$lib/video/modules/outlines';
   import { mapShape, ROT_CENTER } from '$lib/video/modules/outlines-sim';
   import { useEngine } from '$lib/audio/engine-context';
@@ -35,7 +36,7 @@
     return typeof v === 'number' ? v : defaultFor(k);
   }
   const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[k] = v;
+    setNodeParam(id, k, v);
   };
 
   // SHAPE readout: the discrete shape NAME for the current `shape` knob value.

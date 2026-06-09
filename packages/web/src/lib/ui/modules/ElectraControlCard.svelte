@@ -20,6 +20,7 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
   import { patch, ydoc } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode, ParamDef } from '$lib/graph/types';
   import {
@@ -135,7 +136,7 @@
     const live = patch.nodes[sourceId] as ModuleNode | undefined;
     const resolved = resolveSurfaceParam(live, paramId);
     if (resolved) { resolved.set(value); return; }
-    if (live) live.params[paramId] = value;
+    setNodeParam(sourceId, paramId, value);
   }
   function liveReader(sourceId: string, paramId: string) {
     return () => {

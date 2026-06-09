@@ -27,6 +27,7 @@
 
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import { getModuleDef } from '$lib/audio/module-registry';
   import { resolveExposedControls } from '$lib/graph/group-controls';
@@ -87,9 +88,7 @@
     return (live?.params[paramId] ?? paramDefFor(child, paramId)?.defaultValue ?? 0) as number;
   }
   function setParam(child: ModuleNode, paramId: string, value: number) {
-    const target = patch.nodes[child.id];
-    if (!target) return;
-    target.params[paramId] = value;
+    setNodeParam(child.id, paramId, value);
   }
   function isPlaying(child: ModuleNode, paramId: string): boolean {
     return readParam(child, paramId) >= 0.5;

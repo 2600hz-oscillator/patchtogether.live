@@ -10,7 +10,7 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { fourplexerDef } from '$lib/audio/modules/fourplexer';
   import { fourplexerClampSelector } from '$lib/audio/fourplexer-select';
   import { useEngine } from '$lib/audio/engine-context';
@@ -30,7 +30,7 @@
   }
   // Knob value is the 0-based selector; we display 1-based via the label.
   const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[k] = fourplexerClampSelector(v);
+    setNodeParam(id, k, fourplexerClampSelector(v));
   };
   // Live reader so a gate-advanced selection visibly rotates the knob even
   // though the change originated in the worklet (it posts back into params,

@@ -12,7 +12,7 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { moog993Def } from '$lib/audio/modules/moog993';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -32,10 +32,7 @@
   let route3 = $derived(node?.params.route3 ?? def('route3').defaultValue);
 
   function setParam(paramId: string) {
-    return (v: number) => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
+    return (v: number) => setNodeParam(id, paramId, v);
   }
   function readLive(paramId: string) {
     return () => {

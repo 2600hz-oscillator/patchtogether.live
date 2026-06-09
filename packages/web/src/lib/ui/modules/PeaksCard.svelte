@@ -7,7 +7,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import OssAttribution from '$lib/ui/modules/OssAttribution.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { peaksDef, peaksMath, PEAKS_MODE_NAMES, PEAKS_MAX_MODE, type PeaksMode } from '$lib/audio/modules/peaks';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -36,7 +36,7 @@
   let knob0Labels = $derived(peaksMath.knobLabels(clampMode(mode0)));
   let knob1Labels = $derived(peaksMath.knobLabels(clampMode(mode1)));
 
-  const set = (pid: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[pid] = v; };
+  const set = (pid: string) => (v: number) => setNodeParam(id, pid, v);
   const live = (pid: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
     return e.readParam(node, pid);
@@ -46,8 +46,7 @@
     const pid = channel === 0 ? 'mode0' : 'mode1';
     const cur = clampMode(channel === 0 ? mode0 : mode1);
     const next = ((cur + 1) % (PEAKS_MAX_MODE + 1)) as PeaksMode;
-    const t = patch.nodes[id];
-    if (t) t.params[pid] = next;
+    setNodeParam(id, pid, next);
   }
 
   const inputs: PortDescriptor[] = [

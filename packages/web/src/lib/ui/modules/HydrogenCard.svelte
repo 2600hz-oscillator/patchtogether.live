@@ -19,6 +19,7 @@
   import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import {
     defaultTracks,
     coerceTracks,
@@ -55,10 +56,7 @@
     const v = node?.params?.[key];
     return typeof v === 'number' ? v : fb;
   }
-  const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id];
-    if (t) t.params[k] = v;
-  };
+  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
   const live = (k: string) => () => {
     const e = engineCtx.get();
     if (!e || !node) return undefined;
@@ -173,7 +171,7 @@
         }
         for (const k of ['bpm', 'swing', 'gain'] as const) {
           const v = snap[k];
-          if (typeof v === 'number') t.params[k] = v;
+          if (typeof v === 'number') t.params[k] = v; // guard:allow-raw-write
         }
       });
     },

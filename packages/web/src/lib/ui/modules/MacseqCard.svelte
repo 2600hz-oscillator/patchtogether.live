@@ -16,6 +16,7 @@
   import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import {
     STEP_COUNT,
     PAGE_SIZE,
@@ -68,10 +69,7 @@
     return coerceSteps(raw);
   });
 
-  const set = (k: string) => (v: number) => {
-    const target = patch.nodes[id];
-    if (target) target.params[k] = v;
-  };
+  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
 
   function togglePlay() {
     set('isPlaying')(isPlaying ? 0 : 1);
@@ -191,7 +189,7 @@
         }
         for (const k of ['bpm', 'length', 'octave', 'gateLength'] as const) {
           const v = snap[k];
-          if (typeof v === 'number') t.params[k] = v;
+          if (typeof v === 'number') t.params[k] = v; // guard:allow-raw-write
         }
       });
     },

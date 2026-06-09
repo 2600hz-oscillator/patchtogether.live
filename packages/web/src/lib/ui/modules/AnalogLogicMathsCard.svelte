@@ -6,7 +6,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { analogLogicMathsDef } from '$lib/audio/modules/analog-logic-maths';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -19,7 +19,7 @@
   let attA = $derived(node?.params.attA ?? analogLogicMathsDef.params[0]!.defaultValue);
   let attB = $derived(node?.params.attB ?? analogLogicMathsDef.params[1]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[id_] = v; };
+  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
   const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
   const inputs: PortDescriptor[] = [

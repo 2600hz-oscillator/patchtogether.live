@@ -6,6 +6,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import {
     cartesianDef,
     defaultCells,
@@ -68,7 +69,7 @@
   });
 
   const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[k] = v;
+    setNodeParam(id, k, v);
   };
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;

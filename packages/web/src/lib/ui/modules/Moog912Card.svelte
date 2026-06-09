@@ -12,7 +12,7 @@
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { moog912Def } from '$lib/audio/modules/moog912';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -31,10 +31,7 @@
   let smoothing = $derived(node?.params.smoothing ?? def('smoothing').defaultValue);
 
   function setParam(paramId: string) {
-    return (v: number) => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
+    return (v: number) => setNodeParam(id, paramId, v);
   }
   function readLive(paramId: string) {
     return () => {

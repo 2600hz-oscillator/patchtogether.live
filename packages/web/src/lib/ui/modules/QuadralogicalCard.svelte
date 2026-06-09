@@ -34,6 +34,7 @@
   import { useStore, type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -89,10 +90,7 @@
   function pget(key: string): number {
     return (node?.params?.[key] ?? defaultFor(key)) as number;
   }
-  const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id];
-    if (t) t.params[k] = v;
-  };
+  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
   // Wavesculpt-style live-CV poll (suppressed during a drag) so a patched LFO /
   // bound MIDI CC moves the dot in real time. engine.readParam returns
   // intrinsic-knob + most-recent-CV sample.
@@ -373,8 +371,7 @@
 
   // ---- per-edge effect selection ----
   function selectEdgeFx(edgeId: string, fx: number): void {
-    const t = patch.nodes[id];
-    if (t) t.params[`${edgeId}_fx`] = fx;
+    setNodeParam(id, `${edgeId}_fx`, fx);
   }
   // The two control labels for an edge given its selected effect (null = hide
   // that fader for this effect — e.g. DISSOLVE is pure ratio).

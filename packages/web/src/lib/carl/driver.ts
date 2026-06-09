@@ -91,7 +91,7 @@ export function applyIntent(deps: DriverDeps, intent: Intent): number {
       }
       case 'setParam': {
         const n = patch.nodes[intent.nodeId];
-        if (n) n.params[intent.paramId] = intent.value;
+        if (n) n.params[intent.paramId] = intent.value; // guard:allow-raw-write — bot-driven (Carl) programmatic intent, must NOT land on the human's undo stack
         return;
       }
       case 'deleteNode': {

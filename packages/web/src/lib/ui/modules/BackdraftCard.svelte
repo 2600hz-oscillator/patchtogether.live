@@ -11,6 +11,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import {
     backdraftDef,
     BACKDRAFT_MAX_DELAY_MS,
@@ -41,10 +42,7 @@
     return node?.params[name] ?? def?.defaultValue ?? 0;
   }
   function setParam(paramId: string) {
-    return (v: number) => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
+    return (v: number) => setNodeParam(id, paramId, v);
   }
 
   // ---- MIRROR X / MIRROR Y kaleidoscope toggles ----
@@ -55,9 +53,7 @@
   let mirrorYOn = $derived(p('mirrorY') >= 0.5);
   function toggleMirror(paramId: 'mirrorX' | 'mirrorY') {
     return () => {
-      const target = patch.nodes[id];
-      if (!target) return;
-      target.params[paramId] = (target.params[paramId] ?? 0) >= 0.5 ? 0 : 1;
+      setNodeParam(id, paramId, (p(paramId) ?? 0) >= 0.5 ? 0 : 1);
     };
   }
 
@@ -166,7 +162,7 @@
       const stored = (patch.nodes[id]?.params[k] ?? 0);
       if ((live >= 0.5) !== (stored >= 0.5)) {
         const target = patch.nodes[id];
-        if (target) target.params[k] = live >= 0.5 ? 1 : 0;
+        if (target) target.params[k] = live >= 0.5 ? 1 : 0; // guard:allow-raw-write — per-frame engine→store reflect, must NOT pollute undo
       }
     }
   }

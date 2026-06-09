@@ -12,6 +12,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { veilsDef } from '$lib/audio/modules/veils';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -33,7 +34,7 @@
     return fallback ?? defaultFor(k);
   }
   const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[k] = v;
+    setNodeParam(id, k, v);
   };
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
@@ -43,8 +44,7 @@
   // Toggle the resp{N} param between 0 (LIN) and 1 (EXP).
   function toggleResp(ch: number): void {
     const k = `resp${ch}`;
-    const t = patch.nodes[id]; if (!t) return;
-    t.params[k] = (paramVal(k) >= 0.5) ? 0 : 1;
+    setNodeParam(id, k, (paramVal(k) >= 0.5) ? 0 : 1);
   }
 
   // Ports — generated channel-by-channel so we keep the L→R reading order

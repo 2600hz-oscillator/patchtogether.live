@@ -3,7 +3,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { wavetableVcoDef } from '$lib/audio/modules/wavetable-vco';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -19,7 +19,7 @@
   let fmAmount = $derived(node?.params.fmAmount ?? wavetableVcoDef.params.find((p) => p.id === 'fmAmount')!.defaultValue);
   let pmAmount = $derived(node?.params.pmAmount ?? wavetableVcoDef.params.find((p) => p.id === 'pmAmount')!.defaultValue);
 
-  const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
+  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
   const live = (k: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, k); };
 
   const inputs: PortDescriptor[] = [

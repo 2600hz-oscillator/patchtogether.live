@@ -146,7 +146,7 @@ export function setCombineNodeParam(
     const n = findNode(g, targetNodeId);
     if (!n) return;
     if (!n.params) n.params = {};
-    n.params[paramId] = value; // set a single key in place (never spread params)
+    n.params[paramId] = value; // guard:allow-raw-write — NESTED combine-graph op-node params, already in mutateCombine's LOCAL_ORIGIN transact; not a top-level node.params write
   });
 }
 

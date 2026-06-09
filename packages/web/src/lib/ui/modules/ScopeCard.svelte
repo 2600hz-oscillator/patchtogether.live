@@ -5,6 +5,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { scopeDef, type ScopeSnapshot, type PitchResult } from '$lib/audio/modules/scope';
   import { drawScope } from '$lib/audio/modules/scope-draw';
   import { useEngine } from '$lib/audio/engine-context';
@@ -62,20 +63,15 @@
   );
 
   function setParam(paramId: string) {
-    return (v: number) => {
-      const target = patch.nodes[id];
-      if (target) target.params[paramId] = v;
-    };
+    return (v: number) => setNodeParam(id, paramId, v);
   }
   function toggleXY() {
     const target = patch.nodes[id];
     if (target) target.params.mode = xyMode ? 0 : 1;
   }
   function toggleRange(channel: 1 | 2) {
-    const target = patch.nodes[id];
-    if (!target) return;
     const key = channel === 1 ? 'ch1Range' : 'ch2Range';
-    target.params[key] = (target.params[key] ?? 0) >= 0.5 ? 0 : 1;
+    setNodeParam(id, key, (node?.params[key] ?? 0) >= 0.5 ? 0 : 1);
   }
 
   let canvasEl: HTMLCanvasElement | null = $state(null);

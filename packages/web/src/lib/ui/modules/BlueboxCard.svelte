@@ -22,7 +22,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import {
     blueboxDef,
     BLUEBOX_BUTTON_NAMES,
@@ -47,16 +47,14 @@
    */
   function pressBtn(name: BlueboxButtonName) {
     const pid = buttonParamId(name);
-    const t = patch.nodes[id];
-    if (t) t.params[pid] = 1;
+    setNodeParam(id, pid, 1);
     const e = engineCtx.get();
     if (e && node) e.setParam(node, pid, 1);
   }
 
   function releaseBtn(name: BlueboxButtonName) {
     const pid = buttonParamId(name);
-    const t = patch.nodes[id];
-    if (t) t.params[pid] = 0;
+    setNodeParam(id, pid, 0);
     const e = engineCtx.get();
     if (e && node) e.setParam(node, pid, 0);
   }

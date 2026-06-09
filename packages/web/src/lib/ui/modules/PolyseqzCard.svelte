@@ -7,6 +7,7 @@
   import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import {
     defaultChordSteps,
     STEP_COUNT,
@@ -78,7 +79,7 @@
   });
 
   const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[k] = v;
+    setNodeParam(id, k, v);
   };
 
   function togglePlay() {
@@ -341,7 +342,7 @@
         }
         for (const k of ['bpm', 'length', 'octave', 'gateLength', 'humanize'] as const) {
           const v = snap[k];
-          if (typeof v === 'number') t.params[k] = v;
+          if (typeof v === 'number') t.params[k] = v; // guard:allow-raw-write
         }
       });
     },

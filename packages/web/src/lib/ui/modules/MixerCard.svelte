@@ -3,7 +3,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { mixerDef } from '$lib/audio/modules/mixer';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -19,7 +19,7 @@
   let ch4    = $derived(node?.params.ch4    ?? mixerDef.params[3]!.defaultValue);
   let master = $derived(node?.params.master ?? mixerDef.params[4]!.defaultValue);
 
-  const set = (id_: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[id_] = v; };
+  const set = (id_: string) => (v: number) => setNodeParam(id, id_, v);
   const live = (id_: string) => () => { const e = engineCtx.get(); if (!e || !node) return undefined; return e.readParam(node, id_); };
 
   const inputs: PortDescriptor[] = [

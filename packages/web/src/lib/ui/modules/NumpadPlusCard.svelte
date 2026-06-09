@@ -19,6 +19,7 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { patch, ydoc } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import {
     coerceLayers,
@@ -39,10 +40,7 @@
     const v = node?.params?.[key];
     return typeof v === 'number' ? v : fb;
   }
-  const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id];
-    if (t) t.params[k] = v;
-  };
+  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
 
   // ─── Live readouts polled from the engine handle ─────────────────
   let activeLayerLive = $state(0);

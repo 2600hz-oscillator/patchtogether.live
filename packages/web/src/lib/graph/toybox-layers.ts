@@ -150,7 +150,7 @@ export function setLayerParam(nodeId: string, index: number, pid: string, value:
     const layer = ensureLayer(nodeId, index);
     if (!layer) return;
     if (!layer.params) layer.params = {};
-    layer.params[pid] = value;
+    layer.params[pid] = value; // guard:allow-raw-write — NESTED layer params (node.data.layers), already in a LOCAL_ORIGIN transact; not a top-level node.params write
   }, LOCAL_ORIGIN);
 }
 

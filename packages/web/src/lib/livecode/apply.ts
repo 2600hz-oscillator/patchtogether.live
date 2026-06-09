@@ -32,14 +32,14 @@ export function applyMutation(m: Mutation): void {
   if (m.kind === 'setParam') {
     const target = livePatch.nodes[m.nodeId];
     if (!target) return;
-    target.params[m.paramId] = m.value;
+    target.params[m.paramId] = m.value; // guard:allow-raw-write — livecode/clockedRunner per-tick programmatic write; caller owns the transact, not a user knob edit
     return;
   }
   if (m.kind === 'setData') {
     const target = livePatch.nodes[m.nodeId];
     if (!target) return;
     if (!target.data) target.data = {};
-    target.data[m.key] = m.value;
+    target.data[m.key] = m.value; // guard:allow-raw-write — livecode/clockedRunner per-tick programmatic write; caller owns the transact, not a user edit
     return;
   }
 }

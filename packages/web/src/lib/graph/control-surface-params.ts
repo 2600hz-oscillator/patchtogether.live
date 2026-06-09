@@ -18,10 +18,12 @@
 //
 // Writes that reach node.data go through a LOCAL_ORIGIN ydoc transaction so they
 // ride the Y.Doc to rack-mates + register on the undo stack (mirrors the toybox
-// card mutators). Flat node.params writes use the live patch proxy directly (its
-// own setter already transacts) — unchanged from the original card.
+// card mutators). Flat node.params writes go through setNodeParam — the shared
+// mutation seam — which tags the same LOCAL_ORIGIN transaction, so a surface
+// edit on a flat param is undoable on the same footing as the nested path.
 
 import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+import { setNodeParam } from '$lib/graph/mutate';
 import type { ModuleNode, ParamDef } from '$lib/graph/types';
 import { getModuleDef } from '$lib/audio/module-registry';
 import { getVideoModuleDef } from '$lib/video/module-registry';
@@ -92,9 +94,10 @@ function resolveFlat(node: ModuleNode, paramId: string): ResolvedSurfaceParam | 
       return (live?.params[paramId] ?? def.defaultValue ?? 0) as number;
     },
     set: (value: number) => {
-      const live = patch.nodes[node.id];
-      if (!live) return;
-      live.params[paramId] = value; // proxy setter transacts
+      // Route through the shared mutation seam so the flat write rides the
+      // Y.Doc tagged LOCAL_ORIGIN (undoable) — matching the nested/toybox path
+      // above, instead of a bare untagged proxy write.
+      setNodeParam(node.id, paramId, value);
     },
   };
 }

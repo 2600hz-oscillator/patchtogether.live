@@ -10,6 +10,7 @@
   import { Handle, Position } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { acidwarpDef, speedKnobToMultiplier } from '$lib/video/modules/acidwarp';
   import { SCENE_COUNT, PALETTE_COUNT } from '$lib/video/modules/acidwarp-patterns';
   import { useEngine } from '$lib/audio/engine-context';
@@ -29,7 +30,7 @@
     return typeof v === 'number' ? v : defaultFor(k);
   }
   const set = (k: string) => (v: number) => {
-    const t = patch.nodes[id]; if (t) t.params[k] = v;
+    setNodeParam(id, k, v);
   };
 
   // ----- Display canvas: pull the engine's per-frame snapshot -----

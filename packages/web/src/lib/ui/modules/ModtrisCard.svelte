@@ -4,7 +4,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { modtrisDef, drawModtris, type ModtrisState } from '$lib/audio/modules/modtris';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -30,10 +30,7 @@
   let gravityBpm = $derived(node?.params.gravityBpm ?? modtrisDef.params[0]!.defaultValue);
   let levelStep  = $derived(node?.params.levelStep  ?? modtrisDef.params[1]!.defaultValue);
 
-  const setParam = (paramId: string) => (v: number) => {
-    const target = patch.nodes[id];
-    if (target) target.params[paramId] = v;
-  };
+  const setParam = (paramId: string) => (v: number) => setNodeParam(id, paramId, v);
   const readLive = (paramId: string) => () => {
     const eng = engineCtx.get();
     if (!eng || !node) return undefined;

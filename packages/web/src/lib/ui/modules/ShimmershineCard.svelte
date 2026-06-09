@@ -3,7 +3,7 @@
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
-  import { patch } from '$lib/graph/store';
+  import { setNodeParam } from '$lib/graph/mutate';
   import { shimmershineDef } from '$lib/audio/modules/shimmershine';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
@@ -19,7 +19,7 @@
   let damp    = $derived(node?.params.damp    ?? shimmershineDef.params[3]!.defaultValue);
   let mix     = $derived(node?.params.mix     ?? shimmershineDef.params[4]!.defaultValue);
 
-  const set = (k: string) => (v: number) => { const t = patch.nodes[id]; if (t) t.params[k] = v; };
+  const set = (k: string) => (v: number) => setNodeParam(id, k, v);
   const live = (k: string) => () => {
     const e = engineCtx.get(); if (!e || !node) return undefined;
     return e.readParam(node, k);
