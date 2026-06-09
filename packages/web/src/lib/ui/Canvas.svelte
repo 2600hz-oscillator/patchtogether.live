@@ -17,6 +17,12 @@
   import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
   import { buildDuplicate } from '$lib/graph/duplicate';
   import { instanceCount, wouldExceedCap } from '$lib/graph/cap';
+  import {
+    planSingletonCleanup,
+    isElectedDeleter,
+    isSafeToDelete,
+    type CleanupPeer,
+  } from '$lib/graph/singleton-cleanup';
   import { getDefaultSnapshotBus, type PatchSnapshot } from '$lib/graph/snapshot';
   import {
     makeEnvelope,
@@ -621,6 +627,86 @@
     }, LOCAL_ORIGIN);
     didAutoSpawnTimelorde = true;
     trace(`auto-spawned TIMELORDE at (${pos.x}, ${pos.y}) — rack had none`);
+  });
+
+  // ---------------- Phase 4c: post-merge singleton cleanup ----------------
+  //
+  // Closes the undeletable-ghost race the auto-spawn comment above flags as
+  // "future work". Two peers can each insert a TIMELORDE (or any type-level
+  // maxInstances:1 module) before either sees the other's write; Yjs merges
+  // both → a duplicate that the engine drops at runtime but, being
+  // `undeletable: true`, the user can NEVER remove. This pass runs on the
+  // CONVERGED snapshot and deterministically deletes the surplus.
+  //
+  // COLLAB SAFETY (see graph/singleton-cleanup.ts for the full rationale):
+  //   - DETERMINISTIC SURVIVOR: keep the lex-SMALLEST id, delete the lex-larger
+  //     duplicate(s) — matches the engine's eviction tie-break (#705).
+  //   - SINGLE ELECTED DELETER: only ONE peer issues the delete (owner-pref,
+  //     else lowest awareness clientID). Every-peer-deletes could race the
+  //     type down to ZERO. Non-elected peers wait for the merge to converge.
+  //   - RE-CHECK IN TRANSACT + NEVER-DELETE-LAST: the delete re-reads the live
+  //     count inside the Yjs transact (isSafeToDelete) and refuses if removal
+  //     would drop the type to zero → idempotent, double-delete-proof even if
+  //     two peers momentarily both think they're elected.
+  //
+  // This lives HERE (a snapshot $effect with ydoc + LOCAL_ORIGIN), NOT in the
+  // audio reconciler — the reconciler is audio-only and runs on EVERY peer, so
+  // a delete there would double-delete. SCOPE is type-level maxInstances only;
+  // per-user caps (picturebox/camera/samsloop) are excluded inside the helper.
+  $effect(() => {
+    // React to snapshot convergence — re-runs whenever the merged doc changes.
+    const nodes = snapshot.nodes;
+    if (nodes.length === 0) return;
+
+    // Build the awareness roster for the elected-deleter decision. No provider
+    // (public `/` demo / single-user) → empty roster + null localClientID, and
+    // isElectedDeleter treats that as "lone deleter".
+    const aw = provider?.awareness;
+    const localClientID: number | null = aw ? aw.clientID : null;
+    const peers: CleanupPeer[] = [];
+    if (aw) {
+      for (const [clientID, state] of aw.getStates()) {
+        const u = (state as { user?: { isRackOwner?: boolean } } | undefined)?.user;
+        peers.push({ clientID, isRackOwner: u?.isRackOwner === true });
+      }
+    }
+    if (!isElectedDeleter(localClientID, peers)) return; // a rack-mate handles it
+
+    // Plan against the converged snapshot (deterministic lex-survivor).
+    const plan = planSingletonCleanup(
+      patch.nodes as Record<string, { id: string; type: string } | null | undefined>,
+      defLookup,
+    );
+    if (plan.length === 0) return;
+
+    // Issue the deletes in ONE transact, re-checking the live count per node so
+    // we never drop a type to zero (never-delete-last) and skip anything a
+    // rack-mate already removed.
+    ydoc.transact(() => {
+      for (const d of plan) {
+        if (!isSafeToDelete(
+          patch.nodes as Record<string, { type: string } | null | undefined>,
+          d.id,
+          d.type,
+        )) {
+          continue;
+        }
+        // Drop edges touching the doomed node first (mirror deleteNode), then
+        // the node itself. We bypass the `undeletable` guard in deleteNode on
+        // purpose: this surplus IS an undeletable ghost — removing it is the
+        // whole point — and we've already proven the survivor remains.
+        for (const [eid, edge] of Object.entries(patch.edges)) {
+          if (!edge) continue;
+          if (edge.source.nodeId === d.id || edge.target.nodeId === d.id) {
+            delete patch.edges[eid];
+          }
+        }
+        delete patch.nodes[d.id];
+        trace(
+          `singleton-cleanup: deleted duplicate ${d.id} (${d.type}); kept ${d.keptId}`,
+        );
+      }
+    }, LOCAL_ORIGIN);
   });
 
   // Mirror snapshot → SvelteFlow node/edge arrays. We DROPPED bind:nodes /
