@@ -555,6 +555,28 @@
     t.params.mode = Math.round(mode) === 1 ? 0 : 1;
   }
 
+  // ---------- manual TRIGGER ----------
+  //
+  // SAMSLOOP is idle-by-default (no autoplay). The on-card TRIGGER button
+  // fires a momentary rising edge straight at the playback worklet — the
+  // engine handle exposes a `manualTrigger` function (read key) that posts a
+  // `{ type: 'trigger' }` port message. It works whether or not a cable is
+  // patched into the `trig` input, and is MODE-AWARE in the worklet: in
+  // one-shot it plays the sample through once then returns to silence; in
+  // loop it starts/restarts the loop. The play-state is worklet-private and
+  // never persisted, so this never auto-resumes on patch load.
+  let triggerPulse = $state(false); // momentary visual flash on the button
+  function fireTrigger() {
+    const e = engineCtx.get();
+    if (!e || !node) return;
+    const trig = e.read(node, 'manualTrigger');
+    if (typeof trig === 'function') {
+      (trig as () => void)();
+      triggerPulse = true;
+      setTimeout(() => { triggerPulse = false; }, 120);
+    }
+  }
+
   // Decode `fileBytesB64` lazily for the waveform preview. Runs on
   // signature change (new upload OR initial hydrate from a persisted
   // patch). Errors during decode here are silent — the playback path
@@ -746,7 +768,7 @@
             disabled={fileInputDisabled}
             data-testid="samsloop-wav-input"
           />
-          <span>Load audio (≤ {SAMSLOOP_MAX_FILE_BYTES / 1024} KB)…</span>
+          <span>Load audio (≤ {SAMSLOOP_MAX_FILE_BYTES / (1024 * 1024)} MB)…</span>
         </label>
         <button
           type="button"
@@ -756,6 +778,23 @@
           data-testid="samsloop-mode-toggle"
           aria-label="Toggle loop / one-shot"
         >{isLoop ? 'LOOP' : '1-SHOT'}</button>
+      </div>
+
+      <!-- TRIGGER row: SAMSLOOP is idle-by-default (no autoplay). This
+           button fires a momentary rising edge at the worklet to START
+           playback per the current mode (one-shot = play once; loop =
+           start/restart). Mirrors the `trig` gate input; works with or
+           without a cable patched. -->
+      <div class="trigger-row">
+        <button
+          type="button"
+          class="trigger-btn"
+          class:pulse={triggerPulse}
+          onclick={fireTrigger}
+          data-testid="samsloop-trigger-button"
+          aria-label="Trigger playback"
+        >▶ TRIGGER</button>
+        <span class="trigger-hint">{isLoop ? 'start / restart loop' : 'play once'}</span>
       </div>
 
       <!-- Record settings row: three discrete toggle switches matching
@@ -996,6 +1035,41 @@
   }
   .samsloop-card .mode-btn:hover {
     border-color: #6a7282;
+  }
+
+  .samsloop-card .trigger-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .samsloop-card .trigger-btn {
+    background: #15211a;
+    color: rgb(120, 220, 140);
+    border: 1px solid rgb(80, 180, 110);
+    border-radius: 2px;
+    padding: 5px 14px;
+    font-size: 0.65rem;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+    font-family: ui-monospace, monospace;
+    font-weight: 600;
+  }
+  .samsloop-card .trigger-btn:hover {
+    background: #1c3024;
+    border-color: rgb(110, 220, 140);
+  }
+  .samsloop-card .trigger-btn:active,
+  .samsloop-card .trigger-btn.pulse {
+    background: rgb(60, 180, 100);
+    color: #061008;
+    border-color: rgb(120, 240, 160);
+  }
+  .samsloop-card .trigger-hint {
+    font-size: 0.5rem;
+    color: var(--text-dim, #8b94a5);
+    letter-spacing: 0.06em;
+    font-family: ui-monospace, monospace;
+    text-transform: uppercase;
   }
 
   .samsloop-card .rec-settings-row {

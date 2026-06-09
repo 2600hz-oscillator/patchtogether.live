@@ -19,6 +19,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { spawnPatch } from './_helpers';
+import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WAV_PATH = resolve(__dirname, '../fixtures/samsloop-test.wav');
@@ -262,14 +263,15 @@ test.describe('SAMSLOOP module', () => {
     expect(errors, errors.join('; ')).toEqual([]);
   });
 
-  test('rejects oversize files (>250 KB) with the size-limit error', async ({ page }) => {
+  test('rejects oversize files (>2 MB) with the size-limit error', async ({ page }) => {
     const errors = await setupPage(page);
     await spawnPatch(page, [{ id: 's', type: 'samsloop', position: { x: 200, y: 200 } }]);
 
-    // Build a 300 KB byte blob and feed it through the input. The file
-    // gate runs BEFORE decodeAudioData so the content can be arbitrary
-    // bytes — the size check fires first.
-    const oversizeBytes = Buffer.alloc(300 * 1024, 0);
+    // Build a >2 MB byte blob and feed it through the input. The cap was
+    // raised 250 KB → 2 MB, so the blob must exceed 2 MB to trip the gate.
+    // The file gate runs BEFORE decodeAudioData so the content can be
+    // arbitrary bytes — the size check fires first.
+    const oversizeBytes = Buffer.alloc(2 * 1024 * 1024 + 1, 0);
     const fileInput = page.locator('[data-testid="samsloop-wav-input"]');
     await fileInput.setInputFiles({
       name: 'oversize.wav',
@@ -288,5 +290,56 @@ test.describe('SAMSLOOP module', () => {
     // not a thrown exception. We allow stderr-level console messages but
     // not uncaught page errors.
     expect(errors.filter((e) => !/too large/i.test(e)), errors.join('; ')).toEqual([]);
+  });
+
+  test('idle-by-default: a loaded sample stays SILENT until the TRIGGER button produces audio', async ({ page }) => {
+    // SAMSLOOP no longer auto-plays. After a sample loads it sits idle; the
+    // on-card TRIGGER button fires a momentary rising edge at the worklet
+    // and starts playback (mode-aware). We route samsloop.out → SCOPE.ch1
+    // and assert (a) the scope is essentially silent before any trigger,
+    // then (b) audio appears after clicking TRIGGER. Renderer-tolerant:
+    // we max-hold the scope peak over a window (not a single-instant read)
+    // and use a generous floor so SwiftShader/CI software paths still pass
+    // — the assertion is "silent vs audible", not an exact level.
+    const errors = await setupPage(page);
+    await spawnPatch(
+      page,
+      [
+        { id: 's', type: 'samsloop', position: { x: 200, y: 200 }, domain: 'audio', params: { mode: 1 } },
+        { id: 'scp', type: 'scope', position: { x: 620, y: 200 }, domain: 'audio' },
+      ],
+      [
+        { id: 'e1', from: { nodeId: 's', portId: 'out' }, to: { nodeId: 'scp', portId: 'ch1' },
+          sourceType: 'audio', targetType: 'audio' },
+      ],
+    );
+
+    // Load the committed test WAV via the card upload handler.
+    const wavBytes = readFileSync(WAV_PATH);
+    await page.locator('[data-testid="samsloop-wav-input"]').setInputFiles({
+      name: 'samsloop-test.wav',
+      mimeType: 'audio/wav',
+      buffer: wavBytes,
+    });
+    await expect(page.locator('[data-testid="samsloop-upload-status"]')).toContainText(
+      /loaded \d+ samples/i,
+      { timeout: 5000 },
+    );
+    // Give the engine factory's poll (~200ms) time to decode + push the
+    // buffer into the worklet so a trigger would actually have audio to play.
+    await page.waitForTimeout(600);
+
+    // (a) IDLE-BY-DEFAULT: no trigger yet → the output must be silent.
+    const idle = await readScopePeakOverWindow(page, 'scp', 500);
+    expect(idle.peak, `idle peak ${idle.peak} (must be ~silent before trigger)`).toBeLessThan(0.02);
+
+    // (b) Click TRIGGER → playback starts (loop mode) → audio appears.
+    const trigBtn = page.locator('[data-testid="samsloop-trigger-button"]');
+    await expect(trigBtn).toBeVisible();
+    await trigBtn.click();
+    const playing = await readScopePeakOverWindow(page, 'scp', 1200);
+    expect(playing.peak, `post-trigger peak ${playing.peak} (must be audible)`).toBeGreaterThan(0.05);
+
+    expect(errors, errors.join('; ')).toEqual([]);
   });
 });

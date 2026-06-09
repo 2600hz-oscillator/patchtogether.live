@@ -144,6 +144,51 @@ describe('ART samsloop / finite + bounded', () => {
   });
 });
 
+describe('ART samsloop / idle-by-default + mode-aware trigger (no autoplay)', () => {
+  it('emits SILENCE with no trigger — a loaded sample does not autoplay', () => {
+    const src = sineBuffer(440, SR);
+    const { out } = samsloopMath.renderWithTriggers(src, SR, 1, 0, src.length, 'loop', []);
+    expect(rms(out), 'no-trigger RMS must be 0 (idle)').toBe(0);
+  });
+
+  it('a trigger in LOOP mode starts continuous audio at the source pitch', () => {
+    const src = sineBuffer(440, SR);
+    const { out } = samsloopMath.renderWithTriggers(src, SR, 1, 0, src.length, 'loop', [0]);
+    const pFund = powerAt(out, 440, SR);
+    const pOctaveUp = powerAt(out, 880, SR);
+    expect(pFund, `loop-trigger fund ${pFund} > octave-up ${pOctaveUp}`).toBeGreaterThan(
+      pOctaveUp * 10,
+    );
+    // Audio persists to the tail (it keeps looping).
+    expect(rms(out.slice(SR - SR / 4)), 'loop tail must stay audible').toBeGreaterThan(0.05);
+  });
+
+  it('a trigger in ONE-SHOT mode plays once then returns to silence', () => {
+    const lenS = 0.1;
+    const lenSamples = Math.floor(SR * lenS);
+    const src = sineBuffer(440, lenSamples);
+    const { out } = samsloopMath.renderWithTriggers(
+      src, SR, 1, 0, lenSamples, 'one-shot', [0],
+    );
+    // Audible during the single pass...
+    expect(rms(out.slice(0, lenSamples)), 'one-shot pass must be audible').toBeGreaterThan(0.05);
+    // ...silent after one pass.
+    const tailStart = lenSamples + 100;
+    expect(rms(out.slice(tailStart)), 'one-shot tail must be silent').toBeLessThan(1e-6);
+  });
+
+  it('a re-trigger in LOOP mode keeps audio flowing (restart, not stop)', () => {
+    const lenSamples = Math.floor(SR * 0.05);
+    const src = sineBuffer(440, lenSamples);
+    // Trigger at 0 and again at the half-way mark.
+    const { out, playing } = samsloopMath.renderWithTriggers(
+      src, SR, 1, 0, lenSamples, 'loop', [0, Math.floor(SR / 2)],
+    );
+    expect(playing, 'still playing after re-trigger').toBe(true);
+    expect(rms(out.slice(SR - lenSamples)), 'audio survives the re-trigger').toBeGreaterThan(0.05);
+  });
+});
+
 function rms(buf: Float32Array): number {
   let s = 0;
   for (let i = 0; i < buf.length; i++) s += buf[i]! * buf[i]!;

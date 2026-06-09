@@ -2,7 +2,7 @@
 //
 // SAMSLOOP — loop-based sample player AudioWorklet.
 //
-// User uploads a .wav (≤250 KB), AudioContext.decodeAudioData turns it into
+// User uploads a .wav (≤2 MB), AudioContext.decodeAudioData turns it into
 // a Float32Array, the host posts the samples here via `loadSample`. The
 // processor reads through that buffer with a fractional read-cursor and a
 // linear-interpolation tap, controlled by:
@@ -29,9 +29,20 @@
 //   - mode  (AudioParam, 0=one-shot, 1=loop). Discrete; we round inside.
 //   - start (AudioParam, sample-index lower bound; clamped to [0, len-1]).
 //   - end   (AudioParam, sample-index upper bound; clamped to [start+1, len]).
-//   - trig  (audio-rate input, rising edge resets the read-cursor to start
-//           (or to end-1 if rate is negative) so a gate can retrigger the
-//           sample without uploading it again).
+//   - trig  (audio-rate input, rising edge STARTS playback per the current
+//           mode and resets the read-cursor to the window edge — start (or
+//           end-1 if rate is negative). A gate can start/retrigger the
+//           sample without uploading it again.).
+//
+// IDLE-BY-DEFAULT (no autoplay): the worklet keeps a private `playing`
+// boolean that defaults to FALSE. While !playing the output is silence. A
+// rising edge on `trig` OR a `{ type: 'trigger' }` port message (the on-card
+// TRIGGER button) sets playing=true and resets the cursor to the window
+// edge. Playback is MODE-AWARE: in one-shot (mode=0) the cursor running off
+// the end of the window sets playing=false (stop, silent); in loop (mode=1)
+// it wraps and stays playing. `loadSample` does NOT auto-start — a freshly
+// loaded (or rehydrated) sample sits idle until triggered, so a patch load
+// never spontaneously plays.
 //
 // Output is mono. The audio graph's stereo handling (StereoVCA, mixmstrs)
 // can convert this to stereo downstream — matching other one-shot sources
@@ -62,7 +73,14 @@ interface LoadSampleMessage {
 interface ResetMessage {
   type: 'reset';
 }
-type SamsloopMessage = LoadSampleMessage | ResetMessage;
+/** Manual trigger from the on-card TRIGGER button. Equivalent to a `trig`
+ *  gate rising edge: starts playback per the current mode and resets the
+ *  cursor to the window edge. Works whether or not a cable is patched into
+ *  the `trig` input. */
+interface TriggerMessage {
+  type: 'trigger';
+}
+type SamsloopMessage = LoadSampleMessage | ResetMessage | TriggerMessage;
 
 const TRIG_THRESHOLD = 0.5;
 
@@ -90,9 +108,16 @@ class SamsloopProcessor extends AudioWorkletProcessor {
   private buffer: Float32Array = new Float32Array(0);
   /** Fractional read-cursor in sample-frames within `buffer`. */
   private cursor = 0;
-  /** Whether we're currently emitting audio. One-shot mode flips this off
-   *  when the cursor leaves the [start, end] window; loop mode never does. */
-  private active = true;
+  /** Whether we're currently emitting audio. IDLE-BY-DEFAULT: starts FALSE
+   *  (no autoplay). A trig rising edge / manual trigger flips it TRUE +
+   *  resets the cursor; in one-shot the cursor running off the window flips
+   *  it back FALSE (stop, silent); in loop it stays true (wrap). `loadSample`
+   *  does NOT set it true — a loaded/rehydrated sample sits idle. */
+  private playing = false;
+  /** A `{ type: 'trigger' }` port message arrived between process() blocks;
+   *  honored at the top of the next block (same effect as a trig rising
+   *  edge). Consumed (reset to false) once applied. */
+  private pendingTrigger = false;
   /** Trigger edge detection. */
   private lastTrig = 0;
   /** Cursor scale = bufferSampleRate / contextSampleRate. At scale=1 the
@@ -114,7 +139,10 @@ class SamsloopProcessor extends AudioWorkletProcessor {
       if (!(msg.samples instanceof ArrayBuffer)) return;
       this.buffer = new Float32Array(msg.samples);
       this.cursor = 0;
-      this.active = true;
+      // IDLE-BY-DEFAULT: loading a sample does NOT start playback. The
+      // sample sits silent until a trig edge / manual trigger fires.
+      this.playing = false;
+      this.pendingTrigger = false;
       // Update the cursor scale. If the host omitted sampleRate we default
       // to the context rate so the cursor advances 1 sample per output
       // frame (the legacy behavior — keeps old saved patches sounding the
@@ -123,9 +151,16 @@ class SamsloopProcessor extends AudioWorkletProcessor {
         ? msg.sampleRate
         : sampleRate;
       this.rateScale = bufRate / sampleRate;
+    } else if (msg.type === 'trigger') {
+      // Manual trigger (the on-card TRIGGER button). Same effect as a trig
+      // gate rising edge — deferred to the top of the next process() block
+      // so the cursor resets relative to the live start/end window there.
+      this.pendingTrigger = true;
     } else if (msg.type === 'reset') {
+      // Stop + rewind. Stays idle (silent) until the next trigger.
       this.cursor = 0;
-      this.active = true;
+      this.playing = false;
+      this.pendingTrigger = false;
     }
   }
 
@@ -178,22 +213,34 @@ class SamsloopProcessor extends AudioWorkletProcessor {
     let start = Math.max(0, Math.min(len - 1, startRaw));
     let end = Math.max(start + 1, Math.min(len, endRaw));
 
+    // Apply a pending manual trigger (from the on-card TRIGGER button) at
+    // the top of the block — same effect as a trig gate rising edge, but
+    // resolved against the live start/end window here. Direction follows
+    // the block's leading rate sample.
+    if (this.pendingTrigger) {
+      const rate0 = rateArr[0] ?? 1;
+      this.cursor = rate0 >= 0 ? start : end - 1;
+      this.playing = true;
+      this.pendingTrigger = false;
+    }
+
     for (let i = 0; i < out.length; i++) {
-      // Trigger rising-edge → retrigger sample playback from the window edge
-      // (start if playing forward, end-1 if playing reverse). Detect the
-      // edge before sample emission so the very first sample of the new
-      // burst lands in this same frame.
+      // Trigger rising-edge → START / restart sample playback from the
+      // window edge (start if playing forward, end-1 if playing reverse).
+      // Detect the edge before sample emission so the very first sample of
+      // the new burst lands in this same frame. From idle this is what
+      // begins playback (no autoplay); while already playing it restarts.
       if (trigIn) {
         const t = trigIn[i] ?? 0;
         if (this.lastTrig < TRIG_THRESHOLD && t >= TRIG_THRESHOLD) {
           const rate0 = rateArr.length > 1 ? (rateArr[i] ?? 1) : (rateArr[0] ?? 1);
           this.cursor = rate0 >= 0 ? start : end - 1;
-          this.active = true;
+          this.playing = true;
         }
         this.lastTrig = t;
       }
 
-      if (!this.active) {
+      if (!this.playing) {
         out[i] = 0;
         continue;
       }
@@ -217,9 +264,10 @@ class SamsloopProcessor extends AudioWorkletProcessor {
           const winLen = end - start;
           this.cursor = start + ((this.cursor - start) % winLen);
         } else {
-          // One-shot: stick at end, silence subsequent samples.
+          // One-shot: the pass is complete — stop + go idle (silent) until
+          // the next trigger.
           this.cursor = end;
-          this.active = false;
+          this.playing = false;
         }
       } else if (this.cursor < start) {
         // Reverse direction.
@@ -229,8 +277,9 @@ class SamsloopProcessor extends AudioWorkletProcessor {
           const overshoot = start - this.cursor;
           this.cursor = end - (overshoot % winLen);
         } else {
+          // One-shot reverse: pass complete — stop + go idle.
           this.cursor = start;
-          this.active = false;
+          this.playing = false;
         }
       }
     }
