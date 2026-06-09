@@ -103,7 +103,19 @@ interface DumpTapeMessage {
   reel: 'a' | 'b';
 }
 
-type TwoTracksMessage = ResizeMessage | ResetMessage | SeekMessage | DumpTapeMessage;
+/** Manual transport trigger from the card's REC / PLAY buttons. */
+interface TransportMessage {
+  type: 'transport';
+  reel: 'a' | 'b';
+  action: 'rec' | 'play' | 'stop';
+}
+
+type TwoTracksMessage =
+  | ResizeMessage
+  | ResetMessage
+  | SeekMessage
+  | DumpTapeMessage
+  | TransportMessage;
 
 // ---------------------------------------------------------------------------
 // Transport states
@@ -286,6 +298,15 @@ class ReelState {
   // Playhead reporting throttle
   playheadFrameCount: number = 0;
 
+  // Playhead change-tracking — the host playhead message is only posted when
+  // something the card renders actually changed (transport state, quantized
+  // position, or buffer length). An idle/stopped/empty reel therefore produces
+  // ZERO message churn after its first post, so the card stays perfectly static
+  // on spawn (no sweeping playhead, no per-interval re-render).
+  lastSentState: TapeState | null = null;
+  lastSentPosQ: number = -1;
+  lastSentBufLen: number = -1;
+
   // Phase 3: scrub velocity HF loss state (1-pole IIR per channel)
   scrubLossL: number = 0;
   scrubLossR: number = 0;
@@ -394,6 +415,19 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       reel.pendingDecay = false;
     } else if (msg.type === 'seek') {
       reel.pendingSeek = Math.max(0, Math.min(1, msg.pos));
+    } else if (msg.type === 'transport') {
+      // Manual REC / PLAY / STOP from the card buttons. Mirrors the gate-driven
+      // transitions but is triggered directly by the UI.
+      if (msg.action === 'rec') {
+        reel.state = reel.overdubFlag ? 'overdub' : 'rec';
+        reel.pendingDecay = true;
+        reel.pendingSeek = 0; // start recording from the window start
+      } else if (msg.action === 'play') {
+        reel.state = 'play';
+        reel.pendingSeek = 0; // (re)start playback from the window start
+      } else if (msg.action === 'stop') {
+        reel.state = 'idle';
+      }
     } else if (msg.type === 'dump-tape') {
       const len = Math.min(reel.bufLen, TWOTRACKS_MAX_SAMPLES);
       if (len > 0) {
@@ -661,69 +695,96 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       outL[i] += gain * (isActive ? sL : 0);
       outR[i] += gain * (isActive ? sR : 0);
 
-      // ---- Advance cursor ----
-      const rate = av(pRate, i, 1);
-      reel.cursor += rate;
+      // ---- Advance cursor (ONLY while transport is active) ----
+      // A fully idle reel must hold its playhead absolutely still — no
+      // free-running sweep on an empty, stopped module. The cursor (and the
+      // boundary/loop logic that depends on it) only moves when recording,
+      // overdubbing, arming, or playing.
+      if (reel.state !== 'idle') {
+        const rate = av(pRate, i, 1);
+        reel.cursor += rate;
 
-      // ---- Window boundary handling ----
-      if (reel.cursor >= windowEnd) {
-        if (modeVal === 1) {
-          const ov = (reel.cursor - windowStart) % windowLen;
-          reel.cursor = windowStart + ov;
-          if (reel.state === 'overdub') {
-            this.applyDecay(reel, windowStart, windowEnd, decayFactor);
+        // ---- Window boundary handling ----
+        if (reel.cursor >= windowEnd) {
+          if (modeVal === 1) {
+            const ov = (reel.cursor - windowStart) % windowLen;
+            reel.cursor = windowStart + ov;
+            if (reel.state === 'overdub') {
+              this.applyDecay(reel, windowStart, windowEnd, decayFactor);
+            }
+          } else {
+            reel.cursor = windowEnd;
+            if (reel.state === 'rec' || reel.state === 'overdub') {
+              reel.state = 'play';
+              reel.cursor = windowStart;
+            } else if (reel.state === 'play') {
+              reel.state = 'idle';
+              reel.cursor = windowStart;
+            }
           }
-        } else {
-          reel.cursor = windowEnd;
-          if (reel.state === 'rec' || reel.state === 'overdub') {
-            reel.state = 'play';
+        } else if (reel.cursor < windowStart) {
+          if (modeVal === 1) {
+            const ov = (windowStart - reel.cursor) % windowLen;
+            reel.cursor = windowEnd - ov;
+          } else {
             reel.cursor = windowStart;
-          } else if (reel.state === 'play') {
-            reel.state = 'idle';
-            reel.cursor = windowStart;
-          }
-        }
-      } else if (reel.cursor < windowStart) {
-        if (modeVal === 1) {
-          const ov = (windowStart - reel.cursor) % windowLen;
-          reel.cursor = windowEnd - ov;
-        } else {
-          reel.cursor = windowStart;
-          if (reel.state === 'rec' || reel.state === 'overdub') {
-            reel.state = 'play';
-          } else if (reel.state === 'play') {
-            reel.state = 'idle';
+            if (reel.state === 'rec' || reel.state === 'overdub') {
+              reel.state = 'play';
+            } else if (reel.state === 'play') {
+              reel.state = 'idle';
+            }
           }
         }
       }
     }
 
-    // ---- Playhead reporting (throttled) ----
+    // ---- Playhead reporting (throttled + posted only when something changed) ----
     reel.playheadFrameCount++;
     if (reel.playheadFrameCount >= this.PLAYHEAD_INTERVAL) {
       reel.playheadFrameCount = 0;
       const normalized = windowLen > 0
         ? Math.max(0, Math.min(1, (reel.cursor - windowStart) / windowLen))
         : 0;
-      // Compute downsampled peak waveform for card display.
-      const pts = this.WAVEFORM_POINTS;
-      const peaks = new Float32Array(pts);
-      if (reel.bufLen > 0) {
-        const sampPerPt = reel.bufLen / pts;
-        for (let p = 0; p < pts; p++) {
-          const i0 = Math.floor(p * sampPerPt);
-          const i1 = Math.min(Math.floor((p + 1) * sampPerPt), reel.bufLen);
-          let mx = 0;
-          for (let i = i0; i < i1; i++) {
-            const s = Math.abs(reel.bufL[i] ?? 0);
-            if (s > mx) mx = s;
+      const posQ = Math.round(normalized * 1024); // quantize so micro-jitter doesn't churn
+
+      // Only post when the card-visible state actually changed. An idle, empty,
+      // stopped reel posts once then goes silent → the card never re-renders on
+      // spawn (kills the sweeping-playhead + flicker + can't-drag bugs, and the
+      // per-interval live-Y.Doc playhead write that drove a render storm).
+      const changed =
+        reel.state !== reel.lastSentState ||
+        posQ !== reel.lastSentPosQ ||
+        reel.bufLen !== reel.lastSentBufLen;
+
+      if (changed) {
+        reel.lastSentState = reel.state;
+        reel.lastSentPosQ = posQ;
+        reel.lastSentBufLen = reel.bufLen;
+
+        // Compute the downsampled peak waveform ONLY when there is tape to draw.
+        // When empty, omit `peaks` entirely so the host keeps its null reference
+        // (card shows "NO TAPE") and never swaps in a fresh Float32Array → zero
+        // render churn while idle/empty.
+        let peaks: Float32Array | undefined;
+        if (reel.bufLen > 0) {
+          const pts = this.WAVEFORM_POINTS;
+          peaks = new Float32Array(pts);
+          const sampPerPt = reel.bufLen / pts;
+          for (let p = 0; p < pts; p++) {
+            const i0 = Math.floor(p * sampPerPt);
+            const i1 = Math.min(Math.floor((p + 1) * sampPerPt), reel.bufLen);
+            let mx = 0;
+            for (let i = i0; i < i1; i++) {
+              const s = Math.abs(reel.bufL[i] ?? 0);
+              if (s > mx) mx = s;
+            }
+            peaks[p] = mx;
           }
-          peaks[p] = mx;
         }
+        try {
+          this.port.postMessage({ type: 'playhead', reel: reelId, pos: normalized, state: reel.state, bufLen: reel.bufLen, peaks });
+        } catch { /* worklet may be torn down */ }
       }
-      try {
-        this.port.postMessage({ type: 'playhead', reel: reelId, pos: normalized, state: reel.state, bufLen: reel.bufLen, peaks });
-      } catch { /* worklet may be torn down */ }
     }
   }
 

@@ -176,7 +176,7 @@ test.describe('TWOTRACKS module', () => {
     await expect(overdubBtn).not.toHaveClass(/active/);
   });
 
-  test('decay slider updates displayed percentage', async ({ page }) => {
+  test('decay knob reflects the decay param value', async ({ page }) => {
     await setupPage(page);
 
     await spawnPatch(page, [
@@ -185,18 +185,24 @@ test.describe('TWOTRACKS module', () => {
     await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
-    const decaySlider = card.locator('[data-testid="twotracks-decay"]');
+    // The decay control is now an assignable Knob (role="slider"); its tick
+    // angle / aria-valuenow tracks the decay_a param.
+    const decayKnob = card.locator('[data-testid="twotracks-decay"] [role="slider"]');
+    await expect(decayKnob).toBeVisible();
+    await expect(decayKnob).toHaveAttribute('aria-valuenow', '0');
 
-    await expect(decaySlider).toBeVisible();
-
-    const initial = await decaySlider.inputValue();
-    expect(parseFloat(initial)).toBeCloseTo(0, 1);
-
-    await decaySlider.fill('0.5');
-    await decaySlider.dispatchEvent('input');
-
-    const paramVal = card.locator('.param-val').first();
-    await expect(paramVal).toHaveText(/4[0-9]%|5[0-9]%/);
+    // Drive decay_a via the dev Y.Doc; the knob must reflect it.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __ydoc: { transact: (fn: () => void) => void };
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+      };
+      w.__ydoc.transact(() => {
+        const tt = w.__patch.nodes['tt'];
+        if (tt) tt.params['decay_a'] = 0.5;
+      });
+    });
+    await expect(decayKnob).toHaveAttribute('aria-valuenow', '0.5');
   });
 
   // ═══════════════════════════ Phase 2 ═══════════════════════════
@@ -246,7 +252,23 @@ test.describe('TWOTRACKS module', () => {
     expect(errors, errors.join('; ')).toEqual([]);
   });
 
-  test('P2: A/B knob strip is visible with A and B labels', async ({ page }) => {
+  // Helper: set the A/B param directly via the dev Y.Doc (the A/B control is a
+  // drag Knob now, not a fillable range input — so we drive the param and assert
+  // the reactive percentage readout, which is what the gain law actually maps).
+  async function setAbParam(page: Page, value: number) {
+    await page.evaluate((v) => {
+      const w = globalThis as unknown as {
+        __ydoc: { transact: (fn: () => void) => void };
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+      };
+      w.__ydoc.transact(() => {
+        const tt = w.__patch.nodes['tt'];
+        if (tt) tt.params['ab'] = v;
+      });
+    }, value);
+  }
+
+  test('P2: A/B knob strip is visible with A and B readouts', async ({ page }) => {
     await setupPage(page);
 
     await spawnPatch(page, [
@@ -259,13 +281,8 @@ test.describe('TWOTRACKS module', () => {
 
     await expect(abStrip).toBeVisible();
 
-    // Strip should contain "A" and "B" labels
-    await expect(abStrip).toContainText('A');
-    await expect(abStrip).toContainText('B');
-
-    // The A/B slider should be present inside the strip
-    const abSlider = abStrip.locator('input[type="range"]');
-    await expect(abSlider).toBeVisible();
+    // The A/B crossfade Knob should be present inside the strip.
+    await expect(abStrip.locator('.knob, [role="slider"], canvas, svg').first()).toBeVisible();
 
     // Default ab=0: percentage display should show A:100% B:0%
     await expect(abStrip).toContainText('A:100%');
@@ -282,27 +299,23 @@ test.describe('TWOTRACKS module', () => {
 
     const card = page.locator('[data-testid="twotracks-card"]');
     const abStrip = card.locator('[data-testid="twotracks-ab-knob"]');
-    const abSlider = abStrip.locator('input[type="range"]');
 
     // Default ab=0: A:100% B:0%
     await expect(abStrip).toContainText('A:100%');
     await expect(abStrip).toContainText('B:0%');
 
     // Set ab=0.5 (center): A:100% B:100%
-    await abSlider.fill('0.5');
-    await abSlider.dispatchEvent('input');
+    await setAbParam(page, 0.5);
     await expect(abStrip).toContainText('A:100%');
     await expect(abStrip).toContainText('B:100%');
 
     // Set ab=1.0 (full B): A:0% B:100%
-    await abSlider.fill('1');
-    await abSlider.dispatchEvent('input');
+    await setAbParam(page, 1);
     await expect(abStrip).toContainText('A:0%');
     await expect(abStrip).toContainText('B:100%');
 
     // Restore to ab=0: A:100% B:0%
-    await abSlider.fill('0');
-    await abSlider.dispatchEvent('input');
+    await setAbParam(page, 0);
     await expect(abStrip).toContainText('A:100%');
     await expect(abStrip).toContainText('B:0%');
   });
@@ -367,18 +380,15 @@ test.describe('TWOTRACKS module', () => {
 
     const card = page.locator('[data-testid="twotracks-card"]');
 
-    // Reel A EQ section
+    // Reel A EQ section — three assignable EQ knobs (role="slider").
     const eqA = card.locator('[data-testid="twotracks-eq-a"]');
     await expect(eqA).toBeVisible();
-    // Three EQ sliders in reel A
-    const eqSlidersA = eqA.locator('input[type="range"]');
-    await expect(eqSlidersA).toHaveCount(3);
+    await expect(eqA.locator('[role="slider"]')).toHaveCount(3);
 
     // Reel B EQ section
     const eqB = card.locator('[data-testid="twotracks-eq-b"]');
     await expect(eqB).toBeVisible();
-    const eqSlidersB = eqB.locator('input[type="range"]');
-    await expect(eqSlidersB).toHaveCount(3);
+    await expect(eqB.locator('[role="slider"]')).toHaveCount(3);
   });
 
   test('P2: filter sections present on both reels with mode toggle buttons', async ({ page }) => {
@@ -588,6 +598,86 @@ test.describe('TWOTRACKS module', () => {
 
       // tape-info should show duration (1.0s)
       await expect(reelA.locator('.tape-info')).toContainText('1.0s');
+    });
+  });
+
+  // ═══════════════════════════ Phase 5 ═══════════════════════════
+  // Transport trigger buttons + idle stability (the module must be completely
+  // static on spawn — no sweeping playhead, no transport activity).
+
+  test.describe('TWOTRACKS P5 transport + idle stability', () => {
+    test('REC / PLAY / STOP buttons present on both reels', async ({ page }) => {
+      await setupPage(page);
+
+      await spawnPatch(page, [
+        { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
+      ]);
+      await waitForCard(page);
+
+      const card = page.locator('[data-testid="twotracks-card"]');
+      for (const id of [
+        'twotracks-rec', 'twotracks-play', 'twotracks-stop',
+        'twotracks-rec-b', 'twotracks-play-b', 'twotracks-stop-b',
+      ]) {
+        await expect(card.locator(`[data-testid="${id}"]`)).toBeVisible();
+      }
+    });
+
+    test('on spawn the module is idle — no transport LEDs active, playhead static', async ({ page }) => {
+      await setupPage(page);
+
+      await spawnPatch(page, [
+        { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
+      ]);
+      await waitForCard(page);
+
+      const card = page.locator('[data-testid="twotracks-card"]');
+
+      // No transport LED should be lit on a freshly-spawned, empty module.
+      for (const led of ['led-rec', 'led-play', 'led-overdub', 'led-arm',
+                          'led-rec-b', 'led-play-b', 'led-overdub-b', 'led-arm-b']) {
+        await expect(card.locator(`[data-testid="${led}"]`)).not.toHaveClass(/active/);
+      }
+      // REC / PLAY buttons inactive.
+      await expect(card.locator('[data-testid="twotracks-rec"]')).not.toHaveClass(/active/);
+      await expect(card.locator('[data-testid="twotracks-play"]')).not.toHaveClass(/active/);
+
+      // The transport state in node.data must stay 'idle' over time (the worklet
+      // must NOT free-run the playhead on an empty module). Sample twice ~500ms
+      // apart and require it never leaves idle.
+      const readState = () => page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { data?: { transportState_a?: string } }> };
+        };
+        return w.__patch.nodes['tt']?.data?.transportState_a ?? 'idle';
+      });
+      expect(await readState()).toBe('idle');
+      await page.waitForTimeout(500);
+      expect(await readState()).toBe('idle');
+    });
+
+    test('all reel knobs are MIDI + control-surface assignable (right-click → control menu)', async ({ page }) => {
+      await setupPage(page);
+
+      await spawnPatch(page, [
+        { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
+      ]);
+      await waitForCard(page);
+
+      const card = page.locator('[data-testid="twotracks-card"]');
+
+      // Every continuous control is now an assignable Knob (role="slider").
+      // Per reel: 3 EQ + cutoff + reso + decay + rate = 7; ×2 reels = 14; + A/B = 15.
+      const knobs = card.locator('[role="slider"]');
+      await expect(knobs).toHaveCount(15);
+
+      // Right-clicking a knob opens the control context menu whose entries are
+      // the MIDI-Learn + Send-to-control-surface actions — i.e. the control is
+      // assignable to both. Verify on a representative knob (reel A decay).
+      const decayKnob = card.locator('[data-testid="twotracks-decay"] [role="slider"]');
+      await decayKnob.click({ button: 'right' });
+      await expect(page.locator('[data-testid="control-context-menu"]')).toBeVisible();
+      await expect(page.locator('[data-testid="ctx-midi-learn"]')).toBeVisible();
     });
   });
 });

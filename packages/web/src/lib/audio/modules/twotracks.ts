@@ -200,6 +200,12 @@ export const twotracksDef: AudioModuleDef = {
     // Card polls these via eng.read(node, 'peaksA'/'peaksB'), same pattern as SCOPE.
     let localPeaksA: Float32Array | null = null;
     let localPeaksB: Float32Array | null = null;
+    // Playhead position is per-frame, transient render state — it must NOT be
+    // written to the live Y.Doc (a ~90 Hz proxy write during playback is the
+    // render-storm class from cv-modulation-live-store-write-storm). Kept local
+    // and read by the card's rAF poll, exactly like peaks.
+    let localPlayheadA = 0;
+    let localPlayheadB = 0;
 
     // Handle worklet → host messages (playhead + peaks; tape-data for WAV export)
     workletNode.port.onmessage = (e: MessageEvent) => {
@@ -222,19 +228,25 @@ export const twotracksDef: AudioModuleDef = {
           if (reelId === 'a') localPeaksA = msg.peaks;
           else localPeaksB = msg.peaks;
         }
+        // Playhead position → local volatile only (polled by the card's rAF).
+        if (typeof msg.pos === 'number') {
+          if (reelId === 'a') localPlayheadA = msg.pos;
+          else localPlayheadB = msg.pos;
+        }
         try {
           const live = livePatch.nodes[node.id];
           if (!live) return;
           if (!live.data) (live as { data: TwoTracksData }).data = {} as TwoTracksData;
           const d = live.data as TwoTracksData;
+          // ONLY transport state + bufLen go to the Y.Doc — both change rarely
+          // (on transport transitions / record growth), not per frame. The
+          // worklet already posts these only on change.
           if (reelId === 'a') {
-            if (typeof msg.pos === 'number' && d.playhead_a !== msg.pos) d.playhead_a = msg.pos;
             if (typeof msg.state === 'string' && d.transportState_a !== msg.state) {
               d.transportState_a = msg.state as TwoTracksData['transportState_a'];
             }
             if (typeof msg.bufLen === 'number' && d.bufLenA !== msg.bufLen) d.bufLenA = msg.bufLen;
           } else {
-            if (typeof msg.pos === 'number' && d.playhead_b !== msg.pos) d.playhead_b = msg.pos;
             if (typeof msg.state === 'string' && d.transportState_b !== msg.state) {
               d.transportState_b = msg.state as TwoTracksData['transportState_b'];
             }
@@ -365,6 +377,8 @@ export const twotracksDef: AudioModuleDef = {
         if (key === 'sampleRate') return ctx.sampleRate;
         if (key === 'peaksA') return localPeaksA;
         if (key === 'peaksB') return localPeaksB;
+        if (key === 'playheadA') return localPlayheadA;
+        if (key === 'playheadB') return localPlayheadB;
         return undefined;
       },
 
@@ -372,6 +386,8 @@ export const twotracksDef: AudioModuleDef = {
         alive = false;
         localPeaksA = null;
         localPeaksB = null;
+        localPlayheadA = 0;
+        localPlayheadB = 0;
         if (pollTimer !== null) clearTimeout(pollTimer);
         try { workletNode.port.onmessage = null; } catch { /* */ }
         try { workletNode.disconnect(); } catch { /* */ }

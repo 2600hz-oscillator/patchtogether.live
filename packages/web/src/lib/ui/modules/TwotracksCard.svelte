@@ -14,6 +14,7 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import Knob from '$lib/ui/controls/Knob.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -62,18 +63,16 @@
     const d = node?.data as TwoTracksData | undefined;
     return d?.transportState_b ?? 'idle';
   });
-  let syncedPlayheadA = $derived.by(() => {
-    const d = node?.data as TwoTracksData | undefined;
-    return d?.playhead_a ?? 0;
-  });
-  let syncedPlayheadB = $derived.by(() => {
-    const d = node?.data as TwoTracksData | undefined;
-    return d?.playhead_b ?? 0;
-  });
-  // Peaks are local volatile state — polled via eng.read() like SCOPE snapshots,
-  // NOT stored in node.data/Y.Doc (Float32Array can't be Y.Doc-encoded).
+  // Peaks AND playhead are local volatile render state — polled via eng.read()
+  // like SCOPE snapshots, NEVER stored in node.data/Y.Doc (Float32Array can't be
+  // Y.Doc-encoded; a per-frame playhead proxy write is the live-store render
+  // storm). The worklet only emits new values while a reel is active, so an idle
+  // module settles to a fixed playhead + null peaks and this poll stops mutating
+  // state → the card is completely static on spawn (no flicker / no sweep).
   let peaksA = $state<Float32Array | null>(null);
   let peaksB = $state<Float32Array | null>(null);
+  let syncedPlayheadA = $state(0);
+  let syncedPlayheadB = $state(0);
   let rafPeaks: number | null = null;
   $effect(() => {
     function poll() {
@@ -83,6 +82,10 @@
         const pB = eng.read(node, 'peaksB') as Float32Array | null;
         if (pA !== peaksA) peaksA = pA;
         if (pB !== peaksB) peaksB = pB;
+        const hA = eng.read(node, 'playheadA') as number | undefined;
+        const hB = eng.read(node, 'playheadB') as number | undefined;
+        if (typeof hA === 'number' && hA !== syncedPlayheadA) syncedPlayheadA = hA;
+        if (typeof hB === 'number' && hB !== syncedPlayheadB) syncedPlayheadB = hB;
       }
       rafPeaks = requestAnimationFrame(poll);
     }
@@ -178,6 +181,16 @@
       try {
         const port = eng.read(node, 'workletPort') as MessagePort | undefined;
         if (port) port.postMessage({ type: 'dump-tape', reel });
+      } catch { /* engine may not be ready */ }
+    }
+  }
+
+  function sendTransport(reel: 'a' | 'b', action: 'rec' | 'play' | 'stop'): void {
+    const eng = engineCtx.get();
+    if (eng && node) {
+      try {
+        const port = eng.read(node, 'workletPort') as MessagePort | undefined;
+        if (port) port.postMessage({ type: 'transport', reel, action });
       } catch { /* engine may not be ready */ }
     }
   }
@@ -301,13 +314,17 @@
       ctx2d.stroke();
     }
 
-    const px = Math.round(displayPlayhead * w);
-    ctx2d.strokeStyle = 'rgba(80, 160, 255, 0.85)';
-    ctx2d.lineWidth = 1.5;
-    ctx2d.beginPath();
-    ctx2d.moveTo(px + 0.5, 0);
-    ctx2d.lineTo(px + 0.5, h);
-    ctx2d.stroke();
+    // Only draw the playhead cursor when there is actually tape — an empty reel
+    // shows just "NO TAPE", never a stray blue line.
+    if (peaks && bufLen > 0) {
+      const px = Math.round(displayPlayhead * w);
+      ctx2d.strokeStyle = 'rgba(80, 160, 255, 0.85)';
+      ctx2d.lineWidth = 1.5;
+      ctx2d.beginPath();
+      ctx2d.moveTo(px + 0.5, 0);
+      ctx2d.lineTo(px + 0.5, h);
+      ctx2d.stroke();
+    }
   }
 
   // Reactive waveform draws
@@ -359,6 +376,19 @@
             aria-label="Toggle overdub A">OVERDUB</button>
         </div>
 
+        <!-- Transport trigger buttons -->
+        <div class="transport-row">
+          <button type="button" class="transport-btn rec nodrag" class:active={ledRecA}
+            onclick={() => sendTransport('a', ledRecA ? 'stop' : 'rec')}
+            data-testid="twotracks-rec" aria-label="Record reel A">● REC</button>
+          <button type="button" class="transport-btn play nodrag" class:active={ledPlayA}
+            onclick={() => sendTransport('a', transportStateA === 'play' ? 'stop' : 'play')}
+            data-testid="twotracks-play" aria-label="Play reel A">▶ PLAY</button>
+          <button type="button" class="transport-btn stop nodrag"
+            onclick={() => sendTransport('a', 'stop')}
+            data-testid="twotracks-stop" aria-label="Stop reel A">■ STOP</button>
+        </div>
+
         <!-- Waveform canvas -->
         <canvas bind:this={canvasElA} width="220" height="60" class="waveform nodrag"
           data-testid="twotracks-waveform"
@@ -366,66 +396,36 @@
           onpointermove={onCanvasPointerMoveA}
           onpointerup={onCanvasPointerUpA}></canvas>
 
-        <!-- 3-band EQ -->
-        <div class="eq-row" data-testid="twotracks-eq-a">
-          <span class="section-label">EQ</span>
-          <div class="eq-knobs">
-            <div class="knob-group">
-              <span class="knob-label">LOW</span>
-              <input type="range" min="-12" max="12" step="0.1" value={eqLowA}
-                oninput={(e) => setNodeParam(id, 'eqLow_a', parseFloat((e.target as HTMLInputElement).value))}
-                class="eq-slider nodrag" />
-              <span class="knob-val">{eqLowA >= 0 ? '+' : ''}{eqLowA.toFixed(1)}</span>
-            </div>
-            <div class="knob-group">
-              <span class="knob-label">MID</span>
-              <input type="range" min="-12" max="12" step="0.1" value={eqMidA}
-                oninput={(e) => setNodeParam(id, 'eqMid_a', parseFloat((e.target as HTMLInputElement).value))}
-                class="eq-slider nodrag" />
-              <span class="knob-val">{eqMidA >= 0 ? '+' : ''}{eqMidA.toFixed(1)}</span>
-            </div>
-            <div class="knob-group">
-              <span class="knob-label">HIGH</span>
-              <input type="range" min="-12" max="12" step="0.1" value={eqHighA}
-                oninput={(e) => setNodeParam(id, 'eqHigh_a', parseFloat((e.target as HTMLInputElement).value))}
-                class="eq-slider nodrag" />
-              <span class="knob-val">{eqHighA >= 0 ? '+' : ''}{eqHighA.toFixed(1)}</span>
-            </div>
-          </div>
+        <!-- 3-band EQ (assignable knobs) -->
+        <div class="knob-row" data-testid="twotracks-eq-a">
+          <Knob value={eqLowA}  min={-12} max={12} defaultValue={0} label="LOW"  units="dB" curve="linear"
+            onchange={(v) => setNodeParam(id, 'eqLow_a', v)}  moduleId={id} paramId="eqLow_a" />
+          <Knob value={eqMidA}  min={-12} max={12} defaultValue={0} label="MID"  units="dB" curve="linear"
+            onchange={(v) => setNodeParam(id, 'eqMid_a', v)}  moduleId={id} paramId="eqMid_a" />
+          <Knob value={eqHighA} min={-12} max={12} defaultValue={0} label="HIGH" units="dB" curve="linear"
+            onchange={(v) => setNodeParam(id, 'eqHigh_a', v)} moduleId={id} paramId="eqHigh_a" />
         </div>
 
-        <!-- Filter row -->
-        <div class="filter-row" data-testid="twotracks-filter-a">
+        <!-- Filter (mode button + assignable cutoff/reso knobs) -->
+        <div class="knob-row filter-row" data-testid="twotracks-filter-a">
           <button type="button" class="filter-mode-btn nodrag" onclick={cycleFilterA}
             aria-label="Cycle filter mode A">
             {FILTER_MODES[Math.round(filterModeA) % 4]}
           </button>
-          <span class="param-label">CUT</span>
-          <input type="range" min="20" max="20000" step="1" value={cutoffA}
-            oninput={(e) => setNodeParam(id, 'cutoff_a', parseFloat((e.target as HTMLInputElement).value))}
-            class="filter-slider nodrag" />
-          <span class="param-label">RES</span>
-          <input type="range" min="0" max="1" step="0.01" value={resoA}
-            oninput={(e) => setNodeParam(id, 'reso_a', parseFloat((e.target as HTMLInputElement).value))}
-            class="filter-slider nodrag" style="max-width:40px;" />
+          <Knob value={cutoffA} min={20} max={20000} defaultValue={20000} label="CUT" units="Hz" curve="log"
+            onchange={(v) => setNodeParam(id, 'cutoff_a', v)} moduleId={id} paramId="cutoff_a" />
+          <Knob value={resoA}   min={0}  max={1}     defaultValue={0}     label="RES" curve="linear"
+            onchange={(v) => setNodeParam(id, 'reso_a', v)}   moduleId={id} paramId="reso_a" />
         </div>
 
-        <!-- Decay row -->
-        <div class="decay-row">
-          <span class="param-label">DECAY</span>
-          <input type="range" min="0" max="1" step="0.01" value={decayA}
-            oninput={(e) => setNodeParam(id, 'decay_a', parseFloat((e.target as HTMLInputElement).value))}
-            class="decay-slider nodrag" data-testid="twotracks-decay" />
-          <span class="param-val">{Math.round(decayA * 100)}%</span>
-        </div>
-
-        <!-- Rate row -->
-        <div class="rate-row">
-          <span class="param-label">RATE</span>
-          <input type="range" min="-3" max="3" step="0.01" value={rateA}
-            oninput={(e) => setNodeParam(id, 'rate_a', parseFloat((e.target as HTMLInputElement).value))}
-            class="rate-slider nodrag" />
-          <span class="param-val">{rateA >= 0 ? '+' : ''}{rateA.toFixed(2)}×</span>
+        <!-- Decay + Rate (assignable knobs) -->
+        <div class="knob-row">
+          <div data-testid="twotracks-decay">
+            <Knob value={decayA} min={0} max={1} defaultValue={0} label="DECAY" curve="linear"
+              onchange={(v) => setNodeParam(id, 'decay_a', v)} moduleId={id} paramId="decay_a" />
+          </div>
+          <Knob value={rateA} min={-3} max={3} defaultValue={1} label="RATE" units="×" curve="linear"
+            onchange={(v) => setNodeParam(id, 'rate_a', v)} moduleId={id} paramId="rate_a" />
         </div>
 
         <!-- Save row -->
@@ -445,17 +445,25 @@
       <!-- ════════════ CENTER COLUMN ════════════ -->
       <div class="center-col">
 
-        <!-- A/B crossfade strip -->
+        <!-- A/B crossfade knob -->
         <div class="ab-strip" data-testid="twotracks-ab-knob">
-          <span class="ab-label">A</span>
           <div class="ab-knob-wrap">
-            <input type="range" min="0" max="1" step="0.01" value={abParam}
-              oninput={(e) => setNodeParam(id, 'ab', parseFloat((e.target as HTMLInputElement).value))}
-              class="ab-slider nodrag" aria-label="A/B crossfade" />
-            <span class="ab-pct">A:{Math.round(gains.gainA * 100)}%</span>
-            <span class="ab-pct">B:{Math.round(gains.gainB * 100)}%</span>
+            <Knob
+              value={abParam}
+              min={0}
+              max={1}
+              defaultValue={0}
+              label="A/B"
+              curve="linear"
+              onchange={(v) => setNodeParam(id, 'ab', v)}
+              moduleId={id}
+              paramId="ab"
+            />
+            <div class="ab-pcts">
+              <span class="ab-pct">A:{Math.round(gains.gainA * 100)}%</span>
+              <span class="ab-pct">B:{Math.round(gains.gainB * 100)}%</span>
+            </div>
           </div>
-          <span class="ab-label">B</span>
         </div>
 
         <!-- Lofi strip -->
@@ -507,6 +515,19 @@
             aria-label="Toggle overdub B">OVERDUB</button>
         </div>
 
+        <!-- Transport trigger buttons reel B -->
+        <div class="transport-row">
+          <button type="button" class="transport-btn rec nodrag" class:active={ledRecB}
+            onclick={() => sendTransport('b', ledRecB ? 'stop' : 'rec')}
+            data-testid="twotracks-rec-b" aria-label="Record reel B">● REC</button>
+          <button type="button" class="transport-btn play nodrag" class:active={ledPlayB}
+            onclick={() => sendTransport('b', transportStateB === 'play' ? 'stop' : 'play')}
+            data-testid="twotracks-play-b" aria-label="Play reel B">▶ PLAY</button>
+          <button type="button" class="transport-btn stop nodrag"
+            onclick={() => sendTransport('b', 'stop')}
+            data-testid="twotracks-stop-b" aria-label="Stop reel B">■ STOP</button>
+        </div>
+
         <!-- Waveform canvas reel B -->
         <canvas bind:this={canvasElB} width="220" height="60" class="waveform nodrag"
           data-testid="twotracks-waveform-b"
@@ -514,66 +535,36 @@
           onpointermove={onCanvasPointerMoveB}
           onpointerup={onCanvasPointerUpB}></canvas>
 
-        <!-- 3-band EQ reel B -->
-        <div class="eq-row" data-testid="twotracks-eq-b">
-          <span class="section-label">EQ</span>
-          <div class="eq-knobs">
-            <div class="knob-group">
-              <span class="knob-label">LOW</span>
-              <input type="range" min="-12" max="12" step="0.1" value={eqLowB}
-                oninput={(e) => setNodeParam(id, 'eqLow_b', parseFloat((e.target as HTMLInputElement).value))}
-                class="eq-slider nodrag" />
-              <span class="knob-val">{eqLowB >= 0 ? '+' : ''}{eqLowB.toFixed(1)}</span>
-            </div>
-            <div class="knob-group">
-              <span class="knob-label">MID</span>
-              <input type="range" min="-12" max="12" step="0.1" value={eqMidB}
-                oninput={(e) => setNodeParam(id, 'eqMid_b', parseFloat((e.target as HTMLInputElement).value))}
-                class="eq-slider nodrag" />
-              <span class="knob-val">{eqMidB >= 0 ? '+' : ''}{eqMidB.toFixed(1)}</span>
-            </div>
-            <div class="knob-group">
-              <span class="knob-label">HIGH</span>
-              <input type="range" min="-12" max="12" step="0.1" value={eqHighB}
-                oninput={(e) => setNodeParam(id, 'eqHigh_b', parseFloat((e.target as HTMLInputElement).value))}
-                class="eq-slider nodrag" />
-              <span class="knob-val">{eqHighB >= 0 ? '+' : ''}{eqHighB.toFixed(1)}</span>
-            </div>
-          </div>
+        <!-- 3-band EQ reel B (assignable knobs) -->
+        <div class="knob-row" data-testid="twotracks-eq-b">
+          <Knob value={eqLowB}  min={-12} max={12} defaultValue={0} label="LOW"  units="dB" curve="linear"
+            onchange={(v) => setNodeParam(id, 'eqLow_b', v)}  moduleId={id} paramId="eqLow_b" />
+          <Knob value={eqMidB}  min={-12} max={12} defaultValue={0} label="MID"  units="dB" curve="linear"
+            onchange={(v) => setNodeParam(id, 'eqMid_b', v)}  moduleId={id} paramId="eqMid_b" />
+          <Knob value={eqHighB} min={-12} max={12} defaultValue={0} label="HIGH" units="dB" curve="linear"
+            onchange={(v) => setNodeParam(id, 'eqHigh_b', v)} moduleId={id} paramId="eqHigh_b" />
         </div>
 
-        <!-- Filter row reel B -->
-        <div class="filter-row" data-testid="twotracks-filter-b">
+        <!-- Filter reel B (mode button + assignable cutoff/reso knobs) -->
+        <div class="knob-row filter-row" data-testid="twotracks-filter-b">
           <button type="button" class="filter-mode-btn nodrag" onclick={cycleFilterB}
             aria-label="Cycle filter mode B">
             {FILTER_MODES[Math.round(filterModeB) % 4]}
           </button>
-          <span class="param-label">CUT</span>
-          <input type="range" min="20" max="20000" step="1" value={cutoffB}
-            oninput={(e) => setNodeParam(id, 'cutoff_b', parseFloat((e.target as HTMLInputElement).value))}
-            class="filter-slider nodrag" />
-          <span class="param-label">RES</span>
-          <input type="range" min="0" max="1" step="0.01" value={resoB}
-            oninput={(e) => setNodeParam(id, 'reso_b', parseFloat((e.target as HTMLInputElement).value))}
-            class="filter-slider nodrag" style="max-width:40px;" />
+          <Knob value={cutoffB} min={20} max={20000} defaultValue={20000} label="CUT" units="Hz" curve="log"
+            onchange={(v) => setNodeParam(id, 'cutoff_b', v)} moduleId={id} paramId="cutoff_b" />
+          <Knob value={resoB}   min={0}  max={1}     defaultValue={0}     label="RES" curve="linear"
+            onchange={(v) => setNodeParam(id, 'reso_b', v)}   moduleId={id} paramId="reso_b" />
         </div>
 
-        <!-- Decay row reel B -->
-        <div class="decay-row">
-          <span class="param-label">DECAY</span>
-          <input type="range" min="0" max="1" step="0.01" value={decayB}
-            oninput={(e) => setNodeParam(id, 'decay_b', parseFloat((e.target as HTMLInputElement).value))}
-            class="decay-slider nodrag" data-testid="twotracks-decay-b" />
-          <span class="param-val">{Math.round(decayB * 100)}%</span>
-        </div>
-
-        <!-- Rate row reel B -->
-        <div class="rate-row">
-          <span class="param-label">RATE</span>
-          <input type="range" min="-3" max="3" step="0.01" value={rateB}
-            oninput={(e) => setNodeParam(id, 'rate_b', parseFloat((e.target as HTMLInputElement).value))}
-            class="rate-slider nodrag" />
-          <span class="param-val">{rateB >= 0 ? '+' : ''}{rateB.toFixed(2)}×</span>
+        <!-- Decay + Rate reel B (assignable knobs) -->
+        <div class="knob-row">
+          <div data-testid="twotracks-decay-b">
+            <Knob value={decayB} min={0} max={1} defaultValue={0} label="DECAY" curve="linear"
+              onchange={(v) => setNodeParam(id, 'decay_b', v)} moduleId={id} paramId="decay_b" />
+          </div>
+          <Knob value={rateB} min={-3} max={3} defaultValue={1} label="RATE" units="×" curve="linear"
+            onchange={(v) => setNodeParam(id, 'rate_b', v)} moduleId={id} paramId="rate_b" />
         </div>
 
         <!-- Save row reel B -->
@@ -713,6 +704,38 @@
   .twotracks-card .mode-btn.loop { color: rgb(80, 200, 220); border-color: rgb(80, 160, 220); }
   .twotracks-card .overdub-btn.active { color: rgb(80, 160, 255); border-color: rgb(80, 140, 255); background: #111a2a; }
 
+  /* ─── Transport trigger buttons (REC / PLAY / STOP) ─── */
+  .twotracks-card .transport-row {
+    display: flex;
+    gap: 4px;
+  }
+  .twotracks-card .transport-btn {
+    flex: 1 1 0;
+    background: #1a1f2a;
+    color: var(--text-dim, #8b94a5);
+    border: 1px solid #404652;
+    border-radius: 2px;
+    padding: 3px 4px;
+    font-size: 0.50rem;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    font-family: ui-monospace, monospace;
+    white-space: nowrap;
+  }
+  .twotracks-card .transport-btn:hover { border-color: #5a6275; }
+  .twotracks-card .transport-btn.rec.active {
+    color: rgb(255, 90, 80);
+    border-color: rgb(255, 70, 60);
+    background: #2a1414;
+    box-shadow: 0 0 5px rgba(255, 70, 60, 0.4);
+  }
+  .twotracks-card .transport-btn.play.active {
+    color: rgb(80, 230, 120);
+    border-color: rgb(60, 220, 100);
+    background: #122a18;
+    box-shadow: 0 0 5px rgba(60, 220, 100, 0.4);
+  }
+
   /* ─── Waveform canvas ─── */
   .twotracks-card .waveform {
     display: block;
@@ -724,56 +747,16 @@
     cursor: ew-resize;
   }
 
-  /* ─── EQ row ─── */
-  .twotracks-card .eq-row {
+  /* ─── Knob rows (EQ / filter / decay / rate — all assignable knobs) ─── */
+  .twotracks-card .knob-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    justify-content: space-around;
     gap: 4px;
+    flex-wrap: wrap;
   }
-  .twotracks-card .section-label {
-    font-size: 0.45rem;
-    color: var(--text-dim, #8b94a5);
-    letter-spacing: 0.10em;
-    font-family: ui-monospace, monospace;
-    min-width: 16px;
-  }
-  .twotracks-card .eq-knobs {
-    display: flex;
-    gap: 4px;
-    flex: 1;
-  }
-  .twotracks-card .knob-group {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-    flex: 1;
-  }
-  .twotracks-card .knob-label {
-    font-size: 0.40rem;
-    color: var(--text-dim, #8b94a5);
-    font-family: ui-monospace, monospace;
-    letter-spacing: 0.05em;
-  }
-  .twotracks-card .knob-val {
-    font-size: 0.38rem;
-    color: var(--text-dim, #8b94a5);
-    font-family: ui-monospace, monospace;
-    min-width: 30px;
-    text-align: center;
-  }
-  .twotracks-card .eq-slider {
-    width: 100%;
-    height: 4px;
-    accent-color: rgb(100, 200, 160);
-    cursor: pointer;
-  }
-
-  /* ─── Filter row ─── */
   .twotracks-card .filter-row {
-    display: flex;
     align-items: center;
-    gap: 4px;
   }
   .twotracks-card .filter-mode-btn {
     background: #1a1f2a;
@@ -788,40 +771,13 @@
     min-width: 24px;
     text-align: center;
   }
-  .twotracks-card .filter-slider {
-    flex: 1;
-    height: 4px;
-    accent-color: rgb(200, 160, 100);
-    cursor: pointer;
+  /* Shrink the shared Knob a touch so 3 fit across a reel column. */
+  .twotracks-card .knob-row :global(.knob) {
+    width: 30px;
+    height: 30px;
   }
-
-  /* ─── Decay / rate rows ─── */
-  .twotracks-card .decay-row,
-  .twotracks-card .rate-row {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  }
-  .twotracks-card .param-label {
-    font-size: 0.46rem;
-    color: var(--text-dim, #8b94a5);
-    letter-spacing: 0.07em;
-    font-family: ui-monospace, monospace;
-    min-width: 30px;
-  }
-  .twotracks-card .decay-slider,
-  .twotracks-card .rate-slider {
-    flex: 1;
-    height: 4px;
-    accent-color: rgb(255, 140, 40);
-    cursor: pointer;
-  }
-  .twotracks-card .param-val {
-    font-size: 0.46rem;
-    color: var(--text-dim, #8b94a5);
-    font-family: ui-monospace, monospace;
-    min-width: 34px;
-    text-align: right;
+  .twotracks-card .knob-row :global(.label) {
+    font-size: 0.42rem;
   }
 
   /* ─── Save row ─── */
@@ -850,36 +806,27 @@
   }
   .twotracks-card .tape-info.dim { opacity: 0.5; }
 
-  /* ─── A/B center strip ─── */
+  /* ─── A/B center crossfade knob ─── */
   .twotracks-card .ab-strip {
     display: flex;
     align-items: center;
-    gap: 6px;
+    justify-content: center;
     background: #111520;
     border: 1px solid #2a3045;
     border-radius: 3px;
-    padding: 5px 8px;
-  }
-  .twotracks-card .ab-label {
-    font-size: 0.55rem;
-    color: rgb(200, 180, 255);
-    font-family: ui-monospace, monospace;
-    font-weight: bold;
-    letter-spacing: 0.08em;
-    min-width: 10px;
+    padding: 6px 8px;
   }
   .twotracks-card .ab-knob-wrap {
     display: flex;
     flex-direction: column;
     align-items: center;
-    flex: 1;
-    gap: 2px;
+    gap: 3px;
   }
-  .twotracks-card .ab-slider {
-    width: 100%;
-    height: 5px;
-    accent-color: rgb(180, 140, 255);
-    cursor: pointer;
+  .twotracks-card .ab-pcts {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
   }
   .twotracks-card .ab-pct {
     font-size: 0.38rem;
