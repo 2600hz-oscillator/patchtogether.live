@@ -315,6 +315,82 @@ describe('persistence: round-trip', () => {
     expect(dest.store.edges['e1']).toBeUndefined();
   });
 
+  it('drops a structurally-invalid edge (both nodes exist) + records a diagnostic, while valid nodes/edges/params still load (Phase 4d)', () => {
+    // An aged / hand-edited import: BOTH endpoint nodes exist (so the
+    // missing-node drop doesn't catch it), but one edge is structurally
+    // malformed in three independent ways — proving validateEdge runs on the
+    // import path. The reconciler's engine.addEdge would THROW on each and
+    // abort the whole pass; the import-path validation drops the bad edge so
+    // every valid node/edge/param after it still lands.
+    const src = freshPatch();
+    src.ydoc.transact(() => {
+      src.store.nodes['vco'] = {
+        id: 'vco',
+        type: 'analogVco',
+        domain: 'audio',
+        position: { x: 0, y: 0 },
+        params: { tune: 3, fine: -2 },
+      };
+      src.store.nodes['out'] = {
+        id: 'out',
+        type: 'audioOut',
+        domain: 'audio',
+        position: { x: 200, y: 0 },
+        params: { master: 0.7 },
+      };
+      // VALID — source is the VCO's declared output, target a declared input.
+      src.store.edges['good'] = {
+        id: 'good',
+        source: { nodeId: 'vco', portId: 'sine' },
+        target: { nodeId: 'out', portId: 'L' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      };
+      // INVALID #1 — target port does not exist on audioOut (both nodes DO
+      // exist, so this passes the missing-node check but fails validateEdge).
+      src.store.edges['bad-port'] = {
+        id: 'bad-port',
+        source: { nodeId: 'vco', portId: 'sine' },
+        target: { nodeId: 'out', portId: 'doesNotExist' },
+        sourceType: 'audio',
+        targetType: 'audio',
+      };
+      // INVALID #2 — direction reversed: an INPUT used as the source endpoint.
+      src.store.edges['bad-direction'] = {
+        id: 'bad-direction',
+        source: { nodeId: 'out', portId: 'L' },
+        target: { nodeId: 'vco', portId: 'pitch' },
+        sourceType: 'audio',
+        targetType: 'pitch',
+      };
+    });
+    const env = makeEnvelope(src.ydoc);
+
+    const dest = freshPatch();
+    const result = loadEnvelopeIntoStore(env, dest.ydoc, dest.store);
+
+    // Both nodes + their params land in full.
+    expect(result.nodesLoaded).toBe(2);
+    expect(dest.store.nodes['vco']).toBeDefined();
+    expect(dest.store.nodes['vco']!.params).toEqual({ tune: 3, fine: -2 });
+    expect(dest.store.nodes['out']).toBeDefined();
+    expect(dest.store.nodes['out']!.params).toEqual({ master: 0.7 });
+
+    // The valid edge survives.
+    expect(dest.store.edges['good']).toBeDefined();
+    // Both invalid edges are dropped...
+    expect(dest.store.edges['bad-port']).toBeUndefined();
+    expect(dest.store.edges['bad-direction']).toBeUndefined();
+    // ...with a diagnostic for each, tagged type 'edge'.
+    const edgeDiags = result.diagnostics.filter((d) => d.type === 'edge');
+    expect(edgeDiags.map((d) => d.nodeId).sort()).toEqual(['bad-direction', 'bad-port']);
+    for (const d of edgeDiags) {
+      expect(d.reason).toMatch(/invalid edge dropped/);
+    }
+    // edgesLoaded counts only the valid edge.
+    expect(result.edgesLoaded).toBe(1);
+  });
+
   it('parseEnvelope rejects malformed input', () => {
     expect(() => parseEnvelope('not json')).toThrow();
     expect(() => parseEnvelope(JSON.stringify({}))).toThrow();
@@ -959,12 +1035,32 @@ const doomLikeDefV2: VideoModuleDef = {
   factory: throwingFactory as any,
 };
 
+/** A CV source (LFO-like) feeding DOOM's `cv` gate inputs. The real cable into a
+ * DOOM cv input is cv→cv (canConnect rejects audio→cv), so the source port is
+ * declared `cv` — otherwise the Phase-4d import validator would (correctly) drop
+ * the edge as an incompatible cable type. */
+const cvLfoDef: AudioModuleDef = {
+  type: 'cvLfo',
+  domain: 'audio',
+  label: 'CV LFO',
+  category: 'sources',
+  schemaVersion: 1,
+  inputs: [],
+  outputs: [{ id: 'sine', type: 'cv' }],
+  params: [],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  factory: throwingFactory as any,
+};
+
 describe('migrateEdgeEndpoints — DOOM per-slot port migration (#353)', () => {
-  beforeAll(() => registerVideoModule(doomLikeDefV2));
+  beforeAll(() => {
+    registerVideoModule(doomLikeDefV2);
+    registerModule(cvLfoDef);
+  });
 
   const nodes: Record<string, ModuleNode> = {
     doom: { id: 'doom', type: 'doomLike', position: { x: 0, y: 0 }, params: {} } as ModuleNode,
-    lfo: { id: 'lfo', type: 'analogVco', position: { x: 0, y: 0 }, params: {} } as ModuleNode,
+    lfo: { id: 'lfo', type: 'cvLfo', position: { x: 0, y: 0 }, params: {} } as ModuleNode,
   };
   const baseEdge: Edge = {
     id: 'e1',
@@ -997,7 +1093,7 @@ describe('migrateEdgeEndpoints — DOOM per-slot port migration (#353)', () => {
     const src = freshPatch();
     src.ydoc.transact(() => {
       src.store.nodes['doom'] = { id: 'doom', type: 'doomLike', position: { x: 0, y: 0 }, params: {} } as ModuleNode;
-      src.store.nodes['lfo'] = { id: 'lfo', type: 'analogVco', position: { x: 0, y: 0 }, params: {} } as ModuleNode;
+      src.store.nodes['lfo'] = { id: 'lfo', type: 'cvLfo', position: { x: 0, y: 0 }, params: {} } as ModuleNode;
       src.store.edges['e1'] = {
         id: 'e1',
         source: { nodeId: 'lfo', portId: 'sine' },

@@ -25,6 +25,7 @@ import {
 } from '$lib/video/module-registry';
 import { getMetaModuleDef, listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ModuleNode, Edge } from './types';
+import { validateEdge, type ResolveDef } from './validate-edge';
 
 /** Per-module-type schemaVersion + migrate, abstracted across the two
  *  per-domain registries so the persistence layer doesn't have to know
@@ -489,6 +490,17 @@ export function loadEnvelopeIntoStore(
     migratedNodes[id] = { ...node, data: migratedData };
   }
 
+  // Def lookup the edge validator needs (declared input/output ports). This is
+  // the SAME chain the rest of persistence uses (getAnyDomainDef), but typed to
+  // the validator's narrow ValidatorDef view (it only reads `inputs`/`outputs`,
+  // which every real AudioModuleDef / VideoModuleDef / MetaModuleDef carries).
+  // GROUP! nodes have no module def — validateEdge resolves their exposed ports
+  // via resolveExposedPort, so a missing def for `group` is expected, not a bug.
+  const resolveDefForValidation: ResolveDef = (type) =>
+    getAudioModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type);
+  // validateEdge takes a node ARRAY; snapshot the surviving (migrated) nodes once.
+  const survivingNodes = Object.values(migratedNodes);
+
   // 3. Atomically swap the live store.
   liveYdoc.transact(() => {
     // Restore the persisted OUTPUT aspect into the live settings map (so it
@@ -518,6 +530,27 @@ export function loadEnvelopeIntoStore(
       // DOOM's old bare gate ports (`up`/…) driving the p1 group (`p1_up`/…)
       // after the single shared input set became four per-slot groups (#353).
       const migrated = migrateEdgeEndpoints(edge, migratedNodes, envelope.moduleSchemas);
+
+      // STRUCTURAL VALIDATION (Phase 4d): the missing-node check above only
+      // catches a dangling endpoint. An aged or hand-edited import can still
+      // carry a structurally-malformed edge whose nodes BOTH exist — a stale
+      // portId, an output-as-target, an incompatible cable type. The reconciler
+      // materializes edges via engine.addEdge, which THROWS on a missing/
+      // mismatched port; that throw is swallowed at the reconcile-pass level, so
+      // a single bad edge silently aborts the WHOLE pass (every node/edge/param
+      // ordered after it) AND, in multiuser, syncs the poison to every peer.
+      // Drop the one bad edge HERE — exactly like the missing-node branch above
+      // — so a malformed import can never reach (and wedge) the reconciler.
+      const validation = validateEdge(migrated, survivingNodes, resolveDefForValidation);
+      if (!validation.ok) {
+        diagnostics.push({
+          nodeId: migrated.id,
+          type: 'edge',
+          reason: `invalid edge dropped: ${validation.reason ?? 'failed structural validation'}`,
+        });
+        continue;
+      }
+
       livePatch.edges[migrated.id] = migrated;
     }
   });
