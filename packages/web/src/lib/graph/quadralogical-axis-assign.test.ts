@@ -50,9 +50,9 @@ function makeNode(id: string, type: string): void {
 }
 
 afterEach(() => {
-  delete patch.nodes[SID];
-  delete patch.nodes[EID];
-  delete patch.nodes[QUAD];
+  if (patch.nodes[SID]) delete patch.nodes[SID];
+  if (patch.nodes[EID]) delete patch.nodes[EID];
+  if (patch.nodes[QUAD]) delete patch.nodes[QUAD];
 });
 
 // What the card does on "Send <axis> to <surface>".
