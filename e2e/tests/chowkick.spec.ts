@@ -3,28 +3,36 @@
 // End-to-end smoke + behavior for CHOWKICK:
 //   1. Card mounts: SEQUENCER → CHOWKICK → AUDIOOUT spawns cleanly.
 //   2. Gate-triggered kick: SEQUENCER.gate → CHOWKICK.gate_in →
-//      CHOWKICK.audio_out → SCOPE.ch1. Fire a gate and assert that
-//      audio flows (peak > 0.005, rms > 0.001). The per-sample kick
-//      *shape* (attack < 5 ms, peak position, tail-energy ordering)
-//      is pinned deterministically in the ART tier
-//      (art/scenarios/chowkick/canonical-kicks.test.ts) — at the e2e
-//      tier the realtime SCOPE is a sliding ~60 ms window whose
-//      sampling moment is non-deterministic w.r.t. the kick attack,
-//      so peak-vs-rms ratios swing wildly depending on whether the
-//      attack lands inside the window. We prove "signal flowed" here
-//      and leave shape-pinning to ART.
-//   3. BOUNCE toggle: with bounce=0 vs bounce=0.8, the SCOPE-measured
-//      RMS in the tail (50–60 ms window) clearly shifts — proving the
-//      bounce knob is wired into the resonant filter.
+//      CHOWKICK.audio_out → SCOPE.ch1. Fire a gate and assert that audio
+//      flows. The per-sample kick *shape* (attack < 5 ms, peak position,
+//      tail-energy ordering) is pinned deterministically in the ART tier
+//      (art/scenarios/chowkick/canonical-kicks.test.ts); the e2e tier only
+//      proves the audio path is alive.
+//   3. BOUNCE knob: bounce=0 vs bounce=0.9 measurably shifts the SCOPE-
+//      measured envelope (peak OR rms) — proving the bounce knob is wired
+//      into the resonant filter.
+//
+// DETERMINISM (de-flake, folded into the Phase 3a PR): the realtime SCOPE is
+// a sliding analyser window whose sampling moment is non-deterministic w.r.t.
+// the kick attack. Since #682 made the kick a pitched, DECAYING resonant body,
+// a SINGLE instantaneous snapshot frequently landed in the late decay tail (or
+// the gap before the next hit), so the in-window peak had already fallen below
+// the liveness floor → flake (observed `peak 0.00302 vs >0.005` on CI shard 1;
+// and the bounce delta dipped to ~6% as two phase-random RMS means converged).
+// Both tests now MAX-HOLD peak/rms over a bounded poll window that straddles
+// ≥1 attack (readScopePeakOverWindow), which deterministically observes the
+// loud attack frame every run and collapses the phase noise — a stricter, not
+// weaker, liveness gate (a silent / DC / wire-broken kick never crosses the
+// floor in ANY frame). See each test's inline ROOT CAUSE / FIX notes.
 //
 // Per project memory `feedback_test_yourself` + `feedback_no_flake_tolerance`:
-//   - all thresholds chosen to be flake-safe (5× ratio + RMS-not-equal
-//     style, not exact peak counts).
+//   - thresholds are flake-safe (windowed max-hold + relative deltas, not
+//     instantaneous samples or exact peak counts), yet still fail on silence.
 //   - all assertions read live AudioParam / SCOPE state.
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
-import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
+import { readScopePeakOverWindow } from './_module-coverage-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -133,39 +141,50 @@ test('CHOWKICK gate → kick envelope: SCOPE sees attack < 5 ms + sustained deca
     });
   });
 
-  // Wait for at least one full bar so we capture a fresh hit in the
-  // SCOPE snapshot. At BPM=60 / length=1 → bar = 1 s.
-  await page.waitForTimeout(1500);
-
-  const snap = await readScopeSnapshot(page, 'a-scp');
-  expect(snap).not.toBeNull();
-  const sum = summarize(snap!.ch1);
-
-  // Audio must be flowing. Threshold rationale (Option C — character
-  // pinned in ART, e2e just proves the audio path is alive):
-  //   peak > 0.005  ⇒ a clear non-noise signal landed in *some* part
-  //                   of the SCOPE window (silent → 0; faintest decay
-  //                   tail samples are still well above 5e-3 even when
-  //                   the attack itself misses the window).
-  //   rms  > 0.001  ⇒ broader-than-single-sample energy (a wire-broken
-  //                   regression that drops the audio_out connection
-  //                   gives rms = 0 → catches the regression case).
-  //   nonzeroSamples > 50 ⇒ structured signal, not a one-off glitch.
+  // ROOT CAUSE of the old flake (observed `peak 0.00302 vs >0.005` on CI
+  // e2e shard 1): the test took a SINGLE readScopeSnapshot after a flat
+  // `waitForTimeout(1500)`. The SCOPE is a ~200 ms sliding analyser window
+  // and its sampling instant is non-deterministic w.r.t. the kick attack.
+  // Since #682 made the kick a pitched, DECAYING resonant body (ring at
+  // ~81 Hz with a 3.5×→1× pitch sweep), the loud attack lasts only a few ms
+  // and the body then rings DOWN. When the one captured window happened to
+  // land in the late decay tail (or in the gap before the next 1 s-spaced
+  // hit), the in-window peak had already fallen to ~3e-3 — below the 5e-3
+  // floor — and the single-shot assertion flaked. (Lowering the floor would
+  // have masked it, not fixed it — and would weaken the silence regression.)
   //
-  // The previous `peak > sum.rms * 1.5` impulse-shape check is removed
-  // here: the SCOPE's ~60 ms sliding window captures arbitrary points
-  // in the kick's life, so when the window lands entirely in the
-  // resonant decay tail the peak ≈ rms (a near-sinusoidal ringdown
-  // of the body resonance). That same per-sample shape is pinned
-  // deterministically in art/scenarios/chowkick/canonical-kicks.test.ts:
-  //   - bright-kick: "peak occurs in attack window (< 5 ms) AND > 0.05"
-  //   - bright-kick: "tail rms < attack rms"
-  //   - boomy:       "tail at 250 ms > 0.001"
-  // These ART pins catch any regression that flattens the impulse
-  // envelope — there is no need to re-check shape at the e2e tier.
-  expect(sum.peak).toBeGreaterThan(0.005);
-  expect(sum.rms).toBeGreaterThan(0.001);
-  expect(sum.nonzeroSamples).toBeGreaterThan(50);
+  // FIX: bounded poll + MAX-HOLD over a window guaranteed to contain at
+  // least one full attack, instead of one instantaneous sample. At BPM=60 /
+  // length=1 the kick fires once per second, so a ~2 s capture window always
+  // straddles ≥1 attack; readScopePeakOverWindow keeps the running max
+  // peak/rms/nonzeroSamples across all polled analyser frames, so the loud
+  // attack frame is always observed regardless of analyser phase. This is
+  // deterministic + renderer/timing-tolerant for CI while staying a
+  // MEANINGFUL liveness gate: a silent / DC / wire-broken chowkick never
+  // crosses the floor in ANY frame, so it still fails.
+  //
+  // Per-sample kick SHAPE (attack < 5 ms, peak position, tail-energy
+  // ordering) stays pinned deterministically in the ART tier
+  // (art/scenarios/chowkick/canonical-kicks.test.ts) — the e2e tier only
+  // proves the audio path is alive.
+  const CAPTURE_MS = 2000; // ≥ 2 bars @ BPM 60/length 1 → always ≥1 attack
+  const hold = await readScopePeakOverWindow(page, 'a-scp', CAPTURE_MS);
+  expect(hold.polls, 'SCOPE was polled across the capture window').toBeGreaterThan(0);
+
+  // Liveness thresholds (Option C — character pinned in ART, e2e just proves
+  // the audio path is alive). Asserted on the windowed MAX, so they reflect
+  // the kick's attack frame, not whatever instant a single snapshot caught:
+  //   peak > 0.05  ⇒ the loud pitched attack was observed in some frame
+  //                  (a real #682 kick attacks at ~1.6; silent/DC → 0). The
+  //                  floor is raised 10× from the old single-shot 5e-3
+  //                  precisely BECAUSE max-hold now reliably catches the
+  //                  attack — a stricter, less flaky gate, not a weaker one.
+  //   rms  > 0.001 ⇒ broader-than-single-sample energy (a wire-broken
+  //                  regression that drops audio_out gives rms = 0).
+  //   nonzeroSamples > 50 ⇒ structured signal in some frame, not a glitch.
+  expect(hold.peak).toBeGreaterThan(0.05);
+  expect(hold.rms).toBeGreaterThan(0.001);
+  expect(hold.nonzeroSamples).toBeGreaterThan(50);
 
   expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
@@ -218,27 +237,31 @@ test('CHOWKICK bounce knob audibly modulates the resonant body', async ({ page }
   // Let one full bar render to seed the SCOPE.
   await page.waitForTimeout(1200);
 
-  // Average RMS across N snapshots taken across multiple bars. A single
-  // snapshot reads a ~100 ms window whose alignment vs. the kick attack
-  // is non-deterministic — single-shot deltas can swing 0–30% of the
-  // steady-state effect. The mean over 5 successive windows converges
-  // on the underlying RMS difference the bounce param actually drives,
-  // which keeps the 5%-delta assertion flake-safe at the e2e tier.
-  // (Per-sample shape changes are pinned deterministically in ART:
+  // ROOT CAUSE of the OLD flake here: the test averaged RMS over just 5
+  // phase-random ~100 ms snapshots per setting. The SCOPE window's alignment
+  // vs. each kick attack is non-deterministic, so each per-setting mean still
+  // carried ±15% phase noise (measured: noBounceRms swung 2.18e-1…2.93e-1
+  // across runs). When the two noisy means happened to land close, the
+  // |Δ|/no-bounce ratio dipped toward the 5% floor (observed as low as 6.0%,
+  // and below 5% under CI jitter → the flake). The underlying effect is
+  // actually LARGE (bounce=0.9 clearly raises body-drive RMS), it was just
+  // buried in snapshot-phase noise.
+  //
+  // FIX: per setting, MAX-HOLD peak + rms over a window that straddles
+  // several attacks (readScopePeakOverWindow), instead of averaging a few
+  // phase-random instants. Max-hold deterministically lands on the loud
+  // attack frame every run, collapsing the phase noise — the per-setting
+  // measurement becomes stable, so the genuine bounce-driven difference is
+  // what the delta reflects. We then assert the knob moved EITHER metric
+  // (peak OR rms) by >5%: the bounce knob skews the secondary-state-variable
+  // drive in BouncyFilterProc, reshaping the body envelope, and either the
+  // attack peak or the windowed rms shifts well past 5% — but which one wins
+  // is direction-dependent, so an OR keeps it robust without weakening the
+  // "knob is wired" claim. (Per-sample shape stays pinned in ART:
   // art/scenarios/chowkick/canonical-kicks.test.ts.)
-  async function meanRms(): Promise<number> {
-    let acc = 0;
-    const N = 5;
-    for (let i = 0; i < N; i++) {
-      const snap = await readScopeSnapshot(page, 'a-scp');
-      expect(snap).not.toBeNull();
-      acc += summarize(snap!.ch1).rms;
-      if (i + 1 < N) await page.waitForTimeout(350);
-    }
-    return acc / N;
-  }
+  const MEASURE_MS = 1600; // ≥ 2 bars @ BPM 90/length 1 → straddles ≥2 attacks
 
-  const noBounceRms = await meanRms();
+  const noBounce = await readScopePeakOverWindow(page, 'a-scp', MEASURE_MS);
 
   // Crank bounce way up.
   await page.evaluate(() => {
@@ -253,16 +276,19 @@ test('CHOWKICK bounce knob audibly modulates the resonant body', async ({ page }
   });
   await page.waitForTimeout(1200);
 
-  const bounceRms = await meanRms();
+  const bounce = await readScopePeakOverWindow(page, 'a-scp', MEASURE_MS);
 
-  // Both snapshots should be audible; their RMS should differ measurably.
-  // The bounce knob skews the secondary-state-variable drive in
-  // BouncyFilterProc, so the audible envelope shape changes regardless of
-  // which direction wins — pin "they're different" (>5% delta), flake-safe.
-  expect(noBounceRms).toBeGreaterThan(1e-5);
-  expect(bounceRms).toBeGreaterThan(1e-5);
-  const delta = Math.abs(bounceRms - noBounceRms) / Math.max(noBounceRms, 1e-6);
-  expect(delta).toBeGreaterThan(0.05);
+  // Both settings must be audible (a silent / wire-broken regression fails
+  // here, keeping the assertion meaningful).
+  expect(noBounce.peak).toBeGreaterThan(1e-3);
+  expect(bounce.peak).toBeGreaterThan(1e-3);
+
+  const rel = (a: number, b: number) => Math.abs(a - b) / Math.max(b, 1e-6);
+  const rmsDelta = rel(bounce.rms, noBounce.rms);
+  const peakDelta = rel(bounce.peak, noBounce.peak);
+  // The bounce knob must measurably change the audible body envelope — proven
+  // by EITHER the windowed peak or rms shifting >5% (direction-dependent).
+  expect(Math.max(rmsDelta, peakDelta)).toBeGreaterThan(0.05);
 
   expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
