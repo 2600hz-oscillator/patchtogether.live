@@ -73,7 +73,7 @@ declare function registerProcessor(name: string, ctor: typeof AudioWorkletProces
 import {
   TWOTRACKS_TAPE_LEN,
   echoesToDecay,
-  recordWindowLen,
+  loopWindow,
   readInterp,
   recordSpan,
   advanceCursor,
@@ -543,13 +543,11 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     const recArmArr      = parameters[pRecArm]!;
     const overdubTogArr  = parameters[pOverdubTog]!;
 
-    // Compute absolute window. The transport window comes from the pure engine:
-    // fresh-recording spans the whole tape (linear record to the end); play/
-    // overdub loop over the recorded region. See lib/twotracks-engine.ts.
-    const maxLen = recordWindowLen(reel.state, reel.bufLen, TWOTRACKS_MAX_SAMPLES);
-    const windowStart = Math.max(0, Math.min(maxLen - 1, startNorm * maxLen));
-    const windowEnd   = Math.max(windowStart + 1, Math.min(maxLen, endNorm * maxLen));
-    const windowLen   = windowEnd - windowStart;
+    // Compute the absolute loop window from the start/end scrubbers (normalized
+    // over the WHOLE tape, matching the card waveform) clamped to the playable
+    // extent (recorded region in playback / whole tape while recording).
+    // Default 0..1 → loops just the recording; scrubbers narrow within it.
+    const { windowStart, windowEnd } = loopWindow(startNorm, endNorm, reel.state, reel.bufLen, TWOTRACKS_MAX_SAMPLES);
 
     // ECHOES (1..5) → per-overdub-pass decay factor.
     const decayFactor = echoesToDecay(echoesParam);
@@ -559,9 +557,12 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     // about to record. Off = pure tape-deck (you hear the tape head only).
     const monitorOn = Math.round(kv('monitor', 0)) === 1;
 
-    // Apply pending seek
+    // Apply pending seek — pos is a fraction of the WHOLE tape (matching the
+    // card waveform + the whole-tape playhead readout), clamped into the loop
+    // window so a scrub can't land the cursor outside the playable range.
     if (reel.pendingSeek !== null) {
-      reel.cursor = windowStart + reel.pendingSeek * windowLen;
+      const target = reel.pendingSeek * TWOTRACKS_MAX_SAMPLES;
+      reel.cursor = Math.max(windowStart, Math.min(windowEnd, target));
       reel.pendingSeek = null;
     }
 

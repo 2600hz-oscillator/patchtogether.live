@@ -10,7 +10,7 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { twotracksDef, type TwoTracksData, TWOTRACKS_MAX_SAMPLES, abGains } from '$lib/audio/modules/twotracks';
+  import { twotracksDef, type TwoTracksData, TWOTRACKS_MAX_SAMPLES, abGains, clampLoopStart, clampLoopEnd } from '$lib/audio/modules/twotracks';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -34,6 +34,9 @@
   let filterModeA   = $derived(node?.params.filterMode_a   ?? 0);
   let cutoffA       = $derived(node?.params.cutoff_a       ?? 20000);
   let resoA         = $derived(node?.params.reso_a         ?? 0);
+  // Loop scrubbers (fractions of the WHOLE tape — matches the waveform draw).
+  let startA        = $derived(node?.params.start_a        ?? defaultFor('start_a'));
+  let endA          = $derived(node?.params.end_a          ?? defaultFor('end_a'));
 
   // ─── Reel B synced params ───
   let rateB         = $derived(node?.params.rate_b         ?? defaultFor('rate_b'));
@@ -46,6 +49,9 @@
   let filterModeB   = $derived(node?.params.filterMode_b   ?? 0);
   let cutoffB       = $derived(node?.params.cutoff_b       ?? 20000);
   let resoB         = $derived(node?.params.reso_b         ?? 0);
+  // Loop scrubbers reel B.
+  let startB        = $derived(node?.params.start_b        ?? defaultFor('start_b'));
+  let endB          = $derived(node?.params.end_b          ?? defaultFor('end_b'));
 
   // ─── Global A/B param ───
   let abParam = $derived(node?.params.ab ?? 0);
@@ -141,6 +147,22 @@
   let displayPlayheadA = $derived(scrubbingA ? localPlayheadA : syncedPlayheadA);
   let displayPlayheadB = $derived(scrubbingB ? localPlayheadB : syncedPlayheadB);
 
+  // While a reel is actively rolling (and has tape), the loop handles can't be
+  // dragged past the playhead — it must stay inside [start, end]. When idle the
+  // playhead resets to the window start on the next PLAY, so dragging is free
+  // (clamp arg = null). Mirrors clampLoopStart/clampLoopEnd's playhead rule.
+  let rollingA = $derived(transportStateA !== 'idle' && bufLenA > 0);
+  let rollingB = $derived(transportStateB !== 'idle' && bufLenB > 0);
+  let playheadClampA = $derived(rollingA ? displayPlayheadA : null);
+  let playheadClampB = $derived(rollingB ? displayPlayheadB : null);
+
+  // Loop-handle drag state (separate from playhead scrub). Pointer-down
+  // hit-tests which marker is grabbed; null = scrubbing the playhead.
+  let dragHandleA = $state<'start' | 'end' | null>(null);
+  let dragHandleB = $state<'start' | 'end' | null>(null);
+  /** px hit radius around a loop handle (converted to a tape fraction per reel). */
+  const HANDLE_HIT_PX = 8;
+
   // ─── Filter mode labels ───
   const FILTER_MODES = ['OFF', 'HP', 'LP', 'BP'] as const;
 
@@ -165,8 +187,31 @@
 
   function posPxToNorm(x: number, canvas: HTMLCanvasElement | null): number {
     if (!canvas) return 0;
-    return Math.max(0, Math.min(1, x / canvas.width));
+    // offsetX is in CSS pixels; the canvas DISPLAYS at clientWidth (CSS width
+    // 100% ≈ 215px) while its drawing buffer is 220px wide. Divide by the
+    // displayed width so a click maps to the same tape fraction the handle is
+    // drawn at — otherwise the rightmost reachable norm is <1 and the END handle
+    // (at norm=1) can never be grabbed.
+    const wpx = canvas.clientWidth || canvas.width;
+    return Math.max(0, Math.min(1, x / wpx));
   }
+
+  /** Which loop element a pointer at `norm` (0..1) is grabbing on a reel of
+   *  `widthPx`: the closer of the start/end handles if within HANDLE_HIT_PX,
+   *  else 'playhead' (scrub). */
+  function handleHit(norm: number, startNorm: number, endNorm: number, widthPx: number): 'start' | 'end' | 'playhead' {
+    const t = HANDLE_HIT_PX / Math.max(1, widthPx);
+    const dStart = Math.abs(norm - startNorm);
+    const dEnd = Math.abs(norm - endNorm);
+    if (dStart <= t && dStart <= dEnd) return 'start';
+    if (dEnd <= t) return 'end';
+    return 'playhead';
+  }
+
+  function setStartA(norm: number) { setNodeParam(id, 'start_a', clampLoopStart(norm, endA, playheadClampA)); }
+  function setEndA(norm: number)   { setNodeParam(id, 'end_a',   clampLoopEnd(norm, startA, playheadClampA)); }
+  function setStartB(norm: number) { setNodeParam(id, 'start_b', clampLoopStart(norm, endB, playheadClampB)); }
+  function setEndB(norm: number)   { setNodeParam(id, 'end_b',   clampLoopEnd(norm, startB, playheadClampB)); }
 
   function sendSeek(reel: 'a' | 'b', pos: number): void {
     const eng = engineCtx.get();
@@ -220,21 +265,30 @@
     e.stopPropagation();
     if (!canvasElA) return;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    const norm = posPxToNorm(e.offsetX, canvasElA);
+    const hit = handleHit(norm, startA, endA, canvasElA.width);
+    if (hit === 'start') { dragHandleA = 'start'; setStartA(norm); return; }
+    if (hit === 'end')   { dragHandleA = 'end';   setEndA(norm);   return; }
     scrubbingA = true;
     pointerPrevXA = e.offsetX;
-    localPlayheadA = posPxToNorm(e.offsetX, canvasElA);
+    localPlayheadA = norm;
   }
   function onCanvasPointerMoveA(e: PointerEvent) {
     e.stopPropagation();
+    if (!canvasElA) return;
+    const norm = posPxToNorm(e.offsetX, canvasElA);
+    if (dragHandleA === 'start') { setStartA(norm); return; }
+    if (dragHandleA === 'end')   { setEndA(norm);   return; }
     if (!scrubbingA) return;
-    localPlayheadA = posPxToNorm(e.offsetX, canvasElA);
-    const blockWidthPx = canvasElA ? canvasElA.width : 220;
+    localPlayheadA = norm;
+    const blockWidthPx = canvasElA.width;
     const velocity = Math.abs(e.offsetX - pointerPrevXA) / blockWidthPx * 50;
     pointerPrevXA = e.offsetX;
     sendScrubVelocity('a', Math.min(10, velocity));
   }
   function onCanvasPointerUpA(e: PointerEvent) {
     e.stopPropagation();
+    if (dragHandleA) { dragHandleA = null; return; }
     if (!scrubbingA) return;
     scrubbingA = false;
     const pos = posPxToNorm(e.offsetX, canvasElA);
@@ -256,21 +310,30 @@
     e.stopPropagation();
     if (!canvasElB) return;
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    const norm = posPxToNorm(e.offsetX, canvasElB);
+    const hit = handleHit(norm, startB, endB, canvasElB.width);
+    if (hit === 'start') { dragHandleB = 'start'; setStartB(norm); return; }
+    if (hit === 'end')   { dragHandleB = 'end';   setEndB(norm);   return; }
     scrubbingB = true;
     pointerPrevXB = e.offsetX;
-    localPlayheadB = posPxToNorm(e.offsetX, canvasElB);
+    localPlayheadB = norm;
   }
   function onCanvasPointerMoveB(e: PointerEvent) {
     e.stopPropagation();
+    if (!canvasElB) return;
+    const norm = posPxToNorm(e.offsetX, canvasElB);
+    if (dragHandleB === 'start') { setStartB(norm); return; }
+    if (dragHandleB === 'end')   { setEndB(norm);   return; }
     if (!scrubbingB) return;
-    localPlayheadB = posPxToNorm(e.offsetX, canvasElB);
-    const blockWidthPx = canvasElB ? canvasElB.width : 220;
+    localPlayheadB = norm;
+    const blockWidthPx = canvasElB.width;
     const velocity = Math.abs(e.offsetX - pointerPrevXB) / blockWidthPx * 50;
     pointerPrevXB = e.offsetX;
     sendScrubVelocity('b', Math.min(10, velocity));
   }
   function onCanvasPointerUpB(e: PointerEvent) {
     e.stopPropagation();
+    if (dragHandleB) { dragHandleB = null; return; }
     if (!scrubbingB) return;
     scrubbingB = false;
     const pos = posPxToNorm(e.offsetX, canvasElB);
@@ -286,6 +349,8 @@
     peaks: Float32Array | null,
     bufLen: number,
     displayPlayhead: number,
+    startNorm: number,
+    endNorm: number,
   ): void {
     if (!canvasEl) return;
     const ctx2d = canvasEl.getContext('2d');
@@ -317,8 +382,19 @@
       ctx2d.stroke();
     }
 
-    // Only draw the playhead cursor when there is actually tape — an empty reel
-    // shows just "NO TAPE", never a stray blue line.
+    const sX = Math.round(startNorm * w);
+    const eX = Math.round(endNorm * w);
+
+    // Dim the out-of-loop regions ([0,start] and [end,1]) so it's clear which
+    // span of tape actually plays. Only when there's tape — a blank reel stays
+    // clean "NO TAPE".
+    if (peaks && bufLen > 0) {
+      ctx2d.fillStyle = 'rgba(6, 8, 12, 0.62)';
+      if (sX > 0) ctx2d.fillRect(0, 0, sX, h);
+      if (eX < w) ctx2d.fillRect(eX, 0, w - eX, h);
+    }
+
+    // Playhead cursor — only when there's tape (empty reel shows no stray line).
     if (peaks && bufLen > 0) {
       const px = Math.round(displayPlayhead * w);
       ctx2d.strokeStyle = 'rgba(80, 160, 255, 0.85)';
@@ -328,16 +404,33 @@
       ctx2d.lineTo(px + 0.5, h);
       ctx2d.stroke();
     }
+
+    // Loop handles (always grabbable) — start (green) / end (orange) with a top
+    // grip. Clamped 1px in from the edge so a handle at 0 or 1 stays visible.
+    const drawHandle = (x: number, color: string) => {
+      const cx = Math.max(1, Math.min(w - 1, x));
+      ctx2d.strokeStyle = color;
+      ctx2d.lineWidth = 1.5;
+      ctx2d.beginPath();
+      ctx2d.moveTo(cx + 0.5, 0);
+      ctx2d.lineTo(cx + 0.5, h);
+      ctx2d.stroke();
+      ctx2d.fillStyle = color;
+      ctx2d.fillRect(cx - 2, 0, 4, 4);
+      ctx2d.fillRect(cx - 2, h - 4, 4, 4);
+    };
+    drawHandle(sX, 'rgba(120, 230, 140, 0.95)');
+    drawHandle(eX, 'rgba(255, 150, 80, 0.95)');
   }
 
   // Reactive waveform draws
   $effect(() => {
-    void peaksA; void bufLenA; void displayPlayheadA;
-    drawWaveform(canvasElA, peaksA, bufLenA, displayPlayheadA);
+    void peaksA; void bufLenA; void displayPlayheadA; void startA; void endA;
+    drawWaveform(canvasElA, peaksA, bufLenA, displayPlayheadA, startA, endA);
   });
   $effect(() => {
-    void peaksB; void bufLenB; void displayPlayheadB;
-    drawWaveform(canvasElB, peaksB, bufLenB, displayPlayheadB);
+    void peaksB; void bufLenB; void displayPlayheadB; void startB; void endB;
+    drawWaveform(canvasElB, peaksB, bufLenB, displayPlayheadB, startB, endB);
   });
 </script>
 

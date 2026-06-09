@@ -16,8 +16,49 @@ import {
   advanceCursor,
   playheadNorm,
   transportButton,
+  loopWindow,
+  clampLoopStart,
+  clampLoopEnd,
+  MIN_LOOP_GAP,
   type TapeState,
 } from './twotracks-engine';
+
+describe('loopWindow + start/end clamps (loop scrubbers)', () => {
+  const T = TWOTRACKS_TAPE_LEN;
+  it('default 0..1 during playback loops just the recorded region', () => {
+    const w = loopWindow(0, 1, 'play', 96_000, T);
+    expect(w.windowStart).toBe(0);
+    expect(w.windowEnd).toBe(96_000); // = bufLen, NOT the whole tape
+  });
+  it('narrowed start/end carve a sub-window within the recording', () => {
+    const w = loopWindow(0.1, 0.25, 'play', 480_000, T);
+    expect(w.windowStart).toBeCloseTo(0.1 * T, 0);
+    expect(w.windowEnd).toBeCloseTo(0.25 * T, 0);
+  });
+  it('end clamps to the recorded extent (can’t loop into blank tape)', () => {
+    const w = loopWindow(0, 1, 'play', 100_000, T);
+    expect(w.windowEnd).toBe(100_000);
+  });
+  it('while recording the window spans the whole tape', () => {
+    const w = loopWindow(0, 1, 'rec', 0, T);
+    expect(w.windowEnd).toBe(T);
+  });
+
+  it('clampLoopStart blocks crossing END and (while rolling) the playhead', () => {
+    expect(clampLoopStart(0.9, 0.5, null)).toBeCloseTo(0.5 - MIN_LOOP_GAP);
+    expect(clampLoopStart(0.8, 0.95, 0.4)).toBe(0.4);
+    expect(clampLoopStart(-1, 0.5, null)).toBe(0);
+  });
+  it('clampLoopEnd blocks crossing START and (while rolling) the playhead', () => {
+    expect(clampLoopEnd(0.1, 0.5, null)).toBeCloseTo(0.5 + MIN_LOOP_GAP);
+    expect(clampLoopEnd(0.2, 0.05, 0.6)).toBe(0.6);
+    expect(clampLoopEnd(2, 0.5, null)).toBe(1);
+  });
+  it('when stopped (playhead null) start/end move freely within [0,1]', () => {
+    expect(clampLoopStart(0.3, 1, null)).toBe(0.3);
+    expect(clampLoopEnd(0.7, 0, null)).toBe(0.7);
+  });
+});
 
 // ── A tiny tape rig that drives the engine like the worklet's inner loop does:
 //    read (output) → record-span → advance. Returns the captured buffer + trace.

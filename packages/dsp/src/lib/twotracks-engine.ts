@@ -211,3 +211,47 @@ export function playheadNorm(cursor: number, tapeLen: number = TWOTRACKS_TAPE_LE
   const n = cursor / tapeLen;
   return n < 0 ? 0 : n > 1 ? 1 : n;
 }
+
+/** Minimum loop-window width as a fraction of the tape (handles can't cross /
+ *  collapse the window). */
+export const MIN_LOOP_GAP = 0.01;
+
+/**
+ * Resolve the absolute loop window [windowStart, windowEnd) in samples from the
+ * normalized start/end (fractions of the WHOLE tape, matching the card's
+ * waveform which is drawn over the whole tape) — clamped to the playable extent
+ * (the recorded region during playback, the whole tape while recording). So the
+ * default 0..1 still loops just the recording, and the scrubbers narrow within
+ * it. Mirrored by processReel.
+ */
+export function loopWindow(
+  startNorm: number,
+  endNorm: number,
+  state: TapeState,
+  bufLen: number,
+  tapeLen: number = TWOTRACKS_TAPE_LEN,
+): { windowStart: number; windowEnd: number } {
+  const playable = recordWindowLen(state, bufLen, tapeLen);
+  const windowStart = Math.max(0, Math.min(playable - 1, startNorm * tapeLen));
+  const windowEnd = Math.max(windowStart + 1, Math.min(playable, endNorm * tapeLen));
+  return { windowStart, windowEnd };
+}
+
+/**
+ * Clamp a dragged loop START (0..1) so it can't cross the END and — while the
+ * transport is rolling (playheadNorm non-null) — can't be dragged PAST the
+ * playhead (the playhead must stay inside the window). When stopped, pass null.
+ */
+export function clampLoopStart(value: number, endNorm: number, playheadNorm: number | null): number {
+  let hi = endNorm - MIN_LOOP_GAP;
+  if (playheadNorm !== null) hi = Math.min(hi, playheadNorm);
+  return Math.max(0, Math.min(value, hi));
+}
+
+/** Clamp a dragged loop END — can't cross START, and can't be dragged below the
+ *  playhead while rolling. */
+export function clampLoopEnd(value: number, startNorm: number, playheadNorm: number | null): number {
+  let lo = startNorm + MIN_LOOP_GAP;
+  if (playheadNorm !== null) lo = Math.max(lo, playheadNorm);
+  return Math.min(1, Math.max(value, lo));
+}
