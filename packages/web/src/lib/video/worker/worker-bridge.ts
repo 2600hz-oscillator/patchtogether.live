@@ -152,6 +152,17 @@ export class RenderWorkerBridge {
     this.send({ type: 'setResolution', width, height });
   }
 
+  /**
+   * Fix E Phase 2 — send a serialized TOYBOX state snapshot to the worker.
+   * Called by the toybox main-thread wrapper whenever node.data changes so the
+   * worker renderer picks up layer/combine/cvRoute edits without touching the
+   * Yjs store or any DOM API. A no-op when the worker is not supported.
+   */
+  sendToyboxSync(nodeId: string, state: unknown): void {
+    if (!this.supported) return;
+    this.send({ type: 'toybox-sync', nodeId, state });
+  }
+
   /** Drain (remove + return) the latest pending bitmap for a node, transferring
    *  ownership to the caller (the proxy handle uploads + closes it). Returns
    *  null when no fresh frame has arrived since the last drain. */

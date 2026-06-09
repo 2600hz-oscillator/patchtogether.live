@@ -1948,6 +1948,28 @@
     tickScopes();
   }
 
+  // Fix E Phase 2 — reactive data sync to the render worker.
+  // When node.data changes (layers/combine/cvRoutes edited in the UI), send a
+  // serialized snapshot to the worker-side TOYBOX handler via
+  // VideoEngine.syncNodeData → bridge.sendToyboxSync → MsgToyboxSync.
+  // The effect re-runs whenever patch.nodes[id]?.data changes (Svelte 5 tracks
+  // the reactive read). A no-op when the worker flag is off or the worker isn't
+  // active for this node (syncNodeData is safe to call unconditionally).
+  $effect(() => {
+    const liveData = patch.nodes[id]?.data;
+    if (!liveData) return;
+    // Serialize to plain JSON so the structured-clone in postMessage is
+    // deterministic and Y.Doc proxies are stripped out.
+    let plain: unknown;
+    try { plain = JSON.parse(JSON.stringify(liveData)); } catch { return; }
+    const e = engineCtx.get();
+    if (!e) return;
+    try {
+      const ve = e.getDomain<VideoEngine>('video');
+      ve.syncNodeData(id, plain);
+    } catch { /* engine not ready yet */ }
+  });
+
   onMount(() => {
     rafId = requestAnimationFrame(draw);
     // VRT debug hook: pin the engine-side iTime to `time` (constant) so the
