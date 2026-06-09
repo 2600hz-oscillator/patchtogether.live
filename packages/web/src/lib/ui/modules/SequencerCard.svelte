@@ -7,6 +7,7 @@
   import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
+  import { mutateNode } from '$lib/graph/mutate';
   import {
     sequencerDef,
     defaultSteps,
@@ -125,13 +126,18 @@
   }
 
   function writeSteps(arr: Step[]) {
-    const t = patch.nodes[id];
-    if (!t) return;
-    ydoc.transact(() => {
-      if (!t.data) t.data = {};
-      // Replace the whole steps array (in-place index assignment doesn't
-      // reliably propagate through SyncedStore for nested arrays-of-objects).
-      (t.data as Record<string, unknown>).steps = arr.map((s) => ({
+    // Route through the origin-tagged mutation seam (graph/mutate.ts) so the
+    // write is tagged LOCAL_ORIGIN and lands on the UndoManager — every step
+    // edit (toggle gate, set pitch, cycle chord, clear) flows through here, so
+    // this is what makes those edits Cmd-Z-able (Phase 4b). The mutator re-reads
+    // the live node inside the transaction; setting the `steps` KEY on
+    // `live.data` to a fresh plain array is the established safe write (we never
+    // reassign an already-integrated Y type — see [[yjs-save-load-real-ydoc]]).
+    // Whole-array replace is deliberate: in-place index assignment doesn't
+    // reliably propagate through SyncedStore for nested arrays-of-objects.
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      (live.data as Record<string, unknown>).steps = arr.map((s) => ({
         on: s.on,
         midi: s.midi,
         chord: s.chord ?? 'mono',
