@@ -32,6 +32,32 @@ describe('isWorkerFlagOn', () => {
   });
 });
 
+describe('isWorkerFlagOn — URL param (reviewer A/B toggle)', () => {
+  afterEach(() => { vi.unstubAllGlobals(); delete g.__videoWorkerEnabled; });
+
+  it('?videoworker=1 turns it on', () => {
+    vi.stubGlobal('location', { search: '?videoworker=1' });
+    expect(isWorkerFlagOn()).toBe(true);
+  });
+  it('?videoworker=true turns it on', () => {
+    vi.stubGlobal('location', { search: '?foo=bar&videoworker=true' });
+    expect(isWorkerFlagOn()).toBe(true);
+  });
+  it('?videoworker=0 forces it off', () => {
+    vi.stubGlobal('location', { search: '?videoworker=0' });
+    expect(isWorkerFlagOn()).toBe(false);
+  });
+  it('no videoworker param leaves it off (default)', () => {
+    vi.stubGlobal('location', { search: '?other=1' });
+    expect(isWorkerFlagOn()).toBe(false);
+  });
+  it('globalThis override still beats the URL param', () => {
+    vi.stubGlobal('location', { search: '?videoworker=1' });
+    g.__videoWorkerEnabled = false;
+    expect(isWorkerFlagOn()).toBe(false);
+  });
+});
+
 describe('workerCapable', () => {
   const saved = {
     Worker: g.Worker,

@@ -17,17 +17,29 @@
 import type { ModuleNode } from '$lib/graph/types';
 import type { WorkerInboundMsg, WorkerOutboundMsg } from './protocol';
 
-/** Read the Fix E worker flag. Default OFF.
- *  - prod/dev build flag: `import.meta.env.VITE_VIDEO_WORKER === 'true'`
- *  - runtime override (e2e flips this via addInitScript BEFORE boot, or a dev
- *    poking the console): `globalThis.__videoWorkerEnabled === true`.
- *  Either being truthy turns it on; the runtime override also lets a build with
- *  the env unset be exercised in tests. */
+/** Read the Fix E worker flag. Default OFF. Precedence (first match wins):
+ *  1. runtime override `globalThis.__videoWorkerEnabled` (e2e flips this via
+ *     addInitScript BEFORE boot, or a dev pokes the console). `=== false`
+ *     force-disables even if a build/URL said on.
+ *  2. URL param `?videoworker=1` (or `=true`) → ON, `=0`/`=false` → OFF. Lets a
+ *     reviewer A/B the worker path by opening a link — no console, works on
+ *     mobile. SSR-safe (guarded on `location`).
+ *  3. prod/dev build flag `import.meta.env.VITE_VIDEO_WORKER === 'true'`.
+ *  Otherwise OFF. */
 export function isWorkerFlagOn(): boolean {
   const override = (globalThis as unknown as { __videoWorkerEnabled?: boolean })
     .__videoWorkerEnabled;
   if (override === true) return true;
   if (override === false) return false;
+  try {
+    if (typeof location !== 'undefined' && location.search) {
+      const v = new URLSearchParams(location.search).get('videoworker');
+      if (v === '1' || v === 'true') return true;
+      if (v === '0' || v === 'false') return false;
+    }
+  } catch {
+    // location / URLSearchParams unavailable (SSR / odd realm) — fall through.
+  }
   try {
     return (import.meta as unknown as { env?: Record<string, string> }).env
       ?.VITE_VIDEO_WORKER === 'true';
