@@ -112,6 +112,14 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // ── File-input sources: output is silent until a file is uploaded.
   //    No upstream signal can perturb that.
   samsloop:       'needs an uploaded sample AND a trigger to emit (idle-by-default, no autoplay); covered by samsloop.spec.ts',
+  // Tape loop: idle output is hard-gated to silence and a fresh spawn has no
+  // recorded tape, so NO single input perturbs the output in the one-input-at-
+  // a-time control harness — audible output needs a record (audio-in + rec
+  // gate) → play sequence (and a non-zero A/B gain for reel B), which this
+  // sweep can't establish. Covered by twotracks.spec.ts (transport / EQ /
+  // filter / A-B crossfade / lofi UI + OSC→twotracks→SCOPE wiring) and the
+  // twotracks-transport + twotracks-ab unit tests.
+  twotracks:      'tape loop — silent until record→play established; covered by twotracks.spec.ts + twotracks-transport/ab unit tests',
   videobox:       'needs uploaded video file to emit; covered by videobox.test.ts + videobox-sync.test.ts',
   videovarispeed: 'needs uploaded video file to emit; covered by videovarispeed-output.spec.ts',
   picturebox:     'needs uploaded image file to emit; covered by picturebox-related specs',
