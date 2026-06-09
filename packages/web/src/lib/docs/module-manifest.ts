@@ -1348,6 +1348,8 @@ export function buildModuleManifest(
       // synth-utils. The module def lives in hydrogen.ts; everything
       // else with the `hydrogen-` prefix is implementation detail.
       if (file.startsWith('hydrogen-')) return false;
+      // TWOTRACKS pure state machine — not a ModuleDef.
+      if (file === 'twotracks-transport.ts') return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));

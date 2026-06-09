@@ -72,7 +72,7 @@ export interface TwoTracksData {
 export const twotracksDef: AudioModuleDef = {
   type: 'twotracks',
   label: 'twotracks', // MUST be lowercase (card CSS uppercases for display)
-  palette: { top: 'Audio modules', sub: 'Samplers' },
+  palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   category: 'effects',
   schemaVersion: 1,
