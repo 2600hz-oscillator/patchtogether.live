@@ -35,16 +35,31 @@
 //     multi-user constraint that a rack supports up to 4 collaborators
 //     ([[multiuser-constraints]]).
 //
-// NOTE (post-cap-bump PR): the 4.4 MB per-instance figure above came
+// NOTE (post-cap-bump PRs): the 4.4 MB per-instance figure above came
 // from the OLD persistence path that stored decoded PCM as a YArray
 // (one CRDT record per sample) — that path was retired when the decoded
 // cap was raised from 144_000 to 1_500_000 samples. Uploads now persist
 // the ORIGINAL file bytes via a base64 string (single opaque Yjs value,
-// bounded by SAMSLOOP_MAX_FILE_BYTES = 250 KB). Per-instance Yjs cost
-// dropped roughly an order of magnitude; the decoded buffer lives in
-// the worklet's private memory (~6 MB worst case at the new cap, off
-// the main-thread heap). The 20/5 caps still hold with comfortable
-// headroom — no need to re-tune until we hit a different bottleneck.
+// bounded by SAMSLOOP_MAX_FILE_BYTES). Per-instance Yjs cost dropped
+// roughly an order of magnitude vs the old YArray path; the decoded
+// buffer lives in the worklet's private memory (off the main-thread heap,
+// bounded by SAMSLOOP_MAX_DECODED_SAMPLES = 1.5M floats ≈ 6 MB worst
+// case).
+//
+// FILE-BYTE CAP RAISE (this PR): SAMSLOOP_MAX_FILE_BYTES went 250 KB → 2 MB
+// so larger samples (e.g. a full short song / field recording) load. These
+// COUNT caps (20 per rack / 5 per user) are NOT a per-sample byte gate —
+// there is no per-sample byte limit here, so a single 2 MB sample is
+// accepted. The collab cost is the dominant new consideration: a 2 MB
+// upload persists as ~2.7 MB of base64 in node.data, synced as ONE opaque
+// Yjs value through the single-process relay (see relay-single-process-and-
+// drift). Worst case at the rackspace cap = 20 × ~2.7 MB ≈ ~54 MB of Yjs
+// string state, comfortably inside the ~100 MB SAMSLOOP tab budget (the
+// decoded PCM is off-heap in worklet memory). The 20/5 caps therefore
+// still hold with headroom even at the 2 MB file cap — no re-tune needed
+// until we hit a different bottleneck. (If samples routinely run near 2 MB
+// AND racks routinely run near 20 instances, revisit the per-rackspace
+// cap against the relay's per-doc memory then.)
 //
 // Creator attribution lives at `node.data.creatorId` (set by Canvas's
 // spawnFromPalette — same pattern as PICTUREBOX). Pre-existing SAMSLOOP

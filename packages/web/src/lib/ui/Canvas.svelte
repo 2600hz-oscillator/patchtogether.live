@@ -158,6 +158,7 @@
   import { organizeLayout, type Box } from '$lib/ui/canvas/organize';
   import type { CableType, Edge, PortDef, ModuleNode } from '$lib/graph/types';
   import { canConnect } from '$lib/graph/types';
+  import { validateEdge } from '$lib/graph/validate-edge';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
   import {
     pictureboxSpawnDecision,
@@ -317,6 +318,11 @@
       // because the def lookup returned no group def).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__handleConnect = (c: Connection) => handleConnect(c);
+      // Phase 4a — expose the SvelteFlow drag-time gate so e2e can assert
+      // the drag-reject predicate (the same fn wired to the
+      // isValidConnection prop) without synthesizing a real pointer drag.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__isValidConnection = (c: Connection) => isValidConnection(c);
       // Stage-B Playwright @collab tests use these to drive the
       // multi-user provider attach + per-user layout reads without
       // routing through Clerk auth. See e2e/tests/collab.spec.ts.
@@ -1401,6 +1407,30 @@
 
   // ---------------- Mirror Svelte Flow events back to the patch graph ----------------
 
+  /** SvelteFlow drag-time gate. Runs continuously while a cable is being
+   *  dragged toward a candidate handle; returning false makes SvelteFlow
+   *  visually REJECT the drop (no commit, no handleConnect). We reuse the
+   *  exact FW3 validator the commit path uses, so the drag preview and the
+   *  commit agree on direction + canConnect type compatibility (incl. group
+   *  exposed ports). Kept cheap: a couple of Record lookups + the pure
+   *  validator. Endpoints can be null mid-drag (before a target is hovered);
+   *  we permit those so the drag isn't killed before it reaches a handle. */
+  function isValidConnection(connection: FlowEdge | Connection): boolean {
+    const { source, target, sourceHandle, targetHandle } = connection;
+    // Mid-drag with no candidate target yet — don't reject, let the drag run.
+    if (!source || !target || !sourceHandle || !targetHandle) return true;
+    const candidate: Edge = {
+      id: `e-${source}-${sourceHandle}-${target}-${targetHandle}`,
+      source: { nodeId: source, portId: sourceHandle },
+      target: { nodeId: target, portId: targetHandle },
+      // sourceType/targetType are ignored by validateEdge (it re-derives the
+      // real port types); fill with a benign placeholder.
+      sourceType: 'audio',
+      targetType: 'audio',
+    };
+    return validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup).ok;
+  }
+
   /** User dragged a connection between two handles. Create an edge in the patch.
    *  Behavior: an input accepts only ONE connection at a time — patching onto an
    *  occupied input replaces the existing edge. Outputs may fan out to many. */
@@ -1442,6 +1472,30 @@
 
     const id = `e-${connection.source}-${connection.sourceHandle}-${connection.target}-${connection.targetHandle}`;
     if (patch.edges[id]) return;
+
+    // FW3 final structural gate (Phase 4a). The endpoints/types/exposed
+    // ports are resolved above, but nothing has confirmed the cable is
+    // actually materializable — direction (output→input) + canConnect
+    // domain/type compatibility. Run the pure validator against the LIVE
+    // patch nodes + the def-lookup chain (defLookup === getModuleDef ??
+    // getVideoModuleDef ?? getMetaModuleDef). srcExposed/dstExposed are
+    // re-resolved inside the validator the same way, so group exposed-port
+    // cables validate correctly. On failure: trace + silent return (no
+    // throw), exactly like the resolve/dup guards above. The candidate
+    // edge mirrors what we'd write, so the validator re-derives the real
+    // port types itself.
+    const candidate: Edge = {
+      id,
+      source: { nodeId: connection.source, portId: connection.sourceHandle },
+      target: { nodeId: connection.target, portId: connection.targetHandle },
+      sourceType,
+      targetType,
+    };
+    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup);
+    if (!verdict.ok) {
+      trace(`reject connect ${connection.source}.${connection.sourceHandle} → ${connection.target}.${connection.targetHandle}: ${verdict.reason}`);
+      return;
+    }
 
     ydoc.transact(() => {
       // Replace any existing edge targeting the same input.
@@ -4025,6 +4079,7 @@
       colorMode="dark"
       zoomOnDoubleClick={false}
       onconnect={handleConnect}
+      {isValidConnection}
       onconnectstart={handleConnectStart}
       onconnectend={handleConnectEnd}
       onclickconnectstart={handleClickConnectStart}

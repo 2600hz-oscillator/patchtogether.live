@@ -19,7 +19,7 @@ import * as Y from 'yjs';
 import { registerModule, type AudioModuleDef } from '$lib/audio/module-registry';
 import { registerVideoModule, type VideoModuleDef } from '$lib/video/module-registry';
 import { parseEnvelope, ENVELOPE_VERSION, type LivePatch } from '$lib/graph/persistence';
-import type { ModuleNode, Edge } from '$lib/graph/types';
+import type { ModuleNode, Edge, PortDef } from '$lib/graph/types';
 import {
   GIBRIBBON_DEMO_ENVELOPE_RAW,
   getGibribbonDemoEnvelope,
@@ -32,15 +32,20 @@ const throwingFactory = (): never => {
   throw new Error('factory should not be called from gibribbon-demo.test.ts');
 };
 
-function makeStubAudio(type: string, schemaVersion: number): AudioModuleDef {
+function makeStubAudio(
+  type: string,
+  schemaVersion: number,
+  inputs: PortDef[] = [],
+  outputs: PortDef[] = [],
+): AudioModuleDef {
   return {
     type,
     domain: 'audio',
     label: type.toUpperCase(),
     category: 'sources',
     schemaVersion,
-    inputs: [],
-    outputs: [],
+    inputs,
+    outputs,
     params: [],
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     factory: throwingFactory as any,
@@ -107,10 +112,49 @@ function hasEdge(
 beforeAll(() => {
   // schemaVersions must match the envelope's moduleSchemas so the loader
   // doesn't try to run a (nonexistent) migration. timelorde = v2.
-  registerModule(makeStubAudio('timelorde', 2));
-  registerModule(makeStubAudio('macseq', 1));
-  registerModule(makeStubAudio('macrooscillator', 1));
-  registerModule(makeStubAudio('synesthesia', 1));
+  //
+  // Ports declared per the demo's 11 edges — the Phase-4d import validator
+  // (loadEnvelopeIntoStore → validateEdge) now drops any edge whose port
+  // doesn't resolve on the endpoint def, so the stubs must carry the real
+  // ports + cable types the patch wires through (gate→gate, cv→modsignal, …).
+  registerModule(
+    makeStubAudio('timelorde', 2, [], [
+      { id: '1x', type: 'gate' },
+      { id: '2x', type: 'gate' },
+    ]),
+  );
+  registerModule(
+    makeStubAudio(
+      'macseq',
+      1,
+      [{ id: 'clock', type: 'gate' }],
+      [
+        { id: 'pitch', type: 'pitch' },
+        { id: 'gate', type: 'gate' },
+        { id: 'modelcv', type: 'cv' },
+      ],
+    ),
+  );
+  registerModule(
+    makeStubAudio(
+      'macrooscillator',
+      1,
+      [
+        { id: 'pitch', type: 'pitch' },
+        { id: 'trig', type: 'gate' },
+        { id: 'model_cv', type: 'cv' },
+      ],
+      [{ id: 'out', type: 'audio' }],
+    ),
+  );
+  registerModule(
+    makeStubAudio('synesthesia', 1, [{ id: 'a_in', type: 'audio' }], [
+      { id: 'a_band1_env_slow', type: 'cv' },
+      { id: 'a_band2_env_slow', type: 'cv' },
+      { id: 'a_band3_env_slow', type: 'cv' },
+      { id: 'a_band4_env_slow', type: 'cv' },
+    ]),
+  );
   registerVideoModule(stubGibribbonDef);
 });
 
