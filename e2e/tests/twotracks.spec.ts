@@ -744,4 +744,118 @@ test.describe('TWOTRACKS module', () => {
       await expect(monitor).toHaveAttribute('aria-pressed', 'false');
     });
   });
+
+  // ═══════════════════════════ Phase 6 ═══════════════════════════
+  // Per-side start/end loop scrubbers on the waveform (like SAMSLOOP). Dragging
+  // a side's handle narrows the played span; neither handle can cross the other
+  // (and — verified in the engine unit tests — neither can cross the playhead
+  // while rolling). The clamp MATH is unit-tested in twotracks-engine.test.ts
+  // (clampLoopStart/clampLoopEnd); these assert the UI wiring writes the params.
+
+  test.describe('TWOTRACKS P6 loop scrubbers', () => {
+    // Drag across a reel waveform from one displayed fraction to another. With
+    // posPxToNorm dividing by the displayed width, the written tape fraction ≈
+    // the drag fraction.
+    async function dragWaveform(page: Page, testid: string, fromFrac: number, toFrac: number) {
+      const canvas = page.locator(`[data-testid="${testid}"]`);
+      const box = await canvas.boundingBox();
+      if (!box) throw new Error(`no bounding box for ${testid}`);
+      const y = box.y + box.height / 2;
+      await page.mouse.move(box.x + box.width * fromFrac, y);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * toFrac, y, { steps: 8 });
+      await page.mouse.up();
+    }
+    const readParam = (page: Page, p: string) =>
+      page.evaluate((pp) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        };
+        return w.__patch.nodes['tt']?.params[pp];
+      }, p);
+    const setParam = (page: Page, p: string, v: number) =>
+      page.evaluate(({ pp, vv }) => {
+        const w = globalThis as unknown as {
+          __ydoc: { transact: (fn: () => void) => void };
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        };
+        w.__ydoc.transact(() => {
+          const tt = w.__patch.nodes['tt'];
+          if (tt) tt.params[pp] = vv;
+        });
+      }, { pp: p, vv: v });
+
+    // Untouched params aren't materialized into node.params until written, so a
+    // fresh read is `undefined` → fall back to the def default (what the card
+    // renders via `?? defaultFor(...)`).
+    const effStart = async (page: Page) => (await readParam(page, 'start_a')) ?? 0;
+    const effEnd = async (page: Page) => (await readParam(page, 'end_a')) ?? 1;
+
+    test('start/end default to the full tape (0 and 1)', async ({ page }) => {
+      await setupPage(page);
+      await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
+      await waitForCard(page);
+      expect(await effStart(page)).toBe(0);
+      expect(await effEnd(page)).toBe(1);
+    });
+
+    test('dragging the START handle inward moves start_a', async ({ page }) => {
+      await setupPage(page);
+      await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
+      await waitForCard(page);
+      await dragWaveform(page, 'twotracks-waveform', 0.01, 0.5);
+      const start = await readParam(page, 'start_a');
+      expect(start).toBeGreaterThan(0.35);
+      expect(start).toBeLessThan(0.65);
+      // End untouched.
+      expect(await effEnd(page)).toBe(1);
+    });
+
+    test('dragging the END handle inward moves end_a', async ({ page }) => {
+      await setupPage(page);
+      await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
+      await waitForCard(page);
+      await dragWaveform(page, 'twotracks-waveform', 0.99, 0.5);
+      const end = await readParam(page, 'end_a');
+      expect(end).toBeGreaterThan(0.35);
+      expect(end).toBeLessThan(0.65);
+      // Start untouched.
+      expect(await effStart(page)).toBe(0);
+    });
+
+    test('START cannot be dragged past END (clamped to the loop window)', async ({ page }) => {
+      await setupPage(page);
+      await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
+      await waitForCard(page);
+      // Pull END in first, then try to drag START well past it.
+      await setParam(page, 'end_a', 0.3);
+      await dragWaveform(page, 'twotracks-waveform', 0.01, 0.85);
+      const start = await readParam(page, 'start_a');
+      // Clamped at end − MIN_LOOP_GAP (0.3 − 0.01); never crosses END.
+      expect(start).toBeLessThanOrEqual(0.3);
+      expect(start).toBeGreaterThan(0.25);
+    });
+
+    test('reel B scrubbers are independent of reel A', async ({ page }) => {
+      await setupPage(page);
+      await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
+      await waitForCard(page);
+      await dragWaveform(page, 'twotracks-waveform-b', 0.01, 0.4);
+      const startB = await readParam(page, 'start_b');
+      expect(startB).toBeGreaterThan(0.25);
+      // Reel A unchanged.
+      expect(await effStart(page)).toBe(0);
+    });
+
+    test('clicking the middle of the waveform still scrubs the playhead (not a handle)', async ({ page }) => {
+      await setupPage(page);
+      await spawnPatch(page, [{ id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } }]);
+      await waitForCard(page);
+      // A mid-tape press is far from both edge handles → it must NOT move
+      // start_a/end_a (it's a playhead scrub).
+      await dragWaveform(page, 'twotracks-waveform', 0.5, 0.55);
+      expect(await effStart(page)).toBe(0);
+      expect(await effEnd(page)).toBe(1);
+    });
+  });
 });

@@ -28,6 +28,15 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import workletUrl from '@patchtogether.live/dsp/dist/twotracks.js?url';
 
+// Loop start/end clamp helpers live in the worklet's pure engine (the code the
+// worklet actually runs) and are re-exported here so the card + its unit tests
+// share ONE import surface for the scrubber math. clampLoopStart/End enforce the
+// "can't drag a handle past the playhead while rolling" rule.
+// Relative path (not the package alias) — svelte-check only resolves TS source
+// out of node_modules/@patchtogether.live/dsp via the dist build; the cube.ts /
+// sample-hold.ts engines re-export the same way.
+export { clampLoopStart, clampLoopEnd, MIN_LOOP_GAP } from '../../../../../dsp/src/lib/twotracks-engine';
+
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
 /** Maximum tape buffer length in samples — the fixed physical "blank tape"
