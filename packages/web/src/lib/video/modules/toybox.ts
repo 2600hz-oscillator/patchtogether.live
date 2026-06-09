@@ -981,26 +981,73 @@ export const toyboxDef: VideoModuleDef = {
     const scratchB = scratch(1);
 
     // ---- live node helpers ----
+    //
+    // RENDER-LOCAL CLONE (perf: progressive-slowdown leak fix).
+    //
+    // The CV-bridge's per-frame setParam → applyCvRoute → resolveRoute().apply
+    // writes the modulated value into the addressed layer/combine param IN
+    // PLACE. If those getters returned the LIVE SyncedStore (Yjs) proxy, that
+    // per-frame write would mutate the synced+persisted Y.Doc ~once per CV frame
+    // — firing a `ydoc.update` each time. The snapshot bus re-emits on every
+    // update, and Canvas's flowNodes/flowEdges $effects then rebuild the whole
+    // SvelteFlow graph, which LEAKS detached <svg>/<path> edge DOM on every
+    // rebuild (xyflow recreates edge SVG per render). With an active CV cable
+    // that's a ~130-160 MB/min retained-heap climb → the "slows down over time,
+    // worse with videos playing" report (a modulated TOYBOX combine param).
+    //
+    // It is ALSO semantically wrong: a live modulation value is TRANSIENT runtime
+    // state, not patch topology — it must not ride save / multiplayer sync (same
+    // lesson as #147 paramTaps + DOOM's TRANSIENT_DATA_FIELDS).
+    //
+    // FIX: keep a render-local DEEP CLONE of layers + combine. CV modulation
+    // mutates the CLONE (no doc write, no leak). The clone is re-synced from the
+    // store only when the user actually EDITS the structure/params (detected by a
+    // cheap JSON compare of the store's raw data) — so a knob turn / node add /
+    // preset load still flows in, while per-frame CV writes never touch the doc.
+    let cachedLayersKey = '\0uninit';
+    let cachedLayers: ToyboxLayer[] | null = null;
+    let cachedCombineKey = '\0uninit';
+    let cachedCombine: ToyboxCombineGraph | ToyboxCombine | null = null;
+
     function liveLayers(): ToyboxLayer[] {
       const live = livePatch.nodes[node.id];
       const raw =
         (live?.data?.layers as ToyboxLayer[] | undefined) ??
         (node.data?.layers as ToyboxLayer[] | undefined);
-      if (!raw || raw.length === 0) return makeDefaultLayers();
-      const out = raw.slice(0, LAYER_COUNT);
-      while (out.length < LAYER_COUNT) out.push({ kind: 'off', contentId: null, params: {} });
-      return out;
+      // Cheap change-detect: the store JSON only changes on a USER edit now that
+      // CV writes land on the clone, so this stringify runs the deep clone rarely.
+      const key = raw ? JSON.stringify(raw) : '';
+      if (key !== cachedLayersKey || !cachedLayers) {
+        cachedLayersKey = key;
+        let base: ToyboxLayer[];
+        if (!raw || raw.length === 0) base = makeDefaultLayers();
+        else {
+          base = (JSON.parse(key) as ToyboxLayer[]).slice(0, LAYER_COUNT);
+          while (base.length < LAYER_COUNT) base.push({ kind: 'off', contentId: null, params: {} });
+        }
+        cachedLayers = base;
+      }
+      return cachedLayers;
     }
     /** The live combine field — either the Phase-4 GRAPH ({nodes,edges}) or the
      *  legacy linear chain ({steps}). Falls back to the default GRAPH so a card
-     *  that has never been edited still composites like the Phase-1..3 default. */
+     *  that has never been edited still composites like the Phase-1..3 default.
+     *  Returns a render-local CLONE (see the clone rationale above) so the CV
+     *  apply path never writes through the synced Y.Doc proxy. */
     function liveCombineRaw(): ToyboxCombineGraph | ToyboxCombine {
       const live = livePatch.nodes[node.id];
       const raw =
         (live?.data?.combine as unknown) ?? (node.data?.combine as unknown);
-      if (isCombineGraph(raw)) return raw as ToyboxCombineGraph;
-      if (raw && Array.isArray((raw as ToyboxCombine).steps)) return raw as ToyboxCombine;
-      return makeDefaultCombineGraph();
+      const usable =
+        isCombineGraph(raw) || (raw && Array.isArray((raw as ToyboxCombine).steps));
+      const key = usable ? JSON.stringify(raw) : '';
+      if (key !== cachedCombineKey || !cachedCombine) {
+        cachedCombineKey = key;
+        cachedCombine = usable
+          ? (JSON.parse(key) as ToyboxCombineGraph | ToyboxCombine)
+          : makeDefaultCombineGraph();
+      }
+      return cachedCombine;
     }
 
     /** The live cvRoutes map (Phase 5). Absent → no routes (all generic cv
@@ -2177,6 +2224,14 @@ export const toyboxDef: VideoModuleDef = {
         // The batched per-input modulation snapshot the card reads ONCE per rAF
         // to drive all 6 always-on inline scopes (effective/min/max/kind/wave).
         if (key === 'cvScope') return readCvScope();
+        // The LIVE render-local layers/combine (the clone CV modulation mutates).
+        // Live modulation no longer rides the synced Y.Doc (the progressive-leak
+        // fix), so this is the ONLY place to observe the post-modulation param
+        // values — the engine-internal read the e2e CV-routing spec asserts on,
+        // mirroring read('cvScope'). Returns clones to keep the caller read-only.
+        if (key === 'liveModulated') {
+          return { layers: liveLayers(), combine: liveCombineRaw() };
+        }
         return undefined;
       },
       dispose() { surface.dispose(); },

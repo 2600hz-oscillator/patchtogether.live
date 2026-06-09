@@ -43,7 +43,10 @@ type PatchGlobal = {
   __engine?: () => { getDomain: <T>(d: string) => T };
 };
 
-type VideoEngineLike = { setParam: (nodeId: string, paramId: string, value: number) => void };
+type VideoEngineLike = {
+  setParam: (nodeId: string, paramId: string, value: number) => void;
+  read?: (nodeId: string, key: string) => unknown;
+};
 
 /** Pin the viewport at scale 1, panned up so the (CV-section-open) card body
  *  clears the fixed bottombar footer. */
@@ -132,14 +135,30 @@ async function driveCv(page: Page, port: string, raw: number): Promise<void> {
   );
 }
 
-/** Read live layers/combine/routes/inputs back from the patch. */
+/** Read the LIVE (post-modulation) layers/combine from the ENGINE, plus the
+ *  persisted routes/inputs from the patch.
+ *
+ *  Live CV modulation no longer rides the synced Y.Doc (the progressive-slowdown
+ *  / memory-leak fix: mutating the Yjs proxy per CV frame fired a doc update per
+ *  frame → SvelteFlow re-render storm → leaked detached edge SVG). The modulated
+ *  param values now live in the engine's render-local clone, exposed via
+ *  read('liveModulated') — so we read the moved param THERE (mirrors how the card
+ *  reads its scopes via read('cvScope')). cvRoutes/cvInputs are authored config
+ *  and stay on node.data. */
 async function readData(page: Page) {
   return page.evaluate(() => {
     const w = globalThis as unknown as PatchGlobal;
     const n = w.__patch.nodes['tb'];
+    const eng = w.__engine?.().getDomain<VideoEngineLike>('video');
+    const live = eng?.read?.('tb', 'liveModulated') as
+      | {
+          layers?: { kind?: string; contentId?: string | null; params?: Record<string, number>; material?: ObjMaterial }[];
+          combine?: { nodes?: { id?: string; kind?: string; params?: FadeParams }[]; edges?: unknown[] };
+        }
+      | undefined;
     return {
-      layers: n?.data?.layers ?? [],
-      combine: n?.data?.combine ?? { nodes: [] },
+      layers: live?.layers ?? n?.data?.layers ?? [],
+      combine: live?.combine ?? n?.data?.combine ?? { nodes: [] },
       cvRoutes: n?.data?.cvRoutes ?? {},
       cvInputs: n?.data?.cvInputs ?? {},
     };
