@@ -885,6 +885,19 @@ test.describe('per-module per-port: outputs emit signal', () => {
       if (nonExemptOutputs >= 2) {
         test.setTimeout(Math.max(30_000, nonExemptOutputs * 20_000 + 10_000));
       }
+      // MANDLEBLOT / MANDELBULB are heavy fractal / raymarched WebGL video
+      // modules whose per-pixel GPU first-paint is far slower on CI's
+      // SwiftShader software renderer than on a real GPU (the
+      // ci-swiftshader-video-e2e-timeouts class). The output-scaled budget
+      // above leaves them short: mandleblot's 2 non-exempt outputs get only
+      // 50s (2*20s+10s) and mandelbulb's single non-exempt output
+      // (audio_out is emit-exempt) gets just the 30s default — neither
+      // covers a cold SwiftShader fractal mount + per-output sink readout,
+      // so the mandleblot emit test timed out at 50s on shard-7 (#709's run
+      // 27176012257). Lift both to the same 90s heavy tier as foxy. This
+      // runs LAST so it wins over the output-scaled `setTimeout` above
+      // (Playwright's test.setTimeout is last-call-wins).
+      if (mod.type === 'mandleblot' || mod.type === 'mandelbulb') test.setTimeout(90_000);
 
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
