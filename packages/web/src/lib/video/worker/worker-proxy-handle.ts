@@ -188,7 +188,7 @@ export class WorkerProxyHandle implements VideoNodeHandle {
   }
 
   setParam(paramId: string, value: number): void {
-    this.params[paramId] = value;
+    this.params[paramId] = value; // guard:allow-raw-write — worker-side param cache (proxy object, not the live Y.Doc)
     this.bridge.setParam(this.node.id, paramId, value);
     this.fallback?.setParam(paramId, value);
   }
