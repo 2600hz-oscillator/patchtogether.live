@@ -1,0 +1,218 @@
+// packages/dsp/src/lib/twotracks-engine.test.ts
+//
+// Unit tests for the TWOTRACKS tape transport — the exact code the worklet runs.
+// These exercise the record/playback DSP that the headless e2e CANNOT (no
+// AudioWorklet audio thread in Playwright), which is why the recording bugs
+// shipped undetected. A full record→stop→play loop is simulated against
+// synthetic audio.
+
+import { describe, it, expect } from 'vitest';
+import {
+  TWOTRACKS_TAPE_LEN,
+  echoesToDecay,
+  recordWindowLen,
+  readInterp,
+  recordSpan,
+  advanceCursor,
+  playheadNorm,
+  type TapeState,
+} from './twotracks-engine';
+
+// ── A tiny tape rig that drives the engine like the worklet's inner loop does:
+//    read (output) → record-span → advance. Returns the captured buffer + trace.
+function simulateRecord(opts: {
+  input: Float32Array;       // mono input fed to L (R mirrors)
+  rate: number;              // transport speed
+  tapeLen: number;
+  modeVal?: 0 | 1;
+}) {
+  const { input, rate, tapeLen, modeVal = 1 } = opts;
+  const bufL = new Float32Array(tapeLen);
+  const bufR = new Float32Array(tapeLen);
+  let bufLen = 0;
+  let cursor = 0;
+  let state: TapeState = 'rec';
+  const playheads: number[] = [];
+
+  for (let i = 0; i < input.length; i++) {
+    if (state !== 'rec') break; // stopped (hit tape end)
+    const src = input[i] ?? 0;
+    // window spans the whole tape while recording
+    const winLen = recordWindowLen(state, bufLen, tapeLen);
+    const windowStart = 0;
+    const windowEnd = winLen;
+    bufLen = recordSpan(bufL, bufR, cursor, cursor + rate, src, src, false, tapeLen, bufLen);
+    const adv = advanceCursor(cursor, rate, state, modeVal, windowStart, windowEnd);
+    cursor = adv.cursor;
+    state = adv.state;
+    playheads.push(playheadNorm(cursor, tapeLen));
+  }
+  return { bufL, bufR, bufLen, cursor, state, playheads };
+}
+
+describe('echoesToDecay', () => {
+  it('maps ECHOES 1..5 to an increasing per-pass decay factor', () => {
+    expect(echoesToDecay(1)).toBeCloseTo(0.1, 5);
+    expect(echoesToDecay(3)).toBeCloseTo(Math.pow(0.1, 1 / 3), 5);
+    expect(echoesToDecay(5)).toBeCloseTo(Math.pow(0.1, 1 / 5), 5);
+    // more echoes ⇒ slower decay ⇒ larger factor
+    expect(echoesToDecay(5)).toBeGreaterThan(echoesToDecay(1));
+  });
+  it('clamps + rounds out-of-range echoes', () => {
+    expect(echoesToDecay(0)).toBe(echoesToDecay(1));
+    expect(echoesToDecay(99)).toBe(echoesToDecay(5));
+  });
+});
+
+describe('recordWindowLen', () => {
+  it('rec spans the FULL tape regardless of how much is recorded (the chopped-record bug)', () => {
+    for (const grown of [0, 1, 128, 480_000, 5_000_000]) {
+      expect(recordWindowLen('rec', grown, TWOTRACKS_TAPE_LEN)).toBe(TWOTRACKS_TAPE_LEN);
+    }
+  });
+  it('play/overdub/idle loop over the recorded region', () => {
+    expect(recordWindowLen('play', 96_000, TWOTRACKS_TAPE_LEN)).toBe(96_000);
+    expect(recordWindowLen('overdub', 96_000, TWOTRACKS_TAPE_LEN)).toBe(96_000);
+    expect(recordWindowLen('idle', 0, TWOTRACKS_TAPE_LEN)).toBe(TWOTRACKS_TAPE_LEN);
+  });
+});
+
+describe('recordSpan varispeed write', () => {
+  it('rate=1 writes contiguous 1:1 and grows bufLen linearly', () => {
+    const L = new Float32Array(100), R = new Float32Array(100);
+    let bufLen = 0, cursor = 0;
+    for (let i = 0; i < 10; i++) {
+      bufLen = recordSpan(L, R, cursor, cursor + 1, i + 1, i + 1, false, 100, bufLen);
+      cursor += 1;
+    }
+    expect(bufLen).toBe(10);
+    expect(Array.from(L.slice(0, 10))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  });
+
+  it('rate=2 stretches input across 2 cells each (records longer → octave-down on 1x)', () => {
+    const L = new Float32Array(100), R = new Float32Array(100);
+    let bufLen = 0, cursor = 0;
+    for (let i = 0; i < 5; i++) {
+      bufLen = recordSpan(L, R, cursor, cursor + 2, i + 1, i + 1, false, 100, bufLen);
+      cursor += 2;
+    }
+    expect(bufLen).toBe(10); // 5 inputs × 2 cells
+    expect(Array.from(L.slice(0, 10))).toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+  });
+
+  it('rate=0.5 compresses (every other input lands → octave-up on 1x)', () => {
+    const L = new Float32Array(100), R = new Float32Array(100);
+    let bufLen = 0, cursor = 0;
+    for (let i = 0; i < 8; i++) {
+      bufLen = recordSpan(L, R, cursor, cursor + 0.5, i + 1, i + 1, false, 100, bufLen);
+      cursor += 0.5;
+    }
+    // 8 inputs at 0.5/sample → 4 cells; later input overwrites the shared cell.
+    expect(bufLen).toBe(4);
+    expect(Array.from(L.slice(0, 4))).toEqual([2, 4, 6, 8]);
+  });
+
+  it('overdub ADDS onto existing content instead of overwriting', () => {
+    const L = new Float32Array(10).fill(1), R = new Float32Array(10).fill(1);
+    const bufLen = recordSpan(L, R, 0, 1, 0.5, 0.5, true, 10, 10);
+    expect(L[0]).toBeCloseTo(1.5);
+    expect(bufLen).toBe(10);
+  });
+
+  it('never writes past the physical tape end', () => {
+    const L = new Float32Array(5), R = new Float32Array(5);
+    const bufLen = recordSpan(L, R, 4, 7, 9, 9, false, 5, 4);
+    expect(L[4]).toBe(9);
+    expect(bufLen).toBe(5); // clamped, no OOB write/crash
+  });
+});
+
+describe('advanceCursor boundaries', () => {
+  it('rec stops at the tape end → play, rewound to start', () => {
+    const r = advanceCursor(99, 1, 'rec', 1, 0, 100);
+    expect(r.state).toBe('play');
+    expect(r.cursor).toBe(0);
+  });
+  it('rec stops at the tape start under reverse rate → play', () => {
+    const r = advanceCursor(0.5, -1, 'rec', 1, 0, 100);
+    expect(r.state).toBe('play');
+    expect(r.cursor).toBe(0);
+  });
+  it('loop-mode play wraps modulo the window without changing state', () => {
+    const r = advanceCursor(99.5, 1, 'play', 1, 0, 100);
+    expect(r.state).toBe('play');
+    expect(r.cursor).toBeCloseTo(0.5);
+  });
+  it('loop-mode overdub flags a decay pass on wrap', () => {
+    const r = advanceCursor(99.5, 1, 'overdub', 1, 0, 100);
+    expect(r.decayPass).toBe(true);
+  });
+  it('one-shot play → idle at the end', () => {
+    const r = advanceCursor(99, 1, 'play', 0, 0, 100);
+    expect(r.state).toBe('idle');
+  });
+  it('mid-window advance is a plain step (no boundary)', () => {
+    const r = advanceCursor(10, 1, 'play', 1, 0, 100);
+    expect(r).toEqual({ cursor: 11, state: 'play', decayPass: false });
+  });
+});
+
+describe('full record→stop→play simulation (synthetic sine)', () => {
+  const SR = 48000;
+  function sine(freq: number, n: number): Float32Array {
+    const b = new Float32Array(n);
+    for (let i = 0; i < n; i++) b[i] = Math.sin((2 * Math.PI * freq * i) / SR);
+    return b;
+  }
+
+  it('rate=1 captures the WHOLE take (not a snippet) at true 1:1', () => {
+    const input = sine(220, SR); // 1 s
+    const { bufLen, bufL } = simulateRecord({ input, rate: 1, tapeLen: TWOTRACKS_TAPE_LEN });
+    // 1 s in → ~1 s of tape (true 1.0×), NOT a few-ms fragment.
+    expect(bufLen).toBe(SR);
+    // recorded content is the sine, not silence
+    let energy = 0;
+    for (let i = 0; i < bufLen; i++) energy += bufL[i]! * bufL[i]!;
+    expect(Math.sqrt(energy / bufLen)).toBeGreaterThan(0.5);
+  });
+
+  it('rate=2 records ~2× the tape length for the same input (varispeed)', () => {
+    const input = sine(220, SR / 2); // 0.5 s
+    const { bufLen } = simulateRecord({ input, rate: 2, tapeLen: TWOTRACKS_TAPE_LEN });
+    expect(bufLen).toBe(SR); // 0.5 s input × 2 = 1 s of tape
+  });
+
+  it('playhead advances monotonically L→R during forward record (no backward drift)', () => {
+    const input = sine(220, 2000);
+    const { playheads } = simulateRecord({ input, rate: 1, tapeLen: TWOTRACKS_TAPE_LEN });
+    for (let i = 1; i < playheads.length; i++) {
+      expect(playheads[i]!).toBeGreaterThanOrEqual(playheads[i - 1]!);
+    }
+    // and it reflects position within the WHOLE tape (tiny fraction after 2000 of 960k)
+    expect(playheads.at(-1)!).toBeCloseTo(2000 / TWOTRACKS_TAPE_LEN, 4);
+  });
+
+  it('recording the entire tape stops automatically at the end → play', () => {
+    const input = sine(220, TWOTRACKS_TAPE_LEN + 5000); // longer than the tape
+    const { state, bufLen } = simulateRecord({ input, rate: 1, tapeLen: TWOTRACKS_TAPE_LEN });
+    expect(state).toBe('play');          // stopped on its own
+    expect(bufLen).toBe(TWOTRACKS_TAPE_LEN);
+  });
+});
+
+describe('readInterp', () => {
+  it('reads exact integer samples and interpolates between', () => {
+    const b = new Float32Array([0, 10, 20, 30]);
+    expect(readInterp(b, 1)).toBe(10);
+    expect(readInterp(b, 1.5)).toBeCloseTo(15);
+    expect(readInterp(b, -1)).toBe(0);
+  });
+});
+
+describe('playheadNorm', () => {
+  it('normalizes cursor against the whole tape and clamps', () => {
+    expect(playheadNorm(0, 100)).toBe(0);
+    expect(playheadNorm(50, 100)).toBe(0.5);
+    expect(playheadNorm(150, 100)).toBe(1);
+  });
+});

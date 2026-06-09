@@ -30,8 +30,12 @@ import workletUrl from '@patchtogether.live/dsp/dist/twotracks.js?url';
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
 
-/** Maximum tape buffer length in samples (≈30 s at 48 kHz). */
-export const TWOTRACKS_MAX_SAMPLES = 1_440_000;
+/** Maximum tape buffer length in samples — the fixed physical "blank tape"
+ *  length (≈20 s at 48 kHz). Recording fills this left→right; the card draws the
+ *  whole tape and the recorded region grows into it. Sized for a usable
+ *  loop/echo length while keeping per-instance memory + the live peaks scan
+ *  cheap (≈3.7 MB/reel stereo). */
+export const TWOTRACKS_MAX_SAMPLES = 960_000;
 
 /** How often to poll node.data for param changes (ms). */
 const POLL_MS = 100;
@@ -51,30 +55,11 @@ export interface TwoTracksData {
   bufLenB?: number;
 }
 
-/**
- * Length (in samples) of the transport window the worklet records / plays over,
- * given the reel's transport state and current recorded length.
- *
- * While FRESH-recording ('rec') the window spans the full physical buffer so the
- * cursor advances linearly to the end — recording runs until STOP or the buffer
- * fills. Clamping to the still-growing `bufLen` (the bug fixed alongside this
- * helper) collapses the window to a few ms each block, making the cursor loop
- * over the last fragment ("chopped" record / stops after a moment). Playback and
- * overdub loop over the recorded region (`bufLen`).
- *
- * The AudioWorkletProcessor (packages/dsp/src/twotracks.ts, processReel) mirrors
- * this exact rule — keep them in sync. (The worklet isn't importable under
- * vitest, same constraint as samsloopMath, so this pure mirror is the unit-test
- * surface.)
- */
-export function twotracksRecordSpan(
-  state: 'idle' | 'play' | 'armed' | 'rec' | 'overdub',
-  bufLen: number,
-): number {
-  return state === 'rec'
-    ? TWOTRACKS_MAX_SAMPLES
-    : (bufLen > 0 ? bufLen : TWOTRACKS_MAX_SAMPLES);
-}
+// NOTE: the tape transport math (record-window span, varispeed record/advance,
+// playhead, ECHOES→decay) lives in the worklet's pure engine
+// (packages/dsp/src/lib/twotracks-engine.ts) and is unit-tested there against
+// synthetic audio — that's the code the worklet actually runs. This module only
+// owns wiring + the A/B gain law (used by the card).
 
 /** Exported pure A/B gain law — used by the card and unit tests. */
 export function abGains(ab: number): { gainA: number; gainB: number } {
@@ -127,7 +112,7 @@ export const twotracksDef: AudioModuleDef = {
   palette: { top: 'Audio modules', sub: 'VCOs' },
   domain: 'audio',
   category: 'effects',
-  schemaVersion: 4,
+  schemaVersion: 5,
 
   inputs: [
     // Reel A
@@ -153,7 +138,7 @@ export const twotracksDef: AudioModuleDef = {
     // ---- Reel A ----
     { id: 'rate_a',         label: 'Rate A',    defaultValue: 1,     min: -3,  max: 3,     curve: 'linear' },
     { id: 'mode_a',         label: 'Mode A',    defaultValue: 1,     min: 0,   max: 1,     curve: 'discrete' },
-    { id: 'decay_a',        label: 'Decay A',   defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+    { id: 'echoes_a',       label: 'Echoes A',  defaultValue: 3,     min: 1,   max: 5,     curve: 'discrete' },
     { id: 'start_a',        label: 'Start A',   defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
     { id: 'end_a',          label: 'End A',     defaultValue: 1,     min: 0,   max: 1,     curve: 'linear' },
     { id: 'overdub_flag_a', label: 'Overdub A', defaultValue: 0,     min: 0,   max: 1,     curve: 'discrete' },
@@ -170,7 +155,7 @@ export const twotracksDef: AudioModuleDef = {
     // ---- Reel B ----
     { id: 'rate_b',         label: 'Rate B',    defaultValue: 1,     min: -3,  max: 3,     curve: 'linear' },
     { id: 'mode_b',         label: 'Mode B',    defaultValue: 1,     min: 0,   max: 1,     curve: 'discrete' },
-    { id: 'decay_b',        label: 'Decay B',   defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
+    { id: 'echoes_b',       label: 'Echoes B',  defaultValue: 3,     min: 1,   max: 5,     curve: 'discrete' },
     { id: 'start_b',        label: 'Start B',   defaultValue: 0,     min: 0,   max: 1,     curve: 'linear' },
     { id: 'end_b',          label: 'End B',     defaultValue: 1,     min: 0,   max: 1,     curve: 'linear' },
     { id: 'overdub_flag_b', label: 'Overdub B', defaultValue: 0,     min: 0,   max: 1,     curve: 'discrete' },
@@ -308,7 +293,7 @@ export const twotracksDef: AudioModuleDef = {
         // Reel A continuous params
         params.get('rate')?.setValueAtTime(p.rate_a ?? 1, ctx.currentTime);
         params.get('mode')?.setValueAtTime(p.mode_a ?? 1, ctx.currentTime);
-        params.get('decay')?.setValueAtTime(p.decay_a ?? 0, ctx.currentTime);
+        params.get('echoes')?.setValueAtTime(p.echoes_a ?? 3, ctx.currentTime);
         params.get('start')?.setValueAtTime(p.start_a ?? 0, ctx.currentTime);
         params.get('end')?.setValueAtTime(p.end_a ?? 1, ctx.currentTime);
         params.get('eqLow_a')?.setValueAtTime(p.eqLow_a ?? 0, ctx.currentTime);
@@ -321,7 +306,7 @@ export const twotracksDef: AudioModuleDef = {
         // Reel B continuous params
         params.get('rate_b')?.setValueAtTime(p.rate_b ?? 1, ctx.currentTime);
         params.get('mode_b')?.setValueAtTime(p.mode_b ?? 1, ctx.currentTime);
-        params.get('decay_b')?.setValueAtTime(p.decay_b ?? 0, ctx.currentTime);
+        params.get('echoes_b')?.setValueAtTime(p.echoes_b ?? 3, ctx.currentTime);
         params.get('start_b')?.setValueAtTime(p.start_b ?? 0, ctx.currentTime);
         params.get('end_b')?.setValueAtTime(p.end_b ?? 1, ctx.currentTime);
         params.get('eqLow_b')?.setValueAtTime(p.eqLow_b ?? 0, ctx.currentTime);
@@ -431,7 +416,7 @@ function cardParamToWorkletParam(cardId: string): string | null {
     // Reel A — core (keep backward-compat worklet param names)
     rate_a:          'rate',
     mode_a:          'mode',
-    decay_a:         'decay',
+    echoes_a:        'echoes',
     start_a:         'start',
     end_a:           'end',
     // EQ reel A (worklet param names match card IDs)
@@ -445,7 +430,7 @@ function cardParamToWorkletParam(cardId: string): string | null {
     // Reel B — all params use _b suffix in worklet too
     rate_b:          'rate_b',
     mode_b:          'mode_b',
-    decay_b:         'decay_b',
+    echoes_b:        'echoes_b',
     start_b:         'start_b',
     end_b:           'end_b',
     eqLow_b:         'eqLow_b',

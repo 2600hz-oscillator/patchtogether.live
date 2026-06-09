@@ -84,7 +84,7 @@ test.describe('TWOTRACKS module', () => {
     await expect(card.locator('[data-testid="twotracks-overdub-toggle"]')).toBeVisible();
 
     // Decay slider present.
-    await expect(card.locator('[data-testid="twotracks-decay"]')).toBeVisible();
+    await expect(card.locator('[data-testid="twotracks-echoes"]')).toBeVisible();
 
     // Save button present.
     await expect(card.locator('[data-testid="twotracks-save"]')).toBeVisible();
@@ -176,7 +176,7 @@ test.describe('TWOTRACKS module', () => {
     await expect(overdubBtn).not.toHaveClass(/active/);
   });
 
-  test('decay knob reflects the decay param value', async ({ page }) => {
+  test('echoes knob reflects the echoes param value', async ({ page }) => {
     await setupPage(page);
 
     await spawnPatch(page, [
@@ -185,13 +185,13 @@ test.describe('TWOTRACKS module', () => {
     await waitForCard(page);
 
     const card = page.locator('[data-testid="twotracks-card"]');
-    // The decay control is now an assignable Knob (role="slider"); its tick
-    // angle / aria-valuenow tracks the decay_a param.
-    const decayKnob = card.locator('[data-testid="twotracks-decay"] [role="slider"]');
-    await expect(decayKnob).toBeVisible();
-    await expect(decayKnob).toHaveAttribute('aria-valuenow', '0');
+    // ECHOES is an assignable Knob (role="slider", default 3); its aria-valuenow
+    // tracks the echoes_a param.
+    const echoesKnob = card.locator('[data-testid="twotracks-echoes"] [role="slider"]');
+    await expect(echoesKnob).toBeVisible();
+    await expect(echoesKnob).toHaveAttribute('aria-valuenow', '3');
 
-    // Drive decay_a via the dev Y.Doc; the knob must reflect it.
+    // Drive echoes_a via the dev Y.Doc; the knob must reflect it.
     await page.evaluate(() => {
       const w = globalThis as unknown as {
         __ydoc: { transact: (fn: () => void) => void };
@@ -199,10 +199,10 @@ test.describe('TWOTRACKS module', () => {
       };
       w.__ydoc.transact(() => {
         const tt = w.__patch.nodes['tt'];
-        if (tt) tt.params['decay_a'] = 0.5;
+        if (tt) tt.params['echoes_a'] = 5;
       });
     });
-    await expect(decayKnob).toHaveAttribute('aria-valuenow', '0.5');
+    await expect(echoesKnob).toHaveAttribute('aria-valuenow', '5');
   });
 
   // ═══════════════════════════ Phase 2 ═══════════════════════════
@@ -243,7 +243,7 @@ test.describe('TWOTRACKS module', () => {
     await expect(card.locator('[data-testid="twotracks-overdub-toggle-b"]')).toBeVisible();
 
     // Reel B decay slider
-    await expect(card.locator('[data-testid="twotracks-decay-b"]')).toBeVisible();
+    await expect(card.locator('[data-testid="twotracks-echoes-b"]')).toBeVisible();
 
     // Reel B save button
     await expect(card.locator('[data-testid="twotracks-save-b"]')).toBeVisible();
@@ -667,17 +667,50 @@ test.describe('TWOTRACKS module', () => {
       const card = page.locator('[data-testid="twotracks-card"]');
 
       // Every continuous control is now an assignable Knob (role="slider").
-      // Per reel: 3 EQ + cutoff + reso + decay + rate = 7; ×2 reels = 14; + A/B = 15.
+      // Per reel: 3 EQ + cutoff + reso + echoes + rate = 7; ×2 reels = 14; + A/B = 15.
       const knobs = card.locator('[role="slider"]');
       await expect(knobs).toHaveCount(15);
 
       // Right-clicking a knob opens the control context menu whose entries are
       // the MIDI-Learn + Send-to-control-surface actions — i.e. the control is
-      // assignable to both. Verify on a representative knob (reel A decay).
-      const decayKnob = card.locator('[data-testid="twotracks-decay"] [role="slider"]');
-      await decayKnob.click({ button: 'right' });
+      // assignable to both. Verify on a representative knob (reel A echoes).
+      const echoesKnob = card.locator('[data-testid="twotracks-echoes"] [role="slider"]');
+      await echoesKnob.click({ button: 'right' });
       await expect(page.locator('[data-testid="control-context-menu"]')).toBeVisible();
       await expect(page.locator('[data-testid="ctx-midi-learn"]')).toBeVisible();
+    });
+
+    test('the 1× button resets reel speed to true 1.0×', async ({ page }) => {
+      await setupPage(page);
+
+      await spawnPatch(page, [
+        { id: 'tt', type: 'twotracks', position: { x: 200, y: 200 } },
+      ]);
+      await waitForCard(page);
+
+      const card = page.locator('[data-testid="twotracks-card"]');
+
+      // Drive the rate off 1× via the dev Y.Doc.
+      await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __ydoc: { transact: (fn: () => void) => void };
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        };
+        w.__ydoc.transact(() => {
+          const tt = w.__patch.nodes['tt'];
+          if (tt) tt.params['rate_a'] = 2.5;
+        });
+      });
+
+      // Click the 1× reset button → rate_a returns to exactly 1.
+      await card.locator('[data-testid="twotracks-rate-reset"]').evaluate((el: HTMLElement) => el.click());
+      const rate = await page.evaluate(() => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        };
+        return w.__patch.nodes['tt']?.params['rate_a'];
+      });
+      expect(rate).toBe(1);
     });
   });
 });

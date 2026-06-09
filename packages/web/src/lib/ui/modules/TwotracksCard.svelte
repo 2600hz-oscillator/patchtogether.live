@@ -26,7 +26,7 @@
   // ─── Reel A synced params ───
   let rateA         = $derived(node?.params.rate_a         ?? defaultFor('rate_a'));
   let modeA         = $derived(node?.params.mode_a         ?? defaultFor('mode_a'));
-  let decayA        = $derived(node?.params.decay_a        ?? defaultFor('decay_a'));
+  let echoesA       = $derived(node?.params.echoes_a       ?? defaultFor('echoes_a'));
   let overdubFlagA  = $derived(node?.params.overdub_flag_a ?? defaultFor('overdub_flag_a'));
   let eqLowA        = $derived(node?.params.eqLow_a        ?? 0);
   let eqMidA        = $derived(node?.params.eqMid_a        ?? 0);
@@ -38,7 +38,7 @@
   // ─── Reel B synced params ───
   let rateB         = $derived(node?.params.rate_b         ?? defaultFor('rate_b'));
   let modeB         = $derived(node?.params.mode_b         ?? defaultFor('mode_b'));
-  let decayB        = $derived(node?.params.decay_b        ?? defaultFor('decay_b'));
+  let echoesB       = $derived(node?.params.echoes_b       ?? defaultFor('echoes_b'));
   let overdubFlagB  = $derived(node?.params.overdub_flag_b ?? defaultFor('overdub_flag_b'));
   let eqLowB        = $derived(node?.params.eqLow_b        ?? 0);
   let eqMidB        = $derived(node?.params.eqMid_b        ?? 0);
@@ -418,14 +418,18 @@
             onchange={(v) => setNodeParam(id, 'reso_a', v)}   moduleId={id} paramId="reso_a" />
         </div>
 
-        <!-- Decay + Rate (assignable knobs) -->
+        <!-- Echoes + Rate (assignable knobs); RATE has a 1× reset button -->
         <div class="knob-row">
-          <div data-testid="twotracks-decay">
-            <Knob value={decayA} min={0} max={1} defaultValue={0} label="DECAY" curve="linear"
-              onchange={(v) => setNodeParam(id, 'decay_a', v)} moduleId={id} paramId="decay_a" />
+          <div data-testid="twotracks-echoes">
+            <Knob value={echoesA} min={1} max={5} defaultValue={3} label="ECHOES" curve="linear"
+              onchange={(v) => setNodeParam(id, 'echoes_a', Math.round(v))} moduleId={id} paramId="echoes_a" />
           </div>
-          <Knob value={rateA} min={-3} max={3} defaultValue={1} label="RATE" units="×" curve="linear"
-            onchange={(v) => setNodeParam(id, 'rate_a', v)} moduleId={id} paramId="rate_a" />
+          <div class="rate-knob">
+            <Knob value={rateA} min={-3} max={3} defaultValue={1} label="RATE" units="×" curve="linear"
+              onchange={(v) => setNodeParam(id, 'rate_a', v)} moduleId={id} paramId="rate_a" />
+            <button type="button" class="rate-reset nodrag" onclick={() => setNodeParam(id, 'rate_a', 1)}
+              data-testid="twotracks-rate-reset" aria-label="Reset reel A speed to 1×">1×</button>
+          </div>
         </div>
 
         <!-- Save row -->
@@ -557,14 +561,18 @@
             onchange={(v) => setNodeParam(id, 'reso_b', v)}   moduleId={id} paramId="reso_b" />
         </div>
 
-        <!-- Decay + Rate reel B (assignable knobs) -->
+        <!-- Echoes + Rate reel B (assignable knobs); RATE has a 1× reset button -->
         <div class="knob-row">
-          <div data-testid="twotracks-decay-b">
-            <Knob value={decayB} min={0} max={1} defaultValue={0} label="DECAY" curve="linear"
-              onchange={(v) => setNodeParam(id, 'decay_b', v)} moduleId={id} paramId="decay_b" />
+          <div data-testid="twotracks-echoes-b">
+            <Knob value={echoesB} min={1} max={5} defaultValue={3} label="ECHOES" curve="linear"
+              onchange={(v) => setNodeParam(id, 'echoes_b', Math.round(v))} moduleId={id} paramId="echoes_b" />
           </div>
-          <Knob value={rateB} min={-3} max={3} defaultValue={1} label="RATE" units="×" curve="linear"
-            onchange={(v) => setNodeParam(id, 'rate_b', v)} moduleId={id} paramId="rate_b" />
+          <div class="rate-knob">
+            <Knob value={rateB} min={-3} max={3} defaultValue={1} label="RATE" units="×" curve="linear"
+              onchange={(v) => setNodeParam(id, 'rate_b', v)} moduleId={id} paramId="rate_b" />
+            <button type="button" class="rate-reset nodrag" onclick={() => setNodeParam(id, 'rate_b', 1)}
+              data-testid="twotracks-rate-reset-b" aria-label="Reset reel B speed to 1×">1×</button>
+          </div>
         </div>
 
         <!-- Save row reel B -->
@@ -779,6 +787,25 @@
   .twotracks-card .knob-row :global(.label) {
     font-size: 0.42rem;
   }
+  /* RATE knob + its 1× reset button stacked. */
+  .twotracks-card .rate-knob {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .twotracks-card .rate-reset {
+    background: #1a1f2a;
+    color: var(--text-dim, #8b94a5);
+    border: 1px solid #404652;
+    border-radius: 2px;
+    padding: 1px 5px;
+    font-size: 0.45rem;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    font-family: ui-monospace, monospace;
+  }
+  .twotracks-card .rate-reset:hover { border-color: #5a6275; color: var(--text, #cfd6e4); }
 
   /* ─── Save row ─── */
   .twotracks-card .save-row {

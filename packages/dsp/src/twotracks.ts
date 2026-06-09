@@ -68,12 +68,25 @@ declare class AudioWorkletProcessor {
 }
 declare function registerProcessor(name: string, ctor: typeof AudioWorkletProcessor): void;
 
+// Pure tape transport — the SAME code unit-tested in lib/twotracks-engine.test.ts.
+// (src/lib/ is not a worklet entry; esbuild bundles it into this worklet.)
+import {
+  TWOTRACKS_TAPE_LEN,
+  echoesToDecay,
+  recordWindowLen,
+  readInterp,
+  recordSpan,
+  advanceCursor,
+  playheadNorm,
+} from './lib/twotracks-engine';
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Maximum tape length in samples (per channel). ~30 s at 48 kHz. */
-const TWOTRACKS_MAX_SAMPLES = 1_440_000;
+/** Maximum tape length in samples (per channel) — the fixed physical tape.
+ *  Single source of truth: lib/twotracks-engine.ts (≈20 s at 48 kHz). */
+const TWOTRACKS_MAX_SAMPLES = TWOTRACKS_TAPE_LEN;
 
 const TRIG_THRESHOLD = 0.5;
 
@@ -348,7 +361,8 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       { name: 'mode',           defaultValue: 1,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
       { name: 'start',          defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
       { name: 'end',            defaultValue: 1,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
-      { name: 'decay',          defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
+      // ECHOES: integer 1..5 overdub repeats (mapped to a per-pass decay).
+      { name: 'echoes',         defaultValue: 3,      minValue: 1,  maxValue: 5,     automationRate: 'k-rate' as const },
       { name: 'rec_start',      defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'a-rate' as const },
       { name: 'rec_arm',        defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'a-rate' as const },
       { name: 'overdub_toggle', defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'a-rate' as const },
@@ -444,20 +458,6 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     }
   }
 
-  /** Linear interpolation read from a channel buffer. */
-  private readChan(buf: Float32Array, pos: number): number {
-    const len = buf.length;
-    if (len === 0 || pos < 0) return 0;
-    if (pos >= len - 1) {
-      return pos < len ? (buf[len - 1] ?? 0) : 0;
-    }
-    const i = Math.floor(pos);
-    const f = pos - i;
-    const a = buf[i] ?? 0;
-    const b = buf[i + 1] ?? 0;
-    return a + (b - a) * f;
-  }
-
   /** Apply overdub decay to the entire active window in place. */
   private applyDecay(reel: ReelState, windowStart: number, windowEnd: number, decayFactor: number): void {
     const s = Math.floor(windowStart);
@@ -502,7 +502,7 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     const pMode        = suffix === '' ? 'mode'            : 'mode_b';
     const pStart       = suffix === '' ? 'start'           : 'start_b';
     const pEnd         = suffix === '' ? 'end'             : 'end_b';
-    const pDecay       = suffix === '' ? 'decay'           : 'decay_b';
+    const pEchoes      = suffix === '' ? 'echoes'          : 'echoes_b';
     const pRecStart    = suffix === '' ? 'rec_start'       : 'rec_start_b';
     const pRecArm      = suffix === '' ? 'rec_arm'         : 'rec_arm_b';
     const pOverdubTog  = suffix === '' ? 'overdub_toggle'  : 'overdub_toggle_b';
@@ -514,10 +514,10 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     const pReso        = `reso${suffix === '' ? '_a' : '_b'}`;
     const pScrubVel    = suffix === '' ? 'scrubVelocity_a' : 'scrubVelocity_b';
 
-    const modeVal    = Math.round(kv(pMode, 1)); // 0=one-shot, 1=loop
+    const modeVal    = (Math.round(kv(pMode, 1)) === 0 ? 0 : 1) as 0 | 1; // 0=one-shot, 1=loop
     const startNorm  = kv(pStart, 0);
     const endNorm    = kv(pEnd, 1);
-    const decayParam = kv(pDecay, 0);
+    const echoesParam = kv(pEchoes, 3);
 
     // EQ params (k-rate; biquad coeffs recomputed per block at k-rate)
     const eqLowDb  = kv(pEqLow, 0);
@@ -545,25 +545,16 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     const recArmArr      = parameters[pRecArm]!;
     const overdubTogArr  = parameters[pOverdubTog]!;
 
-    // Compute absolute window.
-    //
-    // While FRESH-recording ('rec'), the window must span the full physical
-    // buffer so the cursor advances linearly to the end — recording continues
-    // until STOP or the buffer fills. Clamping to the still-growing bufLen here
-    // would collapse the window to a few ms each block and make the cursor loop
-    // over the last fragment ("chopped" record / stops after a moment).
-    // Overdub + playback loop over the recorded region (bufLen).
-    // MIRROR of twotracksRecordSpan() in $lib/audio/modules/twotracks.ts — keep
-    // in sync (that pure copy is the unit-test surface; this worklet isn't
-    // importable under vitest).
-    const maxLen = reel.state === 'rec'
-      ? TWOTRACKS_MAX_SAMPLES
-      : (reel.bufLen > 0 ? reel.bufLen : TWOTRACKS_MAX_SAMPLES);
+    // Compute absolute window. The transport window comes from the pure engine:
+    // fresh-recording spans the whole tape (linear record to the end); play/
+    // overdub loop over the recorded region. See lib/twotracks-engine.ts.
+    const maxLen = recordWindowLen(reel.state, reel.bufLen, TWOTRACKS_MAX_SAMPLES);
     const windowStart = Math.max(0, Math.min(maxLen - 1, startNorm * maxLen));
     const windowEnd   = Math.max(windowStart + 1, Math.min(maxLen, endNorm * maxLen));
     const windowLen   = windowEnd - windowStart;
 
-    const decayFactor = 0.90 - decayParam * 0.40;
+    // ECHOES (1..5) → per-overdub-pass decay factor.
+    const decayFactor = echoesToDecay(echoesParam);
 
     // Apply pending seek
     if (reel.pendingSeek !== null) {
@@ -642,9 +633,13 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
         reel.pendingDecay = false;
       }
 
-      // ---- Ring buffer read ----
-      let sL = this.readChan(reel.bufL, reel.cursor);
-      let sR = this.readChan(reel.bufR, reel.cursor);
+      // ---- Transport speed for this sample (tape varispeed: same speed for
+      //      record + playback head) ----
+      const rate = av(pRate, i, 1);
+
+      // ---- Ring buffer read (linear interp) ----
+      let sL = readInterp(reel.bufL, reel.cursor);
+      let sR = readInterp(reel.bufR, reel.cursor);
 
       // ---- Scrub velocity HF loss (1-pole IIR LP) ----
       // Emulates head-gap high-frequency loss during manual scrubbing.
@@ -656,21 +651,20 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
         reel.scrubLossR = sR;
       }
 
-      // ---- Write (record) ----
-      if ((reel.state === 'rec' || reel.state === 'overdub') && reel.cursor >= 0) {
-        const ci = Math.floor(reel.cursor);
-        if (ci >= 0 && ci < TWOTRACKS_MAX_SAMPLES) {
-          const srcL = inL ? (inL[i] ?? 0) : 0;
-          const srcR = inR ? (inR[i] ?? 0) : srcL;
-          if (reel.state === 'overdub') {
-            reel.bufL[ci]! += srcL;
-            reel.bufR[ci]! += srcR;
-          } else {
-            reel.bufL[ci] = srcL;
-            reel.bufR[ci] = srcR;
-          }
-          if (ci >= reel.bufLen) reel.bufLen = ci + 1;
-        }
+      // ---- Write (record) — varispeed span-fill across the head's sweep ----
+      // Writes the input across every cell the tape passed under the head this
+      // sample, so |rate|>1 records "stretched" and |rate|<1 records
+      // "compressed" — true tape varispeed. See lib/twotracks-engine.ts.
+      if (reel.state === 'rec' || reel.state === 'overdub') {
+        const srcL = inL ? (inL[i] ?? 0) : 0;
+        const srcR = inR ? (inR[i] ?? 0) : srcL;
+        reel.bufLen = recordSpan(
+          reel.bufL, reel.bufR,
+          reel.cursor, reel.cursor + rate,
+          srcL, srcR,
+          reel.state === 'overdub',
+          TWOTRACKS_MAX_SAMPLES, reel.bufLen,
+        );
       }
 
       // ---- 3-band EQ (applied to playback signal) ----
@@ -707,57 +701,16 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       outL[i] += gain * (isActive ? sL : 0);
       outR[i] += gain * (isActive ? sR : 0);
 
-      // ---- Advance cursor (ONLY while transport is active) ----
-      // A fully idle reel must hold its playhead absolutely still — no
-      // free-running sweep on an empty, stopped module. The cursor (and the
-      // boundary/loop logic that depends on it) only moves when recording,
-      // overdubbing, arming, or playing.
+      // ---- Advance cursor + resolve boundary (ONLY while transport is active).
+      // A fully idle reel holds its playhead still (no free-running sweep on a
+      // stopped module). Mechanics live in the pure engine (advanceCursor):
+      // fresh-record stops at the tape end → play; loop wraps; one-shot ends.
       if (reel.state !== 'idle') {
-        const rate = av(pRate, i, 1);
-        reel.cursor += rate;
-
-        // ---- Window boundary handling ----
-        if (reel.cursor >= windowEnd) {
-          if (reel.state === 'rec') {
-            // Fresh recording reached the end of the physical buffer → stop
-            // recording and play the captured loop back from the start.
-            // (Recording otherwise runs continuously until STOP.)
-            reel.state = 'play';
-            reel.cursor = windowStart;
-          } else if (modeVal === 1) {
-            // Loop mode: wrap. Overdub layers + decays each pass.
-            const ov = (reel.cursor - windowStart) % windowLen;
-            reel.cursor = windowStart + ov;
-            if (reel.state === 'overdub') {
-              this.applyDecay(reel, windowStart, windowEnd, decayFactor);
-            }
-          } else {
-            // One-shot playback / overdub.
-            reel.cursor = windowEnd;
-            if (reel.state === 'overdub') {
-              reel.state = 'play';
-              reel.cursor = windowStart;
-            } else if (reel.state === 'play') {
-              reel.state = 'idle';
-              reel.cursor = windowStart;
-            }
-          }
-        } else if (reel.cursor < windowStart) {
-          if (reel.state === 'rec') {
-            // Reverse-rate recording hit the buffer start → stop + play.
-            reel.state = 'play';
-            reel.cursor = windowStart;
-          } else if (modeVal === 1) {
-            const ov = (windowStart - reel.cursor) % windowLen;
-            reel.cursor = windowEnd - ov;
-          } else {
-            reel.cursor = windowStart;
-            if (reel.state === 'overdub') {
-              reel.state = 'play';
-            } else if (reel.state === 'play') {
-              reel.state = 'idle';
-            }
-          }
+        const adv = advanceCursor(reel.cursor, rate, reel.state, modeVal, windowStart, windowEnd);
+        reel.cursor = adv.cursor;
+        reel.state = adv.state;
+        if (adv.decayPass) {
+          this.applyDecay(reel, windowStart, windowEnd, decayFactor);
         }
       }
     }
@@ -766,14 +719,10 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     reel.playheadFrameCount++;
     if (reel.playheadFrameCount >= this.PLAYHEAD_INTERVAL) {
       reel.playheadFrameCount = 0;
-      // The card draws the waveform over the RECORDED region (bufLen), so report
-      // the playhead relative to bufLen while recording (the window then spans
-      // the full physical buffer, which would otherwise make the head crawl out
-      // of sync with the drawn waveform). Playback already loops over bufLen.
-      const normDen = reel.state === 'rec' ? reel.bufLen : windowLen;
-      const normalized = normDen > 0
-        ? Math.max(0, Math.min(1, (reel.cursor - windowStart) / normDen))
-        : 0;
+      // Playhead position is reported relative to the WHOLE tape — the card
+      // draws the full blank tape and fills the recorded region into it, so the
+      // head crawls L→R across the canvas as recording fills it. (Engine helper.)
+      const normalized = playheadNorm(reel.cursor, TWOTRACKS_MAX_SAMPLES);
       const posQ = Math.round(normalized * 1024); // quantize so micro-jitter doesn't churn
 
       // Only post when the card-visible state actually changed. An idle, empty,
@@ -790,17 +739,20 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
         reel.lastSentPosQ = posQ;
         reel.lastSentBufLen = reel.bufLen;
 
-        // Compute the downsampled peak waveform ONLY when there is tape to draw.
-        // When empty, omit `peaks` entirely so the host keeps its null reference
-        // (card shows "NO TAPE") and never swaps in a fresh Float32Array → zero
-        // render churn while idle/empty.
+        // Downsampled peak waveform over the WHOLE tape (bins map to the full
+        // physical length, NOT the recorded region) so the card draws a fixed
+        // blank tape and the recorded audio grows into it left→right. Only the
+        // recorded portion [0,bufLen) is scanned; bins past it stay 0, so the
+        // cost is O(bufLen) (the silent tail is free). Omitted entirely when
+        // empty (card shows "NO TAPE", host keeps its null → zero render churn).
         let peaks: Float32Array | undefined;
         if (reel.bufLen > 0) {
           const pts = this.WAVEFORM_POINTS;
-          peaks = new Float32Array(pts);
-          const sampPerPt = reel.bufLen / pts;
+          peaks = new Float32Array(pts); // zero-filled tail = blank tape
+          const sampPerPt = TWOTRACKS_MAX_SAMPLES / pts;
           for (let p = 0; p < pts; p++) {
             const i0 = Math.floor(p * sampPerPt);
+            if (i0 >= reel.bufLen) break; // remaining bins are blank tape (0)
             const i1 = Math.min(Math.floor((p + 1) * sampPerPt), reel.bufLen);
             let mx = 0;
             for (let i = i0; i < i1; i++) {
