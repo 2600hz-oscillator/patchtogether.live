@@ -75,7 +75,7 @@
           return cppIdToParamId(cppId) === p.id;
         });
         if (!def) continue;
-        live.params[def.id] = v;
+        live.params[def.id] = v; // guard:allow-raw-write — in-place write on the live node INSIDE mutateNode's origin-tagged transact (the sanctioned multi-field seam), not a bare store write
       }
       live.params.preset_index = idx;
     });

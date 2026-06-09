@@ -6,8 +6,8 @@
 // ---------------
 // Pointer events fire at 120–240 Hz on modern hardware. Every event the
 // fader / knob handler dispatches `onchange(v)` synchronously, and
-// `onchange` in turn mutates the SyncedStore patch graph:
-//   patch.nodes[id].params[paramId] = v
+// `onchange` in turn mutates the SyncedStore patch graph (a
+// setNodeParam(id, paramId, v) write on the node's params map).
 //
 // That single assignment is cheap *in isolation*, but it triggers a Yjs
 // `update` event, which causes the snapshot bus to recompute a fresh
