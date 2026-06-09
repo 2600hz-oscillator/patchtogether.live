@@ -9,10 +9,14 @@
 // the schemaVersion-2 migration that strips dropped cv7/cv8 routes (the 8→6
 // non-destructive load).
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, beforeAll, afterAll, vi } from 'vitest';
 import { toyboxDef, migrateToyboxData, __FEEDBACK_FRAG_SRC_FOR_TEST } from './toybox';
 import { CV_PORT_IDS } from '$lib/video/toybox-cv-routes';
 import { FEEDBACK_MODE_COUNT } from '$lib/video/toybox-feedback';
+import { patch, ydoc } from '$lib/graph/store';
+import { makeDefaultCombineGraph } from '$lib/video/toybox-combine-graph';
+import type { VideoEngineContext, VideoFrameContext } from '$lib/video/engine';
+import type { ModuleNode, Edge } from '$lib/graph/types';
 
 describe('toyboxDef shape', () => {
   it('is a video-source module with one video output', () => {
@@ -92,6 +96,141 @@ describe('migrateToyboxData — 8-input (cv1..cv8) patch loads as 6 inputs', () 
     expect(() => migrateToyboxData(null, 1)).not.toThrow();
     expect(() => migrateToyboxData(undefined, 1)).not.toThrow();
     expect(() => migrateToyboxData({}, 1)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REGRESSION GUARD — CV modulation must NOT write through to the synced Y.Doc.
+//
+// Root cause of the progressive-slowdown / memory leak (perf PR): the TOYBOX
+// factory's CV-bridge setParam → applyCvRoute → resolveRoute().apply mutated the
+// addressed combine/layer param IN PLACE on the object returned by
+// liveCombineRaw()/liveLayers(). Those getters used to return the LIVE
+// SyncedStore (Yjs) proxy, so every per-frame CV write mutated the synced +
+// persisted Y.Doc → a `ydoc.update` PER CV FRAME → the snapshot bus re-emitted →
+// Canvas rebuilt the whole SvelteFlow graph → xyflow leaked detached <svg>/<path>
+// edge DOM each rebuild (~130-160 MB/min retained with one active CV cable).
+//
+// The fix makes those getters return a render-local CLONE that CV modulation
+// mutates, re-synced from the store only on a genuine user edit. This guard
+// drives the REAL factory's setParam('cv1', …) CV-apply path and asserts that
+// (a) the live store's combine param is UNCHANGED and (b) the Y.Doc fires ZERO
+// update events — i.e. live modulation stays transient runtime state, exactly
+// like #147 paramTaps. GL-free: a fake WebGL2 context (the factory only needs
+// non-null handles; jsdom can't render shaders anyway).
+// ---------------------------------------------------------------------------
+
+const RTID = 'toybox-cv-leak-guard';
+
+function makeFakeGl(): WebGL2RenderingContext {
+  return new Proxy(
+    {},
+    {
+      get: (_t, prop) => {
+        const p = String(prop);
+        // Every create*/getUniformLocation must return a NON-null handle (the
+        // factory throws on a null texture/fbo/renderbuffer/program/shader/VAO).
+        if (p.startsWith('create') || p === 'getUniformLocation') return () => ({});
+        if (p === 'checkFramebufferStatus') return () => 0x8cd5; // FRAMEBUFFER_COMPLETE
+        if (p === 'getProgramParameter' || p === 'getShaderParameter') return () => true;
+        if (p === 'getExtension') return () => null;
+        return () => 0;
+      },
+    },
+  ) as unknown as WebGL2RenderingContext;
+}
+
+function makeToyboxCtx(): VideoEngineContext {
+  return {
+    gl: makeFakeGl(),
+    res: { width: 1024, height: 768 },
+    compileFragment: () => ({}) as WebGLProgram,
+    createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+    createFloatFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture, isFloat: false, width: 1024, height: 768 }),
+    drawFullscreenQuad: () => undefined,
+  };
+}
+
+function makeFrameCtx(frameNo: number): VideoFrameContext {
+  return {
+    gl: makeFakeGl(),
+    time: frameNo / 60,
+    frame: frameNo,
+    getInputTexture: () => null,
+  };
+}
+
+describe('TOYBOX CV modulation does NOT write through to the synced Y.Doc (leak guard)', () => {
+  // The factory kicks off a one-shot ensureToyboxCatalog() → fetch('/toybox/
+  // manifest.json'), which has no URL base in jsdom. Stub fetch to an empty-but-
+  // valid manifest so that async load resolves cleanly (this test exercises the
+  // combine/CV path, not shader content). Scoped to this block.
+  beforeAll(() => {
+    vi.stubGlobal('fetch', async () =>
+      ({ ok: true, status: 200, statusText: 'OK', json: async () => ({ shaders: [], gen: [], models: [], presets: [] }) }) as unknown as Response,
+    );
+  });
+  afterAll(() => { vi.unstubAllGlobals(); });
+
+  afterEach(() => {
+    delete patch.nodes[RTID];
+    for (const id of Object.keys(patch.edges)) delete patch.edges[id];
+  });
+
+  it('firing setParam(cvN) repeatedly leaves the store combine param + Y.Doc untouched', () => {
+    // Seed a real TOYBOX node with the default combine graph and a CV route
+    // cv1 → combine op1.amount, plus an inbound cv cable so kindFor()='cv'.
+    const combine = makeDefaultCombineGraph();
+    patch.nodes[RTID] = {
+      id: RTID,
+      type: 'toybox',
+      domain: 'video',
+      position: { x: 0, y: 0 },
+      params: {},
+      data: {
+        combine,
+        cvRoutes: { cv1: { target: 'combine', nodeId: 'op1', param: 'amount' } },
+        cvInputs: { cv1: { scale: 1, offset: 0 } },
+      },
+    } as unknown as ModuleNode;
+    patch.edges['e-cv'] = {
+      id: 'e-cv',
+      source: { nodeId: 'lfo-x', portId: 'phase0' },
+      target: { nodeId: RTID, portId: 'cv1' },
+      sourceType: 'cv',
+    } as unknown as Edge;
+
+    // The authored store value before any modulation.
+    const storedBefore = (patch.nodes[RTID]!.data as { combine: { nodes: Array<{ id: string; params?: Record<string, number> }> } })
+      .combine.nodes.find((n) => n.id === 'op1')!.params!.amount;
+    expect(storedBefore).toBe(0);
+
+    // Count Y.Doc updates across the whole CV-drive window — the leak's mechanism.
+    let docUpdates = 0;
+    const onUpdate = () => { docUpdates++; };
+    ydoc.on('update', onUpdate);
+    try {
+      const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[RTID] as ModuleNode);
+      // Drive the CV-bridge entry point + a draw each frame, like the engine.
+      for (let f = 0; f < 120; f++) {
+        handle.setParam('cv1', Math.sin(f / 7)); // a swinging modulator
+        handle.surface.draw(makeFrameCtx(f));
+      }
+      handle.dispose();
+    } finally {
+      ydoc.off('update', onUpdate);
+    }
+
+    // (a) The SYNCED + PERSISTED store value is unchanged — CV modulation is
+    //     transient and must not ride save / multiplayer.
+    const storedAfter = (patch.nodes[RTID]!.data as { combine: { nodes: Array<{ id: string; params?: Record<string, number> }> } })
+      .combine.nodes.find((n) => n.id === 'op1')!.params!.amount;
+    expect(storedAfter).toBe(0);
+
+    // (b) ZERO Y.Doc updates from 120 frames of active CV modulation. Before the
+    //     fix this was ~120 (one per frame) → the snapshot/SvelteFlow re-render
+    //     storm that leaked detached edge SVG.
+    expect(docUpdates).toBe(0);
   });
 });
 
