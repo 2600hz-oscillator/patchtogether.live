@@ -19,7 +19,57 @@ import {
   resolveActiveLayer,
   NUMPAD_PLUS_LAYERS,
   NUMPAD_PLUS_STEPS,
+  keyCodeLabel,
+  codeForSemitone,
+  remapKeymap,
 } from './numpad-plus';
+
+describe('numpadPlus: keymap remap helpers', () => {
+  it('keyCodeLabel renders numpad / digit / letter / punctuation codes', () => {
+    expect(keyCodeLabel('Numpad5')).toBe('5');
+    expect(keyCodeLabel('NumpadDivide')).toBe('/');
+    expect(keyCodeLabel('NumpadMultiply')).toBe('*');
+    expect(keyCodeLabel('Digit7')).toBe('7');
+    expect(keyCodeLabel('KeyQ')).toBe('Q');
+    expect(keyCodeLabel('Slash')).toBe('/');
+    expect(keyCodeLabel('Comma')).toBe(',');
+    expect(keyCodeLabel('Space')).toBe('␣');
+    expect(keyCodeLabel('F5')).toBe('F5');
+    // Unknown codes fall back to the raw code (never empty).
+    expect(keyCodeLabel('IntlBackslash')).toBe('IntlBackslash');
+  });
+
+  it('codeForSemitone finds the physical key bound to a note', () => {
+    expect(codeForSemitone(DEFAULT_KEYMAP, 0)).toBe('Numpad1');   // C
+    expect(codeForSemitone(DEFAULT_KEYMAP, 11)).toBe('NumpadMultiply'); // B
+    expect(codeForSemitone({}, 0)).toBeNull();
+  });
+
+  it('remapKeymap binds a new key to a note and frees the note’s old key', () => {
+    const next = remapKeymap(DEFAULT_KEYMAP, 'KeyA', 0); // C → A
+    expect(next['KeyA']).toBe(0);
+    expect(next['Numpad1']).toBeUndefined(); // old C key released
+    // every other mapping survives
+    expect(next['Numpad2']).toBe(1);
+  });
+
+  it('remapKeymap keeps one note per key (rebinding a key moves it)', () => {
+    // Numpad2 currently = C# (1). Rebind it to C (0): it should now be 0,
+    // and the previous C key (Numpad1) should be freed.
+    const next = remapKeymap(DEFAULT_KEYMAP, 'Numpad2', 0);
+    expect(next['Numpad2']).toBe(0);
+    expect(next['Numpad1']).toBeUndefined();
+    // C# (1) now has no key (its only key was reassigned).
+    expect(codeForSemitone(next, 1)).toBeNull();
+  });
+
+  it('remapKeymap result keeps midiForKey working for the new binding', () => {
+    const next = remapKeymap(DEFAULT_KEYMAP, 'KeyZ', 4); // E → Z
+    // octave 4, no modifier → E4 = (4+1)*12 + 4 = 64
+    expect(midiForKey('KeyZ', 4, 0, next)).toBe(64);
+    expect(midiForKey('Numpad5', 4, 0, next)).toBeNull(); // old E key freed
+  });
+});
 
 describe('numpadPlus: module def shape', () => {
   it('declares the expected type/label/domain/category', () => {

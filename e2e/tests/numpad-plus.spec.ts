@@ -55,6 +55,43 @@ test.describe('NUMPAD+ module', () => {
     expect(al).toBe(2); // L3 (0-indexed = 2)
   });
 
+  test('right-click a key → Remap → next keypress rebinds it (persisted + displayed)', async ({ page }) => {
+    await spawnNumpadPlus(page);
+
+    // Key 0 = the C pad; default physical key is Numpad1 → label "1".
+    const keyC = page.locator('[data-testid="numpad-key-0"]');
+    await expect(keyC.locator('.kmap-phys')).toHaveText('1');
+
+    // Right-click → context menu → Remap.
+    await keyC.click({ button: 'right' });
+    await expect(page.locator('[data-testid="numpad-key-menu"]')).toBeVisible();
+    await page.locator('[data-testid="numpad-remap-item"]').click();
+    await expect(page.locator('[data-testid="numpad-remap-hint"]')).toBeVisible();
+
+    // Press a NON-numpad key — 'q' → code KeyQ. It binds to C.
+    await page.keyboard.press('q');
+
+    // The pad now displays "Q", the listening hint is gone, and the keymap is
+    // persisted in node.data with KeyQ→0 and the old Numpad1 binding dropped.
+    await expect(keyC.locator('.kmap-phys')).toHaveText('Q');
+    await expect(page.locator('[data-testid="numpad-remap-hint"]')).toHaveCount(0);
+    const keymap = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { keymap?: Record<string, number> } }> };
+      };
+      return w.__patch.nodes.np?.data?.keymap ?? null;
+    });
+    expect(keymap).not.toBeNull();
+    expect(keymap!['KeyQ']).toBe(0);
+    expect(keymap!['Numpad1']).toBeUndefined();
+    expect(keymap!['Numpad2']).toBe(1); // other notes untouched
+
+    // Reset-to-default restores Numpad1 → C.
+    await keyC.click({ button: 'right' });
+    await page.locator('[data-testid="numpad-reset-item"]').click();
+    await expect(keyC.locator('.kmap-phys')).toHaveText('1');
+  });
+
   test('pressing Numpad1 at octave 4 drives l1_pitch ~ 0 V/oct (C4)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
