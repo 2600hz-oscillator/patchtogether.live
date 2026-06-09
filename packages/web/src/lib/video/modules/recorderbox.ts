@@ -65,11 +65,26 @@
 // stereo VCO/mixer is captured as the MP4's AAC track, A/V-synced to the
 // canvas frames via a shared t0 epoch.
 //
-// The audio is TAP-ONLY: a MediaStreamAudioDestinationNode does NOT reach
-// ctx.destination, so arming Record does not monitor the audio through your
-// speakers (by design — recording shouldn't suddenly route audio to the
-// master bus). Patch the same source into AUDIO OUT separately if you want to
-// hear it.
+// The audio is TAP-ONLY (inaudible): arming Record does NOT monitor the audio
+// through your speakers (by design — recording shouldn't suddenly route audio
+// to the master bus). Patch the same source into AUDIO OUT separately if you
+// want to hear it.
+//
+// TWO subtleties make patched audio actually land in the MP4 (both were silent
+// failure modes — see the factory):
+//   1. ENCODABLE-RATE FIX (the reported "audio not recorded" bug). The capture
+//      track inherits the AudioContext's sample rate. On a device that pins the
+//      context LOW (a Bluetooth/HFP headset → 16 kHz), Mediabunny picks an
+//      HE-AAC profile (mp4a.40.29) the browser's AAC encoder can't encode, so
+//      addAudioTrack throws + the soundtrack is silently dropped → VIDEO-ONLY
+//      MP4. We bridge the capture through a dedicated 48 kHz AudioContext when
+//      the app rate ≤ 24 kHz, so the encoder sees AAC-LC (mp4a.40.2).
+//   2. ORPHAN-SILENT GUARD (defensive). A MediaStreamAudioDestinationNode is a
+//      sink but does NOT terminate the graph at ctx.destination, and some
+//      Chromium configs won't pull a subgraph with no path to ctx.destination.
+//      A SILENT keep-alive (merger → gain(0) → ctx.destination) makes the chain
+//      always get pulled — same pattern as DOOM's audio_l/audio_r keep-alive +
+//      video-audio-keepalive.ts. Gain 0 preserves the tap-only contract.
 //
 // ── Recovery scope ──────────────────────────────────────────────────────────
 // OPFS scratch is origin-LOCAL: recovery is this-machine/this-browser only and
@@ -140,13 +155,20 @@ export const recorderboxDef: VideoModuleDef = {
     let destL: MediaStreamAudioDestinationNode | null = null;
     let destR: MediaStreamAudioDestinationNode | null = null;
     let captureStream: MediaStream | null = null;
+    // Silent keep-alive (merger → gain(0) → ctx.destination). Held so dispose()
+    // can tear it down. See the ORPHAN-SILENT GUARD block below.
+    let keepAlive: GainNode | null = null;
+    // Optional dedicated 48 kHz resample context — built ONLY when the app's
+    // AudioContext runs at a low rate (≤24 kHz, e.g. a Bluetooth/HFP output
+    // device). See the ENCODABLE-RATE FIX block. Held so dispose() tears it down.
+    let resampleCtx: AudioContext | null = null;
+    let resampleSrc: MediaStreamAudioSourceNode | null = null;
+    let resampleKeepAlive: GainNode | null = null;
     if (ctx.audioCtx) {
       const ac = ctx.audioCtx;
-      // The bridge connects each upstream source into destL/destR. We then
-      // tap destL/destR's stream tracks' source nodes back into a merger so
-      // the recorder gets a single stereo stream. Simpler + robust: route
-      // each input through a GainNode into a 2-in ChannelMerger, and expose
-      // the GAINS as the audioInputs sinks; the merger output drives a single
+      // The bridge connects each upstream source into gainL/gainR. We route each
+      // input through a GainNode into a 2-in ChannelMerger, and expose the GAINS
+      // as the audioInputs sinks; the merger output drives a single
       // MediaStreamAudioDestinationNode whose stream the recorder reads.
       const gainL = ac.createGain();
       const gainR = ac.createGain();
@@ -158,7 +180,81 @@ export const recorderboxDef: VideoModuleDef = {
       merger.connect(dest);
       destL = dest; // (single dest; kept refs named for dispose symmetry)
       destR = dest;
-      captureStream = dest.stream;
+
+      // ── ORPHAN-SILENT GUARD (defensive) ──────────────────────────────────
+      // A MediaStreamAudioDestinationNode is a sink, but it does NOT terminate
+      // the graph at ctx.destination, and on some Chromium configs a subgraph
+      // with NO path to ctx.destination is treated as orphan + never pulled (the
+      // upstream worklet's process() never runs → silent capture). Same class as
+      // the DOOM audio_l/audio_r keep-alive (doom.ts) + the video-audio-keepalive
+      // decode keep-alive. A parallel SILENT tap merger → gain(0) → destination
+      // gives the chain a real path to ctx.destination so it's always pulled.
+      // Gain 0 = nothing audible (the documented tap-only contract is preserved:
+      // arming Record must not monitor through the speakers).
+      keepAlive = ac.createGain();
+      keepAlive.gain.value = 0;
+      merger.connect(keepAlive);
+      try {
+        keepAlive.connect(ac.destination);
+      } catch {
+        // No real destination (offline/test ctx) — nothing to keep alive.
+      }
+      // A suspended context pulls nothing. Resume best-effort; the audio-gate's
+      // user-gesture resume is the backstop.
+      if (ac.state === 'suspended') {
+        void ac.resume?.().catch(() => { /* best-effort */ });
+      }
+
+      // ── ENCODABLE-RATE FIX (the patched-audio-absent-from-MP4 root cause) ──
+      // The MediaStreamAudioDestinationNode's track inherits the AudioContext's
+      // sample rate. On a machine whose output device forces a LOW rate — a
+      // Bluetooth/HFP headset commonly pins the AudioContext to 16 kHz — the
+      // capture track is 2-channel @ 16 kHz. Mediabunny's AAC codec picker
+      // chooses the AAC PROFILE purely from (channels, sampleRate):
+      //     channels ≥ 2 && rate ≤ 24000  → mp4a.40.29  (HE-AAC v2)
+      //                     rate ≤ 24000  → mp4a.40.5   (HE-AAC v1)
+      //                     otherwise     → mp4a.40.2   (AAC-LC)
+      // Chrome's AAC ENCODER supports only AAC-LC, so a low-rate capture makes
+      // addAudioTrack() throw ("mp4a.40.29 … not supported"), the recorder's
+      // try/catch swallows it, and the MP4 is recorded VIDEO-ONLY (silent) —
+      // exactly the reported bug. (At the normal 44.1/48 kHz this never triggers,
+      // which is why it wasn't caught earlier.)
+      //
+      // Fix: when ac.sampleRate ≤ 24 kHz, bridge the capture stream through a
+      // DEDICATED 48 kHz AudioContext (MediaStreamAudioSourceNode → 48 kHz
+      // MediaStreamAudioDestinationNode). The browser resamples 16 k → 48 k at
+      // the MediaStream boundary, so the track the recorder reads is 48 kHz →
+      // Mediabunny picks AAC-LC → the soundtrack encodes. At normal rates we use
+      // the direct dest stream (no second context).
+      const LOW_RATE_THRESHOLD = 24_000;
+      if (ac.sampleRate <= LOW_RATE_THRESHOLD) {
+        try {
+          const RC = (globalThis as unknown as { AudioContext?: typeof AudioContext }).AudioContext;
+          if (RC) {
+            resampleCtx = new RC({ sampleRate: 48_000 });
+            if (resampleCtx.state === 'suspended') void resampleCtx.resume?.().catch(() => { /* */ });
+            resampleSrc = resampleCtx.createMediaStreamSource(dest.stream);
+            const rDest = resampleCtx.createMediaStreamDestination();
+            rDest.channelCount = 2;
+            resampleSrc.connect(rDest);
+            // Keep-alive on the resample ctx too (same orphan-silent reasoning).
+            resampleKeepAlive = resampleCtx.createGain();
+            resampleKeepAlive.gain.value = 0;
+            resampleSrc.connect(resampleKeepAlive);
+            try { resampleKeepAlive.connect(resampleCtx.destination); } catch { /* */ }
+            captureStream = rDest.stream;
+          } else {
+            captureStream = dest.stream; // no AudioContext ctor — best-effort.
+          }
+        } catch {
+          // Resample bridge failed — fall back to the direct stream (audio may
+          // be dropped at encode time, but never crash the recording).
+          captureStream = dest.stream;
+        }
+      } else {
+        captureStream = dest.stream;
+      }
+
       // Publish the per-port AudioNode SINKS for the cross-domain
       // audio→video audio-input bridge (VideoEngine.getAudioInput).
       audioInputs = new Map<string, { node: AudioNode; input: number }>([
@@ -212,11 +308,16 @@ export const recorderboxDef: VideoModuleDef = {
       dispose() {
         surface.dispose();
         // Tear down the audio capture graph. Disconnect is idempotent-safe.
+        try { keepAlive?.disconnect(); } catch { /* */ }
         try { merger?.disconnect(); } catch { /* */ }
         try { destL?.disconnect(); } catch { /* */ }
         if (destR && destR !== destL) {
           try { destR.disconnect(); } catch { /* */ }
         }
+        // Tear down the dedicated 48 kHz resample bridge (low-rate machines).
+        try { resampleKeepAlive?.disconnect(); } catch { /* */ }
+        try { resampleSrc?.disconnect(); } catch { /* */ }
+        try { void resampleCtx?.close?.(); } catch { /* */ }
         // Stop the capture stream tracks so the recorder (if still attached)
         // sees end-of-stream.
         try { captureStream?.getTracks().forEach((t) => t.stop()); } catch { /* */ }

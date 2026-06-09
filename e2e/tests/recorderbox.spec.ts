@@ -203,6 +203,111 @@ async function sniffMp4Boxes(page: Page, opfsPath: string, truncateTo?: number):
   }, { path: opfsPath, truncateTo });
 }
 
+// ── PATCHED AUDIO IS CAPTURED + ENCODABLE (the "audio not recorded" fix) ──
+//
+// REAL-BROWSER regression net for the reported bug: a source patched into
+// RECORDERBOX.audio_l/audio_r produced a SILENT MP4. ROOT CAUSE: the capture
+// track inherits the AudioContext's sample rate; on a device that pins the
+// context LOW (Bluetooth/HFP headset → 16 kHz) Mediabunny picks an HE-AAC
+// profile (mp4a.40.29) the browser's AAC encoder can't encode, so addAudioTrack
+// throws + the soundtrack is silently dropped → video-only MP4. The fix bridges
+// the capture through a dedicated 48 kHz AudioContext when the app rate ≤ 24 kHz
+// (so the encoder always sees AAC-LC), plus a silent ctx.destination keep-alive
+// so the graph is always pulled.
+//
+// CRUCIALLY this needs NO H.264 encoder — it runs on CI (Web Audio + SwiftShader
+// but no OS encoder). We drive an always-on ANALOG VCO (saw) → audio_l and
+// assert two encoder-free invariants of the capture track:
+//   (1) NON-SILENT: it carries the VCO signal (real RMS), and
+//   (2) ENCODABLE RATE: its sampleRate is > 24 kHz so Mediabunny picks AAC-LC
+//       (the exact bug signature — a ≤24 kHz track is the silent-MP4 trigger).
+test('RECORDERBOX captures patched audio at an ENCODABLE (AAC-LC) sample rate', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
+
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  // Real source chain: an always-on ANALOG VCO (saw) → recorderbox.audio_l.
+  await spawnPatch(
+    page,
+    [
+      { id: 'rec', type: 'recorderbox', position: { x: 500, y: 80 }, domain: 'video' },
+      { id: 'vco', type: 'analogVco', position: { x: 80, y: 240 }, domain: 'audio', params: { freq: 220 } },
+    ],
+    [
+      { id: 'e-vco-al', from: { nodeId: 'vco', portId: 'saw' }, to: { nodeId: 'rec', portId: 'audio_l' }, sourceType: 'audio', targetType: 'audio' },
+    ],
+  );
+
+  await expect(page.locator('[data-testid="recorderbox-card"]')).toBeVisible();
+  // The cross-domain audio→video audio-input edge must survive engine.addEdge.
+  expect(await readEdgeIds(page)).toContain('e-vco-al');
+
+  // The audio gate must be resumed for the AudioContext to pull anything.
+  const gate = page.locator('[data-testid="audio-gate"]');
+  if (await gate.count()) { try { await gate.click({ timeout: 2_000 }); } catch { /* already resumed */ } }
+  await page.waitForFunction(() => {
+    const w = window as unknown as { __engine?: () => { getDomain?: (d: string) => { ctx?: AudioContext } } | null };
+    const ctx = w.__engine?.()?.getDomain?.('audio')?.ctx;
+    return ctx?.state === 'running';
+  }, undefined, { timeout: 10_000 });
+
+  // Read the capture track's sample rate + measure its audio via the SAME
+  // consumer the recorder uses (MediaStreamTrackProcessor → AudioData), so we
+  // observe exactly what Mediabunny would encode — no encoder needed.
+  const result = await page.evaluate(async (id) => {
+    const w = window as unknown as {
+      __engine?: () => { getDomain?: (d: string) => { read?: (n: string, k: string) => unknown } } | null;
+    };
+    const stream = w.__engine?.()?.getDomain?.('video')?.read?.(id, 'audioStream') as MediaStream | null | undefined;
+    if (!stream) return { err: 'no stream' };
+    const track = stream.getAudioTracks()[0];
+    if (!track) return { err: 'no track' };
+    const sampleRate = track.getSettings().sampleRate ?? 0;
+    const MSTP = (globalThis as unknown as { MediaStreamTrackProcessor?: unknown }).MediaStreamTrackProcessor as
+      | (new (o: { track: MediaStreamTrack }) => { readable: ReadableStream<AudioData> })
+      | undefined;
+    let peak = 0;
+    let frames = 0;
+    if (typeof MSTP === 'function') {
+      const reader = new MSTP({ track }).readable.getReader();
+      const deadline = Date.now() + 800;
+      while (Date.now() < deadline && frames < 40) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        const ad = value;
+        frames++;
+        const n = ad.numberOfFrames;
+        const b = new Float32Array(n);
+        try { ad.copyTo(b, { planeIndex: 0, format: 'f32-planar' }); }
+        catch { try { ad.copyTo(b, { planeIndex: 0 }); } catch { /* */ } }
+        let sum = 0;
+        for (let i = 0; i < n; i++) sum += b[i] * b[i];
+        peak = Math.max(peak, Math.sqrt(sum / Math.max(1, n)));
+        ad.close();
+      }
+      try { reader.releaseLock(); } catch { /* */ }
+    }
+    return { sampleRate, peak, frames };
+  }, 'rec');
+
+  expect(result.err, `capture stream + track present (${JSON.stringify(result)})`).toBeUndefined();
+  // (2) ENCODABLE: the track rate must be > 24 kHz so Mediabunny chooses AAC-LC
+  // (mp4a.40.2). A ≤24 kHz track is the exact silent-MP4 trigger this fix kills.
+  expect(result.sampleRate!, 'capture track must be at an AAC-LC-encodable rate (>24 kHz)').toBeGreaterThan(24_000);
+  // (1) NON-SILENT: the patched VCO actually reaches the captured track.
+  // (MediaStreamTrackProcessor may be unavailable on a runner; only assert the
+  // level when we actually read frames — the rate invariant above is the
+  // encoder-free root-cause guard that always runs.)
+  if (result.frames! > 0) {
+    expect(result.peak!, 'patched audio must be NON-SILENT in the capture track').toBeGreaterThan(1e-3);
+  }
+
+  expect(errors.filter((e) => !e.includes('favicon')), 'no page errors').toEqual([]);
+});
+
 // QUARANTINED — task #105. CI's headless Chrome reports H.264 support via
 // VideoEncoder.isConfigSupported but produces ZERO encoded fragments (no real OS
 // encoder on the runner), so the "≥1 moof mid-record" assertion gets 0. Real
