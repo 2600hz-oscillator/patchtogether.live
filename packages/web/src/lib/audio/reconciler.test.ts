@@ -203,6 +203,76 @@ describe('reconciler — determinism (B3)', () => {
     expect(recA.ops).toEqual([]);
   });
 
+  it('a single throwing addEdge does NOT abort the rest of the pass (Phase 4d)', async () => {
+    // Real-world repro: an aged/hand-edited import carries one structurally
+    // bad edge. engine.addEdge THROWS on it. Before Phase 4d the throw
+    // propagated out of doReconcile and was swallowed at the pass level, so
+    // EVERY edge + param ordered after the bad one silently never applied.
+    // After the fix the bad edge is logged + skipped and the pass completes.
+
+    // An engine whose addEdge throws for one specific edge id, records the rest.
+    class OneBadEdgeEngine extends RecordingEngine {
+      badId: string;
+      constructor(badId: string) {
+        super();
+        this.badId = badId;
+      }
+      addEdge(e: Edge): void {
+        if (e.id === this.badId) {
+          throw new Error(`AudioEngine.addEdge: no target port on ${e.target.nodeId}`);
+        }
+        super.addEdge(e);
+      }
+    }
+
+    const pe = new PatchEngine();
+    const rec = new OneBadEdgeEngine('e-bad');
+    pe.registerDomain(rec);
+    const bus = createSnapshotBus({ patch: A.patch as never, ydoc: A.ydoc });
+    const handle = attachReconciler(pe, { bus });
+
+    // Pass 1: materialize the nodes only (params at their initial values), so
+    // they're in appliedNodes and the NEXT pass's step 5 sees genuine param
+    // CHANGES (step 5 only fires setParam when prev != current).
+    A.ydoc.transact(() => {
+      A.patch.nodes['a'] = n('a');
+      A.patch.nodes['b'] = n('b');
+      A.patch.nodes['c'] = n('c');
+    });
+    await flushMicrotasks();
+    await handle.reconcile();
+    rec.ops.length = 0;
+
+    // Pass 2: add three edges (the BAD one sorts in the MIDDLE) AND change a
+    // param. The throwing edge (step 4) must NOT abort the param pass (step 5)
+    // nor the good edge ordered after it.
+    A.ydoc.transact(() => {
+      A.patch.edges['e-good-1'] = e('e-good-1', 'a', 'b');
+      A.patch.edges['e-bad'] = e('e-bad', 'a', 'c');
+      A.patch.edges['e-good-2'] = e('e-good-2', 'b', 'c');
+      A.patch.nodes['a']!.params = { tune: 5 };
+    });
+
+    await flushMicrotasks();
+    await handle.reconcile();
+
+    // The two GOOD edges both applied — including the one AFTER the bad edge.
+    expect(rec.ops).toContain('addEdge e-good-1');
+    expect(rec.ops).toContain('addEdge e-good-2');
+    // The bad edge was NOT recorded (its addEdge threw before super.addEdge).
+    expect(rec.ops).not.toContain('addEdge e-bad');
+    // The param pass (step 5) still ran AFTER the throwing edge — the proof the
+    // whole pass wasn't aborted.
+    expect(rec.ops).toContain('setParam a.tune=5');
+
+    // And it doesn't re-throw / re-attempt the bad edge every subsequent pass.
+    rec.ops.length = 0;
+    await handle.reconcile();
+    expect(rec.ops).not.toContain('addEdge e-bad');
+
+    handle.dispose();
+  });
+
   it('removed-edges run before removed-nodes, both sorted by id', async () => {
     A.ydoc.transact(() => {
       A.patch.nodes['x'] = n('x');

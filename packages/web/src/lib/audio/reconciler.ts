@@ -146,7 +146,21 @@ export function attachReconciler(
       const src = currentNodes.get(edge.source.nodeId);
       const dst = currentNodes.get(edge.target.nodeId);
       if (!src || !dst) continue;
-      engine.addEdge(edge, edgeDomain(edge), edgeTargetDomain(edge));
+      // engine.addEdge THROWS on a missing/mismatched port (a stale portId, an
+      // output-as-target, an incompatible cable type). Without this guard, ONE
+      // bad edge would abort the rest of THIS pass — every remaining edge AND
+      // every param change below — and in multiuser that aborted pass replays
+      // identically on every peer. Imports are now structurally validated
+      // up-front (persistence.ts validateEdge drop-invalid), so a throw here is
+      // belt-and-suspenders: log it, mark the edge applied so we don't retry it
+      // every pass, and keep going so all the VALID work in the pass still lands.
+      try {
+        engine.addEdge(edge, edgeDomain(edge), edgeTargetDomain(edge));
+      } catch (err) {
+        console.warn(
+          `[reconciler] skipping edge ${edge.id} (${edge.source.nodeId}.${edge.source.portId} → ${edge.target.nodeId}.${edge.target.portId}): ${(err as Error).message}`,
+        );
+      }
       appliedEdges.set(edge.id, { ...edge });
     }
 
