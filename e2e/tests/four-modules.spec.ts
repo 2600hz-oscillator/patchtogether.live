@@ -125,38 +125,104 @@ test('TIMELORDE: 1x output emits gate pulses at the configured BPM', async ({ pa
   expect(errors, `TIMELORDE errors: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('TIMELORDE: singleton — second instance is rejected by engine.addNode guard', async ({ page }) => {
+test('TIMELORDE: singleton — a duplicate is cleaned up to a single survivor by the dedupe pass', async ({ page }) => {
+  // Phase 4c — deterministic post-merge singleton cleanup.
+  //
+  // PRE-4c MODEL (now obsolete): a forced 2nd TIMELORDE PERSISTED in the graph
+  // doc and only the engine's addNode guard dropped the loser at runtime — but
+  // TIMELORDE is `undeletable:true`, so the orphan graph node became an
+  // unrecoverable ghost. That ghost is exactly what 4c fixes.
+  //
+  // POST-4c MODEL (asserted here): when the converged doc holds two
+  // `maxInstances:1` TIMELORDE nodes, the Canvas snapshot cleanup $effect
+  // deterministically DELETES the lex-larger duplicate from the Yjs doc,
+  // keeping the lex-smaller survivor — so EXACTLY ONE TIMELORDE remains in BOTH
+  // the graph and the engine. We reproduce the converged end-state directly
+  // (inject both nodes into the live Yjs doc, what a merge-race produces) rather
+  // than via spawnPatch's DOM-mount wait, because the cleanup removes the
+  // lex-larger node before it ever mounts — so a "both nodes are in the DOM"
+  // wait can never be satisfied under 4c (that was the pre-4c assumption that
+  // timed out). No provider is attached on `/`, so the cleanup runs as the lone
+  // elected deleter.
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
-  // Use the canonical id-prefix convention (`${type}-...`) so the engine's
-  // singleton enforcement recognizes both as the same type.
-  await spawnPatch(
-    page,
-    [
-      { id: 'timelorde-aaa', type: 'timelorde', params: {} },
-      { id: 'timelorde-zzz', type: 'timelorde', params: {} },
-    ],
-    [],
-  );
+  // Bootstrap the engine + clear the doc (empty spawn => no DOM-mount wait).
+  await spawnPatch(page, [], []);
 
-  await page.waitForTimeout(500);
-
-  const engineCount = await page.evaluate(() => {
-    const w = globalThis as unknown as { __engine: () => unknown | null };
-    const e = w.__engine();
-    if (!e) return -1;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const audioDomain = (e as any).getDomain ? (e as any).getDomain('audio') : null;
-    if (!audioDomain || !audioDomain.nodes) return -1;
-    let count = 0;
-    for (const id of audioDomain.nodes.keys()) {
-      if (typeof id === 'string' && id.startsWith('timelorde-')) count++;
-    }
-    return count;
+  // Inject TWO TIMELORDE nodes straight into the converged Yjs doc, using the
+  // canonical `${type}-...` id convention. `timelorde-aaa` is lex-smaller (the
+  // deterministic survivor); `timelorde-zzz` is the lex-larger duplicate the
+  // cleanup must delete.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __ydoc: { transact: (fn: () => void) => void };
+      __patch: { nodes: Record<string, unknown> };
+    };
+    w.__ydoc.transact(() => {
+      for (const id of ['timelorde-aaa', 'timelorde-zzz']) {
+        w.__patch.nodes[id] = {
+          id,
+          type: 'timelorde',
+          domain: 'audio',
+          position: { x: id === 'timelorde-aaa' ? 100 : 400, y: 100 },
+          params: {},
+          data: {},
+        };
+      }
+    });
   });
 
-  expect(engineCount, 'engine should have exactly 1 TIMELORDE instance').toBe(1);
+  // The cleanup $effect fires on the next converged snapshot and deletes the
+  // lex-larger duplicate. Bounded poll for the graph doc to converge to exactly
+  // one TIMELORDE — NOT a flat sleep — to allow for the $effect / elected-peer
+  // timing without racing a fixed deadline.
+  await page.waitForFunction(
+    () => {
+      const w = globalThis as unknown as { __patch?: { nodes?: Record<string, { type?: string } | undefined> } };
+      const nodes = w.__patch?.nodes;
+      if (!nodes) return false;
+      let count = 0;
+      for (const n of Object.values(nodes)) if (n?.type === 'timelorde') count++;
+      return count === 1;
+    },
+    undefined,
+    { timeout: 6000 },
+  );
+
+  // The survivor in the graph is the lex-SMALLER id; the lex-larger duplicate
+  // was the one removed. (If the dedupe pass had NOT run, BOTH would persist
+  // and this would still be 2 → the assertion stays a meaningful singleton
+  // guard.)
+  const graphIds = await page.evaluate(() => {
+    const w = globalThis as unknown as { __patch: { nodes: Record<string, { id?: string; type?: string } | undefined> } };
+    return Object.values(w.__patch.nodes)
+      .filter((n) => n?.type === 'timelorde')
+      .map((n) => n?.id ?? null);
+  });
+  expect(graphIds, 'exactly one TIMELORDE survives the cleanup in the graph doc').toEqual(['timelorde-aaa']);
+  expect(graphIds, 'the lex-larger duplicate was the node removed').not.toContain('timelorde-zzz');
+
+  // The engine domain must also converge to exactly one (the reconciler removes
+  // the orphan once the graph node is gone). Bounded poll so the reconcile tick
+  // after the doc mutation isn't a fixed-time race.
+  await page.waitForFunction(
+    () => {
+      const w = globalThis as unknown as { __engine: () => unknown | null };
+      const e = w.__engine();
+      if (!e) return false;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const audioDomain = (e as any).getDomain ? (e as any).getDomain('audio') : null;
+      if (!audioDomain || !audioDomain.nodes) return false;
+      let count = 0;
+      for (const id of audioDomain.nodes.keys()) {
+        if (typeof id === 'string' && id.startsWith('timelorde-')) count++;
+      }
+      return count === 1;
+    },
+    undefined,
+    { timeout: 6000 },
+  );
 });
 
 test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({ page }) => {
