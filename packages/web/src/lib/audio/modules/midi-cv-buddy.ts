@@ -63,6 +63,7 @@
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { midiToVOct } from '$lib/audio/note-entry';
+import { createMidiScheduler } from '$lib/audio/midi-timing';
 
 // ---------------- Web MIDI minimal types ----------------
 //
@@ -382,17 +383,17 @@ export const midiCvBuddyDef: AudioModuleDef = {
       subscriber?.(snapshotState());
     }
 
+    // Project each event's own `event.timeStamp` onto the audio clock so two
+    // notes keep their real inter-note spacing regardless of how late their
+    // main-thread handlers run. The OLD `Math.max(now + L, now + delta + L)`
+    // floor collapsed every note to `currentTime + L` (a Web-MIDI handler
+    // always runs after the event, so delta <= 0), making note spacing equal
+    // main-thread dispatch jitter — audible swing under load. The shared
+    // scheduler owns the perf↔ctx offset + refresh (one impl for all three
+    // MIDI bridges; see $lib/audio/midi-timing).
+    const scheduler = createMidiScheduler(ctx);
     function schedAt(eventTimeStamp: number): number {
-      // event.timeStamp is performance.now()-relative. Convert to
-      // audioCtx.currentTime + small lookahead.
-      const now = ctx.currentTime;
-      const perfNow = typeof performance !== 'undefined' ? performance.now() : eventTimeStamp;
-      const delta = (eventTimeStamp - perfNow) / 1000;
-      // Clamp to "no earlier than now + lookahead" so we never schedule
-      // into the past (which Web Audio silently coerces to currentTime
-      // mid-block — exactly the click we're trying to avoid).
-      const target = Math.max(now + SCHED_LOOKAHEAD_S, now + delta + SCHED_LOOKAHEAD_S);
-      return target;
+      return scheduler.schedAt(eventTimeStamp);
     }
 
     function applyVoiceFromStack(eventTime: number): void {

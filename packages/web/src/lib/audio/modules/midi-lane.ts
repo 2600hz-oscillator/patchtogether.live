@@ -96,6 +96,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { midiToVOct } from '$lib/audio/note-entry';
 import { createPolySender, type PolySender } from '$lib/audio/poly';
+import { createMidiScheduler } from '$lib/audio/midi-timing';
 import type {
   MidiAccessLike,
   MidiEventLike,
@@ -358,11 +359,17 @@ export const midiLaneDef: AudioModuleDef = {
       subscriber?.(snapshotState());
     }
 
+    // Project each event's own `event.timeStamp` onto the audio clock so
+    // sequenced notes keep their real inter-note spacing regardless of when
+    // the main-thread handler runs. The OLD `Math.max(now + L, now + delta + L)`
+    // floor collapsed every note to `currentTime + L` (delta <= 0 because a
+    // Web-MIDI handler always runs after the event), so note spacing equalled
+    // main-thread dispatch jitter — the dominant audible "swing" when locked
+    // to an external clock under heavy main-thread (video) load. The shared
+    // scheduler owns the perf↔ctx offset + refresh; see $lib/audio/midi-timing.
+    const scheduler = createMidiScheduler(ctx);
     function schedAt(eventTimeStamp: number): number {
-      const now = ctx.currentTime;
-      const perfNow = typeof performance !== 'undefined' ? performance.now() : eventTimeStamp;
-      const delta = (eventTimeStamp - perfNow) / 1000;
-      return Math.max(now + SCHED_LOOKAHEAD_S, now + delta + SCHED_LOOKAHEAD_S);
+      return scheduler.schedAt(eventTimeStamp);
     }
 
     /** Repaint the mono pitch/gate outputs from the held-keys stack. */
