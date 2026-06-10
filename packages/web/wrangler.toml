@@ -18,6 +18,20 @@ pages_build_output_dir = ".svelte-kit/cloudflare"
 compatibility_date = "2024-11-06"
 compatibility_flags = ["nodejs_compat"]
 
+# ⚠️  PER-PROJECT ENV VARS MUST BE `secret_text`, NOT `plain_text`.
+# Every per-project Cloudflare Pages variable this app reads at runtime —
+# BETA_GATE_PASS, DATABASE_URL (below), the Clerk keys, INVITE_SECRET,
+# PUBLIC_SENTRY_DSN, etc. — MUST be set as `secret_text` (the "Encrypt" toggle
+# in Dashboard → project → Settings → Variables and Secrets, or any
+# `wrangler pages secret put`, which is always secret_text — see
+# scripts/sync-secrets.sh). `wrangler pages deploy` (used by
+# .github/workflows/deploy.yml) silently CLEARS plain_text project vars on
+# every deploy, while secret_text vars persist. A plain_text BETA_GATE_PASS
+# once got wiped by a prod deploy → the runtime beta gate (hooks.server.ts)
+# turned itself off → prod served HTTP 200 with NO auth (silently open).
+# deploy.yml now runs scripts/assert-beta-gate.sh after each gated deploy to
+# fail loudly (401 expected at `/`) if this ever recurs.
+
 # Database (persistence) is Neon Postgres, reached over Neon's HTTP
 # driver (@neondatabase/serverless's `neon` template tag) ONLY — see
 # src/lib/server/db.ts. This is NOT a direct Worker→Postgres TCP

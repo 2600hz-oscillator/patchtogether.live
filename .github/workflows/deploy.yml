@@ -43,6 +43,18 @@ name: Deploy
 #                           is a total no-op. (Override SENTRY_ORG/SENTRY_PROJECT
 #                           in scripts/sentry-release.sh if the slugs differ.)
 #
+# ⚠️  PER-PROJECT CF PAGES ENV VARS MUST BE `secret_text`, NOT `plain_text`.
+# `wrangler pages deploy` (every deploy step below) CLEARS plain-text project
+# env vars on each deploy; `secret_text` vars persist. This applies to ALL
+# per-project vars — BETA_GATE_PASS, DATABASE_URL, the Clerk keys, INVITE_SECRET,
+# PUBLIC_SENTRY_DSN, etc. A plain_text BETA_GATE_PASS once got wiped by a prod
+# deploy → the runtime beta gate turned itself off → prod served HTTP 200 with
+# NO auth (silently open). Set every var via Dashboard → project → Settings →
+# Variables and Secrets → "Encrypt" (or `wrangler pages secret put`, which is
+# always secret_text; see scripts/sync-secrets.sh). The "Verify beta gate is up"
+# step after each gated deploy below asserts HTTP 401 at `/` and FAILS the deploy
+# if the gate is down — a safety net for exactly this class of regression.
+#
 # Why each deploy job is self-contained (no shared build artifact):
 # wrangler's `pages deploy` re-bundles _worker.js with esbuild, so it needs
 # both the .svelte-kit/ build output AND the project's node_modules visible
@@ -250,6 +262,16 @@ jobs:
           # ellipses (agent-authored messages routinely do). Sending a fixed SHA
           # string sidesteps it entirely.
           command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live --branch=main --commit-message=deploy-${{ github.sha }}
+      # Post-deploy: assert the beta gate is UP (HTTP 401 at `/`, no creds).
+      # The gate lives in hooks.server.ts and is active ONLY while the
+      # BETA_GATE_PASS CF Pages secret is set. That var MUST be `secret_text`
+      # — a `plain_text` BETA_GATE_PASS is silently CLEARED by every
+      # `wrangler pages deploy` above, which once turned the gate off and left
+      # PROD serving 200 to the public with no auth. This step fails the deploy
+      # loudly if that happens again. (/ is gated; /api/health is exempt and
+      # would 200 even with the gate down, so we must probe `/`.)
+      - name: Verify beta gate is up (prod)
+        run: flox activate -- bash scripts/assert-beta-gate.sh https://www.patchtogether.live/
 
   # ---------------- PR previews: auto on PR events ----------------
 
@@ -337,6 +359,14 @@ jobs:
           # inherit the test-instance Clerk env vars and full auth flow
           # works. URL becomes `pr-N.patchtogether-live-autotest.pages.dev`.
           command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-autotest --branch=pr-${{ github.event.pull_request.number }} --commit-message=deploy-${{ github.sha }}
+      # Post-deploy beta-gate assertion (see deploy-prod for the full rationale
+      # + the secret_text requirement). PR previews deploy to the gated autotest
+      # project's Preview env scope (sync-secrets.sh pushes BETA_GATE_PASS to
+      # both the production AND preview scopes), so the preview URL is gated too.
+      # The script rides out CF/DNS propagation (~60s) on this freshly-minted
+      # per-PR URL and only fails on a confirmed non-401.
+      - name: Verify beta gate is up (PR preview)
+        run: flox activate -- bash scripts/assert-beta-gate.sh https://pr-${{ github.event.pull_request.number }}.patchtogether-live-autotest.pages.dev/
 
   # ---------------- Autotest + dev: auto on merge to main ----------------
 
@@ -432,6 +462,11 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: packages/web
           command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-autotest --branch=main --commit-message=deploy-${{ github.sha }}
+      # Post-deploy beta-gate assertion (see deploy-prod for rationale + the
+      # secret_text requirement). The autotest tier is beta-gated; fail the
+      # deploy loudly if `/` ever serves non-401 (gate down = open tier).
+      - name: Verify beta gate is up (autotest)
+        run: flox activate -- bash scripts/assert-beta-gate.sh https://autotest.patchtogether.live/
 
   deploy-dev:
     name: Deploy → dev.patchtogether.live (dev)
@@ -522,6 +557,11 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: packages/web
           command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-dev --branch=dev --commit-message=deploy-${{ github.sha }}
+      # Post-deploy beta-gate assertion (see deploy-prod for rationale + the
+      # secret_text requirement). The dev tier is beta-gated; fail the deploy
+      # loudly if `/` ever serves non-401 (gate down = open tier).
+      - name: Verify beta gate is up (dev)
+        run: flox activate -- bash scripts/assert-beta-gate.sh https://dev.patchtogether.live/
 
   # ---------------- Live smoke ----------------
   # Runs after a successful autotest deploy. Hits the live URL with the
