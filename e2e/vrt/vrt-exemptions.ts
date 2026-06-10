@@ -58,6 +58,13 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // ----- video domain — every video module renders a preview canvas;
   // mask it and assert the chrome around it.
   lines: [{ selector: 'canvas' }],
+  // VFPGA-RUNNER — host card with a live preview canvas + per-CV always-on
+  // scope canvases (both animate off the card rAF), so mask every canvas and
+  // gate on the deterministic chrome (preset select + param knob grid + CV
+  // SCALE/OFFSET knobs + gate LEDs + port handle rows). Currently in
+  // EXEMPT_FROM_VRT below; the mask covers the canvases if promoted into
+  // MODULES once darwin/linux baselines are captured.
+  vfpgaRunner: [{ selector: 'canvas' }],
   // OUTLINES — stateful particle generator; the card carries a live COMBINE
   // preview canvas (shapes spawn + move + spin off the engine rAF), so the
   // canvas region is non-deterministic in the standard solo-spawn VRT. Mask it
@@ -365,6 +372,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // is impossible without freezing the engine clock. Pattern/palette unit
   // coverage in acidwarp-patterns.test.ts; integration coverage via E2E.
   acidwarp: 'animated palette rotation + auto scene cycler defeats deterministic capture; unit + E2E provide coverage',
+  // VFPGA-RUNNER — host module shipping the smpte-bars VFPGA. The card carries
+  // a live preview canvas + per-CV always-on scope canvases (animated off the
+  // card rAF), so the standard solo-spawn capture is non-deterministic. Unit
+  // (snapshot/spec-validation/factory) + the bespoke e2e (vfpga-runner.spec.ts:
+  // preset loads, vout1 emits, CV scope animates) provide coverage. Promote
+  // into MODULES + capture darwin/linux baselines (the canvas mask above covers
+  // the live preview + scopes) in a follow-up PR.
+  vfpgaRunner: 'VRT baseline pending; host card with live preview + CV scope canvases defeats deterministic solo-spawn capture. Unit (snapshot + spec-validation) + e2e (vfpga-runner.spec.ts) provide coverage. Capture darwin/linux baselines (canvases masked) in a follow-up.',
   // MANDELBULB — promoted into MODULES (no longer exempt). The card carries
   // a live ray-marched 3D preview canvas that auto-spins by default, so the
   // canvas region is non-deterministic; it's MASKED via VRT_MODULE_MASKS

@@ -46,7 +46,7 @@ const EXPECTED_NODE_TYPES = [
   'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar',
   'skifree', 'slewSwitch', 'snes9x', 'stages', 'stereovca', 'sticky',
   'swolevco', 'symbiote', 'synesthesia', 'tides2', 'timelorde', 'treeohvox',
-  'unityscalemathematik', 'vca', 'vdelay', 'veils', 'videoMixer', 'videoOut',
+  'unityscalemathematik', 'vca', 'vdelay', 'veils', 'vfpgaRunner', 'videoMixer', 'videoOut',
   'videobox', 'videovarispeed', 'warps', 'warrenspectrum', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq',
 
