@@ -261,7 +261,11 @@
   .ctx-overlay {
     position: fixed;
     inset: 0;
-    z-index: 200;
+    /* Above the patch-menu redesign's portaled panel chrome (z-index 1001) +
+       the pickup cable (1002) so a control/gate-input MIDI-assign menu opened
+       from a card or an OPEN patch panel is never intercepted by the panel rows
+       beneath it. Still below global modals/toasts (9000+). */
+    z-index: 2000;
   }
   .ctx-divider {
     height: 1px;
@@ -270,7 +274,7 @@
   }
   .ctx-menu {
     position: fixed;
-    z-index: 201;
+    z-index: 2001;
     min-width: 180px;
     background: var(--module-bg);
     border: 1px solid #404652;
