@@ -92,6 +92,55 @@ test.describe('NUMPAD+ module', () => {
     await expect(keyC.locator('.kmap-phys')).toHaveText('1');
   });
 
+  test('octave up/down keys render (default + / −) and nudge the octave param', async ({ page }) => {
+    await spawnNumpadPlus(page);
+
+    const octUp = page.locator('[data-testid="numpad-octkey-12"]');
+    const octDown = page.locator('[data-testid="numpad-octkey-13"]');
+    await expect(octUp.locator('.kmap-phys')).toHaveText('+');
+    await expect(octDown.locator('.kmap-phys')).toHaveText('−');
+    await expect(octUp.locator('.kmap-note')).toHaveText('OCT↑');
+
+    // The default-mapped physical keys nudge the octave via the global listener.
+    await expect(page.locator('[data-testid="numpad-octave-value"]')).toHaveText('4');
+    await page.keyboard.press('NumpadAdd');
+    await expect(page.locator('[data-testid="numpad-octave-value"]')).toHaveText('5');
+    await page.keyboard.press('NumpadSubtract');
+    await page.keyboard.press('NumpadSubtract');
+    await expect(page.locator('[data-testid="numpad-octave-value"]')).toHaveText('3');
+  });
+
+  test('an octave key is remappable like a note key', async ({ page }) => {
+    await spawnNumpadPlus(page);
+    const octUp = page.locator('[data-testid="numpad-octkey-12"]');
+    await octUp.click({ button: 'right' });
+    await page.locator('[data-testid="numpad-remap-item"]').click();
+    await page.keyboard.press('ArrowUp'); // bind OCT↑ → ArrowUp
+    await expect(octUp.locator('.kmap-phys')).toHaveText('↑');
+    const keymap = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { keymap?: Record<string, number> } }> };
+      };
+      return w.__patch.nodes.np?.data?.keymap ?? null;
+    });
+    expect(keymap!['ArrowUp']).toBe(12);        // OCTAVE_UP_ACTION
+    expect(keymap!['NumpadAdd']).toBeUndefined(); // old key freed
+    // The remapped key now nudges the octave.
+    await page.keyboard.press('ArrowUp');
+    await expect(page.locator('[data-testid="numpad-octave-value"]')).toHaveText('5');
+  });
+
+  test('the remap menu is portaled to <body> so it spawns at the cursor (not inside the transformed node)', async ({ page }) => {
+    await spawnNumpadPlus(page);
+    await page.locator('[data-testid="numpad-key-0"]').click({ button: 'right' });
+    const menu = page.locator('[data-testid="numpad-key-menu"]');
+    await expect(menu).toBeVisible();
+    // The bug: position:fixed inside SvelteFlow's transformed node anchors the
+    // menu to that node. The fix portals it OUT — so it must NOT be a descendant
+    // of any .svelte-flow node wrapper.
+    await expect(page.locator('.svelte-flow [data-testid="numpad-key-menu"]')).toHaveCount(0);
+  });
+
   test('pressing Numpad1 at octave 4 drives l1_pitch ~ 0 V/oct (C4)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
