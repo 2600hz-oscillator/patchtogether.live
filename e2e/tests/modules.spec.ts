@@ -72,7 +72,11 @@ const SKIP_RENDER: Record<string, string> = {
 // Also includes 'twotracks': xyflow keeps the node wrapper visibility:hidden
 // until ResizeObserver fires; on CI's production preview bundle TwotracksCard
 // (580px wide, complex layout) can take longer than the default 5s.
-const HEAVY_RENDER = new Set(['b3ntb0x', 'mandleblot', 'twotracks']);
+// And 'mandelbulb': a per-pixel GPU 3D fractal raymarcher (the 3D sibling of
+// mandleblot, already heavy here) whose first-paint shader compile on CI's
+// SwiftShader software renderer overruns the default 30s test budget — give it
+// the same heavy headroom (structural assertions unchanged).
+const HEAVY_RENDER = new Set(['b3ntb0x', 'mandleblot', 'mandelbulb', 'twotracks']);
 const HEAVY_MOUNT_TIMEOUT = 30_000;
 const HEAVY_TEST_TIMEOUT = 90_000;
 

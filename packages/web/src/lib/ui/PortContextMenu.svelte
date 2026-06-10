@@ -1,28 +1,36 @@
 <script lang="ts">
-  // Right-click context menu for a port (handle dot). Cascades:
-  //   level 1: "Patch to..." (disabled when no other modules exist)
-  //   level 2: every other module — "DisplayName · TypeLabel"
-  //   level 3: candidate ports on the chosen module, with "!" prefix on
-  //            inputs already receiving a cable (destructive overwrite).
+  // The "patch to" picker for the redesigned patch flow.
   //
-  // The menu persists through ALL pointer movements while open. It closes
-  // only on Escape, on picking a candidate port (which fires
-  // `onpick({ targetNodeId, targetPortId })`), or implicitly when the
-  // user right-clicks a different port (Canvas opens a fresh menu in
-  // place of the old one).
+  // OVERLAY-REPLACE model (no more side-by-side cascade columns):
+  //   * view 'modules' — the list of every other module to patch to.
+  //   * view 'ports'   — the chosen module's compatible ports. REPLACES the
+  //     modules list in the SAME vertical space (modules list hides); a back
+  //     affordance returns to 'modules'. Drill-in is CLICK-only (hover never
+  //     pivots — that fought the click in the old side-by-side layout).
+  //
+  // The menu is body-portaled + position:fixed at edge-aligned coords (the
+  // caller computes them via computeEdgeAlignedRect). It closes only on:
+  //   (a) Escape,
+  //   (b) picking a target port (commits via onpick),
+  //   (c) a pointerdown in negative space (outside the menu DOM),
+  //   (d) the caller re-opening it for a different port.
+  //
+  // Cursor movement does NOT close it — there are no separate columns to
+  // traverse between, but negative-space-only dismissal also matches the
+  // carry flow (the user may move the cursor around with a cable in hand).
 
   import type { ModuleEntry, CandidatePort } from '$lib/ui/port-patch-helpers';
 
   interface Props {
     open: boolean;
-    /** Cursor position (screen-space). */
+    /** Edge-aligned menu position (screen-space, position:fixed). */
     x: number;
     y: number;
     /** Source port info, displayed in the header. */
     sourceLabel: string;
     /** All other modules in the patch, already excluding the source's module. */
     moduleEntries: ModuleEntry[];
-    /** Lazily computed when the user hovers / clicks a module. Caller maps
+    /** Lazily computed when the user clicks a module. Caller maps
      *  nodeId → CandidatePort[]. */
     candidatesFor: (nodeId: string) => CandidatePort[];
     onpick: (target: { nodeId: string; portId: string }) => void;
@@ -40,8 +48,9 @@
     onclose,
   }: Props = $props();
 
-  // Active panel cascade — null = level 1 only; nodeId = level 2 expanded
-  // for that module. Resets every time the menu reopens (on `open` flip).
+  // Overlay-replace view. null = the modules list (level 1); a nodeId = that
+  // module's ports list (level 2, replacing the modules list). Resets every
+  // time the menu reopens.
   let activeModuleId = $state<string | null>(null);
 
   $effect(() => {
@@ -49,6 +58,17 @@
   });
 
   let menuEl: HTMLDivElement | null = $state(null);
+
+  // Portal to <body> so position:fixed resolves against the real viewport,
+  // escaping the SvelteFlow viewport transform. Mirrors ControlContextMenu.
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
 
   $effect(() => {
     if (!open) return;
@@ -58,21 +78,10 @@
         onclose();
       }
     };
-    // Negative-space click closes the menu. "Negative space" = any pointerdown
-    // whose target is NOT inside the menu's DOM subtree. This is the only
-    // dismissal path besides Esc and picking an item — cursor leaving the
-    // menu bounds does NOT close it (the cascade row layout pushes the
-    // submenu past the parent column, and cursor-angle navigation crosses
-    // negative space between them; closing on cursor-leave broke that
-    // traversal). Capture phase so xyflow / Canvas can't swallow the event
-    // before we see it.
     const onDocPointerDown = (e: PointerEvent) => {
       const target = e.target as HTMLElement | null;
       if (!target) return;
       if (menuEl && menuEl.contains(target)) return;
-      // Right-clicks on another port re-open the menu fresh via Canvas's
-      // capture-phase contextmenu handler — let that flow proceed but also
-      // close ours so we don't double-render.
       onclose();
     };
     window.addEventListener('keydown', onWindowKeydown);
@@ -91,6 +100,10 @@
     activeModuleId = nodeId;
   }
 
+  function back() {
+    activeModuleId = null;
+  }
+
   function pickPort(p: CandidatePort) {
     if (!activeModuleId) return;
     onpick({ nodeId: activeModuleId, portId: p.portId });
@@ -99,176 +112,158 @@
 </script>
 
 {#if open}
-  <!--
-    No click-outside overlay: the patch-context menu must persist through
-    ALL pointer movements while the user is mid-patching. It closes only
-    on (a) Escape, (b) picking a target port, or (c) a fresh contextmenu
-    on a different port (Canvas's capture-phase listener replaces this
-    open with a new one, no explicit close needed). An overlay with
-    onclick={onclose} would dismiss the menu on incidental clicks
-    elsewhere on the canvas, which broke the cascade mid-trip.
-  -->
-  <div
-    bind:this={menuEl}
-    class="ctx-menu"
-    style:left="{x}px"
-    style:top="{y}px"
-    role="menu"
-    aria-label="Port actions"
-    data-testid="port-context-menu"
-  >
-    <div class="ctx-header">{sourceLabel}</div>
-    {#if moduleEntries.length === 0}
-      <button
-        class="ctx-item"
-        type="button"
-        disabled
-        role="menuitem"
-        aria-disabled="true"
-        title="No other modules to patch to"
-        data-testid="patch-to-disabled"
-      >
-        Patch to...
-      </button>
-    {:else}
-      <div class="cascade-row">
-        <div class="cascade-col">
+  <div use:portal>
+    <div
+      bind:this={menuEl}
+      class="ctx-menu"
+      style:left="{x}px"
+      style:top="{y}px"
+      role="menu"
+      aria-label="Port actions"
+      data-testid="port-context-menu"
+    >
+      <div class="ctx-header">
+        {#if activeModuleId !== null}
           <button
-            class="ctx-item cascade-trigger"
-            class:active={activeModuleId !== null}
             type="button"
-            role="menuitem"
-            aria-haspopup="menu"
-            aria-expanded={activeModuleId !== null}
-            onclick={() => {
-              if (activeModuleId === null && moduleEntries.length === 1) {
-                pickModule(moduleEntries[0]!.nodeId);
-              }
-            }}
-            data-testid="patch-to-trigger"
+            class="ctx-back"
+            data-testid="patch-to-back"
+            aria-label="Back"
+            onclick={back}
           >
-            Patch to... <span class="chev" aria-hidden="true">▸</span>
+            <span aria-hidden="true">◂</span>
           </button>
-          <ul class="submenu" role="menu" aria-label="Target modules" data-testid="patch-to-modules">
-            {#each moduleEntries as entry (entry.nodeId)}
+        {/if}
+        <span class="ctx-header-label">{sourceLabel}</span>
+      </div>
+
+      {#if moduleEntries.length === 0}
+        <button
+          class="ctx-item"
+          type="button"
+          disabled
+          role="menuitem"
+          aria-disabled="true"
+          title="No other modules to patch to"
+          data-testid="patch-to-disabled"
+        >
+          Patch to...
+        </button>
+      {:else if activeModuleId === null}
+        <!-- LEVEL 1: modules list. -->
+        <ul class="ctx-list" role="menu" aria-label="Target modules" data-testid="patch-to-modules">
+          {#each moduleEntries as entry (entry.nodeId)}
+            <li>
+              <button
+                type="button"
+                class="ctx-item"
+                role="menuitem"
+                data-testid="patch-to-module"
+                data-node-id={entry.nodeId}
+                onclick={() => pickModule(entry.nodeId)}
+              >
+                <span class="entry-name">{entry.displayName}</span>
+                {#if entry.displayName !== entry.typeLabel}
+                  <span class="entry-type">· {entry.typeLabel}</span>
+                {/if}
+                <span class="chev" aria-hidden="true">▸</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <!-- LEVEL 2: chosen module's ports — REPLACES the modules list. -->
+        <ul class="ctx-list ctx-list-ports" role="menu" aria-label="Compatible ports" data-testid="patch-to-ports">
+          {#if candidates.length === 0}
+            <li>
+              <button
+                type="button"
+                class="ctx-item dim"
+                disabled
+                aria-disabled="true"
+                role="menuitem"
+                data-testid="no-compatible-ports"
+              >
+                No compatible ports
+              </button>
+            </li>
+          {:else}
+            {#each candidates as p (p.portId)}
               <li>
                 <button
                   type="button"
                   class="ctx-item"
-                  class:active={activeModuleId === entry.nodeId}
+                  class:warn={p.occupiedBy !== undefined}
                   role="menuitem"
-                  data-testid="patch-to-module"
-                  data-node-id={entry.nodeId}
-                  onmouseenter={() => {
-                    // First hover seeds the submenu (no module picked yet).
-                    // Once any module is active, hovering OTHER module rows
-                    // must NOT re-pivot the submenu — that broke cursor-
-                    // angle navigation (diagonal from the active row across
-                    // sibling rows toward the port column kept rewriting
-                    // the port list mid-trip). Subsequent pivots require
-                    // an explicit click on a different module.
-                    if (activeModuleId === null) pickModule(entry.nodeId);
-                  }}
-                  onfocus={() => {
-                    if (activeModuleId === null) pickModule(entry.nodeId);
-                  }}
-                  onclick={() => pickModule(entry.nodeId)}
+                  data-testid="patch-to-port"
+                  data-port-id={p.portId}
+                  data-occupied={p.occupiedBy !== undefined ? 'true' : 'false'}
+                  title={p.occupiedBy
+                    ? `Will replace existing connection from ${p.occupiedBy.sourceDisplayName}`
+                    : ''}
+                  onclick={() => pickPort(p)}
                 >
-                  <span class="entry-name">{entry.displayName}</span>
-                  {#if entry.displayName !== entry.typeLabel}
-                    <span class="entry-type">· {entry.typeLabel}</span>
-                  {/if}
+                  {#if p.occupiedBy}<span class="warn-glyph" aria-hidden="true">!</span>{/if}
+                  <span>{p.label}</span>
                 </button>
               </li>
             {/each}
-          </ul>
-        </div>
-        {#if activeModuleId !== null}
-          <ul class="submenu submenu-ports" role="menu" aria-label="Compatible ports" data-testid="patch-to-ports">
-            {#if candidates.length === 0}
-              <li>
-                <button
-                  type="button"
-                  class="ctx-item dim"
-                  disabled
-                  aria-disabled="true"
-                  role="menuitem"
-                  data-testid="no-compatible-ports"
-                >
-                  No compatible ports
-                </button>
-              </li>
-            {:else}
-              {#each candidates as p (p.portId)}
-                <li>
-                  <button
-                    type="button"
-                    class="ctx-item"
-                    class:warn={p.occupiedBy !== undefined}
-                    role="menuitem"
-                    data-testid="patch-to-port"
-                    data-port-id={p.portId}
-                    data-occupied={p.occupiedBy !== undefined ? 'true' : 'false'}
-                    title={p.occupiedBy
-                      ? `Will replace existing connection from ${p.occupiedBy.sourceDisplayName}`
-                      : ''}
-                    onclick={() => pickPort(p)}
-                  >
-                    {#if p.occupiedBy}<span class="warn-glyph" aria-hidden="true">!</span>{/if}
-                    <span>{p.label}</span>
-                  </button>
-                </li>
-              {/each}
-            {/if}
-          </ul>
-        {/if}
-      </div>
-    {/if}
+          {/if}
+        </ul>
+      {/if}
+    </div>
   </div>
 {/if}
 
 <style>
   .ctx-menu {
     position: fixed;
-    z-index: 201;
-    min-width: 180px;
+    z-index: 1002;
+    min-width: 200px;
+    max-width: 80vw;
+    max-height: 70vh;
+    overflow-y: auto;
     background: var(--module-bg);
     border: 1px solid #404652;
     border-radius: 6px;
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
-    overflow: hidden;
     font-size: 0.85rem;
     padding: 4px 0;
   }
   .ctx-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 0.65rem;
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--text-dim);
     padding: 6px 12px 4px;
+  }
+  .ctx-header-label {
+    flex: 1;
     pointer-events: none;
   }
-  .cascade-row {
-    display: flex;
-    align-items: stretch;
+  .ctx-back {
+    appearance: none;
+    background: transparent;
+    border: 1px solid #404652;
+    border-radius: 3px;
+    color: var(--text);
+    cursor: pointer;
+    font: inherit;
+    line-height: 1;
+    padding: 1px 5px;
   }
-  .cascade-col {
-    display: flex;
-    flex-direction: column;
-    min-width: 180px;
+  .ctx-back:hover,
+  .ctx-back:focus-visible {
+    border-color: var(--accent, #60a5fa);
+    outline: none;
   }
-  .submenu {
+  .ctx-list {
     list-style: none;
     margin: 0;
-    padding: 4px 0;
-    border-top: 1px solid #2a2f3a;
-    max-height: 50vh;
-    overflow-y: auto;
-  }
-  .submenu-ports {
-    border-top: none;
-    border-left: 1px solid #2a2f3a;
-    min-width: 180px;
+    padding: 2px 0;
   }
   .ctx-item {
     display: flex;
@@ -285,8 +280,7 @@
     cursor: pointer;
   }
   .ctx-item:hover:not(:disabled),
-  .ctx-item:focus-visible,
-  .ctx-item.active {
+  .ctx-item:focus-visible {
     background: rgba(96, 165, 250, 0.1);
     outline: none;
   }
@@ -300,12 +294,6 @@
     color: var(--text-dim);
     font-style: italic;
   }
-  .cascade-trigger {
-    justify-content: space-between;
-  }
-  .chev {
-    color: var(--text-dim);
-  }
   .entry-name {
     flex: 0 0 auto;
   }
@@ -313,6 +301,11 @@
     color: var(--text-dim);
     font-size: 0.78rem;
     margin-left: 6px;
+    flex: 1;
+  }
+  .chev {
+    color: var(--text-dim);
+    margin-left: auto;
   }
   .ctx-item.warn {
     color: #fbbf24;

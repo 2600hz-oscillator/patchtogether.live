@@ -152,7 +152,13 @@ export function compatibleTargetPorts(
   return out;
 }
 
-function findOccupant(
+/**
+ * The single occupancy check: returns the edge currently terminating on
+ * (targetNodeId, targetPortId), or undefined if the input is free. Exported so
+ * the stereo-autowire planner reuses the EXACT same "is this input occupied?"
+ * logic the cascade uses — one source of truth.
+ */
+export function findOccupant(
   targetNodeId: string,
   targetPortId: string,
   edges: Partial<Record<string, Edge>> | Record<string, Edge>,

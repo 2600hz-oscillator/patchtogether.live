@@ -114,18 +114,20 @@ test('MIDI assign: a gate INPUT row binds a NOTE (binding materializes + bound s
   await expect(card).toHaveCount(1);
   await installSimMidi(page);
 
-  // Open + pin the patch panel so the input rows render + stay put. The panel
-  // collapses via opacity (not display:none), so assert aria-hidden=false (the
-  // open contract), matching the cable-drag panel-open helper.
+  // Open the patch panel + drill into INPUT. Under the patch-menu redesign the
+  // port ROWS live in the PORTALED chrome (appended to <body>, keyed by
+  // data-patch-panel-chrome=nodeId) — NOT inline in the card — and are reached
+  // by clicking the INPUT nav pivot (overlay-replace). The gate-assignable
+  // right-click affordance was re-applied onto those overlay rows.
   await card.locator('[data-testid="patch-trigger"]').first().click();
-  await expect(card.locator('[data-testid="patch-panel"]')).toHaveAttribute('aria-hidden', 'false');
-  const gateHandle = card.locator('[data-testid="patch-panel"] [data-handleid="gate"]');
-  await expect(gateHandle).toHaveCount(1);
-  // The gate row is the .gate-assignable <li> that CONTAINS the gate handle.
-  // `filter({ has })` re-roots the relative locator against each <li>.
-  const gateRow = card
-    .locator('[data-testid="patch-panel"] li.panel-row.gate-assignable')
-    .filter({ has: page.locator('[data-handleid="gate"]') });
+  const chrome = page.locator('[data-patch-panel-chrome="ad-1"]');
+  await expect(chrome).toHaveAttribute('aria-hidden', 'false');
+  await chrome.locator('[data-testid="patch-panel-nav"][data-nav="inputs"]').click();
+  // The gate row is the .gate-assignable <li> whose port row carries the gate
+  // port id. ADSR's `gate` input auto-groups to a top-level row.
+  const gateRow = chrome
+    .locator('li.panel-row.gate-assignable')
+    .filter({ has: page.locator('[data-testid="patch-panel-port-row"][data-port-id="gate"]') });
   await expect(gateRow).toHaveCount(1);
 
   // Right-click the gate row's label (the visible target) → control menu.

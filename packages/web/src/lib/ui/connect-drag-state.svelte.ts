@@ -55,6 +55,18 @@ class ConnectDragState {
    *  while pickup is active. Canvas reads this to render the ghost cable
    *  from the source port to the cursor. */
   pickupCursor = $state<{ x: number; y: number } | null>(null);
+  /** True when the pickup gesture was opened *together with* the source
+   *  port's patch menu (the redesigned jack-click → carry-mode flow). The
+   *  PatchPanel that owns the source port reads this so it renders the
+   *  in-carry "patch to" entry. Distinct from the bare click-connect pickup
+   *  (which has no menu). */
+  pickupMenuOpen = $state(false);
+  /** True once the user clicked "patch to" in carry mode: the dangling
+   *  PickupCable ghost is hidden (the patch-to picker has taken over) but
+   *  the source/carry state is RETAINED for the eventual commit. PickupCable
+   *  reads this to stop rendering the ghost; connectDragState still reports
+   *  mode === 'pickup' so Esc / commit logic keeps working. */
+  cableHidden = $state(false);
   /** Live cursor-over-card tracking while a connect gesture is in flight.
    *  The drag tracks the cable's endpoint, not the panel-trigger glyph —
    *  if we relied solely on the trigger's mouseenter the destination
@@ -92,7 +104,42 @@ class ConnectDragState {
     this.lockedPanelNodeId = null;
     this.pickupSource = source;
     this.pickupCursor = null;
+    this.pickupMenuOpen = false;
+    this.cableHidden = false;
     this.installHoverTracker();
+  }
+
+  /** Redesigned jack-click entry (UX item 4): left-clicking a port row in
+   *  the open patch menu simultaneously (a) picks up a cable that dangles
+   *  from the cursor AND (b) flags that the source port's menu is open with
+   *  a "patch to" entry. Same pickup gesture as `pickup`, but with
+   *  pickupMenuOpen=true so the PatchPanel surfaces the carry affordance. */
+  beginPickupWithMenu(source: PickupSource): void {
+    this.mode = 'pickup';
+    this.active = true;
+    this.lockedPanelNodeId = null;
+    this.pickupSource = source;
+    this.pickupCursor = null;
+    this.pickupMenuOpen = true;
+    this.cableHidden = false;
+    this.installHoverTracker();
+  }
+
+  /** UX item 4: the user clicked "patch to" while carrying. The dangling
+   *  cable VISUALLY DISAPPEARS (cableHidden=true) but the carry/source
+   *  state is RETAINED so the eventual port-pick still commits the patch.
+   *  No-op unless a pickup is in flight. */
+  hideCableForPicker(): void {
+    if (this.mode !== 'pickup') return;
+    this.cableHidden = true;
+  }
+
+  /** Terminal discard of a pickup gesture (UX items 5 + 6): an invalid
+   *  carry-commit or Esc. Clears every pickup field back to idle. Alias of
+   *  cancelPickup with an intention-revealing name for the carry-flow call
+   *  sites; both paths must leave NO residual carry state. */
+  discard(): void {
+    this.cancelPickup();
   }
 
   /** Canvas calls this on every mousemove while pickup mode is active —
@@ -112,6 +159,8 @@ class ConnectDragState {
     this.lockedPanelNodeId = null;
     this.pickupSource = null;
     this.pickupCursor = null;
+    this.pickupMenuOpen = false;
+    this.cableHidden = false;
     this.uninstallHoverTracker();
   }
 

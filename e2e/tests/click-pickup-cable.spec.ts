@@ -1,119 +1,102 @@
 // e2e/tests/click-pickup-cable.spec.ts
 //
-// Drag-vs-click gesture differentiation on port handles.
+// Jack-click → pickup (carry) gesture on a port ROW.
 //
-// PR-204 (`fix/patch-menu-ux-streamline`) repurposed the fast-click
-// gesture on a port handle: instead of activating xyflow's
-// click-connect (pickup-mode cable that sticks to the cursor), a fast
-// click now opens the "Patch to..." cascade menu (50 ms hold-timer fires
-// either way; release inside that window also opens the menu via the
-// click-fallback path). The original pickup-mode acceptance tests in
-// this file were removed in PR-208 — they exercised the now-unreachable
-// fast-click-→-pickup contract.
-//
-// What survives: the drag-vs-click differentiation. A normal
-// mousedown-drag-mouseup MUST still enter xyflow's drag-connect flow
-// (mode=dragging), NOT trip the hold timer's click-fallback (which
-// opens the menu) and NOT engage pickup mode. The 5 px
-// connectionDragThreshold is the boundary; this test pins it down.
+// The no-drag redesign RETIRED cable dragging entirely (the old
+// drag-vs-click differentiation is gone — handles are pointer-events:none
+// in the card DOM, used only as cable anchors + the per-port sweep target).
+// The surviving gesture: clicking a port ROW in the open menu picks up a
+// cable that sticks to the cursor (connectDragState mode='pickup' with
+// pickupMenuOpen), follows the cursor on move, and is consumed by the
+// patch-to / carry-commit flow or discarded by Esc.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-interface PatchEdge {
-  id: string;
-  source: { nodeId: string; portId: string };
-  target: { nodeId: string; portId: string };
+function chrome(page: Page, nodeId: string) {
+  return page.locator(`[data-patch-panel-chrome="${nodeId}"]`);
 }
 
-async function readEdges(page: Page): Promise<PatchEdge[]> {
-  return await page.evaluate(() => {
-    const w = window as unknown as { __patch: { edges: Record<string, PatchEdge> } };
-    return Object.values(w.__patch.edges).filter(Boolean) as PatchEdge[];
-  });
+async function openFrom(page: Page, nodeId: string, side: 'left' | 'right' = 'left') {
+  const testid = side === 'left' ? 'patch-trigger' : 'patch-trigger-right';
+  await page
+    .locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="${testid}"]`)
+    .click();
+  await expect(chrome(page, nodeId)).toHaveAttribute('aria-hidden', 'false');
 }
 
 async function readPickupState(page: Page): Promise<{
   mode: string;
   active: boolean;
   sourcePortId: string | null;
+  menuOpen: boolean;
 }> {
-  return await page.evaluate(() => {
+  return page.evaluate(() => {
     const w = window as unknown as {
       __connectDragState?: {
         mode: string;
         active: boolean;
         pickupSource: { portId: string } | null;
+        pickupMenuOpen: boolean;
       };
     };
     return {
       mode: w.__connectDragState?.mode ?? 'idle',
       active: w.__connectDragState?.active ?? false,
       sourcePortId: w.__connectDragState?.pickupSource?.portId ?? null,
+      menuOpen: w.__connectDragState?.pickupMenuOpen ?? false,
     };
   });
 }
 
-async function openPanel(page: Page, nodeId: string) {
-  await page
-    .locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-trigger"]`)
-    .click();
-  await expect(
-    page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-panel"]`),
-  ).toHaveAttribute('aria-hidden', 'false');
-  await page.waitForTimeout(200);
-}
-
-test.describe('PatchPanel: drag-vs-click differentiation', () => {
-  test('drag past threshold uses drag flow, NOT pickup or menu', async ({ page }) => {
-    // Regression: a normal mousedown-drag-mouseup must still enter xyflow's
-    // drag-connect flow (mode=dragging), and the cable must commit on
-    // pointerup over a compatible target handle.
+test.describe('PatchPanel: jack-click → pickup carry', () => {
+  test('clicking an OUTPUT port row picks up a cable (mode=pickup, menu open)', async ({
+    page,
+  }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-
     await spawnPatch(page, [
-      { id: 'lfo', type: 'lfo', position: { x: 80, y: 100 } },
-      { id: 'flt', type: 'filter', position: { x: 700, y: 100 } },
+      { id: 'lfo', type: 'lfo', position: { x: 80, y: 120 } },
+      { id: 'flt', type: 'filter', position: { x: 700, y: 120 } },
     ]);
 
-    await openPanel(page, 'lfo');
-    await openPanel(page, 'flt');
+    await openFrom(page, 'lfo', 'left');
+    await chrome(page, 'lfo')
+      .locator('[data-testid="patch-panel-nav"][data-nav="outputs"]')
+      .click();
+    await chrome(page, 'lfo')
+      .locator('[data-testid="patch-panel-port-row"][data-port-id="phase0"]')
+      .click();
 
-    const sourceHandle = page.locator(
-      `.svelte-flow__node[data-id="lfo"] .svelte-flow__handle[data-handleid="phase0"][class*="source"]`,
-    );
-    const targetHandle = page.locator(
-      `.svelte-flow__node[data-id="flt"] .svelte-flow__handle[data-handleid="cutoff"][class*="target"]`,
-    );
-    const sBox = await sourceHandle.boundingBox();
-    const tBox = await targetHandle.boundingBox();
-    if (!sBox || !tBox) return;
+    const state = await readPickupState(page);
+    expect(state.mode).toBe('pickup');
+    expect(state.active).toBe(true);
+    expect(state.sourcePortId).toBe('phase0');
+    expect(state.menuOpen).toBe(true);
 
-    const sx = sBox.x + sBox.width / 2;
-    const sy = sBox.y + sBox.height / 2;
-    const tx = tBox.x + tBox.width / 2;
-    const ty = tBox.y + tBox.height / 2;
+    // The dangling cable follows the cursor.
+    await page.mouse.move(450, 300);
+    await expect(page.locator('[data-testid="pickup-cable"]')).toBeVisible();
+    await page.mouse.move(550, 360);
+    await expect(page.locator('[data-testid="pickup-cable"]')).toBeVisible();
 
-    await page.mouse.move(sx, sy);
-    await page.mouse.down();
-    // Multi-step drag past the 5px threshold — xyflow fires onConnectStart.
-    await page.mouse.move(sx + 30, sy + 10, { steps: 5 });
-    // Mid-drag: mode is 'dragging', not 'pickup'.
-    await expect
-      .poll(async () => (await readPickupState(page)).mode, { timeout: 1500 })
-      .toBe('dragging');
+    // Esc discards (no edge).
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-testid="pickup-cable"]')).toHaveCount(0);
+    expect((await readPickupState(page)).mode).toBe('idle');
+  });
 
-    // Move to target + release → commit via drag flow.
-    await page.mouse.move(tx, ty, { steps: 10 });
-    await page.mouse.up();
-
-    await expect
-      .poll(async () => (await readEdges(page)).length, { timeout: 1500 })
-      .toBe(1);
-    const after = await readPickupState(page);
-    expect(after.mode, 'idle after drag commit').toBe('idle');
-    // Drag never opens the patch-to cascade.
-    await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
+  test('handles for every declared port stay in the card DOM (io-spec parity)', async ({
+    page,
+  }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(page, [{ id: 'lfo', type: 'lfo', position: { x: 80, y: 120 } }]);
+    // Panel CLOSED.
+    await expect(chrome(page, 'lfo')).toHaveCount(0);
+    const handleIds = await page
+      .locator('.svelte-flow__node[data-id="lfo"] .svelte-flow__handle[data-handleid]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute('data-handleid')));
+    expect(handleIds).toContain('phase0');
   });
 });

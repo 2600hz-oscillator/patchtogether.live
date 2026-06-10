@@ -1,20 +1,51 @@
 <script lang="ts">
-  // Hover-revealed patch panel — every module card hosts one.
+  // Redesigned patch panel — every module card hosts one.
   //
-  // Default state: a single small "patch" affordance at the top-left of the
-  // card. Every <Handle> declared on the module def is rendered here in the
-  // DOM (so the I/O-spec consistency e2e test still finds them) but stacked
-  // at (8, 8) with opacity:0 + pointer-events:none. All cables therefore
-  // visually anchor to the affordance corner.
+  // THE MODEL (see .myrobots / patch-menu-redesign UX spec items 1–5):
   //
-  // Hover (or tap) the affordance: a popover patch-panel slides out, with
-  // each port rendered as a labeled row carrying the real <Handle>. Handles
-  // re-position to their row coordinates on open; we call
-  // useUpdateNodeInternals() with `force: true` so Svelte Flow re-measures
-  // handleBounds and edges re-route.
+  //   * Default state: two small "patch" affordances (top-LEFT + top-RIGHT)
+  //     on the card. Every <Handle> declared on the module def is rendered
+  //     here in the card DOM, stacked at the top-left affordance corner with
+  //     opacity:0 + pointer-events:none. So all cables anchor at the corner
+  //     AND the per-module-per-port handle-presence sweep (which counts
+  //     `.svelte-flow__handle[data-handleid]` with the panel CLOSED) still
+  //     finds every handle. This handle stack NEVER moves out of the card.
   //
-  // Approach (a) from .myrobots/plans/ui-patch-panel-refactor.md.
-  import { onDestroy, onMount, untrack } from 'svelte';
+  //   * CHROME is PORTALED to <body> via use:portal + position:fixed. The
+  //     fixed coords come from computeEdgeAlignedRect so the menu's anchored
+  //     edge aligns to the matching card edge (left trigger → menu LEFT edge
+  //     at card LEFT edge; right trigger → menu RIGHT edge at card RIGHT
+  //     edge) and never spills past that side. Portaling escapes the
+  //     SvelteFlow viewport transform so position:fixed resolves against the
+  //     real viewport.
+  //
+  //   * The chrome is an OVERLAY-REPLACE stack driven by the pure reducer in
+  //     patch-menu-state.ts. Root view shows INPUT / OUTPUT (+ section rows
+  //     for sectioned mega-modules). Clicking one REPLACES the view in place
+  //     (parent hides; nothing stacks side-by-side); a back affordance
+  //     returns to root. Drill-in is by CLICK.
+  //
+  //   * Left-clicking a port ROW = "jack click" (UX item 4): it begins a
+  //     pickup (a cable dangles from the cursor) AND keeps the menu open
+  //     with a "patch to" entry. The actual <Handle> dots also still
+  //     emit click-connect via xyflow, so either affordance works; the row
+  //     is the discoverable one. Clicking "patch to" hides the dangling
+  //     cable + shows the patch-to picker (target module → target port);
+  //     a VALID pick commits the patch, INVALID discards silently.
+  //
+  //   * NO DRAGGING anywhere in this flow. The click-and-hold-to-open
+  //     gesture is RETIRED (see Canvas.svelte).
+  //
+  //   * GATE-INPUT MIDI ASSIGN (from #735): every gate/trigger INPUT row is
+  //     right-clickable to bind a MIDI NOTE (NOTE-on → gate high, off → low)
+  //     via PatchEngine.setGateInput. Re-applied onto the overlay-replace
+  //     rows below.
+  //
+  // The reducer (PatchMenuState) is the single source of truth for "what is
+  // the menu showing + is a cable in flight?"; this component renders it and
+  // feeds it transition events. The carry/pickup lifecycle itself lives in
+  // connectDragState (shared singleton) + Canvas (which owns the commit).
+  import { onDestroy, untrack } from 'svelte';
   import { Handle, Position, useUpdateNodeInternals } from '@xyflow/svelte';
   import {
     resolveVerboseLabel,
@@ -23,6 +54,17 @@
     type PortDescriptor,
   } from '$lib/ui/patch-panel-labels';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
+  import {
+    CLOSED,
+    openFromTrigger,
+    openFromJack,
+    drillInto,
+    back as backReducer,
+    esc as escReducer,
+    type PatchMenuState,
+    type PatchMenuView,
+  } from '$lib/ui/patch-menu-state';
+  import { computeEdgeAlignedRect, type Rect, type Viewport } from '$lib/ui/patch-menu-position';
   import ControlContextMenu from '$lib/ui/controls/ControlContextMenu.svelte';
   import { makeMidiAssignable } from '$lib/ui/controls/midi-assignable.svelte';
   import {
@@ -34,46 +76,12 @@
   import { getActiveEngine } from '$lib/audio/engine-ref';
   import type { Snippet } from 'svelte';
 
-  /**
-   * Props.
-   *
-   * - `nodeId`: the Svelte Flow node id (passed from the card's `let { id }
-   *   = $props()`). Used by useUpdateNodeInternals to ask Svelte Flow to
-   *   recompute handleBounds for THIS card after the panel toggles.
-   * - `inputs` / `outputs`: ordered port lists. Each entry can override the
-   *   verbose label (otherwise it derives from the port id via
-   *   resolveVerboseLabel) and can attach a non-default cable color (which
-   *   shows up as a stripe on the panel row).
-   * - `groupingStrategy`: 'auto' (default) groups inputs by cable type
-   *   (Gates → Pitches → CV → Audio → ...) and outputs the same way.
-   *   'sectioned' lets the card supply explicit section headers — useful
-   *   for mega-modules like RIOTGIRLS where voices need their own grouping.
-   * - `sections`: when groupingStrategy === 'sectioned', an array of
-   *   { label, inputs, outputs } that PatchPanel renders top-to-bottom.
-   * - `panelWidth`: CSS width of the OPEN popover (default 280).
-   *   The open panel hosts a 2-column grid (inputs left, outputs
-   *   right), so each column is ~half this width minus gap. Dense
-   *   modules pass a wider `panelWidth` (MIXMSTRS 560, RIOTGIRLS 600)
-   *   so each column has enough horizontal space for verbose labels
-   *   like "FILTER PING DECAY". The panel scrolls vertically when
-   *   the dense column overflows max-height (70vh), so RIOTGIRLS's
-   *   55-row inputs column doesn't push the panel past the viewport.
-   *   `panelWidth` is capped at 80vw on the panel itself so smaller
-   *   viewports stay legible.
-   * - `children`: the slot for the card's main content (knobs, buttons,
-   *   widgets — everything that is NOT a Handle).
-   */
   interface SectionedGroup {
     label: string;
     inputs?: PortDescriptor[];
     outputs?: PortDescriptor[];
-    /** Optional nested sub-sections. Recursive — sub-sections may
-     *  themselves declare further sub-sections. Drag-time expand-all
-     *  recurses through this tree so every section + sub-section is
-     *  reachable when a cable is in flight. No card currently uses this
-     *  (today's data model is single-level), but the recursion is here
-     *  so future mega-modules can opt into 2-level layouts without
-     *  re-discovering the expand-all gap. */
+    /** Optional nested sub-sections (recursive). No card uses this today;
+     *  kept so future 2-level layouts opt in without re-discovering it. */
     subsections?: SectionedGroup[];
   }
 
@@ -83,6 +91,8 @@
     outputs?: PortDescriptor[];
     groupingStrategy?: 'auto' | 'sectioned';
     sections?: SectionedGroup[];
+    /** CSS width of the OPEN portaled chrome (default 280). Dense
+     *  sectioned modules pass a wider value so verbose labels fit. */
     panelWidth?: number;
     children?: Snippet;
   }
@@ -97,40 +107,61 @@
     children,
   }: Props = $props();
 
-  // For sectioned grouping (RIOTGIRLS), pull the outputs across all
-  // sections into a single flat list rendered in the right column.
-  // Each section keeps its inputs in the left column. This is
-  // "Option A" from the layout spec — simpler than splitting each
-  // section into its own column, and fits within width budget.
-  interface SectionedOutputEntry {
-    sectionLabel: string;
-    ports: PortDescriptor[];
-  }
-  let sectionedOutputs = $derived<SectionedOutputEntry[]>(
-    groupingStrategy === 'sectioned'
-      ? sections
-          .filter((s) => s.outputs && s.outputs.length > 0)
-          .map((s) => ({
-            sectionLabel: s.label,
-            ports: s.outputs ?? [],
-          }))
-      : [],
+  // ---------------- Menu state (overlay-replace reducer) ----------------
+  //
+  // One reducer state per panel. Open = the portaled chrome is up; view =
+  // the overlay-replace level; side = which card edge it edge-aligns to.
+  let menu = $state<PatchMenuState>(CLOSED);
+
+  // The cascade-lock from connectDragState keeps the SOURCE panel logically
+  // "in flight" while a carry/patch-to picker is up for one of its ports.
+  let cascadeLockEngaged = $derived(connectDragState.cascadeActiveForPanel === nodeId);
+
+  // `open` = the menu reducer says open. (No more hover/drag/hold drivers —
+  // the panel is purely click-driven now per the redesign.)
+  let open = $derived(menu.open);
+  let view = $derived<PatchMenuView>(menu.view);
+
+  // ---------------- Port lists ----------------
+  let inputGroups = $derived<GroupedPorts[]>(
+    groupingStrategy === 'auto' ? groupPortsByCableType(inputs, 'input') : [],
   );
-  let sectionedHasInputs = $derived<boolean>(
-    groupingStrategy === 'sectioned' &&
-      sections.some((s) => s.inputs && s.inputs.length > 0),
+  let outputGroups = $derived<GroupedPorts[]>(
+    groupingStrategy === 'auto' ? groupPortsByCableType(outputs, 'output') : [],
   );
 
-  // Layout column count: AudioOut has no outputs; some hypothetical
-  // source modules might have no inputs. In either case collapse to a
-  // single visible column so we don't render an awkward empty grid track.
-  let hasInputs = $derived(
-    groupingStrategy === 'sectioned' ? sectionedHasInputs : inputs.length > 0,
+  // Flat input/output lists across sections (for the all-inputs / all-outputs
+  // drill views on sectioned cards, and for the per-handle render stack).
+  let allInputs = $derived<PortDescriptor[]>(
+    groupingStrategy === 'sectioned'
+      ? sections.flatMap((s) => s.inputs ?? [])
+      : inputs,
   );
-  let hasOutputs = $derived(
-    groupingStrategy === 'sectioned' ? sectionedOutputs.length > 0 : outputs.length > 0,
+  let allOutputs = $derived<PortDescriptor[]>(
+    groupingStrategy === 'sectioned'
+      ? sections.flatMap((s) => s.outputs ?? [])
+      : outputs,
   );
-  let visibleColumnCount = $derived((hasInputs ? 1 : 0) + (hasOutputs ? 1 : 0) || 1);
+
+  let hasInputs = $derived(allInputs.length > 0);
+  let hasOutputs = $derived(allOutputs.length > 0);
+
+  // Sections that actually carry input ports — the nav rows shown at root
+  // for sectioned cards.
+  let inputSections = $derived<SectionedGroup[]>(
+    groupingStrategy === 'sectioned'
+      ? sections.filter((s) => (s.inputs?.length ?? 0) > 0)
+      : [],
+  );
+
+  function sectionByLabel(label: string): SectionedGroup | undefined {
+    return sections.find((s) => s.label === label);
+  }
+
+  function cableColorVar(cable: string | undefined): string {
+    if (!cable) return 'var(--cable-audio)';
+    return `var(--cable-${cable})`;
+  }
 
   // ---------------- Gate-input MIDI assign (WORKSTREAM B) ----------------
   //
@@ -221,234 +252,187 @@
   // near the card edge, not 280px further out) continues to work.
   // The 2-column grid divides this width internally.
 
-  // ---------------- Hover-intent state machine ----------------
-  //
-  // Three drivers can keep the panel open:
-  //   * `hovered`        — mouse is over the trigger or panel
-  //   * `pinned`         — user clicked the trigger to lock it open (until
-  //                        another click or an outside tap)
-  //   * `stayOpenForDrag` — user is mid-connect-drag with a handle inside
-  //                        this panel (released on pointerup)
-  //
-  // Any one of those keeps the panel open; the panel closes only when all
-  // three drop. The 200ms hover-close delay only applies to the `hovered`
-  // driver, so a click stays sticky and a drag never blinks shut.
-
-  let hovered = $state(false);
-  let pinned = $state(false);
-  let stayOpenForDrag = $state(false);
-  // Active trigger corner — set by whichever affordance most recently
-  // received a hover/focus/click. Drives panel positioning so the
-  // popover anchors under the corner the user reached for, instead of
-  // always anchoring to the top-left. ('topLeft' is the historical
-  // default; the cable-anchor-top-left invariant from PR-78 still
-  // applies to closed-state handles regardless of corner.)
-  let triggerCorner = $state<'topLeft' | 'topRight'>('topLeft');
-  // Post-click hold: a click on either trigger sets this to a wall-
-  // clock timestamp 300ms in the future. While `now < postClickHoldUntil`,
-  // the panel stays open even if the cursor leaves — so the user can
-  // navigate from the click target down into a port row without the
-  // panel snapping shut mid-motion. After the hold expires, normal
-  // hover-intent rules (200ms close-grace) resume.
-  const POST_CLICK_HOLD_MS = 300;
-  let postClickHoldUntil = $state<number>(0);
-  let postClickHoldTimer: ReturnType<typeof setTimeout> | null = null;
-
-  // The panel is open if ANY driver wants it open. postClickHoldActive
-  // joins the hover/pin/drag drivers as a fourth keep-open signal —
-  // it's a time-bounded version of `pinned` that auto-expires.
-  // dragLockEngaged is the fifth: a Svelte Flow connect-drag is in
-  // flight AND this panel is the one that opened first during the drag,
-  // so the panel must persist until the drag commits or releases.
-  // cascadeLockEngaged is the sixth: a patch-to cascade (right-click /
-  // double-click) is open AND was triggered from a port inside this
-  // panel — so the panel must stay visible underneath the cascade
-  // until the cascade closes (commit / Esc / new cascade).
-  let postClickHoldActive = $derived(postClickHoldUntil > 0);
-  let dragLockEngaged = $derived(
-    connectDragState.active && connectDragState.lockedPanelNodeId === nodeId,
-  );
-  let cascadeLockEngaged = $derived(
-    connectDragState.cascadeActiveForPanel === nodeId,
-  );
-  // Auto-open when a connect-drag cable hovers over this card. With the
-  // click-to-open trigger model (PR #208), the destination panel would
-  // never unfold during a drag without this driver — the cursor is on
-  // the cable endpoint, not the corner glyph. The hovered card id is
-  // published by connect-drag-state's document-level pointermove tracker.
-  let dragHoverEngaged = $derived(
-    connectDragState.active && connectDragState.hoveredCardNodeId === nodeId,
-  );
-  let open = $derived(
-    hovered ||
-      pinned ||
-      stayOpenForDrag ||
-      postClickHoldActive ||
-      dragLockEngaged ||
-      cascadeLockEngaged ||
-      dragHoverEngaged,
-  );
-
-  // First panel to TRANSITION to open during an active drag claims the
-  // lock. We ignore panels that were already open when the drag started
-  // (e.g. the source panel, pinned by the user before grabbing the
-  // cable) — only a destination panel that opens *as a result of* the
-  // drag should be locked. We track the previous-frame value of `open`
-  // so we can detect the closed→open transition.
-  let prevOpen = $state(false);
-  $effect(() => {
-    const nextOpen = open;
-    if (!prevOpen && nextOpen && connectDragState.active) {
-      connectDragState.tryLock(nodeId);
+  // ---------------- Open / close / drill ----------------
+  function openMenu(side: 'left' | 'right') {
+    // Toggle: clicking the same-side trigger while already open from that
+    // side closes the menu (lets the user dismiss without leaving the card).
+    if (menu.open && menu.side === side) {
+      closeMenu();
+      return;
     }
-    prevOpen = nextOpen;
+    menu = openFromTrigger(side);
+  }
+
+  function closeMenu() {
+    menu = CLOSED;
+    // Closing the trigger-menu must not strand a carry started from a row.
+    if (connectDragState.mode === 'pickup' && connectDragState.cascadeActiveForPanel === nodeId) {
+      connectDragState.discard();
+      connectDragState.endCascade();
+    }
+  }
+
+  function drill(v: PatchMenuView) {
+    menu = drillInto(menu, v);
+  }
+
+  function goBack() {
+    menu = backReducer(menu);
+  }
+
+  // ---------------- Jack click (UX item 4) ----------------
+  //
+  // Clicking a port ROW begins a pickup (cable dangles) AND keeps this
+  // panel's menu open with a "patch to" entry. Canvas owns the picker +
+  // commit; PatchPanel just signals the begin + flips its own view so the
+  // user sees the "patch to" affordance. We dispatch a custom event Canvas
+  // listens for (it knows the cable type + commit wiring).
+  function onPortRowClick(portId: string, direction: 'input' | 'output') {
+    const host = hostEl;
+    if (!host) return;
+    // If a cable is ALREADY being carried (from any source port), clicking a
+    // port row attempts to COMMIT the carried cable to this port (UX item 5:
+    // "click a panel → click submenu → click a valid point = patch made").
+    // VALID → patch; INVALID (output→output etc.) → silent discard. Canvas
+    // owns the validateEdge gate + the write.
+    if (connectDragState.mode === 'pickup') {
+      host.dispatchEvent(
+        new CustomEvent('patchpanel:carrycommit', {
+          bubbles: true,
+          detail: { nodeId, portId, direction },
+        }),
+      );
+      closeMenu();
+      return;
+    }
+    // Otherwise this is a fresh JACK-CLICK (UX item 4): pick up a cable from
+    // this port + flip our view into carry mode (root, where the "patch to"
+    // entry renders) so the user can either steer to a target or use the
+    // picker. Canvas resolves cable type + begins the pickup.
+    menu = openFromJack(menu.side);
+    host.dispatchEvent(
+      new CustomEvent('patchpanel:jackclick', {
+        bubbles: true,
+        detail: { nodeId, portId, direction, side: menu.side },
+      }),
+    );
+  }
+
+  // ---------------- Portal the chrome to <body> ----------------
+  //
+  // SvelteFlow nodes live under .svelte-flow__viewport (a transformed
+  // ancestor), which would become the containing block for our
+  // position:fixed chrome and reinterpret left/top in canvas space. Portal
+  // to <body> so fixed-positioning resolves against the real viewport, then
+  // edge-align via computeEdgeAlignedRect. Mirrors ControlContextMenu.
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
+
+  // Host element (in card DOM) — the trigger + handle stack live here. We
+  // read its bounding rect to edge-align the portaled chrome.
+  let hostEl: HTMLDivElement | null = $state(null);
+  // Portaled chrome element — measured for width/height clamping.
+  let chromeEl: HTMLDivElement | null = $state(null);
+
+  let chromePos = $state<{ left: number; top: number }>({ left: 0, top: 0 });
+
+  function cardRectOf(el: HTMLElement): Rect {
+    // Edge-align against the whole CARD, not just the host wrapper (the host
+    // is display:contents). Walk up to the svelte-flow node element.
+    const card =
+      (el.closest('.svelte-flow__node') as HTMLElement | null) ?? el;
+    const r = card.getBoundingClientRect();
+    return {
+      left: r.left,
+      top: r.top,
+      right: r.right,
+      bottom: r.bottom,
+      width: r.width,
+      height: r.height,
+    };
+  }
+
+  function recomputeChromePos() {
+    if (!open || !hostEl) return;
+    const viewport: Viewport = {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+    const measuredWidth = chromeEl?.offsetWidth || panelWidth;
+    const measuredHeight = chromeEl?.offsetHeight;
+    chromePos = computeEdgeAlignedRect({
+      cardRect: cardRectOf(hostEl),
+      side: menu.side,
+      menuWidth: measuredWidth,
+      menuHeight: measuredHeight,
+      viewport,
+    });
+  }
+
+  // Re-position the chrome whenever it opens / the view changes (height
+  // shifts) / on scroll + resize + pan (the card moves under us). A rAF loop
+  // while open keeps it glued to the card during a SvelteFlow pan without a
+  // per-frame Svelte re-render of the whole panel.
+  $effect(() => {
+    if (!open) return;
+    void view; // re-measure on view swap (overlay-replace changes height)
+    let raf = 0;
+    const tick = () => {
+      recomputeChromePos();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   });
 
-  const CLOSE_DELAY_MS = 200;
-  let closeTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function clearCloseTimer() {
-    if (closeTimer !== null) {
-      clearTimeout(closeTimer);
-      closeTimer = null;
-    }
-  }
-
-  function clearPostClickHoldTimer() {
-    if (postClickHoldTimer !== null) {
-      clearTimeout(postClickHoldTimer);
-      postClickHoldTimer = null;
-    }
-  }
-
-  function openNow() {
-    clearCloseTimer();
-    hovered = true;
-  }
-
-  function scheduleClose() {
-    clearCloseTimer();
-    // If a post-click hold is in flight, defer the hover-close until
-    // after the hold expires (then the normal 200ms grace applies).
-    const now = Date.now();
-    const remaining = postClickHoldUntil - now;
-    const delay = remaining > 0 ? remaining + CLOSE_DELAY_MS : CLOSE_DELAY_MS;
-    closeTimer = setTimeout(() => {
-      hovered = false;
-      closeTimer = null;
-    }, delay);
-  }
-
-  function startPostClickHold() {
-    // Extend the keep-open window to now + 300ms. Multiple clicks just
-    // restart the timer (the latest click wins).
-    clearPostClickHoldTimer();
-    postClickHoldUntil = Date.now() + POST_CLICK_HOLD_MS;
-    postClickHoldTimer = setTimeout(() => {
-      postClickHoldUntil = 0;
-      postClickHoldTimer = null;
-    }, POST_CLICK_HOLD_MS);
-  }
-
-  function onTriggerEnter(corner: 'topLeft' | 'topRight') {
-    triggerCorner = corner;
-    openNow();
-  }
-
-  function onTriggerClick(corner: 'topLeft' | 'topRight') {
-    triggerCorner = corner;
-    // Always seed the 300ms post-click hold so the user has a forgiving
-    // window to move toward a port. Pin-toggle still works on top of it
-    // for explicit lock-open / lock-close.
-    startPostClickHold();
-    if (pinned) {
-      pinned = false;
-      // If the cursor's still on the trigger/panel, hover-driver keeps it
-      // open until the user moves away.
-    } else {
-      pinned = true;
-      clearCloseTimer();
-    }
-  }
-
-  // Close on outside-click for touch / mobile users. We treat ANY
-  // patch-panel host (not just this one) as "inside" — clicking a port
-  // handle in a sibling panel must not close THIS panel, which is the
-  // common multi-card patching case.
-  onMount(() => {
+  // ---------------- Dismiss: Esc + outside (negative-space) click ----------------
+  $effect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Let Canvas handle Esc during an active pickup (it cancels the
+      // pickup + xyflow click-connect); we just close our chrome.
+      menu = escReducer();
+    };
     const onDocPointerDown = (e: PointerEvent) => {
-      if (!open) return;
-      if (stayOpenForDrag) return;
-      // Drag-lock owns this panel — outside-click can't dismiss it
-      // until the drag commits / releases (then connectDragState.end()
-      // fires from Canvas's onconnect / onconnectend).
-      if (dragLockEngaged) return;
-      // Cascade-lock owns this panel — outside-click can't dismiss it
-      // until the patch-to cascade closes (commit / Esc / new cascade).
-      if (cascadeLockEngaged) return;
       const target = e.target as HTMLElement | null;
       if (!target) return;
-      if (target.closest('[data-patch-panel-node]')) return;
-      pinned = false;
-      hovered = false;
-      // Outside-click overrides the post-click hold — the user is
-      // explicitly steering away from this panel, so honour the close.
-      clearPostClickHoldTimer();
-      postClickHoldUntil = 0;
-      clearCloseTimer();
+      // Inside our own chrome (portaled) or our host → keep open.
+      if (target.closest(`[data-patch-panel-chrome="${nodeId}"]`)) return;
+      if (target.closest(`[data-patch-panel-node="${nodeId}"]`)) return;
+      // A carry/patch-to picker owned by Canvas counts as "inside" — don't
+      // dismiss the chrome out from under an in-flight patch.
+      if (cascadeLockEngaged) return;
+      closeMenu();
     };
+    window.addEventListener('keydown', onKey, true);
     document.addEventListener('pointerdown', onDocPointerDown, true);
-    return () => document.removeEventListener('pointerdown', onDocPointerDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('pointerdown', onDocPointerDown, true);
+    };
   });
-
-  // ---------------- Drag-while-open guard ----------------
-  //
-  // The Handle component fires a low-level pointerdown that becomes a
-  // connect-drag. We watch for pointerdowns on any handle inside our panel
-  // and set stayOpenForDrag — Canvas's onconnectstart/end on the SvelteFlow
-  // root would also work but plumbing a callback is more invasive. The
-  // global pointerup clears the flag.
-  function onPanelPointerDown(e: PointerEvent) {
-    const target = e.target as HTMLElement | null;
-    if (!target) return;
-    if (target.closest('.svelte-flow__handle')) {
-      stayOpenForDrag = true;
-      // Watch for the drop / cancel via a one-shot pointerup on the document.
-      const release = () => {
-        stayOpenForDrag = false;
-        document.removeEventListener('pointerup', release, true);
-        document.removeEventListener('pointercancel', release, true);
-      };
-      document.addEventListener('pointerup', release, true);
-      document.addEventListener('pointercancel', release, true);
-    }
-  }
 
   // ---------------- Handle bounds re-measure ----------------
   //
-  // Svelte Flow caches handleBounds keyed by node-element resize. Because
-  // our open/close doesn't change the card's bounding box (the panel is
-  // absolute and overflows), we MUST manually trigger a re-measure so
-  // edges re-route.
+  // The handle stack stays in the card DOM at a fixed (closed) position
+  // regardless of menu state — so edges always anchor at the trigger corner.
+  // We still nudge SvelteFlow to re-measure on menu open/close so any
+  // in-flight cable re-routes cleanly. RAF-deferred so CSS settles first.
   const updateNodeInternals = useUpdateNodeInternals();
-
   $effect(() => {
-    // Read `open` so this effect re-runs on every flip.
     void open;
-    // Also re-run on every section-expand toggle (sectioned modules) so
-    // the handles that fan out / collapse get their bounds re-measured
-    // and any in-flight cables re-route to the new positions. Reading
-    // expandedSections here registers the rune as a dep.
-    void expandedSections;
-    // RAF-defer to let CSS transitions land their endpoint values before
-    // we measure — Svelte Flow uses getBoundingClientRect, which sees
-    // mid-transition values. Two RAFs gives the panel enough time to
-    // reach its final geometry without making the cable-route feel laggy.
     let f1 = 0;
     let f2 = 0;
     f1 = requestAnimationFrame(() => {
       f2 = requestAnimationFrame(() => {
-        updateNodeInternals(nodeId);
+        untrack(() => updateNodeInternals(nodeId));
       });
     });
     return () => {
@@ -457,195 +441,49 @@
     };
   });
 
-  // When the panel fully closes, reset the active corner back to
-  // topLeft so the closed-state CSS (which collapses every handle to
-  // the panel's top-left interior — PR-78's cable-anchor invariant)
-  // resolves against the topLeft trigger position. Without this, a
-  // panel that was last opened from the right would keep its
-  // .anchor-right class while closed, parking the closed-state
-  // handles under the right trigger and breaking output-cable visual
-  // termination at the top-left affordance.
+  // Whether the menu is carrying a cable for THIS panel's source (so we
+  // render the "patch to" entry). Driven by connectDragState.
+  let carryingHere = $derived(
+    connectDragState.mode === 'pickup' &&
+      connectDragState.pickupMenuOpen &&
+      connectDragState.pickupSource?.nodeId === nodeId,
+  );
+
+  // When a carry that originated HERE ends (commit / Esc / discard), Canvas
+  // tears down the pickup + cascade. Close our chrome too so the source
+  // panel doesn't linger open after the patch lands. We only auto-close when
+  // OUR reducer is in carry mode (menu.carrying) AND the global carry for
+  // this node has dropped — i.e. the commit/discard fired.
   $effect(() => {
-    if (!open) {
-      triggerCorner = 'topLeft';
-    }
-  });
-
-  // ---------------- Click-to-expand nested sections ----------------
-  //
-  // For sectioned modules (RIOTGIRLS, MIXMSTRS) the inputs column would
-  // otherwise overflow even a 1366×768 viewport. By default, collapse
-  // every section to its header row + a port-count badge; the user clicks
-  // a header to fan out that section's handles inline. Multiple sections
-  // can be open at once (the top-level decision is "what voices am I
-  // patching right now?" — usually a few, not all).
-  //
-  // CRITICAL: Handle elements stay in the DOM under collapsed sections —
-  // io-spec-consistency e2e walks `.svelte-flow__handle[data-handleid]`
-  // via `count()` + `getAttribute()`, both of which work on hidden
-  // descendants. The collapsed-section CSS (see .section-rows-collapsed
-  // below) pulls the <ul> out of layout flow with position:absolute +
-  // visibility:hidden + height:0, NOT display:none — display:none would
-  // zero out getBoundingClientRect on the inner Handle elements and
-  // break Svelte Flow's handle-bounds cache. Svelte's {#each} block
-  // still renders the Handle children either way so their
-  // data-handleid attributes are reachable for the spec test.
-  //
-  // State persistence: kept in a local rune. When the panel closes we
-  // wipe it so the next hover-open starts every section collapsed —
-  // "fresh hover starts collapsed reduces stale state confusion" per
-  // the spec. Pinned panels retain their expanded state until they
-  // close (the rune isn't cleared while `open` stays true).
-  let expandedSections = $state<Record<string, boolean>>({});
-
-  function isSectionExpanded(label: string): boolean {
-    return expandedSections[label] === true;
-  }
-
-  function toggleSection(label: string) {
-    expandedSections = {
-      ...expandedSections,
-      [label]: !expandedSections[label],
-    };
-  }
-
-  $effect(() => {
-    // Auto-clear expanded-section state when the panel closes — fresh
-    // hover starts collapsed (the spec's "reduce stale state confusion"
-    // rule). The drag-active guard is critical: during a connect-drag
-    // the cursor bounces between cards, flipping `open` on each card
-    // false → true → false → true. If we cleared mid-drag, the drag-time
-    // expand-all snapshot below would still be non-null on the re-open
-    // (suppressing re-expansion under the old `=== null` guard) and the
-    // sections would collapse without re-opening. Keep the expanded
-    // state cached during a drag so the re-open finds it intact; the
-    // snapshot restore at drag-end collapses anything the user hadn't
-    // manually opened.
-    if (!open && !connectDragState.active) {
-      expandedSections = {};
-    }
-  });
-
-  // ---------------- Drag-time expand-all for nested sections ----------------
-  //
-  // When a connect-drag becomes active and this panel is open, auto-
-  // expand every section so the user sees every possible target at
-  // once. We snapshot the pre-drag expandedSections map and restore it
-  // when the drag ends — sections the user manually expanded before
-  // the drag stay open; everything else reverts to collapsed.
-  //
-  // This replaces the earlier hover-based per-section auto-expand:
-  // expanding all sections has the same UX intent ("show me where this
-  // cable can go") without depending on hover-detection through
-  // xyflow's pointer-capture + connection-line overlay (which behaved
-  // inconsistently between local + headless Chromium on CI).
-  let preDragExpandedSnapshot: Record<string, boolean> | null = null;
-
-  // Recursively walk a section tree and mark every node + descendant as
-  // expanded. Handles arbitrary nesting (sections can declare
-  // subsections, which can in turn declare further subsections) so the
-  // drag-time expand-all reveals every level of every branch — the user
-  // shouldn't have to click through three levels of section headers
-  // while a cable is in flight to discover a deeply-nested candidate
-  // port.
-  function expandSectionAndChildren(s: SectionedGroup, into: Record<string, boolean>): void {
-    if ((s.inputs && s.inputs.length > 0) || (s.outputs && s.outputs.length > 0)) {
-      into[s.label] = true;
-    }
-    if (s.subsections && s.subsections.length > 0) {
-      for (const child of s.subsections) {
-        expandSectionAndChildren(child, into);
-      }
-      into[s.label] = true;
-    }
-  }
-
-  $effect(() => {
-    // Track ONLY the gesture-edge signals — reading expandedSections
-    // inside the body would self-trigger this effect on every assign
-    // (the spread `{ ...expandedSections }` subscribes; the assignment
-    // re-fires; loop). untrack() walls off the body from the
-    // dependency graph so the effect only fires when dragActive or
-    // isOpen actually changes.
-    const dragActive = connectDragState.active;
-    const isOpen = open;
+    const stillCarrying =
+      connectDragState.mode === 'pickup' &&
+      connectDragState.pickupSource?.nodeId === nodeId;
     untrack(() => {
-      if (dragActive && isOpen) {
-        // Snapshot the pre-drag state once per drag (first time this
-        // panel opens during the gesture). Subsequent re-opens during
-        // the same drag — typical when the user bounces between cards —
-        // keep the existing snapshot so the eventual restore-on-drag-end
-        // still collapses everything we expanded.
-        if (preDragExpandedSnapshot === null) {
-          preDragExpandedSnapshot = { ...expandedSections };
-        }
-        // Re-fire expand-all on EVERY drag-open transition, not just
-        // the first one. Cheap (one object spread + a recursion
-        // through the section tree). Two cases this fixes:
-        //
-        //   1. Cursor leaves and returns: under the old `=== null`
-        //      snapshot guard, expansion only ran the first time. The
-        //      clear-on-close effect above (now drag-guarded) used to
-        //      wipe expandedSections, so the re-open would render every
-        //      section collapsed.
-        //   2. Mid-drag manual collapse: if the user clicks a section
-        //      header to collapse it during the drag, we want re-
-        //      hovering the card to re-reveal everything reachable.
-        if (groupingStrategy === 'sectioned' && sections.length > 0) {
-          const next: Record<string, boolean> = { ...expandedSections };
-          for (const s of sections) {
-            expandSectionAndChildren(s, next);
-          }
-          expandedSections = next;
-        }
-      } else if (!dragActive && preDragExpandedSnapshot !== null) {
-        const snapshot = preDragExpandedSnapshot;
-        preDragExpandedSnapshot = null;
-        if (isOpen) {
-          expandedSections = { ...snapshot };
-        }
+      if (menu.open && menu.carrying && !stillCarrying) {
+        menu = CLOSED;
       }
     });
   });
-
-  // ---------------- Group/sort port lists ----------------
-
-  let inputGroups = $derived<GroupedPorts[]>(
-    groupingStrategy === 'auto' ? groupPortsByCableType(inputs, 'input') : [],
-  );
-  let outputGroups = $derived<GroupedPorts[]>(
-    groupingStrategy === 'auto' ? groupPortsByCableType(outputs, 'output') : [],
-  );
-
-  function cableColorVar(cable: string | undefined): string {
-    if (!cable) return 'var(--cable-audio)';
-    return `var(--cable-${cable})`;
-  }
 </script>
 
+<!--
+  HOST (in card DOM, display:contents). Holds the two trigger affordances +
+  the always-rendered handle stack. The handle stack is what the per-port
+  sweep counts (panel CLOSED) and what cables anchor to.
+-->
 <div
   class="patch-panel-host"
   data-patch-panel-node={nodeId}
+  bind:this={hostEl}
 >
-  <!--
-    Two trigger affordances — top-left + top-right — both open the SAME
-    panel, share state, and obey the same hover-intent rules. Per user
-    feedback ("UI roll up looks great, but lets make another area in the
-    upper right of each module that opens the same panel"), the right
-    side gives a more natural reach when the user's already on that side
-    of a card (e.g. dragging an OUTPUT cable from the right edge of a
-    module). Both triggers are kept identical structurally so screen
-    readers announce them the same way.
-  -->
   <button
     class="patch-trigger left"
     type="button"
     data-testid="patch-trigger"
     aria-label="Open patch panel"
-    aria-expanded={open}
-    onclick={() => onTriggerClick('topLeft')}
+    aria-expanded={open && menu.side === 'left'}
+    onclick={() => openMenu('left')}
   >
-    <!-- Plug glyph — two short verticals + a horizontal stem. CSS-only. -->
     <span class="trigger-glyph" aria-hidden="true">
       <span class="prong"></span>
       <span class="prong"></span>
@@ -657,8 +495,8 @@
     type="button"
     data-testid="patch-trigger-right"
     aria-label="Open patch panel"
-    aria-expanded={open}
-    onclick={() => onTriggerClick('topRight')}
+    aria-expanded={open && menu.side === 'right'}
+    onclick={() => openMenu('right')}
   >
     <span class="trigger-glyph" aria-hidden="true">
       <span class="prong"></span>
@@ -667,212 +505,272 @@
     </span>
   </button>
 
-  <div
-    class="patch-panel"
-    class:open
-    class:two-col={visibleColumnCount === 2}
-    class:one-col={visibleColumnCount === 1}
-    class:anchor-left={triggerCorner === 'topLeft'}
-    class:anchor-right={triggerCorner === 'topRight'}
-    style:width="{panelWidth}px"
-    data-testid="patch-panel"
-    data-anchor-corner={triggerCorner}
-    aria-hidden={!open}
-    onpointerdown={onPanelPointerDown}
-    role="group"
-  >
-    <!--
-      Open-state layout is a 2-column grid so dense modules
-      (MIXMSTRS 49 inputs, RIOTGIRLS 55 inputs) fit on a typical
-      laptop viewport. Inputs always render in the left column,
-      outputs in the right column. The panel itself scrolls vertically
-      when the dense column overflows max-height (per-column scroll
-      would clip handles — see .panel-col CSS for the rationale).
-      Sectioned grouping (RIOTGIRLS) keeps sections stacked WITHIN the
-      inputs column; outputs from any section fall into the single
-      right column.
+  <!--
+    HANDLE STACK — every declared <Handle> stays in the card DOM at ALL
+    times, stacked + hidden at the top-left corner. This is the cable anchor
+    AND the per-module-per-port handle-presence target. It NEVER moves out of
+    the card and is independent of the portaled chrome.
+  -->
+  <div class="handle-stack" aria-hidden="true">
+    {#each allInputs as port (port.id)}
+      <Handle
+        type="target"
+        position={Position.Left}
+        id={port.id}
+        style={`--handle-color: ${cableColorVar(port.cable)};`}
+      />
+    {/each}
+    {#each allOutputs as port (port.id)}
+      <Handle
+        type="source"
+        position={Position.Right}
+        id={port.id}
+        style={`--handle-color: ${cableColorVar(port.cable)};`}
+      />
+    {/each}
+  </div>
 
-      When a module has only inputs (AudioOut) or only outputs, the
-      panel collapses to a single visible column to avoid rendering a
-      blank grid track.
-    -->
-    <div class="panel-grid">
-      {#if hasInputs}
-      <div class="panel-col panel-col-inputs" data-testid="patch-panel-inputs">
-        {#if groupingStrategy === 'sectioned'}
-          {#each sections as section, sIdx (section.label + '-' + sIdx)}
-            {#if section.inputs && section.inputs.length > 0}
-              {@const expanded = isSectionExpanded(section.label)}
-              <section
-                class="panel-section sectioned"
-                class:section-expanded={expanded}
-                class:section-collapsed={!expanded}
-                data-testid="patch-panel-section"
-                data-section-label={section.label}
-                data-section-expanded={expanded ? 'true' : 'false'}
-              >
-                <!--
-                  Header is a real <button> so keyboard users get
-                  Enter/Space activation for free. The disclosure
-                  triangle + port-count badge live inside the button
-                  so the whole row is one click target. Stop
-                  propagation so the click doesn't bubble out to the
-                  panel's pointerdown drag-guard (which would
-                  otherwise treat the click as a connect-drag start
-                  attempt on the surrounding panel surface).
-                -->
+  {@render children?.()}
+</div>
+
+<!--
+  PORTALED CHROME — only the navigation rows. Edge-aligned, position:fixed,
+  appended to <body>. Overlay-replace: one `view` at a time.
+-->
+{#if open}
+  <div use:portal>
+    <div
+      bind:this={chromeEl}
+      class="patch-panel"
+      class:open
+      data-testid="patch-panel"
+      data-patch-panel-chrome={nodeId}
+      data-anchor-side={menu.side}
+      style:left="{chromePos.left}px"
+      style:top="{chromePos.top}px"
+      style:width="{panelWidth}px"
+      aria-hidden={!open}
+      role="group"
+    >
+      <!-- Header row: back affordance (when drilled) + title. -->
+      <div class="chrome-header">
+        {#if view.kind !== 'root'}
+          <button
+            type="button"
+            class="chrome-back"
+            data-testid="patch-panel-back"
+            aria-label="Back"
+            onclick={goBack}
+          >
+            <span aria-hidden="true">◂</span> back
+          </button>
+        {/if}
+        <span class="chrome-title">
+          {#if view.kind === 'root'}patch
+          {:else if view.kind === 'inputs'}inputs
+          {:else if view.kind === 'outputs'}outputs
+          {:else if view.kind === 'section'}{view.label}
+          {:else if view.kind === 'picker'}patch to
+          {/if}
+        </span>
+      </div>
+
+      {#if view.kind === 'root'}
+        <!-- ROOT: INPUT / OUTPUT pivots (+ section rows for sectioned cards). -->
+        <div class="chrome-body" data-testid="patch-panel-root">
+          {#if menu.carrying || carryingHere}
+            <button
+              type="button"
+              class="nav-row patch-to-row"
+              data-testid="patch-panel-patch-to"
+              onclick={() => {
+                hostEl?.dispatchEvent(
+                  new CustomEvent('patchpanel:patchto', { bubbles: true, detail: { nodeId } }),
+                );
+              }}
+            >
+              patch to&hellip; <span class="chev" aria-hidden="true">▸</span>
+            </button>
+          {/if}
+          {#if groupingStrategy === 'sectioned'}
+            {#if hasInputs}
+              {#each inputSections as section (section.label)}
                 <button
                   type="button"
-                  class="section-toggle section-title"
-                  data-testid="patch-panel-section-toggle"
+                  class="nav-row"
+                  data-testid="patch-panel-section-nav"
                   data-section-label={section.label}
-                  aria-expanded={expanded}
-                  aria-controls="section-{nodeId}-{sIdx}"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    toggleSection(section.label);
-                  }}
+                  onclick={() => drill({ kind: 'section', label: section.label })}
                 >
-                  <span class="disclosure" aria-hidden="true">{expanded ? '▼' : '▶'}</span>
-                  <span class="section-toggle-label">{section.label}</span>
-                  <span class="section-count" aria-label="{section.inputs.length} ports">
-                    ({section.inputs.length})
-                  </span>
+                  <span class="nav-label">{section.label}</span>
+                  <span class="nav-count">({section.inputs?.length ?? 0})</span>
+                  <span class="chev" aria-hidden="true">▸</span>
                 </button>
-                <!--
-                  IMPORTANT: <ul> stays in the DOM unconditionally
-                  (no {#if}) so the Handle elements inside it remain
-                  attached. io-spec-consistency e2e + Svelte Flow's
-                  internal node-handles bookkeeping both rely on
-                  data-handleid being present even when the section
-                  is collapsed. CSS in .section-rows-collapsed
-                  hides the <ul> via position:absolute + visibility:
-                  hidden + height:0 (NOT display:none, which would
-                  zero out the inner Handle bounding boxes and break
-                  Svelte Flow's handle-bounds cache).
-                -->
-                <ul
-                  id="section-{nodeId}-{sIdx}"
-                  class="row-list section-rows"
-                  class:section-rows-collapsed={!expanded}
-                >
-                  {#each section.inputs as port (port.id)}
-                    <li
-                      class="panel-row"
-                      class:gate-assignable={port.cable === 'gate'}
-                      style:--row-cable={cableColorVar(port.cable)}
-                      oncontextmenu={port.cable === 'gate' ? (e) => openGateMidiMenu(e, port) : undefined}
-                      data-gate-midi-bound={port.cable === 'gate' && !!gateBound(port.id) ? 'true' : undefined}
-                    >
-                      <span class="row-stripe" aria-hidden="true"></span>
-                      <span class="row-label" data-testid="port-row-label">
-                        {resolveVerboseLabel(port)}
-                      </span>
-                      <Handle
-                        type="target"
-                        position={Position.Left}
-                        id={port.id}
-                        style={`--handle-color: ${cableColorVar(port.cable)};`}
-                      />
-                    </li>
-                  {/each}
-                </ul>
-              </section>
+              {/each}
             {/if}
-          {/each}
-        {:else if inputGroups.length > 0}
-          <section class="panel-section">
-            <h3 class="section-title">Inputs</h3>
-            {#each inputGroups as group (group.cable)}
-              <h4 class="subgroup-title">{group.label}</h4>
-              <ul class="row-list">
-                {#each group.ports as port (port.id)}
-                  <li
-                    class="panel-row"
-                    class:gate-assignable={port.cable === 'gate'}
-                    style:--row-cable={cableColorVar(port.cable)}
-                    oncontextmenu={port.cable === 'gate' ? (e) => openGateMidiMenu(e, port) : undefined}
-                    data-gate-midi-bound={port.cable === 'gate' && !!gateBound(port.id) ? 'true' : undefined}
+            {#if hasOutputs}
+              <button
+                type="button"
+                class="nav-row"
+                data-testid="patch-panel-nav"
+                data-nav="outputs"
+                onclick={() => drill({ kind: 'outputs' })}
+              >
+                <span class="nav-label">OUTPUT</span>
+                <span class="nav-count">({allOutputs.length})</span>
+                <span class="chev" aria-hidden="true">▸</span>
+              </button>
+            {/if}
+          {:else}
+            {#if hasInputs}
+              <button
+                type="button"
+                class="nav-row"
+                data-testid="patch-panel-nav"
+                data-nav="inputs"
+                onclick={() => drill({ kind: 'inputs' })}
+              >
+                <span class="nav-label">INPUT</span>
+                <span class="nav-count">({allInputs.length})</span>
+                <span class="chev" aria-hidden="true">▸</span>
+              </button>
+            {/if}
+            {#if hasOutputs}
+              <button
+                type="button"
+                class="nav-row"
+                data-testid="patch-panel-nav"
+                data-nav="outputs"
+                onclick={() => drill({ kind: 'outputs' })}
+              >
+                <span class="nav-label">OUTPUT</span>
+                <span class="nav-count">({allOutputs.length})</span>
+                <span class="chev" aria-hidden="true">▸</span>
+              </button>
+            {/if}
+          {/if}
+        </div>
+      {:else if view.kind === 'inputs'}
+        <!-- INPUT drill: flat input port rows (auto grouping). -->
+        <div class="chrome-body" data-testid="patch-panel-inputs">
+          {#each inputGroups as group (group.cable)}
+            <div class="row-group-label">{group.label}</div>
+            <ul class="row-list">
+              {#each group.ports as port (port.id)}
+                <li
+                  class="panel-row"
+                  class:gate-assignable={port.cable === 'gate'}
+                  style:--row-cable={cableColorVar(port.cable)}
+                  oncontextmenu={port.cable === 'gate' ? (e) => openGateMidiMenu(e, port) : undefined}
+                  data-gate-midi-bound={port.cable === 'gate' && !!gateBound(port.id) ? 'true' : undefined}
+                >
+                  <button
+                    type="button"
+                    class="port-row port-row-input"
+                    data-testid="patch-panel-port-row"
+                    data-port-id={port.id}
+                    data-direction="input"
+                    onclick={() => onPortRowClick(port.id, 'input')}
                   >
                     <span class="row-stripe" aria-hidden="true"></span>
                     <span class="row-label" data-testid="port-row-label">
                       {resolveVerboseLabel(port)}
                     </span>
-                    <Handle
-                      type="target"
-                      position={Position.Left}
-                      id={port.id}
-                      style={`--handle-color: ${cableColorVar(port.cable)};`}
-                    />
-                  </li>
-                {/each}
-              </ul>
-            {/each}
-          </section>
-        {/if}
-      </div>
-      {/if}
-
-      {#if hasOutputs}
-      <div class="panel-col panel-col-outputs" data-testid="patch-panel-outputs">
-        {#if groupingStrategy === 'sectioned'}
-          {#if sectionedOutputs.length > 0}
-            <section class="panel-section">
-              <h3 class="section-title">Outputs</h3>
-              {#each sectionedOutputs as entry (entry.sectionLabel)}
-                {#if sectionedOutputs.length > 1}
-                  <h4 class="subgroup-title">{entry.sectionLabel}</h4>
-                {/if}
-                <ul class="row-list">
-                  {#each entry.ports as port (port.id)}
-                    <li class="panel-row right" style:--row-cable={cableColorVar(port.cable)}>
-                      <Handle
-                        type="source"
-                        position={Position.Right}
-                        id={port.id}
-                        style={`--handle-color: ${cableColorVar(port.cable)};`}
-                      />
-                      <span class="row-label right" data-testid="port-row-label">
-                        {resolveVerboseLabel(port)}
-                      </span>
-                      <span class="row-stripe right" aria-hidden="true"></span>
-                    </li>
-                  {/each}
-                </ul>
+                  </button>
+                </li>
               {/each}
-            </section>
-          {/if}
-        {:else if outputGroups.length > 0}
-          <section class="panel-section">
-            <h3 class="section-title">Outputs</h3>
-            {#each outputGroups as group (group.cable)}
-              <h4 class="subgroup-title">{group.label}</h4>
-              <ul class="row-list">
-                {#each group.ports as port (port.id)}
-                  <li class="panel-row right" style:--row-cable={cableColorVar(port.cable)}>
-                    <Handle
-                      type="source"
-                      position={Position.Right}
-                      id={port.id}
-                      style={`--handle-color: ${cableColorVar(port.cable)};`}
-                    />
-                    <span class="row-label right" data-testid="port-row-label">
+            </ul>
+          {/each}
+        </div>
+      {:else if view.kind === 'outputs'}
+        <!-- OUTPUT drill: flat output port rows. -->
+        <div class="chrome-body" data-testid="patch-panel-outputs">
+          {#each outputGroups as group (group.cable)}
+            <div class="row-group-label">{group.label}</div>
+            <ul class="row-list">
+              {#each group.ports as port (port.id)}
+                <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
+                  <button
+                    type="button"
+                    class="port-row port-row-output"
+                    data-testid="patch-panel-port-row"
+                    data-port-id={port.id}
+                    data-direction="output"
+                    onclick={() => onPortRowClick(port.id, 'output')}
+                  >
+                    <span class="row-stripe" aria-hidden="true"></span>
+                    <span class="row-label" data-testid="port-row-label">
                       {resolveVerboseLabel(port)}
                     </span>
-                    <span class="row-stripe right" aria-hidden="true"></span>
-                  </li>
-                {/each}
-              </ul>
-            {/each}
-          </section>
-        {/if}
-      </div>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/each}
+          {#if outputGroups.length === 0 && allOutputs.length > 0}
+            <!-- Sectioned cards funnel outputs into the flat list. -->
+            <ul class="row-list">
+              {#each allOutputs as port (port.id)}
+                <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
+                  <button
+                    type="button"
+                    class="port-row port-row-output"
+                    data-testid="patch-panel-port-row"
+                    data-port-id={port.id}
+                    data-direction="output"
+                    onclick={() => onPortRowClick(port.id, 'output')}
+                  >
+                    <span class="row-stripe" aria-hidden="true"></span>
+                    <span class="row-label" data-testid="port-row-label">
+                      {resolveVerboseLabel(port)}
+                    </span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      {:else if view.kind === 'section'}
+        <!-- SECTION drill: one section's input port rows. -->
+        {@const section = sectionByLabel(view.label)}
+        <div
+          class="chrome-body"
+          data-testid="patch-panel-section"
+          data-section-label={view.label}
+          data-section-expanded="true"
+        >
+          {#if section}
+            <ul class="row-list">
+              {#each section.inputs ?? [] as port (port.id)}
+                <li
+                  class="panel-row"
+                  class:gate-assignable={port.cable === 'gate'}
+                  style:--row-cable={cableColorVar(port.cable)}
+                  oncontextmenu={port.cable === 'gate' ? (e) => openGateMidiMenu(e, port) : undefined}
+                  data-gate-midi-bound={port.cable === 'gate' && !!gateBound(port.id) ? 'true' : undefined}
+                >
+                  <button
+                    type="button"
+                    class="port-row port-row-input"
+                    data-testid="patch-panel-port-row"
+                    data-port-id={port.id}
+                    data-direction="input"
+                    onclick={() => onPortRowClick(port.id, 'input')}
+                  >
+                    <span class="row-stripe" aria-hidden="true"></span>
+                    <span class="row-label" data-testid="port-row-label">
+                      {resolveVerboseLabel(port)}
+                    </span>
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
       {/if}
     </div>
   </div>
-
-  {@render children?.()}
-</div>
+{/if}
 
 <!-- Gate-input MIDI assign menu (right-click a gate INPUT row). 'note' kind:
      MIDI assign captures a NOTE; NOTE-on → gate high, NOTE-off → gate low. -->
@@ -898,31 +796,10 @@
 
 <style>
   .patch-panel-host {
-    /* Wraps the affordance + popover + the card's main content slot. The
-     * host is `display: contents` so it doesn't add an extra box around
-     * the card body — the card's existing layout (faders, knobs) sits
-     * directly inside .mod-card without disturbance. */
     display: contents;
   }
 
   /* ---------------- Trigger affordance (top-left + top-right) ---------------- */
-
-  /* Corner-clip fix (generic, all themes):
-   *
-   * The two trigger glyphs are pinned a few px in from each top corner.
-   * On themes with rounded card corners (--module-radius — LCARS 22px,
-   * DINER 14px) the card's curved edge sweeps diagonally across the
-   * corner, so an 18px square sitting at a flat 4px inset pokes past the
-   * rounded boundary and reads as "clipped" by the corner curve.
-   *
-   * Rather than patch each rounded theme, we derive the trigger inset
-   * from the card radius so the glyph always sits fully INSIDE the curve.
-   * Geometry: for an 18px square's outer corner to stay within a corner
-   * arc of radius R, the inset I must satisfy I ≥ R·(1 − 1/√2) ≈ 0.293·R.
-   * We use 0.42·R for comfortable margin, floored at the legacy 4px so
-   * every non-rounded skin (default/vaporwave/brutalist/…, radius 2px →
-   * 0.84px, floored to 4px) keeps its exact previous position + VRT
-   * baseline. Only the rounded themes shift the glyph inward. */
   .patch-panel-host {
     --patch-trigger-inset: max(4px, calc(var(--module-radius, 2px) * 0.42));
   }
@@ -932,10 +809,6 @@
     top: var(--patch-trigger-inset, 4px);
     width: 18px;
     height: 18px;
-    /* Skin-aware: --module-bg-deep is the lifted version of the literal
-     * `rgba(20, 23, 28, 0.85)` (close enough — both are "darker than the
-     * card body"); --border is the lifted `#2a2f3a`. Default skin keeps
-     * the visual identical; non-default skins recolour both. */
     background: var(--module-bg-deep);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -992,146 +865,137 @@
     border-radius: 1px;
   }
 
-  /* ---------------- Popover panel ---------------- */
-
-  .patch-panel {
+  /* ---------------- Handle stack (closed-state, always in card DOM) ---------------- */
+  /*
+   * Every <Handle> lives here at all times, collapsed to the card's top-left
+   * affordance corner: opacity 0, pointer-events none, stacked. Cables anchor
+   * here; the per-module-per-port sweep counts these (panel CLOSED). The
+   * portaled chrome is a separate, navigation-only surface.
+   */
+  .handle-stack {
     position: absolute;
-    top: 28px;
-    /* Default anchor: top-left corner. Overridden by .anchor-right
-     * below when the user opened the panel via the top-right trigger.
-     * Either way the panel pops down from beneath the trigger that
-     * fired; the panel content (input/output 2-col grid) is unchanged.
-     * Tracks --patch-trigger-inset so the open panel + the closed-state
-     * cable-anchor handles (which collapse to the panel's left edge) stay
-     * aligned with the trigger glyph even when a rounded theme pushes the
-     * glyph inward. Falls back to 4px (the legacy value) when the inset
-     * var is absent. */
+    top: var(--patch-trigger-inset, 4px);
     left: var(--patch-trigger-inset, 4px);
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+  .handle-stack :global(.svelte-flow__handle) {
+    position: absolute !important;
+    top: 6px !important;
+    left: 6px !important;
+    right: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
+  /* ---------------- Portaled chrome ---------------- */
+  .patch-panel {
+    position: fixed;
     background: rgba(14, 17, 22, 0.97);
     border: 1px solid var(--accent-dim);
     border-radius: 3px;
     color: var(--text);
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.6);
-    padding: 8px 10px 10px;
-    /* Closed state: hide visually but keep handles in DOM (I/O spec test
-     * needs to find them). Opacity + pointer-events keeps the geometry
-     * intact for getBoundingClientRect; transform pulls the visual
-     * panel offscreen so it doesn't intercept hover. */
-    opacity: 0;
-    pointer-events: none;
-    transform: translateX(-8px);
-    transition: opacity 120ms ease-out, transform 120ms ease-out;
+    padding: 6px 8px 8px;
     max-height: 70vh;
-    /* Cap at 80vw on smaller viewports so the popover stays onscreen. */
     max-width: 80vw;
-    /* Panel-level vertical scroll. The handle dots (12x12, positioned
-     * at -7px / +5px from .panel-row's leading/trailing edge) sit
-     * within the panel's 10px padding, so the panel's content-box
-     * comfortably contains them and the auto scrollbar doesn't clip.
-     * (Per CSS spec, `overflow-y: auto` is effectively `overflow: auto`
-     * — so per-column scrolling would clip the handles instead.) */
     overflow-y: auto;
-    z-index: 10;
-  }
-  /* Anchor variants — pick which corner of the card the popover
-   * pops down from.
-   *
-   * anchor-left (historical default): the panel's LEFT edge sits at the
-   * card's top-left trigger and the panel grows rightward + down.
-   *
-   * anchor-right (user-requested, this PR): clicking the RIGHT trigger
-   * signals "the useful real estate is on that side", so the panel's
-   * TOP-LEFT corner pins to the card's upper-RIGHT corner and the panel
-   * opens RIGHTWARD into the free screen space beside the module — it
-   * does NOT overlap the card (the old behaviour pinned `right: 4px`,
-   * opening leftward over the card, which is what we're replacing).
-   * `left: 100%` puts the panel's left edge at the host's right edge;
-   * the small +6px offset lifts the panel clear of the card border so
-   * the gap reads as "next to" rather than "fused to" the card. */
-  .patch-panel.anchor-left {
-    left: var(--patch-trigger-inset, 4px);
-    right: auto;
-    transform: translateX(-8px);
-  }
-  .patch-panel.anchor-right {
-    left: calc(100% + 6px);
-    right: auto;
-    transform: translateX(8px);
-  }
-  .patch-panel.open {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateX(0);
+    z-index: 1001;
+    font-family: ui-monospace, monospace;
+    /* Open/close visual transition is handled by the {#if open} mount —
+     * no opacity dance needed now that the chrome only exists when open. */
   }
 
-  /* ---------------- Two-column grid (open state) ---------------- */
-  /*
-   * Inputs left, outputs right. The dense column (usually inputs)
-   * drives panel height; the panel scrolls vertically when content
-   * overflows. Per-column scroll would clip the handle dots that sit
-   * at left:-7px / right:-7px on each row (CSS spec: any axis !=
-   * visible promotes the other axis to auto). Dense modules (MIXMSTRS
-   * 49 inputs / RIOTGIRLS 55 inputs) get their full label width and a
-   * scroll bar inside the panel; the panel's max-height keeps it
-   * onscreen.
-   */
-  .panel-grid {
-    display: grid;
-    gap: 12px;
-    /* Width tracks the inline style:width on .patch-panel so the grid
-     * never grows past the viewport cap (max-width: 80vw on the panel
-     * trims the rendered width on small screens). The panel itself
-     * owns the vertical scroll — the grid stretches to whatever its
-     * content needs and the panel scrolls when needed. */
-    width: 100%;
-  }
-  .patch-panel.two-col .panel-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-  .patch-panel.one-col .panel-grid {
-    grid-template-columns: 1fr;
-  }
-  .panel-col {
+  .chrome-header {
     display: flex;
-    flex-direction: column;
-    /* IMPORTANT: columns must NOT clip overflow. Output handles are
-     * positioned at `right: -7px` relative to .panel-row, which puts
-     * them past the column's right edge. CSS treats `overflow-y: auto`
-     * + `overflow-x: visible` as `overflow: auto` (per spec), so a
-     * scrolling column would clip the handles and break xyflow's
-     * connect-drag hit-testing on neighbouring modules. The PANEL
-     * itself owns the vertical scroll instead (overflow-y: auto on
-     * .patch-panel). The dense column (usually inputs) drives the
-     * scroll height; the shorter column (usually outputs) sits at the
-     * top and is short enough to never need scrolling. */
-    min-width: 0;
-    min-height: 0;
-  }
-
-  .panel-section + .panel-section {
-    margin-top: 10px;
-    padding-top: 8px;
-    /* Skin-aware divider; lifted from the literal #1f242c. */
-    border-top: 1px solid var(--divider);
-  }
-  .section-title {
-    font-size: 0.65rem;
-    font-weight: 600;
-    color: var(--text);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin: 0 0 4px;
+    align-items: center;
+    gap: 8px;
     position: sticky;
-    /* Sticky pins to the panel's scrollport. -8px offsets the panel's
-     * 8px top padding so the title hugs the panel's top edge as the
-     * user scrolls a long inputs column. */
-    top: -8px;
+    top: -6px;
     background: rgba(14, 17, 22, 0.97);
-    padding-top: 4px;
-    padding-bottom: 2px;
+    padding: 2px 2px 6px;
+    margin: 0 0 4px;
+    border-bottom: 1px solid var(--divider);
     z-index: 1;
   }
-  .subgroup-title {
+  .chrome-title {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text);
+    flex: 1;
+  }
+  .chrome-back {
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text);
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 6px;
+  }
+  .chrome-back:hover,
+  .chrome-back:focus-visible {
+    border-color: var(--accent);
+    background: rgba(0, 240, 255, 0.08);
+    outline: none;
+  }
+
+  .chrome-body {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---------------- Nav rows (root pivots) ---------------- */
+  .nav-row {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    font: inherit;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    padding: 7px 8px;
+    border-radius: 2px;
+    font-size: 0.72rem;
+  }
+  .nav-row:hover,
+  .nav-row:focus-visible {
+    background: rgba(0, 240, 255, 0.08);
+    outline: none;
+  }
+  .nav-row .nav-label {
+    flex: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+  .nav-row .nav-count {
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .nav-row .chev {
+    color: var(--text-dim);
+  }
+  .patch-to-row {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* ---------------- Port rows (drill views) ---------------- */
+  .row-group-label {
     font-size: 0.55rem;
     font-weight: 500;
     color: var(--text-dim);
@@ -1144,155 +1008,45 @@
     margin: 0;
     padding: 0;
   }
-
-  /* ---------------- Click-to-expand section header (sectioned only) ---------------- */
-  /*
-   * Replaces the flat <h3 class="section-title"> for sectioned-grouping
-   * modules (RIOTGIRLS, MIXMSTRS) with a clickable button row. Default
-   * state hides every section's port list — the user clicks a header
-   * to fan out that section's handles inline. Multiple sections can be
-   * expanded simultaneously.
-   *
-   * Sticky-pin matches the original .section-title behaviour so the
-   * header stays visible as the user scrolls a long expanded section.
-   */
-  .section-toggle {
-    /* Reset native <button>. */
+  .panel-row {
+    position: relative;
+  }
+  .port-row {
     appearance: none;
-    background: rgba(14, 17, 22, 0.97);
+    background: transparent;
     border: none;
-    border-radius: 2px;
     color: var(--text);
     cursor: pointer;
     font: inherit;
-    padding: 4px 6px 3px;
-    margin: 0 0 2px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
     width: 100%;
     text-align: left;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.65rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    /* Sticky-pin to the panel's scrollport (matches .section-title's
-     * -8px offset against the panel's 8px top padding). */
-    position: sticky;
-    top: -8px;
-    z-index: 1;
-    transition: background 80ms ease-out;
-  }
-  .section-toggle:hover {
-    background: rgba(0, 240, 255, 0.06);
-  }
-  .section-toggle:focus-visible {
-    outline: 1px solid var(--accent);
-    outline-offset: 1px;
-  }
-  .section-toggle .disclosure {
-    display: inline-block;
-    width: 0.7em;
-    color: var(--text-dim);
-    /* Fixed-width so the label doesn't shift when the glyph swaps. */
-    text-align: center;
-  }
-  .section-toggle-label {
-    flex: 1;
-  }
-  .section-count {
-    color: var(--text-dim);
-    font-weight: 400;
-    /* Tabular figures keep the badge aligned across sections with
-     * different port counts (e.g. RIOTGIRLS V1=10 vs Master=12). */
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* Collapsed-section row list: the <ul> + every <li> inside it must
-   * collapse to zero visible height, but the <Handle> elements need
-   * to remain in the DOM AND have a sensible bounding box so any
-   * already-connected cables route to the section header (instead of
-   * (0, 0) in the page) and Svelte Flow's handle-bounds book-keeping
-   * stays consistent. We achieve this by:
-   *
-   *   * pulling the <ul> out of layout flow with `position: absolute`
-   *     so it contributes 0px to the inputs column's flow height;
-   *   * pinning it to (0, 0) of the .panel-section so its inner
-   *     handles inherit the section header's screen position;
-   *   * hiding it visually with visibility:hidden + pointer-events:
-   *     none (NOT display:none, which would zero out
-   *     getBoundingClientRect and break Svelte Flow's bounds cache).
-   *
-   * The Handle children stay in the DOM with their data-handleid
-   * attributes, so io-spec-consistency.spec.ts continues to find
-   * them by id, and any pre-existing cables route to the collapsed
-   * section's header coordinate (a sane "this port lives here, the
-   * user has hidden it" visual). Click the section open and the
-   * <ul> reverts to its in-flow position; cables re-route via the
-   * RAF-deferred updateNodeInternals call above.
-   */
-  .panel-section.sectioned {
-    /* Anchor for the collapsed-state absolute <ul> child. */
-    position: relative;
-  }
-  .section-rows.section-rows-collapsed {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    visibility: hidden;
-    pointer-events: none;
-    /* Keep height at 0 so the absolute box doesn't visually overlap
-     * the next section's header. The handles inside still expose a
-     * real (degenerate) bounding box at the header coordinate. */
-    height: 0;
-    overflow: hidden;
-  }
-
-  /* ---------------- Panel rows ---------------- */
-  /*
-   * Each row is `position: relative` so the absolutely-positioned Handle
-   * inside it lands at the row's leading or trailing edge. Row layout is
-   * a flex line with [stripe | label | handle] for inputs and
-   * [handle | label | stripe] for outputs.
-   */
-  .panel-row {
-    position: relative;
-    display: flex;
-    align-items: center;
-    height: 22px;
-    padding: 0 16px 0 12px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 2px;
     font-size: 0.7rem;
-    font-family: ui-monospace, monospace;
-    color: var(--text);
   }
-  .panel-row.right {
-    padding: 0 12px 0 16px;
-    justify-content: flex-end;
+  .port-row:hover,
+  .port-row:focus-visible {
+    background: rgba(0, 240, 255, 0.08);
+    outline: none;
   }
-  .panel-row .row-stripe {
-    position: absolute;
-    left: 0;
-    top: 4px;
-    bottom: 4px;
+  .port-row .row-stripe {
     width: 3px;
+    height: 14px;
     border-radius: 1px;
     background: var(--row-cable, var(--cable-audio));
+    flex: 0 0 auto;
   }
-  .panel-row .row-stripe.right {
-    left: auto;
-    right: 0;
-  }
-  .panel-row .row-label {
+  .port-row .row-label {
     flex: 1;
-    text-align: left;
   }
-  .panel-row .row-label.right {
-    text-align: right;
-  }
-  /* Gate inputs are right-clickable for MIDI assign; hint via the context cursor
-     + a subtle dot when a NOTE binding is active. */
-  .panel-row.gate-assignable {
+  /* Gate inputs are right-clickable for MIDI assign (re-applied from #735 onto
+     the redesign's overlay-replace port rows); hint via the context cursor +
+     a subtle dot when a NOTE binding is active. */
+  .panel-row.gate-assignable .port-row {
     cursor: context-menu;
   }
   .panel-row.gate-assignable[data-gate-midi-bound='true'] .row-label::after {
@@ -1301,111 +1055,5 @@
     font-size: 0.5rem;
     color: #a8d3ff;
     vertical-align: middle;
-  }
-
-  /* ---------------- Handle positioning ---------------- */
-  /*
-   * Default xyflow handle styling (in routes/global.css) is a 12x12 ringed
-   * dot. Inside our panel rows, the handle anchors so its visible centre
-   * sits AT the panel's outer border line — half outside the panel chrome
-   * (where the cable terminates without occlusion) and half inside (where
-   * it visually associates with its label row).
-   *
-   * Why straddle the border instead of nesting the handle deep inside the
-   * panel? Cable edges paint as a single SVG layer at the SvelteFlow
-   * viewport level. The open-state panel chrome (rgba(14,17,22,0.97)
-   * background + 1px border) sits ABOVE that layer (z-index:10 plus the
-   * :has(.patch-panel.open) lift to z-index:1000 on the host node), so
-   * any cable approach that lands inside the panel's bounding box gets
-   * occluded by the chrome — the user sees cables "stop at the panel
-   * border" instead of plugging into the visible ○ ring icons (the
-   * handles).
-   *
-   * Geometry math:
-   *   .patch-panel padding = 8px 10px 10px (left padding = 10px)
-   *   .panel-row.left = .patch-panel.left + 10
-   *   handle width = 12px → half-width = 6px
-   *   For input handle CENTRE to land at .patch-panel.left:
-   *     handle.left_offset (relative to panel-row) = -16
-   *     (= -10 to back out the panel padding, -6 to half-out the dot)
-   *   For output handle (mirror), same offset on the right side:
-   *     handle.right_offset (relative to panel-row) = -16
-   *
-   * Result: every cable now visibly continues from the panel border
-   * inward to the centre of the ring icon, then stops cleanly at the
-   * dot. Eurorack-style "jacks on the front panel" affordance.
-   */
-  .patch-panel .panel-row :global(.svelte-flow__handle) {
-    position: absolute !important;
-    top: 50% !important;
-    transform: translateY(-50%);
-    /* Lift handle DOM above the panel chrome so the visible ring
-     * (and its border) renders on top of the panel background, not
-     * underneath it. Keeps the whole ○ visible whether the centre
-     * sits half-on/half-off the border. */
-    z-index: 11 !important;
-  }
-  .patch-panel .panel-row :global(.svelte-flow__handle.target),
-  .patch-panel .panel-row:not(.right) :global(.svelte-flow__handle) {
-    left: -16px !important;
-    right: auto !important;
-  }
-  .patch-panel .panel-row.right :global(.svelte-flow__handle),
-  .patch-panel .panel-row :global(.svelte-flow__handle.source) {
-    left: auto !important;
-    right: -16px !important;
-  }
-
-  /* ---------------- Collapsed-state handle stacking ---------------- */
-  /*
-   * When the panel is closed, ALL handles inside it — inputs AND outputs
-   * — must collapse to the SAME on-screen point: the top-left affordance
-   * corner of the card. Cables follow handle positions natively, so this
-   * is what makes every closed cable visually terminate at the trigger.
-   *
-   * The trick: when closed, drop `position: relative` on .panel-row so
-   * the absolutely-positioned handle resolves against .patch-panel
-   * itself (which sits at top:28px;left:var(--patch-trigger-inset) of the
-   * card — 4px on flat-corner skins, inset further on rounded ones so it
-   * stays under the moved trigger glyph). Then a single pair of absolute
-   * top/left values lifts every handle up to the card top-left,
-   * regardless of which row it lives in or whether the row is .right
-   * (output) or default (input).
-   *
-   * Without this, handles instead anchored at each row's top-left —
-   * which for inputs landed near (but not on) the affordance, and for
-   * outputs/long panels landed hundreds of px down/right (so output
-   * cables visually traced back to the wrong side of the card).
-   *
-   * Specificity hack: we need higher specificity than every open-state
-   * positioning rule above. The open-state output rule combines BOTH
-   * `.panel-row.right .svelte-flow__handle` AND
-   * `.panel-row .svelte-flow__handle.source` — so we double both
-   * `.patch-panel` AND `.panel-row` to win against either selector for
-   * either handle type. pointer-events:none stops a stray click on the
-   * stack of invisible handles from starting a connect-drag.
-   */
-  .patch-panel.patch-panel:not(.open) .panel-row.panel-row {
-    position: static;
-  }
-  .patch-panel.patch-panel:not(.open) .panel-row.panel-row :global(.svelte-flow__handle) {
-    position: absolute !important;
-    /* Lift the handle from the panel's interior up to the card's top-
-     * left corner. The panel's box top-edge sits at card y=28px; the
-     * trigger sits at card y=var(--patch-trigger-inset) (4px on flat
-     * skins, ~9px on LCARS) and is 18px tall. -22px puts the handle's
-     * top edge at card y=6px; combined with the handle's own 12px height
-     * the centre lands at ~y=12px, which is on the trigger glyph for
-     * every skin (the visual cable terminus the user sees). The handle's
-     * horizontal position tracks the panel's left edge (which also uses
-     * --patch-trigger-inset), so the closed cable anchors under the
-     * trigger regardless of corner radius. */
-    top: -22px !important;
-    left: 0 !important;
-    right: auto !important;
-    bottom: auto !important;
-    transform: none !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
   }
 </style>

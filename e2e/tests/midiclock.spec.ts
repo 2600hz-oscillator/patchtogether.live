@@ -54,11 +54,19 @@ test('midiclock: card exposes the four documented output ports', async ({ page }
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'mc', type: 'midiclock', position: { x: 200, y: 200 } }]);
-  // Each output renders as a port-labelled element inside the patch panel.
-  // The labels come from the card's PortDescriptor list.
-  const card = page.locator('.svelte-flow__node-midiclock');
-  await expect(card).toContainText('CLK');
-  await expect(card).toContainText('RUN');
-  await expect(card).toContainText('START');
-  await expect(card).toContainText('STOP');
+  // Each output renders as a port-labelled row inside the patch panel. Under
+  // the patch-menu redesign the labels live in the PORTALED chrome (appended to
+  // <body>, only present when the menu is open) — NOT inline in the closed-card
+  // DOM — so open the panel + drill into OUTPUT before asserting. The labels
+  // come from the card's PortDescriptor list (CLK/RUN/START/STOP).
+  await page
+    .locator('.svelte-flow__node[data-id="mc"] [data-testid="patch-trigger"]')
+    .click();
+  const chrome = page.locator('[data-patch-panel-chrome="mc"]');
+  await expect(chrome).toHaveAttribute('aria-hidden', 'false');
+  await chrome.locator('[data-testid="patch-panel-nav"][data-nav="outputs"]').click();
+  await expect(chrome).toContainText('CLK');
+  await expect(chrome).toContainText('RUN');
+  await expect(chrome).toContainText('START');
+  await expect(chrome).toContainText('STOP');
 });

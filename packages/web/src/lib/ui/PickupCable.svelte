@@ -69,7 +69,7 @@
   });
 </script>
 
-{#if connectDragState.mode === 'pickup' && path}
+{#if connectDragState.mode === 'pickup' && !connectDragState.cableHidden && path}
   <svg
     class="pickup-cable"
     data-testid="pickup-cable"
