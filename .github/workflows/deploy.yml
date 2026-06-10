@@ -33,6 +33,15 @@ name: Deploy
 #   CLOUDFLARE_ACCOUNT_ID — CF account id
 #   FLY_API_TOKEN         — Fly deploy token for the relay (`flyctl auth token`).
 #                           Optional: relay deploy steps skip cleanly if unset.
+#   SENTRY_AUTH_TOKEN     — Sentry org token (project:releases + org:read) for
+#                           the source-map upload + release step on the prod /
+#                           autotest / dev web deploys. Optional: the step skips
+#                           cleanly (::warning::, green) when unset, exactly like
+#                           FLY_API_TOKEN. Browser/Worker Sentry itself is
+#                           separately gated at RUNTIME on the PUBLIC_SENTRY_DSN
+#                           env var set per CF Pages project — without it Sentry
+#                           is a total no-op. (Override SENTRY_ORG/SENTRY_PROJECT
+#                           in scripts/sentry-release.sh if the slugs differ.)
 #
 # Why each deploy job is self-contained (no shared build artifact):
 # wrangler's `pages deploy` re-bundles _worker.js with esbuild, so it needs
@@ -217,6 +226,18 @@ jobs:
           # monitor / smoke can confirm which build is live (+ detect a stale
           # web↔relay version drift). Baked at build like the WS URL above.
           VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
+          # Emit HIDDEN source maps so the Sentry step below can upload them
+          # (deleted before deploy; see scripts/sentry-release.sh). No-op for the
+          # bundle unless SENTRY_AUTH_TOKEN is also set.
+          VITE_SENTRY_SOURCEMAPS: '1'
+      # Upload source maps + cut a Sentry release. Cleanly skips (::warning::,
+      # green) when SENTRY_AUTH_TOKEN is unset — same pattern as the FLY_API_TOKEN
+      # relay-deploy gate. Deletes the maps before deploy so they never ship.
+      - name: Sentry release (source maps)
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_RELEASE: ${{ steps.appver.outputs.v }}
+        run: flox activate -- bash scripts/sentry-release.sh
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -397,6 +418,14 @@ jobs:
           VITE_E2E_HOOKS: '1'
           # Deployed web build version surfaced on /api/health.version.
           VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
+          # Hidden source maps for the Sentry step below (deleted before deploy).
+          VITE_SENTRY_SOURCEMAPS: '1'
+      # Sentry release — skips cleanly (::warning::) without SENTRY_AUTH_TOKEN.
+      - name: Sentry release (source maps)
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_RELEASE: ${{ steps.appver.outputs.v }}
+        run: flox activate -- bash scripts/sentry-release.sh
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -479,6 +508,14 @@ jobs:
           VITE_E2E_HOOKS: '1'
           # Deployed web build version surfaced on /api/health.version.
           VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
+          # Hidden source maps for the Sentry step below (deleted before deploy).
+          VITE_SENTRY_SOURCEMAPS: '1'
+      # Sentry release — skips cleanly (::warning::) without SENTRY_AUTH_TOKEN.
+      - name: Sentry release (source maps)
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_RELEASE: ${{ steps.appver.outputs.v }}
+        run: flox activate -- bash scripts/sentry-release.sh
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

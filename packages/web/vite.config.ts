@@ -26,6 +26,17 @@ export default defineConfig({
   // at DSP build time (packages/dsp/scripts/build-worklet.mjs); the parent
   // thread still uses @grame/faustwasm's MonoAudioWorkletNode wrapper but
   // doesn't depend on .toString() at runtime.
+  build: {
+    // Source maps are emitted ONLY when VITE_SENTRY_SOURCEMAPS=1 (the
+    // deploy.yml Sentry release step sets it, gated on SENTRY_AUTH_TOKEN).
+    // 'hidden' = generate the .map files but DON'T append a
+    // `//# sourceMappingURL=` comment, so the deployed bundle never advertises
+    // (or serves) maps to the public — they exist purely for sentry-cli to
+    // upload, then the step deletes them before `pages deploy`. With the flag
+    // unset (local dev, CI, every deploy before the token is wired) this is
+    // `false`, so the default build output is byte-for-byte unchanged.
+    sourcemap: process.env.VITE_SENTRY_SOURCEMAPS === '1' ? 'hidden' : false,
+  },
   optimizeDeps: {
     // Pre-bundle deps that Vite's startup dep-scanner can't reach. The
     // scanner crawls *static* imports from the SvelteKit entry but does NOT
