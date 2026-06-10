@@ -202,4 +202,30 @@ describe('mergeMidiBindings', () => {
     );
     expect(merged).toHaveLength(1);
   });
+
+  it('merges a mixed CC + NOTE set, one record per key', () => {
+    const existing: MidiBindingExport[] = [
+      { kind: 'cc', key: 'knob:cutoff', channel: 0, cc: 7, learnedAt: 1 },
+      { kind: 'note', key: 'btn:play', channel: 1, note: 60, learnedAt: 1 },
+    ];
+    const incoming: MidiBindingExport[] = [
+      // Same key as the existing CC, but now a NOTE — collision: one per key,
+      // bundle wins.
+      { kind: 'note', key: 'knob:cutoff', channel: 2, note: 48, learnedAt: 2 },
+      { kind: 'note', key: 'gate:trig', channel: 3, note: 36, learnedAt: 2 },
+    ];
+    const merged = mergeMidiBindings(existing, incoming);
+    const byKey = Object.fromEntries(merged.map((b) => [b.key, b]));
+    expect(merged).toHaveLength(3);
+    // Collision resolved to the incoming NOTE record (not both CC + NOTE).
+    expect(byKey['knob:cutoff']).toEqual({ kind: 'note', key: 'knob:cutoff', channel: 2, note: 48, learnedAt: 2 });
+    expect(byKey['btn:play']).toMatchObject({ kind: 'note', note: 60 });
+    expect(byKey['gate:trig']).toMatchObject({ kind: 'note', note: 36 });
+  });
+
+  it('preserves a NOTE binding round-tripping through a bundle', () => {
+    const noteRecord: MidiBindingExport = { kind: 'note', key: 'b:g', channel: 4, note: 41, learnedAt: 9 };
+    const merged = mergeMidiBindings([], [noteRecord]);
+    expect(merged).toEqual([noteRecord]);
+  });
 });
