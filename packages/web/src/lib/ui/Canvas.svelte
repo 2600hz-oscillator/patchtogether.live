@@ -166,6 +166,7 @@
   import { canConnect } from '$lib/graph/types';
   import { validateEdge } from '$lib/graph/validate-edge';
   import { planStereoAutowire } from '$lib/graph/stereo-autowire';
+  import { computeEdgeAlignedRect } from '$lib/ui/patch-menu-position';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
   import {
     pictureboxSpawnDecision,
@@ -310,12 +311,6 @@
       // to confirm the lock engaged + released at the right moments.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__connectDragState = connectDragState;
-      // Port hold-to-menu gesture phase, exposed as a getter so e2e reads
-      // the LIVE value. The drag-passes-to-xyflow spec polls this for the
-      // 'cancelled-move' phase — a deterministic signal that the
-      // pointermove cancelled the hold — instead of racing HOLD_FIRE_MS.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (globalThis as any).__portHoldPhase = () => holdPhase;
       // Lets E2E tests exercise the connect-commit path directly — the
       // same xyflow `Connection` envelope a real pointer drag would
       // synthesize. Used by the instrument-exposed-port-patching spec
@@ -2773,6 +2768,9 @@
 
   let portMenuOpen = $state(false);
   let portMenuPos = $state({ x: 0, y: 0 });
+  // Which card side the carry/patch-to picker edge-aligns to (UX item 1).
+  // Seeded from the jack-click that started the carry; defaults to 'left'.
+  let carrySide = $state<'left' | 'right'>('left');
   let portMenuSourceNodeId = $state<string | null>(null);
   let portMenuSourcePortId = $state<string | null>(null);
   let portMenuSourceDirection = $state<'output' | 'input'>('output');
@@ -2874,7 +2872,14 @@
     if (connectDragState.mode === 'pickup') {
       connectDragState.cancelPickup();
     }
-    portMenuPos = { x: e.clientX, y: e.clientY };
+    // Edge-align the picker to whichever card side is nearer the click
+    // (UX item 1): clicks on the right half of the card anchor the menu's
+    // RIGHT edge to the card's right; otherwise the LEFT edge to the left.
+    const r = cardRectFor(info.nodeId);
+    const side: 'left' | 'right' =
+      r && e.clientX > r.left + r.width / 2 ? 'right' : 'left';
+    carrySide = side;
+    portMenuPos = edgeAlignedMenuPos(info.nodeId, side, { x: e.clientX, y: e.clientY });
     portMenuSourceNodeId = info.nodeId;
     portMenuSourcePortId = info.portId;
     portMenuSourceDirection = info.direction;
@@ -2964,181 +2969,229 @@
     };
   });
 
-  // ---------------- Click-and-hold port → patch menu ----------------
+  // ---------------- Edge-aligned patch-to picker (redesign) ----------------
   //
-  // Left-click on a port and HOLD without dragging > 4px for 50ms → open
-  // the Patch-to menu rooted at that port. A fast click (release before
-  // 50ms, < 4px motion) ALSO opens the menu — power users learn the hold
-  // gesture but new users hitting fast clicks get the same affordance.
-  // If the user drags > 4px before the timer fires, we cancel the hold
-  // and xyflow's drag-to-connect takes over (original behavior).
-  //
-  // Capture-phase pointerdown is critical: xyflow attaches its own
-  // pointerdown to .svelte-flow__handle and starts a drag-connection. We
-  // run FIRST (capture, document-level), then DON'T stopPropagation —
-  // letting xyflow set up its drag in parallel. If the user keeps still,
-  // we abort xyflow's drag via cancelConnection() before opening the
-  // menu. If the user drags, we just clear our timer and xyflow proceeds.
-  //
-  // The follow-up pointerup/click that lands AFTER our menu opens must
-  // be swallowed so it doesn't fall through to any item-click handler on
-  // the freshly-rendered menu. We mark the gesture "menu-consumed" and
-  // suppress the next click via document-level capture-phase listeners.
-  // 200 ms = the standard long-press threshold. Lower thresholds (50 ms
-  // was the original) leave no headroom for pointermove dispatch latency:
-  // on CI runners + Playwright's CDP path, the pointermove that should
-  // cancel the hold can arrive AFTER the timer fires, making the menu
-  // open mid-drag. 200 ms is well above CDP roundtrip + still under the
-  // 300 ms "feels slow" perceptual threshold.
-  const HOLD_FIRE_MS = 200;
-  const HOLD_DRAG_TOLERANCE_PX = 4;
-  let holdTimer: ReturnType<typeof setTimeout> | null = null;
-  let holdStart: { x: number; y: number } | null = null;
-  let holdInfo: ReturnType<typeof handleInfoFromEvent> | null = null;
-  let holdMenuConsumed = false;
-  // Observable gesture phase for deterministic e2e (dev-only hook below).
-  // 'idle'           — no port-hold gesture in flight.
-  // 'armed'          — pointerdown on a handle; hold timer running, not yet
-  //                    fired or cancelled.
-  // 'cancelled-move' — a pointermove past the drag tolerance cancelled the
-  //                    hold; xyflow's drag-to-connect now owns the gesture.
-  //                    THIS is the signal the drag-passes-to-xyflow test
-  //                    polls for, so it never has to race HOLD_FIRE_MS.
-  // 'fired'          — the hold timer elapsed and the patch menu opened.
-  // 'released'       — pointerup ended an armed (un-moved) gesture.
-  let holdPhase: 'idle' | 'armed' | 'cancelled-move' | 'fired' | 'released' =
-    'idle';
+  // The click-and-hold-to-open gesture is RETIRED. The patch menu now opens
+  // via the PatchPanel trigger glyphs (handled inside PatchPanel.svelte) and
+  // the "patch to" picker opens via the jack-click → carry flow below. Both
+  // the contextmenu/dblclick fallbacks AND the carry-picker route through
+  // edge-aligned coordinates so the PortContextMenu lines up with the card
+  // side it opened from (UX item 1), instead of spawning at the raw cursor.
 
-  function clearHold(): void {
-    if (holdTimer !== null) {
-      clearTimeout(holdTimer);
-      holdTimer = null;
-    }
-    holdStart = null;
-    holdInfo = null;
+  /** Resolve a node's CARD bounding rect from the DOM (the svelte-flow node
+   *  wrapper). Returns null when the card isn't mounted. */
+  function cardRectFor(nodeId: string): DOMRect | null {
+    if (typeof document === 'undefined') return null;
+    const el = document.querySelector(
+      `.svelte-flow__node[data-id="${nodeId}"]`,
+    ) as HTMLElement | null;
+    return el ? el.getBoundingClientRect() : null;
   }
 
-  /** Open the patch menu without a triggering MouseEvent — used by the
-   *  hold-timer fire path (where we synthesize coordinates from the
-   *  original pointerdown). */
+  /** Edge-align the PortContextMenu to a card side. Falls back to the raw
+   *  cursor point when the card rect can't be measured. The menu width
+   *  estimate (200) matches PortContextMenu's min-width; the position core
+   *  clamps it on-screen. */
+  function edgeAlignedMenuPos(
+    nodeId: string,
+    side: 'left' | 'right',
+    fallback: { x: number; y: number },
+  ): { x: number; y: number } {
+    const r = cardRectFor(nodeId);
+    if (!r) return fallback;
+    const { left, top } = computeEdgeAlignedRect({
+      cardRect: {
+        left: r.left,
+        top: r.top,
+        right: r.right,
+        bottom: r.bottom,
+        width: r.width,
+        height: r.height,
+      },
+      side,
+      menuWidth: 200,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    });
+    return { x: left, y: top };
+  }
+
+  /** Open the patch-to picker at an explicit position. Used by the carry
+   *  ("patch to") flow + the contextmenu/dblclick fallbacks. Does NOT cancel
+   *  an in-flight pickup — the carry path relies on the pickup state
+   *  surviving until the commit. */
   function openPortMenuAt(
-    clientX: number,
-    clientY: number,
+    pos: { x: number; y: number },
     info: NonNullable<ReturnType<typeof handleInfoFromEvent>>,
   ): void {
     try {
       flowApi?.cancelConnection?.();
     } catch { /* defensive */ }
-    if (connectDragState.mode === 'pickup') {
-      connectDragState.cancelPickup();
-    }
-    portMenuPos = { x: clientX, y: clientY };
+    portMenuPos = pos;
     portMenuSourceNodeId = info.nodeId;
     portMenuSourcePortId = info.portId;
     portMenuSourceDirection = info.direction;
     portMenuSourceType = info.type;
     portMenuOpen = true;
     connectDragState.beginCascade(info.nodeId);
-    holdMenuConsumed = true;
-    holdPhase = 'fired';
   }
 
+  // ---------------- Jack-click → carry → patch-to picker ----------------
+  //
+  // PatchPanel dispatches two CustomEvents up the DOM:
+  //   * 'patchpanel:jackclick' — the user clicked a port ROW. We begin a
+  //     pickup-with-menu (a cable dangles from the cursor; the PatchPanel
+  //     surfaces a "patch to" entry) and mark the cascade so the source
+  //     panel stays logically in flight. NO menu opens yet — the dangling
+  //     cable + the "patch to" entry are the affordance.
+  //   * 'patchpanel:patchto' — the user clicked "patch to" in carry mode.
+  //     We HIDE the dangling cable (carry/source state retained) + open the
+  //     edge-aligned patch-to picker. The picker's port pick commits via
+  //     pickPortMenuTarget (validated); Esc / negative-space discards.
   $effect(() => {
-    const onPointerDown = (e: PointerEvent) => {
-      // Left button only — right-click goes through contextmenu, middle
-      // through xyflow's pan.
-      if (e.button !== 0) return;
-      // While pickup-cable mode is engaged, a click on another handle
-      // commits the pickup (xyflow's click-connect). Don't shadow it
-      // with our hold-to-menu gesture.
-      if (connectDragState.mode === 'pickup') return;
-      // If the port menu is already open, a click on a different port
-      // should swap source — but the cleanest behavior is to let the
-      // existing menu's outside-click handler close it and a fresh
-      // contextmenu/dblclick on the new port reopen. Suppress hold here.
-      if (portMenuOpen) return;
-      // Only on handle elements.
-      const info = handleInfoFromEvent(e);
-      if (!info) return;
-      // Initialize gesture state. We DO NOT stopPropagation here — xyflow
-      // needs the pointerdown to set up its own drag tracking. If the
-      // hold fires we'll cancel xyflow's connection via cancelConnection()
-      // and open the menu instead.
-      clearHold();
-      holdMenuConsumed = false;
-      holdStart = { x: e.clientX, y: e.clientY };
-      holdInfo = info;
-      holdPhase = 'armed';
-      const startX = e.clientX;
-      const startY = e.clientY;
-      const startedInfo = info;
-      holdTimer = setTimeout(() => {
-        holdTimer = null;
-        // Still tracking the same gesture (no pointermove > 4px / no
-        // pointerup since pointerdown). Fire the menu.
-        if (!holdStart || !holdInfo) return;
-        openPortMenuAt(startX, startY, startedInfo);
-      }, HOLD_FIRE_MS);
-    };
-    const onPointerMove = (e: PointerEvent) => {
-      if (!holdStart) return;
-      const dx = e.clientX - holdStart.x;
-      const dy = e.clientY - holdStart.y;
-      if (Math.hypot(dx, dy) > HOLD_DRAG_TOLERANCE_PX) {
-        // User is dragging — xyflow's drag-to-connect handles it from
-        // here. Cancel our hold so the timer doesn't fire.
-        clearHold();
-        holdPhase = 'cancelled-move';
+    const onJackClick = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        nodeId: string;
+        portId: string;
+        direction: 'input' | 'output';
+        side: 'left' | 'right';
+      } | null;
+      if (!detail) return;
+      const node = patch.nodes[detail.nodeId];
+      const def = node ? defLookup(node.type) : undefined;
+      let cableType: string | undefined;
+      if (def) {
+        const port =
+          detail.direction === 'output'
+            ? def.outputs.find((p) => p.id === detail.portId)
+            : def.inputs.find((p) => p.id === detail.portId);
+        cableType = port?.type as string | undefined;
       }
-    };
-    const onPointerUp = (e: PointerEvent) => {
-      if (!holdStart || !holdInfo) {
-        // No active hold gesture — nothing to do.
-        return;
+      // Detach an occupied input when grabbing it (one-motion rewire) —
+      // mirrors handleClickConnectStart.
+      if (detail.direction === 'input') {
+        ydoc.transact(() => {
+          for (const [edgeId, edge] of Object.entries(patch.edges)) {
+            if (edge && edge.target.nodeId === detail.nodeId && edge.target.portId === detail.portId) {
+              delete patch.edges[edgeId];
+            }
+          }
+        }, LOCAL_ORIGIN);
       }
-      const dx = e.clientX - holdStart.x;
-      const dy = e.clientY - holdStart.y;
-      const moved = Math.hypot(dx, dy) > HOLD_DRAG_TOLERANCE_PX;
-      const info = holdInfo;
-      const startX = holdStart.x;
-      const startY = holdStart.y;
-      const timerStillLive = holdTimer !== null;
-      clearHold();
-      if (moved) {
-        holdPhase = 'cancelled-move';
-        return; // xyflow handled the drag
-      }
-      if (timerStillLive) {
-        // Fast click before the hold timer — treat as same gesture, open
-        // menu. openPortMenuAt sets holdPhase = 'fired'.
-        openPortMenuAt(startX, startY, info);
-      }
-      // If the timer already fired the menu is open, holdPhase is 'fired'
-      // and holdMenuConsumed === true — leave it; the click-suppress
-      // handler below swallows the trailing click event.
+      connectDragState.beginPickupWithMenu({
+        nodeId: detail.nodeId,
+        portId: detail.portId,
+        handleType: detail.direction === 'output' ? 'source' : 'target',
+        cableType,
+      });
+      // Keep the source panel logically open underneath so its "patch to"
+      // entry renders.
+      connectDragState.beginCascade(detail.nodeId);
+      // Remember the source descriptor + side for the patch-to picker.
+      portMenuSourceNodeId = detail.nodeId;
+      portMenuSourcePortId = detail.portId;
+      portMenuSourceDirection = detail.direction;
+      portMenuSourceType = cableType ?? 'audio';
+      carrySide = detail.side;
+      trace(`jackclick-pickup ${detail.nodeId}.${detail.portId}`);
     };
-    const onClick = (e: MouseEvent) => {
-      // Swallow the click that follows a hold-fire so it can't propagate
-      // into a freshly-rendered menu item or any other handler. We only
-      // suppress ONE click per consumed gesture.
-      if (!holdMenuConsumed) return;
-      holdMenuConsumed = false;
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
+    const onPatchTo = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { nodeId: string } | null;
+      if (!detail) return;
+      if (connectDragState.mode !== 'pickup') return;
+      // Hide the dangling cable; retain the carry/source state for commit.
+      connectDragState.hideCableForPicker();
+      if (!portMenuSourceNodeId || !portMenuSourcePortId) return;
+      const pos = edgeAlignedMenuPos(portMenuSourceNodeId, carrySide, portMenuPos);
+      openPortMenuAt(pos, {
+        nodeId: portMenuSourceNodeId,
+        portId: portMenuSourcePortId,
+        direction: portMenuSourceDirection,
+        type: portMenuSourceType,
+      });
+      trace(`patch-to picker opened for ${portMenuSourceNodeId}.${portMenuSourcePortId}`);
     };
-    document.addEventListener('pointerdown', onPointerDown, true);
-    document.addEventListener('pointermove', onPointerMove, true);
-    document.addEventListener('pointerup', onPointerUp, true);
-    document.addEventListener('click', onClick, true);
+    const onCarryCommit = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        nodeId: string;
+        portId: string;
+        direction: 'input' | 'output';
+      } | null;
+      if (!detail) return;
+      const src = connectDragState.pickupSource;
+      if (!src) return;
+      // The carried cable runs SOURCE.output → TARGET.input. Resolve which
+      // side the clicked row is. A carried OUTPUT lands on an INPUT row; a
+      // carried INPUT (rewire) lands on an OUTPUT row.
+      let from: { nodeId: string; portId: string };
+      let to: { nodeId: string; portId: string };
+      if (src.handleType === 'source') {
+        from = { nodeId: src.nodeId, portId: src.portId };
+        to = { nodeId: detail.nodeId, portId: detail.portId };
+      } else {
+        from = { nodeId: detail.nodeId, portId: detail.portId };
+        to = { nodeId: src.nodeId, portId: src.portId };
+      }
+      // End the carry FIRST so the validated commit path (which mirrors the
+      // picker commit) runs clean; commitCarriedEdge validates + writes or
+      // silently discards on invalid (UX item 5).
+      connectDragState.discard();
+      connectDragState.endCascade();
+      commitCarriedEdge(from, to);
+    };
+    document.addEventListener('patchpanel:jackclick', onJackClick);
+    document.addEventListener('patchpanel:patchto', onPatchTo);
+    document.addEventListener('patchpanel:carrycommit', onCarryCommit);
     return () => {
-      clearHold();
-      document.removeEventListener('pointerdown', onPointerDown, true);
-      document.removeEventListener('pointermove', onPointerMove, true);
-      document.removeEventListener('pointerup', onPointerUp, true);
-      document.removeEventListener('click', onClick, true);
+      document.removeEventListener('patchpanel:jackclick', onJackClick);
+      document.removeEventListener('patchpanel:patchto', onPatchTo);
+      document.removeEventListener('patchpanel:carrycommit', onCarryCommit);
     };
   });
+
+  /** Validate + write a carried edge (UX item 5). Mirrors handleConnect's
+   *  resolve + validateEdge + transact path, but for the carry/patch-to flow.
+   *  On an invalid candidate (output→output, input→input, type-incompat) it
+   *  returns SILENTLY — no patch, no toast — matching the drag-path's silent
+   *  reject. Stereo L/R auto-wire fires in the same transact. */
+  function commitCarriedEdge(
+    from: { nodeId: string; portId: string },
+    to: { nodeId: string; portId: string },
+  ): void {
+    const srcNode = patch.nodes[from.nodeId];
+    const dstNode = patch.nodes[to.nodeId];
+    if (!srcNode || !dstNode) return;
+    const srcDef = defLookup(srcNode.type);
+    const dstDef = defLookup(dstNode.type);
+    if (!srcDef || !dstDef) return;
+    const srcExposed = resolveExposedPort(srcNode, from.portId);
+    const dstExposed = resolveExposedPort(dstNode, to.portId);
+    const srcPort = srcDef.outputs.find((p) => p.id === from.portId);
+    const dstPort = dstDef.inputs.find((p) => p.id === to.portId);
+    const sourceType: CableType = srcExposed?.cableType ?? srcPort?.type ?? 'audio';
+    const targetType: CableType = dstExposed?.cableType ?? dstPort?.type ?? sourceType;
+    const id = `e-${from.nodeId}-${from.portId}-${to.nodeId}-${to.portId}`;
+    if (patch.edges[id]) {
+      trace(`carry-commit: edge already exists ${id}`);
+      return;
+    }
+    const candidate: Edge = { id, source: from, target: to, sourceType, targetType };
+    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup);
+    if (!verdict.ok) {
+      // SILENT discard — output→output / input→input / type-incompat.
+      trace(`carry-commit reject ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}: ${verdict.reason}`);
+      return;
+    }
+    ydoc.transact(() => {
+      for (const [edgeId, edge] of Object.entries(patch.edges)) {
+        if (edge && edge.target.nodeId === to.nodeId && edge.target.portId === to.portId) {
+          delete patch.edges[edgeId];
+        }
+      }
+      patch.edges[id] = { id, source: from, target: to, sourceType, targetType };
+      writeStereoSiblingEdge(from, to);
+    }, LOCAL_ORIGIN);
+    trace(`carry-commit ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}`);
+  }
 
   // ---------------- Pickup-mode cursor tracking + Esc cancel ----------------
   //
@@ -3161,6 +3214,11 @@
       e.preventDefault();
       e.stopPropagation();
       connectDragState.cancelPickup();
+      connectDragState.endCascade();
+      // Also close the patch-to picker if it was up (carry → patch-to → Esc).
+      portMenuOpen = false;
+      portMenuSourceNodeId = null;
+      portMenuSourcePortId = null;
       flowApi?.cancelClickConnect();
       trace('pickup-cancelled (Esc)');
     };
@@ -3174,8 +3232,10 @@
 
   function pickPortMenuTarget({ nodeId, portId }: { nodeId: string; portId: string }) {
     if (!portMenuSourceNodeId || !portMenuSourcePortId) return;
-    // Cascade is committing — release the source PatchPanel's lock.
+    // Cascade is committing — release the source PatchPanel's lock + end any
+    // carry/pickup that fed this picker (the cable is consumed by the patch).
     connectDragState.endCascade();
+    if (connectDragState.mode === 'pickup') connectDragState.discard();
     // Resolve source/target by direction. If the right-clicked port is an
     // OUTPUT, the picked port is the INPUT — cable runs srcNode.srcPort →
     // pickedNode.pickedPort. If the right-clicked port is an INPUT, the
@@ -3209,6 +3269,18 @@
     const id = `e-${from.nodeId}-${from.portId}-${to.nodeId}-${to.portId}`;
     if (patch.edges[id]) {
       trace(`patch-to: edge already exists ${id}`);
+      return;
+    }
+    // FW3 structural gate (UX item 5): the candidate must be materializable
+    // (direction + canConnect type compatibility). The cascade list is
+    // already filtered to compatible ports, but the carry flow can reach
+    // here for an output→output / input→input / type-incompat pick (e.g. a
+    // future direct port-row picker) — validate + SILENTLY discard on
+    // failure (no toast), matching the drag-path's silent return.
+    const candidate: Edge = { id, source: from, target: to, sourceType, targetType };
+    const verdict = validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup);
+    if (!verdict.ok) {
+      trace(`patch-to reject ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}: ${verdict.reason}`);
       return;
     }
     ydoc.transact(() => {
@@ -4448,6 +4520,9 @@
     portMenuSourceNodeId = null;
     portMenuSourcePortId = null;
     connectDragState.endCascade();
+    // Closing the picker without committing (Esc / negative-space) discards
+    // any cable that was carried into it — silently, no patch made.
+    if (connectDragState.mode === 'pickup') connectDragState.discard();
   }}
 />
 
