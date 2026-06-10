@@ -11,6 +11,8 @@ import {
   DEFAULT_KEYMAP,
   OCTAVE_UP_KEY,
   OCTAVE_DOWN_KEY,
+  OCTAVE_UP_ACTION,
+  OCTAVE_DOWN_ACTION,
   midiForKey,
   quantizeToNearestStep,
   defaultLayer,
@@ -120,9 +122,9 @@ describe('numpadPlus: module def shape', () => {
 
 describe('DEFAULT_KEYMAP', () => {
   it('maps 12 numpad keys to chromatic semitones 0..11', () => {
-    const entries = Object.entries(DEFAULT_KEYMAP);
-    expect(entries.length).toBe(12);
-    const sorted = entries.sort((a, b) => a[1] - b[1]);
+    const notes = Object.entries(DEFAULT_KEYMAP).filter(([, v]) => v <= 11);
+    expect(notes.length).toBe(12);
+    const sorted = notes.sort((a, b) => a[1] - b[1]);
     expect(sorted.map(([_, v]) => v)).toEqual([0,1,2,3,4,5,6,7,8,9,10,11]);
   });
 
@@ -131,9 +133,21 @@ describe('DEFAULT_KEYMAP', () => {
     expect(DEFAULT_KEYMAP.NumpadMultiply).toBe(11);
   });
 
-  it('exposes the octave-modifier key codes', () => {
+  it('default-maps numpad + / − to the octave up / down ACTIONS (remappable keys)', () => {
     expect(OCTAVE_UP_KEY).toBe('NumpadAdd');
     expect(OCTAVE_DOWN_KEY).toBe('NumpadSubtract');
+    expect(DEFAULT_KEYMAP[OCTAVE_UP_KEY]).toBe(OCTAVE_UP_ACTION);
+    expect(DEFAULT_KEYMAP[OCTAVE_DOWN_KEY]).toBe(OCTAVE_DOWN_ACTION);
+    // Action sentinels sit OUTSIDE the 0..11 note range.
+    expect(OCTAVE_UP_ACTION).toBeGreaterThan(11);
+    expect(OCTAVE_DOWN_ACTION).toBeGreaterThan(11);
+  });
+
+  it('octave actions are remappable via the same bijection as notes', () => {
+    const next = remapKeymap(DEFAULT_KEYMAP, 'ArrowUp', OCTAVE_UP_ACTION); // OCT↑ → ↑
+    expect(next.ArrowUp).toBe(OCTAVE_UP_ACTION);
+    expect(next.NumpadAdd).toBeUndefined();       // old OCT↑ key freed
+    expect(codeForSemitone(next, OCTAVE_UP_ACTION)).toBe('ArrowUp');
   });
 });
 
@@ -157,7 +171,10 @@ describe('midiForKey', () => {
   it('returns null for keys not in the keymap', () => {
     expect(midiForKey('KeyA', 4, 0)).toBeNull();
     expect(midiForKey('NumpadEnter', 4, 0)).toBeNull();
-    expect(midiForKey('NumpadAdd', 4, 0)).toBeNull();  // modifier key, not in keymap
+    // NumpadAdd/Subtract ARE in the keymap now (octave ACTIONS, sentinel
+    // values ≥12) — midiForKey must still return null since they're not notes.
+    expect(midiForKey('NumpadAdd', 4, 0)).toBeNull();
+    expect(midiForKey('NumpadSubtract', 4, 0)).toBeNull();
   });
 
   it('clamps octave to 0..8', () => {

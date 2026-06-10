@@ -31,6 +31,8 @@
     keyCodeLabel,
     codeForSemitone,
     remapKeymap,
+    OCTAVE_UP_ACTION,
+    OCTAVE_DOWN_ACTION,
   } from '$lib/audio/modules/numpad-plus';
   import { noteNameForMidi } from '$lib/audio/note-entry';
   import type { ModuleNode } from '$lib/graph/types';
@@ -163,6 +165,23 @@
     const code = codeForSemitone(keymap, semitone);
     return code ? keyCodeLabel(code) : '—';
   }
+  // Display name for a remap target: the note name for 0..11, or the octave
+  // action label for the two sentinel targets.
+  function targetLabel(target: number): string {
+    if (target === OCTAVE_UP_ACTION) return 'OCT↑';
+    if (target === OCTAVE_DOWN_ACTION) return 'OCT↓';
+    return SEMITONE_NAMES[target] ?? '?';
+  }
+
+  // Portal the floating remap menu to <body>: it's position:fixed but the card
+  // lives inside SvelteFlow's transformed/zoomed node, so a transformed ancestor
+  // would anchor the menu to itself (wrong spot, drifts on pan/zoom). Appending
+  // to <body> removes that ancestor so it spawns under the cursor. Mirrors
+  // ControlContextMenu.svelte.
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return { destroy() { node.remove(); } };
+  }
 
   // While listening, capture the next physical keydown (ANY key) and bind it to
   // the target note. ESC cancels. Capture-phase + stopImmediatePropagation so
@@ -279,12 +298,26 @@
             <span class="kmap-note">{SEMITONE_NAMES[st]}</span>
           </button>
         {/each}
-        <span class="legend-mod"><b>+</b>oct↑ <b>−</b>oct↓</span>
+        <!-- Octave up/down: remappable keys (default numpad +/−) that nudge the
+             module octave. Same right-click remap flow as the note keys. -->
+        {#each [OCTAVE_UP_ACTION, OCTAVE_DOWN_ACTION] as act (act)}
+          <button
+            type="button"
+            class="kmap-key oct-key nodrag"
+            class:listening={remapSemitone === act}
+            oncontextmenu={(e) => openKeyMenu(e, act)}
+            data-testid={`numpad-octkey-${act}`}
+            aria-label={`${targetLabel(act)} — key ${physLabelFor(act)} (right-click to remap)`}
+          >
+            <span class="kmap-phys">{physLabelFor(act)}</span>
+            <span class="kmap-note">{targetLabel(act)}</span>
+          </button>
+        {/each}
       </div>
 
       {#if remapSemitone !== null}
         <div class="remap-hint" data-testid="numpad-remap-hint">
-          Press any key to map it to <b>{SEMITONE_NAMES[remapSemitone]}</b> · Esc to cancel
+          Press any key to map it to <b>{targetLabel(remapSemitone)}</b> · Esc to cancel
         </div>
       {/if}
 
@@ -298,18 +331,21 @@
 </div>
 
 {#if menuSemitone !== null}
-  <!-- Click-away backdrop + floating remap menu -->
-  <div
-    class="kmap-menu-backdrop"
-    role="presentation"
-    onpointerdown={() => (menuSemitone = null)}
-    oncontextmenu={(e) => { e.preventDefault(); menuSemitone = null; }}
-  ></div>
-  <div class="kmap-menu nodrag" role="menu" style="left:{menuX}px; top:{menuY}px;" data-testid="numpad-key-menu">
-    <button type="button" role="menuitem" class="kmap-menu-item"
-      onclick={() => beginRemap(menuSemitone!)} data-testid="numpad-remap-item">Remap…</button>
-    <button type="button" role="menuitem" class="kmap-menu-item"
-      onclick={() => resetKey(menuSemitone!)} data-testid="numpad-reset-item">Reset to default</button>
+  <!-- Portaled to <body> so position:fixed resolves against the viewport, not
+       SvelteFlow's transformed node — otherwise the menu spawns off-cursor. -->
+  <div use:portal>
+    <div
+      class="kmap-menu-backdrop"
+      role="presentation"
+      onpointerdown={() => (menuSemitone = null)}
+      oncontextmenu={(e) => { e.preventDefault(); menuSemitone = null; }}
+    ></div>
+    <div class="kmap-menu nodrag" role="menu" style="left:{menuX}px; top:{menuY}px;" data-testid="numpad-key-menu">
+      <button type="button" role="menuitem" class="kmap-menu-item"
+        onclick={() => beginRemap(menuSemitone!)} data-testid="numpad-remap-item">Remap…</button>
+      <button type="button" role="menuitem" class="kmap-menu-item"
+        onclick={() => resetKey(menuSemitone!)} data-testid="numpad-reset-item">Reset to default</button>
+    </div>
   </div>
 {/if}
 

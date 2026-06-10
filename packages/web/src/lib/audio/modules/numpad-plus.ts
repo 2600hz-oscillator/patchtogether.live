@@ -93,7 +93,16 @@ export const DEFAULT_KEYMAP: Readonly<Record<string, number>> = {
   Numpad0: 9,   // A
   NumpadDivide: 10,    // A#
   NumpadMultiply: 11,  // B
+  NumpadAdd: 12,       // OCTAVE_UP_ACTION  (octave +)
+  NumpadSubtract: 13,  // OCTAVE_DOWN_ACTION (octave −)
 };
+// Octave up/down are remappable KEYS too (not held modifiers) — they nudge the
+// module's octave param ±1. They live in the same keymap as the notes, keyed by
+// sentinel "semitone" values OUTSIDE the 0..11 note range so midiForKey ignores
+// them. Default-mapped to numpad + / − (the keys that were the old held
+// transpose). Right-click → remap, just like a note key; persisted in the patch.
+export const OCTAVE_UP_ACTION = 12;
+export const OCTAVE_DOWN_ACTION = 13;
 export const OCTAVE_UP_KEY = 'NumpadAdd';     // numpad +
 export const OCTAVE_DOWN_KEY = 'NumpadSubtract'; // numpad -
 
@@ -166,7 +175,8 @@ export function midiForKey(
   keymap: Readonly<Record<string, number>> = DEFAULT_KEYMAP,
 ): number | null {
   const semitone = keymap[code];
-  if (semitone === undefined) return null;
+  // undefined = unmapped; ≥12 = an OCTAVE action sentinel, not a note.
+  if (semitone === undefined || semitone < 0 || semitone > 11) return null;
   const baseOctave = Math.max(0, Math.min(8, Math.round(octave)));
   const effectiveOctave = Math.max(-1, Math.min(9, baseOctave + modifierOctave));
   // MIDI convention: octave 0 starts at C0 = MIDI 12. So octave N's
@@ -325,12 +335,20 @@ export const numpadPlusDef: AudioModuleDef = {
     /** Pressed key tracking — supports chord-style holds. Map of
      *  Numpad code → MIDI note that's currently sounding. */
     const pressedNotes = new Map<string, number>();
-    let octaveModifier: -1 | 0 | 1 = 0;
 
     function readParam(id: string, fallback: number): number {
       const live = livePatch.nodes[nodeId];
       const v = live?.params?.[id];
       return typeof v === 'number' ? v : fallback;
+    }
+    /** Nudge the octave param ±1 (clamped 0..8) when an OCTAVE key fires.
+     *  Written directly on the live SyncedStore proxy (same path as the layer
+     *  data writes) so the card + collaborators + persistence all follow. */
+    function nudgeOctaveParam(delta: number): void {
+      const live = livePatch.nodes[nodeId];
+      if (!live?.params) return;
+      const cur = typeof live.params.octave === 'number' ? live.params.octave : 4;
+      live.params.octave = Math.max(0, Math.min(8, cur + delta));
     }
     function readLayers(): NumpadLayer[] {
       const live = livePatch.nodes[nodeId];
@@ -491,12 +509,17 @@ export const numpadPlusDef: AudioModuleDef = {
         if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
         // When a DOOM card has focus, it owns the keyboard.
         if (ae?.closest('[data-card-type="doom"]')) return;
-        if (ev.code === OCTAVE_UP_KEY)   { octaveModifier =  1; ev.preventDefault(); return; }
-        if (ev.code === OCTAVE_DOWN_KEY) { octaveModifier = -1; ev.preventDefault(); return; }
         const live = livePatch.nodes[nodeId];
         const keymap = (live?.data as { keymap?: Record<string, number> } | undefined)?.keymap
           ?? DEFAULT_KEYMAP;
-        const midi = midiForKey(ev.code, readParam('octave', 4), octaveModifier, keymap);
+        // OCTAVE keys (remappable; default numpad +/−) nudge the octave param.
+        const mapped = keymap[ev.code];
+        if (mapped === OCTAVE_UP_ACTION || mapped === OCTAVE_DOWN_ACTION) {
+          ev.preventDefault();
+          if (!ev.repeat) nudgeOctaveParam(mapped === OCTAVE_UP_ACTION ? 1 : -1);
+          return;
+        }
+        const midi = midiForKey(ev.code, readParam('octave', 4), 0, keymap);
         if (midi === null) return;
         ev.preventDefault();
         ev.stopPropagation();
@@ -526,13 +549,11 @@ export const numpadPlusDef: AudioModuleDef = {
         }
       };
       const onUp = (ev: KeyboardEvent) => {
-        if (!ev.code.startsWith('Numpad')) return;
         // Mirror the keydown guard: while a DOOM card has focus,
         // NUMPAD+'s listener stays out of the way.
         if (document.activeElement?.closest('[data-card-type="doom"]')) return;
-        if (ev.code === OCTAVE_UP_KEY || ev.code === OCTAVE_DOWN_KEY) {
-          octaveModifier = 0; ev.preventDefault(); return;
-        }
+        // Keys are remappable to ANY physical key, so release any tracked note
+        // by its code (the old Numpad-only guard left remapped notes stuck on).
         if (!pressedNotes.has(ev.code)) return;
         ev.preventDefault();
         ev.stopPropagation();
