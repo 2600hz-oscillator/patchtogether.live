@@ -165,6 +165,7 @@
   import type { CableType, Edge, PortDef, ModuleNode } from '$lib/graph/types';
   import { canConnect } from '$lib/graph/types';
   import { validateEdge } from '$lib/graph/validate-edge';
+  import { planStereoAutowire } from '$lib/graph/stereo-autowire';
   import { getNodePosition, setNodePosition } from '$lib/multiplayer/layouts';
   import {
     pictureboxSpawnDecision,
@@ -1517,6 +1518,48 @@
     return validateEdge(candidate, Object.values(patch.nodes) as ModuleNode[], defLookup).ok;
   }
 
+  /** Module-wide stereo L/R auto-wire (WORKSTREAM A item 6). After a primary
+   *  edge `from.OUTPUT → to.INPUT` is written, if BOTH the source and target
+   *  declare a matching stereoPairs sibling AND the sibling target input is
+   *  unpatched, write the SECOND (sibling) edge too — so out_l→in_l implies
+   *  out_r→in_r. Naming-agnostic (resolves via stereoPairs tuples, never name
+   *  patterns); a mono source leaves the sibling unpatched (engine normals R←L).
+   *
+   *  MUST be called INSIDE the same ydoc.transact as the primary edge write so
+   *  both edges land atomically. Only AUDIO module defs carry stereoPairs, so we
+   *  resolve via getModuleDef (the audio registry) — group/exposed/video
+   *  endpoints have no stereoPairs and fall through to a no-op. */
+  function writeStereoSiblingEdge(
+    from: { nodeId: string; portId: string },
+    to: { nodeId: string; portId: string },
+  ): void {
+    const srcNode = patch.nodes[from.nodeId];
+    const dstNode = patch.nodes[to.nodeId];
+    if (!srcNode || !dstNode) return;
+    const fromDef = getModuleDef(srcNode.type);
+    const toDef = getModuleDef(dstNode.type);
+    if (!fromDef || !toDef) return; // only audio defs declare stereoPairs
+    const plan = planStereoAutowire({
+      fromPortId: from.portId,
+      fromDef,
+      toNodeId: to.nodeId,
+      toPortId: to.portId,
+      toDef,
+      edges: patch.edges,
+    });
+    if (!plan) return;
+    const sibId = `e-${from.nodeId}-${plan.siblingFromPortId}-${to.nodeId}-${plan.siblingToPortId}`;
+    if (patch.edges[sibId]) return;
+    patch.edges[sibId] = {
+      id: sibId,
+      source: { nodeId: from.nodeId, portId: plan.siblingFromPortId },
+      target: { nodeId: to.nodeId, portId: plan.siblingToPortId },
+      sourceType: plan.sourceType,
+      targetType: plan.targetType,
+    };
+    trace(`stereo-autowire ${from.nodeId}.${plan.siblingFromPortId} → ${to.nodeId}.${plan.siblingToPortId}`);
+  }
+
   /** User dragged a connection between two handles. Create an edge in the patch.
    *  Behavior: an input accepts only ONE connection at a time — patching onto an
    *  occupied input replaces the existing edge. Outputs may fan out to many. */
@@ -1601,6 +1644,11 @@
         sourceType,
         targetType,
       };
+      // Stereo L/R auto-wire — write the sibling edge in the SAME transact.
+      writeStereoSiblingEdge(
+        { nodeId: connection.source!, portId: connection.sourceHandle! },
+        { nodeId: connection.target!, portId: connection.targetHandle! },
+      );
     }, LOCAL_ORIGIN);
     trace(`connect ${connection.source}.${connection.sourceHandle} → ${connection.target}.${connection.targetHandle}`);
   }
@@ -3180,6 +3228,8 @@
         sourceType,
         targetType,
       };
+      // Stereo L/R auto-wire — write the sibling edge in the SAME transact.
+      writeStereoSiblingEdge(from, to);
     }, LOCAL_ORIGIN);
     trace(`patch-to ${from.nodeId}.${from.portId} → ${to.nodeId}.${to.portId}`);
   }
