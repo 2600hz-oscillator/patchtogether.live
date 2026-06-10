@@ -27,11 +27,14 @@ primary_region = "iad"
   # a web↔relay version drift. Keep in step with the app version on release.
   SERVER_VERSION = "1.0.1-prod"
   # Memory-alarm thresholds (MB) driving the 30s [relay-alarm] log line and the
-  # Better Stack /metrics body-match monitor. Sized BELOW this tier's 256MB
-  # machine so the alarm fires before the OOM-killer — the default 384/480 can
-  # NEVER trip on a 256MB box, which is exactly why the prod OOM went unalerted.
-  RELAY_MEM_WARN_MB = "200"
-  RELAY_MEM_CRIT_MB = "230"
+  # Better Stack /metrics body-match monitor. Sized BELOW this tier's 512MB
+  # machine (see [[vm]] below) so the alarm fires with real headroom before the
+  # OOM-killer: warn at 380 (~74%) gives a heads-up; crit at 440 (~86%) pages
+  # while ~72MB still remains, leaving slack to capture state before the kill.
+  # Keep these in step with the Better Stack /metrics monitor's body-match value
+  # (docs/observability/setup-betterstack.md) — they're two copies of one number.
+  RELAY_MEM_WARN_MB = "380"
+  RELAY_MEM_CRIT_MB = "440"
   # NOTE: BETTERSTACK_HEARTBEAT_URL and LOGTAIL_SOURCE_TOKEN are SECRETS — set
   # via `flyctl secrets set -a patchtogether-server ...`, never committed here.
 
@@ -82,4 +85,9 @@ primary_region = "iad"
 [[vm]]
   cpu_kind = "shared"
   cpus = 1
-  memory_mb = 256
+  # 512MB (up from 256MB): prod relay holds live Yjs doc state + per-rack slot
+  # tracking in process memory for every active rackspace, and 256MB left too
+  # thin a margin under real concurrency. The RELAY_MEM_WARN/CRIT thresholds in
+  # [env] above (380/440) are sized to this box. Keep this the largest of the
+  # tiers' prod-shaped boxes; dev is 1024MB (heavier soak), autotest 256MB.
+  memory_mb = 512

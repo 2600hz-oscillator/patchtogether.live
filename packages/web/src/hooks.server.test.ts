@@ -9,14 +9,25 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('$env/dynamic/private', () => ({ env: {} }));
+// PUBLIC_SENTRY_DSN is deliberately ABSENT here — this is the no-op gating
+// case the whole Sentry wiring is built around (local/CI/prod-pre-DSN).
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
 // withClerkHandler reads from process.env synchronously and bombs out at
 // import time when its expected vars are missing. Stub the whole module.
 vi.mock('svelte-clerk/server', () => ({
   withClerkHandler: () => async (_args: unknown) => new Response(''),
 }));
+// Spy on the server-side Sentry module so we can assert it is NEVER touched
+// when the DSN is unset. If the gate regressed, ensureSentryServer would be
+// imported + called and this mock would record it.
+const ensureSentryServer = vi.fn();
+const captureServerError = vi.fn();
+vi.mock('$lib/observability/sentry-server', () => ({
+  ensureSentryServer,
+  captureServerError,
+}));
 
-import { isBetaGatePublic } from './hooks.server';
+import { handleError, isBetaGatePublic } from './hooks.server';
 
 describe('isBetaGatePublic', () => {
   it('exempts /api/health (uptime probe)', () => {
@@ -44,5 +55,38 @@ describe('isBetaGatePublic', () => {
     expect(isBetaGatePublic('/sign-in')).toBe(false);
     expect(isBetaGatePublic('/r/abc123')).toBe(false);
     expect(isBetaGatePublic('/api/rackspaces')).toBe(false);
+  });
+});
+
+describe('handleError — Sentry gating', () => {
+  it('is a total no-op when PUBLIC_SENTRY_DSN is unset (never touches the SDK)', async () => {
+    const error = new Error('boom');
+    const event = {
+      locals: { requestId: 'req-123' },
+    } as unknown as Parameters<typeof handleError>[0]['event'];
+
+    const result = await handleError({
+      error,
+      event,
+      status: 500,
+      message: 'Internal Error',
+    } as Parameters<typeof handleError>[0]);
+
+    // Default-shaped message preserved (with the request id stitched in).
+    expect(result).toEqual({ message: 'Internal Error', requestId: 'req-123' });
+    // The DSN is unset → the Sentry server module must NEVER be invoked.
+    expect(ensureSentryServer).not.toHaveBeenCalled();
+    expect(captureServerError).not.toHaveBeenCalled();
+  });
+
+  it('returns the default message even without a request id', async () => {
+    const result = await handleError({
+      error: new Error('x'),
+      event: { locals: {} } as unknown as Parameters<typeof handleError>[0]['event'],
+      status: 500,
+      message: 'Internal Error',
+    } as Parameters<typeof handleError>[0]);
+    expect(result).toEqual({ message: 'Internal Error' });
+    expect(captureServerError).not.toHaveBeenCalled();
   });
 });

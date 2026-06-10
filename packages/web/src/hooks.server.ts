@@ -12,11 +12,12 @@
 //      it). In production, packages/web/_headers is the belt-and-suspender;
 //      hooks.server.ts handles dev + edge cases.
 
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, HandleServerError } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { withClerkHandler } from 'svelte-clerk/server';
 import { env as privateEnv } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
+import { sentryEnabled } from '$lib/observability/sentry-config';
 
 const clerkHandle = withClerkHandler();
 
@@ -206,4 +207,58 @@ const requestIdAndLog: Handle = async ({ event, resolve }) => {
   return response;
 };
 
-export const handle = sequence(requestIdAndLog, betaGate, conditionalClerk, setCoopCoepHeaders);
+// Server/Worker error tracking via Sentry — FULLY ENV-GATED on PUBLIC_SENTRY_DSN.
+// With the DSN unset (local dev, CI, prod-before-provisioning) this handle is a
+// straight pass-through and handleError falls back to the default shape, so
+// nothing changes until a Sentry account is provisioned. The actual SDK
+// (@sentry/cloudflare — the one that bundles for the CF Workers runtime; the
+// @sentry/sveltekit server path does NOT, see lib/observability/sentry-server.ts)
+// is only ever imported via the dynamic import below, so an absent DSN means the
+// SDK never enters the request path at all.
+const SENTRY_DSN = publicEnv.PUBLIC_SENTRY_DSN;
+
+const sentryServerHandle: Handle = async ({ event, resolve }) => {
+  if (!sentryEnabled(SENTRY_DSN)) return resolve(event);
+  const { ensureSentryServer, captureServerError } = await import(
+    '$lib/observability/sentry-server'
+  );
+  ensureSentryServer(SENTRY_DSN);
+  try {
+    return await resolve(event);
+  } catch (err) {
+    // Capture the error that escaped the inner handles, then rethrow so
+    // SvelteKit's normal error handling (handleError + the error page) runs.
+    captureServerError(err);
+    throw err;
+  }
+};
+
+// handleError fires for every uncaught server-side error SvelteKit catches
+// (load functions, endpoints, render). Forward to Sentry only when enabled;
+// always return the same default-shaped message so the error UX is unchanged
+// when Sentry is off.
+export const handleError: HandleServerError = async ({ error, event }) => {
+  if (sentryEnabled(SENTRY_DSN)) {
+    try {
+      const { ensureSentryServer, captureServerError } = await import(
+        '$lib/observability/sentry-server'
+      );
+      ensureSentryServer(SENTRY_DSN);
+      captureServerError(error);
+    } catch {
+      // Never let observability wiring turn an app error into a worse one.
+    }
+  }
+  const requestId = event.locals?.requestId;
+  return { message: 'Internal Error', ...(requestId ? { requestId } : {}) };
+};
+
+// Sentry runs FIRST so its try/catch wraps every other handle (it sees errors
+// that beta-gate / Clerk / COOP-COEP throw before SvelteKit's handleError does).
+export const handle = sequence(
+  sentryServerHandle,
+  requestIdAndLog,
+  betaGate,
+  conditionalClerk,
+  setCoopCoepHeaders,
+);
