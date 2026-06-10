@@ -63,6 +63,16 @@ const DEFS: Record<string, ValidatorDef> = {
     inputs: [{ id: 'in', type: 'video' }],
     outputs: [],
   },
+  // `lfo` emits a cv output; `scope` has an audio probe input that `accepts` the
+  // CV family (the SCOPE per-port widening — visualize LFOs/envelopes/gates).
+  lfo: {
+    inputs: [],
+    outputs: [{ id: 'out', type: 'cv' }],
+  },
+  scope: {
+    inputs: [{ id: 'ch1', type: 'audio', accepts: ['cv', 'pitch', 'gate'] }],
+    outputs: [],
+  },
 };
 
 const resolveDef: ResolveDef = (type) => DEFS[type];
@@ -135,6 +145,24 @@ describe('validateEdge', () => {
     const res = validateEdge(e('x', 'osc', 'out', 'flt', 'in'), nodes, resolveDef);
     expect(res.ok).toBe(true);
     expect(res.reason).toBeUndefined();
+  });
+
+  it('accepts cv → SCOPE probe (per-port `accepts` widening on an audio input)', () => {
+    // Regression: after FW3 wired validateEdge into the drag path, cv→scope was
+    // rejected (canConnect blocks cv→audio). The scope probe opts in via accepts.
+    const nodes = [n('lfo', 'lfo'), n('scp', 'scope')];
+    const res = validateEdge(e('x', 'lfo', 'out', 'scp', 'ch1', 'cv', 'audio'), nodes, resolveDef);
+    expect(res.ok).toBe(true);
+    expect(res.reason).toBeUndefined();
+  });
+
+  it('still rejects cv → a PLAIN audio input (the global guard is intact)', () => {
+    // filter.in is audio with NO accepts → cv→audio stays rejected (only the
+    // scope probe opted in, not every audio input).
+    const nodes = [n('lfo', 'lfo'), n('flt', 'filter')];
+    const res = validateEdge(e('x', 'lfo', 'out', 'flt', 'in', 'cv', 'audio'), nodes, resolveDef);
+    expect(res.ok).toBe(false);
+    expect(res.reason).toMatch(/incompatible cable types cv → audio/);
   });
 
   it('accepts a valid audio → cv edge (CV-family upcast on filter.cutoff)', () => {

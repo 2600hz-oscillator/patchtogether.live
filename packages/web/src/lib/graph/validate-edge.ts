@@ -34,7 +34,7 @@
 // from group-projection.ts (both already pure).
 
 import type { Edge, ModuleNode, CableType, PortDef } from './types';
-import { canConnect } from './types';
+import { canConnectToPort } from './types';
 import { resolveExposedPort } from './group-projection';
 
 /**
@@ -82,7 +82,7 @@ function resolveEndpoint(
   portId: string,
   want: 'output' | 'input',
   resolveDef: ResolveDef,
-): { cableType: CableType } | null {
+): { cableType: CableType; accepts?: readonly CableType[] } | null {
   // 1) Group exposed port — resolve BEFORE consulting any module def.
   const exposed = resolveExposedPort(node, portId);
   if (exposed) {
@@ -98,7 +98,11 @@ function resolveEndpoint(
   const ports = want === 'output' ? def.outputs : def.inputs;
   const port = ports.find((p) => p.id === portId);
   if (!port) return null;
-  return { cableType: port.type };
+  // `accepts` (per-port source widening, e.g. a SCOPE probe) is honoured on
+  // INPUT ports only — outputs never widen what they emit.
+  return want === 'input'
+    ? { cableType: port.type, accepts: port.accepts }
+    : { cableType: port.type };
 }
 
 /**
@@ -147,7 +151,7 @@ export function validateEdge(
     };
   }
 
-  if (!canConnect(src.cableType, dst.cableType)) {
+  if (!canConnectToPort(src.cableType, { type: dst.cableType, accepts: dst.accepts })) {
     return {
       ok: false,
       reason: `incompatible cable types ${src.cableType} → ${dst.cableType}`,

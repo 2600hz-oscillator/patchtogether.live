@@ -133,6 +133,21 @@ export function canConnect(srcType: CableType, dstType: CableType): boolean {
   return false;
 }
 
+/**
+ * Can a cable of `srcType` legally terminate on this INPUT port? Passes if the
+ * global rule allows it (canConnect) OR the port opts in via its `accepts` list
+ * (the per-port widening — e.g. a SCOPE probe accepting the CV family on an
+ * `audio`-typed input). The single source of truth shared by the drag-connect
+ * validator and the right-click patch cascade so both agree.
+ */
+export function canConnectToPort(
+  srcType: CableType,
+  dst: { type: CableType; accepts?: readonly CableType[] },
+): boolean {
+  if (canConnect(srcType, dst.type)) return true;
+  return dst.accepts?.includes(srcType) ?? false;
+}
+
 // ---------------- Module types (D5) ----------------
 //
 // Per D18 the module type system is registry-based, NOT a closed union.
@@ -219,6 +234,18 @@ export interface PortDef {
   // Whether the input is an audio-rate node connection or a CV → AudioParam routing.
   // Outputs are always nodes; this hint lives on inputs only.
   paramTarget?: string; // when set, CV connections route to this AudioParam
+  /**
+   * Optional: extra SOURCE cable types this INPUT accepts beyond what
+   * canConnect(srcType, this.type) already allows. Use sparingly — it's an
+   * explicit, per-port widening for inputs where the global rule is too strict.
+   * The canonical case is a SCOPE probe: its signal inputs are typed `audio`
+   * but should accept the CV family (cv/pitch/gate) for visualizing LFOs,
+   * envelopes, pitch CV and gates — a visualizer is not a master bus, so the
+   * "CV on an audio bus → DC/click" guard canConnect enforces globally doesn't
+   * apply. See canConnectToPort(). Honoured by the drag-connect validator
+   * (validate-edge) AND the right-click patch cascade (port-patch-helpers).
+   */
+  accepts?: CableType[];
   /**
    * Optional: scaling hint for `cv`-typed input ports that target a
    * paramTarget. See CvScaleHint for the mapping. When omitted, behavior

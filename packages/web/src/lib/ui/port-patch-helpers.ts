@@ -11,7 +11,7 @@
 //      the menu can flag the entry as a destructive overwrite.
 
 import type { Edge, ModuleNode, PortDef } from '$lib/graph/types';
-import { canConnect } from '$lib/graph/types';
+import { canConnect, canConnectToPort } from '$lib/graph/types';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { MetaModuleDef } from '$lib/meta/module-registry';
@@ -119,7 +119,9 @@ export function compatibleTargetPorts(
   const out: CandidatePort[] = [];
   if (srcDirection === 'output') {
     for (const p of targetDef.inputs) {
-      if (!canConnect(srcType, p.type as string)) continue;
+      // Honour a per-port `accepts` widening (e.g. a SCOPE probe taking the CV
+      // family on an audio input) so the cascade matches the drag validator.
+      if (!canConnectToPort(srcType, p)) continue;
       const occ = findOccupant(targetNodeId, p.id, edges);
       out.push({
         portId: p.id,
