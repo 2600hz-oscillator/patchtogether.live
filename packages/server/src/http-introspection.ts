@@ -49,6 +49,10 @@ interface HocuspocusLike {
 export interface MetricsSnapshot {
   ts: number;
   boot_id: string;
+  /** Deploy version string from the SERVER_VERSION env (per-tier, e.g.
+   *  '1.0.1-prod'); 'unknown' when unset. Lets a monitor / deploy smoke confirm
+   *  WHICH build is live and detect a stale relay by a web↔relay version drift. */
+  server_version: string;
   uptime_s: number;
   rss_mb: number;
   heap_used_mb: number;
@@ -85,6 +89,10 @@ export interface IntrospectionDeps {
   setInterval(fn: () => void, ms: number): ReturnType<typeof setInterval>;
   clearInterval(t: ReturnType<typeof setInterval>): void;
   log(level: 'info' | 'warn' | 'error', msg: string): void;
+  /** Best-effort HTTP GET — used only for the Better Stack heartbeat ping.
+   *  Injected so tests can assert the ping without real network; defaults to
+   *  the global fetch. */
+  fetch(url: string): Promise<unknown>;
 }
 
 const realDeps: IntrospectionDeps = {
@@ -98,6 +106,7 @@ const realDeps: IntrospectionDeps = {
   clearInterval: (t) => clearInterval(t),
   // eslint-disable-next-line no-console
   log: (level, msg) => console[level](msg),
+  fetch: (url) => fetch(url),
 };
 
 const BYTES_PER_MB = 1024 * 1024;
@@ -137,6 +146,8 @@ export interface IntrospectionExtension extends Extension {
   _snapshot(): MetricsSnapshot;
   /** Test-only: invoke the alarm check once. */
   _alarmTick(): void;
+  /** Test-only: invoke the Better Stack heartbeat ping once. */
+  _pingHeartbeat(): Promise<void>;
 }
 
 /**
@@ -160,7 +171,15 @@ export function createIntrospectionExtension(
   } = {},
 ): IntrospectionExtension {
   const deps: IntrospectionDeps = { ...realDeps, ...(options.deps ?? {}) };
-  const thresholds = options.thresholdOverride ?? readMemoryThresholds(options.env);
+  const env = options.env ?? process.env;
+  const thresholds = options.thresholdOverride ?? readMemoryThresholds(env);
+  // Per-tier deploy version (set in fly.<tier>.toml [env]); surfaced on /health
+  // + /metrics so a monitor / deploy smoke can confirm which build is live.
+  const serverVersion = env.SERVER_VERSION ?? 'unknown';
+  // Better Stack heartbeat: when set (Fly secret), the alarm interval pings it
+  // so an alert fires if the introspection path silently dies while /health
+  // still 200s. Unset → no-op (local/dev/CI unaffected).
+  const heartbeatUrl = env.BETTERSTACK_HEARTBEAT_URL;
 
   // Persisted across the process lifetime — a fresh boot gets a new id,
   // so a downstream watcher can detect "the relay restarted" by id flip.
@@ -184,6 +203,7 @@ export function createIntrospectionExtension(
     return {
       ts: deps.now(),
       boot_id: bootId,
+      server_version: serverVersion,
       uptime_s: round(deps.uptime(), 3),
       rss_mb: round(mem.rss / BYTES_PER_MB, 1),
       heap_used_mb: round(mem.heapUsed / BYTES_PER_MB, 1),
@@ -213,6 +233,19 @@ export function createIntrospectionExtension(
     );
   }
 
+  // Best-effort liveness ping to a Better Stack heartbeat. No-ops when the env
+  // var is unset; swallows every error so a flaky heartbeat endpoint can never
+  // disturb the relay. Fires from the same 30-s interval as the memory alarm
+  // (well inside a 2-min heartbeat window).
+  async function pingHeartbeat(): Promise<void> {
+    if (!heartbeatUrl) return;
+    try {
+      await deps.fetch(heartbeatUrl);
+    } catch {
+      // Intentionally ignored — heartbeat is observability, never load-bearing.
+    }
+  }
+
   return {
     extensionName: 'http-introspection',
 
@@ -220,7 +253,10 @@ export function createIntrospectionExtension(
       // Boot the alarm timer here so it's tied to the server lifecycle.
       // We never stop it explicitly — the process exits with it.
       if (alarmTimer === null) {
-        alarmTimer = deps.setInterval(alarmTick, ALARM_CHECK_INTERVAL_MS);
+        alarmTimer = deps.setInterval(() => {
+          alarmTick();
+          void pingHeartbeat();
+        }, ALARM_CHECK_INTERVAL_MS);
       }
     },
 
@@ -253,7 +289,12 @@ export function createIntrospectionExtension(
           'Cache-Control': 'no-store',
         });
         payload.response.end(
-          JSON.stringify({ ok: true, boot_id: bootId, persist: hocuspocus.getPersistenceMode() }),
+          JSON.stringify({
+            ok: true,
+            boot_id: bootId,
+            server_version: serverVersion,
+            persist: hocuspocus.getPersistenceMode(),
+          }),
         );
         // Throw an empty error: Hocuspocus's Server.requestHandler treats
         // this as "an extension already replied, skip the default 200 OK".
@@ -282,6 +323,9 @@ export function createIntrospectionExtension(
     },
     _alarmTick() {
       alarmTick();
+    },
+    _pingHeartbeat() {
+      return pingHeartbeat();
     },
   };
 }

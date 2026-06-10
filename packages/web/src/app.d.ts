@@ -11,6 +11,11 @@ declare global {
   namespace App {
     interface Locals {
       auth: () => SessionAuthObject;
+      /** Per-request correlation id, set by the requestIdAndLog handle in
+       *  hooks.server.ts and echoed as the `x-request-id` response header.
+       *  Lets a Better Stack Logs query stitch a browser report to its server
+       *  access-log line. */
+      requestId: string;
     }
     // No bespoke platform.env bindings yet — DATABASE_URL is read directly
     // from process.env (shimmed by nodejs_compat on Workers). If we wire
