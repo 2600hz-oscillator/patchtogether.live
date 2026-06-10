@@ -13,12 +13,12 @@
 //   * naming-agnostic — resolved via stereoPairs tuples, not name patterns
 //     (rings odd/even, cocoadelay inL/inR, charlottes-echos L/R).
 //
-// These drive the REAL "patch to" cascade commit path (right-click a source
-// OUTPUT → patch to → target INPUT → pickPortMenuTarget → writeStereoSiblingEdge),
-// so they assert the WIRED commit site through a real user gesture, not just the
-// pure planner (which is unit-tested in stereo-autowire.test.ts). The cascade is
-// the stable established patch gesture the redesigned menu replaces; the helper
-// here tracks that gesture.
+// These drive the REAL redesigned "patch to" commit path (open the source
+// menu → drill OUTPUT → jack-click the source output ROW (carry) → "patch
+// to" → pick the target module → pick the target INPUT port →
+// pickPortMenuTarget → writeStereoSiblingEdge), so they assert the WIRED
+// commit site through a real user gesture, not just the pure planner (which
+// is unit-tested in stereo-autowire.test.ts).
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -46,38 +46,39 @@ function hasEdge(edges: PatchEdge[], from: [string, string], to: [string, string
   );
 }
 
-async function openPanel(page: Page, nodeId: string) {
+function chrome(page: Page, nodeId: string) {
+  return page.locator(`[data-patch-panel-chrome="${nodeId}"]`);
+}
+
+async function openMenu(page: Page, nodeId: string) {
   await page
     .locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-trigger"]`)
     .click();
-  await expect(
-    page.locator(`.svelte-flow__node[data-id="${nodeId}"] [data-testid="patch-panel"]`),
-  ).toHaveAttribute('aria-hidden', 'false');
+  await expect(chrome(page, nodeId)).toHaveAttribute('aria-hidden', 'false');
 }
 
-/** Drive the REAL "patch to" cascade: right-click a SOURCE output handle, pick
- *  the target module, then pick the target INPUT port — committing via
- *  pickPortMenuTarget (the wired stereo-autowire commit site). */
+/** Drive the REAL redesigned commit: carry a SOURCE output port (jack-click
+ *  the OUTPUT row), open the "patch to" picker, pick the target module + its
+ *  INPUT port — committing via pickPortMenuTarget (the wired stereo-autowire
+ *  commit site). */
 async function cascadePatch(
   page: Page,
   src: { nodeId: string; portId: string },
   dst: { nodeId: string; portId: string },
 ) {
-  await openPanel(page, src.nodeId);
-  const handle = page.locator(
-    `.svelte-flow__node[data-id="${src.nodeId}"] [data-testid="patch-panel"] ` +
-      `.svelte-flow__handle[data-handleid="${src.portId}"][class*="source"]`,
-  );
-  await expect(handle).toBeVisible();
-  await handle.hover();
-  await handle.click({ button: 'right' });
+  await openMenu(page, src.nodeId);
+  await chrome(page, src.nodeId)
+    .locator('[data-testid="patch-panel-nav"][data-nav="outputs"]')
+    .click();
+  await chrome(page, src.nodeId)
+    .locator(`[data-testid="patch-panel-port-row"][data-port-id="${src.portId}"]`)
+    .click();
+  await page.mouse.move(500, 320);
+  await chrome(page, src.nodeId).locator('[data-testid="patch-panel-patch-to"]').click();
   const menu = page.locator('[data-testid="port-context-menu"]');
   await expect(menu).toBeVisible();
 
-  // Pick the target module row (click — not hover — to pivot deterministically).
-  const moduleRow = menu.locator(`[data-testid="patch-to-module"][data-node-id="${dst.nodeId}"]`);
-  await moduleRow.click();
-  // Pick the target input port.
+  await menu.locator(`[data-testid="patch-to-module"][data-node-id="${dst.nodeId}"]`).click();
   const portRow = menu.locator(`[data-testid="patch-to-port"][data-port-id="${dst.portId}"]`);
   await expect(portRow).toBeVisible();
   await portRow.click();

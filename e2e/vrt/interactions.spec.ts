@@ -128,19 +128,20 @@ test('patch-panel-open: analogVco patch panel popout', async ({ page }) => {
   const card = page.locator('.svelte-flow__node-analogVco').first();
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 
-  // Click is the deterministic open path (hover-intent has timing slop).
+  // Redesign: clicking the trigger opens a BODY-PORTALED chrome (root view:
+  // INPUT / OUTPUT pivots), edge-aligned to the card. The chrome lives at
+  // body level (data-patch-panel-chrome="<nodeId>"), NOT inside the card, so
+  // we screenshot the chrome element itself.
   const trigger = card.locator('[data-testid="patch-trigger"]').first();
   await trigger.click();
-  const panel = card.locator('[data-testid="patch-panel"]').first();
-  await expect(panel).toHaveAttribute('aria-hidden', 'false', { timeout: 5_000 });
+  const chrome = page.locator('[data-patch-panel-chrome="vco-pp"]');
+  await expect(chrome).toHaveAttribute('aria-hidden', 'false', { timeout: 5_000 });
 
-  // Two rAFs: one for the panel transition (now 0s thanks to hideJitterers)
-  // and one for any post-open Handle reposition triggered by
-  // useUpdateNodeInternals.
+  // Two rAFs: edge-align position settle + any post-open node-internals beat.
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 
-  await expect(card).toHaveScreenshot('patch-panel-open.png');
+  await expect(chrome).toHaveScreenshot('patch-panel-open.png');
 });
 
 // ----------------------------------------------------------------------
@@ -187,28 +188,17 @@ test('port-context-menu: right-click on LFO output', async ({ page }) => {
   const card = page.locator('.svelte-flow__node-lfo').first();
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 
+  // Redesign: the patch-to picker is reached via the carry flow — open the
+  // LFO menu, drill OUTPUT, jack-click the phase0 output row (carry), then
+  // "patch to" opens the overlay-replace picker (modules list). That's the
+  // surface we baseline.
   await card.locator('[data-testid="patch-trigger"]').first().click();
-  await expect(card.locator('[data-testid="patch-panel"]').first()).toHaveAttribute(
-    'aria-hidden',
-    'false',
-    { timeout: 5_000 },
-  );
-  // Settle: Handle reposition rAF + Svelte Flow's node-handles bookkeeping.
-  await page.waitForTimeout(250);
-
-  // Locate the LFO's `phase0` source handle INSIDE the open patch panel
-  // (the off-canvas card-corner handles also exist but are hidden). Pattern
-  // mirrors e2e/tests/patch-to-cascade.spec.ts's rightClickPanelHandle —
-  // hover keeps the panel's hover-driver alive, then click({button:'right'})
-  // synthesizes a contextmenu the capture-phase doc listener picks up.
-  // page.mouse.click(x,y,{button:'right'}) does NOT reliably reach the
-  // handle's contextmenu listener in this Svelte Flow setup.
-  const handle = card.locator(
-    '[data-testid="patch-panel"] .svelte-flow__handle[data-handleid="phase0"]',
-  );
-  await expect(handle).toBeVisible();
-  await handle.hover();
-  await handle.click({ button: 'right' });
+  const chrome = page.locator('[data-patch-panel-chrome="lfo-pc"]');
+  await expect(chrome).toHaveAttribute('aria-hidden', 'false', { timeout: 5_000 });
+  await chrome.locator('[data-testid="patch-panel-nav"][data-nav="outputs"]').click();
+  await chrome.locator('[data-testid="patch-panel-port-row"][data-port-id="phase0"]').click();
+  await page.mouse.move(400, 320);
+  await chrome.locator('[data-testid="patch-panel-patch-to"]').click();
 
   const menu = page.locator('[data-testid="port-context-menu"]');
   await menu.waitFor({ state: 'visible', timeout: 5_000 });
