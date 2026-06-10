@@ -152,13 +152,13 @@
     bg: '#0a0d12',
   };
 
-  function regScope(slot: number) {
-    return (el: HTMLCanvasElement) => {
-      el.width = 64; el.height = 22;
-      scopeEls.set(slot, el);
-      if (!scopeRings.has(slot)) scopeRings.set(slot, []);
-      return { destroy() { scopeEls.delete(slot); } };
-    };
+  /** Svelte action: register a CV scope canvas for `slot` (passed via
+   *  use:regScope={slot}). */
+  function regScope(el: HTMLCanvasElement, slot: number) {
+    el.width = 64; el.height = 22;
+    scopeEls.set(slot, el);
+    if (!scopeRings.has(slot)) scopeRings.set(slot, []);
+    return { destroy() { scopeEls.delete(slot); } };
   }
 
   function tick() {
@@ -276,7 +276,7 @@
             <Knob value={cvInputFor(role.slot).offset} min={0} max={1} defaultValue={DEFAULT_INPUT_OFFSET}
               label="OFFSET" curve="linear" onchange={setOffset(role.slot)} />
           </div>
-          <canvas class="cv-scope" use:regScope(role.slot) data-testid={`vfpga-scope-${role.slot}`}></canvas>
+          <canvas class="cv-scope" use:regScope={role.slot} data-testid={`vfpga-scope-${role.slot}`}></canvas>
         </div>
       {/each}
     </div>
