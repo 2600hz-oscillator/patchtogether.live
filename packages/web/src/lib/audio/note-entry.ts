@@ -132,9 +132,18 @@ export function midiToHz(midi: number): number {
 
 // ---------------- Migration / shape interop ----------------
 
+/** Max simultaneous voices a poly step can hold (NUMPAD+ poly mode records up
+ *  to this many of the keys held on the keypad). */
+export const NOTE_STEP_MAX_VOICES = 5;
+
 export interface NoteStep {
   on: boolean;
   midi: number | null;
+  /** Polyphonic held notes (NUMPAD+ poly mode): up to NOTE_STEP_MAX_VOICES MIDI
+   *  ints recorded from the keys HELD when the step was captured. `midi` mirrors
+   *  the LOWEST of these so monophonic consumers (which only read `midi`) keep
+   *  working; absent/empty ⇒ a plain monophonic step. */
+  midis?: number[];
 }
 
 /**
@@ -148,27 +157,40 @@ export function coerceToNoteStep(raw: unknown): NoteStep {
   if (!raw || typeof raw !== 'object') return { on: false, midi: null };
   const r = raw as Record<string, unknown>;
   const on = !!r.on;
-  // Prefer explicit midi field if present.
+  const step: NoteStep = { on, midi: coerceMidiField(r) };
+  // Polyphonic held-notes (NUMPAD+ poly) — optional + back-compat: validated
+  // MIDI ints, capped to NOTE_STEP_MAX_VOICES. Consumers that only read `midi`
+  // ignore it. Only attached when non-empty so mono steps stay `{on, midi}`.
+  if (Array.isArray(r.midis)) {
+    const midis = (r.midis as unknown[])
+      .filter((m): m is number => typeof m === 'number' && Number.isFinite(m))
+      .map((m) => Math.round(m))
+      .filter((m) => m >= MIN_MIDI && m <= MAX_MIDI)
+      .slice(0, NOTE_STEP_MAX_VOICES);
+    if (midis.length > 0) step.midis = midis;
+  }
+  return step;
+}
+
+/** Resolve the canonical `midi` field from a v2 (`midi`) or v1 (`pitch`) step. */
+function coerceMidiField(r: Record<string, unknown>): number | null {
   if ('midi' in r) {
     const m = r.midi;
-    if (m === null || m === undefined) return { on, midi: null };
     if (typeof m === 'number' && Number.isFinite(m)) {
       const rounded = Math.round(m);
-      if (rounded >= MIN_MIDI && rounded <= MAX_MIDI) return { on, midi: rounded };
-      return { on, midi: null };
+      return rounded >= MIN_MIDI && rounded <= MAX_MIDI ? rounded : null;
     }
-    return { on, midi: null };
+    return null;
   }
   // Legacy: pitch (semitones from C4). Snap to MIDI int and clamp.
   if ('pitch' in r) {
     const p = r.pitch;
     if (typeof p === 'number' && Number.isFinite(p)) {
       const candidate = C4_MIDI + Math.round(p);
-      if (candidate >= MIN_MIDI && candidate <= MAX_MIDI) return { on, midi: candidate };
-      return { on, midi: null };
+      return candidate >= MIN_MIDI && candidate <= MAX_MIDI ? candidate : null;
     }
   }
-  return { on, midi: null };
+  return null;
 }
 
 /** Migrate a v1 sequencer/cartesian data block ({steps|cells: [{on, pitch}]})

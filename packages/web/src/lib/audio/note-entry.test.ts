@@ -205,6 +205,21 @@ describe('coerceToNoteStep: legacy + new shape interop', () => {
     expect(coerceToNoteStep(undefined)).toEqual({ on: false, midi: null });
     expect(coerceToNoteStep('not-an-object')).toEqual({ on: false, midi: null });
   });
+
+  it('preserves a poly `midis` array (validated, capped) without it bleeding into mono steps', () => {
+    // Mono steps stay exactly {on, midi} — no stray midis key.
+    expect(coerceToNoteStep({ on: true, midi: 60 })).toEqual({ on: true, midi: 60 });
+    // Valid held-notes round-trip; out-of-range / non-numbers are dropped.
+    expect(coerceToNoteStep({ on: true, midi: 60, midis: [60, 64, 67] }))
+      .toEqual({ on: true, midi: 60, midis: [60, 64, 67] });
+    expect(coerceToNoteStep({ on: true, midi: 60, midis: [60, 999, 'x', 64] }))
+      .toEqual({ on: true, midi: 60, midis: [60, 64] });
+    // Capped at 5.
+    expect(coerceToNoteStep({ on: true, midi: 48, midis: [48, 50, 52, 53, 55, 57] }).midis)
+      .toEqual([48, 50, 52, 53, 55]);
+    // Empty / all-invalid → no midis key at all.
+    expect(coerceToNoteStep({ on: true, midi: 60, midis: [] })).toEqual({ on: true, midi: 60 });
+  });
 });
 
 describe('default seed pitch is C3 for new modules', () => {
