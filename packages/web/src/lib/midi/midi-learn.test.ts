@@ -13,15 +13,21 @@ import type {
 } from '$lib/audio/modules/midi-cv-buddy';
 import {
   beginLearn,
+  beginNoteLearn,
   cancelLearn,
   registerSetter,
   unregisterSetter,
+  registerGateSetter,
+  unregisterGateSetter,
   getBinding,
   clearBinding,
   bindingKey,
   ccValueToParamValue,
   parseCcMessage,
   importBindings,
+  exportBindings,
+  isCcBinding,
+  isNoteBinding,
   __test_setAccess,
   __test_clearBindings,
 } from './midi-learn.svelte';
@@ -32,7 +38,11 @@ import type { ModuleNode, Edge } from '$lib/graph/types';
 
 // ---------------- Tiny fake MIDIAccess ----------------
 
-function makeFakeAccess(): { access: MidiAccessLike; sendCc: (channel: number, cc: number, value: number) => void } {
+function makeFakeAccess(): {
+  access: MidiAccessLike;
+  sendCc: (channel: number, cc: number, value: number) => void;
+  sendNote: (channel: number, note: number, velocity: number) => void;
+} {
   let handler: ((ev: MidiEventLike) => void) | null = null;
   const input: MidiInputLike = {
     id: 'fake-input-0',
@@ -52,7 +62,14 @@ function makeFakeAccess(): { access: MidiAccessLike; sendCc: (channel: number, c
       timeStamp: 0,
     });
   }
-  return { access, sendCc };
+  /** velocity 0 → note-off (0x8n); else note-on (0x9n). */
+  function sendNote(channel: number, note: number, velocity: number) {
+    if (!handler) return;
+    const v = velocity & 0x7f;
+    const status = (v > 0 ? 0x90 : 0x80) | (channel & 0x0f);
+    handler({ data: new Uint8Array([status, note & 0x7f, v]), timeStamp: 0 });
+  }
+  return { access, sendCc, sendNote };
 }
 
 beforeEach(() => {
@@ -418,5 +435,219 @@ describe('MIDI CC → set() → reconciler → live() readback (set/live consist
     expect(live(PARAM)()).toBe(0);
 
     handle.dispose();
+  });
+});
+
+// ---------------- NOTE learn flow (gates + buttons) ----------------
+
+describe('NOTE learn flow (capture next NOTE + drive a gate/button)', () => {
+  const MOD = 'hydrogen-1';
+  const PARAM = 'isPlaying';
+
+  it('first NOTE-ON after beginNoteLearn becomes the binding (kind=note)', async () => {
+    const { access, sendNote } = makeFakeAccess();
+    __test_setAccess(access);
+    const gates: boolean[] = [];
+    await beginNoteLearn({ moduleId: MOD, paramId: PARAM, onGate: (h) => gates.push(h) });
+    sendNote(/*ch*/ 5, /*note*/ 48, /*vel*/ 100);
+    const b = getBinding(MOD, PARAM);
+    expect(b).toBeDefined();
+    expect(b && isNoteBinding(b)).toBe(true);
+    expect(b).toMatchObject({ kind: 'note', channel: 5, note: 48 });
+    // Captured press fires the gate high immediately.
+    expect(gates).toEqual([true]);
+  });
+
+  it('NOTE-on → onGate(true); NOTE-off → onGate(false) (momentary)', async () => {
+    const { access, sendNote } = makeFakeAccess();
+    __test_setAccess(access);
+    const gates: boolean[] = [];
+    await beginNoteLearn({ moduleId: MOD, paramId: PARAM, onGate: (h) => gates.push(h) });
+    sendNote(0, 60, 127); // learn-capture → true
+    gates.length = 0;
+    sendNote(0, 60, 0);   // note-off → false
+    sendNote(0, 60, 90);  // note-on → true
+    sendNote(0, 60, 0);   // note-off → false
+    expect(gates).toEqual([false, true, false]);
+  });
+
+  it('a NOTE on the wrong channel/note is ignored once bound', async () => {
+    const { access, sendNote } = makeFakeAccess();
+    __test_setAccess(access);
+    const gates: boolean[] = [];
+    await beginNoteLearn({ moduleId: MOD, paramId: PARAM, onGate: (h) => gates.push(h) });
+    sendNote(3, 36, 100); // learn captures ch3/note36
+    gates.length = 0;
+    sendNote(3, 37, 100); // wrong note
+    sendNote(2, 36, 100); // wrong channel
+    expect(gates).toEqual([]);
+    sendNote(3, 36, 100); // matches
+    expect(gates).toEqual([true]);
+  });
+
+  it('a CC arriving mid-NOTE-learn does NOT cancel the note learn', async () => {
+    const { access, sendCc, sendNote } = makeFakeAccess();
+    __test_setAccess(access);
+    const gates: boolean[] = [];
+    await beginNoteLearn({ moduleId: MOD, paramId: PARAM, onGate: (h) => gates.push(h) });
+    sendCc(0, 7, 100); // a stray CC — must be ignored by the in-flight note learn
+    expect(getBinding(MOD, PARAM)).toBeUndefined(); // still learning
+    sendNote(0, 50, 100); // the real note now captures
+    expect(getBinding(MOD, PARAM)).toMatchObject({ kind: 'note', note: 50 });
+  });
+
+  it('a NOTE-off during learn does NOT capture (only a press arms the binding)', async () => {
+    const { access, sendNote } = makeFakeAccess();
+    __test_setAccess(access);
+    await beginNoteLearn({ moduleId: MOD, paramId: PARAM, onGate: () => {} });
+    sendNote(0, 60, 0); // release of a previously-held key — ignored
+    expect(getBinding(MOD, PARAM)).toBeUndefined();
+    sendNote(0, 60, 100); // press captures
+    expect(getBinding(MOD, PARAM)).toBeDefined();
+  });
+});
+
+describe('NOTE gate-setter ↔ binding ordering on performance load', () => {
+  const MOD = 'score-1';
+  const PARAM = 'play';
+  const CH = 2;
+  const NOTE = 41;
+
+  it('dispatches when the gate row mounts BEFORE bindings are imported', () => {
+    const { access, sendNote } = makeFakeAccess();
+    __test_setAccess(access);
+    const gates: boolean[] = [];
+    registerGateSetter(MOD, PARAM, { onGate: (h) => gates.push(h) });
+    importBindings([{ kind: 'note', key: bindingKey(MOD, PARAM), channel: CH, note: NOTE, learnedAt: 1 }]);
+    sendNote(CH, NOTE, 100);
+    sendNote(CH, NOTE, 0);
+    expect(gates).toEqual([true, false]);
+  });
+
+  it('also dispatches when bindings are imported BEFORE the gate row mounts', () => {
+    const { access, sendNote } = makeFakeAccess();
+    __test_setAccess(access);
+    const gates: boolean[] = [];
+    importBindings([{ kind: 'note', key: bindingKey(MOD, PARAM), channel: CH, note: NOTE, learnedAt: 1 }]);
+    registerGateSetter(MOD, PARAM, { onGate: (h) => gates.push(h) });
+    sendNote(CH, NOTE, 100);
+    expect(gates).toEqual([true]);
+  });
+
+  it('unregisterGateSetter stops dispatch but keeps the binding for re-mount', () => {
+    const { access, sendNote } = makeFakeAccess();
+    __test_setAccess(access);
+    const gates: boolean[] = [];
+    importBindings([{ kind: 'note', key: bindingKey(MOD, PARAM), channel: CH, note: NOTE, learnedAt: 1 }]);
+    registerGateSetter(MOD, PARAM, { onGate: (h) => gates.push(h) });
+    sendNote(CH, NOTE, 100);
+    expect(gates).toHaveLength(1);
+    unregisterGateSetter(MOD, PARAM);
+    sendNote(CH, NOTE, 100);
+    expect(gates).toHaveLength(1); // no new dispatch
+    expect(getBinding(MOD, PARAM)).toBeDefined();
+    // Re-mount with a new closure: dispatch resumes.
+    const gates2: boolean[] = [];
+    registerGateSetter(MOD, PARAM, { onGate: (h) => gates2.push(h) });
+    sendNote(CH, NOTE, 100);
+    expect(gates2).toEqual([true]);
+  });
+
+  it('a remount with a NEW onGate closure dispatches to the NEW setter', () => {
+    const { access, sendNote } = makeFakeAccess();
+    __test_setAccess(access);
+    importBindings([{ kind: 'note', key: bindingKey(MOD, PARAM), channel: CH, note: NOTE, learnedAt: 1 }]);
+    const orig: boolean[] = [];
+    registerGateSetter(MOD, PARAM, { onGate: (h) => orig.push(h) });
+    sendNote(CH, NOTE, 100);
+    const afterFirst = orig.length;
+    unregisterGateSetter(MOD, PARAM);
+    const next: boolean[] = [];
+    registerGateSetter(MOD, PARAM, { onGate: (h) => next.push(h) });
+    sendNote(CH, NOTE, 100);
+    expect(next).toEqual([true]);
+    expect(orig.length).toBe(afterFirst);
+  });
+});
+
+describe('one binding per key (CC ↔ NOTE collision)', () => {
+  const MOD = 'm';
+  const PARAM = 'p';
+
+  it('a NOTE learn over an existing CC binding replaces it (and drops the CC setter)', async () => {
+    const { access, sendCc, sendNote } = makeFakeAccess();
+    __test_setAccess(access);
+    const cc: number[] = [];
+    const gates: boolean[] = [];
+    await beginLearn({ moduleId: MOD, paramId: PARAM, min: 0, max: 1, onchange: (v) => cc.push(v) });
+    sendCc(0, 7, 64);
+    expect(getBinding(MOD, PARAM)).toMatchObject({ kind: 'cc' });
+    // Now NOTE-learn the same key.
+    await beginNoteLearn({ moduleId: MOD, paramId: PARAM, onGate: (h) => gates.push(h) });
+    sendNote(0, 60, 100);
+    const b = getBinding(MOD, PARAM);
+    expect(b && isNoteBinding(b)).toBe(true);
+    cc.length = 0;
+    gates.length = 0;
+    // The old CC must NOT drive anything now (setter dropped + binding is note).
+    sendCc(0, 7, 127);
+    expect(cc).toEqual([]);
+    // The note drives the gate.
+    sendNote(0, 60, 100);
+    expect(gates).toEqual([true]);
+  });
+
+  it('a CC learn over an existing NOTE binding replaces it (and drops the gate setter)', async () => {
+    const { access, sendCc, sendNote } = makeFakeAccess();
+    __test_setAccess(access);
+    const cc: number[] = [];
+    const gates: boolean[] = [];
+    await beginNoteLearn({ moduleId: MOD, paramId: PARAM, onGate: (h) => gates.push(h) });
+    sendNote(0, 60, 100);
+    expect(getBinding(MOD, PARAM)).toMatchObject({ kind: 'note' });
+    await beginLearn({ moduleId: MOD, paramId: PARAM, min: 0, max: 1, onchange: (v) => cc.push(v) });
+    sendCc(0, 7, 127);
+    expect(getBinding(MOD, PARAM)).toMatchObject({ kind: 'cc' });
+    cc.length = 0;
+    gates.length = 0;
+    sendNote(0, 60, 100); // old note must not drive
+    expect(gates).toEqual([]);
+    sendCc(0, 7, 64);
+    expect(cc).toHaveLength(1);
+  });
+});
+
+describe('export/import round-trips the union + legacy migration', () => {
+  it('export then import preserves a mixed CC + NOTE set', () => {
+    const { access } = makeFakeAccess();
+    __test_setAccess(access);
+    importBindings([
+      { kind: 'cc', key: 'a:p', channel: 1, cc: 7, learnedAt: 1 },
+      { kind: 'note', key: 'b:g', channel: 2, note: 60, learnedAt: 2 },
+    ]);
+    const out = exportBindings();
+    expect(out).toHaveLength(2);
+    const cc = out.find((b) => b.key === 'a:p');
+    const note = out.find((b) => b.key === 'b:g');
+    expect(cc && isCcBinding(cc)).toBe(true);
+    expect(note && isNoteBinding(note)).toBe(true);
+    // Re-import the export — idempotent.
+    __test_clearBindings();
+    importBindings(out);
+    expect(getBinding('a', 'p')).toMatchObject({ kind: 'cc', cc: 7 });
+    expect(getBinding('b', 'g')).toMatchObject({ kind: 'note', note: 60 });
+  });
+
+  it('a legacy record with no kind imports as a CC binding', () => {
+    const { access, sendCc } = makeFakeAccess();
+    __test_setAccess(access);
+    importBindings([{ key: 'legacy:p', channel: 0, cc: 7, learnedAt: 1 }]);
+    const b = getBinding('legacy', 'p');
+    expect(b && isCcBinding(b)).toBe(true);
+    const got: number[] = [];
+    registerGateSetter('legacy', 'p', { onGate: () => got.push(-1) }); // wrong kind: never fires
+    registerSetter('legacy', 'p', { min: 0, max: 1, onchange: (v) => got.push(v) });
+    sendCc(0, 7, 127);
+    expect(got).toEqual([1]);
   });
 });
