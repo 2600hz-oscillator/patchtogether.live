@@ -79,6 +79,8 @@ import {
   advanceCursor,
   playheadNorm,
   transportButton,
+  crossfeedInput,
+  reelOutSample,
 } from './lib/twotracks-engine';
 
 // ---------------------------------------------------------------------------
@@ -324,6 +326,16 @@ class ReelState {
   // Phase 3: scrub velocity HF loss state (1-pole IIR per channel)
   scrubLossL: number = 0;
   scrubLossR: number = 0;
+
+  // Cross-feed double-buffer: this reel's per-sample PLAYBACK (post EQ/filter,
+  // 0 when not rolling) for the current block (Cur) and the previous block
+  // (Prev). The OTHER reel reads our Prev buffer for its cross-feed, so the two
+  // reels stay decoupled (1 render-quantum / ~2.7 ms delay, inaudible). Sized to
+  // the 128-sample render quantum; reads are `?? 0`-guarded against any mismatch.
+  playbackPrevL: Float32Array = new Float32Array(128);
+  playbackPrevR: Float32Array = new Float32Array(128);
+  playbackCurL: Float32Array = new Float32Array(128);
+  playbackCurR: Float32Array = new Float32Array(128);
 }
 
 // ---------------------------------------------------------------------------
@@ -397,6 +409,10 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       // ==================== GLOBAL ====================
       /** A/B crossfade: 0=A only, 0.5=both unity, 1=B only */
       { name: 'ab',               defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
+      /** Cross-feed: how much of reel A's playback bleeds into reel B's input
+       *  path (recorded + monitored), and vice versa. 0 = off (no change). */
+      { name: 'a2b',              defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
+      { name: 'b2a',              defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
       /** Monitor: 1 = pass live input through to output (input monitoring). */
       { name: 'monitor',          defaultValue: 0,      minValue: 0,  maxValue: 1,     automationRate: 'k-rate' as const },
       // Lofi tape degradation (applied to combined output)
@@ -481,6 +497,11 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     parameters: Record<string, Float32Array>,
     suffix: '' | '_b', // '' for reel A param names, '_b' for reel B
     blockLen: number,
+    // Cross-feed: how much of the OTHER reel's playback bleeds into THIS reel's
+    // input path, and that reel's previous-block playback buffers to read from.
+    crossGain: number,
+    crossPrevL: Float32Array,
+    crossPrevR: Float32Array,
   ): void {
     // --- k-rate params ---
     const kv = (name: string, fallback: number): number => {
@@ -634,8 +655,15 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       const rate = av(pRate, i, 1);
 
       // ---- Live input for this sample (used by record + monitor passthrough) ----
-      const srcL = inL ? (inL[i] ?? 0) : 0;
-      const srcR = inR ? (inR[i] ?? 0) : srcL;
+      const dryL = inL ? (inL[i] ?? 0) : 0;
+      const dryR = inR ? (inR[i] ?? 0) : dryL;
+
+      // ---- Cross-feed: bleed the OTHER reel's playback (previous block) into
+      //      THIS reel's input path. Treated EXACTLY like the live input — so it
+      //      is captured to tape while recording AND heard while monitoring
+      //      (engine: crossfeedInput). crossGain 0 → identity (no change). ----
+      const srcL = crossGain !== 0 ? crossfeedInput(dryL, crossGain, crossPrevL[i] ?? 0) : dryL;
+      const srcR = crossGain !== 0 ? crossfeedInput(dryR, crossGain, crossPrevR[i] ?? 0) : dryR;
 
       // ---- Ring buffer read (linear interp) ----
       let sL = readInterp(reel.bufL, reel.cursor);
@@ -694,13 +722,22 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
         }
       }
 
-      // ---- Output: tape head (when rolling) + live input (when monitoring) ----
-      // Rolling = play/rec/overdub. ARMED + IDLE are silent on the tape side
-      // (frozen pre-roll / stopped), but monitor passthrough still sounds so you
-      // can audition the input before/while arming.
+      // ---- Output: tape head (when rolling) + input path (when monitoring) ----
+      // Rolling = play/rec/overdub. With monitor OFF you hear ONLY the tape under
+      // the head (no dry, no live cross-feed bleed); with monitor ON the input
+      // path (dry + cross-feed) is mixed INTO the play/record mix. ARMED + IDLE
+      // are silent on the tape side, but monitor still sounds so you can audition
+      // the input before/while arming. (engine: reelOutSample.)
       const rolling = reel.state === 'play' || reel.state === 'rec' || reel.state === 'overdub';
-      outL[i] += gain * ((rolling ? sL : 0) + (monitorOn ? srcL : 0));
-      outR[i] += gain * ((rolling ? sR : 0) + (monitorOn ? srcR : 0));
+      const tapeL = rolling ? sL : 0;
+      const tapeR = rolling ? sR : 0;
+      outL[i] += gain * reelOutSample(tapeL, srcL, monitorOn);
+      outR[i] += gain * reelOutSample(tapeR, srcR, monitorOn);
+
+      // Publish this reel's playback (post EQ/filter; 0 when not rolling) for the
+      // OTHER reel to cross-feed from next block (read via its crossPrev buffer).
+      reel.playbackCurL[i] = tapeL;
+      reel.playbackCurR[i] = tapeR;
 
       // ---- Advance cursor + resolve boundary (ONLY while rolling).
       // IDLE and ARMED hold the playhead still (no free-running sweep; ARMED is a
@@ -789,6 +826,10 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     const abVal = (parameters['ab']?.[0]) ?? 0;
     const { gainA, gainB } = abGains(abVal);
 
+    // Cross-feed amounts: a2b = A's playback → B's input; b2a = B → A.
+    const a2b = (parameters['a2b']?.[0]) ?? 0;
+    const b2a = (parameters['b2a']?.[0]) ?? 0;
+
     // Temporary buffers for each reel's output
     const tmpAL = new Float32Array(blockLen);
     const tmpAR = new Float32Array(blockLen);
@@ -796,7 +837,9 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
     const tmpBR = new Float32Array(blockLen);
 
     // Process reel A: audio inputs [0]=L, [1]=R; gates via AudioParams
-    // (inputs 2,3 reserved for reel B audio)
+    // (inputs 2,3 reserved for reel B audio). A cross-feeds from B's PREVIOUS
+    // block (b2a) — both reels read each other's prev buffer so the order they
+    // run in doesn't couple them (1 render-quantum delay, inaudible).
     this.processReel(
       this.reelA, 'a',
       tmpAL, tmpAR,
@@ -804,9 +847,11 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       inputs, 0, // inputOffset=0 → inputs[0]=L, inputs[1]=R
       parameters, '',
       blockLen,
+      b2a, this.reelB.playbackPrevL, this.reelB.playbackPrevR,
     );
 
-    // Process reel B: audio inputs [2]=L, [3]=R
+    // Process reel B: audio inputs [2]=L, [3]=R. B cross-feeds from A's previous
+    // block (a2b).
     this.processReel(
       this.reelB, 'b',
       tmpBL, tmpBR,
@@ -814,7 +859,15 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       inputs, 2, // inputOffset=2 → inputs[2]=L, inputs[3]=R
       parameters, '_b',
       blockLen,
+      a2b, this.reelA.playbackPrevL, this.reelA.playbackPrevR,
     );
+
+    // Rotate each reel's playback double-buffer: this block's Cur becomes next
+    // block's Prev (what the other reel will cross-feed from).
+    [this.reelA.playbackPrevL, this.reelA.playbackCurL] = [this.reelA.playbackCurL, this.reelA.playbackPrevL];
+    [this.reelA.playbackPrevR, this.reelA.playbackCurR] = [this.reelA.playbackCurR, this.reelA.playbackPrevR];
+    [this.reelB.playbackPrevL, this.reelB.playbackCurL] = [this.reelB.playbackCurL, this.reelB.playbackPrevL];
+    [this.reelB.playbackPrevR, this.reelB.playbackCurR] = [this.reelB.playbackCurR, this.reelB.playbackPrevR];
 
     // Mix reels into final output
     if (outL) {

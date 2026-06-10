@@ -56,6 +56,10 @@
   // ─── Global A/B param ───
   let abParam = $derived(node?.params.ab ?? 0);
 
+  // ─── Cross-feed params (A→B / B→A), default off ───
+  let a2bParam = $derived(node?.params.a2b ?? 0);
+  let b2aParam = $derived(node?.params.b2a ?? 0);
+
   // ─── Global Lofi param ───
   let lofiParam = $derived(node?.params.lofi ?? 0);
   const LOFI_LABELS = ['OFF', 'LOW', 'HIGH', 'ERROR'] as const;
@@ -566,6 +570,14 @@
           </div>
         </div>
 
+        <!-- Cross-feed: A→B / B→A (assignable knobs, default off) -->
+        <div class="cross-strip" data-testid="twotracks-crossfeed">
+          <Knob value={a2bParam} min={0} max={1} defaultValue={0} label="A→B" curve="linear"
+            onchange={(v) => setNodeParam(id, 'a2b', v)} moduleId={id} paramId="a2b" />
+          <Knob value={b2aParam} min={0} max={1} defaultValue={0} label="B→A" curve="linear"
+            onchange={(v) => setNodeParam(id, 'b2a', v)} moduleId={id} paramId="b2a" />
+        </div>
+
         <!-- Monitor (input passthrough) -->
         <button type="button" class="monitor-btn nodrag" class:active={monitorOn}
           onclick={() => setNodeParam(id, 'monitor', monitorOn ? 0 : 1)}
@@ -962,6 +974,25 @@
     color: rgba(200, 180, 255, 0.7);
     font-family: ui-monospace, monospace;
     letter-spacing: 0.06em;
+  }
+
+  /* ─── Cross-feed strip (A→B / B→A) ─── */
+  .twotracks-card .cross-strip {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-around;
+    gap: 4px;
+    background: #111520;
+    border: 1px solid #2a3045;
+    border-radius: 3px;
+    padding: 6px 4px;
+  }
+  .twotracks-card .cross-strip :global(.knob) {
+    width: 30px;
+    height: 30px;
+  }
+  .twotracks-card .cross-strip :global(.label) {
+    font-size: 0.42rem;
   }
 
   /* ─── Monitor button ─── */
