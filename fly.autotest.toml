@@ -24,6 +24,14 @@ primary_region = "iad"
 [env]
   NODE_ENV = "production"
   PORT = "8080"
+  # Deploy version surfaced on /health + /metrics (server_version).
+  SERVER_VERSION = "1.0.1-autotest"
+  # Memory-alarm thresholds (MB), sized below this tier's 256MB machine (same as
+  # prod) so the alarm fires before the OOM-killer rather than never.
+  RELAY_MEM_WARN_MB = "200"
+  RELAY_MEM_CRIT_MB = "230"
+  # NOTE: BETTERSTACK_HEARTBEAT_URL and LOGTAIL_SOURCE_TOKEN are SECRETS — set
+  # via `flyctl secrets set -a patchtogether-server-autotest ...`, never here.
 
 [[services]]
   protocol = "tcp"

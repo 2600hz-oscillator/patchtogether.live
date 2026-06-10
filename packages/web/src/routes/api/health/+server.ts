@@ -17,6 +17,7 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env as privateEnv } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
+import { probeHocuspocus } from './probe';
 
 /** SHA-256 prefix of a secret value, or null if unset. One-way; the value is
  *  never recoverable from this. Matches the fingerprint() in
@@ -33,8 +34,22 @@ export const GET: RequestHandler = async () => {
   const hasSecret = Boolean(privateEnv.CLERK_SECRET_KEY);
   const hasPublishable = Boolean(publicEnv.PUBLIC_CLERK_PUBLISHABLE_KEY);
   const inviteSecretFingerprint = await fingerprint(privateEnv.INVITE_SECRET);
+
+  // Build-time vars (baked by Vite; CF Pages dashboard env is runtime-only and
+  // never reaches the bundle). VITE_SERVER_WS_URL points at this tier's relay;
+  // VITE_APP_VERSION is the deployed web build version (see deploy.yml).
+  const buildEnv = import.meta.env as Record<string, string | undefined>;
+  // Cross-tier signal: probe the relay /health so this single web endpoint
+  // reflects relay reachability too. Hard 1.5s cap; never throws.
+  const hocuspocus = await probeHocuspocus(buildEnv.VITE_SERVER_WS_URL);
+
   return json({
+    // ok + HTTP 200 stay constant for backward-compat with existing uptime
+    // monitors + @smoke; operational state lives in `status` (healthy iff the
+    // relay probe succeeded), so monitors can match on the body field.
     ok: true,
+    status: hocuspocus.ok ? 'healthy' : 'degraded',
+    version: buildEnv.VITE_APP_VERSION ?? 'unknown',
     auth: hasSecret && hasPublishable ? 'configured' : 'missing',
     // Presence-only signal that the web tier has a Postgres connection string
     // (Phase 2a / FW1). We do NOT connect here — this just lets a deploy smoke
@@ -48,5 +63,7 @@ export const GET: RequestHandler = async () => {
     },
     // Non-secret fingerprint of INVITE_SECRET for drift detection (see header).
     inviteSecretFingerprint,
+    // Downstream-dependency reachability. `hocuspocus.ok` drives `status` above.
+    deps: { hocuspocus },
   });
 };

@@ -22,6 +22,18 @@ primary_region = "iad"
 [env]
   NODE_ENV = "production"
   PORT = "8080"
+  # Deploy version surfaced on /health + /metrics (server_version) so a monitor
+  # or deploy smoke can confirm WHICH build is live and detect a stale relay by
+  # a web↔relay version drift. Keep in step with the app version on release.
+  SERVER_VERSION = "1.0.1-prod"
+  # Memory-alarm thresholds (MB) driving the 30s [relay-alarm] log line and the
+  # Better Stack /metrics body-match monitor. Sized BELOW this tier's 256MB
+  # machine so the alarm fires before the OOM-killer — the default 384/480 can
+  # NEVER trip on a 256MB box, which is exactly why the prod OOM went unalerted.
+  RELAY_MEM_WARN_MB = "200"
+  RELAY_MEM_CRIT_MB = "230"
+  # NOTE: BETTERSTACK_HEARTBEAT_URL and LOGTAIL_SOURCE_TOKEN are SECRETS — set
+  # via `flyctl secrets set -a patchtogether-server ...`, never committed here.
 
 [[services]]
   protocol = "tcp"
@@ -54,6 +66,18 @@ primary_region = "iad"
     interval = "15s"
     timeout = "2s"
     grace_period = "10s"
+
+  # HTTP health check on /health (the WS server replies JSON on the same port
+  # via the introspection extension). A TCP-only check passes even when the
+  # process listens but /health 500s/wedges; this lets Fly RESTART a wedged
+  # relay instead of leaving a half-dead host serving nobody.
+  [[services.http_checks]]
+    interval = "30s"
+    timeout = "3s"
+    grace_period = "10s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
 
 [[vm]]
   cpu_kind = "shared"
