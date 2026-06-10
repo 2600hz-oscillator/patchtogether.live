@@ -74,8 +74,14 @@ export const scopeDef: AudioModuleDef = {
   // ≥0.5 threshold to decide their binary state, so a 5V CV pulse will
   // toggle XY mode just as expected.
   inputs: [
-    { id: 'ch1', type: 'audio' },
-    { id: 'ch2', type: 'audio' },
+    // ch1/ch2 are the signal probes. They're typed `audio` (the trace + the
+    // clean passthrough), but a SCOPE is a VISUALIZER, not a master bus — so
+    // they also `accepts` the CV family (cv/pitch/gate) for scoping LFOs,
+    // envelopes, pitch CV and gates. (canConnect blocks cv/pitch/gate→audio
+    // globally to keep stray CV off the speaker bus; the per-port opt-in lifts
+    // that only for the probe. The engine already routes these node-to-node.)
+    { id: 'ch1', type: 'audio', accepts: ['cv', 'pitch', 'gate'] },
+    { id: 'ch2', type: 'audio', accepts: ['cv', 'pitch', 'gate'] },
     { id: 'timeMs',    type: 'cv', paramTarget: 'timeMs' },
     { id: 'ch1Scale',  type: 'cv', paramTarget: 'ch1Scale' },
     { id: 'ch1Offset', type: 'cv', paramTarget: 'ch1Offset' },

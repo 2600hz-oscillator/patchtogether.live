@@ -15,7 +15,7 @@
 //     mirrors that permissiveness.
 
 import { describe, expect, it } from 'vitest';
-import { canConnect, isVideoCableType } from './types';
+import { canConnect, canConnectToPort, isVideoCableType } from './types';
 
 describe('canConnect — equal types always pass', () => {
   for (const t of ['audio', 'cv', 'pitch', 'gate', 'polyPitchGate', 'mono-video', 'video', 'keys', 'image'] as const) {
@@ -112,6 +112,28 @@ describe('canConnect — strict rejections', () => {
   });
   it('rejects pitch → audio (V/oct is bipolar, would land as DC offset)', () => {
     expect(canConnect('pitch', 'audio')).toBe(false);
+  });
+});
+
+describe('canConnectToPort — per-port `accepts` widening (SCOPE probe)', () => {
+  it('falls through to canConnect when the port has no accepts list', () => {
+    expect(canConnectToPort('cv', { type: 'audio' })).toBe(false);     // global rule
+    expect(canConnectToPort('audio', { type: 'audio' })).toBe(true);   // equal types
+    expect(canConnectToPort('cv', { type: 'cv' })).toBe(true);         // equal types
+  });
+  it('lets an audio probe accept the CV family without changing the global rule', () => {
+    const probe = { type: 'audio' as const, accepts: ['cv', 'pitch', 'gate'] as const };
+    expect(canConnectToPort('cv', probe)).toBe(true);
+    expect(canConnectToPort('pitch', probe)).toBe(true);
+    expect(canConnectToPort('gate', probe)).toBe(true);
+    expect(canConnectToPort('audio', probe)).toBe(true); // still via canConnect (equal)
+    // The GLOBAL rule is untouched — cv→audio is still rejected everywhere else.
+    expect(canConnect('cv', 'audio')).toBe(false);
+  });
+  it('does NOT accept a type that is neither canConnect-allowed nor in accepts', () => {
+    const probe = { type: 'audio' as const, accepts: ['cv'] as const };
+    expect(canConnectToPort('video', probe)).toBe(false);  // video → audio probe: no
+    expect(canConnectToPort('gate', probe)).toBe(false);   // gate not in this accepts list
   });
 });
 
