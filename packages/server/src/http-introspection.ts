@@ -72,6 +72,15 @@ export interface MetricsSnapshot {
   /** Unhandled promise rejections caught since boot (see above; tag
    *  `event=relay_unhandled_rejection`). */
   relay_unhandled_rejections: number;
+  /** Unified early-warning rollup over memory + caught exceptions, so a single
+   *  Better Stack keyword uptime monitor (looking for `"alert_state":"ok"`)
+   *  catches BOTH a pre-OOM memory climb AND any non-fatal exception — no log
+   *  pipeline, no ClickHouse. Derived purely from the snapshot inputs:
+   *   - 'crit' when rss > critMb OR either exception counter is > 0
+   *   - 'warn' when warnMb < rss <= critMb (and no exceptions)
+   *   - 'ok'   otherwise
+   *  See `computeAlertState`. */
+  alert_state: 'ok' | 'warn' | 'crit';
 }
 
 /** Pluggable deps so tests can pin the clock + memory readings. */
@@ -141,6 +150,25 @@ export function classifyMemory(
   return null;
 }
 
+/** Unified `alert_state` for the /metrics rollup. Pure for unit-testing.
+ *
+ *  Reuses {@link classifyMemory} for the memory half ('error'→crit, 'warn',
+ *  or null→ok), then escalates to 'crit' whenever either caught-exception
+ *  counter is > 0 — so a single keyword monitor catches both a pre-OOM memory
+ *  climb and any non-fatal exception. */
+export function computeAlertState(
+  rssMb: number,
+  uncaughtExceptions: number,
+  unhandledRejections: number,
+  thresholds: { warnMb: number; critMb: number },
+): 'ok' | 'warn' | 'crit' {
+  if (uncaughtExceptions > 0 || unhandledRejections > 0) return 'crit';
+  const mem = classifyMemory(rssMb, thresholds);
+  if (mem === 'error') return 'crit';
+  if (mem === 'warn') return 'warn';
+  return 'ok';
+}
+
 export interface IntrospectionExtension extends Extension {
   /** Test-only: build a snapshot synchronously (skips the HTTP path). */
   _snapshot(): MetricsSnapshot;
@@ -200,12 +228,15 @@ export function createIntrospectionExtension(
     const cutoff = deps.now() - PERSIST_WINDOW_MS;
     // Trim the ring opportunistically each scrape; cheap O(n) for n ~ tens.
     persistWrites = persistWrites.filter((t) => t >= cutoff);
+    const rssMb = round(mem.rss / BYTES_PER_MB, 1);
+    const uncaught = hocuspocus.getUncaughtExceptions?.() ?? 0;
+    const unhandled = hocuspocus.getUnhandledRejections?.() ?? 0;
     return {
       ts: deps.now(),
       boot_id: bootId,
       server_version: serverVersion,
       uptime_s: round(deps.uptime(), 3),
-      rss_mb: round(mem.rss / BYTES_PER_MB, 1),
+      rss_mb: rssMb,
       heap_used_mb: round(mem.heapUsed / BYTES_PER_MB, 1),
       heap_total_mb: round(mem.heapTotal / BYTES_PER_MB, 1),
       ext_mb: round(mem.external / BYTES_PER_MB, 1),
@@ -215,8 +246,9 @@ export function createIntrospectionExtension(
       rooms: hocuspocus.getDocumentsCount(),
       persist_writes_per_min: persistWrites.length,
       persist_mode: hocuspocus.getPersistenceMode(),
-      relay_uncaught_exceptions: hocuspocus.getUncaughtExceptions?.() ?? 0,
-      relay_unhandled_rejections: hocuspocus.getUnhandledRejections?.() ?? 0,
+      relay_uncaught_exceptions: uncaught,
+      relay_unhandled_rejections: unhandled,
+      alert_state: computeAlertState(rssMb, uncaught, unhandled, thresholds),
     };
   }
 
