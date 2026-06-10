@@ -185,6 +185,17 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   // gate into `gate_1` so the '1' key (697 + 1209 Hz) holds and `out`
   // sounds inside the drive window.
   bluebox:      { outputPort: 'out', gatePort: 'gate_1' },
+  // MOOG960 — Sequential Controller. Auto-runs on spawn (moog960.ts calls
+  // startTransport() unconditionally), so the row CV outputs emit fine. But
+  // clock_out is a narrow ~10ms pulse per column advance, and at the 2Hz
+  // default `rate` that's one blip every 500ms — the AC-scope capture frames
+  // in the per-port emit sweep fall between pulses intermittently (peak=0
+  // flake; same narrow-gate class as buggles.clock). FIX, not skip: seed
+  // rate=20 (the def max) so clock_out pulses every ~50ms (10× denser) and is
+  // reliably caught. No START gate driver — the module already runs, and a
+  // gate would just re-zero it every rising edge. outputPort stays row1 for
+  // the whole-module shape check.
+  moog960:      { outputPort: 'row1', params: { rate: 20 } },
 };
 
 /** Resolve the canonical driver for a module. Returns the override if
