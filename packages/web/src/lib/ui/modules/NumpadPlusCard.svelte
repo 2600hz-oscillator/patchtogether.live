@@ -110,6 +110,7 @@
     { id: 'l3_gate',  label: 'L3 G', cable: 'gate'  },
     { id: 'l4_pitch', label: 'L4 P', cable: 'pitch' },
     { id: 'l4_gate',  label: 'L4 G', cable: 'gate'  },
+    { id: 'poly',     label: 'POLY', cable: 'polyPitchGate' },
   ];
 
   // ─── Display helpers ─────────────────────────────────────────────
@@ -200,13 +201,15 @@
     return () => document.removeEventListener('keydown', onKey, { capture: true });
   });
 
-  // ─── isPlaying / REC / OVD toggles ───────────────────────────────
+  // ─── isPlaying / REC / OVD / POLY toggles ────────────────────────
   let isPlaying = $derived(pget('isPlaying', 0) >= 0.5);
   let recArm = $derived(pget('recArm', 0) >= 0.5);
   let overdub = $derived(pget('overdub', 0) >= 0.5);
+  let poly = $derived(pget('poly', 0) >= 0.5);
   function togglePlay() { set('isPlaying')(isPlaying ? 0 : 1); }
   function toggleRecArm() { set('recArm')(recArm ? 0 : 1); }
   function toggleOverdub() { set('overdub')(overdub ? 0 : 1); }
+  function togglePoly() { set('poly')(poly ? 0 : 1); }
 </script>
 
 <div class="card numpad-plus" data-testid="numpad-plus-card" data-node-id={id}>
@@ -263,6 +266,15 @@
           data-testid="numpad-overdub"
           title="OVERDUB: every keypress writes the nearest step"
         >OVD</button>
+        <button
+          type="button"
+          class="poly-btn nodrag"
+          class:on={poly}
+          onclick={togglePoly}
+          data-testid="numpad-poly"
+          aria-pressed={poly}
+          title="POLY: record up to 5 held keys per step (mono outs send the lowest; POLY out sends all)"
+        >POLY</button>
       </div>
 
       <!-- 4x4 step grid -->
@@ -419,7 +431,7 @@
     border: 1px solid var(--border);
     border-radius: 2px;
   }
-  .play-btn, .rec-btn, .ovd-btn {
+  .play-btn, .rec-btn, .ovd-btn, .poly-btn {
     appearance: none;
     background: rgba(10,12,16,0.7);
     border: 1px solid var(--border);
@@ -434,6 +446,7 @@
   .rec-btn.on  { background: #ff3030; color: #fff; border-color: #ff3030; }
   .rec-btn.armed { animation: pulse 0.5s steps(2) infinite; }
   .ovd-btn.on  { background: #ff8800; color: #000; border-color: #ff8800; }
+  .poly-btn.on { background: #00f0ff; color: #000; border-color: #00f0ff; }
 
   @keyframes pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(255,48,48,0.8); }

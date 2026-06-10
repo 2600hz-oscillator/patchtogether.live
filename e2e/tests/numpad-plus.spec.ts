@@ -287,4 +287,94 @@ test.describe('NUMPAD+ module', () => {
     });
     expect(al, `activeLayer via CV = ${al} (expected 3 = L4)`).toBe(3);
   });
+
+  // ─── Poly mode ───────────────────────────────────────────────────
+  test('POLY button toggles the poly param + a poly output handle renders', async ({ page }) => {
+    await spawnNumpadPlus(page);
+    const polyBtn = page.locator('[data-testid="numpad-poly"]');
+    await expect(polyBtn).toBeVisible();
+    await expect(polyBtn).toHaveAttribute('aria-pressed', 'false');
+    await polyBtn.click();
+    await expect(polyBtn).toHaveAttribute('aria-pressed', 'true');
+    const polyParam = await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+      return w.__patch.nodes.np?.params.poly;
+    });
+    expect(polyParam).toBe(1);
+    // The polyPitchGate output handle is declared + rendered.
+    await expect(page.locator('[data-handleid="poly"], [data-id*="poly"]').first()).toBeAttached();
+  });
+
+  test('poly mode records up to 5 HELD keys into a step; mono `midi` is the lowest', async ({ page }) => {
+    await spawnNumpadPlus(page);
+    // Poly + overdub on; sequence stopped → writes to step 0.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+      const np = w.__patch.nodes.np;
+      if (np) { np.params.poly = 1; np.params.overdub = 1; }
+    });
+    await page.waitForTimeout(50);
+
+    // HOLD a 3-note chord (C4/E4/G4 = Numpad1/5/8 at octave 4) — keydowns with
+    // no keyup between, so all three are held when the last one captures.
+    await page.evaluate(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad1', key: '1' }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad5', key: '5' }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad8', key: '8' }));
+    });
+    await page.waitForTimeout(120);
+    await page.evaluate(() => {
+      for (const code of ['Numpad1', 'Numpad5', 'Numpad8']) {
+        document.dispatchEvent(new KeyboardEvent('keyup', { code, key: '' }));
+      }
+    });
+
+    const step0 = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { layers?: Array<Array<{ on?: boolean; midi?: number | null; midis?: number[] }>> } }> };
+      };
+      return w.__patch.nodes.np?.data?.layers?.[0]?.[0] ?? null;
+    });
+    expect(step0, 'step 0 recorded').not.toBeNull();
+    expect(step0!.on).toBe(true);
+    // Up to 5 held notes captured (C4/E4/G4 = 60/64/67), sorted ascending.
+    expect(step0!.midis).toEqual([60, 64, 67]);
+    // Mono out reads `midi` = the LOWEST of the chord.
+    expect(step0!.midi).toBe(60);
+  });
+
+  test('held notes keep their PRESS-TIME octave when the octave changes mid-hold', async ({ page }) => {
+    await spawnNumpadPlus(page);
+    await page.evaluate(() => {
+      const w = globalThis as unknown as { __patch: { nodes: Record<string, { params: Record<string, number> }> } };
+      const np = w.__patch.nodes.np;
+      if (np) { np.params.poly = 1; np.params.overdub = 1; np.params.octave = 4; }
+    });
+    await page.waitForTimeout(50);
+
+    // Hold C at octave 4 (=60), then press the octave-UP key (numpad +) to move
+    // to octave 5, then add D (=74) — the still-held C must stay at octave 4.
+    await page.evaluate(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad1', key: '1' })); // C4 = 60
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'NumpadAdd', key: '+' })); // octave → 5
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad3', key: '3' })); // D5 = 74
+    });
+    await page.waitForTimeout(120);
+    await page.evaluate(() => {
+      for (const code of ['Numpad1', 'Numpad3']) {
+        document.dispatchEvent(new KeyboardEvent('keyup', { code, key: '' }));
+      }
+    });
+
+    const res = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params?: Record<string, number>; data?: { layers?: Array<Array<{ midis?: number[]; midi?: number | null }>> } }> };
+      };
+      const np = w.__patch.nodes.np;
+      return { octave: np?.params?.octave, step0: np?.data?.layers?.[0]?.[0] ?? null };
+    });
+    expect(res.octave).toBe(5); // octave param advanced
+    // Held C stayed at octave 4 (60); the new D was taken at octave 5 (74).
+    expect(res.step0!.midis).toEqual([60, 74]);
+  });
 });

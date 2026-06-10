@@ -68,7 +68,8 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { isInputPortConnected } from './transport-helpers';
-import { midiToVOct, coerceToNoteStep, type NoteStep } from '$lib/audio/note-entry';
+import { midiToVOct, coerceToNoteStep, NOTE_STEP_MAX_VOICES, type NoteStep } from '$lib/audio/note-entry';
+import { createPolySender, voicingToVOct, type PolySender } from '$lib/audio/poly';
 
 export const NUMPAD_PLUS_LAYERS = 4;
 export const NUMPAD_PLUS_STEPS = 16;
@@ -200,6 +201,33 @@ export function quantizeToNearestStep(
   return (currentStepIndex + 1) % NUMPAD_PLUS_STEPS;
 }
 
+/** Snapshot the currently-HELD keypad notes for a poly step: de-duplicated,
+ *  sorted ascending, capped to `cap` (the lowest `cap` if more are held). This
+ *  is what poly-mode recording writes to a step — the keys held at capture
+ *  time, NOT an accumulated chord. Pure for testability. */
+export function heldNotesForStep(
+  held: readonly number[],
+  cap: number = NOTE_STEP_MAX_VOICES,
+): number[] {
+  return Array.from(new Set(held)).sort((a, b) => a - b).slice(0, Math.max(0, cap));
+}
+
+/** Lowest MIDI of a voice set (what the per-layer MONO pitch out emits in poly
+ *  mode), or null when empty. */
+export function lowestNote(midis: readonly number[]): number | null {
+  let lo: number | null = null;
+  for (const m of midis) if (lo === null || m < lo) lo = m;
+  return lo;
+}
+
+/** The voices a step contributes to outputs: the recorded poly set if present,
+ *  else the single `midi` (mono), else empty when off. */
+export function stepVoices(step: NoteStep): number[] {
+  if (!step.on) return [];
+  if (step.midis && step.midis.length > 0) return step.midis;
+  return step.midi !== null ? [step.midi] : [];
+}
+
 /** Layer data shape on node.data. */
 export type NumpadLayer = NoteStep[]; // length NUMPAD_PLUS_STEPS
 
@@ -249,7 +277,7 @@ export const numpadPlusDef: AudioModuleDef = {
   domain: 'audio',
   label: 'numpad+',
   category: 'sources',
-  schemaVersion: 1,
+  schemaVersion: 2,
 
   inputs: [
     { id: 'clock', type: 'gate' },
@@ -264,6 +292,9 @@ export const numpadPlusDef: AudioModuleDef = {
     { id: 'l3_gate',  type: 'gate'  },
     { id: 'l4_pitch', type: 'pitch' },
     { id: 'l4_gate',  type: 'gate'  },
+    // Poly output: the ACTIVE layer's up-to-5 voices (held keys live, else the
+    // current step's recorded notes) as a single polyPitchGate bus.
+    { id: 'poly',     type: 'polyPitchGate' },
   ],
   params: [
     { id: 'bpm',         label: 'BPM',  defaultValue: 120, min: 30, max: 300, curve: 'linear' },
@@ -272,6 +303,9 @@ export const numpadPlusDef: AudioModuleDef = {
     { id: 'recArm',      label: 'Rec',  defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
     { id: 'overdub',     label: 'Ovd',  defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
     { id: 'octave',      label: 'Oct',  defaultValue: 4,   min: 0,  max: 8,   curve: 'discrete' },
+    // Poly mode: when on, recording captures up to NOTE_STEP_MAX_VOICES of the
+    // keys HELD on the keypad into the step (mono outs send the lowest).
+    { id: 'poly',        label: 'Poly', defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -289,6 +323,11 @@ export const numpadPlusDef: AudioModuleDef = {
     for (let i = 0; i < NUMPAD_PLUS_LAYERS; i++) {
       layerOutputs.push({ pitch: makeCv(0), gate: makeCv(0) });
     }
+
+    // Poly output (polyPitchGate merger) — carries the ACTIVE layer's voices.
+    // Always live (the `poly` PARAM gates RECORDING, not the output), so a
+    // mono step still emits 1 voice and a poly step emits up to 5.
+    const poly: PolySender = createPolySender(ctx);
 
     // ─── External clock input (rising-edge detection) ────────────────
     const clockInGain = ctx.createGain();
@@ -355,7 +394,12 @@ export const numpadPlusDef: AudioModuleDef = {
       const raw = (live?.data as Record<string, unknown> | undefined)?.layers;
       return coerceLayers(raw);
     }
-    function writeStepIntoLayer(layerIdx: number, stepIdx: number, midi: number): void {
+    function writeStepIntoLayer(
+      layerIdx: number,
+      stepIdx: number,
+      midi: number,
+      heldMidis?: readonly number[],
+    ): void {
       const live = livePatch.nodes[nodeId];
       if (!live) return;
       if (!live.data) live.data = {};
@@ -363,7 +407,14 @@ export const numpadPlusDef: AudioModuleDef = {
       const layers = coerceLayers(data.layers);
       const layer = layers[layerIdx];
       if (!layer) return;
-      layer[stepIdx] = { on: true, midi };
+      // Poly mode passes the keys HELD at capture time → store up to 5 of them
+      // (mono outs read `midi`, so set it to the LOWEST). Mono mode: plain note.
+      if (heldMidis && heldMidis.length > 1) {
+        const voices = heldNotesForStep(heldMidis);
+        layer[stepIdx] = { on: true, midi: lowestNote(voices) ?? midi, midis: voices };
+      } else {
+        layer[stepIdx] = { on: true, midi };
+      }
       // Write back via SyncedStore so collaborators see it.
       data.layers = layers.map((l) => l.map((s) => ({ ...s })));
     }
@@ -418,6 +469,24 @@ export const numpadPlusDef: AudioModuleDef = {
           layerOutputs[i]!.gate.offset.setTargetAtTime(0, ctx.currentTime, 0.001);
         }
       }
+      applyPolyOutput(layers);
+    }
+
+    /** Feed the poly output with the ACTIVE layer's voices: the live-held keys
+     *  win (so you hear/record what you're holding), else the active layer's
+     *  current step (its recorded poly notes, or the single `midi`). Always
+     *  live — the `poly` PARAM gates RECORDING, not this output. */
+    function applyPolyOutput(layers: NumpadLayer[]): void {
+      const ai = activeLayerIndex();
+      let voices: number[];
+      if (manualState[ai]?.gateHigh && pressedNotes.size > 0) {
+        voices = heldNotesForStep(Array.from(pressedNotes.values()));
+      } else {
+        const step = layers[ai]?.[stepIndex] ?? { on: false, midi: null };
+        voices = heldNotesForStep(stepVoices(step));
+      }
+      const lanes = voicingToVOct(voices.map((m) => ({ midi: m, gate: 1 as const })));
+      poly.scheduleStep(ctx.currentTime, lanes, 0); // empty lanes ⇒ all gates 0
     }
 
     function advanceStep(): void {
@@ -545,7 +614,13 @@ export const numpadPlusDef: AudioModuleDef = {
                 (60 / Math.max(30, readParam('bpm', 120))) / 4,
               )
             : stepIndex;
-          writeStepIntoLayer(layerIdx, recStep, midi);
+          // Poly mode: capture up to 5 of the keys HELD right now (incl. this
+          // one — already in pressedNotes) into the step. Mono mode: just `midi`.
+          const polyOn = readParam('poly', 0) >= 0.5;
+          writeStepIntoLayer(
+            layerIdx, recStep, midi,
+            polyOn ? Array.from(pressedNotes.values()) : undefined,
+          );
         }
       };
       const onUp = (ev: KeyboardEvent) => {
@@ -558,12 +633,14 @@ export const numpadPlusDef: AudioModuleDef = {
         ev.preventDefault();
         ev.stopPropagation();
         pressedNotes.delete(ev.code);
-        // If no other keys are still held on the active layer, drop
-        // the manual gate.
+        // If no other keys are still held, drop the manual gate.
         if (pressedNotes.size === 0) {
           for (const m of manualState) m.gateHigh = false;
-          applyOutputs(readLayers());
         }
+        // Re-apply on EVERY release (not just full release) so the poly output
+        // drops the just-released voice while other keys are still held — live
+        // poly play streams the current held set through `poly` in real time.
+        applyOutputs(readLayers());
       };
       document.addEventListener('keydown', onDown, { capture: true });
       document.addEventListener('keyup', onUp, { capture: true });
@@ -583,6 +660,7 @@ export const numpadPlusDef: AudioModuleDef = {
       outputsMap.set(`l${i + 1}_pitch`, { node: layerOutputs[i]!.pitch, output: 0 });
       outputsMap.set(`l${i + 1}_gate`,  { node: layerOutputs[i]!.gate,  output: 0 });
     }
+    outputsMap.set('poly', { node: poly.output, output: 0 });
 
     return {
       domain: 'audio',
@@ -613,6 +691,7 @@ export const numpadPlusDef: AudioModuleDef = {
           try { pitch.stop(); pitch.disconnect(); } catch { /* */ }
           try { gate.stop();  gate.disconnect();  } catch { /* */ }
         }
+        try { poly.dispose(); } catch { /* */ }
       },
     };
   },

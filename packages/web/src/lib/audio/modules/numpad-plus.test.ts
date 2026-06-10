@@ -24,6 +24,9 @@ import {
   keyCodeLabel,
   codeForSemitone,
   remapKeymap,
+  heldNotesForStep,
+  lowestNote,
+  stepVoices,
 } from './numpad-plus';
 
 describe('numpadPlus: keymap remap helpers', () => {
@@ -86,23 +89,26 @@ describe('numpadPlus: module def shape', () => {
     expect(ids).toEqual(['clock', 'layer']);
   });
 
-  it('exposes 8 outputs: l{1..4}_pitch + l{1..4}_gate', () => {
+  it('exposes 8 mono outputs (l{1..4}_pitch/gate) + a poly output', () => {
     const ids = numpadPlusDef.outputs.map((p) => p.id).sort();
     expect(ids).toEqual([
       'l1_gate', 'l1_pitch',
       'l2_gate', 'l2_pitch',
       'l3_gate', 'l3_pitch',
       'l4_gate', 'l4_pitch',
+      'poly',
     ]);
     for (let i = 1; i <= 4; i++) {
       expect(numpadPlusDef.outputs.find((o) => o.id === `l${i}_pitch`)?.type).toBe('pitch');
       expect(numpadPlusDef.outputs.find((o) => o.id === `l${i}_gate`)?.type).toBe('gate');
     }
+    expect(numpadPlusDef.outputs.find((o) => o.id === 'poly')?.type).toBe('polyPitchGate');
   });
 
-  it('exposes bpm/isPlaying/activeLayer/recArm/overdub/octave params', () => {
+  it('exposes bpm/isPlaying/activeLayer/recArm/overdub/octave/poly params', () => {
     const ids = numpadPlusDef.params.map((p) => p.id).sort();
-    expect(ids).toEqual(['activeLayer', 'bpm', 'isPlaying', 'octave', 'overdub', 'recArm']);
+    expect(ids).toEqual(['activeLayer', 'bpm', 'isPlaying', 'octave', 'overdub', 'poly', 'recArm']);
+    expect(numpadPlusDef.params.find((p) => p.id === 'poly')?.defaultValue).toBe(0);
   });
 
   it('octave param defaults to 4 (clamped 0..8)', () => {
@@ -214,6 +220,27 @@ describe('quantizeToNearestStep', () => {
   it('returns current step if duration is zero (defensive)', () => {
     expect(quantizeToNearestStep(0, 7, 0, 0)).toBe(7);
     expect(quantizeToNearestStep(0, 7, 0, -1)).toBe(7);
+  });
+});
+
+describe('poly: heldNotesForStep / lowestNote / stepVoices', () => {
+  it('heldNotesForStep de-dups, sorts ascending, and caps at 5 (keeps lowest)', () => {
+    expect(heldNotesForStep([67, 60, 64])).toEqual([60, 64, 67]);
+    expect(heldNotesForStep([60, 60, 64])).toEqual([60, 64]); // de-dup
+    // 6 held → keep the lowest 5.
+    expect(heldNotesForStep([72, 71, 60, 62, 64, 65])).toEqual([60, 62, 64, 65, 71]);
+    expect(heldNotesForStep([])).toEqual([]);
+  });
+  it('lowestNote returns the minimum, or null when empty', () => {
+    expect(lowestNote([67, 60, 64])).toBe(60);
+    expect(lowestNote([60])).toBe(60);
+    expect(lowestNote([])).toBeNull();
+  });
+  it('stepVoices: poly notes if present, else the single midi, else empty', () => {
+    expect(stepVoices({ on: true, midi: 60, midis: [60, 64, 67] })).toEqual([60, 64, 67]);
+    expect(stepVoices({ on: true, midi: 60 })).toEqual([60]);          // mono step
+    expect(stepVoices({ on: false, midi: 60, midis: [60, 64] })).toEqual([]); // off
+    expect(stepVoices({ on: true, midi: null })).toEqual([]);          // on but empty
   });
 });
 
