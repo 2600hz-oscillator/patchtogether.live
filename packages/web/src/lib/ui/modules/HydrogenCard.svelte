@@ -15,6 +15,7 @@
   import { onDestroy } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import MidiAssignButton from '$lib/ui/controls/MidiAssignButton.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -282,18 +283,22 @@
   <PatchPanel nodeId={id} {sections} groupingStrategy="sectioned" panelWidth={420}>
     <div class="body">
       <div class="transport-row">
-        <button
-          type="button"
-          class="play-btn"
-          class:on={isPlaying}
-          onclick={togglePlay}
-          data-testid="hydrogen-play"
-          aria-pressed={isPlaying}
-        >{isPlaying ? '■ STOP' : '▶ PLAY'}</button>
+        <MidiAssignButton moduleId={id} paramId="play" label="PLAY" momentary={false} onToggle={togglePlay}>
+          <button
+            type="button"
+            class="play-btn"
+            class:on={isPlaying}
+            onclick={togglePlay}
+            data-testid="hydrogen-play"
+            aria-pressed={isPlaying}
+          >{isPlaying ? '■ STOP' : '▶ PLAY'}</button>
+        </MidiAssignButton>
         <Knob value={pget('bpm', 120)}   min={30}  max={300} defaultValue={120} label="BPM" units="bpm" curve="linear" onchange={set('bpm')} moduleId={id} paramId="bpm"   readLive={live('bpm')} />
         <Knob value={pget('swing', 0)}   min={0}   max={0.75} defaultValue={0} label="Sw"   curve="linear" onchange={set('swing')} moduleId={id} paramId="swing" readLive={live('swing')} />
         <Knob value={pget('gain', 1)}    min={0}   max={2}    defaultValue={1} label="Gain" curve="linear" onchange={set('gain')} moduleId={id} paramId="gain"  readLive={live('gain')} />
-        <button type="button" class="clear-btn" onclick={clearAll} data-testid="hydrogen-clear">CLEAR</button>
+        <MidiAssignButton moduleId={id} paramId="clear" label="CLEAR" momentary={false} onToggle={clearAll}>
+          <button type="button" class="clear-btn" onclick={clearAll} data-testid="hydrogen-clear">CLEAR</button>
+        </MidiAssignButton>
       </div>
 
       <!-- Preset slots — SAVE / LOAD / QUEUE mode toggles + 4 slot buttons

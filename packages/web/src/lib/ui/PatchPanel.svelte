@@ -14,7 +14,7 @@
   // handleBounds and edges re-route.
   //
   // Approach (a) from .myrobots/plans/ui-patch-panel-refactor.md.
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { Handle, Position, useUpdateNodeInternals } from '@xyflow/svelte';
   import {
     resolveVerboseLabel,
@@ -23,6 +23,15 @@
     type PortDescriptor,
   } from '$lib/ui/patch-panel-labels';
   import { connectDragState } from '$lib/ui/connect-drag-state.svelte';
+  import ControlContextMenu from '$lib/ui/controls/ControlContextMenu.svelte';
+  import { makeMidiAssignable } from '$lib/ui/controls/midi-assignable.svelte';
+  import {
+    registerGateSetter,
+    unregisterGateSetter,
+    getBinding,
+    bindingsRune,
+  } from '$lib/midi/midi-learn.svelte';
+  import { getActiveEngine } from '$lib/audio/engine-ref';
   import type { Snippet } from 'svelte';
 
   /**
@@ -122,6 +131,90 @@
     groupingStrategy === 'sectioned' ? sectionedOutputs.length > 0 : outputs.length > 0,
   );
   let visibleColumnCount = $derived((hasInputs ? 1 : 0) + (hasOutputs ? 1 : 0) || 1);
+
+  // ---------------- Gate-input MIDI assign (WORKSTREAM B) ----------------
+  //
+  // EVERY gate/trigger INPUT row (cable === 'gate') is right-clickable to bind a
+  // MIDI NOTE. NOTE-on → gate high, NOTE-off → gate low — driven through
+  // PatchEngine.setGateInput, which resolves the port's paramTarget and reuses
+  // the EXACT same-domain gate-edge mechanism. INPUTS only; outputs aren't
+  // assignable. Added here so it covers ALL cards automatically. The binding key
+  // is `nodeId:portId` (the same moduleId:paramId convention as knob CC).
+  //
+  // Each gate port registers a gate setter on mount so a persisted NOTE binding
+  // dispatches even when its row isn't the open-menu target. The single
+  // ControlContextMenu below handles learn/forget/surface/electra for whichever
+  // gate row was right-clicked (tracked by `gatePortId`).
+  let allGateInputs = $derived<PortDescriptor[]>(
+    (groupingStrategy === 'sectioned'
+      ? sections.flatMap((s) => s.inputs ?? [])
+      : inputs
+    ).filter((p) => p.cable === 'gate'),
+  );
+
+  /** Drive a gate input high/low via the live engine (NOTE on/off). */
+  function driveGate(portId: string, high: boolean): void {
+    getActiveEngine()?.setGateInput(nodeId, portId, high);
+  }
+
+  /** Reactive: the persisted MIDI binding for a gate port (or undefined). Read
+   *  in the row markup to surface a bound indicator; re-evals when any binding
+   *  changes (e.g. an injected NOTE completes a learn). */
+  function gateBound(portId: string) {
+    void bindingsRune();
+    return getBinding(nodeId, portId);
+  }
+
+  // Per-gate-port gate setters: (re)registered whenever the gate-port set
+  // changes so a loaded binding fires the moment a card mounts. Cleaned up on
+  // unmount. Tracks which keys we registered so we can unregister exactly those.
+  let registeredGateKeys: string[] = [];
+  $effect(() => {
+    const ports = allGateInputs;
+    untrack(() => {
+      for (const k of registeredGateKeys) {
+        const portId = k.slice(nodeId.length + 1);
+        unregisterGateSetter(nodeId, portId);
+      }
+      registeredGateKeys = [];
+      for (const p of ports) {
+        registerGateSetter(nodeId, p.id, { onGate: (h) => driveGate(p.id, h) });
+        registeredGateKeys.push(`${nodeId}:${p.id}`);
+      }
+    });
+  });
+  onDestroy(() => {
+    for (const p of untrack(() => allGateInputs)) unregisterGateSetter(nodeId, p.id);
+  });
+
+  // Single shared menu for the currently-right-clicked gate row. paramId tracks
+  // the targeted gate port; onGate drives THAT port (closure reads gatePortId).
+  let gatePortId = $state('');
+  const gateMidi = makeMidiAssignable({
+    kind: 'note',
+    get moduleId() { return nodeId; },
+    get paramId() { return gatePortId || undefined; },
+    onGate: (h) => driveGate(gatePortId, h),
+  });
+  let gateCtxOpen = $state(false);
+  let gateCtxX = $state(0);
+  let gateCtxY = $state(0);
+
+  function openGateMidiMenu(e: MouseEvent, port: PortDescriptor): void {
+    e.preventDefault();
+    e.stopPropagation();
+    gatePortId = port.id;
+    gateMidi.refresh();
+    gateCtxX = e.clientX;
+    gateCtxY = e.clientY;
+    gateCtxOpen = true;
+    // Keep THIS panel open underneath the menu via the cascade-lock driver.
+    connectDragState.beginCascade(nodeId);
+  }
+  function closeGateMidiMenu(): void {
+    gateCtxOpen = false;
+    if (connectDragState.cascadeActiveForPanel === nodeId) connectDragState.endCascade();
+  }
 
   // panelWidth is the TOTAL popover width — preserving the prop's
   // pre-two-column semantics so existing test geometry (handles land
@@ -664,7 +757,13 @@
                   class:section-rows-collapsed={!expanded}
                 >
                   {#each section.inputs as port (port.id)}
-                    <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
+                    <li
+                      class="panel-row"
+                      class:gate-assignable={port.cable === 'gate'}
+                      style:--row-cable={cableColorVar(port.cable)}
+                      oncontextmenu={port.cable === 'gate' ? (e) => openGateMidiMenu(e, port) : undefined}
+                      data-gate-midi-bound={port.cable === 'gate' && !!gateBound(port.id) ? 'true' : undefined}
+                    >
                       <span class="row-stripe" aria-hidden="true"></span>
                       <span class="row-label" data-testid="port-row-label">
                         {resolveVerboseLabel(port)}
@@ -688,7 +787,13 @@
               <h4 class="subgroup-title">{group.label}</h4>
               <ul class="row-list">
                 {#each group.ports as port (port.id)}
-                  <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
+                  <li
+                    class="panel-row"
+                    class:gate-assignable={port.cable === 'gate'}
+                    style:--row-cable={cableColorVar(port.cable)}
+                    oncontextmenu={port.cable === 'gate' ? (e) => openGateMidiMenu(e, port) : undefined}
+                    data-gate-midi-bound={port.cable === 'gate' && !!gateBound(port.id) ? 'true' : undefined}
+                  >
                     <span class="row-stripe" aria-hidden="true"></span>
                     <span class="row-label" data-testid="port-row-label">
                       {resolveVerboseLabel(port)}
@@ -768,6 +873,28 @@
 
   {@render children?.()}
 </div>
+
+<!-- Gate-input MIDI assign menu (right-click a gate INPUT row). 'note' kind:
+     MIDI assign captures a NOTE; NOTE-on → gate high, NOTE-off → gate low. -->
+{#if gatePortId}
+  <ControlContextMenu
+    open={gateCtxOpen}
+    x={gateCtxX}
+    y={gateCtxY}
+    title={`${nodeId} · ${gatePortId}`}
+    hasBinding={!!gateMidi.binding}
+    bindingLabel={gateMidi.bindingLabel}
+    onlearn={gateMidi.learn}
+    onforget={gateMidi.forget}
+    onclose={closeGateMidiMenu}
+    surfaces={gateMidi.surfaces}
+    onsendtosurface={gateMidi.sendToSurface}
+    onremovefromsurface={gateMidi.removeFromSurface}
+    electras={gateMidi.electras}
+    onassignelectra={gateMidi.assignElectra}
+    onclearelectra={gateMidi.clearElectra}
+  />
+{/if}
 
 <style>
   .patch-panel-host {
@@ -1162,6 +1289,18 @@
   }
   .panel-row .row-label.right {
     text-align: right;
+  }
+  /* Gate inputs are right-clickable for MIDI assign; hint via the context cursor
+     + a subtle dot when a NOTE binding is active. */
+  .panel-row.gate-assignable {
+    cursor: context-menu;
+  }
+  .panel-row.gate-assignable[data-gate-midi-bound='true'] .row-label::after {
+    content: '●';
+    margin-left: 4px;
+    font-size: 0.5rem;
+    color: #a8d3ff;
+    vertical-align: middle;
   }
 
   /* ---------------- Handle positioning ---------------- */

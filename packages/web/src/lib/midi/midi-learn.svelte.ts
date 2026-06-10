@@ -18,21 +18,41 @@ import type {
   MidiEventLike,
 } from '$lib/audio/modules/midi-cv-buddy';
 import { webMidiAvailable } from '$lib/audio/modules/midi-cv-buddy';
+import {
+  parseNoteMessage,
+  noteMatches,
+  isCcBinding,
+  isNoteBinding,
+  type MidiBinding,
+  type MidiCcBinding,
+  type MidiNoteBinding,
+} from './note-binding';
+
+export {
+  isCcBinding,
+  isNoteBinding,
+  type MidiBinding,
+  type MidiCcBinding,
+  type MidiNoteBinding,
+} from './note-binding';
 
 const STORAGE_KEY = 'pt.midi-bindings.v1';
 
-/** A learned MIDI CC → param binding. */
-export interface MidiBinding {
-  /** Composite "moduleId:paramId" — unique per knob on the rack. */
-  key: string;
-  /** MIDI channel 0..15 the CC arrived on. */
-  channel: number;
-  /** CC number 0..127. */
-  cc: number;
-  /** When the binding was learned (epoch ms). For UI "recently learned"
-   *  hint + future least-recently-used eviction if the binding list grows
-   *  unwieldy. */
-  learnedAt: number;
+/** Migrate a raw persisted/imported record to the discriminated union. Legacy
+ *  records (saved before NOTE bindings existed) carry a `cc` but no `kind`, so
+ *  they default to a CC binding. Returns null when the record is unusable. */
+function normalizeBinding(raw: unknown): MidiBinding | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.key !== 'string' || !Number.isFinite(r.channel)) return null;
+  const learnedAt = Number.isFinite(r.learnedAt) ? (r.learnedAt as number) : Date.now();
+  if (r.kind === 'note') {
+    if (!Number.isFinite(r.note)) return null;
+    return { kind: 'note', key: r.key, channel: r.channel as number, note: r.note as number, learnedAt };
+  }
+  // Default (kind 'cc' or absent): require a finite cc.
+  if (!Number.isFinite(r.cc)) return null;
+  return { kind: 'cc', key: r.key, channel: r.channel as number, cc: r.cc as number, learnedAt };
 }
 
 /** The shape callers pass to beginLearn — everything the singleton needs
@@ -50,6 +70,23 @@ export interface LearnSpec {
   /** The setter the Fader / Knob already uses — same signature so we just
    *  pipe the scaled value through. */
   onchange: (v: number) => void;
+}
+
+/** The shape callers pass to beginNoteLearn — capture the next NOTE and bind
+ *  it to this gate input / button, then route subsequent NOTE on/off events to
+ *  the gate callback. `onGate(true)` on NOTE-on, `onGate(false)` on NOTE-off. */
+export interface NoteLearnSpec {
+  moduleId: string;
+  paramId: string;
+  /** Driven on every matching NOTE: true on note-on (gate high / press),
+   *  false on note-off (gate low / release). */
+  onGate: (high: boolean) => void;
+}
+
+/** A registered gate setter — the live callback driven by inbound NOTE events.
+ *  Kept in a map DECOUPLED from `bindings` (same rationale as `setters`). */
+interface GateSetter {
+  onGate: (high: boolean) => void;
 }
 
 /** Compose the bindings-map key. */
@@ -82,18 +119,14 @@ let access: MidiAccessLike | null = null;
 let connectStarted = false;
 let connectFailed = false;
 
-/** Map of bindingKey → binding metadata (channel/cc/learnedAt only). The
- *  live setter is kept in a SEPARATE map (`setters` below) so the order of
- *  card-mount vs binding-population doesn't matter — see the comment on
- *  `setters` for why this decoupling is required for performance load. */
-interface ActiveBinding extends MidiBinding {
-  /** @deprecated kept as `undefined` for back-compat with any external
-   *  reader; the dispatch path reads from `setters` instead. */
-  setter?: { min: number; max: number; onchange: (v: number) => void };
-}
-const bindings = $state<Map<string, ActiveBinding>>(new Map());
+/** Map of bindingKey → binding metadata (channel/cc|note/learnedAt). The live
+ *  setter is kept in a SEPARATE map (`setters` / `noteSetters` below) so the
+ *  order of card-mount vs binding-population doesn't matter — see the comment on
+ *  `setters` for why this decoupling is required for performance load. ONE
+ *  binding per key — CC or NOTE, never both (begin*Learn overwrites). */
+const bindings = $state<Map<string, MidiBinding>>(new Map());
 
-/** Map of bindingKey → live setter, populated by `registerSetter` on
+/** Map of bindingKey → live CC setter, populated by `registerSetter` on
  *  Fader / Knob mount and read by the CC dispatch loop. Decoupled from
  *  `bindings` so a card that mounts BEFORE its binding exists (the
  *  Save/Load Local Performance order: cards mount as the patch loads,
@@ -103,6 +136,12 @@ const bindings = $state<Map<string, ActiveBinding>>(new Map());
  *  setter — fixing only via a manual re-learn (which went through the
  *  applyLearn path that wrote setter + binding together). */
 const setters = new Map<string, { min: number; max: number; onchange: (v: number) => void }>();
+
+/** Map of bindingKey → live GATE setter (the NOTE analogue of `setters`),
+ *  populated by `registerGateSetter` on gate-input row / button mount and read
+ *  by the NOTE dispatch loop. Decoupled from `bindings` for the same
+ *  load-order reason. */
+const noteSetters = new Map<string, GateSetter>();
 
 /** Monotonic version stamped on every binding add/remove. Components read it
  *  via `bindingsRune()` inside a `$derived` so a binding captured by the
@@ -116,10 +155,15 @@ function touchBindings(): void { bindingsVersion++; }
  *  any binding is added or removed. */
 export function bindingsRune(): number { return bindingsVersion; }
 
-/** Currently-active learn request (null when not learning). Reactive so
+/** Currently-active CC learn request (null when not learning). Reactive so
  *  the Fader / Knob with `spec.moduleId/paramId` matching can show a
  *  pulsing border. */
 let learnSpec = $state<LearnSpec | null>(null);
+
+/** Currently-active NOTE learn request (null when not learning). SEPARATE from
+ *  `learnSpec` so a CC arriving mid-note-learn doesn't cancel the note learn
+ *  (and vice versa) — each learn captures only its own message type. */
+let noteLearnSpec = $state<NoteLearnSpec | null>(null);
 
 // ---------------- Persistence ----------------
 
@@ -128,14 +172,11 @@ function loadFromStorage(): void {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
-    const parsed = JSON.parse(raw) as MidiBinding[];
+    const parsed = JSON.parse(raw) as unknown[];
     if (!Array.isArray(parsed)) return;
-    for (const b of parsed) {
-      if (typeof b?.key === 'string'
-          && Number.isFinite(b.channel)
-          && Number.isFinite(b.cc)) {
-        bindings.set(b.key, { ...b });
-      }
+    for (const r of parsed) {
+      const b = normalizeBinding(r);
+      if (b) bindings.set(b.key, b);
     }
     touchBindings();
   } catch {
@@ -146,11 +187,7 @@ function loadFromStorage(): void {
 function saveToStorage(): void {
   if (typeof window === 'undefined' || !window.localStorage) return;
   try {
-    const arr: MidiBinding[] = [];
-    for (const b of bindings.values()) {
-      arr.push({ key: b.key, channel: b.channel, cc: b.cc, learnedAt: b.learnedAt });
-    }
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([...bindings.values()]));
   } catch {
     // QuotaExceeded etc — non-fatal.
   }
@@ -209,22 +246,36 @@ function attachInput(inp: MidiInputLike): void {
 // ---------------- Incoming CC dispatch ----------------
 
 function handleMidi(ev: MidiEventLike): void {
-  const parsed = parseCcMessage(ev.data);
-  if (!parsed) return;
+  // A single message is EITHER a CC or a NOTE (or neither). Parse both and
+  // route to the matching learn/dispatch path; each learn captures only its
+  // own message type so a stray CC can't cancel an in-flight note learn.
+  const cc = parseCcMessage(ev.data);
+  if (cc) {
+    handleCc(cc);
+    return;
+  }
+  const note = parseNoteMessage(ev.data);
+  if (note) {
+    handleNote(note);
+    return;
+  }
+}
 
-  // 1. Learn mode wins — capture the next CC.
+function handleCc(parsed: { channel: number; cc: number; value: number }): void {
+  // 1. CC learn mode wins — capture the next CC for the in-flight knob.
   if (learnSpec) {
     const spec = learnSpec;
     const key = bindingKey(spec.moduleId, spec.paramId);
-    // If this knob already had a binding, overwrite it.
-    const newBinding: ActiveBinding = {
+    // One binding per key — a fresh CC learn overwrites any prior CC OR note.
+    bindings.set(key, {
+      kind: 'cc',
       key,
       channel: parsed.channel,
       cc: parsed.cc,
       learnedAt: Date.now(),
-    };
-    bindings.set(key, newBinding);
+    });
     setters.set(key, { min: spec.min, max: spec.max, onchange: spec.onchange });
+    noteSetters.delete(key); // the key is now CC; drop any stale gate setter
     touchBindings();
     saveToStorage();
     learnSpec = null;
@@ -233,38 +284,79 @@ function handleMidi(ev: MidiEventLike): void {
     return;
   }
 
-  // 2. Otherwise dispatch to whichever binding (if any) owns this CC. Setter
-  //    lookup goes through the SEPARATE `setters` map — see the comment on
-  //    that map. The intersection of "binding present" + "setter registered"
-  //    is what activates dispatch; either alone is silent.
+  // 2. Dispatch to whichever CC binding (if any) owns this CC. Setter lookup
+  //    goes through the SEPARATE `setters` map. The intersection of "binding
+  //    present" + "setter registered" activates dispatch; either alone is silent.
   for (const b of bindings.values()) {
-    if (b.channel === parsed.channel && b.cc === parsed.cc) {
+    if (isCcBinding(b) && b.channel === parsed.channel && b.cc === parsed.cc) {
       const s = setters.get(b.key);
       if (s) s.onchange(ccValueToParamValue(parsed.value, s.min, s.max));
     }
   }
 }
 
-// ---------------- Public API ----------------
+function handleNote(parsed: ReturnType<typeof parseNoteMessage>): void {
+  if (!parsed) return;
+  // 1. NOTE learn mode wins — capture the next NOTE-ON for the in-flight gate /
+  //    button. Only a note-ON arms the binding (a note-off during learn is
+  //    ignored, so releasing a previously-held key doesn't capture).
+  if (noteLearnSpec && parsed.kind === 'on') {
+    const spec = noteLearnSpec;
+    const key = bindingKey(spec.moduleId, spec.paramId);
+    bindings.set(key, {
+      kind: 'note',
+      key,
+      channel: parsed.channel,
+      note: parsed.note,
+      learnedAt: Date.now(),
+    });
+    noteSetters.set(key, { onGate: spec.onGate });
+    setters.delete(key); // the key is now NOTE; drop any stale CC setter
+    touchBindings();
+    saveToStorage();
+    noteLearnSpec = null;
+    // Fire the gate high immediately so the captured press is felt.
+    spec.onGate(true);
+    return;
+  }
 
-/** Enter learn mode for one knob. Cancels any in-flight learn first.
- *  Auto-`connect()`s if MIDIAccess hasn't been requested yet. */
-export async function beginLearn(spec: LearnSpec): Promise<void> {
-  await connect();
-  learnSpec = spec;
-  // Also register the setter so this knob continues to respond after the
-  // learn captures (and on future page loads where bindings rehydrate
-  // without setters until a card mounts).
-  const key = bindingKey(spec.moduleId, spec.paramId);
-  const existing = bindings.get(key);
-  if (existing) {
-    existing.setter = { min: spec.min, max: spec.max, onchange: spec.onchange };
+  // 2. Dispatch to whichever NOTE binding (if any) owns this note. on → gate
+  //    high, off → gate low (momentary). Setter lookup via `noteSetters`.
+  for (const b of bindings.values()) {
+    if (isNoteBinding(b) && noteMatches(b, parsed)) {
+      const s = noteSetters.get(b.key);
+      if (s) s.onGate(parsed.kind === 'on');
+    }
   }
 }
 
-/** Cancel an in-flight learn. */
+// ---------------- Public API ----------------
+
+/** Enter CC learn mode for one knob. Cancels any in-flight learn (CC or NOTE)
+ *  first. Auto-`connect()`s if MIDIAccess hasn't been requested yet. */
+export async function beginLearn(spec: LearnSpec): Promise<void> {
+  await connect();
+  noteLearnSpec = null; // a CC learn supersedes any in-flight note learn
+  learnSpec = spec;
+  // Register the setter eagerly so this knob responds the moment the learn
+  // captures (and on future loads where bindings rehydrate before a card mounts).
+  registerSetter(spec.moduleId, spec.paramId, { min: spec.min, max: spec.max, onchange: spec.onchange });
+}
+
+/** Enter NOTE learn mode for one gate input / button. Cancels any in-flight
+ *  learn (CC or NOTE) first. Auto-`connect()`s. */
+export async function beginNoteLearn(spec: NoteLearnSpec): Promise<void> {
+  await connect();
+  learnSpec = null; // a NOTE learn supersedes any in-flight CC learn
+  noteLearnSpec = spec;
+  // Register the gate setter eagerly (same load-order rationale as beginLearn).
+  registerGateSetter(spec.moduleId, spec.paramId, { onGate: spec.onGate });
+}
+
+/** Cancel an in-flight learn (CC and/or NOTE). */
 export function cancelLearn(): void {
   learnSpec = null;
+  noteLearnSpec = null;
 }
 
 /** Register / refresh the live setter for a knob. Called by Fader / Knob
@@ -278,29 +370,51 @@ export function registerSetter(moduleId: string, paramId: string, args: {
   setters.set(bindingKey(moduleId, paramId), { ...args });
 }
 
-/** Drop the live setter (called on Fader / Knob unmount). The persisted
+/** Drop the live CC setter (called on Fader / Knob unmount). The persisted
  *  binding stays — re-mounting the card re-registers its setter. */
 export function unregisterSetter(moduleId: string, paramId: string): void {
   setters.delete(bindingKey(moduleId, paramId));
 }
 
-/** Look up the persisted binding for a knob (no setter info). */
-export function getBinding(moduleId: string, paramId: string): MidiBinding | undefined {
-  const b = bindings.get(bindingKey(moduleId, paramId));
-  return b ? { key: b.key, channel: b.channel, cc: b.cc, learnedAt: b.learnedAt } : undefined;
+/** Register / refresh the live GATE setter for a gate input / button. The NOTE
+ *  analogue of registerSetter — stored in `noteSetters` UNCONDITIONALLY (no
+ *  dependence on a binding existing yet) so a gate row / button mounted BEFORE
+ *  its binding loads (Save/Load Performance flow) gets wired the moment the
+ *  binding arrives. Idempotent. */
+export function registerGateSetter(moduleId: string, paramId: string, args: GateSetter): void {
+  noteSetters.set(bindingKey(moduleId, paramId), { onGate: args.onGate });
 }
 
-/** Remove a binding entirely. */
+/** Drop the live gate setter (called on gate-row / button unmount). */
+export function unregisterGateSetter(moduleId: string, paramId: string): void {
+  noteSetters.delete(bindingKey(moduleId, paramId));
+}
+
+/** Look up the persisted binding (CC or NOTE) for a control. */
+export function getBinding(moduleId: string, paramId: string): MidiBinding | undefined {
+  return bindings.get(bindingKey(moduleId, paramId));
+}
+
+/** Remove a binding entirely (also drops both setter maps for the key). */
 export function clearBinding(moduleId: string, paramId: string): void {
-  bindings.delete(bindingKey(moduleId, paramId));
+  const key = bindingKey(moduleId, paramId);
+  bindings.delete(key);
+  setters.delete(key);
+  noteSetters.delete(key);
   touchBindings();
   saveToStorage();
 }
 
-/** Reactive getter for the in-flight learn spec — Fader / Knob reads this
+/** Reactive getter for the in-flight CC learn spec — Fader / Knob reads this
  *  to know whether to show the pulsing border. */
 export function learnSpecRune(): LearnSpec | null {
   return learnSpec;
+}
+
+/** Reactive getter for the in-flight NOTE learn spec — gate rows / buttons read
+ *  this to know whether to show the pulsing "assign" border. */
+export function noteLearnSpecRune(): NoteLearnSpec | null {
+  return noteLearnSpec;
 }
 
 /** Reactive getter for the bindings map — exposed for the future
@@ -318,11 +432,8 @@ export function allBindings(): ReadonlyMap<string, MidiBinding> {
 
 /** Snapshot the current bindings as plain export records (no live setters). */
 export function exportBindings(): MidiBinding[] {
-  const arr: MidiBinding[] = [];
-  for (const b of bindings.values()) {
-    arr.push({ key: b.key, channel: b.channel, cc: b.cc, learnedAt: b.learnedAt });
-  }
-  return arr;
+  // Shallow-copy each record so external mutation can't corrupt live state.
+  return [...bindings.values()].map((b) => ({ ...b }));
 }
 
 /**
@@ -331,21 +442,15 @@ export function exportBindings(): MidiBinding[] {
  * risk #6 — don't clobber the user's unrelated mappings). Existing live
  * setters are kept where the key already had one so a mounted card keeps
  * driving without a remount. */
-export function importBindings(incoming: MidiBinding[]): void {
-  for (const b of incoming) {
-    if (typeof b?.key !== 'string' || !Number.isFinite(b.channel) || !Number.isFinite(b.cc)) {
-      continue;
-    }
-    // No setter to preserve / restore — the `setters` map is independent of
-    // `bindings`, so a card whose setter is already registered just starts
-    // dispatching the moment this binding lands, and a card that mounts
-    // later finds the binding waiting for it.
-    bindings.set(b.key, {
-      key: b.key,
-      channel: b.channel,
-      cc: b.cc,
-      learnedAt: b.learnedAt,
-    });
+export function importBindings(incoming: unknown[]): void {
+  for (const raw of incoming) {
+    const b = normalizeBinding(raw);
+    if (!b) continue;
+    // No setter to preserve / restore — the `setters` / `noteSetters` maps are
+    // independent of `bindings`, so a card whose setter is already registered
+    // just starts dispatching the moment this binding lands, and a card that
+    // mounts later finds the binding waiting for it.
+    bindings.set(b.key, b);
   }
   touchBindings();
   saveToStorage();
@@ -362,11 +467,14 @@ export function __test_setAccess(fake: MidiAccessLike | null): void {
   if (fake) attachAllInputs();
 }
 
-/** Wipe in-memory bindings (does not touch localStorage). */
+/** Wipe in-memory bindings + setters + learn state (does not touch localStorage). */
 export function __test_clearBindings(): void {
   bindings.clear();
+  setters.clear();
+  noteSetters.clear();
   touchBindings();
   learnSpec = null;
+  noteLearnSpec = null;
 }
 
 // ---------------- Dev-only simulated-MIDI device ----------------
@@ -381,17 +489,19 @@ export function __test_clearBindings(): void {
 // the window hook is absent from plain production bundles but present in the
 // preview/autotest bundle built with VITE_E2E_HOOKS=1.
 let simSender: ((channel: number, cc: number, value: number) => void) | null = null;
+let simNoteSender: ((channel: number, note: number, velocity: number) => void) | null = null;
+/** The installed sim device's raw handler — both senders push through it. */
+let simHandler: ((ev: MidiEventLike) => void) | null = null;
 
-export function installSimulatedMidiDevice(): (channel: number, cc: number, value: number) => void {
-  if (simSender) return simSender;
-  let handler: ((ev: MidiEventLike) => void) | null = null;
+function ensureSimDevice(): void {
+  if (access) return; // already installed (sim or real) — reuse it
   const input: MidiInputLike = {
     id: 'pt-sim-midi-0',
     name: 'PatchTogether Simulated MIDI',
     manufacturer: 'patchtogether',
     state: 'connected',
-    get onmidimessage() { return handler; },
-    set onmidimessage(h) { handler = h; },
+    get onmidimessage() { return simHandler; },
+    set onmidimessage(h) { simHandler = h; },
   };
   const inputs = new Map<string, MidiInputLike>();
   inputs.set(input.id, input);
@@ -402,12 +512,36 @@ export function installSimulatedMidiDevice(): (channel: number, cc: number, valu
   connectStarted = true;
   connectFailed = false;
   attachAllInputs();
+}
+
+export function installSimulatedMidiDevice(): (channel: number, cc: number, value: number) => void {
+  if (simSender) return simSender;
+  ensureSimDevice();
   simSender = (channel: number, cc: number, value: number) => {
-    if (!handler) return;
-    handler({
+    if (!simHandler) return;
+    simHandler({
       data: new Uint8Array([0xb0 | (channel & 0x0f), cc & 0x7f, value & 0x7f]),
       timeStamp: 0,
     });
   };
   return simSender;
+}
+
+/** Sibling of installSimulatedMidiDevice: returns a `sendNote` that pushes a
+ *  NOTE on/off (velocity 0 = note-off) through the same dispatch path real
+ *  hardware uses, so NOTE learn + gate dispatch are exercised end-to-end. */
+export function installSimulatedNoteDevice(): (channel: number, note: number, velocity: number) => void {
+  if (simNoteSender) return simNoteSender;
+  ensureSimDevice();
+  simNoteSender = (channel: number, note: number, velocity: number) => {
+    if (!simHandler) return;
+    const v = velocity & 0x7f;
+    // velocity 0 → note-off (0x8n); else note-on (0x9n).
+    const status = (v > 0 ? 0x90 : 0x80) | (channel & 0x0f);
+    simHandler({
+      data: new Uint8Array([status, note & 0x7f, v]),
+      timeStamp: 0,
+    });
+  };
+  return simNoteSender;
 }

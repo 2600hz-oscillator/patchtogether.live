@@ -35,6 +35,10 @@ export interface ControlBinding {
    *  Electra preset, clamped to 14 chars there; falls back to the param label
    *  in the on-card UI). */
   name?: string;
+  /** What kind of control the pointer addresses. Drives the Electra preset
+   *  representation: a 'knob' (default when absent) → fader/list; a 'button' →
+   *  a pad (momentary note / toggle cc7). Absent = 'knob' for back-compat. */
+  controlType?: 'knob' | 'button';
 }
 
 export interface ScreenBinding {
@@ -172,11 +176,21 @@ function mutateSurface(surfaceId: string, fn: (data: ControlSurfaceData) => void
 // cleanly and existing ones are untouched. (The pure with* helpers above stay
 // for unit assertions; they are NOT used to write live Y state.)
 
-export function addBindingToSurface(surfaceId: string, moduleId: string, paramId: string): void {
+export function addBindingToSurface(
+  surfaceId: string,
+  moduleId: string,
+  paramId: string,
+  controlType?: 'knob' | 'button',
+): void {
   mutateSurface(surfaceId, (data) => {
     if (!data.bindings) data.bindings = [];
     if (!hasBinding(data, moduleId, paramId)) {
-      data.bindings.push({ moduleId, paramId }); // append a NEW plain object, in place
+      // Append a NEW plain object, in place (never spread the live Y array).
+      // Only stamp controlType when it's a button — keeps knob records lean +
+      // back-compat (absent === 'knob').
+      const entry: ControlBinding = { moduleId, paramId };
+      if (controlType === 'button') entry.controlType = 'button';
+      data.bindings.push(entry);
     }
   });
 }

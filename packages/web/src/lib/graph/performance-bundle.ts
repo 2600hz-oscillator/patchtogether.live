@@ -53,13 +53,22 @@ export interface PerformanceAssetRef {
   duration?: number;
 }
 
-/** A MIDI Learn CC binding, as exported from the global localStorage store.
- *  Device-agnostic (matched by channel+cc across all connected inputs). */
+/** A MIDI Learn binding, as exported from the global localStorage store.
+ *  Device-agnostic (matched by channel + cc|note across all connected inputs).
+ *  The union widened in WORKSTREAM B: a CC binding (knobs/faders) carries `cc`;
+ *  a NOTE binding (gates/buttons) carries `kind:'note'` + `note`. `kind` is
+ *  OPTIONAL so legacy records (saved before NOTE bindings existed) — which have
+ *  a `cc` and no `kind` — still parse as CC. One record per key. */
 export interface MidiBindingExport {
   /** "moduleId:paramId". */
   key: string;
   channel: number;
-  cc: number;
+  /** 'cc' (default when absent) or 'note'. */
+  kind?: 'cc' | 'note';
+  /** CC number — present for CC (kind absent/'cc') bindings. */
+  cc?: number;
+  /** Note number — present for NOTE (kind 'note') bindings. */
+  note?: number;
   learnedAt: number;
 }
 
