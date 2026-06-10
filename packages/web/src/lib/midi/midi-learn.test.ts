@@ -192,8 +192,7 @@ describe('learn flow (capture next CC + bind)', () => {
 
     const b = getBinding('vca-1', 'base');
     expect(b).toBeDefined();
-    expect(b?.channel).toBe(3);
-    expect(b?.cc).toBe(22);
+    expect(b).toMatchObject({ kind: 'cc', channel: 3, cc: 22 });
     // The captured value should also fire the setter immediately.
     expect(captured).toBeCloseTo(0.504, 2);
   });

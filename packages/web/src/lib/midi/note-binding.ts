@@ -40,14 +40,20 @@ export interface MidiNoteBinding {
 /** Either binding kind. One per key — a control is CC OR NOTE, never both. */
 export type MidiBinding = MidiCcBinding | MidiNoteBinding;
 
+/** A binding-or-raw-record the guards accept. The union member with all-optional
+ *  fields lets a caller pass a legacy record (no `kind`) without TS's weak-type
+ *  "no properties in common" rejection, while a concrete MidiBinding still
+ *  narrows correctly. */
+type BindingLike = MidiBinding | { kind?: 'cc' | 'note'; cc?: number; note?: number };
+
 /** Type guard: is this a CC binding? Treats a missing `kind` as 'cc' so legacy
  *  records (saved before the union existed) parse as CC. */
-export function isCcBinding(b: { kind?: string }): b is MidiCcBinding {
+export function isCcBinding(b: BindingLike): b is MidiCcBinding {
   return b.kind === undefined || b.kind === 'cc';
 }
 
 /** Type guard: is this a NOTE binding? */
-export function isNoteBinding(b: { kind?: string }): b is MidiNoteBinding {
+export function isNoteBinding(b: BindingLike): b is MidiNoteBinding {
   return b.kind === 'note';
 }
 
