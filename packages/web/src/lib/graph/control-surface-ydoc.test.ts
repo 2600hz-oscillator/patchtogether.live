@@ -70,6 +70,20 @@ describe('control surface — real Y.Doc binding mutators', () => {
     expect(readSurfaceData(patch.nodes[SID]).bindings?.length).toBe(1);
   });
 
+  it('stamps controlType:button for a button binding; knobs stay lean (no controlType)', () => {
+    makeSurface();
+    addBindingToSurface(SID, 'adsr-1', 'attack');                 // knob (default)
+    addBindingToSurface(SID, 'hydrogen-1', 'play', 'button');     // button
+    const data = readSurfaceData(patch.nodes[SID]);
+    const knob = data.bindings?.find((b) => b.moduleId === 'adsr-1');
+    const button = data.bindings?.find((b) => b.moduleId === 'hydrogen-1');
+    expect(knob?.controlType).toBeUndefined(); // absent === knob, back-compat
+    expect(button?.controlType).toBe('button');
+    // Adding a button after a knob must not throw (the in-place append discipline).
+    expect(() => addBindingToSurface(SID, 'score-1', 'play', 'button')).not.toThrow();
+    expect(readSurfaceData(patch.nodes[SID]).bindings?.length).toBe(3);
+  });
+
   it('removes one binding in place, leaving the rest intact', () => {
     makeSurface();
     addBindingToSurface(SID, 'adsr-1', 'attack');

@@ -63,6 +63,10 @@ export interface MidiAssignableArgs {
   // ── kind:'note' ──
   /** Driven on every matching NOTE: true on note-on, false on note-off. NOTE only. */
   onGate?: (high: boolean) => void;
+  /** The control kind for surface/Electra representation. 'button' for card
+   *  buttons (→ Electra pad); omitted/'knob' for continuous controls + gate
+   *  inputs (→ fader). */
+  controlType?: 'knob' | 'button';
 }
 
 export interface SurfaceEntry { id: string; name: string; bound: boolean }
@@ -192,7 +196,7 @@ export function makeMidiAssignable(args: MidiAssignableArgs): MidiAssignable {
   function sendToSurface(surfaceId: string): void {
     const m = args.moduleId, p = args.paramId;
     if (!m || !p) return;
-    addBindingToSurface(surfaceId, m, p);
+    addBindingToSurface(surfaceId, m, p, args.controlType);
   }
   function removeFromSurface(surfaceId: string): void {
     const m = args.moduleId, p = args.paramId;

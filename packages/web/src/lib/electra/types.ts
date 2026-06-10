@@ -171,8 +171,13 @@ export interface ElectraAllocation {
    *  - 'rw'   : writable control (CC in → param write; param → CC out feedback)
    *  - 'meter': read-only (param/level → CC out only; inbound CC ignored)
    *  - 'tap'  : momentary note in → tap-tempo helper (NOT a param)
-   *  - 'banner': app→device label only (info text / source banner) */
-  role: 'rw' | 'meter' | 'tap' | 'banner';
+   *  - 'banner': app→device label only (info text / source banner)
+   *  - 'button-momentary': momentary note pad (note in → bound button action via
+   *             the host callback registry; mirrors the TAP pad).
+   *  - 'button-toggle': toggle cc7 0..1 pad (cc in → bound button action on the
+   *             rising edge via the host callback registry; mirrors the Mute pad
+   *             geometry but routes to a button action, not a raw param write). */
+  role: 'rw' | 'meter' | 'tap' | 'banner' | 'button-momentary' | 'button-toggle';
 }
 
 /** The generator's full output: the preset doc + its deterministic CC/page

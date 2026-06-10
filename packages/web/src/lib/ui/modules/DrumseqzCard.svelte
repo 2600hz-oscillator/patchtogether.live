@@ -3,6 +3,7 @@
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
+  import MidiAssignButton from '$lib/ui/controls/MidiAssignButton.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import QuicksaveControls from '$lib/ui/QuicksaveControls.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -352,15 +353,17 @@
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
     <ModuleTitle {id} {data} defaultLabel="DRUMSEQZ" inline />
-    <button
-      class="play-btn"
-      class:playing={isPlaying}
-      onclick={togglePlay}
-      title={isPlaying ? 'Stop' : 'Play'}
-      data-testid={`drumseqz-play-${id}`}
-    >
-      {isPlaying ? '■' : '▶'}
-    </button>
+    <MidiAssignButton moduleId={id} paramId="play" label="PLAY" momentary={false} onToggle={togglePlay}>
+      <button
+        class="play-btn"
+        class:playing={isPlaying}
+        onclick={togglePlay}
+        title={isPlaying ? 'Stop' : 'Play'}
+        data-testid={`drumseqz-play-${id}`}
+      >
+        {isPlaying ? '■' : '▶'}
+      </button>
+    </MidiAssignButton>
   </header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>

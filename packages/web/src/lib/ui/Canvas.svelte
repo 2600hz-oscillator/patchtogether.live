@@ -190,7 +190,7 @@
   } from '$lib/audio/modules/timelorde-autospawn';
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
-  import { installSimulatedMidiDevice } from '$lib/midi/midi-learn.svelte';
+  import { installSimulatedMidiDevice, installSimulatedNoteDevice } from '$lib/midi/midi-learn.svelte';
 
   // Stage B PR B-b: when mounted under /r/[id] (multi-user), the parent
   // passes the current user's id so per-user layouts are scoped correctly.
@@ -3825,6 +3825,15 @@
       (globalThis as any).__midiTestInject = (channel: number, cc: number, value: number) => {
         const send = installSimulatedMidiDevice();
         send(channel, cc, value);
+        return true;
+      };
+      // Simulated-MIDI NOTE injection (WORKSTREAM B): pushes a NOTE on/off
+      // (velocity 0 = note-off) through the same dispatch path real hardware
+      // uses, so NOTE learn + gate/button dispatch are exercised e2e. DEV-only.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__midiTestInjectNote = (channel: number, note: number, velocity: number) => {
+        const send = installSimulatedNoteDevice();
+        send(channel, note, velocity);
         return true;
       };
       // Install the fake device WITHOUT sending — so a subsequent beginLearn()

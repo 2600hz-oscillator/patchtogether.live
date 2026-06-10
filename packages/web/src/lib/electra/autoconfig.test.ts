@@ -113,6 +113,79 @@ describe('inbound dispatch', () => {
   });
 });
 
+describe('button routing (WORKSTREAM B)', () => {
+  /** Host whose surface has ONE momentary + ONE toggle button (no continuous
+   *  controls), with a triggerButton spy. */
+  function makeButtonHost(): {
+    host: AutoconfigHost;
+    triggers: Array<[string, string, boolean]>;
+  } {
+    const triggers: Array<[string, string, boolean]> = [];
+    const host: AutoconfigHost = {
+      buildGenInput: () => ({
+        surfaceBindings: [
+          { moduleId: 'hydrogen', paramId: 'play', controlType: 'button', momentary: true },
+          { moduleId: 'score', paramId: 'play', controlType: 'button', momentary: false },
+        ],
+        moduleLabel: (id) => id,
+        resolveParamDef: () => null,
+        mixmstrsId: null,
+        timelordeId: null,
+        name: 'patchtogether',
+      }),
+      readParamValue: () => undefined,
+      readMeterAmp: () => 0,
+      writeParam: () => {},
+      hasExternalClock: () => false,
+      luaSource: () => '-- lua',
+      triggerButton: (m, p, high) => triggers.push([m, p, high]),
+    };
+    return { host, triggers };
+  }
+
+  it('a momentary button NOTE on/off fires triggerButton on BOTH edges', async () => {
+    const fake = makeFakeBroker();
+    const { host, triggers } = makeButtonHost();
+    const auto = new ElectraAutoconfig(host, fake.broker, { identifyTimeoutMs: 20 });
+    await auto.run();
+    const a = auto.allocations.find((x) => x.role === 'button-momentary')!;
+    expect(a.key).toBe('hydrogen:play');
+    fake.emit([0x90, a.number, 100]); // NOTE-on
+    fake.emit([0x80, a.number, 0]);   // NOTE-off
+    auto.stop();
+    expect(triggers).toEqual([
+      ['hydrogen', 'play', true],
+      ['hydrogen', 'play', false],
+    ]);
+  });
+
+  it('a toggle button CC fires triggerButton on the rising edge only', async () => {
+    const fake = makeFakeBroker();
+    const { host, triggers } = makeButtonHost();
+    const auto = new ElectraAutoconfig(host, fake.broker, { identifyTimeoutMs: 20 });
+    await auto.run();
+    const a = auto.allocations.find((x) => x.role === 'button-toggle')!;
+    expect(a.key).toBe('score:play');
+    fake.emit([0xb0, a.number, 127]); // press → rising edge fires
+    fake.emit([0xb0, a.number, 0]);   // release → ignored
+    auto.stop();
+    expect(triggers).toEqual([['score', 'play', true]]);
+  });
+
+  it('a toggle button does NOT writeParam (it pulses the button action, not a raw param)', async () => {
+    const fake = makeFakeBroker();
+    const writes: Array<[string, string, number]> = [];
+    const { host } = makeButtonHost();
+    host.writeParam = (m, p, v) => writes.push([m, p, v]);
+    const auto = new ElectraAutoconfig(host, fake.broker, { identifyTimeoutMs: 20 });
+    await auto.run();
+    const a = auto.allocations.find((x) => x.role === 'button-toggle')!;
+    fake.emit([0xb0, a.number, 127]);
+    auto.stop();
+    expect(writes).toHaveLength(0);
+  });
+});
+
 describe('tap-tempo routing', () => {
   it('tap notes converge BPM and write internal bpm', async () => {
     const fake = makeFakeBroker();
