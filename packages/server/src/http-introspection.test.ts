@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   classifyMemory,
+  computeAlertState,
   createIntrospectionExtension,
   readMemoryThresholds,
   type IntrospectionDeps,
@@ -159,6 +160,28 @@ describe('classifyMemory', () => {
   });
 });
 
+describe('computeAlertState', () => {
+  const t = { warnMb: 100, critMb: 200 };
+  it("is 'ok' when rss is below warn and both counters are 0", () => {
+    expect(computeAlertState(50, 0, 0, t)).toBe('ok');
+    expect(computeAlertState(100, 0, 0, t)).toBe('ok');
+  });
+  it("is 'warn' when warn < rss <= crit and counters are 0", () => {
+    expect(computeAlertState(150, 0, 0, t)).toBe('warn');
+    expect(computeAlertState(200, 0, 0, t)).toBe('warn');
+  });
+  it("is 'crit' when rss exceeds crit", () => {
+    expect(computeAlertState(201, 0, 0, t)).toBe('crit');
+    expect(computeAlertState(9999, 0, 0, t)).toBe('crit');
+  });
+  it("is 'crit' when rss is fine but uncaught exceptions > 0", () => {
+    expect(computeAlertState(50, 1, 0, t)).toBe('crit');
+  });
+  it("is 'crit' when rss is fine but unhandled rejections > 0", () => {
+    expect(computeAlertState(50, 0, 1, t)).toBe('crit');
+  });
+});
+
 describe('createIntrospectionExtension — snapshot shape', () => {
   it('matches the documented MetricsSnapshot keys exactly', () => {
     const { clock, ext } = makeExt({ conns: 3, rooms: 2 });
@@ -183,6 +206,7 @@ describe('createIntrospectionExtension — snapshot shape', () => {
       'persist_mode',
       'relay_uncaught_exceptions',
       'relay_unhandled_rejections',
+      'alert_state',
     ];
     expect(Object.keys(snap).sort()).toEqual([...keys].sort());
     expect(snap.uptime_s).toBe(42);
@@ -262,6 +286,63 @@ describe('createIntrospectionExtension — snapshot shape', () => {
     // Advance past the 60 s ring and confirm old writes get dropped.
     clock.advance(61_000);
     expect(ext._snapshot().persist_writes_per_min).toBe(0);
+  });
+});
+
+describe('createIntrospectionExtension — alert_state rollup', () => {
+  const thresholds = { warnMb: 100, critMb: 200 };
+
+  it("is 'ok' when rss is below warn and both counters are 0", () => {
+    const { clock, ext } = makeExt({ thresholds });
+    clock.setMem({ rss: 50 });
+    expect(ext._snapshot().alert_state).toBe('ok');
+  });
+
+  it("is 'warn' when warn < rss <= crit and counters are 0", () => {
+    const { clock, ext } = makeExt({ thresholds });
+    clock.setMem({ rss: 150 });
+    expect(ext._snapshot().alert_state).toBe('warn');
+  });
+
+  it("is 'crit' when rss exceeds crit", () => {
+    const { clock, ext } = makeExt({ thresholds });
+    clock.setMem({ rss: 250 });
+    expect(ext._snapshot().alert_state).toBe('crit');
+  });
+
+  it("is 'crit' when rss is fine but relay_uncaught_exceptions > 0", () => {
+    const { clock, ext, setUncaught } = makeExt({ thresholds });
+    clock.setMem({ rss: 50 });
+    setUncaught(1);
+    expect(ext._snapshot().alert_state).toBe('crit');
+  });
+
+  it("is 'crit' when rss is fine but relay_unhandled_rejections > 0", () => {
+    const { clock, ext, setUnhandled } = makeExt({ thresholds });
+    clock.setMem({ rss: 50 });
+    setUnhandled(1);
+    expect(ext._snapshot().alert_state).toBe('crit');
+  });
+
+  it('serializes alert_state into the /metrics body', async () => {
+    const { clock, ext } = makeExt({ thresholds });
+    clock.setMem({ rss: 50 });
+    const res = makeRes();
+    try {
+      await ext.onRequest!({
+        request: makeReq('/metrics'),
+        response: res,
+        instance: {} as never,
+      } as never);
+    } catch (e) {
+      expect(e).toBe('');
+    }
+    expect(res.captured.status).toBe(200);
+    // The raw body must literally contain the keyword the Better Stack monitor
+    // greps for.
+    expect(res.captured.body).toContain('"alert_state":"ok"');
+    const body = JSON.parse(res.captured.body!) as MetricsSnapshot;
+    expect(body.alert_state).toBe('ok');
   });
 });
 
