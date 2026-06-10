@@ -197,6 +197,77 @@ describe('generatePreset — CONTROL page', () => {
   });
 });
 
+describe('generatePreset — BUTTON bindings render as pads (WORKSTREAM B)', () => {
+  it('a momentary button → a note pad on PT-PLAY (role button-momentary)', () => {
+    const input = baseInput({
+      surfaceBindings: [{ moduleId: 'hydrogen', paramId: 'play', controlType: 'button', momentary: true, name: 'PLAY' }],
+      resolveParamDef: () => null, // a button has no continuous param def
+      mixmstrsId: null,
+      timelordeId: null,
+    });
+    const { preset, allocations } = generatePreset(input);
+    const page1 = preset.controls.filter((c) => c.pageId === PAGE_CONTROL);
+    expect(page1).toHaveLength(1);
+    const pad = page1[0]!;
+    expect(pad.type).toBe('pad');
+    expect(pad.mode).toBe('momentary');
+    expect(pad.name).toBe('PLAY');
+    expect(pad.values[0]!.message.type).toBe('note');
+    expect(pad.values[0]!.message.deviceId).toBe(DEVICE_PLAY);
+    const alloc = allocations.find((a) => a.key === 'hydrogen:play')!;
+    expect(alloc.role).toBe('button-momentary');
+    expect(alloc.messageType).toBe('note');
+    expect(alloc.deviceId).toBe(DEVICE_PLAY);
+  });
+
+  it('a toggle button → a cc7 0..1 toggle pad on PT-CTRL (role button-toggle)', () => {
+    const input = baseInput({
+      surfaceBindings: [{ moduleId: 'score', paramId: 'play', controlType: 'button', momentary: false }],
+      resolveParamDef: () => null,
+      mixmstrsId: null,
+      timelordeId: null,
+    });
+    const { preset, allocations } = generatePreset(input);
+    const pad = preset.controls.filter((c) => c.pageId === PAGE_CONTROL)[0]!;
+    expect(pad.type).toBe('pad');
+    expect(pad.mode).toBe('toggle');
+    expect(pad.values[0]!.message.type).toBe('cc7');
+    expect(pad.values[0]!.message.deviceId).toBe(DEVICE_CTRL);
+    expect(pad.values[0]!.message.min).toBe(0);
+    expect(pad.values[0]!.message.max).toBe(1);
+    const alloc = allocations.find((a) => a.key === 'score:play')!;
+    expect(alloc.role).toBe('button-toggle');
+    expect(alloc.messageType).toBe('cc7');
+  });
+
+  it('buttons + knobs coexist on the CONTROL page (button survives a null def, knob resolves)', () => {
+    const input = baseInput({
+      surfaceBindings: [
+        { moduleId: 'osc1', paramId: 'freq' },                                   // knob → fader
+        { moduleId: 'hydrogen', paramId: 'play', controlType: 'button', momentary: true }, // button → pad
+      ],
+      mixmstrsId: null,
+      timelordeId: null,
+    });
+    const { preset } = generatePreset(input);
+    const page1 = preset.controls.filter((c) => c.pageId === PAGE_CONTROL);
+    expect(page1.map((c) => c.type)).toEqual(['fader', 'pad']);
+  });
+
+  it('a momentary button pad gets bounds + visible like every other control', () => {
+    const input = baseInput({
+      surfaceBindings: [{ moduleId: 'hydrogen', paramId: 'clear', controlType: 'button', momentary: true }],
+      resolveParamDef: () => null,
+      mixmstrsId: null,
+      timelordeId: null,
+    });
+    const { preset } = generatePreset(input);
+    const pad = preset.controls.filter((c) => c.pageId === PAGE_CONTROL)[0]!;
+    expect(Array.isArray(pad.bounds)).toBe(true);
+    expect(pad.visible).toBe(true);
+  });
+});
+
 describe('generatePreset — control bounds (render placement)', () => {
   it('every control gets an on-screen bounds + visible:true (else the device draws nothing)', () => {
     const { preset } = generatePreset(baseInput());

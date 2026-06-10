@@ -73,6 +73,8 @@ function makeExt(opts?: {
   persist?: 'postgres' | 'memory';
   uncaught?: number;
   unhandled?: number;
+  env?: Record<string, string | undefined>;
+  fetch?: (url: string) => Promise<unknown>;
 }) {
   const clock = new MockClock();
   let conns = opts?.conns ?? 0;
@@ -97,8 +99,12 @@ function makeExt(opts?: {
         setInterval: clock.setInterval as never,
         clearInterval: clock.clearInterval as never,
         log: clock.log,
+        fetch: opts?.fetch ?? (async () => undefined),
       },
       thresholdOverride: opts?.thresholds,
+      // Default to an empty env so server_version is deterministically
+      // 'unknown' (not whatever the test runner's process.env happens to hold).
+      env: opts?.env ?? {},
     },
   );
   return {
@@ -163,6 +169,7 @@ describe('createIntrospectionExtension — snapshot shape', () => {
     const keys: Array<keyof MetricsSnapshot> = [
       'ts',
       'boot_id',
+      'server_version',
       'uptime_s',
       'rss_mb',
       'heap_used_mb',
@@ -198,6 +205,16 @@ describe('createIntrospectionExtension — snapshot shape', () => {
   it('reflects the injected persistence mode (memory)', () => {
     const { ext } = makeExt({ persist: 'memory' });
     expect(ext._snapshot().persist_mode).toBe('memory');
+  });
+
+  it("defaults server_version to 'unknown' when SERVER_VERSION is unset", () => {
+    const { ext } = makeExt({ env: {} });
+    expect(ext._snapshot().server_version).toBe('unknown');
+  });
+
+  it('surfaces the SERVER_VERSION env on the snapshot', () => {
+    const { ext } = makeExt({ env: { SERVER_VERSION: '1.0.1-prod' } });
+    expect(ext._snapshot().server_version).toBe('1.0.1-prod');
   });
 
   it('surfaces the injected relay error counters', () => {
@@ -309,6 +326,59 @@ describe('memory alarm logic', () => {
   });
 });
 
+describe('Better Stack heartbeat ping', () => {
+  const URL = 'https://uptime.betterstack.example/api/v1/heartbeat/tok';
+
+  it('does not ping when BETTERSTACK_HEARTBEAT_URL is unset', async () => {
+    const calls: string[] = [];
+    const { ext } = makeExt({
+      env: {},
+      fetch: async (u) => {
+        calls.push(u);
+      },
+    });
+    await ext._pingHeartbeat();
+    expect(calls).toEqual([]);
+  });
+
+  it('pings the heartbeat URL when set', async () => {
+    const calls: string[] = [];
+    const { ext } = makeExt({
+      env: { BETTERSTACK_HEARTBEAT_URL: URL },
+      fetch: async (u) => {
+        calls.push(u);
+      },
+    });
+    await ext._pingHeartbeat();
+    expect(calls).toEqual([URL]);
+  });
+
+  it('swallows a failing heartbeat ping (never throws)', async () => {
+    const { ext } = makeExt({
+      env: { BETTERSTACK_HEARTBEAT_URL: URL },
+      fetch: async () => {
+        throw new Error('network down');
+      },
+    });
+    await expect(ext._pingHeartbeat()).resolves.toBeUndefined();
+  });
+
+  it('fires from the 30 s alarm interval alongside the memory alarm', async () => {
+    const calls: string[] = [];
+    const { clock, ext } = makeExt({
+      env: { BETTERSTACK_HEARTBEAT_URL: URL },
+      fetch: async (u) => {
+        calls.push(u);
+      },
+    });
+    await ext.onConfigure!({} as never);
+    clock.fireAllOnce();
+    await Promise.resolve(); // flush the void pingHeartbeat() microtask
+    expect(calls).toEqual([URL]);
+    await ext.onDestroy!({} as never);
+  });
+});
+
 // Minimal IncomingMessage / ServerResponse stand-ins for onRequest tests.
 function makeReq(url: string): { url: string } {
   return { url };
@@ -350,6 +420,9 @@ describe('onRequest routing', () => {
     const body = JSON.parse(res.captured.body!);
     expect(body.ok).toBe(true);
     expect(typeof body.boot_id).toBe('string');
+    // server_version (per-tier deploy string) surfaced on /health for deploy
+    // confirmation; 'unknown' here since makeExt defaults env to {}.
+    expect(body.server_version).toBe('unknown');
     // Phase 2a / FW1: /health surfaces the persistence mode so a misconfigured
     // prod relay serving a non-persistent rack is observable.
     expect(body.persist).toBe('memory');

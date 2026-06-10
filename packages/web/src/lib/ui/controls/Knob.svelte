@@ -10,31 +10,7 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import { createDragCommit } from './drag-commit';
   import ControlContextMenu from './ControlContextMenu.svelte';
-  import {
-    beginLearn,
-    cancelLearn,
-    registerSetter,
-    unregisterSetter,
-    getBinding,
-    clearBinding,
-    learnSpecRune,
-    bindingsRune,
-  } from '$lib/midi/midi-learn.svelte';
-  import { patch } from '$lib/graph/store';
-  import {
-    listControlSurfaces,
-    readSurfaceData,
-    hasBinding as surfaceHasBinding,
-    addBindingToSurface,
-    removeBindingFromSurface,
-  } from '$lib/graph/control-surface';
-  import {
-    listElectraControls,
-    readElectraData,
-    slotForBinding,
-    assignSlotToElectra,
-    clearSlot,
-  } from '$lib/graph/electra-control';
+  import { makeMidiAssignable } from './midi-assignable.svelte';
 
   interface Props {
     value: number;
@@ -71,54 +47,26 @@
     paramId,
   }: Props = $props();
 
-  // ---------------- MIDI Learn integration (mirrors Fader.svelte) ----------------
-  let bindingTick = $state(0);
-  function bumpBindingTick() { bindingTick++; }
-  let binding = $derived.by(() => {
-    void bindingTick;      // legacy local-action bump
-    void bindingsRune();   // reactive: re-eval when ANY binding add/remove
-                           // happens (e.g. an incoming CC completes a learn)
-    if (!moduleId || !paramId) return undefined;
-    return getBinding(moduleId, paramId);
-  });
-  let learning = $derived.by(() => {
-    if (!moduleId || !paramId) return false;
-    const ls = learnSpecRune();
-    return !!ls && ls.moduleId === moduleId && ls.paramId === paramId;
+  // ---------------- MIDI Learn integration (shared factory) ----------------
+  // The single CC-vs-NOTE branch lives in makeMidiAssignable; the knob is a
+  // kind:'cc' consumer. `args` uses getters so the factory always reads the
+  // CURRENT reactive prop (min/max/onchange can change across re-renders).
+  const midi = makeMidiAssignable({
+    kind: 'cc',
+    get moduleId() { return moduleId; },
+    get paramId() { return paramId; },
+    get min() { return min; },
+    get max() { return max; },
+    get onchange() { return onchange; },
   });
 
   let ctxOpen = $state(false);
   let ctxX = $state(0);
   let ctxY = $state(0);
-  // Control surfaces this knob can be sent to — snapshotted when the menu
-  // opens (surfaces rarely change mid-menu; recomputed each open).
-  let ctxSurfaces = $state<Array<{ id: string; name: string; bound: boolean }>>([]);
-  // ElectraControl surfaces this knob can be sent to a fixed (row, knob) slot
-  // on — snapshotted alongside ctxSurfaces when the menu opens.
-  let ctxElectras = $state<Array<{ id: string; name: string; assignedSlot: number | null }>>([]);
-
-  function refreshSurfaces() {
-    if (!moduleId || !paramId) { ctxSurfaces = []; return; }
-    ctxSurfaces = listControlSurfaces(patch.nodes).map((s) => ({
-      id: s.id,
-      name: s.name,
-      bound: surfaceHasBinding(readSurfaceData(patch.nodes[s.id]), moduleId!, paramId!),
-    }));
-  }
-
-  function refreshElectras() {
-    if (!moduleId || !paramId) { ctxElectras = []; return; }
-    ctxElectras = listElectraControls(patch.nodes).map((e) => ({
-      id: e.id,
-      name: e.name,
-      assignedSlot: slotForBinding(readElectraData(patch.nodes[e.id]), moduleId!, paramId!),
-    }));
-  }
 
   function openContextMenu(e: MouseEvent) {
     if (!moduleId || !paramId) return;
-    refreshSurfaces();
-    refreshElectras();
+    midi.refresh();
     // Plain right-click on a wired knob opens the control menu (MIDI Learn /
     // Forget). We stopPropagation so the event does NOT bubble to the node
     // menu — right-clicking the card *background* still gets the node menu
@@ -130,35 +78,7 @@
     ctxY = e.clientY;
     ctxOpen = true;
   }
-  function onLearnPick() {
-    if (!moduleId || !paramId) return;
-    beginLearn({ moduleId, paramId, min, max, onchange });
-    bumpBindingTick();
-  }
-  function onForgetPick() {
-    if (!moduleId || !paramId) return;
-    clearBinding(moduleId, paramId);
-    bumpBindingTick();
-  }
-  function onSendToSurface(surfaceId: string) {
-    if (!moduleId || !paramId) return;
-    addBindingToSurface(surfaceId, moduleId, paramId);
-  }
-  function onRemoveFromSurface(surfaceId: string) {
-    if (!moduleId || !paramId) return;
-    removeBindingFromSurface(surfaceId, moduleId, paramId);
-  }
-  function onAssignElectra(electraId: string, slot: number) {
-    if (!moduleId || !paramId) return;
-    assignSlotToElectra(electraId, slot, moduleId, paramId);
-  }
-  function onClearElectra(electraId: string, slot: number) {
-    clearSlot(electraId, slot);
-  }
-  onMount(() => {
-    if (!moduleId || !paramId) return;
-    registerSetter(moduleId, paramId, { min, max, onchange });
-  });
+  onMount(() => midi.register());
 
   let dragging = $state(false);
   let hovering = $state(false);
@@ -200,10 +120,7 @@
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
     dragCommit.dispose();
-    if (moduleId && paramId) {
-      unregisterSetter(moduleId, paramId);
-      if (learning) cancelLearn();
-    }
+    midi.unregister();
   });
 
   // Map internal value ↔ normalized [0,1] using the declared curve.
@@ -297,8 +214,8 @@
 <div
   class="knob-wrap"
   class:dragging
-  class:midi-learning={learning}
-  class:midi-bound={!!binding}
+  class:midi-learning={midi.learning}
+  class:midi-bound={!!midi.binding}
   onpointerenter={() => (hovering = true)}
   onpointerleave={() => (hovering = false)}
   role="presentation"
@@ -324,9 +241,9 @@
     <div class="tick" style:transform="rotate({angle}deg)"></div>
   </div>
   <div class="label">{label}</div>
-  {#if binding}
-    <div class="midi-badge" title="Bound to MIDI Channel {binding.channel + 1}, CC {binding.cc}">
-      CC {binding.cc}
+  {#if midi.binding}
+    <div class="midi-badge" title={`Bound to MIDI ${midi.bindingLabel}`}>
+      {midi.badge}
     </div>
   {/if}
 </div>
@@ -337,17 +254,17 @@
     x={ctxX}
     y={ctxY}
     title={`${moduleId} · ${label}`}
-    hasBinding={!!binding}
-    bindingLabel={binding ? `CH ${binding.channel + 1} · CC ${binding.cc}` : undefined}
-    onlearn={onLearnPick}
-    onforget={onForgetPick}
+    hasBinding={!!midi.binding}
+    bindingLabel={midi.bindingLabel}
+    onlearn={midi.learn}
+    onforget={midi.forget}
     onclose={() => (ctxOpen = false)}
-    surfaces={ctxSurfaces}
-    onsendtosurface={onSendToSurface}
-    onremovefromsurface={onRemoveFromSurface}
-    electras={ctxElectras}
-    onassignelectra={onAssignElectra}
-    onclearelectra={onClearElectra}
+    surfaces={midi.surfaces}
+    onsendtosurface={midi.sendToSurface}
+    onremovefromsurface={midi.removeFromSurface}
+    electras={midi.electras}
+    onassignelectra={midi.assignElectra}
+    onclearelectra={midi.clearElectra}
   />
 {/if}
 

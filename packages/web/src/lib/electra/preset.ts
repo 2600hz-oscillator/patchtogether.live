@@ -59,6 +59,13 @@ export interface SurfaceBinding {
    *  (CONTROL SURFACE path) the existing first-seen + group-header behavior is
    *  unchanged. */
   slot?: number;
+  /** Control kind. A 'button' renders as a PAD (not a fader): momentary →
+   *  note pad (role 'button-momentary', mirrors TAP); toggle → cc7 toggle pad
+   *  (role 'rw', mirrors Mute). Absent/'knob' → the existing fader/list path. */
+  controlType?: 'knob' | 'button';
+  /** For controlType 'button': momentary (held) vs toggle (latched). Absent on a
+   *  button defaults to toggle (the safer latched representation). */
+  momentary?: boolean;
 }
 
 /** Minimal ParamDef the generator needs (a subset of graph/types ParamDef). */
@@ -189,9 +196,13 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
   const nextOverlayId = () => ++overlayId;
 
   // ── Page 1: CONTROL (surface bindings) ──
+  // A BUTTON binding (controlType 'button') renders as a PAD and has NO
+  // continuous ParamDef, so it survives the resolve step even when resolveParamDef
+  // returns null. A knob/fader binding is dropped when its def can't resolve.
   const page1Resolved = input.surfaceBindings
     .map((b) => ({ b, def: input.resolveParamDef(b.moduleId, b.paramId) }))
-    .filter((x): x is { b: SurfaceBinding; def: GenParamDef } => x.def !== null)
+    .filter((x): x is { b: SurfaceBinding; def: GenParamDef | null } =>
+      x.def !== null || x.b.controlType === 'button')
     .slice(0, MAX_CONTROLS_PER_PAGE); // surface has no ordering beyond first-seen
 
   // POSITIONAL mode (ElectraControl path): if ANY binding carries an explicit
@@ -225,23 +236,62 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
       groupStartSlot = slot;
     }
 
-    const cc = alloc.nextCc();
     const key = `${b.moduleId}:${b.paramId}`;
-    const isDiscrete = def.curve === 'discrete';
+    const fallbackName = () =>
+      b.name && b.name.trim().length > 0
+        ? clampName(b.name)
+        : electraControlName(input.moduleLabel(b.moduleId), def?.label ?? b.paramId);
+
+    if (b.controlType === 'button') {
+      // BUTTON → PAD. Momentary: a note pad (role 'button-momentary', mirrors
+      // the TAP pad; inbound NOTE-on routes to the bound button's action via the
+      // host callback registry). Toggle: a cc7 0..1 toggle pad (role 'rw',
+      // mirrors the Mute pad; cc7 0/127 in → 0/1 button-toggle write).
+      if (b.momentary) {
+        const note = alloc.nextNote();
+        controls.push({
+          id: nextControlId(), pageId: PAGE_CONTROL, controlSetId: csId, potId,
+          type: 'pad', mode: 'momentary', name: fallbackName(),
+          values: [{ message: { deviceId: DEVICE_PLAY, type: 'note', parameterNumber: note, onValue: 127, offValue: 0 } }],
+        });
+        allocations.push({
+          key, pageId: PAGE_CONTROL, controlSetId: csId, potId,
+          deviceId: DEVICE_PLAY, messageType: 'note', number: note, role: 'button-momentary',
+        });
+      } else {
+        const cc = alloc.nextCc();
+        controls.push({
+          id: nextControlId(), pageId: PAGE_CONTROL, controlSetId: csId, potId,
+          type: 'pad', mode: 'toggle', name: fallbackName(),
+          values: [{ message: { deviceId: DEVICE_CTRL, type: 'cc7', parameterNumber: cc, min: 0, max: 1, onValue: 127, offValue: 0 } }],
+        });
+        allocations.push({
+          key, pageId: PAGE_CONTROL, controlSetId: csId, potId,
+          deviceId: DEVICE_CTRL, messageType: 'cc7', number: cc, min: 0, max: 1, curve: 'discrete', role: 'button-toggle',
+        });
+      }
+      slot++;
+      continue;
+    }
+
+    // KNOB / FADER (def is non-null here per the filter).
+    const cdef = def!;
+    const cc = alloc.nextCc();
+    const isDiscrete = cdef.curve === 'discrete';
     let ovId: number | undefined;
     if (isDiscrete) {
       ovId = nextOverlayId();
       overlays.push({
         id: ovId,
-        items: discreteItems(def),
+        items: discreteItems(cdef),
       });
     }
     const value: ElectraValue = {
       message: { deviceId: DEVICE_CTRL, type: 'cc7', parameterNumber: cc, min: 0, max: 127 },
-      min: def.min,
-      max: def.max,
-      defaultValue: def.defaultValue,
-      formatter: formatterFor(def),
+      min: cdef.min,
+      max: cdef.max,
+      defaultValue: cdef.defaultValue,
+      formatter: formatterFor(cdef),
       overlayId: ovId,
     };
     // A user CUSTOM name on the Control Surface binding WINS (clamped to 14);
@@ -249,7 +299,7 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
     const name =
       b.name && b.name.trim().length > 0
         ? clampName(b.name)
-        : electraControlName(input.moduleLabel(b.moduleId), def.label);
+        : electraControlName(input.moduleLabel(b.moduleId), cdef.label);
     controls.push({
       id: nextControlId(),
       pageId: PAGE_CONTROL,
@@ -268,9 +318,9 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
       deviceId: DEVICE_CTRL,
       messageType: 'cc7',
       number: cc,
-      min: def.min,
-      max: def.max,
-      curve: def.curve,
+      min: cdef.min,
+      max: cdef.max,
+      curve: cdef.curve,
       role: 'rw',
     });
     slot++;

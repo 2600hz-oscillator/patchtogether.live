@@ -36,6 +36,29 @@ test.describe('auth-route shape', () => {
     ).toBe(true);
   });
 
+  test('GET /api/health surfaces observability fields (status/version/deps) @smoke', async ({
+    request,
+  }) => {
+    const r = await request.get('/api/health');
+    expect(r.status(), `health 200; got ${r.status()}`).toBe(200);
+    const body = await r.json();
+    // `status` reflects relay reachability; BOTH values are valid in a smoke
+    // env (the relay may legitimately be unreachable from the test runner), so
+    // assert the contract shape, not a specific health verdict.
+    expect(['healthy', 'degraded'], `status; got ${body.status}`).toContain(body.status);
+    expect(typeof body.version, 'version is a string').toBe('string');
+    // deps.hocuspocus is the cross-tier probe result that drives `status`.
+    expect(body.deps?.hocuspocus, 'deps.hocuspocus present').toBeTruthy();
+    expect(typeof body.deps.hocuspocus.ok, 'deps.hocuspocus.ok is boolean').toBe('boolean');
+  });
+
+  test('responses carry an x-request-id correlation header @smoke', async ({ request }) => {
+    const r = await request.get('/api/health');
+    const id = r.headers()['x-request-id'];
+    expect(id, 'x-request-id header present').toBeTruthy();
+    expect(id.length, `x-request-id length >= 16; got "${id}"`).toBeGreaterThanOrEqual(16);
+  });
+
   // Why "not 500" instead of "< 500": 503 is the *expected* response when
   // Clerk env is missing — that's the friendly auth-not-configured page
   // hooks.server.ts returns by design. 500 is what we actually want to

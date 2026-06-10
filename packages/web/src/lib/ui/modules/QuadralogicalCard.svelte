@@ -58,6 +58,8 @@
     cancelLearn,
     learnSpecRune,
     bindingsRune,
+    isCcBinding,
+    type MidiBinding,
   } from '$lib/midi/midi-learn.svelte';
   import {
     listControlSurfaces,
@@ -185,6 +187,12 @@
   // Reactive badges per axis (mirrors Knob.svelte).
   let bindX = $derived.by(() => { void bindingsRune(); return getBinding(id, 'pos_x'); });
   let bindY = $derived.by(() => { void bindingsRune(); return getBinding(id, 'pos_y'); });
+  /** Short "CC n" / "NOTE n" suffix for a binding (axes are CC, but the union
+   *  is widened so guard the read). */
+  function bindNum(b: MidiBinding | undefined): string {
+    if (!b) return '';
+    return isCcBinding(b) ? `CC ${b.cc}` : `NOTE ${b.note}`;
+  }
   let learningX = $derived.by(() => {
     const ls = learnSpecRune();
     return !!ls && ls.moduleId === id && ls.paramId === 'pos_x';
@@ -465,8 +473,8 @@
         <div class="readout" data-testid="quadralogical-readout">
           <span>x: <strong>{fmt(pos_x)}</strong></span>
           <span>y: <strong>{fmt(pos_y)}</strong></span>
-          {#if bindX}<span class="midi-badge" title="X bound to CH {bindX.channel + 1} · CC {bindX.cc}">X·MIDI</span>{/if}
-          {#if bindY}<span class="midi-badge" title="Y bound to CH {bindY.channel + 1} · CC {bindY.cc}">Y·MIDI</span>{/if}
+          {#if bindX}<span class="midi-badge" title="X bound to CH {bindX.channel + 1} · {bindNum(bindX)}">X·MIDI</span>{/if}
+          {#if bindY}<span class="midi-badge" title="Y bound to CH {bindY.channel + 1} · {bindNum(bindY)}">Y·MIDI</span>{/if}
         </div>
       </div>
 
@@ -577,10 +585,10 @@
       <button class="ctx-item" role="menuitem" data-testid="quadralogical-assign-x" onclick={() => assignAxis('pos_x')}>Assign MIDI to X…</button>
       <button class="ctx-item" role="menuitem" data-testid="quadralogical-assign-y" onclick={() => assignAxis('pos_y')}>Assign MIDI to Y…</button>
       {#if bindX}
-        <button class="ctx-item subtle" role="menuitem" data-testid="quadralogical-forget-x" onclick={() => forgetAxis('pos_x')}>Forget X (CH {bindX.channel + 1} · CC {bindX.cc})</button>
+        <button class="ctx-item subtle" role="menuitem" data-testid="quadralogical-forget-x" onclick={() => forgetAxis('pos_x')}>Forget X (CH {bindX.channel + 1} · {bindNum(bindX)})</button>
       {/if}
       {#if bindY}
-        <button class="ctx-item subtle" role="menuitem" data-testid="quadralogical-forget-y" onclick={() => forgetAxis('pos_y')}>Forget Y (CH {bindY.channel + 1} · CC {bindY.cc})</button>
+        <button class="ctx-item subtle" role="menuitem" data-testid="quadralogical-forget-y" onclick={() => forgetAxis('pos_y')}>Forget Y (CH {bindY.channel + 1} · {bindNum(bindY)})</button>
       {/if}
 
       <!-- ── Control Surface: send each axis as an assignable control. Mirrors

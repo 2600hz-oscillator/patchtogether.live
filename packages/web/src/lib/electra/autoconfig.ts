@@ -44,6 +44,11 @@ export interface AutoconfigHost {
   luaSource(): string;
   /** Optional: pull the SRC banner text ('INT 120' / 'EXT 128'). */
   bannerText?(): string;
+  /** Optional: fire a momentary BUTTON's bound action (e.g. transport play) on
+   *  the press edge. The host looks up its registered onGate/onToggle callback
+   *  keyed `moduleId:paramId`. `high` is true on NOTE-on, false on NOTE-off so a
+   *  momentary host can hold + release; a toggle host ignores the release. */
+  triggerButton?(moduleId: string, paramId: string, high: boolean): void;
 }
 
 export interface AutoconfigResult {
@@ -136,18 +141,42 @@ export class ElectraAutoconfig {
     this.unsubNote?.();
     // Writable-control CCs → param writes.
     this.unsubCc = this.broker.onCC((ev: CcEvent) => this.handleCc(ev));
-    // The tap pad arrives as a NoteOn (status 0x9n) on the PLAY port. Route
-    // each press (on-edge only) to the tap-tempo helper.
+    // Inbound notes on the PLAY port: the tap pad (on-edge only → tap-tempo) and
+    // momentary BUTTON pads (both edges → the bound button's action).
     this.unsubNote = this.broker.onNote((ev: NoteEvent) => {
-      if (ev.on) this.handleTapNote(ev.note, this.now());
+      this.handleNote(ev);
     });
     void gen;
   }
 
-  /** Route an inbound CC to its param (rw) — or ignore (meter/banner). */
+  /** Route an inbound NOTE to its allocation: tap pad → tap-tempo (on-edge),
+   *  momentary button pad → the host's bound button action (both edges). */
+  handleNote(ev: NoteEvent): void {
+    const a = this.allocByNumber.get(`note:${ev.note}`);
+    if (!a) return;
+    if (a.role === 'tap') {
+      if (ev.on) this.handleTapNote(ev.note, this.now());
+      return;
+    }
+    if (a.role === 'button-momentary') {
+      const { moduleId, paramId } = splitKey(a.key);
+      this.host.triggerButton?.(moduleId, paramId, ev.on);
+    }
+  }
+
+  /** Route an inbound CC to its param (rw) — or a toggle button action
+   *  (button-toggle) — or ignore (meter/banner). */
   handleCc(ev: CcEvent): void {
     const a = this.allocByNumber.get(`cc7:${ev.cc}`);
     if (!a) return; // not one of ours; midi-learn may still own it
+    // A TOGGLE button pad: fire the bound button action on the RISING edge only
+    // (cc ≥ 64 → press). The button itself owns the latched state; we just pulse
+    // the toggle, matching the on-card click behavior.
+    if (a.role === 'button-toggle') {
+      const { moduleId, paramId } = splitKey(a.key);
+      if (ev.value >= 64) this.host.triggerButton?.(moduleId, paramId, true);
+      return;
+    }
     if (a.role !== 'rw') return; // meters/banners are app→device only
     if (a.min === undefined || a.max === undefined) return;
     const { moduleId, paramId } = splitKey(a.key);

@@ -302,6 +302,23 @@ export class AudioEngine implements DomainEngine {
    * min/max/defaultValue. The two come together because the scaling math
    * needs both pieces.
    */
+  /**
+   * Resolve a (node, INPUT port) → the AudioParam id that input drives, via the
+   * module def's `port.paramTarget`. Returns null when the node isn't known or
+   * the port declares no paramTarget (a pure AudioNode input with no param to
+   * drive). Used by PatchEngine.pulseGateInput / setGateInput so a MIDI-assigned
+   * NOTE on a gate input drives the SAME param a same-domain gate edge does.
+   */
+  resolvePortParamTarget(nodeId: string, portId: string): string | null {
+    const moduleType = this.nodeTypes.get(nodeId);
+    if (!moduleType) return null;
+    const def = getModuleDef(moduleType) as AudioModuleDef | undefined;
+    if (!def) return null;
+    const port = def.inputs.find((p) => p.id === portId);
+    if (!port || !port.paramTarget) return null;
+    return port.paramTarget;
+  }
+
   private getCvScaleForTarget(
     targetNodeId: string,
     targetPortId: string,
@@ -1565,6 +1582,93 @@ export class PatchEngine {
   setParam(node: ModuleNode, paramId: string, value: number): void {
     const engine = this.getDomain(node.domain);
     engine.setParam(node.id, paramId, value);
+  }
+
+  /** Gate inputs whose port declared no paramTarget — warned once each so a
+   *  MIDI-assigned NOTE on an un-routable gate input emits a single dev hint
+   *  (UI surfaces "this input needs a cable") rather than spamming. */
+  private warnedGateInputs = new Set<string>();
+
+  /**
+   * Resolve a (node, gate INPUT port) → its target AudioParam id, across all
+   * registered domain engines. Returns null when no engine knows the node, or
+   * the port declares no paramTarget (a pure AudioNode gate input — a
+   * ConstantSourceNode injection node is a FOLLOW-UP). The same resolution a
+   * same-domain gate EDGE uses, so a MIDI-assigned NOTE drives the identical param.
+   */
+  private resolveGateTarget(nodeId: string, portId: string): { engine: DomainEngine; paramId: string } | null {
+    for (const engine of this.domains.values()) {
+      const e = engine as DomainEngine & {
+        resolvePortParamTarget?: (nodeId: string, portId: string) => string | null;
+        resolveTargetParamId?: (nodeId: string, portId: string) => string;
+      };
+      // AudioEngine: resolvePortParamTarget (null when no paramTarget / unknown).
+      if (typeof e.resolvePortParamTarget === 'function') {
+        const p = e.resolvePortParamTarget(nodeId, portId);
+        if (p) return { engine, paramId: p };
+      }
+      // VideoEngine (DOOM etc.): resolveTargetParamId echoes the portId when it
+      // can't resolve, so only accept a DIFFERENT, truthy id (a real mapping).
+      else if (typeof e.resolveTargetParamId === 'function') {
+        try {
+          const p = e.resolveTargetParamId(nodeId, portId);
+          if (p && p !== portId) return { engine, paramId: p };
+        } catch { /* engine doesn't own this node */ }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Drive a gate/trigger INPUT port HIGH (high=true) or LOW (high=false) by
+   * resolving the port's paramTarget and calling setParam(target, high?1:0) on
+   * the owning engine — REUSING the exact same-domain gate-edge mechanism. A
+   * MIDI NOTE-on → setGateInput(...,true); NOTE-off → setGateInput(...,false).
+   * No-op (warn-once) when the port has no paramTarget. Returns true when it
+   * drove a param.
+   */
+  setGateInput(nodeId: string, portId: string, high: boolean): boolean {
+    const resolved = this.resolveGateTarget(nodeId, portId);
+    if (!resolved) {
+      const key = `${nodeId}:${portId}`;
+      if (!this.warnedGateInputs.has(key)) {
+        this.warnedGateInputs.add(key);
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[midi] gate input ${key} has no paramTarget — MIDI assign is a no-op (this input needs a cable).`,
+        );
+      }
+      return false;
+    }
+    try { resolved.engine.setParam(nodeId, resolved.paramId, high ? 1 : 0); } catch { /* */ }
+    return true;
+  }
+
+  /**
+   * Pulse a TRIGGER input: setParam(target, 1) then setParam(target, 0) on the
+   * next tick — the EXACT pulse shape the same-domain gate-edge dispatch uses so
+   * a trigger detector resets to LOW before the next pulse. Used for momentary
+   * NOTE → trigger when the caller wants a one-shot rather than a held gate.
+   * No-op (warn-once) when the port has no paramTarget.
+   */
+  pulseGateInput(nodeId: string, portId: string): boolean {
+    const resolved = this.resolveGateTarget(nodeId, portId);
+    if (!resolved) {
+      const key = `${nodeId}:${portId}`;
+      if (!this.warnedGateInputs.has(key)) {
+        this.warnedGateInputs.add(key);
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[midi] gate input ${key} has no paramTarget — MIDI assign is a no-op (this input needs a cable).`,
+        );
+      }
+      return false;
+    }
+    try { resolved.engine.setParam(nodeId, resolved.paramId, 1); } catch { /* */ }
+    setTimeout(() => {
+      try { resolved.engine.setParam(nodeId, resolved.paramId, 0); } catch { /* */ }
+    }, 0);
+    return true;
   }
 
   readParam(node: ModuleNode, paramId: string): number | undefined {

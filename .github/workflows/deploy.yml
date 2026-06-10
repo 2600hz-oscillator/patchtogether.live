@@ -203,6 +203,9 @@ jobs:
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
             | shasum -a 1 -c -
       - run: flox activate -- task install
+      - name: Compute app version
+        id: appver
+        run: echo "v=$(jq -r .version package.json)-prod" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           # VITE_* vars are baked into the client bundle at build time;
@@ -210,6 +213,10 @@ jobs:
           # the bundle. Set the Hocuspocus WS URL per tier here so the
           # client knows where to connect.
           VITE_SERVER_WS_URL: wss://patchtogether-server.fly.dev
+          # Deployed web build version, surfaced on /api/health.version so a
+          # monitor / smoke can confirm which build is live (+ detect a stale
+          # web↔relay version drift). Baked at build like the WS URL above.
+          VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -285,10 +292,15 @@ jobs:
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
             | shasum -a 1 -c -
       - run: flox activate -- task install
+      - name: Compute app version
+        id: appver
+        run: echo "v=$(jq -r .version package.json)-preview" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           # Previews share the autotest tier's Hocuspocus instance.
           VITE_SERVER_WS_URL: wss://patchtogether-server-autotest.fly.dev
+          # Deployed web build version surfaced on /api/health.version.
+          VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
           # Re-expose the dev-only window globals (__patch / __ydoc /
           # __ensureEngine / __listModuleDefs) on the built bundle so the
           # chaos runner + e2e suites can drive a deployed preview. Gated
@@ -374,12 +386,17 @@ jobs:
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
             | shasum -a 1 -c -
       - run: flox activate -- task install
+      - name: Compute app version
+        id: appver
+        run: echo "v=$(jq -r .version package.json)-autotest" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           VITE_SERVER_WS_URL: wss://patchtogether-server-autotest.fly.dev
           # See preview-deploy comment — autotest is the canonical target for
           # chaos + e2e runs, so the in-page test hooks must be exposed here.
           VITE_E2E_HOOKS: '1'
+          # Deployed web build version surfaced on /api/health.version.
+          VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -452,11 +469,16 @@ jobs:
           echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
             | shasum -a 1 -c -
       - run: flox activate -- task install
+      - name: Compute app version
+        id: appver
+        run: echo "v=$(jq -r .version package.json)-dev" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           VITE_SERVER_WS_URL: wss://patchtogether-server-dev.fly.dev
           # See preview-deploy comment — dev tier also runs chaos + e2e.
           VITE_E2E_HOOKS: '1'
+          # Deployed web build version surfaced on /api/health.version.
+          VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

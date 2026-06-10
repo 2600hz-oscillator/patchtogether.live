@@ -179,4 +179,31 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-export const handle = sequence(betaGate, conditionalClerk, setCoopCoepHeaders);
+// Per-request correlation id + structured access log. Runs FIRST so it wraps
+// every handle (logging the FINAL status — incl beta-gate 401s) and stamps
+// x-request-id on the response. The single-line JSON is what a Better Stack
+// Logs drain (CF tail-worker / Logpush) parses to alert on web 5xx rate and to
+// stitch a browser error report to its server-side request via request_id.
+const requestIdAndLog: Handle = async ({ event, resolve }) => {
+  const requestId = crypto.randomUUID();
+  event.locals.requestId = requestId;
+  const start = Date.now();
+  const response = await resolve(event);
+  response.headers.set('x-request-id', requestId);
+  // eslint-disable-next-line no-console
+  console.log(
+    JSON.stringify({
+      ts: new Date().toISOString(),
+      level: response.status >= 500 ? 'error' : 'info',
+      msg: 'request',
+      request_id: requestId,
+      method: event.request.method,
+      path: event.url.pathname,
+      status: response.status,
+      ms: Date.now() - start,
+    }),
+  );
+  return response;
+};
+
+export const handle = sequence(requestIdAndLog, betaGate, conditionalClerk, setCoopCoepHeaders);
