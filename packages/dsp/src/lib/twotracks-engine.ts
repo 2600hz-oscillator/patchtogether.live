@@ -261,9 +261,24 @@ export function clampLoopEnd(value: number, startNorm: number, playheadNorm: num
 // The per-reel signal path (mirrored sample-by-sample in processReel):
 //   inputPath = crossfeedInput(dryIn, crossGain, otherReelPlayback)
 //   if recording → the tape RECORDS inputPath (cross-feed captured to tape)
-//   output       = reelOutSample(tapePlayback, inputPath, monitorOn)
+//   output       = reelOutSample(tapePlayback, inputPath, monitorOn, freshRec)
 // so the cross-feed behaves EXACTLY like the live input — recorded when this
 // reel records, heard when it monitors, silent (live) on pure playback.
+//
+// FRESH-RECORD MONITOR CRUSH (fixed):
+//   While FRESH-recording ('rec', i.e. NOT overdub) the record head is writing
+//   the live input into the SAME integer cells it then reads back the next sample
+//   for playback. The write is sample-quantized (integer cells via recordSpan)
+//   while the read is fractional/interpolated (readInterp at a varispeed cursor),
+//   so the tape read-back of the region under the head is a DECIMATED, aliased
+//   copy of the live input. With MONITOR on, the old mix `tape + input` summed
+//   that decimated read-back ONTO the clean live input → a comb/aliasing
+//   artifact the owner heard as "bitcrushed" the instant RECORD engaged — even
+//   though the tape itself (and therefore the recording) is clean.
+//   Fix: during fresh 'rec' the monitor must NOT mix the tape read-back of the
+//   head you're actively writing. The monitor outputs the clean input path (what
+//   you heard while just monitoring); the recording is unaffected. Overdub and
+//   plain playback still mix the existing tape content normally.
 
 /**
  * Cross-feed: blend a fraction of the OTHER reel's playback into THIS reel's
@@ -286,7 +301,22 @@ export function crossfeedInput(dryIn: number, crossGain: number, otherPlay: numb
  * live cross-feed bleed (the cross-feed is still captured to tape while
  * recording, via the record source = inputPath). With monitor ON the input is
  * mixed INTO the play/record mix (input + tape), not instead of it.
+ *
+ * `freshRec` true = this reel is FRESH-recording (state 'rec', NOT overdub). In
+ * that case the tape read-back of the head being written is a decimated copy of
+ * the live input (see the FRESH-RECORD MONITOR CRUSH note above), so it is NOT
+ * mixed into the monitor output — the monitor passes the clean input path,
+ * matching what you hear while merely monitoring. The recording is independent
+ * (the worklet writes the input to tape regardless), so the captured take stays
+ * clean. Overdub (freshRec=false) keeps mixing the existing tape so you can hear
+ * the layers you're playing over.
  */
-export function reelOutSample(tapePlay: number, inputPath: number, monitorOn: boolean): number {
-  return tapePlay + (monitorOn ? inputPath : 0);
+export function reelOutSample(
+  tapePlay: number,
+  inputPath: number,
+  monitorOn: boolean,
+  freshRec: boolean = false,
+): number {
+  const tape = freshRec ? 0 : tapePlay;
+  return tape + (monitorOn ? inputPath : 0);
 }

@@ -728,16 +728,27 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
       // path (dry + cross-feed) is mixed INTO the play/record mix. ARMED + IDLE
       // are silent on the tape side, but monitor still sounds so you can audition
       // the input before/while arming. (engine: reelOutSample.)
+      //
+      // FRESH-RECORD ('rec', not overdub): the tape read-back of the head we are
+      // actively writing is a sample-quantized/aliased copy of the live input
+      // (write = integer cells, read = fractional interp), so summing it onto the
+      // monitor produced the "bitcrushed" artifact the owner heard the instant
+      // RECORD engaged. reelOutSample drops the tape read-back during fresh rec —
+      // the monitor passes the clean input (matching plain monitoring) while the
+      // recording (written from srcL above) stays clean. Overdub keeps the tape.
       const rolling = reel.state === 'play' || reel.state === 'rec' || reel.state === 'overdub';
+      const freshRec = reel.state === 'rec';
       const tapeL = rolling ? sL : 0;
       const tapeR = rolling ? sR : 0;
-      outL[i] += gain * reelOutSample(tapeL, srcL, monitorOn);
-      outR[i] += gain * reelOutSample(tapeR, srcR, monitorOn);
+      outL[i] += gain * reelOutSample(tapeL, srcL, monitorOn, freshRec);
+      outR[i] += gain * reelOutSample(tapeR, srcR, monitorOn, freshRec);
 
-      // Publish this reel's playback (post EQ/filter; 0 when not rolling) for the
-      // OTHER reel to cross-feed from next block (read via its crossPrev buffer).
-      reel.playbackCurL[i] = tapeL;
-      reel.playbackCurR[i] = tapeR;
+      // Publish this reel's playback for the OTHER reel to cross-feed from next
+      // block. Mirror the monitor rule: during fresh rec the head read-back is
+      // the decimated artifact, so we cross-feed 0 (not the crushed read-back) —
+      // overdub/play publish the real tape. (read via its crossPrev buffer.)
+      reel.playbackCurL[i] = freshRec ? 0 : tapeL;
+      reel.playbackCurR[i] = freshRec ? 0 : tapeR;
 
       // ---- Advance cursor + resolve boundary (ONLY while rolling).
       // IDLE and ARMED hold the playhead still (no free-running sweep; ARMED is a
