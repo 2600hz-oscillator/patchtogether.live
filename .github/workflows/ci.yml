@@ -1607,13 +1607,11 @@ jobs:
     name: webgl-attest (real-GPU attestation gate)
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # PHASED: informational + non-gating until the heavy-WebGL triage campaign
-    # lands a green local attestation (see webgl-attestation-semaphore.md §-2 +
-    # ci.md). `continue-on-error: true` keeps the overall CI RUN green (like
-    # `vrt`/`behavioral`) so the expected "no attestation yet" red doesn't show
-    # main CI as failing / mask a real regression. REMOVE this line at the same
-    # time you re-add `|| "$WEBGL_ATTEST" != "success"` to the umbrella `if`.
-    continue-on-error: true
+    # GATING (re-armed 2026-06-11, Phase 4): the heavy-WebGL triage campaign
+    # landed (#752 green baseline + #753 lean lane, retries=0 clean) and the first
+    # real-GPU attestation (ci-webgl-attest/<hash>.json) is committed, so this
+    # verify job now GATES the `ci` umbrella (the `$WEBGL_ATTEST` clause in the
+    # aggregator `if`). No `continue-on-error`. See webgl-attestation-semaphore.md.
     steps:
       - name: Checkout (no LFS — only needs source + ci-webgl-attest/)
         uses: actions/checkout@v4
@@ -1731,15 +1729,14 @@ jobs:
              || "$ART" != "success" \
              || "$BUILD" != "success" \
              || "$E2E" != "success" \
-             || "$WEBGL_SMOKE" != "success" ]]; then
-          # NOTE: $WEBGL_ATTEST is intentionally NON-GATING for now (PHASED rollout
-          # — see .myrobots/plans/webgl-attestation-semaphore.md §-2). The heavy
-          # WebGL suite has ~15 rotted specs (ungated since e2e-video was disabled),
-          # so the attest gate can't bootstrap green yet. It runs informationally
-          # (visible in the summary above). RE-ADD `|| "$WEBGL_ATTEST" != "success"`
-          # to this `if` once the heavy-WebGL triage campaign is done + the first
-          # real-GPU attestation is committed. webgl-smoke + the coverage guard
-          # (in `unit`) ARE gating now.
+             || "$WEBGL_SMOKE" != "success" \
+             || "$WEBGL_ATTEST" != "success" ]]; then
+          # $WEBGL_ATTEST is GATING (re-armed 2026-06-11, Phase 4): the heavy-WebGL
+          # triage campaign is done (#752 green baseline + #753 lean lane) and the
+          # first real-GPU attestation (ci-webgl-attest/<hash>.json) is committed,
+          # so a WebGL-path change without a re-run `task webgl:attest` → hash
+          # mismatch → this fails. webgl-smoke + the coverage guard (in `unit`)
+          # are also gating.
           # collab is UN-GATED (informational, task #69); behavioral is also
           # INFORMATIONAL (un-gated — the
           # 1x gate flaked on moog911 on the next PR). Do NOT re-add $BEHAVIORAL
