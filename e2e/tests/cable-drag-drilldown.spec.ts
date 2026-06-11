@@ -28,7 +28,7 @@
 // screen coordinate inside the target card, so handleConnectEnd's
 // elementFromPoint resolves the dropped-on card exactly as a real release does.
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 // Serial (not parallel): this spec shares a shard with heavy WebGL video specs
@@ -55,6 +55,37 @@ async function cardCenter(page: Page, nodeId: string): Promise<{ x: number; y: n
   const box = await page.locator(`.svelte-flow__node[data-id="${nodeId}"]`).boundingBox();
   expect(box, `card ${nodeId} must be mounted`).toBeTruthy();
   return { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
+}
+
+/** Pick a port in the drill-down picker, deterministically + provably unobstructed.
+ *
+ *  Playwright's own pointer hit-test is an unreliable FALSE NEGATIVE on this
+ *  body-portaled `position:fixed` menu under headless SwiftShader — `.click()`
+ *  hangs at "scrolling into view" for 30s even though the option is fully
+ *  rendered and nothing covers it (confirmed in the CI failure screenshot).
+ *
+ *  Rather than blindly force the click, we first PROVE the option is genuinely
+ *  the topmost element at its own centre using the BROWSER's real hit-test
+ *  (`document.elementFromPoint`). That assertion fails loudly if a real overlay
+ *  ever covers the option — a true regression we must catch — so this is not
+ *  flake-tolerance. Only once the option is proven clickable do we dispatch the
+ *  click with `{ force: true }` to skip Playwright's redundant (and here broken)
+ *  actionability probe. Callers still assert the resulting edge. */
+async function pickPort(menu: Locator, portId: string): Promise<void> {
+  const opt = menu.locator(`[data-testid="patch-to-port"][data-port-id="${portId}"]`);
+  await expect(opt).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        opt.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return !!top && (top === el || el.contains(top) || top.closest('[data-testid="patch-to-port"]') === el);
+        }),
+      { timeout: 5000 },
+    )
+    .toBe(true);
+  await opt.click({ force: true });
 }
 
 /** Drive a native cable DRAG: grab a handle, release over a screen point —
@@ -138,17 +169,8 @@ test('picking a port in the drilled-down picker commits the chosen edge', async 
   // menu container, and clicking before it exists raced the commit.
   await expect(menu.locator('[data-testid="patch-to-ports"]')).toBeVisible();
   // Pick QUADRALOGICAL's IN2.
-  const in2 = menu.locator('[data-testid="patch-to-port"][data-port-id="in2"]');
-  // Visibility is asserted explicitly; the click is then dispatched with force to
-  // bypass Playwright's pointer HIT-TEST, which is an unreliable FALSE NEGATIVE
-  // on this body-portaled `position:fixed` menu under headless SwiftShader — the
-  // option is provably visible + unobstructed (confirmed in the CI failure
-  // screenshot: full IN1–IN4 list rendered, nothing over it) yet the hit-test
-  // hangs at "scrolling into view". The real behavior is still fully asserted
-  // below (edge created with the chosen endpoints + the picker closes), so this
-  // is not a skip — only the flaky actionability probe is bypassed.
-  await expect(in2).toBeVisible();
-  await in2.click({ force: true });
+  // Pick QUADRALOGICAL's IN2 (proven-unobstructed; see pickPort).
+  await pickPort(menu, 'in2');
 
   // Exactly the edge the user chose lands — vs.video → quad.in2.
   await expect.poll(async () => (await readEdges(page)).length, { timeout: 5000 }).toBe(1);
@@ -198,9 +220,7 @@ test('reverse drag — grab a raw INPUT, drop on a PatchPanel card — picker of
   expect(await readEdges(page)).toHaveLength(0);
 
   // Pick it → edge runs quad.out (OUTPUT) → vout.in (INPUT), correctly oriented.
-  const outOpt = menu.locator('[data-testid="patch-to-port"][data-port-id="out"]');
-  await expect(outOpt).toBeVisible();
-  await outOpt.click({ force: true }); // headless hit-test false-negative — see the IN2 click above
+  await pickPort(menu, 'out');
   await expect.poll(async () => (await readEdges(page)).length, { timeout: 5000 }).toBe(1);
   const edges = await readEdges(page);
   expect(edges[0]!.source).toEqual({ nodeId: 'quad', portId: 'out' });
