@@ -94,6 +94,20 @@ export interface AudioModuleDef {
    */
   vizPassthrough?: boolean;
   /**
+   * WebGL-attestation marker (semaphore scheme). When true, this AUDIO-domain
+   * module's card renders via a real WebGL/WebGL2 context (CUBE / HYPERCUBE /
+   * WAVESCULPT) — i.e. it is a GPU render path even though it lives in the
+   * audio registry. The §12 coverage guard reads this flag to mechanically
+   * include the module's source in the WebGL content-hash basis (instead of a
+   * hand-maintained list), and CROSS-CHECKS it against a grep of the card
+   * source for `getContext('webgl')` so the flag can't silently drift away from
+   * reality (a flagged def whose card no longer renders WebGL, or a WebGL card
+   * whose def forgot the flag, both fail the guard). Video-domain modules don't
+   * need this — they are derived from `domain:'video'`. See
+   * .myrobots/plans/webgl-attestation-semaphore.md (§-1 fix V3).
+   */
+  rendersWebGL?: boolean;
+  /**
    * Attribution for modules that are direct ports of MIT-licensed open-source
    * DSP code. Rendered as a subdued disclaimer at the bottom of the module
    * card via <OssAttribution>. Set ONLY when the module's DSP/algorithm code

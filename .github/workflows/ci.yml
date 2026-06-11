@@ -1123,6 +1123,11 @@ jobs:
     # an intermittent whole-lane wall-clock timeout. It is SKIPPED + removed from
     # the required umbrella gate until the 3-way shard lands (task #65). Re-enable
     # (sharded) in the shard PR. See .myrobots/plans/e2e-video-analysis.md.
+    # STAYS dispatch-only: the new real-GPU `webgl-attest` gate (verified locally
+    # on the owner's GPU) now covers this lane's PER-PR role, and `webgl-smoke`
+    # (SwiftShader) covers gross-breakage on CI every PR. This stays the on-demand
+    # "actually run the heavy lane on SwiftShader" escape hatch + the future
+    # GPU-runner host (semaphore plan §7/§11).
     # Non-constant guard (actionlint rejects a literal `if: false`): on PR/push
     # event_name is 'pull_request'/'push' → false → job skipped; still runnable
     # via manual workflow_dispatch.
@@ -1472,6 +1477,152 @@ jobs:
           retention-days: 30
 
   # -----------------------------------------------------------------------
+  # webgl-smoke — the REQUIRED on-CI WebGL FLOOR (.myrobots/plans/webgl-
+  # attestation-semaphore.md §6). CI's only WebGL renderer is SwiftShader and
+  # the heavy WebGL e2e lane (e2e-video) is disabled on PRs, so without this CI
+  # would be fully BLIND to gross WebGL breakage. This runs a tiny, fast,
+  # renderer-TOLERANT smoke set (`--grep @webgl-smoke`) on SwiftShader every PR:
+  # it asserts a real GL context paints non-black / a shader compiles / the
+  # OffscreenCanvas worker-proxy renders — NOT exact pixels (per
+  # capability-dependent-e2e-local-vs-ci). ~4 tests, < 1 min of test time;
+  # serves the prebuilt preview bundle (same as the e2e shards). This is the
+  # un-forgeable floor that backstops the local-GPU attestation (which covers
+  # DEPTH on a real GPU but is hand-forgeable). FORKS get this same floor (they
+  # can't merge anyway + don't get the attestation skip).
+  # -----------------------------------------------------------------------
+  webgl-smoke:
+    name: webgl-smoke (SwiftShader WebGL floor)
+    needs: [dsp-build, build-web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      E2E_USE_PREVIEW: '1'
+      # Force Chromium's WebGL onto SwiftShader so the floor runs on the exact
+      # software renderer CI uses (also what a fork runner gets for free).
+      E2E_SWIFTSHADER: '1'
+
+    steps:
+      - name: Checkout (no LFS — serves the prebuilt bundle)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
+      - name: Download web preview bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+
+      # The renderer-tolerant WebGL floor: only @webgl-smoke-tagged tests, on
+      # SwiftShader, 1 worker. Fast (~4 tests). retries=1 absorbs a cold-GL
+      # hiccup without masking a real break (the asserts are non-pixel-exact).
+      - name: Run WebGL smoke floor (@webgl-smoke, SwiftShader)
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            --grep "@webgl-smoke" \
+            --workers=1 \
+            --retries=1 \
+            --reporter=list
+
+      - name: Upload Playwright test-results on failure (webgl-smoke)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-webgl-smoke
+          path: e2e/test-results
+          retention-days: 14
+
+  # -----------------------------------------------------------------------
+  # webgl-attest — the REAL-GPU attestation VERIFY gate (.myrobots/plans/webgl-
+  # attestation-semaphore.md §7). Recomputes the deterministic WebGL content-
+  # hash (scripts/webgl-attest-hash.sh) and checks ci-webgl-attest/<hash>.json
+  # exists. The attestation was produced by the owner's local real-GPU
+  # `task webgl:attest` run and committed WITH the PR; it travels through
+  # squash-merge because the hash is content-keyed, NOT git-HEAD-keyed.
+  #
+  #   match  → WebGL surface unchanged-or-attested → the (disabled) heavy WebGL
+  #            lane stays skipped, trusting the local run. PASS.
+  #   miss   → a WebGL/video path changed without re-attesting → FAIL with
+  #            `run: flox activate -- task webgl:attest`.
+  #
+  # HONEST FRAMING: the one robust property is "editing a hashed WebGL file
+  # forces a re-attest or CI fails" (accidental staleness). It is NOT anti-forge
+  # — every JSON field is hand-writable. Acceptable because the repo is
+  # contribution-locked to the owner (owner-only merge + fork-PR approval) →
+  # owner self-attestation = single-trusted-actor. See ci-webgl-attest/README.md.
+  #
+  # MIGRATION: retire this whole scheme (job + scripts + Taskfile targets +
+  # folder) the day a real-GPU CI runner lands — re-enable e2e-video on it +
+  # add THAT to the umbrella instead. The umbrella name never changed, so
+  # retirement needs no ruleset edit. (§11.)
+  #
+  # Cheap (< 1 min: checkout + flox + one hash). No LFS, no DB, no bundle.
+  # -----------------------------------------------------------------------
+  webgl-attest:
+    name: webgl-attest (real-GPU attestation gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (no LFS — only needs source + ci-webgl-attest/)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Install workspace deps (tsx + minimatch for the hash script)
+        run: flox activate -- task install
+
+      - name: Verify WebGL attestation
+        run: flox activate -- bash scripts/webgl-attest-verify.sh
+
+  # -----------------------------------------------------------------------
   # ci (umbrella) — gates branch protection. Required status check named
   # `typecheck + unit + ART + E2E` (see ruleset 16042163). This job exists
   # ONLY to preserve that name and aggregate the pass/fail of the split
@@ -1495,7 +1646,14 @@ jobs:
     # tests — then it gets re-gated as a RELIABLE check. Tracked by task #69.
     # collab is intentionally removed from `needs:` so the umbrella does not even
     # WAIT on it (keeps merge latency low). merge-reports/behavioral notes below.
-    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e]
+    # webgl-smoke (SwiftShader WebGL floor) + webgl-attest (real-GPU attestation
+    # verify) are REQUIRED — wired via the THREE edits the semaphore plan calls
+    # out (adversarial-review fix V2): added to `needs:` here, to the aggregate
+    # `env:` below, AND to the failing `if [[ ]]` test. `needs:` ALONE only makes
+    # the umbrella WAIT (the umbrella is `if: always()` and gates via the env+if
+    # block, not via needs) — exactly how collab/behavioral sit un-gated. See
+    # .myrobots/plans/webgl-attestation-semaphore.md §7.
+    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -1510,6 +1668,8 @@ jobs:
           ART: ${{ needs.art.result }}
           BUILD: ${{ needs.build.result }}
           E2E: ${{ needs.e2e.result }}
+          WEBGL_SMOKE: ${{ needs.webgl-smoke.result }}
+          WEBGL_ATTEST: ${{ needs.webgl-attest.result }}
         run: |
           echo "actionlint:    $ACTIONLINT"
           echo "typecheck:     $TYPECHECK"
@@ -1519,7 +1679,9 @@ jobs:
           echo "art:           $ART"
           echo "build:         $BUILD"
           echo "e2e:           $E2E"
-          echo "e2e-video:     (TEMPORARILY DISABLED — skipped + un-gated pending the 3-way shard, task #65)"
+          echo "webgl-smoke:   $WEBGL_SMOKE"
+          echo "webgl-attest:  $WEBGL_ATTEST"
+          echo "e2e-video:     (TEMPORARILY DISABLED — skipped + un-gated pending the 3-way shard, task #65; the real-GPU webgl-attest gate now covers its per-PR role)"
           echo "collab:        (informational — see collab job; temporarily un-gated, task #69)"
           # `e2e` is a matrix; its aggregated result is `success` only if all
           # shards succeeded. `e2e-video` is the dedicated WebGL-heavy lane (#68)
@@ -1561,7 +1723,9 @@ jobs:
              || "$BUILD_WEB" != "success" \
              || "$ART" != "success" \
              || "$BUILD" != "success" \
-             || "$E2E" != "success" ]]; then
+             || "$E2E" != "success" \
+             || "$WEBGL_SMOKE" != "success" \
+             || "$WEBGL_ATTEST" != "success" ]]; then
           # collab is UN-GATED (informational, task #69); behavioral is also
           # INFORMATIONAL (un-gated — the
           # 1x gate flaked on moog911 on the next PR). Do NOT re-add $BEHAVIORAL

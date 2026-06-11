@@ -18,7 +18,10 @@ import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe('video Phase-0: LINES → OUTPUT', () => {
-  test('renders a non-trivial pattern into the OUTPUT canvas', async ({ page }) => {
+  // @webgl-smoke — REQUIRED on-CI WebGL floor: a video module (LINES) renders a
+  // frame to a VideoOut WebGL canvas without throwing + paints non-trivial
+  // content. Renderer-tolerant (variance/non-black, NOT exact pixels).
+  test('renders a non-trivial pattern into the OUTPUT canvas @webgl-smoke', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {

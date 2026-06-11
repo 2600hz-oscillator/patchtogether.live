@@ -157,6 +157,11 @@ export const cubeDef: AudioModuleDef = {
   domain: 'audio',
   label: 'cube',
   category: 'sources',
+  // CubeCard renders the 3D wavetable cube via a real WebGL2 context → this
+  // audio-domain module is a GPU render path. The marker mechanically pulls
+  // cube.ts into the WebGL content-hash basis + is cross-checked against the
+  // card's getContext('webgl2') by the §12 coverage guard.
+  rendersWebGL: true,
   schemaVersion: 1,
 
   inputs: [
