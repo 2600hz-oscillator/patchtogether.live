@@ -11,6 +11,18 @@ import {
   gamepadDef,
   GAMEPAD_OUTPUTS,
   STICK_DEADZONE,
+  CALIBRATION_DEADZONE,
+  newCalibrationSweep,
+  recordCalibrationSample,
+  sweepIsUsable,
+  finalizeCalibration,
+  normalizeAxis,
+  applyCalibration,
+  type StickCalibration,
+  detectChangedControl,
+  REMAP_AXIS_THRESHOLD,
+  REMAP_BUTTON_THRESHOLD,
+  type RawGamepadReading,
 } from './gamepad';
 import { scaleCv } from '$lib/audio/cv-scale';
 import { wavesculptDef } from './wavesculpt';
@@ -220,5 +232,248 @@ describe('GAMEPAD stick → WAVESCULPT camera mapping (composed full-range)', ()
     expect(stickToPosX(0, 0.5)).toBe(0.5);
     // Hard-left still reaches the bottom of the range.
     expect(stickToPosX(-1, 0.5)).toBeCloseTo(-0.5, 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LEFT-STICK CALIBRATION — pure math (Gladiator NXT first deliverable).
+//
+// The full flow exercised here, GL/hardware-free:
+//   newCalibrationSweep() → recordCalibrationSample()× (the user sweep) →
+//   sweepIsUsable() (gate) → finalizeCalibration() (one-time committed record)
+//   → applyCalibration()/normalizeAxis() (the per-frame read-loop mapping).
+// ---------------------------------------------------------------------------
+describe('calibration sweep capture', () => {
+  it('seeds an empty sweep that is NOT yet usable', () => {
+    const s = newCalibrationSweep();
+    expect(s.samples).toBe(0);
+    expect(sweepIsUsable(s)).toBe(false);
+  });
+
+  it('records observed min/max across a sweep', () => {
+    const s = newCalibrationSweep();
+    recordCalibrationSample(s, 0.0, 0.0);
+    recordCalibrationSample(s, -0.8, 0.7);
+    recordCalibrationSample(s, 0.9, -0.85);
+    expect(s.minX).toBeCloseTo(-0.8);
+    expect(s.maxX).toBeCloseTo(0.9);
+    expect(s.minY).toBeCloseTo(-0.85);
+    expect(s.maxY).toBeCloseTo(0.7);
+    expect(s.samples).toBe(3);
+  });
+
+  it('ignores non-finite samples (disconnected pad) without corrupting the range', () => {
+    const s = newCalibrationSweep();
+    recordCalibrationSample(s, -0.5, 0.5);
+    recordCalibrationSample(s, NaN, 0.9);
+    recordCalibrationSample(s, 0.6, Infinity);
+    // Only the first sample was finite on both axes.
+    expect(s.minX).toBeCloseTo(-0.5);
+    expect(s.maxX).toBeCloseTo(-0.5);
+    expect(s.samples).toBe(1);
+  });
+
+  it('clamps over-range raw samples to the legal [-1,1] axis band', () => {
+    const s = newCalibrationSweep();
+    recordCalibrationSample(s, -1.5, 1.4);
+    recordCalibrationSample(s, 2.0, -3.0);
+    expect(s.minX).toBe(-1);
+    expect(s.maxX).toBe(1);
+    expect(s.minY).toBe(-1);
+    expect(s.maxY).toBe(1);
+  });
+
+  it('is usable only after a non-trivial span on BOTH axes', () => {
+    const s = newCalibrationSweep();
+    // A wide X sweep but a tiny Y span → not usable (Y range too small).
+    recordCalibrationSample(s, -0.9, 0.0);
+    recordCalibrationSample(s, 0.9, 0.01);
+    recordCalibrationSample(s, 0.0, -0.01);
+    expect(sweepIsUsable(s)).toBe(false);
+    // Add a real Y span → now usable.
+    recordCalibrationSample(s, 0.0, 0.5);
+    recordCalibrationSample(s, 0.0, -0.5);
+    expect(sweepIsUsable(s)).toBe(true);
+  });
+
+  it('rejects a usable check with too few samples even if span is wide', () => {
+    const s = newCalibrationSweep();
+    recordCalibrationSample(s, -1, -1);
+    recordCalibrationSample(s, 1, 1);
+    // Only 2 samples — below the floor.
+    expect(sweepIsUsable(s)).toBe(false);
+  });
+});
+
+describe('finalizeCalibration', () => {
+  it('returns null for an unusable sweep (keeps prior calibration)', () => {
+    expect(finalizeCalibration(newCalibrationSweep())).toBeNull();
+  });
+
+  it('locks in the observed range + default deadzone', () => {
+    const s = newCalibrationSweep();
+    recordCalibrationSample(s, -0.8, 0.7);
+    recordCalibrationSample(s, 0.85, -0.75);
+    recordCalibrationSample(s, 0.0, 0.0);
+    const cal = finalizeCalibration(s)!;
+    expect(cal).not.toBeNull();
+    expect(cal.minX).toBeCloseTo(-0.8);
+    expect(cal.maxX).toBeCloseTo(0.85);
+    expect(cal.minY).toBeCloseTo(-0.75);
+    expect(cal.maxY).toBeCloseTo(0.7);
+    expect(cal.deadzone).toBe(CALIBRATION_DEADZONE);
+  });
+
+  it('clamps a custom deadzone into [0, 0.9]', () => {
+    const s = newCalibrationSweep();
+    recordCalibrationSample(s, -1, -1);
+    recordCalibrationSample(s, 1, 1);
+    recordCalibrationSample(s, 0, 0);
+    expect(finalizeCalibration(s, -1)!.deadzone).toBe(0);
+    expect(finalizeCalibration(s, 5)!.deadzone).toBe(0.9);
+  });
+});
+
+describe('normalizeAxis (per-axis calibrated mapping)', () => {
+  it('maps observed-min → -1 and observed-max → +1', () => {
+    // A worn / flight stick that only reaches [-0.7, +0.8].
+    expect(normalizeAxis(-0.7, -0.7, 0.8, 0)).toBeCloseTo(-1, 5);
+    expect(normalizeAxis(0.8, -0.7, 0.8, 0)).toBeCloseTo(1, 5);
+  });
+
+  it('maps the calibrated CENTER → 0 even when the stick rests off-zero', () => {
+    // Loose centre: range [-0.6, +0.9] → centre +0.15.
+    expect(normalizeAxis(0.15, -0.6, 0.9, 0)).toBeCloseTo(0, 5);
+  });
+
+  it('saturates past the calibrated extremes (outer deadzone)', () => {
+    expect(normalizeAxis(0.95, -0.7, 0.8, 0)).toBe(1);
+    expect(normalizeAxis(-0.95, -0.7, 0.8, 0)).toBe(-1);
+  });
+
+  it('returns 0 (never NaN) for a degenerate min==max calibration', () => {
+    expect(normalizeAxis(0.5, 0.3, 0.3, 0)).toBe(0);
+    expect(Number.isNaN(normalizeAxis(0.5, 0.3, 0.3, 0))).toBe(false);
+  });
+
+  it('applies + re-normalizes a per-axis deadzone', () => {
+    // Symmetric [-1,1] range, dz 0.1: a sample just inside dz → 0, just
+    // outside → near-0 (renormalized), full → 1.
+    expect(normalizeAxis(0.05, -1, 1, 0.1)).toBe(0);
+    const justOut = normalizeAxis(0.11, -1, 1, 0.1);
+    expect(justOut).toBeGreaterThan(0);
+    expect(justOut).toBeLessThan(0.02);
+    expect(normalizeAxis(1, -1, 1, 0.1)).toBeCloseTo(1, 5);
+  });
+});
+
+describe('applyCalibration (full per-frame mapping incl. radial deadzone)', () => {
+  const cal: StickCalibration = { minX: -0.7, maxX: 0.8, minY: -0.75, maxY: 0.7, deadzone: 0.1 };
+
+  it('full deflection reaches ±1 on each axis', () => {
+    expect(applyCalibration(0.8, 0, cal).x).toBeCloseTo(1, 4);
+    expect(applyCalibration(-0.7, 0, cal).x).toBeCloseTo(-1, 4);
+    expect(applyCalibration(0, 0.7, cal).y).toBeCloseTo(1, 4);
+    expect(applyCalibration(0, -0.75, cal).y).toBeCloseTo(-1, 4);
+  });
+
+  it('rest-at-calibrated-centre reads {0,0} (no snap-back drift)', () => {
+    const cx = (cal.minX + cal.maxX) / 2;
+    const cy = (cal.minY + cal.maxY) / 2;
+    const out = applyCalibration(cx, cy, cal);
+    expect(out.x).toBe(0);
+    expect(out.y).toBe(0);
+  });
+
+  it('radial deadzone gates small diagonal noise inside the dz circle', () => {
+    // A small diagonal nudge whose per-axis components are each below the
+    // radial dz radius → both axes 0 (the radial guard, not just per-axis).
+    const cx = (cal.minX + cal.maxX) / 2;
+    const cy = (cal.minY + cal.maxY) / 2;
+    // Nudge just a hair off centre — magnitude well under 0.1.
+    const out = applyCalibration(cx + 0.01, cy + 0.01, cal);
+    expect(out.x).toBe(0);
+    expect(out.y).toBe(0);
+  });
+
+  it('preserves direction past the deadzone (does not snap to an axis)', () => {
+    // A diagonal push to (maxX, minY): X normalizes toward +1, Y toward -1.
+    // Both components stay non-zero (no snap to an axis).
+    const out = applyCalibration(0.8, -0.75, cal);
+    expect(out.x).toBeGreaterThan(0.5);
+    expect(out.y).toBeLessThan(-0.5);
+    // Magnitude does not exceed the unit-square diagonal.
+    expect(Math.hypot(out.x, out.y)).toBeLessThanOrEqual(Math.SQRT2 + 1e-6);
+  });
+
+  it('never emits NaN for a degenerate calibration', () => {
+    const degen: StickCalibration = { minX: 0, maxX: 0, minY: 0, maxY: 0, deadzone: 0.1 };
+    const out = applyCalibration(0.5, 0.5, degen);
+    expect(Number.isNaN(out.x)).toBe(false);
+    expect(Number.isNaN(out.y)).toBe(false);
+    expect(out.x).toBe(0);
+    expect(out.y).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CONTROL-REMAP DETECTION — pure diff (broad-control-support feasibility core).
+// ---------------------------------------------------------------------------
+describe('detectChangedControl', () => {
+  const reading = (axes: number[], btnValues: number[]): RawGamepadReading => ({
+    axes,
+    buttons: btnValues.map((v) => ({ value: v, pressed: v > 0.5 })),
+  });
+
+  it('returns null on the first poll (no baseline to diff)', () => {
+    expect(detectChangedControl(null, reading([0, 0], [0]))).toBeNull();
+  });
+
+  it('returns null when nothing moved past the threshold', () => {
+    const prev = reading([0, 0, 0, 0], [0, 0, 0]);
+    const cur = reading([0.1, -0.1, 0, 0], [0.2, 0, 0]); // all sub-threshold
+    expect(detectChangedControl(prev, cur)).toBeNull();
+  });
+
+  it('detects a swept axis as the changed control', () => {
+    const prev = reading([0, 0, 0, 0], []);
+    const cur = reading([0, 0, 0.9, 0], []); // axis 2 swept
+    expect(detectChangedControl(prev, cur)).toEqual({ kind: 'axis', index: 2 });
+  });
+
+  it('detects a pressed button as the changed control', () => {
+    const prev = reading([0, 0], [0, 0, 0, 0]);
+    const cur = reading([0, 0], [0, 0, 1, 0]); // button 2 pressed
+    expect(detectChangedControl(prev, cur)).toEqual({ kind: 'button', index: 2 });
+  });
+
+  it('picks the LARGEST-magnitude change when several move (deliberate vs jitter)', () => {
+    const prev = reading([0, 0, 0], [0, 0]);
+    // axis 0 nudged a bit (0.55), axis 1 fully swept (0.95) → axis 1 wins.
+    const cur = reading([0.55, 0.95, 0], [0, 0]);
+    expect(detectChangedControl(prev, cur)).toEqual({ kind: 'axis', index: 1 });
+  });
+
+  it('honours custom thresholds', () => {
+    const prev = reading([0, 0], [0]);
+    const cur = reading([0.3, 0, 0, 0], [0]);
+    // Below the default axis threshold…
+    expect(detectChangedControl(prev, cur)).toBeNull();
+    // …but above a lowered one.
+    expect(detectChangedControl(prev, cur, { axisThreshold: 0.2 })).toEqual({ kind: 'axis', index: 0 });
+  });
+
+  it('ignores non-finite samples without throwing', () => {
+    const prev = reading([0, 0], [0]);
+    // axis 0 is NaN (skipped, no throw), axis 1 swept, no button moved → axis 1.
+    const cur: RawGamepadReading = { axes: [NaN, 0.9], buttons: [{ value: 0, pressed: false }] };
+    expect(detectChangedControl(prev, cur)).toEqual({ kind: 'axis', index: 1 });
+  });
+
+  it('exposes sensible default thresholds', () => {
+    expect(REMAP_AXIS_THRESHOLD).toBeGreaterThan(0);
+    expect(REMAP_AXIS_THRESHOLD).toBeLessThanOrEqual(1);
+    expect(REMAP_BUTTON_THRESHOLD).toBeGreaterThan(0);
+    expect(REMAP_BUTTON_THRESHOLD).toBeLessThanOrEqual(1);
   });
 });

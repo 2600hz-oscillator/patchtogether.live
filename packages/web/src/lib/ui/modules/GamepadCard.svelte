@@ -25,8 +25,18 @@
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
+  import { mutateNode } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
-  import { GAMEPAD_OUTPUTS, type GamepadSnapshot } from '$lib/audio/modules/gamepad';
+  import {
+    GAMEPAD_OUTPUTS,
+    type GamepadSnapshot,
+    type GamepadData,
+    newCalibrationSweep,
+    recordCalibrationSample,
+    sweepIsUsable,
+    finalizeCalibration,
+    type CalibrationSweep,
+  } from '$lib/audio/modules/gamepad';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -45,13 +55,36 @@
     connected: false,
     id: '',
     values: Object.fromEntries(GAMEPAD_OUTPUTS.map((o) => [o.id, 0])),
+    rawLeftX: 0,
+    rawLeftY: 0,
+    calibrated: false,
   });
+
+  // ---------------- left-stick calibration MODE ----------------
+  // Entering calibration MODE arms a live min/max sweep. Each poll frame folds
+  // the RAW left-stick axes (snapshot.rawLeftX/Y) into the sweep — this is
+  // TRANSIENT render state, NOT a synced write (a per-frame Y.Doc write is the
+  // render-storm bug class). Only the FINAL committed calibration is written,
+  // once, to node.data on "complete calibration".
+  let calibrating = $state(false);
+  // Mutated in place every frame; reassigned to a fresh object to nudge Svelte
+  // reactivity for the live min/max readout + the "complete" enabled gate.
+  let sweep = $state<CalibrationSweep>(newCalibrationSweep());
+  let canComplete = $derived(calibrating && sweepIsUsable(sweep));
+
   let rafId: number | null = null;
   function poll() {
     const e = engineCtx.get();
     if (e && node) {
       const s = e.read(node, 'snapshot') as GamepadSnapshot | undefined;
-      if (s) snapshot = s;
+      if (s) {
+        snapshot = s;
+        if (calibrating && s.connected) {
+          recordCalibrationSample(sweep, s.rawLeftX, s.rawLeftY);
+          // Reassign a shallow copy so the $derived/readout re-evaluate.
+          sweep = { ...sweep };
+        }
+      }
     }
     rafId = requestAnimationFrame(poll);
   }
@@ -60,6 +93,38 @@
     if (rafId !== null) cancelAnimationFrame(rafId);
     rafId = null;
   });
+
+  function startCalibration() {
+    sweep = newCalibrationSweep();
+    calibrating = true;
+  }
+  function cancelCalibration() {
+    calibrating = false;
+    sweep = newCalibrationSweep();
+  }
+  /** Lock in the swept range as a ONE-TIME synced write to node.data, then
+   *  leave calibration mode. The factory's poll picks up the new calibration
+   *  on its next frame. */
+  function completeCalibration() {
+    const cal = finalizeCalibration(sweep);
+    if (cal) {
+      // SINGLE committed write — never per frame. mutateNode rides the Y.Doc
+      // (collab + undo) and mutates node.data IN PLACE (never reassigns an
+      // integrated Y type).
+      mutateNode(id, (live) => {
+        if (!live.data) live.data = {};
+        (live.data as GamepadData).leftStickCalibration = cal;
+      });
+    }
+    calibrating = false;
+    sweep = newCalibrationSweep();
+  }
+  /** Clear the committed calibration (revert to the fixed-deadzone path). */
+  function clearCalibration() {
+    mutateNode(id, (live) => {
+      if (live.data) delete (live.data as GamepadData).leftStickCalibration;
+    });
+  }
 
   // Pad-slot picker.
   let padIndex = $derived<number>(
@@ -143,6 +208,54 @@
           </div>
           <div class="stick-label">R</div>
         </div>
+      </div>
+
+      <!-- Left-stick calibration. Off-mode: a single "calibrate left stick"
+           button (+ a "calibrated" badge / clear when one is committed). In
+           mode: a sweep banner with live min/max + "complete" (gated until the
+           sweep is usable) and "cancel". -->
+      <div class="calib" data-testid="gamepad-calib">
+        {#if !calibrating}
+          <button
+            type="button"
+            class="calib-btn"
+            onclick={startCalibration}
+            data-testid="gamepad-calibrate-start"
+          >calibrate left stick</button>
+          {#if snapshot.calibrated}
+            <span class="calib-badge" data-testid="gamepad-calibrated">calibrated</span>
+            <button
+              type="button"
+              class="calib-clear"
+              onclick={clearCalibration}
+              data-testid="gamepad-calibrate-clear"
+              title="clear calibration"
+            >✕</button>
+          {/if}
+        {:else}
+          <div class="calib-mode" data-testid="gamepad-calib-mode">
+            <div class="calib-hint">sweep the left stick through its full range…</div>
+            <div class="calib-range">
+              x [{Number.isFinite(sweep.minX) ? sweep.minX.toFixed(2) : '–'}, {Number.isFinite(sweep.maxX) ? sweep.maxX.toFixed(2) : '–'}]
+              · y [{Number.isFinite(sweep.minY) ? sweep.minY.toFixed(2) : '–'}, {Number.isFinite(sweep.maxY) ? sweep.maxY.toFixed(2) : '–'}]
+            </div>
+            <div class="calib-actions">
+              <button
+                type="button"
+                class="calib-btn complete"
+                disabled={!canComplete}
+                onclick={completeCalibration}
+                data-testid="gamepad-calibrate-complete"
+              >complete calibration</button>
+              <button
+                type="button"
+                class="calib-cancel"
+                onclick={cancelCalibration}
+                data-testid="gamepad-calibrate-cancel"
+              >cancel</button>
+            </div>
+          </div>
+        {/if}
       </div>
 
       <div class="triggers">
@@ -267,6 +380,84 @@
     font-family: ui-monospace, monospace;
     color: var(--text-dim);
   }
+
+  .calib {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .calib-btn {
+    appearance: none;
+    background: rgba(10, 12, 16, 0.7);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 0.6rem;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: background 60ms ease-out, color 60ms ease-out, border-color 60ms ease-out;
+  }
+  .calib-btn:hover { border-color: var(--accent-dim); color: var(--text); }
+  .calib-btn.complete {
+    background: var(--accent, #00f0ff);
+    border-color: var(--accent, #00f0ff);
+    color: #000;
+  }
+  .calib-btn.complete:disabled {
+    background: rgba(10, 12, 16, 0.7);
+    border-color: var(--border);
+    color: var(--text-dim);
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  .calib-badge {
+    font-size: 0.55rem;
+    font-family: ui-monospace, monospace;
+    color: var(--accent, #00f0ff);
+    letter-spacing: 0.04em;
+  }
+  .calib-clear {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.7rem;
+    line-height: 1;
+    padding: 0 2px;
+  }
+  .calib-clear:hover { color: var(--text); }
+  .calib-mode {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+  }
+  .calib-hint {
+    font-size: 0.58rem;
+    font-family: ui-monospace, monospace;
+    color: var(--accent, #00f0ff);
+  }
+  .calib-range {
+    font-size: 0.55rem;
+    font-family: ui-monospace, monospace;
+    color: var(--text-dim);
+  }
+  .calib-actions { display: flex; gap: 6px; }
+  .calib-cancel {
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 0.6rem;
+    padding: 4px 8px;
+    cursor: pointer;
+  }
+  .calib-cancel:hover { border-color: var(--accent-dim); color: var(--text); }
 
   .triggers {
     display: flex;
