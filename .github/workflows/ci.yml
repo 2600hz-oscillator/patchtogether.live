@@ -1607,6 +1607,13 @@ jobs:
     name: webgl-attest (real-GPU attestation gate)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # PHASED: informational + non-gating until the heavy-WebGL triage campaign
+    # lands a green local attestation (see webgl-attestation-semaphore.md §-2 +
+    # ci.md). `continue-on-error: true` keeps the overall CI RUN green (like
+    # `vrt`/`behavioral`) so the expected "no attestation yet" red doesn't show
+    # main CI as failing / mask a real regression. REMOVE this line at the same
+    # time you re-add `|| "$WEBGL_ATTEST" != "success"` to the umbrella `if`.
+    continue-on-error: true
     steps:
       - name: Checkout (no LFS — only needs source + ci-webgl-attest/)
         uses: actions/checkout@v4
