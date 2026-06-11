@@ -330,4 +330,152 @@ describe('reelOutSample (dry gating + monitor mix)', () => {
     expect(reelOutSample(0.2, inputPath, true)).toBeCloseTo(0.2 + 0.4);  // heard while monitoring
     expect(reelOutSample(0.2, inputPath, false)).toBe(0.2);              // only tape when not
   });
+
+  // ─── Fresh-record monitor-crush fix (the owner bug) ───
+  it('FRESH REC + monitor → clean input ONLY (NOT input + decimated tape read-back)', () => {
+    // The crush came from summing the head read-back (a decimated copy of the
+    // input) onto the live input while fresh-recording. With freshRec the tape
+    // read-back is dropped → the monitor is the clean input path, exactly what
+    // you hear while merely monitoring (tapePlay=0).
+    const cleanInput = 0.6;
+    const decimatedReadback = 0.55; // what readInterp returns over the head
+    expect(reelOutSample(decimatedReadback, cleanInput, true, /*freshRec*/ true))
+      .toBeCloseTo(cleanInput);
+    // identical to the plain-monitor output (no tape, monitor on)
+    expect(reelOutSample(decimatedReadback, cleanInput, true, true))
+      .toBeCloseTo(reelOutSample(0, cleanInput, true, false));
+  });
+  it('FRESH REC + monitor OFF → silence (no crushed read-back leaks out)', () => {
+    expect(reelOutSample(0.9, 0.4, false, true)).toBe(0);
+  });
+  it('OVERDUB still mixes the existing tape under the monitor (layering)', () => {
+    // overdub is NOT freshRec → existing tape content is still heard + input.
+    expect(reelOutSample(0.3, 0.2, true, false)).toBeCloseTo(0.5);
+  });
+  it('PLAY (not recording) is unchanged by the freshRec default', () => {
+    expect(reelOutSample(0.4, 0.9, false)).toBe(reelOutSample(0.4, 0.9, false, false));
+    expect(reelOutSample(0.4, 0.3, true)).toBe(reelOutSample(0.4, 0.3, true, false));
+  });
+});
+
+// ── Faithful inner-loop simulator: drives read → record-span → OUTPUT exactly
+//    as processReel does, so it reproduces the actual monitor-crush signal (the
+//    pure engine tests above prove the gate; this proves the END-TO-END output
+//    while fresh-recording is the clean input, not the aliased read-back sum).
+function simulateMonitorWhileRecording(opts: {
+  input: Float32Array;
+  rate: number;
+  tapeLen: number;
+  monitorOn: boolean;
+  freshRec: boolean; // true='rec', false='overdub'
+  preExisting?: Float32Array | null; // tape content already on the reel (overdub)
+}) {
+  const { input, rate, tapeLen, monitorOn, freshRec, preExisting = null } = opts;
+  const bufL = new Float32Array(tapeLen);
+  const bufR = new Float32Array(tapeLen);
+  if (preExisting) {
+    for (let i = 0; i < Math.min(preExisting.length, tapeLen); i++) {
+      bufL[i] = preExisting[i] ?? 0;
+      bufR[i] = preExisting[i] ?? 0;
+    }
+  }
+  let bufLen = preExisting ? Math.min(preExisting.length, tapeLen) : 0;
+  let cursor = 0;
+  const out: number[] = [];
+  const overdub = !freshRec;
+  for (let i = 0; i < input.length; i++) {
+    const src = input[i] ?? 0;
+    // 1. read the head (linear interp) — pre-write, exactly like processReel
+    const sL = readInterp(bufL, cursor);
+    // 2. record-span write
+    bufLen = recordSpan(bufL, bufR, cursor, cursor + rate, src, src, overdub, tapeLen, bufLen);
+    // 3. output mix (the path under test)
+    out.push(reelOutSample(sL, src, monitorOn, freshRec));
+    cursor += rate;
+    if (cursor >= tapeLen) break;
+  }
+  return { out, bufL, bufLen };
+}
+
+function rms(xs: ArrayLike<number>): number {
+  let e = 0;
+  for (let i = 0; i < xs.length; i++) { const v = xs[i] ?? 0; e += v * v; }
+  return Math.sqrt(e / Math.max(1, xs.length));
+}
+
+describe('monitor path while fresh-recording is CLEAN (regression: record-time crush)', () => {
+  const SR = 48000;
+  function sine(freq: number, n: number): Float32Array {
+    const b = new Float32Array(n);
+    for (let i = 0; i < n; i++) b[i] = 0.7 * Math.sin((2 * Math.PI * freq * i) / SR);
+    return b;
+  }
+
+  it('monitor output during fresh REC equals the live input sample-for-sample', () => {
+    const input = sine(220, 4096);
+    const { out } = simulateMonitorWhileRecording({
+      input, rate: 1, tapeLen: TWOTRACKS_TAPE_LEN, monitorOn: true, freshRec: true,
+    });
+    // Clean monitor: out[i] === input[i] (no summed read-back).
+    let maxErr = 0;
+    for (let i = 0; i < out.length; i++) {
+      maxErr = Math.max(maxErr, Math.abs((out[i] ?? 0) - (input[i] ?? 0)));
+    }
+    expect(maxErr).toBeLessThan(1e-9);
+  });
+
+  it('at a varispeed rate (where the read-back aliasing is worst) the monitor is STILL the clean input', () => {
+    // rate=0.5: each input lands twice → the head read-back of the just-written
+    // cell would otherwise alias hard. Monitor must remain the clean input.
+    const input = sine(330, 4096);
+    const { out } = simulateMonitorWhileRecording({
+      input, rate: 0.5, tapeLen: TWOTRACKS_TAPE_LEN, monitorOn: true, freshRec: true,
+    });
+    const n = Math.min(out.length, input.length);
+    let maxErr = 0;
+    for (let i = 0; i < n; i++) maxErr = Math.max(maxErr, Math.abs((out[i] ?? 0) - (input[i] ?? 0)));
+    expect(maxErr).toBeLessThan(1e-9);
+  });
+
+  it('the OLD behavior (sum read-back into monitor) measurably differs — the crush was real', () => {
+    // Re-record over an already-recorded reel so the head read-back is non-zero:
+    // the pre-fix mix (tape + input) injects a decimated copy that combs with the
+    // input → extra energy + HF content. This guards against a no-op "fix".
+    const input = sine(440, 8192);
+    const pre = sine(440, 8192); // existing take under the head
+    // Pre-fix monitor = read-back summed onto input (freshRec ignored):
+    const oldStyle: number[] = [];
+    {
+      const bufL = new Float32Array(TWOTRACKS_TAPE_LEN);
+      const bufR = new Float32Array(TWOTRACKS_TAPE_LEN);
+      for (let i = 0; i < pre.length; i++) { bufL[i] = pre[i]!; bufR[i] = pre[i]!; }
+      let bufLen = pre.length, cursor = 0;
+      for (let i = 0; i < input.length; i++) {
+        const src = input[i] ?? 0;
+        const sL = readInterp(bufL, cursor);
+        bufLen = recordSpan(bufL, bufR, cursor, cursor + 1, src, src, false, TWOTRACKS_TAPE_LEN, bufLen);
+        oldStyle.push(sL + src); // OLD: tape read-back + input (the bug)
+        cursor += 1;
+      }
+    }
+    // Fixed monitor:
+    const fixed = simulateMonitorWhileRecording({
+      input, rate: 1, tapeLen: TWOTRACKS_TAPE_LEN, monitorOn: true, freshRec: true,
+      preExisting: pre,
+    }).out;
+    // The fixed monitor equals the clean input; the old one is clearly different.
+    expect(rms(fixed)).toBeCloseTo(rms(input), 4);
+    expect(Math.abs(rms(oldStyle) - rms(input))).toBeGreaterThan(0.05); // crush added energy
+  });
+
+  it('the RECORDING itself stays clean under the fix (tape == input, no crush stored)', () => {
+    const input = sine(220, 4096);
+    const { bufL, bufLen } = simulateMonitorWhileRecording({
+      input, rate: 1, tapeLen: TWOTRACKS_TAPE_LEN, monitorOn: true, freshRec: true,
+    });
+    expect(bufLen).toBe(input.length);
+    let maxErr = 0;
+    for (let i = 0; i < bufLen; i++) maxErr = Math.max(maxErr, Math.abs((bufL[i] ?? 0) - (input[i] ?? 0)));
+    expect(maxErr).toBeLessThan(1e-9); // captured take is the clean input
+  });
 });
