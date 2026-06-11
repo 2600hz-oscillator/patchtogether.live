@@ -157,6 +157,38 @@ export function resolveHeavyWebglSpecs(): string[] {
   return matched.sort();
 }
 
+/** True iff EVERY test in the spec is gated behind a top-level
+ *  `test.describe('…@collab…' | '…@capacity…')` (with no un-tagged top-level
+ *  `test(`), so the attest's Pass-A `--grep-invert "@collab|@capacity"` filters
+ *  the WHOLE FILE out — it then runs ZERO tests and Playwright never registers it
+ *  as a spec file. Such a spec is matched by the heavy glob but is NOT attestable
+ *  (it belongs to the @collab lane), so it must be subtracted from Pass A's
+ *  expected spec-file count or the count-gate sees a false shortfall (48/49).
+ *  Sound for this repo's structure (tags live on the outermost describe). */
+export function isFullyCollabCapacityGated(absPath: string): boolean {
+  const src = stripComments(readFileSync(absPath, 'utf8'));
+  // No tag anywhere → definitely attestable.
+  if (!/@collab|@capacity/.test(src)) return false;
+  // A top-level (un-indented) `test(` / `test.only(` with no tag in its own title
+  // would survive the grep-invert → the spec IS attestable.
+  const bareTopLevelTest = /^test(\.only)?\(\s*(['"`])((?!.*@(?:collab|capacity)).)*\2/m;
+  if (bareTopLevelTest.test(src)) return false;
+  // Every top-level `test.describe(` must carry a tag for the file to be fully
+  // gated. If any top-level describe lacks the tag, surviving tests remain.
+  const topDescribes = [...src.matchAll(/^test\.describe(\.\w+)?\(\s*(['"`])(.*?)\2/gm)];
+  if (topDescribes.length === 0) return false; // tag present but not structuring describes → be safe, count it
+  return topDescribes.every((m) => /@collab|@capacity/.test(m[3] ?? ''));
+}
+
+/** The heavy specs that Pass A ACTUALLY runs: the glob set minus any spec that
+ *  is fully @collab/@capacity-gated (grep-inverted out). This is the correct
+ *  EXPECTED count for Pass A's measured-spec-file gate. */
+export function resolveAttestableHeavyWebglSpecs(): string[] {
+  return resolveHeavyWebglSpecs().filter(
+    (p) => !isFullyCollabCapacityGated(join(REPO_ROOT, p)),
+  );
+}
+
 // -------------------------------------------------------------------------
 // The WEBGL_PATHS basis (mechanical + fail-closed — §3.3)
 // -------------------------------------------------------------------------

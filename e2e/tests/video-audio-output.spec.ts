@@ -163,8 +163,13 @@ test.describe('video source audio reaches the destination through a user patch',
     await loadAndPlay(page, 'vv');
 
     // wireAudio must have run (audio_l is now the live splitter, not the silent
-    // placeholder) before we patch audio downstream.
-    expect(await readNode(page, 'vv', 'audioWired'), 'vv audio wired').toBe(true);
+    // placeholder) before we patch audio downstream. POLL, don't single-read:
+    // wireAudio runs slightly AFTER data-is-playing flips (loadAndPlay's gate),
+    // so a one-shot read races it (flaked on both Metal + SwiftShader). The
+    // keep-alive is set in the same wireAudio() call.
+    await expect
+      .poll(() => readNode(page, 'vv', 'audioWired'), { timeout: 8000, message: 'vv audio wired' })
+      .toBe(true);
     expect(await readNode(page, 'vv', 'hasKeepAlive'), 'vv keep-alive live').toBe(true);
 
     // Patch audio_l into BOTH the scope and AUDIO OUT (post-load, so the bridge

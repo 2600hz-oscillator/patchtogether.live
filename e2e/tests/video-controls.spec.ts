@@ -104,6 +104,37 @@ function statsDiffer(a: PixelStats, b: PixelStats): boolean {
 
 const VIDEO_OUT_CANVAS = 'canvas[data-testid="video-out-canvas"]';
 
+/** Snapshot the canvas's full per-pixel luma (downsampled stride) as a flat
+ *  array, so two frames can be diffed PIXEL-WISE. Two visually-DISTINCT patterns
+ *  (a line field vs a radial field) can share near-identical GLOBAL mean/variance
+ *  AND coarse per-cell averages, yet differ strongly PER PIXEL — a direct
+ *  frame-diff catches the pattern SWAP the global statsDiffer() misses (the
+ *  V-MIXER cross-fade flake: var 7379 → 6941 + a 6×6 cell delta of only 3.2,
+ *  both under any global bar, though the line/radial pattern fully changed). */
+async function lumaFrame(canvas: Locator): Promise<number[]> {
+  return canvas.evaluate((el) => {
+    const c = el as HTMLCanvasElement;
+    const ctx = c.getContext('2d');
+    if (!ctx) return [];
+    const { data } = ctx.getImageData(0, 0, c.width, c.height);
+    const out: number[] = [];
+    // Stride 4 px (×4 RGBA = 16) — dense enough to register a fine line-field
+    // shift, cheap enough to diff in JS.
+    for (let i = 0; i < data.length; i += 16) {
+      out.push((data[i]! + data[i + 1]! + data[i + 2]!) / 3);
+    }
+    return out;
+  });
+}
+
+/** Mean absolute per-pixel luma difference between two equal-length frames. */
+function frameDiff(a: number[], b: number[]): number {
+  if (a.length === 0 || a.length !== b.length) return 0;
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += Math.abs(a[i]! - b[i]!);
+  return s / a.length;
+}
+
 /** Sample twice with a small wait between captures. Returns the latest
  *  pair so callers can diff. */
 async function takePair(page: Page, canvas: Locator, gapMs = 350): Promise<[PixelStats, PixelStats]> {
@@ -425,18 +456,27 @@ test.describe('video controls drive output', () => {
     const canvas = page.locator(VIDEO_OUT_CANVAS);
     await page.waitForTimeout(500);
     const before = (await readCanvasStats(canvas))!;
+    const beforeFrame = await lumaFrame(canvas);
 
-    // Cross-fade: drop amount1 to 0, raise amount2 to 1. Different
-    // pattern dominates → stats should shift.
+    // Cross-fade: drop amount1 to 0, raise amount2 to 1. A DIFFERENT pattern
+    // dominates → the output must change.
     await setNodeParam(page, 'v-mix', 'amount1', 0.0);
     await setNodeParam(page, 'v-mix', 'amount2', 1.0);
     await page.waitForTimeout(500);
     const after = (await readCanvasStats(canvas))!;
+    const afterFrame = await lumaFrame(canvas);
 
+    // The line-field → radial-field swap keeps global mean/variance within the
+    // statsDiffer() tolerance (flaky on BOTH Metal + SwiftShader: var 7379 →
+    // 6941), so assert the PER-PIXEL frame difference instead — a genuine
+    // pattern swap moves many pixels even when the aggregate stats match. A
+    // renderer-tolerant floor: identical frames diff ~0; the cross-fade is ~15+.
+    const pxDelta = frameDiff(beforeFrame, afterFrame);
     expect(
-      statsDiffer(before, after),
-      `V-MIXER cross-fade: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
-    ).toBe(true);
+      pxDelta,
+      `V-MIXER cross-fade per-pixel delta: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} ` +
+        `post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)} frameDiff=${pxDelta.toFixed(1)}`,
+    ).toBeGreaterThan(6);
   });
 });
 

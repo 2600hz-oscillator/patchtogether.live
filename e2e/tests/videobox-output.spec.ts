@@ -77,6 +77,41 @@ async function canvasSignature(
   });
 }
 
+/** Drive the video engine's step() N times with a macrotask gap between each,
+ *  advancing both decode (rVFC callbacks fire in the gap) and the composited
+ *  videoOut output. */
+async function stepVideo(page: import('@playwright/test').Page, n = 6): Promise<void> {
+  await page.evaluate(async (n) => {
+    const w = globalThis as unknown as {
+      __engine?: () => { getDomain: (d: string) => { step: () => void } } | null;
+    };
+    const vid = w.__engine?.()?.getDomain('video');
+    if (!vid) return;
+    for (let i = 0; i < n; i++) {
+      vid.step();
+      await new Promise<void>((res) => setTimeout(res, 16));
+    }
+  }, n);
+}
+
+/** Seek every <video> element back to 0 and (re)play it — the av-clip fixture
+ *  is ~1.97s and does not loop, so after the liveness() window it sits paused on
+ *  the last frame; this gives the visual moved-poll fresh motion to observe. */
+async function replayVideo(page: import('@playwright/test').Page): Promise<void> {
+  await page.evaluate(async () => {
+    const vids = Array.from(document.querySelectorAll('video')) as HTMLVideoElement[];
+    for (const v of vids) {
+      try {
+        v.currentTime = 0;
+        await v.play();
+      } catch {
+        /* autoplay/InvalidState is fine — the engine step still advances decode */
+      }
+    }
+  });
+  await page.waitForTimeout(200);
+}
+
 /** Drive the video engine's step() over a bounded window with macrotask gaps
  *  (so rVFC decode callbacks fire) and return the named node's uploadCount
  *  delta plus the OUTPUT's resolved input source + hasInput. This is the
@@ -174,11 +209,20 @@ test.describe('VIDEOBOX video output reaches downstream', () => {
       expect(stats.max, `VIDEO-OUT has bright pixels (mean=${stats.mean.toFixed(1)} max=${stats.max})`).toBeGreaterThan(40);
       expect(stats.mean, `VIDEO-OUT not near-black (mean=${stats.mean.toFixed(1)})`).toBeGreaterThan(6);
 
+      // Restart playback from t=0 so there is GUARANTEED fresh motion to
+      // observe: the av-clip fixture is only ~1.97s and does NOT loop, and the
+      // deterministic liveness() guard above already consumed its playback to
+      // the end (the <video> is then paused on the last frame → the canvas is
+      // lit but static). Seek to 0 + play, then drive engine step()s (advancing
+      // both the decode and the composited output) while polling for a moved
+      // frame — deterministic across Metal + SwiftShader, headed or headless.
+      await replayVideo(page);
       const first = await canvasSignature(page, 'video-out-canvas');
       let last = first, moved = false;
       const deadline = Date.now() + 5000;
       while (Date.now() < deadline) {
-        await page.waitForTimeout(150);
+        await stepVideo(page, 6);
+        await page.waitForTimeout(100);
         last = await canvasSignature(page, 'video-out-canvas');
         if (Math.abs(first - last) / Math.max(1, Math.abs(first)) > 0.001) { moved = true; break; }
       }

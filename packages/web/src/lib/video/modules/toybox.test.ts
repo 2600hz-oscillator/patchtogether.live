@@ -234,6 +234,114 @@ describe('TOYBOX CV modulation does NOT write through to the synced Y.Doc (leak 
   });
 });
 
+// ---------------------------------------------------------------------------
+// BATCH-OP CV TARGETING — a cv route into a batch-op param drives the live
+// (render-local) combine param. Downgraded here from e2e/toybox-node-batch.spec
+// ('TOYBOX batch op nodes — CV targeting'): the old e2e read node.data.combine
+// after the cv drive and asserted the STORE value changed, which is now
+// architecturally WRONG — CV modulation writes ONLY the render-local clone
+// (read('liveModulated')), never the synced Y.Doc (the leak fix above). This
+// drives the REAL toyboxDef factory's setParam(cvN) hot-path and reads the
+// post-modulation param off read('liveModulated').combine — the same engine-
+// internal read the toybox-cv-routing e2e asserts on — so a broken cv route /
+// resolveRoute / effectiveCvValue wiring fails this fast unit test (no render).
+// ---------------------------------------------------------------------------
+
+const CVID = 'toybox-cv-targeting';
+
+/** Build a combine graph: src0 -> the op node -> output, so the op's params are
+ *  addressable by a cvRoute { target:'combine', nodeId:'op', param }. */
+function combineWithOp(kind: string): unknown {
+  return {
+    nodes: [
+      { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+      { id: 'op', kind, x: 120, y: 14, params: {} },
+      { id: 'out', kind: 'output', x: 286, y: 66 },
+    ],
+    edges: [
+      { id: 'e0', from: 'src0', to: 'op', toPort: 'in0' },
+      { id: 'eo', from: 'op', to: 'out', toPort: 'in0' },
+    ],
+  };
+}
+
+describe('TOYBOX batch-op CV targeting drives the render-local combine param', () => {
+  beforeAll(() => {
+    vi.stubGlobal('fetch', async () =>
+      ({ ok: true, status: 200, statusText: 'OK', json: async () => ({ shaders: [], gen: [], models: [], presets: [] }) }) as unknown as Response,
+    );
+  });
+  afterAll(() => { vi.unstubAllGlobals(); });
+  afterEach(() => {
+    delete patch.nodes[CVID];
+    for (const id of Object.keys(patch.edges)) delete patch.edges[id];
+  });
+
+  // Each entry: the op kind, the CV-routed param, and the param's [min,max].
+  // cv=+1 → foldCvToUnipolar(1)=1 → effective = max (scale 1, offset 0);
+  // cv=−1 → fold(−1)=0 → effective = min.
+  for (const { kind, param, min, max } of [
+    { kind: 'tile', param: 'tilesX', min: 1, max: 16 },
+    { kind: 'biocells', param: 'cellCount', min: 4, max: 64 },
+    { kind: 'framedelay', param: 'mix', min: 0, max: 1 },
+    { kind: 'flowsmear', param: 'persistence', min: 0, max: 1 },
+  ] as const) {
+    it(`${kind}.${param}: a cv2 route + drive modulates the live param (max→min), not the store`, () => {
+      patch.nodes[CVID] = {
+        id: CVID,
+        type: 'toybox',
+        domain: 'video',
+        position: { x: 0, y: 0 },
+        params: {},
+        data: {
+          combine: combineWithOp(kind),
+          cvRoutes: { cv2: { target: 'combine', nodeId: 'op', param } },
+          cvInputs: { cv2: { scale: 1, offset: 0 } },
+        },
+      } as unknown as ModuleNode;
+      // An inbound cv cable so the factory's kindFor('cv2') sees a patched cv port
+      // (only edge.target + edge.sourceType are read).
+      patch.edges['e-cv2'] = {
+        id: 'e-cv2',
+        source: { nodeId: 'lfo', portId: 'out' },
+        target: { nodeId: CVID, portId: 'cv2' },
+        sourceType: 'cv',
+      } as unknown as Edge;
+
+      const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[CVID] as ModuleNode);
+      try {
+        const liveParam = (): number | undefined => {
+          const lm = handle.read?.('liveModulated') as
+            | { combine?: { nodes?: Array<{ id: string; params?: Record<string, number> }> } }
+            | undefined;
+          return lm?.combine?.nodes?.find((n) => n.id === 'op')?.params?.[param];
+        };
+
+        // Drive cv2 to +1 → the param resolves to its MAX in the render-local clone.
+        handle.setParam('cv2', 1);
+        handle.surface.draw(makeFrameCtx(0));
+        expect(liveParam(), `${kind}.${param} cv=+1 → max`).toBeCloseTo(max, 1);
+
+        // Drive cv2 to −1 → the param resolves to its MIN (well under max/2).
+        handle.setParam('cv2', -1);
+        handle.surface.draw(makeFrameCtx(1));
+        const lo = liveParam();
+        expect(lo, `${kind}.${param} cv=−1 → min`).toBeCloseTo(min, 1);
+        expect(lo!, `${kind}.${param} cv=−1 is well below max`).toBeLessThan(max * 0.5 + 0.001);
+
+        // The SYNCED store value is NEVER written by CV modulation (the leak fix):
+        // the op node in node.data.combine keeps its authored (empty) params.
+        const storedOp = (patch.nodes[CVID]!.data as {
+          combine: { nodes: Array<{ id: string; params?: Record<string, number> }> };
+        }).combine.nodes.find((n) => n.id === 'op');
+        expect(storedOp?.params?.[param], 'store param untouched by CV').toBeUndefined();
+      } finally {
+        handle.dispose();
+      }
+    });
+  }
+});
+
 describe('FEEDBACK fragment shader (the stateful op program)', () => {
   it('declares the feedback + input samplers + the per-mode uniforms', () => {
     const src = __FEEDBACK_FRAG_SRC_FOR_TEST;

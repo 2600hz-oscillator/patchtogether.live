@@ -43,6 +43,8 @@ import { conventionalCardName } from '$lib/ui/modules-card-map';
 import {
   resolveWebglBasis,
   resolveHeavyWebglSpecs,
+  resolveAttestableHeavyWebglSpecs,
+  isFullyCollabCapacityGated,
   findAllWebglSourceFiles,
   sourceCreatesWebglContext,
   AUDIO_WEBGL_MODULE_DEFS,
@@ -119,6 +121,35 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
     expect(specs.length, 'heavy glob resolved zero specs — glob/import is broken').toBeGreaterThan(40);
     const uncovered = specs.filter((f) => !basisSet.has(f));
     expect(uncovered, `heavy specs not in basis: ${uncovered.join(', ')}`).toEqual([]);
+  });
+
+  it('(4b) the ATTESTABLE heavy set excludes fully @collab/@capacity-gated specs', () => {
+    // Pass A runs `--grep-invert "@collab|@capacity"`, so a heavy spec whose
+    // every test is @collab/@capacity-gated runs ZERO tests and Playwright never
+    // registers it — the runner's measured-spec-file count would be short of the
+    // raw glob count (the 48/49 false-shortfall). The attestable set subtracts
+    // those, so it equals what Pass A actually runs.
+    const all = resolveHeavyWebglSpecs();
+    const attestable = resolveAttestableHeavyWebglSpecs();
+    const excluded = all.filter((p) => !attestable.includes(p));
+    // Every excluded spec must really be fully gated (no false exclusion that
+    // would let a real failure hide behind an under-count).
+    for (const p of excluded) {
+      expect(
+        isFullyCollabCapacityGated(join(REPO_ROOT, p)),
+        `${p} was excluded from the attestable set but is NOT fully @collab/@capacity-gated`,
+      ).toBe(true);
+    }
+    // And no attestable spec should itself be fully gated (it would never run).
+    for (const p of attestable) {
+      expect(
+        isFullyCollabCapacityGated(join(REPO_ROOT, p)),
+        `${p} is fully @collab/@capacity-gated but counted as attestable`,
+      ).toBe(false);
+    }
+    // The attestable set is non-empty and ≤ the glob set.
+    expect(attestable.length).toBeGreaterThan(40);
+    expect(attestable.length).toBeLessThanOrEqual(all.length);
   });
 
   it('(5) NO node-env *.test.ts file leaked into the basis (fix V6)', () => {

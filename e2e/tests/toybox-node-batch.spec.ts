@@ -133,6 +133,54 @@ async function advance(page: Page, time: number, steps: number): Promise<void> {
   }
 }
 
+/** Advance frames at a MONOTONICALLY INCREASING iTime until the canvas is lit,
+ *  capturing the average + signature WHILE the clock is still moving. Some
+ *  stateful ops are MOTION-driven — DATAMOSH estimates optical flow from the
+ *  frame-to-frame luma DIFF, so with a constant pinned iTime its motion is ~0,
+ *  its HOLD gate latches, and the visible output stays the (initially empty →
+ *  black) advected ring forever → a constant-iTime freezeUntilLit times out, and
+ *  re-pinning a constant after a moving warm-up lets it decay back to black
+ *  before the read. So we keep the clock moving and capture mid-motion. Returns
+ *  { avg, sig } captured on the last lit moving frame. */
+async function captureMoving(
+  page: Page,
+  startTime: number,
+  steps: number,
+): Promise<{ avg: [number, number, number]; sig: number[] }> {
+  const dt = 0.1;
+  // Warm up enough frames for the ring to converge + the motion to register.
+  for (let i = 0; i < steps; i++) {
+    const t = startTime + i * dt;
+    await page.evaluate(({ t }) => (globalThis as unknown as PatchGlobal).__toyboxFreeze?.(t), { t });
+    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+  }
+  // Keep stepping until lit (bounded), then capture on the SAME moving frame.
+  let t = startTime + steps * dt;
+  for (let tries = 0; tries < 120; tries++) {
+    await page.evaluate(({ t }) => (globalThis as unknown as PatchGlobal).__toyboxFreeze?.(t), { t });
+    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+    const lit = await page.evaluate(() => {
+      const c = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
+      if (!c || c.width === 0) return false;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return false;
+      const { data } = ctx.getImageData(0, 0, c.width, c.height);
+      let n = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) n++;
+      }
+      return n > c.width * c.height * 0.05;
+    });
+    if (lit) {
+      const avg = await average(page);
+      const sig = await signature(page);
+      return { avg, sig };
+    }
+    t += dt;
+  }
+  throw new Error('captureMoving: canvas never reached a lit frame');
+}
+
 /** VIVID, fast-compiling, strongly-distinct layers so a band/feed reroute moves
  *  the average UNMISTAKABLY (noise-fbm/worley render near the idle grey, which
  *  is too subtle to assert a feed change on). src0/src3 = synthwave (purple),
@@ -260,7 +308,7 @@ function opGraph(
  *  delay-line ops (framedelay) are an IDENTITY on a static frozen input, so we
  *  feed them a DIFFERENT layer (src1 = worley) than the src0 (noise) bypass to
  *  prove they pass content through + are wired. */
-const OPS: Array<{ kind: string; ports: number; params: Record<string, number>; steps: number; wires?: string[] }> = [
+const OPS: Array<{ kind: string; ports: number; params: Record<string, number>; steps: number; wires?: string[]; moving?: boolean; vivid?: boolean }> = [
   { kind: 'over', ports: 2, params: { amount: 0.7 }, steps: 1 },
   { kind: 'tile', ports: 1, params: { tilesX: 3, tilesY: 3 }, steps: 1 },
   { kind: 'mirror', ports: 1, params: { mode: 3, segments: 6 }, steps: 1 },
@@ -271,8 +319,15 @@ const OPS: Array<{ kind: string; ports: number; params: Record<string, number>; 
   { kind: 'framedelay', ports: 1, params: { delay: 4, mix: 0.7 }, steps: 8, wires: ['src1'] },
   { kind: 'channeldesync', ports: 1, params: { gDelay: 5, bDelay: 10, offsetMag: 0.12 }, steps: 12 },
   { kind: 'flowsmear', ports: 1, params: { flowStrength: 0.9, noiseScale: 4, persistence: 0.9 }, steps: 12 },
-  { kind: 'dreammelt', ports: 2, params: { meltAmount: 0.9, dripSpeed: 0.8 }, steps: 12 },
-  { kind: 'datamosh', ports: 1, params: { flowScale: 0.7, decay: 0.9 }, steps: 10 },
+  // dreammelt melts in0 -> in1; with the near-grey default layers the blend
+  // delta is subtle (~1.7 vs the >2 bar). Feed VIVID, strongly-distinct layers
+  // (synthwave purple vs star-field) — the same ones its bespoke tests below use
+  // — so the in0->in1 dissolve is unmistakable.
+  { kind: 'dreammelt', ports: 2, params: { meltAmount: 0.9, dripSpeed: 0.8 }, steps: 12, vivid: true },
+  // datamosh estimates optical flow from the frame-to-frame luma DIFF, so it
+  // needs a MOVING clock (a constant pinned iTime leaves motion ~0, its HOLD gate
+  // latches, and the visible output is the empty advected ring → black).
+  { kind: 'datamosh', ports: 1, params: { flowScale: 0.7, decay: 0.9 }, steps: 10, moving: true },
 ];
 
 test.describe('TOYBOX batch op nodes — registry + menu', () => {
@@ -326,7 +381,7 @@ test.describe('TOYBOX batch op nodes — registry + menu', () => {
 });
 
 test.describe('TOYBOX batch op nodes — render + output delta', () => {
-  for (const { kind, ports, params, steps, wires } of OPS) {
+  for (const { kind, ports, params, steps, wires, moving, vivid } of OPS) {
     test(`${kind}: renders non-black + visibly affects the output`, async ({ page }) => {
       // Scale the budget by the converge-step count (stateful ops need several
       // frames per capture on SwiftShader). Base 60s + 4s/step, 2 captures.
@@ -341,18 +396,37 @@ test.describe('TOYBOX batch op nodes — render + output delta', () => {
       await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
       await pinViewport(page);
 
-      // Bypass baseline (layer 0 only).
-      await seed(page, bypassGraph().nodes, bypassGraph().edges);
-      await freezeUntilLit(page, 2.0);
-      const bypassSig = await signature(page);
-
-      // The op wired in.
-      const g = opGraph(kind, ports, params, wires);
-      await seed(page, g.nodes, g.edges);
-      await freezeUntilLit(page, 2.0);
-      await advance(page, 2.0, steps);
-      const withOpAvg = await average(page);
-      const withOpSig = await signature(page);
+      // Bypass baseline (layer 0 only). Motion-driven ops (datamosh) use VIVID,
+      // strongly-distinct layers (synthwave/star-field) so the op has enough
+      // luma-gradient signal to mosh (grey noise-fbm gives it nothing to advect →
+      // a black frame), and a MOVING clock (it estimates optical flow from the
+      // frame-to-frame luma diff — a constant pinned iTime leaves its HOLD gate
+      // latched on the empty advected ring → black). The rest use the standard
+      // grey layers + constant-iTime freeze.
+      let withOpAvg: [number, number, number];
+      let withOpSig: number[];
+      let bypassSig: number[];
+      if (moving) {
+        await seedVivid(page, bypassGraph().nodes, bypassGraph().edges);
+        const bypassCap = await captureMoving(page, 2.0, steps);
+        bypassSig = bypassCap.sig;
+        const g = opGraph(kind, ports, params, wires);
+        await seedVivid(page, g.nodes, g.edges);
+        const cap = await captureMoving(page, 2.0, steps);
+        withOpAvg = cap.avg;
+        withOpSig = cap.sig;
+      } else {
+        const seedFn = vivid ? seedVivid : seed;
+        await seedFn(page, bypassGraph().nodes, bypassGraph().edges);
+        await freezeUntilLit(page, 2.0);
+        bypassSig = await signature(page);
+        const g = opGraph(kind, ports, params, wires);
+        await seedFn(page, g.nodes, g.edges);
+        await freezeUntilLit(page, 2.0);
+        await advance(page, 2.0, steps);
+        withOpAvg = await average(page);
+        withOpSig = await signature(page);
+      }
 
       // (b) RENDERS: the op's composite is non-black.
       expect(lum(withOpAvg), `${kind} composite is non-black`).toBeGreaterThan(15);
@@ -563,80 +637,17 @@ test.describe('TOYBOX batch op nodes — multi-input exercise', () => {
   });
 });
 
-test.describe('TOYBOX batch op nodes — CV targeting', () => {
-  // A cv route into a batch-op param writes the live param (the CV machinery is
-  // data-driven over OP_PARAMS, so a correct registry wiring makes EVERY param
-  // CV-targetable for free). We assert the param RESPONDS to a +1 cv drive.
-  for (const { kind, param, max } of [
-    { kind: 'tile', param: 'tilesX', max: 16 },
-    { kind: 'biocells', param: 'cellCount', max: 64 },
-    { kind: 'framedelay', param: 'mix', max: 1 },
-    { kind: 'flowsmear', param: 'persistence', max: 1 },
-  ] as const) {
-    test(`${kind}.${param} is CV-targetable + responds`, async ({ page }) => {
-      test.setTimeout(180_000);
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
-      page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-      await page.goto('/');
-      await page.waitForLoadState('networkidle');
-      await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
-      await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
-
-      const op: GNode = { id: 'op', kind, x: 120, y: 14, params: {} };
-      await seed(
-        page,
-        [...sources(), op, { id: 'out', kind: 'output', x: 286, y: 66 }],
-        [
-          { id: 'e0', from: 'src0', to: 'op', toPort: 'in0' },
-          { id: 'eo', from: 'op', to: 'out', toPort: 'in0' },
-        ],
-        { cv2: { target: 'combine', nodeId: 'op', param } },
-      );
-      // Seed a SYNTHETIC inbound cv edge into cv2 so the factory's kind detection
-      // sees a patched port (source node need not exist — only edge.target +
-      // edge.sourceType are read; mirrors toybox-cv-routing.spec).
-      await page.evaluate(() => {
-        const w = globalThis as unknown as PatchGlobal;
-        w.__ydoc.transact(() => {
-          w.__patch.edges['cv2edge'] = {
-            id: 'cv2edge',
-            source: { nodeId: 'lfo', portId: 'out' },
-            target: { nodeId: 'tb', portId: 'cv2' },
-            sourceType: 'cv',
-            targetType: 'modsignal',
-          };
-        });
-      });
-
-      // Drive cv2 to +1 (folds to 1.0 → the param's max).
-      const drive = async (raw: number) => {
-        await page.evaluate(({ raw }) => {
-          const w = globalThis as unknown as PatchGlobal;
-          w.__engine?.().getDomain('video').setParam('tb', 'cv2', raw);
-        }, { raw });
-        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-      };
-      await drive(1);
-      await expect
-        .poll(() => page.evaluate(({ param }) => {
-          const w = globalThis as unknown as PatchGlobal;
-          return w.__patch.nodes['tb']?.data?.combine?.nodes?.find((n) => n.id === 'op')?.params?.[param];
-        }, { param }))
-        .toBeCloseTo(max, 1);
-      await drive(-1);
-      await expect
-        .poll(() => page.evaluate(({ param }) => {
-          const w = globalThis as unknown as PatchGlobal;
-          return w.__patch.nodes['tb']?.data?.combine?.nodes?.find((n) => n.id === 'op')?.params?.[param];
-        }, { param }))
-        .toBeLessThan(max * 0.5 + 0.001);
-
-      expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
-    });
-  }
-});
+// NOTE: the "batch-op param is CV-targetable + responds" coverage moved OUT of
+// e2e into a REAL-engine unit test — see toybox.test.ts
+// ('TOYBOX batch-op CV targeting drives the render-local combine param'). The
+// old e2e block read node.data.combine after a cv drive and asserted the STORE
+// value changed; that is now architecturally WRONG — CV modulation deliberately
+// writes only the render-local clone (read('liveModulated')), never the synced
+// Y.Doc (the progressive-slowdown leak fix), so the store value correctly never
+// moves. The unit test drives the real toyboxDef factory's setParam(cvN) and
+// asserts the post-modulation value via read('liveModulated').combine — the same
+// engine-internal read the toybox-cv-routing e2e asserts on — and fails if the
+// cv wiring is broken (no render needed).
 
 test.describe('TOYBOX combine graph — resizable view persists', () => {
   test('the node-graph panel resizes + the height persists in node.data', async ({ page }) => {

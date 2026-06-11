@@ -81,6 +81,7 @@
     makeDefaultCombineGraph,
     combineDisplayNames,
     edgesTouching,
+    LAYER_INPUT_SOURCE,
     type ToyboxCombineGraph,
     type ToyboxGraphNode,
     type ToyboxInPort,
@@ -2324,6 +2325,11 @@
         onchange={onSurfaceChange}
       >
         <option value="-1">MATCAP</option>
+        <!-- LAYER INPUT (-2): UV-map whatever node output is wired into this
+             layer's combine source (the feedback tap). The engine supports the
+             LAYER_INPUT_SOURCE sentinel (toybox-surface.ts surfaceTextureSource);
+             this is the UI affordance that lets an OBJ select it. -->
+        <option value={String(LAYER_INPUT_SOURCE)}>LAYER INPUT</option>
         {#each Array(LAYER_COUNT) as _, i (i)}
           {#if i !== activeLayer}
             <option value={String(i)}>LAYER {i + 1}</option>

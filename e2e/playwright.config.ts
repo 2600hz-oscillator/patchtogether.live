@@ -28,6 +28,23 @@ const SWIFTSHADER_ARGS =
   process.env.E2E_SWIFTSHADER === '1'
     ? ['--use-gl=angle', '--use-angle=swiftshader', '--use-cmd-decoder=passthrough']
     : [];
+// E2E_REAL_GPU=1 forces Chromium's WebGL onto the REAL hardware GPU via the
+// platform ANGLE backend (Metal on macOS, the default ANGLE backend elsewhere).
+// HEADLESS Chromium on macOS otherwise falls back to SwiftShader EVEN ON A REAL
+// GPU machine (verified: default headless → "SwiftShader driver"; with these
+// flags → "ANGLE Metal Renderer: Apple M*"). The WebGL-attestation runner
+// (scripts/webgl-attest.ts) sets this for all three real-GPU passes so the
+// attested run is genuinely on the GPU, not software. Mutually exclusive with
+// E2E_SWIFTSHADER (which wins if both are set, to keep the SwiftShader floor
+// honest). Defaults to macOS Metal; override the backend via E2E_ANGLE_BACKEND.
+const REAL_GPU_ARGS =
+  process.env.E2E_SWIFTSHADER !== '1' && process.env.E2E_REAL_GPU === '1'
+    ? [
+        '--use-gl=angle',
+        `--use-angle=${process.env.E2E_ANGLE_BACKEND || (process.platform === 'darwin' ? 'metal' : 'default')}`,
+      ]
+    : [];
+const GPU_ARGS = [...SWIFTSHADER_ARGS, ...REAL_GPU_ARGS];
 // --------------------------------------------------------------------------
 // WebGL-HEAVY partition (shard rebalance, #68) — the SINGLE source of truth is
 // now e2e/webgl-heavy-globs.ts (imported as WEBGL_HEAVY_GLOBS above), so the
@@ -121,7 +138,7 @@ export default defineConfig({
             '--autoplay-policy=no-user-gesture-required',
             // COOP/COEP isolation only matters when the headers are set;
             // Playwright doesn't need extra flags for this.
-            ...SWIFTSHADER_ARGS,
+            ...GPU_ARGS,
           ],
         },
       },
@@ -145,7 +162,7 @@ export default defineConfig({
             '--autoplay-policy=no-user-gesture-required',
             '--use-fake-ui-for-media-stream',
             '--use-fake-device-for-media-stream',
-            ...SWIFTSHADER_ARGS,
+            ...GPU_ARGS,
           ],
         },
       },
@@ -170,7 +187,7 @@ export default defineConfig({
             '--autoplay-policy=no-user-gesture-required',
             '--use-fake-ui-for-media-stream',
             '--use-fake-device-for-media-stream',
-            ...SWIFTSHADER_ARGS,
+            ...GPU_ARGS,
           ],
         },
       },
