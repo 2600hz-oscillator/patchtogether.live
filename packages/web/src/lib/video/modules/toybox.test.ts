@@ -342,6 +342,207 @@ describe('TOYBOX batch-op CV targeting drives the render-local combine param', (
   }
 });
 
+// ---------------------------------------------------------------------------
+// CV/MODULATION SECTION — the full setParam → applyCvRoute → kindFor →
+// resolveRoute → effectiveCvValue → apply wiring, plus applyUnpatchedOffsets.
+//
+// Downgraded here from e2e/toybox-cv-routing.spec.ts (DOWNGRADE → behavioral,
+// webgl-suite-optimization §2/§7-3). The e2e booted a full 90s WebGL TOYBOX,
+// seeded routes on node.data, drove the engine's REAL setParam each frame, and
+// read the moved param off read('liveModulated') — but the assertions are pure
+// numeric param math (no pixels). This drives the SAME real toyboxDef factory
+// setParam path and reads the SAME read('liveModulated') channel with NO render
+// and NO GPU boot, so a broken kindFor / resolveRoute / effectiveCvValue /
+// scale-offset / applyUnpatchedOffsets wiring fails this fast unit test.
+//
+// (The e2e's only DOM-unique assertion — the cv2 badge auto-detecting AUDIO from
+// the inbound edge sourceType — is covered by toybox-cv-section.spec, which owns
+// the in-card target/param select + badge UI. The layer-CONTENT-uniform route
+// branch — cv1 → 'speed' — depends on the fetched manifest (stubbed empty here),
+// and its resolveRoute branch is owned by toybox-cv-routes' unit tests; the
+// WIRING this guard covers is target-type-agnostic, exercised via combine + obj
+// targets whose ranges are static in code.)
+// ---------------------------------------------------------------------------
+
+const ROUTEID = 'toybox-cv-routing-dg';
+
+/** A combine graph with a fade op (range [0,1]) addressable as combine:xf.amount
+ *  and an obj layer (layer 2) so material:spin (range [0,3]) resolves. */
+function routingNode(id: string): ModuleNode {
+  return {
+    id,
+    type: 'toybox',
+    domain: 'video',
+    position: { x: 0, y: 0 },
+    params: {},
+    data: {
+      layers: [
+        // layers 0/1 unused by these routes (cv2→combine, cv3→obj at layer 2);
+        // keep them 'off' so no manifest content lookup runs (stub is empty).
+        { kind: 'off', contentId: null, params: {} },
+        { kind: 'off', contentId: null, params: {} },
+        {
+          kind: 'obj',
+          contentId: null,
+          params: {},
+          material: { modelId: 'cube', rotX: 0.3, rotY: 0.6, rotZ: 0, scale: 1, spin: 0, matcap: 0, tintR: 1, tintG: 1, tintB: 1 },
+        },
+        { kind: 'off', contentId: null, params: {} },
+      ],
+      combine: {
+        nodes: [
+          { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+          { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+          { id: 'xf', kind: 'fade', x: 120, y: 40, params: { amount: 0.5 } },
+          { id: 'out', kind: 'output', x: 286, y: 40 },
+        ],
+        edges: [
+          { id: 'e0', from: 'src0', to: 'xf', toPort: 'in0' },
+          { id: 'e1', from: 'src1', to: 'xf', toPort: 'in1' },
+          { id: 'e2', from: 'xf', to: 'out', toPort: 'in0' },
+        ],
+      },
+      cvRoutes: {},
+      cvInputs: {},
+    },
+  } as unknown as ModuleNode;
+}
+
+/** Seed an inbound edge into a TOYBOX mod port with a given sourceType so the
+ *  factory's kindFor() sees a patched port owned by the cv-bridge. */
+function seedEdge(eid: string, port: string, sourceType: string): void {
+  patch.edges[eid] = {
+    id: eid,
+    source: { nodeId: 'lfo', portId: 'out' },
+    target: { nodeId: ROUTEID, portId: port },
+    sourceType,
+  } as unknown as Edge;
+}
+
+describe('TOYBOX CV/modulation wiring (setParam → resolved param)', () => {
+  beforeAll(() => {
+    vi.stubGlobal('fetch', async () =>
+      ({ ok: true, status: 200, statusText: 'OK', json: async () => ({ shaders: [], gen: [], models: [], presets: [] }) }) as unknown as Response,
+    );
+  });
+  afterAll(() => { vi.unstubAllGlobals(); });
+  afterEach(() => {
+    delete patch.nodes[ROUTEID];
+    for (const id of Object.keys(patch.edges)) delete patch.edges[id];
+  });
+
+  /** Read the resolved combine fade amount off read('liveModulated'). */
+  function liveAmount(handle: ReturnType<typeof toyboxDef.factory>): number | undefined {
+    const lm = handle.read?.('liveModulated') as
+      | { combine?: { nodes?: Array<{ id: string; params?: Record<string, number> }> } }
+      | undefined;
+    return lm?.combine?.nodes?.find((n) => n.id === 'xf')?.params?.amount;
+  }
+  /** Read the resolved obj material spin off read('liveModulated'). */
+  function liveSpin(handle: ReturnType<typeof toyboxDef.factory>): number | undefined {
+    const lm = handle.read?.('liveModulated') as
+      | { layers?: Array<{ material?: { spin?: number } }> }
+      | undefined;
+    return lm?.layers?.[2]?.material?.spin;
+  }
+
+  it('cv→combine + cv→obj: a +1/0/−1 cv sweep folds to max/mid/min on the routed param', () => {
+    const node = routingNode(ROUTEID);
+    (node.data as Record<string, unknown>).cvRoutes = {
+      cv2: { target: 'combine', nodeId: 'xf', param: 'amount' },
+      cv3: { target: 'layer', layer: 2, param: 'material:spin' },
+    };
+    (node.data as Record<string, unknown>).cvInputs = { cv2: { scale: 1, offset: 0 }, cv3: { scale: 1, offset: 0 } };
+    // Assign into the reactive store, then drive the STORE node (livePatch reads
+    // a proxied copy — the local `node` ref is NOT the store object).
+    patch.nodes[ROUTEID] = node;
+    seedEdge('e2', 'cv2', 'cv');
+    seedEdge('e3', 'cv3', 'cv');
+
+    const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[ROUTEID] as ModuleNode);
+    try {
+      // cv2 = +1 → fold(1)=1 → fade amount = max (1).
+      handle.setParam('cv2', 1);
+      handle.surface.draw(makeFrameCtx(0));
+      expect(liveAmount(handle), 'cv2=+1 → fade max').toBeCloseTo(1, 2);
+      // cv2 = -1 → fold(-1)=0 → min (0).
+      handle.setParam('cv2', -1);
+      handle.surface.draw(makeFrameCtx(1));
+      expect(liveAmount(handle), 'cv2=-1 → fade min').toBeCloseTo(0, 2);
+      // cv2 = 0 → fold(0)=0.5 → midpoint (0.5).
+      handle.setParam('cv2', 0);
+      handle.surface.draw(makeFrameCtx(2));
+      expect(liveAmount(handle), 'cv2=0 → fade midpoint').toBeCloseTo(0.5, 2);
+
+      // cv3 = +1 → material:spin max (3). cv3 = -1 → min (0).
+      handle.setParam('cv3', 1);
+      handle.surface.draw(makeFrameCtx(3));
+      expect(liveSpin(handle), 'cv3=+1 → spin max').toBeCloseTo(3, 1);
+      handle.setParam('cv3', -1);
+      handle.surface.draw(makeFrameCtx(4));
+      expect(liveSpin(handle), 'cv3=-1 → spin min').toBeCloseTo(0, 1);
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  it('attenuverter SCALE inverts; an AUDIO source is detected + taken as a 0..1 envelope (not folded)', () => {
+    const node = routingNode(ROUTEID);
+    (node.data as Record<string, unknown>).cvRoutes = {
+      cv2: { target: 'combine', nodeId: 'xf', param: 'amount' }, // CV, inverted
+      cv4: { target: 'combine', nodeId: 'xf', param: 'amount' }, // AUDIO (drives same param)
+    };
+    (node.data as Record<string, unknown>).cvInputs = { cv2: { scale: -1, offset: 1 }, cv4: { scale: 1, offset: 0 } };
+    patch.nodes[ROUTEID] = node;
+    seedEdge('e2', 'cv2', 'cv');
+    seedEdge('e4', 'cv4', 'audio');
+
+    const handle = toyboxDef.factory(makeToyboxCtx(), patch.nodes[ROUTEID] as ModuleNode);
+    try {
+      // cv2 SCALE -1 OFFSET 1: a rising cv LOWERS the param.
+      // cv = +1 → fold→1 → norm = clamp(1*-1+1)=0 → amount min (0).
+      handle.setParam('cv2', 1);
+      handle.surface.draw(makeFrameCtx(0));
+      expect(liveAmount(handle), 'cv2 inverted: +1 → min').toBeCloseTo(0, 2);
+      // cv = -1 → fold→0 → norm = clamp(0*-1+1)=1 → amount max (1).
+      handle.setParam('cv2', -1);
+      handle.surface.draw(makeFrameCtx(1));
+      expect(liveAmount(handle), 'cv2 inverted: -1 → max').toBeCloseTo(1, 2);
+
+      // cv4 is an AUDIO source → kindFor='audio' → the value is taken as an
+      // already-0..1 envelope (NOT folded). 0.75 → amount 0.75.
+      handle.setParam('cv4', 0.75);
+      handle.surface.draw(makeFrameCtx(2));
+      expect(liveAmount(handle), 'audio envelope 0.75 → amount 0.75 (not folded)').toBeCloseTo(0.75, 2);
+    } finally {
+      handle.dispose();
+    }
+  });
+
+  it('OFFSET on an UNPATCHED routed port drives the param each frame (manual control, no cable)', () => {
+    const node = routingNode(ROUTEID);
+    (node.data as Record<string, unknown>).cvRoutes = { cv5: { target: 'combine', nodeId: 'xf', param: 'amount' } };
+    (node.data as Record<string, unknown>).cvInputs = { cv5: { scale: 1, offset: 0.5 } }; // no inbound edge on cv5
+    patch.nodes[ROUTEID] = node;
+    // Intentionally NO edge on cv5 → applyUnpatchedOffsets owns the write.
+
+    const stored = patch.nodes[ROUTEID] as ModuleNode;
+    const handle = toyboxDef.factory(makeToyboxCtx(), stored);
+    try {
+      // draw() runs applyUnpatchedOffsets (frozenTime() === null in this ctx).
+      handle.surface.draw(makeFrameCtx(0));
+      expect(liveAmount(handle), 'OFFSET 0.5 → amount 0.5 (signal 0)').toBeCloseTo(0.5, 2);
+
+      // Raise OFFSET to 0.9 ON THE STORE NODE → the param tracks it next frame.
+      (stored.data as { cvInputs: Record<string, { scale: number; offset: number }> }).cvInputs.cv5.offset = 0.9;
+      handle.surface.draw(makeFrameCtx(1));
+      expect(liveAmount(handle), 'OFFSET 0.9 → amount 0.9').toBeCloseTo(0.9, 2);
+    } finally {
+      handle.dispose();
+    }
+  });
+});
+
 describe('FEEDBACK fragment shader (the stateful op program)', () => {
   it('declares the feedback + input samplers + the per-mode uniforms', () => {
     const src = __FEEDBACK_FRAG_SRC_FOR_TEST;

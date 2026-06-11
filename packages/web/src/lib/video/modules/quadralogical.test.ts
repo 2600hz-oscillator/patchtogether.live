@@ -34,6 +34,8 @@ import {
   QUADRALOGICAL_DEFAULT_SHARP,
   type RGB,
 } from './quadralogical';
+import type { VideoEngineContext, VideoFrameContext } from '$lib/video/engine';
+import type { ModuleNode } from '$lib/graph/types';
 
 const M = QUADRALOGICAL_DEFAULT_MARGIN;
 const K = QUADRALOGICAL_DEFAULT_SHARP;
@@ -641,5 +643,79 @@ describe('pure scalar helpers', () => {
     expect(smoothstep(0, 1, 2)).toBe(1);
     expect(smoothstep(0, 1, 0.5)).toBeCloseTo(0.5, 6);
     expect(smoothstep(0.5, 1, 0.5)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FREEZE (deterministic-capture hook) — downgraded from quadralogical.spec.ts
+// test 3 ("FREEZE holds the MIX still"), webgl-suite-optimization §1/§2/§7-3.
+// The e2e booted a 120s WebGL mixer + sampled the OUTPUT canvas twice 200ms
+// apart and asserted the pixels were identical. The freeze mechanism itself is
+// `if (params.freeze >= 0.5) return;` at the top of draw() — i.e. a frozen frame
+// issues ZERO GL draw calls, so the last-rendered FBOs are held. This drives the
+// REAL quadralogicalDef factory draw() with a draw-COUNTING ctx and asserts the
+// frozen frame does no draws while the live frame does — no GPU, no pixel read,
+// but the same hold-the-frame property the e2e proved. (The per-effect PIXEL
+// determinism is owned by vrt-quadralogical's 8 baselines.)
+// ---------------------------------------------------------------------------
+
+function makeFakeGl(): WebGL2RenderingContext {
+  return new Proxy(
+    {},
+    {
+      get: (_t, prop) => {
+        const p = String(prop);
+        if (p.startsWith('create') || p === 'getUniformLocation') return () => ({});
+        if (p === 'checkFramebufferStatus') return () => 0x8cd5;
+        if (p === 'getProgramParameter' || p === 'getShaderParameter') return () => true;
+        if (p === 'getExtension') return () => null;
+        return () => 0;
+      },
+    },
+  ) as unknown as WebGL2RenderingContext;
+}
+
+describe('QUADRALOGICAL FREEZE holds the frame (draw() is a no-op when frozen)', () => {
+  it('a live frame issues GL draws; a frozen frame issues none', () => {
+    let draws = 0;
+    const ctx: VideoEngineContext = {
+      gl: makeFakeGl(),
+      res: { width: 256, height: 256 },
+      compileFragment: () => ({}) as WebGLProgram,
+      createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+      createFloatFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture, isFloat: false, width: 256, height: 256 }),
+      drawFullscreenQuad: () => { draws++; },
+    };
+    const node = {
+      id: 'q', type: 'quadralogical', domain: 'video', position: { x: 0, y: 0 }, params: {},
+    } as unknown as ModuleNode;
+    const frame: VideoFrameContext = {
+      gl: makeFakeGl(),
+      time: 0,
+      frame: 0,
+      getInputTexture: () => null,
+    };
+
+    const handle = quadralogicalDef.factory(ctx, node);
+    try {
+      // Live frame: the MIX + PREVIEW passes each draw a fullscreen quad.
+      draws = 0;
+      handle.surface.draw(frame);
+      expect(draws, 'unfrozen frame issues GL draws').toBeGreaterThan(0);
+
+      // Freeze it → draw() returns before any GL work → output held.
+      handle.setParam?.('freeze', 1);
+      draws = 0;
+      handle.surface.draw({ ...frame, time: 1, frame: 60 });
+      expect(draws, 'frozen frame issues ZERO draws (last frame held)').toBe(0);
+
+      // Unfreeze → draws resume.
+      handle.setParam?.('freeze', 0);
+      draws = 0;
+      handle.surface.draw({ ...frame, time: 2, frame: 120 });
+      expect(draws, 'unfreezing resumes drawing').toBeGreaterThan(0);
+    } finally {
+      handle.dispose();
+    }
   });
 });

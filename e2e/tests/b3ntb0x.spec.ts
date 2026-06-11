@@ -141,40 +141,12 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
     expect(mad, `bent output differs from clean (MAD=${mad.toFixed(2)})`).toBeGreaterThan(3);
   });
 
-  test('CV-bending knobs mutate params via the patch store', async ({ page }) => {
-    test.setTimeout(60_000); // CI SwiftShader GL warm-up (see above)
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    await spawnPatch(page, [
-      { id: 'bb', type: 'b3ntb0x', position: { x: 200, y: 100 }, domain: 'video' },
-    ]);
-    await expect(page.locator('[data-testid="b3ntb0x-card"]')).toHaveCount(1);
-
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['bb'];
-        if (!n) return;
-        n.params.sync_crush = 1.7;
-        n.params.enhance = 0.6;
-        n.params.bend_a = -0.5;
-      });
-    });
-    await page.waitForTimeout(120);
-
-    const params = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-      };
-      const n = w.__patch.nodes['bb'];
-      return { sync_crush: n?.params.sync_crush, enhance: n?.params.enhance, bend_a: n?.params.bend_a };
-    });
-    expect(params.sync_crush).toBe(1.7);
-    expect(params.enhance).toBe(0.6);
-    expect(params.bend_a).toBe(-0.5);
-  });
+  // NOTE (Phase 2 lean, webgl-suite-optimization §1/§2/§7-3): the old test 3
+  // ("CV-bending knobs mutate params via the patch store") was a pure store
+  // round-trip (wrote node.params, read them BACK from the store; never touched
+  // the engine) → DOWNGRADED to b3ntb0x.test.ts ("B3NTB0X factory setParam
+  // propagates to the live engine param"), which drives the REAL factory setParam
+  // hot-path (GPU-free). t1 (structured non-black decode) + t2 (bend-mangles-
+  // output, the 4-pass NTSC proof) stay here as the ONLY GL pixel gates for this
+  // VRT-exempt + per-port-exempt module (plan §1/§6).
 });

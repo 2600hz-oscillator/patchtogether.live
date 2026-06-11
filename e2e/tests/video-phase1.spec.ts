@@ -1,92 +1,17 @@
 // e2e/tests/video-phase1.spec.ts
 //
-// Phase-1 video-domain demo: build a multi-module video graph and assert
-// the OUTPUT canvas renders a non-trivial pattern.
+// Phase-1 video-domain: the cross-domain CV bridge.
 //
-// Graph:
-//   LINES    \
-//   INWARDS   --> V-MIXER (in1, in2) --> DESTRUCTOR --> OUTPUT
-//
-// Why this graph: it exercises the whole Phase-1 op chain end-to-end —
-// two procedural sources, the new mixer, an effect that mangles RGB
-// channels, and the existing OUTPUT sink. If any link breaks (a
-// shader compile fails, a port id mismatches, the topo sort is wrong)
-// the canvas goes flat and pixel variance plummets.
+// Phase 2 lean (webgl-suite-optimization §2/§7-4): the old test 1
+// (LINES + INWARDS → V-MIXER → DESTRUCTOR → OUTPUT renders non-flat) was DROPPED
+// — "a multi-module video graph composes through the engine and paints non-flat
+// content" is owned by video-chain (incl. its @webgl-smoke floor case) and
+// video-controls. What remains is the UNIQUE cross-domain proof a chain test
+// can't give: an AUDIO LFO modulating a VIDEO param (DESTRUCTOR.mangle) actually
+// MOVES the rendered pixels over an LFO cycle (the audio-CV→video-param bridge).
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
-
-test.describe('video Phase-1: multi-module graph renders to OUTPUT', () => {
-  test('LINES + INWARDS -> V-MIXER -> DESTRUCTOR -> OUTPUT produces a varying canvas', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    await spawnPatch(
-      page,
-      [
-        { id: 'v-lines',   type: 'lines',      position: { x: 40,  y: 40 },  domain: 'video' },
-        { id: 'v-inwards', type: 'inwards',    position: { x: 40,  y: 280 }, domain: 'video' },
-        { id: 'v-mixer',   type: 'videoMixer', position: { x: 320, y: 80 },  domain: 'video', params: { amount1: 0.6, amount2: 0.6, amount3: 0, amount4: 0 } },
-        { id: 'v-destr',   type: 'destructor', position: { x: 700, y: 80 },  domain: 'video', params: { shift: 0.7, scanline: 0.5, posterize: 0.4, mangle: 0.8 } },
-        { id: 'v-out',     type: 'videoOut',   position: { x: 1000, y: 80 }, domain: 'video' },
-      ],
-      [
-        { id: 'e-lines-mixer',   from: { nodeId: 'v-lines',   portId: 'out' }, to: { nodeId: 'v-mixer', portId: 'in1' }, sourceType: 'mono-video', targetType: 'video' },
-        { id: 'e-inwards-mixer', from: { nodeId: 'v-inwards', portId: 'out' }, to: { nodeId: 'v-mixer', portId: 'in2' }, sourceType: 'mono-video', targetType: 'video' },
-        { id: 'e-mixer-destr',   from: { nodeId: 'v-mixer',   portId: 'out' }, to: { nodeId: 'v-destr', portId: 'in' },  sourceType: 'video',      targetType: 'video' },
-        { id: 'e-destr-out',     from: { nodeId: 'v-destr',   portId: 'out' }, to: { nodeId: 'v-out',   portId: 'in' },  sourceType: 'video',      targetType: 'video' },
-      ],
-    );
-
-    // All cards visible.
-    await expect(page.locator('.svelte-flow__node-lines'),      'LINES visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-inwards'),    'INWARDS visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoMixer'), 'V-MIXER visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-destructor'), 'DESTRUCTOR visible').toBeVisible();
-    await expect(page.locator('.svelte-flow__node-videoOut'),   'OUTPUT visible').toBeVisible();
-
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(canvas, 'video-out canvas in DOM').toHaveCount(1);
-
-    // Allow several rAF ticks. ~600ms covers slow CI runners.
-    await page.waitForTimeout(800);
-
-    const stats = await canvas.evaluate((el) => {
-      const c = el as HTMLCanvasElement;
-      const ctx = c.getContext('2d');
-      if (!ctx) return null;
-      const img = ctx.getImageData(0, 0, c.width, c.height);
-      const data = img.data;
-      let n = 0, sum = 0, sumSq = 0, nonZero = 0;
-      for (let i = 0; i < data.length; i += 16) {
-        const v = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
-        sum += v;
-        sumSq += v * v;
-        if (v > 8) nonZero++;
-        n++;
-      }
-      const mean = sum / n;
-      const variance = sumSq / n - mean * mean;
-      return { mean, variance, nonZero, samples: n };
-    });
-
-    expect(stats, 'pixel-stats sample').not.toBeNull();
-    if (!stats) return;
-
-    expect(stats.variance, `variance ${stats.variance} > 50 (non-flat)`).toBeGreaterThan(50);
-    expect(stats.nonZero / stats.samples, 'fraction of bright pixels > 5%').toBeGreaterThan(0.05);
-
-    await page.screenshot({ path: 'test-results/video-phase1-demo.png', fullPage: false });
-
-    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
-  });
-});
 
 test.describe('video Phase-1: cross-domain CV bridge', () => {
   // Verifies the audio CV → video param bridge wires through correctly.

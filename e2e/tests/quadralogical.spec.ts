@@ -124,7 +124,15 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
   // heavy WebGL e2e; see repo memory ci-swiftshader-video-e2e-timeouts).
   test.describe.configure({ timeout: 120_000 });
 
-  test('4 colored CHROMA inputs → MIX renders non-black; corner-drag makes that input dominate; center is a 4-way blend', async ({ page }) => {
+  // Phase 2 lean (webgl-suite-optimization §1/§7-4): reduced from the full
+  // 4-corner + center sweep to ONE live-source corner smoke. The corner/edge/
+  // center WEIGHT MAP (one-hot corners, 2-input edges, balanced center) is owned
+  // pixel-free by quadralogical.test.ts (quadWeights/edgeWeights), and the
+  // per-effect pixel determinism by vrt-quadralogical's 8 baselines. What stays
+  // here is the unique GL claim a flat-CHROMA unit can't make: a LIVE LINES
+  // source, tinted by a real CHROMA, reaches the right corner of the real MIX
+  // FBO (structured, not all-black, with the routed colour dominating).
+  test('4 colored CHROMA inputs → MIX renders a structured live frame; TL corner is in1 (red) dominant', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -148,48 +156,9 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
     const tl = await readStats(page);
     expect(tl, 'MIX canvas readable').not.toBeNull();
     expect(tl!.nonZeroFrac, 'MIX not all-black at TL corner').toBeGreaterThan(0.02);
-    expect(tl!.variance, 'MIX has spatial structure (lines)').toBeGreaterThan(20);
+    expect(tl!.variance, 'MIX has spatial structure (live LINES)').toBeGreaterThan(20);
     expect(tl!.r, 'TL corner → in1 (red) dominant: R > G').toBeGreaterThan(tl!.g + 8);
     expect(tl!.r, 'TL corner → in1 (red) dominant: R > B').toBeGreaterThan(tl!.b + 8);
-
-    // ---- BR corner ⇒ in4 (yellow) dominates (R+G high, B low) + distinct frame ----
-    await setJoystick(page, 1, -1);
-    await page.waitForTimeout(400);
-    const br = await readStats(page);
-    expect(br!.nonZeroFrac, 'MIX not all-black at BR corner').toBeGreaterThan(0.02);
-    expect(br!.g, 'BR corner → in4 (yellow): G high').toBeGreaterThan(br!.b + 8);
-    expect(br!.r, 'BR corner → in4 (yellow): R high').toBeGreaterThan(br!.b + 8);
-    // TL (red) and BR (yellow) must be meaningfully different composites.
-    expect(Math.abs(br!.g - tl!.g), 'TL vs BR are distinct (green channel differs)').toBeGreaterThan(8);
-
-    // ---- TR corner ⇒ in2 (green) dominates ----
-    await setJoystick(page, 1, 1);
-    await page.waitForTimeout(400);
-    const tr = await readStats(page);
-    expect(tr!.g, 'TR corner → in2 (green) dominant: G > R').toBeGreaterThan(tr!.r + 8);
-    expect(tr!.g, 'TR corner → in2 (green) dominant: G > B').toBeGreaterThan(tr!.b + 8);
-
-    // ---- BL corner ⇒ in3 (blue) dominates ----
-    await setJoystick(page, -1, -1);
-    await page.waitForTimeout(400);
-    const bl = await readStats(page);
-    expect(bl!.b, 'BL corner → in3 (blue) dominant: B > R').toBeGreaterThan(bl!.r + 8);
-    expect(bl!.b, 'BL corner → in3 (blue) dominant: B > G').toBeGreaterThan(bl!.g + 8);
-
-    // ---- CENTER (inside the diamond) ⇒ balanced 4-way composite ----
-    // All four colours contribute, so no single channel dominates the way it
-    // does at a corner. R/G/B should all be appreciably present and closer
-    // together than at any pure corner.
-    await setJoystick(page, 0, 0);
-    await page.waitForTimeout(400);
-    const center = await readStats(page);
-    expect(center!.nonZeroFrac, 'center MIX not all-black').toBeGreaterThan(0.02);
-    // The center frame must differ from every corner (it's a blend, not in1).
-    expect(Math.abs(center!.b - tl!.b), 'center differs from TL corner').toBeGreaterThan(5);
-    // 4-way blend: blue (only in3) is present but the warm channels (in1/in2/in4
-    // all carry R or G) dominate — so R and G are both clearly nonzero.
-    expect(center!.r, 'center has red contribution (in1+in4)').toBeGreaterThan(8);
-    expect(center!.g, 'center has green contribution (in2+in4)').toBeGreaterThan(8);
 
     expect(errors, 'no console / page errors').toEqual([]);
   });
@@ -224,48 +193,10 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
     expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('FREEZE holds the MIX still (deterministic-capture hook)', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    await spawnPatch(page, buildNodes(), buildEdges());
-
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(canvas).toHaveCount(1);
-    await setJoystick(page, 0, 0);
-    await page.waitForTimeout(400);
-
-    // Freeze QUADRALOGICAL.
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['quad'];
-        if (n) n.params.freeze = 1;
-      });
-    });
-    await page.waitForTimeout(150);
-
-    const sample = (): Promise<number[]> =>
-      canvas.evaluate((el) => {
-        const c = el as HTMLCanvasElement;
-        const ctx = c.getContext('2d');
-        if (!ctx) return [];
-        const d = ctx.getImageData(0, 0, c.width, c.height).data;
-        const out: number[] = [];
-        for (let i = 0; i < d.length; i += 4 * 64) out.push(d[i]!);
-        return out;
-      });
-
-    const a = await sample();
-    await page.waitForTimeout(200);
-    const b = await sample();
-
-    expect(a.length).toBeGreaterThan(0);
-    expect(b, 'frozen: two samples 200ms apart are identical').toEqual(a);
-  });
+  // NOTE (Phase 2 lean, §1/§7-3): the FREEZE deterministic-capture test was
+  // DOWNGRADED to quadralogical.test.ts ("QUADRALOGICAL FREEZE holds the frame")
+  // — the freeze mechanism is `draw() returns before any GL work when frozen`,
+  // which a draw-counting unit ctx asserts GPU-free (no canvas sample needed).
 
   // ── Phase 2: per-edge effects ────────────────────────────────────────────
 
@@ -313,40 +244,12 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
     expect(errors, 'no console / page errors').toEqual([]);
   });
 
-  test('all 8 effects render on an edge without error + each is a distinct frame', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-    await spawnPatch(page, buildNodes(), buildEdges());
-    await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
-
-    // Top edge active (in1 ↔ in2). A WIPE/IRIS at amount=0/0.5 makes the
-    // spatial split visible; CHROMA keys green; etc.
-    await setJoystick(page, 0, 1);
-
-    const sigs: Array<{ fx: number; mean: number; r: number; g: number; b: number; nz: number }> = [];
-    for (let fx = 0; fx < 8; fx++) {
-      await setParams(page, { edge1_fx: fx, edge1_amount: 0.5, edge1_param: 0.15, keyG: 1 });
-      await page.waitForTimeout(350);
-      const s = await readStats(page);
-      expect(s, `fx ${fx} canvas readable`).not.toBeNull();
-      // Every effect must render SOMETHING (not all-black) on a 2-colour edge.
-      expect(s!.nonZeroFrac, `fx ${fx} renders non-black`).toBeGreaterThan(0.02);
-      sigs.push({ fx, mean: s!.mean, r: s!.r, g: s!.g, b: s!.b, nz: s!.nonZeroFrac });
-    }
-
-    // The 8 signatures must not all collapse to one value — at least several
-    // are clearly distinct in the (r,g,b,mean) feature space. (Two effects can
-    // legitimately look similar at a given setting, so we count distinct ones
-    // rather than demand all-pairwise-distinct.)
-    const distinct = new Set(sigs.map((s) => `${Math.round(s.r / 6)}_${Math.round(s.g / 6)}_${Math.round(s.b / 6)}_${Math.round(s.mean / 6)}`));
-    expect(distinct.size, 'effects produce several visibly distinct frames').toBeGreaterThanOrEqual(4);
-
-    expect(errors, 'no console / page errors').toEqual([]);
-  });
+  // NOTE (Phase 2 lean, §1/§2/§7-2): the "all 8 effects render distinct" test
+  // was PRUNED — it is a true duplicate. vrt-quadralogical.spec.ts pins one
+  // pixel-exact baseline PER effect (dissolve/add/multiply/wipe/chroma/luma/
+  // diff/iris), and quadralogical.test.ts covers the blend2 math for every
+  // effect branch. The dynamic "effect-change moves the mix" claim is kept by
+  // the DISSOLVE≠MULTIPLY≠DIFF test above (the "always-dissolve" regression).
 
   test('per-edge assignment is INDEPENDENT (edge 1–2 fx does not affect a different active edge)', async ({ page }) => {
     const errors: string[] = [];
