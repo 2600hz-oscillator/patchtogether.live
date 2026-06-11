@@ -51,7 +51,11 @@ async function readCanvasStats(
 }
 
 test.describe('Video chain — chainable outputs on RUTTETRA / MONOGLITCH / OUTPUT', () => {
-  test('LINES → MONOGLITCH → RUTTETRA → OUTPUT renders something visible', async ({ page }) => {
+  // @webgl-smoke — REQUIRED on-CI WebGL floor: a multi-module video chain
+  // (LINES → MONOGLITCH → RUTTETRA → OUTPUT) composes through the WebGL engine
+  // and paints visible content under CI's SwiftShader. Renderer-tolerant
+  // (visible content, NOT exact pixels).
+  test('LINES → MONOGLITCH → RUTTETRA → OUTPUT renders something visible @webgl-smoke', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {

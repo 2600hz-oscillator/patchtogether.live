@@ -43,7 +43,12 @@ async function outputStats(page: Page): Promise<{ nonZeroFrac: number; variance:
 }
 
 test.describe('Fix E render worker — acidwarp', () => {
-  test('flag ON: acidwarp renders in the worker; downstream OUTPUT is non-black', async ({ page }) => {
+  // @webgl-smoke — REQUIRED on-CI WebGL floor: proves the OffscreenCanvas WebGL2
+  // worker render path produces non-black output under CI's SwiftShader (the
+  // Fix-E Phase-0 spike already confirmed it does). Renderer-tolerant
+  // (non-black fraction, NOT exact pixels). See e2e/webgl-smoke (the floor that
+  // backstops the local-GPU attestation; it covers gross breakage CI can verify).
+  test('flag ON: acidwarp renders in the worker; downstream OUTPUT is non-black @webgl-smoke', async ({ page }) => {
     // Worker WebGL2 compiles + warms slowly on CI's software renderer
     // (SwiftShader) against the preview build: goto + networkidle + spawnPatch +
     // worker spawn + module-worker import + shader warm-up. 60s gives headroom.

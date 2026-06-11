@@ -664,6 +664,11 @@ export const wavesculptDef: AudioModuleDef = {
   domain: 'audio',
   label: 'wavesculpt',
   category: 'sources',
+  // WavesculptCard renders the spatial waveform field via a real WebGL2 context
+  // → this audio-domain module is a GPU render path. The marker mechanically
+  // pulls wavesculpt.ts into the WebGL content-hash basis + is cross-checked
+  // against the card's getContext('webgl2') by the §12 coverage guard.
+  rendersWebGL: true,
   schemaVersion: 2,
 
   inputs: [

@@ -114,7 +114,12 @@ test.describe('Fix E render worker — toybox', () => {
     expect(errors, 'no console / page errors with the render worker on').toEqual([]);
   });
 
-  test('flag OFF (default): TOYBOX still renders on main thread; OUTPUT is non-black (parity)', async ({ page }) => {
+  // @webgl-smoke — REQUIRED on-CI WebGL floor: TOYBOX's MAIN-THREAD WebGL render
+  // path (the prod default) compiles its gen-layer shader + paints non-black
+  // downstream under CI's SwiftShader. Renderer-tolerant (non-black, NOT exact
+  // pixels). Covers the gross-breakage class the local-GPU attestation can't
+  // prove on CI: shader-compile failure / blank canvas on the software renderer.
+  test('flag OFF (default): TOYBOX still renders on main thread; OUTPUT is non-black (parity) @webgl-smoke', async ({ page }) => {
     // The flag-off path is the existing main-thread render. This proves the
     // default (prod) behavior is unchanged: same downstream-non-black result.
     test.setTimeout(60_000);

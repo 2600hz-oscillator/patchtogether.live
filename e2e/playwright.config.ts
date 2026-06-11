@@ -6,6 +6,10 @@
 // but the flags belt-and-suspender it).
 
 import { defineConfig, devices } from '@playwright/test';
+// THE single source of truth for the WebGL-heavy spec set — exported so the
+// WebGL-attestation hash/coverage tooling reads the SAME literal Playwright
+// uses (adversarial-review fix V4). See e2e/webgl-heavy-globs.ts.
+import { WEBGL_HEAVY_GLOBS } from './webgl-heavy-globs';
 
 // E2E_USE_PREVIEW=1 swaps the dev server for `vite preview` so we can run the
 // @smoke subset against the prod-built bundle locally. Catches regressions
@@ -25,23 +29,10 @@ const SWIFTSHADER_ARGS =
     ? ['--use-gl=angle', '--use-angle=swiftshader', '--use-cmd-decoder=passthrough']
     : [];
 // --------------------------------------------------------------------------
-// WebGL-HEAVY partition (shard rebalance, #68) — the SINGLE source of truth.
-//
-// Playwright's default shard splitter sorts SPEC FILES alphabetically then
-// round-robins, so the alphabetically-late, heavy cross-domain WebGL specs
-// (toybox-*, video-*, wavesculpt*, multi-video, …) all cluster onto the
-// high-numbered shards. On CI's SwiftShader (software WebGL) those co-tenant
-// heavies starve the single GL context / main thread and overrun their
-// per-test budgets — the toybox-node-menu / presets-io SAVE / video-projection
-// / combine-editor timeout class (#621/#629/#625). Spreading them by bumping
-// the shard COUNT (#600, 8→10) helped wall-clock but did NOT un-cluster them
-// (they're still adjacent alphabetically).
-//
-// FIX (option C from triage): pull every WebGL-heavy spec OUT of the sharded
-// matrix and run them on their own dedicated, NON-sharded, serialized job
-// (`e2e-video` in ci.yml: --workers=1, so no two heavies ever co-tenant a
-// SwiftShader context). The functional shards then carry a uniform, light load
-// and stop timing out on unrelated PRs.
+// WebGL-HEAVY partition (shard rebalance, #68) — the SINGLE source of truth is
+// now e2e/webgl-heavy-globs.ts (imported as WEBGL_HEAVY_GLOBS above), so the
+// WebGL-attestation hash/coverage tooling can resolve the SAME spec set without
+// text-parsing this file (adversarial-review fix V4).
 //
 // One glob list, two CI modes (mirrors how @collab/@capacity/behavioral are
 // partitioned into their own lanes via grep — but file-glob, not title-grep,
@@ -50,30 +41,9 @@ const SWIFTSHADER_ARGS =
 //   E2E_WEBGL_HEAVY=exclude  → run everything EXCEPT  (the sharded e2e matrix)
 //   unset                    → run everything         (local dev / single runner)
 //
-// To re-classify a spec, edit THIS list only — no per-describe tag to forget
-// when a heavy file gains a second describe (the fragility that sank option A).
-const WEBGL_HEAVY_GLOBS = [
-  '**/toybox-*.spec.ts',
-  '**/video-*.spec.ts',
-  '**/videobox-*.spec.ts',
-  '**/videovarispeed-*.spec.ts',
-  '**/multi-video-playback.spec.ts',
-  '**/wavesculpt*.spec.ts',
-  '**/wavecel-video-outs.spec.ts',
-  '**/scope-video-out.spec.ts',
-  '**/synesthesia-video-mode.spec.ts',
-  '**/freezeframe.spec.ts',
-  '**/picturebox-*.spec.ts',
-  '**/b3ntb0x.spec.ts',
-  // 1024×768 bump (#662): these three are GPU-fractal / multi-input video
-  // mixers + routers whose page.screenshot/evaluate budgets blow on CI's
-  // SwiftShader at 2.56× the old pixel count (they pass on a real GPU). Same
-  // class as the toybox/video heavies above — run them in the serialized
-  // e2e-video lane, not the sharded matrix.
-  '**/4plexvid.spec.ts', // 4×4 video router — heavy WebGL screenshot
-  '**/quadralogical.spec.ts', // 4-input video mixer — heavy WebGL evaluate
-  '**/mandleblot.spec.ts', // GPU Mandelbrot fractal
-];
+// To re-classify a spec, edit e2e/webgl-heavy-globs.ts only — no per-describe
+// tag to forget when a heavy file gains a second describe (the fragility that
+// sank option A).
 const WEBGL_HEAVY_MODE = process.env.E2E_WEBGL_HEAVY; // 'only' | 'exclude' | undefined
 
 // Skip the local webServer when targeting a deployed URL (live smoke). Detected
@@ -143,7 +113,7 @@ export default defineConfig({
         WEBGL_HEAVY_MODE === 'exclude'
           ? ['**/camera-input.spec.ts', '**/audio-in.spec.ts', ...WEBGL_HEAVY_GLOBS]
           : ['**/camera-input.spec.ts', '**/audio-in.spec.ts'],
-      ...(WEBGL_HEAVY_MODE === 'only' ? { testMatch: WEBGL_HEAVY_GLOBS } : {}),
+      ...(WEBGL_HEAVY_MODE === 'only' ? { testMatch: [...WEBGL_HEAVY_GLOBS] } : {}),
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {

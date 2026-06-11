@@ -130,6 +130,11 @@ export const hypercubeDef: AudioModuleDef = {
   domain: 'audio',
   label: 'hypercube',
   category: 'sources',
+  // HypercubeCard renders the 4D tesseract via a real WebGL2 context → this
+  // audio-domain module is a GPU render path. The marker mechanically pulls
+  // hypercube.ts into the WebGL content-hash basis + is cross-checked against
+  // the card's getContext('webgl2') by the §12 coverage guard.
+  rendersWebGL: true,
   schemaVersion: 1,
 
   inputs: [
