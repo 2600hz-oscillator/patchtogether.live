@@ -2,13 +2,19 @@
 //
 // TOYBOX Shadertoy runtime — end-to-end pixel proofs.
 //
-//   1. a single-pass GEN Shadertoy shader (synthwave-sunset) renders NON-BLACK
-//      through the mainImage->main shim + full uniform set,
-//   2. a FRAG shader (frag-invert-scan) VISIBLY TRANSFORMS the layer below it
+//   1. a FRAG shader (frag-invert-scan) VISIBLY TRANSFORMS the layer below it
 //      (the FRAG composite differs from the raw layer-below composite),
-//   3. the multi-buffer GROWING-PEAK preset renders NON-BLACK after advancing
+//   2. the multi-buffer GROWING-PEAK preset renders NON-BLACK after advancing
 //      several step()s (feedback convergence), AND a simulated iMouse click
 //      changes the output (the click-to-grow raises the terrain).
+//
+// CONSOLIDATED 3→2 (webgl-suite-optimization §2): the former first test, a
+// single-pass GEN Shadertoy shader (synthwave-sunset) rendering non-black through
+// the mainImage->main shim, was DROPPED — it is a dup of two cheaper proofs: the
+// toybox-new-content matrix already compiles+draws each GEN Shadertoy content id,
+// and toybox-disk-loading already exercises the mainImage->main shim + uniform
+// set on a custom GEN source. The two kept tests own the UNIQUE Shadertoy paths:
+// FRAG-transforms-the-layer-below, and multi-buffer ping-pong + iMouse state.
 //
 // CI runs e2e on SwiftShader (slow). The multi-buffer raymarch is the most
 // expensive thing TOYBOX does — generous timeouts per the
@@ -63,64 +69,7 @@ async function spawnToybox(page: Page): Promise<void> {
   await card.waitFor({ state: 'visible', timeout: 10_000 });
 }
 
-/** Set layer 0 to a content id of the given kind on the live node. */
-async function setLayer0(page: Page, kind: string, contentId: string): Promise<void> {
-  await page.evaluate(
-    ({ kind, contentId }) => {
-      const w = globalThis as unknown as STGlobal;
-      w.__toyboxFreeze?.(); // resume the clock so the new content compiles
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['tb'];
-        if (!n) return;
-        if (!n.data) n.data = {};
-        n.data.layers = [
-          { kind, contentId, params: {} },
-          { kind: 'off', contentId: null, params: {} },
-          { kind: 'off', contentId: null, params: {} },
-          { kind: 'off', contentId: null, params: {} },
-        ];
-      });
-    },
-    { kind, contentId },
-  );
-}
-
 test.describe('TOYBOX Shadertoy runtime', () => {
-  test('a single-pass GEN Shadertoy shader (synthwave) renders non-black', async ({ page }) => {
-    test.setTimeout(90_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-    await spawnToybox(page);
-    await setLayer0(page, 'gen', 'synthwave-sunset');
-
-    // Freeze at a fixed time, advance a few engine steps so the shim compiles +
-    // renders, then assert non-black.
-    await page.waitForFunction(
-      () => {
-        const w = globalThis as unknown as STGlobal;
-        w.__toyboxFreeze?.(3.0);
-        const canvas = document.querySelector('[data-testid="toybox-canvas"]') as HTMLCanvasElement | null;
-        if (!canvas) return false;
-        const c2d = canvas.getContext('2d');
-        if (!c2d) return false;
-        const { data } = c2d.getImageData(0, 0, canvas.width, canvas.height);
-        let lit = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          if (data[i]! > 16 || data[i + 1]! > 16 || data[i + 2]! > 16) lit++;
-        }
-        return lit > canvas.width * canvas.height * 0.1;
-      },
-      undefined,
-      { timeout: 30_000 },
-    );
-
-    const s = await sampleCanvas(page);
-    expect(s.lit, 'synthwave GEN renders non-black').toBeGreaterThan(s.total * 0.1);
-    expect(errors.filter((e) => !e.includes('AudioContext')), 'no errors').toEqual([]);
-  });
-
   test('a FRAG shader visibly transforms the layer below it', async ({ page }) => {
     test.setTimeout(90_000);
     const errors: string[] = [];

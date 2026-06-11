@@ -20,6 +20,13 @@
 // selects use { force, noWaitAfter } (TOYBOX's WebGL rAF compositor starves the
 // main thread so the default post-action nav-wait is pathologically slow), and
 // node.data reads poll via the frozen-average stability loop.
+//
+// Phase 2-remainder consolidation (webgl-suite-optimization §2): this spec
+// ABSORBS toybox-texture-source.spec.ts — the SURFACE-source dropdown
+// (`toybox-surface-select`) that maps ANOTHER layer's rendered output onto an OBJ
+// as a UV surface texture. This file already seeds an OBJ-textured sphere + drives
+// the surfmode select, so the surface-select check folds in here (one fewer GPU
+// boot). See the "picking a SURFACE source ..." test below.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -213,6 +220,97 @@ test.describe('TOYBOX input layer kinds (#39)', () => {
     await resetSig(page);
     const avg = await frozenAverage(page, 1.0);
     expect(avg[0] + avg[1] + avg[2]).toBeGreaterThan(8);
+
+    expect(errors.filter((e) => !e.includes('AudioContext')), 'no console / page errors').toEqual([]);
+  });
+});
+
+test.describe('TOYBOX surface-texture from a layer (Phase 6)', () => {
+  // Folded in from toybox-texture-source.spec.ts (consolidation §2): map ANOTHER
+  // layer's rendered output onto an OBJ as a UV surface texture, driven by the
+  // in-card SURFACE-source dropdown (`toybox-surface-select`). Unique vs the
+  // projective test below (which assumes a surfaceSource is ALREADY set + drives
+  // surfmode): this proves the surface-SELECT mutator itself writes
+  // material.surfaceSource AND that texturing the matcap-only sphere changes the
+  // composite. The projective MATH is unit-covered; this is the only e2e of the
+  // surface-source picker UI → render path.
+  test('picking a SURFACE source textures the OBJ + persists + changes the composite', async ({ page }) => {
+    // TOYBOX runs a WebGL rAF compositor; on CI's software renderer every op is
+    // slow. Give headroom beyond the 30s default (mirrors the cv-routing spec).
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await spawnToybox(page);
+
+    // Seed layer 0 = OBJ sphere (matcap-only to start, spin 0 for determinism),
+    // layer 1 = a bright cos-gradient shader. The combine OUTPUT shows layer 0
+    // (the sphere) so a matcap→texture change is visible in the composite.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as PatchGlobal;
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['tb'];
+        if (!n) return;
+        if (!n.data) n.data = {};
+        n.data.layers = [
+          {
+            kind: 'obj', contentId: null, params: {},
+            material: {
+              modelId: 'sphere', rotX: 0.3, rotY: 0.6, rotZ: 0, scale: 1,
+              spin: 0, matcap: 0, tintR: 1, tintG: 1, tintB: 1,
+            },
+          },
+          { kind: 'gen', contentId: 'cos-gradient', params: { speed: 0.5, phase: 0.3, scale: 4 } },
+          { kind: 'off', contentId: null, params: {} },
+          { kind: 'off', contentId: null, params: {} },
+        ];
+        // OUTPUT shows layer 0 (the sphere) so the matcap→texture swap moves the
+        // composite. fade amount 0 = pass the base (layer 0) through.
+        n.data.combine = {
+          nodes: [
+            { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
+            { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
+            { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
+            { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
+            { id: 'pass', kind: 'fade', x: 120, y: 40, params: { amount: 0 } },
+            { id: 'out', kind: 'output', x: 286, y: 40 },
+          ],
+          edges: [
+            { id: 'e0', from: 'src0', to: 'pass', toPort: 'in0' },
+            { id: 'e1', from: 'src1', to: 'pass', toPort: 'in1' },
+            { id: 'e2', from: 'pass', to: 'out', toPort: 'in0' },
+          ],
+        };
+      });
+    });
+    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+
+    // Baseline: matcap-only sphere. Freeze + average.
+    await resetSig(page);
+    const matcapAvg = await frozenAverage(page, 1.0);
+
+    // Resume the clock so the (newly textured) frame re-renders, then pick the
+    // SURFACE source = LAYER 1 via the new in-card dropdown.
+    await page.evaluate(() => {
+      (globalThis as unknown as PatchGlobal).__toyboxFreeze?.();
+    });
+    await selectEd(page, 'toybox-surface-select', '1');
+
+    // (a) The dropdown write persisted to the live material at the right field.
+    {
+      const surfaceSource = await page.evaluate(() => {
+        const w = globalThis as unknown as PatchGlobal;
+        return w.__patch.nodes['tb']?.data?.layers?.[0]?.material?.surfaceSource;
+      });
+      expect(surfaceSource).toBe(1);
+    }
+
+    // (b) The composite CHANGED — the sphere now shows layer 1's shader, not the
+    // flat matcap. A frozen-average delta proves the texture reached the render.
+    await resetSig(page);
+    const texturedAvg = await frozenAverage(page, 1.0);
+    expect(dist(matcapAvg, texturedAvg)).toBeGreaterThan(4);
 
     expect(errors.filter((e) => !e.includes('AudioContext')), 'no console / page errors').toEqual([]);
   });

@@ -182,59 +182,14 @@ test.describe('WAVECEL video outputs (cross-domain bridge)', () => {
     expect(errors).toEqual([]);
   });
 
-  test('on-card scope/3D toggle is independent of the video outputs', async ({ page }) => {
-    // The card's viz-toggle button only flips the on-card preview;
-    // the two video outs always render their own view. We can't
-    // easily compare canvases in two tests at once, so we route
-    // BOTH outputs (3D + scope) into two distinct video pipelines
-    // — but the simpler sanity check is just: clicking the toggle
-    // doesn't break the scope_out -> OUTPUT path.
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-    await spawnPatch(
-      page,
-      [
-        { id: 'a-vco',  type: 'analogVco', position: { x: 60,  y: 60 }, domain: 'audio' },
-        { id: 'a-wave', type: 'wavecel',   position: { x: 280, y: 60 }, domain: 'audio' },
-        { id: 'v-out',  type: 'videoOut',  position: { x: 600, y: 60 }, domain: 'video' },
-      ],
-      [
-        { id: 'e-vco-wave', from: { nodeId: 'a-vco',  portId: 'sine' },      to: { nodeId: 'a-wave', portId: 'pitch' },     sourceType: 'pitch',      targetType: 'pitch' },
-        { id: 'e-wave-out', from: { nodeId: 'a-wave', portId: 'scope_out' }, to: { nodeId: 'v-out',  portId: 'in' },        sourceType: 'mono-video', targetType: 'video' },
-      ],
-    );
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await page.waitForTimeout(600);
-
-    const before = await canvas.evaluate((el) => {
-      const c = el as HTMLCanvasElement;
-      const ctx = c.getContext('2d');
-      if (!ctx) return 0;
-      const img = ctx.getImageData(0, 0, c.width, c.height);
-      let sum = 0;
-      for (let i = 0; i < img.data.length; i += 4) {
-        sum += (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!);
-      }
-      return sum;
-    });
-    expect(before, 'scope_out renders non-zero pixels initially').toBeGreaterThan(0);
-
-    // Flip the on-card toggle. The viz-toggle button cycles
-    // '3d' <-> 'scope' for the on-card preview only.
-    await page.locator('[data-testid="wavecel-viz-toggle"]').first().click();
-    await page.waitForTimeout(600);
-
-    const after = await canvas.evaluate((el) => {
-      const c = el as HTMLCanvasElement;
-      const ctx = c.getContext('2d');
-      if (!ctx) return 0;
-      const img = ctx.getImageData(0, 0, c.width, c.height);
-      let sum = 0;
-      for (let i = 0; i < img.data.length; i += 4) {
-        sum += (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!);
-      }
-      return sum;
-    });
-    expect(after, 'scope_out still renders non-zero pixels after toggle').toBeGreaterThan(0);
-  });
+  // NOTE (consolidation §2): the third test "on-card scope/3D toggle is
+  // independent of the video outputs" was DROPPED. Its only assertion was that
+  // scope_out renders non-zero pixels before AND after clicking the viz-toggle —
+  // a strictly WEAKER re-assertion of the first test's render (variance>5 +
+  // nonZero fraction). The REAL independence claim — that the scope view and the
+  // 3D view are distinct draws (white active-frame + orange polylines for 3D,
+  // mono trace for scope), which is what makes the on-card toggle orthogonal to
+  // the two video outs — is owned by the unit test
+  // packages/web/src/lib/audio/modules/wavecel-draw.test.ts (drawWaveScope vs
+  // drawWave3D), where it is asserted deterministically without a GPU boot.
 });
