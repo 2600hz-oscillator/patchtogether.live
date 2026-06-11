@@ -10,6 +10,7 @@
     Background,
     Controls,
     MiniMap,
+    ConnectionMode,
     type Node as FlowNode,
     type Edge as FlowEdge,
     type Connection,
@@ -320,6 +321,20 @@
       // because the def lookup returned no group def).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__handleConnect = (c: Connection) => handleConnect(c);
+      // Cable-drag drill-down (no-auto-patch) e2e: drive the REAL drag
+      // lifecycle (start → end) the same way SvelteFlow's pointer drag does,
+      // without synthesizing pixel-perfect pointer moves on a stacked-handle
+      // card. __handleConnectStart records the grabbed source; __handleConnectEnd
+      // takes an explicit screen drop point so handleConnectEnd's elementFromPoint
+      // resolves the dropped-on card exactly. Together they exercise the
+      // suppress-snap + open-drill-down path end-to-end.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__handleConnectStart = (
+        params: { nodeId: string | null; handleId: string | null; handleType: 'source' | 'target' | null },
+      ) => handleConnectStart(new MouseEvent('mousedown'), params);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__handleConnectEnd = (drop: { x: number; y: number }) =>
+        handleConnectEnd(new MouseEvent('mouseup', { clientX: drop.x, clientY: drop.y }));
       // Phase 4a — expose the SvelteFlow drag-time gate so e2e can assert
       // the drag-reject predicate (the same fn wired to the
       // isValidConnection prop) without synthesizing a real pointer drag.
@@ -1501,10 +1516,22 @@
     const { source, target, sourceHandle, targetHandle } = connection;
     // Mid-drag with no candidate target yet — don't reject, let the drag run.
     if (!source || !target || !sourceHandle || !targetHandle) return true;
+    // Orient by declared direction so a reverse drag (input → output, enabled
+    // by connectionMode=loose) previews as valid — the commit path orients the
+    // same way. (No PatchPanel short-circuit here: this predicate stays the
+    // honest strict verdict so the drag preview + the validate-edge spec agree.
+    // Drops onto a hidden-handle PatchPanel card are diverted to the drill-down
+    // picker from onconnectend, independent of this verdict.)
+    const oriented = orientConnection({
+      source,
+      sourceHandle,
+      target,
+      targetHandle,
+    });
     const candidate: Edge = {
-      id: `e-${source}-${sourceHandle}-${target}-${targetHandle}`,
-      source: { nodeId: source, portId: sourceHandle },
-      target: { nodeId: target, portId: targetHandle },
+      id: `e-${oriented.source}-${oriented.sourceHandle}-${oriented.target}-${oriented.targetHandle}`,
+      source: { nodeId: oriented.source!, portId: oriented.sourceHandle! },
+      target: { nodeId: oriented.target!, portId: oriented.targetHandle! },
       // sourceType/targetType are ignored by validateEdge (it re-derives the
       // real port types); fill with a benign placeholder.
       sourceType: 'audio',
@@ -1555,14 +1582,147 @@
     trace(`stereo-autowire ${from.nodeId}.${plan.siblingFromPortId} → ${to.nodeId}.${plan.siblingToPortId}`);
   }
 
+  /** True when a node's card renders the redesigned PatchPanel (its handles
+   *  live in a hidden, pointer-events:none stack at the card corner) rather
+   *  than raw, individually-positioned <Handle> dots. The discriminator is
+   *  the `data-patch-panel-node` attribute PatchPanel sets on its host.
+   *
+   *  Why this matters: SvelteFlow snaps a dragged/click-connect cable to the
+   *  geometrically-nearest registered handle within connectionRadius — and it
+   *  IGNORES `pointer-events:none`, so on a PatchPanel card it snaps to an
+   *  ARBITRARY one of the stacked corner handles and would auto-commit there.
+   *  That is exactly the "click just patches something without opening the
+   *  menu" bug. For these cards we must NOT honour the snap; instead the cable
+   *  becomes a carry and the card's drill-down INPUT/OUTPUT picker opens so the
+   *  user chooses the real destination port. Raw-handle cards (video/game
+   *  cards with visible, distinct handles) keep the precise direct drop. */
+  function isPatchPanelCard(nodeId: string): boolean {
+    if (typeof document === 'undefined') return false;
+    return !!document.querySelector(
+      `.svelte-flow__node[data-id="${nodeId}"] [data-patch-panel-node="${nodeId}"]`,
+    );
+  }
+
+  /** A cable gesture (native drag OR carry/click-connect) landed over a
+   *  PatchPanel target card whose handles are a hidden stack. Rather than
+   *  honour SvelteFlow's arbitrary nearest-handle snap, open that card's
+   *  drill-down picker seeded with the carried SOURCE port + PRE-DRILLED into
+   *  the dropped-on target module, so the user lands on its compatible-port
+   *  list and picks the destination. No edge is written until the user picks. */
+  function openDrillDownForCarry(
+    from: { nodeId: string; portId: string; direction: 'output' | 'input'; type: string },
+    targetNodeId: string,
+  ): void {
+    // Kill xyflow's in-flight connection so its dashed snap-preview doesn't
+    // linger behind our picker, and drop any pickup ghost cable.
+    try {
+      flowApi?.cancelConnection?.();
+    } catch { /* defensive — never block the picker */ }
+    if (connectDragState.mode === 'pickup') connectDragState.cancelPickup();
+    // Edge-align the picker to whichever side of the TARGET card is nearer the
+    // pointer (mirrors openPortMenu). Default to left when unmeasured.
+    const r = cardRectFor(targetNodeId);
+    const cursor = lastPointer;
+    const side: 'left' | 'right' =
+      r && cursor.x > r.left + r.width / 2 ? 'right' : 'left';
+    const pos = edgeAlignedMenuPos(targetNodeId, side, cursor);
+    carrySide = side;
+    openPortMenuAt(pos, {
+      nodeId: from.nodeId,
+      portId: from.portId,
+      direction: from.direction,
+      type: from.type,
+    });
+    // Pre-drill into the dropped-on target module so the user lands directly on
+    // its compatible-port list (the drill-down menu the owner asked for), not
+    // the full module list. PortContextMenu reads `preselectNodeId` to open at
+    // its ports level for that one card.
+    portMenuPreselectNodeId = targetNodeId;
+    trace(`carry drill-down → ${targetNodeId} (source ${from.nodeId}.${from.portId})`);
+  }
+
+  /** Re-orient a connection so the edge SOURCE is the OUTPUT side and the
+   *  TARGET is the INPUT side — the only orientation validateEdge accepts.
+   *
+   *  Fixes the reverse-drag snag: with connectionMode=loose the user can grab
+   *  an INPUT handle and drag back to an OUTPUT, and SvelteFlow then reports the
+   *  literal grabbed input as `source`. validateEdge requires output→input, so
+   *  that cable would silently die. We can't infer direction from the def alone
+   *  (many modules reuse the SAME port id for an input AND an output, e.g.
+   *  filter `audio`), so orientation is driven by the xyflow HANDLE TYPE of the
+   *  grabbed handle, captured at connect-start in `dragSourceHandle`:
+   *    - grabbed a 'target' handle (an INPUT) → the literal source is the input,
+   *      so SWAP to make the other endpoint the source.
+   *  We only swap when the literal source matches the captured grabbed handle
+   *  AND it was a 'target'. No drag context (the programmatic test hook) → never
+   *  swap; trust the caller's stated source/target exactly. */
+  function orientConnection(c: Connection): Connection {
+    if (!c.source || !c.target || !c.sourceHandle || !c.targetHandle) return c;
+    const grabbed = dragSourceHandle;
+    if (
+      grabbed &&
+      grabbed.handleType === 'target' &&
+      grabbed.nodeId === c.source &&
+      grabbed.handleId === c.sourceHandle
+    ) {
+      return {
+        source: c.target,
+        sourceHandle: c.targetHandle,
+        target: c.source,
+        targetHandle: c.sourceHandle,
+      };
+    }
+    return c;
+  }
+
   /** User dragged a connection between two handles. Create an edge in the patch.
    *  Behavior: an input accepts only ONE connection at a time — patching onto an
-   *  occupied input replaces the existing edge. Outputs may fan out to many. */
-  function handleConnect(connection: Connection) {
+   *  occupied input replaces the existing edge. Outputs may fan out to many.
+   *
+   *  EXCEPTION (redesign): if the drop landed on a PatchPanel card (hidden
+   *  handle stack), do NOT honour SvelteFlow's arbitrary nearest-handle snap.
+   *  Convert the gesture into the drill-down picker so the user picks the real
+   *  destination port — never an auto-patch. */
+  function handleConnect(rawConnection: Connection) {
+    // Was this a real in-flight pointer drag (begun via handleConnectStart)?
+    // The programmatic __handleConnect test hook commits a PRECISE connection
+    // without a drag gesture — it names the exact target handle, so the
+    // snap-ambiguity that motivates the drill-down redirect doesn't apply. We
+    // only redirect genuine drags. Snapshot BEFORE end() clears the flag.
+    const wasDragging = connectDragState.mode === 'dragging';
     // Drag committed — release any drag-induced PatchPanel lock.
     connectDragState.end();
-    if (!connection.source || !connection.target) return;
-    if (!connection.sourceHandle || !connection.targetHandle) return;
+    if (!rawConnection.source || !rawConnection.target) return;
+    if (!rawConnection.sourceHandle || !rawConnection.targetHandle) return;
+
+    // REVERSE-DRAG NORMALIZATION (fixes the "drag the other direction snags"
+    // report). SvelteFlow reports `source`/`target` by the drag's literal
+    // start/end handle. When the user grabs an INPUT and drags back to an
+    // OUTPUT (target→source), the literal source is the INPUT — which our
+    // output→input validator then rejects, so the cable silently dies (the
+    // "snag"). orientConnection flips the endpoints when the grabbed handle (the
+    // xyflow handle TYPE captured at connect-start) was a 'target' input, so the
+    // OUTPUT becomes the edge source and the INPUT the target.
+    const oriented = orientConnection(rawConnection);
+    // orientConnection preserves the (already non-null) endpoints; re-narrow for
+    // the type system.
+    if (!oriented.source || !oriented.target || !oriented.sourceHandle || !oriented.targetHandle) return;
+    const connection = {
+      source: oriented.source,
+      target: oriented.target,
+      sourceHandle: oriented.sourceHandle,
+      targetHandle: oriented.targetHandle,
+    };
+
+    // SUPPRESS auto-commit on a REAL drag that snapped onto a hidden-handle
+    // PatchPanel target. SvelteFlow snaps the cable to the geometrically
+    // nearest stacked handle and would auto-patch there — the "click just
+    // patches something without opening the menu" bug. We instead let
+    // handleConnectEnd (onconnectend) open the card's drill-down picker so the
+    // user picks the real destination port. The programmatic test hook
+    // (wasDragging=false) commits the precise connection it was given; raw-
+    // handle target cards (visible, distinct handles) keep the direct drop.
+    if (wasDragging && isPatchPanelCard(connection.target)) return;
 
     const srcNode = patch.nodes[connection.source];
     const dstNode = patch.nodes[connection.target];
@@ -1655,6 +1815,13 @@
     // Mark a connect-drag in flight — PatchPanels opened during this drag
     // will lock open until handleConnect / handleConnectEnd fires.
     connectDragState.begin();
+    // Remember where the cable was grabbed so handleConnectEnd can open the
+    // drill-down picker if the drag lands on a hidden-handle PatchPanel card.
+    dragInFlight = true;
+    dragSourceHandle =
+      params.nodeId && params.handleId && params.handleType
+        ? { nodeId: params.nodeId, handleId: params.handleId, handleType: params.handleType }
+        : null;
     if (params.handleType !== 'target') return;
     if (!params.nodeId || !params.handleId) return;
     let removed = 0;
@@ -1674,10 +1841,66 @@
   }
 
   /** Cable drag finished — committed-or-not. Always release the drag-
-   *  induced PatchPanel lock so the locked panel can resume normal
-   *  hover-intent behaviour. */
-  function handleConnectEnd() {
+   *  induced PatchPanel lock. If the drag was released OVER a hidden-handle
+   *  PatchPanel card, open that card's drill-down picker (seeded with the
+   *  grabbed source) so the user picks the destination port — instead of the
+   *  arbitrary nearest-handle auto-patch that handleConnect suppressed. The
+   *  drop card is resolved from the pointer (elementFromPoint), not xyflow's
+   *  snap, so it's exact regardless of the stacked-handle geometry. */
+  function handleConnectEnd(
+    event?: MouseEvent | TouchEvent,
+  ) {
+    const wasDrag = dragInFlight;
+    const grabbed = dragSourceHandle;
+    dragInFlight = false;
+    dragSourceHandle = null;
     connectDragState.end();
+    if (!wasDrag || !grabbed) return;
+    // Resolve the drop point. Touch events expose changedTouches; mouse the
+    // clientX/Y. Fall back to the last tracked pointer.
+    let dropX = lastPointer.x;
+    let dropY = lastPointer.y;
+    if (event) {
+      const me = event as MouseEvent;
+      const te = event as TouchEvent;
+      if (typeof me.clientX === 'number' && (me.clientX || me.clientY)) {
+        dropX = me.clientX;
+        dropY = me.clientY;
+      } else if (te.changedTouches && te.changedTouches.length > 0) {
+        dropX = te.changedTouches[0].clientX;
+        dropY = te.changedTouches[0].clientY;
+      }
+    }
+    if (typeof document === 'undefined') return;
+    const el = document.elementFromPoint(dropX, dropY) as HTMLElement | null;
+    const nodeEl = el?.closest('.svelte-flow__node') as HTMLElement | null;
+    const dropNodeId = nodeEl?.getAttribute('data-id') ?? null;
+    // No card under the cursor, dropped on itself, or the drop card is NOT a
+    // hidden-handle PatchPanel card → nothing to redirect (a raw-handle target
+    // already committed in handleConnect; empty space cancels the gesture).
+    if (!dropNodeId || dropNodeId === grabbed.nodeId) return;
+    if (!isPatchPanelCard(dropNodeId)) return;
+    // Resolve the grabbed source's direction + cable type. The drill-down
+    // picker offers only ports COMPATIBLE with this source, so the user can
+    // only complete a valid patch.
+    const node = patch.nodes[grabbed.nodeId];
+    const def = node ? defLookup(node.type) : undefined;
+    const exposed = node ? resolveExposedPort(node, grabbed.handleId) : undefined;
+    const direction: 'output' | 'input' =
+      exposed?.direction ?? (grabbed.handleType === 'source' ? 'output' : 'input');
+    let type = exposed?.cableType ?? 'audio';
+    if (!exposed && def) {
+      const port =
+        direction === 'output'
+          ? def.outputs.find((p) => p.id === grabbed.handleId)
+          : def.inputs.find((p) => p.id === grabbed.handleId);
+      if (port) type = port.type as CableType;
+    }
+    lastPointer = { x: dropX, y: dropY };
+    openDrillDownForCarry(
+      { nodeId: grabbed.nodeId, portId: grabbed.handleId, direction, type: type as string },
+      dropNodeId,
+    );
   }
 
   /** User clicked a handle without dragging past the connectionDragThreshold.
@@ -2775,6 +2998,24 @@
   let portMenuSourcePortId = $state<string | null>(null);
   let portMenuSourceDirection = $state<'output' | 'input'>('output');
   let portMenuSourceType = $state<string>('audio');
+  // When a cable gesture lands on a PatchPanel (hidden-handle) target card, we
+  // open the picker PRE-DRILLED into that one target module so the user lands
+  // straight on its compatible-port list (the drill-down menu). null = the
+  // normal full-module-list entry point (carry "patch to", contextmenu, etc.).
+  let portMenuPreselectNodeId = $state<string | null>(null);
+  // Last observed pointer position (screen px). A native SvelteFlow connect-
+  // drag's `onconnect` carries no cursor coords, so we snapshot the pointer to
+  // edge-align the drill-down picker to the dropped-on card side.
+  let lastPointer = { x: 0, y: 0 };
+  // The handle a native connect-DRAG started from (captured in
+  // handleConnectStart). Read by handleConnectEnd to seed the drill-down picker
+  // when the drag is released over a hidden-handle PatchPanel card. Null when
+  // no drag is in flight. NOT a $state — it's gesture-scoped plumbing, not UI.
+  let dragSourceHandle: { nodeId: string; handleId: string; handleType: 'source' | 'target' } | null = null;
+  // True for the duration of a genuine pointer connect-drag (set on
+  // connectstart, cleared on connectend). Distinguishes a real drag from the
+  // programmatic __handleConnect test hook.
+  let dragInFlight = false;
 
   let portMenuSourceLabel = $derived.by(() => {
     void snapshot;
@@ -2884,6 +3125,7 @@
     portMenuSourcePortId = info.portId;
     portMenuSourceDirection = info.direction;
     portMenuSourceType = info.type;
+    portMenuPreselectNodeId = null; // contextmenu/dblclick → full module list
     portMenuOpen = true;
     // Lock the source-port's PatchPanel open while the cascade is up.
     connectDragState.beginCascade(info.nodeId);
@@ -3031,6 +3273,11 @@
     portMenuSourcePortId = info.portId;
     portMenuSourceDirection = info.direction;
     portMenuSourceType = info.type;
+    // Default entry = full module list. The cable-drop drill-down path sets
+    // portMenuPreselectNodeId AFTER calling this to pre-drill into one target;
+    // every other caller (carry "patch to", contextmenu/dblclick) wants the
+    // module list, so clear any stale preselect here.
+    portMenuPreselectNodeId = null;
     portMenuOpen = true;
     connectDragState.beginCascade(info.nodeId);
   }
@@ -3205,6 +3452,9 @@
   // pickup instead of committing.
   $effect(() => {
     const onPointerMove = (e: PointerEvent) => {
+      // Always snapshot the pointer so a native connect-drop (which gives us no
+      // coords) can edge-align its drill-down picker.
+      lastPointer = { x: e.clientX, y: e.clientY };
       if (connectDragState.mode !== 'pickup') return;
       connectDragState.updatePickupCursor(e.clientX, e.clientY);
     };
@@ -3219,6 +3469,7 @@
       portMenuOpen = false;
       portMenuSourceNodeId = null;
       portMenuSourcePortId = null;
+      portMenuPreselectNodeId = null;
       flowApi?.cancelClickConnect();
       trace('pickup-cancelled (Esc)');
     };
@@ -4302,6 +4553,7 @@
       onclickconnectstart={handleClickConnectStart}
       onclickconnectend={handleClickConnectEnd}
       connectionDragThreshold={5}
+      connectionMode={ConnectionMode.Loose}
       ondelete={handleDelete}
       onnodedragstop={handleNodeDragStop}
       onpanecontextmenu={onPaneContextMenu}
@@ -4523,11 +4775,13 @@
   sourceLabel={portMenuSourceLabel}
   moduleEntries={portMenuModuleEntries}
   candidatesFor={portMenuCandidatesFor}
+  preselectModuleId={portMenuPreselectNodeId}
   onpick={pickPortMenuTarget}
   onclose={() => {
     portMenuOpen = false;
     portMenuSourceNodeId = null;
     portMenuSourcePortId = null;
+    portMenuPreselectNodeId = null;
     connectDragState.endCascade();
     // Closing the picker without committing (Esc / negative-space) discards
     // any cable that was carried into it — silently, no patch made.
