@@ -16,6 +16,13 @@ docs/src/data/modules.json
 .env.local
 .env.*.local
 
+# Infra / observability secrets handed in locally (NEVER commit). The Better
+# Stack read/write API key lives here; the secret inventory + admin runbooks
+# are in the private ../patchtogether-infra-docs repo, not this public repo.
+betterstack.txt
+*.token
+*.secret
+
 # OS / editor
 .DS_Store
 .idea/
