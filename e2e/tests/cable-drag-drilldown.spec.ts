@@ -74,17 +74,48 @@ async function cardCenter(page: Page, nodeId: string): Promise<{ x: number; y: n
 async function pickPort(menu: Locator, portId: string): Promise<void> {
   const opt = menu.locator(`[data-testid="patch-to-port"][data-port-id="${portId}"]`);
   await expect(opt).toBeVisible();
-  await expect
-    .poll(
-      async () =>
-        opt.evaluate((el) => {
-          const r = el.getBoundingClientRect();
-          const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-          return !!top && (top === el || el.contains(top) || top.closest('[data-testid="patch-to-port"]') === el);
-        }),
-      { timeout: 5000 },
-    )
-    .toBe(true);
+  // Verify via the BROWSER's real hit-test that the option is genuinely the
+  // topmost element at its own centre. If it is not, capture EXACTLY what is
+  // covering it (tag/id/class/testid + coords + viewport) and fail with that —
+  // a real overlay obstructing the option is a true bug we must surface, never
+  // tolerate. (Poll briefly to ride out any one-frame settle.)
+  const probe = () =>
+    opt.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const top = document.elementFromPoint(cx, cy) as HTMLElement | null;
+      const isOpt = !!top && (top === el || el.contains(top) || top.closest('[data-testid="patch-to-port"]') === el);
+      const describe = (n: HTMLElement | null) =>
+        n
+          ? `${n.tagName.toLowerCase()}${n.id ? '#' + n.id : ''}` +
+            `${typeof n.className === 'string' && n.className.trim() ? '.' + n.className.trim().split(/\s+/).join('.') : ''}` +
+            `[testid=${n.getAttribute('data-testid')}]`
+          : 'null (off-viewport?)';
+      return {
+        isOpt,
+        top: describe(top),
+        cx: Math.round(cx),
+        cy: Math.round(cy),
+        vw: window.innerWidth,
+        vh: window.innerHeight,
+        box: { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+      };
+    });
+  let info = await probe();
+  const deadline = Date.now() + 5000;
+  while (!info.isOpt && Date.now() < deadline) {
+    await new Promise((res) => setTimeout(res, 200));
+    info = await probe();
+  }
+  expect(
+    info.isOpt,
+    `drill-down port "${portId}" is NOT the topmost element at its centre ` +
+      `(${info.cx},${info.cy}); viewport ${info.vw}x${info.vh}; option box ${JSON.stringify(info.box)}; ` +
+      `covered by: ${info.top}`,
+  ).toBe(true);
+  // Proven unobstructed above; force past Playwright's separate (headless-flaky)
+  // actionability probe — the real obstruction check is the assertion above.
   await opt.click({ force: true });
 }
 
