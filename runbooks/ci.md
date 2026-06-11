@@ -39,8 +39,20 @@ Branch ruleset **id 16042163** requires these **exact** status-check names:
    actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e. **Renaming
    this job breaks the merge gate** unless you also PUT the ruleset.
 2. **`vrt-strict`** — the pure-DOM deterministic VRT subset (also REQUIRED).
+3. **`webgl-smoke`** — the renderer-tolerant SwiftShader WebGL floor (a few
+   `@webgl-smoke`-tagged specs: context-not-lost / shader-compiles / canvas-not-blank).
+   REQUIRED via the umbrella's aggregate `if`.
 
 **Informational (NOT gating)** lanes:
+
+- `webgl-attest` (real-GPU attestation gate) — **PHASED: currently NON-gating.**
+  The verify job runs + is visible, but is intentionally left out of the umbrella
+  `if` because the heavy WebGL suite has ~15 rotted specs (ungated since `e2e-video`
+  was disabled) and the attestation can't bootstrap green yet. After the heavy-WebGL
+  triage campaign + the first real-GPU attestation, re-add `|| "$WEBGL_ATTEST" !=
+  "success"` to the umbrella `if` to enforce it. See
+  `.myrobots/plans/webgl-attestation-semaphore.md` §-2 + the dev flow in
+  [testing.md](testing.md).
 
 - `vrt` (full canvas sweep) — `continue-on-error: true`; canvas/GPU timing may
   drift, so only `vrt-strict` is required.

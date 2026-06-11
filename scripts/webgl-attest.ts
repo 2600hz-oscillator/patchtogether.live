@@ -194,7 +194,10 @@ function probeRenderer(): string {
         process.stdout.write(String(r));
       })().catch(e => { process.stdout.write('probe-error: ' + e.message); });
     `;
-    const out = execSync(`node -e ${JSON.stringify(probeScript)}`, {
+    // execFileSync (argv form) — NOT execSync via the shell: passing the probe
+    // script as a `-e` argv element avoids shell mangling of its quotes/parens
+    // (the shell path produced "Invalid or unexpected token").
+    const out = execFileSync('node', ['-e', probeScript], {
       cwd: join(REPO_ROOT, 'e2e'),
       encoding: 'utf8',
     }).trim();
