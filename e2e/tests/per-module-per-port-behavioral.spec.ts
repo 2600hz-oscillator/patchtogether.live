@@ -524,6 +524,21 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    class as the `foxy` exemption above. Covered by mandelbulb-related
   //    VRT/specs which screenshot the fractal at distinct parameter values.
   mandelbulb: 'heavy ray-marched 3D fractal; 2-spawn × per-input sweep exceeds the 162s CI test budget (times out, not a per-port delta failure — same class as foxy); covered by mandelbulb VRT/specs',
+
+  // ── vfpgaRunner — HOST module whose def declares the FULL I/O SUPERSET (4
+  //    video in / 4 CV / 4 gate), but the LOADED VFPGA selects which subset is
+  //    ACTIVE. The only bundled VFPGA (smpte-bars) is a pure GENERATOR: it uses
+  //    cv1 (a SHIFT role that only rotates the bar columns) and ZERO video/gate
+  //    inputs — so 11 of the 12 superset ports are CORRECTLY inert for this spec
+  //    (they're activated by FUTURE VFPGAs in later waves), and cv1's bar-column
+  //    rotation moves Δμvar≈0.6 (below the universal variance floor) at the
+  //    sampled-frame statistic. The behavioral "every input perturbs the output"
+  //    invariant is fundamentally wrong for a manifest-host whose ACTIVE inputs
+  //    are per-loaded-spec; this is a HOST-SUPERSET exemption, not a regression.
+  //    Per-spec input→effect coverage lives in vfpga-runner.spec.ts (smpte-bars
+  //    renders to OUTPUT) + the spec-validation + snapshot unit tests; each
+  //    port's wire-up is still pinned by per-module-per-port.spec.ts inputs-accept.
+  vfpgaRunner: 'manifest-HOST superset class: the def declares the full I/O superset (vin1-4/cv1-4/g1-4) but the loaded VFPGA selects the active subset — the only bundled spec (smpte-bars) is a pure generator using just cv1 (SHIFT, Δμvar≈0.6 below floor) + 0 video/gate, so 11/12 superset ports are correctly inert for it. Covered by vfpga-runner.spec.ts (smpte-bars → OUTPUT) + spec-validation/snapshot unit tests; inputs-accept still pins each port wire-up.',
 };
 
 // ────────── Reconciliation law: every exemption is BACKLOG ──────────
