@@ -14,10 +14,18 @@
 //   4. Assert it CHANGES WITH THE SOURCE: a layer pointed at the OTHER port
 //      (no feed there) falls back to the idle pattern, distinct from the
 //      patched-feed average.
-//   5. (Projective) Map a patched feed onto an OBJ mesh — layer 1 = video inA,
-//      layer 0 = OBJ texturing layer 1 — and assert the textured mesh differs
-//      from the matcap-only baseline (so a patched feed flows through the same
-//      UV-texmap / projective surface path #603 built).
+//
+// CONSOLIDATED 4→2 (webgl-suite-optimization §2): the In-A and In-B feed tests
+// were near-dups (spawn a feed into a port, point a video layer at that port,
+// assert the feed reaches the output) — they are now ONE parametrized test over
+// both ports that keeps EVERY unique claim per port (feed reaches output, the
+// videoSource Yjs write persists at the right field, AND the feed≠idle delta when
+// the layer is pointed at the OTHER, feed-less port). The former 4th test — a
+// patched feed projected onto an OBJ mesh — was DROPPED: that surface-texmap
+// render path is owned by toybox-texture-source (now folded into
+// toybox-video-projection) + the projective render proof in
+// toybox-video-projection.spec.ts; what is UNIQUE here (a patched live FEED as
+// the layer source) is fully exercised by the kept feed + SOURCE-select tests.
 //
 // Determinism: ACIDWARP is animated, but the assertions are coarse (non-black,
 // idle-vs-feed delta) so a single frozen TOYBOX render (which forces a full
@@ -226,65 +234,59 @@ test.describe('TOYBOX video inputs (VID A / VID B) — patched-feed layer source
     test.setTimeout(120_000);
   });
 
-  test('a layer sourced from In A shows the patched feed (non-black, not idle)', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  // Parametrized over BOTH input ports (consolidation §2). Per port this keeps
+  // every unique claim the two former per-port tests made: (a) the patched feed
+  // reaches the layer FBO + output (non-black, brighter than idle), (b) the
+  // videoSource Yjs write persisted at the right field, and (c) the output
+  // CHANGES WITH THE SOURCE — pointing the SAME layer at the OTHER (feed-less)
+  // port falls back to the idle pattern, distinct from the patched feed.
+  for (const { feed, other } of [
+    { feed: 'inA', other: 'inB' },
+    { feed: 'inB', other: 'inA' },
+  ] as const) {
+    test(`a layer sourced from In ${feed === 'inA' ? 'A' : 'B'} shows the patched feed (non-black, not idle; changes with the source)`, async ({ page }) => {
+      const errors: string[] = [];
+      page.on('pageerror', (e) => errors.push(e.message));
+      page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await spawnWithFeed(page, 'inA');
-    await seedVideoLayer(page, 'inA');
+      await spawnWithFeed(page, feed);
+      await seedVideoLayer(page, feed);
 
-    // The patched feed (ACIDWARP plasma) reached the layer FBO + the output.
-    const feedAvg = await frozenAverage(page, 1.0);
-    // ACIDWARP plasma is bright + colourful — well above the dark-teal idle
-    // pattern (~(10,18,24) → brightness ~17). A non-black, brighter-than-idle
-    // average proves the feed (not the idle fallback) is on screen.
-    expect(brightness(feedAvg)).toBeGreaterThan(40);
+      // (a) The patched feed (ACIDWARP plasma) reached the layer FBO + the output.
+      // ACIDWARP plasma is bright + colourful — well above the dark-teal idle
+      // pattern (~(10,18,24) → brightness ~17). A non-black, brighter-than-idle
+      // average proves the feed (not the idle fallback) is on screen.
+      const feedAvg = await frozenAverage(page, 1.0);
+      expect(brightness(feedAvg), `In ${feed}: patched feed is brighter than idle`).toBeGreaterThan(40);
 
-    // Point the SAME layer at In B (NO feed there) → the layer falls back to the
-    // idle pattern, which must look DIFFERENT from the patched In-A feed.
-    await resume(page);
-    await page.evaluate(() => {
-      const w = globalThis as unknown as PatchGlobal;
-      w.__ydoc.transact(() => {
-        const l = w.__patch.nodes['tb']?.data?.layers?.[0];
-        if (l) l.videoSource = 'inB';
+      // (b) The persisted source is the patched port (the Yjs write landed at the
+      // right field).
+      const persisted = await page.evaluate(() => {
+        const w = globalThis as unknown as PatchGlobal;
+        return w.__patch.nodes['tb']?.data?.layers?.[0]?.videoSource;
       });
+      expect(persisted, `In ${feed}: videoSource persisted`).toBe(feed);
+
+      // (c) Point the SAME layer at the OTHER port (NO feed there) → the layer
+      // falls back to the idle pattern, which must look DIFFERENT from the feed.
+      await resume(page);
+      await page.evaluate((other) => {
+        const w = globalThis as unknown as PatchGlobal;
+        w.__ydoc.transact(() => {
+          const l = w.__patch.nodes['tb']?.data?.layers?.[0];
+          if (l) l.videoSource = other;
+        });
+      }, other);
+      await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      const idleAvg = await frozenAverage(page, 1.0);
+      expect(dist(feedAvg, idleAvg), `In ${feed}: output changes with the source (feed vs idle ${other})`).toBeGreaterThan(8);
+
+      expect(
+        errors.filter((e) => !e.includes('AudioContext')),
+        'no console / page errors',
+      ).toEqual([]);
     });
-    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-    const idleAvg = await frozenAverage(page, 1.0);
-    // The output CHANGES WITH THE SOURCE: feed (In A) vs idle (In B, no feed).
-    expect(dist(feedAvg, idleAvg)).toBeGreaterThan(8);
-
-    expect(
-      errors.filter((e) => !e.includes('AudioContext')),
-      'no console / page errors',
-    ).toEqual([]);
-  });
-
-  test('a layer sourced from In B shows the feed patched into In B', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-    await spawnWithFeed(page, 'inB');
-    await seedVideoLayer(page, 'inB');
-
-    const feedAvg = await frozenAverage(page, 1.0);
-    expect(brightness(feedAvg)).toBeGreaterThan(40);
-
-    // The persisted source is In B (the Yjs write landed at the right field).
-    const persisted = await page.evaluate(() => {
-      const w = globalThis as unknown as PatchGlobal;
-      return w.__patch.nodes['tb']?.data?.layers?.[0]?.videoSource;
-    });
-    expect(persisted).toBe('inB');
-
-    expect(
-      errors.filter((e) => !e.includes('AudioContext')),
-      'no console / page errors',
-    ).toEqual([]);
-  });
+  }
 
   test('the in-card SOURCE select drives videoSource + the patched feed reaches the output', async ({ page }) => {
     const errors: string[] = [];
@@ -348,78 +350,14 @@ test.describe('TOYBOX video inputs (VID A / VID B) — patched-feed layer source
     ).toEqual([]);
   });
 
-  test('a patched feed projects onto an OBJ mesh (texmap surface composes the feed)', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-    await spawnWithFeed(page, 'inA');
-
-    // Layer 1 = a VIDEO layer sourced from In A; layer 0 = an OBJ sphere whose
-    // SURFACE source is layer 1 (UV-texmap the patched feed onto the mesh).
-    // OUTPUT shows layer 0 (the textured sphere).
-    await page.evaluate(() => {
-      const w = globalThis as unknown as PatchGlobal;
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['tb'];
-        if (!n) return;
-        if (!n.data) n.data = {};
-        n.data.layers = [
-          {
-            kind: 'obj', contentId: null, params: {},
-            material: {
-              modelId: 'sphere', rotX: 0.3, rotY: 0.6, rotZ: 0, scale: 1,
-              spin: 0, matcap: 0, tintR: 1, tintG: 1, tintB: 1,
-              surfaceSource: -1, surfaceMix: 1,
-            },
-          },
-          { kind: 'video', contentId: null, params: {}, videoSource: 'inA' },
-          { kind: 'off', contentId: null, params: {} },
-          { kind: 'off', contentId: null, params: {} },
-        ];
-        n.data.combine = (
-          () => ({
-            nodes: [
-              { id: 'src0', kind: 'source', layer: 0, x: 14, y: 14 },
-              { id: 'src1', kind: 'source', layer: 1, x: 14, y: 66 },
-              { id: 'src2', kind: 'source', layer: 2, x: 14, y: 118 },
-              { id: 'src3', kind: 'source', layer: 3, x: 14, y: 170 },
-              { id: 'pass', kind: 'fade', x: 120, y: 40, params: { amount: 0 } },
-              { id: 'out', kind: 'output', x: 286, y: 40 },
-            ],
-            edges: [
-              { id: 'e0', from: 'src0', to: 'pass', toPort: 'in0' },
-              { id: 'e1', from: 'src1', to: 'pass', toPort: 'in1' },
-              { id: 'e2', from: 'pass', to: 'out', toPort: 'in0' },
-            ],
-          })
-        )();
-      });
-    });
-    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-
-    // Baseline: matcap-only sphere (surfaceSource = -1).
-    const matcapAvg = await frozenAverage(page, 1.0);
-
-    // Texture the sphere with the patched feed (surfaceSource = layer 1).
-    await resume(page);
-    await page.evaluate(() => {
-      const w = globalThis as unknown as PatchGlobal;
-      w.__ydoc.transact(() => {
-        const mat = w.__patch.nodes['tb']?.data?.layers?.[0]?.material;
-        if (mat) mat.surfaceSource = 1;
-      });
-    });
-    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-
-    const texturedAvg = await frozenAverage(page, 1.0);
-    // The textured sphere shows the patched feed, not the flat matcap — proving
-    // a patched feed composes through the same UV-texmap surface path #603 built.
-    expect(dist(matcapAvg, texturedAvg)).toBeGreaterThan(4);
-
-    expect(
-      errors.filter((e) => !e.includes('AudioContext')),
-      'no console / page errors',
-    ).toEqual([]);
-  });
+  // NOTE (consolidation §2): the former "a patched feed projects onto an OBJ mesh
+  // (texmap surface composes the feed)" test was DROPPED. The UV-texmap / surface
+  // render path (mapping a layer's output onto a mesh) is owned by the surface-
+  // select + projective proofs in toybox-video-projection.spec.ts (which absorbed
+  // toybox-texture-source). What is UNIQUE to THIS spec — a live PATCHED feed
+  // (ACIDWARP.out → TOYBOX.inA/B) reaching the layer FBO + output — is fully
+  // exercised by the parametrized feed tests + the SOURCE-select test above; the
+  // dropped test re-tested the same texmap path with a feed instead of a shader,
+  // which adds no new coverage (it boots TWO heavy modules per case, the priciest
+  // in the cluster).
 });

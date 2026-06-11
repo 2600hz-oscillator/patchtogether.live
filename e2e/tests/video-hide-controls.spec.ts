@@ -222,6 +222,52 @@ test.describe('OUTPUT regression', () => {
     expect(data.height, 'OUTPUT still uses node.data.height').toBeGreaterThanOrEqual(240);
     expect(data.resizedWidth, 'OUTPUT does NOT use new resizedWidth key').toBeUndefined();
   });
+
+  // Folded in from video-output-resize.spec.ts (consolidation §2): the corner-drag
+  // resize itself is the dup the test above already covers (same dragCorner +
+  // node.data.width/height); the UNIQUE leg is that after a known size is forced,
+  // the INNER canvas dimensions follow the card (aspect-fit, not collapsed to 0).
+  // We set the size directly via patch mutation (skip the drag) so the aspect-fit
+  // math is testable independent of the drag harness.
+  test('inner canvas keeps aspect-fit after resize (engine 4:3)', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'v-out', type: 'videoOut', position: { x: 200, y: 100 }, domain: 'video' },
+    ]);
+    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
+
+    // Force a known size via direct patch mutation (skip the drag) so
+    // the aspect-fit math is testable independent of the drag harness.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        const n = w.__patch.nodes['v-out'];
+        if (!n) return;
+        if (!n.data) n.data = {};
+        n.data.width = 800;
+        n.data.height = 480;
+      });
+    });
+    await page.waitForTimeout(150);
+
+    const inner = await page.evaluate(() => {
+      const c = document.querySelector('canvas[data-testid="video-out-canvas"]') as HTMLCanvasElement | null;
+      if (!c) return null;
+      // The aspect inside the card should be 4:3 (engine resolution),
+      // but the canvas-wrap simply takes (width - PAD, height - HEADER).
+      // We check it's CLOSE to that size and not collapsed to 0.
+      return { width: c.width, height: c.height };
+    });
+    expect(inner).not.toBeNull();
+    if (!inner) return;
+    expect(inner.width, 'inner canvas width follows card width').toBeGreaterThan(700);
+    expect(inner.height, 'inner canvas height follows card height').toBeGreaterThan(380);
+  });
 });
 
 test.describe('PR-113 regression - handle dblclick still opens patch-to', () => {

@@ -61,6 +61,16 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // whose files we already know (AUDIO_WEBGL_MODULE_DEFS); this just verifies the
 // flag and the file agree.
 
+// The EXACT count of heavy-WebGL spec FILES the glob resolves (after the Phase-2
+// re-bin EXCLUDEs). This is an exact guard, not a loose floor: a silent drop
+// (e.g. a consolidation that accidentally deletes a kept spec, or a glob/exclude
+// edit that mis-classifies one) must turn this red. Update it deliberately when a
+// heavy spec is intentionally added/removed/consolidated, in lock-step with a
+// fresh `task webgl:attest` (the attest count-gate uses the SAME resolver).
+// Phase 2-remainder (#754 follow-up) consolidated texture-source→video-projection
+// and video-output-resize→video-hide-controls, deleting 2 files: 44 → 42.
+const EXPECTED_HEAVY_SPEC_COUNT = 42;
+
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();
   const basisSet = new Set(basis);
@@ -118,7 +128,12 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
 
   it('(4) every heavy WebGL spec the exported glob resolves is in the basis', () => {
     const specs = resolveHeavyWebglSpecs();
-    expect(specs.length, 'heavy glob resolved zero specs — glob/import is broken').toBeGreaterThan(40);
+    expect(
+      specs.length,
+      `heavy glob resolved ${specs.length} specs, expected exactly ${EXPECTED_HEAVY_SPEC_COUNT} ` +
+        `— if you intentionally added/removed/consolidated a heavy spec, update ` +
+        `EXPECTED_HEAVY_SPEC_COUNT + re-attest; if not, a spec was silently dropped/mis-classified.`,
+    ).toBe(EXPECTED_HEAVY_SPEC_COUNT);
     const uncovered = specs.filter((f) => !basisSet.has(f));
     expect(uncovered, `heavy specs not in basis: ${uncovered.join(', ')}`).toEqual([]);
   });
@@ -147,8 +162,9 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
         `${p} is fully @collab/@capacity-gated but counted as attestable`,
       ).toBe(false);
     }
-    // The attestable set is non-empty and ≤ the glob set.
-    expect(attestable.length).toBeGreaterThan(40);
+    // The attestable set is non-empty and ≤ the glob set. No heavy spec is fully
+    // @collab/@capacity-gated today, so it currently equals the glob count.
+    expect(attestable.length).toBe(EXPECTED_HEAVY_SPEC_COUNT);
     expect(attestable.length).toBeLessThanOrEqual(all.length);
   });
 

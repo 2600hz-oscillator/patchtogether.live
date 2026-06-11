@@ -23,6 +23,12 @@
 // converging frames, so we advance the freeze a handful of steps. Budgets are
 // scaled by the per-op render count (CI's SwiftShader starves the main thread —
 // see repo memory ci-swiftshader-video-e2e-timeouts), NOT a flat value.
+//
+// BATCH-per-boot (webgl-suite-optimization §2): the render/output-delta proofs
+// (b)+(c) are GROUPED so multiple ops share ONE module boot (the dominant cost is
+// goto+spawn+GL-warm, not the assertion) — see RENDER_BATCHES below. Each batched
+// test asserts PER-ID (a loop of per-id expect()s with the op id in every failure
+// message) so a single bad op cannot hide behind a green aggregate (§6 risk).
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, ensureCombineOpen } from './_helpers';
@@ -380,63 +386,98 @@ test.describe('TOYBOX batch op nodes — registry + menu', () => {
   });
 });
 
+type Op = (typeof OPS)[number];
+
+/** Within an ALREADY-BOOTED toybox page, render the bypass baseline then `op`'s
+ *  composite (fresh graph seeds reset any stateful ring between ops, so multiple
+ *  ops share ONE boot safely) and return the captures the assertions check. The
+ *  moving/vivid branch logic is identical to the former per-op test — only the
+ *  page boot moved out of the loop. */
+async function captureOp(
+  page: Page,
+  { kind, ports, params, steps, wires, moving, vivid }: Op,
+): Promise<{ withOpAvg: [number, number, number]; withOpSig: number[]; bypassSig: number[] }> {
+  // Motion-driven ops (datamosh) use VIVID, strongly-distinct layers
+  // (synthwave/star-field) so the op has enough luma-gradient signal to mosh
+  // (grey noise-fbm gives it nothing to advect → a black frame), and a MOVING
+  // clock (it estimates optical flow from the frame-to-frame luma diff — a
+  // constant pinned iTime leaves its HOLD gate latched on the empty advected ring
+  // → black). The rest use the standard grey layers + constant-iTime freeze.
+  if (moving) {
+    await seedVivid(page, bypassGraph().nodes, bypassGraph().edges);
+    const bypassCap = await captureMoving(page, 2.0, steps);
+    const g = opGraph(kind, ports, params, wires);
+    await seedVivid(page, g.nodes, g.edges);
+    const cap = await captureMoving(page, 2.0, steps);
+    return { withOpAvg: cap.avg, withOpSig: cap.sig, bypassSig: bypassCap.sig };
+  }
+  const seedFn = vivid ? seedVivid : seed;
+  await seedFn(page, bypassGraph().nodes, bypassGraph().edges);
+  await freezeUntilLit(page, 2.0);
+  const bypassSig = await signature(page);
+  const g = opGraph(kind, ports, params, wires);
+  await seedFn(page, g.nodes, g.edges);
+  await freezeUntilLit(page, 2.0);
+  await advance(page, 2.0, steps);
+  return { withOpAvg: await average(page), withOpSig: await signature(page), bypassSig };
+}
+
+// BATCH-per-boot (webgl-suite-optimization §2): the per-op render/output-delta
+// proofs used to pay a FULL fresh module boot (goto + spawn + GL warm, ~the whole
+// cost) PER op — 12 boots. They are now grouped so MULTIPLE ops share one boot,
+// the largest single lane wall-time win. Per the §6 risk note ("BATCH-per-boot
+// can mask a per-id failure"), each batched test ASSERTS PER-ID — it loops the
+// ops, runs per-id expect()s with the op id in every failure message, so one bad
+// op can't hide behind a green aggregate. Batches keep similar handling together
+// to bound each boot's wall-time: the cheap steps=1 ops in one boot, the stateful
+// constant-clock ops in another, the moving-clock datamosh in its own (priciest).
+const RENDER_BATCHES: Array<{ name: string; ops: Op[] }> = [
+  {
+    name: 'simple single-step ops',
+    ops: OPS.filter((o) => o.steps === 1 && !o.moving && !o.vivid),
+  },
+  {
+    name: 'stateful constant-clock ops',
+    ops: OPS.filter((o) => o.steps > 1 && !o.moving),
+  },
+  {
+    name: 'moving-clock ops',
+    ops: OPS.filter((o) => o.moving),
+  },
+];
+
 test.describe('TOYBOX batch op nodes — render + output delta', () => {
-  for (const { kind, ports, params, steps, wires, moving, vivid } of OPS) {
-    test(`${kind}: renders non-black + visibly affects the output`, async ({ page }) => {
-      // Scale the budget by the converge-step count (stateful ops need several
-      // frames per capture on SwiftShader). Base 60s + 4s/step, 2 captures.
-      test.setTimeout(60_000 + steps * 8_000);
+  for (const batch of RENDER_BATCHES) {
+    test(`${batch.name} render non-black + visibly affect the output`, async ({ page }) => {
+      // Budget = a single boot + Σ(per-op converge cost). Base 60s for the boot,
+      // + 4s/step × 2 captures per op (stateful ops need several frames each on
+      // SwiftShader), summed over the ops sharing this boot.
+      const stepBudget = batch.ops.reduce((s, o) => s + o.steps, 0);
+      test.setTimeout(60_000 + stepBudget * 8_000);
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
+      // ONE boot for the whole batch.
       await page.goto('/');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
       await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });
       await pinViewport(page);
 
-      // Bypass baseline (layer 0 only). Motion-driven ops (datamosh) use VIVID,
-      // strongly-distinct layers (synthwave/star-field) so the op has enough
-      // luma-gradient signal to mosh (grey noise-fbm gives it nothing to advect →
-      // a black frame), and a MOVING clock (it estimates optical flow from the
-      // frame-to-frame luma diff — a constant pinned iTime leaves its HOLD gate
-      // latched on the empty advected ring → black). The rest use the standard
-      // grey layers + constant-iTime freeze.
-      let withOpAvg: [number, number, number];
-      let withOpSig: number[];
-      let bypassSig: number[];
-      if (moving) {
-        await seedVivid(page, bypassGraph().nodes, bypassGraph().edges);
-        const bypassCap = await captureMoving(page, 2.0, steps);
-        bypassSig = bypassCap.sig;
-        const g = opGraph(kind, ports, params, wires);
-        await seedVivid(page, g.nodes, g.edges);
-        const cap = await captureMoving(page, 2.0, steps);
-        withOpAvg = cap.avg;
-        withOpSig = cap.sig;
-      } else {
-        const seedFn = vivid ? seedVivid : seed;
-        await seedFn(page, bypassGraph().nodes, bypassGraph().edges);
-        await freezeUntilLit(page, 2.0);
-        bypassSig = await signature(page);
-        const g = opGraph(kind, ports, params, wires);
-        await seedFn(page, g.nodes, g.edges);
-        await freezeUntilLit(page, 2.0);
-        await advance(page, 2.0, steps);
-        withOpAvg = await average(page);
-        withOpSig = await signature(page);
+      // PER-ID assertions (a bad op can't hide in the shared boot).
+      for (const op of batch.ops) {
+        const { withOpAvg, withOpSig, bypassSig } = await captureOp(page, op);
+        // (b) RENDERS: the op's composite is non-black.
+        expect(lum(withOpAvg), `${op.kind} composite is non-black`).toBeGreaterThan(15);
+        // (c) VISIBLY AFFECTS OUTPUT: the per-cell layout differs from the bypass
+        //     baseline (a coarse-grid signature catches spatial ops whose GLOBAL
+        //     average is nearly unchanged, e.g. tile/mirror/displace/flowsmear).
+        expect(
+          sigDist(bypassSig, withOpSig),
+          `${op.kind} changes the live output vs bypass`,
+        ).toBeGreaterThan(2);
       }
-
-      // (b) RENDERS: the op's composite is non-black.
-      expect(lum(withOpAvg), `${kind} composite is non-black`).toBeGreaterThan(15);
-      // (c) VISIBLY AFFECTS OUTPUT: the per-cell layout differs from the bypass
-      //     baseline (a coarse-grid signature catches spatial ops whose GLOBAL
-      //     average is nearly unchanged, e.g. tile/mirror/displace/flowsmear).
-      expect(
-        sigDist(bypassSig, withOpSig),
-        `${kind} changes the live output vs bypass`,
-      ).toBeGreaterThan(2);
 
       expect(errors.filter((e) => !e.includes('AudioContext'))).toEqual([]);
     });
