@@ -40,11 +40,13 @@ const DRY = process.argv.includes('--dry-run'); // verify the mechanism w/o the 
 // assertion (verified: the offenders pass 5/5 in ISOLATION but a different ~1-2
 // of 210 stall on each saturated full run — the documented GPU-serial transient,
 // ci-swiftshader-video-e2e-timeouts). This is an ENVIRONMENT stall, not a code
-// flake, and is exactly why the original e2e-video lane ran --retries=2. A retry
-// recovers the transient; a test that FAILS ALL RETRIES still refuses the
-// attestation (real-failure detection preserved). REPEAT>1 (the 3× pre-MR
-// flake-check) forces retries=0 so a genuine flake can't hide behind a retry.
-const RETRIES = REPEAT > 1 ? 0 : Math.max(0, parseInt(process.env.WEBGL_ATTEST_RETRIES || '2', 10) || 0);
+// flake, and is why Phase 1 shipped --retries=2 as an interim. Phase 2 (#753)
+// leaned the lane (49→44 specs) and it now passes CLEAN at retries=0 (verified:
+// 0 flaky across all passes), so the DEFAULT is now 0 — a transient stall now
+// correctly REFUSES the attestation, forcing investigation (no-flake-tolerance).
+// Override with WEBGL_ATTEST_RETRIES=N only if the lane ever regrows. A test that
+// FAILS ALL RETRIES still refuses; REPEAT>1 (the 3× pre-MR flake-check) forces 0.
+const RETRIES = REPEAT > 1 ? 0 : Math.max(0, parseInt(process.env.WEBGL_ATTEST_RETRIES || '0', 10) || 0);
 
 interface PassResult {
   name: string;
