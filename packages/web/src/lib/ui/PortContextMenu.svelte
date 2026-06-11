@@ -33,6 +33,13 @@
     /** Lazily computed when the user clicks a module. Caller maps
      *  nodeId → CandidatePort[]. */
     candidatesFor: (nodeId: string) => CandidatePort[];
+    /** When set on OPEN, the picker drills STRAIGHT into this module's port
+     *  list (level 2) instead of showing the full module list (level 1).
+     *  Used by the cable-drop flow: dropping a carried cable over a target
+     *  card lands the user directly on that card's compatible ports — the
+     *  drill-down INPUT/OUTPUT menu the redesign asks for. null = normal entry
+     *  (carry "patch to", contextmenu/dblclick fallbacks). */
+    preselectModuleId?: string | null;
     onpick: (target: { nodeId: string; portId: string }) => void;
     onclose: () => void;
   }
@@ -44,17 +51,19 @@
     sourceLabel,
     moduleEntries,
     candidatesFor,
+    preselectModuleId = null,
     onpick,
     onclose,
   }: Props = $props();
 
   // Overlay-replace view. null = the modules list (level 1); a nodeId = that
-  // module's ports list (level 2, replacing the modules list). Resets every
-  // time the menu reopens.
+  // module's ports list (level 2, replacing the modules list). On open it
+  // resets to `preselectModuleId` when the caller pre-drilled into a dropped-on
+  // target, else to the modules list; on close it clears.
   let activeModuleId = $state<string | null>(null);
 
   $effect(() => {
-    if (!open) activeModuleId = null;
+    activeModuleId = open ? (preselectModuleId ?? null) : null;
   });
 
   let menuEl: HTMLDivElement | null = $state(null);
