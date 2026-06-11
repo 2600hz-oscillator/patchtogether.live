@@ -41,7 +41,7 @@ const EXPECTED_NODE_TYPES = [
   'mandelbulb', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'mixer', 'mixmstrs', 'modtris',
   'monoglitch', 'moog902', 'moog904a', 'moog911', 'moog921Vco', 'moogCp3', 'nibbles',
   'noise', 'numpadPlus', 'peaks', 'peakstate', 'picturebox', 'polyhelm', 'polyseqz', 'pong',
-  'qbert', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'rings',
+  'qbert', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
   'riotgirls', 'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
   'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar',
   'skifree', 'slewSwitch', 'snes9x', 'stages', 'stereovca', 'sticky',
