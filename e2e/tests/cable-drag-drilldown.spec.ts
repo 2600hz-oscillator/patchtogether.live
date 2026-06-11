@@ -129,11 +129,17 @@ test('picking a port in the drilled-down picker commits the chosen edge', async 
 
   const menu = page.locator('[data-testid="port-context-menu"]');
   await expect(menu).toBeVisible();
+  // Wait for the drilled-in port list to render before picking — on CI's
+  // SwiftShader/slower runner the body-portaled sublist mounts a beat after the
+  // menu container, and clicking before it exists raced the commit.
+  await expect(menu.locator('[data-testid="patch-to-ports"]')).toBeVisible();
   // Pick QUADRALOGICAL's IN2.
-  await menu.locator('[data-testid="patch-to-port"][data-port-id="in2"]').click();
+  const in2 = menu.locator('[data-testid="patch-to-port"][data-port-id="in2"]');
+  await expect(in2).toBeVisible();
+  await in2.click();
 
   // Exactly the edge the user chose lands — vs.video → quad.in2.
-  await expect.poll(async () => (await readEdges(page)).length, { timeout: 2000 }).toBe(1);
+  await expect.poll(async () => (await readEdges(page)).length, { timeout: 5000 }).toBe(1);
   const edges = await readEdges(page);
   expect(edges[0]!.source).toEqual({ nodeId: 'vs', portId: 'video' });
   expect(edges[0]!.target).toEqual({ nodeId: 'quad', portId: 'in2' });
@@ -177,8 +183,10 @@ test('reverse drag — grab a raw INPUT, drop on a PatchPanel card — picker of
   expect(await readEdges(page)).toHaveLength(0);
 
   // Pick it → edge runs quad.out (OUTPUT) → vout.in (INPUT), correctly oriented.
-  await menu.locator('[data-testid="patch-to-port"][data-port-id="out"]').click();
-  await expect.poll(async () => (await readEdges(page)).length, { timeout: 2000 }).toBe(1);
+  const outOpt = menu.locator('[data-testid="patch-to-port"][data-port-id="out"]');
+  await expect(outOpt).toBeVisible();
+  await outOpt.click();
+  await expect.poll(async () => (await readEdges(page)).length, { timeout: 5000 }).toBe(1);
   const edges = await readEdges(page);
   expect(edges[0]!.source).toEqual({ nodeId: 'quad', portId: 'out' });
   expect(edges[0]!.target).toEqual({ nodeId: 'vout', portId: 'in' });
@@ -213,7 +221,7 @@ test('reverse raw→raw drag (grab INPUT, drop on OUTPUT) commits the oriented e
   });
 
   await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
-  await expect.poll(async () => (await readEdges(page)).length, { timeout: 2000 }).toBe(1);
+  await expect.poll(async () => (await readEdges(page)).length, { timeout: 5000 }).toBe(1);
   const edges = await readEdges(page);
   expect(edges[0]!.source).toEqual({ nodeId: 'vs', portId: 'video' });
   expect(edges[0]!.target).toEqual({ nodeId: 'vout', portId: 'in' });
@@ -248,7 +256,7 @@ test('drag between two raw-handle cards still commits directly (no picker)', asy
 
   // No drill-down picker — the edge committed directly.
   await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
-  await expect.poll(async () => (await readEdges(page)).length, { timeout: 2000 }).toBe(1);
+  await expect.poll(async () => (await readEdges(page)).length, { timeout: 5000 }).toBe(1);
   const edges = await readEdges(page);
   expect(edges[0]!.source).toEqual({ nodeId: 'vs', portId: 'video' });
   expect(edges[0]!.target).toEqual({ nodeId: 'vout', portId: 'in' });
