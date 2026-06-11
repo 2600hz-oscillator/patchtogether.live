@@ -31,7 +31,11 @@
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
-test.describe.configure({ mode: 'parallel' });
+// Serial (not parallel): this spec shares a shard with heavy WebGL video specs
+// (e.g. backdraft) that can crash the SwiftShader browser under contention on
+// CI; running these few cable-drag cases serially keeps the worker stable and
+// avoids inheriting a dead browser from a parallel sibling.
+test.describe.configure({ mode: 'serial' });
 
 interface PatchEdge {
   id: string;
@@ -159,9 +163,12 @@ test('reverse drag — grab a raw INPUT, drop on a PatchPanel card — picker of
   // and the resulting edge must run quad.out (OUTPUT) → vout.in (INPUT).
   await page.goto('/');
   await page.waitForLoadState('networkidle');
+  // QUAD is the DROP target, so place it where the forward-drag test drops
+  // (x:760) — a proven-visible region. At x:80 the body-portaled picker opened
+  // hard against the left viewport edge and its option was un-actionable on CI.
   await spawnPatch(page, [
-    { id: 'quad', type: 'quadralogical', position: { x: 80, y: 120 }, domain: 'video' },
-    { id: 'vout', type: 'videoOut', position: { x: 760, y: 120 }, domain: 'video' },
+    { id: 'vout', type: 'videoOut', position: { x: 80, y: 120 }, domain: 'video' },
+    { id: 'quad', type: 'quadralogical', position: { x: 760, y: 120 }, domain: 'video' },
   ]);
   expect(await readEdges(page)).toHaveLength(0);
 
