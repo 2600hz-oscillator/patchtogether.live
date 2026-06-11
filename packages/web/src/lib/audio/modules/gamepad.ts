@@ -50,6 +50,7 @@
 
 import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
+import { patch as livePatch } from '$lib/graph/store';
 
 /** Stick deadzone. Xbox sticks (especially older ones) have notable
  *  drift; 0.08 swallows that without losing much usable range. After
@@ -66,6 +67,182 @@ export function applyDeadzone(raw: number, dz = STICK_DEADZONE): number {
   return Math.sign(v) * ((abs - dz) / (1 - dz));
 }
 
+// ---------------------------------------------------------------------------
+// LEFT-STICK CALIBRATION (Gladiator NXT support — first deliverable)
+//
+// Prior art (analog-stick calibration; min/max normalization + deadzone):
+//   * Per-axis min/max capture: the user sweeps the stick through its full
+//     range; we record observed (min,max) per axis. observed-min → full-min,
+//     observed-max → full-max. This is the classic SDL/evdev/DS4Windows
+//     calibration: a worn or non-Xbox stick (e.g. a VKB flight stick) rarely
+//     reaches a clean ±1 nor centres at 0, so a fixed mapping wastes range and
+//     drifts off-centre. (See SDL_GameControllerDB / Linux evdev-joystick.)
+//   * CENTER from the calibrated range midpoint, not assumed 0 — accounts for a
+//     "loose centre" (a Hall stick centres ~0.002, a worn stick ~0.045).
+//   * RADIAL deadzone around the calibrated centre (the modern-game standard —
+//     CoD/Apex) so diagonal noise inside the circle reads 0; we ALSO keep a tiny
+//     per-axis guard for sticks with uneven X/Y noise. This avoids snap-back
+//     "stick drift" producing phantom CV at rest.
+//   * OUTER deadzone (saturation): anything past the calibrated max pins to ±1.
+//
+// The calibrated result is a small plain record persisted ONCE to
+// node.data.leftStickCalibration on "complete calibration" (NEVER written per
+// frame — a per-frame Y.Doc write is the render/update-storm bug class). The
+// factory reads it on its rAF poll and applies `applyCalibration` to lx/ly in
+// place of the fixed `applyDeadzone`.
+// ---------------------------------------------------------------------------
+
+/** Default radial deadzone (fraction of the calibrated half-range) applied
+ *  around the calibrated centre. 0.10 sits in the "typical" 0.05–0.12 band
+ *  that masks light electrical noise without a noticeable dead spot. */
+export const CALIBRATION_DEADZONE = 0.1;
+
+/** Persisted left-stick calibration. Lives on `node.data.leftStickCalibration`
+ *  (rides the Y.Doc to rack-mates). All fields raw-axis units (the Gamepad API
+ *  reports ≈[-1,+1], but a real stick's *observed* extremes are usually inside
+ *  that — that's the whole point of calibrating). */
+export interface StickCalibration {
+  /** Observed raw min/max per axis (axes[0] = X, axes[1] = Y, raw spec frame:
+   *  +X = right, +Y = down). */
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  /** Radial deadzone as a fraction (0..1) of the calibrated half-range. */
+  deadzone: number;
+}
+
+/** Live min/max accumulator the card mutates each frame during calibration
+ *  MODE (transient render state — NOT synced; only the FINAL record is). */
+export interface CalibrationSweep {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  /** Number of samples folded in — used to gate "complete" until the user has
+   *  actually swept (a single frame can't define a range). */
+  samples: number;
+}
+
+/** A fresh sweep accumulator. min seeded to +Inf / max to -Inf so the first
+ *  finite sample sets both. */
+export function newCalibrationSweep(): CalibrationSweep {
+  return { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, samples: 0 };
+}
+
+/** Fold one raw (x,y) sample into the sweep, IN PLACE. Non-finite samples are
+ *  ignored (a disconnected pad reports nothing useful). Returns the sweep for
+ *  chaining/readability. */
+export function recordCalibrationSample(
+  sweep: CalibrationSweep,
+  rawX: number,
+  rawY: number,
+): CalibrationSweep {
+  if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) return sweep;
+  // Clamp to the spec's legal axis range so a glitchy >|1| sample can't blow
+  // the calibrated range out past full deflection.
+  const x = Math.max(-1, Math.min(1, rawX));
+  const y = Math.max(-1, Math.min(1, rawY));
+  if (x < sweep.minX) sweep.minX = x;
+  if (x > sweep.maxX) sweep.maxX = x;
+  if (y < sweep.minY) sweep.minY = y;
+  if (y > sweep.maxY) sweep.maxY = y;
+  sweep.samples++;
+  return sweep;
+}
+
+/** True once the sweep has captured a usable range on BOTH axes (a non-trivial
+ *  span + at least a handful of samples). Gates the "complete calibration"
+ *  button so a user can't lock in a degenerate (min==max → divide-by-zero)
+ *  calibration. */
+export function sweepIsUsable(sweep: CalibrationSweep, minSpan = 0.2): boolean {
+  if (sweep.samples < 3) return false;
+  if (!Number.isFinite(sweep.minX) || !Number.isFinite(sweep.maxX)) return false;
+  if (!Number.isFinite(sweep.minY) || !Number.isFinite(sweep.maxY)) return false;
+  return sweep.maxX - sweep.minX >= minSpan && sweep.maxY - sweep.minY >= minSpan;
+}
+
+/** Lock a completed sweep into a persisted StickCalibration. Pure — the caller
+ *  writes the result to node.data ONCE. `deadzone` defaults to
+ *  CALIBRATION_DEADZONE. Returns null when the sweep isn't usable (caller keeps
+ *  the prior calibration). */
+export function finalizeCalibration(
+  sweep: CalibrationSweep,
+  deadzone = CALIBRATION_DEADZONE,
+): StickCalibration | null {
+  if (!sweepIsUsable(sweep)) return null;
+  return {
+    minX: sweep.minX,
+    maxX: sweep.maxX,
+    minY: sweep.minY,
+    maxY: sweep.maxY,
+    deadzone: Math.max(0, Math.min(0.9, deadzone)),
+  };
+}
+
+/** Normalize ONE raw axis sample against its calibrated [min,max] so
+ *  observed-min → -1, observed-centre → 0, observed-max → +1, with a
+ *  per-axis-half deadzone re-normalized so values just outside the dz start
+ *  near 0 (no jump). Outer saturation: past the calibrated extreme pins to ±1.
+ *  Pure; used by both axes (the radial guard is applied on top in
+ *  applyCalibration). */
+export function normalizeAxis(
+  raw: number,
+  min: number,
+  max: number,
+  dz = CALIBRATION_DEADZONE,
+): number {
+  if (!Number.isFinite(raw) || !Number.isFinite(min) || !Number.isFinite(max)) return 0;
+  const span = max - min;
+  if (span <= 1e-6) return 0; // degenerate calibration → neutral, never NaN
+  const center = (min + max) / 2;
+  // Map to [-1,+1] about the calibrated centre, using each side's own
+  // half-span so an asymmetric stick still reaches ±1 on both ends.
+  const halfPos = max - center;
+  const halfNeg = center - min;
+  const v = Math.max(-1, Math.min(1, raw));
+  let n: number;
+  if (v >= center) {
+    n = halfPos > 1e-6 ? (v - center) / halfPos : 0;
+  } else {
+    n = halfNeg > 1e-6 ? (v - center) / halfNeg : 0;
+  }
+  n = Math.max(-1, Math.min(1, n));
+  // Per-axis deadzone + renormalize (same shape as applyDeadzone).
+  const abs = Math.abs(n);
+  if (abs < dz) return 0;
+  return Math.sign(n) * ((abs - dz) / (1 - dz));
+}
+
+/** Apply a full StickCalibration to a raw (x,y) pair, returning the normalized
+ *  pair. A RADIAL deadzone is applied first (magnitude < dz of the unit circle
+ *  → both axes 0) so diagonal rest-noise can't leak through the per-axis
+ *  guards; then each axis is normalized + per-axis deadzoned. When `cal` is
+ *  absent the caller should fall back to applyDeadzone (the un-calibrated
+ *  path). Returns {x, y} in the raw (un-inverted) frame — the read loop still
+ *  inverts Y so +1 = stick up. */
+export function applyCalibration(
+  rawX: number,
+  rawY: number,
+  cal: StickCalibration,
+): { x: number; y: number } {
+  const dz = Number.isFinite(cal.deadzone) ? Math.max(0, Math.min(0.9, cal.deadzone)) : CALIBRATION_DEADZONE;
+  // First normalize WITHOUT a per-axis deadzone so we can measure the true
+  // radial magnitude, then apply the radial gate, then the per-axis dz.
+  const nx = normalizeAxis(rawX, cal.minX, cal.maxX, 0);
+  const ny = normalizeAxis(rawY, cal.minY, cal.maxY, 0);
+  const mag = Math.hypot(nx, ny);
+  if (mag < dz) return { x: 0, y: 0 };
+  // Radial re-normalize: scale so magnitude `dz` maps to 0 and 1 stays 1,
+  // preserving the direction (the modern radial-deadzone formula).
+  const scaled = (mag - dz) / (1 - dz);
+  const k = mag > 1e-6 ? scaled / mag : 0;
+  return {
+    x: Math.max(-1, Math.min(1, nx * k)),
+    y: Math.max(-1, Math.min(1, ny * k)),
+  };
+}
+
 /** Pure helper — clamp + binary-threshold a value into a {0,1} gate
  *  level. Used for the trigger-as-CV path (lt/rt return the smooth
  *  0..1 value) but ALSO available so card unit tests can pin the
@@ -74,6 +251,85 @@ export function applyDeadzone(raw: number, dz = STICK_DEADZONE): number {
 export function triggerToCv(raw: number): number {
   if (!Number.isFinite(raw)) return 0;
   return Math.max(0, Math.min(1, raw));
+}
+
+// ---------------------------------------------------------------------------
+// CONTROL-REMAP DETECTION (broad button/control support — feasibility core).
+//
+// The Gamepad API has NO events — you can only POLL navigator.getGamepads()
+// each frame. So a "remap"/"learn" affordance (right-click a UI element → arm
+// "listening" → press/move the physical control you want bound) can't wait on
+// an event; it must DIFF consecutive polled snapshots and pick the control that
+// moved the most. This is the same arm-then-detect UX as MIDI-learn, minus the
+// event — implemented as a pure diff so it's unit-testable hardware-free.
+//
+// `detectChangedControl` is that pure primitive: given a previous + current raw
+// Gamepad reading, it returns the single physical control (an axis index or a
+// button index) whose change exceeds a threshold, ranked by magnitude — exactly
+// what an armed "press the control to bind" listener consumes. The card-side
+// binding store + per-output UI is the follow-up slice (see the PR body); this
+// ships the tested detection core the rest builds on.
+// ---------------------------------------------------------------------------
+
+/** A physical control on a gamepad: one analog axis, or one button. */
+export type PhysicalControl =
+  | { kind: 'axis'; index: number }
+  | { kind: 'button'; index: number };
+
+/** The minimal raw reading the detector diffs — a subset of the W3C Gamepad. */
+export interface RawGamepadReading {
+  axes: readonly number[];
+  buttons: readonly { value: number; pressed: boolean }[];
+}
+
+/** Default movement thresholds for "this control changed enough to be the one
+ *  the user is trying to bind". Axes need a big sweep (so resting drift / an
+ *  un-calibrated centre doesn't capture); buttons a clear press. */
+export const REMAP_AXIS_THRESHOLD = 0.5;
+export const REMAP_BUTTON_THRESHOLD = 0.5;
+
+/**
+ * Pure detector for an armed remap listener: compare a previous and current raw
+ * reading and return the SINGLE control that changed the most past the
+ * thresholds, or null if nothing moved enough. Axes rank by absolute delta;
+ * buttons by absolute value-delta. The largest-magnitude change across both
+ * wins so a deliberate full-deflection / firm press is picked over incidental
+ * jitter on another control. `prev === null` (first poll after arming) returns
+ * null — we need a baseline to diff against.
+ */
+export function detectChangedControl(
+  prev: RawGamepadReading | null,
+  cur: RawGamepadReading,
+  opts: { axisThreshold?: number; buttonThreshold?: number } = {},
+): PhysicalControl | null {
+  if (!prev) return null;
+  const axisTh = opts.axisThreshold ?? REMAP_AXIS_THRESHOLD;
+  const btnTh = opts.buttonThreshold ?? REMAP_BUTTON_THRESHOLD;
+  let best: PhysicalControl | null = null;
+  let bestMag = 0;
+  const nAxes = Math.min(prev.axes.length, cur.axes.length);
+  for (let i = 0; i < nAxes; i++) {
+    const a = cur.axes[i];
+    const b = prev.axes[i];
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    const d = Math.abs(a! - b!);
+    if (d >= axisTh && d > bestMag) {
+      bestMag = d;
+      best = { kind: 'axis', index: i };
+    }
+  }
+  const nBtns = Math.min(prev.buttons.length, cur.buttons.length);
+  for (let i = 0; i < nBtns; i++) {
+    const a = cur.buttons[i]?.value ?? 0;
+    const b = prev.buttons[i]?.value ?? 0;
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    const d = Math.abs(a - b);
+    if (d >= btnTh && d > bestMag) {
+      bestMag = d;
+      best = { kind: 'button', index: i };
+    }
+  }
+  return best;
 }
 
 /** Output ports in display order. Stick axes first (most-used), then
@@ -128,6 +384,21 @@ export interface GamepadSnapshot {
   id: string;
   /** Live values per output port. */
   values: Record<string, number>;
+  /** Raw (un-calibrated, un-inverted) left-stick axes on the most recent
+   *  poll — the card's calibration MODE folds these into its sweep. Distinct
+   *  from `values.lx/ly` (which are post-calibration + Y-inverted). */
+  rawLeftX: number;
+  rawLeftY: number;
+  /** Whether a left-stick calibration is currently active (read from
+   *  node.data on each poll). The card shows a "calibrated" badge + a "clear"
+   *  affordance when true. */
+  calibrated: boolean;
+}
+
+/** Structured, synced module state on `node.data`. Only the calibration record
+ *  so far; future remap bindings would live here too. */
+export interface GamepadData {
+  leftStickCalibration?: StickCalibration;
 }
 
 export const gamepadDef: AudioModuleDef = {
@@ -187,7 +458,26 @@ export const gamepadDef: AudioModuleDef = {
       connected: false,
       id: '',
       values: Object.fromEntries(OUTPUT_DEFS.map((o) => [o.id, 0])),
+      rawLeftX: 0,
+      rawLeftY: 0,
+      calibrated: false,
     };
+
+    /** Read the live (synced) left-stick calibration off node.data. Cheap —
+     *  reads the live patch proxy, no write. Returns undefined when no
+     *  calibration has been committed. */
+    function readCalibration(): StickCalibration | undefined {
+      const data = (livePatch.nodes[node.id]?.data ?? undefined) as GamepadData | undefined;
+      const c = data?.leftStickCalibration;
+      if (
+        c &&
+        Number.isFinite(c.minX) && Number.isFinite(c.maxX) &&
+        Number.isFinite(c.minY) && Number.isFinite(c.maxY)
+      ) {
+        return c;
+      }
+      return undefined;
+    }
 
     function readPadIndex(): number {
       const v = (node.params ?? {}).padIndex;
@@ -215,6 +505,8 @@ export const gamepadDef: AudioModuleDef = {
           // doesn't latch the last value.
           snapshot.connected = false;
           snapshot.id = '';
+          snapshot.rawLeftX = 0;
+          snapshot.rawLeftY = 0;
           for (const o of OUTPUT_DEFS) {
             sources[o.id]!.offset.setValueAtTime(0, ctx.currentTime);
             snapshot.values[o.id] = 0;
@@ -226,9 +518,30 @@ export const gamepadDef: AudioModuleDef = {
       snapshot.connected = true;
       snapshot.id = pad.id;
 
-      // Axes — apply deadzone, invert Y so +1 = stick UP.
-      const lx = applyDeadzone(pad.axes[0] ?? 0);
-      const ly = -applyDeadzone(pad.axes[1] ?? 0);
+      // Raw left-stick axes (spec frame: +X = right, +Y = down) — surfaced on
+      // the snapshot so the card's calibration sweep folds them in directly.
+      const rawLeftX = pad.axes[0] ?? 0;
+      const rawLeftY = pad.axes[1] ?? 0;
+      snapshot.rawLeftX = rawLeftX;
+      snapshot.rawLeftY = rawLeftY;
+
+      // Left stick — when a calibration is committed (node.data), map the raw
+      // axes through it (per-axis min/max normalize + radial deadzone); else
+      // the fixed-deadzone path. Invert Y so +1 = stick UP either way.
+      const cal = readCalibration();
+      snapshot.calibrated = !!cal;
+      let lx: number;
+      let ly: number;
+      if (cal) {
+        const c = applyCalibration(rawLeftX, rawLeftY, cal);
+        lx = c.x;
+        ly = -c.y;
+      } else {
+        lx = applyDeadzone(rawLeftX);
+        ly = -applyDeadzone(rawLeftY);
+      }
+      // Right stick keeps the fixed deadzone (calibration is left-stick-only,
+      // per the first deliverable).
       const rx = applyDeadzone(pad.axes[2] ?? 0);
       const ry = -applyDeadzone(pad.axes[3] ?? 0);
       // Triggers — pad.buttons[6/7].value gives the smooth 0..1

@@ -259,6 +259,113 @@ test.describe('GAMEPAD module', () => {
     await expect.poll(dotLeftPx, { timeout: 2000 }).toBeLessThan(22);
   });
 
+  test('calibrate left stick: sweep (simulated) → complete → locked range remaps to full ±1', async ({ page }) => {
+    // The first deliverable: enter calibration MODE, sweep the fake stick
+    // through a REDUCED range (a flight stick / worn pad that only reaches
+    // ±0.6), complete, and assert that AFTER calibration the same ±0.6 raw
+    // deflection now maps to (near) ±1 on lx — i.e. observed-max → full-max.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
+    await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
+    await page.waitForTimeout(150);
+
+    const card = page.locator('[data-testid="gamepad-card"]');
+    const readLx = () => page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __engine?: () => { readParam: (n: unknown, k: string) => unknown } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const eng = w.__engine?.();
+      const gp = w.__patch.nodes.gp;
+      if (!eng || !gp) return -99;
+      return (eng.readParam(gp, 'lx') as number | undefined) ?? -99;
+    });
+
+    // Baseline (un-calibrated): raw 0.6 → lx ≈ 0.56 (fixed-deadzone path), i.e.
+    // the stick can't reach +1 at its reduced extreme.
+    await updateFakeGamepad(page, { axes: [0.6, 0, 0, 0] });
+    await expect.poll(readLx, { timeout: 2000 }).toBeGreaterThan(0.4);
+    await expect.poll(readLx, { timeout: 2000 }).toBeLessThan(0.7);
+
+    // Enter calibration mode.
+    await card.getByTestId('gamepad-calibrate-start').click();
+    await expect(card.getByTestId('gamepad-calib-mode')).toBeVisible();
+    // "complete" starts disabled (no usable sweep yet).
+    await expect(card.getByTestId('gamepad-calibrate-complete')).toBeDisabled();
+
+    // Sweep the reduced range several times: hit each extreme on both axes.
+    const sweepPts: [number, number][] = [
+      [0.6, 0], [-0.6, 0], [0, 0.6], [0, -0.6],
+      [0.6, 0.6], [-0.6, -0.6], [0, 0],
+    ];
+    for (let rep = 0; rep < 2; rep++) {
+      for (const [x, y] of sweepPts) {
+        await updateFakeGamepad(page, { axes: [x, y, 0, 0] });
+        await page.waitForTimeout(40);
+      }
+    }
+    // Now the sweep is usable → "complete" enables.
+    await expect.poll(
+      () => card.getByTestId('gamepad-calibrate-complete').isEnabled(),
+      { timeout: 2000 },
+    ).toBe(true);
+
+    // Complete → mode exits, calibrated badge appears, range persisted to data.
+    await card.getByTestId('gamepad-calibrate-complete').click();
+    await expect(card.getByTestId('gamepad-calib-mode')).toBeHidden();
+    await expect(card.getByTestId('gamepad-calibrated')).toBeVisible();
+
+    // The calibration was written ONCE to node.data (single committed value).
+    const cal = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { leftStickCalibration?: unknown } }> };
+      };
+      return w.__patch.nodes.gp?.data?.leftStickCalibration ?? null;
+    });
+    expect(cal).not.toBeNull();
+
+    // AFTER calibration: the SAME raw 0.6 deflection now reaches (near) +1.
+    await updateFakeGamepad(page, { axes: [0.6, 0, 0, 0] });
+    await expect.poll(readLx, { timeout: 2000 }).toBeGreaterThan(0.9);
+    // And full-left raw -0.6 reaches (near) -1.
+    await updateFakeGamepad(page, { axes: [-0.6, 0, 0, 0] });
+    await expect.poll(readLx, { timeout: 2000 }).toBeLessThan(-0.9);
+    // Centre still reads ~0 (no snap-back drift).
+    await updateFakeGamepad(page, { axes: [0, 0, 0, 0] });
+    await expect.poll(readLx, { timeout: 2000 }).toBeCloseTo(0, 1);
+  });
+
+  test('clear calibration reverts the left stick to the fixed-deadzone path', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
+    await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
+    await page.waitForTimeout(150);
+    const card = page.locator('[data-testid="gamepad-card"]');
+
+    // Seed a calibration directly via node.data (the committed shape), then
+    // assert the clear affordance removes it.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      };
+      const gp = w.__patch.nodes.gp;
+      if (!gp.data) gp.data = {};
+      gp.data.leftStickCalibration = { minX: -0.6, maxX: 0.6, minY: -0.6, maxY: 0.6, deadzone: 0.1 };
+    });
+    await expect(card.getByTestId('gamepad-calibrated')).toBeVisible();
+    await card.getByTestId('gamepad-calibrate-clear').click();
+    await expect(card.getByTestId('gamepad-calibrated')).toBeHidden();
+    const cleared = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { leftStickCalibration?: unknown } }> };
+      };
+      return w.__patch.nodes.gp?.data?.leftStickCalibration ?? null;
+    });
+    expect(cleared).toBeNull();
+  });
+
   test('button press shows up as a gate (a-button)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
