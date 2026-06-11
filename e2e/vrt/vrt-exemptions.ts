@@ -634,6 +634,13 @@ export const STRICT_VRT_MODULES = new Set<string>([
  *  up CI capture lands the other platform's PNG. The exempted pair is
  *  SKIPPED at the test level rather than allowed to fail. */
 export const EXEMPT_BASELINE_PAIRS = new Set<string>([
+  // RINGBACK: darwin baseline (the static stereo-crush card — title + subtitle +
+  // L/R IN + L/R OUT handles + RATE/SIZE/FB/MIX knobs; no animated canvas)
+  // captured locally; linux baseline pending a `vrt-update.yml`
+  // workflow_dispatch on this branch. Functional coverage is ringback-core.test.ts
+  // (the crush DSP) + ringback.test.ts (def + factory) + the per-port sweep +
+  // the bespoke ringback.spec.ts (real VCO → stereo in → audible RMS at L/R out).
+  'linux/ringback',
   // OUTLINES (was CIRCLES): the card gained a SHAPE selector + ROTATION knob
   // (+ their CV input rows + small readouts), so the deterministic chrome
   // changed and the baseline was regenerated. The live COMBINE preview canvas
