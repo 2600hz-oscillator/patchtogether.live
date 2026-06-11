@@ -18,15 +18,19 @@ const SPEC_MODULES = import.meta.glob<Record<string, unknown>>(
 );
 
 /** Does this exported value look like a VfpgaSpec? Requires a string `id`,
- *  a string `docSlug`, and an `effect.outputs.vout1` (the minimal render
- *  graph). Helper exports that lack those are ignored. */
+ *  a string `docSlug`, and EITHER a hand-authored `effect.outputs.vout1`
+ *  (the legacy render graph) OR a `fabric.outputs.vout1` (the P&R'd bitstream —
+ *  design §2). Helper exports that lack those are ignored. */
 function looksLikeVfpgaSpec(v: unknown): v is VfpgaSpec {
   if (!v || typeof v !== 'object') return false;
   const o = v as Record<string, unknown>;
   if (typeof o.id !== 'string') return false;
   if (typeof o.docSlug !== 'string') return false;
   const effect = o.effect as { outputs?: { vout1?: unknown } } | undefined;
-  return !!effect && !!effect.outputs && typeof effect.outputs.vout1 === 'string';
+  const hasEffect = !!effect && !!effect.outputs && typeof effect.outputs.vout1 === 'string';
+  const fabric = o.fabric as { outputs?: { vout1?: unknown } } | undefined;
+  const hasFabric = !!fabric && !!fabric.outputs && typeof fabric.outputs.vout1 === 'string';
+  return hasEffect || hasFabric;
 }
 
 /** Collect every bundled VFPGA spec, deduped by id, sorted by id for a

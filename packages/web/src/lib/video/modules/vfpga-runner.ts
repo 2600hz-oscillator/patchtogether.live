@@ -55,7 +55,9 @@ import {
   VFPGA_PARAM_SLOTS,
   gateEvtParam,
   type VfpgaSpec,
+  type VfpgaEffect,
 } from '$lib/video/vfpga/types';
+import { fabricToEffect } from '$lib/video/vfpga/place-and-route';
 import { getVfpgaSpec, DEFAULT_VFPGA_ID, listVfpgaSpecs } from '$lib/video/vfpga/registry';
 import { effectiveCvValue, foldCvToUnipolar } from '$lib/video/toybox-cv-math';
 import { getCvInput, type CvInputs } from '$lib/video/toybox-cv-routes';
@@ -69,6 +71,16 @@ import {
 /** The synthetic CV param a cv input writes into (`cv1` → `cv1_val`, …). */
 function cvValParam(slot: number): string {
   return `cv${slot}_val`;
+}
+
+/** Resolve the render graph a spec runs: a fabric-described spec (design §2) is
+ *  place-and-routed into a VfpgaEffect; a legacy spec uses its hand-authored
+ *  `effect` directly. Throws if a spec declares neither (the registry's
+ *  looksLikeVfpgaSpec guard already requires one, so this is a defensive net). */
+function resolveSpecEffect(s: VfpgaSpec): VfpgaEffect {
+  if (s.fabric) return fabricToEffect(s.fabric);
+  if (s.effect) return s.effect;
+  throw new Error(`vfpga spec "${s.id}" has neither a fabric nor an effect`);
 }
 
 /** node.data shape this module owns. */
@@ -195,8 +207,13 @@ export const vfpgaRunnerDef: VideoModuleDef = {
     }
 
     function buildEffect(s: VfpgaSpec): CompiledEffect {
+      // FABRIC FRONT-STEP (design §4.1): a fabric-described spec is place-and-
+      // routed into the SAME VfpgaEffect shape the legacy hand-authored `effect`
+      // has, so the GL code below is unchanged. A legacy effect-only spec
+      // (smpte-bars) uses its `effect` directly.
+      const effect = resolveSpecEffect(s);
       const fbos = new Map<string, { fbo: WebGLFramebuffer; texture: WebGLTexture }>();
-      for (const f of s.effect.fbos ?? []) {
+      for (const f of effect.fbos ?? []) {
         if (f.kind === 'float' && ctx.createFloatFbo) {
           const { fbo, texture } = ctx.createFloatFbo();
           fbos.set(f.id, { fbo, texture });
@@ -205,7 +222,7 @@ export const vfpgaRunnerDef: VideoModuleDef = {
           fbos.set(f.id, { fbo, texture });
         }
       }
-      const passes: CompiledPass[] = s.effect.passes.map((pass) => {
+      const passes: CompiledPass[] = effect.passes.map((pass) => {
         const program = ctx.compileFragment(pass.frag);
         const samplers = (pass.inputs ?? []).map((inp) => ({
           source: inp.source,
@@ -221,8 +238,8 @@ export const vfpgaRunnerDef: VideoModuleDef = {
       return {
         passes,
         fbos,
-        vout1Id: s.effect.outputs.vout1,
-        vout2Id: s.effect.outputs.vout2 ?? null,
+        vout1Id: effect.outputs.vout1,
+        vout2Id: effect.outputs.vout2 ?? null,
       };
     }
 

@@ -13,9 +13,21 @@ import {
   VFPGA_GATE_PORTS,
   VFPGA_PARAM_SLOTS,
   VFPGA_VIDEO_IN_PORTS,
+  type VfpgaEffect,
+  type VfpgaSpec,
 } from './types';
+import { fabricToEffect, validateFabric } from './place-and-route';
 
 const SPECS = listVfpgaSpecs();
+
+/** Resolve the render graph a spec runs: a fabric spec is P&R'd to a
+ *  VfpgaEffect (the same shape the legacy hand-authored `effect` already has),
+ *  so the downstream effect-shape assertions cover BOTH authoring paths. */
+function resolveEffect(spec: VfpgaSpec): VfpgaEffect {
+  if (spec.fabric) return fabricToEffect(spec.fabric);
+  if (spec.effect) return spec.effect;
+  throw new Error(`spec "${spec.id}" has neither a fabric nor an effect`);
+}
 
 describe('VFPGA registry', () => {
   it('collects at least the smpte-bars spec', () => {
@@ -44,6 +56,20 @@ describe('VFPGA registry', () => {
 });
 
 describe.each(SPECS.map((s) => [s.id, s] as const))('VFPGA spec: %s', (_id, spec) => {
+  it('declares EXACTLY ONE of fabric / effect (the authoring surface)', () => {
+    const hasFabric = !!spec.fabric;
+    const hasEffect = !!spec.effect;
+    expect(hasFabric || hasEffect, 'a spec needs a fabric or an effect').toBe(true);
+    // Both is allowed (a fabric spec MAY keep a legacy effect as a reference),
+    // but at least one must be present + resolve.
+    expect(() => resolveEffect(spec)).not.toThrow();
+  });
+
+  it('a fabric spec passes the §2.1 validation gate (GL-free)', () => {
+    if (!spec.fabric) return; // legacy effect-only spec — nothing to validate here
+    expect(validateFabric(spec.fabric)).toEqual([]);
+  });
+
   it('has the required docs fields (generic, no trademarked names)', () => {
     expect(spec.id).toMatch(/^[a-z0-9-]+$/); // generic kebab id
     expect(spec.name.length).toBeGreaterThan(0);
@@ -88,21 +114,26 @@ describe.each(SPECS.map((s) => [s.id, s] as const))('VFPGA spec: %s', (_id, spec
   });
 
   it('has at least one pass and a vout1 output that resolves to output or a declared fbo', () => {
-    expect(spec.effect.passes.length).toBeGreaterThanOrEqual(1);
-    const fboIds = new Set((spec.effect.fbos ?? []).map((f) => f.id));
+    const effect = resolveEffect(spec);
+    expect(effect.passes.length).toBeGreaterThanOrEqual(1);
+    const fboIds = new Set((effect.fbos ?? []).map((f) => f.id));
     const valid = (id: string) => id === 'output' || fboIds.has(id);
-    expect(valid(spec.effect.outputs.vout1)).toBe(true);
-    if (spec.effect.outputs.vout2) expect(valid(spec.effect.outputs.vout2)).toBe(true);
+    expect(valid(effect.outputs.vout1)).toBe(true);
+    if (effect.outputs.vout2) expect(valid(effect.outputs.vout2)).toBe(true);
     // videoOut count must match whether vout2 is declared.
-    expect(spec.videoOut).toBe(spec.effect.outputs.vout2 ? 2 : 1);
+    expect(spec.videoOut).toBe(effect.outputs.vout2 ? 2 : 1);
   });
 
   it('every pass target + sampler source resolves to a host video-in port or a declared fbo', () => {
-    const fboIds = new Set((spec.effect.fbos ?? []).map((f) => f.id));
+    const effect = resolveEffect(spec);
+    const fboIds = new Set((effect.fbos ?? []).map((f) => f.id));
     const vinIds = new Set(VFPGA_VIDEO_IN_PORTS as readonly string[]);
-    for (const pass of spec.effect.passes) {
+    for (const pass of effect.passes) {
       expect(pass.target === 'output' || fboIds.has(pass.target)).toBe(true);
       for (const inp of pass.inputs ?? []) {
+        // The P&R may emit the `__unpatched__` sentinel for an undriven cell
+        // input (the factory binds 1×1 black for it) — that's a valid source.
+        if (inp.source === '__unpatched__') continue;
         const ok = vinIds.has(inp.source) || fboIds.has(inp.source);
         expect(ok, `pass input source "${inp.source}" is a host vin port or a declared fbo`).toBe(true);
         // A vinN sampler is only allowed if its index is within videoIn.
@@ -115,7 +146,8 @@ describe.each(SPECS.map((s) => [s.id, s] as const))('VFPGA spec: %s', (_id, spec
   });
 
   it('shader source declares the shared #version 300 es fragment contract', () => {
-    for (const pass of spec.effect.passes) {
+    const effect = resolveEffect(spec);
+    for (const pass of effect.passes) {
       expect(pass.frag).toContain('#version 300 es');
       expect(pass.frag).toContain('out vec4 outColor');
       expect(pass.frag).toContain('in vec2 vUv');
