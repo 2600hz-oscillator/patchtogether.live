@@ -272,9 +272,11 @@
           <span class="cv-name">{role.label}</span>
           <div class="cv-knobs">
             <Knob value={cvInputFor(role.slot).scale} min={-1} max={1} defaultValue={DEFAULT_INPUT_SCALE}
-              label="SCALE" curve="linear" onchange={setScale(role.slot)} />
+              label="SCALE" curve="linear" onchange={setScale(role.slot)}
+              moduleId={id} paramId={`${VFPGA_CV_PORTS[role.slot - 1]}:scale`} />
             <Knob value={cvInputFor(role.slot).offset} min={0} max={1} defaultValue={DEFAULT_INPUT_OFFSET}
-              label="OFFSET" curve="linear" onchange={setOffset(role.slot)} />
+              label="OFFSET" curve="linear" onchange={setOffset(role.slot)}
+              moduleId={id} paramId={`${VFPGA_CV_PORTS[role.slot - 1]}:offset`} />
           </div>
           <canvas class="cv-scope" use:regScope={role.slot} data-testid={`vfpga-scope-${role.slot}`}></canvas>
         </div>
