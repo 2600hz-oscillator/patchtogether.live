@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, sep } from 'node:path';
 import { minimatch } from 'minimatch';
 
-import { WEBGL_HEAVY_GLOBS } from '../e2e/webgl-heavy-globs';
+import { WEBGL_HEAVY_GLOBS, WEBGL_HEAVY_EXCLUDE } from '../e2e/webgl-heavy-globs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(__dirname, '..');
@@ -81,9 +81,10 @@ export const AUDIO_WEBGL_MODULE_DEFS = [
  *  proxy, or canvas-pixel asserts on a video card not in the heavy set). Edit
  *  here when such a spec is added; the runner's count-gate flags drift. */
 export const WEBGL_LEAKER_SPECS = [
-  // OffscreenCanvas worker proxy (Fix-E Phase 1) — genuinely GPU-path.
-  'render-worker-acidwarp.spec.ts',
-  'render-worker-toybox.spec.ts',
+  // NOTE: render-worker-acidwarp/render-worker-toybox were Pass-B leakers but
+  // Phase 2 (webgl-suite-optimization §7-1) added `**/render-worker-*.spec.ts`
+  // to WEBGL_HEAVY_GLOBS, so they now run in Pass A (the heavy lane). They are
+  // intentionally NOT listed here to avoid double-running them in two passes.
   // Audio-domain WebGL module specs not in the heavy globs.
   'cube.spec.ts',
   'foxy.spec.ts',
@@ -153,7 +154,11 @@ export function resolveHeavyWebglSpecs(): string[] {
   // `e2e/tests/<name>.spec.ts`, so a plain minimatch matches directly (the `**`
   // absorbs the leading `e2e/tests/`). This is the exact semantics Playwright's
   // testMatch/testIgnore use against these globs.
-  const matched = all.filter((p) => WEBGL_HEAVY_GLOBS.some((g) => minimatch(p, g)));
+  const matched = all.filter(
+    (p) =>
+      WEBGL_HEAVY_GLOBS.some((g) => minimatch(p, g)) &&
+      !WEBGL_HEAVY_EXCLUDE.some((g) => minimatch(p, g)),
+  );
   return matched.sort();
 }
 

@@ -9,7 +9,14 @@ import { defineConfig, devices } from '@playwright/test';
 // THE single source of truth for the WebGL-heavy spec set — exported so the
 // WebGL-attestation hash/coverage tooling reads the SAME literal Playwright
 // uses (adversarial-review fix V4). See e2e/webgl-heavy-globs.ts.
-import { WEBGL_HEAVY_GLOBS } from './webgl-heavy-globs';
+import { resolveEffectiveHeavySpecGlobs } from './webgl-heavy-globs';
+
+// The EFFECTIVE heavy spec set = heavy globs MINUS the RE-BINned exclusions,
+// resolved to concrete `**/<file>.spec.ts` patterns (see webgl-heavy-globs.ts
+// for why concrete files rather than the raw globs — testMatch/testIgnore have
+// no native subtraction). This is exactly the set the serialized e2e-video lane
+// runs and the sharded matrix ignores.
+const EFFECTIVE_HEAVY_GLOBS = resolveEffectiveHeavySpecGlobs();
 
 // E2E_USE_PREVIEW=1 swaps the dev server for `vite preview` so we can run the
 // @smoke subset against the prod-built bundle locally. Catches regressions
@@ -128,9 +135,9 @@ export default defineConfig({
       // live in their own projects below and are unaffected.
       testIgnore:
         WEBGL_HEAVY_MODE === 'exclude'
-          ? ['**/camera-input.spec.ts', '**/audio-in.spec.ts', ...WEBGL_HEAVY_GLOBS]
+          ? ['**/camera-input.spec.ts', '**/audio-in.spec.ts', ...EFFECTIVE_HEAVY_GLOBS]
           : ['**/camera-input.spec.ts', '**/audio-in.spec.ts'],
-      ...(WEBGL_HEAVY_MODE === 'only' ? { testMatch: [...WEBGL_HEAVY_GLOBS] } : {}),
+      ...(WEBGL_HEAVY_MODE === 'only' ? { testMatch: [...EFFECTIVE_HEAVY_GLOBS] } : {}),
       use: {
         ...devices['Desktop Chrome'],
         launchOptions: {

@@ -6,6 +6,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { mandleblotDef, jsZoomFromKnob, MANDLEBLOT_DEFAULTS } from './mandleblot';
+import type { VideoEngineContext } from '$lib/video/engine';
+import type { ModuleNode } from '$lib/graph/types';
 
 describe('mandleblotDef shape', () => {
   it('is a video-domain source module', () => {
@@ -120,6 +122,75 @@ describe('jsZoomFromKnob — log-mapped 1×..1e6×', () => {
       const z = jsZoomFromKnob(k);
       expect(z).toBeGreaterThan(prev);
       prev = z;
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PARAM-MUTATION WIRING — downgraded from mandleblot.spec.ts test 2 ("zoom
+// param mutation propagates to the engine without errors"), webgl-suite-
+// optimization §2/§7-3. The e2e only wrote node.params.zoom into the store and
+// read it BACK from the store — it never touched the engine, so it was a pure
+// store round-trip with no GL/engine assertion (a downgrade target). This drives
+// the REAL mandleblotDef factory's setParam hot-path (what the CV bridge calls)
+// and asserts the live param + the post-curve zoomFactor the card reads, with no
+// render and no GPU boot — a regression in setParam / jsZoomFromKnob wiring fails
+// this fast unit test. (The single GL PIXEL gate — variance>5 + brightFrac>10%
+// — stays in mandleblot.spec test 1, the only pixel backstop for this VRT-exempt
+// module per plan §6.)
+// ---------------------------------------------------------------------------
+
+function makeFakeGl(): WebGL2RenderingContext {
+  return new Proxy(
+    {},
+    {
+      get: (_t, prop) => {
+        const p = String(prop);
+        if (p.startsWith('create') || p === 'getUniformLocation') return () => ({});
+        if (p === 'checkFramebufferStatus') return () => 0x8cd5;
+        if (p === 'getProgramParameter' || p === 'getShaderParameter') return () => true;
+        if (p === 'getExtension') return () => null;
+        return () => 0;
+      },
+    },
+  ) as unknown as WebGL2RenderingContext;
+}
+
+function makeCtx(): VideoEngineContext {
+  return {
+    gl: makeFakeGl(),
+    res: { width: 1024, height: 768 },
+    compileFragment: () => ({}) as WebGLProgram,
+    createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+    createFloatFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture, isFloat: false, width: 1024, height: 768 }),
+    drawFullscreenQuad: () => undefined,
+  };
+}
+
+describe('MANDLEBLOT factory setParam propagates to the live engine param', () => {
+  it('setParam(zoom/iterations/color_cycle) updates the readback + post-curve zoomFactor', () => {
+    const node = {
+      id: 'mb', type: 'mandleblot', domain: 'video', position: { x: 0, y: 0 }, params: {},
+    } as unknown as ModuleNode;
+    const handle = mandleblotDef.factory(makeCtx(), node);
+    try {
+      // Defaults before any drive (zoom default 0.2 → factor jsZoomFromKnob(0.2)).
+      expect(handle.readParam?.('zoom')).toBe(0.2);
+      expect(handle.read?.('zoomFactor')).toBeCloseTo(jsZoomFromKnob(0.2), 5);
+
+      // Drive zoom 0.2 → 0.7 (the e2e's sweep), iterations + color_cycle too.
+      handle.setParam?.('zoom', 0.7);
+      handle.setParam?.('iterations', 250);
+      handle.setParam?.('color_cycle', 2);
+
+      expect(handle.readParam?.('zoom'), 'zoom propagated to engine param').toBe(0.7);
+      expect(handle.readParam?.('iterations')).toBe(250);
+      expect(handle.readParam?.('color_cycle')).toBe(2);
+      // The post-curve zoomFactor the card reads moves with the knob.
+      expect(handle.read?.('zoomFactor'), 'zoomFactor reflects jsZoomFromKnob(0.7)')
+        .toBeCloseTo(jsZoomFromKnob(0.7), 5);
+    } finally {
+      handle.dispose();
     }
   });
 });

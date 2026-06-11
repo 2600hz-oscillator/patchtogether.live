@@ -117,58 +117,13 @@ test.describe('MANDLEBLOT — Mandelbrot fractal generator', () => {
     expect(errors, `no console / page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('zoom param mutation propagates to the engine without errors', async ({ page }) => {
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
-    });
-
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    await spawnPatch(page, [
-      { id: 'mb', type: 'mandleblot', position: { x: 200, y: 100 }, domain: 'video' },
-    ]);
-    await expect(page.locator('[data-testid="mandleblot-card"]')).toHaveCount(1);
-
-    // Sweep zoom 0.2 → 0.7 (which maps log-style 10× → ~50,000×). Drive
-    // via direct patch-store mutation (the same path the CV bridge uses
-    // after audio CV writes through).
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const n = w.__patch.nodes['mb'];
-        if (!n) return;
-        n.params.zoom = 0.7;
-        n.params.iterations = 250;
-        n.params.color_cycle = 2;
-      });
-    });
-
-    // Let the engine render a couple of frames at the new params.
-    await page.waitForTimeout(300);
-
-    const params = await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-      };
-      const n = w.__patch.nodes['mb'];
-      return n
-        ? {
-            zoom: n.params.zoom,
-            iterations: n.params.iterations,
-            color_cycle: n.params.color_cycle,
-          }
-        : null;
-    });
-
-    expect(params?.zoom).toBe(0.7);
-    expect(params?.iterations).toBe(250);
-    expect(params?.color_cycle).toBe(2);
-    expect(errors, 'no console / page errors during zoom sweep').toEqual([]);
-  });
+  // NOTE (Phase 2 lean, webgl-suite-optimization §2/§7-3): the old test 2
+  // ("zoom param mutation propagates to the engine without errors") was a pure
+  // store round-trip (wrote node.params.zoom, read it BACK from the store; never
+  // touched the engine) → DOWNGRADED to mandleblot.test.ts
+  // ("MANDLEBLOT factory setParam propagates to the live engine param"), which
+  // drives the REAL factory setParam + reads the post-curve zoomFactor (a
+  // stronger, GPU-free check). The single GL PIXEL gate above (variance>5 +
+  // brightFrac>10%) stays here — it is the ONLY pixel backstop for this
+  // VRT-exempt module (plan §6).
 });

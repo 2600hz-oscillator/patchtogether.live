@@ -15,6 +15,8 @@ import {
   b3ntb0xMirrorGateTick,
   makeB3ntb0xMirrorGateState,
 } from './b3ntb0x';
+import type { VideoEngineContext } from '$lib/video/engine';
+import type { ModuleNode } from '$lib/graph/types';
 import {
   rgbToYiq,
   yiqToRgb,
@@ -357,5 +359,71 @@ describe('B3NTB0X module def shape', () => {
   it('TBC/Lock defaults to rock-steady (1) so a fresh patch is stable', () => {
     const tbc = b3ntb0xDef.params.find((p) => p.id === 'tbc')!;
     expect(tbc.defaultValue).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PARAM-MUTATION WIRING — downgraded from b3ntb0x.spec.ts test 3 ("CV-bending
+// knobs mutate params via the patch store"), webgl-suite-optimization §1/§2/§7-3.
+// The e2e only wrote node.params into the store and read them BACK from the store
+// — it never touched the engine (a pure store round-trip, no GL/engine
+// assertion). This drives the REAL b3ntb0xDef factory's setParam hot-path (what
+// the CV bridge calls each frame) and reads it back via readParam, with no render
+// and no GPU boot, so a broken setParam wiring fails this fast unit test. (b3ntb0x
+// is VRT-EXEMPT + per-port-exempt: t1 — structured non-black decode — and t2 —
+// bend-mangles-output, the 4-pass NTSC proof — stay in b3ntb0x.spec as the ONLY
+// GL pixel gates, per plan §1/§6.)
+// ---------------------------------------------------------------------------
+
+function makeFakeGl(): WebGL2RenderingContext {
+  return new Proxy(
+    {},
+    {
+      get: (_t, prop) => {
+        const p = String(prop);
+        if (p.startsWith('create') || p === 'getUniformLocation') return () => ({});
+        if (p === 'checkFramebufferStatus') return () => 0x8cd5;
+        if (p === 'getProgramParameter' || p === 'getShaderParameter') return () => true;
+        if (p === 'getExtension') return () => null;
+        return () => 0;
+      },
+    },
+  ) as unknown as WebGL2RenderingContext;
+}
+
+function makeCtx(): VideoEngineContext {
+  return {
+    gl: makeFakeGl(),
+    res: { width: 1024, height: 768 },
+    compileFragment: () => ({}) as WebGLProgram,
+    createFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture }),
+    createFloatFbo: () => ({ fbo: {} as WebGLFramebuffer, texture: {} as WebGLTexture, isFloat: false, width: 1024, height: 768 }),
+    drawFullscreenQuad: () => undefined,
+  };
+}
+
+describe('B3NTB0X factory setParam propagates to the live engine param', () => {
+  it('setParam(sync_crush/enhance/bend_a) updates the engine readback', () => {
+    const node = {
+      id: 'bb', type: 'b3ntb0x', domain: 'video', position: { x: 0, y: 0 }, params: {},
+    } as unknown as ModuleNode;
+    const handle = b3ntb0xDef.factory(makeCtx(), node);
+    try {
+      // Defaults before any drive (sync_crush default 1, enhance 0, bend_a 0).
+      expect(handle.readParam?.('sync_crush')).toBe(1);
+      expect(handle.readParam?.('enhance')).toBe(0);
+      expect(handle.readParam?.('bend_a')).toBe(0);
+
+      // The e2e's exact drive (CV-bend knobs).
+      handle.setParam?.('sync_crush', 1.7);
+      handle.setParam?.('enhance', 0.6);
+      handle.setParam?.('bend_a', -0.5);
+
+      expect(handle.readParam?.('sync_crush'), 'sync_crush propagated').toBe(1.7);
+      expect(handle.readParam?.('enhance'), 'enhance propagated').toBe(0.6);
+      expect(handle.readParam?.('bend_a'), 'bend_a propagated').toBe(-0.5);
+    } finally {
+      handle.dispose();
+    }
   });
 });

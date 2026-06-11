@@ -125,44 +125,54 @@ async function setSingleLayer(page: Page, kind: string, contentId: string): Prom
 
 const NEW_GENS = ['growing-mountain', 'flow-field', 'interference', 'spiral-bloom'];
 const NEW_FRAGS = ['frag-scanline-blinds', 'frag-datamosh-wave', 'frag-zoom-warp', 'frag-edge-glow'];
-// The NEW single-pass presets (the multi-buffer growing-peak is covered in
-// toybox-shadertoy.spec.ts). cat-feedback renders even with no user media.
-const NEW_PRESETS = ['mountain-weather', 'glitch-tv', 'spiral-feedback', 'wave-interference', 'cat-feedback'];
+// The NEW single-pass presets ('mountain-weather'…'cat-feedback') were a `.each`
+// render loop here — PRUNED in Phase 2 (webgl-suite-optimization §2/§7-2). Their
+// validity + "reaches OUTPUT renders not black" is unit-owned by
+// toybox-presets.test.ts (declares the exact 12-preset list + per-preset combine
+// topo-sort-to-OUTPUT), and the in-card preset-apply UI by toybox-presets.spec.
+// The remaining GEN + FRAG cases each uniquely prove a NEW shader COMPILES + DRAWS
+// through the real engine — they stay, but are now BATCHED multiple ids per BOOT
+// (the per-case fresh boot was the cost driver). Each id is asserted with the id
+// in the failure message so one bad shader can't hide in the shared boot.
 
 test.describe('TOYBOX new content — GEN shaders render', () => {
-  for (const id of NEW_GENS) {
-    test(`GEN "${id}" renders non-black`, async ({ page }) => {
-      test.setTimeout(180_000);
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
-      page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  // BATCH-per-boot: ONE TOYBOX boot, every NEW GEN swapped onto layer 0 in turn.
+  test('every new GEN shader compiles + renders non-black', async ({ page }) => {
+    test.setTimeout(180_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-      await spawnToybox(page);
+    await spawnToybox(page);
+
+    for (const id of NEW_GENS) {
       await setSingleLayer(page, 'gen', id);
       await freezeAndWaitLit(page, 2.0, 0.05);
-
       const s = await sampleCanvas(page);
-      expect(s.lit, `${id} renders non-black`).toBeGreaterThan(s.total * 0.05);
-      expect(errors.filter((e) => !e.includes('AudioContext')), `${id}: no errors`).toEqual([]);
-    });
-  }
+      // PER-ID assertion (id in the message) so a single bad shader is named.
+      expect(s.lit, `GEN "${id}" renders non-black`).toBeGreaterThan(s.total * 0.05);
+    }
+
+    expect(errors.filter((e) => !e.includes('AudioContext')), 'no GLSL/console errors across all GENs').toEqual([]);
+  });
 });
 
 test.describe('TOYBOX new content — FRAG shaders transform the layer below', () => {
-  for (const id of NEW_FRAGS) {
-    test(`FRAG "${id}" transforms the layer below`, async ({ page }) => {
-      test.setTimeout(180_000);
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
-      page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  // BATCH-per-boot: ONE TOYBOX boot, every NEW FRAG layered over a worley base.
+  test('every new FRAG shader compiles + transforms the layer below', async ({ page }) => {
+    test.setTimeout(180_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-      await spawnToybox(page);
+    await spawnToybox(page);
 
-      // Base: worley GEN on layer 0, OUTPUT = layer 0.
-      await setSingleLayer(page, 'gen', 'worley-cells');
-      await freezeAndWaitLit(page, 2.0, 0.1);
-      const below = await sampleCanvas(page);
+    // Base: worley GEN on layer 0, OUTPUT = layer 0. Capture its signature once.
+    await setSingleLayer(page, 'gen', 'worley-cells');
+    await freezeAndWaitLit(page, 2.0, 0.1);
+    const below = await sampleCanvas(page);
 
+    for (const id of NEW_FRAGS) {
       // Add the FRAG on layer 1 reading layer 0 as iChannel0; OUTPUT = layer 1.
       await page.evaluate(
         ({ id }) => {
@@ -198,37 +208,11 @@ test.describe('TOYBOX new content — FRAG shaders transform the layer below', (
       await freezeAndWaitLit(page, 2.0, 0.05);
       const fragged = await sampleCanvas(page);
 
-      expect(fragged.lit, `${id} renders non-black`).toBeGreaterThan(fragged.total * 0.05);
-      expect(fragged.sig, `${id} visibly transforms the layer below`).not.toEqual(below.sig);
-      expect(errors.filter((e) => !e.includes('AudioContext')), `${id}: no errors`).toEqual([]);
-    });
-  }
-});
+      // PER-ID assertions (id in the message).
+      expect(fragged.lit, `FRAG "${id}" renders non-black`).toBeGreaterThan(fragged.total * 0.05);
+      expect(fragged.sig, `FRAG "${id}" visibly transforms the layer below`).not.toEqual(below.sig);
+    }
 
-test.describe('TOYBOX new content — presets load + render', () => {
-  for (const id of NEW_PRESETS) {
-    test(`preset "${id}" loads + renders non-black`, async ({ page }) => {
-      test.setTimeout(180_000);
-      const errors: string[] = [];
-      page.on('pageerror', (e) => errors.push(e.message));
-      page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-      await spawnToybox(page);
-      await page.waitForFunction(
-        () => typeof (globalThis as unknown as STGlobal).__toyboxLoadPreset === 'function',
-        undefined,
-        { timeout: 15_000 },
-      );
-      await page.evaluate(async ({ id }) => {
-        const w = globalThis as unknown as STGlobal;
-        w.__toyboxFreeze?.();
-        await w.__toyboxLoadPreset?.(id);
-      }, { id });
-
-      await freezeAndWaitLit(page, 2.0, 0.04);
-      const s = await sampleCanvas(page);
-      expect(s.lit, `${id} renders non-black`).toBeGreaterThan(s.total * 0.04);
-      expect(errors.filter((e) => !e.includes('AudioContext')), `${id}: no errors`).toEqual([]);
-    });
-  }
+    expect(errors.filter((e) => !e.includes('AudioContext')), 'no GLSL/console errors across all FRAGs').toEqual([]);
+  });
 });
