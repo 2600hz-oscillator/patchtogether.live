@@ -1,0 +1,69 @@
+// packages/web/src/lib/video/vfpga/cells/cells.test.ts
+//
+// Cell-library tests — runs over EVERY glob-collected cell so a new cells/<op>.ts
+// auto-enrols. Asserts the kernel<->metadata contract the P&R + validation gate
+// rely on: a (type, op) lookup; the kernel declares the shared frag contract,
+// one sampler per input, one float uniform per knob. GL-free (no compile — the
+// browser e2e asserts GLSL compiles).
+
+import { describe, expect, it } from 'vitest';
+import { getCell, hasCell, listCells } from './index';
+import { cellInputUniform } from './types';
+
+const CELLS = listCells();
+
+describe('cell library registry', () => {
+  it('collects at least the 3 P0 CLB cells', () => {
+    expect(CELLS.length).toBeGreaterThanOrEqual(3);
+    expect(hasCell('clb', 'passthru')).toBe(true);
+    expect(hasCell('clb', 'mix')).toBe(true);
+    expect(hasCell('clb', 'threshold')).toBe(true);
+  });
+
+  it('does not have a cell for the not-yet-implemented tile types', () => {
+    expect(hasCell('dsp', 'conv3x3')).toBe(false);
+    expect(hasCell('bram', 'linebuf')).toBe(false);
+    expect(hasCell('lut16', 'lut')).toBe(false);
+  });
+
+  it('(type, op) keys are unique', () => {
+    const keys = CELLS.map((c) => `${c.type}:${c.op}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('listCells is sorted by type:op (deterministic docs order)', () => {
+    const keys = CELLS.map((c) => `${c.type}:${c.op}`);
+    expect(keys).toEqual([...keys].sort());
+  });
+});
+
+describe.each(CELLS.map((c) => [`${c.type}:${c.op}`, c] as const))('cell %s', (_k, cell) => {
+  const frag = cell.kernel({
+    uTexFor: (i) => cellInputUniform(i),
+    uniformFor: (k) => cell.knobs.find((kb) => kb.name === k)?.uniform ?? `u_${k}`,
+  });
+
+  it('the kernel declares the shared #version 300 es fragment contract', () => {
+    expect(frag).toContain('#version 300 es');
+    expect(frag).toContain('in vec2 vUv');
+    expect(frag).toContain('out vec4 outColor');
+  });
+
+  it('declares a sampler2D per logical input', () => {
+    for (const input of cell.inputs) {
+      expect(frag).toContain(`uniform sampler2D ${cellInputUniform(input)}`);
+    }
+  });
+
+  it('declares a float uniform per knob + sane knob metadata', () => {
+    for (const knob of cell.knobs) {
+      expect(knob.uniform.length).toBeGreaterThan(0);
+      expect(Number.isFinite(knob.defaultValue)).toBe(true);
+      expect(frag).toContain(`uniform float ${knob.uniform}`);
+    }
+  });
+
+  it('getCell round-trips by (type, op)', () => {
+    expect(getCell(cell.type, cell.op)).toBe(cell);
+  });
+});

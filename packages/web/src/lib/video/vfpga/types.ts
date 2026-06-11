@@ -117,6 +117,120 @@ export interface VfpgaEffect {
   outputs: { vout1: string; vout2?: string };
 }
 
+// ----------------------------------------------------------------------
+// FABRIC CONFIGURATION ("the bitstream") — the FPGA-authentic authoring
+// surface (design §2). An author describes a GRID of typed TILES wired by a
+// routing NETLIST; a pure place-and-route step (`vfpga/place-and-route.ts`)
+// lowers the fabric into the exact same `VfpgaEffect` shape the factory's
+// `buildEffect` already consumes — `effect.passes[]` becomes the *output* of
+// P&R, not the authoring surface. `effect` stays as a legacy escape hatch
+// (smpte-bars keeps it). See `.myrobots/plans/vfpga-fpga-authentic-architecture.md`.
+// ----------------------------------------------------------------------
+
+/** A fabric tile TYPE (the silicon primitive it models, design §1.1):
+ *  - `clb`     — generic per-pixel ALU cell (parameterised kernel; the P0 cells).
+ *  - `dsp`     — heavier MAC/convolve cell (3×3 conv, demod). [kernels: later phase]
+ *  - `bram`    — on-chip line/frame memory (line buffer, frame store). [later phase]
+ *  - `reg`     — clocked flip-flop: a ping-pong FBO holding LAST frame's value;
+ *               reading it via `<id>:prev` is the clocked (previous-frame) read
+ *               that legally breaks feedback cycles. [swap is P1; type defined now]
+ *  - `lut16`   — literal 4-input bitwise truth table (16-texel INIT). [later phase]
+ *  - `iob_in`  — fixed fabric-edge INPUT block: maps a host port (IIN/CIN/GIN)
+ *               into the fabric so nets can source it.
+ *  - `iob_out` — fixed fabric-edge OUTPUT block: a fabric net sink that drives a
+ *               host video output (OUT1/OUT2). */
+export type VfpgaTileType =
+  | 'clb'
+  | 'dsp'
+  | 'bram'
+  | 'reg'
+  | 'lut16'
+  | 'iob_in'
+  | 'iob_out';
+
+/** A per-config-knob binding: routes a tile-config knob to a host param slot
+ *  (p1..p8), a CV role, or a gate role, surfaced to the kernel as `uniform`.
+ *  This is the foundation's uniform-binding mechanism, sourced from a tile's
+ *  config instead of a pass's `uniforms[]`. */
+export interface VfpgaTileBind {
+  /** The config knob name this binding drives (e.g. 'amount', 't'). */
+  knob: string;
+  /** Bind source: a param slot, a CV role, or a gate role. */
+  to: 'p' | 'cv' | 'gate';
+  /** Host slot index (1-based): p1..p8 / cv1..cv4 / g1..g4. */
+  slot?: number;
+  /** The GLSL uniform the bound value is written into in the tile's kernel. */
+  uniform: string;
+}
+
+/** One configurable fabric tile — a node in the routing graph. Its `type`
+ *  selects the kernel family and `config.op` selects the specific cell within
+ *  that family (P&R instantiates the cell's GLSL template with this config). */
+export interface VfpgaTile {
+  /** Unique tile id; the net-endpoint name nets reference (`from`/`to`). */
+  id: string;
+  /** Which silicon primitive this tile models. */
+  type: VfpgaTileType;
+  /** Floorplan placement (for the card viz + P&R hints). Optional → auto-place. */
+  pos?: { row: number; col: number };
+  config: {
+    /** Selects the kernel WITHIN the type (the cell `op` name, e.g. 'mix'). For
+     *  IOB tiles `op` names the host port: iob_in → 'IIN1'..'IIN4' / 'CIN1'.. /
+     *  'GIN1'.. ; iob_out → 'OUT1' | 'OUT2'. */
+    op?: string;
+    /** Static bitstream constants (kernel knobs not bound to p/cv/gate). */
+    consts?: Record<string, number>;
+    /** LUT16: 16-bit truth table (per selected bit-plane). [later phase] */
+    lutInit?: number;
+    /** LUT16 / bitmask: which channel bit-planes participate. [later phase] */
+    bitPlanes?: number[];
+    /** DSP: convolution kernel taps. [later phase] */
+    taps?: number[];
+    /** BRAM: line-buffer depth (rows). [later phase] */
+    rows?: number;
+    /** reg: update every N frames (clock divider). [later phase] */
+    clockDiv?: number;
+    /** Tile FBO precision (default 'rgba8'; 'float' → createFloatFbo). */
+    kind?: 'rgba8' | 'float';
+    /** Per-knob bindings to host p/cv/gate (uniform-binding mechanism). */
+    bind?: VfpgaTileBind[];
+  };
+  /** Logical input names this tile's kernel reads (a sampler each), giving nets
+   *  stable endpoints to target (`<tileId>:<inputName>`). A 0-input generator/
+   *  IOB-in tile omits this. */
+  inputs?: string[];
+}
+
+/** One routed net — the switch-matrix wire from a source to a destination.
+ *  The binding IS the switch; there is no literal switchbox object. */
+export interface VfpgaNet {
+  /** Source: a tile's output (`"<tileId>"`), a host IOB-in port
+   *  (`"IIN1".."IIN4"` / `"CIN1".."CIN4"` / `"GIN1".."GIN4"`), or the CLOCKED
+   *  back-buffer read of a register tile (`"<regId>:prev"` — previous frame,
+   *  which legally breaks a feedback cycle). A plain `"<regId>"` read (no
+   *  `:prev`) participating in a cycle is a combinational loop → P&R rejects. */
+  from: string;
+  /** Destination: a tile's named input (`"<tileId>:<inputName>"`) or a host
+   *  video output (`"OUT1" | "OUT2"`). */
+  to: string;
+}
+
+/** The fabric configuration — the FPGA bitstream the host loads + P&R compiles. */
+export interface VfpgaFabric {
+  /** Floorplan dimensions (for the card viz + auto-placement). */
+  grid: { rows: number; cols: number };
+  /** The configurable tiles. */
+  tiles: VfpgaTile[];
+  /** The routing netlist (the switch-matrix). */
+  nets: VfpgaNet[];
+  /** Which fabric endpoint each module video OUTPUT samples — a tile id (whose
+   *  output FBO that vout reads) or a host `OUT1`/`OUT2` IOB-out tile id. */
+  outputs: { vout1: string; vout2?: string };
+  /** Resource caps (authentic "doesn't fit" budget + a CI-walltime guardrail):
+   *  max DSP tiles, max BRAM rows, max compiled passes. */
+  budget?: { dsp?: number; bramRows?: number; passes?: number };
+}
+
 export interface VfpgaSpec {
   /** Stable unique id (generic, no trademarked names). Doubles as the
    *  "load preset…" option value + the docs slug key. */
@@ -138,8 +252,14 @@ export interface VfpgaSpec {
   gateRoles?: VfpgaGateRole[];
   /** Param slots mapped onto the host p1..p8 bank. */
   params?: VfpgaParamSpec[];
-  /** The compiled render-graph. */
-  effect: VfpgaEffect;
+  /** NEW (design §2): the fabric configuration. When present, the factory P&R's
+   *  it into a `VfpgaEffect` (P1). The fabric-described path is the catalog goal. */
+  fabric?: VfpgaFabric;
+  /** LEGACY escape hatch (design §4): a hand-authored render-graph. Kept
+   *  first-class for `smpte-bars` + edge cases; deprecated for NEW catalog
+   *  VFPGAs (those are fabric-described). Exactly ONE of `fabric`/`effect` must
+   *  be present (P&R supplies `effect` from `fabric` at build time). */
+  effect?: VfpgaEffect;
 }
 
 // ----------------------------------------------------------------------
@@ -158,6 +278,36 @@ export const VFPGA_GATE_PORTS = ['g1', 'g2', 'g3', 'g4'] as const;
 export const VFPGA_VIDEO_OUT_PORTS = ['vout1', 'vout2'] as const;
 /** Host generic param slots. */
 export const VFPGA_PARAM_SLOTS = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'] as const;
+
+// ----------------------------------------------------------------------
+// FABRIC IOB superset — the fixed fabric-edge ports a net can source/sink
+// (design §1.1). They map 1:1 onto the host superset above: IIN←vin, CIN←cv
+// (post attenuverter), GIN←gate (edge-detected), OUT→vout. A net `from`/`to`
+// referencing an IOB name must be within these sets (validation §2.1).
+// ----------------------------------------------------------------------
+
+/** Fabric IOB-in VIDEO ports (←vin1..vin4). */
+export const VFPGA_IOB_IIN = ['IIN1', 'IIN2', 'IIN3', 'IIN4'] as const;
+/** Fabric IOB-in CV ports (←cv1..cv4, post attenuverter). */
+export const VFPGA_IOB_CIN = ['CIN1', 'CIN2', 'CIN3', 'CIN4'] as const;
+/** Fabric IOB-in GATE ports (←g1..g4, edge-detected). */
+export const VFPGA_IOB_GIN = ['GIN1', 'GIN2', 'GIN3', 'GIN4'] as const;
+/** Fabric IOB-out VIDEO ports (→vout1/vout2). */
+export const VFPGA_IOB_OUT = ['OUT1', 'OUT2'] as const;
+
+/** Every fabric IOB-in port name (the union a `net.from` IOB source must be in). */
+export const VFPGA_IOB_IN_PORTS: readonly string[] = [
+  ...VFPGA_IOB_IIN,
+  ...VFPGA_IOB_CIN,
+  ...VFPGA_IOB_GIN,
+];
+
+/** Map a 1-based IOB-in VIDEO port to its backing host vin port (IIN1→vin1). */
+export const iobIinToVin = (port: string): string | null =>
+  /^IIN[1-4]$/.test(port) ? `vin${port.slice(3)}` : null;
+/** Map a 1-based IOB-out VIDEO port to its host vout port (OUT1→vout1). */
+export const iobOutToVout = (port: string): string | null =>
+  /^OUT[1-2]$/.test(port) ? `vout${port.slice(3)}` : null;
 
 /** The synthetic per-gate param a gate input's raw sample is written into
  *  (`g1` → `g1_evt`, …). The factory edge-detects these. */
