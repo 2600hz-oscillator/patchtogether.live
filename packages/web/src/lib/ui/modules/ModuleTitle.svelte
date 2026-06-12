@@ -33,7 +33,8 @@
   // click as a drag-start.
 
   import ModuleNameLabel from '$lib/ui/ModuleNameLabel.svelte';
-  import { patch } from '$lib/graph/store';
+  import { patch, ydoc } from '$lib/graph/store';
+  import { resolveControlColor } from '$lib/graph/control-color';
   import type { ModuleNode } from '$lib/graph/types';
 
   interface Props {
@@ -63,9 +64,43 @@
     if (fromData) return fromData;
     return patch.nodes[id] as ModuleNode | undefined;
   });
+
+  // Re-derive the colour dot on any Yjs update so an assign / reset / undo /
+  // remote change reflects immediately (the dot has no other reactive trigger —
+  // a nested node.data.controlColor write isn't deeply tracked through the
+  // SyncedStore proxy by a plain $derived read). Mirrors the cards' cardVersion
+  // pump, scoped to just the dot.
+  let docVersion = $state(0);
+  $effect(() => {
+    const h = () => { docVersion = docVersion + 1; };
+    ydoc.on('update', h);
+    return () => ydoc.off('update', h);
+  });
+
+  // CONTROL COLOUR dot — a subtle swatch by the title showing this module's
+  // resolved control colour, but ONLY once the user has EXPLICITLY assigned one
+  // (data.controlColor). The auto per-instance default applies to every module,
+  // so showing it always would put a dot on every card; we keep it subtle by
+  // surfacing it only where the user actually set it. (Plan Decision D.) Reads
+  // through the live patch node so a remote / undo colour change reflects.
+  let controlColor = $derived.by<string | null>(() => {
+    void docVersion;
+    const live = patch.nodes[id] as ModuleNode | undefined;
+    const assigned = (live?.data as { controlColor?: unknown } | undefined)?.controlColor;
+    if (typeof assigned !== 'string') return null;
+    return resolveControlColor(live); // normalized/quantized resolved colour
+  });
 </script>
 
 {#if inline}
+  {#if controlColor}
+    <span
+      class="control-color-dot"
+      data-testid="control-color-dot"
+      style:background={`#${controlColor}`}
+      title="Control colour"
+    ></span>
+  {/if}
   {#if resolvedNode}
     <ModuleNameLabel node={resolvedNode} {defaultLabel} />
   {:else}
@@ -73,6 +108,14 @@
   {/if}
 {:else}
   <header class="title">
+    {#if controlColor}
+      <span
+        class="control-color-dot"
+        data-testid="control-color-dot"
+        style:background={`#${controlColor}`}
+        title="Control colour"
+      ></span>
+    {/if}
     {#if resolvedNode}
       <ModuleNameLabel node={resolvedNode} {defaultLabel} />
     {:else}
@@ -114,5 +157,17 @@
   .fallback {
     font: inherit;
     color: inherit;
+  }
+  /* Subtle control-colour swatch by the title (shown only when the user has
+     explicitly assigned a colour). A small inline dot — purposely understated. */
+  .control-color-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+    border: 1px solid rgba(0, 0, 0, 0.35);
+    flex: none;
   }
 </style>

@@ -8,6 +8,14 @@
 // source node's live param directly. A lock/unlock toggle freezes or frees
 // the grouped boxes for rearranging (the surface is a mini-graph of itself).
 //
+// CONTROL COLOUR (passthrough): each proxied knob shows a thin COLOUR STRIPE
+// above it = the SOURCE module's "control colour" (right-click a module →
+// "Assign control color"; unassigned modules get a stable auto colour). The
+// colour identifies the source at a glance, so the SAME control shows the SAME
+// colour everywhere it appears. The surface NEVER stores the colour — it reads
+// the source module's current colour live (passthrough), the same way it reads
+// the source param's live value. See $lib/graph/control-color.ts.
+//
 // Meta domain: no engine binding, no ports, no params. All state lives on
 // node.data (see $lib/graph/control-surface.ts).
 //

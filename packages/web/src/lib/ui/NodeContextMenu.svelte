@@ -1,9 +1,19 @@
 <script lang="ts">
-  // Right-click context menu for module nodes. Four actions:
+  // Right-click context menu for module nodes. Actions:
   //   Docs         — open this module's in-app docs page in a new tab
+  //   Assign control color ▸ — set this module's "control colour" tag (the
+  //                  colour that PASSES THROUGH onto any Control Surface /
+  //                  ElectraControl stripe + the Electra preset). A submenu of
+  //                  curated swatches + a custom hex picker + "Reset to default".
   //   Duplicate    — clone the module with all params/data into a new node
   //   Unpatch all  — keep node, remove every edge touching it
   //   Delete       — remove node + every edge touching it
+
+  import {
+    CONTROL_COLOR_PALETTE,
+    quantizeToRgb565,
+    normalizeHex,
+  } from '$lib/graph/control-color';
 
   interface Props {
     open: boolean;
@@ -48,6 +58,16 @@
     canSeeSnesOutputDef?: boolean;
     /** SNES9X — open the per-ROM CV/GATE output-definition panel. */
     onseesnesoutputdef?: () => void;
+    /** Control colour — the module's CURRENT resolved colour (6-digit hex, no
+     *  `#`), shown as the menu's preview swatch. */
+    currentControlColor?: string | null;
+    /** Whether the user has EXPLICITLY assigned a colour (vs. the auto default)
+     *  — gates the "Reset to default" entry. */
+    hasCustomControlColor?: boolean;
+    /** Set this module's control colour (6-digit hex, no `#`). */
+    onsetcontrolcolor?: (hex: string) => void;
+    /** Clear the module's control colour → revert to the auto default. */
+    onresetcontrolcolor?: () => void;
     onclose: () => void;
   }
 
@@ -71,8 +91,44 @@
     canSaveGroup = false,
     canSeeSnesOutputDef = false,
     onseesnesoutputdef,
+    currentControlColor = null,
+    hasCustomControlColor = false,
+    onsetcontrolcolor,
+    onresetcontrolcolor,
     onclose,
   }: Props = $props();
+
+  // ── Control-colour submenu state ──
+  let colorSubmenuOpen = $state(false);
+  // Collapse the submenu whenever the whole menu closes, so the NEXT open starts
+  // fresh (the component instance is reused via bind:open — without this reset a
+  // second open would TOGGLE the still-open submenu shut).
+  $effect(() => {
+    if (!open) colorSubmenuOpen = false;
+  });
+  // The custom <input type=color> value, seeded from the current colour. Kept
+  // as a `#rrggbb` string (the native input's format).
+  let customHex = $state('#FFFFFF');
+  // The 565-quantized PREVIEW of the custom hex — what the hardware renders.
+  let customPreview = $derived(quantizeToRgb565(normalizeHex(customHex) ?? 'FFFFFF'));
+
+  function openColorSubmenu() {
+    customHex = `#${currentControlColor ?? 'FFFFFF'}`;
+    colorSubmenuOpen = !colorSubmenuOpen;
+  }
+  function pickColor(hex: string) {
+    onsetcontrolcolor?.(hex);
+    onclose();
+  }
+  function pickCustomColor() {
+    const norm = normalizeHex(customHex);
+    if (norm) onsetcontrolcolor?.(quantizeToRgb565(norm));
+    onclose();
+  }
+  function pickResetColor() {
+    onresetcontrolcolor?.();
+    onclose();
+  }
 
   // Window-level Escape handler — context menus traditionally don't take focus,
   // and the user expects Esc to dismiss regardless of where focus actually sits.
@@ -216,6 +272,81 @@
       </button>
       <div class="ctx-sep" role="presentation"></div>
     {:else}
+      {#if onsetcontrolcolor}
+        <!-- Assign control color ▸ — sets the module's tag colour that passes
+             through onto Control Surface / ElectraControl stripes + Electra. -->
+        <button
+          class="ctx-item ctx-has-submenu"
+          onclick={openColorSubmenu}
+          role="menuitem"
+          aria-haspopup="true"
+          aria-expanded={colorSubmenuOpen}
+          data-testid="ctx-assign-control-color"
+        >
+          <span
+            class="ctx-color-swatch"
+            style:background={`#${currentControlColor ?? 'FFFFFF'}`}
+            aria-hidden="true"
+          ></span>
+          Assign control color
+          <span class="ctx-caret" aria-hidden="true">{colorSubmenuOpen ? '▾' : '▸'}</span>
+        </button>
+        {#if colorSubmenuOpen}
+          <div class="ctx-color-panel" data-testid="ctx-color-panel" role="group" aria-label="Control colour">
+            <div class="ctx-swatches">
+              {#each CONTROL_COLOR_PALETTE as sw (sw.hex)}
+                <button
+                  type="button"
+                  class="ctx-swatch-btn"
+                  class:selected={currentControlColor === sw.hex}
+                  style:background={`#${sw.hex}`}
+                  title={sw.name}
+                  aria-label={sw.name}
+                  data-testid={`ctx-color-swatch-${sw.hex}`}
+                  onclick={() => pickColor(sw.hex)}
+                ></button>
+              {/each}
+            </div>
+            <div class="ctx-custom-row">
+              <label class="ctx-custom-label" title="Custom colour">
+                <input
+                  type="color"
+                  class="ctx-color-input nodrag"
+                  bind:value={customHex}
+                  data-testid="ctx-color-custom-input"
+                  aria-label="Custom control colour"
+                />
+                <span
+                  class="ctx-custom-preview"
+                  style:background={`#${customPreview}`}
+                  title={`Hardware (RGB565): #${customPreview}`}
+                  aria-hidden="true"
+                ></span>
+                <span class="ctx-custom-hex">#{customPreview}</span>
+              </label>
+              <button
+                type="button"
+                class="ctx-custom-apply"
+                onclick={pickCustomColor}
+                data-testid="ctx-color-custom-apply"
+              >
+                Apply
+              </button>
+            </div>
+            {#if hasCustomControlColor}
+              <button
+                type="button"
+                class="ctx-item ctx-reset"
+                onclick={pickResetColor}
+                role="menuitem"
+                data-testid="ctx-color-reset"
+              >
+                Reset to default
+              </button>
+            {/if}
+          </div>
+        {/if}
+      {/if}
       <button class="ctx-item" onclick={pickDuplicate} role="menuitem">
         Duplicate
       </button>
@@ -289,5 +420,109 @@
     height: 1px;
     background: #404652;
     margin: 4px 0;
+  }
+  /* ── Control-colour submenu ── */
+  .ctx-has-submenu {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ctx-color-swatch {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.4);
+    flex: none;
+  }
+  .ctx-caret {
+    margin-left: auto;
+    color: var(--text-dim);
+    font-size: 0.7rem;
+  }
+  .ctx-color-panel {
+    padding: 6px 12px 8px;
+    border-bottom: 1px solid #2a2f3a;
+  }
+  .ctx-swatches {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 5px;
+    margin-bottom: 8px;
+  }
+  .ctx-swatch-btn {
+    width: 100%;
+    aspect-ratio: 1;
+    min-width: 18px;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    padding: 0;
+  }
+  .ctx-swatch-btn:hover,
+  .ctx-swatch-btn:focus-visible {
+    outline: 2px solid var(--accent, #60a5fa);
+    outline-offset: 1px;
+  }
+  .ctx-swatch-btn.selected {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+  }
+  .ctx-custom-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .ctx-custom-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1;
+    cursor: pointer;
+  }
+  .ctx-color-input {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid #404652;
+    border-radius: 4px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .ctx-custom-preview {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.4);
+    flex: none;
+  }
+  .ctx-custom-hex {
+    font-size: 0.65rem;
+    font-family: ui-monospace, monospace;
+    color: var(--text-dim);
+  }
+  .ctx-custom-apply {
+    font-size: 0.7rem;
+    padding: 3px 10px;
+    border-radius: 4px;
+    border: 1px solid #404652;
+    background: rgba(96, 165, 250, 0.12);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .ctx-custom-apply:hover {
+    background: rgba(96, 165, 250, 0.22);
+  }
+  .ctx-reset {
+    padding: 4px 0 0;
+    color: var(--text-dim);
+    font-size: 0.78rem;
+  }
+  .ctx-reset:hover,
+  .ctx-reset:focus-visible {
+    background: transparent;
+    color: var(--text);
   }
 </style>

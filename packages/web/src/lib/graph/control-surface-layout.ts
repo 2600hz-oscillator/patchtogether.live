@@ -39,7 +39,8 @@
 import type { BindingGroup } from '$lib/graph/control-surface';
 
 // ── KNOB CELL GRID (mirrors `.cs-group-body` + `.cs-knob` in the card CSS) ──
-// Each knob cell stacks: a DIAL SLOT (the 36px dial + room for its overhanging
+// Each knob cell stacks: a COLOUR STRIPE (the source module's passthrough
+// control colour), a DIAL SLOT (the 36px dial + room for its overhanging
 // "CC n" MIDI badge), then the (ellipsized) param-name LABEL row, then the ✎
 // rename-button row. The button row is reserved even when LOCKED (button
 // hidden) so the box height doesn't jump on lock/unlock.
@@ -48,8 +49,9 @@ export const KNOB_CELL_W = 76;
 /** Knobs per row — the FIXED grid column count (`repeat(2, …)`). */
 export const KNOBS_PER_ROW = 2;
 /** Height of one knob-grid row (px) — `grid-auto-rows` on `.cs-group-body`:
- *  dial-slot(48) + label(16) + rename-button(20) + internal slack(4). */
-export const KNOB_ROW_H = 88;
+ *  colour-stripe(4) + stripe-gap(2) + dial-slot(48) + label(16) +
+ *  rename-button(20) + internal slack(4). */
+export const KNOB_ROW_H = 94;
 /** Gap between cells in the grid, both axes (px) — `.cs-group-body` `gap`. */
 export const KNOB_GRID_GAP = 8;
 

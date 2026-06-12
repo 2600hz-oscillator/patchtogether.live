@@ -18,6 +18,11 @@
   //
   // Modeled on GroupExposedControls.svelte (same proxied-Knob + drag-layout
   // pattern), generalized from group-children to arbitrary pointers.
+  //
+  // CONTROL COLOUR (passthrough): a thin colour stripe above each proxied knob
+  // shows the SOURCE module's control colour (resolveControlColor) — a LIVE read
+  // of the source, NOT a stored copy. It sits right beside the live VALUE read
+  // (resolveSurfaceParam), the same passthrough pattern. See control-color.ts.
 
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
@@ -46,6 +51,7 @@
     unlockedCanvasSize,
   } from '$lib/graph/control-surface-layout';
   import { resolveSurfaceParam, pruneSurfaceDangling } from '$lib/graph/control-surface-params';
+  import { resolveControlColor } from '$lib/graph/control-color';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -110,6 +116,10 @@
   interface RenderGroup {
     moduleId: string;
     label: string;
+    /** The SOURCE module's resolved control colour (6-digit hex), read LIVE as
+     *  PASSTHROUGH — NOT stored on the surface. Drives the stripe above each of
+     *  this group's knobs (same colour everywhere this source appears). */
+    color: string;
     controls: RenderControl[];
   }
 
@@ -139,7 +149,10 @@
         });
       }
       if (controls.length === 0) continue;
-      out.push({ moduleId: g.moduleId, label: sourceLabel(g.moduleId), controls });
+      // LIVE read of the source module's control colour (passthrough) — re-runs
+      // through cardVersion on any source-color change, exactly like the values.
+      const color = resolveControlColor(sourceNode);
+      out.push({ moduleId: g.moduleId, label: sourceLabel(g.moduleId), color, controls });
     }
     return out;
   });
@@ -314,6 +327,15 @@
                 onpointerdown={(e) => e.stopPropagation()}
                 title={`${c.label} — right-click for “Remove from ${surfaceTitle}”`}
               >
+                <!-- PASSTHROUGH colour stripe: the SOURCE module's live control
+                     colour (resolveControlColor), so a glance identifies which
+                     source each knob comes from. Not a stored copy. -->
+                <div
+                  class="cs-knob-stripe"
+                  data-testid={`control-surface-stripe-${g.moduleId}-${c.paramId}`}
+                  style:background={`#${g.color}`}
+                  aria-hidden="true"
+                ></div>
                 <Knob
                   value={readParam(g.moduleId, c.paramId, c.def)}
                   min={c.def.min}
@@ -483,11 +505,21 @@
     touch-action: none;
     width: var(--cs-cell-w);
     display: grid;
-    grid-template-rows: var(--cs-dial-h) auto auto;
+    /* colour-stripe(4) then dial-slot, label, rename rows. The stripe row +
+       its row-gap are budgeted into KNOB_ROW_H (control-surface-layout.ts). */
+    grid-template-rows: 4px var(--cs-dial-h) auto auto;
     justify-items: center;
     align-content: start;
     row-gap: 2px;
     overflow: hidden;
+  }
+  /* PASSTHROUGH colour stripe — the source module's live control colour sits
+     above the knob, so the surface reads "what's coming from what" at a glance.
+     The background colour is set inline from resolveControlColor(source). */
+  .cs-knob-stripe {
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
   }
   /* The Knob unit (dial + label + badge) lives in the dial slot. We hide the
      Knob's OWN flow `.label` and render the name in the surface's dedicated

@@ -15,6 +15,11 @@
   // Modeled on ControlSurfaceCard.svelte (the cardVersion ydoc pump, the live
   // read/write through resolveSurfaceParam, the inline ✎ rename) — but with NO
   // drag/flow geometry (it does NOT import control-surface-layout.ts).
+  //
+  // CONTROL COLOUR (passthrough): each filled slot shows a thin colour stripe =
+  // the SOURCE module's control colour (resolveControlColor), a LIVE read of the
+  // source (not a stored copy). The same colour is threaded onto the Electra One
+  // hardware at flash time (electra/host.ts). See control-color.ts.
 
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
@@ -32,6 +37,7 @@
     ELECTRA_BANKS,
   } from '$lib/graph/electra-control';
   import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
+  import { resolveControlColor } from '$lib/graph/control-color';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -74,6 +80,9 @@
     /** The user-set custom name (empty when none) — seeds the rename input. */
     customName: string;
     def: ParamDef | null;
+    /** The SOURCE module's resolved control colour (6-digit hex), read LIVE as
+     *  PASSTHROUGH (null on an empty slot). Drives the stripe above the knob. */
+    color: string | null;
   }
   interface BankView {
     label: string;
@@ -96,6 +105,7 @@
           let def: ParamDef | null = null;
           let label = '';
           let customName = '';
+          let color: string | null = null;
           if (b) {
             const sourceNode = patch.nodes[b.moduleId] as ModuleNode | undefined;
             const resolved = sourceNode ? resolveSurfaceParam(sourceNode, b.paramId) : null;
@@ -104,6 +114,8 @@
               customName = typeof b.name === 'string' ? b.name.trim() : '';
               const baseLabel = resolved.def.label ?? b.paramId;
               label = customName.length > 0 ? customName : baseLabel;
+              // LIVE read of the source module's control colour (passthrough).
+              color = resolveControlColor(sourceNode);
             }
           }
           cells.push({
@@ -115,6 +127,7 @@
             label,
             customName,
             def,
+            color,
           });
         }
         return cells;
@@ -192,6 +205,15 @@
                 onpointerdown={(e) => e.stopPropagation()}
               >
                 {#if c.def && c.moduleId && c.paramId}
+                  <!-- PASSTHROUGH colour stripe: the SOURCE module's live control
+                       colour (resolveControlColor), so a glance identifies which
+                       source drives each slot. Not a stored copy. -->
+                  <div
+                    class="ec-slot-stripe"
+                    data-testid={`electra-control-stripe-${c.row}-${c.knob}`}
+                    style:background={`#${c.color}`}
+                    aria-hidden="true"
+                  ></div>
                   <Knob
                     value={readParam(c.moduleId, c.paramId, c.def)}
                     min={c.def.min}
@@ -303,6 +325,14 @@
     min-width: 48px;
     min-height: 62px;
     touch-action: none;
+  }
+  /* PASSTHROUGH colour stripe — the source module's live control colour, above
+     the knob. Background colour set inline from resolveControlColor(source). */
+  .ec-slot-stripe {
+    width: 80%;
+    height: 4px;
+    border-radius: 2px;
+    margin-bottom: 2px;
   }
   /* Empty slot: a dim, inert dial-shaped placeholder so the fixed grid reads
      as a physical control surface (which knob drives what) even when empty. */

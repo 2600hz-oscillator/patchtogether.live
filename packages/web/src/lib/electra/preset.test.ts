@@ -131,6 +131,45 @@ describe('generatePreset — CONTROL page control naming', () => {
   });
 });
 
+describe('generatePreset — CONTROL page control colour (source passthrough)', () => {
+  it("emits the binding's resolved SOURCE colour on the matching control", () => {
+    const { preset } = generatePreset(
+      baseInput({
+        surfaceBindings: [
+          { moduleId: 'osc1', paramId: 'freq', color: 'F45C51' }, // red
+          { moduleId: 'osc1', paramId: 'level', color: 'F45C51' },
+          { moduleId: 'flt1', paramId: 'cutoff', color: '529DEC' }, // blue
+          { moduleId: 'flt1', paramId: 'mode', color: '529DEC' },
+        ],
+      }),
+    );
+    const page1 = preset.controls.filter((c) => c.pageId === PAGE_CONTROL);
+    expect(page1.map((c) => c.color)).toEqual(['F45C51', 'F45C51', '529DEC', '529DEC']);
+  });
+
+  it('falls back to the page default colour when a binding has no colour', () => {
+    const { preset } = generatePreset(baseInput()); // baseInput sets no colours
+    const page1 = preset.controls.filter((c) => c.pageId === PAGE_CONTROL);
+    // PAGE_COLOR[PAGE_CONTROL] is the blue page accent (the historical default).
+    expect(page1.every((c) => c.color === '529DEC')).toBe(true);
+  });
+
+  it('a BUTTON binding also carries the source colour', () => {
+    const { preset } = generatePreset(
+      baseInput({
+        surfaceBindings: [
+          { moduleId: 'osc1', paramId: 'freq', controlType: 'button', momentary: true, color: '7ED957' },
+          { moduleId: 'osc1', paramId: 'level', controlType: 'button', color: 'B06FE0' }, // toggle
+        ],
+        resolveParamDef: () => null, // buttons survive a null def
+      }),
+    );
+    const page1 = preset.controls.filter((c) => c.pageId === PAGE_CONTROL);
+    expect(page1.map((c) => c.type)).toEqual(['pad', 'pad']);
+    expect(page1.map((c) => c.color)).toEqual(['7ED957', 'B06FE0']);
+  });
+});
+
 describe('generatePreset — pages + devices', () => {
   it('emits version 2, three pages, two devices', () => {
     const { preset } = generatePreset(baseInput());

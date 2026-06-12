@@ -66,6 +66,13 @@ export interface SurfaceBinding {
   /** For controlType 'button': momentary (held) vs toggle (latched). Absent on a
    *  button defaults to toggle (the safer latched representation). */
   momentary?: boolean;
+  /** OPTIONAL accent colour as a 6-digit hex (e.g. 'F45C51'), RESOLVED FROM THE
+   *  SOURCE MODULE at build time (host.ts buildLiveGenInput → resolveControlColor)
+   *  — this is the source's "control colour" PASSTHROUGH onto the hardware. When
+   *  present, the emitted Electra control carries it as `c.color`; when absent it
+   *  falls back to the page default. Nothing is stored on the Electra node — the
+   *  colour is re-resolved each time the preset is regenerated. */
+  color?: string;
 }
 
 /** Minimal ParamDef the generator needs (a subset of graph/types ParamDef). */
@@ -251,7 +258,7 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
         const note = alloc.nextNote();
         controls.push({
           id: nextControlId(), pageId: PAGE_CONTROL, controlSetId: csId, potId,
-          type: 'pad', mode: 'momentary', name: fallbackName(),
+          type: 'pad', mode: 'momentary', name: fallbackName(), color: b.color,
           values: [{ message: { deviceId: DEVICE_PLAY, type: 'note', parameterNumber: note, onValue: 127, offValue: 0 } }],
         });
         allocations.push({
@@ -262,7 +269,7 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
         const cc = alloc.nextCc();
         controls.push({
           id: nextControlId(), pageId: PAGE_CONTROL, controlSetId: csId, potId,
-          type: 'pad', mode: 'toggle', name: fallbackName(),
+          type: 'pad', mode: 'toggle', name: fallbackName(), color: b.color,
           values: [{ message: { deviceId: DEVICE_CTRL, type: 'cc7', parameterNumber: cc, min: 0, max: 1, onValue: 127, offValue: 0 } }],
         });
         allocations.push({
@@ -307,6 +314,7 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
       potId,
       type: isDiscrete ? 'list' : 'fader',
       name,
+      color: b.color,
       inputs: [{ potId, valueId: 'value' }],
       values: [value],
     });
@@ -552,6 +560,10 @@ export function generatePreset(input: PresetGenInput): GeneratedPreset {
     c.name = clampName(c.name);
     if (!c.bounds && c.potId) c.bounds = boundsForPotSet(c.potId, c.controlSetId);
     if (c.visible === undefined) c.visible = true;
+    // Colour precedence: an explicit per-control colour (page-1 surface bindings
+    // carry the SOURCE module's resolved control colour as PASSTHROUGH — set at
+    // the push sites above from `b.color`) WINS; otherwise fall back to the page
+    // accent, then white. The device converts the 24-bit hex → RGB565 itself.
     if (c.color === undefined) c.color = PAGE_COLOR[c.pageId] ?? 'FFFFFF';
     for (const v of c.values) {
       // Each value's `id` must match the input's `valueId` ('value') or the pot
