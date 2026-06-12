@@ -29,6 +29,19 @@
 // user spawns the module under a non-default sampleRate context we'll
 // pitch-shift gracefully (chipmunk DOOM); a proper resampler is a
 // follow-up.
+//
+// LOUDNESS — fixed makeup gain (the −42 dB fix):
+//
+// The C mixer (i_pcmgen.c `int32_t out = accum >> 6;`) divides the 8-bit
+// SFX sum by 64 "for 8-channel headroom" before clamping to s16. So a
+// SINGLE SFX at full volume peaks at only ~254/32768 ≈ −42 dBFS — DOOM has
+// been ~40 dB too quiet since day one. After the s16→f32 convert that lone
+// SFX peak is ≈ 0.00775 in float. A fixed makeup of MAKEUP=24 lifts it to
+// ≈ 0.186 ≈ −14.6 dBFS: punchy for a single shot, while still leaving room
+// for the soft limiter to absorb loud firefights. This is SEPARATE from the
+// user's `audioGain` param (this._gain, 0..2 default 1) — that knob trims on
+// top of the makeup; the makeup itself is fixed.
+const MAKEUP = 24;
 
 class DoomPcmProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -86,7 +99,11 @@ class DoomPcmProcessor extends AudioWorkletProcessor {
       if (this._read === this._write) {
         ch0[i] = 0;
       } else {
-        ch0[i] = this._ring[this._read] * this._gain;
+        // Apply the fixed MAKEUP gain + the user's audioGain (this._gain),
+        // then SOFT-saturate with tanh: ~linear at low levels (transparent
+        // for 1–2 simultaneous SFX) and smoothly rolling toward ±1 for a loud
+        // firefight, so the makeup never hard-clips. Underrun stays a clean 0.
+        ch0[i] = Math.tanh(this._ring[this._read] * MAKEUP * this._gain);
         this._read = (this._read + 1) % this._ringSize;
       }
     }
