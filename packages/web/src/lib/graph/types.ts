@@ -277,6 +277,18 @@ export interface ModuleNode {
   domain: Domain; // 'audio' for all Phase 1 modules
   position: { x: number; y: number };
   params: Record<string, number>;
+  /**
+   * Per-node persistent state (Yjs-synced). Open `Record<string, unknown>`
+   * because each module owns its own data shape. A few cross-cutting keys the
+   * platform reads on ANY node:
+   *   - `name?: string`         — the editable display name (ModuleNameLabel).
+   *   - `controlColor?: string` — this module's "control colour" tag, a 6-digit
+   *     uppercase hex (e.g. `'F45C51'`). Read LIVE as PASSTHROUGH by the Control
+   *     Surface / ElectraControl stripes + the Electra preset (they NEVER copy
+   *     it onto their own data). Set via `setControlColor` (mutate.ts); resolved
+   *     — with an auto per-instance default when unset — by `resolveControlColor`
+   *     (control-color.ts).
+   */
   data?: Record<string, unknown>;
 }
 

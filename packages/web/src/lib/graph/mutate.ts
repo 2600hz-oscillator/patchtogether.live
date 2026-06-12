@@ -110,3 +110,39 @@ export function setNodeParam(
     options,
   );
 }
+
+/**
+ * Set (or clear) the SOURCE module's "control colour" — `node.data.controlColor`
+ * — a 6-digit uppercase hex string (e.g. `'F45C51'`). This is the per-module tag
+ * colour that the Control Surface / ElectraControl stripes + the Electra preset
+ * all read LIVE as PASSTHROUGH (they never copy it). A `null` hex deletes the
+ * key, reverting the module to its auto default (control-color.ts
+ * defaultColorFor). No-op when the node is absent.
+ *
+ * Writes a SINGLE key in place onto the live `data` map — never reassigns it
+ * (the [[yjs-save-load-real-ydoc]] "Type already integrated" trap). It is a
+ * one-time user action (right-click → pick), never a per-frame write, so there
+ * is no update-storm risk ([[cv-modulation-live-store-write-storm]]).
+ *
+ * @param nodeId the SOURCE module whose tag colour to set
+ * @param hex    the 6-digit uppercase hex, or `null` to clear (auto default)
+ * @param options `{ origin = LOCAL_ORIGIN }` — the transaction origin
+ */
+export function setControlColor(
+  nodeId: string,
+  hex: string | null,
+  options: MutateOptions = {},
+): void {
+  mutateNode(
+    nodeId,
+    (live) => {
+      if (!live.data) live.data = {};
+      if (hex === null) {
+        delete live.data.controlColor; // clear → revert to auto default
+      } else {
+        live.data.controlColor = hex; // set a single key in place
+      }
+    },
+    options,
+  );
+}

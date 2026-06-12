@@ -17,7 +17,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { patch, ydoc, undoManager, LOCAL_ORIGIN } from './store';
-import { mutateNode, setNodeParam } from './mutate';
+import { mutateNode, setNodeParam, setControlColor } from './mutate';
 import type { ModuleNode } from './types';
 
 const NID = 'mutate-test-node';
@@ -127,6 +127,44 @@ describe('origin axis — a non-tracked origin is deliberately NOT undoable', ()
     );
     expect(undoManager.undoStack.length).toBe(0);
     expect(patch.nodes[NID]!.params.tune).toBe(0.33);
+  });
+});
+
+describe('setControlColor — single-key in-place set/clear on node.data', () => {
+  it('sets data.controlColor in place + is undoable; null clears it', () => {
+    makeNode();
+    const dataBefore = patch.nodes[NID]!.data;
+
+    setControlColor(NID, 'F45C51');
+    expect((patch.nodes[NID]!.data as { controlColor?: string }).controlColor).toBe('F45C51');
+    // The live data map is mutated IN PLACE — same object reference (never a
+    // spread-reassign that would re-integrate live Y types).
+    expect(patch.nodes[NID]!.data).toBe(dataBefore);
+    expect(undoManager.undoStack.length).toBe(1);
+
+    // Pre-existing keys survive the single-key set.
+    expect((patch.nodes[NID]!.data as { label?: string }).label).toBe('orig');
+
+    setControlColor(NID, null);
+    expect((patch.nodes[NID]!.data as { controlColor?: string }).controlColor).toBeUndefined();
+    expect((patch.nodes[NID]!.data as { label?: string }).label).toBe('orig');
+  });
+
+  it('undo() restores the prior colour', () => {
+    makeNode();
+    setControlColor(NID, '529DEC');
+    // Force a fresh undo capture so the second write is its own entry (Yjs
+    // batches writes within captureTimeout into one transaction otherwise).
+    undoManager.stopCapturing();
+    setControlColor(NID, 'F45C51');
+    undoManager.undo();
+    expect((patch.nodes[NID]!.data as { controlColor?: string }).controlColor).toBe('529DEC');
+  });
+
+  it('is a safe no-op on an absent node', () => {
+    expect(() => setControlColor('nope', 'FFFFFF')).not.toThrow();
+    expect(patch.nodes['nope']).toBeUndefined();
+    expect(undoManager.undoStack.length).toBe(0);
   });
 });
 

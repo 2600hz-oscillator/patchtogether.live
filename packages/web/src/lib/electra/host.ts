@@ -26,8 +26,16 @@ import {
   ELECTRA_SLOT_COUNT,
 } from '$lib/graph/electra-control';
 import { resolveSurfaceParam } from '$lib/graph/control-surface-params';
+import { resolveControlColor } from '$lib/graph/control-color';
 import type { AutoconfigHost } from './autoconfig';
 import type { PresetGenInput, GenParamDef, SurfaceBinding } from './preset';
+
+/** Resolve the SOURCE module's current control colour (PASSTHROUGH) for a
+ *  binding — read live from patch.nodes, never stored on the surface/electra
+ *  node. Returns a 6-digit hex (the auto default when unassigned). */
+function colorForBinding(moduleId: string, paramId: string): string {
+  return resolveControlColor(patch.nodes[moduleId], paramId);
+}
 
 /** The first ElectraControl's bindings in slotIndex order (0..35), skipping
  *  empties, each carrying its EXPLICIT generator page-local slot through so the
@@ -46,7 +54,13 @@ function electraControlBindings(): SurfaceBinding[] | null {
     if (!b) continue; // empty slot emits nothing
     const { controlSetId, potId } = electraPosOfSlot(storageSlot);
     const genSlot = (controlSetId - 1) * 12 + (potId - 1);
-    out.push({ moduleId: b.moduleId, paramId: b.paramId, name: b.name, slot: genSlot });
+    out.push({
+      moduleId: b.moduleId,
+      paramId: b.paramId,
+      name: b.name,
+      slot: genSlot,
+      color: colorForBinding(b.moduleId, b.paramId), // SOURCE colour passthrough
+    });
   }
   return out;
 }
@@ -62,7 +76,12 @@ function firstSurfaceBindings(): SurfaceBinding[] {
   const out: SurfaceBinding[] = [];
   for (const g of grouped)
     for (const b of g.bindings)
-      out.push({ moduleId: b.moduleId, paramId: b.paramId, name: b.name });
+      out.push({
+        moduleId: b.moduleId,
+        paramId: b.paramId,
+        name: b.name,
+        color: colorForBinding(b.moduleId, b.paramId), // SOURCE colour passthrough
+      });
   return out;
 }
 

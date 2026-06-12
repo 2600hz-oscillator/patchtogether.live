@@ -31,6 +31,14 @@
 //   is the same as on the source. The source stays live even when collapsed in
 //   a Group, so proxies keep working when the underlying module is folded away.
 //
+// CONTROL COLOUR (passthrough): each filled slot shows a thin COLOUR STRIPE =
+//   the SOURCE module's "control colour" (right-click a module → "Assign control
+//   color"; unassigned modules get a stable auto colour). And the FLASH threads
+//   that colour onto the Electra One control bars (the device renders the best
+//   RGB565 approximation). The colour is NEVER stored on the slot/electra node —
+//   it is resolved live from the source each render / each preset regenerate
+//   (passthrough). See $lib/graph/control-color.ts.
+//
 // IO
 //   Inputs: none. Outputs: none. Params: none. Meta domain: no engine binding —
 //   all persistent state lives on the node's `data` (Yjs-synced), see

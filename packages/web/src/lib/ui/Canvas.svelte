@@ -18,6 +18,8 @@
   import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
   import { buildDuplicate } from '$lib/graph/duplicate';
   import { instanceCount, wouldExceedCap } from '$lib/graph/cap';
+  import { setControlColor } from '$lib/graph/mutate';
+  import { resolveControlColor } from '$lib/graph/control-color';
   import {
     planSingletonCleanup,
     isElectedDeleter,
@@ -2091,6 +2093,22 @@
     } catch {
       return false;
     }
+  });
+
+  // Control colour — the right-clicked module's CURRENT resolved colour (for the
+  // menu preview swatch) + whether the user has explicitly assigned one (gates
+  // "Reset to default"). Resolved LIVE from the node (passthrough); the auto
+  // default applies even when unassigned.
+  let ctxMenuControlColor = $derived.by<string | null>(() => {
+    void snapshot;
+    if (!ctxMenuNodeId) return null;
+    return resolveControlColor(patch.nodes[ctxMenuNodeId] as ModuleNode | undefined);
+  });
+  let ctxMenuHasCustomColor = $derived.by<boolean>(() => {
+    void snapshot;
+    if (!ctxMenuNodeId) return false;
+    const n = patch.nodes[ctxMenuNodeId];
+    return typeof (n?.data as { controlColor?: unknown } | undefined)?.controlColor === 'string';
   });
 
   function onNodeContextMenu({ event, node }: { event: MouseEvent | TouchEvent; node: FlowNode }) {
@@ -4694,6 +4712,10 @@
   groupExpanded={ctxMenuGroupExpanded}
   canSaveGroup={Boolean(currentUserId) && ctxMenuNodeType === 'group'}
   canSeeSnesOutputDef={ctxMenuCanSeeSnesOutputDef}
+  currentControlColor={ctxMenuControlColor}
+  hasCustomControlColor={ctxMenuHasCustomColor}
+  onsetcontrolcolor={(hex) => ctxMenuNodeId && setControlColor(ctxMenuNodeId, hex)}
+  onresetcontrolcolor={() => ctxMenuNodeId && setControlColor(ctxMenuNodeId, null)}
   onseesnesoutputdef={() => {
     if (!ctxMenuNodeId) return;
     // The Snes9xCard listens for this window event keyed by node id +
