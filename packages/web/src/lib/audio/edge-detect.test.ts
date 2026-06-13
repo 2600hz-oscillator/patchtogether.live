@@ -18,9 +18,9 @@ const HOP_N = Math.round(HOP_S * SR); // 1200 samples/tick
 /** A fake AnalyserNode whose ring buffer the test sets explicitly. */
 class FakeAnalyser {
   fftSize = FFT;
-  private _buf = new Float32Array(FFT);
-  set(buf: Float32Array): void {
-    this._buf = buf;
+  private _buf: Float32Array<ArrayBuffer> = new Float32Array(FFT);
+  set(b: Float32Array<ArrayBuffer>): void {
+    this._buf = b;
   }
   getFloatTimeDomainData(out: Float32Array): void {
     out.set(this._buf);
@@ -33,7 +33,7 @@ function fakeCtx(): { sampleRate: number; currentTime: number } {
 }
 
 /** Build a 2048 buffer: low everywhere except [hiStart, hiEnd) set to 1. */
-function buf(hiStart: number, hiEnd: number): Float32Array {
+function buf(hiStart: number, hiEnd: number): Float32Array<ArrayBuffer> {
   const b = new Float32Array(FFT);
   for (let i = Math.max(0, hiStart); i < Math.min(FFT, hiEnd); i++) b[i] = 1;
   return b;

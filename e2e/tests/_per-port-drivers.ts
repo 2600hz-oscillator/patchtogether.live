@@ -212,6 +212,40 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'STAGES: drive .trig with SEQUENCER.gate; segment outputs ramp to default primary',
   },
 
+  // GATEMAIDEN: a converter — its single `in` needs a gate/trigger to produce
+  // output. Drive `in` with SEQUENCER.gate; both the GATE out (held min-width)
+  // and the TRIG out (short pulse per rising edge) then emit.
+  gatemaiden: {
+    upstream: () => ({
+      nodes: [sequencerGate('drv-seq').node],
+      edges: [
+        {
+          id: 'e-drv-gm',
+          from: { nodeId: 'drv-seq', portId: 'gate' },
+          to:   { nodeId: 'sut',     portId: 'in' },
+          sourceType: 'gate',
+          targetType: 'gate',
+        },
+      ],
+    }),
+    postSpawn: async (page) => {
+      const seed = sequencerGate('drv-seq');
+      await page.evaluate((d) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => {
+          const n = w.__patch.nodes['drv-seq'];
+          if (!n) return;
+          if (!n.data) n.data = {};
+          n.data.steps = d.steps;
+        });
+      }, seed.data);
+    },
+    note: 'GATEMAIDEN: drive .in with SEQUENCER.gate; gate + trig outs fire',
+  },
+
   // ───── Step sequencers — seed steps + isPlaying ─────
   sequencer: {
     params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.5 },
