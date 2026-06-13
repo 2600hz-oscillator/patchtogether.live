@@ -28,53 +28,53 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   adsr: { size: '1u', hp: 2 }, // 154×240px  [LOCKED]
   analogLogicMaths: { size: '1u', hp: 2 }, // 154×220px
   analogVco: { size: '1u', hp: 2 }, // 225×240px  [LOCKED]
-  aquaTank: { size: '3u', hp: 2 }, // 273×320px
-  atlantisCatalyst: { size: '3u', hp: 2 }, // 261×360px
+  aquaTank: { size: '2u', hp: 2 }, // 273×320px
+  atlantisCatalyst: { size: '2u', hp: 2 }, // 261×360px
   attenumix: { size: '1u', hp: 2 }, // 158×300px
-  audioIn: { size: '3u', hp: 1 }, // 241×200px
+  audioIn: { size: '2u', hp: 1 }, // 241×200px
   audioOut: { size: '1u', hp: 1 }, // 200×180px  [LOCKED]
-  bluebox: { size: '3u', hp: 2 }, // 360×280px
+  bluebox: { size: '2u', hp: 2 }, // 360×280px
   buggles: { size: '1u', hp: 2 }, // 156×280px
-  callsine: { size: '3u', hp: 2 }, // 196×340px
-  cartesian: { size: '3u', hp: 2 }, // 563×360px
+  callsine: { size: '1u', hp: 2 }, // 196×340px
+  cartesian: { size: '4u', hp: 2 }, // 563×360px
   charlottesEchos: { size: '1u', hp: 2 }, // 109×320px  [LOCKED]
-  chowkick: { size: '3u', hp: 3 }, // 839×540px  [LOCKED]
-  clockedRunner: { size: '3u', hp: 2 }, // 220×360px
-  clouds: { size: '3u', hp: 2 }, // 201×340px
+  chowkick: { size: '5u', hp: 3 }, // 839×540px
+  clockedRunner: { size: '2u', hp: 2 }, // 220×360px
+  clouds: { size: '2u', hp: 2 }, // 201×340px
   cloudseed: { size: '3u', hp: 4 }, // 427×680px
-  cocoadelay: { size: '3u', hp: 4 }, // 283×620px
-  cube: { size: '3u', hp: 2 }, // 888×360px
+  cocoadelay: { size: '2u', hp: 4 }, // 283×620px
+  cube: { size: '5u', hp: 2 }, // 888×360px
   delay: { size: '1u', hp: 1 }, // 152×200px
   destroy: { size: '1u', hp: 2 }, // 152×220px
   drummergirl: { size: '1u', hp: 2 }, // 152×320px  [LOCKED]
-  drumseqz: { size: '3u', hp: 5 }, // 604×820px
-  dx7: { size: '3u', hp: 2 }, // 326×320px
-  elements: { size: '3u', hp: 3 }, // 298×460px
+  drumseqz: { size: '4u', hp: 5 }, // 604×820px
+  dx7: { size: '2u', hp: 2 }, // 326×320px
+  elements: { size: '2u', hp: 3 }, // 298×460px
   filter: { size: '1u', hp: 1 }, // 180×200px  [LOCKED]
   flipper: { size: '1u', hp: 1 }, // 90×176px
   fourplexer: { size: '1u', hp: 2 }, // 158×320px
-  foxy: { size: '3u', hp: 4 }, // 575×720px
-  frogger: { size: '3u', hp: 2 }, // 380×260px
-  gamepad: { size: '3u', hp: 2 }, // 267×280px
-  gatemaiden: { size: '3u', hp: 1 }, // 199×200px
+  foxy: { size: '4u', hp: 4 }, // 575×720px
+  frogger: { size: '2u', hp: 2 }, // 380×260px
+  gamepad: { size: '2u', hp: 2 }, // 267×280px
+  gatemaiden: { size: '1u', hp: 1 }, // 199×200px
   grids: { size: '3u', hp: 2 }, // 463×320px
   helm: { size: '3u', hp: 4 }, // 536×720px
-  hydrogen: { size: '3u', hp: 4 }, // 687×660px
-  hypercube: { size: '3u', hp: 2 }, // 770×360px
+  hydrogen: { size: '4u', hp: 4 }, // 687×660px
+  hypercube: { size: '5u', hp: 2 }, // 770×360px
   illogic: { size: '1u', hp: 2 }, // 154×240px
-  joystick: { size: '3u', hp: 2 }, // 234×220px
-  lfo: { size: '3u', hp: 1 }, // 221×200px
-  livecode: { size: '3u', hp: 3 }, // 380×460px
-  macrooscillator: { size: '3u', hp: 2 }, // 187×320px
-  macseq: { size: '3u', hp: 5 }, // 282×880px
-  marbles: { size: '3u', hp: 3 }, // 199×420px
+  joystick: { size: '2u', hp: 2 }, // 234×220px
+  lfo: { size: '2u', hp: 1 }, // 221×200px
+  livecode: { size: '2u', hp: 3 }, // 380×460px
+  macrooscillator: { size: '1u', hp: 2 }, // 187×320px
+  macseq: { size: '2u', hp: 5 }, // 282×880px
+  marbles: { size: '1u', hp: 3 }, // 199×420px
   meowbox: { size: '1u', hp: 2 }, // 127×240px
   midiclock: { size: '1u', hp: 1 }, // 136×200px
   midiCvBuddy: { size: '1u', hp: 2 }, // 136×220px
   midiLane: { size: '3u', hp: 2 }, // 149×230px  [LOCKED]
   midiOutBuddy: { size: '1u', hp: 2 }, // 136×220px
   mixer: { size: '1u', hp: 2 }, // 150×260px  [LOCKED]
-  mixmstrs: { size: '3u', hp: 4 }, // 661×720px
+  mixmstrs: { size: '4u', hp: 4 }, // 661×720px
   modtris: { size: '3u', hp: 2 }, // 424×260px
   moog902: { size: '1u', hp: 2 }, // 152×236px
   moog903a: { size: '1u', hp: 1 }, // 124×180px
@@ -82,66 +82,66 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   moog904b: { size: '1u', hp: 2 }, // 152×236px
   moog904c: { size: '1u', hp: 2 }, // 124×220px
   moog905: { size: '1u', hp: 2 }, // 124×220px
-  moog907a: { size: '3u', hp: 1 }, // 655×200px
-  moog911: { size: '3u', hp: 2 }, // 187×232px
+  moog907a: { size: '4u', hp: 1 }, // 655×200px
+  moog911: { size: '1u', hp: 2 }, // 187×232px
   moog911a: { size: '1u', hp: 1 }, // 137×200px
   moog912: { size: '1u', hp: 1 }, // 124×200px
-  moog914: { size: '3u', hp: 1 }, // 891×200px
+  moog914: { size: '5u', hp: 1 }, // 891×200px
   moog921a: { size: '1u', hp: 2 }, // 152×236px
-  moog921b: { size: '3u', hp: 2 }, // 214×252px
-  moog921Vco: { size: '3u', hp: 2 }, // 214×252px
+  moog921b: { size: '2u', hp: 2 }, // 214×252px
+  moog921Vco: { size: '2u', hp: 2 }, // 214×252px
   moog923: { size: '1u', hp: 2 }, // 124×220px
   moog956: { size: '1u', hp: 2 }, // 174×240px
   moog960: { size: '3u', hp: 3 }, // 385×520px
   moog961: { size: '1u', hp: 2 }, // 124×220px
   moog962: { size: '1u', hp: 1 }, // 124×200px
-  moog984: { size: '3u', hp: 2 }, // 313×300px
+  moog984: { size: '2u', hp: 2 }, // 313×300px
   moog992: { size: '1u', hp: 2 }, // 124×220px
   moog993: { size: '1u', hp: 2 }, // 124×220px
   moog994: { size: '1u', hp: 1 }, // 61×180px
   moog995: { size: '1u', hp: 1 }, // 124×200px
-  moogCp3: { size: '3u', hp: 2 }, // 187×264px
+  moogCp3: { size: '1u', hp: 2 }, // 187×264px
   noise: { size: '1u', hp: 1 }, // 154×160px
-  numpadPlus: { size: '3u', hp: 4 }, // 714×722px
+  numpadPlus: { size: '4u', hp: 4 }, // 714×722px
   peaks: { size: '3u', hp: 2 }, // 197×320px  [LOCKED]
   pentemelodica: { size: '3u', hp: 7 }, // 462×1180px
   polyhelm: { size: '3u', hp: 4 }, // 536×720px
-  polyseqz: { size: '3u', hp: 3 }, // 321×540px
-  pong: { size: '3u', hp: 2 }, // 304×240px
+  polyseqz: { size: '2u', hp: 3 }, // 321×540px
+  pong: { size: '2u', hp: 2 }, // 304×240px
   qbrt: { size: '1u', hp: 2 }, // 152×280px
-  rasterize: { size: '3u', hp: 2 }, // 330×320px
+  rasterize: { size: '2u', hp: 2 }, // 330×320px
   resofilter: { size: '1u', hp: 2 }, // 156×340px  [LOCKED]
   reverb: { size: '1u', hp: 1 }, // 152×200px
   ringback: { size: '1u', hp: 2 }, // 123×240px
-  rings: { size: '3u', hp: 2 }, // 199×360px
-  riotgirls: { size: '3u', hp: 6 }, // 849×1100px
+  rings: { size: '1u', hp: 2 }, // 199×360px
+  riotgirls: { size: '5u', hp: 6 }, // 849×1100px
   sampleHold: { size: '1u', hp: 2 }, // 149×260px
   samsloop: { size: '3u', hp: 2 }, // 420×360px
   scope: { size: '3u', hp: 2 }, // 500×320px  [LOCKED]
-  score: { size: '3u', hp: 4 }, // 597×720px
+  score: { size: '4u', hp: 4 }, // 597×720px
   sequencer: { size: '3u', hp: 3 }, // 307×540px  [LOCKED]
   shimmershine: { size: '1u', hp: 2 }, // 152×280px
-  sidecar: { size: '3u', hp: 2 }, // 299×380px
+  sidecar: { size: '2u', hp: 2 }, // 299×380px
   skifree: { size: '3u', hp: 2 }, // 420×360px
-  slewSwitch: { size: '3u', hp: 2 }, // 273×320px
-  stages: { size: '3u', hp: 3 }, // 302×460px
+  slewSwitch: { size: '2u', hp: 2 }, // 273×320px
+  stages: { size: '2u', hp: 3 }, // 302×460px
   stereovca: { size: '1u', hp: 1 }, // 156×180px
-  swolevco: { size: '3u', hp: 2 }, // 262×360px
-  symbiote: { size: '3u', hp: 3 }, // 199×440px
+  swolevco: { size: '2u', hp: 2 }, // 262×360px
+  symbiote: { size: '1u', hp: 3 }, // 199×440px
   synesthesia: { size: '3u', hp: 3 }, // 419×460px
-  tides2: { size: '3u', hp: 2 }, // 221×380px
+  tides2: { size: '2u', hp: 2 }, // 221×380px
   timelorde: { size: '3u', hp: 2 }, // 152×280px  [LOCKED]
-  treeohvox: { size: '3u', hp: 2 }, // 240×340px
+  treeohvox: { size: '2u', hp: 2 }, // 240×340px
   twotracks: { size: '3u', hp: 4 }, // 406×580px
   unityscalemathematik: { size: '3u', hp: 2 }, // 446×240px
   vca: { size: '1u', hp: 1 }, // 156×160px
   veils: { size: '1u', hp: 2 }, // 179×280px
-  warps: { size: '3u', hp: 2 }, // 187×320px
+  warps: { size: '1u', hp: 2 }, // 187×320px
   warrenspectrum: { size: '3u', hp: 3 }, // 481×440px
   wavecel: { size: '3u', hp: 2 }, // 398×320px
-  wavesculpt: { size: '3u', hp: 7 }, // 880×1280px
+  wavesculpt: { size: '5u', hp: 7 }, // 880×1280px
   wavetableVco: { size: '1u', hp: 2 }, // 152×240px
-  writeseq: { size: '3u', hp: 5 }, // 261×880px
+  writeseq: { size: '2u', hp: 5 }, // 261×880px
 
   // ── meta domain ──
   electraControl: { size: '3u', hp: 2 }, // 519×360px
@@ -150,46 +150,46 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   '4plexvid': { size: '3u', hp: 2 }, // 463×280px
   acidwarp: { size: '3u', hp: 2 }, // 407×380px
   b3ntb0x: { size: '3u', hp: 3 }, // 540×460px
-  backdraft: { size: '3u', hp: 2 }, // 660×340px
+  backdraft: { size: '4u', hp: 2 }, // 660×340px
   bentbox: { size: '3u', hp: 3 }, // 480×420px
   cameraInput: { size: '3u', hp: 2 }, // 370×280px  [LOCKED]
-  cellshade: { size: '3u', hp: 2 }, // 369×220px
-  chroma: { size: '3u', hp: 2 }, // 360×260px
+  cellshade: { size: '2u', hp: 2 }, // 369×220px
+  chroma: { size: '2u', hp: 2 }, // 360×260px
   chromakey: { size: '3u', hp: 2 }, // 389×260px
-  colorizer: { size: '3u', hp: 2 }, // 270×240px
-  destructor: { size: '3u', hp: 2 }, // 240×260px
-  doom: { size: '3u', hp: 2 }, // 377×360px
-  edges: { size: '3u', hp: 1 }, // 250×200px
+  colorizer: { size: '2u', hp: 2 }, // 270×240px
+  destructor: { size: '2u', hp: 2 }, // 240×260px
+  doom: { size: '2u', hp: 2 }, // 377×360px
+  edges: { size: '2u', hp: 1 }, // 250×200px
   feedback: { size: '3u', hp: 2 }, // 411×320px
-  freezeframe: { size: '3u', hp: 2 }, // 609×260px
+  freezeframe: { size: '4u', hp: 2 }, // 609×260px
   gibribbon: { size: '3u', hp: 5 }, // 398×836px
-  inwards: { size: '3u', hp: 2 }, // 280×220px
-  lines: { size: '3u', hp: 2 }, // 361×220px
-  luma: { size: '3u', hp: 2 }, // 275×220px
-  lumakey: { size: '3u', hp: 2 }, // 287×220px
-  mandelbulb: { size: '3u', hp: 2 }, // 362×280px
-  mandleblot: { size: '3u', hp: 2 }, // 360×280px
-  mapper: { size: '3u', hp: 1 }, // 250×200px
+  inwards: { size: '2u', hp: 2 }, // 280×220px
+  lines: { size: '2u', hp: 2 }, // 361×220px
+  luma: { size: '2u', hp: 2 }, // 275×220px
+  lumakey: { size: '2u', hp: 2 }, // 287×220px
+  mandelbulb: { size: '2u', hp: 2 }, // 362×280px
+  mandleblot: { size: '2u', hp: 2 }, // 360×280px
+  mapper: { size: '2u', hp: 1 }, // 250×200px
   monoglitch: { size: '3u', hp: 2 }, // 425×320px
-  nibbles: { size: '3u', hp: 2 }, // 367×380px
+  nibbles: { size: '2u', hp: 2 }, // 367×380px
   outlines: { size: '3u', hp: 2 }, // 420×260px
-  peakstate: { size: '3u', hp: 2 }, // 329×240px
-  picturebox: { size: '3u', hp: 2 }, // 240×220px
-  qbert: { size: '3u', hp: 2 }, // 326×340px
-  quadralogical: { size: '3u', hp: 3 }, // 874×480px
-  recorderbox: { size: '3u', hp: 2 }, // 296×248px
+  peakstate: { size: '2u', hp: 2 }, // 329×240px
+  picturebox: { size: '2u', hp: 2 }, // 240×220px
+  qbert: { size: '2u', hp: 2 }, // 326×340px
+  quadralogical: { size: '5u', hp: 3 }, // 874×480px
+  recorderbox: { size: '2u', hp: 2 }, // 296×248px
   reshaper: { size: '3u', hp: 2 }, // 480×320px
   ruttetra: { size: '3u', hp: 2 }, // 480×320px
   scoreboard: { size: '1u', hp: 2 }, // 240×260px  [LOCKED]
-  shapedramps: { size: '3u', hp: 2 }, // 641×240px
-  shapegen: { size: '3u', hp: 2 }, // 304×300px
-  shapes: { size: '3u', hp: 2 }, // 320×220px
-  snes9x: { size: '3u', hp: 3 }, // 380×442px
-  toybox: { size: '3u', hp: 5 }, // 693×860px
+  shapedramps: { size: '4u', hp: 2 }, // 641×240px
+  shapegen: { size: '2u', hp: 2 }, // 304×300px
+  shapes: { size: '2u', hp: 2 }, // 320×220px
+  snes9x: { size: '2u', hp: 3 }, // 380×442px
+  toybox: { size: '4u', hp: 5 }, // 693×860px
   vdelay: { size: '3u', hp: 2 }, // 431×220px
   vfpgaRunner: { size: '3u', hp: 3 }, // 467×420px
-  videobox: { size: '3u', hp: 2 }, // 360×320px
+  videobox: { size: '2u', hp: 2 }, // 360×320px
   videoMixer: { size: '3u', hp: 2 }, // 420×280px
-  videoOut: { size: '3u', hp: 2 }, // 240×360px
+  videoOut: { size: '2u', hp: 2 }, // 240×360px
   videovarispeed: { size: '3u', hp: 2 }, // 452×320px
 };

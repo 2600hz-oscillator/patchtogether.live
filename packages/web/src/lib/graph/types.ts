@@ -327,8 +327,14 @@ export interface PatchGraph {
 
 // ---------------- Module registry shape (D18, D19) ----------------
 
-/** Rack HEIGHT tier: '1u' = one square grid tile tall, '3u' = three tiles. */
-export type RackSize = '1u' | '3u';
+/**
+ * Rack HEIGHT tier in whole grid units — `${N}u` = N square grid tiles tall.
+ * Most modules are '1u' (small utilities) or '3u' (standard); genuinely-large
+ * modules (WebGL synths, big filter banks, control grids) take an EXACT taller
+ * tier ('4u', '5u', …) rather than being crammed — every tier is a whole
+ * multiple of one tile so the rack stays on its 1u×1u grid.
+ */
+export type RackSize = `${number}u`;
 
 export interface ModuleDef {
   type: ModuleType;

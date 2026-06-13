@@ -264,9 +264,9 @@
   // Resolution: the def's own `size`/`hp` WIN (a new module declares them on its
   // def); the bulk RACK_SIZE_DEFAULTS map (rack-sizes.ts) is the fallback that
   // classifies every existing module so every card snaps to the grid.
-  const rackSizeByType: Record<string, { size?: '1u' | '3u'; hp?: number }> = {};
+  const rackSizeByType: Record<string, { size?: string; hp?: number }> = {};
   for (const d of [...listModuleDefs(), ...listVideoModuleDefs(), ...listMetaModuleDefs()]) {
-    const r = d as { type: string; size?: '1u' | '3u'; hp?: number };
+    const r = d as { type: string; size?: string; hp?: number };
     const fallback = RACK_SIZE_DEFAULTS[r.type];
     const size = r.size ?? fallback?.size;
     if (size) rackSizeByType[r.type] = { size, hp: r.hp ?? fallback?.hp };
@@ -827,15 +827,15 @@
       // styling (which xyflow handles internally via the .selected class
       // rather than a competing zIndex).
       // Rack sizing: tag declared cards so _module-card.css forces their tier
-      // height (1u/3u) + hp width. Untagged (unmigrated) cards keep their size.
+      // height (Nu) + hp width. Untagged (unmigrated) cards keep their size.
       const rack = rackSizeByType[n.type];
       if (rack?.size) {
         // xyflow applies `class` to the .svelte-flow__node wrapper; our shared
-        // _module-card.css keys off rack-sized + rack-{1u,3u} (+ the inline
-        // --rack-hp) to force the card's tier height + hp width.
-        const rackClass = `rack-sized rack-${rack.size}`;
-        node.class = node.class ? `${String(node.class)} ${rackClass}` : rackClass;
-        node.style = `${node.style ? node.style + ';' : ''}--rack-hp:${rack.hp ?? 1}`;
+        // _module-card.css keys off `rack-sized` + the inline `--rack-u`
+        // (height tiles) and `--rack-hp` (width tiles) to force the card box.
+        const u = parseInt(rack.size, 10) || 1;
+        node.class = node.class ? `${String(node.class)} rack-sized` : 'rack-sized';
+        node.style = `${node.style ? node.style + ';' : ''}--rack-hp:${rack.hp ?? 1};--rack-u:${u}`;
       }
       if (top === n.id) node.zIndex = 1000;
       next.push(node);

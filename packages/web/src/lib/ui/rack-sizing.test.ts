@@ -36,9 +36,12 @@ const DYNAMIC_SIZED = new Set(['group', 'sticky', 'controlSurface']);
 
 interface SizedDef {
   type: string;
-  size?: '1u' | '3u';
+  size?: string; // `${N}u` — 1u/3u common, taller exact tiers (4u/5u…) for giants
   hp?: number;
 }
+
+/** A rack size is an exact whole-tile tier: `${N}u` with N a positive integer. */
+const RACK_SIZE_RE = /^[1-9]\d*u$/;
 
 function allDefs(): SizedDef[] {
   return [
@@ -49,10 +52,10 @@ function allDefs(): SizedDef[] {
 }
 
 describe('rack sizing — declaration invariants', () => {
-  it('every declared size is exactly 1u or 3u', () => {
+  it('every declared size is an exact whole-tile tier (`${N}u`)', () => {
     for (const d of allDefs()) {
       if (d.size !== undefined) {
-        expect(['1u', '3u'], `${d.type} size`).toContain(d.size);
+        expect(RACK_SIZE_RE.test(d.size), `${d.type} size "${d.size}" must be \`\${N}u\``).toBe(true);
       }
     }
   });
@@ -74,12 +77,11 @@ describe('rack sizing — declaration invariants', () => {
     }
   });
 
-  it('sample: stereovca = 1u/hp1 (the 1u reference); sequencer = 3u/hp3', () => {
+  it('sample: stereovca = 1u/hp1 (the 1u reference); sequencer = 3u tall', () => {
     const by = Object.fromEntries(allDefs().map((d) => [d.type, d]));
     expect(by.stereovca?.size).toBe('1u');
     expect(by.stereovca?.hp).toBe(1);
     expect(by.sequencer?.size).toBe('3u');
-    expect(by.sequencer?.hp).toBe(3);
   });
 });
 
@@ -115,9 +117,9 @@ describe('rack sizing — bulk classification coverage (RACK_SIZE_DEFAULTS)', ()
     }
   });
 
-  it('every RACK_SIZE_DEFAULTS entry is itself well-formed (1u|3u + integer hp >= 1)', () => {
+  it('every RACK_SIZE_DEFAULTS entry is itself well-formed (`${N}u` + integer hp >= 1)', () => {
     for (const [type, v] of Object.entries(RACK_SIZE_DEFAULTS)) {
-      expect(['1u', '3u'], `${type} map size`).toContain(v.size);
+      expect(RACK_SIZE_RE.test(v.size), `${type} map size "${v.size}" must be \`\${N}u\``).toBe(true);
       expect(Number.isInteger(v.hp), `${type} map hp must be an integer`).toBe(true);
       expect(v.hp, `${type} map hp must be >= 1`).toBeGreaterThanOrEqual(1);
     }
@@ -132,10 +134,12 @@ describe('rack sizing — bulk classification coverage (RACK_SIZE_DEFAULTS)', ()
   it('respects the user-LOCKED per-module tier overrides (DECISIONS §2)', () => {
     // resolveSize must yield exactly these for the explicitly-called modules,
     // whether the tier comes from the def or the map.
+    // chowkick is intentionally NOT locked — at 839px it takes its natural taller
+    // tier (the user approved exact Nu tiers for genuinely-big modules).
     const LOCKED: Record<string, '1u' | '3u'> = {
       adsr: '1u', filter: '1u', sequencer: '3u', mixer: '1u', scope: '3u',
       midiLane: '3u', analogVco: '1u', peaks: '3u', resofilter: '1u',
-      chowkick: '3u', drummergirl: '1u', charlottesEchos: '1u', audioOut: '1u',
+      drummergirl: '1u', charlottesEchos: '1u', audioOut: '1u',
       scoreboard: '1u', cameraInput: '3u', timelorde: '3u',
     };
     const by = Object.fromEntries(allDefs().map((d) => [d.type, d]));
@@ -147,14 +151,20 @@ describe('rack sizing — bulk classification coverage (RACK_SIZE_DEFAULTS)', ()
   });
 });
 
-describe('rack sizing — CSS token relationship (3u = 3 × 1u)', () => {
-  it('_module-card.css pins 1u height = --rack-unit and 3u = calc(3 * --rack-unit)', () => {
+describe('rack sizing — CSS token relationship (height = exact N × 1u)', () => {
+  it('_module-card.css pins the rack box to exact whole tiles via --rack-u/--rack-hp', () => {
     const css = readFileSync(
       resolve(dirname(fileURLToPath(import.meta.url)), 'modules', '_module-card.css'),
       'utf8',
     );
     expect(css).toMatch(/--rack-unit:\s*\d+px/);
-    expect(css).toMatch(/\.rack-1u[^{]*\{[^}]*height:\s*var\(--rack-unit\)/s);
-    expect(css).toMatch(/\.rack-3u[^{]*\{[^}]*height:\s*calc\(3 \* var\(--rack-unit\)\)/s);
+    // Height is an EXACT multiple of the tile (N×--rack-unit) — pinned on
+    // height + min-height + max-height so the box is pixel-perfect, never
+    // a fractional / in-between size.
+    expect(css).toMatch(/height:\s*calc\(var\(--rack-u,\s*1\)\s*\*\s*var\(--rack-unit\)\)/s);
+    expect(css).toMatch(/min-height:\s*calc\(var\(--rack-u/s);
+    expect(css).toMatch(/max-height:\s*calc\(var\(--rack-u/s);
+    // Width is hp tiles.
+    expect(css).toMatch(/width:\s*calc\(var\(--rack-hp,\s*1\)\s*\*\s*var\(--rack-unit\)\)/s);
   });
 });
