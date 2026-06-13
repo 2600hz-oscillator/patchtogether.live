@@ -25,6 +25,11 @@ import { RACK_SIZE_DEFAULTS } from './rack-sizes';
 // modules-card-map guard uses).
 const NO_CARD_BY_DESIGN = new Set(['cadillac']);
 
+// GROUP is a DYNAMIC container — it grows to fit its child modules, so it must
+// NOT be forced to a fixed 1u/3u tier (doing so clips its contents; broke the
+// group-geometry e2e). Excluded from the size-coverage requirement.
+const DYNAMIC_SIZED = new Set(['group']);
+
 interface SizedDef {
   type: string;
   size?: '1u' | '3u';
@@ -85,7 +90,9 @@ describe('rack sizing — bulk classification coverage (RACK_SIZE_DEFAULTS)', ()
     return d.hp ?? RACK_SIZE_DEFAULTS[d.type]?.hp;
   }
 
-  const cardModules = allDefs().filter((d) => !NO_CARD_BY_DESIGN.has(d.type));
+  const cardModules = allDefs().filter(
+    (d) => !NO_CARD_BY_DESIGN.has(d.type) && !DYNAMIC_SIZED.has(d.type),
+  );
 
   it('every registered module (with a card) resolves to a size tier', () => {
     const unclassified = cardModules.filter((d) => resolveSize(d) === undefined).map((d) => d.type);

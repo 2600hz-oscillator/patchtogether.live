@@ -216,6 +216,5 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   // ── Meta / containers (controlSurface + group → 3u; sticky free-form) ────
   controlSurface: { size: '3u', hp: 2 }, //            max-content → 2hp (surface)
   electraControl: { size: '3u', hp: 2 }, //            max-content → 2hp (surface)
-  group: { size: '3u', hp: 1 }, //                     220px → 1hp (container chrome)
   sticky: { size: '1u', hp: 1 }, //                    200px (resizable note) → 1hp
 };
