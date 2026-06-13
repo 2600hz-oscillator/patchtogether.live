@@ -5,7 +5,7 @@
 //
 // Module defs auto-register from `./modules/index.ts` on first import.
 
-import type { ModuleDef, ModuleType, ParamDef, PortDef, Domain } from '$lib/graph/types';
+import type { ModuleDef, ModuleType, ParamDef, PortDef, Domain, RackSize } from '$lib/graph/types';
 import type { AudioModuleFactory } from './engine';
 
 /**
@@ -55,6 +55,10 @@ export interface AudioModuleDef {
   outputs: PortDef[];
   params: readonly ParamDef[];
   schemaVersion: number;
+  /** Rack HEIGHT tier ('1u' | '3u') — see ModuleDef.size. */
+  size?: RackSize;
+  /** Width in 1u square tiles (default 1) — see ModuleDef.hp. */
+  hp?: number;
   migrate?: (data: unknown, fromVersion: number) => unknown;
   /**
    * Hard cap on simultaneous instances per rackspace. Singleton modules

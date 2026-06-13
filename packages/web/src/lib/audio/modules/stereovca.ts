@@ -96,6 +96,9 @@ export const stereovcaDef: AudioModuleDef = {
   label: 'stereovca',
   category: 'utilities',
   schemaVersion: 1,
+  // Rack: the canonical 1u reference (1 square tile). Phase-1 rack sizing.
+  size: '1u',
+  hp: 1,
 
   inputs: [
     { id: 'in_l',       type: 'audio' },

@@ -257,6 +257,17 @@
     ...listMetaModuleDefs(),
   ]);
 
+  // Rack sizing: module type → declared { size, hp }. The flowNodes derivation
+  // tags each DECLARED card's SvelteFlow wrapper (rack-sized rack-{1u,3u} +
+  // an inline --rack-hp) so the shared _module-card.css forces its tier height
+  // + hp width. Modules that don't declare `size` are left untagged (keep their
+  // content-driven size) — lets the rack rollout land card-by-card.
+  const rackSizeByType: Record<string, { size?: '1u' | '3u'; hp?: number }> = {};
+  for (const d of [...listModuleDefs(), ...listVideoModuleDefs(), ...listMetaModuleDefs()]) {
+    const r = d as { type: string; size?: '1u' | '3u'; hp?: number };
+    if (r.size) rackSizeByType[r.type] = { size: r.size, hp: r.hp };
+  }
+
   let audioCtx: AudioContext | null = $state(null);
   let engine: PatchEngine | null = $state(null);
   let reconciler: { reconcile: () => Promise<void>; dispose: () => void } | null = $state(null);
@@ -811,6 +822,17 @@
       // card above everything without colliding with selected-node
       // styling (which xyflow handles internally via the .selected class
       // rather than a competing zIndex).
+      // Rack sizing: tag declared cards so _module-card.css forces their tier
+      // height (1u/3u) + hp width. Untagged (unmigrated) cards keep their size.
+      const rack = rackSizeByType[n.type];
+      if (rack?.size) {
+        // xyflow applies `class` to the .svelte-flow__node wrapper; our shared
+        // _module-card.css keys off rack-sized + rack-{1u,3u} (+ the inline
+        // --rack-hp) to force the card's tier height + hp width.
+        const rackClass = `rack-sized rack-${rack.size}`;
+        node.class = node.class ? `${String(node.class)} ${rackClass}` : rackClass;
+        node.style = `${node.style ? node.style + ';' : ''}--rack-hp:${rack.hp ?? 1}`;
+      }
       if (top === n.id) node.zIndex = 1000;
       next.push(node);
     }

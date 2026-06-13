@@ -83,3 +83,27 @@
   padding: 0 26px;
   justify-content: center;
 }
+
+/* ── Rack sizing (1u/3u height tiers · 1u×1u square grid) ───────────────────
+ * One square grid tile = --rack-unit. A module is `hp` tiles wide and 1u or 3u
+ * tall. The flowNodes derivation (Canvas.svelte) tags a card's SvelteFlow node
+ * wrapper with `rack-sized rack-{1u,3u}` + an inline `--rack-hp:<n>` ONLY when
+ * the module's def declares a `size`. So these rules touch migrated cards only;
+ * unmigrated cards keep their content-driven size. The wrapper-scoped selectors
+ * (0,3,0) outrank each card's own `.mod-card { width: … }` (0,1,0). */
+:root {
+  --rack-unit: 180px;
+}
+.svelte-flow__node.rack-sized > .mod-card,
+.svelte-flow__node.rack-sized > * > .mod-card {
+  box-sizing: border-box;
+  width: calc(var(--rack-hp, 1) * var(--rack-unit));
+}
+.svelte-flow__node.rack-1u > .mod-card,
+.svelte-flow__node.rack-1u > * > .mod-card {
+  height: var(--rack-unit);
+}
+.svelte-flow__node.rack-3u > .mod-card,
+.svelte-flow__node.rack-3u > * > .mod-card {
+  height: calc(3 * var(--rack-unit));
+}
