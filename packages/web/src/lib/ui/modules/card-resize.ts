@@ -9,6 +9,10 @@ import type { useStore } from '@xyflow/svelte';
 
 type FlowStore = ReturnType<typeof useStore>;
 
+/** The rack grid tile (px). Resizable cards snap to whole-tile (Nu) multiples
+ *  so they stay on the 1u×1u rack grid — see _module-card.css `--rack-unit`. */
+const RACK_UNIT = 180;
+
 export interface ResizeOptions {
   flowStore: FlowStore;
   minWidth: number;
@@ -21,6 +25,11 @@ export interface ResizeOptions {
    *  hover transitions or set an aria attribute. */
   onStart?: () => void;
   onEnd?: () => void;
+  /** Grid quantum for snapping the resized size (px). Defaults to RACK_UNIT
+   *  (180) so resizable cards snap to whole-u tiles, ROUNDING UP — the card
+   *  always lands on the rack grid. Pass 1 to disable snapping (STICKY, the
+   *  free-form note). */
+  snapTo?: number;
 }
 
 export function startCornerResize(ev: PointerEvent, opts: ResizeOptions): AbortController {
@@ -33,12 +42,20 @@ export function startCornerResize(ev: PointerEvent, opts: ResizeOptions): AbortC
   const sig = ctl.signal;
   opts.onStart?.();
 
+  const snap = opts.snapTo ?? RACK_UNIT;
+  // Snap to the next whole grid tile, ROUNDING UP, so the card always lands on
+  // the rack grid (a -1..+1 drag past a tile boundary jumps a full u). min is
+  // honoured first, then rounded up to the grid too. snap<=1 → free (STICKY).
+  const quantize = (raw: number, min: number) => {
+    const v = Math.max(min, Math.round(raw));
+    return snap > 1 ? Math.ceil(v / snap) * snap : v;
+  };
   const onMove = (mev: PointerEvent) => {
     const zoom = opts.flowStore.viewport.zoom || 1;
     const dx = (mev.clientX - startX) / zoom;
     const dy = (mev.clientY - startY) / zoom;
-    const w = Math.max(opts.minWidth, Math.round(startW + dx));
-    const h = Math.max(opts.minHeight, Math.round(startH + dy));
+    const w = quantize(startW + dx, opts.minWidth);
+    const h = quantize(startH + dy, opts.minHeight);
     opts.apply(w, h);
   };
   const stop = () => {

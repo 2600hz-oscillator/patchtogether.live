@@ -46,6 +46,7 @@
       flowStore,
       minWidth: MIN_WIDTH,
       minHeight: MIN_HEIGHT,
+      snapTo: 1, // STICKY is a free-form note — no rack-grid snapping
       getStartSize: () => ({ width, height }),
       apply: (w, h) => {
         const target = patch.nodes[id];
