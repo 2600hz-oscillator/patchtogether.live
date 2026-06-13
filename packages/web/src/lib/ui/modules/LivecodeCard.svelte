@@ -35,13 +35,13 @@
   const flowStore = useStore();
 
   // ───── Resize state (unchanged from v1) ─────────────────────────
-  const DEFAULT_WIDTH = 460;
-  // Rack-compaction (#759): default 380 → 360 so the card fits its 2u tier.
-  // Body is responsive (bodyHeight = cardHeight − header − footer), so the
-  // editor/output just get 20px shorter; everything stays usable + resizable.
+  // Rounded to whole-u (180px) rack tiles (#759) so default + min land on the
+  // grid; this card is user-resizable so the rack CSS doesn't clamp it. Body is
+  // responsive (bodyHeight = cardHeight − header − footer) so it stays usable.
+  const DEFAULT_WIDTH = 540;
   const DEFAULT_HEIGHT = 360;
-  const MIN_WIDTH = 320;
-  const MIN_HEIGHT = 240;
+  const MIN_WIDTH = 360;
+  const MIN_HEIGHT = 360;
 
   let cardWidth = $derived<number>(
     (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH,

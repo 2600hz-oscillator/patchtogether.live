@@ -105,11 +105,11 @@ test('Phase 3B: SCOPE inside a group portals its canvas into the GroupCard body'
   const portaledCanvas = vizBody.locator('canvas[data-viz-passthrough]');
   await expect(portaledCanvas).toHaveCount(1);
   // The canvas keeps its rAF draw loop alive: width/height stays at the
-  // ScopeCard's declared bitmap size (280×120 — see ScopeCard.svelte).
-  // We can't easily diff pixels here, but we can assert the canvas
-  // attribute survives the move + the element is visible.
-  await expect(portaledCanvas).toHaveAttribute('width', '280');
-  await expect(portaledCanvas).toHaveAttribute('height', '120');
+  // ScopeCard's declared bitmap size (320×300 — the bigger 3u screen, see
+  // ScopeCard.svelte). We can't easily diff pixels here, but we can assert the
+  // canvas attribute survives the move + the element is visible.
+  await expect(portaledCanvas).toHaveAttribute('width', '320');
+  await expect(portaledCanvas).toHaveAttribute('height', '300');
   await expect(portaledCanvas).toBeVisible();
 });
 

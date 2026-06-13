@@ -39,7 +39,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   cartesian: { size: '4u', hp: 2 }, // 563×360px
   charlottesEchos: { size: '1u', hp: 2 }, // 109×320px  [LOCKED]
   chowkick: { size: '5u', hp: 3 }, // 839×540px
-  clockedRunner: { size: '2u', hp: 2 }, // 220×360px
   clouds: { size: '2u', hp: 2 }, // 201×340px
   cloudseed: { size: '3u', hp: 4 }, // 427×680px
   cocoadelay: { size: '2u', hp: 4 }, // 283×620px
@@ -54,6 +53,13 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   flipper: { size: '1u', hp: 1 }, // 90×176px
   fourplexer: { size: '1u', hp: 2 }, // 158×320px
   foxy: { size: '4u', hp: 4 }, // 575×720px
+  // NOTE: 12 user-resizable cards (clockedRunner, livecode, wavesculpt,
+  // b3ntb0x, backdraft, bentbox, monoglitch, reshaper, ruttetra, toybox,
+  // videobox, videoOut) are intentionally ABSENT from this map — they are sized
+  // by their own corner-resize (snapped to whole-u via card-resize.ts), not a
+  // fixed tier, so the rack CSS must NOT clamp them. They live in
+  // rack-sizing.test.ts DYNAMIC_SIZED. Their DEFAULT/MIN constants are rounded
+  // to 180-multiples so they still land on-grid out of the box.
   frogger: { size: '2u', hp: 2 }, // 380×260px
   gamepad: { size: '2u', hp: 2 }, // 267×280px
   gatemaiden: { size: '1u', hp: 1 }, // 199×200px
@@ -64,7 +70,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   illogic: { size: '1u', hp: 2 }, // 154×240px
   joystick: { size: '2u', hp: 2 }, // 234×220px
   lfo: { size: '2u', hp: 1 }, // 221×200px
-  livecode: { size: '2u', hp: 3 }, // 380×460px
   macrooscillator: { size: '1u', hp: 2 }, // 187×320px
   macseq: { size: '2u', hp: 5 }, // 282×880px
   marbles: { size: '1u', hp: 3 }, // 199×420px
@@ -139,7 +144,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   warps: { size: '1u', hp: 2 }, // 187×320px
   warrenspectrum: { size: '3u', hp: 3 }, // 481×440px
   wavecel: { size: '3u', hp: 2 }, // 398×320px
-  wavesculpt: { size: '5u', hp: 7 }, // 880×1280px
   wavetableVco: { size: '1u', hp: 2 }, // 152×240px
   writeseq: { size: '2u', hp: 5 }, // 261×880px
 
@@ -149,9 +153,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   // ── video domain ──
   '4plexvid': { size: '3u', hp: 2 }, // 463×280px
   acidwarp: { size: '3u', hp: 2 }, // 407×380px
-  b3ntb0x: { size: '3u', hp: 3 }, // 540×460px
-  backdraft: { size: '4u', hp: 2 }, // 660×340px
-  bentbox: { size: '3u', hp: 3 }, // 480×420px
   cameraInput: { size: '3u', hp: 2 }, // 370×280px  [LOCKED]
   cellshade: { size: '2u', hp: 2 }, // 369×220px
   chroma: { size: '2u', hp: 2 }, // 360×260px
@@ -170,7 +171,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   mandelbulb: { size: '2u', hp: 2 }, // 362×280px
   mandleblot: { size: '2u', hp: 2 }, // 360×280px
   mapper: { size: '2u', hp: 1 }, // 250×200px
-  monoglitch: { size: '3u', hp: 2 }, // 425×320px
   nibbles: { size: '2u', hp: 2 }, // 367×380px
   outlines: { size: '3u', hp: 2 }, // 420×260px
   peakstate: { size: '2u', hp: 2 }, // 329×240px
@@ -178,18 +178,13 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   qbert: { size: '2u', hp: 2 }, // 326×340px
   quadralogical: { size: '5u', hp: 3 }, // 874×480px
   recorderbox: { size: '2u', hp: 2 }, // 296×248px
-  reshaper: { size: '3u', hp: 2 }, // 480×320px
-  ruttetra: { size: '3u', hp: 2 }, // 480×320px
   scoreboard: { size: '1u', hp: 2 }, // 240×260px  [LOCKED]
   shapedramps: { size: '4u', hp: 2 }, // 641×240px
   shapegen: { size: '2u', hp: 2 }, // 304×300px
   shapes: { size: '2u', hp: 2 }, // 320×220px
   snes9x: { size: '2u', hp: 3 }, // 380×442px
-  toybox: { size: '4u', hp: 5 }, // 693×860px
   vdelay: { size: '3u', hp: 2 }, // 431×220px
   vfpgaRunner: { size: '3u', hp: 3 }, // 467×420px
-  videobox: { size: '2u', hp: 2 }, // 360×320px
   videoMixer: { size: '3u', hp: 2 }, // 420×280px
-  videoOut: { size: '2u', hp: 2 }, // 240×360px
   videovarispeed: { size: '3u', hp: 2 }, // 452×320px
 };

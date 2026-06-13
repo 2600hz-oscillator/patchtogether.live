@@ -97,7 +97,11 @@ test('clicking "Create group" closes palette and enters lasso mode', async ({ pa
   const pane = page.locator('.svelte-flow__pane');
   const box = await pane.boundingBox();
   if (!box) throw new Error('no pane');
-  await page.mouse.click(box.x + 100, box.y + 100, { button: 'right' });
+  // Right-click EMPTY pane to open the palette. The chain nodes sit in a
+  // horizontal band near the vertical center after fitView; the rack-sized
+  // cards (lfo is 2u = 360px tall) now reach the top-left corner where this
+  // used to click, so target the lower-center band which stays empty (#759).
+  await page.mouse.click(box.x + box.width * 0.5, box.y + box.height - 60, { button: 'right' });
   await expect(page.locator('.module-palette')).toBeVisible();
   await page.locator('[data-testid="palette-create-group"]').click();
   await expect(page.locator('.module-palette')).toHaveCount(0);

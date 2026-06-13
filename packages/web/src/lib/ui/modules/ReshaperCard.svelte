@@ -39,11 +39,12 @@
   const CANVAS_H = 158;
 
   // Hide-controls (video-only resizable) defaults. Min keeps the canvas
-  // legible at small zoom; default mirrors OUTPUT's 360x240.
-  const MIN_WIDTH = 240;
-  const MIN_HEIGHT = 160;
+  // legible at small zoom. Rounded to whole-u (180px) rack tiles (#759) so
+  // default + min land on the grid; user-resizable so the rack CSS doesn't clamp.
+  const MIN_WIDTH = 360;
+  const MIN_HEIGHT = 180;
   const DEFAULT_WIDTH = 360;
-  const DEFAULT_HEIGHT = 240;
+  const DEFAULT_HEIGHT = 360;
   // Letterbox padding when in hide-controls mode (matches VideoOut).
   const HEADER_PX = 56;
   const PAD_PX = 20;

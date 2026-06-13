@@ -34,8 +34,22 @@ const NO_CARD_BY_DESIGN = new Set(['cadillac']);
 //   matrixMix      — the EMS/Buchla patchbay: a both-axes-scrollable grid card
 //                    (`.matrixmix-card` root, deliberately outside the rack
 //                    `:is()` sizing list) that can exceed 3u; never tiered.
+//
+// USER-RESIZABLE cards — each carries a corner-resize handle (card-resize.ts)
+// and is sized by the user's drag, SNAPPED to whole-u tiles, NOT a fixed tier.
+// Forcing them to a fixed tier via the rack CSS max-height/max-width would CAP
+// the resize so the card couldn't grow (#759 — the bentbox resize e2e). Their
+// DEFAULT/MIN size constants (in each *Card.svelte) are rounded to 180-multiples
+// so they still land on the rack grid out of the box.
+//   clockedRunner, livecode, wavesculpt, b3ntb0x, backdraft, bentbox,
+//   monoglitch, reshaper, ruttetra, toybox, videobox, videoOut
 // All are excluded from the size-coverage requirement + the rack CSS.
-const DYNAMIC_SIZED = new Set(['group', 'sticky', 'controlSurface', 'matrixMix']);
+const DYNAMIC_SIZED = new Set([
+  'group', 'sticky', 'controlSurface', 'matrixMix',
+  // user-resizable, sized by resize-snap-to-u not a fixed tier:
+  'clockedRunner', 'livecode', 'wavesculpt', 'b3ntb0x', 'backdraft', 'bentbox',
+  'monoglitch', 'reshaper', 'ruttetra', 'toybox', 'videobox', 'videoOut',
+]);
 
 interface SizedDef {
   type: string;

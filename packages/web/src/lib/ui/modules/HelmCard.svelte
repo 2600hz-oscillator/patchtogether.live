@@ -446,7 +446,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-right: 8px;
+    /* Clear the shared PatchPanel right-edge trigger (top:4px right:4px,
+     * ~22px wide) so the gear button's click target isn't intercepted by
+     * it (#759 — the right trigger sits in the top-right corner). */
+    padding-right: 28px;
   }
   .helm-card .gear-btn {
     background: transparent;
