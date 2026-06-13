@@ -122,7 +122,9 @@
   let dotColor = $derived(INPUT_COLORS[dominantIdx] ?? '#ffd24a');
 
   // ---- pad geometry ----
-  const PAD_PX = 440;
+  // 380px square: large enough to drag precisely, and (with the ~300px right
+  // column of preview + 2×2 edge selectors) fits the 720px-wide 4hp rack box.
+  const PAD_PX = 380;
   let dotX = $derived(((pos_x + 1) / 2) * PAD_PX);
   let dotY = $derived(((-pos_y + 1) / 2) * PAD_PX);
   // A CSS square of side s rotated 45° has its vertices at distance s/√2 from
@@ -321,8 +323,8 @@
   // ---- on-card MIX preview canvas ----
   const ENGINE_W = VIDEO_RES.width;
   const ENGINE_H = VIDEO_RES.height;
-  const CANVAS_W = 280;
-  const CANVAS_H = 158;
+  const CANVAS_W = 270;
+  const CANVAS_H = 152;
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let drawRaf: number | null = null;
 
@@ -428,6 +430,10 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={340}>
     <div class="body">
+      <!-- Two columns: LEFT = the XY joystick mix view + x/y readout; RIGHT =
+           the transition preview + the four EDGE selectors (2×2 grid). -->
+      <div class="cols">
+      <div class="col col-left">
       <!-- The XY pad — pointer-events on the PAD (not the dot), so a dot
            right-click lands here on the pad for the 2-axis MIDI menu. -->
       <div class="pad-wrap">
@@ -477,7 +483,9 @@
           {#if bindY}<span class="midi-badge" title="Y bound to CH {bindY.channel + 1} · {bindNum(bindY)}">Y·MIDI</span>{/if}
         </div>
       </div>
+      </div>
 
+      <div class="col col-right">
       <!-- on-card MIX preview (the canonical surface) -->
       <div class="canvas-wrap">
         <canvas
@@ -549,6 +557,8 @@
             {/if}
           </div>
         {/each}
+      </div>
+      </div>
       </div>
 
       <!-- shared chroma key colour (shown only when an edge runs CHROMA) -->
@@ -702,10 +712,27 @@
   .body {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     gap: 10px;
     margin-top: 8px;
   }
+  /* Two-column layout for the wide (4hp) rack box: joystick mix view on the
+     LEFT, transition preview + 2×2 EDGE selectors on the RIGHT. */
+  .cols {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 12px;
+    width: 100%;
+  }
+  .col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  .col-left { flex: 0 0 auto; align-items: center; }
+  .col-right { flex: 1 1 auto; align-items: stretch; }
   .pad-wrap {
     display: flex;
     flex-direction: column;

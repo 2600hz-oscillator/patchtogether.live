@@ -850,6 +850,9 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={360}>
     <div class="cube-body">
+      <!-- LEFT column: the tesseract viewport (+ SLICE / OUTPUT) and the four
+           wavetable source selectors. RIGHT column: toggles, knobs, view. -->
+      <div class="cube-col cube-col-left">
       <div class="viz-col">
         <canvas
           bind:this={glCanvas}
@@ -918,7 +921,9 @@
           </div>
         {/each}
       </div>
+      </div>
 
+      <div class="cube-col cube-col-right">
       <div class="toggles">
         <button
           class="toggle"
@@ -980,6 +985,7 @@
           {/each}
         </div>
       </div>
+      </div>
     </div>
   </PatchPanel>
 </div>
@@ -990,7 +996,12 @@
     background: var(--hypercube-bg, #15121d);
     color: #ece8e2;
   }
-  .cube-body { padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 8px; }
+  /* 2-column layout for the wide (4hp) rack box: viewport + sources on the
+     left, controls on the right. */
+  .cube-body { padding: 6px 10px 8px; display: flex; flex-direction: row; gap: 14px; align-items: flex-start; }
+  .cube-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .cube-col-left { flex: 0 0 auto; }
+  .cube-col-right { flex: 1 1 340px; min-width: 320px; }
   .viz-col { display: flex; flex-direction: column; gap: 6px; align-items: center; }
   .viz-row { display: flex; gap: 6px; justify-content: center; }
   .viz { border-radius: 4px; background: #0c0a12; border: 1px solid rgba(255,255,255,0.08); }

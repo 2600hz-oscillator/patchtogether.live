@@ -176,7 +176,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   peakstate: { size: '2u', hp: 2 }, // 329×240px
   picturebox: { size: '2u', hp: 2 }, // 240×220px
   qbert: { size: '2u', hp: 2 }, // 326×340px
-  quadralogical: { size: '4u', hp: 4 }, // 720×720px — 2-col (joystick left, preview+edges right)
+  quadralogical: { size: '3u', hp: 4 }, // 540×720px — 2-col (joystick left, preview+edges right)
   recorderbox: { size: '2u', hp: 2 }, // 296×248px
   scoreboard: { size: '1u', hp: 2 }, // 240×260px  [LOCKED]
   shapedramps: { size: '4u', hp: 2 }, // 641×240px
