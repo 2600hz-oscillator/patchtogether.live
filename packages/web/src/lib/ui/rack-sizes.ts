@@ -37,6 +37,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   mixer: { size: '1u', hp: 1 }, // OVERRIDE 1u         260px → 1hp
   videoMixer: { size: '3u', hp: 2 }, //                280px → 2hp (video preview)
   flipper: { size: '1u', hp: 1 }, //                   176px → 1hp
+  gatemaiden: { size: '1u', hp: 1 }, //                200px → 1hp (gate↔trigger converter, merged via #758)
   illogic: { size: '1u', hp: 1 }, //                   240px → 1hp
   analogLogicMaths: { size: '1u', hp: 1 }, //          220px → 1hp
   unityscalemathematik: { size: '1u', hp: 1 }, //      240px → 1hp
