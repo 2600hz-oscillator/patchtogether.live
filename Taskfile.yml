@@ -24,6 +24,25 @@ tasks:
       - task --list-all
     silent: true
 
+  actionlint:
+    desc: Lint GitHub Actions workflows locally (same pinned binary + flags as CI) — run before pushing any .github/workflows change
+    vars:
+      AL_VER: 1.7.12
+      AL_BIN: node_modules/.cache/actionlint/actionlint
+    cmds:
+      - |
+        set -euo pipefail
+        if [ ! -x "{{.AL_BIN}}" ]; then
+          mkdir -p "$(dirname "{{.AL_BIN}}")"
+          OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+          ARCH=$(uname -m); [ "$ARCH" = "x86_64" ] && ARCH=amd64; [ "$ARCH" = "aarch64" ] && ARCH=arm64
+          curl -sSfL -o /tmp/actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v{{.AL_VER}}/actionlint_{{.AL_VER}}_${OS}_${ARCH}.tar.gz"
+          tar -xzf /tmp/actionlint.tar.gz -C "$(dirname "{{.AL_BIN}}")" actionlint
+        fi
+        # -shellcheck= disables shellcheck integration to match ci.yml's actionlint job.
+        "{{.AL_BIN}}" -shellcheck=
+
   # ---------------- Setup ----------------
   install:
     desc: Install all workspace dependencies

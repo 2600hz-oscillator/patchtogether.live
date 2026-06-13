@@ -85,13 +85,18 @@ jobs:
       - name: Build VRT changeset gallery
         id: build
         env:
+          # Pass PR fields via env (NOT inline ${{ }} in run:) — the title is
+          # untrusted user input; inlining it is a script-injection vector
+          # (actionlint [expression]). See the secure-use GHA guidance.
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
           COUNT=$(node scripts/vrt-changeset-gallery.mjs \
-            --base "origin/${{ github.event.pull_request.base.ref }}" \
-            --pr "${{ github.event.pull_request.number }}" \
-            --title "${{ github.event.pull_request.title }}" \
+            --base "origin/${PR_BASE}" \
+            --pr "${PR_NUMBER}" \
+            --title "${PR_TITLE}" \
             --json /tmp/vrt-changeset.json)
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "Changed baselines: $COUNT"
