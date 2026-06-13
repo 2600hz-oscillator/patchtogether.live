@@ -103,11 +103,12 @@
     justify-content: space-between;
     gap: 8px;
     width: calc(100% - 24px);
-    margin: 2px 12px 4px;
+    /* Rack-compaction (#759): tighter margin + padding to fit 1u. */
+    margin: 1px 12px 2px;
     border: 1px solid var(--border, #555);
     background: var(--bg-elevated, #1a1a1a);
     color: var(--text, #eee);
-    padding: 4px 10px;
+    padding: 3px 10px;
     font-family: var(--font-display, monospace);
     font-size: 0.7rem;
     letter-spacing: 0.06em;
@@ -124,7 +125,8 @@
     font-weight: 600;
   }
   .rings-card .fader-row {
-    margin-top: 10px;
+    /* Rack-compaction (#759): tighter top margin to fit 1u. */
+    margin-top: 3px;
     display: flex;
     justify-content: center;
     gap: 8px;

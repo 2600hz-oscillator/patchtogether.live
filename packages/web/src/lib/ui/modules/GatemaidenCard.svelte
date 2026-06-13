@@ -79,8 +79,9 @@
     border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
+    /* Rack-compaction (#759): tightened 18/14 → 10/9 to fit the 1u tier. */
+    padding-top: 10px;
+    padding-bottom: 9px;
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
@@ -91,11 +92,12 @@
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; }
   .body {
-    padding: 4px 10px 10px;
+    /* Rack-compaction (#759): tightened padding + gap to fit 1u. */
+    padding: 2px 10px 4px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
   }
   .len { width: 60px; }
   .modebtn {

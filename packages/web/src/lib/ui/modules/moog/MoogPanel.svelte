@@ -94,7 +94,9 @@
     border: 2px solid var(--border-strong);
     border-radius: 4px;
     color: var(--text);
-    padding-bottom: 14px;
+    /* Rack-compaction (#759): tightened 14 → 9 so the marginal 1u Moog cards
+     * (911 / CP3) fit their tier with no content spill. */
+    padding-bottom: 9px;
     position: relative;
     /* Walnut end-cheek shadow + soft drop. */
     box-shadow:
@@ -136,7 +138,8 @@
   }
 
   .moog-body {
-    padding-top: 8px;
+    /* Rack-compaction (#759): tightened 8 → 6 to help 1u Moog cards fit. */
+    padding-top: 6px;
   }
 
   /*
