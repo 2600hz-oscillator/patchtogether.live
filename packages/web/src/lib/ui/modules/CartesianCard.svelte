@@ -288,14 +288,15 @@
 <style>
   .cartesian-card { width: 360px; padding-right: 0; padding-left: 0; }
   .lfo-row {
-    margin-top: 8px;
-    padding: 0 22px 12px;
+    /* Rack-compaction (#759): tighter margin + paddings to fit the 3u tier. */
+    margin-top: 6px;
+    padding: 0 22px 9px;
     display: flex;
     flex-direction: row;
     align-items: flex-end;
     gap: 16px;
     border-top: 1px solid #2a2f3a;
-    padding-top: 10px;
+    padding-top: 8px;
   }
   .lfo-label {
     font-size: 0.62rem;
@@ -332,7 +333,8 @@
     border-color: var(--cable-pitch);
   }
   .grid {
-    margin: 30px 22px 12px;
+    /* Rack-compaction (#759): tighter top margin to fit the 3u tier. */
+    margin: 16px 22px 10px;
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;

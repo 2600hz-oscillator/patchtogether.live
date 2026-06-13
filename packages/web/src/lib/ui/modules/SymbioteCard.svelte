@@ -116,14 +116,15 @@
     font-size: 0.85rem;
     letter-spacing: 0.04em;
   }
-  .symbiote-card .btn-row { display: flex; gap: 8px; margin: 2px 12px 4px; }
+  /* Rack-compaction (#759): tighter btn-row margin to fit 1u. */
+  .symbiote-card .btn-row { display: flex; gap: 8px; margin: 1px 12px 2px; }
   .symbiote-card .sel-btn {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     flex: 1;
     border: 1px solid var(--border, #555);
     background: var(--bg-elevated, #1a1a1a);
     color: var(--text, #eee);
-    padding: 4px 10px;
+    padding: 3px 10px;
     font-family: var(--font-display, monospace);
     font-size: 0.7rem;
     letter-spacing: 0.06em;
@@ -134,7 +135,8 @@
   .symbiote-card .sel-label { color: var(--text-muted, #999); }
   .symbiote-card .sel-value { color: var(--text, #eee); font-weight: 600; }
   .symbiote-card .fader-row {
-    margin-top: 10px;
+    /* Rack-compaction (#759): tighter top margin to fit 1u. */
+    margin-top: 3px;
     display: flex;
     justify-content: center;
     gap: 6px;

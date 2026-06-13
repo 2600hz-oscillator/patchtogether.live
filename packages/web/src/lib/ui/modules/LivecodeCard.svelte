@@ -36,7 +36,10 @@
 
   // ───── Resize state (unchanged from v1) ─────────────────────────
   const DEFAULT_WIDTH = 460;
-  const DEFAULT_HEIGHT = 380;
+  // Rack-compaction (#759): default 380 → 360 so the card fits its 2u tier.
+  // Body is responsive (bodyHeight = cardHeight − header − footer), so the
+  // editor/output just get 20px shorter; everything stays usable + resizable.
+  const DEFAULT_HEIGHT = 360;
   const MIN_WIDTH = 320;
   const MIN_HEIGHT = 240;
 

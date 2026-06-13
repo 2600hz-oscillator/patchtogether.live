@@ -235,14 +235,15 @@
 <style>
   .card {
     width: 180px;
-    min-height: 200px;
+    min-height: 180px;
     background-color: #000;
     background-image: linear-gradient(var(--module-bg), var(--module-bg));
     border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
+    /* Rack-compaction (#759): tightened 18/14 → 10/9 to fit the 1u tier. */
+    padding-top: 10px;
+    padding-bottom: 9px;
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
@@ -263,7 +264,8 @@
     background: var(--text-dim);
   }
   .device-area {
-    margin: 4px 8px 8px;
+    /* Rack-compaction (#759): tightened vertical margins to fit 1u. */
+    margin: 2px 8px 4px;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -303,7 +305,7 @@
     opacity: 1;
   }
   .fader-row {
-    margin-top: 6px;
+    margin-top: 2px;
     display: flex;
     justify-content: center;
   }

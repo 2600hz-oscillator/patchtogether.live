@@ -99,14 +99,15 @@
     letter-spacing: 0.04em;
   }
   .clouds-card .fader-row {
-    margin-top: 10px;
+    /* Rack-compaction (#759): tighter top margin to fit 1u. */
+    margin-top: 4px;
     display: flex;
     justify-content: center;
     gap: 10px;
     padding: 0 14px;
   }
   .clouds-card .freeze-row {
-    margin-top: 10px;
+    margin-top: 3px;
     display: flex;
     justify-content: center;
   }
@@ -115,7 +116,7 @@
     color: var(--text-strong, #ddd);
     border: 1px solid var(--border, #444);
     border-radius: 3px;
-    padding: 4px 14px;
+    padding: 3px 14px;
     font-family: var(--font-display, inherit);
     font-size: 0.7rem;
     letter-spacing: 0.08em;

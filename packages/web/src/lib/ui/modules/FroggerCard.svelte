@@ -48,7 +48,9 @@
   // Canvas — 200 CSS px wide × 240 tall (a hair taller-than-square to fit
   // 14×13 grid + HUD strip). 2× DPR for crisp pixels.
   const CSS_W = 200;
-  const CSS_H = 240;
+  // Rack-compaction (#759): trimmed 240 → 226 so the card fits its 2u tier
+  // with no content spill. drawFrogger scales to canvas.width/height.
+  const CSS_H = 226;
   const DPR = 2;
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let raf: number | null = null;
@@ -109,11 +111,12 @@
 </div>
 
 <style>
-  .frogger-card { width: 260px; min-height: 380px; }
+  .frogger-card { width: 260px; min-height: 360px; }
   .frogger-card .game-area {
     display: flex;
     justify-content: center;
-    padding: 6px 0 8px;
+    /* Rack-compaction (#759): tighter padding to fit 2u. */
+    padding: 4px 0 4px;
   }
   .frogger-card canvas {
     display: block;
