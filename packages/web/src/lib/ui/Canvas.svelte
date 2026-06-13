@@ -104,6 +104,7 @@
   // drops its XyzCard.svelte here (matching the PascalCase(type)+Card
   // convention, or declaring `card` on its def) and is picked up automatically.
   import { buildNodeTypes } from '$lib/ui/modules-card-map';
+  import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   import { computeCabinetLayout } from '$lib/ui/canvas/cabinet-layout';
   // ModuleNameLabel moved INTO every module card's title chrome (see
   // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
@@ -257,15 +258,18 @@
     ...listMetaModuleDefs(),
   ]);
 
-  // Rack sizing: module type → declared { size, hp }. The flowNodes derivation
-  // tags each DECLARED card's SvelteFlow wrapper (rack-sized rack-{1u,3u} +
-  // an inline --rack-hp) so the shared _module-card.css forces its tier height
-  // + hp width. Modules that don't declare `size` are left untagged (keep their
-  // content-driven size) — lets the rack rollout land card-by-card.
+  // Rack sizing: module type → resolved { size, hp }. The flowNodes derivation
+  // tags each card's SvelteFlow wrapper (rack-sized rack-{1u,3u} + an inline
+  // --rack-hp) so the shared _module-card.css forces its tier height + hp width.
+  // Resolution: the def's own `size`/`hp` WIN (a new module declares them on its
+  // def); the bulk RACK_SIZE_DEFAULTS map (rack-sizes.ts) is the fallback that
+  // classifies every existing module so every card snaps to the grid.
   const rackSizeByType: Record<string, { size?: '1u' | '3u'; hp?: number }> = {};
   for (const d of [...listModuleDefs(), ...listVideoModuleDefs(), ...listMetaModuleDefs()]) {
     const r = d as { type: string; size?: '1u' | '3u'; hp?: number };
-    if (r.size) rackSizeByType[r.type] = { size: r.size, hp: r.hp };
+    const fallback = RACK_SIZE_DEFAULTS[r.type];
+    const size = r.size ?? fallback?.size;
+    if (size) rackSizeByType[r.type] = { size, hp: r.hp ?? fallback?.hp };
   }
 
   let audioCtx: AudioContext | null = $state(null);

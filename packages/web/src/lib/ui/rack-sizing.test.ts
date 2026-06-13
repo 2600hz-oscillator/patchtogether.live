@@ -18,6 +18,13 @@ import { listModuleDefs } from '$lib/audio/module-registry';
 import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
 
+import { RACK_SIZE_DEFAULTS } from './rack-sizes';
+
+// CADILLAC is a meta module drawn as a full-canvas overlay (CadillacOverlay),
+// never a SvelteFlow card — so it has no card box to tier (same exclusion the
+// modules-card-map guard uses).
+const NO_CARD_BY_DESIGN = new Set(['cadillac']);
+
 interface SizedDef {
   type: string;
   size?: '1u' | '3u';
@@ -64,6 +71,68 @@ describe('rack sizing — declaration invariants', () => {
     expect(by.stereovca?.hp).toBe(1);
     expect(by.sequencer?.size).toBe('3u');
     expect(by.sequencer?.hp).toBe(3);
+  });
+});
+
+describe('rack sizing — bulk classification coverage (RACK_SIZE_DEFAULTS)', () => {
+  // Resolution mirrors Canvas.svelte rackSizeByType: the def's own size/hp WIN;
+  // the RACK_SIZE_DEFAULTS map is the fallback. After this PR every card-bearing
+  // module must resolve to a size so it snaps to the rack grid.
+  function resolveSize(d: SizedDef) {
+    return d.size ?? RACK_SIZE_DEFAULTS[d.type]?.size;
+  }
+  function resolveHp(d: SizedDef) {
+    return d.hp ?? RACK_SIZE_DEFAULTS[d.type]?.hp;
+  }
+
+  const cardModules = allDefs().filter((d) => !NO_CARD_BY_DESIGN.has(d.type));
+
+  it('every registered module (with a card) resolves to a size tier', () => {
+    const unclassified = cardModules.filter((d) => resolveSize(d) === undefined).map((d) => d.type);
+    expect(
+      unclassified,
+      `modules with no rack size (declare size on the def OR add to RACK_SIZE_DEFAULTS): ${unclassified.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('every registered module (with a card) resolves to a positive-integer hp', () => {
+    for (const d of cardModules) {
+      const hp = resolveHp(d);
+      expect(hp, `${d.type} resolves no hp`).toBeDefined();
+      expect(Number.isInteger(hp), `${d.type} hp must be an integer`).toBe(true);
+      expect(hp as number, `${d.type} hp must be >= 1`).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('every RACK_SIZE_DEFAULTS entry is itself well-formed (1u|3u + integer hp >= 1)', () => {
+    for (const [type, v] of Object.entries(RACK_SIZE_DEFAULTS)) {
+      expect(['1u', '3u'], `${type} map size`).toContain(v.size);
+      expect(Number.isInteger(v.hp), `${type} map hp must be an integer`).toBe(true);
+      expect(v.hp, `${type} map hp must be >= 1`).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('the map has no stale entries (every key is a registered card-bearing module)', () => {
+    const registered = new Set(cardModules.map((d) => d.type));
+    const stale = Object.keys(RACK_SIZE_DEFAULTS).filter((t) => !registered.has(t));
+    expect(stale, `RACK_SIZE_DEFAULTS keys not matching a registered module: ${stale.join(', ')}`).toEqual([]);
+  });
+
+  it('respects the user-LOCKED per-module tier overrides (DECISIONS §2)', () => {
+    // resolveSize must yield exactly these for the explicitly-called modules,
+    // whether the tier comes from the def or the map.
+    const LOCKED: Record<string, '1u' | '3u'> = {
+      adsr: '1u', filter: '1u', sequencer: '3u', mixer: '1u', scope: '1u',
+      midiLane: '3u', analogVco: '1u', peaks: '3u', resofilter: '1u',
+      chowkick: '3u', drummergirl: '3u', audioOut: '1u', scoreboard: '1u',
+      cameraInput: '3u', timelorde: '3u',
+    };
+    const by = Object.fromEntries(allDefs().map((d) => [d.type, d]));
+    for (const [type, tier] of Object.entries(LOCKED)) {
+      const d = by[type];
+      expect(d, `${type} not registered`).toBeDefined();
+      expect(resolveSize(d as SizedDef), `${type} locked tier`).toBe(tier);
+    }
   });
 });
 
