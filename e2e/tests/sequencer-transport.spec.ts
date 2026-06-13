@@ -652,7 +652,9 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
             id: nodeId,
             type: 'sequencer',
             domain: 'audio',
-            position: { x: 200, y: 200 },
+            // x:600 clears the auto-spawned TIMELORDE (top-left 3u×2hp) so its
+            // knob-row can't occlude the quicksave-slot click (#759 sizing).
+            position: { x: 600, y: 200 },
             params: { isPlaying: 0, bpm: 132 },
             data: { steps },
           };
@@ -786,7 +788,9 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
             id: nodeId,
             type: 'polyseqz',
             domain: 'audio',
-            position: { x: 200, y: 200 },
+            // x:600 clears the auto-spawned TIMELORDE (top-left 3u×2hp) so its
+            // knob-row can't occlude the quicksave-slot click (#759 sizing).
+            position: { x: 600, y: 200 },
             params: { isPlaying: 0, bpm: 132, length: 8 },
             data: { steps },
           };
