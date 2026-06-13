@@ -378,6 +378,73 @@ test.describe('q → KEY_ESCAPE intercept in DOOM keyboard mode (#5)', () => {
   });
 });
 
+// ----------------------------------------------------------------- #7
+test.describe('DOOM Volume control writes params.audioGain (the −42 dB fix UI) (#7)', () => {
+  test('Volume knob renders + drives params.audioGain via the setParam path', async ({ page }) => {
+    page.on('pageerror', (e) => console.error('pageerror:', e.message));
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // No WASM/WAD needed — the Volume control is plain card UI bound to the
+    // audioGain param (default 1, range 0..2). The engine forwards the value
+    // to the PCM worklet on change (a fixed makeup gain there does the loudness
+    // lift; this knob trims on top). We assert the card → param write path.
+    await spawnPatch(page, [
+      { id: 'v-doom', type: 'doom', position: { x: 200, y: 120 }, domain: 'video' },
+    ]);
+
+    const card = page.locator('[data-testid="doom-card"]');
+    await expect(card, 'DOOM card mounts').toHaveCount(1);
+
+    // The Volume control is a standard Knob (role="slider", aria-label="Volume")
+    // inside the OUTPUT-FIT row.
+    const volume = card.locator('[data-testid="doom-volume"]');
+    await expect(volume, 'Volume control renders on the card').toHaveCount(1);
+    const knob = volume.locator('[role="slider"][aria-label="Volume"]');
+    await expect(knob, 'Volume knob (aria slider) renders').toHaveCount(1);
+
+    // audioGain starts at its default of 1.
+    const before = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params?: Record<string, number> } | undefined> };
+      };
+      return w.__patch.nodes['v-doom']?.params?.audioGain ?? 1;
+    });
+    expect(before, 'audioGain defaults to 1').toBeCloseTo(1, 5);
+
+    // Drag the knob DOWN (vertical drag = lower value; the D15 Knob maps
+    // downward drag to a lower value). A clear drag delta moves it off 1.
+    const box = await knob.boundingBox();
+    expect(box, 'knob has a bounding box').not.toBeNull();
+    const cx = box!.x + box!.width / 2;
+    const cy = box!.y + box!.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx, cy + 60, { steps: 12 }); // drag down → lower gain
+    await page.mouse.up();
+    await page.waitForTimeout(100);
+
+    const after = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params?: Record<string, number> } | undefined> };
+      };
+      return w.__patch.nodes['v-doom']?.params?.audioGain ?? 1;
+    });
+    // The drag must have changed audioGain (downward → strictly lower), and it
+    // stays within the param's [0,2] range. This proves card → setParam →
+    // patch.nodes[id].params.audioGain (the same path the engine's setParam
+    // watches + forwards to the worklet).
+    expect(
+      after,
+      `dragging the Volume knob down must lower params.audioGain ` +
+        `(was ${before}, now ${after}). If unchanged, the knob isn't wired to ` +
+        `the audioGain param's setter.`,
+    ).toBeLessThan(before);
+    expect(after).toBeGreaterThanOrEqual(0);
+    expect(after).toBeLessThanOrEqual(2);
+  });
+});
+
 // ----------------------------------------------------------------- #6
 test.describe('DOOM evt_kill → SCOREBOARD.score fires (same-domain video CV bridge) (#6)', () => {
   test('forcePulse(evt_kill) increments SCOREBOARD score downstream', async ({ page }) => {

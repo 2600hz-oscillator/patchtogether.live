@@ -254,6 +254,26 @@ export interface PortDef {
    * "LFO sweeps full range" semantics.
    */
   cvScale?: CvScaleHint;
+  /**
+   * Optional DECLARED gate/trigger semantic for this port (the consumer
+   * contract — see $lib/audio/gate-trigger). It does NOT restrict connections:
+   * the unified `gate` cable stays cross-patchable with cv/pitch (it's just CV),
+   * exactly as before. `edge` only documents how a `gate`-typed port behaves so
+   * the model is explicit + lintable instead of re-derived per module, and so
+   * the card can show a ▷ (trigger) / ▭ (gate) glyph on the port:
+   *   - 'trigger' → fires ONCE per rising edge (clock / reset / strike / sync /
+   *                 start-stop / sample); ignores how long the level stays high.
+   *                 MUST be edge-detected (shared createEdgeCounter or a
+   *                 per-sample worklet edge-detect) — never level-sampled.
+   *   - 'gate'    → acts WHILE the level is high + reacts to both edges (an
+   *                 ADSR sustain, a VCA hold, a poly note-on/off). Do NOT
+   *                 convert a gate consumer to edge-only.
+   * Only meaningful on `gate`-typed ports (inputs primarily; an output may
+   * carry it to drive the cosmetic glyph + emitted waveform shape).
+   * (Literal union mirrors EdgeSemantic in $lib/audio/gate-trigger — inlined
+   * here to keep the foundational graph layer free of an audio-layer import.)
+   */
+  edge?: 'trigger' | 'gate';
 }
 
 export type KnobCurve = 'linear' | 'log' | 'exp' | 'discrete';
