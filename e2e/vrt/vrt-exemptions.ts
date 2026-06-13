@@ -224,6 +224,15 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // fingerprinting. Covered by control-surface.test.ts (model) + the
   // control-surface e2e (spawn → send → proxy drives source → collapse).
   controlSurface: 'content is binding-dependent (proxied controls vary by patch); empty state is a blank square. Covered by control-surface.test.ts + control-surface.spec.ts.',
+  // MATRIXMIX — meta module (EMS-Synthi / Buchla patch matrix) whose entire
+  // grid body is patch-dependent: a solo-spawned card shows only two axis
+  // dropdowns + a "pick a module" hint (the matrix only materializes once both
+  // axes name a module that exists in the patch), so the grid has no stable
+  // module-specific pixels to fingerprint. Like CONTROL SURFACE, covered by
+  // the pure-core unit (matrixmix-grid.test.ts), the real-Y.Doc edge writer
+  // (matrixmix-ydoc.test.ts), and the live-chain e2e (matrixmix.spec.ts:
+  // spawn matrix + two modules → select axes → click cell → assert edge + dot).
+  matrixMix: 'grid body is patch-dependent — solo-spawn shows only the axis dropdowns + a pick-a-module hint (no stable module-specific pixels). Covered by matrixmix-grid.test.ts + matrixmix-ydoc.test.ts + e2e/tests/matrixmix.spec.ts.',
   // CLOUDS first-slice PR (#166): VRT baseline pending; ART + unit + E2E
   // provide coverage. Promote into MODULES + capture baselines on both
   // platforms in a follow-up PR.
