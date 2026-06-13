@@ -79,8 +79,8 @@
 
   // ---------- Present on a second display ----------
   // Separate popup window on the chosen display fed THIS card's live canvas
-  // via captureStream; the main window stays interactive (unlike fullscreen).
-  // Capability-gated by the menu (getScreenDetails + >1 screen).
+  // via a per-frame canvas blit; the main window stays interactive (unlike
+  // fullscreen). Capability-gated by the menu (getScreenDetails + >1 screen).
   const present = createPresent({
     getCanvas: () => canvasEl,
     fullscreen: fs,
@@ -196,7 +196,7 @@
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
     if (resizeAbort) resizeAbort.abort();
-    // Close any present popup + release the capture tap when the card is gone.
+    // Close any present popup + stop the blit loop when the card is gone.
     present.dispose();
   });
 

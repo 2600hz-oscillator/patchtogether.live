@@ -93,7 +93,7 @@
 
   // ---------- Present on a second display ----------
   // Separate popup window on the chosen display fed THIS card's live canvas
-  // via captureStream; the main window stays interactive (unlike fullscreen).
+  // via a per-frame canvas blit; the main window stays interactive (unlike fullscreen).
   const present = createPresent({
     getCanvas: () => canvasEl,
     fullscreen: fs,

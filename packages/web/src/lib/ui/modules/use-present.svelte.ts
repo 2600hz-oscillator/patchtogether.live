@@ -9,7 +9,7 @@
 // A card creates one instance, hands it a getter for the OUTPUT canvas + the
 // fullscreen controller (for getScreenRect), and calls present(screenId) /
 // stop(). Call dispose() from onDestroy so a deleted card never leaves a popup
-// open or a capture tap running.
+// open or a blit loop running.
 
 import type { FullscreenController } from './use-fullscreen.svelte';
 import { startPresent, type PresentSession } from './present-window';
@@ -19,12 +19,12 @@ export interface PresentController {
    *  "Stop presenting" item + suppresses a second present. */
   readonly isPresenting: boolean;
   /** Open a present popup on the display behind `screenId`, fed the canvas.
-   *  No-op (and returns false) if there's no canvas, captureStream is
-   *  unsupported, or the popup is blocked. Replaces any existing session. */
+   *  No-op (and returns false) if there's no canvas or the popup is blocked.
+   *  Replaces any existing session. */
   present(screenId: string): boolean;
-  /** Close the popup + release the capture tap. Safe to call when idle. */
+  /** Close the popup + stop the blit loop. Safe to call when idle. */
   stop(): void;
-  /** Tear down on unmount (closes any open popup + stops capture). */
+  /** Tear down on unmount (closes any open popup + stops the blit loop). */
   dispose(): void;
 }
 

@@ -114,11 +114,23 @@ const conditionalClerk: Handle = async ({ event, resolve }) => {
 // so we scope these headers to routes that DO: the public canvas at `/`
 // and the rack canvas at `/r/`. Everything else (sign-in/up, dashboard,
 // docs, api) gets no isolation headers and can load Clerk's widgets.
+//
+// `/present` (the second-display popup sink) ALSO gets COOP `same-origin` here
+// — NOT for SAB, but so the popup shares a browsing-context group with its
+// opener (`/` or `/r/`, both COOP `same-origin`). With a MISMATCHED COOP the
+// browser severs the opener relationship: the popup's `window.opener` becomes
+// null AND the opener loses cross-window DOM access — so the present handshake
+// (popup → opener `present:ready`) and the opener's per-frame canvas blit into
+// the popup both silently break (a BLACK popup). In production the `_headers`
+// `/*` rule already covered `/present`; this makes DEV match prod so the
+// pipeline works locally + is e2e-testable. See routes/present/+page.svelte.
 const SAB_ROUTES = ['/r/'];
+const ISOLATED_EXACT = new Set(['/', '/present']);
 const setCoopCoepHeaders: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
   const path = event.url.pathname;
-  const needsIsolation = path === '/' || SAB_ROUTES.some((p) => path.startsWith(p));
+  const needsIsolation =
+    ISOLATED_EXACT.has(path) || SAB_ROUTES.some((p) => path.startsWith(p));
   if (needsIsolation) {
     response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
     response.headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
