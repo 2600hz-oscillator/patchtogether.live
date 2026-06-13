@@ -31,9 +31,12 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
     await spawnPatch(
       page,
       [
+        // Spread wide enough that the rack-sized cards (analogVco is 3u/hp2 =
+        // 360px wide) don't overlap — an overlapping neighbor would intercept
+        // the pointer over the middle card (#759).
         { id: 'a-vco',   type: 'analogVco', position: { x: 60,  y: 200 } },
-        { id: 'a-vca',   type: 'vca',       position: { x: 320, y: 200 } },
-        { id: 'a-out',   type: 'audioOut',  position: { x: 580, y: 200 } },
+        { id: 'a-vca',   type: 'vca',       position: { x: 520, y: 200 } },
+        { id: 'a-out',   type: 'audioOut',  position: { x: 800, y: 200 } },
       ],
       [
         {
@@ -78,9 +81,12 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
     await spawnPatch(
       page,
       [
+        // Spread wide enough that the rack-sized cards (analogVco is 3u/hp2 =
+        // 360px wide) don't overlap — an overlapping neighbor would intercept
+        // the pointer over the middle card (#759).
         { id: 'a-vco',   type: 'analogVco', position: { x: 60,  y: 200 } },
-        { id: 'a-vca',   type: 'vca',       position: { x: 320, y: 200 } },
-        { id: 'a-out',   type: 'audioOut',  position: { x: 580, y: 200 } },
+        { id: 'a-vca',   type: 'vca',       position: { x: 520, y: 200 } },
+        { id: 'a-out',   type: 'audioOut',  position: { x: 800, y: 200 } },
       ],
       [
         {

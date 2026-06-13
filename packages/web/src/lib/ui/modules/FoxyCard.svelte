@@ -142,6 +142,33 @@
     }
   }
 
+  // LIVE WAVETABLE redraw guard. drawWave3D/drawWaveScope are pure functions of
+  // (frames, activeFrame, vizMode), so re-running them every rAF when nothing
+  // changed just re-rasterizes identical pixels. While FREEZE TABLE is on the
+  // frames don't change, so without a guard the canvas was repainted ~60×/s with
+  // the SAME content — and at a fractional canvas zoom each repaint composites
+  // with non-deterministic sub-pixel AA, so two screenshots taken 2 s apart
+  // differed by a few bytes and broke the freeze-equality e2e (#759/#411/#420).
+  // Skipping the redraw when the inputs are unchanged keeps the composited layer
+  // byte-stable (and is a small perf win in production).
+  let lastWtSig = '';
+  function wtSignature(fs: Float32Array[], activeFrame: number, mode: string): string {
+    // Cheap content fingerprint: frame count + length + a few sampled values
+    // from the first/last frame + the active index + viz mode. Enough to detect
+    // a real wavetable change without hashing every sample each frame.
+    const n = fs.length;
+    let sig = `${mode}|${activeFrame}|${n}`;
+    if (n > 0) {
+      const f0 = fs[0]!;
+      const fl = fs[n - 1]!;
+      sig += `|${f0.length}`;
+      const k = Math.max(1, f0.length >> 3);
+      for (let i = 0; i < f0.length; i += k) sig += `,${f0[i]!.toFixed(4)}`;
+      for (let i = 0; i < fl.length; i += k) sig += `;${fl[i]!.toFixed(4)}`;
+    }
+    return sig;
+  }
+
   $effect(() => {
     if (!rasterAEl && !rasterBEl && !rasterCEl && !xyzEl && !wtEl) return;
     function tick() {
@@ -175,13 +202,19 @@
             }
           }
         }
-        // Animated wavetable display.
+        // Animated wavetable display. Only repaint when the draw inputs
+        // changed (see wtSignature) — a frozen table keeps the same pixels, so
+        // skipping the redraw keeps the composited canvas byte-stable.
         if (wtEl) {
           const c = wtEl.getContext('2d');
           if (c) {
             const fs = wt ?? [];
-            if (vizMode === '3d') drawWave3D(c, fs, wtEl.width, wtEl.height, { activeFrame });
-            else drawWaveScope(c, fs, wtEl.width, wtEl.height, { activeFrame });
+            const sig = wtSignature(fs, activeFrame, vizMode);
+            if (sig !== lastWtSig) {
+              lastWtSig = sig;
+              if (vizMode === '3d') drawWave3D(c, fs, wtEl.width, wtEl.height, { activeFrame });
+              else drawWaveScope(c, fs, wtEl.width, wtEl.height, { activeFrame });
+            }
           }
         }
       }
@@ -460,8 +493,15 @@
   }
   .foxy-card .viz {
     display: block;
-    width: 100%;
+    /* FIXED pixel size matching the canvas bitmap (280×110) so the rendered
+     * element never CSS-stretches with the card. The rack forces FOXY to its 4u
+     * tier (720px tall, taller than its natural content, #759); a `width: 100%`
+     * canvas re-rasterized on every layout reflow of the stretched card, so two
+     * screenshots 2s apart drifted by a few bytes and broke the freeze-equality
+     * e2e. A fixed px box makes the frozen-wavetable snapshots byte-stable. */
+    width: 280px;
     height: 110px;
+    margin: 0 auto;
     background: #0a0c11;
     border: 1px solid #2a2f3a;
     border-radius: 2px;

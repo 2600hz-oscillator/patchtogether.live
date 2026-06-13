@@ -70,10 +70,22 @@ test.describe('CAMERA → OUTPUT (fake webcam)', () => {
     // visible, then wait for streaming. (If it's not visible, we're
     // already in streaming/paused/etc.)
     const requestBtn = page.locator('[data-testid="camera-request-access"]');
-    if ((await requestBtn.count()) > 0 && await requestBtn.isVisible().catch(() => false)) {
-      // { force: true, noWaitAfter: true } avoids actionability retry on
-      // the about-to-detach button (the click handler swaps Pause/Resume in).
-      await requestBtn.click({ force: true, noWaitAfter: true });
+    // Only click when the button is actually ENABLED. On a fast machine the
+    // onMount auto-acquire has often already fired by the time we get here, so
+    // the button is rendered DISABLED and about to detach (it swaps to
+    // Pause/Resume) — a force-click then races the detach and hangs the full
+    // 30s ("element was detached from the DOM, retrying"). A disabled button
+    // means streaming is already on its way, so skip the click and fall through
+    // to the streaming wait. The .catch() covers the residual detach-mid-click
+    // race when the button WAS enabled at check time.
+    if (
+      (await requestBtn.count()) > 0 &&
+      (await requestBtn.isVisible().catch(() => false)) &&
+      (await requestBtn.isEnabled().catch(() => false))
+    ) {
+      await requestBtn.click({ noWaitAfter: true }).catch(() => {
+        /* auto-acquire detached the button — streaming is already starting */
+      });
     }
 
     // Wait for the state machine to reach 'streaming'.

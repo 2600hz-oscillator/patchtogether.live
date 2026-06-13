@@ -199,10 +199,12 @@
 
 <style>
   .seq960 {
-    padding: 8px 14px 4px;
+    /* Rack-compaction (#759): tighter row gap + bottom padding so the 8-step
+     * grid fits its exact 2u tier (was +18px over). */
+    padding: 6px 14px 2px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
   }
   .grid-row {
     display: grid;

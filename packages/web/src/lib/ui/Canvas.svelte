@@ -104,6 +104,7 @@
   // drops its XyzCard.svelte here (matching the PascalCase(type)+Card
   // convention, or declaring `card` on its def) and is picked up automatically.
   import { buildNodeTypes } from '$lib/ui/modules-card-map';
+  import { RACK_SIZE_DEFAULTS } from '$lib/ui/rack-sizes';
   import { computeCabinetLayout } from '$lib/ui/canvas/cabinet-layout';
   // ModuleNameLabel moved INTO every module card's title chrome (see
   // ModuleTitle.svelte) when the floating-overhead NodeToolbar was dropped.
@@ -256,6 +257,20 @@
     ...listVideoModuleDefs(),
     ...listMetaModuleDefs(),
   ]);
+
+  // Rack sizing: module type → resolved { size, hp }. The flowNodes derivation
+  // tags each card's SvelteFlow wrapper (rack-sized rack-{1u,3u} + an inline
+  // --rack-hp) so the shared _module-card.css forces its tier height + hp width.
+  // Resolution: the def's own `size`/`hp` WIN (a new module declares them on its
+  // def); the bulk RACK_SIZE_DEFAULTS map (rack-sizes.ts) is the fallback that
+  // classifies every existing module so every card snaps to the grid.
+  const rackSizeByType: Record<string, { size?: string; hp?: number }> = {};
+  for (const d of [...listModuleDefs(), ...listVideoModuleDefs(), ...listMetaModuleDefs()]) {
+    const r = d as { type: string; size?: string; hp?: number };
+    const fallback = RACK_SIZE_DEFAULTS[r.type];
+    const size = r.size ?? fallback?.size;
+    if (size) rackSizeByType[r.type] = { size, hp: r.hp ?? fallback?.hp };
+  }
 
   let audioCtx: AudioContext | null = $state(null);
   let engine: PatchEngine | null = $state(null);
@@ -811,6 +826,17 @@
       // card above everything without colliding with selected-node
       // styling (which xyflow handles internally via the .selected class
       // rather than a competing zIndex).
+      // Rack sizing: tag declared cards so _module-card.css forces their tier
+      // height (Nu) + hp width. Untagged (unmigrated) cards keep their size.
+      const rack = rackSizeByType[n.type];
+      if (rack?.size) {
+        // xyflow applies `class` to the .svelte-flow__node wrapper; our shared
+        // _module-card.css keys off `rack-sized` + the inline `--rack-u`
+        // (height tiles) and `--rack-hp` (width tiles) to force the card box.
+        const u = parseInt(rack.size, 10) || 1;
+        node.class = node.class ? `${String(node.class)} rack-sized` : 'rack-sized';
+        node.style = `${node.style ? node.style + ';' : ''}--rack-hp:${rack.hp ?? 1};--rack-u:${u}`;
+      }
       if (top === n.id) node.zIndex = 1000;
       next.push(node);
     }

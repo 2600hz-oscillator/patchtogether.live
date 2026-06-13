@@ -122,9 +122,13 @@ test('helm: gate-clocked advance — driving GATE in advances the step pointer +
   await spawnPatch(
     page,
     [
-      { id: 'src', type: 'sequencer', params: { bpm: 600, length: 4, isPlaying: 1, gateLength: 0.4 } },
-      { id: 'h',   type: 'helm',      params: { stepDepth: 0.5, stepNumSteps: 8 } },
-      { id: 'out', type: 'audioOut',  params: { master: 0.1 } },
+      // Explicit, well-separated positions: rack-sized cards (helm 720×540,
+      // sequencer 540×540) overlap when stacked at the default (100,100), and
+      // the overlapping card would intercept clicks on helm's bottom-row seq
+      // controls (#759). Spread them so each card's controls are clickable.
+      { id: 'src', type: 'sequencer', position: { x: 60,  y: 720 }, params: { bpm: 600, length: 4, isPlaying: 1, gateLength: 0.4 } },
+      { id: 'h',   type: 'helm',      position: { x: 60,  y: 60 },  params: { stepDepth: 0.5, stepNumSteps: 8 } },
+      { id: 'out', type: 'audioOut',  position: { x: 860, y: 60 },  params: { master: 0.1 } },
     ],
     [
       { id: 'g',  from: { nodeId: 'src', portId: 'gate'  }, to: { nodeId: 'h',   portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },
@@ -190,9 +194,12 @@ test('helm: RESET button snaps the dot away (currentStep → -1 = no dot)', asyn
   await spawnPatch(
     page,
     [
-      { id: 'src', type: 'sequencer', params: { bpm: 600, length: 4, isPlaying: 1, gateLength: 0.4 } },
-      { id: 'h',   type: 'helm',      params: { stepDepth: 0.5, stepNumSteps: 8 } },
-      { id: 'out', type: 'audioOut',  params: { master: 0.1 } },
+      // Explicit, well-separated positions (see gate-clocked test above): the
+      // rack-sized helm + sequencer overlap when stacked at the default
+      // (100,100) and would intercept clicks on helm's bottom-row controls.
+      { id: 'src', type: 'sequencer', position: { x: 60,  y: 720 }, params: { bpm: 600, length: 4, isPlaying: 1, gateLength: 0.4 } },
+      { id: 'h',   type: 'helm',      position: { x: 60,  y: 60 },  params: { stepDepth: 0.5, stepNumSteps: 8 } },
+      { id: 'out', type: 'audioOut',  position: { x: 860, y: 60 },  params: { master: 0.1 } },
     ],
     [
       { id: 'g',  from: { nodeId: 'src', portId: 'gate'  }, to: { nodeId: 'h',   portId: 'gate' }, sourceType: 'gate', targetType: 'gate' },

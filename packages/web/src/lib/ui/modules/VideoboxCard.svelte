@@ -69,11 +69,13 @@
   // ---- Resize (mirror VideoOutCard / BentboxCard) ----
   // VIDEOBOX is now drag-resizable so several can be tiled into a grid
   // (a "wall of TVs" alongside VIDEO OUT / BENTBOX). Width/height persist
-  // on node.data so they sync via Y.Doc.
-  const DEFAULT_WIDTH = 320;
+  // on node.data so they sync via Y.Doc. Rounded to whole-u (180px) rack tiles
+  // (#759) so default + min land on the grid; user-resizable so the rack CSS
+  // doesn't clamp it.
+  const DEFAULT_WIDTH = 360;
   const DEFAULT_HEIGHT = 360;
-  const MIN_WIDTH = 240;
-  const MIN_HEIGHT = 300;
+  const MIN_WIDTH = 360;
+  const MIN_HEIGHT = 360;
   let cardWidth = $derived<number>((node?.data?.width as number | undefined) ?? DEFAULT_WIDTH);
   let cardHeight = $derived<number>((node?.data?.height as number | undefined) ?? DEFAULT_HEIGHT);
 

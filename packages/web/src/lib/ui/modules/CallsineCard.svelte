@@ -99,11 +99,12 @@
     font-size: 0.7rem;
     letter-spacing: 0.08em;
     color: var(--text-muted, #999);
-    margin-top: -2px;
-    margin-bottom: 2px;
+    margin-top: -3px;
+    margin-bottom: 0;
   }
   .callsine-card .fader-row {
-    margin-top: 10px;
+    /* Rack-compaction (#759): tighter top margin to fit 1u. */
+    margin-top: 3px;
     display: flex;
     justify-content: center;
     gap: 10px;

@@ -118,6 +118,10 @@ export const sequencerDef: AudioModuleDef = {
   //     'polyPitchGate'; the engine's resolveConnection() routes lane 0 to
   //     mono pitch sinks so existing patches keep working.
   schemaVersion: 4,
+  // Rack: 3u tall (step grid + transport + quicksave), 3 tiles wide (540px).
+  size: '3u',
+  hp: 3,
+
   migrate(data, fromVersion) {
     // v1 -> v2: per-step pitch encoding (semitones-from-C4) -> midi int.
     let migrated: Record<string, unknown> | undefined;

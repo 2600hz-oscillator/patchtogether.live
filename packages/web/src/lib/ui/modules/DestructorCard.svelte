@@ -64,11 +64,13 @@
   .port-label.left { left: 14px; }
   .port-label.right { right: 14px; }
   .fader-grid {
-    margin-top: 50px;
-    padding: 0 12px;
+    /* 1u (180px tall): 4 faders in one row to the RIGHT of the in/M handle
+       column, starting just under the title. */
+    margin-top: 2px;
+    padding: 0 10px 0 36px;
     display: grid;
     grid-template-columns: 1fr 1fr 1fr 1fr;
-    gap: 12px 6px;
+    gap: 0 6px;
     justify-items: center;
   }
 </style>

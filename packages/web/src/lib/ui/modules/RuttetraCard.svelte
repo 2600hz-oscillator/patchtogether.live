@@ -57,10 +57,12 @@
   const CANVAS_W = 280;
   const CANVAS_H = 158;
 
-  const MIN_WIDTH = 240;
-  const MIN_HEIGHT = 160;
+  // Rounded to whole-u (180px) rack tiles (#759) so default + min land on the
+  // grid; this card is user-resizable so the rack CSS doesn't clamp it.
+  const MIN_WIDTH = 360;
+  const MIN_HEIGHT = 180;
   const DEFAULT_WIDTH = 360;
-  const DEFAULT_HEIGHT = 240;
+  const DEFAULT_HEIGHT = 360;
   const HEADER_PX = 56;
   const PAD_PX = 20;
 

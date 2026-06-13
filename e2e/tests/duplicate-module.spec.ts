@@ -248,7 +248,10 @@ test('@collab duplicate in A appears in B within 4s', async ({ browser }) => {
           id: 'adsr-shared',
           type: 'adsr',
           domain: 'audio',
-          position: { x: 200, y: 200 },
+          // x:600 keeps the ADSR clear of the auto-spawned TIMELORDE (top-left,
+          // ~24,24 → 384,564 at 3u×2hp) — otherwise TIMELORDE's knob-row occludes
+          // the ADSR title and the right-click intercepts (CI hang, #759 sizing).
+          position: { x: 600, y: 200 },
           params: { attack: 0.5 },
         };
       });

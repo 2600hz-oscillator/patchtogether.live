@@ -237,12 +237,13 @@
   .mod-card {
     width: max-content;
     min-width: 360px;
-    min-height: 380px;
+    min-height: 360px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
-    padding: 18px 40px 12px;
+    /* Rack-compaction (#759): tighter top padding to fit the 2u tier. */
+    padding: 10px 40px 9px;
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     outline: none;
@@ -275,7 +276,8 @@
   .port-label.right { right: 6px; }
   .screen-wrap {
     position: relative;
-    margin: 16px auto 8px;
+    /* Rack-compaction (#759): tighter vertical margin to fit 2u. */
+    margin: 8px auto 6px;
     width: 256px;
     height: 224px;
     border: 1px solid #000;

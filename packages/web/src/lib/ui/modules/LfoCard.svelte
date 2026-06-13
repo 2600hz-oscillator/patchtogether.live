@@ -46,18 +46,22 @@
   <ModuleTitle {id} {data} defaultLabel="LFO" />
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
-    <div class="fader-row">
+    <!-- 1u: Rate + Shape faders with the Depth KNOB to their right, one row. -->
+    <div class="control-row">
       <Fader value={rate}  min={0.01} max={100} defaultValue={1} label="Rate"  units="Hz" curve="log"    onchange={set('rate')}  readLive={live('rate')}  moduleId={id} paramId="rate" />
       <Fader value={shape} min={0}    max={2}   defaultValue={0} label="Shape"            curve="linear" onchange={set('shape')} readLive={live('shape')} glyphs={SHAPE_GLYPHS} moduleId={id} paramId="shape" />
-    </div>
-    <div class="knob-row">
       <Knob value={depth} min={0} max={1} defaultValue={0.5} label="Depth" curve="linear" onchange={set('depth')} readLive={live('depth')} moduleId={id} paramId="depth" />
     </div>
   </PatchPanel>
 </div>
 
 <style>
-  .lfo-card { width: 200px; }
-  .lfo-card .fader-row { padding: 0 30px; margin-top: 16px; gap: 12px; }
-  .lfo-card .knob-row { display: flex; justify-content: center; margin-top: 16px; }
+  .lfo-card .control-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 18px;
+    padding: 0 16px;
+    margin-top: 12px;
+  }
 </style>

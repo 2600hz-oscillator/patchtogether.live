@@ -326,6 +326,16 @@ export interface PatchGraph {
 }
 
 // ---------------- Module registry shape (D18, D19) ----------------
+
+/**
+ * Rack HEIGHT tier in whole grid units — `${N}u` = N square grid tiles tall.
+ * Most modules are '1u' (small utilities) or '3u' (standard); genuinely-large
+ * modules (WebGL synths, big filter banks, control grids) take an EXACT taller
+ * tier ('4u', '5u', …) rather than being crammed — every tier is a whole
+ * multiple of one tile so the rack stays on its 1u×1u grid.
+ */
+export type RackSize = `${number}u`;
+
 export interface ModuleDef {
   type: ModuleType;
   domain: Domain;
@@ -338,6 +348,17 @@ export interface ModuleDef {
   params: ParamSchema;
   /** Bumped when params or data shape changes (D19). */
   schemaVersion: number;
+  /**
+   * Rack sizing (Phase-1 rack standardization). HEIGHT tier — every module is
+   * either '1u' (one square grid tile tall) or '3u' (three tiles tall). WIDTH
+   * is `hp` square tiles wide (default 1). The canvas snaps to a 1u×1u grid;
+   * the shared card CSS forces height/width from these via the `rack-{size}` +
+   * `rack-hp{n}` classes the flowNodes derivation applies. Unset = unmigrated
+   * (the card keeps its content-driven size until it's classified).
+   */
+  size?: RackSize;
+  /** Width in 1u square tiles (default 1). See `size`. */
+  hp?: number;
   /** Migrate older saved data forward to the current schemaVersion. */
   migrate?: (data: unknown, fromVersion: number) => unknown;
   /**

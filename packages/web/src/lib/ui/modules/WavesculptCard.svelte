@@ -81,9 +81,11 @@
   const flowStore = useStore();
 
   // ----- Resize plumbing (mirror BentboxCard) -----
-  const DEFAULT_WIDTH = 1280;
-  const DEFAULT_HEIGHT = 880;
-  const MIN_WIDTH = 1024;
+  // Rounded to whole-u (180px) rack tiles (#759) so default + min land on the
+  // grid; this card is user-resizable so the rack CSS doesn't clamp it.
+  const DEFAULT_WIDTH = 1440;
+  const DEFAULT_HEIGHT = 900;
+  const MIN_WIDTH = 1080;
   const MIN_HEIGHT = 720;
   const ENGINE_W = VIDEO_RES.width;
   const ENGINE_H = VIDEO_RES.height;

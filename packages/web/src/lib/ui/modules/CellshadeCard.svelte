@@ -141,13 +141,16 @@
 <style>
   .card {
     width: 220px;
-    min-height: 360px;
+    min-height: 351px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
     padding-top: 18px;
-    padding-bottom: 14px;
+    /* Rack-compaction (#759): tighter bottom padding to fit the 2u tier.
+     * padding-top stays 18px because the preview-wrap top margin is tuned to
+     * clear the absolutely-positioned CV handles (top: 56–156px). */
+    padding-bottom: 9px;
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
@@ -182,7 +185,8 @@
   }
   .preview-label { font-size: 0.55rem; color: var(--text-dim); letter-spacing: 0.08em; font-family: ui-monospace, monospace; }
   .fader-grid {
-    margin-top: 14px;
+    /* Rack-compaction (#759): tighter top margin to fit the 2u tier. */
+    margin-top: 8px;
     padding: 0 14px;
     display: grid;
     grid-template-columns: repeat(3, 1fr);

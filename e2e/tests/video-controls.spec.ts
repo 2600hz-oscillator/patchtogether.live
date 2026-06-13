@@ -187,8 +187,11 @@ test.describe('video controls drive output', () => {
   test('INWARDS density knob changes pixel pattern', async ({ page }) => {
     await spawnPatch(
       page,
+      // speed:0 freezes the inward scroll, so the ONLY thing that can move a
+      // pixel between the two captures is the density param — isolating the
+      // param→shader path (no animation confound).
       [
-        { id: 'v-in',  type: 'inwards',  position: { x: 80, y: 60 },  domain: 'video', params: { density: 4, speed: 0.1, thickness: 0.4 } },
+        { id: 'v-in',  type: 'inwards',  position: { x: 80, y: 60 },  domain: 'video', params: { density: 4, speed: 0, thickness: 0.4 } },
         { id: 'v-out', type: 'videoOut', position: { x: 480, y: 60 }, domain: 'video' },
       ],
       [
@@ -198,16 +201,25 @@ test.describe('video controls drive output', () => {
     const canvas = page.locator(VIDEO_OUT_CANVAS);
     await page.waitForTimeout(500);
     const before = (await readCanvasStats(canvas))!;
+    const beforeFrame = await lumaFrame(canvas);
     expect(before.variance).toBeGreaterThan(20);
 
     await setNodeParam(page, 'v-in', 'density', 30);
     await page.waitForTimeout(500);
     const after = (await readCanvasStats(canvas))!;
+    const afterFrame = await lumaFrame(canvas);
 
+    // density 4 → 30 takes ~4 rings to ~30 rings — a huge PER-PIXEL change, but
+    // the GLOBAL mean/variance can collude to near-identical values (4 wide
+    // bands vs 30 tight bands average similarly), so statsDiffer() misses it
+    // (var 9071 → 8541 on Metal — the same blind spot as the V-MIXER cross-fade;
+    // see lumaFrame/frameDiff above). Assert the per-pixel frame delta instead:
+    // a genuine ring-count change moves many pixels even when aggregates match.
+    const pxDelta = frameDiff(beforeFrame, afterFrame);
     expect(
-      statsDiffer(before, after),
-      `INWARDS density 4→30: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
-    ).toBe(true);
+      pxDelta,
+      `INWARDS density 4→30 per-pixel delta: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)} frameDiff=${pxDelta.toFixed(1)}`,
+    ).toBeGreaterThan(6);
   });
 
   test('DESTRUCTOR mangle knob changes pixel pattern', async ({ page }) => {

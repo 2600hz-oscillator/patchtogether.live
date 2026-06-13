@@ -2896,8 +2896,11 @@
 
 <style>
   .mod-card {
-    /* Wide 3-column card (preview + layer editor | combine graph | CV section). */
-    width: 860px;
+    /* Wide 3-column card (preview + layer editor | combine graph | CV section).
+     * Width rounded to a whole-u (180px) rack tile (#759 — 5u = 900px) so the
+     * card lands on the rack grid; its inner combine-graph panel stays
+     * vertically resizable, so it's a DYNAMIC_SIZED card (no fixed rack tier). */
+    width: 900px;
     min-height: 300px;
     background: var(--module-bg);
     border: 1px solid var(--border);

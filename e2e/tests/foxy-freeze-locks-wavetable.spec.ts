@@ -123,17 +123,32 @@ async function foxySetParam(
   );
 }
 
-/** Count differing bytes between two PNG buffers (RGBA pixel data). The
- *  byte count is a CONSERVATIVE proxy for differing PIXELS — each pixel
- *  is 4 bytes (R+G+B+A) so byte-equal implies pixel-equal. For our
- *  280×110 canvas the buffers are < 50 KB so the linear scan is cheap. */
-function differingBytes(a: Buffer, b: Buffer): number {
+/** Count differing bytes between two RGBA pixel arrays. Each pixel is 4 bytes
+ *  (R+G+B+A) so byte-equal implies pixel-equal. */
+function differingBytes(a: number[], b: number[]): number {
   if (a.length !== b.length) return Math.max(a.length, b.length);
   let n = 0;
   for (let i = 0; i < a.length; i++) {
     if (a[i] !== b[i]) n++;
   }
   return n;
+}
+
+/** Read the LIVE WAVETABLE canvas's exact RGBA backing-store pixels (NOT a
+ *  composited screenshot). getImageData reads the canvas drawing buffer
+ *  directly, so it's deterministic + independent of viewport zoom / the
+ *  continuously-repainting sibling preview canvases — a composited
+ *  `element.screenshot()` of a canvas inside an animating layer is NOT
+ *  byte-stable even when the canvas itself is frozen (the canvas's own
+ *  toDataURL proves the pixels are identical). This is a STRONGER observable
+ *  for "the frozen wavetable held its pixels" than a screenshot. */
+async function readWavetablePixels(page: Page, testId: string): Promise<number[]> {
+  return page.getByTestId(testId).evaluate((el) => {
+    const c = el as HTMLCanvasElement;
+    const ctx = c.getContext('2d');
+    if (!ctx) return [];
+    return Array.from(ctx.getImageData(0, 0, c.width, c.height).data);
+  });
 }
 
 test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for #411 + #420)', () => {
@@ -197,11 +212,11 @@ test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for 
     // (BRIDGE_MS=42 throttle ⇒ up to 42 ms can elapse). 300 ms covers it.
     await page.waitForTimeout(300);
 
-    // Capture A: frozen — first snapshot.
+    // Capture A: frozen — first snapshot. Read the canvas's exact RGBA pixels
+    // (getImageData), not a composited screenshot — see readWavetablePixels.
     const wavetableA = await readWavetableHash(page, 'foxy');
     expect(wavetableA, 'wavetable hash readable after freeze').not.toBeNull();
-    const canvas = page.getByTestId('foxy-wavetable');
-    const pngA = await canvas.screenshot();
+    const pngA = await readWavetablePixels(page, 'foxy-wavetable');
 
     // ── Phase 2: wait 2 s while frozen ──
     // During this window the rasters + XYZ scope keep evolving (FrT freezes
@@ -214,7 +229,7 @@ test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for 
     // Capture B: still frozen, 2 s later.
     const wavetableB = await readWavetableHash(page, 'foxy');
     expect(wavetableB, 'wavetable hash readable 2s into freeze').not.toBeNull();
-    const pngB = await canvas.screenshot();
+    const pngB = await readWavetablePixels(page, 'foxy-wavetable');
 
     // ── Assertion 1: A === B (frozen wavetable held its content). ──
     // Hash equality is the strongest signal — the contents the worklet is
@@ -227,19 +242,17 @@ test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for 
         `into the factory's setParam switch.`,
     ).toBe(wavetableA);
 
-    // Canvas pixel equality (belt-and-suspenders). The two PNG buffers
-    // come from screenshots of the same DOM canvas 2 s apart while frozen
-    // — they must be byte-identical (the canvas draws from wtFrames; if
-    // wtFrames is frozen, draws are identical pixel-by-pixel). We allow
-    // up to 20 byte-diffs as a tolerance for any rAF-aliased antialiasing
-    // jitter on the SCOPE/3D toggle; 20 bytes = ≤ 5 RGBA pixels per the
-    // user-requested tolerance.
+    // Canvas pixel equality (belt-and-suspenders). The two RGBA buffers are the
+    // canvas's exact backing-store pixels 2 s apart while frozen — they must be
+    // byte-identical (the canvas draws from wtFrames; if wtFrames is frozen,
+    // draws are identical pixel-by-pixel). getImageData is deterministic, so we
+    // require an EXACT match (0 byte diffs).
     const diffAB = differingBytes(pngA, pngB);
     expect(
       diffAB,
       `LIVE WAVETABLE canvas pixels drifted while frozen (${diffAB} bytes diff). ` +
         `Canvas A size=${pngA.length}, B size=${pngB.length}.`,
-    ).toBeLessThanOrEqual(20);
+    ).toBe(0);
 
     // ── Phase 3: UNFREEZE + 2 s of live ──
     await page.getByTestId('foxy-freeze-table').click();
@@ -248,7 +261,7 @@ test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for 
     // Capture C: live, after 2 s of motion.
     const wavetableC = await readWavetableHash(page, 'foxy');
     expect(wavetableC, 'wavetable hash readable after unfreeze').not.toBeNull();
-    const pngC = await canvas.screenshot();
+    const pngC = await readWavetablePixels(page, 'foxy-wavetable');
 
     // ── Assertion 2: C differs substantially from A (table evolves). ──
     // The raster cursors have drifted ~48 bridge ticks during the 2 s of
@@ -263,15 +276,14 @@ test.describe('FOXY FREEZE TABLE locks the wavetable end-to-end (regression for 
         `That means the unfreeze path didn't re-engage the loadWavetable posts.`,
     ).toBeGreaterThan(0.1);
 
-    // Canvas C must differ from A by MORE than the in-frozen tolerance —
-    // the live table evolution paints a visibly different waveform on the
-    // canvas. We assert ≥ 100 bytes diff so a hypothetical antialiasing
-    // edge case can't pass both halves.
+    // Canvas C must differ substantially from A — the live table evolution
+    // paints a visibly different waveform on the canvas. We assert ≥ 100 RGBA
+    // byte diffs so the unfreeze genuinely re-engaged the live draw.
     const diffAC = differingBytes(pngA, pngC);
     expect(
       diffAC,
       `LIVE WAVETABLE canvas failed to evolve after unfreeze (${diffAC} bytes diff vs ` +
-        `frozen ≤ 20).`,
+        `frozen == 0).`,
     ).toBeGreaterThan(100);
 
     // Ignore the AudioContext autoplay warning that always fires before the

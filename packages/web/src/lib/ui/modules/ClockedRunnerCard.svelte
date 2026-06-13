@@ -29,10 +29,12 @@
   const flowStore = useStore();
 
   // ───── Sizing ─────────────────────────────────────────────────
+  // Rounded to whole-u (180px) rack tiles (#759) so the default + min land on
+  // the rack grid; this card is user-resizable so the rack CSS doesn't clamp it.
   const DEFAULT_WIDTH = 360;
-  const DEFAULT_HEIGHT = 220;
-  const MIN_WIDTH = 280;
-  const MIN_HEIGHT = 160;
+  const DEFAULT_HEIGHT = 360;
+  const MIN_WIDTH = 360;
+  const MIN_HEIGHT = 180;
 
   let cardWidth = $derived<number>((node?.data?.width as number | undefined) ?? DEFAULT_WIDTH);
   let cardHeight = $derived<number>((node?.data?.height as number | undefined) ?? DEFAULT_HEIGHT);

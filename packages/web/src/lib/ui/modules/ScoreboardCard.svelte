@@ -40,7 +40,10 @@
 
   // -------- Live preview canvas (200×80) --------
   const PREVIEW_W = 200;
-  const PREVIEW_H = 80;
+  // Rack-compaction (#759): trimmed 80 → 56 so the card fits its 1u tier.
+  // drawScoreboard scales the 7-segment readout to the canvas dimensions, so
+  // the digits stay legible at the shorter height.
+  const PREVIEW_H = 56;
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let raf: number | null = null;
   let liveScore = $state(0);
@@ -110,13 +113,14 @@
 <style>
   .mod-card {
     width: 260px;
-    min-height: 240px;
+    min-height: 180px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
+    /* Rack-compaction (#759): tighter padding to fit the 1u tier. */
+    padding-top: 14px;
+    padding-bottom: 9px;
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
@@ -143,9 +147,12 @@
   .port-label.left { left: 14px; }
   .port-label.right { right: 14px; }
   .screen-wrap {
-    margin: 16px auto 12px;
+    /* Rack-compaction (#759): tighter vertical margin + shorter readout to
+     * fit the 1u tier. Top margin keeps the canvas clear of the SCORE/RESET
+     * input handles (top: 56/96px). */
+    margin: 14px auto 6px;
     width: 200px;
-    height: 80px;
+    height: 56px;
     border: 1px solid #000;
     background: #0a0a0a;
     box-shadow:
@@ -156,13 +163,13 @@
   }
   .screen {
     width: 200px;
-    height: 80px;
+    height: 56px;
     image-rendering: pixelated;
     display: block;
   }
   .knob-row {
     display: flex;
     justify-content: center;
-    margin-top: 4px;
+    margin-top: 2px;
   }
 </style>

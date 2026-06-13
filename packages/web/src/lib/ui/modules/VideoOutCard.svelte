@@ -63,11 +63,13 @@
   const flowStore = useStore();
 
   // Defaults: card-size defaults (engine 4:3 output aspect-fits inside).
-  // Stored in node.data so they sync via Y.Doc.
+  // Stored in node.data so they sync via Y.Doc. Rounded to whole-u (180px) rack
+  // tiles (#759) so default + min land on the grid; user-resizable so the rack
+  // CSS doesn't clamp it.
   const DEFAULT_WIDTH = 360;
-  const DEFAULT_HEIGHT = 240;
-  const MIN_WIDTH = 240;
-  const MIN_HEIGHT = 160;
+  const DEFAULT_HEIGHT = 360;
+  const MIN_WIDTH = 360;
+  const MIN_HEIGHT = 180;
   // Engine render resolution — derived from VIDEO_RES so the preview's
   // fitRect aspect (and the fullscreen buffer-size derive below) always
   // tracks the live engine resolution.

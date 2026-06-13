@@ -192,7 +192,10 @@
     border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
-    padding: 18px 14px 12px;
+    /* Rack-compaction (#759): tighter bottom padding to fit the 2u tier.
+     * padding-top stays 18px because the output handles are absolutely
+     * positioned (top: 56–224px) relative to the card top. */
+    padding: 18px 14px 9px;
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     outline: none;
@@ -228,7 +231,8 @@
     letter-spacing: 0.08em;
   }
   .screen-wrap {
-    margin: 4px auto 10px;
+    /* Rack-compaction (#759): tighter vertical margin to fit the 2u tier. */
+    margin: 3px auto 6px;
     border: 1px solid #000;
     box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.6), 0 0 4px rgba(0, 0, 0, 0.3);
     background: #000;

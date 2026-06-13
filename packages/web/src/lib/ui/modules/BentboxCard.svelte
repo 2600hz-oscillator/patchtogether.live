@@ -43,9 +43,11 @@
   // Default size sized for the knob grid below the screen. Width is
   // 4 knob columns wide; height = screen (4:3 of inner width) + knob
   // grid.
-  const DEFAULT_WIDTH = 420;
-  const DEFAULT_HEIGHT = 480;
-  const MIN_WIDTH = 320;
+  // Rounded to whole-u (180px) rack tiles (#759) so default + min land on the
+  // grid; this card is user-resizable so the rack CSS doesn't clamp it.
+  const DEFAULT_WIDTH = 540;
+  const DEFAULT_HEIGHT = 540;
+  const MIN_WIDTH = 360;
   const MIN_HEIGHT = 360;
 
   // Engine render resolution — matches VIDEO_RES in video/engine.ts.

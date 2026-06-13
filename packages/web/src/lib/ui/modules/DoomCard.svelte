@@ -2469,7 +2469,8 @@
     align-items: center;
     justify-content: center;
     gap: 8px;
-    margin: 4px 0 2px;
+    /* Rack-compaction (#759): tighter margin to fit the 2u tier. */
+    margin: 2px 0 1px;
   }
   .doom-fit-label {
     font-size: 0.6rem;
@@ -2564,7 +2565,8 @@
   .doom-card .game-area {
     display: flex;
     justify-content: center;
-    padding: 6px 0 8px;
+    /* Rack-compaction (#759): tighter padding to fit the 2u tier. */
+    padding: 4px 0 4px;
     position: relative;
   }
   /* Host's Single Player / Host Multiplayer choice (added in #314 but never
@@ -2574,7 +2576,8 @@
   .doom-card .start-choice {
     display: flex;
     gap: 8px;
-    padding: 0 10px 6px;
+    /* Rack-compaction (#759): tighter bottom padding to fit the 2u tier. */
+    padding: 0 10px 4px;
     pointer-events: auto;
   }
   .doom-card .start-btn {
@@ -2603,7 +2606,8 @@
   }
   .doom-card .overlay {
     position: absolute;
-    inset: 6px 0 8px 0;
+    /* Rack-compaction (#759): match the tightened game-area padding. */
+    inset: 4px 0 4px 0;
     margin: 0 auto;
     width: 320px;
     height: 200px;
