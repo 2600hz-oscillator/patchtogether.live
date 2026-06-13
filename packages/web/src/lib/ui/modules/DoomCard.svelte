@@ -112,6 +112,7 @@
   import { shouldOpenMultiplayer, guestWaitingState } from '$lib/doom/doom-session';
   import ModuleTitle from './ModuleTitle.svelte';
   import NativeFillToggle from './NativeFillToggle.svelte';
+  import Knob from '$lib/ui/controls/Knob.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -125,6 +126,16 @@
   function setFillMode(v: number): void {
     const target = patch.nodes[id];
     if (target) target.params.fillMode = v;
+  }
+
+  // Output volume (audioGain): a fixed +makeup gain now lives in the PCM
+  // worklet (the −42 dB i_pcmgen `>>6` fix); this knob trims on top of it,
+  // 0..2 (default 1). Same param-node write path as fillMode, which the
+  // engine's setParam picks up + forwards straight to the worklet on change.
+  let audioGain = $derived<number>((node?.params?.audioGain as number | undefined) ?? 1);
+  function setAudioGain(v: number): void {
+    const target = patch.nodes[id];
+    if (target) target.params.audioGain = v;
   }
 
   // ---- UI / lifecycle state ----
@@ -2413,6 +2424,19 @@
   <div class="doom-fit-row" data-testid="doom-fit-row">
     <span class="doom-fit-label">OUTPUT FIT</span>
     <NativeFillToggle {fillMode} srcAspect={640 / 400} onchange={setFillMode} />
+    <div class="doom-volume nodrag" data-testid="doom-volume">
+      <Knob
+        value={audioGain}
+        min={0}
+        max={2}
+        defaultValue={1}
+        label="Volume"
+        curve="linear"
+        onchange={setAudioGain}
+        moduleId={id}
+        paramId="audioGain"
+      />
+    </div>
   </div>
 
   <footer class="hint">
@@ -2453,6 +2477,11 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     font-family: ui-monospace, monospace;
+  }
+  .doom-volume {
+    display: flex;
+    align-items: center;
+    margin-left: 4px;
   }
   .doom-card {
     width: 360px;

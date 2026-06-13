@@ -130,6 +130,130 @@ async function readScopePeak(
   }, scopeNodeId);
 }
 
+// ---- LOUDNESS GUARD (the −42 dB fix) ----------------------------------------
+//
+// Root cause: the C mixer (i_pcmgen.c `int32_t out = accum >> 6;`) divides by
+// 64, so a single SFX at full volume peaks at only ~254/32768 ≈ −42 dBFS — DOOM
+// has been ~40 dB too quiet since day one. The fix is a FIXED makeup gain +
+// tanh soft-limiter in the PCM worklet (we do NOT touch the C / WASM). This
+// LIVE test proves the makeup actually lifts the audible level: it boots DOOM,
+// walks into E1M1, fires the pistol (Ctrl) a few times to guarantee a loud SFX,
+// and asserts the SCOPE RMS off audio_l is well above the old near-silence
+// floor. The threshold is tolerant (well above −42 dB, well below a hard clip)
+// so it guards the makeup without being brittle about the non-deterministic
+// exact in-game amplitude.
+//
+// Skip-clean when WASM/WAD are absent (same semantics as the rest of the file).
+// CI ships both, so CI enforces the guard even when a local dev can't.
+test.describe('DOOM loudness: makeup gain lifts audio_l RMS above the old −42 dB floor', () => {
+  test('in-level SFX (pistol) produce audible RMS on a downstream SCOPE', async ({ page }) => {
+    page.on('pageerror', (e) => console.error('pageerror:', e.message));
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    const hasWasm = await doomWasmPresent(page);
+    const hasWad = await doomWadPresent(page);
+    test.skip(
+      !hasWasm || !hasWad,
+      'DOOM WASM and/or DOOM1.WAD not present locally — '
+        + 'run `bash packages/web/native/build-doom-wasm.sh` + drop DOOM1.WAD '
+        + 'into packages/web/static/doom. CI builds both before e2e.',
+    );
+
+    const doomId = 'v-doom-loud';
+    const scopeId = 'cons-scope-doom-loud';
+
+    await spawnPatch(
+      page,
+      [
+        { id: doomId,  type: 'doom',  position: { x: 80,  y: 80 }, domain: 'video' },
+        { id: scopeId, type: 'scope', position: { x: 540, y: 80 }, domain: 'audio' },
+      ],
+      [
+        {
+          id: 'e-doom-loud-scope',
+          from: { nodeId: doomId,  portId: 'audio_l' },
+          to:   { nodeId: scopeId, portId: 'ch1' },
+          sourceType: 'audio',
+          targetType: 'audio',
+        },
+      ],
+    );
+
+    const card = page.locator('[data-testid="doom-card"]');
+    await expect(card, 'DOOM card mounts').toHaveCount(1);
+    const loadBtn = card.locator('button.overlay').filter({ hasText: 'Click to load DOOM' });
+    await expect(loadBtn).toBeVisible();
+    await loadBtn.click();
+    await expect(card.locator('.overlay'), 'load overlay clears').toHaveCount(0, {
+      timeout: 30_000,
+    });
+    await card.click(); // focus the card so DOOM consumes our keys
+
+    // Walk into E1M1 (Enter ×4) and wait for the marine.
+    for (let i = 0; i < 4; i++) {
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(300);
+    }
+    await page.waitForFunction(
+      (id) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            getDomain?: (d: string) => { read?: (n: string, k: string) => unknown } | null;
+          } | null;
+        };
+        const ve = w.__engine?.()?.getDomain?.('video');
+        const extras = ve?.read?.(id, 'extras') as
+          | { getRuntime?: () => { hasPlayerMobj?: () => boolean } | null }
+          | undefined;
+        return extras?.getRuntime?.()?.hasPlayerMobj?.() === true;
+      },
+      doomId,
+      { timeout: 30_000 },
+    );
+
+    // Fire the pistol by HOLDING primary fire (KeyF). Ctrl is DOOM's secondary
+    // fire bind but macOS binds Ctrl+Arrow to Mission Control and intercepts the
+    // key, so a keyboard `press('Control')` fired unreliably — that's what made
+    // this flake between a faint shot and total silence. KeyF is the documented
+    // MacBook-safe PRIMARY fire (see doomkeys.ts). Holding it auto-repeats the
+    // pistol; we sample the SCOPE across the burst so a shot reliably lands
+    // inside an analyser window.
+    let bestRms = 0;
+    let bestPeak = 0;
+    await page.keyboard.down('f');
+    try {
+      for (let i = 0; i < 24; i++) {
+        await page.waitForTimeout(80);
+        const s = await readScopePeak(page, scopeId);
+        if (s) {
+          if (s.rms > bestRms) bestRms = s.rms;
+          if (s.peak > bestPeak) bestPeak = s.peak;
+        }
+      }
+    } finally {
+      await page.keyboard.up('f');
+    }
+
+    // Old behaviour: a single SFX peaked at ≈ 0.00775 (−42 dBFS), so RMS over a
+    // window was a tiny fraction of that. The makeup gain (24×) lifts a single
+    // SFX peak to ≈ 0.18, so even a sparse pistol-shot window must show RMS
+    // comfortably above the old floor. 0.02 RMS is ~14 dB above the old
+    // single-SFX PEAK and far above its RMS — a clear, tolerant witness that
+    // the makeup gain is live (and that the worklet didn't go silent).
+    expect(
+      bestPeak,
+      `audio_l peak stayed near silence (${bestPeak}). The PCM worklet's makeup ` +
+        `gain (the −42 dB fix) is missing or the audio path is dead.`,
+    ).toBeGreaterThan(0.08);
+    expect(
+      bestRms,
+      `audio_l RMS (${bestRms}) is at the old −42 dB near-silence floor. With the ` +
+        `makeup gain a fired pistol must lift RMS well above it.`,
+    ).toBeGreaterThan(0.02);
+  });
+});
+
 test.describe('DOOM audio output regression: A-L / A-R reach a downstream SCOPE', () => {
   for (const channel of ['audio_l', 'audio_r'] as const) {
     // FIXME(#78): test scenario needs a synthetic keypress to trigger an
