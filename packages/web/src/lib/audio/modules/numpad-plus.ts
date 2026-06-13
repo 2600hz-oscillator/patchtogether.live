@@ -68,6 +68,7 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { isInputPortConnected } from './transport-helpers';
+import { createEdgeCounter } from '$lib/audio/edge-detect';
 import { midiToVOct, coerceToNoteStep, NOTE_STEP_MAX_VOICES, type NoteStep } from '$lib/audio/note-entry';
 import { createPolySender, voicingToVOct, type PolySender } from '$lib/audio/poly';
 
@@ -310,7 +311,6 @@ export const numpadPlusDef: AudioModuleDef = {
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
-    const CLOCK_THRESHOLD = 0.5;
 
     // ─── Output ConstantSources ──────────────────────────────────────
     function makeCv(initial = 0): ConstantSourceNode {
@@ -334,12 +334,15 @@ export const numpadPlusDef: AudioModuleDef = {
     const clockInAnalyser = ctx.createAnalyser();
     clockInAnalyser.fftSize = 2048;
     clockInGain.connect(clockInAnalyser);
-    const clockInBuf = new Float32Array(clockInAnalyser.fftSize);
     const clockInSilence = ctx.createConstantSource();
     clockInSilence.offset.value = 0;
     clockInSilence.start();
     clockInSilence.connect(clockInGain);
-    let lastClockSample = 0;
+    // Windowed rising-edge counter (shared seam): scans ONLY the samples that
+    // arrived since the last tick, so a single external clock pulse advances
+    // exactly one step — no 2048-sample overlap double-count (the reported
+    // NUMPAD+ bug). See $lib/audio/edge-detect.
+    const clockCounter = createEdgeCounter({ ctx, analyser: clockInAnalyser });
 
     // ─── Layer-selector CV input ─────────────────────────────────────
     const layerCvGain = ctx.createGain();
@@ -439,18 +442,6 @@ export const numpadPlusDef: AudioModuleDef = {
       return resolveActiveLayer(readParam('activeLayer', 0), pollLayerCvSample());
     }
 
-    function pollClockEdges(): number {
-      clockInAnalyser.getFloatTimeDomainData(clockInBuf);
-      let edges = 0;
-      for (let s = 0; s < clockInBuf.length; s++) {
-        const v = clockInBuf[s]!;
-        const high = v >= CLOCK_THRESHOLD ? 1 : 0;
-        if (high && !lastClockSample) edges++;
-        lastClockSample = high;
-      }
-      return edges;
-    }
-
     /** Apply the current SEQUENCED + MANUAL state to all layer
      *  outputs. Manual (key held) always wins; otherwise the
      *  sequenced state from the most-recently-advanced step is held. */
@@ -522,6 +513,9 @@ export const numpadPlusDef: AudioModuleDef = {
           stepIndex = 0;
           stepStartCtxTime = ctx.currentTime;
           nextStepCtxTime = ctx.currentTime + 0.05;
+          // Fresh edge state on play-from-start so a stale buffer edge can't
+          // leak an extra advance on resume.
+          clockCounter.reset();
           // Latch armed recording on play-from-start.
           if (readParam('recArm', 0) >= 0.5) {
             armedRecording = true;
@@ -539,7 +533,7 @@ export const numpadPlusDef: AudioModuleDef = {
         }
 
         if (externalClock) {
-          const edges = pollClockEdges();
+          const edges = clockCounter.poll(ctx.currentTime);
           for (let e = 0; e < edges; e++) advanceStep();
           return;
         }

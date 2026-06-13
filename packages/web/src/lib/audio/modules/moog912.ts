@@ -69,6 +69,14 @@ export function smoothingToCutoffHz(smoothing: number): number {
 }
 
 // Gate fires once the smoothed envelope rises above this level.
+//
+// NOTE: this is deliberately NOT the canonical CV edge threshold
+// (`GATE_HI = 0.5` in $lib/audio/gate-trigger). This is an ENVELOPE-FOLLOWER
+// SENSITIVITY level — how loud the rectified+smoothed AUDIO envelope must get
+// before this module's gate OUTPUT opens. 0.1 (≈ −20 dB of full-scale) keeps
+// the follower sensitive to quiet material; raising it to 0.5 would only open
+// the gate on near-clipping audio. So it is intentionally a different number
+// from the 0/1 CV gate-detection threshold used everywhere else.
 export const GATE_THRESHOLD = 0.1;
 
 /** Full-wave rectifier curve: x → |x|. A WaveShaper maps its input domain

@@ -199,6 +199,31 @@ the `HelmEngine` class directly; the default mono mode gated poly output to 0, s
 the real MIDI-LANE→module chain was dead. The same voice-gating/silent-poly bug
 class hit the poly wave 5×. See `poly-modules-test-real-source-chain`.)
 
+## Triggers vs gates: edge-detect through the shared seam
+
+A **trigger** input fires ONCE per rising edge (clock / reset / strike / sync /
+start-stop / sample-and-hold); a **gate** input acts WHILE the level is high and
+reacts to both edges (an ADSR sustain, a VCA hold, a poly note-on/off). Both
+flow through the unified `gate` cable — cross-patching stays legal (it's just
+CV) — but the *consumer's* interpretation differs, and that interpretation is
+DECLARED on the port (`PortDef.edge: 'trigger' | 'gate'` — see
+`$lib/audio/gate-trigger`).
+
+- **Main-thread trigger detection MUST use `$lib/audio/edge-detect`
+  `createEdgeCounter`.** NEVER re-scan a whole `AnalyserNode` buffer
+  (`getFloatTimeDomainData` + `for (let s = 0; s < buf.length …)` rising-edge
+  count). The 2048-sample ring (~42 ms) overlaps the ~25 ms scheduler tick, so a
+  whole-buffer rescan counts the same edge twice → "one clock pulse advances two
+  steps" (the NUMPAD+/HYDROGEN/ATLANTIS-CATALYST bug, fixed by the windowed
+  counter). A worklet consumer is exempt (per-sample `prev<TH && cur>=TH` is
+  correct by construction).
+- **Do NOT convert a gate consumer to edge-only.** An ADSR sustain is
+  level-sensitive on purpose — declare it `edge: 'gate'` and read the level.
+- A new module's trigger/gate inputs declare `edge`; the canonical thresholds +
+  emitted waveforms (short-triangle trigger / held-square gate) live in
+  `$lib/audio/gate-trigger` (`GATE_HI`, `TRIGGER_PULSE_S`, …) — don't re-derive
+  the numbers. GATEMAIDEN is the user-facing gate↔trigger converter.
+
 ## Commands run through flox
 
 Every command (git, gh, task, npm, node, …) runs inside the Flox env:
