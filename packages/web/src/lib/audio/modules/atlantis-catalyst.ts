@@ -47,7 +47,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import { createTransportCv, TRANSPORT_CV_PORT_DEFS } from './transport-cv';
-import { createRisingEdgeDetector } from './transport-helpers';
+import { createEdgeCounter } from '$lib/audio/edge-detect';
 
 const TICK_MS = 25; // drift-rate orchestrator tick (40 Hz)
 const SCENE_PULSE_MS = 50;
@@ -281,8 +281,10 @@ export const atlantisCatalystDef: AudioModuleDef = {
     nudgeSilence.offset.value = 0;
     nudgeSilence.start();
     nudgeSilence.connect(nudgeGain);
-    const nudgeBuf = new Float32Array(2048);
-    const nudgeDet = createRisingEdgeDetector(0.5);
+    // Windowed rising-edge counter (shared seam): a single nudge transitions
+    // the scene exactly once — the old scan(buf, 0, len) re-scanned the whole
+    // buffer each tick and could double-transition.
+    const nudgeCounter = createEdgeCounter({ ctx, analyser: nudgeAna });
 
     const freezeGain = ctx.createGain();
     const freezeAna = ctx.createAnalyser();
@@ -452,8 +454,7 @@ export const atlantisCatalystDef: AudioModuleDef = {
       frozen = freezeBuf[freezeBuf.length - 1]! > 0.5;
 
       // Nudge → manual transition.
-      nudgeAna.getFloatTimeDomainData(nudgeBuf);
-      if (nudgeDet.scan(nudgeBuf, 0, nudgeBuf.length) > 0 && !frozen) {
+      if (nudgeCounter.poll(ctx.currentTime) > 0 && !frozen) {
         transitionScene();
         return;
       }

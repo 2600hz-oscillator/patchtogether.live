@@ -65,6 +65,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
+import { createEdgeCounter, type EdgeCounter } from '$lib/audio/edge-detect';
 import {
   isInputPortConnected,
   shouldSequencerRun,
@@ -538,9 +539,11 @@ export const hydrogenDef: AudioModuleDef = {
     // ---------- Per-instrument trig{i} input handling ----------
     const trigGains: GainNode[] = [];
     const trigAnalysers: AnalyserNode[] = [];
-    const trigAnalyserBuf = new Float32Array(2048);
     const trigSilences: ConstantSourceNode[] = [];
-    const lastTrigSample: number[] = new Array(HYDROGEN_INSTRUMENT_COUNT).fill(0);
+    // Per-instrument windowed edge counters — one strike per rising edge, no
+    // overlap double-count (the shared seam; replaces the old peak-over-buffer
+    // scan that could miss closely-spaced strikes).
+    const trigCounters: EdgeCounter[] = [];
     for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
       const g = ctx.createGain();
       const a = ctx.createAnalyser();
@@ -554,6 +557,7 @@ export const hydrogenDef: AudioModuleDef = {
       trigGains.push(g);
       trigAnalysers.push(a);
       trigSilences.push(silence);
+      trigCounters.push(createEdgeCounter({ ctx, analyser: a }));
     }
 
     // ---------- clock_in / reset_in detection ----------
@@ -561,25 +565,21 @@ export const hydrogenDef: AudioModuleDef = {
     const clockInAnalyser = ctx.createAnalyser();
     clockInAnalyser.fftSize = 2048;
     clockInGain.connect(clockInAnalyser);
-    const clockInBuffer = new Float32Array(clockInAnalyser.fftSize);
     const clockInSilence = ctx.createConstantSource();
     clockInSilence.offset.value = 0;
     clockInSilence.start();
     clockInSilence.connect(clockInGain);
+    const clockCounter = createEdgeCounter({ ctx, analyser: clockInAnalyser });
 
     const resetInGain = ctx.createGain();
     const resetInAnalyser = ctx.createAnalyser();
     resetInAnalyser.fftSize = 2048;
     resetInGain.connect(resetInAnalyser);
-    const resetInBuffer = new Float32Array(resetInAnalyser.fftSize);
     const resetInSilence = ctx.createConstantSource();
     resetInSilence.offset.value = 0;
     resetInSilence.start();
     resetInSilence.connect(resetInGain);
-
-    let lastClockSample = 0;
-    let lastResetSample = 0;
-    const CLOCK_THRESHOLD = 0.5;
+    const resetCounter = createEdgeCounter({ ctx, analyser: resetInAnalyser });
 
     const transportCv = createTransportCv(ctx);
     let lastTransportPollTime = ctx.currentTime;
@@ -633,47 +633,25 @@ export const hydrogenDef: AudioModuleDef = {
     }
 
     function pollTrigInputs(): void {
+      const now = ctx.currentTime;
       for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
-        trigAnalysers[i]!.getFloatTimeDomainData(trigAnalyserBuf);
-        let peak = 0;
-        for (let s = 0; s < trigAnalyserBuf.length; s++) {
-          const v = trigAnalyserBuf[s]!;
-          if (v > peak) peak = v;
-        }
-        const high = peak >= CLOCK_THRESHOLD ? 1 : 0;
-        if (high && !lastTrigSample[i]) {
-          fireInstrument(i, ctx.currentTime + 0.005);
-        }
-        lastTrigSample[i] = high;
+        // One strike per rising edge, windowed to new-samples-since-last-tick:
+        // a held/slow trig fires exactly once (not once per tick).
+        const edges = trigCounters[i]!.poll(now);
+        for (let e = 0; e < edges; e++) fireInstrument(i, now + 0.005);
       }
     }
 
     function pollResetInput(): void {
-      resetInAnalyser.getFloatTimeDomainData(resetInBuffer);
-      let peak = 0;
-      for (let s = 0; s < resetInBuffer.length; s++) {
-        const v = resetInBuffer[s]!;
-        if (v > peak) peak = v;
-      }
-      const high = peak >= CLOCK_THRESHOLD ? 1 : 0;
-      if (high && !lastResetSample) {
+      if (resetCounter.poll(ctx.currentTime) > 0) {
         stepIndex = 0;
         playhead.reset();
         nextStepTime = ctx.currentTime + 0.005;
       }
-      lastResetSample = high;
     }
 
     function pollExternalClockEdges(): number {
-      clockInAnalyser.getFloatTimeDomainData(clockInBuffer);
-      let edges = 0;
-      for (let s = 0; s < clockInBuffer.length; s++) {
-        const v = clockInBuffer[s]!;
-        const high = v >= CLOCK_THRESHOLD ? 1 : 0;
-        if (high && !lastClockSample) edges++;
-        lastClockSample = high;
-      }
-      return edges;
+      return clockCounter.poll(ctx.currentTime);
     }
 
     function pollTransportCv(): boolean {
