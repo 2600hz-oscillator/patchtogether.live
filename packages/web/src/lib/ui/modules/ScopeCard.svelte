@@ -245,8 +245,8 @@
            group (see Module-grouping Phase 3B + scopeDef.vizPassthrough). -->
       <canvas
         bind:this={canvasEl}
-        width="280"
-        height="120"
+        width="320"
+        height="300"
         data-viz-passthrough="scope"
         data-testid="scope-canvas"
       ></canvas>
@@ -379,7 +379,9 @@
   canvas {
     display: block;
     width: 100%;
-    height: 120px;
+    /* 3u SCOPE — a big screen that fills the taller tier (the rack forces the
+     * card to 3u = 540px; the trace bitmap is 320×300 so it stays crisp). */
+    height: 300px;
   }
   .fader-row {
     display: flex;
