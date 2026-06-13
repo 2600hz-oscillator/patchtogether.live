@@ -42,7 +42,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   clouds: { size: '2u', hp: 2 }, // 201×340px
   cloudseed: { size: '3u', hp: 4 }, // 427×680px
   cocoadelay: { size: '2u', hp: 4 }, // 283×620px
-  cube: { size: '5u', hp: 2 }, // 888×360px
+  cube: { size: '3u', hp: 4 }, // 540×720px — 2-col (viewport+sources left, controls right)
   delay: { size: '1u', hp: 1 }, // 152×200px
   destroy: { size: '1u', hp: 2 }, // 152×220px
   drummergirl: { size: '1u', hp: 2 }, // 152×320px  [LOCKED]
@@ -66,10 +66,10 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   grids: { size: '3u', hp: 2 }, // 463×320px
   helm: { size: '3u', hp: 4 }, // 536×720px
   hydrogen: { size: '4u', hp: 4 }, // 687×660px
-  hypercube: { size: '5u', hp: 2 }, // 770×360px
+  hypercube: { size: '3u', hp: 4 }, // 540×720px — 2-col (viewport left, controls right)
   illogic: { size: '1u', hp: 2 }, // 154×240px
   joystick: { size: '2u', hp: 2 }, // 234×220px
-  lfo: { size: '2u', hp: 1 }, // 221×200px
+  lfo: { size: '1u', hp: 2 }, // 180×360px — Rate/Shape faders + Depth knob in one row
   macrooscillator: { size: '1u', hp: 2 }, // 187×320px
   macseq: { size: '2u', hp: 5 }, // 282×880px
   marbles: { size: '1u', hp: 3 }, // 199×420px
@@ -158,9 +158,9 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   chroma: { size: '2u', hp: 2 }, // 360×260px
   chromakey: { size: '3u', hp: 2 }, // 389×260px
   colorizer: { size: '2u', hp: 2 }, // 270×240px
-  destructor: { size: '2u', hp: 2 }, // 240×260px
+  destructor: { size: '1u', hp: 2 }, // 180×360px — 4 knobs in one row
   doom: { size: '2u', hp: 2 }, // 377×360px
-  edges: { size: '2u', hp: 1 }, // 250×200px
+  edges: { size: '1u', hp: 2 }, // 180×360px — 2 faders one row beside handles
   feedback: { size: '3u', hp: 2 }, // 411×320px
   freezeframe: { size: '4u', hp: 2 }, // 609×260px
   gibribbon: { size: '3u', hp: 5 }, // 398×836px
@@ -176,7 +176,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   peakstate: { size: '2u', hp: 2 }, // 329×240px
   picturebox: { size: '2u', hp: 2 }, // 240×220px
   qbert: { size: '2u', hp: 2 }, // 326×340px
-  quadralogical: { size: '5u', hp: 3 }, // 874×480px
+  quadralogical: { size: '4u', hp: 4 }, // 720×720px — 2-col (joystick left, preview+edges right)
   recorderbox: { size: '2u', hp: 2 }, // 296×248px
   scoreboard: { size: '1u', hp: 2 }, // 240×260px  [LOCKED]
   shapedramps: { size: '4u', hp: 2 }, // 641×240px

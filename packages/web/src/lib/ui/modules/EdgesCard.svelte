@@ -75,13 +75,14 @@
   .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
   .port-label.left { left: 14px; }
   .port-label.right { right: 14px; }
+  /* 1u (180px tall): the two faders sit in one row to the RIGHT of the
+     left-edge in/T/W handle column, starting just under the title. */
   .fader-grid {
-    /* Clear the lowest CV-input handle (top: 124px). */
-    margin-top: 80px;
-    padding: 0 12px;
+    margin-top: 2px;
+    padding: 0 12px 0 40px;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px 16px;
+    gap: 0 16px;
     justify-items: center;
   }
 </style>
