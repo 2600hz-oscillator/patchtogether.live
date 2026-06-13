@@ -80,6 +80,7 @@ describe('matrixmix — createMatrixEdge against the live patch', () => {
     expect(id).toBe(`e-${ADSR}-env-${VCA}-cv`);
     const e = patch.edges[id!];
     expect(e).toBeDefined();
+    if (!e) return;
     expect(e.source).toEqual(source);
     expect(e.target).toEqual(target);
     expect(e.sourceType).toBe('cv');

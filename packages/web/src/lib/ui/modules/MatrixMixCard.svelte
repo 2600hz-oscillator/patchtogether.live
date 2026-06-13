@@ -185,7 +185,7 @@
   void MATRIXMIX_TYPE; // keep the constant referenced for re-export hygiene
 </script>
 
-<div class="matrixmix-card" data-testid="matrixmix-card">
+<div class="matrixmix-card" data-testid="matrixmix-card" data-node-id={id}>
   <ModuleTitle {id} {data} defaultLabel="MATRIXMIX" />
 
   <div class="mm-axes">
