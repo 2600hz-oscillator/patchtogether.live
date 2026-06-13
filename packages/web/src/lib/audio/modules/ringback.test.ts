@@ -25,10 +25,16 @@ describe('ringbackDef: module-def shape', () => {
     expect(ringbackDef.domain).toBe('audio');
   });
 
-  it('is stereo in: in_l + in_r (audio)', () => {
-    const ids = ringbackDef.inputs.map((p) => p.id).sort();
-    expect(ids).toEqual(['in_l', 'in_r']);
-    for (const p of ringbackDef.inputs) expect(p.type).toBe('audio');
+  it('stereo audio in (in_l + in_r) + a CV input per param (rate/size/feedback/mix)', () => {
+    const audioIns = ringbackDef.inputs.filter((p) => p.type === 'audio').map((p) => p.id).sort();
+    expect(audioIns).toEqual(['in_l', 'in_r']);
+    const cvIns = ringbackDef.inputs.filter((p) => p.type === 'cv').map((p) => p.id).sort();
+    expect(cvIns).toEqual(['feedback', 'mix', 'rate', 'size']);
+    // each CV input drives its like-named param through the shared cvScale routing.
+    for (const p of ringbackDef.inputs.filter((q) => q.type === 'cv')) {
+      expect(p.paramTarget).toBe(p.id);
+      expect(p.cvScale).toBeDefined();
+    }
   });
 
   it('is stereo out: out_l + out_r (audio)', () => {
@@ -59,9 +65,9 @@ describe('ringbackDef: module-def shape', () => {
     expect(byId.mix!.defaultValue).toBe(1);
   });
 
-  it('has a factory + handle count 4 (2 in + 2 out)', () => {
+  it('has a factory + handle count 8 (2 audio in + 4 CV in + 2 out)', () => {
     expect(typeof ringbackDef.factory).toBe('function');
-    expect(ringbackDef.inputs.length + ringbackDef.outputs.length).toBe(4);
+    expect(ringbackDef.inputs.length + ringbackDef.outputs.length).toBe(8);
   });
 });
 
