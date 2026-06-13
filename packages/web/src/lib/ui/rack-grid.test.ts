@@ -6,7 +6,14 @@
 // relies on falling out for free).
 
 import { describe, it, expect } from 'vitest';
-import { snapToGrid, snapPositionToGrid, RACK_UNIT } from './rack-grid';
+import {
+  snapToGrid,
+  snapPositionToGrid,
+  RACK_UNIT,
+  rectsOverlap,
+  findFreeRackSlot,
+  type RackRect,
+} from './rack-grid';
 
 describe('snapToGrid', () => {
   it('the rack unit is 180px (mirrors --rack-unit)', () => {
@@ -69,5 +76,55 @@ describe('snapPositionToGrid', () => {
     expect(snapPositionToGrid({ x: 0, y: 540 + 30 }).y).toBe(540); // top third
     expect(snapPositionToGrid({ x: 0, y: 540 + 200 }).y).toBe(720); // middle third
     expect(snapPositionToGrid({ x: 0, y: 540 + 380 }).y).toBe(900); // bottom third
+  });
+});
+
+describe('rectsOverlap', () => {
+  const R = (x: number, y: number, w = 180, h = 180): RackRect => ({ x, y, w, h });
+  it('true when the rects intersect', () => {
+    expect(rectsOverlap(R(0, 0), R(90, 90))).toBe(true);
+  });
+  it('false when they only touch edges (adjacent slots are NOT overlapping)', () => {
+    expect(rectsOverlap(R(0, 0), R(180, 0))).toBe(false);
+    expect(rectsOverlap(R(0, 0), R(0, 180))).toBe(false);
+  });
+  it('false when fully disjoint', () => {
+    expect(rectsOverlap(R(0, 0), R(360, 0))).toBe(false);
+  });
+});
+
+describe('findFreeRackSlot (lock never lands a card on top of another)', () => {
+  const R = (x: number, y: number, w = 180, h = 180): RackRect => ({ x, y, w, h });
+  const fits = (r: { x: number; y: number }, size: { w: number; h: number }, others: RackRect[]) =>
+    !others.some((o) => rectsOverlap({ ...r, ...size }, o));
+
+  it('returns the snapped position unchanged when nothing is there', () => {
+    expect(findFreeRackSlot({ x: 360, y: 0 }, { w: 180, h: 180 }, [])).toEqual({ x: 360, y: 0 });
+    // an existing card elsewhere doesn't block a clear slot
+    expect(findFreeRackSlot({ x: 360, y: 0 }, { w: 180, h: 180 }, [R(0, 0)])).toEqual({ x: 360, y: 0 });
+  });
+
+  it('nudges one tile to a free slot when the snapped slot is taken', () => {
+    const others = [R(0, 0)];
+    const r = findFreeRackSlot({ x: 0, y: 0 }, { w: 180, h: 180 }, others);
+    expect(fits(r, { w: 180, h: 180 }, others)).toBe(true);
+    expect(Math.abs(r.x) + Math.abs(r.y)).toBe(180); // exactly one tile away (smallest move)
+  });
+
+  it('reaches past a fully-surrounded slot to the nearest free one', () => {
+    // Occupy the snapped slot + all 4 orthogonal neighbours → must go to a
+    // diagonal (ring-1) which is still collision-free.
+    const others = [R(0, 0), R(180, 0), R(-180, 0), R(0, 180), R(0, -180)];
+    const r = findFreeRackSlot({ x: 0, y: 0 }, { w: 180, h: 180 }, others);
+    expect(fits(r, { w: 180, h: 180 }, others)).toBe(true);
+  });
+
+  it('accounts for the LOCKING card’s own multi-tile footprint', () => {
+    // A 2hp×1u card (360×180) at {0,0}: a neighbour exactly abutting at x=360
+    // only TOUCHES → no move needed.
+    expect(findFreeRackSlot({ x: 0, y: 0 }, { w: 360, h: 180 }, [R(360, 0)])).toEqual({ x: 0, y: 0 });
+    // …but a neighbour at x=180 is UNDER the 360-wide card → it must relocate.
+    const r = findFreeRackSlot({ x: 0, y: 0 }, { w: 360, h: 180 }, [R(180, 0)]);
+    expect(fits(r, { w: 360, h: 180 }, [R(180, 0)])).toBe(true);
   });
 });

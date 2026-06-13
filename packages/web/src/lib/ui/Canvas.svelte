@@ -19,7 +19,7 @@
   import { buildDuplicate } from '$lib/graph/duplicate';
   import { instanceCount, wouldExceedCap } from '$lib/graph/cap';
   import { setControlColor, setNodeLocked } from '$lib/graph/mutate';
-  import { snapPositionToGrid } from '$lib/ui/rack-grid';
+  import { snapPositionToGrid, findFreeRackSlot, RACK_UNIT, type RackRect } from '$lib/ui/rack-grid';
   import { resolveControlColor } from '$lib/graph/control-color';
   import {
     planSingletonCleanup,
@@ -2085,8 +2085,33 @@
    *  slot for free (no special-casing). */
   function lockNode(nodeId: string): void {
     const pos = currentNodePosition(nodeId);
-    if (pos) writeNodePosition(nodeId, snapPositionToGrid(pos));
+    if (pos) {
+      // Snap to the grid, then nudge to the nearest FREE slot so locking never
+      // drops the card on top of a neighbour (Phase-2 §3 collision rule). The
+      // footprint is each card's true rendered box (offsetWidth/Height is
+      // zoom-independent = flow-space px), which covers forced-tier AND
+      // user-resized cards uniformly.
+      const snapped = snapPositionToGrid(pos);
+      const size = nodeFootprintPx(nodeId);
+      const others: RackRect[] = snapshot.nodes
+        .filter((n) => n.id !== nodeId && n.type !== 'cadillac')
+        .map((n) => {
+          const p = currentNodePosition(n.id) ?? n.position;
+          const s = nodeFootprintPx(n.id);
+          return { x: p.x, y: p.y, w: s.w, h: s.h };
+        });
+      writeNodePosition(nodeId, findFreeRackSlot(snapped, size, others));
+    }
     setNodeLocked(nodeId, true);
+  }
+
+  /** A node's true footprint in flow-space px (zoom-independent layout box).
+   *  Falls back to a 1u tile if the element isn't in the DOM yet. */
+  function nodeFootprintPx(nodeId: string): { w: number; h: number } {
+    const el = document.querySelector(
+      `.svelte-flow__node[data-id="${CSS.escape(nodeId)}"]`,
+    ) as HTMLElement | null;
+    return el ? { w: el.offsetWidth, h: el.offsetHeight } : { w: RACK_UNIT, h: RACK_UNIT };
   }
 
   /** Unscrew a module — clear the lock flag so it free-floats + drags again.
