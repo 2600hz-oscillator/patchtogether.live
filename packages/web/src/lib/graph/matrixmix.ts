@@ -117,3 +117,29 @@ export function createMatrixEdge(
   }, LOCAL_ORIGIN);
   return id;
 }
+
+/**
+ * Remove (unpatch) the edge a DIRECT matrix cell describes — the green/colored
+ * circle the user clicks to toggle OFF a cable that runs between the two
+ * matrixed modules. REUSES the platform's canonical edge-removal seam
+ * (`delete patch.edges[id]` inside ONE LOCAL_ORIGIN transaction — the exact
+ * shape the Canvas delete path / createMatrixEdge's replace-on-input use), so
+ * the removal rides the Y.Doc to rack-mates + lands on the undo stack.
+ *
+ * The matrix only ever toggles edges BETWEEN the two matrixed modules: the
+ * classifier hands us the id of the SINGLE input←output cable spanning a cell's
+ * two jacks (`direct` cells only — an input takes one cable, so the id is
+ * unambiguous), so deleting by that id never touches a foreign cable (the
+ * gray/red ✕ cells carry no edgeId and never reach here). Silent no-op if the
+ * id is absent or already gone (e.g. a rack-mate removed it first) — idempotent,
+ * mirroring the create path.
+ *
+ * @returns true if an edge was deleted, false if there was nothing to delete.
+ */
+export function removeMatrixEdge(edgeId: string): boolean {
+  if (!patch.edges[edgeId]) return false; // already gone — idempotent no-op
+  ydoc.transact(() => {
+    delete patch.edges[edgeId];
+  }, LOCAL_ORIGIN);
+  return true;
+}

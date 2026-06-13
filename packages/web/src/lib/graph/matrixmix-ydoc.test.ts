@@ -24,7 +24,9 @@ import {
   setXAxisModule,
   setYAxisModule,
   createMatrixEdge,
+  removeMatrixEdge,
 } from './matrixmix';
+import { jacksForDef, classifyCell } from '$lib/ui/matrixmix-grid';
 
 const MID = 'mm-ydoc-test';
 const ADSR = 'adsr-1';
@@ -136,5 +138,111 @@ describe('matrixmix — createMatrixEdge against the live patch', () => {
     const b = createMatrixEdge({ nodeId: ADSR, portId: 'env' }, { nodeId: VCA, portId: 'cv' }, 'cv', 'cv', defLookup);
     expect(a).toBe(b);
     expect(Object.keys(patch.edges)).toHaveLength(1);
+  });
+});
+
+describe('matrixmix — removeMatrixEdge (unpatch) against the live patch', () => {
+  it('removes EXACTLY the direct edge between the two matrixed modules', () => {
+    setup();
+    const id = createMatrixEdge(
+      { nodeId: ADSR, portId: 'env' },
+      { nodeId: VCA, portId: 'cv' },
+      'cv',
+      'cv',
+      defLookup,
+    );
+    expect(id).toBeDefined();
+    expect(patch.edges[id!]).toBeDefined();
+
+    const removed = removeMatrixEdge(id!);
+    expect(removed).toBe(true);
+    // The exact edge is gone; nothing else was created.
+    expect(patch.edges[id!]).toBeUndefined();
+    expect(Object.keys(patch.edges)).toHaveLength(0);
+  });
+
+  it('removing a direct edge leaves FOREIGN edges (gray ✕) untouched', () => {
+    setup();
+    patch.nodes['lfo-1'] = node('lfo-1', 'lfo');
+    // A foreign cable on ADSR's OUTPUT jack — ADSR.env fans out to a THIRD
+    // module (LFO.rate, cv→cv). In the matrix this is a gray ✕; it must NEVER
+    // be removed by the matrix.
+    patch.edges['foreign-out'] = {
+      id: 'foreign-out',
+      source: { nodeId: ADSR, portId: 'env' },
+      target: { nodeId: 'lfo-1', portId: 'rate' },
+      sourceType: 'cv',
+      targetType: 'cv',
+    } as never;
+
+    // The direct cable between the two matrixed modules (ADSR.env → VCA.cv).
+    const directId = createMatrixEdge(
+      { nodeId: ADSR, portId: 'env' },
+      { nodeId: VCA, portId: 'cv' },
+      'cv',
+      'cv',
+      defLookup,
+    );
+    expect(directId).toBeDefined();
+
+    const removed = removeMatrixEdge(directId!);
+    expect(removed).toBe(true);
+    // The direct edge is gone…
+    expect(patch.edges[directId!]).toBeUndefined();
+    // …but the foreign OUTPUT cable (gray ✕) survives.
+    expect(patch.edges['foreign-out']).toBeDefined();
+    expect(Object.keys(patch.edges)).toEqual(['foreign-out']);
+  });
+
+  it('a gray-✕ (foreign output) cell exposes NO edgeId → the card can never remove it', () => {
+    setup();
+    patch.nodes['lfo-1'] = node('lfo-1', 'lfo');
+    // ADSR.env (cv output) fans out to LFO.rate (cv input) → the cell pairing
+    // ADSR.env with VCA.cv reads as outputFanout (gray ✕) — the output already
+    // feeds a third module, the cell's own input (VCA.cv) is free. Classify it
+    // through the SAME pure core the card uses and confirm it carries NO edgeId,
+    // so onCellClick's `direct` branch never fires for it.
+    patch.edges['foreign-out'] = {
+      id: 'foreign-out',
+      source: { nodeId: ADSR, portId: 'env' },
+      target: { nodeId: 'lfo-1', portId: 'rate' },
+      sourceType: 'cv',
+      targetType: 'cv',
+    } as never;
+    // X = ADSR (cols), Y = VCA (rows). colJack = ADSR.env, rowJack = VCA.cv.
+    const colJack = jacksForDef(defLookup('adsr')).find(
+      (j) => j.portId === 'env' && j.direction === 'output',
+    )!;
+    const rowJack = jacksForDef(defLookup('vca')).find(
+      (j) => j.portId === 'cv' && j.direction === 'input',
+    )!;
+    const cls = classifyCell(
+      rowJack,
+      colJack,
+      Object.values(patch.edges),
+      ADSR /* xModuleId — cols */,
+      VCA /* yModuleId — rows */,
+      (n) => n,
+    );
+    expect(cls.kind).toBe('outputFanout');
+    expect(cls.edgeId).toBeUndefined();
+    // The foreign cable stands.
+    expect(patch.edges['foreign-out']).toBeDefined();
+  });
+
+  it('is idempotent — removing an absent / already-gone edge is a no-op (false)', () => {
+    setup();
+    expect(removeMatrixEdge('e-does-not-exist')).toBe(false);
+    const id = createMatrixEdge(
+      { nodeId: ADSR, portId: 'env' },
+      { nodeId: VCA, portId: 'cv' },
+      'cv',
+      'cv',
+      defLookup,
+    );
+    expect(removeMatrixEdge(id!)).toBe(true);
+    // Second remove finds nothing.
+    expect(removeMatrixEdge(id!)).toBe(false);
+    expect(Object.keys(patch.edges)).toHaveLength(0);
   });
 });

@@ -63,6 +63,11 @@ export interface CellClassification {
   /** For 'direct': the existing cable's CONTENT type, for colouring (the
    *  source-emitted type). Absent for every other kind. */
   cableType?: CableType;
+  /** For 'direct': the id of the SINGLE edge that spans these two matrixed
+   *  jacks, so the card can REMOVE it on click (unpatch). There is at most one
+   *  input←output cable per jack-pair (an input takes one cable), so this is
+   *  unambiguous. Absent for every other kind. */
+  edgeId?: string;
   /** For 'inputTaken' / 'outputFanout': the THIRD-party endpoint, for the
    *  hover tooltip ("sourceModuleName.portId"). */
   remote?: { name: string; port: string };
@@ -209,8 +214,10 @@ export function classifyCell(
   const direct = findDirectEdge(rowJack, colJack, edgeList, xModuleId, yModuleId);
   if (direct) {
     // The cell's cable colour follows the SOURCE-emitted content type (what the
-    // output puts on the wire) — same as the canvas cables.
-    return { kind: 'direct', cableType: direct.sourceType };
+    // output puts on the wire) — same as the canvas cables. Carry the edge id
+    // so a click can REMOVE exactly this cable (unpatch) — there is at most one
+    // input←output cable per jack-pair, so the id is unambiguous.
+    return { kind: 'direct', cableType: direct.sourceType, edgeId: direct.id };
   }
 
   // 2) Legal input/output + compatible-type pair?

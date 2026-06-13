@@ -98,6 +98,17 @@ test('select both axes → click a legal cell creates the edge + a dot; an exter
   await expect(legalCell).toHaveAttribute('data-kind', 'direct');
   await expect(legalCell.locator('[data-testid="matrixmix-dot"]')).toBeVisible();
 
+  // ── Unpatch: clicking the now-GREEN (direct) cell REMOVES the edge ─────────
+  // The same cell is now a direct connection between the two matrixed modules.
+  // Clicking it toggles it OFF — removeMatrixEdge deletes that exact edge, and
+  // the cell flips back to a clickable empty (legalEmpty) cell with no dot.
+  await legalCell.click();
+  await expect
+    .poll(async () => Object.keys(await readEdges(page)))
+    .not.toContain(LEGAL_EDGE_ID);
+  await expect(legalCell).toHaveAttribute('data-kind', 'legalEmpty');
+  await expect(legalCell.locator('[data-testid="matrixmix-dot"]')).toHaveCount(0);
+
   // ── Live external conflict ───────────────────────────────────────────────
   // Patch LFO.phase0 (cv out) → VCA.audio (audio... NO). Use a DIFFERENT legal
   // target so we don't collide with the cell we just made: feed VCA's `cv`

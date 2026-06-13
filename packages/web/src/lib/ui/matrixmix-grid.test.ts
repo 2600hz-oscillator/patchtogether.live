@@ -130,6 +130,26 @@ describe('classifyCell', () => {
     expect(cls.cableType).toBe('cv');
   });
 
+  it('DIRECT carries the spanning edge id so a click can REMOVE it (unpatch)', () => {
+    // The id the cell exposes must be the EXACT edge between the two matrixed
+    // jacks — the card deletes by this id, so it must be unambiguous.
+    const e = edge('e-unpatch-me', [X, 'out'], [Y, 'in']);
+    const cls = classifyCell(audioIn /* row Y.in */, audioOut /* col X.out */, [e], X, Y, nameOf);
+    expect(cls.kind).toBe('direct');
+    expect(cls.edgeId).toBe('e-unpatch-me');
+  });
+
+  it('a non-direct cell carries NO edgeId (only direct cells are removable)', () => {
+    // legalEmpty: nothing to remove.
+    expect(classifyCell(audioIn, audioOut, [], X, Y, nameOf).edgeId).toBeUndefined();
+    // outputFanout (foreign cable on the output): immutable from the matrix.
+    const fan = edge('e-fan', [X, 'out'], [THIRD, 'in']);
+    expect(classifyCell(audioIn, audioOut, [fan], X, Y, nameOf).edgeId).toBeUndefined();
+    // inputTaken (foreign cable on the input): immutable from the matrix.
+    const occ = edge('e-occ', [THIRD, 'lfo'], [Y, 'in'], 'cv', 'audio');
+    expect(classifyCell(audioIn, audioOut, [occ], X, Y, nameOf).edgeId).toBeUndefined();
+  });
+
   it('ILLEGAL: input → input → illegal, no patch', () => {
     const cls = classifyCell(audioIn, cvIn, [], X, Y, nameOf);
     expect(cls.kind).toBe('illegal');

@@ -35,6 +35,7 @@
     setXAxisModule,
     setYAxisModule,
     createMatrixEdge,
+    removeMatrixEdge,
   } from '$lib/graph/matrixmix';
 
   let { id, data }: NodeProps = $props();
@@ -138,6 +139,15 @@
   });
 
   function onCellClick(cell: RenderCell) {
+    // A click only ever affects the edge BETWEEN the two matrixed modules:
+    //   - direct (green/colored dot) → REMOVE that exact cable (unpatch).
+    //   - legalEmpty                  → CREATE the cable.
+    //   - inputTaken (red ✕) / outputFanout (gray ✕) / illegal → no-op. Those
+    //     are foreign cables (someone else's), never touched by the matrix.
+    if (cell.cls.kind === 'direct') {
+      if (cell.cls.edgeId) removeMatrixEdge(cell.cls.edgeId);
+      return;
+    }
     if (cell.cls.kind !== 'legalEmpty' || !cell.cls.patch) return;
     // Cable runs output → input. The output jack supplies sourceType; the input
     // jack supplies targetType. Exactly one of row/col is the output.
@@ -152,6 +162,13 @@
     );
   }
 
+  // A cell is INTERACTIVE iff a click changes the edge between the two matrixed
+  // modules: legalEmpty (creates) or direct (removes / unpatch). Foreign-cable
+  // cells (inputTaken / outputFanout) + illegal are inert.
+  function isClickable(cls: CellClassification): boolean {
+    return cls.kind === 'legalEmpty' || (cls.kind === 'direct' && !!cls.edgeId);
+  }
+
   // Tooltip text for a ✕ cell (the third-party endpoint it touches).
   function cellTitle(cls: CellClassification, rowJack: Jack, colJack: Jack): string {
     if (cls.kind === 'inputTaken' && cls.remote) {
@@ -161,7 +178,7 @@
       return `output already feeds ${cls.remote.name}.${cls.remote.port} — clicking adds another cable`;
     }
     if (cls.kind === 'direct') {
-      return `${jackLabel(colJack)} ↔ ${jackLabel(rowJack)} — connected`;
+      return `${jackLabel(colJack)} ↔ ${jackLabel(rowJack)} — connected (click to unpatch)`;
     }
     if (cls.kind === 'illegal') {
       return `illegal: ${jackLabel(colJack)} ↔ ${jackLabel(rowJack)}`;
@@ -256,8 +273,8 @@
                   data-testid={`matrixmix-cell-${cell.rowJack.direction}-${cell.rowJack.portId}-${cell.colJack.direction}-${cell.colJack.portId}`}
                   data-kind={cell.cls.kind}
                   title={cellTitle(cell.cls, cell.rowJack, cell.colJack)}
-                  role={cell.cls.kind === 'legalEmpty' ? 'button' : undefined}
-                  tabindex={cell.cls.kind === 'legalEmpty' ? 0 : undefined}
+                  role={isClickable(cell.cls) ? 'button' : undefined}
+                  tabindex={isClickable(cell.cls) ? 0 : undefined}
                   aria-label={cellTitle(cell.cls, cell.rowJack, cell.colJack)}
                   onclick={() => onCellClick(cell)}
                   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onCellClick(cell); } }}
@@ -431,6 +448,11 @@
   }
   .mm-cell.mm-legalEmpty { cursor: pointer; }
   .mm-cell.mm-legalEmpty:hover { background: rgba(96, 165, 250, 0.18); }
+  /* A direct (connected) cell is clickable to UNPATCH — pointer cursor + a
+     subtle red hover wash so it reads as "click to remove this cable". */
+  .mm-cell.mm-direct { cursor: pointer; }
+  .mm-cell.mm-direct:hover { background: rgba(248, 113, 113, 0.18); }
+  .mm-cell.mm-direct:hover .mm-dot { opacity: 0.55; }
   /* Illegal cells show a red-✕ cursor so the user knows a click does nothing.
      A tiny inline data-URI cursor of a red ✕, falling back to not-allowed. */
   .mm-cell.mm-illegal {
