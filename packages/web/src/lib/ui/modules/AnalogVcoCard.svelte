@@ -113,7 +113,7 @@
     <canvas
       bind:this={canvasEl}
       width="200"
-      height="56"
+      height="168"
       data-testid="analog-vco-scope"
     ></canvas>
   </div>
@@ -174,7 +174,7 @@
   .scope-wrap canvas {
     display: block;
     width: 100%;
-    height: 56px;
+    height: 168px; /* 3× the old 56px — fills the 3u card's empty vertical space */
   }
   .fader-row {
     margin-top: 12px;
