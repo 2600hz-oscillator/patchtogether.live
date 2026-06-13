@@ -1,0 +1,185 @@
+name: VRT changeset gallery
+
+# Per-PR "VRT changeset gallery": when a PR changes any VRT baseline PNG, render
+# a static page showing ONLY the changed baselines (OLD / NEW / DIFF per image),
+# publish it to Cloudflare Pages, and upsert a single PR comment with the link.
+#
+# Why this (vs. the alternatives we evaluated):
+#   - The existing docs/vrt GitHub-Pages gallery (e2e/vrt/build_gallery.py) lists
+#     ALL ~240 baselines — it can't tell you which ones a PR touched, and a PR
+#     like rack-sizing #759 moves ~165 of them.
+#   - The Playwright HTML report only shows expected/actual/diff for tests that
+#     FAILED on that run; once a PR commits its updated baselines (the normal
+#     flow — vrt-update.yml commits them onto the branch) the VRT job is GREEN
+#     and the report shows nothing changed. So it can't review an intentional,
+#     already-committed baseline change.
+#   - This gallery is git-diff-driven (base = the PR's merge-base), so it shows
+#     exactly the PR's changed images whether or not the new baselines are
+#     committed yet, and re-renders on every push.
+#
+# This workflow is INFORMATIONAL — it never gates merge. It's gated to PRs that
+# actually touch VRT baselines (paths filter below) so it doesn't run on every
+# PR. CI wall-time impact: a single lightweight ubuntu job (no app build, no
+# Playwright browser, no DSP/WASM) — checkout + npm install + image diff +
+# wrangler deploy, well under ~2 min, and only on VRT-touching PRs.
+#
+# Reuses the existing CF Pages setup from deploy.yml — same secrets
+# (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID) and the same autotest Pages
+# project (patchtogether-live-autotest), under a distinct branch alias
+# `vrt-pr-<N>` so it never collides with the app's `pr-<N>` preview deploy.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'e2e/vrt/__screenshots__/**'
+
+# One run per PR; a new push cancels the stale gallery build.
+concurrency:
+  group: vrt-changeset-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write   # upsert the gallery-link comment
+
+jobs:
+  gallery:
+    name: Build + publish VRT changeset gallery
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      # Full history so we can resolve the merge-base with the PR's base branch,
+      # and LFS so both the base (`git show`) and working-tree baseline PNGs
+      # materialize as REAL bytes (not the ~130-byte LFS pointer files — those
+      # don't decode and would render the gallery useless).
+      - name: Checkout PR head (full history + LFS baselines)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      # The gallery diffs against the PR's base branch. fetch-depth:0 already has
+      # remote-tracking refs, but fetch the base branch explicitly so
+      # origin/<base> resolves even on a shallow-ish graph.
+      - name: Fetch PR base branch
+        run: |
+          git fetch --no-tags origin "${{ github.event.pull_request.base.ref }}":"refs/remotes/origin/${{ github.event.pull_request.base.ref }}" || true
+
+      # Ensure the baseline LFS objects on BOTH sides are present locally (the
+      # `lfs: true` checkout pulls the head's objects; the script also reads base
+      # objects via `git show` + smudge, which need the object store populated).
+      - name: Pull VRT baseline LFS objects
+        run: git lfs pull --include "e2e/vrt/__screenshots__/**" || true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Only the root deps are needed (sharp + pixelmatch). `npm install` at the
+      # repo root is enough — no workspace build, no Playwright browser.
+      - name: Install root deps (sharp + pixelmatch)
+        run: npm install --no-audit --no-fund
+
+      - name: Build VRT changeset gallery
+        id: build
+        env:
+          # Pass PR fields via env (NOT inline ${{ }} in run:) — the title is
+          # untrusted user input; inlining it is a script-injection vector
+          # (actionlint [expression]). See the secure-use GHA guidance.
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          COUNT=$(node scripts/vrt-changeset-gallery.mjs \
+            --base "origin/${PR_BASE}" \
+            --pr "${PR_NUMBER}" \
+            --title "${PR_TITLE}" \
+            --json /tmp/vrt-changeset.json)
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Changed baselines: $COUNT"
+
+      # Deploy to the autotest CF Pages project under a per-PR alias. wrangler-
+      # action exposes `deployment-url`; we also compute the deterministic alias
+      # URL as a fallback for the comment.
+      - name: Deploy gallery to Cloudflare Pages
+        id: deploy
+        if: steps.build.outputs.count != '0'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Deploy the static gallery dir. ASCII commit message for the same
+          # reason deploy.yml uses one (CF rejects non-UTF-8 metadata).
+          command: >-
+            pages deploy docs/vrt-changeset
+            --project-name=patchtogether-live-autotest
+            --branch=vrt-pr-${{ github.event.pull_request.number }}
+            --commit-message=vrt-changeset-${{ github.sha }}
+
+      - name: Compute gallery URL
+        id: url
+        if: steps.build.outputs.count != '0'
+        run: |
+          # Prefer wrangler's reported deployment-url; fall back to the
+          # deterministic per-branch alias on the autotest Pages project.
+          URL="${{ steps.deploy.outputs.deployment-url }}"
+          if [ -z "$URL" ]; then
+            URL="https://vrt-pr-${{ github.event.pull_request.number }}.patchtogether-live-autotest.pages.dev"
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Gallery URL: $URL"
+
+      # Upsert a single marker-tagged comment (find existing by marker → update,
+      # else create). Idempotent across pushes so we don't spam the PR.
+      - name: Upsert PR comment with gallery link
+        if: steps.build.outputs.count != '0'
+        uses: actions/github-script@v7
+        env:
+          GALLERY_URL: ${{ steps.url.outputs.url }}
+          COUNT: ${{ steps.build.outputs.count }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- vrt-changeset-gallery -->';
+            const url = process.env.GALLERY_URL;
+            const count = process.env.COUNT;
+            let summary = '';
+            try {
+              const j = JSON.parse(fs.readFileSync('/tmp/vrt-changeset.json', 'utf8'));
+              const bits = [];
+              if (j.added) bits.push(`${j.added} added`);
+              if (j.modified) bits.push(`${j.modified} modified`);
+              if (j.deleted) bits.push(`${j.deleted} deleted`);
+              if (j.renamed) bits.push(`${j.renamed} renamed`);
+              summary = bits.length ? ` (${bits.join(', ')})` : '';
+            } catch {}
+            const body = [
+              marker,
+              `### 🖼️ VRT changeset gallery`,
+              ``,
+              `This PR changes **${count}** VRT baseline image${count === '1' ? '' : 's'}${summary}.`,
+              ``,
+              `**[▶ View the changed images inline (OLD / NEW / DIFF) →](${url})**`,
+              ``,
+              `<sub>Only the baselines this PR touched, each as before/after/pixel-diff. Re-renders on every push. Generated by \`scripts/vrt-changeset-gallery.mjs\` · published to Cloudflare Pages.</sub>`,
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              core.info(`Updated existing comment ${existing.id}`);
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              core.info('Created new gallery comment');
+            }
+
+      - name: No baseline changes — skip
+        if: steps.build.outputs.count == '0'
+        run: echo "No VRT baseline changes vs base — nothing to publish."
