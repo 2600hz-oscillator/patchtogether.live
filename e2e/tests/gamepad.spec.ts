@@ -366,6 +366,116 @@ test.describe('GAMEPAD module', () => {
     expect(cleared).toBeNull();
   });
 
+  // ─────────────────────── CONTROL REMAP ───────────────────────
+  // Right-click a button LED / trigger label → arm a button-remap; the next
+  // physical press binds that output. "Remap X/Y" buttons under a stick arm an
+  // axis-remap; the next axis the user moves binds it. Bindings persist on
+  // node.data.bindings (synced) and the read loop follows them the next frame.
+
+  const readBindings = (page: Page) => page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: { bindings?: Record<string, { kind: string; index: number }> } }> };
+    };
+    return w.__patch.nodes.gp?.data?.bindings ?? null;
+  });
+  const readGp = (page: Page, port: string) => page.evaluate((p) => {
+    const w = globalThis as unknown as {
+      __engine?: () => { readParam: (n: unknown, k: string) => unknown } | null;
+      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+    };
+    const eng = w.__engine?.();
+    const gp = w.__patch.nodes.gp;
+    if (!eng || !gp) return -99;
+    return (eng.readParam(gp, p) as number | undefined) ?? -99;
+  }, port);
+
+  test('right-click a button LED → arm → press a DIFFERENT physical button binds the output, and the output now follows it', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    // All buttons released at rest (17 zeros) so the armed baseline is clean.
+    await installFakeGamepad(page, { buttons: Array(17).fill(0) });
+    await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
+    await page.waitForTimeout(200);
+    const card = page.locator('[data-testid="gamepad-card"]');
+
+    // Baseline: the `a` output follows physical A (button 0). Pressing X
+    // (button 2) does NOT light `a` yet.
+    const pressX = [...Array(17).fill(0)]; pressX[2] = 1;
+    await updateFakeGamepad(page, { buttons: pressX });
+    await page.waitForTimeout(100);
+    expect(await readGp(page, 'a')).toBe(0);
+    // Release before arming so the baseline diff starts from rest.
+    await updateFakeGamepad(page, { buttons: Array(17).fill(0) });
+    await page.waitForTimeout(100);
+
+    // Arm the `a` output's remap (right-click its LED) → banner appears.
+    await card.getByTestId('gamepad-remap-a').click({ button: 'right' });
+    await expect(card.getByTestId('gamepad-remap-banner')).toBeVisible();
+
+    // Press physical X (button 2) → detector binds `a` → physical X.
+    await updateFakeGamepad(page, { buttons: pressX });
+    // Wait for the binding to be committed to node.data.
+    await expect.poll(() => readBindings(page), { timeout: 3000 }).not.toBeNull();
+    const bindings = await readBindings(page);
+    expect(bindings?.a).toEqual({ kind: 'button', index: 2 });
+    // Banner clears once bound.
+    await expect(card.getByTestId('gamepad-remap-banner')).toBeHidden();
+
+    // The `a` output now FOLLOWS physical X: holding X reads 1…
+    await expect.poll(() => readGp(page, 'a'), { timeout: 2000 }).toBe(1);
+    // …and pressing physical A (button 0) alone does NOT light `a` anymore.
+    const pressA = [...Array(17).fill(0)]; pressA[0] = 1;
+    await updateFakeGamepad(page, { buttons: pressA });
+    await expect.poll(() => readGp(page, 'a'), { timeout: 2000 }).toBe(0);
+  });
+
+  test('"Remap X" under the left stick → move an axis → axis binding persists + output follows', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
+    await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
+    await page.waitForTimeout(200);
+    const card = page.locator('[data-testid="gamepad-card"]');
+
+    // Arm the left-stick X remap (the user-preferred separate "Remap X" button).
+    await card.getByTestId('gamepad-remap-lx').click();
+    await expect(card.getByTestId('gamepad-remap-banner')).toBeVisible();
+
+    // Move the RIGHT-stick X axis (index 2) fully → detector binds lx → axis 2.
+    await updateFakeGamepad(page, { axes: [0, 0, 0.95, 0] });
+    await expect.poll(() => readBindings(page), { timeout: 3000 }).not.toBeNull();
+    const bindings = await readBindings(page);
+    expect(bindings?.lx).toEqual({ kind: 'axis', index: 2 });
+    await expect(card.getByTestId('gamepad-remap-banner')).toBeHidden();
+
+    // The lx OUTPUT now follows axis 2: moving axis 2 drives lx, while the
+    // original axis 0 no longer does.
+    await updateFakeGamepad(page, { axes: [0, 0, 1, 0] });
+    await expect.poll(() => readGp(page, 'lx'), { timeout: 2000 }).toBeGreaterThan(0.8);
+    await updateFakeGamepad(page, { axes: [1, 0, 0, 0] }); // old axis 0 hard-right
+    await expect.poll(() => readGp(page, 'lx'), { timeout: 2000 }).toBeLessThan(0.2);
+  });
+
+  test('Esc cancels an armed remap with no binding written', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await installFakeGamepad(page, { buttons: Array(17).fill(0) });
+    await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
+    await page.waitForTimeout(200);
+    const card = page.locator('[data-testid="gamepad-card"]');
+
+    await card.getByTestId('gamepad-remap-b').click({ button: 'right' });
+    await expect(card.getByTestId('gamepad-remap-banner')).toBeVisible();
+    // Cancel via Esc.
+    await page.keyboard.press('Escape');
+    await expect(card.getByTestId('gamepad-remap-banner')).toBeHidden();
+    // Now press a button — it must NOT bind anything (listener disarmed).
+    const pressX = [...Array(17).fill(0)]; pressX[2] = 1;
+    await updateFakeGamepad(page, { buttons: pressX });
+    await page.waitForTimeout(200);
+    expect(await readBindings(page)).toBeNull();
+  });
+
   test('button press shows up as a gate (a-button)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');

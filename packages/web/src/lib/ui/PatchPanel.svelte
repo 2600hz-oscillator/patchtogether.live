@@ -74,6 +74,12 @@
     bindingsRune,
   } from '$lib/midi/midi-learn.svelte';
   import { getActiveEngine } from '$lib/audio/engine-ref';
+  import { patch, ydoc } from '$lib/graph/store';
+  import { getModuleDef } from '$lib/audio/module-registry';
+  import { getVideoModuleDef } from '$lib/video/module-registry';
+  import { getMetaModuleDef } from '$lib/meta/module-registry';
+  import { portConnections } from '$lib/ui/port-patch-helpers';
+  import type { ModuleNode } from '$lib/graph/types';
   import type { Snippet } from 'svelte';
 
   interface SectionedGroup {
@@ -161,6 +167,57 @@
   function cableColorVar(cable: string | undefined): string {
     if (!cable) return 'var(--cable-audio)';
     return `var(--cable-${cable})`;
+  }
+
+  // ---------------- Live patch status (jack indicator + hover overlay) -------
+  //
+  // Each port row shows a filled circle when an edge connects to it, else a
+  // hollow ring; hovering a patched circle surfaces the remote endpoint(s) via
+  // the native `title` attribute (robust in the portaled, scrollable menu).
+  // We re-derive on every Yjs update — the SAME cardVersion pump MatrixMixCard
+  // / CONTROL SURFACE / GROUP use — so the indicator reflects patches made
+  // ANYWHERE (drag-connect, this menu, a collaborator) in real time.
+  let edgeVersion = $state(0);
+  $effect(() => {
+    const h = () => { edgeVersion = edgeVersion + 1; };
+    ydoc.on('update', h);
+    return () => ydoc.off('update', h);
+  });
+
+  // Any-domain def lookup — the SAME chain validate-edge / persistence /
+  // MATRIXMIX use, so remote module names match everywhere.
+  function defLookup(type: string) {
+    return getModuleDef(type) ?? getVideoModuleDef(type) ?? getMetaModuleDef(type);
+  }
+
+  let connections = $derived.by(() => {
+    void edgeVersion; // re-run on every edge change
+    return portConnections(
+      patch.edges,
+      nodeId,
+      patch.nodes as Record<string, ModuleNode | undefined>,
+      defLookup,
+    );
+  });
+
+  /** Remote endpoint strings for one port (empty when unpatched). */
+  function remotesFor(portId: string, direction: 'input' | 'output'): string[] {
+    const map = direction === 'input' ? connections.inputs : connections.outputs;
+    return map.get(portId) ?? [];
+  }
+
+  function isPatched(portId: string, direction: 'input' | 'output'): boolean {
+    return remotesFor(portId, direction).length > 0;
+  }
+
+  /** Hover/aria text for a patched jack: INPUT takes one cable (← FROM …);
+   *  OUTPUT fans out (→ TO a, b, …). Empty for an unpatched port. */
+  function patchTitle(portId: string, direction: 'input' | 'output'): string | undefined {
+    const remotes = remotesFor(portId, direction);
+    if (remotes.length === 0) return undefined;
+    return direction === 'input'
+      ? `← FROM ${remotes[0]}`
+      : `→ TO ${remotes.join(', ')}`;
   }
 
   // ---------------- Gate-input MIDI assign (WORKSTREAM B) ----------------
@@ -467,6 +524,40 @@
 </script>
 
 <!--
+  PORT ROW BUTTON — one shape across all four drill views (inputs / outputs /
+  sectioned-outputs fallback / section). The cable-type stripe + verbose label
+  come first; a trailing JACK INDICATOR (filled circle = patched, hollow ring =
+  unpatched) right-aligns because the label is flex:1. Hovering a patched jack
+  shows the remote endpoint(s) via the native `title` (mirrored on aria-label),
+  which never clips inside the scrollable portaled menu. The <li> wrappers (and
+  the input-only gate-assignable / contextmenu plumbing) stay per-site.
+-->
+{#snippet portButton(port: PortDescriptor, direction: 'input' | 'output')}
+  {@const patched = isPatched(port.id, direction)}
+  {@const title = patchTitle(port.id, direction)}
+  <button
+    type="button"
+    class="port-row port-row-{direction}"
+    data-testid="patch-panel-port-row"
+    data-port-id={port.id}
+    data-direction={direction}
+    onclick={() => onPortRowClick(port.id, direction)}
+  >
+    <span class="row-stripe" aria-hidden="true"></span>
+    <span class="row-label" data-testid="port-row-label">
+      {resolveVerboseLabel(port)}
+    </span>
+    <span
+      class="row-jack"
+      data-testid="port-row-jack"
+      data-patched={patched ? 'true' : 'false'}
+      title={title}
+      aria-label={title}
+    ></span>
+  </button>
+{/snippet}
+
+<!--
   HOST (in card DOM, display:contents). Holds the two trigger affordances +
   the always-rendered handle stack. The handle stack is what the per-port
   sweep counts (panel CLOSED) and what cables anchor to.
@@ -664,19 +755,7 @@
                   oncontextmenu={port.cable === 'gate' ? (e) => openGateMidiMenu(e, port) : undefined}
                   data-gate-midi-bound={port.cable === 'gate' && !!gateBound(port.id) ? 'true' : undefined}
                 >
-                  <button
-                    type="button"
-                    class="port-row port-row-input"
-                    data-testid="patch-panel-port-row"
-                    data-port-id={port.id}
-                    data-direction="input"
-                    onclick={() => onPortRowClick(port.id, 'input')}
-                  >
-                    <span class="row-stripe" aria-hidden="true"></span>
-                    <span class="row-label" data-testid="port-row-label">
-                      {resolveVerboseLabel(port)}
-                    </span>
-                  </button>
+                  {@render portButton(port, 'input')}
                 </li>
               {/each}
             </ul>
@@ -690,19 +769,7 @@
             <ul class="row-list">
               {#each group.ports as port (port.id)}
                 <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
-                  <button
-                    type="button"
-                    class="port-row port-row-output"
-                    data-testid="patch-panel-port-row"
-                    data-port-id={port.id}
-                    data-direction="output"
-                    onclick={() => onPortRowClick(port.id, 'output')}
-                  >
-                    <span class="row-stripe" aria-hidden="true"></span>
-                    <span class="row-label" data-testid="port-row-label">
-                      {resolveVerboseLabel(port)}
-                    </span>
-                  </button>
+                  {@render portButton(port, 'output')}
                 </li>
               {/each}
             </ul>
@@ -712,19 +779,7 @@
             <ul class="row-list">
               {#each allOutputs as port (port.id)}
                 <li class="panel-row" style:--row-cable={cableColorVar(port.cable)}>
-                  <button
-                    type="button"
-                    class="port-row port-row-output"
-                    data-testid="patch-panel-port-row"
-                    data-port-id={port.id}
-                    data-direction="output"
-                    onclick={() => onPortRowClick(port.id, 'output')}
-                  >
-                    <span class="row-stripe" aria-hidden="true"></span>
-                    <span class="row-label" data-testid="port-row-label">
-                      {resolveVerboseLabel(port)}
-                    </span>
-                  </button>
+                  {@render portButton(port, 'output')}
                 </li>
               {/each}
             </ul>
@@ -749,19 +804,7 @@
                   oncontextmenu={port.cable === 'gate' ? (e) => openGateMidiMenu(e, port) : undefined}
                   data-gate-midi-bound={port.cable === 'gate' && !!gateBound(port.id) ? 'true' : undefined}
                 >
-                  <button
-                    type="button"
-                    class="port-row port-row-input"
-                    data-testid="patch-panel-port-row"
-                    data-port-id={port.id}
-                    data-direction="input"
-                    onclick={() => onPortRowClick(port.id, 'input')}
-                  >
-                    <span class="row-stripe" aria-hidden="true"></span>
-                    <span class="row-label" data-testid="port-row-label">
-                      {resolveVerboseLabel(port)}
-                    </span>
-                  </button>
+                  {@render portButton(port, 'input')}
                 </li>
               {/each}
             </ul>
@@ -1042,6 +1085,25 @@
   }
   .port-row .row-label {
     flex: 1;
+  }
+  /* JACK INDICATOR (trailing, right-aligned by the flex:1 label). A hollow
+     cable-coloured RING means the port is unpatched; a FILLED cable-coloured
+     circle means an edge connects to it. Hovering a filled jack surfaces the
+     remote endpoint(s) via the native `title`. Visually echoes .row-stripe. */
+  .port-row .row-jack {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    box-sizing: border-box;
+    border: 1.5px solid var(--row-cable, var(--cable-audio));
+    background: transparent;
+    flex: 0 0 auto;
+    /* A slightly larger transparent hit area for the hover title without
+       changing the visible 8px ring. */
+    margin: 0 1px;
+  }
+  .port-row .row-jack[data-patched='true'] {
+    background: var(--row-cable, var(--cable-audio));
   }
   /* Gate inputs are right-clickable for MIDI assign (re-applied from #735 onto
      the redesign's overlay-replace port rows); hint via the context cursor +

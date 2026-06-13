@@ -11,6 +11,7 @@ import {
   buildModuleEntries,
   compatibleTargetPorts,
   moduleDisplayName,
+  portConnections,
   type AnyDef,
 } from './port-patch-helpers';
 
@@ -412,5 +413,80 @@ describe('moduleDisplayName', () => {
     };
     expect(moduleDisplayName('lfo1', nodes, defs({ lfo: lfoDef }))).toBe('LFO #1');
     expect(moduleDisplayName('lfo2', nodes, defs({ lfo: lfoDef }))).toBe('LFO #2');
+  });
+});
+
+// ----------------------------------------------------------------------------
+// portConnections — live patched/unpatched + remote-endpoint strings for the
+// on-card patch-menu jack indicator + hover overlay.
+// ----------------------------------------------------------------------------
+
+function edge(
+  id: string,
+  source: { nodeId: string; portId: string },
+  target: { nodeId: string; portId: string },
+  type = 'cv',
+): Edge {
+  return { id, source, target, sourceType: type as Edge['sourceType'], targetType: type as Edge['targetType'] };
+}
+
+describe('portConnections', () => {
+  it('maps an INPUT port to its single incoming remote source (uppercased)', () => {
+    const nodes = {
+      lfo1: makeNode('lfo1', 'lfo'),
+      filter1: makeNode('filter1', 'filter'),
+    };
+    const edges = {
+      e1: edge('e1', { nodeId: 'lfo1', portId: 'phase0' }, { nodeId: 'filter1', portId: 'cutoff' }),
+    };
+    const { inputs, outputs } = portConnections(
+      edges,
+      'filter1',
+      nodes,
+      defs({ lfo: lfoDef, filter: filterDef }),
+    );
+    expect(inputs.get('cutoff')).toEqual(['LFO.PHASE0']);
+    // The unpatched 'res' input is absent (a miss = hollow ring).
+    expect(inputs.get('res')).toBeUndefined();
+    // filter1 drives nothing here.
+    expect(outputs.size).toBe(0);
+  });
+
+  it('maps an OUTPUT port fanning out to two targets (both listed)', () => {
+    const nodes = {
+      lfo1: makeNode('lfo1', 'lfo'),
+      filter1: makeNode('filter1', 'filter'),
+      filter2: makeNode('filter2', 'filter'),
+    };
+    const edges = {
+      e1: edge('e1', { nodeId: 'lfo1', portId: 'phase0' }, { nodeId: 'filter1', portId: 'cutoff' }),
+      e2: edge('e2', { nodeId: 'lfo1', portId: 'phase0' }, { nodeId: 'filter2', portId: 'res' }),
+    };
+    const { inputs, outputs } = portConnections(
+      edges,
+      'lfo1',
+      nodes,
+      defs({ lfo: lfoDef, filter: filterDef }),
+    );
+    // Two distinct Filter instances → numbered display names; both endpoints.
+    expect(outputs.get('phase0')?.sort()).toEqual(['Filter #1.CUTOFF', 'Filter #2.RES']);
+    // lfo1 receives nothing.
+    expect(inputs.size).toBe(0);
+  });
+
+  it('leaves an unpatched module with empty maps', () => {
+    const nodes = {
+      lfo1: makeNode('lfo1', 'lfo'),
+      filter1: makeNode('filter1', 'filter'),
+    };
+    const { inputs, outputs } = portConnections(
+      {},
+      'filter1',
+      nodes,
+      defs({ lfo: lfoDef, filter: filterDef }),
+    );
+    expect(inputs.size).toBe(0);
+    expect(outputs.size).toBe(0);
+    expect(inputs.get('cutoff')).toBeUndefined();
   });
 });

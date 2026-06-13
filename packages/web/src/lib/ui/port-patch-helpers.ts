@@ -175,3 +175,44 @@ export function findOccupant(
 function portLabel(p: PortDef): string {
   return p.id.toUpperCase();
 }
+
+/**
+ * Live patch-status for every port of one module, derived from the edge set.
+ *
+ * Used by the on-card patch menu to show a filled/hollow jack indicator + a
+ * hover overlay of the remote endpoint(s):
+ *   - `inputs`  maps an INPUT portId → the remote sources feeding it. An input
+ *     normally takes one cable, but the map is an array so a duplicate/edge race
+ *     can't drop a tail — the menu shows the first (and the rest if present).
+ *     Each entry is `"<RemoteDisplayName>.<SRCPORT-uppercased>"`.
+ *   - `outputs` maps an OUTPUT portId → every consumer it fans out to. Each
+ *     entry is `"<RemoteDisplayName>.<DSTPORT-uppercased>"`.
+ *
+ * Ports with no cable are simply absent from the map (a `.get()` miss = hollow).
+ * Framework-free (no Svelte/Yjs) so it unit-tests cleanly.
+ */
+export function portConnections(
+  edges: Partial<Record<string, Edge>> | Record<string, Edge>,
+  nodeId: string,
+  nodes: Partial<Record<string, ModuleNode>> | Record<string, ModuleNode>,
+  defLookup: (type: string) => AnyDef | undefined,
+): { inputs: Map<string, string[]>; outputs: Map<string, string[]> } {
+  const inputs = new Map<string, string[]>();
+  const outputs = new Map<string, string[]>();
+  for (const e of Object.values(edges)) {
+    if (!e) continue;
+    if (e.target.nodeId === nodeId) {
+      const remote = `${moduleDisplayName(e.source.nodeId, nodes, defLookup)}.${e.source.portId.toUpperCase()}`;
+      const list = inputs.get(e.target.portId);
+      if (list) list.push(remote);
+      else inputs.set(e.target.portId, [remote]);
+    }
+    if (e.source.nodeId === nodeId) {
+      const remote = `${moduleDisplayName(e.target.nodeId, nodes, defLookup)}.${e.target.portId.toUpperCase()}`;
+      const list = outputs.get(e.source.portId);
+      if (list) list.push(remote);
+      else outputs.set(e.source.portId, [remote]);
+    }
+  }
+  return { inputs, outputs };
+}
