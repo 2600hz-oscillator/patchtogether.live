@@ -23,6 +23,14 @@ import {
   REMAP_AXIS_THRESHOLD,
   REMAP_BUTTON_THRESHOLD,
   type RawGamepadReading,
+  DEFAULT_GAMEPAD_BINDINGS,
+  isPhysicalControl,
+  bindingForOutput,
+  readControlValue,
+  setBinding,
+  describeControl,
+  type RemapBindings,
+  type PhysicalControl,
 } from './gamepad';
 import { scaleCv } from '$lib/audio/cv-scale';
 import { wavesculptDef } from './wavesculpt';
@@ -475,5 +483,170 @@ describe('detectChangedControl', () => {
     expect(REMAP_AXIS_THRESHOLD).toBeLessThanOrEqual(1);
     expect(REMAP_BUTTON_THRESHOLD).toBeGreaterThan(0);
     expect(REMAP_BUTTON_THRESHOLD).toBeLessThanOrEqual(1);
+  });
+
+  // `only` filter — the two remap entry points arm with different families so
+  // a "Remap X" can't be captured by a button press and vice-versa.
+  it('only:"axis" ignores a button press, picks the swept axis', () => {
+    const prev = reading([0, 0, 0, 0], [0, 0, 0]);
+    // Button 1 firmly pressed AND axis 2 swept — axis-only must pick the axis.
+    const cur = reading([0, 0, 0.9, 0], [0, 1, 0]);
+    expect(detectChangedControl(prev, cur, { only: 'axis' })).toEqual({ kind: 'axis', index: 2 });
+  });
+
+  it('only:"axis" returns null when only a button moved (a press is ignored)', () => {
+    const prev = reading([0, 0], [0, 0]);
+    const cur = reading([0, 0], [0, 1]); // only a button pressed
+    expect(detectChangedControl(prev, cur, { only: 'axis' })).toBeNull();
+  });
+
+  it('only:"button" ignores a swept axis, picks the pressed button', () => {
+    const prev = reading([0, 0, 0, 0], [0, 0, 0]);
+    // Axis 0 swept AND button 2 pressed — button-only must pick the button.
+    const cur = reading([0.95, 0, 0, 0], [0, 0, 1]);
+    expect(detectChangedControl(prev, cur, { only: 'button' })).toEqual({ kind: 'button', index: 2 });
+  });
+
+  it('only:"button" returns null when only an axis moved (a wobble is ignored)', () => {
+    const prev = reading([0, 0], [0]);
+    const cur = reading([0.95, 0], [0]); // only an axis swept
+    expect(detectChangedControl(prev, cur, { only: 'button' })).toBeNull();
+  });
+
+  it('cancel/no-input (prev===null OR nothing past threshold) yields no binding', () => {
+    // The cancel/timeout path: the listener never gets a baseline diff that
+    // crosses a threshold, so it produces no PhysicalControl.
+    expect(detectChangedControl(null, reading([0.9, 0.9], [1]), { only: 'axis' })).toBeNull();
+    const prev = reading([0, 0], [0]);
+    const stillResting = reading([0.05, -0.03], [0.1]);
+    expect(detectChangedControl(prev, stillResting, { only: 'axis' })).toBeNull();
+    expect(detectChangedControl(prev, stillResting, { only: 'button' })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CONTROL REMAP — per-output binding model (default table + override logic).
+// ---------------------------------------------------------------------------
+describe('gamepad remap bindings', () => {
+  const reading = (axes: number[], btnValues: number[]): RawGamepadReading => ({
+    axes,
+    buttons: btnValues.map((v) => ({ value: v, pressed: v > 0.5 })),
+  });
+
+  it('DEFAULT_GAMEPAD_BINDINGS covers all 18 outputs with the standard mapping', () => {
+    const outIds = GAMEPAD_OUTPUTS.map((o) => o.id);
+    for (const id of outIds) {
+      expect(DEFAULT_GAMEPAD_BINDINGS[id], `default for ${id}`).toBeDefined();
+    }
+    // Stick axes → axes 0..3; everything else → a button.
+    expect(DEFAULT_GAMEPAD_BINDINGS.lx).toEqual({ kind: 'axis', index: 0 });
+    expect(DEFAULT_GAMEPAD_BINDINGS.ly).toEqual({ kind: 'axis', index: 1 });
+    expect(DEFAULT_GAMEPAD_BINDINGS.rx).toEqual({ kind: 'axis', index: 2 });
+    expect(DEFAULT_GAMEPAD_BINDINGS.ry).toEqual({ kind: 'axis', index: 3 });
+    expect(DEFAULT_GAMEPAD_BINDINGS.a).toEqual({ kind: 'button', index: 0 });
+    expect(DEFAULT_GAMEPAD_BINDINGS.dr).toEqual({ kind: 'button', index: 15 });
+  });
+
+  it('isPhysicalControl accepts valid controls + rejects junk', () => {
+    expect(isPhysicalControl({ kind: 'axis', index: 0 })).toBe(true);
+    expect(isPhysicalControl({ kind: 'button', index: 7 })).toBe(true);
+    expect(isPhysicalControl(null)).toBe(false);
+    expect(isPhysicalControl({ kind: 'axis' })).toBe(false);
+    expect(isPhysicalControl({ kind: 'axis', index: -1 })).toBe(false);
+    expect(isPhysicalControl({ kind: 'axis', index: 1.5 })).toBe(false);
+    expect(isPhysicalControl({ kind: 'pedal', index: 0 })).toBe(false);
+  });
+
+  it('bindingForOutput falls back to the default when there is no override', () => {
+    expect(bindingForOutput('a', undefined)).toEqual({ kind: 'button', index: 0 });
+    expect(bindingForOutput('a', {})).toEqual({ kind: 'button', index: 0 });
+    expect(bindingForOutput('lx', {})).toEqual({ kind: 'axis', index: 0 });
+  });
+
+  it('bindingForOutput returns a valid override over the default', () => {
+    const b: RemapBindings = { a: { kind: 'button', index: 2 } }; // A driven by physical X
+    expect(bindingForOutput('a', b)).toEqual({ kind: 'button', index: 2 });
+  });
+
+  it('bindingForOutput ignores a corrupt override (falls back to default)', () => {
+    const b = { a: { kind: 'bogus', index: -3 } } as unknown as RemapBindings;
+    expect(bindingForOutput('a', b)).toEqual({ kind: 'button', index: 0 });
+  });
+
+  it('bindingForOutput returns undefined for an unknown output', () => {
+    expect(bindingForOutput('nope', {})).toBeUndefined();
+  });
+
+  it('readControlValue reads the right axis / button value', () => {
+    const r = reading([0.2, -0.4, 0.9, 0], [0, 0.7, 1]);
+    expect(readControlValue(r, { kind: 'axis', index: 2 })).toBeCloseTo(0.9);
+    expect(readControlValue(r, { kind: 'button', index: 1 })).toBeCloseTo(0.7);
+    // Out-of-range index → 0 (never NaN/undefined).
+    expect(readControlValue(r, { kind: 'axis', index: 9 })).toBe(0);
+    expect(readControlValue(r, { kind: 'button', index: 9 })).toBe(0);
+  });
+
+  it('setBinding produces a new map with the output bound, others untouched', () => {
+    const prev: RemapBindings = { b: { kind: 'button', index: 5 } };
+    const next = setBinding(prev, 'a', { kind: 'button', index: 2 });
+    expect(next.a).toEqual({ kind: 'button', index: 2 });
+    expect(next.b).toEqual({ kind: 'button', index: 5 }); // untouched
+    // Immutable: the original is unchanged.
+    expect(prev.a).toBeUndefined();
+  });
+
+  it('arm → detect → setBinding: the X button press binds the `a` output', () => {
+    // The button right-click flow, end to end (pure): arm only:'button', the
+    // user presses physical X (button 2), the detector returns it, setBinding
+    // records `a` → button 2.
+    const armBaseline = reading([0, 0, 0, 0], [0, 0, 0, 0]);
+    const pressedX = reading([0, 0, 0, 0], [0, 0, 1, 0]);
+    const detected = detectChangedControl(armBaseline, pressedX, { only: 'button' });
+    expect(detected).toEqual({ kind: 'button', index: 2 });
+    const bindings = setBinding(undefined, 'a', detected as PhysicalControl);
+    expect(bindingForOutput('a', bindings)).toEqual({ kind: 'button', index: 2 });
+    // …and the `a` output now follows physical X: pressing X reads 1 via that
+    // binding even though physical A (button 0) is untouched.
+    expect(readControlValue(pressedX, bindingForOutput('a', bindings)!)).toBe(1);
+    expect(readControlValue(pressedX, bindingForOutput('a', undefined)!)).toBe(0);
+  });
+
+  it('arm Remap X → detect → setBinding: the right-stick X axis binds `lx`', () => {
+    // The "Remap X" flow: arm only:'axis', the user moves the right-stick X
+    // (axis 2), the detector returns it, setBinding records lx → axis 2.
+    const armBaseline = reading([0, 0, 0, 0], []);
+    const movedRx = reading([0, 0, 0.9, 0], []);
+    const detected = detectChangedControl(armBaseline, movedRx, { only: 'axis' });
+    expect(detected).toEqual({ kind: 'axis', index: 2 });
+    const bindings = setBinding(undefined, 'lx', detected as PhysicalControl);
+    expect(bindingForOutput('lx', bindings)).toEqual({ kind: 'axis', index: 2 });
+  });
+
+  it('remapping back to the default DROPS the override (back-compat clean state)', () => {
+    // Bind `a` → button 2, then remap it back to physical A (its default,
+    // button 0) → the override is removed, leaving the clean absent state.
+    let bindings = setBinding(undefined, 'a', { kind: 'button', index: 2 });
+    expect(bindings.a).toBeDefined();
+    bindings = setBinding(bindings, 'a', { kind: 'button', index: 0 });
+    expect(bindings.a).toBeUndefined();
+    expect(bindingForOutput('a', bindings)).toEqual({ kind: 'button', index: 0 });
+  });
+
+  it('two outputs CAN bind the same physical control (no exclusivity)', () => {
+    // Conflict policy: a physical control may drive multiple outputs (last
+    // write per OUTPUT wins; the same source on two outputs is allowed — both
+    // simply follow it).
+    let bindings = setBinding(undefined, 'a', { kind: 'button', index: 2 });
+    bindings = setBinding(bindings, 'b', { kind: 'button', index: 2 });
+    expect(bindingForOutput('a', bindings)).toEqual({ kind: 'button', index: 2 });
+    expect(bindingForOutput('b', bindings)).toEqual({ kind: 'button', index: 2 });
+  });
+
+  it('describeControl labels standard controls + falls back for unknowns', () => {
+    expect(describeControl({ kind: 'axis', index: 2 })).toBe('R-X axis');
+    expect(describeControl({ kind: 'button', index: 0 })).toBe('A btn');
+    expect(describeControl({ kind: 'button', index: 9 })).toBe('START btn');
+    expect(describeControl({ kind: 'axis', index: 7 })).toBe('axis 7');
+    expect(describeControl({ kind: 'button', index: 16 })).toBe('btn 16');
   });
 });

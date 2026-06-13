@@ -36,6 +36,13 @@
     sweepIsUsable,
     finalizeCalibration,
     type CalibrationSweep,
+    detectChangedControl,
+    setBinding,
+    bindingForOutput,
+    describeControl,
+    type RawGamepadReading,
+    type RemapBindings,
+    type PhysicalControl,
   } from '$lib/audio/modules/gamepad';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -58,7 +65,82 @@
     rawLeftX: 0,
     rawLeftY: 0,
     calibrated: false,
+    raw: { axes: [], buttons: [] },
+    bindings: {},
   });
+
+  // ---------------- control REMAP (arm → detect → bind) ----------------
+  // The Gamepad API has no events, so an armed "learn" listener must DIFF
+  // consecutive polled snapshots (gamepad.ts detectChangedControl) and pick the
+  // single control the user moved/pressed. Two entry points share this FSM:
+  //   * right-click a button LED / trigger row → arm `only:'button'`,
+  //   * the "Remap X" / "Remap Y" buttons under a stick → arm `only:'axis'`.
+  // The committed binding lives on node.data.bindings (single in-place Y.Doc
+  // write); the factory reads it each frame so a remap takes effect immediately
+  // + survives reload + syncs to rack-mates. Esc or a timeout cancels.
+  const REMAP_TIMEOUT_MS = 8000;
+  let remap = $state<{
+    outputId: string;
+    only: 'axis' | 'button';
+    /** Label of the output being rebound, for the affordance banner. */
+    label: string;
+    /** Baseline reading captured on the first armed frame to diff against. */
+    baseline: RawGamepadReading | null;
+  } | null>(null);
+  let remapTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Live per-output overrides (synced) — drives the per-control "remapped"
+   *  badges. Read off the snapshot the factory publishes each poll. */
+  let bindings = $derived<RemapBindings>(snapshot.bindings ?? {});
+
+  function isRemapped(outputId: string): boolean {
+    return !!bindings[outputId];
+  }
+  function bindingLabel(outputId: string): string {
+    const b = bindingForOutput(outputId, bindings);
+    return b ? describeControl(b) : '';
+  }
+
+  function armRemap(outputId: string, only: 'axis' | 'button', label: string) {
+    cancelRemap();
+    // baseline=null → the next polled frame seeds it (first diff returns null).
+    remap = { outputId, only, label, baseline: null };
+    remapTimer = setTimeout(cancelRemap, REMAP_TIMEOUT_MS);
+  }
+  function cancelRemap() {
+    remap = null;
+    if (remapTimer !== null) { clearTimeout(remapTimer); remapTimer = null; }
+  }
+  /** Commit a detected physical control to the armed output as a SINGLE in-place
+   *  node.data write (rides the Y.Doc → collab + undo). */
+  function commitRemap(outputId: string, control: PhysicalControl) {
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      const d = live.data as GamepadData;
+      const next = setBinding(d.bindings, outputId, control);
+      // Replace the bindings map's CONTENTS in place — never reassign an
+      // integrated Y type. We mutate keys on the existing object when present.
+      if (!d.bindings) {
+        d.bindings = next;
+      } else {
+        // Drop keys no longer present, then set/overwrite the rest, all in place.
+        for (const k of Object.keys(d.bindings)) {
+          if (!(k in next)) delete d.bindings[k];
+        }
+        for (const k of Object.keys(next)) {
+          d.bindings[k] = next[k]!;
+        }
+      }
+    });
+    cancelRemap();
+  }
+  /** Clear a single output's override (revert to its default control). */
+  function clearRemap(outputId: string) {
+    mutateNode(id, (live) => {
+      const d = live.data as GamepadData | undefined;
+      if (d?.bindings) delete d.bindings[outputId];
+    });
+  }
 
   // ---------------- left-stick calibration MODE ----------------
   // Entering calibration MODE arms a live min/max sweep. Each poll frame folds
@@ -84,15 +166,36 @@
           // Reassign a shallow copy so the $derived/readout re-evaluate.
           sweep = { ...sweep };
         }
+        // Armed remap: diff the raw reading against the captured baseline and
+        // bind the first control the user moves/presses past the threshold.
+        if (remap && s.connected) {
+          const cur = s.raw;
+          if (!remap.baseline) {
+            // Seed the baseline on the first armed frame (a diff needs a prev).
+            remap = { ...remap, baseline: cur };
+          } else {
+            const hit = detectChangedControl(remap.baseline, cur, { only: remap.only });
+            if (hit) commitRemap(remap.outputId, hit);
+          }
+        }
       }
     }
     rafId = requestAnimationFrame(poll);
   }
-  onMount(() => { rafId = requestAnimationFrame(poll); });
+  onMount(() => {
+    rafId = requestAnimationFrame(poll);
+    window.addEventListener('keydown', onKeydown);
+  });
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
     rafId = null;
+    window.removeEventListener('keydown', onKeydown);
+    if (remapTimer !== null) clearTimeout(remapTimer);
   });
+
+  function onKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape' && remap) { e.preventDefault(); cancelRemap(); }
+  }
 
   function startCalibration() {
     sweep = newCalibrationSweep();
@@ -185,6 +288,19 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
+      <!-- Armed remap affordance: a "listening…" banner while a remap is armed,
+           naming the output being rebound + how to cancel. -->
+      {#if remap}
+        <div class="remap-banner" data-testid="gamepad-remap-banner" role="status">
+          <span class="remap-dot" aria-hidden="true"></span>
+          <span class="remap-text">
+            listening… {remap.only === 'axis' ? 'move an axis' : 'press a control'}
+            to bind <b>{remap.label}</b> (Esc to cancel)
+          </span>
+          <button type="button" class="remap-cancel" onclick={cancelRemap} data-testid="gamepad-remap-cancel">✕</button>
+        </div>
+      {/if}
+
       <div class="sticks">
         <div class="stick-block">
           <div class="stick-pad" aria-label="Left stick">
@@ -196,6 +312,30 @@
             ></div>
           </div>
           <div class="stick-label">L</div>
+          <!-- Separate "Remap X / Remap Y" buttons (the user-preferred axis path:
+               one axis at a time, no listen-for-both ambiguity). -->
+          <div class="remap-xy">
+            <button
+              type="button"
+              class="remap-btn"
+              class:armed={remap?.outputId === 'lx'}
+              class:bound={isRemapped('lx')}
+              onclick={() => armRemap('lx', 'axis', 'L-X')}
+              title={isRemapped('lx') ? `L-X ← ${bindingLabel('lx')} (right-click to reset)` : 'remap left-stick X axis'}
+              oncontextmenu={(e) => { e.preventDefault(); clearRemap('lx'); }}
+              data-testid="gamepad-remap-lx"
+            >X</button>
+            <button
+              type="button"
+              class="remap-btn"
+              class:armed={remap?.outputId === 'ly'}
+              class:bound={isRemapped('ly')}
+              onclick={() => armRemap('ly', 'axis', 'L-Y')}
+              title={isRemapped('ly') ? `L-Y ← ${bindingLabel('ly')} (right-click to reset)` : 'remap left-stick Y axis'}
+              oncontextmenu={(e) => { e.preventDefault(); clearRemap('ly'); }}
+              data-testid="gamepad-remap-ly"
+            >Y</button>
+          </div>
         </div>
         <div class="stick-block">
           <div class="stick-pad" aria-label="Right stick">
@@ -207,6 +347,28 @@
             ></div>
           </div>
           <div class="stick-label">R</div>
+          <div class="remap-xy">
+            <button
+              type="button"
+              class="remap-btn"
+              class:armed={remap?.outputId === 'rx'}
+              class:bound={isRemapped('rx')}
+              onclick={() => armRemap('rx', 'axis', 'R-X')}
+              title={isRemapped('rx') ? `R-X ← ${bindingLabel('rx')} (right-click to reset)` : 'remap right-stick X axis'}
+              oncontextmenu={(e) => { e.preventDefault(); clearRemap('rx'); }}
+              data-testid="gamepad-remap-rx"
+            >X</button>
+            <button
+              type="button"
+              class="remap-btn"
+              class:armed={remap?.outputId === 'ry'}
+              class:bound={isRemapped('ry')}
+              onclick={() => armRemap('ry', 'axis', 'R-Y')}
+              title={isRemapped('ry') ? `R-Y ← ${bindingLabel('ry')} (right-click to reset)` : 'remap right-stick Y axis'}
+              oncontextmenu={(e) => { e.preventDefault(); clearRemap('ry'); }}
+              data-testid="gamepad-remap-ry"
+            >Y</button>
+          </div>
         </div>
       </div>
 
@@ -258,20 +420,53 @@
         {/if}
       </div>
 
+      <!-- Triggers — right-click a label to arm a button-remap (next press binds
+           it); the bar shows the live 0..1. -->
       <div class="triggers">
         <div class="trig-row">
-          <span class="trig-label">LT</span>
+          <button
+            type="button"
+            class="trig-label remappable"
+            class:armed={remap?.outputId === 'lt'}
+            class:bound={isRemapped('lt')}
+            oncontextmenu={(e) => { e.preventDefault(); armRemap('lt', 'button', 'LT'); }}
+            onclick={(e) => { if (e.altKey) clearRemap('lt'); }}
+            title={isRemapped('lt') ? `LT ← ${bindingLabel('lt')} (alt-click to reset)` : 'right-click to remap LT'}
+            data-testid="gamepad-remap-lt"
+          >LT{#if isRemapped('lt')}<span class="remap-mark" aria-hidden="true">●</span>{/if}</button>
           <div class="trig-bar"><div class="trig-fill" style="width: {(snapshot.values.lt ?? 0) * 100}%"></div></div>
         </div>
         <div class="trig-row">
-          <span class="trig-label">RT</span>
+          <button
+            type="button"
+            class="trig-label remappable"
+            class:armed={remap?.outputId === 'rt'}
+            class:bound={isRemapped('rt')}
+            oncontextmenu={(e) => { e.preventDefault(); armRemap('rt', 'button', 'RT'); }}
+            onclick={(e) => { if (e.altKey) clearRemap('rt'); }}
+            title={isRemapped('rt') ? `RT ← ${bindingLabel('rt')} (alt-click to reset)` : 'right-click to remap RT'}
+            data-testid="gamepad-remap-rt"
+          >RT{#if isRemapped('rt')}<span class="remap-mark" aria-hidden="true">●</span>{/if}</button>
           <div class="trig-bar"><div class="trig-fill" style="width: {(snapshot.values.rt ?? 0) * 100}%"></div></div>
         </div>
       </div>
 
+      <!-- Button LEDs — right-click a tile to arm a button-remap (next physical
+           press binds that output); alt-click resets to the default. A small
+           corner mark shows a remapped output. -->
       <div class="buttons">
         {#each buttonLeds as btn (btn.id)}
-          <div class="btn-led" class:on={(snapshot.values[btn.id] ?? 0) >= 0.5}>{btn.label}</div>
+          <button
+            type="button"
+            class="btn-led remappable"
+            class:on={(snapshot.values[btn.id] ?? 0) >= 0.5}
+            class:armed={remap?.outputId === btn.id}
+            class:bound={isRemapped(btn.id)}
+            oncontextmenu={(e) => { e.preventDefault(); armRemap(btn.id, 'button', btn.label); }}
+            onclick={(e) => { if (e.altKey) clearRemap(btn.id); }}
+            title={isRemapped(btn.id) ? `${btn.label} ← ${bindingLabel(btn.id)} (alt-click to reset)` : `right-click to remap ${btn.label}`}
+            data-testid="gamepad-remap-{btn.id}"
+          >{btn.label}{#if isRemapped(btn.id)}<span class="remap-mark" aria-hidden="true">●</span>{/if}</button>
         {/each}
       </div>
 
@@ -469,7 +664,17 @@
     font-size: 0.6rem;
     font-family: ui-monospace, monospace;
     color: var(--text-dim);
-    width: 18px;
+    width: 22px;
+  }
+  /* trig-label is a <button> (remappable) — strip default chrome. */
+  button.trig-label {
+    appearance: none;
+    background: transparent;
+    border: none;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+    position: relative;
   }
   .trig-bar {
     flex: 1;
@@ -491,6 +696,8 @@
     gap: 3px;
   }
   .btn-led {
+    position: relative;
+    appearance: none;
     text-align: center;
     font-size: 0.55rem;
     font-family: ui-monospace, monospace;
@@ -500,6 +707,7 @@
     border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text-dim);
+    cursor: pointer;
     transition: background 60ms ease-out, color 60ms ease-out, border-color 60ms ease-out;
   }
   .btn-led.on {
@@ -507,6 +715,74 @@
     border-color: var(--cable-gate, #ffd000);
     color: #000;
   }
+
+  /* ── REMAP affordances ── */
+  .remap-banner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    background: rgba(0, 240, 255, 0.08);
+    border: 1px solid var(--accent, #00f0ff);
+    border-radius: 3px;
+    font-size: 0.55rem;
+    font-family: ui-monospace, monospace;
+    color: var(--accent, #00f0ff);
+  }
+  .remap-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent, #00f0ff);
+    box-shadow: 0 0 6px var(--accent, #00f0ff);
+    animation: remap-pulse 0.9s ease-in-out infinite;
+    flex: 0 0 auto;
+  }
+  @keyframes remap-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+  .remap-text { flex: 1; line-height: 1.3; }
+  .remap-cancel {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--accent, #00f0ff);
+    cursor: pointer;
+    font-size: 0.7rem;
+    line-height: 1;
+    padding: 0 2px;
+    flex: 0 0 auto;
+  }
+  .remap-xy {
+    display: flex;
+    gap: 3px;
+    margin-top: 2px;
+  }
+  .remap-btn {
+    appearance: none;
+    background: rgba(10, 12, 16, 0.7);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    line-height: 1;
+    padding: 2px 6px;
+    cursor: pointer;
+    transition: background 60ms ease-out, color 60ms ease-out, border-color 60ms ease-out;
+  }
+  .remap-btn:hover { border-color: var(--accent-dim); color: var(--text); }
+  .remap-btn.bound { border-color: var(--accent, #00f0ff); color: var(--accent, #00f0ff); }
+  .remappable.armed,
+  .remap-btn.armed {
+    border-color: var(--accent, #00f0ff);
+    box-shadow: 0 0 0 1px var(--accent-glow, rgba(0, 240, 255, 0.5));
+    animation: remap-pulse 0.9s ease-in-out infinite;
+  }
+  .remap-mark {
+    position: absolute;
+    top: 1px; right: 2px;
+    font-size: 0.4rem;
+    line-height: 1;
+    color: var(--accent, #00f0ff);
+  }
+  .trig-label.bound { color: var(--accent, #00f0ff); }
 
   .slot-row {
     display: flex;
