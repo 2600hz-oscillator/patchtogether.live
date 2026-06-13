@@ -73,12 +73,12 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   reverb: { size: '1u', hp: 1 }, //                    200px → 1hp
   delay: { size: '1u', hp: 1 }, //                     200px → 1hp
   destroy: { size: '1u', hp: 1 }, //                   220px → 1hp
-  cocoadelay: { size: '1u', hp: 3 }, //                620px → 3hp
+  cocoadelay: { size: '3u', hp: 3 }, //                620px → 3hp (3u — dense FX, user call)
   ringback: { size: '1u', hp: 1 }, //                  240px → 1hp
   resofilter: { size: '1u', hp: 2 }, // OVERRIDE 1u    340px → 2hp
   clouds: { size: '3u', hp: 2 }, //                    340px → 2hp
   cloudseed: { size: '3u', hp: 4 }, //                 680px → 4hp
-  callsine: { size: '3u', hp: 2 }, //                  340px → 2hp
+  callsine: { size: '1u', hp: 2 }, //                  340px → 2hp (fits 1u, user call)
   charlottesEchos: { size: '3u', hp: 2 }, //           320px → 2hp
   aquaTank: { size: '3u', hp: 2 }, //                  320px → 2hp
   warps: { size: '3u', hp: 2 }, //                     320px → 2hp
