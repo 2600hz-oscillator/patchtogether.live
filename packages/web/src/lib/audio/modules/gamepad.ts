@@ -296,37 +296,50 @@ export const REMAP_BUTTON_THRESHOLD = 0.5;
  * wins so a deliberate full-deflection / firm press is picked over incidental
  * jitter on another control. `prev === null` (first poll after arming) returns
  * null — we need a baseline to diff against.
+ *
+ * `opts.only` restricts detection to ONE control family — the two remap entry
+ * points need different filters and the unified detector serves both:
+ *   - a button/control right-click arms with `only: 'button'` so a resting
+ *     stick wobble can't capture the bind,
+ *   - the explicit "Remap X" / "Remap Y" buttons arm with `only: 'axis'` so the
+ *     next AXIS the user moves is bound (a button press is ignored).
+ * Default `'any'` ranks both families together (the original behaviour).
  */
 export function detectChangedControl(
   prev: RawGamepadReading | null,
   cur: RawGamepadReading,
-  opts: { axisThreshold?: number; buttonThreshold?: number } = {},
+  opts: { axisThreshold?: number; buttonThreshold?: number; only?: 'axis' | 'button' | 'any' } = {},
 ): PhysicalControl | null {
   if (!prev) return null;
   const axisTh = opts.axisThreshold ?? REMAP_AXIS_THRESHOLD;
   const btnTh = opts.buttonThreshold ?? REMAP_BUTTON_THRESHOLD;
+  const only = opts.only ?? 'any';
   let best: PhysicalControl | null = null;
   let bestMag = 0;
-  const nAxes = Math.min(prev.axes.length, cur.axes.length);
-  for (let i = 0; i < nAxes; i++) {
-    const a = cur.axes[i];
-    const b = prev.axes[i];
-    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
-    const d = Math.abs(a! - b!);
-    if (d >= axisTh && d > bestMag) {
-      bestMag = d;
-      best = { kind: 'axis', index: i };
+  if (only !== 'button') {
+    const nAxes = Math.min(prev.axes.length, cur.axes.length);
+    for (let i = 0; i < nAxes; i++) {
+      const a = cur.axes[i];
+      const b = prev.axes[i];
+      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+      const d = Math.abs(a! - b!);
+      if (d >= axisTh && d > bestMag) {
+        bestMag = d;
+        best = { kind: 'axis', index: i };
+      }
     }
   }
-  const nBtns = Math.min(prev.buttons.length, cur.buttons.length);
-  for (let i = 0; i < nBtns; i++) {
-    const a = cur.buttons[i]?.value ?? 0;
-    const b = prev.buttons[i]?.value ?? 0;
-    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
-    const d = Math.abs(a - b);
-    if (d >= btnTh && d > bestMag) {
-      bestMag = d;
-      best = { kind: 'button', index: i };
+  if (only !== 'axis') {
+    const nBtns = Math.min(prev.buttons.length, cur.buttons.length);
+    for (let i = 0; i < nBtns; i++) {
+      const a = cur.buttons[i]?.value ?? 0;
+      const b = prev.buttons[i]?.value ?? 0;
+      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+      const d = Math.abs(a - b);
+      if (d >= btnTh && d > bestMag) {
+        bestMag = d;
+        best = { kind: 'button', index: i };
+      }
     }
   }
   return best;
@@ -373,6 +386,128 @@ const STD_BTN = {
   du: 12, dd: 13, dl: 14, dr: 15,
 } as const;
 
+/** Standard-mapping axis indices. */
+const STD_AXIS = { lx: 0, ly: 1, rx: 2, ry: 3 } as const;
+
+// ---------------------------------------------------------------------------
+// CONTROL REMAP — per-output physical-control bindings.
+//
+// Each output port (lx, a, du, …) is driven by ONE physical control (an axis or
+// a button) on the gamepad. By default that's the standard-mapping control of
+// the same name; a "remap" overrides it so e.g. the `a` output can be driven by
+// the user's physical X button, or the `lx` output by the right-stick X axis.
+//
+// The binding is the SINGLE source of truth the read loop consults for every
+// output, so a remap takes effect the next frame and survives reload/collab.
+// Bindings live on `node.data.bindings` (a single in-place Y.Doc key). Absent /
+// invalid → the default control for that output. Pure helpers below so the card
+// is a thin arm-and-render shell.
+// ---------------------------------------------------------------------------
+
+/** Per-output remap overrides. Key = output port id; value = the physical
+ *  control that drives it. An output absent here uses its DEFAULT control. */
+export type RemapBindings = Record<string, PhysicalControl>;
+
+/** Default physical control for each output id — the standard-mapping control
+ *  of the same name. CV-axis outputs map to an axis; everything else (triggers,
+ *  bumpers, face, d-pad, menu) to a button. */
+export const DEFAULT_GAMEPAD_BINDINGS: Readonly<RemapBindings> = {
+  lx: { kind: 'axis', index: STD_AXIS.lx },
+  ly: { kind: 'axis', index: STD_AXIS.ly },
+  rx: { kind: 'axis', index: STD_AXIS.rx },
+  ry: { kind: 'axis', index: STD_AXIS.ry },
+  lt: { kind: 'button', index: STD_BTN.lt },
+  rt: { kind: 'button', index: STD_BTN.rt },
+  lb: { kind: 'button', index: STD_BTN.lb },
+  rb: { kind: 'button', index: STD_BTN.rb },
+  a:  { kind: 'button', index: STD_BTN.a },
+  b:  { kind: 'button', index: STD_BTN.b },
+  x:  { kind: 'button', index: STD_BTN.x },
+  y:  { kind: 'button', index: STD_BTN.y },
+  du: { kind: 'button', index: STD_BTN.du },
+  dd: { kind: 'button', index: STD_BTN.dd },
+  dl: { kind: 'button', index: STD_BTN.dl },
+  dr: { kind: 'button', index: STD_BTN.dr },
+  start: { kind: 'button', index: STD_BTN.start },
+  back:  { kind: 'button', index: STD_BTN.back },
+} as const;
+
+/** True for a structurally valid PhysicalControl (finite non-negative integer
+ *  index, known kind). Guards a corrupt/foreign node.data entry from the read
+ *  loop. */
+export function isPhysicalControl(c: unknown): c is PhysicalControl {
+  if (!c || typeof c !== 'object') return false;
+  const o = c as { kind?: unknown; index?: unknown };
+  if (o.kind !== 'axis' && o.kind !== 'button') return false;
+  return typeof o.index === 'number' && Number.isInteger(o.index) && o.index >= 0;
+}
+
+/** Resolve the physical control that drives `outputId`: the remap override when
+ *  present + valid, else the default. Returns undefined for an unknown output.
+ *  Pure — the read loop calls this per output per frame. */
+export function bindingForOutput(
+  outputId: string,
+  bindings: RemapBindings | undefined,
+): PhysicalControl | undefined {
+  const override = bindings?.[outputId];
+  if (isPhysicalControl(override)) return override;
+  return DEFAULT_GAMEPAD_BINDINGS[outputId];
+}
+
+/** Read a physical control's raw value off a gamepad reading. Axis → the raw
+ *  axis sample ([-1,1], un-deadzoned, un-inverted); button → its 0..1 analog
+ *  value. Out-of-range / non-finite → 0. The caller applies the per-output
+ *  shaping (deadzone / Y-invert / pressed-threshold). Pure. */
+export function readControlValue(
+  reading: RawGamepadReading,
+  control: PhysicalControl,
+): number {
+  if (control.kind === 'axis') {
+    const v = reading.axes[control.index];
+    return Number.isFinite(v) ? (v as number) : 0;
+  }
+  const v = reading.buttons[control.index]?.value;
+  return Number.isFinite(v) ? (v as number) : 0;
+}
+
+/** Short human label for a physical control, used by the card's "remapped"
+ *  badge. Known standard-mapping indices get their canonical name (e.g.
+ *  axis 2 → "R-X axis", button 0 → "A btn"); anything else falls back to the
+ *  raw index. Pure. */
+export function describeControl(control: PhysicalControl): string {
+  if (control.kind === 'axis') {
+    const named = (Object.keys(STD_AXIS) as (keyof typeof STD_AXIS)[]).find(
+      (k) => STD_AXIS[k] === control.index,
+    );
+    const labels: Record<string, string> = { lx: 'L-X', ly: 'L-Y', rx: 'R-X', ry: 'R-Y' };
+    return named ? `${labels[named]} axis` : `axis ${control.index}`;
+  }
+  const named = (Object.keys(STD_BTN) as (keyof typeof STD_BTN)[]).find(
+    (k) => STD_BTN[k] === control.index,
+  );
+  return named ? `${named.toUpperCase()} btn` : `btn ${control.index}`;
+}
+
+/** Produce a new RemapBindings with `outputId` bound to `control`, leaving all
+ *  other outputs untouched. When `control` equals the DEFAULT for that output
+ *  the override is DROPPED (so a "remap back to default" reverts to the absent /
+ *  back-compat state rather than persisting a redundant entry). Pure — the card
+ *  passes the result into a single in-place node.data mutation. */
+export function setBinding(
+  bindings: RemapBindings | undefined,
+  outputId: string,
+  control: PhysicalControl,
+): RemapBindings {
+  const next: RemapBindings = { ...(bindings ?? {}) };
+  const def = DEFAULT_GAMEPAD_BINDINGS[outputId];
+  if (def && def.kind === control.kind && def.index === control.index) {
+    delete next[outputId];
+  } else {
+    next[outputId] = { kind: control.kind, index: control.index };
+  }
+  return next;
+}
+
 /** Public per-port snapshot — used by the card's live indicator
  *  display. Distinct from the engine's read('snapshot') so the card
  *  can poll cheaply without going through the AnalyserNode path. */
@@ -393,12 +528,24 @@ export interface GamepadSnapshot {
    *  node.data on each poll). The card shows a "calibrated" badge + a "clear"
    *  affordance when true. */
   calibrated: boolean;
+  /** Raw reading on the most recent poll — the card's armed remap listener
+   *  diffs consecutive snapshots through `detectChangedControl` (the Gamepad API
+   *  has no events, so the listener must poll). Empty arrays when disconnected. */
+  raw: RawGamepadReading;
+  /** Per-output remap overrides currently in effect (read from node.data each
+   *  poll). The card renders a "remapped" badge per output + the read loop
+   *  resolves each output's source through these. */
+  bindings: RemapBindings;
 }
 
-/** Structured, synced module state on `node.data`. Only the calibration record
- *  so far; future remap bindings would live here too. */
+/** Structured, synced module state on `node.data`. The calibration record + the
+ *  per-output remap overrides. Both are one-time committed writes (never
+ *  per-frame). */
 export interface GamepadData {
   leftStickCalibration?: StickCalibration;
+  /** Per-output physical-control overrides. Absent → all outputs use their
+   *  default standard-mapping control (back-compat: existing patches unchanged). */
+  bindings?: RemapBindings;
 }
 
 export const gamepadDef: AudioModuleDef = {
@@ -461,6 +608,8 @@ export const gamepadDef: AudioModuleDef = {
       rawLeftX: 0,
       rawLeftY: 0,
       calibrated: false,
+      raw: { axes: [], buttons: [] },
+      bindings: {},
     };
 
     /** Read the live (synced) left-stick calibration off node.data. Cheap —
@@ -477,6 +626,14 @@ export const gamepadDef: AudioModuleDef = {
         return c;
       }
       return undefined;
+    }
+
+    /** Read the live (synced) per-output remap overrides off node.data. Returns
+     *  an empty record when none committed (all outputs default). */
+    function readBindings(): RemapBindings {
+      const data = (livePatch.nodes[node.id]?.data ?? undefined) as GamepadData | undefined;
+      const b = data?.bindings;
+      return b && typeof b === 'object' ? b : {};
     }
 
     function readPadIndex(): number {
@@ -507,6 +664,7 @@ export const gamepadDef: AudioModuleDef = {
           snapshot.id = '';
           snapshot.rawLeftX = 0;
           snapshot.rawLeftY = 0;
+          snapshot.raw = { axes: [], buttons: [] };
           for (const o of OUTPUT_DEFS) {
             sources[o.id]!.offset.setValueAtTime(0, ctx.currentTime);
             snapshot.values[o.id] = 0;
@@ -518,6 +676,23 @@ export const gamepadDef: AudioModuleDef = {
       snapshot.connected = true;
       snapshot.id = pad.id;
 
+      // A plain RawGamepadReading snapshot the card's armed remap listener
+      // diffs frame-to-frame (the Gamepad API has no events). Copy out of the
+      // live GamepadButton objects so the card never holds a stale browser ref.
+      const reading: RawGamepadReading = {
+        axes: Array.from(pad.axes, (a) => (Number.isFinite(a) ? a : 0)),
+        buttons: Array.from(pad.buttons, (btn) => ({
+          value: Number.isFinite(btn?.value) ? btn.value : 0,
+          pressed: !!btn?.pressed,
+        })),
+      };
+      snapshot.raw = reading;
+
+      // Per-output remap overrides (live, synced). Each output resolves to a
+      // physical control (override or default) below.
+      const bindings = readBindings();
+      snapshot.bindings = bindings;
+
       // Raw left-stick axes (spec frame: +X = right, +Y = down) — surfaced on
       // the snapshot so the card's calibration sweep folds them in directly.
       const rawLeftX = pad.axes[0] ?? 0;
@@ -525,47 +700,63 @@ export const gamepadDef: AudioModuleDef = {
       snapshot.rawLeftX = rawLeftX;
       snapshot.rawLeftY = rawLeftY;
 
-      // Left stick — when a calibration is committed (node.data), map the raw
-      // axes through it (per-axis min/max normalize + radial deadzone); else
-      // the fixed-deadzone path. Invert Y so +1 = stick UP either way.
       const cal = readCalibration();
       snapshot.calibrated = !!cal;
-      let lx: number;
-      let ly: number;
-      if (cal) {
-        const c = applyCalibration(rawLeftX, rawLeftY, cal);
-        lx = c.x;
-        ly = -c.y;
-      } else {
-        lx = applyDeadzone(rawLeftX);
-        ly = -applyDeadzone(rawLeftY);
-      }
-      // Right stick keeps the fixed deadzone (calibration is left-stick-only,
-      // per the first deliverable).
-      const rx = applyDeadzone(pad.axes[2] ?? 0);
-      const ry = -applyDeadzone(pad.axes[3] ?? 0);
-      // Triggers — pad.buttons[6/7].value gives the smooth 0..1
-      // position (NOT just the binary `pressed`).
-      const ltBtn = pad.buttons[STD_BTN.lt];
-      const rtBtn = pad.buttons[STD_BTN.rt];
-      const lt = triggerToCv(ltBtn?.value ?? 0);
-      const rt = triggerToCv(rtBtn?.value ?? 0);
 
-      const next: Record<string, number> = {
-        lx, ly, rx, ry, lt, rt,
-        lb: pad.buttons[STD_BTN.lb]?.pressed ? 1 : 0,
-        rb: pad.buttons[STD_BTN.rb]?.pressed ? 1 : 0,
-        a:  pad.buttons[STD_BTN.a]?.pressed  ? 1 : 0,
-        b:  pad.buttons[STD_BTN.b]?.pressed  ? 1 : 0,
-        x:  pad.buttons[STD_BTN.x]?.pressed  ? 1 : 0,
-        y:  pad.buttons[STD_BTN.y]?.pressed  ? 1 : 0,
-        du: pad.buttons[STD_BTN.du]?.pressed ? 1 : 0,
-        dd: pad.buttons[STD_BTN.dd]?.pressed ? 1 : 0,
-        dl: pad.buttons[STD_BTN.dl]?.pressed ? 1 : 0,
-        dr: pad.buttons[STD_BTN.dr]?.pressed ? 1 : 0,
-        start: pad.buttons[STD_BTN.start]?.pressed ? 1 : 0,
-        back:  pad.buttons[STD_BTN.back]?.pressed  ? 1 : 0,
-      };
+      // Resolve every output through its binding (override or default) and apply
+      // the output's own shaping. CV-axis outputs deadzone the raw axis (with
+      // Y-inversion + sign on the natural stick axes); trigger outputs map 0..1;
+      // gate outputs threshold the pressed state. Left-stick calibration applies
+      // ONLY when lx/ly are still bound to their default axes (0,1) as a PAIR —
+      // calibration is a 2D radial map that's meaningless once an axis is
+      // remapped elsewhere; that case falls back to the fixed deadzone.
+      const lxBind = bindingForOutput('lx', bindings)!;
+      const lyBind = bindingForOutput('ly', bindings)!;
+      const leftStickDefault =
+        lxBind.kind === 'axis' && lxBind.index === STD_AXIS.lx &&
+        lyBind.kind === 'axis' && lyBind.index === STD_AXIS.ly;
+
+      let calLx: number | null = null;
+      let calLy: number | null = null;
+      if (cal && leftStickDefault) {
+        const c = applyCalibration(rawLeftX, rawLeftY, cal);
+        calLx = c.x;
+        calLy = -c.y;
+      }
+
+      const next: Record<string, number> = {};
+      for (const o of OUTPUT_DEFS) {
+        const control = bindingForOutput(o.id, bindings)!;
+        const raw = readControlValue(reading, control);
+        let v: number;
+        if (o.id === 'lx' && calLx !== null) {
+          v = calLx;
+        } else if (o.id === 'ly' && calLy !== null) {
+          v = calLy;
+        } else if (o.id === 'lt' || o.id === 'rt') {
+          // Trigger outputs read the analog button value (or a remapped axis,
+          // rectified to 0..1) as a smooth 0..1 CV.
+          v = triggerToCv(control.kind === 'axis' ? Math.abs(raw) : raw);
+        } else if (o.type === 'cv') {
+          // Stick-axis CV outputs: deadzone. ly/ry invert (so +1 = up) when on
+          // their natural Y axis; a remapped axis keeps its raw sign.
+          const isNaturalY =
+            (o.id === 'ly' && control.kind === 'axis' && control.index === STD_AXIS.ly) ||
+            (o.id === 'ry' && control.kind === 'axis' && control.index === STD_AXIS.ry);
+          const dz = control.kind === 'axis' ? applyDeadzone(raw) : raw;
+          v = isNaturalY ? -dz : dz;
+        } else {
+          // Gate outputs: 1 when the source crosses the pressed threshold. A
+          // button source uses its pressed flag; a remapped axis crosses at half
+          // deflection.
+          const pressed =
+            control.kind === 'button'
+              ? !!reading.buttons[control.index]?.pressed
+              : Math.abs(raw) >= 0.5;
+          v = pressed ? 1 : 0;
+        }
+        next[o.id] = v;
+      }
 
       // Push only on change to keep the audio thread's param queue
       // shallow. The if-changed compare against the cached snapshot
@@ -624,7 +815,17 @@ export const gamepadDef: AudioModuleDef = {
         return undefined;
       },
       read(key) {
-        if (key === 'snapshot') return { ...snapshot, values: { ...snapshot.values } };
+        if (key === 'snapshot') {
+          // Fresh copies of the nested structures so a card holding the result
+          // across frames isn't mutated under it (raw/bindings are reassigned
+          // each poll, but values is mutated in place).
+          return {
+            ...snapshot,
+            values: { ...snapshot.values },
+            raw: snapshot.raw,
+            bindings: snapshot.bindings,
+          };
+        }
         return undefined;
       },
       dispose() {
