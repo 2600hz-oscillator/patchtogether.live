@@ -18,7 +18,8 @@
   import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
   import { buildDuplicate } from '$lib/graph/duplicate';
   import { instanceCount, wouldExceedCap } from '$lib/graph/cap';
-  import { setControlColor } from '$lib/graph/mutate';
+  import { setControlColor, setNodeLocked } from '$lib/graph/mutate';
+  import { snapPositionToGrid } from '$lib/ui/rack-grid';
   import { resolveControlColor } from '$lib/graph/control-color';
   import {
     planSingletonCleanup,
@@ -836,6 +837,15 @@
         const u = parseInt(rack.size, 10) || 1;
         node.class = node.class ? `${String(node.class)} rack-sized` : 'rack-sized';
         node.style = `${node.style ? node.style + ';' : ''}--rack-hp:${rack.hp ?? 1};--rack-u:${u}`;
+      }
+      // Virtual-rack Phase 2: a LOCKED ("screwed down") module is pinned to its
+      // slot — SvelteFlow won't drag it (draggable=false) and a `node-locked`
+      // class lights the lock-glyph affordance in _module-card.css. The flag is
+      // shared patch data (node.data.locked), so rack-mates see the same lock.
+      const locked = (n.data as { locked?: boolean } | undefined)?.locked === true;
+      if (locked) {
+        node.draggable = false;
+        node.class = node.class ? `${String(node.class)} node-locked` : 'node-locked';
       }
       if (top === n.id) node.zIndex = 1000;
       next.push(node);
@@ -2045,6 +2055,46 @@
     }, LOCAL_ORIGIN);
   }
 
+  /** Read the current screen position of a node, preferring the per-user layout
+   *  override (multiplayer) and falling back to the shared node.position — the
+   *  same resolution the flowNodes derivation uses via getNodePosition. */
+  function currentNodePosition(nodeId: string): { x: number; y: number } | null {
+    const n = patch.nodes[nodeId];
+    if (!n) return null;
+    return getNodePosition(ydoc, currentUserId, nodeId, { x: n.position.x, y: n.position.y });
+  }
+
+  /** Write a node's position through the SAME dual-path as handleNodeDragStop:
+   *  per-user layout map in multiplayer, shared node.position single-user. */
+  function writeNodePosition(nodeId: string, pos: { x: number; y: number }): void {
+    if (currentUserId) {
+      setNodePosition(ydoc, currentUserId, nodeId, pos);
+    } else {
+      ydoc.transact(() => {
+        const target = patch.nodes[nodeId];
+        if (target) target.position = { x: pos.x, y: pos.y };
+      }, LOCAL_ORIGIN);
+    }
+  }
+
+  /** Virtual-rack Phase 2 — "screw down" a module to its rack slot:
+   *  1. snap its position to the nearest 180px rack-grid line (both axes), then
+   *  2. persist data.locked=true (shared patch state → synced to rack-mates).
+   *  The flowNodes derivation then renders it non-draggable + lock-marked.
+   *  Snapping Y to every 180px line makes a 1u card land on a third of a 3u
+   *  slot for free (no special-casing). */
+  function lockNode(nodeId: string): void {
+    const pos = currentNodePosition(nodeId);
+    if (pos) writeNodePosition(nodeId, snapPositionToGrid(pos));
+    setNodeLocked(nodeId, true);
+  }
+
+  /** Unscrew a module — clear the lock flag so it free-floats + drags again.
+   *  Position is left where it snapped (the user can drag it away once free). */
+  function unlockNode(nodeId: string): void {
+    setNodeLocked(nodeId, false);
+  }
+
   // ---------------- Module-add palette ----------------
 
   let paletteOpen = $state(false);
@@ -2102,6 +2152,15 @@
     const n = patch.nodes[ctxMenuNodeId];
     if (!n || n.type !== 'group') return false;
     return (n.data as { expanded?: boolean } | undefined)?.expanded === true;
+  });
+
+  // Virtual-rack Phase 2 — whether the right-clicked node is "screwed down" to
+  // its rack slot, so the menu shows "Unlock" instead of "Lock".
+  let ctxMenuLocked = $derived.by<boolean>(() => {
+    void snapshot;
+    if (!ctxMenuNodeId) return false;
+    const n = patch.nodes[ctxMenuNodeId];
+    return (n?.data as { locked?: boolean } | undefined)?.locked === true;
   });
 
   // SNES9X — the right-clicked node is a snes9x with a ROM loaded → offer
@@ -4604,7 +4663,23 @@
       onnodecontextmenu={onNodeContextMenu}
       onselectioncontextmenu={onSelectionContextMenu}
     >
-      <Background size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
+      <!-- Base canvas: the fine 16px dot field (legacy look, sets the bg fill). -->
+      <Background id="fine" size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
+      <!-- Virtual-rack grid (Phase 2): a subtle dotted overlay aligned to the
+           180px rack unit (--rack-unit) in BOTH axes, so it lines up with the
+           1u×1u tile cards snap to. Pans/zooms WITH the canvas (it's a
+           <Background>). The dot colour comes from --rack-grid-color, which
+           defaults to the theme-aware --bg-grid-dot (global.css) → it follows
+           the active skin (e.g. MATRIXCOWBOY → phosphor green). Slightly larger
+           dot (size=1.4) than the fine grid so the rack lines read as the
+           structural guide without dominating. No bgColor → transparent, so it
+           layers over the fine field rather than repainting it. -->
+      <Background
+        id="rack"
+        gap={180}
+        size={1.4}
+        patternColor="var(--rack-grid-color)"
+      />
       <Controls />
       {#if minimapOpen}
         <MiniMap
@@ -4736,6 +4811,7 @@
   nodeType={ctxMenuNodeType}
   isGroup={ctxMenuNodeType === 'group'}
   groupExpanded={ctxMenuGroupExpanded}
+  locked={ctxMenuLocked}
   canSaveGroup={Boolean(currentUserId) && ctxMenuNodeType === 'group'}
   canSeeSnesOutputDef={ctxMenuCanSeeSnesOutputDef}
   currentControlColor={ctxMenuControlColor}
@@ -4757,6 +4833,8 @@
   }}
   onduplicate={() => ctxMenuNodeId && duplicateNode(ctxMenuNodeId)}
   onunpatch={() => ctxMenuNodeId && unpatchNode(ctxMenuNodeId)}
+  onlock={() => ctxMenuNodeId && lockNode(ctxMenuNodeId)}
+  onunlock={() => ctxMenuNodeId && unlockNode(ctxMenuNodeId)}
   onungroup={() => ctxMenuNodeId && ungroupNode(ctxMenuNodeId)}
   ontoggleexpanded={() => ctxMenuNodeId && toggleGroupExpanded(ctxMenuNodeId)}
   oneditexposed={() => ctxMenuNodeId && openEditExposedJacks(ctxMenuNodeId)}

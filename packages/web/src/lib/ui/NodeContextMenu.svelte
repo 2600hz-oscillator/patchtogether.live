@@ -31,9 +31,17 @@
     /** Module-grouping Phase 2A: current expanded state of the group.
      *  Drives the label of the "Edit knob positions" toggle. */
     groupExpanded?: boolean;
+    /** Virtual-rack Phase 2: whether this module is "screwed down" to its rack
+     *  slot. Drives the Lock/Unlock entry label + which callback fires. */
+    locked?: boolean;
     ondelete: () => void;
     onduplicate: () => void;
     onunpatch: () => void;
+    /** Virtual-rack Phase 2: screw the module down to its rack slot (snap to
+     *  the 180px grid + pin it non-draggable). */
+    onlock?: () => void;
+    /** Virtual-rack Phase 2: unscrew the module so it free-floats / drags. */
+    onunlock?: () => void;
     onungroup?: () => void;
     /** Module-grouping Phase 2A — toggle data.expanded on the group. */
     ontoggleexpanded?: () => void;
@@ -79,9 +87,12 @@
     nodeType = null,
     isGroup = false,
     groupExpanded = false,
+    locked = false,
     ondelete,
     onduplicate,
     onunpatch,
+    onlock,
+    onunlock,
     onungroup,
     ontoggleexpanded,
     oneditexposed,
@@ -154,6 +165,11 @@
   }
   function pickUnpatch() {
     onunpatch();
+    onclose();
+  }
+  function pickLock() {
+    if (locked) onunlock?.();
+    else onlock?.();
     onclose();
   }
   function pickDocs() {
@@ -357,6 +373,19 @@
       {#if nodeType !== 'toybox'}
         <button class="ctx-item" onclick={pickUnpatch} role="menuitem">
           Unpatch all
+        </button>
+      {/if}
+      <!-- Virtual-rack Phase 2: "screw down" the module to its rack slot
+           (snap to the 180px grid + pin non-draggable), or release it. -->
+      {#if onlock || onunlock}
+        <button
+          class="ctx-item"
+          onclick={pickLock}
+          role="menuitem"
+          data-testid="ctx-lock"
+          aria-pressed={locked}
+        >
+          {locked ? 'Unlock' : 'Lock'}
         </button>
       {/if}
     {/if}
