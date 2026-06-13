@@ -227,12 +227,23 @@ export function classifyCell(
   const inputNodeId = jackNodeId(roles.input, rowJack, xModuleId, yModuleId);
   const outputNodeId = jackNodeId(roles.output, rowJack, xModuleId, yModuleId);
 
+  // The cable a click here would create — output → input between the two
+  // matrixed modules. Carried on EVERY legal pair (legalEmpty AND the two ✕
+  // kinds) so the card can (re)patch any clickable cell through one code path;
+  // for the ✕ kinds the card warns first (createMatrixEdge replaces a taken
+  // input / adds to a fanning-out output).
+  const patch = {
+    source: { nodeId: outputNodeId, portId: roles.output.portId },
+    target: { nodeId: inputNodeId, portId: roles.input.portId },
+  };
+
   // 3) INPUT already fed by a THIRD module (destructive re-patch) — red ✕.
   const occ = findInputOccupant(inputNodeId, roles.input.portId, edgeList);
   if (occ) {
     return {
       kind: 'inputTaken',
       remote: { name: nameOf(occ.source.nodeId), port: occ.source.portId },
+      patch,
     };
   }
 
@@ -242,17 +253,40 @@ export function classifyCell(
     return {
       kind: 'outputFanout',
       remote: { name: nameOf(consumer.target.nodeId), port: consumer.target.portId },
+      patch,
     };
   }
 
   // 5) Legal + empty → clickable. The cable runs output → input.
-  return {
-    kind: 'legalEmpty',
-    patch: {
-      source: { nodeId: outputNodeId, portId: roles.output.portId },
-      target: { nodeId: inputNodeId, portId: roles.input.portId },
-    },
-  };
+  return { kind: 'legalEmpty', patch };
+}
+
+/**
+ * The confirm-dialog message a destructive/ambiguous ✕ cell shows BEFORE it
+ * (re)patches — pure so it's unit-tested in isolation and ports to native.
+ *
+ *  - inputTaken (RED ✕): patching REPLACES the foreign source feeding this
+ *    input → warn exactly which module.port gets unpatched.
+ *  - outputFanout (GRAY ✕): patching only ADDS a cable (the output fans out) →
+ *    nothing is unpatched; the message says so, naming the existing consumer.
+ *  - every other kind needs no confirm → null (the caller patches/unpatches
+ *    directly).
+ *
+ * @param cls           the classified cell
+ * @param thisOutput    display label of THIS cell's output endpoint
+ *                      ("name.port"), used only for the outputFanout copy.
+ */
+export function confirmMessageFor(
+  cls: CellClassification,
+  thisOutput?: string,
+): string | null {
+  if (cls.kind === 'inputTaken' && cls.remote) {
+    return `Making this patch will unpatch ${cls.remote.name}.${cls.remote.port}.`;
+  }
+  if (cls.kind === 'outputFanout' && cls.remote) {
+    return `${thisOutput ?? 'This output'} already feeds ${cls.remote.name}.${cls.remote.port}. Making this patch adds another cable (nothing is unpatched).`;
+  }
+  return null;
 }
 
 /** Stable, deterministic id for the edge a legal cell creates — mirrors the

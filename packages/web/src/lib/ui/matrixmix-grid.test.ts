@@ -11,6 +11,7 @@ import {
   resolvePatchRoles,
   findDirectEdge,
   classifyCell,
+  confirmMessageFor,
   matrixEdgeId,
   type Jack,
 } from './matrixmix-grid';
@@ -171,6 +172,12 @@ describe('classifyCell', () => {
     const cls = classifyCell(audioIn /* row Y.in */, audioOut /* col X.out */, [occ], X, Y, nameOf);
     expect(cls.kind).toBe('inputTaken');
     expect(cls.remote).toEqual({ name: 'LFO', port: 'lfo' });
+    // It also carries the (re)patch the cell would make — output(X.out) →
+    // input(Y.in) — so a click can REPLACE THIRD's cable through one code path.
+    expect(cls.patch).toEqual({
+      source: { nodeId: X, portId: 'out' },
+      target: { nodeId: Y, portId: 'in' },
+    });
   });
 
   it('OUTPUT-FANOUT: the cell output already feeds a THIRD module → gray ✕ + remote tooltip', () => {
@@ -179,6 +186,12 @@ describe('classifyCell', () => {
     const cls = classifyCell(audioIn /* row Y.in */, audioOut /* col X.out */, [fan], X, Y, nameOf);
     expect(cls.kind).toBe('outputFanout');
     expect(cls.remote).toEqual({ name: 'LFO', port: 'in' });
+    // It carries the additive patch the cell would make — output(X.out) →
+    // input(Y.in) — without removing the foreign consumer.
+    expect(cls.patch).toEqual({
+      source: { nodeId: X, portId: 'out' },
+      target: { nodeId: Y, portId: 'in' },
+    });
   });
 
   it('INPUT-TAKEN wins over OUTPUT-FANOUT when both apply (destructive warned first)', () => {
@@ -210,6 +223,35 @@ describe('classifyCell', () => {
     // X === Y, the diagonal cell pairs in/in or out/out → illegal.
     const cls = classifyCell(audioIn, audioIn, [], X, X, nameOf);
     expect(cls.kind).toBe('illegal');
+  });
+});
+
+describe('confirmMessageFor', () => {
+  it('inputTaken (RED ✕) → warns exactly which module.port gets unpatched', () => {
+    const occ = edge('e-occ', [THIRD, 'lfo'], [Y, 'in'], 'cv', 'audio');
+    const cls = classifyCell(audioIn, audioOut, [occ], X, Y, nameOf);
+    expect(confirmMessageFor(cls)).toBe('Making this patch will unpatch LFO.lfo.');
+  });
+
+  it('outputFanout (GRAY ✕) → says it ADDS a cable (nothing unpatched), naming the consumer', () => {
+    const fan = edge('e-fan', [X, 'out'], [THIRD, 'in']);
+    const cls = classifyCell(audioIn, audioOut, [fan], X, Y, nameOf);
+    expect(confirmMessageFor(cls, 'VCA.out')).toBe(
+      'VCA.out already feeds LFO.in. Making this patch adds another cable (nothing is unpatched).',
+    );
+  });
+
+  it('outputFanout falls back to "This output" when no label is given', () => {
+    const fan = edge('e-fan', [X, 'out'], [THIRD, 'in']);
+    const cls = classifyCell(audioIn, audioOut, [fan], X, Y, nameOf);
+    expect(confirmMessageFor(cls)).toMatch(/^This output already feeds LFO\.in\./);
+  });
+
+  it('legalEmpty / direct / illegal need no confirm → null', () => {
+    expect(confirmMessageFor(classifyCell(audioIn, audioOut, [], X, Y, nameOf))).toBeNull();
+    const e = edge('e1', [X, 'out'], [Y, 'in']);
+    expect(confirmMessageFor(classifyCell(audioIn, audioOut, [e], X, Y, nameOf))).toBeNull();
+    expect(confirmMessageFor(classifyCell(audioIn, cvIn, [], X, Y, nameOf))).toBeNull();
   });
 });
 

@@ -26,6 +26,7 @@
   import {
     jacksForDef,
     classifyCell,
+    confirmMessageFor,
     type Jack,
     type CellClassification,
   } from '$lib/ui/matrixmix-grid';
@@ -139,34 +140,49 @@
   });
 
   function onCellClick(cell: RenderCell) {
-    // A click only ever affects the edge BETWEEN the two matrixed modules:
-    //   - direct (green/colored dot) → REMOVE that exact cable (unpatch).
-    //   - legalEmpty                  → CREATE the cable.
-    //   - inputTaken (red ✕) / outputFanout (gray ✕) / illegal → no-op. Those
-    //     are foreign cables (someone else's), never touched by the matrix.
-    if (cell.cls.kind === 'direct') {
-      if (cell.cls.edgeId) removeMatrixEdge(cell.cls.edgeId);
+    const { cls } = cell;
+    // direct (green/colored dot) → REMOVE that exact cable (unpatch). A single
+    // LOCAL_ORIGIN delete → it lands on the undo stack (Cmd-Z restores it).
+    if (cls.kind === 'direct') {
+      if (cls.edgeId) removeMatrixEdge(cls.edgeId);
       return;
     }
-    if (cell.cls.kind !== 'legalEmpty' || !cell.cls.patch) return;
+    // legalEmpty (create), inputTaken (RED ✕ — re-patch REPLACES the foreign
+    // source on the input) and outputFanout (GRAY ✕ — ADDS another cable to a
+    // fanning-out output) all materialize the SAME output→input cable through
+    // createMatrixEdge; the two ✕ kinds warn first. illegal → inert.
+    if (cls.kind !== 'legalEmpty' && cls.kind !== 'inputTaken' && cls.kind !== 'outputFanout') return;
+    if (!cls.patch) return;
+    // Warn before a destructive (RED) / ambiguous (GRAY) ✕ (re)patch. The output
+    // endpoint's display label ("name.port") feeds the outputFanout copy.
+    const thisOutput = `${nameOf(cls.patch.source.nodeId)}.${cls.patch.source.portId}`;
+    const warning = confirmMessageFor(cls, thisOutput);
+    if (warning && !window.confirm(`${warning}\n\nMake this patch?`)) return;
     // Cable runs output → input. The output jack supplies sourceType; the input
-    // jack supplies targetType. Exactly one of row/col is the output.
+    // jack supplies targetType. Exactly one of row/col is the output. The whole
+    // (drop-foreign-on-input + write-new) runs in ONE LOCAL_ORIGIN transaction
+    // inside createMatrixEdge, so a single Cmd-Z reverts the entire re-patch.
     const outJack = cell.rowJack.direction === 'output' ? cell.rowJack : cell.colJack;
     const inJack = cell.rowJack.direction === 'input' ? cell.rowJack : cell.colJack;
     createMatrixEdge(
-      cell.cls.patch.source,
-      cell.cls.patch.target,
+      cls.patch.source,
+      cls.patch.target,
       outJack.type, // output's emitted cable type → sourceType
       inJack.type,  // input's declared cable type  → targetType
       defLookup,
     );
   }
 
-  // A cell is INTERACTIVE iff a click changes the edge between the two matrixed
-  // modules: legalEmpty (creates) or direct (removes / unpatch). Foreign-cable
-  // cells (inputTaken / outputFanout) + illegal are inert.
+  // A cell is INTERACTIVE iff a click changes the edge graph: legalEmpty
+  // (creates), direct (removes / unpatch), or a ✕ cell that resolves to a legal
+  // re-patch (inputTaken / outputFanout — both carry the patch to make, gated by
+  // a confirm). Only `illegal` (in→in / out→out / type-mismatch) stays inert.
   function isClickable(cls: CellClassification): boolean {
-    return cls.kind === 'legalEmpty' || (cls.kind === 'direct' && !!cls.edgeId);
+    if (cls.kind === 'direct') return !!cls.edgeId;
+    if (cls.kind === 'legalEmpty' || cls.kind === 'inputTaken' || cls.kind === 'outputFanout') {
+      return !!cls.patch;
+    }
+    return false; // illegal
   }
 
   // Tooltip text for a ✕ cell (the third-party endpoint it touches).
@@ -460,8 +476,13 @@
     cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16'><text x='1' y='13' font-size='14' fill='%23f87171'>✕</text></svg>") 8 8, not-allowed;
     background: #090a0e;
   }
-  .mm-cell.mm-inputTaken,
-  .mm-cell.mm-outputFanout { cursor: help; }
+  /* ✕ cells are now clickable (with a confirm). RED ✕ (inputTaken) re-patch is
+     destructive (replaces the input's source) → red hover wash; GRAY ✕
+     (outputFanout) only adds a cable → neutral blue hover wash. */
+  .mm-cell.mm-inputTaken { cursor: pointer; }
+  .mm-cell.mm-inputTaken:hover { background: rgba(248, 113, 113, 0.18); }
+  .mm-cell.mm-outputFanout { cursor: pointer; }
+  .mm-cell.mm-outputFanout:hover { background: rgba(96, 165, 250, 0.14); }
   .mm-dot {
     display: inline-block;
     width: 14px;
