@@ -212,19 +212,27 @@ test.describe('DOOM loudness: makeup gain lifts audio_l RMS above the old −42 
       { timeout: 30_000 },
     );
 
-    // Fire the pistol several times — Ctrl is DOOM's default fire bind. Each
-    // shot is a loud SFX. Spread them out so a shot lands inside the analyser
-    // window when we sample. (Also keep the level alive against the demo loop.)
+    // Fire the pistol by HOLDING primary fire (KeyF). Ctrl is DOOM's secondary
+    // fire bind but macOS binds Ctrl+Arrow to Mission Control and intercepts the
+    // key, so a keyboard `press('Control')` fired unreliably — that's what made
+    // this flake between a faint shot and total silence. KeyF is the documented
+    // MacBook-safe PRIMARY fire (see doomkeys.ts). Holding it auto-repeats the
+    // pistol; we sample the SCOPE across the burst so a shot reliably lands
+    // inside an analyser window.
     let bestRms = 0;
     let bestPeak = 0;
-    for (let shot = 0; shot < 8; shot++) {
-      await page.keyboard.press('Control');
-      await page.waitForTimeout(120);
-      const s = await readScopePeak(page, scopeId);
-      if (s) {
-        if (s.rms > bestRms) bestRms = s.rms;
-        if (s.peak > bestPeak) bestPeak = s.peak;
+    await page.keyboard.down('f');
+    try {
+      for (let i = 0; i < 24; i++) {
+        await page.waitForTimeout(80);
+        const s = await readScopePeak(page, scopeId);
+        if (s) {
+          if (s.rms > bestRms) bestRms = s.rms;
+          if (s.peak > bestPeak) bestPeak = s.peak;
+        }
       }
+    } finally {
+      await page.keyboard.up('f');
     }
 
     // Old behaviour: a single SFX peaked at ≈ 0.00775 (−42 dBFS), so RMS over a

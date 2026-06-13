@@ -39,7 +39,7 @@ type ProcCtor = new () => PcmProcessor;
 
 // The single-SFX float peak the C mixer emits after s16→f32: 254/32768.
 const SINGLE_SFX_F32 = 254 / 32768; // ≈ 0.00775
-const MAKEUP = 24; // mirror the worklet's named const (kept in lockstep here)
+const MAKEUP = 96; // mirror the worklet's named const (kept in lockstep here)
 
 let Processor: ProcCtor;
 
@@ -81,7 +81,8 @@ describe('doom-pcm-worklet — makeup gain + soft limiter (−42 dB fix)', () =>
     const N = 64;
     const out = pump(proc, new Float32Array(N).fill(SINGLE_SFX_F32), N);
     // Old behaviour (gain 1, no makeup) left this at ≈ 0.00775 (−42 dB).
-    // With MAKEUP=24 + tanh it lands at tanh(0.186) ≈ 0.184 (≈ −14.7 dB).
+    // With MAKEUP=96 + tanh a full-scale SFX lands at tanh(0.744) ≈ 0.63
+    // (≈ −4 dB); the quieter typical pistol (~0.0019) lands ≈ 0.18 (≈ −15 dB).
     const v = out[0]!;
     expect(v).toBeGreaterThan(0.1); // emphatically louder than the old floor
     expect(v).toBeCloseTo(Math.tanh(SINGLE_SFX_F32 * MAKEUP), 4);
@@ -90,7 +91,7 @@ describe('doom-pcm-worklet — makeup gain + soft limiter (−42 dB fix)', () =>
   it('is ~linear (transparent) at low input — tanh ≈ identity for small x', () => {
     const proc = new Processor();
     // A very quiet sample: makeup*x is tiny → tanh barely bends it.
-    const x = 0.0005;
+    const x = 0.0001;
     const out = pump(proc, new Float32Array(8).fill(x), 8);
     const expected = x * MAKEUP; // tanh(small) ≈ small
     expect(out[0]!).toBeCloseTo(expected, 5);
@@ -117,7 +118,7 @@ describe('doom-pcm-worklet — makeup gain + soft limiter (−42 dB fix)', () =>
     // The soft KNEE (vs a hard clip): a moderately-hot sample that overshoots
     // 1.0 linearly is rolled BELOW 1.0 by tanh, not flattened at exactly 1.0.
     const proc3 = new Processor();
-    const knee = 0.06; // makeup*x = 1.44 > 1 linearly → tanh(1.44) ≈ 0.894
+    const knee = 0.015; // makeup*x = 1.44 > 1 linearly → tanh(1.44) ≈ 0.894
     const outKnee = pump(proc3, new Float32Array(8).fill(knee), 8);
     expect(outKnee[0]!).toBeLessThan(1);
     expect(outKnee[0]!).toBeCloseTo(Math.tanh(knee * MAKEUP), 4);
@@ -142,10 +143,14 @@ describe('doom-pcm-worklet — makeup gain + soft limiter (−42 dB fix)', () =>
   it('clamps the user gain to [0,4]', () => {
     const proc = new Processor();
     proc.port.onmessage?.({ data: { type: 'gain', value: 99 } });
-    const out = pump(proc, new Float32Array(8).fill(SINGLE_SFX_F32), 8);
-    // Clamped to 4, not 99 → tanh(0.00775*24*4) = tanh(0.744) ≈ 0.63, not ~1.
-    expect(out[0]!).toBeCloseTo(Math.tanh(SINGLE_SFX_F32 * MAKEUP * 4), 4);
-    expect(out[0]!).toBeLessThan(0.95);
+    // Probe with a QUIET sample so the clamp is witnessable: at MAKEUP=96 a
+    // full-scale SFX already saturates by gain≈2, so gain 4 vs gain 99 would
+    // both read ~1.0. With x=0.001: clamped(×4) → tanh(0.384) ≈ 0.366, whereas
+    // an unclamped ×99 would be tanh(9.5) ≈ 1.0 — so this distinguishes them.
+    const x = 0.001;
+    const out = pump(proc, new Float32Array(8).fill(x), 8);
+    expect(out[0]!).toBeCloseTo(Math.tanh(x * MAKEUP * 4), 4);
+    expect(out[0]!).toBeLessThan(0.5); // clearly NOT the ~1.0 an unclamped 99 gives
   });
 
   it('writes a clean 0 on underrun (empty ring)', () => {

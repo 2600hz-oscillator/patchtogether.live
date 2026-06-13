@@ -35,13 +35,15 @@
 // The C mixer (i_pcmgen.c `int32_t out = accum >> 6;`) divides the 8-bit
 // SFX sum by 64 "for 8-channel headroom" before clamping to s16. So a
 // SINGLE SFX at full volume peaks at only ~254/32768 ≈ −42 dBFS — DOOM has
-// been ~40 dB too quiet since day one. After the s16→f32 convert that lone
-// SFX peak is ≈ 0.00775 in float. A fixed makeup of MAKEUP=24 lifts it to
-// ≈ 0.186 ≈ −14.6 dBFS: punchy for a single shot, while still leaving room
-// for the soft limiter to absorb loud firefights. This is SEPARATE from the
-// user's `audioGain` param (this._gain, 0..2 default 1) — that knob trims on
-// top of the makeup; the makeup itself is fixed.
-const MAKEUP = 24;
+// been ~40 dB too quiet since day one. In practice typical SFX (e.g. the
+// pistol) sit well below that theoretical full-scale peak: measured ≈ 0.0019
+// in float post-convert (≈ −54 dBFS). A fixed makeup of MAKEUP=96 lifts the
+// pistol to ≈ 0.18 ≈ −15 dBFS at unity (≈ −9 dBFS at audioGain=2) — clearly
+// audible/punchy — while the tanh soft-limiter below keeps a full-scale SFX
+// (≈ 0.0077 → ~0.6) and summed firefights from hard-clipping (DOOM-appropriate
+// saturation). This is SEPARATE from the user's `audioGain` param (this._gain,
+// 0..2 default 1) — that knob trims on top of the makeup; the makeup is fixed.
+const MAKEUP = 96;
 
 class DoomPcmProcessor extends AudioWorkletProcessor {
   constructor() {
