@@ -22,6 +22,12 @@ import { createFullscreen } from './use-fullscreen.svelte';
 interface FakeScreen {
   label: string;
   isPrimary: boolean;
+  // Optional working-area geometry — present on real ScreenDetailed objects,
+  // used by getScreenRect() for present-popup placement.
+  availLeft?: number;
+  availTop?: number;
+  availWidth?: number;
+  availHeight?: number;
 }
 
 /** A fake element recording each requestFullscreen call's options. */
@@ -151,6 +157,42 @@ describe('createFullscreen — multi-monitor (Window Management API)', () => {
     await fs.loadScreens();
     await fs.loadScreens();
     expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('getScreenRect() returns the working-area rect for a known display (present popup placement)', async () => {
+    // Real ScreenDetailed objects carry availLeft/Top/Width/Height; include
+    // them on the fakes so getScreenRect can resolve the popup placement.
+    const details = fakeScreenDetails([
+      { label: 'Primary', isPrimary: true, availLeft: 0, availTop: 0, availWidth: 1920, availHeight: 1080 },
+      { label: 'DELL U2720Q', isPrimary: false, availLeft: 1920, availTop: 0, availWidth: 2560, availHeight: 1440 },
+    ] as FakeScreen[]);
+    installWindow(() => Promise.resolve(details));
+    const fs = createFullscreen();
+    fs.setTarget(fakeTarget().el as unknown as HTMLElement);
+    await fs.loadScreens();
+
+    const sec = fs.availableScreens.find((s) => !s.isPrimary)!;
+    expect(fs.getScreenRect(sec.id)).toEqual({
+      left: 1920,
+      top: 0,
+      width: 2560,
+      height: 1440,
+    });
+    // Unknown id -> null (caller falls back to a default popup size).
+    expect(fs.getScreenRect('display-99')).toBeNull();
+  });
+
+  it('getScreenRect() returns null when a display lacks geometry (partial stub)', async () => {
+    const details = fakeScreenDetails([
+      { label: 'A', isPrimary: true },
+      { label: 'B', isPrimary: false },
+    ]);
+    installWindow(() => Promise.resolve(details));
+    const fs = createFullscreen();
+    fs.setTarget(fakeTarget().el as unknown as HTMLElement);
+    await fs.loadScreens();
+    const sec = fs.availableScreens.find((s) => !s.isPrimary)!;
+    expect(fs.getScreenRect(sec.id)).toBeNull();
   });
 });
 

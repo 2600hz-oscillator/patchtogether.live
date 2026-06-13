@@ -49,6 +49,22 @@ interface FullscreenElementExt extends HTMLElement {
 interface ScreenDetailedLike {
   readonly label?: string;
   readonly isPrimary?: boolean;
+  // Working-area geometry (the screen minus OS chrome/taskbar). Present on
+  // real ScreenDetailed objects; used to POSITION a present popup onto the
+  // target display. Optional so a stale / partial stub never throws.
+  readonly availLeft?: number;
+  readonly availTop?: number;
+  readonly availWidth?: number;
+  readonly availHeight?: number;
+}
+
+/** The working-area rect of a display, in CSS px relative to the multi-screen
+ *  origin. Used to size + place a present popup so it lands on that monitor. */
+export interface ScreenRect {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
 }
 interface ScreenDetailsLike extends EventTarget {
   readonly screens: ScreenDetailedLike[];
@@ -135,6 +151,11 @@ export interface FullscreenController {
   enter(screenId?: string): Promise<void>;
   /** Exit fullscreen (also bound to dblclick on the target while active). */
   exit(): Promise<void>;
+  /** Working-area rect of the display behind `screenId` (from the cached
+   *  ScreenDetails), or null if unknown / single-display / API unsupported.
+   *  Lets a "present on second display" popup be sized + placed on that
+   *  monitor without re-querying the Window Management API. */
+  getScreenRect(screenId: string): ScreenRect | null;
   /** Wire up the fullscreenchange listener + dblclick lifecycle. Call from
    *  an $effect so it tears down on unmount. Returns a cleanup fn. */
   attach(): () => void;
@@ -240,6 +261,21 @@ export function createFullscreen(): FullscreenController {
     async exit() {
       await exitFs();
       syncFromDocument();
+    },
+    getScreenRect(screenId: string): ScreenRect | null {
+      const s = idToScreen.get(screenId);
+      if (!s) return null;
+      // A real ScreenDetailed always carries availWidth/Height; bail if a
+      // partial stub doesn't, so callers fall back to a default popup size.
+      if (typeof s.availWidth !== 'number' || typeof s.availHeight !== 'number') {
+        return null;
+      }
+      return {
+        left: s.availLeft ?? 0,
+        top: s.availTop ?? 0,
+        width: s.availWidth,
+        height: s.availHeight,
+      };
     },
     attach() {
       const onChange = () => syncFromDocument();

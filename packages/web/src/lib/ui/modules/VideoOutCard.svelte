@@ -45,6 +45,7 @@
   import { startCornerResize } from './card-resize';
   import { createFullscreen } from './use-fullscreen.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
+  import { createPresent } from './use-present.svelte';
   import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
   import { liveEngineAspect } from './video-card-aspect';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
@@ -112,6 +113,16 @@
     fs.setTarget(wrapEl);
   });
   $effect(() => fs.attach());
+
+  // ---------- Present on a second display ----------
+  // Opens a SEPARATE popup window on the chosen display fed THIS card's live
+  // canvas via captureStream — the main window stays interactive (unlike true
+  // fullscreen, which relocates the whole tab). Capability-gated by the menu
+  // (only shows when getScreenDetails exists + >1 screen).
+  const present = createPresent({
+    getCanvas: () => canvasEl,
+    fullscreen: fs,
+  });
 
   // ---------- Full Frame (in-app, NOT browser fullscreen) ----------
   // Expands the canvas to consume the card border, hiding chrome (port
@@ -249,6 +260,8 @@
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
     if (resizeAbort) resizeAbort.abort();
+    // Close any present popup + release the capture tap when the card is gone.
+    present.dispose();
   });
 
   // ---------- Corner-drag resize ----------
@@ -340,6 +353,9 @@
   onfullscreen={(screenId) => { ff.exit(); void fs.enter(screenId); }}
   onfullframe={() => ff.toggle(fullFrame)}
   isFullFrame={fullFrame}
+  onpresent={(screenId) => present.present(screenId)}
+  onstoppresent={() => present.stop()}
+  isPresenting={present.isPresenting}
   onclose={() => { ctxOpen = false; }}
 />
 

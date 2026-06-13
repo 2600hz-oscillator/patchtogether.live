@@ -20,6 +20,7 @@
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import { startCornerResize } from './card-resize';
   import { createFullscreen } from './use-fullscreen.svelte';
+  import { createPresent } from './use-present.svelte';
   import { createFullFrame } from './use-full-frame.svelte';
   import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
@@ -89,6 +90,14 @@
     fs.setTarget(wrapEl);
   });
   $effect(() => fs.attach());
+
+  // ---------- Present on a second display ----------
+  // Separate popup window on the chosen display fed THIS card's live canvas
+  // via captureStream; the main window stays interactive (unlike fullscreen).
+  const present = createPresent({
+    getCanvas: () => canvasEl,
+    fullscreen: fs,
+  });
 
   // ---------- Full Frame (in-app, NOT browser fullscreen) ----------
   // Expands the CRT surface to consume the card border, hiding the knob
@@ -212,6 +221,7 @@
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
     if (resizeAbort) resizeAbort.abort();
+    present.dispose();
   });
 
   // ---------------- Resize handle ----------------
@@ -387,6 +397,9 @@
   onfullscreen={(screenId) => { ff.exit(); void fs.enter(screenId); }}
   onfullframe={() => ff.toggle(fullFrame)}
   isFullFrame={fullFrame}
+  onpresent={(screenId) => present.present(screenId)}
+  onstoppresent={() => present.stop()}
+  isPresenting={present.isPresenting}
   onclose={() => { ctxOpen = false; }}
 />
 

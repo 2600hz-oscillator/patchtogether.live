@@ -41,6 +41,18 @@
     /** Whether the card is currently in full-frame, so the item can read
      *  "Full Frame" vs "Exit Full Frame". */
     isFullFrame?: boolean;
+    /** Optional "Present on <display>" handler: open a SEPARATE popup window
+     *  on the chosen display fed this card's live canvas, leaving the main
+     *  window interactive (unlike fullscreen, which relocates the whole tab).
+     *  Only offered for NON-current displays in multi-monitor mode. When
+     *  omitted (or single-monitor / unsupported), no present items show. */
+    onpresent?: (screenId: string) => void;
+    /** Stop an active present session (close the popup + release the capture).
+     *  When provided AND `isPresenting`, a "Stop presenting" item shows. */
+    onstoppresent?: () => void;
+    /** Whether a present popup is currently open, so we can show "Stop
+     *  presenting". */
+    isPresenting?: boolean;
     onclose: () => void;
   }
 
@@ -54,12 +66,23 @@
     onrequestscreens,
     onfullframe,
     isFullFrame = false,
+    onpresent,
+    onstoppresent,
+    isPresenting = false,
     onclose,
   }: Props = $props();
 
   // Show per-display entries only when there's a genuine multi-monitor
   // choice; otherwise the classic single "Fullscreen" item.
   const multiMonitor = $derived(availableScreens.length > 1);
+
+  // "Present on …" targets the OTHER monitor(s) — presenting on THIS display
+  // (the one the patcher is on) makes no sense (it would cover the patcher),
+  // so we offer only the non-primary displays. Gated additionally on the
+  // onpresent handler being wired (cards opt in) + multi-monitor.
+  const presentScreens = $derived(
+    onpresent && multiMonitor ? availableScreens.filter((s) => !s.isPrimary) : [],
+  );
 
   // The menu is `position: fixed` and anchored at the cursor. For a card
   // whose canvas sits low/right in the viewport (e.g. BENTBOX, whose screen
@@ -138,6 +161,16 @@
     onclose();
   }
 
+  function pickPresent(screenId: string) {
+    onpresent?.(screenId);
+    onclose();
+  }
+
+  function pickStopPresent() {
+    onstoppresent?.();
+    onclose();
+  }
+
   // Render the menu + overlay at <body> so they escape SvelteFlow's pane
   // `transform` (zoom/pan). A `position: fixed` element nested inside a
   // transformed ancestor anchors to that ANCESTOR's box, not the viewport —
@@ -210,6 +243,29 @@
           {isFullFrame ? 'Exit Full Frame' : 'Full Frame'}
         </button>
       {/if}
+      {#if presentScreens.length > 0}
+        <div class="ctx-sep" role="separator"></div>
+        {#each presentScreens as screen (screen.id)}
+          <button
+            class="ctx-item"
+            onclick={() => pickPresent(screen.id)}
+            role="menuitem"
+            data-testid="ctx-present-{screen.id}"
+          >
+            Present on {screen.label}
+          </button>
+        {/each}
+      {/if}
+      {#if onstoppresent && isPresenting}
+        <button
+          class="ctx-item"
+          onclick={pickStopPresent}
+          role="menuitem"
+          data-testid="ctx-stop-present"
+        >
+          Stop presenting
+        </button>
+      {/if}
     </div>
   </div>
 {/if}
@@ -256,5 +312,10 @@
   .ctx-item:focus-visible {
     background: rgba(96, 165, 250, 0.1);
     outline: none;
+  }
+  .ctx-sep {
+    height: 1px;
+    margin: 4px 0;
+    background: #404652;
   }
 </style>
