@@ -1,220 +1,195 @@
 // packages/web/src/lib/ui/rack-sizes.ts
 //
-// Bulk Phase-1 rack classification for EXISTING modules.
+// Rack classification for every registered card-bearing module.
 //
-// Each registered module type is mapped to a rack `size` tier ('1u' | '3u') and
-// an `hp` width (in 1u = 180px square tiles). A module is `hp` tiles wide ×
-// (1u | 3u) tall, snapping to the uniform 3u-slot grid (see
-// `.myrobots/plans/module-sizing-rack-format.md` +
-// `.myrobots/plans/module-sizing-DECISIONS-2026-06-13.md`).
+// Each module type maps to a rack `size` tier ('1u' | '3u') and an `hp` width
+// (in 1u = 180px square tiles). A module is `hp` tiles wide × (1u | 3u) tall,
+// snapping to the uniform 3u-slot grid.
 //
-// size heuristic (per the plan §5.1 + the user's LOCKED overrides):
-//   3u = has a screen / canvas / viz (ALL video-domain modules, scope-likes,
-//        games, toybox/doom, 3D viz, wavesculpt/synesthesia/recorderbox),
-//        sequencers, full synth voices, control surfaces + group, big mixers.
-//   1u = simple utilities (VCAs, attenuators, mults, lfo, adsr, filters,
-//        delays, reverbs, the moog utility modules, midi buddies, audioIn/Out,
-//        small mixers).
-// The user's explicit per-module overrides (DECISIONS §2) are applied VERBATIM
-// and noted inline below.
+// ── These values are MEASURED, not estimated ──
+// The inline `HxWpx` comment on each line is the card's NATURAL rendered size
+// (offsetHeight×offsetWidth, the SvelteFlow zoom-independent layout box) captured
+// by the measurement probe (.myrobots/plans/rack-measure.probe.ts.txt).
+//   size = '1u' if natural height ≤ 180px (the --rack-unit tile), else '3u'
+//   hp   = round(natural width / 180), min 1
+// [LOCKED] = a user-decided tier override applied verbatim regardless of the
+//   measurement (DECISIONS §2 + the 2026-06-13 preview pass; scope→3u w/ bigger
+//   screen, drummergirl→1u, charlottesEchos→1u). Cards whose content exceeds
+//   their tier are compacted per-card (see rack-sizing-CAMPAIGN-2026-06-13.md).
 //
-// hp = max(1, round(cardWidthPx / 180)) from each card's component-local CSS
-// width (the `--rack-unit` square = 180px). Big modules keep a unique hp.
-//
-// PRECEDENCE: a module def that declares `size`/`hp` on the def itself OVERRIDES
-// this map (see Canvas.svelte rackSizeByType + rack-sizing.test.ts). This map is
-// the bulk fallback for existing modules that haven't moved their declaration
-// onto the def yet. New modules should declare size/hp on the def.
+// PRECEDENCE: a def that declares `size`/`hp` OVERRIDES this map (see
+// Canvas.svelte rackSizeByType + rack-sizing.test.ts). This map is the bulk
+// fallback; new modules should declare size/hp on the def.
 
 import type { RackSize } from '$lib/graph/types';
 
 export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> = {
-  // ── Audio · Utility / Mixing / I/O ──────────────────────────────────────
-  vca: { size: '1u', hp: 1 }, //                       160px → 1hp
-  stereovca: { size: '1u', hp: 1 }, //                 180px → 1hp (the 1u reference)
-  noise: { size: '1u', hp: 1 }, //                     160px → 1hp
-  attenumix: { size: '1u', hp: 2 }, //                 300px → 2hp
-  mixer: { size: '1u', hp: 1 }, // OVERRIDE 1u         260px → 1hp
-  videoMixer: { size: '3u', hp: 2 }, //                280px → 2hp (video preview)
-  flipper: { size: '1u', hp: 1 }, //                   176px → 1hp
-  gatemaiden: { size: '1u', hp: 1 }, //                200px → 1hp (gate↔trigger converter, merged via #758)
-  illogic: { size: '1u', hp: 1 }, //                   240px → 1hp
-  analogLogicMaths: { size: '1u', hp: 1 }, //          220px → 1hp
-  unityscalemathematik: { size: '1u', hp: 1 }, //      240px → 1hp
-  veils: { size: '1u', hp: 2 }, //                     280px → 2hp
-  fourplexer: { size: '1u', hp: 2 }, //                320px → 2hp
-  sampleHold: { size: '1u', hp: 1 }, //                260px → 1hp
-  slewSwitch: { size: '1u', hp: 2 }, //                320px → 2hp
-  audioIn: { size: '1u', hp: 1 }, //                   200px → 1hp
-  audioOut: { size: '1u', hp: 1 }, // OVERRIDE 1u      180px → 1hp
-  rasterize: { size: '1u', hp: 2 }, //                 320px → 2hp
-  qbrt: { size: '1u', hp: 2 }, //                      280px → 2hp
+  // ── audio domain ──
+  adsr: { size: '1u', hp: 1 }, // 161×240px  [LOCKED]
+  analogLogicMaths: { size: '1u', hp: 1 }, // 161×220px
+  analogVco: { size: '1u', hp: 1 }, // 225×240px  [LOCKED]
+  aquaTank: { size: '3u', hp: 2 }, // 273×320px
+  atlantisCatalyst: { size: '3u', hp: 2 }, // 261×360px
+  attenumix: { size: '1u', hp: 2 }, // 165×300px
+  audioIn: { size: '3u', hp: 1 }, // 241×200px
+  audioOut: { size: '1u', hp: 1 }, // 200×180px  [LOCKED]
+  bluebox: { size: '3u', hp: 2 }, // 360×280px
+  buggles: { size: '1u', hp: 2 }, // 163×280px
+  callsine: { size: '3u', hp: 2 }, // 203×340px
+  cartesian: { size: '3u', hp: 2 }, // 570×360px
+  charlottesEchos: { size: '1u', hp: 2 }, // 116×320px  [LOCKED]
+  chowkick: { size: '3u', hp: 3 }, // 896×540px  [LOCKED]
+  clockedRunner: { size: '3u', hp: 2 }, // 220×360px
+  clouds: { size: '3u', hp: 2 }, // 208×340px
+  cloudseed: { size: '3u', hp: 4 }, // 434×680px
+  cocoadelay: { size: '3u', hp: 3 }, // 290×620px
+  cube: { size: '3u', hp: 2 }, // 895×360px
+  delay: { size: '1u', hp: 1 }, // 159×200px
+  destroy: { size: '1u', hp: 1 }, // 159×220px
+  drummergirl: { size: '1u', hp: 2 }, // 159×320px  [LOCKED]
+  drumseqz: { size: '3u', hp: 5 }, // 611×820px
+  dx7: { size: '3u', hp: 2 }, // 333×320px
+  elements: { size: '3u', hp: 3 }, // 305×460px
+  filter: { size: '1u', hp: 1 }, // 187×200px  [LOCKED]
+  flipper: { size: '1u', hp: 1 }, // 97×176px
+  fourplexer: { size: '1u', hp: 2 }, // 158×320px
+  foxy: { size: '3u', hp: 4 }, // 582×720px
+  frogger: { size: '3u', hp: 1 }, // 380×260px
+  gamepad: { size: '3u', hp: 2 }, // 267×280px
+  gatemaiden: { size: '3u', hp: 1 }, // 199×200px
+  grids: { size: '3u', hp: 2 }, // 500×320px
+  helm: { size: '3u', hp: 4 }, // 543×720px
+  hydrogen: { size: '3u', hp: 4 }, // 687×660px
+  hypercube: { size: '3u', hp: 2 }, // 777×360px
+  illogic: { size: '1u', hp: 1 }, // 161×240px
+  joystick: { size: '3u', hp: 1 }, // 241×220px
+  lfo: { size: '3u', hp: 1 }, // 228×200px
+  livecode: { size: '3u', hp: 3 }, // 380×460px
+  macrooscillator: { size: '3u', hp: 2 }, // 194×320px
+  macseq: { size: '3u', hp: 5 }, // 289×880px
+  marbles: { size: '3u', hp: 2 }, // 206×420px
+  meowbox: { size: '1u', hp: 1 }, // 134×240px
+  midiclock: { size: '1u', hp: 1 }, // 143×200px
+  midiCvBuddy: { size: '1u', hp: 1 }, // 143×220px
+  midiLane: { size: '3u', hp: 1 }, // 156×230px  [LOCKED]
+  midiOutBuddy: { size: '1u', hp: 1 }, // 143×220px
+  mixer: { size: '1u', hp: 1 }, // 157×260px  [LOCKED]
+  mixmstrs: { size: '3u', hp: 4 }, // 668×720px
+  modtris: { size: '3u', hp: 1 }, // 431×260px
+  moog902: { size: '1u', hp: 1 }, // 152×236px
+  moog903a: { size: '1u', hp: 1 }, // 124×180px
+  moog904a: { size: '1u', hp: 1 }, // 152×236px
+  moog904b: { size: '1u', hp: 1 }, // 152×236px
+  moog904c: { size: '1u', hp: 1 }, // 124×220px
+  moog905: { size: '1u', hp: 1 }, // 124×220px
+  moog907a: { size: '3u', hp: 1 }, // 655×200px
+  moog911: { size: '3u', hp: 1 }, // 187×232px
+  moog911a: { size: '1u', hp: 1 }, // 137×200px
+  moog912: { size: '1u', hp: 1 }, // 124×200px
+  moog914: { size: '3u', hp: 1 }, // 891×200px
+  moog921a: { size: '1u', hp: 1 }, // 152×236px
+  moog921b: { size: '3u', hp: 1 }, // 214×252px
+  moog921Vco: { size: '3u', hp: 1 }, // 214×252px
+  moog923: { size: '1u', hp: 1 }, // 124×220px
+  moog956: { size: '1u', hp: 1 }, // 174×240px
+  moog960: { size: '3u', hp: 3 }, // 385×520px
+  moog961: { size: '1u', hp: 1 }, // 124×220px
+  moog962: { size: '1u', hp: 1 }, // 124×200px
+  moog984: { size: '3u', hp: 2 }, // 313×300px
+  moog992: { size: '1u', hp: 1 }, // 124×220px
+  moog993: { size: '1u', hp: 1 }, // 124×220px
+  moog994: { size: '1u', hp: 1 }, // 61×180px
+  moog995: { size: '1u', hp: 1 }, // 124×200px
+  moogCp3: { size: '3u', hp: 1 }, // 187×264px
+  noise: { size: '1u', hp: 1 }, // 161×160px
+  numpadPlus: { size: '3u', hp: 4 }, // 714×722px
+  peaks: { size: '3u', hp: 2 }, // 204×320px  [LOCKED]
+  pentemelodica: { size: '3u', hp: 7 }, // 462×1180px
+  polyhelm: { size: '3u', hp: 4 }, // 543×720px
+  polyseqz: { size: '3u', hp: 3 }, // 328×540px
+  pong: { size: '3u', hp: 1 }, // 311×240px
+  qbrt: { size: '1u', hp: 2 }, // 159×280px
+  rasterize: { size: '3u', hp: 2 }, // 330×320px
+  resofilter: { size: '1u', hp: 2 }, // 163×340px  [LOCKED]
+  reverb: { size: '1u', hp: 1 }, // 159×200px
+  ringback: { size: '1u', hp: 1 }, // 130×240px
+  rings: { size: '3u', hp: 2 }, // 206×360px
+  riotgirls: { size: '3u', hp: 6 }, // 856×1100px
+  sampleHold: { size: '1u', hp: 1 }, // 149×260px
+  samsloop: { size: '3u', hp: 2 }, // 420×360px
+  scope: { size: '3u', hp: 2 }, // 320×320px  [LOCKED]
+  score: { size: '3u', hp: 4 }, // 604×720px
+  sequencer: { size: '3u', hp: 3 }, // 314×540px  [LOCKED]
+  shimmershine: { size: '1u', hp: 2 }, // 159×280px
+  sidecar: { size: '3u', hp: 2 }, // 326×380px
+  skifree: { size: '3u', hp: 2 }, // 420×360px
+  slewSwitch: { size: '3u', hp: 2 }, // 273×320px
+  stages: { size: '3u', hp: 3 }, // 309×460px
+  stereovca: { size: '1u', hp: 1 }, // 173×180px
+  swolevco: { size: '3u', hp: 2 }, // 269×360px
+  symbiote: { size: '3u', hp: 2 }, // 206×440px
+  synesthesia: { size: '3u', hp: 3 }, // 426×460px
+  tides2: { size: '3u', hp: 2 }, // 228×380px
+  timelorde: { size: '3u', hp: 2 }, // 156×280px  [LOCKED]
+  treeohvox: { size: '3u', hp: 2 }, // 240×340px
+  twotracks: { size: '3u', hp: 3 }, // 413×580px
+  unityscalemathematik: { size: '3u', hp: 1 }, // 483×240px
+  vca: { size: '1u', hp: 1 }, // 173×160px
+  veils: { size: '3u', hp: 2 }, // 186×280px
+  warps: { size: '3u', hp: 2 }, // 194×320px
+  warrenspectrum: { size: '3u', hp: 2 }, // 488×440px
+  wavecel: { size: '3u', hp: 2 }, // 405×320px
+  wavesculpt: { size: '3u', hp: 7 }, // 880×1280px
+  wavetableVco: { size: '1u', hp: 1 }, // 159×240px
+  writeseq: { size: '3u', hp: 5 }, // 268×880px
 
-  // ── Audio · Modulation ──────────────────────────────────────────────────
-  lfo: { size: '1u', hp: 1 }, //                       200px → 1hp
-  adsr: { size: '1u', hp: 1 }, // OVERRIDE 1u          240px → 1hp
-  buggles: { size: '1u', hp: 2 }, //                   280px → 2hp
-  atlantisCatalyst: { size: '1u', hp: 2 }, //          360px → 2hp
-  peaks: { size: '3u', hp: 2 }, // OVERRIDE 3u         320px → 2hp
-  sequencer: { size: '3u', hp: 3 }, // OVERRIDE 3u     540px → 3hp
-  polyseqz: { size: '3u', hp: 3 }, //                  540px → 3hp
-  drumseqz: { size: '3u', hp: 5 }, //                  820px → 5hp
-  macseq: { size: '3u', hp: 5 }, //                    880px → 5hp
-  score: { size: '3u', hp: 4 }, //                     720px → 4hp
-  writeseq: { size: '3u', hp: 5 }, //                  880px → 5hp
-  grids: { size: '3u', hp: 2 }, //                     320px → 2hp
-  marbles: { size: '3u', hp: 2 }, //                   420px → 2hp
-  tides2: { size: '3u', hp: 2 }, //                    380px → 2hp
-  stages: { size: '3u', hp: 3 }, //                    460px → 3hp
-  cartesian: { size: '3u', hp: 2 }, //                 360px → 2hp
-  timelorde: { size: '3u', hp: 2 }, // OVERRIDE 3u     280px → 2hp
+  // ── meta domain ──
+  electraControl: { size: '3u', hp: 2 }, // 519×360px
 
-  // ── Audio · Filters / Effects / Processors ──────────────────────────────
-  filter: { size: '1u', hp: 1 }, // OVERRIDE 1u        200px → 1hp
-  reverb: { size: '1u', hp: 1 }, //                    200px → 1hp
-  delay: { size: '1u', hp: 1 }, //                     200px → 1hp
-  destroy: { size: '1u', hp: 1 }, //                   220px → 1hp
-  cocoadelay: { size: '3u', hp: 3 }, //                620px → 3hp (3u — dense FX, user call)
-  ringback: { size: '1u', hp: 1 }, //                  240px → 1hp
-  resofilter: { size: '1u', hp: 2 }, // OVERRIDE 1u    340px → 2hp
-  clouds: { size: '3u', hp: 2 }, //                    340px → 2hp
-  cloudseed: { size: '3u', hp: 4 }, //                 680px → 4hp
-  callsine: { size: '1u', hp: 2 }, //                  340px → 2hp (fits 1u, user call)
-  charlottesEchos: { size: '3u', hp: 2 }, //           320px → 2hp
-  aquaTank: { size: '3u', hp: 2 }, //                  320px → 2hp
-  warps: { size: '3u', hp: 2 }, //                     320px → 2hp
-  shimmershine: { size: '3u', hp: 2 }, //              280px → 2hp
-  sidecar: { size: '3u', hp: 2 }, //                   380px → 2hp
-  warrenspectrum: { size: '3u', hp: 2 }, //            440px → 2hp (spectrum viz)
-  twotracks: { size: '3u', hp: 3 }, //                 580px → 3hp (dual-reel viz)
-
-  // ── Audio · Sources / Voices ────────────────────────────────────────────
-  chowkick: { size: '3u', hp: 3 }, // OVERRIDE 3u      540px → 3hp
-  drummergirl: { size: '3u', hp: 2 }, // OVERRIDE 3u   320px → 2hp
-  numpadPlus: { size: '3u', hp: 2 }, //                360px (min-width) → 2hp
-  riotgirls: { size: '3u', hp: 6 }, //                 1100px → 6hp
-  analogVco: { size: '1u', hp: 1 }, // OVERRIDE 1u     240px → 1hp
-  wavetableVco: { size: '3u', hp: 1 }, //              240px → 1hp
-  swolevco: { size: '3u', hp: 2 }, //                  360px → 2hp
-  macrooscillator: { size: '3u', hp: 2 }, //           320px → 2hp
-  helm: { size: '3u', hp: 4 }, //                      720px → 4hp
-  polyhelm: { size: '3u', hp: 4 }, //                  720px → 4hp
-  dx7: { size: '3u', hp: 2 }, //                       320px → 2hp
-  elements: { size: '3u', hp: 3 }, //                  460px → 3hp
-  rings: { size: '3u', hp: 2 }, //                     360px → 2hp
-  symbiote: { size: '3u', hp: 2 }, //                  440px → 2hp
-  treeohvox: { size: '3u', hp: 2 }, //                 340px → 2hp
-  pentemelodica: { size: '3u', hp: 7 }, //             1180px → 7hp
-  meowbox: { size: '3u', hp: 1 }, //                   240px → 1hp
-  wavecel: { size: '3u', hp: 2 }, //                   320px → 2hp
-  wavesculpt: { size: '3u', hp: 7 }, //                1280px (resizable) → 7hp (WebGL)
-  cube: { size: '3u', hp: 2 }, //                      360px → 2hp (3D WebGL)
-  hypercube: { size: '3u', hp: 2 }, //                 360px → 2hp (4D WebGL)
-  foxy: { size: '3u', hp: 4 }, //                      720px → 4hp
-  bluebox: { size: '3u', hp: 2 }, //                   280px → 2hp
-  samsloop: { size: '3u', hp: 2 }, //                  360px → 2hp
-  vfpgaRunner: { size: '3u', hp: 2 }, //               420px → 2hp
-  gibribbon: { size: '3u', hp: 2 }, //                 max-content → 2hp
-
-  // ── Audio · Mixing (big) ────────────────────────────────────────────────
-  mixmstrs: { size: '3u', hp: 4 }, //                  720px → 4hp (big mixer + viz)
-
-  // ── Moog System 35/55 clones ────────────────────────────────────────────
-  moog902: { size: '1u', hp: 1 }, //                   236px → 1hp (VCA)
-  moog903a: { size: '1u', hp: 1 }, //                  180px → 1hp (noise)
-  moog904a: { size: '1u', hp: 1 }, //                  236px → 1hp (VCF)
-  moog904b: { size: '1u', hp: 1 }, //                  236px → 1hp (VCF)
-  moog904c: { size: '1u', hp: 1 }, //                  220px → 1hp (filter coupler)
-  moog905: { size: '1u', hp: 1 }, //                   220px → 1hp (reverb)
-  moog907a: { size: '1u', hp: 1 }, //                  200px → 1hp (fixed filter bank)
-  moog911: { size: '1u', hp: 1 }, //                   232px → 1hp (envelope)
-  moog911a: { size: '1u', hp: 1 }, //                  200px → 1hp (dual trigger delay)
-  moog912: { size: '1u', hp: 1 }, //                   200px → 1hp (env follower)
-  moog914: { size: '1u', hp: 1 }, //                   200px → 1hp (fixed filter bank)
-  moog921Vco: { size: '1u', hp: 1 }, //                252px → 1hp (VCO)
-  moog921a: { size: '1u', hp: 1 }, //                  236px → 1hp (VCO driver)
-  moog921b: { size: '1u', hp: 1 }, //                  252px → 1hp (VCO)
-  moog923: { size: '1u', hp: 1 }, //                   220px → 1hp (noise + filters)
-  moog956: { size: '3u', hp: 1 }, //                   240px → 1hp (ribbon controller)
-  moog960: { size: '3u', hp: 3 }, //                   520px → 3hp (sequential controller)
-  moog961: { size: '1u', hp: 1 }, //                   220px → 1hp (interface)
-  moog962: { size: '1u', hp: 1 }, //                   200px → 1hp (sequential switch)
-  moog984: { size: '1u', hp: 2 }, //                   300px → 2hp (matrix mixer)
-  moog992: { size: '1u', hp: 1 }, //                   220px → 1hp (controller)
-  moog993: { size: '1u', hp: 1 }, //                   220px → 1hp (controller)
-  moog994: { size: '1u', hp: 1 }, //                   180px → 1hp (mults)
-  moog995: { size: '1u', hp: 1 }, //                   200px → 1hp (attenuators)
-  moogCp3: { size: '1u', hp: 1 }, //                   264px → 1hp (mixer)
-
-  // ── MIDI ────────────────────────────────────────────────────────────────
-  midiclock: { size: '1u', hp: 1 }, //                 200px → 1hp
-  midiCvBuddy: { size: '1u', hp: 1 }, //               220px → 1hp
-  midiOutBuddy: { size: '1u', hp: 1 }, //              220px → 1hp
-  midiLane: { size: '3u', hp: 1 }, // OVERRIDE 3u      230px → 1hp
-  gamepad: { size: '1u', hp: 2 }, //                   280px (min-width) → 2hp
-  joystick: { size: '1u', hp: 1 }, //                  220px → 1hp
-
-  // ── Scope ───────────────────────────────────────────────────────────────
-  scope: { size: '1u', hp: 2 }, // OVERRIDE 1u         320px → 2hp
-
-  // ── Video domain (all render a preview canvas → 3u) ──────────────────────
-  '4plexvid': { size: '3u', hp: 2 }, //                280px → 2hp
-  acidwarp: { size: '3u', hp: 2 }, //                  380px → 2hp
-  b3ntb0x: { size: '3u', hp: 3 }, //                   460px (resizable) → 3hp
-  backdraft: { size: '3u', hp: 2 }, //                 340px (resizable) → 2hp
-  bentbox: { size: '3u', hp: 2 }, //                   420px (resizable) → 2hp
-  cameraInput: { size: '3u', hp: 2 }, // OVERRIDE 3u   280px → 2hp
-  cellshade: { size: '3u', hp: 1 }, //                 220px → 1hp
-  chroma: { size: '3u', hp: 1 }, //                    260px → 1hp
-  chromakey: { size: '3u', hp: 1 }, //                 260px → 1hp
-  colorizer: { size: '3u', hp: 1 }, //                 240px → 1hp
-  destructor: { size: '3u', hp: 1 }, //                260px → 1hp
-  doom: { size: '3u', hp: 2 }, //                      360px → 2hp (play screen)
-  edges: { size: '3u', hp: 1 }, //                     200px → 1hp
-  feedback: { size: '3u', hp: 2 }, //                  320px → 2hp
-  freezeframe: { size: '3u', hp: 1 }, //               260px → 1hp
-  inwards: { size: '3u', hp: 1 }, //                   220px → 1hp
-  lines: { size: '3u', hp: 1 }, //                     220px → 1hp
-  luma: { size: '3u', hp: 1 }, //                      220px → 1hp
-  lumakey: { size: '3u', hp: 1 }, //                   220px → 1hp
-  mandelbulb: { size: '3u', hp: 2 }, //                280px → 2hp (WebGL)
-  mandleblot: { size: '3u', hp: 2 }, //                280px → 2hp (WebGL)
-  mapper: { size: '3u', hp: 1 }, //                    200px → 1hp
-  monoglitch: { size: '3u', hp: 2 }, //                320px (resizable) → 2hp
-  nibbles: { size: '3u', hp: 2 }, //                   max-content → 2hp (game)
-  outlines: { size: '3u', hp: 1 }, //                  260px → 1hp
-  peakstate: { size: '3u', hp: 1 }, //                 240px → 1hp
-  picturebox: { size: '3u', hp: 1 }, //                220px → 1hp
-  qbert: { size: '3u', hp: 2 }, //                     max-content → 2hp (game)
-  quadralogical: { size: '3u', hp: 3 }, //             480px → 3hp (matrix)
-  recorderbox: { size: '3u', hp: 1 }, //               248px → 1hp (capture UI)
-  reshaper: { size: '3u', hp: 2 }, //                  320px (resizable) → 2hp
-  ruttetra: { size: '3u', hp: 2 }, //                  320px (resizable) → 2hp
-  scoreboard: { size: '1u', hp: 1 }, // OVERRIDE 1u    260px → 1hp
-  shapedramps: { size: '3u', hp: 1 }, //               240px → 1hp
-  shapegen: { size: '3u', hp: 2 }, //                  300px → 2hp
-  shapes: { size: '3u', hp: 1 }, //                    220px → 1hp
-  snes9x: { size: '3u', hp: 2 }, //                    max-content → 2hp (emulator)
-  toybox: { size: '3u', hp: 5 }, //                    860px (resizable) → 5hp
-  vdelay: { size: '3u', hp: 1 }, //                    220px → 1hp
-  videobox: { size: '3u', hp: 2 }, //                  320px (resizable) → 2hp
-  videoOut: { size: '3u', hp: 2 }, //                  360px (resizable) → 2hp
-  videovarispeed: { size: '3u', hp: 2 }, //            320px → 2hp
-
-  // ── Games / Emulators (audio-domain) ────────────────────────────────────
-  pong: { size: '3u', hp: 1 }, //                      240px → 1hp (play screen)
-  frogger: { size: '3u', hp: 1 }, //                   260px → 1hp (play screen)
-  modtris: { size: '3u', hp: 1 }, //                   260px → 1hp (play screen)
-  skifree: { size: '3u', hp: 2 }, //                   360px → 2hp (play screen)
-  synesthesia: { size: '3u', hp: 3 }, //               460px → 3hp (viz)
-
-  // ── Audio voices/sequencers with screens (audio-domain) ─────────────────
-  hydrogen: { size: '3u', hp: 4 }, //                  660px (min-width) → 4hp
-  clockedRunner: { size: '3u', hp: 2 }, //             360px (resizable) → 2hp
-  livecode: { size: '3u', hp: 3 }, //                  460px (resizable, code editor) → 3hp
-
-  // ── Meta / containers (controlSurface + group → 3u; sticky free-form) ────
-  controlSurface: { size: '3u', hp: 2 }, //            max-content → 2hp (surface)
-  electraControl: { size: '3u', hp: 2 }, //            max-content → 2hp (surface)
-  sticky: { size: '1u', hp: 1 }, //                    200px (resizable note) → 1hp
+  // ── video domain ──
+  '4plexvid': { size: '3u', hp: 2 }, // 463×280px
+  acidwarp: { size: '3u', hp: 2 }, // 407×380px
+  b3ntb0x: { size: '3u', hp: 3 }, // 540×460px
+  backdraft: { size: '3u', hp: 2 }, // 660×340px
+  bentbox: { size: '3u', hp: 2 }, // 480×420px
+  cameraInput: { size: '3u', hp: 2 }, // 370×280px  [LOCKED]
+  cellshade: { size: '3u', hp: 1 }, // 369×220px
+  chroma: { size: '3u', hp: 1 }, // 360×260px
+  chromakey: { size: '3u', hp: 1 }, // 389×260px
+  colorizer: { size: '3u', hp: 1 }, // 270×240px
+  destructor: { size: '3u', hp: 1 }, // 240×260px
+  doom: { size: '3u', hp: 2 }, // 384×360px
+  edges: { size: '3u', hp: 1 }, // 250×200px
+  feedback: { size: '3u', hp: 2 }, // 411×320px
+  freezeframe: { size: '3u', hp: 1 }, // 609×260px
+  gibribbon: { size: '3u', hp: 5 }, // 398×836px
+  inwards: { size: '3u', hp: 1 }, // 280×220px
+  lines: { size: '3u', hp: 1 }, // 361×220px
+  luma: { size: '3u', hp: 1 }, // 275×220px
+  lumakey: { size: '3u', hp: 1 }, // 287×220px
+  mandelbulb: { size: '3u', hp: 2 }, // 362×280px
+  mandleblot: { size: '3u', hp: 2 }, // 360×280px
+  mapper: { size: '3u', hp: 1 }, // 250×200px
+  monoglitch: { size: '3u', hp: 2 }, // 425×320px
+  nibbles: { size: '3u', hp: 2 }, // 367×380px
+  outlines: { size: '3u', hp: 1 }, // 420×260px
+  peakstate: { size: '3u', hp: 1 }, // 329×240px
+  picturebox: { size: '3u', hp: 1 }, // 240×220px
+  qbert: { size: '3u', hp: 2 }, // 326×340px
+  quadralogical: { size: '3u', hp: 3 }, // 881×480px
+  recorderbox: { size: '3u', hp: 1 }, // 296×248px
+  reshaper: { size: '3u', hp: 2 }, // 480×320px
+  ruttetra: { size: '3u', hp: 2 }, // 480×320px
+  scoreboard: { size: '1u', hp: 1 }, // 240×260px  [LOCKED]
+  shapedramps: { size: '3u', hp: 1 }, // 641×240px
+  shapegen: { size: '3u', hp: 2 }, // 304×300px
+  shapes: { size: '3u', hp: 1 }, // 320×220px
+  snes9x: { size: '3u', hp: 2 }, // 380×442px
+  toybox: { size: '3u', hp: 5 }, // 693×860px
+  vdelay: { size: '3u', hp: 1 }, // 431×220px
+  vfpgaRunner: { size: '3u', hp: 2 }, // 467×420px
+  videobox: { size: '3u', hp: 2 }, // 360×320px
+  videoMixer: { size: '3u', hp: 2 }, // 420×280px
+  videoOut: { size: '3u', hp: 2 }, // 240×360px
+  videovarispeed: { size: '3u', hp: 2 }, // 452×320px
 };

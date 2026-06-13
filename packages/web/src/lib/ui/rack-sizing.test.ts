@@ -25,10 +25,14 @@ import { RACK_SIZE_DEFAULTS } from './rack-sizes';
 // modules-card-map guard uses).
 const NO_CARD_BY_DESIGN = new Set(['cadillac']);
 
-// GROUP is a DYNAMIC container — it grows to fit its child modules, so it must
-// NOT be forced to a fixed 1u/3u tier (doing so clips its contents; broke the
-// group-geometry e2e). Excluded from the size-coverage requirement.
-const DYNAMIC_SIZED = new Set(['group']);
+// DYNAMIC containers — they grow to fit their content, so they must NOT be
+// forced to a fixed 1u/3u tier (doing so clips them):
+//   group          — grows to fit its child modules (broke the group-geometry e2e)
+//   sticky         — free-form resizable note
+//   controlSurface — grows to fit its proxied controls (the "card grows so ALL
+//                    groups + knobs render within bounds" control-surface e2e)
+// All three are excluded from the size-coverage requirement + the rack CSS.
+const DYNAMIC_SIZED = new Set(['group', 'sticky', 'controlSurface']);
 
 interface SizedDef {
   type: string;
@@ -129,10 +133,10 @@ describe('rack sizing — bulk classification coverage (RACK_SIZE_DEFAULTS)', ()
     // resolveSize must yield exactly these for the explicitly-called modules,
     // whether the tier comes from the def or the map.
     const LOCKED: Record<string, '1u' | '3u'> = {
-      adsr: '1u', filter: '1u', sequencer: '3u', mixer: '1u', scope: '1u',
+      adsr: '1u', filter: '1u', sequencer: '3u', mixer: '1u', scope: '3u',
       midiLane: '3u', analogVco: '1u', peaks: '3u', resofilter: '1u',
-      chowkick: '3u', drummergirl: '3u', audioOut: '1u', scoreboard: '1u',
-      cameraInput: '3u', timelorde: '3u',
+      chowkick: '3u', drummergirl: '1u', charlottesEchos: '1u', audioOut: '1u',
+      scoreboard: '1u', cameraInput: '3u', timelorde: '3u',
     };
     const by = Object.fromEntries(allDefs().map((d) => [d.type, d]));
     for (const [type, tier] of Object.entries(LOCKED)) {

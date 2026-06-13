@@ -88,14 +88,20 @@
  * One square grid tile = --rack-unit. A module is `hp` tiles wide and 1u or 3u
  * tall. The flowNodes derivation (Canvas.svelte) tags a card's SvelteFlow node
  * wrapper with `rack-sized rack-{1u,3u}` + an inline `--rack-hp:<n>` ONLY when
- * the module's def declares a `size`. So these rules touch migrated cards only;
- * unmigrated cards keep their content-driven size. The wrapper-scoped selectors
- * (0,3,0) outrank each card's own `.mod-card { width: … }` (0,1,0). */
+ * the module's def declares a `size` (or RACK_SIZE_DEFAULTS maps it). So these
+ * rules touch sized cards only; unmapped cards keep their content-driven size.
+ *
+ * Card ROOTS vary: `.mod-card` (most), `.card` (scope, all video, moog-less
+ * synths), `.moog-panel` (the 25 Moog modules). The `:is(...)` list sizes ALL
+ * of them — without it ~40% of cards (every Moog, scope, video card) ignored the
+ * rack entirely. `.sticky-card` is intentionally excluded (free-form resizable
+ * note). The wrapper-scoped selectors (0,3,0) outrank each card root's own
+ * `width:`/`min-height:` (0,1,0). */
 :root {
   --rack-unit: 180px;
 }
-.svelte-flow__node.rack-sized > .mod-card,
-.svelte-flow__node.rack-sized > * > .mod-card {
+.svelte-flow__node.rack-sized > :is(.mod-card, .card, .moog-panel),
+.svelte-flow__node.rack-sized > * > :is(.mod-card, .card, .moog-panel) {
   box-sizing: border-box;
   width: calc(var(--rack-hp, 1) * var(--rack-unit));
 }
@@ -103,14 +109,14 @@
  * `min-height` (e.g. scope's 270px) can't escape the tier and render a
  * "neither 1u nor 3u" box. Content taller than the tier is the per-card
  * content-fit follow-up (it overflows visibly until that card is compacted). */
-.svelte-flow__node.rack-1u > .mod-card,
-.svelte-flow__node.rack-1u > * > .mod-card {
+.svelte-flow__node.rack-1u > :is(.mod-card, .card, .moog-panel),
+.svelte-flow__node.rack-1u > * > :is(.mod-card, .card, .moog-panel) {
   height: var(--rack-unit);
   min-height: var(--rack-unit);
   max-height: var(--rack-unit);
 }
-.svelte-flow__node.rack-3u > .mod-card,
-.svelte-flow__node.rack-3u > * > .mod-card {
+.svelte-flow__node.rack-3u > :is(.mod-card, .card, .moog-panel),
+.svelte-flow__node.rack-3u > * > :is(.mod-card, .card, .moog-panel) {
   height: calc(3 * var(--rack-unit));
   min-height: calc(3 * var(--rack-unit));
   max-height: calc(3 * var(--rack-unit));
