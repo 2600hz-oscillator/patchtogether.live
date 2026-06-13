@@ -462,6 +462,19 @@ tasks:
           --results-dir  e2e/vrt/test-results
           --output-dir   docs/vrt
 
+  vrt:changeset:
+    desc: |
+      Build the per-PR VRT CHANGESET gallery (docs/vrt-changeset/) — only the
+      baseline PNGs THIS branch changed vs its base, each as OLD/NEW/DIFF.
+      git-diff-driven (works whether or not the new baselines are committed) +
+      LFS-aware. Used by the vrt-changeset-gallery.yml workflow to publish a
+      CF Pages link + PR comment. Pass extra flags after `--`.
+      Examples:
+        task vrt:changeset                          # base = merge-base(origin/main, HEAD)
+        task vrt:changeset -- --base origin/main --pr 759
+    cmds:
+      - node scripts/vrt-changeset-gallery.mjs {{.CLI_ARGS}}
+
   # ---------------- WebGL local-GPU attestation ("semaphore") ----------------
   # CI's only WebGL renderer is SwiftShader and the heavy WebGL e2e lane is
   # disabled on PRs (24-27 min + timeout-prone on software GL). This scheme runs
