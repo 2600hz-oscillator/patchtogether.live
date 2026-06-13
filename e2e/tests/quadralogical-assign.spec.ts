@@ -103,7 +103,9 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'quad', type: 'quadralogical', position: { x: 80, y: 80 }, domain: 'video' },
-      { id: 'cs-1', type: 'controlSurface', position: { x: 720, y: 80 }, domain: 'meta' },
+      // quad is 4hp (720px) wide → right edge ~800; place the surface clear of it
+      // so its proxy knobs aren't occluded (the dblclick would otherwise hang).
+      { id: 'cs-1', type: 'controlSurface', position: { x: 900, y: 80 }, domain: 'meta' },
     ]);
 
     const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
@@ -176,7 +178,8 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'quad', type: 'quadralogical', position: { x: 80, y: 80 }, domain: 'video' },
-      { id: 'ec-1', type: 'electraControl', position: { x: 720, y: 80 }, domain: 'meta' },
+      // quad is 4hp (720px) wide → right edge ~800; place Electra clear of it.
+      { id: 'ec-1', type: 'electraControl', position: { x: 900, y: 80 }, domain: 'meta' },
     ]);
 
     const card = page.locator('[data-testid="electra-control-card"][data-node-id="ec-1"]');
