@@ -27,6 +27,11 @@
   const inputs: PortDescriptor[] = [
     { id: 'in_l', label: 'L IN', cable: 'audio' },
     { id: 'in_r', label: 'R IN', cable: 'audio' },
+    // CV ins for the four knobs (ids match the def 1:1 — io-spec parity test).
+    { id: 'rate',     label: 'RATE CV', cable: 'cv' },
+    { id: 'size',     label: 'SIZE CV', cable: 'cv' },
+    { id: 'feedback', label: 'FB CV',   cable: 'cv' },
+    { id: 'mix',      label: 'MIX CV',  cable: 'cv' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'out_l', label: 'L OUT', cable: 'audio' },

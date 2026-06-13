@@ -53,6 +53,13 @@ export const ringbackDef: AudioModuleDef = {
   inputs: [
     { id: 'in_l', type: 'audio' },
     { id: 'in_r', type: 'audio' },
+    // CV inputs — the four params are a-rate worklet AudioParams, so a -1..+1
+    // CV sweeps each param's natural range via the shared cvScale routing
+    // (engine.addEdge → attachCvScale). cvScale.mode mirrors each knob's curve.
+    { id: 'rate',     type: 'cv', paramTarget: 'rate',     cvScale: { mode: 'linear' } },
+    { id: 'size',     type: 'cv', paramTarget: 'size',     cvScale: { mode: 'log' } },
+    { id: 'feedback', type: 'cv', paramTarget: 'feedback', cvScale: { mode: 'linear' } },
+    { id: 'mix',      type: 'cv', paramTarget: 'mix',      cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out_l', type: 'audio' },
@@ -89,6 +96,12 @@ export const ringbackDef: AudioModuleDef = {
       inputs: new Map([
         ['in_l', { node: worklet, input: 0 }],
         ['in_r', { node: worklet, input: 1 }],
+        // CV → AudioParam (a-rate). node/input are placeholders required by the
+        // handle type; the engine connects to `param` (cvScale interposed).
+        ['rate',     { node: worklet, input: 0, param: params.get('rate')! }],
+        ['size',     { node: worklet, input: 0, param: params.get('size')! }],
+        ['feedback', { node: worklet, input: 0, param: params.get('feedback')! }],
+        ['mix',      { node: worklet, input: 0, param: params.get('mix')! }],
       ]),
       outputs: new Map([
         ['out_l', { node: worklet, output: 0 }],
