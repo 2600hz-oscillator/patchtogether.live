@@ -1,13 +1,33 @@
 // e2e/tests/node-context-menu.spec.ts
 //
-// Right-click on a module card opens a context menu. Two actions:
+// Right-click on a module card opens a context menu. Actions covered:
 //   - Delete: removes node + every edge touching it
 //   - Unpatch all: keeps node, removes every edge touching it
+//   - Lock / Unlock (virtual-rack Phase 2): "screw down" a module to its rack
+//     slot — snap to the 180px grid, persist data.locked, pin non-draggable.
 
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
+
+/** Read a node's persisted position + lock flag from the dev `__patch` global. */
+async function readNodeState(
+  page: Page,
+  id: string,
+): Promise<{ x: number; y: number; locked: boolean }> {
+  return page.evaluate((nid) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { position: { x: number; y: number }; data?: { locked?: boolean } }> };
+    };
+    const n = w.__patch.nodes[nid];
+    return {
+      x: n.position.x,
+      y: n.position.y,
+      locked: n.data?.locked === true,
+    };
+  }, id);
+}
 
 test('node context menu: right-click opens, Escape closes', async ({ page }) => {
   await page.goto('/');
@@ -100,4 +120,65 @@ test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps 
   await expect(menu.locator('[role="menuitem"]', { hasText: 'Docs' })).toHaveCount(1);
   await expect(menu.locator('[role="menuitem"]', { hasText: 'Duplicate' })).toHaveCount(1);
   await expect(menu.locator('[role="menuitem"]', { hasText: 'Delete' })).toHaveCount(1);
+});
+
+test('node context menu: Lock snaps to the 180px rack grid, marks locked + non-draggable; Unlock reverts', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  // Spawn a single module at a DELIBERATELY off-grid position (not a multiple
+  // of 180) so the snap is observable. 250→180, 430→360.
+  await spawnPatch(
+    page,
+    [{ id: 'lck', type: 'vca', position: { x: 250, y: 430 } }],
+    [],
+  );
+  const card = page.locator('.svelte-flow__node[data-id="lck"]');
+  await card.waitFor({ state: 'visible', timeout: 10_000 });
+
+  // Sanity: starts free-floating (SvelteFlow tags draggable nodes with the
+  // `.draggable` class) and unlocked, at its off-grid spawn point.
+  await expect(card).toHaveClass(/\bdraggable\b/);
+  let st = await readNodeState(page, 'lck');
+  expect(st.locked).toBe(false);
+  expect(st.x).toBe(250);
+  expect(st.y).toBe(430);
+
+  // Right-click the card title (a non-control region) → menu → Lock.
+  await card.locator('.title').click({ button: 'right' });
+  const menu = page.locator('[role="menu"][aria-label="Module actions"]');
+  await expect(menu).toBeVisible();
+  const lockItem = menu.getByTestId('ctx-lock');
+  await expect(lockItem).toHaveText('Lock');
+  await lockItem.click();
+
+  // (a) position snapped to the nearest 180px multiple in BOTH axes.
+  await expect
+    .poll(async () => (await readNodeState(page, 'lck')).x)
+    .toBe(180);
+  st = await readNodeState(page, 'lck');
+  expect(st.x).toBe(180); // 250 → 180
+  expect(st.y).toBe(360); // 430 → 360
+  expect(st.x % 180).toBe(0);
+  expect(st.y % 180).toBe(0);
+  // (b) data.locked persisted true.
+  expect(st.locked).toBe(true);
+  // (c) the node is now non-draggable — SvelteFlow drops the `.draggable`
+  // class + our derivation adds `node-locked`.
+  await expect(card).not.toHaveClass(/\bdraggable\b/);
+  await expect(card).toHaveClass(/\bnode-locked\b/);
+
+  // Re-open the menu: the entry now reads "Unlock".
+  await card.locator('.title').click({ button: 'right' });
+  await expect(menu).toBeVisible();
+  const unlockItem = menu.getByTestId('ctx-lock');
+  await expect(unlockItem).toHaveText('Unlock');
+  await unlockItem.click();
+
+  // Unlock clears the flag + restores draggability (position stays snapped).
+  await expect(card).toHaveClass(/\bdraggable\b/);
+  await expect(card).not.toHaveClass(/\bnode-locked\b/);
+  st = await readNodeState(page, 'lck');
+  expect(st.locked).toBe(false);
+  expect(st.x).toBe(180); // left where it snapped
+  expect(st.y).toBe(360);
 });

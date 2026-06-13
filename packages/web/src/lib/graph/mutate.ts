@@ -146,3 +146,42 @@ export function setControlColor(
     options,
   );
 }
+
+/**
+ * Set (or clear) a node's "locked" flag — `node.data.locked` — the virtual-rack
+ * Phase-2 "screwed down" state. When `true`, the card is snapped onto the rack
+ * grid and made non-draggable by the flowNodes derivation (Canvas.svelte); when
+ * cleared, the card floats freely again.
+ *
+ * Lock state is SHARED patch data (lives on the node, synced to rack-mates) —
+ * NOT a per-user layout entry — so every collaborator sees a module that's been
+ * screwed into a slot. The Canvas owns the SEPARATE side effect of snapping the
+ * position (which CAN be per-user in multiplayer); this helper only writes the
+ * boolean.
+ *
+ * Writes / deletes a SINGLE key in place on the live `data` map — never
+ * reassigns it (the [[yjs-save-load-real-ydoc]] "Type already integrated" trap).
+ * A one-time user action (right-click → Lock), so no update-storm risk.
+ *
+ * @param nodeId the module to lock / unlock
+ * @param locked `true` to screw down, `false` to free-float
+ * @param options `{ origin = LOCAL_ORIGIN }` — the transaction origin
+ */
+export function setNodeLocked(
+  nodeId: string,
+  locked: boolean,
+  options: MutateOptions = {},
+): void {
+  mutateNode(
+    nodeId,
+    (live) => {
+      if (!live.data) live.data = {};
+      if (locked) {
+        live.data.locked = true; // set a single key in place
+      } else {
+        delete live.data.locked; // clear → free-floating (the default)
+      }
+    },
+    options,
+  );
+}
