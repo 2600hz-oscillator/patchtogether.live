@@ -27,7 +27,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   // ── audio domain ──
   adsr: { size: '1u', hp: 2 }, // 154×240px  [LOCKED]
   analogLogicMaths: { size: '1u', hp: 2 }, // 154×220px
-  analogVco: { size: '1u', hp: 2 }, // 225×240px  [LOCKED]
+  analogVco: { size: '3u', hp: 2 }, // 225×240px  [LOCKED]
   aquaTank: { size: '2u', hp: 2 }, // 273×320px
   atlantisCatalyst: { size: '2u', hp: 2 }, // 261×360px
   attenumix: { size: '1u', hp: 2 }, // 158×300px

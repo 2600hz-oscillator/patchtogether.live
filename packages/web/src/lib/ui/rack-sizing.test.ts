@@ -138,7 +138,7 @@ describe('rack sizing — bulk classification coverage (RACK_SIZE_DEFAULTS)', ()
     // tier (the user approved exact Nu tiers for genuinely-big modules).
     const LOCKED: Record<string, '1u' | '3u'> = {
       adsr: '1u', filter: '1u', sequencer: '3u', mixer: '1u', scope: '3u',
-      midiLane: '3u', analogVco: '1u', peaks: '3u', resofilter: '1u',
+      midiLane: '3u', analogVco: '3u', peaks: '3u', resofilter: '1u',
       drummergirl: '1u', charlottesEchos: '1u', audioOut: '1u',
       scoreboard: '1u', cameraInput: '3u', timelorde: '3u',
     };

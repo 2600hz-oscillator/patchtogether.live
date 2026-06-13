@@ -24,10 +24,10 @@
    * reproduces the legacy hard-edged value for every other skin. */
   border-radius: var(--module-radius, 2px);
   color: var(--text);
-  /* Rack-compaction trim (#759): tightened from 18/14 so marginal cards fit the
-   * 1u tier without overflow. Applies to every .mod-card. */
-  padding-top: 14px;
-  padding-bottom: 11px;
+  /* Rack-compaction trim (#759): tightened from 18/14 so marginal cards fit
+   * their EXACT tier (no content spill). Applies to every .mod-card. */
+  padding-top: 10px;
+  padding-bottom: 9px;
   position: relative;
   /* --module-glow is OPTIONAL (DINER's soft purple neon-tube glow). The
    * fallback is the legacy drop-shadow only, so non-DINER skins get no
@@ -79,9 +79,9 @@
 .mod-card .port-label.left  { left: 14px; }
 .mod-card .port-label.right { right: 14px; }
 .mod-card .fader-row {
-  /* Rack-compaction trim (#759): margin 28→18, side padding 26→16 so fader
-   * cards are shorter + narrower and snap to their tier/hp without overflow. */
-  margin-top: 18px;
+  /* Rack-compaction trim (#759): margin 28→11, side padding 26→16 so fader
+   * cards fit their EXACT tier (no content spill) + snap to hp width. */
+  margin-top: 11px;
   display: flex;
   gap: 6px;
   padding: 0 16px;
