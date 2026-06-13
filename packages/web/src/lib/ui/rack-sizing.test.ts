@@ -31,8 +31,11 @@ const NO_CARD_BY_DESIGN = new Set(['cadillac']);
 //   sticky         — free-form resizable note
 //   controlSurface — grows to fit its proxied controls (the "card grows so ALL
 //                    groups + knobs render within bounds" control-surface e2e)
-// All three are excluded from the size-coverage requirement + the rack CSS.
-const DYNAMIC_SIZED = new Set(['group', 'sticky', 'controlSurface']);
+//   matrixMix      — the EMS/Buchla patchbay: a both-axes-scrollable grid card
+//                    (`.matrixmix-card` root, deliberately outside the rack
+//                    `:is()` sizing list) that can exceed 3u; never tiered.
+// All are excluded from the size-coverage requirement + the rack CSS.
+const DYNAMIC_SIZED = new Set(['group', 'sticky', 'controlSurface', 'matrixMix']);
 
 interface SizedDef {
   type: string;
