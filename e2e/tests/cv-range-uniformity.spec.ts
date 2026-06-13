@@ -208,3 +208,26 @@ test('LFO sweeps DESTROY decimate (1..64 linear) across most of range', async ({
     `DESTROY decimate sweep span ${sweep.span} (samples ${sweep.samples.slice(0, 5).join(', ')}…)`,
   ).toBeGreaterThanOrEqual(25);
 });
+
+test('LFO sweeps RINGBACK mix (0..1 linear) across most of range', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(
+    page,
+    [
+      { id: 'lfo', type: 'lfo',      position: { x: 100, y: 100 }, params: { rate: 4.0, shape: 0 } },
+      { id: 'rb',  type: 'ringback', position: { x: 500, y: 100 }, params: { mix: 0.5 } },
+    ],
+    [
+      { id: 'e1', from: { nodeId: 'lfo', portId: 'phase0' }, to: { nodeId: 'rb', portId: 'mix' }, sourceType: 'cv', targetType: 'cv' },
+    ],
+  );
+  await page.waitForTimeout(400);
+
+  const sweep = await sampleParamSweep(page, 'rb', 'mix', 16, 110);
+  // Mix 0..1, knob 0.5, halfSpan 0.5 → cv=±1 sweeps 0..1. 40% threshold = span ≥ 0.4.
+  expect(
+    sweep.span,
+    `RINGBACK mix sweep span ${sweep.span} (samples ${sweep.samples.slice(0, 5).join(', ')}…)`,
+  ).toBeGreaterThanOrEqual(0.4);
+});
