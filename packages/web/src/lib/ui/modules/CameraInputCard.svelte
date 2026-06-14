@@ -19,7 +19,9 @@
   //     "(saved camera not found)" and user picks again.
 
   import { onMount, onDestroy, untrack } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { useProvider } from '$lib/multiplayer/provider-context';
@@ -53,6 +55,17 @@
 
   const engineCtx = useEngine();
   const providerCtx = useProvider();
+
+  // ---- PatchPanel ports (NO raw side handles — the #767 yellow drill-down
+  //      standard; also gives the card its rear-view back panel). Port `id`s are
+  //      BYTE-IDENTICAL to the module def so the CV bridge + persisted edges
+  //      route unchanged; only the rendering moved into the panel. ----
+  const inputs: PortDescriptor[] = [
+    { id: 'gain', label: 'GAIN', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT', cable: 'video' },
+  ];
 
   let videoEl: HTMLVideoElement | null = $state(null);
   let stream: MediaStream | null = null;
@@ -409,12 +422,7 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="CAMERA" />
 
-  <Handle type="target" position={Position.Left} id="gain" style="top: 56px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 50px;">CV</span>
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="body">
     <label class="row">
       <span class="row-label">device</span>
@@ -536,6 +544,7 @@
       />
     </div>
   </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -571,18 +580,10 @@
     margin: 0 0 8px;
     letter-spacing: 0.05em;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
-
   .body {
-    margin-top: 22px;
+    /* Clear the PatchPanel's top-left/right trigger affordances (18px tall,
+       inset from the corners) — same top margin the swept video cards use. */
+    margin-top: 24px;
     padding: 0 12px;
     display: flex;
     flex-direction: column;
