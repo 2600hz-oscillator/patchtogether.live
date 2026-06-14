@@ -133,7 +133,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   stereovca: { size: '1u', hp: 1 }, // 156×180px
   swolevco: { size: '2u', hp: 2 }, // 262×360px
   symbiote: { size: '1u', hp: 3 }, // 199×440px
-  synesthesia: { size: '3u', hp: 3 }, // 419×460px
+  synesthesia: { size: '3u', hp: 2 }, // 540×360 — was 3hp, trimmed empty right margin
   tides2: { size: '2u', hp: 2 }, // 221×380px
   timelorde: { size: '3u', hp: 2 }, // 152×280px  [LOCKED]
   treeohvox: { size: '2u', hp: 2 }, // 240×340px
