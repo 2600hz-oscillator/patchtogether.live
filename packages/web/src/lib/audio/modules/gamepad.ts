@@ -866,21 +866,36 @@ export interface GamepadPreset {
  *  Each entry's `mapping` is applied via `applyMapping` on selection. */
 export const GAMEPAD_PRESETS: readonly GamepadPreset[] = [
   {
-    // TODO(user): the owner will fill in the real NXT Gladiator mapping in this
-    // PR. The value below is a VALID-but-PLACEHOLDER mapping — the DEFAULT
-    // bindings (every output → its standard-mapping control), no inverted axes,
-    // and no stick calibration — so selecting it is a safe no-op until the real
-    // bindings/invert/calibration are dropped in here.
+    // NXT Gladiator — the owner's calibrated mapping for the NXT Gladiator pad,
+    // captured via "Save mapping" on a real device (gamepad-mapping.json).
+    // Only the controls that DIFFER from the standard mapping are listed; every
+    // output not named here keeps its default standard-mapping binding (e.g.
+    // lx/ly stay axes 0/1, the face buttons stay their standard indices). The
+    // right stick is on axes 3/2 with Y inverted, and both sticks carry the
+    // owner's measured min/max + 0.1 deadzone calibration.
     name: 'NXT Gladiator',
     mapping: {
-      // Default standard-mapping bindings, spelled out as a plain GamepadMapping
-      // so the owner can edit individual entries in place. Equivalent to "no
-      // overrides" (applyMapping treats a binding equal to its default as a
-      // no-op), but explicit so the slot is obvious.
-      bindings: { ...DEFAULT_GAMEPAD_BINDINGS },
-      invert: {},
-      // leftStickCalibration / rightStickCalibration intentionally omitted
-      // (no calibration) — add them here when the real mapping is known.
+      bindings: {
+        rx: { kind: 'axis', index: 3 },
+        ry: { kind: 'axis', index: 2 },
+        x: { kind: 'button', index: 21 },
+        du: { kind: 'button', index: 10 },
+        dd: { kind: 'button', index: 12 },
+        dl: { kind: 'button', index: 13 },
+        dr: { kind: 'button', index: 11 },
+        rb: { kind: 'button', index: 19 },
+        lt: { kind: 'button', index: 25 },
+        rt: { kind: 'button', index: 23 },
+      },
+      invert: { ry: true },
+      leftStickCalibration: {
+        minX: -1,
+        maxX: 0.9672771692276001,
+        minY: -0.9960927963256836,
+        maxY: 0.8583638668060303,
+        deadzone: 0.1,
+      },
+      rightStickCalibration: { minX: -1, maxX: 1, minY: -1, maxY: 1, deadzone: 0.1 },
     },
   },
 ];
