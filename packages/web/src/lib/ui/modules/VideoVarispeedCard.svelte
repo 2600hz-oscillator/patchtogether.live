@@ -22,7 +22,9 @@
   // set changes) so the hot rAF loop never scans the patch.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -63,6 +65,25 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+
+  // ---- PatchPanel ports (NO raw side handles — the #767 yellow drill-down
+  //      standard; also gives the card its rear-view back panel). Port `id`s are
+  //      BYTE-IDENTICAL to the module def so the CV bridge + persisted edges
+  //      route unchanged; only the rendering moved into the panel. ----
+  const inputs: PortDescriptor[] = [
+    { id: 'cv_start', label: 'START', cable: 'gate' },
+    { id: 'cv_pause', label: 'PAUSE', cable: 'gate' },
+    { id: 'cv_reset', label: 'RESET', cable: 'gate' },
+    { id: 'cv_loop_toggle', label: 'LOOP', cable: 'gate' },
+    { id: 'speedCv', label: 'SPEED', cable: 'cv' },
+    { id: 'startCv', label: 'START CV', cable: 'cv' },
+    { id: 'endCv', label: 'END CV', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'video', label: 'VIDEO', cable: 'video' },
+    { id: 'audio_l', label: 'AUDIO L', cable: 'audio' },
+    { id: 'audio_r', label: 'AUDIO R', cable: 'audio' },
+  ];
 
   // ---- DOM refs + local state ----
   let videoEl: HTMLVideoElement | null = $state(null);
@@ -642,28 +663,7 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="VIDEOVARISPEED" />
 
-  <Handle type="target" position={Position.Left}  id="cv_start" style="top: 56px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 50px;">STRT</span>
-  <Handle type="target" position={Position.Left}  id="cv_pause" style="top: 84px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 78px;">PAUS</span>
-  <Handle type="target" position={Position.Left}  id="cv_reset" style="top: 112px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 106px;">RST</span>
-  <Handle type="target" position={Position.Left}  id="cv_loop_toggle" style="top: 140px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 134px;">LOOP</span>
-  <Handle type="target" position={Position.Left}  id="speedCv" style="top: 168px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 162px;">SPD</span>
-  <Handle type="target" position={Position.Left}  id="startCv" style="top: 196px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 190px;">S-CV</span>
-  <Handle type="target" position={Position.Left}  id="endCv" style="top: 224px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 218px;">E-CV</span>
-
-  <Handle type="source" position={Position.Right} id="video"   style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">VID</span>
-  <Handle type="source" position={Position.Right} id="audio_l" style="top: 84px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 78px;">A-L</span>
-  <Handle type="source" position={Position.Right} id="audio_r" style="top: 112px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 106px;">A-R</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="body">
     <div class="preview-wrap" data-testid="videovarispeed-preview">
       <!-- svelte-ignore a11y_media_has_caption -->
@@ -799,6 +799,7 @@
       </div>
     {/if}
   </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -841,16 +842,6 @@
     margin: 0 0 8px;
     letter-spacing: 0.05em;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.55rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
-
   .body {
     margin-top: 28px;
     padding: 0 12px;
