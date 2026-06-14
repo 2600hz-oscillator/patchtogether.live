@@ -1,10 +1,23 @@
 /*
   Cross-Origin-Opener-Policy: same-origin
-  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Embedder-Policy: credentialless
 
-# When COEP=require-corp is in effect on the page, every subresource
-# (including same-origin .wasm + .json + JS chunks) must declare a
-# Cross-Origin-Resource-Policy or the browser refuses to load it.
-# `same-site` is the safe default for our hashed assets.
+# COEP = `credentialless` (not `require-corp`). Both keep the page
+# cross-origin-ISOLATED so SharedArrayBuffer / Faust WASM threads work
+# (crossOriginIsolated === true under either), but `require-corp` BLOCKS every
+# cross-origin no-cors subresource that lacks a Cross-Origin-Resource-Policy
+# header, whereas `credentialless` loads such subresources without credentials
+# and does NOT require CORP. That is what lets ARCHIVIST actually PLAY
+# archive.org <video>/<audio> + load <img>: archive.org's CDN sends neither CORP
+# nor (reliably) CORS on the final hop, so under require-corp the media was
+# blocked outright (never reaching even the tainted-texture stage). A no-cors
+# media element is still opaque to the canvas under credentialless, so the
+# documented play-only / no-clean-video-texture limitation is unchanged.
+# Keep this in sync with packages/web/src/hooks.server.ts (dev) +
+# packages/web/vite.config.ts (vite dev/preview).
+
+# Same-origin subresources don't need CORP under credentialless (CORP only gates
+# cross-origin), but this stays as belt-and-suspenders for any UA that still
+# defaults same-origin embeds — harmless for hashed assets.
 /_app/immutable/*
   Cross-Origin-Resource-Policy: same-site

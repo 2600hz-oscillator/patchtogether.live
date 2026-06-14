@@ -53,13 +53,14 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   flipper: { size: '1u', hp: 1 }, // 90×176px
   fourplexer: { size: '1u', hp: 2 }, // 158×320px
   foxy: { size: '4u', hp: 4 }, // 575×720px
-  // NOTE: 12 user-resizable cards (clockedRunner, livecode, wavesculpt,
-  // b3ntb0x, backdraft, bentbox, monoglitch, reshaper, ruttetra, toybox,
-  // videobox, videoOut) are intentionally ABSENT from this map — they are sized
-  // by their own corner-resize (snapped to whole-u via card-resize.ts), not a
-  // fixed tier, so the rack CSS must NOT clamp them. They live in
-  // rack-sizing.test.ts DYNAMIC_SIZED. Their DEFAULT/MIN constants are rounded
-  // to 180-multiples so they still land on-grid out of the box.
+  // NOTE: user-resizable cards (clockedRunner, livecode, wavesculpt, b3ntb0x,
+  // bentbox, monoglitch, reshaper, ruttetra, toybox, videobox, videoOut,
+  // archivist) are intentionally ABSENT from this map — they are sized by their
+  // own corner-resize (snapped to whole-u via card-resize.ts), not a fixed
+  // tier, so the rack CSS must NOT clamp them. They live in rack-sizing.test.ts
+  // DYNAMIC_SIZED. Their DEFAULT/MIN constants are rounded to 180-multiples so
+  // they still land on-grid out of the box. (backdraft was promoted to a FIXED
+  // 3u/hp4 tier in #767 and now lives in this map, not the resizable set.)
   frogger: { size: '2u', hp: 2 }, // 380×260px
   gamepad: { size: '2u', hp: 2 }, // 267×280px
   gatemaiden: { size: '1u', hp: 1 }, // 199×200px

@@ -45,6 +45,9 @@
     validateBundle,
     BundleParseError,
     mergeMidiBindings,
+    resolveMidiDeviceId,
+    MIDI_DEVICE_NODE_TYPES,
+    type ConnectedMidiInput,
   } from '$lib/graph/performance-bundle';
   import {
     buildPerformanceZip,
@@ -75,6 +78,7 @@
     connect as connectMidiLearn,
   } from '$lib/midi/midi-learn.svelte';
   import { getMidiClockSource } from '$lib/midi/midi-clock-source';
+  import { encodeTapeBytes, decodeTapeBytes } from '$lib/audio/modules/twotracks';
 
   function persistenceLoad(env: unknown, ydocArg: typeof ydoc, patchArg: typeof patch) {
     // Validate via parseEnvelope when a raw object is passed; if already typed,
@@ -1191,6 +1195,34 @@
 
   let perfZipBusy = $state(false);
 
+  /** Dump every TWOTRACKS reel's recorded tape to out-of-band 'audio' media for
+   *  the .zip. The tape is worklet-owned PCM (never on node.data), so we ask the
+   *  engine handle to dump each reel, encode it to compact 16-bit PCM, and key it
+   *  `<nodeId>:<reel>` so the loader routes it back to the right reel. Reels with
+   *  no recording resolve null + are skipped. */
+  async function collectTwotracksTapes(): Promise<PerformanceMedia[]> {
+    const out: PerformanceMedia[] = [];
+    const e = engine;
+    if (!e) return out;
+    for (const [nid, n] of Object.entries(patch.nodes)) {
+      if (!n || n.type !== 'twotracks') continue;
+      const dump = e.read(n, 'dumpTapeAsync') as
+        | ((reel: 'a' | 'b') => Promise<{ bufL: Float32Array; bufR: Float32Array; bufLen: number } | null>)
+        | undefined;
+      if (typeof dump !== 'function') continue;
+      for (const reel of ['a', 'b'] as const) {
+        try {
+          const tape = await dump(reel);
+          if (!tape || tape.bufLen <= 0) continue;
+          const bytes = encodeTapeBytes(tape.bufL, tape.bufR, tape.bufLen);
+          if (bytes.length === 0) continue;
+          out.push({ nodeId: nid, handleId: `${nid}:${reel}`, role: 'audio', name: `twotracks-${reel}.pcm`, bytes });
+        } catch { /* skip a reel that can't be dumped */ }
+      }
+    }
+    return out;
+  }
+
   /** Build the portable performance .zip bytes for the current rack. Pure-ish:
    *  reads the live store + resolves loaded video bytes. Exposed for the e2e
    *  hook so the round-trip test can capture the bytes without a download. */
@@ -1244,6 +1276,9 @@
       name: r.name,
       bytes: r.bytes,
     }));
+    // TWOTRACKS reel tapes: worklet-owned PCM that can't ride the envelope.
+    // Dump each reel out-of-band as 'audio' media keyed `<nodeId>:<reel>`.
+    media.push(...(await collectTwotracksTapes()));
     return buildPerformanceZip({ bundle, media, savedAt: Date.now() });
   }
 
@@ -1280,11 +1315,13 @@
 
     await ensureEngine();
 
-    // Seed each out-of-band video's bytes into the IDB handle store under its
-    // handleId BEFORE applying the envelope, so each VIDEOBOX card mounting from
-    // the load finds a granted blob handle and auto-reloads (no re-pick).
+    // Seed each out-of-band VIDEO's bytes into the IDB handle store under its
+    // handleId BEFORE applying the envelope, so each VIDEOBOX / VIDEOVARISPEED
+    // card mounting from the load finds a granted blob handle and auto-reloads
+    // (no re-pick). AUDIO (TWOTRACKS tape) media is restored AFTER reconcile (it
+    // needs the live worklet) — see below.
     for (const m of parsed.media) {
-      if (!m.handleId) continue;
+      if (m.role !== 'video' || !m.handleId) continue;
       const blob = new Blob([m.bytes as unknown as BlobPart], { type: 'video/mp4' });
       await putVideoFileBlob(m.handleId, blob, m.name);
     }
@@ -1298,9 +1335,110 @@
 
     const result = persistenceLoad(bundle.patch, ydoc, patch);
     await reconciler?.reconcile();
-    trace(`loaded performance .zip (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges, ${parsed.media.length} video assets)`);
+    trace(`loaded performance .zip (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges, ${parsed.media.length} media assets)`);
     if (result.diagnostics.length > 0) {
       for (const d of result.diagnostics) console.warn(`[load-perf-zip] ${d.nodeId} (${d.type}): ${d.reason}`);
+    }
+
+    // Restore TWOTRACKS reel tapes (out-of-band 'audio' media): decode the
+    // 16-bit PCM + send it to each reel's worklet via the engine handle's
+    // `loadTape`. Done AFTER reconcile so the worklet exists. The reel stays
+    // idle on load (load-tape never auto-rolls).
+    await restoreTwotracksTapes(parsed.media);
+
+    // FIX 1: auto-bind MIDI on zip load. After the rack is materialized, each
+    // MIDI LANE / MIDICLOCK / MIDI-CV-BUDDY card mounts with its saved
+    // `lastDeviceId` already on node.data — but Web MIDI access is strictly
+    // on-demand (needs a user gesture), so without the manual per-card "Connect
+    // MIDI…" click no device is ever attached. THIS load call IS that gesture
+    // (the user clicked "Load performance"), so we request access ONCE here and
+    // auto-bind every saved MIDI module to its device (by saved id, falling back
+    // to NAME for cross-machine). No mappings → no prompt.
+    await autoBindMidiDevices(bundle.midiDevices);
+  }
+
+  /** Restore each TWOTRACKS reel tape from the perf-zip's out-of-band 'audio'
+   *  media. The handle's `loadTape` may not be ready the instant reconcile
+   *  resolves (the worklet module loads async), so retry briefly per asset. */
+  async function restoreTwotracksTapes(media: PerformanceMedia[]): Promise<void> {
+    const tapes = media.filter((m) => m.role === 'audio');
+    if (tapes.length === 0) return;
+    const e = engine;
+    if (!e) return;
+    for (const m of tapes) {
+      const node = patch.nodes[m.nodeId];
+      if (!node || node.type !== 'twotracks') continue;
+      const reel = m.handleId.endsWith(':b') ? 'b' : 'a';
+      const decoded = decodeTapeBytes(m.bytes);
+      if (decoded.bufLen <= 0) continue;
+      // Retry until the engine handle exposes loadTape (worklet ready), ~3s.
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const load = e.read(node, 'loadTape') as
+          | ((r: 'a' | 'b', bufL: Float32Array, bufR: Float32Array, bufLen: number) => void)
+          | undefined;
+        if (typeof load === 'function') {
+          load(reel, decoded.bufL, decoded.bufR, decoded.bufLen);
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+  }
+
+  /** Re-bind each saved MIDI module to its device after a performance load.
+   *  Requests MIDI access ONCE (the load click is the user gesture), then for
+   *  every MIDI LANE / MIDICLOCK / MIDI-CV-BUDDY node calls its card-api
+   *  `connect()` + `selectDevice(resolvedId)` — resolved id-first then by NAME.
+   *  Graceful: empty list → no prompt; access denied / unavailable → bail
+   *  quietly (the cards keep their saved selection for a later manual connect /
+   *  hot-plug); device absent → leave that module unbound with a clear trace. */
+  async function autoBindMidiDevices(
+    midiDevices: { nodeId: string; deviceName: string; deviceId?: string }[],
+  ): Promise<void> {
+    if (!midiDevices || midiDevices.length === 0) return; // no mappings → no prompt
+    // The list of currently-connected inputs (id + name) for resolution. This
+    // ALSO performs the one-time requestMIDIAccess (gated behind the load
+    // gesture). On denial / unsupported it returns [] and we bail.
+    let connected: ConnectedMidiInput[];
+    try {
+      const nav = navigator as unknown as {
+        requestMIDIAccess?: (o?: unknown) => Promise<{ inputs: Map<string, { name?: string | null }> }>;
+      };
+      if (typeof nav.requestMIDIAccess !== 'function') return; // Web MIDI unsupported
+      const access = await nav.requestMIDIAccess({ sysex: false });
+      connected = [...access.inputs].map(([id, inp]) => ({ id, name: inp.name ?? id }));
+    } catch {
+      // Permission denied / hardware error — don't hang; the cards keep their
+      // saved selection and the user can still click "Connect MIDI…" per card.
+      trace('auto-bind MIDI: access denied or unavailable — leaving modules unbound');
+      return;
+    }
+    const e = engine;
+    if (!e) return;
+    for (const dev of midiDevices) {
+      const node = patch.nodes[dev.nodeId];
+      if (!node || !(MIDI_DEVICE_NODE_TYPES as readonly string[]).includes(node.type)) continue;
+      const api = e.read(node, 'card-api') as
+        | { connect: () => Promise<boolean>; selectDevice: (id: string | null) => void }
+        | undefined;
+      if (!api || typeof api.connect !== 'function' || typeof api.selectDevice !== 'function') continue;
+      try {
+        // connect() resolves the singleton access + binds the saved id if it's
+        // present in the live inputs (its pickDefaultDevice prefers the saved
+        // selectedDeviceId). We additionally resolve id→name so a cross-machine
+        // load (regenerated ids) still binds, then selectDevice the resolved id.
+        await api.connect();
+        const resolved = resolveMidiDeviceId(dev, connected);
+        if (resolved) {
+          api.selectDevice(resolved);
+          trace(`auto-bound ${node.type} ${dev.nodeId} → "${dev.deviceName}"`);
+        } else {
+          trace(`auto-bind MIDI: device "${dev.deviceName}" absent — ${dev.nodeId} left unbound`);
+        }
+      } catch {
+        // A single card's connect can fail (denied / removed mid-load); skip it
+        // so one bad module doesn't abort the rest of the rack's re-bind.
+      }
     }
   }
 

@@ -70,6 +70,50 @@ export interface TwoTracksData {
 // synthetic audio — that's the code the worklet actually runs. This module only
 // owns wiring + the A/B gain law (used by the card).
 
+// ---------------------------------------------------------------------------
+// Tape persistence codec (pure) — perf-zip round-trip of recorded reel audio.
+// ---------------------------------------------------------------------------
+//
+// The reel ring buffers are worklet-owned Float32 (NOT on node.data — a
+// ~7.7 MB/reel typed array can't ride the Y.Doc envelope). For the portable
+// .zip we dump them, encode to compact 16-bit interleaved-stereo PCM (halves
+// the byte count), bundle the bytes out-of-band as an 'audio' media entry, and
+// on load decode + re-send via the worklet's `load-tape`. Pure functions so the
+// round-trip is unit-tested without a worklet.
+
+/** Encode a reel's L/R Float32 tape (the recorded [0,bufLen) portion) to 16-bit
+ *  interleaved-stereo PCM bytes for the .zip. Returns an empty array for an
+ *  empty take. */
+export function encodeTapeBytes(bufL: Float32Array, bufR: Float32Array, bufLen: number): Uint8Array {
+  const n = Math.max(0, Math.min(bufLen | 0, bufL.length, bufR.length));
+  if (n === 0) return new Uint8Array(0);
+  const out = new Uint8Array(n * 4); // 2 ch × 2 bytes
+  const view = new DataView(out.buffer);
+  let off = 0;
+  for (let i = 0; i < n; i++) {
+    const l = Math.max(-1, Math.min(1, bufL[i] ?? 0));
+    const r = Math.max(-1, Math.min(1, bufR[i] ?? 0));
+    view.setInt16(off, Math.round(l * 0x7fff), true); off += 2;
+    view.setInt16(off, Math.round(r * 0x7fff), true); off += 2;
+  }
+  return out;
+}
+
+/** Decode 16-bit interleaved-stereo PCM tape bytes back to parallel L/R Float32
+ *  buffers + the frame count, ready to re-send to the reel worklet. */
+export function decodeTapeBytes(bytes: Uint8Array): { bufL: Float32Array; bufR: Float32Array; bufLen: number } {
+  const frames = Math.floor(bytes.byteLength / 4);
+  const bufL = new Float32Array(frames);
+  const bufR = new Float32Array(frames);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let off = 0;
+  for (let i = 0; i < frames; i++) {
+    bufL[i] = view.getInt16(off, true) / 0x7fff; off += 2;
+    bufR[i] = view.getInt16(off, true) / 0x7fff; off += 2;
+  }
+  return { bufL, bufR, bufLen: frames };
+}
+
 /** Exported pure A/B gain law — used by the card and unit tests. */
 export function abGains(ab: number): { gainA: number; gainB: number } {
   const t = ab < 0 ? 0 : ab > 1 ? 1 : ab;
@@ -230,6 +274,14 @@ export const twotracksDef: AudioModuleDef = {
     let localPlayheadA = 0;
     let localPlayheadB = 0;
 
+    // Pending tape-dump requests, keyed by reel. The perf-zip exporter calls
+    // dumpTapeAsync(reel) to capture a reel's recorded PCM out-of-band (the tape
+    // is worklet-owned — it never lives on node.data, so this request/response
+    // over the port is the only way to reach it). The WAV-download path (the
+    // card's requestDumpTape) uses the OTHER 'tape-data' branch and is
+    // unaffected: we tag export dumps so only those resolve a pending promise.
+    const pendingTapeDumps = new Map<'a' | 'b', (r: { bufL: Float32Array; bufR: Float32Array; bufLen: number } | null) => void>();
+
     // Handle worklet → host messages (playhead + peaks; tape-data for WAV export)
     workletNode.port.onmessage = (e: MessageEvent) => {
       const msg = e.data as {
@@ -280,12 +332,24 @@ export const twotracksDef: AudioModuleDef = {
       } else if (msg.type === 'tape-data') {
         // Transferred buffers arrive as plain objects with array data after structured clone
         const raw = e.data as { type: string; reel: 'a' | 'b'; bufLen: number; bufL?: ArrayBuffer; bufR?: ArrayBuffer };
-        if (raw.bufL && raw.bufR) {
+        const reelId = raw.reel ?? 'a';
+        const pending = pendingTapeDumps.get(reelId);
+        if (pending) {
+          // Export-dump response: hand the raw PCM to the perf-zip exporter
+          // (NOT a WAV download). One-shot — clear the resolver.
+          pendingTapeDumps.delete(reelId);
+          pending(
+            raw.bufL && raw.bufR
+              ? { bufL: new Float32Array(raw.bufL), bufR: new Float32Array(raw.bufR), bufLen: raw.bufLen }
+              : null,
+          );
+        } else if (raw.bufL && raw.bufR) {
+          // Card's SAVE button: synthesize + download a WAV.
           downloadWav(
             new Float32Array(raw.bufL),
             new Float32Array(raw.bufR),
             raw.bufLen,
-            `twotracks-reel-${raw.reel}`,
+            `twotracks-reel-${reelId}`,
           );
         }
       }
@@ -412,6 +476,50 @@ export const twotracksDef: AudioModuleDef = {
         if (key === 'peaksB') return localPeaksB;
         if (key === 'playheadA') return localPlayheadA;
         if (key === 'playheadB') return localPlayheadB;
+        // Perf-zip persistence: dump a reel's recorded tape PCM (request →
+        // 'tape-data' response, resolved by the pendingTapeDumps map above).
+        // Resolves null on no recording / timeout, so the exporter just omits
+        // an empty reel. The tape is worklet-owned, so this port round-trip is
+        // the only way the pure exporter can reach the bytes.
+        if (key === 'dumpTapeAsync') {
+          return (reel: 'a' | 'b'): Promise<{ bufL: Float32Array; bufR: Float32Array; bufLen: number } | null> =>
+            new Promise((resolve) => {
+              let to: ReturnType<typeof setTimeout> | null = null;
+              // The resolver stashed in the map clears the timeout + resolves
+              // exactly once. The 'tape-data' handler calls this on response;
+              // the timeout calls it if the worklet never answers (empty reel
+              // → the worklet skips the response, so we resolve null).
+              const settle = (r: { bufL: Float32Array; bufR: Float32Array; bufLen: number } | null): void => {
+                if (to !== null) { clearTimeout(to); to = null; }
+                resolve(r);
+              };
+              pendingTapeDumps.set(reel, settle);
+              to = setTimeout(() => {
+                if (pendingTapeDumps.get(reel) === settle) pendingTapeDumps.delete(reel);
+                resolve(null);
+              }, 1500);
+              try {
+                workletNode.port.postMessage({ type: 'dump-tape', reel });
+              } catch {
+                if (pendingTapeDumps.get(reel) === settle) pendingTapeDumps.delete(reel);
+                settle(null);
+              }
+            });
+        }
+        // Perf-zip restore: refill a reel's ring buffer from persisted PCM.
+        if (key === 'loadTape') {
+          return (reel: 'a' | 'b', bufL: Float32Array, bufR: Float32Array, bufLen: number): void => {
+            try {
+              // Copy into fresh transferable buffers (the caller's may be reused).
+              const l = bufL.slice(0);
+              const r = bufR.slice(0);
+              workletNode.port.postMessage(
+                { type: 'load-tape', reel, bufLen, bufL: l.buffer, bufR: r.buffer },
+                [l.buffer, r.buffer],
+              );
+            } catch { /* node may be torn down */ }
+          };
+        }
         return undefined;
       },
 
