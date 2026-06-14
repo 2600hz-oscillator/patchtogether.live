@@ -122,6 +122,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   twotracks:      'tape loop — silent until record→play established; covered by twotracks.spec.ts + twotracks-transport/ab unit tests',
   videobox:       'needs uploaded video file to emit; covered by videobox.test.ts + videobox-sync.test.ts',
   videovarispeed: 'needs uploaded video file to emit; covered by videovarispeed-output.spec.ts',
+  archivist:      'idle until an archive.org item loads (external network); play_trigger only acts on a loaded item; covered by archivist-query.test.ts + archivist-scrub.test.ts + route-mocked archivist.spec.ts',
   picturebox:     'needs uploaded image file to emit; covered by picturebox-related specs',
   // TV LIBRARIAN needs a live tuned HLS stream to emit any output, which the
   // behavioral sweep can't establish (and we never hit live famelack/streams in

@@ -42,11 +42,14 @@ const NO_CARD_BY_DESIGN = new Set(['cadillac']);
 // DEFAULT/MIN size constants (in each *Card.svelte) are rounded to 180-multiples
 // so they still land on the rack grid out of the box.
 //   clockedRunner, livecode, wavesculpt, b3ntb0x, bentbox,
-//   monoglitch, reshaper, ruttetra, toybox, videobox, videoOut
+//   monoglitch, reshaper, ruttetra, toybox, videobox, videoOut, archivist
 // All are excluded from the size-coverage requirement + the rack CSS.
 // NOTE: backdraft was promoted to a FIXED 3u/hp4 tier (#767 — 2-col
 // preview-left/controls-right layout, no longer corner-resizable), so it
 // lives in RACK_SIZE_DEFAULTS and is NOT listed here.
+// archivist — same user-resizable family as videobox/videoOut: a corner-resize
+// handle (card-resize.ts) drives its size, with DEFAULT/MIN constants rounded to
+// 180-multiples (360/540/360/360), so a fixed tier would CAP its resize.
 const DYNAMIC_SIZED = new Set([
   'group', 'sticky', 'controlSurface', 'matrixMix',
   // user-resizable, sized by resize-snap-to-u not a fixed tier:
@@ -56,6 +59,7 @@ const DYNAMIC_SIZED = new Set([
   // corner-resizable like videobox (default 360×540, snaps to whole-u), so it
   // takes no fixed tier (forcing one would cap the resize / clip the list).
   'tvLibrarian',
+  'archivist',
 ]);
 
 interface SizedDef {

@@ -29,7 +29,7 @@ import { buildNodeTypes, conventionalCardName, type CardDefLike } from './module
 // fewer). When you add a NEW module, add its type id here too — that's the
 // one intentional touch (a single line in a test), NOT a shared registry edit.
 const EXPECTED_NODE_TYPES = [
-  '4plexvid', 'acidwarp', 'adsr', 'analogLogicMaths', 'analogVco', 'aquaTank',
+  '4plexvid', 'acidwarp', 'adsr', 'analogLogicMaths', 'analogVco', 'aquaTank', 'archivist',
   'atlantisCatalyst', 'attenumix', 'audioIn', 'audioOut', 'backdraft', 'bentbox',
   'bluebox', 'buggles', 'callsine', 'cameraInput', 'cartesian',
   'charlottesEchos', 'chowkick', 'chroma', 'chromakey', 'clockedRunner', 'clouds',

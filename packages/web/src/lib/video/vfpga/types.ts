@@ -103,6 +103,14 @@ export interface VfpgaPass {
    *  declares (so an effect can omit ones it ignores). Param/CV/gate uniforms
    *  PLUS the always-available `uTime` (seconds) / `uResolution` (vec2). */
   uniforms?: string[];
+  /** STATIC float uniform values the host writes verbatim each frame (the
+   *  "bitstream constants", P&R output, design §2 `config.consts` + a cell knob's
+   *  `defaultValue`). Keyed by the GLSL uniform NAME → its constant value. A knob
+   *  BOUND to a host p/cv/gate role (via `config.bind`) is NOT here — its uniform
+   *  is set live by the role loop instead. The host sets consts first, then the
+   *  role loop overrides by name, so a bound role always wins. A legacy
+   *  hand-authored `effect` omits this (it sets its own consts in-shader). */
+  consts?: Record<string, number>;
 }
 
 /** A register tile's ping-pong FBO PAIR (design §1.1, §4.3). P&R emits one per
