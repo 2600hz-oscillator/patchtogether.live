@@ -41,8 +41,9 @@ test.describe.configure({ mode: 'default' });
 
 test('landing-empty: public canvas with no modules', async ({ page }) => {
   skipIfNoBaseline(test, 'landing-empty');
-  // Pin the topbar chrome text (h1 / "+ Add module" / "Load example…"
-  // dropdown / Save·Load·Clear / skin switcher) to the bundled Inter face
+  // Pin the topbar chrome text (h1 / "+ Add module" / "Load example…" +
+  // "Raw JSON" dropdowns / Clear / Export·Load Perf / skin switcher) to the
+  // bundled Inter face
   // BEFORE first paint — same deterministic-font fix #598 applied to the
   // per-card sweep (vrt.spec.ts). Without it the topbar glyphs resolve via
   // the runner's fontconfig to whatever sans is installed, which is not

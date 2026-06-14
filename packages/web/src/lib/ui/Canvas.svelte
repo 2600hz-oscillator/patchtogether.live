@@ -34,6 +34,9 @@
     makePortableEnvelope,
     parseEnvelope,
     loadEnvelopeIntoStore,
+    downloadEnvelope,
+    pickAndLoadEnvelope,
+    DEFAULT_FILENAME,
     EnvelopeParseError,
     readVideoAspectFromDoc,
     writeVideoAspectToDoc,
@@ -1105,6 +1108,78 @@
     // update, and SvelteFlow now consumes a one-way `nodes` prop so it
     // can't stomp the assignment.
     trace('cleared patch');
+  }
+
+  // ---------------- Raw JSON export / import ----------------
+  //
+  // The lightweight sibling of the portable .zip flow: download / load JUST the
+  // patch ENVELOPE (graph + positions + params + INLINE assets the envelope
+  // already carries — PICTUREBOX images, SAMSLOOP samples, CV routes,
+  // control-surface bindings, module names). NO out-of-band media (VIDEOBOX
+  // bytes, TWOTRACKS tape) and NO MIDI/gamepad maps — that's what the .zip is
+  // for. This restores the convenience the old topbar "Save"/"Load" JSON
+  // buttons gave (removed in #771); it reuses the canonical
+  // makeEnvelope/downloadEnvelope + parseEnvelope/pickAndLoadEnvelope helpers —
+  // the SAME serializer the .zip + persistence paths use. (The deliberately
+  // deleted browser-localStorage "Save/Load Local Performance" feature is NOT
+  // reintroduced — this is file export/import only.)
+
+  /** "Export JSON (only)" — download the current patch as the JSON envelope
+   *  ONLY (no media, no zip). Same envelope the old "Save" button produced. */
+  function exportPatchJson() {
+    error = null;
+    try {
+      const env = makeEnvelope(ydoc);
+      downloadEnvelope(env, DEFAULT_FILENAME);
+      trace(
+        `exported patch JSON (${Object.keys(patch.nodes).length} nodes, ${Object.keys(patch.edges).length} edges)`,
+      );
+    } catch (e) {
+      error = `Export JSON failed: ${e instanceof Error ? e.message : String(e)}`;
+      trace(`export JSON failed: ${String(e)}`);
+    }
+  }
+
+  /** "Import JSON" — file-pick a `.json` envelope and load it into the live
+   *  rack. Bootstraps the engine + reconciler from inside this click handler
+   *  (the user gesture) so the AudioContext resumes and a reconciler exists to
+   *  materialize the loaded nodes — mirrors loadExample()'s shape, identical to
+   *  the old "Load" button. */
+  async function importPatchJson() {
+    error = null;
+    try {
+      await ensureEngine();
+      const result = await pickAndLoadEnvelope(ydoc, patch);
+      if (!result) {
+        trace('import JSON cancelled');
+        return;
+      }
+      await reconciler?.reconcile();
+      trace(`imported patch JSON (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
+      if (result.diagnostics.length > 0) {
+        for (const d of result.diagnostics) {
+          console.warn(`[import-json] ${d.nodeId} (${d.type}): ${d.reason}`);
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof EnvelopeParseError ? e.message : (e instanceof Error ? e.message : String(e));
+      error = `Import JSON failed: ${msg}`;
+      trace(`import JSON failed: ${msg}`);
+    }
+  }
+
+  /** Action-menu dispatcher for the "Raw JSON" `<select>` (top-RIGHT of the
+   *  topbar). Like the "Load example…" menu it's an ACTION menu, so the bound
+   *  value resets to the placeholder after each dispatch — letting the user
+   *  re-pick the same action. */
+  type RawJsonKey = 'export-json' | 'import-json';
+  let rawJsonChoice = $state('');
+  async function onRawJsonChosen(key: RawJsonKey) {
+    switch (key) {
+      case 'export-json': exportPatchJson(); break;
+      case 'import-json': await importPatchJson(); break;
+    }
+    rawJsonChoice = '';
   }
 
   // ---------------- Performance device-resolution helpers ----------------
@@ -4526,6 +4601,24 @@
         data-testid="load-perf-zip-btn"
         title="Load a portable performance .zip into a fresh rack — restores the patch + ALL embedded media + mappings on any machine (no re-pick needed)."
       >Load Perf (.zip)</button>
+      <!-- "Raw JSON" — lightweight envelope-only export/import (no media/zip).
+           ACTION menu (like "Load example…"): each option fires its handler,
+           then onRawJsonChosen() resets the value to the placeholder so the
+           same action can be re-picked. Restores the raw-JSON convenience the
+           old Save/Load buttons gave (removed in #771). Sits in the top-RIGHT
+           actions cluster, clear of the top-LEFT preset slots. -->
+      <select
+        class="raw-json"
+        data-testid="raw-json-select"
+        aria-label="Raw JSON export / import"
+        bind:value={rawJsonChoice}
+        onchange={(e) => onRawJsonChosen(e.currentTarget.value as RawJsonKey)}
+        title="Export the current patch as a raw JSON envelope (graph only, no media), or import one."
+      >
+        <option value="" disabled selected>Raw JSON</option>
+        <option value="export-json">Export JSON (only)</option>
+        <option value="import-json">Import JSON</option>
+      </select>
       <AspectToggle />
       <SkinSwitcher />
       <!-- Electra One on EVERY rack (incl. the anonymous `/` scratch canvas) —
@@ -4582,22 +4675,26 @@
     >
       <!-- Base canvas: the fine 16px dot field (legacy look, sets the bg fill). -->
       <Background id="fine" size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
-      <!-- Virtual-rack grid (Phase 2): a RING overlay aligned to the 180px rack
-           unit (--rack-unit) in BOTH axes, so it lines up with the 1u×1u tile
-           cards snap to. Pans/zooms WITH the canvas (it's a <Background>). Drawn
-           as a RING, not a filled dot: `size={15}` → DotPattern circle radius
-           7.5, and `.rack-ring` (global.css) paints it `fill:none` + a 5px
-           stroke → the visible ring spans r5..r10 = 20px outer Ø with a 10px
-           uncoloured hole. Colour is --rack-grid-color (theme-aware
-           --bg-grid-dot), so it follows the active skin (e.g. MATRIXCOWBOY →
-           phosphor green). No bgColor → transparent, layering over the fine
-           field rather than repainting it. -->
-      <Background
-        id="rack"
-        gap={180}
-        size={15}
-        patternClass="rack-ring"
-      />
+      <!-- Virtual-rack grid (Phase 2): a true RING overlay aligned to the 180px
+           rack unit (--rack-unit) in BOTH axes, so it lines up with the 1u×1u
+           tile cards snap to. Pans/zooms WITH the canvas (each is a
+           <Background>).
+
+           Built as an ANNULUS from two FILLED dot layers (NOT a stroked
+           circle): SvelteFlow's DotPattern anchors the <circle> at the
+           pattern-cell origin, and STROKING it clips at the cell edges → warped
+           flat-sided "rounded squares". FILLED dots tile cleanly. So:
+             - ring layer  — filled dot, 20px outer Ø, --rack-grid-color
+               (theme-aware --bg-grid-dot; follows the active skin, e.g.
+               MATRIXCOWBOY → phosphor green).
+             - hole layer  — filled dot, 10px Ø, painted the canvas background
+               (--bg) and drawn ON TOP to punch the centre out → a clean 20px/10px
+               ring at every 180px rack intersection.
+           Both DotPattern circles centre on the SAME pattern origin (cx=cy=r,
+           then -r offset), so the 10px hole sits dead-centre on the 20px ring
+           regardless of size → concentric annulus. -->
+      <Background id="rack-ring" gap={180} size={20} patternColor="var(--rack-grid-color)" />
+      <Background id="rack-hole" gap={180} size={10} patternColor="var(--bg)" />
       <Controls>
         {#snippet before()}
           <!-- Flip rack (rear view): flips every card over its own Y axis in
@@ -4947,6 +5044,23 @@
   /* The dropdown's expanded options render in the OS-native menu, which
      ignores the dark control colors above; force readable contrast. */
   .topbar select.load-example option {
+    background: #2a2f3a;
+    color: var(--text);
+  }
+  /* "Raw JSON" dropdown — neutral utility control (matches .topbar button,
+     not the accent .load-example): it's a convenience export/import, not a
+     curated-demo loader. */
+  .topbar select.raw-json {
+    background: #2a2f3a;
+    color: var(--text);
+    border: 1px solid #404652;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .topbar select.raw-json option {
     background: #2a2f3a;
     color: var(--text);
   }
