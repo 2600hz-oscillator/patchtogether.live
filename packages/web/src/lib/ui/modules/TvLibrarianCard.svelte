@@ -229,6 +229,13 @@
     streamState = 'loading';
     getExtras()?.setStreamOnline(false);
     getExtras()?.unwireAudio();
+    // Re-mute for THIS stream's autoplay attempt. The programmatic play() below
+    // (on channel select / remote tune — no user gesture) is only allowed on a
+    // muted element; ensureAudioWired() un-mutes again once the audio is routed
+    // into Web Audio (see the comment there). On a channel SWAP the previous
+    // stream left the element un-muted, so without this the new play() would be
+    // autoplay-blocked.
+    if (videoEl) videoEl.muted = true;
 
     const onPlaying = (): void => {
       streamState = 'playing';
@@ -273,7 +280,22 @@
     if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
     const extras = getExtras();
     extras?.wireAudio();
-    if (extras?.isAudioWired()) return;
+    if (extras?.isAudioWired()) {
+      // CRITICAL: the <video> is created `muted` so the programmatic play()
+      // satisfies the autoplay policy (an UNmuted auto-play() without a user
+      // gesture is rejected → stream never starts). But a MUTED media element
+      // feeds SILENCE into its MediaElementAudioSourceNode — the mute gates the
+      // audio AT THE SOURCE, upstream of the Web Audio tap — so audio_l/audio_r
+      // would carry zero even with the splitter correctly wired. Now that
+      // wireAudio() has succeeded, createMediaElementSource has redirected the
+      // element's audio INTO the Web Audio graph (its native speaker output is
+      // disconnected), so un-muting un-gates the tap WITHOUT playing through the
+      // speaker. This is the exact `videoEl.muted = false` step VIDEOBOX does
+      // after load — TV LIBRARIAN was missing it, which is why the tuned
+      // stream's audio never reached the outputs. (#tv-librarian-audio)
+      if (videoEl) videoEl.muted = false;
+      return;
+    }
     if (attempt >= 50) return;
     audioWireTimer = setTimeout(() => ensureAudioWired(attempt + 1), 100);
   }
