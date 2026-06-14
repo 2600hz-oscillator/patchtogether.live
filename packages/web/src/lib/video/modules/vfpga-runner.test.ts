@@ -204,3 +204,38 @@ describe('vfpgaRunnerDef.factory — preset + snapshot + outputs', () => {
     expect(h.read?.('snapshot')).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// P3 composite-era bent VFPGAs — hot-swap + draw through the factory (fake GL).
+// Verifies the new const/bind plumbing + the framestore-howl register swap drive
+// the GL pipeline without crashing (the actual bent pixels are the e2e's job).
+// ---------------------------------------------------------------------------
+
+describe('vfpgaRunnerDef.factory — P3 bent VFPGAs hot-swap + draw', () => {
+  for (const id of ['sync-bender', 'chroma-rot', 'framestore-howl', 'databend-cvbs']) {
+    it(`loads ${id} via node.data and draws repeatedly with a valid vout1`, () => {
+      const h = spawn({ vfpga: id });
+      expect(h.read?.('vfpga')).toBe(id);
+      // Drive a CV + a gate so the role/seed/feedback uniform paths execute.
+      h.setParam('cv1_val', 0.7);
+      h.setParam('g1_evt', 1);
+      for (let i = 0; i < 4; i++) h.surface.draw(makeFrame());
+      h.setParam('g1_evt', 0);
+      h.surface.draw(makeFrame());
+      // Single-output bent specs: vout1 resolves, vout2 is null.
+      expect(h.read?.('outputTexture:vout1')).toBeTruthy();
+      expect(h.read?.('outputTexture:vout2')).toBeNull();
+    });
+  }
+
+  it('framestore-howl allocates the register pair, draws (swaps), and disposes cleanly', () => {
+    // The feedback flagship's frame-store is a register ping-pong pair: build →
+    // draw (which runs the end-of-frame swapRegisters) → dispose, all without
+    // throwing. This exercises the no-leak path (fixed FBOs swapped in place, then
+    // freed on dispose) the leak-audit covers.
+    const h = spawn({ vfpga: 'framestore-howl' });
+    for (let i = 0; i < 3; i++) h.surface.draw(makeFrame());
+    expect(h.read?.('outputTexture:vout1')).toBeTruthy();
+    expect(() => h.dispose?.()).not.toThrow();
+  });
+});
