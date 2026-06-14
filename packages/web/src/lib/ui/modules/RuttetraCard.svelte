@@ -10,8 +10,10 @@
   // "Advanced" disclosure for xFreq/yFreq/xPhase/yPhase (matches p10).
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
+  import { useStore, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -37,6 +39,22 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+
+  // 1 video input (z) + 7 cv inputs. Port id MUST match param id for the CV
+  // bridge.
+  const inputs: PortDescriptor[] = [
+    { id: 'z',         label: 'Z',  cable: 'video' },
+    { id: 'xShape',    label: 'XS', cable: 'cv' },
+    { id: 'yShape',    label: 'YS', cable: 'cv' },
+    { id: 'xDisp',     label: 'XD', cable: 'cv' },
+    { id: 'yDisp',     label: 'YD', cable: 'cv' },
+    { id: 'intensity', label: 'I',  cable: 'cv' },
+    { id: 'xFreq',     label: 'XF', cable: 'cv' },
+    { id: 'yFreq',     label: 'YF', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', cable: 'video' },
+  ];
 
   // XYZSettingsSheet.shapeName — the morph label shown under each shape slider.
   function shapeName(v: number): string {
@@ -202,27 +220,6 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="RUTTETRA" />
 
-  <!-- 1 video input (z) + 7 cv inputs -->
-  <Handle type="target" position={Position.Left} id="z"         style="top: 56px;  --handle-color: var(--cable-video);" />
-  {#if !hideControls}<span class="port-label left" style="top: 50px;">Z</span>{/if}
-  <Handle type="target" position={Position.Left} id="xShape"    style="top: 92px;  --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 86px;">XS</span>{/if}
-  <Handle type="target" position={Position.Left} id="yShape"    style="top: 120px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 114px;">YS</span>{/if}
-  <Handle type="target" position={Position.Left} id="xDisp"     style="top: 148px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 142px;">XD</span>{/if}
-  <Handle type="target" position={Position.Left} id="yDisp"     style="top: 176px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 170px;">YD</span>{/if}
-  <Handle type="target" position={Position.Left} id="intensity" style="top: 204px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 198px;">I</span>{/if}
-  <Handle type="target" position={Position.Left} id="xFreq"     style="top: 232px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 226px;">XF</span>{/if}
-  <Handle type="target" position={Position.Left} id="yFreq"     style="top: 260px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 254px;">YF</span>{/if}
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  {#if !hideControls}<span class="port-label right" style="top: 50px;">OUT</span>{/if}
-
   <button
     type="button"
     class="hide-toggle nodrag"
@@ -232,6 +229,7 @@
     onclick={toggleHideControls}
   >{hideControls ? '+' : '–'}</button>
 
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   {#if hideControls}
     <div class="canvas-wrap canvas-wrap-resizable" style="width: {innerWidth}px; height: {innerHeight}px;">
       <canvas
@@ -295,6 +293,7 @@
       </details>
     </div>
   {/if}
+  </PatchPanel>
 </div>
 
 <style>
@@ -341,17 +340,8 @@
     margin: 0 0 8px;
     letter-spacing: 0.05em;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .canvas-wrap {
-    margin: 12px 18px 8px 40px;
+    margin: 12px 18px 8px;
     border: 1px solid var(--cable-video);
     border-radius: 2px;
     overflow: hidden;
@@ -421,7 +411,8 @@
   .hide-toggle {
     position: absolute;
     top: 4px;
-    right: 6px;
+    /* Sit left of the PatchPanel right-trigger affordance. */
+    right: 26px;
     width: 16px;
     height: 16px;
     padding: 0;

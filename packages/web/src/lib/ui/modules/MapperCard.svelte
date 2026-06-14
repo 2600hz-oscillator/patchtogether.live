@@ -7,8 +7,10 @@
   // (OUT). One THRESHOLD knob with a matching per-param CV input. Mirrors
   // the EdgesCard / LumakeyCard processor-card layout (handles on the
   // left, OUT on the right, fader grid below).
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { mapperDef } from '$lib/video/modules/mapper';
   import type { ModuleNode } from '$lib/graph/types';
@@ -27,33 +29,34 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'video',     label: 'VID', cable: 'video' },
+    { id: 'key',       label: 'KEY', cable: 'mono-video' },
+    // CV input — id MUST match the param id (cross-domain CV bridge routes
+    // cv onto setParam(portId)).
+    { id: 'threshold', label: 'THRESH', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', cable: 'video' },
+  ];
 </script>
 
 <div class="card video" data-testid="mapper-card">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="MAPPER" />
 
-  <Handle type="target" position={Position.Left} id="video"     style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 50px;">VID</span>
-  <Handle type="target" position={Position.Left} id="key"       style="top: 92px;  --handle-color: var(--cable-mono-video);" />
-  <span class="port-label left" style="top: 86px;">KEY</span>
-  <!-- CV input — one per modulatable param. handle id MUST match the param
-       id (the cross-domain CV bridge routes cv onto setParam(portId)). -->
-  <Handle type="target" position={Position.Left} id="threshold" style="top: 124px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 118px;">T</span>
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
-  <div class="fader-grid">
-    <Fader value={p('threshold')} min={0} max={1} defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
-  </div>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="fader-grid">
+      <Fader value={p('threshold')} min={0} max={1} defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
   .card {
     width: 200px;
-    min-height: 250px;
+    min-height: 180px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -73,12 +76,8 @@
      video producer at a glance. */
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
   .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .fader-grid {
-    /* Clear the lowest CV-input handle (top: 124px). */
-    margin-top: 80px;
+    margin-top: 16px;
     padding: 0 12px;
     display: grid;
     grid-template-columns: 1fr;

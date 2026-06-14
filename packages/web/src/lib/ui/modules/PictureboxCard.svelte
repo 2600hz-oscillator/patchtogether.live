@@ -8,8 +8,10 @@
   // Multiplayer: image content NOW syncs across rack-mates. See
   // .myrobots/plans/picturebox-multiplayer-sync.md for the sizing,
   // codec, and limit decisions.
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { pictureboxDef, type PictureboxHandleExtras } from '$lib/video/modules/picturebox';
@@ -186,6 +188,13 @@
       }
     }
   }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'gain', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', cable: 'image' },
+  ];
 </script>
 
 <div
@@ -196,12 +205,7 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="PICTUREBOX" />
 
-  <Handle type="target" position={Position.Left} id="gain" style="top: 56px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 50px;">G</span>
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-image);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="picker">
     <label class="pick-btn">
       <input type="file" accept="image/*" onchange={onFileChange} data-testid="picturebox-file-input" />
@@ -223,6 +227,7 @@
   <div class="fader-grid">
     <Fader value={p('gain')} min={0} max={2} defaultValue={pictureboxDef.params.find((x) => x.id === 'gain')!.defaultValue} label="Gain" curve="linear" onchange={setParam('gain')} moduleId={id} paramId="gain" />
   </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -246,11 +251,8 @@
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-image); }
   .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .picker {
-    margin: 28px 16px 8px;
+    margin: 18px 16px 8px;
     text-align: center;
   }
   .pick-btn {

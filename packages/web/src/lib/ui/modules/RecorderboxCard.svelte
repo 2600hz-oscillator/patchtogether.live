@@ -20,7 +20,9 @@
   // reassign the data object.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import type { VideoEngine } from '$lib/video/engine';
@@ -333,11 +335,14 @@
     return `${mm}:${ss}`;
   }
 
-  // Handle layout.
-  const INPUTS = [
-    { id: 'in', y: 56, label: 'IN', color: 'var(--cable-video)' },
-    { id: 'audio_l', y: 92, label: 'A·L', color: 'var(--cable-audio)' },
-    { id: 'audio_r', y: 124, label: 'A·R', color: 'var(--cable-audio)' },
+  // Port layout.
+  const inputs: PortDescriptor[] = [
+    { id: 'in',      label: 'IN',  cable: 'video' },
+    { id: 'audio_l', label: 'A·L', cable: 'audio' },
+    { id: 'audio_r', label: 'A·R', cable: 'audio' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', cable: 'video' },
   ];
 </script>
 
@@ -345,13 +350,7 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="RECORDERBOX" />
 
-  {#each INPUTS as h}
-    <Handle type="target" position={Position.Left} id={h.id} style={`top: ${h.y}px; --handle-color: ${h.color};`} />
-    <span class="port-label left" style={`top: ${h.y - 6}px;`}>{h.label}</span>
-  {/each}
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="preview-wrap">
     <canvas
       bind:this={previewEl}
@@ -417,6 +416,7 @@
       {/each}
     </div>
   {/if}
+  </PatchPanel>
 </div>
 
 <style>
@@ -442,13 +442,7 @@
     position: absolute; top: 0; left: 0; right: 0; height: 2px;
     border-radius: 2px 2px 0 0; background: var(--cable-video);
   }
-  .port-label {
-    position: absolute; font-size: 0.6rem; color: var(--text-dim);
-    pointer-events: none; font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
-  .preview-wrap { position: relative; margin: 30px auto 8px; width: 200px; height: 150px; }
+  .preview-wrap { position: relative; margin: 18px auto 8px; width: 200px; height: 150px; }
   .preview-wrap canvas {
     background: #0a0406; border: 1px solid var(--cable-video);
     border-radius: 1px; image-rendering: pixelated;

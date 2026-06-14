@@ -13,8 +13,10 @@
   //     0..1 and the mapping is log).
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
   import { mandleblotDef, jsZoomFromKnob } from '$lib/video/modules/mandleblot';
@@ -121,23 +123,22 @@
     if (z < 1_000_000) return `${(z / 1000).toFixed(z < 10000 ? 1 : 0)}k×`;
     return `${(z / 1_000_000).toFixed(1)}M×`;
   }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'zoom_cv', label: 'ZOOM', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'mono_out',  label: 'MONO',  cable: 'mono-video' },
+    { id: 'color_out', label: 'COLOR', cable: 'video' },
+  ];
 </script>
 
 <div class="mod-card mandleblot-card" data-testid="mandleblot-card" data-node-id={id}>
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="MANDLEBLOT" />
 
-  <!-- Patch panel: 1 CV input (zoom_cv) on the left, 2 video outputs
-       (MONO, COLOR) on the right. The right-side handle colours
-       distinguish mono-video from colour-video (CSS vars). -->
-  <Handle type="target" position={Position.Left}  id="zoom_cv" style="top: 56px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left"  style="top: 50px;">ZOOM</span>
-
-  <Handle type="source" position={Position.Right} id="mono_out"  style="top: 56px; --handle-color: var(--cable-mono-video, var(--cable-video));" />
-  <span class="port-label right" style="top: 50px;">MONO</span>
-  <Handle type="source" position={Position.Right} id="color_out" style="top: 88px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 82px;">COLOR</span>
-
+  <!-- Patch panel: 1 CV input (zoom_cv), 2 video outputs (MONO, COLOR). -->
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="screen-wrap">
     <canvas
       bind:this={canvasEl}
@@ -189,6 +190,7 @@
       onchange={set('center_y')} moduleId={id} paramId="center_y"
     />
   </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -216,15 +218,6 @@
     border-radius: 2px 2px 0 0;
     background: var(--cable-video);
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left  { left: 14px; }
-  .port-label.right { right: 14px; }
   .screen-wrap {
     margin: 12px auto 8px;
     width: 200px;

@@ -13,8 +13,9 @@
   // direction (CCW / · / CW).
 
   import type { NodeProps } from '@xyflow/svelte';
-  import { Handle, Position } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { outlinesDef, OUTLINES_GATE_PORT_ID, OUTLINES_COLLIDE_PORT_ID } from '$lib/video/modules/outlines';
@@ -77,42 +78,34 @@
       (e) => e?.target?.nodeId === id && e?.target?.portId === OUTLINES_GATE_PORT_ID,
     ),
   );
+
+  // Left rail: gate spawn + collide gate + D/V/SPD/DECAY/SHAPE/ROT CV + video.
+  // Both gate/collide are declared `type: 'gate'` on the def.
+  const inputs: PortDescriptor[] = [
+    { id: OUTLINES_GATE_PORT_ID,    label: 'GATE', cable: 'gate' },
+    { id: OUTLINES_COLLIDE_PORT_ID, label: 'COL',  cable: 'gate' },
+    { id: 'd',        label: 'D',   cable: 'cv' },
+    { id: 'v',        label: 'V',   cable: 'cv' },
+    { id: 'spd',      label: 'SPD', cable: 'cv' },
+    { id: 'decay',    label: 'DEC', cable: 'cv' },
+    { id: 'shape',    label: 'SHP', cable: 'cv' },
+    { id: 'rotation', label: 'ROT', cable: 'cv' },
+    { id: 'video',    label: 'VID', cable: 'video' },
+  ];
+  // Right rail: the four outputs.
+  const outputs: PortDescriptor[] = [
+    { id: 'overlap', label: 'OVR', cable: 'mono-video' },
+    { id: 'contour', label: 'CNT', cable: 'mono-video' },
+    { id: 'combine', label: 'CMB', cable: 'video' },
+    { id: 'mapped',  label: 'MAP', cable: 'video' },
+  ];
 </script>
 
 <div class="mod-card outlines-card" data-testid="outlines-card">
   <div class="stripe" style="background: var(--cable-video);"></div>
   <ModuleTitle {id} {data} defaultLabel="outlines" />
 
-  <!-- Left rail: gate spawn + collide gate + D/V/SPD/DECAY/SHAPE/ROT CV + video input. -->
-  <Handle type="target" position={Position.Left} id={OUTLINES_GATE_PORT_ID} style="top: 56px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 50px;">GATE</span>
-  <Handle type="target" position={Position.Left} id={OUTLINES_COLLIDE_PORT_ID} style="top: 84px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 78px;">COL</span>
-  <Handle type="target" position={Position.Left} id="d"   style="top: 112px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 106px;">D</span>
-  <Handle type="target" position={Position.Left} id="v"   style="top: 140px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 134px;">V</span>
-  <Handle type="target" position={Position.Left} id="spd" style="top: 168px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 162px;">SPD</span>
-  <Handle type="target" position={Position.Left} id="decay" style="top: 196px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 190px;">DEC</span>
-  <Handle type="target" position={Position.Left} id="shape" style="top: 224px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 218px;">SHP</span>
-  <Handle type="target" position={Position.Left} id="rotation" style="top: 252px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 246px;">ROT</span>
-  <Handle type="target" position={Position.Left} id="video" style="top: 280px; --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 274px;">VID</span>
-
-  <!-- Right rail: the four outputs. -->
-  <Handle type="source" position={Position.Right} id="overlap" style="top: 56px;  --handle-color: var(--cable-mono-video);" />
-  <span class="port-label right" style="top: 50px;">OVR</span>
-  <Handle type="source" position={Position.Right} id="contour" style="top: 88px;  --handle-color: var(--cable-mono-video);" />
-  <span class="port-label right" style="top: 82px;">CNT</span>
-  <Handle type="source" position={Position.Right} id="combine" style="top: 120px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 114px;">CMB</span>
-  <Handle type="source" position={Position.Right} id="mapped"  style="top: 152px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 146px;">MAP</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="screen-wrap">
     {#if gatePatched}
       <span class="gated-badge" data-testid="outlines-gated-badge">[GATED]</span>
@@ -137,12 +130,13 @@
     </div>
     <Knob value={paramVal('rate')}  min={0} max={1} defaultValue={defaultFor('rate')}  label="RATE" curve="linear" onchange={set('rate')}  moduleId={id} paramId="rate" />
   </div>
+  </PatchPanel>
 </div>
 
 <style>
   .mod-card {
     width: 260px;
-    min-height: 420px;
+    min-height: 360px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -158,11 +152,8 @@
     box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .screen-wrap {
-    margin: 28px auto 12px;
+    margin: 16px auto 12px;
     width: 168px;
     height: 168px;
     border: 1px solid #000;
