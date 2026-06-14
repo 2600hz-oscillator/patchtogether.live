@@ -105,6 +105,21 @@ export interface VfpgaPass {
   uniforms?: string[];
 }
 
+/** A register tile's ping-pong FBO PAIR (design §1.1, §4.3). P&R emits one per
+ *  register tile: `front` is the FBO a register pass WRITES this frame; `back` is
+ *  the FBO a `<regId>:prev` net READS (last frame). After the frame's passes
+ *  draw, the host SWAPS the two FBOs' textures — the just-written front becomes
+ *  next frame's `:prev` back (the clock edge). Only present on a P&R'd
+ *  (fabric-described) effect; a legacy hand-authored `effect` omits it → no swap. */
+export interface VfpgaRegisterPair {
+  /** The reg tile id (diagnostics / stable order). */
+  id: string;
+  /** FBO id the register WRITES this frame (the front / this-frame buffer). */
+  front: string;
+  /** FBO id a `:prev` net READS (the back / last-frame buffer). */
+  back: string;
+}
+
 export interface VfpgaEffect {
   /** Ordered render passes (producers first; the LAST pass writing `output`
    *  feeds `vout1`). */
@@ -115,6 +130,9 @@ export interface VfpgaEffect {
    *  and is the canonical surface (downstream samples `surface.texture`).
    *  `vout2` (optional) is exposed via `read('outputTexture:vout2')`. */
   outputs: { vout1: string; vout2?: string };
+  /** Register ping-pong pairs to SWAP at end of frame (P&R output only). A
+   *  legacy effect with no registers omits this. */
+  registers?: VfpgaRegisterPair[];
 }
 
 // ----------------------------------------------------------------------
