@@ -5,8 +5,10 @@
   // the H/V ramps, Z displacement, line count, spacing, and color tint.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
+  import { useStore, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -29,6 +31,18 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+
+  // Video input + 3 CV inputs. Port id MUST match param id for the CV bridge
+  // (PatchEngine routes audio cv → setParam(portId)).
+  const inputs: PortDescriptor[] = [
+    { id: 'in',        label: 'VIDEO', cable: 'video' },
+    { id: 'hRamp',     label: 'H',     cable: 'cv' },
+    { id: 'vRamp',     label: 'V',     cable: 'cv' },
+    { id: 'intensity', label: 'Z',     cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', cable: 'video' },
+  ];
 
   // Engine render resolution — matches VIDEO_RES in
   // packages/web/src/lib/video/engine.ts.
@@ -188,20 +202,6 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="MONOGLITCH" />
 
-  <!-- Video input + 3 CV inputs. Port id MUST match param id for the CV
-       bridge (PatchEngine routes audio cv → setParam(portId)). -->
-  <Handle type="target" position={Position.Left} id="in"        style="top: 56px;  --handle-color: var(--cable-video);" />
-  {#if !hideControls}<span class="port-label left" style="top: 50px;">VIDEO</span>{/if}
-  <Handle type="target" position={Position.Left} id="hRamp"     style="top: 92px;  --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 86px;">H</span>{/if}
-  <Handle type="target" position={Position.Left} id="vRamp"     style="top: 124px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 118px;">V</span>{/if}
-  <Handle type="target" position={Position.Left} id="intensity" style="top: 156px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 150px;">Z</span>{/if}
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  {#if !hideControls}<span class="port-label right" style="top: 50px;">OUT</span>{/if}
-
   <button
     type="button"
     class="hide-toggle nodrag"
@@ -211,6 +211,7 @@
     onclick={toggleHideControls}
   >{hideControls ? '+' : '–'}</button>
 
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   {#if hideControls}
     <div class="canvas-wrap canvas-wrap-resizable" style="width: {innerWidth}px; height: {innerHeight}px;">
       <canvas
@@ -250,6 +251,7 @@
       <Fader value={p('tintB')}     min={0}  max={1}   defaultValue={monoglitchDef.params.find((x) => x.id === 'tintB')!.defaultValue}     label="B"     curve="linear" onchange={setParam('tintB')} moduleId={id} paramId="tintB" />
     </div>
   {/if}
+  </PatchPanel>
 </div>
 
 <style>
@@ -295,17 +297,8 @@
     margin: 0 0 8px;
     letter-spacing: 0.05em;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .canvas-wrap {
-    margin: 12px 18px 8px 28px;
+    margin: 12px 18px 8px;
     border: 1px solid var(--cable-video);
     border-radius: 2px;
     overflow: hidden;
@@ -340,7 +333,9 @@
   .hide-toggle {
     position: absolute;
     top: 4px;
-    right: 6px;
+    /* Sit left of the PatchPanel right-trigger affordance (which lives at
+       the top-right corner). */
+    right: 26px;
     width: 16px;
     height: 16px;
     padding: 0;

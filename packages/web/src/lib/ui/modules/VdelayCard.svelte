@@ -4,8 +4,10 @@
   // VDELAY publishes its result via the `out` port; users wire it into
   // an OUTPUT / MONOGLITCH / RUTTETRA card to see the result.
 
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { vdelayDef, VDELAY_MAX_DELAY } from '$lib/video/modules/vdelay';
   import type { ModuleNode } from '$lib/graph/types';
@@ -21,36 +23,36 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'in',          label: 'IN', cable: 'video' },
+    { id: 'time_cv',     label: 'T',  cable: 'cv' },
+    { id: 'feedback_cv', label: 'FB', cable: 'cv' },
+    { id: 'mix_cv',      label: 'M',  cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', cable: 'video' },
+  ];
 </script>
 
 <div class="card video">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="VDELAY" />
 
-  <Handle type="target" position={Position.Left} id="in"          style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 50px;">IN</span>
-  <Handle type="target" position={Position.Left} id="time_cv"     style="top: 92px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 86px;">T</span>
-  <Handle type="target" position={Position.Left} id="feedback_cv" style="top: 124px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 118px;">FB</span>
-  <Handle type="target" position={Position.Left} id="mix_cv"      style="top: 156px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 150px;">M</span>
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="fader-grid">
     <Fader value={p('delayTime')}  min={1} max={VDELAY_MAX_DELAY} defaultValue={vdelayDef.params.find((x) => x.id === 'delayTime')!.defaultValue}  label="Time"  curve="linear" onchange={setParam('delayTime')} moduleId={id} paramId="delayTime" />
     <Fader value={p('feedback')}   min={0} max={0.95}             defaultValue={vdelayDef.params.find((x) => x.id === 'feedback')!.defaultValue}   label="FB"    curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" />
     <Fader value={p('mix')}        min={0} max={1}                defaultValue={vdelayDef.params.find((x) => x.id === 'mix')!.defaultValue}        label="Mix"   curve="linear" onchange={setParam('mix')} moduleId={id} paramId="mix" />
     <Fader value={p('colorShift')} min={0} max={1}                defaultValue={vdelayDef.params.find((x) => x.id === 'colorShift')!.defaultValue} label="Color" curve="linear" onchange={setParam('colorShift')} moduleId={id} paramId="colorShift" />
   </div>
+  </PatchPanel>
 </div>
 
 <style>
   .card {
     width: 220px;
-    min-height: 280px;
+    min-height: 200px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -68,11 +70,8 @@
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
   .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .fader-grid {
-    margin-top: 180px;
+    margin-top: 16px;
     padding: 0 14px;
     display: grid;
     grid-template-columns: repeat(2, 1fr);

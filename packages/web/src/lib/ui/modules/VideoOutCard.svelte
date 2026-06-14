@@ -39,7 +39,9 @@
   // other preview cards, which shared the same blit) render right-side-up.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
+  import { useStore, type NodeProps } from '@xyflow/svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { startCornerResize } from './card-resize';
@@ -57,6 +59,13 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+
+  const inputs: PortDescriptor[] = [
+    { id: 'in', label: 'IN', cable: 'video' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', cable: 'video' },
+  ];
 
   // Read viewport reactively so resize math always uses the live zoom
   // factor. The store is provided by <SvelteFlow>; this card is
@@ -307,12 +316,7 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="OUTPUT" />
 
-  <Handle type="target" position={Position.Left} id="in" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 50px;">IN</span>
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     bind:this={wrapEl}
@@ -343,6 +347,7 @@
     data-testid="video-out-resize-handle"
     onpointerdown={onResizeStart}
   ></div>
+  </PatchPanel>
 </div>
 
 <VideoCanvasContextMenu
@@ -404,15 +409,6 @@
     margin: 0 0 8px;
     letter-spacing: 0.05em;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .canvas-wrap {
     margin: 18px auto 0;
     display: flex;
@@ -461,16 +457,19 @@
     padding: 0;
   }
   .card.full-frame .title,
-  .card.full-frame .port-label,
   .card.full-frame .stripe {
     display: none;
   }
-  /* Hide the card's OWN Svelte Flow jacks while full-frame — keep them in
-   * the DOM (opacity/pointer-events, not display:none) so existing cables
-   * stay connected; we're hiding the jacks visually, not disconnecting. */
+  /* Hide the card's OWN Svelte Flow jacks + patch-panel triggers while
+   * full-frame — keep handles in the DOM (opacity/pointer-events, not
+   * display:none) so existing cables stay connected; we're hiding the jacks
+   * visually, not disconnecting. */
   .card.full-frame :global(.svelte-flow__handle) {
     opacity: 0;
     pointer-events: none;
+  }
+  .card.full-frame :global(.patch-trigger) {
+    display: none;
   }
   .canvas-wrap.full-frame {
     margin: 0;

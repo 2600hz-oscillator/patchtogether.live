@@ -16,8 +16,10 @@
   // allocation; same pattern ACIDWARP uses for its on-card preview.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { peakstateDef } from '$lib/video/modules/peakstate';
   import { useEngine } from '$lib/audio/engine-context';
@@ -64,28 +66,24 @@
     }, 33); // ~30 Hz
   });
   onDestroy(() => { if (pollTimer) clearInterval(pollTimer); });
+
+  const inputs: PortDescriptor[] = [
+    { id: 'speed_cv',       label: 'SPD', cable: 'cv' },
+    { id: 'complexity_cv',  label: 'CMP', cable: 'cv' },
+    { id: 'color_speed_cv', label: 'CLR', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'mono_out', label: 'MONO', cable: 'mono-video' },
+    { id: 'rgb_out',  label: 'RGB',  cable: 'video' },
+    { id: 'out_3d',   label: '3D',   cable: 'video' },
+  ];
 </script>
 
 <div class="mod-card peakstate-card" data-testid="peakstate-card" data-node-id={id}>
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="PEAKSTATE" />
 
-  <!-- CV inputs (left side) -->
-  <Handle type="target" position={Position.Left}  id="speed_cv"       style="top: 56px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left"  style="top: 50px;">SPD</span>
-  <Handle type="target" position={Position.Left}  id="complexity_cv"  style="top: 88px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left"  style="top: 82px;">CMP</span>
-  <Handle type="target" position={Position.Left}  id="color_speed_cv" style="top: 120px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left"  style="top: 114px;">CLR</span>
-
-  <!-- Video outputs (right side) -->
-  <Handle type="source" position={Position.Right} id="mono_out" style="top: 56px;  --handle-color: var(--cable-mono-video);" />
-  <span class="port-label right" style="top: 50px;">MONO</span>
-  <Handle type="source" position={Position.Right} id="rgb_out"  style="top: 88px;  --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 82px;">RGB</span>
-  <Handle type="source" position={Position.Right} id="out_3d"   style="top: 120px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 114px;">3D</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="screen-wrap">
     <canvas bind:this={canvasEl} class="screen" data-testid="peakstate-preview"></canvas>
   </div>
@@ -122,6 +120,7 @@
       onchange={setP('oblong')} moduleId={id} paramId="oblong"
     />
   </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -149,15 +148,6 @@
     border-radius: 2px 2px 0 0;
     background: var(--cable-video);
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .screen-wrap {
     margin: 16px auto 12px;
     width: 144px;

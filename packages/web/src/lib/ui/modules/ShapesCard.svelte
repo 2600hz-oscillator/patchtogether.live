@@ -2,8 +2,10 @@
   // ShapesCard — UI for the SHAPES geometry source. Mirrors LinesCard's
   // layout (handles + faders), with a 3-state shape-select button + a
   // tile-on/off toggle as discrete controls.
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { shapesDef } from '$lib/video/modules/shapes';
@@ -35,26 +37,25 @@
     if (!target) return;
     target.params.tile = tileOn ? 0 : 1;
   }
+
+  // CV inputs — port id MUST match param id so the cross-domain CV bridge in
+  // VideoEngine routes audio-side cv onto setParam(portId).
+  const inputs: PortDescriptor[] = [
+    { id: 'shape',  label: 'SH', cable: 'cv' },
+    { id: 'tile',   label: 'TI', cable: 'cv' },
+    { id: 'rotate', label: 'R',  cable: 'cv' },
+    { id: 'zoom',   label: 'Z',  cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', cable: 'mono-video' },
+  ];
 </script>
 
 <div class="card video">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="SHAPES" />
 
-  <!-- CV inputs — port id MUST match param id so the cross-domain CV
-       bridge in VideoEngine routes audio-side cv onto setParam(portId). -->
-  <Handle type="target" position={Position.Left} id="shape"  style="top: 56px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 50px;">SH</span>
-  <Handle type="target" position={Position.Left} id="tile"   style="top: 88px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 82px;">TI</span>
-  <Handle type="target" position={Position.Left} id="rotate" style="top: 120px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 114px;">R</span>
-  <Handle type="target" position={Position.Left} id="zoom"   style="top: 152px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 146px;">Z</span>
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-mono-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="button-row">
     <button class="mode-btn" onclick={cycleShape} title="Cycle shape (circle / square / triangle)">
       {SHAPE_LABELS[shapeIdx]}
@@ -69,14 +70,13 @@
     <Fader value={p('rotate')} min={-3.14159} max={3.14159} defaultValue={shapesDef.params.find((x) => x.id === 'rotate')!.defaultValue} label="Rotate" curve="linear" onchange={setParam('rotate')} moduleId={id} paramId="rotate" />
     <Fader value={p('zoom')}   min={0.05}     max={10}      defaultValue={shapesDef.params.find((x) => x.id === 'zoom')!.defaultValue}   label="Zoom"   curve="log"    onchange={setParam('zoom')} moduleId={id} paramId="zoom" />
   </div>
+  </PatchPanel>
 </div>
 
 <style>
   .card {
     width: 220px;
-    /* Matches INWARDS layout — clears the lowest CV input handle plus
-     * the buttons + faders below. */
-    min-height: 320px;
+    min-height: 220px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -106,17 +106,8 @@
     margin: 0 0 8px;
     letter-spacing: 0.05em;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .button-row {
-    margin-top: 100px;
+    margin-top: 16px;
     padding: 0 12px;
     display: flex;
     gap: 6px;

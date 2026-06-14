@@ -7,8 +7,10 @@
   // intensity, X/Y luma displacement, and color tint.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
+  import { useStore, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -31,6 +33,20 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+
+  // 3 video inputs (x, y, z) + 3 cv inputs (intensity, xDisp, yDisp). Port id
+  // MUST match param id for the CV bridge.
+  const inputs: PortDescriptor[] = [
+    { id: 'x',         label: 'X',  cable: 'mono-video' },
+    { id: 'y',         label: 'Y',  cable: 'mono-video' },
+    { id: 'z',         label: 'Z',  cable: 'video' },
+    { id: 'intensity', label: 'I',  cable: 'cv' },
+    { id: 'xDisp',     label: 'XD', cable: 'cv' },
+    { id: 'yDisp',     label: 'YD', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', cable: 'video' },
+  ];
 
   const ENGINE_W = VIDEO_RES.width;
   const ENGINE_H = VIDEO_RES.height;
@@ -194,23 +210,6 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="RESHAPER" />
 
-  <!-- 3 video inputs (x, y, z) + 3 cv inputs (intensity, xDisp, yDisp) -->
-  <Handle type="target" position={Position.Left} id="x"         style="top: 56px;  --handle-color: var(--cable-mono-video);" />
-  {#if !hideControls}<span class="port-label left" style="top: 50px;">X</span>{/if}
-  <Handle type="target" position={Position.Left} id="y"         style="top: 88px;  --handle-color: var(--cable-mono-video);" />
-  {#if !hideControls}<span class="port-label left" style="top: 82px;">Y</span>{/if}
-  <Handle type="target" position={Position.Left} id="z"         style="top: 120px; --handle-color: var(--cable-video);" />
-  {#if !hideControls}<span class="port-label left" style="top: 114px;">Z</span>{/if}
-  <Handle type="target" position={Position.Left} id="intensity" style="top: 156px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 150px;">I</span>{/if}
-  <Handle type="target" position={Position.Left} id="xDisp"     style="top: 188px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 182px;">XD</span>{/if}
-  <Handle type="target" position={Position.Left} id="yDisp"     style="top: 220px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 214px;">YD</span>{/if}
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  {#if !hideControls}<span class="port-label right" style="top: 50px;">OUT</span>{/if}
-
   <button
     type="button"
     class="hide-toggle nodrag"
@@ -220,6 +219,7 @@
     onclick={toggleHideControls}
   >{hideControls ? '+' : '–'}</button>
 
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   {#if hideControls}
     <div class="canvas-wrap canvas-wrap-resizable" style="width: {innerWidth}px; height: {innerHeight}px;">
       <canvas
@@ -257,6 +257,7 @@
       <Fader value={p('tintB')}     min={0}  max={1}  defaultValue={reshaperDef.params.find((x) => x.id === 'tintB')!.defaultValue}     label="B"   curve="linear" onchange={setParam('tintB')} moduleId={id} paramId="tintB" />
     </div>
   {/if}
+  </PatchPanel>
 </div>
 
 <style>
@@ -304,17 +305,8 @@
     margin: 0 0 8px;
     letter-spacing: 0.05em;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .canvas-wrap {
-    margin: 12px 18px 8px 40px;
+    margin: 12px 18px 8px;
     border: 1px solid var(--cable-video);
     border-radius: 2px;
     overflow: hidden;
@@ -349,7 +341,8 @@
   .hide-toggle {
     position: absolute;
     top: 4px;
-    right: 6px;
+    /* Sit left of the PatchPanel right-trigger affordance. */
+    right: 26px;
     width: 16px;
     height: 16px;
     padding: 0;
