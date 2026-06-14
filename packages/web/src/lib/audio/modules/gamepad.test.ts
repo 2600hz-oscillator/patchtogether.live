@@ -35,7 +35,12 @@ import {
   toggleInvertOnData,
   applyBindingToData,
   clearBindingOnData,
+  exportMapping,
+  applyMapping,
+  isGamepadMapping,
+  GAMEPAD_PRESETS,
   type GamepadData,
+  type GamepadMapping,
   type RemapBindings,
   type PhysicalControl,
 } from './gamepad';
@@ -778,5 +783,185 @@ describe('gamepad per-axis invert', () => {
     // Toggle the last flag off → the whole invert map is dropped (clean state).
     toggleInvertOnData(data, 'ly');
     expect(data.invert).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RIGHT-STICK CALIBRATION — the right stick stores its OWN StickCalibration
+// record on node.data.rightStickCalibration, applied to rx/ry exactly as the
+// left's is to lx/ly. The calibration MATH is shared (already covered above);
+// these pin that the right record is independent + symmetric on GamepadData.
+// (The read-loop application is covered end-to-end by the e2e spec.)
+// ---------------------------------------------------------------------------
+describe('right-stick calibration (symmetric to left)', () => {
+  const cal: StickCalibration = { minX: -0.6, maxX: 0.6, minY: -0.6, maxY: 0.6, deadzone: 0.1 };
+
+  it('left + right calibration records are independent fields on GamepadData', () => {
+    const data: GamepadData = {};
+    data.leftStickCalibration = { ...cal };
+    data.rightStickCalibration = { minX: -0.7, maxX: 0.8, minY: -0.75, maxY: 0.7, deadzone: 0.1 };
+    expect(data.leftStickCalibration).not.toEqual(data.rightStickCalibration);
+    // Clearing one leaves the other intact.
+    delete data.leftStickCalibration;
+    expect(data.leftStickCalibration).toBeUndefined();
+    expect(data.rightStickCalibration?.maxX).toBeCloseTo(0.8);
+  });
+
+  it('the right stick reuses the SAME applyCalibration math (full deflection → ±1)', () => {
+    // The right stick reads its own axes (2,3) but maps them through the exact
+    // same applyCalibration. A reduced ±0.6 range maps to (near) ±1.
+    expect(applyCalibration(0.6, 0, cal).x).toBeCloseTo(1, 4);
+    expect(applyCalibration(-0.6, 0, cal).x).toBeCloseTo(-1, 4);
+    expect(applyCalibration(0, 0.6, cal).y).toBeCloseTo(1, 4);
+    expect(applyCalibration(0, -0.6, cal).y).toBeCloseTo(-1, 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SAVE / LOAD MAPPING + built-in PRESETS — exportMapping / applyMapping /
+// isGamepadMapping / GAMEPAD_PRESETS (pure paths; the real-Y.Doc apply trap is
+// covered in gamepad-remap-ydoc.test.ts).
+// ---------------------------------------------------------------------------
+describe('gamepad save/load mapping', () => {
+  const fullData = (): GamepadData => ({
+    bindings: { a: { kind: 'button', index: 2 }, rx: { kind: 'axis', index: 0 } },
+    invert: { ly: true, rx: true },
+    leftStickCalibration: { minX: -0.7, maxX: 0.8, minY: -0.75, maxY: 0.7, deadzone: 0.1 },
+    rightStickCalibration: { minX: -0.6, maxX: 0.6, minY: -0.6, maxY: 0.6, deadzone: 0.12 },
+  });
+
+  it('exportMapping pulls the persistable fields into a fresh plain object', () => {
+    const data = fullData();
+    const m = exportMapping(data);
+    expect(m.bindings).toEqual(data.bindings);
+    expect(m.invert).toEqual(data.invert);
+    expect(m.leftStickCalibration).toEqual(data.leftStickCalibration);
+    expect(m.rightStickCalibration).toEqual(data.rightStickCalibration);
+  });
+
+  it('exportMapping never aliases the source (deep, fresh values)', () => {
+    const data = fullData();
+    const m = exportMapping(data);
+    expect(m.bindings).not.toBe(data.bindings);
+    expect(m.bindings!.a).not.toBe(data.bindings!.a);
+    expect(m.invert).not.toBe(data.invert);
+    expect(m.leftStickCalibration).not.toBe(data.leftStickCalibration);
+    expect(m.rightStickCalibration).not.toBe(data.rightStickCalibration);
+  });
+
+  it('exportMapping omits absent/empty fields (clean minimal mapping)', () => {
+    expect(exportMapping({})).toEqual({});
+    expect(exportMapping(undefined)).toEqual({});
+    expect(exportMapping({ invert: {} })).toEqual({});
+    expect(exportMapping({ bindings: {} })).toEqual({});
+  });
+
+  it('round-trips: export then apply onto a fresh node yields equivalent data', () => {
+    const data = fullData();
+    const m = exportMapping(data);
+    const target: GamepadData = {};
+    applyMapping(target, m);
+    expect(target.bindings).toEqual(data.bindings);
+    expect(target.invert).toEqual(data.invert);
+    expect(target.leftStickCalibration).toEqual(data.leftStickCalibration);
+    expect(target.rightStickCalibration).toEqual(data.rightStickCalibration);
+  });
+
+  it('applyMapping over EXISTING data replaces it wholesale (no leftover keys)', () => {
+    const target: GamepadData = {
+      bindings: { b: { kind: 'button', index: 5 }, lx: { kind: 'axis', index: 3 } },
+      invert: { lx: true },
+      leftStickCalibration: { minX: -1, maxX: 1, minY: -1, maxY: 1, deadzone: 0.1 },
+    };
+    applyMapping(target, { bindings: { a: { kind: 'button', index: 2 } }, invert: { rx: true } });
+    // Old bindings/invert/calibration are gone; only the new mapping remains.
+    expect(target.bindings).toEqual({ a: { kind: 'button', index: 2 } });
+    expect(target.invert).toEqual({ rx: true });
+    expect(target.leftStickCalibration).toBeUndefined();
+  });
+
+  it('applying an EMPTY mapping clears everything to the default state', () => {
+    const target = fullData();
+    applyMapping(target, {});
+    expect(target.bindings).toBeUndefined();
+    expect(target.invert).toBeUndefined();
+    expect(target.leftStickCalibration).toBeUndefined();
+    expect(target.rightStickCalibration).toBeUndefined();
+  });
+
+  it('apply twice (idempotent) yields the same data, never throws (plain-object mirror)', () => {
+    const m = exportMapping(fullData());
+    const target: GamepadData = {};
+    expect(() => { applyMapping(target, m); applyMapping(target, m); }).not.toThrow();
+    expect(target.bindings).toEqual(m.bindings);
+    expect(target.invert).toEqual(m.invert);
+  });
+
+  it('applyMapping sanitises garbage sub-fields (corrupt binding dropped, never thrown)', () => {
+    const target: GamepadData = {};
+    const garbage = {
+      bindings: { a: { kind: 'bogus', index: -1 }, b: { kind: 'button', index: 3 } },
+      invert: { lx: true, nope: true },
+      leftStickCalibration: { minX: 'x' },
+    } as unknown as GamepadMapping;
+    expect(() => applyMapping(target, garbage)).not.toThrow();
+    // The corrupt binding is dropped; the valid one survives.
+    expect(target.bindings).toEqual({ b: { kind: 'button', index: 3 } });
+    // Only the valid invert axis survives.
+    expect(target.invert).toEqual({ lx: true });
+    // The malformed calibration is ignored.
+    expect(target.leftStickCalibration).toBeUndefined();
+  });
+
+  it('applyMapping ignores wholesale-garbage (non-object) input without throwing', () => {
+    const target = fullData();
+    // A totally invalid mapping is treated as an empty mapping (clears state).
+    expect(() => applyMapping(target, null as unknown as GamepadMapping)).not.toThrow();
+    expect(target.bindings).toBeUndefined();
+  });
+
+  it('isGamepadMapping accepts valid + empty, rejects garbage', () => {
+    expect(isGamepadMapping({})).toBe(true);
+    expect(isGamepadMapping({ bindings: { a: { kind: 'button', index: 0 } } })).toBe(true);
+    expect(isGamepadMapping({ unknownKey: 1 })).toBe(true); // extra keys ignored
+    expect(isGamepadMapping(null)).toBe(false);
+    expect(isGamepadMapping(42)).toBe(false);
+    expect(isGamepadMapping('nope')).toBe(false);
+    expect(isGamepadMapping({ bindings: 5 })).toBe(false);
+    expect(isGamepadMapping({ invert: 'x' })).toBe(false);
+  });
+
+  it('a mapping survives JSON round-trip (save → parse → apply)', () => {
+    const m = exportMapping(fullData());
+    const reparsed: unknown = JSON.parse(JSON.stringify(m));
+    expect(isGamepadMapping(reparsed)).toBe(true);
+    const target: GamepadData = {};
+    applyMapping(target, reparsed as GamepadMapping);
+    expect(target.bindings).toEqual(m.bindings);
+    expect(target.rightStickCalibration).toEqual(m.rightStickCalibration);
+  });
+});
+
+describe('gamepad built-in presets', () => {
+  it('GAMEPAD_PRESETS contains the "NXT Gladiator" entry', () => {
+    const names = GAMEPAD_PRESETS.map((p) => p.name);
+    expect(names).toContain('NXT Gladiator');
+  });
+
+  it('every preset has a valid (loadable) mapping', () => {
+    for (const p of GAMEPAD_PRESETS) {
+      expect(isGamepadMapping(p.mapping), `${p.name} mapping shape`).toBe(true);
+    }
+  });
+
+  it('applying the "NXT Gladiator" preset does not throw + lands a coherent mapping', () => {
+    const preset = GAMEPAD_PRESETS.find((p) => p.name === 'NXT Gladiator')!;
+    const target: GamepadData = {};
+    expect(() => applyMapping(target, preset.mapping)).not.toThrow();
+    // The placeholder is the default bindings (no overrides) → every output still
+    // resolves to its standard-mapping control, so the module behaves identically
+    // to "no preset" until the owner fills the real mapping in.
+    expect(bindingForOutput('a', target.bindings)).toEqual({ kind: 'button', index: 0 });
+    expect(bindingForOutput('rx', target.bindings)).toEqual({ kind: 'axis', index: 2 });
   });
 });

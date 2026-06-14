@@ -587,10 +587,19 @@ export interface GamepadSnapshot {
    *  from `values.lx/ly` (which are post-calibration + Y-inverted). */
   rawLeftX: number;
   rawLeftY: number;
+  /** Raw (un-calibrated, un-inverted) right-stick axes on the most recent poll
+   *  — the card's RIGHT-stick calibration MODE folds these into its sweep.
+   *  Distinct from `values.rx/ry` (post-calibration + Y-inverted). */
+  rawRightX: number;
+  rawRightY: number;
   /** Whether a left-stick calibration is currently active (read from
    *  node.data on each poll). The card shows a "calibrated" badge + a "clear"
    *  affordance when true. */
   calibrated: boolean;
+  /** Whether a RIGHT-stick calibration is currently active (read from node.data
+   *  each poll). The card shows the right-stick "calibrated" badge + clear when
+   *  true. */
+  rightCalibrated: boolean;
   /** Raw reading on the most recent poll — the card's armed remap listener
    *  diffs consecutive snapshots through `detectChangedControl` (the Gamepad API
    *  has no events, so the listener must poll). Empty arrays when disconnected. */
@@ -656,17 +665,225 @@ export function toggleInvertOnData(data: GamepadData, axisId: InvertibleAxis): v
   }
 }
 
-/** Structured, synced module state on `node.data`. The calibration record, the
+/** Structured, synced module state on `node.data`. The calibration records, the
  *  per-output remap overrides, and the per-axis invert flags. All are one-time
  *  committed writes (never per-frame). */
 export interface GamepadData {
+  /** Left-stick calibration (applied to lx/ly when both are on their default
+   *  axes). Absent → the fixed-deadzone path. */
   leftStickCalibration?: StickCalibration;
+  /** Right-stick calibration (applied to rx/ry when both are on their default
+   *  axes). Same StickCalibration shape + flow as the left stick, reading the
+   *  right-stick's own axes (2,3). Absent → the fixed-deadzone path. */
+  rightStickCalibration?: StickCalibration;
   /** Per-output physical-control overrides. Absent → all outputs use their
    *  default standard-mapping control (back-compat: existing patches unchanged). */
   bindings?: RemapBindings;
   /** Per-stick-axis invert flags (lx/ly/rx/ry). Absent → no inversion. */
   invert?: StickInvert;
 }
+
+// ---------------------------------------------------------------------------
+// SAVE / LOAD MAPPING — the full user-configurable control state as one
+// serializable bundle, plus a built-in named-preset registry.
+//
+// A "mapping" is everything the user can configure on GAMEPAD that should
+// survive a save/load or transfer between racks: the per-output remap
+// bindings, the per-axis invert flags, and BOTH stick calibrations. The live /
+// raw runtime fields (snapshot values, the rAF poll state) are deliberately
+// excluded — a mapping is pure configuration.
+//
+// `exportMapping` pulls those fields into a FRESH plain object (deep-cloned
+// plain values — never an alias to a live Y type) so the result is safe to
+// JSON.stringify and download. `applyMapping` writes a mapping back onto the
+// LIVE node.data IN PLACE following the same applyBindingToData discipline (set
+// fresh plain objects for the keys in the mapping, delete the keys it omits) so
+// it never re-assigns an already-integrated Y type (the trap that killed the
+// module after a 2nd remap). Both the file "Load mapping" and the "Load preset"
+// menu funnel through `applyMapping`.
+// ---------------------------------------------------------------------------
+
+/** The full, serializable GAMEPAD control configuration — the persistable
+ *  subset of GamepadData (everything EXCEPT live/raw runtime fields). This is
+ *  exactly what "Save mapping" downloads and "Load mapping" / "Load preset"
+ *  apply. Every field is optional so a partial / older mapping still loads
+ *  (absent fields → the module's default for that aspect). */
+export interface GamepadMapping {
+  /** Per-output physical-control overrides (the remaps). */
+  bindings?: RemapBindings;
+  /** Per-stick-axis invert flags. */
+  invert?: StickInvert;
+  /** Left-stick calibration record. */
+  leftStickCalibration?: StickCalibration;
+  /** Right-stick calibration record. */
+  rightStickCalibration?: StickCalibration;
+}
+
+/** Deep-clone a StickCalibration into a FRESH plain object, or undefined when
+ *  the input isn't a structurally valid calibration. Never aliases the input
+ *  (which, off the live proxy, is an integrated Y type). */
+function cloneCalibration(c: unknown): StickCalibration | undefined {
+  if (!c || typeof c !== 'object') return undefined;
+  const o = c as Partial<StickCalibration>;
+  if (
+    !Number.isFinite(o.minX) || !Number.isFinite(o.maxX) ||
+    !Number.isFinite(o.minY) || !Number.isFinite(o.maxY)
+  ) {
+    return undefined;
+  }
+  return {
+    minX: o.minX as number,
+    maxX: o.maxX as number,
+    minY: o.minY as number,
+    maxY: o.maxY as number,
+    deadzone: Number.isFinite(o.deadzone) ? (o.deadzone as number) : CALIBRATION_DEADZONE,
+  };
+}
+
+/** Deep-clone a RemapBindings into a FRESH plain map of FRESH value objects,
+ *  dropping any structurally-corrupt entry. Never aliases the input's value
+ *  objects (mirrors setBinding's fresh-object guarantee). */
+function cloneBindings(b: RemapBindings | undefined): RemapBindings | undefined {
+  if (!b || typeof b !== 'object') return undefined;
+  const next: RemapBindings = {};
+  for (const k of Object.keys(b)) {
+    const c = b[k];
+    if (isPhysicalControl(c)) next[k] = { kind: c.kind, index: c.index };
+  }
+  return Object.keys(next).length ? next : undefined;
+}
+
+/** Deep-clone a StickInvert into a FRESH plain map of only the set flags. */
+function cloneInvert(inv: StickInvert | undefined): StickInvert | undefined {
+  if (!inv || typeof inv !== 'object') return undefined;
+  const next: StickInvert = {};
+  for (const k of INVERTIBLE_AXES) {
+    if (inv[k]) next[k] = true;
+  }
+  return Object.keys(next).length ? next : undefined;
+}
+
+/** Pull the persistable fields off `data` into a FRESH plain GamepadMapping —
+ *  deep-cloned plain values that never alias a live Y type, so the result is
+ *  safe to JSON.stringify + download. Omits a field entirely when it's absent /
+ *  empty (a clean, minimal mapping). Pure (reads `data`, allocates fresh). */
+export function exportMapping(data: GamepadData | undefined): GamepadMapping {
+  const m: GamepadMapping = {};
+  const bindings = cloneBindings(data?.bindings);
+  if (bindings) m.bindings = bindings;
+  const invert = cloneInvert(data?.invert);
+  if (invert) m.invert = invert;
+  const left = cloneCalibration(data?.leftStickCalibration);
+  if (left) m.leftStickCalibration = left;
+  const right = cloneCalibration(data?.rightStickCalibration);
+  if (right) m.rightStickCalibration = right;
+  return m;
+}
+
+/** True for a structurally plausible GamepadMapping object — used by "Load
+ *  mapping" to reject garbage JSON gracefully (never throw into the rAF poll).
+ *  Lenient by design: an empty object {} is a valid (no-op) mapping, and unknown
+ *  extra keys are ignored. Only the SHAPE of the known fields is checked. */
+export function isGamepadMapping(m: unknown): m is GamepadMapping {
+  if (!m || typeof m !== 'object') return false;
+  const o = m as GamepadMapping;
+  if (o.bindings !== undefined && (typeof o.bindings !== 'object' || o.bindings === null)) return false;
+  if (o.invert !== undefined && (typeof o.invert !== 'object' || o.invert === null)) return false;
+  if (o.leftStickCalibration !== undefined && o.leftStickCalibration !== null && typeof o.leftStickCalibration !== 'object') return false;
+  if (o.rightStickCalibration !== undefined && o.rightStickCalibration !== null && typeof o.rightStickCalibration !== 'object') return false;
+  return true;
+}
+
+/** Apply a mapping onto the LIVE node.data IN PLACE, safe against the SyncedStore
+ *  proxy inside a `ydoc.transact`. Mirrors the applyBindingToData discipline:
+ *  every key the mapping SETS becomes a FRESH plain object; every key the mapping
+ *  OMITS is DELETED — and we never re-assign an object already integrated into the
+ *  Y.Doc tree. Garbage / out-of-shape sub-fields are sanitised (via the clone
+ *  helpers) so a corrupt mapping can't throw out of the card's rAF poll.
+ *
+ *  Idempotent + repeat-safe: applying the same mapping twice, or one mapping over
+ *  another, never throws ("reassigning object that already occurs in the tree").
+ *  Unit-tested against a real Y.Doc. */
+export function applyMapping(data: GamepadData, mapping: GamepadMapping): void {
+  const m = isGamepadMapping(mapping) ? mapping : {};
+
+  // --- bindings: rebuild the live map in place (delete-then-set fresh) ---
+  const nextBindings = cloneBindings(m.bindings);
+  if (!nextBindings) {
+    if (data.bindings) delete data.bindings;
+  } else if (!data.bindings) {
+    // First write of the bindings map — assign the fresh map wholesale (a brand
+    // new object, never integrated yet → safe).
+    data.bindings = nextBindings;
+  } else {
+    const live = data.bindings;
+    for (const k of Object.keys(live)) {
+      if (!(k in nextBindings)) delete live[k];
+    }
+    for (const k of Object.keys(nextBindings)) {
+      const c = nextBindings[k]!;
+      const cur = live[k];
+      if (isPhysicalControl(cur) && cur.kind === c.kind && cur.index === c.index) continue;
+      live[k] = { kind: c.kind, index: c.index };
+    }
+  }
+
+  // --- invert: rebuild the live map in place ---
+  const nextInvert = cloneInvert(m.invert);
+  if (!nextInvert) {
+    if (data.invert) delete data.invert;
+  } else if (!data.invert) {
+    data.invert = nextInvert;
+  } else {
+    const live = data.invert;
+    for (const k of INVERTIBLE_AXES) {
+      if (!nextInvert[k] && live[k]) delete live[k];
+    }
+    for (const k of INVERTIBLE_AXES) {
+      if (nextInvert[k] && !live[k]) live[k] = true;
+    }
+  }
+
+  // --- calibrations: a calibration record is a leaf plain object; set a FRESH
+  // clone or delete the key. Never alias the mapping's object (it might be a
+  // shared preset record) so the live doc owns its own copy. ---
+  const left = cloneCalibration(m.leftStickCalibration);
+  if (left) data.leftStickCalibration = left;
+  else if (data.leftStickCalibration) delete data.leftStickCalibration;
+
+  const right = cloneCalibration(m.rightStickCalibration);
+  if (right) data.rightStickCalibration = right;
+  else if (data.rightStickCalibration) delete data.rightStickCalibration;
+}
+
+/** A built-in named mapping the card surfaces in its "Load preset…" menu. */
+export interface GamepadPreset {
+  name: string;
+  mapping: GamepadMapping;
+}
+
+/** Built-in named mappings, pre-populated in the card's "Load preset…" menu.
+ *  Each entry's `mapping` is applied via `applyMapping` on selection. */
+export const GAMEPAD_PRESETS: readonly GamepadPreset[] = [
+  {
+    // TODO(user): the owner will fill in the real NXT Gladiator mapping in this
+    // PR. The value below is a VALID-but-PLACEHOLDER mapping — the DEFAULT
+    // bindings (every output → its standard-mapping control), no inverted axes,
+    // and no stick calibration — so selecting it is a safe no-op until the real
+    // bindings/invert/calibration are dropped in here.
+    name: 'NXT Gladiator',
+    mapping: {
+      // Default standard-mapping bindings, spelled out as a plain GamepadMapping
+      // so the owner can edit individual entries in place. Equivalent to "no
+      // overrides" (applyMapping treats a binding equal to its default as a
+      // no-op), but explicit so the slot is obvious.
+      bindings: { ...DEFAULT_GAMEPAD_BINDINGS },
+      invert: {},
+      // leftStickCalibration / rightStickCalibration intentionally omitted
+      // (no calibration) — add them here when the real mapping is known.
+    },
+  },
+];
 
 export const gamepadDef: AudioModuleDef = {
   type: 'gamepad',
@@ -727,18 +944,23 @@ export const gamepadDef: AudioModuleDef = {
       values: Object.fromEntries(OUTPUT_DEFS.map((o) => [o.id, 0])),
       rawLeftX: 0,
       rawLeftY: 0,
+      rawRightX: 0,
+      rawRightY: 0,
       calibrated: false,
+      rightCalibrated: false,
       raw: { axes: [], buttons: [] },
       bindings: {},
       invert: {},
     };
 
-    /** Read the live (synced) left-stick calibration off node.data. Cheap —
-     *  reads the live patch proxy, no write. Returns undefined when no
-     *  calibration has been committed. */
-    function readCalibration(): StickCalibration | undefined {
+    /** Read the live (synced) calibration for one stick off node.data. Cheap —
+     *  reads the live patch proxy, no write. `stick` selects which calibration
+     *  record (left = lx/ly axes 0,1; right = rx/ry axes 2,3). Returns undefined
+     *  when no calibration has been committed for that stick. The math + record
+     *  shape are identical per stick — only the source field differs. */
+    function readCalibration(stick: 'left' | 'right'): StickCalibration | undefined {
       const data = (livePatch.nodes[node.id]?.data ?? undefined) as GamepadData | undefined;
-      const c = data?.leftStickCalibration;
+      const c = stick === 'left' ? data?.leftStickCalibration : data?.rightStickCalibration;
       if (
         c &&
         Number.isFinite(c.minX) && Number.isFinite(c.maxX) &&
@@ -793,6 +1015,8 @@ export const gamepadDef: AudioModuleDef = {
           snapshot.id = '';
           snapshot.rawLeftX = 0;
           snapshot.rawLeftY = 0;
+          snapshot.rawRightX = 0;
+          snapshot.rawRightY = 0;
           snapshot.raw = { axes: [], buttons: [] };
           for (const o of OUTPUT_DEFS) {
             sources[o.id]!.offset.setValueAtTime(0, ctx.currentTime);
@@ -827,28 +1051,40 @@ export const gamepadDef: AudioModuleDef = {
       const invert = readInvert();
       snapshot.invert = invert;
 
-      // Raw left-stick axes (spec frame: +X = right, +Y = down) — surfaced on
-      // the snapshot so the card's calibration sweep folds them in directly.
+      // Raw left + right stick axes (spec frame: +X = right, +Y = down) —
+      // surfaced on the snapshot so each stick's calibration sweep folds them in
+      // directly. Left = axes 0,1; right = axes 2,3.
       const rawLeftX = pad.axes[0] ?? 0;
       const rawLeftY = pad.axes[1] ?? 0;
+      const rawRightX = pad.axes[2] ?? 0;
+      const rawRightY = pad.axes[3] ?? 0;
       snapshot.rawLeftX = rawLeftX;
       snapshot.rawLeftY = rawLeftY;
+      snapshot.rawRightX = rawRightX;
+      snapshot.rawRightY = rawRightY;
 
-      const cal = readCalibration();
+      const cal = readCalibration('left');
       snapshot.calibrated = !!cal;
+      const calR = readCalibration('right');
+      snapshot.rightCalibrated = !!calR;
 
       // Resolve every output through its binding (override or default) and apply
       // the output's own shaping. CV-axis outputs deadzone the raw axis (with
       // Y-inversion + sign on the natural stick axes); trigger outputs map 0..1;
-      // gate outputs threshold the pressed state. Left-stick calibration applies
-      // ONLY when lx/ly are still bound to their default axes (0,1) as a PAIR —
-      // calibration is a 2D radial map that's meaningless once an axis is
-      // remapped elsewhere; that case falls back to the fixed deadzone.
+      // gate outputs threshold the pressed state. A stick's calibration applies
+      // ONLY when that stick's two axis outputs are still bound to their default
+      // axes as a PAIR — calibration is a 2D radial map that's meaningless once an
+      // axis is remapped elsewhere; that case falls back to the fixed deadzone.
       const lxBind = bindingForOutput('lx', bindings)!;
       const lyBind = bindingForOutput('ly', bindings)!;
       const leftStickDefault =
         lxBind.kind === 'axis' && lxBind.index === STD_AXIS.lx &&
         lyBind.kind === 'axis' && lyBind.index === STD_AXIS.ly;
+      const rxBind = bindingForOutput('rx', bindings)!;
+      const ryBind = bindingForOutput('ry', bindings)!;
+      const rightStickDefault =
+        rxBind.kind === 'axis' && rxBind.index === STD_AXIS.rx &&
+        ryBind.kind === 'axis' && ryBind.index === STD_AXIS.ry;
 
       let calLx: number | null = null;
       let calLy: number | null = null;
@@ -856,6 +1092,13 @@ export const gamepadDef: AudioModuleDef = {
         const c = applyCalibration(rawLeftX, rawLeftY, cal);
         calLx = c.x;
         calLy = -c.y;
+      }
+      let calRx: number | null = null;
+      let calRy: number | null = null;
+      if (calR && rightStickDefault) {
+        const c = applyCalibration(rawRightX, rawRightY, calR);
+        calRx = c.x;
+        calRy = -c.y;
       }
 
       const next: Record<string, number> = {};
@@ -867,6 +1110,10 @@ export const gamepadDef: AudioModuleDef = {
           v = calLx;
         } else if (o.id === 'ly' && calLy !== null) {
           v = calLy;
+        } else if (o.id === 'rx' && calRx !== null) {
+          v = calRx;
+        } else if (o.id === 'ry' && calRy !== null) {
+          v = calRy;
         } else if (o.id === 'lt' || o.id === 'rt') {
           // Trigger outputs read the analog button value (or a remapped axis,
           // rectified to 0..1) as a smooth 0..1 CV.
