@@ -361,6 +361,31 @@
   // user sees the "patch to" affordance. We dispatch a custom event Canvas
   // listens for (it knows the cable type + commit wiring).
   function onPortRowClick(portId: string, direction: 'input' | 'output') {
+    return jackInteract(portId, direction, true);
+  }
+
+  // ---------------- Rear-view back-panel jack click (rack Phase 3) ----------
+  //
+  // In rear view ("Flip rack") the card's FRONT — including the hidden handle
+  // stack the front-view chrome drives — is rotated away (backface-visibility),
+  // so the only patch surface is the back panel. We make its labelled jacks LIVE
+  // patch points that reuse the EXACT SAME carry seam the front-view port rows
+  // use (patchpanel:jackclick → carry → patchpanel:carrycommit, owned by
+  // Canvas), so a rear-view patch is the SAME validated edge with the SAME port
+  // ids as a front-view one. Direct jack-to-jack ("patch on the back like a
+  // patchbay"): first click picks up a cable from that jack, the second click on
+  // any compatible jack (this card or another) commits it. There is NO drill-down
+  // chrome in rear view — the jacks ARE the affordance — so we suppress the menu
+  // flip (openMenu=false) and let the dangling ghost cable + jack click stand in.
+  function onBackJackClick(portId: string, direction: 'input' | 'output') {
+    return jackInteract(portId, direction, false);
+  }
+
+  // Shared jack pickup/commit. `openChrome` flips the drill-down menu into carry
+  // mode (front view); rear view passes false (jacks-only, no chrome). Both paths
+  // dispatch the identical Canvas-owned carry events, so the committed edge is
+  // identical regardless of which face the user patched from.
+  function jackInteract(portId: string, direction: 'input' | 'output', openChrome: boolean) {
     const host = hostEl;
     if (!host) return;
     // If a cable is ALREADY being carried (from any source port), clicking a
@@ -375,14 +400,16 @@
           detail: { nodeId, portId, direction },
         }),
       );
-      closeMenu();
+      if (openChrome) closeMenu();
       return;
     }
     // Otherwise this is a fresh JACK-CLICK (UX item 4): pick up a cable from
-    // this port + flip our view into carry mode (root, where the "patch to"
-    // entry renders) so the user can either steer to a target or use the
-    // picker. Canvas resolves cable type + begins the pickup.
-    menu = openFromJack(menu.side);
+    // this port + (front view only) flip our view into carry mode (root, where
+    // the "patch to" entry renders) so the user can either steer to a target or
+    // use the picker. Rear view skips the chrome — the dangling ghost cable + a
+    // second jack click ARE the affordance. Canvas resolves cable type + begins
+    // the pickup either way.
+    if (openChrome) menu = openFromJack(menu.side);
     host.dispatchEvent(
       new CustomEvent('patchpanel:jackclick', {
         bubbles: true,
@@ -643,21 +670,38 @@
     REAR-VIEW BACK PANEL (rack Phase 3). Always in the DOM (so the CSS 3D flip
     can reveal it without a mount), but display:none until the flow container
     carries `.rear-view`. Covers the whole card, pre-rotated 180° (see
-    _module-card.css). Shows the module name + every declared INPUT/OUTPUT jack
-    as a labelled jack hole so wiring reads from behind. Decorative/viewing only:
-    pointer-events:none, aria-hidden.
+    _module-card.css). Shows the module name + every declared INPUT/OUTPUT jack.
+    Each jack is a LIVE patch point in rear view: a <button> that drives the same
+    carry seam the front-view port rows use (patchpanel:jackclick → carry →
+    patchpanel:carrycommit, owned by Canvas), so a patch made from the back is
+    the SAME validated edge with the SAME port ids as a front-view patch. Direct
+    jack-to-jack: first click picks up a cable, the next click on any compatible
+    jack commits it. The back panel is interactive ONLY in rear view (gated in
+    _module-card.css: pointer-events flip to auto under `.rear-view`).
   -->
-  <div class="card-back-panel" data-testid="card-back-panel" aria-hidden="true">
+  <div class="card-back-panel" data-testid="card-back-panel">
     <div class="back-title" data-testid="card-back-title">{backTitle}</div>
     <div class="back-cols">
       <div class="back-col inputs">
         <div class="back-col-head">in</div>
         {#if hasInputs}
           {#each allInputs as port (port.id)}
-            <div class="back-jack" style:--jack-color={cableColorVar(port.cable)}>
-              <span class="jack-hole" aria-hidden="true"></span>
+            {@const patched = isPatched(port.id, 'input')}
+            <button
+              type="button"
+              class="back-jack"
+              data-testid="back-jack"
+              data-port-id={port.id}
+              data-direction="input"
+              data-patched={patched ? 'true' : 'false'}
+              title={patchTitle(port.id, 'input') ?? resolveVerboseLabel(port)}
+              aria-label={`patch ${resolveVerboseLabel(port)} input`}
+              style:--jack-color={cableColorVar(port.cable)}
+              onclick={() => onBackJackClick(port.id, 'input')}
+            >
+              <span class="jack-hole" data-patched={patched ? 'true' : 'false'} aria-hidden="true"></span>
               <span class="jack-label">{resolveVerboseLabel(port)}</span>
-            </div>
+            </button>
           {/each}
         {:else}
           <div class="back-empty">—</div>
@@ -667,10 +711,22 @@
         <div class="back-col-head">out</div>
         {#if hasOutputs}
           {#each allOutputs as port (port.id)}
-            <div class="back-jack" style:--jack-color={cableColorVar(port.cable)}>
-              <span class="jack-hole" aria-hidden="true"></span>
+            {@const patched = isPatched(port.id, 'output')}
+            <button
+              type="button"
+              class="back-jack"
+              data-testid="back-jack"
+              data-port-id={port.id}
+              data-direction="output"
+              data-patched={patched ? 'true' : 'false'}
+              title={patchTitle(port.id, 'output') ?? resolveVerboseLabel(port)}
+              aria-label={`patch ${resolveVerboseLabel(port)} output`}
+              style:--jack-color={cableColorVar(port.cable)}
+              onclick={() => onBackJackClick(port.id, 'output')}
+            >
+              <span class="jack-hole" data-patched={patched ? 'true' : 'false'} aria-hidden="true"></span>
               <span class="jack-label">{resolveVerboseLabel(port)}</span>
-            </div>
+            </button>
           {/each}
         {:else}
           <div class="back-empty">—</div>

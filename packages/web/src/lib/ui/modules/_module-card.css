@@ -114,60 +114,59 @@
   max-height: calc(var(--rack-u, 1) * var(--rack-unit));
 }
 
-/* ── Rear view / "flip rack" (rack Phase 3) ──────────────────────────────────
+/* ── Rear view / "flip rack" (rack Phase 3 + rear-view patching) ──────────────
  * A single LOCAL toggle (Canvas `rearView`) puts `.rear-view` on the flow
- * container. Each card then flips over its OWN Y axis IN PLACE (the node does
- * NOT move) to reveal a back panel of patch jacks for tracing wiring. Pure CSS,
- * class-driven — no per-frame JS. The back face element (`.card-back-panel`) is
- * rendered by PatchPanel (which has each node's port descriptors); it sits
- * inside the card root and is pre-rotated 180° so it faces the viewer once the
- * card is flipped.
+ * container. Each card then turns over IN PLACE (the node does NOT move) to
+ * reveal a back panel of patch jacks — and in rear view those jacks are LIVE
+ * patch points (direct jack-to-jack patching, "patch on the back like a
+ * patchbay"). Pure CSS for the reveal/flip-in + a click handler on each jack
+ * (PatchPanel) that drives the SAME carry seam as front-view patching. The back
+ * panel (`.card-back-panel`) is rendered by PatchPanel (which has each node's
+ * port descriptors) and sits inside the card root.
  *
- * 3D mechanics:
- *   - perspective lives on the NODE WRAPPER (the flipping element's parent), so
- *     every card gets depth without a per-card container edit.
- *   - the card root is the flipped element: preserve-3d (so its back-face child
- *     keeps its own 3D position) + a rotateY transition.
- *   - the card front (everything that ISN'T the back panel) is hidden via
- *     backface-visibility once rotated past 90°; the back panel becomes visible.
+ * Mechanics (flat — NOT a preserve-3d subtree, on purpose):
+ *   - The settled rear view is FLAT: the card is not rotated and not in a 3D
+ *     context; the front content is hidden; the back panel is a flat overlay.
+ *     This is what makes the jacks HIT-TESTABLE — Chromium does not hit-test
+ *     descendants inside a `rotateY(180deg)`/`preserve-3d` subtree, which is why
+ *     the original 3D flip's back jacks could be SEEN but never CLICKED.
+ *   - A short 2D flip-in keyframe (perspective baked into the keyframe) keeps the
+ *     "card turns over" feel without a hit-test-breaking 3D ancestor.
  *
  * Covers all three card roots (.mod-card / .card / .moog-panel) like the rack-
  * sizing rule above. STICKY notes (.sticky-card) are deliberately excluded
  * (free-form, no ports). */
 
-/* IMPORTANT — VRT safety: `transform-style: preserve-3d` promotes a card (and
- * any <canvas> it hosts, e.g. SCOPE) to a 3D rendering layer, which subtly
- * changes canvas rasterization and breaks pixel-stable baselines. So preserve-3d
- * is applied ONLY while `.rear-view` is active, never on the resting front card.
- * The `transition` on `transform` IS unconditional (it doesn't promote layers
- * and is a no-op when transform doesn't change) so toggling rear view OFF also
- * animates. `perspective` lives on the WRAPPER (parent), not the card, so it
- * gives depth without promoting the card's own canvas content. */
-.flow .svelte-flow__node {
-  perspective: 1200px;
-}
+/* IMPORTANT — VRT safety: the resting FRONT card carries NO 3D promotion (no
+ * `transform-style: preserve-3d`, no rotation) so its <canvas> rasterization
+ * (e.g. SCOPE) is byte-stable and front-view baselines never shift. Front view
+ * is a true no-op: without `.rear-view` nothing below applies and the back panel
+ * is `display:none`.
+ *
+ * REAR VIEW + PATCHING (rack Phase 3): the original #771 flip rotated the card
+ * `rotateY(180deg)` under `preserve-3d` with a counter-rotated back-panel CHILD.
+ * That READS correctly but Chromium does NOT hit-test descendants inside a
+ * `rotateY(180deg)`/`preserve-3d` subtree (`elementFromPoint` never resolves the
+ * jack — confirmed empirically), so the back jacks were un-clickable and you
+ * could not patch from behind. To make the back panel a LIVE patch surface we
+ * present the settled rear view FLAT (2D): the card is not rotated and not in a
+ * 3D context, the front content is hidden, and the back panel is a flat overlay
+ * — identical to look at, but fully hit-testable. A short 2D flip-IN keyframe on
+ * the back panel preserves the "card turns over" feel without a 3D subtree
+ * (reduced-motion drops it, below). The patchbay still reads + now patches. */
 .flow .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
 .flow .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) {
-  transition: transform 380ms cubic-bezier(0.22, 0.61, 0.36, 1);
-}
-.rear-view .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
-.rear-view .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) {
-  transform-style: preserve-3d;
-  backface-visibility: hidden;
-  transform: rotateY(180deg);
+  transform-style: flat;
 }
 
-/* The back panel — rendered by PatchPanel, hidden by default, shown only in
- * rear view. It's absolutely positioned to cover the whole card and pre-rotated
- * 180° so it reads correctly once the card flips. backface-visibility keeps it
- * hidden while the card shows its front. */
+/* The back panel — rendered by PatchPanel, hidden by default, shown only in rear
+ * view. Absolutely positioned to cover the whole card. NO rotateY (it's a flat
+ * overlay, so it reads correctly AND hit-tests), revealed only under
+ * `.rear-view`. */
 .card-back-panel {
   position: absolute;
   inset: 0;
   display: none;
-  transform: rotateY(180deg);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
   z-index: 8;
   box-sizing: border-box;
   border-radius: var(--module-radius, 2px);
@@ -185,18 +184,58 @@
 }
 .rear-view .card-back-panel {
   display: block;
+  /* A brief 2D flip-in (perspective baked into the keyframe so it doesn't need a
+   * 3D ancestor) — the "card turns over" feel without a hit-test-breaking
+   * preserve-3d subtree. Settles flat (rotateY 0) → fully clickable. */
+  animation: card-back-flip-in 360ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
-/* While flipped, the FRONT content (everything that isn't the back panel) is
- * non-interactive — it's a viewing mode and backface-visibility hides it
- * anyway. We also pointer-events:none the card front so a click can't fall
- * through to a control behind the back face. */
+@keyframes card-back-flip-in {
+  from {
+    transform: perspective(1200px) rotateY(-90deg);
+    opacity: 0;
+  }
+  to {
+    transform: perspective(1200px) rotateY(0deg);
+    opacity: 1;
+  }
+}
+
+/* While in rear view the FRONT content (everything that isn't the back panel) is
+ * hidden + non-interactive: visibility:hidden removes it from rendering AND from
+ * hit-testing so a click can only land on the back-panel jacks over it. (No
+ * backface-visibility trick now — the card isn't rotated.)
+ *
+ * NOTE: PatchPanel's host (`.patch-panel-host`) is `display:contents` and hosts
+ * the back panel, so this `> :not(.card-back-panel)` rule matches the HOST (a
+ * direct child) and `visibility` (which inherits) would also hide the back panel
+ * inside it — so we explicitly re-assert `visibility:visible` on the back panel
+ * below. */
 .rear-view .svelte-flow__node > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
 .rear-view .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel) {
+  visibility: hidden;
   pointer-events: none;
 }
+.rear-view .card-back-panel,
+.rear-view .card-back-panel * {
+  visibility: visible;
+}
+/* Front view: the back panel is display:none, but keep it fully inert as a
+ * belt-and-braces guard so it can never steal a click from the live card. */
 .card-back-panel,
 .card-back-panel * {
   pointer-events: none;
+}
+/* Rear view (rear-view patching): the back-panel JACKS become the live patch
+ * points. Re-enable pointer events on the jack buttons so a click reaches the
+ * carry seam (PatchPanel.onBackJackClick → patchpanel:jackclick / :carrycommit
+ * → Canvas.commitCarriedEdge → validateEdge). The non-jack chrome (title,
+ * headings, labels) stays inert so ONLY the jacks are interactive — patch on the
+ * back like a real patchbay. */
+.rear-view .card-back-panel {
+  pointer-events: none;
+}
+.rear-view .card-back-panel .back-jack {
+  pointer-events: auto;
 }
 
 .card-back-panel .back-title {
@@ -234,7 +273,19 @@
   margin-bottom: 2px;
 }
 .card-back-panel .back-col.outputs { text-align: right; }
+/* The jack is a <button> (live patch point in rear view) — strip the native
+ * button chrome so it reads as the bare jack-hole + label it did as a div, then
+ * layer on a hover/focus cue (only ever shown in rear view, where it's the
+ * interactive face). */
 .card-back-panel .back-jack {
+  appearance: none;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: inherit;
+  cursor: pointer;
+  padding: 1px 2px;
+  border-radius: 2px;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -244,6 +295,11 @@
   line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
+}
+.rear-view .card-back-panel .back-jack:hover,
+.rear-view .card-back-panel .back-jack:focus-visible {
+  background: rgba(0, 240, 255, 0.1);
+  outline: none;
 }
 .card-back-panel .back-col.outputs .back-jack {
   flex-direction: row-reverse;
@@ -257,6 +313,16 @@
   border: 1.5px solid var(--jack-color, var(--cable-audio));
   box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.8);
 }
+/* A patched jack reads as a filled (cable-coloured) plug seated in the hole, so
+ * wiring status is visible from the back the same way the front-view row jack
+ * indicator fills when connected. */
+.card-back-panel .back-jack .jack-hole[data-patched='true'] {
+  background: radial-gradient(
+    circle at 50% 40%,
+    var(--jack-color, var(--cable-audio)) 0 52%,
+    #05070a 54% 100%
+  );
+}
 .card-back-panel .back-jack .jack-label {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -267,13 +333,11 @@
   font-style: italic;
 }
 
-/* prefers-reduced-motion: skip the flip animation (instant state change). */
+/* prefers-reduced-motion: skip the flip-in animation (instant reveal). The rear
+ * view state change is otherwise identical (back panel shows flat, front hides). */
 @media (prefers-reduced-motion: reduce) {
-  .flow .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
-  .flow .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel),
-  .rear-view .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
-  .rear-view .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) {
-    transition: none;
+  .rear-view .card-back-panel {
+    animation: none;
   }
 }
 
