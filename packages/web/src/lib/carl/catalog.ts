@@ -20,6 +20,13 @@ export interface CatalogPort {
   id: string;
   cableType: string;
   paramTarget?: string;
+  /**
+   * Declared gate/trigger semantic (PortDef.edge). Post cable-collapse the
+   * cableType is `cv` for BOTH pitch and gate/trigger ports, so this is how
+   * the auto-wirers (Mike/Carl) tell a gate from a pitch — a gate/trigger
+   * port has `edge` set; a pitch/cv-modulation port does not.
+   */
+  edge?: 'trigger' | 'gate';
 }
 
 export interface CatalogParam {
@@ -69,10 +76,12 @@ export function buildCatalogFromRegistry(): Catalog {
       id: p.id,
       cableType: p.type,
       paramTarget: p.paramTarget,
+      edge: p.edge,
     })),
     outputs: d.outputs.map((p) => ({
       id: p.id,
       cableType: p.type,
+      edge: p.edge,
     })),
     params: d.params.map((p) => ({
       id: p.id,

@@ -9,7 +9,7 @@
 // highlights red will fail — no surprises from "the linter was wrong".
 
 import type { ModuleNode, Edge, CableType } from '$lib/graph/types';
-import { canConnect } from '$lib/graph/types';
+import { canConnect, migrateCableType } from '$lib/graph/types';
 import { getModuleDef } from '$lib/audio/module-registry';
 import { getVideoModuleDef } from '$lib/video/module-registry';
 
@@ -42,18 +42,16 @@ export function getDefForNode(node: ModuleNode): DefPorts | undefined {
  *  consolidating here so both the editor lint + the runtime stay
  *  in lockstep. */
 export function isPatchCompatible(srcType: CableType, dstType: CableType): boolean {
+  // canConnect already migrates legacy 9-type strings → the 4 post-collapse
+  // types and covers cv↔cv (the former pitch/gate cross-patches), poly↔cv, and
+  // cv→video. Delegate to it, then keep the livecode flow's slightly-more-liberal
+  // allowance: audio ↔ cv both directions (the DSL has always let scripts wire an
+  // audio source into a cv input and vice-versa; not newly restricting that).
   if (canConnect(srcType, dstType)) return true;
-  // Polyphony cable plumbing — both directions.
-  if (srcType === 'polyPitchGate') {
-    return dstType === 'pitch' || dstType === 'gate' || dstType === 'cv' || dstType === 'audio';
-  }
-  if (dstType === 'polyPitchGate') {
-    return srcType === 'pitch' || srcType === 'gate' || srcType === 'cv' || srcType === 'audio';
-  }
-  const monoCv: ReadonlySet<CableType> = new Set<CableType>(['pitch', 'gate', 'cv']);
-  if (monoCv.has(srcType) && monoCv.has(dstType)) return true;
-  const audioOrCv: ReadonlySet<CableType> = new Set<CableType>(['audio', 'cv', 'pitch', 'gate']);
-  if (audioOrCv.has(srcType) && audioOrCv.has(dstType)) return true;
+  const src = migrateCableType(srcType);
+  const dst = migrateCableType(dstType);
+  const audioOrCv: ReadonlySet<CableType> = new Set<CableType>(['audio', 'cv']);
+  if (audioOrCv.has(src) && audioOrCv.has(dst)) return true;
   return false;
 }
 

@@ -319,6 +319,25 @@ export class AudioEngine implements DomainEngine {
     return port.paramTarget;
   }
 
+  /**
+   * Look up the declared gate/trigger `edge` semantic of an input/output port,
+   * for poly channel routing (post cable-collapse, a `cv` port routes to the
+   * poly cable's gate channels iff its edge is gate/trigger). Returns undefined
+   * when the port declares no edge (the pitch/cv default).
+   */
+  private resolvePortEdge(
+    nodeId: string,
+    portId: string,
+    dir: 'input' | 'output',
+  ): 'trigger' | 'gate' | undefined {
+    const moduleType = this.nodeTypes.get(nodeId);
+    if (!moduleType) return undefined;
+    const def = getModuleDef(moduleType) as AudioModuleDef | undefined;
+    if (!def) return undefined;
+    const ports = dir === 'input' ? def.inputs : def.outputs;
+    return ports.find((p) => p.id === portId)?.edge;
+  }
+
   private getCvScaleForTarget(
     targetNodeId: string,
     targetPortId: string,
@@ -349,11 +368,18 @@ export class AudioEngine implements DomainEngine {
       `AudioEngine.addEdge: no target port ${edge.target.portId} on ${edge.target.nodeId}`
     );
 
-    // Stage-1 polyphony: when either side speaks `polyPitchGate` and the other
-    // doesn't, we need an interposed splitter (poly→mono) or merger (mono→poly)
-    // to pick the right channel(s). The pure planning function lives in poly.ts;
-    // here we just apply its plan.
-    const plan = resolveConnection(edge.sourceType, edge.targetType);
+    // Stage-1 polyphony: when either side speaks `poly` and the other doesn't,
+    // we need an interposed splitter (poly→mono) or merger (mono→poly) to pick
+    // the right channel(s). The pure planning function lives in poly.ts; here we
+    // just apply its plan. Post cable-collapse the pitch-vs-gate channel choice
+    // is driven by the mono side's declared `edge` semantic (gate/trigger ⇒ gate
+    // channels), so we look up the source-output / target-input PortDef.edge.
+    const plan = resolveConnection(
+      edge.sourceType,
+      edge.targetType,
+      this.resolvePortEdge(edge.source.nodeId, edge.source.portId, 'output'),
+      this.resolvePortEdge(edge.target.nodeId, edge.target.portId, 'input'),
+    );
     if (plan.needSplitter || plan.needMerger) {
       const undo = this.applyPolyPlan(edge, sout, din, plan);
       this.edges.set(edge.id, undo);
@@ -972,7 +998,8 @@ export class PatchEngine {
       && sourceDomain === 'audio'
       && targetDomain !== 'audio'
       && (edge.sourceType === 'cv'
-        || edge.sourceType === 'gate'
+        // (gate folded into cv after the 9→4 cable collapse; the same
+        // ConstantSource/AudioParam sample-and-hold path serves both.)
         // AUDIO → a `modsignal` modulation input (TOYBOX's 6-input section). An
         // audio-rate source patched into a modsignal input is ENVELOPE-FOLLOWED
         // by the sample-and-hold bridge (see VideoEngine.tickCvBridges) to a
@@ -1009,10 +1036,8 @@ export class PatchEngine {
       targetDomain !== undefined
       && sourceDomain === 'audio'
       && targetDomain === 'video'
-      && (edge.sourceType === 'mono-video'
-        || edge.sourceType === 'video'
-        || edge.sourceType === 'image'
-        || edge.sourceType === 'keys')
+      // (keys/image/mono-video all folded into `video` after the 9→4 collapse.)
+      && edge.sourceType === 'video'
     ) {
       this.addCrossDomainVideoTextureBridge(edge);
       return;
@@ -1033,9 +1058,8 @@ export class PatchEngine {
       targetDomain !== undefined
       && sourceDomain === 'video'
       && targetDomain === 'audio'
-      && (edge.sourceType === 'audio'
-        || edge.sourceType === 'cv'
-        || edge.sourceType === 'gate')
+      // (gate folded into cv after the 9→4 collapse.)
+      && (edge.sourceType === 'audio' || edge.sourceType === 'cv')
     ) {
       this.addCrossDomainAudioBridge(edge);
       return;
@@ -1084,7 +1108,8 @@ export class PatchEngine {
       targetDomain !== undefined
       && sourceDomain === 'video'
       && targetDomain === 'video'
-      && (edge.sourceType === 'cv' || edge.sourceType === 'gate')
+      // (gate folded into cv after the 9→4 collapse.)
+      && edge.sourceType === 'cv'
     ) {
       this.addSameDomainVideoCvBridge(edge);
       return;
@@ -1104,10 +1129,8 @@ export class PatchEngine {
     if (
       sourceDomain === 'audio'
       && (targetDomain === undefined || targetDomain === 'audio')
-      && (edge.sourceType === 'mono-video'
-        || edge.sourceType === 'video'
-        || edge.sourceType === 'image'
-        || edge.sourceType === 'keys')
+      // (keys/image/mono-video all folded into `video` after the 9→4 collapse.)
+      && edge.sourceType === 'video'
     ) {
       return;
     }
@@ -1519,7 +1542,13 @@ export class PatchEngine {
     // discrete setParam(target, 1) → setParam(target, 0) pair into the
     // destination's gateEdge detector on every pulse. The analyser stays
     // wired so cv-shaped sources (no `subscribePulse`) still flow through.
-    if (edge.sourceType === 'gate') {
+    //
+    // Post cable-collapse a gate source is typed `cv` (gate folded into cv),
+    // so the former `sourceType === 'gate'` fast-path is gone — we always probe
+    // for a `subscribePulse` (the exact gate-source contract: only gate/trigger
+    // sources publish it). Non-gate cv sources simply have no subscribePulse and
+    // fall through to the analyser path below.
+    {
       const srcHandle = (typeof ve.getNodeHandle === 'function'
         ? ve.getNodeHandle(edge.source.nodeId)
         : undefined) as

@@ -24,6 +24,7 @@
 //     don't need one because chord lanes are deterministic).
 
 import { midiToVOct, MAX_MIDI, MIN_MIDI } from '$lib/audio/note-entry';
+import { migrateCableType } from '$lib/graph/types';
 
 // ---------------- Constants ----------------
 
@@ -291,26 +292,38 @@ export interface ResolvedConnection {
  * Pure function: given a source/target cable type pair, return the
  * connection plan the engine must execute. Doesn't touch Web Audio.
  *
+ * Post cable-collapse (9→4): the poly cable is named `poly` (formerly
+ * `polyPitchGate`) and there is no longer a distinct `pitch`/`gate` cable
+ * TYPE — both fold into `cv`. The pitch-vs-gate routing decision (lane-0
+ * pitch channel vs the OR-summed gate channels) is therefore made from the
+ * mono side's `edge` SEMANTIC (PortDef.edge: 'gate'|'trigger' ⇒ gate route;
+ * anything else ⇒ pitch route), passed in by the engine. Legacy type strings
+ * (polyPitchGate / pitch / gate) are migrated first so old edges still route.
+ *
  * Rules (per §5a of the plan + Stage-1 user adjustments):
  *
- *   polyPitchGate → polyPitchGate  : direct merger→splitter (10ch passthrough).
- *   polyPitchGate → pitch          : pull lane-0 pitch (channel 0).
- *   polyPitchGate → gate           : sum lanes' gate channels (1,3,5,7,9).
- *   pitch         → polyPitchGate  : drive lane-0 pitch (merger input 0); other lanes silent.
- *   gate          → polyPitchGate  : drive lane-0 gate  (merger input 1); other lanes silent.
- *   audio/cv ↔ polyPitchGate       : same shape as pitch/gate above. Treat
- *                                    audio/cv as "drive lane-0 pitch" by
- *                                    default — Stage 1 doesn't expose any
- *                                    such patches but this keeps the resolver
- *                                    total.
- *   anything else                  : direct connect (existing behavior).
+ *   poly → poly                 : direct merger→splitter (10ch passthrough).
+ *   poly → cv (pitch-semantic)  : pull lane-0 pitch (channel 0).
+ *   poly → cv (gate-semantic)   : sum lanes' gate channels (1,3,5,7,9).
+ *   cv (pitch-semantic) → poly  : drive lane-0 pitch (merger input 0); others silent.
+ *   cv (gate-semantic)  → poly  : drive lane-0 gate  (merger input 1); others silent.
+ *   audio ↔ poly                : treat as "drive lane-0 pitch" by default.
+ *   anything else               : direct connect (existing behavior).
  */
 export function resolveConnection(
   sourceType: string,
   targetType: string,
+  sourceEdge?: 'trigger' | 'gate',
+  targetEdge?: 'trigger' | 'gate',
 ): ResolvedConnection {
-  const isSrcPoly = sourceType === 'polyPitchGate';
-  const isDstPoly = targetType === 'polyPitchGate';
+  const src = migrateCableType(sourceType);
+  const dst = migrateCableType(targetType);
+  const isSrcPoly = src === 'poly';
+  const isDstPoly = dst === 'poly';
+  // A mono cv port whose declared `edge` is gate/trigger routes to/from the
+  // poly cable's GATE channels rather than the pitch channel.
+  const targetIsGate = targetEdge === 'gate' || targetEdge === 'trigger';
+  const sourceIsGate = sourceEdge === 'gate' || sourceEdge === 'trigger';
 
   if (isSrcPoly && isDstPoly) {
     return {
@@ -324,18 +337,7 @@ export function resolveConnection(
   }
 
   if (isSrcPoly && !isDstPoly) {
-    if (targetType === 'pitch' || targetType === 'cv' || targetType === 'audio') {
-      // Pull lane 0 pitch.
-      return {
-        needSplitter: true,
-        needMerger: false,
-        needGateSum: false,
-        splitChannels: [0],
-        mergeInputs: [],
-        rule: 'poly→mono pitch/cv/audio: route lane 0 pitch (channel 0)',
-      };
-    }
-    if (targetType === 'gate') {
+    if ((dst === 'cv' || dst === 'audio') && targetIsGate) {
       // Sum lane gate channels (1, 3, 5, 7, 9). Web Audio's connection summing
       // adds them — since each lane gate is 0 or 1, sum ∈ [0, 5]; downstream
       // gate consumers threshold at 0.5 so this is OR semantics in practice.
@@ -350,6 +352,17 @@ export function resolveConnection(
         rule: 'poly→mono gate: OR-sum of all lane gate channels',
       };
     }
+    if (dst === 'cv' || dst === 'audio') {
+      // Pull lane 0 pitch.
+      return {
+        needSplitter: true,
+        needMerger: false,
+        needGateSum: false,
+        splitChannels: [0],
+        mergeInputs: [],
+        rule: 'poly→mono cv/audio: route lane 0 pitch (channel 0)',
+      };
+    }
     // Unknown target — default: lane 0 pitch.
     return {
       needSplitter: true,
@@ -357,23 +370,12 @@ export function resolveConnection(
       needGateSum: false,
       splitChannels: [0],
       mergeInputs: [],
-      rule: `poly→${targetType} (unknown): default to lane 0 pitch`,
+      rule: `poly→${dst} (unknown): default to lane 0 pitch`,
     };
   }
 
   if (!isSrcPoly && isDstPoly) {
-    if (sourceType === 'pitch' || sourceType === 'cv' || sourceType === 'audio') {
-      // Drive lane 0 pitch only. Other lanes' inputs see no source → silent.
-      return {
-        needSplitter: false,
-        needMerger: true,
-        needGateSum: false,
-        splitChannels: [],
-        mergeInputs: [0],
-        rule: 'mono pitch/cv/audio→poly: drive lane 0 pitch (merger input 0)',
-      };
-    }
-    if (sourceType === 'gate') {
+    if ((src === 'cv' || src === 'audio') && sourceIsGate) {
       // Drive lane 0 gate only.
       return {
         needSplitter: false,
@@ -384,13 +386,24 @@ export function resolveConnection(
         rule: 'mono gate→poly: drive lane 0 gate (merger input 1)',
       };
     }
+    if (src === 'cv' || src === 'audio') {
+      // Drive lane 0 pitch only. Other lanes' inputs see no source → silent.
+      return {
+        needSplitter: false,
+        needMerger: true,
+        needGateSum: false,
+        splitChannels: [],
+        mergeInputs: [0],
+        rule: 'mono cv/audio→poly: drive lane 0 pitch (merger input 0)',
+      };
+    }
     return {
       needSplitter: false,
       needMerger: true,
       needGateSum: false,
       splitChannels: [],
       mergeInputs: [0],
-      rule: `${sourceType}→poly (unknown): default to lane 0 pitch`,
+      rule: `${src}→poly (unknown): default to lane 0 pitch`,
     };
   }
 

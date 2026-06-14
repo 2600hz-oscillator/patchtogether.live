@@ -15,119 +15,112 @@ type StandardDomain = 'audio' | 'video';
 export type Domain = StandardDomain | (string & {});
 
 // ---------------- Cable types (D6, D7, D18) ----------------
-// `polyPitchGate` is the Stage-1 polyphony cable (10 audio channels packed
-// (p0,g0,p1,g1,...,p4,g4) — 5 voice pairs). See packages/web/src/lib/audio/poly.ts
-// and .myrobots/plans/dx7-and-polyphony.md §5 for the architecture.
+// 2026-06: the cable/port type legend was COLLAPSED from 9 visible types to
+// FOUR semantic channels (owner spec — see feat/cable-type-collapse):
 //
-// Video-domain cable types (Phase 0):
-//   keys       — single-channel still mono image (no time axis)
-//   image      — RGB still image (no time axis)
-//   mono-video — single-channel animated video stream
-//   video      — RGB animated video stream
-// Implicit upcasting `keys → mono-video`, `image → video`, `keys → image`
-// is allowed; the upcast is free at the shader layer. See `canConnect`.
+//   cv     — every control/voltage signal: bipolar CV, V/oct PITCH, and
+//            GATE/TRIGGER pulses. (pitch + gate folded INTO cv; the
+//            trigger-vs-gate consumer contract survives verbatim on the
+//            SEPARATE `PortDef.edge` field, NOT the cable type.)
+//   audio  — audio-rate bus signal.
+//   video  — every video-domain frame/image stream: the former keys, image,
+//            mono-video and video all fold into one `video` type.
+//   poly   — the multi-voice cable (formerly `polyPitchGate`): 10 packed
+//            audio channels (p0,g0,p1,g1,...,p4,g4) — 5 voice pairs. Kept as
+//            its own 4th type so multi-voice routing stays EXPLICIT (the owner
+//            does NOT want poly folded into cv/audio). See packages/web/src/
+//            lib/audio/poly.ts and .myrobots/plans/dx7-and-polyphony.md §5.
 //
-//   modsignal  — a permissive MODULATION input that accepts EITHER a cv, gate,
-//                OR audio source. Used by TOYBOX's Structure-style 6-input
-//                modulation section: each input has an attenuverter + offset and
-//                auto-detects whether a cv-rate or audio-rate signal is patched
-//                (audio is envelope-followed by the cross-domain bridge). It is
-//                a TARGET-only type — no source ever emits `modsignal`, so the
-//                cable stripe keys off the SOURCE type (cv/audio/gate) and no new
-//                cable colour variant is needed (Canvas.svelte). Declaring this
-//                as its own type (rather than globally widening audio→cv) keeps
-//                the audio→cv connection rejected everywhere EXCEPT modsignal
-//                inputs.
+//   modsignal — a permissive MODULATION input that accepts EITHER a cv OR
+//               audio source. Used by TOYBOX's Structure-style 6-input
+//               modulation section: each input has an attenuverter + offset and
+//               auto-detects whether a cv-rate or audio-rate signal is patched
+//               (audio is envelope-followed by the cross-domain bridge). It is
+//               a TARGET-only type — no source ever emits `modsignal`, so the
+//               cable stripe keys off the SOURCE type (cv/audio) and no new
+//               cable colour variant is needed (Canvas.svelte). Declaring this
+//               as its own type (rather than globally widening audio→cv) keeps
+//               the audio→cv connection rejected everywhere EXCEPT modsignal
+//               inputs. NOT one of the 4 user-facing legend types.
 type StandardCableType =
   | 'audio'
-  | 'pitch'
-  | 'gate'
   | 'cv'
-  | 'modsignal'
-  | 'polyPitchGate'
-  | 'keys'
-  | 'image'
-  | 'mono-video'
-  | 'video';
+  | 'video'
+  | 'poly'
+  | 'modsignal';
 export type CableType = StandardCableType | (string & {});
 
-/** True if `type` is one of the four video-domain cable types. */
-export function isVideoCableType(type: CableType): boolean {
-  return type === 'keys' || type === 'image' || type === 'mono-video' || type === 'video';
+/**
+ * The 9→4 collapse map. Maps every LEGACY cable-type string a persisted
+ * patch / old edge / stale fixture might carry onto its post-collapse name.
+ * Unknown strings (custom registered types, the kept `audio`/`cv`/`video`/
+ * `poly`/`modsignal`) pass through unchanged. This is the SINGLE source of
+ * truth for the migration — call `migrateCableType` at every load/deserialize
+ * boundary that reads a stored type string (patch reconciler, edge load).
+ */
+const CABLE_TYPE_MIGRATION: Record<string, CableType> = {
+  // CV family — pitch + gate fold into cv (edge semantics live on PortDef.edge).
+  pitch: 'cv',
+  gate: 'cv',
+  // Video family — all four former video-domain types fold into video.
+  keys: 'video',
+  image: 'video',
+  'mono-video': 'video',
+  // Poly cable rename.
+  polyPitchGate: 'poly',
+};
+
+/** Map a (possibly legacy) cable-type string onto its post-collapse name. */
+export function migrateCableType(type: CableType): CableType {
+  return CABLE_TYPE_MIGRATION[type as string] ?? type;
 }
 
-/** The "CV family" — bipolar audio-rate voltages that all flow through the
- *  same Web Audio routing and are freely interchangeable at the type level.
- *  `cv` is the canonical bipolar control voltage; `pitch` adds the V/oct
- *  semantic; `gate` is a 0/+5V style trigger. The engine handles them
- *  uniformly (CV → AudioParam, with the cv-scale helper applied when the
- *  destination opts in), and real-world patches routinely cross-patch them
- *  — a SEQUENCER.gate firing into an ADSR.attack as a modulator, an LFO
- *  driving AnalogVCO.pitch_cv to wiggle pitch, a Sequencer.pitch into a
- *  filter cutoff for keytracking. canConnect used to reject these at the
- *  UI level (the patch-to cascade hid them as "not compatible") even though
- *  the engine permits them — see canConnect(). */
-const CV_FAMILY = new Set<string>(['cv', 'pitch', 'gate']);
+/** True if `type` is the (single, post-collapse) video-domain cable type. */
+export function isVideoCableType(type: CableType): boolean {
+  // Tolerate legacy strings so callers passing an un-migrated stored type
+  // still classify correctly during the load-migration window.
+  return migrateCableType(type) === 'video';
+}
 
 /**
  * Returns true if a cable of `srcType` may legally terminate on a port
- * declaring `dstType`. Equal types always pass; explicit upcasts cover:
+ * declaring `dstType`. Both sides are migrated to the 4-type vocabulary
+ * first so legacy/stored strings still validate. Rules:
  *
- *   * Video-domain "free" conversions: keys→mono-video, keys→image,
- *     image→video, mono-video→video.
- *   * CV family (cv ↔ pitch ↔ gate): any direction. They're all bipolar
- *     audio-rate voltages flowing through the same AudioParam plumbing,
- *     and rejecting cross-family patches at the UI level (while the engine
- *     happily routes them at runtime) hid legitimate patches from the
- *     patch-to cascade. See CV_FAMILY above.
- *   * polyPitchGate ↔ cv-family: the engine interposes a splitter
- *     (poly→mono picks channel 0) or merger (mono→poly fills channel 0,
- *     rest silent) via resolveConnection in poly.ts — we mirror that
- *     permissiveness at the type-check level here.
- *   * Audio CV → video param input (frame-rate sample-and-hold; the
- *     bridge is wired in Phase 1, but we permit the connection at the
- *     type level so the eventual bridge doesn't change call-site type
- *     checks).
+ *   * Equal types always pass (cv↔cv covers the former pitch/gate/cv
+ *     cross-patches — a SEQUENCER pitch into a filter cutoff, an LFO into a
+ *     pitch input, a gate into an ADSR — all `cv` now, all legal).
+ *   * poly ↔ cv: the engine interposes a splitter (poly→mono picks channel 0)
+ *     or merger (mono→poly fills channel 0, rest silent) via resolveConnection
+ *     in poly.ts — mirrored permissively here.
+ *   * cv → video param input (frame-rate sample-and-hold cross-domain bridge).
+ *   * modsignal TARGET accepts cv OR audio (see below).
  *
- * Strictly out: audio → any non-audio port; video → any audio port; gate
- * → audio (a 0/5V gate landing on an audio bus is the kind of click track
- * the limiter shouldn't have to defend against).
+ * Strictly out: audio → any non-audio port (except modsignal); video → any
+ * audio/cv port (a 0/5V-style level landing on an audio bus is the click
+ * track the limiter shouldn't have to defend against).
  */
 export function canConnect(srcType: CableType, dstType: CableType): boolean {
-  if (srcType === dstType) return true;
+  const src = migrateCableType(srcType);
+  const dst = migrateCableType(dstType);
+  if (src === dst) return true;
 
-  const upcasts: Record<string, readonly string[]> = {
-    keys: ['mono-video', 'image'],
-    image: ['video'],
-    'mono-video': ['video'],
-  };
-  const ok = upcasts[srcType as string];
-  if (ok && ok.includes(dstType as string)) return true;
+  // poly ↔ cv. Splitter / merger interposed by the engine's resolveConnection
+  // (poly.ts). poly→cv picks voice-0 pitch; cv→poly fills voice-0.
+  if (src === 'poly' && dst === 'cv') return true;
+  if (src === 'cv' && dst === 'poly') return true;
 
-  // CV family — cv / pitch / gate all interchange at the type level.
-  if (CV_FAMILY.has(srcType as string) && CV_FAMILY.has(dstType as string)) {
-    return true;
-  }
+  // cv → video param input (frame-rate sample-and-hold cross-domain bridge).
+  if (src === 'cv' && dst === 'video') return true;
 
-  // polyPitchGate ↔ cv-family. Splitter / merger interposed by the
-  // engine's resolveConnection (poly.ts).
-  if (srcType === 'polyPitchGate' && CV_FAMILY.has(dstType as string)) return true;
-  if (CV_FAMILY.has(srcType as string) && dstType === 'polyPitchGate') return true;
-
-  // Audio CV → video param input (frame-rate sample-and-hold; deferred
-  // bridge in Phase 1). Permit at the type level so the eventual bridge
-  // doesn't change call-site type checks.
-  if (srcType === 'cv' && isVideoCableType(dstType)) return true;
-
-  // modsignal MODULATION input (TOYBOX's 6-input section) accepts a cv, gate,
-  // OR audio source. This is the ONLY place audio→(non-audio) is permitted: it
-  // is scoped to the `modsignal` TARGET type, so audio→cv / audio→pitch etc.
-  // stay rejected everywhere else. The cross-domain bridge envelope-follows an
-  // audio source to a 0..1 modulation value (engine.ts → tickCvBridges); cv/gate
-  // sample-and-hold as usual. (modsignal→modsignal is covered by the equal-type
-  // check above; no source ever emits `modsignal`.)
-  if (dstType === 'modsignal') {
-    return srcType === 'cv' || srcType === 'gate' || srcType === 'audio';
+  // modsignal MODULATION input (TOYBOX's 6-input section) accepts a cv OR audio
+  // source. This is the ONLY place audio→(non-audio) is permitted: it is scoped
+  // to the `modsignal` TARGET type, so audio→cv stays rejected everywhere else.
+  // The cross-domain bridge envelope-follows an audio source to a 0..1
+  // modulation value (engine.ts → tickCvBridges); cv sample-and-holds as usual.
+  // (Former `gate` sources are now `cv`, still accepted.)
+  if (dst === 'modsignal') {
+    return src === 'cv' || src === 'audio';
   }
 
   return false;
@@ -239,10 +232,11 @@ export interface PortDef {
    * canConnect(srcType, this.type) already allows. Use sparingly — it's an
    * explicit, per-port widening for inputs where the global rule is too strict.
    * The canonical case is a SCOPE probe: its signal inputs are typed `audio`
-   * but should accept the CV family (cv/pitch/gate) for visualizing LFOs,
-   * envelopes, pitch CV and gates — a visualizer is not a master bus, so the
-   * "CV on an audio bus → DC/click" guard canConnect enforces globally doesn't
-   * apply. See canConnectToPort(). Honoured by the drag-connect validator
+   * but should accept `cv` (which now subsumes the former pitch/gate types) for
+   * visualizing LFOs, envelopes, pitch CV and gates — a visualizer is not a
+   * master bus, so the "CV on an audio bus → DC/click" guard canConnect
+   * enforces globally doesn't apply. See canConnectToPort(). Honoured by the
+   * drag-connect validator
    * (validate-edge) AND the right-click patch cascade (port-patch-helpers).
    */
   accepts?: CableType[];
@@ -257,10 +251,12 @@ export interface PortDef {
   /**
    * Optional DECLARED gate/trigger semantic for this port (the consumer
    * contract — see $lib/audio/gate-trigger). It does NOT restrict connections:
-   * the unified `gate` cable stays cross-patchable with cv/pitch (it's just CV),
-   * exactly as before. `edge` only documents how a `gate`-typed port behaves so
-   * the model is explicit + lintable instead of re-derived per module, and so
-   * the card can show a ▷ (trigger) / ▭ (gate) glyph on the port:
+   * the cable TYPE is `cv` (gate/trigger ports fold into the cv channel after
+   * the 9→4 cable collapse), so it stays cross-patchable with any other cv —
+   * it's just CV. `edge` is the SEPARATE, surviving declaration of how a port
+   * INTERPRETS that cv: it is what distinguishes a trigger from a gate now that
+   * both share the `cv` cable type. It also keys the gate→MIDI-learn affordance
+   * (PatchPanel) and lets a card show a ▷ (trigger) / ▭ (gate) glyph:
    *   - 'trigger' → fires ONCE per rising edge (clock / reset / strike / sync /
    *                 start-stop / sample); ignores how long the level stays high.
    *                 MUST be edge-detected (shared createEdgeCounter or a
@@ -268,7 +264,7 @@ export interface PortDef {
    *   - 'gate'    → acts WHILE the level is high + reacts to both edges (an
    *                 ADSR sustain, a VCA hold, a poly note-on/off). Do NOT
    *                 convert a gate consumer to edge-only.
-   * Only meaningful on `gate`-typed ports (inputs primarily; an output may
+   * Declared on `cv`-typed gate/trigger ports (inputs primarily; an output may
    * carry it to drive the cosmetic glyph + emitted waveform shape).
    * (Literal union mirrors EdgeSemantic in $lib/audio/gate-trigger — inlined
    * here to keep the foundational graph layer free of an audio-layer import.)

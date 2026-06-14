@@ -367,14 +367,16 @@ export class MeticulousMike {
       )
     ) {
       const seqDef = this.catModule(melodySeq.type);
-      const clockInput = seqDef?.inputs.find((p) => p.id === 'clock' && p.cableType === 'gate');
+      // Post cable-collapse the clock input is typed `cv` with a gate/trigger
+      // `edge`; match on id + the edge semantic (not the old `gate` cableType).
+      const clockInput = seqDef?.inputs.find((p) => p.id === 'clock' && !!p.edge);
       if (clockInput) {
         return this.edge({
           sourceNodeId: clockSource.nodeId,
           sourcePortId: clockSource.portId,
           targetNodeId: melodySeq.id,
           targetPortId: clockInput.id,
-          cableType: 'gate',
+          cableType: 'cv',
         });
       }
     }
@@ -528,27 +530,34 @@ export class MeticulousMike {
     const voiceDef = this.catModule(voice.type);
     if (!seqDef || !voiceDef) return this.sleepIntent(rng);
     // Prefer pitch/cv outputs first, then fall back to a gate connection.
+    // Post cable-collapse pitch + gate are BOTH the `cv` cableType; a
+    // gate/trigger port is the one with an `edge` semantic, a pitch/cv port
+    // is a `cv` port WITHOUT an edge (or the canonical pitch ids). So match a
+    // pitch by id/(cv && !edge), and a gate by its `edge` declaration.
     const occupiedTargets = new Set<string>();
-    const pitchOut = seqDef.outputs.find((p) => p.cableType === 'pitch' || p.id === 'pitch1' || p.id === 'pitch');
-    const pitchIn = voiceDef.inputs.find((p) => p.cableType === 'pitch');
+    const isPitchPort = (p: { id: string; cableType: string; edge?: string }) =>
+      p.id === 'pitch1' || p.id === 'pitch'
+      || (p.cableType === 'cv' && !p.edge && /pitch/i.test(p.id));
+    const pitchOut = seqDef.outputs.find(isPitchPort);
+    const pitchIn = voiceDef.inputs.find(isPitchPort);
     if (pitchOut && pitchIn) {
       return this.edge({
         sourceNodeId: seq.id,
         sourcePortId: pitchOut.id,
         targetNodeId: voice.id,
         targetPortId: pitchIn.id,
-        cableType: 'pitch',
+        cableType: 'cv',
       });
     }
-    const gateOut = seqDef.outputs.find((p) => p.cableType === 'gate');
-    const gateIn = voiceDef.inputs.find((p) => p.cableType === 'gate');
+    const gateOut = seqDef.outputs.find((p) => !!p.edge);
+    const gateIn = voiceDef.inputs.find((p) => !!p.edge);
     if (gateOut && gateIn && !occupiedTargets.has(`${voice.id}::${gateIn.id}`)) {
       return this.edge({
         sourceNodeId: seq.id,
         sourcePortId: gateOut.id,
         targetNodeId: voice.id,
         targetPortId: gateIn.id,
-        cableType: 'gate',
+        cableType: 'cv',
       });
     }
     return this.sleepIntent(rng);

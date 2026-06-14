@@ -20,6 +20,7 @@
 
 import * as Y from 'yjs';
 import type { Edge, ModuleNode } from './types';
+import { migrateCableType } from './types';
 import {
   patch as defaultPatch,
   ydoc as defaultYdoc,
@@ -76,8 +77,13 @@ export function buildPatchSnapshot(
       id: e.id ?? id,
       source: { nodeId: e.source.nodeId, portId: e.source.portId },
       target: { nodeId: e.target.nodeId, portId: e.target.portId },
-      sourceType: e.sourceType ?? 'audio',
-      targetType: e.targetType ?? 'audio',
+      // Load-time 9→4 cable-type migration: a patch saved before the cable
+      // collapse stores legacy type strings (pitch/gate/keys/image/mono-video/
+      // polyPitchGate) on its edges. Migrate them here — the single chokepoint
+      // every persisted edge flows through into the live snapshot — so the
+      // engine/reconciler/UI only ever see the 4 post-collapse types.
+      sourceType: migrateCableType(e.sourceType ?? 'audio'),
+      targetType: migrateCableType(e.targetType ?? 'audio'),
     });
   }
   nodes.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
