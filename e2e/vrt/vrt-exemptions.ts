@@ -485,6 +485,13 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // capture. Pure cores (dataset parse/filter/next/random + geo projection)
   // are unit-tested; e2e mocks the network (no live famelack/streams in CI).
   tvLibrarian: 'live external HLS <video> + runtime-fetched, ever-changing channel list defeat deterministic capture (same as videobox); pure-core unit tests + network-mocked e2e provide coverage',
+  // PEERTUBE — like TV LIBRARIAN, a live external <video> (a remote PeerTube HLS
+  // stream via hls.js) plus a runtime Sepia-Search results list (network-
+  // dependent + ever-changing fediverse content + live thumbnails), so the card
+  // has no deterministic frame to capture. Pure cores (Sepia query build/parse +
+  // per-instance stream resolution) are unit-tested; e2e mocks the network (no
+  // live Sepia/instance/HLS in CI).
+  peertube: 'live external PeerTube HLS <video> + runtime-fetched, ever-changing Sepia-Search results + live thumbnails defeat deterministic capture (same as tvLibrarian/videobox); pure-core unit tests (query/parse/stream-resolve) + network-mocked e2e provide coverage',
   // VIDEOVARISPEED — sibling of VIDEOBOX: a live <video> element streamed
   // via rVFC at a varying (varispeed) cadence, plus a ticking playhead
   // readout. Both defeat deterministic single-frame capture, same as
