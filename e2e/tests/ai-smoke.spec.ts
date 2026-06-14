@@ -107,7 +107,10 @@ test.describe('AI smoke check', () => {
     // Background dot pattern proves Svelte Flow itself is rendering.
     // Use toBeAttached because the background is an SVG without intrinsic size
     // even though the dots are visibly painted — toBeVisible is too strict here.
-    const bgPattern = page.locator('.svelte-flow__background-pattern.dots');
+    // The canvas now layers TWO dot <Background> fields — the fine 16px texture
+    // and the 180px virtual-rack grid (Canvas.svelte) — so `.dots` matches two
+    // patterns; `.first()` keeps the assertion unambiguous (strict-mode safe).
+    const bgPattern = page.locator('.svelte-flow__background-pattern.dots').first();
     await expect(bgPattern, 'background dot pattern not in DOM').toBeAttached();
   });
 

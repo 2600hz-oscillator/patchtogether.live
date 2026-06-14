@@ -244,24 +244,27 @@ test('reverse raw→raw drag (grab INPUT, drop on OUTPUT) commits the oriented e
 }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
+  // CHROMA is a raw-handle card (visible side jacks, NOT a PatchPanel) with a
+  // single video input `in` — the right fixture for the raw→raw direct-commit
+  // path now that VIDEO OUT routes through the yellow PatchPanel menu (#767).
   await spawnPatch(page, [
     { id: 'vs', type: 'videovarispeed', position: { x: 80, y: 120 }, domain: 'video' },
-    { id: 'vout', type: 'videoOut', position: { x: 760, y: 120 }, domain: 'video' },
+    { id: 'chr', type: 'chroma', position: { x: 760, y: 120 }, domain: 'video' },
   ]);
   expect(await readEdges(page)).toHaveLength(0);
 
-  // Grab VIDEO OUT.in (raw INPUT), commit the literal reverse connection onto
+  // Grab CHROMA.in (raw INPUT), commit the literal reverse connection onto
   // VARISPEED.video (raw OUTPUT) — both visible handles, a precise drop. xyflow
   // (loose mode) reports the grabbed input as the literal source; orientation
-  // must flip it so the written edge is vs.video → vout.in.
+  // must flip it so the written edge is vs.video → chr.in.
   await page.evaluate(() => {
     const w = window as unknown as {
       __handleConnectStart: (p: { nodeId: string; handleId: string; handleType: 'source' | 'target' }) => void;
       __handleConnect: (c: { source: string; target: string; sourceHandle: string; targetHandle: string }) => void;
       __handleConnectEnd: (d: { x: number; y: number }) => void;
     };
-    w.__handleConnectStart({ nodeId: 'vout', handleId: 'in', handleType: 'target' });
-    w.__handleConnect({ source: 'vout', target: 'vs', sourceHandle: 'in', targetHandle: 'video' });
+    w.__handleConnectStart({ nodeId: 'chr', handleId: 'in', handleType: 'target' });
+    w.__handleConnect({ source: 'chr', target: 'vs', sourceHandle: 'in', targetHandle: 'video' });
     w.__handleConnectEnd({ x: 0, y: 0 });
   });
 
@@ -269,19 +272,21 @@ test('reverse raw→raw drag (grab INPUT, drop on OUTPUT) commits the oriented e
   await expect.poll(async () => (await readEdges(page)).length, { timeout: 5000 }).toBe(1);
   const edges = await readEdges(page);
   expect(edges[0]!.source).toEqual({ nodeId: 'vs', portId: 'video' });
-  expect(edges[0]!.target).toEqual({ nodeId: 'vout', portId: 'in' });
+  expect(edges[0]!.target).toEqual({ nodeId: 'chr', portId: 'in' });
 });
 
 // ── (4) drag between two raw-handle cards keeps the precise direct commit ─────
 
 test('drag between two raw-handle cards still commits directly (no picker)', async ({ page }) => {
-  // VARISPEED.video (raw out) → VIDEO OUT.in (raw in) — both visible handles, an
+  // VARISPEED.video (raw out) → CHROMA.in (raw in) — both visible handles, an
   // unambiguous precise drop, so it commits directly without the drill-down.
+  // (CHROMA is a raw-handle card; VIDEO OUT now routes through the PatchPanel
+  // menu after the #767 sweep, so it's no longer the raw-handle fixture here.)
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'vs', type: 'videovarispeed', position: { x: 80, y: 120 }, domain: 'video' },
-    { id: 'vout', type: 'videoOut', position: { x: 760, y: 120 }, domain: 'video' },
+    { id: 'chr', type: 'chroma', position: { x: 760, y: 120 }, domain: 'video' },
   ]);
   expect(await readEdges(page)).toHaveLength(0);
 
@@ -293,9 +298,9 @@ test('drag between two raw-handle cards still commits directly (no picker)', asy
     };
     // Real lifecycle: start the drag, commit a PRECISE connection onto the raw
     // target handle (as SvelteFlow's onconnect would for a visible-handle drop),
-    // then end. VIDEO OUT is a raw-handle card so the commit is honoured.
+    // then end. CHROMA is a raw-handle card so the commit is honoured.
     w.__handleConnectStart({ nodeId: 'vs', handleId: 'video', handleType: 'source' });
-    w.__handleConnect({ source: 'vs', target: 'vout', sourceHandle: 'video', targetHandle: 'in' });
+    w.__handleConnect({ source: 'vs', target: 'chr', sourceHandle: 'video', targetHandle: 'in' });
     w.__handleConnectEnd({ x: 0, y: 0 });
   });
 
@@ -304,5 +309,5 @@ test('drag between two raw-handle cards still commits directly (no picker)', asy
   await expect.poll(async () => (await readEdges(page)).length, { timeout: 5000 }).toBe(1);
   const edges = await readEdges(page);
   expect(edges[0]!.source).toEqual({ nodeId: 'vs', portId: 'video' });
-  expect(edges[0]!.target).toEqual({ nodeId: 'vout', portId: 'in' });
+  expect(edges[0]!.target).toEqual({ nodeId: 'chr', portId: 'in' });
 });
