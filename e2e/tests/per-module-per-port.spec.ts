@@ -162,6 +162,7 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   twotracks:      'needs a recorded buffer to emit (idle until first record pass); signal-flow covered by twotracks.spec.ts (record → play → SCOPE RMS assert)',
   videobox:       'needs decoded video file (Web Codecs pipeline); covered by videobox.test.ts',
   videovarispeed: 'needs decoded video file + varispeed scrubber; covered by videovarispeed-output.spec.ts',
+  archivist:      'all outputs (image/video/audio/gates/playhead) are idle until an archive.org item loads (external network); covered by archivist-query.test.ts + archivist-scrub.test.ts + route-mocked archivist.spec.ts',
   // ── Game modules whose outputs ONLY fire on rare in-game events ──
   // MODTRIS line clears require ~10 piece drops + a full row filled;
   // PONG scores require a ball-miss after several bounces. Both exceed
