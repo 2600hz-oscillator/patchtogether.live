@@ -35,17 +35,21 @@ export const PERFORMANCE_ZIP_FORMAT = 'pt-performance-v1';
 const MANIFEST_JSON = 'performance.json';
 const MEDIA_DIR = 'media/';
 
-/** One out-of-band media asset (a loaded VIDEOBOX / TOYBOX-layer video),
- *  resolved to raw bytes for the zip. */
+/** One out-of-band media asset, resolved to raw bytes for the zip. Two kinds:
+ *  - 'video' — a loaded VIDEOBOX / VIDEOVARISPEED clip (the bytes are seeded
+ *    back into the video-file-store under `handleId` so the card re-acquires it);
+ *  - 'audio' — a TWOTRACKS reel tape (recorded PCM with no source file; the
+ *    loader re-sends it to the reel's worklet via `load-tape`). The `handleId`
+ *    encodes the reel (`<nodeId>:a` / `<nodeId>:b`) so the loader routes it. */
 export interface PerformanceMedia {
   /** Patch node id this asset belongs to. */
   nodeId: string;
-  /** The stable id under which the restore side seeds the bytes (for VIDEOBOX
-   *  this is the node's fileMeta.handleId, so the card's tryReloadFromHandle
-   *  picks it up). Empty when the asset has no handle (the loader can mint one). */
+  /** The stable id under which the restore side seeds/routes the bytes. For
+   *  VIDEOBOX/VIDEOVARISPEED this is the node's fileMeta.handleId (so the card's
+   *  tryReloadFromHandle picks it up); for TWOTRACKS it is `<nodeId>:<reel>`. */
   handleId: string;
-  /** Asset role (today only 'video' has out-of-band bytes). */
-  role: 'video';
+  /** Asset role. */
+  role: 'video' | 'audio';
   /** Original filename (display + restored File name + in-zip path). */
   name: string;
   /** Raw asset bytes. */
@@ -68,7 +72,7 @@ export interface PerformanceZipBundle {
 interface MediaEntry {
   nodeId: string;
   handleId: string;
-  role: 'video';
+  role: 'video' | 'audio';
   name: string;
   path: string;
 }
@@ -94,8 +98,9 @@ export function buildPerformanceZip(input: PerformanceZipBundle): Uint8Array {
     handleId: m.handleId,
     role: m.role,
     name: m.name,
-    // include `i` + nodeId so two same-named videos on different nodes don't collide
-    path: `${MEDIA_DIR}video-${i}-${sanitize(m.nodeId)}-${sanitize(m.name)}`,
+    // include role + `i` + handleId so two assets on the same node (e.g. a
+    // TWOTRACKS reel a + reel b) and same-named clips on different nodes don't collide
+    path: `${MEDIA_DIR}${m.role}-${i}-${sanitize(m.handleId)}-${sanitize(m.name)}`,
   }));
   const manifest: PerformanceManifest = {
     format: PERFORMANCE_ZIP_FORMAT,
@@ -144,9 +149,12 @@ export function parsePerformanceZip(zip: ArrayBuffer | Uint8Array): PerformanceZ
   for (const m of manifest.media ?? []) {
     const mbytes = entries[m.path];
     if (!mbytes) continue; // referenced media missing → skip (node re-links)
+    // The 50 MB cap guards the heavy out-of-band VIDEO assets. TWOTRACKS audio
+    // tapes are bounded by the worklet's fixed buffer (≈20 s stereo, well under
+    // the cap) but we apply the same ceiling defensively to any bundled asset.
     if (mbytes.length > MAX_VIDEO_BYTES) {
       throw new Error(
-        `Bundled video '${m.name}' is ${(mbytes.length / 1048576).toFixed(0)} MB — exceeds the ${(MAX_VIDEO_BYTES / 1048576).toFixed(0)} MB limit`,
+        `Bundled ${m.role} '${m.name}' is ${(mbytes.length / 1048576).toFixed(0)} MB — exceeds the ${(MAX_VIDEO_BYTES / 1048576).toFixed(0)} MB limit`,
       );
     }
     media.push({ nodeId: m.nodeId, handleId: m.handleId, role: m.role, name: m.name, bytes: mbytes });

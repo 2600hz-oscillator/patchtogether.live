@@ -22,7 +22,12 @@ test.describe('AI smoke check', () => {
     expect(
       headers['cross-origin-embedder-policy'],
       'COEP missing'
-    ).toBe('require-corp');
+    ).toBe('credentialless');
+    // ^ `credentialless` (not `require-corp`): keeps the page cross-origin
+    //   ISOLATED (the @smoke test below asserts crossOriginIsolated === true, so
+    //   SharedArrayBuffer/Faust still work) while letting no-cors third-party
+    //   media (ARCHIVIST's archive.org <video>/<audio>/<img>) actually load. See
+    //   packages/web/src/hooks.server.ts setCoopCoepHeaders.
   });
 
   test('app: title is patchtogether.live @smoke', async ({ page }) => {

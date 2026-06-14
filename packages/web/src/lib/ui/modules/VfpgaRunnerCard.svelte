@@ -2,26 +2,34 @@
   // VfpgaRunnerCard — UI for the vfpga-runner HOST module.
   //
   // The card is MANIFEST-DRIVEN: a loaded VfpgaSpec (node.data.vfpga, resolved
-  // from the registry) determines which ports are ACTIVE, the param-knob grid,
-  // and the CV/gate jack labels. The card renders the FULL host port SUPERSET as
-  // handles (so the per-module-per-port handle sweep stays green) but DIMS the
-  // ports the loaded spec doesn't activate, so the active I/O reads clearly.
+  // from the registry) determines the param-knob grid and the CV/gate roles. All
+  // I/O patches through the yellow drill-down PatchPanel (post-#767 standard: NO
+  // raw <Handle> side jacks). PatchPanel renders the full host port SUPERSET of
+  // handles internally (so the per-module-per-port handle sweep stays green); the
+  // card body shows only the controls for the loaded spec's ACTIVE roles.
   //
-  // Layout:
-  //   - preview canvas (CPU snapshot via read('snapshot'), ~30 Hz);
+  // Layout (PatchPanel children):
+  //   - preview canvas — the REAL engine output for the LOADED spec, pulled via
+  //     engine.blitOutputToDrawingBuffer(id) + a 2D blit of engine.canvas (the
+  //     same path OUTPUT uses). This shows whatever the loaded VFPGA renders, so
+  //     switching presets visibly changes the preview (NOT a CPU snapshot frozen
+  //     on the smpte-bars test pattern — the old read('snapshot') path only ever
+  //     produced a preview for smpte-bars, so every other preset left the canvas
+  //     showing the last-drawn bars).
   //   - "load preset…" <select> — VFPGAs ARE the presets (one option per spec);
   //   - manifest-driven p1..pN knob grid (Knob w/ moduleId/paramId → MIDI-learn);
   //   - active CV inputs each with a SCALE attenuverter + OFFSET + always-on
-  //     scope (TOYBOX pattern, batched read('cvScope')-style — here we read the
-  //     post scale+offset value back per rAF, joined to the preview pull);
+  //     scope (TOYBOX pattern; the jack itself lives in the PatchPanel);
   //   - active gate inputs with an activity LED;
   //   - docs link to the loaded VFPGA's subpage.
   //
-  // Live render state (active-port set, attenuverter/scope) lives in node.data —
-  // NEVER per-frame Y.Doc writes.
+  // Live render state (attenuverter/scope/preset) lives in node.data — NEVER
+  // per-frame Y.Doc writes.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -41,12 +49,30 @@
   import { drawToyboxInputScope, type ToyboxScopeColors } from '$lib/video/toybox-scope-draw';
   import { setVfpgaSpec } from '$lib/graph/vfpga-runner';
   import ModuleTitle from './ModuleTitle.svelte';
+  import VfpgaFloorplan from './VfpgaFloorplan.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
   const SPECS = listVfpgaSpecs();
+
+  // ── PatchPanel port descriptors — the FULL host I/O superset. EVERY declared
+  //    def port id MUST appear here (byte-identical) so PatchPanel renders its
+  //    handle + the per-module-per-port handle-presence sweep stays green. Port
+  //    ids are load-bearing (the CV bridge routes by id) — do NOT rename. The
+  //    card body below only surfaces controls for the LOADED spec's active roles;
+  //    the jacks for every port live in the panel.
+  const inputs: PortDescriptor[] = [
+    ...VFPGA_VIDEO_IN_PORTS.map((pid) => ({ id: pid, label: pid.toUpperCase(), cable: 'video' })),
+    ...VFPGA_CV_PORTS.map((pid) => ({ id: pid, label: pid.toUpperCase(), cable: 'cv' })),
+    ...VFPGA_GATE_PORTS.map((pid) => ({ id: pid, label: pid.toUpperCase(), cable: 'gate' })),
+  ];
+  const outputs: PortDescriptor[] = VFPGA_VIDEO_OUT_PORTS.map((pid) => ({
+    id: pid,
+    label: pid.toUpperCase(),
+    cable: 'video',
+  }));
 
   // ── reactive trigger so the card re-derives the active spec/grid after a local
   //    data write (preset change) immediately, not a snapshot-bus tick later.
@@ -61,29 +87,6 @@
   let currentVfpgaId = $derived.by<string>(() => liveData().vfpga ?? DEFAULT_VFPGA_ID);
   let spec = $derived.by<VfpgaSpec | undefined>(() => getVfpgaSpec(currentVfpgaId) ?? getVfpgaSpec(DEFAULT_VFPGA_ID));
 
-  // ── Active-port sets derived from the loaded spec ──
-  let activeVin = $derived.by<Set<string>>(() => {
-    const s = new Set<string>();
-    const n = spec?.videoIn ?? 0;
-    for (let i = 1; i <= n; i++) s.add(VFPGA_VIDEO_IN_PORTS[i - 1]!);
-    return s;
-  });
-  let activeVout = $derived.by<Set<string>>(() => {
-    const s = new Set<string>();
-    const n = spec?.videoOut ?? 1;
-    for (let i = 1; i <= n; i++) s.add(VFPGA_VIDEO_OUT_PORTS[i - 1]!);
-    return s;
-  });
-  let cvRoleBySlot = $derived.by<Map<number, { label: string }>>(() => {
-    const m = new Map<number, { label: string }>();
-    for (const r of spec?.cvRoles ?? []) m.set(r.slot, { label: r.label });
-    return m;
-  });
-  let gateRoleBySlot = $derived.by<Map<number, { label: string }>>(() => {
-    const m = new Map<number, { label: string }>();
-    for (const r of spec?.gateRoles ?? []) m.set(r.slot, { label: r.label });
-    return m;
-  });
   let paramGrid = $derived.by(() => spec?.params ?? []);
 
   // ── Param knob helpers (p1..p8 slots) ──
@@ -144,6 +147,10 @@
   const SCOPE_LEN = 64;
   let raf: number | null = null;
 
+  // Preview internal resolution (4:3).
+  const PREVIEW_W = 320;
+  const PREVIEW_H = 240;
+
   const SCOPE_COLORS: ToyboxScopeColors = {
     trace: 'var(--cable-cv)',
     fill: 'rgba(120, 200, 255, 0.18)',
@@ -161,16 +168,44 @@
     return { destroy() { scopeEls.delete(slot); } };
   }
 
+  /** Aspect-fit a (srcW×srcH) source into a (dstW×dstH) canvas. */
+  function fitRect(srcW: number, srcH: number, dstW: number, dstH: number) {
+    const srcAspect = srcW / srcH;
+    const dstAspect = dstW / dstH;
+    if (dstAspect > srcAspect) {
+      const h = dstH;
+      const w = Math.round(h * srcAspect);
+      return { x: Math.round((dstW - w) / 2), y: 0, w, h };
+    }
+    const w = dstW;
+    const h = Math.round(w / srcAspect);
+    return { x: 0, y: Math.round((dstH - h) / 2), w, h };
+  }
+
   function tick() {
     raf = requestAnimationFrame(tick);
     const e = engineCtx.get();
     if (!e || !node) return;
     let ve: VideoEngine | undefined;
     try { ve = e.getDomain<VideoEngine>('video'); } catch { return; }
-    // Preview snapshot.
-    if (ctx2d) {
-      const snap = ve.read(id, 'snapshot') as ImageData | undefined;
-      if (snap) ctx2d.putImageData(snap, 0, 0);
+    // Preview: blit THIS node's own output FBO into the engine drawing buffer,
+    // then 2D-blit the engine canvas (aspect-fit) into the preview. This shows
+    // the REAL output of whatever VFPGA is loaded — so switching presets visibly
+    // changes the preview (the old CPU read('snapshot') only ever rendered the
+    // smpte-bars pattern; every other preset left the canvas stale).
+    if (ctx2d && canvasEl) {
+      try {
+        ve.blitOutputToDrawingBuffer(id);
+        const src = ve.canvas as CanvasImageSource;
+        const sw = ve.canvas.width || PREVIEW_W;
+        const sh = ve.canvas.height || PREVIEW_H;
+        const cw = canvasEl.width;
+        const ch = canvasEl.height;
+        ctx2d.fillStyle = '#050608';
+        ctx2d.fillRect(0, 0, cw, ch);
+        const r = fitRect(sw, sh, cw, ch);
+        ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
+      } catch { /* engine not ready / GL hiccup — keep the loop alive */ }
     }
     // CV scopes: read each active CV slot's post scale+offset value back.
     for (const [slot, el] of scopeEls) {
@@ -193,132 +228,109 @@
 
   onMount(() => {
     if (canvasEl) {
-      canvasEl.width = 320; canvasEl.height = 240;
+      canvasEl.width = PREVIEW_W; canvasEl.height = PREVIEW_H;
       ctx2d = canvasEl.getContext('2d');
     }
     raf = requestAnimationFrame(tick);
   });
   onDestroy(() => { if (raf) cancelAnimationFrame(raf); });
 
-  // Handle vertical positions (px from card top).
-  const VIN_TOP = (i: number) => 60 + i * 26;
-  const CV_TOP = (i: number) => 60 + i * 26;
-  const G_TOP = (i: number) => 168 + i * 26;
-  const VOUT_TOP = (i: number) => 60 + i * 26;
-
   let docSlug = $derived.by(() => spec?.docSlug ?? '');
+
+  // ── Fabric floorplan view (P5): a read-only tile-grid + lit-nets diagram of
+  //    the loaded VFPGA's placed fabric. Off by default (the card already shows
+  //    the preview + controls); toggled on demand. Render-local UI state only.
+  let showFloorplan = $state(false);
+  function toggleFloorplan() { showFloorplan = !showFloorplan; }
 </script>
 
 <div class="mod-card vfpga-card" data-testid="vfpga-runner-card">
   <div class="stripe" style="background: var(--cable-video);"></div>
   <ModuleTitle {id} {data} defaultLabel="VFPGA-RUNNER" />
 
-  <!-- VIDEO IN superset (left, upper) -->
-  {#each VFPGA_VIDEO_IN_PORTS as p, i}
-    <Handle type="target" position={Position.Left} id={p}
-      class={activeVin.has(p) ? 'vfpga-active' : 'vfpga-inactive'}
-      style={`top:${VIN_TOP(i)}px; --handle-color: var(--cable-video);`} />
-    <span class="port-label left" class:dim={!activeVin.has(p)} style={`top:${VIN_TOP(i) - 6}px;`}>{p.toUpperCase()}</span>
-  {/each}
-
-  <!-- VIDEO OUT superset (right) -->
-  {#each VFPGA_VIDEO_OUT_PORTS as p, i}
-    <Handle type="source" position={Position.Right} id={p}
-      class={activeVout.has(p) ? 'vfpga-active' : 'vfpga-inactive'}
-      style={`top:${VOUT_TOP(i)}px; --handle-color: var(--cable-video);`} />
-    <span class="port-label right" class:dim={!activeVout.has(p)} style={`top:${VOUT_TOP(i) - 6}px;`}>{p.toUpperCase()}</span>
-  {/each}
-
-  <!-- preview -->
-  <div class="screen-wrap">
-    <canvas bind:this={canvasEl} class="screen" data-testid="vfpga-screen"></canvas>
-  </div>
-
-  <!-- load preset… (VFPGAs are the presets) -->
-  <div class="preset-row">
-    <select class="preset" data-testid="vfpga-preset" bind:value={presetSelect} onchange={onPresetChange}>
-      <option value="">load preset…</option>
-      {#each SPECS as s}
-        <option value={s.id}>{s.name}</option>
-      {/each}
-    </select>
-    <span class="loaded" data-testid="vfpga-loaded">{spec?.name ?? '—'}</span>
-  </div>
-
-  <!-- manifest-driven param knob grid -->
-  {#if paramGrid.length > 0}
-    <div class="knob-grid" data-testid="vfpga-knobs">
-      {#each paramGrid as ps}
-        <div class="knob-box">
-          <Knob
-            value={knobValue(ps.slot)}
-            min={ps.min} max={ps.max} defaultValue={knobDefault(ps.slot)}
-            label={ps.label} curve={ps.curve ?? 'linear'}
-            onchange={setKnob(ps.slot)} moduleId={id} paramId={`p${ps.slot}`}
-          />
-        </div>
-      {/each}
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <!-- preview -->
+    <div class="screen-wrap">
+      <canvas bind:this={canvasEl} class="screen" data-testid="vfpga-screen"></canvas>
     </div>
-  {/if}
 
-  <!-- active CV inputs: jack + SCALE attenuverter + OFFSET + scope -->
-  {#if (spec?.cvRoles ?? []).length > 0}
-    <div class="cv-section" data-testid="vfpga-cv">
-      {#each spec?.cvRoles ?? [] as role}
-        <div class="cv-row">
-          <Handle type="target" position={Position.Left} id={VFPGA_CV_PORTS[role.slot - 1]}
-            class="vfpga-active"
-            style={`top:${CV_TOP(role.slot + 3)}px; --handle-color: var(--cable-cv);`} />
-          <span class="cv-name">{role.label}</span>
-          <div class="cv-knobs">
-            <Knob value={cvInputFor(role.slot).scale} min={-1} max={1} defaultValue={DEFAULT_INPUT_SCALE}
-              label="SCALE" curve="linear" onchange={setScale(role.slot)}
-              moduleId={id} paramId={`${VFPGA_CV_PORTS[role.slot - 1]}:scale`} />
-            <Knob value={cvInputFor(role.slot).offset} min={0} max={1} defaultValue={DEFAULT_INPUT_OFFSET}
-              label="OFFSET" curve="linear" onchange={setOffset(role.slot)}
-              moduleId={id} paramId={`${VFPGA_CV_PORTS[role.slot - 1]}:offset`} />
+    <!-- load preset… (VFPGAs are the presets) -->
+    <div class="preset-row">
+      <select class="preset" data-testid="vfpga-preset" bind:value={presetSelect} onchange={onPresetChange}>
+        <option value="">load preset…</option>
+        {#each SPECS as s}
+          <option value={s.id}>{s.name}</option>
+        {/each}
+      </select>
+      <span class="loaded" data-testid="vfpga-loaded">{spec?.name ?? '—'}</span>
+      <button
+        type="button"
+        class="fp-toggle"
+        class:on={showFloorplan}
+        data-testid="vfpga-floorplan-toggle"
+        aria-pressed={showFloorplan}
+        title="show the fabric floorplan (tile grid + lit routing nets)"
+        onclick={toggleFloorplan}
+      >fabric</button>
+    </div>
+
+    <!-- fabric floorplan view (read-only tile grid + lit routing nets) -->
+    {#if showFloorplan}
+      <VfpgaFloorplan {spec} />
+    {/if}
+
+    <!-- manifest-driven param knob grid -->
+    {#if paramGrid.length > 0}
+      <div class="knob-grid" data-testid="vfpga-knobs">
+        {#each paramGrid as ps}
+          <div class="knob-box">
+            <Knob
+              value={knobValue(ps.slot)}
+              min={ps.min} max={ps.max} defaultValue={knobDefault(ps.slot)}
+              label={ps.label} curve={ps.curve ?? 'linear'}
+              onchange={setKnob(ps.slot)} moduleId={id} paramId={`p${ps.slot}`}
+            />
           </div>
-          <canvas class="cv-scope" use:regScope={role.slot} data-testid={`vfpga-scope-${role.slot}`}></canvas>
-        </div>
-      {/each}
-    </div>
-  {/if}
-
-  <!-- active gate inputs: jack + activity LED -->
-  {#if (spec?.gateRoles ?? []).length > 0}
-    <div class="gate-section" data-testid="vfpga-gates">
-      {#each spec?.gateRoles ?? [] as role}
-        <div class="gate-row">
-          <span class="led" class:on={gateHeld[role.slot - 1]}></span>
-          <span class="gate-name">{role.label}</span>
-        </div>
-      {/each}
-    </div>
-  {/if}
-
-  <!-- inactive gate jack handles (rendered for the handle sweep; dimmed) -->
-  {#each VFPGA_GATE_PORTS as p, i}
-    <Handle type="target" position={Position.Left} id={p}
-      class={gateRoleBySlot.has(i + 1) ? 'vfpga-active' : 'vfpga-inactive'}
-      style={`top:${G_TOP(i)}px; --handle-color: var(--cable-gate);`} />
-    {#if !gateRoleBySlot.has(i + 1)}
-      <span class="port-label left dim" style={`top:${G_TOP(i) - 6}px;`}>{p.toUpperCase()}</span>
+        {/each}
+      </div>
     {/if}
-  {/each}
 
-  <!-- inactive CV jack handles (active ones rendered in cv-section above) -->
-  {#each VFPGA_CV_PORTS as p, i}
-    {#if !cvRoleBySlot.has(i + 1)}
-      <Handle type="target" position={Position.Left} id={p}
-        class="vfpga-inactive"
-        style={`top:${CV_TOP(i + 3)}px; --handle-color: var(--cable-cv);`} />
-      <span class="port-label left dim" style={`top:${CV_TOP(i + 3) - 6}px;`}>{p.toUpperCase()}</span>
+    <!-- active CV inputs: SCALE attenuverter + OFFSET + scope (jack lives in the panel) -->
+    {#if (spec?.cvRoles ?? []).length > 0}
+      <div class="cv-section" data-testid="vfpga-cv">
+        {#each spec?.cvRoles ?? [] as role}
+          <div class="cv-row">
+            <span class="cv-name">{role.label}</span>
+            <div class="cv-knobs">
+              <Knob value={cvInputFor(role.slot).scale} min={-1} max={1} defaultValue={DEFAULT_INPUT_SCALE}
+                label="SCALE" curve="linear" onchange={setScale(role.slot)}
+                moduleId={id} paramId={`${VFPGA_CV_PORTS[role.slot - 1]}:scale`} />
+              <Knob value={cvInputFor(role.slot).offset} min={0} max={1} defaultValue={DEFAULT_INPUT_OFFSET}
+                label="OFFSET" curve="linear" onchange={setOffset(role.slot)}
+                moduleId={id} paramId={`${VFPGA_CV_PORTS[role.slot - 1]}:offset`} />
+            </div>
+            <canvas class="cv-scope" use:regScope={role.slot} data-testid={`vfpga-scope-${role.slot}`}></canvas>
+          </div>
+        {/each}
+      </div>
     {/if}
-  {/each}
 
-  {#if docSlug}
-    <a class="docs-link" data-testid="vfpga-docs" href={`/docs/modules/vfpga/${docSlug}/`} target="_blank" rel="noopener">docs ↗</a>
-  {/if}
+    <!-- active gate inputs: activity LED (jack lives in the panel) -->
+    {#if (spec?.gateRoles ?? []).length > 0}
+      <div class="gate-section" data-testid="vfpga-gates">
+        {#each spec?.gateRoles ?? [] as role}
+          <div class="gate-row">
+            <span class="led" class:on={gateHeld[role.slot - 1]}></span>
+            <span class="gate-name">{role.label}</span>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    {#if docSlug}
+      <a class="docs-link" data-testid="vfpga-docs" href={`/docs/modules/vfpga/${docSlug}/`} target="_blank" rel="noopener">docs ↗</a>
+    {/if}
+  </PatchPanel>
 </div>
 
 <style>
@@ -339,12 +351,6 @@
     box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; }
-  .port-label { position: absolute; font-size: 0.55rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 16px; }
-  .port-label.right { right: 16px; }
-  .port-label.dim { opacity: 0.35; }
-  /* dim inactive handles so the active I/O reads clearly */
-  :global(.vfpga-inactive) { opacity: 0.3; }
   .screen-wrap {
     margin: 8px auto 10px;
     width: 320px; height: 240px;
@@ -360,6 +366,14 @@
     font-size: 0.7rem; padding: 4px 6px; font-family: ui-monospace, monospace;
   }
   .loaded { font-size: 0.65rem; color: var(--text-dim); font-family: ui-monospace, monospace; }
+  .fp-toggle {
+    background: var(--module-bg); color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: 3px;
+    font-size: 0.6rem; padding: 3px 6px; font-family: ui-monospace, monospace;
+    cursor: pointer; white-space: nowrap;
+  }
+  .fp-toggle:hover { border-color: var(--accent-dim); color: var(--text); }
+  .fp-toggle.on { border-color: var(--accent); color: var(--accent); }
   .knob-grid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; padding: 4px 6px 8px; }
   .knob-box { display: flex; flex-direction: column; align-items: center; }
   .cv-section, .gate-section { padding: 4px 6px; }

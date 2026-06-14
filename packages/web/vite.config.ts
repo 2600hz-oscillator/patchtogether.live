@@ -62,7 +62,11 @@ export default defineConfig({
   server: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
+      // `credentialless` (not `require-corp`): keeps the dev page cross-origin
+      // isolated for SharedArrayBuffer/Faust WASM threads while letting no-cors
+      // third-party media (ARCHIVIST's archive.org <video>/<audio>/<img>) load.
+      // Mirrors hooks.server.ts + packages/web/_headers — keep all three in sync.
+      'Cross-Origin-Embedder-Policy': 'credentialless',
     },
     fs: {
       // Allow serving compiled DSP artifacts from packages/dsp/dist, plus the
@@ -73,7 +77,9 @@ export default defineConfig({
   preview: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp',
+      // See server.headers above — credentialless keeps SAB while allowing
+      // no-cors archive.org media to load.
+      'Cross-Origin-Embedder-Policy': 'credentialless',
     },
   },
 });

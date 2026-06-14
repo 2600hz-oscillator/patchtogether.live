@@ -167,6 +167,14 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
  *  ≥10-char reason — the vrt-meta self-test enforces this. */
 export const EXEMPT_FROM_VRT: Record<string, string> = {
+  // ARCHIVIST — Internet Archive (archive.org) media source. LIVE external
+  // network source (search + stream of random items) + a live <video>/<audio>
+  // element + ticking playhead readout + a per-item preview that depends on
+  // archive.org content — all non-deterministic, so a single-frame baseline
+  // can't be pinned. Coverage: archivist-query.test.ts + archivist-scrub.test.ts
+  // (pure cores: query builder, response parser, best-file picker, scrub math)
+  // + e2e/tests/archivist.spec.ts (route-mocked archive.org — never live).
+  archivist: 'live external archive.org source + live <video>/<audio> + ticking playhead defeat deterministic capture; pure-core unit tests (query/parse/file-pick/scrub) + route-mocked e2e provide coverage',
   // 4PLEXVID — 4-in/4-out video router. Card carries a live OUT-1 preview
   // canvas; the rest is static chrome (4 discrete selector knobs + handle
   // rows). VRT baseline pending platform-specific capture. Functional
@@ -471,6 +479,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // the module-def shape (videobox.test.ts) + the playhead-sync drift
   // math (videobox-sync.test.ts); E2E spawn smoke covers card render.
   videobox: 'live <video> element + ticking playhead readout defeat deterministic capture; unit + sync-math + per-module spawn smoke provide coverage',
+  // TV LIBRARIAN — like VIDEOBOX, a live external <video> (a remote HLS stream
+  // via hls.js) plus a runtime-fetched channel list (network-dependent + the
+  // famelack dataset/streams change), so the card has no deterministic frame to
+  // capture. Pure cores (dataset parse/filter/next/random + geo projection)
+  // are unit-tested; e2e mocks the network (no live famelack/streams in CI).
+  tvLibrarian: 'live external HLS <video> + runtime-fetched, ever-changing channel list defeat deterministic capture (same as videobox); pure-core unit tests + network-mocked e2e provide coverage',
   // VIDEOVARISPEED — sibling of VIDEOBOX: a live <video> element streamed
   // via rVFC at a varying (varispeed) cadence, plus a ticking playhead
   // readout. Both defeat deterministic single-frame capture, same as

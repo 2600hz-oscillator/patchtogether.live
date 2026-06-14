@@ -84,6 +84,7 @@ export const WEBGL_HEAVY_EXCLUDE = [
   '**/toybox-presets-io.spec.ts', // zip round-trip / import-file / dropdown — no pixels
   '**/video-audio-output.spec.ts', // AnalyserNode RMS on the audio terminal — never reads a canvas
   '**/video-aspect-switch.spec.ts', // engine resolution + routing-survival via __engine hooks; pixel probe omitted on CI by its own header
+  '**/videovarispeed-perfzip.spec.ts', // perf-zip round-trip: asserts data-has-local-file / imageBytes / zip bytes / node count — DOM+Y.Doc only, no canvas read (VideoVarispeedCard renders a plain <video>, no WebGL context)
 ] as const;
 
 /** Resolve the EFFECTIVE heavy spec FILES (concrete repo-relative paths) =

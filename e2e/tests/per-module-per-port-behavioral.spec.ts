@@ -122,7 +122,13 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   twotracks:      'tape loop — silent until record→play established; covered by twotracks.spec.ts + twotracks-transport/ab unit tests',
   videobox:       'needs uploaded video file to emit; covered by videobox.test.ts + videobox-sync.test.ts',
   videovarispeed: 'needs uploaded video file to emit; covered by videovarispeed-output.spec.ts',
+  archivist:      'idle until an archive.org item loads (external network); play_trigger only acts on a loaded item; covered by archivist-query.test.ts + archivist-scrub.test.ts + route-mocked archivist.spec.ts',
   picturebox:     'needs uploaded image file to emit; covered by picturebox-related specs',
+  // TV LIBRARIAN needs a live tuned HLS stream to emit any output, which the
+  // behavioral sweep can't establish (and we never hit live famelack/streams in
+  // CI). Same as videobox. Covered by tv-librarian-data/geo unit tests + a
+  // network-mocked tv-librarian e2e.
+  tvLibrarian:    'needs a live tuned HLS stream to emit; no network stream in the sweep (mirrors videobox); covered by tv-librarian-data/geo.test.ts + network-mocked tv-librarian e2e',
 
   // ── User-toggled sequencer-like sources: output silent until steps are
   //    toggled by user interaction (which our spawnPatch doesn't model).

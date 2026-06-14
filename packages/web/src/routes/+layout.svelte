@@ -397,12 +397,14 @@
     };
   }
 
-  // Clerk's JS bundle is loaded cross-origin from clerk.accounts.dev. With
-  // COEP=require-corp on every page (Faust prereq), the browser refuses to
-  // load it unless the CDN sends Cross-Origin-Resource-Policy headers — and
-  // Clerk's CDN doesn't. So we only mount ClerkProvider on routes that
-  // actually need auth, leaving the public canvas at `/` free to use SAB.
-  // Same prefix list as hooks.server.ts uses to scope the server handle.
+  // Clerk's JS bundle is loaded cross-origin from clerk.accounts.dev. The
+  // canvas routes are cross-origin isolated for SAB (Faust prereq). We keep
+  // ClerkProvider scoped to the auth routes (which carry NO isolation headers)
+  // so Clerk's widgets/CDN load unconditionally, leaving the public canvas at
+  // `/` free to use SharedArrayBuffer. (The canvas COEP is now `credentialless`
+  // rather than `require-corp`, which would also let a no-cors CDN bundle load,
+  // but auth simply doesn't need to run on the isolated canvas routes.) Same
+  // prefix list hooks.server.ts uses to scope the server handle.
   const AUTH_PREFIXES = ['/dashboard', '/r/', '/sign-in', '/sign-up'];
   let isAuthRoute = $derived(
     AUTH_PREFIXES.some((p) => page.url.pathname === p || page.url.pathname.startsWith(p)),

@@ -60,6 +60,7 @@ import {
 import { fabricToEffect } from '$lib/video/vfpga/place-and-route';
 import { swapRegisters } from '$lib/video/vfpga/register-swap';
 import { getVfpgaSpec, DEFAULT_VFPGA_ID, listVfpgaSpecs } from '$lib/video/vfpga/registry';
+import { specParamSlotDefault } from '$lib/graph/vfpga-runner';
 import { effectiveCvValue, foldCvToUnipolar } from '$lib/video/toybox-cv-math';
 import { getCvInput, type CvInputs } from '$lib/video/toybox-cv-routes';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
@@ -102,6 +103,10 @@ interface CompiledPass {
   samplers: { source: string; loc: WebGLUniformLocation | null }[];
   /** float uniform locations the host sets each frame, keyed by uniform name. */
   uniforms: Map<string, WebGLUniformLocation | null>;
+  /** STATIC float consts (P&R `pass.consts` — bitstream constants + unbound cell-
+   *  knob defaults): {location, value}. Set verbatim each frame BEFORE the role
+   *  loop, so a knob bound to a p/cv/gate role (absent here) still overrides. */
+  consts: { loc: WebGLUniformLocation | null; value: number }[];
   /** target fbo id, or 'output' for the surface FBO. */
   target: string;
 }
@@ -189,6 +194,19 @@ export const vfpgaRunnerDef: VideoModuleDef = {
     for (const p of vfpgaRunnerDef.params) params[p.id] = p.defaultValue;
     Object.assign(params, node.params ?? {});
 
+    /** Seed the loaded spec's param-slot DEFAULTS into the engine bag for any slot
+     *  the node hasn't set (the host slot bank is generic 0 → a spec param at min →
+     *  an inert bend). With a default seeded, a freshly-loaded VFPGA renders with
+     *  its intended bend amounts. Mirrors the card/graph mutator's seeding so the
+     *  engine + card agree; a card-written slot value (in node.params) always wins. */
+    function seedSpecParamDefaults(s: VfpgaSpec, n: ModuleNode): void {
+      const nodeParams = (n.params ?? {}) as Record<string, number>;
+      for (const p of s.params ?? []) {
+        const key = `p${p.slot}`;
+        if (nodeParams[key] === undefined) params[key] = specParamSlotDefault(p);
+      }
+    }
+
     // ---- Per-gate edge-detect state ----
     const gateEdges: EdgeState[] = VFPGA_GATE_PORTS.map(() => makeEdgeState());
     const gateCounts: number[] = VFPGA_GATE_PORTS.map(() => 0);
@@ -238,7 +256,14 @@ export const vfpgaRunnerDef: VideoModuleDef = {
         // uTime / uResolution are ALWAYS available to a pass that declares them.
         if (!uniforms.has('uTime')) uniforms.set('uTime', gl.getUniformLocation(program, 'uTime'));
         if (!uniforms.has('uResolution')) uniforms.set('uResolution', gl.getUniformLocation(program, 'uResolution'));
-        return { program, samplers, uniforms, target: pass.target };
+        // Static consts (P&R bitstream constants + unbound knob defaults): resolve
+        // each uniform's location once. A const whose uniform is ALSO a spec
+        // role/param uniform is harmless (the role loop overrides it each frame).
+        const consts = Object.entries(pass.consts ?? {}).map(([u, value]) => ({
+          loc: gl.getUniformLocation(program, u),
+          value,
+        }));
+        return { program, samplers, uniforms, consts, target: pass.target };
       });
       // Register ping-pong pairs to swap at end of frame (P&R output only).
       // Defensive: only keep pairs whose BOTH FBOs were actually allocated.
@@ -263,6 +288,7 @@ export const vfpgaRunnerDef: VideoModuleDef = {
       }
     }
 
+    seedSpecParamDefaults(spec, node);
     compiled = buildEffect(spec);
 
     // ---- Live node.data readers (off the LIVE patch each call) ----
@@ -307,38 +333,47 @@ export const vfpgaRunnerDef: VideoModuleDef = {
     }
 
     function setAllUniforms(pass: CompiledPass, frame: VideoFrameContext): void {
-      // uTime / uResolution.
+      // uTime / uResolution (host-provided, never accumulated).
       const uT = pass.uniforms.get('uTime');
       if (uT) gl.uniform1f(uT, frame.time);
       const uR = pass.uniforms.get('uResolution');
       if (uR) gl.uniform2f(uR, ctx.res.width, ctx.res.height);
-      // CV roles → their uniform (post scale+offset 0..1, then mapped to a
-      // role-appropriate value: SHIFT-style roles want a 0..7-ish range; we
-      // hand the raw 0..1 and let the spec's shader scale, EXCEPT we multiply
-      // by a role-declared range hint baked into the uniform value below).
-      for (const role of spec.cvRoles ?? []) {
-        const loc = pass.uniforms.get(role.uniform);
-        if (!loc) continue;
-        gl.uniform1f(loc, cvRoleValue(role.slot) * roleRangeHint(role.uniform));
-      }
-      // Gate roles → held level + edge count uniforms.
-      for (const role of spec.gateRoles ?? []) {
-        if (role.heldUniform) {
-          const loc = pass.uniforms.get(role.heldUniform);
-          if (loc) gl.uniform1f(loc, gateEdges[role.slot - 1]!.pressed ? 1 : 0);
-        }
-        if (role.countUniform) {
-          const loc = pass.uniforms.get(role.countUniform);
-          if (loc) gl.uniform1f(loc, gateCounts[role.slot - 1]!);
-        }
-      }
-      // Param slots → their uniform (the mapped value across [min,max]).
+
+      // ACCUMULATE each float uniform from all its contributors, then write ONCE.
+      // A uniform's value = its static const BASE (bitstream const / unbound knob
+      // default OR a bound param's mapped value) PLUS any CV/gate role contribution
+      // that targets the SAME uniform. This makes the modular mental model work: a
+      // param sets the base amount and a CV patched to the same control ADDS its
+      // modulation on top (instead of the last loop silently overwriting). A
+      // uniform driven by a single source just gets that source's value.
+      const acc = new Map<WebGLUniformLocation, number>();
+      const add = (loc: WebGLUniformLocation | null, v: number) => {
+        if (!loc) return;
+        acc.set(loc, (acc.get(loc) ?? 0) + v);
+      };
+
+      // BASE: static consts (bitstream constants + unbound cell-knob defaults).
+      for (const c of pass.consts) add(c.loc, c.value);
+      // BASE: param slots → their uniform (the mapped value across [min,max]).
       for (const ps of spec.params ?? []) {
         const loc = pass.uniforms.get(ps.uniform);
         if (!loc) continue;
         const knob = params[`p${ps.slot}`] ?? 0; // 0..1 generic slot
-        gl.uniform1f(loc, ps.min + knob * (ps.max - ps.min));
+        add(loc, ps.min + knob * (ps.max - ps.min));
       }
+      // MODULATION: CV roles add onto their uniform (post scale+offset 0..1, then
+      // a per-uniform range hint — SHIFT-style roles span 0..7).
+      for (const role of spec.cvRoles ?? []) {
+        add(pass.uniforms.get(role.uniform) ?? null, cvRoleValue(role.slot) * roleRangeHint(role.uniform));
+      }
+      // MODULATION: gate roles add held level + rising-edge count onto their
+      // uniform(s) (a re-roll/burst trigger drives a count; a hold drives a level).
+      for (const role of spec.gateRoles ?? []) {
+        if (role.heldUniform) add(pass.uniforms.get(role.heldUniform) ?? null, gateEdges[role.slot - 1]!.pressed ? 1 : 0);
+        if (role.countUniform) add(pass.uniforms.get(role.countUniform) ?? null, gateCounts[role.slot - 1]!);
+      }
+
+      for (const [loc, v] of acc) gl.uniform1f(loc, v);
     }
 
     /** A CV role uniform's value range hint. v1: SHIFT-style roles scale 0..1 →
@@ -427,6 +462,13 @@ export const vfpgaRunnerDef: VideoModuleDef = {
       const next = resolveSpec(node);
       if (next.id === spec.id && compiled) return;
       spec = next;
+      // Pull the live node.params (the card/graph mutator seeds the new spec's
+      // param-slot defaults there on preset change) into the engine bag, then seed
+      // any slot the node still hasn't set, so the swapped-in VFPGA renders with
+      // its intended defaults immediately (not the host's inert 0).
+      const live = livePatch.nodes[node.id];
+      if (live?.params) Object.assign(params, live.params);
+      seedSpecParamDefaults(spec, (live as ModuleNode | undefined) ?? node);
       const old = compiled;
       compiled = buildEffect(spec);
       disposeEffect(old);

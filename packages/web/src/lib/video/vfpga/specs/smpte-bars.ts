@@ -86,8 +86,25 @@ export const smpteBarsSpec: VfpgaSpec = {
   fabric: {
     grid: { rows: 1, cols: 1 },
     tiles: [
-      // 0-input generator (no `inputs`): renders the SMPTE pattern directly.
-      { id: 'gen', type: 'clb', config: { op: 'smpte' }, pos: { row: 0, col: 0 } },
+      // 0-input generator (no `inputs`): renders the SMPTE pattern directly. Its
+      // three knobs are BOUND to the host roles (shift→cv1, brightness→p1,
+      // saturation→p2) so the factory's role loop sets them live — exactly the
+      // pre-bind behaviour (the bind targets are the cell's own uniform names, so
+      // the frag + emitted uniform list are unchanged → still byte-identical to
+      // the legacy effect, and no static const is emitted).
+      {
+        id: 'gen',
+        type: 'clb',
+        config: {
+          op: 'smpte',
+          bind: [
+            { knob: 'shift', to: 'cv', slot: 1, uniform: 'uShift' },
+            { knob: 'brightness', to: 'p', slot: 1, uniform: 'uBrightness' },
+            { knob: 'saturation', to: 'p', slot: 2, uniform: 'uSaturation' },
+          ],
+        },
+        pos: { row: 0, col: 0 },
+      },
       // Fixed fabric-edge OUTPUT block → host vout1.
       { id: 'o1', type: 'iob_out', config: { op: 'OUT1' } },
     ],
