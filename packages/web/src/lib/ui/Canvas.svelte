@@ -4444,20 +4444,21 @@
     >
       <!-- Base canvas: the fine 16px dot field (legacy look, sets the bg fill). -->
       <Background id="fine" size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
-      <!-- Virtual-rack grid (Phase 2): a subtle dotted overlay aligned to the
-           180px rack unit (--rack-unit) in BOTH axes, so it lines up with the
-           1u×1u tile cards snap to. Pans/zooms WITH the canvas (it's a
-           <Background>). The dot colour comes from --rack-grid-color, which
-           defaults to the theme-aware --bg-grid-dot (global.css) → it follows
-           the active skin (e.g. MATRIXCOWBOY → phosphor green). Slightly larger
-           dot (size=1.4) than the fine grid so the rack lines read as the
-           structural guide without dominating. No bgColor → transparent, so it
-           layers over the fine field rather than repainting it. -->
+      <!-- Virtual-rack grid (Phase 2): a RING overlay aligned to the 180px rack
+           unit (--rack-unit) in BOTH axes, so it lines up with the 1u×1u tile
+           cards snap to. Pans/zooms WITH the canvas (it's a <Background>). Drawn
+           as a RING, not a filled dot: `size={15}` → DotPattern circle radius
+           7.5, and `.rack-ring` (global.css) paints it `fill:none` + a 5px
+           stroke → the visible ring spans r5..r10 = 20px outer Ø with a 10px
+           uncoloured hole. Colour is --rack-grid-color (theme-aware
+           --bg-grid-dot), so it follows the active skin (e.g. MATRIXCOWBOY →
+           phosphor green). No bgColor → transparent, layering over the fine
+           field rather than repainting it. -->
       <Background
         id="rack"
         gap={180}
-        size={1.4}
-        patternColor="var(--rack-grid-color)"
+        size={15}
+        patternClass="rack-ring"
       />
       <Controls>
         {#snippet before()}
