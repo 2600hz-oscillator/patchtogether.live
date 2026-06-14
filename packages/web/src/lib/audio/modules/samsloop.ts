@@ -663,6 +663,48 @@ export const samsloopMath = {
     return Math.max(SAMSLOOP_RATE_RANGE.min, Math.min(SAMSLOOP_RATE_RANGE.max, sliderValue));
   },
 
+  /**
+   * Re-scale saved loop boundaries when the buffer is re-decoded to a DIFFERENT
+   * length than it had at save time — the SAMSLOOP boundary-restore bug.
+   *
+   * Boundaries persist as ABSOLUTE sample indices against the decoded length at
+   * save time (`savedLen`). On a perf-zip load on a machine whose AudioContext
+   * runs at a different sample rate, a NON-WAV source (mp3/m4a/ogg — anything
+   * routed through `decodeAudioData`, which resamples to the live ctx rate)
+   * re-decodes to a different `newLen`, so the saved absolute indices point at
+   * the WRONG positions (e.g. a 25%..75% window collapses or overruns). WAV
+   * sources parse losslessly at their own rate, so `newLen === savedLen` and
+   * this is a no-op for them.
+   *
+   * We map start/end PROPORTIONALLY from the saved length onto the new length so
+   * the loop window keeps the same musical placement. Returns null when no
+   * rescale is needed (lengths equal / no usable saved length / boundaries are
+   * still at their pristine defaults — a full-buffer window, which the worklet's
+   * own clamp already handles).
+   */
+  rescaleBoundaries(
+    start: number,
+    end: number,
+    savedLen: number,
+    newLen: number,
+  ): { start: number; end: number } | null {
+    if (!Number.isFinite(savedLen) || !Number.isFinite(newLen)) return null;
+    if (savedLen <= 0 || newLen <= 0) return null;
+    if (savedLen === newLen) return null; // same machine / WAV — indices are exact
+    // A pristine full-buffer window (start=0, end>=savedLen, or the param default
+    // 1e6 ceiling) needs no proportional map — re-anchor end to the new length so
+    // the fader bound is right; the worklet clamps anyway.
+    const sClamped = Math.max(0, Math.min(savedLen, Math.round(start)));
+    const eClamped = Math.max(sClamped, Math.min(savedLen, Math.round(end)));
+    if (sClamped === 0 && end >= savedLen) {
+      return { start: 0, end: newLen };
+    }
+    const scale = newLen / savedLen;
+    const ns = Math.max(0, Math.min(newLen - 1, Math.round(sClamped * scale)));
+    const ne = Math.max(ns + 1, Math.min(newLen, Math.round(eClamped * scale)));
+    return { start: ns, end: ne };
+  },
+
   /** Clamp start/end indices to a valid window inside `[0, len]`. Caller
    *  passes raw slider-derived values; we enforce start < end and both
    *  inside the buffer. Returns the clamped pair. */
@@ -914,8 +956,35 @@ export const samsloopDef: AudioModuleDef = {
         if (!live) return;
         if (!live.data) live.data = {} as never;
         const ld = live.data as SamsloopData;
-        if (ld.sampleLength !== result.samples.length) {
-          ld.sampleLength = result.samples.length;
+        const newLen = result.samples.length;
+        // BOUNDARY-RESTORE FIX: the saved loop start/end are ABSOLUTE indices
+        // against the length the buffer had at SAVE time (ld.sampleLength, just
+        // restored from the envelope). When this re-decode yields a DIFFERENT
+        // length — a non-WAV source re-decoded on a machine with a different
+        // AudioContext rate (decodeAudioData resamples to ctx.sampleRate) — the
+        // saved indices point at the wrong samples. Re-scale start/end
+        // PROPORTIONALLY onto the new length so the loop window keeps its
+        // placement. WAV / same-machine loads have newLen === savedLen → no-op.
+        const savedLen = typeof ld.sampleLength === 'number' ? ld.sampleLength : 0;
+        if (savedLen > 0 && savedLen !== newLen && live.params) {
+          const p = live.params as Record<string, number>;
+          const rescaled = samsloopMath.rescaleBoundaries(
+            p.start ?? 0,
+            p.end ?? newLen,
+            savedLen,
+            newLen,
+          );
+          if (rescaled) {
+            p.start = rescaled.start;
+            p.end = rescaled.end;
+            // Re-apply to the worklet immediately (the poll loop only repushes
+            // the sample, not start/end — those are set once at factory init).
+            params.get('start')?.setValueAtTime(rescaled.start, ctx.currentTime);
+            params.get('end')?.setValueAtTime(rescaled.end, ctx.currentTime);
+          }
+        }
+        if (ld.sampleLength !== newLen) {
+          ld.sampleLength = newLen;
         }
         if (ld.sampleRate !== result.sampleRate) {
           ld.sampleRate = result.sampleRate;

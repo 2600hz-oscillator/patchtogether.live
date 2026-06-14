@@ -72,12 +72,18 @@ export interface MidiBindingExport {
   learnedAt: number;
 }
 
-/** A MIDI-CV-BUDDY device selection, keyed by device NAME (stable) rather
- *  than MIDIInput.id (regenerated each session). */
+/** A MIDI module's device selection (MIDI-CV-BUDDY / MIDI LANE / MIDICLOCK).
+ *  Keyed by device NAME (stable across sessions) so the loader can re-bind to a
+ *  matching connected input even when MIDIInput.id has been regenerated. The
+ *  unstable `deviceId` rides along as the same-machine fast path (a load on the
+ *  ORIGINAL machine matches by id directly, before the name fallback). */
 export interface MidiDeviceBinding {
   nodeId: string;
   deviceName: string;
   manufacturer?: string;
+  /** The MIDIInput.id at save time. Unstable across machines/sessions, but the
+   *  exact match on the same machine; the loader tries this first, then NAME. */
+  deviceId?: string;
 }
 
 /** A GAMEPAD mapping keyed by gamepad.id (stable per device model). */
@@ -118,16 +124,23 @@ type NodeMap = Record<string, BundleNode | undefined>;
 
 // ---------------- Asset / device extraction (pure) ----------------
 
+/** Module types whose loaded VIDEO bytes live ONLY in a card-owned object URL
+ *  (the engine never sees the file; node.data carries just fileMeta). Both
+ *  VIDEOBOX and VIDEOVARISPEED stamp a `fileMeta.handleId` + register a bytes
+ *  resolver with the video-export-registry, so the portable .zip carries their
+ *  actual bytes (the one asset the envelope can't inline). */
+export const VIDEO_ASSET_NODE_TYPES = ['videobox', 'videovarispeed'] as const;
+
 /**
- * Collect VIDEOBOX asset refs from the live node map. Only nodes with a
- * `fileMeta.handleId` produce a ref (i.e. a file was actually picked and a
- * handle persisted). PICTUREBOX/SAMSLOOP are inline in the envelope, so they
- * don't get a ref here — extend `roles` later if we ever stop inlining them.
+ * Collect VIDEO asset refs (VIDEOBOX + VIDEOVARISPEED) from the live node map.
+ * Only nodes with a `fileMeta.handleId` produce a ref (i.e. a file was actually
+ * loaded + a handle stamped). PICTUREBOX/SAMSLOOP are inline in the envelope, so
+ * they don't get a ref here — extend the type list if we ever stop inlining them.
  */
 export function collectAssetRefs(nodes: NodeMap): PerformanceAssetRef[] {
   const refs: PerformanceAssetRef[] = [];
   for (const node of Object.values(nodes)) {
-    if (!node || node.type !== 'videobox') continue;
+    if (!node || !(VIDEO_ASSET_NODE_TYPES as readonly string[]).includes(node.type)) continue;
     const fileMeta = (node.data as { fileMeta?: unknown } | undefined)?.fileMeta as
       | { handleId?: unknown; name?: unknown; size?: unknown; duration?: unknown }
       | null
@@ -145,12 +158,22 @@ export function collectAssetRefs(nodes: NodeMap): PerformanceAssetRef[] {
   return refs;
 }
 
+/** Module types that store a MIDI input selection on `node.data.lastDeviceId`
+ *  (the unstable MIDIInput.id) and want it re-bound on performance load. All
+ *  three use the IDENTICAL `lastDeviceId` convention + a `card-api` with
+ *  `connect()` + `selectDevice()`. (The registered types are camelCase
+ *  `midiCvBuddy` / `midiLane` and lowercase `midiclock` — NOT kebab. The old
+ *  kebab `midi-cv-buddy` literal never matched a real node, which is why saved
+ *  device selections silently vanished.) */
+export const MIDI_DEVICE_NODE_TYPES = ['midiCvBuddy', 'midiLane', 'midiclock'] as const;
+
 /**
- * Collect MIDI-CV-BUDDY device selections keyed by device NAME. The node's
- * `data.lastDeviceId` is the unstable MIDIInput.id; the caller resolves it to
- * a name via the supplied `idToName` lookup (the live MIDIAccess input map).
- * Nodes whose id doesn't resolve to a name are skipped (device not connected
- * at save time — nothing stable to key by).
+ * Collect MIDI device selections (MIDI-CV-BUDDY / MIDI LANE / MIDICLOCK) keyed
+ * by device NAME. The node's `data.lastDeviceId` is the unstable MIDIInput.id;
+ * the caller resolves it to a name via the supplied resolver (the live
+ * MIDIAccess input map). The unstable id rides along as `deviceId` for the
+ * same-machine fast path. Nodes whose saved id doesn't resolve to a name are
+ * skipped (device not connected at save time — nothing stable to key by).
  */
 export function collectMidiDevices(
   nodes: NodeMap,
@@ -158,17 +181,12 @@ export function collectMidiDevices(
 ): MidiDeviceBinding[] {
   const out: MidiDeviceBinding[] = [];
   for (const node of Object.values(nodes)) {
-    // The registered module type is camelCase `midiCvBuddy` (see
-    // midi-cv-buddy.ts), NOT the kebab `midi-cv-buddy`. The old kebab
-    // literal never matched a real node, so saved performances silently
-    // dropped every MIDI-CV-BUDDY device selection (the unit test was
-    // vacuous because it used the same wrong kebab string).
-    if (!node || node.type !== 'midiCvBuddy') continue;
+    if (!node || !(MIDI_DEVICE_NODE_TYPES as readonly string[]).includes(node.type)) continue;
     const lastId = (node.data as { lastDeviceId?: unknown } | undefined)?.lastDeviceId;
     if (typeof lastId !== 'string' || lastId.length === 0) continue;
     const dev = resolve(lastId);
     if (!dev || !dev.name) continue;
-    out.push({ nodeId: node.id, deviceName: dev.name, manufacturer: dev.manufacturer });
+    out.push({ nodeId: node.id, deviceName: dev.name, manufacturer: dev.manufacturer, deviceId: lastId });
   }
   return out;
 }
@@ -264,6 +282,44 @@ export function validateBundle(raw: unknown): PerformanceBundle {
       ? (b.gamepadBindings as GamepadBinding[])
       : [],
   };
+}
+
+// ---------------- MIDI device re-bind resolution (load side, pure) ----------------
+
+/** A connected MIDI input, as seen by the load side (from the live MIDIAccess). */
+export interface ConnectedMidiInput {
+  id: string;
+  name: string;
+}
+
+/**
+ * Resolve a saved MIDI device binding to a live MIDIInput.id among the currently
+ * connected inputs, so the loader can auto-select it without a manual pick.
+ *
+ * Priority (per the cross-machine design):
+ *   1. EXACT id match — the binding's `deviceId` is still connected (same machine
+ *      / same session): bind to it directly. Fastest + unambiguous.
+ *   2. NAME match — the saved `deviceName` matches a connected input's name
+ *      (cross-machine, or the id was regenerated): bind to the first such input.
+ *   3. null — the device isn't connected: leave the module unbound (the card
+ *      keeps its saved selection so a later hot-plug reattaches; FIX 1 surfaces
+ *      a clear "device absent" status rather than hanging).
+ *
+ * Pure: takes the binding + the connected-input list, returns the id or null.
+ */
+export function resolveMidiDeviceId(
+  binding: Pick<MidiDeviceBinding, 'deviceId' | 'deviceName'>,
+  connected: ConnectedMidiInput[],
+): string | null {
+  if (binding.deviceId) {
+    const byId = connected.find((c) => c.id === binding.deviceId);
+    if (byId) return byId.id;
+  }
+  if (binding.deviceName) {
+    const byName = connected.find((c) => c.name === binding.deviceName);
+    if (byName) return byName.id;
+  }
+  return null;
 }
 
 // ---------------- MIDI binding merge (load side, pure) ----------------

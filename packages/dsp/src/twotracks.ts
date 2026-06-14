@@ -119,6 +119,19 @@ interface DumpTapeMessage {
   reel: 'a' | 'b';
 }
 
+/** Restore a reel's tape from persisted PCM (perf-zip / patch reload). The host
+ *  transfers parallel L/R Float32 buffers (NOT interleaved) + the recorded
+ *  length; the worklet copies them into the ring buffer and sets bufLen so the
+ *  reel plays back the saved take. Idle/STOP-by-default — restore never
+ *  auto-rolls (mirrors SAMSLOOP's idle-on-load discipline). */
+interface LoadTapeMessage {
+  type: 'load-tape';
+  reel: 'a' | 'b';
+  bufLen: number;
+  bufL: ArrayBuffer;
+  bufR: ArrayBuffer;
+}
+
 /** Manual transport trigger from the card's REC / PLAY buttons. */
 interface TransportMessage {
   type: 'transport';
@@ -131,6 +144,7 @@ type TwoTracksMessage =
   | ResetMessage
   | SeekMessage
   | DumpTapeMessage
+  | LoadTapeMessage
   | TransportMessage;
 
 // ---------------------------------------------------------------------------
@@ -463,12 +477,38 @@ class TwoTracksProcessor extends AudioWorkletProcessor {
         const copyL = reel.bufL.slice(0, len);
         const copyR = reel.bufR.slice(0, len);
         try {
+          // The buffers MUST be NAMED fields (bufL/bufR) on the message — a bare
+          // transfer list moves the ArrayBuffers but the receiver has no handle
+          // to them. (This was the latent bug that left both the perf-zip dump
+          // AND the SAVE-WAV download with undefined bufL/bufR.)
           this.port.postMessage(
-            { type: 'tape-data', reel: msg.reel, bufLen: len },
+            { type: 'tape-data', reel: msg.reel, bufLen: len, bufL: copyL.buffer, bufR: copyR.buffer },
             [copyL.buffer, copyR.buffer],
           );
         } catch { /* port may be closed */ }
       }
+    } else if (msg.type === 'load-tape') {
+      // Restore a persisted take into the ring buffer (perf-zip / patch reload).
+      const srcL = new Float32Array(msg.bufL);
+      const srcR = new Float32Array(msg.bufR);
+      const len = Math.max(0, Math.min(TWOTRACKS_MAX_SAMPLES, msg.bufLen | 0, srcL.length, srcR.length));
+      // Clear then copy the recorded portion so a re-load doesn't leave a longer
+      // previous take's tail behind the new (shorter) one.
+      reel.bufL.fill(0);
+      reel.bufR.fill(0);
+      for (let i = 0; i < len; i++) {
+        reel.bufL[i] = srcL[i] ?? 0;
+        reel.bufR[i] = srcR[i] ?? 0;
+      }
+      reel.bufLen = len;
+      reel.cursor = 0;
+      // Idle-on-load: a restored tape does NOT auto-roll (matches SAMSLOOP).
+      reel.state = 'idle';
+      reel.pendingDecay = false;
+      // Force the next playhead post (bufLen + peaks) so the host's node.data
+      // bufLen + the card's waveform reflect the restored take immediately.
+      reel.lastSentBufLen = -1;
+      reel.lastSentState = null;
     }
   }
 

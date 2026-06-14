@@ -87,6 +87,29 @@ describe('buildPerformanceZip / parsePerformanceZip', () => {
     expect(Array.from(parsed.media[0]!.bytes)).toEqual(Array.from(VIDEO_BYTES));
   });
 
+  it('round-trips mixed VIDEO + AUDIO media (TWOTRACKS reel tapes) distinctly', () => {
+    const { bundle } = realBundle();
+    const vid = new Uint8Array([9, 8, 7]);
+    const tapeA = new Uint8Array([1, 2, 3, 4]);
+    const tapeB = new Uint8Array([5, 6, 7, 8]);
+    // Two AUDIO entries on the SAME node (reel a + reel b) must not collide.
+    const media: PerformanceMedia[] = [
+      { nodeId: 'v1', handleId: 'h-vid', role: 'video', name: 'clip.webm', bytes: vid },
+      { nodeId: 't1', handleId: 't1:a', role: 'audio', name: 'twotracks-a.pcm', bytes: tapeA },
+      { nodeId: 't1', handleId: 't1:b', role: 'audio', name: 'twotracks-b.pcm', bytes: tapeB },
+    ];
+    const zip = buildPerformanceZip({ bundle, media, savedAt: 5 });
+    const parsed = parsePerformanceZip(zip);
+    expect(parsed.media).toHaveLength(3);
+    const byHandle = Object.fromEntries(parsed.media.map((m) => [m.handleId, m]));
+    expect(byHandle['h-vid']!.role).toBe('video');
+    expect(Array.from(byHandle['h-vid']!.bytes)).toEqual([9, 8, 7]);
+    expect(byHandle['t1:a']!.role).toBe('audio');
+    expect(Array.from(byHandle['t1:a']!.bytes)).toEqual([1, 2, 3, 4]);
+    expect(byHandle['t1:b']!.role).toBe('audio');
+    expect(Array.from(byHandle['t1:b']!.bytes)).toEqual([5, 6, 7, 8]);
+  });
+
   it('handles a rack with NO out-of-band media', () => {
     const { bundle } = realBundle();
     const zip = buildPerformanceZip({ bundle, media: [], savedAt: 0 });
