@@ -492,13 +492,28 @@ export function describeControl(control: PhysicalControl): string {
  *  other outputs untouched. When `control` equals the DEFAULT for that output
  *  the override is DROPPED (so a "remap back to default" reverts to the absent /
  *  back-compat state rather than persisting a redundant entry). Pure — the card
- *  passes the result into a single in-place node.data mutation. */
+ *  passes the result into a single in-place node.data mutation.
+ *
+ *  Returns FRESH plain `{kind,index}` objects for every entry — it never reuses
+ *  a value object from the input `bindings` (which, when called with the live
+ *  SyncedStore proxy, would be an already-integrated Y type). That guarantee is
+ *  what makes the in-place commit (`applyBindingToData`) safe: re-assigning an
+ *  already-tree-resident Y object throws "reassigning object that already occurs
+ *  in the tree" — the bug that killed the gamepad output after a 2nd remap. */
 export function setBinding(
   bindings: RemapBindings | undefined,
   outputId: string,
   control: PhysicalControl,
 ): RemapBindings {
-  const next: RemapBindings = { ...(bindings ?? {}) };
+  const next: RemapBindings = {};
+  // Copy each existing entry into a FRESH plain object (never alias the source's
+  // value objects — see the doc comment above).
+  if (bindings) {
+    for (const k of Object.keys(bindings)) {
+      const c = bindings[k];
+      if (isPhysicalControl(c)) next[k] = { kind: c.kind, index: c.index };
+    }
+  }
   const def = DEFAULT_GAMEPAD_BINDINGS[outputId];
   if (def && def.kind === control.kind && def.index === control.index) {
     delete next[outputId];
@@ -506,6 +521,54 @@ export function setBinding(
     next[outputId] = { kind: control.kind, index: control.index };
   }
   return next;
+}
+
+/** Commit a remap binding to a node's `data` object IN PLACE, safe to call
+ *  against the LIVE SyncedStore proxy inside a `ydoc.transact`. This is the seam
+ *  that broke: the previous card code spread the live `data.bindings` proxy and
+ *  then re-assigned its own already-integrated value objects back onto it, which
+ *  Yjs rejects ("reassigning object that already occurs in the tree") — the
+ *  throw escaped the card's rAF poll, killing the poll loop so the module went
+ *  dead after a 2nd remap.
+ *
+ *  `data` is mutated IN PLACE: we compute the desired bindings map with
+ *  `setBinding` (which returns fresh value objects), then on the live
+ *  `data.bindings` map we DELETE keys that should be gone and ASSIGN FRESH plain
+ *  `{kind,index}` objects for the rest — never an object already in the tree.
+ *  When `data.bindings` doesn't exist yet we assign the fresh map wholesale (the
+ *  first-write path, which was never broken). Pure aside from the in-place
+ *  mutation; unit-tested against a real Y.Doc. */
+export function applyBindingToData(
+  data: GamepadData,
+  outputId: string,
+  control: PhysicalControl,
+): void {
+  const next = setBinding(data.bindings, outputId, control);
+  if (!data.bindings) {
+    data.bindings = next;
+    return;
+  }
+  const live = data.bindings;
+  // Drop keys no longer present.
+  for (const k of Object.keys(live)) {
+    if (!(k in next)) delete live[k];
+  }
+  // Set ONLY the keys whose value actually changed, with FRESH plain objects.
+  // Skipping unchanged keys both avoids needless Y.Doc churn AND — critically —
+  // never touches an already-integrated value that would otherwise be re-assigned
+  // (the throw that broke the module).
+  for (const k of Object.keys(next)) {
+    const c = next[k]!;
+    const cur = live[k];
+    if (isPhysicalControl(cur) && cur.kind === c.kind && cur.index === c.index) continue;
+    live[k] = { kind: c.kind, index: c.index };
+  }
+}
+
+/** Clear ONE output's remap override on a node's `data` IN PLACE (revert it to
+ *  its default control). Safe against the live proxy: it only deletes a key. */
+export function clearBindingOnData(data: GamepadData, outputId: string): void {
+  if (data.bindings) delete data.bindings[outputId];
 }
 
 /** Public per-port snapshot — used by the card's live indicator
@@ -536,16 +599,73 @@ export interface GamepadSnapshot {
    *  poll). The card renders a "remapped" badge per output + the read loop
    *  resolves each output's source through these. */
   bindings: RemapBindings;
+  /** Per-axis invert flags currently in effect (read from node.data each poll).
+   *  The card renders the four INVERT toggles' on/off state from this. */
+  invert: StickInvert;
 }
 
-/** Structured, synced module state on `node.data`. The calibration record + the
- *  per-output remap overrides. Both are one-time committed writes (never
- *  per-frame). */
+/** Per-stick-axis INVERT flags. Each true flag negates that axis's value at read
+ *  time (`v → -v`), keeping the same output range + centre. Composes AFTER any
+ *  remap (the possibly-remapped axis is read first, then inverted) and AFTER
+ *  Y-inversion / calibration, so it flips whatever the user sees on that output.
+ *  Keys are the four CV-axis output ids; absent / false → no inversion. */
+export interface StickInvert {
+  lx?: boolean;
+  ly?: boolean;
+  rx?: boolean;
+  ry?: boolean;
+}
+
+/** The four invertible stick-axis output ids. */
+export const INVERTIBLE_AXES = ['lx', 'ly', 'rx', 'ry'] as const;
+export type InvertibleAxis = (typeof INVERTIBLE_AXES)[number];
+
+/** True when `id` names one of the four invertible stick axes. */
+export function isInvertibleAxis(id: string): id is InvertibleAxis {
+  return (INVERTIBLE_AXES as readonly string[]).includes(id);
+}
+
+/** Apply the per-axis INVERT flag to a (already remapped/shaped) axis value:
+ *  flips the sign when the axis's flag is set, leaving range + centre intact.
+ *  Pure; the read loop calls it as the LAST step so invert composes on top of a
+ *  remap, calibration, and Y-inversion. Non-axis ids pass through unchanged. */
+export function applyInvert(
+  outputId: string,
+  value: number,
+  invert: StickInvert | undefined,
+): number {
+  if (!invert || !isInvertibleAxis(outputId)) return value;
+  return invert[outputId] ? -value : value;
+}
+
+/** Toggle ONE axis's invert flag on a node's `data` IN PLACE (safe against the
+ *  live SyncedStore proxy — sets/deletes a single boolean key). A flag that
+ *  toggles back to false is DELETED so the absent / back-compat state is clean
+ *  (existing patches without an `invert` map stay unchanged). */
+export function toggleInvertOnData(data: GamepadData, axisId: InvertibleAxis): void {
+  const cur = !!data.invert?.[axisId];
+  if (cur) {
+    if (data.invert) {
+      delete data.invert[axisId];
+      // Drop an emptied invert map so a cleared module reverts to the absent state.
+      if (Object.keys(data.invert).length === 0) delete data.invert;
+    }
+  } else {
+    if (!data.invert) data.invert = {};
+    data.invert[axisId] = true;
+  }
+}
+
+/** Structured, synced module state on `node.data`. The calibration record, the
+ *  per-output remap overrides, and the per-axis invert flags. All are one-time
+ *  committed writes (never per-frame). */
 export interface GamepadData {
   leftStickCalibration?: StickCalibration;
   /** Per-output physical-control overrides. Absent → all outputs use their
    *  default standard-mapping control (back-compat: existing patches unchanged). */
   bindings?: RemapBindings;
+  /** Per-stick-axis invert flags (lx/ly/rx/ry). Absent → no inversion. */
+  invert?: StickInvert;
 }
 
 export const gamepadDef: AudioModuleDef = {
@@ -610,6 +730,7 @@ export const gamepadDef: AudioModuleDef = {
       calibrated: false,
       raw: { axes: [], buttons: [] },
       bindings: {},
+      invert: {},
     };
 
     /** Read the live (synced) left-stick calibration off node.data. Cheap —
@@ -634,6 +755,14 @@ export const gamepadDef: AudioModuleDef = {
       const data = (livePatch.nodes[node.id]?.data ?? undefined) as GamepadData | undefined;
       const b = data?.bindings;
       return b && typeof b === 'object' ? b : {};
+    }
+
+    /** Read the live (synced) per-axis invert flags off node.data. Returns an
+     *  empty record when none committed (no axis inverted). */
+    function readInvert(): StickInvert {
+      const data = (livePatch.nodes[node.id]?.data ?? undefined) as GamepadData | undefined;
+      const inv = data?.invert;
+      return inv && typeof inv === 'object' ? inv : {};
     }
 
     function readPadIndex(): number {
@@ -692,6 +821,11 @@ export const gamepadDef: AudioModuleDef = {
       // physical control (override or default) below.
       const bindings = readBindings();
       snapshot.bindings = bindings;
+
+      // Per-axis invert flags (live, synced). Applied as the LAST shaping step so
+      // invert composes on top of a remap / calibration / Y-inversion.
+      const invert = readInvert();
+      snapshot.invert = invert;
 
       // Raw left-stick axes (spec frame: +X = right, +Y = down) — surfaced on
       // the snapshot so the card's calibration sweep folds them in directly.
@@ -755,7 +889,10 @@ export const gamepadDef: AudioModuleDef = {
               : Math.abs(raw) >= 0.5;
           v = pressed ? 1 : 0;
         }
-        next[o.id] = v;
+        // INVERT (last step) — flips the four stick-axis outputs when their flag
+        // is set, composing on top of the remap / calibration / Y-inversion
+        // above. A no-op for non-axis outputs + un-inverted axes.
+        next[o.id] = applyInvert(o.id, v, invert);
       }
 
       // Push only on change to keep the audio thread's param queue
@@ -824,6 +961,7 @@ export const gamepadDef: AudioModuleDef = {
             values: { ...snapshot.values },
             raw: snapshot.raw,
             bindings: snapshot.bindings,
+            invert: snapshot.invert,
           };
         }
         return undefined;

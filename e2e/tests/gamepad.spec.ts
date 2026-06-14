@@ -476,6 +476,97 @@ test.describe('GAMEPAD module', () => {
     expect(await readBindings(page)).toBeNull();
   });
 
+  test('remap the RIGHT stick after another remap → module KEEPS emitting (regression)', async ({ page }) => {
+    // The shipped bug: the 2nd remap commit threw "reassigning object that
+    // already occurs in the tree" out of the card's rAF poll, killing the poll
+    // loop so the module went DEAD. Reproduce the user's flow: remap one output,
+    // then remap the right-stick X, and assert the module STILL produces output.
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await installFakeGamepad(page, { axes: [0, 0, 0, 0], buttons: Array(17).fill(0) });
+    await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
+    await page.waitForTimeout(200);
+    const card = page.locator('[data-testid="gamepad-card"]');
+
+    // FIRST remap: arm the left-stick X (left-click, the axis path → no context
+    // menu) and move axis 1 → binds lx→axis1.
+    await card.getByTestId('gamepad-remap-lx').click();
+    await expect(card.getByTestId('gamepad-remap-banner')).toBeVisible();
+    await updateFakeGamepad(page, { axes: [0, 0.95, 0, 0] }); // only axis 1 moves
+    await expect.poll(async () => (await readBindings(page))?.lx ?? null, { timeout: 3000 }).not.toBeNull();
+    expect((await readBindings(page))?.lx).toEqual({ kind: 'axis', index: 1 });
+    // Settle ALL axes to rest so the NEXT armed baseline diff only sees axis 0.
+    await updateFakeGamepad(page, { axes: [0, 0, 0, 0] });
+    await page.waitForTimeout(100);
+
+    // SECOND remap (the one that broke): arm the right-stick X, move axis 0 →
+    // binds rx→axis0. The shipped code threw out of the rAF poll HERE (the
+    // bindings map already existed), killing the module. It must NOT throw.
+    await card.getByTestId('gamepad-remap-rx').click();
+    await expect(card.getByTestId('gamepad-remap-banner')).toBeVisible();
+    await updateFakeGamepad(page, { axes: [0.95, 0, 0, 0] }); // only axis 0 moves
+    await expect.poll(async () => (await readBindings(page))?.rx ?? null, { timeout: 3000 }).not.toBeNull();
+    expect((await readBindings(page))?.rx).toEqual({ kind: 'axis', index: 0 });
+    await expect(card.getByTestId('gamepad-remap-banner')).toBeHidden();
+
+    // The module is STILL ALIVE: rx now follows axis 0 (push axis 0 hard-right)…
+    await updateFakeGamepad(page, { axes: [1, 0, 0, 0] });
+    await expect.poll(() => readGp(page, 'rx'), { timeout: 2000 }).toBeGreaterThan(0.8);
+    // …and the FIRST remap survived: lx follows axis 1.
+    await updateFakeGamepad(page, { axes: [0, 1, 0, 0] });
+    await expect.poll(() => readGp(page, 'lx'), { timeout: 2000 }).toBeGreaterThan(0.8);
+    // …and an UN-remapped output still works (a-button via physical A = button 0).
+    const pressA = [...Array(17).fill(0)]; pressA[0] = 1;
+    await updateFakeGamepad(page, { axes: [0, 0, 0, 0], buttons: pressA });
+    await expect.poll(() => readGp(page, 'a'), { timeout: 2000 }).toBe(1);
+  });
+
+  test('INVERT toggle flips the sign of a stick axis (composes with remap)', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await installFakeGamepad(page, { axes: [0, 0, 0, 0] });
+    await spawnPatch(page, [{ id: 'gp', type: 'gamepad', position: { x: 200, y: 200 } }]);
+    await page.waitForTimeout(200);
+    const card = page.locator('[data-testid="gamepad-card"]');
+
+    // Baseline: right-stick X (axis 2) hard-right → rx ≈ +1 (no invert).
+    await updateFakeGamepad(page, { axes: [0, 0, 1, 0] });
+    await expect.poll(() => readGp(page, 'rx'), { timeout: 2000 }).toBeGreaterThan(0.8);
+
+    // Toggle INVERT on rx → the SAME hard-right deflection now reads ≈ -1.
+    await card.getByTestId('gamepad-invert-rx').click();
+    await expect(card.getByTestId('gamepad-invert-rx')).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => readGp(page, 'rx'), { timeout: 2000 }).toBeLessThan(-0.8);
+    // Persisted on node.data.invert (synced).
+    const inv = await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: { invert?: Record<string, boolean> } }> };
+      };
+      return w.__patch.nodes.gp?.data?.invert ?? null;
+    });
+    expect(inv?.rx).toBe(true);
+
+    // Toggle OFF → back to +1.
+    await card.getByTestId('gamepad-invert-rx').click();
+    await expect(card.getByTestId('gamepad-invert-rx')).toHaveAttribute('aria-pressed', 'false');
+    await expect.poll(() => readGp(page, 'rx'), { timeout: 2000 }).toBeGreaterThan(0.8);
+
+    // Invert COMPOSES with a remap: remap rx → axis 0, invert it, push axis 0.
+    // First settle ALL axes to rest so the armed baseline diff only sees axis 0
+    // move (otherwise axis 2 releasing from +1 would out-delta axis 0 and the
+    // detector would pick axis 2 = rx's own default).
+    await updateFakeGamepad(page, { axes: [0, 0, 0, 0] });
+    await expect.poll(() => readGp(page, 'rx'), { timeout: 2000 }).toBeCloseTo(0, 1);
+    await card.getByTestId('gamepad-remap-rx').click();
+    await expect(card.getByTestId('gamepad-remap-banner')).toBeVisible();
+    await updateFakeGamepad(page, { axes: [0.95, 0, 0, 0] }); // only axis 0 moves
+    await expect.poll(async () => (await readBindings(page))?.rx ?? null, { timeout: 3000 }).not.toBeNull();
+    expect((await readBindings(page))?.rx).toEqual({ kind: 'axis', index: 0 });
+    await card.getByTestId('gamepad-invert-rx').click();
+    await updateFakeGamepad(page, { axes: [1, 0, 0, 0] }); // axis 0 hard-right, remapped→rx, inverted
+    await expect.poll(() => readGp(page, 'rx'), { timeout: 2000 }).toBeLessThan(-0.8);
+  });
+
   test('button press shows up as a gate (a-button)', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');

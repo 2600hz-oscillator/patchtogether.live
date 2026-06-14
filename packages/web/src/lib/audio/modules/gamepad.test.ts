@@ -29,6 +29,13 @@ import {
   readControlValue,
   setBinding,
   describeControl,
+  applyInvert,
+  isInvertibleAxis,
+  INVERTIBLE_AXES,
+  toggleInvertOnData,
+  applyBindingToData,
+  clearBindingOnData,
+  type GamepadData,
   type RemapBindings,
   type PhysicalControl,
 } from './gamepad';
@@ -648,5 +655,128 @@ describe('gamepad remap bindings', () => {
     expect(describeControl({ kind: 'button', index: 9 })).toBe('START btn');
     expect(describeControl({ kind: 'axis', index: 7 })).toBe('axis 7');
     expect(describeControl({ kind: 'button', index: 16 })).toBe('btn 16');
+  });
+
+  // The exact remap-output-dead bug, at the pure level: setBinding must return
+  // FRESH value objects (never alias the input map's entries) so the in-place
+  // commit can't re-assign an object already integrated into the Y.Doc tree.
+  it('setBinding returns FRESH value objects (no alias to the input bindings)', () => {
+    const prev: RemapBindings = { a: { kind: 'button', index: 5 }, b: { kind: 'button', index: 6 } };
+    const next = setBinding(prev, 'lx', { kind: 'axis', index: 2 });
+    // Carried-over entries are equal in VALUE but DIFFERENT object identities.
+    expect(next.a).toEqual(prev.a);
+    expect(next.a).not.toBe(prev.a);
+    expect(next.b).not.toBe(prev.b);
+    // The new entry is also a fresh object.
+    expect(next.lx).toEqual({ kind: 'axis', index: 2 });
+  });
+
+  it('setBinding drops a corrupt entry in the input map (never carries it over)', () => {
+    const prev = { a: { kind: 'bogus', index: -1 }, b: { kind: 'button', index: 6 } } as unknown as RemapBindings;
+    const next = setBinding(prev, 'a', { kind: 'button', index: 2 });
+    expect(next.b).toEqual({ kind: 'button', index: 6 });
+    expect(next.a).toEqual({ kind: 'button', index: 2 });
+  });
+
+  it('applyBindingToData on a plain object preserves existing bindings (2nd remap)', () => {
+    // Pure (plain-object) mirror of the real-Y.Doc regression — the 2nd commit
+    // must keep the first binding AND add the second, not clobber/throw.
+    const data: GamepadData = {};
+    applyBindingToData(data, 'a', { kind: 'button', index: 2 });
+    expect(data.bindings).toEqual({ a: { kind: 'button', index: 2 } });
+    applyBindingToData(data, 'rx', { kind: 'axis', index: 5 });
+    expect(data.bindings).toEqual({
+      a: { kind: 'button', index: 2 },
+      rx: { kind: 'axis', index: 5 },
+    });
+  });
+
+  it('applyBindingToData remapping an axis to its OWN default drops the override, output unaffected', () => {
+    const data: GamepadData = {};
+    applyBindingToData(data, 'a', { kind: 'button', index: 2 });
+    // rx → its default axis 2 → dropped; `a` override survives.
+    applyBindingToData(data, 'rx', { kind: 'axis', index: 2 });
+    expect(data.bindings?.rx).toBeUndefined();
+    expect(data.bindings?.a).toEqual({ kind: 'button', index: 2 });
+    // rx falls back to its default control.
+    expect(bindingForOutput('rx', data.bindings)).toEqual({ kind: 'axis', index: 2 });
+  });
+
+  it('clearBindingOnData removes a single override, leaves others', () => {
+    const data: GamepadData = {};
+    applyBindingToData(data, 'a', { kind: 'button', index: 2 });
+    applyBindingToData(data, 'b', { kind: 'button', index: 3 });
+    clearBindingOnData(data, 'a');
+    expect(data.bindings?.a).toBeUndefined();
+    expect(data.bindings?.b).toEqual({ kind: 'button', index: 3 });
+    // Clearing on data with no bindings map is a safe no-op.
+    expect(() => clearBindingOnData({}, 'a')).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PER-AXIS INVERT — pure transform + composition with remap (4 toggles).
+// ---------------------------------------------------------------------------
+describe('gamepad per-axis invert', () => {
+  it('INVERTIBLE_AXES is exactly the four stick-axis outputs', () => {
+    expect([...INVERTIBLE_AXES].sort()).toEqual(['lx', 'ly', 'rx', 'ry']);
+  });
+
+  it('isInvertibleAxis is true only for the four stick axes', () => {
+    for (const id of ['lx', 'ly', 'rx', 'ry']) expect(isInvertibleAxis(id)).toBe(true);
+    for (const id of ['lt', 'rt', 'a', 'du', 'start', 'nope']) expect(isInvertibleAxis(id)).toBe(false);
+  });
+
+  it('applyInvert negates the value (v → -v) when the axis flag is set', () => {
+    expect(applyInvert('rx', 0.7, { rx: true })).toBeCloseTo(-0.7);
+    expect(applyInvert('rx', -0.4, { rx: true })).toBeCloseTo(0.4);
+    expect(applyInvert('ly', 1, { ly: true })).toBe(-1);
+  });
+
+  it('applyInvert keeps the range + centre (0 stays 0; ±1 stays ±1 magnitude)', () => {
+    // -0 === 0 (centre is unchanged); use closeTo so the sign of zero doesn't matter.
+    expect(applyInvert('lx', 0, { lx: true })).toBeCloseTo(0);
+    expect(applyInvert('lx', 1, { lx: true })).toBe(-1);
+    expect(applyInvert('lx', -1, { lx: true })).toBe(1);
+  });
+
+  it('applyInvert is a no-op when the flag is absent/false or invert map missing', () => {
+    expect(applyInvert('rx', 0.7, {})).toBeCloseTo(0.7);
+    expect(applyInvert('rx', 0.7, { rx: false })).toBeCloseTo(0.7);
+    expect(applyInvert('rx', 0.7, undefined)).toBeCloseTo(0.7);
+    expect(applyInvert('rx', 0.7, { lx: true })).toBeCloseTo(0.7); // a DIFFERENT axis
+  });
+
+  it('applyInvert never touches non-axis outputs (triggers / buttons)', () => {
+    // Even if a (nonsensical) flag is present for a non-axis id, it passes through.
+    expect(applyInvert('lt', 0.9, { lx: true } as never)).toBeCloseTo(0.9);
+    expect(applyInvert('a', 1, { rx: true })).toBe(1);
+  });
+
+  it('invert composes AFTER a remap (apply to the already-remapped value)', () => {
+    // The read loop reads the (possibly remapped) axis, shapes it, THEN inverts.
+    // Model that order: remap rx → axis 0, read its value, invert.
+    const reading: RawGamepadReading = { axes: [0.6, 0, 0, 0], buttons: [] };
+    const bindings = setBinding(undefined, 'rx', { kind: 'axis', index: 0 });
+    const ctrl = bindingForOutput('rx', bindings)!;
+    const shaped = applyDeadzone(readControlValue(reading, ctrl)); // remapped + deadzoned
+    expect(shaped).toBeGreaterThan(0.5);
+    const inverted = applyInvert('rx', shaped, { rx: true });
+    expect(inverted).toBeCloseTo(-shaped, 6);
+    expect(inverted).toBeLessThan(-0.5);
+  });
+
+  it('toggleInvertOnData flips a flag on/off in place + cleans an emptied map', () => {
+    const data: GamepadData = {};
+    toggleInvertOnData(data, 'rx');
+    expect(data.invert).toEqual({ rx: true });
+    toggleInvertOnData(data, 'ly');
+    expect(data.invert).toEqual({ rx: true, ly: true });
+    // Toggle rx back off → flag deleted, ly stays.
+    toggleInvertOnData(data, 'rx');
+    expect(data.invert).toEqual({ ly: true });
+    // Toggle the last flag off → the whole invert map is dropped (clean state).
+    toggleInvertOnData(data, 'ly');
+    expect(data.invert).toBeUndefined();
   });
 });

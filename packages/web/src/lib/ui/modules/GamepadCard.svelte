@@ -37,9 +37,13 @@
     finalizeCalibration,
     type CalibrationSweep,
     detectChangedControl,
-    setBinding,
+    applyBindingToData,
+    clearBindingOnData,
     bindingForOutput,
     describeControl,
+    toggleInvertOnData,
+    type StickInvert,
+    type InvertibleAxis,
     type RawGamepadReading,
     type RemapBindings,
     type PhysicalControl,
@@ -67,6 +71,7 @@
     calibrated: false,
     raw: { axes: [], buttons: [] },
     bindings: {},
+    invert: {},
   });
 
   // ---------------- control REMAP (arm → detect → bind) ----------------
@@ -112,33 +117,38 @@
     if (remapTimer !== null) { clearTimeout(remapTimer); remapTimer = null; }
   }
   /** Commit a detected physical control to the armed output as a SINGLE in-place
-   *  node.data write (rides the Y.Doc → collab + undo). */
+   *  node.data write (rides the Y.Doc → collab + undo). The in-place mutation
+   *  lives in `applyBindingToData` (gamepad.ts) — it assigns FRESH plain value
+   *  objects and never re-assigns an already-integrated Y type, which is the trap
+   *  that threw out of this rAF poll and killed all output after a 2nd remap. */
   function commitRemap(outputId: string, control: PhysicalControl) {
     mutateNode(id, (live) => {
       if (!live.data) live.data = {};
-      const d = live.data as GamepadData;
-      const next = setBinding(d.bindings, outputId, control);
-      // Replace the bindings map's CONTENTS in place — never reassign an
-      // integrated Y type. We mutate keys on the existing object when present.
-      if (!d.bindings) {
-        d.bindings = next;
-      } else {
-        // Drop keys no longer present, then set/overwrite the rest, all in place.
-        for (const k of Object.keys(d.bindings)) {
-          if (!(k in next)) delete d.bindings[k];
-        }
-        for (const k of Object.keys(next)) {
-          d.bindings[k] = next[k]!;
-        }
-      }
+      applyBindingToData(live.data as GamepadData, outputId, control);
     });
     cancelRemap();
   }
   /** Clear a single output's override (revert to its default control). */
   function clearRemap(outputId: string) {
     mutateNode(id, (live) => {
-      const d = live.data as GamepadData | undefined;
-      if (d?.bindings) delete d.bindings[outputId];
+      if (live.data) clearBindingOnData(live.data as GamepadData, outputId);
+    });
+  }
+
+  // ---------------- per-axis INVERT toggles ----------------
+  // Four small toggle buttons — left-X, left-Y, right-X, right-Y — flip the
+  // direction of whatever physical axis is mapped to that output (v → -v at read
+  // time). The flag is committed as a SINGLE in-place node.data write (rides the
+  // Y.Doc → collab + undo) and the factory reads it each frame, so it composes on
+  // top of a remap. Live state is read off the snapshot the factory publishes.
+  let invert = $derived<StickInvert>(snapshot.invert ?? {});
+  function isInverted(axisId: InvertibleAxis): boolean {
+    return !!invert[axisId];
+  }
+  function toggleInvert(axisId: InvertibleAxis) {
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      toggleInvertOnData(live.data as GamepadData, axisId);
     });
   }
 
@@ -336,6 +346,28 @@
               data-testid="gamepad-remap-ly"
             >Y</button>
           </div>
+          <!-- Per-axis INVERT toggles: flip the direction of the mapped axis. -->
+          <div class="invert-xy">
+            <span class="invert-label" aria-hidden="true">inv</span>
+            <button
+              type="button"
+              class="invert-btn"
+              class:on={isInverted('lx')}
+              aria-pressed={isInverted('lx')}
+              onclick={() => toggleInvert('lx')}
+              title="invert left-stick X"
+              data-testid="gamepad-invert-lx"
+            >x</button>
+            <button
+              type="button"
+              class="invert-btn"
+              class:on={isInverted('ly')}
+              aria-pressed={isInverted('ly')}
+              onclick={() => toggleInvert('ly')}
+              title="invert left-stick Y"
+              data-testid="gamepad-invert-ly"
+            >y</button>
+          </div>
         </div>
         <div class="stick-block">
           <div class="stick-pad" aria-label="Right stick">
@@ -368,6 +400,28 @@
               oncontextmenu={(e) => { e.preventDefault(); clearRemap('ry'); }}
               data-testid="gamepad-remap-ry"
             >Y</button>
+          </div>
+          <!-- Per-axis INVERT toggles: flip the direction of the mapped axis. -->
+          <div class="invert-xy">
+            <span class="invert-label" aria-hidden="true">inv</span>
+            <button
+              type="button"
+              class="invert-btn"
+              class:on={isInverted('rx')}
+              aria-pressed={isInverted('rx')}
+              onclick={() => toggleInvert('rx')}
+              title="invert right-stick X"
+              data-testid="gamepad-invert-rx"
+            >x</button>
+            <button
+              type="button"
+              class="invert-btn"
+              class:on={isInverted('ry')}
+              aria-pressed={isInverted('ry')}
+              onclick={() => toggleInvert('ry')}
+              title="invert right-stick Y"
+              data-testid="gamepad-invert-ry"
+            >y</button>
           </div>
         </div>
       </div>
@@ -753,6 +807,37 @@
     display: flex;
     gap: 3px;
     margin-top: 2px;
+  }
+  .invert-xy {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 2px;
+  }
+  .invert-label {
+    font-size: 0.5rem;
+    font-family: ui-monospace, monospace;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+  }
+  .invert-btn {
+    appearance: none;
+    background: rgba(10, 12, 16, 0.7);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    line-height: 1;
+    padding: 2px 5px;
+    cursor: pointer;
+    transition: background 60ms ease-out, color 60ms ease-out, border-color 60ms ease-out;
+  }
+  .invert-btn:hover { border-color: var(--accent-dim); color: var(--text); }
+  .invert-btn.on {
+    background: var(--accent, #00f0ff);
+    border-color: var(--accent, #00f0ff);
+    color: #000;
   }
   .remap-btn {
     appearance: none;
