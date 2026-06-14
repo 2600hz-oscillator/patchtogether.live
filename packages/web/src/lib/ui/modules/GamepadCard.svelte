@@ -47,6 +47,11 @@
     type RawGamepadReading,
     type RemapBindings,
     type PhysicalControl,
+    exportMapping,
+    applyMapping,
+    isGamepadMapping,
+    GAMEPAD_PRESETS,
+    type GamepadMapping,
   } from '$lib/audio/modules/gamepad';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -68,7 +73,10 @@
     values: Object.fromEntries(GAMEPAD_OUTPUTS.map((o) => [o.id, 0])),
     rawLeftX: 0,
     rawLeftY: 0,
+    rawRightX: 0,
+    rawRightY: 0,
     calibrated: false,
+    rightCalibrated: false,
     raw: { axes: [], buttons: [] },
     bindings: {},
     invert: {},
@@ -152,17 +160,19 @@
     });
   }
 
-  // ---------------- left-stick calibration MODE ----------------
-  // Entering calibration MODE arms a live min/max sweep. Each poll frame folds
-  // the RAW left-stick axes (snapshot.rawLeftX/Y) into the sweep — this is
-  // TRANSIENT render state, NOT a synced write (a per-frame Y.Doc write is the
-  // render-storm bug class). Only the FINAL committed calibration is written,
-  // once, to node.data on "complete calibration".
-  let calibrating = $state(false);
+  // ---------------- stick calibration MODE (left + right) ----------------
+  // Entering calibration MODE arms a live min/max sweep for ONE stick. Each poll
+  // frame folds that stick's RAW axes (snapshot.rawLeftX/Y or rawRightX/Y) into
+  // the sweep — this is TRANSIENT render state, NOT a synced write (a per-frame
+  // Y.Doc write is the render-storm bug class). Only the FINAL committed
+  // calibration is written, once, to node.data on "complete calibration". The
+  // sweep math + record shape are identical per stick; only which raw axes feed
+  // it + which node.data field it commits to differ.
+  let calibrating = $state<'left' | 'right' | null>(null);
   // Mutated in place every frame; reassigned to a fresh object to nudge Svelte
   // reactivity for the live min/max readout + the "complete" enabled gate.
   let sweep = $state<CalibrationSweep>(newCalibrationSweep());
-  let canComplete = $derived(calibrating && sweepIsUsable(sweep));
+  let canComplete = $derived(!!calibrating && sweepIsUsable(sweep));
 
   let rafId: number | null = null;
   function poll() {
@@ -172,7 +182,10 @@
       if (s) {
         snapshot = s;
         if (calibrating && s.connected) {
-          recordCalibrationSample(sweep, s.rawLeftX, s.rawLeftY);
+          // Fold the ACTIVE stick's raw axes into the sweep.
+          const rx = calibrating === 'left' ? s.rawLeftX : s.rawRightX;
+          const ry = calibrating === 'left' ? s.rawLeftY : s.rawRightY;
+          recordCalibrationSample(sweep, rx, ry);
           // Reassign a shallow copy so the $derived/readout re-evaluate.
           sweep = { ...sweep };
         }
@@ -201,42 +214,130 @@
     rafId = null;
     window.removeEventListener('keydown', onKeydown);
     if (remapTimer !== null) clearTimeout(remapTimer);
+    if (mappingStatusTimer !== null) clearTimeout(mappingStatusTimer);
   });
 
   function onKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && remap) { e.preventDefault(); cancelRemap(); }
   }
 
-  function startCalibration() {
+  function startCalibration(stick: 'left' | 'right') {
     sweep = newCalibrationSweep();
-    calibrating = true;
+    calibrating = stick;
   }
   function cancelCalibration() {
-    calibrating = false;
+    calibrating = null;
     sweep = newCalibrationSweep();
   }
-  /** Lock in the swept range as a ONE-TIME synced write to node.data, then
-   *  leave calibration mode. The factory's poll picks up the new calibration
-   *  on its next frame. */
+  /** Lock in the swept range as a ONE-TIME synced write to node.data (the active
+   *  stick's calibration field), then leave calibration mode. The factory's poll
+   *  picks up the new calibration on its next frame. */
   function completeCalibration() {
+    const stick = calibrating;
     const cal = finalizeCalibration(sweep);
-    if (cal) {
+    if (cal && stick) {
       // SINGLE committed write — never per frame. mutateNode rides the Y.Doc
       // (collab + undo) and mutates node.data IN PLACE (never reassigns an
-      // integrated Y type).
+      // integrated Y type — a calibration record is a leaf plain object).
       mutateNode(id, (live) => {
         if (!live.data) live.data = {};
-        (live.data as GamepadData).leftStickCalibration = cal;
+        const d = live.data as GamepadData;
+        if (stick === 'left') d.leftStickCalibration = cal;
+        else d.rightStickCalibration = cal;
       });
     }
-    calibrating = false;
+    calibrating = null;
     sweep = newCalibrationSweep();
   }
-  /** Clear the committed calibration (revert to the fixed-deadzone path). */
-  function clearCalibration() {
+  /** Clear ONE stick's committed calibration (revert to the fixed-deadzone path). */
+  function clearCalibration(stick: 'left' | 'right') {
     mutateNode(id, (live) => {
-      if (live.data) delete (live.data as GamepadData).leftStickCalibration;
+      if (!live.data) return;
+      const d = live.data as GamepadData;
+      if (stick === 'left') delete d.leftStickCalibration;
+      else delete d.rightStickCalibration;
     });
+  }
+
+  // ---------------- SAVE / LOAD mapping + presets ----------------
+  // A "mapping" is the full user-configurable control state (bindings, invert,
+  // both stick calibrations) as one serializable bundle. Save downloads it as
+  // JSON; Load (from file) + Load preset both funnel through applyMapping — a
+  // SINGLE in-place node.data write (rides the Y.Doc → collab + undo), following
+  // the same fresh-object discipline as the remap commit so it can't throw out of
+  // the rAF poll. A transient status line surfaces success/ignored-garbage.
+  let mappingStatus = $state<string | null>(null);
+  let mappingStatusTimer: ReturnType<typeof setTimeout> | null = null;
+  function flashStatus(msg: string) {
+    mappingStatus = msg;
+    if (mappingStatusTimer !== null) clearTimeout(mappingStatusTimer);
+    mappingStatusTimer = setTimeout(() => { mappingStatus = null; }, 4000);
+  }
+
+  /** "Save mapping" → download the current mapping as a .json file. Mirrors the
+   *  Blob + anchor download idiom used elsewhere (Canvas exportPerformanceZip). */
+  function saveMapping() {
+    const data = (patch.nodes[id]?.data ?? {}) as GamepadData;
+    const mapping = exportMapping(data);
+    try {
+      const json = JSON.stringify(mapping, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'gamepad-mapping.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch { /* */ } }, 60_000);
+      flashStatus('mapping saved');
+    } catch (e) {
+      flashStatus(`save failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /** Apply a mapping onto the live node.data via the single in-place mutation
+   *  (collab + undo). applyMapping sanitises garbage internally, but we never let
+   *  a throw escape into the rAF poll. */
+  function applyMappingToNode(mapping: GamepadMapping) {
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      applyMapping(live.data as GamepadData, mapping);
+    });
+  }
+
+  /** "Load mapping" file picker → parse + validate JSON, then applyMapping.
+   *  Garbage/unknown is ignored gracefully (never throws into the poll). */
+  async function onMappingFile(ev: Event) {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed: unknown = JSON.parse(text);
+      if (!isGamepadMapping(parsed)) {
+        flashStatus('ignored: not a gamepad mapping');
+        return;
+      }
+      applyMappingToNode(parsed as GamepadMapping);
+      flashStatus(`loaded ${file.name}`);
+    } catch {
+      flashStatus('ignored: invalid JSON');
+    } finally {
+      try { input.value = ''; } catch { /* */ }
+    }
+  }
+
+  /** "Load preset…" select → applyMapping the chosen built-in preset's mapping. */
+  let presetSel = $state('');
+  function onPresetSelect(ev: Event) {
+    const name = (ev.target as HTMLSelectElement).value;
+    presetSel = '';
+    if (!name) return;
+    const preset = GAMEPAD_PRESETS.find((p) => p.name === name);
+    if (!preset) return;
+    applyMappingToNode(preset.mapping);
+    flashStatus(`loaded preset: ${name}`);
   }
 
   // Pad-slot picker.
@@ -426,31 +527,52 @@
         </div>
       </div>
 
-      <!-- Left-stick calibration. Off-mode: a single "calibrate left stick"
-           button (+ a "calibrated" badge / clear when one is committed). In
-           mode: a sweep banner with live min/max + "complete" (gated until the
-           sweep is usable) and "cancel". -->
+      <!-- Stick calibration (left + right, symmetric). Off-mode: a "calibrate"
+           button per stick (+ a "calibrated" badge / clear when one is
+           committed). In mode (one stick at a time): a sweep banner naming the
+           active stick with live min/max + "complete" (gated until the sweep is
+           usable) and "cancel". -->
       <div class="calib" data-testid="gamepad-calib">
         {#if !calibrating}
-          <button
-            type="button"
-            class="calib-btn"
-            onclick={startCalibration}
-            data-testid="gamepad-calibrate-start"
-          >calibrate left stick</button>
-          {#if snapshot.calibrated}
-            <span class="calib-badge" data-testid="gamepad-calibrated">calibrated</span>
+          <div class="calib-stick">
             <button
               type="button"
-              class="calib-clear"
-              onclick={clearCalibration}
-              data-testid="gamepad-calibrate-clear"
-              title="clear calibration"
-            >✕</button>
-          {/if}
+              class="calib-btn"
+              onclick={() => startCalibration('left')}
+              data-testid="gamepad-calibrate-start"
+            >calibrate left stick</button>
+            {#if snapshot.calibrated}
+              <span class="calib-badge" data-testid="gamepad-calibrated">calibrated</span>
+              <button
+                type="button"
+                class="calib-clear"
+                onclick={() => clearCalibration('left')}
+                data-testid="gamepad-calibrate-clear"
+                title="clear left calibration"
+              >✕</button>
+            {/if}
+          </div>
+          <div class="calib-stick">
+            <button
+              type="button"
+              class="calib-btn"
+              onclick={() => startCalibration('right')}
+              data-testid="gamepad-calibrate-start-right"
+            >calibrate right stick</button>
+            {#if snapshot.rightCalibrated}
+              <span class="calib-badge" data-testid="gamepad-calibrated-right">calibrated</span>
+              <button
+                type="button"
+                class="calib-clear"
+                onclick={() => clearCalibration('right')}
+                data-testid="gamepad-calibrate-clear-right"
+                title="clear right calibration"
+              >✕</button>
+            {/if}
+          </div>
         {:else}
           <div class="calib-mode" data-testid="gamepad-calib-mode">
-            <div class="calib-hint">sweep the left stick through its full range…</div>
+            <div class="calib-hint">sweep the {calibrating} stick through its full range…</div>
             <div class="calib-range">
               x [{Number.isFinite(sweep.minX) ? sweep.minX.toFixed(2) : '–'}, {Number.isFinite(sweep.maxX) ? sweep.maxX.toFixed(2) : '–'}]
               · y [{Number.isFinite(sweep.minY) ? sweep.minY.toFixed(2) : '–'}, {Number.isFinite(sweep.maxY) ? sweep.maxY.toFixed(2) : '–'}]
@@ -473,6 +595,43 @@
           </div>
         {/if}
       </div>
+
+      <!-- Save / Load mapping + built-in presets. A "mapping" bundles the full
+           control config (remaps, inverts, both calibrations). Save downloads
+           JSON; Load (file) + Load preset both apply via applyMapping. -->
+      <div class="mapping" data-testid="gamepad-mapping">
+        <button
+          type="button"
+          class="mapping-btn"
+          onclick={saveMapping}
+          data-testid="gamepad-save-mapping"
+          title="download the current control mapping as JSON"
+        >save mapping</button>
+        <label class="mapping-btn mapping-load" title="load a control mapping from a .json file">
+          <input
+            type="file"
+            accept=".json,application/json"
+            onchange={onMappingFile}
+            data-testid="gamepad-load-mapping-input"
+          />
+          <span>load mapping…</span>
+        </label>
+        <select
+          class="mapping-preset"
+          bind:value={presetSel}
+          onchange={onPresetSelect}
+          data-testid="gamepad-preset-select"
+          title="load a built-in preset mapping"
+        >
+          <option value="">load preset…</option>
+          {#each GAMEPAD_PRESETS as p (p.name)}
+            <option value={p.name}>{p.name}</option>
+          {/each}
+        </select>
+      </div>
+      {#if mappingStatus}
+        <div class="mapping-status" data-testid="gamepad-mapping-status">{mappingStatus}</div>
+      {/if}
 
       <!-- Triggers — right-click a label to arm a button-remap (next press binds
            it); the bar shows the live 0..1. -->
@@ -632,6 +791,11 @@
 
   .calib {
     display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .calib-stick {
+    display: flex;
     align-items: center;
     gap: 6px;
     flex-wrap: wrap;
@@ -707,6 +871,59 @@
     cursor: pointer;
   }
   .calib-cancel:hover { border-color: var(--accent-dim); color: var(--text); }
+
+  /* ── SAVE / LOAD mapping + presets ── */
+  .mapping {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .mapping-btn {
+    appearance: none;
+    background: rgba(10, 12, 16, 0.7);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 0.6rem;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: background 60ms ease-out, color 60ms ease-out, border-color 60ms ease-out;
+  }
+  .mapping-btn:hover { border-color: var(--accent-dim); color: var(--text); }
+  .mapping-load {
+    position: relative;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+  }
+  .mapping-load input[type='file'] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    font-size: 0; /* keep the native control from blowing out the label box */
+  }
+  .mapping-preset {
+    appearance: none;
+    background: rgba(10, 12, 16, 0.7);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 0.6rem;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: background 60ms ease-out, color 60ms ease-out, border-color 60ms ease-out;
+  }
+  .mapping-preset:hover { border-color: var(--accent-dim); color: var(--text); }
+  .mapping-status {
+    font-size: 0.55rem;
+    font-family: ui-monospace, monospace;
+    color: var(--accent, #00f0ff);
+    letter-spacing: 0.02em;
+  }
 
   .triggers {
     display: flex;

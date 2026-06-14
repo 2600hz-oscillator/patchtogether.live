@@ -22,9 +22,14 @@ import {
   clearBindingOnData,
   toggleInvertOnData,
   bindingForOutput,
+  exportMapping,
+  applyMapping,
+  GAMEPAD_PRESETS,
   type GamepadData,
+  type GamepadMapping,
   type PhysicalControl,
   type InvertibleAxis,
+  type StickCalibration,
 } from './gamepad';
 import type { ModuleNode } from '$lib/graph/types';
 
@@ -65,6 +70,17 @@ function readBindings() {
 }
 function readInvert() {
   return (patch.nodes[TID]!.data as GamepadData).invert;
+}
+function readData() {
+  return patch.nodes[TID]!.data as GamepadData;
+}
+/** Apply a mapping the way the card does — in a tracked transaction against the
+ *  live node (the path that must NOT re-assign an integrated Y type). */
+function applyMappingLive(mapping: GamepadMapping): void {
+  mutateNode(TID, (live) => {
+    if (!live.data) live.data = {};
+    applyMapping(live.data as GamepadData, mapping);
+  });
 }
 
 afterEach(() => {
@@ -142,5 +158,89 @@ describe('GAMEPAD remap — real Y.Doc mutation', () => {
     commitRemap('rx', { kind: 'axis', index: 0 });
     expect(readInvert()).toEqual({ ly: true });
     expect(readBindings()?.rx).toEqual({ kind: 'axis', index: 0 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SAVE / LOAD MAPPING — applyMapping against the LIVE Y.Doc. The "Load mapping"
+// + "Load preset" UIs commit through `mutateNode → applyMapping(live.data, …)`.
+// Just like the remap commit, applyMapping must NOT re-assign an already-
+// integrated Y type (the "reassigning object that already occurs in the tree"
+// throw that killed the card's rAF poll). These exercise that path against the
+// real syncedStore, including the apply-over-existing + apply-twice cases that a
+// plain-object test can't catch. [[yjs-save-load-real-ydoc]]
+// ---------------------------------------------------------------------------
+const FULL_MAPPING: GamepadMapping = {
+  bindings: { a: { kind: 'button', index: 2 }, rx: { kind: 'axis', index: 0 } },
+  invert: { ly: true, rx: true },
+  leftStickCalibration: { minX: -0.7, maxX: 0.8, minY: -0.75, maxY: 0.7, deadzone: 0.1 },
+  rightStickCalibration: { minX: -0.6, maxX: 0.6, minY: -0.6, maxY: 0.6, deadzone: 0.12 } as StickCalibration,
+};
+
+describe('GAMEPAD save/load mapping — real Y.Doc apply', () => {
+  it('applyMapping onto a fresh node writes the whole bundle', () => {
+    makeGamepad();
+    expect(() => applyMappingLive(FULL_MAPPING)).not.toThrow();
+    expect(readBindings()?.a).toEqual({ kind: 'button', index: 2 });
+    expect(readBindings()?.rx).toEqual({ kind: 'axis', index: 0 });
+    expect(readInvert()).toEqual({ ly: true, rx: true });
+    expect(readData().leftStickCalibration?.maxX).toBeCloseTo(0.8);
+    expect(readData().rightStickCalibration?.deadzone).toBeCloseTo(0.12);
+  });
+
+  it('apply OVER an existing mapping does NOT throw (the integrated-type trap)', () => {
+    makeGamepad();
+    // Seed live state via the SAME mutators the card uses, so the maps are real
+    // integrated Y types before the second apply.
+    commitRemap('b', { kind: 'button', index: 5 });
+    toggleInvert('lx');
+    applyMappingLive(FULL_MAPPING); // first apply over live data
+    // The second apply (e.g. loading a different file) re-writes the already-
+    // integrated bindings/invert maps in place — this is the throw site.
+    expect(() => applyMappingLive(FULL_MAPPING)).not.toThrow();
+    expect(readBindings()?.a).toEqual({ kind: 'button', index: 2 });
+    // The pre-existing 'b' override + 'lx' invert were replaced by the mapping.
+    expect(readBindings()?.b).toBeUndefined();
+    expect(readInvert()).toEqual({ ly: true, rx: true });
+  });
+
+  it('apply TWICE (idempotent) never throws + leaves identical data', () => {
+    makeGamepad();
+    applyMappingLive(FULL_MAPPING);
+    expect(() => applyMappingLive(FULL_MAPPING)).not.toThrow();
+    expect(readBindings()?.rx).toEqual({ kind: 'axis', index: 0 });
+    expect(readData().rightStickCalibration?.maxX).toBeCloseTo(0.6);
+  });
+
+  it('export from the live doc then re-apply round-trips without throwing', () => {
+    makeGamepad();
+    applyMappingLive(FULL_MAPPING);
+    // exportMapping reads the LIVE proxy (integrated Y types) — it must clone, not
+    // alias, so the result is a safe plain object to re-apply.
+    const exported = exportMapping(readData());
+    const target: GamepadData = {};
+    expect(() => applyMapping(target, exported)).not.toThrow();
+    expect(target.bindings).toEqual(FULL_MAPPING.bindings);
+    expect(target.invert).toEqual(FULL_MAPPING.invert);
+  });
+
+  it('applying the empty mapping clears the live doc without throwing', () => {
+    makeGamepad();
+    applyMappingLive(FULL_MAPPING);
+    expect(() => applyMappingLive({})).not.toThrow();
+    expect(readData().bindings).toBeUndefined();
+    expect(readData().invert).toBeUndefined();
+    expect(readData().leftStickCalibration).toBeUndefined();
+    expect(readData().rightStickCalibration).toBeUndefined();
+  });
+
+  it('applying the "NXT Gladiator" preset on the live doc does not throw', () => {
+    makeGamepad();
+    const preset = GAMEPAD_PRESETS.find((p) => p.name === 'NXT Gladiator')!;
+    // Apply over pre-existing live state to also exercise the over-existing path.
+    commitRemap('a', { kind: 'button', index: 7 });
+    expect(() => applyMappingLive(preset.mapping)).not.toThrow();
+    // The placeholder = default bindings → every output resolves to its default.
+    expect(bindingForOutput('a', readBindings())).toEqual({ kind: 'button', index: 0 });
   });
 });
