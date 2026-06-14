@@ -3,27 +3,29 @@
 // @load — regression test for the "load patch, no audio ~50% of the time" bug.
 //
 // Bug shape (fix/load-patch-audio-race):
-//   loadPatch() in Canvas.svelte didn't call ensureEngine() before applying
-//   the saved Yjs update. If Load was the user's first action in a session,
-//   no engine + no reconciler existed; the update was applied but nothing
-//   observed it → silence. The fix awaits ensureEngine() (which resumes the
-//   AudioContext using the click as the user gesture) AND awaits a synchronous
-//   reconciler.reconcile() after load instead of trusting the doc.on('update')
-//   microtask scheduler.
+//   The load handler in Canvas.svelte didn't call ensureEngine() before
+//   applying the saved Yjs update. If Load was the user's first action in a
+//   session, no engine + no reconciler existed; the update was applied but
+//   nothing observed it → silence. The fix awaits ensureEngine() (which resumes
+//   the AudioContext using the click as the user gesture) AND awaits a
+//   synchronous reconciler.reconcile() after load instead of trusting the
+//   doc.on('update') microtask scheduler.
 //
-// What this test does:
-//   1. Generate a small fixture patch on first run (analogVco → scope → audioOut)
-//      and write it to e2e/fixtures/cold-load-patch.json. Subsequent runs reuse
-//      the file. The fixture is a real envelope produced by makeEnvelope —
-//      same code path the user's Save button uses.
-//   2. In a fresh browser context with NO prior user gesture, click Load,
-//      hand the fixture to the file picker, wait for the engine to materialize,
-//      then read RMS off the scope's analyser. Assert RMS > 0.001.
+// The manual Save/Load patch buttons were retired in rack Phase 3; the
+// surviving cold-load entry point is the topbar's "Load Perf (.zip)" button,
+// whose handler (loadPerformanceZipBytes) keeps the exact same
+// ensureEngine()-before-apply + reconcile()-after contract. This spec now
+// guards THAT path:
+//   1. Generate a portable .ptperf.zip fixture on first run (analogVco →
+//      scope → audioOut) and write it to e2e/fixtures/cold-load-patch.ptperf.zip.
+//      The fixture comes from the real __perfZip.export() hook — same envelope
+//      path the export button uses.
+//   2. In a fresh browser context with NO prior user gesture, click
+//      "Load Perf (.zip)", hand the fixture to the file picker, wait for the
+//      engine to materialize, then read RMS off the scope. Assert RMS > 0.001.
 //
-// Why this matters: previously the "Load button restores the patch" e2e test
-// in save-load.spec.ts always clicked "Load example" first, masking the bug
-// because that click bootstrapped the engine. This spec is the cold-load
-// scenario the two reporting users hit in the wild.
+// Why this matters: a fresh context with Load as the first gesture is the
+// cold-load scenario the two reporting users hit in the wild.
 
 import { test, expect, type Page } from '@playwright/test';
 import { readFile, writeFile, access } from 'node:fs/promises';
@@ -31,12 +33,12 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const FIXTURE_PATH = join(__dirname, '..', 'fixtures', 'cold-load-patch.json');
+const FIXTURE_PATH = join(__dirname, '..', 'fixtures', 'cold-load-patch.ptperf.zip');
 
 test.describe.configure({ mode: 'serial' }); // serial so fixture-gen happens before consumer
 
-/** Build the fixture envelope by booting the app, mutating the patch via the
- * dev globals, and calling __persistence.save(). Pure setup — does not assert
+/** Build the fixture .ptperf.zip by booting the app, mutating the patch via the
+ * dev globals, and calling __perfZip.export(). Pure setup — does not assert
  * audio. Same boot path the user takes (loaded once per CI run). */
 async function generateFixtureIfMissing(page: Page): Promise<void> {
   try {
@@ -108,13 +110,14 @@ async function generateFixtureIfMissing(page: Page): Promise<void> {
       };
     });
   });
-  const env = await page.evaluate(() => {
+  const zipBytes = await page.evaluate(async () => {
     const w = globalThis as unknown as {
-      __persistence: { save: () => unknown };
+      __perfZip: { export: () => Promise<Uint8Array> };
     };
-    return w.__persistence.save();
+    const bytes = await w.__perfZip.export();
+    return Array.from(bytes);
   });
-  await writeFile(FIXTURE_PATH, JSON.stringify(env, null, 2), 'utf8');
+  await writeFile(FIXTURE_PATH, Buffer.from(zipBytes));
 }
 
 test('@load cold-load: clicking Load as the first user action produces audio', async ({
@@ -146,18 +149,19 @@ test('@load cold-load: clicking Load as the first user action produces audio', a
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    // Wait for the dev globals to be installed (so __ensureEngine inside
-    // loadPatch can resolve when the click handler runs). We do NOT call
+    // Wait for the dev globals to be installed (so ensureEngine inside the
+    // zip-load handler can resolve when the click handler runs). We do NOT call
     // __ensureEngine ourselves here — that would mask the bug we're guarding.
     await page.waitForFunction(() => {
       const w = globalThis as unknown as { __ensureEngine?: () => Promise<unknown> };
       return typeof w.__ensureEngine === 'function';
     });
 
-    // Click Load — the click counts as the user gesture, AudioContext can
-    // resume from inside ensureEngine() inside loadPatch().
+    // Click "Load Perf (.zip)" — the click counts as the user gesture, so the
+    // AudioContext can resume from inside ensureEngine() inside
+    // loadPerformanceZipBytes().
     const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: 'Load', exact: true }).click();
+    await page.getByRole('button', { name: 'Load Perf (.zip)', exact: true }).click();
     const chooser = await fileChooserPromise;
     await chooser.setFiles(FIXTURE_PATH);
 
@@ -180,8 +184,8 @@ test('@load cold-load: clicking Load as the first user action produces audio', a
     expect(
       rms,
       `expected audio after cold load (rms=${rms.toFixed(6)}); ` +
-        `bug fix: loadPatch must call ensureEngine() before pickAndLoadEnvelope ` +
-        `and await reconciler.reconcile() after`
+        `bug fix: the zip-load handler must call ensureEngine() before applying ` +
+        `the envelope and await reconciler.reconcile() after`
     ).toBeGreaterThan(0.001);
 
     // No surprise console errors during the load path.

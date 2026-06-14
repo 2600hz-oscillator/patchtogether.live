@@ -21,17 +21,29 @@
 
 <h2>tl;dr</h2>
 <p>
-  You don't need to click <strong>Save</strong>. While you edit a rackspace, every change
+  You don't need to save manually. While you edit a rackspace, every change
   auto-syncs to the collaboration server (Hocuspocus) and is debounced into a
   durable Postgres snapshot a few seconds later. Reload the page, close the
   tab, come back tomorrow — your rack is exactly as you left it.
 </p>
 <p>
-  The <strong>Save</strong> button is for <em>exporting a portable backup file</em>
-  (<code>.imp.json</code>). Use it for: snapshot-before-an-experiment,
-  send-this-rack-to-a-friend, version-control the patch alongside your code,
-  or move a rack between accounts. The <strong>Load</strong> button reads one of
-  those files back, replacing the current rack.
+  To take a rack <em>with you</em>, use the topbar's
+  <strong>Export Perf (.zip)</strong> button. It writes a single portable
+  <code>.ptperf.zip</code> that carries the WHOLE show — the patch graph +
+  positions, INLINE assets (PICTUREBOX images, TOYBOX layer images/shaders/OBJs,
+  SAMSLOOP samples), the actual VIDEOBOX video bytes, CV routes, control-surface
+  bindings, and MIDI/gamepad maps. Use it for: snapshot-before-an-experiment,
+  send-this-rack-to-a-friend, version-control the patch alongside your code, or
+  move a rack between machines. <strong>Load Perf (.zip)</strong> reads one of
+  those files back into a fresh rack — no re-pick of assets needed, on any
+  machine.
+</p>
+<p>
+  (The old in-browser <em>Save</em> / <em>Load</em> patch buttons and the
+  <em>Save&nbsp;Perf</em> / <em>Load&nbsp;Perf</em> browser-slot feature were
+  retired: the auto-sync above already covers durable per-rack persistence, and
+  the portable <code>.zip</code> covers cross-machine moves — including the
+  video bytes the old browser-slot path couldn't carry.)
 </p>
 
 <h2>the three tiers</h2>
@@ -90,8 +102,9 @@
 
 <h2>the .imp.json envelope</h2>
 <p>
-  The Save / Load buttons in the canvas topbar produce and consume a single JSON
-  envelope, format <code>envelopeVersion: 1</code>:
+  The portable <code>.ptperf.zip</code> wraps a single JSON patch envelope,
+  format <code>envelopeVersion: 1</code> (the same envelope the auto-sync path
+  and the dev tooling round-trip):
 </p>
 <pre><code>{`{
   "envelopeVersion": 1,
@@ -123,7 +136,7 @@
   the patch keeps a hash reference in <code>node.data</code>. Hashes dedupe across
   racks (same image used 4 times = stored once). Beyond ~25 MB, those bytes move to
   Cloudflare R2 and the Postgres table holds the URL. Both migrations are additive
-  and leave the user-facing Save / Load story unchanged.
+  and leave the user-facing export/import story unchanged.
 </p>
 
 <h2>see also</h2>

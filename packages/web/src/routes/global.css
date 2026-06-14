@@ -157,6 +157,28 @@ body {
   filter: drop-shadow(0 0 4px var(--accent-glow));
 }
 
+/* Rear view ("flip rack", rack Phase 3): tracing wiring is the whole point of
+ * the rear view, so EMPHASIZE every cable — brighter + thicker — while the rack
+ * is flipped. The `.rear-view` class is set on the .flow container by Canvas, so
+ * scope the bump to its edges. Pure CSS; complements the per-card flip in
+ * _module-card.css. */
+.flow.rear-view .svelte-flow__edge .svelte-flow__edge-path {
+  stroke-width: 4 !important;
+  filter: brightness(1.55) drop-shadow(0 0 3px var(--accent-glow));
+}
+
+/* Virtual-rack grid as a RING (rack Phase 3). The rack <Background id="rack">
+ * uses size={15} (DotPattern circle radius 7.5) + patternClass="rack-ring";
+ * here we paint that circle as an unfilled, 5px-stroked ring → the visible band
+ * spans r5..r10, i.e. a 20px outer Ø with a 10px uncoloured (background) hole.
+ * Two-class specificity beats SvelteFlow's default filled `.dots` rule. Colour
+ * follows the theme via --rack-grid-color. */
+.svelte-flow__background-pattern.rack-ring {
+  fill: none;
+  stroke: var(--rack-grid-color);
+  stroke-width: 5px;
+}
+
 /* PatchPanel: float the entire .svelte-flow__node above its peers when
  * its hover-revealed patch panel is open. The panel itself uses z-index 10
  * within the card's local stacking context, but Svelte Flow's node

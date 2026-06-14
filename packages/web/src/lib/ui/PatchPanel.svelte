@@ -200,6 +200,22 @@
     );
   });
 
+  // ---------------- Rear-view back-panel title (rack Phase 3) ----------------
+  //
+  // The back panel (revealed by the "Flip rack" toggle, styled in
+  // _module-card.css) shows the module's name + its declared jacks. The display
+  // name is the same `node.data.name` channel ModuleTitle uses; fall back to the
+  // node TYPE (then the nodeId) so a card always reads as *something* from
+  // behind. Re-derives on edge changes so renames reflect (cheap; reads the
+  // live store node, same pump the jack indicators use).
+  let backTitle = $derived.by(() => {
+    void edgeVersion;
+    const node = patch.nodes[nodeId] as ModuleNode | undefined;
+    const name = (node?.data as { name?: unknown } | null | undefined)?.name;
+    if (typeof name === 'string' && name.trim().length > 0) return name;
+    return node?.type ?? nodeId;
+  });
+
   /** Remote endpoint strings for one port (empty when unpatched). */
   function remotesFor(portId: string, direction: 'input' | 'output'): string[] {
     const map = direction === 'input' ? connections.inputs : connections.outputs;
@@ -622,6 +638,46 @@
   </div>
 
   {@render children?.()}
+
+  <!--
+    REAR-VIEW BACK PANEL (rack Phase 3). Always in the DOM (so the CSS 3D flip
+    can reveal it without a mount), but display:none until the flow container
+    carries `.rear-view`. Covers the whole card, pre-rotated 180° (see
+    _module-card.css). Shows the module name + every declared INPUT/OUTPUT jack
+    as a labelled jack hole so wiring reads from behind. Decorative/viewing only:
+    pointer-events:none, aria-hidden.
+  -->
+  <div class="card-back-panel" data-testid="card-back-panel" aria-hidden="true">
+    <div class="back-title" data-testid="card-back-title">{backTitle}</div>
+    <div class="back-cols">
+      <div class="back-col inputs">
+        <div class="back-col-head">in</div>
+        {#if hasInputs}
+          {#each allInputs as port (port.id)}
+            <div class="back-jack" style:--jack-color={cableColorVar(port.cable)}>
+              <span class="jack-hole" aria-hidden="true"></span>
+              <span class="jack-label">{resolveVerboseLabel(port)}</span>
+            </div>
+          {/each}
+        {:else}
+          <div class="back-empty">—</div>
+        {/if}
+      </div>
+      <div class="back-col outputs">
+        <div class="back-col-head">out</div>
+        {#if hasOutputs}
+          {#each allOutputs as port (port.id)}
+            <div class="back-jack" style:--jack-color={cableColorVar(port.cable)}>
+              <span class="jack-hole" aria-hidden="true"></span>
+              <span class="jack-label">{resolveVerboseLabel(port)}</span>
+            </div>
+          {/each}
+        {:else}
+          <div class="back-empty">—</div>
+        {/if}
+      </div>
+    </div>
+  </div>
 </div>
 
 <!--
