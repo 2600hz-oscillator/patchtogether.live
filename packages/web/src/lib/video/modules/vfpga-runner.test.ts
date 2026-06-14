@@ -187,6 +187,26 @@ describe('vfpgaRunnerDef.factory — preset + snapshot + outputs', () => {
     expect(h.read?.('outputTexture:vout1')).toBeTruthy();
   });
 
+  it('hot-swap to a DIFFERENT preset rebuilds the pipeline + read("vfpga") follows the new id', () => {
+    // The user-reported preset bug: loading a non-default VFPGA must actually
+    // swap the running effect. The card writes node.data.vfpga (the SAME data
+    // object the factory captured — snapshot.ts passes `data: n.data` by ref) and
+    // pulses __reloadVfpga; the factory must re-resolve from that live data + swap.
+    const data: Record<string, unknown> = { vfpga: 'smpte-bars' };
+    const node = {
+      id: 'vfpga', type: 'vfpgaRunner', domain: 'video', params: {}, data, position: { x: 0, y: 0 },
+    } as ModuleNode;
+    const h = vfpgaRunnerDef.factory(makeCtx(), node);
+    expect(h.read?.('vfpga')).toBe('smpte-bars');
+    // Mutate the captured data object in place (what setVfpgaSpec does on the live
+    // SyncedStore node), then pulse the reload sentinel.
+    data.vfpga = 'chroma-rot';
+    h.setParam('__reloadVfpga', 1);
+    h.surface.draw(makeFrame());
+    expect(h.read?.('vfpga')).toBe('chroma-rot'); // engine actually swapped
+    expect(h.read?.('outputTexture:vout1')).toBeTruthy();
+  });
+
   it('unknown spec id falls back to the default (smpte-bars)', () => {
     const h = spawn({ vfpga: 'does-not-exist' });
     expect(h.read?.('vfpga')).toBe('smpte-bars');
