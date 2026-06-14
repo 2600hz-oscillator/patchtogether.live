@@ -9,7 +9,7 @@
 //     explicit `label` to override entirely.
 //
 //  2. Bucket ports by cable type for the auto-grouping panel layout
-//     (Gates → Pitches → CV → Audio → Poly).
+//     (CV → Audio → Video → Poly — the four post-collapse cable types).
 //
 // The verbose-label rule from .myrobots/plans/ui-patch-panel-refactor.md:
 // full word default, with hardware-convention abbreviations like FM, PW,
@@ -162,28 +162,40 @@ export function resolveVerboseLabel(port: PortDescriptor): string {
 }
 
 /**
- * Group a port list by its cable type, ordered Gates → Pitches → CV →
- * Audio → Poly. Each group emits its own header in the panel. Ports
- * within a group keep their original (declared) order.
+ * Group a port list by its cable type, ordered CV → Audio → Video → Poly
+ * (the four post-collapse cable types). Each group emits its own header in the
+ * panel. Ports within a group keep their original (declared) order.
+ *
+ * Legacy cable strings (pitch/gate/keys/image/mono-video/polyPitchGate) are
+ * folded to their post-collapse bucket first, so a card or fixture still
+ * passing an old `cable` value groups correctly.
  */
 export function groupPortsByCableType(
   ports: PortDescriptor[],
   _direction: 'input' | 'output',
 ): GroupedPorts[] {
-  // Stable group order — gates first (they're visually striking) then
-  // pitch (which a user often reaches for next), then CVs (the bulk),
-  // then audio, then poly. Unknown cable types fall to the end.
-  const order = ['gate', 'pitch', 'cv', 'audio', 'polyPitchGate'];
+  // Stable group order — CV (the bulk) first, then audio, then video, then
+  // poly. Unknown cable types fall to the end.
+  const order = ['cv', 'audio', 'video', 'poly'];
   const labels: Record<string, string> = {
-    gate: 'Gates',
-    pitch: 'Pitches',
     cv: 'CV',
     audio: 'Audio',
-    polyPitchGate: 'Poly',
+    video: 'Video',
+    poly: 'Poly',
+  };
+  // Fold legacy cable strings onto their post-collapse bucket.
+  const fold: Record<string, string> = {
+    pitch: 'cv',
+    gate: 'cv',
+    keys: 'video',
+    image: 'video',
+    'mono-video': 'video',
+    polyPitchGate: 'poly',
   };
   const buckets = new Map<string, PortDescriptor[]>();
   for (const p of ports) {
-    const cable = p.cable ?? 'audio';
+    const raw = p.cable ?? 'audio';
+    const cable = fold[raw] ?? raw;
     if (!buckets.has(cable)) buckets.set(cable, []);
     buckets.get(cable)!.push(p);
   }

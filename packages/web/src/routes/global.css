@@ -42,25 +42,34 @@
   --divider: #1f242c;
   --text-on-accent: #1a1d23;
 
+  /* The FOUR cable types (9→4 collapse, 2026-06). One CSS var per type; the
+   * name MUST match the CableType id verbatim because Canvas.svelte does
+   * `var(--cable-${e.sourceType})` to resolve the stroke colour.
+   *   audio — yellow      cv — green
+   *   video — pink/violet poly — purple-blue
+   * The four hues stay well-separated so a glance reads the signal channel. */
   --cable-audio: #fbbf24;
-  --cable-pitch: #60a5fa;
-  --cable-gate: #f87171;
+  /* cv subsumes the former pitch (blue) + gate (red) types. */
   --cable-cv: #34d399;
-  /* Stage-1 polyphony cable: a richer purple-blue distinct from --cable-pitch
-   * so users can read at a glance which cables carry chords. */
-  --cable-polyPitchGate: #a78bfa;
-
-  /* Video-domain cables (Phase 0 of the visual-modules MVP). Pink/violet
-   * band — visually distinct from the audio palette (yellow/red/green/blue)
-   * and from --cable-cv (#34d399) so users can read at a glance which
-   * cables carry video-domain signals. The CSS-var name MUST match the
-   * CableType id verbatim because Canvas.svelte does
-   * `var(--cable-${e.sourceType})` to resolve the stroke colour;
-   * `mono-video` keeps its hyphen for the same reason. */
-  --cable-keys: #d8b4fe;
-  --cable-image: #ec4899;
-  --cable-mono-video: #c084fc;
+  /* video subsumes the former keys/image/mono-video/video video-domain types. */
   --cable-video: #f472b6;
+  /* poly (formerly polyPitchGate): the multi-voice cable — purple-blue, distinct
+   * from cv so users read at a glance which cables carry chords. */
+  --cable-poly: #a78bfa;
+
+  /* Legacy cable-var ALIASES (kept after the 9→4 collapse). The cable STROKE
+   * + legend only ever reference the four canonical vars above. These aliases
+   * exist solely so the large amount of DECORATIVE card chrome (stripes,
+   * borders, accents) that picked a former cable colour keeps rendering, and so
+   * the per-skin theme tables (skins/*.ts) can keep their fuller palettes. They
+   * are NOT semantic cable types — each just points at the channel its former
+   * type folded into. New code should use the four canonical vars. */
+  --cable-pitch: var(--cable-cv);
+  --cable-gate: var(--cable-cv);
+  --cable-polyPitchGate: var(--cable-poly);
+  --cable-keys: var(--cable-video);
+  --cable-image: var(--cable-video);
+  --cable-mono-video: var(--cable-video);
 
   /* Tron-influenced UI accent. Used for chrome only — focus rings, hover
    * glow, selected-card outline, drag-active glow. Explicitly NOT a cable

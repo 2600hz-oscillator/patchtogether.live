@@ -423,6 +423,7 @@
     font-family: var(--doc-mono);
     font-size: 8px;
   }
+  /* The four post-collapse cable types. */
   .docs-root :global(.io-svg .pin-audio) {
     stroke: var(--doc-accent);
     fill: var(--doc-accent);
@@ -431,15 +432,11 @@
     stroke: #ff8a00;
     fill: #ff8a00;
   }
-  .docs-root :global(.io-svg .pin-gate) {
-    stroke: #ff3df0;
-    fill: #ff3df0;
+  .docs-root :global(.io-svg .pin-video) {
+    stroke: #f472b6;
+    fill: #f472b6;
   }
-  .docs-root :global(.io-svg .pin-pitch) {
-    stroke: #6effd6;
-    fill: #6effd6;
-  }
-  .docs-root :global(.io-svg .pin-polyPitchGate) {
+  .docs-root :global(.io-svg .pin-poly) {
     stroke: #a78bfa;
     fill: #a78bfa;
   }

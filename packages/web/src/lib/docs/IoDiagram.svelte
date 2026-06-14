@@ -2,14 +2,15 @@
   // IoDiagram.svelte
   //
   // Tron-style I/O diagram for one module. Inputs render as labeled pins on
-  // the left, outputs on the right. Cable types color-coded:
-  //   audio = electric blue   cv    = orange
-  //   gate  = magenta         pitch = cyan-green
-  //   polyPitchGate = violet  (Stage-1 polyphony cable)
+  // the left, outputs on the right. The four post-collapse cable types are
+  // colour-coded:
+  //   audio = electric blue   cv = orange
+  //   video = pink            poly = violet (multi-voice cable)
   //
   // Auto-sizing: height grows with max(inputs, outputs).
 
   import type { ManifestModule } from './module-manifest';
+  import { migrateCableType } from '$lib/graph/types';
 
   interface Props {
     mod: ManifestModule;
@@ -35,7 +36,9 @@
   const boxH = $derived(innerH);
 
   function pinClass(t: string): string {
-    return `pin pin-${t}`;
+    // Fold any legacy 9-type string (pitch/gate/keys/image/mono-video/
+    // polyPitchGate) onto its post-collapse type so the pin colours line up.
+    return `pin pin-${migrateCableType(t)}`;
   }
 </script>
 
@@ -57,7 +60,7 @@
     <line class={pinClass(p.type)} x1={4} y1={y} x2={boxX} y2={y} />
     <circle class={pinClass(p.type)} cx={boxX} cy={y} r={2.4} />
     <text class="label-name" x={boxX + 6} y={y + 3}>{p.id}</text>
-    <text class="label-type" x={4} y={y - 3}>{p.type}</text>
+    <text class="label-type" x={4} y={y - 3}>{migrateCableType(p.type)}</text>
   {/each}
 
   {#each outputs as p, i (p.id)}
@@ -66,17 +69,17 @@
     <line class={pinClass(p.type)} x1={boxX + boxW} y1={y} x2={x2} y2={y} />
     <circle class={pinClass(p.type)} cx={boxX + boxW} cy={y} r={2.4} />
     <text class="label-name" x={boxX + boxW - 6} y={y + 3} text-anchor="end">{p.id}</text>
-    <text class="label-type" x={x2} y={y - 3} text-anchor="end">{p.type}</text>
+    <text class="label-type" x={x2} y={y - 3} text-anchor="end">{migrateCableType(p.type)}</text>
   {/each}
 
   <g transform="translate({boxX}, {totalH - 14})">
-    <line class="pin-audio" x1={0} y1={4} x2={14} y2={4} />
-    <text class="legend-text" x={18} y={7}>audio</text>
-    <line class="pin-cv" x1={56} y1={4} x2={70} y2={4} />
-    <text class="legend-text" x={74} y={7}>cv</text>
-    <line class="pin-gate" x1={102} y1={4} x2={116} y2={4} />
-    <text class="legend-text" x={120} y={7}>gate</text>
-    <line class="pin-pitch" x1={150} y1={4} x2={164} y2={4} />
-    <text class="legend-text" x={168} y={7}>pitch</text>
+    <line class="pin-cv" x1={0} y1={4} x2={14} y2={4} />
+    <text class="legend-text" x={18} y={7}>cv</text>
+    <line class="pin-audio" x1={44} y1={4} x2={58} y2={4} />
+    <text class="legend-text" x={62} y={7}>audio</text>
+    <line class="pin-video" x1={100} y1={4} x2={114} y2={4} />
+    <text class="legend-text" x={118} y={7}>video</text>
+    <line class="pin-poly" x1={156} y1={4} x2={170} y2={4} />
+    <text class="legend-text" x={174} y={7}>poly</text>
   </g>
 </svg>

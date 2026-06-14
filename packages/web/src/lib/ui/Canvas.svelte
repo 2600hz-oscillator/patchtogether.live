@@ -5093,18 +5093,14 @@
         {/if}
       </span>
     </div>
+    <!-- The four cable types (9→4 collapse): CV subsumes the former pitch +
+         gate; video subsumes keys/image/mono-video; poly is the multi-voice
+         cable; audio is the audio bus. Swatch styles colocated below. -->
     <ul class="cable-legend">
-      <li><span class="swatch audio"></span> audio</li>
-      <li><span class="swatch pitch"></span> pitch</li>
-      <li><span class="swatch gate"></span> gate</li>
       <li><span class="swatch cv"></span> CV</li>
-      <li><span class="swatch polyPitchGate"></span> poly</li>
-      <!-- Phase 0 video-domain cables. Swatch styles are colocated in the
-           same .swatch ruleset below; declared here in legend order -->
-      <li><span class="swatch keys"></span> keys</li>
-      <li><span class="swatch image"></span> image</li>
-      <li><span class="swatch mono-video"></span> m-video</li>
+      <li><span class="swatch audio"></span> audio</li>
       <li><span class="swatch video"></span> video</li>
+      <li><span class="swatch poly"></span> poly</li>
     </ul>
   </footer>
 
@@ -5630,22 +5626,16 @@
     height: 3px;
     border-radius: 2px;
   }
-  .swatch.audio { background: var(--cable-audio); }
-  .swatch.pitch { background: var(--cable-pitch); }
-  .swatch.gate { background: var(--cable-gate); }
+  /* The four cable-type swatches (9→4 collapse). Class name == cable-type id
+   * so the swatch lines up with var(--cable-<type>) with no mapping table. */
   .swatch.cv { background: var(--cable-cv); }
-  .swatch.polyPitchGate { background: var(--cable-polyPitchGate); }
+  .swatch.audio { background: var(--cable-audio); }
+  .swatch.video { background: var(--cable-video); }
+  .swatch.poly { background: var(--cable-poly); }
   /* (2026-05-27) `.node-name-toolbar` styles deleted — the per-node
    * editable name label moved INSIDE each card's title chrome and is no
    * longer rendered via NodeToolbar. ModuleNameLabel keeps its own
    * inline styles (see ModuleNameLabel.svelte). */
-  /* Video-domain swatches (Phase 0 spike). The CSS-class name shape
-   * mirrors the cable-type id exactly so e.g. mono-video lines up
-   * with --cable-mono-video without an extra mapping table. */
-  .swatch.keys { background: var(--cable-keys); }
-  .swatch.image { background: var(--cable-image); }
-  .swatch.mono-video { background: var(--cable-mono-video); }
-  .swatch.video { background: var(--cable-video); }
   .trace-panel {
     padding: 0.4rem 1.25rem 0.6rem;
     border-top: 1px solid #1f242c;
