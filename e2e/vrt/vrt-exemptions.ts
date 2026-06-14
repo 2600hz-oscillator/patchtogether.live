@@ -471,6 +471,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // the module-def shape (videobox.test.ts) + the playhead-sync drift
   // math (videobox-sync.test.ts); E2E spawn smoke covers card render.
   videobox: 'live <video> element + ticking playhead readout defeat deterministic capture; unit + sync-math + per-module spawn smoke provide coverage',
+  // TV LIBRARIAN — like VIDEOBOX, a live external <video> (a remote HLS stream
+  // via hls.js) plus a runtime-fetched channel list (network-dependent + the
+  // famelack dataset/streams change), so the card has no deterministic frame to
+  // capture. Pure cores (dataset parse/filter/next/random + geo projection)
+  // are unit-tested; e2e mocks the network (no live famelack/streams in CI).
+  tvLibrarian: 'live external HLS <video> + runtime-fetched, ever-changing channel list defeat deterministic capture (same as videobox); pure-core unit tests + network-mocked e2e provide coverage',
   // VIDEOVARISPEED — sibling of VIDEOBOX: a live <video> element streamed
   // via rVFC at a varying (varispeed) cadence, plus a ticking playhead
   // readout. Both defeat deterministic single-frame capture, same as

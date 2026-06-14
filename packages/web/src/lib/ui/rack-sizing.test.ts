@@ -52,6 +52,10 @@ const DYNAMIC_SIZED = new Set([
   // user-resizable, sized by resize-snap-to-u not a fixed tier:
   'clockedRunner', 'livecode', 'wavesculpt', 'b3ntb0x', 'bentbox',
   'monoglitch', 'reshaper', 'ruttetra', 'toybox', 'videobox', 'videoOut',
+  // tvLibrarian — live HLS source card with a country picker + channel list;
+  // corner-resizable like videobox (default 360×540, snaps to whole-u), so it
+  // takes no fixed tier (forcing one would cap the resize / clip the list).
+  'tvLibrarian',
 ]);
 
 interface SizedDef {
