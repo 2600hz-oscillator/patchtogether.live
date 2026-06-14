@@ -13,17 +13,34 @@ import { cellInputUniform } from './types';
 const CELLS = listCells();
 
 describe('cell library registry', () => {
-  it('collects at least the 3 P0 CLB cells', () => {
+  it('collects the P0 CLB cells', () => {
     expect(CELLS.length).toBeGreaterThanOrEqual(3);
     expect(hasCell('clb', 'passthru')).toBe(true);
     expect(hasCell('clb', 'mix')).toBe(true);
     expect(hasCell('clb', 'threshold')).toBe(true);
   });
 
-  it('does not have a cell for the not-yet-implemented tile types', () => {
-    expect(hasCell('dsp', 'conv3x3')).toBe(false);
+  it('collects the P2 CLB breadth (arith / logic / colour / routing ops)', () => {
+    for (const op of ['add', 'multiply', 'diff', 'invert', 'gain', 'select', 'luma', 'hsvShift']) {
+      expect(hasCell('clb', op), `clb:${op} registered`).toBe(true);
+    }
+  });
+
+  it('collects the P2 DSP cells (conv3x3 / mac / quadDemod)', () => {
+    expect(hasCell('dsp', 'conv3x3')).toBe(true);
+    expect(hasCell('dsp', 'mac')).toBe(true);
+    expect(hasCell('dsp', 'quadDemod')).toBe(true);
+  });
+
+  it('collects the P2 LUT16 cell', () => {
+    expect(hasCell('lut16', 'lut')).toBe(true);
+  });
+
+  it('does not (yet) have a cell for the deferred BRAM tile type', () => {
+    // BRAM (line/frame memory) needs host line-buffer plumbing P&R does not yet
+    // provide (a single fragment kernel can't allocate `rows`-deep line memory) →
+    // deferred to a later phase. Its tile TYPE exists; no kernel does.
     expect(hasCell('bram', 'linebuf')).toBe(false);
-    expect(hasCell('lut16', 'lut')).toBe(false);
   });
 
   it('(type, op) keys are unique', () => {

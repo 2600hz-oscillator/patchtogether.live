@@ -81,10 +81,10 @@ describe('validateFabric', () => {
     expect(findError(validateFabric(f), /unknown cell clb:"nope"/)).toBeTruthy();
   });
 
-  it('rejects a tile type with no P0 cell (e.g. dsp)', () => {
+  it('rejects a tile referencing a non-existent dsp op', () => {
     const f = passthruFabric();
-    f.tiles[0] = { id: 'p', type: 'dsp', config: { op: 'conv3x3' }, inputs: ['a'] };
-    expect(findError(validateFabric(f), /unknown cell dsp:"conv3x3"/)).toBeTruthy();
+    f.tiles[0] = { id: 'p', type: 'dsp', config: { op: 'noSuchDsp' }, inputs: ['a'] };
+    expect(findError(validateFabric(f), /unknown cell dsp:"noSuchDsp"/)).toBeTruthy();
   });
 
   it('rejects a net.from referencing an unknown tile', () => {
@@ -151,11 +151,11 @@ describe('validateFabric', () => {
     it('rejects over the dsp budget', () => {
       const f = passthruFabric();
       // a reg tile so the comb-graph stays valid; add 2 dsp tiles unwired
-      f.tiles.push({ id: 'd1', type: 'dsp', config: { op: 'mac' }, inputs: ['a'] });
-      f.tiles.push({ id: 'd2', type: 'dsp', config: { op: 'mac' }, inputs: ['a'] });
+      f.tiles.push({ id: 'd1', type: 'dsp', config: { op: 'mac' }, inputs: ['a', 'b'] });
+      f.tiles.push({ id: 'd2', type: 'dsp', config: { op: 'mac' }, inputs: ['a', 'b'] });
       f.budget = { dsp: 1 };
-      // (the dsp cells are unknown in P0 — both an unknown-cell AND budget error;
-      //  assert the budget one specifically)
+      // (the dsp:mac cell now EXISTS — P2 — so these tiles are otherwise valid;
+      //  the only diagnostic is the budget overflow)
       expect(findError(validateFabric(f), /DSP budget exceeded: 2 dsp tiles > budget 1/)).toBeTruthy();
     });
 

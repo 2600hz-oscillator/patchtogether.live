@@ -1,19 +1,18 @@
 // e2e/tests/save-load.spec.ts
 //
-// JSON patch save/load (Phase 1 done-gate item).
+// JSON patch save/load DATA round-trip (Phase 1 done-gate item).
 //
-// Three layers covered:
-//   1. Data round-trip: save → clear → load reconstructs the patch identically.
-//   2. UI Save: clicking the Save button produces a downloadable envelope JSON.
-//   3. UI Load: clicking the Load button + supplying a saved envelope file
-//      restores the patch.
+// The manual Save / Load patch buttons were retired in rack Phase 3 (the
+// portable .ptperf.zip export/import is the survivor; auto-sync covers durable
+// per-rack persistence). The underlying envelope save/load is still exercised
+// here via the dev __persistence hook (the same makeEnvelope / loadEnvelope
+// path the .zip + auto-sync use), so the round-trip contract stays covered
+// without depending on removed topbar buttons.
 //
 // Format spec: phase-1-mvp.md lines 344-377 (PatchEnvelope: envelopeVersion=1,
 // savedAt, moduleSchemas, base64 Y.encodeStateAsUpdate).
 
 import { test, expect } from '@playwright/test';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
 import { spawnPatch } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -152,24 +151,18 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5);
 });
 
-test('save-load: Save button downloads a valid PatchEnvelope JSON', async ({ page }) => {
+test('save-load: __persistence.save() emits a valid PatchEnvelope JSON', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
-  // Save now prompts for filename (default = patch.imp.json). Accepting the
-  // prompt with no edit produces the same filename the prompt-less flow did.
-  page.once('dialog', (dialog) => dialog.accept());
-  const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
-  const download = await downloadPromise;
-
-  expect(download.suggestedFilename()).toBe('patch.imp.json');
-
-  const path = await download.path();
-  const content = await readFile(path, 'utf8');
-  const env = JSON.parse(content) as PatchEnvelope;
+  // The retired Save button used makeEnvelope(ydoc); __persistence.save() is the
+  // exact same call, so this still proves the envelope contract.
+  const env = (await page.evaluate(() => {
+    const w = globalThis as unknown as { __persistence: { save: () => unknown } };
+    return w.__persistence.save();
+  })) as PatchEnvelope;
 
   expect(env.envelopeVersion).toBe(1);
   expect(typeof env.savedAt).toBe('string');
@@ -183,33 +176,28 @@ test('save-load: Save button downloads a valid PatchEnvelope JSON', async ({ pag
   expect(env.update).toMatch(/^[A-Za-z0-9+/=]+$/);
 });
 
-test('save-load: Load button restores the patch from a saved envelope', async ({ page }, testInfo) => {
+test('save-load: __persistence.load() restores the patch from a saved envelope', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
-  // Start with a known patch and save it.
+  // Start with a known patch and capture its envelope.
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
 
-  page.once('dialog', (dialog) => dialog.accept());
-  const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
-  const download = await downloadPromise;
-  const fixturePath = join(testInfo.outputDir, 'patch.imp.json');
-  await mkdir(dirname(fixturePath), { recursive: true });
-  await writeFile(fixturePath, await readFile(await download.path()));
+  const env = await page.evaluate(() => {
+    const w = globalThis as unknown as { __persistence: { save: () => unknown } };
+    return w.__persistence.save();
+  });
 
   // Clear the patch.
   await page.getByRole('button', { name: 'Clear' }).click();
   await expect(page.locator('.svelte-flow__node')).toHaveCount(0);
 
-  // Click Load → handle the file picker.
-  // The Load button creates a hidden <input type=file> and clicks it. Playwright
-  // catches the resulting OS file dialog via the 'filechooser' event.
-  const fileChooserPromise = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Load', exact: true }).click();
-  const chooser = await fileChooserPromise;
-  await chooser.setFiles(fixturePath);
+  // Load the captured envelope back through the same path the .zip import uses.
+  await page.evaluate((envIn) => {
+    const w = globalThis as unknown as { __persistence: { load: (env: unknown) => unknown } };
+    w.__persistence.load(envIn);
+  }, env);
 
   // Engine reconciles → 5 nodes + 6 edges back on the canvas.
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 5_000 });
