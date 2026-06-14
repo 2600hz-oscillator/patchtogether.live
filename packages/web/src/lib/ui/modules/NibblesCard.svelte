@@ -12,8 +12,9 @@
 
   import type { NodeProps } from '@xyflow/svelte';
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { nibblesDef, type NibblesHandleExtras } from '$lib/video/modules/nibbles';
@@ -118,6 +119,16 @@
 
   let screenW = $derived(320 * scale);
   let screenH = $derived(200 * scale);
+
+  const outputs: PortDescriptor[] = [
+    { id: 'out',        label: 'OUT',    cable: 'video' },
+    { id: 'pellet',     label: 'PELLET', cable: 'gate' },
+    { id: 'death',      label: 'DEATH',  cable: 'gate' },
+    { id: 'dir_change', label: 'DIR',    cable: 'gate' },
+    { id: 'length_cv',  label: 'LENGTH', cable: 'cv' },
+    { id: 'snake',      label: 'SNAKE',  cable: 'audio' },
+    { id: 'gated',      label: 'GATED',  cable: 'audio' },
+  ];
 </script>
 
 <div
@@ -134,22 +145,7 @@
   <div class="stripe" style="background: var(--cable-video);"></div>
   <ModuleTitle {id} {data} defaultLabel="NIBBLES" />
 
-  <!-- Output handles. Vertical stack on the RIGHT edge: gates on top, CV in the middle, audio at the bottom. -->
-  <Handle type="source" position={Position.Right} id="out"        style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-  <Handle type="source" position={Position.Right} id="pellet"     style="top: 84px;  --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 78px;">PEL</span>
-  <Handle type="source" position={Position.Right} id="death"      style="top: 112px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 106px;">DTH</span>
-  <Handle type="source" position={Position.Right} id="dir_change" style="top: 140px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 134px;">DIR</span>
-  <Handle type="source" position={Position.Right} id="length_cv"  style="top: 168px; --handle-color: var(--cable-cv);" />
-  <span class="port-label right" style="top: 162px;">LEN</span>
-  <Handle type="source" position={Position.Right} id="snake"      style="top: 196px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 190px;">SNK</span>
-  <Handle type="source" position={Position.Right} id="gated"      style="top: 224px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 218px;">GTD</span>
-
+  <PatchPanel nodeId={id} {outputs}>
   <div class="header-row">
     <div class="score" data-testid="nibbles-score">LEN {score}{alive ? '' : ' †'}</div>
     <button
@@ -180,6 +176,7 @@
   </div>
 
   <div class="tip">Click to focus → arrow keys drive snake. AUTO = self-play.</div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -212,11 +209,6 @@
     position: absolute; top: 0; left: 0; right: 0; height: 2px;
     border-radius: 2px 2px 0 0;
   }
-  .port-label {
-    position: absolute; font-size: 0.6rem; color: var(--text-dim);
-    pointer-events: none; font-family: ui-monospace, monospace;
-  }
-  .port-label.right { right: 14px; }
   .header-row {
     display: flex;
     justify-content: space-between;

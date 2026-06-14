@@ -153,6 +153,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   // ── video domain ──
   '4plexvid': { size: '3u', hp: 2 }, // 463×280px
   acidwarp: { size: '3u', hp: 2 }, // 407×380px
+  backdraft: { size: '3u', hp: 4 }, // 720px wide — 2-col (preview left, controls right)  [LOCKED]
   cameraInput: { size: '3u', hp: 2 }, // 370×280px  [LOCKED]
   cellshade: { size: '2u', hp: 2 }, // 369×220px
   chroma: { size: '2u', hp: 2 }, // 360×260px
@@ -162,7 +163,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   doom: { size: '2u', hp: 2 }, // 377×360px
   edges: { size: '1u', hp: 2 }, // 180×360px — 2 faders one row beside handles
   feedback: { size: '3u', hp: 2 }, // 411×320px
-  freezeframe: { size: '4u', hp: 2 }, // 609×260px
+  freezeframe: { size: '3u', hp: 2 }, // ~470×260px — enlarged preview fills the body
   gibribbon: { size: '3u', hp: 5 }, // 398×836px
   inwards: { size: '2u', hp: 2 }, // 280×220px
   lines: { size: '2u', hp: 2 }, // 361×220px
@@ -185,6 +186,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   snes9x: { size: '2u', hp: 3 }, // 380×442px
   vdelay: { size: '3u', hp: 2 }, // 431×220px
   vfpgaRunner: { size: '3u', hp: 3 }, // 467×420px
-  videoMixer: { size: '3u', hp: 2 }, // 420×280px
+  videoMixer: { size: '1u', hp: 2 }, // 180×280px — 4 channel faders in one row  [LOCKED]
   videovarispeed: { size: '3u', hp: 2 }, // 452×320px
 };

@@ -1,8 +1,10 @@
 <script lang="ts">
   // ColorizerCard — mono-video → tinted video. Three CV inputs let an
   // upstream LFO/sequencer drive the tint color.
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { colorizerDef } from '$lib/video/modules/colorizer';
   import type { ModuleNode } from '$lib/graph/types';
@@ -18,37 +20,35 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'in',    label: 'IN', cable: 'mono-video' },
+    { id: 'tintR', label: 'R',  cable: 'cv' },
+    { id: 'tintG', label: 'G',  cable: 'cv' },
+    { id: 'tintB', label: 'B',  cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT', cable: 'video' },
+  ];
 </script>
 
 <div class="card video">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="COLORIZER" />
 
-  <!-- Inputs: stacked on the left edge. `in` (video) at top, then 3 CV
-       inputs for R/G/B tint modulation. -->
-  <Handle type="target" position={Position.Left} id="in"    style="top: 56px;  --handle-color: var(--cable-mono-video);" />
-  <span class="port-label left" style="top: 50px;">IN</span>
-  <Handle type="target" position={Position.Left} id="tintR" style="top: 92px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 86px;">R</span>
-  <Handle type="target" position={Position.Left} id="tintG" style="top: 124px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 118px;">G</span>
-  <Handle type="target" position={Position.Left} id="tintB" style="top: 156px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 150px;">B</span>
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
-  <div class="fader-grid">
-    <Fader value={p('tintR')} min={0} max={1} defaultValue={colorizerDef.params.find((x) => x.id === 'tintR')!.defaultValue} label="R" curve="linear" onchange={setParam('tintR')} moduleId={id} paramId="tintR" />
-    <Fader value={p('tintG')} min={0} max={1} defaultValue={colorizerDef.params.find((x) => x.id === 'tintG')!.defaultValue} label="G" curve="linear" onchange={setParam('tintG')} moduleId={id} paramId="tintG" />
-    <Fader value={p('tintB')} min={0} max={1} defaultValue={colorizerDef.params.find((x) => x.id === 'tintB')!.defaultValue} label="B" curve="linear" onchange={setParam('tintB')} moduleId={id} paramId="tintB" />
-  </div>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="fader-grid">
+      <Fader value={p('tintR')} min={0} max={1} defaultValue={colorizerDef.params.find((x) => x.id === 'tintR')!.defaultValue} label="R" curve="linear" onchange={setParam('tintR')} moduleId={id} paramId="tintR" />
+      <Fader value={p('tintG')} min={0} max={1} defaultValue={colorizerDef.params.find((x) => x.id === 'tintG')!.defaultValue} label="G" curve="linear" onchange={setParam('tintG')} moduleId={id} paramId="tintG" />
+      <Fader value={p('tintB')} min={0} max={1} defaultValue={colorizerDef.params.find((x) => x.id === 'tintB')!.defaultValue} label="B" curve="linear" onchange={setParam('tintB')} moduleId={id} paramId="tintB" />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
   .card {
     width: 240px;
-    min-height: 270px;
+    min-height: 180px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -66,11 +66,8 @@
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
   .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .fader-grid {
-    margin-top: 80px;
+    margin-top: 12px;
     padding: 0 12px;
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;

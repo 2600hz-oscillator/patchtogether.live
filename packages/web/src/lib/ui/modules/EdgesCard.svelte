@@ -3,10 +3,11 @@
   //
   // Single video input (in) → mono-video output (out). Two knobs:
   // THRESHOLD (edge trigger) + THICKNESS (rendered edge width), each with
-  // a matching per-param CV input. Mirrors the LUMA / CHROMA processor-card
-  // layout (handles on the left, OUT on the right, fader grid below).
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  // a matching per-param CV input. The yellow PatchPanel hosts the handles.
+  import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { edgesDef, EDGES_MAX_THICKNESS } from '$lib/video/modules/edges';
   import type { ModuleNode } from '$lib/graph/types';
@@ -25,28 +26,27 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'in',        label: 'IN',     cable: 'video' },
+    { id: 'threshold', label: 'THRESH', cable: 'cv' },
+    { id: 'thickness', label: 'THICK',  cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT', cable: 'mono-video' },
+  ];
 </script>
 
 <div class="card video" data-testid="edges-card">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="EDGES" />
 
-  <Handle type="target" position={Position.Left} id="in"        style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 50px;">IN</span>
-  <!-- CV inputs — one per modulatable param. handle id MUST match the param
-       id (the cross-domain CV bridge routes cv onto setParam(portId)). -->
-  <Handle type="target" position={Position.Left} id="threshold" style="top: 92px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 86px;">T</span>
-  <Handle type="target" position={Position.Left} id="thickness" style="top: 124px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 118px;">W</span>
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-mono-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
-  <div class="fader-grid">
-    <Fader value={p('threshold')} min={0} max={1}                  defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
-    <Fader value={p('thickness')} min={1} max={EDGES_MAX_THICKNESS} units="px" defaultValue={pdef('thickness')} label="Thick"  curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
-  </div>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="fader-grid">
+      <Fader value={p('threshold')} min={0} max={1}                  defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
+      <Fader value={p('thickness')} min={1} max={EDGES_MAX_THICKNESS} units="px" defaultValue={pdef('thickness')} label="Thick"  curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -72,14 +72,10 @@
      as a mono-video producer at a glance. */
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-mono-video); }
   .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
-  /* 1u (180px tall): the two faders sit in one row to the RIGHT of the
-     left-edge in/T/W handle column, starting just under the title. */
+  /* 1u (180px tall): the two faders sit in one row, just under the title. */
   .fader-grid {
     margin-top: 2px;
-    padding: 0 12px 0 40px;
+    padding: 0 18px;
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0 16px;
