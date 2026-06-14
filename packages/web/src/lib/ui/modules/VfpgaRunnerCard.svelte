@@ -41,6 +41,7 @@
   import { drawToyboxInputScope, type ToyboxScopeColors } from '$lib/video/toybox-scope-draw';
   import { setVfpgaSpec } from '$lib/graph/vfpga-runner';
   import ModuleTitle from './ModuleTitle.svelte';
+  import VfpgaFloorplan from './VfpgaFloorplan.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -207,6 +208,12 @@
   const VOUT_TOP = (i: number) => 60 + i * 26;
 
   let docSlug = $derived.by(() => spec?.docSlug ?? '');
+
+  // ── Fabric floorplan view (P5): a read-only tile-grid + lit-nets diagram of
+  //    the loaded VFPGA's placed fabric. Off by default (the card already shows
+  //    the preview + controls); toggled on demand. Render-local UI state only.
+  let showFloorplan = $state(false);
+  function toggleFloorplan() { showFloorplan = !showFloorplan; }
 </script>
 
 <div class="mod-card vfpga-card" data-testid="vfpga-runner-card">
@@ -243,7 +250,21 @@
       {/each}
     </select>
     <span class="loaded" data-testid="vfpga-loaded">{spec?.name ?? '—'}</span>
+    <button
+      type="button"
+      class="fp-toggle"
+      class:on={showFloorplan}
+      data-testid="vfpga-floorplan-toggle"
+      aria-pressed={showFloorplan}
+      title="show the fabric floorplan (tile grid + lit routing nets)"
+      onclick={toggleFloorplan}
+    >fabric</button>
   </div>
+
+  <!-- fabric floorplan view (read-only tile grid + lit routing nets) -->
+  {#if showFloorplan}
+    <VfpgaFloorplan {spec} />
+  {/if}
 
   <!-- manifest-driven param knob grid -->
   {#if paramGrid.length > 0}
@@ -360,6 +381,14 @@
     font-size: 0.7rem; padding: 4px 6px; font-family: ui-monospace, monospace;
   }
   .loaded { font-size: 0.65rem; color: var(--text-dim); font-family: ui-monospace, monospace; }
+  .fp-toggle {
+    background: var(--module-bg); color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: 3px;
+    font-size: 0.6rem; padding: 3px 6px; font-family: ui-monospace, monospace;
+    cursor: pointer; white-space: nowrap;
+  }
+  .fp-toggle:hover { border-color: var(--accent-dim); color: var(--text); }
+  .fp-toggle.on { border-color: var(--accent); color: var(--accent); }
   .knob-grid { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; padding: 4px 6px 8px; }
   .knob-box { display: flex; flex-direction: column; align-items: center; }
   .cv-section, .gate-section { padding: 4px 6px; }
