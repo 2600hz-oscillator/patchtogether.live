@@ -191,4 +191,16 @@ describe('vfpgaRunnerDef.factory — preset + snapshot + outputs', () => {
     const h = spawn({ vfpga: 'does-not-exist' });
     expect(h.read?.('vfpga')).toBe('smpte-bars');
   });
+
+  it('renders the default smpte-bars through the FABRIC path across repeated draws (no register swap, stable output)', () => {
+    // smpte-bars is now fabric-described (P1 dogfood); its 1-tile generator
+    // fabric P&R's to a single output pass with NO registers, so repeated draws
+    // are stable + the swap loop is a no-op (byte-identical to the legacy path).
+    const h = spawn();
+    for (let i = 0; i < 3; i++) h.surface.draw(makeFrame());
+    expect(h.read?.('outputTexture:vout1')).toBeTruthy();
+    expect(h.read?.('outputTexture:vout2')).toBeNull();
+    // The CPU-preview snapshot still resolves (spec id unchanged).
+    expect(h.read?.('snapshot')).toBeTruthy();
+  });
 });

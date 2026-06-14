@@ -13,6 +13,7 @@ import {
   type FabricError,
 } from './place-and-route';
 import type { VfpgaFabric, VfpgaTile, VfpgaNet } from './types';
+import { smpteBarsSpec } from './specs/smpte-bars';
 
 // ----------------------------------------------------------------------
 // Fixtures.
@@ -406,5 +407,111 @@ describe('determinism', () => {
     const eff = fabricToEffect(f);
     // x is vout1 → 'output'; y → fbo_y; order: x then y (fabric order)
     expect(eff.passes.map((p) => p.target)).toEqual(['output', 'fbo_y']);
+  });
+});
+
+// ----------------------------------------------------------------------
+// P1 — register ping-pong pairs (`registers[]`) emitted for the host swap.
+// ----------------------------------------------------------------------
+
+/** A feedback fabric: mix(input, reg:prev) → reg ; mix → vout1. */
+function regFabric(): VfpgaFabric {
+  return {
+    grid: { rows: 1, cols: 2 },
+    tiles: [
+      clb('fb', 'mix', ['a', 'b']),
+      { id: 'r', type: 'reg', config: { op: 'reg' }, inputs: ['a'] },
+    ],
+    nets: [
+      { from: 'IIN1', to: 'fb:a' },
+      { from: 'r:prev', to: 'fb:b' }, // clocked read of last frame
+      { from: 'fb', to: 'r:a' }, // reg captures this frame
+    ],
+    outputs: { vout1: 'fb' },
+  };
+}
+
+describe('register ping-pong pairs (P1 host swap metadata)', () => {
+  it('emits a registers[] entry pairing the reg front (write) + back (:prev read) FBOs', () => {
+    const eff = fabricToEffect(regFabric());
+    expect(eff.registers).toEqual([{ id: 'r', front: 'fbo_r__a', back: 'fbo_r__b' }]);
+    // Both buffers are real allocated FBOs (the host swaps them safely).
+    const ids = new Set((eff.fbos ?? []).map((f) => f.id));
+    expect(ids.has('fbo_r__a')).toBe(true);
+    expect(ids.has('fbo_r__b')).toBe(true);
+  });
+
+  it('a register pair inherits the tile FBO precision (float)', () => {
+    const f = regFabric();
+    f.tiles[1]!.config.kind = 'float';
+    const eff = fabricToEffect(f);
+    expect(eff.fbos).toContainEqual({ id: 'fbo_r__a', kind: 'float' });
+    expect(eff.fbos).toContainEqual({ id: 'fbo_r__b', kind: 'float' });
+  });
+
+  it('omits registers[] entirely for a register-free fabric', () => {
+    expect(fabricToEffect(passthruFabric()).registers).toBeUndefined();
+  });
+
+  it('emits one pair per register tile, in fabric order', () => {
+    const f: VfpgaFabric = {
+      grid: { rows: 1, cols: 3 },
+      tiles: [
+        clb('fb', 'mix', ['a', 'b']),
+        { id: 'r1', type: 'reg', config: { op: 'reg' }, inputs: ['a'] },
+        { id: 'r2', type: 'reg', config: { op: 'reg' }, inputs: ['a'] },
+      ],
+      nets: [
+        { from: 'IIN1', to: 'fb:a' },
+        { from: 'r1:prev', to: 'fb:b' },
+        { from: 'fb', to: 'r1:a' },
+        { from: 'fb', to: 'r2:a' },
+      ],
+      outputs: { vout1: 'fb' },
+    };
+    const eff = fabricToEffect(f);
+    expect(eff.registers?.map((r) => r.id)).toEqual(['r1', 'r2']);
+  });
+});
+
+// ----------------------------------------------------------------------
+// P1 dogfood — smpte-bars expressed as a fabric P&R's to the SAME effect as its
+// legacy hand-authored `effect` (the byte-identical correctness anchor).
+// ----------------------------------------------------------------------
+
+describe('smpte-bars dogfood: fabric P&R == legacy effect', () => {
+  it('the spec carries BOTH a fabric (runtime path) and a legacy effect (reference)', () => {
+    expect(smpteBarsSpec.fabric).toBeDefined();
+    expect(smpteBarsSpec.effect).toBeDefined();
+  });
+
+  it('the fabric is a single-pass generator → output (no inputs, no fbos)', () => {
+    const eff = fabricToEffect(smpteBarsSpec.fabric!);
+    expect(eff.passes).toHaveLength(1);
+    expect(eff.outputs).toEqual({ vout1: 'output' });
+    expect(eff.fbos).toBeUndefined(); // generator → surface; no scratch fbo
+    expect(eff.registers).toBeUndefined(); // no register tiles
+    const pass = eff.passes[0]!;
+    expect(pass.target).toBe('output');
+    expect(pass.inputs).toBeUndefined(); // 0-input generator
+    expect(pass.uniforms).toEqual(['uShift', 'uBrightness', 'uSaturation']);
+  });
+
+  it('the P&R pass is byte-identical to the legacy effect pass (same FRAG + uniforms)', () => {
+    const fromFabric = fabricToEffect(smpteBarsSpec.fabric!);
+    const legacy = smpteBarsSpec.effect!;
+    // Same single pass: identical FRAG string, identical target + uniform list.
+    expect(fromFabric.passes).toHaveLength(legacy.passes.length);
+    const a = fromFabric.passes[0]!;
+    const b = legacy.passes[0]!;
+    expect(a.frag).toBe(b.frag); // the shared SMPTE_FRAG → identical render
+    expect(a.target).toBe(b.target);
+    expect(a.uniforms).toEqual(b.uniforms);
+    // The whole compiled effect is structurally identical (byte-for-byte JSON).
+    expect(JSON.stringify(fromFabric)).toBe(JSON.stringify(legacy));
+  });
+
+  it('the fabric passes the §2.1 validation gate', () => {
+    expect(validateFabric(smpteBarsSpec.fabric!)).toEqual([]);
   });
 });

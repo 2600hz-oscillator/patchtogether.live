@@ -22,10 +22,11 @@
 //        ▼
 //   VfpgaEffect { passes[], fbos[], outputs } — fed UNCHANGED to buildEffect.
 //
-// P0 supports the cells that exist (the 3 CLB cells) + IOB in/out adapters; the
-// register ping-pong end-of-frame SWAP itself is P1 (an engine-draw touch), but
-// P&R already assigns the ping-pong FBO pair + routes `:prev` reads here so the
-// loop-cut model is unit-testable now.
+// P&R assigns each register tile a ping-pong FBO pair (front/back), routes
+// `:prev` reads to the back buffer, and (P1) emits a `registers[]` list of those
+// pairs on the effect so the HOST swaps front↔back at end of frame (the clock
+// edge — see vfpga-runner.ts draw()). The cells that exist are the 3 CLB cells
+// (+ the smpte generator) + IOB in/out adapters; DSP/BRAM/LUT16 are later phases.
 
 import {
   VFPGA_IOB_IN_PORTS,
@@ -35,6 +36,7 @@ import {
   type VfpgaFabric,
   type VfpgaFbo,
   type VfpgaPass,
+  type VfpgaRegisterPair,
   type VfpgaTile,
 } from './types';
 import { getCell } from './cells';
@@ -430,6 +432,8 @@ export function fabricToEffect(fabric: VfpgaFabric): VfpgaEffect {
   const fbos: VfpgaFbo[] = [];
   const tileFboId = new Map<string, string>(); // compute tile → its WRITE fbo id
   const regBackFboId = new Map<string, string>(); // reg tile → its :prev (read) fbo id
+  // Register ping-pong pairs the HOST swaps at end of frame (P1, design §4.3).
+  const registers: VfpgaRegisterPair[] = [];
   for (const t of fabric.tiles) {
     if (t.type === 'iob_in' || t.type === 'iob_out') continue;
     const kind = t.config.kind === 'float' ? 'float' : 'rgba8';
@@ -439,6 +443,7 @@ export function fabricToEffect(fabric: VfpgaFabric): VfpgaEffect {
       fbos.push({ id: front, kind }, { id: back, kind });
       tileFboId.set(t.id, front); // writes the front buffer this frame
       regBackFboId.set(t.id, back); // :prev reads the back buffer (last frame)
+      registers.push({ id: t.id, front, back });
     } else {
       const id = `fbo_${t.id}`;
       fbos.push({ id, kind });
@@ -534,10 +539,17 @@ export function fabricToEffect(fabric: VfpgaFabric): VfpgaEffect {
   const vout1Id = 'output';
   const vout2Id = vout2TileId ? tileFboId.get(vout2TileId) : undefined;
 
+  // Only swap register pairs whose BOTH buffers are real allocated FBOs. (A
+  // register that itself drives vout1 has its front buffer replaced by the
+  // surface 'output' — a degenerate config; we don't ping-pong the surface.)
+  const liveFboIds = new Set(liveFbos.map((f) => f.id));
+  const liveRegisters = registers.filter((r) => liveFboIds.has(r.front) && liveFboIds.has(r.back));
+
   return {
     passes,
     fbos: liveFbos.length ? liveFbos : undefined,
     outputs: vout2Id ? { vout1: vout1Id, vout2: vout2Id } : { vout1: vout1Id },
+    ...(liveRegisters.length ? { registers: liveRegisters } : {}),
   };
 }
 

@@ -58,6 +58,7 @@ import {
   type VfpgaEffect,
 } from '$lib/video/vfpga/types';
 import { fabricToEffect } from '$lib/video/vfpga/place-and-route';
+import { swapRegisters } from '$lib/video/vfpga/register-swap';
 import { getVfpgaSpec, DEFAULT_VFPGA_ID, listVfpgaSpecs } from '$lib/video/vfpga/registry';
 import { effectiveCvValue, foldCvToUnipolar } from '$lib/video/toybox-cv-math';
 import { getCvInput, type CvInputs } from '$lib/video/toybox-cv-routes';
@@ -112,6 +113,10 @@ interface CompiledEffect {
   /** vout1/vout2 → the fbo id (or 'output') whose texture they sample. */
   vout1Id: string;
   vout2Id: string | null;
+  /** Register ping-pong pairs (P&R output) the host swaps at END of frame: the
+   *  front buffer just written becomes next frame's `:prev` back buffer (the
+   *  fabric clock edge). Empty for legacy effects with no registers. */
+  registers: { front: string; back: string }[];
 }
 
 export const vfpgaRunnerDef: VideoModuleDef = {
@@ -235,11 +240,17 @@ export const vfpgaRunnerDef: VideoModuleDef = {
         if (!uniforms.has('uResolution')) uniforms.set('uResolution', gl.getUniformLocation(program, 'uResolution'));
         return { program, samplers, uniforms, target: pass.target };
       });
+      // Register ping-pong pairs to swap at end of frame (P&R output only).
+      // Defensive: only keep pairs whose BOTH FBOs were actually allocated.
+      const registers = (effect.registers ?? []).filter(
+        (r) => fbos.has(r.front) && fbos.has(r.back),
+      );
       return {
         passes,
         fbos,
         vout1Id: effect.outputs.vout1,
         vout2Id: effect.outputs.vout2 ?? null,
+        registers,
       };
     }
 
@@ -369,6 +380,12 @@ export const vfpgaRunnerDef: VideoModuleDef = {
           ctx.drawFullscreenQuad();
         }
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        // CLOCK EDGE (P1, design §4.3): swap each register's front↔back FBO so
+        // the buffer JUST written this frame becomes next frame's `:prev` read.
+        // Exchanging the {fbo,texture} entries under the two stable fbo ids means
+        // next frame's targetFbo(front)/textureForSource(back) resolve to the
+        // rotated buffers with no pass-binding rewrite. Pure, GL-free helper.
+        if (e.registers.length) swapRegisters(e.fbos, e.registers);
       },
       dispose() {
         disposeEffect(compiled);
