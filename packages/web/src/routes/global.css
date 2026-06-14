@@ -157,6 +157,16 @@ body {
   filter: drop-shadow(0 0 4px var(--accent-glow));
 }
 
+/* Rear view ("flip rack", rack Phase 3): tracing wiring is the whole point of
+ * the rear view, so EMPHASIZE every cable — brighter + thicker — while the rack
+ * is flipped. The `.rear-view` class is set on the .flow container by Canvas, so
+ * scope the bump to its edges. Pure CSS; complements the per-card flip in
+ * _module-card.css. */
+.flow.rear-view .svelte-flow__edge .svelte-flow__edge-path {
+  stroke-width: 4 !important;
+  filter: brightness(1.55) drop-shadow(0 0 3px var(--accent-glow));
+}
+
 /* PatchPanel: float the entire .svelte-flow__node above its peers when
  * its hover-revealed patch panel is open. The panel itself uses z-index 10
  * within the card's local stacking context, but Svelte Flow's node

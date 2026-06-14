@@ -9,6 +9,7 @@
     SvelteFlow,
     Background,
     Controls,
+    ControlButton,
     MiniMap,
     ConnectionMode,
     type Node as FlowNode,
@@ -31,12 +32,8 @@
   import {
     makeEnvelope,
     makePortableEnvelope,
-    downloadEnvelope,
-    pickAndLoadEnvelope,
     parseEnvelope,
     loadEnvelopeIntoStore,
-    sanitizeFilename,
-    DEFAULT_FILENAME,
     EnvelopeParseError,
     readVideoAspectFromDoc,
     writeVideoAspectToDoc,
@@ -56,14 +53,6 @@
   } from '$lib/graph/performance-zip';
   import { resolveAllVideoExports } from '$lib/video/video-export-registry';
   import { putVideoFileBlob } from '$lib/video/video-file-store';
-  import {
-    canPersistPerformances,
-    savePerformanceSlot,
-    loadPerformanceSlot,
-    listPerformanceSlots,
-    deletePerformanceSlot,
-    MAX_PERFORMANCES,
-  } from '$lib/graph/performance-store';
   import {
     exportBindings as exportMidiBindings,
     importBindings as importMidiBindings,
@@ -1114,73 +1103,13 @@
     trace('cleared patch');
   }
 
-  function savePatch() {
-    const input = window.prompt('Save patch as…', DEFAULT_FILENAME);
-    if (input === null) {
-      trace('save cancelled');
-      return;
-    }
-    const filename = sanitizeFilename(input);
-    const env = makeEnvelope(ydoc);
-    downloadEnvelope(env, filename);
-    trace(`saved patch as ${filename} (${Object.keys(patch.nodes).length} nodes, ${Object.keys(patch.edges).length} edges)`);
-  }
-
-  async function loadPatch() {
-    error = null;
-    try {
-      // Bootstrap engine + reconciler from inside the click handler so that
-      // (a) the AudioContext resumes via this user gesture, and (b) a
-      // reconciler exists to observe the Yjs update applied by
-      // pickAndLoadEnvelope. Without this, loading a patch as the user's
-      // first action would silently apply the update with nothing to
-      // materialize the engine nodes — audio plays only ~50% of the time
-      // depending on whether the user had previously bootstrapped via
-      // Load example. Mirrors loadExample()'s ensureEngine + reconcile shape.
-      await ensureEngine();
-      const result = await pickAndLoadEnvelope(ydoc, patch);
-      if (!result) {
-        trace('load cancelled');
-        return;
-      }
-      // Force a synchronous reconcile pass instead of trusting the
-      // doc.on('update') microtask scheduler — same reason loadExample does it.
-      await reconciler?.reconcile();
-      trace(`loaded patch (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
-      if (result.diagnostics.length > 0) {
-        for (const d of result.diagnostics) {
-          console.warn(`[load] ${d.nodeId} (${d.type}): ${d.reason}`);
-        }
-      }
-    } catch (e) {
-      const msg = e instanceof EnvelopeParseError ? e.message : String(e);
-      error = `Load failed: ${msg}`;
-      trace(`load failed: ${msg}`);
-    }
-  }
-
-  // ---------------- Save / Load Local Performance ----------------
+  // ---------------- Performance device-resolution helpers ----------------
   //
-  // A "performance slot" is a named snapshot of the WHOLE track stored in this
-  // browser's IndexedDB. The bundle is a superset of the patch envelope:
-  //   * patch graph + edges + params + module positions + INLINE PICTUREBOX
-  //     images + INLINE SAMSLOOP samples — all already in the envelope (free).
-  //   * VIDEOBOX video files — NOT inlined. Their FileSystemFileHandles already
-  //     persist in the existing video-handle IDB store (PR #102), keyed by the
-  //     `fileMeta.handleId` that's saved in the envelope. So on the SAME browser
-  //     profile, reloading the bundle re-applies the envelope, each VideoboxCard
-  //     re-acquires its handle by handleId and shows the one-click "re-allow"
-  //     (Chromium) — the video comes back. We record asset refs in the bundle
-  //     for the picker summary + future cross-profile guided re-pick.
-  //   * MIDI Learn CC maps (device-agnostic) + MIDI-CV-BUDDY device-by-NAME +
-  //     gamepad-by-id metadata — see performance-bundle.ts.
-  //
-  // Browser support: IndexedDB-gated. Degrades gracefully — the buttons show a
-  // notice (not a hard fail) where File System Access is absent (Firefox/Safari):
-  // the patch + inline assets still restore; only the video files need a manual
-  // re-pick via the existing VIDEOBOX re-link prompt.
-
-  let perfSupported = $derived(canPersistPerformances());
+  // Shared by the portable Export Perf (.zip) path below: resolve live MIDI /
+  // gamepad device metadata so the exported bundle can record device-by-NAME +
+  // gamepad-by-id for guided re-bind on load. (The browser-slot "Save/Load
+  // Local Performance" feature these once also served was retired — its
+  // IndexedDB layer lived in performance-store.ts and was removed with it.)
 
   /** Resolve a MIDIInput.id → {name, manufacturer} from the live MIDIAccess,
    *  if one has been granted. Best-effort: returns null when Web MIDI isn't
@@ -1209,168 +1138,6 @@
       return pads?.[slot]?.id ?? null;
     } catch {
       return null;
-    }
-  }
-
-  async function savePerformance() {
-    error = null;
-    if (!perfSupported) {
-      error = 'Save Local Performance needs IndexedDB (not available in this browser).';
-      return;
-    }
-    // Show how many slots are used so the user knows they're approaching the
-    // per-browser cap before they type a name. Best-effort — listing failures
-    // shouldn't block the save.
-    let usedCount = 0;
-    try { usedCount = (await listPerformanceSlots()).length; } catch { /* */ }
-    const input = window.prompt(
-      `Save Local Performance as…\n(${usedCount}/${MAX_PERFORMANCES} slots used)`,
-      'My Performance',
-    );
-    if (input === null) {
-      trace('save performance cancelled');
-      return;
-    }
-    const name = input.trim();
-    if (!name) {
-      error = 'Performance name cannot be empty.';
-      return;
-    }
-    try {
-      // Portable snapshot: bake THIS user's displayed positions into
-      // node.position + drop the per-user layouts map, so the performance loads
-      // with correct placement for any future loader (incl. a different user or
-      // single-user reload). In single-user mode currentUserId is undefined and
-      // this is equivalent to makeEnvelope (positions are already canonical).
-      const envelope = makePortableEnvelope(ydoc, currentUserId);
-      // Build the live node map (plain objects) for asset/device extraction.
-      const nodes: Record<string, { id: string; type: string; data?: Record<string, unknown> | null; params?: Record<string, unknown> | null }> = {};
-      for (const [id, n] of Object.entries(patch.nodes)) {
-        if (n) nodes[id] = { id, type: n.type, data: n.data as Record<string, unknown> | null, params: n.params as Record<string, unknown> | null };
-      }
-      const resolveMidi = await resolveMidiDevices();
-      const bundle = makePerformanceBundle({
-        envelope,
-        nodes,
-        midiBindings: exportMidiBindings(),
-        resolveMidiDevice: resolveMidi,
-        resolveGamepad,
-      });
-      const res = await savePerformanceSlot(name, bundle);
-      if (!res.ok) {
-        if (res.reason === 'cap') {
-          error = `You have reached the ${res.cap ?? MAX_PERFORMANCES}-performance cap. Delete one from the Load menu first.`;
-        } else {
-          error = 'Could not save the performance (storage unavailable or full).';
-        }
-        return;
-      }
-      const videoCount = bundle.assets.length;
-      trace(`saved performance "${name}" (${Object.keys(nodes).length} nodes, ${videoCount} video assets)`);
-      if (videoCount > 0) {
-        error = `Saved "${name}". On reload, click each VIDEOBOX's "re-allow" to bring the ${videoCount} video file${videoCount === 1 ? '' : 's'} back (same browser profile).`;
-      }
-    } catch (e) {
-      error = `Save Performance failed: ${e instanceof Error ? e.message : String(e)}`;
-      trace(`save performance failed: ${String(e)}`);
-    }
-  }
-
-  async function loadPerformance() {
-    error = null;
-    if (!perfSupported) {
-      error = 'Load Local Performance needs IndexedDB (not available in this browser).';
-      return;
-    }
-    try {
-      const slots = await listPerformanceSlots();
-      if (slots.length === 0) {
-        error = 'No saved performances found in this browser.';
-        return;
-      }
-      // Minimal picker: numbered prompt (no new modal component to keep the
-      // MVP small + testable). Newest-first. Type `N` to load, `dN` to
-      // delete slot N (e.g. `d3`). The slot cap is enforced at save time.
-      const menu = slots
-        .map((s, i) => `${i + 1}. ${s.name}${s.assetCount ? ` (${s.assetCount} video${s.assetCount === 1 ? '' : 's'})` : ''}`)
-        .join('\n');
-      const pick = window.prompt(
-        `Load which performance? (${slots.length}/${MAX_PERFORMANCES} slots used)\n\n${menu}\n\nEnter a number to LOAD, or "dN" (e.g. d3) to DELETE slot N:`,
-        '1',
-      );
-      if (pick === null) {
-        trace('load performance cancelled');
-        return;
-      }
-      const raw = pick.trim();
-      const delMatch = /^d\s*(\d+)$/i.exec(raw);
-      if (delMatch) {
-        const dIdx = Number.parseInt(delMatch[1]!, 10) - 1;
-        const target = slots[dIdx];
-        if (!target) {
-          error = `No performance #${delMatch[1]} to delete.`;
-          return;
-        }
-        const confirmed = window.confirm(`Delete performance "${target.name}"? This cannot be undone.`);
-        if (!confirmed) {
-          trace('delete performance cancelled');
-          return;
-        }
-        await deletePerformanceSlot(target.name);
-        trace(`deleted performance "${target.name}"`);
-        return;
-      }
-      const idx = Number.parseInt(raw, 10) - 1;
-      const chosen = slots[idx];
-      if (!chosen) {
-        error = `No performance #${raw}.`;
-        return;
-      }
-
-      const rec = await loadPerformanceSlot(chosen.name);
-      if (!rec) {
-        error = `Performance "${chosen.name}" could not be read.`;
-        return;
-      }
-      const bundle = validateBundle(rec.bundle);
-
-      // Bootstrap engine + reconciler inside this gesture (same reason as
-      // loadPatch): resume AudioContext + have a reconciler observe the update.
-      await ensureEngine();
-
-      // Restore MIDI Learn CC maps (device-agnostic; merge so other patches'
-      // bindings aren't clobbered). Done BEFORE applying the envelope so cards
-      // re-register their setters against the restored bindings on mount.
-      if (bundle.midiBindings.length > 0) {
-        const merged = mergeMidiBindings(exportMidiBindings(), bundle.midiBindings);
-        importMidiBindings(merged);
-      }
-
-      // Apply the patch envelope — restores nodes/edges/params/positions +
-      // inline images/samples. Each VIDEOBOX card then re-acquires its video
-      // handle by handleId (same-profile) on mount and offers the re-allow /
-      // re-link prompt automatically (PR #102 path).
-      const result = persistenceLoad(bundle.patch, ydoc, patch);
-      await reconciler?.reconcile();
-
-      trace(`loaded performance "${chosen.name}" (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
-
-      // Surface device re-bind status as a notice (not an error).
-      const notes: string[] = [];
-      if (bundle.assets.length > 0) {
-        notes.push(`${bundle.assets.length} video file${bundle.assets.length === 1 ? '' : 's'}: click each VIDEOBOX "re-allow" to relink.`);
-      }
-      if (bundle.midiDevices.length > 0) {
-        notes.push(`${bundle.midiDevices.length} MIDI device${bundle.midiDevices.length === 1 ? '' : 's'} recorded by name — open each MIDI-CV-BUDDY and pick the controller if not auto-selected.`);
-      }
-      if (result.diagnostics.length > 0) {
-        for (const d of result.diagnostics) console.warn(`[load-perf] ${d.nodeId} (${d.type}): ${d.reason}`);
-      }
-      if (notes.length > 0) error = `Loaded "${chosen.name}". ${notes.join(' ')}`;
-    } catch (e) {
-      const msg = e instanceof BundleParseError || e instanceof EnvelopeParseError ? e.message : String(e);
-      error = `Load Performance failed: ${msg}`;
-      trace(`load performance failed: ${msg}`);
     }
   }
 
@@ -4529,6 +4296,17 @@
   // ---------------- MiniMap toggle ----------------
   let minimapOpen = $state(true);
 
+  // ---------------- Rear view ("flip rack") — rack Phase 3 ----------------
+  //
+  // LOCAL view state ONLY — a single global toggle that flips EVERY card over
+  // its own Y axis IN PLACE to reveal its back panel (declared patch jacks), so
+  // the user can trace wiring from behind. It is NOT synced patch data (never
+  // written to the Y.Doc), NOT per-node. When on, the `.rear-view` class is set
+  // on the flow container; pure CSS (in _module-card.css + global.css) drives
+  // the per-card 3D flip + the cable emphasis. The back face itself is rendered
+  // by PatchPanel (which already has each node's inputs/outputs).
+  let rearView = $state(false);
+
   // ---------------- OUTPUT aspect (4:3/16:9) ↔ Y.Doc sync ----------------
   //
   // The canonical persisted value lives in the patch Y.Doc settings map (rides
@@ -4597,32 +4375,7 @@
         <option value="glitches">Glitches Get Riches</option>
         <option value="gibribbon-demo">GIBRIBBON (game demo)</option>
       </select>
-      <button
-        onclick={savePatch}
-        disabled={nodeCount === 0}
-        title="Download a .imp.json backup of this rack (auto-save to your account already runs while you edit; this button gives you a portable file)."
-      >Save</button>
-      <button
-        onclick={loadPatch}
-        title="Replace the current rack with a .imp.json file from disk."
-      >Load</button>
       <button onclick={clearPatch} disabled={nodeCount === 0}>Clear</button>
-      <button
-        onclick={savePerformance}
-        disabled={nodeCount === 0 || !perfSupported}
-        data-testid="save-perf-btn"
-        title={perfSupported
-          ? 'Save the WHOLE track (patch + positions + images + samples + video handles + MIDI/gamepad maps) into a named slot in THIS browser. Reload + Load Perf brings it all back on the same profile.'
-          : 'Unavailable: needs IndexedDB (not in this browser).'}
-      >Save Perf</button>
-      <button
-        onclick={loadPerformance}
-        disabled={!perfSupported}
-        data-testid="load-perf-btn"
-        title={perfSupported
-          ? 'Restore a saved local performance. Reloads the patch + inline assets; re-acquires video files (one click to re-allow on Chromium) + re-binds MIDI/gamepad.'
-          : 'Unavailable: needs IndexedDB (not in this browser).'}
-      >Load Perf</button>
       <button
         onclick={exportPerformanceZip}
         disabled={nodeCount === 0 || perfZipBusy}
@@ -4667,7 +4420,7 @@
     <pre class="error">{error}</pre>
   {/if}
 
-  <div class="flow" bind:this={flowEl}>
+  <div class="flow" class:rear-view={rearView} data-rear-view={rearView ? 'true' : undefined} bind:this={flowEl}>
     <SvelteFlow
       nodes={flowNodes}
       edges={flowEdges}
@@ -4706,7 +4459,35 @@
         size={1.4}
         patternColor="var(--rack-grid-color)"
       />
-      <Controls />
+      <Controls>
+        {#snippet before()}
+          <!-- Flip rack (rear view): flips every card over its own Y axis in
+               place to reveal the back-panel patch jacks for tracing wiring.
+               LOCAL view state only — not synced, not per-node. Sits at the TOP
+               of the Controls cluster via the `before` snippet. -->
+          <ControlButton
+            class="svelte-flow__controls-flip-rack"
+            onclick={() => (rearView = !rearView)}
+            aria-label="Flip rack (rear view)"
+            aria-pressed={rearView}
+            data-testid="flip-rack-btn"
+            data-active={rearView ? 'true' : undefined}
+            title={rearView ? 'Front view' : 'Flip rack (rear view)'}
+          >
+            <!-- Flip/rotate glyph: a rounded arrow pair suggesting a Y-axis flip. -->
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none">
+              <path
+                d="M5 9a7 7 0 0 1 12-3l2 2M19 15a7 7 0 0 1-12 3l-2-2"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path d="M19 4v4h-4M5 20v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </ControlButton>
+        {/snippet}
+      </Controls>
       {#if minimapOpen}
         <MiniMap
           position="bottom-right"

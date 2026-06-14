@@ -114,6 +114,169 @@
   max-height: calc(var(--rack-u, 1) * var(--rack-unit));
 }
 
+/* ── Rear view / "flip rack" (rack Phase 3) ──────────────────────────────────
+ * A single LOCAL toggle (Canvas `rearView`) puts `.rear-view` on the flow
+ * container. Each card then flips over its OWN Y axis IN PLACE (the node does
+ * NOT move) to reveal a back panel of patch jacks for tracing wiring. Pure CSS,
+ * class-driven — no per-frame JS. The back face element (`.card-back-panel`) is
+ * rendered by PatchPanel (which has each node's port descriptors); it sits
+ * inside the card root and is pre-rotated 180° so it faces the viewer once the
+ * card is flipped.
+ *
+ * 3D mechanics:
+ *   - perspective lives on the NODE WRAPPER (the flipping element's parent), so
+ *     every card gets depth without a per-card container edit.
+ *   - the card root is the flipped element: preserve-3d (so its back-face child
+ *     keeps its own 3D position) + a rotateY transition.
+ *   - the card front (everything that ISN'T the back panel) is hidden via
+ *     backface-visibility once rotated past 90°; the back panel becomes visible.
+ *
+ * Covers all three card roots (.mod-card / .card / .moog-panel) like the rack-
+ * sizing rule above. STICKY notes (.sticky-card) are deliberately excluded
+ * (free-form, no ports). */
+
+/* IMPORTANT — VRT safety: `transform-style: preserve-3d` promotes a card (and
+ * any <canvas> it hosts, e.g. SCOPE) to a 3D rendering layer, which subtly
+ * changes canvas rasterization and breaks pixel-stable baselines. So preserve-3d
+ * is applied ONLY while `.rear-view` is active, never on the resting front card.
+ * The `transition` on `transform` IS unconditional (it doesn't promote layers
+ * and is a no-op when transform doesn't change) so toggling rear view OFF also
+ * animates. `perspective` lives on the WRAPPER (parent), not the card, so it
+ * gives depth without promoting the card's own canvas content. */
+.flow .svelte-flow__node {
+  perspective: 1200px;
+}
+.flow .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
+.flow .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) {
+  transition: transform 380ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.rear-view .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
+.rear-view .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  transform: rotateY(180deg);
+}
+
+/* The back panel — rendered by PatchPanel, hidden by default, shown only in
+ * rear view. It's absolutely positioned to cover the whole card and pre-rotated
+ * 180° so it reads correctly once the card flips. backface-visibility keeps it
+ * hidden while the card shows its front. */
+.card-back-panel {
+  position: absolute;
+  inset: 0;
+  display: none;
+  transform: rotateY(180deg);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  z-index: 8;
+  box-sizing: border-box;
+  border-radius: var(--module-radius, 2px);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(0, 0, 0, 0.18) 0 2px,
+      rgba(0, 0, 0, 0) 2px 7px
+    ),
+    var(--module-bg-deep, #0b0e13);
+  border: 1px solid var(--module-border-color, var(--border));
+  color: var(--text);
+  overflow: hidden;
+  padding: 8px 6px;
+}
+.rear-view .card-back-panel {
+  display: block;
+}
+/* While flipped, the FRONT content (everything that isn't the back panel) is
+ * non-interactive — it's a viewing mode and backface-visibility hides it
+ * anyway. We also pointer-events:none the card front so a click can't fall
+ * through to a control behind the back face. */
+.rear-view .svelte-flow__node > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel),
+.rear-view .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) > :not(.card-back-panel) {
+  pointer-events: none;
+}
+.card-back-panel,
+.card-back-panel * {
+  pointer-events: none;
+}
+
+.card-back-panel .back-title {
+  font-family: var(--font-silkscreen, ui-monospace, monospace);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.04em;
+  margin: 0 0 6px;
+  color: var(--text);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-back-panel .back-cols {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.card-back-panel .back-col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.card-back-panel .back-col-head {
+  font-size: 0.5rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+.card-back-panel .back-col.outputs { text-align: right; }
+.card-back-panel .back-jack {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.52rem;
+  color: var(--text);
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.card-back-panel .back-col.outputs .back-jack {
+  flex-direction: row-reverse;
+}
+.card-back-panel .back-jack .jack-hole {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, #1b1f27 0 44%, #05070a 46% 100%);
+  border: 1.5px solid var(--jack-color, var(--cable-audio));
+  box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.8);
+}
+.card-back-panel .back-jack .jack-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-back-panel .back-empty {
+  font-size: 0.5rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* prefers-reduced-motion: skip the flip animation (instant state change). */
+@media (prefers-reduced-motion: reduce) {
+  .flow .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
+  .flow .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel),
+  .rear-view .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
+  .rear-view .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) {
+    transition: none;
+  }
+}
+
 /* ── Locked ("screwed down") card cue (rack Phase 2) ─────────────────────────
  * The flowNodes derivation adds `node-locked` to the wrapper when
  * node.data.locked is set; SvelteFlow has already made the node non-draggable.
