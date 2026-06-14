@@ -1,7 +1,9 @@
 <script lang="ts">
   // DestructorCard — RGB-shift / scanline / posterize glitch effect.
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { destructorDef } from '$lib/video/modules/destructor';
   import type { ModuleNode } from '$lib/graph/types';
@@ -17,26 +19,28 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'in',     label: 'IN',     cable: 'video' },
+    { id: 'mangle', label: 'MANGLE', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT', cable: 'video' },
+  ];
 </script>
 
 <div class="card video">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="DESTRUCTOR" />
 
-  <Handle type="target" position={Position.Left} id="in"     style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 50px;">IN</span>
-  <Handle type="target" position={Position.Left} id="mangle" style="top: 92px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 86px;">M</span>
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
-  <div class="fader-grid">
-    <Fader value={p('shift')}     min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'shift')!.defaultValue}     label="Shift"  curve="linear" onchange={setParam('shift')} moduleId={id} paramId="shift" />
-    <Fader value={p('scanline')}  min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'scanline')!.defaultValue}  label="Scan"   curve="linear" onchange={setParam('scanline')} moduleId={id} paramId="scanline" />
-    <Fader value={p('posterize')} min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'posterize')!.defaultValue} label="Post"   curve="linear" onchange={setParam('posterize')} moduleId={id} paramId="posterize" />
-    <Fader value={p('mangle')}    min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'mangle')!.defaultValue}    label="Mangle" curve="linear" onchange={setParam('mangle')} moduleId={id} paramId="mangle" />
-  </div>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="fader-grid">
+      <Fader value={p('shift')}     min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'shift')!.defaultValue}     label="Shift"  curve="linear" onchange={setParam('shift')} moduleId={id} paramId="shift" />
+      <Fader value={p('scanline')}  min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'scanline')!.defaultValue}  label="Scan"   curve="linear" onchange={setParam('scanline')} moduleId={id} paramId="scanline" />
+      <Fader value={p('posterize')} min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'posterize')!.defaultValue} label="Post"   curve="linear" onchange={setParam('posterize')} moduleId={id} paramId="posterize" />
+      <Fader value={p('mangle')}    min={0} max={1} defaultValue={destructorDef.params.find((x) => x.id === 'mangle')!.defaultValue}    label="Mangle" curve="linear" onchange={setParam('mangle')} moduleId={id} paramId="mangle" />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -60,14 +64,10 @@
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
   .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .fader-grid {
-    /* 1u (180px tall): 4 faders in one row to the RIGHT of the in/M handle
-       column, starting just under the title. */
+    /* 1u (180px tall): 4 faders in one row, just under the title. */
     margin-top: 2px;
-    padding: 0 10px 0 36px;
+    padding: 0 14px;
     display: grid;
     grid-template-columns: 1fr 1fr 1fr 1fr;
     gap: 0 6px;

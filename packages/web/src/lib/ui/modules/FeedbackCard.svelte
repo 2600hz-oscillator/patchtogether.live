@@ -8,9 +8,11 @@
   // buffer into the on-card canvas (the same blitOutputToDrawingBuffer pattern
   // BackdraftCard / QuadralogicalCard / ReshaperCard use). It shows the module's
   // canonical feedback render whether or not the OUT port is patched.
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import { onMount, onDestroy } from 'svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { feedbackDef } from '$lib/video/modules/feedback';
   import { useEngine } from '$lib/audio/engine-context';
@@ -29,6 +31,19 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+
+  const inputs: PortDescriptor[] = [
+    { id: 'in',      label: 'IN',     cable: 'video' },
+    { id: 'wet',     label: 'WET',    cable: 'cv' },
+    { id: 'decay',   label: 'DECAY',  cable: 'cv' },
+    { id: 'zoom',    label: 'ZOOM',   cable: 'cv' },
+    { id: 'rotate',  label: 'ROTATE', cable: 'cv' },
+    { id: 'offsetX', label: 'OFF X',  cable: 'cv' },
+    { id: 'offsetY', label: 'OFF Y',  cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT', cable: 'video' },
+  ];
 
   // ---- live output preview (blit from the shared video engine) ----
   const ENGINE_W = VIDEO_RES.width;
@@ -81,43 +96,27 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="FEEDBACK" />
 
-  <!-- live output preview (the canonical feedback render) -->
-  <div class="preview-wrap">
-    <canvas
-      bind:this={canvasEl}
-      width={CANVAS_W}
-      height={CANVAS_H}
-      data-testid="feedback-canvas"
-      data-node-id={id}
-    ></canvas>
-  </div>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <!-- live output preview (the canonical feedback render) -->
+    <div class="preview-wrap">
+      <canvas
+        bind:this={canvasEl}
+        width={CANVAS_W}
+        height={CANVAS_H}
+        data-testid="feedback-canvas"
+        data-node-id={id}
+      ></canvas>
+    </div>
 
-  <Handle type="target" position={Position.Left} id="in"      style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 50px;">IN</span>
-  <Handle type="target" position={Position.Left} id="wet"     style="top: 92px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 86px;">W</span>
-  <Handle type="target" position={Position.Left} id="decay"   style="top: 124px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 118px;">D</span>
-  <Handle type="target" position={Position.Left} id="zoom"    style="top: 156px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 150px;">Z</span>
-  <Handle type="target" position={Position.Left} id="rotate"  style="top: 188px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 182px;">R</span>
-  <Handle type="target" position={Position.Left} id="offsetX" style="top: 220px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 214px;">X</span>
-  <Handle type="target" position={Position.Left} id="offsetY" style="top: 252px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 246px;">Y</span>
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
-  <div class="fader-grid">
-    <Fader value={p('wet')}     min={0}    max={1}   defaultValue={feedbackDef.params.find((x) => x.id === 'wet')!.defaultValue}     label="Wet"    curve="linear" onchange={setParam('wet')} moduleId={id} paramId="wet" />
-    <Fader value={p('decay')}   min={0}    max={2}   defaultValue={feedbackDef.params.find((x) => x.id === 'decay')!.defaultValue}   label="Decay"  curve="linear" onchange={setParam('decay')} moduleId={id} paramId="decay" />
-    <Fader value={p('zoom')}    min={0.9}  max={1.1} defaultValue={feedbackDef.params.find((x) => x.id === 'zoom')!.defaultValue}    label="Zoom"   curve="linear" onchange={setParam('zoom')} moduleId={id} paramId="zoom" />
-    <Fader value={p('rotate')}  min={-3.14159} max={3.14159} defaultValue={feedbackDef.params.find((x) => x.id === 'rotate')!.defaultValue}  label="Rot"    curve="linear" onchange={setParam('rotate')} moduleId={id} paramId="rotate" />
-    <Fader value={p('offsetX')} min={-1}   max={1}   defaultValue={feedbackDef.params.find((x) => x.id === 'offsetX')!.defaultValue} label="OffX"   curve="linear" onchange={setParam('offsetX')} moduleId={id} paramId="offsetX" />
-    <Fader value={p('offsetY')} min={-1}   max={1}   defaultValue={feedbackDef.params.find((x) => x.id === 'offsetY')!.defaultValue} label="OffY"   curve="linear" onchange={setParam('offsetY')} moduleId={id} paramId="offsetY" />
-  </div>
+    <div class="fader-grid">
+      <Fader value={p('wet')}     min={0}    max={1}   defaultValue={feedbackDef.params.find((x) => x.id === 'wet')!.defaultValue}     label="Wet"    curve="linear" onchange={setParam('wet')} moduleId={id} paramId="wet" />
+      <Fader value={p('decay')}   min={0}    max={2}   defaultValue={feedbackDef.params.find((x) => x.id === 'decay')!.defaultValue}   label="Decay"  curve="linear" onchange={setParam('decay')} moduleId={id} paramId="decay" />
+      <Fader value={p('zoom')}    min={0.9}  max={1.1} defaultValue={feedbackDef.params.find((x) => x.id === 'zoom')!.defaultValue}    label="Zoom"   curve="linear" onchange={setParam('zoom')} moduleId={id} paramId="zoom" />
+      <Fader value={p('rotate')}  min={-3.14159} max={3.14159} defaultValue={feedbackDef.params.find((x) => x.id === 'rotate')!.defaultValue}  label="Rot"    curve="linear" onchange={setParam('rotate')} moduleId={id} paramId="rotate" />
+      <Fader value={p('offsetX')} min={-1}   max={1}   defaultValue={feedbackDef.params.find((x) => x.id === 'offsetX')!.defaultValue} label="OffX"   curve="linear" onchange={setParam('offsetX')} moduleId={id} paramId="offsetX" />
+      <Fader value={p('offsetY')} min={-1}   max={1}   defaultValue={feedbackDef.params.find((x) => x.id === 'offsetY')!.defaultValue} label="OffY"   curve="linear" onchange={setParam('offsetY')} moduleId={id} paramId="offsetY" />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -141,13 +140,9 @@
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
   .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
-  /* Live output preview at the top — inset from the left/right port columns so
-     it doesn't sit under the IN / OUT handle labels. */
+  /* Live output preview at the top (the canonical feedback render). */
   .preview-wrap {
-    margin: 4px 24px 0;
+    margin: 4px 16px 0;
     border: 1px solid var(--cable-video);
     border-radius: 2px;
     overflow: hidden;
@@ -162,7 +157,7 @@
     background: #050608;
   }
   .fader-grid {
-    margin-top: 24px;
+    margin-top: 16px;
     padding: 0 10px;
     display: grid;
     grid-template-columns: repeat(3, 1fr);

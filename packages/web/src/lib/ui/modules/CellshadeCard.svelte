@@ -8,8 +8,10 @@
   // Each knob has a matching per-param CV input. A live preview of the
   // cel-shaded OUT is shown (mirrors FreezeframeCard's blit).
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
   import {
@@ -87,69 +89,65 @@
 
   onMount(() => { rafId = requestAnimationFrame(draw); });
   onDestroy(() => { if (rafId !== null) cancelAnimationFrame(rafId); });
+
+  const inputs: PortDescriptor[] = [
+    { id: 'in',        label: 'IN',     cable: 'video' },
+    { id: 'threshold', label: 'THRESH', cable: 'cv' },
+    { id: 'thickness', label: 'THICK',  cable: 'cv' },
+    { id: 'bits',      label: 'BITS',   cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT', cable: 'video' },
+  ];
 </script>
 
 <div class="card video" data-testid="cellshade-card" data-node-id={id}>
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="CELLSHADE" />
 
-  <Handle type="target" position={Position.Left} id="in"        style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 50px;">IN</span>
-  <!-- CV inputs — one per modulatable param. handle id MUST match the param
-       id (the cross-domain CV bridge routes cv onto setParam(portId)). -->
-  <Handle type="target" position={Position.Left} id="threshold" style="top: 92px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 86px;">T</span>
-  <Handle type="target" position={Position.Left} id="thickness" style="top: 124px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 118px;">W</span>
-  <Handle type="target" position={Position.Left} id="bits"      style="top: 156px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 150px;">B</span>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <!-- OUT live preview -->
+    <div class="preview-wrap">
+      <canvas
+        bind:this={canvasEl}
+        width={160}
+        height={120}
+        data-testid="cellshade-preview"
+        data-node-id={id}
+      ></canvas>
+      <span class="preview-label" data-testid="cellshade-bits-readout">{bitDepth}-BIT · {colorCount} COL</span>
+    </div>
 
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
-  <!-- OUT live preview -->
-  <div class="preview-wrap">
-    <canvas
-      bind:this={canvasEl}
-      width={160}
-      height={120}
-      data-testid="cellshade-preview"
-      data-node-id={id}
-    ></canvas>
-    <span class="preview-label" data-testid="cellshade-bits-readout">{bitDepth}-BIT · {colorCount} COL</span>
-  </div>
-
-  <div class="fader-grid">
-    <Fader value={p('threshold')} min={0} max={1}                  defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
-    <Fader value={p('thickness')} min={1} max={EDGES_MAX_THICKNESS} units="px" defaultValue={pdef('thickness')} label="Thick"  curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
-    <Fader
-      value={p('bits')}
-      min={0}
-      max={BITS_MAX_INDEX}
-      defaultValue={pdef('bits')}
-      label="Bits"
-      curve="discrete"
-      formatValue={formatBits}
-      ticks={BITS_TICKS}
-      onchange={setParam('bits')}
-      moduleId={id}
-      paramId="bits"
-    />
-  </div>
+    <div class="fader-grid">
+      <Fader value={p('threshold')} min={0} max={1}                  defaultValue={pdef('threshold')} label="Thresh" curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
+      <Fader value={p('thickness')} min={1} max={EDGES_MAX_THICKNESS} units="px" defaultValue={pdef('thickness')} label="Thick"  curve="linear" onchange={setParam('thickness')} moduleId={id} paramId="thickness" />
+      <Fader
+        value={p('bits')}
+        min={0}
+        max={BITS_MAX_INDEX}
+        defaultValue={pdef('bits')}
+        label="Bits"
+        curve="discrete"
+        formatValue={formatBits}
+        ticks={BITS_TICKS}
+        onchange={setParam('bits')}
+        moduleId={id}
+        paramId="bits"
+      />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
   .card {
     width: 220px;
-    min-height: 351px;
+    min-height: 200px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
     padding-top: 18px;
-    /* Rack-compaction (#759): tighter bottom padding to fit the 2u tier.
-     * padding-top stays 18px because the preview-wrap top margin is tuned to
-     * clear the absolutely-positioned CV handles (top: 56–156px). */
+    /* Rack-compaction (#759): tighter bottom padding to fit the 2u tier. */
     padding-bottom: 9px;
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -162,12 +160,8 @@
   }
   /* Video stripe — same accent the OUT handle uses. */
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .preview-wrap {
-    /* Clear the lowest CV-input handle (top: 156px). */
-    margin: 78px auto 0;
+    margin: 6px auto 0;
     width: 160px;
     display: flex;
     flex-direction: column;

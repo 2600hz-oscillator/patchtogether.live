@@ -12,8 +12,10 @@
   // combined output (the canonical surface.texture), mirroring
   // FourPlexVidCard's blit.
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
   import { freezeframeDef } from '$lib/video/modules/freezeframe';
@@ -37,23 +39,24 @@
     return freezeframeDef.params.find((x) => x.id === name)!;
   }
 
-  // Inputs (left): video + gate.
-  const INPUTS = [
-    { id: 'video_in', y: 56, label: 'VID', color: 'var(--cable-video)' },
-    { id: 'gate_in',  y: 92, label: 'GATE', color: 'var(--cable-cv)' },
+  const inputs: PortDescriptor[] = [
+    { id: 'video_in', label: 'VIDEO', cable: 'video' },
+    { id: 'gate_in',  label: 'GATE',  cable: 'gate' },
   ];
-  // Outputs (right): combined + isolated layers.
-  const OUTPUTS = [
-    { id: 'video_out', y: 56,  label: 'OUT' },
-    { id: 'r_out',     y: 92,  label: 'R' },
-    { id: 'g_out',     y: 124, label: 'G' },
-    { id: 'b_out',     y: 156, label: 'B' },
-    { id: 'luma_out',  y: 188, label: 'L' },
+  const outputs: PortDescriptor[] = [
+    { id: 'video_out', label: 'OUT',  cable: 'video' },
+    { id: 'r_out',     label: 'R',    cable: 'video' },
+    { id: 'g_out',     label: 'G',    cable: 'video' },
+    { id: 'b_out',     label: 'B',    cable: 'video' },
+    { id: 'luma_out',  label: 'LUMA', cable: 'video' },
   ];
 
   // --- Live preview of video_out (the canonical surface.texture). ---
   const ENGINE_W = VIDEO_RES.width;
   const ENGINE_H = VIDEO_RES.height;
+  // Bigger on-card preview (fills the previously-empty card body). 4:3 box.
+  const PREVIEW_W = 228;
+  const PREVIEW_H = Math.round(PREVIEW_W * (ENGINE_H / ENGINE_W)); // 171
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
@@ -91,39 +94,32 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="FREEZEFRAME" />
 
-  {#each INPUTS as h}
-    <Handle type="target" position={Position.Left} id={h.id} style={`top: ${h.y}px; --handle-color: ${h.color};`} />
-    <span class="port-label left" style={`top: ${h.y - 6}px;`}>{h.label}</span>
-  {/each}
-  {#each OUTPUTS as h}
-    <Handle type="source" position={Position.Right} id={h.id} style={`top: ${h.y}px; --handle-color: var(--cable-video);`} />
-    <span class="port-label right" style={`top: ${h.y - 6}px;`}>{h.label}</span>
-  {/each}
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <!-- video_out live preview (enlarged to fill the card body) -->
+    <div class="preview-wrap">
+      <canvas
+        bind:this={canvasEl}
+        width={PREVIEW_W}
+        height={PREVIEW_H}
+        data-testid="freezeframe-preview"
+        data-node-id={id}
+      ></canvas>
+      <span class="preview-label">OUT</span>
+    </div>
 
-  <!-- video_out live preview -->
-  <div class="preview-wrap">
-    <canvas
-      bind:this={canvasEl}
-      width={160}
-      height={120}
-      data-testid="freezeframe-preview"
-      data-node-id={id}
-    ></canvas>
-    <span class="preview-label">OUT</span>
-  </div>
-
-  <div class="fader-grid">
-    <Fader value={p('quant_r')}    min={0} max={1} defaultValue={def('quant_r').defaultValue}    label="QUANT R"    curve="linear" onchange={setParam('quant_r')}    moduleId={id} paramId="quant_r" />
-    <Fader value={p('quant_g')}    min={0} max={1} defaultValue={def('quant_g').defaultValue}    label="QUANT G"    curve="linear" onchange={setParam('quant_g')}    moduleId={id} paramId="quant_g" />
-    <Fader value={p('quant_b')}    min={0} max={1} defaultValue={def('quant_b').defaultValue}    label="QUANT B"    curve="linear" onchange={setParam('quant_b')}    moduleId={id} paramId="quant_b" />
-    <Fader value={p('quant_luma')} min={0} max={1} defaultValue={def('quant_luma').defaultValue} label="QUANT LUMA" curve="linear" onchange={setParam('quant_luma')} moduleId={id} paramId="quant_luma" />
-  </div>
+    <div class="fader-grid">
+      <Fader value={p('quant_r')}    min={0} max={1} defaultValue={def('quant_r').defaultValue}    label="QUANT R"    curve="linear" onchange={setParam('quant_r')}    moduleId={id} paramId="quant_r" />
+      <Fader value={p('quant_g')}    min={0} max={1} defaultValue={def('quant_g').defaultValue}    label="QUANT G"    curve="linear" onchange={setParam('quant_g')}    moduleId={id} paramId="quant_g" />
+      <Fader value={p('quant_b')}    min={0} max={1} defaultValue={def('quant_b').defaultValue}    label="QUANT B"    curve="linear" onchange={setParam('quant_b')}    moduleId={id} paramId="quant_b" />
+      <Fader value={p('quant_luma')} min={0} max={1} defaultValue={def('quant_luma').defaultValue} label="QUANT LUMA" curve="linear" onchange={setParam('quant_luma')} moduleId={id} paramId="quant_luma" />
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
   .card {
     width: 260px;
-    min-height: 400px;
+    min-height: 460px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -141,20 +137,18 @@
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
   .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .preview-wrap {
-    margin: 210px auto 0;
-    width: 160px;
+    margin: 8px auto 0;
+    width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 3px;
+    gap: 4px;
   }
   .preview-wrap canvas {
-    width: 160px;
-    height: 120px;
+    width: 228px;
+    height: 171px;
+    max-width: calc(100% - 28px);
     background: #050608;
     border: 1px solid var(--cable-video);
     border-radius: 1px;
@@ -163,11 +157,11 @@
   }
   .preview-label { font-size: 0.55rem; color: var(--text-dim); letter-spacing: 0.1em; font-family: ui-monospace, monospace; }
   .fader-grid {
-    margin-top: 16px;
+    margin-top: 22px;
     padding: 0 14px;
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 12px 6px;
+    gap: 26px 6px;
     justify-items: center;
   }
 </style>
