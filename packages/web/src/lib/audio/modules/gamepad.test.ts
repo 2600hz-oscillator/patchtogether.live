@@ -954,14 +954,21 @@ describe('gamepad built-in presets', () => {
     }
   });
 
-  it('applying the "NXT Gladiator" preset does not throw + lands a coherent mapping', () => {
+  it('applying the "NXT Gladiator" preset does not throw + lands its real mapping', () => {
     const preset = GAMEPAD_PRESETS.find((p) => p.name === 'NXT Gladiator')!;
     const target: GamepadData = {};
     expect(() => applyMapping(target, preset.mapping)).not.toThrow();
-    // The placeholder is the default bindings (no overrides) → every output still
-    // resolves to its standard-mapping control, so the module behaves identically
-    // to "no preset" until the owner fills the real mapping in.
+    // 'a' is NOT remapped by the preset → stays the standard button 0.
     expect(bindingForOutput('a', target.bindings)).toEqual({ kind: 'button', index: 0 });
-    expect(bindingForOutput('rx', target.bindings)).toEqual({ kind: 'axis', index: 2 });
+    // The right stick is the owner's real remap: rx→axis 3, ry→axis 2 (inverted),
+    // and x is on button 21. The left stick is left at its standard axes.
+    expect(bindingForOutput('rx', target.bindings)).toEqual({ kind: 'axis', index: 3 });
+    expect(bindingForOutput('ry', target.bindings)).toEqual({ kind: 'axis', index: 2 });
+    expect(bindingForOutput('x', target.bindings)).toEqual({ kind: 'button', index: 21 });
+    expect(bindingForOutput('lx', target.bindings)).toEqual({ kind: 'axis', index: 0 });
+    expect(target.invert?.ry).toBe(true);
+    // The measured stick calibration travels with the preset.
+    expect(target.leftStickCalibration?.deadzone).toBe(0.1);
+    expect(target.rightStickCalibration?.maxX).toBe(1);
   });
 });
