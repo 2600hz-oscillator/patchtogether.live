@@ -36,11 +36,12 @@ describe('cell library registry', () => {
     expect(hasCell('lut16', 'lut')).toBe(true);
   });
 
-  it('does not (yet) have a cell for the deferred BRAM tile type', () => {
-    // BRAM (line/frame memory) needs host line-buffer plumbing P&R does not yet
-    // provide (a single fragment kernel can't allocate `rows`-deep line memory) →
-    // deferred to a later phase. Its tile TYPE exists; no kernel does.
-    expect(hasCell('bram', 'linebuf')).toBe(false);
+  it('collects the P4 BRAM line-buffer cell (the scaler-glitch star)', () => {
+    // BRAM (line/frame memory) — the FPGA video staple — is realised per design
+    // §1.1 as an FBO + a kernel that addresses prior rows: the line-buffer tile
+    // holds the full-frame FBO and reads neighbouring scanlines by texel offset
+    // (config.rows declares the buffer depth, counted against the bramRows budget).
+    expect(hasCell('bram', 'linebuf')).toBe(true);
   });
 
   it('(type, op) keys are unique', () => {
