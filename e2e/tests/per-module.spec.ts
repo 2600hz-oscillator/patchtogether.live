@@ -111,6 +111,17 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   // (def shape) + videovarispeed-transport.test.ts (varispeed math) +
   // videovarispeed-output.spec.ts (wired-up output path).
   videovarispeed: 'needs uploaded video file to emit non-silence; covered by videovarispeed.test.ts + videovarispeed-transport.test.ts + videovarispeed-output.spec.ts',
+  // ARCHIVIST — archive.org media SOURCE. Identical silent-source pattern to
+  // VIDEOBOX / VIDEOVARISPEED: audio_l / audio_r emit silent ConstantSourceNodes
+  // (so the graph stays patchable) until a real item LOADS from archive.org, at
+  // which point wireAudio() swaps in a MediaElementAudioSourceNode -> 2-ch
+  // ChannelSplitter. The bare 800ms smoke can't fetch + decode a live network
+  // item (and CI must never hit live archive.org), so the audio outs stay at the
+  // peak-floor. Dedicated coverage: archivist-query.test.ts (file-pick incl. the
+  // playable-derivative selection) + archivist-scrub.test.ts (transport math) +
+  // the route-mocked archivist.spec.ts (real fetch -> parse -> attach -> preview
+  // for image/audio/video).
+  archivist: 'archive.org source; audio_l/audio_r emit silent ConstantSourceNodes until a network item loads (CI never hits live archive.org) — same pattern as videobox/videovarispeed; covered by archivist-query.test.ts + archivist-scrub.test.ts + route-mocked archivist.spec.ts',
   // MANDELBULB — audio_out is a CONDITIONAL output: it emits a silent
   // ConstantSourceNode until the user enables the SLICE toggle (default off),
   // at which point the slice→waveform→audio path posts a real wavetable. The

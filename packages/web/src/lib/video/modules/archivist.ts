@@ -23,6 +23,18 @@
 // Search + metadata are CORS-open, so the card fetches them directly (no
 // proxy). All query/parse/file-pick logic is in archivist-query.ts (pure).
 //
+// PLAYABLE-FILE PICKER: for VIDEO the picker (archivist-query.ts pickBestFile)
+// ranks by the metadata `format` token, NOT just the container ext — an h.264
+// derivative or a theora `.ogv` is chosen over an un-decodable MPEG-4-Part-2 /
+// HEVC `.mp4` original, and items whose ONLY video is a non-HTML5 container
+// (.mpeg/.avi/.mov/…) resolve to null so the card SKIPS them. Combined with the
+// card's `waitForMeta` error+timeout + auto-advance, the card always lands on a
+// playable item instead of hanging on "Loading" (the original v1 bug).
+//
+// CARD CHROME: the card uses the shared yellow drill-down PatchPanel (NO raw
+// side handles — the #767 project-wide standard); every port below renders as a
+// PatchPanel row with a byte-identical `id`.
+//
 // Inputs:
 //   play_trigger (gate, paramTarget=cv_play_trigger): rising edge toggles
 //       play/pause for time-media (no-op for an image).

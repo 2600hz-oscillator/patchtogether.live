@@ -239,9 +239,61 @@ const PREFERRED_EXT: Record<Exclude<ArchivistMediaType, 'any'>, string[]> = {
   // mp3 first (universal VBR MP3 derivative, seekable + small); then ogg.
   // flac/wav last (large — only if nothing lighter exists).
   audio: ['.mp3', '.ogg', '.oga', '.m4a', '.flac', '.wav'],
-  // mp4 (h.264) first; webm/ogv as fallbacks.
+  // HTML5-playable containers only. The CONTAINER ext alone is NOT enough for
+  // video — a `.mp4` can be h.264 (plays), MPEG-4-Part-2 / DivX (does NOT play
+  // in Chromium), or HEVC (no software decode on CI / many machines). The
+  // `format` field disambiguates; see VIDEO_FORMAT_RANK below. We deliberately
+  // OMIT non-HTML5 containers (.mpeg/.mpg/.avi/.mov/.mkv/.flv) so an item whose
+  // ONLY video is an old MPEG-2 / Cinepak-AVI / ProRes-MOV original resolves to
+  // null → the card skips it (no infinite "Loading"), instead of attaching a
+  // file the <video> can never decode.
   video: ['.mp4', '.m4v', '.webm', '.ogv'],
 };
+
+/**
+ * VIDEO playability ranking by archive.org's `format` token (lower = better,
+ * Infinity = treat as NOT HTML5-playable → never auto-picked). archive.org
+ * stamps every derivative/original with a stable format string we can rank on
+ * (verified 2026-06-14 against a random `mediatype:movies` sample):
+ *
+ *   h.264 / h.264 IA / h.264 HD  — Baseline/Main h.264 → plays everywhere.
+ *   Ogg Video                    — Theora → plays in Chromium/Firefox.
+ *   WebM                         — VP8/VP9 → plays in Chromium/Firefox.
+ *   512Kb / HiRes MPEG4          — these are h.264-in-mp4 IA derivatives whose
+ *                                  format string starts "512Kb"/"HiRes MPEG4";
+ *                                  treated as playable (real downloadable h.264).
+ *   MPEG4 (bare)                 — MPEG-4 Part 2 (DivX/Xvid) ORIGINAL → does NOT
+ *                                  decode in Chromium → NOT playable.
+ *   HEVC / H.265                 — no reliable software decode → NOT playable.
+ *   (anything else)              — unknown → NOT auto-picked.
+ *
+ * The container ext is still required (PREFERRED_EXT) — this only refines the
+ * choice AMONG container-playable candidates and rejects the un-decodable ones.
+ */
+function videoFormatRank(format: string | undefined, ext: string): number {
+  const f = (format ?? '').toLowerCase();
+  // Hard-reject formats that share a playable container ext but don't decode.
+  if (f.includes('hevc') || f.includes('h.265') || f.includes('h265')) return Infinity;
+  // Bare "mpeg4" (MPEG-4 Part 2 original) is NOT the h.264 IA derivative. The IA
+  // h.264 derivatives read "512Kb MPEG4" / "HiRes MPEG4" — allow those; reject a
+  // bare "mpeg4".
+  if (f === 'mpeg4') return Infinity;
+  // Best: an explicit h.264 derivative.
+  if (f.includes('h.264') || f.includes('h264')) return 0;
+  // IA's size-tagged mp4 derivatives are h.264 in practice.
+  if (f.includes('512kb mpeg4') || f.includes('hires mpeg4') || f.includes('mpeg4 512')) return 1;
+  // Theora / WebM open derivatives — fully playable.
+  if (f.includes('ogg video') || f === 'theora') return 2;
+  if (f.includes('webm') || f.includes('vp8') || f.includes('vp9')) return 2;
+  // UNKNOWN / empty format on a known-playable CONTAINER ext (e.g. a mocked
+  // fixture, or an item whose format string we don't recognise): allow it, but
+  // rank BELOW every recognised-playable format so a real h.264 always wins.
+  // Among unknowns we keep the historical container preference (mp4 > ogv/webm)
+  // by leaning on the extRank tie-break in fileScore — so all unknowns share one
+  // bucket (3) and the lower-order ext digit orders them.
+  if (ext === '.mp4' || ext === '.m4v' || ext === '.webm' || ext === '.ogv') return 3;
+  return Infinity;
+}
 
 /** System/sidecar files we never want to present as the primary media. */
 function isSystemFile(name: string): boolean {
@@ -266,11 +318,41 @@ function extOf(name: string): string {
   return dot >= 0 ? name.slice(dot).toLowerCase() : '';
 }
 
+/** Per-type comparable "playability score" for one file (lower = better;
+ *  Infinity = not playable / never auto-picked). Encodes a lexicographic
+ *  preference as a single number so the picker is a plain min-reduce:
+ *
+ *   - VIDEO: PRIMARY key is the FORMAT playability (videoFormatRank) — an
+ *     un-decodable `.mp4` (MPEG-4 Part 2 / HEVC original) must LOSE to a
+ *     theora `.ogv` or a real h.264 even though its container ext ranks
+ *     higher. The ext order + a derivative-over-original tie-break are the
+ *     low-order digits. This is the fix for the "hangs on Loading" bug:
+ *     the card only ever attaches a file the <video> can actually decode.
+ *   - IMAGE / AUDIO: ext order is primary (unchanged behaviour), with a
+ *     small derivative-over-original tie-break.
+ */
+function fileScore(f: ArchiveFile, type: Exclude<ArchivistMediaType, 'any'>): number {
+  const ext = extOf(f.name);
+  const extRank = PREFERRED_EXT[type].indexOf(ext);
+  if (extRank < 0) return Infinity; // not a playable container for this type
+  // derivative (transcoded for streaming) slightly beats an original.
+  const srcTieBreak = f.source === 'derivative' ? 0 : 1;
+  if (type === 'video') {
+    const fmtRank = videoFormatRank(f.format, ext);
+    if (!Number.isFinite(fmtRank)) return Infinity; // un-decodable → reject
+    // format(0..) · 100  +  ext(0..)·10  +  source(0..1)
+    return fmtRank * 100 + extRank * 10 + srcTieBreak;
+  }
+  return extRank * 10 + srcTieBreak;
+}
+
 /**
  * Pick the best streamable file for a given media type from a metadata file
- * list. Skips system/sidecar + metadata-source files, then ranks by the
- * per-type preferred-extension order (earlier = better). Returns null if no
- * playable file of the type exists.
+ * list. Skips system/sidecar + metadata-source files, then ranks by
+ * `fileScore` (per-type: video is FORMAT-playability first so an un-decodable
+ * container is never chosen; image/audio are extension-order first). Returns
+ * null if no playable file of the type exists — the caller then advances to
+ * the next item rather than attaching a file that can't play.
  *
  * For 'any', the caller should resolve the concrete type from the doc's
  * mediatype first; this function requires a concrete type.
@@ -279,16 +361,14 @@ export function pickBestFile(
   files: readonly ArchiveFile[],
   type: Exclude<ArchivistMediaType, 'any'>,
 ): ArchiveFile | null {
-  const prefs = PREFERRED_EXT[type];
   let best: ArchiveFile | null = null;
-  let bestRank = Number.POSITIVE_INFINITY;
+  let bestScore = Number.POSITIVE_INFINITY;
   for (const f of files) {
     if (isSystemFile(f.name)) continue;
     if (f.source === 'metadata') continue;
-    const rank = prefs.indexOf(extOf(f.name));
-    if (rank < 0) continue; // not a playable ext for this type
-    if (rank < bestRank) {
-      bestRank = rank;
+    const score = fileScore(f, type);
+    if (score < bestScore) {
+      bestScore = score;
       best = f;
     }
   }

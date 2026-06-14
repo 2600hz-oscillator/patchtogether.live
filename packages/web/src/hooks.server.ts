@@ -9,7 +9,10 @@
 //   2. Clerk auth — populates event.locals.auth with session info every
 //      request, lets +page.server.ts loaders use locals.auth.userId.
 //   3. COOP/COEP headers — required for SharedArrayBuffer (Faust may use
-//      it). In production, packages/web/_headers is the belt-and-suspender;
+//      it). COEP is `credentialless` (keeps cross-origin isolation for SAB
+//      while letting no-cors third-party media — e.g. ARCHIVIST's archive.org
+//      <video>/<audio>/<img> — actually load; see setCoopCoepHeaders below).
+//      In production, packages/web/_headers is the belt-and-suspender;
 //      hooks.server.ts handles dev + edge cases.
 
 import type { Handle, HandleServerError } from '@sveltejs/kit';
@@ -115,6 +118,23 @@ const conditionalClerk: Handle = async ({ event, resolve }) => {
 // and the rack canvas at `/r/`. Everything else (sign-in/up, dashboard,
 // docs, api) gets no isolation headers and can load Clerk's widgets.
 //
+// COEP MODE = `credentialless` (NOT `require-corp`). Both keep the page
+// cross-origin-ISOLATED (so `crossOriginIsolated === true` and SharedArrayBuffer
+// / Faust WASM threads keep working — verified), but `require-corp` BLOCKS every
+// cross-origin no-cors subresource that doesn't send a `Cross-Origin-Resource-
+// Policy` header, while `credentialless` instead loads such subresources WITHOUT
+// credentials and does NOT require CORP. This is what lets ARCHIVIST (and any
+// future external media source) actually PLAY archive.org `<video>`/`<audio>` /
+// load `<img>`: archive.org's final CDN hop sends neither CORP nor (reliably)
+// CORS, so under `require-corp` the media was blocked outright (net::ERR_BLOCKED_
+// BY_RESPONSE.NotSameOriginAfterDefaultedToSameOriginByCoep) — it never even
+// reached the "tainted texture" stage. Under `credentialless` it loads + plays;
+// a no-cors media element is still opaque to the canvas, so the documented
+// play-only / no-clean-video-texture limitation is UNCHANGED. `credentialless`
+// is supported by Chromium (96+) and Firefox; a browser that doesn't honour it
+// simply falls back to a less-isolated state (SAB-gated features already probe
+// `crossOriginIsolated`).
+//
 // `/present` (the second-display popup sink) ALSO gets COOP `same-origin` here
 // — NOT for SAB, but so the popup shares a browsing-context group with its
 // opener (`/` or `/r/`, both COOP `same-origin`). With a MISMATCHED COOP the
@@ -133,7 +153,7 @@ const setCoopCoepHeaders: Handle = async ({ event, resolve }) => {
     ISOLATED_EXACT.has(path) || SAB_ROUTES.some((p) => path.startsWith(p));
   if (needsIsolation) {
     response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
-    response.headers.set('Cross-Origin-Embedder-Policy', 'require-corp');
+    response.headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
   }
   return response;
 };

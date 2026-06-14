@@ -216,12 +216,89 @@ describe('pickBestFile', () => {
     expect(f?.name).toBe('song.mp3');
   });
 
-  it('VIDEO: prefers mp4 over webm/ogv', () => {
+  it('VIDEO: prefers mp4 over webm/ogv (format unknown — historical container order)', () => {
     const f = pickBestFile(
       [{ name: 'clip.ogv' }, { name: 'clip.webm' }, { name: 'clip.mp4' }],
       'video',
     );
     expect(f?.name).toBe('clip.mp4');
+  });
+
+  it('VIDEO: prefers an h.264 derivative over an MPEG-4-Part-2 .mp4 original (the "hang on Loading" fix)', () => {
+    // The bug: ranking only by container ext picks the un-decodable MPEG-4
+    // ORIGINAL .mp4 (DivX/Xvid), the <video> errors, the card hangs. The
+    // format-aware picker must pick the real h.264 derivative instead.
+    const f = pickBestFile(
+      [
+        { name: 'movie_3mb.mp4', format: 'MPEG4', source: 'original' }, // NOT playable
+        { name: 'movie.mp4', format: 'h.264', source: 'derivative' }, // playable
+      ],
+      'video',
+    );
+    expect(f?.name).toBe('movie.mp4');
+  });
+
+  it('VIDEO: falls back to a theora .ogv when the only .mp4 is an un-decodable original', () => {
+    // This_Is_Poland-style item: the .mp4 is an MPEG-4 original; only the .ogv
+    // is a real (theora) derivative. The picker must skip the bad .mp4.
+    const f = pickBestFile(
+      [
+        { name: 'film_3mb.mp4', format: 'MPEG4', source: 'original' },
+        { name: 'film.ogv', format: 'Ogg Video', source: 'derivative' },
+      ],
+      'video',
+    );
+    expect(f?.name).toBe('film.ogv');
+  });
+
+  it('VIDEO: rejects HEVC and rejects a bare-MPEG4 original even though they are .mp4', () => {
+    // HEVC has no reliable software decode (fails on CI/many machines); a bare
+    // "MPEG4" original is MPEG-4 Part 2. With ONLY these, there is nothing
+    // playable → null → the card advances to the next item.
+    expect(
+      pickBestFile(
+        [
+          { name: 'a.mp4', format: 'HEVC', source: 'original' },
+          { name: 'b.mp4', format: 'MPEG4', source: 'original' },
+        ],
+        'video',
+      ),
+    ).toBeNull();
+  });
+
+  it('VIDEO: prefers IA 512Kb/HiRes MPEG4 derivatives (h.264) over a bare-MPEG4 original', () => {
+    const f = pickBestFile(
+      [
+        { name: 'x.mp4', format: 'MPEG4', source: 'original' }, // un-decodable
+        { name: 'x_512kb.mp4', format: '512Kb MPEG4', source: 'derivative' }, // h.264
+      ],
+      'video',
+    );
+    expect(f?.name).toBe('x_512kb.mp4');
+  });
+
+  it('VIDEO: never picks a non-HTML5 container (.mpeg/.avi/.mov) — returns null', () => {
+    expect(
+      pickBestFile(
+        [
+          { name: 'old.mpeg', format: 'MPEG2', source: 'original' },
+          { name: 'old.avi', format: 'Cinepack', source: 'original' },
+          { name: 'old.mov', format: 'h.264 HD', source: 'original' },
+        ],
+        'video',
+      ),
+    ).toBeNull();
+  });
+
+  it('VIDEO: prefers a derivative over an original when format + ext tie', () => {
+    const f = pickBestFile(
+      [
+        { name: 'orig.mp4', format: 'h.264', source: 'original' },
+        { name: 'deriv.mp4', format: 'h.264', source: 'derivative' },
+      ],
+      'video',
+    );
+    expect(f?.name).toBe('deriv.mp4');
   });
 
   it('skips metadata-source + sidecar files', () => {

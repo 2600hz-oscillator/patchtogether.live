@@ -164,5 +164,39 @@ test.describe('ARCHIVIST (archive.org, mocked)', () => {
     // still plays/scrubs in the preview (transport present).
     await expect(page.locator('[data-testid="archivist-play"]')).toBeVisible();
     await expect(page.locator('[data-testid="archivist-seek"]')).toBeVisible();
+
+    // The clip ACTUALLY decoded: the <video> reached metadata (a finite,
+    // positive duration) — the fix for the old "hangs on Loading at 0:00/0:00"
+    // bug. (The fixture is VP8/webm, an open codec the test Chromium decodes;
+    // real-browser h.264 is verified separately — see archivist-query.test.ts
+    // for the playable-derivative picker.)
+    const video = page.locator('[data-testid="archivist-video"]');
+    await expect
+      .poll(async () => video.evaluate((el: HTMLVideoElement) => el.readyState), {
+        timeout: 10_000,
+        message: 'video reached HAVE_METADATA (readyState >= 1)',
+      })
+      .toBeGreaterThanOrEqual(1);
+    const dur = await video.evaluate((el: HTMLVideoElement) => el.duration);
+    expect(Number.isFinite(dur) && dur > 0, `video duration ${dur} is finite + > 0`).toBe(true);
+
+    // It actually PLAYS: a REAL pointer press on the Play button (a synthetic
+    // .click() inside a SvelteFlow node is swallowed by the node's pan handler —
+    // a true pointerdown/up is what a user does) starts playback + advances the
+    // playhead.
+    const playBtn = page.locator('[data-testid="archivist-play"]');
+    const box = await playBtn.boundingBox();
+    expect(box).not.toBeNull();
+    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+    await page.mouse.down();
+    await page.mouse.up();
+    await expect(card).toHaveAttribute('data-is-playing', 'true', { timeout: 5_000 });
+    const t0 = await video.evaluate((el: HTMLVideoElement) => el.currentTime);
+    await expect
+      .poll(async () => video.evaluate((el: HTMLVideoElement) => el.currentTime), {
+        timeout: 5_000,
+        message: 'playhead advances while playing',
+      })
+      .toBeGreaterThan(t0);
   });
 });

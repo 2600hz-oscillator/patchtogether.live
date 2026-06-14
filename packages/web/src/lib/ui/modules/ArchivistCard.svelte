@@ -14,12 +14,23 @@
   // All query/parse/file-pick logic lives in archivist-query.ts (pure,
   // unit-tested); scrub math in archivist-scrub.ts.
   //
+  // PORTS: rendered through the shared yellow drill-down <PatchPanel> (NO raw
+  // side handles — the #767 standard). Port ids are byte-identical to the
+  // module def so the CV bridge + persisted edges route unchanged.
+  //
+  // PLAYBACK ROBUSTNESS: the file picker prefers HTML5-playable derivatives
+  // (h.264 / theora / webm) and `waitForMeta` has an `error` listener + a
+  // timeout, so an un-decodable archive.org derivative AUTO-ADVANCES to the
+  // next random match instead of hanging the card on "Loading" forever.
+  //
   // Multiplayer: the loaded item (identifier/title/type/fileUrl/duration) +
   // search inputs + isPlaying are mirrored on node.data (Yjs) so peers see
   // the same item + can drive play/seek. Each peer loads the URL locally.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
+  import { useStore, type NodeProps } from '@xyflow/svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { startCornerResize } from './card-resize';
@@ -67,6 +78,26 @@
   const MIN_HEIGHT = 360;
   let cardWidth = $derived<number>((node?.data?.width as number | undefined) ?? DEFAULT_WIDTH);
   let cardHeight = $derived<number>((node?.data?.height as number | undefined) ?? DEFAULT_HEIGHT);
+
+  // ---- PatchPanel ports (NO raw side handles — the #767 yellow-drill-down
+  //      standard). Port `id`s are BYTE-IDENTICAL to the module def + the prior
+  //      raw <Handle>s so the CV bridge / persisted edges route unchanged; only
+  //      the rendering moved into the panel. `cable` drives the row colour +
+  //      the panel's Gates→CV→Audio grouping (gate/cv/video/audio match the def
+  //      port `type`s). ----
+  const inputs: PortDescriptor[] = [
+    { id: 'play_trigger', label: 'PLAY TRIGGER', cable: 'gate' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'image', label: 'IMAGE', cable: 'video' },
+    { id: 'video', label: 'VIDEO', cable: 'video' },
+    { id: 'audio_l', label: 'AUDIO L', cable: 'audio' },
+    { id: 'audio_r', label: 'AUDIO R', cable: 'audio' },
+    { id: 'loaded', label: 'LOADED', cable: 'gate' },
+    { id: 'ended', label: 'ENDED', cable: 'gate' },
+    { id: 'playing', label: 'PLAYING', cable: 'gate' },
+    { id: 'playhead', label: 'PLAYHEAD', cable: 'cv' },
+  ];
 
   // ---- DOM refs ----
   let mediaEl: HTMLVideoElement | null = $state(null); // <video> for video items
@@ -199,9 +230,13 @@
   }
 
   async function loadRandomFromDocs(): Promise<void> {
-    // Try up to a few docs in case the first has no playable file of the type.
+    // Try several random docs in case some have no playable file of the type or
+    // the chosen derivative won't decode (auto-advance — the user lands on a
+    // playable item instead of a card stuck on "Loading"). Bounded by both an
+    // attempt cap AND the number of distinct docs so we never spin.
     const tried = new Set<string>();
-    for (let attempt = 0; attempt < 5 && tried.size < lastDocs.length; attempt++) {
+    const maxAttempts = Math.min(8, lastDocs.length);
+    for (let attempt = 0; attempt < maxAttempts && tried.size < lastDocs.length; attempt++) {
       const doc = pickRandomDoc(lastDocs);
       if (!doc || tried.has(doc.identifier)) continue;
       tried.add(doc.identifier);
@@ -209,7 +244,7 @@
       if (ok) return;
     }
     statusMsg = null;
-    errorMsg = 'Could not find a playable file in the results.';
+    errorMsg = 'Could not find a playable item in the results — try another term or “↻ next”.';
   }
 
   /** Load one specific item: fetch metadata, pick the best file, attach. */
@@ -243,7 +278,16 @@
         cleanOutput: hasCleanOutput(concrete),
       };
       writeItem(itemMeta);
-      await attachMedia(itemMeta);
+      const ok = await attachMedia(itemMeta);
+      if (!ok) {
+        // The picked derivative wouldn't decode (errored / timed out). Clear it
+        // and let the caller advance to the next random match rather than
+        // hanging at "Loading" — the user always lands on a playable item.
+        writeItem(null);
+        try { videoEngine()?.attachExternalSource(id, 'video', null); } catch { /* */ }
+        statusMsg = `Couldn't play "${doc.title}" — skipping…`;
+        return false;
+      }
       statusMsg = null;
       getExtras()?.fireLoaded();
       return true;
@@ -255,19 +299,22 @@
     }
   }
 
-  /** Point the right element at the item's URL + wire it into the engine. */
-  async function attachMedia(meta: ArchivistItemMeta): Promise<void> {
+  /** Point the right element at the item's URL + wire it into the engine.
+   *  Returns `true` when the element actually loaded (image decoded / media
+   *  reached metadata), `false` on a load failure/timeout — the caller skips a
+   *  failed item and advances to the next random match instead of hanging. */
+  async function attachMedia(meta: ArchivistItemMeta): Promise<boolean> {
     const ve = videoEngine();
     // Tear down any previous wiring first.
     getExtras()?.unwireAudio();
 
     if (meta.type === 'image') {
-      if (!imgEl) return;
+      if (!imgEl) return false;
       imgEl.crossOrigin = 'anonymous'; // CORS-clean for archive images → untainted texture
-      await new Promise<void>((resolve) => {
-        if (!imgEl) { resolve(); return; }
-        const done = (): void => { cleanupImg(); resolve(); };
-        const onErr = (): void => { cleanupImg(); errorMsg = 'Image failed to load.'; resolve(); };
+      const ok = await new Promise<boolean>((resolve) => {
+        if (!imgEl) { resolve(false); return; }
+        const done = (): void => { cleanupImg(); resolve(true); };
+        const onErr = (): void => { cleanupImg(); resolve(false); };
         function cleanupImg(): void {
           imgEl?.removeEventListener('load', done);
           imgEl?.removeEventListener('error', onErr);
@@ -276,32 +323,35 @@
         imgEl.addEventListener('error', onErr, { once: true });
         imgEl.src = meta.fileUrl;
       });
+      if (!ok) return false;
       // Attach AFTER load so the factory's one-shot texImage2D sees a decoded img.
       try { ve?.attachExternalSource(id, 'image', imgEl); } catch { /* not ready */ }
-      return;
+      return true;
     }
 
     if (meta.type === 'audio') {
-      if (!audioEl) return;
+      if (!audioEl) return false;
       audioEl.crossOrigin = 'anonymous'; // CORS-clean → MediaElementSource untainted
       audioEl.src = meta.fileUrl;
-      await waitForMeta(audioEl);
+      const ok = await waitForMeta(audioEl);
+      if (!ok) return false;
       updateDuration(meta, audioEl.duration);
       try { ve?.attachExternalSource(id, 'video', audioEl as unknown as HTMLVideoElement); } catch { /* */ }
       // ^ the factory's audio wiring path takes any HTMLMediaElement; the
       //   'video' kind just means "attach for audio/playback, not texturing".
       ensureAudioWired();
-      return;
+      return true;
     }
 
     if (meta.type === 'video') {
-      if (!mediaEl) return;
+      if (!mediaEl) return false;
       // NO crossOrigin — archive.org video lacks CORS; setting crossorigin
       // would BLOCK playback entirely. Play-only (tainted), so we never
       // texture it; we only play + (optionally) wire its audio track.
       mediaEl.removeAttribute('crossorigin');
       mediaEl.src = meta.fileUrl;
-      await waitForMeta(mediaEl);
+      const ok = await waitForMeta(mediaEl);
+      if (!ok) return false; // un-playable derivative → caller advances
       updateDuration(meta, mediaEl.duration);
       try { ve?.attachExternalSource(id, 'video', mediaEl); } catch { /* */ }
       // Audio track of a video item is also tainted (no CORS), so a
@@ -309,24 +359,56 @@
       // throw; we DO attempt wireAudio (it tolerates failure) but the audio
       // output for video items is best-effort / typically unavailable.
       ensureAudioWired();
-      return;
+      return true;
     }
+    return false;
   }
 
   function updateDuration(meta: ArchivistItemMeta, dur: number): void {
     const d = Number.isFinite(dur) ? dur : 0;
     ydoc.transact(() => {
       const t = patch.nodes[id];
-      const cur = (t?.data as Partial<ArchivistData> | undefined)?.item;
-      if (cur && cur.identifier === meta.identifier) cur.duration = d;
+      const data = t?.data as Partial<ArchivistData> | undefined;
+      const cur = data?.item;
+      if (!data || !cur || cur.identifier !== meta.identifier) return;
+      // REASSIGN the whole item object (don't mutate `cur.duration` in place):
+      // the card's `durationSec = $derived(item?.duration)` reads node.data.item,
+      // and an in-place nested mutation doesn't re-trigger the SvelteFlow node
+      // re-render, so the "/ 0:00" duration readout + the seek `max` stayed at 0
+      // even after metadata loaded. A fresh object is what writeItem() does (and
+      // what made data-has-item reactive). Same nested-Y-mutation reactivity gap
+      // documented in the repo's yjs-save-load memory.
+      data.item = { ...cur, duration: d };
     }, LOCAL_ORIGIN);
   }
 
-  function waitForMeta(el: HTMLMediaElement): Promise<void> {
-    return new Promise<void>((resolve) => {
-      if (el.readyState >= 1) { resolve(); return; }
-      const on = (): void => { el.removeEventListener('loadedmetadata', on); resolve(); };
-      el.addEventListener('loadedmetadata', on, { once: true });
+  /** Max wait for a media element to reach HAVE_METADATA before we treat it as
+   *  un-playable. archive.org's CDN can be slow, but 12s is well past a normal
+   *  first-byte → metadata for any decodable file; a hang past this means the
+   *  derivative isn't HTML5-playable on this engine (or the network stalled). */
+  const META_TIMEOUT_MS = 12_000;
+
+  /**
+   * Resolve when the media element has metadata, or report FAILURE on a media
+   * `error` event OR after META_TIMEOUT_MS — so the card NEVER hangs forever on
+   * "Loading" when a derivative can't be decoded (the old bug: no error/timeout
+   * handler → spin at 0:00/0:00). All listeners + the timer are cleaned up on
+   * every exit path. Returns `true` on success, `false` on failure/timeout.
+   */
+  function waitForMeta(el: HTMLMediaElement): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      if (el.readyState >= 1) { resolve(true); return; }
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const cleanup = (): void => {
+        el.removeEventListener('loadedmetadata', onMeta);
+        el.removeEventListener('error', onError);
+        if (timer) { clearTimeout(timer); timer = null; }
+      };
+      const onMeta = (): void => { cleanup(); resolve(true); };
+      const onError = (): void => { cleanup(); resolve(false); };
+      el.addEventListener('loadedmetadata', onMeta, { once: true });
+      el.addEventListener('error', onError, { once: true });
+      timer = setTimeout(() => { cleanup(); resolve(false); }, META_TIMEOUT_MS);
     });
   }
 
@@ -497,26 +579,7 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="ARCHIVIST" />
 
-  <Handle type="target" position={Position.Left} id="play_trigger" style="top: 56px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 50px;">TRIG</span>
-
-  <Handle type="source" position={Position.Right} id="image"    style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">IMG</span>
-  <Handle type="source" position={Position.Right} id="video"    style="top: 84px;  --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 78px;">VID</span>
-  <Handle type="source" position={Position.Right} id="audio_l"  style="top: 112px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 106px;">A-L</span>
-  <Handle type="source" position={Position.Right} id="audio_r"  style="top: 140px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 134px;">A-R</span>
-  <Handle type="source" position={Position.Right} id="loaded"   style="top: 168px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 162px;">LD</span>
-  <Handle type="source" position={Position.Right} id="ended"    style="top: 196px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 190px;">END</span>
-  <Handle type="source" position={Position.Right} id="playing"  style="top: 224px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 218px;">PLY</span>
-  <Handle type="source" position={Position.Right} id="playhead" style="top: 252px; --handle-color: var(--cable-cv);" />
-  <span class="port-label right" style="top: 246px;">POS</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="body">
     <!-- Search controls -->
     <div class="controls">
@@ -676,6 +739,7 @@
     data-testid="archivist-resize-handle"
     onpointerdown={onResizeStart}
   ></div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -706,19 +770,11 @@
     border-radius: 2px 2px 0 0;
     background: var(--cable-video);
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.5rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
-
   .body {
-    margin-top: 28px;
-    padding: 0 12px 0 30px; /* left pad clears the right-edge labels via the card width */
+    /* Clear the PatchPanel's top-left/right trigger affordances (18px tall,
+       inset from the corners) — same top margin the swept video cards use. */
+    margin-top: 24px;
+    padding: 0 12px;
     display: flex;
     flex-direction: column;
     gap: 6px;
