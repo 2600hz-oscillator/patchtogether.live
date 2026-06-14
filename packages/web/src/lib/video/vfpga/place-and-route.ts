@@ -193,6 +193,31 @@ export function validateFabric(fabric: VfpgaFabric): FabricError[] {
             });
           }
         }
+        // Each config.bind / config.consts entry must name a knob the cell has
+        // (else the bind/const is dead — surfaces a fabric typo at validation).
+        const knobNames = new Set(cell.knobs.map((k) => k.name));
+        for (const b of t.config.bind ?? []) {
+          if (!knobNames.has(b.knob)) {
+            errors.push({
+              message: `tile "${t.id}" binds knob "${b.knob}" the cell ${t.type}:${op} does not have`,
+              path: `tiles/${t.id}`,
+            });
+          }
+          if (!b.uniform) {
+            errors.push({
+              message: `tile "${t.id}" bind for knob "${b.knob}" is missing a target uniform`,
+              path: `tiles/${t.id}`,
+            });
+          }
+        }
+        for (const knob of Object.keys(t.config.consts ?? {})) {
+          if (!knobNames.has(knob)) {
+            errors.push({
+              message: `tile "${t.id}" sets const "${knob}" the cell ${t.type}:${op} does not have`,
+              path: `tiles/${t.id}`,
+            });
+          }
+        }
       }
     }
   }
@@ -509,8 +534,17 @@ export function fabricToEffect(fabric: VfpgaFabric): VfpgaEffect {
     const cell = getCell(tile.type, tile.config.op ?? '');
     if (!cell) continue; // unreachable (validated), keeps TS happy
 
-    // Resolve the knob → uniform names + the kernel source.
-    const knobUniform = new Map(cell.knobs.map((k) => [k.name, k.uniform] as const));
+    // A knob is EITHER bound to a host p/cv/gate role (config.bind → its uniform
+    // is set LIVE by the role loop) OR a static const (config.consts[knob] ?? the
+    // cell's defaultValue → emitted in pass.consts for the host to set verbatim).
+    // A bound knob renames its kernel uniform to the bind's `uniform` so the
+    // factory's existing role loop (which sets a spec role/param by its `uniform`)
+    // drives it — exactly how smpte-bars wires uShift/uBrightness/uSaturation.
+    const bindByKnob = new Map((tile.config.bind ?? []).map((b) => [b.knob, b] as const));
+    const knobUniform = new Map(
+      cell.knobs.map((k) => [k.name, bindByKnob.get(k.name)?.uniform ?? k.uniform] as const),
+    );
+
     const frag = cell.kernel({
       uTexFor: (input) => cellInputUniform(input),
       uniformFor: (knob) => knobUniform.get(knob) ?? `u_${knob}`,
@@ -518,16 +552,24 @@ export function fabricToEffect(fabric: VfpgaFabric): VfpgaEffect {
 
     const inputs = cell.inputs.map((input) => samplerFor(tileId, input));
 
-    // Uniform set: every knob uniform + the always-available uTime/uResolution.
-    // (Bound p/cv/gate knobs surface through the foundation uniform-binding in a
-    // later phase; P0 emits the knob uniform names so the factory sets consts.)
-    const uniforms = cell.knobs.map((k) => k.uniform);
+    // Uniform set: every knob's RESOLVED uniform name (bound → the bind target,
+    // unbound → the cell's own) + the always-available uTime/uResolution.
+    const uniforms = cell.knobs.map((k) => knobUniform.get(k.name)!);
+
+    // Static consts: every UNBOUND knob's value (config.consts override, else the
+    // cell defaultValue). Bound knobs are omitted (role loop sets them live).
+    const consts: Record<string, number> = {};
+    for (const k of cell.knobs) {
+      if (bindByKnob.has(k.name)) continue; // role-driven, not a const
+      consts[knobUniform.get(k.name)!] = tile.config.consts?.[k.name] ?? k.defaultValue;
+    }
 
     passes.push({
       frag,
       inputs: inputs.length ? inputs : undefined,
       target,
       uniforms: uniforms.length ? uniforms : undefined,
+      ...(Object.keys(consts).length ? { consts } : {}),
     });
   }
 
