@@ -5167,6 +5167,24 @@
     padding: 0.8rem 1.25rem;
     border-bottom: 1px solid #1f242c;
   }
+  /* Never let the topbar's flex row squeeze its controls. The preset-slot bar
+     pushed the total control width past the 1280px viewport; the default
+     flex-shrink:1 then compressed each control below its content width, and the
+     ones with `white-space: normal` (the theme-picker dropdown + the aspect /
+     Electra buttons, which live in CHILD components and so can't be reached by
+     a `.topbar button` rule scoped to this file) wrapped to two lines. That
+     ~doubled the row height, grew the topbar by a non-integer amount, and
+     shifted the SvelteFlow canvas + every card down to a fractional Y —
+     rastering all text-heavy module cards ±1px on CI (the documented VRT
+     1px-layout-rounding flake). Pinning every direct child to flex-shrink:0
+     keeps each control at its natural single-line height, so the topbar (and
+     the canvas origin) stays exactly what it was before the bar existed and the
+     per-card baselines still match with no regeneration. The row may extend a
+     few px past the viewport edge — harmless on a fixed-height header, and far
+     better than a vertical wrap that moves the canvas. */
+  .topbar > * {
+    flex-shrink: 0;
+  }
   .topbar h1 {
     margin: 0;
     font-weight: 500;
