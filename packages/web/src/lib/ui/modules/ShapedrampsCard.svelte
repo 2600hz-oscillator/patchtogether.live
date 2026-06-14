@@ -10,8 +10,10 @@
   //   MIX 2: mix2_a, mix2_b inputs + mix2_cv + mix2_out
   //   Each mixer crossfades its inputs by amount knob/CV
   //   (out = (1 - amount) * A + amount * B).
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { shapedrampsDef } from '$lib/video/modules/shapedramps';
   import type { ModuleNode } from '$lib/graph/types';
@@ -27,56 +29,41 @@
   function setParam(paramId: string) {
     return (v: number) => setNodeParam(id, paramId, v);
   }
+
+  const inputs: PortDescriptor[] = [
+    // 6 CV inputs (shape/phase/freq).
+    { id: 'h_shape', label: 'HS',   cable: 'cv' },
+    { id: 'v_shape', label: 'VS',   cable: 'cv' },
+    { id: 'h_phase', label: 'HP',   cable: 'cv' },
+    { id: 'v_phase', label: 'VP',   cable: 'cv' },
+    { id: 'h_freq',  label: 'HF',   cable: 'cv' },
+    { id: 'v_freq',  label: 'VF',   cable: 'cv' },
+    // MIX 1 — 2 mono-video signal ins + 1 cv in.
+    { id: 'mix1_a',  label: 'M1A',  cable: 'mono-video' },
+    { id: 'mix1_b',  label: 'M1B',  cable: 'mono-video' },
+    { id: 'mix1_cv', label: 'M1CV', cable: 'cv' },
+    // MIX 2 — 2 mono-video signal ins + 1 cv in.
+    { id: 'mix2_a',  label: 'M2A',  cable: 'mono-video' },
+    { id: 'mix2_b',  label: 'M2B',  cable: 'mono-video' },
+    { id: 'mix2_cv', label: 'M2CV', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    // 4 mono-video outputs (linear identity + shaped).
+    { id: 'h_lin',    label: 'H_LIN',  cable: 'mono-video' },
+    { id: 'v_lin',    label: 'V_LIN',  cable: 'mono-video' },
+    { id: 'h_out',    label: 'H_OUT',  cable: 'mono-video' },
+    { id: 'v_out',    label: 'V_OUT',  cable: 'mono-video' },
+    // Mixer outs.
+    { id: 'mix1_out', label: 'M1_OUT', cable: 'mono-video' },
+    { id: 'mix2_out', label: 'M2_OUT', cable: 'mono-video' },
+  ];
 </script>
 
 <div class="card video">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="SHAPEDRAMPS" />
 
-  <!-- 6 CV inputs left side, upper -->
-  <Handle type="target" position={Position.Left} id="h_shape" style="top: 56px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 50px;">HS</span>
-  <Handle type="target" position={Position.Left} id="v_shape" style="top: 88px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 82px;">VS</span>
-  <Handle type="target" position={Position.Left} id="h_phase" style="top: 120px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 114px;">HP</span>
-  <Handle type="target" position={Position.Left} id="v_phase" style="top: 152px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 146px;">VP</span>
-  <Handle type="target" position={Position.Left} id="h_freq"  style="top: 184px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 178px;">HF</span>
-  <Handle type="target" position={Position.Left} id="v_freq"  style="top: 216px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 210px;">VF</span>
-
-  <!-- 4 mono-video outputs right side, upper -->
-  <Handle type="source" position={Position.Right} id="h_lin" style="top: 56px;  --handle-color: var(--cable-mono-video);" />
-  <span class="port-label right" style="top: 50px;">H_LIN</span>
-  <Handle type="source" position={Position.Right} id="v_lin" style="top: 88px;  --handle-color: var(--cable-mono-video);" />
-  <span class="port-label right" style="top: 82px;">V_LIN</span>
-  <Handle type="source" position={Position.Right} id="h_out" style="top: 152px; --handle-color: var(--cable-mono-video);" />
-  <span class="port-label right" style="top: 146px;">H_OUT</span>
-  <Handle type="source" position={Position.Right} id="v_out" style="top: 184px; --handle-color: var(--cable-mono-video);" />
-  <span class="port-label right" style="top: 178px;">V_OUT</span>
-
-  <!-- MIX 1 — 2 mono-video signal ins + 1 cv in (left), 1 mono-video out (right) -->
-  <Handle type="target" position={Position.Left} id="mix1_a"  style="top: 320px; --handle-color: var(--cable-mono-video);" />
-  <span class="port-label left" style="top: 314px;">M1A</span>
-  <Handle type="target" position={Position.Left} id="mix1_b"  style="top: 352px; --handle-color: var(--cable-mono-video);" />
-  <span class="port-label left" style="top: 346px;">M1B</span>
-  <Handle type="target" position={Position.Left} id="mix1_cv" style="top: 384px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 378px;">M1CV</span>
-  <Handle type="source" position={Position.Right} id="mix1_out" style="top: 352px; --handle-color: var(--cable-mono-video);" />
-  <span class="port-label right" style="top: 346px;">M1_OUT</span>
-
-  <!-- MIX 2 — 2 mono-video signal ins + 1 cv in (left), 1 mono-video out (right) -->
-  <Handle type="target" position={Position.Left} id="mix2_a"  style="top: 432px; --handle-color: var(--cable-mono-video);" />
-  <span class="port-label left" style="top: 426px;">M2A</span>
-  <Handle type="target" position={Position.Left} id="mix2_b"  style="top: 464px; --handle-color: var(--cable-mono-video);" />
-  <span class="port-label left" style="top: 458px;">M2B</span>
-  <Handle type="target" position={Position.Left} id="mix2_cv" style="top: 496px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 490px;">M2CV</span>
-  <Handle type="source" position={Position.Right} id="mix2_out" style="top: 464px; --handle-color: var(--cable-mono-video);" />
-  <span class="port-label right" style="top: 458px;">M2_OUT</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="fader-grid">
     <Fader value={p('h_shape')} min={0}   max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'h_shape')!.defaultValue} label="HS" curve="linear" onchange={setParam('h_shape')} moduleId={id} paramId="h_shape" />
     <Fader value={p('v_shape')} min={0}   max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'v_shape')!.defaultValue} label="VS" curve="linear" onchange={setParam('v_shape')} moduleId={id} paramId="v_shape" />
@@ -94,12 +81,13 @@
     <div class="section-label">MIX 2</div>
     <Fader value={p('mix2')} min={0} max={1} defaultValue={shapedrampsDef.params.find((x) => x.id === 'mix2')!.defaultValue} label="M2" curve="linear" onchange={setParam('mix2')} moduleId={id} paramId="mix2" />
   </div>
+  </PatchPanel>
 </div>
 
 <style>
   .card {
     width: 240px;
-    min-height: 540px;
+    min-height: 280px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -129,17 +117,8 @@
     margin: 0 0 8px;
     letter-spacing: 0.05em;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .fader-grid {
-    margin-top: 140px;
+    margin-top: 16px;
     padding: 0 12px;
     display: grid;
     grid-template-columns: repeat(3, 1fr);

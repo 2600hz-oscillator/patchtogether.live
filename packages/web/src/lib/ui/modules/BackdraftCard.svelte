@@ -1,14 +1,17 @@
 <script lang="ts">
   // BackdraftCard — UI for BACKDRAFT (video feedback generator).
   //
-  // Two video inputs (in_a / in_b) + two KEY masks (lighten / darken) +
-  // per-param CV inputs on the left; the `out` video port + an on-card
-  // preview canvas (blit from the engine, same pattern as ReshaperCard).
-  // Every Fader is wired with moduleId={id} + paramId so MIDI-Learn binds.
+  // 2-column 3u layout (mirrors CUBE/HYPERCUBE): a large video PREVIEW on the
+  // LEFT, all controls (mirror toggles + fader grid) on the RIGHT. Every port
+  // (2 video + 2 KEY masks + 18 CV/gate inputs + the `out` video output) lives
+  // in the yellow PatchPanel drill-down menu. Every Fader is wired with
+  // moduleId={id} + paramId so MIDI-Learn binds.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -23,7 +26,6 @@
     BACKDRAFT_OFFSET_MIN,
     BACKDRAFT_OFFSET_MAX,
   } from '$lib/video/modules/backdraft';
-  import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -32,7 +34,6 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
-  const flowStore = useStore();
 
   function pdef(name: string): number {
     return backdraftDef.params.find((d) => d.id === name)!.defaultValue;
@@ -77,23 +78,9 @@
 
   const ENGINE_W = VIDEO_RES.width;
   const ENGINE_H = VIDEO_RES.height;
-  const CANVAS_W = 280;
-  const CANVAS_H = 158;
-
-  // Rounded to whole-u (180px) rack tiles (#759) so default + min land on the
-  // grid; this card is user-resizable so the rack CSS doesn't clamp it.
-  const MIN_WIDTH = 360;
-  const MIN_HEIGHT = 180;
-  const DEFAULT_WIDTH = 360;
-  const DEFAULT_HEIGHT = 360;
-  const HEADER_PX = 56;
-  const PAD_PX = 20;
-
-  let hideControls = $derived<boolean>(Boolean(node?.data?.hideControls));
-  let resizedWidth = $derived<number>((node?.data?.resizedWidth as number | undefined) ?? DEFAULT_WIDTH);
-  let resizedHeight = $derived<number>((node?.data?.resizedHeight as number | undefined) ?? DEFAULT_HEIGHT);
-  let innerWidth = $derived(Math.max(MIN_WIDTH - PAD_PX, resizedWidth - PAD_PX));
-  let innerHeight = $derived(Math.max(MIN_HEIGHT - HEADER_PX, resizedHeight - HEADER_PX));
+  // Big on-card preview that fills the LEFT column of the 3u 2-col layout.
+  const CANVAS_W = 320;
+  const CANVAS_H = Math.round(CANVAS_W * (ENGINE_H / ENGINE_W)); // 4:3
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
@@ -179,212 +166,110 @@
   });
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
-    if (resizeAbort) resizeAbort.abort();
     if (edgesUnobserve) { try { edgesUnobserve(); } catch { /* */ } edgesUnobserve = null; }
   });
 
-  // ---------- Hide-controls toggle + corner-drag resize ----------
-  let resizing = $state(false);
-  let resizeAbort: AbortController | null = null;
-
-  function toggleHideControls(ev: MouseEvent) {
-    ev.preventDefault();
-    ev.stopPropagation();
-    const target = patch.nodes[id];
-    if (!target) return;
-    if (!target.data) target.data = {};
-    const next = !target.data.hideControls;
-    target.data.hideControls = next;
-    if (!next) {
-      delete target.data.resizedWidth;
-      delete target.data.resizedHeight;
-    }
-  }
-
-  function onResizeStart(ev: PointerEvent) {
-    resizeAbort = startCornerResize(ev, {
-      flowStore,
-      minWidth: MIN_WIDTH,
-      minHeight: MIN_HEIGHT,
-      getStartSize: () => ({ width: resizedWidth, height: resizedHeight }),
-      apply: (w, h) => {
-        const target = patch.nodes[id];
-        if (target) {
-          if (!target.data) target.data = {};
-          target.data.resizedWidth = w;
-          target.data.resizedHeight = h;
-        }
-      },
-      onStart: () => { resizing = true; },
-      onEnd: () => { resizing = false; resizeAbort = null; },
-    });
-  }
-
-  function onBodyDblClick(ev: MouseEvent) {
-    if (!hideControls) return;
-    const t = ev.target as HTMLElement | null;
-    if (t && t.closest('.svelte-flow__handle')) return;
-    ev.stopPropagation();
-    const target = patch.nodes[id];
-    if (!target) return;
-    if (!target.data) target.data = {};
-    target.data.hideControls = false;
-    delete target.data.resizedWidth;
-    delete target.data.resizedHeight;
-  }
+  // ---------------- Patch-panel ports ----------------
+  // Port ids match the def EXACTLY (handle id === port id — the cross-domain
+  // CV bridge + saved patches route by id). lighten/darken CV use the `_cv`
+  // suffix; gate-style inputs (delay_clock / mirror_*_gate) carry raw swing.
+  const inputs: PortDescriptor[] = [
+    { id: 'in_a',    label: 'IN A',    cable: 'video' },
+    { id: 'in_b',    label: 'IN B',    cable: 'video' },
+    { id: 'lighten', label: 'KEY +',   cable: 'video' },
+    { id: 'darken',  label: 'KEY -',   cable: 'video' },
+    { id: 'mix',         label: 'MIX',       cable: 'cv' },
+    { id: 'feedback',    label: 'FEEDBACK',  cable: 'cv' },
+    { id: 'delay',       label: 'DELAY',     cable: 'cv' },
+    { id: 'delay_clock', label: 'DELAY CLK', cable: 'gate' },
+    { id: 'luma',        label: 'LUMA',      cable: 'cv' },
+    { id: 'chroma',      label: 'CHROMA',    cable: 'cv' },
+    { id: 'r',           label: 'R',         cable: 'cv' },
+    { id: 'g',           label: 'G',         cable: 'cv' },
+    { id: 'b',           label: 'B',         cable: 'cv' },
+    { id: 'lighten_cv',  label: 'LIGHTEN',   cable: 'cv' },
+    { id: 'darken_cv',   label: 'DARKEN',    cable: 'cv' },
+    { id: 'pixelate',    label: 'PIXELATE',  cable: 'cv' },
+    { id: 'zoom',        label: 'ZOOM',      cable: 'cv' },
+    { id: 'rotate',      label: 'ROTATE',    cable: 'cv' },
+    { id: 'offsetx',     label: 'OFF X',     cable: 'cv' },
+    { id: 'offsety',     label: 'OFF Y',     cable: 'cv' },
+    { id: 'mirror_x_gate', label: 'MIRROR X', cable: 'gate' },
+    { id: 'mirror_y_gate', label: 'MIRROR Y', cable: 'gate' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT', cable: 'video' },
+  ];
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions a11y_no_noninteractive_element_interactions -->
-<div
-  class="card video"
-  class:hide-controls={hideControls}
-  class:resizing
-  style={hideControls ? `width: ${resizedWidth}px; height: ${resizedHeight}px;` : ''}
-  data-testid="backdraft-card"
-  data-node-id={id}
-  data-hide-controls={hideControls ? 'true' : 'false'}
-  ondblclick={onBodyDblClick}
->
+<div class="card video" data-testid="backdraft-card" data-node-id={id}>
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="BACKDRAFT" />
 
-  <!-- 2 video inputs + 2 key masks -->
-  <Handle type="target" position={Position.Left} id="in_a"    style="top: 56px;  --handle-color: var(--cable-video);" />
-  {#if !hideControls}<span class="port-label left" style="top: 50px;">A</span>{/if}
-  <Handle type="target" position={Position.Left} id="in_b"    style="top: 84px;  --handle-color: var(--cable-video);" />
-  {#if !hideControls}<span class="port-label left" style="top: 78px;">B</span>{/if}
-  <Handle type="target" position={Position.Left} id="lighten" style="top: 116px; --handle-color: var(--cable-video);" />
-  {#if !hideControls}<span class="port-label left" style="top: 110px;">L+</span>{/if}
-  <Handle type="target" position={Position.Left} id="darken"  style="top: 144px; --handle-color: var(--cable-video);" />
-  {#if !hideControls}<span class="port-label left" style="top: 138px;">D-</span>{/if}
-
-  <!-- CV inputs (port id == param id; lighten/darken CV use the _cv suffix) -->
-  <Handle type="target" position={Position.Left} id="mix"        style="top: 180px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 174px;">M</span>{/if}
-  <Handle type="target" position={Position.Left} id="feedback"   style="top: 208px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 202px;">FB</span>{/if}
-  <Handle type="target" position={Position.Left} id="delay"      style="top: 236px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 230px;">DL</span>{/if}
-  <Handle type="target" position={Position.Left} id="luma"       style="top: 264px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 258px;">LU</span>{/if}
-  <Handle type="target" position={Position.Left} id="chroma"     style="top: 292px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 286px;">CH</span>{/if}
-  <Handle type="target" position={Position.Left} id="r"          style="top: 320px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 314px;">R</span>{/if}
-  <Handle type="target" position={Position.Left} id="g"          style="top: 348px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 342px;">G</span>{/if}
-  <Handle type="target" position={Position.Left} id="b"          style="top: 376px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 370px;">B</span>{/if}
-  <Handle type="target" position={Position.Left} id="lighten_cv" style="top: 404px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 398px;">L</span>{/if}
-  <Handle type="target" position={Position.Left} id="darken_cv"  style="top: 432px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 426px;">D</span>{/if}
-  <Handle type="target" position={Position.Left} id="zoom"       style="top: 460px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 454px;">ZM</span>{/if}
-  <Handle type="target" position={Position.Left} id="rotate"     style="top: 488px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 482px;">RT</span>{/if}
-  <Handle type="target" position={Position.Left} id="offsetx"    style="top: 516px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 510px;">OX</span>{/if}
-  <Handle type="target" position={Position.Left} id="offsety"    style="top: 544px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 538px;">OY</span>{/if}
-  <!-- DELAY CLOCK gate/clock input — overrides the DELAY knob when patched. -->
-  <Handle type="target" position={Position.Left} id="delay_clock" style="top: 572px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 566px;">CLK</span>{/if}
-  <!-- MIRROR gate inputs — a rising edge FLIPS the matching mirror axis. -->
-  <Handle type="target" position={Position.Left} id="mirror_x_gate" style="top: 600px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 594px;">MX</span>{/if}
-  <Handle type="target" position={Position.Left} id="mirror_y_gate" style="top: 628px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 622px;">MY</span>{/if}
-  <!-- PIXELATE CV — displaces the source-resolution reduction (0..1). -->
-  <Handle type="target" position={Position.Left} id="pixelate" style="top: 656px; --handle-color: var(--cable-cv);" />
-  {#if !hideControls}<span class="port-label left" style="top: 650px;">PX</span>{/if}
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  {#if !hideControls}<span class="port-label right" style="top: 50px;">OUT</span>{/if}
-
-  <button
-    type="button"
-    class="hide-toggle nodrag"
-    aria-label={hideControls ? 'Show BACKDRAFT controls' : 'Hide BACKDRAFT controls'}
-    title={hideControls ? 'Show controls (or double-click frame)' : 'Hide controls'}
-    data-testid="backdraft-hide-toggle"
-    onclick={toggleHideControls}
-  >{hideControls ? '+' : '–'}</button>
-
-  {#if hideControls}
-    <div class="canvas-wrap canvas-wrap-resizable" style="width: {innerWidth}px; height: {innerHeight}px;">
-      <canvas
-        bind:this={canvasEl}
-        width={innerWidth}
-        height={innerHeight}
-        data-testid="backdraft-canvas"
-        data-node-id={id}
-      ></canvas>
-    </div>
-    <div
-      class="resize-handle nodrag"
-      role="separator"
-      aria-label="Resize BACKDRAFT"
-      data-testid="backdraft-resize-handle"
-      onpointerdown={onResizeStart}
-    ></div>
-  {:else}
-    <div class="canvas-wrap">
-      <canvas
-        bind:this={canvasEl}
-        width={CANVAS_W}
-        height={CANVAS_H}
-        data-testid="backdraft-canvas"
-        data-node-id={id}
-      ></canvas>
-    </div>
-
-    <div class="mirror-row" data-testid="backdraft-mirror-row">
-      <button
-        type="button"
-        class="mirror-btn nodrag"
-        class:on={mirrorXOn}
-        data-testid="backdraft-mirror-x"
-        title="MIRROR X — fold the left half over the right (kaleidoscope)"
-        onclick={toggleMirror('mirrorX')}
-      >MIRROR X</button>
-      <button
-        type="button"
-        class="mirror-btn nodrag"
-        class:on={mirrorYOn}
-        data-testid="backdraft-mirror-y"
-        title="MIRROR Y — fold the top half over the bottom (kaleidoscope)"
-        onclick={toggleMirror('mirrorY')}
-      >MIRROR Y</button>
-    </div>
-
-    <div class="fader-grid" data-testid="backdraft-controls">
-      <Fader value={p('mix')}      min={0}  max={1}                     defaultValue={pdef('mix')}      label="Mix"  curve="linear" onchange={setParam('mix')}      moduleId={id} paramId="mix" />
-      <Fader value={p('feedback')} min={0}  max={BACKDRAFT_MAX_FEEDBACK} defaultValue={pdef('feedback')} label="FB"   curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" />
-      <div class="delay-cell" class:clk-driven={clockPatched}>
-        <Fader value={p('delay')}    min={0}  max={BACKDRAFT_MAX_DELAY_MS} units="ms" defaultValue={pdef('delay')} label={clockPatched ? 'Dly·CLK' : 'Delay'} curve="linear" onchange={setParam('delay')} moduleId={id} paramId="delay" />
-        {#if clockPatched}<span class="clk-badge" data-testid="backdraft-clk-badge" title="DELAY CLOCK is driving the feedback delay (knob overridden)">CLK</span>{/if}
+  <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={300}>
+    <div class="bd-body">
+      <!-- LEFT column: large video preview. -->
+      <div class="bd-col bd-col-left">
+        <div class="canvas-wrap">
+          <canvas
+            bind:this={canvasEl}
+            width={CANVAS_W}
+            height={CANVAS_H}
+            data-testid="backdraft-canvas"
+            data-node-id={id}
+          ></canvas>
+        </div>
       </div>
-      <Fader value={p('luma')}     min={-1} max={2}                     defaultValue={pdef('luma')}     label="Luma" curve="linear" onchange={setParam('luma')}     moduleId={id} paramId="luma" />
-      <Fader value={p('chroma')}   min={-1} max={2}                     defaultValue={pdef('chroma')}   label="Chr"  curve="linear" onchange={setParam('chroma')}   moduleId={id} paramId="chroma" />
-      <Fader value={p('r')}        min={-1} max={2}                     defaultValue={pdef('r')}        label="R"    curve="linear" onchange={setParam('r')}        moduleId={id} paramId="r" />
-      <Fader value={p('g')}        min={-1} max={2}                     defaultValue={pdef('g')}        label="G"    curve="linear" onchange={setParam('g')}        moduleId={id} paramId="g" />
-      <Fader value={p('b')}        min={-1} max={2}                     defaultValue={pdef('b')}        label="B"    curve="linear" onchange={setParam('b')}        moduleId={id} paramId="b" />
-      <Fader value={p('lighten')}  min={0}  max={1}                     defaultValue={pdef('lighten')}  label="Lgt"  curve="linear" onchange={setParam('lighten')}  moduleId={id} paramId="lighten" />
-      <Fader value={p('darken')}   min={0}  max={1}                     defaultValue={pdef('darken')}   label="Drk"  curve="linear" onchange={setParam('darken')}   moduleId={id} paramId="darken" />
-      <Fader value={p('pixelate')} min={0}  max={1}                     defaultValue={pdef('pixelate')} label="Pix"  curve="linear" onchange={setParam('pixelate')} moduleId={id} paramId="pixelate" />
-      <Fader value={p('zoom')}     min={BACKDRAFT_ZOOM_MIN}   max={BACKDRAFT_ZOOM_MAX}   defaultValue={pdef('zoom')}    label="Zoom" curve="linear" onchange={setParam('zoom')}    moduleId={id} paramId="zoom" />
-      <Fader value={p('rotate')}   min={BACKDRAFT_ROTATE_MIN} max={BACKDRAFT_ROTATE_MAX} units="°" defaultValue={pdef('rotate')} label="Rot"  curve="linear" onchange={setParam('rotate')}  moduleId={id} paramId="rotate" />
-      <Fader value={p('offsetX')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetX')} label="OffX" curve="linear" onchange={setParam('offsetX')} moduleId={id} paramId="offsetX" />
-      <Fader value={p('offsetY')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetY')} label="OffY" curve="linear" onchange={setParam('offsetY')} moduleId={id} paramId="offsetY" />
+
+      <!-- RIGHT column: mirror toggles + the fader grid. -->
+      <div class="bd-col bd-col-right">
+        <div class="mirror-row" data-testid="backdraft-mirror-row">
+          <button
+            type="button"
+            class="mirror-btn nodrag"
+            class:on={mirrorXOn}
+            data-testid="backdraft-mirror-x"
+            title="MIRROR X — fold the left half over the right (kaleidoscope)"
+            onclick={toggleMirror('mirrorX')}
+          >MIRROR X</button>
+          <button
+            type="button"
+            class="mirror-btn nodrag"
+            class:on={mirrorYOn}
+            data-testid="backdraft-mirror-y"
+            title="MIRROR Y — fold the top half over the bottom (kaleidoscope)"
+            onclick={toggleMirror('mirrorY')}
+          >MIRROR Y</button>
+        </div>
+
+        <div class="fader-grid" data-testid="backdraft-controls">
+          <Fader value={p('mix')}      min={0}  max={1}                     defaultValue={pdef('mix')}      label="Mix"  curve="linear" onchange={setParam('mix')}      moduleId={id} paramId="mix" />
+          <Fader value={p('feedback')} min={0}  max={BACKDRAFT_MAX_FEEDBACK} defaultValue={pdef('feedback')} label="FB"   curve="linear" onchange={setParam('feedback')} moduleId={id} paramId="feedback" />
+          <div class="delay-cell" class:clk-driven={clockPatched}>
+            <Fader value={p('delay')}    min={0}  max={BACKDRAFT_MAX_DELAY_MS} units="ms" defaultValue={pdef('delay')} label={clockPatched ? 'Dly·CLK' : 'Delay'} curve="linear" onchange={setParam('delay')} moduleId={id} paramId="delay" />
+            {#if clockPatched}<span class="clk-badge" data-testid="backdraft-clk-badge" title="DELAY CLOCK is driving the feedback delay (knob overridden)">CLK</span>{/if}
+          </div>
+          <Fader value={p('luma')}     min={-1} max={2}                     defaultValue={pdef('luma')}     label="Luma" curve="linear" onchange={setParam('luma')}     moduleId={id} paramId="luma" />
+          <Fader value={p('chroma')}   min={-1} max={2}                     defaultValue={pdef('chroma')}   label="Chr"  curve="linear" onchange={setParam('chroma')}   moduleId={id} paramId="chroma" />
+          <Fader value={p('r')}        min={-1} max={2}                     defaultValue={pdef('r')}        label="R"    curve="linear" onchange={setParam('r')}        moduleId={id} paramId="r" />
+          <Fader value={p('g')}        min={-1} max={2}                     defaultValue={pdef('g')}        label="G"    curve="linear" onchange={setParam('g')}        moduleId={id} paramId="g" />
+          <Fader value={p('b')}        min={-1} max={2}                     defaultValue={pdef('b')}        label="B"    curve="linear" onchange={setParam('b')}        moduleId={id} paramId="b" />
+          <Fader value={p('lighten')}  min={0}  max={1}                     defaultValue={pdef('lighten')}  label="Lgt"  curve="linear" onchange={setParam('lighten')}  moduleId={id} paramId="lighten" />
+          <Fader value={p('darken')}   min={0}  max={1}                     defaultValue={pdef('darken')}   label="Drk"  curve="linear" onchange={setParam('darken')}   moduleId={id} paramId="darken" />
+          <Fader value={p('pixelate')} min={0}  max={1}                     defaultValue={pdef('pixelate')} label="Pix"  curve="linear" onchange={setParam('pixelate')} moduleId={id} paramId="pixelate" />
+          <Fader value={p('zoom')}     min={BACKDRAFT_ZOOM_MIN}   max={BACKDRAFT_ZOOM_MAX}   defaultValue={pdef('zoom')}    label="Zoom" curve="linear" onchange={setParam('zoom')}    moduleId={id} paramId="zoom" />
+          <Fader value={p('rotate')}   min={BACKDRAFT_ROTATE_MIN} max={BACKDRAFT_ROTATE_MAX} units="°" defaultValue={pdef('rotate')} label="Rot"  curve="linear" onchange={setParam('rotate')}  moduleId={id} paramId="rotate" />
+          <Fader value={p('offsetX')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetX')} label="OffX" curve="linear" onchange={setParam('offsetX')} moduleId={id} paramId="offsetX" />
+          <Fader value={p('offsetY')}  min={BACKDRAFT_OFFSET_MIN} max={BACKDRAFT_OFFSET_MAX} defaultValue={pdef('offsetY')} label="OffY" curve="linear" onchange={setParam('offsetY')} moduleId={id} paramId="offsetY" />
+        </div>
+      </div>
     </div>
-  {/if}
+  </PatchPanel>
 </div>
 
 <style>
   .card {
-    width: 340px;
-    min-height: 660px;
+    width: 720px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -395,15 +280,6 @@
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
   }
-  .card.hide-controls {
-    background-color: #000;
-    background-image: linear-gradient(var(--module-bg), var(--module-bg));
-    min-height: 0;
-    padding-bottom: 14px;
-    overflow: hidden;
-    isolation: isolate;
-  }
-  .card.resizing { transition: none; }
   :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
   :global(.svelte-flow__node.selected) .card {
     border-color: var(--accent);
@@ -423,52 +299,42 @@
     margin: 0 0 8px;
     letter-spacing: 0.05em;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
+  /* 2-column 3u layout: preview LEFT, controls RIGHT (CUBE pattern). */
+  .bd-body {
+    padding: 6px 14px 8px;
+    display: flex;
+    flex-direction: row;
+    gap: 16px;
+    align-items: flex-start;
   }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
+  .bd-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .bd-col-left { flex: 0 0 auto; }
+  .bd-col-right { flex: 1 1 auto; min-width: 0; }
   .canvas-wrap {
-    margin: 12px 18px 8px 44px;
     border: 1px solid var(--cable-video);
     border-radius: 2px;
     overflow: hidden;
     line-height: 0;
     background: #050608;
   }
-  .canvas-wrap-resizable {
-    margin: 12px auto 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    border: 1px solid var(--cable-video);
-  }
-  canvas {
+  .canvas-wrap canvas {
     display: block;
-    width: 100%;
-    height: 100%;
+    width: 320px;
+    height: 240px;
     image-rendering: pixelated;
     background: #050608;
   }
-  .canvas-wrap:not(.canvas-wrap-resizable) canvas { height: auto; }
   .fader-grid {
-    margin-top: 10px;
-    padding: 0 14px;
+    margin-top: 4px;
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 10px 4px;
+    gap: 14px 6px;
     justify-items: center;
   }
   .mirror-row {
     display: flex;
     gap: 8px;
-    justify-content: center;
-    margin-top: 10px;
-    padding: 0 14px;
+    justify-content: flex-start;
   }
   .mirror-btn {
     flex: 1;
@@ -513,47 +379,4 @@
     font-family: ui-monospace, monospace;
     pointer-events: none;
   }
-  .hide-toggle {
-    position: absolute;
-    top: 4px;
-    right: 6px;
-    width: 16px;
-    height: 16px;
-    padding: 0;
-    line-height: 14px;
-    font-size: 12px;
-    font-family: ui-monospace, monospace;
-    color: var(--text-dim);
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 2px;
-    cursor: pointer;
-    z-index: 6;
-  }
-  .hide-toggle:hover {
-    color: var(--text);
-    border-color: var(--cable-video);
-  }
-  .resize-handle {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    width: 16px;
-    height: 16px;
-    cursor: nwse-resize;
-    background: linear-gradient(
-      135deg,
-      transparent 50%,
-      var(--cable-video) 50%,
-      var(--cable-video) 60%,
-      transparent 60%,
-      transparent 70%,
-      var(--cable-video) 70%,
-      var(--cable-video) 80%,
-      transparent 80%
-    );
-    opacity: 0.7;
-    z-index: 5;
-  }
-  .resize-handle:hover { opacity: 1; }
 </style>

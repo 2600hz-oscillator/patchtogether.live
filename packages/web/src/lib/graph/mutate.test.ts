@@ -17,7 +17,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { patch, ydoc, undoManager, LOCAL_ORIGIN } from './store';
-import { mutateNode, setNodeParam, setControlColor } from './mutate';
+import { mutateNode, setNodeParam, setControlColor, setNodeLocked } from './mutate';
 import type { ModuleNode } from './types';
 
 const NID = 'mutate-test-node';
@@ -163,6 +163,33 @@ describe('setControlColor — single-key in-place set/clear on node.data', () =>
 
   it('is a safe no-op on an absent node', () => {
     expect(() => setControlColor('nope', 'FFFFFF')).not.toThrow();
+    expect(patch.nodes['nope']).toBeUndefined();
+    expect(undoManager.undoStack.length).toBe(0);
+  });
+});
+
+describe('setNodeLocked — single-key in-place set/clear on node.data', () => {
+  it('sets data.rackLocked=true in place + is undoable; false deletes the key', () => {
+    makeNode();
+    const dataBefore = patch.nodes[NID]!.data;
+    expect((patch.nodes[NID]!.data as { rackLocked?: boolean }).rackLocked).toBeUndefined();
+
+    setNodeLocked(NID, true);
+    expect((patch.nodes[NID]!.data as { rackLocked?: boolean }).rackLocked).toBe(true);
+    // Mutated IN PLACE — same data object (no spread-reassign of live Y types).
+    expect(patch.nodes[NID]!.data).toBe(dataBefore);
+    expect(undoManager.undoStack.length).toBe(1);
+    // Pre-existing keys survive the single-key set.
+    expect((patch.nodes[NID]!.data as { label?: string }).label).toBe('orig');
+
+    setNodeLocked(NID, false);
+    // Cleared → the key is GONE (free-floating is the absence of the flag).
+    expect('rackLocked' in (patch.nodes[NID]!.data as object)).toBe(false);
+    expect((patch.nodes[NID]!.data as { label?: string }).label).toBe('orig');
+  });
+
+  it('is a safe no-op on an absent node', () => {
+    expect(() => setNodeLocked('nope', true)).not.toThrow();
     expect(patch.nodes['nope']).toBeUndefined();
     expect(undoManager.undoStack.length).toBe(0);
   });

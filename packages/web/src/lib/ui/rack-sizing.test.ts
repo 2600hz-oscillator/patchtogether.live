@@ -41,13 +41,16 @@ const NO_CARD_BY_DESIGN = new Set(['cadillac']);
 // the resize so the card couldn't grow (#759 — the bentbox resize e2e). Their
 // DEFAULT/MIN size constants (in each *Card.svelte) are rounded to 180-multiples
 // so they still land on the rack grid out of the box.
-//   clockedRunner, livecode, wavesculpt, b3ntb0x, backdraft, bentbox,
+//   clockedRunner, livecode, wavesculpt, b3ntb0x, bentbox,
 //   monoglitch, reshaper, ruttetra, toybox, videobox, videoOut
 // All are excluded from the size-coverage requirement + the rack CSS.
+// NOTE: backdraft was promoted to a FIXED 3u/hp4 tier (#767 — 2-col
+// preview-left/controls-right layout, no longer corner-resizable), so it
+// lives in RACK_SIZE_DEFAULTS and is NOT listed here.
 const DYNAMIC_SIZED = new Set([
   'group', 'sticky', 'controlSurface', 'matrixMix',
   // user-resizable, sized by resize-snap-to-u not a fixed tier:
-  'clockedRunner', 'livecode', 'wavesculpt', 'b3ntb0x', 'backdraft', 'bentbox',
+  'clockedRunner', 'livecode', 'wavesculpt', 'b3ntb0x', 'bentbox',
   'monoglitch', 'reshaper', 'ruttetra', 'toybox', 'videobox', 'videoOut',
 ]);
 

@@ -26,8 +26,10 @@
   // raymarch. When SCRN is OFF we also stop pulling the preview.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
   import { mandelbulbDef, MB_SLICE_Y_RANGE } from '$lib/video/modules/mandelbulb';
@@ -257,41 +259,25 @@
     { pid: 'slice_ry', label: 'S RY',   portLabel: 'SRY' },
     { pid: 'slice_rz', label: 'S RZ',   portLabel: 'SRZ' },
   ];
+
+  // Patch-panel ports. EVERY spatial/slice CV input (id == `${pid}_cv`,
+  // matching the def) is always declared (the handle-presence sweep pins
+  // them); slice CV labels are only meaningful while SLICE is ON.
+  const inputs: PortDescriptor[] = [
+    ...CONTROLS.map((c): PortDescriptor => ({ id: `${c.pid}_cv`, label: c.label, cable: 'cv' })),
+    ...SLICE_CONTROLS.map((c): PortDescriptor => ({ id: `${c.pid}_cv`, label: c.label, cable: 'cv' })),
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'video_out', label: 'VIDEO', cable: 'mono-video' },
+    { id: 'audio_out', label: 'AUDIO', cable: 'audio' },
+  ];
 </script>
 
 <div class="mod-card mandelbulb-card" data-testid="mandelbulb-card" data-node-id={id}>
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="MANDELBULB" />
 
-  <!-- CV inputs (one per spatial/zoom control) down the left edge. -->
-  {#each CONTROLS as c, i (c.pid)}
-    <Handle
-      type="target"
-      position={Position.Left}
-      id={`${c.pid}_cv`}
-      style={`top: ${56 + i * 26}px; --handle-color: var(--cable-cv);`}
-    />
-    <span class="port-label left" style={`top: ${50 + i * 26}px;`}>{c.portLabel}</span>
-  {/each}
-  <!-- Slice CV inputs — always present (declared ports → handle-presence sweep);
-       labels are only meaningful when SLICE is ON. -->
-  {#each SLICE_CONTROLS as c, i (c.pid)}
-    <Handle
-      type="target"
-      position={Position.Left}
-      id={`${c.pid}_cv`}
-      style={`top: ${56 + (CONTROLS.length + i) * 26}px; --handle-color: var(--cable-cv);`}
-    />
-    <span class="port-label left" style={`top: ${50 + (CONTROLS.length + i) * 26}px;`}>{c.portLabel}</span>
-  {/each}
-
-  <!-- Mono-video output. -->
-  <Handle type="source" position={Position.Right} id="video_out" style="top: 56px; --handle-color: var(--cable-mono-video, var(--cable-video));" />
-  <span class="port-label right" style="top: 50px;">VIDEO</span>
-  <!-- Mono-audio output (ALWAYS present; silent until SLICE is ON). -->
-  <Handle type="source" position={Position.Right} id="audio_out" style="top: 82px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 76px;">AUDIO</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <!-- Display #1: the fractal view, with the movable YELLOW SELECT BOX overlay
        when SLICE is ON. -->
   <div
@@ -381,6 +367,7 @@
       {/each}
     </div>
   {/if}
+  </PatchPanel>
 </div>
 
 <style>
@@ -408,15 +395,6 @@
     border-radius: 2px 2px 0 0;
     background: var(--cable-video);
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left  { left: 14px; }
-  .port-label.right { right: 14px; }
   .screen-wrap {
     position: relative;
     margin: 12px auto 8px;

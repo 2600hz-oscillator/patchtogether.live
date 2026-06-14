@@ -12,6 +12,14 @@
 :root {
   --bg: #0e1116;
   --bg-grid-dot: #1f242c;
+  /* Virtual-rack grid (Phase 2): the dot colour for the 180px rack-unit grid
+   * overlay on the canvas. Defaults to the same theme-aware --bg-grid-dot the
+   * fine background dots use, so it follows the active skin automatically (e.g.
+   * MATRIXCOWBOY → phosphor green). A skin can override this token directly to
+   * tint the rack grid independently of the fine grid; none do by default, so
+   * every skin's baseline is unchanged. The Background component reads it via
+   * patternColor="var(--rack-grid-color)". */
+  --rack-grid-color: var(--bg-grid-dot);
   --module-bg: #1a1d23;
   --text: #e0e0e0;
   --text-dim: #888;
