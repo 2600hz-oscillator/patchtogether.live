@@ -12,6 +12,7 @@ import {
   makePerformanceBundle,
   validateBundle,
   mergeMidiBindings,
+  resolveMidiDeviceId,
   BundleParseError,
   type MidiBindingExport,
 } from './performance-bundle';
@@ -53,13 +54,37 @@ describe('collectAssetRefs', () => {
     expect(collectAssetRefs({ a: { id: 'a', type: 'vco' } })).toEqual([]);
   });
 
+  // FIX 2: VIDEOVARISPEED now stamps fileMeta.handleId + registers an export
+  // resolver just like VIDEOBOX, so its loaded clip must be collected too —
+  // before this it was silently dropped (only `videobox` was matched).
+  it('also collects VIDEOVARISPEED nodes with a persisted handleId', () => {
+    const nodes = {
+      vv: {
+        id: 'vv',
+        type: 'videovarispeed',
+        data: { fileMeta: { handleId: 'h-vv', name: 'clip.mp4', size: 99, duration: 4.2 } },
+      },
+    };
+    const refs = collectAssetRefs(nodes);
+    expect(refs).toHaveLength(1);
+    expect(refs[0]).toMatchObject({ handleId: 'h-vv', role: 'video', nodeId: 'vv', filename: 'clip.mp4' });
+  });
+
+  it('collects both VIDEOBOX and VIDEOVARISPEED in one rack', () => {
+    const nodes = {
+      vb: { id: 'vb', type: 'videobox', data: { fileMeta: { handleId: 'h1', name: 'a.mp4' } } },
+      vv: { id: 'vv', type: 'videovarispeed', data: { fileMeta: { handleId: 'h2', name: 'b.mp4' } } },
+    };
+    expect(collectAssetRefs(nodes).map((r) => r.handleId).sort()).toEqual(['h1', 'h2']);
+  });
+
   it('tolerates missing/undefined node entries', () => {
     expect(collectAssetRefs({ a: undefined })).toEqual([]);
   });
 });
 
 describe('collectMidiDevices', () => {
-  it('keys MIDI-CV-BUDDY device by NAME via the id resolver', () => {
+  it('keys MIDI-CV-BUDDY device by NAME via the id resolver + carries the id', () => {
     const nodes = {
       m1: { id: 'm1', type: 'midiCvBuddy', data: { lastDeviceId: 'unstable-id-42' } },
     };
@@ -67,28 +92,73 @@ describe('collectMidiDevices', () => {
       id === 'unstable-id-42' ? { name: 'Launchpad Mini', manufacturer: 'Focusrite' } : null,
     );
     expect(out).toEqual([
-      { nodeId: 'm1', deviceName: 'Launchpad Mini', manufacturer: 'Focusrite' },
+      { nodeId: 'm1', deviceName: 'Launchpad Mini', manufacturer: 'Focusrite', deviceId: 'unstable-id-42' },
+    ]);
+  });
+
+  // FIX 1: MIDI LANE + MIDICLOCK store device on the SAME node.data.lastDeviceId
+  // convention but were NEVER collected before (only midiCvBuddy matched), so
+  // their device binding silently dropped from saved performances → the user
+  // had to re-pick on every load.
+  it('also collects MIDI LANE + MIDICLOCK device selections', () => {
+    const nodes = {
+      lane: { id: 'lane', type: 'midiLane', data: { lastDeviceId: 'id-lane' } },
+      clk: { id: 'clk', type: 'midiclock', data: { lastDeviceId: 'id-clk' } },
+    };
+    const out = collectMidiDevices(nodes, (id) =>
+      id === 'id-lane' ? { name: 'Keystep' } : id === 'id-clk' ? { name: 'Beatstep' } : null,
+    );
+    expect(out).toEqual([
+      { nodeId: 'lane', deviceName: 'Keystep', manufacturer: undefined, deviceId: 'id-lane' },
+      { nodeId: 'clk', deviceName: 'Beatstep', manufacturer: undefined, deviceId: 'id-clk' },
     ]);
   });
 
   it('skips a node whose saved id no longer resolves (device absent at save)', () => {
-    const nodes = { m1: { id: 'm1', type: 'midiCvBuddy', data: { lastDeviceId: 'gone' } } };
+    const nodes = { m1: { id: 'm1', type: 'midiLane', data: { lastDeviceId: 'gone' } } };
     expect(collectMidiDevices(nodes, () => null)).toEqual([]);
   });
 
   it('skips a node with no saved device', () => {
-    const nodes = { m1: { id: 'm1', type: 'midiCvBuddy', data: { lastDeviceId: null } } };
+    const nodes = { m1: { id: 'm1', type: 'midiclock', data: { lastDeviceId: null } } };
     expect(collectMidiDevices(nodes, () => ({ name: 'X' }))).toEqual([]);
   });
 
-  // Regression guard: the registered type is camelCase `midiCvBuddy`. The old
-  // code (and this test) used the kebab `midi-cv-buddy`, which never matched a
-  // real node — so device selections silently vanished from saved performances
-  // and this test was vacuous. Assert the kebab string is NOT collected so we
-  // can't quietly regress to it.
+  // Regression guard: the registered types are camelCase `midiCvBuddy` /
+  // `midiLane` + lowercase `midiclock` — NOT kebab. The old kebab
+  // `midi-cv-buddy` literal never matched a real node, so device selections
+  // silently vanished. Assert the kebab string is NOT collected.
   it('does NOT match the kebab "midi-cv-buddy" (wrong type — would be vacuous)', () => {
     const nodes = { m1: { id: 'm1', type: 'midi-cv-buddy', data: { lastDeviceId: 'x' } } };
     expect(collectMidiDevices(nodes, () => ({ name: 'X' }))).toEqual([]);
+  });
+});
+
+describe('resolveMidiDeviceId (load-side re-bind)', () => {
+  const connected = [
+    { id: 'live-1', name: 'Keystep' },
+    { id: 'live-2', name: 'Launchpad Mini' },
+  ];
+
+  it('matches by exact id first (same machine)', () => {
+    expect(resolveMidiDeviceId({ deviceId: 'live-2', deviceName: 'Keystep' }, connected)).toBe('live-2');
+  });
+
+  it('falls back to NAME when the saved id is absent (cross-machine)', () => {
+    // Saved id regenerated → not in `connected`; name still matches.
+    expect(resolveMidiDeviceId({ deviceId: 'stale-id', deviceName: 'Launchpad Mini' }, connected)).toBe('live-2');
+  });
+
+  it('resolves by name when no id was saved', () => {
+    expect(resolveMidiDeviceId({ deviceName: 'Keystep' }, connected)).toBe('live-1');
+  });
+
+  it('returns null when the device is not connected', () => {
+    expect(resolveMidiDeviceId({ deviceId: 'x', deviceName: 'Not Plugged In' }, connected)).toBeNull();
+  });
+
+  it('returns null against an empty input list', () => {
+    expect(resolveMidiDeviceId({ deviceId: 'live-1', deviceName: 'Keystep' }, [])).toBeNull();
   });
 });
 
@@ -136,7 +206,7 @@ describe('makePerformanceBundle', () => {
     expect(bundle.patch).toBe(envelope);
     expect(bundle.assets).toHaveLength(1);
     expect(bundle.midiBindings).toHaveLength(1);
-    expect(bundle.midiDevices).toEqual([{ nodeId: 'm1', deviceName: 'Keystep', manufacturer: undefined }]);
+    expect(bundle.midiDevices).toEqual([{ nodeId: 'm1', deviceName: 'Keystep', manufacturer: undefined, deviceId: 'dev' }]);
     expect(bundle.gamepadBindings).toEqual([{ nodeId: 'g1', gamepadId: 'pad-0', padIndex: 0 }]);
     expect(typeof bundle.savedAt).toBe('string');
   });

@@ -669,6 +669,43 @@ describe('samsloopDecodeBytesB64 — engine-factory hydrate helper', () => {
 
 // ---------- varispeed mapping ----------
 
+describe('samsloopMath.rescaleBoundaries (perf-zip boundary-restore fix)', () => {
+  it('is a no-op when the re-decoded length matches the saved length (WAV / same machine)', () => {
+    expect(samsloopMath.rescaleBoundaries(2700, 8100, 10800, 10800)).toBeNull();
+  });
+
+  it('proportionally maps a sub-window when the buffer re-decodes longer', () => {
+    // Saved 25%..75% over a 1000-sample buffer; re-decode yields 2000 samples
+    // (e.g. a non-WAV source decoded on a higher-rate AudioContext). The window
+    // must keep its 25%..75% placement → 500..1500.
+    const r = samsloopMath.rescaleBoundaries(250, 750, 1000, 2000);
+    expect(r).toEqual({ start: 500, end: 1500 });
+  });
+
+  it('proportionally maps when the buffer re-decodes shorter', () => {
+    const r = samsloopMath.rescaleBoundaries(500, 1500, 2000, 1000);
+    expect(r).toEqual({ start: 250, end: 750 });
+  });
+
+  it('re-anchors a pristine full-buffer window to the new length', () => {
+    // start=0, end>=savedLen (or the 1e6 default ceiling) → full window.
+    expect(samsloopMath.rescaleBoundaries(0, 1000, 1000, 1500)).toEqual({ start: 0, end: 1500 });
+    expect(samsloopMath.rescaleBoundaries(0, 1e6, 1000, 1500)).toEqual({ start: 0, end: 1500 });
+  });
+
+  it('keeps start < end after rescale (never inverts the window)', () => {
+    const r = samsloopMath.rescaleBoundaries(999, 1000, 1000, 4)!;
+    expect(r.start).toBeLessThan(r.end);
+    expect(r.end).toBeLessThanOrEqual(4);
+  });
+
+  it('returns null on degenerate lengths', () => {
+    expect(samsloopMath.rescaleBoundaries(10, 20, 0, 100)).toBeNull();
+    expect(samsloopMath.rescaleBoundaries(10, 20, 100, 0)).toBeNull();
+    expect(samsloopMath.rescaleBoundaries(10, 20, Number.NaN, 100)).toBeNull();
+  });
+});
+
 describe('samsloopMath.sliderToRate', () => {
   it('center (1.0) → unity forward', () => {
     expect(samsloopMath.sliderToRate(1)).toBe(1);

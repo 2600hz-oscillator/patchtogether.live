@@ -44,6 +44,20 @@
     decideEdgeAction,
     reverseScrubStep,
   } from '$lib/video/modules/videovarispeed-transport';
+  import {
+    canPersistVideoHandles,
+    newVideoFileId,
+    putVideoFileHandle,
+    getVideoFileHandle,
+    deleteVideoFileHandle,
+    queryHandleReadPermission,
+    requestHandleReadPermission,
+    type StoredFileHandle,
+  } from '$lib/video/video-file-store';
+  import {
+    registerVideoExport,
+    unregisterVideoExport,
+  } from '$lib/video/video-export-registry';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -56,6 +70,16 @@
   let localFileName = $state<string | null>(null);
   let isDragOver = $state(false);
   let loadError = $state<string | null>(null);
+
+  // ---- Persistence: remembered file handle (Chromium) + re-link fallback ----
+  // Mirrors VIDEOBOX: a picked/dropped FileSystemFileHandle is stashed in
+  // IndexedDB keyed by an id stamped into fileMeta.handleId; on patch / perf-zip
+  // load we reload that exact file (or the seeded blob the zip carried) so the
+  // clip plays again WITHOUT a re-pick. Firefox / Safari never produce a handle
+  // and fall back to the re-link prompt only.
+  const canRememberHandle = canPersistVideoHandles();
+  let pendingHandle = $state<StoredFileHandle | null>(null);
+  let handleReloadAttempted = false;
 
   // ---- Reactive reads from data (Yjs-backed) ----
   let fileMeta = $derived<VideoboxFileMeta | null>(
@@ -143,6 +167,12 @@
     }, LOCAL_ORIGIN);
   }
   function writeFileMeta(meta: VideoboxFileMeta): void {
+    // Drop a stale remembered handle in THIS browser's IDB if the id changes
+    // (a fresh pick); a reload reuses the same id, so no churn there.
+    const prevId = fileMeta?.handleId;
+    if (prevId && prevId !== meta.handleId) {
+      void deleteVideoFileHandle(prevId);
+    }
     ydoc.transact(() => {
       const t = patch.nodes[id];
       if (!t) return;
@@ -163,8 +193,18 @@
   function toggleLoop(): void { writeLoop(!loop); }
 
   // ---- File-picker handling ----
-  async function loadFile(file: File): Promise<void> {
+  //
+  // `opts.handle` — a FileSystemFileHandle to persist for one-click reload (from
+  //   showOpenFilePicker / a drop that exposed getAsFileSystemHandle, or the
+  //   synthetic blob-handle the perf-zip loader seeds).
+  // `opts.reuseHandleId` — reload from an existing remembered handle: keep the
+  //   patch's existing handleId rather than minting a new one.
+  async function loadFile(
+    file: File,
+    opts?: { handle?: StoredFileHandle | null; reuseHandleId?: string },
+  ): Promise<void> {
     loadError = null;
+    pendingHandle = null;
     if (!file.type.startsWith('video/')) {
       loadError = `Not a video file: ${file.type || file.name}`;
       return;
@@ -175,6 +215,17 @@
     }
     objectUrl = URL.createObjectURL(file);
     localFileName = file.name;
+    // Register this node's bytes resolver for the portable "Export performance"
+    // (.zip) path — the exporter (Canvas) collects loaded video bytes across ALL
+    // video cards via this registry. Mirrors VIDEOBOX exactly. The closure
+    // re-reads objectUrl/localFileName so a later swap is reflected.
+    registerVideoExport(id, async () => {
+      const url = objectUrl;
+      if (!url) return null;
+      const resp = await fetch(url);
+      const ab = await (await resp.blob()).arrayBuffer();
+      return { bytes: new Uint8Array(ab), name: localFileName ?? file.name };
+    });
     if (!videoEl) return;
     videoEl.src = objectUrl;
     videoEl.muted = false;
@@ -187,9 +238,21 @@
     });
     if (!videoEl) return;
 
+    // Persist the handle (if we have one + the browser supports it) BEFORE
+    // writing fileMeta so the stamped handleId is the one the handle is stored
+    // under. On the perf-zip path the loader has already seeded a blob handle
+    // under `bundle-<nodeId>` (reuseHandleId), so we just re-stamp the same id.
+    let handleId: string | undefined = opts?.reuseHandleId;
+    if (opts?.handle && canRememberHandle) {
+      if (!handleId) handleId = newVideoFileId();
+      await putVideoFileHandle(handleId, opts.handle);
+    }
+
     writeFileMeta({
       name: file.name,
       duration: Number.isFinite(videoEl.duration) ? videoEl.duration : 0,
+      size: Number.isFinite(file.size) ? file.size : undefined,
+      handleId,
     });
 
     // Force a first frame to decode so the output streams immediately even
@@ -198,6 +261,65 @@
 
     ensureAudioWired();
   }
+
+  // ---- Persistence: reload from a remembered handle on patch / perf-zip load ----
+  //
+  // After a load, fileMeta may carry a handleId pointing at a handle THIS
+  // browser persisted, OR the synthetic blob handle the perf-zip loader seeded
+  // (putVideoFileBlob under `bundle-<nodeId>`). Same flow as VIDEOBOX:
+  //   - granted  → reload immediately (no re-pick);
+  //   - prompt   → stash for a one-click re-allow gesture;
+  //   - missing / denied → re-link prompt covers it.
+  async function tryReloadFromHandle(): Promise<void> {
+    const hid = fileMeta?.handleId;
+    if (!hid || hasLocalFile) return;
+    const handle = await getVideoFileHandle(hid);
+    if (!handle) return; // not in this browser → re-link prompt path
+    const perm = await queryHandleReadPermission(handle);
+    if (perm === 'granted') {
+      try {
+        const file = await handle.getFile();
+        await loadFile(file, { handle, reuseHandleId: hid });
+      } catch { /* file moved/gone — re-link prompt takes over */ }
+      return;
+    }
+    if (perm === 'prompt') pendingHandle = handle;
+    // 'denied' → re-link prompt covers it.
+  }
+
+  // One-click "re-allow": request read permission inside this click gesture,
+  // then reload. Bound to the re-allow button.
+  async function onReAllow(): Promise<void> {
+    const handle = pendingHandle;
+    const hid = fileMeta?.handleId;
+    if (!handle) return;
+    const perm = await requestHandleReadPermission(handle);
+    if (perm === 'granted') {
+      pendingHandle = null;
+      try {
+        const file = await handle.getFile();
+        await loadFile(file, { handle, reuseHandleId: hid ?? undefined });
+        return;
+      } catch { /* fall through to re-link */ }
+    }
+    pendingHandle = null;
+  }
+
+  // Re-link prompt visibility: saved fileMeta exists (a file was loaded at save)
+  // but THIS browser has no local copy + no usable handle.
+  let showRelinkPrompt = $derived<boolean>(
+    !hasLocalFile && fileMeta !== null && pendingHandle === null,
+  );
+
+  // Run the handle-reload attempt once fileMeta.handleId becomes available.
+  $effect(() => {
+    void fileMeta?.handleId;
+    if (handleReloadAttempted) return;
+    if (!fileMeta?.handleId) return;
+    if (hasLocalFile) return;
+    handleReloadAttempted = true;
+    void tryReloadFromHandle();
+  });
 
   // Wire the element's audio into the engine, RETRYING until it sticks.
   //
@@ -226,16 +348,64 @@
   function onFileInputChange(ev: Event): void {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
+    // The native <input type=file> can't hand us a FileSystemFileHandle, so a
+    // pick through this path gets no remembered-handle persistence (only
+    // fileMeta + the export resolver). The picker button path uses
+    // showOpenFilePicker when available to also persist a handle.
     if (file) void loadFile(file);
     try { input.value = ''; } catch { /* */ }
   }
+
+  // Picker button: prefer showOpenFilePicker (Chromium) so we capture a
+  // FileSystemFileHandle to remember; fall back to the native <input>.
+  async function pickViaPicker(): Promise<boolean> {
+    if (!canRememberHandle) return false;
+    const picker = (globalThis as {
+      showOpenFilePicker?: (opts?: unknown) => Promise<StoredFileHandle[]>;
+    }).showOpenFilePicker;
+    if (typeof picker !== 'function') return false;
+    try {
+      const handles = await picker({
+        multiple: false,
+        types: [{ description: 'Video', accept: { 'video/*': ['.mp4', '.webm', '.mov', '.m4v', '.ogv'] } }],
+      });
+      const handle = handles?.[0];
+      if (!handle) return true; // user cancelled — still "handled"
+      const file = await handle.getFile();
+      await loadFile(file, { handle });
+    } catch (e) {
+      if ((e as { name?: string })?.name !== 'AbortError') {
+        loadError = `Could not open file: ${(e as Error)?.message ?? 'unknown error'}`;
+      }
+    }
+    return true;
+  }
+  function onPickClick(ev: MouseEvent): void {
+    if (!canRememberHandle) return; // let the native <input> handle it
+    ev.preventDefault();
+    void pickViaPicker();
+  }
+
   function onDragOver(ev: DragEvent): void { ev.preventDefault(); isDragOver = true; }
   function onDragLeave(): void { isDragOver = false; }
-  function onDrop(ev: DragEvent): void {
+  async function onDrop(ev: DragEvent): Promise<void> {
     ev.preventDefault();
     isDragOver = false;
-    const file = ev.dataTransfer?.files?.[0];
-    if (file) void loadFile(file);
+    // Try to grab a FileSystemFileHandle (Chromium) so a dropped file is also
+    // remembered for one-click reload.
+    const item = ev.dataTransfer?.items?.[0];
+    let handle: StoredFileHandle | null = null;
+    const getHandle = (item as unknown as {
+      getAsFileSystemHandle?: () => Promise<StoredFileHandle | null>;
+    })?.getAsFileSystemHandle;
+    if (canRememberHandle && typeof getHandle === 'function') {
+      try {
+        const h = await getHandle.call(item);
+        if (h && h.kind === 'file') handle = h;
+      } catch { /* fall back to the plain File below */ }
+    }
+    const file = handle ? await handle.getFile().catch(() => null) : ev.dataTransfer?.files?.[0];
+    if (file) void loadFile(file, { handle });
   }
 
   // ---- Transport window + speed helpers (live, CV-summed) ----
@@ -422,6 +592,7 @@
     try { ve?.attachExternalSource(id, 'video', null); } catch { /* */ }
     const extras = getExtras();
     extras?.unwireAudio();
+    unregisterVideoExport(id);
     if (objectUrl) {
       try { URL.revokeObjectURL(objectUrl); } catch { /* */ }
       objectUrl = null;
@@ -497,15 +668,41 @@
     <div class="preview-wrap" data-testid="videovarispeed-preview">
       <!-- svelte-ignore a11y_media_has_caption -->
       <video bind:this={videoEl} data-testid="videovarispeed-video" playsinline></video>
-      {#if !hasLocalFile}
+      {#if !hasLocalFile && !fileMeta}
         <div class="overlay drop-hint" data-testid="videovarispeed-drop-hint">
           <div>Drop a video file</div>
           <div class="sub">or click to select</div>
         </div>
+      {:else if !hasLocalFile && pendingHandle}
+        <!-- One-click re-allow: a remembered handle exists but its read
+             permission lapsed. Re-grant + reload in a single user gesture. -->
+        <div class="overlay reallow-hint" data-testid="videovarispeed-reallow-hint">
+          <div><strong>{fileMeta?.name}</strong></div>
+          <button
+            type="button"
+            class="reallow-btn"
+            onclick={onReAllow}
+            data-testid="videovarispeed-reallow-btn"
+          >Click to re-allow {fileMeta?.name}</button>
+        </div>
+      {:else if showRelinkPrompt}
+        <!-- Re-link fallback (no usable handle / cross-machine): re-pick the
+             clip. On Chromium onPickClick uses showOpenFilePicker so the
+             re-picked file gets a fresh remembered handle. -->
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+        <label
+          class="overlay relink-hint"
+          data-testid="videovarispeed-relink-hint"
+          onclick={onPickClick}
+        >
+          <input type="file" accept="video/*" onchange={onFileInputChange} data-testid="videovarispeed-relink-input" />
+          <div class="relink-label">Re-link: drop "{fileMeta?.name}"</div>
+        </label>
       {/if}
     </div>
 
-    <label class="pick-btn" data-testid="videovarispeed-pick-label">
+    <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
+    <label class="pick-btn" data-testid="videovarispeed-pick-label" onclick={onPickClick}>
       <input
         type="file"
         accept="video/*"
@@ -701,6 +898,41 @@
   }
   .overlay .sub { color: var(--text-dim); font-size: 0.6rem; }
   .drop-hint { border: 1px dashed color-mix(in oklab, var(--cable-video) 50%, transparent); }
+
+  /* Re-allow affordance (remembered handle, lapsed permission). */
+  .reallow-hint { gap: 8px; }
+  .reallow-btn {
+    background: var(--cable-video);
+    color: #000;
+    border: none;
+    border-radius: 2px;
+    padding: 5px 12px;
+    font-size: 0.65rem;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .reallow-btn:hover { filter: brightness(1.1); }
+
+  /* Re-link prompt (no usable handle — re-pick your own copy). */
+  .relink-hint {
+    cursor: pointer;
+    border: 1px dashed color-mix(in oklab, var(--cable-video) 50%, transparent);
+    gap: 6px;
+  }
+  .relink-hint input { display: none; }
+  .relink-label {
+    color: var(--text);
+    font-size: 0.7rem;
+    max-width: 92%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .relink-hint:hover .relink-label { text-decoration: underline; }
 
   .pick-btn {
     display: inline-flex;
