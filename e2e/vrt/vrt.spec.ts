@@ -86,6 +86,17 @@ test.describe('VRT: every module card matches its baseline', () => {
       // covered by document.fonts.ready here.)
       await awaitVrtFonts(page);
 
+      // Hide SvelteFlow's floating chrome (minimap / controls / attribution)
+      // for the capture. A large card spawned near the pane corner (e.g.
+      // videoOut) otherwise catches the minimap overlay inside its element
+      // screenshot — the card is fine, but the baseline isn't. The minimap is
+      // an absolute overlay, so display:none doesn't reflow the flow content;
+      // only cards that actually overlapped it change.
+      await page.addStyleTag({
+        content:
+          '.svelte-flow__minimap,.svelte-flow__controls,.svelte-flow__attribution{display:none !important;}',
+      });
+
       // Use a registered scene if one exists for this module type
       // (drives the card's canvas with real content so the baseline
       // is informative + the diff catches rendering regressions).
