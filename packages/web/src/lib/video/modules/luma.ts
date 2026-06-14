@@ -124,10 +124,10 @@ export const lumaDef: VideoModuleDef = {
   migrate: migrateLuma,
   inputs: [
     { id: 'in',              type: 'video' },
-    { id: 'gamma',           type: 'cv', paramTarget: 'gamma' },
-    { id: 'contrast',        type: 'cv', paramTarget: 'contrast' },
-    { id: 'posterizeLevels', type: 'cv', paramTarget: 'posterizeLevels' },
-    { id: 'bias',            type: 'cv', paramTarget: 'bias' },
+    { id: 'gamma',           type: 'cv', paramTarget: 'gamma', cvScale: { mode: 'linear' } },
+    { id: 'contrast',        type: 'cv', paramTarget: 'contrast', cvScale: { mode: 'linear' } },
+    { id: 'posterizeLevels', type: 'cv', paramTarget: 'posterizeLevels', cvScale: { mode: 'discrete' } },
+    { id: 'bias',            type: 'cv', paramTarget: 'bias', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'video' },

@@ -78,9 +78,9 @@ export const colorizerDef: VideoModuleDef = {
     // param." description; the runtime bridge looks up via port id
     // directly so it works without paramTarget — see issue #G.1 in
     // .myrobots/plans/test-coverage-audit.md.
-    { id: 'tintR', type: 'cv', paramTarget: 'tintR' },
-    { id: 'tintG', type: 'cv', paramTarget: 'tintG' },
-    { id: 'tintB', type: 'cv', paramTarget: 'tintB' },
+    { id: 'tintR', type: 'cv', paramTarget: 'tintR', cvScale: { mode: 'linear' } },
+    { id: 'tintG', type: 'cv', paramTarget: 'tintG', cvScale: { mode: 'linear' } },
+    { id: 'tintB', type: 'cv', paramTarget: 'tintB', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'video' },
