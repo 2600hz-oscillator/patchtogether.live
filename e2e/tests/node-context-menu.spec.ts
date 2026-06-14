@@ -24,7 +24,7 @@ async function readNodeState(
     return {
       x: n.position.x,
       y: n.position.y,
-      locked: n.data?.locked === true,
+      locked: n.data?.rackLocked === true,
     };
   }, id);
 }
@@ -148,7 +148,10 @@ test('node context menu: Lock snaps to the 180px rack grid, marks locked + non-d
   const menu = page.locator('[role="menu"][aria-label="Module actions"]');
   await expect(menu).toBeVisible();
   const lockItem = menu.getByTestId('ctx-lock');
-  await expect(lockItem).toHaveText('Lock');
+  // Gate on the item itself rendering (the menu can be visible a frame before
+  // its items populate) before asserting its label, then click.
+  await expect(lockItem).toBeVisible({ timeout: 10_000 });
+  await expect(lockItem).toHaveText('Lock', { timeout: 10_000 });
   await lockItem.click();
 
   // (a) position snapped to the nearest 180px multiple in BOTH axes.

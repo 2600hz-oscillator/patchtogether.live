@@ -841,8 +841,9 @@
       // Virtual-rack Phase 2: a LOCKED ("screwed down") module is pinned to its
       // slot — SvelteFlow won't drag it (draggable=false) and a `node-locked`
       // class lights the lock-glyph affordance in _module-card.css. The flag is
-      // shared patch data (node.data.locked), so rack-mates see the same lock.
-      const locked = (n.data as { locked?: boolean } | undefined)?.locked === true;
+      // shared patch data (node.data.rackLocked — distinct from the Control
+      // Surface's own data.locked), so rack-mates see the same lock.
+      const locked = (n.data as { rackLocked?: boolean } | undefined)?.rackLocked === true;
       if (locked) {
         node.draggable = false;
         node.class = node.class ? `${String(node.class)} node-locked` : 'node-locked';
@@ -2185,7 +2186,7 @@
     void snapshot;
     if (!ctxMenuNodeId) return false;
     const n = patch.nodes[ctxMenuNodeId];
-    return (n?.data as { locked?: boolean } | undefined)?.locked === true;
+    return (n?.data as { rackLocked?: boolean } | undefined)?.rackLocked === true;
   });
 
   // SNES9X — the right-clicked node is a snes9x with a ROM loaded → offer

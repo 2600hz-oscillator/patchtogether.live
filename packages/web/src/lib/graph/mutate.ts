@@ -148,10 +148,13 @@ export function setControlColor(
 }
 
 /**
- * Set (or clear) a node's "locked" flag — `node.data.locked` — the virtual-rack
- * Phase-2 "screwed down" state. When `true`, the card is snapped onto the rack
- * grid and made non-draggable by the flowNodes derivation (Canvas.svelte); when
- * cleared, the card floats freely again.
+ * Set (or clear) a node's rack-lock flag — `node.data.rackLocked` — the
+ * virtual-rack Phase-2 "screwed down" state. When `true`, the card is snapped
+ * onto the rack grid and made non-draggable by the flowNodes derivation
+ * (Canvas.svelte); when cleared, the card floats freely again.
+ *
+ * NOTE the key is `rackLocked`, NOT `locked` — the Control Surface already owns
+ * `node.data.locked` for its own box-freeze lock, and the two must not collide.
  *
  * Lock state is SHARED patch data (lives on the node, synced to rack-mates) —
  * NOT a per-user layout entry — so every collaborator sees a module that's been
@@ -177,9 +180,9 @@ export function setNodeLocked(
     (live) => {
       if (!live.data) live.data = {};
       if (locked) {
-        live.data.locked = true; // set a single key in place
+        live.data.rackLocked = true; // set a single key in place
       } else {
-        delete live.data.locked; // clear → free-floating (the default)
+        delete live.data.rackLocked; // clear → free-floating (the default)
       }
     },
     options,

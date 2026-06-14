@@ -169,13 +169,13 @@ describe('setControlColor — single-key in-place set/clear on node.data', () =>
 });
 
 describe('setNodeLocked — single-key in-place set/clear on node.data', () => {
-  it('sets data.locked=true in place + is undoable; false deletes the key', () => {
+  it('sets data.rackLocked=true in place + is undoable; false deletes the key', () => {
     makeNode();
     const dataBefore = patch.nodes[NID]!.data;
-    expect((patch.nodes[NID]!.data as { locked?: boolean }).locked).toBeUndefined();
+    expect((patch.nodes[NID]!.data as { rackLocked?: boolean }).rackLocked).toBeUndefined();
 
     setNodeLocked(NID, true);
-    expect((patch.nodes[NID]!.data as { locked?: boolean }).locked).toBe(true);
+    expect((patch.nodes[NID]!.data as { rackLocked?: boolean }).rackLocked).toBe(true);
     // Mutated IN PLACE — same data object (no spread-reassign of live Y types).
     expect(patch.nodes[NID]!.data).toBe(dataBefore);
     expect(undoManager.undoStack.length).toBe(1);
@@ -184,7 +184,7 @@ describe('setNodeLocked — single-key in-place set/clear on node.data', () => {
 
     setNodeLocked(NID, false);
     // Cleared → the key is GONE (free-floating is the absence of the flag).
-    expect('locked' in (patch.nodes[NID]!.data as object)).toBe(false);
+    expect('rackLocked' in (patch.nodes[NID]!.data as object)).toBe(false);
     expect((patch.nodes[NID]!.data as { label?: string }).label).toBe('orig');
   });
 
