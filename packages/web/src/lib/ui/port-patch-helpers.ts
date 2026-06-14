@@ -201,6 +201,19 @@ export function portConnections(
   const outputs = new Map<string, string[]>();
   for (const e of Object.values(edges)) {
     if (!e) continue;
+    // Defensive: an edge endpoint may be absent or half-formed for a beat — a
+    // legacy/partial edge in the live store, or one mid-reconcile. This used to
+    // be reached only lazily (the patch menu when OPENED), but the rear-view
+    // back panel now derives port-connection status for EVERY card on EVERY
+    // render, so a single malformed edge here would throw and tear down every
+    // card on screen (SvelteFlow unmounts the whole NodeRenderer). Skip any
+    // edge whose endpoints aren't both `{ nodeId, portId }` objects rather than
+    // crash the render.
+    const src = e.source;
+    const dst = e.target;
+    if (!src || !dst || typeof src.nodeId !== 'string' || typeof dst.nodeId !== 'string') {
+      continue;
+    }
     if (e.target.nodeId === nodeId) {
       const remote = `${moduleDisplayName(e.source.nodeId, nodes, defLookup)}.${e.source.portId.toUpperCase()}`;
       const list = inputs.get(e.target.portId);
