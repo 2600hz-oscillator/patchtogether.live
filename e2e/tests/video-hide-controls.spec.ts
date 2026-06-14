@@ -271,20 +271,28 @@ test.describe('OUTPUT regression', () => {
 });
 
 test.describe('PR-113 regression - handle dblclick still opens patch-to', () => {
-  test('dblclick on a Handle inside RUTTETRA opens the port menu', async ({ page }) => {
+  // Uses CHROMA — a RAW-handle card (visible side jacks). RUTTETRA was the
+  // original fixture, but the #767 sweep moved it onto the yellow PatchPanel
+  // menu, where the patch-trigger button covers the hidden handle stack and
+  // intercepts the dblclick (only the real-GPU attest lane runs this heavy spec,
+  // so regular shards never caught the regression). PatchPanel cards patch via
+  // the drill-down menu — that path is covered by cable-drag-drilldown.spec;
+  // THIS test asserts the raw-handle dblclick→patch-to cascade still works, so it
+  // needs a card that still exposes raw side handles.
+  test('dblclick on a Handle inside a raw-handle card opens the port menu', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
-      { id: 'r', type: 'ruttetra', position: { x: 200, y: 100 }, domain: 'video' },
+      { id: 'c', type: 'chroma', position: { x: 200, y: 100 }, domain: 'video' },
       { id: 'l', type: 'lines', position: { x: 600, y: 100 }, domain: 'video' },
     ]);
 
-    const card = page.locator('[data-testid="ruttetra-card"]');
+    const card = page.locator('.svelte-flow__node-chroma');
     await expect(card).toHaveCount(1);
 
     const handle = page
-      .locator('.svelte-flow__node-ruttetra .svelte-flow__handle.source')
+      .locator('.svelte-flow__node-chroma .svelte-flow__handle.source')
       .first();
     await expect(handle).toBeVisible();
     await handle.dblclick();
