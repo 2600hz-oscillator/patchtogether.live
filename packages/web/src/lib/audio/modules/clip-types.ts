@@ -323,3 +323,59 @@ export function toggleNoteAt(clip: NoteClipRecord, step: number, midi: number): 
       : [...clip.steps, { step, midi, velocity: DEFAULT_VELOCITY, lengthSteps: 1 }];
   return { ...clip, steps };
 }
+
+// ---------------------------------------------------------------------------
+// Velocity tiers — the "second-press cycles low/med/high" editor gesture
+// (DECIDED 2026-06-15). Same gesture on the card (mouse) and the grid (pad):
+// first press places a note at MED; each further press cycles the velocity and
+// the 4th press removes it. Three tiers map to three grid-LED brightnesses.
+// ---------------------------------------------------------------------------
+export const VEL_MED = 80;
+export const VEL_LOW = 40;
+export const VEL_HIGH = 120;
+/** Cycle order: a fresh note starts MED, then LOW, then HIGH, then removed. */
+export const VEL_CYCLE: readonly number[] = [VEL_MED, VEL_LOW, VEL_HIGH];
+
+export type VelTier = 'low' | 'med' | 'high';
+/** Bucket a raw 0..127 velocity to one of the three editor tiers. */
+export function velTier(velocity: number | undefined): VelTier {
+  const v = velocity ?? VEL_MED;
+  if (v <= (VEL_LOW + VEL_MED) / 2) return 'low';
+  if (v >= (VEL_MED + VEL_HIGH) / 2) return 'high';
+  return 'med';
+}
+
+/**
+ * Cycle a note at (step, midi): absent → add at MED; MED → LOW → HIGH → removed.
+ * This is the single editor gesture for both placing notes and setting their
+ * velocity tier. Returns a NEW clip (caller persists via the in-place Y
+ * discipline). Notes whose velocity isn't an exact tier value normalize to the
+ * next tier on the first press (so loaded clips behave predictably).
+ */
+export function cycleNoteAt(clip: NoteClipRecord, step: number, midi: number): NoteClipRecord {
+  const i = clip.steps.findIndex((e) => e.step === step && e.midi === midi);
+  if (i < 0) {
+    return {
+      ...clip,
+      steps: [...clip.steps, { step, midi, velocity: VEL_MED, lengthSteps: 1 }],
+    };
+  }
+  const cur = clip.steps[i];
+  const tierIdx = VEL_CYCLE.indexOf(cur.velocity ?? VEL_MED);
+  const next = tierIdx + 1;
+  if (next >= VEL_CYCLE.length) {
+    return { ...clip, steps: clip.steps.filter((_, j) => j !== i) };
+  }
+  const steps = clip.steps.slice();
+  steps[i] = { ...cur, velocity: VEL_CYCLE[next] };
+  return { ...clip, steps };
+}
+
+/** The note event at (step, midi), or undefined. */
+export function noteAt(
+  clip: NoteClipRecord,
+  step: number,
+  midi: number,
+): NoteEvent | undefined {
+  return clip.steps.find((e) => e.step === step && e.midi === midi);
+}

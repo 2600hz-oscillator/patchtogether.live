@@ -1,24 +1,52 @@
 // packages/web/src/lib/grid/grid-clip-binding.svelte.ts
 //
-// Phase 3 — binds the monome grid (lib/grid/grid-device) to ONE focused
-// clip-player node, in Session/launch mode:
-//   - grid key-down on a clip pad → launch it (or stop it if it's playing),
-//     written to the clip-player's node.data.queued (the SAME synced field the
-//     card writes), so the engine applies it on the next quantize boundary and
-//     all peers see it.
-//   - the STOP pad → queue-stop the playing clip.
-//   - the grid's LEDs are repainted each scheduler tick from the clip-player's
-//     live clip + playing/queued state (computeSessionLeds), with a ~2 Hz blink.
+// Binds the monome grid (grid-device) to ONE focused 8-lane clip-player node.
 //
-// The binding (which clip-player the grid drives) is PER-MACHINE local
-// (localStorage) — the grid is the holder's hardware, like a MIDI-learn
-// binding. The LED frame is local render state, never synced. (Plan §5.)
+// SESSION mode (default):
+//   - clip pad → launch that clip in its lane (or stop the lane if it's the one
+//     playing), written to node.data.queued[lane] (the SAME synced per-lane
+//     field the card writes), so the engine applies it on the next quantize
+//     boundary and all peers see it.
+//   - per-lane STOP column → queue-stop that lane.
+//   - SCENE column → fire slot Y across ALL lanes at once (Ableton scene).
+//   - STOP ALL / TRANSPORT (toggles TIMELORDE.running).
+//   - HOLD the EDIT pad + tap a clip → enter EDIT mode for that clip.
+//
+// EDIT mode:
+//   - the full grid is the clip's note editor; press a cell to cycle its note
+//     OFF→MED→LOW→HIGH→off (cycleNoteAt). The reserved EDIT pad exits.
+//
+// LEDs are repainted each scheduler tick from the live clip/playing/queued
+// state (computeSessionLeds / computeEditLeds) with a ~2 Hz blink. The binding
+// (which clip-player the grid drives) is PER-MACHINE local (localStorage) — the
+// grid is the holder's hardware, like a MIDI-learn binding. LED frames are
+// local render state, never synced.
 
 import { patch as livePatch, ydoc } from '$lib/graph/store';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { onKey, setFrame, isConnected, type GridKeyEvent } from './grid-device.svelte';
-import { padToClipIndex, isStopPad, computeSessionLeds } from './grid-clip-map';
-import type { ClipPlayerData } from '$lib/audio/modules/clip-types';
+import {
+  padToClipIndex,
+  stopLaneForPad,
+  sceneSlotForPad,
+  isEditPad,
+  isStopAllPad,
+  isTransportPad,
+  editPadToNote,
+  computeSessionLeds,
+  computeEditLeds,
+} from './grid-clip-map';
+import {
+  CLIP_LANES,
+  clipIndex,
+  laneOf,
+  slotOf,
+  lanePlaying,
+  coerceClipRecord,
+  cycleNoteAt,
+  type ClipPlayerData,
+  type NoteClipRecord,
+} from '$lib/audio/modules/clip-types';
 
 const STORAGE_KEY = 'pt.grid.boundClipNode';
 // Blink toggles every BLINK_TICKS scheduler ticks (~25ms each) → ~2 Hz.
@@ -28,6 +56,11 @@ let boundNodeId: string | null = null;
 let unsubKey: (() => void) | null = null;
 let unsubTick: (() => void) | null = null;
 let tickCount = 0;
+
+// Mode state (local — the grid's own view of the bound clip-player).
+let mode: 'session' | 'edit' = 'session';
+let editClipIndex = 0;
+let editArmed = false; // EDIT pad held in session mode
 
 /** Reactive version — bump on bind/unbind so card UI re-derives. */
 let bindingVersion = $state(0);
@@ -42,6 +75,8 @@ export function boundClipNode(): string | null {
 function start(): void {
   stopLoops();
   tickCount = 0;
+  mode = 'session';
+  editArmed = false;
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
 }
@@ -89,36 +124,135 @@ export function restoreGridBinding(): void {
   }
 }
 
-function writeQueued(nodeId: string, q: string | 'stop'): void {
+// --- graph helpers (in-place Y discipline) ---
+function liveData(nodeId: string): ClipPlayerData | undefined {
+  return livePatch.nodes[nodeId]?.data as ClipPlayerData | undefined;
+}
+function editData(nodeId: string, mut: (d: ClipPlayerData) => void): void {
   const node = livePatch.nodes[nodeId];
   if (!node) return;
   ydoc.transact(() => {
     if (!node.data) node.data = {};
-    (node.data as ClipPlayerData).queued = q;
+    mut(node.data as ClipPlayerData);
+  });
+}
+function queueLane(nodeId: string, lane: number, action: number | 'stop' | null): void {
+  editData(nodeId, (d) => {
+    if (!Array.isArray(d.queued) || d.queued.length < CLIP_LANES) {
+      const base: (number | 'stop' | null)[] = new Array(CLIP_LANES).fill(null);
+      if (Array.isArray(d.queued)) {
+        for (let i = 0; i < d.queued.length && i < CLIP_LANES; i++) base[i] = d.queued[i];
+      }
+      d.queued = base;
+    }
+    d.queued[lane] = action;
+  });
+}
+function clipAtIndex(data: ClipPlayerData | undefined, index: number): NoteClipRecord | null {
+  const c = coerceClipRecord(data?.clips?.[String(index)]);
+  return c && c.kind === 'note' ? c : null;
+}
+function timelordeNode(): { node: { params?: Record<string, number> }; id: string } | null {
+  for (const [id, n] of Object.entries(livePatch.nodes)) {
+    if ((n as { type?: string } | undefined)?.type === 'timelorde') {
+      return { node: n as { params?: Record<string, number> }, id };
+    }
+  }
+  return null;
+}
+function transportRunning(): boolean {
+  const t = timelordeNode();
+  if (!t) return false;
+  const r = t.node.params?.running;
+  return typeof r === 'number' ? r >= 0.5 : true;
+}
+function toggleTransport(): void {
+  const t = timelordeNode();
+  if (!t) return;
+  const next = transportRunning() ? 0 : 1;
+  ydoc.transact(() => {
+    const n = livePatch.nodes[t.id];
+    if (n) {
+      if (!n.params) n.params = {};
+      (n.params as Record<string, number>).running = next;
+    }
   });
 }
 
 function handleKey(e: GridKeyEvent): void {
-  if (e.s !== 1) return; // act on press, not release
   const nodeId = boundNodeId;
-  if (!nodeId) return;
-  const node = livePatch.nodes[nodeId];
-  if (!node) return;
-  const data = node.data as ClipPlayerData | undefined;
+  if (!nodeId || !livePatch.nodes[nodeId]) return;
 
-  if (isStopPad(e.x, e.y)) {
-    if ((data?.playing ?? null) !== null) writeQueued(nodeId, 'stop');
+  // EDIT pad — works on press, in both modes + tracks hold in session.
+  if (isEditPad(e.x, e.y)) {
+    if (e.s === 1) {
+      if (mode === 'edit') {
+        mode = 'session'; // tap EDIT to exit the editor
+        editArmed = false;
+      } else {
+        editArmed = true; // hold to arm; a clip tap enters edit
+      }
+    } else {
+      editArmed = false; // release
+    }
     return;
   }
-  const clipIdx = padToClipIndex(e.x, e.y);
-  if (clipIdx === null) return; // an unused control pad
-  const key = String(clipIdx);
-  if ((data?.playing ?? null) === key) {
-    writeQueued(nodeId, 'stop'); // press the playing clip → stop
-  } else if (data?.clips?.[key]) {
-    writeQueued(nodeId, key); // press a loaded clip → launch (quantized in the engine)
+
+  if (e.s !== 1) return; // every other control acts on press
+
+  if (mode === 'edit') {
+    const clip = clipAtIndex(liveData(nodeId), editClipIndex);
+    if (!clip) { mode = 'session'; return; }
+    const note = editPadToNote(clip, e.x, e.y);
+    if (!note) return;
+    const next = cycleNoteAt(clip, note.step, note.midi);
+    editData(nodeId, (d) => {
+      if (!d.clips) d.clips = {};
+      d.clips[String(editClipIndex)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+    });
+    return;
   }
-  // Empty pad: no-op on the grid (clips are created from the card in v1).
+
+  // --- SESSION mode ---
+  const data = liveData(nodeId);
+
+  const clipIdx = padToClipIndex(e.x, e.y);
+  if (clipIdx !== null) {
+    if (editArmed) {
+      editClipIndex = clipIdx; // hold-EDIT + tap → open the editor
+      mode = 'edit';
+      return;
+    }
+    const lane = laneOf(clipIdx);
+    const slot = slotOf(clipIdx);
+    if (lanePlaying(data, lane) === slot) queueLane(nodeId, lane, 'stop');
+    else if (data?.clips?.[String(clipIdx)]) queueLane(nodeId, lane, slot);
+    return;
+  }
+
+  const stopLane = stopLaneForPad(e.x, e.y);
+  if (stopLane !== null) {
+    if (lanePlaying(data, stopLane) !== null) queueLane(nodeId, stopLane, 'stop');
+    return;
+  }
+
+  const sceneSlot = sceneSlotForPad(e.x, e.y);
+  if (sceneSlot !== null) {
+    for (let lane = 0; lane < CLIP_LANES; lane++) {
+      const has = data?.clips?.[String(clipIndex(sceneSlot, lane))];
+      queueLane(nodeId, lane, has ? sceneSlot : 'stop');
+    }
+    return;
+  }
+
+  if (isStopAllPad(e.x, e.y)) {
+    editData(nodeId, (d) => { d.queued = new Array(CLIP_LANES).fill('stop'); });
+    return;
+  }
+  if (isTransportPad(e.x, e.y)) {
+    toggleTransport();
+    return;
+  }
 }
 
 function renderLeds(): void {
@@ -128,7 +262,18 @@ function renderLeds(): void {
   if (!node) return;
   tickCount++;
   const blinkOn = Math.floor(tickCount / BLINK_TICKS) % 2 === 0;
-  setFrame(computeSessionLeds(node.data as ClipPlayerData | undefined, blinkOn));
+  const data = node.data as ClipPlayerData | undefined;
+  if (mode === 'edit') {
+    const clip = clipAtIndex(data, editClipIndex);
+    if (clip) {
+      setFrame(computeEditLeds(clip, -1));
+      return;
+    }
+    mode = 'session'; // clip vanished — fall back
+  }
+  setFrame(
+    computeSessionLeds(data, blinkOn, { transportRunning: transportRunning(), editArmed }),
+  );
 }
 
 /** Reset ALL binding state — test isolation. */
@@ -136,4 +281,15 @@ export function __test_resetBinding(): void {
   stopLoops();
   boundNodeId = null;
   tickCount = 0;
+  mode = 'session';
+  editClipIndex = 0;
+  editArmed = false;
+}
+/** Read internal mode state — tests only. */
+export function __test_mode(): {
+  mode: 'session' | 'edit';
+  editClipIndex: number;
+  editArmed: boolean;
+} {
+  return { mode, editClipIndex, editArmed };
 }
