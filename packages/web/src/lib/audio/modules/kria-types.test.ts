@@ -14,6 +14,7 @@ import {
   coercePattern,
   activePattern,
   patternAt,
+  slotOccupied,
   stepMidi,
   stepVOct,
   loopWindow,
@@ -27,7 +28,6 @@ import {
   setDuration,
   KRIA_TRACKS,
   KRIA_STEPS,
-  KRIA_PATTERNS,
   type KriaTrack,
   type CueState,
 } from './kria-types';
@@ -46,11 +46,12 @@ describe('kria-types: defaults + coercion', () => {
     expect(p.tracks).toHaveLength(KRIA_TRACKS);
     expect(p.scale).toBe('major');
   });
-  it('defaultKriaData seeds slot 0 only', () => {
+  it('defaultKriaData seeds slot 0 only (string-keyed bank)', () => {
     const d = defaultKriaData();
-    expect(d.patterns).toHaveLength(KRIA_PATTERNS);
-    expect(d.patterns![0]).not.toBeNull();
-    expect(d.patterns![1]).toBeNull();
+    expect(d.patterns!['0']).not.toBeNull();
+    expect(d.patterns!['1']).toBeUndefined();
+    expect(slotOccupied(d, 0)).toBe(true);
+    expect(slotOccupied(d, 1)).toBe(false);
     expect(d.active).toBe(0);
   });
   it('coerceTrack normalizes ragged/invalid arrays + clamps', () => {
