@@ -27,6 +27,7 @@ import {
   ONSET_DEBOUNCE_MS,
   ONSET_PULSE_MS,
   CV_MAKEUP,
+  applyBipolar,
 } from '../../../../../dsp/src/lib/synesthesia-dsp';
 import { buildCvBridgeMapping, mapCvBridgeValue } from '$lib/video/cv-bridge-map';
 import { outlinesDef } from '$lib/video/modules/outlines';
@@ -665,5 +666,171 @@ describe('synesthesia-dsp — kick → OUTLINES rotation end-to-end (real bridge
     // And the retune is a real improvement at the SAME kick.
     const rotPeakNew = rotationFor(Math.min(1, rawPeak * CV_MAKEUP[0]), 0.5);
     expect(rotPeakNew - rotPeakOld).toBeGreaterThan(0.12);
+  });
+});
+
+// ───────────────────── BIPOLAR output mode ─────────────────────
+//
+// The user wants a STRONG KICK to traverse the WHOLE destination CV range, not
+// just the upper half. The env CV is unipolar [0,1]; through the cv→video
+// bridge's KNOB-CENTERED scaleCv, a [0,1] source with the destination knob at
+// centre only sweeps the UPPER HALF. SYNESTHESIA's new BIPOLAR mode remaps the
+// env CV outputs 0..1 → -1..+1 (silence → -1, strong kick → +1) so ±1 sweeps
+// the FULL [min,max] range regardless of knob position. Default OFF preserves
+// the existing behaviour. The remap is on the env CV OUTPUT only — gate/onset/
+// meter are unaffected (proven below).
+
+describe('synesthesia-dsp — applyBipolar (pure remap)', () => {
+  it('OFF: pass-through (silence→0, full→1, mid→0.5)', () => {
+    expect(applyBipolar(0, false)).toBe(0);
+    expect(applyBipolar(0.5, false)).toBe(0.5);
+    expect(applyBipolar(1, false)).toBe(1);
+  });
+  it('ON: 0..1 → -1..+1 (silence→-1, mid→0, full→+1)', () => {
+    expect(applyBipolar(0, true)).toBe(-1);
+    expect(applyBipolar(0.5, true)).toBe(0);
+    expect(applyBipolar(1, true)).toBe(1);
+  });
+});
+
+/** Min + max of a buffer (for range assertions). */
+function bufRange(a: Float32Array): { min: number; max: number } {
+  let min = Infinity, max = -Infinity;
+  for (const v of a) { if (v < min) min = v; if (v > max) max = v; }
+  return { min, max };
+}
+
+describe('synesthesia-dsp — BIPOLAR env CV mode (renderSynesthesia)', () => {
+  it('OFF (default): env CV outputs stay UNIPOLAR in [0,1] (unchanged behaviour)', () => {
+    const buf = kickFloor(174, 8, 1.0);
+    const off = renderSynesthesia(buf, { sr: SR }); // bipolar omitted → default OFF
+    for (const stream of [off.envSlow, off.envFast]) {
+      for (let b = 0; b < SYN_NUM_BANDS; b++) {
+        const { min, max } = bufRange(stream[b]!);
+        expect(min, `band ${b} min`).toBeGreaterThanOrEqual(0);
+        expect(max, `band ${b} max`).toBeLessThanOrEqual(1);
+      }
+    }
+    // And explicitly bipolar:false equals the default.
+    const explicit = renderSynesthesia(buf, { sr: SR, bipolar: false });
+    expect(explicit.envFast[0]![1000]).toBe(off.envFast[0]![1000]);
+  });
+
+  it('ON: env CV outputs are BIPOLAR in [-1,+1]; silence≈-1, strong kick≈+1', () => {
+    const buf = kickFloor(174, 8, 1.2);
+    const bi = renderSynesthesia(buf, { sr: SR, bipolar: true });
+    const uni = renderSynesthesia(buf, { sr: SR }); // reference unipolar
+    const biBass = bi.envFast[0]!;
+    const uniBass = uni.envFast[0]!;
+    const { min, max } = bufRange(biBass);
+    // Whole stream stays within the bipolar range.
+    expect(min).toBeGreaterThanOrEqual(-1);
+    expect(max).toBeLessThanOrEqual(1);
+    // A strong kick reaches near +1 (it pinned near unipolar 1.0 → 2·1−1 = +1).
+    expect(max).toBeGreaterThanOrEqual(0.9);
+    // Silence between/before kicks sits near -1 (unipolar ~0 → 2·0−1 = -1).
+    const spb = 60 / 174;
+    const idle = Math.round((0.05 + 3 * spb - 0.005) * SR);
+    expect(biBass[idle]!).toBeLessThan(-0.5);
+    // The bipolar value is EXACTLY the documented remap of the unipolar value.
+    for (const i of [0, 500, idle, 5000]) {
+      expect(biBass[i]!).toBeCloseTo(2 * uniBass[i]! - 1, 6);
+    }
+  });
+
+  it('ON: only env CV is remapped — gate / trig / band-audio stay UNIPOLAR', () => {
+    const buf = kickFloor(150, 6, 1.0);
+    const bi = renderSynesthesia(buf, { sr: SR, bipolar: true });
+    const uni = renderSynesthesia(buf, { sr: SR });
+    // gate + trig are 0/1 pulses regardless of polarity (read the RAW env).
+    for (const stream of [bi.gate, bi.trig]) {
+      for (let b = 0; b < SYN_NUM_BANDS; b++) {
+        const { min, max } = bufRange(stream[b]!);
+        expect(min).toBeGreaterThanOrEqual(0);
+        expect(max).toBeLessThanOrEqual(1);
+      }
+    }
+    // gate + trig + band-audio are byte-for-byte identical to unipolar mode
+    // (proves the bipolar flag never touches the detectors / audio path).
+    for (let b = 0; b < SYN_NUM_BANDS; b++) {
+      expect(Array.from(bi.gate[b]!)).toEqual(Array.from(uni.gate[b]!));
+      expect(Array.from(bi.trig[b]!)).toEqual(Array.from(uni.trig[b]!));
+      expect(Array.from(bi.audio[b]!)).toEqual(Array.from(uni.audio[b]!));
+    }
+  });
+});
+
+describe('synesthesia-dsp — BIPOLAR env CV mode (VIDEO copy)', () => {
+  it('OFF→[0,1], ON→[-1,+1] on a held RED frame (env CV only)', () => {
+    const frame = [[1, 0, 0, 0.299]] as const;
+    const hold = Math.round(SR * 0.2);
+    const off = renderSynesthesiaVideo([...frame], { sr: SR, holdSamples: hold });
+    const on = renderSynesthesiaVideo([...frame], { sr: SR, holdSamples: hold, bipolar: true });
+    // R channel (idx 0) saturates → unipolar ~1, bipolar ~+1.
+    expect(bufRange(off.envFast[0]!).max).toBeLessThanOrEqual(1);
+    expect(bufRange(on.envFast[0]!).max).toBeGreaterThanOrEqual(0.9);
+    // The DARK channels (G/B, idx 1/2) sit at unipolar 0 → bipolar -1.
+    expect(on.envFast[1]![hold - 1]!).toBeCloseTo(-1, 5);
+    expect(off.envFast[1]![hold - 1]!).toBeCloseTo(0, 5);
+    // gate unaffected: R opened, G stayed closed, in BOTH modes.
+    expect(Math.max(...on.gate[0]!)).toBe(1);
+    expect(Math.max(...on.gate[1]!)).toBe(0);
+  });
+});
+
+// ───── END-TO-END: BIPOLAR kick → OUTLINES rotation FULL-RANGE traversal ─────
+//
+// The user's exact need: with BIPOLAR on + a CENTERED OUTLINES rotation knob, a
+// strong kick should traverse the WHOLE [min,max] rotation range — not just the
+// upper half a unipolar source reaches. Drives the REAL outlinesDef rotation
+// PortDef + param + the REAL cv-bridge math (buildCvBridgeMapping /
+// mapCvBridgeValue), fed the REAL renderSynesthesia bipolar bass env CV.
+
+describe('synesthesia-dsp — BIPOLAR kick → OUTLINES rotation FULL-RANGE (real bridge)', () => {
+  const rotInput = outlinesDef.inputs?.find((p) => p.id === 'rotation');
+
+  function rotationFor(envSample: number, knob: number): number {
+    const mapping = buildCvBridgeMapping(rotInput, 'rotation', outlinesDef.params, { rotation: knob });
+    return mapCvBridgeValue(mapping, envSample);
+  }
+
+  it('UNIPOLAR (default) at the centre knob only reaches the UPPER half', () => {
+    // The documented baseline: a [0,1] kick centred at 0.5 swings [0.5, 1.0].
+    const { envFast } = renderSynesthesia(kickFloor(174, 8, 1.2), { sr: SR });
+    let lo = Infinity, hi = -Infinity;
+    for (const env of envFast[0]!) {
+      const r = rotationFor(env, 0.5);
+      if (r < lo) lo = r; if (r > hi) hi = r;
+    }
+    expect(hi).toBeGreaterThanOrEqual(0.99); // reaches the top…
+    expect(lo).toBeGreaterThanOrEqual(0.49); // …but never the BOTTOM (stuck ≥ centre)
+  });
+
+  it('BIPOLAR at the centre knob traverses (near) the FULL [min,max] range', () => {
+    const { envFast } = renderSynesthesia(kickFloor(174, 8, 1.2), { sr: SR, bipolar: true });
+    let lo = Infinity, hi = -Infinity;
+    for (const env of envFast[0]!) {
+      const r = rotationFor(env, /*centre knob*/ 0.5);
+      if (r < lo) lo = r; if (r > hi) hi = r;
+    }
+    // A strong kick (bipolar +1) pins rotation at the TOP of the range…
+    expect(hi).toBeGreaterThanOrEqual(0.99);
+    // …and silence (bipolar -1) pulls it to the BOTTOM — the WHOLE range now,
+    // not just the upper half. (rotation param is [0,1] — see the #792 test.)
+    expect(lo).toBeLessThanOrEqual(0.01);
+    // Full traversal: spans ≥ 98% of the param's [0,1] range on a kick.
+    expect(hi - lo).toBeGreaterThanOrEqual(0.98);
+  });
+
+  it('BIPOLAR sweeps the FULL range at every target BPM (centre knob)', () => {
+    for (const bpm of [174, 130, 145]) {
+      const { envFast } = renderSynesthesia(kickFloor(bpm, 8, 1.0), { sr: SR, bipolar: true });
+      let lo = Infinity, hi = -Infinity;
+      for (const env of envFast[0]!) {
+        const r = rotationFor(env, 0.5);
+        if (r < lo) lo = r; if (r > hi) hi = r;
+      }
+      expect(hi - lo, `bpm ${bpm} full sweep`).toBeGreaterThanOrEqual(0.9);
+    }
   });
 });

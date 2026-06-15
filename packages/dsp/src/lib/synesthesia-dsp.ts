@@ -74,6 +74,24 @@ function cvClamp(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
+/**
+ * Remap a finished UNIPOLAR env CV value (0..1, post-makeup, post-clamp) to the
+ * BIPOLAR [-1, +1] range when `bipolar` is on; otherwise pass it through.
+ *
+ * WHY: the cv→video bridge's `scaleCv` (cv-bridge-map.ts) CENTERS modulation on
+ * the destination knob. A unipolar [0,1] kick with the knob at centre only
+ * sweeps the UPPER half of the destination range. Remapped to [-1,+1] (silence
+ * → -1, strong kick → +1), ±1 sweeps the FULL [min,max] range regardless of the
+ * knob position — exactly what a Eurorack bipolar CV does.
+ *
+ * Applied to the env CV OUTPUT ONLY (env_slow / env_fast); the gate + onset
+ * detectors keep reading the un-remapped env, so beat triggers / gate
+ * hysteresis are unchanged. Default OFF preserves the existing [0,1] behaviour.
+ */
+export function applyBipolar(env01: number, bipolar: boolean): number {
+  return bipolar ? 2 * env01 - 1 : env01;
+}
+
 // Butterworth damping (Q≈0.707 → k = 1/Q = √2). Cascading two such 2nd-order
 // SVF stages per crossover edge gives a ~24 dB/oct Linkwitz-Riley-style slope —
 // steep enough that a test tone one band away is well rejected.
@@ -397,12 +415,15 @@ export class SynesthesiaVideoCopy {
   /**
    * Advance one sample. `levels` are the held R/G/B/Luma channel levels (0..1);
    * `master`/`gains` apply the same gain law as audio mode. Returns the
-   * per-channel audio/env/gate/trig/level scalars for this sample.
+   * per-channel audio/env/gate/trig/level scalars for this sample. When
+   * `bipolar` is true the env CV outputs are remapped 0..1 → -1..+1 (see
+   * applyBipolar); audio/gate/trig/level are unaffected.
    */
   step(
     levels: ArrayLike<number>,
     master: number,
     gains: ArrayLike<number>,
+    bipolar = false,
   ): SynesthesiaVideoFrameOut {
     const audio: [number, number, number, number] = [0, 0, 0, 0];
     const envSlow: [number, number, number, number] = [0, 0, 0, 0];
@@ -419,8 +440,9 @@ export class SynesthesiaVideoCopy {
       const ef = this.fast[c]!.step(a);
       const es = this.slow[c]!.step(a);
       const mk = CV_MAKEUP[c] ?? 1;
-      envFast[c] = cvClamp(ef * mk);
-      envSlow[c] = cvClamp(es * mk);
+      // env CV out: makeup → clamp to [0,1] → optional bipolar remap to [-1,+1].
+      envFast[c] = applyBipolar(cvClamp(ef * mk), bipolar);
+      envSlow[c] = applyBipolar(cvClamp(es * mk), bipolar);
       gate[c] = this.gate[c]!.step(ef);
       trig[c] = this.onset[c]!.step(a);
       level[c] = this.meter[c]!.step(a);
@@ -437,12 +459,20 @@ export class SynesthesiaVideoCopy {
  */
 export function renderSynesthesiaVideo(
   levels: ArrayLike<number>[],
-  opts: { sr: number; master?: number; gains?: [number, number, number, number]; holdSamples?: number },
+  opts: {
+    sr: number;
+    master?: number;
+    gains?: [number, number, number, number];
+    holdSamples?: number;
+    /** When true, env CV outputs are bipolar [-1,+1] (default OFF = [0,1]). */
+    bipolar?: boolean;
+  },
 ): SynesthesiaRender {
   const { sr } = opts;
   const master = opts.master ?? 1;
   const gains = opts.gains ?? [1, 1, 1, 1];
   const hold = opts.holdSamples ?? 1;
+  const bipolar = opts.bipolar ?? false;
   const n = levels.length * hold;
   const idx = [0, 1, 2, 3];
   const mk = (): Float32Array[] => idx.map(() => new Float32Array(n));
@@ -451,7 +481,7 @@ export function renderSynesthesiaVideo(
   let s = 0;
   for (const frame of levels) {
     for (let h = 0; h < hold; h++) {
-      const out = copy.step(frame, master, gains);
+      const out = copy.step(frame, master, gains, bipolar);
       for (let c = 0; c < SYN_NUM_BANDS; c++) {
         audio[c]![s] = out.audio[c]!;
         envFast[c]![s] = out.envFast[c]!;
@@ -472,11 +502,18 @@ export function renderSynesthesiaVideo(
  */
 export function renderSynesthesia(
   input: Float32Array,
-  opts: { sr: number; master?: number; gains?: [number, number, number, number] },
+  opts: {
+    sr: number;
+    master?: number;
+    gains?: [number, number, number, number];
+    /** When true, env CV outputs are bipolar [-1,+1] (default OFF = [0,1]). */
+    bipolar?: boolean;
+  },
 ): SynesthesiaRender {
   const { sr } = opts;
   const master = opts.master ?? 1;
   const gains = opts.gains ?? [1, 1, 1, 1];
+  const bipolar = opts.bipolar ?? false;
   const n = input.length;
   const splitter = makeBandSplitter(sr);
   const idx = [0, 1, 2, 3];
@@ -498,8 +535,9 @@ export function renderSynesthesia(
       const ef = fast[b]!.step(a);
       const es = slow[b]!.step(a);
       const mk = CV_MAKEUP[b] ?? 1;
-      envFast[b]![i] = cvClamp(ef * mk);
-      envSlow[b]![i] = cvClamp(es * mk);
+      // env CV out: makeup → clamp to [0,1] → optional bipolar remap to [-1,+1].
+      envFast[b]![i] = applyBipolar(cvClamp(ef * mk), bipolar);
+      envSlow[b]![i] = applyBipolar(cvClamp(es * mk), bipolar);
       gate[b]![i] = gates[b]!.step(ef);
       trig[b]![i] = onsets[b]!.step(a);
       level[b]![i] = meters[b]!.step(a);

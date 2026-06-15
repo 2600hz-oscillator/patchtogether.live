@@ -25,7 +25,15 @@
 // VU levels are posted to the host via port.postMessage({type:'snapshot', ...}),
 // not as an audio output.
 // Params (k-rate): a_master/b_master (0.5..1.5); a_gain1..4 / b_gain1..4 (1..2);
-//   a_mode/b_mode (0=AUDIO spectral bands, 1=VIDEO R/G/B/Luma channels).
+//   a_mode/b_mode (0=AUDIO spectral bands, 1=VIDEO R/G/B/Luma channels);
+//   a_bipolar/b_bipolar (0=UNI env CV [0,1] (default), 1=BI env CV [-1,+1]).
+//
+// POLARITY (a_bipolar/b_bipolar): the env CV outputs (env_slow/env_fast) are
+// UNIPOLAR [0,1] by default. When bipolar is on they're remapped to [-1,+1]
+// (silence → -1, strong kick → +1) so that, through the cv→video bridge's
+// knob-centered scaleCv, ±1 sweeps the FULL destination range instead of just
+// the upper half. The remap is on the env CV OUTPUT ONLY — the gate/onset/meter
+// stages read the un-remapped env, so beat triggers + gates are unchanged.
 //
 // VIDEO mode (per copy, independent): the card reads the patched video frame's
 // pixels and posts {type:'video', copy:'a'|'b', levels:[R,G,B,Luma]} (0..1) to
@@ -43,6 +51,7 @@ import {
   OnsetDetector,
   MeterBallistics,
   SynesthesiaVideoCopy,
+  applyBipolar,
   combinedGain,
   CV_MAKEUP,
   SYN_NUM_BANDS,
@@ -149,6 +158,10 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
       // 0 = AUDIO (spectral bands), 1 = VIDEO (R/G/B/Luma channels). Per copy.
       { name: 'a_mode', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
       { name: 'b_mode', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
+      // POLARITY of the env CV outputs: 0 = UNIPOLAR [0,1] (default, preserves
+      // existing behaviour), 1 = BIPOLAR [-1,+1]. Per copy. See file header.
+      { name: 'a_bipolar', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
+      { name: 'b_bipolar', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' as const },
     ];
     for (const c of ['a', 'b']) {
       for (let n = 1; n <= SYN_NUM_BANDS; n++) {
@@ -169,6 +182,7 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
     master: number,
     gains: number[],
     n: number,
+    bipolar: boolean,
     audio?: Float32Array[],
     slow?: Float32Array[],
     fast?: Float32Array[],
@@ -192,8 +206,9 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
         const lv = copy.meter[b]!.step(a);
         const mk = CV_MAKEUP[b] ?? 1;
         if (audio?.[b]) audio[b]![s] = a;
-        if (slow?.[b]) slow[b]![s] = cvClamp(es * mk);
-        if (fast?.[b]) fast[b]![s] = cvClamp(ef * mk);
+        // env CV: makeup → clamp [0,1] → optional bipolar remap to [-1,+1].
+        if (slow?.[b]) slow[b]![s] = applyBipolar(cvClamp(es * mk), bipolar);
+        if (fast?.[b]) fast[b]![s] = applyBipolar(cvClamp(ef * mk), bipolar);
         if (gate?.[b]) gate[b]![s] = gt;
         if (trig?.[b]) trig[b]![s] = tr;
         if (lv > peak[b]!) peak[b] = lv;
@@ -214,6 +229,7 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
     master: number,
     gains: number[],
     n: number,
+    bipolar: boolean,
     audio?: Float32Array[],
     slow?: Float32Array[],
     fast?: Float32Array[],
@@ -223,7 +239,8 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
   ): void {
     const peak = [0, 0, 0, 0];
     for (let s = 0; s < n; s++) {
-      const out = copy.video.step(copy.videoLevels, master, gains);
+      // bipolar is applied inside copy.video.step (env CV out only).
+      const out = copy.video.step(copy.videoLevels, master, gains, bipolar);
       for (let b = 0; b < SYN_NUM_BANDS; b++) {
         if (audio?.[b]) audio[b]![s] = out.audio[b]!;
         if (slow?.[b]) slow[b]![s] = out.envSlow[b]!;
@@ -246,28 +263,31 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
     // mode >= 0.5 → VIDEO. Independent per copy, so switching A never touches B.
     const aVideo = this.kval(parameters, 'a_mode', 0) >= 0.5;
     const bVideo = this.kval(parameters, 'b_mode', 0) >= 0.5;
+    // POLARITY: bipolar >= 0.5 → env CV out remapped [0,1] → [-1,+1]. Per copy.
+    const aBipolar = this.kval(parameters, 'a_bipolar', 0) >= 0.5;
+    const bBipolar = this.kval(parameters, 'b_bipolar', 0) >= 0.5;
 
     // Output index map: 0/1=audio, 2/3=envSlow, 4/5=envFast, 6/7=gate,
     // 8/9=trig (A/B).
     if (aVideo) {
       this.runVideoCopy(
-        this.a, this.kval(parameters, 'a_master', 1), gainsOf('a'), n,
+        this.a, this.kval(parameters, 'a_master', 1), gainsOf('a'), n, aBipolar,
         outputs[0], outputs[2], outputs[4], outputs[6], outputs[8], this.levelsA,
       );
     } else {
       this.runCopy(
-        this.a, inputs[0]?.[0] ?? null, this.kval(parameters, 'a_master', 1), gainsOf('a'), n,
+        this.a, inputs[0]?.[0] ?? null, this.kval(parameters, 'a_master', 1), gainsOf('a'), n, aBipolar,
         outputs[0], outputs[2], outputs[4], outputs[6], outputs[8], this.levelsA,
       );
     }
     if (bVideo) {
       this.runVideoCopy(
-        this.b, this.kval(parameters, 'b_master', 1), gainsOf('b'), n,
+        this.b, this.kval(parameters, 'b_master', 1), gainsOf('b'), n, bBipolar,
         outputs[1], outputs[3], outputs[5], outputs[7], outputs[9], this.levelsB,
       );
     } else {
       this.runCopy(
-        this.b, inputs[1]?.[0] ?? null, this.kval(parameters, 'b_master', 1), gainsOf('b'), n,
+        this.b, inputs[1]?.[0] ?? null, this.kval(parameters, 'b_master', 1), gainsOf('b'), n, bBipolar,
         outputs[1], outputs[3], outputs[5], outputs[7], outputs[9], this.levelsB,
       );
     }
