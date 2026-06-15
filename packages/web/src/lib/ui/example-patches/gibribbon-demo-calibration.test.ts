@@ -58,10 +58,22 @@ const GIB_TICK_SAMPLES = Math.round(GIB_TICK_SECS * SR);
 // gibribbon-demo.test.ts proves the committed blob actually carries these.
 const DEMO_MASTER = 1.2;
 const DEMO_GAINS: [number, number, number, number] = [1.4, 2.35, 3.9, 1.9];
-// The OLD (pre-#698) gains that left jump+imp dead — used by the negative-guard
+// A KNOWN-BAD calibration that leaves jump+imp dead — used by the negative-guard
 // test below to prove this calibration test really would catch a regression.
-const OLD_MASTER = 1.35;
-const OLD_GAINS: [number, number, number, number] = [1.5, 1.6, 1.7, 1.8];
+//
+// NOTE (kick-bass CV re-tune, this PR): the env CV now carries a per-band MAKEUP
+// gain (CV_MAKEUP in synesthesia-dsp), so every band's slow env reaches full
+// scale on energetic steps — which is exactly what revived all four channels at
+// the demo gains. That makeup also lifted the PRE-#698 gains [1.5,1.6,1.7,1.8]
+// enough that they no longer kill a channel, so they're no longer a valid
+// negative case. The flat UNITY calibration (master 1, all band gains 1 — i.e.
+// NO per-band balancing at all) is the new known-bad: the demo voice's mid
+// bands (band2=jump, band3=imp) carry too little energy to cross cvSpawnThreshold
+// without per-band makeup gain, so both stay dead while the energetic bass
+// (loop) + treble (zombie) still fire. If a future edit reverts to a flat /
+// unbalanced calibration, the "ALL FOUR" assertion fails the same way.
+const OLD_MASTER = 1.0;
+const OLD_GAINS: [number, number, number, number] = [1, 1, 1, 1];
 
 interface DemoStep {
   on: boolean;
@@ -246,14 +258,15 @@ describe('GIBRIBBON demo — real-chain SYNESTHESIA calibration (#698 retune gua
   });
 
   // NEGATIVE GUARD: prove this test really catches a band/gain regression. With
-  // the OLD (pre-#698) gains the same real chain leaves jump+imp DEAD — exactly
-  // the bug the retune fixed. If a future edit reverts to a calibration that
-  // kills a channel, the "ALL FOUR" assertion above fails the same way.
-  it('FAILS-SAFE: the OLD pre-#698 gains leave jump + imp dead (the bug)', () => {
+  // a FLAT/unbalanced calibration (unity master + unity band gains, no per-band
+  // makeup) the same real chain leaves jump+imp DEAD — the mid bands never cross
+  // cvSpawnThreshold. If a future edit reverts to a calibration that kills a
+  // channel, the "ALL FOUR" assertion above fails the same way.
+  it('FAILS-SAFE: a flat unity calibration leaves jump + imp dead (the bug)', () => {
     const { counts } = oldRun;
-    // Demonstrates the regression the new gains fix: at least one mid band dead.
+    // Demonstrates the regression the balanced gains fix: at least one mid band dead.
     expect(counts.jump + counts.imp).toBe(0);
-    // loop + zombie still fired under the old gains (only the mids died).
+    // loop + zombie still fired under the flat gains (only the mids died).
     expect(counts.loop).toBeGreaterThanOrEqual(1);
     expect(counts.zombie).toBeGreaterThanOrEqual(1);
   });
