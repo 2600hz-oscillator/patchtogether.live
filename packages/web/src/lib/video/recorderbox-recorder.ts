@@ -64,16 +64,24 @@ import {
   MediaStreamAudioTrackSource,
   canEncodeVideo,
   canEncodeAudio,
+  type VideoCodec,
 } from 'mediabunny';
 
-// ── Locked defaults (user said proceed; overridable later) ──
-/** ~14 Mbps VBR video — "high quality" per the spec. */
+// ── Defaults ──
+// These describe the HIGH tier (the historical default). The card now picks a
+// per-tier EncodeProfile (recorderbox-quality.ts) and passes its video codec +
+// bitrate + keyframe interval + audio bitrate into start(); when no profile is
+// supplied (older callers / a probe-only mount) these defaults stand in, so the
+// default behavior is byte-for-byte the original ~14 Mbps H.264 MP4.
+/** ~14 Mbps VBR video — "high quality" per the spec (HIGH tier). */
 export const DEFAULT_VIDEO_BITRATE = 14_000_000;
-/** 192 kbps AAC stereo. */
+/** 192 kbps AAC stereo (HIGH tier). */
 export const DEFAULT_AUDIO_BITRATE = 192_000;
 /** 30 fps capture. */
 export const DEFAULT_FPS = 30;
-export const VIDEO_CODEC = 'avc' as const; // H.264
+/** Default keyframe interval, seconds (Mediabunny's own default — HIGH tier). */
+export const DEFAULT_KEYFRAME_INTERVAL = 2;
+export const VIDEO_CODEC: VideoCodec = 'avc'; // H.264 — the guaranteed baseline
 export const AUDIO_CODEC = 'aac' as const; // AAC-LC (mp4a.40.2)
 export const CONTAINER_MIME = 'video/mp4';
 
@@ -255,8 +263,19 @@ export interface RecorderboxRecorderOptions {
    * saveBytes (the <a download> blob path).
    */
   destHandle?: FileSystemFileHandle | null;
-  /** Video bitrate override (defaults to 14 Mbps). */
+  /** Video codec to encode with (defaults to H.264 'avc'). The card resolves
+   *  this per quality tier via pickEncodeProfile (AV1/VP9 for BALANCED/SMALL
+   *  where supported; H.264 always for HIGH + as the fallback). The MP4
+   *  container carries all of avc/hevc/vp9/av1, so the codec swap does NOT
+   *  change the container, extension, or crash-recovery semantics. */
+  videoCodec?: VideoCodec;
+  /** Video bitrate override (defaults to 14 Mbps — the HIGH H.264 baseline). */
   videoBitrate?: number;
+  /** Keyframe interval in seconds (defaults to ~2 s — the HIGH tier). Longer =
+   *  smaller file, at a slightly coarser seek/recovery granularity. */
+  keyFrameInterval?: number;
+  /** AAC audio bitrate (defaults to 192 kbps — the HIGH tier). */
+  audioBitrate?: number;
   /** Recording-resolution width/height (the encoder's first-frame box). */
   width: number;
   height: number;
@@ -375,10 +394,14 @@ export class RecorderboxRecorder {
     });
     this.output = output;
 
-    // Video track from the hidden capture canvas.
+    // Video track from the hidden capture canvas. Codec + bitrate + keyframe
+    // interval come from the quality tier the card resolved (HIGH = the original
+    // H.264 / 14 Mbps / ~2 s defaults); a modern codec (AV1/VP9) for the smaller
+    // tiers stays inside the same fragmented MP4 container.
     const canvasSource = new CanvasSource(this.opts.canvas as HTMLCanvasElement, {
-      codec: VIDEO_CODEC,
+      codec: this.opts.videoCodec ?? VIDEO_CODEC,
       bitrate: this.opts.videoBitrate ?? DEFAULT_VIDEO_BITRATE,
+      keyFrameInterval: this.opts.keyFrameInterval ?? DEFAULT_KEYFRAME_INTERVAL,
       // The engine canvas keeps a stable size for a recording; deny size
       // changes mid-stream (the encoder's first-frame box is authoritative).
       sizeChangeBehavior: 'contain',
@@ -391,7 +414,7 @@ export class RecorderboxRecorder {
       try {
         const audioSource = new MediaStreamAudioTrackSource(
           this.opts.audioTrack as MediaStreamAudioTrack,
-          { codec: AUDIO_CODEC, bitrate: DEFAULT_AUDIO_BITRATE },
+          { codec: AUDIO_CODEC, bitrate: this.opts.audioBitrate ?? DEFAULT_AUDIO_BITRATE },
         );
         // IMPORTANT: Mediabunny surfaces internal encode errors via
         // `errorPromise`, NOT the constructor — and warns (in console) if you
