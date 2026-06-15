@@ -44,6 +44,7 @@ import {
   MeterBallistics,
   SynesthesiaVideoCopy,
   combinedGain,
+  CV_MAKEUP,
   SYN_NUM_BANDS,
   ENV_FAST_REL_MS,
   ENV_FAST_ATK_MS,
@@ -51,6 +52,12 @@ import {
   ENV_SLOW_ATK_MS,
   type BandSplitter,
 } from './lib/synesthesia-dsp';
+
+/** Clamp an env value to the 0..1 CV range after makeup (worklet-local; the lib
+ *  helper isn't exported to keep the dist surface minimal). */
+function cvClamp(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
 
 declare const sampleRate: number;
 declare class AudioWorkletProcessor {
@@ -175,14 +182,18 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
       for (let b = 0; b < SYN_NUM_BANDS; b++) {
         const g = combinedGain(master, gains[b] ?? 1);
         const a = (bands[b] as number) * g;
+        // Gate keys off the RAW fast env (hysteresis unchanged); CV makeup is
+        // applied to the env OUTPUT only (then clamped 0..1) so a strong kick
+        // drives the bass CV near full scale. See CV_MAKEUP in synesthesia-dsp.
         const ef = copy.fast[b]!.step(a);
         const es = copy.slow[b]!.step(a);
         const gt = copy.gate[b]!.step(ef);
         const tr = copy.onset[b]!.step(a);
         const lv = copy.meter[b]!.step(a);
+        const mk = CV_MAKEUP[b] ?? 1;
         if (audio?.[b]) audio[b]![s] = a;
-        if (slow?.[b]) slow[b]![s] = es;
-        if (fast?.[b]) fast[b]![s] = ef;
+        if (slow?.[b]) slow[b]![s] = cvClamp(es * mk);
+        if (fast?.[b]) fast[b]![s] = cvClamp(ef * mk);
         if (gate?.[b]) gate[b]![s] = gt;
         if (trig?.[b]) trig[b]![s] = tr;
         if (lv > peak[b]!) peak[b] = lv;

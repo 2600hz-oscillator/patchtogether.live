@@ -28,8 +28,16 @@ export const SYN_NUM_BANDS = 4;
 /** Envelope-follower attack + release times (ms) — see module spec.
  *  A REAL attack stage (was instant-attack, which strobes on video). Releases
  *  are kept at the original 50 / 500 ms so gibribbon's slow-env game feel
- *  barely shifts; only the rising edge is now ramped instead of instant. */
-export const ENV_FAST_ATK_MS = 5;
+ *  barely shifts; only the rising edge is ramped instead of instant.
+ *
+ *  KICK-BASS RE-TUNE (this PR): the FAST attack dropped 5 ms → 2 ms so a kick
+ *  onset hits the bass CV hard and locked-to-the-transient (atk-to-90% on a
+ *  4-on-the-floor kick: ~19 ms → ~11 ms). The SLOW attack is unchanged (40 ms)
+ *  so gibribbon's slow-env game cadence is untouched; only the fast CV sharpens.
+ *  Releases unchanged so the env still decays cleanly between kicks at DnB
+ *  (~174), industrial (~130) and psytrance (~145) tempos (the env returns to
+ *  ~0 well before the next kick at all three). */
+export const ENV_FAST_ATK_MS = 2;
 export const ENV_FAST_REL_MS = 50;
 export const ENV_SLOW_ATK_MS = 40;
 export const ENV_SLOW_REL_MS = 500;
@@ -37,6 +45,34 @@ export const ENV_SLOW_REL_MS = 500;
 // downstream CV key off; kept so existing call-sites/tests read unchanged).
 export const ENV_FAST_MS = ENV_FAST_REL_MS;
 export const ENV_SLOW_MS = ENV_SLOW_REL_MS;
+
+/**
+ * Per-band CV MAKEUP gain — applied ONLY to the env-follower OUTPUT values that
+ * become the `env_slow` / `env_fast` CV streams (then clamped to 0..1). This is
+ * the kick-bass re-tune's core: a full-amplitude band transient lands the env
+ * CV near FULL SCALE (≈1.0) instead of the ~0.64 a raw band amplitude reached,
+ * so a strong kick drives a downstream CV input (e.g. OUTLINES "rotation")
+ * across (near) its full range.
+ *
+ * Measured (full-amplitude percussive burst per band): raw fast-env peaks
+ * cluster at ~0.62–0.68, so ~1.5–1.6× brings any band's strong hit to full
+ * scale; softer hits scale proportionally (dynamics preserved, not crushed).
+ * Bass gets the slightly-higher value (the band the kick lives in). Values are
+ * intentionally near-uniform so per-band response stays consistent + predictable.
+ *
+ * IMPORTANT: the makeup is applied to the env OUTPUT, NOT to the band signal
+ * feeding the GateDetector / OnsetDetector — those keep reading the un-boosted
+ * env, so the gate hysteresis (0.05/0.02) + the scale-invariant onset flux are
+ * unchanged. (gibribbon reads the SLOW env CV directly, which IS boosted — its
+ * demo's per-band gains were re-balanced for the new scaling; see the
+ * gibribbon-demo-calibration guard.)
+ */
+export const CV_MAKEUP: readonly [number, number, number, number] = [1.6, 1.6, 1.6, 1.5];
+
+/** Clamp an env-follower value to the 0..1 CV range after makeup. */
+function cvClamp(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
 
 // Butterworth damping (Q≈0.707 → k = 1/Q = √2). Cascading two such 2nd-order
 // SVF stages per crossover edge gives a ~24 dB/oct Linkwitz-Riley-style slope —
@@ -378,9 +414,14 @@ export class SynesthesiaVideoCopy {
       const g = combinedGain(master, gains[c] ?? 1);
       const a = (levels[c] ?? 0) * g;
       audio[c] = a;
-      envFast[c] = this.fast[c]!.step(a);
-      envSlow[c] = this.slow[c]!.step(a);
-      gate[c] = this.gate[c]!.step(envFast[c]!);
+      // Same as audio mode: gate keys off the RAW (un-boosted) fast env; the CV
+      // makeup is applied to the env OUTPUT only (then clamped to 0..1).
+      const ef = this.fast[c]!.step(a);
+      const es = this.slow[c]!.step(a);
+      const mk = CV_MAKEUP[c] ?? 1;
+      envFast[c] = cvClamp(ef * mk);
+      envSlow[c] = cvClamp(es * mk);
+      gate[c] = this.gate[c]!.step(ef);
       trig[c] = this.onset[c]!.step(a);
       level[c] = this.meter[c]!.step(a);
     }
@@ -452,9 +493,13 @@ export function renderSynesthesia(
       const g = combinedGain(master, gains[b] ?? 1);
       const a = (bands[b] as number) * g;
       audio[b]![i] = a;
+      // Raw envelope (un-boosted) drives the GATE so its 0.05/0.02 hysteresis is
+      // unchanged. CV makeup is applied to the env OUTPUT only (then clamped).
       const ef = fast[b]!.step(a);
-      envFast[b]![i] = ef;
-      envSlow[b]![i] = slow[b]!.step(a);
+      const es = slow[b]!.step(a);
+      const mk = CV_MAKEUP[b] ?? 1;
+      envFast[b]![i] = cvClamp(ef * mk);
+      envSlow[b]![i] = cvClamp(es * mk);
       gate[b]![i] = gates[b]!.step(ef);
       trig[b]![i] = onsets[b]!.step(a);
       level[b]![i] = meters[b]!.step(a);

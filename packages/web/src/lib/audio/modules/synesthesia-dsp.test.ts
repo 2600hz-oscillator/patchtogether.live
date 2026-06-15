@@ -26,7 +26,10 @@ import {
   ENV_FAST_REL_MS,
   ONSET_DEBOUNCE_MS,
   ONSET_PULSE_MS,
+  CV_MAKEUP,
 } from '../../../../../dsp/src/lib/synesthesia-dsp';
+import { buildCvBridgeMapping, mapCvBridgeValue } from '$lib/video/cv-bridge-map';
+import { outlinesDef } from '$lib/video/modules/outlines';
 
 const SR = 48000;
 
@@ -430,19 +433,24 @@ describe('synesthesia-dsp — VIDEO mode drives envelope/gate followers from lev
   });
 
   it('envelope follower rises with the held level (fast tracks, slow lags)', () => {
+    // Use a HALF-level red (0.5) so the CV-makeup-boosted env (×1.6 → ~0.8 at
+    // steady state) stays BELOW the 0..1 clamp ceiling — otherwise a full-scale
+    // (1.0) level pins both fast + slow at 1.0 and the lag is invisible. The
+    // makeup is applied to the env OUTPUT (see CV_MAKEUP), so the steady value
+    // is level·makeup, not level. The lag between fast (2 ms atk) and slow
+    // (40 ms atk) is what we're proving here.
     const r = renderSynesthesiaVideo(
-      [[1, 0, 0, 0.299]],
+      [[0.5, 0, 0, 0.299]],
       { sr: SR, holdSamples: Math.round(SR * 0.1) },
     );
     const fast0 = r.envFast[0]!;
     const slow0 = r.envSlow[0]!;
-    // Both have a REAL attack now: over 100 ms the fast (5 ms atk) saturates
-    // to ~1, while the slow (40 ms atk) is still climbing — so it lags but is
-    // already well up. Early on the fast leads the slow (the lag is visible).
-    expect(fast0[fast0.length - 1]!).toBeGreaterThan(0.98);
-    expect(slow0[slow0.length - 1]!).toBeGreaterThan(0.85);
+    // Over 100 ms the fast (2 ms atk) saturates to ~0.5·1.6 = 0.8, while the
+    // slow (40 ms atk) is still climbing — so it lags but is already well up.
+    expect(fast0[fast0.length - 1]!).toBeGreaterThan(0.78);
+    expect(slow0[slow0.length - 1]!).toBeGreaterThan(0.68);
     expect(slow0[slow0.length - 1]!).toBeLessThan(fast0[fast0.length - 1]!); // lags
-    // 20 ms in, the fast (≈4 atk-τ) is far ahead of the slow (≈0.5 atk-τ).
+    // 20 ms in, the fast (≈10 atk-τ) is far ahead of the slow (≈0.5 atk-τ).
     const at20ms = Math.round(SR * 0.02);
     expect(fast0[at20ms]!).toBeGreaterThan(slow0[at20ms]!);
   });
@@ -456,5 +464,206 @@ describe('synesthesia-dsp — VIDEO mode drives envelope/gate followers from lev
       const m = r.level[c]!;
       expect(m[m.length - 1]!).toBeGreaterThan(0.6);
     }
+  });
+});
+
+// ───────────────── KICK → BASS CV re-tune (this PR's spine) ─────────────────
+//
+// The user-facing goal: "a strong kick drum should make [a downstream CV input,
+// e.g. OUTLINES rotation] run the whole CV range." Before this PR, a full-
+// amplitude kick only drove the bass envelope CV to ~0.64 (raw band amplitude,
+// no makeup) → a downstream linear CV input swung barely a third of its range.
+// The fix: a 2 ms fast attack + a per-band CV_MAKEUP gain on the env OUTPUT, so
+// a strong kick lands the bass env CV at (near) full scale 1.0.
+//
+// Test material is DETERMINISTIC + license-free: a pitch-swept sine kick (95→48
+// Hz body, ~2 ms attack, ~70 ms exp decay — a realistic electronic kick) laid
+// out 4-on-the-floor at the three target genres' KNOWN BPMs.
+
+/** A realistic deterministic kick: pitch-swept sine (95→48 Hz) with a fast
+ *  attack + exp-decay amplitude. `amp` scales the whole hit. */
+function realKick(buf: Float32Array, at: number, amp = 1.0, sr = SR): void {
+  const len = Math.round(0.18 * sr);
+  for (let i = 0; i < len && at + i < buf.length; i++) {
+    const t = i / sr;
+    const f = 48 + 47 * Math.exp(-t / 0.025); // 95 Hz → 48 Hz body sweep
+    const a = (1 - Math.exp(-t / 0.002)) * Math.exp(-t / 0.07); // ~2 ms atk, ~70 ms decay
+    buf[at + i]! += amp * a * Math.sin(2 * Math.PI * f * t);
+  }
+}
+
+/** 4-on-the-floor kick pattern: one kick per beat at `bpm`, `beats` kicks. */
+function kickFloor(bpm: number, beats: number, amp = 1.0): Float32Array {
+  const spb = 60 / bpm;
+  const buf = new Float32Array(Math.round((spb * beats + 0.5) * SR));
+  for (let b = 0; b < beats; b++) realKick(buf, Math.round((0.05 + b * spb) * SR), amp);
+  return buf;
+}
+
+function bufPeak(a: Float32Array): number {
+  let p = 0;
+  for (const v of a) if (v > p) p = v;
+  return p;
+}
+
+describe('synesthesia-dsp — kick → BASS CV re-tune', () => {
+  // The three target genres + their canonical BPMs (kick on every beat).
+  const GENRES: Array<[string, number]> = [
+    ['DnB', 174],
+    ['industrial', 130],
+    ['psytrance', 145],
+  ];
+
+  for (const [name, bpm] of GENRES) {
+    it(`${name} (${bpm} BPM): a full-amplitude kick drives the bass env CV to ~full scale`, () => {
+      const { envFast } = renderSynesthesia(kickFloor(bpm, 8, 1.0), { sr: SR });
+      const bass = envFast[0]!;
+      // (b) reaches ≥ 0.9 of full range on a strong kick.
+      expect(bufPeak(bass)).toBeGreaterThanOrEqual(0.9);
+    });
+
+    it(`${name} (${bpm} BPM): the bass env decays back near zero BETWEEN kicks`, () => {
+      const buf = kickFloor(bpm, 8, 1.0);
+      const { envFast } = renderSynesthesia(buf, { sr: SR });
+      const bass = envFast[0]!;
+      // (c) decays between kicks: sample the env JUST before the 4th kick — it
+      // must have fallen well back down (a clear rhythmic trough, not a smear).
+      const spb = 60 / bpm;
+      const justBefore4th = Math.round((0.05 + 3 * spb - 0.005) * SR);
+      expect(bass[justBefore4th]!).toBeLessThan(0.25);
+    });
+  }
+
+  it('each kick produces a SHARP rise locked to the transient (~≤12 ms to 90%)', () => {
+    // (a) sharp rise locked to each kick. Measure the first kick's attack: time
+    // from onset to 90% of the first peak. The 2 ms fast attack + the band-
+    // limited kick rise should reach 90% within ~12 ms (was ~19 ms at 5 ms atk).
+    const onset = Math.round(0.05 * SR);
+    const { envFast } = renderSynesthesia(kickFloor(174, 4, 1.0), { sr: SR });
+    const bass = envFast[0]!;
+    let firstPeak = 0, peakIdx = onset;
+    for (let i = onset; i < onset + Math.round(0.2 * SR); i++) {
+      if (bass[i]! > firstPeak) { firstPeak = bass[i]!; peakIdx = i; }
+    }
+    let i90 = peakIdx;
+    for (let i = onset; i <= peakIdx; i++) if (bass[i]! >= 0.9 * firstPeak) { i90 = i; break; }
+    const atkMs = ((i90 - onset) / SR) * 1000;
+    expect(atkMs).toBeLessThanOrEqual(12);
+  });
+
+  it('preserves DYNAMICS: a soft kick stays clearly below a strong kick (not crushed)', () => {
+    const soft = bufPeak(renderSynesthesia(kickFloor(140, 4, 0.45), { sr: SR }).envFast[0]!);
+    const strong = bufPeak(renderSynesthesia(kickFloor(140, 4, 1.0), { sr: SR }).envFast[0]!);
+    expect(strong).toBeGreaterThanOrEqual(0.9); // strong → full scale
+    expect(soft).toBeLessThan(0.7); // soft is clearly lower (dynamics intact)
+    expect(strong - soft).toBeGreaterThan(0.25); // a real, audible difference
+  });
+
+  it('the bass band carries the kick — NOT the mid/treble bands', () => {
+    // The kick energy lands in band 1 (bass), not the upper bands — so a kick
+    // modulates the BASS CV, not the others. (Confirms the band window includes
+    // the ~48–95 Hz kick fundamental.)
+    const { envFast } = renderSynesthesia(kickFloor(150, 6, 1.0), { sr: SR });
+    const peaks = envFast.map(bufPeak);
+    expect(peaks[0]!).toBe(Math.max(...peaks)); // bass is the strongest band
+    expect(peaks[0]!).toBeGreaterThan(2 * Math.max(peaks[2]!, peaks[3]!));
+  });
+
+  it('CV_MAKEUP is the documented bass-emphasised set + applied to the env', () => {
+    // Guards the constant so a future edit can't silently zero the makeup
+    // (which would re-introduce the weak-bass bug).
+    expect(CV_MAKEUP).toEqual([1.6, 1.6, 1.6, 1.5]);
+    // And prove the env OUTPUT actually carries it: a sub-clamp sustained bass
+    // tone settles at (raw env)·makeup, i.e. clearly above the raw env.
+    const tone = sine(90, 0.4, 0.35); // low amp so raw env stays well under clamp
+    const { envFast } = renderSynesthesia(tone, { sr: SR });
+    expect(rmsTail(envFast[0]!)).toBeGreaterThan(0.2); // boosted, not the ~0.13 raw
+  });
+});
+
+// ───────── END-TO-END: kick → bass CV → OUTLINES "rotation" full sweep ───────
+//
+// The user's exact scenario: SYNESTHESIA's bass CV → OUTLINES (formerly CIRCLES)
+// "rotation" CV input should traverse (near) the full range on a strong kick.
+// This drives the value through the REAL production routing: the actual
+// `outlinesDef` rotation PortDef (cvScale {mode:'linear'}) + param def + the
+// REAL cv→video bridge math (buildCvBridgeMapping / mapCvBridgeValue, the same
+// helpers engine.ts.tickCvBridges calls per frame) — fed the REAL
+// renderSynesthesia bass env CV. No WebGL needed (the bridge value math is pure;
+// the GL only paints the result). So this is a true end-to-end of the CV path
+// from a kick to the OUTLINES rotation param the spin reads.
+//
+// NOTE on the math: the SYNESTHESIA env CV is UNIPOLAR (0..1). scaleCv(linear)
+// centres the sweep on the knob (a bipolar ±1 source sweeps ±halfSpan). A
+// unipolar 0..1 source therefore reaches from `knob` up to `knob + halfSpan`.
+// The rotation knob ships CENTRED (ROT_CENTER = 0.5 — see OUTLINES DEFAULTS), so
+// a full bass env (≈1.0) reaches 0.5 + 0.5 = 1.0 (the top) and idle sits back at
+// 0.5 — the whole upper half of the range swings on the kick.
+
+describe('synesthesia-dsp — kick → OUTLINES rotation end-to-end (real bridge)', () => {
+  // The REAL OUTLINES rotation input PortDef (carries the cvScale hint) + param.
+  const rotInput = outlinesDef.inputs?.find((p) => p.id === 'rotation');
+  const rotParam = outlinesDef.params?.find((p) => p.id === 'rotation');
+
+  /** Map a SYNESTHESIA env CV sample → the OUTLINES rotation param value through
+   *  the REAL cv-bridge, at the given knob position. */
+  function rotationFor(envSample: number, knob: number): number {
+    const mapping = buildCvBridgeMapping(rotInput, 'rotation', outlinesDef.params, { rotation: knob });
+    return mapCvBridgeValue(mapping, envSample);
+  }
+
+  it('OUTLINES rotation declares the linear cvScale hint the bridge needs', () => {
+    // Sanity: if this hint ever drops, the bridge falls back to gate semantics
+    // and the kick→rotation sweep silently dies (the OUTLINES #787 bug class).
+    expect(rotInput?.cvScale?.mode).toBe('linear');
+    expect(rotParam).toMatchObject({ min: 0, max: 1 });
+  });
+
+  it('a strong kick sweeps rotation across (near) the full reachable range', () => {
+    const { envFast } = renderSynesthesia(kickFloor(174, 8, 1.2), { sr: SR });
+    const bass = envFast[0]!;
+    // Default centre knob (ROT_CENTER = 0.5), driven through the REAL bridge.
+    let rotPeak = 0.5;
+    for (const env of bass) {
+      const r = rotationFor(env, /*knob*/ 0.5);
+      if (r > rotPeak) rotPeak = r;
+    }
+    expect(rotPeak).toBeGreaterThanOrEqual(0.99); // pinned at the top of the range
+
+    // The rhythm reads out: between kicks rotation falls back to the knob centre.
+    const spb = 60 / 174;
+    const idle = bass[Math.round((0.05 + 3 * spb - 0.005) * SR)]!;
+    const rotIdle = rotationFor(idle, 0.5);
+    expect(rotIdle).toBeLessThan(0.62); // back near centre → a kick-locked swing
+    expect(rotPeak - rotIdle).toBeGreaterThan(0.38); // the FULL reachable upper swing
+  });
+
+  it('the default centre knob swings the FULL UPPER HALF at every target BPM', () => {
+    for (const bpm of [174, 130, 145]) {
+      const { envFast } = renderSynesthesia(kickFloor(bpm, 8, 1.0), { sr: SR });
+      let rotPeak = 0.5;
+      for (const env of envFast[0]!) {
+        const r = rotationFor(env, 0.5);
+        if (r > rotPeak) rotPeak = r;
+      }
+      expect(rotPeak, `bpm ${bpm}`).toBeGreaterThanOrEqual(0.95); // centre → (near) full top
+    }
+  });
+
+  it('FAILS-SAFE: WITHOUT the cv makeup, the same kick barely moves rotation', () => {
+    // Negative guard: emulate the pre-retune env (raw band amplitude, no makeup)
+    // by dividing the boosted bass env back down by CV_MAKEUP[0]. The same kick
+    // then only nudges rotation a fraction of the way — the weak-bass bug.
+    const { envFast } = renderSynesthesia(kickFloor(174, 8, 1.0), { sr: SR });
+    let rawPeak = 0;
+    for (const env of envFast[0]!) {
+      const raw = env / CV_MAKEUP[0]; // undo the makeup → pre-retune env
+      if (raw > rawPeak) rawPeak = raw;
+    }
+    const rotPeakOld = rotationFor(rawPeak, 0.5);
+    expect(rotPeakOld).toBeLessThan(0.85); // pre-retune: rotation never neared the top
+    // And the retune is a real improvement at the SAME kick.
+    const rotPeakNew = rotationFor(Math.min(1, rawPeak * CV_MAKEUP[0]), 0.5);
+    expect(rotPeakNew - rotPeakOld).toBeGreaterThan(0.12);
   });
 });
