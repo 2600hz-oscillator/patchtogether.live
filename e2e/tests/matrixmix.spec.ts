@@ -283,6 +283,11 @@ test('GRAY ✕ (outputFanout) is clickable: accept ADDS a cable, the foreign con
 test('Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way back to the exact starting patch', async ({
   page,
 }) => {
+  // CI-load robustness: loads a 5-module example then drives a long multi-step
+  // matrix patch/unpatch + full Cmd-Z undo chain (each step polls the edge
+  // store). The flat 30s default timed out under CI load (main run 1b897a3c,
+  // cleared on rerun → flake, not a real break). Give it room.
+  test.setTimeout(90_000);
   await page.goto('/');
   await page.waitForLoadState('networkidle');
 
