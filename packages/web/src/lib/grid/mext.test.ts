@@ -152,9 +152,12 @@ describe('createGridRxParser', () => {
     expect(evs).toEqual<GridRxEvent[]>([{ type: 'key', x: 2, y: 2, s: 1 }]);
   });
 
-  it('decodes a size response', () => {
+  it('decodes a size response — the grid replies on 0x03 (hardware-confirmed)', () => {
     const p = createGridRxParser();
-    expect(p.push([0x05, 16, 8])).toEqual<GridRxEvent[]>([{ type: 'size', x: 16, y: 8 }]);
+    // Real "monome 128" reply to a 0x05 request:
+    expect(p.push([0x03, 16, 8])).toEqual<GridRxEvent[]>([{ type: 'size', x: 16, y: 8 }]);
+    // and the legacy 0x05-echo form still parses:
+    expect(p.push([0x05, 8, 8])).toEqual<GridRxEvent[]>([{ type: 'size', x: 8, y: 8 }]);
   });
 
   it('decodes an id response and strips trailing spaces', () => {

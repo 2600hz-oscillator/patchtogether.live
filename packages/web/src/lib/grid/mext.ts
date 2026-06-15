@@ -58,6 +58,10 @@ export const LED_LEVEL_MAX = 15;
 // mext command bytes (the subset we implement).
 const CMD_SYS_QUERY = 0x00;
 const CMD_SYS_ID = 0x01;
+// Size: the host REQUESTS with 0x05 but the grid RESPONDS with 0x03 (the
+// request/response asymmetry the spec notes + real hardware confirmed — a
+// "monome 128" replies `[0x03, 16, 8]` to a `[0x05]` request).
+const CMD_SYS_SIZE_RESP = 0x03;
 const CMD_SYS_SIZE = 0x05;
 const CMD_LED_SET = 0x18;
 const CMD_LED_ALL = 0x19;
@@ -180,7 +184,8 @@ export type GridRxEvent =
 const RX_FRAME_LEN: Record<number, number> = {
   [CMD_SYS_QUERY]: 3, // [0x00, section, count]
   [CMD_SYS_ID]: 33, // [0x01, ...32 ascii]
-  [CMD_SYS_SIZE]: 3, // [0x05, x, y]
+  [CMD_SYS_SIZE_RESP]: 3, // [0x03, x, y] — the grid's actual size reply
+  [CMD_SYS_SIZE]: 3, // [0x05, x, y] — kept for any firmware that echoes 0x05
   [CMD_KEY_UP]: 3, // [0x20, x, y]
   [CMD_KEY_DOWN]: 3, // [0x21, x, y]
 };
@@ -214,6 +219,7 @@ export function createGridRxParser() {
           case CMD_KEY_UP:
             out.push({ type: 'key', x: frame[1], y: frame[2], s: 0 });
             break;
+          case CMD_SYS_SIZE_RESP:
           case CMD_SYS_SIZE:
             out.push({ type: 'size', x: frame[1], y: frame[2] });
             break;

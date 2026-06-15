@@ -17,7 +17,6 @@
 // FTDI port and the in-memory simulated device.
 
 import {
-  FTDI_VENDOR_ID,
   GRID_BAUD_RATE,
   GRID_WIDTH,
   GRID_HEIGHT,
@@ -133,10 +132,21 @@ export async function connect(): Promise<boolean> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const serial = (navigator as any).serial;
-    const port = await serial.requestPort({
-      filters: [{ usbVendorId: FTDI_VENDOR_ID }],
-    });
+    // NO usbVendorId filter (hardware-confirmed, Phase 0): macOS presents the
+    // grid's FTDI port to Chrome with vendorId 0 / no USB metadata, so a
+    // `{ usbVendorId: 0x0403 }` filter HIDES the grid from the picker. Show all
+    // serial ports and let the user pick the monome.
+    const port = await serial.requestPort();
     await port.open({ baudRate: GRID_BAUD_RATE });
+    // Assert DTR + RTS (hardware-confirmed, Phase 0): WebSerial leaves them
+    // DEASSERTED on open, and the grid won't TRANSMIT (key/handshake bytes)
+    // until DTR is high — terminal tools assert it for you, which is why it
+    // "works in a shell but not the browser" without this.
+    try {
+      await port.setSignals({ dataTerminalReady: true, requestToSend: true });
+    } catch {
+      /* some platforms/ports reject setSignals — proceed; LED TX still works */
+    }
     const t = createWebSerialTransport(port);
     await attachTransport(t);
     return true;
