@@ -514,6 +514,10 @@ test('toybox material + combine params: proxy renders on the surface and drives 
 // chain through the real CARD knob (right-click → Send to surface), so it proves
 // the card emission, not just the resolver.
 test('toybox model SCALE on a NON-FIRST layer: card knob → surface drives the LEARNED layer', async ({ page }) => {
+  // Heavy TOYBOX WebGL card under 10-way-sharded CI CPU contention renders
+  // controls well past the default 30s/5s budgets (passes ~8s locally idle).
+  // Mirror the sibling toybox specs' CI-robustness timeout.
+  test.setTimeout(60_000);
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
@@ -522,7 +526,7 @@ test('toybox model SCALE on a NON-FIRST layer: card knob → surface drives the 
   ]);
 
   const toybox = page.locator('[data-testid="toybox-card"][data-node-id="toybox-1"]');
-  await expect(toybox).toBeVisible();
+  await expect(toybox).toBeVisible({ timeout: 15_000 });
 
   // Seed: layer 0 OFF; layer 1 a DIFFERENT obj (scale 1.1, must stay untouched);
   // layer 2 the user's model (scale 1) — the one we'll edit + send to the surface.
@@ -546,14 +550,14 @@ test('toybox model SCALE on a NON-FIRST layer: card knob → surface drives the 
   // Activate LAYER 3 (index 2) — the user's model. The card's SCALE knob now
   // edits layer 2 + (the fix) emits paramId 'layer:2:scale'.
   await toybox.locator('[data-testid="toybox-layer-tab-2"]').click();
-  await expect(toybox.locator('[data-testid="toybox-layer-tab-2"]')).toHaveAttribute('data-active', 'true');
+  await expect(toybox.locator('[data-testid="toybox-layer-tab-2"]')).toHaveAttribute('data-active', 'true', { timeout: 15_000 });
 
   // Right-click the material SCALE knob (scope to the OBJ transform grid — the
   // 6 CV-input attenuverters also have a "SCALE" slider) → Send to surface cs-1.
   const scaleKnob = toybox
     .locator('[data-testid="toybox-controls"]')
     .locator('[role="slider"][aria-label="SCALE"]');
-  await expect(scaleKnob).toBeVisible();
+  await expect(scaleKnob).toBeVisible({ timeout: 15_000 });
   await scaleKnob.click({ button: 'right' });
   const menu = page.locator('[data-testid="control-context-menu"]');
   await expect(menu).toBeVisible();
@@ -569,7 +573,7 @@ test('toybox model SCALE on a NON-FIRST layer: card knob → surface drives the 
   // layer 1 (the first OBJ, the old wrong target) stays at 1.1.
   const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
   const scaleProxy = surface.locator('[data-testid="control-surface-knob-toybox-1-layer:2:scale"]');
-  await expect(scaleProxy).toBeVisible();
+  await expect(scaleProxy).toBeVisible({ timeout: 15_000 });
 
   await page.evaluate(() => {
     const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
