@@ -67,7 +67,10 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened]
+    # opened/synchronize/reopened → build + deploy the PR preview.
+    # closed (merged or not) → delete that PR's preview deployments (the
+    # cleanup-preview job below). deploy-preview filters closed out via its `if:`.
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       target:
@@ -277,7 +280,9 @@ jobs:
 
   deploy-preview:
     name: Deploy → PR-${{ github.event.pull_request.number }} preview
-    if: github.event_name == 'pull_request'
+    # Build + deploy on open/synchronize/reopen only. `closed` is handled by
+    # the cleanup-preview job below (it deletes the preview), so skip the build.
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -350,6 +355,23 @@ jobs:
           # via testHooksEnabled() in lib/dev/test-hooks.ts; never set on
           # prod.
           VITE_E2E_HOOKS: '1'
+      # Ensure the PR-preview beta gate is UP *before* the deploy. PR previews
+      # deploy to branch `pr-N` on the autotest project, which reads its runtime
+      # env from the project's PREVIEW scope (NOT the Production scope that
+      # serves autotest.patchtogether.live). This sets BETA_GATE_PASS on that
+      # Preview scope as `secret_text` via the CF "edit project" API
+      # (deployment_configs.preview.env_vars) — secret_text so the following
+      # `wrangler pages deploy` does NOT clear it (the #742 plain_text-wipe bug).
+      # Idempotent + tolerant: a no-op if PREVIEW_BETA_GATE_PASS is unset or the
+      # token lacks Pages:Edit (the post-deploy assert is the real gate). Runs
+      # BEFORE deploy so the new deployment picks the secret up. User `beta`
+      # (hooks.server.ts default) + this pass = the `beta:2600hz` preview cred.
+      - name: Ensure preview beta gate (secret_text, Preview scope)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIEW_BETA_GATE_PASS: ${{ secrets.PREVIEW_BETA_GATE_PASS }}
+        run: flox activate -- bash scripts/cf-set-preview-beta-gate.sh
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -359,15 +381,42 @@ jobs:
           # inherit the test-instance Clerk env vars and full auth flow
           # works. URL becomes `pr-N.patchtogether-live-autotest.pages.dev`.
           command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live-autotest --branch=pr-${{ github.event.pull_request.number }} --commit-message=deploy-${{ github.sha }}
-      # NOTE: the beta-gate assertion is intentionally NOT run on ephemeral PR
-      # previews. The autotest CF Pages project's *Preview* env scope currently
-      # has no BETA_GATE_PASS (only the Production scope does), so per-PR
-      # `pr-N.…pages.dev` deployments run ungated. They sit behind unguessable
-      # URLs and gating them reliably (set BETA_GATE_PASS secret_text on the
-      # project's Preview scope, or have sync-secrets.sh push to both scopes) is a
-      # separate follow-up — we do NOT want every PR's merge to gate on
-      # preview-scope state. The real regression risk is the persistent tiers
-      # (prod/dev/autotest), which ARE asserted below + after the prod deploy.
+      # Post-deploy beta-gate assertion for the PR preview (see deploy-prod for
+      # the rationale + secret_text requirement). Previews are gated with
+      # `beta:2600hz` (same as dev) via the Preview-scope BETA_GATE_PASS set in
+      # the step above. This asserts HTTP 401 at `/` with NO creds — i.e. the
+      # gate is UP. If the preview secret was never provisioned (repo secret
+      # PREVIEW_BETA_GATE_PASS unset AND the one-time Dashboard step skipped),
+      # this fails loudly the same way it would for a wiped persistent-tier gate.
+      - name: Verify beta gate is up (preview)
+        run: flox activate -- bash scripts/assert-beta-gate.sh "https://pr-${{ github.event.pull_request.number }}.patchtogether-live-autotest.pages.dev/"
+
+  # ---------------- PR-close cleanup: delete the preview deployment ----------
+  # On PR close (merged OR not), delete the `pr-<N>` preview deployment(s) on
+  # the autotest project so they don't accumulate forever (the project had
+  # grown to ~2,400 dead previews; a separate one-off bulk-prune handles the
+  # historical backlog — THIS keeps it from regrowing, one PR at a time).
+  # Cheap: a handful of CF API calls, only on close. `continue-on-error` +
+  # a tolerant script guarantee a cleanup hiccup never affects the merge.
+  cleanup-preview:
+    name: Cleanup → delete PR-${{ github.event.pull_request.number }} preview
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # No LFS / no build — just the cleanup script (curl + jq, both present on
+      # GitHub-hosted runners). flox keeps it in lockstep with the repo standard
+      # and guarantees the toolchain; the script is tolerant if anything's absent.
+      - uses: actions/checkout@v4
+      - uses: flox/install-flox-action@v2
+      - name: Delete preview deployments for pr-${{ github.event.pull_request.number }}
+        continue-on-error: true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: flox activate -- bash scripts/cf-preview-cleanup.sh "pr-${{ github.event.pull_request.number }}"
 
   # ---------------- Autotest + dev: auto on merge to main ----------------
 
