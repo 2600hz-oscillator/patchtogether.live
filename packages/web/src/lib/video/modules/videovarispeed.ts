@@ -40,14 +40,28 @@
 // videovarispeed-transport.ts. The card drives playbackRate / scrub / window;
 // the factory stores params + samples the element into its FBO.
 //
+// 7-SLOT ASSET SELECTOR (asset-selector PR): the card owns up to 7 preloaded
+// <video> elements (one per slot) and swaps which one is the ACTIVE source via
+// attachExternalSource on a gate-driven slot switch — the factory itself stays
+// single-element (it samples whatever element is currently attached). A clip
+// player's note/gate output picks the slot (see asset-select.ts for the 7-note
+// → slot map); on the gate edge the newly-active video restarts from the
+// beginning (currentTime=0) and the audio is re-wired to the new element. The
+// per-slot file BYTES stay LOCAL (objectUrl/handle) exactly like the single
+// video — only per-slot fileMeta syncs so collaborators can re-link.
+//
 // Inputs:
 //   cv_start / cv_pause / cv_reset / cv_loop_toggle (gate, paramTarget=…):
 //     rising-edge transport gates.
+//   asset_pitch (pitch, RAW V/oct passthrough): slot-select pitch. NO cvScale
+//     so the bridge passes the raw V/oct through; the card reads it on each
+//     asset_gate rising edge.
+//   asset_gate (gate, paramTarget): rising-edge slot-select trigger.
 //   speedCv / startCv / endCv (cv, linear, paramTarget=…): per-param CV displacement.
 //
 // Outputs:
 //   video (video): decoded frames at the user's transport state.
-//   audio_l / audio_r (audio): stereo bridges from the file's audio track.
+//   audio_l / audio_r (audio): stereo bridges from the ACTIVE slot's audio.
 //
 // Params:
 //   speed (linear 0..1): playback rate (0 = stop, mapped to negative…positive multiplier).
@@ -55,10 +69,12 @@
 //   speedCv / startCv / endCv (linear -1..1): cached CV values.
 //   cv_start / cv_pause / cv_reset / cv_loop_toggle (linear 0..1):
 //     cached state from the gate inputs.
+//   asset_pitch (raw V/oct cache) / asset_gate (raw gate level; card edge-detects).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
+import { ASSET_SLOTS } from '$lib/video/asset-select';
 import type { VideoboxFileMeta } from './videobox-sync';
 
 // Passthrough sample of the source texture, with an idle pattern so an empty
@@ -95,10 +111,16 @@ void main() {
   outColor = vec4(texture(uTex, centered).rgb, 1.0);
 }`;
 
+/** Per-slot file size cap. 7 preloaded <video> elements are memory-heavy, so
+ *  each slot's file is capped to keep total resident memory bounded. Documented
+ *  in the module's DESCRIPTIONS entry. */
+export const VIDEOVARISPEED_MAX_SLOT_BYTES = 100 * 1024 * 1024; // 100 MB
+
 /** Persisted shape on node.data. The card is the only writer. */
 export interface VideoVarispeedData {
   /** Metadata about the file the loader picked. Null until a file is picked.
-   *  Local-only player, but we keep it on data so it survives reload. */
+   *  Local-only player, but we keep it on data so it survives reload. This is
+   *  the ACTIVE / slot-0 file (back-compat with the single-video model). */
   fileMeta: VideoboxFileMeta | null;
   /** True when the transport is logically playing. */
   isPlaying: boolean;
@@ -106,6 +128,11 @@ export interface VideoVarispeedData {
    *  (stop at END). Persisted so the loop button + loop_toggle gate flip the
    *  same state across reload. */
   loop: boolean;
+  /** 7-slot per-slot file meta (parallel to the asset slots). Each entry
+   *  mirrors `fileMeta` so collaborators can re-link their own copy of each
+   *  slot's video; the actual bytes stay LOCAL (objectUrl / FileSystemFileHandle)
+   *  exactly like the single-video model. null = empty slot. */
+  slotMeta?: (VideoboxFileMeta | null)[];
 }
 
 /** Default state stamped onto a freshly spawned VIDEOVARISPEED. */
@@ -113,6 +140,7 @@ export const VIDEOVARISPEED_DATA_DEFAULTS: VideoVarispeedData = {
   fileMeta: null,
   isPlaying: false,
   loop: true,
+  slotMeta: new Array(ASSET_SLOTS).fill(null),
 };
 
 /** Handle extras — the card calls these to drive the audio wiring once the
@@ -145,6 +173,11 @@ interface VideoVarispeedParams {
   cv_pause: number;
   cv_reset: number;
   cv_loop_toggle: number;
+  // Asset-selector synthetic params. asset_pitch caches the RAW V/oct of the
+  // slot-select pitch (NO cvScale ⇒ raw passthrough); asset_gate caches the
+  // raw gate level the card edge-detects.
+  asset_pitch: number;
+  asset_gate: number;
 }
 
 const DEFAULTS: VideoVarispeedParams = {
@@ -158,6 +191,8 @@ const DEFAULTS: VideoVarispeedParams = {
   cv_pause: 0,
   cv_reset: 0,
   cv_loop_toggle: 0,
+  asset_pitch: 0,
+  asset_gate: 0,
 };
 
 export const videoVarispeedDef: VideoModuleDef = {
@@ -181,6 +216,13 @@ export const videoVarispeedDef: VideoModuleDef = {
     { id: 'cv_reset',       type: 'gate', paramTarget: 'cv_reset' },
     // loop_toggle: flip LOOP <-> ONE-SHOT on rising edge.
     { id: 'cv_loop_toggle', type: 'gate', paramTarget: 'cv_loop_toggle' },
+    // --- 7-slot asset selector ---
+    // asset_pitch: V/oct slot-select pitch. NO cvScale ⇒ raw passthrough so
+    // the card reads the raw V/oct on each gate edge. `pitch`-typed so a clip
+    // player's pitch (polyPitchGate → lane 0) can patch in.
+    { id: 'asset_pitch', type: 'pitch', paramTarget: 'asset_pitch' },
+    // asset_gate: rising-edge slot-select trigger (raw passthrough; card edge-detects).
+    { id: 'asset_gate',  type: 'gate', paramTarget: 'asset_gate' },
     // --- CV inputs (bipolar -1..+1), separate paramTargets from the
     //     knob/slider params; the card sums them. ---
     { id: 'speedCv', type: 'cv', paramTarget: 'speedCv', cvScale: { mode: 'linear' } },
@@ -207,6 +249,10 @@ export const videoVarispeedDef: VideoModuleDef = {
     { id: 'cv_pause',        label: 'Pause gate', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     { id: 'cv_reset',        label: 'Reset gate', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
     { id: 'cv_loop_toggle',  label: 'Loop gate',  defaultValue: 0, min: 0, max: 1, curve: 'linear' },
+    // Asset-selector synthetic params. asset_pitch carries the raw V/oct (wide
+    // range); asset_gate is the 0/1 gate level the card edge-detects.
+    { id: 'asset_pitch', label: 'Asset pitch', defaultValue: 0, min: -10, max: 10, curve: 'linear' },
+    { id: 'asset_gate',  label: 'Asset gate',  defaultValue: 0, min: 0,   max: 1,  curve: 'linear' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
