@@ -325,7 +325,7 @@ test('RECORDERBOX captures patched audio at an ENCODABLE (AAC-LC) sample rate', 
 //       only assert the modern-codec preference when the runtime reports one,
 //       so it degrades cleanly on CI's headless software runner (which may
 //       report only avc, or nothing).
-test('RECORDERBOX SIZE selector defaults to HIGH + maps to a smaller profile', async ({ page }) => {
+test('RECORDERBOX SIZE selector defaults to BALANCED + maps to a smaller profile', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
@@ -338,19 +338,20 @@ test('RECORDERBOX SIZE selector defaults to HIGH + maps to a smaller profile', a
   ]);
   await expect(page.locator('[data-testid="recorderbox-card"]')).toBeVisible();
 
-  // (1) STRUCTURAL: the SIZE selector renders with HIGH/BALANCED/SMALL + HIGH
-  // selected by default (the high-quality default is preserved). The tier syncs
-  // to node.data.quality — flip to SMALL and confirm it's persisted on the
-  // live store (the same Y.Doc-synced field the recorder reads at start).
+  // (1) STRUCTURAL: the SIZE selector renders with HIGH/BALANCED/SMALL + BALANCED
+  // selected by default (owner default 2026-06-15 — smaller files at a small
+  // quality hit; HIGH stays one click away). The tier syncs to node.data.quality
+  // — flip to SMALL and confirm it's persisted on the live store (the same
+  // Y.Doc-synced field the recorder reads at start).
   const sel = page.locator('[data-testid="recorderbox-quality"]');
   await expect(sel).toBeVisible({ timeout: 10_000 });
   await expect(sel.locator('option')).toHaveText(['HIGH', 'BALANCED', 'SMALL']);
-  await expect(sel).toHaveValue('high');
+  await expect(sel).toHaveValue('balanced');
   const initialQuality = await page.evaluate(() => {
     const w = globalThis as unknown as { __patch: { nodes: Record<string, { data?: Record<string, unknown> }> } };
-    return w.__patch?.nodes?.rec?.data?.quality ?? 'high'; // default is HIGH (unset)
+    return w.__patch?.nodes?.rec?.data?.quality ?? 'balanced'; // default is BALANCED (unset)
   });
-  expect(initialQuality).toBe('high');
+  expect(initialQuality).toBe('balanced');
 
   await sel.selectOption('small');
   await expect(sel).toHaveValue('small');

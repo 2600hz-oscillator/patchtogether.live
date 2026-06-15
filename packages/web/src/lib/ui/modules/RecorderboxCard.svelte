@@ -63,8 +63,9 @@
 
   let filename = $derived<string>((node?.data?.filename as string | undefined) ?? 'recording');
   let recording = $derived<boolean>((node?.data?.recording as boolean | undefined) ?? false);
-  // QUALITY/SIZE tier. Default 'high' preserves the original ~14 Mbps H.264 MP4
-  // (no silent regression for existing racks). Synced to rack-mates via Y.Doc.
+  // QUALITY/SIZE tier. Default BALANCED (owner default 2026-06-15) — ~−80% size
+  // for a small quality hit; HIGH (original ~14 Mbps H.264) is one click away.
+  // Synced to rack-mates via Y.Doc.
   let quality = $derived<RecorderboxQuality>(coerceQuality(node?.data?.quality));
 
   let previewEl: HTMLCanvasElement | null = $state(null);
