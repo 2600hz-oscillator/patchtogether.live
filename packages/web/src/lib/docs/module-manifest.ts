@@ -1380,6 +1380,9 @@ export function buildModuleManifest(
       if (file.startsWith('hydrogen-')) return false;
       // TWOTRACKS pure state machine — not a ModuleDef.
       if (file === 'twotracks-transport.ts') return false;
+      // CLIPPLAYER clip-page data model + Deluge row math — not a ModuleDef
+      // (the def lives in clipplayer.ts).
+      if (file === 'clip-types.ts') return false;
       return true;
     })
     .sort((a, b) => a.file.localeCompare(b.file));
