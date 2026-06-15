@@ -29,7 +29,11 @@ test.describe('BENTBOX — CRT-emulation output', () => {
         { id: 'bb',     type: 'bentbox', position: { x: 500, y: 100 }, domain: 'video' },
       ],
       [
-        { id: 'e-shapes-bb', source: 'shapes', sourceHandle: 'out', target: 'bb', targetHandle: 'in' },
+        {
+          id: 'e-shapes-bb',
+          from: { nodeId: 'shapes', portId: 'out' },
+          to: { nodeId: 'bb', portId: 'in' },
+        },
       ],
     );
 

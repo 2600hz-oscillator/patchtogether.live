@@ -679,6 +679,13 @@ export const STRICT_VRT_MODULES = new Set<string>([
  *  up CI capture lands the other platform's PNG. The exempted pair is
  *  SKIPPED at the test level rather than allowed to fail. */
 export const EXEMPT_BASELINE_PAIRS = new Set<string>([
+  // SCALER: darwin baseline (the tiny 1-in/1-out multiplier card — title + the
+  // single AMOUNT knob + the yellow PatchPanel IN/OUT drill-down; no animated
+  // canvas) captured locally; linux baseline pending a `vrt-update.yml`
+  // workflow_dispatch on this branch. Functional coverage is scaler.test.ts
+  // (def + factory + out=in×amount across 0.1..10) + the per-module-per-port +
+  // behavioral sweeps.
+  'linux/scaler',
   // RINGBACK: darwin baseline (the static stereo-crush card — title + subtitle +
   // L/R IN + L/R OUT handles + RATE/SIZE/FB/MIX knobs; no animated canvas)
   // captured locally; linux baseline pending a `vrt-update.yml`

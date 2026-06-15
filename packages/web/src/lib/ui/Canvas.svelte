@@ -34,6 +34,9 @@
     makePortableEnvelope,
     parseEnvelope,
     loadEnvelopeIntoStore,
+    downloadEnvelope,
+    pickAndLoadEnvelope,
+    DEFAULT_FILENAME,
     EnvelopeParseError,
     readVideoAspectFromDoc,
     writeVideoAspectToDoc,
@@ -54,6 +57,22 @@
     parsePerformanceZip,
     type PerformanceMedia,
   } from '$lib/graph/performance-zip';
+  // Quick-switch PRESET SLOT bar (top-left of the menu bar) + the portable
+  // `.set` container that bundles all five slots + the MIDI map. The pure
+  // (de)serialize core lives in preset-set.ts; the per-browser IndexedDB
+  // persistence in preset-slot-store.ts (zips are large → never localStorage).
+  import {
+    buildSet,
+    parseSet,
+    SLOT_COUNT,
+    type SetSlot,
+  } from '$lib/graph/preset-set';
+  import {
+    putSlot,
+    getSlot,
+    clearSlot as clearSlotStore,
+    listOccupied,
+  } from '$lib/graph/preset-slot-store';
   import { resolveAllVideoExports } from '$lib/video/video-export-registry';
   import { putVideoFileBlob } from '$lib/video/video-file-store';
   import {
@@ -381,6 +400,22 @@
       (globalThis as any).__perfZip = {
         export: async (): Promise<Uint8Array> => buildPerformanceZipBytes(),
         load: async (bytes: Uint8Array): Promise<void> => loadPerformanceZipBytes(bytes),
+      };
+      // Preset-slot bar + `.set` round-trip hook (e2e): store/read/clear slots
+      // + build/load a `.set` WITHOUT a file dialog. Mirrors the real handlers.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__presetSet = {
+        // Store captured perf-zip bytes directly into a slot (skips the picker).
+        putSlot: async (index: number, bytes: Uint8Array, label?: string): Promise<void> => {
+          await putSlot(index, bytes, label);
+          slotOccupied[index] = true;
+        },
+        loadSlot: async (index: number): Promise<void> => loadSlot(index),
+        clearSlot: async (index: number): Promise<void> => clearSlot(index),
+        occupied: (): boolean[] => [...slotOccupied],
+        buildSet: async (): Promise<Uint8Array> => buildSetBytes(),
+        loadSet: async (bytes: Uint8Array): Promise<void> => loadSetBytes(bytes),
+        refresh: async (): Promise<void> => refreshSlotOccupancy(),
       };
       // Right-click + Organize tests need flow-space coords + the same
       // spawn path as the in-app palette (collision offset + maxInstances
@@ -1107,6 +1142,78 @@
     trace('cleared patch');
   }
 
+  // ---------------- Raw JSON export / import ----------------
+  //
+  // The lightweight sibling of the portable .zip flow: download / load JUST the
+  // patch ENVELOPE (graph + positions + params + INLINE assets the envelope
+  // already carries — PICTUREBOX images, SAMSLOOP samples, CV routes,
+  // control-surface bindings, module names). NO out-of-band media (VIDEOBOX
+  // bytes, TWOTRACKS tape) and NO MIDI/gamepad maps — that's what the .zip is
+  // for. This restores the convenience the old topbar "Save"/"Load" JSON
+  // buttons gave (removed in #771); it reuses the canonical
+  // makeEnvelope/downloadEnvelope + parseEnvelope/pickAndLoadEnvelope helpers —
+  // the SAME serializer the .zip + persistence paths use. (The deliberately
+  // deleted browser-localStorage "Save/Load Local Performance" feature is NOT
+  // reintroduced — this is file export/import only.)
+
+  /** "Export JSON (only)" — download the current patch as the JSON envelope
+   *  ONLY (no media, no zip). Same envelope the old "Save" button produced. */
+  function exportPatchJson() {
+    error = null;
+    try {
+      const env = makeEnvelope(ydoc);
+      downloadEnvelope(env, DEFAULT_FILENAME);
+      trace(
+        `exported patch JSON (${Object.keys(patch.nodes).length} nodes, ${Object.keys(patch.edges).length} edges)`,
+      );
+    } catch (e) {
+      error = `Export JSON failed: ${e instanceof Error ? e.message : String(e)}`;
+      trace(`export JSON failed: ${String(e)}`);
+    }
+  }
+
+  /** "Import JSON" — file-pick a `.json` envelope and load it into the live
+   *  rack. Bootstraps the engine + reconciler from inside this click handler
+   *  (the user gesture) so the AudioContext resumes and a reconciler exists to
+   *  materialize the loaded nodes — mirrors loadExample()'s shape, identical to
+   *  the old "Load" button. */
+  async function importPatchJson() {
+    error = null;
+    try {
+      await ensureEngine();
+      const result = await pickAndLoadEnvelope(ydoc, patch);
+      if (!result) {
+        trace('import JSON cancelled');
+        return;
+      }
+      await reconciler?.reconcile();
+      trace(`imported patch JSON (${result.nodesLoaded} nodes, ${result.edgesLoaded} edges)`);
+      if (result.diagnostics.length > 0) {
+        for (const d of result.diagnostics) {
+          console.warn(`[import-json] ${d.nodeId} (${d.type}): ${d.reason}`);
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof EnvelopeParseError ? e.message : (e instanceof Error ? e.message : String(e));
+      error = `Import JSON failed: ${msg}`;
+      trace(`import JSON failed: ${msg}`);
+    }
+  }
+
+  /** Action-menu dispatcher for the "Raw JSON" `<select>` (top-RIGHT of the
+   *  topbar). Like the "Load example…" menu it's an ACTION menu, so the bound
+   *  value resets to the placeholder after each dispatch — letting the user
+   *  re-pick the same action. */
+  type RawJsonKey = 'export-json' | 'import-json';
+  let rawJsonChoice = $state('');
+  async function onRawJsonChosen(key: RawJsonKey) {
+    switch (key) {
+      case 'export-json': exportPatchJson(); break;
+      case 'import-json': await importPatchJson(); break;
+    }
+    rawJsonChoice = '';
+  }
+
   // ---------------- Performance device-resolution helpers ----------------
   //
   // Shared by the portable Export Perf (.zip) path below: resolve live MIDI /
@@ -1430,10 +1537,15 @@
 
   /** Open the system file picker for a .zip; resolves null on cancel. */
   function pickPerformanceZipFile(): Promise<File | null> {
+    return pickFile('.zip,application/zip');
+  }
+
+  /** Generic single-file picker; resolves the File or null on cancel. */
+  function pickFile(accept: string): Promise<File | null> {
     return new Promise((resolve) => {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.zip,application/zip';
+      input.accept = accept;
       input.style.display = 'none';
       input.addEventListener('change', () => {
         const f = input.files?.[0] ?? null;
@@ -1444,6 +1556,187 @@
       document.body.appendChild(input);
       input.click();
     });
+  }
+
+  // ---------------- Preset SLOT bar + portable SET (top-left menu bar) ----------------
+  //
+  // Five numbered quick-switch slots: EMPTY = red, OCCUPIED = green.
+  //   * right-click an EMPTY slot → Load… → pick a performance .zip → store in
+  //     IndexedDB → slot turns green;
+  //   * LEFT-click a GREEN slot → instantly load its stored zip (no dialog);
+  //   * right-click a GREEN slot → Replace with… / Clear slot.
+  // A `.set` bundles all five slots + the MIDI map into one zip-of-zips
+  // (preset-set.ts) — Save Set downloads it, Load Set repopulates the bar.
+  // Slots persist per-browser-profile in IndexedDB (zips are large) and are NOT
+  // synced — this is the performer's personal quick-switch bar.
+
+  // Reactive occupancy mirror (red/green). Seeded from IDB on mount; mutated by
+  // the slot ops below so the bar re-colours without an IDB round-trip.
+  let slotOccupied = $state<boolean[]>(new Array(SLOT_COUNT).fill(false));
+  // Open per-slot context menu (right-click). null = closed.
+  let slotMenu = $state<{ index: number; x: number; y: number } | null>(null);
+  let slotBusy = $state(false);
+
+  /** Refresh the whole bar's red/green state from IndexedDB. */
+  async function refreshSlotOccupancy(): Promise<void> {
+    slotOccupied = await listOccupied();
+  }
+
+  /** LEFT-click a slot: green → instantly load its stored perf zip; red →
+   *  open the load picker (a convenience so an empty slot is also clickable). */
+  async function onSlotClick(index: number): Promise<void> {
+    if (slotBusy) return;
+    if (slotOccupied[index]) {
+      await loadSlot(index);
+    } else {
+      await loadIntoSlot(index);
+    }
+  }
+
+  /** RIGHT-click a slot: open its context menu at the cursor. */
+  function onSlotContextMenu(event: MouseEvent, index: number): void {
+    event.preventDefault();
+    event.stopPropagation();
+    slotMenu = { index, x: event.clientX, y: event.clientY };
+  }
+
+  function closeSlotMenu(): void {
+    slotMenu = null;
+  }
+
+  /** Load (or Replace) a slot from a picked performance .zip → store in IDB. */
+  async function loadIntoSlot(index: number): Promise<void> {
+    closeSlotMenu();
+    error = null;
+    if (slotBusy) return;
+    slotBusy = true;
+    try {
+      const file = await pickPerformanceZipFile();
+      if (!file) { trace(`slot ${index + 1}: load cancelled`); return; }
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      // Validate it's a real performance zip before committing the slot.
+      parsePerformanceZip(bytes);
+      await putSlot(index, bytes, file.name);
+      slotOccupied[index] = true;
+      trace(`slot ${index + 1}: stored "${file.name}" (${(bytes.length / 1024).toFixed(0)} KB)`);
+    } catch (e) {
+      error = `Slot ${index + 1} load failed: ${e instanceof Error ? e.message : String(e)}`;
+      trace(`slot ${index + 1} load failed: ${String(e)}`);
+    } finally {
+      slotBusy = false;
+    }
+  }
+
+  /** Instantly switch to a green slot's stored performance (no file dialog). */
+  async function loadSlot(index: number): Promise<void> {
+    closeSlotMenu();
+    error = null;
+    if (slotBusy) return;
+    slotBusy = true;
+    try {
+      const rec = await getSlot(index);
+      if (!rec) { slotOccupied[index] = false; trace(`slot ${index + 1}: empty`); return; }
+      await loadPerformanceZipBytes(rec.zipBytes);
+      trace(`slot ${index + 1}: loaded "${rec.label ?? 'preset'}"`);
+    } catch (e) {
+      const msg = e instanceof BundleParseError || e instanceof EnvelopeParseError ? e.message : (e instanceof Error ? e.message : String(e));
+      error = `Slot ${index + 1} switch failed: ${msg}`;
+      trace(`slot ${index + 1} switch failed: ${msg}`);
+    } finally {
+      slotBusy = false;
+    }
+  }
+
+  /** Clear a slot back to empty (red). */
+  async function clearSlot(index: number): Promise<void> {
+    closeSlotMenu();
+    if (slotBusy) return;
+    slotBusy = true;
+    try {
+      await clearSlotStore(index);
+      slotOccupied[index] = false;
+      trace(`slot ${index + 1}: cleared`);
+    } finally {
+      slotBusy = false;
+    }
+  }
+
+  /** Save Set: bundle every occupied slot's perf zip + the MIDI map into one
+   *  `.set` (zip-of-zips) and download it. */
+  async function saveSet(): Promise<void> {
+    error = null;
+    if (slotBusy) return;
+    slotBusy = true;
+    try {
+      const bytes = await buildSetBytes();
+      const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/zip' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'preset-bar.set';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch { /* */ } }, 60_000);
+      trace(`saved .set (${(bytes.length / 1024).toFixed(0)} KB)`);
+    } catch (e) {
+      error = `Save Set failed: ${e instanceof Error ? e.message : String(e)}`;
+      trace(`save set failed: ${String(e)}`);
+    } finally {
+      slotBusy = false;
+    }
+  }
+
+  /** Build the `.set` bytes from the current slot bar + MIDI map. Exposed for
+   *  the e2e hook so the round-trip test can capture bytes without a download. */
+  async function buildSetBytes(): Promise<Uint8Array> {
+    const slots: SetSlot[] = [];
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const rec = await getSlot(i);
+      if (rec) slots.push({ index: i, zipBytes: rec.zipBytes, label: rec.label });
+    }
+    return buildSet({ slots, midiBindings: exportMidiBindings(), savedAt: Date.now() });
+  }
+
+  /** Load Set: replace ALL slot contents from a picked `.set`. */
+  async function loadSet(): Promise<void> {
+    error = null;
+    if (slotBusy) return;
+    slotBusy = true;
+    try {
+      const file = await pickFile('.set,.zip,application/zip');
+      if (!file) { trace('load set cancelled'); return; }
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await loadSetBytes(bytes);
+    } catch (e) {
+      error = `Load Set failed: ${e instanceof Error ? e.message : String(e)}`;
+      trace(`load set failed: ${String(e)}`);
+    } finally {
+      slotBusy = false;
+    }
+  }
+
+  /** Apply a parsed `.set` to the slot bar: replace ALL slots (occupied ones
+   *  from the set → green; absent ones cleared → red) + restore the MIDI map.
+   *  Shared by the file picker + the e2e hook (which passes captured bytes). */
+  async function loadSetBytes(bytes: Uint8Array): Promise<void> {
+    const set = parseSet(bytes);
+    const fromSet = new Map(set.slots.map((s) => [s.index, s] as const));
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const s = fromSet.get(i);
+      if (s) {
+        await putSlot(i, s.zipBytes, s.label);
+        slotOccupied[i] = true;
+      } else {
+        await clearSlotStore(i);
+        slotOccupied[i] = false;
+      }
+    }
+    // Restore the MIDI Learn map (merge so other patches' bindings survive).
+    if (set.midiBindings.length > 0) {
+      importMidiBindings(mergeMidiBindings(exportMidiBindings(), set.midiBindings));
+    }
+    trace(`loaded .set (${set.slots.length} slot${set.slots.length === 1 ? '' : 's'})`);
   }
 
   // ---------------- Mirror Svelte Flow events back to the patch graph ----------------
@@ -4469,6 +4762,9 @@
     // Seed from the doc (a rack that already carries an aspect, e.g. a
     // collaborator joining a 16:9 rack). Legacy / fresh racks stay 4:3.
     onSettings();
+    // Seed the preset-slot bar's red/green state from IndexedDB (this browser
+    // profile's quick-switch slots persist across reloads).
+    void refreshSlotOccupancy();
   });
 
   onDestroy(() => {
@@ -4490,6 +4786,40 @@
 <div class="root" class:lasso-mode={lassoMode} data-testid="canvas-root">
   <header class="topbar">
     <h1>2600hz</h1>
+    <!-- Quick-switch PRESET SLOTS (top-left): five numbered buttons.
+         EMPTY = red, OCCUPIED = green. Left-click a green slot to switch to it
+         instantly; right-click any slot for Load / Replace / Clear. Save Set /
+         Load Set bundle the whole bar (+ MIDI map) as a portable .set file. -->
+    <div class="preset-bar" data-testid="preset-slot-bar">
+      {#each Array(SLOT_COUNT) as _, i (i)}
+        <button
+          class="slot"
+          class:occupied={slotOccupied[i]}
+          data-testid={`preset-slot-${i + 1}`}
+          data-occupied={slotOccupied[i] ? 'true' : 'false'}
+          disabled={slotBusy}
+          onclick={() => onSlotClick(i)}
+          oncontextmenu={(e) => onSlotContextMenu(e, i)}
+          title={slotOccupied[i]
+            ? `Preset slot ${i + 1} (loaded) — click to switch, right-click to replace/clear`
+            : `Preset slot ${i + 1} (empty) — right-click to load a performance .zip`}
+        >{i + 1}</button>
+      {/each}
+      <button
+        class="set-btn"
+        data-testid="save-set-btn"
+        disabled={slotBusy}
+        onclick={saveSet}
+        title="Save the whole preset bar (all loaded slots + MIDI mapping) as a portable .set file"
+      >Save Set</button>
+      <button
+        class="set-btn"
+        data-testid="load-set-btn"
+        disabled={slotBusy}
+        onclick={loadSet}
+        title="Load a .set file — repopulates all five preset slots + restores the MIDI mapping"
+      >Load Set</button>
+    </div>
     <div class="actions">
       <button onclick={openPaletteFromButton}>+ Add module</button>
       <!-- "Load example…" is an ACTION menu, not a persistent value: each
@@ -4526,6 +4856,24 @@
         data-testid="load-perf-zip-btn"
         title="Load a portable performance .zip into a fresh rack — restores the patch + ALL embedded media + mappings on any machine (no re-pick needed)."
       >Load Perf (.zip)</button>
+      <!-- "Raw JSON" — lightweight envelope-only export/import (no media/zip).
+           ACTION menu (like "Load example…"): each option fires its handler,
+           then onRawJsonChosen() resets the value to the placeholder so the
+           same action can be re-picked. Restores the raw-JSON convenience the
+           old Save/Load buttons gave (removed in #771). Sits in the top-RIGHT
+           actions cluster, clear of the top-LEFT preset slots. -->
+      <select
+        class="raw-json"
+        data-testid="raw-json-select"
+        aria-label="Raw JSON export / import"
+        bind:value={rawJsonChoice}
+        onchange={(e) => onRawJsonChosen(e.currentTarget.value as RawJsonKey)}
+        title="Export the current patch as a raw JSON envelope (graph only, no media), or import one."
+      >
+        <option value="" disabled selected>Raw JSON</option>
+        <option value="export-json">Export JSON (only)</option>
+        <option value="import-json">Import JSON</option>
+      </select>
       <AspectToggle />
       <SkinSwitcher />
       <!-- Electra One on EVERY rack (incl. the anonymous `/` scratch canvas) —
@@ -4553,6 +4901,33 @@
       {/if}
     </div>
   </header>
+
+  <!-- Per-slot right-click context menu. A full-screen transparent backdrop
+       closes it on any outside click / right-click. -->
+  {#if slotMenu}
+    {@const sm = slotMenu}
+    <div
+      class="slot-menu-backdrop"
+      role="presentation"
+      onclick={closeSlotMenu}
+      oncontextmenu={(e) => { e.preventDefault(); closeSlotMenu(); }}
+    ></div>
+    <div
+      class="slot-menu"
+      data-testid="preset-slot-menu"
+      style={`left:${sm.x}px; top:${sm.y}px;`}
+      role="menu"
+    >
+      <div class="slot-menu-title">Slot {sm.index + 1}</div>
+      {#if slotOccupied[sm.index]}
+        <button role="menuitem" data-testid="slot-menu-switch" onclick={() => loadSlot(sm.index)}>Switch to this</button>
+        <button role="menuitem" data-testid="slot-menu-replace" onclick={() => loadIntoSlot(sm.index)}>Replace with…</button>
+        <button role="menuitem" data-testid="slot-menu-clear" onclick={() => clearSlot(sm.index)}>Clear slot</button>
+      {:else}
+        <button role="menuitem" data-testid="slot-menu-load" onclick={() => loadIntoSlot(sm.index)}>Load…</button>
+      {/if}
+    </div>
+  {/if}
 
   {#if error}
     <pre class="error">{error}</pre>
@@ -4582,22 +4957,26 @@
     >
       <!-- Base canvas: the fine 16px dot field (legacy look, sets the bg fill). -->
       <Background id="fine" size={1} gap={16} bgColor="#0e1116" patternColor="#1f242c" />
-      <!-- Virtual-rack grid (Phase 2): a RING overlay aligned to the 180px rack
-           unit (--rack-unit) in BOTH axes, so it lines up with the 1u×1u tile
-           cards snap to. Pans/zooms WITH the canvas (it's a <Background>). Drawn
-           as a RING, not a filled dot: `size={15}` → DotPattern circle radius
-           7.5, and `.rack-ring` (global.css) paints it `fill:none` + a 5px
-           stroke → the visible ring spans r5..r10 = 20px outer Ø with a 10px
-           uncoloured hole. Colour is --rack-grid-color (theme-aware
-           --bg-grid-dot), so it follows the active skin (e.g. MATRIXCOWBOY →
-           phosphor green). No bgColor → transparent, layering over the fine
-           field rather than repainting it. -->
-      <Background
-        id="rack"
-        gap={180}
-        size={15}
-        patternClass="rack-ring"
-      />
+      <!-- Virtual-rack grid (Phase 2): a true RING overlay aligned to the 180px
+           rack unit (--rack-unit) in BOTH axes, so it lines up with the 1u×1u
+           tile cards snap to. Pans/zooms WITH the canvas (each is a
+           <Background>).
+
+           Built as an ANNULUS from two FILLED dot layers (NOT a stroked
+           circle): SvelteFlow's DotPattern anchors the <circle> at the
+           pattern-cell origin, and STROKING it clips at the cell edges → warped
+           flat-sided "rounded squares". FILLED dots tile cleanly. So:
+             - ring layer  — filled dot, 20px outer Ø, --rack-grid-color
+               (theme-aware --bg-grid-dot; follows the active skin, e.g.
+               MATRIXCOWBOY → phosphor green).
+             - hole layer  — filled dot, 10px Ø, painted the canvas background
+               (--bg) and drawn ON TOP to punch the centre out → a clean 20px/10px
+               ring at every 180px rack intersection.
+           Both DotPattern circles centre on the SAME pattern origin (cx=cy=r,
+           then -r offset), so the 10px hole sits dead-centre on the 20px ring
+           regardless of size → concentric annulus. -->
+      <Background id="rack-ring" gap={180} size={20} patternColor="var(--rack-grid-color)" />
+      <Background id="rack-hole" gap={180} size={10} patternColor="var(--bg)" />
       <Controls>
         {#snippet before()}
           <!-- Flip rack (rear view): flips every card over its own Y axis in
@@ -4885,6 +5264,24 @@
     padding: 0.8rem 1.25rem;
     border-bottom: 1px solid #1f242c;
   }
+  /* Never let the topbar's flex row squeeze its controls. The preset-slot bar
+     pushed the total control width past the 1280px viewport; the default
+     flex-shrink:1 then compressed each control below its content width, and the
+     ones with `white-space: normal` (the theme-picker dropdown + the aspect /
+     Electra buttons, which live in CHILD components and so can't be reached by
+     a `.topbar button` rule scoped to this file) wrapped to two lines. That
+     ~doubled the row height, grew the topbar by a non-integer amount, and
+     shifted the SvelteFlow canvas + every card down to a fractional Y —
+     rastering all text-heavy module cards ±1px on CI (the documented VRT
+     1px-layout-rounding flake). Pinning every direct child to flex-shrink:0
+     keeps each control at its natural single-line height, so the topbar (and
+     the canvas origin) stays exactly what it was before the bar existed and the
+     per-card baselines still match with no regeneration. The row may extend a
+     few px past the viewport edge — harmless on a fixed-height header, and far
+     better than a vertical wrap that moves the canvas. */
+  .topbar > * {
+    flex-shrink: 0;
+  }
   .topbar h1 {
     margin: 0;
     font-weight: 500;
@@ -4950,9 +5347,92 @@
     background: #2a2f3a;
     color: var(--text);
   }
+  /* "Raw JSON" dropdown — neutral utility control (matches .topbar button,
+     not the accent .load-example): it's a convenience export/import, not a
+     curated-demo loader. */
+  .topbar select.raw-json {
+    background: #2a2f3a;
+    color: var(--text);
+    border: 1px solid #404652;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .topbar select.raw-json option {
+    background: #2a2f3a;
+    color: var(--text);
+  }
   .topbar button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+  /* ---- Preset SLOT bar (top-left) ---- */
+  .topbar .preset-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .topbar .preset-bar .slot {
+    /* Compact, fixed-width numbered button. EMPTY = red, OCCUPIED = green. */
+    width: 1.7rem;
+    padding: 0.3rem 0;
+    text-align: center;
+    font-weight: 600;
+    /* Empty (default): red. */
+    background: #5a2230;
+    border-color: #8a3346;
+    color: #ffd7df;
+  }
+  .topbar .preset-bar .slot.occupied {
+    background: #1f5a32;
+    border-color: #2f8a4c;
+    color: #d7ffe2;
+  }
+  .topbar .preset-bar .slot:hover:not(:disabled) {
+    filter: brightness(1.2);
+  }
+  .topbar .preset-bar .set-btn {
+    margin-left: 0.2rem;
+  }
+  /* ---- Per-slot right-click context menu ---- */
+  .slot-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    background: transparent;
+  }
+  .slot-menu {
+    position: fixed;
+    z-index: 9999;
+    min-width: 9rem;
+    background: #2a2f3a;
+    border: 1px solid #404652;
+    border-radius: 5px;
+    padding: 0.25rem;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .slot-menu .slot-menu-title {
+    color: var(--text-dim);
+    font-size: 0.72rem;
+    padding: 0.2rem 0.45rem;
+  }
+  .slot-menu button {
+    background: transparent;
+    color: var(--text);
+    border: none;
+    text-align: left;
+    padding: 0.35rem 0.45rem;
+    font-size: 0.8rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .slot-menu button:hover {
+    background: #3a4150;
   }
   .topbar .signin-link {
     background: #2a2f3a;

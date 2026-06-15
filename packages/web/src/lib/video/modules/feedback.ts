@@ -103,12 +103,12 @@ export const feedbackDef: VideoModuleDef = {
     { id: 'in',      type: 'video' },
     // paramTarget == port.id keeps docs manifest in sync; bridge uses
     // port id directly so the runtime works either way.
-    { id: 'wet',     type: 'cv', paramTarget: 'wet' },
-    { id: 'decay',   type: 'cv', paramTarget: 'decay' },
-    { id: 'zoom',    type: 'cv', paramTarget: 'zoom' },
-    { id: 'rotate',  type: 'cv', paramTarget: 'rotate' },
-    { id: 'offsetX', type: 'cv', paramTarget: 'offsetX' },
-    { id: 'offsetY', type: 'cv', paramTarget: 'offsetY' },
+    { id: 'wet',     type: 'cv', paramTarget: 'wet', cvScale: { mode: 'linear' } },
+    { id: 'decay',   type: 'cv', paramTarget: 'decay', cvScale: { mode: 'linear' } },
+    { id: 'zoom',    type: 'cv', paramTarget: 'zoom', cvScale: { mode: 'linear' } },
+    { id: 'rotate',  type: 'cv', paramTarget: 'rotate', cvScale: { mode: 'linear' } },
+    { id: 'offsetX', type: 'cv', paramTarget: 'offsetX', cvScale: { mode: 'linear' } },
+    { id: 'offsetY', type: 'cv', paramTarget: 'offsetY', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'video' },

@@ -76,6 +76,11 @@ test('clicking the patch-trigger opens the menu; hover alone does not', async ({
 });
 
 test('INPUT / OUTPUT drill overlay-replaces root in place; back returns', async ({ page }) => {
+  // CI-load robustness: spawns two modules then drives the click → body-portal
+  // mount → aria-hidden flip → drill/back sequence, each step a default-timeout
+  // assertion. Under CI load the portal-mount/aria flip races the default
+  // budget (patch-menu-ux:79 timing flake). Give the whole sequence room.
+  test.setTimeout(60_000);
   await spawnSeqAdsr(page);
   await openFrom(page, 'adsr', 'left');
 

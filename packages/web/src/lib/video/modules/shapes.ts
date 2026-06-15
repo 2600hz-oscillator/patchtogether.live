@@ -122,10 +122,10 @@ export const shapesDef: VideoModuleDef = {
     // Per-param CV inputs. Mirrors LINES (PR-65): port id == param id so
     // the cross-domain CV bridge in PatchEngine routes audio-side cv
     // signals to setParam(portId).
-    { id: 'shape',  type: 'cv', paramTarget: 'shape'  },
-    { id: 'tile',   type: 'cv', paramTarget: 'tile'   },
-    { id: 'rotate', type: 'cv', paramTarget: 'rotate' },
-    { id: 'zoom',   type: 'cv', paramTarget: 'zoom'   },
+    { id: 'shape',  type: 'cv', paramTarget: 'shape', cvScale: { mode: 'linear' }  },
+    { id: 'tile',   type: 'cv', paramTarget: 'tile', cvScale: { mode: 'linear' }   },
+    { id: 'rotate', type: 'cv', paramTarget: 'rotate', cvScale: { mode: 'linear' } },
+    { id: 'zoom',   type: 'cv', paramTarget: 'zoom', cvScale: { mode: 'log' }   },
   ],
   outputs: [
     { id: 'out', type: 'mono-video' },

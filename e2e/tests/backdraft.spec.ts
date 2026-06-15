@@ -315,6 +315,11 @@ test.describe('BACKDRAFT — video feedback generator', () => {
   });
 
   test('MIRROR X / MIRROR Y fold the output (kaleidoscope) + gate toggles the param', async ({ page }) => {
+    // CI-load robustness: this heavy video-feedback spec reads the WebGL output
+    // canvas several times under the SwiftShader software renderer (far slower
+    // than a real GPU). The flat 30s default timed out under CI load (#790).
+    // Match the sibling WebGL-heavy specs' generous per-test budget.
+    test.setTimeout(90_000);
     // Drive BACKDRAFT with an ASYMMETRIC source (a single small off-centre
     // shape) and NO feedback, so the output is essentially the folded source.
     // We then read the video-out canvas and assert the fold symmetries:

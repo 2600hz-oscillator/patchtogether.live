@@ -287,22 +287,29 @@ test('score: dynamic marker scales the env output amplitude', async ({ page }) =
     });
   });
 
-  await page.waitForTimeout(500);
-  const dynScale = await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __engine?: () => {
-        read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
-      } | null;
-      __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-    };
-    const eng = w.__engine?.();
-    if (!eng) return -1;
-    const v = eng.read(w.__patch.nodes['score'], 'dynamicScale');
-    return typeof v === 'number' ? v : -1;
-  });
-  // ff -> 0.95
-  expect(dynScale).toBeGreaterThan(0.85);
-  expect(dynScale).toBeLessThan(1.05);
+  // CI-load robustness: dynamicScale is a DETERMINISTIC value (ff → 0.95), but
+  // a fixed 500ms wait raced the engine picking up the n.data write under CI
+  // load (score env-amplitude `toBeGreaterThan` flake). Poll the live read
+  // until it settles into the expected band instead of a one-shot read after a
+  // fixed sleep — same correctness assertion, tolerant of slow propagation.
+  const readDynScale = () =>
+    page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __engine?: () => {
+          read: (node: { id: string; type: string; domain: string }, key: string) => unknown;
+        } | null;
+        __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
+      };
+      const eng = w.__engine?.();
+      if (!eng) return -1;
+      const v = eng.read(w.__patch.nodes['score'], 'dynamicScale');
+      return typeof v === 'number' ? v : -1;
+    });
+  // ff -> 0.95 (band [0.85, 1.05]); poll until the engine reports it.
+  await expect
+    .poll(readDynScale, { timeout: 10_000 })
+    .toBeGreaterThan(0.85);
+  expect(await readDynScale()).toBeLessThan(1.05);
 });
 
 test('score: bar overflow rejected — second whole note in the same bar does NOT add', async ({ page }) => {

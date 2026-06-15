@@ -24,7 +24,9 @@
   // the on-card preview pull so the captured canvas matches the frozen FBO.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import { type NodeProps } from '@xyflow/svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
@@ -161,6 +163,23 @@
   const VIDEO_IN_PORTS: ReadonlyArray<{ id: 'inA' | 'inB'; label: string }> = [
     { id: 'inA', label: 'VID A' },
     { id: 'inB', label: 'VID B' },
+  ];
+
+  // ---- PatchPanel ports (NO raw side handles — the #767 yellow drill-down
+  //      standard). Port `id`s are BYTE-IDENTICAL to the toybox def + the prior
+  //      raw <Handle>s (cv1..cv6 / inA / inB / out) so the CV bridge + persisted
+  //      edges route unchanged; only the rendering moved into the panel. The 6
+  //      generic mod inputs are coloured `cv` (the def widens their cable TYPE to
+  //      modsignal, but they're modulation inputs — `cv` is the panel's row
+  //      colour, mirroring the old --cable-cv handles); the video I/O is `video`.
+  //      These are ONLY the OUTER module ports — the internal combine-graph node
+  //      editor's own jacks (SVG, not <Handle>) are untouched. ----
+  const inputs: PortDescriptor[] = [
+    ...CV_PORT_IDS.map((cvId, i) => ({ id: cvId, label: `IN ${i + 1}`, cable: 'cv' })),
+    ...VIDEO_IN_PORTS.map((vp) => ({ id: vp.id, label: vp.label, cable: 'video' })),
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT', cable: 'video' },
   ];
 
   let { id, data }: NodeProps = $props();
@@ -372,6 +391,23 @@
     setLayerParam(id, activeLayer, pid, v);
     bumpRev();
   };
+
+  // ───── MIDI / control-surface paramId: pin per-layer knobs to the ACTIVE layer
+  //
+  // Material fields ('scale'/'rotX'/…) and content uniforms live PER LAYER, but a
+  // BARE paramId carries no index. resolveToyboxParam (the surface/MIDI adapter)
+  // resolves a bare material id against the FIRST OBJ layer / first owning content
+  // layer — so a model the user has on layer 2/3/4 (or when the active layer is
+  // not the first OBJ layer) was driven on the WRONG layer, i.e. "toybox scale on
+  // a model assigned to a control surface doesn't work". We emit the LAYER-
+  // QUALIFIED id ('layer:<activeLayer>:<param>') for these knobs so the binding
+  // sticks to the layer it was learned on (resolveLayerQualified, audit M4). The
+  // adapter keeps the bare→first-layer fallback, so older saved bindings still
+  // resolve. (Combine + cvN:scale/offset knobs are already qualified by their own
+  // schemes and are unaffected.)
+  function layerParam(param: string): string {
+    return `layer:${activeLayer}:${param}`;
+  }
 
   // ───────────────────── IMAGE / VIDEO INPUT LAYERS (#39) ─────────────────────
   //
@@ -2029,42 +2065,11 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="TOYBOX" />
 
-  <!-- Video output. -->
-  <Handle
-    type="source"
-    position={Position.Right}
-    id="out"
-    style="top: 56px; --handle-color: var(--cable-video);"
-  />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
-  <!-- The 6 generic modulation input ports (port ids cv1..cv6; LABELLED IN1..
-       IN6 in the UI). Real input handles — the outer canvas draws cables to
-       them; each is shaped (SCALE/OFFSET) + routed to a param in the CV section.
-       Stacked down the left edge. Typed `modsignal` so cv/gate/audio connect. -->
-  {#each CV_PORT_IDS as cvId, i (cvId)}
-    <Handle
-      type="target"
-      position={Position.Left}
-      id={cvId}
-      style={`top: ${44 + i * 22}px; --handle-color: var(--cable-cv);`}
-    />
-    <span class="port-label left" style={`top: ${38 + i * 22}px;`}>IN{i + 1}</span>
-  {/each}
-
-  <!-- Two VIDEO input ports (ids inA / inB; LABELLED VID A / VID B). A patched
-       feed (e.g. ACIDWARP / CAMERA / another module's video out) reaches a
-       VIDEO-kind layer that selects 'In A'/'In B' as its source. Stacked below
-       the 6 cv ports; the video cable colour distinguishes them. -->
-  {#each VIDEO_IN_PORTS as vp, i (vp.id)}
-    <Handle
-      type="target"
-      position={Position.Left}
-      id={vp.id}
-      style={`top: ${44 + (CV_PORT_IDS.length + i) * 22 + 8}px; --handle-color: var(--cable-video);`}
-    />
-    <span class="port-label left" style={`top: ${38 + (CV_PORT_IDS.length + i) * 22 + 8}px;`}>{vp.label}</span>
-  {/each}
+  <!-- All EXTERNAL module ports (cv1..cv6 / inA / inB / out) patch through the
+       shared yellow drill-down PatchPanel (#767 standard) — NO raw side jacks,
+       and the rear-view back panel works when the rack is flipped. PatchPanel's
+       host is display:contents, so the card layout below is unchanged. -->
+  <PatchPanel nodeId={id} {inputs} {outputs}>
 
   <!-- 3-COLUMN BODY: LEFT = preview + layer editor, CENTER = combine graph,
        RIGHT = the 6-input CV/modulation section. -->
@@ -2374,19 +2379,19 @@
         {#if !projUseCamera}
           <div class="knob-grid" data-testid="toybox-proj-controls">
             <Knob value={matVal('projPosX')} min={-5} max={5} defaultValue={0}
-              label="POS X" curve="linear" onchange={setMat('projPosX')} moduleId={id} paramId="projPosX" />
+              label="POS X" curve="linear" onchange={setMat('projPosX')} moduleId={id} paramId={layerParam('projPosX')} />
             <Knob value={matVal('projPosY')} min={-5} max={5} defaultValue={0}
-              label="POS Y" curve="linear" onchange={setMat('projPosY')} moduleId={id} paramId="projPosY" />
+              label="POS Y" curve="linear" onchange={setMat('projPosY')} moduleId={id} paramId={layerParam('projPosY')} />
             <Knob value={matVal('projPosZ')} min={-5} max={5} defaultValue={2.5}
-              label="POS Z" curve="linear" onchange={setMat('projPosZ')} moduleId={id} paramId="projPosZ" />
+              label="POS Z" curve="linear" onchange={setMat('projPosZ')} moduleId={id} paramId={layerParam('projPosZ')} />
             <Knob value={matVal('projDirX')} min={-1} max={1} defaultValue={0}
-              label="DIR X" curve="linear" onchange={setMat('projDirX')} moduleId={id} paramId="projDirX" />
+              label="DIR X" curve="linear" onchange={setMat('projDirX')} moduleId={id} paramId={layerParam('projDirX')} />
             <Knob value={matVal('projDirY')} min={-1} max={1} defaultValue={0}
-              label="DIR Y" curve="linear" onchange={setMat('projDirY')} moduleId={id} paramId="projDirY" />
+              label="DIR Y" curve="linear" onchange={setMat('projDirY')} moduleId={id} paramId={layerParam('projDirY')} />
             <Knob value={matVal('projDirZ')} min={-1} max={1} defaultValue={-1}
-              label="DIR Z" curve="linear" onchange={setMat('projDirZ')} moduleId={id} paramId="projDirZ" />
+              label="DIR Z" curve="linear" onchange={setMat('projDirZ')} moduleId={id} paramId={layerParam('projDirZ')} />
             <Knob value={matVal('projFov') || 0.8726646} min={0.2} max={2.6} defaultValue={0.8726646}
-              label="FOV" curve="linear" onchange={setMat('projFov')} moduleId={id} paramId="projFov" />
+              label="FOV" curve="linear" onchange={setMat('projFov')} moduleId={id} paramId={layerParam('projFov')} />
           </div>
         {/if}
       {/if}
@@ -2394,23 +2399,23 @@
 
     <div class="knob-grid" data-testid="toybox-controls">
       <Knob value={matVal('rotX')} min={-3.14159} max={3.14159} defaultValue={0.3}
-        label="ROT X" curve="linear" onchange={setMat('rotX')} moduleId={id} paramId="rotX" />
+        label="ROT X" curve="linear" onchange={setMat('rotX')} moduleId={id} paramId={layerParam('rotX')} />
       <Knob value={matVal('rotY')} min={-3.14159} max={3.14159} defaultValue={0.6}
-        label="ROT Y" curve="linear" onchange={setMat('rotY')} moduleId={id} paramId="rotY" />
+        label="ROT Y" curve="linear" onchange={setMat('rotY')} moduleId={id} paramId={layerParam('rotY')} />
       <Knob value={matVal('rotZ')} min={-3.14159} max={3.14159} defaultValue={0}
-        label="ROT Z" curve="linear" onchange={setMat('rotZ')} moduleId={id} paramId="rotZ" />
+        label="ROT Z" curve="linear" onchange={setMat('rotZ')} moduleId={id} paramId={layerParam('rotZ')} />
       <Knob value={matVal('scale')} min={0.25} max={3} defaultValue={1}
-        label="SCALE" curve="linear" onchange={setMat('scale')} moduleId={id} paramId="scale" />
+        label="SCALE" curve="linear" onchange={setMat('scale')} moduleId={id} paramId={layerParam('scale')} />
       <Knob value={matVal('spin')} min={0} max={3} defaultValue={0.4}
-        label="SPIN" curve="linear" onchange={setMat('spin')} moduleId={id} paramId="spin" />
+        label="SPIN" curve="linear" onchange={setMat('spin')} moduleId={id} paramId={layerParam('spin')} />
       <Knob value={matVal('tintR')} min={0} max={1} defaultValue={1}
-        label="TINT R" curve="linear" onchange={setMat('tintR')} moduleId={id} paramId="tintR" />
+        label="TINT R" curve="linear" onchange={setMat('tintR')} moduleId={id} paramId={layerParam('tintR')} />
       <Knob value={matVal('tintG')} min={0} max={1} defaultValue={1}
-        label="TINT G" curve="linear" onchange={setMat('tintG')} moduleId={id} paramId="tintG" />
+        label="TINT G" curve="linear" onchange={setMat('tintG')} moduleId={id} paramId={layerParam('tintG')} />
       <Knob value={matVal('tintB')} min={0} max={1} defaultValue={1}
-        label="TINT B" curve="linear" onchange={setMat('tintB')} moduleId={id} paramId="tintB" />
+        label="TINT B" curve="linear" onchange={setMat('tintB')} moduleId={id} paramId={layerParam('tintB')} />
       <Knob value={surfaceMixVal()} min={0} max={1} defaultValue={1}
-        label="SURF MIX" curve="linear" onchange={setMat('surfaceMix')} moduleId={id} paramId="surfaceMix" />
+        label="SURF MIX" curve="linear" onchange={setMat('surfaceMix')} moduleId={id} paramId={layerParam('surfaceMix')} />
     </div>
   {:else if currentKind === 'gen' || currentKind === 'shader' || currentKind === 'frag'}
     <div class="content-row">
@@ -2470,7 +2475,7 @@
             value={paramVal(p.id)}
             min={p.min} max={p.max} defaultValue={p.default}
             label={p.label} curve={p.curve}
-            onchange={setParam(p.id)} moduleId={id} paramId={p.id}
+            onchange={setParam(p.id)} moduleId={id} paramId={layerParam(p.id)}
           />
         {/each}
       {/if}
@@ -2892,6 +2897,7 @@
   </div>
   </div><!-- /toybox-col-right -->
   </div><!-- /toybox-cols -->
+  </PatchPanel>
 </div>
 
 <style>
@@ -2917,8 +2923,11 @@
     display: flex;
     align-items: flex-start;
     gap: 1px;
-    /* clear the left input-port labels (IN1..IN6 down the edge). */
-    padding-left: 30px;
+    /* Clear the PatchPanel's top-left/right trigger affordances (18px tall,
+       inset from the corners) — ports now patch through the panel, not raw
+       side jacks, so the old left-edge IN1..IN6 label gutter is retired. */
+    margin-top: 8px;
+    padding-left: 8px;
   }
   .toybox-col {
     display: flex;
@@ -2946,15 +2955,6 @@
     border-radius: 2px 2px 0 0;
     background: var(--cable-video);
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.right { right: 14px; }
-  .port-label.left { left: 14px; }
   .screen-wrap {
     margin: 12px auto 8px;
     width: 200px;

@@ -489,4 +489,33 @@ describe('portConnections', () => {
     expect(outputs.size).toBe(0);
     expect(inputs.get('cutoff')).toBeUndefined();
   });
+
+  // Regression: the rear-view back panel derives port-connection status for
+  // EVERY card on EVERY render (front-view used to evaluate this lazily, only on
+  // the open patch menu). A half-formed edge in the live store — endpoints
+  // absent, or still flat strings rather than `{ nodeId, portId }` objects mid-
+  // reconcile — must be SKIPPED, not throw: a throw here tore down every card on
+  // screen (SvelteFlow unmounts the whole NodeRenderer). See bentbox.spec /
+  // rear-view-patching regression.
+  it('skips malformed edges (missing / non-object endpoints) without throwing', () => {
+    const nodes = {
+      lfo1: makeNode('lfo1', 'lfo'),
+      filter1: makeNode('filter1', 'filter'),
+    };
+    const edges = {
+      // both endpoints undefined
+      bad1: { id: 'bad1', source: undefined, target: undefined } as unknown as Edge,
+      // endpoints are flat strings, not { nodeId, portId } objects
+      bad2: { id: 'bad2', source: 'lfo1', target: 'filter1' } as unknown as Edge,
+      // one good edge alongside the bad ones still resolves
+      good: edge('good', { nodeId: 'lfo1', portId: 'phase0' }, { nodeId: 'filter1', portId: 'cutoff' }),
+    };
+    let result!: ReturnType<typeof portConnections>;
+    expect(() => {
+      result = portConnections(edges, 'filter1', nodes, defs({ lfo: lfoDef, filter: filterDef }));
+    }).not.toThrow();
+    // The single well-formed edge is still mapped; the malformed ones are dropped.
+    expect(result.inputs.get('cutoff')).toEqual(['LFO.PHASE0']);
+    expect(result.outputs.size).toBe(0);
+  });
 });

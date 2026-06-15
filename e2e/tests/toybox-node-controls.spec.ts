@@ -359,16 +359,20 @@ test.describe('TOYBOX node controls — deleting any node kind never crashes', (
       // DELETE it (the × affordance) — the reported crash path.
       await page.locator('[data-testid="toybox-delnode-op"]').click({ force: true, noWaitAfter: true });
       // Node is gone from node.data…
+      // CI-load robustness: the per-kind delete+render round runs 17× under the
+      // SwiftShader software renderer; the per-iteration 6s/default-5s waits race
+      // a slow software frame (toybox-node-controls:341 flake). Widen the per-
+      // iteration heavy-card waits (the overall test.setTimeout is already maxed).
       await expect
         .poll(() => page.evaluate(() => {
           const w = globalThis as unknown as PatchGlobal;
           return (w.__patch.nodes['tb']?.data?.combine?.nodes ?? []).some((n) => n.id === 'op');
-        }), { timeout: 6_000 })
+        }), { timeout: 15_000 })
         .toBe(false);
       // …and the engine is still alive: a frame still renders to the canvas.
       await page.evaluate(() => (globalThis as unknown as PatchGlobal).__toyboxFreeze?.(2.5));
       await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
-      await expect(page.locator(CANVAS)).toBeVisible();
+      await expect(page.locator(CANVAS)).toBeVisible({ timeout: 15_000 });
       // Fail fast with the offending kind if anything threw this round.
       expect(errors.filter((e) => !e.includes('AudioContext')), `no crash deleting ${kind}`).toEqual([]);
     }

@@ -185,14 +185,20 @@ export const outlinesDef: VideoModuleDef = {
     { id: OUTLINES_COLLIDE_PORT_ID, type: 'gate', paramTarget: OUTLINES_COLLIDE_PARAM_ID },
     // Per-param CV — port id MUST equal the param id (the cross-domain CV
     // bridge routes onto setParam(portId)). `rate` is knob-only (no port).
-    { id: 'd',        type: 'cv', paramTarget: 'd' },
-    { id: 'v',        type: 'cv', paramTarget: 'v' },
-    { id: 'spd',      type: 'cv', paramTarget: 'spd' },
-    { id: 'decay',    type: 'cv', paramTarget: 'decay' },
+    // These are CONTINUOUS knob modulators, so each MUST carry a `cvScale`
+    // hint: the cv→video bridge (cv-bridge-map.ts) only sweeps a ±1 source
+    // across the param's full range CENTERED on the knob when `cvScale` is
+    // present. Without it the bridge falls back to GATE semantics (raw
+    // passthrough), which clobbers the knob + sends bipolar CV out of the
+    // 0..1 range — i.e. the CV input "does nothing useful" (the reported bug).
+    { id: 'd',        type: 'cv', paramTarget: 'd',        cvScale: { mode: 'linear' } },
+    { id: 'v',        type: 'cv', paramTarget: 'v',        cvScale: { mode: 'linear' } },
+    { id: 'spd',      type: 'cv', paramTarget: 'spd',      cvScale: { mode: 'linear' } },
+    { id: 'decay',    type: 'cv', paramTarget: 'decay',    cvScale: { mode: 'linear' } },
     // SHAPE selector CV — latched per shape at spawn (like d/v/spd/decay).
-    { id: 'shape',    type: 'cv', paramTarget: 'shape' },
+    { id: 'shape',    type: 'cv', paramTarget: 'shape',    cvScale: { mode: 'linear' } },
     // ROTATION CV — a LIVE GLOBAL bipolar angular velocity (NOT latched).
-    { id: 'rotation', type: 'cv', paramTarget: 'rotation' },
+    { id: 'rotation', type: 'cv', paramTarget: 'rotation', cvScale: { mode: 'linear' } },
     // The video source for the `mapped` output.
     { id: 'video', type: 'video' },
   ],

@@ -123,6 +123,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   riotgirls: { size: '5u', hp: 6 }, // 849×1100px
   sampleHold: { size: '1u', hp: 2 }, // 149×260px
   samsloop: { size: '3u', hp: 2 }, // 420×360px
+  scaler: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out 1-knob multiplier)
   scope: { size: '3u', hp: 2 }, // 500×320px  [LOCKED]
   score: { size: '4u', hp: 4 }, // 597×720px
   sequencer: { size: '3u', hp: 3 }, // 307×540px  [LOCKED]

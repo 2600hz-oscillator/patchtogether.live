@@ -90,9 +90,9 @@ export const lumakeyDef: VideoModuleDef = {
   inputs: [
     { id: 'fg',        type: 'video' },
     { id: 'bg',        type: 'video' },
-    { id: 'threshold', type: 'cv', paramTarget: 'threshold' },
-    { id: 'softness',  type: 'cv', paramTarget: 'softness' },
-    { id: 'invert',    type: 'cv', paramTarget: 'invert' },
+    { id: 'threshold', type: 'cv', paramTarget: 'threshold', cvScale: { mode: 'linear' } },
+    { id: 'softness',  type: 'cv', paramTarget: 'softness', cvScale: { mode: 'linear' } },
+    { id: 'invert',    type: 'cv', paramTarget: 'invert', cvScale: { mode: 'discrete' } },
   ],
   outputs: [
     { id: 'out', type: 'video' },

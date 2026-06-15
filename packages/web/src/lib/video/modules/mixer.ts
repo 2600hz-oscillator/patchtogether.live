@@ -88,10 +88,10 @@ export const mixerVideoDef: VideoModuleDef = {
     { id: 'in4', type: 'video' },
     // paramTarget == port.id keeps docs manifest in sync; bridge uses
     // port id directly so the runtime works either way.
-    { id: 'amount1', type: 'cv', paramTarget: 'amount1' },
-    { id: 'amount2', type: 'cv', paramTarget: 'amount2' },
-    { id: 'amount3', type: 'cv', paramTarget: 'amount3' },
-    { id: 'amount4', type: 'cv', paramTarget: 'amount4' },
+    { id: 'amount1', type: 'cv', paramTarget: 'amount1', cvScale: { mode: 'linear' } },
+    { id: 'amount2', type: 'cv', paramTarget: 'amount2', cvScale: { mode: 'linear' } },
+    { id: 'amount3', type: 'cv', paramTarget: 'amount3', cvScale: { mode: 'linear' } },
+    { id: 'amount4', type: 'cv', paramTarget: 'amount4', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'video' },
