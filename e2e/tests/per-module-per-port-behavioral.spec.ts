@@ -123,6 +123,17 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // voice → audible RMS, incl. the freeze-while-stopped lock) + clip-types.test.ts
   // (note→V/oct + Deluge row math + per-lane/velocity helpers).
   clipplayer:     'TIMELORDE-locked launch output (8 lanes); only input stop_all silences, no per-output input + needs a running transport — no clean per-input delta in the short window; covered by clipplayer.test.ts + clipplayer.spec.ts + clip-types.test.ts',
+  // KRIA — same shape as clipplayer/sequencer: a 4-track grid step-sequencer
+  // whose outputs are clock-derived (a seeded running pattern). Patching `clock`
+  // only switches internal-tempo → external-clock advance (RE-PHASES the same
+  // gate streams at a similar density, no attributable per-input footprint), and
+  // `reset` only re-anchors the playhead to the loop start (a phase reset the
+  // spawn-once one-input-at-a-time harness can't cleanly attribute). Covered by
+  // kria.test.ts (def + 4-track factory tick loop: pitch/gate emit per track,
+  // pattern-cue quantize, reset re-anchor) + kria-types.test.ts (step-advance /
+  // scale→V/oct / loop / direction / cue math) + the bespoke real-source-chain
+  // kria.spec.ts (TIMELORDE → KRIA → VCO+VCA → audible gated RMS).
+  kria:           'clock-derived 4-track output (seeded running pattern); clock only re-phases, reset only re-anchors — no clean per-input delta in the short window; covered by kria.test.ts + kria-types.test.ts + kria.spec.ts',
   // Tape loop: idle output is hard-gated to silence and a fresh spawn has no
   // recorded tape, so NO single input perturbs the output in the one-input-at-
   // a-time control harness — audible output needs a record (audio-in + rec

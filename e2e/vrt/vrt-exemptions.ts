@@ -687,6 +687,15 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // per-module-per-port + behavioral sweeps + the bespoke real-source-chain
   // clipplayer.spec.ts (TIMELORDE → clip → voice → audible RMS).
   'linux/clipplayer',
+  // KRIA: darwin baseline (the 4-track grid sequencer card — track/page
+  // selectors + a 16-step editor grid + a 16-slot pattern strip + BPM knob; no
+  // animated canvas) captured locally; linux baseline pending a `vrt-update.yml`
+  // workflow_dispatch on this branch (same pattern as CLIPPLAYER above).
+  // Functional coverage is kria-types.test.ts + kria.test.ts (def + factory
+  // 4-track tick loop / pattern-cue quantize / reset) + kria-grid.test.ts (grid
+  // binding edits + LED frame) + the per-module-per-port + behavioral sweeps +
+  // the bespoke real-source-chain kria.spec.ts (TIMELORDE → KRIA → voice → RMS).
+  'linux/kria',
   // SCALER: darwin baseline (the tiny 1-in/1-out multiplier card — title + the
   // single AMOUNT knob + the yellow PatchPanel IN/OUT drill-down; no animated
   // canvas) captured locally; linux baseline pending a `vrt-update.yml`
