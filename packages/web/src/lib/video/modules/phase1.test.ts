@@ -80,9 +80,11 @@ describe('video Phase-1 — INWARDS', () => {
 });
 
 describe('video Phase-1 — PICTUREBOX', () => {
-  it('cv gain input + image output', () => {
+  it('cv gain input + image output (+ v3 asset-selector inputs)', () => {
     const def = getVideoModuleDef('picturebox')!;
-    expect(def.inputs.map((p) => p.id)).toEqual(['gain']);
+    // gain stays the first input + image out is unchanged; the v3 asset
+    // selector adds asset_pitch + asset_gate (see picturebox.test.ts).
+    expect(def.inputs.map((p) => p.id)).toEqual(['gain', 'asset_pitch', 'asset_gate']);
     expect(def.inputs[0]?.type).toBe('cv');
     expect(def.outputs.map((p) => p.id)).toEqual(['out']);
     expect(def.outputs[0]?.type).toBe('image');
