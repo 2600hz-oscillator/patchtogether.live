@@ -194,8 +194,11 @@
 <p>
   The <strong>function row</strong> (bottom): <strong>EDIT</strong> (tap to exit) ·
   <strong>VEL</strong> (hold to set velocity) · <strong>OCT−</strong> /
-  <strong>OCT+</strong> (move the 7-row pitch window). While the clip plays, the
-  current step column lights up and sweeps across — the tempo pulsing through the clip.
+  <strong>OCT+</strong> (move the 7-row pitch window) · <strong>SCALE</strong> (cycle
+  the clip's scale: major → minor → pentatonic → chromatic). Switching to chromatic
+  makes each row a semitone, so in-key notes spread further apart vertically (use
+  OCT−/+ to reach the ones that scroll off). While the clip plays, the current step
+  column lights up and sweeps across — the tempo pulsing through the clip.
 </p>
 
 <h2>LED feedback</h2>

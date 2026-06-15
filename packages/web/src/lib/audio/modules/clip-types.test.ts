@@ -27,6 +27,7 @@ import {
   noteAt,
   noteCovering,
   setNoteSpan,
+  nextScale,
   velTier,
   VEL_LOW,
   VEL_MED,
@@ -234,6 +235,15 @@ describe('held notes (the hold-pad + tap-another tie gesture)', () => {
     expect(noteCovering(clip, 4, 60)).toBeDefined(); // held tail
     expect(noteCovering(clip, 5, 60)).toBeUndefined(); // past the span
     expect(noteCovering(clip, 3, 62)).toBeUndefined(); // wrong row
+  });
+});
+
+describe('nextScale (the grid SCALE pad / card scale cycle)', () => {
+  it('cycles major → minor → pentatonic → chromatic → major', () => {
+    expect(nextScale('major')).toBe('minor');
+    expect(nextScale('minor')).toBe('pentatonic');
+    expect(nextScale('pentatonic')).toBeUndefined(); // chromatic
+    expect(nextScale(undefined)).toBe('major'); // wraps from chromatic
   });
 });
 

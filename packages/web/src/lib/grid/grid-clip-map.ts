@@ -69,6 +69,7 @@ export const EDIT_EXIT_PAD = { x: 0, y: FUNC_ROW } as const; // tap → leave th
 export const VEL_PAD = { x: 1, y: FUNC_ROW } as const; // hold + tap a note → cycle velocity
 export const OCT_DOWN_PAD = { x: 2, y: FUNC_ROW } as const; // shift the pitch window down
 export const OCT_UP_PAD = { x: 3, y: FUNC_ROW } as const; // shift the pitch window up
+export const SCALE_PAD = { x: 4, y: FUNC_ROW } as const; // cycle the clip's scale (major→…→chromatic)
 
 // --- Session-mode control-pad coordinates ---
 export const CTRL_STOP_COL = CLIP_SLOTS; // 8 — per-lane stop
@@ -154,6 +155,9 @@ export function isOctDownPad(x: number, y: number): boolean {
 }
 export function isOctUpPad(x: number, y: number): boolean {
   return x === OCT_UP_PAD.x && y === OCT_UP_PAD.y;
+}
+export function isScalePad(x: number, y: number): boolean {
+  return x === SCALE_PAD.x && y === SCALE_PAD.y;
 }
 
 // ---------------------------------------------------------------------------
@@ -256,5 +260,6 @@ export function computeEditLeds(
   frame[frameIndex(VEL_PAD.x, VEL_PAD.y)] = velArmed ? LED_FUNC_ON : LED_FUNC;
   frame[frameIndex(OCT_DOWN_PAD.x, OCT_DOWN_PAD.y)] = LED_FUNC;
   frame[frameIndex(OCT_UP_PAD.x, OCT_UP_PAD.y)] = LED_FUNC;
+  frame[frameIndex(SCALE_PAD.x, SCALE_PAD.y)] = LED_FUNC;
   return frame;
 }

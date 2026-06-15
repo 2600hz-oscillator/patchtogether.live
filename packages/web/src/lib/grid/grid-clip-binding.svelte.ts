@@ -36,6 +36,7 @@ import {
   isVelPad,
   isOctDownPad,
   isOctUpPad,
+  isScalePad,
   editPadToNote,
   computeSessionLeds,
   computeEditLeds,
@@ -50,6 +51,7 @@ import {
   toggleNoteAt,
   setNoteSpan,
   cycleVelocity,
+  nextScale,
   type ClipPlayerData,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
@@ -227,6 +229,18 @@ function handleKey(e: GridKeyEvent): void {
     if (isVelPad(e.x, e.y)) { velHeld = e.s === 1; return; } // hold-modifier
     if (e.s === 1 && isOctDownPad(e.x, e.y)) { editOctave -= 1; return; }
     if (e.s === 1 && isOctUpPad(e.x, e.y)) { editOctave += 1; return; }
+    if (e.s === 1 && isScalePad(e.x, e.y)) {
+      // Cycle the clip's scale (major→minor→pentatonic→chromatic→…). The note
+      // DATA is unchanged — only the row math; chromatic spreads notes apart.
+      editData(nodeId, (d) => {
+        const c = d.clips?.[String(editClipIndex)] as NoteClipRecord | undefined;
+        if (!c) return;
+        const ns = nextScale(c.scale);
+        if (ns) c.scale = ns;
+        else delete c.scale; // chromatic = no scale set
+      });
+      return;
+    }
 
     const note = editPadToNote(clip, e.x, e.y, editOctave);
     if (!note) return; // a non-control function-row / out-of-range pad

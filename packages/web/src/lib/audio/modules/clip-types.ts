@@ -266,6 +266,25 @@ export function lanesForStep(clip: NoteClipRecord, step: number): StepLanes {
 // Deluge note-editor row math (X = step, Y = pitch) — PURE
 // ---------------------------------------------------------------------------
 
+/** The editor's scale cycle (a SCALE pad / the card tag steps through these).
+ *  `undefined` = chromatic (12 semitone rows). Switching to chromatic spreads a
+ *  clip's notes apart vertically (each row becomes a semitone, not a degree). */
+export const SCALE_CYCLE: readonly (ScaleName | undefined)[] = [
+  'major',
+  'minor',
+  'pentatonic',
+  undefined,
+];
+/** Next scale in the cycle (major → minor → pentatonic → chromatic → major). */
+export function nextScale(scale: ScaleName | undefined): ScaleName | undefined {
+  const i = SCALE_CYCLE.indexOf(scale);
+  return SCALE_CYCLE[(i + 1) % SCALE_CYCLE.length];
+}
+/** Display name for a scale (chromatic when unset). */
+export function scaleName(scale: ScaleName | undefined): string {
+  return scale ?? 'chromatic';
+}
+
 /** The semitone offsets for a scale, or the 12-tone chromatic set when no
  *  scale is set (the editor's chromatic rows). */
 export function scaleSteps(scale?: ScaleName): readonly number[] {

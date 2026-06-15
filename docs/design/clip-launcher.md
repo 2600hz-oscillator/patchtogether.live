@@ -240,13 +240,16 @@ art we borrow for our hands-only clip-edit nav.
    EDIT.** `c8` per-lane STOP, `c9` scene-launch (fire a column across all lanes),
    `(15,0)` EDIT, `(15,6)` stop-all, `(15,7)` transport.
 4. **Grid clip editor = 7 note rows + a bottom FUNCTION ROW** (refined 2026-06-15).
-   The note grid is **16 steps × 7 in-key pitch rows** (one octave; root at the
-   bottom — every step fully playable, no dead cells). The bottom row is
-   `EDIT (exit) · VEL · OCT− · OCT+` (+ room).
+   The note grid is **N pitch rows × 16 steps** (in-key, root at the bottom — every
+   step fully playable, no dead cells). The bottom row is
+   `EDIT (exit) · VEL · OCT− · OCT+ · SCALE` (+ room).
 5. **Note entry** → **tap = on/off** (placed at MED velocity). **Hold a note +
    tap another in the same row** → one HELD note spanning them (gate high the
    whole span). **Hold VEL + tap a note** → cycle its velocity MED → LOW → HIGH
-   (three LED brightness tiers). **OCT−/+** move the 7-row pitch window.
+   (three LED brightness tiers). **OCT−/+** move the pitch window. **SCALE** cycles
+   the clip's scale (major → minor → pentatonic → chromatic — same set + math as
+   the card's scale tag); chromatic makes each row a semitone so in-key notes
+   spread apart vertically.
 6. **Playhead** → while a lane plays its edited clip, the current-step column
    lights and sweeps across (card + grid) — the tempo pulse. Published from a
    non-synced in-memory registry (never a per-frame Y.Doc write).

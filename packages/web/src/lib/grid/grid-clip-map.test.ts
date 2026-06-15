@@ -14,6 +14,7 @@ import {
   isVelPad,
   isOctDownPad,
   isOctUpPad,
+  isScalePad,
   computeSessionLeds,
   computeEditLeds,
   CTRL_STOP_COL,
@@ -25,6 +26,7 @@ import {
   VEL_PAD,
   OCT_DOWN_PAD,
   OCT_UP_PAD,
+  SCALE_PAD,
   NOTE_ROWS,
   LED_EMPTY,
   LED_LOADED,
@@ -164,6 +166,7 @@ describe('edit-mode note grid (7 rows × 16 steps) + function row', () => {
     expect(isVelPad(VEL_PAD.x, VEL_PAD.y)).toBe(true);
     expect(isOctDownPad(OCT_DOWN_PAD.x, OCT_DOWN_PAD.y)).toBe(true);
     expect(isOctUpPad(OCT_UP_PAD.x, OCT_UP_PAD.y)).toBe(true);
+    expect(isScalePad(SCALE_PAD.x, SCALE_PAD.y)).toBe(true);
     expect(editPadToNote(clip(), VEL_PAD.x, VEL_PAD.y)).toBeNull(); // never a note cell
   });
   it('computeEditLeds lights a note by tier + the function row + a root guide', () => {
@@ -174,6 +177,7 @@ describe('edit-mode note grid (7 rows × 16 steps) + function row', () => {
     expect(f[fi(0, NOTE_ROWS - 1)]).toBe(LED_ROOT_GUIDE); // bottom note row = root pc
     expect(f[fi(EDIT_EXIT_PAD.x, EDIT_EXIT_PAD.y)]).toBe(LED_FUNC);
     expect(f[fi(OCT_UP_PAD.x, OCT_UP_PAD.y)]).toBe(LED_FUNC);
+    expect(f[fi(SCALE_PAD.x, SCALE_PAD.y)]).toBe(LED_FUNC);
   });
   it('the VEL function pad lights bright while armed', () => {
     const f = computeEditLeds(clip(), -1, 0, true);

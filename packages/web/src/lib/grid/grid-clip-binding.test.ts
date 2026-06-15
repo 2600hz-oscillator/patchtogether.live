@@ -39,6 +39,7 @@ import {
   EDIT_EXIT_PAD,
   VEL_PAD,
   OCT_UP_PAD,
+  SCALE_PAD,
   LED_LOADED,
   LED_PLAYING,
 } from './grid-clip-map';
@@ -220,6 +221,16 @@ describe('grid EDIT mode (hold EDIT + tap → note editor)', () => {
     expect(__test_mode().editOctave).toBe(1);
     tapEdit(3, 4);
     expect(clipSteps()[0].midi).toBe(editRowToMidi(noteClip(), 4, 1));
+  });
+
+  it('the SCALE pad cycles the clip scale (major → minor → …)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindGridToClip(NODE_ID);
+    enterEdit();
+    // default clip is major
+    expect((liveData().clips as Record<string, NoteClipRecord>)['0'].scale).toBe('major');
+    sim.press(SCALE_PAD.x, SCALE_PAD.y);
+    expect((liveData().clips as Record<string, NoteClipRecord>)['0'].scale).toBe('minor');
   });
 
   it('tapping the function-row EDIT pad exits to session', () => {
