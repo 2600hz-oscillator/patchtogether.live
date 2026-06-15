@@ -118,7 +118,7 @@
     const target = patch.nodes[id];
     if (!target) return;
     ydoc.transact(() => {
-      if (!target.data) target.data = defaultKriaData();
+      if (!target.data) target.data = { ...defaultKriaData() } as Record<string, unknown>;
       mut(target.data as KriaData);
     });
   }
