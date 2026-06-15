@@ -152,9 +152,9 @@ export const monoglitchDef: VideoModuleDef = {
     { id: 'in',        type: 'video' },
     // CV inputs — port id == param id so the cross-domain CV bridge in
     // PatchEngine routes audio cv signals into setParam(portId).
-    { id: 'hRamp',     type: 'cv', paramTarget: 'hRamp' },
-    { id: 'vRamp',     type: 'cv', paramTarget: 'vRamp' },
-    { id: 'intensity', type: 'cv', paramTarget: 'intensity' },
+    { id: 'hRamp',     type: 'cv', paramTarget: 'hRamp', cvScale: { mode: 'linear' } },
+    { id: 'vRamp',     type: 'cv', paramTarget: 'vRamp', cvScale: { mode: 'linear' } },
+    { id: 'intensity', type: 'cv', paramTarget: 'intensity', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'video' },

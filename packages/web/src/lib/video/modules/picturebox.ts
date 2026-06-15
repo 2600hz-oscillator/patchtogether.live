@@ -115,7 +115,7 @@ export const pictureboxDef: VideoModuleDef = {
   inputs: [
     // paramTarget == port id keeps docs manifest in sync. Bridge uses
     // port id directly so the runtime works either way.
-    { id: 'gain', type: 'cv', paramTarget: 'gain' },
+    { id: 'gain', type: 'cv', paramTarget: 'gain', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'image' },

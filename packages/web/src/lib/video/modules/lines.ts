@@ -112,10 +112,10 @@ export const linesDef: VideoModuleDef = {
     // the param ids exactly (`orient`, `amp`, `thickness`, `phase`).
     // `fmDepth` is omitted — that's what the `fm` mono-video input is
     // for; modulating its depth via cv would double-up the same idea.
-    { id: 'orient',    type: 'cv', paramTarget: 'orient' },
-    { id: 'amp',       type: 'cv', paramTarget: 'amp' },
-    { id: 'thickness', type: 'cv', paramTarget: 'thickness' },
-    { id: 'phase',     type: 'cv', paramTarget: 'phase' },
+    { id: 'orient',    type: 'cv', paramTarget: 'orient', cvScale: { mode: 'linear' } },
+    { id: 'amp',       type: 'cv', paramTarget: 'amp', cvScale: { mode: 'linear' } },
+    { id: 'thickness', type: 'cv', paramTarget: 'thickness', cvScale: { mode: 'linear' } },
+    { id: 'phase',     type: 'cv', paramTarget: 'phase', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'mono-video' },

@@ -171,12 +171,12 @@ export const chromakeyDef: VideoModuleDef = {
   inputs: [
     { id: 'fg',            type: 'video' },
     { id: 'bg',            type: 'video' },
-    { id: 'keyR',          type: 'cv', paramTarget: 'keyR' },
-    { id: 'keyG',          type: 'cv', paramTarget: 'keyG' },
-    { id: 'keyB',          type: 'cv', paramTarget: 'keyB' },
-    { id: 'threshold',     type: 'cv', paramTarget: 'threshold' },
-    { id: 'softness',      type: 'cv', paramTarget: 'softness' },
-    { id: 'spillSuppress', type: 'cv', paramTarget: 'spillSuppress' },
+    { id: 'keyR',          type: 'cv', paramTarget: 'keyR', cvScale: { mode: 'linear' } },
+    { id: 'keyG',          type: 'cv', paramTarget: 'keyG', cvScale: { mode: 'linear' } },
+    { id: 'keyB',          type: 'cv', paramTarget: 'keyB', cvScale: { mode: 'linear' } },
+    { id: 'threshold',     type: 'cv', paramTarget: 'threshold', cvScale: { mode: 'linear' } },
+    { id: 'softness',      type: 'cv', paramTarget: 'softness', cvScale: { mode: 'linear' } },
+    { id: 'spillSuppress', type: 'cv', paramTarget: 'spillSuppress', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'video' },

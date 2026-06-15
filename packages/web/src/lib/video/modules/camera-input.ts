@@ -147,7 +147,7 @@ export const cameraInputDef: VideoModuleDef = {
     // CV input for gain modulation. paramTarget == port id keeps the
     // docs manifest in sync; the cross-domain CV bridge looks up the
     // target via port id directly.
-    { id: 'gain', type: 'cv', paramTarget: 'gain' },
+    { id: 'gain', type: 'cv', paramTarget: 'gain', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'video' },
