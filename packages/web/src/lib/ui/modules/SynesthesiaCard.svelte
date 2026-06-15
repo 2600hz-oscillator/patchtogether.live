@@ -45,6 +45,17 @@
     set(`${c}_mode`)(cur === 1 ? 0 : 1);
   }
 
+  // POLARITY of the env CV outputs (env_slow / env_fast): UNI = unipolar [0,1]
+  // (default), BI = bipolar [-1,+1]. Bipolar makes a strong kick sweep the FULL
+  // destination range through the knob-centered cv→video bridge. Per copy.
+  let aBipolar = $derived(Math.round(param('a_bipolar', 0)));
+  let bBipolar = $derived(Math.round(param('b_bipolar', 0)));
+  const isBipolar = (c: 'a' | 'b'): boolean => (c === 'a' ? aBipolar : bBipolar) === 1;
+  function togglePolarity(c: 'a' | 'b'): void {
+    const cur = c === 'a' ? aBipolar : bBipolar;
+    set(`${c}_bipolar`)(cur === 1 ? 0 : 1);
+  }
+
   function copyPorts(c: 'a' | 'b'): { inputs: PortDescriptor[]; outputs: PortDescriptor[] } {
     return {
       inputs: [
@@ -220,6 +231,15 @@
           onclick={() => toggleMode('a')}
           title="Toggle A between AUDIO (spectral bands) and VIDEO (R/G/B/Luma)"
         >{isVideo('a') ? 'VIDEO' : 'AUDIO'}</button>
+        <button
+          type="button"
+          class="polarity-toggle"
+          class:bipolar={isBipolar('a')}
+          data-testid="synesthesia-polarity-a"
+          data-polarity={isBipolar('a') ? 'bi' : 'uni'}
+          onclick={() => togglePolarity('a')}
+          title="Env CV polarity: UNI [0,1] or BI [-1,+1] (BI sweeps the full destination range)"
+        >{isBipolar('a') ? 'BI' : 'UNI'}</button>
         <Knob value={param('a_master', 1)} min={0.5} max={1.5} defaultValue={1} label="A MAS"
           curve="linear" onchange={set('a_master')} moduleId={id} paramId="a_master" readLive={live('a_master')} />
       </div>
@@ -249,6 +269,15 @@
           onclick={() => toggleMode('b')}
           title="Toggle B between AUDIO (spectral bands) and VIDEO (R/G/B/Luma)"
         >{isVideo('b') ? 'VIDEO' : 'AUDIO'}</button>
+        <button
+          type="button"
+          class="polarity-toggle"
+          class:bipolar={isBipolar('b')}
+          data-testid="synesthesia-polarity-b"
+          data-polarity={isBipolar('b') ? 'bi' : 'uni'}
+          onclick={() => togglePolarity('b')}
+          title="Env CV polarity: UNI [0,1] or BI [-1,+1] (BI sweeps the full destination range)"
+        >{isBipolar('b') ? 'BI' : 'UNI'}</button>
         <Knob value={param('b_master', 1)} min={0.5} max={1.5} defaultValue={1} label="B MAS"
           curve="linear" onchange={set('b_master')} moduleId={id} paramId="b_master" readLive={live('b_master')} />
       </div>
@@ -306,6 +335,24 @@
     color: var(--cable-video, #c084fc);
     border-color: var(--cable-video, #c084fc);
     box-shadow: 0 0 4px var(--cable-video, #c084fc);
+  }
+  .polarity-toggle {
+    font-size: 0.55rem;
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.04em;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: #0c0e12;
+    color: var(--text-dim);
+    cursor: pointer;
+    width: 52px;
+    text-align: center;
+  }
+  .polarity-toggle.bipolar {
+    color: var(--cable-cv, #f59e0b);
+    border-color: var(--cable-cv, #f59e0b);
+    box-shadow: 0 0 4px var(--cable-cv, #f59e0b);
   }
   .bands {
     flex: 1;

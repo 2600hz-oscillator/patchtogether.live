@@ -57,6 +57,7 @@ const PARAM_DEFAULTS: Record<string, number> = {};
 for (const c of COPIES) {
   PARAM_DEFAULTS[`${c}_master`] = 1;
   PARAM_DEFAULTS[`${c}_mode`] = 0; // 0 = AUDIO (spectral bands), 1 = VIDEO (R/G/B/Luma)
+  PARAM_DEFAULTS[`${c}_bipolar`] = 0; // 0 = UNIPOLAR env CV [0,1], 1 = BIPOLAR [-1,+1]
   for (const b of BANDS) PARAM_DEFAULTS[`${c}_gain${b}`] = 1;
 }
 
@@ -147,6 +148,12 @@ export const synesthesiaDef: AudioModuleDef = {
     // copy switches independently. Discrete 0/1 (a toggle on the card).
     { id: 'a_mode', label: 'A Mode', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
     { id: 'b_mode', label: 'B Mode', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+    // Per-copy POLARITY of the env CV outputs: 0 = UNIPOLAR [0,1] (default,
+    // preserves existing patches), 1 = BIPOLAR [-1,+1]. Bipolar makes a strong
+    // kick sweep the FULL destination range through the knob-centered cv→video
+    // bridge instead of just the upper half. Discrete 0/1 (a toggle on the card).
+    { id: 'a_bipolar', label: 'A Polarity', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
+    { id: 'b_bipolar', label: 'B Polarity', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
     // Master gain: 0.5×@7:00 → 1.5×@5:00 (unity at 12:00) — raises/lowers floor.
     { id: 'a_master', label: 'A Mas', defaultValue: 1, min: 0.5, max: 1.5, curve: 'linear' },
     { id: 'b_master', label: 'B Mas', defaultValue: 1, min: 0.5, max: 1.5, curve: 'linear' },

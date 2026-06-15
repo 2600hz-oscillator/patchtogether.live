@@ -40,6 +40,35 @@ this repository's licensing.
 | `shaders/frag-datamosh-wave.frag.glsl` | MIT | Original — colourful datamosh (stacked-sine per-row warp + RGB/chroma split + rainbow hue bleed + block/line tearing + oversaturation) of iChannel0 | (this project) |
 | `shaders/frag-zoom-warp.frag.glsl` | MIT | Original — radial zoom + swirl polar remap with per-radius chroma fringe of iChannel0 (feedback-friendly) | (this project) |
 | `shaders/frag-edge-glow.frag.glsl` | MIT | Original — Sobel luma-gradient edge detector tinted with a hue-cycling neon glow over a darkened iChannel0 | (this project) |
+| `shaders/seascape.frag.glsl` | MIT | Original clean-room — animated ocean (sum-of-octaves heightfield + analytic normals + Fresnel sky/water mix). Titled after TDM's "Seascape" (Shadertoy `Ms2SD1`), which is **CC BY-NC-SA 3.0 / non-commercial** — NOT used; this is a from-technique reimplementation. | (this project) |
+| `shaders/octgrams.frag.glsl` | MIT | Original clean-room — neon octahedron-lattice "descent" (folded-space SDF box frame raymarch + glow). Inspired by the "octgrams" Shadertoy look; no source text copied. | (this project) |
+| `shaders/vangogh-sunset.frag.glsl` | MIT | Original clean-room — Van Gogh "Starry Night" swirling sky (curl-of-scalar-potential flow + domain-warped fBm + directional brush-stroke modulation + haloed stars/moon). Titled after Vincent van Gogh's public-domain painting; no image asset / source text used. | (this project) |
+| `shaders/raymarch-primitives.frag.glsl` | MIT | Original clean-room — SDF-primitive gallery (sphere/box/torus/etc. sphere-tracing + soft shadows + AO), AA fixed at 1 for CI. Titled after IQ "Raymarching - Primitives" (`Xds3zN`), whose canonical page badge is **CC BY-NC-SA 3.0 / non-commercial** — NOT used; standard public SDF formulae only. | (this project) |
+| `shaders/lava-lamp.frag.glsl` | MIT | Original clean-room — rising/merging metaball wax blobs (inverse-square field + smooth threshold + heat palette) | (this project) |
+| `shaders/circuit-bloom.frag.glsl` | MIT | Original clean-room — glowing circuit-board traces (grid-cell wire routing + pulsing data packets) | (this project) |
+| `shaders/frag-chromatic-shift.frag.glsl` | MIT | Original — RGB chromatic-aberration + hashed horizontal-tear glitch of iChannel0 | (this project) |
+| `shaders/frag-posterize.frag.glsl` | MIT | Original — colour quantisation + ordered (Bayer) dither + optional duotone of iChannel0 | (this project) |
+| `shaders/plasma-flow.frag.glsl` | MIT | Original — demoscene sine-plasma (sum of axis/radial/moving-centre sines) + IQ cosine palette | (this project) |
+| `shaders/kaleido-bloom.frag.glsl` | MIT | Original — generative kaleidoscope mandala (polar wedge fold + radial petal/ring pattern), distinct from the FRAG kaleido (which folds the layer below) | (this project) |
+| `shaders/warp-tunnel.frag.glsl` | MIT | Original — demoscene polar tunnel (u=angle, v=1/r) with a procedural wall pattern + distance fog | (this project) |
+| `shaders/metaball-field.frag.glsl` | MIT | Original — generative metaballs (inverse-square field + iso-contours + gradient specular), distinct from the FRAG metaballs-overlay | (this project) |
+| `shaders/warp-terrain.frag.glsl` | MIT | Original — scrolling top-down fBm terrain (domain-warp + elevation contour bands + height-ramp palette + gradient shading) | (this project) |
+| `shaders/gyroid-slice.frag.glsl` | MIT | Original — animated 2D slice through a 3D gyroid (standard public minimal-surface formula) with iso-contour shading | (this project) |
+| `shaders/hyperspace.frag.glsl` | MIT | Original — radial star-warp "jump to lightspeed" (hashed star layers + radial motion-blur accumulation) | (this project) |
+| `shaders/caustic-pool.frag.glsl` | MIT | Original — underwater light caustics (octave-summed folded-sine ripple filaments + aqua palette) | (this project) |
+| `shaders/frag-bloom.frag.glsl` | MIT | Original — light-bloom (luma-threshold bright pass + multi-tap gaussian blur + additive composite) of iChannel0 | (this project) |
+| `shaders/frag-crt.frag.glsl` | MIT | Original — CRT/tube-monitor look (barrel UV warp + RGB aperture-grille mask + scanlines + vignette) of iChannel0 | (this project) |
+| `shaders/frag-halftone.frag.glsl` | MIT | Original — angled dot-screen halftone (rotate UV → cell grid → dot radius from luma) + duotone of iChannel0 | (this project) |
+| `shaders/frag-pixelate.frag.glsl` | MIT | Original — lo-fi mosaic (grid-snapped UV) + colour quantisation + hashed block-smear corruption of iChannel0 | (this project) |
+| `shaders/frag-ascii.frag.glsl` | MIT | Original — ASCII text-mode renderer (cell-bin + brightness→procedural-glyph-density, NO font atlas) of iChannel0 | (this project) |
+| `shaders/frag-mirror-fold.frag.glsl` | MIT | Original — planar triangle-wave mirror-kaleidoscope tiling of iChannel0 (distinct from the polar FRAG kaleido) | (this project) |
+
+> NOTE on Seascape / Raymarching-Primitives: the canonical Shadertoy shaders of
+> those names are **CC BY-NC-SA 3.0 (non-commercial)** and are NOT compatible
+> with this permissive-only bank. The files above are **original clean-room**
+> reimplementations from standard, individually-public techniques (octave-summed
+> ocean heightfields, SDF primitive formulae, sphere tracing, soft shadows/AO) —
+> no NC source text was copied. See PR #794 for the license decision.
 
 ## Shadertoy ports — CC BY 3.0 (attribution required)
 
