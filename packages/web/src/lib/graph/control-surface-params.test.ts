@@ -143,6 +143,74 @@ describe('resolveSurfaceParam — TOYBOX (nested node.data) source', () => {
   });
 });
 
+// ───────────────────── TOYBOX model SCALE on a NON-FIRST layer ─────────────────────
+//
+// REGRESSION (user report: "toybox scale on a model when assigned to a control
+// surface doesn't work"). The TOYBOX card learns material/content-uniform knobs
+// for whatever layer is ACTIVE, emitting the layer-QUALIFIED paramId
+// 'layer:<activeLayer>:scale' (NOT a bare 'scale'). A bare 'scale' resolves to
+// the FIRST OBJ layer, so a model the user has on layer 2 was driven on the
+// WRONG layer (or not at all if layer 0 isn't an OBJ layer) → "doesn't work".
+// The qualified binding must drive the SAME live material the card edits, on the
+// exact learned layer, and must NOT disturb a different layer's same-named field.
+function makeMultiLayerToybox(): void {
+  // layer 0 = OFF (the user's model is on layer 2, not the first layer)
+  // layer 1 = a DIFFERENT OBJ (its own scale — must stay untouched)
+  // layer 2 = the user's model (the one the card has active + learned)
+  patch.nodes[TID] = {
+    id: TID,
+    type: 'toybox',
+    domain: 'video',
+    position: { x: 0, y: 0 },
+    params: {},
+    data: {
+      layers: [
+        { kind: 'off', contentId: null, params: {} },
+        objLayer({ scale: 1.1 }),
+        objLayer({ scale: 1 }),
+        { kind: 'off', contentId: null, params: {} },
+      ],
+      combine: makeDefaultCombineGraph(),
+    },
+  } as unknown as ModuleNode;
+}
+
+describe('resolveSurfaceParam — TOYBOX model on a NON-FIRST layer (scale-on-surface bug)', () => {
+  it("drives the LEARNED layer's material, not the first OBJ layer", () => {
+    makeMultiLayerToybox();
+    const tb = () => patch.nodes[TID] as ModuleNode;
+    const layers = () => tb().data!.layers as ToyboxLayer[];
+
+    // The card on activeLayer=2 binds 'layer:2:scale'.
+    const r = resolveSurfaceParam(tb(), 'layer:2:scale');
+    expect(r, 'layer-qualified material id must resolve').not.toBeNull();
+    expect(r!.def).toMatchObject({ id: 'layer:2:scale', label: 'SCALE', min: 0.25, max: 3 });
+    expect(r!.get()).toBe(1);
+
+    // A SURFACE write lands on LAYER 2's material…
+    r!.set(2.5);
+    const mat = (i: number) => layers()[i]!.material as unknown as Record<string, number>;
+    expect(mat(2).scale, 'the learned layer (2) is driven').toBe(2.5);
+    // …and does NOT touch layer 1 (the OBJ that bare-resolution would have hit).
+    expect(mat(1).scale, 'a different OBJ layer is untouched').toBe(1.1);
+
+    // A CARD edit on the same layer lands on the SAME location (surface===card).
+    setLayerMaterialField(TID, 2, 'scale', 0.75);
+    expect(resolveSurfaceParam(tb(), 'layer:2:scale')!.get()).toBe(0.75);
+    expect(mat(1).scale).toBe(1.1); // still untouched
+  });
+
+  it('keeps backward-compat: a bare saved binding still resolves to the first OBJ layer', () => {
+    makeMultiLayerToybox();
+    const tb = () => patch.nodes[TID] as ModuleNode;
+    // A patch saved BEFORE this fix stored a bare 'scale' — it must still resolve
+    // (to the first OBJ layer, here layer 1) so old patches don't break.
+    const r = resolveSurfaceParam(tb(), 'scale');
+    expect(r).not.toBeNull();
+    expect(r!.get()).toBe(1.1); // first OBJ layer = layer 1
+  });
+});
+
 describe('resolveSurfaceParam — guards', () => {
   it('returns null for a missing node + never proxies a surface onto itself', () => {
     makeSurface();

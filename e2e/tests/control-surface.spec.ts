@@ -505,3 +505,84 @@ test('toybox material + combine params: proxy renders on the surface and drives 
   });
   expect(amountAfter).toBe(1); // fade T default is 1 → proxy reset the live op node
 });
+
+// REGRESSION (user: "toybox scale on a model when assigned to a control surface
+// doesn't work"). The card's material knobs emit a LAYER-QUALIFIED paramId
+// ('layer:<activeLayer>:scale'), so a "send to surface" binds the SPECIFIC layer
+// the user is editing — NOT the first OBJ layer (the old bare-'scale' behaviour
+// drove the wrong layer when the model sat on layer 2/3/4). This drives the WHOLE
+// chain through the real CARD knob (right-click → Send to surface), so it proves
+// the card emission, not just the resolver.
+test('toybox model SCALE on a NON-FIRST layer: card knob → surface drives the LEARNED layer', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'toybox-1', type: 'toybox', position: { x: 0, y: 0 }, domain: 'video' },
+    { id: 'cs-1', type: 'controlSurface', position: { x: 1200, y: 0 }, domain: 'meta' },
+  ]);
+
+  const toybox = page.locator('[data-testid="toybox-card"][data-node-id="toybox-1"]');
+  await expect(toybox).toBeVisible();
+
+  // Seed: layer 0 OFF; layer 1 a DIFFERENT obj (scale 1.1, must stay untouched);
+  // layer 2 the user's model (scale 1) — the one we'll edit + send to the surface.
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __patch: { nodes: Record<string, PatchNode> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const tb = w.__patch.nodes['toybox-1'];
+      if (!tb.data) tb.data = {};
+      (tb.data as Record<string, unknown>).layers = [
+        { kind: 'off', contentId: null, params: {} },
+        { kind: 'obj', contentId: null, params: {}, material: { modelId: 'cube', scale: 1.1, matcap: 0, tintR: 1, tintG: 1, tintB: 1 } },
+        { kind: 'obj', contentId: null, params: {}, material: { modelId: 'cube', scale: 1, matcap: 0, tintR: 1, tintG: 1, tintB: 1 } },
+        { kind: 'off', contentId: null, params: {} },
+      ];
+    });
+  });
+
+  // Activate LAYER 3 (index 2) — the user's model. The card's SCALE knob now
+  // edits layer 2 + (the fix) emits paramId 'layer:2:scale'.
+  await toybox.locator('[data-testid="toybox-layer-tab-2"]').click();
+  await expect(toybox.locator('[data-testid="toybox-layer-tab-2"]')).toHaveAttribute('data-active', 'true');
+
+  // Right-click the material SCALE knob (scope to the OBJ transform grid — the
+  // 6 CV-input attenuverters also have a "SCALE" slider) → Send to surface cs-1.
+  const scaleKnob = toybox
+    .locator('[data-testid="toybox-controls"]')
+    .locator('[role="slider"][aria-label="SCALE"]');
+  await expect(scaleKnob).toBeVisible();
+  await scaleKnob.click({ button: 'right' });
+  const menu = page.locator('[data-testid="control-context-menu"]');
+  await expect(menu).toBeVisible();
+  await menu.locator('[data-testid="ctx-surface-cs-1"]').click();
+
+  // PROOF the card emitted the LAYER-QUALIFIED id (not bare 'scale').
+  expect(await readSurfaceBindings(page, 'cs-1')).toEqual([
+    { moduleId: 'toybox-1', paramId: 'layer:2:scale' },
+  ]);
+
+  // The proxy drives LAYER 2's material, not layer 1's. Push layer 2 off-default,
+  // reset via the proxy (double-click → default 1), and assert layer 2 reset while
+  // layer 1 (the first OBJ, the old wrong target) stays at 1.1.
+  const surface = page.locator('[data-testid="control-surface-card"][data-node-id="cs-1"]');
+  const scaleProxy = surface.locator('[data-testid="control-surface-knob-toybox-1-layer:2:scale"]');
+  await expect(scaleProxy).toBeVisible();
+
+  await page.evaluate(() => {
+    const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
+    const layers = (w.__patch.nodes['toybox-1'].data as { layers: Array<{ material?: Record<string, number> }> }).layers;
+    layers[2]!.material!.scale = 2.8;
+  });
+  await scaleProxy.locator('[role="slider"]').dblclick();
+
+  const { l1, l2 } = await page.evaluate(() => {
+    const w = window as unknown as { __patch: { nodes: Record<string, PatchNode> } };
+    const layers = (w.__patch.nodes['toybox-1'].data as { layers: Array<{ material?: Record<string, number> }> }).layers;
+    return { l1: layers[1]!.material!.scale, l2: layers[2]!.material!.scale };
+  });
+  expect(l2).toBe(1);   // the LEARNED layer was driven (reset to default)
+  expect(l1).toBe(1.1); // the first OBJ layer was NOT touched (the old bug)
+});
