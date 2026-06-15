@@ -1,0 +1,87 @@
+// packages/web/src/lib/audio/modules/scaler.ts
+//
+// SCALER — a tiny 1-in / 1-out signal multiplier (a VCA-without-CV / fixed-gain
+// utility). The single AMOUNT knob multiplies the input by a factor from 0.1x
+// up to 10x, sample-accurately. out = in * amount.
+//
+// Think of it as a clean "gain trim" / "boost-or-cut" utility: dial below 1.0
+// to attenuate (down to a tenth), above 1.0 to boost (up to ten times), or
+// leave it at unity (1.0 = a direct patch, signal passes unaltered). Unlike the
+// passive 995 attenuator (which only cuts, 0..1) the SCALER can also BOOST.
+//
+// DSP: NONE — this is a pure Web Audio graph (one GainNode), so there's no
+// worklet and no Faust .dsp. Multiplying a signal by a knob value maps exactly
+// onto a GainNode whose gain ∈ [0.1, 10]. Mirrors the pure-gain factory pattern
+// used by MOOG 995 / ATTENUMIX / MIXER's GainNode graphs. A GainNode multiplies
+// at the audio sample rate, so the scaling is sample-accurate by construction.
+//
+// Inputs:
+//   in (audio, also accepts the CV family): the SIGNAL to scale. Typed `audio`
+//     so it interops with audio cables directly, and `accepts` cv/pitch/gate so
+//     a CV / gate / pitch source can be scaled too (the SCOPE-probe widening
+//     pattern) — it's just a multiply, valid for either signal class.
+//
+// Outputs:
+//   out (audio): the scaled signal (out = in * amount). Typed `audio` so it can
+//     drive audio inputs directly (and any CV-family port that opts into an
+//     `accepts: ['audio']` widening, e.g. a SCOPE probe).
+//
+// Params:
+//   amount (log 0.1..10, default 1.0): the scale factor. LOG curve so unity
+//     (1.0) sits at knob CENTER and the taper is symmetric (x0.1 at the left
+//     extreme, x10 at the right). Default 1.0 so a freshly spawned SCALER
+//     passes a direct patch through unaltered until the user dials it.
+
+import type { AudioDomainNodeHandle } from '$lib/audio/engine';
+import type { AudioModuleDef } from '$lib/audio/module-registry';
+
+export const scalerDef: AudioModuleDef = {
+  type: 'scaler',
+  palette: { top: 'Audio modules', sub: 'Utility' },
+  domain: 'audio',
+  label: 'scaler',
+  category: 'utilities',
+  schemaVersion: 1,
+
+  inputs: [
+    // The signal to scale. `audio`-typed but widened to the CV family so a
+    // CV / gate / pitch source can be scaled too (SCOPE-probe pattern).
+    { id: 'in', type: 'audio', accepts: ['cv', 'pitch', 'gate'] },
+  ],
+  outputs: [
+    // out = in * amount.
+    { id: 'out', type: 'audio' },
+  ],
+  params: [
+    // LOG taper so 1.0 (unity) lands at knob center and x0.1..x10 is symmetric.
+    // Default 1.0 = a direct passthrough on a fresh SCALER.
+    { id: 'amount', label: 'AMOUNT', defaultValue: 1, min: 0.1, max: 10, curve: 'log' },
+  ],
+
+  async factory(ctx, node): Promise<AudioDomainNodeHandle> {
+    // Pure Web Audio: one GainNode whose gain IS the AMOUNT. in -> gain -> out.
+    const gain = ctx.createGain();
+
+    // Apply the initial value (saved patch override, else the def default).
+    const initial = node.params ?? {};
+    const v = initial.amount ?? scalerDef.params[0].defaultValue;
+    gain.gain.setValueAtTime(v, ctx.currentTime);
+
+    return {
+      domain: 'audio',
+      inputs: new Map<string, { node: AudioNode; input: number; param?: AudioParam }>([
+        ['in', { node: gain, input: 0 }],
+      ]),
+      outputs: new Map([['out', { node: gain, output: 0 }]]),
+      setParam(paramId, value) {
+        if (paramId === 'amount') gain.gain.setValueAtTime(value, ctx.currentTime);
+      },
+      readParam(paramId) {
+        return paramId === 'amount' ? gain.gain.value : undefined;
+      },
+      dispose() {
+        try { gain.disconnect(); } catch { /* */ }
+      },
+    };
+  },
+};
