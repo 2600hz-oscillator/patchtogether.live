@@ -161,8 +161,13 @@ export function clampStepCount(n: number): number {
   return Math.max(1, Math.min(MAX_CLIP_STEPS, Math.round(n)));
 }
 
-/** Read clip at a flat index from node.data (coerced), or null. */
-export function readClip(data: ClipPlayerData | undefined, index: string | number): ClipRecord | null {
+/** Read clip at a flat index from node.data (coerced), or null. Accepts any
+ *  clip-bearing shape (the value is coerced/validated), so callers can pass a
+ *  raw node.data without first asserting it's a strict ClipPlayerData. */
+export function readClip(
+  data: { clips?: Record<string, unknown> } | undefined,
+  index: string | number,
+): ClipRecord | null {
   const clips = data?.clips;
   if (!clips) return null;
   return coerceClipRecord(clips[String(index)]);
