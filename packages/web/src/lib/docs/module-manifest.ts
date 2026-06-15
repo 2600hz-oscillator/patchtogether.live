@@ -1397,6 +1397,8 @@ export function buildModuleManifest(
       // CLIPPLAYER clip-page data model + Deluge row math — not a ModuleDef
       // (the def lives in clipplayer.ts).
       if (file === 'clip-types.ts') return false;
+      // CLIPPLAYER per-lane playhead registry (render state) — not a ModuleDef.
+      if (file === 'clip-playhead.ts') return false;
       // KRIA step/pattern data model + step-advance / scale / cue math — not a
       // ModuleDef (the def lives in kria.ts).
       if (file === 'kria-types.ts') return false;
