@@ -273,6 +273,43 @@ const DRIVERS: Record<string, PerPortDriver> = {
     },
     note: 'CLIPPLAYER: seed + queue a 4-step note clip (midi 72+) with quantize off → launches immediately; pitch/gate/velocity/clip_gate emit',
   },
+  // ───── KRIA — 4-track grid sequencer; seed a running pattern ─────
+  // KRIA is idle until RUN (or TIMELORDE) drives it. With no TIMELORDE node in
+  // the per-port harness, set params.running=1 so the local transport runs, and
+  // a fast bpm so every track's pitch/gate fires inside the window. Seed
+  // pattern 0 with all 4 tracks trigged on every step at octave offset +2
+  // (degree 0 + root 48 = MIDI 72 = +1.0 V/oct, clearing the peak floor that
+  // rejects C4=0V). Each track plays so pitch1..4 + gate1..4 all emit.
+  kria: (() => {
+    const STEPS = 16;
+    const track = (degree: number) => ({
+      trig: new Array(STEPS).fill(true),
+      ratchet: new Array(STEPS).fill(1),
+      note: new Array(STEPS).fill(degree),
+      octave: new Array(STEPS).fill(2), // +2 oct → MIDI 72+ → V/oct ≠ 0
+      duration: new Array(STEPS).fill(0.8),
+      probability: new Array(STEPS).fill(1),
+      glide: new Array(STEPS).fill(0),
+      loopStart: 0,
+      loopLength: STEPS,
+      timeDivision: 1,
+      direction: 'forward',
+      muted: false,
+    });
+    return {
+      params: { running: 1, bpm: 240 },
+      data: {
+        active: 0,
+        cued: null,
+        cueSteps: 0,
+        // String-keyed pattern bank (SyncedStore-safe; '0' = the running slot).
+        patterns: {
+          '0': { scale: 'major', root: 48, tracks: [track(0), track(1), track(2), track(3)] },
+        },
+      },
+      note: 'KRIA: running=1 + a seeded 4-track pattern (all trigs on, octave +2 → MIDI 72+); pitch1..4 + gate1..4 emit',
+    };
+  })(),
   // ───── Step sequencers — seed steps + isPlaying ─────
   sequencer: {
     params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.5 },

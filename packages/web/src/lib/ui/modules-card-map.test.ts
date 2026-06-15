@@ -36,7 +36,7 @@ const EXPECTED_NODE_TYPES = [
   'cloudseed', 'cocoadelay', 'colorizer', 'cube', 'delay', 'depolarizer', 'destroy', 'destructor',
   'doom', 'drummergirl', 'drumseqz', 'dx7', 'elements', 'feedback', 'filter',
   'fourplexer', 'foxy', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'grids', 'group',
-  'helm', 'hydrogen', 'hypercube', 'illogic', 'inwards', 'joystick', 'lfo', 'lines', 'livecode',
+  'helm', 'hydrogen', 'hypercube', 'illogic', 'inwards', 'joystick', 'kria', 'lfo', 'lines', 'livecode',
   'luma', 'lumakey', 'macrooscillator', 'macseq', 'mandleblot', 'marbles', 'matrixMix', 'meowbox',
   'mandelbulb', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'mixer', 'mixmstrs', 'modtris',
   'monoglitch', 'moog902', 'moog904a', 'moog911', 'moog921Vco', 'moogCp3', 'negativity', 'nibbles',
@@ -49,6 +49,11 @@ const EXPECTED_NODE_TYPES = [
   'unityscalemathematik', 'vca', 'vdelay', 'veils', 'vfpgaRunner', 'videoMixer', 'videoOut',
   'videobox', 'videovarispeed', 'warps', 'warrenspectrum', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq',
+
+
+
+
+
 
 
 
