@@ -21,6 +21,7 @@
     activePattern,
     defaultKriaData,
     defaultPattern,
+    slotOccupied,
     coerceTrack,
     toggleTrig,
     setNote,
@@ -32,6 +33,7 @@
     KRIA_PATTERNS,
     type KriaData,
     type KriaPattern,
+    type KriaPatternBank,
     type KriaTrack,
   } from '$lib/audio/modules/kria-types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -101,7 +103,7 @@
   let occupied = $derived.by<boolean[]>(() => {
     void cardVersion;
     const d = dataObj();
-    return Array.from({ length: KRIA_PATTERNS }, (_, i) => !!d.patterns?.[i]);
+    return Array.from({ length: KRIA_PATTERNS }, (_, i) => slotOccupied(d, i));
   });
   let degreeCount = $derived(scaleSemitones(pattern.scale).length);
 
@@ -125,13 +127,13 @@
    *  so we never reassign a live Y type at two paths). */
   function commitTrack(next: KriaTrack) {
     writeData((d) => {
-      if (!Array.isArray(d.patterns)) d.patterns = new Array(KRIA_PATTERNS).fill(null);
+      if (!d.patterns || typeof d.patterns !== 'object') d.patterns = {} as KriaPatternBank;
       const slot = d.active ?? 0;
       const base = activePattern(d) ?? defaultPattern();
       const tracks = base.tracks.map((tr, i) =>
         i === selTrack ? cloneTrack(next) : cloneTrack(coerceTrack(tr)),
       );
-      d.patterns[slot] = { scale: base.scale, root: base.root, tracks };
+      d.patterns[String(slot)] = { scale: base.scale, root: base.root, tracks };
     });
   }
   function cloneTrack(t: KriaTrack): KriaTrack {
@@ -190,10 +192,10 @@
 
   function selectPattern(slot: number) {
     writeData((d) => {
-      if (!Array.isArray(d.patterns)) d.patterns = new Array(KRIA_PATTERNS).fill(null);
-      if (!d.patterns[slot]) {
+      if (!d.patterns || typeof d.patterns !== 'object') d.patterns = {} as KriaPatternBank;
+      if (!slotOccupied(d, slot)) {
         // Empty slot → seed a fresh pattern and activate it immediately.
-        d.patterns[slot] = defaultPattern();
+        d.patterns[String(slot)] = defaultPattern();
         d.active = slot;
         d.cued = null;
         return;

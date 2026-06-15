@@ -302,9 +302,10 @@ const DRIVERS: Record<string, PerPortDriver> = {
         active: 0,
         cued: null,
         cueSteps: 0,
-        patterns: [
-          { scale: 'major', root: 48, tracks: [track(0), track(1), track(2), track(3)] },
-        ],
+        // String-keyed pattern bank (SyncedStore-safe; '0' = the running slot).
+        patterns: {
+          '0': { scale: 'major', root: 48, tracks: [track(0), track(1), track(2), track(3)] },
+        },
       },
       note: 'KRIA: running=1 + a seeded 4-track pattern (all trigs on, octave +2 → MIDI 72+); pitch1..4 + gate1..4 emit',
     };

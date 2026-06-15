@@ -28,6 +28,7 @@ import {
 import {
   activePattern,
   defaultPattern,
+  slotOccupied,
   setNote as setNoteHelper,
   setOctave as setOctaveHelper,
   setDuration as setDurationHelper,
@@ -35,6 +36,7 @@ import {
   coerceTrack,
   type KriaData,
   type KriaPattern,
+  type KriaPatternBank,
 } from '$lib/audio/modules/kria-types';
 
 const STORAGE_KEY = 'pt.grid.boundKriaNode';
@@ -130,7 +132,7 @@ function mutateTrack(nodeId: string, trackIdx: number, fn: (t: ReturnType<typeof
     if (!node) return;
     if (!node.data) node.data = {};
     const d = node.data as KriaData;
-    if (!Array.isArray(d.patterns)) d.patterns = new Array(KRIA_PATTERNS).fill(null);
+    if (!d.patterns || typeof d.patterns !== 'object') d.patterns = {} as KriaPatternBank;
     // Clone the whole active pattern, replacing track trackIdx.
     const patClone: KriaPattern = {
       scale: ctx.pattern.scale,
@@ -141,7 +143,8 @@ function mutateTrack(nodeId: string, trackIdx: number, fn: (t: ReturnType<typeof
           : cloneTrack(coerceTrack(tr)),
       ),
     };
-    d.patterns[ctx.active] = patClone;
+    // String-keyed record assignment — SyncedStore-safe (no array index set).
+    d.patterns[String(ctx.active)] = patClone;
   });
 }
 
@@ -229,7 +232,7 @@ function renderLeds(): void {
   const blinkOn = Math.floor(tickCount / BLINK_TICKS) % 2 === 0;
   const data = (node.data ?? {}) as KriaData;
   const pattern = activePattern(data);
-  const occupied = Array.from({ length: KRIA_PATTERNS }, (_, i) => !!data.patterns?.[i]);
+  const occupied = Array.from({ length: KRIA_PATTERNS }, (_, i) => slotOccupied(data, i));
   // Playhead step for the selected track — read from the engine handle if the
   // card has wired it via node.data._step (kept simple: 0 fallback for tests).
   const playStep =

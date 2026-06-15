@@ -132,10 +132,15 @@ export interface KriaPattern {
   root: number;
 }
 
-/** Persisted on node.data. */
+/** Persisted on node.data. The pattern bank is a STRING-keyed record (slot
+ *  index → pattern), NOT a JS array, so it round-trips through SyncedStore
+ *  (Yjs forbids `arr[i] = x` index assignment on a live Y.Array; an object
+ *  record supports `obj[key] = x` — same discipline clipplayer uses for its
+ *  clip bank). Slots are '0'..'15'; absent/null = empty. */
+export type KriaPatternBank = Record<string, KriaPattern | null>;
 export interface KriaData {
-  /** 16 pattern slots; sparse — absent/null = empty. */
-  patterns?: (KriaPattern | null)[];
+  /** 16 pattern slots keyed '0'..'15'; sparse — absent/null = empty. */
+  patterns?: KriaPatternBank;
   /** The pattern slot currently playing (0..KRIA_PATTERNS-1). */
   active?: number;
   /** A cued pattern slot to switch to, or null = nothing cued. Applied when
@@ -178,9 +183,19 @@ export function defaultPattern(): KriaPattern {
 /** A fresh KriaData: pattern 0 seeded (so the card has something to edit),
  *  the rest empty. */
 export function defaultKriaData(): KriaData {
-  const patterns: (KriaPattern | null)[] = new Array(KRIA_PATTERNS).fill(null);
-  patterns[0] = defaultPattern();
-  return { patterns, active: 0, cued: null, cueSteps: 0 };
+  return { patterns: { '0': defaultPattern() }, active: 0, cued: null, cueSteps: 0 };
+}
+
+/** Read a raw pattern slot value from a bank (accepts an object record OR a
+ *  legacy array shape, so a seeded-as-array test fixture still reads). */
+function bankSlot(bank: KriaPatternBank | undefined, slot: number): unknown {
+  if (!bank) return undefined;
+  // Object record (the canonical shape) — string key.
+  const byKey = (bank as Record<string, unknown>)[String(slot)];
+  if (byKey !== undefined) return byKey;
+  // Array fallback (test fixtures / older saves seeded patterns as an array).
+  if (Array.isArray(bank)) return (bank as unknown[])[slot];
+  return undefined;
 }
 
 function clampInt(n: unknown, lo: number, hi: number, fallback: number): number {
@@ -256,14 +271,18 @@ export function coercePattern(raw: unknown): KriaPattern | null {
 export function activePattern(data: KriaData | undefined): KriaPattern | null {
   if (!data) return null;
   const idx = clampInt(data.active, 0, KRIA_PATTERNS - 1, 0);
-  const raw = data.patterns?.[idx];
-  return coercePattern(raw);
+  return coercePattern(bankSlot(data.patterns, idx));
 }
 
 /** Read pattern at a slot (coerced), or null. */
 export function patternAt(data: KriaData | undefined, slot: number): KriaPattern | null {
   if (!data) return null;
-  return coercePattern(data.patterns?.[slot]);
+  return coercePattern(bankSlot(data.patterns, slot));
+}
+
+/** True iff a slot holds a (loaded) pattern. */
+export function slotOccupied(data: KriaData | undefined, slot: number): boolean {
+  return !!bankSlot(data?.patterns, slot);
 }
 
 // ---------------------------------------------------------------------------

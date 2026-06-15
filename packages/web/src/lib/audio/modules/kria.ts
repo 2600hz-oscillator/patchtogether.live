@@ -156,8 +156,9 @@ export const kriaDef: AudioModuleDef = {
       const live = livePatch.nodes[nodeId];
       if (!live) return;
       if (!live.data) live.data = {};
-      (live.data as KriaData).active = idx;
-      (live.data as KriaData).cued = null;
+      const d = live.data as KriaData;
+      d.active = idx; // guard:allow-raw-write — engine quantize-switch during the tick, not a user edit
+      d.cued = null;
     }
     function isClockConnected(): boolean {
       return isInputPortConnected(Object.values(livePatch.edges), nodeId, 'clock');
