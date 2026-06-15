@@ -202,3 +202,77 @@ describe('synesthesia worklet — VIDEO mode (R/G/B/Luma channels)', () => {
     for (let c = 0; c < 4; c++) expect(last.levelsB[c]!).toBeGreaterThan(0.4);
   });
 });
+
+// ───────────────────────── BIPOLAR env CV param ─────────────────────────
+//
+// Proves the WORKLET wiring of the new a_bipolar/b_bipolar k-rate params: the
+// env CV outputs (env_slow=2/3, env_fast=4/5) are remapped 0..1 → -1..+1 when
+// bipolar≥0.5, while band-audio (0/1), gate (6/7) and trig (8/9) are untouched.
+
+/** Run a 261 Hz tone into copy A for `blocks` quanta with a_bipolar = `bip`,
+ *  capturing the per-(output,band) min + max of the actual output samples. */
+function runBipolar(bip: number, blocks: number): { min: number[][]; max: number[][] } {
+  const proc = new Processor();
+  const min: number[][] = Array.from({ length: NUM_OUT }, () => [Infinity, Infinity, Infinity, Infinity]);
+  const max: number[][] = Array.from({ length: NUM_OUT }, () => [-Infinity, -Infinity, -Infinity, -Infinity]);
+  const params = { a_bipolar: new Float32Array([bip]) };
+  let phase = 0;
+  for (let blk = 0; blk < blocks; blk++) {
+    const inA = new Float32Array(QUANTUM);
+    for (let i = 0; i < QUANTUM; i++) inA[i] = 0.8 * Math.sin((2 * Math.PI * 261 * (phase + i)) / SR);
+    phase += QUANTUM;
+    const outputs = mkOutputs();
+    proc.process([[inA], []], outputs, params);
+    for (let o = 0; o < NUM_OUT; o++) {
+      for (let b = 0; b < 4; b++) {
+        const ch = outputs[o]![b]!;
+        for (let i = 0; i < ch.length; i++) {
+          const v = ch[i]!;
+          if (v < min[o]![b]!) min[o]![b] = v;
+          if (v > max[o]![b]!) max[o]![b] = v;
+        }
+      }
+    }
+  }
+  return { min, max };
+}
+
+describe('synesthesia worklet — BIPOLAR env CV param (a_bipolar)', () => {
+  it('default (a_bipolar=0): env_slow/env_fast outputs stay in [0,1]', () => {
+    const { min, max } = runBipolar(0, 200);
+    for (const o of [2, 4]) { // env_slow A, env_fast A
+      for (let b = 0; b < 4; b++) {
+        expect(min[o]![b]!).toBeGreaterThanOrEqual(0);
+        expect(max[o]![b]!).toBeLessThanOrEqual(1);
+      }
+    }
+    // The lit band (261 Hz → band 2) actually carried energy (env > 0).
+    expect(max[4]![1]!).toBeGreaterThan(0);
+  });
+
+  it('a_bipolar=1: env_slow/env_fast outputs go BIPOLAR [-1,+1] (silence→-1)', () => {
+    const { min, max } = runBipolar(1, 200);
+    for (const o of [2, 4]) {
+      for (let b = 0; b < 4; b++) {
+        expect(min[o]![b]!).toBeGreaterThanOrEqual(-1);
+        expect(max[o]![b]!).toBeLessThanOrEqual(1);
+      }
+    }
+    // A SILENT band (e.g. band 1, unlit by the 261 Hz tone) sits at -1.
+    expect(min[4]![0]!).toBeCloseTo(-1, 4);
+    // The LIT band (band 2) rises above 0 (env crossed 0.5 unipolar → >0 bipolar).
+    expect(max[4]![1]!).toBeGreaterThan(0);
+  });
+
+  it('a_bipolar does NOT change gate / trig / band-audio polarity', () => {
+    const off = runBipolar(0, 200);
+    const on = runBipolar(1, 200);
+    // band-audio (0), gate (6), trig (8) min/max identical regardless of polarity.
+    for (const o of [0, 6, 8]) {
+      for (let b = 0; b < 4; b++) {
+        expect(on.min[o]![b]!).toBeCloseTo(off.min[o]![b]!, 6);
+        expect(on.max[o]![b]!).toBeCloseTo(off.max[o]![b]!, 6);
+      }
+    }
+  });
+});
