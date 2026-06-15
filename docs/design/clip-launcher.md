@@ -168,8 +168,10 @@ follow the clip's scale, root at the bottom):
  └─────────────────────────────────┘
 ```
 
-- **Click a cell** → toggle a note. **Drag horizontally** → set its length.
-- Velocity: per-note (right-click / second control — see open Q below).
+- **Click a cell** → toggle a note (placed at medium velocity). **Drag
+  horizontally** → set its length.
+- **Click the note again** → cycle velocity low → med → high (cell brightness
+  shows the tier; same gesture on the grid).
 - Scale / root / length are editable here; changing scale re-labels the rows.
 
 ---
@@ -226,20 +228,21 @@ art we borrow for our hands-only clip-edit nav.
 
 ---
 
-## 7. Open UI decisions (owner sign-off)
+## 7. UI decisions — DECIDED (owner, 2026-06-15)
 
-Tracked so we don't silently lock them in:
+1. **Card: open a clip for editing** → **double-click the cell.** Single-click
+   fires/launches; double-click drills into the note editor. No extra button.
+2. **Grid: enter clip-edit hands-only** → **hold the EDIT pad + tap a clip.** The
+   whole 16×8 becomes that clip's note grid; tap EDIT again to return. (Kria-style
+   hold-to-page grammar.)
+3. **Grid right-half (control strip)** → **scene-launch + per-lane STOP +
+   transport + EDIT.** `c8` scene-launch column (fire a whole column/scene across
+   all lanes), `c15` per-lane STOP, EDIT + global ▶ ■ on the remaining pads.
+4. **Velocity in the note editor** → **second-press cycles low → med → high**
+   (three grid-LED brightness tiers; identical gesture on card + grid). First
+   press places the note at med.
 
-1. **Card: open a clip for editing** — double-click a cell · a persistent EDIT
-   toggle then click · right-click → "Edit clip".
-2. **Grid: enter clip-edit hands-only** — hold an EDIT pad + tap a clip · double-
-   tap a clip · a mode-toggle pad.
-3. **Grid right-half (control strip) contents** — scene-launch + per-lane stop +
-   transport (recommended) · per-lane mute only · a second bank of 8 clip slots.
-4. **Velocity entry in the note editor** — second-press cycles low/med/high ·
-   right-click slider · a velocity "ruler" row.
-
-(These are the only undecided pieces; everything above is built or in build.)
+(All four resolved; everything in this doc is now built or in active build.)
 
 ---
 
