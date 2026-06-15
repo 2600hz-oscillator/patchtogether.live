@@ -90,7 +90,7 @@
 </p>
 <ol>
   <li>Plug the grid in over USB.</li>
-  <li>On the clip-player card, click <strong>GRID</strong> and pick the grid's serial port in the browser prompt.</li>
+  <li>On the clip-player card, click <strong>GRID</strong> and pick the grid's serial port in the browser prompt. The list shows <em>all</em> serial ports (macOS reports the grid without USB vendor info, so it can't be auto-filtered) — choose the <code>usbserial</code> / monome entry.</li>
   <li>That card is now bound to the grid (remembered per machine). Click <strong>GRID</strong> again to disconnect.</li>
 </ol>
 <p class="aside">
