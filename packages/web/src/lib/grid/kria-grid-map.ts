@@ -23,9 +23,7 @@ import {
   KRIA_STEPS,
   KRIA_TRACKS,
   KRIA_PATTERNS,
-  scaleSemitones,
   type KriaPattern,
-  type KriaScaleName,
 } from '$lib/audio/modules/kria-types';
 
 export type KriaPage = 'trig' | 'note' | 'octave' | 'duration';
@@ -234,11 +232,6 @@ function loopWindowSet(track: { loopStart: number; loopLength: number }): number
   const out: number[] = [];
   for (let i = 0; i < len; i++) out.push((start + i) % KRIA_STEPS);
   return out;
-}
-
-/** Convenience used by the card's grid mirror: the human label per scale. */
-export function scaleDegreeCount(scale: KriaScaleName): number {
-  return scaleSemitones(scale).length;
 }
 
 export { KRIA_TRACKS, KRIA_STEPS, KRIA_PATTERNS };

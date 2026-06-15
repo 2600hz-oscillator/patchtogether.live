@@ -37,7 +37,6 @@ import {
   activePattern,
   patternAt,
   stepVOct,
-  loopWindow,
   advanceStep,
   willWrap,
   initialCursor,

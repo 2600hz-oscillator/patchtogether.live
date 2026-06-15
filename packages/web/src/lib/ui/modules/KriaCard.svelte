@@ -27,7 +27,6 @@
     setNote,
     setOctave,
     setDuration,
-    scaleSemitones,
     KRIA_TRACKS,
     KRIA_STEPS,
     KRIA_PATTERNS,
@@ -105,8 +104,6 @@
     const d = dataObj();
     return Array.from({ length: KRIA_PATTERNS }, (_, i) => slotOccupied(d, i));
   });
-  let degreeCount = $derived(scaleSemitones(pattern.scale).length);
-
   const setParam = (pid: string) => (v: number) => setNodeParam(id, pid, v);
   const readLive = (pid: string) => () => {
     const e = engineCtx.get();
@@ -177,8 +174,11 @@
     switch (selPage) {
       case 'trig':
         return row === EDIT_ROWS - 1 && track.trig[step]!;
-      case 'note':
-        return EDIT_ROWS - 1 - row === Math.min(degreeCount * 2, track.note[step] ?? 0);
+      case 'note': {
+        // Bottom row (row 6) = degree 0; the 7-row editor caps at degree 6.
+        const deg = Math.max(0, Math.min(EDIT_ROWS - 1, track.note[step] ?? 0));
+        return EDIT_ROWS - 1 - row === deg;
+      }
       case 'octave': {
         const oct = Math.min(5, track.octave[step] ?? 0);
         return EDIT_ROWS - 1 - row <= oct;
