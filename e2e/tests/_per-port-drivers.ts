@@ -970,6 +970,58 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'MIDI LANE: mock requestMIDIAccess + send note-on (pitch/gate/vel) + CC1/CC7 (cc_a/cc_b); note_gate/poly exempt',
   },
 
+  // ───── CV-polarity utility trio (POLARIZER / DEPOLARIZER / NEGATIVITY) ─────
+  //
+  // All three are 1-in/1-out CV-math pass-throughs (out = f(in)). With nothing
+  // patched the per-port outputs-emit sweep would see only a DC artifact
+  // (polarizer/depolarizer rest at −1 / 0.5) — and NEGATIVITY's out = −in rests
+  // at exactly 0 (silent), failing the peak-above-floor check. Drive `in` with
+  // a self-running CV source (BUGGLES.smooth, slow random walk) so `out` carries
+  // a real, moving signal — a genuine driven-signal emit check, not a DC fluke.
+  // (The exact math is pinned by polarizer/depolarizer/negativity.test.ts.)
+  polarizer: {
+    upstream: () => ({
+      nodes: [bugglesCv('drv-bug')],
+      edges: [
+        {
+          id: 'e-drv-pol',
+          from: { nodeId: 'drv-bug', portId: 'smooth' },
+          to:   { nodeId: 'sut',     portId: 'in' },
+          sourceType: 'cv', targetType: 'cv',
+        },
+      ],
+    }),
+    note: 'POLARIZER: drive `in` with BUGGLES.smooth (self-running CV) so `out` = (2·in−1)·depth carries a moving signal',
+  },
+  depolarizer: {
+    upstream: () => ({
+      nodes: [bugglesCv('drv-bug')],
+      edges: [
+        {
+          id: 'e-drv-dep',
+          from: { nodeId: 'drv-bug', portId: 'smooth' },
+          to:   { nodeId: 'sut',     portId: 'in' },
+          sourceType: 'cv', targetType: 'cv',
+        },
+      ],
+    }),
+    note: 'DEPOLARIZER: drive `in` with BUGGLES.smooth (self-running CV) so `out` = 0.5 + depth·(in/2) carries a moving signal',
+  },
+  negativity: {
+    upstream: () => ({
+      nodes: [bugglesCv('drv-bug')],
+      edges: [
+        {
+          id: 'e-drv-neg',
+          from: { nodeId: 'drv-bug', portId: 'smooth' },
+          to:   { nodeId: 'sut',     portId: 'in' },
+          sourceType: 'cv', targetType: 'cv',
+        },
+      ],
+    }),
+    note: 'NEGATIVITY: drive `in` with BUGGLES.smooth (self-running CV) so `out` = −in carries a moving signal (rests at 0 unpatched)',
+  },
+
   // ───── VIDEOOUT — wire ACIDWARP.out into .in so .out passes through ─────
   videoOut: {
     upstream: () => ({

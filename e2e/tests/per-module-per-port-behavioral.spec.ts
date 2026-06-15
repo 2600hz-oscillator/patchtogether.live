@@ -141,6 +141,11 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // CI). Same as videobox. Covered by tv-librarian-data/geo unit tests + a
   // network-mocked tv-librarian e2e.
   tvLibrarian:    'needs a live tuned HLS stream to emit; no network stream in the sweep (mirrors videobox); covered by tv-librarian-data/geo.test.ts + network-mocked tv-librarian e2e',
+  // PEERTUBE needs a resolved + attached PeerTube stream to emit any output, which
+  // the behavioral sweep can't establish (and we never hit live Sepia/instance/HLS
+  // in CI). Same as tvLibrarian/videobox. Covered by peertube-query unit tests + a
+  // network-mocked peertube e2e.
+  peertube:       'needs a resolved + attached PeerTube stream to emit; no network stream in the sweep (mirrors tvLibrarian/videobox); covered by peertube-query.test.ts + network-mocked peertube e2e',
 
   // ── User-toggled sequencer-like sources: output silent until steps are
   //    toggled by user interaction (which our spawnPatch doesn't model).

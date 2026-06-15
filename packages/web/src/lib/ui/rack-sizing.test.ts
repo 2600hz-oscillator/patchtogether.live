@@ -60,6 +60,11 @@ const DYNAMIC_SIZED = new Set([
   // takes no fixed tier (forcing one would cap the resize / clip the list).
   'tvLibrarian',
   'archivist',
+  // peertube — same user-resizable source family as videobox/tvLibrarian/
+  // archivist: a corner-resize handle (card-resize.ts) drives its size, with
+  // DEFAULT/MIN constants rounded to 180-multiples (360/540/360/360), so a
+  // fixed tier would CAP its resize / clip the federated results list.
+  'peertube',
 ]);
 
 interface SizedDef {

@@ -1628,6 +1628,63 @@ jobs:
         run: flox activate -- bash scripts/webgl-attest-verify.sh
 
   # -----------------------------------------------------------------------
+  # collab-attest — the LOCAL-RELAY @collab attestation VERIFY gate (the collab
+  # analogue of webgl-attest; see .myrobots/plans/collab-attest-2026-06-15.md +
+  # ci-collab-attest/README.md). Recomputes the deterministic @collab content-
+  # hash (scripts/collab-attest-hash.sh) and checks ci-collab-attest/<hash>.json
+  # exists. The attestation was produced by the owner's local FRESH-dedicated-
+  # relay+DB `task collab:attest` run and committed WITH the PR; it travels
+  # through squash-merge because the hash is content-keyed, NOT git-HEAD-keyed.
+  #
+  #   match  → collab surface unchanged-or-attested → the ~6.5-8 min @collab lane
+  #            stays per-PR-informational, trusting the local calm-relay run. PASS.
+  #   miss   → a collab/sync/relay path changed without re-attesting → FAIL with
+  #            `run: flox activate -- task collab:attest`.
+  #
+  # WHY: the @collab CI lane is FLAKY + slow — the single-process Hocuspocus relay
+  # buckles under CI's 10-shard contention (so it's informational, un-gated since
+  # 2026-06-06; DOOM-MP specs test.skip(true,'…relay flake…') → green-but-vacuous).
+  # LOCALLY the owner controls the relay (a fresh, dedicated, uncontended relay
+  # actually converges), so we attest there + verify cheaply here.
+  #
+  # CAVEAT (differs from webgl): a calm LOCAL relay is merely LESS CONTENDED than
+  # CI's, not strictly superior — it can mask an under-load race. The NIGHTLY
+  # backstop (collab-nightly.yml) runs the FULL real @collab lane on CI daily to
+  # surface contention regressions. See the plan doc.
+  #
+  # INFORMATIONAL for now (NOT in the `ci` umbrella's failing-condition set) —
+  # exactly how webgl-attest started. `continue-on-error: true` so a miss can't
+  # block merge while the scheme is proven. The owner flips it required later via
+  # ONE ruleset step (see the plan doc §rollout): add `collab-attest` to
+  # ruleset 16042163's required-status-checks AND add the three umbrella edits
+  # (needs:/env:/if). Do NOT touch the ruleset in this PR.
+  #
+  # Cheap (< 2 min: checkout + flox + one hash). No LFS, no DB, no bundle.
+  # -----------------------------------------------------------------------
+  collab-attest:
+    name: collab-attest (local-relay attestation gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # INFORMATIONAL while the scheme is proven (mirrors webgl-attest's Phase-1
+    # start). A hash miss reports failure on THIS job but does not block the PR,
+    # because this job is NOT in the `ci` umbrella's needs/env/if set yet.
+    continue-on-error: true
+    steps:
+      - name: Checkout (no LFS — only needs source + ci-collab-attest/)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Install workspace deps (tsx for the hash script)
+        run: flox activate -- task install
+
+      - name: Verify @collab attestation
+        run: flox activate -- bash scripts/collab-attest-verify.sh
+
+  # -----------------------------------------------------------------------
   # ci (umbrella) — gates branch protection. Required status check named
   # `typecheck + unit + ART + E2E` (see ruleset 16042163). This job exists
   # ONLY to preserve that name and aggregate the pass/fail of the split
@@ -1688,6 +1745,7 @@ jobs:
           echo "webgl-attest:  $WEBGL_ATTEST"
           echo "e2e-video:     (TEMPORARILY DISABLED — skipped + un-gated pending the 3-way shard, task #65; the real-GPU webgl-attest gate now covers its per-PR role)"
           echo "collab:        (informational — see collab job; temporarily un-gated, task #69)"
+          echo "collab-attest: (informational — local-relay attestation VERIFY; NOT yet in the failing set, mirrors webgl-attest's Phase-1 start; owner flips it required via the ruleset later)"
           # `e2e` is a matrix; its aggregated result is `success` only if all
           # shards succeeded. `e2e-video` is the dedicated WebGL-heavy lane (#68)
           # — REQUIRED, same coverage bar as the sharded `e2e` job (together they

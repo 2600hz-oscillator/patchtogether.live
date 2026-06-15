@@ -1,0 +1,183 @@
+# collab-nightly — the UNDER-LOAD backstop for the @collab attestation scheme.
+#
+# WHY this exists: per-PR @collab gating moved to the cheap content-hash VERIFY
+# (the `collab-attest` job in ci.yml), which trusts a local FRESH-dedicated-relay
+# run. That keeps the per-PR path fast (~2 min verify vs ~6.5-8 min real lane),
+# but a CALM LOCAL relay is merely LESS CONTENDED than CI's, not strictly
+# superior — it can MASK an under-load multiplayer race (the caveat in
+# .myrobots/plans/collab-attest-2026-06-15.md + ci-collab-attest/README.md). This
+# scheduled job runs the FULL real @collab lane on CI every day so contention
+# regressions still surface daily, without paying that cost on every PR.
+#
+# It is a DIAGNOSTIC backstop, NOT a per-PR gate: a red run here is a signal to
+# investigate (and re-attest after a fix), not a merge blocker. It mirrors the
+# ci.yml `collab` job's setup (DB + DOOM/SNES/WAD assets + DSP + preview bundle),
+# but is self-contained (builds its own artifacts inline) since it runs off the
+# ci.yml job graph.
+#
+# Dispatch manually any time:  gh workflow run collab-nightly.yml --ref <branch>
+name: collab-nightly
+
+on:
+  schedule:
+    # 09:00 UTC daily (off-peak; well clear of typical PR-CI bursts so the
+    # full @collab lane isn't itself contending with PR runs).
+    - cron: '0 9 * * *'
+  workflow_dispatch: {}
+
+# Never let two nightly runs (or a nightly + a manual re-dispatch) collide on the
+# shared relay assumptions.
+concurrency:
+  group: collab-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  collab-full:
+    name: collab-nightly (full @collab lane, under load)
+    runs-on: ubuntu-latest
+    # Generous ceiling: the full ~28-spec @collab suite incl. cold DOOM WASM +
+    # several 2-context boots, PLUS the inline DSP + preview build, at 2 workers.
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        # AWS ECR Public mirror — avoids the flaky Docker Hub service-container
+        # pull (same image the ci.yml collab/unit jobs use).
+        image: public.ecr.aws/docker/library/postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      # Opt the COLLAB_JOB-gated @collab DOOM specs back IN (same as the ci.yml
+      # collab job): RUN here (serial-ish, reliable), skipped in the sharded
+      # matrix.
+      COLLAB_JOB: '1'
+      # Run @collab against `vite preview` (built bundle), not the dev server —
+      # kills the HMR-reload flake class (#232/#225). Requires a web build below.
+      E2E_USE_PREVIEW: '1'
+
+    steps:
+      - name: Checkout (lfs for the SM64 bundle the preview build bakes in)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      # --- Build artifacts inline (this workflow is off the ci.yml job graph) ---
+
+      - name: Build DSP worklets (Faust + esbuild)
+        run: flox activate -- task dsp:build
+
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+
+      - name: Cache SNES9X WASM artifact
+        id: cache-snes9x-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/snes9x/snes9x.js
+            packages/web/static/snes9x/snes9x.wasm
+          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
+
+      - name: Build SNES9X WASM (emcc)
+        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
+
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
+
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+
+      - name: Build web (preview bundle, test hooks enabled)
+        run: flox activate -- task build:web
+
+      # --- The full real @collab lane (the under-load coverage) ---
+      # Mirrors `task collab` / the ci.yml collab job exactly: same grep, same
+      # workers, same DATABASE_URL + COLLAB_JOB + E2E_USE_PREVIEW. html reporter
+      # so the run is as inspectable as the per-PR collab lane.
+      - name: Run full @collab lane (under load, html report)
+        env:
+          PLAYWRIGHT_HTML_OPEN: never
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            --grep "@collab|@capacity" \
+            --workers=2 \
+            --reporter=list,html
+
+      - name: Upload Playwright HTML report (collab-nightly)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collab-nightly-playwright-report
+          path: e2e/playwright-report
+          retention-days: 30
+
+      - name: Upload Playwright test-results on failure (collab-nightly)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collab-nightly-test-results
+          path: e2e/test-results
+          retention-days: 14

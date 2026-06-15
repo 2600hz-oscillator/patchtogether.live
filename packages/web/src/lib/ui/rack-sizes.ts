@@ -44,6 +44,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   cocoadelay: { size: '2u', hp: 4 }, // 283×620px
   cube: { size: '3u', hp: 4 }, // 540×720px — 2-col (viewport+sources left, controls right)
   delay: { size: '1u', hp: 1 }, // 152×200px
+  depolarizer: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out bipolar→unipolar CV util)
   destroy: { size: '1u', hp: 2 }, // 152×220px
   drummergirl: { size: '1u', hp: 2 }, // 152×320px  [LOCKED]
   drumseqz: { size: '4u', hp: 5 }, // 604×820px
@@ -107,10 +108,12 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   moog994: { size: '1u', hp: 1 }, // 61×180px
   moog995: { size: '1u', hp: 1 }, // 124×200px
   moogCp3: { size: '1u', hp: 2 }, // 187×264px
+  negativity: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out CV inverter, no knob)
   noise: { size: '1u', hp: 1 }, // 154×160px
   numpadPlus: { size: '4u', hp: 4 }, // 714×722px
   peaks: { size: '3u', hp: 2 }, // 197×320px  [LOCKED]
   pentemelodica: { size: '3u', hp: 7 }, // 462×1180px
+  polarizer: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out unipolar→bipolar CV util)
   polyhelm: { size: '3u', hp: 4 }, // 536×720px
   polyseqz: { size: '2u', hp: 3 }, // 321×540px
   pong: { size: '2u', hp: 2 }, // 304×240px
