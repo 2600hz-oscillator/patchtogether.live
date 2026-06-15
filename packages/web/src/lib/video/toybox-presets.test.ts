@@ -53,7 +53,7 @@ const modelIds = new Set(manifest.models.map((m) => m.id));
 const materialParamIds = new Set(MATERIAL_PARAMS.map((p) => p.id));
 
 describe('TOYBOX manifest presets', () => {
-  it('declares exactly the 15 expected presets', () => {
+  it('declares exactly the 24 expected presets', () => {
     expect(presets.map((p) => p.id)).toEqual([
       'plasma-dissolve',
       'cow-on-camera',
@@ -69,7 +69,16 @@ describe('TOYBOX manifest presets', () => {
       'cat-feedback',
       'ocean-voyage',
       'neon-descent',
-      'aurora-gallery',
+      'primitive-pool',
+      'starry-night',
+      'plasma-terminal',
+      'tunnel-tv',
+      'comic-gyroid',
+      'chrome-teapot',
+      'neon-knot',
+      'caustic-cow',
+      'clay-pawn-terrain',
+      'metaball-mirror',
     ]);
   });
 

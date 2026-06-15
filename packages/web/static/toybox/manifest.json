@@ -191,6 +191,84 @@
         { "id": "dither",  "label": "DITHER",  "min": 0.0, "max": 1.0, "default": 0.6, "curve": "linear" },
         { "id": "duotone", "label": "DUOTONE", "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear" }
       ]
+    },
+    {
+      "id": "frag-bloom",
+      "label": "FRAG BLOOM",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-bloom.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "thresh", "label": "THRESH", "min": 0.0, "max": 1.0, "default": 0.55, "curve": "linear" },
+        { "id": "glow",   "label": "GLOW",   "min": 0.0, "max": 2.0, "default": 0.9,  "curve": "linear" },
+        { "id": "radius", "label": "RADIUS", "min": 0.0, "max": 1.0, "default": 0.5,  "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-crt",
+      "label": "FRAG CRT",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-crt.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "curve", "label": "CURVE", "min": 0.0, "max": 1.5, "default": 0.5, "curve": "linear" },
+        { "id": "scan",  "label": "SCAN",  "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear" },
+        { "id": "mask",  "label": "MASK",  "min": 0.0, "max": 1.0, "default": 0.6, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-halftone",
+      "label": "FRAG HALFTONE",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-halftone.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "cells",   "label": "CELLS",   "min": 4.0, "max": 32.0, "default": 14.0, "curve": "linear" },
+        { "id": "angle",   "label": "ANGLE",   "min": 0.0, "max": 3.14, "default": 0.6,  "curve": "linear" },
+        { "id": "duotone", "label": "DUOTONE", "min": 0.0, "max": 1.0,  "default": 0.0,  "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-pixelate",
+      "label": "FRAG PIXELATE",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-pixelate.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "blocks", "label": "BLOCKS", "min": 8.0, "max": 96.0, "default": 40.0, "curve": "linear" },
+        { "id": "bits",   "label": "BITS",   "min": 2.0, "max": 16.0, "default": 8.0,  "curve": "discrete" },
+        { "id": "smear",  "label": "SMEAR",  "min": 0.0, "max": 1.0,  "default": 0.4,  "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-ascii",
+      "label": "FRAG ASCII",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-ascii.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "cells", "label": "CELLS", "min": 16.0, "max": 96.0, "default": 48.0, "curve": "linear" },
+        { "id": "gamma", "label": "GAMMA", "min": 0.0,  "max": 1.0,  "default": 0.5,  "curve": "linear" },
+        { "id": "tint",  "label": "TINT",  "min": 0.0,  "max": 1.0,  "default": 0.3,  "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-mirror-fold",
+      "label": "FRAG MIRROR-FOLD",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-mirror-fold.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "folds", "label": "FOLDS", "min": 1.0, "max": 4.0,  "default": 3.0, "curve": "discrete" },
+        { "id": "spin",  "label": "SPIN",  "min": -2.0, "max": 2.0, "default": 0.4, "curve": "linear" },
+        { "id": "drift", "label": "DRIFT", "min": 0.0, "max": 2.0,  "default": 0.6, "curve": "linear" }
+      ]
     }
   ],
   "gen": [
@@ -390,17 +468,6 @@
       ]
     },
     {
-      "id": "aurora-curtains",
-      "label": "AURORA CURTAINS",
-      "family": "GEN",
-      "glsl": "/toybox/shaders/aurora-curtains.frag.glsl",
-      "params": [
-        { "id": "speed",     "label": "SPEED",     "min": 0.0, "max": 2.0, "default": 0.5, "curve": "linear" },
-        { "id": "intensity", "label": "INTENSITY", "min": 0.0, "max": 1.5, "default": 0.6, "curve": "linear" },
-        { "id": "hue",       "label": "HUE",       "min": 0.0, "max": 1.0, "default": 0.3, "curve": "linear" }
-      ]
-    },
-    {
       "id": "lava-lamp",
       "label": "LAVA LAMP",
       "family": "GEN",
@@ -422,6 +489,106 @@
         { "id": "scale", "label": "SCALE", "min": 2.0,  "max": 16.0, "default": 7.0, "curve": "linear" },
         { "id": "pulse", "label": "PULSE", "min": 0.0,  "max": 3.0,  "default": 1.0, "curve": "linear" },
         { "id": "glow",  "label": "GLOW",  "min": 0.0,  "max": 1.0,  "default": 0.6, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "plasma-flow",
+      "label": "PLASMA FLOW",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/plasma-flow.frag.glsl",
+      "params": [
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 0.6, "curve": "linear" },
+        { "id": "scale", "label": "SCALE", "min": 0.0, "max": 2.0, "default": 0.8, "curve": "linear" },
+        { "id": "hue",   "label": "HUE",   "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "kaleido-bloom",
+      "label": "KALEIDO BLOOM",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/kaleido-bloom.frag.glsl",
+      "params": [
+        { "id": "segments", "label": "SEGMENTS", "min": 2.0, "max": 16.0, "default": 6.0, "curve": "discrete" },
+        { "id": "spin",     "label": "SPIN",     "min": -2.0, "max": 2.0, "default": 0.5, "curve": "linear" },
+        { "id": "hue",      "label": "HUE",      "min": 0.0, "max": 1.0,  "default": 0.0, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "warp-tunnel",
+      "label": "WARP TUNNEL",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/warp-tunnel.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 0.7, "curve": "linear" },
+        { "id": "twist", "label": "TWIST", "min": -3.0, "max": 3.0, "default": 0.8, "curve": "linear" },
+        { "id": "fog",   "label": "FOG",   "min": 0.0, "max": 1.0, "default": 0.6, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "metaball-field",
+      "label": "METABALL FIELD",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/metaball-field.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "count", "label": "COUNT", "min": 2.0, "max": 8.0, "default": 5.0, "curve": "discrete" },
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 0.6, "curve": "linear" },
+        { "id": "hue",   "label": "HUE",   "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "warp-terrain",
+      "label": "WARP TERRAIN",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/warp-terrain.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "scale", "label": "SCALE", "min": 0.0, "max": 3.0, "default": 1.0, "curve": "linear" },
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 0.6, "curve": "linear" },
+        { "id": "warp",  "label": "WARP",  "min": 0.0, "max": 2.0, "default": 0.8, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "gyroid-slice",
+      "label": "GYROID SLICE",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/gyroid-slice.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "scale", "label": "SCALE", "min": 0.0, "max": 3.0, "default": 1.0, "curve": "linear" },
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 2.0, "default": 0.6, "curve": "linear" },
+        { "id": "hue",   "label": "HUE",   "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "hyperspace",
+      "label": "HYPERSPACE",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/hyperspace.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "speed",   "label": "SPEED",   "min": 0.0, "max": 3.0,  "default": 0.8, "curve": "linear" },
+        { "id": "density", "label": "DENSITY", "min": 0.0, "max": 8.0,  "default": 3.0, "curve": "linear" },
+        { "id": "warp",    "label": "WARP",    "min": 0.0, "max": 2.0,  "default": 0.8, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "caustic-pool",
+      "label": "CAUSTIC POOL",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/caustic-pool.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "scale",  "label": "SCALE",  "min": 0.0, "max": 2.0, "default": 0.8, "curve": "linear" },
+        { "id": "speed",  "label": "SPEED",  "min": 0.0, "max": 3.0, "default": 0.7, "curve": "linear" },
+        { "id": "bright", "label": "BRIGHT", "min": 0.0, "max": 1.5, "default": 0.6, "curve": "linear" }
       ]
     }
   ],
@@ -930,12 +1097,12 @@
       }
     },
     {
-      "id": "aurora-gallery",
-      "label": "AURORA GALLERY",
-      "note": "COMPLETE scene: the RAYMARCH-PRIMITIVES SDF gallery (GEN, layer 0) screen-MAPped with the AURORA-CURTAINS night sky (GEN, layer 1) — chrome primitives glinting under northern lights. OUTPUT = the MAP composite. cv2 → map MIX, cv3 → primitives SPIN, cv5 → aurora INTENSITY.",
+      "id": "primitive-pool",
+      "label": "PRIMITIVE POOL",
+      "note": "COMPLETE scene: the RAYMARCH-PRIMITIVES SDF gallery (GEN, layer 0) screen-MAPped with the CAUSTIC-POOL water light (GEN, layer 1) — chrome primitives glinting under dancing pool caustics. OUTPUT = the MAP composite. cv2 → map MIX, cv3 → primitives SPIN, cv5 → caustic SPEED.",
       "layers": [
         { "kind": "gen", "contentId": "raymarch-primitives", "params": { "spin": 0.4, "zoom": 1.0, "light": 0.6 } },
-        { "kind": "gen", "contentId": "aurora-curtains",     "params": { "speed": 0.5, "intensity": 0.6, "hue": 0.3 } },
+        { "kind": "gen", "contentId": "caustic-pool",        "params": { "scale": 0.8, "speed": 0.7, "bright": 0.6 } },
         { "kind": "off", "contentId": null, "params": {} },
         { "kind": "off", "contentId": null, "params": {} }
       ],
@@ -957,7 +1124,305 @@
       "cvRoutes": {
         "cv2": { "target": "combine", "nodeId": "map1", "param": "amount" },
         "cv3": { "target": "layer", "layer": 0, "param": "spin" },
-        "cv5": { "target": "layer", "layer": 1, "param": "intensity" }
+        "cv5": { "target": "layer", "layer": 1, "param": "speed" }
+      }
+    },
+    {
+      "id": "starry-night",
+      "label": "STARRY NIGHT (van gogh)",
+      "note": "COMPLETE scene: the fixed VAN GOGH SUNSET swirling Starry-Night sky (GEN, layer 0) softened by the BLOOM FRAG (layer 1) reading it — the painting's luminous stars + moon get a thick impasto glow. OUTPUT = the bloomed painting. cv1 → bloom GLOW, cv2 → sky SWIRL, cv4 → sky WARMTH.",
+      "layers": [
+        { "kind": "gen",  "contentId": "vangogh-sunset", "params": { "speed": 0.5, "swirl": 0.9, "warmth": 0.5 } },
+        { "kind": "frag", "contentId": "frag-bloom",      "params": { "thresh": 0.5, "glow": 0.9, "radius": 0.5 } },
+        { "kind": "off",  "contentId": null, "params": {} },
+        { "kind": "off",  "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "pass", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "pass", "toPort": "in0" },
+          { "id": "e1", "from": "pass", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 1, "param": "glow" },
+        "cv2": { "target": "layer", "layer": 0, "param": "swirl" },
+        "cv4": { "target": "layer", "layer": 0, "param": "warmth" }
+      }
+    },
+    {
+      "id": "plasma-terminal",
+      "label": "PLASMA TERMINAL",
+      "note": "COMPLETE scene: the PLASMA FLOW liquid-light field (GEN, layer 0) rendered as ASCII text-mode by the ASCII FRAG (layer 1) reading it — flowing plasma reduced to a glowing green terminal of procedural glyphs. OUTPUT = the ASCII output. cv1 → ascii TINT, cv2 → plasma SPEED, cv3 → ascii CELLS.",
+      "layers": [
+        { "kind": "gen",  "contentId": "plasma-flow", "params": { "speed": 0.6, "scale": 0.8, "hue": 0.0 } },
+        { "kind": "frag", "contentId": "frag-ascii",   "params": { "cells": 48.0, "gamma": 0.5, "tint": 0.3 } },
+        { "kind": "off",  "contentId": null, "params": {} },
+        { "kind": "off",  "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "pass", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "pass", "toPort": "in0" },
+          { "id": "e1", "from": "pass", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 1, "param": "tint" },
+        "cv2": { "target": "layer", "layer": 0, "param": "speed" },
+        "cv3": { "target": "layer", "layer": 1, "param": "cells" }
+      }
+    },
+    {
+      "id": "tunnel-tv",
+      "label": "TUNNEL TV",
+      "note": "COMPLETE scene: the WARP TUNNEL fly-through (GEN, layer 0) shot off a tube TV by the CRT FRAG (layer 1) reading it — an infinite wormhole with screen curvature, phosphor mask + scanlines. OUTPUT = the CRT output. cv1 → tunnel SPEED, cv2 → CRT MASK, cv5 → CRT CURVE.",
+      "layers": [
+        { "kind": "gen",  "contentId": "warp-tunnel", "params": { "speed": 0.7, "twist": 0.8, "fog": 0.6 } },
+        { "kind": "frag", "contentId": "frag-crt",     "params": { "curve": 0.5, "scan": 0.5, "mask": 0.6 } },
+        { "kind": "off",  "contentId": null, "params": {} },
+        { "kind": "off",  "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "pass", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "pass", "toPort": "in0" },
+          { "id": "e1", "from": "pass", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 0, "param": "speed" },
+        "cv2": { "target": "layer", "layer": 1, "param": "mask" },
+        "cv5": { "target": "layer", "layer": 1, "param": "curve" }
+      }
+    },
+    {
+      "id": "comic-gyroid",
+      "label": "COMIC GYROID",
+      "note": "COMPLETE scene: the GYROID SLICE organic lattice (GEN, layer 0) silk-screened by the HALFTONE FRAG (layer 1) reading it — a morphing minimal-surface inked as a comic-book dot screen. OUTPUT = the halftone. cv1 → halftone CELLS, cv2 → gyroid SPEED, cv4 → halftone DUOTONE.",
+      "layers": [
+        { "kind": "gen",  "contentId": "gyroid-slice",  "params": { "scale": 1.0, "speed": 0.6, "hue": 0.0 } },
+        { "kind": "frag", "contentId": "frag-halftone",  "params": { "cells": 14.0, "angle": 0.6, "duotone": 0.0 } },
+        { "kind": "off",  "contentId": null, "params": {} },
+        { "kind": "off",  "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "pass", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "pass", "toPort": "in0" },
+          { "id": "e1", "from": "pass", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 1, "param": "cells" },
+        "cv2": { "target": "layer", "layer": 0, "param": "speed" },
+        "cv4": { "target": "layer", "layer": 1, "param": "duotone" }
+      }
+    },
+    {
+      "id": "chrome-teapot",
+      "label": "CHROME TEAPOT",
+      "note": "COMPLETE OBJ scene: the UTAH TEAPOT (OBJ, layer 0, CHROME matcap) spinning over the PLASMA FLOW field (GEN, layer 1), luma-keyed so the plasma shows around the silhouette. OUTPUT = the lumakey composite. cv3 spins the teapot, cv2 → key amount, cv5 → plasma SPEED.",
+      "layers": [
+        {
+          "kind": "obj", "contentId": null, "params": {},
+          "material": {
+            "modelId": "teapot", "rotX": 0.4, "rotY": 0.6, "rotZ": 0.0,
+            "scale": 1.0, "spin": 0.6, "matcap": 0, "tintR": 1.0, "tintG": 1.0, "tintB": 1.0
+          }
+        },
+        { "kind": "gen", "contentId": "plasma-flow", "params": { "speed": 0.6, "scale": 0.8, "hue": 0.4 } },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "lk1", "kind": "lumakey", "x": 120, "y": 40, "params": { "amount": 0.05, "soft": 0.1, "invert": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "lk1", "toPort": "in0" },
+          { "id": "e1", "from": "src0", "to": "lk1", "toPort": "in1" },
+          { "id": "e2", "from": "lk1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv3": { "target": "layer", "layer": 0, "param": "material:spin" },
+        "cv2": { "target": "combine", "nodeId": "lk1", "param": "amount" },
+        "cv5": { "target": "layer", "layer": 1, "param": "speed" }
+      }
+    },
+    {
+      "id": "neon-knot",
+      "label": "NEON KNOT",
+      "note": "COMPLETE OBJ scene: a NEON-matcap TORUS KNOT (builtin, layer 0) tumbling over the HYPERSPACE star-warp (GEN, layer 1), luma-keyed so the streaking stars show behind it. OUTPUT = the lumakey composite. cv3 spins the knot, cv1 → warp SPEED, cv5 → knot SCALE.",
+      "layers": [
+        {
+          "kind": "obj", "contentId": null, "params": {},
+          "material": {
+            "modelId": "torus-knot", "rotX": 0.3, "rotY": 0.5, "rotZ": 0.2,
+            "scale": 1.1, "spin": 0.7, "matcap": 2, "tintR": 1.0, "tintG": 1.0, "tintB": 1.0
+          }
+        },
+        { "kind": "gen", "contentId": "hyperspace", "params": { "speed": 0.9, "density": 3.0, "warp": 0.9 } },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "lk1", "kind": "lumakey", "x": 120, "y": 40, "params": { "amount": 0.05, "soft": 0.1, "invert": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "lk1", "toPort": "in0" },
+          { "id": "e1", "from": "src0", "to": "lk1", "toPort": "in1" },
+          { "id": "e2", "from": "lk1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv3": { "target": "layer", "layer": 0, "param": "material:spin" },
+        "cv1": { "target": "layer", "layer": 1, "param": "speed" },
+        "cv5": { "target": "layer", "layer": 0, "param": "material:scale" }
+      }
+    },
+    {
+      "id": "caustic-cow",
+      "label": "CAUSTIC COW",
+      "note": "COMPLETE OBJ scene: SPOT THE COW (OBJ, layer 0) whose SURFACE is the CAUSTIC POOL water light (layer 1) UV-mapped onto the mesh (material.surfaceSource = 1) — a cow textured with dancing pool caustics, the caustic field also rendering behind as the OUTPUT base. cv3 spins the cow, cv2 → caustic SPEED.",
+      "layers": [
+        {
+          "kind": "obj", "contentId": null, "params": {},
+          "material": {
+            "modelId": "spot", "rotX": 0.3, "rotY": 0.6, "rotZ": 0.0,
+            "scale": 1.0, "spin": 0.4, "matcap": 0, "tintR": 1.0, "tintG": 1.0, "tintB": 1.0,
+            "surfaceSource": 1, "surfaceMix": 1.0
+          }
+        },
+        { "kind": "gen", "contentId": "caustic-pool", "params": { "scale": 0.8, "speed": 0.7, "bright": 0.6 } },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "fade1", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 1.0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "fade1", "toPort": "in0" },
+          { "id": "e1", "from": "src0", "to": "fade1", "toPort": "in1" },
+          { "id": "e2", "from": "fade1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv3": { "target": "layer", "layer": 0, "param": "material:spin" },
+        "cv2": { "target": "layer", "layer": 1, "param": "speed" }
+      }
+    },
+    {
+      "id": "clay-pawn-terrain",
+      "label": "CLAY PAWN TERRAIN",
+      "note": "COMPLETE OBJ scene: a CLAY-matcap CHESS PAWN (OBJ, layer 0) standing over the WARP TERRAIN flyover map (GEN, layer 1), luma-keyed so the generated land shows around it. OUTPUT = the lumakey composite. cv3 spins the pawn, cv2 → terrain SPEED, cv5 → terrain WARP.",
+      "layers": [
+        {
+          "kind": "obj", "contentId": null, "params": {},
+          "material": {
+            "modelId": "chess-pawn", "rotX": 0.1, "rotY": 0.4, "rotZ": 0.0,
+            "scale": 1.0, "spin": 0.3, "matcap": 1, "tintR": 1.0, "tintG": 1.0, "tintB": 1.0
+          }
+        },
+        { "kind": "gen", "contentId": "warp-terrain", "params": { "scale": 1.0, "speed": 0.6, "warp": 0.8 } },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "lk1", "kind": "lumakey", "x": 120, "y": 40, "params": { "amount": 0.05, "soft": 0.1, "invert": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "lk1", "toPort": "in0" },
+          { "id": "e1", "from": "src0", "to": "lk1", "toPort": "in1" },
+          { "id": "e2", "from": "lk1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv3": { "target": "layer", "layer": 0, "param": "material:spin" },
+        "cv2": { "target": "layer", "layer": 1, "param": "speed" },
+        "cv5": { "target": "layer", "layer": 1, "param": "warp" }
+      }
+    },
+    {
+      "id": "metaball-mirror",
+      "label": "METABALL MIRROR",
+      "note": "COMPLETE scene: the METABALL FIELD gooey blobs (GEN, layer 0) folded into a mirrored kaleidoscopic quilt by the MIRROR-FOLD FRAG (layer 1) reading it. OUTPUT = the folded blobs. cv1 → fold SPIN, cv2 → metaball SPEED, cv6 → fold DRIFT.",
+      "layers": [
+        { "kind": "gen",  "contentId": "metaball-field",   "params": { "count": 5.0, "speed": 0.6, "hue": 0.2 } },
+        { "kind": "frag", "contentId": "frag-mirror-fold",  "params": { "folds": 3.0, "spin": 0.4, "drift": 0.6 } },
+        { "kind": "off",  "contentId": null, "params": {} },
+        { "kind": "off",  "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "pass", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "pass", "toPort": "in0" },
+          { "id": "e1", "from": "pass", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 1, "param": "spin" },
+        "cv2": { "target": "layer", "layer": 0, "param": "speed" },
+        "cv6": { "target": "layer", "layer": 1, "param": "drift" }
       }
     }
   ]
