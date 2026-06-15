@@ -3,9 +3,15 @@ import { describe, it, expect } from 'vitest';
 import { midiToVOct, C3_MIDI } from '$lib/audio/note-entry';
 import {
   CLIP_COUNT,
+  CLIP_LANES,
   CLIP_TRACKS,
   DEFAULT_CLIP_STEPS,
   clipIndex,
+  laneOf,
+  slotOf,
+  lanePlaying,
+  laneQueued,
+  playingSet,
   defaultNoteClip,
   coerceNoteEvent,
   coerceClipRecord,
@@ -17,6 +23,12 @@ import {
   rowToMidi,
   midiToRow,
   toggleNoteAt,
+  cycleNoteAt,
+  noteAt,
+  velTier,
+  VEL_LOW,
+  VEL_MED,
+  VEL_HIGH,
   type NoteClipRecord,
 } from './clip-types';
 
@@ -172,5 +184,51 @@ describe('toggleNoteAt', () => {
     expect(c0.steps).toEqual([]); // original untouched
     const c2 = toggleNoteAt(c1, 3, 60);
     expect(c2.steps).toEqual([]);
+  });
+});
+
+describe('per-lane index + state helpers', () => {
+  it('laneOf / slotOf split a flat index (row-major, lane*8+slot)', () => {
+    expect([laneOf(0), slotOf(0)]).toEqual([0, 0]);
+    expect([laneOf(9), slotOf(9)]).toEqual([1, 1]);
+    expect([laneOf(63), slotOf(63)]).toEqual([7, 7]);
+  });
+  it('lanePlaying / laneQueued read the per-lane arrays', () => {
+    const data = {
+      playing: [null, 3, null, null, null, null, null, null],
+      queued: ['stop', 2, null, null, null, null, null, null] as (number | 'stop' | null)[],
+    };
+    expect(lanePlaying(data, 1)).toBe(3);
+    expect(lanePlaying(data, 0)).toBeNull();
+    expect(lanePlaying(undefined, 0)).toBeNull();
+    expect(laneQueued(data, 0)).toBe('stop');
+    expect(laneQueued(data, 1)).toBe(2);
+    expect(laneQueued(data, 2)).toBeNull();
+  });
+  it('playingSet normalizes to exactly CLIP_LANES entries', () => {
+    expect(playingSet({ playing: [1] })).toHaveLength(CLIP_LANES);
+    expect(playingSet(undefined)).toEqual(new Array(CLIP_LANES).fill(null));
+    expect(playingSet({ playing: [1] })[0]).toBe(1);
+  });
+});
+
+describe('velocity-cycle editor gesture', () => {
+  it('cycleNoteAt: absent → MED → LOW → HIGH → removed', () => {
+    const c0 = defaultNoteClip();
+    const c1 = cycleNoteAt(c0, 3, 60);
+    expect(noteAt(c1, 3, 60)?.velocity).toBe(VEL_MED);
+    const c2 = cycleNoteAt(c1, 3, 60);
+    expect(noteAt(c2, 3, 60)?.velocity).toBe(VEL_LOW);
+    const c3 = cycleNoteAt(c2, 3, 60);
+    expect(noteAt(c3, 3, 60)?.velocity).toBe(VEL_HIGH);
+    const c4 = cycleNoteAt(c3, 3, 60);
+    expect(noteAt(c4, 3, 60)).toBeUndefined(); // removed
+    expect(c0.steps).toEqual([]); // immutable
+  });
+  it('velTier buckets a raw velocity into low/med/high', () => {
+    expect(velTier(VEL_LOW)).toBe('low');
+    expect(velTier(VEL_MED)).toBe('med');
+    expect(velTier(VEL_HIGH)).toBe('high');
+    expect(velTier(undefined)).toBe('med');
   });
 });

@@ -138,14 +138,14 @@ function editData(nodeId: string, mut: (d: ClipPlayerData) => void): void {
 }
 function queueLane(nodeId: string, lane: number, action: number | 'stop' | null): void {
   editData(nodeId, (d) => {
-    if (!Array.isArray(d.queued) || d.queued.length < CLIP_LANES) {
-      const base: (number | 'stop' | null)[] = new Array(CLIP_LANES).fill(null);
-      if (Array.isArray(d.queued)) {
-        for (let i = 0; i < d.queued.length && i < CLIP_LANES; i++) base[i] = d.queued[i];
-      }
-      d.queued = base;
+    // SyncedStore Y.Arrays reject index assignment — rebuild a plain array and
+    // assign the whole thing (the same discipline the factory uses).
+    const base: (number | 'stop' | null)[] = new Array(CLIP_LANES).fill(null);
+    if (Array.isArray(d.queued)) {
+      for (let i = 0; i < d.queued.length && i < CLIP_LANES; i++) base[i] = d.queued[i];
     }
-    d.queued[lane] = action;
+    base[lane] = action;
+    d.queued = base;
   });
 }
 function clipAtIndex(data: ClipPlayerData | undefined, index: number): NoteClipRecord | null {

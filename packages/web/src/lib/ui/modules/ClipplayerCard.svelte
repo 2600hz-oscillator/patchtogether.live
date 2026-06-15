@@ -132,15 +132,14 @@
 
   // --- per-lane queue (the synced playing-set the engine + peers consume) ---
   function queueLane(lane: number, action: number | 'stop' | null) {
+    // SyncedStore Y.Arrays reject index assignment — rebuild + assign whole.
     writeData((d) => {
-      if (!Array.isArray(d.queued) || d.queued.length < CLIP_LANES) {
-        const base: (number | 'stop' | null)[] = new Array(CLIP_LANES).fill(null);
-        if (Array.isArray(d.queued)) {
-          for (let i = 0; i < d.queued.length && i < CLIP_LANES; i++) base[i] = d.queued[i];
-        }
-        d.queued = base;
+      const base: (number | 'stop' | null)[] = new Array(CLIP_LANES).fill(null);
+      if (Array.isArray(d.queued)) {
+        for (let i = 0; i < d.queued.length && i < CLIP_LANES; i++) base[i] = d.queued[i];
       }
-      d.queued[lane] = action;
+      base[lane] = action;
+      d.queued = base;
     });
   }
   function stopAll() {

@@ -26,8 +26,20 @@ import {
   unbindGrid,
   boundClipNode,
   __test_resetBinding,
+  __test_mode,
 } from './grid-clip-binding.svelte';
-import { STOP_PAD, clipIndexToPad, LED_LOADED, LED_PLAYING } from './grid-clip-map';
+import {
+  clipIndexToPad,
+  editRowToMidi,
+  CTRL_STOP_COL,
+  CTRL_SCENE_COL,
+  EDIT_PAD,
+  STOPALL_PAD,
+  TRANSPORT_PAD,
+  LED_LOADED,
+  LED_PLAYING,
+} from './grid-clip-map';
+import { clipIndex, defaultNoteClip, type NoteClipRecord } from '$lib/audio/modules/clip-types';
 
 const NODE_ID = 'cp1';
 
@@ -35,8 +47,8 @@ function clearPatch() {
   for (const k of Object.keys(livePatch.nodes)) delete livePatch.nodes[k];
   for (const k of Object.keys(livePatch.edges)) delete livePatch.edges[k];
 }
-function noteClip() {
-  return { kind: 'note', steps: [], lengthSteps: 16, root: 48, loop: true };
+function noteClip(): NoteClipRecord {
+  return defaultNoteClip();
 }
 function seedClipPlayer(data: Record<string, unknown>) {
   clearPatch();
@@ -44,8 +56,16 @@ function seedClipPlayer(data: Record<string, unknown>) {
     id: NODE_ID, type: 'clipplayer', domain: 'audio', position: { x: 0, y: 0 }, params: {}, data,
   } as never;
 }
+function seedTimelorde(running: number) {
+  livePatch.nodes['tl'] = {
+    id: 'tl', type: 'timelorde', domain: 'audio', position: { x: 0, y: 0 }, params: { running }, data: {},
+  } as never;
+}
 function liveData() {
   return livePatch.nodes[NODE_ID]!.data as Record<string, unknown>;
+}
+function queued() {
+  return liveData().queued as (number | 'stop' | null)[] | undefined;
 }
 
 let sim: SimulatedGrid;
@@ -57,67 +77,119 @@ beforeEach(async () => {
   sim = await installSimulatedGrid();
 });
 
-describe('grid → clip-player launch (Session mode)', () => {
-  it('pressing a loaded clip pad queues that clip', () => {
-    seedClipPlayer({ clips: { '0': noteClip(), '9': noteClip() } });
+describe('grid → clip-player launch (Session, per-lane)', () => {
+  it('pressing a loaded clip pad queues that clip in its lane', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip(), [clipIndex(1, 1)]: noteClip() } });
     bindGridToClip(NODE_ID);
     expect(boundClipNode()).toBe(NODE_ID);
-    sim.press(0, 0); // clip 0
-    expect(liveData().queued).toBe('0');
-    // clip 9 is at (x=1,y=1)
-    sim.press(1, 1);
-    expect(liveData().queued).toBe('9');
+    sim.press(0, 0); // lane0 slot0
+    expect(queued()![0]).toBe(0);
+    sim.press(1, 1); // lane1 slot1
+    expect(queued()![1]).toBe(1);
   });
 
-  it('pressing the currently-playing clip queues a stop', () => {
-    seedClipPlayer({ clips: { '0': noteClip() }, playing: '0' });
+  it('pressing the currently-playing clip queues a stop for that lane', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() }, playing: [0, null, null, null, null, null, null, null] });
     bindGridToClip(NODE_ID);
     sim.press(0, 0);
-    expect(liveData().queued).toBe('stop');
+    expect(queued()![0]).toBe('stop');
   });
 
-  it('the STOP pad queues a stop only while a clip plays', () => {
-    seedClipPlayer({ clips: { '0': noteClip() }, playing: '0' });
+  it('the per-lane STOP column stops only a playing lane', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() }, playing: [0, null, null, null, null, null, null, null] });
     bindGridToClip(NODE_ID);
-    sim.press(STOP_PAD.x, STOP_PAD.y);
-    expect(liveData().queued).toBe('stop');
+    sim.press(CTRL_STOP_COL, 0); // lane0 playing → stop
+    expect(queued()![0]).toBe('stop');
+    sim.press(CTRL_STOP_COL, 1); // lane1 idle → no-op
+    expect(queued()![1]).toBeNull();
   });
 
-  it('pressing an empty pad is a no-op (clips are created from the card)', () => {
-    seedClipPlayer({ clips: { '0': noteClip() } });
+  it('the SCENE column launches a slot across all lanes (empty lanes stop)', () => {
+    seedClipPlayer({ clips: { [clipIndex(2, 0)]: noteClip(), [clipIndex(2, 1)]: noteClip() } });
     bindGridToClip(NODE_ID);
-    sim.press(3, 0); // clip 3 — not loaded
-    expect(liveData().queued).toBeUndefined();
+    sim.press(CTRL_SCENE_COL, 2); // scene = slot 2
+    expect(queued()![0]).toBe(2);
+    expect(queued()![1]).toBe(2);
+    expect(queued()![2]).toBe('stop'); // lane2 has no slot-2 clip
   });
 
-  it('key release does not trigger an action', () => {
-    seedClipPlayer({ clips: { '0': noteClip() } });
+  it('STOP ALL queues stop on every lane', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() }, playing: [0, 0, null, null, null, null, null, null] });
     bindGridToClip(NODE_ID);
+    sim.press(STOPALL_PAD.x, STOPALL_PAD.y);
+    expect(queued()).toEqual(['stop', 'stop', 'stop', 'stop', 'stop', 'stop', 'stop', 'stop']);
+  });
+
+  it('TRANSPORT pad toggles TIMELORDE.running', () => {
+    seedClipPlayer({ clips: {} });
+    seedTimelorde(0);
+    bindGridToClip(NODE_ID);
+    sim.press(TRANSPORT_PAD.x, TRANSPORT_PAD.y);
+    expect((livePatch.nodes['tl']!.params as Record<string, number>).running).toBe(1);
+  });
+
+  it('empty clip pad is a no-op; key release never acts', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindGridToClip(NODE_ID);
+    sim.press(3, 0); // lane0 slot3 — not loaded
     sim.release(0, 0);
-    expect(liveData().queued).toBeUndefined();
+    expect(queued()?.[0] ?? null).toBeNull();
+    expect(queued()?.[3] ?? null).toBeNull();
+  });
+});
+
+describe('grid EDIT mode (hold EDIT + tap → note editor)', () => {
+  it('hold EDIT + tap a clip enters edit (no launch); a cell press adds a note', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindGridToClip(NODE_ID);
+    sim.press(EDIT_PAD.x, EDIT_PAD.y); // hold EDIT
+    expect(__test_mode().editArmed).toBe(true);
+    sim.press(0, 0); // tap clip 0 → enter edit, NOT launch
+    expect(__test_mode().mode).toBe('edit');
+    expect(__test_mode().editClipIndex).toBe(0);
+    expect(queued()?.[0] ?? null).toBeNull(); // did not launch
+    sim.release(EDIT_PAD.x, EDIT_PAD.y);
+
+    sim.press(3, 4); // a note cell
+    const clip = liveData().clips as Record<string, NoteClipRecord>;
+    expect(clip['0'].steps).toHaveLength(1);
+    expect(clip['0'].steps[0]).toMatchObject({ step: 3, midi: editRowToMidi(noteClip(), 4) });
+  });
+
+  it('tapping EDIT again exits to session', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindGridToClip(NODE_ID);
+    sim.press(EDIT_PAD.x, EDIT_PAD.y);
+    sim.press(0, 0);
+    sim.release(EDIT_PAD.x, EDIT_PAD.y);
+    expect(__test_mode().mode).toBe('edit');
+    sim.press(EDIT_PAD.x, EDIT_PAD.y); // tap to exit
+    expect(__test_mode().mode).toBe('session');
   });
 });
 
 describe('LED render loop', () => {
-  it('repaints the grid from clip-player state on each tick', () => {
-    seedClipPlayer({ clips: { '0': noteClip(), '9': noteClip() }, playing: '9' });
+  it('repaints the grid from per-lane state on each tick', () => {
+    seedClipPlayer({
+      clips: { [clipIndex(0, 0)]: noteClip(), [clipIndex(1, 1)]: noteClip() },
+      playing: [null, 1, null, null, null, null, null, null],
+    });
     bindGridToClip(NODE_ID);
     expect(hoisted.tick).toBeTruthy();
-    hoisted.tick!(); // one render pass
-    // clip 0 loaded → medium; clip 9 (x1,y1) playing → full bright.
-    expect(sim.ledAt(0, 0)).toBe(LED_LOADED);
-    const p = clipIndexToPad(9);
-    expect(sim.ledAt(p.x, p.y)).toBe(LED_PLAYING);
+    hoisted.tick!();
+    expect(sim.ledAt(0, 0)).toBe(LED_LOADED); // lane0 slot0 loaded
+    const p = clipIndexToPad(clipIndex(1, 1));
+    expect(sim.ledAt(p.x, p.y)).toBe(LED_PLAYING); // lane1 slot1 playing
   });
 });
 
 describe('unbind', () => {
   it('stops driving + blanks the grid', () => {
-    seedClipPlayer({ clips: { '0': noteClip() } });
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindGridToClip(NODE_ID);
     unbindGrid();
     expect(boundClipNode()).toBeNull();
-    sim.press(0, 0); // no longer bound
-    expect(liveData().queued).toBeUndefined();
+    sim.press(0, 0);
+    expect(queued()?.[0] ?? null).toBeNull();
   });
 });
