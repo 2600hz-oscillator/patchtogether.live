@@ -23,7 +23,7 @@ import {
   rowToMidi,
   midiToRow,
   toggleNoteAt,
-  cycleNoteAt,
+  cycleVelocity,
   noteAt,
   noteCovering,
   setNoteSpan,
@@ -182,7 +182,7 @@ describe('toggleNoteAt', () => {
   it('adds then removes a note immutably', () => {
     const c0 = defaultNoteClip();
     const c1 = toggleNoteAt(c0, 3, 60);
-    expect(c1.steps).toEqual([{ step: 3, midi: 60, velocity: 100, lengthSteps: 1 }]);
+    expect(c1.steps).toEqual([{ step: 3, midi: 60, velocity: VEL_MED, lengthSteps: 1 }]);
     expect(c0.steps).toEqual([]); // original untouched
     const c2 = toggleNoteAt(c1, 3, 60);
     expect(c2.steps).toEqual([]);
@@ -237,18 +237,23 @@ describe('held notes (the hold-pad + tap-another tie gesture)', () => {
   });
 });
 
-describe('velocity-cycle editor gesture', () => {
-  it('cycleNoteAt: absent → MED → LOW → HIGH → removed', () => {
+describe('VELOCITY-hold velocity cycle', () => {
+  it('cycleVelocity: empty → MED, then MED → LOW → HIGH → MED (wraps, never removes)', () => {
     const c0 = defaultNoteClip();
-    const c1 = cycleNoteAt(c0, 3, 60);
+    const c1 = cycleVelocity(c0, 3, 60); // places at MED
     expect(noteAt(c1, 3, 60)?.velocity).toBe(VEL_MED);
-    const c2 = cycleNoteAt(c1, 3, 60);
+    const c2 = cycleVelocity(c1, 3, 60);
     expect(noteAt(c2, 3, 60)?.velocity).toBe(VEL_LOW);
-    const c3 = cycleNoteAt(c2, 3, 60);
+    const c3 = cycleVelocity(c2, 3, 60);
     expect(noteAt(c3, 3, 60)?.velocity).toBe(VEL_HIGH);
-    const c4 = cycleNoteAt(c3, 3, 60);
-    expect(noteAt(c4, 3, 60)).toBeUndefined(); // removed
+    const c4 = cycleVelocity(c3, 3, 60);
+    expect(noteAt(c4, 3, 60)?.velocity).toBe(VEL_MED); // wraps; note still there
     expect(c0.steps).toEqual([]); // immutable
+  });
+  it('cycleVelocity changes the COVERING held note (press anywhere in its span)', () => {
+    const clip = { ...defaultNoteClip(), steps: [{ step: 2, midi: 60, velocity: VEL_MED, lengthSteps: 3 }] };
+    const next = cycleVelocity(clip, 4, 60); // press a held-tail cell
+    expect(noteAt(next, 2, 60)?.velocity).toBe(VEL_LOW); // the note (start step 2) changed
   });
   it('velTier buckets a raw velocity into low/med/high', () => {
     expect(velTier(VEL_LOW)).toBe('low');

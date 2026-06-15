@@ -32,6 +32,7 @@ import {
   rowToMidi,
   scaleSteps,
   noteCovering,
+  velTier,
   type ClipPlayerData,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
@@ -50,19 +51,29 @@ export const LED_EDIT_PAD = 5;
 export const LED_TRANSPORT_ON = 15;
 
 // --- Edit-mode LED levels ---
-export const LED_NOTE = 12; // a placed note (velocity is deferred — single level)
-export const LED_PLAYHEAD = 6; // bright wash on the current-step column (the pulse)
-export const LED_NOTE_PLAYHEAD = 15; // a note the playhead is currently over
-export const LED_ROOT_GUIDE = 1; // faint marker on root-pitch-class rows
-// Velocity tiers are reserved for a future hold-modifier (see clip-types VEL_*).
-export const LED_NOTE_LOW = 4;
-export const LED_NOTE_MED = 9;
+// A note is lit by its velocity tier; the playhead column washes empties + boosts
+// the note it crosses to full. The bottom FUNCTION ROW holds the editor controls.
+export const LED_NOTE_LOW = 5;
+export const LED_NOTE_MED = 10;
 export const LED_NOTE_HIGH = 15;
+export const LED_NOTE_PLAYHEAD = 15; // a note the playhead is currently over
+export const LED_PLAYHEAD = 6; // wash on the current-step column (the pulse)
+export const LED_ROOT_GUIDE = 1; // faint marker on root-pitch-class rows
+export const LED_FUNC = 5; // a function-row pad (idle)
+export const LED_FUNC_ON = 15; // a held function-row pad (e.g. VEL armed)
 
-// --- Control-pad coordinates ---
+// --- Edit-mode geometry: 7 note rows (0..6) + a bottom FUNCTION ROW (7) ---
+export const NOTE_ROWS = GRID_HEIGHT - 1; // 7 pitch rows (= 1 in-key octave)
+export const FUNC_ROW = GRID_HEIGHT - 1; // row 7 = controls
+export const EDIT_EXIT_PAD = { x: 0, y: FUNC_ROW } as const; // tap → leave the editor
+export const VEL_PAD = { x: 1, y: FUNC_ROW } as const; // hold + tap a note → cycle velocity
+export const OCT_DOWN_PAD = { x: 2, y: FUNC_ROW } as const; // shift the pitch window down
+export const OCT_UP_PAD = { x: 3, y: FUNC_ROW } as const; // shift the pitch window up
+
+// --- Session-mode control-pad coordinates ---
 export const CTRL_STOP_COL = CLIP_SLOTS; // 8 — per-lane stop
 export const CTRL_SCENE_COL = CLIP_SLOTS + 1; // 9 — scene launch
-export const EDIT_PAD = { x: GRID_WIDTH - 1, y: 0 } as const; // (15,0)
+export const EDIT_PAD = { x: GRID_WIDTH - 1, y: 0 } as const; // (15,0) — hold to enter edit
 export const STOPALL_PAD = { x: GRID_WIDTH - 1, y: GRID_HEIGHT - 2 } as const; // (15,6)
 export const TRANSPORT_PAD = { x: GRID_WIDTH - 1, y: GRID_HEIGHT - 1 } as const; // (15,7)
 
@@ -105,19 +116,20 @@ export function isTransportPad(x: number, y: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// EDIT-mode mapping (PURE)
+// EDIT-mode mapping (PURE) — note grid = rows 0..NOTE_ROWS-1 × all 16 steps;
+// row NOTE_ROWS (= FUNC_ROW) is the function row, never a note cell.
 // ---------------------------------------------------------------------------
 
-/** Display row y (0 = top) → MIDI note for a clip, given an octave-view offset. */
+/** Display row y (0 = top, NOTE_ROWS-1 = bottom note row) → MIDI for a clip. */
 export function editRowToMidi(clip: NoteClipRecord, y: number, octaveOffset = 0): number {
   const scaleLen = scaleSteps(clip.scale).length;
-  const logicalRow = octaveOffset * scaleLen + (GRID_HEIGHT - 1 - y);
+  const logicalRow = octaveOffset * scaleLen + (NOTE_ROWS - 1 - y);
   return rowToMidi(logicalRow, clip.root, clip.scale);
 }
 
 /**
- * An edit-mode pad (x,y) → the {step, midi} it edits, or null when it's the
- * reserved EDIT pad or a step beyond the clip's length / the 16-wide window.
+ * An edit-mode pad (x,y) → the {step, midi} it edits, or null when it's in the
+ * function row, or a step beyond the clip's length / the 16-wide window.
  */
 export function editPadToNote(
   clip: NoteClipRecord,
@@ -125,10 +137,23 @@ export function editPadToNote(
   y: number,
   octaveOffset = 0,
 ): { step: number; midi: number } | null {
-  if (isEditPad(x, y)) return null;
-  if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) return null;
+  if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= NOTE_ROWS) return null; // func row / oob
   if (x >= clip.lengthSteps) return null; // beyond the clip
   return { step: x, midi: editRowToMidi(clip, y, octaveOffset) };
+}
+
+// EDIT-mode function-row pad classifiers.
+export function isEditExitPad(x: number, y: number): boolean {
+  return x === EDIT_EXIT_PAD.x && y === EDIT_EXIT_PAD.y;
+}
+export function isVelPad(x: number, y: number): boolean {
+  return x === VEL_PAD.x && y === VEL_PAD.y;
+}
+export function isOctDownPad(x: number, y: number): boolean {
+  return x === OCT_DOWN_PAD.x && y === OCT_DOWN_PAD.y;
+}
+export function isOctUpPad(x: number, y: number): boolean {
+  return x === OCT_UP_PAD.x && y === OCT_UP_PAD.y;
 }
 
 // ---------------------------------------------------------------------------
@@ -186,35 +211,38 @@ export function computeSessionLeds(
   return frame;
 }
 
+const TIER_LED: Record<'low' | 'med' | 'high', number> = {
+  low: LED_NOTE_LOW,
+  med: LED_NOTE_MED,
+  high: LED_NOTE_HIGH,
+};
+
 /**
- * Full 128-cell EDIT-mode LED frame for one clip: placed notes (held notes light
- * the WHOLE span they sustain over), a bright wash on the live playhead column
- * (the tempo pulse moving across the clip), a faint guide on root-pitch-class
- * rows, and the reserved EDIT pad. `playheadStep` < 0 = not playing.
+ * Full 128-cell EDIT-mode LED frame for one clip. Note rows (0..NOTE_ROWS-1):
+ * a note lights its WHOLE held span by velocity tier (the playhead column boosts
+ * the note it crosses to full and washes empties). Bottom FUNCTION ROW: EDIT
+ * (exit), VEL (bright while held), OCT−, OCT+. `playheadStep` < 0 = not playing.
  */
 export function computeEditLeds(
   clip: NoteClipRecord,
   playheadStep: number,
   octaveOffset = 0,
+  velArmed = false,
 ): Uint8Array {
   const frame = new Uint8Array(GRID_CELLS);
   const rootPc = ((clip.root % 12) + 12) % 12;
-  for (let y = 0; y < GRID_HEIGHT; y++) {
+  for (let y = 0; y < NOTE_ROWS; y++) {
     for (let x = 0; x < GRID_WIDTH; x++) {
       const fi = frameIndex(x, y);
-      if (isEditPad(x, y)) {
-        frame[fi] = LED_EDIT_PAD;
-        continue;
-      }
       const note = editPadToNote(clip, x, y, octaveOffset);
       if (!note) {
         frame[fi] = LED_EMPTY;
         continue;
       }
       const onPlayhead = x === playheadStep;
-      // A held note lights every cell of its span (not just its start).
-      if (noteCovering(clip, note.step, note.midi)) {
-        frame[fi] = onPlayhead ? LED_NOTE_PLAYHEAD : LED_NOTE;
+      const cov = noteCovering(clip, note.step, note.midi);
+      if (cov) {
+        frame[fi] = onPlayhead ? LED_NOTE_PLAYHEAD : TIER_LED[velTier(cov.velocity)];
         continue;
       }
       let base = LED_EMPTY;
@@ -223,5 +251,10 @@ export function computeEditLeds(
       frame[fi] = base;
     }
   }
+  // Function row.
+  frame[frameIndex(EDIT_EXIT_PAD.x, EDIT_EXIT_PAD.y)] = LED_FUNC;
+  frame[frameIndex(VEL_PAD.x, VEL_PAD.y)] = velArmed ? LED_FUNC_ON : LED_FUNC;
+  frame[frameIndex(OCT_DOWN_PAD.x, OCT_DOWN_PAD.y)] = LED_FUNC;
+  frame[frameIndex(OCT_UP_PAD.x, OCT_UP_PAD.y)] = LED_FUNC;
   return frame;
 }

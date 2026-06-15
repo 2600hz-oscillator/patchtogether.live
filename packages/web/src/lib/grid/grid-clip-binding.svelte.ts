@@ -32,6 +32,10 @@ import {
   isEditPad,
   isStopAllPad,
   isTransportPad,
+  isEditExitPad,
+  isVelPad,
+  isOctDownPad,
+  isOctUpPad,
   editPadToNote,
   computeSessionLeds,
   computeEditLeds,
@@ -45,6 +49,7 @@ import {
   coerceClipRecord,
   toggleNoteAt,
   setNoteSpan,
+  cycleVelocity,
   type ClipPlayerData,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
@@ -68,6 +73,8 @@ let editArmed = false; // EDIT pad held in session mode
 // note; holding the anchor + tapping another pad in the same row ties them.
 let editAnchor: { step: number; midi: number } | null = null;
 let editSpanned = false;
+let editOctave = 0; // pitch-window offset (OCT−/+ on the function row)
+let velHeld = false; // the VELOCITY function pad is held
 
 /** Reactive version — bump on bind/unbind so card UI re-derives. */
 let bindingVersion = $state(0);
@@ -86,6 +93,8 @@ function start(): void {
   editArmed = false;
   editAnchor = null;
   editSpanned = false;
+  editOctave = 0;
+  velHeld = false;
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
 }
@@ -199,29 +208,33 @@ function handleKey(e: GridKeyEvent): void {
   const nodeId = boundNodeId;
   if (!nodeId || !livePatch.nodes[nodeId]) return;
 
-  // EDIT pad — works on press, in both modes + tracks hold in session.
-  if (isEditPad(e.x, e.y)) {
-    if (e.s === 1) {
-      if (mode === 'edit') {
-        mode = 'session'; // tap EDIT to exit the editor
-        editArmed = false;
-      } else {
-        editArmed = true; // hold to arm; a clip tap enters edit
-      }
-    } else {
-      editArmed = false; // release
-    }
+  // SESSION EDIT pad (15,0) — hold to arm; a clip tap then enters the editor.
+  if (mode === 'session' && isEditPad(e.x, e.y)) {
+    editArmed = e.s === 1;
     return;
   }
 
-  // --- EDIT mode: the whole grid is the clip's note editor (press + release) ---
+  // --- EDIT mode: rows 0..6 = note grid, bottom row = function controls ---
   if (mode === 'edit') {
     const clip = clipAtIndex(liveData(nodeId), editClipIndex);
     if (!clip) { if (e.s === 1) mode = 'session'; return; }
-    const note = editPadToNote(clip, e.x, e.y);
-    if (!note) return; // reserved EDIT pad / out-of-range
+
+    // function row
+    if (isEditExitPad(e.x, e.y)) {
+      if (e.s === 1) { mode = 'session'; editAnchor = null; editSpanned = false; velHeld = false; }
+      return;
+    }
+    if (isVelPad(e.x, e.y)) { velHeld = e.s === 1; return; } // hold-modifier
+    if (e.s === 1 && isOctDownPad(e.x, e.y)) { editOctave -= 1; return; }
+    if (e.s === 1 && isOctUpPad(e.x, e.y)) { editOctave += 1; return; }
+
+    const note = editPadToNote(clip, e.x, e.y, editOctave);
+    if (!note) return; // a non-control function-row / out-of-range pad
     if (e.s === 1) {
-      if (editAnchor && editAnchor.midi === note.midi && editAnchor.step !== note.step) {
+      if (velHeld) {
+        // VELOCITY modifier: cycle this note's velocity (or place at MED).
+        writeClip(nodeId, cycleVelocity(clip, note.step, note.midi));
+      } else if (editAnchor && editAnchor.midi === note.midi && editAnchor.step !== note.step) {
         // hold a note + tap another in the SAME row → one held note spanning them
         writeClip(nodeId, setNoteSpan(clip, editAnchor.step, note.step, note.midi));
         editSpanned = true;
@@ -229,7 +242,7 @@ function handleKey(e: GridKeyEvent): void {
         editAnchor = { step: note.step, midi: note.midi };
         editSpanned = false;
       }
-    } else if (editAnchor && editAnchor.step === note.step && editAnchor.midi === note.midi) {
+    } else if (!velHeld && editAnchor && editAnchor.step === note.step && editAnchor.midi === note.midi) {
       // releasing the anchor with no span = a simple tap → toggle the note on/off
       if (!editSpanned) writeClip(nodeId, toggleNoteAt(clip, note.step, note.midi));
       editAnchor = null;
@@ -248,6 +261,11 @@ function handleKey(e: GridKeyEvent): void {
     if (editArmed) {
       editClipIndex = clipIdx; // hold-EDIT + tap → open the editor
       mode = 'edit';
+      editArmed = false;
+      editAnchor = null;
+      editSpanned = false;
+      editOctave = 0;
+      velHeld = false;
       return;
     }
     const lane = laneOf(clipIdx);
@@ -296,7 +314,7 @@ function renderLeds(): void {
       // Show the playhead only when the edited clip's lane is actually playing it.
       const lane = laneOf(editClipIndex);
       const ph = lanePlaying(data, lane) === slotOf(editClipIndex) ? getLanePlayhead(nodeId, lane) : -1;
-      setFrame(computeEditLeds(clip, ph));
+      setFrame(computeEditLeds(clip, ph, editOctave, velHeld));
       return;
     }
     mode = 'session'; // clip vanished — fall back
@@ -316,12 +334,16 @@ export function __test_resetBinding(): void {
   editArmed = false;
   editAnchor = null;
   editSpanned = false;
+  editOctave = 0;
+  velHeld = false;
 }
 /** Read internal mode state — tests only. */
 export function __test_mode(): {
   mode: 'session' | 'edit';
   editClipIndex: number;
   editArmed: boolean;
+  editOctave: number;
+  velHeld: boolean;
 } {
-  return { mode, editClipIndex, editArmed };
+  return { mode, editClipIndex, editArmed, editOctave, velHeld };
 }

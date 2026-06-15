@@ -175,17 +175,28 @@
 </ul>
 
 <h2>Editing a clip on the pads (hands-only)</h2>
-<ol>
-  <li><strong>Hold the EDIT pad</strong> (top-right) and <strong>tap a clip</strong> → the whole grid becomes that clip's note editor.</li>
-  <li><strong>X = step, Y = pitch</strong> (in-key, root at the bottom). Press a cell to place a note; press it again to cycle velocity:</li>
-</ol>
+<p>
+  <strong>Hold the EDIT pad</strong> (session, top-right) + <strong>tap a clip</strong>
+  → the grid becomes that clip's note editor: the top <strong>7 rows = pitch</strong>
+  (in-key, one octave; root at the bottom), all <strong>16 columns = steps</strong>,
+  and the <strong>bottom row is a function row</strong>.
+</p>
+<ul>
+  <li><strong>Tap a cell</strong> → note ON; tap it again → note OFF.</li>
+  <li><strong>Hold a note + tap another in the same row</strong> → one HELD note spanning them (the gate stays high the whole time).</li>
+  <li><strong>Hold VEL + tap a note</strong> → cycle its velocity MED → LOW → HIGH (three LED brightnesses):</li>
+</ul>
 <div class="vel-legend">
   {#each VEL_STATES as v (v.label)}
     <span class="vel"><span class="led" style="background:{swatch(v.level)}"></span>{v.label}</span>
   {/each}
-  <span class="vel">→ press once more to remove</span>
 </div>
-<p><strong>Tap EDIT again</strong> to return to the session.</p>
+<p>
+  The <strong>function row</strong> (bottom): <strong>EDIT</strong> (tap to exit) ·
+  <strong>VEL</strong> (hold to set velocity) · <strong>OCT−</strong> /
+  <strong>OCT+</strong> (move the 7-row pitch window). While the clip plays, the
+  current step column lights up and sweeps across — the tempo pulsing through the clip.
+</p>
 
 <h2>LED feedback</h2>
 <table>
@@ -229,7 +240,7 @@
 
 <h2>What's next</h2>
 <ul>
-  <li><strong>Step paging on the grid</strong> for clips longer than 16 steps, plus a per-clip octave shift on the pads.</li>
+  <li><strong>Step paging on the grid</strong> for clips longer than 16 steps.</li>
   <li><strong>More clip kinds</strong> — audio loops and patch snapshots alongside note clips, plus recording into slots.</li>
 </ul>
 

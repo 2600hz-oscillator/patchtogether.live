@@ -320,21 +320,21 @@ export function toggleNoteAt(clip: NoteClipRecord, step: number, midi: number): 
   const steps =
     existing >= 0
       ? clip.steps.filter((_, i) => i !== existing)
-      : [...clip.steps, { step, midi, velocity: DEFAULT_VELOCITY, lengthSteps: 1 }];
+      : [...clip.steps, { step, midi, velocity: VEL_MED, lengthSteps: 1 }];
   return { ...clip, steps };
 }
 
 // ---------------------------------------------------------------------------
-// Velocity tiers — the "second-press cycles low/med/high" editor gesture
-// (DECIDED 2026-06-15). Same gesture on the card (mouse) and the grid (pad):
-// first press places a note at MED; each further press cycles the velocity and
-// the 4th press removes it. Three tiers map to three grid-LED brightnesses.
+// Velocity tiers (DECIDED 2026-06-15). A plain note tap places MED; on the grid
+// you HOLD the VELOCITY pad + tap a note to cycle its velocity MED → LOW → HIGH
+// (wrapping, never removing — removal is a plain tap). Three tiers map to three
+// grid-LED brightnesses.
 // ---------------------------------------------------------------------------
 export const VEL_MED = 80;
 export const VEL_LOW = 40;
 export const VEL_HIGH = 120;
-/** Cycle order: a fresh note starts MED, then LOW, then HIGH, then removed. */
-export const VEL_CYCLE: readonly number[] = [VEL_MED, VEL_LOW, VEL_HIGH];
+/** The wrap order the VELOCITY-hold modifier cycles through. */
+export const VEL_TIER_ORDER: readonly number[] = [VEL_MED, VEL_LOW, VEL_HIGH];
 
 export type VelTier = 'low' | 'med' | 'high';
 /** Bucket a raw 0..127 velocity to one of the three editor tiers. */
@@ -346,28 +346,20 @@ export function velTier(velocity: number | undefined): VelTier {
 }
 
 /**
- * Cycle a note at (step, midi): absent → add at MED; MED → LOW → HIGH → removed.
- * This is the single editor gesture for both placing notes and setting their
- * velocity tier. Returns a NEW clip (caller persists via the in-place Y
- * discipline). Notes whose velocity isn't an exact tier value normalize to the
- * next tier on the first press (so loaded clips behave predictably).
+ * The VELOCITY-hold gesture: cycle the velocity of the note COVERING (step,
+ * midi) MED → LOW → HIGH → MED (wrapping). If no note is there yet, place one at
+ * MED. Never removes a note (a plain tap does that). Returns a NEW clip.
  */
-export function cycleNoteAt(clip: NoteClipRecord, step: number, midi: number): NoteClipRecord {
-  const i = clip.steps.findIndex((e) => e.step === step && e.midi === midi);
-  if (i < 0) {
-    return {
-      ...clip,
-      steps: [...clip.steps, { step, midi, velocity: VEL_MED, lengthSteps: 1 }],
-    };
+export function cycleVelocity(clip: NoteClipRecord, step: number, midi: number): NoteClipRecord {
+  const cov = noteCovering(clip, step, midi);
+  if (!cov) {
+    return { ...clip, steps: [...clip.steps, { step, midi, velocity: VEL_MED, lengthSteps: 1 }] };
   }
-  const cur = clip.steps[i];
-  const tierIdx = VEL_CYCLE.indexOf(cur.velocity ?? VEL_MED);
-  const next = tierIdx + 1;
-  if (next >= VEL_CYCLE.length) {
-    return { ...clip, steps: clip.steps.filter((_, j) => j !== i) };
-  }
-  const steps = clip.steps.slice();
-  steps[i] = { ...cur, velocity: VEL_CYCLE[next] };
+  const i = VEL_TIER_ORDER.indexOf(cov.velocity ?? VEL_MED);
+  const next = VEL_TIER_ORDER[(i + 1) % VEL_TIER_ORDER.length];
+  const steps = clip.steps.map((e) =>
+    e.step === cov.step && e.midi === cov.midi ? { ...e, velocity: next } : e,
+  );
   return { ...clip, steps };
 }
 
@@ -408,6 +400,6 @@ export function setNoteSpan(
   const a = Math.min(lo, hi);
   const b = Math.max(lo, hi);
   const steps = clip.steps.filter((e) => e.midi !== midi || e.step < a || e.step > b);
-  steps.push({ step: a, midi, velocity: DEFAULT_VELOCITY, lengthSteps: b - a + 1 });
+  steps.push({ step: a, midi, velocity: VEL_MED, lengthSteps: b - a + 1 });
   return { ...clip, steps };
 }

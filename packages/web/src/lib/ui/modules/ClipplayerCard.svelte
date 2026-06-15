@@ -37,6 +37,7 @@
     scaleSteps,
     toggleNoteAt,
     noteCovering,
+    velTier,
     type ClipPlayerData,
     type NoteClipRecord,
   } from '$lib/audio/modules/clip-types';
@@ -248,8 +249,9 @@
     const logicalRow = editorOctave * scaleLen + (EDIT_ROWS - 1 - displayRow);
     return rowToMidi(logicalRow, clip.root, clip.scale);
   }
-  function cellOn(clip: NoteClipRecord, step: number, midi: number): boolean {
-    return noteCovering(clip, step, midi) !== undefined;
+  function cellVel(clip: NoteClipRecord, step: number, midi: number): '' | 'vlow' | 'vmed' | 'vhigh' {
+    const ev = noteCovering(clip, step, midi);
+    return ev ? `v${velTier(ev.velocity)}` : '';
   }
   function toggleNote(step: number, displayRow: number) {
     const clip = clipAt(selectedClip);
@@ -395,8 +397,7 @@
                 {#each Array(editCols) as _c, step (step)}
                   {@const midi = midiForDisplayRow(editClip, row)}
                   <button
-                    class="cell"
-                    class:on={cellOn(editClip, step, midi)}
+                    class="cell {cellVel(editClip, step, midi)}"
                     class:playhead={step === playheadCol}
                     data-step={step}
                     data-row={row}
@@ -568,10 +569,15 @@
     cursor: pointer;
     padding: 0;
   }
-  .cell.on { background: hsl(200 78% 50%); }
+  /* note cells by velocity tier (low/med/high) */
+  .cell.vlow { background: hsl(200 60% 34%); }
+  .cell.vmed { background: hsl(200 75% 48%); }
+  .cell.vhigh { background: hsl(200 90% 62%); }
   /* the playhead lights the whole column so you see the tempo pulse cross the clip */
   .cell.playhead { background: rgba(108, 170, 255, 0.22); border-color: var(--accent, #6cf); }
-  .cell.on.playhead { background: hsl(200 90% 64%); }
+  .cell.vlow.playhead,
+  .cell.vmed.playhead,
+  .cell.vhigh.playhead { background: hsl(200 95% 70%); }
   .knob-row {
     display: flex;
     align-items: center;

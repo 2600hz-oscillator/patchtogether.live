@@ -36,10 +36,18 @@ import {
   EDIT_PAD,
   STOPALL_PAD,
   TRANSPORT_PAD,
+  EDIT_EXIT_PAD,
+  VEL_PAD,
+  OCT_UP_PAD,
   LED_LOADED,
   LED_PLAYING,
 } from './grid-clip-map';
-import { clipIndex, defaultNoteClip, type NoteClipRecord } from '$lib/audio/modules/clip-types';
+import {
+  clipIndex,
+  defaultNoteClip,
+  VEL_LOW,
+  type NoteClipRecord,
+} from '$lib/audio/modules/clip-types';
 
 const NODE_ID = 'cp1';
 
@@ -190,12 +198,36 @@ describe('grid EDIT mode (hold EDIT + tap → note editor)', () => {
     });
   });
 
-  it('tapping EDIT again exits to session', () => {
+  it('hold VEL + tap a note cycles its velocity (does not remove it)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindGridToClip(NODE_ID);
+    enterEdit();
+    tapEdit(3, 4); // place a MED note
+    sim.press(VEL_PAD.x, VEL_PAD.y); // hold VEL
+    expect(__test_mode().velHeld).toBe(true);
+    sim.press(3, 4); // tap the note → cycle velocity (no toggle)
+    sim.release(3, 4);
+    sim.release(VEL_PAD.x, VEL_PAD.y);
+    expect(clipSteps()).toHaveLength(1); // still there
+    expect(clipSteps()[0].velocity).toBe(VEL_LOW); // MED → LOW
+  });
+
+  it('OCT+ shifts the pitch window so a placed note lands an octave up', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindGridToClip(NODE_ID);
+    enterEdit();
+    sim.press(OCT_UP_PAD.x, OCT_UP_PAD.y); // shift window up
+    expect(__test_mode().editOctave).toBe(1);
+    tapEdit(3, 4);
+    expect(clipSteps()[0].midi).toBe(editRowToMidi(noteClip(), 4, 1));
+  });
+
+  it('tapping the function-row EDIT pad exits to session', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindGridToClip(NODE_ID);
     enterEdit();
     expect(__test_mode().mode).toBe('edit');
-    sim.press(EDIT_PAD.x, EDIT_PAD.y); // tap to exit
+    sim.press(EDIT_EXIT_PAD.x, EDIT_EXIT_PAD.y); // tap to exit
     expect(__test_mode().mode).toBe('session');
   });
 });
