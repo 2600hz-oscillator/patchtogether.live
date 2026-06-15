@@ -175,12 +175,12 @@ export const chromaDef: VideoModuleDef = {
   migrate: migrateChroma,
   inputs: [
     { id: 'in',         type: 'video' },
-    { id: 'hue',        type: 'cv', paramTarget: 'hue' },
-    { id: 'saturation', type: 'cv', paramTarget: 'saturation' },
-    { id: 'tintR',      type: 'cv', paramTarget: 'tintR' },
-    { id: 'tintG',      type: 'cv', paramTarget: 'tintG' },
-    { id: 'tintB',      type: 'cv', paramTarget: 'tintB' },
-    { id: 'tintMix',    type: 'cv', paramTarget: 'tintMix' },
+    { id: 'hue',        type: 'cv', paramTarget: 'hue', cvScale: { mode: 'linear' } },
+    { id: 'saturation', type: 'cv', paramTarget: 'saturation', cvScale: { mode: 'linear' } },
+    { id: 'tintR',      type: 'cv', paramTarget: 'tintR', cvScale: { mode: 'linear' } },
+    { id: 'tintG',      type: 'cv', paramTarget: 'tintG', cvScale: { mode: 'linear' } },
+    { id: 'tintB',      type: 'cv', paramTarget: 'tintB', cvScale: { mode: 'linear' } },
+    { id: 'tintMix',    type: 'cv', paramTarget: 'tintMix', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'video' },

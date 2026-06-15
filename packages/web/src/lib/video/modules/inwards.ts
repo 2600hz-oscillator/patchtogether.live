@@ -88,9 +88,9 @@ export const inwardsDef: VideoModuleDef = {
     // into VideoEngine.setParam, where the target param id == this input
     // port id. So the port ids MUST match the param ids exactly
     // (`speed`, `density`, `thickness`).
-    { id: 'speed',     type: 'cv', paramTarget: 'speed' },
-    { id: 'density',   type: 'cv', paramTarget: 'density' },
-    { id: 'thickness', type: 'cv', paramTarget: 'thickness' },
+    { id: 'speed',     type: 'cv', paramTarget: 'speed', cvScale: { mode: 'linear' } },
+    { id: 'density',   type: 'cv', paramTarget: 'density', cvScale: { mode: 'linear' } },
+    { id: 'thickness', type: 'cv', paramTarget: 'thickness', cvScale: { mode: 'linear' } },
   ],
   outputs: [
     { id: 'out', type: 'mono-video' },

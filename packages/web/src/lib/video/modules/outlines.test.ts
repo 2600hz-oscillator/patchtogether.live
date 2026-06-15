@@ -95,6 +95,21 @@ describe('outlinesDef — shape', () => {
     expect(byId['video'].type).toBe('video');
   });
 
+  it('every CONTINUOUS cv input carries a cvScale hint (so the cv→video bridge sweeps the full param range centered on the knob, not raw gate passthrough)', () => {
+    // Regression: without `cvScale`, cv-bridge-map.ts treats a cv input as
+    // GATE-style raw passthrough — the incoming value clobbers the knob and a
+    // bipolar ±1 source falls outside the 0..1 range, so the CV input appears
+    // dead. The two real gate inputs (gate/collide) MUST stay passthrough.
+    const byId = Object.fromEntries(outlinesDef.inputs.map((p) => [p.id, p]));
+    for (const id of ['d', 'v', 'spd', 'decay', 'shape', 'rotation']) {
+      expect(byId[id].cvScale, `${id} must declare cvScale`).toBeDefined();
+      expect(byId[id].cvScale!.mode).toBe('linear');
+    }
+    // Gate inputs deliberately carry NO cvScale (edge-detected, not scaled).
+    expect(byId[OUTLINES_GATE_PORT_ID].cvScale).toBeUndefined();
+    expect(byId[OUTLINES_COLLIDE_PORT_ID].cvScale).toBeUndefined();
+  });
+
   it('has NO cv input for rate (knob only)', () => {
     expect(outlinesDef.inputs.find((p) => p.id === 'rate')).toBeUndefined();
   });
