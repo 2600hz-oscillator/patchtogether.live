@@ -35,6 +35,13 @@
     type RecorderState,
   } from '$lib/video/recorderbox-recorder';
   import {
+    pickEncodeProfile,
+    coerceQuality,
+    QUALITY_VALUES,
+    qualityLabel,
+    type RecorderboxQuality,
+  } from '$lib/video/recorderbox-quality';
+  import {
     listRecoverable,
     readOpfsBytes,
     deleteOpfsFile,
@@ -56,6 +63,10 @@
 
   let filename = $derived<string>((node?.data?.filename as string | undefined) ?? 'recording');
   let recording = $derived<boolean>((node?.data?.recording as boolean | undefined) ?? false);
+  // QUALITY/SIZE tier. Default BALANCED (owner default 2026-06-15) — ~−80% size
+  // for a small quality hit; HIGH (original ~14 Mbps H.264) is one click away.
+  // Synced to rack-mates via Y.Doc.
+  let quality = $derived<RecorderboxQuality>(coerceQuality(node?.data?.quality));
 
   let previewEl: HTMLCanvasElement | null = $state(null);
   // Hidden full-res capture canvas the recorder encodes from.
@@ -76,7 +87,7 @@
   // Recovery prompt state.
   let recoverable = $state<RecorderboxManifest[]>([]);
 
-  function setData(key: 'filename' | 'recording', value: string | boolean) {
+  function setData(key: 'filename' | 'recording' | 'quality', value: string | boolean) {
     const target = patch.nodes[id];
     if (target) {
       if (!target.data) target.data = {};
@@ -87,6 +98,11 @@
   function onFilenameInput(e: Event) {
     const v = (e.target as HTMLInputElement).value;
     setData('filename', v);
+  }
+
+  function onQualityChange(e: Event) {
+    const v = (e.target as HTMLSelectElement).value;
+    setData('quality', coerceQuality(v));
   }
 
   function toggleRecord() {
@@ -200,6 +216,14 @@
       captureEl.width = ew;
       captureEl.height = eh;
 
+      // Resolve the encode profile for the chosen quality tier at THIS
+      // resolution: HIGH = the original H.264 / 14 Mbps; BALANCED/SMALL prefer a
+      // modern codec (AV1/VP9) if the runtime can encode it, else a lower-bitrate
+      // H.264. Probed against the real runtime (degrades gracefully).
+      const profile = await pickEncodeProfile(quality, ew, eh);
+      // The user may have flipped Record OFF while the probe ran.
+      if (!recording) return;
+
       // Pull the live capture MediaStream the module published (null = audio off
       // → record video only / silent).
       const e = engineCtx.get();
@@ -215,6 +239,10 @@
         audioTrack,
         filename,
         destHandle: dest, // null on Firefox/Safari → stop() downloads instead.
+        videoCodec: profile.videoCodec,
+        videoBitrate: profile.videoBitrate,
+        keyFrameInterval: profile.keyFrameInterval,
+        audioBitrate: profile.audioBitrate,
         width: ew,
         height: eh,
         saveBytes,
@@ -386,6 +414,22 @@
       <span class="ext">.mp4</span>
     </label>
 
+    <label class="quality-row">
+      <span class="lbl">SIZE</span>
+      <select
+        class="quality-select nodrag"
+        value={quality}
+        onchange={onQualityChange}
+        disabled={recState === 'recording' || recState === 'finalizing'}
+        data-testid="recorderbox-quality"
+        title="Smaller files trade a little quality. HIGH = original H.264; BALANCED/SMALL prefer AV1/VP9 where supported."
+      >
+        {#each QUALITY_VALUES as q (q)}
+          <option value={q}>{qualityLabel(q)}</option>
+        {/each}
+      </select>
+    </label>
+
     <button
       class="rec-btn nodrag"
       class:on={recording}
@@ -475,6 +519,19 @@
   }
   .filename:focus { outline: none; border-color: var(--accent); }
   .ext { font-size: 0.62rem; color: var(--text-dim); font-family: ui-monospace, monospace; }
+  .quality-row { display: flex; align-items: center; gap: 6px; }
+  .quality-row .lbl {
+    font-size: 0.6rem; color: var(--text-dim); font-family: ui-monospace, monospace;
+  }
+  .quality-select {
+    flex: 1; min-width: 0;
+    background: var(--input-bg, #111); color: var(--text);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 4px 6px; font-size: 0.72rem; font-family: ui-monospace, monospace;
+    cursor: pointer;
+  }
+  .quality-select:focus { outline: none; border-color: var(--accent); }
+  .quality-select:disabled { opacity: 0.5; cursor: not-allowed; }
   .rec-btn {
     width: 100%; padding: 7px 0;
     background: var(--input-bg, #111); color: var(--text);
