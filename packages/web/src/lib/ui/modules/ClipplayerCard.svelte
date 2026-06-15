@@ -30,10 +30,36 @@
     type NoteClipRecord,
   } from '$lib/audio/modules/clip-types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import {
+    serialAvailable as gridSerialAvailable,
+    connect as gridConnect,
+    isConnected as gridIsConnected,
+    connectedRune as gridConnectedRune,
+  } from '$lib/grid/grid-device.svelte';
+  import {
+    bindGridToClip,
+    unbindGrid,
+    boundClipNode,
+    bindingRune,
+  } from '$lib/grid/grid-clip-binding.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+
+  // Monome grid (Phase 3) — WebSerial connect + bind THIS clip-player to the
+  // grid. Capability-gated (Chromium only); the button always renders (so the
+  // card chrome is deterministic) but is disabled where WebSerial is absent.
+  const gridSupported = gridSerialAvailable();
+  let gridBoundHere = $derived((bindingRune(), gridConnectedRune(), boundClipNode() === id));
+  async function toggleGrid() {
+    if (boundClipNode() === id) {
+      unbindGrid();
+      return;
+    }
+    const ok = await gridConnect(); // gesture-gated picker prompt
+    if (ok || gridIsConnected()) bindGridToClip(id);
+  }
 
   let cardVersion = $state(0);
   $effect(() => {
@@ -178,7 +204,21 @@
   <div class="stripe"></div>
   <header class="title">
     <ModuleTitle {id} {data} defaultLabel="CLIP PLAYER" inline />
-    <button class="stop-all" onclick={stopAll} title="Stop all" data-testid={`clipplayer-stopall-${id}`}>■</button>
+    <span class="title-btns">
+      <button
+        class="grid-btn"
+        class:on={gridBoundHere}
+        disabled={!gridSupported}
+        onclick={toggleGrid}
+        title={!gridSupported
+          ? 'monome grid needs WebSerial (Chromium only)'
+          : gridBoundHere
+            ? 'Disconnect monome grid'
+            : 'Connect a monome grid to launch clips'}
+        data-testid={`clipplayer-grid-${id}`}
+      >GRID</button>
+      <button class="stop-all" onclick={stopAll} title="Stop all" data-testid={`clipplayer-stopall-${id}`}>■</button>
+    </span>
   </header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
@@ -282,6 +322,11 @@
     justify-content: space-between;
     padding: 0 10px 4px;
   }
+  .title-btns {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
   .stop-all {
     background: var(--control-bg, #222);
     color: var(--text);
@@ -291,6 +336,25 @@
     line-height: 1;
     padding: 2px 6px;
     cursor: pointer;
+  }
+  .grid-btn {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    padding: 3px 6px;
+    cursor: pointer;
+  }
+  .grid-btn.on {
+    color: var(--accent, #6cf);
+    border-color: var(--accent, #6cf);
+  }
+  .grid-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
   .body {
     margin-top: 24px;

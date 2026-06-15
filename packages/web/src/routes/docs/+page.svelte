@@ -110,6 +110,10 @@
     4-player co-op: starting a game, joining, late-join, player colors, controls.
   </li>
   <li>
+    <a href="/docs/modules/grid-clip-launcher">Clip player + monome grid</a> —
+    build note clips + launch them from a monome grid 128 (WebSerial, no helper).
+  </li>
+  <li>
     <a href="/docs/rackspace-persistence">Rackspace persistence</a> —
     where patches + assets live, what Save/Load do, what auto-saves.
   </li>
