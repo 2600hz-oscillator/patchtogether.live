@@ -686,6 +686,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // (def + factory + out=in×amount across 0.1..10) + the per-module-per-port +
   // behavioral sweeps.
   'linux/scaler',
+  // POLARIZER / DEPOLARIZER / NEGATIVITY: the CV-polarity utility trio (tiny
+  // 1-in/1-out CV-math cards — title + a single DEPTH knob (POLARIZER /
+  // DEPOLARIZER) or a fixed −1× glyph (NEGATIVITY) + the yellow PatchPanel
+  // IN/OUT drill-down; no animated canvas). Darwin baselines captured locally;
+  // linux baselines pending a `vrt-update.yml` workflow_dispatch on this branch
+  // (same as SCALER above). Functional coverage is polarizer.test.ts /
+  // depolarizer.test.ts / negativity.test.ts (def + factory + the CV math) +
+  // the per-module-per-port + behavioral sweeps.
+  'linux/polarizer',
+  'linux/depolarizer',
+  'linux/negativity',
   // RINGBACK: darwin baseline (the static stereo-crush card — title + subtitle +
   // L/R IN + L/R OUT handles + RATE/SIZE/FB/MIX knobs; no animated canvas)
   // captured locally; linux baseline pending a `vrt-update.yml`
