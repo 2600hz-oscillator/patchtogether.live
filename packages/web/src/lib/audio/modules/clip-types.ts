@@ -20,18 +20,35 @@ import {
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 
 // ---------------------------------------------------------------------------
-// Dimensions (DECIDED: 8 tracks × 8 scenes = 64 clips, left 8×8 grid quadrant)
+// Dimensions (DECIDED 2026-06-15): rows = INSTRUMENTS, columns = clip SLOTS.
+// 8 instrument lanes × 8 clip slots = 64 clips on the left 8×8 grid quadrant.
+// Each lane drives its own pitch/gate/velocity output pair (the owner's
+// "each row reflects a given instrument's materials" model). The flat index is
+// row-major (index = lane*CLIP_SLOTS + slot), i.e. identical numerics to the
+// grid's `y*8 + x` so the pad↔index mapping is unchanged.
 // ---------------------------------------------------------------------------
-export const CLIP_TRACKS = 8;
-export const CLIP_SCENES = 8;
-export const CLIP_COUNT = CLIP_TRACKS * CLIP_SCENES; // 64
+export const CLIP_LANES = 8; // rows = instruments
+export const CLIP_SLOTS = 8; // columns = clip alternatives per instrument
+export const CLIP_COUNT = CLIP_LANES * CLIP_SLOTS; // 64
 export const DEFAULT_CLIP_STEPS = 16;
 export const MAX_CLIP_STEPS = 64;
 export const DEFAULT_VELOCITY = 100; // MIDI 0..127
 
-/** Flat clip-bank index for a (track=col, scene=row) cell, row-major. */
-export function clipIndex(track: number, scene: number): number {
-  return scene * CLIP_TRACKS + track;
+// Back-compat aliases (older call sites used track/scene naming).
+export const CLIP_TRACKS = CLIP_SLOTS;
+export const CLIP_SCENES = CLIP_LANES;
+
+/** Flat clip-bank index for a (slot=col, lane=row) cell, row-major. */
+export function clipIndex(slot: number, lane: number): number {
+  return lane * CLIP_SLOTS + slot;
+}
+/** Which instrument lane (row) a flat clip index belongs to. */
+export function laneOf(index: number): number {
+  return Math.floor(index / CLIP_SLOTS);
+}
+/** Which clip slot (column) within its lane a flat clip index is. */
+export function slotOf(index: number): number {
+  return index % CLIP_SLOTS;
 }
 
 // ---------------------------------------------------------------------------
@@ -87,9 +104,40 @@ export type ClipRecord = NoteClipRecord | AudioClipRecord | SnapshotClipRecord;
 /** Persisted on node.data. Note clips are tiny so no caps in v1. */
 export interface ClipPlayerData {
   clips?: Record<string, ClipRecord | null>; // sparse; null/absent = empty
-  playing?: string | null; // active clip index (SYNCED — playing-set, §5.2)
-  queued?: string | 'stop' | null; // queued launch/stop (SYNCED), applied on boundary
+  /** Per-lane active clip SLOT (0..CLIP_SLOTS-1) or null = stopped. Length
+   *  CLIP_LANES. SYNCED — the playing-set all peers + grids see (§5.2). Up to
+   *  8 clips (one per instrument lane) play simultaneously. */
+  playing?: (number | null)[];
+  /** Per-lane queued action applied on that lane's loop boundary: a slot index
+   *  to launch, 'stop' to stop the lane, or null/absent = nothing queued. */
+  queued?: (number | 'stop' | null)[];
   creatorId?: string;
+}
+
+/** Normalize a per-lane state array to exactly CLIP_LANES entries. */
+function coerceLaneArray<T>(raw: unknown, fallback: T): T[] {
+  const out: T[] = new Array(CLIP_LANES).fill(fallback);
+  if (Array.isArray(raw)) {
+    for (let i = 0; i < CLIP_LANES; i++) if (i < raw.length) out[i] = raw[i] as T;
+  }
+  return out;
+}
+/** The active clip slot for a lane (or null = stopped). */
+export function lanePlaying(data: ClipPlayerData | undefined, lane: number): number | null {
+  const v = data?.playing?.[lane];
+  return typeof v === 'number' ? v : null;
+}
+/** The queued action for a lane: a slot index, 'stop', or null. */
+export function laneQueued(
+  data: ClipPlayerData | undefined,
+  lane: number,
+): number | 'stop' | null {
+  const v = data?.queued?.[lane];
+  return v === 'stop' || typeof v === 'number' ? v : null;
+}
+/** Read the full per-lane playing-set, normalized to CLIP_LANES entries. */
+export function playingSet(data: ClipPlayerData | undefined): (number | null)[] {
+  return coerceLaneArray<number | null>(data?.playing, null);
 }
 
 // ---------------------------------------------------------------------------
