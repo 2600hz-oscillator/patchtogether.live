@@ -539,6 +539,55 @@ tasks:
     cmds:
       - bash scripts/webgl-attest-verify.sh
 
+  # ---------------- @collab local-relay attestation ("semaphore") ----------------
+  # The @collab CI lane (~6.5-8 min) is flaky because the single-process
+  # Hocuspocus relay buckles under CI's 10-shard contention (it's informational,
+  # un-gated since 2026-06-06). LOCALLY you control the relay: this scheme boots a
+  # FRESH dedicated relay + DB with zero contention (where multiplayer actually
+  # converges), runs the @collab specs, and writes a content-hash-named
+  # attestation that CI verifies cheaply (~2 min). See ci-collab-attest/README.md
+  # + .myrobots/plans/collab-attest-2026-06-15.md.
+  collab:attest:
+    desc: |
+      [pre-PR, LOCAL relay+DB] Boot a FRESH dedicated Hocuspocus relay + apply
+      the DB schema (requires a local Postgres reachable via $DATABASE_URL — the
+      @collab lane is VACUOUS without a DB), pre-flight the DOOM assets, then run
+      the @collab/@capacity specs at retries=0. Only on a fully-green run with
+      ZERO relay/sync-vacuity skips (a `test.skip(true,'…relay flake…')` firing
+      locally means the run proved nothing → treated as FAILURE) does it write
+      ci-collab-attest/<hash>.json so CI can verify cheaply. Run this before a PR
+      that touches any collab/sync/relay path, then commit the written file.
+      REPEAT=3 flake-checks. `-- --dry-run` verifies the DB/relay/skip-classify/
+      writer wiring without the long run. Run when the machine is otherwise idle.
+    deps: [dsp:ensure, test:emit-manifest]
+    cmds:
+      - bash scripts/collab-attest.sh {{.CLI_ARGS}}
+
+  collab:attest:check:
+    desc: |
+      [read-only] Recompute the @collab content-hash and report whether a
+      matching attestation already exists (so you know if a re-attest is needed
+      after a pull/rebase). Runs nothing. `-- --list` prints the full hash basis.
+    cmds:
+      - |
+        if [ "{{.CLI_ARGS}}" = "--list" ]; then
+          bash scripts/collab-attest-hash.sh --list
+          exit 0
+        fi
+        HASH="$(bash scripts/collab-attest-hash.sh)"
+        echo "@collab content hash: $HASH"
+        if [ -f "ci-collab-attest/$HASH.json" ]; then
+          echo "✓ A matching attestation exists (ci-collab-attest/$HASH.json). No re-attest needed."
+        else
+          echo "✗ No matching attestation. Run: flox activate -- task collab:attest"
+          exit 1
+        fi
+
+  collab:attest:verify:
+    desc: '[CI] Recompute the @collab content-hash + verify a matching local-relay attestation exists (the collab-attest CI job runs this).'
+    cmds:
+      - bash scripts/collab-attest-verify.sh
+
   # ---------------- E2E (Playwright) ----------------
   e2e:
     desc: 'Run end-to-end tests (headless Chromium). Pass extra Playwright args after `--` (e.g. `task e2e -- tests/foo.spec.ts`).'
