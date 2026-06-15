@@ -123,8 +123,21 @@ async function setSingleLayer(page: Page, kind: string, contentId: string): Prom
   );
 }
 
-const NEW_GENS = ['growing-mountain', 'flow-field', 'interference', 'spiral-bloom'];
-const NEW_FRAGS = ['frag-scanline-blinds', 'frag-datamosh-wave', 'frag-zoom-warp', 'frag-edge-glow'];
+const NEW_GENS = [
+  'growing-mountain', 'flow-field', 'interference', 'spiral-bloom',
+  // #794 + follow-up (this PR) GEN scenes — each proves its GLSL COMPILES +
+  // renders non-black through the real engine under SwiftShader.
+  'seascape', 'octgrams', 'vangogh-sunset', 'raymarch-primitives', 'lava-lamp',
+  'circuit-bloom', 'plasma-flow', 'kaleido-bloom', 'warp-tunnel', 'metaball-field',
+  'warp-terrain', 'gyroid-slice', 'hyperspace', 'caustic-pool',
+];
+const NEW_FRAGS = [
+  'frag-scanline-blinds', 'frag-datamosh-wave', 'frag-zoom-warp', 'frag-edge-glow',
+  // #794 + follow-up (this PR) FRAG effects — each proves its GLSL COMPILES +
+  // visibly TRANSFORMS the layer below (composite differs) under SwiftShader.
+  'frag-chromatic-shift', 'frag-posterize', 'frag-bloom', 'frag-crt',
+  'frag-halftone', 'frag-pixelate', 'frag-ascii', 'frag-mirror-fold',
+];
 // The NEW single-pass presets ('mountain-weather'…'cat-feedback') were a `.each`
 // render loop here — PRUNED in Phase 2 (webgl-suite-optimization §2/§7-2). Their
 // validity + "reaches OUTPUT renders not black" is unit-owned by
