@@ -10,6 +10,8 @@ import {
   snapToGrid,
   snapPositionToGrid,
   RACK_UNIT,
+  HP_UNIT,
+  HP_PER_U,
   rectsOverlap,
   findFreeRackSlot,
   type RackRect,
@@ -62,17 +64,32 @@ describe('snapToGrid', () => {
   });
 });
 
-describe('snapPositionToGrid', () => {
-  it('snaps both axes independently', () => {
-    expect(snapPositionToGrid({ x: 100, y: 260 })).toEqual({ x: 180, y: 180 });
+describe('HP pitch', () => {
+  it('1u = 8hp → hp pitch is 22.5px', () => {
+    expect(HP_PER_U).toBe(8);
+    expect(HP_UNIT).toBe(22.5);
+  });
+});
+
+describe('snapPositionToGrid (anisotropic: X→hp, Y→u)', () => {
+  it('snaps X to the HP pitch (22.5px) and Y to the U row (180px)', () => {
+    // X: 100/22.5 = 4.44 → 4 hp → 90 ; Y: 260 → 180
+    expect(snapPositionToGrid({ x: 100, y: 260 })).toEqual({ x: 90, y: 180 });
     expect(snapPositionToGrid({ x: 0, y: 0 })).toEqual({ x: 0, y: 0 });
-    expect(snapPositionToGrid({ x: 620, y: 80 })).toEqual({ x: 540, y: 0 });
+    // X: 50/22.5 = 2.22 → 2 hp → 45 ; Y: 80 → 0
+    expect(snapPositionToGrid({ x: 50, y: 80 })).toEqual({ x: 45, y: 0 });
+    // X already on an hp line stays put
+    expect(snapPositionToGrid({ x: 67.5, y: 0 }).x).toBe(67.5); // 3hp
+  });
+
+  it('gives 8 distinct horizontal lock positions per 1u of width', () => {
+    const xs = new Set<number>();
+    for (let i = 0; i < HP_PER_U; i++) xs.add(snapPositionToGrid({ x: i * HP_UNIT, y: 0 }).x);
+    expect(xs.size).toBe(HP_PER_U); // 0, 22.5, 45, … 157.5 all distinct
   });
 
   it('a 1u module snaps to a third-of-3u-slot Y for free (spec §3)', () => {
-    // A 3u slot spans 540px (3 tiles). Dropping a 1u card anywhere inside it
-    // snaps Y to the nearest 180px line → top (0/540), middle (180/720),
-    // or bottom (360/900) third — no special-casing in the lock action.
+    // Y still locks to the 180px U row — a 1u card lands on a third of a 3u slot.
     expect(snapPositionToGrid({ x: 0, y: 540 + 30 }).y).toBe(540); // top third
     expect(snapPositionToGrid({ x: 0, y: 540 + 200 }).y).toBe(720); // middle third
     expect(snapPositionToGrid({ x: 0, y: 540 + 380 }).y).toBe(900); // bottom third
@@ -104,11 +121,22 @@ describe('findFreeRackSlot (lock never lands a card on top of another)', () => {
     expect(findFreeRackSlot({ x: 360, y: 0 }, { w: 180, h: 180 }, [R(0, 0)])).toEqual({ x: 360, y: 0 });
   });
 
-  it('nudges one tile to a free slot when the snapped slot is taken', () => {
+  it('nudges to a free slot when the snapped slot is taken', () => {
     const others = [R(0, 0)];
     const r = findFreeRackSlot({ x: 0, y: 0 }, { w: 180, h: 180 }, others);
     expect(fits(r, { w: 180, h: 180 }, others)).toBe(true);
-    expect(Math.abs(r.x) + Math.abs(r.y)).toBe(180); // exactly one tile away (smallest move)
+    // A 180-wide card beside a 180-wide obstacle: nearest free is one full
+    // module to the side (or one U down) — all 180px away.
+    expect(Math.abs(r.x) + Math.abs(r.y)).toBe(180);
+  });
+
+  it('slides HORIZONTALLY by HP (not a whole U) into the nearest gap', () => {
+    // A 2hp (45px) card clashing with a 2hp obstacle slides 45px = 2hp sideways,
+    // NOT a 180px row jump — horizontal moves are cheap (anisotropic search).
+    const obstacle = [R(0, 0, 45, 180)];
+    const r = findFreeRackSlot({ x: 0, y: 0 }, { w: 45, h: 180 }, obstacle);
+    expect(fits(r, { w: 45, h: 180 }, obstacle)).toBe(true);
+    expect(r).toEqual({ x: -45, y: 0 }); // 2hp left, same row — least relocation
   });
 
   it('reaches past a fully-surrounded slot to the nearest free one', () => {

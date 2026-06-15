@@ -2277,11 +2277,13 @@
   }
 
   /** Virtual-rack Phase 2 — "screw down" a module to its rack slot:
-   *  1. snap its position to the nearest 180px rack-grid line (both axes), then
+   *  1. snap like a real rack — X to the HP pitch (22.5px = 1u/8, 8 lock
+   *     positions per 1u), Y to the U row (180px) — then nudge to the nearest
+   *     FREE slot (HP-first), then
    *  2. persist data.locked=true (shared patch state → synced to rack-mates).
    *  The flowNodes derivation then renders it non-draggable + lock-marked.
-   *  Snapping Y to every 180px line makes a 1u card land on a third of a 3u
-   *  slot for free (no special-casing). */
+   *  Snapping Y to every U line makes a 1u card land on a third of a 3u slot for
+   *  free (no special-casing). */
   function lockNode(nodeId: string): void {
     const pos = currentNodePosition(nodeId);
     if (pos) {
