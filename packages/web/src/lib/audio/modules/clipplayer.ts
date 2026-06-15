@@ -263,6 +263,7 @@ export const clipplayerDef: AudioModuleDef = {
             const nextIdx = (stepIndex + 1) % length;
             if (nextIdx === 0) {
               totalLoops++;
+              emitClipGate(ctx.currentTime + 0.005); // clip downbeat
               if (quantize && applyQueued()) continue; // switched clip → fresh step 0
               if (activeClip === null) break;
             }
@@ -278,6 +279,7 @@ export const clipplayerDef: AudioModuleDef = {
             const nextStart = nextStepTime + stepDur;
             if (nextIdx === 0) {
               totalLoops++;
+              emitClipGate(nextStart); // clip downbeat (start + each loop)
               if (quantize && applyQueued()) {
                 // Re-anchor the new clip's step 0 to this natural boundary.
                 nextStepTime = nextStart;

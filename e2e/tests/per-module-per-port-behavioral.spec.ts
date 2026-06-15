@@ -112,6 +112,18 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // ── File-input sources: output is silent until a file is uploaded.
   //    No upstream signal can perturb that.
   samsloop:       'needs an uploaded sample AND a trigger to emit (idle-by-default, no autoplay); covered by samsloop.spec.ts',
+  // CLIPPLAYER: clock-derived-output class (cf. timelorde / moog960). The
+  // outputs are the LAUNCHED clip's pattern; the per-port driver pre-launches a
+  // clip so OUTPUT_EMIT passes, but in the one-input-at-a-time behavioral
+  // harness neither input gives a clean amplitude/edge delta vs the unpatched
+  // control: patching `clock` only switches internal-BPM → external-clock
+  // advance (it RE-PHASES the same gate stream at a similar density, no
+  // attributable footprint), and `stop_all` silences (a delta the spawn-once
+  // pattern would need precise timing to catch). Covered by clipplayer.test.ts
+  // (def + factory launch / quantized-switch / stop / silent via the REAL tick
+  // loop) + the bespoke real-source-chain clipplayer.spec.ts (TIMELORDE → clip
+  // → voice → audible RMS) + clip-types.test.ts (note→V/oct + Deluge row math).
+  clipplayer:     'clock-derived output (launched clip pattern); clock only re-phases, stop_all silences — no clean per-input delta in the short window; covered by clipplayer.test.ts + clipplayer.spec.ts + clip-types.test.ts',
   // Tape loop: idle output is hard-gated to silence and a fresh spawn has no
   // recorded tape, so NO single input perturbs the output in the one-input-at-
   // a-time control harness — audible output needs a record (audio-in + rec
