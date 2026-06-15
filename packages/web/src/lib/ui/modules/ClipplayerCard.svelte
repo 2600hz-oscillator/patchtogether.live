@@ -488,12 +488,17 @@
   .launch-grid {
     display: flex;
     flex-direction: column;
+    align-items: center;
     gap: 3px;
   }
   .grid-row { display: flex; gap: 3px; }
+  /* Fixed INTEGER pad size (no flex:1 / aspect-ratio) so the 8-column layout is
+     pixel-deterministic — sub-pixel flex rounding drifts across columns and
+     flakes the VRT baseline. */
   .pad {
-    flex: 1;
-    aspect-ratio: 1;
+    width: 28px;
+    height: 28px;
+    flex: none;
     border: 1px solid var(--border);
     border-radius: 2px;
     background: #1a1a1a;
@@ -553,11 +558,12 @@
     cursor: pointer;
     margin-left: 1px;
   }
-  .piano-roll { display: flex; flex-direction: column; gap: 2px; }
+  .piano-roll { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   .pr-row { display: flex; gap: 2px; }
   .cell {
-    flex: 1;
+    width: 15px;
     height: 13px;
+    flex: none;
     border: 1px solid var(--border);
     border-radius: 1px;
     background: #161616;
