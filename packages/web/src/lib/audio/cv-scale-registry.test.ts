@@ -15,6 +15,14 @@ import { listModuleDefs } from '$lib/audio/module-registry';
 // full-musical-range mapping. New entries here MUST be justified in
 // .myrobots/plans/cv-range-standard.md.
 const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
+  // polarizer/depolarizer/negativity: 1-in/1-out CV-math UTILITIES — `in` is the
+  // signal being transformed directly (out = f(in): polarizer 2·in−1, depolarizer
+  // in/2+0.5, negativity −in), NOT a knob modulator routed onto an AudioParam (the
+  // DEPTH knob, where present, is a separate control). So cvScale doesn't apply —
+  // same shape as moog992's passive CV panel.
+  polarizer: ['in'],
+  depolarizer: ['in'],
+  negativity: ['in'],
   // moog992 cv1..cv4: a passive CV PANEL — these inputs are the signals being
   // attenuated + summed into cv_out (no paramTarget, not modulating a knob), so
   // cvScale doesn't apply. The per-channel attenuator knobs scale them.
