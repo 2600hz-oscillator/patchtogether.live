@@ -35,9 +35,8 @@
     coerceClipRecord,
     rowToMidi,
     scaleSteps,
-    cycleNoteAt,
-    noteAt,
-    velTier,
+    toggleNoteAt,
+    noteCovering,
     type ClipPlayerData,
     type NoteClipRecord,
   } from '$lib/audio/modules/clip-types';
@@ -249,15 +248,14 @@
     const logicalRow = editorOctave * scaleLen + (EDIT_ROWS - 1 - displayRow);
     return rowToMidi(logicalRow, clip.root, clip.scale);
   }
-  function cellTier(clip: NoteClipRecord, step: number, midi: number): '' | 'low' | 'med' | 'high' {
-    const ev = noteAt(clip, step, midi);
-    return ev ? velTier(ev.velocity) : '';
+  function cellOn(clip: NoteClipRecord, step: number, midi: number): boolean {
+    return noteCovering(clip, step, midi) !== undefined;
   }
-  function cycleNote(step: number, displayRow: number) {
+  function toggleNote(step: number, displayRow: number) {
     const clip = clipAt(selectedClip);
     if (!clip) return;
     const midi = midiForDisplayRow(clip, displayRow);
-    const next = cycleNoteAt(clip, step, midi);
+    const next = toggleNoteAt(clip, step, midi);
     writeData((d) => {
       if (!d.clips) d.clips = {};
       d.clips[String(selectedClip)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
@@ -396,14 +394,14 @@
               <div class="pr-row">
                 {#each Array(editCols) as _c, step (step)}
                   {@const midi = midiForDisplayRow(editClip, row)}
-                  {@const tier = cellTier(editClip, step, midi)}
                   <button
-                    class="cell {tier}"
+                    class="cell"
+                    class:on={cellOn(editClip, step, midi)}
                     class:playhead={step === playheadCol}
                     data-step={step}
                     data-row={row}
                     aria-label={`step ${step} row ${row}`}
-                    onclick={() => cycleNote(step, row)}
+                    onclick={() => toggleNote(step, row)}
                   ></button>
                 {/each}
               </div>
@@ -570,10 +568,10 @@
     cursor: pointer;
     padding: 0;
   }
-  .cell.low { background: hsl(200 70% 32%); }
-  .cell.med { background: hsl(200 75% 45%); }
-  .cell.high { background: hsl(200 85% 60%); }
-  .cell.playhead { border-color: var(--accent, #6cf); }
+  .cell.on { background: hsl(200 78% 50%); }
+  /* the playhead lights the whole column so you see the tempo pulse cross the clip */
+  .cell.playhead { background: rgba(108, 170, 255, 0.22); border-color: var(--accent, #6cf); }
+  .cell.on.playhead { background: hsl(200 90% 64%); }
   .knob-row {
     display: flex;
     align-items: center;

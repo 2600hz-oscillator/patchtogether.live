@@ -43,10 +43,12 @@ import {
   slotOf,
   lanePlaying,
   coerceClipRecord,
-  cycleNoteAt,
+  toggleNoteAt,
+  setNoteSpan,
   type ClipPlayerData,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
+import { getLanePlayhead } from '$lib/audio/modules/clip-playhead';
 
 const STORAGE_KEY = 'pt.grid.boundClipNode';
 // Blink toggles every BLINK_TICKS scheduler ticks (~25ms each) → ~2 Hz.
@@ -61,6 +63,11 @@ let tickCount = 0;
 let mode: 'session' | 'edit' = 'session';
 let editClipIndex = 0;
 let editArmed = false; // EDIT pad held in session mode
+// In EDIT mode: the currently-held note pad (anchor) + whether a held-span was
+// created during this hold. A simple tap (press+release, no span) toggles the
+// note; holding the anchor + tapping another pad in the same row ties them.
+let editAnchor: { step: number; midi: number } | null = null;
+let editSpanned = false;
 
 /** Reactive version — bump on bind/unbind so card UI re-derives. */
 let bindingVersion = $state(0);
@@ -77,6 +84,8 @@ function start(): void {
   tickCount = 0;
   mode = 'session';
   editArmed = false;
+  editAnchor = null;
+  editSpanned = false;
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
 }
@@ -152,6 +161,13 @@ function clipAtIndex(data: ClipPlayerData | undefined, index: number): NoteClipR
   const c = coerceClipRecord(data?.clips?.[String(index)]);
   return c && c.kind === 'note' ? c : null;
 }
+/** Persist a new clip record at the editor's slot (cloning steps for Yjs). */
+function writeClip(nodeId: string, next: NoteClipRecord): void {
+  editData(nodeId, (d) => {
+    if (!d.clips) d.clips = {};
+    d.clips[String(editClipIndex)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+  });
+}
 function timelordeNode(): { node: { params?: Record<string, number> }; id: string } | null {
   for (const [id, n] of Object.entries(livePatch.nodes)) {
     if ((n as { type?: string } | undefined)?.type === 'timelorde') {
@@ -198,20 +214,31 @@ function handleKey(e: GridKeyEvent): void {
     return;
   }
 
-  if (e.s !== 1) return; // every other control acts on press
-
+  // --- EDIT mode: the whole grid is the clip's note editor (press + release) ---
   if (mode === 'edit') {
     const clip = clipAtIndex(liveData(nodeId), editClipIndex);
-    if (!clip) { mode = 'session'; return; }
+    if (!clip) { if (e.s === 1) mode = 'session'; return; }
     const note = editPadToNote(clip, e.x, e.y);
-    if (!note) return;
-    const next = cycleNoteAt(clip, note.step, note.midi);
-    editData(nodeId, (d) => {
-      if (!d.clips) d.clips = {};
-      d.clips[String(editClipIndex)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
-    });
+    if (!note) return; // reserved EDIT pad / out-of-range
+    if (e.s === 1) {
+      if (editAnchor && editAnchor.midi === note.midi && editAnchor.step !== note.step) {
+        // hold a note + tap another in the SAME row → one held note spanning them
+        writeClip(nodeId, setNoteSpan(clip, editAnchor.step, note.step, note.midi));
+        editSpanned = true;
+      } else {
+        editAnchor = { step: note.step, midi: note.midi };
+        editSpanned = false;
+      }
+    } else if (editAnchor && editAnchor.step === note.step && editAnchor.midi === note.midi) {
+      // releasing the anchor with no span = a simple tap → toggle the note on/off
+      if (!editSpanned) writeClip(nodeId, toggleNoteAt(clip, note.step, note.midi));
+      editAnchor = null;
+      editSpanned = false;
+    }
     return;
   }
+
+  if (e.s !== 1) return; // session controls act on press
 
   // --- SESSION mode ---
   const data = liveData(nodeId);
@@ -266,7 +293,10 @@ function renderLeds(): void {
   if (mode === 'edit') {
     const clip = clipAtIndex(data, editClipIndex);
     if (clip) {
-      setFrame(computeEditLeds(clip, -1));
+      // Show the playhead only when the edited clip's lane is actually playing it.
+      const lane = laneOf(editClipIndex);
+      const ph = lanePlaying(data, lane) === slotOf(editClipIndex) ? getLanePlayhead(nodeId, lane) : -1;
+      setFrame(computeEditLeds(clip, ph));
       return;
     }
     mode = 'session'; // clip vanished — fall back
@@ -284,6 +314,8 @@ export function __test_resetBinding(): void {
   mode = 'session';
   editClipIndex = 0;
   editArmed = false;
+  editAnchor = null;
+  editSpanned = false;
 }
 /** Read internal mode state — tests only. */
 export function __test_mode(): {

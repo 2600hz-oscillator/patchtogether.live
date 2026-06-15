@@ -371,11 +371,43 @@ export function cycleNoteAt(clip: NoteClipRecord, step: number, midi: number): N
   return { ...clip, steps };
 }
 
-/** The note event at (step, midi), or undefined. */
+/** The note event STARTING at (step, midi), or undefined. */
 export function noteAt(
   clip: NoteClipRecord,
   step: number,
   midi: number,
 ): NoteEvent | undefined {
   return clip.steps.find((e) => e.step === step && e.midi === midi);
+}
+
+/** The note COVERING (step, midi) — i.e. a note in that row whose held span
+ *  [start, start+lengthSteps) includes `step`. Used to render a held note as a
+ *  bar across the cells it sustains over (not just its start cell). */
+export function noteCovering(
+  clip: NoteClipRecord,
+  step: number,
+  midi: number,
+): NoteEvent | undefined {
+  return clip.steps.find(
+    (e) => e.midi === midi && e.step <= step && step < e.step + (e.lengthSteps ?? 1),
+  );
+}
+
+/**
+ * Make a SINGLE held note spanning steps lo..hi (inclusive) at `midi`, with the
+ * gate high the whole time (lengthSteps = hi-lo+1). Any other notes in that row
+ * within the span are removed/merged. Returns a NEW clip. This is the
+ * "hold a pad + tap another in the same row" tie gesture.
+ */
+export function setNoteSpan(
+  clip: NoteClipRecord,
+  lo: number,
+  hi: number,
+  midi: number,
+): NoteClipRecord {
+  const a = Math.min(lo, hi);
+  const b = Math.max(lo, hi);
+  const steps = clip.steps.filter((e) => e.midi !== midi || e.step < a || e.step > b);
+  steps.push({ step: a, midi, velocity: DEFAULT_VELOCITY, lengthSteps: b - a + 1 });
+  return { ...clip, steps };
 }

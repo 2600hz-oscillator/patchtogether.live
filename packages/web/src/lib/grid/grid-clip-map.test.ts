@@ -27,14 +27,15 @@ import {
   LED_SCENE_IDLE,
   LED_EDIT_PAD,
   LED_TRANSPORT_ON,
-  LED_NOTE_HIGH,
+  LED_NOTE,
+  LED_NOTE_PLAYHEAD,
+  LED_PLAYHEAD,
   LED_ROOT_GUIDE,
 } from './grid-clip-map';
 import { GRID_WIDTH } from './mext';
 import {
   defaultNoteClip,
   clipIndex,
-  VEL_HIGH,
   type ClipPlayerData,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
@@ -147,12 +148,28 @@ describe('edit-mode note grid (X=step, Y=pitch)', () => {
     expect(editPadToNote(c, EDIT_PAD.x, EDIT_PAD.y)).toBeNull(); // reserved
     expect(editPadToNote(c, 10, 0)).toBeNull(); // beyond an 8-step clip
   });
-  it('computeEditLeds lights notes by tier + the EDIT pad + a root guide', () => {
+  it('computeEditLeds lights a note (single level), the EDIT pad + a root guide', () => {
     const midi = editRowToMidi(clip(), 4);
-    const c = clip({ steps: [{ step: 2, midi, velocity: VEL_HIGH, lengthSteps: 1 }] });
+    const c = clip({ steps: [{ step: 2, midi, velocity: 100, lengthSteps: 1 }] });
     const f = computeEditLeds(c, -1);
-    expect(f[fi(2, 4)]).toBe(LED_NOTE_HIGH);
+    expect(f[fi(2, 4)]).toBe(LED_NOTE);
     expect(f[fi(EDIT_PAD.x, EDIT_PAD.y)]).toBe(LED_EDIT_PAD);
     expect(f[fi(0, 7)]).toBe(LED_ROOT_GUIDE); // bottom row = root pitch class
+  });
+  it('a held note lights its WHOLE span (not just the start cell)', () => {
+    const midi = editRowToMidi(clip(), 4);
+    const c = clip({ steps: [{ step: 2, midi, velocity: 100, lengthSteps: 3 }] });
+    const f = computeEditLeds(c, -1);
+    expect(f[fi(2, 4)]).toBe(LED_NOTE);
+    expect(f[fi(3, 4)]).toBe(LED_NOTE);
+    expect(f[fi(4, 4)]).toBe(LED_NOTE);
+    expect(f[fi(5, 4)]).toBe(LED_EMPTY); // span ended
+  });
+  it('the playhead column washes empty cells + brightens the note it crosses', () => {
+    const midi = editRowToMidi(clip(), 4);
+    const c = clip({ steps: [{ step: 2, midi, velocity: 100, lengthSteps: 1 }] });
+    const f = computeEditLeds(c, 2); // playhead at step 2
+    expect(f[fi(2, 4)]).toBe(LED_NOTE_PLAYHEAD); // note under the playhead
+    expect(f[fi(2, 0)]).toBe(LED_PLAYHEAD); // empty cell in the playhead column
   });
 });

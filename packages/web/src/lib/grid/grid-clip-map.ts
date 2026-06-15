@@ -31,8 +31,7 @@ import {
   laneQueued,
   rowToMidi,
   scaleSteps,
-  noteAt,
-  velTier,
+  noteCovering,
   type ClipPlayerData,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
@@ -51,11 +50,14 @@ export const LED_EDIT_PAD = 5;
 export const LED_TRANSPORT_ON = 15;
 
 // --- Edit-mode LED levels ---
+export const LED_NOTE = 12; // a placed note (velocity is deferred — single level)
+export const LED_PLAYHEAD = 6; // bright wash on the current-step column (the pulse)
+export const LED_NOTE_PLAYHEAD = 15; // a note the playhead is currently over
+export const LED_ROOT_GUIDE = 1; // faint marker on root-pitch-class rows
+// Velocity tiers are reserved for a future hold-modifier (see clip-types VEL_*).
 export const LED_NOTE_LOW = 4;
 export const LED_NOTE_MED = 9;
 export const LED_NOTE_HIGH = 15;
-export const LED_PLAYHEAD = 2; // faint wash on the current step column
-export const LED_ROOT_GUIDE = 1; // faint marker on root-pitch-class rows
 
 // --- Control-pad coordinates ---
 export const CTRL_STOP_COL = CLIP_SLOTS; // 8 — per-lane stop
@@ -184,15 +186,10 @@ export function computeSessionLeds(
   return frame;
 }
 
-const TIER_LED: Record<'low' | 'med' | 'high', number> = {
-  low: LED_NOTE_LOW,
-  med: LED_NOTE_MED,
-  high: LED_NOTE_HIGH,
-};
-
 /**
- * Full 128-cell EDIT-mode LED frame for one clip: notes lit by velocity tier,
- * a faint wash on the live playhead column, a faint guide on root-pitch-class
+ * Full 128-cell EDIT-mode LED frame for one clip: placed notes (held notes light
+ * the WHOLE span they sustain over), a bright wash on the live playhead column
+ * (the tempo pulse moving across the clip), a faint guide on root-pitch-class
  * rows, and the reserved EDIT pad. `playheadStep` < 0 = not playing.
  */
 export function computeEditLeds(
@@ -214,13 +211,14 @@ export function computeEditLeds(
         frame[fi] = LED_EMPTY;
         continue;
       }
-      const ev = noteAt(clip, note.step, note.midi);
-      if (ev) {
-        frame[fi] = TIER_LED[velTier(ev.velocity)];
+      const onPlayhead = x === playheadStep;
+      // A held note lights every cell of its span (not just its start).
+      if (noteCovering(clip, note.step, note.midi)) {
+        frame[fi] = onPlayhead ? LED_NOTE_PLAYHEAD : LED_NOTE;
         continue;
       }
       let base = LED_EMPTY;
-      if (x === playheadStep) base = LED_PLAYHEAD;
+      if (onPlayhead) base = LED_PLAYHEAD; // the moving pulse column
       if (((note.midi % 12) + 12) % 12 === rootPc) base = Math.max(base, LED_ROOT_GUIDE);
       frame[fi] = base;
     }

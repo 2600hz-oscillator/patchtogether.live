@@ -22,6 +22,7 @@ import { createPolySender, POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { createEdgeCounter } from '$lib/audio/edge-detect';
 import { isInputPortConnected } from './transport-helpers';
+import { setLanePlayhead, clearPlayheads } from './clip-playhead';
 import {
   readClip,
   lanesForStep,
@@ -89,6 +90,9 @@ export const clipplayerDef: AudioModuleDef = {
       lastVOct: number;
       lastGate: number;
       lastVel: number;
+      // Ring of recently-scheduled (audio time → step) for an audio-accurate
+      // visual playhead (steps are scheduled LOOKAHEAD_S ahead of currentTime).
+      sched: { t: number; idx: number }[];
     }
     const lanes: Lane[] = Array.from({ length: LANES }, () => {
       const poly = createPolySender(ctx);
@@ -108,8 +112,26 @@ export const clipplayerDef: AudioModuleDef = {
         lastVOct: 0,
         lastGate: 0,
         lastVel: 0,
+        sched: [],
       };
     });
+
+    /** The step lane L is currently SOUNDING (the latest scheduled step whose
+     *  time has passed), or -1 when the lane is stopped. Audio-accurate (not the
+     *  lookahead position) so the card + grid playhead tracks what you hear. */
+    function laneDisplayStep(L: number): number {
+      const ln = lanes[L];
+      if (ln.active === null) return -1;
+      let best = -1;
+      let bestT = -Infinity;
+      for (const e of ln.sched) {
+        if (e.t <= ctx.currentTime && e.t > bestT) {
+          bestT = e.t;
+          best = e.idx;
+        }
+      }
+      return best;
+    }
 
     // --- stop_all input (windowed edge counter — no whole-buffer rescan) ---
     const stopGain = ctx.createGain();
@@ -232,9 +254,16 @@ export const clipplayerDef: AudioModuleDef = {
       const r = lanesForStep(clip, idx);
       const octave = readParam('octave', 0);
       const gateFrac = readParam('gateLength', 0.9);
-      const gateOff = Math.max(0.001, r.gateSteps * stepDur * gateFrac);
+      // A held/tied note (lengthSteps > 1) keeps its gate HIGH the whole span
+      // (legato) — the "hold a pad + tap another" gesture. A single-step note
+      // uses the GATE duty cycle so it can be shortened/staccato.
+      const span = r.gateSteps * stepDur;
+      const gateOff =
+        r.gateSteps > 1 ? Math.max(0.001, span - 0.002) : Math.max(0.001, span * gateFrac);
       const voiced = r.lanes.map((v) => ({ pitch: v.pitch + octave, gate: v.gate }));
       ln.poly.scheduleStep(atTime, voiced, gateOff);
+      ln.sched.push({ t: atTime, idx });
+      if (ln.sched.length > 32) ln.sched.shift();
       if (r.any) {
         ln.gateSrc.offset.setValueAtTime(1, atTime);
         ln.gateSrc.offset.setValueAtTime(0, atTime + gateOff);
@@ -293,6 +322,10 @@ export const clipplayerDef: AudioModuleDef = {
         for (let L = 0; L < LANES; L++) {
           if (!quantize || lanes[L].active === null) applyLaneQueued(L);
         }
+
+        // Publish each lane's audio-time playhead (render state — NOT synced;
+        // the card editor + grid LEDs read it to draw the moving playhead).
+        for (let L = 0; L < LANES; L++) setLanePlayhead(nodeId, L, laneDisplayStep(L));
 
         if (!running) return;
 
@@ -364,7 +397,7 @@ export const clipplayerDef: AudioModuleDef = {
               case 'pitchVOct': return ln.lastVOct;
               case 'gateValue': return ln.lastGate;
               case 'velValue': return ln.lastVel;
-              case 'currentStep': return ln.stepIndex;
+              case 'currentStep': return laneDisplayStep(L);
             }
           }
         }
@@ -372,6 +405,7 @@ export const clipplayerDef: AudioModuleDef = {
       },
       dispose() {
         alive = false;
+        clearPlayheads(nodeId);
         if (unsubscribeTick) {
           unsubscribeTick();
           unsubscribeTick = null;

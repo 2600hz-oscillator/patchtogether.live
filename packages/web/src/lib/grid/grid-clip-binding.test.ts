@@ -139,29 +139,61 @@ describe('grid → clip-player launch (Session, per-lane)', () => {
 });
 
 describe('grid EDIT mode (hold EDIT + tap → note editor)', () => {
-  it('hold EDIT + tap a clip enters edit (no launch); a cell press adds a note', () => {
+  // enter EDIT mode on clip 0 (lane0/slot0 = pad 0,0).
+  function enterEdit() {
+    sim.press(EDIT_PAD.x, EDIT_PAD.y); // hold EDIT
+    sim.press(0, 0); // tap clip 0 → enter edit (consumed, not launched)
+    sim.release(EDIT_PAD.x, EDIT_PAD.y);
+  }
+  const tapEdit = (x: number, y: number) => {
+    sim.press(x, y);
+    sim.release(x, y);
+  };
+  const clipSteps = () => (liveData().clips as Record<string, NoteClipRecord>)['0'].steps;
+
+  it('hold EDIT + tap a clip enters edit (no launch)', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindGridToClip(NODE_ID);
-    sim.press(EDIT_PAD.x, EDIT_PAD.y); // hold EDIT
+    sim.press(EDIT_PAD.x, EDIT_PAD.y);
     expect(__test_mode().editArmed).toBe(true);
-    sim.press(0, 0); // tap clip 0 → enter edit, NOT launch
+    sim.press(0, 0);
     expect(__test_mode().mode).toBe('edit');
     expect(__test_mode().editClipIndex).toBe(0);
     expect(queued()?.[0] ?? null).toBeNull(); // did not launch
     sim.release(EDIT_PAD.x, EDIT_PAD.y);
+  });
 
-    sim.press(3, 4); // a note cell
-    const clip = liveData().clips as Record<string, NoteClipRecord>;
-    expect(clip['0'].steps).toHaveLength(1);
-    expect(clip['0'].steps[0]).toMatchObject({ step: 3, midi: editRowToMidi(noteClip(), 4) });
+  it('a tap (press+release) toggles a note ON, tap again OFF', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindGridToClip(NODE_ID);
+    enterEdit();
+    tapEdit(3, 4);
+    expect(clipSteps()).toHaveLength(1);
+    expect(clipSteps()[0]).toMatchObject({ step: 3, midi: editRowToMidi(noteClip(), 4), lengthSteps: 1 });
+    tapEdit(3, 4);
+    expect(clipSteps()).toHaveLength(0);
+  });
+
+  it('hold a note + tap another in the same row → one held note spanning them', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindGridToClip(NODE_ID);
+    enterEdit();
+    sim.press(2, 4); // hold the anchor
+    sim.press(5, 4); // tap another pad in the same row → tie
+    sim.release(5, 4);
+    sim.release(2, 4); // releasing the anchor after a span does NOT toggle
+    expect(clipSteps()).toHaveLength(1);
+    expect(clipSteps()[0]).toMatchObject({
+      step: 2,
+      midi: editRowToMidi(noteClip(), 4),
+      lengthSteps: 4, // steps 2..5 held as one note
+    });
   });
 
   it('tapping EDIT again exits to session', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindGridToClip(NODE_ID);
-    sim.press(EDIT_PAD.x, EDIT_PAD.y);
-    sim.press(0, 0);
-    sim.release(EDIT_PAD.x, EDIT_PAD.y);
+    enterEdit();
     expect(__test_mode().mode).toBe('edit');
     sim.press(EDIT_PAD.x, EDIT_PAD.y); // tap to exit
     expect(__test_mode().mode).toBe('session');

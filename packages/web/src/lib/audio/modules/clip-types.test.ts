@@ -25,6 +25,8 @@ import {
   toggleNoteAt,
   cycleNoteAt,
   noteAt,
+  noteCovering,
+  setNoteSpan,
   velTier,
   VEL_LOW,
   VEL_MED,
@@ -209,6 +211,29 @@ describe('per-lane index + state helpers', () => {
     expect(playingSet({ playing: [1] })).toHaveLength(CLIP_LANES);
     expect(playingSet(undefined)).toEqual(new Array(CLIP_LANES).fill(null));
     expect(playingSet({ playing: [1] })[0]).toBe(1);
+  });
+});
+
+describe('held notes (the hold-pad + tap-another tie gesture)', () => {
+  it('setNoteSpan makes one held note across lo..hi, merging the row', () => {
+    const c0 = defaultNoteClip();
+    const c1 = setNoteSpan(c0, 2, 5, 60);
+    expect(c1.steps).toHaveLength(1);
+    expect(c1.steps[0]).toMatchObject({ step: 2, midi: 60, lengthSteps: 4 });
+    expect(c0.steps).toEqual([]); // immutable
+  });
+  it('setNoteSpan normalizes order + removes overlapping notes in the row', () => {
+    const c0 = { ...defaultNoteClip(), steps: [{ step: 4, midi: 60, lengthSteps: 1 }] };
+    const c1 = setNoteSpan(c0, 5, 2, 60); // hi/lo swapped; covers the existing step-4 note
+    expect(c1.steps).toHaveLength(1);
+    expect(c1.steps[0]).toMatchObject({ step: 2, midi: 60, lengthSteps: 4 });
+  });
+  it('noteCovering reports a held note across its whole span (not just the start)', () => {
+    const clip = { ...defaultNoteClip(), steps: [{ step: 2, midi: 60, lengthSteps: 3 }] };
+    expect(noteCovering(clip, 2, 60)).toBeDefined(); // start
+    expect(noteCovering(clip, 4, 60)).toBeDefined(); // held tail
+    expect(noteCovering(clip, 5, 60)).toBeUndefined(); // past the span
+    expect(noteCovering(clip, 3, 62)).toBeUndefined(); // wrong row
   });
 });
 
