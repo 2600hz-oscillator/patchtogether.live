@@ -132,6 +132,17 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   // selection) + the network-mocked tv-librarian.spec.ts (tune -> attach ->
   // preview path).
   tvLibrarian: 'live HLS (famelack) source; audio_l/audio_r emit silent ConstantSourceNodes until a country/channel is tuned (CI never hits a live TV CDN) — same pattern as videobox/archivist; covered by tv-librarian-data.test.ts + tv-librarian-geo.test.ts + network-mocked tv-librarian.spec.ts',
+  // PEERTUBE — federated PeerTube video SOURCE. Same silent-source pattern as
+  // TV LIBRARIAN / ARCHIVIST / VIDEOBOX: audio_l / audio_r emit silent
+  // ConstantSourceNodes (so the graph stays patchable) until a Sepia-Search
+  // result is PICKED + its per-instance HLS stream RESOLVES + ATTACHES, at which
+  // point ensureAudioWired() swaps in a MediaElementAudioSourceNode -> 2-ch
+  // ChannelSplitter. The bare 800ms smoke can't fetch + decode a live federated
+  // stream (and CI must never hit a live PeerTube instance), so the audio outs
+  // stay at the peak-floor. Dedicated coverage: peertube-query.test.ts
+  // (search/parse + stream-resolve) + the route-mocked peertube.spec.ts (real
+  // fetch -> parse -> resolve -> hls-attach -> audible-RMS, capability-gated).
+  peertube: 'federated PeerTube source; audio_l/audio_r emit silent ConstantSourceNodes until a Sepia result is picked + its HLS stream attaches (CI never hits a live PeerTube instance) — same pattern as videobox/tvLibrarian/archivist; covered by peertube-query.test.ts + route-mocked peertube.spec.ts',
   // MANDELBULB — audio_out is a CONDITIONAL output: it emits a silent
   // ConstantSourceNode until the user enables the SLICE toggle (default off),
   // at which point the slice→waveform→audio path posts a real wavetable. The
