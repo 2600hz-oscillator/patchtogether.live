@@ -34,12 +34,12 @@ describe('coerceQuality', () => {
     expect(coerceQuality('balanced')).toBe('balanced');
     expect(coerceQuality('small')).toBe('small');
   });
-  it('defaults anything else to high (no silent regression)', () => {
-    expect(coerceQuality(undefined)).toBe('high');
-    expect(coerceQuality(null)).toBe('high');
-    expect(coerceQuality('garbage')).toBe('high');
-    expect(coerceQuality(42)).toBe('high');
-    expect(DEFAULT_QUALITY).toBe('high');
+  it('defaults anything else to the BALANCED default (owner default 2026-06-15)', () => {
+    expect(coerceQuality(undefined)).toBe('balanced');
+    expect(coerceQuality(null)).toBe('balanced');
+    expect(coerceQuality('garbage')).toBe('balanced');
+    expect(coerceQuality(42)).toBe('balanced');
+    expect(DEFAULT_QUALITY).toBe('balanced');
   });
 });
 
@@ -130,10 +130,13 @@ describe('pickEncodeProfile — robustness', () => {
     expect(probe.calls[0].height).toBe(720);
   });
 
-  it('coerces a garbage tier to HIGH', async () => {
+  it('coerces a garbage tier to the BALANCED default', async () => {
     const probe = probeFor(['av1', 'vp9', 'avc']);
-    const p = await pickEncodeProfile('nonsense' as RecorderboxQuality, 1024, 768, probe);
-    expect(p.videoCodec).toBe('avc');
-    expect(p.videoBitrate).toBe(BASELINE_H264_BITRATE);
+    const garbage = await pickEncodeProfile('nonsense' as RecorderboxQuality, 1024, 768, probe);
+    const balanced = await pickEncodeProfile('balanced', 1024, 768, probe);
+    // Falls back to DEFAULT_QUALITY (now 'balanced'), not the historical HIGH.
+    expect(garbage.videoCodec).toBe(balanced.videoCodec);
+    expect(garbage.videoBitrate).toBe(balanced.videoBitrate);
+    expect(garbage.videoBitrate).not.toBe(BASELINE_H264_BITRATE);
   });
 });

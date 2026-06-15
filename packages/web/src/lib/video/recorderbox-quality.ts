@@ -49,8 +49,10 @@ import { canEncodeVideo as mbCanEncodeVideo, type VideoCodec } from 'mediabunny'
  *  pre-existing ~14 Mbps H.264 behavior exactly (no silent regression). */
 export type RecorderboxQuality = 'high' | 'balanced' | 'small';
 
-/** The DEFAULT tier — preserves the historical high-quality recording. */
-export const DEFAULT_QUALITY: RecorderboxQuality = 'high';
+/** The DEFAULT tier — BALANCED (owner default, 2026-06-15): AV1/VP9 at ~−80%
+ *  file size for a small quality hit, with H.264 fallback where AV1/VP9 isn't
+ *  supported. HIGH (the historical ~14 Mbps H.264 baseline) stays one click away. */
+export const DEFAULT_QUALITY: RecorderboxQuality = 'balanced';
 
 export const QUALITY_VALUES: readonly RecorderboxQuality[] = ['high', 'balanced', 'small'] as const;
 
