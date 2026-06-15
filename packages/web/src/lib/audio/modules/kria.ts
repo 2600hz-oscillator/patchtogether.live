@@ -264,6 +264,7 @@ export const kriaDef: AudioModuleDef = {
       const pat = activePattern(liveData());
       if (!pat) return;
       let track0Boundary = false;
+      let track0Advanced = false;
       for (let t = 0; t < KRIA_TRACKS; t++) {
         if (divCountdown[t]! > 0) {
           divCountdown[t]!--;
@@ -277,11 +278,16 @@ export const kriaDef: AudioModuleDef = {
         const { step, cursor: next } = advanceStep(track, cursor[t]!);
         cursor[t] = next;
         emitTrackStep(pat, t, step, at, stepDur * Math.max(1, Math.round(track.timeDivision)));
-        if (t === 0 && boundary) track0Boundary = true;
+        if (t === 0) {
+          track0Advanced = true;
+          if (boundary) track0Boundary = true;
+        }
         totalAdvances++;
       }
-      // Pattern-cue quantize, evaluated once per track-0 advance.
-      if (cursor[0]) {
+      // Pattern-cue quantize — only ticks when track 0 actually ADVANCED this
+      // base tick (so a track-0 TIME division > 1 doesn't over-count the cue
+      // clock on the ticks where track 0 was skipped).
+      if (track0Advanced) {
         const data = liveData();
         const cued = data?.cued ?? null;
         const cueSteps = typeof data?.cueSteps === 'number' ? Math.max(0, data.cueSteps) : 0;
