@@ -246,6 +246,33 @@ const DRIVERS: Record<string, PerPortDriver> = {
     note: 'GATEMAIDEN: drive .in with SEQUENCER.gate; gate + trig outs fire',
   },
 
+  // ───── Clip launcher — seed a launched note clip ─────
+  // CLIPPLAYER is idle until a clip is LAUNCHED. Seed clip 0 with a 4-step
+  // note pattern (midi 72+ so V/oct ≠ 0 — the peak floor rejects C4=0V),
+  // queue it, and turn quantize OFF so the first tick launches immediately.
+  // Then pitch/gate/velocity emit per step and clip_gate pulses each loop.
+  // Fast tempo (bpm 240 → 0.25s loop) so every output fires inside the window.
+  clipplayer: {
+    params: { quantize: 0, bpm: 240, gateLength: 0.9, octave: 0 },
+    data: {
+      clips: {
+        '0': {
+          kind: 'note',
+          lengthSteps: 4,
+          root: 48,
+          loop: true,
+          steps: [
+            { step: 0, midi: 72, velocity: 127, lengthSteps: 1 },
+            { step: 1, midi: 74, velocity: 127, lengthSteps: 1 },
+            { step: 2, midi: 76, velocity: 127, lengthSteps: 1 },
+            { step: 3, midi: 79, velocity: 127, lengthSteps: 1 },
+          ],
+        },
+      },
+      queued: '0',
+    },
+    note: 'CLIPPLAYER: seed + queue a 4-step note clip (midi 72+) with quantize off → launches immediately; pitch/gate/velocity/clip_gate emit',
+  },
   // ───── Step sequencers — seed steps + isPlaying ─────
   sequencer: {
     params: { isPlaying: 1, length: 4, bpm: 240, gateLength: 0.5 },

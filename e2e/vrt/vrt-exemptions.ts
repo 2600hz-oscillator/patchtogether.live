@@ -679,6 +679,14 @@ export const STRICT_VRT_MODULES = new Set<string>([
  *  up CI capture lands the other platform's PNG. The exempted pair is
  *  SKIPPED at the test level rather than allowed to fail. */
 export const EXEMPT_BASELINE_PAIRS = new Set<string>([
+  // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
+  // Deluge note editor + transport knobs; no animated canvas) captured
+  // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on
+  // this branch. Functional coverage is clip-types.test.ts + clipplayer.test.ts
+  // (def + factory launch/quantized-switch/stop via the real tick loop) + the
+  // per-module-per-port + behavioral sweeps + the bespoke real-source-chain
+  // clipplayer.spec.ts (TIMELORDE → clip → voice → audible RMS).
+  'linux/clipplayer',
   // SCALER: darwin baseline (the tiny 1-in/1-out multiplier card — title + the
   // single AMOUNT knob + the yellow PatchPanel IN/OUT drill-down; no animated
   // canvas) captured locally; linux baseline pending a `vrt-update.yml`
