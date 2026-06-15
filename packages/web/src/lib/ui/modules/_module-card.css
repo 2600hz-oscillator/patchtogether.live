@@ -200,6 +200,29 @@
   }
 }
 
+/* Returning to front view. CSS can't animate the rear→front transition itself
+ * (it's a `display:none` on the back panel — nothing to keyframe), so Canvas
+ * sets a transient `.flip-back` class on the flow container for ~360ms after
+ * leaving rear view. While it's set, the card FRONTS flip in from the OPPOSITE
+ * direction (rotateY +90→0, vs the back panel's −90→0) so the card visibly
+ * "turns back over" instead of just snapping to front. The class clears once
+ * the keyframe settles. Targets all three card roots, same as the rear-view
+ * hide rule. */
+.flow.flip-back .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
+.flow.flip-back .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) {
+  animation: card-front-flip-in 360ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes card-front-flip-in {
+  from {
+    transform: perspective(1200px) rotateY(90deg);
+    opacity: 0;
+  }
+  to {
+    transform: perspective(1200px) rotateY(0deg);
+    opacity: 1;
+  }
+}
+
 /* While in rear view the FRONT content (everything that isn't the back panel) is
  * hidden + non-interactive: visibility:hidden removes it from rendering AND from
  * hit-testing so a click can only land on the back-panel jacks over it. (No
@@ -337,6 +360,10 @@
  * view state change is otherwise identical (back panel shows flat, front hides). */
 @media (prefers-reduced-motion: reduce) {
   .rear-view .card-back-panel {
+    animation: none;
+  }
+  .flow.flip-back .svelte-flow__node > :is(.mod-card, .card, .moog-panel),
+  .flow.flip-back .svelte-flow__node > * > :is(.mod-card, .card, .moog-panel) {
     animation: none;
   }
 }
