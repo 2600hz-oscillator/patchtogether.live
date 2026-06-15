@@ -165,6 +165,32 @@
         { "id": "glow",   "label": "GLOW",   "min": 0.0, "max": 3.0, "default": 1.5,  "curve": "linear" },
         { "id": "dark",   "label": "DARK",   "min": 0.0, "max": 1.0, "default": 0.7,  "curve": "linear" }
       ]
+    },
+    {
+      "id": "frag-chromatic-shift",
+      "label": "FRAG CHROMATIC-SHIFT",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-chromatic-shift.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "shift", "label": "SHIFT", "min": 0.0, "max": 4.0, "default": 1.2, "curve": "linear" },
+        { "id": "tear",  "label": "TEAR",  "min": 0.0, "max": 2.0, "default": 0.6, "curve": "linear" },
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 1.0, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "frag-posterize",
+      "label": "FRAG POSTERIZE",
+      "family": "FRAG",
+      "glsl": "/toybox/shaders/frag-posterize.frag.glsl",
+      "shadertoy": true,
+      "input": "scene",
+      "params": [
+        { "id": "levels",  "label": "LEVELS",  "min": 2.0, "max": 8.0, "default": 4.0, "curve": "discrete" },
+        { "id": "dither",  "label": "DITHER",  "min": 0.0, "max": 1.0, "default": 0.6, "curve": "linear" },
+        { "id": "duotone", "label": "DUOTONE", "min": 0.0, "max": 1.0, "default": 0.0, "curve": "linear" }
+      ]
     }
   ],
   "gen": [
@@ -309,6 +335,93 @@
         { "id": "scale",    "label": "SCALE",    "min": 0.5, "max": 4.0, "default": 1.5, "curve": "linear" },
         { "id": "contrast", "label": "CONTRAST", "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear" },
         { "id": "drift",    "label": "DRIFT",    "min": 0.0, "max": 1.0, "default": 0.4, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "seascape",
+      "label": "SEASCAPE",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/seascape.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "speed",  "label": "SPEED",  "min": 0.0, "max": 2.0, "default": 0.6, "curve": "linear" },
+        { "id": "choppy", "label": "CHOPPY", "min": 0.0, "max": 1.0, "default": 0.6, "curve": "linear" },
+        { "id": "height", "label": "HEIGHT", "min": 0.0, "max": 1.5, "default": 0.5, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "octgrams",
+      "label": "SHAPE DESCENT",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/octgrams.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 2.0, "default": 0.6, "curve": "linear" },
+        { "id": "glow",  "label": "GLOW",  "min": 0.0, "max": 2.0, "default": 0.7, "curve": "linear" },
+        { "id": "scale", "label": "SCALE", "min": 0.6, "max": 3.0, "default": 1.2, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "vangogh-sunset",
+      "label": "VAN GOGH SUNSET",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/vangogh-sunset.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "speed",  "label": "SPEED",  "min": 0.0, "max": 2.0, "default": 0.5, "curve": "linear" },
+        { "id": "swirl",  "label": "SWIRL",  "min": 0.0, "max": 2.0, "default": 0.7, "curve": "linear" },
+        { "id": "warmth", "label": "WARMTH", "min": 0.0, "max": 1.0, "default": 0.6, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "raymarch-primitives",
+      "label": "RAYMARCH PRIMITIVES",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/raymarch-primitives.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "spin",  "label": "SPIN",  "min": 0.0, "max": 2.0, "default": 0.4, "curve": "linear" },
+        { "id": "zoom",  "label": "ZOOM",  "min": 0.0, "max": 3.0, "default": 1.0, "curve": "linear" },
+        { "id": "light", "label": "LIGHT", "min": 0.0, "max": 1.0, "default": 0.6, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "aurora-curtains",
+      "label": "AURORA CURTAINS",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/aurora-curtains.frag.glsl",
+      "params": [
+        { "id": "speed",     "label": "SPEED",     "min": 0.0, "max": 2.0, "default": 0.5, "curve": "linear" },
+        { "id": "intensity", "label": "INTENSITY", "min": 0.0, "max": 1.5, "default": 0.6, "curve": "linear" },
+        { "id": "hue",       "label": "HUE",       "min": 0.0, "max": 1.0, "default": 0.3, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "lava-lamp",
+      "label": "LAVA LAMP",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/lava-lamp.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 2.0, "default": 0.6, "curve": "linear" },
+        { "id": "blobs", "label": "BLOBS", "min": 1.0, "max": 6.0, "default": 4.0, "curve": "discrete" },
+        { "id": "heat",  "label": "HEAT",  "min": 0.0, "max": 1.0, "default": 0.5, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "circuit-bloom",
+      "label": "CIRCUIT BLOOM",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/circuit-bloom.frag.glsl",
+      "params": [
+        { "id": "scale", "label": "SCALE", "min": 2.0,  "max": 16.0, "default": 7.0, "curve": "linear" },
+        { "id": "pulse", "label": "PULSE", "min": 0.0,  "max": 3.0,  "default": 1.0, "curve": "linear" },
+        { "id": "glow",  "label": "GLOW",  "min": 0.0,  "max": 1.0,  "default": 0.6, "curve": "linear" }
       ]
     }
   ],
@@ -754,6 +867,97 @@
         "cv1": { "target": "combine", "nodeId": "fb1", "param": "zoom" },
         "cv2": { "target": "combine", "nodeId": "fb2", "param": "decay" },
         "cv3": { "target": "layer", "layer": 0, "param": "material:spin" }
+      }
+    },
+    {
+      "id": "ocean-voyage",
+      "label": "OCEAN VOYAGE",
+      "note": "COMPLETE scene: the clean-room SEASCAPE ocean (GEN, layer 0) glitched by the CHROMATIC-SHIFT FRAG (layer 1) reading it as iChannel0 — rolling water with a broken-signal RGB fringe. OUTPUT shows the fragged ocean. cv1 → chromatic SHIFT, cv2 → ocean SPEED, cv3 → ocean HEIGHT.",
+      "layers": [
+        { "kind": "gen",  "contentId": "seascape",            "params": { "speed": 0.6, "choppy": 0.6, "height": 0.5 } },
+        { "kind": "frag", "contentId": "frag-chromatic-shift", "params": { "shift": 1.2, "tear": 0.4, "speed": 1.0 } },
+        { "kind": "off",  "contentId": null, "params": {} },
+        { "kind": "off",  "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "pass", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "pass", "toPort": "in0" },
+          { "id": "e1", "from": "pass", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 1, "param": "shift" },
+        "cv2": { "target": "layer", "layer": 0, "param": "speed" },
+        "cv3": { "target": "layer", "layer": 0, "param": "height" }
+      }
+    },
+    {
+      "id": "neon-descent",
+      "label": "NEON DESCENT",
+      "note": "COMPLETE scene: the clean-room OCTGRAMS neon octahedron lattice (GEN, layer 0) silk-screened by the POSTERIZE FRAG (layer 1) reading it — a luminous wireframe descent flattened into graphic ink bands. OUTPUT shows the posterized lattice. cv1 → octgrams GLOW, cv2 → posterize LEVELS, cv4 → posterize DUOTONE.",
+      "layers": [
+        { "kind": "gen",  "contentId": "octgrams",       "params": { "speed": 0.6, "glow": 0.7, "scale": 1.2 } },
+        { "kind": "frag", "contentId": "frag-posterize",  "params": { "levels": 5.0, "dither": 0.6, "duotone": 0.0 } },
+        { "kind": "off",  "contentId": null, "params": {} },
+        { "kind": "off",  "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "pass", "kind": "fade", "x": 120, "y": 40, "params": { "amount": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "pass", "toPort": "in0" },
+          { "id": "e1", "from": "pass", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 0, "param": "glow" },
+        "cv2": { "target": "layer", "layer": 1, "param": "levels" },
+        "cv4": { "target": "layer", "layer": 1, "param": "duotone" }
+      }
+    },
+    {
+      "id": "aurora-gallery",
+      "label": "AURORA GALLERY",
+      "note": "COMPLETE scene: the RAYMARCH-PRIMITIVES SDF gallery (GEN, layer 0) screen-MAPped with the AURORA-CURTAINS night sky (GEN, layer 1) — chrome primitives glinting under northern lights. OUTPUT = the MAP composite. cv2 → map MIX, cv3 → primitives SPIN, cv5 → aurora INTENSITY.",
+      "layers": [
+        { "kind": "gen", "contentId": "raymarch-primitives", "params": { "spin": 0.4, "zoom": 1.0, "light": 0.6 } },
+        { "kind": "gen", "contentId": "aurora-curtains",     "params": { "speed": 0.5, "intensity": 0.6, "hue": 0.3 } },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "map1", "kind": "map", "x": 120, "y": 40, "params": { "amount": 0.6, "mode": 1 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "map1", "toPort": "in0" },
+          { "id": "e1", "from": "src1", "to": "map1", "toPort": "in1" },
+          { "id": "e2", "from": "map1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv2": { "target": "combine", "nodeId": "map1", "param": "amount" },
+        "cv3": { "target": "layer", "layer": 0, "param": "spin" },
+        "cv5": { "target": "layer", "layer": 1, "param": "intensity" }
       }
     }
   ]
