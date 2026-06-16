@@ -140,3 +140,94 @@ export function eventsInRange(data: ArrangeData, fromBeat: number, toBeat: numbe
 export function hasArrangement(data: ArrangeData | undefined): boolean {
   return !!data && data.events.length > 0;
 }
+
+// ---------------------------------------------------------------------------
+// SONG VIEW (Phase 2) — block derivation + edit ops, all PURE.
+//
+// The event log is the source of truth; the editor renders + mutates a BLOCK
+// view DERIVED from it. A launch event starts a block that plays until the
+// lane's next event (or the arrangement end); a 'stop' event ends the block
+// (its silent span emits no block). Edits map straight back to the log:
+//   move block  → change the launch event's beat
+//   swap clip   → change the event's slot
+//   delete block→ remove the event (the prior clip extends; or insert 'stop')
+// ---------------------------------------------------------------------------
+
+/** A contiguous span in one lane where a single clip plays (for the timeline). */
+export interface ArrangeBlock {
+  lane: number;
+  startBeat: number;
+  endBeat: number; // exclusive
+  slot: number; // the clip slot (blocks are only emitted for launches, not stops)
+}
+
+/** Beat-equality tolerance for matching a block back to its launch event. */
+const BEAT_EPS = 1e-6;
+
+/** Per-lane blocks for the song view. Each launch runs until the lane's next
+ *  event (or `end` = the arrangement length); 'stop' events end a block. */
+export function arrangeBlocks(data: ArrangeData, lengthBeats?: number): ArrangeBlock[] {
+  const end = lengthBeats ?? arrangeLengthBeats(data);
+  const blocks: ArrangeBlock[] = [];
+  for (let lane = 0; lane < CLIP_LANES; lane++) {
+    const evs = data.events.filter((e) => e.lane === lane).sort((a, b) => a.beat - b.beat);
+    for (let i = 0; i < evs.length; i++) {
+      const e = evs[i];
+      if (e.slot === 'stop') continue; // silence span — no block
+      const nextBeat = i + 1 < evs.length ? evs[i + 1].beat : end;
+      const startBeat = Math.min(e.beat, end);
+      const endBeat = Math.max(startBeat, Math.min(nextBeat, end));
+      blocks.push({ lane, startBeat, endBeat, slot: e.slot });
+    }
+  }
+  return blocks;
+}
+
+/** Index of the launch event for the block a lane starts at `startBeat`. */
+function eventIndexAt(data: ArrangeData, lane: number, startBeat: number): number {
+  return data.events.findIndex(
+    (e) => e.lane === lane && Math.abs(e.beat - startBeat) < BEAT_EPS,
+  );
+}
+
+/** Move a block's launch to a new beat (clamped ≥ 0). Re-sorts. Returns NEW. */
+export function moveBlock(
+  data: ArrangeData,
+  lane: number,
+  startBeat: number,
+  newStartBeat: number,
+): ArrangeData {
+  const i = eventIndexAt(data, lane, startBeat);
+  if (i < 0) return data;
+  const events = data.events.map((e, j) =>
+    j === i ? { ...e, beat: Math.max(0, newStartBeat) } : e,
+  );
+  events.sort((a, b) => a.beat - b.beat);
+  return { ...data, events };
+}
+
+/** Change which clip a block launches. Returns NEW. */
+export function setBlockSlot(
+  data: ArrangeData,
+  lane: number,
+  startBeat: number,
+  newSlot: number,
+): ArrangeData {
+  const i = eventIndexAt(data, lane, startBeat);
+  if (i < 0) return data;
+  const events = data.events.map((e, j) => (j === i ? { ...e, slot: newSlot } : e));
+  return { ...data, events };
+}
+
+/** Remove a block's launch event (the prior clip in that lane extends over it).
+ *  Returns NEW. */
+export function deleteBlock(data: ArrangeData, lane: number, startBeat: number): ArrangeData {
+  const i = eventIndexAt(data, lane, startBeat);
+  if (i < 0) return data;
+  return { ...data, events: data.events.filter((_, j) => j !== i) };
+}
+
+/** Set the explicit loop length (0 = open/auto). Returns NEW. */
+export function setArrangeLength(data: ArrangeData, lengthBeats: number): ArrangeData {
+  return { ...data, lengthBeats: Math.max(0, lengthBeats) };
+}

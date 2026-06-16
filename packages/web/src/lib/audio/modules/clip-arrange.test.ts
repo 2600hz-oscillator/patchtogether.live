@@ -14,6 +14,11 @@ import {
   arrangeLengthBeats,
   eventsInRange,
   hasArrangement,
+  arrangeBlocks,
+  moveBlock,
+  setBlockSlot,
+  deleteBlock,
+  setArrangeLength,
   type ArrangeData,
 } from './clip-arrange';
 
@@ -153,5 +158,81 @@ describe('hasArrangement', () => {
     expect(hasArrangement(undefined)).toBe(false);
     expect(hasArrangement(defaultArrangeData())).toBe(false);
     expect(hasArrangement({ events: [{ beat: 0, lane: 0, slot: 0 }], lengthBeats: 0, loop: true })).toBe(true);
+  });
+});
+
+describe('arrangeBlocks (song-view derivation)', () => {
+  it('a lane block runs from its launch until the next event (or arrangement end)', () => {
+    const d: ArrangeData = {
+      events: [
+        { beat: 0, lane: 0, slot: 1 },
+        { beat: 4, lane: 0, slot: 2 },
+      ],
+      lengthBeats: 8,
+      loop: true,
+    };
+    const b = arrangeBlocks(d).filter((x) => x.lane === 0);
+    expect(b).toEqual([
+      { lane: 0, startBeat: 0, endBeat: 4, slot: 1 },
+      { lane: 0, startBeat: 4, endBeat: 8, slot: 2 },
+    ]);
+  });
+  it("a 'stop' event ends a block — its silent span emits none", () => {
+    const d: ArrangeData = {
+      events: [
+        { beat: 0, lane: 1, slot: 0 },
+        { beat: 4, lane: 1, slot: 'stop' },
+        { beat: 6, lane: 1, slot: 3 },
+      ],
+      lengthBeats: 8,
+      loop: true,
+    };
+    const b = arrangeBlocks(d).filter((x) => x.lane === 1);
+    expect(b).toEqual([
+      { lane: 1, startBeat: 0, endBeat: 4, slot: 0 }, // ends at the stop
+      { lane: 1, startBeat: 6, endBeat: 8, slot: 3 }, // resumes; 4..6 is silent
+    ]);
+  });
+  it('derives the end from the last event when length is open', () => {
+    const d: ArrangeData = { events: [{ beat: 5, lane: 0, slot: 0 }], lengthBeats: 0, loop: true };
+    // last event 5 → rounds up to 8 (next bar)
+    expect(arrangeBlocks(d)[0]).toEqual({ lane: 0, startBeat: 5, endBeat: 8, slot: 0 });
+  });
+});
+
+describe('song-view edit ops', () => {
+  const base: ArrangeData = {
+    events: [
+      { beat: 0, lane: 0, slot: 1 },
+      { beat: 4, lane: 0, slot: 2 },
+    ],
+    lengthBeats: 8,
+    loop: true,
+  };
+  it('moveBlock retimes the launch (clamped ≥0) + re-sorts', () => {
+    const d = moveBlock(base, 0, 4, 2);
+    expect(d.events.map((e) => e.beat)).toEqual([0, 2]); // re-sorted
+    expect(d.events.find((e) => e.slot === 2)?.beat).toBe(2);
+    expect(moveBlock(base, 0, 0, -5).events[0].beat).toBe(0); // clamp
+    expect(base.events[1].beat).toBe(4); // immutable
+  });
+  it('setBlockSlot swaps which clip the block launches', () => {
+    const d = setBlockSlot(base, 0, 4, 5);
+    expect(d.events.find((e) => e.beat === 4)?.slot).toBe(5);
+    expect(base.events[1].slot).toBe(2); // immutable
+  });
+  it('deleteBlock removes the launch (prior clip extends over the gap)', () => {
+    const d = deleteBlock(base, 0, 4);
+    expect(d.events).toHaveLength(1);
+    // the remaining slot-1 block now runs the whole length
+    expect(arrangeBlocks(d)).toEqual([{ lane: 0, startBeat: 0, endBeat: 8, slot: 1 }]);
+  });
+  it('a no-match edit returns the data unchanged', () => {
+    expect(moveBlock(base, 3, 0, 2)).toBe(base); // wrong lane
+    expect(deleteBlock(base, 0, 99)).toBe(base); // no block at 99
+  });
+  it('setArrangeLength clamps ≥ 0', () => {
+    expect(setArrangeLength(base, 16).lengthBeats).toBe(16);
+    expect(setArrangeLength(base, -4).lengthBeats).toBe(0);
   });
 });
