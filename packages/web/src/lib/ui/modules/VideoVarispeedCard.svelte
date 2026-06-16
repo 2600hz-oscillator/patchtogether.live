@@ -35,7 +35,9 @@
     videoVarispeedDef,
     type VideoVarispeedHandleExtras,
     type VideoVarispeedData,
+    VIDEOVARISPEED_MAX_SLOT_BYTES,
   } from '$lib/video/modules/videovarispeed';
+  import { ASSET_SLOTS, ASSET_SLOT_LABELS, slotForVOct } from '$lib/video/asset-select';
   import type { VideoboxFileMeta } from '$lib/video/modules/videobox-sync';
   import {
     speedKnobToMultiplier,
@@ -75,6 +77,8 @@
     { id: 'cv_pause', label: 'PAUSE', cable: 'gate' },
     { id: 'cv_reset', label: 'RESET', cable: 'gate' },
     { id: 'cv_loop_toggle', label: 'LOOP', cable: 'gate' },
+    { id: 'asset_pitch', label: 'ASSET PITCH', cable: 'pitch' },
+    { id: 'asset_gate', label: 'ASSET GATE', cable: 'gate' },
     { id: 'speedCv', label: 'SPEED', cable: 'cv' },
     { id: 'startCv', label: 'START CV', cable: 'cv' },
     { id: 'endCv', label: 'END CV', cable: 'cv' },
@@ -86,11 +90,28 @@
   ];
 
   // ---- DOM refs + local state ----
-  let videoEl: HTMLVideoElement | null = $state(null);
+  //
+  // 7 <video> elements, one per asset slot. Slot 0 is the MAIN preview
+  // element (existing single-video behaviour); slots 1..6 are hidden,
+  // preloaded elements in the "Load multiple…" panel. The ACTIVE slot's
+  // element is what the engine samples + the transport loop drives; `videoEl`
+  // is derived from `activeSlot` so all the existing transport code that
+  // reads/mutates `videoEl` automatically follows the active element.
+  let slotEls = $state<(HTMLVideoElement | null)[]>(new Array(ASSET_SLOTS).fill(null));
+  let activeSlot = $state(0);
+  let videoEl = $derived<HTMLVideoElement | null>(slotEls[activeSlot] ?? null);
+  // Per-slot object URLs (local bytes; never synced) — index 0 is the single
+  // video's url (kept in sync with the legacy `objectUrl` accessor below).
+  let slotUrls: (string | null)[] = new Array(ASSET_SLOTS).fill(null);
+  // Per-slot local filenames (drives the active card's data-has-local-file).
+  let slotNames = $state<(string | null)[]>(new Array(ASSET_SLOTS).fill(null));
+  // Legacy single-video accessors map onto slot 0.
   let objectUrl: string | null = null;
   let localFileName = $state<string | null>(null);
   let isDragOver = $state(false);
   let loadError = $state<string | null>(null);
+  // "Load multiple…" panel toggle (right-click on the card).
+  let multiOpen = $state(false);
 
   // ---- Persistence: remembered file handle (Chromium) + re-link fallback ----
   // Mirrors VIDEOBOX: a picked/dropped FileSystemFileHandle is stashed in
@@ -103,8 +124,22 @@
   let handleReloadAttempted = false;
 
   // ---- Reactive reads from data (Yjs-backed) ----
-  let fileMeta = $derived<VideoboxFileMeta | null>(
+  // Synced 7-slot file meta (parallel to the asset slots). null entries = empty.
+  let slotMeta = $derived<(VideoboxFileMeta | null)[]>(
+    (node?.data as Partial<VideoVarispeedData> | undefined)?.slotMeta
+      ?? new Array(ASSET_SLOTS).fill(null),
+  );
+  // Legacy single-video fileMeta lives at slot 0 for back-compat; the ACTIVE
+  // slot's meta is what the transport readouts (duration / re-link) reflect.
+  let baseFileMeta = $derived<VideoboxFileMeta | null>(
     (node?.data as Partial<VideoVarispeedData> | undefined)?.fileMeta ?? null,
+  );
+  // For slot 0 the legacy single-video `fileMeta` is authoritative (it's what
+  // the perf-zip export/restore + handle-reload paths read/write); slots 1..6
+  // use the per-slot slotMeta. This keeps slot 0 byte-identical to the
+  // pre-asset-selector behaviour.
+  let fileMeta = $derived<VideoboxFileMeta | null>(
+    activeSlot === 0 ? (baseFileMeta ?? slotMeta[0] ?? null) : (slotMeta[activeSlot] ?? null),
   );
   let isPlaying = $derived<boolean>(
     (node?.data as Partial<VideoVarispeedData> | undefined)?.isPlaying ?? false,
@@ -114,8 +149,8 @@
     (node?.data as Partial<VideoVarispeedData> | undefined)?.loop ?? true,
   );
 
-  /** Track whether THIS browser has loaded a local copy of the file. */
-  let hasLocalFile = $derived<boolean>(localFileName !== null);
+  /** Track whether THIS browser has loaded a local copy of the ACTIVE slot. */
+  let hasLocalFile = $derived<boolean>((slotNames[activeSlot] ?? null) !== null);
 
   // ---- Transport param accessors (knob + sliders live on node.params) ----
   function defaultFor(k: string): number {
@@ -224,63 +259,102 @@
     file: File,
     opts?: { handle?: StoredFileHandle | null; reuseHandleId?: string },
   ): Promise<void> {
+    // Legacy single-load path → slot 0 (the main preview element). Makes
+    // slot 0 active so the existing transport drives it.
+    await loadFileIntoSlot(0, file, opts);
+  }
+
+  /** Load `file` into asset slot `slot`. Slot 0 is the main preview element +
+   *  the back-compat single-video write (fileMeta + export resolver); slots
+   *  1..6 are the "Load multiple…" preloaded elements (per-slot objectUrl +
+   *  slotMeta). When loading the ACTIVE slot, re-wires audio + decodes the
+   *  first frame. Per-slot size cap keeps 7 preloaded elements bounded. */
+  async function loadFileIntoSlot(
+    slot: number,
+    file: File,
+    opts?: { handle?: StoredFileHandle | null; reuseHandleId?: string },
+  ): Promise<void> {
     loadError = null;
-    pendingHandle = null;
+    if (slot === activeSlot) pendingHandle = null;
+    if (slot < 0 || slot >= ASSET_SLOTS) return;
     if (!file.type.startsWith('video/')) {
       loadError = `Not a video file: ${file.type || file.name}`;
       return;
     }
-    if (objectUrl) {
-      try { URL.revokeObjectURL(objectUrl); } catch { /* */ }
-      objectUrl = null;
+    if (Number.isFinite(file.size) && file.size > VIDEOVARISPEED_MAX_SLOT_BYTES) {
+      loadError = `File too large (max ${Math.round(VIDEOVARISPEED_MAX_SLOT_BYTES / (1024 * 1024))} MB per slot)`;
+      return;
     }
-    objectUrl = URL.createObjectURL(file);
-    localFileName = file.name;
-    // Register this node's bytes resolver for the portable "Export performance"
-    // (.zip) path — the exporter (Canvas) collects loaded video bytes across ALL
-    // video cards via this registry. Mirrors VIDEOBOX exactly. The closure
-    // re-reads objectUrl/localFileName so a later swap is reflected.
-    registerVideoExport(id, async () => {
-      const url = objectUrl;
-      if (!url) return null;
-      const resp = await fetch(url);
-      const ab = await (await resp.blob()).arrayBuffer();
-      return { bytes: new Uint8Array(ab), name: localFileName ?? file.name };
-    });
-    if (!videoEl) return;
-    videoEl.src = objectUrl;
-    videoEl.muted = false;
+    const el = slotEls[slot];
+    // Revoke a previous url for THIS slot.
+    if (slotUrls[slot]) {
+      try { URL.revokeObjectURL(slotUrls[slot]!); } catch { /* */ }
+      slotUrls[slot] = null;
+    }
+    const url = URL.createObjectURL(file);
+    slotUrls[slot] = url;
+    slotNames[slot] = file.name;
+    if (slot === 0) {
+      objectUrl = url;
+      localFileName = file.name;
+      // Register slot-0 bytes resolver for the portable "Export performance"
+      // (.zip) path. Mirrors VIDEOBOX. (Multi-slot export is out of scope.)
+      registerVideoExport(id, async () => {
+        const u = slotUrls[0];
+        if (!u) return null;
+        const resp = await fetch(u);
+        const ab = await (await resp.blob()).arrayBuffer();
+        return { bytes: new Uint8Array(ab), name: slotNames[0] ?? file.name };
+      });
+    }
+    if (!el) return;
+    el.src = url;
+    el.muted = false;
 
     await new Promise<void>((resolve) => {
-      if (!videoEl) { resolve(); return; }
-      if (videoEl.readyState >= 1 /* HAVE_METADATA */) { resolve(); return; }
-      const onMeta = (): void => { videoEl?.removeEventListener('loadedmetadata', onMeta); resolve(); };
-      videoEl.addEventListener('loadedmetadata', onMeta, { once: true });
+      if (el.readyState >= 1 /* HAVE_METADATA */) { resolve(); return; }
+      const onMeta = (): void => { el.removeEventListener('loadedmetadata', onMeta); resolve(); };
+      el.addEventListener('loadedmetadata', onMeta, { once: true });
     });
-    if (!videoEl) return;
 
-    // Persist the handle (if we have one + the browser supports it) BEFORE
-    // writing fileMeta so the stamped handleId is the one the handle is stored
-    // under. On the perf-zip path the loader has already seeded a blob handle
-    // under `bundle-<nodeId>` (reuseHandleId), so we just re-stamp the same id.
+    // Persist the handle (slot 0 only; slots 1..6 keep objectUrl/handle local).
     let handleId: string | undefined = opts?.reuseHandleId;
-    if (opts?.handle && canRememberHandle) {
+    if (slot === 0 && opts?.handle && canRememberHandle) {
       if (!handleId) handleId = newVideoFileId();
       await putVideoFileHandle(handleId, opts.handle);
     }
 
-    writeFileMeta({
+    const meta: VideoboxFileMeta = {
       name: file.name,
-      duration: Number.isFinite(videoEl.duration) ? videoEl.duration : 0,
+      duration: Number.isFinite(el.duration) ? el.duration : 0,
       size: Number.isFinite(file.size) ? file.size : undefined,
       handleId,
-    });
+    };
+    if (slot === 0) writeFileMeta(meta);
+    writeSlotMeta(slot, meta);
 
     // Force a first frame to decode so the output streams immediately even
-    // before play (rVFC fires on the first decoded frame).
-    try { videoEl.currentTime = 0; } catch { /* */ }
+    // before play (rVFC fires on the first decoded frame) — also satisfies the
+    // "preload first frame" requirement for the inactive slots.
+    try { el.currentTime = 0; } catch { /* */ }
 
-    ensureAudioWired();
+    if (slot === activeSlot) ensureAudioWired();
+  }
+
+  /** Write a per-slot fileMeta into the synced slotMeta array. */
+  function writeSlotMeta(slot: number, meta: VideoboxFileMeta | null): void {
+    ydoc.transact(() => {
+      const t = patch.nodes[id];
+      if (!t) return;
+      if (!t.data) t.data = {};
+      const d = t.data as Partial<VideoVarispeedData>;
+      const arr = Array.isArray(d.slotMeta)
+        ? d.slotMeta.slice(0, ASSET_SLOTS)
+        : new Array(ASSET_SLOTS).fill(null);
+      while (arr.length < ASSET_SLOTS) arr.push(null);
+      arr[slot] = meta;
+      d.slotMeta = arr;
+    }, LOCAL_ORIGIN);
   }
 
   // ---- Persistence: reload from a remembered handle on patch / perf-zip load ----
@@ -429,6 +503,42 @@
     if (file) void loadFile(file, { handle });
   }
 
+  // ---- "Load multiple…" 7-slot panel (right-click toggle) ------------
+  function onCardContextMenu(ev: MouseEvent): void {
+    ev.preventDefault();
+    multiOpen = !multiOpen;
+  }
+  let slotLoading = $state<boolean[]>(new Array(ASSET_SLOTS).fill(false));
+  async function onSlotFileInputChange(ev: Event, slot: number): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file) {
+      slotLoading[slot] = true;
+      try {
+        // Try to capture a FileSystemFileHandle on Chromium for slot 0 reload;
+        // slots 1..6 keep objectUrl-only (re-link prompt covers reload).
+        await loadFileIntoSlot(slot, file);
+      } finally {
+        slotLoading[slot] = false;
+      }
+    }
+    try { input.value = ''; } catch { /* */ }
+  }
+  function clearSlot(slot: number): void {
+    if (slot < 0 || slot >= ASSET_SLOTS) return;
+    const el = slotEls[slot];
+    if (el) { try { el.pause(); el.removeAttribute('src'); el.load(); } catch { /* */ } }
+    if (slotUrls[slot]) {
+      try { URL.revokeObjectURL(slotUrls[slot]!); } catch { /* */ }
+      slotUrls[slot] = null;
+    }
+    slotNames[slot] = null;
+    if (slot === 0) { objectUrl = null; localFileName = null; }
+    writeSlotMeta(slot, null);
+    // If we cleared the ACTIVE slot, fall back to slot 0 if it has a video.
+    if (slot === activeSlot && slot !== 0 && slotHasLocalVideo(0)) selectAssetSlot(0);
+  }
+
   // ---- Transport window + speed helpers (live, CV-summed) ----
   function effectiveSpeed(): number {
     return speedKnobToMultiplier(
@@ -467,9 +577,52 @@
     if (videoEl && hasLocalFile) { try { videoEl.currentTime = pos; } catch { /* */ } }
   }
 
+  // ---- Asset slot select (gate-driven) -------------------------------
+  //
+  // True iff slot `i` has a LOCAL video element with a loaded source — only
+  // then can we make it active (a peer that hasn't re-linked that slot ignores
+  // the switch + keeps its current display).
+  function slotHasLocalVideo(i: number): boolean {
+    return i >= 0 && i < ASSET_SLOTS && (slotNames[i] ?? null) !== null && slotEls[i] != null;
+  }
+
+  // Make slot `i` the active source: attach its element to the engine, restart
+  // it from the beginning (currentTime=0), play if the transport is playing,
+  // and re-wire audio to the new element. This is the "start playing from the
+  // beginning as soon as the gate fires" behaviour. No-op if the slot has no
+  // local video or is already active.
+  function selectAssetSlot(i: number): void {
+    if (!slotHasLocalVideo(i)) return;
+    if (i === activeSlot) {
+      // Already active — still restart from the beginning on a re-trigger.
+      const el = slotEls[i];
+      if (el) { try { el.currentTime = 0; } catch { /* */ } }
+      return;
+    }
+    const prev = slotEls[activeSlot];
+    const next = slotEls[i];
+    // Tear down audio on the OUTGOING element before swapping (idempotent).
+    const extras = getExtras();
+    extras?.unwireAudio();
+    if (prev && !prev.paused) { try { prev.pause(); } catch { /* */ } }
+    activeSlot = i;
+    if (next) {
+      try { next.currentTime = 0; } catch { /* */ }
+      if (isPlaying && effectiveSpeed() >= 0) {
+        void next.play().catch(() => { /* autoplay */ });
+      }
+    }
+    // Re-attach the engine source to the new element + re-wire its audio. The
+    // keep-alive pattern in wireAudio() is idempotent, so the unwire→wire pair
+    // is safe.
+    const ve = videoEngine();
+    try { ve?.attachExternalSource(id, 'video', next ?? null); } catch { /* */ }
+    ensureAudioWired();
+  }
+
   // ---- Gate input edge detection (rising-edge, polled) ----
   const lastGate: Record<string, number> = {
-    cv_start: 0, cv_pause: 0, cv_reset: 0, cv_loop_toggle: 0,
+    cv_start: 0, cv_pause: 0, cv_reset: 0, cv_loop_toggle: 0, asset_gate: 0,
   };
   function risingEdge(paramId: string): boolean {
     const v = readCv(paramId);
@@ -487,6 +640,13 @@
       if (risingEdge('cv_pause')) gatePause();
       if (risingEdge('cv_reset')) gateReset();
       if (risingEdge('cv_loop_toggle')) toggleLoop();
+      // Asset selector: on a rising edge read the raw asset_pitch V/oct, map
+      // it to a slot, and switch IF that slot holds a local video (black-key
+      // pitch → null → ignore; empty/unlinked slot → ignore).
+      if (risingEdge('asset_gate')) {
+        const slot = slotForVOct(readCv('asset_pitch'));
+        if (slot != null && slotHasLocalVideo(slot)) selectAssetSlot(slot);
+      }
     }, 33);
   }
   function stopGateLoop(): void {
@@ -614,10 +774,14 @@
     const extras = getExtras();
     extras?.unwireAudio();
     unregisterVideoExport(id);
-    if (objectUrl) {
-      try { URL.revokeObjectURL(objectUrl); } catch { /* */ }
-      objectUrl = null;
+    // Revoke every per-slot object URL (slot 0 == objectUrl).
+    for (let i = 0; i < ASSET_SLOTS; i++) {
+      if (slotUrls[i]) {
+        try { URL.revokeObjectURL(slotUrls[i]!); } catch { /* */ }
+        slotUrls[i] = null;
+      }
     }
+    objectUrl = null;
   });
 
   // ---- Displayed current position ----
@@ -657,6 +821,8 @@
   ondragover={onDragOver}
   ondragleave={onDragLeave}
   ondrop={onDrop}
+  oncontextmenu={onCardContextMenu}
+  data-active-slot={activeSlot}
   role="region"
   aria-label="VIDEOVARISPEED video player"
 >
@@ -667,7 +833,7 @@
   <div class="body">
     <div class="preview-wrap" data-testid="videovarispeed-preview">
       <!-- svelte-ignore a11y_media_has_caption -->
-      <video bind:this={videoEl} data-testid="videovarispeed-video" playsinline></video>
+      <video bind:this={slotEls[0]} data-testid="videovarispeed-video" playsinline></video>
       {#if !hasLocalFile && !fileMeta}
         <div class="overlay drop-hint" data-testid="videovarispeed-drop-hint">
           <div>Drop a video file</div>
@@ -796,6 +962,42 @@
     {#if fileMeta}
       <div class="filename" title={fileMeta.name} data-testid="videovarispeed-filename">
         {fileMeta.name}
+      </div>
+    {/if}
+
+    <!-- Hidden preloaded <video> elements for slots 1..6 (slot 0 is the main
+         preview above). Each is bound so loadFileIntoSlot can drive it +
+         attachExternalSource can sample it once it becomes active. They stay
+         off-screen but resident so a gate switch is an instant element swap. -->
+    <div class="slot-pool" aria-hidden="true">
+      {#each [1, 2, 3, 4, 5, 6] as si (si)}
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <video bind:this={slotEls[si]} data-testid="videovarispeed-slot-video-{si}" playsinline muted></video>
+      {/each}
+    </div>
+
+    {#if multiOpen}
+      <!-- "Load multiple…" 7-slot panel. Right-click the card to toggle. Each
+           row maps to a note (C..B) → asset slot; a clip player's note/gate
+           output switches which slot plays (restarting from 0). -->
+      <div class="multi-panel" data-testid="videovarispeed-multi-panel">
+        <div class="multi-head">
+          <span>Load multiple… (max {Math.round(VIDEOVARISPEED_MAX_SLOT_BYTES / (1024 * 1024))} MB/slot)</span>
+          <button type="button" class="multi-close" onclick={() => (multiOpen = false)} data-testid="videovarispeed-multi-close" aria-label="Close">✕</button>
+        </div>
+        {#each ASSET_SLOT_LABELS as label, i (i)}
+          <div class="slot-row" class:active={i === activeSlot} data-testid="videovarispeed-slot-{i}">
+            <span class="slot-note">{label}</span>
+            <label class="slot-load">
+              <input type="file" accept="video/*" onchange={(e) => onSlotFileInputChange(e, i)} data-testid="videovarispeed-slot-input-{i}" />
+              <span>{slotLoading[i] ? '…' : 'Load video…'}</span>
+            </label>
+            <span class="slot-name" title={slotNames[i] ?? (slotMeta[i]?.name ?? '')} data-testid="videovarispeed-slot-name-{i}">{slotNames[i] ?? slotMeta[i]?.name ?? '—'}</span>
+            {#if slotNames[i] || slotMeta[i]}
+              <button type="button" class="slot-clear" onclick={() => clearSlot(i)} data-testid="videovarispeed-slot-clear-{i}" aria-label="Clear slot {label}">✕</button>
+            {/if}
+          </div>
+        {/each}
       </div>
     {/if}
   </div>
@@ -1015,4 +1217,74 @@
   }
   .window-slider { flex: 1; accent-color: var(--cable-cv); }
   .warn { font-size: 0.6rem; color: #ffb347; font-family: ui-monospace, monospace; }
+
+  /* Hidden preloaded slot <video> elements (slots 1..6). Resident but
+     off-layout; the active element renders via the engine FBO, not here. */
+  .slot-pool { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
+  .slot-pool video { width: 1px; height: 1px; }
+
+  /* "Load multiple…" 7-slot panel (right-click toggle). */
+  .multi-panel {
+    margin-top: 6px;
+    padding: 6px;
+    background: #0c0f14;
+    border: 1px solid var(--cable-video);
+    border-radius: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .multi-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.58rem;
+    color: var(--cable-video);
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.03em;
+    margin-bottom: 2px;
+  }
+  .multi-close, .slot-clear {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.65rem;
+    padding: 0 2px;
+    line-height: 1;
+  }
+  .multi-close:hover, .slot-clear:hover { color: #ff6b6b; }
+  .slot-row {
+    display: grid;
+    grid-template-columns: 14px auto 1fr 14px;
+    align-items: center;
+    gap: 5px;
+  }
+  .slot-row.active .slot-note { color: #87c8ff; }
+  .slot-note {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--cable-video);
+    font-family: ui-monospace, monospace;
+    text-align: center;
+  }
+  .slot-load {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--cable-video);
+    color: #000;
+    border-radius: 2px;
+    font-size: 0.55rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .slot-load input { display: none; }
+  .slot-name {
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 </style>

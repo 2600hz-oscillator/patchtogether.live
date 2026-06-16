@@ -8,6 +8,7 @@
   // Multiplayer: image content NOW syncs across rack-mates. See
   // .myrobots/plans/picturebox-multiplayer-sync.md for the sizing,
   // codec, and limit decisions.
+  import { onMount, onDestroy } from 'svelte';
   import { type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -21,6 +22,7 @@
     TARGET_W,
     TARGET_H,
   } from '$lib/video/modules/picturebox-encode';
+  import { ASSET_SLOTS, ASSET_SLOT_LABELS, slotForVOct } from '$lib/video/asset-select';
   import { useEngine } from '$lib/audio/engine-context';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -32,6 +34,9 @@
 
   let loading = $state(false);
   let error = $state<string | null>(null);
+  // "Load multiple…" 7-slot panel (opened via right-click on the card).
+  let multiOpen = $state(false);
+  let slotLoading = $state<boolean[]>(new Array(ASSET_SLOTS).fill(false));
 
   // Reactive reads of the persisted shape (lives on node.data). Survives
   // remote Yjs updates because data flows through the snapshot bus.
@@ -42,6 +47,18 @@
     (node?.data as { imageName?: string | null } | undefined)?.imageName ?? null,
   );
   let hasImage = $derived(imageBytes !== null && imageBytes.length > 0);
+
+  // v3: 7-slot asset arrays (synced base64 JPEGs + parallel filenames). The
+  // DISPLAYED slot is local render state computed from the gate stream — NOT
+  // synced — so we never write it to the Y.Doc per gate event.
+  let assets = $derived<(string | null)[]>(
+    (node?.data as { assets?: (string | null)[] } | undefined)?.assets
+      ?? new Array(ASSET_SLOTS).fill(null),
+  );
+  let assetNames = $derived<(string | null)[]>(
+    (node?.data as { assetNames?: (string | null)[] } | undefined)?.assetNames
+      ?? new Array(ASSET_SLOTS).fill(null),
+  );
 
   function p(name: string): number {
     const def = pictureboxDef.params.find((d) => d.id === name);
@@ -150,6 +167,157 @@
     }
   }
 
+  // ---- 7-slot asset pre-upload ----------------------------------------
+  //
+  // Decode every loaded `assets[i]` base64 → ImageBitmap and pre-upload it
+  // into the engine slot texture, so a gate-driven switch is an instant
+  // active-index flip (no decode/upload on the gate). Re-runs when the
+  // synced `assets` array changes (local load OR remote peer). We track the
+  // last-applied byte string per slot to avoid redundant re-decode when the
+  // snapshot bus re-fires with unchanged bytes. Like the single-image path,
+  // this RETRIES until the engine has materialized this node (patch load).
+  const lastSlotBytes: (string | null)[] = new Array(ASSET_SLOTS).fill(undefined as unknown as null);
+  let slotRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  $effect(() => {
+    const snapshot = assets.slice(0, ASSET_SLOTS);
+    void node?.id;
+    if (slotRetryTimer) { clearTimeout(slotRetryTimer); slotRetryTimer = null; }
+    void applySlotsToEngine(snapshot, 0);
+  });
+  $effect(() => () => {
+    if (slotRetryTimer) { clearTimeout(slotRetryTimer); slotRetryTimer = null; }
+  });
+
+  async function applySlotsToEngine(snapshot: (string | null)[], attempt: number): Promise<void> {
+    const extras = getExtras();
+    if (!extras || !extras.setAssetAtSlot) {
+      if (attempt >= 50) return;
+      slotRetryTimer = setTimeout(() => {
+        slotRetryTimer = null;
+        const latest =
+          ((node?.data as { assets?: (string | null)[] } | undefined)?.assets
+            ?? new Array(ASSET_SLOTS).fill(null)).slice(0, ASSET_SLOTS);
+        void applySlotsToEngine(latest, attempt + 1);
+      }, 100);
+      return;
+    }
+    for (let i = 0; i < ASSET_SLOTS; i++) {
+      const bytes = snapshot[i] ?? null;
+      if (bytes === lastSlotBytes[i]) continue;
+      lastSlotBytes[i] = bytes;
+      if (!bytes) {
+        extras.setAssetAtSlot(i, null);
+        continue;
+      }
+      try {
+        const bitmap = await base64ToImageBitmap(bytes);
+        extras.setAssetAtSlot(i, bitmap);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[picturebox] slot ${i} decode failed:`, msg);
+      }
+    }
+  }
+
+  // ---- asset_gate edge detection → slot select ------------------------
+  //
+  // Mirror VIDEOVARISPEED's polled gate loop: each tick read the raw
+  // asset_gate level (bridge-written synthetic param), detect a rising
+  // edge, and on a rising edge read the raw asset_pitch V/oct, map it to a
+  // slot (asset-select.slotForVOct), and select that slot IF it holds an
+  // asset. A black-key pitch (slotForVOct → null) or an empty slot is
+  // ignored (keep showing the current asset). The selection is purely
+  // LOCAL render state — every peer computes it from the same synced gate +
+  // synced assets, so we never write it to the Y.Doc.
+  let lastAssetGate = 0;
+  function readParamLive(paramId: string): number {
+    const e = engineCtx.get();
+    if (!e || !node) return 0;
+    const v = e.readParam(node, paramId);
+    return typeof v === 'number' ? v : 0;
+  }
+  let gateTimer: ReturnType<typeof setInterval> | null = null;
+  onMount(() => {
+    gateTimer = setInterval(() => {
+      const e = engineCtx.get();
+      if (!e || !node) return;
+      const g = readParamLive('asset_gate');
+      const rising = lastAssetGate < 0.5 && g >= 0.5;
+      lastAssetGate = g;
+      if (!rising) return;
+      const slot = slotForVOct(readParamLive('asset_pitch'));
+      if (slot == null) return; // black key — no slot, ignore
+      const extras = getExtras();
+      if (extras?.slotHasAsset?.(slot)) extras.selectSlot(slot);
+    }, 33);
+  });
+  onDestroy(() => {
+    if (gateTimer !== null) { clearInterval(gateTimer); gateTimer = null; }
+  });
+
+  // ---- "Load multiple…" panel: per-slot file load --------------------
+  async function onSlotFileChange(ev: Event, slot: number): Promise<void> {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    slotLoading[slot] = true;
+    error = null;
+    try {
+      const base64 = await downscaleAndEncode(file);
+      ydoc.transact(() => {
+        const target = patch.nodes[id];
+        if (!target) return;
+        if (!target.data) target.data = {};
+        const d = target.data as Record<string, unknown>;
+        const arr = Array.isArray(d.assets)
+          ? (d.assets as (string | null)[]).slice(0, ASSET_SLOTS)
+          : new Array(ASSET_SLOTS).fill(null);
+        while (arr.length < ASSET_SLOTS) arr.push(null);
+        arr[slot] = base64;
+        d.assets = arr;
+        const names = Array.isArray(d.assetNames)
+          ? (d.assetNames as (string | null)[]).slice(0, ASSET_SLOTS)
+          : new Array(ASSET_SLOTS).fill(null);
+        while (names.length < ASSET_SLOTS) names.push(null);
+        names[slot] = file.name;
+        d.assetNames = names;
+      }, LOCAL_ORIGIN);
+      // The $effect pre-uploads the new slot bytes to the engine on the next
+      // microtask (same path as a remote peer's update).
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      slotLoading[slot] = false;
+      try { input.value = ''; } catch { /* */ }
+    }
+  }
+
+  function clearSlot(slot: number): void {
+    ydoc.transact(() => {
+      const target = patch.nodes[id];
+      if (!target) return;
+      if (!target.data) target.data = {};
+      const d = target.data as Record<string, unknown>;
+      const arr = Array.isArray(d.assets)
+        ? (d.assets as (string | null)[]).slice(0, ASSET_SLOTS)
+        : new Array(ASSET_SLOTS).fill(null);
+      while (arr.length < ASSET_SLOTS) arr.push(null);
+      arr[slot] = null;
+      d.assets = arr;
+      const names = Array.isArray(d.assetNames)
+        ? (d.assetNames as (string | null)[]).slice(0, ASSET_SLOTS)
+        : new Array(ASSET_SLOTS).fill(null);
+      while (names.length < ASSET_SLOTS) names.push(null);
+      names[slot] = null;
+      d.assetNames = names;
+    }, LOCAL_ORIGIN);
+  }
+
+  function onCardContextMenu(ev: MouseEvent): void {
+    ev.preventDefault();
+    multiOpen = !multiOpen;
+  }
+
   async function onFileChange(ev: Event) {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -191,6 +359,8 @@
 
   const inputs: PortDescriptor[] = [
     { id: 'gain', cable: 'cv' },
+    { id: 'asset_pitch', label: 'ASSET PITCH', cable: 'pitch' },
+    { id: 'asset_gate', label: 'ASSET GATE', cable: 'gate' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'out', cable: 'image' },
@@ -201,6 +371,9 @@
   class="card video"
   data-has-image={hasImage}
   data-testid="picturebox-card"
+  oncontextmenu={onCardContextMenu}
+  role="region"
+  aria-label="PICTUREBOX image source"
 >
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="PICTUREBOX" />
@@ -227,6 +400,31 @@
   <div class="fader-grid">
     <Fader value={p('gain')} min={0} max={2} defaultValue={pictureboxDef.params.find((x) => x.id === 'gain')!.defaultValue} label="Gain" curve="linear" onchange={setParam('gain')} moduleId={id} paramId="gain" />
   </div>
+
+  {#if multiOpen}
+    <!-- "Load multiple…" 7-slot panel. Right-click the card to toggle. Each
+         row maps to a note (C..B) → asset slot; a clip player's note/gate
+         output switches which slot displays. -->
+    <div class="multi-panel" data-testid="picturebox-multi-panel">
+      <div class="multi-head">
+        <span>Load multiple…</span>
+        <button type="button" class="multi-close" onclick={() => (multiOpen = false)} data-testid="picturebox-multi-close" aria-label="Close">✕</button>
+      </div>
+      {#each ASSET_SLOT_LABELS as label, i (i)}
+        <div class="slot-row" data-testid="picturebox-slot-{i}">
+          <span class="slot-note">{label}</span>
+          <label class="slot-load">
+            <input type="file" accept="image/*" onchange={(e) => onSlotFileChange(e, i)} data-testid="picturebox-slot-input-{i}" />
+            <span>{slotLoading[i] ? '…' : 'Load file…'}</span>
+          </label>
+          <span class="slot-name" title={assetNames[i] ?? ''} data-testid="picturebox-slot-name-{i}">{assetNames[i] ?? '—'}</span>
+          {#if assets[i]}
+            <button type="button" class="slot-clear" onclick={() => clearSlot(i)} data-testid="picturebox-slot-clear-{i}" aria-label="Clear slot {label}">✕</button>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  {/if}
   </PatchPanel>
 </div>
 
@@ -293,5 +491,69 @@
     padding: 0 12px;
     display: flex;
     justify-content: center;
+  }
+
+  /* "Load multiple…" 7-slot panel (right-click toggle). */
+  .multi-panel {
+    margin: 10px 8px 0;
+    padding: 6px;
+    background: #0c0f14;
+    border: 1px solid var(--cable-image);
+    border-radius: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .multi-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.6rem;
+    color: var(--cable-image);
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+  }
+  .multi-close, .slot-clear {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.65rem;
+    padding: 0 2px;
+    line-height: 1;
+  }
+  .multi-close:hover, .slot-clear:hover { color: #f87171; }
+  .slot-row {
+    display: grid;
+    grid-template-columns: 14px auto 1fr 14px;
+    align-items: center;
+    gap: 4px;
+  }
+  .slot-note {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--cable-image);
+    font-family: ui-monospace, monospace;
+    text-align: center;
+  }
+  .slot-load {
+    display: inline-block;
+    padding: 1px 5px;
+    background: var(--cable-image);
+    color: #000;
+    border-radius: 2px;
+    font-size: 0.55rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .slot-load input { display: none; }
+  .slot-name {
+    font-size: 0.55rem;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

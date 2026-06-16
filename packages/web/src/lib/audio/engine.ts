@@ -973,6 +973,17 @@ export class PatchEngine {
       && targetDomain !== 'audio'
       && (edge.sourceType === 'cv'
         || edge.sourceType === 'gate'
+        // PITCH / poly-PITCH → a CV-family video param (cv/pitch/gate). The
+        // video SOURCE asset-selector (PICTUREBOX / VIDEOVARISPEED
+        // asset_pitch) reads a clip player's V/oct note: the source emits
+        // `pitch` (or `polyPitchGate`, downcast to lane 0 by getOutputNode's
+        // output-0 tap) and the target is a `pitch`-typed param. Route it
+        // through the same sample-and-hold CV bridge (RAW passthrough, since
+        // the asset_pitch input declares NO cvScale) so the card reads the
+        // raw V/oct. SCOPED to a CV-family TARGET so a pitch source can never
+        // accidentally hit the texture/stream bridge below.
+        || ((edge.sourceType === 'pitch' || edge.sourceType === 'polyPitchGate')
+          && (edge.targetType === 'cv' || edge.targetType === 'pitch' || edge.targetType === 'gate'))
         // AUDIO → a `modsignal` modulation input (TOYBOX's 6-input section). An
         // audio-rate source patched into a modsignal input is ENVELOPE-FOLLOWED
         // by the sample-and-hold bridge (see VideoEngine.tickCvBridges) to a
