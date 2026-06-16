@@ -252,27 +252,40 @@ const DRIVERS: Record<string, PerPortDriver> = {
   // queue it, and turn quantize OFF so the first tick launches immediately.
   // Then pitch/gate/velocity emit per step and clip_gate pulses each loop.
   // Fast tempo (bpm 240 → 0.25s loop) so every output fires inside the window.
-  clipplayer: {
-    params: { quantize: 0, bpm: 240, gateLength: 0.9, octave: 0 },
-    data: {
-      clips: {
-        '0': {
-          kind: 'note',
-          lengthSteps: 4,
-          root: 48,
-          loop: true,
-          steps: [
-            { step: 0, midi: 72, velocity: 127, lengthSteps: 1 },
-            { step: 1, midi: 74, velocity: 127, lengthSteps: 1 },
-            { step: 2, midi: 76, velocity: 127, lengthSteps: 1 },
-            { step: 3, midi: 79, velocity: 127, lengthSteps: 1 },
-          ],
-        },
-      },
-      queued: '0',
-    },
-    note: 'CLIPPLAYER: seed + queue a 4-step note clip (midi 72+) with quantize off → launches immediately; pitch/gate/velocity/clip_gate emit',
-  },
+  // CLIPPLAYER (v2) — 8 INSTRUMENT LANES, each with its own pitch/gate/vel outs.
+  // Every output port (pitch1..8 / gate1..8 / vel1..8) only emits when ITS lane
+  // has a launched, playing clip — so seed a slot-0 note clip in ALL 8 lanes
+  // (clipIndex(0, lane) = lane*8 → keys '0','8',…,'56') and queue slot 0 in
+  // every lane via the v2 PER-LANE `queued` array. v1's single-clip + single
+  // `queued:'0'` string only launched lane 0 (pitch1) — pitch2..8 stayed silent.
+  // No TIMELORDE in the per-port harness → the module free-runs (transportRunning
+  // returns true with no TIMELORDE) at the 120bpm fallback; quantize off launches
+  // immediately. midi 72+ keeps V/oct ≠ 0 so the pitch peak clears the floor.
+  clipplayer: (() => {
+    const STEPS = [
+      { step: 0, midi: 72, velocity: 127, lengthSteps: 1 },
+      { step: 1, midi: 74, velocity: 127, lengthSteps: 1 },
+      { step: 2, midi: 76, velocity: 127, lengthSteps: 1 },
+      { step: 3, midi: 79, velocity: 127, lengthSteps: 1 },
+    ];
+    const clips: Record<string, unknown> = {};
+    const queued: (number | null)[] = [];
+    for (let lane = 0; lane < 8; lane++) {
+      clips[String(lane * 8)] = {
+        kind: 'note',
+        lengthSteps: 4,
+        root: 48,
+        loop: true,
+        steps: STEPS.map((s) => ({ ...s })),
+      };
+      queued.push(0); // launch slot 0 in this lane
+    }
+    return {
+      params: { quantize: 0, gateLength: 0.9, octave: 0, stepDiv: 2 },
+      data: { clips, queued },
+      note: 'CLIPPLAYER (v2): seed a slot-0 note clip in ALL 8 lanes + per-lane queued=[0×8], quantize off, free-run; every lane emits pitch/gate/vel',
+    };
+  })(),
   // ───── KRIA — 4-track grid sequencer; seed a running pattern ─────
   // KRIA is idle until RUN (or TIMELORDE) drives it. With no TIMELORDE node in
   // the per-port harness, set params.running=1 so the local transport runs, and
