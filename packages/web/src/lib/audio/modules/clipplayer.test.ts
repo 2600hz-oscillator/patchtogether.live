@@ -1,9 +1,10 @@
 // packages/web/src/lib/audio/modules/clipplayer.test.ts
 //
-// Drives the REAL clipplayer factory + tick loop against a fake AudioContext
-// (advanceable currentTime) and the live graph store, asserting launch / quantized
-// switch / stop / silent-when-empty behavior. The audible end-to-end chain
-// (TIMELORDE → clipplayer → voice → RMS) is covered by the e2e spec.
+// Drives the REAL clipplayer (v2, 8-lane) factory + tick loop against a fake
+// AudioContext (advanceable currentTime) and the live graph store, asserting
+// per-lane launch / quantized switch / stop / TIMELORDE-lock / silent-when-empty
+// behavior. The audible end-to-end chain (TIMELORDE → clipplayer → voice → RMS)
+// is covered by the e2e spec.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { midiToVOct } from '$lib/audio/note-entry';
@@ -94,7 +95,7 @@ function pulseBuffer(len = 2048): Float32Array {
 }
 
 import { clipplayerDef } from './clipplayer';
-import type { NoteClipRecord } from './clip-types';
+import { clipIndex, type NoteClipRecord } from './clip-types';
 
 const NODE_ID = 'cp1';
 
@@ -111,6 +112,12 @@ function noteClip(midi: number, lengthSteps = 4): NoteClipRecord {
     loop: true,
   };
 }
+/** Per-lane state array of length 8 with `val` at `lane`. */
+function lane8<T>(lane: number, val: T, fill: T): T[] {
+  const a = new Array<T>(8).fill(fill);
+  a[lane] = val;
+  return a;
+}
 function seed(params: Record<string, number>, data: Record<string, unknown>) {
   clearPatch();
   livePatch.nodes[NODE_ID] = {
@@ -121,6 +128,15 @@ function seed(params: Record<string, number>, data: Record<string, unknown>) {
     params,
     data,
   } as never;
+}
+function seedTimelorde(running: number, bpm = 120) {
+  livePatch.nodes['tl'] = {
+    id: 'tl', type: 'timelorde', domain: 'audio', position: { x: 0, y: 0 }, params: { running, bpm }, data: {},
+  } as never;
+}
+function gateOf(handle: { outputs: Map<string, { node: unknown }> }, lane: number): FakeParam {
+  return (handle.outputs.get(`gate${lane + 1}`)!.node as unknown as FakeConstantSource)
+    .offset as unknown as FakeParam;
 }
 function hasHighEvent(param: FakeParam): boolean {
   return param.events.some((e) => e.value >= 0.5);
@@ -151,95 +167,147 @@ describe('clipplayer: module def', () => {
     expect(clipplayerDef.label).toBe(clipplayerDef.label.toLowerCase());
     expect(clipplayerDef.category).toBe('modulation');
   });
-  it('declares the launch I/O ports', () => {
-    expect(clipplayerDef.inputs.map((p) => p.id).sort()).toEqual(['clock', 'stop_all']);
+  it('declares stop_all in + 8 lanes × (pitch/gate/vel) out', () => {
+    expect(clipplayerDef.inputs.map((p) => p.id)).toEqual(['stop_all']);
     const outs = Object.fromEntries(clipplayerDef.outputs.map((p) => [p.id, p.type]));
-    expect(outs).toEqual({
-      pitch: 'polyPitchGate',
-      gate: 'gate',
-      velocity: 'cv',
-      clip_gate: 'gate',
-    });
+    expect(clipplayerDef.outputs).toHaveLength(24);
+    expect(outs.pitch1).toBe('polyPitchGate');
+    expect(outs.gate1).toBe('gate');
+    expect(outs.vel1).toBe('cv');
+    expect(outs.pitch8).toBe('polyPitchGate');
+    expect(outs.gate8).toBe('gate');
+    expect(outs.vel8).toBe('cv');
+  });
+  it('has no BPM/clock — STEP param drives steps-per-beat', () => {
+    const ids = clipplayerDef.params.map((p) => p.id);
+    expect(ids).toContain('stepDiv');
+    expect(ids).not.toContain('bpm');
+    expect(clipplayerDef.inputs.map((p) => p.id)).not.toContain('clock');
   });
 });
 
-describe('clipplayer: launch', () => {
-  it('launches a queued clip immediately (quantize off) and emits its pitch + gate', async () => {
-    seed({ bpm: 120, quantize: 0, octave: 0, gateLength: 0.9 }, { clips: { '0': noteClip(72) }, queued: '0' });
+describe('clipplayer: per-lane launch', () => {
+  it('launches a queued clip immediately (quantize off) on its OWN lane', async () => {
+    // clip 0 = lane0/slot0; clip 9 = lane1/slot1.
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 },
+      {
+        clips: { [clipIndex(0, 0)]: noteClip(72), [clipIndex(1, 1)]: noteClip(60) },
+        queued: [0, 1, null, null, null, null, null, null],
+      },
+    );
     const ctx = new FakeAudioContext();
     const handle = await build(ctx);
-    expect(hoisted.tick).toBeTruthy();
     run(ctx, 0, 0.1);
-    expect(handle.read!('activeClip')).toBe(0);
-    expect(handle.read!('pitchVOct')).toBeCloseTo(midiToVOct(72), 5); // C5 = +1 V/oct
-    const gate = (handle.outputs.get('gate')!.node as unknown as FakeConstantSource).offset as unknown as FakeParam;
-    expect(hasHighEvent(gate)).toBe(true);
-    const clipGate = (handle.outputs.get('clip_gate')!.node as unknown as FakeConstantSource).offset as unknown as FakeParam;
-    expect(hasHighEvent(clipGate)).toBe(true); // pulsed on start
+    expect(handle.read!('activeLane:0')).toBe(0);
+    expect(handle.read!('activeLane:1')).toBe(1);
+    expect(handle.read!('pitchVOct:0')).toBeCloseTo(midiToVOct(72), 5);
+    expect(handle.read!('pitchVOct:1')).toBeCloseTo(midiToVOct(60), 5);
+    expect(hasHighEvent(gateOf(handle, 0))).toBe(true);
+    expect(hasHighEvent(gateOf(handle, 1))).toBe(true);
+    // an un-launched lane stays silent
+    expect(handle.read!('activeLane:2')).toBe(-1);
+    expect(hasHighEvent(gateOf(handle, 2))).toBe(false);
   });
 
   it('applies the octave param to the emitted pitch', async () => {
-    seed({ bpm: 120, quantize: 0, octave: 1, gateLength: 0.9 }, { clips: { '0': noteClip(60) }, queued: '0' });
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 1, gateLength: 0.9 },
+      { clips: { [clipIndex(0, 0)]: noteClip(60) }, queued: lane8(0, 0, null) },
+    );
     const ctx = new FakeAudioContext();
     const handle = await build(ctx);
     run(ctx, 0, 0.1);
-    expect(handle.read!('pitchVOct')).toBeCloseTo(midiToVOct(60) + 1, 5);
+    expect(handle.read!('pitchVOct:0')).toBeCloseTo(midiToVOct(60) + 1, 5);
   });
 });
 
-describe('clipplayer: quantized switch', () => {
-  it('a queued clip takes over only at the active clip loop boundary', async () => {
+describe('clipplayer: quantized switch (per lane, at the loop boundary)', () => {
+  it('a queued clip takes over only at the active lane loop boundary', async () => {
+    // both clips on lane 0: slot0 (clip 0) + slot1 (clip 1).
     seed(
-      { bpm: 120, quantize: 1, octave: 0, gateLength: 0.9 },
-      { clips: { '0': noteClip(72), '1': noteClip(48) } },
+      { stepDiv: 2, quantize: 1, octave: 0, gateLength: 0.9 },
+      { clips: { [clipIndex(0, 0)]: noteClip(72), [clipIndex(1, 0)]: noteClip(48) } },
     );
     const ctx = new FakeAudioContext();
     const handle = await build(ctx);
 
-    // Launch clip 0 — nothing playing yet, so it starts immediately.
-    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).queued = '0';
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).queued = lane8(0, 0, null);
     run(ctx, 0, 0.1);
-    expect(handle.read!('activeClip')).toBe(0);
+    expect(handle.read!('activeLane:0')).toBe(0); // started immediately (was idle)
 
-    // Queue clip 1. A 4-step clip at 120bpm 16ths loops every 0.5s. The
-    // lookahead (200ms) means the state machine crosses the loop boundary
-    // ~lookahead ahead of audio time — so before the boundary is *scheduled*
-    // it's still clip 0, after it's clip 1.
-    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).queued = '1';
-    // Before the first loop boundary is reached it must still be clip 0.
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).queued = lane8(0, 1, null);
     run(ctx, 0.1, 0.16);
-    expect(handle.read!('activeClip')).toBe(0);
-    // Once the lookahead crosses the boundary it switches to clip 1.
+    expect(handle.read!('activeLane:0')).toBe(0); // still clip 0 before the boundary
     run(ctx, 0.16, 0.8);
-    expect(handle.read!('activeClip')).toBe(1);
-    expect(handle.read!('pitchVOct')).toBeCloseTo(midiToVOct(48), 5); // C3 = -1 V/oct
+    expect(handle.read!('activeLane:0')).toBe(1); // switched at the loop boundary
+    expect(handle.read!('pitchVOct:0')).toBeCloseTo(midiToVOct(48), 5);
   });
 });
 
 describe('clipplayer: stop', () => {
-  it('stop_all rising edge stops the playing clip', async () => {
-    seed({ bpm: 120, quantize: 0, octave: 0, gateLength: 0.9 }, { clips: { '0': noteClip(72) }, queued: '0' });
+  it('stop_all rising edge stops every lane', async () => {
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 },
+      {
+        clips: { [clipIndex(0, 0)]: noteClip(72), [clipIndex(0, 1)]: noteClip(60) },
+        queued: [0, 0, null, null, null, null, null, null],
+      },
+    );
     const ctx = new FakeAudioContext();
     const handle = await build(ctx);
     run(ctx, 0, 0.1);
-    expect(handle.read!('activeClip')).toBe(0);
+    expect(handle.read!('activeLane:0')).toBe(0);
+    expect(handle.read!('activeLane:1')).toBe(0);
 
-    // Inject a rising edge on stop_all.
     const stopGain = handle.inputs.get('stop_all')!.node as unknown as FakeGain;
     stopGain.injected = pulseBuffer();
     run(ctx, 0.1, 0.15);
-    expect(handle.read!('activeClip')).toBe(-1);
+    expect(handle.read!('activeLane:0')).toBe(-1);
+    expect(handle.read!('activeLane:1')).toBe(-1);
+  });
+});
+
+describe('clipplayer: TIMELORDE lock', () => {
+  it('freezes (no gate) while TIMELORDE is stopped; runs when started', async () => {
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 },
+      { clips: { [clipIndex(0, 0)]: noteClip(72) }, queued: lane8(0, 0, null) },
+    );
+    seedTimelorde(0);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.1);
+    expect(handle.read!('transportRunning')).toBe(0);
+    expect(hasHighEvent(gateOf(handle, 0))).toBe(false); // frozen
+
+    (livePatch.nodes['tl']!.params as Record<string, number>).running = 1;
+    run(ctx, 0.1, 0.25);
+    expect(handle.read!('transportRunning')).toBe(1);
+    expect(hasHighEvent(gateOf(handle, 0))).toBe(true); // now sounding
+  });
+
+  it('reports externallyClocked when TIMELORDE.start_in is patched', async () => {
+    seed({ stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 }, { clips: {} });
+    seedTimelorde(1);
+    livePatch.edges['e1'] = {
+      source: { nodeId: 'mc', portId: 'midistart' },
+      target: { nodeId: 'tl', portId: 'start_in' },
+    } as never;
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.05);
+    expect(handle.read!('externallyClocked')).toBe(1);
   });
 });
 
 describe('clipplayer: silent when empty', () => {
   it('emits no gate when no clip is launched', async () => {
-    seed({ bpm: 120, quantize: 1, octave: 0, gateLength: 0.9 }, {});
+    seed({ stepDiv: 2, quantize: 1, octave: 0, gateLength: 0.9 }, {});
     const ctx = new FakeAudioContext();
     const handle = await build(ctx);
     run(ctx, 0, 0.3);
-    expect(handle.read!('activeClip')).toBe(-1);
-    const gate = (handle.outputs.get('gate')!.node as unknown as FakeConstantSource).offset as unknown as FakeParam;
-    expect(hasHighEvent(gate)).toBe(false);
+    expect(handle.read!('activeLane:0')).toBe(-1);
+    expect(hasHighEvent(gateOf(handle, 0))).toBe(false);
   });
 });

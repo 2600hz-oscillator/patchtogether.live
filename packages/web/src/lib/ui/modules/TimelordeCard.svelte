@@ -46,11 +46,29 @@
   // here we only read the new key.
   let muteOutputs = $derived((void cardVersion, (node?.params.muteOutputs ?? 0) >= 0.5));
 
+  // running (v3): the GLOBAL transport. 1 = clock advances; 0 = HALTED (phase
+  // freezes, gates go low). Distinct from MUTE (muteOutputs only silences gate
+  // outputs; the internal clock keeps turning for LIVECODE). Every sequencer
+  // locked to TIMELORDE — incl. the clip player — freezes when running = 0, so
+  // this is the rack-wide stop/start.
+  let running = $derived((void cardVersion, (node?.params.running ?? 1) >= 0.5));
+
   let hasExternalClock = $derived.by(() => {
     void cardVersion;
     for (const edge of Object.values(patch.edges)) {
       if (!edge) continue;
       if (edge.target.nodeId === id && edge.target.portId === 'clock') return true;
+    }
+    return false;
+  });
+  // When start_in / stop_in are patched, an external transport owns `running`
+  // (MIDICLOCK etc.), so the card's transport button steps aside to avoid a fight.
+  let transportSlaved = $derived.by(() => {
+    void cardVersion;
+    for (const edge of Object.values(patch.edges)) {
+      if (!edge) continue;
+      if (edge.target.nodeId === id && (edge.target.portId === 'start_in' || edge.target.portId === 'stop_in'))
+        return true;
     }
     return false;
   });
@@ -66,6 +84,11 @@
     // even while MIDICLOCK drives TIMELORDE. The internal clock keeps
     // running for LIVECODE consumers regardless.
     set('muteOutputs')(muteOutputs ? 0 : 1);
+  }
+  function toggleRun() {
+    // Global transport: halt/resume the whole rack clock. Musical position is
+    // preserved (the worklet resumes from the frozen phase on restart).
+    set('running')(running ? 0 : 1);
   }
 
   const OUT_LABELS = ['1x', '8x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64', 'swing'];
@@ -89,6 +112,14 @@
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
     <ModuleTitle {id} {data} defaultLabel="TIMELORDE" inline />
+    <!-- Global TRANSPORT (running): halts/resumes the whole rack clock — every
+         sequencer locked to TIMELORDE (incl. the clip player) stops with it.
+         Hidden when an external transport (start_in/stop_in) owns `running`. -->
+    {#if !transportSlaved}
+      <button class="play-btn run-btn" class:playing={running} onclick={toggleRun} title={running ? 'Stop transport (halt the rack clock)' : 'Start transport (resume the rack clock)'} data-testid={`timelorde-run-${id}`}>
+        {running ? '■' : '▶'}
+      </button>
+    {/if}
     <!-- MUTE always shown (v2 — clock keeps running even when an
          external clock is patched; the mute only silences the gate
          outputs, not the internal phase that LIVECODE rides on). -->
@@ -140,6 +171,12 @@
     background: var(--cable-gate);
     color: #1a1d23;
     border-color: var(--cable-gate);
+  }
+  /* The global transport reads distinct from MUTE: accent-tinted while running. */
+  .run-btn.playing {
+    background: var(--accent, #6cf);
+    border-color: var(--accent, #6cf);
+    color: #1a1d23;
   }
   .knob-row {
     margin: 16px 0 0;

@@ -111,7 +111,8 @@
   </li>
   <li>
     <a href="/docs/modules/grid-clip-launcher">Clip player + monome grid</a> —
-    build note clips + launch them from a monome grid 128 (WebSerial, no helper).
+    an 8-instrument-lane, TIMELORDE-locked clip launcher you build, launch, scene,
+    and edit from a monome grid 128 (WebSerial, no helper).
   </li>
   <li>
     <a href="/docs/rackspace-persistence">Rackspace persistence</a> —

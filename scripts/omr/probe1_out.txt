@@ -1,0 +1,20 @@
+=== FILE ===
+size_bytes: 2332461
+header: b'%PDF-1.7\n\n4 0 ob'
+
+=== MARKER COUNTS ===
+  Producer           1
+  DCTDecode          2
+  FlateDecode        1
+  /XObject           3
+
+=== METADATA ===
+   b'/Producer (Microsoft: Print To PDF)\n/Title (Real Book 3 Bb.pdf)\n>>\nendobj\nxref\n0 9\r\n0000000000 65535 f\r\n000233'
+   b"/CreationDate (D:20231007094154-03'00')\n/ModDate (D:20231007094154-03'00')\n/Producer (Microsoft: Print To PDF)"
+   b'/Title (Real Book 3 Bb.pdf)\n>>\nendobj\nxref\n0 9\r\n0000000000 65535 f\r\n0002331976 00000 n\r\n0002331917 00000 n\r\n00'
+
+=== BASEFONTS ===
+
+=== VERDICT ===
+  images=2 fonts=0
+  scanned raster (image-only) -> OMR required

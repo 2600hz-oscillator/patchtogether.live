@@ -20,18 +20,35 @@ import {
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 
 // ---------------------------------------------------------------------------
-// Dimensions (DECIDED: 8 tracks × 8 scenes = 64 clips, left 8×8 grid quadrant)
+// Dimensions (DECIDED 2026-06-15): rows = INSTRUMENTS, columns = clip SLOTS.
+// 8 instrument lanes × 8 clip slots = 64 clips on the left 8×8 grid quadrant.
+// Each lane drives its own pitch/gate/velocity output pair (the owner's
+// "each row reflects a given instrument's materials" model). The flat index is
+// row-major (index = lane*CLIP_SLOTS + slot), i.e. identical numerics to the
+// grid's `y*8 + x` so the pad↔index mapping is unchanged.
 // ---------------------------------------------------------------------------
-export const CLIP_TRACKS = 8;
-export const CLIP_SCENES = 8;
-export const CLIP_COUNT = CLIP_TRACKS * CLIP_SCENES; // 64
+export const CLIP_LANES = 8; // rows = instruments
+export const CLIP_SLOTS = 8; // columns = clip alternatives per instrument
+export const CLIP_COUNT = CLIP_LANES * CLIP_SLOTS; // 64
 export const DEFAULT_CLIP_STEPS = 16;
 export const MAX_CLIP_STEPS = 64;
 export const DEFAULT_VELOCITY = 100; // MIDI 0..127
 
-/** Flat clip-bank index for a (track=col, scene=row) cell, row-major. */
-export function clipIndex(track: number, scene: number): number {
-  return scene * CLIP_TRACKS + track;
+// Back-compat aliases (older call sites used track/scene naming).
+export const CLIP_TRACKS = CLIP_SLOTS;
+export const CLIP_SCENES = CLIP_LANES;
+
+/** Flat clip-bank index for a (slot=col, lane=row) cell, row-major. */
+export function clipIndex(slot: number, lane: number): number {
+  return lane * CLIP_SLOTS + slot;
+}
+/** Which instrument lane (row) a flat clip index belongs to. */
+export function laneOf(index: number): number {
+  return Math.floor(index / CLIP_SLOTS);
+}
+/** Which clip slot (column) within its lane a flat clip index is. */
+export function slotOf(index: number): number {
+  return index % CLIP_SLOTS;
 }
 
 // ---------------------------------------------------------------------------
@@ -87,9 +104,49 @@ export type ClipRecord = NoteClipRecord | AudioClipRecord | SnapshotClipRecord;
 /** Persisted on node.data. Note clips are tiny so no caps in v1. */
 export interface ClipPlayerData {
   clips?: Record<string, ClipRecord | null>; // sparse; null/absent = empty
-  playing?: string | null; // active clip index (SYNCED — playing-set, §5.2)
-  queued?: string | 'stop' | null; // queued launch/stop (SYNCED), applied on boundary
+  /** Per-lane active clip SLOT (0..CLIP_SLOTS-1) or null = stopped. Length
+   *  CLIP_LANES. SYNCED — the playing-set all peers + grids see (§5.2). Up to
+   *  8 clips (one per instrument lane) play simultaneously. */
+  playing?: (number | null)[];
+  /** Per-lane queued action applied on that lane's loop boundary: a slot index
+   *  to launch, 'stop' to stop the lane, or null/absent = nothing queued. */
+  queued?: (number | 'stop' | null)[];
+  /** Per-lane MONO flag (length CLIP_LANES). When a lane is mono, placing a note
+   *  in a column that already holds one REPLACES it — a monophonic melody lane.
+   *  An EDIT-time constraint (the card's per-lane toggle); absent/false = poly
+   *  (up to POLY_CHANNEL_PAIRS notes per column). */
+  mono?: boolean[];
   creatorId?: string;
+}
+
+/** Normalize a per-lane state array to exactly CLIP_LANES entries. */
+function coerceLaneArray<T>(raw: unknown, fallback: T): T[] {
+  const out: T[] = new Array(CLIP_LANES).fill(fallback);
+  if (Array.isArray(raw)) {
+    for (let i = 0; i < CLIP_LANES; i++) if (i < raw.length) out[i] = raw[i] as T;
+  }
+  return out;
+}
+/** The active clip slot for a lane (or null = stopped). */
+export function lanePlaying(data: ClipPlayerData | undefined, lane: number): number | null {
+  const v = data?.playing?.[lane];
+  return typeof v === 'number' ? v : null;
+}
+/** The queued action for a lane: a slot index, 'stop', or null. */
+export function laneQueued(
+  data: ClipPlayerData | undefined,
+  lane: number,
+): number | 'stop' | null {
+  const v = data?.queued?.[lane];
+  return v === 'stop' || typeof v === 'number' ? v : null;
+}
+/** Read the full per-lane playing-set, normalized to CLIP_LANES entries. */
+export function playingSet(data: ClipPlayerData | undefined): (number | null)[] {
+  return coerceLaneArray<number | null>(data?.playing, null);
+}
+/** Whether a lane is MONO (one note per column on note entry). Default poly. */
+export function laneMono(data: ClipPlayerData | undefined, lane: number): boolean {
+  return data?.mono?.[lane] === true;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +275,25 @@ export function lanesForStep(clip: NoteClipRecord, step: number): StepLanes {
 // Deluge note-editor row math (X = step, Y = pitch) — PURE
 // ---------------------------------------------------------------------------
 
+/** The editor's scale cycle (a SCALE pad / the card tag steps through these).
+ *  `undefined` = chromatic (12 semitone rows). Switching to chromatic spreads a
+ *  clip's notes apart vertically (each row becomes a semitone, not a degree). */
+export const SCALE_CYCLE: readonly (ScaleName | undefined)[] = [
+  'major',
+  'minor',
+  'pentatonic',
+  undefined,
+];
+/** Next scale in the cycle (major → minor → pentatonic → chromatic → major). */
+export function nextScale(scale: ScaleName | undefined): ScaleName | undefined {
+  const i = SCALE_CYCLE.indexOf(scale);
+  return SCALE_CYCLE[(i + 1) % SCALE_CYCLE.length];
+}
+/** Display name for a scale (chromatic when unset). */
+export function scaleName(scale: ScaleName | undefined): string {
+  return scale ?? 'chromatic';
+}
+
 /** The semitone offsets for a scale, or the 12-tone chromatic set when no
  *  scale is set (the editor's chromatic rows). */
 export function scaleSteps(scale?: ScaleName): readonly number[] {
@@ -262,16 +338,160 @@ export function midiToRow(midi: number, root: number, scale?: ScaleName): number
   return octave * n + deg;
 }
 
+/** Options for note entry. `mono` = one note per column (replace on add).
+ *  `maxVoices` = poly cap per column (default POLY_CHANNEL_PAIRS = 5). */
+export interface NoteEntryOpts {
+  mono?: boolean;
+  maxVoices?: number;
+}
+
 /**
  * Toggle a note at (step, midi) in a note clip — add it (default length 1,
  * default velocity) if absent, remove it if present. Returns a NEW clip
  * (callers mutate node.data via the in-place Y discipline at the call site).
+ *
+ * Voice management on ADD:
+ *  - MONO lane: a column holds ONE note. Adding clears every note covering this
+ *    column first, then places the new one (replace-on-add — the owner's mono
+ *    melody behaviour).
+ *  - POLY lane: a column holds at most `maxVoices` (5) notes. Adding a
+ *    (maxVoices+1)th re-uses the OLDEST note in that column (first in array
+ *    order) so the chord never exceeds the poly width the engine can sound.
  */
-export function toggleNoteAt(clip: NoteClipRecord, step: number, midi: number): NoteClipRecord {
+export function toggleNoteAt(
+  clip: NoteClipRecord,
+  step: number,
+  midi: number,
+  opts: NoteEntryOpts = {},
+): NoteClipRecord {
   const existing = clip.steps.findIndex((e) => e.step === step && e.midi === midi);
-  const steps =
-    existing >= 0
-      ? clip.steps.filter((_, i) => i !== existing)
-      : [...clip.steps, { step, midi, velocity: DEFAULT_VELOCITY, lengthSteps: 1 }];
+  if (existing >= 0) {
+    // Present → remove (a plain tap toggles off), regardless of mono/poly.
+    return { ...clip, steps: clip.steps.filter((_, i) => i !== existing) };
+  }
+  let steps = clip.steps;
+  if (opts.mono) {
+    // Mono: clear the whole column, then place the single note.
+    steps = steps.filter((e) => !(e.step <= step && step < e.step + (e.lengthSteps ?? 1)));
+  } else {
+    const max = opts.maxVoices ?? POLY_CHANNEL_PAIRS;
+    const here = steps.filter((e) => e.step === step);
+    if (here.length >= max) {
+      // Re-use the oldest voice in this column (first occurrence in array order).
+      const oldest = steps.find((e) => e.step === step);
+      steps = steps.filter((e) => e !== oldest);
+    }
+  }
+  return { ...clip, steps: [...steps, { step, midi, velocity: VEL_DEFAULT, lengthSteps: 1 }] };
+}
+
+// ---------------------------------------------------------------------------
+// Velocity LEVELS (DECIDED 2026-06-15, revised). SIX evenly-spaced steps the
+// VELOCITY-hold modifier cycles through, so the velocity CV out (velocity/127)
+// spans the FULL 0..1 range. The old 3-tier set (40/80/120) bunched into
+// 0.31/0.63/0.94 — too subtle into a sustain/accent VCA (MOOG 911 sus). These
+// six give a true 0 floor (a ghost note: the gate/note still fire, vel CV = 0)
+// and a true 1.0 ceiling, in 20% steps. Stored as MIDI 0..127 on the event; the
+// grid + card render each level as a distinct brightness/shade.
+//
+// A plain note tap places VEL_DEFAULT (60%). On the grid you HOLD the VELOCITY
+// pad + tap a note to cycle its level UP (wrapping, never removing — removal is
+// a plain tap).
+// ---------------------------------------------------------------------------
+/** The six velocity levels (MIDI 0..127) ≈ 0 / 20 / 40 / 60 / 80 / 100%. */
+export const VEL_LEVELS: readonly number[] = [0, 25, 51, 76, 102, 127];
+/** Number of velocity levels (6) — grid LEDs + card cells render this many. */
+export const VEL_LEVEL_COUNT = VEL_LEVELS.length;
+/** A freshly-placed note's velocity (≈60% — clearly audible, room both ways). */
+export const VEL_DEFAULT = 76;
+
+/** Velocity DISPLAY buckets: the 6 levels collapse to 3 visible colours (TWO
+ *  levels per colour). Matches the monome grid's distinguishable brightnesses —
+ *  3 note colours + dark (= empty cell). The CV out keeps the full 6 levels;
+ *  only the LED/cell colour buckets. */
+export const VEL_BUCKET_COUNT = 3;
+/** The display bucket (0=low,1=med,2=high) for a velocity — `level >> 1`, so
+ *  levels {0,1}→0, {2,3}→1, {4,5}→2. */
+export function velBucket(velocity: number | undefined): number {
+  return Math.floor(velLevelIndex(velocity) / 2);
+}
+
+/** Snap a raw 0..127 velocity to the nearest level INDEX (0..VEL_LEVEL_COUNT-1). */
+export function velLevelIndex(velocity: number | undefined): number {
+  const v = velocity ?? VEL_DEFAULT;
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < VEL_LEVELS.length; i++) {
+    const d = Math.abs(VEL_LEVELS[i] - v);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * The VELOCITY-hold gesture: cycle the velocity of the note COVERING (step,
+ * midi) UP one level (wrapping 100% → 0%). If no note is there yet, place one at
+ * VEL_DEFAULT. Never removes a note (a plain tap does that). Returns a NEW clip.
+ */
+export function cycleVelocity(clip: NoteClipRecord, step: number, midi: number): NoteClipRecord {
+  const cov = noteCovering(clip, step, midi);
+  if (!cov) {
+    return { ...clip, steps: [...clip.steps, { step, midi, velocity: VEL_DEFAULT, lengthSteps: 1 }] };
+  }
+  const next = VEL_LEVELS[(velLevelIndex(cov.velocity) + 1) % VEL_LEVELS.length];
+  const steps = clip.steps.map((e) =>
+    e.step === cov.step && e.midi === cov.midi ? { ...e, velocity: next } : e,
+  );
+  return { ...clip, steps };
+}
+
+/** The note event STARTING at (step, midi), or undefined. */
+export function noteAt(
+  clip: NoteClipRecord,
+  step: number,
+  midi: number,
+): NoteEvent | undefined {
+  return clip.steps.find((e) => e.step === step && e.midi === midi);
+}
+
+/** The note COVERING (step, midi) — i.e. a note in that row whose held span
+ *  [start, start+lengthSteps) includes `step`. Used to render a held note as a
+ *  bar across the cells it sustains over (not just its start cell). */
+export function noteCovering(
+  clip: NoteClipRecord,
+  step: number,
+  midi: number,
+): NoteEvent | undefined {
+  return clip.steps.find(
+    (e) => e.midi === midi && e.step <= step && step < e.step + (e.lengthSteps ?? 1),
+  );
+}
+
+/**
+ * Make a SINGLE held note spanning steps lo..hi (inclusive) at `midi`, with the
+ * gate high the whole time (lengthSteps = hi-lo+1). Any other notes in that row
+ * within the span are removed/merged. Returns a NEW clip. This is the
+ * "hold a pad + tap another in the same row" tie gesture.
+ *
+ * In a MONO lane the span is monophonic: every note covering any column in
+ * [a,b] (regardless of pitch) is cleared first, so the held note is the only
+ * voice across its span.
+ */
+export function setNoteSpan(
+  clip: NoteClipRecord,
+  lo: number,
+  hi: number,
+  midi: number,
+  opts: NoteEntryOpts = {},
+): NoteClipRecord {
+  const a = Math.min(lo, hi);
+  const b = Math.max(lo, hi);
+  const steps = opts.mono
+    ? clip.steps.filter((e) => e.step + (e.lengthSteps ?? 1) - 1 < a || e.step > b)
+    : clip.steps.filter((e) => e.midi !== midi || e.step < a || e.step > b);
+  steps.push({ step: a, midi, velocity: VEL_DEFAULT, lengthSteps: b - a + 1 });
   return { ...clip, steps };
 }

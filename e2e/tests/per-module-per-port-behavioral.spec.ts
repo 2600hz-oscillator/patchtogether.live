@@ -112,18 +112,17 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // ── File-input sources: output is silent until a file is uploaded.
   //    No upstream signal can perturb that.
   samsloop:       'needs an uploaded sample AND a trigger to emit (idle-by-default, no autoplay); covered by samsloop.spec.ts',
-  // CLIPPLAYER: clock-derived-output class (cf. timelorde / moog960). The
-  // outputs are the LAUNCHED clip's pattern; the per-port driver pre-launches a
-  // clip so OUTPUT_EMIT passes, but in the one-input-at-a-time behavioral
-  // harness neither input gives a clean amplitude/edge delta vs the unpatched
-  // control: patching `clock` only switches internal-BPM → external-clock
-  // advance (it RE-PHASES the same gate stream at a similar density, no
-  // attributable footprint), and `stop_all` silences (a delta the spawn-once
-  // pattern would need precise timing to catch). Covered by clipplayer.test.ts
-  // (def + factory launch / quantized-switch / stop / silent via the REAL tick
-  // loop) + the bespoke real-source-chain clipplayer.spec.ts (TIMELORDE → clip
-  // → voice → audible RMS) + clip-types.test.ts (note→V/oct + Deluge row math).
-  clipplayer:     'clock-derived output (launched clip pattern); clock only re-phases, stop_all silences — no clean per-input delta in the short window; covered by clipplayer.test.ts + clipplayer.spec.ts + clip-types.test.ts',
+  // CLIP PLAYER: TIMELORDE-locked, launch-derived output (8 lanes). The outputs
+  // are the LAUNCHED clip's pattern; the module has only ONE input (stop_all),
+  // which SILENCES — a negative delta the one-input-at-a-time spawn-once harness
+  // would need precise timing to catch — and there is no per-output input to
+  // perturb. Output also requires a running TIMELORDE (no internal BPM), which
+  // the sweep can't establish. Covered by clipplayer.test.ts (def + per-lane
+  // launch / quantized-switch / stop / TIMELORDE-lock / silent via the REAL tick
+  // loop) + the bespoke real-source-chain clipplayer.spec.ts (TIMELORDE → clip →
+  // voice → audible RMS, incl. the freeze-while-stopped lock) + clip-types.test.ts
+  // (note→V/oct + Deluge row math + per-lane/velocity helpers).
+  clipplayer:     'TIMELORDE-locked launch output (8 lanes); only input stop_all silences, no per-output input + needs a running transport — no clean per-input delta in the short window; covered by clipplayer.test.ts + clipplayer.spec.ts + clip-types.test.ts',
   // KRIA — same shape as clipplayer/sequencer: a 4-track grid step-sequencer
   // whose outputs are clock-derived (a seeded running pattern). Patching `clock`
   // only switches internal-tempo → external-clock advance (RE-PHASES the same
