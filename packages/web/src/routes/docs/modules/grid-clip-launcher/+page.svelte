@@ -20,6 +20,13 @@
     STOPALL_PAD,
     TRANSPORT_PAD,
   } from '$lib/grid/grid-clip-map';
+  import GridDiagram from '$lib/docs/GridDiagram.svelte';
+  import { clipSessionGrid, clipEditGrid } from '$lib/docs/clip-grid-spec';
+
+  // Annotated reference diagrams (monome-manual style) — pure functions of the
+  // live grid layout constants, so they never drift from the binding.
+  const sessionGrid = clipSessionGrid();
+  const editGrid = clipEditGrid();
 
   const swatch = (level: number) => {
     const v = Math.round((level / 15) * 255);
@@ -147,6 +154,14 @@
 </p>
 
 <h2>Grid layout (Session mode)</h2>
+<GridDiagram
+  cols={sessionGrid.cols}
+  rows={sessionGrid.rows}
+  cells={sessionGrid.cells}
+  callouts={sessionGrid.callouts}
+  sideLabels={sessionGrid.sideLabels}
+  caption={sessionGrid.caption}
+/>
 <div class="gridmap" role="img" aria-label="monome grid 128 layout: left 8 columns are the clip matrix, right columns are controls">
   {#each cells as c (c.x + '-' + c.y)}
     <span
@@ -179,6 +194,13 @@
   (in-key, one octave; root at the bottom), all <strong>16 columns = steps</strong>,
   and the <strong>bottom row is a function row</strong>.
 </p>
+<GridDiagram
+  cols={editGrid.cols}
+  rows={editGrid.rows}
+  cells={editGrid.cells}
+  callouts={editGrid.callouts}
+  caption={editGrid.caption}
+/>
 <ul>
   <li><strong>Tap a cell</strong> → note ON; tap it again → note OFF.</li>
   <li><strong>Hold a note + tap another in the same row</strong> → one HELD note spanning them (the gate stays high the whole time).</li>
