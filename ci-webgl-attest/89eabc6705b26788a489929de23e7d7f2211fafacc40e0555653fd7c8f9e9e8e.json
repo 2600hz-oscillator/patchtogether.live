@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "webglContentHash": "89eabc6705b26788a489929de23e7d7f2211fafacc40e0555653fd7c8f9e9e8e",
+  "attestedAt": "2026-06-16T00:42:55.235Z",
+  "attestedBy": "tmayshark@gmail.com",
+  "gitHeadAtAttest": "fd671d8cf40f904eef64f0aaee20bf1d8de9d1cc",
+  "playwrightVersion": "1.50.0",
+  "os": "darwin 25.4.0 (arm64)",
+  "host": "2600hzs-MBP.home.local",
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "repeatEach": 1,
+  "suites": {
+    "A-heavy": {
+      "specFiles": 42,
+      "passed": 163,
+      "failed": 0,
+      "flaky": 1,
+      "skipped": 3
+    },
+    "B-leakers": {
+      "specFiles": 5,
+      "passed": 13,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0
+    },
+    "C-camera": {
+      "specFiles": 1,
+      "passed": 2,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0
+    }
+  },
+  "durationSec": 251
+}
