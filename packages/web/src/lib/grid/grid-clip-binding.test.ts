@@ -176,6 +176,21 @@ describe('grid EDIT mode (hold EDIT + tap → note editor)', () => {
     sim.release(EDIT_PAD.x, EDIT_PAD.y);
   });
 
+  it('hold EDIT + tap an EMPTY clip creates the clip AND enters its editor', () => {
+    seedClipPlayer({ clips: {} }); // nothing initialized yet
+    bindGridToClip(NODE_ID);
+    sim.press(EDIT_PAD.x, EDIT_PAD.y); // hold EDIT
+    sim.press(3, 2); // tap an uninitialized pad (lane2 slot3)
+    sim.release(EDIT_PAD.x, EDIT_PAD.y);
+    const idx = clipIndex(3, 2);
+    // the clip was materialized in place …
+    expect((liveData().clips as Record<string, NoteClipRecord>)[String(idx)]).toBeTruthy();
+    // … and we are now editing it (no card round-trip, no launch).
+    expect(__test_mode().mode).toBe('edit');
+    expect(__test_mode().editClipIndex).toBe(idx);
+    expect(queued()?.[2] ?? null).toBeNull();
+  });
+
   it('a tap (press+release) toggles a note ON, tap again OFF', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindGridToClip(NODE_ID);

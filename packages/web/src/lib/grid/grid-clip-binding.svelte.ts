@@ -53,6 +53,7 @@ import {
   lanePlaying,
   laneMono,
   coerceClipRecord,
+  defaultNoteClip,
   scaleSteps,
   toggleNoteAt,
   setNoteSpan,
@@ -286,7 +287,17 @@ function handleKey(e: GridKeyEvent): void {
   const clipIdx = padToClipIndex(e.x, e.y);
   if (clipIdx !== null) {
     if (editArmed) {
-      editClipIndex = clipIdx; // hold-EDIT + tap → open the editor
+      // hold-EDIT + tap → open the editor. If the slot is EMPTY, create the clip
+      // first so the gesture both initializes AND enters it (no card round-trip):
+      // without this, entering edit on an empty slot finds no clip and bounces
+      // back to session.
+      if (!data?.clips?.[String(clipIdx)]) {
+        editData(nodeId, (d) => {
+          if (!d.clips) d.clips = {};
+          if (!d.clips[String(clipIdx)]) d.clips[String(clipIdx)] = defaultNoteClip();
+        });
+      }
+      editClipIndex = clipIdx;
       mode = 'edit';
       editArmed = false;
       editAnchor = null;
