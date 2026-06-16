@@ -341,18 +341,30 @@
     if (slot === activeSlot) ensureAudioWired();
   }
 
-  /** Write a per-slot fileMeta into the synced slotMeta array. */
+  /** Write a per-slot fileMeta into the synced slotMeta array.
+   *
+   *  Rebuilds the array from PLAIN clones of the existing entries. Reading back
+   *  a previously-written entry yields a LIVE Y type (already integrated into
+   *  the doc); putting it into the new array and reassigning would throw
+   *  "reassigning object that already occurs in the tree" and abort the
+   *  transaction — so before this, every slot AFTER the first silently failed
+   *  to persist (only slot 0 ever saved). Cloning to plain objects keeps the
+   *  whole-array reassign legal. (Same Y-reintegration trap as the sequencer
+   *  save-to-slot bug.) */
   function writeSlotMeta(slot: number, meta: VideoboxFileMeta | null): void {
     ydoc.transact(() => {
       const t = patch.nodes[id];
       if (!t) return;
       if (!t.data) t.data = {};
       const d = t.data as Partial<VideoVarispeedData>;
-      const arr = Array.isArray(d.slotMeta)
-        ? d.slotMeta.slice(0, ASSET_SLOTS)
-        : new Array(ASSET_SLOTS).fill(null);
-      while (arr.length < ASSET_SLOTS) arr.push(null);
-      arr[slot] = meta;
+      const cur = Array.isArray(d.slotMeta) ? d.slotMeta : [];
+      const arr: (VideoboxFileMeta | null)[] = [];
+      for (let i = 0; i < ASSET_SLOTS; i++) {
+        if (i === slot) { arr.push(meta); continue; }
+        const e = cur[i] as VideoboxFileMeta | null | undefined;
+        // PLAIN clone of any prior entry — never re-insert a live Y type.
+        arr.push(e ? { name: e.name, duration: e.duration, size: e.size, handleId: e.handleId } : null);
+      }
       d.slotMeta = arr;
     }, LOCAL_ORIGIN);
   }
