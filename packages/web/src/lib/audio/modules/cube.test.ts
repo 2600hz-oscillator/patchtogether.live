@@ -470,6 +470,25 @@ describe('CUBE worklet — capture + audible output', () => {
     expect(peak(out)).toBe(0);
   });
 
+  it('slice params track CV fast (de-lag): smoothed sliceY settles within ~12 blocks', async () => {
+    // The slice-shaping smoothers are stepped once per BLOCK but used to be
+    // built with a per-SAMPLE 80 Hz corner → an effective ~0.26 s time constant,
+    // so CV-modulating the slice felt laggy. Tuned to the block rate, an 80 Hz
+    // corner settles in ~10 ms. Jump slice_y 0.5→0.9 and confirm the smoothed
+    // value the worklet posts has essentially arrived after ~12 blocks (~32 ms);
+    // the old smoother would still be near ~0.55 here.
+    const Proc = await loadProcessor();
+    const p = new Proc();
+    loadAllTables(p);
+    p.port.onmessage?.({ data: { type: 'offThread' } });
+    const voct = Math.log2(98 / 261.626);
+    const msgs = runProcCapture(p, makeParams({ slice_y: 0.9 }), 12, voct);
+    const pcs = msgs.filter((m) => m.type === 'paramsChanged');
+    expect(pcs.length, 'expected paramsChanged while sliceY ramps').toBeGreaterThan(0);
+    const lastY = pcs[pcs.length - 1]!.sliceY as number;
+    expect(lastY).toBeGreaterThan(0.85);
+  });
+
   it('off-thread: plays the wave the main thread posts via setWave (L≠R at spread)', async () => {
     const Proc = await loadProcessor();
     const p = new Proc();
