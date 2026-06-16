@@ -15,7 +15,7 @@
 // We do NOT cover the worklet's DSP-side BPM / phase / multiplier math —
 // that's the ART scenario's job (art/scenarios/timelorde/).
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { timelordeDef, transportEventsToRunState } from './timelorde';
 import { patch as livePatch } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
@@ -35,9 +35,27 @@ describe('timelordeDef: shape', () => {
     expect(p?.type).toBe('gate');
   });
 
-  it('keeps the existing clock input alongside the new transport gates', () => {
+  it('keeps the existing clock input alongside the transport gates + the wizard gate', () => {
     const ids = timelordeDef.inputs.map((i) => i.id);
-    expect(ids).toEqual(['clock', 'start_in', 'stop_in']);
+    expect(ids).toEqual(['clock', 'start_in', 'stop_in', 'gate']);
+  });
+
+  it('declares the wizard `gate` input as a LEVEL-SENSITIVE gate (edge: gate)', () => {
+    const p = timelordeDef.inputs.find((i) => i.id === 'gate');
+    expect(p).toBeDefined();
+    expect(p?.type).toBe('gate');
+    // Level-sensitive show/hide, NOT edge-triggered — must declare edge:'gate'
+    // so the gate↔trigger model is explicit (CLAUDE.md "Triggers vs gates").
+    expect(p?.edge).toBe('gate');
+  });
+
+  it('declares a wizardOn discrete param defaulting to 1 (shown)', () => {
+    const p = timelordeDef.params.find((x) => x.id === 'wizardOn');
+    expect(p).toBeDefined();
+    expect(p?.curve).toBe('discrete');
+    expect(p?.defaultValue).toBe(1);
+    expect(p?.min).toBe(0);
+    expect(p?.max).toBe(1);
   });
 
   // Regression: the timelorde worklet had outputPulseEnd = new Int32Array(12)
@@ -199,6 +217,8 @@ class FakeAudioWorkletNode {
       // when an explicit value is required for a scenario.
       ['running', makeParam(1)],
       ['hasExternalClock', makeParam(0)],
+      // wizardOn (card-visual show/hide flag; gate input + button converge here).
+      ['wizardOn', makeParam(1)],
     ]);
     this.parameters = { get: (k) => this._paramMap.get(k) };
   }
@@ -336,8 +356,9 @@ describe('timelordeDef.factory: start_in / stop_in transport gates', () => {
       ctx as unknown as AudioContext,
       node,
     );
-    // Sanity: a subscriber was registered.
-    expect(fakeSchedulerSubs.length).toBe(1);
+    // Sanity: the scheduler subscribers were registered — the transport-gate
+    // poll AND the wizard-gate (gate→wizardOn level) poll = 2.
+    expect(fakeSchedulerSubs.length).toBe(2);
 
     // First poll has elapsed=0 → no edges to scan. Advance time so the
     // next poll covers a real window.
@@ -469,16 +490,97 @@ describe('timelordeDef.factory: start_in / stop_in transport gates', () => {
     expect(handle.read?.('running')).toBe(1);
   });
 
-  it('handle.dispose() unsubscribes from the scheduler clock', async () => {
+  it('handle.dispose() unsubscribes BOTH scheduler subscriptions (transport + wizard-gate)', async () => {
     const ctx = makeMockCtx();
     const node = makeNode({ running: 0 });
     const handle = await timelordeDef.factory(
       ctx as unknown as AudioContext,
       node,
     );
-    expect(fakeSchedulerSubs.length).toBe(1);
+    // Two subscriptions: the transport-gate poll + the wizard-gate poll.
+    expect(fakeSchedulerSubs.length).toBe(2);
     handle.dispose();
     expect(fakeSchedulerSubs.length).toBe(0);
+  });
+});
+
+// ---------------- factory: gate → wizardOn (level-sensitive) ----------------
+//
+// The `gate` input is LEVEL-SENSITIVE: when a cable is patched, its level
+// owns wizardOn (HIGH = on, LOW = off). When nothing is patched, the on-card
+// button governs (the factory leaves wizardOn alone so the silence-source 0
+// doesn't clamp the wizard off). These tests drive the analyser ring directly
+// (like the start_in/stop_in tests) and assert the livePatch write-through.
+
+describe('timelordeDef.factory: gate → wizardOn (wizard show/hide)', () => {
+  beforeEach(() => {
+    fakeSchedulerSubs.length = 0;
+    for (const k of Object.keys(livePatch.nodes)) delete livePatch.nodes[k];
+    for (const k of Object.keys(livePatch.edges)) delete livePatch.edges[k];
+    livePatch.nodes['timelorde-test'] = {
+      id: 'timelorde-test',
+      type: 'timelorde',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: { wizardOn: 1 },
+      data: {},
+    } as ModuleNode;
+    (globalThis as unknown as { AudioWorkletNode: typeof FakeAudioWorkletNode }).AudioWorkletNode =
+      FakeAudioWorkletNode;
+  });
+  afterEach(() => {
+    for (const k of Object.keys(livePatch.edges)) delete livePatch.edges[k];
+  });
+
+  function wireGateEdge(): void {
+    // A gate cable into TIMELORDE.gate so pollWizardGate considers it patched.
+    livePatch.edges['e-wiz'] = {
+      id: 'e-wiz',
+      source: { nodeId: 'src', portId: 'out' },
+      target: { nodeId: 'timelorde-test', portId: 'gate' },
+      sourceType: 'gate',
+      targetType: 'gate',
+    } as (typeof livePatch.edges)[string];
+  }
+
+  it('exposes the gate input in the handle.inputs map', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode());
+    expect(handle.inputs.has('gate')).toBe(true);
+  });
+
+  it('a HIGH gate level (patched) sets wizardOn ← 1; a LOW level sets it ← 0', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode());
+    wireGateEdge();
+
+    const gateGain = handle.inputs.get('gate')!.node as unknown as FakeGainNode;
+    const ana = gateGain.connect.mock.calls[0]?.[0] as FakeAnalyserNode;
+    expect(ana, 'gate gain connected to an analyser').toBeDefined();
+
+    // Drive the gate LOW first → wizardOn 0.
+    ana.pushSamples([0, 0, 0, 0]);
+    tickAll();
+    expect(livePatch.nodes['timelorde-test']!.params.wizardOn).toBe(0);
+
+    // Drive the gate HIGH → wizardOn 1.
+    ana.pushSamples([1, 1, 1, 1]);
+    tickAll();
+    expect(livePatch.nodes['timelorde-test']!.params.wizardOn).toBe(1);
+  });
+
+  it('leaves wizardOn alone when NO gate cable is patched (button stays in control)', async () => {
+    const ctx = makeMockCtx();
+    // No wireGateEdge() — nothing patched into `gate`.
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode());
+    const gateGain = handle.inputs.get('gate')!.node as unknown as FakeGainNode;
+    const ana = gateGain.connect.mock.calls[0]?.[0] as FakeAnalyserNode;
+    // Even though the (unpatched) analyser reads 0, an unpatched gate must
+    // NOT clamp wizardOn off — the button governs. wizardOn stays at its
+    // seeded value (1).
+    ana.pushSamples([0, 0, 0, 0]);
+    tickAll();
+    expect(livePatch.nodes['timelorde-test']!.params.wizardOn).toBe(1);
   });
 });
 

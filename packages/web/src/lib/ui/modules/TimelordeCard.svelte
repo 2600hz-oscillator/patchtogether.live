@@ -9,6 +9,12 @@
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import {
+    bitmapToDots,
+    bitmapSize,
+    beatPulse,
+    type WizardDot,
+  } from '$lib/audio/modules/timelorde-wizard';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -52,6 +58,78 @@
   // locked to TIMELORDE — incl. the clip player — freezes when running = 0, so
   // this is the rack-wide stop/start.
   let running = $derived((void cardVersion, (node?.params.running ?? 1) >= 0.5));
+
+  // wizardOn: the dot-matrix neon WIZARD graphic show/hide flag. Driven by
+  // BOTH the on-card toggle button (toggleWizard, below) AND the `gate` input
+  // level (the factory's pollWizardGate writes node.params.wizardOn from the
+  // gate's level). They converge here on a single param — button = manual
+  // override, gate = external control. Persisted on node.data + Y.Doc-synced.
+  let wizardOn = $derived((void cardVersion, (node?.params.wizardOn ?? 1) >= 0.5));
+
+  function toggleWizard() {
+    set('wizardOn')(wizardOn ? 0 : 1);
+  }
+
+  // ---- Beat-pulse animation (the wizard flashes in time with the beat) ----
+  //
+  // The pulse intensity (0 dim … 1 flash) is computed by the PURE beatPulse()
+  // helper from TIMELORDE's OWN bpm + running state (the same values the clock
+  // worklet uses — we do NOT spin up a second clock; this is just a cheap
+  // function of bpm and elapsed wall-clock time). An rAF loop re-evaluates it
+  // each frame and writes the brightness to a CSS custom property.
+  //
+  // VRT/accessibility determinism: under `prefers-reduced-motion: reduce`
+  // (which the VRT runner sets, alongside animations:'disabled') we DON'T run
+  // the rAF loop and pin the pulse to 0 (the idle/dim frame) — so the card
+  // renders one deterministic frame and stays in the strict VRT lane. Real
+  // users without reduced-motion get the live beat pulse.
+  let pulse = $state(0);
+  // Wall-clock anchor: reset whenever the transport (re)starts so the flash
+  // lands on the downbeat after a start rather than at an arbitrary offset.
+  let beatAnchorMs = performance.now();
+  let prevRunningForAnchor = running;
+
+  function prefersReducedMotion(): boolean {
+    return (
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  }
+
+  $effect(() => {
+    // Re-anchor the beat phase on a stopped→running transition.
+    if (running && !prevRunningForAnchor) beatAnchorMs = performance.now();
+    prevRunningForAnchor = running;
+
+    if (prefersReducedMotion()) {
+      // Frozen, deterministic frame (VRT / reduced-motion): idle wizard.
+      pulse = 0;
+      return;
+    }
+
+    let raf: number | null = null;
+    const tick = () => {
+      // External-clock lock writes the measured tempo into node.params.bpm,
+      // so reading the reactive `bpm` keeps the visual pulse on the real beat.
+      pulse = beatPulse({
+        bpm,
+        running,
+        nowMs: performance.now(),
+        anchorMs: beatAnchorMs,
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      if (raf !== null) cancelAnimationFrame(raf);
+      raf = null;
+    };
+  });
+
+  // The dot-matrix wizard, derived once from the (data-driven) bitmap.
+  const wizardDots: WizardDot[] = bitmapToDots();
+  const wizardGrid = bitmapSize();
 
   let hasExternalClock = $derived.by(() => {
     void cardVersion;
@@ -100,6 +178,8 @@
     // Intended pairing: MIDICLOCK.midistart → START, MIDICLOCK.midistop → STOP.
     { id: 'start_in', label: 'START',    cable: 'gate' },
     { id: 'stop_in',  label: 'STOP',     cable: 'gate' },
+    // ▭ = level-sensitive gate glyph. Drives the wizard show/hide (HIGH = on).
+    { id: 'gate',     label: '▭ WIZARD', cable: 'gate' },
   ];
   const outputs: PortDescriptor[] = OUT_LABELS.map((label) => ({
     id: label,
@@ -127,6 +207,37 @@
         {muteOutputs ? 'MUTE' : 'ON'}
       </button>
   </header>
+
+  <!-- Dot-matrix neon WIZARD — pulses with the beat. The actual pixels come
+       from the data-driven WIZARD_BITMAP in timelorde-wizard.ts (PLACEHOLDER
+       art; the owner swaps that one constant for their own painting). The
+       brightness here rides the beat-pulse rAF (frozen idle under reduced
+       motion / VRT). Hidden via wizardOn (button or gate input). -->
+  <div class="wizard-wrap">
+    <button
+      class="wizard-toggle"
+      class:on={wizardOn}
+      onclick={toggleWizard}
+      title={wizardOn ? 'Hide the wizard' : 'Show the wizard'}
+      data-testid={`timelorde-wizard-toggle-${id}`}
+    >🧙</button>
+    {#if wizardOn}
+      <div
+        class="wizard"
+        data-testid={`timelorde-wizard-${id}`}
+        style={`--wiz-cols:${wizardGrid.cols}; --wiz-rows:${wizardGrid.rows}; --wiz-pulse:${pulse.toFixed(3)};`}
+      >
+        {#each wizardDots as dot (dot.row * wizardGrid.cols + dot.col)}
+          <span
+            class={`dot dot-${dot.role}`}
+            style={`grid-column:${dot.col + 1}; grid-row:${dot.row + 1};`}
+          ></span>
+        {/each}
+      </div>
+    {:else}
+      <div class="wizard-off" data-testid={`timelorde-wizard-off-${id}`}>wizard off</div>
+    {/if}
+  </div>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="knob-row">
@@ -192,5 +303,92 @@
     color: var(--text-dim);
     font-family: ui-monospace, monospace;
     pointer-events: none;
+  }
+
+  /* ---- Dot-matrix neon WIZARD ---- */
+  .wizard-wrap {
+    position: relative;
+    margin: 12px 0 4px;
+    display: flex;
+    justify-content: center;
+  }
+  .wizard-toggle {
+    position: absolute;
+    top: -4px;
+    right: 8px;
+    width: 22px;
+    height: 22px;
+    background: #2a2f3a;
+    border: 1px solid #404652;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    opacity: 0.55;
+    filter: grayscale(1);
+    z-index: 1;
+  }
+  .wizard-toggle.on {
+    opacity: 1;
+    filter: none;
+    border-color: var(--cable-gate);
+    box-shadow: 0 0 4px var(--cable-gate);
+  }
+  .wizard {
+    --dot-size: 7px;
+    --dot-gap: 1px;
+    /* Pulse drives an idle→flash brightness on the lit dots. 0 = dim idle. */
+    display: grid;
+    grid-template-columns: repeat(var(--wiz-cols), var(--dot-size));
+    grid-template-rows: repeat(var(--wiz-rows), var(--dot-size));
+    gap: var(--dot-gap);
+    padding: 8px;
+    background: #07090d;
+    border: 1px solid #1a1f2a;
+    border-radius: 4px;
+    /* Scale up subtly on the beat (1.0 idle → ~1.05 flash). */
+    transform: scale(calc(1 + 0.05 * var(--wiz-pulse, 0)));
+    transform-origin: center bottom;
+  }
+  .dot {
+    width: var(--dot-size);
+    height: var(--dot-size);
+    border-radius: 50%;
+    /* Idle dots glow faintly; the pulse raises brightness + bloom toward 1. */
+    opacity: calc(0.32 + 0.68 * var(--wiz-pulse, 0));
+  }
+  /* Neon palette — themable via the gate cable accent for the body, warm for
+     skin, and the brightest accent for the staff/orb (the "magic"). */
+  .dot-hat,
+  .dot-body {
+    background: var(--cable-gate, #ffd23f);
+    box-shadow: 0 0 calc(2px + 4px * var(--wiz-pulse, 0)) var(--cable-gate, #ffd23f);
+  }
+  .dot-skin {
+    background: #ffd9b0;
+    box-shadow: 0 0 calc(1px + 3px * var(--wiz-pulse, 0)) #ffb27a;
+  }
+  .dot-staff {
+    background: #7bdfff;
+    box-shadow: 0 0 calc(3px + 6px * var(--wiz-pulse, 0)) #7bdfff;
+    /* The orb stays a touch brighter than the body even at idle. */
+    opacity: calc(0.5 + 0.5 * var(--wiz-pulse, 0));
+  }
+  .wizard-off {
+    font-size: 0.55rem;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    padding: 18px 0;
+    opacity: 0.5;
+  }
+  /* Reduced motion (also the VRT capture): no transform animation; the JS
+     loop already pins pulse=0, so this is belt-and-braces for the scale. */
+  @media (prefers-reduced-motion: reduce) {
+    .wizard { transform: none; }
   }
 </style>

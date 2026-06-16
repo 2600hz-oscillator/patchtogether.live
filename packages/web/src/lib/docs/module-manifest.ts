@@ -511,6 +511,8 @@ const PORT_NOTES: Record<string, string> = {
   'meowbox.R': 'Stereo R out.',
   'timelorde.clock':
     'External clock - snaps 1x to incoming rising edges; falls back to internal BPM after ~2 master periods.',
+  'timelorde.gate':
+    'Level-sensitive show/hide for the dot-matrix neon wizard graphic. HIGH = wizard on, LOW = off (same on/off state as the on-card wizard button).',
   'timelorde.1x': 'Master tempo gate.',
   'charlottesEchos.L': 'Stereo L in / out.',
   'charlottesEchos.R': 'Stereo R in / out.',
@@ -1392,6 +1394,10 @@ export function buildModuleManifest(
       // TIMELORDE auto-spawn predicate + position helper consumed by
       // Canvas.svelte's snapshot effect. Not a ModuleDef.
       if (file === 'timelorde-autospawn.ts') return false;
+      // TIMELORDE neon-wizard pure helpers (pixel-art bitmap → dots, beat-pulse
+      // math, gate→on/off) consumed by TimelordeCard.svelte + timelorde.ts.
+      // Not a ModuleDef.
+      if (file === 'timelorde-wizard.ts') return false;
       // HYDROGEN's supporting files: kit registry, per-kit data tables,
       // synth-utils. The module def lives in hydrogen.ts; everything
       // else with the `hydrogen-` prefix is implementation detail.
