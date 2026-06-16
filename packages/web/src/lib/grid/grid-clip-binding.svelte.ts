@@ -13,8 +13,10 @@
 //   - HOLD the EDIT pad + tap a clip → enter EDIT mode for that clip.
 //
 // EDIT mode:
-//   - the full grid is the clip's note editor; press a cell to cycle its note
-//     OFF→MED→LOW→HIGH→off (cycleNoteAt). The reserved EDIT pad exits.
+//   - the full grid is the clip's note editor; tap a cell to toggle a note
+//     on/off, hold VEL + tap to cycle its velocity level, hold a note + tap
+//     another in the row to tie a held span. ROW±/OCT± scroll the pitch window;
+//     SCALE cycles the clip scale. The reserved EDIT pad exits.
 //
 // LEDs are repainted each scheduler tick from the live clip/playing/queued
 // state (computeSessionLeds / computeEditLeds) with a ~2 Hz blink. The binding
@@ -36,6 +38,8 @@ import {
   isVelPad,
   isOctDownPad,
   isOctUpPad,
+  isRowDownPad,
+  isRowUpPad,
   isScalePad,
   editPadToNote,
   computeSessionLeds,
@@ -47,7 +51,9 @@ import {
   laneOf,
   slotOf,
   lanePlaying,
+  laneMono,
   coerceClipRecord,
+  scaleSteps,
   toggleNoteAt,
   setNoteSpan,
   cycleVelocity,
@@ -75,7 +81,7 @@ let editArmed = false; // EDIT pad held in session mode
 // note; holding the anchor + tapping another pad in the same row ties them.
 let editAnchor: { step: number; midi: number } | null = null;
 let editSpanned = false;
-let editOctave = 0; // pitch-window offset (OCT−/+ on the function row)
+let editRowOffset = 0; // pitch-window offset (OCT−/+ on the function row)
 let velHeld = false; // the VELOCITY function pad is held
 
 /** Reactive version — bump on bind/unbind so card UI re-derives. */
@@ -95,7 +101,7 @@ function start(): void {
   editArmed = false;
   editAnchor = null;
   editSpanned = false;
-  editOctave = 0;
+  editRowOffset = 0;
   velHeld = false;
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
@@ -227,8 +233,13 @@ function handleKey(e: GridKeyEvent): void {
       return;
     }
     if (isVelPad(e.x, e.y)) { velHeld = e.s === 1; return; } // hold-modifier
-    if (e.s === 1 && isOctDownPad(e.x, e.y)) { editOctave -= 1; return; }
-    if (e.s === 1 && isOctUpPad(e.x, e.y)) { editOctave += 1; return; }
+    // ROW± shift the pitch window by ONE scale-degree row; OCT± by a whole
+    // octave (= scaleLen rows for the active scale).
+    const scaleLen = scaleSteps(clip.scale).length;
+    if (e.s === 1 && isRowDownPad(e.x, e.y)) { editRowOffset -= 1; return; }
+    if (e.s === 1 && isRowUpPad(e.x, e.y)) { editRowOffset += 1; return; }
+    if (e.s === 1 && isOctDownPad(e.x, e.y)) { editRowOffset -= scaleLen; return; }
+    if (e.s === 1 && isOctUpPad(e.x, e.y)) { editRowOffset += scaleLen; return; }
     if (e.s === 1 && isScalePad(e.x, e.y)) {
       // Cycle the clip's scale (major→minor→pentatonic→chromatic→…). The note
       // DATA is unchanged — only the row math; chromatic spreads notes apart.
@@ -242,15 +253,17 @@ function handleKey(e: GridKeyEvent): void {
       return;
     }
 
-    const note = editPadToNote(clip, e.x, e.y, editOctave);
+    const note = editPadToNote(clip, e.x, e.y, editRowOffset);
     if (!note) return; // a non-control function-row / out-of-range pad
+    // Mono lanes replace-on-add; poly lanes cap at POLY_CHANNEL_PAIRS per column.
+    const mono = laneMono(liveData(nodeId), laneOf(editClipIndex));
     if (e.s === 1) {
       if (velHeld) {
-        // VELOCITY modifier: cycle this note's velocity (or place at MED).
+        // VELOCITY modifier: cycle this note's velocity (or place at default).
         writeClip(nodeId, cycleVelocity(clip, note.step, note.midi));
       } else if (editAnchor && editAnchor.midi === note.midi && editAnchor.step !== note.step) {
         // hold a note + tap another in the SAME row → one held note spanning them
-        writeClip(nodeId, setNoteSpan(clip, editAnchor.step, note.step, note.midi));
+        writeClip(nodeId, setNoteSpan(clip, editAnchor.step, note.step, note.midi, { mono }));
         editSpanned = true;
       } else {
         editAnchor = { step: note.step, midi: note.midi };
@@ -258,7 +271,7 @@ function handleKey(e: GridKeyEvent): void {
       }
     } else if (!velHeld && editAnchor && editAnchor.step === note.step && editAnchor.midi === note.midi) {
       // releasing the anchor with no span = a simple tap → toggle the note on/off
-      if (!editSpanned) writeClip(nodeId, toggleNoteAt(clip, note.step, note.midi));
+      if (!editSpanned) writeClip(nodeId, toggleNoteAt(clip, note.step, note.midi, { mono }));
       editAnchor = null;
       editSpanned = false;
     }
@@ -278,7 +291,7 @@ function handleKey(e: GridKeyEvent): void {
       editArmed = false;
       editAnchor = null;
       editSpanned = false;
-      editOctave = 0;
+      editRowOffset = 0;
       velHeld = false;
       return;
     }
@@ -328,7 +341,7 @@ function renderLeds(): void {
       // Show the playhead only when the edited clip's lane is actually playing it.
       const lane = laneOf(editClipIndex);
       const ph = lanePlaying(data, lane) === slotOf(editClipIndex) ? getLanePlayhead(nodeId, lane) : -1;
-      setFrame(computeEditLeds(clip, ph, editOctave, velHeld));
+      setFrame(computeEditLeds(clip, ph, editRowOffset, velHeld));
       return;
     }
     mode = 'session'; // clip vanished — fall back
@@ -348,7 +361,7 @@ export function __test_resetBinding(): void {
   editArmed = false;
   editAnchor = null;
   editSpanned = false;
-  editOctave = 0;
+  editRowOffset = 0;
   velHeld = false;
 }
 /** Read internal mode state — tests only. */
@@ -356,8 +369,8 @@ export function __test_mode(): {
   mode: 'session' | 'edit';
   editClipIndex: number;
   editArmed: boolean;
-  editOctave: number;
+  editRowOffset: number;
   velHeld: boolean;
 } {
-  return { mode, editClipIndex, editArmed, editOctave, velHeld };
+  return { mode, editClipIndex, editArmed, editRowOffset, velHeld };
 }

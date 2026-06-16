@@ -13,9 +13,7 @@
     LED_SCENE_IDLE,
     LED_EDIT_PAD,
     LED_TRANSPORT_ON,
-    LED_NOTE_LOW,
-    LED_NOTE_MED,
-    LED_NOTE_HIGH,
+    LED_NOTE_LEVELS,
     CTRL_STOP_COL,
     CTRL_SCENE_COL,
     EDIT_PAD,
@@ -40,12 +38,10 @@
     { label: 'TRANSPORT', level: LED_TRANSPORT_ON, note: 'bottom-right — bright while TIMELORDE runs' },
   ];
 
-  // Edit-mode velocity tiers (the second-press cycle), shown as grid brightness.
-  const VEL_STATES = [
-    { label: 'low', level: LED_NOTE_LOW },
-    { label: 'med', level: LED_NOTE_MED },
-    { label: 'high', level: LED_NOTE_HIGH },
-  ];
+  // Edit-mode velocity LEVELS (the VEL-hold cycle), shown as grid brightness.
+  // Six steps ≈ 0/20/40/60/80/100%, mapped to the six note LED brightnesses.
+  const VEL_PCTS = ['0%', '20%', '40%', '60%', '80%', '100%'];
+  const VEL_STATES = LED_NOTE_LEVELS.map((level, i) => ({ label: VEL_PCTS[i], level }));
 
   // 16×8 Session-layout map — colour each pad by its role so the diagram is the
   // single source of truth for the binding's coordinates.
@@ -99,9 +95,10 @@
   <li>Add a <strong>clip player</strong> (Add module → Audio → sequencers). It also drops a <strong>TIMELORDE</strong> if your rack doesn't have one.</li>
   <li>
     <strong>Double-click</strong> a pad in the card's 8×8 grid to open its note
-    editor. Click cells to place notes (rows = pitch, in-key; columns = step).
-    Click a note again to cycle its velocity <em>low → med → high → remove</em>.
-    Use <code>‹</code> to return to the launch grid.
+    editor. <strong>Click</strong> a cell to place a note, <strong>click again</strong>
+    to remove it (rows = pitch, in-key; columns = step). <strong>Right-click</strong>
+    a cell to cycle its velocity through the 6 levels. Use <code>‹</code> to return
+    to the launch grid.
   </li>
   <li>
     Wire that lane to a voice: open the card's <em>PATCH PANEL</em> (the yellow
@@ -125,8 +122,8 @@
 
 <h2>The card</h2>
 <ul>
-  <li><strong>Session view</strong> (default) — the 8×8 launch grid (rows lane-tinted). Single-click = launch / queue / stop; double-click = open the editor.</li>
-  <li><strong>Edit view</strong> — a Deluge note editor for one clip: X = step, Y = pitch (scale-degree rows in-key, root at the bottom). Click to place a note; click again to cycle velocity; drag horizontally for length. Cycle <em>scale</em>, set <em>root</em>, change <em>length</em> (16/32/64/8), shift the <code>−/+</code> octave view, or <code>⌫</code> clear the clip. A playhead column tracks the beat while the lane plays.</li>
+  <li><strong>Session view</strong> (default) — the 8×8 launch grid (rows lane-tinted). Single-click = launch / queue / stop; double-click = open the editor. A small <strong>1/5 button</strong> to the left of each row toggles that instrument lane between <strong>MONO</strong> (one note per column — placing a note replaces what's there) and <strong>POLY</strong> (up to 5 notes per column).</li>
+  <li><strong>Edit view</strong> — a Deluge note editor for one clip: X = step, Y = pitch (scale-degree rows in-key, root at the bottom). Click to place a note (click again to remove); <strong>right-click to cycle its velocity</strong> through 6 levels. Cycle <em>scale</em>, set <em>root</em>, change <em>length</em> (16/32/64/8), scroll the pitch window by a <strong>row</strong> (<code>↑/↓</code>) or an <strong>octave</strong> (<code>⤒/⤓</code>), or <code>⌫</code> clear the clip. A playhead column tracks the beat while the lane plays.</li>
   <li><strong>Params</strong> — <code>STEP</code> (1/4 · 1/8 · 1/16 · 1/32 = steps per beat), <code>OCT</code> (transpose all lanes), <code>GATE</code> (note duty cycle), <code>QNT</code> (quantize launch to the loop boundary).</li>
   <li><strong>Transport</strong> — <code>▶/■</code> drives TIMELORDE (hidden when externally clocked); <code>■</code> in the title bar stops all lanes; <code>GRID</code> connects a monome grid.</li>
 </ul>
@@ -184,21 +181,36 @@
 <ul>
   <li><strong>Tap a cell</strong> → note ON; tap it again → note OFF.</li>
   <li><strong>Hold a note + tap another in the same row</strong> → one HELD note spanning them (the gate stays high the whole time).</li>
-  <li><strong>Hold VEL + tap a note</strong> → cycle its velocity MED → LOW → HIGH (three LED brightnesses):</li>
+  <li><strong>Hold VEL + tap a note</strong> → step its velocity UP one level (wrapping 100% → 0%). Six levels ≈ 0/20/40/60/80/100%, shown as six LED brightnesses:</li>
 </ul>
 <div class="vel-legend">
   {#each VEL_STATES as v (v.label)}
     <span class="vel"><span class="led" style="background:{swatch(v.level)}"></span>{v.label}</span>
   {/each}
 </div>
+<p class="aside">
+  0% is a <strong>ghost note</strong> — the gate/note still fire, but the velocity
+  CV is 0 (silent into a velocity-driven VCA). The six levels span the full 0..1
+  velocity-CV range, so patching <code>VEL n</code> into a sustain/level amount
+  (e.g. MOOG 911 sustain) gives a real, drastic dynamic range.
+</p>
 <p>
-  The <strong>function row</strong> (bottom): <strong>EDIT</strong> (tap to exit) ·
-  <strong>VEL</strong> (hold to set velocity) · <strong>OCT−</strong> /
-  <strong>OCT+</strong> (move the 7-row pitch window) · <strong>SCALE</strong> (cycle
-  the clip's scale: major → minor → pentatonic → chromatic). Switching to chromatic
-  makes each row a semitone, so in-key notes spread further apart vertically (use
-  OCT−/+ to reach the ones that scroll off). While the clip plays, the current step
-  column lights up and sweeps across — the tempo pulsing through the clip.
+  The <strong>function row</strong> (bottom), with spacer gaps for legibility:
+  <strong>EDIT</strong> (tap to exit) · <strong>VEL</strong> (hold to set velocity)
+  · <em>gap</em> · <strong>ROW−</strong> · <strong>OCT−</strong> · <em>gap</em> ·
+  <strong>ROW+</strong> · <strong>OCT+</strong> · <em>gap</em> · <strong>SCALE</strong>.
+  <strong>ROW±</strong> nudge the 7-row pitch window by a single scale-degree row;
+  <strong>OCT±</strong> move it a whole octave. <strong>SCALE</strong> cycles the
+  clip's scale (major → minor → pentatonic → chromatic); chromatic makes each row a
+  semitone, so in-key notes spread further apart vertically (use ROW/OCT to reach
+  the ones that scroll off). While the clip plays, the current step column lights up
+  and sweeps across — the tempo pulsing through the clip.
+</p>
+<p class="aside">
+  <strong>Per-lane MONO/POLY</strong> is set on the card (the 1/5 button left of
+  each launch row), not on the grid. In a mono lane, placing a note in a column
+  that already holds one replaces it; a poly lane caps at <strong>5 notes per
+  column</strong> (the poly voice width) and re-uses the oldest when you add a 6th.
 </p>
 
 <h2>LED feedback</h2>

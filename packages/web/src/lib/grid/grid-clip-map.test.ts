@@ -14,6 +14,8 @@ import {
   isVelPad,
   isOctDownPad,
   isOctUpPad,
+  isRowDownPad,
+  isRowUpPad,
   isScalePad,
   computeSessionLeds,
   computeEditLeds,
@@ -26,6 +28,8 @@ import {
   VEL_PAD,
   OCT_DOWN_PAD,
   OCT_UP_PAD,
+  ROW_DOWN_PAD,
+  ROW_UP_PAD,
   SCALE_PAD,
   NOTE_ROWS,
   LED_EMPTY,
@@ -38,7 +42,7 @@ import {
   LED_SCENE_IDLE,
   LED_EDIT_PAD,
   LED_TRANSPORT_ON,
-  LED_NOTE_MED,
+  LED_NOTE_LEVELS,
   LED_NOTE_PLAYHEAD,
   LED_PLAYHEAD,
   LED_ROOT_GUIDE,
@@ -150,10 +154,11 @@ describe('computeSessionLeds (per-lane)', () => {
 });
 
 describe('edit-mode note grid (7 rows × 16 steps) + function row', () => {
-  it('bottom NOTE row = clip root; row 0 = top of the 7-row window', () => {
+  it('bottom NOTE row = clip root; rowOffset scrolls by scale-degree rows', () => {
     const c = clip({ root: 48, scale: 'major' });
     expect(editRowToMidi(c, NOTE_ROWS - 1)).toBe(48); // bottom note row = root
-    expect(editRowToMidi(c, NOTE_ROWS - 1, 1)).toBe(60); // octave-up offset
+    expect(editRowToMidi(c, NOTE_ROWS - 1, 1)).toBe(50); // +1 ROW = next degree (D)
+    expect(editRowToMidi(c, NOTE_ROWS - 1, 7)).toBe(60); // +7 rows (major scaleLen) = +1 octave
   });
   it('editPadToNote maps step=x; rejects the function row; clamps to length', () => {
     const c = clip({ lengthSteps: 8 });
@@ -161,35 +166,50 @@ describe('edit-mode note grid (7 rows × 16 steps) + function row', () => {
     expect(editPadToNote(c, 0, NOTE_ROWS)).toBeNull(); // function row, not a note
     expect(editPadToNote(c, 10, 0)).toBeNull(); // beyond an 8-step clip
   });
-  it('function-row pad classifiers', () => {
+  it('function-row pad classifiers (with ROW± + spacer layout)', () => {
     expect(isEditExitPad(EDIT_EXIT_PAD.x, EDIT_EXIT_PAD.y)).toBe(true);
     expect(isVelPad(VEL_PAD.x, VEL_PAD.y)).toBe(true);
+    expect(isRowDownPad(ROW_DOWN_PAD.x, ROW_DOWN_PAD.y)).toBe(true);
     expect(isOctDownPad(OCT_DOWN_PAD.x, OCT_DOWN_PAD.y)).toBe(true);
+    expect(isRowUpPad(ROW_UP_PAD.x, ROW_UP_PAD.y)).toBe(true);
     expect(isOctUpPad(OCT_UP_PAD.x, OCT_UP_PAD.y)).toBe(true);
     expect(isScalePad(SCALE_PAD.x, SCALE_PAD.y)).toBe(true);
     expect(editPadToNote(clip(), VEL_PAD.x, VEL_PAD.y)).toBeNull(); // never a note cell
+    // The decided layout: [EDIT][VEL]_[ROW−][OCT−]_[ROW+][OCT+]_[SCALE].
+    expect([EDIT_EXIT_PAD.x, VEL_PAD.x, ROW_DOWN_PAD.x, OCT_DOWN_PAD.x, ROW_UP_PAD.x, OCT_UP_PAD.x, SCALE_PAD.x])
+      .toEqual([0, 1, 3, 4, 6, 7, 9]);
   });
-  it('computeEditLeds lights a note by tier + the function row + a root guide', () => {
+  it('computeEditLeds lights a note by velocity level + the function row + a root guide', () => {
     const midi = editRowToMidi(clip(), 4);
-    const c = clip({ steps: [{ step: 2, midi, velocity: 80, lengthSteps: 1 }] }); // MED
+    const c = clip({ steps: [{ step: 2, midi, velocity: 80, lengthSteps: 1 }] }); // → level 3 (76)
     const f = computeEditLeds(c, -1);
-    expect(f[fi(2, 4)]).toBe(LED_NOTE_MED);
+    expect(f[fi(2, 4)]).toBe(LED_NOTE_LEVELS[3]);
     expect(f[fi(0, NOTE_ROWS - 1)]).toBe(LED_ROOT_GUIDE); // bottom note row = root pc
     expect(f[fi(EDIT_EXIT_PAD.x, EDIT_EXIT_PAD.y)]).toBe(LED_FUNC);
+    expect(f[fi(ROW_DOWN_PAD.x, ROW_DOWN_PAD.y)]).toBe(LED_FUNC);
+    expect(f[fi(ROW_UP_PAD.x, ROW_UP_PAD.y)]).toBe(LED_FUNC);
     expect(f[fi(OCT_UP_PAD.x, OCT_UP_PAD.y)]).toBe(LED_FUNC);
     expect(f[fi(SCALE_PAD.x, SCALE_PAD.y)]).toBe(LED_FUNC);
+    expect(f[fi(2, NOTE_ROWS)]).toBe(LED_EMPTY); // a spacer pad stays dark
+  });
+  it('a 0%-velocity (ghost) note still lights DIM (level 0), never off', () => {
+    const midi = editRowToMidi(clip(), 4);
+    const c = clip({ steps: [{ step: 2, midi, velocity: 0, lengthSteps: 1 }] });
+    const f = computeEditLeds(c, -1);
+    expect(f[fi(2, 4)]).toBe(LED_NOTE_LEVELS[0]);
+    expect(LED_NOTE_LEVELS[0]).toBeGreaterThan(0); // visible, not empty
   });
   it('the VEL function pad lights bright while armed', () => {
     const f = computeEditLeds(clip(), -1, 0, true);
     expect(f[fi(VEL_PAD.x, VEL_PAD.y)]).toBe(LED_FUNC_ON);
   });
-  it('a held note lights its WHOLE span by tier', () => {
+  it('a held note lights its WHOLE span by velocity level', () => {
     const midi = editRowToMidi(clip(), 4);
     const c = clip({ steps: [{ step: 2, midi, velocity: 80, lengthSteps: 3 }] });
     const f = computeEditLeds(c, -1);
-    expect(f[fi(2, 4)]).toBe(LED_NOTE_MED);
-    expect(f[fi(3, 4)]).toBe(LED_NOTE_MED);
-    expect(f[fi(4, 4)]).toBe(LED_NOTE_MED);
+    expect(f[fi(2, 4)]).toBe(LED_NOTE_LEVELS[3]);
+    expect(f[fi(3, 4)]).toBe(LED_NOTE_LEVELS[3]);
+    expect(f[fi(4, 4)]).toBe(LED_NOTE_LEVELS[3]);
     expect(f[fi(5, 4)]).toBe(LED_EMPTY); // span ended
   });
   it('the playhead column washes empties + brightens the note it crosses', () => {

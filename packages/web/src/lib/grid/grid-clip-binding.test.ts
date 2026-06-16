@@ -39,6 +39,7 @@ import {
   EDIT_EXIT_PAD,
   VEL_PAD,
   OCT_UP_PAD,
+  ROW_UP_PAD,
   SCALE_PAD,
   LED_LOADED,
   LED_PLAYING,
@@ -46,7 +47,10 @@ import {
 import {
   clipIndex,
   defaultNoteClip,
-  VEL_LOW,
+  scaleSteps,
+  velLevelIndex,
+  VEL_DEFAULT,
+  VEL_LEVELS,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
 
@@ -199,26 +203,40 @@ describe('grid EDIT mode (hold EDIT + tap → note editor)', () => {
     });
   });
 
-  it('hold VEL + tap a note cycles its velocity (does not remove it)', () => {
+  it('hold VEL + tap a note cycles its velocity UP one level (does not remove it)', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindGridToClip(NODE_ID);
     enterEdit();
-    tapEdit(3, 4); // place a MED note
+    tapEdit(3, 4); // place a note at the default level
+    expect(clipSteps()[0].velocity).toBe(VEL_DEFAULT);
     sim.press(VEL_PAD.x, VEL_PAD.y); // hold VEL
     expect(__test_mode().velHeld).toBe(true);
     sim.press(3, 4); // tap the note → cycle velocity (no toggle)
     sim.release(3, 4);
     sim.release(VEL_PAD.x, VEL_PAD.y);
     expect(clipSteps()).toHaveLength(1); // still there
-    expect(clipSteps()[0].velocity).toBe(VEL_LOW); // MED → LOW
+    expect(clipSteps()[0].velocity).toBe(VEL_LEVELS[velLevelIndex(VEL_DEFAULT) + 1]); // up one level
   });
 
-  it('OCT+ shifts the pitch window so a placed note lands an octave up', () => {
+  it('OCT+ shifts the pitch window a whole octave (scaleLen rows) so a note lands an octave up', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindGridToClip(NODE_ID);
     enterEdit();
-    sim.press(OCT_UP_PAD.x, OCT_UP_PAD.y); // shift window up
-    expect(__test_mode().editOctave).toBe(1);
+    const scaleLen = scaleSteps(noteClip().scale).length; // major = 7 degrees
+    sim.press(OCT_UP_PAD.x, OCT_UP_PAD.y); // shift window up one octave
+    expect(__test_mode().editRowOffset).toBe(scaleLen);
+    tapEdit(3, 4);
+    // One octave up from the un-shifted note (= same row + 12 semitones).
+    expect(clipSteps()[0].midi).toBe(editRowToMidi(noteClip(), 4) + 12);
+    expect(clipSteps()[0].midi).toBe(editRowToMidi(noteClip(), 4, scaleLen));
+  });
+
+  it('ROW+ shifts the pitch window by a single scale-degree row', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindGridToClip(NODE_ID);
+    enterEdit();
+    sim.press(ROW_UP_PAD.x, ROW_UP_PAD.y); // shift window up one row
+    expect(__test_mode().editRowOffset).toBe(1);
     tapEdit(3, 4);
     expect(clipSteps()[0].midi).toBe(editRowToMidi(noteClip(), 4, 1));
   });

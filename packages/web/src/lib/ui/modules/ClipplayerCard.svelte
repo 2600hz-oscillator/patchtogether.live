@@ -7,8 +7,8 @@
   //     A ▶/■ transport drives TIMELORDE (hidden when TIMELORDE is externally
   //     clocked). STEP / OCT / GATE / QNT params below.
   //   EDIT: a Deluge-style note editor for one clip (X = step, Y = pitch, in-key
-  //     rows). Click a cell to place a note; click it again to cycle its
-  //     velocity LOW→MED→HIGH→remove (the same gesture the grid uses).
+  //     rows). Click a cell to toggle a note on/off; RIGHT-click to cycle its
+  //     velocity through 6 levels. Per-lane MONO replaces-on-add; POLY caps at 5.
   //
   // Clock is LOCKED TO TIMELORDE (no BPM knob, no clock cable). The monome grid
   // drives the SAME actions via lib/grid. All ports live in the shared yellow
@@ -36,8 +36,10 @@
     rowToMidi,
     scaleSteps,
     toggleNoteAt,
+    cycleVelocity,
     noteCovering,
-    velTier,
+    velLevelIndex,
+    laneMono,
     type ClipPlayerData,
     type NoteClipRecord,
   } from '$lib/audio/modules/clip-types';
@@ -233,7 +235,10 @@
   // --- Deluge note editor (selected clip) ---
   const EDIT_ROWS = 8;
   const MAX_EDIT_COLS = 16;
-  let editorOctave = $state(0); // per-user view offset (octaves), not synced
+  let editorRow = $state(0); // per-user pitch-window offset, in scale-degree ROWS (not synced)
+  function scaleLenOf(clip: NoteClipRecord): number {
+    return scaleSteps(clip.scale).length;
+  }
 
   let editClip = $derived.by<NoteClipRecord | null>(() => {
     void cardVersion;
@@ -243,24 +248,49 @@
   let editLane = $derived(laneOf(selectedClip));
   let editSlot = $derived(slotOf(selectedClip));
 
-  // Display row 0 = top (highest). Logical row 0 = clip root.
+  // Display row 0 = top (highest). editorRow scrolls the window by scale-degree
+  // rows (row buttons shift by 1, octave buttons by scaleLen).
   function midiForDisplayRow(clip: NoteClipRecord, displayRow: number): number {
-    const scaleLen = scaleSteps(clip.scale).length;
-    const logicalRow = editorOctave * scaleLen + (EDIT_ROWS - 1 - displayRow);
+    const logicalRow = editorRow + (EDIT_ROWS - 1 - displayRow);
     return rowToMidi(logicalRow, clip.root, clip.scale);
   }
-  function cellVel(clip: NoteClipRecord, step: number, midi: number): '' | 'vlow' | 'vmed' | 'vhigh' {
+  /** '' for empty, else `vel0`..`vel5` (the note's velocity LEVEL). */
+  function cellVel(clip: NoteClipRecord, step: number, midi: number): string {
     const ev = noteCovering(clip, step, midi);
-    return ev ? `v${velTier(ev.velocity)}` : '';
+    return ev ? `vel${velLevelIndex(ev.velocity)}` : '';
+  }
+  function writeClipData(next: NoteClipRecord) {
+    writeData((d) => {
+      if (!d.clips) d.clips = {};
+      d.clips[String(selectedClip)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+    });
   }
   function toggleNote(step: number, displayRow: number) {
     const clip = clipAt(selectedClip);
     if (!clip) return;
     const midi = midiForDisplayRow(clip, displayRow);
-    const next = toggleNoteAt(clip, step, midi);
+    // Mono lanes replace-on-add; poly lanes cap at 5 voices per column.
+    const mono = laneMono(dataObj(), laneOf(selectedClip));
+    writeClipData(toggleNoteAt(clip, step, midi, { mono }));
+  }
+  /** Right-click a cell → cycle its velocity level (mouse equivalent of the
+   *  grid's VEL-hold). Places a note at the default level if the cell is empty. */
+  function cycleCellVelocity(step: number, displayRow: number) {
+    const clip = clipAt(selectedClip);
+    if (!clip) return;
+    writeClipData(cycleVelocity(clip, step, midiForDisplayRow(clip, displayRow)));
+  }
+  // --- per-lane MONO toggle (left of each launch-grid row) ---
+  function laneIsMono(lane: number): boolean {
+    void cardVersion;
+    return laneMono(dataObj(), lane);
+  }
+  function toggleLaneMono(lane: number) {
     writeData((d) => {
-      if (!d.clips) d.clips = {};
-      d.clips[String(selectedClip)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+      const base = new Array<boolean>(CLIP_LANES).fill(false);
+      if (Array.isArray(d.mono)) for (let i = 0; i < CLIP_LANES && i < d.mono.length; i++) base[i] = !!d.mono[i];
+      base[lane] = !base[lane];
+      d.mono = base;
     });
   }
 
@@ -345,6 +375,18 @@
         <div class="launch-grid" data-testid="clipplayer-grid" role="grid" aria-label="clip launch grid">
           {#each Array(CLIP_LANES) as _l, lane (lane)}
             <div class="grid-row" role="row" style={`--lane-hue:${laneHue(lane)}`}>
+              <button
+                class="lane-mono"
+                class:on={laneIsMono(lane)}
+                onclick={() => toggleLaneMono(lane)}
+                title={laneIsMono(lane)
+                  ? `Lane ${lane + 1}: MONO — one note per column (click for POLY)`
+                  : `Lane ${lane + 1}: POLY — up to 5 notes per column (click for MONO)`}
+                aria-label={`lane ${lane + 1} ${laneIsMono(lane) ? 'mono' : 'poly'}`}
+                aria-pressed={laneIsMono(lane)}
+                data-lane={lane}
+                data-testid={`clipplayer-mono-${lane}`}
+              >{laneIsMono(lane) ? '1' : '5'}</button>
               {#each Array(CLIP_SLOTS) as _s, slot (slot)}
                 {@const idx = clipIndex(slot, lane)}
                 {@const st = padState(idx)}
@@ -386,8 +428,10 @@
             <span class="tag root">{noteNameForMidi(editClip.root)}</span>
             <button class="tag" onclick={cycleLength} title="Cycle clip length">{editClip.lengthSteps}st</button>
             <span class="oct">
-              <button onclick={() => (editorOctave -= 1)} title="Octave down" aria-label="octave down">−</button>
-              <button onclick={() => (editorOctave += 1)} title="Octave up" aria-label="octave up">+</button>
+              <button onclick={() => (editorRow -= scaleLenOf(editClip))} title="Octave down" aria-label="octave down">⤓</button>
+              <button onclick={() => (editorRow -= 1)} title="Row down" aria-label="row down">↓</button>
+              <button onclick={() => (editorRow += 1)} title="Row up" aria-label="row up">↑</button>
+              <button onclick={() => (editorRow += scaleLenOf(editClip))} title="Octave up" aria-label="octave up">⤒</button>
             </span>
             <button class="clear" onclick={clearClip} title="Clear clip" data-testid="clipplayer-clear">⌫</button>
           </div>
@@ -402,7 +446,9 @@
                     data-step={step}
                     data-row={row}
                     aria-label={`step ${step} row ${row}`}
+                    title="Click: note on/off · Right-click: cycle velocity"
                     onclick={() => toggleNote(step, row)}
+                    oncontextmenu={(e) => { e.preventDefault(); cycleCellVelocity(step, row); }}
                   ></button>
                 {/each}
               </div>
@@ -569,15 +615,43 @@
     cursor: pointer;
     padding: 0;
   }
-  /* note cells by velocity tier (low/med/high) */
-  .cell.vlow { background: hsl(200 60% 34%); }
-  .cell.vmed { background: hsl(200 75% 48%); }
-  .cell.vhigh { background: hsl(200 90% 62%); }
+  /* note cells by velocity LEVEL (6 brightnesses ≈ 0/20/40/60/80/100%). Level 0
+     (0% = ghost note) is dim-but-visible so it never reads as empty. */
+  .cell.vel0 { background: hsl(200 45% 24%); }
+  .cell.vel1 { background: hsl(200 55% 32%); }
+  .cell.vel2 { background: hsl(200 65% 40%); }
+  .cell.vel3 { background: hsl(200 75% 48%); }
+  .cell.vel4 { background: hsl(200 85% 56%); }
+  .cell.vel5 { background: hsl(200 92% 64%); }
   /* the playhead lights the whole column so you see the tempo pulse cross the clip */
   .cell.playhead { background: rgba(108, 170, 255, 0.22); border-color: var(--accent, #6cf); }
-  .cell.vlow.playhead,
-  .cell.vmed.playhead,
-  .cell.vhigh.playhead { background: hsl(200 95% 70%); }
+  .cell.vel0.playhead,
+  .cell.vel1.playhead,
+  .cell.vel2.playhead,
+  .cell.vel3.playhead,
+  .cell.vel4.playhead,
+  .cell.vel5.playhead { background: hsl(200 95% 70%); }
+  /* per-lane MONO/POLY toggle to the left of each launch-grid row */
+  .lane-mono {
+    width: 16px;
+    height: 28px;
+    flex: none;
+    margin-right: 3px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: #141414;
+    color: var(--text-dim, #888);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+  }
+  .lane-mono.on {
+    background: hsl(var(--lane-hue) 55% 34%);
+    color: #fff;
+    border-color: hsl(var(--lane-hue) 70% 55%);
+  }
   .knob-row {
     display: flex;
     align-items: center;
