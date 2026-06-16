@@ -127,6 +127,16 @@ if (typeof G.registerProcessor === 'undefined') {
 
 const C4_HZ = 261.626;
 
+// AudioWorklet render quantum (Chrome is fixed at 128). The slice-shaping param
+// smoothers are stepped once per block, so their one-pole corner must be tuned
+// against THIS rate (sampleRate / quantum), not the sample rate — see the
+// constructor.
+const CUBE_RENDER_QUANTUM = 128;
+// One-pole corner for the per-block slice-param smoothers. 80 Hz ≈ a ~10 ms
+// settle at the block rate: snappy enough that CV-modulating the slice tracks in
+// real time, slow enough to mask the per-block (and 1/512-quantized) step.
+const CUBE_SLICE_SMOOTH_HZ = 80;
+
 // Poly bus shape (mirrors packages/web/src/lib/audio/poly.ts): 5 voice lanes,
 // 10 channels (ch 2i = lane-i pitch V/oct, ch 2i+1 = lane-i gate).
 const POLY_VOICES = 5;
@@ -260,18 +270,28 @@ class CubeProcessor extends AudioWorkletProcessor {
 
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
-    this.smMorphFc = new WtParamSmoother(sampleRate);
-    this.smConnect = new WtParamSmoother(sampleRate);
-    this.smCrush = new WtParamSmoother(sampleRate);
-    this.smSpread = new WtParamSmoother(sampleRate);
-    this.smFold = new WtParamSmoother(sampleRate);
-    this.smSliceY = new WtParamSmoother(sampleRate);
-    this.smRx = new WtParamSmoother(sampleRate);
-    this.smRy = new WtParamSmoother(sampleRate);
-    this.smRz = new WtParamSmoother(sampleRate);
-    this.smSpaceCrush = new WtParamSmoother(sampleRate);
-    this.smSpaceDiffuse = new WtParamSmoother(sampleRate);
-    this.smConnectStrength = new WtParamSmoother(sampleRate);
+    // CUBE's slice-shaping params are smoothed ONCE PER BLOCK (see `aval` — a
+    // per-sample slice recompute is impossible at 256·96 field reads). A
+    // WtParamSmoother computes its one-pole α from the SAMPLE rate, but we only
+    // step it at the BLOCK rate (sampleRate/128 ≈ 375 Hz), so the default 80 Hz
+    // corner came out 128× too slow — an effective ~0.26 s time constant that
+    // made CV-modulating the slice feel like a laggy, stepped retrigger. Build
+    // the smoothers against the block rate so the corner is honoured at the rate
+    // we actually step them: an 80 Hz corner now settles in ~10 ms, so the slice
+    // tracks CV in real time (still long enough to mask the per-block step).
+    const blockRate = sampleRate / CUBE_RENDER_QUANTUM;
+    this.smMorphFc = new WtParamSmoother(blockRate, CUBE_SLICE_SMOOTH_HZ);
+    this.smConnect = new WtParamSmoother(blockRate, CUBE_SLICE_SMOOTH_HZ);
+    this.smCrush = new WtParamSmoother(blockRate, CUBE_SLICE_SMOOTH_HZ);
+    this.smSpread = new WtParamSmoother(blockRate, CUBE_SLICE_SMOOTH_HZ);
+    this.smFold = new WtParamSmoother(blockRate, CUBE_SLICE_SMOOTH_HZ);
+    this.smSliceY = new WtParamSmoother(blockRate, CUBE_SLICE_SMOOTH_HZ);
+    this.smRx = new WtParamSmoother(blockRate, CUBE_SLICE_SMOOTH_HZ);
+    this.smRy = new WtParamSmoother(blockRate, CUBE_SLICE_SMOOTH_HZ);
+    this.smRz = new WtParamSmoother(blockRate, CUBE_SLICE_SMOOTH_HZ);
+    this.smSpaceCrush = new WtParamSmoother(blockRate, CUBE_SLICE_SMOOTH_HZ);
+    this.smSpaceDiffuse = new WtParamSmoother(blockRate, CUBE_SLICE_SMOOTH_HZ);
+    this.smConnectStrength = new WtParamSmoother(blockRate, CUBE_SLICE_SMOOTH_HZ);
     // Prime to defaults so the first block doesn't ramp from 0.
     this.smMorphFc.prime(0);
     this.smConnect.prime(0);
