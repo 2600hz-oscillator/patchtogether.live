@@ -611,6 +611,26 @@
               </div>
             {/each}
           </div>
+          <!-- Launch the clip you're editing without leaving the editor:
+               NOW = jump straight in (immediate, ignores QNT); QUEUE = arm it to
+               drop in on the lane's next loop boundary (follows QNT). Both target
+               THIS clip's lane+slot. -->
+          <div class="editor-foot">
+            <button
+              class="launch now"
+              class:on={lanePlaying(dataObj(), editLane) === editSlot}
+              onclick={() => queueLane(editLane, editSlot, true)}
+              title="Jump into this clip NOW (immediate — ignores QNT)"
+              data-testid="clipplayer-edit-now"
+            >NOW</button>
+            <button
+              class="launch queue"
+              class:armed={laneQueued(dataObj(), editLane) === editSlot}
+              onclick={() => queueLane(editLane, editSlot, false)}
+              title="Queue this clip (drops in on the lane's next loop boundary)"
+              data-testid="clipplayer-edit-queue"
+            >QUEUE</button>
+          </div>
         </div>
       {/if}
     </div>
@@ -837,6 +857,37 @@
     margin-left: 1px;
   }
   .piano-roll { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  /* Edit-view launch row — NOW (left) + QUEUE (right), bottom-right of the editor. */
+  .editor-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .editor-foot .launch {
+    background: var(--control-bg, #222);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    padding: 4px 9px;
+    cursor: pointer;
+  }
+  .editor-foot .launch.now:hover,
+  .editor-foot .launch.queue:hover { border-color: var(--accent-dim, #6f9); }
+  /* NOW lights green while this clip is the one playing in its lane;
+     QUEUE pulses amber while this clip is armed to drop in. */
+  .editor-foot .launch.now.on {
+    color: var(--accent, #6f9);
+    border-color: var(--accent, #6f9);
+  }
+  .editor-foot .launch.queue.armed {
+    color: #e8b35b;
+    border-color: #e8b35b;
+    animation: rec-blink 1s steps(2, jump-none) infinite;
+  }
   .pr-row { display: flex; gap: 2px; }
   .cell {
     width: 15px;
