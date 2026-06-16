@@ -27,6 +27,17 @@
 
 <p>{mod.description}</p>
 
+{#if data.guide}
+  <a class="guide-callout" href={data.guide.href} data-testid="module-guide-link">
+    <span class="guide-icon" aria-hidden="true">📖</span>
+    <span class="guide-text">
+      <strong>Full guide: {data.guide.title}</strong>
+      <span class="guide-blurb">{data.guide.blurb}</span>
+    </span>
+    <span class="guide-arrow" aria-hidden="true">→</span>
+  </a>
+{/if}
+
 <div class="diagram-wrap" data-testid="module-diagram">
   <IoDiagram mod={mod} />
   <div class="port-counts">
@@ -117,6 +128,41 @@
 </nav>
 
 <style>
+  .guide-callout {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    margin: 1.25rem 0;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--doc-accent, #2bb6c8);
+    border-left-width: 4px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--doc-accent, #2bb6c8) 8%, transparent);
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.12s ease;
+  }
+  .guide-callout:hover {
+    background: color-mix(in srgb, var(--doc-accent, #2bb6c8) 16%, transparent);
+  }
+  .guide-icon {
+    font-size: 1.4rem;
+    line-height: 1;
+  }
+  .guide-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+  }
+  .guide-blurb {
+    color: var(--doc-fg-dim, #6e7a82);
+    font-size: 0.86em;
+  }
+  .guide-arrow {
+    font-size: 1.2rem;
+    color: var(--doc-accent, #2bb6c8);
+  }
   .diagram-wrap {
     margin: 1.5rem 0;
   }
