@@ -12,9 +12,17 @@
 // position back through the multiplayer-aware position seam); this file only
 // computes coordinates.
 
-/** One square rack tile, in flow-space px. Mirrors `--rack-unit` (180px) in
- *  _module-card.css — the unit both card sizing AND the canvas grid snap to. */
+/** One rack U, in flow-space px (the VERTICAL pitch). Mirrors `--rack-unit`
+ *  (180px) in _module-card.css — the row height cards snap to vertically. */
 export const RACK_UNIT = 180;
+
+/** Like a real rack, U matters only VERTICALLY; the HORIZONTAL plane locks to a
+ *  finer "HP" pitch. We define 1u = 8hp → 8 horizontal lock positions per 1u of
+ *  width. (Module widths becoming exact even-HP multiples is a follow-up UI
+ *  pass; this file only governs WHERE a card's left edge locks.) */
+export const HP_PER_U = 8;
+/** Horizontal lock pitch in flow-space px: 180 / 8 = 22.5px. */
+export const HP_UNIT = RACK_UNIT / HP_PER_U;
 
 /**
  * Snap a single scalar to the nearest multiple of `unit` (default the 180px
@@ -32,17 +40,18 @@ export function snapToGrid(value: number, unit: number = RACK_UNIT): number {
 }
 
 /**
- * Snap an {x, y} position onto the rack grid — both axes to the nearest 180px
- * line. Because the grid is uniform in Y, a 1u module dropped into a 3u (540px)
- * slot naturally lands on the slot's top/middle/bottom third with no special
- * casing — that "1u-in-3u-slot" behaviour falls out of snapping Y to every
- * 180px line (Phase-2 spec §3).
+ * Snap an {x, y} position onto the rack grid — ANISOTROPIC like a real rack:
+ * X locks to the HP pitch (22.5px → 8 positions per 1u), Y locks to the U row
+ * (180px). Snapping Y to every U line makes a 1u card land on a third of a 3u
+ * slot for free (no special-casing). The defaults are the production pitches;
+ * pass explicit units in tests.
  */
 export function snapPositionToGrid(
   pos: { x: number; y: number },
-  unit: number = RACK_UNIT,
+  xUnit: number = HP_UNIT,
+  yUnit: number = RACK_UNIT,
 ): { x: number; y: number } {
-  return { x: snapToGrid(pos.x, unit), y: snapToGrid(pos.y, unit) };
+  return { x: snapToGrid(pos.x, xUnit), y: snapToGrid(pos.y, yUnit) };
 }
 
 /** An axis-aligned footprint in flow-space px. */
@@ -61,46 +70,52 @@ export function rectsOverlap(a: RackRect, b: RackRect): boolean {
 /**
  * Find the rack slot to lock a card into so it NEVER sits on top of another
  * module. Start at `snapped` (already grid-snapped). If a card of `size` placed
- * there doesn't overlap any `others`, lock there. Otherwise search outward in
- * `unit`-step rings and return the FREE position with the smallest displacement
- * from `snapped` — "move it whichever direction needs the least relocation".
+ * there doesn't overlap any `others`, lock there. Otherwise search outward —
+ * HORIZONTALLY in HP steps (22.5px), VERTICALLY in U steps (180px), like a real
+ * rack — and return the FREE position with the smallest REAL-PX displacement
+ * from `snapped` ("move it whichever direction needs the least relocation").
+ * Because an HP step (22.5px) is far cheaper than a U step (180px), a clashing
+ * card slides along its row to the nearest free HP before it ever jumps a row.
  *
  * Pure (no DOM/Yjs) so it's unit-testable; the caller supplies the locking
- * card's footprint + every other card's rect (in the same flow-space).
- *
- * Search order guarantees nearest-first: candidates are visited by increasing
- * Chebyshev ring (every flow slot exactly once), and the first ring that yields
- * any free slot necessarily contains the Euclidean-nearest one (ring-r's min
- * Euclidean distance `r` exceeds ring-(r-1)'s max `(r-1)·√2` for r ≥ 1, so no
- * later ring can beat an earlier ring's hit). Within that ring we pick the
- * smallest Euclidean displacement, preferring straight axis moves over diagonals.
+ * card's footprint + every other card's rect (in the same flow-space). The unit
+ * defaults are the production pitches; tests may pass explicit units.
  */
 export function findFreeRackSlot(
   snapped: { x: number; y: number },
   size: { w: number; h: number },
   others: readonly RackRect[],
-  unit: number = RACK_UNIT,
+  xUnit: number = HP_UNIT,
+  yUnit: number = RACK_UNIT,
 ): { x: number; y: number } {
   const fits = (x: number, y: number): boolean =>
     !others.some((o) => rectsOverlap({ x, y, w: size.w, h: size.h }, o));
 
   if (fits(snapped.x, snapped.y)) return { x: snapped.x, y: snapped.y };
 
-  const MAX_RING = 64; // 64 × 180px ≈ 11.5k px of search — far beyond any rack
-  for (let r = 1; r <= MAX_RING; r++) {
-    let best: { x: number; y: number; d: number } | null = null;
-    for (let dx = -r; dx <= r; dx++) {
-      for (let dy = -r; dy <= r; dy++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // ring perimeter only
-        const x = snapped.x + dx * unit;
-        const y = snapped.y + dy * unit;
-        if (!fits(x, y)) continue;
-        const d = dx * dx + dy * dy; // squared Euclidean (monotonic ⇒ no sqrt)
-        if (!best || d < best.d) best = { x, y, d };
-      }
+  // Anisotropic bounded scan: HP columns out to ~MAX_HP, U rows out to ~MAX_U.
+  // Track the FREE candidate with the smallest squared real-px displacement
+  // (monotonic ⇒ no sqrt); this yields the true Euclidean-nearest free slot.
+  const MAX_HP = 200; // 200 × 22.5px = 4500px of horizontal search
+  const MAX_U = 24; //   24 × 180px  = 4320px of vertical search
+  let best: { x: number; y: number; d: number } | null = null;
+  for (let ix = -MAX_HP; ix <= MAX_HP; ix++) {
+    const dx = ix * xUnit;
+    const dx2 = dx * dx;
+    // Once even this column's pure-horizontal distance can't beat `best`, no
+    // cell in it can — skip the whole column.
+    if (best && dx2 >= best.d) continue;
+    for (let iy = -MAX_U; iy <= MAX_U; iy++) {
+      if (ix === 0 && iy === 0) continue;
+      const dy = iy * yUnit;
+      const d = dx2 + dy * dy;
+      if (best && d >= best.d) continue;
+      const x = snapped.x + dx;
+      const y = snapped.y + dy;
+      if (!fits(x, y)) continue;
+      best = { x, y, d };
     }
-    if (best) return { x: best.x, y: best.y };
   }
   // Pathological (rack impossibly dense) — lock at the snapped spot anyway.
-  return { x: snapped.x, y: snapped.y };
+  return best ? { x: best.x, y: best.y } : { x: snapped.x, y: snapped.y };
 }
