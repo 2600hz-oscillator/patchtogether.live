@@ -2,7 +2,7 @@
 //
 // Data model + PURE helpers for the `clipplayer` module — the clip-launcher's
 // "clip page". Kept separate from the def/factory (clipplayer.ts) so the model,
-// the note→V/oct scheduling math, and the Deluge-style note-editor row math are
+// the note→V/oct scheduling math, and the piano-roll note-editor row math are
 // all unit-testable with no engine. (This file exports no `*Def`, so the audio
 // module glob ignores it.)
 //
@@ -272,7 +272,7 @@ export function lanesForStep(clip: NoteClipRecord, step: number): StepLanes {
 }
 
 // ---------------------------------------------------------------------------
-// Deluge note-editor row math (X = step, Y = pitch) — PURE
+// piano-roll note-editor row math (X = step, Y = pitch) — PURE
 // ---------------------------------------------------------------------------
 
 /** The editor's scale cycle (a SCALE pad / the card tag steps through these).
@@ -312,8 +312,8 @@ export function scaleSteps(scale?: ScaleName): readonly number[] {
 /**
  * Map a grid editor ROW to a MIDI note. Row 0 = the clip root; higher rows go
  * up. In-key (scale set): each row is the next scale DEGREE, so a row octave is
- * the scale length (Deluge INKY). Chromatic (no scale): each row is +1 semitone
- * (Deluge ISO). Handles negative rows (scrolling below the root).
+ * the scale length (in-key mode). Chromatic (no scale): each row is +1 semitone
+ * (chromatic mode). Handles negative rows (scrolling below the root).
  */
 export function rowToMidi(row: number, root: number, scale?: ScaleName): number {
   const steps = scaleSteps(scale);

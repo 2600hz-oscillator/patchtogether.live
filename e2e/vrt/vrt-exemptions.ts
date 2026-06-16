@@ -680,7 +680,7 @@ export const STRICT_VRT_MODULES = new Set<string>([
  *  SKIPPED at the test level rather than allowed to fail. */
 export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // CLIPPLAYER: darwin baseline (the clip-launcher card — 8×8 launch grid +
-  // Deluge note editor + transport knobs; no animated canvas) captured
+  // piano-roll note editor + transport knobs; no animated canvas) captured
   // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on
   // this branch. Functional coverage is clip-types.test.ts + clipplayer.test.ts
   // (def + factory launch/quantized-switch/stop via the real tick loop) + the

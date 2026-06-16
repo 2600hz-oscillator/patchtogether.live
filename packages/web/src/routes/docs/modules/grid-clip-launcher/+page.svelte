@@ -73,7 +73,7 @@
 <section class="hero">
   <h1>Clip player + monome grid</h1>
   <p class="lede">
-    The <strong>clip player</strong> is a Deluge-flavored, Ableton-Session
+    The <strong>clip player</strong> is an Ableton-Session-style
     <strong>clip launcher</strong> with <strong>8 instrument lanes</strong>. Each
     row is one instrument with its own pitch / gate / velocity outputs, so up to
     <strong>8 clips sound at once</strong>. It locks to <strong>TIMELORDE</strong>
@@ -124,7 +124,7 @@
 <h2>The card</h2>
 <ul>
   <li><strong>Session view</strong> (default) — the 8×8 launch grid (rows lane-tinted). Single-click = launch / queue / stop; double-click = open the editor. A small <strong>1/5 button</strong> to the left of each row toggles that instrument lane between <strong>MONO</strong> (one note per column — placing a note replaces what's there) and <strong>POLY</strong> (up to 5 notes per column).</li>
-  <li><strong>Edit view</strong> — a Deluge note editor for one clip: X = step, Y = pitch (scale-degree rows in-key, root at the bottom). Click to place a note (click again to remove); <strong>right-click to cycle its velocity</strong> through 6 levels. Cycle <em>scale</em>, set <em>root</em>, change <em>length</em> (16/32/64/8), scroll the pitch window by a <strong>row</strong> (<code>↑/↓</code>) or an <strong>octave</strong> (<code>⤒/⤓</code>), or <code>⌫</code> clear the clip. A playhead column tracks the beat while the lane plays.</li>
+  <li><strong>Edit view</strong> — a piano-roll note editor for one clip: X = step, Y = pitch (scale-degree rows in-key, root at the bottom). Click to place a note (click again to remove); <strong>right-click to cycle its velocity</strong> through 6 levels. Cycle <em>scale</em>, set <em>root</em>, change <em>length</em> (16/32/64/8), scroll the pitch window by a <strong>row</strong> (<code>↑/↓</code>) or an <strong>octave</strong> (<code>⤒/⤓</code>), or <code>⌫</code> clear the clip. A playhead column tracks the beat while the lane plays.</li>
   <li><strong>Params</strong> — <code>STEP</code> (1/4 · 1/8 · 1/16 · 1/32 = steps per beat), <code>OCT</code> (transpose all lanes), <code>GATE</code> (note duty cycle), <code>QNT</code> (quantize launch to the loop boundary).</li>
   <li><strong>Transport</strong> — <code>▶/■</code> drives TIMELORDE (hidden when externally clocked); <code>■</code> in the title bar stops all lanes; <code>GRID</code> connects a monome grid.</li>
 </ul>
