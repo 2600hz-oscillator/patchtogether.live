@@ -863,25 +863,41 @@ jobs:
 
   # -----------------------------------------------------------------------
   # collab — the @collab multi-context Playwright specs, run on a SINGLE,
-  # NON-SHARDED runner with --workers=1. These drive two+ independent browser
-  # contexts (separate cookie jars / ydocs — real "two users on two machines")
-  # against the in-memory Hocuspocus relay. Under the 8-shard × 4-worker fan-
-  # out they flaked badly (the shared dev server + relay get hammered and
-  # cross-context Yjs sync drops — task #97), so they were quarantined behind
-  # `test.skip(!!process.env.CI)`. This dedicated job removes the shard
-  # contention (its OWN runner + dev server + relay, modest 2-worker
-  # parallelism vs the 8-shard × 4-worker fan-out that caused the flake) so the
-  # DOOM 2-user test + the rest of the @collab suite are a RELIABLE gate. The
-  # relay is in-memory so a single runner is cheap. Same DB + DOOM-asset + DSP
-  # setup as e2e.
+  # NON-SHARDED runner with --workers=1 (fully SERIAL). These drive two+
+  # independent browser contexts (separate cookie jars / ydocs — real "two
+  # users on two machines") against the ONE in-memory Hocuspocus relay. Under
+  # the 8-shard × 4-worker fan-out they flaked badly (the shared dev server +
+  # relay get hammered and cross-context Yjs sync drops — task #97), so they
+  # were quarantined behind `test.skip(!!process.env.CI)`. This dedicated job
+  # opts them back in.
+  #
+  # --workers=1 (NOT 2): the residual per-PR flake was relay CONTENTION, not a
+  # real multiplayer regression. At 2 workers, two 2-context specs run at once →
+  # FOUR heavy browser contexts + DOOM WASM + vite-preview + the single-process
+  # relay all share this runner's 2–4 cores. The relay's event loop starves, a
+  # cross-context Yjs update arrives past the spec's 4s/30s/120s wait, and the
+  # assertion times out (duplicate-module:212 + sequencer-transport:749 both
+  # died this way — B simply never received A's update; retries=1 didn't help
+  # because the contention is CONSTANT, not transient). Serializing to 1 worker
+  # means at most one sync spec's contexts touch the relay at a time → it gets
+  # CPU → updates flow → reliably GREEN. The under-load stress coverage (does
+  # the app survive a CONTENDED relay?) lives in collab-nightly.yml, which keeps
+  # --workers=2 deliberately as a daily diagnostic canary.
+  #
+  # The DOOM 2-user test + the rest of the @collab suite stay a RELIABLE gate.
+  # Same DB + DOOM-asset + DSP setup as e2e.
   # -----------------------------------------------------------------------
   collab:
     name: collab (@collab multi-context)
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
-    # 40 min ceiling: the full @collab suite (~41 specs incl. cold DOOM WASM +
-    # several 2-context boots) at 2 workers finishes well under this; a single
-    # serial worker overran the previous 25 min cap (the run was killed at 25m).
+    # 40 min ceiling, huge headroom: setup is ~3.2 min fixed (deps install
+    # ~100s + the DOOM lockstep oracle ~56s), and the @collab playwright run is
+    # ~7 min at 2 workers; serialized to 1 worker the run roughly doubles to
+    # ~14 min → ~17 min total, well under 40. (The old "single worker overran
+    # 25 min" note predated dropping the inline `task build:web` — the bundle is
+    # now DOWNLOADED from build-web, see the download step below — so serial is
+    # cheap now.)
     timeout-minutes: 40
 
     services:
@@ -1044,14 +1060,16 @@ jobs:
       - name: DOOM true-lockstep barrier acceptance (bit-exact, fresh build)
         run: flox activate -- node packages/web/native/doomgeneric/tests/lockstep-barrier.acceptance.mjs
 
-      # @collab on a dedicated runner — modest 2-worker parallelism (mirrors
-      # `task collab`'s grep + workers), generous per-job timeout absorbs the
-      # cold DOOM WASM + 2-context boot. We invoke playwright DIRECTLY here
-      # (instead of `task collab`) only so we can force a BROWSABLE HTML report
-      # alongside the console list output — `--reporter=list,html` writes to
-      # e2e/playwright-report/ (--workspace e2e sets cwd to e2e/). This changes
-      # the REPORTER ONLY, not WHAT @collab tests (same grep, same workers, same
-      # DATABASE_URL + COLLAB_JOB=1 + E2E_USE_PREVIEW env from the job `env:`).
+      # @collab on a dedicated runner, FULLY SERIAL (--workers=1) so the single
+      # in-memory relay never has to service two sync specs at once — the
+      # contention that flaked this lane (see the job-header comment). The
+      # generous per-job timeout absorbs the cold DOOM WASM + 2-context boots
+      # even serialized (~17 min total, see timeout note). We invoke playwright
+      # DIRECTLY here (instead of `task collab`) only so we can force a BROWSABLE
+      # HTML report alongside the console list output — `--reporter=list,html`
+      # writes to e2e/playwright-report/ (--workspace e2e sets cwd to e2e/).
+      # Same grep + DATABASE_URL + COLLAB_JOB=1 + E2E_USE_PREVIEW env from the
+      # job `env:`; retries=1 (playwright.config) stays as a transient-blip net.
       # PLAYWRIGHT_HTML_OPEN=never keeps the html reporter from auto-serving the
       # report (which would hang the job in CI).
       - name: Run @collab specs (single non-sharded runner, html report)
@@ -1060,7 +1078,7 @@ jobs:
         run: |
           flox activate -- npx --workspace e2e playwright test \
             --grep "@collab|@capacity" \
-            --workers=2 \
+            --workers=1 \
             --reporter=list,html
 
       # Always upload the browsable HTML report so the @collab lane is as
