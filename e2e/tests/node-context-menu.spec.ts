@@ -122,11 +122,13 @@ test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps 
   await expect(menu.locator('[role="menuitem"]', { hasText: 'Delete' })).toHaveCount(1);
 });
 
-test('node context menu: Lock snaps to the 180px rack grid, marks locked + non-draggable; Unlock reverts', async ({ page }) => {
+test('node context menu: Lock snaps to the HP×U rack grid, marks locked + non-draggable; Unlock reverts', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  // Spawn a single module at a DELIBERATELY off-grid position (not a multiple
-  // of 180) so the snap is observable. 250→180, 430→360.
+  // Spawn a single module at a DELIBERATELY off-grid position so the snap is
+  // observable. The rack grid is ANISOTROPIC (PR #806): X snaps to the 22.5px
+  // HP column (1u = 8hp → 180/8), Y snaps to the 180px U row. So 250→247.5 (11hp),
+  // 430→360 (2u).
   await spawnPatch(
     page,
     [{ id: 'lck', type: 'vca', position: { x: 250, y: 430 } }],
@@ -154,15 +156,16 @@ test('node context menu: Lock snaps to the 180px rack grid, marks locked + non-d
   await expect(lockItem).toHaveText('Lock', { timeout: 10_000 });
   await lockItem.click();
 
-  // (a) position snapped to the nearest 180px multiple in BOTH axes.
+  // (a) position snapped anisotropically: X to the nearest 22.5px HP column,
+  // Y to the nearest 180px U row.
   await expect
     .poll(async () => (await readNodeState(page, 'lck')).x)
-    .toBe(180);
+    .toBe(247.5);
   st = await readNodeState(page, 'lck');
-  expect(st.x).toBe(180); // 250 → 180
-  expect(st.y).toBe(360); // 430 → 360
-  expect(st.x % 180).toBe(0);
-  expect(st.y % 180).toBe(0);
+  expect(st.x).toBe(247.5); // 250 → 247.5 (11hp × 22.5)
+  expect(st.y).toBe(360); // 430 → 360 (2u × 180)
+  expect(st.x % 22.5).toBe(0); // on an HP column
+  expect(st.y % 180).toBe(0); // on a U row
   // (b) data.locked persisted true.
   expect(st.locked).toBe(true);
   // (c) the node is now non-draggable — SvelteFlow drops the `.draggable`
@@ -182,6 +185,6 @@ test('node context menu: Lock snaps to the 180px rack grid, marks locked + non-d
   await expect(card).not.toHaveClass(/\bnode-locked\b/);
   st = await readNodeState(page, 'lck');
   expect(st.locked).toBe(false);
-  expect(st.x).toBe(180); // left where it snapped
+  expect(st.x).toBe(247.5); // left where it snapped
   expect(st.y).toBe(360);
 });
