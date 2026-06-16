@@ -18,6 +18,9 @@ import {
   type ScaleName,
 } from '$lib/mike/music-theory';
 import { POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
+// Type-only import (erased at runtime → no cycle with clip-arrange.ts, which
+// imports VALUES from this file). The arranger model lives in clip-arrange.ts.
+import type { ArrangeData, ClipPlayMode } from './clip-arrange';
 
 // ---------------------------------------------------------------------------
 // Dimensions (DECIDED 2026-06-15): rows = INSTRUMENTS, columns = clip SLOTS.
@@ -111,11 +114,26 @@ export interface ClipPlayerData {
   /** Per-lane queued action applied on that lane's loop boundary: a slot index
    *  to launch, 'stop' to stop the lane, or null/absent = nothing queued. */
   queued?: (number | 'stop' | null)[];
+  /** Per-lane "launch NOW" override, paired with `queued`: when true the queued
+   *  action fires on the next tick regardless of QNT (a mid-clip immediate
+   *  switch). Cleared when the launch applies. */
+  queuedImmediate?: boolean[];
   /** Per-lane MONO flag (length CLIP_LANES). When a lane is mono, placing a note
    *  in a column that already holds one REPLACES it — a monophonic melody lane.
    *  An EDIT-time constraint (the card's per-lane toggle); absent/false = poly
    *  (up to POLY_CHANNEL_PAIRS notes per column). */
   mono?: boolean[];
+  // ── SONG MODE (arranger) ──
+  /** The recorded arrangement (an event log of clip launches over song time).
+   *  Absent = none recorded. See clip-arrange.ts. */
+  arrangement?: ArrangeData;
+  /** Which transport drives playback: 'session' (launch clips live) or
+   *  'arrangement' (replay the recorded log). Absent/falsey = session. */
+  clipMode?: ClipPlayMode;
+  /** Record-arm: while true AND session AND running, each applied launch is
+   *  appended to `arrangement` at the current song-beat. Local-ish (synced so
+   *  peers see the armed state); v1 is single-recorder. */
+  recording?: boolean;
   creatorId?: string;
 }
 

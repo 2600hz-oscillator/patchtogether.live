@@ -43,6 +43,16 @@
     type ClipPlayerData,
     type NoteClipRecord,
   } from '$lib/audio/modules/clip-types';
+  import {
+    coerceArrangeData,
+    arrangeBlocks,
+    arrangeLengthBeats,
+    deleteBlock,
+    setBlockSlot,
+    setArrangeLength,
+    type ArrangeBlock,
+    type ArrangeData,
+  } from '$lib/audio/modules/clip-arrange';
   import type { ScaleName } from '$lib/mike/music-theory';
   import { noteNameForMidi } from '$lib/audio/note-entry';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -133,7 +143,9 @@
   }
 
   // --- per-lane queue (the synced playing-set the engine + peers consume) ---
-  function queueLane(lane: number, action: number | 'stop' | null) {
+  // `immediate` = a NOW override (mid-clip switch): the launch fires next tick
+  // regardless of QNT (see queuedImmediate in the engine).
+  function queueLane(lane: number, action: number | 'stop' | null, immediate = false) {
     // SyncedStore Y.Arrays reject index assignment — rebuild + assign whole.
     writeData((d) => {
       const base: (number | 'stop' | null)[] = new Array(CLIP_LANES).fill(null);
@@ -142,6 +154,14 @@
       }
       base[lane] = action;
       d.queued = base;
+      if (immediate) {
+        const imm = new Array<boolean>(CLIP_LANES).fill(false);
+        if (Array.isArray(d.queuedImmediate)) {
+          for (let i = 0; i < d.queuedImmediate.length && i < CLIP_LANES; i++) imm[i] = !!d.queuedImmediate[i];
+        }
+        imm[lane] = true;
+        d.queuedImmediate = imm;
+      }
     });
   }
   function stopAll() {
@@ -153,11 +173,13 @@
   // Single-click: launch / queue / stop. Debounced so a double-click (→ edit)
   // doesn't also fire a launch.
   let clickTimer: ReturnType<typeof setTimeout> | null = null;
-  function onPadClick(idx: number) {
+  // Shift-click = NOW (immediate mid-clip switch); plain click = quantized (QNT).
+  function onPadClick(idx: number, ev: MouseEvent) {
+    const now = ev.shiftKey;
     if (clickTimer) clearTimeout(clickTimer);
     clickTimer = setTimeout(() => {
       clickTimer = null;
-      launchPad(idx);
+      launchPad(idx, now);
     }, 220);
   }
   function onPadDblClick(idx: number) {
@@ -166,16 +188,16 @@
     selectedClip = idx;
     view = 'edit';
   }
-  function launchPad(idx: number) {
+  function launchPad(idx: number, immediate = false) {
     const lane = laneOf(idx);
     const slot = slotOf(idx);
     if (!clips[String(idx)]) {
       ensureClip(idx);
-      queueLane(lane, slot); // create + arm so it starts on the next boundary
+      queueLane(lane, slot, immediate); // create + arm
       return;
     }
-    if (lanePlaying(dataObj(), lane) === slot) queueLane(lane, 'stop');
-    else queueLane(lane, slot);
+    if (lanePlaying(dataObj(), lane) === slot) queueLane(lane, 'stop', immediate);
+    else queueLane(lane, slot, immediate);
   }
 
   function padState(idx: number): 'empty' | 'loaded' | 'queued' | 'playing' {
@@ -200,6 +222,7 @@
   let transportRunning = $state(false);
   let externallyClocked = $state(false);
   let curStep = $state(0);
+  let songBeatLive = $state(0); // live song position for the arrangement playhead
   $effect(() => {
     void node; // re-subscribe if the node identity changes
     let raf = 0;
@@ -214,6 +237,8 @@
           const cs = e.read(node, `currentStep:${laneOf(selectedClip)}`);
           if (typeof cs === 'number') curStep = cs;
         }
+        const sb = e.read(node, 'songBeat');
+        if (typeof sb === 'number') songBeatLive = sb;
       }
       raf = requestAnimationFrame(frame);
     };
@@ -226,6 +251,61 @@
     const tid = timelordeId();
     if (!tid) return;
     setNodeParam(tid, 'running', transportRunning ? 0 : 1);
+  }
+
+  // --- SONG MODE (arranger) — synced state on node.data ---
+  let recording = $derived((void cardVersion, dataObj().recording === true));
+  let arrangeMode = $derived((void cardVersion, dataObj().clipMode === 'arrangement'));
+  let arrangeEvents = $derived(
+    (void cardVersion, Array.isArray(dataObj().arrangement?.events) ? dataObj().arrangement!.events!.length : 0),
+  );
+  /** Arm/disarm recording. Arming clears the log + restarts song time (engine,
+   *  on the rising edge) — v1 replace semantics. */
+  function toggleRecord() {
+    writeData((d) => { d.recording = !d.recording; });
+  }
+  /** Flip SESSION ⇄ ARRANGEMENT playback. */
+  function toggleArrangeMode() {
+    writeData((d) => { d.clipMode = d.clipMode === 'arrangement' ? 'session' : 'arrangement'; });
+  }
+
+  // --- SONG VIEW timeline (shown in ARRANGEMENT mode) ---
+  const ARR_W = 312; // svg content width (px)
+  const ARR_LANE_H = 13; // px per lane row
+  let arrangeData = $derived.by<ArrangeData>(() => {
+    void cardVersion;
+    return coerceArrangeData(dataObj().arrangement);
+  });
+  let arrangeLen = $derived(arrangeLengthBeats(arrangeData, 4));
+  let blocks = $derived(arrangeBlocks(arrangeData, arrangeLen));
+  let selBlock = $state<{ lane: number; startBeat: number } | null>(null);
+  let playheadX = $derived(arrangeLen > 0 ? ((songBeatLive % arrangeLen) / arrangeLen) * ARR_W : 0);
+  const blockX = (b: ArrangeBlock) => (b.startBeat / arrangeLen) * ARR_W;
+  const blockW = (b: ArrangeBlock) => Math.max(3, ((b.endBeat - b.startBeat) / arrangeLen) * ARR_W);
+  const isSel = (b: ArrangeBlock) =>
+    !!selBlock && selBlock.lane === b.lane && Math.abs(selBlock.startBeat - b.startBeat) < 1e-6;
+  function writeArrange(mut: (a: ArrangeData) => ArrangeData) {
+    writeData((d) => { d.arrangement = mut(coerceArrangeData(d.arrangement)); });
+  }
+  function selectBlock(b: ArrangeBlock) {
+    selBlock = isSel(b) ? null : { lane: b.lane, startBeat: b.startBeat };
+  }
+  function deleteSelected() {
+    if (!selBlock) return;
+    const s = selBlock;
+    writeArrange((a) => deleteBlock(a, s.lane, s.startBeat));
+    selBlock = null;
+  }
+  function cycleSelectedSlot(dir: 1 | -1) {
+    if (!selBlock) return;
+    const b = blocks.find(isSel);
+    if (!b) return;
+    const next = (b.slot + dir + CLIP_SLOTS) % CLIP_SLOTS;
+    const s = selBlock;
+    writeArrange((a) => setBlockSlot(a, s.lane, s.startBeat, next));
+  }
+  function nudgeLength(barsDelta: number) {
+    writeArrange((a) => setArrangeLength(a, Math.max(4, arrangeLen + barsDelta * 4)));
   }
 
   function cycleStep() {
@@ -353,6 +433,26 @@
           data-testid={`clipplayer-transport-${id}`}
         >{transportRunning ? '■' : '▶'}</button>
       {/if}
+      <!-- SONG MODE: SESSION ⇄ ARRANGE + RECORD arm. -->
+      <button
+        class="song-mode"
+        class:on={arrangeMode}
+        onclick={toggleArrangeMode}
+        title={arrangeMode
+          ? `ARRANGEMENT — playing the recorded song (${arrangeEvents} events). Click for SESSION.`
+          : 'SESSION — launch clips live. Click for ARRANGEMENT (play the recorded song).'}
+        data-testid={`clipplayer-mode-${id}`}
+      >{arrangeMode ? 'ARR' : 'SES'}</button>
+      <button
+        class="rec-btn"
+        class:on={recording}
+        onclick={toggleRecord}
+        title={recording
+          ? 'Recording launches to the arrangement — click to stop'
+          : 'Record clip launches into the arrangement (clears + records fresh)'}
+        aria-pressed={recording}
+        data-testid={`clipplayer-record-${id}`}
+      >●</button>
       <button
         class="grid-btn"
         class:on={gridBoundHere}
@@ -371,7 +471,63 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
-      {#if view === 'session'}
+      {#if view === 'session' && arrangeMode}
+        <!-- SONG VIEW: arrangement timeline (8 lane rows × song-time bars). Each
+             block is a recorded clip launch spanning until the next change; a
+             playhead sweeps during playback. Click a block to select, then
+             edit with the toolbar. -->
+        <div class="song-view" data-testid="clipplayer-songview">
+          <svg
+            class="song-tl"
+            viewBox={`0 0 ${ARR_W} ${CLIP_LANES * ARR_LANE_H}`}
+            width={ARR_W}
+            height={CLIP_LANES * ARR_LANE_H}
+            role="img"
+            aria-label="arrangement timeline"
+          >
+            {#each Array(CLIP_LANES) as _l, lane (lane)}
+              <rect x="0" y={lane * ARR_LANE_H} width={ARR_W} height={ARR_LANE_H - 1}
+                class="song-lane" style={`--lane-hue:${laneHue(lane)}`} />
+            {/each}
+            <!-- bar gridlines (every 4 beats) -->
+            {#each Array(Math.max(1, Math.ceil(arrangeLen / 4))) as _b, bar (bar)}
+              <line class="song-bar" x1={(bar * 4 / arrangeLen) * ARR_W} y1="0"
+                x2={(bar * 4 / arrangeLen) * ARR_W} y2={CLIP_LANES * ARR_LANE_H} />
+            {/each}
+            {#each blocks as b (b.lane + ':' + b.startBeat)}
+              <rect
+                class="song-block"
+                class:sel={isSel(b)}
+                x={blockX(b)}
+                y={b.lane * ARR_LANE_H + 1}
+                width={blockW(b)}
+                height={ARR_LANE_H - 3}
+                style={`--lane-hue:${laneHue(b.lane)}`}
+                role="button"
+                tabindex="0"
+                aria-label={`lane ${b.lane + 1} clip ${b.slot + 1} at beat ${b.startBeat}`}
+                data-lane={b.lane}
+                data-slot={b.slot}
+                onclick={() => selectBlock(b)}
+                onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectBlock(b); } }}
+              />
+            {/each}
+            <line class="song-playhead" x1={playheadX} y1="0" x2={playheadX} y2={CLIP_LANES * ARR_LANE_H} />
+          </svg>
+          <div class="song-tools">
+            <span class="song-info">{blocks.length} blocks · {Math.round(arrangeLen / 4)} bars</span>
+            <span class="song-len">
+              <button onclick={() => nudgeLength(-1)} title="Shorten loop by a bar" aria-label="shorten">−</button>
+              <button onclick={() => nudgeLength(1)} title="Lengthen loop by a bar" aria-label="lengthen">+</button>
+            </span>
+            <span class="song-edit" class:dim={!selBlock}>
+              <button onclick={() => cycleSelectedSlot(-1)} disabled={!selBlock} title="Previous clip" aria-label="prev clip">◂</button>
+              <button onclick={() => cycleSelectedSlot(1)} disabled={!selBlock} title="Next clip" aria-label="next clip">▸</button>
+              <button class="song-del" onclick={deleteSelected} disabled={!selBlock} title="Delete selected block" data-testid="clipplayer-song-del">⌫</button>
+            </span>
+          </div>
+        </div>
+      {:else if view === 'session'}
         <!-- 8×8 launch grid: rows = instrument lanes, cols = clip slots -->
         <div class="launch-grid" data-testid="clipplayer-grid" role="grid" aria-label="clip launch grid">
           {#each Array(CLIP_LANES) as _l, lane (lane)}
@@ -399,7 +555,7 @@
                   data-lane={lane}
                   data-slot={slot}
                   data-state={st}
-                  onclick={() => onPadClick(idx)}
+                  onclick={(e) => onPadClick(idx, e)}
                   ondblclick={() => onPadDblClick(idx)}
                 ></button>
               {/each}
@@ -524,6 +680,36 @@
   }
   .grid-btn.on { color: var(--accent, #6cf); border-color: var(--accent, #6cf); }
   .grid-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  /* SONG MODE: SES/ARR toggle + RECORD arm */
+  .song-mode {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    padding: 3px 5px;
+    cursor: pointer;
+  }
+  .song-mode.on { color: var(--accent, #c9f); border-color: var(--accent, #c9f); }
+  .rec-btn {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 11px;
+    line-height: 1;
+    padding: 2px 5px;
+    cursor: pointer;
+  }
+  .rec-btn.on {
+    color: #fff;
+    background: #c0392b;
+    border-color: #e74c3c;
+    animation: rec-blink 1s steps(2) infinite;
+  }
+  @keyframes rec-blink { 50% { opacity: 0.5; } }
   .body {
     margin-top: 24px;
     padding: 0 12px;
@@ -531,6 +717,40 @@
     flex-direction: column;
     gap: 10px;
   }
+  /* SONG VIEW — arrangement timeline */
+  .song-view { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+  .song-tl { background: #0d0d0d; border: 1px solid var(--border); border-radius: 2px; }
+  .song-lane { fill: hsl(var(--lane-hue) 30% 8%); }
+  .song-bar { stroke: rgba(255, 255, 255, 0.08); stroke-width: 1; }
+  .song-block {
+    fill: hsl(var(--lane-hue) 65% 45%);
+    stroke: hsl(var(--lane-hue) 70% 60%);
+    stroke-width: 0.5;
+    cursor: pointer;
+    rx: 1;
+  }
+  .song-block.sel { stroke: #fff; stroke-width: 1.5; }
+  .song-playhead { stroke: var(--accent, #6cf); stroke-width: 1; opacity: 0.9; pointer-events: none; }
+  .song-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 9px;
+    color: var(--text-dim, #999);
+  }
+  .song-tools button {
+    background: var(--control-bg, #222);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 10px;
+    line-height: 1;
+    padding: 2px 5px;
+    cursor: pointer;
+  }
+  .song-tools button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .song-edit.dim { opacity: 0.7; }
+  .song-del { color: #e6a; }
   .launch-grid {
     display: flex;
     flex-direction: column;

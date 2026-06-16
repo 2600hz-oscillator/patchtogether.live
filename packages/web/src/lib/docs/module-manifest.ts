@@ -1403,6 +1403,9 @@ export function buildModuleManifest(
       if (file === 'clip-types.ts') return false;
       // CLIPPLAYER per-lane playhead registry (render state) — not a ModuleDef.
       if (file === 'clip-playhead.ts') return false;
+      // CLIPPLAYER song-mode arranger data model + record/replay math — not a
+      // ModuleDef (the def lives in clipplayer.ts).
+      if (file === 'clip-arrange.ts') return false;
       // KRIA step/pattern data model + step-advance / scale / cue math — not a
       // ModuleDef (the def lives in kria.ts).
       if (file === 'kria-types.ts') return false;
