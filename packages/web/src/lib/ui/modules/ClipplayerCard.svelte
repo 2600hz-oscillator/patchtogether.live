@@ -624,9 +624,16 @@
     border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
-    padding-top: 18px;
-    padding-bottom: 14px;
+    /* Clear the top border stripe + the corner PatchPanel jacks so the title
+       isn't clipped at the top. */
+    padding-top: 26px;
+    padding-bottom: 16px;
     position: relative;
+    /* Fill the pinned rack height (rack-sized sets a fixed height taller than
+       the natural content): stack as a flex column so the body can absorb the
+       slack instead of leaving dead space at the bottom. */
+    display: flex;
+    flex-direction: column;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
@@ -711,11 +718,16 @@
   }
   @keyframes rec-blink { 50% { opacity: 0.5; } }
   .body {
-    margin-top: 24px;
+    margin-top: 18px;
     padding: 0 12px;
+    /* Grow to fill the card's pinned rack height and CENTER the grid+controls
+       cluster in the leftover slack, so the content reads as intentionally
+       placed instead of bunched at the top with a blank bottom. */
+    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    justify-content: center;
+    gap: 14px;
   }
   /* SONG VIEW — arrangement timeline */
   .song-view { display: flex; flex-direction: column; gap: 6px; align-items: center; }
