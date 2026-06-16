@@ -133,3 +133,40 @@ test('song mode: ARRANGEMENT playback launches lanes from the recorded log', asy
     }, { timeout: 4000 })
     .toBe(true);
 });
+
+test('song view: renders blocks + select/delete edits the arrangement', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
+  await seedClips(page, 'cp', [0, 8]);
+  // lane 0: slot 0 [0,8) then slot 1 [8,16); lane 1: slot 0 [0,16) → 3 blocks.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as W;
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['cp'];
+      if (!n.data) n.data = {};
+      n.data.arrangement = {
+        events: [
+          { beat: 0, lane: 0, slot: 0 },
+          { beat: 8, lane: 0, slot: 1 },
+          { beat: 0, lane: 1, slot: 0 },
+        ],
+        lengthBeats: 16,
+        loop: true,
+      } as never;
+      n.data.clipMode = 'arrangement';
+    });
+  });
+
+  const blocks = page.locator('.song-block');
+  await expect(blocks).toHaveCount(3);
+
+  // Select the first block, then delete it → its launch event is removed.
+  await blocks.first().click();
+  await expect(blocks.first()).toHaveClass(/\bsel\b/);
+  await page.getByTestId('clipplayer-song-del').click();
+
+  await expect(blocks).toHaveCount(2);
+  const evs = (await readData(page, 'cp')).arrangement?.events ?? [];
+  expect(evs.length).toBe(2);
+});
