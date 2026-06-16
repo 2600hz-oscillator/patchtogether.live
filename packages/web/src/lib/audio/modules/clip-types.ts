@@ -405,6 +405,17 @@ export const VEL_LEVEL_COUNT = VEL_LEVELS.length;
 /** A freshly-placed note's velocity (≈60% — clearly audible, room both ways). */
 export const VEL_DEFAULT = 76;
 
+/** Velocity DISPLAY buckets: the 6 levels collapse to 3 visible colours (TWO
+ *  levels per colour). Matches the monome grid's distinguishable brightnesses —
+ *  3 note colours + dark (= empty cell). The CV out keeps the full 6 levels;
+ *  only the LED/cell colour buckets. */
+export const VEL_BUCKET_COUNT = 3;
+/** The display bucket (0=low,1=med,2=high) for a velocity — `level >> 1`, so
+ *  levels {0,1}→0, {2,3}→1, {4,5}→2. */
+export function velBucket(velocity: number | undefined): number {
+  return Math.floor(velLevelIndex(velocity) / 2);
+}
+
 /** Snap a raw 0..127 velocity to the nearest level INDEX (0..VEL_LEVEL_COUNT-1). */
 export function velLevelIndex(velocity: number | undefined): number {
   const v = velocity ?? VEL_DEFAULT;

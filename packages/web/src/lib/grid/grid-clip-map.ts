@@ -31,7 +31,7 @@ import {
   laneQueued,
   rowToMidi,
   noteCovering,
-  velLevelIndex,
+  velBucket,
   type ClipPlayerData,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
@@ -50,12 +50,12 @@ export const LED_EDIT_PAD = 5;
 export const LED_TRANSPORT_ON = 15;
 
 // --- Edit-mode LED levels ---
-// A note is lit by its velocity LEVEL (one of 6 brightnesses, ≈0/20/40/60/80/
-// 100%); the playhead column washes empties + boosts the note it crosses to full.
-// The bottom FUNCTION ROW holds the editor controls.
-// Six velocity brightnesses, indexed by velLevelIndex (0..5). Level 0 (0% vel)
-// is still a PLACED note, so it shows DIM (3) rather than off — a visible ghost.
-export const LED_NOTE_LEVELS: readonly number[] = [3, 5, 7, 9, 12, 15];
+// A note is lit by its velocity COLOUR — 3 distinguishable note brightnesses
+// (low/med/high), TWO of the 6 velocity levels per colour (velBucket). Empty is
+// the only dark cell, so a placed note (even 0%) always shows a colour. That's
+// the grid's "4 colours, 1 dark" reality. The playhead column washes empties +
+// boosts the note it crosses to full. The bottom FUNCTION ROW holds controls.
+export const LED_NOTE_BRIGHTNESS: readonly number[] = [5, 10, 15]; // low / med / high
 export const LED_NOTE_PLAYHEAD = 15; // a note the playhead is currently over
 export const LED_PLAYHEAD = 6; // wash on the current-step column (the pulse)
 export const LED_ROOT_GUIDE = 1; // faint marker on root-pitch-class rows
@@ -230,8 +230,9 @@ export function computeSessionLeds(
 
 /**
  * Full 128-cell EDIT-mode LED frame for one clip. Note rows (0..NOTE_ROWS-1):
- * a note lights its WHOLE held span by velocity LEVEL (6 brightnesses; the
- * playhead column boosts the note it crosses to full and washes empties). Bottom
+ * a note lights its WHOLE held span by velocity COLOUR (3 brightnesses, 2 levels
+ * each; the playhead column boosts the note it crosses to full and washes
+ * empties). Bottom
  * FUNCTION ROW (with spacer gaps): EDIT (exit), VEL (bright while held), ROW−,
  * OCT−, ROW+, OCT+, SCALE. `playheadStep` < 0 = not playing. `rowOffset` scrolls
  * the pitch window by scale-degree rows.
@@ -255,7 +256,7 @@ export function computeEditLeds(
       const onPlayhead = x === playheadStep;
       const cov = noteCovering(clip, note.step, note.midi);
       if (cov) {
-        frame[fi] = onPlayhead ? LED_NOTE_PLAYHEAD : LED_NOTE_LEVELS[velLevelIndex(cov.velocity)];
+        frame[fi] = onPlayhead ? LED_NOTE_PLAYHEAD : LED_NOTE_BRIGHTNESS[velBucket(cov.velocity)];
         continue;
       }
       let base = LED_EMPTY;

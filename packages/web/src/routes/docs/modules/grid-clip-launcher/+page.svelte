@@ -13,7 +13,7 @@
     LED_SCENE_IDLE,
     LED_EDIT_PAD,
     LED_TRANSPORT_ON,
-    LED_NOTE_LEVELS,
+    LED_NOTE_BRIGHTNESS,
     CTRL_STOP_COL,
     CTRL_SCENE_COL,
     EDIT_PAD,
@@ -38,10 +38,11 @@
     { label: 'TRANSPORT', level: LED_TRANSPORT_ON, note: 'bottom-right — bright while TIMELORDE runs' },
   ];
 
-  // Edit-mode velocity LEVELS (the VEL-hold cycle), shown as grid brightness.
-  // Six steps ≈ 0/20/40/60/80/100%, mapped to the six note LED brightnesses.
-  const VEL_PCTS = ['0%', '20%', '40%', '60%', '80%', '100%'];
-  const VEL_STATES = LED_NOTE_LEVELS.map((level, i) => ({ label: VEL_PCTS[i], level }));
+  // Edit-mode velocity. The VEL-hold cycle steps through SIX levels
+  // (≈0/20/40/60/80/100%), but the grid shows them as THREE note colours — two
+  // levels per colour (the grid's 4 colours, one of which is dark = empty).
+  const VEL_PCTS = ['0 / 20%', '40 / 60%', '80 / 100%'];
+  const VEL_STATES = LED_NOTE_BRIGHTNESS.map((level, i) => ({ label: VEL_PCTS[i], level }));
 
   // 16×8 Session-layout map — colour each pad by its role so the diagram is the
   // single source of truth for the binding's coordinates.
@@ -181,7 +182,7 @@
 <ul>
   <li><strong>Tap a cell</strong> → note ON; tap it again → note OFF.</li>
   <li><strong>Hold a note + tap another in the same row</strong> → one HELD note spanning them (the gate stays high the whole time).</li>
-  <li><strong>Hold VEL + tap a note</strong> → step its velocity UP one level (wrapping 100% → 0%). Six levels ≈ 0/20/40/60/80/100%, shown as six LED brightnesses:</li>
+  <li><strong>Hold VEL + tap a note</strong> → step its velocity UP one level (wrapping 100% → 0%). Six levels ≈ 0/20/40/60/80/100%, shown on the grid as three note colours — two levels per colour:</li>
 </ul>
 <div class="vel-legend">
   {#each VEL_STATES as v (v.label)}

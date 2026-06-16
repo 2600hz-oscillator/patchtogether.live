@@ -29,6 +29,7 @@ import {
   setNoteSpan,
   nextScale,
   velLevelIndex,
+  velBucket,
   laneMono,
   VEL_DEFAULT,
   VEL_LEVELS,
@@ -337,5 +338,9 @@ describe('VELOCITY-hold velocity cycle (6 levels)', () => {
     expect(velLevelIndex(76)).toBe(3);
     expect(velLevelIndex(100)).toBe(4); // nearest 102
     expect(velLevelIndex(undefined)).toBe(velLevelIndex(VEL_DEFAULT));
+  });
+  it('velBucket folds the 6 levels into 3 display colours (2 per colour)', () => {
+    // levels {0,1}→0, {2,3}→1, {4,5}→2
+    expect(VEL_LEVELS.map((v) => velBucket(v))).toEqual([0, 0, 1, 1, 2, 2]);
   });
 });

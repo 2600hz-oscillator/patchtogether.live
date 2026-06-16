@@ -38,7 +38,7 @@
     toggleNoteAt,
     cycleVelocity,
     noteCovering,
-    velLevelIndex,
+    velBucket,
     laneMono,
     type ClipPlayerData,
     type NoteClipRecord,
@@ -254,10 +254,11 @@
     const logicalRow = editorRow + (EDIT_ROWS - 1 - displayRow);
     return rowToMidi(logicalRow, clip.root, clip.scale);
   }
-  /** '' for empty, else `vel0`..`vel5` (the note's velocity LEVEL). */
+  /** '' for empty, else `vel0`..`vel2` (the note's velocity COLOUR — 3 buckets,
+   *  2 of the 6 levels each, matching the grid's 3 note colours). */
   function cellVel(clip: NoteClipRecord, step: number, midi: number): string {
     const ev = noteCovering(clip, step, midi);
-    return ev ? `vel${velLevelIndex(ev.velocity)}` : '';
+    return ev ? `vel${velBucket(ev.velocity)}` : '';
   }
   function writeClipData(next: NoteClipRecord) {
     writeData((d) => {
@@ -615,22 +616,17 @@
     cursor: pointer;
     padding: 0;
   }
-  /* note cells by velocity LEVEL (6 brightnesses ≈ 0/20/40/60/80/100%). Level 0
-     (0% = ghost note) is dim-but-visible so it never reads as empty. */
-  .cell.vel0 { background: hsl(200 45% 24%); }
-  .cell.vel1 { background: hsl(200 55% 32%); }
-  .cell.vel2 { background: hsl(200 65% 40%); }
-  .cell.vel3 { background: hsl(200 75% 48%); }
-  .cell.vel4 { background: hsl(200 85% 56%); }
-  .cell.vel5 { background: hsl(200 92% 64%); }
+  /* note cells by velocity COLOUR — 3 buckets (low/med/high), 2 of the 6
+     velocity levels each, matching the grid's 3 note colours. A placed note
+     (even 0%) always shows a colour; only an empty cell is dark. */
+  .cell.vel0 { background: hsl(200 55% 32%); }
+  .cell.vel1 { background: hsl(200 75% 48%); }
+  .cell.vel2 { background: hsl(200 92% 64%); }
   /* the playhead lights the whole column so you see the tempo pulse cross the clip */
   .cell.playhead { background: rgba(108, 170, 255, 0.22); border-color: var(--accent, #6cf); }
   .cell.vel0.playhead,
   .cell.vel1.playhead,
-  .cell.vel2.playhead,
-  .cell.vel3.playhead,
-  .cell.vel4.playhead,
-  .cell.vel5.playhead { background: hsl(200 95% 70%); }
+  .cell.vel2.playhead { background: hsl(200 95% 70%); }
   /* per-lane MONO/POLY toggle to the left of each launch-grid row */
   .lane-mono {
     width: 16px;
