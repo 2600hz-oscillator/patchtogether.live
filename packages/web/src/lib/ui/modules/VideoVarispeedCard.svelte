@@ -1223,9 +1223,20 @@
   .slot-pool { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
   .slot-pool video { width: 1px; height: 1px; }
 
-  /* "Load multiple…" 7-slot panel (right-click toggle). */
+  /* "Load multiple…" 7-slot panel (right-click toggle). Floats as an absolute
+     overlay sheet over the card body INSTEAD of stacking in normal flow: the
+     card is pinned to an exact rack-unit height (height + min/max-height locked
+     by `.rack-sized` in _module-card.css) with `overflow: hidden`, so an
+     in-flow panel pushed past the tier and its bottom rows (slots A/B) were
+     clipped. As an overlay it sits within the fixed card box and scrolls if it
+     ever exceeds it. */
   .multi-panel {
-    margin-top: 6px;
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: 34px; /* below the card title */
+    max-height: calc(100% - 42px); /* never exceed the card; scroll if it would */
+    z-index: 6;
     padding: 6px;
     background: #0c0f14;
     border: 1px solid var(--cable-video);
@@ -1233,6 +1244,7 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
+    overflow-y: auto;
   }
   .multi-head {
     display: flex;
