@@ -493,9 +493,19 @@
     justify-content: center;
   }
 
-  /* "Load multiple…" 7-slot panel (right-click toggle). */
+  /* "Load multiple…" 7-slot panel (right-click toggle). Floats as an absolute
+     overlay sheet over the card body INSTEAD of stacking in normal flow: the
+     card is pinned to an exact rack-unit height (min/max-height locked by
+     `.rack-sized` in _module-card.css), so an in-flow panel pushed past the
+     tier and spilled outside the card box. As an overlay it sits within the
+     fixed card box and scrolls if it ever exceeds it. */
   .multi-panel {
-    margin: 10px 8px 0;
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: 34px; /* below the card title */
+    max-height: calc(100% - 42px); /* never exceed the card; scroll if it would */
+    z-index: 6;
     padding: 6px;
     background: #0c0f14;
     border: 1px solid var(--cable-image);
@@ -503,6 +513,7 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
+    overflow-y: auto;
   }
   .multi-head {
     display: flex;
