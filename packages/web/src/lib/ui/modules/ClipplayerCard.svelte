@@ -133,7 +133,9 @@
   }
 
   // --- per-lane queue (the synced playing-set the engine + peers consume) ---
-  function queueLane(lane: number, action: number | 'stop' | null) {
+  // `immediate` = a NOW override (mid-clip switch): the launch fires next tick
+  // regardless of QNT (see queuedImmediate in the engine).
+  function queueLane(lane: number, action: number | 'stop' | null, immediate = false) {
     // SyncedStore Y.Arrays reject index assignment — rebuild + assign whole.
     writeData((d) => {
       const base: (number | 'stop' | null)[] = new Array(CLIP_LANES).fill(null);
@@ -142,6 +144,14 @@
       }
       base[lane] = action;
       d.queued = base;
+      if (immediate) {
+        const imm = new Array<boolean>(CLIP_LANES).fill(false);
+        if (Array.isArray(d.queuedImmediate)) {
+          for (let i = 0; i < d.queuedImmediate.length && i < CLIP_LANES; i++) imm[i] = !!d.queuedImmediate[i];
+        }
+        imm[lane] = true;
+        d.queuedImmediate = imm;
+      }
     });
   }
   function stopAll() {
@@ -153,11 +163,13 @@
   // Single-click: launch / queue / stop. Debounced so a double-click (→ edit)
   // doesn't also fire a launch.
   let clickTimer: ReturnType<typeof setTimeout> | null = null;
-  function onPadClick(idx: number) {
+  // Shift-click = NOW (immediate mid-clip switch); plain click = quantized (QNT).
+  function onPadClick(idx: number, ev: MouseEvent) {
+    const now = ev.shiftKey;
     if (clickTimer) clearTimeout(clickTimer);
     clickTimer = setTimeout(() => {
       clickTimer = null;
-      launchPad(idx);
+      launchPad(idx, now);
     }, 220);
   }
   function onPadDblClick(idx: number) {
@@ -166,16 +178,16 @@
     selectedClip = idx;
     view = 'edit';
   }
-  function launchPad(idx: number) {
+  function launchPad(idx: number, immediate = false) {
     const lane = laneOf(idx);
     const slot = slotOf(idx);
     if (!clips[String(idx)]) {
       ensureClip(idx);
-      queueLane(lane, slot); // create + arm so it starts on the next boundary
+      queueLane(lane, slot, immediate); // create + arm
       return;
     }
-    if (lanePlaying(dataObj(), lane) === slot) queueLane(lane, 'stop');
-    else queueLane(lane, slot);
+    if (lanePlaying(dataObj(), lane) === slot) queueLane(lane, 'stop', immediate);
+    else queueLane(lane, slot, immediate);
   }
 
   function padState(idx: number): 'empty' | 'loaded' | 'queued' | 'playing' {
@@ -226,6 +238,22 @@
     const tid = timelordeId();
     if (!tid) return;
     setNodeParam(tid, 'running', transportRunning ? 0 : 1);
+  }
+
+  // --- SONG MODE (arranger) — synced state on node.data ---
+  let recording = $derived((void cardVersion, dataObj().recording === true));
+  let arrangeMode = $derived((void cardVersion, dataObj().clipMode === 'arrangement'));
+  let arrangeEvents = $derived(
+    (void cardVersion, Array.isArray(dataObj().arrangement?.events) ? dataObj().arrangement!.events!.length : 0),
+  );
+  /** Arm/disarm recording. Arming clears the log + restarts song time (engine,
+   *  on the rising edge) — v1 replace semantics. */
+  function toggleRecord() {
+    writeData((d) => { d.recording = !d.recording; });
+  }
+  /** Flip SESSION ⇄ ARRANGEMENT playback. */
+  function toggleArrangeMode() {
+    writeData((d) => { d.clipMode = d.clipMode === 'arrangement' ? 'session' : 'arrangement'; });
   }
 
   function cycleStep() {
@@ -353,6 +381,26 @@
           data-testid={`clipplayer-transport-${id}`}
         >{transportRunning ? '■' : '▶'}</button>
       {/if}
+      <!-- SONG MODE: SESSION ⇄ ARRANGE + RECORD arm. -->
+      <button
+        class="song-mode"
+        class:on={arrangeMode}
+        onclick={toggleArrangeMode}
+        title={arrangeMode
+          ? `ARRANGEMENT — playing the recorded song (${arrangeEvents} events). Click for SESSION.`
+          : 'SESSION — launch clips live. Click for ARRANGEMENT (play the recorded song).'}
+        data-testid={`clipplayer-mode-${id}`}
+      >{arrangeMode ? 'ARR' : 'SES'}</button>
+      <button
+        class="rec-btn"
+        class:on={recording}
+        onclick={toggleRecord}
+        title={recording
+          ? 'Recording launches to the arrangement — click to stop'
+          : 'Record clip launches into the arrangement (clears + records fresh)'}
+        aria-pressed={recording}
+        data-testid={`clipplayer-record-${id}`}
+      >●</button>
       <button
         class="grid-btn"
         class:on={gridBoundHere}
@@ -399,7 +447,7 @@
                   data-lane={lane}
                   data-slot={slot}
                   data-state={st}
-                  onclick={() => onPadClick(idx)}
+                  onclick={(e) => onPadClick(idx, e)}
                   ondblclick={() => onPadDblClick(idx)}
                 ></button>
               {/each}
@@ -524,6 +572,36 @@
   }
   .grid-btn.on { color: var(--accent, #6cf); border-color: var(--accent, #6cf); }
   .grid-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  /* SONG MODE: SES/ARR toggle + RECORD arm */
+  .song-mode {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    padding: 3px 5px;
+    cursor: pointer;
+  }
+  .song-mode.on { color: var(--accent, #c9f); border-color: var(--accent, #c9f); }
+  .rec-btn {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 11px;
+    line-height: 1;
+    padding: 2px 5px;
+    cursor: pointer;
+  }
+  .rec-btn.on {
+    color: #fff;
+    background: #c0392b;
+    border-color: #e74c3c;
+    animation: rec-blink 1s steps(2) infinite;
+  }
+  @keyframes rec-blink { 50% { opacity: 0.5; } }
   .body {
     margin-top: 24px;
     padding: 0 12px;
