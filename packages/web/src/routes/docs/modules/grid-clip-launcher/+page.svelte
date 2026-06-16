@@ -67,6 +67,20 @@
     Array.from({ length: 16 }, (_, x) => ({ x, y, role: role(x, y) })),
   ).flat();
   const laneHue = (y: number) => Math.round((y * 360) / 8);
+
+  // Illustrative arrangement blocks for the song-view diagram (purely a doc
+  // mock — {x,w} in the 320-wide viewBox; a 4-bar song at 80px/bar). Shows a
+  // few lanes launching, swapping, and dropping out over song time.
+  const SONG_DEMO: { x: number; w: number }[][] = [
+    [{ x: 0, w: 158 }, { x: 160, w: 158 }],         // lane 0: a clip, then a swap at bar 3
+    [{ x: 0, w: 318 }],                              // lane 1: one clip the whole song
+    [{ x: 80, w: 78 }, { x: 240, w: 78 }],          // lane 2: enters bar 2, out, back bar 4
+    [{ x: 160, w: 158 }],                            // lane 3: enters at the bar-3 drop
+    [{ x: 0, w: 78 }],                               // lane 4: a one-bar stab up top
+    [],                                              // lane 5: silent
+    [{ x: 80, w: 238 }],                             // lane 6: enters bar 2, runs out
+    [],                                              // lane 7: silent
+  ];
 </script>
 
 <svelte:head>
@@ -96,6 +110,7 @@
   <li><strong>Launch a clip</strong> and it swaps into its lane on the next loop boundary (or instantly). Each lane plays one clip at a time; launching a new one replaces it.</li>
   <li>A <strong>scene</strong> is a <em>column</em> — fire it and every instrument launches its clip in that column together.</li>
   <li><strong>No tempo knob.</strong> The clock is TIMELORDE: it runs when TIMELORDE runs, at TIMELORDE's BPM. The only timing control is <strong>STEP</strong> (steps per beat).</li>
+  <li><strong>Song mode</strong> records the launches you perform into an <em>arrangement</em> and plays them back — a linear song built from your live session. (<a href="#song-mode">jump to song mode ↓</a>)</li>
 </ul>
 
 <h2>Quick start (no grid needed)</h2>
@@ -236,6 +251,80 @@
   column</strong> (the poly voice width) and re-uses the oldest when you add a 6th.
 </p>
 
+<h2 id="song-mode">Song mode — record your launches into an arrangement</h2>
+<p>
+  The clip player has <strong>two transports</strong>. Everything above is
+  <strong>SESSION</strong> — you launch clips live and they loop. <strong>Song
+  mode</strong> adds an <strong>ARRANGEMENT</strong>: a linear timeline of the
+  clip launches you performed, over song time, that the transport plays back.
+  Record a session take, then replay it — the arrangement <em>is</em> your
+  performance, captured launch-for-launch.
+</p>
+<p>
+  Two small buttons on the card header drive it:
+</p>
+<ul>
+  <li>
+    <strong>REC</strong> — arm recording. While it's armed and the transport is
+    running, every launch you make (a clip pad, a scene, a stop — from the card
+    <em>or</em> the grid) is appended to the arrangement at the
+    <strong>song-beat you heard it apply</strong> (not the beat you clicked), so
+    playback reproduces exactly what you heard. Arming <strong>clears</strong> the
+    old arrangement and records fresh (v1 is replace, not overdub).
+  </li>
+  <li>
+    <strong>SES ⇄ ARR</strong> — flip the playback transport between
+    <strong>SES</strong> session (launch live) and <strong>ARR</strong>angement
+    (play the recorded song). In ARR the button shows the captured event count,
+    and a read-only <strong>song view</strong> appears under the header — an
+    8-lane × song-time timeline with one block per clip and a playhead sweeping
+    across as it plays.
+  </li>
+</ul>
+<figure class="song-fig">
+  <svg viewBox="0 0 320 116" width="320" height="116" role="img"
+       aria-label="Arrangement timeline: 8 instrument lanes across song time, coloured blocks per launched clip, a playhead sweeping across.">
+    <!-- bar gridlines -->
+    {#each [80, 160, 240] as bx (bx)}
+      <line x1={bx} y1="0" x2={bx} y2="104" stroke="rgba(255,255,255,0.10)" />
+    {/each}
+    <!-- lane rows + illustrative clip blocks (one colour per lane) -->
+    {#each Array.from({ length: 8 }, (_, i) => i) as lane (lane)}
+      <rect x="0" y={lane * 13} width="320" height="12" fill="rgba(255,255,255,0.03)" />
+      {#each (SONG_DEMO[lane] ?? []) as b (b.x)}
+        <rect x={b.x} y={lane * 13 + 1} width={b.w} height="10" rx="1.5"
+              fill={`hsl(${laneHue(lane)} 55% 45%)`} />
+      {/each}
+    {/each}
+    <!-- playhead -->
+    <line x1="150" y1="0" x2="150" y2="104" stroke="#6fcf8f" stroke-width="1.5" />
+    <text x="0" y="114" fill="rgba(255,255,255,0.55)" font-size="8">bar 1</text>
+    <text x="76" y="114" fill="rgba(255,255,255,0.55)" font-size="8">2</text>
+    <text x="156" y="114" fill="rgba(255,255,255,0.55)" font-size="8">3</text>
+    <text x="236" y="114" fill="rgba(255,255,255,0.55)" font-size="8">4</text>
+  </svg>
+  <figcaption class="caption">
+    The song view (ARR mode). Rows = the 8 instrument lanes (lane-tinted); the
+    horizontal axis = song time in bars; each block is a launched clip running
+    until the lane's next launch/stop; the green line is the playhead.
+  </figcaption>
+</figure>
+<h3>Switching mid-clip (the "NOW" override)</h3>
+<p>
+  <code>QNT</code> stays the default — launches land on the lane's loop boundary
+  so everything stays in phase. To break a clip <em>immediately</em>, mid-loop,
+  <strong>Shift-click</strong> the clip on the card (or turn <code>QNT</code> off
+  for launch-now everywhere). An immediate switch is captured into the
+  arrangement tagged as such, so the recorded song reproduces the off-boundary
+  timing exactly — quantized launches replay quantized, NOW launches replay NOW.
+</p>
+<p class="aside">
+  The arrangement (and which mode you're in) lives in the shared rack state, so
+  collaborators see the same recorded song. For v1 the <strong>REC arm is
+  single-recorder</strong> — one person records a take at a time; multi-recorder
+  overdub is a later phase.
+</p>
+
 <h2>LED feedback</h2>
 <table>
   <thead>
@@ -278,6 +367,9 @@
 
 <h2>What's next</h2>
 <ul>
+  <li><strong>Song-mode editing (Phase 2)</strong> — the song view is read-only today; next it becomes an editable arrangement: drag block edges to retime, click to swap or delete a clip, set the loop length. Blocks are derived from the recorded event log, so editing maps straight back onto it.</li>
+  <li><strong>Overdub</strong> — layer a new take onto an existing arrangement (today's REC clears and records fresh), and multi-recorder song-building.</li>
+  <li><strong>On-grid song overview (Phase 3)</strong> — scrub and see the arrangement on the pads (monochrome presence/position on a monome; colour-coded blocks on an RGB Launchpad).</li>
   <li><strong>Step paging on the grid</strong> for clips longer than 16 steps.</li>
   <li><strong>More clip kinds</strong> — audio loops and patch snapshots alongside note clips, plus recording into slots.</li>
 </ul>
@@ -328,4 +420,13 @@
   .cell.transport { background: #6fcf8f; }
   .vel-legend { display: flex; gap: 14px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
   .vel { display: inline-flex; align-items: center; gap: 2px; opacity: 0.9; }
+  .song-fig { margin: 16px 0; }
+  .song-fig svg {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.2);
+    max-width: 100%;
+    height: auto;
+  }
+  .song-fig figcaption { margin-top: 6px; }
 </style>
