@@ -6,7 +6,7 @@
   //     click the playing cell = stop the lane; double-click = open its editor.
   //     A ▶/■ transport drives TIMELORDE (hidden when TIMELORDE is externally
   //     clocked). STEP / OCT / GATE / QNT params below.
-  //   EDIT: a Deluge-style note editor for one clip (X = step, Y = pitch, in-key
+  //   EDIT: a piano-roll note editor for one clip (X = step, Y = pitch, in-key
   //     rows). Click a cell to toggle a note on/off; RIGHT-click to cycle its
   //     velocity through 6 levels. Per-lane MONO replaces-on-add; POLY caps at 5.
   //
@@ -260,7 +260,7 @@
     setParam('stepDiv')((stepDiv + 1) % STEP_LABELS.length);
   }
 
-  // --- Deluge note editor (selected clip) ---
+  // --- piano-roll note editor (selected clip) ---
   const EDIT_ROWS = 8;
   const MAX_EDIT_COLS = 16;
   let editorRow = $state(0); // per-user pitch-window offset, in scale-degree ROWS (not synced)
@@ -468,7 +468,7 @@
             title="Quantize launch to clip boundary" data-testid="clipplayer-quantize">QNT</button>
         </div>
       {:else if editClip}
-        <!-- Deluge-style note editor for the selected clip -->
+        <!-- piano-roll note editor for the selected clip -->
         <div class="editor" data-testid="clipplayer-editor">
           <div class="editor-head">
             <button class="back" onclick={() => (view = 'session')} title="Back to session" data-testid="clipplayer-back">‹</button>
