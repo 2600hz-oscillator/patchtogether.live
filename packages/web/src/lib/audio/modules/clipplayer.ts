@@ -31,6 +31,16 @@ import {
   CLIP_COUNT,
   type ClipPlayerData,
 } from './clip-types';
+import {
+  coerceArrangeData,
+  recordEvent,
+  clearArrange,
+  eventsInRange,
+  arrangeLengthBeats,
+  type ArrangeEvent,
+  type ArrangeSlot,
+  type ClipPlayMode,
+} from './clip-arrange';
 
 /** steps-per-beat for each stepDiv index (0=1/4 … 3=1/32). */
 const STEP_DIV_SPB = [1, 2, 4, 8] as const;
@@ -149,6 +159,17 @@ export const clipplayerDef: AudioModuleDef = {
     let prevRunning = false;
     let totalLoops = 0;
 
+    // --- SONG MODE (arranger) ---
+    // songBeat = beats since the current song origin (record-arm or arrangement
+    // play from the top). Tracks ctx.currentTime so a recorded launch's beat is
+    // the beat you HEARD it apply. arrangeCursor = the last songBeat the playback
+    // cursor fired up to (half-open, so each event fires once).
+    let songBeat = 0;
+    let lastBeatAt = ctx.currentTime;
+    let arrangeCursor = 0;
+    let prevRecording = false;
+    let prevClipMode: ClipPlayMode = 'session';
+
     function liveData(): ClipPlayerData | undefined {
       return livePatch.nodes[nodeId]?.data as ClipPlayerData | undefined;
     }
@@ -161,6 +182,31 @@ export const clipplayerDef: AudioModuleDef = {
       if (!live) return;
       if (!live.data) live.data = {};
       mut(live.data as ClipPlayerData);
+    }
+
+    // --- SONG MODE helpers ---
+    function clipMode(): ClipPlayMode {
+      return liveData()?.clipMode === 'arrangement' ? 'arrangement' : 'session';
+    }
+    function isRecording(): boolean {
+      return liveData()?.recording === true;
+    }
+    /** Append an applied launch to the arrangement log at the current song-beat. */
+    function appendArrangeEvent(ev: ArrangeEvent): void {
+      writeData((d) => {
+        d.arrangement = recordEvent(coerceArrangeData(d.arrangement), ev);
+      });
+    }
+    /** Apply one arrangement event during playback (the timeline IS the schedule,
+     *  so launch directly via setLaneActive — no quantize). */
+    function applyArrangeEvent(ev: ArrangeEvent): void {
+      setLaneActive(ev.lane, ev.slot === 'stop' ? null : ev.slot);
+    }
+    /** Restart song time at the top (record-arm / arrangement (re)start). */
+    function resetSongOrigin(): void {
+      songBeat = 0;
+      arrangeCursor = 0;
+      lastBeatAt = ctx.currentTime;
     }
 
     // --- TIMELORDE transport (the rack clock we lock to) ---
@@ -230,20 +276,42 @@ export const clipplayerDef: AudioModuleDef = {
       const d = liveData();
       const q = d?.queued?.[L];
       if (q === undefined || q === null) return false;
+      // Was this an immediate (NOW / mid-clip) apply? — the per-lane NOW flag, or
+      // QNT off, or the lane wasn't playing (first launch is always immediate).
+      const wasImmediate =
+        d?.queuedImmediate?.[L] === true ||
+        readParam('quantize', 1) < 0.5 ||
+        lanes[L].active === null;
       writeData((dd) => {
         const queued = ensureArray<number | 'stop' | null>(dd.queued, null);
         queued[L] = null;
         dd.queued = queued;
+        if (Array.isArray(dd.queuedImmediate)) {
+          const qi = ensureArray<boolean>(dd.queuedImmediate, false);
+          qi[L] = false;
+          dd.queuedImmediate = qi;
+        }
       });
+      let changed = false;
       if (q === 'stop') {
-        if (lanes[L].active === null) return false;
-        setLaneActive(L, null);
-        return true;
+        if (lanes[L].active !== null) {
+          setLaneActive(L, null);
+          changed = true;
+        }
+      } else {
+        const slot = Number(q);
+        if (slot !== lanes[L].active) {
+          setLaneActive(L, slot);
+          changed = true;
+        }
       }
-      const slot = Number(q);
-      if (slot === lanes[L].active) return false;
-      setLaneActive(L, slot);
-      return true;
+      // RECORD: capture the applied launch at the current song-beat (session
+      // mode only — arrangement playback drives the lanes itself).
+      if (changed && isRecording() && clipMode() === 'session') {
+        const slot: ArrangeSlot = q === 'stop' ? 'stop' : Number(q);
+        appendArrangeEvent({ beat: songBeat, lane: L, slot, immediate: wasImmediate });
+      }
+      return changed;
     }
 
     function emitLaneStep(L: number, idx: number, atTime: number, stepDur: number): void {
@@ -287,6 +355,25 @@ export const clipplayerDef: AudioModuleDef = {
       if (!alive) return;
       try {
         const running = transportRunning();
+        const d0 = liveData();
+        const mode = d0?.clipMode === 'arrangement' ? 'arrangement' : 'session';
+        const recording = d0?.recording === true;
+
+        // SONG-MODE origin resets (before advancing songBeat this tick):
+        //  - record ARM (replace): clear the log + restart song time at 0.
+        //  - entering arrangement mode OR pressing play in it: replay from top.
+        if (recording && !prevRecording) {
+          writeData((d) => {
+            d.arrangement = clearArrange(coerceArrangeData(d.arrangement));
+          });
+          resetSongOrigin();
+        }
+        if (mode === 'arrangement' && (prevClipMode !== 'arrangement' || (running && !prevRunning))) {
+          resetSongOrigin();
+        }
+        prevRecording = recording;
+        prevClipMode = mode;
+
         if (running && !prevRunning) {
           // Transport started → align all lanes to step 0 on the downbeat.
           for (let L = 0; L < LANES; L++) {
@@ -298,29 +385,51 @@ export const clipplayerDef: AudioModuleDef = {
         }
         prevRunning = running;
 
-        // Adopt peer-driven playing changes (synced playing-set).
-        const d0 = liveData();
-        for (let L = 0; L < LANES; L++) {
-          const synced = d0?.playing?.[L] ?? null;
-          const sv = typeof synced === 'number' ? synced : null;
-          const hasQueued = (d0?.queued?.[L] ?? null) !== null;
-          if (sv !== lanes[L].active && !hasQueued) {
-            lanes[L].active = sv;
-            lanes[L].stepIndex = 0;
-            lanes[L].nextStepTime = ctx.currentTime + 0.01;
-            if (sv === null) silenceLane(L, ctx.currentTime);
-          }
-        }
+        // Song-position clock: advance by real elapsed beats while running.
+        const nowAt = ctx.currentTime;
+        if (running) songBeat += Math.max(0, nowAt - lastBeatAt) / (60 / transportBpm());
+        lastBeatAt = nowAt;
 
-        // stop_all — stop every lane immediately.
+        // stop_all — stop every lane immediately (panic; both modes).
         if (stopCounter.poll(ctx.currentTime) > 0) {
           for (let L = 0; L < LANES; L++) if (lanes[L].active !== null) setLaneActive(L, null);
         }
 
         const quantize = readParam('quantize', 1) >= 0.5;
-        // Immediate-launch path (quantize off, or a lane that isn't playing).
-        for (let L = 0; L < LANES; L++) {
-          if (!quantize || lanes[L].active === null) applyLaneQueued(L);
+
+        if (mode === 'session') {
+          // Adopt peer-driven playing changes (synced playing-set).
+          for (let L = 0; L < LANES; L++) {
+            const synced = d0?.playing?.[L] ?? null;
+            const sv = typeof synced === 'number' ? synced : null;
+            const hasQueued = (d0?.queued?.[L] ?? null) !== null;
+            if (sv !== lanes[L].active && !hasQueued) {
+              lanes[L].active = sv;
+              lanes[L].stepIndex = 0;
+              lanes[L].nextStepTime = ctx.currentTime + 0.01;
+              if (sv === null) silenceLane(L, ctx.currentTime);
+            }
+          }
+          // Immediate-launch path: QNT off, a lane that isn't playing, or a
+          // per-lane NOW override (mid-clip immediate switch).
+          for (let L = 0; L < LANES; L++) {
+            if (!quantize || lanes[L].active === null || d0?.queuedImmediate?.[L] === true) {
+              applyLaneQueued(L);
+            }
+          }
+        } else if (running) {
+          // ARRANGEMENT playback: fire the recorded log as song-time advances.
+          // The timestamps already encode the timing, so launch directly.
+          const arr = coerceArrangeData(d0?.arrangement);
+          const len = arrangeLengthBeats(arr, 4);
+          let from = arrangeCursor;
+          if (arr.loop && len > 0 && songBeat >= len) {
+            for (const ev of eventsInRange(arr, from, len)) applyArrangeEvent(ev);
+            songBeat -= len; // wrap song time to the top
+            from = 0;
+          }
+          for (const ev of eventsInRange(arr, from, songBeat)) applyArrangeEvent(ev);
+          arrangeCursor = songBeat;
         }
 
         // Publish each lane's audio-time playhead (render state — NOT synced;
@@ -344,7 +453,9 @@ export const clipplayerDef: AudioModuleDef = {
             const nextStart = ln.nextStepTime + stepDur;
             if (nextIdx === 0) {
               totalLoops++;
-              if (quantize && applyLaneQueued(L)) {
+              // Boundary-apply queued launches — SESSION mode only (arrangement
+              // is driven by the cursor above, not the manual queue).
+              if (mode === 'session' && quantize && applyLaneQueued(L)) {
                 ln.nextStepTime = nextStart;
                 continue;
               }
@@ -385,6 +496,11 @@ export const clipplayerDef: AudioModuleDef = {
         if (key === 'totalLoops') return totalLoops;
         if (key === 'transportRunning') return transportRunning() ? 1 : 0;
         if (key === 'externallyClocked') return transportExternallyClocked() ? 1 : 0;
+        // SONG MODE: the card reads these to drive the RECORD/mode UI + readout.
+        if (key === 'songBeat') return songBeat;
+        if (key === 'clipMode') return clipMode() === 'arrangement' ? 1 : 0;
+        if (key === 'recording') return isRecording() ? 1 : 0;
+        if (key === 'arrangeEvents') return coerceArrangeData(liveData()?.arrangement).events.length;
         if (typeof key === 'string') {
           // per-lane reads: 'activeLane:L' 'pitchVOct:L' 'gateValue:L' 'velValue:L' 'currentStep:L'
           const m = /^(activeLane|pitchVOct|gateValue|velValue|currentStep):(\d+)$/.exec(key);
