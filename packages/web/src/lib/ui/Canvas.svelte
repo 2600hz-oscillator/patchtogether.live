@@ -57,6 +57,7 @@
     parsePerformanceZip,
     type PerformanceMedia,
   } from '$lib/graph/performance-zip';
+  import { savePerformanceZip } from '$lib/graph/performance-save';
   // Quick-switch PRESET SLOT bar (top-left of the menu bar) + the portable
   // `.set` container that bundles all five slots + the MIDI map. The pure
   // (de)serialize core lives in preset-set.ts; the per-browser IndexedDB
@@ -1363,17 +1364,14 @@
     perfZipBusy = true;
     try {
       const bytes = await buildPerformanceZipBytes();
-      const blob = new Blob([bytes as unknown as BlobPart], { type: 'application/zip' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'performance.ptperf.zip';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => { try { URL.revokeObjectURL(url); } catch { /* */ } }, 60_000);
-      const vids = bytes.length;
-      trace(`exported performance .zip (${(vids / 1024).toFixed(0)} KB)`);
+      // Let the user NAME the file (Chromium: native Save dialog; elsewhere: a
+      // name prompt + download) instead of force-saving a fixed name.
+      const outcome = await savePerformanceZip(bytes);
+      if (outcome === 'cancelled') {
+        trace('export performance cancelled by user');
+        return;
+      }
+      trace(`exported performance .zip (${(bytes.length / 1024).toFixed(0)} KB)`);
     } catch (e) {
       error = `Export performance failed: ${e instanceof Error ? e.message : String(e)}`;
       trace(`export performance failed: ${String(e)}`);
