@@ -4620,6 +4620,12 @@
       if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return true;
       return false;
     }
+    function isFlip(e: KeyboardEvent): boolean {
+      // Plain Tab toggles rear view. We deliberately ignore any modifier combo
+      // (Cmd/Ctrl/Alt/Shift-Tab) so OS/browser tab-switching + Shift-Tab focus
+      // traversal are untouched — only a bare Tab is the rack-flip shortcut.
+      return e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+    }
     function onKey(e: KeyboardEvent) {
       if (shouldIgnore(e.target)) return;
       if (isUndo(e)) {
@@ -4632,6 +4638,14 @@
         e.preventDefault();
         undoManager.redo();
         trace('redo');
+      } else if (isFlip(e)) {
+        // Tab flips the rack front↔rear. NOTE: this overrides Tab's native
+        // focus-traversal while the canvas (not a text field) is focused — the
+        // intended tradeoff (user-requested rack-flip shortcut). Text inputs +
+        // contentEditable are already excluded by shouldIgnore() above.
+        e.preventDefault();
+        toggleRearView();
+        trace('flip-rack-tab');
       }
     }
     window.addEventListener('keydown', onKey);
@@ -4737,6 +4751,38 @@
   // the per-card 3D flip + the cable emphasis. The back face itself is rendered
   // by PatchPanel (which already has each node's inputs/outputs).
   let rearView = $state(false);
+
+  // Transient "flipping back to front" cue. CSS can animate the flip TO rear view
+  // (the back panel mounts → `card-back-flip-in` keyframe), but it CANNOT animate
+  // the return: leaving rear view just sets the back panel `display:none`, with no
+  // element to keyframe. So on exit we set `flipBack` for the keyframe's duration —
+  // `.flow.flip-back` runs `card-front-flip-in` (rotateY +90→0, the OPPOSITE
+  // direction) on the now-visible card fronts — then clear it. (Re-entering rear
+  // view immediately cancels a pending clear so the two never fight.)
+  let flipBack = $state(false);
+  let flipBackTimer: ReturnType<typeof setTimeout> | null = null;
+  const FLIP_MS = 360; // mirrors card-front/back-flip-in duration in _module-card.css
+
+  function setRearView(next: boolean) {
+    if (next === rearView) return;
+    if (flipBackTimer) {
+      clearTimeout(flipBackTimer);
+      flipBackTimer = null;
+    }
+    if (!next) {
+      // Going front: arm the return animation, then clear it once it settles.
+      flipBack = true;
+      flipBackTimer = setTimeout(() => {
+        flipBack = false;
+        flipBackTimer = null;
+      }, FLIP_MS);
+    } else {
+      // Going rear: the back panel's own keyframe handles the motion.
+      flipBack = false;
+    }
+    rearView = next;
+  }
+  const toggleRearView = () => setRearView(!rearView);
 
   // ---------------- OUTPUT aspect (4:3/16:9) ↔ Y.Doc sync ----------------
   //
@@ -4933,7 +4979,7 @@
     <pre class="error">{error}</pre>
   {/if}
 
-  <div class="flow" class:rear-view={rearView} data-rear-view={rearView ? 'true' : undefined} bind:this={flowEl}>
+  <div class="flow" class:rear-view={rearView} class:flip-back={flipBack} data-rear-view={rearView ? 'true' : undefined} bind:this={flowEl}>
     <SvelteFlow
       nodes={flowNodes}
       edges={flowEdges}
@@ -4985,7 +5031,7 @@
                of the Controls cluster via the `before` snippet. -->
           <ControlButton
             class="svelte-flow__controls-flip-rack"
-            onclick={() => (rearView = !rearView)}
+            onclick={toggleRearView}
             aria-label="Flip rack (rear view)"
             aria-pressed={rearView}
             data-testid="flip-rack-btn"
