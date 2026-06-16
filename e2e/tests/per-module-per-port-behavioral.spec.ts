@@ -121,7 +121,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // launch / quantized-switch / stop / TIMELORDE-lock / silent via the REAL tick
   // loop) + the bespoke real-source-chain clipplayer.spec.ts (TIMELORDE → clip →
   // voice → audible RMS, incl. the freeze-while-stopped lock) + clip-types.test.ts
-  // (note→V/oct + Deluge row math + per-lane/velocity helpers).
+  // (note→V/oct + note-editor row math + per-lane/velocity helpers).
   clipplayer:     'TIMELORDE-locked launch output (8 lanes); only input stop_all silences, no per-output input + needs a running transport — no clean per-input delta in the short window; covered by clipplayer.test.ts + clipplayer.spec.ts + clip-types.test.ts',
   // KRIA — same shape as clipplayer/sequencer: a 4-track grid step-sequencer
   // whose outputs are clock-derived (a seeded running pattern). Patching `clock`

@@ -152,7 +152,7 @@ describe('lanesForStep', () => {
   });
 });
 
-describe('Deluge row math', () => {
+describe('note-editor row math', () => {
   it('chromatic rows are +1 semitone from root', () => {
     expect(scaleSteps(undefined)).toHaveLength(12);
     expect(rowToMidi(0, 48)).toBe(48);

@@ -42,7 +42,7 @@ export const clipplayerDef: AudioModuleDef = {
   label: 'clip player',
   category: 'modulation',
   schemaVersion: 2,
-  // 8×8 clip grid (capped) + Deluge note editor + transport — fits a 3u tile.
+  // 8×8 clip grid (capped) + piano-roll note editor + transport — fits a 3u tile.
   size: '3u',
   hp: 2,
 

@@ -39,7 +39,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   cartesian: { size: '4u', hp: 2 }, // 563×360px
   charlottesEchos: { size: '1u', hp: 2 }, // 109×320px  [LOCKED]
   chowkick: { size: '5u', hp: 3 }, // 839×540px
-  clipplayer: { size: '3u', hp: 2 }, // 8×8 launch grid + Deluge note editor + transport
+  clipplayer: { size: '3u', hp: 2 }, // 8×8 launch grid + piano-roll note editor + transport
   clouds: { size: '2u', hp: 2 }, // 201×340px
   cloudseed: { size: '3u', hp: 4 }, // 427×680px
   cocoadelay: { size: '2u', hp: 4 }, // 283×620px
