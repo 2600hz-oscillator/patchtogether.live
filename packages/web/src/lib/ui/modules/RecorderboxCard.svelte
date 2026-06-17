@@ -217,9 +217,10 @@
       captureEl.height = eh;
 
       // Resolve the encode profile for the chosen quality tier at THIS
-      // resolution: HIGH = the original H.264 / 14 Mbps; BALANCED/SMALL prefer a
-      // modern codec (AV1/VP9) if the runtime can encode it, else a lower-bitrate
-      // H.264. Probed against the real runtime (degrades gracefully).
+      // resolution: HIGH = the original H.264 / 14 Mbps; BALANCED/SMALL prefer
+      // hardware HEVC if the runtime can encode it, else a lower-bitrate H.264.
+      // Probed against the real runtime (degrades gracefully). All tiers request
+      // the hardware encoder so a software encode can't starve the audio capture.
       const profile = await pickEncodeProfile(quality, ew, eh);
       // The user may have flipped Record OFF while the probe ran.
       if (!recording) return;
@@ -243,6 +244,7 @@
         videoBitrate: profile.videoBitrate,
         keyFrameInterval: profile.keyFrameInterval,
         audioBitrate: profile.audioBitrate,
+        hardwareAcceleration: profile.hardwareAcceleration,
         width: ew,
         height: eh,
         saveBytes,

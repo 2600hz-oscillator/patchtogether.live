@@ -56,32 +56,34 @@ describe('qualityLabel + QUALITY_VALUES', () => {
 
 describe('pickEncodeProfile — HIGH preserves the original H.264 baseline', () => {
   it('HIGH always picks H.264 at the full baseline bitrate + ~2 s GOP + 192 kbps audio', async () => {
-    // Even with AV1 + VP9 available, HIGH stays H.264 (bit-identical default).
-    const probe = probeFor(['av1', 'vp9', 'avc']);
+    // Even with HEVC available, HIGH stays H.264 (bit-identical default).
+    const probe = probeFor(['hevc', 'avc']);
     const p = await pickEncodeProfile('high', 1024, 768, probe);
     expect(p.videoCodec).toBe('avc');
     expect(p.videoBitrate).toBe(BASELINE_H264_BITRATE);
     expect(p.keyFrameInterval).toBe(2);
     expect(p.audioBitrate).toBe(BASELINE_AUDIO_BITRATE);
-    // HIGH only ever probes avc — it never even considers a modern codec.
+    expect(p.hardwareAcceleration).toBe('prefer-hardware');
+    // HIGH only ever probes avc — it never even considers HEVC.
     expect(probe.calls.map((c) => c.codec)).toEqual(['avc']);
   });
 });
 
-describe('pickEncodeProfile — BALANCED / SMALL prefer a modern codec', () => {
-  it('BALANCED picks AV1 when available, at a reduced + codec-adjusted bitrate', async () => {
-    const probe = probeFor(['av1', 'vp9', 'avc']);
+describe('pickEncodeProfile — BALANCED / SMALL prefer hardware HEVC', () => {
+  it('BALANCED picks HEVC when available, at a reduced + codec-adjusted bitrate', async () => {
+    const probe = probeFor(['hevc', 'avc']);
     const p = await pickEncodeProfile('balanced', 1024, 768, probe);
-    expect(p.videoCodec).toBe('av1');
+    expect(p.videoCodec).toBe('hevc');
     // Strictly smaller than the HIGH baseline (the whole point).
     expect(p.videoBitrate).toBeLessThan(BASELINE_H264_BITRATE);
     expect(p.keyFrameInterval).toBeGreaterThan(2); // longer GOP than HIGH
     expect(p.audioBitrate).toBeLessThan(BASELINE_AUDIO_BITRATE);
-    expect(probe.calls[0].codec).toBe('av1'); // probed AV1 first
+    expect(p.hardwareAcceleration).toBe('prefer-hardware');
+    expect(probe.calls[0].codec).toBe('hevc'); // probed HEVC first
   });
 
   it('SMALL is strictly smaller than BALANCED at every knob', async () => {
-    const probe = probeFor(['av1', 'vp9', 'avc']);
+    const probe = probeFor(['hevc', 'avc']);
     const bal = await pickEncodeProfile('balanced', 1024, 768, probe);
     const sml = await pickEncodeProfile('small', 1024, 768, probe);
     expect(sml.videoBitrate).toBeLessThan(bal.videoBitrate);
@@ -89,21 +91,26 @@ describe('pickEncodeProfile — BALANCED / SMALL prefer a modern codec', () => {
     expect(sml.audioBitrate).toBeLessThanOrEqual(bal.audioBitrate);
   });
 
-  it('falls back through the preference list: VP9 when AV1 is unavailable', async () => {
-    const probe = probeFor(['vp9', 'avc']); // no AV1
-    const p = await pickEncodeProfile('small', 1024, 768, probe);
-    expect(p.videoCodec).toBe('vp9');
-    // Probed AV1 (rejected) before VP9.
-    expect(probe.calls.map((c) => c.codec)).toEqual(['av1', 'vp9']);
-  });
-
-  it('falls all the way back to H.264 when no modern codec encodes', async () => {
-    const probe = probeFor(['avc']); // H.264 only (the typical Safari / older case)
+  it('falls back to H.264 when HEVC is unavailable (no-HEVC-encoder platform)', async () => {
+    const probe = probeFor(['avc']); // no HEVC encoder
     const p = await pickEncodeProfile('small', 1024, 768, probe);
     expect(p.videoCodec).toBe('avc');
     // Still a SMALL-tier bitrate (reduced) + long GOP — size win even on H.264.
     expect(p.videoBitrate).toBeLessThan(BASELINE_H264_BITRATE);
     expect(p.keyFrameInterval).toBeGreaterThan(2);
+    // Probed HEVC (rejected) before falling to H.264 — never av1/vp9.
+    expect(probe.calls.map((c) => c.codec)).toEqual(['hevc', 'avc']);
+  });
+
+  it('NEVER selects AV1/VP9 even when the runtime can encode them (audio-glitch + NLE guard)', async () => {
+    // All modern codecs available, but no HEVC → must land on H.264, NOT av1/vp9.
+    const probe = probeFor(['av1', 'vp9', 'avc']);
+    const bal = await pickEncodeProfile('balanced', 1024, 768, probe);
+    const sml = await pickEncodeProfile('small', 1024, 768, probe);
+    expect(bal.videoCodec).toBe('avc');
+    expect(sml.videoCodec).toBe('avc');
+    // av1/vp9 are never even probed — only hevc then avc.
+    for (const c of probe.calls) expect(['hevc', 'avc']).toContain(c.codec);
   });
 });
 
@@ -114,6 +121,7 @@ describe('pickEncodeProfile — robustness', () => {
     expect(p.videoCodec).toBe('avc');
     expect(p.videoBitrate).toBeGreaterThan(0);
     expect(p.audioBitrate).toBeGreaterThan(0);
+    expect(p.hardwareAcceleration).toBe('prefer-hardware');
   });
 
   it('never throws when the probe itself rejects — degrades to the fallback', async () => {
@@ -121,17 +129,18 @@ describe('pickEncodeProfile — robustness', () => {
     const p = await pickEncodeProfile('small', 1024, 768, throwing);
     expect(p.videoCodec).toBe('avc');
     expect(p.videoBitrate).toBeGreaterThan(0);
+    expect(p.hardwareAcceleration).toBe('prefer-hardware');
   });
 
   it('probes at the ACTUAL recording resolution', async () => {
-    const probe = probeFor(['av1']);
+    const probe = probeFor(['hevc']);
     await pickEncodeProfile('small', 1280, 720, probe);
     expect(probe.calls[0].width).toBe(1280);
     expect(probe.calls[0].height).toBe(720);
   });
 
   it('coerces a garbage tier to the BALANCED default', async () => {
-    const probe = probeFor(['av1', 'vp9', 'avc']);
+    const probe = probeFor(['hevc', 'avc']);
     const garbage = await pickEncodeProfile('nonsense' as RecorderboxQuality, 1024, 768, probe);
     const balanced = await pickEncodeProfile('balanced', 1024, 768, probe);
     // Falls back to DEFAULT_QUALITY (now 'balanced'), not the historical HIGH.

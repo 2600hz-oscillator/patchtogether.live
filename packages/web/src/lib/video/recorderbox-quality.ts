@@ -9,21 +9,39 @@
 //
 // ── The levers (and why) ─────────────────────────────────────────────────────
 //
-//  1. CODEC. A modern codec (AV1 / VP9) is dramatically more efficient than
-//     H.264 at equal perceptual quality (~30-50% smaller for AV1, ~25-40% for
-//     VP9 on typical content), so the single biggest size win is to PREFER a
-//     modern codec when the runtime can encode it — falling back to H.264, which
-//     is the guaranteed baseline. We keep the MP4 container in every case
-//     (Mediabunny's MP4 muxer carries avc/hevc/vp9/av1), so the container,
-//     extension (.mp4), and the fragmented-MP4 crash-recovery semantics never
-//     change — only the codec inside it does. We probe each candidate with
-//     `canEncodeVideo` at the ACTUAL recording resolution before selecting it.
+//  1. CODEC — HARDWARE-FIRST (HEVC → H.264). The smaller tiers prefer HEVC
+//     (H.265), then fall back to H.264 (the guaranteed baseline). We deliberately
+//     do NOT use AV1 or VP9, for two independent reasons both learned the hard way
+//     (2026-06-17):
+//
+//       (a) AUDIO GLITCHES. No shipping Mac (and most PCs) has a HARDWARE AV1 or
+//           VP9 *encoder* — the browser encodes them in SOFTWARE. At 30 fps that
+//           software encoder saturates the CPU, which starves the realtime audio
+//           render thread → clicks/pops baked into the captured soundtrack
+//           (worse the heavier the live patch). HEVC + H.264 both encode in
+//           hardware (VideoToolbox on macOS, the platform encoder elsewhere), so
+//           the CPU stays free and the audio capture is clean. We additionally
+//           pass `hardwareAcceleration:'prefer-hardware'` on the encoder config.
+//
+//       (b) NLE COMPATIBILITY. DaVinci Resolve (and most NLEs) cannot import
+//           VP9- or AV1-in-MP4 at all — they only decode H.264 / H.265 / ProRes /
+//           DNx from an MP4. An AV1/VP9 take plays in a browser but is rejected by
+//           Resolve. HEVC + H.264 import everywhere the OS provides the decoder.
+//
+//     HEVC is still meaningfully more efficient than H.264 (~35% smaller at equal
+//     quality), so the smaller tiers stay smaller — just via a hardware codec the
+//     editor can read. We keep the MP4 container in every case (Mediabunny's MP4
+//     muxer carries avc/hevc), so the container, extension (.mp4), and the
+//     fragmented-MP4 crash-recovery semantics never change — only the codec inside
+//     it does. We probe each candidate with `canEncodeVideo` at the ACTUAL
+//     recording resolution before selecting it; where the OS has no HEVC encoder,
+//     the probe fails and we fall back to hardware H.264.
 //
 //  2. BITRATE / RATE CONTROL. Lower target bitrate is the direct size knob;
 //     Mediabunny's default `bitrateMode:'variable'` (VBR) already spends bits
 //     where they matter. We express each tier's video target as a fraction of
 //     the HIGH baseline (~14 Mbps for H.264) AND scale it for the more-efficient
-//     codecs (a VP9/AV1 take needs fewer bits for the same look), so SMALL is
+//     codec (an HEVC take needs fewer bits for the same look), so SMALL is
 //     small on size, not just on codec.
 //
 //  3. KEYFRAME INTERVAL (GOP). Longer GOP = fewer expensive I-frames = smaller
@@ -49,9 +67,12 @@ import { canEncodeVideo as mbCanEncodeVideo, type VideoCodec } from 'mediabunny'
  *  pre-existing ~14 Mbps H.264 behavior exactly (no silent regression). */
 export type RecorderboxQuality = 'high' | 'balanced' | 'small';
 
-/** The DEFAULT tier — BALANCED (owner default, 2026-06-15): AV1/VP9 at ~−80%
- *  file size for a small quality hit, with H.264 fallback where AV1/VP9 isn't
- *  supported. HIGH (the historical ~14 Mbps H.264 baseline) stays one click away. */
+/** The DEFAULT tier — BALANCED (owner default, 2026-06-15): a hardware HEVC take
+ *  at ~−55%/−35% the HIGH file size for a small quality hit, falling back to
+ *  hardware H.264 where the OS has no HEVC encoder. HIGH (the historical ~14 Mbps
+ *  H.264 baseline) stays one click away. (BALANCED/SMALL used to prefer AV1/VP9,
+ *  which encode in SOFTWARE on every Mac — that starved the realtime audio thread
+ *  into clicks/pops AND can't be imported into Resolve; replaced 2026-06-17.) */
 export const DEFAULT_QUALITY: RecorderboxQuality = 'balanced';
 
 export const QUALITY_VALUES: readonly RecorderboxQuality[] = ['high', 'balanced', 'small'] as const;
@@ -77,7 +98,9 @@ interface TierSpec {
   /** Audio (AAC) target bitrate, bps. */
   audioBitrate: number;
   /** Ordered codec preference. The first the runtime can encode wins; H.264
-   *  ('avc') is ALWAYS last so it's the guaranteed fallback. */
+   *  ('avc') is ALWAYS last so it's the guaranteed fallback. Only HARDWARE codecs
+   *  appear here (HEVC/H.264) — never AV1/VP9 (software-only on Mac → audio
+   *  glitches + un-importable by NLEs). See lever #1. */
   codecPreference: VideoCodec[];
 }
 
@@ -93,34 +116,36 @@ const TIERS: Record<RecorderboxQuality, TierSpec> = {
     audioBitrate: BASELINE_AUDIO_BITRATE,
     codecPreference: ['avc'],
   },
-  // BALANCED — meaningfully smaller at near-imperceptible quality cost: prefer a
-  // modern codec, ~55% of the H.264-equivalent bitrate, slightly longer GOP,
-  // 128 kbps audio.
+  // BALANCED — meaningfully smaller at near-imperceptible quality cost: prefer
+  // hardware HEVC, ~55% of the H.264-equivalent bitrate, slightly longer GOP,
+  // 128 kbps audio. Falls back to hardware H.264 where the OS has no HEVC encoder.
   balanced: {
     videoBitrateFactor: 0.55,
     keyFrameInterval: 4,
     audioBitrate: 128_000,
-    codecPreference: ['av1', 'vp9', 'avc'],
+    codecPreference: ['hevc', 'avc'],
   },
-  // SMALL — aggressively small for sharing/upload: prefer the most efficient
-  // codec, ~30% of the H.264-equivalent bitrate, long GOP, 96 kbps audio.
+  // SMALL — aggressively small for sharing/upload: prefer hardware HEVC, ~30% of
+  // the H.264-equivalent bitrate, long GOP, 96 kbps audio. H.264 fallback.
   small: {
     videoBitrateFactor: 0.3,
     keyFrameInterval: 8,
     audioBitrate: 96_000,
-    codecPreference: ['av1', 'vp9', 'avc'],
+    codecPreference: ['hevc', 'avc'],
   },
 };
 
 /** How many bits a codec needs RELATIVE to H.264 for the same perceptual
  *  quality (lower = more efficient). The tier's H.264-equivalent target is
- *  multiplied by this once a codec is chosen, so a VP9/AV1 take is smaller than
- *  the same tier's bitrate-factor alone would imply. Conservative values. */
+ *  multiplied by this once a codec is chosen, so an HEVC take is smaller than the
+ *  same tier's bitrate-factor alone would imply. Conservative values. (av1/vp9/
+ *  vp8 kept for completeness of the VideoCodec map but are never preferred — see
+ *  lever #1: software-only on Mac → audio glitches + un-importable by NLEs.) */
 const CODEC_EFFICIENCY: Record<VideoCodec, number> = {
-  av1: 0.6, // AV1 ~ 40% smaller than H.264 at equal quality.
-  vp9: 0.72, // VP9 ~ 28% smaller.
-  hevc: 0.65, // HEVC ~ 35% smaller (not in the preference lists; here for safety).
-  avc: 1.0, // H.264 reference.
+  hevc: 0.65, // HEVC (H.265) ~ 35% smaller than H.264 — the preferred small-tier codec.
+  avc: 1.0, // H.264 reference (the guaranteed hardware fallback).
+  av1: 0.6, // AV1 ~ 40% smaller — but software-encoded; never preferred (see above).
+  vp9: 0.72, // VP9 ~ 28% smaller — but software-encoded; never preferred.
   vp8: 1.05, // older than H.264 — slightly worse (never preferred).
 };
 
@@ -132,7 +157,16 @@ export interface EncodeProfile {
   /** Keyframe interval in seconds. */
   keyFrameInterval: number;
   audioBitrate: number;
+  /** Hardware-acceleration hint passed to the encoder. Always 'prefer-hardware':
+   *  a realtime recorder must never let a software video encoder monopolize the
+   *  CPU and starve the audio thread (the clicks/pops bug). Both preferred codecs
+   *  (HEVC/H.264) encode in hardware where available; this nudges the runtime to
+   *  use it. */
+  hardwareAcceleration: 'no-preference' | 'prefer-hardware' | 'prefer-software';
 }
+
+/** A realtime recorder always wants the hardware encoder (see EncodeProfile). */
+const HW_PREF = 'prefer-hardware' as const;
 
 /** Injectable probe so unit tests can drive the codec-support matrix. */
 export type CanEncodeVideoFn = (
@@ -177,6 +211,7 @@ export async function pickEncodeProfile(
         videoBitrate: bitrate,
         keyFrameInterval: tier.keyFrameInterval,
         audioBitrate: tier.audioBitrate,
+        hardwareAcceleration: HW_PREF,
       };
     }
   }
@@ -188,6 +223,7 @@ export async function pickEncodeProfile(
     videoBitrate: Math.round(h264Target),
     keyFrameInterval: tier.keyFrameInterval,
     audioBitrate: tier.audioBitrate,
+    hardwareAcceleration: HW_PREF,
   };
 }
 

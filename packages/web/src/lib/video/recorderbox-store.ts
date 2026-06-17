@@ -299,6 +299,20 @@ export async function readOpfsBytes(path: string): Promise<Uint8Array | null> {
   }
 }
 
+/** Get the OPFS scratch as a DOM `File` (a Blob) for ranged reading — e.g. a
+ *  Mediabunny `BlobSource` the remuxer seeks within (reading the moof/moov index
+ *  + sample ranges) WITHOUT a full in-memory read. Null when OPFS is unavailable
+ *  or the file is missing. */
+export async function getOpfsFileForRead(path: string): Promise<File | null> {
+  const handle = await resolveOpfsFile(path, false);
+  if (!handle) return null;
+  try {
+    return await handle.getFile();
+  } catch {
+    return null;
+  }
+}
+
 /** Minimal sink the chunked copy writes into — the structural subset of a
  *  `FileSystemWritableFileStream` (what `destHandle.createWritable()` returns).
  *  Narrow so tests can supply an in-memory capture. */
