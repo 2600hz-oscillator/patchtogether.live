@@ -208,11 +208,12 @@
       </button>
   </header>
 
-  <!-- Dot-matrix neon WIZARD — pulses with the beat. The actual pixels come
-       from the data-driven WIZARD_BITMAP in timelorde-wizard.ts (PLACEHOLDER
-       art; the owner swaps that one constant for their own painting). The
-       brightness here rides the beat-pulse rAF (frozen idle under reduced
-       motion / VRT). Hidden via wizardOn (button or gate input). -->
+  <!-- Neon pixel-art WIZARD — a blown-up SOLID-PIXEL sprite (not a sparse
+       dot-matrix) that pulses with the beat. The actual pixels come from the
+       data-driven WIZARD_BITMAP in timelorde-wizard.ts (PLACEHOLDER art; the
+       owner swaps that one constant for their own painting). The bloom here
+       rides the beat-pulse rAF (frozen idle under reduced motion / VRT). Hidden
+       via wizardOn (button or gate input). -->
   <div class="wizard-wrap">
     <button
       class="wizard-toggle"
@@ -339,45 +340,38 @@
     box-shadow: 0 0 4px var(--cable-gate);
   }
   .wizard {
-    --dot-size: 7px;
-    --dot-gap: 1px;
-    /* Pulse drives an idle→flash brightness on the lit dots. 0 = dim idle. */
+    /* SOLID-PIXEL render: each lit cell is a full square (no gap), so adjacent
+       cells merge into clean blocks — a blown-up pixel-art sprite of the
+       thumbnail, NOT a sparse dot-matrix (the spaced circles looked bad scaled
+       up). One px var sizes the whole sprite. */
+    --px: 8px;
     display: grid;
-    grid-template-columns: repeat(var(--wiz-cols), var(--dot-size));
-    grid-template-rows: repeat(var(--wiz-rows), var(--dot-size));
-    gap: var(--dot-gap);
-    padding: 8px;
+    grid-template-columns: repeat(var(--wiz-cols), var(--px));
+    grid-template-rows: repeat(var(--wiz-rows), var(--px));
+    gap: 0;
+    padding: 10px;
     background: #07090d;
     border: 1px solid #1a1f2a;
     border-radius: 4px;
+    /* Overall neon bloom rides the beat-pulse on the WHOLE sprite (dim idle →
+       bright flash), rather than per-pixel blooms that muddy a solid sprite. */
+    filter: brightness(calc(0.82 + 0.5 * var(--wiz-pulse, 0)))
+            drop-shadow(0 0 calc(2px + 8px * var(--wiz-pulse, 0)) var(--cable-gate, #ffd23f));
     /* Scale up subtly on the beat (1.0 idle → ~1.05 flash). */
     transform: scale(calc(1 + 0.05 * var(--wiz-pulse, 0)));
     transform-origin: center bottom;
   }
   .dot {
-    width: var(--dot-size);
-    height: var(--dot-size);
-    border-radius: 50%;
-    /* Idle dots glow faintly; the pulse raises brightness + bloom toward 1. */
-    opacity: calc(0.32 + 0.68 * var(--wiz-pulse, 0));
+    /* A solid square pixel filling its whole grid cell (no radius, no gap). */
+    width: var(--px);
+    height: var(--px);
   }
-  /* Neon palette — themable via the gate cable accent for the body, warm for
-     skin, and the brightest accent for the staff/orb (the "magic"). */
+  /* Neon palette — body via the gate cable accent, warm skin, bright staff/orb
+     ("the magic"). Solid fills; the container's filter supplies the glow. */
   .dot-hat,
-  .dot-body {
-    background: var(--cable-gate, #ffd23f);
-    box-shadow: 0 0 calc(2px + 4px * var(--wiz-pulse, 0)) var(--cable-gate, #ffd23f);
-  }
-  .dot-skin {
-    background: #ffd9b0;
-    box-shadow: 0 0 calc(1px + 3px * var(--wiz-pulse, 0)) #ffb27a;
-  }
-  .dot-staff {
-    background: #7bdfff;
-    box-shadow: 0 0 calc(3px + 6px * var(--wiz-pulse, 0)) #7bdfff;
-    /* The orb stays a touch brighter than the body even at idle. */
-    opacity: calc(0.5 + 0.5 * var(--wiz-pulse, 0));
-  }
+  .dot-body { background: var(--cable-gate, #ffd23f); }
+  .dot-skin { background: #ffd9b0; }
+  .dot-staff { background: #7bdfff; }
   .wizard-off {
     font-size: 0.55rem;
     letter-spacing: 0.1em;
