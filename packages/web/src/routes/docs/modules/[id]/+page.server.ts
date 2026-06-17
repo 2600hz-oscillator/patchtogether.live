@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { EntryGenerator, PageServerLoad } from './$types';
 import { buildModuleManifest } from '$lib/docs/module-manifest';
+import { guideFor } from '$lib/docs/module-guides';
 
 // SvelteKit prerender enumerator — declares every [id] value to bake into
 // static HTML at build time. Without this, the prerender step would skip
@@ -22,6 +23,7 @@ export const load: PageServerLoad = ({ params }) => {
   const next = idx >= 0 && idx < sameCat.length - 1 ? sameCat[idx + 1] : null;
   return {
     mod,
+    guide: guideFor(mod.type),
     prev: prev ? { type: prev.type, label: prev.label } : null,
     next: next ? { type: next.type, label: next.label } : null,
   };
