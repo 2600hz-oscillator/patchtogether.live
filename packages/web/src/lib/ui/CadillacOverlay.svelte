@@ -213,7 +213,19 @@
         }, LOCAL_ORIGIN);
         // Render explosions at each victim's screen-space center.
         for (const vid of victims) {
-          const internal = flow.getInternalNode(vid);
+          // We just deleted this node (above), so xyflow's internals for it
+          // may already be torn down — `getInternalNode` can throw mid-teardown.
+          // Guard it like the other call sites; the `?? 80` fallbacks below
+          // cover the miss. (An unguarded throw here surfaced as the
+          // intermittent `pageerror: o(...) is not a function` that flaked the
+          // Media Burn load-example e2e on whichever shard ran it.)
+          const internal = (() => {
+            try {
+              return flow.getInternalNode(vid);
+            } catch {
+              return undefined;
+            }
+          })();
           const w = internal?.measured?.width ?? 80;
           const h = internal?.measured?.height ?? 80;
           // Use the *flow* position from the snapshot rather than

@@ -146,7 +146,7 @@
 <h2>The card</h2>
 <ul>
   <li><strong>Session view</strong> (default) — the 8×8 launch grid (rows lane-tinted). Single-click = launch / queue / stop; double-click = open the editor. A small <strong>1/5 button</strong> to the left of each row toggles that instrument lane between <strong>MONO</strong> (one note per column — placing a note replaces what's there) and <strong>POLY</strong> (up to 5 notes per column).</li>
-  <li><strong>Edit view</strong> — a piano-roll note editor for one clip: X = step, Y = pitch (scale-degree rows in-key, root at the bottom). Click to place a note (click again to remove); <strong>right-click to cycle its velocity</strong> through 6 levels. Cycle <em>scale</em>, set <em>root</em>, change <em>length</em> (16/32/64/8), scroll the pitch window by a <strong>row</strong> (<code>↑/↓</code>) or an <strong>octave</strong> (<code>⤒/⤓</code>), or <code>⌫</code> clear the clip. A playhead column tracks the beat while the lane plays.</li>
+  <li><strong>Edit view</strong> — a piano-roll note editor for one clip: X = step, Y = pitch (scale-degree rows in-key, root at the bottom). Click to place a note (click again to remove); <strong>right-click to cycle its velocity</strong> through 6 levels. Cycle <em>scale</em>, set <em>root</em>, change <em>length</em> (16/32/64/8), scroll the pitch window by a <strong>row</strong> (<code>↑/↓</code>) or an <strong>octave</strong> (<code>⤒/⤓</code>), or <code>⌫</code> clear the clip. A playhead column tracks the beat while the lane plays. <strong>Audition the clip without leaving the editor</strong> with the <strong>NOW</strong> / <strong>QUEUE</strong> buttons at the bottom-right (see <a href="#audition">below ↓</a>).</li>
   <li><strong>Params</strong> — <code>STEP</code> (1/4 · 1/8 · 1/16 · 1/32 = steps per beat), <code>OCT</code> (transpose all lanes), <code>GATE</code> (note duty cycle), <code>QNT</code> (quantize launch to the loop boundary).</li>
   <li><strong>Transport</strong> — <code>▶/■</code> drives TIMELORDE (hidden when externally clocked); <code>■</code> in the title bar stops all lanes; <code>GRID</code> connects a monome grid.</li>
 </ul>
@@ -250,6 +250,40 @@
   that already holds one replaces it; a poly lane caps at <strong>5 notes per
   column</strong> (the poly voice width) and re-uses the oldest when you add a 6th.
 </p>
+
+<h2 id="audition">Auditioning the clip you're editing</h2>
+<p>
+  You don't have to leave the editor to hear your work. The bottom-right of the
+  note editor has two launch buttons that target <em>this</em> clip's lane and
+  slot:
+</p>
+<ul>
+  <li><strong>NOW</strong> (left) — jump straight into the clip <em>immediately</em>, mid-loop, ignoring <code>QNT</code>. It lights green while this clip is the one playing in its lane. Use it to hear an edit the instant you make it.</li>
+  <li><strong>QUEUE</strong> (right) — arm the clip to drop in on the lane's <em>next loop boundary</em> (it follows <code>QNT</code>); it pulses amber while armed, then plays in time. Use it to audition in-tempo with whatever else is running.</li>
+</ul>
+<figure class="song-fig">
+  <svg viewBox="0 0 320 132" width="320" height="132" role="img"
+       aria-label="Clip editor footer: a piano-roll grid with NOW and QUEUE launch buttons at the bottom-right.">
+    <!-- mini piano-roll -->
+    {#each Array.from({ length: 5 }, (_, r) => r) as r (r)}
+      {#each Array.from({ length: 16 }, (_, c) => c) as c (c)}
+        <rect x={4 + c * 18} y={4 + r * 16} width="16" height="14" rx="1.5"
+              fill={(r === 2 && (c === 2 || c === 6 || c === 10)) ? 'hsl(150 55% 45%)' : 'rgba(255,255,255,0.05)'}
+              stroke="rgba(255,255,255,0.10)" />
+      {/each}
+    {/each}
+    <!-- NOW + QUEUE buttons, bottom-right -->
+    <rect x="170" y="100" width="64" height="24" rx="3" fill="rgba(255,255,255,0.04)" stroke="#6fcf8f" />
+    <text x="202" y="116" text-anchor="middle" fill="#6fcf8f" font-size="11" font-weight="700">NOW</text>
+    <rect x="242" y="100" width="74" height="24" rx="3" fill="rgba(255,255,255,0.04)" stroke="#e8b35b" />
+    <text x="279" y="116" text-anchor="middle" fill="#e8b35b" font-size="11" font-weight="700">QUEUE</text>
+  </svg>
+  <figcaption class="caption">
+    The editor footer. <strong>NOW</strong> (green) launches the edited clip
+    immediately; <strong>QUEUE</strong> (amber) arms it for the next loop
+    boundary. Both act on the clip's own lane + slot.
+  </figcaption>
+</figure>
 
 <h2 id="song-mode">Song mode — record your launches into an arrangement</h2>
 <p>
