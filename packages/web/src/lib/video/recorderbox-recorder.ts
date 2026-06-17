@@ -46,7 +46,6 @@ import {
   putManifest,
   markManifestDone,
   deleteManifest,
-  streamOpfsToWritable,
   hasOpfs,
   type RecorderboxManifest,
   type ChunkSink,
@@ -64,6 +63,15 @@ import {
   MediaStreamAudioTrackSource,
   canEncodeVideo,
   canEncodeAudio,
+  // Remux-to-flat-MP4 pieces (delivery step in stop()): read the fragmented OPFS
+  // scratch + re-mux it (codec COPY, no re-encode) into a standard moov-based
+  // MP4 that NLEs like DaVinci Resolve will import. All side-effect-free value
+  // imports, only constructed inside defaultRemuxToFlatMp4 (behind a runtime).
+  Input,
+  BlobSource,
+  Mp4InputFormat,
+  BufferTarget,
+  Conversion,
   type VideoCodec,
 } from 'mediabunny';
 
@@ -264,10 +272,10 @@ export interface RecorderboxRecorderOptions {
    */
   destHandle?: FileSystemFileHandle | null;
   /** Video codec to encode with (defaults to H.264 'avc'). The card resolves
-   *  this per quality tier via pickEncodeProfile (AV1/VP9 for BALANCED/SMALL
-   *  where supported; H.264 always for HIGH + as the fallback). The MP4
-   *  container carries all of avc/hevc/vp9/av1, so the codec swap does NOT
-   *  change the container, extension, or crash-recovery semantics. */
+   *  this per quality tier via pickEncodeProfile (HEVC for BALANCED/SMALL where
+   *  the OS has a hardware encoder; H.264 always for HIGH + as the fallback). The
+   *  MP4 container carries both avc/hevc, so the codec swap does NOT change the
+   *  container, extension, or crash-recovery semantics. */
   videoCodec?: VideoCodec;
   /** Video bitrate override (defaults to 14 Mbps — the HIGH H.264 baseline). */
   videoBitrate?: number;
@@ -276,6 +284,11 @@ export interface RecorderboxRecorderOptions {
   keyFrameInterval?: number;
   /** AAC audio bitrate (defaults to 192 kbps — the HIGH tier). */
   audioBitrate?: number;
+  /** Hardware-acceleration hint for the video encoder (defaults to
+   *  'prefer-hardware'). A realtime recorder must use the HARDWARE encoder so a
+   *  software video encode can't saturate the CPU and starve the audio thread
+   *  into clicks/pops. Resolved by pickEncodeProfile. */
+  hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software';
   /** Recording-resolution width/height (the encoder's first-frame box). */
   width: number;
   height: number;
@@ -287,6 +300,12 @@ export interface RecorderboxRecorderOptions {
   /** OPFS-writer factory. Defaults to the real Worker-backed writer; tests
    *  inject an in-memory sink. */
   makeWriter?: (opfsPath: string) => OpfsWriter;
+  /** Remux the finalized FRAGMENTED OPFS scratch into a flat (moov-based) MP4 for
+   *  delivery — the Resolve-import fix. Returns the flat bytes, or null if the
+   *  remux can't run (then stop() falls back to delivering the raw fragmented
+   *  bytes so a take is never lost). Defaults to the real Mediabunny remux; tests
+   *  inject a stub (so node unit tests don't run a real Conversion). */
+  remuxToFlatMp4?: (opfsPath: string) => Promise<Uint8Array | null>;
   onStateChange?: (state: RecorderState) => void;
   /** Called if the AUDIO track fails to add / encode (e.g. an unsupported AAC
    *  profile from a low-rate capture). The video recording still proceeds
@@ -396,12 +415,21 @@ export class RecorderboxRecorder {
 
     // Video track from the hidden capture canvas. Codec + bitrate + keyframe
     // interval come from the quality tier the card resolved (HIGH = the original
-    // H.264 / 14 Mbps / ~2 s defaults); a modern codec (AV1/VP9) for the smaller
-    // tiers stays inside the same fragmented MP4 container.
+    // H.264 / 14 Mbps / ~2 s defaults); HEVC for the smaller tiers stays inside
+    // the same fragmented MP4 container.
+    //
+    // hardwareAcceleration:'prefer-hardware' is the audio-glitch fix (2026-06-17):
+    // a SOFTWARE video encoder (AV1/VP9 on a Mac) saturates the CPU and starves
+    // the secondary audio CAPTURE/encode path → clicks/pops baked into the take
+    // (the live speaker monitor stays clean because the OS audio callback has
+    // priority — which is exactly why the glitches were only ever heard on the
+    // recording, not during the session). HEVC/H.264 + the hardware hint keep the
+    // CPU free so the capture path makes its deadlines.
     const canvasSource = new CanvasSource(this.opts.canvas as HTMLCanvasElement, {
       codec: this.opts.videoCodec ?? VIDEO_CODEC,
       bitrate: this.opts.videoBitrate ?? DEFAULT_VIDEO_BITRATE,
       keyFrameInterval: this.opts.keyFrameInterval ?? DEFAULT_KEYFRAME_INTERVAL,
+      hardwareAcceleration: this.opts.hardwareAcceleration ?? 'prefer-hardware',
       // The engine canvas keeps a stable size for a recording; deny size
       // changes mid-stream (the encoder's first-frame box is authoritative).
       sizeChangeBehavior: 'contain',
@@ -476,13 +504,22 @@ export class RecorderboxRecorder {
 
   /**
    * Finalize the recording: flush + finalize the muxer (writes the final
-   * fragment), close the OPFS writer, then deliver the take to its destination:
+   * fragment), close the OPFS writer, REMUX the fragmented scratch into a flat
+   * (moov-based) MP4, then deliver the take to its destination:
    *
-   *   * destHandle present (Chromium, the user picked a path at START) — STREAM
-   *     the OPFS scratch straight into the handle in chunks (correct name at the
-   *     chosen path; never reads the whole GB-scale file into memory).
-   *   * no destHandle (Firefox/Safari, or a test capture) — read the bytes back
-   *     and hand them to saveBytes (the <a download> blob fallback).
+   *   * destHandle present (Chromium, the user picked a path at START) — write
+   *     the flat bytes to the chosen path.
+   *   * no destHandle (Firefox/Safari, or a test capture) — hand the flat bytes
+   *     to saveBytes (the <a download> blob fallback).
+   *
+   * WHY REMUX (2026-06-17): the OPFS scratch is a FRAGMENTED MP4 — the
+   * crash-recovery guarantee (playable from whatever fragments hit disk). But
+   * DaVinci Resolve + some NLEs refuse to import fragmented MP4 (they play fine in
+   * a browser / QuickTime, which is exactly the "plays in preview, won't import
+   * into Resolve" symptom). We remux to a standard moov-based MP4 — container
+   * only, codec COPY, no re-encode. If the remux can't run we fall back to
+   * delivering the RAW fragmented bytes so a take is NEVER lost (still playable
+   * everywhere except the picky NLE).
    *
    * On success, mark the manifest done + delete the scratch. On a failed save
    * (picker cancel / permission revoked), KEEP the scratch + manifest as a
@@ -504,17 +541,39 @@ export class RecorderboxRecorder {
 
     const savedName = this.opts.filename;
 
-    // ── Streaming save to the chosen handle (Chromium) ──
+    // ── Build the FLAT deliverable: remux the fragmented scratch → moov-based
+    //    MP4 (Resolve-importable). Fall back to the RAW fragmented bytes if the
+    //    remux can't run, so a take is never lost. Reading OPFS is allowed on the
+    //    main thread; only the SyncAccessHandle WRITE is worker-only. ──
+    const remux = this.opts.remuxToFlatMp4 ?? defaultRemuxToFlatMp4;
+    let bytes: Uint8Array | null = null;
+    try {
+      bytes = await remux(this.opfsPath);
+    } catch {
+      bytes = null;
+    }
+    if (!bytes || bytes.byteLength === 0) {
+      try {
+        const { readOpfsBytes } = await import('./recorderbox-store');
+        bytes = await readOpfsBytes(this.opfsPath);
+      } catch {
+        bytes = null;
+      }
+    }
+
+    // Nothing to deliver (remux + raw read both empty) — KEEP the scratch +
+    // manifest as a recover candidate rather than retiring an empty take.
+    if (!bytes || bytes.byteLength === 0) {
+      this.setState('idle');
+      return null;
+    }
+
+    // ── Deliver to the chosen handle (Chromium) ──
     if (this.opts.destHandle) {
       try {
         const sink = await createWritableSink(this.opts.destHandle);
-        const written = await streamOpfsToWritable(this.opfsPath, sink);
-        if (written > 0) {
-          await this.retire();
-          this.setState('idle');
-          return savedName;
-        }
-        // Nothing landed — fall through to cleanup (empty take).
+        await sink.write(bytes as unknown as BufferSource);
+        await sink.close();
       } catch {
         // Permission revoked / write failed — KEEP the scratch + manifest so the
         // user can retry via recovery.
@@ -523,32 +582,21 @@ export class RecorderboxRecorder {
       }
       await this.retire();
       this.setState('idle');
-      return null;
+      return savedName;
     }
 
-    // ── Fallback: full read → saveBytes (<a download> blob) ──
-    // Reading OPFS is allowed on the main thread; only the SyncAccessHandle
-    // WRITE is worker-only. This path has no streaming-to-disk API anyway.
-    let bytes: Uint8Array | null = null;
+    // ── Fallback: saveBytes (<a download> blob, Firefox/Safari) ──
     try {
-      const { readOpfsBytes } = await import('./recorderbox-store');
-      bytes = await readOpfsBytes(this.opfsPath);
+      await this.opts.saveBytes(bytes, savedName, CONTAINER_MIME);
     } catch {
-      bytes = null;
-    }
-    if (bytes && bytes.byteLength > 0) {
-      try {
-        await this.opts.saveBytes(bytes, savedName, CONTAINER_MIME);
-      } catch {
-        // Save failed — KEEP the scratch + leave the manifest as a recover
-        // candidate so they can try again.
-        this.setState('idle');
-        return null;
-      }
+      // Save failed — KEEP the scratch + leave the manifest as a recover
+      // candidate so they can try again.
+      this.setState('idle');
+      return null;
     }
     await this.retire();
     this.setState('idle');
-    return bytes && bytes.byteLength > 0 ? savedName : null;
+    return savedName;
   }
 
   /** Retire the recovery state + delete the OPFS scratch (best-effort). */
@@ -604,6 +652,52 @@ async function createWritableSink(handle: FileSystemFileHandle): Promise<ChunkSi
     write: (chunk: BufferSource | Blob) => writable.write(chunk),
     close: () => writable.close(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Default remux: fragmented OPFS scratch → flat (moov-based) MP4
+// ---------------------------------------------------------------------------
+
+/**
+ * The DEFAULT remux used by stop(): read the FRAGMENTED OPFS scratch as a ranged
+ * Blob and re-mux it (codec COPY — no re-encode) into a standard, NON-fragmented
+ * moov-based MP4 that DaVinci Resolve + other NLEs will import. Returns the flat
+ * bytes, or null if it can't run (OPFS missing / Mediabunny unavailable / the
+ * input wasn't a readable MP4) — stop() then falls back to the raw fragmented
+ * bytes so a take is never lost.
+ *
+ * `fastStart:'in-memory'` assembles the whole output in RAM before flushing, so
+ * peak memory ≈ the output file size at SAVE time (the recording itself streamed
+ * to OPFS durably during capture). Fine for typical takes; a streaming remux for
+ * multi-GB recordings is a noted follow-up.
+ */
+async function defaultRemuxToFlatMp4(opfsPath: string): Promise<Uint8Array | null> {
+  let file: File | null = null;
+  try {
+    const { getOpfsFileForRead } = await import('./recorderbox-store');
+    file = await getOpfsFileForRead(opfsPath);
+  } catch {
+    file = null;
+  }
+  if (!file || file.size === 0) return null;
+  try {
+    const input = new Input({ source: new BlobSource(file), formats: [new Mp4InputFormat()] });
+    const target = new BufferTarget();
+    const output = new Output({
+      // A standard moov-based MP4 (not 'fragmented') — the layout NLEs expect.
+      format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
+      target,
+    });
+    // No video/audio options → Conversion COPIES the encoded samples (remux only,
+    // no transcode), so the codec + quality are byte-identical — only the
+    // container layout changes from fragmented to flat.
+    const conversion = await Conversion.init({ input, output });
+    await conversion.execute();
+    const buf = target.buffer;
+    return buf ? new Uint8Array(buf) : null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
