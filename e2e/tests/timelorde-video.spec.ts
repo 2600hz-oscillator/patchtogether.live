@@ -3,17 +3,18 @@
 // LIVE-patch coverage for TIMELORDE's new VIDEO IN / VIDEO OUT jacks + the
 // big-display redesign. Claims:
 //
-//   1. WIZARD render (no feed): with nothing patched into video_in + the
-//      wizard ON, the big display canvas renders a non-blank, beat-bright
-//      picture (the crisp 🧙 glyph) — proving the ~4× display paints.
-//   2. WIZARD ↔ VIDEO toggle: patch a self-running video source (ACIDWARP) into
+//   1. OWL render (no feed): with nothing patched into video_in + the owl ON,
+//      the big display canvas renders a non-blank picture (the owner's owl
+//      painting) — proving the ~4× display paints. (data-display-mode 'wizard'
+//      is the owl-art mode — the enum name predates the owl swap.)
+//   2. OWL ↔ VIDEO toggle: patch a self-running video source (ACIDWARP) into
 //      video_in and the display flips to the LIVE FEED (data-display-mode goes
-//      wizard→video); unpatch and it returns to the wizard.
+//      wizard→video); unpatch and it returns to the owl.
 //   3. VIDEO passthrough (in → display → out): TIMELORDE.video_out wired into
 //      OUTPUT renders the SAME live feed downstream — proving the cross-domain
 //      passthrough is genuine (TIMELORDE can sit inline in a video chain).
 //
-// The pure decision (feed wins over wizard) + the videoSources/write→drawFrame
+// The pure decision (feed wins over owl) + the videoSources/write→drawFrame
 // handoff are unit-tested in timelorde-wizard.test.ts + timelorde.test.ts; this
 // spec proves the real end-to-end wiring through the card's rAF.
 
@@ -50,8 +51,8 @@ async function displayMode(page: Page, nodeId: string): Promise<string | null> {
     .getAttribute('data-display-mode');
 }
 
-test.describe('TIMELORDE big display: wizard ↔ live video + passthrough', () => {
-  test('renders the crisp wizard when nothing is patched into video_in', async ({ page }) => {
+test.describe('TIMELORDE big display: owl ↔ live video + passthrough', () => {
+  test('renders the owl painting when nothing is patched into video_in', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -76,19 +77,19 @@ test.describe('TIMELORDE big display: wizard ↔ live video + passthrough', () =
 
     expect(await displayMode(page, TL)).toBe('wizard');
 
-    // The wizard paints a non-blank picture (the glyph + neon bloom).
+    // The owl painting fills the display — a non-blank, varying picture.
     await page.waitForTimeout(700);
     const stats = await canvasStats(display);
     expect(stats, 'display pixels readable').not.toBeNull();
     if (stats) {
-      expect(stats.brightFrac, `wizard lights some pixels (got ${stats.brightFrac})`).toBeGreaterThan(0.01);
-      expect(stats.variance, `wizard has pixel variance (got ${stats.variance})`).toBeGreaterThan(5);
+      expect(stats.brightFrac, `owl lights some pixels (got ${stats.brightFrac})`).toBeGreaterThan(0.01);
+      expect(stats.variance, `owl has pixel variance (got ${stats.variance})`).toBeGreaterThan(5);
     }
 
     expect(errors).toEqual([]);
   });
 
-  test('patching video_in flips the display from WIZARD to the LIVE FEED, and back', async ({ page }) => {
+  test('patching video_in flips the display from the OWL to the LIVE FEED, and back', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
@@ -105,7 +106,7 @@ test.describe('TIMELORDE big display: wizard ↔ live video + passthrough', () =
     ];
     await spawnPatch(page, nodes, edges);
 
-    // Display shows the live feed (the feed wins over the wizard).
+    // Display shows the live feed (the feed wins over the owl).
     await expect
       .poll(() => displayMode(page, TL), { timeout: 4000, message: 'display flips to video' })
       .toBe('video');
@@ -118,7 +119,7 @@ test.describe('TIMELORDE big display: wizard ↔ live video + passthrough', () =
       expect(feedStats.brightFrac, 'live feed lights the display').toBeGreaterThan(0.02);
     }
 
-    // Unpatch the video_in edge → back to the wizard.
+    // Unpatch the video_in edge → back to the owl.
     await page.evaluate(() => {
       const w = globalThis as unknown as {
         __patch: { edges: Record<string, unknown> };

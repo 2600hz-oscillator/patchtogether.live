@@ -12,9 +12,17 @@
   import ModuleTitle from './ModuleTitle.svelte';
   import {
     beatPulse,
+    applyBeatBoost,
     wizardDisplayMode,
     type WizardDisplayMode,
   } from '$lib/audio/modules/timelorde-wizard';
+
+  // The owner's folk-art OWL PAINTING — a bundled static asset (served at the
+  // site root from packages/web/static/img). Drawn into the big display + used
+  // as the small toggle thumbnail. Referenced by static path (the cadillac /
+  // media-burn precedent) so the SAME url works for both <img> and a canvas
+  // Image() load.
+  const OWL_SRC = '/img/timelorde-owl.png';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -142,6 +150,21 @@
   const DISPLAY_H = 220;
   let displayCanvas: HTMLCanvasElement | null = $state(null);
   let displayRaf: number | null = null;
+
+  // The owl painting, loaded once into an HTMLImageElement so the rAF can blit
+  // it into the display each frame (then colour-key boost the eyes + border).
+  // Until it decodes we paint the dark idle background, so the canvas is never
+  // garbage. (createImageBitmap is overkill for a single static asset.)
+  let owlImg: HTMLImageElement | null = null;
+  let owlReady = $state(false);
+  $effect(() => {
+    if (typeof Image === 'undefined') return;
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => { owlImg = img; owlReady = true; };
+    img.src = OWL_SRC;
+    return () => { img.onload = null; owlImg = null; owlReady = false; };
+  });
   // Off-screen scratch we composite into, then transfer to the node as an
   // ImageBitmap each frame (createImageBitmap is the cheapest DOM→node handoff,
   // and the node closes the previous bitmap — see timelorde.ts write()).
@@ -222,11 +245,16 @@
     } catch { return false; }
   }
 
-  /** The crisp neon wizard glyph, painted into a 2D context. This is the SAME
-   *  detailed art as the small thumbnail icon (the 🧙 glyph — a vector font
-   *  glyph, so it stays sharp at any size, NOT the blocky 16×18 bitmap upscale).
-   *  The beat-pulse drives the glow + a subtle scale. */
-  function drawWizard(
+  /** The owner's OWL PAINTING, painted into the big display. The owl fills the
+   *  square (object-fit: contain, centred on the dark ground). After the blit
+   *  we read the pixels back and apply the COLOUR-TARGETED beat boost
+   *  (applyBeatBoost): the YELLOW EYES + the BLUE BORDER brighten by the pulse,
+   *  the brown owl body stays steady — so only the eyes + border pulse with the
+   *  music. (Pure per-pixel maths in timelorde-wizard.ts; this is the I/O.)
+   *
+   *  Until the image decodes we paint just the dark idle ground, so the display
+   *  is never garbage (the same fallback the off-screen video_out idle uses). */
+  function drawOwl(
     ctx2d: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
     w: number,
     h: number,
@@ -235,30 +263,33 @@
     ctx2d.clearRect(0, 0, w, h);
     ctx2d.fillStyle = '#07090d';
     ctx2d.fillRect(0, 0, w, h);
-    const accent = readGateAccent();
-    const scale = 1 + 0.06 * pulseNow;
-    const fontPx = Math.round(h * 0.62 * scale);
-    ctx2d.save();
-    ctx2d.textAlign = 'center';
-    ctx2d.textBaseline = 'middle';
-    ctx2d.font = `${fontPx}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif`;
-    // Neon bloom rides the beat — dim idle → bright flash.
-    ctx2d.shadowColor = accent;
-    ctx2d.shadowBlur = 6 + 26 * pulseNow;
-    ctx2d.globalAlpha = 0.85 + 0.15 * pulseNow;
-    ctx2d.fillText('🧙', w / 2, h / 2 + h * 0.04);
-    ctx2d.restore();
-  }
-
-  /** The gate-cable accent colour (themable) resolved from CSS, for the bloom. */
-  function readGateAccent(): string {
-    if (typeof window === 'undefined' || !displayCanvas) return '#ffd23f';
+    if (!owlImg || !owlReady) return;
+    // object-fit: contain — preserve the painting's aspect, centred.
+    const iw = owlImg.naturalWidth || owlImg.width;
+    const ih = owlImg.naturalHeight || owlImg.height;
+    if (!iw || !ih) return;
+    const scale = Math.min(w / iw, h / ih);
+    const dw = iw * scale;
+    const dh = ih * scale;
+    const dx = (w - dw) / 2;
+    const dy = (h - dh) / 2;
     try {
-      const v = getComputedStyle(displayCanvas)
-        .getPropertyValue('--cable-gate')
-        .trim();
-      return v || '#ffd23f';
-    } catch { return '#ffd23f'; }
+      ctx2d.imageSmoothingEnabled = true;
+      ctx2d.drawImage(owlImg, dx, dy, dw, dh);
+    } catch {
+      return; // image not yet usable (decode race) — idle ground stands
+    }
+    // Colour-key beat boost — only when pulsing (idle frame = the bare owl, so
+    // the VRT capture under reduced-motion stays the deterministic steady owl).
+    if (pulseNow <= 0) return;
+    let frame: ImageData;
+    try {
+      frame = ctx2d.getImageData(0, 0, w, h);
+    } catch {
+      return; // tainted/locked canvas — skip the boost, owl still shows
+    }
+    applyBeatBoost(frame.data, pulseNow);
+    ctx2d.putImageData(frame, 0, 0);
   }
 
   // rAF: paint the big display (live feed or wizard) + push the frame to the
@@ -276,10 +307,10 @@
       painted = drawVideoFeed(ctx2d, w, h);
     }
     if (!painted) {
-      // No feed (or none patched) → the wizard. (When wizardOff the visible
-      // card shows the "wizard off" placeholder via markup; we still paint the
-      // wizard into the push canvas so video_out emits a coherent picture.)
-      drawWizard(ctx2d, w, h, pulse);
+      // No feed (or none patched) → the owl. (When wizardOff the visible card
+      // shows the "wizard off" placeholder via markup; we still paint the owl
+      // into the push canvas so video_out emits a coherent picture.)
+      drawOwl(ctx2d, w, h, pulse);
     }
     // Push the composited display to the node for video_out passthrough.
     pushDisplayFrame();
@@ -311,8 +342,9 @@
 
   $effect(() => {
     // Track the inputs so the loop re-arms when video patch state / wizard
-    // visibility changes.
-    void displayMode; void hasVideoIn; void displayCanvas;
+    // visibility / owl-image readiness changes (owlReady so the deterministic
+    // reduced-motion frame repaints once the painting finishes decoding).
+    void displayMode; void hasVideoIn; void displayCanvas; void owlReady;
     if (!displayCanvas) return;
     if (prefersReducedMotion()) {
       // One deterministic frame, then idle (VRT / reduced-motion).
@@ -423,21 +455,21 @@
       </button>
   </header>
 
-  <!-- BIG SQUARE DISPLAY — ~4× the old wizard. Normally a crisp, beat-pulsing
-       neon WIZARD (the SAME detailed art as the small thumbnail toggle, drawn
-       as the 🧙 vector glyph so it stays sharp at this size — NOT the blocky
-       16×18 bitmap upscale). With a cable in video_in it becomes a LIVE MONITOR
-       of that feed, and video_out passes the feed through. Rendered on a 2D
-       canvas by the renderDisplay rAF (one frozen frame under reduced-motion /
-       VRT). The small 🧙 toggle (kept as-is) shows/hides the wizard. -->
+  <!-- BIG SQUARE DISPLAY — ~4× the old sprite. Normally the owner's beat-pulsing
+       OWL PAINTING: the owl is drawn into the canvas and its YELLOW EYES + BLUE
+       BORDER brighten with the beat (the brown body stays steady — see
+       applyBeatBoost). With a cable in video_in it becomes a LIVE MONITOR of
+       that feed, and video_out passes the feed through. Rendered on a 2D canvas
+       by the renderDisplay rAF (one frozen frame under reduced-motion / VRT —
+       the steady owl, no boost). The small owl thumbnail toggle shows/hides it. -->
   <div class="wizard-wrap">
     <button
       class="wizard-toggle"
       class:on={wizardOn}
       onclick={toggleWizard}
-      title={wizardOn ? 'Hide the wizard' : 'Show the wizard'}
+      title={wizardOn ? 'Hide the owl' : 'Show the owl'}
       data-testid={`timelorde-wizard-toggle-${id}`}
-    >🧙</button>
+    ><img class="wizard-thumb" src={OWL_SRC} alt="" draggable="false" /></button>
     <!-- The canvas is ALWAYS mounted (it feeds video_out's passthrough even
          when the visible card shows "wizard off"); we hide it visually in the
          wizard-off / no-feed case via the overlay below. -->
@@ -540,16 +572,27 @@
     background: #2a2f3a;
     border: 1px solid #404652;
     border-radius: 3px;
-    font-size: 0.8rem;
     line-height: 1;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 0;
+    overflow: hidden;
     opacity: 0.55;
     filter: grayscale(1);
     z-index: 1;
+  }
+  /* A small thumbnail of the SAME owl painting (object-fit: cover so the owl
+     fills the square chip). */
+  .wizard-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    pointer-events: none;
+    -webkit-user-drag: none;
+    user-select: none;
   }
   .wizard-toggle.on {
     opacity: 1;
