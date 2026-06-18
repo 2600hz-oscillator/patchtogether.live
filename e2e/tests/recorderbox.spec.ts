@@ -297,6 +297,26 @@ test('RECORDERBOX captures patched audio at an ENCODABLE (AAC-LC) sample rate', 
   // (2) ENCODABLE: the track rate must be > 24 kHz so Mediabunny chooses AAC-LC
   // (mp4a.40.2). A ≤24 kHz track is the exact silent-MP4 trigger this fix kills.
   expect(result.sampleRate!, 'capture track must be at an AAC-LC-encodable rate (>24 kHz)').toBeGreaterThan(24_000);
+
+  // (3) SAMPLE-ACCURATE TAP (the clicks/pops fix): the module also publishes a
+  // worklet capture tap via read('audioCapture') — a Promise resolving to
+  // { port, sampleRate }. The recorder PREFERS it (drains posted f32 chunks
+  // through a backpressured AudioSampleSource = lossless, no silence-pad clicks).
+  // No OS encoder needed (just AudioWorklet + a MessagePort), so this runs on CI.
+  const tap = await page.evaluate(async (id) => {
+    const w = window as unknown as {
+      __engine?: () => { getDomain?: (d: string) => { read?: (n: string, k: string) => unknown } } | null;
+    };
+    const t = await (w.__engine?.()?.getDomain?.('video')?.read?.(id, 'audioCapture') as
+      | Promise<{ port: MessagePort; sampleRate: number } | null>
+      | undefined);
+    if (!t) return { ok: false, sampleRate: 0, hasPort: false };
+    return { ok: true, sampleRate: t.sampleRate, hasPort: typeof t.port?.postMessage === 'function' };
+  }, 'rec');
+  expect(tap.ok, 'audioCapture tap resolved (worklet loaded)').toBe(true);
+  expect(tap.hasPort, 'tap exposes a real MessagePort').toBe(true);
+  // The tap's captured rate is the ENCODABLE rate (44.1/48k — the bridge rate).
+  expect(tap.sampleRate, 'capture tap rate is AAC-LC-encodable (>24 kHz)').toBeGreaterThan(24_000);
   // (1) NON-SILENT: the patched VCO actually reaches the captured track.
   // (MediaStreamTrackProcessor may be unavailable on a runner; only assert the
   // level when we actually read frames — the rate invariant above is the

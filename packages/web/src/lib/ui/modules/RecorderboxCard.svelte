@@ -225,11 +225,26 @@
       // The user may have flipped Record OFF while the probe ran.
       if (!recording) return;
 
-      // Pull the live capture MediaStream the module published (null = audio off
-      // → record video only / silent).
+      // Pull the live audio source the module published. PREFER the
+      // sample-accurate capture tap (read('audioCapture') → a Promise resolving
+      // to { port, sampleRate } | null): the worklet posts planar f32 stereo
+      // from the audio thread + the recorder drains it losslessly (no
+      // clicks/pops). Fall back to the legacy capture MediaStream's audio track
+      // (audioStream) when no tap is available (no AudioContext / worklet load
+      // failed). null/absent both = record video only / silent.
       const e = engineCtx.get();
+      let audioCapture: { port: MessagePort; sampleRate: number } | null = null;
       let audioTrack: MediaStreamTrack | null = null;
       if (e && node) {
+        try {
+          audioCapture = (await e.read(node, 'audioCapture')) as
+            | { port: MessagePort; sampleRate: number }
+            | null;
+        } catch {
+          audioCapture = null;
+        }
+        // The user may have flipped Record OFF while the tap Promise settled.
+        if (!recording) return;
         const stream = e.read(node, 'audioStream') as MediaStream | null | undefined;
         audioTrack = stream?.getAudioTracks?.()[0] ?? null;
       }
@@ -237,7 +252,8 @@
       recorder = new RecorderboxRecorder({
         nodeId: id,
         canvas: captureEl,
-        audioTrack,
+        audioCapture,   // PREFERRED — sample-accurate worklet tap (lossless).
+        audioTrack,     // FALLBACK — legacy MediaStreamAudioTrackSource path.
         filename,
         destHandle: dest, // null on Firefox/Safari → stop() downloads instead.
         videoCodec: profile.videoCodec,

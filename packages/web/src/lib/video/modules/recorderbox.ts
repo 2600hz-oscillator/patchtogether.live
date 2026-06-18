@@ -94,6 +94,25 @@
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
+// SAMPLE-ACCURATE CAPTURE TAP worklet (the clicks/pops fix). Runs on the AUDIO
+// THREAD: while ARMED it batches 1024 stereo frames and POSTS planar f32 to the
+// main thread via its port (the port BUFFERS under load → the audio thread never
+// drops a sample). The recorder drains those posts through mediabunny's
+// BACKPRESSURED AudioSampleSource.add() → lossless. See recorderbox-capture.ts +
+// recorderbox-capture-drain.ts. The `?url` import resolves the pre-built
+// dist/recorderbox-capture.js (task dsp:build) — same pattern as MANDELBULB's
+// mandelbulb-osc worklet.
+import captureWorkletUrl from '@patchtogether.live/dsp/dist/recorderbox-capture.js?url';
+
+/** What `read('audioCapture')` resolves to: the worklet's MessagePort (the
+ *  drain reads planar f32 chunks off it) + the ENCODABLE capture sample rate
+ *  (44.1/48k — post the low-rate→48k bridge), or null when there's no
+ *  AudioContext / the worklet couldn't load (then the recorder falls back to the
+ *  MediaStreamAudioTrackSource path via `audioStream`). */
+export interface RecorderboxAudioCaptureTap {
+  port: MessagePort;
+  sampleRate: number;
+}
 
 const COPY_FRAG_SRC = `#version 300 es
 precision highp float;
@@ -164,6 +183,29 @@ export const recorderboxDef: VideoModuleDef = {
     let resampleCtx: AudioContext | null = null;
     let resampleSrc: MediaStreamAudioSourceNode | null = null;
     let resampleKeepAlive: GainNode | null = null;
+    // ── SAMPLE-ACCURATE CAPTURE TAP (the clicks/pops fix) ──
+    // An AudioWorkletNode ('recorderbox-capture') tapped off the merged stereo
+    // signal IN THE ENCODABLE-RATE CONTEXT (the main ctx at normal rates; the
+    // dedicated 48 kHz resample ctx on a low-rate device — reusing the same
+    // 48k-bridge decision so the captured rate is always AAC-LC-encodable). While
+    // ARMED it posts planar f32 chunks to the main thread; the recorder drains
+    // them through mediabunny's backpressured AudioSampleSource.add() → lossless,
+    // no dropped samples → no silence-pad → no click. Loaded ASYNC (addModule),
+    // so the tap is published via a Promise (read('audioCapture')). Held so
+    // dispose() tears it down. A gain(0)→destination keep-alive makes Chromium
+    // actually run the worklet's process() (an orphan subgraph is never pulled).
+    let captureNode: AudioWorkletNode | null = null;
+    let captureKeepAlive: GainNode | null = null;
+    // The encodable-rate context the capture node lives in + the source node we
+    // tap (the merger at normal rates, the resampleSrc on a low-rate device).
+    // Resolved synchronously below; the worklet load (async) reads them.
+    let captureAc: BaseAudioContext | null = null;
+    let captureTapSource: AudioNode | null = null;
+    let captureSampleRate = 0;
+    // The published tap Promise — resolved once addModule + node creation
+    // complete (or with null on no-AudioContext / load failure). read() returns
+    // this so the card can `await` it at record start.
+    let captureTap: Promise<RecorderboxAudioCaptureTap | null> = Promise.resolve(null);
     if (ctx.audioCtx) {
       const ac = ctx.audioCtx;
       // The bridge connects each upstream source into gainL/gainR. We route each
@@ -243,16 +285,74 @@ export const recorderboxDef: VideoModuleDef = {
             resampleSrc.connect(resampleKeepAlive);
             try { resampleKeepAlive.connect(resampleCtx.destination); } catch { /* */ }
             captureStream = rDest.stream;
+            // The sample-accurate tap lives in the 48 kHz resample ctx (the
+            // encodable rate), tapped off the resampled stereo source.
+            captureAc = resampleCtx;
+            captureTapSource = resampleSrc;
+            captureSampleRate = resampleCtx.sampleRate; // 48000
           } else {
             captureStream = dest.stream; // no AudioContext ctor — best-effort.
+            // No second context — tap the main ctx merger directly (still
+            // ≤24 kHz here, but the worklet path itself never drops; the rate
+            // gate is the MediaStreamAudioTrackSource fallback's problem).
+            captureAc = ac;
+            captureTapSource = merger;
+            captureSampleRate = ac.sampleRate;
           }
         } catch {
           // Resample bridge failed — fall back to the direct stream (audio may
           // be dropped at encode time, but never crash the recording).
           captureStream = dest.stream;
+          captureAc = ac;
+          captureTapSource = merger;
+          captureSampleRate = ac.sampleRate;
         }
       } else {
         captureStream = dest.stream;
+        // Normal rate (44.1/48k): tap the main ctx merger directly — already an
+        // AAC-LC-encodable rate, so no second context is needed.
+        captureAc = ac;
+        captureTapSource = merger;
+        captureSampleRate = ac.sampleRate;
+      }
+
+      // ── Kick off the async capture-worklet load (the sample-accurate tap) ──
+      // Same async-in-factory pattern as MANDELBULB's mandelbulb-osc: load the
+      // module, build the node, connect the encodable-rate source → capture →
+      // gain(0)→destination keep-alive (so Chromium runs its process()). Publish
+      // the {port, sampleRate} tap via a Promise the card awaits at record start.
+      // On any failure resolve null → the recorder uses the audioStream fallback.
+      const tapAc = captureAc;
+      const tapSrc = captureTapSource;
+      const tapRate = captureSampleRate;
+      if (tapAc && tapSrc && tapRate > 0) {
+        captureTap = (async (): Promise<RecorderboxAudioCaptureTap | null> => {
+          try {
+            await tapAc.audioWorklet.addModule(captureWorkletUrl);
+            const cap = new AudioWorkletNode(tapAc, 'recorderbox-capture', {
+              numberOfInputs: 1,
+              numberOfOutputs: 1,
+              channelCount: 2,
+              channelCountMode: 'explicit',
+            });
+            captureNode = cap;
+            tapSrc.connect(cap);
+            // Keep-alive: an AudioWorkletNode with no path to destination is an
+            // orphan subgraph Chromium won't pull → its process() never runs.
+            // gain(0) keeps the tap-only/inaudible contract.
+            captureKeepAlive = tapAc.createGain();
+            captureKeepAlive.gain.value = 0;
+            cap.connect(captureKeepAlive);
+            if ('destination' in tapAc && tapAc.destination) {
+              try { captureKeepAlive.connect(tapAc.destination); } catch { /* */ }
+            }
+            return { port: cap.port, sampleRate: tapRate };
+          } catch {
+            // Worklet load failed (CSP / missing dist / no AudioWorklet) — the
+            // recorder falls back to the MediaStreamAudioTrackSource path.
+            return null;
+          }
+        })();
       }
 
       // Publish the per-port AudioNode SINKS for the cross-domain
@@ -303,10 +403,17 @@ export const recorderboxDef: VideoModuleDef = {
         // recorder (or null when no audio context — record video only).
         if (key === 'audioStream') return captureStream;
         if (key === 'hasAudio') return captureStream !== null;
+        // The sample-accurate capture tap (PREFERRED). A Promise resolving to
+        // { port, sampleRate } once the worklet has loaded, or null if there's
+        // no AudioContext / the worklet failed to load (→ audioStream fallback).
+        if (key === 'audioCapture') return captureTap;
         return undefined;
       },
       dispose() {
         surface.dispose();
+        // Tear down the sample-accurate capture tap + its keep-alive.
+        try { captureNode?.disconnect(); } catch { /* */ }
+        try { captureKeepAlive?.disconnect(); } catch { /* */ }
         // Tear down the audio capture graph. Disconnect is idempotent-safe.
         try { keepAlive?.disconnect(); } catch { /* */ }
         try { merger?.disconnect(); } catch { /* */ }
