@@ -46,7 +46,7 @@
   // feeds it transition events. The carry/pickup lifecycle itself lives in
   // connectDragState (shared singleton) + Canvas (which owns the commit).
   import { onDestroy, untrack } from 'svelte';
-  import { Handle, Position, useUpdateNodeInternals } from '@xyflow/svelte';
+  import { Handle, Position, useStore } from '@xyflow/svelte';
   import {
     resolveVerboseLabel,
     groupPortsByCableType,
@@ -525,14 +525,45 @@
   // regardless of menu state — so edges always anchor at the trigger corner.
   // We still nudge SvelteFlow to re-measure on menu open/close so any
   // in-flight cable re-routes cleanly. RAF-deferred so CSS settles first.
-  const updateNodeInternals = useUpdateNodeInternals();
+  //
+  // We re-measure through the *stable* SvelteFlow store (captured eagerly,
+  // a plain context object) rather than xyflow's `useUpdateNodeInternals()`
+  // hook. That hook reads `domNode`/`updateNodeInternals` through a
+  // component-owned `$derived(useStore())`, and schedules its OWN
+  // uncancellable inner rAF that re-reads that derived. If this card is
+  // deleted between scheduling and the rAF firing — e.g. CADILLAC drives
+  // through a PICTUREBOX tile and deletes it — the derived is INERT
+  // (`svelte/e/derived_inert`) and the read throws an unhandled
+  // `updateNodeInternals is not a function` (minified `o(...) is not a
+  // function`). That intermittent pageerror flaked the Media Burn
+  // load-example e2e (#821 fixed the sibling CadillacOverlay call sites; this
+  // PatchPanel site, on every card, was the remaining source). Reading the
+  // method off the stable store inside OUR cancellable rAF — and guarding the
+  // call — keeps it on the live component's lifecycle.
+  const flowStore = useStore();
   $effect(() => {
     void open;
+    const id = nodeId;
     let f1 = 0;
     let f2 = 0;
     f1 = requestAnimationFrame(() => {
       f2 = requestAnimationFrame(() => {
-        untrack(() => updateNodeInternals(nodeId));
+        untrack(() => {
+          // The card may be mid-teardown by the time this fires (deleted
+          // node). The querySelector miss + try/catch make it a no-op rather
+          // than an unhandled throw.
+          try {
+            const nodeElement = flowStore.domNode?.querySelector<HTMLDivElement>(
+              `.svelte-flow__node[data-id="${id}"]`,
+            );
+            if (!nodeElement) return;
+            flowStore.updateNodeInternals(
+              new Map([[id, { id, nodeElement, force: true }]]),
+            );
+          } catch {
+            /* node already gone — re-measure is moot */
+          }
+        });
       });
     });
     return () => {

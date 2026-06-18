@@ -37,7 +37,7 @@ const EXPECTED_NODE_TYPES = [
   'doom', 'drummergirl', 'drumseqz', 'dx7', 'elements', 'feedback', 'filter',
   'fourplexer', 'foxy', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'grids', 'group',
   'helm', 'hydrogen', 'hypercube', 'illogic', 'inwards', 'joystick', 'kria', 'lfo', 'lines', 'livecode',
-  'luma', 'lumakey', 'macrooscillator', 'macseq', 'mandleblot', 'marbles', 'matrixMix', 'meowbox',
+  'luma', 'lumakey', 'macrooscillator', 'macseq', 'mandleblot', 'mappy', 'marbles', 'matrixMix', 'meowbox',
   'mandelbulb', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'mixer', 'mixmstrs', 'modtris',
   'monoglitch', 'moog902', 'moog904a', 'moog911', 'moog921Vco', 'moogCp3', 'negativity', 'nibbles',
   'noise', 'numpadPlus', 'peaks', 'peakstate', 'peertube', 'picturebox', 'polyhelm', 'polyseqz', 'pong',
