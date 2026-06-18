@@ -119,6 +119,18 @@ export const timelordeDef: AudioModuleDef = {
     // is patched, only the button governs. See gateLevelToWizardOn() in
     // timelorde-wizard.ts (one-spot place to flip the meaning).
     { id: 'gate',     type: 'gate', edge: 'gate' },
+    // video_in (cross-domain VIDEO input): patch a video feed here and the
+    // card's big display becomes a LIVE MONITOR of that feed (the wizard steps
+    // aside) — and `video_out` passes the feed through, so TIMELORDE can sit
+    // INLINE in a video chain (in → display → out). When nothing is patched
+    // the display shows the beat-pulsing wizard (the original behaviour).
+    //
+    // Consumed CARD-SIDE (the SYNESTHESIA / WAVESCULPT-wall precedent): the
+    // card walks patch.edges to find the upstream source and blits its frame
+    // into the display + the passthrough. The audio engine has no AudioNode
+    // for a video port, so PatchEngine.addEdge IGNORES the video-frame edge
+    // (same-domain audio video-frame branch) — no graph wiring needed here.
+    { id: 'video_in', type: 'video' },
   ],
   outputs: [
     // Order MUST match dsp/timelorde.ts OUT_* indices.
@@ -135,6 +147,15 @@ export const timelordeDef: AudioModuleDef = {
     { id: '1/32',  type: 'gate' },
     { id: '1/64',  type: 'gate' },
     { id: 'swing', type: 'gate' },
+    // video_out (cross-domain VIDEO output): the picture TIMELORDE's big
+    // display shows — the LIVE video feed when something is patched into
+    // video_in, else the beat-pulsing wizard. Published via the handle's
+    // `videoSources` map with a `drawFrame` (the SCOPE precedent for an
+    // AUDIO module driving a video source): the card pushes the current
+    // display frame into the node each rAF (handle.write('displayFrame', …)),
+    // and drawFrame() blits the latest one for the cross-domain video bridge,
+    // so a downstream video module sees the feed pass through.
+    { id: 'video_out', type: 'video' },
   ],
   params: [
     { id: 'bpm',          label: 'BPM',   defaultValue: 120, min: 10, max: 300, curve: 'log',      units: 'bpm' },
@@ -359,6 +380,54 @@ export const timelordeDef: AudioModuleDef = {
     const wizardGateBuf = new Float32Array(wizardGateAna.fftSize);
     const wizardOnParam = params.get('wizardOn');
 
+    // -------- video_out: card-pushed display frame → cross-domain bridge -----
+    //
+    // TIMELORDE is an AUDIO module that ALSO carries a `video_out`. Audio
+    // modules publish a video output via the handle's `videoSources` map; the
+    // cross-domain video-texture bridge calls our `drawFrame(canvas)` each
+    // VIDEO frame and uploads the result for downstream video modules (the
+    // SCOPE / WAVESCULPT.video_out precedent).
+    //
+    // The picture is the SAME thing the card's big display shows — the live
+    // video feed when video_in is patched, else the beat-pulsing wizard. Only
+    // the DOM (the card) can read the upstream video frame + paint the wizard,
+    // so the card computes the display each rAF and PUSHES it to us via
+    // handle.write('displayFrame', ImageBitmap) (the SYNESTHESIA write() path).
+    // drawFrame() blits the latest pushed bitmap; before the first push (or
+    // with no DOM) it paints a dark idle frame so a downstream consumer never
+    // samples an uninitialised texture.
+    let lastDisplayFrame: ImageBitmap | null = null;
+    function drawFrame(canvas: OffscreenCanvas | HTMLCanvasElement): void {
+      const g = canvas.getContext('2d') as
+        | OffscreenCanvasRenderingContext2D
+        | CanvasRenderingContext2D
+        | null;
+      if (!g) return;
+      const w = canvas.width;
+      const h = canvas.height;
+      if (lastDisplayFrame) {
+        try {
+          g.clearRect(0, 0, w, h);
+          g.drawImage(lastDisplayFrame, 0, 0, w, h);
+          return;
+        } catch {
+          // Bitmap was closed out from under us — fall through to idle.
+        }
+      }
+      // Idle frame (no card push yet): the gate-cable accent on near-black so
+      // a downstream module reads a stable, non-garbage texture.
+      g.fillStyle = '#07090d';
+      g.fillRect(0, 0, w, h);
+    }
+    // The `analyser` field is required by getVideoSource() callers even when a
+    // drawFrame is supplied (the bridge ignores it then — see the
+    // AudioDomainNodeHandle.videoSources docs). Tap output 0 (the 1x clock) so
+    // there's a live AnalyserNode to hand over.
+    const videoTapAna = ctx.createAnalyser();
+    videoTapAna.fftSize = 2048;
+    videoTapAna.smoothingTimeConstant = 0;
+    try { workletNode.connect(videoTapAna, 0); } catch { /* offline/test ctx */ }
+
     let lastTransportPollTime = ctx.currentTime;
     function pollTransportGates(): void {
       const nowAt = ctx.currentTime;
@@ -456,11 +525,32 @@ export const timelordeDef: AudioModuleDef = {
         ['1/64',  { node: workletNode, output: 11 }],
         ['swing', { node: workletNode, output: 12 }],
       ]),
+      // video_out (cross-domain): the card-pushed display frame, exposed as a
+      // video source for the audio→video texture bridge. `drawFrame` blits the
+      // latest frame; `analyser` (the 1x clock tap) satisfies the bridge's
+      // contract even though it's ignored when drawFrame is present.
+      videoSources: new Map([
+        ['video_out', { analyser: videoTapAna, sampleRate: ctx.sampleRate, drawFrame }],
+      ]),
       setParam(paramId, value) {
         params.get(paramId)?.setValueAtTime(value, ctx.currentTime);
       },
       readParam(paramId) {
         return params.get(paramId)?.value;
+      },
+      // The card pushes the current big-display picture (live feed or wizard)
+      // here every rAF so video_out's drawFrame can pass it through. We adopt
+      // the new ImageBitmap and close the previous one (bitmaps hold GPU/CPU
+      // memory until close()). Mirrors SYNESTHESIA's video_levels_a/_b write().
+      write(key, value) {
+        if (key === 'displayFrame') {
+          const prev = lastDisplayFrame;
+          lastDisplayFrame =
+            value instanceof ImageBitmap ? value : null;
+          if (prev && prev !== lastDisplayFrame) {
+            try { prev.close(); } catch { /* */ }
+          }
+        }
       },
       read(key) {
         if (key === 'hasExternalClock') {
@@ -496,6 +586,11 @@ export const timelordeDef: AudioModuleDef = {
         startAna.disconnect();
         stopAna.disconnect();
         wizardGateAna.disconnect();
+        try { videoTapAna.disconnect(); } catch { /* */ }
+        if (lastDisplayFrame) {
+          try { lastDisplayFrame.close(); } catch { /* */ }
+          lastDisplayFrame = null;
+        }
         workletNode.disconnect();
       },
     };

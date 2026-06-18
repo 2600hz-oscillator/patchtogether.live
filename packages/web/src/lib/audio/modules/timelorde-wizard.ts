@@ -201,6 +201,41 @@ export function gateLevelToWizardOn(level: number): boolean {
   return level >= GATE_HI;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// 4. Big display: WIZARD vs LIVE VIDEO
+// ─────────────────────────────────────────────────────────────────────────
+//
+// TIMELORDE's big square display normally shows the beat-pulsing wizard. With
+// something patched into the `video_in` jack it shows that LIVE VIDEO FEED
+// instead (and `video_out` passes the feed through — in → display → out). The
+// pure decision of WHICH to show lives here so the card stays a thin renderer
+// and the rule is unit-tested.
+
+/** What the big display should render right now. */
+export type WizardDisplayMode = 'video' | 'wizard' | 'off';
+
+/**
+ * Decide the big-display mode from the two inputs:
+ *   - `hasVideoIn`  — is a cable patched into the `video_in` jack?
+ *   - `wizardOn`    — the show/hide flag (button + gate input).
+ *
+ * Rules (in priority order):
+ *   1. A patched video feed ALWAYS wins — the operator wired TIMELORDE inline
+ *      in a video chain, so the display IS the monitor (independent of the
+ *      wizard toggle — the toggle only ever governed the wizard art).
+ *   2. Otherwise, show the wizard when `wizardOn`, else the "off" placeholder.
+ *
+ * This keeps the existing wizard↔off behaviour byte-identical when no video is
+ * patched, and makes the feed take over the moment a cable lands.
+ */
+export function wizardDisplayMode(args: {
+  hasVideoIn: boolean;
+  wizardOn: boolean;
+}): WizardDisplayMode {
+  if (args.hasVideoIn) return 'video';
+  return args.wizardOn ? 'wizard' : 'off';
+}
+
 function clamp01(x: number): number {
   if (x < 0) return 0;
   if (x > 1) return 1;

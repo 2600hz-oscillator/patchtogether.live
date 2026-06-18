@@ -10,6 +10,7 @@ import {
   bitmapToDots,
   beatPulse,
   gateLevelToWizardOn,
+  wizardDisplayMode,
 } from './timelorde-wizard';
 import { GATE_HI } from '$lib/audio/gate-trigger';
 
@@ -136,5 +137,30 @@ describe('timelorde-wizard: gateLevelToWizardOn', () => {
     expect(gateLevelToWizardOn(0)).toBe(false);
     expect(gateLevelToWizardOn(GATE_HI - 0.001)).toBe(false);
     expect(gateLevelToWizardOn(-0.2)).toBe(false);
+  });
+});
+
+describe('timelorde-wizard: wizardDisplayMode', () => {
+  it('shows the LIVE VIDEO feed whenever video_in is patched — even if the wizard is on', () => {
+    expect(wizardDisplayMode({ hasVideoIn: true, wizardOn: true })).toBe('video');
+    expect(wizardDisplayMode({ hasVideoIn: true, wizardOn: false })).toBe('video');
+  });
+
+  it('falls back to the WIZARD when nothing is patched + the wizard is on', () => {
+    expect(wizardDisplayMode({ hasVideoIn: false, wizardOn: true })).toBe('wizard');
+  });
+
+  it('shows the OFF placeholder when nothing is patched + the wizard is off', () => {
+    expect(wizardDisplayMode({ hasVideoIn: false, wizardOn: false })).toBe('off');
+  });
+
+  it('preserves the prior wizard↔off behaviour exactly when no video is patched', () => {
+    // With no video cable, the mode is governed solely by wizardOn — the
+    // pre-video-jack behaviour, unchanged.
+    for (const wizardOn of [true, false]) {
+      const mode = wizardDisplayMode({ hasVideoIn: false, wizardOn });
+      expect(mode).toBe(wizardOn ? 'wizard' : 'off');
+      expect(mode).not.toBe('video');
+    }
   });
 });

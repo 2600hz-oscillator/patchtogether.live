@@ -1,19 +1,19 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { timelordeDef } from '$lib/audio/modules/timelorde';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
+  import type { VideoEngine } from '$lib/video/engine';
   import ModuleTitle from './ModuleTitle.svelte';
   import {
-    bitmapToDots,
-    bitmapSize,
     beatPulse,
-    type WizardDot,
+    wizardDisplayMode,
+    type WizardDisplayMode,
   } from '$lib/audio/modules/timelorde-wizard';
 
   let { id, data }: NodeProps = $props();
@@ -127,9 +127,215 @@
     };
   });
 
-  // The dot-matrix wizard, derived once from the (data-driven) bitmap.
-  const wizardDots: WizardDot[] = bitmapToDots();
-  const wizardGrid = bitmapSize();
+  // ── video_in → big display + video_out passthrough (cross-domain) ──
+  //
+  // TIMELORDE is an AUDIO module that also carries a `video_in` / `video_out`
+  // pair so it can sit INLINE in a video chain. Both are consumed CARD-SIDE
+  // (the SYNESTHESIA / WAVESCULPT-wall precedent — the audio engine has no
+  // AudioNode for a video port): the card walks patch.edges to find the source
+  // patched into video_in, blits its frame into the big display canvas, and
+  // PUSHES that same frame back into the node (handle.write('displayFrame', …))
+  // so video_out's drawFrame can pass it downstream. With nothing patched the
+  // display shows the beat-pulsing wizard (the original behaviour) and we push
+  // a snapshot of the wizard so video_out still emits a coherent picture.
+  const DISPLAY_W = 220;
+  const DISPLAY_H = 220;
+  let displayCanvas: HTMLCanvasElement | null = $state(null);
+  let displayRaf: number | null = null;
+  // Off-screen scratch we composite into, then transfer to the node as an
+  // ImageBitmap each frame (createImageBitmap is the cheapest DOM→node handoff,
+  // and the node closes the previous bitmap — see timelorde.ts write()).
+  let pushCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
+
+  /** Resolve (nodeId, portId) currently patched into our video_in. */
+  function findVideoInSource(): { nodeId: string; portId: string } | null {
+    for (const eid of Object.keys(patch.edges)) {
+      const e = patch.edges[eid];
+      if (!e) continue;
+      if (e.target?.nodeId === id && e.target?.portId === 'video_in') {
+        return { nodeId: e.source.nodeId, portId: e.source.portId };
+      }
+    }
+    return null;
+  }
+
+  let hasVideoIn = $derived.by(() => {
+    void cardVersion;
+    return findVideoInSource() !== null;
+  });
+  // The display mode is the PURE decision (video feed wins, else wizard/off).
+  let displayMode: WizardDisplayMode = $derived(
+    wizardDisplayMode({ hasVideoIn, wizardOn }),
+  );
+
+  function ensurePushCanvas(): HTMLCanvasElement | OffscreenCanvas | null {
+    if (pushCanvas) return pushCanvas;
+    if (typeof OffscreenCanvas !== 'undefined') {
+      pushCanvas = new OffscreenCanvas(DISPLAY_W, DISPLAY_H);
+    } else if (typeof document !== 'undefined') {
+      const c = document.createElement('canvas');
+      c.width = DISPLAY_W; c.height = DISPLAY_H;
+      pushCanvas = c;
+    }
+    return pushCanvas;
+  }
+
+  /** Draw the LIVE video feed patched into video_in into a 2D context. Returns
+   *  true on success (a frame was drawn). Mirrors SynesthesiaCard.readVideoLevels:
+   *  a video-domain source blits via the VideoEngine; an audio-domain mono-video
+   *  source pulls its drawFrame. */
+  function drawVideoFeed(
+    ctx2d: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+    w: number,
+    h: number,
+  ): boolean {
+    const e = engineCtx.get();
+    if (!e) return false;
+    const src = findVideoInSource();
+    if (!src) return false;
+    const srcNode = patch.nodes[src.nodeId];
+    const srcDomain = srcNode?.domain ?? 'audio';
+    if (srcDomain === 'video') {
+      let ve: VideoEngine | undefined;
+      try { ve = e.getDomain<VideoEngine>('video'); } catch { return false; }
+      if (!ve) return false;
+      try { ve.blitOutputToDrawingBuffer(src.nodeId); } catch { return false; }
+      const img = ve.canvas as CanvasImageSource | undefined;
+      if (!img) return false;
+      try {
+        ctx2d.clearRect(0, 0, w, h);
+        ctx2d.drawImage(img, 0, 0, w, h);
+        return true;
+      } catch { return false; }
+    }
+    // Audio-domain mono-video / video source (SCOPE.out, WAVESCULPT.video_out,
+    // even another TIMELORDE.video_out): pull its drawFrame into our scratch.
+    let ae:
+      | { getVideoSource?: (n: string, p: string) => { drawFrame?: (c: OffscreenCanvas | HTMLCanvasElement) => void } | null }
+      | undefined;
+    try { ae = e.getDomain('audio') as unknown as typeof ae; } catch { return false; }
+    const vsrc = ae?.getVideoSource?.(src.nodeId, src.portId) ?? null;
+    if (!vsrc?.drawFrame) return false;
+    try {
+      vsrc.drawFrame(ctx2d.canvas as OffscreenCanvas | HTMLCanvasElement);
+      return true;
+    } catch { return false; }
+  }
+
+  /** The crisp neon wizard glyph, painted into a 2D context. This is the SAME
+   *  detailed art as the small thumbnail icon (the 🧙 glyph — a vector font
+   *  glyph, so it stays sharp at any size, NOT the blocky 16×18 bitmap upscale).
+   *  The beat-pulse drives the glow + a subtle scale. */
+  function drawWizard(
+    ctx2d: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
+    w: number,
+    h: number,
+    pulseNow: number,
+  ): void {
+    ctx2d.clearRect(0, 0, w, h);
+    ctx2d.fillStyle = '#07090d';
+    ctx2d.fillRect(0, 0, w, h);
+    const accent = readGateAccent();
+    const scale = 1 + 0.06 * pulseNow;
+    const fontPx = Math.round(h * 0.62 * scale);
+    ctx2d.save();
+    ctx2d.textAlign = 'center';
+    ctx2d.textBaseline = 'middle';
+    ctx2d.font = `${fontPx}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui, sans-serif`;
+    // Neon bloom rides the beat — dim idle → bright flash.
+    ctx2d.shadowColor = accent;
+    ctx2d.shadowBlur = 6 + 26 * pulseNow;
+    ctx2d.globalAlpha = 0.85 + 0.15 * pulseNow;
+    ctx2d.fillText('🧙', w / 2, h / 2 + h * 0.04);
+    ctx2d.restore();
+  }
+
+  /** The gate-cable accent colour (themable) resolved from CSS, for the bloom. */
+  function readGateAccent(): string {
+    if (typeof window === 'undefined' || !displayCanvas) return '#ffd23f';
+    try {
+      const v = getComputedStyle(displayCanvas)
+        .getPropertyValue('--cable-gate')
+        .trim();
+      return v || '#ffd23f';
+    } catch { return '#ffd23f'; }
+  }
+
+  // rAF: paint the big display (live feed or wizard) + push the frame to the
+  // node so video_out passes it through. Under reduced-motion (VRT) we still
+  // paint ONE deterministic frame (pulse pinned to 0 by the effect above) and
+  // then stop, so the capture is stable.
+  function renderDisplay(): void {
+    if (!displayCanvas) return;
+    const ctx2d = displayCanvas.getContext('2d', { alpha: false });
+    if (!ctx2d) return;
+    const w = displayCanvas.width;
+    const h = displayCanvas.height;
+    let painted = false;
+    if (hasVideoIn) {
+      painted = drawVideoFeed(ctx2d, w, h);
+    }
+    if (!painted) {
+      // No feed (or none patched) → the wizard. (When wizardOff the visible
+      // card shows the "wizard off" placeholder via markup; we still paint the
+      // wizard into the push canvas so video_out emits a coherent picture.)
+      drawWizard(ctx2d, w, h, pulse);
+    }
+    // Push the composited display to the node for video_out passthrough.
+    pushDisplayFrame();
+  }
+
+  function pushDisplayFrame(): void {
+    const e = engineCtx.get();
+    if (!e || !node || !displayCanvas) return;
+    if (typeof createImageBitmap !== 'function') return;
+    const scratch = ensurePushCanvas();
+    if (!scratch) return;
+    const sctx = scratch.getContext('2d') as
+      | CanvasRenderingContext2D
+      | OffscreenCanvasRenderingContext2D
+      | null;
+    if (!sctx) return;
+    try {
+      sctx.clearRect(0, 0, DISPLAY_W, DISPLAY_H);
+      sctx.drawImage(displayCanvas, 0, 0, DISPLAY_W, DISPLAY_H);
+    } catch { return; }
+    void createImageBitmap(scratch as CanvasImageSource)
+      .then((bmp) => {
+        const eng = engineCtx.get();
+        if (eng && node) eng.write(node, 'displayFrame', bmp);
+        else { try { bmp.close(); } catch { /* */ } }
+      })
+      .catch(() => { /* best-effort — never break the rAF loop */ });
+  }
+
+  $effect(() => {
+    // Track the inputs so the loop re-arms when video patch state / wizard
+    // visibility changes.
+    void displayMode; void hasVideoIn; void displayCanvas;
+    if (!displayCanvas) return;
+    if (prefersReducedMotion()) {
+      // One deterministic frame, then idle (VRT / reduced-motion).
+      renderDisplay();
+      return;
+    }
+    let raf: number | null = null;
+    const loop = () => {
+      renderDisplay();
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    displayRaf = raf;
+    return () => {
+      if (raf !== null) cancelAnimationFrame(raf);
+      raf = null;
+      displayRaf = null;
+    };
+  });
+
+  onDestroy(() => {
+    if (displayRaf !== null) cancelAnimationFrame(displayRaf);
+  });
 
   let hasExternalClock = $derived.by(() => {
     void cardVersion;
@@ -180,12 +386,21 @@
     { id: 'stop_in',  label: 'STOP',     cable: 'gate' },
     // ▭ = level-sensitive gate glyph. Drives the wizard show/hide (HIGH = on).
     { id: 'gate',     label: '▭ WIZARD', cable: 'gate' },
+    // Patch a video feed here → the big display becomes a LIVE MONITOR of it
+    // (the wizard steps aside) and video_out passes it through (inline in a
+    // video chain). Unpatched → the display shows the wizard.
+    { id: 'video_in', label: 'VIDEO IN', cable: 'video' },
   ];
-  const outputs: PortDescriptor[] = OUT_LABELS.map((label) => ({
-    id: label,
-    label: `CLOCK ${label.toUpperCase()}`,
-    cable: 'gate',
-  }));
+  const outputs: PortDescriptor[] = [
+    ...OUT_LABELS.map((label) => ({
+      id: label,
+      label: `CLOCK ${label.toUpperCase()}`,
+      cable: 'gate' as const,
+    })),
+    // The picture the big display shows (live feed when video_in is patched,
+    // else the wizard) — so TIMELORDE can sit inline in a video chain.
+    { id: 'video_out', label: 'VIDEO OUT', cable: 'video' as const },
+  ];
 </script>
 
 <div class="mod-card timelorde-card">
@@ -208,12 +423,13 @@
       </button>
   </header>
 
-  <!-- Neon pixel-art WIZARD — a blown-up SOLID-PIXEL sprite (not a sparse
-       dot-matrix) that pulses with the beat. The actual pixels come from the
-       data-driven WIZARD_BITMAP in timelorde-wizard.ts (PLACEHOLDER art; the
-       owner swaps that one constant for their own painting). The bloom here
-       rides the beat-pulse rAF (frozen idle under reduced motion / VRT). Hidden
-       via wizardOn (button or gate input). -->
+  <!-- BIG SQUARE DISPLAY — ~4× the old wizard. Normally a crisp, beat-pulsing
+       neon WIZARD (the SAME detailed art as the small thumbnail toggle, drawn
+       as the 🧙 vector glyph so it stays sharp at this size — NOT the blocky
+       16×18 bitmap upscale). With a cable in video_in it becomes a LIVE MONITOR
+       of that feed, and video_out passes the feed through. Rendered on a 2D
+       canvas by the renderDisplay rAF (one frozen frame under reduced-motion /
+       VRT). The small 🧙 toggle (kept as-is) shows/hides the wizard. -->
   <div class="wizard-wrap">
     <button
       class="wizard-toggle"
@@ -222,20 +438,20 @@
       title={wizardOn ? 'Hide the wizard' : 'Show the wizard'}
       data-testid={`timelorde-wizard-toggle-${id}`}
     >🧙</button>
-    {#if wizardOn}
-      <div
-        class="wizard"
-        data-testid={`timelorde-wizard-${id}`}
-        style={`--wiz-cols:${wizardGrid.cols}; --wiz-rows:${wizardGrid.rows}; --wiz-pulse:${pulse.toFixed(3)};`}
-      >
-        {#each wizardDots as dot (dot.row * wizardGrid.cols + dot.col)}
-          <span
-            class={`dot dot-${dot.role}`}
-            style={`grid-column:${dot.col + 1}; grid-row:${dot.row + 1};`}
-          ></span>
-        {/each}
-      </div>
-    {:else}
+    <!-- The canvas is ALWAYS mounted (it feeds video_out's passthrough even
+         when the visible card shows "wizard off"); we hide it visually in the
+         wizard-off / no-feed case via the overlay below. -->
+    <canvas
+      bind:this={displayCanvas}
+      class="display"
+      class:hidden={displayMode === 'off'}
+      width={DISPLAY_W}
+      height={DISPLAY_H}
+      data-testid={`timelorde-display-${id}`}
+      data-display-mode={displayMode}
+      style={`--wiz-pulse:${pulse.toFixed(3)};`}
+    ></canvas>
+    {#if displayMode === 'off'}
       <div class="wizard-off" data-testid={`timelorde-wizard-off-${id}`}>wizard off</div>
     {/if}
   </div>
@@ -255,7 +471,7 @@
 
 <style>
   .timelorde-card {
-    width: 280px;
+    width: 300px;
     padding-bottom: 26px;
   }
   .timelorde-card > .title {
@@ -306,12 +522,14 @@
     pointer-events: none;
   }
 
-  /* ---- Dot-matrix neon WIZARD ---- */
+  /* ---- Big neon WIZARD / LIVE-VIDEO display ---- */
   .wizard-wrap {
     position: relative;
     margin: 12px 0 4px;
     display: flex;
     justify-content: center;
+    align-items: center;
+    min-height: 224px;
   }
   .wizard-toggle {
     position: absolute;
@@ -339,50 +557,43 @@
     border-color: var(--cable-gate);
     box-shadow: 0 0 4px var(--cable-gate);
   }
-  .wizard {
-    /* SOLID-PIXEL render: each lit cell is a full square (no gap), so adjacent
-       cells merge into clean blocks — a blown-up pixel-art sprite of the
-       thumbnail, NOT a sparse dot-matrix (the spaced circles looked bad scaled
-       up). One px var sizes the whole sprite. */
-    --px: 8px;
-    display: grid;
-    grid-template-columns: repeat(var(--wiz-cols), var(--px));
-    grid-template-rows: repeat(var(--wiz-rows), var(--px));
-    gap: 0;
-    padding: 10px;
+  /* The big square display canvas — the wizard glyph or the live video feed,
+     painted by renderDisplay(). It's ~4× the old dot-matrix sprite. The glow +
+     subtle beat-scale ride --wiz-pulse (pinned to 0 under reduced-motion/VRT,
+     so the capture is a deterministic single frame). */
+  .display {
+    width: 220px;
+    height: 220px;
+    display: block;
     background: #07090d;
     border: 1px solid #1a1f2a;
     border-radius: 4px;
-    /* Overall neon bloom rides the beat-pulse on the WHOLE sprite (dim idle →
-       bright flash), rather than per-pixel blooms that muddy a solid sprite. */
-    filter: brightness(calc(0.82 + 0.5 * var(--wiz-pulse, 0)))
-            drop-shadow(0 0 calc(2px + 8px * var(--wiz-pulse, 0)) var(--cable-gate, #ffd23f));
-    /* Scale up subtly on the beat (1.0 idle → ~1.05 flash). */
-    transform: scale(calc(1 + 0.05 * var(--wiz-pulse, 0)));
+    box-shadow: 0 0 calc(2px + 10px * var(--wiz-pulse, 0)) var(--cable-gate, #ffd23f);
+    transform: scale(calc(1 + 0.02 * var(--wiz-pulse, 0)));
     transform-origin: center bottom;
   }
-  .dot {
-    /* A solid square pixel filling its whole grid cell (no radius, no gap). */
-    width: var(--px);
-    height: var(--px);
+  .display.hidden {
+    /* wizard-off / no feed: keep the canvas mounted (it feeds video_out) but
+       out of layout — the "wizard off" placeholder takes its place. */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    box-shadow: none;
+    transform: none;
   }
-  /* Neon palette — body via the gate cable accent, warm skin, bright staff/orb
-     ("the magic"). Solid fills; the container's filter supplies the glow. */
-  .dot-hat,
-  .dot-body { background: var(--cable-gate, #ffd23f); }
-  .dot-skin { background: #ffd9b0; }
-  .dot-staff { background: #7bdfff; }
   .wizard-off {
-    font-size: 0.55rem;
+    font-size: 0.6rem;
     letter-spacing: 0.1em;
     color: var(--text-dim);
     font-family: ui-monospace, monospace;
-    padding: 18px 0;
+    padding: 100px 0;
     opacity: 0.5;
   }
   /* Reduced motion (also the VRT capture): no transform animation; the JS
      loop already pins pulse=0, so this is belt-and-braces for the scale. */
   @media (prefers-reduced-motion: reduce) {
-    .wizard { transform: none; }
+    .display { transform: none; }
   }
 </style>
