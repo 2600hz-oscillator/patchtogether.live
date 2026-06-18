@@ -15,7 +15,7 @@
 // We do NOT cover the worklet's DSP-side BPM / phase / multiplier math —
 // that's the ART scenario's job (art/scenarios/timelorde/).
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { timelordeDef, transportEventsToRunState } from './timelorde';
 import { patch as livePatch } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
@@ -35,29 +35,63 @@ describe('timelordeDef: shape', () => {
     expect(p?.type).toBe('gate');
   });
 
-  it('keeps the existing clock input alongside the new transport gates', () => {
+  it('keeps the existing clock input alongside the transport gates + the wizard gate + the video-in jack', () => {
     const ids = timelordeDef.inputs.map((i) => i.id);
-    expect(ids).toEqual(['clock', 'start_in', 'stop_in']);
+    expect(ids).toEqual(['clock', 'start_in', 'stop_in', 'gate', 'video_in']);
+  });
+
+  it('declares a video_in INPUT (video cable) for the live-monitor display', () => {
+    const p = timelordeDef.inputs.find((i) => i.id === 'video_in');
+    expect(p).toBeDefined();
+    expect(p?.type).toBe('video');
+  });
+
+  it('declares the wizard `gate` input as a LEVEL-SENSITIVE gate (edge: gate)', () => {
+    const p = timelordeDef.inputs.find((i) => i.id === 'gate');
+    expect(p).toBeDefined();
+    expect(p?.type).toBe('gate');
+    // Level-sensitive show/hide, NOT edge-triggered — must declare edge:'gate'
+    // so the gate↔trigger model is explicit (CLAUDE.md "Triggers vs gates").
+    expect(p?.edge).toBe('gate');
+  });
+
+  it('declares a wizardOn discrete param defaulting to 1 (shown)', () => {
+    const p = timelordeDef.params.find((x) => x.id === 'wizardOn');
+    expect(p).toBeDefined();
+    expect(p?.curve).toBe('discrete');
+    expect(p?.defaultValue).toBe(1);
+    expect(p?.min).toBe(0);
+    expect(p?.max).toBe(1);
   });
 
   // Regression: the timelorde worklet had outputPulseEnd = new Int32Array(12)
   // which silently dropped writes at index 12 (OUT_SWING). The def must
-  // declare exactly 13 outputs and swing must be the 13th so the per-port
-  // sweep catches any future miscount.
-  it('declares exactly 13 outputs (12 fixed divisions + swing)', () => {
-    expect(timelordeDef.outputs.length).toBe(13);
+  // declare exactly 13 CLOCK outputs and swing must be the 13th so the per-port
+  // sweep catches any future miscount. (video_out is appended after the clock
+  // outputs — see below — and is NOT a clock-gate output.)
+  it('declares exactly 13 clock outputs (12 fixed divisions + swing)', () => {
+    const clockOuts = timelordeDef.outputs.filter((o) => o.type === 'gate');
+    expect(clockOuts.length).toBe(13);
   });
 
-  it('declares swing as the last output (index 12)', () => {
+  it('declares swing as the last CLOCK output (index 12)', () => {
     const swing = timelordeDef.outputs[12];
     expect(swing?.id).toBe('swing');
     expect(swing?.type).toBe('gate');
   });
 
-  it('every output is declared as gate type', () => {
-    for (const out of timelordeDef.outputs) {
+  it('every CLOCK output is declared as gate type', () => {
+    for (const out of timelordeDef.outputs.filter((o) => o.id !== 'video_out')) {
       expect(out.type, `output ${out.id}`).toBe('gate');
     }
+  });
+
+  it('declares a video_out OUTPUT (video cable) for the passthrough display', () => {
+    const p = timelordeDef.outputs.find((o) => o.id === 'video_out');
+    expect(p).toBeDefined();
+    expect(p?.type).toBe('video');
+    // Appended AFTER the clock outputs so the OUT_* worklet indices are intact.
+    expect(timelordeDef.outputs.at(-1)?.id).toBe('video_out');
   });
 });
 
@@ -199,6 +233,8 @@ class FakeAudioWorkletNode {
       // when an explicit value is required for a scenario.
       ['running', makeParam(1)],
       ['hasExternalClock', makeParam(0)],
+      // wizardOn (card-visual show/hide flag; gate input + button converge here).
+      ['wizardOn', makeParam(1)],
     ]);
     this.parameters = { get: (k) => this._paramMap.get(k) };
   }
@@ -336,8 +372,9 @@ describe('timelordeDef.factory: start_in / stop_in transport gates', () => {
       ctx as unknown as AudioContext,
       node,
     );
-    // Sanity: a subscriber was registered.
-    expect(fakeSchedulerSubs.length).toBe(1);
+    // Sanity: the scheduler subscribers were registered — the transport-gate
+    // poll AND the wizard-gate (gate→wizardOn level) poll = 2.
+    expect(fakeSchedulerSubs.length).toBe(2);
 
     // First poll has elapsed=0 → no edges to scan. Advance time so the
     // next poll covers a real window.
@@ -469,16 +506,97 @@ describe('timelordeDef.factory: start_in / stop_in transport gates', () => {
     expect(handle.read?.('running')).toBe(1);
   });
 
-  it('handle.dispose() unsubscribes from the scheduler clock', async () => {
+  it('handle.dispose() unsubscribes BOTH scheduler subscriptions (transport + wizard-gate)', async () => {
     const ctx = makeMockCtx();
     const node = makeNode({ running: 0 });
     const handle = await timelordeDef.factory(
       ctx as unknown as AudioContext,
       node,
     );
-    expect(fakeSchedulerSubs.length).toBe(1);
+    // Two subscriptions: the transport-gate poll + the wizard-gate poll.
+    expect(fakeSchedulerSubs.length).toBe(2);
     handle.dispose();
     expect(fakeSchedulerSubs.length).toBe(0);
+  });
+});
+
+// ---------------- factory: gate → wizardOn (level-sensitive) ----------------
+//
+// The `gate` input is LEVEL-SENSITIVE: when a cable is patched, its level
+// owns wizardOn (HIGH = on, LOW = off). When nothing is patched, the on-card
+// button governs (the factory leaves wizardOn alone so the silence-source 0
+// doesn't clamp the wizard off). These tests drive the analyser ring directly
+// (like the start_in/stop_in tests) and assert the livePatch write-through.
+
+describe('timelordeDef.factory: gate → wizardOn (wizard show/hide)', () => {
+  beforeEach(() => {
+    fakeSchedulerSubs.length = 0;
+    for (const k of Object.keys(livePatch.nodes)) delete livePatch.nodes[k];
+    for (const k of Object.keys(livePatch.edges)) delete livePatch.edges[k];
+    livePatch.nodes['timelorde-test'] = {
+      id: 'timelorde-test',
+      type: 'timelorde',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: { wizardOn: 1 },
+      data: {},
+    } as ModuleNode;
+    (globalThis as unknown as { AudioWorkletNode: typeof FakeAudioWorkletNode }).AudioWorkletNode =
+      FakeAudioWorkletNode;
+  });
+  afterEach(() => {
+    for (const k of Object.keys(livePatch.edges)) delete livePatch.edges[k];
+  });
+
+  function wireGateEdge(): void {
+    // A gate cable into TIMELORDE.gate so pollWizardGate considers it patched.
+    livePatch.edges['e-wiz'] = {
+      id: 'e-wiz',
+      source: { nodeId: 'src', portId: 'out' },
+      target: { nodeId: 'timelorde-test', portId: 'gate' },
+      sourceType: 'gate',
+      targetType: 'gate',
+    } as (typeof livePatch.edges)[string];
+  }
+
+  it('exposes the gate input in the handle.inputs map', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode());
+    expect(handle.inputs.has('gate')).toBe(true);
+  });
+
+  it('a HIGH gate level (patched) sets wizardOn ← 1; a LOW level sets it ← 0', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode());
+    wireGateEdge();
+
+    const gateGain = handle.inputs.get('gate')!.node as unknown as FakeGainNode;
+    const ana = gateGain.connect.mock.calls[0]?.[0] as FakeAnalyserNode;
+    expect(ana, 'gate gain connected to an analyser').toBeDefined();
+
+    // Drive the gate LOW first → wizardOn 0.
+    ana.pushSamples([0, 0, 0, 0]);
+    tickAll();
+    expect(livePatch.nodes['timelorde-test']!.params.wizardOn).toBe(0);
+
+    // Drive the gate HIGH → wizardOn 1.
+    ana.pushSamples([1, 1, 1, 1]);
+    tickAll();
+    expect(livePatch.nodes['timelorde-test']!.params.wizardOn).toBe(1);
+  });
+
+  it('leaves wizardOn alone when NO gate cable is patched (button stays in control)', async () => {
+    const ctx = makeMockCtx();
+    // No wireGateEdge() — nothing patched into `gate`.
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode());
+    const gateGain = handle.inputs.get('gate')!.node as unknown as FakeGainNode;
+    const ana = gateGain.connect.mock.calls[0]?.[0] as FakeAnalyserNode;
+    // Even though the (unpatched) analyser reads 0, an unpatched gate must
+    // NOT clamp wizardOn off — the button governs. wizardOn stays at its
+    // seeded value (1).
+    ana.pushSamples([0, 0, 0, 0]);
+    tickAll();
+    expect(livePatch.nodes['timelorde-test']!.params.wizardOn).toBe(1);
   });
 });
 
@@ -545,3 +663,91 @@ describe('timelordeDef.factory: external-clock BPM follow (measuredBpm → bpm)'
     expect(handle.read?.('measuredBpm')).toBe(0);
   });
 });
+
+// ---------------- factory: video_out passthrough source ----------------
+//
+// TIMELORDE publishes a `video_out` cross-domain source via the handle's
+// videoSources map. The card pushes the current display picture each rAF via
+// write('displayFrame', ImageBitmap); the bridge calls drawFrame(canvas) to
+// blit the latest frame for downstream video modules. These tests cover the
+// structural contract + the write→drawFrame handoff (without a real GPU/DOM).
+
+describe('timelordeDef.factory: video_out cross-domain source', () => {
+  beforeEach(() => {
+    fakeSchedulerSubs.length = 0;
+    for (const k of Object.keys(livePatch.nodes)) delete livePatch.nodes[k];
+    livePatch.nodes['timelorde-test'] = {
+      id: 'timelorde-test',
+      type: 'timelorde',
+      domain: 'audio',
+      position: { x: 0, y: 0 },
+      params: { running: 1, muteOutputs: 0 },
+      data: {},
+    } as ModuleNode;
+    (globalThis as unknown as { AudioWorkletNode: typeof FakeAudioWorkletNode }).AudioWorkletNode =
+      FakeAudioWorkletNode;
+  });
+
+  it('exposes a video_out entry in handle.videoSources with an analyser + drawFrame', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode());
+    const src = handle.videoSources?.get('video_out');
+    expect(src).toBeDefined();
+    expect(src?.analyser).toBeDefined();
+    expect(src?.sampleRate).toBe(ctx.sampleRate);
+    expect(typeof src?.drawFrame).toBe('function');
+  });
+
+  it('drawFrame paints an idle frame before any displayFrame is pushed (no throw)', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode());
+    const drawFrame = handle.videoSources?.get('video_out')?.drawFrame;
+    expect(drawFrame).toBeDefined();
+    // A minimal 2D-canvas stub captures the draw calls (jsdom/node has no real
+    // canvas). drawFrame must paint a fill rect (the idle frame) + not throw.
+    const calls: string[] = [];
+    const canvas = makeFakeCanvas(calls);
+    expect(() => drawFrame!(canvas)).not.toThrow();
+    expect(calls).toContain('fillRect'); // idle fill (no frame yet)
+    expect(calls).not.toContain('drawImage');
+  });
+
+  it('write(displayFrame) is adopted → drawFrame blits it (the passthrough)', async () => {
+    const ctx = makeMockCtx();
+    const handle = await timelordeDef.factory(ctx as unknown as AudioContext, makeNode());
+    const drawFrame = handle.videoSources?.get('video_out')?.drawFrame;
+    // A fake ImageBitmap-shaped value. Production checks `instanceof ImageBitmap`;
+    // jsdom/node lacks ImageBitmap, so make the global match our stub class so
+    // the guard accepts it. (drawImage on the canvas stub is what we assert.)
+    const closed: boolean[] = [];
+    class FakeBitmap { close() { closed.push(true); } }
+    (globalThis as unknown as { ImageBitmap: typeof FakeBitmap }).ImageBitmap = FakeBitmap;
+    const bmp1 = new FakeBitmap();
+    handle.write?.('displayFrame', bmp1 as unknown as ImageBitmap);
+    const calls: string[] = [];
+    drawFrame!(makeFakeCanvas(calls));
+    expect(calls).toContain('drawImage'); // the pushed frame is blitted through
+    // Pushing a NEW frame closes the previous bitmap (memory hygiene).
+    const bmp2 = new FakeBitmap();
+    handle.write?.('displayFrame', bmp2 as unknown as ImageBitmap);
+    expect(closed.length).toBe(1); // bmp1 was closed when bmp2 replaced it
+  });
+});
+
+/** Minimal 2D canvas stub: records the context method names called so a test
+ *  can assert which drawing path drawFrame took (fillRect = idle, drawImage =
+ *  pushed-frame passthrough). width/height satisfy the drawFrame sizing reads. */
+function makeFakeCanvas(calls: string[]): HTMLCanvasElement {
+  const ctx2d = {
+    clearRect: () => calls.push('clearRect'),
+    fillRect: () => calls.push('fillRect'),
+    drawImage: () => calls.push('drawImage'),
+    set fillStyle(_v: string) { /* */ },
+    get fillStyle() { return ''; },
+  };
+  return {
+    width: 220,
+    height: 220,
+    getContext: (_type: string) => ctx2d,
+  } as unknown as HTMLCanvasElement;
+}
