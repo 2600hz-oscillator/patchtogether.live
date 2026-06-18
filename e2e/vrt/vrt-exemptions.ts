@@ -682,7 +682,16 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'shimmershine',         // shimmer-reverb knob card
   'stereovca',            // stereo VCA fader card
   'sticky',               // sticky-note widget (static)
-  'timelorde',            // master clock card (BPM/play/stop, no animated tick at default)
+  // timelorde: TEMPORARILY demoted from the strict lane. The card big display
+  // is the owner's OWL PAINTING whose YELLOW EYES + BLUE BORDER beat-pulse
+  // (the colour boost is FROZEN to the idle/steady owl under
+  // prefers-reduced-motion, so the capture IS deterministic) + an owl toggle +
+  // a gate input row. The darwin baseline was regenerated, but the linux
+  // baseline is pending a `vrt-update.yml` workflow_dispatch (see
+  // EXEMPT_BASELINE_PAIRS → linux/timelorde). The strict lane requires BOTH
+  // platform baselines current (vrt-meta self-test), so timelorde rides the
+  // full (informational) VRT lane until the linux baseline lands — then
+  // re-add it here + drop linux/timelorde from EXEMPT_BASELINE_PAIRS.
   'vca',                  // mono VCA card
   'wavecel',              // wave-cell knob card
   'wavetableVco',         // wavetable VCO card
@@ -1114,4 +1123,16 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // e2e/tests/video-aspect-switch.spec.ts; the geometry math by
   // video-res.test.ts.
   'linux/aspect16x9-output',
+  // TIMELORDE: the card big display is the owner's OWL PAINTING (a bundled
+  // static asset) whose YELLOW EYES + BLUE BORDER beat-pulse (a colour-keyed
+  // brightness boost) + an owl show/hide toggle button + a `gate` input row.
+  // The boost is FROZEN to the idle/steady owl under prefers-reduced-motion
+  // (which the VRT runner sets) so the capture stays deterministic — but the
+  // darwin baseline was regenerated for the new art and the linux baseline is
+  // pending a `vrt-update.yml` workflow_dispatch on this branch (same pattern
+  // as SCALER / OUTLINES above). Functional coverage: the pure
+  // timelorde-wizard.test.ts (beat-pulse math, colour-key boost, gate→on/off,
+  // display-mode) + timelorde.test.ts (gate→wizardOn factory write-through) +
+  // the per-module-per-port sweep + timelorde-video.spec.ts (owl ↔ feed).
+  'linux/timelorde',
 ]);
