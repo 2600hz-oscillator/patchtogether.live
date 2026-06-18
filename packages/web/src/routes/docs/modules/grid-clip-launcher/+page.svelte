@@ -21,12 +21,13 @@
     TRANSPORT_PAD,
   } from '$lib/grid/grid-clip-map';
   import GridDiagram from '$lib/docs/GridDiagram.svelte';
-  import { clipSessionGrid, clipEditGrid } from '$lib/docs/clip-grid-spec';
+  import { clipSessionGrid, clipEditGrid, clipLengthEditGrid } from '$lib/docs/clip-grid-spec';
 
   // Annotated reference diagrams (monome-manual style) — pure functions of the
   // live grid layout constants, so they never drift from the binding.
   const sessionGrid = clipSessionGrid();
   const editGrid = clipEditGrid();
+  const lengthEditGrid = clipLengthEditGrid(48); // example: a 3-page (48-step) clip
 
   const swatch = (level: number) => {
     const v = Math.round((level / 15) * 255);
@@ -110,6 +111,7 @@
   <li><strong>Launch a clip</strong> and it swaps into its lane on the next loop boundary (or instantly). Each lane plays one clip at a time; launching a new one replaces it.</li>
   <li>A <strong>scene</strong> is a <em>column</em> — fire it and every instrument launches its clip in that column together.</li>
   <li><strong>No tempo knob.</strong> The clock is TIMELORDE: it runs when TIMELORDE runs, at TIMELORDE's BPM. The only timing control is <strong>STEP</strong> (steps per beat).</li>
+  <li><strong>Clips can be different lengths</strong> (1–128 steps, each independent). Lanes free-run as a <strong>POLYMETER</strong> — a 16-step clip against a 17-step clip drifts in and out of phase — and they all <strong>re-align to step 0 on the transport downbeat</strong> (press ▶), so a fresh start is always phase-locked.</li>
   <li><strong>Song mode</strong> records the launches you perform into an <em>arrangement</em> and plays them back — a linear song built from your live session. (<a href="#song-mode">jump to song mode ↓</a>)</li>
 </ul>
 
@@ -146,7 +148,7 @@
 <h2>The card</h2>
 <ul>
   <li><strong>Session view</strong> (default) — the 8×8 launch grid (rows lane-tinted). Single-click = launch / queue / stop; double-click = open the editor. A small <strong>1/5 button</strong> to the left of each row toggles that instrument lane between <strong>MONO</strong> (one note per column — placing a note replaces what's there) and <strong>POLY</strong> (up to 5 notes per column).</li>
-  <li><strong>Edit view</strong> — a piano-roll note editor for one clip: X = step, Y = pitch (scale-degree rows in-key, root at the bottom). Click to place a note (click again to remove); <strong>right-click to cycle its velocity</strong> through 6 levels. Cycle <em>scale</em>, set <em>root</em>, change <em>length</em> (16/32/64/8), scroll the pitch window by a <strong>row</strong> (<code>↑/↓</code>) or an <strong>octave</strong> (<code>⤒/⤓</code>), or <code>⌫</code> clear the clip. A playhead column tracks the beat while the lane plays. <strong>Audition the clip without leaving the editor</strong> with the <strong>NOW</strong> / <strong>QUEUE</strong> buttons at the bottom-right (see <a href="#audition">below ↓</a>).</li>
+  <li><strong>Edit view</strong> — a piano-roll note editor for one clip: X = step, Y = pitch (scale-degree rows in-key, root at the bottom). Click to place a note (click again to remove); <strong>right-click to cycle its velocity</strong> through 6 levels. Cycle <em>scale</em>, set <em>root</em>, change <em>length</em> (16/32/64/128/8; up to 128 steps), scroll the pitch window by a <strong>row</strong> (<code>↑/↓</code>) or an <strong>octave</strong> (<code>⤒/⤓</code>), or <code>⌫</code> clear the clip. A playhead column tracks the beat while the lane plays. <strong>Audition the clip without leaving the editor</strong> with the <strong>NOW</strong> / <strong>QUEUE</strong> buttons at the bottom-right (see <a href="#audition">below ↓</a>).</li>
   <li><strong>Params</strong> — <code>STEP</code> (1/4 · 1/8 · 1/16 · 1/32 = steps per beat), <code>OCT</code> (transpose all lanes), <code>GATE</code> (note duty cycle), <code>QNT</code> (quantize launch to the loop boundary).</li>
   <li><strong>Transport</strong> — <code>▶/■</code> drives TIMELORDE (hidden when externally clocked); <code>■</code> in the title bar stops all lanes; <code>GRID</code> connects a monome grid.</li>
 </ul>
@@ -202,6 +204,23 @@
   <li><strong>⊘</strong> stops every lane; <strong>▶</strong> toggles TIMELORDE.</li>
 </ul>
 
+<h3>Copy / paste clips on the pads</h3>
+<p>
+  The right column carries three <strong>held modifiers</strong> (hold-and-tap,
+  never sticky): <strong>COPY</strong>, <strong>PASTE</strong> and
+  <strong>PASTE↺</strong> (paste-reversed).
+</p>
+<ul>
+  <li><strong>Hold COPY + tap a clip</strong> → grab a structural copy of it into a per-machine clip buffer (a clipboard — local to your grid, never written to the shared rack). The <strong>buffer indicator</strong> just below COPY pulses while the buffer holds a clip.</li>
+  <li><strong>Hold PASTE + tap a slot</strong> → drop the buffer into that slot (creating it if empty, overwriting if not), as one undoable change. Pasting into a currently-playing lane takes effect at that lane's next loop boundary.</li>
+  <li><strong>Hold PASTE↺ + tap a slot</strong> → paste a <em>time-reversed</em> copy of the buffer (held notes keep their length, re-anchored to the mirrored end).</li>
+</ul>
+<p class="aside">
+  Precedence if you somehow hold more than one: EDIT &gt; COPY &gt; PASTE. The
+  buffer survives reconnecting the grid, so you can copy a riff once and paste it
+  across the whole bank.
+</p>
+
 <h2>Editing a clip on the pads (hands-only)</h2>
 <p>
   <strong>Hold the EDIT pad</strong> (session, top-right) + <strong>tap a clip</strong>
@@ -236,7 +255,9 @@
   The <strong>function row</strong> (bottom), with spacer gaps for legibility:
   <strong>EDIT</strong> (tap to exit) · <strong>VEL</strong> (hold to set velocity)
   · <em>gap</em> · <strong>ROW−</strong> · <strong>OCT−</strong> · <em>gap</em> ·
-  <strong>ROW+</strong> · <strong>OCT+</strong> · <em>gap</em> · <strong>SCALE</strong>.
+  <strong>ROW+</strong> · <strong>OCT+</strong> · <em>gap</em> · <strong>SCALE</strong>
+  · <em>gap</em> · <strong>FOLLOW</strong> · <strong>◀</strong> · <strong>▶</strong> ·
+  <strong>x2</strong> · <strong>LEN</strong>.
   <strong>ROW±</strong> nudge the 7-row pitch window by a single scale-degree row;
   <strong>OCT±</strong> move it a whole octave. <strong>SCALE</strong> cycles the
   clip's scale (major → minor → pentatonic → chromatic); chromatic makes each row a
@@ -244,6 +265,36 @@
   the ones that scroll off). While the clip plays, the current step column lights up
   and sweeps across — the tempo pulsing through the clip.
 </p>
+
+<h3>Long patterns — pages, FOLLOW, DOUBLE</h3>
+<p>
+  A clip can be up to <strong>128 steps</strong>, edited as up to <strong>8
+  pages</strong> of 16. The pad columns always show <em>one</em> 16-step page.
+</p>
+<ul>
+  <li><strong>FOLLOW</strong> (default on, steady-lit) auto-scrolls the shown page along with the playhead, so the moving pulse always stays on screen. <strong>◀ / ▶</strong> are no-ops while following (dim).</li>
+  <li><strong>Tap FOLLOW</strong> to FREEZE on the current page (it flashes); now <strong>◀ / ▶</strong> page left/right (dim/no-op at the ends). Tap FOLLOW again to resume and snap straight back to the live playhead page.</li>
+  <li><strong>x2 (DOUBLE)</strong> doubles the clip length and copies the first half into the new second half — instant "make it twice as long, same again." It's a no-op at 128 steps.</li>
+</ul>
+
+<h3>Setting the length (the LEN page)</h3>
+<p>
+  <strong>LEN</strong> opens a dedicated 2-row length editor. The top row picks
+  which <strong>16-step block</strong> the pattern ends in (tap block <em>C</em> →
+  length <em>C</em>×16; the far-right pad EXITs back to the note editor); the
+  second row <strong>trims</strong> to the exact last step inside that block — so
+  length 113 is "block 8, then step 1." Setting length is
+  <strong>non-destructive</strong>: notes past the new end simply stop sounding
+  but are kept, and they return the moment you lengthen the clip again.
+</p>
+<GridDiagram
+  cols={lengthEditGrid.cols}
+  rows={lengthEditGrid.rows}
+  cells={lengthEditGrid.cells}
+  callouts={lengthEditGrid.callouts}
+  sideLabels={lengthEditGrid.sideLabels}
+  caption={lengthEditGrid.caption}
+/>
 <p class="aside">
   <strong>Per-lane MONO/POLY</strong> is set on the card (the 1/5 button left of
   each launch row), not on the grid. In a mono lane, placing a note in a column
@@ -404,7 +455,6 @@
   <li><strong>Song-mode editing (Phase 2)</strong> — the song view is read-only today; next it becomes an editable arrangement: drag block edges to retime, click to swap or delete a clip, set the loop length. Blocks are derived from the recorded event log, so editing maps straight back onto it.</li>
   <li><strong>Overdub</strong> — layer a new take onto an existing arrangement (today's REC clears and records fresh), and multi-recorder song-building.</li>
   <li><strong>On-grid song overview (Phase 3)</strong> — scrub and see the arrangement on the pads (monochrome presence/position on a monome; colour-coded blocks on an RGB Launchpad).</li>
-  <li><strong>Step paging on the grid</strong> for clips longer than 16 steps.</li>
   <li><strong>More clip kinds</strong> — audio loops and patch snapshots alongside note clips, plus recording into slots.</li>
 </ul>
 

@@ -104,10 +104,10 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // ── MIDI-driven: same as hardware — no MIDI device in test browser.
   midiCvBuddy: 'requires MIDI device; covered by midi-cv-buddy.spec.ts',
   midiclock:   'requires MIDI device; covered by midiclock.spec.ts',
-  // Output-less MIDI sink: emits MIDI to an external device, has NO audio/CV
-  // output for the behavioral sweep to observe (already in EXEMPT_OUTPUT_EMIT).
-  // Input behavior is covered by midi-out-buddy.spec.ts (fake MIDIOutput).
-  midiOutBuddy: 'no observable audio/CV output (MIDI sink); covered by midi-out-buddy.spec.ts',
+  // (midiOutBuddy is a ZERO-output MIDI sink — emits MIDI to an external device,
+  //  no audio/CV output for the sweep to observe → handled mechanically by the
+  //  `mod.outputs.length === 0` DELETE filter in the test loop; input behavior
+  //  covered by midi-out-buddy.spec.ts with a fake MIDIOutput.)
 
   // ── File-input sources: output is silent until a file is uploaded.
   //    No upstream signal can perturb that.
@@ -181,13 +181,14 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts',
   gibribbon: 'gameplay-conditional outputs (evt_hit/miss/fire/kill/gameover fire on in-game judgement; health_cv is idle DC); covered by gibribbon.spec.ts (forcePulse) + gibribbon-events.test.ts',
 
-  // ── Pure-passthrough sinks with no semantic transformation: VIDEOOUT
+  // ── Pure-passthrough sink with no semantic transformation: VIDEOOUT
   //    just blits its input to canvas, so behavioral assertion would be
   //    "video in → video out" which is already covered by every spec
-  //    that uses a VIDEOOUT sink. AUDIO-OUT same shape with no outputs
-  //    (terminal node).
+  //    that uses a VIDEOOUT sink.
+  //    (AUDIO-OUT is a ZERO-output terminal node → now handled mechanically by
+  //    the `mod.outputs.length === 0` DELETE filter in the test loop, not parked
+  //    here.)
   videoOut: 'passthrough sink; outputs equal inputs by construction',
-  audioOut: 'terminal sink: no outputs to observe',
 
   // ── SCOPE is the canonical sink we USE in this test; can't be SUT.
   scope:    'is itself the canonical receiver',
@@ -200,10 +201,9 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   //    Dedicated timelorde specs measure the rate.
   timelorde: 'clock-divider; rate-delta needs spectral analysis; covered by timelorde specs',
 
-  // ── LIVECODE — text-DSL editor, no audio path.
-  livecode: 'text-DSL; no audio path',
-  // ── STICKY — meta card, no engine binding.
-  sticky:   'meta-domain; no audio path',
+  // (LIVECODE text-DSL editor + STICKY meta card are ZERO-output non-subjects —
+  //  no output port to observe — so they're handled by the mechanical
+  //  zero-output / zero-input filters in the test loop, not parked here.)
 
   // ── 4plexvid — multiplex selector: each input feeds a SPECIFIC
   //    output only (in_i → out_i, gated by gate_i edges). No "mix"
@@ -2505,6 +2505,16 @@ test.describe.configure({ mode: 'parallel' });
 test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on driven input vs unpatched)', () => {
   for (const mod of REGISTRY) {
     if (mod.inputs.length === 0) continue;
+    // TERMINAL SINK (zero outputs — audioOut, midiOutBuddy, sticky): with no
+    // output port, an input can NEVER produce an observable output delta, so
+    // there is no behavioral assertion to make. Per this spec's reconciliation
+    // doctrine these are DELETED (not parked as exempt backlog): they are simply
+    // not behavioral subjects. Mechanical + fail-closed — keyed on the live
+    // output count, so any module WITH an output still proceeds to test-or-exempt
+    // and a future zero-output module drops out automatically. Each is covered by
+    // its own spec (audioOut → audio-output specs; midiOutBuddy →
+    // midi-out-buddy.spec.ts; sticky → meta-domain, no audio path).
+    if (mod.outputs.length === 0) continue;
     const skipReason = SKIP_SPAWN[mod.type];
     const title = `${mod.type}: each declared input perturbs the module's observable output (vs unpatched control)`;
     if (skipReason) {

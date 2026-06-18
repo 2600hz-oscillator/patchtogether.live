@@ -249,7 +249,6 @@ describe('behavioral exemptions are ALL reconciliation backlog (no permanent-exe
     for (const m of [
       'buggles',
       'mixmstrs',
-      'audioOut',
       'foxy',
       'mandelbulb',
       'cellshade',
@@ -259,6 +258,22 @@ describe('behavioral exemptions are ALL reconciliation backlog (no permanent-exe
     ]) {
       expect(moduleExempt.has(m)).toBe(true);
     }
+  });
+
+  it('zero-output terminal sinks are DELETED from the module-exempt map (mechanical filter, not parked)', () => {
+    // behavioral-recon (terminal sinks): a module with NO output port can never
+    // produce an observable output delta, so there is no behavioral assertion to
+    // make. Per the reconciliation doctrine (fix OR delete — no permanent-exempt
+    // bucket) these are DELETED from BEHAVIORAL_MODULE_EXEMPT and handled
+    // mechanically by the live zero-output filter in the test loop, not parked as
+    // backlog. So they must be OUT of the exempt map AND the filter must exist.
+    const moduleExempt = extractRecordKeys(specSrc, 'BEHAVIORAL_MODULE_EXEMPT');
+    for (const m of ['audioOut', 'midiOutBuddy', 'sticky', 'livecode']) {
+      expect(moduleExempt.has(m)).toBe(false);
+    }
+    // The mechanical, fail-closed filter keyed on the LIVE output count — any
+    // future zero-output module drops out automatically (no silent re-park).
+    expect(/if\s*\(\s*mod\.outputs\.length\s*===\s*0\s*\)\s*continue;/.test(specSrc)).toBe(true);
   });
 });
 

@@ -67,6 +67,13 @@ function splitKey(key: string): { moduleId: string; paramId: string } {
     : { moduleId: key.slice(0, i), paramId: key.slice(i + 1) };
 }
 
+/** When to re-PRIME the device with live values after connect. The .epr upload
+ *  over SysEx isn't ingested by the time the first feedback tick fires, so a
+ *  single early push is lost (the "mixer shows 0 on first load" bug). We push
+ *  immediately AND at these settle points; readParamValue may also be undefined
+ *  until the engine is live at click time, which the later primes cover. */
+export const DEFAULT_PRIME_DELAYS_MS = [250, 800, 1800] as const;
+
 export class ElectraAutoconfig {
   private pump: FeedbackPump | null = null;
   private tap: TapTempo | null = null;
@@ -74,14 +81,24 @@ export class ElectraAutoconfig {
   private unsubNote: (() => void) | null = null;
   private allocByNumber = new Map<string, ElectraAllocation>(); // `${type}:${num}` → alloc
   private generated: GeneratedPreset | null = null;
+  private primeTimers: Array<ReturnType<typeof setTimeout>> = [];
+  private readonly schedule: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
   private now: () => number =
     () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
   constructor(
     private host: AutoconfigHost,
     private broker: ElectraBroker = electraBroker,
-    private opts: { identifyTimeoutMs?: number } = {},
-  ) {}
+    private opts: {
+      identifyTimeoutMs?: number;
+      /** Settle points (ms) to re-prime live values; injectable for tests. */
+      primeDelaysMs?: readonly number[];
+      /** Timer impl (injectable for tests); defaults to global setTimeout. */
+      scheduler?: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
+    } = {},
+  ) {
+    this.schedule = opts.scheduler ?? ((fn, ms) => setTimeout(fn, ms));
+  }
 
   /** The full automagic flow. Returns a result describing what happened. */
   async run(): Promise<AutoconfigResult> {
@@ -125,7 +142,23 @@ export class ElectraAutoconfig {
     this.pushBanner();
     this.broker.switchPage(1);
 
+    // PRIME the device with the live values of every writable control so it
+    // shows real values immediately (not the preset's 0 defaults) — fixes the
+    // "MIXMASTER page reads 0 for everything on first load" bug. Pushed now and
+    // again as the upload settles (see DEFAULT_PRIME_DELAYS_MS).
+    this.primeValues();
+
     return { ok: true, isElectra: id.isElectra, generated: gen };
+  }
+
+  /** Force-push live control values now + at the settle points so the device
+   *  lands on real values regardless of the upload-ingest / engine-ready race. */
+  private primeValues(): void {
+    this.pump?.prime();
+    const delays = this.opts.primeDelaysMs ?? DEFAULT_PRIME_DELAYS_MS;
+    for (const ms of delays) {
+      this.primeTimers.push(this.schedule(() => this.pump?.prime(), ms));
+    }
   }
 
   /** Build the inbound-number index for O(1) CC/note → allocation lookup. */
@@ -218,6 +251,8 @@ export class ElectraAutoconfig {
   stop(): void {
     this.pump?.stop();
     this.pump = null;
+    for (const t of this.primeTimers) clearTimeout(t);
+    this.primeTimers = [];
     this.unsubCc?.();
     this.unsubCc = null;
     this.unsubNote?.();

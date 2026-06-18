@@ -30,6 +30,7 @@
 // toolbar wiring + permission gestures live in Canvas.svelte.
 
 import type { PatchEnvelope } from './persistence';
+import { dedupeBindingsByAddress } from '$lib/midi/note-binding';
 
 /** Bumped when the bundle wire format itself changes. */
 export const BUNDLE_VERSION = 1 as const;
@@ -329,7 +330,12 @@ export function resolveMidiDeviceId(
  * Risk #6 in the design: blindly overwriting would clobber the user's
  * other-patch bindings. We merge by `key` (moduleId:paramId) — bundle wins for
  * keys it defines (this performance's modules), everything else is preserved.
- * Pure: returns the merged array; the caller writes it back to localStorage.
+ *
+ * Then collapse to ONE binding per physical address (channel+cc | channel+note),
+ * newest `learnedAt` winning — so a bundle saved with the legacy colliding map
+ * (many params parked on the same CC across Electra regenerates) loads REPAIRED:
+ * one physical control drives one param. Pure: returns the merged+deduped array;
+ * the caller writes it back to localStorage.
  */
 export function mergeMidiBindings(
   existing: MidiBindingExport[],
@@ -338,5 +344,5 @@ export function mergeMidiBindings(
   const byKey = new Map<string, MidiBindingExport>();
   for (const b of existing) if (b && typeof b.key === 'string') byKey.set(b.key, b);
   for (const b of incoming) if (b && typeof b.key === 'string') byKey.set(b.key, b);
-  return [...byKey.values()];
+  return dedupeBindingsByAddress([...byKey.values()]);
 }

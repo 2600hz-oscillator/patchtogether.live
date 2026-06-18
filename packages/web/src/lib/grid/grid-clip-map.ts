@@ -32,6 +32,10 @@ import {
   rowToMidi,
   noteCovering,
   velBucket,
+  STEPS_PER_PAGE,
+  MAX_EDIT_PAGES,
+  lengthEndBlock,
+  lengthEndStep,
   type ClipPlayerData,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
@@ -48,6 +52,11 @@ export const LED_STOP_ACTIVE = 12;
 export const LED_SCENE_IDLE = 4;
 export const LED_EDIT_PAD = 5;
 export const LED_TRANSPORT_ON = 15;
+// COPY / PASTE / PASTE-REV held-modifier pads + the copy-buffer indicator.
+export const LED_MOD_IDLE = 4; // a held-modifier pad at rest
+export const LED_MOD_ON = 15; // a held-modifier pad while held
+// COPY-INDICATOR pulse ramp (med→high→med→low), indexed off the blink cadence.
+export const LED_COPY_IND_PULSE: readonly number[] = [8, 13, 8, 3];
 
 // --- Edit-mode LED levels ---
 // A note is lit by its velocity COLOUR — 3 distinguishable note brightnesses
@@ -61,14 +70,22 @@ export const LED_PLAYHEAD = 6; // wash on the current-step column (the pulse)
 export const LED_ROOT_GUIDE = 1; // faint marker on root-pitch-class rows
 export const LED_FUNC = 5; // a function-row pad (idle)
 export const LED_FUNC_ON = 15; // a held function-row pad (e.g. VEL armed)
+export const LED_FUNC_DIM = 2; // a function pad that is a no-op right now (dim)
+export const LED_FUNC_FLASH = 12; // a flashing function pad (FOLLOW frozen)
+
+// --- LENGTH-EDIT page LED levels (the 2-row length editor) ---
+export const LED_LEN_BLOCK = 6; // a counted 16-step block (cells 1..endBlock−1)
+export const LED_LEN_END = 15; // the END block / END step (bright)
+export const LED_LEN_EXIT = 5; // the EXIT pad (row 0, cell 16)
 
 // --- Edit-mode geometry: 7 note rows (0..6) + a bottom FUNCTION ROW (7) ---
 export const NOTE_ROWS = GRID_HEIGHT - 1; // 7 pitch rows (= 1 in-key octave)
 export const FUNC_ROW = GRID_HEIGHT - 1; // row 7 = controls
-// Function-row layout (DECIDED 2026-06-15) with spacer gaps for legibility:
-//   [EDIT] [VEL] _ [ROW−] [OCT−] _ [ROW+] [OCT+] _ [SCALE]
-// x=2,5,8 are intentionally blank. ROW±1 shift the pitch window by a single
-// scale-degree row; OCT± shift by a whole octave (scaleLen rows).
+// Function-row layout (DECIDED 2026-06-16) with spacer gaps for legibility:
+//   [EDIT] [VEL] _ [ROW−] [OCT−] _ [ROW+] [OCT+] _ [SCALE] _ [FOLLOW] [LEFT] [RIGHT] [DOUBLE] [LEN]
+// x=2,5,8,10 are intentionally blank. ROW±1 shift the pitch window by a single
+// scale-degree row; OCT± shift by a whole octave (scaleLen rows). Pages 12..15
+// add the multi-page navigation + length cluster.
 export const EDIT_EXIT_PAD = { x: 0, y: FUNC_ROW } as const; // tap → leave the editor
 export const VEL_PAD = { x: 1, y: FUNC_ROW } as const; // hold + tap a note → cycle velocity
 export const ROW_DOWN_PAD = { x: 3, y: FUNC_ROW } as const; // shift the pitch window down 1 row
@@ -76,11 +93,22 @@ export const OCT_DOWN_PAD = { x: 4, y: FUNC_ROW } as const; // shift the pitch w
 export const ROW_UP_PAD = { x: 6, y: FUNC_ROW } as const; // shift the pitch window up 1 row
 export const OCT_UP_PAD = { x: 7, y: FUNC_ROW } as const; // shift the pitch window up 1 octave
 export const SCALE_PAD = { x: 9, y: FUNC_ROW } as const; // cycle the clip's scale (major→…→chromatic)
+export const FOLLOW_PAD = { x: 11, y: FUNC_ROW } as const; // tap-toggle auto-scroll the shown page
+export const PAGE_LEFT_PAD = { x: 12, y: FUNC_ROW } as const; // page left (only when frozen)
+export const PAGE_RIGHT_PAD = { x: 13, y: FUNC_ROW } as const; // page right (only when frozen)
+export const DOUBLE_PAD = { x: 14, y: FUNC_ROW } as const; // double the clip length (dup first half)
+export const LENGTH_EDIT_PAD = { x: 15, y: FUNC_ROW } as const; // open the LENGTH-EDIT page
 
 // --- Session-mode control-pad coordinates ---
+// Right column (col 15), top→bottom: EDIT(0) · _(1) · COPY(2) · COPY-IND(3) ·
+// PASTE(4) · PASTE-REV(5) · STOP-ALL(6) · TRANSPORT(7).
 export const CTRL_STOP_COL = CLIP_SLOTS; // 8 — per-lane stop
 export const CTRL_SCENE_COL = CLIP_SLOTS + 1; // 9 — scene launch
 export const EDIT_PAD = { x: GRID_WIDTH - 1, y: 0 } as const; // (15,0) — hold to enter edit
+export const COPY_PAD = { x: GRID_WIDTH - 1, y: 2 } as const; // (15,2) — hold + tap clip → copy
+export const COPY_IND_PAD = { x: GRID_WIDTH - 1, y: 3 } as const; // (15,3) — render-only buffer indicator
+export const PASTE_PAD = { x: GRID_WIDTH - 1, y: 4 } as const; // (15,4) — hold + tap clip → paste
+export const PASTE_REV_PAD = { x: GRID_WIDTH - 1, y: 5 } as const; // (15,5) — hold + tap → paste reversed
 export const STOPALL_PAD = { x: GRID_WIDTH - 1, y: GRID_HEIGHT - 2 } as const; // (15,6)
 export const TRANSPORT_PAD = { x: GRID_WIDTH - 1, y: GRID_HEIGHT - 1 } as const; // (15,7)
 
@@ -135,19 +163,28 @@ export function editRowToMidi(clip: NoteClipRecord, y: number, rowOffset = 0): n
   return rowToMidi(logicalRow, clip.root, clip.scale);
 }
 
+/** Number of 16-step pages a clip spans (1..MAX_EDIT_PAGES). */
+export function editPageCount(clip: NoteClipRecord): number {
+  return Math.max(1, Math.min(MAX_EDIT_PAGES, Math.ceil(clip.lengthSteps / STEPS_PER_PAGE)));
+}
+
 /**
  * An edit-mode pad (x,y) → the {step, midi} it edits, or null when it's in the
- * function row, or a step beyond the clip's length / the 16-wide window.
+ * function row, or a step beyond the clip's length. `page` (0-based, default 0)
+ * selects which 16-step window the columns map to: realStep = page*16 + x. A pad
+ * whose realStep ≥ lengthSteps is null (beyond the clip).
  */
 export function editPadToNote(
   clip: NoteClipRecord,
   x: number,
   y: number,
   rowOffset = 0,
+  page = 0,
 ): { step: number; midi: number } | null {
   if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= NOTE_ROWS) return null; // func row / oob
-  if (x >= clip.lengthSteps) return null; // beyond the clip
-  return { step: x, midi: editRowToMidi(clip, y, rowOffset) };
+  const realStep = page * STEPS_PER_PAGE + x;
+  if (realStep >= clip.lengthSteps) return null; // beyond the clip
+  return { step: realStep, midi: editRowToMidi(clip, y, rowOffset) };
 }
 
 // EDIT-mode function-row pad classifiers.
@@ -172,6 +209,55 @@ export function isRowUpPad(x: number, y: number): boolean {
 export function isScalePad(x: number, y: number): boolean {
   return x === SCALE_PAD.x && y === SCALE_PAD.y;
 }
+export function isFollowPad(x: number, y: number): boolean {
+  return x === FOLLOW_PAD.x && y === FOLLOW_PAD.y;
+}
+export function isPageLeftPad(x: number, y: number): boolean {
+  return x === PAGE_LEFT_PAD.x && y === PAGE_LEFT_PAD.y;
+}
+export function isPageRightPad(x: number, y: number): boolean {
+  return x === PAGE_RIGHT_PAD.x && y === PAGE_RIGHT_PAD.y;
+}
+export function isDoublePad(x: number, y: number): boolean {
+  return x === DOUBLE_PAD.x && y === DOUBLE_PAD.y;
+}
+export function isLengthEditPad(x: number, y: number): boolean {
+  return x === LENGTH_EDIT_PAD.x && y === LENGTH_EDIT_PAD.y;
+}
+
+// --- SESSION held-modifier classifiers (COPY / PASTE / PASTE-REV) ---
+export function isCopyPad(x: number, y: number): boolean {
+  return x === COPY_PAD.x && y === COPY_PAD.y;
+}
+export function isPastePad(x: number, y: number): boolean {
+  return x === PASTE_PAD.x && y === PASTE_PAD.y;
+}
+export function isPasteRevPad(x: number, y: number): boolean {
+  return x === PASTE_REV_PAD.x && y === PASTE_REV_PAD.y;
+}
+
+// ---------------------------------------------------------------------------
+// LENGTH-EDIT page mapping (PURE) — the 2-row length editor.
+//   ROW 0, pads 0..7   = the 16-step BLOCK the pattern ends in (1-based cells).
+//   ROW 0, pad 15      = EXIT (back to the clip editor).
+//   ROW 1, pads 0..15  = the STEP within the end block that is last (1-based).
+// Returns a tagged action for a pressed pad (null = a no-op / unused pad).
+// ---------------------------------------------------------------------------
+export type LengthEditAction =
+  | { kind: 'exit' }
+  | { kind: 'block'; block: number } // 1-based 16-step block
+  | { kind: 'step'; step: number }; // 1-based step within the end block
+
+export function isLengthEditExitPad(x: number, y: number): boolean {
+  return y === 0 && x === GRID_WIDTH - 1;
+}
+/** Classify a LENGTH-EDIT pad press → its action, or null for an unused pad. */
+export function lengthEditPad(x: number, y: number): LengthEditAction | null {
+  if (isLengthEditExitPad(x, y)) return { kind: 'exit' };
+  if (y === 0 && x >= 0 && x < MAX_EDIT_PAGES) return { kind: 'block', block: x + 1 };
+  if (y === 1 && x >= 0 && x < STEPS_PER_PAGE) return { kind: 'step', step: x + 1 };
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // LED frames (PURE)
@@ -181,6 +267,15 @@ export interface SessionLedOpts {
   transportRunning?: boolean;
   /** True while EDIT is held — lights the EDIT pad bright as feedback. */
   editArmed?: boolean;
+  /** True while COPY / PASTE / PASTE-REV is held (lights that pad bright). */
+  copyHeld?: boolean;
+  pasteHeld?: boolean;
+  pasteRevHeld?: boolean;
+  /** True when the per-machine copy buffer holds a clip (pulses the indicator). */
+  bufferArmed?: boolean;
+  /** Free-running blink phase (= floor(tickCount/BLINK_TICKS)); the copy-indicator
+   *  pulse ramp is indexed off it so it animates without extra state. */
+  blinkPhase?: number;
 }
 
 /**
@@ -221,6 +316,14 @@ export function computeSessionLeds(
     frame[frameIndex(CTRL_SCENE_COL, slot)] = LED_SCENE_IDLE;
   }
   frame[frameIndex(EDIT_PAD.x, EDIT_PAD.y)] = opts.editArmed ? LED_PLAYING : LED_EDIT_PAD;
+  // COPY / PASTE / PASTE-REV held-modifier pads (bright while held).
+  frame[frameIndex(COPY_PAD.x, COPY_PAD.y)] = opts.copyHeld ? LED_MOD_ON : LED_MOD_IDLE;
+  frame[frameIndex(PASTE_PAD.x, PASTE_PAD.y)] = opts.pasteHeld ? LED_MOD_ON : LED_MOD_IDLE;
+  frame[frameIndex(PASTE_REV_PAD.x, PASTE_REV_PAD.y)] = opts.pasteRevHeld ? LED_MOD_ON : LED_MOD_IDLE;
+  // COPY-INDICATOR — pulses med→high→med→low while the buffer is armed, else dark.
+  frame[frameIndex(COPY_IND_PAD.x, COPY_IND_PAD.y)] = opts.bufferArmed
+    ? LED_COPY_IND_PULSE[((opts.blinkPhase ?? 0) % LED_COPY_IND_PULSE.length + LED_COPY_IND_PULSE.length) % LED_COPY_IND_PULSE.length]
+    : LED_EMPTY;
   frame[frameIndex(STOPALL_PAD.x, STOPALL_PAD.y)] = anyPlaying ? LED_STOP_ACTIVE : LED_STOP_IDLE;
   frame[frameIndex(TRANSPORT_PAD.x, TRANSPORT_PAD.y)] = opts.transportRunning
     ? LED_TRANSPORT_ON
@@ -228,32 +331,66 @@ export function computeSessionLeds(
   return frame;
 }
 
+export interface EditLedOpts {
+  /** Pitch-window scroll offset (ROW±/OCT±). */
+  rowOffset?: number;
+  /** VEL function pad held → light it bright. */
+  velArmed?: boolean;
+  /** Whether FOLLOW (auto-scroll the shown page) is on. Default true. When on,
+   *  the shown page tracks the playhead and LEFT/RIGHT are no-ops (render dim);
+   *  when frozen, the FOLLOW pad flashes and LEFT/RIGHT light per range. */
+  followOn?: boolean;
+  /** The frozen page to show when !followOn (0-based). Ignored while following. */
+  editPage?: number;
+}
+
 /**
  * Full 128-cell EDIT-mode LED frame for one clip. Note rows (0..NOTE_ROWS-1):
  * a note lights its WHOLE held span by velocity COLOUR (3 brightnesses, 2 levels
- * each; the playhead column boosts the note it crosses to full and washes
- * empties). Bottom
- * FUNCTION ROW (with spacer gaps): EDIT (exit), VEL (bright while held), ROW−,
- * OCT−, ROW+, OCT+, SCALE. `playheadStep` < 0 = not playing. `rowOffset` scrolls
- * the pitch window by scale-degree rows.
+ * each; the playhead column — drawn ONLY when its page is the shown page — boosts
+ * the note it crosses to full and washes empties). Bottom FUNCTION ROW (with
+ * spacer gaps): EDIT (exit), VEL, ROW−, OCT−, ROW+, OCT+, SCALE, FOLLOW, LEFT,
+ * RIGHT, DOUBLE, LENGTH-EDIT.
+ *
+ * `playheadStep` is the clip's GLOBAL step (-1 = not playing). The shown page is
+ * `followOn ? floor(playhead/16) : editPage` (page 0 when not playing/following).
+ * The playhead column is drawn only when floor(playhead/16) === shownPage.
  */
 export function computeEditLeds(
   clip: NoteClipRecord,
   playheadStep: number,
-  rowOffset = 0,
-  velArmed = false,
+  rowOffsetOrOpts: number | EditLedOpts = 0,
+  velArmedArg = false,
 ): Uint8Array {
+  // Back-compat: the old (rowOffset, velArmed) positional form is still accepted.
+  const opts: EditLedOpts =
+    typeof rowOffsetOrOpts === 'number'
+      ? { rowOffset: rowOffsetOrOpts, velArmed: velArmedArg }
+      : rowOffsetOrOpts;
+  const rowOffset = opts.rowOffset ?? 0;
+  const velArmed = opts.velArmed ?? false;
+  const followOn = opts.followOn ?? true;
+  const pageCount = editPageCount(clip);
+  const playheadPage = playheadStep >= 0 ? Math.floor(playheadStep / STEPS_PER_PAGE) : -1;
+  let shownPage = followOn
+    ? playheadStep >= 0
+      ? playheadPage
+      : 0
+    : Math.max(0, Math.min(pageCount - 1, opts.editPage ?? 0));
+
   const frame = new Uint8Array(GRID_CELLS);
   const rootPc = ((clip.root % 12) + 12) % 12;
+  // The playhead column is shown only when the playing page IS the shown page.
+  const localPlayheadX = playheadPage === shownPage ? playheadStep - shownPage * STEPS_PER_PAGE : -1;
   for (let y = 0; y < NOTE_ROWS; y++) {
     for (let x = 0; x < GRID_WIDTH; x++) {
       const fi = frameIndex(x, y);
-      const note = editPadToNote(clip, x, y, rowOffset);
+      const note = editPadToNote(clip, x, y, rowOffset, shownPage);
       if (!note) {
         frame[fi] = LED_EMPTY;
         continue;
       }
-      const onPlayhead = x === playheadStep;
+      const onPlayhead = x === localPlayheadX;
       const cov = noteCovering(clip, note.step, note.midi);
       if (cov) {
         frame[fi] = onPlayhead ? LED_NOTE_PLAYHEAD : LED_NOTE_BRIGHTNESS[velBucket(cov.velocity)];
@@ -265,7 +402,7 @@ export function computeEditLeds(
       frame[fi] = base;
     }
   }
-  // Function row (spacer pads at x=2,5,8 stay dark / LED_EMPTY).
+  // Function row (spacer pads at x=2,5,8,10 stay dark / LED_EMPTY).
   frame[frameIndex(EDIT_EXIT_PAD.x, EDIT_EXIT_PAD.y)] = LED_FUNC;
   frame[frameIndex(VEL_PAD.x, VEL_PAD.y)] = velArmed ? LED_FUNC_ON : LED_FUNC;
   frame[frameIndex(ROW_DOWN_PAD.x, ROW_DOWN_PAD.y)] = LED_FUNC;
@@ -273,5 +410,41 @@ export function computeEditLeds(
   frame[frameIndex(ROW_UP_PAD.x, ROW_UP_PAD.y)] = LED_FUNC;
   frame[frameIndex(OCT_UP_PAD.x, OCT_UP_PAD.y)] = LED_FUNC;
   frame[frameIndex(SCALE_PAD.x, SCALE_PAD.y)] = LED_FUNC;
+  // FOLLOW: steady-lit while following; FLASHES (med) while frozen.
+  frame[frameIndex(FOLLOW_PAD.x, FOLLOW_PAD.y)] = followOn ? LED_FUNC_ON : LED_FUNC_FLASH;
+  // LEFT/RIGHT: dim no-op while following or at the edge; lit when actionable.
+  const canLeft = !followOn && shownPage > 0;
+  const canRight = !followOn && shownPage < pageCount - 1;
+  frame[frameIndex(PAGE_LEFT_PAD.x, PAGE_LEFT_PAD.y)] = canLeft ? LED_FUNC : LED_FUNC_DIM;
+  frame[frameIndex(PAGE_RIGHT_PAD.x, PAGE_RIGHT_PAD.y)] = canRight ? LED_FUNC : LED_FUNC_DIM;
+  frame[frameIndex(DOUBLE_PAD.x, DOUBLE_PAD.y)] = LED_FUNC;
+  frame[frameIndex(LENGTH_EDIT_PAD.x, LENGTH_EDIT_PAD.y)] = LED_FUNC;
+  return frame;
+}
+
+/**
+ * Full 128-cell LENGTH-EDIT page LED frame. ROW 0 pads 0..7 = the 16-step
+ * BLOCKS: cells 1..endBlock−1 LOW, cell endBlock BRIGHT, cells after off; pad 15
+ * = EXIT. ROW 1 pads 0..15 = the STEP within the end block: cells 1..endStep−1
+ * LOW, cell endStep BRIGHT, after off. Rows 2..7 are reserved (dark).
+ */
+export function computeLengthEditLeds(clip: NoteClipRecord): Uint8Array {
+  const frame = new Uint8Array(GRID_CELLS);
+  const L = Math.max(1, clip.lengthSteps);
+  const endBlock = lengthEndBlock(L); // 1..MAX_EDIT_PAGES
+  const endStep = lengthEndStep(L); // 1..STEPS_PER_PAGE
+  // ROW 0: the block ruler (cells are 1-based; pad x = cell x+1).
+  for (let x = 0; x < MAX_EDIT_PAGES; x++) {
+    const cell = x + 1;
+    frame[frameIndex(x, 0)] =
+      cell < endBlock ? LED_LEN_BLOCK : cell === endBlock ? LED_LEN_END : LED_EMPTY;
+  }
+  frame[frameIndex(GRID_WIDTH - 1, 0)] = LED_LEN_EXIT; // EXIT pad
+  // ROW 1: the step-within-end-block ruler.
+  for (let x = 0; x < STEPS_PER_PAGE; x++) {
+    const cell = x + 1;
+    frame[frameIndex(x, 1)] =
+      cell < endStep ? LED_LEN_BLOCK : cell === endStep ? LED_LEN_END : LED_EMPTY;
+  }
   return frame;
 }

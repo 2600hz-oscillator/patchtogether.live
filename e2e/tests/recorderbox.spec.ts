@@ -363,29 +363,29 @@ test('RECORDERBOX SIZE selector defaults to BALANCED + maps to a smaller profile
   ).toBe('small');
 
   // (2) CODEC AVAILABILITY (capability probe; CI-safe — isConfigSupported is a
-  // config check, NOT a real encode). SMALL prefers a modern codec (AV1 then
-  // VP9). Where the runtime reports one, that's the size win; where it doesn't
-  // (CI's headless software runner may report only avc, or nothing), SMALL still
-  // wins on the reduced H.264 bitrate + longer GOP — so we ASSERT the modern
-  // codec ONLY when the runtime actually advertises it, and otherwise just note
-  // the H.264 fallback. Nothing here requires an OS H.264 ENCODER.
+  // config check, NOT a real encode). SMALL prefers HARDWARE HEVC, then H.264 —
+  // never software AV1/VP9 (those starve the audio-capture path into clicks/pops
+  // AND can't be imported by NLEs; see recorderbox-quality.ts lever #1). Where
+  // the runtime reports HEVC that's the size win; where it doesn't (CI's headless
+  // software runner may report only avc, or nothing), SMALL still wins on the
+  // reduced H.264 bitrate + longer GOP. Nothing here requires an OS H.264 ENCODER.
   const codecSupport = await page.evaluate(async () => {
     const VE = (globalThis as unknown as { VideoEncoder?: { isConfigSupported?: (c: unknown) => Promise<{ supported?: boolean }> } }).VideoEncoder;
-    if (!VE?.isConfigSupported) return { av1: false, vp9: false, avc: false };
+    if (!VE?.isConfigSupported) return { hevc: false, avc: false };
     const probe = async (codec: string) => {
       try { return !!(await VE.isConfigSupported!({ codec, width: 1024, height: 768, bitrate: 4_000_000, framerate: 30 })).supported; }
       catch { return false; }
     };
-    return { av1: await probe('av01.0.08M.08'), vp9: await probe('vp09.00.40.08'), avc: await probe('avc1.640028') };
+    return { hevc: await probe('hvc1.1.6.L93.B0'), avc: await probe('avc1.640028') };
   });
   // Soft signal — never fails the test; documents the runtime's codec menu so a
-  // SMALL recording's actual codec is explainable (av1 > vp9 > avc preference).
+  // SMALL recording's actual codec is explainable (hevc > avc preference).
   // eslint-disable-next-line no-console
   console.log('RECORDERBOX_CODEC_SUPPORT', JSON.stringify(codecSupport));
   // At minimum SOME codec path exists OR the card would show the no-encoder
   // badge — assert the two are mutually exclusive (a real terminal state).
   const badge = await page.locator('[data-testid="recorderbox-no-encoder"]').count();
-  const anyCodec = codecSupport.av1 || codecSupport.vp9 || codecSupport.avc;
+  const anyCodec = codecSupport.hevc || codecSupport.avc;
   expect(anyCodec || badge >= 0, 'either a codec is advertised or the no-encoder badge is shown').toBeTruthy();
 
   expect(errors.filter((e) => !e.includes('favicon')), 'no page errors').toEqual([]);

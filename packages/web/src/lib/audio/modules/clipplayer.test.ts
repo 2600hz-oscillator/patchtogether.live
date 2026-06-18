@@ -311,3 +311,77 @@ describe('clipplayer: silent when empty', () => {
     expect(hasHighEvent(gateOf(handle, 0))).toBe(false);
   });
 });
+
+describe('clipplayer: transport-start re-align (regression)', () => {
+  // Two lanes playing POLYMETER clips (length 16 + 17). When both are mid-cycle
+  // (stepIndex ≠ 0) and the transport edges 0→1, BOTH lanes snap to step 0 on the
+  // downbeat — regardless of WHO flipped TIMELORDE.running (a direct param write
+  // or the grid TRANSPORT pad, which write the same flag). Free-running polymeter
+  // drift between starts is intended; the re-align is the contract under test.
+  function seedTwoLanePolymeter() {
+    // dense clips (a note on every step) so currentStep tracks the playhead.
+    const denseClip = (len: number): NoteClipRecord => ({
+      kind: 'note',
+      lengthSteps: len,
+      root: 48,
+      loop: true,
+      steps: Array.from({ length: len }, (_, s) => ({ step: s, midi: 60, velocity: 100, lengthSteps: 1 })),
+    });
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 },
+      {
+        clips: { [clipIndex(0, 0)]: denseClip(16), [clipIndex(1, 1)]: denseClip(17) },
+        queued: [0, 1, null, null, null, null, null, null],
+      },
+    );
+    seedTimelorde(1); // running so the lanes launch + advance
+  }
+
+  async function runUntilMidCycle(ctx: FakeAudioContext, handle: { read?: (k: string) => unknown }) {
+    // advance well past step 0 on BOTH lanes (stepDiv 2 @ 120bpm → 0.25s/step).
+    run(ctx, 0, 1.2);
+    expect(handle.read!('activeLane:0')).toBe(0);
+    expect(handle.read!('activeLane:1')).toBe(1);
+    // both lanes are sounding a step ≠ 0 (mid-cycle).
+    expect(handle.read!('currentStep:0')).not.toBe(0);
+    expect(handle.read!('currentStep:1')).not.toBe(0);
+  }
+
+  it('re-aligns both lanes to step 0 — DIRECT params.running 0→1', async () => {
+    seedTwoLanePolymeter();
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    await runUntilMidCycle(ctx, handle);
+
+    // stop, then restart via a DIRECT TIMELORDE.running write (1→0→1 edge).
+    (livePatch.nodes['tl']!.params as Record<string, number>).running = 0;
+    run(ctx, 1.2, 1.3);
+    (livePatch.nodes['tl']!.params as Record<string, number>).running = 1;
+    // one tick services the 0→1 edge → realign; the immediately-scheduled step 0
+    // is observable as soon as its time passes.
+    run(ctx, 1.3, 1.35);
+    expect(handle.read!('currentStep:0')).toBe(0);
+    expect(handle.read!('currentStep:1')).toBe(0);
+  });
+
+  it('re-aligns both lanes to step 0 — GRID toggleTransport path (same flag)', async () => {
+    seedTwoLanePolymeter();
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    await runUntilMidCycle(ctx, handle);
+
+    // The grid TRANSPORT pad toggles TIMELORDE.running. Replicate that exact
+    // write (read current → write the opposite) to prove the grid path lands on
+    // the SAME params.running the engine re-aligns from.
+    const gridToggleTransport = () => {
+      const tl = livePatch.nodes['tl']!.params as Record<string, number>;
+      tl.running = tl.running >= 0.5 ? 0 : 1;
+    };
+    gridToggleTransport(); // 1 → 0 (stop)
+    run(ctx, 1.2, 1.3);
+    gridToggleTransport(); // 0 → 1 (start) — the 0→1 edge
+    run(ctx, 1.3, 1.35);
+    expect(handle.read!('currentStep:0')).toBe(0);
+    expect(handle.read!('currentStep:1')).toBe(0);
+  });
+});

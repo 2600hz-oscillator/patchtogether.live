@@ -389,7 +389,7 @@
       if (c) { if (nextScale) c.scale = nextScale; else delete c.scale; }
     });
   }
-  const LENGTHS = [16, 32, 64, 8];
+  const LENGTHS = [16, 32, 64, 128, 8];
   function cycleLength() {
     const clip = clipAt(selectedClip);
     if (!clip) return;
