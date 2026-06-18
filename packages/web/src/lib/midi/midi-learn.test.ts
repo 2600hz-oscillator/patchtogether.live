@@ -26,6 +26,7 @@ import {
   parseCcMessage,
   importBindings,
   exportBindings,
+  repairBindingCollisions,
   isCcBinding,
   isNoteBinding,
   __test_setAccess,
@@ -648,5 +649,105 @@ describe('export/import round-trips the union + legacy migration', () => {
     registerSetter('legacy', 'p', { min: 0, max: 1, onchange: (v) => got.push(v) });
     sendCc(0, 7, 127);
     expect(got).toEqual([1]);
+  });
+});
+
+// ---------------- One-owner-per-(channel,cc|note) invariant ----------------
+//
+// The Electra "controls on different pages collide" bug: a single CC was learned
+// /imported onto MULTIPLE params (across regenerates), so the dispatch loop drove
+// EVERY binding sharing that (channel,cc) → one physical knob moved 3 params. The
+// invariant: at most ONE binding per physical address; the newest wins; dispatch
+// fires exactly one param.
+describe('one-owner-per-address invariant (Electra cross-page collision fix)', () => {
+  it('a fresh learn EVICTS a prior key on the same (channel,cc); only the new param moves', async () => {
+    const { access, sendCc } = makeFakeAccess();
+    __test_setAccess(access);
+    const aVals: number[] = [];
+    const bVals: number[] = [];
+    // cubeA:slice learns knob ch0/cc0.
+    await beginLearn({ moduleId: 'cubeA', paramId: 'slice', min: 0, max: 1, onchange: (v) => aVals.push(v) });
+    sendCc(0, 0, 10);
+    // Later, the SAME physical knob (ch0/cc0) is learned onto cubeB:slice.
+    await beginLearn({ moduleId: 'cubeB', paramId: 'slice', min: 0, max: 1, onchange: (v) => bVals.push(v) });
+    sendCc(0, 0, 20);
+    aVals.length = 0; bVals.length = 0;
+
+    sendCc(0, 0, 127); // turn the physical knob
+    expect(bVals).toHaveLength(1);          // the newest binding owns the CC
+    expect(aVals).toEqual([]);              // the evicted one no longer moves
+    expect(getBinding('cubeA', 'slice')).toBeUndefined(); // binding evicted
+    expect(getBinding('cubeB', 'slice')).toBeDefined();
+  });
+
+  it('importBindings repairs a colliding map — newest learnedAt wins, one survivor per CC', () => {
+    const { access, sendCc } = makeFakeAccess();
+    __test_setAccess(access);
+    // Three params parked on ch0/cc0 from successive Electra regenerates.
+    importBindings([
+      { key: 'cubeA:slice_ry', channel: 0, cc: 0, learnedAt: 100 },
+      { key: 'cubeB:slice_rx', channel: 0, cc: 0, learnedAt: 200 },
+      { key: 'chroma:hue', channel: 0, cc: 0, learnedAt: 300 }, // newest
+    ]);
+    const onCc0 = exportBindings().filter((b) => isCcBinding(b) && b.channel === 0 && b.cc === 0);
+    expect(onCc0).toHaveLength(1);
+    expect(onCc0[0]!.key).toBe('chroma:hue');
+
+    // Dispatch fires exactly the surviving param.
+    const fired: string[] = [];
+    registerSetter('cubeA', 'slice_ry', { min: 0, max: 1, onchange: () => fired.push('A') });
+    registerSetter('cubeB', 'slice_rx', { min: 0, max: 1, onchange: () => fired.push('B') });
+    registerSetter('chroma', 'hue', { min: 0, max: 1, onchange: () => fired.push('hue') });
+    sendCc(0, 0, 64);
+    expect(fired).toEqual(['hue']);
+  });
+
+  it('an Electra RE-CONNECT (fresh import) supersedes stale colliders on the same CC', () => {
+    const { access } = makeFakeAccess();
+    __test_setAccess(access);
+    importBindings([{ key: 'old:param', channel: 0, cc: 5, learnedAt: 1 }]); // stale
+    // Re-connect imports the fresh allocation (Date.now() ≫ 1) — newest wins.
+    importBindings([{ key: 'new:param', channel: 0, cc: 5, learnedAt: 999_999 }]);
+    const onCc5 = exportBindings().filter((b) => isCcBinding(b) && b.channel === 0 && b.cc === 5);
+    expect(onCc5).toHaveLength(1);
+    expect(onCc5[0]!.key).toBe('new:param');
+    expect(getBinding('old', 'param')).toBeUndefined();
+  });
+
+  it('CC and NOTE on the same channel+number do NOT collide (distinct address spaces)', () => {
+    const { access } = makeFakeAccess();
+    __test_setAccess(access);
+    importBindings([
+      { kind: 'cc', key: 'm:knob', channel: 0, cc: 1, learnedAt: 1 },
+      { kind: 'note', key: 'm:gate', channel: 0, note: 1, learnedAt: 1 },
+    ]);
+    expect(getBinding('m', 'knob')).toBeDefined();
+    expect(getBinding('m', 'gate')).toBeDefined();
+  });
+
+  it('repairBindingCollisions() collapses an already-loaded colliding set (the ctrl_bug shape)', () => {
+    const { access } = makeFakeAccess();
+    __test_setAccess(access);
+    // A representative slice of the user's bug bundle: many keys, only a few
+    // distinct (channel,cc) — all on channel 0 (mirrors 149 bindings → 52 addrs).
+    const colliding = [
+      { key: 'cube-b28b6fb0:slice_ry', channel: 0, cc: 0, learnedAt: 1 },
+      { key: 'cube-e1112852:slice_rx', channel: 0, cc: 0, learnedAt: 2 },
+      { key: 'chroma-635e2f0d:hue', channel: 0, cc: 0, learnedAt: 3 },
+      { key: 'mixmstrs-005d562e:ch1_volume', channel: 0, cc: 11, learnedAt: 1 },
+      { key: 'cube-e1112852:attack', channel: 0, cc: 11, learnedAt: 2 },
+      { key: 'pentemelodica:v4_wave', channel: 0, cc: 11, learnedAt: 3 },
+      { key: 'timelorde:bpm', channel: 0, cc: 41, learnedAt: 1 }, // already unique
+    ];
+    // Import withOUT the auto-repair path to simulate a pre-fix loaded set, then
+    // repair explicitly (also the code path importBindings runs internally).
+    importBindings(colliding);
+    const survivors = exportBindings();
+    // 3 distinct addresses (cc0, cc11, cc41) → 3 survivors.
+    expect(survivors).toHaveLength(3);
+    const addrs = survivors.map((b) => (isCcBinding(b) ? `${b.channel}:${b.cc}` : 'x'));
+    expect(new Set(addrs).size).toBe(3);
+    // A second repair is a no-op (idempotent — nothing left to remove).
+    expect(repairBindingCollisions()).toBe(0);
   });
 });

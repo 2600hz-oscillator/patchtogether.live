@@ -298,4 +298,32 @@ describe('mergeMidiBindings', () => {
     const merged = mergeMidiBindings([], [noteRecord]);
     expect(merged).toEqual([noteRecord]);
   });
+
+  it('REPAIRS a colliding map on load — one binding per (channel,cc), newest wins', () => {
+    // A bundle saved with the legacy Electra collision: three params parked on
+    // ch0/cc0 across regenerates (the user-reported "controls collide" bug).
+    const existing: MidiBindingExport[] = [
+      { key: 'cube-a:slice_ry', channel: 0, cc: 0, learnedAt: 100 },
+      { key: 'cube-b:slice_rx', channel: 0, cc: 0, learnedAt: 200 },
+    ];
+    const incoming: MidiBindingExport[] = [
+      { key: 'chroma:hue', channel: 0, cc: 0, learnedAt: 300 }, // newest on cc0
+      { key: 'mixmstrs:ch1_volume', channel: 0, cc: 11, learnedAt: 50 }, // distinct
+    ];
+    const merged = mergeMidiBindings(existing, incoming);
+    // cc0 collapses to ONE (the newest), cc11 survives → 2 total.
+    expect(merged).toHaveLength(2);
+    const onCc0 = merged.filter((b) => b.channel === 0 && b.cc === 0);
+    expect(onCc0).toHaveLength(1);
+    expect(onCc0[0]!.key).toBe('chroma:hue');
+    expect(merged.some((b) => b.key === 'mixmstrs:ch1_volume')).toBe(true);
+  });
+
+  it('does NOT collapse the same number on different channels (distinct addresses)', () => {
+    const merged = mergeMidiBindings(
+      [{ key: 'a:p', channel: 0, cc: 4, learnedAt: 1 }],
+      [{ key: 'b:p', channel: 1, cc: 4, learnedAt: 1 }],
+    );
+    expect(merged).toHaveLength(2);
+  });
 });
