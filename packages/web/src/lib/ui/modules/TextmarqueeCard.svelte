@@ -35,6 +35,12 @@
     layoutModel,
     lineAlignOffset,
     modelPlainText,
+    clampFontPx,
+    truncateModelChars,
+    MIN_FONT_PX,
+    MAX_FONT_PX,
+    DEFAULT_FONT_PX,
+    MAX_CHARS,
   } from '$lib/video/modules/textmarquee-layout';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -198,7 +204,8 @@
     if (paragraphs.length === 0) {
       paragraphs.push({ runs: [{ text: '' }], align: alignOf(editorEl) });
     }
-    return { paragraphs, fg: layerFg, bg: layerBg };
+    // Cap total chars (a pasted wall of text can't blow up the texture).
+    return truncateModelChars({ paragraphs, fg: layerFg, bg: layerBg, fontPx }, MAX_CHARS);
   }
 
   function onEditorInput() {
@@ -277,6 +284,15 @@
   // Layer fg/bg — stored on the model (not per-run).
   let layerFg = $state('#ffffff');
   let layerBg = $state('#000000');
+  // Render font size in VIDEO PX (drives on-screen size; MAX = a short word fills
+  // the screen). Local control value; the render reads model.fontPx so it stays
+  // correct under remote edits too.
+  let fontPx = $state(DEFAULT_FONT_PX);
+  function setFontPx(v: number) {
+    fontPx = clampFontPx(v);
+    persistModel(serializeEditor());
+    queueRender();
+  }
   function setLayerFg(hex: string) {
     layerFg = hex;
     persistModel({ ...serializeEditorNoLayer(), fg: layerFg, bg: layerBg });
@@ -292,17 +308,15 @@
   }
 
   // ── Offscreen text canvas → engine texture ───────────────────────────────
-  const FONT_PX = 56; // generous so the ribbon reads at video res
-  const LINE_HEIGHT = Math.round(FONT_PX * 1.3);
   const PAD = 16;
 
   let textCanvas: HTMLCanvasElement | null = null;
   let measureCtx: CanvasRenderingContext2D | null = null;
 
-  function runFont(run: RichRun): string {
+  function runFont(run: RichRun, fpx: number): string {
     const style = run.italic ? 'italic ' : '';
     const weight = run.bold ? '700 ' : '400 ';
-    return `${style}${weight}${FONT_PX}px sans-serif`;
+    return `${style}${weight}${fpx}px sans-serif`;
   }
 
   /** Render the current model to the offscreen canvas + push it to the engine. */
@@ -323,8 +337,13 @@
     const mctx = measureCtx;
     if (!mctx) return;
 
+    // Font size (video px) from the model — slider-driven; MAX makes a short word
+    // span the frame. LINE_HEIGHT scales with it.
+    const fpx = clampFontPx(model.fontPx);
+    const LINE_HEIGHT = Math.round(fpx * 1.3);
+
     const measure = (text: string, run: RichRun): number => {
-      mctx.font = runFont(run);
+      mctx.font = runFont(run, fpx);
       return mctx.measureText(text).width;
     };
     const layout = layoutModel(model, measure, LINE_HEIGHT);
@@ -347,14 +366,14 @@
       const ax = lineAlignOffset(line.width, layout.width, line.align);
       const y = PAD + li * LINE_HEIGHT;
       for (const pr of line.runs) {
-        ctx2d.font = runFont(pr.run);
+        ctx2d.font = runFont(pr.run, fpx);
         ctx2d.fillStyle = pr.run.color ?? model.fg;
         const x = PAD + ax + pr.x;
         ctx2d.fillText(pr.text, x, y);
         if (pr.run.underline) {
-          const uy = y + FONT_PX * 0.92;
+          const uy = y + fpx * 0.92;
           ctx2d.strokeStyle = pr.run.color ?? model.fg;
-          ctx2d.lineWidth = Math.max(1, FONT_PX * 0.06);
+          ctx2d.lineWidth = Math.max(1, fpx * 0.06);
           ctx2d.beginPath();
           ctx2d.moveTo(x, uy);
           ctx2d.lineTo(x + pr.width, uy);
@@ -454,9 +473,10 @@
   }
 
   onMount(() => {
-    // Seed local fg/bg from the persisted model, paint the editor + canvas.
+    // Seed local fg/bg/size from the persisted model, paint the editor + canvas.
     layerFg = model.fg;
     layerBg = model.bg;
+    fontPx = clampFontPx(model.fontPx);
     applyModelToDom(model);
     renderTextCanvasToEngine();
     if (previewEl) {
@@ -510,6 +530,13 @@
         <input type="color" class="nodrag" value={runColor} data-testid="textmarquee-run-color"
           onmousedown={keepSelection}
           oninput={(e) => applyRunColor((e.currentTarget as HTMLInputElement).value)} />
+      </label>
+      <span class="sep"></span>
+      <label class="swatch" title="Font size (max = a short word fills the screen)">
+        <span class="lbl">SIZE</span>
+        <input type="range" class="nodrag" min={MIN_FONT_PX} max={MAX_FONT_PX} step="2" value={fontPx}
+          data-testid="textmarquee-size"
+          oninput={(e) => setFontPx(Number((e.currentTarget as HTMLInputElement).value))} />
       </label>
     </div>
 

@@ -57,7 +57,7 @@ export interface RichParagraph {
 }
 
 /** The whole layer model: paragraphs + the layer foreground (default glyph
- *  colour) + background fill. */
+ *  colour) + background fill + the render font size. */
 export interface RichTextModel {
   paragraphs: RichParagraph[];
   /** Default glyph colour for runs without their own `color` ('#rrggbb'). */
@@ -65,6 +65,32 @@ export interface RichTextModel {
   /** Layer background fill ('#rrggbb'). The renderer fills the text block's
    *  bounding box with this before drawing glyphs. */
   bg: string;
+  /** Glyph height in VIDEO PIXELS. The module draws the text texture 1:1 to
+   *  screen px, so this directly controls on-screen size. Clamped to
+   *  [MIN_FONT_PX, MAX_FONT_PX]; absent → DEFAULT_FONT_PX. */
+  fontPx?: number;
+}
+
+/** Font-size bounds (video px). MAX is calibrated so a short ~5-char word (e.g.
+ *  "BIOME") spans the full width of the video frame in most system fonts: 5 caps
+ *  × ~0.6·px ≈ 3·px, so at MAX_FONT_PX=420 that's ~1260px ≥ the 1024-wide
+ *  VIDEO_RES frame → the word fills the screen (with margin, and real-font caps
+ *  are wider). Verified visually across fonts. */
+export const MIN_FONT_PX = 16;
+export const DEFAULT_FONT_PX = 64;
+export const MAX_FONT_PX = 420;
+
+/** Max total characters across the whole model (a reasonable marquee cap; the
+ *  card enforces it on input + coercion truncates a too-long persisted/remote
+ *  model so a pasted wall of text can't blow up the texture). */
+export const MAX_CHARS = 240;
+
+/** Clamp a possibly-untrusted font size to [MIN_FONT_PX, MAX_FONT_PX], rounded;
+ *  non-finite → DEFAULT_FONT_PX. */
+export function clampFontPx(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_FONT_PX;
+  return Math.max(MIN_FONT_PX, Math.min(MAX_FONT_PX, Math.round(n)));
 }
 
 /** A sane empty model (one empty left-aligned paragraph, white on black). */
@@ -73,6 +99,7 @@ export function emptyRichTextModel(): RichTextModel {
     paragraphs: [{ runs: [{ text: '' }], align: 'left' }],
     fg: '#ffffff',
     bg: '#000000',
+    fontPx: DEFAULT_FONT_PX,
   };
 }
 
@@ -120,7 +147,29 @@ export function coerceRichTextModel(data: unknown): RichTextModel {
     paragraphs.push({ runs, align });
   }
   if (paragraphs.length === 0) return empty;
-  return { paragraphs, fg, bg };
+  return truncateModelChars({ paragraphs, fg, bg, fontPx: clampFontPx(o.fontPx) }, MAX_CHARS);
+}
+
+/** Trim a model to at most `max` total characters (across all runs/paragraphs),
+ *  preserving styling on the surviving text + always keeping ≥1 paragraph/run.
+ *  Idempotent for an already-short model. Used by coercion + the card on input
+ *  so a pasted wall of text can never blow up the rendered texture. */
+export function truncateModelChars(model: RichTextModel, max: number): RichTextModel {
+  if (modelPlainText(model).length <= max) return model;
+  let budget = Math.max(0, max);
+  const paragraphs: RichParagraph[] = [];
+  for (const p of model.paragraphs) {
+    if (budget <= 0) break;
+    const runs: RichRun[] = [];
+    for (const r of p.runs) {
+      if (budget <= 0) break;
+      const text = r.text.slice(0, budget);
+      budget -= text.length;
+      runs.push({ ...r, text });
+    }
+    paragraphs.push({ runs: runs.length ? runs : [{ text: '' }], align: p.align });
+  }
+  return { ...model, paragraphs: paragraphs.length ? paragraphs : [{ runs: [{ text: '' }], align: 'left' }] };
 }
 
 /** The concatenated plain text of a model (paragraphs joined by "\n"). Handy

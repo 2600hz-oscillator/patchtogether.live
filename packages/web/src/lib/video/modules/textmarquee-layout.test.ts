@@ -13,6 +13,12 @@ import {
   coerceRichTextModel,
   normalizeHex,
   modelPlainText,
+  clampFontPx,
+  truncateModelChars,
+  MIN_FONT_PX,
+  MAX_FONT_PX,
+  DEFAULT_FONT_PX,
+  MAX_CHARS,
   layoutModel,
   lineAlignOffset,
   posToDrawX,
@@ -246,5 +252,57 @@ describe('computeDrawOffset — position + scroll combined', () => {
     const expectedDx = scrollOffset(0.9, 1.5, 1024, 300);
     expect(scrolled.x - base.x).toBeCloseTo(expectedDx, 6);
     expect(scrolled.y).toBeCloseTo(base.y, 6); // scrollY static → no y change
+  });
+});
+
+describe('clampFontPx', () => {
+  it('clamps to [MIN, MAX] and rounds', () => {
+    expect(clampFontPx(MAX_FONT_PX + 999)).toBe(MAX_FONT_PX);
+    expect(clampFontPx(MIN_FONT_PX - 999)).toBe(MIN_FONT_PX);
+    expect(clampFontPx(63.6)).toBe(64);
+  });
+  it('non-finite → DEFAULT', () => {
+    expect(clampFontPx(undefined)).toBe(DEFAULT_FONT_PX);
+    expect(clampFontPx('nope')).toBe(DEFAULT_FONT_PX);
+    expect(clampFontPx(NaN)).toBe(DEFAULT_FONT_PX);
+  });
+  it('coerceRichTextModel clamps a too-big persisted fontPx + defaults a missing one', () => {
+    expect(coerceRichTextModel({ paragraphs: [{ runs: [{ text: 'x' }], align: 'left' }], fontPx: 99999 }).fontPx).toBe(MAX_FONT_PX);
+    expect(coerceRichTextModel({ paragraphs: [{ runs: [{ text: 'x' }], align: 'left' }] }).fontPx).toBe(DEFAULT_FONT_PX);
+  });
+});
+
+describe('MAX font size makes a short word fill the screen', () => {
+  it('"BIOME" at MAX_FONT_PX spans the full 1024-wide video frame (sans-serif ~0.6·px caps)', () => {
+    const FRAME_W = 1024; // VIDEO_RES.width
+    // Conservative cap width ≈ 0.6·fontPx for system sans fonts (real caps are wider).
+    const measure = (text: string): number => text.length * 0.6 * MAX_FONT_PX;
+    expect(measure('BIOME')).toBeGreaterThanOrEqual(FRAME_W); // fills the frame
+    // …and the default size does NOT fill it (so the MAX is what enables it).
+    const measureDefault = (text: string): number => text.length * 0.6 * DEFAULT_FONT_PX;
+    expect(measureDefault('BIOME')).toBeLessThan(FRAME_W);
+  });
+});
+
+describe('truncateModelChars — char cap', () => {
+  const long: RichTextModel = {
+    paragraphs: [{ runs: [{ text: 'a'.repeat(200) }, { text: 'b'.repeat(200), bold: true }], align: 'left' }],
+    fg: '#ffffff', bg: '#000000',
+  };
+  it('caps total chars + keeps styling on the survivors', () => {
+    const out = truncateModelChars(long, MAX_CHARS);
+    expect(modelPlainText(out).length).toBe(MAX_CHARS);
+    // first run (200 'a') survives whole; second run trimmed to the remainder, bold kept.
+    expect(out.paragraphs[0]!.runs[0]!.text).toBe('a'.repeat(200));
+    expect(out.paragraphs[0]!.runs[1]!.text).toBe('b'.repeat(MAX_CHARS - 200));
+    expect(out.paragraphs[0]!.runs[1]!.bold).toBe(true);
+  });
+  it('is a no-op for an already-short model (same ref)', () => {
+    const short = emptyRichTextModel();
+    expect(truncateModelChars(short, MAX_CHARS)).toBe(short);
+  });
+  it('coerceRichTextModel applies the cap to a too-long persisted model', () => {
+    const huge = { paragraphs: [{ runs: [{ text: 'z'.repeat(5000) }], align: 'left' }] };
+    expect(modelPlainText(coerceRichTextModel(huge)).length).toBe(MAX_CHARS);
   });
 });
