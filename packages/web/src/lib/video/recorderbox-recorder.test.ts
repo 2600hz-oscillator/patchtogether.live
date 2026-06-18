@@ -9,10 +9,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   probeEncoders,
+  RecorderboxRecorder,
   DEFAULT_VIDEO_BITRATE,
   DEFAULT_AUDIO_BITRATE,
   VIDEO_CODEC,
   AUDIO_CODEC,
+  type RecorderboxRecorderOptions,
+  type AudioSampleSourceLike,
 } from '$lib/video/recorderbox-recorder';
 import {
   sanitizeRecordingFilename,
@@ -282,5 +285,192 @@ describe('ensureHandleWritePermission', () => {
       queryPermission: vi.fn(async () => { throw new Error('stale handle'); }),
     } as unknown as FileSystemFileHandle;
     expect(await ensureHandleWritePermission(handle)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sample-accurate audio capture path (the clicks/pops fix): the recorder feeds
+// worklet-posted planar f32 chunks through a BACKPRESSURED AudioSampleSource so
+// NO sample is dropped (the old MediaStreamAudioTrackSource hard-drops under
+// encoder backpressure → silence-pad → click). These drive the recorder's REAL
+// arm + drain wiring with an injected fake source + a stub worklet port, and
+// assert: (a) EVERY posted chunk is add()'d (none closed/dropped), and (b) the
+// emitted timestamps are exactly contiguous (audio-clock authoritative), EVEN
+// when add() is slow (simulated encoder backpressure).
+// ---------------------------------------------------------------------------
+
+/** A stub of the worklet's MessagePort. Captures arm/disarm posts; lets the
+ *  test inject chunks via the recorder-installed `onmessage`. */
+function stubCapturePort() {
+  const posts: Array<{ type: string }> = [];
+  const port = {
+    onmessage: null as ((e: MessageEvent) => void) | null,
+    postMessage(msg: { type: string }) { posts.push(msg); },
+  };
+  return {
+    port: port as unknown as MessagePort,
+    posts,
+    /** Simulate the worklet posting a captured chunk to the main thread. */
+    post(chunk: { data: Float32Array; frames: number }) {
+      port.onmessage?.({ data: chunk } as MessageEvent);
+    },
+  };
+}
+
+/** A planar stereo chunk of `frames` frames; samples seeded from `seed` so we
+ *  can assert no chunk was reordered/lost. */
+function chunk(frames: number, seed: number) {
+  const data = new Float32Array(frames * 2);
+  for (let i = 0; i < data.length; i++) data[i] = seed + i;
+  return { data, frames };
+}
+
+/** A fake mediabunny AudioSampleSource that records every add()'d sample's
+ *  (frames, timestamp). `slow` makes add() resolve on a later macrotask so the
+ *  drain experiences real backpressure (the encoder-busy case). */
+function fakeAudioSampleSource(slow = false) {
+  const added: Array<{ frames: number; timestamp: number }> = [];
+  const source = {
+    async add(sample: { numberOfFrames: number; timestamp: number }) {
+      if (slow) await new Promise<void>((r) => setTimeout(r, 0));
+      added.push({ frames: sample.numberOfFrames, timestamp: sample.timestamp });
+    },
+  };
+  return { source: source as unknown as AudioSampleSourceLike, added };
+}
+
+/** Build a recorder wired for the capture path WITHOUT calling start() (the real
+ *  Mediabunny Output can't construct under node), then drive the same private
+ *  setup + arm the start()/stop() flow uses. Mirrors recorderbox-stop.test.ts's
+ *  armForStop pattern. */
+function makeCaptureRecorder(opts: {
+  sampleRate: number;
+  makeAudioSampleSource: RecorderboxRecorderOptions['makeAudioSampleSource'];
+  port: MessagePort;
+}) {
+  const rec = new RecorderboxRecorder({
+    nodeId: 'cap1',
+    canvas: {} as HTMLCanvasElement,
+    audioTrack: null,
+    audioCapture: { port: opts.port, sampleRate: opts.sampleRate },
+    filename: 'cap',
+    width: 320,
+    height: 240,
+    saveBytes: async () => {},
+    makeWriter: () => ({ write: async () => {}, close: async () => {} }),
+    makeAudioSampleSource: opts.makeAudioSampleSource,
+  });
+  const internal = rec as unknown as {
+    state: string;
+    output: { addAudioTrack: (s: unknown) => void };
+    capturePort: MessagePort | null;
+    captureDrain: unknown;
+    captureDrainLoop: Promise<void> | null;
+    setupCaptureSource: (
+      output: { addAudioTrack: (s: unknown) => void },
+      tap: { port: MessagePort; sampleRate: number },
+    ) => AudioSampleSourceLike | null;
+    armCaptureDrain: (src: AudioSampleSourceLike) => void;
+  };
+  // Force the recorder into the post-start() state the real start() leaves.
+  const addedTracks: unknown[] = [];
+  internal.state = 'recording';
+  internal.output = { addAudioTrack: (s) => { addedTracks.push(s); } };
+  return { rec, internal, addedTracks };
+}
+
+describe('sample-accurate capture path — lossless drain through backpressured add()', () => {
+  it('add()s EVERY worklet chunk (none dropped) with contiguous timestamps', async () => {
+    const sampleRate = 48_000;
+    const { source, added } = fakeAudioSampleSource(false);
+    const stub = stubCapturePort();
+    const { internal } = makeCaptureRecorder({
+      sampleRate,
+      makeAudioSampleSource: () => source,
+      port: stub.port,
+    });
+
+    // Wire the capture source (adds the audio track + installs port.onmessage),
+    // then ARM + start the drain loop (the same two steps start() runs).
+    const src = internal.setupCaptureSource(internal.output, { port: stub.port, sampleRate });
+    expect(src).toBe(source);
+    expect(stub.posts).toEqual([]); // not armed yet
+    internal.armCaptureDrain(src!);
+    expect(stub.posts).toEqual([{ type: 'arm' }]); // worklet armed
+
+    // The worklet posts a run of differently-sized batches.
+    const sizes = [1024, 1024, 512, 1024, 256];
+    sizes.forEach((n, i) => stub.post(chunk(n, i * 10_000)));
+
+    // DISARM + close + await the drain loop (the stop()/finalize sequence). The
+    // private fields are what stop() reads.
+    stub.post(chunk(128, 99_000)); // a final partial (the disarm-flush analogue)
+    (internal.captureDrain as { close: () => void }).close();
+    await internal.captureDrainLoop;
+
+    // (a) LOSSLESS: every posted chunk was add()'d, in order, none dropped.
+    const expectedFrames = [...sizes, 128];
+    expect(added.map((a) => a.frames)).toEqual(expectedFrames);
+
+    // (b) CONTIGUOUS timestamps: sample N starts at (sum of prior frames)/rate.
+    let cum = 0;
+    for (let i = 0; i < expectedFrames.length; i++) {
+      expect(added[i].timestamp).toBeCloseTo(cum / sampleRate, 9);
+      cum += expectedFrames[i];
+    }
+    // First sample at t0 = 0 (shared zero epoch with the video track → A/V sync).
+    expect(added[0].timestamp).toBe(0);
+  });
+
+  it('is STILL lossless + contiguous when add() is SLOW (encoder backpressure)', async () => {
+    const sampleRate = 44_100;
+    const { source, added } = fakeAudioSampleSource(true); // slow add → backpressure
+    const stub = stubCapturePort();
+    const { internal } = makeCaptureRecorder({
+      sampleRate,
+      makeAudioSampleSource: () => source,
+      port: stub.port,
+    });
+    const src = internal.setupCaptureSource(internal.output, { port: stub.port, sampleRate });
+    internal.armCaptureDrain(src!);
+
+    // Burst many chunks FASTER than the slow encoder can drain — the queue fills
+    // (the backpressure case that used to drop samples). All must still land.
+    const sizes = Array.from({ length: 20 }, (_, i) => (i % 2 ? 512 : 1024));
+    sizes.forEach((n, i) => stub.post(chunk(n, i * 5_000)));
+
+    (internal.captureDrain as { close: () => void }).close();
+    await internal.captureDrainLoop;
+
+    // LOSSLESS under backpressure: all 20 chunks add()'d, in order.
+    expect(added.map((a) => a.frames)).toEqual(sizes);
+    // CONTIGUOUS: timestamps never overlap nor gap.
+    let cum = 0;
+    for (let i = 0; i < sizes.length; i++) {
+      expect(added[i].timestamp).toBeCloseTo(cum / sampleRate, 9);
+      cum += sizes[i];
+    }
+    // Drain reports the right total frames emitted.
+    expect((internal.captureDrain as { framesEmitted: number }).framesEmitted)
+      .toBe(sizes.reduce((a, b) => a + b, 0));
+  });
+
+  it('falls back (no capture wiring) when audioCapture is absent', async () => {
+    // No audioCapture → the legacy MediaStreamAudioTrackSource(audioTrack) path.
+    const rec = new RecorderboxRecorder({
+      nodeId: 'fb1',
+      canvas: {} as HTMLCanvasElement,
+      audioTrack: null,
+      filename: 'fb',
+      width: 320,
+      height: 240,
+      saveBytes: async () => {},
+      makeWriter: () => ({ write: async () => {}, close: async () => {} }),
+      makeAudioSampleSource: () => { throw new Error('must NOT be called on the fallback path'); },
+    });
+    const internal = rec as unknown as { capturePort: MessagePort | null; captureDrain: unknown };
+    // The capture state is never set up without an audioCapture tap.
+    expect(internal.capturePort).toBeNull();
+    expect(internal.captureDrain).toBeNull();
   });
 });

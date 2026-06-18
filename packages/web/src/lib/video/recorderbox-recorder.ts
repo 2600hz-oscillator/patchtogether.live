@@ -50,6 +50,11 @@ import {
   type RecorderboxManifest,
   type ChunkSink,
 } from './recorderbox-store';
+import {
+  AudioCaptureDrain,
+  type CaptureChunk,
+  type CaptureSampleInit,
+} from './recorderbox-capture-drain';
 
 // Mediabunny is a real dependency (MPL-2.0). We import its high-level
 // canvas/audio sources + the fragmented-MP4 output. Type-only where possible
@@ -61,6 +66,12 @@ import {
   StreamTarget,
   CanvasSource,
   MediaStreamAudioTrackSource,
+  // Sample-accurate (lossless) audio path: a backpressured source we feed
+  // worklet-captured planar f32 chunks through AudioSample.add() (awaited per
+  // chunk = no dropped samples → no silence-pad → no click). The fallback
+  // MediaStreamAudioTrackSource (above) hard-drops under encoder backpressure.
+  AudioSampleSource,
+  AudioSample,
   canEncodeVideo,
   canEncodeAudio,
   // Remux-to-flat-MP4 pieces (delivery step in stop()): read the fragmented OPFS
@@ -257,8 +268,22 @@ export interface RecorderboxRecorderOptions {
   /** The hidden capture canvas the card draws the engine frame into each rAF. */
   canvas: HTMLCanvasElement | OffscreenCanvas;
   /** The merged L+R MediaStream audio track (from the module's
-   *  MediaStreamAudioDestinationNode). Null = record video only (silent). */
+   *  MediaStreamAudioDestinationNode). Null = record video only (silent).
+   *  Used ONLY as the FALLBACK when `audioCapture` is absent (the legacy
+   *  MediaStreamAudioTrackSource path, which hard-drops samples under encoder
+   *  backpressure → the clicks/pops bug). */
   audioTrack: MediaStreamTrack | null;
+  /**
+   * The PREFERRED, sample-accurate audio source: the recorderbox-capture
+   * worklet's MessagePort (planar f32 stereo chunks posted from the audio
+   * thread) + its encodable sample rate. When present, start() ARMS the worklet,
+   * drains every posted chunk through mediabunny's BACKPRESSURED
+   * AudioSampleSource.add() (the awaited add = lossless — no dropped samples →
+   * no silence-pad → no click), and IGNORES audioTrack. Absent → fall back to
+   * the MediaStreamAudioTrackSource(audioTrack) path. Null is equivalent to
+   * absent (the module publishes null when there's no AudioContext / the worklet
+   * failed to load). */
+  audioCapture?: { port: MessagePort; sampleRate: number } | null;
   /** User-chosen base filename (sanitized at save time + baked into the OPFS
    *  scratch path so a recovered/partial file carries the intended name). */
   filename: string;
@@ -300,6 +325,14 @@ export interface RecorderboxRecorderOptions {
   /** OPFS-writer factory. Defaults to the real Worker-backed writer; tests
    *  inject an in-memory sink. */
   makeWriter?: (opfsPath: string) => OpfsWriter;
+  /** Factory for the backpressured audio source used by the sample-accurate
+   *  capture path (only when `audioCapture` is present). Defaults to the real
+   *  mediabunny AudioSampleSource + AudioSample; tests inject a fake so the
+   *  lossless-drain behavior is verifiable without a real AAC encoder. */
+  makeAudioSampleSource?: (encodingConfig: {
+    codec: typeof AUDIO_CODEC;
+    bitrate: number;
+  }) => AudioSampleSourceLike;
   /** Remux the finalized FRAGMENTED OPFS scratch into a flat (moov-based) MP4 for
    *  delivery — the Resolve-import fix. Returns the flat bytes, or null if the
    *  remux can't run (then stop() falls back to delivering the raw fragmented
@@ -320,6 +353,31 @@ export interface RecorderboxRecorderOptions {
 export interface OpfsWriter {
   write(chunk: { data: Uint8Array; position: number }): Promise<void>;
   close(): Promise<void>;
+}
+
+/** The narrow mediabunny AudioSampleSource surface the recorder uses: a
+ *  backpressured `add(sample)` (await it = honor encoder backpressure), plus the
+ *  object the muxer needs for `output.addAudioTrack`. Abstracted so tests inject
+ *  a fake (and so the recorder doesn't hard-depend on the concrete class). */
+export interface AudioSampleSourceLike {
+  /** Backpressured: resolves once the output can accept more. Await it. */
+  add(sample: AudioSample): Promise<void>;
+}
+
+/** The DEFAULT backpressured audio source: a real mediabunny AudioSampleSource.
+ *  The drain wraps each planar-f32 chunk in an AudioSample before add(). */
+function defaultMakeAudioSampleSource(encodingConfig: {
+  codec: typeof AUDIO_CODEC;
+  bitrate: number;
+}): AudioSampleSourceLike {
+  return new AudioSampleSource(encodingConfig) as unknown as AudioSampleSourceLike;
+}
+
+/** Yield a macrotask — the drain's idle() while the queue is momentarily empty,
+ *  so the event loop can deliver the next worklet port message + the encoder can
+ *  make progress (vs. a tight spin). */
+function macrotask(): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
 /**
@@ -344,6 +402,18 @@ export class RecorderboxRecorder {
    *  (Mediabunny's add() returns a promise we should await, but per-rAF we
    *  don't want to stall the loop — drop instead). */
   private addInFlight = false;
+
+  // ── Sample-accurate audio capture (the clicks/pops fix) ──
+  /** The worklet port we ARM/DISARM + read planar f32 chunks off (when
+   *  audioCapture was provided). Null = the MediaStreamAudioTrackSource fallback
+   *  path is in use. */
+  private capturePort: MessagePort | null = null;
+  /** The lossless drain: queues worklet chunks, hands them to the backpressured
+   *  add() in monotonic, contiguous-timestamp order. */
+  private captureDrain: AudioCaptureDrain | null = null;
+  /** The running drain loop (drain.drain(...)). Awaited in stop() so the final
+   *  partial chunk lands before finalize(). */
+  private captureDrainLoop: Promise<void> | null = null;
 
   constructor(opts: RecorderboxRecorderOptions) {
     this.opts = opts;
@@ -437,8 +507,19 @@ export class RecorderboxRecorder {
     this.canvasSource = canvasSource;
     output.addVideoTrack(canvasSource, { frameRate: DEFAULT_FPS });
 
-    // Audio track — optional. A null track records video only (silent MP4).
-    if (this.opts.audioTrack) {
+    // ── Audio track — optional, two paths ──
+    //   1. PREFERRED: the sample-accurate capture tap (audioCapture). A
+    //      backpressured AudioSampleSource we feed worklet-captured planar f32
+    //      chunks through (awaited add = lossless → no clicks/pops). Set up here
+    //      (addAudioTrack), ARMED + drained after output.start() below.
+    //   2. FALLBACK: MediaStreamAudioTrackSource(audioTrack) — the legacy path,
+    //      which hard-drops samples under encoder backpressure (the bug). Used
+    //      only when no capture tap is available.
+    //   A null/absent of both records video only (silent MP4).
+    let captureSampleSource: AudioSampleSourceLike | null = null;
+    if (this.opts.audioCapture) {
+      captureSampleSource = this.setupCaptureSource(output, this.opts.audioCapture);
+    } else if (this.opts.audioTrack) {
       try {
         const audioSource = new MediaStreamAudioTrackSource(
           this.opts.audioTrack as MediaStreamAudioTrack,
@@ -480,6 +561,78 @@ export class RecorderboxRecorder {
       await deleteManifest(this.opfsPath);
       throw err;
     }
+
+    // ── ARM the capture worklet + start the lossless drain (after start) ──
+    // The output is now accepting samples, so it's safe to begin draining.
+    if (captureSampleSource) this.armCaptureDrain(captureSampleSource);
+  }
+
+  /**
+   * Wire the sample-accurate capture source onto the muxer + the worklet port.
+   * Returns the backpressured source (already added to `output`), or null if
+   * setup failed (then the recording proceeds video-only). Extracted from
+   * start() so the wiring is unit-testable without the real Mediabunny Output.
+   */
+  private setupCaptureSource(
+    output: { addAudioTrack: (s: AudioSampleSource) => void },
+    tap: { port: MessagePort; sampleRate: number },
+  ): AudioSampleSourceLike | null {
+    try {
+      const makeASS = this.opts.makeAudioSampleSource ?? defaultMakeAudioSampleSource;
+      const audioSource = makeASS({
+        codec: AUDIO_CODEC,
+        bitrate: this.opts.audioBitrate ?? DEFAULT_AUDIO_BITRATE,
+      });
+      // Observe the internal encode-error promise (same as the legacy path).
+      try {
+        const ep = (audioSource as unknown as { errorPromise?: Promise<unknown> }).errorPromise;
+        void ep?.catch((e) => {
+          this.audioEncodeError = e instanceof Error ? e : new Error(String(e));
+          this.opts.onAudioError?.(this.audioEncodeError);
+        });
+      } catch { /* older mediabunny without errorPromise — ignore */ }
+      output.addAudioTrack(audioSource as unknown as AudioSampleSource);
+      this.capturePort = tap.port;
+      // A/V SYNC: the video CanvasSource timestamps each frame at
+      // (performance.now() - t0)/1000 — i.e. ~0 at the first frame. The drain
+      // clocks audio off the AUDIO sample count from t0=0 too, so audio sample N
+      // lands at N/sampleRate seconds and the two tracks share the same zero
+      // epoch (a small constant lead from the worklet's first batch is fine;
+      // there is NO drift because both clocks are sample/frame-accurate).
+      this.captureDrain = new AudioCaptureDrain(tap.sampleRate, 0);
+      const drain = this.captureDrain;
+      this.capturePort.onmessage = (e: MessageEvent) => {
+        drain.push(e.data as CaptureChunk);
+      };
+      return audioSource;
+    } catch (e) {
+      // Capture-source setup failed — record video only rather than failing the
+      // whole recording. Surface it so it isn't fully silent.
+      this.audioEncodeError = e instanceof Error ? e : new Error(String(e));
+      this.opts.onAudioError?.(this.audioEncodeError);
+      this.capturePort = null;
+      this.captureDrain = null;
+      return null;
+    }
+  }
+
+  /**
+   * ARM the worklet (it begins posting batches — idle until now, so nothing
+   * buffers between takes) and start the lossless drain loop. Each chunk is fed
+   * through the BACKPRESSURED add() (awaited), so a busy encoder fills the queue
+   * + drains later — never drops a sample. Extracted from start() for testing.
+   */
+  private armCaptureDrain(src: AudioSampleSourceLike): void {
+    const drain = this.captureDrain;
+    const port = this.capturePort;
+    if (!drain || !port) return;
+    port.postMessage({ type: 'arm' });
+    this.captureDrainLoop = drain.drain(
+      async (init: CaptureSampleInit) => {
+        await src.add(new AudioSample(init));
+      },
+      macrotask,
+    ).catch(() => { /* drain errors must not crash the recording */ });
   }
 
   /**
@@ -531,6 +684,27 @@ export class RecorderboxRecorder {
       return null;
     }
     this.setState('finalizing');
+
+    // ── Drain the capture tail BEFORE finalize ──
+    // DISARM flushes the worklet's final partial batch (so the take isn't
+    // truncated), close() lets the drain loop exit once the queue empties, and
+    // awaiting captureDrainLoop guarantees every captured sample reached the
+    // backpressured add() before we close the muxer's audio track.
+    if (this.capturePort) {
+      try { this.capturePort.postMessage({ type: 'disarm' }); } catch { /* */ }
+      // Give the disarm flush a macrotask to be delivered + pushed before close.
+      await macrotask();
+    }
+    if (this.captureDrain) {
+      this.captureDrain.close();
+    }
+    if (this.captureDrainLoop) {
+      try { await this.captureDrainLoop; } catch { /* */ }
+    }
+    if (this.capturePort) {
+      try { this.capturePort.onmessage = null; } catch { /* */ }
+    }
+
     try {
       await this.output.finalize();
     } catch {
@@ -616,6 +790,16 @@ export class RecorderboxRecorder {
   async abandon(): Promise<void> {
     if (this.state !== 'recording' || !this.output) return;
     this.setState('idle');
+    // Tear down the capture tap best-effort (disarm flushes the final partial;
+    // close + await the drain so the captured tail lands in the recoverable
+    // fragments before finalize).
+    if (this.capturePort) {
+      try { this.capturePort.postMessage({ type: 'disarm' }); } catch { /* */ }
+      await macrotask();
+    }
+    if (this.captureDrain) this.captureDrain.close();
+    if (this.captureDrainLoop) { try { await this.captureDrainLoop; } catch { /* */ } }
+    if (this.capturePort) { try { this.capturePort.onmessage = null; } catch { /* */ } }
     try { await this.output.finalize(); } catch { /* */ }
     try { await this.writer?.close(); } catch { /* */ }
     // Intentionally NOT deleting the manifest/scratch — that's the recovery
