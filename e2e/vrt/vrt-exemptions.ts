@@ -515,6 +515,19 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // composite + all 8 blend2 branches + normalling) + e2e/tests/quadralogical
   // .spec.ts (corner dominance + per-edge distinctness + independence + freeze).
   quadralogical: 'SOLO-spawn VRT exempt (live MIX preview canvas with nothing patched). The deterministic per-edge composite VRT is vrt-quadralogical.spec.ts (8 effect baselines, darwin captured; linux via EXEMPT_BASELINE_PAIRS). Unit (weight model + edge composite + all 8 blends) + e2e (corner dominance + per-edge distinctness/independence) provide coverage.',
+  // MAPPY — multi-surface manual projection mapper (v1). The SOLO-spawn card
+  // carries a LIVE composite preview canvas + an SVG corner-drag overlay whose
+  // handles only appear for CONNECTED inputs, so a SOLO (nothing-patched) VRT
+  // is non-deterministic chrome over a black/empty preview. Functional
+  // coverage: mappy.test.ts (homography-bridge: full-frame back-projection,
+  // forward warp onto a dragged quad, round-trip, degenerate-quad null, surface
+  // normalization/clamp) + the shared mappy-homography.test.ts (DLT solve /
+  // apply / invert / column-major) + e2e/tests/mappy-output.spec.ts (real
+  // source → mappy → output: composite non-blank + warping a surface / driving
+  // an input changes the output, renderer-tolerant pixel deltas). Promote into
+  // MODULES + capture deterministic darwin/linux composite baselines (flat
+  // sources → a frozen warp) in a follow-up PR.
+  mappy: 'SOLO-spawn VRT exempt (live composite preview canvas + connected-only corner overlay; nothing patched is non-deterministic chrome over a black preview). Unit (mappy.test.ts surface-normalize + homography-bridge warp/back-project/round-trip/degenerate) + mappy-homography.test.ts + e2e (mappy-output.spec.ts: real source→mappy→output, composite non-blank, warp/drive changes output) provide coverage. Capture deterministic darwin/linux composite baselines in a follow-up PR.',
   // CHROMA — v3 reshape (this PR) changed the card layout + stripe colour
   // entirely (was a 5-fader mask-extractor; now a 3-fader hue-shifter +
   // tint swatch). Old baselines were deleted; regenerate via

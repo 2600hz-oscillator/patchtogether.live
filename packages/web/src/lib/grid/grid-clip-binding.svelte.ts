@@ -41,9 +41,20 @@ import {
   isRowDownPad,
   isRowUpPad,
   isScalePad,
+  isFollowPad,
+  isPageLeftPad,
+  isPageRightPad,
+  isDoublePad,
+  isLengthEditPad,
+  isCopyPad,
+  isPastePad,
+  isPasteRevPad,
   editPadToNote,
+  editPageCount,
+  lengthEditPad,
   computeSessionLeds,
   computeEditLeds,
+  computeLengthEditLeds,
 } from './grid-clip-map';
 import {
   CLIP_LANES,
@@ -59,6 +70,12 @@ import {
   setNoteSpan,
   cycleVelocity,
   nextScale,
+  doubleNoteClip,
+  reverseClipSteps,
+  copyClip,
+  lengthFromBlockTap,
+  lengthFromStepTap,
+  STEPS_PER_PAGE,
   type ClipPlayerData,
   type NoteClipRecord,
 } from '$lib/audio/modules/clip-types';
@@ -74,7 +91,7 @@ let unsubTick: (() => void) | null = null;
 let tickCount = 0;
 
 // Mode state (local — the grid's own view of the bound clip-player).
-let mode: 'session' | 'edit' = 'session';
+let mode: 'session' | 'edit' | 'lengthEdit' = 'session';
 let editClipIndex = 0;
 let editArmed = false; // EDIT pad held in session mode
 // In EDIT mode: the currently-held note pad (anchor) + whether a held-span was
@@ -84,6 +101,15 @@ let editAnchor: { step: number; midi: number } | null = null;
 let editSpanned = false;
 let editRowOffset = 0; // pitch-window offset (OCT−/+ on the function row)
 let velHeld = false; // the VELOCITY function pad is held
+// Multi-page editing: which 16-step page is shown when FROZEN, and whether the
+// shown page auto-scrolls with the playhead (FOLLOW, default on).
+let editPage = 0;
+let followOn = true;
+// Session COPY/PASTE held modifiers + the per-machine clip buffer (NOT synced).
+let copyHeld = false;
+let pasteHeld = false;
+let pasteRevHeld = false;
+let clipBuffer: NoteClipRecord | null = null;
 
 /** Reactive version — bump on bind/unbind so card UI re-derives. */
 let bindingVersion = $state(0);
@@ -104,6 +130,12 @@ function start(): void {
   editSpanned = false;
   editRowOffset = 0;
   velHeld = false;
+  editPage = 0;
+  followOn = true;
+  copyHeld = false;
+  pasteHeld = false;
+  pasteRevHeld = false;
+  // NOTE: clipBuffer survives a re-bind on purpose (it's the machine's clipboard).
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
 }
@@ -179,11 +211,32 @@ function clipAtIndex(data: ClipPlayerData | undefined, index: number): NoteClipR
   const c = coerceClipRecord(data?.clips?.[String(index)]);
   return c && c.kind === 'note' ? c : null;
 }
-/** Persist a new clip record at the editor's slot (cloning steps for Yjs). */
-function writeClip(nodeId: string, next: NoteClipRecord): void {
+/** The live playhead step for the edited clip's lane, or -1 when it isn't the
+ *  lane's currently-playing slot (= not playing this clip). */
+function editPlayhead(nodeId: string, data: ClipPlayerData | undefined): number {
+  const lane = laneOf(editClipIndex);
+  return lanePlaying(data, lane) === slotOf(editClipIndex) ? getLanePlayhead(nodeId, lane) : -1;
+}
+/** The 16-step page the editor should SHOW for `clip`: the live playhead page
+ *  while FOLLOWing (page 0 when not playing), else the frozen editPage. */
+function shownEditPage(clip: NoteClipRecord): number {
+  if (followOn) {
+    const ph = boundNodeId ? editPlayhead(boundNodeId, liveData(boundNodeId)) : -1;
+    return ph >= 0 ? Math.floor(ph / STEPS_PER_PAGE) : 0;
+  }
+  return Math.max(0, Math.min(editPageCount(clip) - 1, editPage));
+}
+/** Re-clamp editPage into range (e.g. after the length shrank while frozen). */
+function clampEditPage(clip: NoteClipRecord): void {
+  editPage = Math.max(0, Math.min(editPageCount(clip) - 1, editPage));
+}
+/** Persist a clip record at a clip index (default = the editor's slot), cloning
+ *  every event object so we never reuse a ref / index-assign a live Y.Array —
+ *  the whole map entry is rebuilt + assigned in ONE transaction (paste/edit). */
+function writeClip(nodeId: string, next: NoteClipRecord, index: number = editClipIndex): void {
   editData(nodeId, (d) => {
     if (!d.clips) d.clips = {};
-    d.clips[String(editClipIndex)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
+    d.clips[String(index)] = { ...next, steps: next.steps.map((s) => ({ ...s })) };
   });
 }
 function timelordeNode(): { node: { params?: Record<string, number> }; id: string } | null {
@@ -223,6 +276,28 @@ function handleKey(e: GridKeyEvent): void {
     return;
   }
 
+  // --- LENGTH-EDIT page (2-row length editor) ---
+  if (mode === 'lengthEdit') {
+    if (e.s !== 1) return; // acts on press
+    const clip = clipAtIndex(liveData(nodeId), editClipIndex);
+    if (!clip) { mode = 'session'; return; }
+    const act = lengthEditPad(e.x, e.y);
+    if (!act) return; // an unused pad — TRUE no-op
+    if (act.kind === 'exit') {
+      mode = 'edit'; // plain tap → back to the clip editor
+      clampEditPage(clip);
+      return;
+    }
+    const nextLen =
+      act.kind === 'block' ? lengthFromBlockTap(act.block) : lengthFromStepTap(clip.lengthSteps, act.step);
+    // Non-destructive: ONLY lengthSteps changes (steps[] is never pruned).
+    editData(nodeId, (d) => {
+      const c = d.clips?.[String(editClipIndex)] as NoteClipRecord | undefined;
+      if (c) c.lengthSteps = nextLen;
+    });
+    return;
+  }
+
   // --- EDIT mode: rows 0..6 = note grid, bottom row = function controls ---
   if (mode === 'edit') {
     const clip = clipAtIndex(liveData(nodeId), editClipIndex);
@@ -253,8 +328,49 @@ function handleKey(e: GridKeyEvent): void {
       });
       return;
     }
+    // FOLLOW — tap-toggle (act on key-DOWN only, like a toggle, NOT press-hold).
+    if (e.s === 1 && isFollowPad(e.x, e.y)) {
+      if (followOn) {
+        // freeze on the page currently shown — capture the live page BEFORE
+        // clearing followOn (shownEditPage reads followOn).
+        editPage = shownEditPage(clip);
+        followOn = false;
+        clampEditPage(clip);
+      } else {
+        // resume → shownEditPage now snaps to the live playhead (0 if stopped).
+        followOn = true;
+        clampEditPage(clip);
+      }
+      return;
+    }
+    // LEFT / RIGHT — only act when FROZEN and the target page is in range; else a
+    // TRUE no-op (no state change). No-op while following.
+    if (e.s === 1 && isPageLeftPad(e.x, e.y)) {
+      if (!followOn && editPage > 0) editPage -= 1;
+      return;
+    }
+    if (e.s === 1 && isPageRightPad(e.x, e.y)) {
+      if (!followOn && editPage < editPageCount(clip) - 1) editPage += 1;
+      return;
+    }
+    // DOUBLE — duplicate the first half into a doubled length. At 128 it's a
+    // no-op: doubleNoteClip returns the SAME ref → skip the write (no Y churn).
+    if (e.s === 1 && isDoublePad(e.x, e.y)) {
+      const next = doubleNoteClip(clip);
+      if (next !== clip) writeClip(nodeId, next);
+      return;
+    }
+    // LENGTH-EDIT — open the 2-row length page.
+    if (e.s === 1 && isLengthEditPad(e.x, e.y)) {
+      mode = 'lengthEdit';
+      editAnchor = null;
+      editSpanned = false;
+      velHeld = false;
+      return;
+    }
 
-    const note = editPadToNote(clip, e.x, e.y, editRowOffset);
+    const page = shownEditPage(clip);
+    const note = editPadToNote(clip, e.x, e.y, editRowOffset, page);
     if (!note) return; // a non-control function-row / out-of-range pad
     // Mono lanes replace-on-add; poly lanes cap at POLY_CHANNEL_PAIRS per column.
     const mono = laneMono(liveData(nodeId), laneOf(editClipIndex));
@@ -279,6 +395,13 @@ function handleKey(e: GridKeyEvent): void {
     return;
   }
 
+  // SESSION held-modifiers (COPY / PASTE / PASTE-REV) act on BOTH edges (hold).
+  if (mode === 'session') {
+    if (isCopyPad(e.x, e.y)) { copyHeld = e.s === 1; return; }
+    if (isPastePad(e.x, e.y)) { pasteHeld = e.s === 1; return; }
+    if (isPasteRevPad(e.x, e.y)) { pasteRevHeld = e.s === 1; return; }
+  }
+
   if (e.s !== 1) return; // session controls act on press
 
   // --- SESSION mode ---
@@ -286,6 +409,8 @@ function handleKey(e: GridKeyEvent): void {
 
   const clipIdx = padToClipIndex(e.x, e.y);
   if (clipIdx !== null) {
+    // Held-modifier branches FIRST, in precedence order editArmed > copy > paste.
+    // Only one is realistically held at a time; this fixes the order if not.
     if (editArmed) {
       // hold-EDIT + tap → open the editor. If the slot is EMPTY, create the clip
       // first so the gesture both initializes AND enters it (no card round-trip):
@@ -304,6 +429,23 @@ function handleKey(e: GridKeyEvent): void {
       editSpanned = false;
       editRowOffset = 0;
       velHeld = false;
+      followOn = true;
+      editPage = 0;
+      return;
+    }
+    if (copyHeld) {
+      const c = clipAtIndex(data, clipIdx);
+      if (c) clipBuffer = copyClip(c); // → per-machine buffer (not the Y.Doc)
+      return;
+    }
+    if (pasteHeld && clipBuffer) {
+      // PASTE = overwrite OR create (plain assignment handles both). ONE undoable
+      // transaction with CLONED events (writeClip's discipline).
+      writeClip(nodeId, copyClip(clipBuffer), clipIdx);
+      return;
+    }
+    if (pasteRevHeld && clipBuffer) {
+      writeClip(nodeId, reverseClipSteps(copyClip(clipBuffer)), clipIdx);
       return;
     }
     const lane = laneOf(clipIdx);
@@ -344,21 +486,34 @@ function renderLeds(): void {
   const node = livePatch.nodes[nodeId];
   if (!node) return;
   tickCount++;
-  const blinkOn = Math.floor(tickCount / BLINK_TICKS) % 2 === 0;
+  const blinkPhase = Math.floor(tickCount / BLINK_TICKS);
+  const blinkOn = blinkPhase % 2 === 0;
   const data = node.data as ClipPlayerData | undefined;
+  if (mode === 'lengthEdit') {
+    const clip = clipAtIndex(data, editClipIndex);
+    if (clip) { setFrame(computeLengthEditLeds(clip)); return; }
+    mode = 'session'; // clip vanished — fall back
+  }
   if (mode === 'edit') {
     const clip = clipAtIndex(data, editClipIndex);
     if (clip) {
       // Show the playhead only when the edited clip's lane is actually playing it.
-      const lane = laneOf(editClipIndex);
-      const ph = lanePlaying(data, lane) === slotOf(editClipIndex) ? getLanePlayhead(nodeId, lane) : -1;
-      setFrame(computeEditLeds(clip, ph, editRowOffset, velHeld));
+      const ph = editPlayhead(nodeId, data);
+      setFrame(computeEditLeds(clip, ph, { rowOffset: editRowOffset, velArmed: velHeld, followOn, editPage }));
       return;
     }
     mode = 'session'; // clip vanished — fall back
   }
   setFrame(
-    computeSessionLeds(data, blinkOn, { transportRunning: transportRunning(), editArmed }),
+    computeSessionLeds(data, blinkOn, {
+      transportRunning: transportRunning(),
+      editArmed,
+      copyHeld,
+      pasteHeld,
+      pasteRevHeld,
+      bufferArmed: clipBuffer !== null,
+      blinkPhase,
+    }),
   );
 }
 
@@ -374,14 +529,38 @@ export function __test_resetBinding(): void {
   editSpanned = false;
   editRowOffset = 0;
   velHeld = false;
+  editPage = 0;
+  followOn = true;
+  copyHeld = false;
+  pasteHeld = false;
+  pasteRevHeld = false;
+  clipBuffer = null;
 }
 /** Read internal mode state — tests only. */
 export function __test_mode(): {
-  mode: 'session' | 'edit';
+  mode: 'session' | 'edit' | 'lengthEdit';
   editClipIndex: number;
   editArmed: boolean;
   editRowOffset: number;
   velHeld: boolean;
+  editPage: number;
+  followOn: boolean;
+  copyHeld: boolean;
+  pasteHeld: boolean;
+  pasteRevHeld: boolean;
+  bufferArmed: boolean;
 } {
-  return { mode, editClipIndex, editArmed, editRowOffset, velHeld };
+  return {
+    mode,
+    editClipIndex,
+    editArmed,
+    editRowOffset,
+    velHeld,
+    editPage,
+    followOn,
+    copyHeld,
+    pasteHeld,
+    pasteRevHeld,
+    bufferArmed: clipBuffer !== null,
+  };
 }

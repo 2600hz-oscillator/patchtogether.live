@@ -178,6 +178,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   mandelbulb: { size: '2u', hp: 2 }, // 362×280px
   mandleblot: { size: '2u', hp: 2 }, // 360×280px
   mapper: { size: '2u', hp: 1 }, // 250×200px
+  mappy: { size: '3u', hp: 2 }, // ~380×300px — 320×180 (16:9) composite preview + GRID toggle + surface legend
   nibbles: { size: '2u', hp: 2 }, // 367×380px
   outlines: { size: '3u', hp: 2 }, // 420×260px
   peakstate: { size: '2u', hp: 2 }, // 329×240px

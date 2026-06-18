@@ -137,6 +137,35 @@ export class FeedbackPump {
     this.state.noteInbound(key, cc, this.now());
   }
 
+  /**
+   * PRIME the device with the CURRENT value of every writable control, FORCE-
+   * sending (bypassing the delta/echo dedupe) so the device shows real values
+   * immediately after connect — not the preset's 0 defaults.
+   *
+   * Why a dedicated prime (vs. the steady pumpControls): the .epr upload over
+   * SysEx hasn't been ingested by the device when the first ~33ms pump tick
+   * fires, so that early value CC is dropped — and pumpControls then records it
+   * as `lastSent` and never re-sends, leaving an untouched control (the whole
+   * MIXMASTER page) stuck at 0. prime() resets the per-control state and resends,
+   * so calling it a few times as the upload settles guarantees the device lands
+   * on the live values. A control whose value isn't readable yet (engine not up
+   * at click time) is skipped; a later prime catches it. Returns the count sent.
+   */
+  prime(): number {
+    this.state.clear(); // forget stale sent/inbound so every readable control resends
+    const now = this.now();
+    let sent = 0;
+    for (const a of this.rw) {
+      const v = this.deps.readParamValue(a.key);
+      if (v === undefined || a.min === undefined || a.max === undefined) continue;
+      const cc = valueToCc7(v, a.min, a.max, a.curve ?? 'linear');
+      this.state.shouldSend(a.key, cc, now); // record as lastSent so the steady pump won't immediately re-send
+      this.deps.sendCc(a.deviceId, a.number, cc);
+      sent++;
+    }
+    return sent;
+  }
+
   /** One pass over writable controls: read param → curve-aware CC → maybe send. */
   pumpControls(): void {
     const now = this.now();
