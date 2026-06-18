@@ -23,6 +23,8 @@ import {
   noteMatches,
   isCcBinding,
   isNoteBinding,
+  bindingAddress,
+  dedupeBindingsByAddress,
   type MidiBinding,
   type MidiCcBinding,
   type MidiNoteBinding,
@@ -155,6 +157,51 @@ function touchBindings(): void { bindingsVersion++; }
  *  any binding is added or removed. */
 export function bindingsRune(): number { return bindingsVersion; }
 
+// ---------------- One-owner-per-address invariant ----------------
+//
+// A binding's ADDRESS is the physical message it listens for — (channel, cc) or
+// (channel, note). If two keys share one address, a single physical knob/pad
+// drives BOTH params: the Electra "controls on different pages collide" bug
+// (one CC was learned/imported onto multiple params across regenerates). We keep
+// at-most-one binding per address, newest wins. Enforced on EVERY add path
+// (learn, import, load) so dispatch naturally fires exactly one param.
+
+/** Remove any OTHER key's binding that shares `addr` (drops its setters too).
+ *  Called after a fresh learn so the just-learned control becomes the sole
+ *  owner of its (channel, cc|note). Returns the number evicted. */
+function evictAddressOwners(addr: string, exceptKey: string): number {
+  let removed = 0;
+  for (const [k, b] of bindings) {
+    if (k === exceptKey) continue;
+    if (bindingAddress(b) === addr) {
+      bindings.delete(k);
+      setters.delete(k);
+      noteSetters.delete(k);
+      removed++;
+    }
+  }
+  return removed;
+}
+
+/** Collapse the whole bindings map to one owner per address (newest wins) and
+ *  drop the losers' setters. Returns the number of colliding bindings removed.
+ *  Used after a bulk add (import / storage load) and exposed publicly so a
+ *  "repair MIDI map" action / test can repair an already-loaded colliding set. */
+export function repairBindingCollisions(): number {
+  const survivors = new Set(dedupeBindingsByAddress([...bindings.values()]).map((b) => b.key));
+  let removed = 0;
+  for (const k of [...bindings.keys()]) {
+    if (!survivors.has(k)) {
+      bindings.delete(k);
+      setters.delete(k);
+      noteSetters.delete(k);
+      removed++;
+    }
+  }
+  if (removed) touchBindings();
+  return removed;
+}
+
 /** Currently-active CC learn request (null when not learning). Reactive so
  *  the Fader / Knob with `spec.moduleId/paramId` matching can show a
  *  pulsing border. */
@@ -178,6 +225,8 @@ function loadFromStorage(): void {
       const b = normalizeBinding(r);
       if (b) bindings.set(b.key, b);
     }
+    // Repair a stale, colliding localStorage on boot (one owner per address).
+    repairBindingCollisions();
     touchBindings();
   } catch {
     // Corrupt storage — ignore. A fresh learn overwrites.
@@ -276,6 +325,9 @@ function handleCc(parsed: { channel: number; cc: number; value: number }): void 
     });
     setters.set(key, { min: spec.min, max: spec.max, onchange: spec.onchange });
     noteSetters.delete(key); // the key is now CC; drop any stale gate setter
+    // Sole owner of this (channel, cc): a physical knob controls ONE param — drop
+    // any other key previously learned/imported onto the same CC (collision fix).
+    evictAddressOwners(`cc:${parsed.channel}:${parsed.cc}`, key);
     touchBindings();
     saveToStorage();
     learnSpec = null;
@@ -312,6 +364,8 @@ function handleNote(parsed: ReturnType<typeof parseNoteMessage>): void {
     });
     noteSetters.set(key, { onGate: spec.onGate });
     setters.delete(key); // the key is now NOTE; drop any stale CC setter
+    // Sole owner of this (channel, note): a physical pad drives ONE gate/button.
+    evictAddressOwners(`note:${parsed.channel}:${parsed.note}`, key);
     touchBindings();
     saveToStorage();
     noteLearnSpec = null;
@@ -452,6 +506,11 @@ export function importBindings(incoming: unknown[]): void {
     // mounts later finds the binding waiting for it.
     bindings.set(b.key, b);
   }
+  // Enforce one-owner-per-address: an Electra re-connect imports the fresh
+  // allocation table (newest learnedAt), which SUPERSEDES any stale binding still
+  // parked on the same CC from a prior regenerate — repairing the user's already-
+  // saved colliding map without a manual re-learn.
+  repairBindingCollisions();
   touchBindings();
   saveToStorage();
 }

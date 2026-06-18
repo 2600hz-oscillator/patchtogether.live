@@ -91,3 +91,67 @@ export function parseNoteMessage(data: Uint8Array | number[]): ParsedNote | null
 export function noteMatches(binding: MidiNoteBinding, parsed: ParsedNote): boolean {
   return binding.channel === parsed.channel && binding.note === parsed.note;
 }
+
+// ──────────────────────── address (channel+cc/note) identity ────────────────────────
+//
+// A binding's ADDRESS is the physical MIDI message it listens for: (channel, cc)
+// for a CC binding or (channel, note) for a NOTE binding. The dispatch loop fires
+// a binding when an inbound message matches its address — so TWO bindings sharing
+// one address means a single physical knob/pad drives BOTH params (the Electra
+// "controls collide across pages" bug). The invariant we enforce everywhere a
+// binding is added (learn / import / bundle-load) is: AT MOST ONE binding per
+// address — the most-recently-learned one wins (a physical control maps to ONE
+// param at a time). These pure helpers are the single source of truth for that.
+
+/** A minimal binding-record shape the address helpers accept (the persisted /
+ *  exported record is structurally this — `kind` may be absent on legacy CC
+ *  records, handled by `isCcBinding`). */
+type AddressableBinding = {
+  /** Present on real bindings ("moduleId:paramId"); ignored by the address
+   *  helpers but declared so a full binding literal type-checks here. */
+  key?: string;
+  kind?: 'cc' | 'note';
+  channel: number;
+  cc?: number;
+  note?: number;
+  learnedAt?: number;
+};
+
+/** The address (physical MIDI message identity) a binding listens for:
+ *  `cc:<channel>:<cc>` or `note:<channel>:<note>`. Two bindings with the SAME
+ *  address would both fire on one inbound message — the collision we prevent. */
+export function bindingAddress(b: AddressableBinding): string {
+  return isNoteBinding(b as BindingLike)
+    ? `note:${b.channel}:${b.note}`
+    : `cc:${b.channel}:${b.cc}`;
+}
+
+/**
+ * Drop colliding bindings so AT MOST ONE remains per address — the newest
+ * (highest `learnedAt`) wins; on a tie the LATER element in the input wins
+ * (stable: a fresh import batch / re-learn supersedes the stale entry). Order of
+ * the survivors is preserved from the input. Pure — used by the MIDI-learn
+ * singleton (learn/import/load) and the performance-bundle merge so every path
+ * that adds a binding upholds the one-owner-per-address invariant.
+ */
+export function dedupeBindingsByAddress<T extends AddressableBinding>(bindings: T[]): T[] {
+  // First pass: pick the winning record per address (newest learnedAt, ties → later).
+  const winnerByAddr = new Map<string, T>();
+  for (const b of bindings) {
+    const addr = bindingAddress(b);
+    const prev = winnerByAddr.get(addr);
+    if (!prev || (b.learnedAt ?? 0) >= (prev.learnedAt ?? 0)) winnerByAddr.set(addr, b);
+  }
+  // Second pass: emit each address's winner exactly once, preserving the input
+  // order of the winners (so the result is deterministic, not Map-iteration order).
+  const emitted = new Set<string>();
+  const out: T[] = [];
+  for (const b of bindings) {
+    const addr = bindingAddress(b);
+    if (winnerByAddr.get(addr) === b && !emitted.has(addr)) {
+      emitted.add(addr);
+      out.push(b);
+    }
+  }
+  return out;
+}

@@ -6,7 +6,7 @@
 // external-clock edge greys the tap path, and the 30Hz per-channel VU meter
 // stream emits the right meter CCs (the MIXMASTER meter view wiring).
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { ElectraAutoconfig, type AutoconfigHost } from './autoconfig';
+import { ElectraAutoconfig, DEFAULT_PRIME_DELAYS_MS, type AutoconfigHost } from './autoconfig';
 import { ElectraBroker, type MidiFullAccessLike } from './broker';
 import type { MidiOutputLike } from '$lib/audio/modules/midi-out-buddy';
 import type { MidiInputLike, MidiEventLike } from '$lib/audio/modules/midi-cv-buddy';
@@ -309,5 +309,43 @@ describe('MIXMASTER meter feedback stream', () => {
     const afterSecond = fake.sentCtrl.filter((m) => asCc(m)).length;
     auto.stop();
     expect(afterSecond).toBe(afterFirst);
+  });
+});
+
+describe('value prime on connect (MIXMASTER shows real values, not 0, on first load)', () => {
+  it('run() FORCE-pushes each writable control current value during connect', async () => {
+    const fake = makeFakeBroker();
+    // osc1:level (the lone CONTROL-page control, cc number 0) reads 1.0 live.
+    const { host } = makeHost({ readParamValue: (k) => (k === 'osc1:level' ? 1 : undefined) });
+    const scheduled: Array<() => void> = [];
+    const auto = new ElectraAutoconfig(host, fake.broker, {
+      identifyTimeoutMs: 20,
+      scheduler: (fn) => { scheduled.push(fn); return 0 as unknown as ReturnType<typeof setTimeout>; },
+    });
+    await auto.run();
+    // The immediate prime pushed osc1:level on cc 0 at its REAL value (127), not 0.
+    expect(fake.sentCtrl.map(asCc).find((x) => x?.cc === 0)).toEqual({ cc: 0, value: 127 });
+    // Settle re-primes are SCHEDULED via the injected timer (not leaked to real setTimeout).
+    expect(scheduled.length).toBe(DEFAULT_PRIME_DELAYS_MS.length);
+    auto.stop();
+  });
+
+  it('a scheduled re-prime pushes the value once the engine becomes live (undefined-at-click)', async () => {
+    const fake = makeFakeBroker();
+    let live = false;
+    const { host } = makeHost({ readParamValue: (k) => (live && k === 'osc1:level' ? 1 : undefined) });
+    const scheduled: Array<() => void> = [];
+    const auto = new ElectraAutoconfig(host, fake.broker, {
+      identifyTimeoutMs: 20,
+      scheduler: (fn) => { scheduled.push(fn); return 0 as unknown as ReturnType<typeof setTimeout>; },
+    });
+    await auto.run();
+    // Engine wasn't live at click time → nothing primed for osc1:level yet.
+    expect(fake.sentCtrl.map(asCc).some((x) => x?.cc === 0)).toBe(false);
+    // Engine comes up; the first settle re-prime now pushes the real value.
+    live = true;
+    scheduled[0]!();
+    expect(fake.sentCtrl.map(asCc).find((x) => x?.cc === 0)).toEqual({ cc: 0, value: 127 });
+    auto.stop();
   });
 });

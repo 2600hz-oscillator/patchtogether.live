@@ -97,4 +97,46 @@ describe('FeedbackPump', () => {
     pump.pumpMeters();
     expect(sent).toEqual([[1, 50, 127]]);
   });
+
+  it('prime() FORCE-sends the current value of every writable control', () => {
+    const sent: Array<[number, number, number]> = [];
+    const pump = new FeedbackPump([rw], {
+      readParamValue: () => 1, // full-scale → cc 127
+      readMeterAmp: () => undefined,
+      sendCc: (d, cc, v) => sent.push([d, cc, v]),
+      now: () => 0,
+    });
+    expect(pump.prime()).toBe(1);
+    expect(sent).toEqual([[1, 10, 127]]); // deviceId 1, cc 10, value 127
+  });
+
+  it('prime() RE-SENDS a value the steady pump already deduped (the first-load-0 bug)', () => {
+    const sent: Array<[number, number, number]> = [];
+    const pump = new FeedbackPump([rw], {
+      readParamValue: () => 0.5, // → cc ~64
+      readMeterAmp: () => undefined,
+      sendCc: (d, cc, v) => sent.push([d, cc, v]),
+      now: () => 0,
+    });
+    pump.pumpControls();            // first send (would be lost if the device isn't ready yet)
+    expect(sent).toHaveLength(1);
+    pump.pumpControls();            // deduped — value unchanged → NOT re-sent
+    expect(sent).toHaveLength(1);
+    // prime() resets the dedupe state and force-resends the live value.
+    pump.prime();
+    expect(sent).toHaveLength(2);
+    expect(sent[1]![1]).toBe(10);  // same control's cc re-sent
+  });
+
+  it('prime() skips a control whose value is not readable yet (engine not live)', () => {
+    const sent: Array<[number, number, number]> = [];
+    const pump = new FeedbackPump([rw], {
+      readParamValue: () => undefined, // engine not up at click time
+      readMeterAmp: () => undefined,
+      sendCc: (d, cc, v) => sent.push([d, cc, v]),
+      now: () => 0,
+    });
+    expect(pump.prime()).toBe(0);
+    expect(sent).toEqual([]);
+  });
 });
