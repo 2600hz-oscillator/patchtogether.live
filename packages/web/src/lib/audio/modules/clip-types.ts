@@ -34,7 +34,13 @@ export const CLIP_LANES = 8; // rows = instruments
 export const CLIP_SLOTS = 8; // columns = clip alternatives per instrument
 export const CLIP_COUNT = CLIP_LANES * CLIP_SLOTS; // 64
 export const DEFAULT_CLIP_STEPS = 16;
-export const MAX_CLIP_STEPS = 64;
+// Max steps in a clip. Bumped 64→128 (DECIDED 2026-06-16): the grid edits up to
+// 128 steps via 8 pages of 16. Sparse NoteEvent[] storage doesn't grow with this
+// cap — only the clamp + the editor's max page count.
+export const MAX_CLIP_STEPS = 128;
+// One editor PAGE = 16 steps; up to 8 pages cover the 128-step max.
+export const STEPS_PER_PAGE = 16;
+export const MAX_EDIT_PAGES = MAX_CLIP_STEPS / STEPS_PER_PAGE; // 8
 export const DEFAULT_VELOCITY = 100; // MIDI 0..127
 
 // Back-compat aliases (older call sites used track/scene naming).
@@ -512,4 +518,116 @@ export function setNoteSpan(
     : clip.steps.filter((e) => e.midi !== midi || e.step < a || e.step > b);
   steps.push({ step: a, midi, velocity: VEL_DEFAULT, lengthSteps: b - a + 1 });
   return { ...clip, steps };
+}
+
+// ---------------------------------------------------------------------------
+// Clip transforms (DOUBLE / REVERSE / COPY) — PURE. All return a NEW clip
+// (steps cloned), so the caller persists via the in-place Y discipline.
+// ---------------------------------------------------------------------------
+
+/**
+ * DOUBLE a clip's length, duplicating the first half into the second half.
+ * newLen = min(MAX_CLIP_STEPS, lengthSteps*2). For each existing event, a copy
+ * is placed at step + lengthSteps; copies whose start lands ≥ newLen are DROPPED,
+ * and a copied held note's span is clamped so start+len ≤ newLen (no bleed past
+ * the cap). DOUBLE is intentionally destructive to any hidden notes living in the
+ * (now-overwritten) second half. If the clip is already at MAX_CLIP_STEPS it is a
+ * no-op: the SAME reference is returned so the caller can skip the write entirely.
+ */
+export function doubleNoteClip(clip: NoteClipRecord): NoteClipRecord {
+  const len = clip.lengthSteps;
+  if (len >= MAX_CLIP_STEPS) return clip; // === identity → caller skips the write
+  const newLen = Math.min(MAX_CLIP_STEPS, len * 2);
+  const steps: NoteEvent[] = [];
+  for (const e of clip.steps) {
+    // keep the original (clamp its span to the new length, defensively)
+    steps.push(clampEventSpan({ ...e }, newLen));
+    // its mirror in the second half
+    const copyStart = e.step + len;
+    if (copyStart >= newLen) continue; // dropped — past the new end
+    steps.push(clampEventSpan({ ...e, step: copyStart }, newLen));
+  }
+  return { ...clip, lengthSteps: newLen, steps };
+}
+
+/** Clamp an event so step + lengthSteps ≤ maxLen (and lengthSteps ≥ 1). */
+function clampEventSpan(e: NoteEvent, maxLen: number): NoteEvent {
+  const len = e.lengthSteps ?? 1;
+  const max = Math.max(1, maxLen - e.step);
+  if (len > max) e.lengthSteps = max;
+  return e;
+}
+
+/**
+ * REVERSE a clip's steps in time. Each event spanning [start, start+len) is
+ * re-anchored to the mirrored END of its span: mirroredStart = lengthSteps −
+ * (start + len). This keeps held notes the same DURATION but flips their position
+ * (it is NOT Array.reverse of the events, which would corrupt forward-held spans).
+ * A note whose mirroredStart < 0 (it would start before step 0 — only possible if
+ * a span exceeded lengthSteps) is clamped to step 0 with its length trimmed to fit.
+ */
+export function reverseClipSteps(clip: NoteClipRecord): NoteClipRecord {
+  const len = clip.lengthSteps;
+  const steps: NoteEvent[] = [];
+  for (const e of clip.steps) {
+    const span = e.lengthSteps ?? 1;
+    let mirroredStart = len - (e.step + span);
+    let mirroredLen = span;
+    if (mirroredStart < 0) {
+      // span ran past the clip end — clamp the start to 0 + trim the length.
+      mirroredLen = span + mirroredStart; // = len - e.step
+      mirroredStart = 0;
+      if (mirroredLen < 1) continue; // nothing of the note remains inside the clip
+    }
+    steps.push({ ...e, step: mirroredStart, lengthSteps: mirroredLen });
+  }
+  return { ...clip, steps };
+}
+
+/** Structural clone of a note clip (steps[] + lengthSteps + root + scale + loop).
+ *  Used by the session COPY/PASTE buffer so the buffer never shares event refs
+ *  with the live clip (and a later paste rebuild can't alias a Y type). */
+export function copyClip(clip: NoteClipRecord): NoteClipRecord {
+  const out: NoteClipRecord = {
+    kind: 'note',
+    steps: clip.steps.map((s) => ({ ...s })),
+    lengthSteps: clip.lengthSteps,
+    root: clip.root,
+    loop: clip.loop,
+  };
+  if (clip.scale) out.scale = clip.scale;
+  if (typeof clip.color === 'number') out.color = clip.color;
+  if (typeof clip.name === 'string') out.name = clip.name;
+  if (typeof clip.gain === 'number') out.gain = clip.gain;
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// LENGTH-EDIT page math (PURE) — the grid's 2-row length editor. Length L
+// (1..MAX_CLIP_STEPS) is described as a 16-step BLOCK + a final STEP within it:
+//   endBlock = ceil(L/16)  (1..MAX_EDIT_PAGES)
+//   endStep  = L − (endBlock−1)*16  (1..16)
+// ---------------------------------------------------------------------------
+
+/** The 16-step block (1-based, 1..MAX_EDIT_PAGES) the clip's last step lives in. */
+export function lengthEndBlock(lengthSteps: number): number {
+  return Math.ceil(Math.max(1, lengthSteps) / STEPS_PER_PAGE);
+}
+/** The step within the end block (1-based, 1..16) that is the clip's last step. */
+export function lengthEndStep(lengthSteps: number): number {
+  const L = Math.max(1, lengthSteps);
+  return L - (lengthEndBlock(L) - 1) * STEPS_PER_PAGE;
+}
+/** Length from a TAP of row-0 block C (1-based): the full C blocks = C*16,
+ *  clamped to MAX_CLIP_STEPS. */
+export function lengthFromBlockTap(block: number): number {
+  const c = Math.max(1, Math.min(MAX_EDIT_PAGES, Math.round(block)));
+  return Math.min(MAX_CLIP_STEPS, c * STEPS_PER_PAGE);
+}
+/** Length from a TAP of row-1 step N (1-based) within the CURRENT end block:
+ *  (endBlock−1)*16 + N, clamped to MAX_CLIP_STEPS. */
+export function lengthFromStepTap(lengthSteps: number, step: number): number {
+  const n = Math.max(1, Math.min(STEPS_PER_PAGE, Math.round(step)));
+  const block = lengthEndBlock(lengthSteps);
+  return Math.min(MAX_CLIP_STEPS, (block - 1) * STEPS_PER_PAGE + n);
 }

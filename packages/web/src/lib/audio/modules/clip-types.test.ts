@@ -33,7 +33,18 @@ import {
   laneMono,
   VEL_DEFAULT,
   VEL_LEVELS,
+  MAX_CLIP_STEPS,
+  STEPS_PER_PAGE,
+  MAX_EDIT_PAGES,
+  doubleNoteClip,
+  reverseClipSteps,
+  copyClip,
+  lengthEndBlock,
+  lengthEndStep,
+  lengthFromBlockTap,
+  lengthFromStepTap,
   type NoteClipRecord,
+  type NoteEvent,
 } from './clip-types';
 
 describe('dimensions', () => {
@@ -98,10 +109,12 @@ describe('coerceClipRecord', () => {
 });
 
 describe('clampStepCount', () => {
-  it('clamps to [1, 64] and defaults bad input', () => {
+  it('clamps to [1, MAX_CLIP_STEPS=128] and defaults bad input', () => {
+    expect(MAX_CLIP_STEPS).toBe(128);
     expect(clampStepCount(0)).toBe(1);
     expect(clampStepCount(16)).toBe(16);
-    expect(clampStepCount(999)).toBe(64);
+    expect(clampStepCount(128)).toBe(128);
+    expect(clampStepCount(999)).toBe(MAX_CLIP_STEPS);
     expect(clampStepCount(NaN)).toBe(DEFAULT_CLIP_STEPS);
   });
 });
@@ -342,5 +355,169 @@ describe('VELOCITY-hold velocity cycle (6 levels)', () => {
   it('velBucket folds the 6 levels into 3 display colours (2 per colour)', () => {
     // levels {0,1}→0, {2,3}→1, {4,5}→2
     expect(VEL_LEVELS.map((v) => velBucket(v))).toEqual([0, 0, 1, 1, 2, 2]);
+  });
+});
+
+describe('doubleNoteClip', () => {
+  const c = (lengthSteps: number, steps: NoteEvent[]): NoteClipRecord => ({
+    ...defaultNoteClip(),
+    lengthSteps,
+    steps,
+  });
+  it('16 → 32 with the first half duplicated into the second', () => {
+    const c0 = c(16, [{ step: 0, midi: 60, lengthSteps: 1 }, { step: 4, midi: 64, lengthSteps: 2 }]);
+    const d = doubleNoteClip(c0);
+    expect(d.lengthSteps).toBe(32);
+    // originals kept …
+    expect(d.steps).toContainEqual({ step: 0, midi: 60, lengthSteps: 1 });
+    expect(d.steps).toContainEqual({ step: 4, midi: 64, lengthSteps: 2 });
+    // … plus their mirror at +16.
+    expect(d.steps).toContainEqual({ step: 16, midi: 60, lengthSteps: 1 });
+    expect(d.steps).toContainEqual({ step: 20, midi: 64, lengthSteps: 2 });
+    expect(c0.steps).toHaveLength(2); // immutable
+  });
+  it('17 → 34, including a copy that lands in the second half (partial tail kept)', () => {
+    const c0 = c(17, [{ step: 0, midi: 60, lengthSteps: 1 }, { step: 16, midi: 67, lengthSteps: 1 }]);
+    const d = doubleNoteClip(c0);
+    expect(d.lengthSteps).toBe(34);
+    expect(d.steps).toContainEqual({ step: 0, midi: 60, lengthSteps: 1 });
+    expect(d.steps).toContainEqual({ step: 16, midi: 67, lengthSteps: 1 }); // original
+    expect(d.steps).toContainEqual({ step: 17, midi: 60, lengthSteps: 1 }); // mirror of step-0
+    expect(d.steps).toContainEqual({ step: 33, midi: 67, lengthSteps: 1 }); // mirror of step-16 (33 < 34)
+  });
+  it('65 → 128 (capped), truncating copies that would start past 128', () => {
+    const c0 = c(65, [
+      { step: 0, midi: 60, lengthSteps: 1 },   // mirror → 65 (< 128, kept)
+      { step: 63, midi: 62, lengthSteps: 1 },  // mirror → 128 (>= 128, DROPPED)
+      { step: 64, midi: 64, lengthSteps: 1 },  // mirror → 129 (>= 128, DROPPED)
+    ]);
+    const d = doubleNoteClip(c0);
+    expect(d.lengthSteps).toBe(128);
+    expect(d.steps).toContainEqual({ step: 65, midi: 60, lengthSteps: 1 }); // kept
+    expect(d.steps.some((e) => e.step === 128)).toBe(false); // dropped (at the cap)
+    expect(d.steps.some((e) => e.step === 129)).toBe(false); // dropped (past the cap)
+    // originals all survive
+    expect(d.steps.filter((e) => e.step < 65)).toHaveLength(3);
+  });
+  it('at MAX_CLIP_STEPS (128) it is a no-op returning the SAME reference', () => {
+    const c0 = c(128, [{ step: 0, midi: 60, lengthSteps: 1 }]);
+    expect(doubleNoteClip(c0)).toBe(c0); // identity → caller skips the write
+  });
+  it('clamps a copied held note so it cannot bleed past the new length', () => {
+    // length 65 → 128; a held note near the end whose mirror would overrun 128.
+    const c0 = c(65, [{ step: 60, midi: 60, lengthSteps: 4 }]); // mirror at 125, span 4 → 129
+    const d = doubleNoteClip(c0);
+    const mirror = d.steps.find((e) => e.step === 125);
+    expect(mirror).toBeDefined();
+    expect(mirror!.step + (mirror!.lengthSteps ?? 1)).toBeLessThanOrEqual(128); // clamped, no bleed
+    expect(mirror!.lengthSteps).toBe(3); // 128 - 125
+  });
+});
+
+describe('reverseClipSteps', () => {
+  const c = (lengthSteps: number, steps: NoteEvent[]): NoteClipRecord => ({
+    ...defaultNoteClip(),
+    lengthSteps,
+    steps,
+  });
+  it('mirrors a single-step note across the clip length', () => {
+    const r = reverseClipSteps(c(16, [{ step: 0, midi: 60, lengthSteps: 1 }]));
+    // start 0, span 1 → mirroredStart = 16 - (0+1) = 15.
+    expect(r.steps).toEqual([{ step: 15, midi: 60, lengthSteps: 1 }]);
+  });
+  it('re-anchors a MULTI-STEP held span to the mirrored END (not Array.reverse)', () => {
+    // a 3-step held note at step 2 (covers 2,3,4) in a 16-step clip.
+    const r = reverseClipSteps(c(16, [{ step: 2, midi: 60, lengthSteps: 3 }]));
+    // mirroredStart = 16 - (2+3) = 11; still a 3-step note (covers 11,12,13).
+    expect(r.steps).toEqual([{ step: 11, midi: 60, lengthSteps: 3 }]);
+  });
+  it('a span anchored at step 0 mirrors to the clip end', () => {
+    const r = reverseClipSteps(c(16, [{ step: 0, midi: 60, lengthSteps: 4 }])); // covers 0..3
+    // mirroredStart = 16 - (0+4) = 12; covers 12..15.
+    expect(r.steps).toEqual([{ step: 12, midi: 60, lengthSteps: 4 }]);
+  });
+  it('preserves multiple notes (full forward→reverse symmetry)', () => {
+    const fwd = c(8, [
+      { step: 0, midi: 60, lengthSteps: 2 }, // → 8-(0+2)=6
+      { step: 6, midi: 64, lengthSteps: 1 }, // → 8-(6+1)=1
+    ]);
+    const r = reverseClipSteps(fwd);
+    expect(r.steps).toContainEqual({ step: 6, midi: 60, lengthSteps: 2 });
+    expect(r.steps).toContainEqual({ step: 1, midi: 64, lengthSteps: 1 });
+    // reversing twice round-trips back to the original positions.
+    const back = reverseClipSteps(r);
+    expect(back.steps).toContainEqual({ step: 0, midi: 60, lengthSteps: 2 });
+    expect(back.steps).toContainEqual({ step: 6, midi: 64, lengthSteps: 1 });
+    expect(fwd.steps).toHaveLength(2); // immutable
+  });
+  it('clamps a span that overran the clip end (mirroredStart < 0)', () => {
+    // a note at step 6 with span 4 (covers 6..9) but length only 8 — span > end.
+    const r = reverseClipSteps(c(8, [{ step: 6, midi: 60, lengthSteps: 4 }]));
+    // mirroredStart = 8 - (6+4) = -2 → clamp to 0, trim len to 4 + (-2) = 2.
+    expect(r.steps).toEqual([{ step: 0, midi: 60, lengthSteps: 2 }]);
+  });
+});
+
+describe('copyClip', () => {
+  it('structurally clones steps, length, root, scale (no shared refs)', () => {
+    const c0: NoteClipRecord = {
+      ...defaultNoteClip(),
+      root: 50,
+      scale: 'minor',
+      lengthSteps: 24,
+      steps: [{ step: 1, midi: 62, velocity: 100, lengthSteps: 2 }],
+    };
+    const c1 = copyClip(c0);
+    expect(c1).toEqual({
+      kind: 'note',
+      root: 50,
+      scale: 'minor',
+      loop: true,
+      lengthSteps: 24,
+      steps: [{ step: 1, midi: 62, velocity: 100, lengthSteps: 2 }],
+    });
+    expect(c1.steps).not.toBe(c0.steps); // array cloned
+    expect(c1.steps[0]).not.toBe(c0.steps[0]); // event cloned
+    // mutating the copy never touches the original.
+    c1.steps[0].midi = 99;
+    expect(c0.steps[0].midi).toBe(62);
+  });
+  it('a chromatic (no-scale) clip clones without a scale key', () => {
+    const c0: NoteClipRecord = { ...defaultNoteClip(), steps: [] };
+    delete c0.scale;
+    expect('scale' in copyClip(c0)).toBe(false);
+  });
+});
+
+describe('LENGTH-EDIT page math', () => {
+  it('STEPS_PER_PAGE = 16, MAX_EDIT_PAGES = 8', () => {
+    expect(STEPS_PER_PAGE).toBe(16);
+    expect(MAX_EDIT_PAGES).toBe(8);
+  });
+  // endBlock / endStep for the documented lengths 1 / 16 / 17 / 113 / 128.
+  it.each([
+    [1, 1, 1],
+    [16, 1, 16],
+    [17, 2, 1],
+    [113, 8, 1],
+    [128, 8, 16],
+  ])('L=%i → endBlock=%i, endStep=%i', (L, block, step) => {
+    expect(lengthEndBlock(L)).toBe(block);
+    expect(lengthEndStep(L)).toBe(step);
+  });
+  it('tap row-0 block C → C*16 (full block)', () => {
+    expect(lengthFromBlockTap(1)).toBe(16);
+    expect(lengthFromBlockTap(7)).toBe(112);
+    expect(lengthFromBlockTap(8)).toBe(128);
+    expect(lengthFromBlockTap(99)).toBe(128); // clamp
+  });
+  it('tap row-1 step N → (endBlock−1)*16 + N (length 113 = block 8 then step 1)', () => {
+    // currently in block 8 (e.g. L=128) → tapping row-1 step 1 trims to 113.
+    expect(lengthFromStepTap(128, 1)).toBe(113);
+    expect(lengthFromStepTap(128, 16)).toBe(128);
+    // in block 2 (e.g. L=17) → tapping step 5 → 16 + 5 = 21.
+    expect(lengthFromStepTap(17, 5)).toBe(21);
+    // in block 1 → tapping step 8 → 8.
+    expect(lengthFromStepTap(16, 8)).toBe(8);
   });
 });
