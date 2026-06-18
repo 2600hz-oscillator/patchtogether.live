@@ -122,6 +122,13 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // The quantize + edge-ink correctness is covered by cellshade.test.ts
   // (CPU mirror of the shader) + the bespoke cellshade e2e (pixel sampling).
   cellshade: [{ selector: 'canvas' }],
+  // TEXTMARQUEE carries a live OUT preview canvas (continuously animated when
+  // scrolling) — mask it. The card ALSO contains a contenteditable region whose
+  // rendered SYSTEM-FONT glyphs rasterize differently across platforms (the
+  // exact known linux-VRT glyph nondeterminism), so the LINUX baseline is
+  // exempted via EXEMPT_BASELINE_PAIRS below; the darwin baseline gates the
+  // chrome (toolbar buttons + FG/BG swatches + the four knob rows).
+  textmarquee: [{ selector: 'canvas' }],
   // 4PLEXVID carries a live OUT-1 preview canvas; mask it so the
   // deterministic chrome (4 selector knobs + handle rows) diffs while the
   // live render is excluded. (Kept here for the follow-up baseline; the
@@ -972,6 +979,17 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // edge-ink correctness is proven by cellshade.test.ts (CPU mirror) + the
   // bespoke e2e/tests/cellshade.spec.ts (posterize + ink + BITS/THRESH sweeps).
   'linux/cellshade',
+  // TEXTMARQUEE (rich-text marquee video generator): darwin baseline captured
+  // on this machine (the live OUT preview canvas is masked — see
+  // VRT_MODULE_MASKS). The card embeds a contenteditable rich-text region whose
+  // SYSTEM-FONT glyphs rasterize differently across platforms — the EXACT known
+  // linux-VRT glyph nondeterminism ([[vrt-flake-1px-layout-rounding]] +
+  // CLAUDE.md text-rendering note) — so the linux baseline is exempted rather
+  // than fighting cross-platform font rasterization. The pos/scroll/wrap math +
+  // the rich-text layout/measurement are proven cross-platform by
+  // textmarquee-layout.test.ts (pure, deterministic), and the spawn/edit/CV
+  // surface by textmarquee.spec.ts.
+  'linux/textmarquee',
   // MANDLEBLOT (Mandelbrot fractal generator): darwin baseline captured on
   // this machine (canvas masked — the colour pass cycles hue with uTime, so
   // the canvas region is non-deterministic; the chrome around it diffs).

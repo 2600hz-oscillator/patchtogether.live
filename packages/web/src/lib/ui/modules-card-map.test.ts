@@ -49,7 +49,7 @@ const EXPECTED_NODE_TYPES = [
   'launchpadControlLeft', 'launchpadControlRight',
   'unityscalemathematik', 'vca', 'vdelay', 'veils', 'vfpgaRunner', 'videoMixer', 'videoOut',
   'videobox', 'videovarispeed', 'warps', 'warrenspectrum', 'wavecel', 'wavesculpt',
-  'twotracks', 'wavetableVco', 'writeseq',
+  'twotracks', 'wavetableVco', 'writeseq', 'textmarquee',
 
 
 
