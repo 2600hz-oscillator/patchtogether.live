@@ -4,7 +4,7 @@
 // LANES. Rows = instruments (8), columns = clip slots (8) → 64 note clips. Each
 // lane independently plays its launched clip out its OWN pitch/gate/velocity
 // outputs, so up to 8 clips sound at once (one per instrument). A monome grid
-// drives it (lib/grid) and the card is the always-available editor + launcher.
+// drives it (lib/control/monome) and the card is the always-available editor + launcher.
 //
 // Clock: LOCKED TO TIMELORDE (the rack transport). The module runs only while
 // TIMELORDE.running, at TIMELORDE.bpm, and freezes when it stops — no internal

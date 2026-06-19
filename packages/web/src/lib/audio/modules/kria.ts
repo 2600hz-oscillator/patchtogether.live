@@ -6,7 +6,7 @@
 // own per-step TRIG / NOTE / OCTAVE / DURATION sequence, per-track LOOP / TIME
 // (clock division) / DIRECTION, per-step PROBABILITY + GLIDE, a shared SCALE,
 // and 16 pattern slots with QUANTIZED (cued) pattern switching. The module is
-// driven by a monome grid 128 over WebSerial (lib/grid) AND fully usable from
+// driven by a monome grid 128 over WebSerial (lib/control/monome) AND fully usable from
 // its on-card UI with a mouse.
 //
 // Clock = the rack's TIMELORDE singleton (read live from the graph store): runs

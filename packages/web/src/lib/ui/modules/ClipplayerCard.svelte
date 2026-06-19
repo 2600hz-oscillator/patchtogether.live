@@ -11,7 +11,7 @@
   //     velocity through 6 levels. Per-lane MONO replaces-on-add; POLY caps at 5.
   //
   // Clock is LOCKED TO TIMELORDE (no BPM knob, no clock cable). The monome grid
-  // drives the SAME actions via lib/grid. All ports live in the shared yellow
+  // drives the SAME actions via lib/control/monome. All ports live in the shared yellow
   // drill-down <PatchPanel> (post-#767 — NO raw side <Handle> jacks); port ids
   // are byte-identical to clipplayerDef so the CV bridge routes unchanged.
   import type { NodeProps } from '@xyflow/svelte';
@@ -61,13 +61,13 @@
     connect as gridConnect,
     isConnected as gridIsConnected,
     connectedRune as gridConnectedRune,
-  } from '$lib/grid/grid-device.svelte';
+  } from '$lib/control/monome/monome-device.svelte';
   import {
     bindGridToClip,
     unbindGrid,
     boundClipNode,
     bindingRune,
-  } from '$lib/grid/grid-clip-binding.svelte';
+  } from '$lib/control/monome/monome-control.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);

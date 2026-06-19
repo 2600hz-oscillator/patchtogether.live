@@ -1,4 +1,4 @@
-// packages/web/src/lib/grid/grid-device.test.ts
+// packages/web/src/lib/control/monome/monome-device.test.ts
 //
 // Device-singleton tests driven entirely through the simulated-grid hook — no
 // hardware, no WebSerial. Exercises the same RX-parse / dispatch / LED-write
@@ -21,7 +21,7 @@ import {
   gridDeviceId,
   currentLedFrame,
   type GridKeyEvent,
-} from './grid-device.svelte';
+} from './monome-device.svelte';
 import { GRID_CELLS, GRID_WIDTH } from './mext';
 
 beforeEach(() => {

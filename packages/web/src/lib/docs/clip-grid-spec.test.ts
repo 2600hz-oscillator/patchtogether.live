@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { clipSessionGrid, clipEditGrid, clipLengthEditGrid } from './clip-grid-spec';
-import { GRID_WIDTH, GRID_HEIGHT } from '$lib/grid/mext';
+import { GRID_WIDTH, GRID_HEIGHT } from '$lib/control/monome/mext';
 import { CLIP_SLOTS, CLIP_LANES } from '$lib/audio/modules/clip-types';
 import {
   CTRL_STOP_COL,
@@ -22,7 +22,7 @@ import {
   DOUBLE_PAD,
   LENGTH_EDIT_PAD,
   FUNC_ROW,
-} from '$lib/grid/grid-clip-map';
+} from '$lib/control/monome/monome-map';
 
 describe('clipSessionGrid', () => {
   const g = clipSessionGrid();

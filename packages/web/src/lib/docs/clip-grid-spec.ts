@@ -4,7 +4,7 @@
 // (grid-clip-map + mext), so they can never drift from what the binding
 // actually does. Two views: SESSION (launch clips) and EDIT (note editor).
 
-import { GRID_WIDTH, GRID_HEIGHT } from '$lib/grid/mext';
+import { GRID_WIDTH, GRID_HEIGHT } from '$lib/control/monome/mext';
 import {
   CLIP_SLOTS,
   CLIP_LANES,
@@ -35,7 +35,7 @@ import {
   LENGTH_EDIT_PAD,
   NOTE_ROWS,
   FUNC_ROW,
-} from '$lib/grid/grid-clip-map';
+} from '$lib/control/monome/monome-map';
 import type { GridCell, GridCallout, GridSideLabel } from './grid-diagram-types';
 
 // shared palette (muted, doc-friendly)

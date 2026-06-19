@@ -19,7 +19,7 @@
     EDIT_PAD,
     STOPALL_PAD,
     TRANSPORT_PAD,
-  } from '$lib/grid/grid-clip-map';
+  } from '$lib/control/monome/monome-map';
   import GridDiagram from '$lib/docs/GridDiagram.svelte';
   import { clipSessionGrid, clipEditGrid, clipLengthEditGrid } from '$lib/docs/clip-grid-spec';
 

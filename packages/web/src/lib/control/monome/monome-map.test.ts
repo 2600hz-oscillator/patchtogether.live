@@ -1,4 +1,4 @@
-// packages/web/src/lib/grid/grid-clip-map.test.ts
+// packages/web/src/lib/control/monome/monome-map.test.ts
 import { describe, it, expect } from 'vitest';
 import {
   padToClipIndex,
@@ -77,7 +77,7 @@ import {
   LED_LEN_BLOCK,
   LED_LEN_END,
   LED_LEN_EXIT,
-} from './grid-clip-map';
+} from './monome-map';
 import { GRID_WIDTH } from './mext';
 import {
   defaultNoteClip,
