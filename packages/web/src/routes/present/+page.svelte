@@ -69,20 +69,29 @@
   function onUserGesture(): void {
     void goFullscreen();
   }
+  /** The opener may DELEGATE its transient activation to us (Capability
+   *  Delegation API) so we can go fullscreen with no click on the projector. */
+  function onOpenerMessage(ev: MessageEvent): void {
+    if (ev.origin !== window.location.origin) return;
+    const d = ev.data as { type?: string } | null;
+    if (d?.type === 'present:go-fullscreen') void goFullscreen();
+  }
 
   onMount(() => {
     sizeCanvas();
     window.addEventListener('resize', onResize);
     document.addEventListener('fullscreenchange', onFsChange);
-    // First click / key in the popup → fullscreen (covers the gesture-gated case
-    // + lets the user re-enter after pressing Esc). Pure sink, so any input maps
-    // cleanly to "go fullscreen".
+    // First click / key ANYWHERE in the popup → fullscreen (covers the
+    // gesture-gated case + lets the user re-enter after pressing Esc). Pure
+    // sink, so any input maps cleanly to "go fullscreen".
     window.addEventListener('pointerdown', onUserGesture);
     window.addEventListener('keydown', onUserGesture);
+    // The opener delegates fullscreen activation to us once it sees us ready.
+    window.addEventListener('message', onOpenerMessage);
     // Best-effort immediate attempt (popups opened from a click often still hold
     // transient activation for a beat).
     void goFullscreen();
-    // Tell the opener we're ready to be drawn into.
+    // Tell the opener we're ready to be drawn into (and to delegate fullscreen).
     if (window.opener) {
       try {
         window.opener.postMessage({ type: 'present:ready' }, window.location.origin);
@@ -98,6 +107,7 @@
     document.removeEventListener('fullscreenchange', onFsChange);
     window.removeEventListener('pointerdown', onUserGesture);
     window.removeEventListener('keydown', onUserGesture);
+    window.removeEventListener('message', onOpenerMessage);
   });
 </script>
 
@@ -108,7 +118,7 @@
 <div class="present-root" data-testid="present-root">
   <canvas bind:this={canvasEl} class="present-canvas" data-testid="present-canvas"></canvas>
   {#if !isFs}
-    <div class="fs-hint" data-testid="present-fs-hint">click for full screen</div>
+    <div class="fs-hint" data-testid="present-fs-hint">⛶ click anywhere for full screen</div>
   {/if}
 </div>
 
@@ -134,24 +144,28 @@
     height: 100%;
     background: #000;
   }
-  /* Subtle, auto-hiding affordance shown only until we're actually fullscreen. */
+  /* Prominent, PERSISTENT affordance shown until we're actually fullscreen — a
+     popup's requestFullscreen is gesture-gated, so when auto/delegated entry is
+     blocked the operator needs a clear, lasting "click for fullscreen" cue (the
+     old 4s-fade hint vanished before it was noticed). Centred + large so it
+     reads across the room on a projector; a gentle pulse draws the eye. */
   .fs-hint {
     position: fixed;
     left: 50%;
-    bottom: 16px;
-    transform: translateX(-50%);
-    padding: 6px 12px;
-    font: 12px/1 system-ui, sans-serif;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    padding: 14px 26px;
+    font: 600 22px/1.2 system-ui, sans-serif;
     letter-spacing: 0.04em;
-    color: rgba(255, 255, 255, 0.75);
-    background: rgba(0, 0, 0, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 999px;
+    color: rgba(255, 255, 255, 0.92);
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 12px;
     pointer-events: none;
-    animation: fs-hint-fade 4s ease-in forwards;
+    animation: fs-hint-pulse 1.8s ease-in-out infinite;
   }
-  @keyframes fs-hint-fade {
-    0%, 60% { opacity: 1; }
-    100% { opacity: 0; }
+  @keyframes fs-hint-pulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
   }
 </style>
