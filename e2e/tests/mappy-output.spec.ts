@@ -230,4 +230,72 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
 
     expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
   });
+
+  test('GRIDS-FIRST: with NO inputs the output shows the calibration grid; adding a surface changes it', async ({ page }) => {
+    const errors = await setup(page);
+
+    // No source at all — just MAPPY → videoOut. The grids-first behavior must
+    // render surface 1's numbered calibration grid so you can set up geometry
+    // before patching any video.
+    const nodes: Node[] = [
+      { id: 'mappy', type: 'mappy', position: { x: 560, y: 60 }, domain: 'video' },
+      { id: 'v-out', type: 'videoOut', position: { x: 900, y: 60 }, domain: 'video' },
+    ];
+    const edges: Edge[] = [
+      { id: 'mo', from: { nodeId: 'mappy', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+    ];
+    await spawnPatch(page, nodes, edges);
+    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+    await page.waitForTimeout(600);
+
+    // 1) the default single surface renders its grid → non-blank + structured
+    //    (the checker + border + digit), with NO input connected.
+    const grid1 = await readStats(page);
+    expect(grid1, 'grid composite readable').not.toBeNull();
+    expect(grid1!.nonZeroFrac, 'grid is NOT all-black with no inputs').toBeGreaterThan(0.3);
+    expect(grid1!.variance, 'grid has spatial structure (checker)').toBeGreaterThan(15);
+
+    // 2) warp surface 2 to a sub-rect and bump surfaceCount → a 2nd grid joins
+    //    the composite → it demonstrably changes.
+    await warpSurface(page, 'mappy', 2, [[0.1, 0.1], [0.5, 0.1], [0.5, 0.5], [0.1, 0.5]]);
+    await setParams(page, 'mappy', { surfaceCount: 2 });
+    await page.waitForTimeout(600);
+    const grid2 = await readStats(page);
+    expect(grid2, '2-grid composite readable').not.toBeNull();
+    expect(grid2!.sig, 'a 2nd grid changes the composite signature').not.toBe(grid1!.sig);
+
+    expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
+  test('MAP editor opens with a large canvas, can add a surface, and closes', async ({ page }) => {
+    const errors = await setup(page);
+
+    const nodes: Node[] = [
+      { id: 'mappy', type: 'mappy', position: { x: 560, y: 60 }, domain: 'video' },
+      { id: 'v-out', type: 'videoOut', position: { x: 900, y: 60 }, domain: 'video' },
+    ];
+    const edges: Edge[] = [
+      { id: 'mo', from: { nodeId: 'mappy', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+    ];
+    await spawnPatch(page, nodes, edges);
+    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+
+    // open the full-window editor
+    await page.locator('[data-testid="mappy-open-editor"]').click();
+    await expect(page.locator('[data-testid="mappy-editor"]')).toBeVisible();
+    await expect(page.locator('[data-testid="mappy-editor-canvas"]')).toHaveCount(1);
+    // one surface to start → tab 1 present, tab 2 absent
+    await expect(page.locator('[data-testid="mappy-editor-tab-1"]')).toHaveCount(1);
+    await expect(page.locator('[data-testid="mappy-editor-tab-2"]')).toHaveCount(0);
+
+    // add a surface → tab 2 appears
+    await page.locator('[data-testid="mappy-editor-add"]').click();
+    await expect(page.locator('[data-testid="mappy-editor-tab-2"]')).toHaveCount(1);
+
+    // close
+    await page.locator('[data-testid="mappy-editor-close"]').click();
+    await expect(page.locator('[data-testid="mappy-editor"]')).toHaveCount(0);
+
+    expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
+  });
 });

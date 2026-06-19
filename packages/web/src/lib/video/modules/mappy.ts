@@ -5,19 +5,26 @@
 // ──────────────────────────────────────────────────────────────────────────
 // WHAT IT DOES
 // ──────────────────────────────────────────────────────────────────────────
-// MAPPY spawns up to SIX surfaces. Each surface is fed by a distinct video
-// input (in1..in6) and warped onto its own draggable QUAD in the output
-// frame, then composited (painter's order, OVER) into ONE output → a
-// projector. Use cases:
+// MAPPY hosts up to SIX surfaces. Each surface owns its own draggable QUAD in
+// the output frame; surface i is fed by input in(i+1). The surfaces are
+// composited (painter's order, OVER) into ONE output → a projector. Use cases:
 //   * 1 surface  → DE-SKEW an awkwardly-angled projection (drag the four
 //     corners to match the physical screen).
 //   * up to 6    → map each face of a white cube to its own video feed (only
 //     ~3-4 faces are visible at once from any one projector angle).
 //
-// This is the MANUAL mapper: you drag the corners by hand on the card. The
-// camera-assisted AUTO-align (point a camera at the projection, solve the
-// homography from detected features) is a LATER phase — there is NO camera
-// input and NO CV here in v1, by design.
+// GRIDS-FIRST WORKFLOW. A fresh MAPPY shows ONE surface, and a live surface
+// with NO input connected renders its NUMBERED CALIBRATION GRID — so with
+// nothing patched the output is the grid(s), and you set the geometry up on the
+// physical faces FIRST (drag corners, +/− surfaceCount up to 6), THEN connect
+// video. The instant inN is connected, that surface swaps grid→warped video in
+// the quad you already mapped. surfaceCount governs how many surfaces are live;
+// connecting inN auto-activates surface N even beyond the count.
+//
+// This is the MANUAL mapper: you drag the corners by hand (on the card or in
+// the full-window MAP editor). The camera-assisted AUTO-align (point a camera
+// at the projection, solve the homography from detected features) is a LATER
+// phase — there is NO camera input and NO CV here, by design.
 //
 // ──────────────────────────────────────────────────────────────────────────
 // WARP + COMPOSITE
@@ -113,6 +120,43 @@ export function defaultSurfaces(): MappySurfaceState[] {
   return Array.from({ length: MAPPY_SURFACE_COUNT }, defaultSurface);
 }
 
+/** Minimum number of live surfaces (you always have at least one grid). */
+export const MAPPY_MIN_SURFACES = 1;
+/** A fresh MAPPY starts with ONE live surface (one grid you set up first). */
+export const DEFAULT_SURFACE_COUNT = 1;
+
+/**
+ * The quad a NEWLY-ADDED surface drops in as — a staggered inset rectangle so
+ * each added grid is an obviously-distinct, fully-on-screen object you can grab
+ * and drag onto a physical face (rather than perfectly overlapping the others).
+ * `index` is the 0-based surface number; surfaces cascade down-right and wrap.
+ * Always inset within [0,1] so every corner handle is reachable.
+ */
+export function insetQuadForIndex(index: number): [Vec2, Vec2, Vec2, Vec2] {
+  const w = 0.34;
+  const h = 0.34;
+  const step = 0.1;
+  const slot = index % 4;
+  const x = 0.08 + slot * step;
+  const y = 0.08 + slot * step;
+  // clamp the origin so the inset box stays fully inside [0,1]
+  const ox = Math.min(x, 1 - w - 0.02);
+  const oy = Math.min(y, 1 - h - 0.02);
+  return [
+    [ox, oy],
+    [ox + w, oy],
+    [ox + w, oy + h],
+    [ox, oy + h],
+  ];
+}
+
+/** Coerce a persisted/loose surface-count into [MAPPY_MIN_SURFACES, COUNT]. */
+export function clampSurfaceCount(raw: unknown): number {
+  const n = Math.round(Number(raw));
+  if (!Number.isFinite(n)) return DEFAULT_SURFACE_COUNT;
+  return Math.max(MAPPY_MIN_SURFACES, Math.min(MAPPY_SURFACE_COUNT, n));
+}
+
 const clamp01 = (v: number): number =>
   !Number.isFinite(v) ? 0 : v < 0 ? 0 : v > 1 ? 1 : v;
 
@@ -204,9 +248,47 @@ vec2 sourceUv(vec2 uv) {
   return p.xy / p.z;
 }
 
+// Distance from point p to the segment a→b (for the 7-segment digit glyph).
+float segDist(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a;
+  vec2 ba = b - a;
+  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h);
+}
+
+// Which of the 7 segments (bits a=1,b=2,c=4,d=8,e=16,f=32,g=64) are lit for a
+// single decimal digit 1..6 (the only surface numbers MAPPY can show).
+int segMask(int d) {
+  if (d == 1) return 6;    // b c
+  if (d == 2) return 91;   // a b d e g
+  if (d == 3) return 79;   // a b c d g
+  if (d == 4) return 102;  // b c f g
+  if (d == 5) return 109;  // a c d f g
+  return 125;              // 6: a c d e f g
+}
+
+// Coverage (0..1) of a 7-segment digit d drawn in local box space p in [0,1]^2
+// (x right, y down). Used to label each calibration grid with the number of the
+// input that will feed that surface. Deterministic.
+float digitCoverage(vec2 p, int d) {
+  int m = segMask(d);
+  float th = 0.085;   // segment half-thickness
+  float aa = 0.02;    // antialias width
+  float cov = 0.0;
+  // seven segment endpoints in the [0,1] box
+  if ((m & 1) != 0)  cov = max(cov, 1.0 - smoothstep(th - aa, th + aa, segDist(p, vec2(0.18, 0.06), vec2(0.82, 0.06)))); // a top
+  if ((m & 2) != 0)  cov = max(cov, 1.0 - smoothstep(th - aa, th + aa, segDist(p, vec2(0.82, 0.06), vec2(0.82, 0.50)))); // b top-right
+  if ((m & 4) != 0)  cov = max(cov, 1.0 - smoothstep(th - aa, th + aa, segDist(p, vec2(0.82, 0.50), vec2(0.82, 0.94)))); // c bottom-right
+  if ((m & 8) != 0)  cov = max(cov, 1.0 - smoothstep(th - aa, th + aa, segDist(p, vec2(0.18, 0.94), vec2(0.82, 0.94)))); // d bottom
+  if ((m & 16) != 0) cov = max(cov, 1.0 - smoothstep(th - aa, th + aa, segDist(p, vec2(0.18, 0.50), vec2(0.18, 0.94)))); // e bottom-left
+  if ((m & 32) != 0) cov = max(cov, 1.0 - smoothstep(th - aa, th + aa, segDist(p, vec2(0.18, 0.06), vec2(0.18, 0.50)))); // f top-left
+  if ((m & 64) != 0) cov = max(cov, 1.0 - smoothstep(th - aa, th + aa, segDist(p, vec2(0.18, 0.50), vec2(0.82, 0.50)))); // g middle
+  return cov;
+}
+
 // A numbered calibration grid in [0,1] SOURCE space: an 8×8 checker, a bright
-// border, centre cross-hairs, and a small filled "tally" pip block in the
-// centre encoding the surface number (index+1 pips) so each surface reads
+// border, centre cross-hairs, and a big readable 7-segment DIGIT (index+1) in
+// the centre naming the input that will feed this surface, so each surface reads
 // distinctly when aligning. Deterministic — no time dependence.
 vec4 calibrationGrid(vec2 s, float idx) {
   vec3 tint = GRID_COLORS[int(clamp(idx, 0.0, 5.0))];
@@ -226,16 +308,15 @@ vec4 calibrationGrid(vec2 s, float idx) {
   vec2 d = abs(s - 0.5);
   float cross = (min(d.x, d.y) < 0.004) ? 1.0 : 0.0;
   col = mix(col, vec3(1.0), cross);
-  // tally pips for the surface number (idx+1), a horizontal run in the centre
-  float n = idx + 1.0;
-  float pipY = abs(s.y - 0.5);
-  if (pipY < 0.03) {
-    float px = (s.x - 0.5 + n * 0.05) / 0.1; // pips spaced 0.1, centred-ish
-    float pipIdx = floor(px);
-    float pipFrac = abs(fract(px) - 0.5);
-    if (pipIdx >= 0.0 && pipIdx < n && pipFrac < 0.3) {
-      col = vec3(1.0);
-    }
+  // BIG readable digit (idx+1) naming the input that will feed this surface,
+  // over a dark backing plate so it reads against any checker tint.
+  int num = int(idx + 1.5); // 0..5 → 1..6
+  vec2 boxHalf = vec2(0.17, 0.27);
+  vec2 p = (s - (vec2(0.5) - boxHalf)) / (2.0 * boxHalf);
+  if (p.x >= 0.0 && p.x <= 1.0 && p.y >= 0.0 && p.y <= 1.0) {
+    col = mix(col, vec3(0.03), 0.8);
+    float dc = digitCoverage(p, num);
+    col = mix(col, vec3(1.0), dc);
   }
   return vec4(col, 1.0);
 }
@@ -263,10 +344,17 @@ interface MappyParams {
   // to the user as a toggle on the card (and ALSO mirrored to node.data.showGrid
   // so the card reads it the same way it reads surfaces).
   showGrid: number;
+  // surfaceCount is the number of LIVE surfaces (1..6) — the +/− on the card. A
+  // live surface ALWAYS renders: its calibration grid when no input is patched
+  // (set up the geometry first), or the warped video once inN is connected. A
+  // surface beyond the count still auto-activates the moment its input is
+  // connected, so patching inN can never go to a dead surface.
+  surfaceCount: number;
 }
 
 const DEFAULTS: MappyParams = {
   showGrid: 0,
+  surfaceCount: DEFAULT_SURFACE_COUNT,
 };
 
 export const mappyDef: VideoModuleDef = {
@@ -291,6 +379,8 @@ export const mappyDef: VideoModuleDef = {
     // showGrid is a hidden 0/1 param (the card drives it as a toggle); kept in
     // the param list so it persists + has a default for the manifest.
     { id: 'showGrid', label: 'Grid', defaultValue: DEFAULTS.showGrid, min: 0, max: 1, curve: 'linear' },
+    // surfaceCount (1..6) — the +/− on the card; persisted like any param.
+    { id: 'surfaceCount', label: 'Surfaces', defaultValue: DEFAULTS.surfaceCount, min: MAPPY_MIN_SURFACES, max: MAPPY_SURFACE_COUNT, curve: 'linear' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -322,6 +412,9 @@ export const mappyDef: VideoModuleDef = {
     const rawParams = node.params as Record<string, unknown>;
     const params: MappyParams = {
       showGrid: typeof rawParams.showGrid === 'number' ? rawParams.showGrid : DEFAULTS.showGrid,
+      surfaceCount: typeof rawParams.surfaceCount === 'number'
+        ? clampSurfaceCount(rawParams.surfaceCount)
+        : DEFAULTS.surfaceCount,
     };
 
     /** Live surface state, read every frame from node.data (so dragging a
@@ -332,11 +425,18 @@ export const mappyDef: VideoModuleDef = {
       return normalizeSurfaces(data?.surfaces);
     }
     /** showGrid is mirrored on node.data so the card toggle + the param agree;
-     *  prefer node.data when present, else the param. */
+     *  prefer node.data when present, else the param. When ON it FORCES the grid
+     *  on every live surface (a re-alignment override). */
     function gridOn(): boolean {
       const data = node.data as { showGrid?: unknown } | undefined;
       if (data && typeof data.showGrid === 'boolean') return data.showGrid;
       return params.showGrid >= 0.5;
+    }
+    /** Number of live surfaces (1..6) — node.data.surfaceCount wins, else param. */
+    function surfaceCount(): number {
+      const data = node.data as { surfaceCount?: unknown } | undefined;
+      if (data && typeof data.surfaceCount === 'number') return clampSurfaceCount(data.surfaceCount);
+      return clampSurfaceCount(params.surfaceCount);
     }
 
     const surface: VideoNodeSurface = {
@@ -345,7 +445,8 @@ export const mappyDef: VideoModuleDef = {
       draw(frame) {
         const g = frame.gl;
         const surfaces = readSurfaces();
-        const showGrid = gridOn();
+        const forceGrid = gridOn();
+        const count = surfaceCount();
 
         g.bindFramebuffer(g.FRAMEBUFFER, compositeFbo.fbo);
         g.viewport(0, 0, ctx.res.width, ctx.res.height);
@@ -364,20 +465,26 @@ export const mappyDef: VideoModuleDef = {
 
         for (let i = 0; i < MAPPY_SURFACE_COUNT; i++) {
           const inputTex = frame.getInputTexture(node.id, MAPPY_INPUT_IDS[i]);
-          // Skip a surface with no connected input (unless drawing the grid,
-          // which is synthesized and needs no input). An unconnected input in
-          // grid mode is also skipped — the grid is an ALIGNMENT aid for the
-          // connected surfaces, so it tracks the same connected set.
-          if (!inputTex) continue;
+          // A surface is LIVE if it's within the surface count (set up its grid
+          // first) OR its input is connected (auto-activate on patch). Surfaces
+          // beyond the count with no input are skipped.
+          const live = i < count || !!inputTex;
+          if (!live) continue;
 
           const inv = surfaceInverseColumnMajor(surfaces[i]!.corners);
           if (!inv) continue; // degenerate quad → nothing to draw
 
+          // GRIDS-FIRST: draw the numbered calibration grid when there's no
+          // input yet (set up the geometry on the physical surface), or when the
+          // GRID override forces it. Once inN is connected, the warped video
+          // fills the quad you already mapped.
+          const drawGrid = forceGrid || !inputTex;
+
           g.activeTexture(g.TEXTURE0);
-          g.bindTexture(g.TEXTURE_2D, showGrid ? emptyTex : inputTex);
+          g.bindTexture(g.TEXTURE_2D, drawGrid ? emptyTex : inputTex);
           g.uniform1i(u.tex, 0);
           g.uniformMatrix3fv(u.inv, false, new Float32Array(inv));
-          g.uniform1f(u.showGrid, showGrid ? 1.0 : 0.0);
+          g.uniform1f(u.showGrid, drawGrid ? 1.0 : 0.0);
           g.uniform1f(u.index, i);
           ctx.drawFullscreenQuad();
         }
