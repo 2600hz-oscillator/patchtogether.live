@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="720" viewBox="0 0 920 720" font-family="ui-monospace, 'SF Mono', Menlo, monospace">
+  <!-- ===================================================================== -->
+  <!-- LAUNCHPAD CLIP EDITOR (8x8 windowed)  —  proposal §6 + §7              -->
+  <!-- Unit L flips to an 8-pitch x 8-step NOTE GRID. The 8 columns show only  -->
+  <!-- HALF a 16-step block; ▲▼◀▶ scroll one row/col, SHIFT+▲▼◀▶ jump 8.       -->
+  <!-- ===================================================================== -->
+  <defs>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.8" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b1d23"/><stop offset="1" stop-color="#0f1116"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2d36"/><stop offset="1" stop-color="#202329"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="920" height="720" rx="18" fill="url(#bg)"/>
+  <text x="34" y="44" fill="#e8eaf0" font-size="22" font-weight="700">LAUNCHPAD CLIP EDITOR · 8×8 windowed note grid</text>
+  <text x="34" y="66" fill="#8b90a0" font-size="12.5">8 pitch rows × 8 step columns = HALF a 16-step block · ▲▼◀▶ scroll 1 · SHIFT+▲▼◀▶ jump a full screen (8)</text>
+
+  <!-- device shell (Unit L in EDIT mode) -->
+  <rect x="40" y="92" width="560" height="560" rx="22" fill="url(#shell)" stroke="#3a3f4d" stroke-width="1.5" filter="url(#soft)"/>
+
+  <!-- ===== top dir row (CC91-95): ▲ ▼ ◀ ▶ SHIFT ===== -->
+  <g font-size="13" font-weight="700" text-anchor="middle">
+    <circle cx="92"  cy="124" r="22" fill="#e8e8ff" filter="url(#soft)"/><text x="92"  y="130" fill="#1b1d23">▲</text>
+    <circle cx="152" cy="124" r="22" fill="#e8e8ff" filter="url(#soft)"/><text x="152" y="130" fill="#1b1d23">▼</text>
+    <circle cx="212" cy="124" r="22" fill="#e8e8ff" filter="url(#soft)"/><text x="212" y="130" fill="#1b1d23">◀</text>
+    <circle cx="272" cy="124" r="22" fill="#e8e8ff" filter="url(#soft)"/><text x="272" y="130" fill="#1b1d23">▶</text>
+    <circle cx="332" cy="124" r="22" fill="#7a4fd0" filter="url(#soft)"/><text x="332" y="129" fill="#fff" font-size="10">SHIFT</text>
+    <circle cx="392" cy="124" r="22" fill="#23262e" stroke="#3a3f4d"/>
+    <circle cx="452" cy="124" r="22" fill="#23262e" stroke="#3a3f4d"/>
+    <circle cx="512" cy="124" r="22" fill="#23262e" stroke="#3a3f4d"/>
+  </g>
+  <g fill="#6f7589" font-size="9" text-anchor="middle">
+    <text x="92" y="160">pitch+</text><text x="152" y="160">pitch−</text><text x="212" y="160">step◀</text><text x="272" y="160">step▶</text><text x="332" y="160" fill="#9a86d0">×8</text>
+  </g>
+
+  <!-- ===== the 8x8 note grid =====
+       y rows: 0(top)..7(bottom). Bottom = clip root (faint guide).
+       x cols: steps 5..12 of a 16-block (the shown window = block1 right half).
+       a note = velocity colour (blue->cyan ramp, 6 shades collapsed visually).
+       held span = a bar across cols. playhead col = amber wash + yellow boost.
+  -->
+  <!-- pitch row labels -->
+  <g fill="#7f8597" font-size="11" text-anchor="end">
+    <text x="74" y="200">B</text><text x="74" y="256">A</text><text x="74" y="312">G</text><text x="74" y="368">F</text>
+    <text x="74" y="424">E</text><text x="74" y="480">D</text><text x="74" y="536">C′</text><text x="74" y="592" fill="#c98">C</text>
+  </g>
+  <!-- step (column) labels: the shown window = steps 5..12 -->
+  <g fill="#6f7589" font-size="10" text-anchor="middle">
+    <text x="98" y="640">s5</text><text x="154" y="640">s6</text><text x="210" y="640">s7</text><text x="266" y="640">s8</text>
+    <text x="322" y="640">s9</text><text x="378" y="640">s10</text><text x="434" y="640">s11</text><text x="490" y="640">s12</text>
+  </g>
+
+  <!-- empty grid base -->
+  <g>
+    <!-- draw all 64 cells as empty first, then overlay notes -->
+    <!-- y positions 178 234 290 346 402 458 514 570 ; x 76 132 188 244 300 356 412 468 -->
+    <!-- row guides: bottom row (root) gets faint guide -->
+    <!-- We overlay only the lit cells; everything else dark. -->
+    <!-- base dark cells -->
+    <g fill="#15171c" stroke="#23262e">
+      <rect x="76" y="178" width="44" height="44" rx="9"/><rect x="132" y="178" width="44" height="44" rx="9"/><rect x="188" y="178" width="44" height="44" rx="9"/><rect x="244" y="178" width="44" height="44" rx="9"/><rect x="300" y="178" width="44" height="44" rx="9"/><rect x="356" y="178" width="44" height="44" rx="9"/><rect x="412" y="178" width="44" height="44" rx="9"/><rect x="468" y="178" width="44" height="44" rx="9"/>
+      <rect x="76" y="234" width="44" height="44" rx="9"/><rect x="132" y="234" width="44" height="44" rx="9"/><rect x="188" y="234" width="44" height="44" rx="9"/><rect x="244" y="234" width="44" height="44" rx="9"/><rect x="300" y="234" width="44" height="44" rx="9"/><rect x="356" y="234" width="44" height="44" rx="9"/><rect x="412" y="234" width="44" height="44" rx="9"/><rect x="468" y="234" width="44" height="44" rx="9"/>
+      <rect x="76" y="290" width="44" height="44" rx="9"/><rect x="132" y="290" width="44" height="44" rx="9"/><rect x="188" y="290" width="44" height="44" rx="9"/><rect x="244" y="290" width="44" height="44" rx="9"/><rect x="300" y="290" width="44" height="44" rx="9"/><rect x="356" y="290" width="44" height="44" rx="9"/><rect x="412" y="290" width="44" height="44" rx="9"/><rect x="468" y="290" width="44" height="44" rx="9"/>
+      <rect x="76" y="346" width="44" height="44" rx="9"/><rect x="132" y="346" width="44" height="44" rx="9"/><rect x="188" y="346" width="44" height="44" rx="9"/><rect x="244" y="346" width="44" height="44" rx="9"/><rect x="300" y="346" width="44" height="44" rx="9"/><rect x="356" y="346" width="44" height="44" rx="9"/><rect x="412" y="346" width="44" height="44" rx="9"/><rect x="468" y="346" width="44" height="44" rx="9"/>
+      <rect x="76" y="402" width="44" height="44" rx="9"/><rect x="132" y="402" width="44" height="44" rx="9"/><rect x="188" y="402" width="44" height="44" rx="9"/><rect x="244" y="402" width="44" height="44" rx="9"/><rect x="300" y="402" width="44" height="44" rx="9"/><rect x="356" y="402" width="44" height="44" rx="9"/><rect x="412" y="402" width="44" height="44" rx="9"/><rect x="468" y="402" width="44" height="44" rx="9"/>
+      <rect x="76" y="458" width="44" height="44" rx="9"/><rect x="132" y="458" width="44" height="44" rx="9"/><rect x="188" y="458" width="44" height="44" rx="9"/><rect x="244" y="458" width="44" height="44" rx="9"/><rect x="300" y="458" width="44" height="44" rx="9"/><rect x="356" y="458" width="44" height="44" rx="9"/><rect x="412" y="458" width="44" height="44" rx="9"/><rect x="468" y="458" width="44" height="44" rx="9"/>
+      <rect x="76" y="514" width="44" height="44" rx="9"/><rect x="132" y="514" width="44" height="44" rx="9"/><rect x="188" y="514" width="44" height="44" rx="9"/><rect x="244" y="514" width="44" height="44" rx="9"/><rect x="300" y="514" width="44" height="44" rx="9"/><rect x="356" y="514" width="44" height="44" rx="9"/><rect x="412" y="514" width="44" height="44" rx="9"/><rect x="468" y="514" width="44" height="44" rx="9"/>
+    </g>
+    <!-- bottom (root) row: faint guide -->
+    <g fill="#23252b" stroke="#3a3f4d">
+      <rect x="76" y="570" width="44" height="44" rx="9"/><rect x="132" y="570" width="44" height="44" rx="9"/><rect x="188" y="570" width="44" height="44" rx="9"/><rect x="244" y="570" width="44" height="44" rx="9"/><rect x="300" y="570" width="44" height="44" rx="9"/><rect x="356" y="570" width="44" height="44" rx="9"/><rect x="412" y="570" width="44" height="44" rx="9"/><rect x="468" y="570" width="44" height="44" rx="9"/>
+    </g>
+
+    <!-- playhead column wash (col 3 = step s8, x=244) -->
+    <rect x="240" y="174" width="52" height="444" rx="10" fill="#ffd23b" opacity="0.10"/>
+    <rect x="244" y="178" width="44" height="440" rx="9" fill="#ffd23b" opacity="0.06"/>
+
+    <!-- ===== notes ===== -->
+    <!-- a held note span on row G (y=290), steps s5..s7 (x=76..232) high vel cyan -->
+    <rect x="76" y="290" width="156" height="44" rx="9" fill="#7fb6ff" filter="url(#soft)"/>
+    <text x="120" y="316" fill="#06243a" font-size="9.5" font-weight="700">held ▸ (lengthSteps=3)</text>
+    <!-- a med-vel note on row E (y=402) step s8 — UNDER the playhead → yellow boost -->
+    <rect x="244" y="402" width="44" height="44" rx="9" fill="#ffd23b" filter="url(#soft)"/>
+    <!-- low-vel note row C′ (y=514) step s6 -->
+    <rect x="132" y="514" width="44" height="44" rx="9" fill="#3a516f"/>
+    <!-- med note row A (y=234) step s11 -->
+    <rect x="412" y="234" width="44" height="44" rx="9" fill="#4a7dc0"/>
+    <!-- root note row C (y=570) step s9 -->
+    <rect x="300" y="570" width="44" height="44" rx="9" fill="#4a7dc0"/>
+  </g>
+
+  <!-- ===== the windowing diagram (right side) ===== -->
+  <g transform="translate(636,100)">
+    <text x="0" y="6" fill="#6f7589" font-size="12" font-weight="700">THE 128-STEP CLIP (16-step blocks)</text>
+    <text x="0" y="24" fill="#8b90a0" font-size="10">the 8-col window shows HALF a block; ▲▼◀▶ move it</text>
+
+    <!-- block ruler: 8 blocks x 16 steps; show block1 expanded into two halves -->
+    <!-- a long bar of 16 steps split into L-half and R-half(shown) -->
+    <g transform="translate(0,44)">
+      <text x="0" y="0" fill="#9aa0b2" font-size="10">block 1 (steps 1-16)</text>
+      <!-- 16 little cells, cols 1-8 = left half, 9-16 = right half (shown, ring) -->
+      <g>
+        <!-- left half (steps 1-8) dim -->
+        <rect x="0"   y="10" width="14" height="14" rx="3" fill="#2c3d57"/>
+        <rect x="16"  y="10" width="14" height="14" rx="3" fill="#2c3d57"/>
+        <rect x="32"  y="10" width="14" height="14" rx="3" fill="#2c3d57"/>
+        <rect x="48"  y="10" width="14" height="14" rx="3" fill="#2c3d57"/>
+        <rect x="64"  y="10" width="14" height="14" rx="3" fill="#2c3d57"/>
+        <rect x="80"  y="10" width="14" height="14" rx="3" fill="#2c3d57"/>
+        <rect x="96"  y="10" width="14" height="14" rx="3" fill="#2c3d57"/>
+        <rect x="112" y="10" width="14" height="14" rx="3" fill="#2c3d57"/>
+        <!-- right half (steps 9-16) bright = currently SHOWN window -->
+        <rect x="128" y="10" width="14" height="14" rx="3" fill="#7fb6ff"/>
+        <rect x="144" y="10" width="14" height="14" rx="3" fill="#7fb6ff"/>
+        <rect x="160" y="10" width="14" height="14" rx="3" fill="#7fb6ff"/>
+        <rect x="176" y="10" width="14" height="14" rx="3" fill="#7fb6ff"/>
+        <rect x="192" y="10" width="14" height="14" rx="3" fill="#7fb6ff"/>
+        <rect x="208" y="10" width="14" height="14" rx="3" fill="#7fb6ff"/>
+        <rect x="224" y="10" width="14" height="14" rx="3" fill="#7fb6ff"/>
+        <rect x="240" y="10" width="14" height="14" rx="3" fill="#7fb6ff"/>
+        <rect x="126" y="8" width="130" height="18" rx="5" fill="none" stroke="#ffd23b" stroke-width="2"/>
+        <text x="191" y="46" fill="#ffd23b" font-size="9.5" text-anchor="middle">shown 8 (s9-16)</text>
+        <text x="56" y="46" fill="#6f7589" font-size="9.5" text-anchor="middle">◀ ◀ to here</text>
+      </g>
+    </g>
+
+    <!-- block strip: 8 blocks -->
+    <g transform="translate(0,120)">
+      <text x="0" y="0" fill="#9aa0b2" font-size="10">8 blocks = up to 128 steps</text>
+      <g>
+        <rect x="0"   y="10" width="30" height="18" rx="4" fill="#4a7dc0"/><text x="15" y="23" fill="#06243a" font-size="9" text-anchor="middle">1</text>
+        <rect x="34"  y="10" width="30" height="18" rx="4" fill="#2c3d57"/><text x="49" y="23" fill="#8aa" font-size="9" text-anchor="middle">2</text>
+        <rect x="68"  y="10" width="30" height="18" rx="4" fill="#2c3d57"/><text x="83" y="23" fill="#8aa" font-size="9" text-anchor="middle">3</text>
+        <rect x="102" y="10" width="30" height="18" rx="4" fill="#2c3d57"/><text x="117" y="23" fill="#8aa" font-size="9" text-anchor="middle">4</text>
+        <rect x="136" y="10" width="30" height="18" rx="4" fill="#1a1f29"/><text x="151" y="23" fill="#556" font-size="9" text-anchor="middle">5</text>
+        <rect x="170" y="10" width="30" height="18" rx="4" fill="#1a1f29"/><text x="185" y="23" fill="#556" font-size="9" text-anchor="middle">6</text>
+        <rect x="204" y="10" width="30" height="18" rx="4" fill="#1a1f29"/><text x="219" y="23" fill="#556" font-size="9" text-anchor="middle">7</text>
+        <rect x="238" y="10" width="30" height="18" rx="4" fill="#1a1f29"/><text x="253" y="23" fill="#556" font-size="9" text-anchor="middle">8</text>
+      </g>
+      <text x="0" y="48" fill="#6f7589" font-size="9.5">SHIFT+▶ jumps a whole 8-col window (½ block); 2×SHIFT-▶ = next block</text>
+    </g>
+
+    <!-- nav summary -->
+    <g transform="translate(0,206)">
+      <text x="0" y="0" fill="#6f7589" font-size="12" font-weight="700">NAV (proposal §7)</text>
+      <text x="0" y="22" fill="#cfd3df" font-size="10.5">◀ / ▶  step window  ± 1</text>
+      <text x="0" y="40" fill="#cfd3df" font-size="10.5">▲ / ▼  pitch window ± 1 row</text>
+      <text x="0" y="64" fill="#9a86d0" font-size="10.5">SHIFT + ◀/▶  ± 8 steps (a screen)</text>
+      <text x="0" y="82" fill="#9a86d0" font-size="10.5">SHIFT + ▲/▼  ± 8 rows (a screen)</text>
+      <text x="0" y="106" fill="#9aa0b2" font-size="10.5">FOLLOW (on R) auto-scrolls the</text>
+      <text x="0" y="122" fill="#9aa0b2" font-size="10.5">window with the playhead; freeze</text>
+      <text x="0" y="138" fill="#9aa0b2" font-size="10.5">it to drive ◀▶ by hand.</text>
+    </g>
+
+    <!-- editor note colours -->
+    <g transform="translate(0,360)">
+      <text x="0" y="0" fill="#6f7589" font-size="11" font-weight="700">NOTE COLOURS</text>
+      <rect x="0" y="12" width="20" height="20" rx="6" fill="#3a516f"/><text x="28" y="27" fill="#cfd3df" font-size="10.5">low vel</text>
+      <rect x="0" y="38" width="20" height="20" rx="6" fill="#4a7dc0"/><text x="28" y="53" fill="#cfd3df" font-size="10.5">med vel</text>
+      <rect x="0" y="64" width="20" height="20" rx="6" fill="#7fb6ff"/><text x="28" y="79" fill="#cfd3df" font-size="10.5">high vel / held span</text>
+      <rect x="0" y="90" width="20" height="20" rx="6" fill="#ffd23b"/><text x="28" y="105" fill="#cfd3df" font-size="10.5">note under playhead</text>
+      <rect x="0" y="116" width="20" height="20" rx="6" fill="#23252b" stroke="#3a3f4d"/><text x="28" y="131" fill="#cfd3df" font-size="10.5">root-row guide / empty</text>
+    </g>
+  </g>
+
+  <text x="34" y="692" fill="#5c6172" font-size="10.5">all 8 rows are pitch (the function row moved to UNIT R) · velocity ladder + SCALE + LENGTH-EDIT live on Unit R's editor deck</text>
+</svg>

@@ -1,0 +1,194 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="720" viewBox="0 0 760 720" font-family="ui-monospace, 'SF Mono', Menlo, monospace">
+  <!-- ===================================================================== -->
+  <!-- LAUNCHPAD LEFT  —  Unit L = the clip matrix (Plan B / proposal §4.1)   -->
+  <!-- 8x8 RGB pads = rows(lanes 1-8) x cols(slots 1-8); top row = ▲▼◀▶ + SHIFT -->
+  <!-- right column = SCENE LAUNCH. Same node.data.queued[] writes as the card. -->
+  <!-- ===================================================================== -->
+  <defs>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.8" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b1d23"/><stop offset="1" stop-color="#0f1116"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2d36"/><stop offset="1" stop-color="#202329"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="760" height="720" rx="18" fill="url(#bg)"/>
+  <text x="34" y="44" fill="#e8eaf0" font-size="22" font-weight="700">LAUNCHPAD LEFT · clip matrix</text>
+  <text x="34" y="66" fill="#8b90a0" font-size="12.5">rows = instrument lanes 1-8 · cols = clip slots 1-8 · top = ▲▼◀▶ nav + SHIFT · right = SCENE LAUNCH</text>
+
+  <!-- device shell -->
+  <rect x="40" y="92" width="560" height="560" rx="22" fill="url(#shell)" stroke="#3a3f4d" stroke-width="1.5" filter="url(#soft)"/>
+
+  <!-- ===== top function row (CC 91-98) ===== -->
+  <!-- 8 round buttons: ▲ ▼ ◀ ▶ ▣SHIFT  _ _ _  -->
+  <g font-size="13" font-weight="700" text-anchor="middle">
+    <!-- helper: circles -->
+    <!-- ▲ CC91 -->
+    <circle cx="92"  cy="124" r="22" fill="#e8e8ff" filter="url(#soft)"/><text x="92"  y="130" fill="#1b1d23">▲</text>
+    <circle cx="152" cy="124" r="22" fill="#e8e8ff" filter="url(#soft)"/><text x="152" y="130" fill="#1b1d23">▼</text>
+    <circle cx="212" cy="124" r="22" fill="#e8e8ff" filter="url(#soft)"/><text x="212" y="130" fill="#1b1d23">◀</text>
+    <circle cx="272" cy="124" r="22" fill="#e8e8ff" filter="url(#soft)"/><text x="272" y="130" fill="#1b1d23">▶</text>
+    <!-- ▣ SHIFT CC95 (violet = held modifier) -->
+    <circle cx="332" cy="124" r="22" fill="#7a4fd0" filter="url(#soft)"/><text x="332" y="129" fill="#fff" font-size="10">SHIFT</text>
+    <circle cx="392" cy="124" r="22" fill="#23262e" stroke="#3a3f4d"/><text x="392" y="129" fill="#5c6172" font-size="10">96</text>
+    <circle cx="452" cy="124" r="22" fill="#23262e" stroke="#3a3f4d"/><text x="452" y="129" fill="#5c6172" font-size="10">97</text>
+    <circle cx="512" cy="124" r="22" fill="#23262e" stroke="#3a3f4d"/><text x="512" y="129" fill="#5c6172" font-size="10">98</text>
+  </g>
+  <text x="92" y="160" fill="#6f7589" font-size="9.5" text-anchor="middle">CC91</text>
+  <text x="152" y="160" fill="#6f7589" font-size="9.5" text-anchor="middle">CC92</text>
+  <text x="212" y="160" fill="#6f7589" font-size="9.5" text-anchor="middle">CC93</text>
+  <text x="272" y="160" fill="#6f7589" font-size="9.5" text-anchor="middle">CC94</text>
+  <text x="332" y="160" fill="#9a86d0" font-size="9.5" text-anchor="middle">CC95</text>
+
+  <!-- ===== the 8x8 clip matrix + right scene column =====
+       cells: x col (0..7 = slots), plus col 8 = scene column.
+       y row (0..7) = lanes 1..8 (top = lane1).
+       state legend by colour:
+         empty  #15171c
+         loaded #3a516f (dim blue)
+         playing #2fd06a (green) + small core
+         queued-launch green dashed ring
+         queued-stop  red dashed ring
+         copy-source turquoise #26c6c6
+  -->
+  <!-- We hand-place a realistic state snapshot. -->
+  <!-- grid origin -->
+  <g>
+    <!-- ROW labels (lanes) -->
+    <g fill="#7f8597" font-size="11" text-anchor="end">
+      <text x="74" y="200">L1</text><text x="74" y="256">L2</text><text x="74" y="312">L3</text><text x="74" y="368">L4</text>
+      <text x="74" y="424">L5</text><text x="74" y="480">L6</text><text x="74" y="536">L7</text><text x="74" y="592">L8</text>
+    </g>
+    <!-- COL labels (slots) -->
+    <g fill="#6f7589" font-size="10" text-anchor="middle">
+      <text x="98" y="640">s1</text><text x="154" y="640">s2</text><text x="210" y="640">s3</text><text x="266" y="640">s4</text>
+      <text x="322" y="640">s5</text><text x="378" y="640">s6</text><text x="434" y="640">s7</text><text x="490" y="640">s8</text>
+      <text x="552" y="640" fill="#e0a32a">SCN</text>
+    </g>
+
+    <!-- generate pads: I place them with a repeating template. -->
+    <!-- Row 1 (lane1): playing s1 (green), loaded s2, queued-launch s3 -->
+    <!-- pad size 44, gap 12, start x=76 y=178 -->
+    <!-- ===== ROW 1 ===== -->
+    <rect x="76"  y="178" width="44" height="44" rx="9" fill="#2fd06a" filter="url(#soft)"/><circle cx="98" cy="200" r="7" fill="#bfffd8"/>
+    <rect x="132" y="178" width="44" height="44" rx="9" fill="#3a516f"/>
+    <rect x="188" y="178" width="44" height="44" rx="9" fill="#2fd06a" opacity="0.5"/><rect x="188" y="178" width="44" height="44" rx="9" fill="none" stroke="#2fd06a" stroke-width="2.2" stroke-dasharray="5 4"/>
+    <rect x="244" y="178" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="300" y="178" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="356" y="178" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="412" y="178" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="468" y="178" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="530" y="178" width="44" height="44" rx="9" fill="#e0a32a" opacity="0.85"/>
+
+    <!-- ===== ROW 2 ===== loaded s1, playing s2, queued-stop on the playing one -->
+    <rect x="76"  y="234" width="44" height="44" rx="9" fill="#3a516f"/>
+    <rect x="132" y="234" width="44" height="44" rx="9" fill="#2fd06a" filter="url(#soft)"/><circle cx="154" cy="256" r="7" fill="#bfffd8"/>
+    <rect x="132" y="234" width="44" height="44" rx="9" fill="none" stroke="#d23b3b" stroke-width="2.2" stroke-dasharray="5 4"/>
+    <rect x="188" y="234" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="244" y="234" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="300" y="234" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="356" y="234" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="412" y="234" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="468" y="234" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="530" y="234" width="44" height="44" rx="9" fill="#e0a32a" opacity="0.85"/>
+
+    <!-- ===== ROW 3 ===== copy-source turquoise at s3 -->
+    <rect x="76"  y="290" width="44" height="44" rx="9" fill="#3a516f"/>
+    <rect x="132" y="290" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="188" y="290" width="44" height="44" rx="9" fill="#26c6c6" filter="url(#soft)"/><text x="210" y="316" fill="#06343a" font-size="10" text-anchor="middle" font-weight="700">cpy</text>
+    <rect x="244" y="290" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="300" y="290" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="356" y="290" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="412" y="290" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="468" y="290" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="530" y="290" width="44" height="44" rx="9" fill="#e0a32a" opacity="0.85"/>
+
+    <!-- ===== ROWS 4-8 : sparser, with a couple of loaded/playing ===== -->
+    <!-- row4: playing s3 -->
+    <rect x="76"  y="346" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="132" y="346" width="44" height="44" rx="9" fill="#3a516f"/>
+    <rect x="188" y="346" width="44" height="44" rx="9" fill="#2fd06a" filter="url(#soft)"/><circle cx="210" cy="368" r="7" fill="#bfffd8"/>
+    <rect x="244" y="346" width="44" height="44" rx="9" fill="#3a516f"/>
+    <rect x="300" y="346" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="356" y="346" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="412" y="346" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="468" y="346" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+    <rect x="530" y="346" width="44" height="44" rx="9" fill="#e0a32a" opacity="0.85"/>
+
+    <!-- rows 5-8 mostly empty + a few loaded -->
+    <g>
+      <!-- row5 -->
+      <rect x="76"  y="402" width="44" height="44" rx="9" fill="#3a516f"/>
+      <rect x="132" y="402" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="188" y="402" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="244" y="402" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="300" y="402" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="356" y="402" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="412" y="402" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="468" y="402" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="530" y="402" width="44" height="44" rx="9" fill="#e0a32a" opacity="0.85"/>
+      <!-- row6 -->
+      <rect x="76"  y="458" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="132" y="458" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="188" y="458" width="44" height="44" rx="9" fill="#3a516f"/>
+      <rect x="244" y="458" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="300" y="458" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="356" y="458" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="412" y="458" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="468" y="458" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="530" y="458" width="44" height="44" rx="9" fill="#e0a32a" opacity="0.85"/>
+      <!-- row7 -->
+      <rect x="76"  y="514" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="132" y="514" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="188" y="514" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="244" y="514" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="300" y="514" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="356" y="514" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="412" y="514" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="468" y="514" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="530" y="514" width="44" height="44" rx="9" fill="#e0a32a" opacity="0.85"/>
+      <!-- row8 -->
+      <rect x="76"  y="570" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="132" y="570" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="188" y="570" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="244" y="570" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="300" y="570" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="356" y="570" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="412" y="570" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="468" y="570" width="44" height="44" rx="9" fill="#15171c" stroke="#23262e"/>
+      <rect x="530" y="570" width="44" height="44" rx="9" fill="#e0a32a" opacity="0.85"/>
+    </g>
+
+    <!-- scene-column CC tags -->
+    <g fill="#7a6325" font-size="8.5" text-anchor="middle">
+      <text x="552" y="166">CC89</text>
+    </g>
+  </g>
+
+  <!-- ===== legend (right side) ===== -->
+  <g transform="translate(620,108)">
+    <text x="0" y="6" fill="#6f7589" font-size="11" font-weight="700">STATE</text>
+    <rect x="0" y="20" width="22" height="22" rx="6" fill="#15171c" stroke="#2b2e38"/><text x="30" y="36" fill="#cfd3df" font-size="11">empty</text>
+    <rect x="0" y="50" width="22" height="22" rx="6" fill="#3a516f"/><text x="30" y="66" fill="#cfd3df" font-size="11">loaded</text>
+    <rect x="0" y="80" width="22" height="22" rx="6" fill="#2fd06a"/><text x="30" y="96" fill="#cfd3df" font-size="11">playing</text>
+    <rect x="0" y="110" width="22" height="22" rx="6" fill="#2fd06a" opacity="0.5"/><rect x="0" y="110" width="22" height="22" rx="6" fill="none" stroke="#2fd06a" stroke-width="2" stroke-dasharray="4 3"/><text x="30" y="126" fill="#cfd3df" font-size="11">queued ▸launch</text>
+    <rect x="0" y="140" width="22" height="22" rx="6" fill="none" stroke="#d23b3b" stroke-width="2" stroke-dasharray="4 3"/><text x="30" y="156" fill="#cfd3df" font-size="11">queued ▸stop</text>
+    <rect x="0" y="170" width="22" height="22" rx="6" fill="#26c6c6"/><text x="30" y="186" fill="#cfd3df" font-size="11">copy source</text>
+    <rect x="0" y="200" width="22" height="22" rx="6" fill="#e0a32a"/><text x="30" y="216" fill="#cfd3df" font-size="11">scene launch</text>
+    <rect x="0" y="230" width="22" height="22" rx="6" fill="#7a4fd0"/><text x="30" y="246" fill="#cfd3df" font-size="11">SHIFT (held)</text>
+
+    <text x="0" y="288" fill="#6f7589" font-size="11" font-weight="700">GESTURES</text>
+    <text x="0" y="310" fill="#9aa0b2" font-size="10.5">tap clip → launch / stop</text>
+    <text x="0" y="328" fill="#9aa0b2" font-size="10.5">  its lane (queued[lane])</text>
+    <text x="0" y="350" fill="#9aa0b2" font-size="10.5">scene col → fire slot</text>
+    <text x="0" y="368" fill="#9aa0b2" font-size="10.5">  across ALL lanes</text>
+    <text x="0" y="390" fill="#9aa0b2" font-size="10.5">▲▼◀▶ → window 1 step/row</text>
+    <text x="0" y="408" fill="#9aa0b2" font-size="10.5">SHIFT+▲▼◀▶ → jump 8</text>
+  </g>
+
+  <text x="34" y="692" fill="#5c6172" font-size="10.5">pads = notes 11..88 (row*10+col) · right scene col = CC 89/79/…/19 · top row = CC 91-98 · all RGB via the lighting SysEx (§9)</text>
+</svg>

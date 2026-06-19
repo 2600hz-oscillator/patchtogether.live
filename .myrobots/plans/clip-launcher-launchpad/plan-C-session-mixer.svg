@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="560" viewBox="0 0 1180 560" font-family="ui-monospace, 'SF Mono', Menlo, monospace">
+  <!-- PLAN C · ROLE-SPLIT — Unit 1 = ALWAYS the clip matrix; Unit 2 = context
+       surface, here in MIXER role (per-lane level fader + mute/solo). The matrix
+       never disappears while you edit/mix. -->
+  <defs>
+    <linearGradient id="bgC" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b1d23"/><stop offset="1" stop-color="#0e1015"/></linearGradient>
+    <filter id="padC" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000" flood-opacity="0.5"/></filter>
+  </defs>
+  <rect width="1180" height="560" rx="18" fill="url(#bgC)"/>
+  <text x="36" y="40" fill="#e8eaf0" font-size="21" font-weight="700">PLAN C — role split · Unit 1 = persistent clip matrix · Unit 2 = context surface (MIXER role shown)</text>
+  <text x="36" y="62" fill="#8b90a0" font-size="12.5">Unit 1 never changes mode — clips stay launchable while you mix or edit on Unit 2. Unit 2's top row picks its role: SESSION-FX / MIXER / EDIT / SONG.</text>
+
+  <!-- ===== UNIT 1 : clip matrix (fixed) ===== -->
+  <g transform="translate(40,96)">
+    <rect x="-14" y="-14" width="492" height="448" rx="16" fill="#0a0b0f" stroke="#2a2d36" stroke-width="1.5"/>
+    <text x="0" y="-22" fill="#9aa0b2" font-size="12" font-weight="700">UNIT 1 · usb id 1 · CLIP MATRIX (always)</text>
+    <g><rect x="0" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padC)"/><rect x="52" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padC)"/><rect x="104" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padC)"/><rect x="156" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padC)"/><rect x="208" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padC)"/><rect x="260" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padC)"/><rect x="312" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padC)"/><rect x="364" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padC)"/><text x="150" y="26" fill="#3a2a08" font-size="11" font-weight="700">SCENE LAUNCH</text></g>
+    <g transform="translate(0,52)">
+      <g transform="translate(0,0)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#2fd06a"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+      <g transform="translate(0,52)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#2fd06a"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/></g>
+      <g transform="translate(0,104)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#2fd06a" opacity="0.5"/><rect x="104" y="0" width="46" height="46" rx="9" fill="none" stroke="#2fd06a" stroke-width="2.5" stroke-dasharray="5 4"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+      <g transform="translate(0,156)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+      <g transform="translate(0,208)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#2fd06a"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+      <g transform="translate(0,260)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+      <g transform="translate(0,312)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+    </g>
+    <g transform="translate(420,0)"><rect x="0" y="0" width="46" height="40" rx="9" fill="#d23b3b"/><text x="4" y="18" fill="#fff" font-size="8.5" font-weight="700">STOP</text><text x="8" y="30" fill="#fff" font-size="8.5" font-weight="700">ALL</text></g>
+    <g transform="translate(420,52)">
+      <rect x="0" y="0"   width="46" height="46" rx="9" fill="#d23b3b"/><rect x="0" y="52"  width="46" height="46" rx="9" fill="#d23b3b"/><rect x="0" y="104" width="46" height="46" rx="9" fill="#8a4a14"/><rect x="0" y="156" width="46" height="46" rx="9" fill="#8a4a14"/><rect x="0" y="208" width="46" height="46" rx="9" fill="#d23b3b"/><rect x="0" y="260" width="46" height="46" rx="9" fill="#8a4a14"/><rect x="0" y="312" width="46" height="46" rx="9" fill="#8a4a14"/>
+      <text x="-2" y="372" fill="#5a6072" font-size="9">per-lane STOP</text>
+    </g>
+  </g>
+
+  <!-- ===== UNIT 2 : context surface in MIXER role ===== -->
+  <g transform="translate(610,96)">
+    <rect x="-14" y="-14" width="492" height="448" rx="16" fill="#0a0b0f" stroke="#2a2d36" stroke-width="1.5"/>
+    <text x="0" y="-22" fill="#9aa0b2" font-size="12" font-weight="700">UNIT 2 · usb id 2 · CONTEXT SURFACE → MIXER role</text>
+
+    <!-- top row = role selector; MIXER lit -->
+    <g>
+      <rect x="0" y="0"   width="46" height="40" rx="9" fill="#3a3550"/><text x="2" y="24" fill="#b0a8d0" font-size="8.5" font-weight="700">FX</text>
+      <rect x="52" y="0"  width="46" height="40" rx="9" fill="#26c6c6"/><text x="56" y="24" fill="#063" font-size="8.5" font-weight="700">MIXER</text>
+      <rect x="104" y="0" width="46" height="40" rx="9" fill="#3a3550"/><text x="110" y="24" fill="#b0a8d0" font-size="8.5" font-weight="700">EDIT</text>
+      <rect x="156" y="0" width="46" height="40" rx="9" fill="#3a3550"/><text x="162" y="24" fill="#b0a8d0" font-size="8.5" font-weight="700">SONG</text>
+      <rect x="208" y="0" width="46" height="40" rx="9" fill="#2f7d52"/><text x="216" y="25" fill="#fff" font-size="13" font-weight="700">▶</text>
+      <rect x="260" y="0" width="46" height="40" rx="9" fill="#ff3b3b"/><text x="274" y="25" fill="#fff" font-size="13" font-weight="700">●</text>
+      <rect x="312" y="0" width="46" height="40" rx="9" fill="#e8e8ff"/><text x="318" y="24" fill="#222" font-size="9" font-weight="700">ALIGN</text>
+      <rect x="364" y="0" width="46" height="40" rx="9" fill="#e8e8ff"/><text x="372" y="24" fill="#222" font-size="9" font-weight="700">TAP</text>
+      <text x="0" y="-12" fill="#5a6072" font-size="10">TOP ROW = role select (FX·MIXER·EDIT·SONG) + global transport</text>
+    </g>
+
+    <!-- 8 columns = 8 lanes; each column is a vertical LEVEL fader (Launchpad DAW fader) -->
+    <g transform="translate(0,52)">
+      <!-- helper: each column draws 7 cells, bottom-up brightness = level -->
+      <!-- lane1 ~80% -->
+      <g transform="translate(0,0)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#173448"/><rect x="0" y="52" width="46" height="46" rx="9" fill="#1f4760"/><rect x="0" y="104" width="46" height="46" rx="9" fill="#2a5e80"/><rect x="0" y="156" width="46" height="46" rx="9" fill="#3a7da8"/><rect x="0" y="208" width="46" height="46" rx="9" fill="#4f9fd0"/><rect x="0" y="260" width="46" height="46" rx="9" fill="#173448"/><rect x="0" y="312" width="46" height="46" rx="9" fill="#0f2433"/>
+      </g>
+      <!-- lane2 ~50% -->
+      <g transform="translate(52,0)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#0f2433"/><rect x="0" y="52" width="46" height="46" rx="9" fill="#0f2433"/><rect x="0" y="104" width="46" height="46" rx="9" fill="#2a5e80"/><rect x="0" y="156" width="46" height="46" rx="9" fill="#3a7da8"/><rect x="0" y="208" width="46" height="46" rx="9" fill="#4f9fd0"/><rect x="0" y="260" width="46" height="46" rx="9" fill="#5fb0e0"/><rect x="0" y="312" width="46" height="46" rx="9" fill="#0f2433"/>
+      </g>
+      <!-- lane3 ~100% -->
+      <g transform="translate(104,0)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#2a5e80"/><rect x="0" y="52" width="46" height="46" rx="9" fill="#3a7da8"/><rect x="0" y="104" width="46" height="46" rx="9" fill="#4f9fd0"/><rect x="0" y="156" width="46" height="46" rx="9" fill="#5fb0e0"/><rect x="0" y="208" width="46" height="46" rx="9" fill="#7fc8ff"/><rect x="0" y="260" width="46" height="46" rx="9" fill="#9fd8ff"/><rect x="0" y="312" width="46" height="46" rx="9" fill="#cfeaff"/>
+      </g>
+      <!-- lane4 ~30% -->
+      <g transform="translate(156,0)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#0f2433"/><rect x="0" y="52" width="46" height="46" rx="9" fill="#0f2433"/><rect x="0" y="104" width="46" height="46" rx="9" fill="#0f2433"/><rect x="0" y="156" width="46" height="46" rx="9" fill="#0f2433"/><rect x="0" y="208" width="46" height="46" rx="9" fill="#3a7da8"/><rect x="0" y="260" width="46" height="46" rx="9" fill="#4f9fd0"/><rect x="0" y="312" width="46" height="46" rx="9" fill="#0f2433"/>
+      </g>
+      <!-- lane5 ~70% -->
+      <g transform="translate(208,0)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#173448"/><rect x="0" y="52" width="46" height="46" rx="9" fill="#2a5e80"/><rect x="0" y="104" width="46" height="46" rx="9" fill="#3a7da8"/><rect x="0" y="156" width="46" height="46" rx="9" fill="#4f9fd0"/><rect x="0" y="208" width="46" height="46" rx="9" fill="#5fb0e0"/><rect x="0" y="260" width="46" height="46" rx="9" fill="#0f2433"/><rect x="0" y="312" width="46" height="46" rx="9" fill="#0f2433"/>
+      </g>
+      <!-- lane6 ~90% -->
+      <g transform="translate(260,0)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#2a5e80"/><rect x="0" y="52" width="46" height="46" rx="9" fill="#3a7da8"/><rect x="0" y="104" width="46" height="46" rx="9" fill="#4f9fd0"/><rect x="0" y="156" width="46" height="46" rx="9" fill="#5fb0e0"/><rect x="0" y="208" width="46" height="46" rx="9" fill="#7fc8ff"/><rect x="0" y="260" width="46" height="46" rx="9" fill="#9fd8ff"/><rect x="0" y="312" width="46" height="46" rx="9" fill="#0f2433"/>
+      </g>
+      <!-- lane7 ~40% -->
+      <g transform="translate(312,0)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#0f2433"/><rect x="0" y="52" width="46" height="46" rx="9" fill="#0f2433"/><rect x="0" y="104" width="46" height="46" rx="9" fill="#0f2433"/><rect x="0" y="156" width="46" height="46" rx="9" fill="#3a7da8"/><rect x="0" y="208" width="46" height="46" rx="9" fill="#4f9fd0"/><rect x="0" y="260" width="46" height="46" rx="9" fill="#0f2433"/><rect x="0" y="312" width="46" height="46" rx="9" fill="#0f2433"/>
+      </g>
+      <!-- lane8 ~60% -->
+      <g transform="translate(364,0)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#173448"/><rect x="0" y="52" width="46" height="46" rx="9" fill="#2a5e80"/><rect x="0" y="104" width="46" height="46" rx="9" fill="#3a7da8"/><rect x="0" y="156" width="46" height="46" rx="9" fill="#4f9fd0"/><rect x="0" y="208" width="46" height="46" rx="9" fill="#5fb0e0"/><rect x="0" y="260" width="46" height="46" rx="9" fill="#0f2433"/><rect x="0" y="312" width="46" height="46" rx="9" fill="#0f2433"/>
+      </g>
+      <text x="120" y="384" fill="#5a6072" font-size="10">8 vertical LEVEL faders (one per lane) — Launchpad DAW-fader layout · idea: top row of grid = MUTE row</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="560" viewBox="0 0 1180 560" font-family="ui-monospace, 'SF Mono', Menlo, monospace">
+  <!-- PLAN B · EDITOR — Unit L = FULL note grid (8 rows pitch × 8 cols = half a 16-step
+       block; top row = block/half-block select; 8 blocks × 16 = 128 max);
+       Unit R = dedicated editor deck (velocity ladder, scale, copy/paste/reverse held
+       modifiers, DOUBLE, FOLLOW + page-nav, the 2-row LENGTH-EDIT). -->
+  <defs>
+    <linearGradient id="bgBe" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b1d23"/><stop offset="1" stop-color="#0e1015"/></linearGradient>
+  </defs>
+  <rect width="1180" height="560" rx="18" fill="url(#bgBe)"/>
+  <text x="36" y="40" fill="#e8eaf0" font-size="21" font-weight="700">PLAN B — Editor · Unit L = note grid (all 64 pads), Unit R = editor deck</text>
+  <text x="36" y="62" fill="#8b90a0" font-size="12.5">Velocity LADDER on Unit R = a true 6-level fader, not a hold-cycle. Deck holds scale / copy-paste-reverse / DOUBLE / FOLLOW / the 2-row LENGTH-EDIT (see plan-B-length.svg) — no pad doubles as a step.</text>
+
+  <!-- ===== UNIT L : pure note grid ===== -->
+  <g transform="translate(40,96)">
+    <rect x="-14" y="-14" width="492" height="448" rx="16" fill="#0a0b0f" stroke="#2a2d36" stroke-width="1.5"/>
+    <text x="0" y="-22" fill="#9aa0b2" font-size="12" font-weight="700">UNIT L · NOTE GRID — X step · Y pitch · top row = 16-step block halves</text>
+    <!-- top row: block/half-block select (each 16-step block = 2 columns-pages) -->
+    <g>
+      <rect x="0" y="0" width="46" height="40" rx="9" fill="#e8e8ff"/><text x="6" y="25" fill="#222" font-size="9" font-weight="700">B1a</text>
+      <rect x="52" y="0" width="46" height="40" rx="9" fill="#2a2d36"/><text x="58" y="25" fill="#8b90a0" font-size="9">B1b</text>
+      <rect x="104" y="0" width="46" height="40" rx="9" fill="#2a2d36"/><text x="110" y="25" fill="#8b90a0" font-size="9">B2a</text>
+      <rect x="156" y="0" width="46" height="40" rx="9" fill="#2a2d36"/><text x="162" y="25" fill="#8b90a0" font-size="9">B2b</text>
+      <rect x="208" y="0" width="46" height="40" rx="9" fill="#2a2d36"/><text x="214" y="25" fill="#8b90a0" font-size="9">B3a</text>
+      <rect x="260" y="0" width="46" height="40" rx="9" fill="#2a2d36"/><text x="266" y="25" fill="#8b90a0" font-size="9">B3b</text>
+      <rect x="312" y="0" width="46" height="40" rx="9" fill="#2a2d36"/><text x="318" y="25" fill="#8b90a0" font-size="9">B4a</text>
+      <rect x="364" y="0" width="46" height="40" rx="9" fill="#2a2d36"/><text x="370" y="25" fill="#8b90a0" font-size="9">B4b</text>
+    </g>
+    <!-- 8x8 note grid -->
+    <g transform="translate(0,52)">
+      <g transform="translate(0,0)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#7fb6ff"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#23252b"/></g>
+      <g transform="translate(0,52)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#4a7dc0"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#23252b"/></g>
+      <g transform="translate(0,104)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#ffd23b"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#23252b"/></g>
+      <g transform="translate(0,156)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#1a1f2b"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#1a1f2b"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#1a1f2b"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#1a1f2b"/><rect x="208" y="0" width="138" height="46" rx="9" fill="#4a7dc0"/><text x="232" y="29" fill="#cfe2ff" font-size="10">held span</text></g>
+      <g transform="translate(0,208)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#7fb6ff"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#23252b"/></g>
+      <g transform="translate(0,260)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#23252b"/></g>
+      <g transform="translate(0,312)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#1a1f2b"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#1a1f2b"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#1a1f2b"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#1a1f2b"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#1a1f2b"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#1a1f2b"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#1a1f2b"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#1a1f2b"/></g>
+      <!-- full 8-row grid (8 pitch rows since the function row moved to unit R) -->
+      <g transform="translate(0,364)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#23252b"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#23252b"/></g>
+      <rect x="104" y="-4" width="46" height="424" rx="9" fill="#ffd23b" opacity="0.12"/>
+    </g>
+    <text x="60" y="528" fill="#5a6072" font-size="10">all 8 rows are pitch (8 in-key degrees) — no function row stolen · 8 blocks × 16 = 128 steps · each block = 2 half-pages (a/b)</text>
+  </g>
+
+  <!-- ===== UNIT R : editor deck ===== -->
+  <g transform="translate(610,96)">
+    <rect x="-14" y="-14" width="492" height="448" rx="16" fill="#0a0b0f" stroke="#2a2d36" stroke-width="1.5"/>
+    <text x="0" y="-22" fill="#9aa0b2" font-size="12" font-weight="700">UNIT R · EDITOR DECK — velocity ladder · scale · clipboard · length</text>
+    <!-- top row: EXIT, FOLLOW + page nav, copy/paste/reverse (held modifiers), DOUBLE -->
+    <g>
+      <rect x="0" y="0" width="46" height="40" rx="9" fill="#d23b3b"/><text x="6" y="25" fill="#fff" font-size="10" font-weight="700">EXIT</text>
+      <rect x="52" y="0" width="46" height="40" rx="9" fill="#2f7d52"/><text x="54" y="24" fill="#fff" font-size="8" font-weight="700">FOLLOW</text>
+      <rect x="104" y="0" width="46" height="40" rx="9" fill="#2a2d36"/><text x="112" y="24" fill="#5a6072" font-size="9" font-weight="700">◀PG</text>
+      <rect x="156" y="0" width="46" height="40" rx="9" fill="#2a2d36"/><text x="164" y="24" fill="#5a6072" font-size="9" font-weight="700">PG▶</text>
+      <rect x="208" y="0" width="46" height="40" rx="9" fill="#26c6c6"/><text x="214" y="24" fill="#063" font-size="9" font-weight="700">COPY</text>
+      <rect x="260" y="0" width="46" height="40" rx="9" fill="#9b6cff"/><text x="266" y="24" fill="#fff" font-size="9" font-weight="700">PASTE</text>
+      <rect x="312" y="0" width="46" height="40" rx="9" fill="#c64fb0"/><text x="318" y="21" fill="#fff" font-size="8" font-weight="700">PASTE</text><text x="322" y="33" fill="#fff" font-size="8" font-weight="700">REV</text>
+      <rect x="364" y="0" width="46" height="40" rx="9" fill="#e8e8ff"/><text x="376" y="24" fill="#222" font-size="11" font-weight="700">×2</text>
+      <text x="0" y="-12" fill="#5a6072" font-size="8.5">FOLLOW steady=follow / flash=frozen · ◀PG/PG▶ dim when following · COPY/PASTE/PASTE-REV = HOLD + tap a clip · ×2 = DOUBLE (cap 128)</text>
+    </g>
+
+    <!-- velocity ladder: a vertical 6-step fader (col 1), bright = current level -->
+    <g transform="translate(0,52)">
+      <text x="-2" y="-6" fill="#5a6072" font-size="9">VELOCITY</text>
+      <rect x="0" y="0"   width="46" height="46" rx="9" fill="#7fb6ff"/><text x="6" y="28" fill="#06203a" font-size="10" font-weight="700">100%</text>
+      <rect x="0" y="52"  width="46" height="46" rx="9" fill="#5f97df"/><text x="6" y="80" fill="#06203a" font-size="10">80%</text>
+      <rect x="0" y="104" width="46" height="46" rx="9" fill="#4a7dc0"/><text x="6" y="132" fill="#fff" font-size="10">60%</text>
+      <rect x="0" y="156" width="46" height="46" rx="9" fill="#3a5d8f"/><text x="6" y="184" fill="#cfe2ff" font-size="10">40%</text>
+      <rect x="0" y="208" width="46" height="46" rx="9" fill="#2c4366"/><text x="6" y="236" fill="#cfe2ff" font-size="10">20%</text>
+      <rect x="0" y="260" width="46" height="46" rx="9" fill="#1f2d44"/><text x="6" y="288" fill="#9aa0b2" font-size="10">0%</text>
+      <rect x="0" y="312" width="46" height="46" rx="9" fill="#7a4fd0"/><text x="2" y="338" fill="#fff" font-size="8.5" font-weight="700">PROB</text>
+    </g>
+
+    <!-- scale picker: col 2 -->
+    <g transform="translate(52,52)">
+      <text x="-2" y="-6" fill="#5a6072" font-size="9">SCALE</text>
+      <rect x="0" y="0"   width="46" height="46" rx="9" fill="#26c6c6"/><text x="4" y="28" fill="#063" font-size="9.5" font-weight="700">MAJ</text>
+      <rect x="0" y="52"  width="46" height="46" rx="9" fill="#194d4d"/><text x="4" y="80" fill="#7fd9d9" font-size="9.5">MIN</text>
+      <rect x="0" y="104" width="46" height="46" rx="9" fill="#194d4d"/><text x="4" y="132" fill="#7fd9d9" font-size="9">PENT</text>
+      <rect x="0" y="156" width="46" height="46" rx="9" fill="#194d4d"/><text x="2" y="184" fill="#7fd9d9" font-size="8.5">CHROM</text>
+      <rect x="0" y="208" width="46" height="46" rx="9" fill="#5a4a2a"/><text x="6" y="236" fill="#e0c08a" font-size="9">ROOT−</text>
+      <rect x="0" y="260" width="46" height="46" rx="9" fill="#5a4a2a"/><text x="6" y="288" fill="#e0c08a" font-size="9">ROOT+</text>
+      <rect x="0" y="312" width="46" height="46" rx="9" fill="#e8e8ff"/><text x="2" y="338" fill="#222" font-size="8.5" font-weight="700">MONO</text>
+    </g>
+
+    <!-- length picker: col 3 = coarse end-BLOCK ladder (×16); tap LEN-EDIT for the
+         full 2-row end-block + end-step page (plan-B-length.svg) -->
+    <g transform="translate(104,52)">
+      <text x="-2" y="-6" fill="#5a6072" font-size="9">END BLK</text>
+      <rect x="0" y="0"   width="46" height="46" rx="9" fill="#5a4a14"/><text x="6" y="28" fill="#e0c08a" font-size="9.5">128</text>
+      <rect x="0" y="52"  width="46" height="46" rx="9" fill="#5a4a14"/><text x="6" y="80" fill="#e0c08a" font-size="9.5">×96</text>
+      <rect x="0" y="104" width="46" height="46" rx="9" fill="#5a4a14"/><text x="6" y="132" fill="#e0c08a" font-size="9.5">×80</text>
+      <rect x="0" y="156" width="46" height="46" rx="9" fill="#e0a32a"/><text x="6" y="184" fill="#3a2a08" font-size="9.5" font-weight="700">×48</text>
+      <rect x="0" y="208" width="46" height="46" rx="9" fill="#5a4a14"/><text x="6" y="236" fill="#e0c08a" font-size="9.5">×32</text>
+      <rect x="0" y="260" width="46" height="46" rx="9" fill="#5a4a14"/><text x="6" y="288" fill="#e0c08a" font-size="9.5">×16</text>
+      <rect x="0" y="312" width="46" height="46" rx="9" fill="#e8e8ff"/><text x="0" y="338" fill="#222" font-size="7.5" font-weight="700">LEN-EDIT</text>
+    </g>
+
+    <!-- octave / row scroll: col 4 -->
+    <g transform="translate(156,52)">
+      <text x="-2" y="-6" fill="#5a6072" font-size="9">PITCH WIN</text>
+      <rect x="0" y="0"   width="46" height="46" rx="9" fill="#e8e8ff"/><text x="6" y="28" fill="#222" font-size="9" font-weight="700">OCT+</text>
+      <rect x="0" y="52"  width="46" height="46" rx="9" fill="#e8e8ff"/><text x="6" y="80" fill="#222" font-size="9" font-weight="700">ROW+</text>
+      <rect x="0" y="104" width="46" height="46" rx="9" fill="#2a2d36"/>
+      <rect x="0" y="156" width="46" height="46" rx="9" fill="#2a2d36"/>
+      <rect x="0" y="208" width="46" height="46" rx="9" fill="#e8e8ff"/><text x="6" y="236" fill="#222" font-size="9" font-weight="700">ROW−</text>
+      <rect x="0" y="260" width="46" height="46" rx="9" fill="#e8e8ff"/><text x="6" y="288" fill="#222" font-size="9" font-weight="700">OCT−</text>
+      <rect x="0" y="312" width="46" height="46" rx="9" fill="#7a4fd0"/><text x="2" y="340" fill="#fff" font-size="8">NUDGE</text>
+    </g>
+
+    <!-- mini step-preview / mixer area: cols 5..8 reserved -->
+    <g transform="translate(208,52)">
+      <rect x="0" y="0" width="202" height="358" rx="12" fill="#11141b" stroke="#23272f"/>
+      <text x="16" y="28" fill="#6f7589" font-size="11" font-weight="700">RESERVED</text>
+      <text x="16" y="50" fill="#5a6072" font-size="10">per-step PROB ladder,</text>
+      <text x="16" y="66" fill="#5a6072" font-size="10">micro-timing nudge,</text>
+      <text x="16" y="82" fill="#5a6072" font-size="10">clip colour picker,</text>
+      <text x="16" y="98" fill="#5a6072" font-size="10">RANDOM / HUMANIZE.</text>
+      <text x="16" y="124" fill="#5a6072" font-size="10">(grows into the editor</text>
+      <text x="16" y="140" fill="#5a6072" font-size="10">deck without ever</text>
+      <text x="16" y="156" fill="#5a6072" font-size="10">stealing note pads.)</text>
+    </g>
+  </g>
+</svg>

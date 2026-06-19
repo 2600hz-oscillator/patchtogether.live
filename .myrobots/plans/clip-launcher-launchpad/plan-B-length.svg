@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="560" viewBox="0 0 780 560" font-family="ui-monospace, 'SF Mono', Menlo, monospace">
+  <!-- PLAN B · LENGTH-EDIT VIEW — the shipped 2-row length editor, rendered on a
+       Launchpad. Length L = (endBlock-1)*16 + endStep, up to 128 (8 blocks × 16).
+       Example shown: L = 48  →  endBlock 3, endStep 16. Non-destructive. -->
+  <defs>
+    <linearGradient id="bgBl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b1d23"/><stop offset="1" stop-color="#0e1015"/></linearGradient>
+    <filter id="padBl" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000" flood-opacity="0.5"/></filter>
+  </defs>
+  <rect width="780" height="560" rx="18" fill="url(#bgBl)"/>
+  <text x="36" y="40" fill="#e8eaf0" font-size="21" font-weight="700">PLAN B — LENGTH-EDIT (the shipped 2-row length editor)</text>
+  <text x="36" y="62" fill="#8b90a0" font-size="12.5">Length = (endBlock−1)×16 + endStep, up to 128. ROW 0 = which 16-step BLOCK ends the clip (+EXIT); ROW 1–2 = the exact end STEP (1..16) in it. Non-destructive.</text>
+
+  <g transform="translate(120,104)">
+    <rect x="-16" y="-16" width="528" height="420" rx="16" fill="#0a0b0f" stroke="#2a2d36" stroke-width="1.5"/>
+
+    <!-- ROW 0 : END-BLOCK ruler (8 pads = blocks 1..8) + EXIT at the far right -->
+    <text x="0" y="-22" fill="#9aa0b2" font-size="11" font-weight="700">ROW 0 · END BLOCK (each pad = a 16-step block) · counted=dim, end=bright · far-right pad = EXIT</text>
+    <g>
+      <!-- example L=48 → endBlock 3: blocks 1,2 counted (dim blue), block 3 end (bright) -->
+      <rect x="0"   y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="20" y="29" fill="#cfe2ff" font-size="11" font-weight="700">1</text>
+      <rect x="58"  y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="78" y="29" fill="#cfe2ff" font-size="11" font-weight="700">2</text>
+      <rect x="116" y="0" width="52" height="46" rx="9" fill="#4a7dc0" filter="url(#padBl)"/><text x="136" y="29" fill="#06203a" font-size="11" font-weight="700">3</text>
+      <rect x="174" y="0" width="52" height="46" rx="9" fill="#15171c" stroke="#262a33"/><text x="194" y="29" fill="#3a3f4d" font-size="11">4</text>
+      <rect x="232" y="0" width="52" height="46" rx="9" fill="#15171c" stroke="#262a33"/><text x="252" y="29" fill="#3a3f4d" font-size="11">5</text>
+      <rect x="290" y="0" width="52" height="46" rx="9" fill="#15171c" stroke="#262a33"/><text x="310" y="29" fill="#3a3f4d" font-size="11">6</text>
+      <rect x="348" y="0" width="52" height="46" rx="9" fill="#15171c" stroke="#262a33"/><text x="368" y="29" fill="#3a3f4d" font-size="11">7</text>
+      <!-- EXIT (model: row-0 pad 16; on an 8-wide Launchpad it lives at the row's end) -->
+      <rect x="406" y="0" width="52" height="46" rx="9" fill="#7a5a1f" filter="url(#padBl)"/><text x="414" y="29" fill="#fff" font-size="10" font-weight="700">EXIT</text>
+    </g>
+    <text x="0" y="76" fill="#5a6072" font-size="9.5">tap block C → length = C×16 (block 3 here = 48 steps). On the model's 16-wide row, block 8 = pad 8 and EXIT = pad 16.</text>
+
+    <!-- ROW 1–2 : END-STEP ruler (1..16) — a Launchpad row is 8 wide, so 16 cells fold onto two rows -->
+    <text x="0" y="116" fill="#9aa0b2" font-size="11" font-weight="700">ROW 1 (·2) · END STEP within the end block (1..16) · before=dim, the last step=bright</text>
+    <!-- steps 1..8 -->
+    <g transform="translate(0,128)">
+      <rect x="0"   y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="18" y="29" fill="#cfe2ff" font-size="10">1</text>
+      <rect x="58"  y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="76" y="29" fill="#cfe2ff" font-size="10">2</text>
+      <rect x="116" y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="134" y="29" fill="#cfe2ff" font-size="10">3</text>
+      <rect x="174" y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="192" y="29" fill="#cfe2ff" font-size="10">4</text>
+      <rect x="232" y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="250" y="29" fill="#cfe2ff" font-size="10">5</text>
+      <rect x="290" y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="308" y="29" fill="#cfe2ff" font-size="10">6</text>
+      <rect x="348" y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="366" y="29" fill="#cfe2ff" font-size="10">7</text>
+      <rect x="406" y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="424" y="29" fill="#cfe2ff" font-size="10">8</text>
+    </g>
+    <!-- steps 9..16 (16 = the end step here, bright) -->
+    <g transform="translate(0,186)">
+      <rect x="0"   y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="18" y="29" fill="#cfe2ff" font-size="10">9</text>
+      <rect x="58"  y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="74" y="29" fill="#cfe2ff" font-size="10">10</text>
+      <rect x="116" y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="132" y="29" fill="#cfe2ff" font-size="10">11</text>
+      <rect x="174" y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="190" y="29" fill="#cfe2ff" font-size="10">12</text>
+      <rect x="232" y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="248" y="29" fill="#cfe2ff" font-size="10">13</text>
+      <rect x="290" y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="306" y="29" fill="#cfe2ff" font-size="10">14</text>
+      <rect x="348" y="0" width="52" height="46" rx="9" fill="#3a4a6b" filter="url(#padBl)"/><text x="364" y="29" fill="#cfe2ff" font-size="10">15</text>
+      <rect x="406" y="0" width="52" height="46" rx="9" fill="#4a7dc0" filter="url(#padBl)"/><text x="420" y="29" fill="#06203a" font-size="10" font-weight="700">16</text>
+    </g>
+    <text x="0" y="290" fill="#5a6072" font-size="9.5">tap step N → length = (endBlock−1)×16 + N. End block 3 + end step 16 = 48 steps. (On the model's 16-wide grid this whole ruler is one row.)</text>
+
+    <!-- result readout -->
+    <g transform="translate(0,308)">
+      <rect x="0" y="0" width="458" height="56" rx="10" fill="#11141b" stroke="#23272f"/>
+      <text x="16" y="24" fill="#cfd3df" font-size="13" font-weight="700">LENGTH = 48 steps</text>
+      <text x="16" y="44" fill="#8b90a0" font-size="11">(end BLOCK 3 × 16) + end STEP 16  ·  shorten/lengthen freely — hidden notes return when you lengthen again</text>
+    </g>
+  </g>
+</svg>

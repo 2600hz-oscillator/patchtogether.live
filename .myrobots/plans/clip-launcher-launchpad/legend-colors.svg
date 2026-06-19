@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="640" viewBox="0 0 900 640" font-family="ui-monospace, 'SF Mono', Menlo, monospace">
+  <!-- ===================================================================== -->
+  <!-- COLOR LEGEND — the RGB color language shared by all three Launchpad   -->
+  <!-- plans. Each swatch shows the exact RGB the firmware is sent (SysEx    -->
+  <!-- type 3, R/G/B 0..127 scaled to 0..255 here) + the nearest stock       -->
+  <!-- palette index, mapped to a clip-launcher / editor STATE.              -->
+  <!-- ===================================================================== -->
+  <defs>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.6" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b1d23"/>
+      <stop offset="1" stop-color="#101218"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="640" rx="18" fill="url(#bg)"/>
+  <text x="36" y="46" fill="#e8eaf0" font-size="22" font-weight="700">CLIP LAUNCHER · Launchpad color language</text>
+  <text x="36" y="70" fill="#8b90a0" font-size="13">RGB sent via Programmer-mode SysEx (type 3). Idx = nearest stock palette entry. Anim = static / pulse / flash.</text>
+
+  <!-- column headers -->
+  <g fill="#6f7589" font-size="11" font-weight="600">
+    <text x="36"  y="104">SWATCH</text>
+    <text x="120" y="104">STATE</text>
+    <text x="430" y="104">RGB (0..127)</text>
+    <text x="600" y="104">IDX</text>
+    <text x="660" y="104">ANIM</text>
+  </g>
+  <line x1="36" y1="114" x2="864" y2="114" stroke="#2a2d36" stroke-width="1"/>
+
+  <!-- rows: y, fill (255-scale), state label, rgb127, idx, anim -->
+  <!-- empty -->
+  <g transform="translate(0,128)">
+    <rect x="36" y="0" width="64" height="34" rx="8" fill="#15171c" stroke="#2b2e38" stroke-width="1.5"/>
+    <text x="120" y="22" fill="#cfd3df" font-size="14">empty slot (clip absent)</text>
+    <text x="430" y="22" fill="#9aa0b2" font-size="13">0 / 0 / 0</text>
+    <text x="600" y="22" fill="#9aa0b2" font-size="13">0</text>
+    <text x="660" y="22" fill="#9aa0b2" font-size="13">off</text>
+  </g>
+  <!-- loaded -->
+  <g transform="translate(0,170)">
+    <rect x="36" y="0" width="64" height="34" rx="8" fill="#3a516f" filter="url(#soft)"/>
+    <text x="120" y="22" fill="#cfd3df" font-size="14">loaded clip (idle, has notes)</text>
+    <text x="430" y="22" fill="#9aa0b2" font-size="13">28 / 40 / 56</text>
+    <text x="600" y="22" fill="#9aa0b2" font-size="13">~41</text>
+    <text x="660" y="22" fill="#9aa0b2" font-size="13">static dim</text>
+  </g>
+  <!-- playing -->
+  <g transform="translate(0,212)">
+    <rect x="36" y="0" width="64" height="34" rx="8" fill="#2fd06a" filter="url(#soft)"/>
+    <text x="120" y="22" fill="#cfd3df" font-size="14">playing clip</text>
+    <text x="430" y="22" fill="#9aa0b2" font-size="13">23 / 104 / 53</text>
+    <text x="600" y="22" fill="#9aa0b2" font-size="13">21</text>
+    <text x="660" y="22" fill="#9aa0b2" font-size="13">pulse (sync’d)</text>
+  </g>
+  <!-- queued launch -->
+  <g transform="translate(0,254)">
+    <rect x="36" y="0" width="64" height="34" rx="8" fill="#2fd06a" filter="url(#soft)" opacity="0.55"/>
+    <rect x="36" y="0" width="64" height="34" rx="8" fill="none" stroke="#2fd06a" stroke-width="2" stroke-dasharray="5 4"/>
+    <text x="120" y="22" fill="#cfd3df" font-size="14">queued to launch (waiting for boundary)</text>
+    <text x="430" y="22" fill="#9aa0b2" font-size="13">23 / 104 / 53</text>
+    <text x="600" y="22" fill="#9aa0b2" font-size="13">21</text>
+    <text x="660" y="22" fill="#9aa0b2" font-size="13">flash green</text>
+  </g>
+  <!-- queued stop -->
+  <g transform="translate(0,296)">
+    <rect x="36" y="0" width="64" height="34" rx="8" fill="#d23b3b" filter="url(#soft)" opacity="0.6"/>
+    <rect x="36" y="0" width="64" height="34" rx="8" fill="none" stroke="#d23b3b" stroke-width="2" stroke-dasharray="5 4"/>
+    <text x="120" y="22" fill="#cfd3df" font-size="14">queued to stop</text>
+    <text x="430" y="22" fill="#9aa0b2" font-size="13">104 / 23 / 23</text>
+    <text x="600" y="22" fill="#9aa0b2" font-size="13">5</text>
+    <text x="660" y="22" fill="#9aa0b2" font-size="13">flash red</text>
+  </g>
+  <!-- recording / armed (arranger record) -->
+  <g transform="translate(0,338)">
+    <rect x="36" y="0" width="64" height="34" rx="8" fill="#ff3b3b" filter="url(#soft)"/>
+    <text x="120" y="22" fill="#cfd3df" font-size="14">recording / record-armed lane (arranger)</text>
+    <text x="430" y="22" fill="#9aa0b2" font-size="13">127 / 16 / 16</text>
+    <text x="600" y="22" fill="#9aa0b2" font-size="13">5</text>
+    <text x="660" y="22" fill="#9aa0b2" font-size="13">pulse red</text>
+  </g>
+  <!-- clip in clipboard (copy source) -->
+  <g transform="translate(0,380)">
+    <rect x="36" y="0" width="64" height="34" rx="8" fill="#26c6c6" filter="url(#soft)"/>
+    <text x="120" y="22" fill="#cfd3df" font-size="14">copy buffer loaded (COPY-INDICATOR pulse)</text>
+    <text x="430" y="22" fill="#9aa0b2" font-size="13">15 / 99 / 99</text>
+    <text x="600" y="22" fill="#9aa0b2" font-size="13">37</text>
+    <text x="660" y="22" fill="#9aa0b2" font-size="13">pulse turquoise</text>
+  </g>
+
+  <!-- right column: function/control colours -->
+  <g fill="#6f7589" font-size="11" font-weight="600">
+    <text x="430" y="430">CONTROL / FUNCTION COLOURS</text>
+  </g>
+  <line x1="430" y1="438" x2="864" y2="438" stroke="#2a2d36" stroke-width="1"/>
+  <g transform="translate(0,452)">
+    <rect x="430" y="0" width="48" height="26" rx="7" fill="#e0a32a"/>
+    <text x="490" y="18" fill="#cfd3df" font-size="13">scene launch (amber)  idx 9</text>
+  </g>
+  <g transform="translate(0,486)">
+    <rect x="430" y="0" width="48" height="26" rx="7" fill="#8a4a14"/>
+    <text x="490" y="18" fill="#cfd3df" font-size="13">stop lane (dim red)  idx 7</text>
+  </g>
+  <g transform="translate(0,520)">
+    <rect x="430" y="0" width="48" height="26" rx="7" fill="#e8e8ff"/>
+    <text x="490" y="18" fill="#cfd3df" font-size="13">function / FOLLOW idle (white)  idx 3</text>
+  </g>
+  <g transform="translate(0,554)">
+    <rect x="430" y="0" width="48" height="26" rx="7" fill="#7a4fd0"/>
+    <text x="490" y="18" fill="#cfd3df" font-size="13">held modifier (COPY/PASTE/VEL) · FOLLOW frozen flashes (violet) idx 49</text>
+  </g>
+  <g transform="translate(0,588)">
+    <rect x="430" y="0" width="48" height="26" rx="7" fill="#2f7d52"/>
+    <text x="490" y="18" fill="#cfd3df" font-size="13">transport running / FOLLOW on (green)  idx 21</text>
+  </g>
+
+  <!-- editor swatches (left lower) -->
+  <g fill="#6f7589" font-size="11" font-weight="600">
+    <text x="36" y="430">EDITOR (note grid) COLOURS</text>
+  </g>
+  <line x1="36" y1="438" x2="410" y2="438" stroke="#2a2d36" stroke-width="1"/>
+  <g transform="translate(0,452)">
+    <rect x="36" y="0" width="48" height="26" rx="7" fill="#3a516f"/>
+    <text x="96" y="18" fill="#cfd3df" font-size="13">note · low velocity</text>
+  </g>
+  <g transform="translate(0,486)">
+    <rect x="36" y="0" width="48" height="26" rx="7" fill="#4a7dc0"/>
+    <text x="96" y="18" fill="#cfd3df" font-size="13">note · med velocity</text>
+  </g>
+  <g transform="translate(0,520)">
+    <rect x="36" y="0" width="48" height="26" rx="7" fill="#7fb6ff"/>
+    <text x="96" y="18" fill="#cfd3df" font-size="13">note · high velocity</text>
+  </g>
+  <g transform="translate(0,554)">
+    <rect x="36" y="0" width="48" height="26" rx="7" fill="#ffd23b"/>
+    <text x="96" y="18" fill="#cfd3df" font-size="13">note under playhead (boost)</text>
+  </g>
+  <g transform="translate(0,588)">
+    <rect x="36" y="0" width="48" height="26" rx="7" fill="#23252b" stroke="#3a3f4d" stroke-width="1"/>
+    <text x="96" y="18" fill="#cfd3df" font-size="13">root-row guide / empty step</text>
+  </g>
+</svg>

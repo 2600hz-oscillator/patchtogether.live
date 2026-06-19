@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="560" viewBox="0 0 1180 560" font-family="ui-monospace, 'SF Mono', Menlo, monospace">
+  <!-- PLAN A · SESSION VIEW · two Launchpad Mini MK3 side by side (16 lanes wide) -->
+  <defs>
+    <linearGradient id="bgA" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b1d23"/><stop offset="1" stop-color="#0e1015"/>
+    </linearGradient>
+    <filter id="padA" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <rect width="1180" height="560" rx="18" fill="url(#bgA)"/>
+  <text x="36" y="40" fill="#e8eaf0" font-size="21" font-weight="700">PLAN A — Ableton-faithful session · 2× Launchpad Mini MK3 = one 16-lane × 8-scene wall</text>
+  <text x="36" y="62" fill="#8b90a0" font-size="12.5">Unit L = lanes 1–8, Unit R = lanes 9–16. Top row = scene launch (amber). Right column = per-unit functions. Pulse green = playing, dashed = queued.</text>
+
+  <!-- ============ macro for a unit: drawn twice via explicit groups ============ -->
+  <!-- Geometry constants used by hand: pad 46, gap 6, grid origin per unit -->
+
+  <!-- ===== UNIT L ===== -->
+  <g transform="translate(40,92)">
+    <rect x="-14" y="-14" width="492" height="448" rx="16" fill="#0a0b0f" stroke="#2a2d36" stroke-width="1.5"/>
+    <text x="0" y="-22" fill="#9aa0b2" font-size="12" font-weight="700">UNIT L · usb id 1 · LANES 1–8</text>
+
+    <!-- top row: scene launch CC91..98 -->
+    <g>
+      <!-- 8 amber scene pads + 1 logo gap at far right handled by right column -->
+      <!-- scenes 1..8 -->
+      <g transform="translate(0,0)">
+        <rect x="0"   y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/>
+        <rect x="52"  y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/>
+        <rect x="104" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/>
+        <rect x="156" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/>
+        <rect x="208" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/>
+        <rect x="260" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/>
+        <rect x="312" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/>
+        <rect x="364" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/>
+      </g>
+      <text x="180" y="26" fill="#3a2a08" font-size="11" font-weight="700">SCENE  1 · 2 · 3 · 4 · 5 · 6 · 7 · 8</text>
+    </g>
+
+    <!-- 8x8 clip matrix: rows = scenes 0..7 (top->bottom), cols = lanes 1..8 -->
+    <g transform="translate(0,52)">
+      <!-- Fill all as loaded blue, then overlay states -->
+      <!-- row y = r*52 -->
+      <!-- We draw 64 pads -->
+      <!-- generated rows -->
+      <!-- r0 -->
+      <g transform="translate(0,0)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/>
+      </g>
+      <!-- r1 : lane1 playing (green pulse) -->
+      <g transform="translate(0,52)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#2fd06a"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/>
+      </g>
+      <!-- r2 : lane3 queued (dashed green) -->
+      <g transform="translate(0,104)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#2fd06a" opacity="0.5"/><rect x="104" y="0" width="46" height="46" rx="9" fill="none" stroke="#2fd06a" stroke-width="2.5" stroke-dasharray="5 4"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/>
+      </g>
+      <!-- r3 -->
+      <g transform="translate(0,156)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/>
+      </g>
+      <!-- r4 : lane5 playing -->
+      <g transform="translate(0,208)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#2fd06a"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/>
+      </g>
+      <!-- r5 -->
+      <g transform="translate(0,260)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/>
+      </g>
+      <!-- r6 -->
+      <g transform="translate(0,312)">
+        <rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/>
+      </g>
+    </g>
+
+    <!-- lane labels under matrix -->
+    <text x="180" y="430" fill="#5a6072" font-size="10.5">↑ rows = scenes 1–8   ·   cols = lanes 1–8 (instruments)</text>
+  </g>
+
+  <!-- Right column functions for unit L (drawn just right of its grid) -->
+  <g transform="translate(40,92)">
+    <g transform="translate(420,0)">
+      <rect x="0" y="0"   width="46" height="40" rx="9" fill="#d23b3b"/><text x="6" y="24" fill="#fff" font-size="9" font-weight="700">STOP</text><text x="6" y="34" fill="#fff" font-size="9" font-weight="700">ALL</text>
+    </g>
+    <!-- per-lane stop column lives at right of matrix -->
+    <g transform="translate(420,52)">
+      <rect x="0" y="0"   width="46" height="46" rx="9" fill="#8a4a14"/>
+      <rect x="0" y="52"  width="46" height="46" rx="9" fill="#d23b3b"/>
+      <rect x="0" y="104" width="46" height="46" rx="9" fill="#8a4a14"/>
+      <rect x="0" y="156" width="46" height="46" rx="9" fill="#8a4a14"/>
+      <rect x="0" y="208" width="46" height="46" rx="9" fill="#d23b3b"/>
+      <rect x="0" y="260" width="46" height="46" rx="9" fill="#8a4a14"/>
+      <rect x="0" y="312" width="46" height="46" rx="9" fill="#8a4a14"/>
+      <text x="-2" y="372" fill="#5a6072" font-size="9">STOP lane (bright=playing)</text>
+    </g>
+  </g>
+
+  <!-- ===== UNIT R (mirror; lanes 9–16) ===== -->
+  <g transform="translate(610,92)">
+    <rect x="-14" y="-14" width="492" height="448" rx="16" fill="#0a0b0f" stroke="#2a2d36" stroke-width="1.5"/>
+    <text x="0" y="-22" fill="#9aa0b2" font-size="12" font-weight="700">UNIT R · usb id 2 · LANES 9–16</text>
+    <!-- scene row mirrored (same scenes fire BOTH units) -->
+    <g>
+      <rect x="0"   y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/><rect x="52"  y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/><rect x="104" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/><rect x="156" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/><rect x="208" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/><rect x="260" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/><rect x="312" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/><rect x="364" y="0" width="46" height="40" rx="9" fill="#e0a32a" filter="url(#padA)"/>
+      <text x="120" y="26" fill="#3a2a08" font-size="11" font-weight="700">SCENE (same 8 scenes — both units fire together)</text>
+    </g>
+    <!-- clip matrix r0..r6 (sparser, a couple playing) -->
+    <g transform="translate(0,52)">
+      <g transform="translate(0,0)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+      <g transform="translate(0,52)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#2fd06a"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+      <g transform="translate(0,104)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+      <g transform="translate(0,156)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#2fd06a" opacity="0.5"/><rect x="104" y="0" width="46" height="46" rx="9" fill="none" stroke="#2fd06a" stroke-width="2.5" stroke-dasharray="5 4"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+      <g transform="translate(0,208)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+      <g transform="translate(0,260)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+      <g transform="translate(0,312)"><rect x="0" y="0" width="46" height="46" rx="9" fill="#15171c" stroke="#262a33"/><rect x="52" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="104" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="156" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="208" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="260" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="312" y="0" width="46" height="46" rx="9" fill="#3a516f"/><rect x="364" y="0" width="46" height="46" rx="9" fill="#3a516f"/></g>
+    </g>
+    <!-- right column functions for unit R -->
+    <g transform="translate(420,0)"><rect x="0" y="0" width="46" height="40" rx="9" fill="#7a4fd0"/><text x="8" y="18" fill="#fff" font-size="9" font-weight="700">EDIT</text><text x="2" y="30" fill="#fff" font-size="8">(hold)</text></g>
+    <g transform="translate(420,52)">
+      <rect x="0" y="0"   width="46" height="46" rx="9" fill="#8a4a14"/>
+      <rect x="0" y="52"  width="46" height="46" rx="9" fill="#d23b3b"/>
+      <rect x="0" y="104" width="46" height="46" rx="9" fill="#8a4a14"/>
+      <rect x="0" y="156" width="46" height="46" rx="9" fill="#8a4a14"/>
+      <rect x="0" y="208" width="46" height="46" rx="9" fill="#8a4a14"/>
+      <rect x="0" y="260" width="46" height="46" rx="9" fill="#8a4a14"/>
+      <rect x="0" y="312" width="46" height="46" rx="9" fill="#2f7d52"/><text x="6" y="338" fill="#fff" font-size="9" font-weight="700">▶</text>
+      <text x="-2" y="372" fill="#5a6072" font-size="9">STOP lanes 9–16 · bottom = TRANSPORT ▶</text>
+    </g>
+  </g>
+</svg>
