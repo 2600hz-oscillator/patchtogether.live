@@ -69,6 +69,39 @@ export interface RichTextModel {
    *  screen px, so this directly controls on-screen size. Clamped to
    *  [MIN_FONT_PX, MAX_FONT_PX]; absent → DEFAULT_FONT_PX. */
   fontPx?: number;
+  /** CSS font-family for the whole layer (one of FONT_FAMILIES). Absent →
+   *  DEFAULT_FONT_FAMILY. Whitelisted so persisted/remote data can't inject an
+   *  arbitrary CSS string into the canvas font shorthand. */
+  fontFamily?: string;
+}
+
+/** The font choices offered in the card's FONT picker. Each value is a CSS
+ *  font-family stack ending in a generic, so an absent system font still
+ *  renders. Kept as a whitelist (normalizeFontFamily) — the renderer
+ *  interpolates the value straight into the canvas `font` shorthand. */
+export const FONT_FAMILIES: ReadonlyArray<{ label: string; value: string }> = [
+  { label: 'Sans', value: 'sans-serif' },
+  { label: 'Serif', value: 'serif' },
+  { label: 'Mono', value: 'monospace' },
+  { label: 'Helvetica', value: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
+  { label: 'Arial', value: 'Arial, sans-serif' },
+  { label: 'Georgia', value: 'Georgia, serif' },
+  { label: 'Times', value: '"Times New Roman", Times, serif' },
+  { label: 'Courier', value: '"Courier New", Courier, monospace' },
+  { label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
+  { label: 'Trebuchet', value: '"Trebuchet MS", sans-serif' },
+  { label: 'Impact', value: 'Impact, Haettenschweiler, sans-serif' },
+  { label: 'Comic', value: '"Comic Sans MS", "Comic Sans", cursive' },
+];
+
+export const DEFAULT_FONT_FAMILY = FONT_FAMILIES[0]!.value; // 'sans-serif'
+
+/** Coerce an untrusted font-family to one of FONT_FAMILIES, else the default. */
+export function normalizeFontFamily(value: unknown): string {
+  if (typeof value === 'string' && FONT_FAMILIES.some((f) => f.value === value)) {
+    return value;
+  }
+  return DEFAULT_FONT_FAMILY;
 }
 
 /** Font-size bounds (video px). MAX is calibrated so a short ~5-char word (e.g.
@@ -100,6 +133,7 @@ export function emptyRichTextModel(): RichTextModel {
     fg: '#ffffff',
     bg: '#000000',
     fontPx: DEFAULT_FONT_PX,
+    fontFamily: DEFAULT_FONT_FAMILY,
   };
 }
 
@@ -147,7 +181,10 @@ export function coerceRichTextModel(data: unknown): RichTextModel {
     paragraphs.push({ runs, align });
   }
   if (paragraphs.length === 0) return empty;
-  return truncateModelChars({ paragraphs, fg, bg, fontPx: clampFontPx(o.fontPx) }, MAX_CHARS);
+  return truncateModelChars(
+    { paragraphs, fg, bg, fontPx: clampFontPx(o.fontPx), fontFamily: normalizeFontFamily(o.fontFamily) },
+    MAX_CHARS,
+  );
 }
 
 /** Trim a model to at most `max` total characters (across all runs/paragraphs),

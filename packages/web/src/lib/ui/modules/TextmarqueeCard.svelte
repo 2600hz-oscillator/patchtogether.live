@@ -3,7 +3,9 @@
   //
   // An EXTREMELY BASIC rich-text editor: a `contenteditable` region + a small
   // toolbar (align left/center/right, bold, italic, underline, per-selection
-  // text colour, and layer FG + BG colours). The DOM is serialized into a
+  // TEXT colour, a FONT-family picker, a SIZE slider) + a single layer
+  // BACKGROUND colour. (No per-character background, no separate layer
+  // foreground — the TEXT colour is the only foreground.) The DOM is serialized into a
   // small RICH-TEXT MODEL (paragraphs → styled runs) persisted in
   // node.data.richText (Y.Doc-synced, in place — never reassign the live data
   // map, the [[yjs-save-load-real-ydoc]] trap). That SAME model is rendered to
@@ -37,6 +39,9 @@
     modelPlainText,
     clampFontPx,
     truncateModelChars,
+    normalizeFontFamily,
+    FONT_FAMILIES,
+    DEFAULT_FONT_FAMILY,
     MIN_FONT_PX,
     MAX_FONT_PX,
     DEFAULT_FONT_PX,
@@ -205,7 +210,10 @@
       paragraphs.push({ runs: [{ text: '' }], align: alignOf(editorEl) });
     }
     // Cap total chars (a pasted wall of text can't blow up the texture).
-    return truncateModelChars({ paragraphs, fg: layerFg, bg: layerBg, fontPx }, MAX_CHARS);
+    return truncateModelChars(
+      { paragraphs, fg: model.fg, bg: layerBg, fontPx, fontFamily },
+      MAX_CHARS,
+    );
   }
 
   function onEditorInput() {
@@ -281,30 +289,29 @@
     exec('foreColor', hex);
   }
 
-  // Layer fg/bg — stored on the model (not per-run).
-  let layerFg = $state('#ffffff');
+  // Layer BACKGROUND — a single fill behind the WHOLE text block. There is no
+  // separate layer-foreground control: the per-selection TEXT colour in the
+  // toolbar is the one and only foreground, and there is no per-character
+  // background. (model.fg stays as the white fallback for un-coloured glyphs.)
   let layerBg = $state('#000000');
-  // Render font size in VIDEO PX (drives on-screen size; MAX = a short word fills
-  // the screen). Local control value; the render reads model.fontPx so it stays
-  // correct under remote edits too.
+  // Render font size in VIDEO PX (drives on-screen size; MAX = a short word
+  // fills the screen). FONT is a whole-layer family choice.
   let fontPx = $state(DEFAULT_FONT_PX);
+  let fontFamily = $state(DEFAULT_FONT_FAMILY);
   function setFontPx(v: number) {
     fontPx = clampFontPx(v);
     persistModel(serializeEditor());
     queueRender();
   }
-  function setLayerFg(hex: string) {
-    layerFg = hex;
-    persistModel({ ...serializeEditorNoLayer(), fg: layerFg, bg: layerBg });
+  function setFontFamily(name: string) {
+    fontFamily = normalizeFontFamily(name);
+    if (editorEl) editorEl.style.fontFamily = fontFamily;
+    persistModel(serializeEditor());
+    queueRender();
   }
   function setLayerBg(hex: string) {
     layerBg = hex;
-    persistModel({ ...serializeEditorNoLayer(), fg: layerFg, bg: layerBg });
-  }
-  // Serialize without re-reading layerFg/Bg (so the layer setters don't loop).
-  function serializeEditorNoLayer(): RichTextModel {
-    const m = serializeEditor();
-    return m;
+    persistModel(serializeEditor());
   }
 
   // ── Offscreen text canvas → engine texture ───────────────────────────────
@@ -316,7 +323,8 @@
   function runFont(run: RichRun, fpx: number): string {
     const style = run.italic ? 'italic ' : '';
     const weight = run.bold ? '700 ' : '400 ';
-    return `${style}${weight}${fpx}px sans-serif`;
+    const family = normalizeFontFamily(model.fontFamily);
+    return `${style}${weight}${fpx}px ${family}`;
   }
 
   /** Render the current model to the offscreen canvas + push it to the engine. */
@@ -473,10 +481,11 @@
   }
 
   onMount(() => {
-    // Seed local fg/bg/size from the persisted model, paint the editor + canvas.
-    layerFg = model.fg;
+    // Seed local bg/size/font from the persisted model, paint editor + canvas.
     layerBg = model.bg;
     fontPx = clampFontPx(model.fontPx);
+    fontFamily = normalizeFontFamily(model.fontFamily);
+    if (editorEl) editorEl.style.fontFamily = fontFamily;
     applyModelToDom(model);
     renderTextCanvasToEngine();
     if (previewEl) {
@@ -525,11 +534,22 @@
       <button type="button" class="tb i" title="Italic" data-testid="textmarquee-italic" onmousedown={keepSelection} onclick={toggleItalic}>I</button>
       <button type="button" class="tb u" title="Underline" data-testid="textmarquee-underline" onmousedown={keepSelection} onclick={toggleUnderline}>U</button>
       <span class="sep"></span>
-      <label class="swatch" title="Text colour (selection)">
-        <span class="sw-dot" style={`background:${runColor}`}></span>
+      <label class="swatch" title="Text colour (applies to the selected text)">
+        <span class="lbl">TEXT</span>
         <input type="color" class="nodrag" value={runColor} data-testid="textmarquee-run-color"
           onmousedown={keepSelection}
           oninput={(e) => applyRunColor((e.currentTarget as HTMLInputElement).value)} />
+      </label>
+      <span class="sep"></span>
+      <label class="swatch" title="Font">
+        <span class="lbl">FONT</span>
+        <select class="nodrag font-select" value={fontFamily} data-testid="textmarquee-font"
+          onmousedown={keepSelection}
+          onchange={(e) => setFontFamily((e.currentTarget as HTMLSelectElement).value)}>
+          {#each FONT_FAMILIES as f (f.value)}
+            <option value={f.value}>{f.label}</option>
+          {/each}
+        </select>
       </label>
       <span class="sep"></span>
       <label class="swatch" title="Font size (max = a short word fills the screen)">
@@ -554,14 +574,9 @@
       onblur={onEditorBlur}
     ></div>
 
-    <!-- Layer fg / bg -->
+    <!-- Layer background (single fill behind the whole text) -->
     <div class="layer-row nodrag">
-      <label class="swatch" title="Foreground (default glyph colour)">
-        <span class="lbl">FG</span>
-        <input type="color" class="nodrag" value={layerFg} data-testid="textmarquee-fg"
-          oninput={(e) => setLayerFg((e.currentTarget as HTMLInputElement).value)} />
-      </label>
-      <label class="swatch" title="Background fill">
+      <label class="swatch" title="Background — fills the whole layer behind the text">
         <span class="lbl">BG</span>
         <input type="color" class="nodrag" value={layerBg} data-testid="textmarquee-bg"
           oninput={(e) => setLayerBg((e.currentTarget as HTMLInputElement).value)} />
@@ -632,10 +647,19 @@
   .sep { width: 1px; height: 16px; background: var(--border); margin: 0 2px; }
   .swatch { display: inline-flex; align-items: center; gap: 3px; }
   .swatch .lbl { font-size: 0.5rem; color: var(--text-dim); letter-spacing: 0.06em; }
-  .sw-dot { width: 12px; height: 12px; border-radius: 2px; border: 1px solid var(--border); display: inline-block; }
   .swatch input[type='color'] {
     width: 20px; height: 20px; padding: 0; border: 1px solid var(--border);
     border-radius: 3px; background: none; cursor: pointer;
+  }
+  .font-select {
+    height: 22px;
+    max-width: 86px;
+    font-size: 0.62rem;
+    color: var(--text);
+    background: var(--control-bg, #1c1c22);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: pointer;
   }
 
   .editor {
@@ -649,7 +673,9 @@
     border-radius: 3px;
     font-size: 0.85rem;
     line-height: 1.3;
-    color: var(--text);
+    /* White by default so untouched glyphs render white (the TEXT colour picker
+       overrides per selection); getComputedStyle reads this into each run. */
+    color: #ffffff;
     outline: none;
     white-space: pre-wrap;
     word-break: break-word;
