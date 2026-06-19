@@ -298,4 +298,131 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
 
     expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
   });
+
+  test('a surface renders INSIDE its bounding box, in the right place (Y-orientation guard)', async ({ page }) => {
+    const errors = await setup(page);
+
+    // No inputs → grids-first shows surface 1's calibration grid. Confine it to
+    // the VISUAL TOP-LEFT quadrant and assert every lit pixel lands there. This
+    // is deterministic + renderer-tolerant (counts pixels, not glyphs) and is the
+    // regression guard for the y-down/y-up flip that put the grid in the wrong
+    // half. Corners are in the engine's y-UP uv space (v=1 = canvas top), so the
+    // visual top-left quad uses HIGH v.
+    const nodes: Node[] = [
+      { id: 'mappy', type: 'mappy', position: { x: 560, y: 60 }, domain: 'video' },
+      { id: 'v-out', type: 'videoOut', position: { x: 900, y: 60 }, domain: 'video' },
+    ];
+    const edges: Edge[] = [
+      { id: 'mo', from: { nodeId: 'mappy', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+    ];
+    await spawnPatch(page, nodes, edges);
+    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+
+    // surface 1 → visual top-left quadrant: x∈[0.05,0.5], visual-y∈[0.05,0.5]
+    // (v∈[0.5,0.95], v high = top).
+    await warpSurface(page, 'mappy', 1, [[0.05, 0.95], [0.5, 0.95], [0.5, 0.5], [0.05, 0.5]]);
+    await page.waitForTimeout(600);
+
+    const b = await page.locator('canvas[data-testid="video-out-canvas"]').evaluate((el) => {
+      const c = el as HTMLCanvasElement;
+      const ctx = c.getContext('2d');
+      if (!ctx) return null;
+      const { width: w, height: h } = c;
+      const data = ctx.getImageData(0, 0, w, h).data;
+      let minX = 1, maxX = 0, minY = 1, maxY = 0, lit = 0;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          const v = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
+          if (v > 24) {
+            lit++;
+            const fx = x / w, fy = y / h;
+            if (fx < minX) minX = fx;
+            if (fx > maxX) maxX = fx;
+            if (fy < minY) minY = fy;
+            if (fy > maxY) maxY = fy;
+          }
+        }
+      }
+      return { minX, maxX, minY, maxY, litFrac: lit / (w * h) };
+    });
+    expect(b, 'bbox readable').not.toBeNull();
+    // the grid is actually drawn (its bright border lights a decent area)
+    expect(b!.litFrac, 'the grid lit something').toBeGreaterThan(0.02);
+    // …and EVERY lit pixel is within the top-left quadrant (+ a small AA margin).
+    // The Y-orientation guard: maxY must stay in the TOP half — a y-flip would
+    // push the grid to the bottom (maxY → ~0.95) and fail here.
+    const M = 0.06;
+    expect(b!.minX, `left edge inside (minX=${b!.minX.toFixed(3)})`).toBeGreaterThan(0.05 - M);
+    expect(b!.maxX, `right edge inside (maxX=${b!.maxX.toFixed(3)})`).toBeLessThan(0.5 + M);
+    expect(b!.minY, `top edge inside (minY=${b!.minY.toFixed(3)})`).toBeGreaterThan(0.05 - M);
+    expect(b!.maxY, `bottom edge inside — NOT flipped to lower half (maxY=${b!.maxY.toFixed(3)})`).toBeLessThan(0.5 + M);
+    // …and it fills toward the far (bottom-right) corner of its box (so it's a
+    // real quad, not a sliver): the lit region reaches near x=0.5 and y=0.5.
+    expect(b!.maxX, 'fills toward right edge').toBeGreaterThan(0.4);
+    expect(b!.maxY, 'fills toward box bottom').toBeGreaterThan(0.4);
+
+    expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
+  test('card: the rendered grid sits INSIDE its corner-handle box (overlay ↔ render)', async ({ page }) => {
+    // The actual y-flip bug was the OVERLAY handles not matching the render. This
+    // reads the 4 corner-handle screen positions AND the lit grid bbox from the
+    // card preview and asserts they coincide — i.e. the grid is 100% inside the
+    // box the handles draw (the user's invariant).
+    const errors = await setup(page);
+    const nodes: Node[] = [
+      { id: 'mappy', type: 'mappy', position: { x: 560, y: 60 }, domain: 'video' },
+    ];
+    await spawnPatch(page, nodes, []);
+    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+
+    // a clearly-off-centre quad so a flip/offset would be unmissable
+    await warpSurface(page, 'mappy', 1, [[0.1, 0.9], [0.6, 0.9], [0.6, 0.45], [0.1, 0.45]]);
+    await page.waitForTimeout(500);
+
+    const canvasBox = await page.locator('[data-testid="mappy-canvas"]').boundingBox();
+    expect(canvasBox, 'card preview canvas present').not.toBeNull();
+    // handle-box in canvas-fractional coords (from the 4 SVG handle centres)
+    let hMinX = 1, hMaxX = 0, hMinY = 1, hMaxY = 0;
+    for (let i = 0; i < 4; i++) {
+      const hb = await page.locator(`[data-testid="mappy-handle-1-${i}"]`).boundingBox();
+      expect(hb, `handle ${i} present`).not.toBeNull();
+      const fx = (hb!.x + hb!.width / 2 - canvasBox!.x) / canvasBox!.width;
+      const fy = (hb!.y + hb!.height / 2 - canvasBox!.y) / canvasBox!.height;
+      hMinX = Math.min(hMinX, fx); hMaxX = Math.max(hMaxX, fx);
+      hMinY = Math.min(hMinY, fy); hMaxY = Math.max(hMaxY, fy);
+    }
+    // rendered grid bbox from the card preview pixels
+    const r = await page.locator('[data-testid="mappy-canvas"]').evaluate((el) => {
+      const c = el as HTMLCanvasElement;
+      const ctx = c.getContext('2d');
+      if (!ctx) return null;
+      const { width: w, height: h } = c;
+      const data = ctx.getImageData(0, 0, w, h).data;
+      let minX = 1, maxX = 0, minY = 1, maxY = 0, lit = 0;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          if ((data[i]! + data[i + 1]! + data[i + 2]!) / 3 > 24) {
+            lit++;
+            const fx = x / w, fy = y / h;
+            if (fx < minX) minX = fx; if (fx > maxX) maxX = fx;
+            if (fy < minY) minY = fy; if (fy > maxY) maxY = fy;
+          }
+        }
+      }
+      return { minX, maxX, minY, maxY, litFrac: lit / (w * h) };
+    });
+    expect(r, 'preview readable').not.toBeNull();
+    expect(r!.litFrac, 'grid is drawn in the preview').toBeGreaterThan(0.02);
+    // the rendered grid must fall within the handle box (+ AA/handle-radius slack)
+    const M = 0.08;
+    expect(r!.minX, `grid left ≥ box left (grid ${r!.minX.toFixed(2)} vs box ${hMinX.toFixed(2)})`).toBeGreaterThan(hMinX - M);
+    expect(r!.maxX, `grid right ≤ box right (grid ${r!.maxX.toFixed(2)} vs box ${hMaxX.toFixed(2)})`).toBeLessThan(hMaxX + M);
+    expect(r!.minY, `grid top ≥ box top (grid ${r!.minY.toFixed(2)} vs box ${hMinY.toFixed(2)})`).toBeGreaterThan(hMinY - M);
+    expect(r!.maxY, `grid bottom ≤ box bottom — NOT y-flipped (grid ${r!.maxY.toFixed(2)} vs box ${hMaxY.toFixed(2)})`).toBeLessThan(hMaxY + M);
+
+    expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
+  });
 });

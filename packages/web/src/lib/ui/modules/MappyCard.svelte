@@ -117,7 +117,10 @@
     if (!svgEl) return null;
     const rect = svgEl.getBoundingClientRect();
     const x = (ev.clientX - rect.left) / rect.width;
-    const y = (ev.clientY - rect.top) / rect.height;
+    // y is FLIPPED: corners live in the engine's y-UP uv space (vUv.y=1 = canvas
+    // top), so a click near the visual top must map to a HIGH v — else the grid
+    // renders mirrored vs the handle (the y-down/y-up mismatch).
+    const y = 1 - (ev.clientY - rect.top) / rect.height;
     return { x, y };
   }
   function onHandleDown(surfaceIdx: number, cornerIdx: number, ev: PointerEvent): void {
@@ -179,7 +182,9 @@
 
   // ───────── overlay geometry helpers (uv [0,1] → preview px) ─────────
   function px(u: number): number { return u * CANVAS_W; }
-  function py(v: number): number { return v * CANVAS_H; }
+  // y-UP: v=1 draws at the TOP (matches the engine's vUv space + the flipped
+  // pointer in uvFromPointer), so handles sit exactly where the surface renders.
+  function py(v: number): number { return (1 - v) * CANVAS_H; }
   /** SVG polygon points string for a surface's quad (TL→TR→BR→BL). */
   function quadPoints(s: MappySurfaceState): string {
     return s.corners.map((c) => `${px(c[0])},${py(c[1])}`).join(' ');

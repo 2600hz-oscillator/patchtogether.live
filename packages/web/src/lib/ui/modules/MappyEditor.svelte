@@ -78,7 +78,8 @@
     if (rect.width === 0 || rect.height === 0) return null;
     return {
       x: (ev.clientX - rect.left) / rect.width,
-      y: (ev.clientY - rect.top) / rect.height,
+      // y FLIPPED — corners are y-UP (engine vUv space, v=1 = canvas top).
+      y: 1 - (ev.clientY - rect.top) / rect.height,
     };
   }
 
@@ -158,7 +159,9 @@
 
   // ───────── geometry helpers (uv [0,1] → svg units) ─────────
   const sx = (u: number): number => u * VW;
-  const sy = (v: number): number => v * VH;
+  // y-UP: v=1 draws at the TOP (matches engine vUv + the flipped pointer), so
+  // handles sit exactly where the surface renders.
+  const sy = (v: number): number => (1 - v) * VH;
   function quadPoints(s: MappySurfaceState): string {
     return s.corners.map((c) => `${sx(c[0])},${sy(c[1])}`).join(' ');
   }

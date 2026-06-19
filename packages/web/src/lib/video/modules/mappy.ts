@@ -312,7 +312,10 @@ vec4 calibrationGrid(vec2 s, float idx) {
   // over a dark backing plate so it reads against any checker tint.
   int num = int(idx + 1.5); // 0..5 → 1..6
   vec2 boxHalf = vec2(0.17, 0.27);
-  vec2 p = (s - (vec2(0.5) - boxHalf)) / (2.0 * boxHalf);
+  // Source v is y-UP (vUv = aPos*0.5+0.5 → v=1 at the canvas top), but the 7-seg
+  // glyph is authored y-DOWN (segment a = top at small p.y). Flip v for the box
+  // so the digit reads upright on screen (matches the upright sampled video).
+  vec2 p = (vec2(s.x, 1.0 - s.y) - (vec2(0.5) - boxHalf)) / (2.0 * boxHalf);
   if (p.x >= 0.0 && p.x <= 1.0 && p.y >= 0.0 && p.y <= 1.0) {
     col = mix(col, vec3(0.03), 0.8);
     float dc = digitCoverage(p, num);
