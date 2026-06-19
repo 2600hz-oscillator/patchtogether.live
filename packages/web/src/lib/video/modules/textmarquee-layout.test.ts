@@ -26,6 +26,9 @@ import {
   scrollOffset,
   computeDrawOffset,
   MAX_SCREENS_PER_SEC,
+  normalizeFontFamily,
+  FONT_FAMILIES,
+  DEFAULT_FONT_FAMILY,
 } from './textmarquee-layout';
 
 // Deterministic measure: every char is 1px wide, bold doubles it (so style
@@ -87,6 +90,38 @@ describe('rich-text model', () => {
     };
     // fg/bg here are short — modelPlainText doesn't care, only text matters.
     expect(modelPlainText(m)).toBe('foobar\nbaz');
+  });
+});
+
+describe('font family (whitelist)', () => {
+  it('FONT_FAMILIES is a non-empty list of {label,value} string pairs', () => {
+    expect(FONT_FAMILIES.length).toBeGreaterThan(1);
+    for (const f of FONT_FAMILIES) {
+      expect(typeof f.label).toBe('string');
+      expect(typeof f.value).toBe('string');
+      expect(f.value.length).toBeGreaterThan(0);
+    }
+    expect(DEFAULT_FONT_FAMILY).toBe(FONT_FAMILIES[0]!.value);
+  });
+
+  it('normalizeFontFamily passes a whitelisted value, rejects everything else', () => {
+    const good = FONT_FAMILIES[3]!.value;
+    expect(normalizeFontFamily(good)).toBe(good);
+    expect(normalizeFontFamily('"; drop table; --')).toBe(DEFAULT_FONT_FAMILY);
+    expect(normalizeFontFamily('Wingdings')).toBe(DEFAULT_FONT_FAMILY);
+    expect(normalizeFontFamily(undefined)).toBe(DEFAULT_FONT_FAMILY);
+    expect(normalizeFontFamily(42)).toBe(DEFAULT_FONT_FAMILY);
+  });
+
+  it('emptyRichTextModel carries the default font family', () => {
+    expect(emptyRichTextModel().fontFamily).toBe(DEFAULT_FONT_FAMILY);
+  });
+
+  it('coerceRichTextModel keeps a whitelisted fontFamily + defaults an invalid one', () => {
+    const good = FONT_FAMILIES[5]!.value;
+    expect(coerceRichTextModel({ paragraphs: [{ runs: [{ text: 'x' }], align: 'left' }], fontFamily: good }).fontFamily).toBe(good);
+    expect(coerceRichTextModel({ paragraphs: [{ runs: [{ text: 'x' }], align: 'left' }], fontFamily: 'Bogus' }).fontFamily).toBe(DEFAULT_FONT_FAMILY);
+    expect(coerceRichTextModel({ paragraphs: [{ runs: [{ text: 'x' }], align: 'left' }] }).fontFamily).toBe(DEFAULT_FONT_FAMILY);
   });
 });
 
