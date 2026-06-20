@@ -103,7 +103,7 @@ describe('Unit L — session LED frame (colour language)', () => {
   }
   it('loaded / playing / queued-launch paint the legend colours', () => {
     const onFrame = computeLSessionFrame(data(), { blinkOn: true });
-    // lane1 slot1 is playing → green (pulse up phase = playing). lane→row flipped.
+    // lane1 slot1 is playing → SOLID green. lane→row flipped.
     expect(eqRgb(at(onFrame, padNote(1, yForLane(1))), RGB_PLAYING)).toBe(true);
     // lane0 slot0 is queued-launch → green flash (on phase). lane 0 = TOP row.
     expect(eqRgb(at(onFrame, padNote(0, yForLane(0))), RGB_QUEUED)).toBe(true);
@@ -115,9 +115,13 @@ describe('Unit L — session LED frame (colour language)', () => {
     const f = computeLSessionFrame(d, { blinkOn: true });
     expect(eqRgb(at(f, padNote(2, yForLane(3))), RGB_LOADED)).toBe(true);
   });
-  it('queued-launch + playing FLASH off on the blink-off phase', () => {
+  it('a PLAYING clip is SOLID (does NOT blink off) — only queued flashes', () => {
+    // On the blink-OFF phase: the playing clip (lane1/slot1) must stay solid
+    // green; the queued clip (lane0/slot0) flashes off. (Owner: a blinking
+    // "playing" reads as queued on the hardware.)
     const f = computeLSessionFrame(data(), { blinkOn: false });
-    expect(eqRgb(at(f, padNote(0, yForLane(0))), RGB_OFF)).toBe(true); // queued flashes off
+    expect(eqRgb(at(f, padNote(1, yForLane(1))), RGB_PLAYING), 'playing stays solid on blink-off').toBe(true);
+    expect(eqRgb(at(f, padNote(0, yForLane(0))), RGB_OFF), 'queued flashes off on blink-off').toBe(true);
   });
   it('a queued STOP on a playing lane flashes red', () => {
     const d: ClipPlayerData = {

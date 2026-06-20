@@ -268,17 +268,31 @@ export function bindUnit(unit: LaunchpadUnit, inputId: string, outputId: string)
   const output = access.outputs.get(outputId) ?? null;
   if (!input || !output) return false;
   const u = units[unit];
-  // Detach a prior input on this unit before re-wiring.
-  if (u.input && u.input !== input) u.input.onmidimessage = null;
+  const prevInput = u.input;
   u.inputId = inputId;
   u.outputId = outputId;
   u.input = input;
   u.output = output;
   u.lastRgb.clear();
   input.onmidimessage = (ev: MidiEventLike) => handleInbound(unit, ev);
+  // Detach this unit's PREVIOUS input — but ONLY if no unit still references it.
+  // During an L↔R pairing swap, the two units exchange input objects; binding L
+  // to the other unit's old input must NOT null that input (it's about to be /
+  // already is owned by this unit), and re-binding R must NOT null L's new input.
+  // Nulling by object-identity alone killed the freshly-wired LEFT input on real
+  // hardware (LEFT pads dead, RIGHT working). Detach only a truly-orphaned input.
+  if (prevInput && prevInput !== input && !inputStillBound(prevInput)) {
+    prevInput.onmidimessage = null;
+  }
   enterProgrammerMode(unit);
   bumpStatus();
   return true;
+}
+
+/** Is a MIDI input still referenced by EITHER bound unit? (Guards the L↔R swap
+ *  detach: an input being handed from one unit to the other is NOT orphaned.) */
+function inputStillBound(input: MidiInputLike): boolean {
+  return units.L.input === input || units.R.input === input;
 }
 
 /** Re-resolve a unit's MidiInput/Output objects from the current access by the

@@ -14,9 +14,13 @@ import type { MidiOutputLike } from '$lib/audio/modules/midi-out-buddy';
 import {
   enumerateLaunchpadPorts,
   isLaunchpadMidiPortName,
+  bindUnit,
+  onKey,
+  isUnitBound,
   __test_setAccess,
   __test_resetLaunchpad,
   type MidiFullAccessLike,
+  type LaunchpadKeyEvent,
 } from './launchpad-device.svelte';
 
 function fakeInput(id: string, name: string): MidiInputLike {
@@ -93,5 +97,53 @@ describe('enumerateLaunchpadPorts — two identical Mini Mk3 units', () => {
   it('returns [] with no access', () => {
     __test_resetLaunchpad();
     expect(enumerateLaunchpadPorts()).toEqual([]);
+  });
+});
+
+describe('bindUnit — swapping L↔R inputs keeps BOTH inputs live (real-hardware pairing)', () => {
+  beforeEach(() => {
+    __test_resetLaunchpad();
+  });
+
+  // The pairing handshake binds the two candidates provisionally (L=inA, R=inB),
+  // then — if the user presses the unit that was provisional R — re-binds with
+  // the order SWAPPED (L=inB, R=inA). The detach-by-object logic in bindUnit
+  // used to null the input handler of the OTHER unit during that swap, killing
+  // the freshly-wired L input. On real hardware that left the LEFT unit's pads
+  // completely dead (no launch / no edit) while the RIGHT unit kept working.
+  it('after a provisional bind then a SWAPPED re-bind, both inputs dispatch to the right unit', () => {
+    const inA = fakeInput('inA', 'LPMiniMK3 MIDI In');
+    const inB = fakeInput('inB', 'LPMiniMK3 MIDI In');
+    __test_setAccess(
+      fakeAccess([inA, inB], [fakeOutput('outA', 'LPMiniMK3 MIDI Out'), fakeOutput('outB', 'LPMiniMK3 MIDI Out')]),
+    );
+
+    const seen: LaunchpadKeyEvent[] = [];
+    onKey((e) => seen.push(e));
+
+    // (1) provisional bind: L=inA, R=inB.
+    bindUnit('L', 'inA', 'outA');
+    bindUnit('R', 'inB', 'outB');
+
+    // (2) SWAP (the user picked the provisional-R unit to be LEFT): L=inB, R=inA.
+    bindUnit('L', 'inB', 'outB');
+    bindUnit('R', 'inA', 'outA');
+
+    expect(isUnitBound('L'), 'L bound').toBe(true);
+    expect(isUnitBound('R'), 'R bound').toBe(true);
+
+    // BOTH physical inputs must still have a live handler after the swap.
+    expect(typeof inA.onmidimessage, 'inA still has a handler').toBe('function');
+    expect(typeof inB.onmidimessage, 'inB still has a handler (NOT nulled by the swap)').toBe('function');
+
+    // A pad press on inB (now LEFT) must dispatch tagged unit:'L'.
+    inB.onmidimessage!({ data: new Uint8Array([0x90, 81, 100]), timeStamp: 0 } as never); // padNote(0,7)=81
+    // A pad press on inA (now RIGHT) must dispatch tagged unit:'R'.
+    inA.onmidimessage!({ data: new Uint8Array([0x90, 11, 100]), timeStamp: 0 } as never); // padNote(0,0)=11
+
+    const lEv = seen.find((e) => e.ev.type === 'pad' && e.unit === 'L');
+    const rEv = seen.find((e) => e.ev.type === 'pad' && e.unit === 'R');
+    expect(lEv, 'inB press dispatched as unit L (LEFT matrix alive)').toBeTruthy();
+    expect(rEv, 'inA press dispatched as unit R').toBeTruthy();
   });
 });

@@ -101,7 +101,7 @@ export const RGB_OFF: Rgb = [0, 0, 0];
 // Session clip states.
 export const RGB_LOADED: Rgb = [14, 20, 28]; // dim blue (idle, has notes)
 export const RGB_PLAYING: Rgb = [23, 104, 53]; // green (playing) — pulses (see blink)
-export const RGB_PLAYING_DIM: Rgb = [8, 40, 20]; // the down phase of the playing pulse
+export const RGB_PLAYING_DIM: Rgb = [8, 40, 20]; // (reserved) dim green — playing now renders SOLID, not pulsed
 export const RGB_QUEUED: Rgb = [23, 104, 53]; // green (queued-launch) — FLASHES on/off
 export const RGB_QUEUED_STOP: Rgb = [104, 23, 23]; // red (queued-stop) — flashes on/off
 export const RGB_RECORDING: Rgb = [127, 16, 16]; // red (record-armed / recording) — pulses
@@ -353,8 +353,12 @@ export function computeLSessionFrame(
       const note = padNote(pad.x, pad.y);
       let rgb: Rgb = RGB_OFF;
       if (pl === slot) {
-        // playing: pulse green; if a stop is queued, flash to red.
-        rgb = q === 'stop' ? (blinkOn ? RGB_QUEUED_STOP : RGB_OFF) : blinkOn ? RGB_PLAYING : RGB_PLAYING_DIM;
+        // PLAYING = SOLID green (steady — the Ableton idiom: a running clip is
+        // solid, a QUEUED clip blinks). A blinking "playing" reads as queued on
+        // the hardware, which confused the owner — so playing never blinks here.
+        // The ONLY blink while playing is a queued-STOP (flashes red until the
+        // boundary), so you can see a stop is pending.
+        rgb = q === 'stop' ? (blinkOn ? RGB_QUEUED_STOP : RGB_OFF) : RGB_PLAYING;
       } else if (q === slot) {
         rgb = blinkOn ? RGB_QUEUED : RGB_OFF; // queued-launch flashes
       } else if (clips[String(idx)]) {

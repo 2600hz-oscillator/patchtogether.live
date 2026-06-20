@@ -135,7 +135,7 @@
   const SESSION_COLORS: { state: string; rgb: Rgb; anim: string; note: string }[] = [
     { state: 'empty slot', rgb: [0, 0, 0], anim: 'off', note: 'no clip here' },
     { state: 'loaded clip', rgb: RGB_LOADED, anim: 'static dim', note: 'has notes, stopped' },
-    { state: 'playing', rgb: RGB_PLAYING, anim: 'pulse green', note: 'running now' },
+    { state: 'playing', rgb: RGB_PLAYING, anim: 'SOLID green', note: 'running now (steady — a blinking pad means queued, not playing)' },
     { state: 'queued-launch', rgb: RGB_QUEUED, anim: 'flash green', note: 'waiting for the loop boundary' },
     { state: 'queued-stop', rgb: RGB_QUEUED_STOP, anim: 'flash red', note: 'will stop on the boundary' },
     { state: 'record-armed (REC)', rgb: RGB_RECORDING, anim: 'pulse red', note: 'arranger record-arm (R top-row CC 91)' },
