@@ -274,6 +274,29 @@ export interface PortDef {
    * here to keep the foundational graph layer free of an audio-layer import.)
    */
   edge?: 'trigger' | 'gate';
+  /**
+   * OUTPUT-port only: declare this output as a TYPE-TRANSPARENT pass-through
+   * whose EMITTED cable type adopts the type of whatever's patched into the
+   * named INPUT port (its `id`). Use on attenuator/scaler/buffer utilities
+   * that pass a signal through unchanged — the cable on the OTHER side of the
+   * module should be the SAME class (a CV source → a CV output), not a fixed
+   * declared type.
+   *
+   * WHY THIS MATTERS — the audio→video bridge picks its read path off the
+   * SOURCE cable type: an `audio`-typed source is RMS envelope-followed
+   * (clamped 0..1), while a `cv`/`gate`/`pitch` source is read as the raw
+   * tail sample. SCALER scales a CV signal, but with a hard-wired `audio`
+   * output its scaled CV hit the RMS follower and SATURATED — the AMOUNT knob
+   * had ZERO effect at a video destination. Adopting the upstream type keeps a
+   * CV signal CV through the bridge so AMOUNT actually scales the ±CV value.
+   *
+   * Resolution is LIVE (re-derived in buildPatchSnapshot every graph update),
+   * so re-patching the upstream re-types the output. Falls back to this port's
+   * declared `type` when nothing is patched upstream, or when the adopted type
+   * could not legally reach the actual downstream target (canConnect guard) —
+   * so an audio source still emits `audio` and drives an audio bus normally.
+   */
+  adoptsUpstreamFrom?: string;
 }
 
 export type KnobCurve = 'linear' | 'log' | 'exp' | 'discrete';

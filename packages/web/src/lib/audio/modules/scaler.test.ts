@@ -40,9 +40,17 @@ describe('scalerDef: module def shape', () => {
     expect(inp.paramTarget).toBeUndefined();
   });
 
-  it('exposes a single `out` audio output', () => {
+  it('exposes a single `out` output that adopts its upstream input type', () => {
     expect(scalerDef.outputs.map((p) => p.id)).toEqual(['out']);
+    // Declared `audio` is the FALLBACK type (nothing patched upstream).
     expect(scalerDef.outputs[0].type).toBe('audio');
+    // TYPE-TRANSPARENT pass-through: the emitted cable type adopts whatever's
+    // patched into `in`, so a CV source → a CV out (→ the cross-domain video
+    // bridge reads the scaled value on the raw tail-sample path, not the RMS
+    // follower that clamped the AMOUNT knob dead). The id MUST reference a real
+    // input port. See snapshot.ts resolveAdoptedSourceTypes.
+    expect(scalerDef.outputs[0].adoptsUpstreamFrom).toBe('in');
+    expect(scalerDef.inputs.map((p) => p.id)).toContain(scalerDef.outputs[0].adoptsUpstreamFrom);
   });
 
   it('exposes one AMOUNT param: log taper, 0.1..10, default 1 (unity)', () => {
@@ -211,5 +219,54 @@ describe('scaler DSP: out = in × amount across the 0.1..10 range', () => {
     // Dial down to ×0.1 — a 1.0 input now yields 0.1.
     handle.setParam('amount', 0.1);
     expect(1.0 * created[0].gain.value).toBeCloseTo(0.1, 12);
+  });
+});
+
+// ───────────────────── AMOUNT scales a CV signal linearly (dead-knob fix) ─────────────────────
+// The dead-knob defect was at the cross-domain bridge (an audio-typed out
+// hitting the RMS follower); the PURE scaling core is the same GainNode for CV
+// as for audio. This block pins the contract the e2e proves end-to-end: for a
+// ±CV input, out = cv × amount, LINEARLY, across the AMOUNT range — so amount
+// 2 vs 5 vs 10 produce DISTINCT scaled CV (the values the owner saw collapse to
+// an identical result when the RMS branch saturated).
+describe('scaler CV scaling: out = cv × amount, linear (dead-knob regression)', () => {
+  // A representative ±CV value (e.g. an LFO / env tail sample feeding a video
+  // module's orient input). Eurorack convention is ±1 on the cv cable.
+  const CV = 0.4;
+  const AMOUNTS = [2, 5, 10];
+
+  it('different AMOUNTs scale the SAME CV to DISTINCT, ordered values', async () => {
+    const scaled: number[] = [];
+    for (const amount of AMOUNTS) {
+      const { ctx, created } = makeMockCtx();
+      await scalerDef.factory(ctx as unknown as AudioContext, makeNode({ amount }));
+      const gain = created[0].gain.value;
+      expect(gain).toBeCloseTo(amount, 12);
+      scaled.push(CV * gain); // GainNode output = input × gain, sample-accurate.
+    }
+    // amount 2/5/10 → 0.8 / 2.0 / 4.0 — exact, and strictly increasing. (Under
+    // the bug these all collapsed to ~the same RMS-clamped result.)
+    expect(scaled).toEqual([CV * 2, CV * 5, CV * 10]);
+    expect(scaled[0]).toBeLessThan(scaled[1]);
+    expect(scaled[1]).toBeLessThan(scaled[2]);
+  });
+
+  it('scaling is LINEAR in AMOUNT: doubling AMOUNT doubles the scaled CV', async () => {
+    const make = async (amount: number) => {
+      const { ctx, created } = makeMockCtx();
+      await scalerDef.factory(ctx as unknown as AudioContext, makeNode({ amount }));
+      return CV * created[0].gain.value;
+    };
+    const at2 = await make(2);
+    const at4 = await make(4);
+    expect(at4).toBeCloseTo(at2 * 2, 12);
+  });
+
+  it('attenuation (AMOUNT < 1) scales a CV DOWN, preserving sign', async () => {
+    const { ctx, created } = makeMockCtx();
+    await scalerDef.factory(ctx as unknown as AudioContext, makeNode({ amount: 0.25 }));
+    const gain = created[0].gain.value;
+    expect(-0.8 * gain).toBeCloseTo(-0.2, 12); // sign preserved, magnitude ×0.25
+    expect(0.8 * gain).toBeCloseTo(0.2, 12);
   });
 });
