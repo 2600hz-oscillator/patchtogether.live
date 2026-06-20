@@ -44,6 +44,7 @@ import {
   DECK_PASTE_COL,
   DECK_PASTE_REV_COL,
   DECK_NOW_COL,
+  DECK_COPY_IND_COL,
   CC_TRANSPORT,
   CC_STOP_ALL,
   CC_REC,
@@ -363,6 +364,19 @@ describe('Deck DOUBLE / LENGTH-EDIT / copy-paste', () => {
     expect(clipAt(clipIndex(1, 0))).toBeTruthy();
     // the pasted clip carries the source's note.
     expect(clipAt(clipIndex(1, 0)).steps.some((s) => s.step === 1 && s.midi === 64)).toBe(true);
+  });
+
+  it('tapping the COPY-INDICATOR pad EMPTIES the buffer (turns off the turquoise glow)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    // load the buffer from clip 0.
+    sim.press('R', DECK_COPY_COL, 0); sim.press('L', 0, yForLane(0)); sim.release('R', DECK_COPY_COL, 0);
+    expect(__test_mode().bufferArmed, 'buffer loaded').toBe(true);
+    expect(__test_mode().bufferSourceIndex, 'glow on clip 0').toBe(0);
+    // tap the COPY-INDICATOR pad → buffer cleared, glow off.
+    sim.press('R', DECK_COPY_IND_COL, 0); sim.release('R', DECK_COPY_IND_COL, 0);
+    expect(__test_mode().bufferArmed, 'buffer emptied').toBe(false);
+    expect(__test_mode().bufferSourceIndex, 'turquoise glow cleared').toBeNull();
   });
 
   it('PASTE-REV pastes a time-reversed copy', () => {

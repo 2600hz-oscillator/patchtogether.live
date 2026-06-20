@@ -149,8 +149,8 @@
     { state: 'queued-stop', rgb: RGB_QUEUED_STOP, anim: 'flash red', note: 'will stop on the boundary' },
     { state: 'record-armed (REC)', rgb: RGB_RECORDING, anim: 'pulse red', note: 'arranger record-arm (R top-row CC 91)' },
     { state: 'arrangement (SONG)', rgb: RGB_SONG_ARRANGE, anim: 'static white', note: 'SES⇄ARR lit in ARRANGEMENT (R top-row CC 92)' },
-    { state: 'copy buffer', rgb: RGB_COPY_BUFFER, anim: 'pulse turquoise', note: 'the clip in your clipboard' },
-    { state: 'scene (L right col)', rgb: RGB_SCENE, anim: 'amber', note: 'fire a slot across every lane' },
+    { state: 'copy buffer', rgb: RGB_COPY_BUFFER, anim: 'pulse turquoise', note: 'the clip in your clipboard (reads as a "flashing blue") — tap BUF on R to clear it' },
+    { state: 'scene (L right col)', rgb: RGB_SCENE, anim: 'amber', note: 'fire one clip slot across every lane at once (a whole column)' },
     { state: 'stop lane idle (R right col)', rgb: RGB_STOP_IDLE, anim: 'dim red', note: 'per-lane stop' },
     { state: 'stop lane active', rgb: RGB_STOP_ACTIVE, anim: 'bright red', note: 'that lane is audible' },
   ];
@@ -220,6 +220,28 @@
   <li>The matrix <strong>stays live even while you edit</strong> — editing happens on Unit R.</li>
 </ul>
 
+<h3>Scene launch — the L right column</h3>
+<p class="muted">
+  Each of the 8 <strong>amber buttons down the right edge of Unit L</strong> is a <strong>scene</strong> —
+  it fires one whole <strong>column of clips at once</strong>. Pressing scene button <em>N</em> launches
+  the clip in <strong>slot N of every lane that has one</strong>, and <strong>stops</strong> any lane that
+  has no clip in slot N. It's the one-press way to switch your whole rig to a new section
+  (verse → chorus): instead of tapping eight clips, you tap one scene. (Same quantize rules as a
+  normal launch — they drop in on the boundary, or instantly if you hold <strong>NOW</strong> on R.)
+</p>
+<ul class="tight">
+  <li>Scene button row <em>y</em> = clip <strong>slot</strong> <em>y</em> across all 8 lanes (a vertical column on the card).</li>
+  <li>Lanes with a clip in that slot <strong>launch</strong> it; lanes without one <strong>stop</strong> — so a scene is a clean, full snapshot of "what plays now."</li>
+</ul>
+
+<h3>What the colours mean (matrix)</h3>
+<ul class="tight">
+  <li><strong>Dim blue, steady</strong> = a <strong>loaded clip</strong> (has notes, not playing).</li>
+  <li><strong>Solid green</strong> = <strong>playing</strong>. <strong>Flashing green</strong> = <strong>queued</strong> to launch on the next boundary (with the transport stopped it just waits — start the transport to drop it in).</li>
+  <li><strong>Flashing red</strong> = queued to <strong>stop</strong>. <strong>Dim red</strong> (empty pads) = the player is <strong>record-armed</strong>.</li>
+  <li><strong>Pulsing turquoise (looks like a "flashing blue")</strong> = the clip you <strong>COPIED</strong> — it marks what's in your clipboard. It stays lit until you paste elsewhere or <strong>clear it</strong>: tap the <strong>BUF</strong> (copy-indicator) pad on Unit R to empty the clipboard and turn the glow off.</li>
+</ul>
+
 <h2>Unit R — the command deck (session)</h2>
 <LaunchpadDiagram
   pads={rDeckPads}
@@ -230,7 +252,7 @@
 />
 <ul class="tight">
   <li><strong>EDIT</strong> <span style="color:{hex(RGB_DECK_EDIT_ON)}">(orange)</span> (hold) + tap a clip on L → open its note editor on R.</li>
-  <li><strong>COPY / PASTE / PASTE-REV</strong> <span style="color:{hex(RGB_DECK_COPY_ON)}">(green)</span> (hold) + tap a clip on L → copy / paste / paste-reversed.</li>
+  <li><strong>COPY / PASTE / PASTE-REV</strong> <span style="color:{hex(RGB_DECK_COPY_ON)}">(green)</span> (hold) + tap a clip on L → copy / paste / paste-reversed. The copied clip <strong>pulses turquoise on L</strong> + the <strong>BUF</strong> indicator lights — <strong>tap BUF to empty the clipboard</strong> + turn the glow off.</li>
   <li><strong>DOUBLE</strong> <span style="color:{hex(RGB_DECK_DBL)}">(purple)</span> duplicates the pattern + doubles the length (cap 128). <strong>LENGTH</strong> <span style="color:{hex(RGB_DECK_LEN)}">(yellow)</span> opens the length page. <strong>NOW</strong> <span style="color:{hex(RGB_DECK_NOW_ON)}">(purple)</span> (hold) makes launches ignore quantize.</li>
   <li><strong>REC</strong> (top-left, CC 91) arms the <strong>arranger</strong> — red + pulse while armed; every clip launch is recorded into the song. <strong>SONG</strong> (CC 92) flips <strong>SESSION ⇄ ARRANGEMENT</strong> (white, bright in ARRANGEMENT) to play back the recorded song. Both write the same state the card's REC + SES/ARR buttons do.</li>
 </ul>
