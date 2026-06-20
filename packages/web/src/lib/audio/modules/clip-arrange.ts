@@ -231,3 +231,11 @@ export function deleteBlock(data: ArrangeData, lane: number, startBeat: number):
 export function setArrangeLength(data: ArrangeData, lengthBeats: number): ArrangeData {
   return { ...data, lengthBeats: Math.max(0, lengthBeats) };
 }
+
+/** Snap a beat to a grid (snapTo>0, in beats), clamped ≥0. snapTo<=0 ⇒ no snap
+ *  (just clamp ≥0). Used by the drag-to-move flow: bar-snap (4) by default, a
+ *  fine mode = beat-snap (1). */
+export function snapBeat(beat: number, snapTo: number): number {
+  if (snapTo <= 0) return Math.max(0, beat);
+  return Math.max(0, Math.round(beat / snapTo) * snapTo);
+}

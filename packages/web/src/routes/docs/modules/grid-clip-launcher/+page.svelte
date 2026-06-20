@@ -354,8 +354,11 @@
     running, every launch you make (a clip pad, a scene, a stop — from the card
     <em>or</em> the grid) is appended to the arrangement at the
     <strong>song-beat you heard it apply</strong> (not the beat you clicked), so
-    playback reproduces exactly what you heard. Arming <strong>clears</strong> the
-    old arrangement and records fresh (v1 is replace, not overdub).
+    playback reproduces exactly what you heard. The record-mode toggle (the
+    RPL/OVR pill next to REC on the card) chooses: in <strong>REPLACE</strong>
+    (default) arming <strong>clears</strong> the old arrangement and records fresh;
+    in <strong>OVERDUB</strong> arming <strong>keeps</strong> the existing take and
+    merges new launches into it by song-beat.
   </li>
   <li>
     <strong>SES ⇄ ARR</strong> — flip the playback transport between
@@ -452,8 +455,8 @@
 
 <h2>What's next</h2>
 <ul>
-  <li><strong>Song-mode editing (Phase 2)</strong> — the song view is read-only today; next it becomes an editable arrangement: drag block edges to retime, click to swap or delete a clip, set the loop length. Blocks are derived from the recorded event log, so editing maps straight back onto it.</li>
-  <li><strong>Overdub</strong> — layer a new take onto an existing arrangement (today's REC clears and records fresh), and multi-recorder song-building.</li>
+  <li><strong>Song-mode editing</strong> — <em>shipped:</em> the song view is editable. Drag a clip block to retime it in time (bar-snapped), click to select then cycle/delete it, and nudge the loop length in bars — in the in-card timeline or the full-window pop-out arranger editor (the "ARR ⤢" button). Blocks are derived from the recorded event log, so editing maps straight back onto it. <em>Next:</em> cross-lane (vertical) moves + per-note editing inside the pop-out.</li>
+  <li><strong>Overdub</strong> — <em>shipped:</em> the RPL/OVR record-mode toggle layers a new take onto an existing arrangement (REPLACE clears + records fresh; OVERDUB keeps the take + merges by song-beat). <em>Next:</em> surfacing OVERDUB on the Launchpad/grid controls + multi-recorder song-building.</li>
   <li><strong>On-grid song overview (Phase 3)</strong> — scrub and see the arrangement on the pads (monochrome presence/position on a monome; colour-coded blocks on an RGB Launchpad).</li>
   <li><strong>More clip kinds</strong> — audio loops and patch snapshots alongside note clips, plus recording into slots.</li>
 </ul>
