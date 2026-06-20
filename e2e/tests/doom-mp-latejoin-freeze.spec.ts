@@ -302,12 +302,14 @@ test.describe('@collab DOOM multiplayer — late-join host freeze', () => {
       // ── 3. Anon hot-joins the RUNNING game → arbiter relaunches at np=2 ────
       const joinBtn = anon.page.locator('[data-testid="doom-join-btn"]');
       await expect(joinBtn, 'anon Join enables once MP is live').toBeEnabled({ timeout: 20000 });
-      // force:true — the Join is gated visible+enabled above; the only blocker is
-      // the auto-spawned TIMELORDE display canvas overlapping the DOOM card in
+      // dispatchEvent — the Join is gated visible+enabled above; the only blocker
+      // is the auto-spawned TIMELORDE display canvas overlapping the DOOM card in
       // screen space (SvelteFlow fitView re-centers both nodes, so relocating
-      // doesn't help). The canonical Playwright remedy for an unrelated overlay
-      // intercept on a confirmed-actionable target.
-      await joinBtn.click({ force: true });
+      // doesn't help). A real pointer click — even click({force:true}) — still
+      // hit-tests to the TOPMOST element (TIMELORDE), so the anon was never seated
+      // (the @collab attest red). dispatchEvent fires the click DIRECTLY on the
+      // Join button, bypassing browser hit-testing entirely.
+      await joinBtn.dispatchEvent('click');
       // De-flake (consolidated #837+#841): formerly a "relay flake" vacuity skip.
       // Now a real bounded assert — a relay that never seats the anon at slot 1
       // FAILS the test instead of silently skipping green.
