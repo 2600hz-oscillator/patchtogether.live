@@ -58,6 +58,8 @@ import {
   computeRDeckFrame,
   CC_TRANSPORT,
   CC_STOP_ALL,
+  CC_REC,
+  CC_SONG,
   // R editor
   editPadToNote,
   computeREditFrame,
@@ -474,6 +476,25 @@ function toggleTransport(): void {
 function recordArmed(data: ClipPlayerData | undefined): boolean {
   return data?.recording === true;
 }
+function arrangeMode(data: ClipPlayerData | undefined): boolean {
+  return data?.clipMode === 'arrangement';
+}
+/** Toggle the arranger record-arm — the SAME node.data.recording field the
+ *  ClipplayerCard's REC button writes. The clipplayer factory captures each
+ *  applied launch into node.data.arrangement while this is true (session mode);
+ *  arming clears the log + restarts song time (engine rising-edge, v1 replace). */
+function toggleRecording(nodeId: string): void {
+  editData(nodeId, (d) => {
+    d.recording = !d.recording;
+  });
+}
+/** Flip SESSION ⇄ ARRANGEMENT — the SAME node.data.clipMode field the card's
+ *  SES/ARR button writes. ARRANGEMENT replays the recorded launch log. */
+function toggleArrangeMode(nodeId: string): void {
+  editData(nodeId, (d) => {
+    d.clipMode = d.clipMode === 'arrangement' ? 'session' : 'arrangement';
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Inbound key routing — split by unit.
@@ -609,6 +630,8 @@ function handleRDeck(nodeId: string, e: LaunchpadKeyEvent): void {
       editData(nodeId, (d) => { d.queued = new Array(CLIP_LANES).fill('stop'); });
       return;
     }
+    if (ev.cc === CC_REC) { toggleRecording(nodeId); return; }
+    if (ev.cc === CC_SONG) { toggleArrangeMode(nodeId); return; }
   }
 }
 
@@ -789,6 +812,8 @@ function renderLeds(): void {
     pasteRevHeld,
     nowHeld,
     bufferArmed: clipBuffer !== null,
+    recording: recordArmed(data),
+    arrangeMode: arrangeMode(data),
     data,
   }));
 }

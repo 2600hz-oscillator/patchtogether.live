@@ -113,6 +113,9 @@ export const RGB_FUNC: Rgb = [60, 60, 70]; // function idle (white-ish)
 export const RGB_FUNC_ON: Rgb = [122, 79, 112]; // held modifier (violet, bright)
 export const RGB_FUNC_DIM: Rgb = [10, 10, 14]; // a no-op-right-now function pad
 export const RGB_TRANSPORT_ON: Rgb = [23, 104, 53]; // green (transport running)
+export const RGB_RECORDING_DIM: Rgb = [30, 4, 4]; // down phase of the record-arm pulse
+export const RGB_SONG_SESSION: Rgb = [16, 16, 20]; // SES/ARR idle (SESSION) — dim white
+export const RGB_SONG_ARRANGE: Rgb = [90, 90, 100]; // SES/ARR in ARRANGEMENT — bright white
 export const RGB_COPY_BUFFER: Rgb = [15, 99, 99]; // turquoise (copy buffer loaded) — pulses
 export const RGB_COPY_BUFFER_DIM: Rgb = [4, 30, 30]; // down phase of the copy pulse
 export const RGB_EXIT: Rgb = [104, 23, 23]; // red (EXIT)
@@ -133,14 +136,29 @@ export const RGB_LEN_END: Rgb = [63, 91, 127]; // the END block/step (bright)
 // UNIT L — the clip matrix placement (PURE classifiers).
 // ---------------------------------------------------------------------------
 
-/** L pad (x=slot, y=lane) → flat clip index, or null when out of the matrix. */
-export function lPadToClipIndex(x: number, y: number): number | null {
-  return clipIndexForSlotLane(x, y); // launchpad L: pad.x = slot, pad.y = lane
+// The launchpad's programmer-mode y is measured from the BOTTOM (y=0 = bottom
+// row). The on-screen ClipplayerCard renders lane 0 as the TOP grid row (it
+// `#each`es lanes top→bottom). To make the launchpad MATCH WHAT YOU SEE on the
+// card — tap the pad that's lit and you hit the clip you see — lane 0 lands on
+// the launchpad's TOP physical row (y = CLIP_LANES-1) and lane 7 on the bottom.
+// This flip is applied CONSISTENTLY in BOTH the decode (here) and the LED render
+// (computeLSessionFrame), so a press lands on the clip whose LED is lit.
+/** Launchpad physical y (0 = bottom) ↔ instrument lane (0 = card TOP row). The
+ *  flip is its own inverse, so one helper serves both directions. */
+export function lYToLane(y: number): number {
+  return CLIP_LANES - 1 - y;
 }
-/** Flat clip index → its (x=slot, y=lane) pad on unit L. */
+
+/** L pad (x=slot, y from BOTTOM) → flat clip index, or null when out of the
+ *  matrix. y is flipped to a lane so the TOP row = lane 0 (matches the card). */
+export function lPadToClipIndex(x: number, y: number): number | null {
+  return clipIndexForSlotLane(x, lYToLane(y)); // launchpad L: pad.x = slot, pad.y flips to lane
+}
+/** Flat clip index → its (x=slot, y from BOTTOM) pad on unit L (lane→row flipped
+ *  so lane 0 = the TOP physical row, matching the card). */
 export function clipIndexToLPad(index: number): { x: number; y: number } {
   const { slot, lane } = slotLaneForClipIndex(index);
-  return { x: slot, y: lane };
+  return { x: slot, y: lYToLane(lane) }; // lYToLane is its own inverse
 }
 /** An L scene-column row → the slot it launches across all lanes, or null.
  *  Scene row y addresses slot y (rows 0..CLIP_SLOTS-1). */
@@ -163,8 +181,18 @@ export const DECK_DOUBLE_COL = 5;
 export const DECK_LENGTH_COL = 6;
 export const DECK_NOW_COL = 7;
 
-// Top-row CC roles (session deck): the arrows are unused; CC 96/97 = transport
-// / stop-all. (CC 95 = SHIFT, reserved across both modes; CC 98 spare.)
+// Top-row CC roles (session deck): the ▲▼◀▶ arrows are unused in SESSION (the
+// editor uses them), so the otherwise-idle top-left arrows host the arranger
+// SONG controls. CC 96/97 = transport / stop-all. (CC 95 = SHIFT, reserved
+// across both modes.)
+//   CC 91 (▲) = REC   — song record-arm (node.data.recording), red + pulse
+//   CC 92 (▼) = SONG  — SESSION ⇄ ARRANGEMENT (node.data.clipMode), white,
+//                       distinct/lit in ARRANGEMENT
+// These write the SAME node.data fields the ClipplayerCard's REC + SES/ARR
+// buttons write, so the engine arranger (clip-arrange) records launches and
+// arrangement playback runs identically whichever surface armed it.
+export const CC_REC = CC_UP; // 91 — arranger record-arm
+export const CC_SONG = CC_DOWN; // 92 — SESSION ⇄ ARRANGEMENT
 export const CC_TRANSPORT = CC_TOP_SPARE_6; // 96
 export const CC_STOP_ALL = CC_TOP_SPARE_7; // 97
 
@@ -321,7 +349,8 @@ export function computeLSessionFrame(
     const q = laneQueued(data, lane);
     for (let slot = 0; slot < CLIP_SLOTS; slot++) {
       const idx = clipIndex(slot, lane);
-      const note = padNote(slot, lane); // x=slot, y=lane
+      const pad = clipIndexToLPad(idx); // lane→row flipped (lane 0 = TOP row, matches the card)
+      const note = padNote(pad.x, pad.y);
       let rgb: Rgb = RGB_OFF;
       if (pl === slot) {
         // playing: pulse green; if a stop is queued, flash to red.
@@ -355,6 +384,10 @@ export interface RSessionOpts {
   pasteRevHeld?: boolean;
   nowHeld?: boolean;
   bufferArmed?: boolean;
+  /** Arranger record-arm (node.data.recording) — lights REC red + pulse. */
+  recording?: boolean;
+  /** Arrangement mode (node.data.clipMode === 'arrangement') — lights SONG white. */
+  arrangeMode?: boolean;
   /** Which lanes are playing (lights per-lane STOP active). */
   data?: ClipPlayerData | undefined;
 }
@@ -376,9 +409,17 @@ export function computeRDeckFrame(opts: RSessionOpts = {}): LaunchpadFrame {
     padNote(DECK_COPY_IND_COL, DECK_ROW),
     opts.bufferArmed ? (blinkOn ? RGB_COPY_BUFFER : RGB_COPY_BUFFER_DIM) : RGB_OFF,
   );
-  // Top-row transport + stop-all.
+  // Top-row transport + stop-all + arranger SONG controls.
   put(frame, CC_TRANSPORT, opts.transportRunning ? RGB_TRANSPORT_ON : RGB_STOP_IDLE);
   put(frame, CC_STOP_ALL, RGB_STOP_IDLE);
+  // REC (CC 91): red, pulses while record-armed; dim red at rest.
+  put(
+    frame,
+    CC_REC,
+    opts.recording ? (blinkOn ? RGB_RECORDING : RGB_RECORDING_DIM) : RGB_STOP_IDLE,
+  );
+  // SONG (CC 92): bright white in ARRANGEMENT, dim white in SESSION.
+  put(frame, CC_SONG, opts.arrangeMode ? RGB_SONG_ARRANGE : RGB_SONG_SESSION);
   // R scene column = per-lane STOP (bright red where a lane plays).
   for (let i = 0; i < SCENE_CCS.length; i++) {
     const row = LP_HEIGHT - 1 - i;

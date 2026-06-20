@@ -17,6 +17,7 @@
     RGB_FUNC,
     RGB_FUNC_ON,
     RGB_TRANSPORT_ON,
+    RGB_SONG_ARRANGE,
     RGB_COPY_BUFFER,
     RGB_NOTE_BY_VEL,
     RGB_NOTE_PLAYHEAD,
@@ -33,15 +34,19 @@
     `rgb(${Math.round((c[0] / 127) * 255)},${Math.round((c[1] / 127) * 255)},${Math.round((c[2] / 127) * 255)})`;
 
   // ── UNIT L · clip matrix (an illustrative live state) ──
+  // y is the launchpad's BOTTOM-origin row; the matrix maps lane 0 → the TOP
+  // row (y=7) so it matches the on-screen card (which renders lane 0 at the
+  // top). yL() converts a card-lane (0 = top) to its physical row.
+  const yL = (lane: number) => 7 - lane;
   const lPads = [
-    { x: 0, y: 0, fill: hex(RGB_PLAYING) }, // lane1/slot1 playing
-    { x: 1, y: 0, fill: hex(RGB_LOADED) },
-    { x: 2, y: 0, fill: hex(RGB_LOADED) },
-    { x: 0, y: 1, fill: hex(RGB_QUEUED) }, // lane2/slot1 queued-launch
-    { x: 1, y: 1, fill: hex(RGB_LOADED) },
-    { x: 0, y: 2, fill: hex(RGB_LOADED) },
-    { x: 1, y: 2, fill: hex(RGB_QUEUED_STOP) }, // queued-stop
-    { x: 3, y: 3, fill: hex(RGB_COPY_BUFFER) }, // copy-buffer source glow
+    { x: 0, y: yL(0), fill: hex(RGB_PLAYING) }, // lane1/slot1 playing (TOP row)
+    { x: 1, y: yL(0), fill: hex(RGB_LOADED) },
+    { x: 2, y: yL(0), fill: hex(RGB_LOADED) },
+    { x: 0, y: yL(1), fill: hex(RGB_QUEUED) }, // lane2/slot1 queued-launch
+    { x: 1, y: yL(1), fill: hex(RGB_LOADED) },
+    { x: 0, y: yL(2), fill: hex(RGB_LOADED) },
+    { x: 1, y: yL(2), fill: hex(RGB_QUEUED_STOP) }, // queued-stop
+    { x: 3, y: yL(3), fill: hex(RGB_COPY_BUFFER) }, // copy-buffer source glow
   ];
   const lScene = Array.from({ length: 8 }, (_, r) => ({
     row: r,
@@ -62,6 +67,8 @@
     { x: 7, y: 0, fill: hex(RGB_FUNC) },
   ];
   const rDeckTop = [
+    { col: 0, fill: hex(RGB_RECORDING), label: 'REC' }, // CC 91 — arranger record-arm
+    { col: 1, fill: hex(RGB_SONG_ARRANGE), label: 'SONG' }, // CC 92 — SES⇄ARR
     { col: 4, fill: hex(RGB_FUNC), label: 'SHFT' },
     { col: 5, fill: hex(RGB_STOP_IDLE), label: 'PLAY' },
     { col: 6, fill: hex(RGB_STOP_IDLE), label: 'ALL' },
@@ -131,7 +138,8 @@
     { state: 'playing', rgb: RGB_PLAYING, anim: 'pulse green', note: 'running now' },
     { state: 'queued-launch', rgb: RGB_QUEUED, anim: 'flash green', note: 'waiting for the loop boundary' },
     { state: 'queued-stop', rgb: RGB_QUEUED_STOP, anim: 'flash red', note: 'will stop on the boundary' },
-    { state: 'record-armed', rgb: RGB_RECORDING, anim: 'pulse red', note: 'arranger record-arm' },
+    { state: 'record-armed (REC)', rgb: RGB_RECORDING, anim: 'pulse red', note: 'arranger record-arm (R top-row CC 91)' },
+    { state: 'arrangement (SONG)', rgb: RGB_SONG_ARRANGE, anim: 'static white', note: 'SES⇄ARR lit in ARRANGEMENT (R top-row CC 92)' },
     { state: 'copy buffer', rgb: RGB_COPY_BUFFER, anim: 'pulse turquoise', note: 'the clip in your clipboard' },
     { state: 'scene (L right col)', rgb: RGB_SCENE, anim: 'amber', note: 'fire a slot across every lane' },
     { state: 'stop lane idle (R right col)', rgb: RGB_STOP_IDLE, anim: 'dim red', note: 'per-lane stop' },
@@ -154,8 +162,8 @@
 
   const PAD_MAP: { what: string; addr: string }[] = [
     { what: '8×8 pads (programmer mode)', addr: 'note = row*10 + col · 11 = bottom-left · 88 = top-right' },
-    { what: 'top row ▲ ▼ ◀ ▶ ▣(SHIFT)', addr: 'CC 91 · 92 · 93 · 94 · 95' },
-    { what: 'top row spare / globals', addr: 'CC 96 · 97 · 98' },
+    { what: 'top row ▲ ▼ ◀ ▶ ▣(SHIFT)', addr: 'CC 91 · 92 · 93 · 94 · 95 — editor nav (▲▼◀▶) + SHIFT(95)' },
+    { what: 'top row arranger (session) / globals', addr: 'CC 91 = REC · 92 = SONG · 96 = transport · 97 = stop-all' },
     { what: 'right scene column (top→bottom)', addr: 'CC 89 · 79 · 69 · 59 · 49 · 39 · 29 · 19' },
     { what: 'per-LED full RGB', addr: 'F0 00 20 29 02 0D 03  03 <pad> <R> <G> <B>  F7   (0–127)' },
   ];
@@ -191,10 +199,10 @@
   pads={lPads}
   scene={lScene}
   callouts={lCallouts}
-  caption="UNIT L · rows = the 8 instrument lanes (bottom→top), columns = the 8 clip slots. Tap a clip to launch it / stop its lane (next quantize boundary; hold NOW on R to fire instantly). Right column = scene launch."
+  caption="UNIT L · rows = the 8 instrument lanes (TOP→BOTTOM, matching the on-screen card — lane 1 is the top row), columns = the 8 clip slots. Tap a clip to launch it / stop its lane (next quantize boundary; hold NOW on R to fire instantly). Right column = scene launch."
 />
 <ul class="tight">
-  <li>Pad <code>(slot, lane)</code> is clip <code>lane*8 + slot</code>; note 11..88.</li>
+  <li>Pad <code>(slot, lane)</code> is clip <code>lane*8 + slot</code>; <strong>lane 1 = the TOP physical row</strong> so the launchpad matches what you see on the card (the device's note 11..88 is bottom-origin; the matrix flips lane→row to align with the screen).</li>
   <li>The matrix <strong>stays live even while you edit</strong> — editing happens on Unit R.</li>
 </ul>
 
@@ -204,12 +212,13 @@
   top={rDeckTop}
   scene={rDeckScene}
   callouts={rDeckCallouts}
-  caption="UNIT R · bottom row = functions (BUF = copy-buffer indicator, dark until you copy). EDIT/COPY/PASTE/P-REV/NOW are HOLD modifiers. Right column = per-lane STOP. Top: SHIFT, PLAY (transport), ALL (stop-all)."
+  caption="UNIT R · bottom row = functions (BUF = copy-buffer indicator, dark until you copy). EDIT/COPY/PASTE/P-REV/NOW are HOLD modifiers. Right column = per-lane STOP. Top row: REC (record-arm the arrangement), SONG (SESSION⇄ARRANGEMENT), SHIFT, PLAY (transport), ALL (stop-all)."
 />
 <ul class="tight">
   <li><strong>EDIT</strong> (hold) + tap a clip on L → open its note editor on R.</li>
   <li><strong>COPY / PASTE / PASTE-REV</strong> (hold) + tap a clip on L → copy / paste / paste-reversed.</li>
   <li><strong>DOUBLE</strong> duplicates the pattern + doubles the length (cap 128). <strong>LENGTH</strong> opens the length page. <strong>NOW</strong> (hold) makes launches ignore quantize.</li>
+  <li><strong>REC</strong> (top-left, CC 91) arms the <strong>arranger</strong> — red + pulse while armed; every clip launch is recorded into the song. <strong>SONG</strong> (CC 92) flips <strong>SESSION ⇄ ARRANGEMENT</strong> (white, bright in ARRANGEMENT) to play back the recorded song. Both write the same state the card's REC + SES/ARR buttons do.</li>
 </ul>
 
 <h2>Unit R — the note editor</h2>
