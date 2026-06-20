@@ -50,9 +50,12 @@ import {
   EDIT_DOUBLE_SCENE_ROW,
   EDIT_LENGTH_SCENE_ROW,
   editPadToNote,
+  lPadToClipIndex,
+  clipIndexToLPad,
 } from './launchpad-map';
-import { SCENE_CCS } from './launchpad-sysex';
+import { SCENE_CCS, padNote } from './launchpad-sysex';
 import {
+  CLIP_LANES,
   clipIndex,
   defaultNoteClip,
   scaleSteps,
@@ -105,21 +108,26 @@ beforeEach(async () => {
 // index (7 - row). Helper to press a scene-column button by ROW.
 const sceneCcForRow = (row: number) => SCENE_CCS[7 - row];
 
+// The L matrix maps lane 0 → the TOP physical row (y = CLIP_LANES-1) so it
+// matches the on-screen card (which renders lane 0 as the top grid row). A pad
+// for (slot, lane) is therefore at physical (x=slot, y=yForLane(lane)).
+const yForLane = (lane: number) => CLIP_LANES - 1 - lane;
+
 describe('Launchpad L (matrix) → clip-player launch', () => {
   it('pressing a loaded clip pad on L queues that clip in its lane', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip(), [clipIndex(1, 1)]: noteClip() } });
     bindLaunchpadToClip(NODE_ID);
     expect(boundClipNode()).toBe(NODE_ID);
-    sim.press('L', 0, 0); // slot0 lane0
+    sim.press('L', 0, yForLane(0)); // slot0 lane0 (top row)
     expect(queued()![0]).toBe(0);
-    sim.press('L', 1, 1); // slot1 lane1
+    sim.press('L', 1, yForLane(1)); // slot1 lane1
     expect(queued()![1]).toBe(1);
   });
 
   it('pressing the currently-playing clip queues a stop for that lane', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() }, playing: [0, null, null, null, null, null, null, null] });
     bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 0, 0);
+    sim.press('L', 0, yForLane(0));
     expect(queued()![0]).toBe('stop');
   });
 
@@ -135,8 +143,8 @@ describe('Launchpad L (matrix) → clip-player launch', () => {
   it('empty clip pad is a no-op; key release never launches', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
     bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 3, 0); // slot3 lane0 — not loaded
-    sim.release('L', 0, 0);
+    sim.press('L', 3, yForLane(0)); // slot3 lane0 — not loaded
+    sim.release('L', 0, yForLane(0));
     expect(queued()?.[0] ?? null).toBeNull();
     expect(queued()?.[3] ?? null).toBeNull();
   });
@@ -172,7 +180,7 @@ describe('Launchpad R (deck) — transport + per-lane stop + NOW', () => {
     bindLaunchpadToClip(NODE_ID);
     sim.press('R', DECK_NOW_COL, 0); // hold NOW
     expect(__test_mode().nowHeld).toBe(true);
-    sim.press('L', 0, 0); // launch with NOW held
+    sim.press('L', 0, yForLane(0)); // launch with NOW held
     expect(queued()![0]).toBe(0);
     expect(queuedImmediate()![0]).toBe(true);
     sim.release('R', DECK_NOW_COL, 0);
@@ -182,7 +190,7 @@ describe('Launchpad R (deck) — transport + per-lane stop + NOW', () => {
 describe('Launchpad EDIT — hold EDIT on R + tap a clip on L', () => {
   function enterEdit(slot = 0, lane = 0) {
     sim.press('R', DECK_EDIT_COL, 0); // hold EDIT (deck)
-    sim.press('L', slot, lane); // tap clip on the matrix → enter editor
+    sim.press('L', slot, yForLane(lane)); // tap clip on the matrix → enter editor
     sim.release('R', DECK_EDIT_COL, 0);
   }
   const clipSteps = (idx = 0) => (liveData().clips as Record<string, NoteClipRecord>)[String(idx)].steps;
@@ -192,7 +200,7 @@ describe('Launchpad EDIT — hold EDIT on R + tap a clip on L', () => {
     bindLaunchpadToClip(NODE_ID);
     sim.press('R', DECK_EDIT_COL, 0);
     expect(__test_mode().editArmed).toBe(true);
-    sim.press('L', 0, 0);
+    sim.press('L', 0, yForLane(0));
     expect(__test_mode().mode).toBe('edit');
     expect(__test_mode().editClipIndex).toBe(0);
     expect(queued()?.[0] ?? null).toBeNull(); // did not launch
@@ -263,7 +271,7 @@ describe('Launchpad EDIT — hold EDIT on R + tap a clip on L', () => {
 describe('Editor SHIFT windowing (×8 jump)', () => {
   function enterEdit() {
     sim.press('R', DECK_EDIT_COL, 0);
-    sim.press('L', 0, 0);
+    sim.press('L', 0, yForLane(0));
     sim.release('R', DECK_EDIT_COL, 0);
   }
   it('▲ scrolls pitch +1 row; SHIFT+▲ jumps +8 rows', () => {
@@ -302,7 +310,7 @@ describe('Editor SHIFT windowing (×8 jump)', () => {
 describe('Deck DOUBLE / LENGTH-EDIT / copy-paste', () => {
   function enterEdit() {
     sim.press('R', DECK_EDIT_COL, 0);
-    sim.press('L', 0, 0);
+    sim.press('L', 0, yForLane(0));
     sim.release('R', DECK_EDIT_COL, 0);
   }
   const clipAt = (idx: number) => (liveData().clips as Record<string, NoteClipRecord>)[String(idx)];
@@ -337,13 +345,13 @@ describe('Deck DOUBLE / LENGTH-EDIT / copy-paste', () => {
     bindLaunchpadToClip(NODE_ID);
     // hold COPY + tap the source clip.
     sim.press('R', DECK_COPY_COL, 0);
-    sim.press('L', 0, 0);
+    sim.press('L', 0, yForLane(0));
     sim.release('R', DECK_COPY_COL, 0);
     expect(__test_mode().bufferArmed).toBe(true);
     expect(__test_mode().bufferSourceIndex).toBe(0);
     // hold PASTE + tap an empty destination (slot1 lane0).
     sim.press('R', DECK_PASTE_COL, 0);
-    sim.press('L', 1, 0);
+    sim.press('L', 1, yForLane(0));
     sim.release('R', DECK_PASTE_COL, 0);
     expect(clipAt(clipIndex(1, 0))).toBeTruthy();
     // the pasted clip carries the source's note.
@@ -357,8 +365,8 @@ describe('Deck DOUBLE / LENGTH-EDIT / copy-paste', () => {
       },
     });
     bindLaunchpadToClip(NODE_ID);
-    sim.press('R', DECK_COPY_COL, 0); sim.press('L', 0, 0); sim.release('R', DECK_COPY_COL, 0);
-    sim.press('R', DECK_PASTE_REV_COL, 0); sim.press('L', 1, 0); sim.release('R', DECK_PASTE_REV_COL, 0);
+    sim.press('R', DECK_COPY_COL, 0); sim.press('L', 0, yForLane(0)); sim.release('R', DECK_COPY_COL, 0);
+    sim.press('R', DECK_PASTE_REV_COL, 0); sim.press('L', 1, yForLane(0)); sim.release('R', DECK_PASTE_REV_COL, 0);
     // a note at step 0 (len 1) in a 16-step clip mirrors to step 15.
     expect(clipAt(clipIndex(1, 0)).steps.some((s) => s.step === 15 && s.midi === 64)).toBe(true);
   });
@@ -374,8 +382,9 @@ describe('LED render loop (both units)', () => {
     bindLaunchpadToClip(NODE_ID);
     expect(hoisted.tick).toBeTruthy();
     hoisted.tick!();
-    // L: lane1 slot1 playing → its pad LED is lit (non-zero).
-    const lit = sim.ledAt('L', /* padNote(1,1) */ 22);
+    // L: lane1 slot1 playing → its pad LED is lit (non-zero). lane 1 flips to
+    // physical y = yForLane(1) so it reads at the card-matching row.
+    const lit = sim.ledAt('L', padNote(1, yForLane(1)));
     expect(lit).not.toBeNull();
     expect(lit![0] + lit![1] + lit![2]).toBeGreaterThan(0);
     // R: the EDIT deck pad is lit (function colour).
@@ -390,7 +399,7 @@ describe('unbind', () => {
     bindLaunchpadToClip(NODE_ID);
     unbindLaunchpad();
     expect(boundClipNode()).toBeNull();
-    sim.press('L', 0, 0);
+    sim.press('L', 0, yForLane(0));
     expect(queued()?.[0] ?? null).toBeNull();
   });
 });
@@ -411,10 +420,6 @@ describe('sanity: editPadToNote octave math used by the editor', () => {
 // pass. See the PR description for the audit table.
 // ===========================================================================
 
-// The L matrix now maps lane 0 → TOP physical row (y=7) to MATCH THE ON-SCREEN
-// CARD (the card renders lane 0 as the TOP grid row).
-const yForLane = (lane: number) => CLIP_LANES - 1 - lane;
-
 describe('BUG 1 — L matrix Y-axis matches the on-screen card (lane 0 = TOP row)', () => {
   it('the card top-left clip (lane0,slot0) lights the launchpad TOP-left pad, not the bottom', () => {
     seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() }, playing: [0, null, null, null, null, null, null, null] });
@@ -427,106 +432,6 @@ describe('BUG 1 — L matrix Y-axis matches the on-screen card (lane 0 = TOP row
     expect(top![0] + top![1] + top![2]).toBeGreaterThan(0);
     // the BOTTOM-left pad (y=0) = lane 7 slot 0 = empty → off — proves Y isn't inverted.
     const bottom = sim.ledAt('L', padNote(0, 0));
-    expect((bottom?.[0] ?? 0) + (bottom?.[1] ?? 0) + (bottom?.[2] ?? 0)).toBe(0);
-  });
-
-  it('pressing the TOP-left pad on L launches lane 0 (the card top row)', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip(), [clipIndex(0, 7)]: noteClip() } });
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('L', 0, yForLane(0)); // top-left physical pad
-    expect(queued()![0], 'top-left pad → lane 0').toBe(0);
-    expect(queued()![7] ?? null, 'lane 7 untouched').toBeNull();
-    // and the BOTTOM-left pad addresses lane 7 (the card's bottom row).
-    sim.press('L', 0, yForLane(7)); // = y 0 (bottom)
-    expect(queued()![7], 'bottom-left pad → lane 7').toBe(0);
-  });
-
-  it('lPadToClipIndex / clipIndexToLPad round-trip with the card orientation', () => {
-    for (let lane = 0; lane < CLIP_LANES; lane++) {
-      const p = clipIndexToLPad(clipIndex(0, lane));
-      expect(p.y, `lane ${lane} → physical y`).toBe(yForLane(lane));
-      expect(lPadToClipIndex(p.x, p.y)).toBe(clipIndex(0, lane));
-    }
-  });
-});
-
-describe('BUG 2 — tapping a loaded clip in an already-playing lane switches it', () => {
-  it('lane already playing slot0; tapping loaded slot2 queues slot2 (not a no-op/stop)', () => {
-    seedClipPlayer({
-      clips: { [clipIndex(0, 0)]: noteClip(), [clipIndex(2, 0)]: noteClip() },
-      playing: [0, null, null, null, null, null, null, null],
-    });
-    bindLaunchpadToClip(NODE_ID);
-    // tap the DIFFERENT loaded clip in the same (top) lane.
-    sim.press('L', 2, yForLane(0));
-    expect(queued()![0], 'switch queued to slot 2').toBe(2);
-  });
-});
-
-describe('BUG 3 — create a clip from an EMPTY pad (hold EDIT + tap empty)', () => {
-  it('hold EDIT on R + tap an empty pad on L creates a clip there + flips R to the editor', () => {
-    seedClipPlayer({ clips: {} });
-    bindLaunchpadToClip(NODE_ID);
-    sim.press('R', DECK_EDIT_COL, 0); // hold EDIT
-    expect(__test_mode().editArmed, 'EDIT armed while held').toBe(true);
-    sim.press('L', 4, yForLane(3)); // empty pad: lane3 slot4
-    const idx = clipIndex(4, 3);
-    expect((liveData().clips as Record<string, unknown>)[String(idx)], 'clip created at tapped index').toBeTruthy();
-    expect(__test_mode().mode, 'R flipped to the editor').toBe('edit');
-    expect(__test_mode().editClipIndex).toBe(idx);
-    expect(queued()?.[3] ?? null, 'an empty-pad EDIT tap does NOT launch').toBeNull();
-    sim.release('R', DECK_EDIT_COL, 0);
-  });
-});
-
-describe('BUG 4 — transport RESTARTS (toggle stop → start → stop again)', () => {
-  it('CC 96 toggles TIMELORDE.running both directions, repeatedly', () => {
-    seedClipPlayer({ clips: {} });
-    seedTimelorde(1); // running
-    bindLaunchpadToClip(NODE_ID);
-    const running = () => (livePatch.nodes['tl']!.params as Record<string, number>).running;
-    expect(running()).toBe(1);
-    sim.cc('R', CC_TRANSPORT, 127); // → stop
-    expect(running(), 'first press stops').toBe(0);
-    sim.cc('R', CC_TRANSPORT, 127); // → RESTART
-    expect(running(), 'second press RESTARTS').toBe(1);
-    sim.cc('R', CC_TRANSPORT, 127); // → stop again
-    expect(running(), 'third press stops again').toBe(0);
-  });
-
-  it('CC 97 (stop-all) is distinct from CC 96 (transport) and does NOT touch running', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() }, playing: [0, null, null, null, null, null, null, null] });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    sim.cc('R', CC_STOP_ALL, 127);
-    expect(queued()).toEqual(['stop', 'stop', 'stop', 'stop', 'stop', 'stop', 'stop', 'stop']);
-    expect((livePatch.nodes['tl']!.params as Record<string, number>).running, 'stop-all leaves transport running').toBe(1);
-  });
-});
-
-// ===========================================================================
-// BUG REGRESSIONS (fix/launchpad-clip-bugs). Each block reproduces a confirmed
-// hardware bug the owner hit; written FAILING first, then the fix makes them
-// pass. See the PR description for the audit table.
-// ===========================================================================
-
-// SCENE_CCS index 0 = top = row 7; the L matrix now maps lane 0 → TOP row
-// (y=7) to MATCH THE ON-SCREEN CARD (card renders lane 0 as the top grid row).
-const yForLane = (lane: number) => CLIP_LANES - 1 - lane;
-
-describe('BUG 1 — L matrix Y-axis matches the on-screen card (lane 0 = TOP row)', () => {
-  it('the card top-left clip (lane0,slot0) lights the launchpad TOP-left pad, not the bottom', () => {
-    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() }, playing: [0, null, null, null, null, null, null, null] });
-    seedTimelorde(1);
-    bindLaunchpadToClip(NODE_ID);
-    hoisted.tick!();
-    // lane 0 plays → its pad must be lit at the TOP physical row (y=7), slot col 0.
-    const top = sim.ledAt('L', padNote(0, yForLane(0)));
-    expect(top, 'lane0/slot0 lit at TOP row (y=7)').not.toBeNull();
-    expect(top![0] + top![1] + top![2]).toBeGreaterThan(0);
-    // the BOTTOM-left pad (y=0) must NOT be the lane-0 clip (that's lane 7).
-    const bottom = sim.ledAt('L', padNote(0, 0));
-    // bottom is lane 7 slot 0 = empty → off (sum 0) — proves Y isn't inverted.
     expect((bottom?.[0] ?? 0) + (bottom?.[1] ?? 0) + (bottom?.[2] ?? 0)).toBe(0);
   });
 

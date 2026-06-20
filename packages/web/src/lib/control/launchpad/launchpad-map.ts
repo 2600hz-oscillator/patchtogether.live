@@ -133,14 +133,29 @@ export const RGB_LEN_END: Rgb = [63, 91, 127]; // the END block/step (bright)
 // UNIT L — the clip matrix placement (PURE classifiers).
 // ---------------------------------------------------------------------------
 
-/** L pad (x=slot, y=lane) → flat clip index, or null when out of the matrix. */
-export function lPadToClipIndex(x: number, y: number): number | null {
-  return clipIndexForSlotLane(x, y); // launchpad L: pad.x = slot, pad.y = lane
+// The launchpad's programmer-mode y is measured from the BOTTOM (y=0 = bottom
+// row). The on-screen ClipplayerCard renders lane 0 as the TOP grid row (it
+// `#each`es lanes top→bottom). To make the launchpad MATCH WHAT YOU SEE on the
+// card — tap the pad that's lit and you hit the clip you see — lane 0 lands on
+// the launchpad's TOP physical row (y = CLIP_LANES-1) and lane 7 on the bottom.
+// This flip is applied CONSISTENTLY in BOTH the decode (here) and the LED render
+// (computeLSessionFrame), so a press lands on the clip whose LED is lit.
+/** Launchpad physical y (0 = bottom) ↔ instrument lane (0 = card TOP row). The
+ *  flip is its own inverse, so one helper serves both directions. */
+export function lYToLane(y: number): number {
+  return CLIP_LANES - 1 - y;
 }
-/** Flat clip index → its (x=slot, y=lane) pad on unit L. */
+
+/** L pad (x=slot, y from BOTTOM) → flat clip index, or null when out of the
+ *  matrix. y is flipped to a lane so the TOP row = lane 0 (matches the card). */
+export function lPadToClipIndex(x: number, y: number): number | null {
+  return clipIndexForSlotLane(x, lYToLane(y)); // launchpad L: pad.x = slot, pad.y flips to lane
+}
+/** Flat clip index → its (x=slot, y from BOTTOM) pad on unit L (lane→row flipped
+ *  so lane 0 = the TOP physical row, matching the card). */
 export function clipIndexToLPad(index: number): { x: number; y: number } {
   const { slot, lane } = slotLaneForClipIndex(index);
-  return { x: slot, y: lane };
+  return { x: slot, y: lYToLane(lane) }; // lYToLane is its own inverse
 }
 /** An L scene-column row → the slot it launches across all lanes, or null.
  *  Scene row y addresses slot y (rows 0..CLIP_SLOTS-1). */
@@ -321,7 +336,8 @@ export function computeLSessionFrame(
     const q = laneQueued(data, lane);
     for (let slot = 0; slot < CLIP_SLOTS; slot++) {
       const idx = clipIndex(slot, lane);
-      const note = padNote(slot, lane); // x=slot, y=lane
+      const pad = clipIndexToLPad(idx); // lane→row flipped (lane 0 = TOP row, matches the card)
+      const note = padNote(pad.x, pad.y);
       let rgb: Rgb = RGB_OFF;
       if (pl === slot) {
         // playing: pulse green; if a stop is queued, flash to red.
