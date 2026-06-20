@@ -215,50 +215,42 @@ export function isLaunchpadMidiPortName(name: string | null | undefined): boolea
 }
 
 /**
- * Enumerate the Launchpad **MIDI** ports as input/output PAIRS (matched by a
- * shared name stem). Each entry can be lit + pressed during pairing. Returns []
- * when no access / no Launchpad ports. PURE-ish (reads the access map only).
+ * Enumerate the Launchpad **MIDI** ports as input/output PAIRS, pairing the i-th
+ * filtered input with the i-th filtered output (device/enumeration order).
+ *
+ * CRITICAL: two identical Launchpad Mini Mk3 units enumerate with the **exact
+ * same** port names ("LPMiniMK3 MIDI In" / "LPMiniMK3 MIDI Out") — there is no
+ * name to tell them apart. Matching an input to an output BY NAME therefore
+ * collapses BOTH units onto the first output (every input "best-matches" the
+ * first identically-named output), so only one physical unit is ever addressed
+ * — it enters programmer mode + lights, the other stays stuck in its standalone
+ * Keys mode. That was the real-hardware pairing bug.
+ *
+ * CoreMIDI / Web-MIDI enumerate a device's input and output together and in the
+ * same device order, so the i-th Launchpad-MIDI input and the i-th
+ * Launchpad-MIDI output belong to the SAME physical unit: in[0]↔out[0] = unit A,
+ * in[1]↔out[1] = unit B. Pairing by position distinguishes two identical units.
+ * (The pairing handshake then resolves which physical unit is L vs R by which
+ * one the user presses — see startPairing.)
+ *
+ * Returns [] when no access / no Launchpad ports. Reads the access maps only.
  */
 export function enumerateLaunchpadPorts(): LaunchpadPort[] {
   if (!access) return [];
-  const out: LaunchpadPort[] = [];
+  const ins: MidiInputLike[] = [];
   for (const inp of access.inputs.values()) {
-    if (!isLaunchpadMidiPortName(inp.name)) continue;
-    // Pair with the output whose name best matches this input's name.
-    const stem = portStem(inp.name);
-    let bestOut: MidiOutputLike | null = null;
-    let bestScore = -1;
-    for (const o of access.outputs.values()) {
-      if (!isLaunchpadMidiPortName(o.name)) continue;
-      const score = nameMatchScore(stem, portStem(o.name));
-      if (score > bestScore) {
-        bestScore = score;
-        bestOut = o;
-      }
-    }
-    if (bestOut) {
-      out.push({ inputId: inp.id, outputId: bestOut.id, name: inp.name ?? bestOut.name ?? inp.id });
-    }
+    if (isLaunchpadMidiPortName(inp.name)) ins.push(inp);
+  }
+  const outs: MidiOutputLike[] = [];
+  for (const o of access.outputs.values()) {
+    if (isLaunchpadMidiPortName(o.name)) outs.push(o);
+  }
+  const n = Math.min(ins.length, outs.length);
+  const out: LaunchpadPort[] = [];
+  for (let i = 0; i < n; i++) {
+    out.push({ inputId: ins[i].id, outputId: outs[i].id, name: ins[i].name ?? outs[i].name ?? ins[i].id });
   }
   return out;
-}
-
-/** Strip an "In"/"Out"/"MIDI" suffix so an input + output of the same unit
- *  share a stem (e.g. "LPMiniMK3 MIDI In" / "… Out" → "lpminimk3 midi"). */
-function portStem(name: string | null | undefined): string {
-  return (name ?? '')
-    .toLowerCase()
-    .replace(/\b(in|out|input|output|port)\b/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-function nameMatchScore(a: string, b: string): number {
-  if (!a || !b) return 0;
-  if (a === b) return 100;
-  // longest shared prefix length as a coarse score
-  let i = 0;
-  while (i < a.length && i < b.length && a[i] === b[i]) i++;
-  return i;
 }
 
 // ---------------------------------------------------------------------------
@@ -476,9 +468,13 @@ export async function installSimulatedLaunchpad(): Promise<SimulatedLaunchpad> {
     const outId = `pt-sim-lp-${unit}-out`;
     writesByPort.set(outId, []);
     handlers.set(inId, null);
+    // IDENTICAL names for both units — exactly like two real Launchpad Mini Mk3
+    // units (no per-unit discriminator in the port name). Only the port `id`
+    // differs. This makes enumerateLaunchpadPorts' by-index pairing the only way
+    // to tell the units apart (and guards the identical-name regression).
     const input: MidiInputLike = {
       id: inId,
-      name: `LPMiniMK3 ${unit} MIDI In`,
+      name: `LPMiniMK3 MIDI In`,
       manufacturer: 'Focusrite - Novation',
       state: 'connected',
       get onmidimessage() {
@@ -490,7 +486,7 @@ export async function installSimulatedLaunchpad(): Promise<SimulatedLaunchpad> {
     };
     const output: MidiOutputLike = {
       id: outId,
-      name: `LPMiniMK3 ${unit} MIDI Out`,
+      name: `LPMiniMK3 MIDI Out`,
       manufacturer: 'Focusrite - Novation',
       state: 'connected',
       send(d: number[] | Uint8Array) {

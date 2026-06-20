@@ -45,7 +45,7 @@ import {
   type LaunchpadPort,
   type LaunchpadUnit,
 } from './launchpad-device.svelte';
-import { padNote } from './launchpad-sysex';
+import { padNote, LP_WIDTH, LP_HEIGHT } from './launchpad-sysex';
 import {
   // L matrix
   lPadToClipIndex,
@@ -307,15 +307,18 @@ export async function startPairing(onPaired?: () => void): Promise<boolean> {
   return true;
 }
 
-/** Paint the centred dice-5 "press a pad" prompt on a unit (owner-confirmed
- *  centre near 45/54). Uses individual diffed LED writes. */
+/** Paint the "press a pad" prompt: FILL the whole 8×8 of a candidate unit so
+ *  BOTH units are unmistakably lit during pairing (the proof that both are alive
+ *  + addressable — the thing that was broken when two identical units collapsed
+ *  onto one output). The two provisional candidates get DISTINCT colours so you
+ *  can see there really are two units responding; press any pad on the one you
+ *  want as the LEFT/matrix unit. (Provisional 'L' = green, 'R' = blue — the
+ *  press, not this label, decides the final L/R.) Diffed LED writes. */
 function lightPairPrompt(unit: LaunchpadUnit): void {
-  const dice5: Array<[number, number]> = [
-    [2, 2], [5, 2], // bottom corners
-    [3, 4], [4, 3], // centre pair (45/54 area)
-    [2, 5], [5, 5], // top corners
-  ];
-  for (const [x, y] of dice5) setLed(unit, padNote(x, y), 60, 60, 80);
+  const [r, g, b] = unit === 'L' ? [0, 90, 30] : [0, 30, 100];
+  for (let y = 0; y < LP_HEIGHT; y++) {
+    for (let x = 0; x < LP_WIDTH; x++) setLed(unit, padNote(x, y), r, g, b);
+  }
 }
 
 /** Commit a resolved L/R pair: bind both, persist, blank prompts, render. */
