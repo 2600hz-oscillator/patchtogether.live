@@ -260,8 +260,7 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // launchpad-control.test.ts (binding mode-machine), and the real-source-chain
   // e2e launchpad-clip-launch.spec.ts (TIMELORDE → clipplayer → simulated pad →
   // audible RMS). Same treatment as controlSurface/matrixMix (fully exempt).
-  launchpadControlLeft: 'meta control-surface card; body is device/binding-dependent (Pair/Bind state + status absent in CI), like controlSurface/electraControl. Covered by launchpad-sysex/map/control unit suites + the real-source-chain launchpad-clip-launch e2e (pad → audible RMS).',
-  launchpadControlRight: 'meta control-surface card; body is device/binding-dependent (Pair/Bind state + status absent in CI), like controlSurface/electraControl. Covered by launchpad-sysex/map/control unit suites + the real-source-chain launchpad-clip-launch e2e (pad → audible RMS).',
+  launchpadControlLeft: 'meta control-surface card (consolidated launchpad-control pair); body is device/binding-dependent (Pair/Bind state + status absent in CI), like controlSurface/electraControl. Covered by launchpad-sysex/map/control unit suites + the real-source-chain launchpad-clip-launch e2e (pad → audible RMS).',
   // CLOUDS first-slice PR (#166): VRT baseline pending; ART + unit + E2E
   // provide coverage. Promote into MODULES + capture baselines on both
   // platforms in a follow-up PR.

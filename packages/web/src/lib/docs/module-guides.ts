@@ -32,15 +32,9 @@ export const MODULE_GUIDES: Record<string, ModuleGuide> = {
   },
   launchpadControlLeft: {
     href: '/docs/modules/launchpadControlLeft',
-    title: 'Launchpad clip launcher (L + R)',
+    title: 'Launchpad control (clip launcher)',
     blurb:
       'Drive the clip player from a pair of Novation Launchpad Mini Mk3 units — the always-live 8×8 matrix on the left, the command deck + note editor on the right. Pairing, pad/CC map, SHIFT windowing, and the full RGB colour language.',
-  },
-  launchpadControlRight: {
-    href: '/docs/modules/launchpadControlRight',
-    title: 'Launchpad clip launcher (L + R)',
-    blurb:
-      'The right Launchpad is the command deck (EDIT / COPY / PASTE / DOUBLE / LENGTH / NOW + per-lane STOP + transport) and flips to the note editor while you edit. Pairing, pad/CC map, SHIFT windowing, and the full RGB colour language.',
   },
   vfpgaRunner: {
     href: '/docs/modules/vfpga-runner',
