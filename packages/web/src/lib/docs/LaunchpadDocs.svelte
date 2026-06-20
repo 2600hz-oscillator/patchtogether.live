@@ -1,9 +1,9 @@
 <script lang="ts">
   // LAUNCHPAD MK3 — shared, colour-coded in-app guide with faithful pad-grid
-  // diagrams. Rendered by BOTH /docs/modules/launchpadControlLeft and
-  // /docs/modules/launchpadControlRight (right-click a card → "View docs"). The
-  // diagram colours + swatches import the LIVE map constants, so the doc never
-  // drifts from what the firmware is actually sent.
+  // diagrams. Rendered by /docs/modules/launchpadControlLeft, the consolidated
+  // launchpad-control module's docs route (right-click the card → "View docs").
+  // The diagram colours + swatches import the LIVE map constants, so the doc
+  // never drifts from what the firmware is actually sent.
   import LaunchpadDiagram from './LaunchpadDiagram.svelte';
   import {
     RGB_LOADED,
