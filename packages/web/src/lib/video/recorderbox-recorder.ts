@@ -55,7 +55,7 @@ import {
   type CaptureChunk,
   type CaptureSampleInit,
 } from './recorderbox-capture-drain';
-import { CfrClock, planCfrEmit } from './recorderbox-cfr';
+import { CfrClock, planCfrEmit, DEFICIT_SLACK_FRAMES } from './recorderbox-cfr';
 import { AudioRingBuffer } from './recorderbox-audio-ring';
 import { chunkFileName } from './recorderbox-chunk-name';
 
@@ -466,6 +466,13 @@ export class RecorderboxRecorder {
   private cfr = new CfrClock(DEFAULT_FPS);
   /** 1-based index of the chunk currently recording (001, 002, …). */
   private chunkIndex = 1;
+  /** Consecutive rAF ticks the CFR grid has been BEHIND wall-clock (i.e. we
+   *  emitted while still behind). Drives planCfrEmit's sustained-deficit ramp:
+   *  once it crosses SUSTAINED_DEFICIT_TICKS the per-tick catch-up cap relaxes so
+   *  video DURATION tracks real time under persistently slow rendering (the
+   *  A/V-desync fix). Reset to 0 the moment we're on pace / ahead, and on a roll
+   *  (the new chunk's grid restarts at 0). */
+  private deficitStreak = 0;
   /** Wall-clock elapsed (s) at which the current chunk started — the roll timer
    *  measures (elapsed - chunkStartElapsed) against maxChunkSeconds. */
   private chunkStartElapsed = 0;
@@ -496,6 +503,17 @@ export class RecorderboxRecorder {
   private audioRing: AudioRingBuffer | null = null;
   /** Capture sample rate (for the ring + per-chunk audio clock). */
   private captureSampleRate = 0;
+  /**
+   * HOLD buffer for live samples the long-lived drain pops DURING a chunk roll —
+   * i.e. between detaching the finishing chunk's audio source and installing +
+   * priming chunk N+1's. The old code early-returned (dropped) here, leaving a
+   * real audio gap (the finalize window, tens-to-hundreds ms) at every ~10-min
+   * boundary. We instead STASH each popped sample in order and flush it into the
+   * new chunk's source AFTER the overlap prepend, so ZERO samples are lost across
+   * a roll. Non-null only while a roll is in flight (addAudioToCurrentChunk holds
+   * whenever this is non-null; rollChunk allocates it before the swap, flushes it
+   * after, then nulls it). */
+  private heldDuringRoll: CaptureSampleInit[] | null = null;
 
   constructor(opts: RecorderboxRecorderOptions) {
     this.opts = opts;
@@ -768,8 +786,30 @@ export class RecorderboxRecorder {
 
   /** Add one planar-stereo init to the CURRENT chunk's audio source on the
    *  PER-CHUNK clock (each file's audio restarts at 0 + stays contiguous), and
-   *  tap it into the overlap ring. Shared by the drain loop + the roll prepend. */
+   *  tap it into the overlap ring. Shared by the drain loop + the roll prepend.
+   *
+   *  ROLL SAFETY: while a roll is in flight (`heldDuringRoll` non-null) we do NOT
+   *  write to the source — we STASH the init in order and rollChunk flushes the
+   *  hold (after the overlap prepend) so no sample popped during the finalize
+   *  window is lost OR reordered ahead of the overlap. We must never early-return
+   *  (drop) when the source is momentarily null mid-roll. */
   private async addAudioToCurrentChunk(init: CaptureSampleInit): Promise<void> {
+    if (this.heldDuringRoll) {
+      // Mid-roll: the finishing chunk's source is detached and the new chunk's
+      // overlap hasn't been primed yet. Hold this live sample (in capture order)
+      // for rollChunk to flush into chunk N+1 after the overlap. No drop.
+      this.heldDuringRoll.push(init);
+      return;
+    }
+    await this.writeAudioToChunk(init);
+  }
+
+  /** Write one planar-stereo init to the CURRENT chunk's audio source on the
+   *  per-chunk clock + tap the overlap ring. The actual write, with NO roll
+   *  gate — only addAudioToCurrentChunk (live drain) and rollChunk's hold-flush
+   *  call this, so the roll-ordering invariant (overlap → held → live) holds. A
+   *  null source (genuine video-only) is a no-op. */
+  private async writeAudioToChunk(init: CaptureSampleInit): Promise<void> {
     const src = this.currentAudioSource;
     if (!src) return;
     const frames = init.data.length / 2; // planar stereo: data = [L…, R…]
@@ -838,7 +878,19 @@ export class RecorderboxRecorder {
     // for each chunk file. Usually [] (ahead) or one index (on pace); a hitch
     // duplicates up to a bounded few.
     const chunkElapsed = elapsed - this.chunkStartElapsed;
-    const plan = planCfrEmit(this.cfr, this.frameCount, chunkElapsed);
+    // Deficit-aware: track how long we've been MEANINGFULLY behind the grid and
+    // pass that streak to planCfrEmit so it relaxes the per-tick catch-up cap once
+    // the deficit is SUSTAINED — otherwise a render persistently below ~10 fps lets
+    // the video frameCount lag the grid forever and the video track ends shorter
+    // than the sample-accurate audio (growing A/V desync). A perfectly on-pace
+    // render is ALWAYS ~1 frame behind (the frame is emitted the tick its slot
+    // becomes due), so we only count a deficit LARGER than DEFICIT_SLACK_FRAMES —
+    // that's what keeps an on-pace / transiently-hitched render from ever tripping
+    // the sustained ramp. Update the streak BEFORE emitting.
+    const due = this.cfr.framesDue(chunkElapsed);
+    this.deficitStreak =
+      due - this.frameCount > DEFICIT_SLACK_FRAMES ? this.deficitStreak + 1 : 0;
+    const plan = planCfrEmit(this.cfr, this.frameCount, chunkElapsed, 2, this.deficitStreak);
     if (plan.length === 0) return;
 
     // Emit the first grid frame now (honoring backpressure via addInFlight); any
@@ -873,15 +925,21 @@ export class RecorderboxRecorder {
       const overlap = this.audioRing?.snapshotPlanar() ?? { data: new Float32Array(0), frames: 0 };
 
       // 2) Wait for any in-flight video frame to drain, then finalize + deliver
-      //    the current chunk. The drain keeps queueing audio (lossless) while we
-      //    finalize; those queued samples land in the NEXT chunk (correct: they're
-      //    captured after the roll boundary).
+      //    the current chunk. The long-lived drain keeps popping audio (lossless)
+      //    while we finalize — those samples are captured AFTER the roll boundary
+      //    and belong in chunk N+1. We ARM the hold buffer BEFORE detaching the
+      //    finishing source so addAudioToCurrentChunk stashes (never drops) every
+      //    sample popped during the finalize window; step 4 flushes them into the
+      //    new chunk after the overlap, preserving order + sample-accuracy. (Old
+      //    bug: a null source here made addAudioToCurrentChunk early-return-DROP,
+      //    a real audio gap at each ~10-min boundary.)
       while (this.addInFlight) await macrotask();
       const finishing = this.output;
       const finishingPath = this.opfsPath;
       const finishingWriter = this.writer;
-      // Detach the finishing session's audio source so the drain stops feeding it
-      // mid-finalize (the next session's source is installed in step 3).
+      // Arm the hold, THEN detach the finishing session's audio source so the
+      // drain stops feeding the finishing muxer but loses nothing in the gap.
+      this.heldDuringRoll = [];
       this.currentAudioSource = null;
       try { await finishing?.finalize(); } catch { /* recoverable fragments remain */ }
       try { await finishingWriter?.close(); } catch { /* */ }
@@ -894,6 +952,7 @@ export class RecorderboxRecorder {
       this.chunkIndex = rolledIndex + 1;
       const newSrc = await this.buildChunkSession(this.chunkIndex, new Date(), false);
       this.frameCount = 0;
+      this.deficitStreak = 0; // new chunk's grid restarts at 0 — no carried deficit.
       this.chunkStartElapsed = (performance.now() - this.t0) / 1000;
       this.chunkAudioFrames = 0;
       try {
@@ -906,21 +965,42 @@ export class RecorderboxRecorder {
       }
       this.currentAudioSource = newSrc;
 
-      // 4) PREPEND the overlap: feed the retained 5 s into the new chunk's audio
-      //    source FIRST, timestamped from 0, so chunk N+1 begins with the
-      //    duplicated tail of chunk N. (First chunk has an empty ring → no
-      //    prepend.) Then the long-lived drain resumes live capture after it.
+      // 4) PREPEND the overlap, then FLUSH the hold — both via writeAudioToChunk
+      //    (the direct, NON-roll-gated write) so they land BEFORE live capture
+      //    resumes, in this exact order on the per-chunk clock:
+      //      (a) the retained ≤5 s overlap tail of chunk N (timestamp 0…), then
+      //      (b) the live samples popped DURING the finalize window, in capture
+      //          order (continuing the per-chunk clock right after the overlap).
+      //    Only after the hold is drained do we null heldDuringRoll, so any sample
+      //    the drain pops in the meantime is still held (never reordered ahead of
+      //    the overlap/earlier-held samples). (First chunk has an empty ring → no
+      //    prepend; a video-only take has a null source → writeAudioToChunk no-ops
+      //    and the hold is simply discarded.)
       if (newSrc && overlap.frames > 0 && this.captureSampleRate > 0) {
-        await this.addAudioToCurrentChunk({
+        await this.writeAudioToChunk({
           data: overlap.data,
           format: 'f32-planar',
           numberOfChannels: 2,
           sampleRate: this.captureSampleRate,
-          timestamp: 0, // recomputed by addAudioToCurrentChunk on the chunk clock
+          timestamp: 0, // recomputed by writeAudioToChunk on the chunk clock
         });
       }
+      // Flush every sample held during the finalize window, in order. We swap the
+      // buffer out for a FRESH empty hold each pass so any sample the drain pops
+      // while we await an add() is appended to the fresh hold (still ordered AFTER
+      // these) instead of mutating the array we're iterating. Loop until a pass
+      // adds nothing new, then null the hold so live capture writes directly.
+      for (;;) {
+        const held = this.heldDuringRoll ?? [];
+        if (held.length === 0) break;
+        this.heldDuringRoll = []; // fresh hold catches anything popped during the awaits
+        for (const init of held) await this.writeAudioToChunk(init);
+      }
+      // Roll complete: live capture resumes writing directly (heldDuringRoll null).
+      this.heldDuringRoll = null;
     } finally {
       this.rolling = false;
+      this.heldDuringRoll = null;
     }
   }
 

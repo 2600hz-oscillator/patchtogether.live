@@ -71,6 +71,29 @@ export class CfrClock {
   }
 }
 
+/** Frames the grid may run ahead of what's emitted WITHOUT it counting as a
+ *  deficit. A perfectly on-pace render is ALWAYS ~1 frame behind (you emit a
+ *  frame the very tick its grid slot becomes due), and a fast machine that just
+ *  skipped a couple ticks is a transient — neither is "falling behind". Only a
+ *  gap LARGER than this slack starts the sustained-deficit streak. (Used by the
+ *  caller — RecorderboxRecorder.frame — to decide whether a tick is "behind".) */
+export const DEFICIT_SLACK_FRAMES = 3;
+
+/** Consecutive ticks the grid must be MEANINGFULLY behind (deficit >
+ *  DEFICIT_SLACK_FRAMES) before it's judged SUSTAINED — a genuinely slow render,
+ *  not a one-off hitch — and the per-tick catch-up cap is relaxed so video
+ *  DURATION tracks wall-clock. Kept small (~4 ticks ≈ 0.13 s at 30 fps) so little
+ *  A/V drift accrues before the ramp engages; the slack above is what prevents an
+ *  on-pace render from ever reaching it. */
+export const SUSTAINED_DEFICIT_TICKS = 4;
+
+/** Per-tick emission cap ONCE the deficit is sustained: large enough that the
+ *  video tracks the grid even at a very slow ~3 fps render (grid advancing ~10
+ *  slots/tick) AND drains the small backlog accrued before the ramp engaged, yet
+ *  bounded so a freak multi-second stall can't dump hundreds of duplicate frames
+ *  in one tick (a visible stutter). 1 s of grid @ 30 fps. */
+export const SUSTAINED_MAX_CATCHUP = 30;
+
 /**
  * Decide, for one rAF tick, how many CFR frames to emit and at which grid index
  * each lands — the pure scheduling core the recorder's `frame()` calls.
@@ -80,27 +103,52 @@ export class CfrClock {
  *   * grid AHEAD of wall time (`due <= emitted`) → `[]` (skip — never two frames
  *     in one slot on a fast machine).
  *   * grid BEHIND  (`due > emitted`) → catch up, emitting indices
- *     `emitted, emitted+1, …` up to `due-1`, but NO MORE than `maxCatchup` frames
- *     in a single tick (a long stall can't flood the encoder; the timeline simply
- *     resumes from where it is — playback duration tracks real elapsed time within
- *     the catch-up bound). The extra (duplicate) frames reuse the current canvas.
+ *     `emitted, emitted+1, …` up to `due-1`, but NO MORE than the effective cap
+ *     frames in a single tick. The extra (duplicate) frames reuse the current
+ *     canvas.
+ *
+ * THE EFFECTIVE PER-TICK LIMIT (the sustained-deficit / A-V-desync fix):
+ *   * TRANSIENT deficit (`deficitStreak < SUSTAINED_DEFICIT_TICKS`) → emit at
+ *     most `1 + maxCatchup` frames (default 3). A one-off hitch resumes from where
+ *     it is and re-catches over the next few ticks — no burst of duplicated
+ *     frames.
+ *   * SUSTAINED deficit (`deficitStreak >= SUSTAINED_DEFICIT_TICKS`) → emit up to
+ *     `SUSTAINED_MAX_CATCHUP` frames. Under a render PERSISTENTLY below ~10 fps
+ *     the small transient limit (≤3/tick) can't keep pace with a 30 fps grid
+ *     (which advances >3 slots/tick), so video `frameCount` would lag the grid
+ *     FOREVER → the video track ends SHORTER than the sample-accurate audio →
+ *     growing A/V desync. Raising the limit once the deficit is proven sustained
+ *     lets `frameCount` track `due` so video DURATION tracks wall-clock. The
+ *     extra frames are duplicates of the current canvas, spread across the slow
+ *     ticks (the deficit accrues gradually + the limit is bounded), not dumped as
+ *     one visible burst.
  *
  * The returned indices are always exactly `emitted, emitted+1, …` (contiguous on
  * the grid) so `CfrClock.ptsForFrame` yields a strictly increasing, evenly-spaced
  * PTS sequence with no gaps and no duplicates — the property that kills the
- * slow-mo. Pure + allocation-light (returns a small array, usually length 0 or 1).
+ * slow-mo, preserved in BOTH regimes. Pure + allocation-light (returns a small
+ * array, usually length 0 or 1).
+ *
+ * @param deficitStreak consecutive prior ticks the caller observed MEANINGFULLY
+ *        behind the grid (deficit > DEFICIT_SLACK_FRAMES). The caller bumps it
+ *        while behind by more than the slack + resets it to 0 once it catches up
+ *        within the slack. 0 (the default) preserves the original transient-only
+ *        behavior for callers that don't track it.
  */
 export function planCfrEmit(
   clock: CfrClock,
   emitted: number,
   elapsedSeconds: number,
   maxCatchup = 2,
+  deficitStreak = 0,
 ): number[] {
   const due = clock.framesDue(elapsedSeconds);
   if (due <= emitted) return [];
-  // Emit one frame for being on pace, plus up to `maxCatchup` extra to close a
-  // gap — total capped at (1 + maxCatchup) frames per tick.
-  const want = Math.min(due - emitted, 1 + Math.max(0, maxCatchup));
+  const sustained = deficitStreak >= SUSTAINED_DEFICIT_TICKS;
+  // Per-tick limit: 1 (on pace) + transient catch-up, OR the relaxed sustained
+  // limit once the deficit is proven persistent.
+  const limit = sustained ? SUSTAINED_MAX_CATCHUP : 1 + Math.max(0, maxCatchup);
+  const want = Math.min(due - emitted, limit);
   const out: number[] = [];
   for (let i = 0; i < want; i++) out.push(emitted + i);
   return out;
