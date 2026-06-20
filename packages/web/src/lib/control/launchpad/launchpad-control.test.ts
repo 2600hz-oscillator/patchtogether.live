@@ -41,6 +41,8 @@ import {
   DECK_NOW_COL,
   CC_TRANSPORT,
   CC_STOP_ALL,
+  CC_REC,
+  CC_SONG,
   CC_SHIFT,
   CC_EDIT_ROW_UP,
   CC_EDIT_STEP_RIGHT,
@@ -506,5 +508,47 @@ describe('BUG 4 — transport RESTARTS (toggle stop → start → stop again)', 
     sim.cc('R', CC_STOP_ALL, 127);
     expect(queued()).toEqual(['stop', 'stop', 'stop', 'stop', 'stop', 'stop', 'stop', 'stop']);
     expect((livePatch.nodes['tl']!.params as Record<string, number>).running, 'stop-all leaves transport running').toBe(1);
+  });
+});
+
+// ===========================================================================
+// ARRANGER (Phase C) — REC + SES⇄ARR on the R deck write the SAME node.data
+// fields the ClipplayerCard writes, so the engine's clip-arrange records +
+// replays identically. (The end-to-end arrangement CAPTURE — armed REC +
+// launch → an event in node.data.arrangement — needs the real engine factory,
+// so it lives in the e2e real-source-chain spec; here we pin the field writes.)
+// ===========================================================================
+describe('ARRANGER — REC + SES⇄ARR (R deck top row)', () => {
+  it('CC 91 (REC) toggles node.data.recording (the arranger record-arm)', () => {
+    seedClipPlayer({ clips: {} });
+    bindLaunchpadToClip(NODE_ID);
+    expect(liveData().recording ?? false, 'starts disarmed').toBeFalsy();
+    sim.cc('R', CC_REC, 127);
+    expect(liveData().recording, 'REC arms recording').toBe(true);
+    sim.cc('R', CC_REC, 127);
+    expect(liveData().recording, 'REC disarms').toBe(false);
+  });
+
+  it('CC 92 (SONG) flips node.data.clipMode SESSION ⇄ ARRANGEMENT', () => {
+    seedClipPlayer({ clips: {} });
+    bindLaunchpadToClip(NODE_ID);
+    expect(liveData().clipMode ?? 'session', 'starts in SESSION').not.toBe('arrangement');
+    sim.cc('R', CC_SONG, 127);
+    expect(liveData().clipMode, 'SONG → ARRANGEMENT').toBe('arrangement');
+    sim.cc('R', CC_SONG, 127);
+    expect(liveData().clipMode, 'SONG → back to SESSION').toBe('session');
+  });
+
+  it('REC + SONG light their deck LEDs from state (red pulse / white)', () => {
+    seedClipPlayer({ clips: {}, recording: true, clipMode: 'arrangement' });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    hoisted.tick!();
+    const rec = sim.ledAt('R', CC_REC);
+    expect(rec, 'REC LED painted').not.toBeNull();
+    expect(rec![0], 'REC is red (R channel high)').toBeGreaterThan(rec![1]);
+    const song = sim.ledAt('R', CC_SONG);
+    expect(song, 'SONG LED painted').not.toBeNull();
+    expect(song![0] + song![1] + song![2], 'SONG lit in ARRANGEMENT').toBeGreaterThan(0);
   });
 });
