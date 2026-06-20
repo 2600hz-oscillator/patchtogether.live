@@ -21,12 +21,10 @@ name: CI
 #                            | against the prebuilt bundle (`vite preview`,
 #                            | :4173) instead of booting `vite dev` per shard.
 #                            | E2E_WEBGL_HEAVY=exclude → no WebGL-heavy specs
-#   e2e-video     ~6-9 min | SHARD REBALANCE (#68): the WebGL-heavy specs
-#                            | (toybox-*/video-*/wavesculpt*/…) pulled OUT of the
-#                            | shard matrix + run here NON-sharded at --workers=1
-#                            | (E2E_WEBGL_HEAVY=only) so they never co-tenant /
-#                            | starve a SwiftShader context. REQUIRED gate.
-#   merge-reports   ~30 s  | needs: [e2e, e2e-video] — merges the blob-reports
+#                            | (the dead `e2e-video` lane that used to run them
+#                            | was deleted 2026-06-20; webgl-smoke + webgl-attest
+#                            | are the blessed heavy-WebGL gates now).
+#   merge-reports   ~30 s  | needs: [e2e] — merges the blob-reports
 #   ci (umbrella)   ~0 s   | needs all above; gates branch protection
 #   vrt             ~3-5 min | needs: dsp-build (restores dist)
 #
@@ -662,11 +660,13 @@ jobs:
       # default splitter sorts files alphabetically then round-robins, so the
       # alphabetically-late heavies clustered onto the high-numbered shards and
       # starved the single SwiftShader context (the per-target/HEADLINE/SAVE/
-      # PROJECTION/combine-editor timeout class, #621/#629/#625). They now run on
-      # the dedicated non-sharded `e2e-video` job (--workers=1) below; here the
-      # functional shards stay light/uniform. The glob list is the single source
-      # of truth in playwright.config.ts (WEBGL_HEAVY_GLOBS). 'exclude' adds it
-      # to testIgnore for the chromium project.
+      # PROJECTION/combine-editor timeout class, #621/#629/#625). The dedicated
+      # non-sharded `e2e-video` lane that used to run them was deleted 2026-06-20
+      # (it had been dormant/dispatch-only); webgl-smoke (SwiftShader floor) +
+      # webgl-attest (real-GPU attestation) are the blessed heavy-WebGL gates
+      # now. Here the functional shards stay light/uniform. The glob list is the
+      # single source of truth in playwright.config.ts (WEBGL_HEAVY_GLOBS).
+      # 'exclude' adds it to testIgnore for the chromium project.
       E2E_WEBGL_HEAVY: exclude
 
     steps:
@@ -809,8 +809,8 @@ jobs:
   merge-reports:
     name: Merge Playwright reports
     if: always()
-    # (e2e-video is TEMPORARILY DISABLED — task #65; it produces no blob-report-
-    # video while skipped, so it's dropped from needs. Re-add with the shard.)
+    # (the `e2e-video` lane was deleted 2026-06-20 — it produced the only other
+    # blob-report-* artifact; merge-reports now aggregates the e2e shards alone.)
     needs: [e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -1105,156 +1105,6 @@ jobs:
           retention-days: 14
 
   # -----------------------------------------------------------------------
-  # e2e-video — the WebGL-HEAVY e2e specs, run on a SINGLE, NON-SHARDED runner
-  # with --workers=1 (SHARD REBALANCE, #68).
-  #
-  # Playwright's default shard splitter sorts spec FILES alphabetically then
-  # round-robins, so the alphabetically-late, heavy cross-domain WebGL specs
-  # (toybox-*, video-*, wavesculpt*, multi-video-playback, freezeframe,
-  # picturebox-*, b3ntb0x, …) clustered onto the high-numbered shards of the
-  # `e2e` matrix. On CI's SwiftShader (software WebGL) those co-tenant heavies
-  # starve the single GL context / main thread and overrun their per-test
-  # budgets — the toybox-node-menu / presets-io SAVE / video-projection /
-  # combine-editor timeout class (#621/#629/#625). Bumping the shard COUNT
-  # (#600, 8→10) helped wall-clock but did NOT un-cluster them.
-  #
-  # FIX (option C): pull every WebGL-heavy spec out of the sharded matrix
-  # (E2E_WEBGL_HEAVY=exclude there) and run them HERE, serialized at
-  # --workers=1 so NO two heavies ever co-tenant a SwiftShader context. The
-  # long pole is bounded + isolated instead of poisoning a functional shard, so
-  # the re-enabled de-clustered batch finishes well inside its per-test budget.
-  # The heavy-spec set is the single glob list in playwright.config.ts
-  # (WEBGL_HEAVY_GLOBS); 'only' mode runs exactly those files.
-  #
-  # @collab/@capacity heavy specs (only picturebox-sync today) are grep-inverted
-  # OUT here and run in the dedicated `collab` job — same mechanism the sharded
-  # matrix uses. blob reporter so merge-reports (globs blob-report-*) picks this
-  # up with no aggregator change. REQUIRED gate (wired into the `ci` umbrella) —
-  # coverage parity with the sharded e2e job. Same DB + DSP + preview-bundle
-  # setup as the `e2e` shards; no DOOM/SNES9X WASM (the heavy video specs don't
-  # touch the emulator bundles).
-  # -----------------------------------------------------------------------
-  e2e-video:
-    name: e2e-video (WebGL-heavy, serialized)
-    # TEMPORARILY DISABLED (2026-06-07): this single-runner lane ran 24-27 min at
-    # --workers=1 with zero slack under its 30-min cap — the merge bottleneck +
-    # an intermittent whole-lane wall-clock timeout. It is SKIPPED + removed from
-    # the required umbrella gate until the 3-way shard lands (task #65). Re-enable
-    # (sharded) in the shard PR. See .myrobots/plans/e2e-video-analysis.md.
-    # STAYS dispatch-only: the new real-GPU `webgl-attest` gate (verified locally
-    # on the owner's GPU) now covers this lane's PER-PR role, and `webgl-smoke`
-    # (SwiftShader) covers gross-breakage on CI every PR. This stays the on-demand
-    # "actually run the heavy lane on SwiftShader" escape hatch + the future
-    # GPU-runner host (semaphore plan §7/§11).
-    # Non-constant guard (actionlint rejects a literal `if: false`): on PR/push
-    # event_name is 'pull_request'/'push' → false → job skipped; still runnable
-    # via manual workflow_dispatch.
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    needs: [dsp-build, build-web]
-    runs-on: ubuntu-latest
-    # The WebGL-heavy specs at workers=1 on SwiftShader are the slowest lane;
-    # generous ceiling absorbs the cold software-GL warmup + retries=2.
-    timeout-minutes: 30
-
-    services:
-      postgres:
-        image: public.ecr.aws/docker/library/postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: patchtogether_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
-      E2E_USE_PREVIEW: '1'
-      # Run ONLY the WebGL-heavy glob set (WEBGL_HEAVY_GLOBS in
-      # playwright.config.ts). The sharded `e2e` job runs everything else
-      # (E2E_WEBGL_HEAVY=exclude). Together they partition the suite with no
-      # overlap and no coverage loss.
-      E2E_WEBGL_HEAVY: only
-
-    steps:
-      # No LFS — serves the prebuilt web-preview-dist artifact (build-web checks
-      # out lfs:true). Mirrors the e2e shards.
-      - name: Checkout (no LFS — serves the prebuilt bundle)
-        uses: actions/checkout@v4
-        with:
-          lfs: false
-
-      - name: Install Flox
-        uses: flox/install-flox-action@v2
-
-      - name: Cache npm + Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.npm
-            ~/.cache/ms-playwright
-          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-deps-
-
-      - name: Install workspace deps + Playwright Chromium
-        run: flox activate -- task setup
-
-      - name: Download DSP dist artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: dsp-dist
-          path: packages/dsp/dist
-
-      - name: Download web preview bundle artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: web-preview-dist
-          path: packages/web/.svelte-kit/output
-
-      - name: Apply DB schema
-        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
-
-      - name: Emit registry manifest for E2E
-        run: flox activate -- task test:emit-manifest
-
-      # Serialized (--workers=1): no two WebGL-heavy specs co-tenant the single
-      # SwiftShader context, which is the whole point of this lane. retries=2 to
-      # rescue a genuinely transient cold-GL hiccup (the systemic co-tenant
-      # contention is already removed by workers=1). blob reporter → merged into
-      # the shared HTML report by merge-reports. @collab/@capacity excluded (run
-      # in the `collab` job).
-      - name: Run WebGL-heavy E2E (workers=1, retries=2, blob reporter, no @collab)
-        run: |
-          flox activate -- npx --workspace e2e playwright test \
-            --grep-invert "@collab|@capacity" \
-            --workers=1 \
-            --retries=2 \
-            --reporter=blob
-
-      # Name it blob-report-video so merge-reports' count-agnostic blob-report-*
-      # glob picks it up alongside the 10 sharded blobs.
-      - name: Upload blob report (e2e-video)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: blob-report-video
-          path: e2e/blob-report
-          retention-days: 7
-
-      - name: Upload Playwright test-results on failure (e2e-video)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-test-results-video
-          path: e2e/test-results
-          retention-days: 14
-
-  # -----------------------------------------------------------------------
   # behavioral-coverage — the heavy behavioral input-coverage sweep
   # (per-module-per-port-behavioral.spec.ts). ~100 module-level tests,
   # each iterating its module's inputs with 2-spawn control-vs-patched
@@ -1497,8 +1347,9 @@ jobs:
   # -----------------------------------------------------------------------
   # webgl-smoke — the REQUIRED on-CI WebGL FLOOR (.myrobots/plans/webgl-
   # attestation-semaphore.md §6). CI's only WebGL renderer is SwiftShader and
-  # the heavy WebGL e2e lane (e2e-video) is disabled on PRs, so without this CI
-  # would be fully BLIND to gross WebGL breakage. This runs a tiny, fast,
+  # there is no heavy WebGL e2e lane on PRs (the dead `e2e-video` lane was
+  # deleted 2026-06-20), so without this CI would be fully BLIND to gross WebGL
+  # breakage. This runs a tiny, fast,
   # renderer-TOLERANT smoke set (`--grep @webgl-smoke`) on SwiftShader every PR:
   # it asserts a real GL context paints non-black / a shader compiles / the
   # OffscreenCanvas worker-proxy renders — NOT exact pixels (per
@@ -1614,10 +1465,12 @@ jobs:
   # contribution-locked to the owner (owner-only merge + fork-PR approval) →
   # owner self-attestation = single-trusted-actor. See ci-webgl-attest/README.md.
   #
-  # MIGRATION: retire this whole scheme (job + scripts + Taskfile targets +
-  # folder) the day a real-GPU CI runner lands — re-enable e2e-video on it +
-  # add THAT to the umbrella instead. The umbrella name never changed, so
-  # retirement needs no ruleset edit. (§11.)
+  # MIGRATION: the day a real-GPU CI runner lands, this whole scheme (job +
+  # scripts + Taskfile targets + folder) could be retired in favor of running
+  # the heavy WebGL specs directly on that runner. (Owner has currently ruled
+  # OUT a real-GPU runner, 2026-06-20, so this stays the live gate; the old
+  # dispatch-only `e2e-video` lane was deleted the same day.) The umbrella name
+  # never changed, so any future retirement needs no ruleset edit. (§11.)
   #
   # Cheap (< 1 min: checkout + flox + one hash). No LFS, no DB, no bundle.
   # -----------------------------------------------------------------------
@@ -1761,13 +1614,12 @@ jobs:
           echo "e2e:           $E2E"
           echo "webgl-smoke:   $WEBGL_SMOKE"
           echo "webgl-attest:  $WEBGL_ATTEST"
-          echo "e2e-video:     (TEMPORARILY DISABLED — skipped + un-gated pending the 3-way shard, task #65; the real-GPU webgl-attest gate now covers its per-PR role)"
           echo "collab:        (informational — see collab job; temporarily un-gated, task #69)"
           echo "collab-attest: (informational — local-relay attestation VERIFY; NOT yet in the failing set, mirrors webgl-attest's Phase-1 start; owner flips it required via the ruleset later)"
           # `e2e` is a matrix; its aggregated result is `success` only if all
-          # shards succeeded. `e2e-video` is the dedicated WebGL-heavy lane (#68)
-          # — REQUIRED, same coverage bar as the sharded `e2e` job (together they
-          # partition the e2e suite with no overlap / no loss). `collab` is
+          # shards succeeded. (The old `e2e-video` WebGL-heavy lane was deleted
+          # 2026-06-20 — it had been dormant/dispatch-only; webgl-smoke +
+          # webgl-attest are the heavy-WebGL gates now.) `collab` is
           # TEMPORARILY UN-GATED (informational — pending the 5x
           # collab-flake-purge; see the needs: note above). It is deliberately
           # NOT in the failing condition below. `behavioral` is
@@ -1793,10 +1645,11 @@ jobs:
           # this umbrella → the e2e shards would otherwise fail confusingly on
           # an "artifact not found" download.
           #
-          # `behavioral-coverage` (BEHAVIORAL) is now GATED too (2026-06-03):
-          # the per-port stabilization pass landed (driver-params + justified
-          # exempts) so the lane is clean. `merge-reports` is the only
-          # informational job still left out of this gate.
+          # `behavioral-coverage` (BEHAVIORAL) is INFORMATIONAL
+          # (continue-on-error; push/label-only) and is deliberately NOT in this
+          # gate — the 1x gate (#562) flaked on moog911 on the next PR, so it is
+          # un-gated pending a proper 3x flake-purge. `merge-reports` is likewise
+          # informational and left out of this gate.
           if [[ "$ACTIONLINT" != "success" \
              || "$TYPECHECK" != "success" \
              || "$UNIT" != "success" \
