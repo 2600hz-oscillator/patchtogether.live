@@ -128,6 +128,12 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // module is currently in EXEMPT_FROM_VRT below — promote it into MODULES
   // when the darwin/linux PNGs are captured.)
   '4plexvid': [{ selector: 'canvas' }],
+  // ONE TO NINE — 1-in/9-out 3×3 splitter. The card carries a live MONITOR
+  // preview canvas (input + grid + numbers via blitOutputToDrawingBuffer off
+  // the engine clock); mask it so the deterministic chrome (GRID toggle +
+  // IN/OUT1..OUT9 patch-panel) is the regression gate. The crop math is
+  // covered by onetonine.test.ts + the bespoke onetonine e2e.
+  onetonine: [{ selector: 'canvas' }],
   shapegen: [{ selector: 'canvas' }],
   // MANDLEBLOT — Mandelbrot fractal with time-driven hue cycle. The
   // shader's colour mode mixes mu + uTime + log(uZoom) into the hue, so
@@ -184,6 +190,16 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // edge-detect). Promote into MODULES + capture darwin/linux PNGs (the
   // canvas mask above masks the live preview) in a follow-up PR.
   '4plexvid': 'VRT baseline pending; e2e/tests/4plexvid.spec.ts + plex-select unit tests provide coverage. Promote + capture darwin/linux baselines (live preview masked) in a follow-up PR.',
+  // ONE TO NINE — 1-in/9-out fixed 3×3 splitter. The card is a live MONITOR
+  // preview canvas (input + grid + numbers) + a GRID toggle + the IN/OUT1..OUT9
+  // patch panel; nothing patched is a black preview, and the live render is
+  // non-deterministic chrome. Coverage: onetonine.test.ts (pure cell→source-rect
+  // crop math: cell 1 top-left/high-v, cell 9 bottom-right/low-v, exact tiling)
+  // + e2e/tests/onetonine.spec.ts (real source→onetonine→output: monitor
+  // non-blank + structured, out1 vs out9 non-blank AND spatially different).
+  // Promote + capture darwin/linux baselines (live preview masked) in a
+  // follow-up PR.
+  onetonine: 'VRT baseline pending; onetonine.test.ts (crop math) + e2e/tests/onetonine.spec.ts (real source→splitter→output, monitor structured, out1≠out9) provide coverage. Promote + capture darwin/linux baselines (live monitor preview masked) in a follow-up PR.',
   // SHAPEGEN — first-slice PR extracts FOXY's 3dShapeGen path into a
   // standalone video module (3 raster inputs, SIZE/ROT knobs, SOLIDS
   // toggle). Unit + e2e coverage; VRT baseline pending. The
