@@ -234,16 +234,27 @@ test.describe('TOYBOX video inputs (VID A / VID B) — patched-feed layer source
     test.setTimeout(120_000);
   });
 
-  // Parametrized over BOTH input ports (consolidation §2). Per port this keeps
+  // Parametrized over the input ports (consolidation §2). Per port this keeps
   // every unique claim the two former per-port tests made: (a) the patched feed
   // reaches the layer FBO + output (non-black, brighter than idle), (b) the
   // videoSource Yjs write persisted at the right field, and (c) the output
   // CHANGES WITH THE SOURCE — pointing the SAME layer at the OTHER (feed-less)
   // port falls back to the idle pattern, distinct from the patched feed.
-  for (const { feed, other } of [
-    { feed: 'inA', other: 'inB' },
-    { feed: 'inB', other: 'inA' },
-  ] as const) {
+  //
+  // LEANED for the serialized real-GPU webgl-attest lane (fix/lean-webgl-attest):
+  // each case here boots TWO heavy modules (TOYBOX + ACIDWARP) and does 2× the
+  // 3-frame frozenAverage capture — the priciest pattern in this file — and the
+  // lane runs them serially on ONE real-GPU context, where two such cases back to
+  // back flake under load. The In-A full feed→FBO→output path is ALSO proven by
+  // the in-card SOURCE-select test below (the REAL UI dropdown mutator), so In A
+  // here is REDUNDANT on that path. We keep In B (the data-seed feed+delta proof
+  // for the second port) here, and let the In A coverage come from the real-UI
+  // source-select test — both ports stay independently proven, one dual-module
+  // boot is dropped from the lane. FULL_TOYBOX_CONTENT=1 restores both ports.
+  const PORTS = process.env.FULL_TOYBOX_CONTENT === '1'
+    ? ([{ feed: 'inA', other: 'inB' }, { feed: 'inB', other: 'inA' }] as const)
+    : ([{ feed: 'inB', other: 'inA' }] as const);
+  for (const { feed, other } of PORTS) {
     test(`a layer sourced from In ${feed === 'inA' ? 'A' : 'B'} shows the patched feed (non-black, not idle; changes with the source)`, async ({ page }) => {
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
