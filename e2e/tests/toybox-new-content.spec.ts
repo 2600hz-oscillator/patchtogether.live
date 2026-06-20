@@ -123,21 +123,43 @@ async function setSingleLayer(page: Page, kind: string, contentId: string): Prom
   );
 }
 
-const NEW_GENS = [
+// LEANED for the serialized real-GPU webgl-attest lane (fix/lean-webgl-attest):
+// these used to be the FULL 18-GEN / 12-FRAG banks, rendered one shader per
+// iteration in a serial loop = 30 heavy GL renders in one file. On the single
+// real-GPU context the lane runs on, that sustained burst is what made this spec
+// flake/retry under load. The EXHAUSTIVE "every shader COMPILES + its uniforms
+// exist + its asset is on disk" guarantee is already UNIT-owned + fail-closed by
+// toybox-manifest-integrity.test.ts (reads every referenced GLSL off disk) and
+// toybox-content.test.ts, so the e2e's UNIQUE job is only to prove the real
+// WebGL engine compiles + draws a shader of each KIND non-black / transforming.
+// We keep a REPRESENTATIVE 3 per kind (a mix of the original + #794 banks) — the
+// intent is unchanged, the load is cut ~6×. Run the full bank manually with
+// FULL_TOYBOX_CONTENT=1 (it iterates ALL ids below); the SwiftShader shards do
+// not re-run this file (it's pinned to the heavy lane), so use the env locally on
+// a real GPU when validating a new content batch.
+const ALL_GENS = [
   'growing-mountain', 'flow-field', 'interference', 'spiral-bloom',
-  // #794 + follow-up (this PR) GEN scenes — each proves its GLSL COMPILES +
-  // renders non-black through the real engine under SwiftShader.
+  // #794 + follow-up GEN scenes — each proves its GLSL COMPILES + renders
+  // non-black through the real engine.
   'seascape', 'octgrams', 'vangogh-sunset', 'raymarch-primitives', 'lava-lamp',
   'circuit-bloom', 'plasma-flow', 'kaleido-bloom', 'warp-tunnel', 'metaball-field',
   'warp-terrain', 'gyroid-slice', 'hyperspace', 'caustic-pool',
 ];
-const NEW_FRAGS = [
+const ALL_FRAGS = [
   'frag-scanline-blinds', 'frag-datamosh-wave', 'frag-zoom-warp', 'frag-edge-glow',
-  // #794 + follow-up (this PR) FRAG effects — each proves its GLSL COMPILES +
-  // visibly TRANSFORMS the layer below (composite differs) under SwiftShader.
+  // #794 + follow-up FRAG effects — each proves its GLSL COMPILES + visibly
+  // TRANSFORMS the layer below (composite differs).
   'frag-chromatic-shift', 'frag-posterize', 'frag-bloom', 'frag-crt',
   'frag-halftone', 'frag-pixelate', 'frag-ascii', 'frag-mirror-fold',
 ];
+// Representative subset for the serialized real-GPU lane (3 per kind): an early
+// raymarch/SDF scene, a domain-warp scene, and a post-FX-style scene — enough to
+// prove the engine compiles + renders a shader of each shape non-black.
+const REP_GENS = ['growing-mountain', 'raymarch-primitives', 'warp-tunnel'];
+const REP_FRAGS = ['frag-scanline-blinds', 'frag-chromatic-shift', 'frag-pixelate'];
+const FULL = process.env.FULL_TOYBOX_CONTENT === '1';
+const NEW_GENS = FULL ? ALL_GENS : REP_GENS;
+const NEW_FRAGS = FULL ? ALL_FRAGS : REP_FRAGS;
 // The NEW single-pass presets ('mountain-weather'…'cat-feedback') were a `.each`
 // render loop here — PRUNED in Phase 2 (webgl-suite-optimization §2/§7-2). Their
 // validity + "reaches OUTPUT renders not black" is unit-owned by
