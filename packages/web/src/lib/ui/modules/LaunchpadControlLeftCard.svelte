@@ -60,6 +60,9 @@
     }
     return null;
   }
+  // Reactive: is there a clip-player on the canvas to bind to? The Bind button
+  // only makes sense when one exists — otherwise it's a dead no-op.
+  let hasClip = $derived((bindingRune(), statusRune(), firstClipplayer() !== null));
 
   async function pair() {
     if (!supported) { status = 'no-midi'; return; }
@@ -130,7 +133,7 @@
             Pair Launchpads
           {/if}
         </button>
-        {#if paired}
+        {#if paired && (bound || hasClip)}
           <button
             class="lp-btn nodrag"
             type="button"
@@ -152,8 +155,10 @@
           Not paired.
         {:else if bound}
           Driving clip-player <code>{bound}</code>.
+        {:else if hasClip}
+          Paired ✓ — hit Bind to drive your clip-player.
         {:else}
-          Paired ✓ — add a clip-player, then Bind.
+          Paired ✓ — add a clip-player module to drive (pairing auto-binds it).
         {/if}
       </div>
     {/if}
