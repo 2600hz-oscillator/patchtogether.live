@@ -61,7 +61,10 @@ const GPU_ARGS = [...SWIFTSHADER_ARGS, ...REAL_GPU_ARGS];
 // One glob list, two CI modes (mirrors how @collab/@capacity/behavioral are
 // partitioned into their own lanes via grep — but file-glob, not title-grep,
 // so it's robust to a spec growing extra describe blocks):
-//   E2E_WEBGL_HEAVY=only     → run ONLY these specs   (the e2e-video job)
+//   E2E_WEBGL_HEAVY=only     → run ONLY these specs   (local heavy-WebGL runs;
+//                                                       the CI `e2e-video` lane
+//                                                       that used this was
+//                                                       deleted 2026-06-20)
 //   E2E_WEBGL_HEAVY=exclude  → run everything EXCEPT  (the sharded e2e matrix)
 //   unset                    → run everything         (local dev / single runner)
 //
@@ -130,9 +133,10 @@ export default defineConfig({
       //
       // WebGL-heavy partition (see WEBGL_HEAVY_GLOBS above): in 'exclude' mode
       // (the sharded e2e matrix) the heavy specs are ignored here so the
-      // functional shards stay light/uniform; in 'only' mode (the dedicated
-      // serialized e2e-video job) ONLY the heavy specs run. Camera/audio-in
-      // live in their own projects below and are unaffected.
+      // functional shards stay light/uniform; in 'only' mode ONLY the heavy
+      // specs run (a local heavy-WebGL run — the CI `e2e-video` lane that used
+      // this was deleted 2026-06-20). Camera/audio-in live in their own
+      // projects below and are unaffected.
       testIgnore:
         WEBGL_HEAVY_MODE === 'exclude'
           ? ['**/camera-input.spec.ts', '**/audio-in.spec.ts', ...EFFECTIVE_HEAVY_GLOBS]
