@@ -221,6 +221,28 @@
   <li><strong>REC</strong> (top-left, CC 91) arms the <strong>arranger</strong> — red + pulse while armed; every clip launch is recorded into the song. <strong>SONG</strong> (CC 92) flips <strong>SESSION ⇄ ARRANGEMENT</strong> (white, bright in ARRANGEMENT) to play back the recorded song. Both write the same state the card's REC + SES/ARR buttons do.</li>
 </ul>
 
+<h2>Record a song (arranger)</h2>
+<p class="muted">
+  The arranger records your <strong>live clip-launch performance</strong> — which clips you
+  fire in which lanes, and exactly when — then plays it back as a song. You perform in
+  <strong>SESSION</strong> (firing clips on the matrix) with <strong>REC</strong> armed; you play the
+  result back in <strong>ARRANGEMENT</strong>. It records <em>launches</em>, not audio, so the clips
+  themselves stay fully editable afterward. (Identical to the card's <strong>●</strong> REC +
+  <strong>SES/ARR</strong> buttons — drive whichever you like; both write the same synced state.)
+</p>
+<ol class="steps">
+  <li>Be in <strong>SESSION</strong> (the default — <strong>SONG</strong>/CC 92 is dim white, not bright). Make sure the <strong>transport is running</strong> (▶ PLAY / CC 96, or the card's transport) so song-time advances.</li>
+  <li>Press <strong>REC</strong> (top-left, CC 91). It glows <strong>red and pulses</strong>. <strong>Arming clears any previous recording and restarts the song at bar 1</strong> (v1 = record replaces, it doesn't overdub).</li>
+  <li><strong>Perform:</strong> launch / switch / stop clips on the <strong>L matrix</strong> as you normally would. Each launch is captured at the moment it actually applies — so your <strong>quantized</strong> launches land on the boundary and your <strong>NOW</strong> (hold NOW + tap) launches land instantly, exactly as you played them.</li>
+  <li>Press <strong>REC</strong> again to <strong>disarm</strong> (the pulse stops). Your performance is now stored as the song.</li>
+  <li>Press <strong>SONG</strong> (CC 92) to switch to <strong>ARRANGEMENT</strong> (it lights bright white). Playback runs your recorded launches <strong>from the top</strong>, looping. Press <strong>SONG</strong> again to return to <strong>SESSION</strong> (live) play.</li>
+</ol>
+<ul class="tight">
+  <li><strong>Recording only happens in SESSION.</strong> In ARRANGEMENT the timeline drives the lanes itself, so REC there is a no-op — record in session, play back in arrangement.</li>
+  <li><strong>Edit the recorded song</strong> on the <strong>clip player card</strong> (its SES/ARR view shows the arrangement timeline: drag/recolour/delete blocks, set the loop length). The launchpad records + plays; the card is where you fine-tune the timeline.</li>
+  <li>To <strong>re-record</strong>, just arm <strong>REC</strong> again — it wipes the old take and starts fresh from bar 1.</li>
+</ul>
+
 <h2>Unit R — the note editor</h2>
 <LaunchpadDiagram
   pads={rEditPads}
