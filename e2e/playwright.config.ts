@@ -23,23 +23,6 @@ const EFFECTIVE_HEAVY_GLOBS = resolveEffectiveHeavySpecGlobs();
 // that only manifest under minification / static-asset paths (e.g. Faust's
 // runtime worklet stitching breaking when classes are mangled).
 const USE_PREVIEW = process.env.E2E_USE_PREVIEW === '1';
-
-// COLLAB_JOB=1 marks the dedicated, serialized @collab multi-context lane (the
-// one CI runs at --workers=1). There we boot the COMPILED relay
-// (`tsc` → `node dist/index.js`) instead of `tsx watch src/index.ts`. The
-// dev relay's `tsx watch` runs a chokidar file-watcher + an on-the-fly esbuild
-// transpiler in the SAME process as the single-threaded Hocuspocus event loop;
-// under the @collab lane's CPU contention (vite preview + two browser contexts
-// share the runner's 2–4 vCPU) that overhead is exactly what starves the relay
-// — a cross-context Yjs update then arrives past the test budget and the spec
-// hangs to its timeout (the chronic @collab flake — task #69). The compiled
-// relay drops the watcher + transpiler entirely, freeing the event loop, so
-// concurrent sync specs converge reliably. The build is one-time per run and
-// cheap (~a few seconds of tsc); `&&` so `start` only runs on a clean build.
-const COLLAB_RELAY_COMPILED = process.env.COLLAB_JOB === '1';
-const RELAY_COMMAND = COLLAB_RELAY_COMPILED
-  ? 'npm run build -w packages/server && npm run start -w packages/server'
-  : 'npm run dev -w packages/server';
 const DEFAULT_LOCAL = USE_PREVIEW ? 'http://localhost:4173' : 'http://localhost:5173';
 const BASE_URL = process.env.E2E_BASE_URL ?? DEFAULT_LOCAL;
 
@@ -243,9 +226,7 @@ export default defineConfig({
           // Hocuspocus on ws://localhost:1235 (not Hocuspocus's documented
           // default 1234, which BitwigStudio reserves for OSC). The provider
           // in the web app reads VITE_SERVER_WS_URL with that as the default.
-          // COMPILED relay on the dedicated @collab lane (COLLAB_JOB=1); the
-          // lighter `tsx watch` dev relay otherwise (see RELAY_COMMAND above).
-          command: RELAY_COMMAND,
+          command: 'npm run dev -w packages/server',
           cwd: '..',
           // Ready signal: TCP port. Hocuspocus's HTTP request handler is
           // intercepted by an internal extension that doesn't write a
@@ -257,9 +238,7 @@ export default defineConfig({
           reuseExistingServer: !process.env.CI,
           stdout: 'pipe',
           stderr: 'pipe',
-          // The COLLAB_JOB lane prefixes a `tsc` build before `start`, so allow
-          // extra startup headroom there (the dev `tsx watch` path is instant).
-          timeout: COLLAB_RELAY_COMPILED ? 120_000 : 60_000,
+          timeout: 60_000,
         },
       ]
     : undefined,
