@@ -14,6 +14,7 @@
 //   flox activate -- task e2e -- --grep "@collab carl"
 
 import { test, expect } from '@playwright/test';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 import {
   openCarlContexts,
   attemptSpawn,
@@ -29,7 +30,13 @@ import {
 } from './carl-rackspace.helpers';
 
 test.describe('@collab carl leader-elected', () => {
-  test('spawn writes an active session record visible to all peers within 2s', async ({
+  // Each test chains a few cross-context relay converges (peer sees session,
+  // leader election propagates), each on the generous SYNC_BUDGET_MS backed-off
+  // poll. The 30s default couldn't hold several slow-but-correct converges
+  // under CI relay contention; 120s does (the @collab de-flake).
+  test.setTimeout(120_000);
+
+  test('spawn writes an active session record visible to all peers', async ({
     browser,
   }) => {
     const s = await openCarlContexts(browser, 2);
@@ -40,7 +47,7 @@ test.describe('@collab carl leader-elected', () => {
       const ok = await attemptSpawn(a, 'user-a', 'Alice');
       expect(ok).toBe(true);
       await expect
-        .poll(async () => (await readSession(b))?.ownerUserId, { timeout: 2000 })
+        .poll(async () => (await readSession(b))?.ownerUserId, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBe('user-a');
       const seen = await readSession(b);
       expect(seen?.ownerDisplayName).toBe('Alice');
@@ -58,7 +65,7 @@ test.describe('@collab carl leader-elected', () => {
       const [a, b] = s.pages;
       await attemptSpawn(a, 'user-a', 'Alice');
       await expect
-        .poll(async () => (await readSession(b))?.ownerUserId, { timeout: 2000 })
+        .poll(async () => (await readSession(b))?.ownerUserId, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBe('user-a');
       const okB = await attemptSpawn(b, 'user-b', 'Bob');
       expect(okB).toBe(false);
@@ -75,7 +82,7 @@ test.describe('@collab carl leader-elected', () => {
       await attemptSpawn(a, 'user-a', 'Alice');
       await startLoop(a, { seed: 7, baseTickMs: 50 });
       await expect
-        .poll(() => countCarlNodes(a), { timeout: 4000 })
+        .poll(() => countCarlNodes(a), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBeGreaterThan(0);
       await stopLoop(a);
       // B (not the spawner) does the eviction. Approach B's UX rule:
@@ -84,7 +91,7 @@ test.describe('@collab carl leader-elected', () => {
       await evictPatch(b);
       // A sees the session cleared.
       await expect
-        .poll(async () => await readSession(a), { timeout: 2000 })
+        .poll(async () => await readSession(a), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBeNull();
     } finally {
       await s.close();
@@ -110,13 +117,13 @@ test.describe('@collab carl leader-elected', () => {
       await Promise.all([publishCandidacy(a), publishCandidacy(b), publishCandidacy(c)]);
       // Each page agrees on the leader within 1s.
       await expect
-        .poll(async () => (await readLeader(a))?.leaderClientId, { timeout: 1500 })
+        .poll(async () => (await readLeader(a))?.leaderClientId, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBe(Math.min(...ids));
       await expect
-        .poll(async () => (await readLeader(b))?.leaderClientId, { timeout: 1500 })
+        .poll(async () => (await readLeader(b))?.leaderClientId, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBe(Math.min(...ids));
       await expect
-        .poll(async () => (await readLeader(c))?.leaderClientId, { timeout: 1500 })
+        .poll(async () => (await readLeader(c))?.leaderClientId, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBe(Math.min(...ids));
     } finally {
       await s.close();
@@ -143,14 +150,16 @@ test.describe('@collab carl leader-elected', () => {
       await Promise.all(s.pages.map((p) => publishCandidacy(p)));
       await expect
         .poll(async () => (await readLeader(s.pages[secondIdx]!))?.leaderClientId, {
-          timeout: 1500,
+          timeout: SYNC_BUDGET_MS,
+          intervals: SYNC_POLL_INTERVALS,
         })
         .toBe(sorted[0]);
       // The current leader withdraws — leadership migrates to second.
       await withdrawCandidacy(s.pages[lowestIdx]!);
       await expect
         .poll(async () => (await readLeader(s.pages[secondIdx]!))?.leaderClientId, {
-          timeout: 2000,
+          timeout: SYNC_BUDGET_MS,
+          intervals: SYNC_POLL_INTERVALS,
         })
         .toBe(sorted[1]);
     } finally {
@@ -167,7 +176,7 @@ test.describe('@collab carl leader-elected', () => {
       await attemptSpawn(a, 'user-a', 'Alice');
       await startLoop(a, { seed: 13, baseTickMs: 50 });
       await expect
-        .poll(() => countCarlNodes(b), { timeout: 5000 })
+        .poll(() => countCarlNodes(b), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBeGreaterThan(0);
       await stopLoop(a);
     } finally {

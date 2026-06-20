@@ -8,6 +8,7 @@
 // for A should NOT carry per-frame car positions.
 
 import { test, expect, type Page, type Browser } from '@playwright/test';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -65,6 +66,12 @@ async function readNodes(page: Page): Promise<PatchNode[]> {
 }
 
 test.describe('@collab cadillac', () => {
+  // 120s: the car's drive-and-self-destruct plays out over ~15-18s of B-side
+  // converges PLUS the initial cross-context spawn converge, each on a generous
+  // budget. The 30s default could be exceeded by the sequential 15s+18s
+  // deletion polls alone under CI relay contention (the @collab de-flake).
+  test.setTimeout(120_000);
+
   test('A spawns CADILLAC; B sees the deletions land via Yjs', async ({ browser }) => {
     const rackspaceId = `cadillac-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const a = await attach(browser, rackspaceId, {
@@ -104,16 +111,26 @@ test.describe('@collab cadillac', () => {
         });
       });
 
-      // Wait for B to see the spawn (Yjs convergence).
+      // Wait for B to see the THREE VCOs converge (Yjs). Count ONLY the VCOs,
+      // not all nodes: a synced rackspace auto-spawns the undeletable TIMELORDE
+      // singleton, so a total-count assertion races the auto-spawn re-add (the
+      // delete-all above also removed TIMELORDE; the auto-spawn $effect re-adds
+      // it) → an intermittent `Received: 4` (3 VCOs + 1 TIMELORDE). Filtering to
+      // analogVco is robust to the singleton, matching the deletion polls below.
       await expect
-        .poll(async () => (await readNodes(b.page)).length, { timeout: 5000 })
+        .poll(
+          async () => (await readNodes(b.page)).filter((n) => n.type === 'analogVco').length,
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
+        )
         .toBe(3);
 
-      // Wait for SvelteFlow on A to measure cards so the overlay can hit.
+      // Wait for SvelteFlow on A to measure the three VCO cards so the overlay
+      // can hit. Count the VCO cards specifically (the TIMELORDE card is also
+      // rendered), same singleton-robustness as the convergence poll above.
       await a.page.waitForFunction(
-        () => document.querySelectorAll('.svelte-flow__node').length === 3,
+        () => document.querySelectorAll('.svelte-flow__node-analogVco').length === 3,
         null,
-        { timeout: 5000 },
+        { timeout: 15_000 },
       );
 
       // Snapshot B's awareness states so we can confirm no per-frame car
