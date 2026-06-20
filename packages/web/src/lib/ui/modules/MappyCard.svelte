@@ -20,7 +20,6 @@
   import { type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { ModuleNode } from '$lib/graph/types';
@@ -29,12 +28,21 @@
   import {
     mappyDef,
     MAPPY_SURFACE_COUNT,
+    MAPPY_MIN_SURFACES,
     MAPPY_INPUT_IDS,
     MAPPY_SURFACE_COLORS,
     normalizeSurfaces,
-    defaultSurface,
     type MappySurfaceState,
   } from '$lib/video/modules/mappy';
+  import {
+    getSurfaceCount,
+    addSurface,
+    removeSurface,
+    setCorner as editSetCorner,
+    resetSurface as editResetSurface,
+    toggleGrid as editToggleGrid,
+  } from './mappy-edit';
+  import MappyEditor from './MappyEditor.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
 
   let { id, data }: NodeProps = $props();
@@ -73,53 +81,32 @@
   let showGrid = $derived<boolean>(
     ((node?.data as { showGrid?: unknown } | undefined)?.showGrid as boolean) ?? false,
   );
+  let surfaceCount = $derived<number>(getSurfaceCount(node));
+  /** A surface is LIVE (shown + editable) if it's within the surface count OR
+   *  its input is connected (auto-activate on patch) — mirrors the engine. */
+  let live = $derived<boolean[]>(
+    Array.from({ length: MAPPY_SURFACE_COUNT }, (_, i) => i < surfaceCount || !!connected[i]),
+  );
 
   let selected = $state(0); // which surface owns the on-top handles
+  let editorOpen = $state(false);
 
-  // ───────── in-place node.data writes (Yjs discipline) ─────────
-  /** Ensure node.data.surfaces is a fully-populated 6-surface array of live Y
-   *  objects, mutating IN PLACE. Returns the live array (or null in tests). */
-  function ensureSurfaces(): MappySurfaceState[] | null {
-    const t = patch.nodes[id];
-    if (!t) return null;
-    if (!t.data) t.data = {};
-    const d = t.data as { surfaces?: MappySurfaceState[] };
-    if (!Array.isArray(d.surfaces) || d.surfaces.length !== MAPPY_SURFACE_COUNT) {
-      // First write: seed the canonical normalized array (one assignment of a
-      // FRESH array into the Y map — not a re-assignment of a live Y child).
-      d.surfaces = normalizeSurfaces(d.surfaces);
-    }
-    return d.surfaces!;
-  }
-
+  // ───────── edits (Yjs in-place via shared $lib/ui/modules/mappy-edit) ─────────
   function setCorner(surfaceIdx: number, cornerIdx: number, x: number, y: number): void {
-    const arr = ensureSurfaces();
-    if (!arr) return;
-    const cx = Math.max(0, Math.min(1, x));
-    const cy = Math.max(0, Math.min(1, y));
-    // Mutate the live corner array element in place (don't reassign corners).
-    const s = arr[surfaceIdx];
-    if (!s) return;
-    s.corners[cornerIdx] = [cx, cy];
+    editSetCorner(id, surfaceIdx, cornerIdx, x, y);
   }
-
   function resetSurface(surfaceIdx: number): void {
-    const arr = ensureSurfaces();
-    if (!arr) return;
-    const s = arr[surfaceIdx];
-    if (!s) return;
-    const def = defaultSurface().corners;
-    for (let c = 0; c < 4; c++) s.corners[c] = [def[c]![0], def[c]![1]];
+    editResetSurface(id, surfaceIdx);
   }
-
   function toggleGrid(): void {
-    const t = patch.nodes[id];
-    if (!t) return;
-    if (!t.data) t.data = {};
-    const d = t.data as { showGrid?: boolean };
-    d.showGrid = !showGrid;
-    // mirror to the param so the factory reads it via either path + it persists
-    setNodeParam(id, 'showGrid', d.showGrid ? 1 : 0);
+    editToggleGrid(id, showGrid);
+  }
+  function onAdd(): void {
+    selected = addSurface(id) - 1;
+  }
+  function onRemove(): void {
+    removeSurface(id);
+    if (selected >= surfaceCount - 1) selected = Math.max(0, surfaceCount - 2);
   }
 
   // ───────── corner drag (pointer ↔ preview rect) ─────────
@@ -130,7 +117,10 @@
     if (!svgEl) return null;
     const rect = svgEl.getBoundingClientRect();
     const x = (ev.clientX - rect.left) / rect.width;
-    const y = (ev.clientY - rect.top) / rect.height;
+    // y is FLIPPED: corners live in the engine's y-UP uv space (vUv.y=1 = canvas
+    // top), so a click near the visual top must map to a HIGH v — else the grid
+    // renders mirrored vs the handle (the y-down/y-up mismatch).
+    const y = 1 - (ev.clientY - rect.top) / rect.height;
     return { x, y };
   }
   function onHandleDown(surfaceIdx: number, cornerIdx: number, ev: PointerEvent): void {
@@ -192,7 +182,9 @@
 
   // ───────── overlay geometry helpers (uv [0,1] → preview px) ─────────
   function px(u: number): number { return u * CANVAS_W; }
-  function py(v: number): number { return v * CANVAS_H; }
+  // y-UP: v=1 draws at the TOP (matches the engine's vUv space + the flipped
+  // pointer in uvFromPointer), so handles sit exactly where the surface renders.
+  function py(v: number): number { return (1 - v) * CANVAS_H; }
   /** SVG polygon points string for a surface's quad (TL→TR→BR→BL). */
   function quadPoints(s: MappySurfaceState): string {
     return s.corners.map((c) => `${px(c[0])},${py(c[1])}`).join(' ');
@@ -237,7 +229,7 @@
           data-testid="mappy-overlay"
         >
           {#each surfaces as surf, i (i)}
-            {#if connected[i]}
+            {#if live[i]}
               {@const color = MAPPY_SURFACE_COLORS[i]}
               {@const isSel = selected === i}
               <polygon
@@ -266,24 +258,52 @@
           {/each}
         </svg>
         {#if !anyConnected}
-          <div class="empty-hint" data-testid="mappy-empty-hint">patch a video source into IN1…IN6</div>
+          <div class="empty-hint" data-testid="mappy-empty-hint">drag the grid corners to map · then connect IN1…IN6</div>
         {/if}
       </div>
 
-      <!-- controls: grid toggle + connected-surface legend -->
+      <!-- controls: surface count + MAP + grid toggle + per-surface legend -->
       <div class="controls">
-        <button
-          class="grid-toggle nodrag"
-          class:on={showGrid}
-          type="button"
-          onclick={toggleGrid}
-          data-testid="mappy-grid-toggle"
-          title="Show a numbered calibration grid for manual alignment"
-        >GRID {showGrid ? 'ON' : 'OFF'}</button>
+        <div class="toolbar">
+          <div class="count" data-testid="mappy-count">
+            <button
+              class="count-btn nodrag"
+              type="button"
+              onclick={onRemove}
+              disabled={surfaceCount <= MAPPY_MIN_SURFACES}
+              data-testid="mappy-remove"
+              title="Remove the last surface"
+            >−</button>
+            <span class="count-n" data-testid="mappy-count-n">{surfaceCount}</span>
+            <button
+              class="count-btn nodrag"
+              type="button"
+              onclick={onAdd}
+              disabled={surfaceCount >= MAPPY_SURFACE_COUNT}
+              data-testid="mappy-add"
+              title="Add a surface (up to 6)"
+            >+</button>
+          </div>
+          <button
+            class="map-btn nodrag"
+            type="button"
+            onclick={() => (editorOpen = true)}
+            data-testid="mappy-open-editor"
+            title="Open the full-window mapping editor for precise corner-pin"
+          >MAP ⤢</button>
+          <button
+            class="grid-toggle nodrag"
+            class:on={showGrid}
+            type="button"
+            onclick={toggleGrid}
+            data-testid="mappy-grid-toggle"
+            title="Force the numbered calibration grid on every surface"
+          >GRID {showGrid ? 'ON' : 'OFF'}</button>
+        </div>
 
         <div class="legend" data-testid="mappy-legend">
           {#each surfaces as _surf, i (i)}
-            {#if connected[i]}
+            {#if live[i]}
               <div class="legend-row" class:selected={selected === i} data-testid={`mappy-legend-${i + 1}`}>
                 <button
                   class="swatch-btn nodrag"
@@ -295,6 +315,7 @@
                 >
                   <span class="swatch"></span>
                   <span class="legend-label">IN{i + 1}</span>
+                  <span class="legend-state" class:lit={connected[i]}>{connected[i] ? '● video' : '○ grid'}</span>
                 </button>
                 <button
                   class="reset-btn nodrag"
@@ -306,14 +327,15 @@
               </div>
             {/if}
           {/each}
-          {#if !anyConnected}
-            <p class="legend-empty">no surfaces — connect an input</p>
-          {/if}
         </div>
       </div>
     </div>
   </PatchPanel>
 </div>
+
+{#if editorOpen}
+  <MappyEditor {id} {node} {connected} onClose={() => (editorOpen = false)} />
+{/if}
 
 <style>
   .mappy-card { width: 380px; }
@@ -375,8 +397,52 @@
     gap: 8px;
     padding: 0 6px;
   }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .count {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    border: 1px solid #404652;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .count-btn {
+    background: #2a2f3a;
+    color: var(--text);
+    border: none;
+    padding: 2px 9px;
+    font-size: 0.9rem;
+    line-height: 1;
+    font-family: ui-monospace, monospace;
+    cursor: pointer;
+  }
+  .count-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .count-btn:hover:not(:disabled) { background: #353c49; }
+  .count-n {
+    min-width: 16px;
+    text-align: center;
+    font-size: 0.74rem;
+    font-family: ui-monospace, monospace;
+    color: var(--text);
+  }
+  .map-btn {
+    background: rgba(74, 223, 255, 0.12);
+    color: var(--cable-video, #4adfff);
+    border: 1px solid var(--cable-video, #4adfff);
+    border-radius: 3px;
+    padding: 3px 12px;
+    font-size: 0.66rem;
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+  }
+  .map-btn:hover { background: rgba(74, 223, 255, 0.22); }
   .grid-toggle {
-    align-self: flex-start;
     background: #2a2f3a;
     color: var(--text);
     border: 1px solid #404652;
@@ -392,6 +458,12 @@
     border-color: var(--yellow, #ffd24a);
     color: var(--yellow, #ffd24a);
   }
+  .legend-state {
+    margin-left: 6px;
+    font-size: 0.6rem;
+    color: var(--text-dim, #889);
+  }
+  .legend-state.lit { color: var(--cable-video, #4adfff); }
   .legend {
     display: flex;
     flex-direction: column;
@@ -442,10 +514,4 @@
     cursor: pointer;
   }
   .reset-btn:hover { color: var(--text); border-color: var(--cable-video); }
-  .legend-empty {
-    font-size: 0.66rem;
-    color: var(--text-dim, #889);
-    font-style: italic;
-    margin: 4px 0;
-  }
 </style>

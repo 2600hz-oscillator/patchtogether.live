@@ -93,27 +93,34 @@
 </div>
 
 <p>
-  Surfaces composite in input order with an OVER blend. Every surface starts
-  <strong>full-frame</strong> (the unit quad), so connecting any single input
-  immediately fills the frame with that feed — then drag its corners in to
-  skew / shrink the footprint. The composite is exposed on the <code>out</code>
-  port and as the on-card live preview.
+  Surfaces composite in input order with an OVER blend. The composite is exposed
+  on the <code>out</code> port and as the on-card live preview.
 </p>
 <p>
-  <strong>SHOW GRID</strong> swaps the input for a numbered calibration grid
-  (per-surface-tinted checker + bright border + cross-hairs + a tally encoding
-  the surface number), warped into each connected surface's quad. Line the grid
-  up to the physical surface, then turn it off.
+  <strong>Grids-first.</strong> A fresh MAPPY shows <strong>one</strong> surface,
+  and a live surface with <em>no input connected</em> renders its
+  <strong>numbered calibration grid</strong> — a per-surface-tinted checker +
+  bright border + cross-hairs + a big seven-segment <strong>digit</strong> naming
+  the input that will feed it. So with nothing patched the output <em>is</em> the
+  grid(s): set the geometry up on the physical faces first (drag corners; use
+  <code>+</code>/<code>−</code> to add up to six surfaces), then connect video.
+  The instant <code>inN</code> is connected, surface <em>N</em> swaps grid →
+  warped video in the quad you already mapped — surface ↔ input is fixed, no
+  reassignment. The <strong>GRID</strong> toggle forces the grid back on for
+  every live surface (a re-alignment override); connecting <code>inN</code>
+  auto-activates surface <em>N</em> even beyond the count.
 </p>
 
-<h2>card</h2>
+<h2>card &amp; MAP editor</h2>
 <p>
-  A live composite preview with an SVG overlay of every <em>connected</em>
-  surface's draggable corner handles and quad outline (coloured per surface; the
-  focused surface's handles come to front). A legend lists each connected input
-  with a focus toggle and a "reset corners to full-frame" button, plus the GRID
-  toggle. All ports live on the yellow drill-down patch panel — no raw side
-  jacks.
+  The card has a live composite preview with draggable corner handles + quad
+  outlines (coloured per surface), a <code>+</code>/<code>−</code> surface
+  counter, a <strong>MAP</strong> button, the GRID toggle, and a per-surface
+  legend (focus · reset · a ● video / ○ grid state). Precise corner-pin work
+  happens in the <strong>MAP editor</strong> — a full-window canvas with big
+  handles, drag-inside-a-surface to move it bodily, surface tabs, and
+  snap-to-grid for matching a real edge. All ports live on the yellow drill-down
+  patch panel — no raw side jacks.
 </p>
 
 {#if data.inputs.length > 0}
@@ -159,18 +166,23 @@
 
 <h2>usage</h2>
 <ol>
-  <li>Patch a video source into <code>in1</code> — it fills the whole frame.</li>
   <li>
-    Turn on <strong>GRID</strong> and drag the surface's four corner handles on
-    the preview until the calibration grid lines up with the physical screen /
-    cube face, then turn GRID off.
+    Route <code>out</code> → OUTPUT (your projector). With nothing patched yet,
+    MAPPY projects surface 1's numbered grid.
   </li>
   <li>
-    Add more sources on <code>in2</code>…<code>in6</code> for more surfaces;
-    focus a surface in the legend to bring its handles to front, and
-    <em>reset</em> any surface back to full-frame.
+    Open <strong>MAP</strong> (or drag on the card) and pull the grid's four
+    corners until it lines up with the physical screen / cube face.
   </li>
-  <li>Route <code>out</code> → OUTPUT (your projector).</li>
+  <li>
+    Hit <code>+</code> to add surface 2 (it drops in as an inset grid showing the
+    digit “2”), map it onto the next face, and repeat — up to six surfaces.
+  </li>
+  <li>
+    Connect a video source into <code>inN</code> — surface <em>N</em>'s grid is
+    replaced by that feed, warped into the quad you already mapped. Flip
+    <strong>GRID</strong> back on any time to re-check alignment.
+  </li>
 </ol>
 
 <nav class="prev-next">

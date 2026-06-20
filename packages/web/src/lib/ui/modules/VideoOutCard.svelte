@@ -157,14 +157,17 @@
   $effect(() => ff.attach(cardEl, () => fullFrame));
 
   // Canvas drawing-buffer dims. In the rack: the card's inner dims (card
-  // aspect). In TRUE fullscreen: the live ENGINE dims so the buffer carries the
-  // ENGINE aspect — fitRect then fills it edge-to-edge (no baked bars) and the
-  // CSS object-fit:contain pillarboxes the true source aspect into the screen
-  // (height-fill, side pillarbox only for 4:3 — no top/bottom letterbox). See
+  // aspect). In TRUE fullscreen — OR while PRESENTING on a second display: the
+  // live ENGINE dims so the buffer carries the ENGINE aspect — fitRect then
+  // fills it edge-to-edge (no baked bars). The CSS object-fit:contain
+  // pillarboxes the true source aspect into the screen (height-fill, side
+  // pillarbox only for 4:3 — no top/bottom letterbox), and the present popup
+  // mirrors this CLEAN engine-aspect buffer so a 16:9 output fills a 16:9
+  // projector instead of the doubly-letterboxed card preview. See
   // fullscreen-canvas-dims.ts for the full rationale.
   let bufferDims = $derived(
     fullscreenCanvasDims(
-      fs.isFullscreen,
+      fs.isFullscreen || present.isPresenting,
       { canvas: { width: engineW, height: engineH } },
       { width: innerWidth, height: innerHeight },
     ),

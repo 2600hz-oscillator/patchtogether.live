@@ -199,6 +199,27 @@ describe('startPresent', () => {
     expect(y).toBe(0);
   });
 
+  it('delegates fullscreen to the popup on ready (Capability Delegation) so it can go true-fullscreen with no click', () => {
+    const env = installWindow();
+    const canvas = fakeSourceCanvas();
+    const { popup, posted } = fakePopup();
+    const openWindow = vi.fn(() => popup as unknown as Window);
+    const sched = fakeRaf();
+
+    startPresent({ canvas, rect: null, openWindow, raf: sched.raf, caf: sched.caf });
+    // Before ready: no delegation yet.
+    expect(posted.some((p) => (p.data as { type?: string })?.type === 'present:go-fullscreen')).toBe(false);
+
+    // On ready, the opener posts a fullscreen-delegated message to the popup.
+    env.fireMessage({ source: popup, data: { type: 'present:ready' } });
+    const fs = posted.find((p) => (p.data as { type?: string })?.type === 'present:go-fullscreen');
+    expect(fs, 'a present:go-fullscreen message is posted to the popup').toBeDefined();
+    // The second postMessage arg carries the Capability-Delegation option.
+    const opts = fs!.origin as unknown as { targetOrigin?: string; delegate?: string };
+    expect(opts.delegate).toBe('fullscreen');
+    expect(opts.targetOrigin).toBe('http://localhost');
+  });
+
   it('letterboxes a 4:3 source into a 16:9 sink (pillarbox, height-fill)', () => {
     const env = installWindow();
     const canvas = fakeSourceCanvas(640, 480); // 4:3
