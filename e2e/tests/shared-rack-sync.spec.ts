@@ -26,6 +26,7 @@
 // Run only this:  flox activate -- task e2e -- shared-rack-sync.spec.ts
 
 import { test, expect, type Page, type BrowserContext, type Browser } from '@playwright/test';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 interface Pair {
   pageA: Page;
@@ -115,11 +116,18 @@ async function hasNode(page: Page, id: string): Promise<boolean> {
 
 async function expectSeesNode(page: Page, id: string): Promise<void> {
   await expect
-    .poll(async () => await hasNode(page, id), { timeout: 5000 })
+    .poll(async () => await hasNode(page, id), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
     .toBe(true);
 }
 
 test.describe('@collab shared-rack-sync', () => {
+  // Each test chains SIX+ sequential cross-context converges (see node, see
+  // reverse node, see cable, see reverse cable, …), each on the generous
+  // SYNC_BUDGET_MS backed-off poll. The default 30s test timeout couldn't hold
+  // that many slow-but-correct converges under CI relay contention; 120s does
+  // (the @collab de-flake).
+  test.setTimeout(120_000);
+
   test('full flow: create → add → join → see → add → see → patch → see (bidirectional)', async ({
     browser,
   }) => {
@@ -177,7 +185,7 @@ test.describe('@collab shared-rack-sync', () => {
               if (!e) return null;
               return `${e.source?.nodeId}->${e.target?.nodeId}`;
             }, edgeId),
-          { timeout: 5000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe('a-vco->b-vca');
 
@@ -209,7 +217,7 @@ test.describe('@collab shared-rack-sync', () => {
                 ).includes(eid),
               edgeId2,
             ),
-          { timeout: 5000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
     } finally {
