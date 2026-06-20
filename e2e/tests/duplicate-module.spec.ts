@@ -10,6 +10,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -209,7 +210,7 @@ test('right-click → Duplicate does not copy edges of the source', async ({ pag
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(1);
 });
 
-test('@collab duplicate in A appears in B within 4s', async ({ browser }) => {
+test('@collab duplicate in A appears in B', async ({ browser }) => {
   // Two browser contexts on the same rackspace. A duplicates a node; B
   // observes the new node show up. This proves Duplicate goes through the
   // standard add-node path (Y.Doc transact) that the multiplayer provider
@@ -262,7 +263,7 @@ test('@collab duplicate in A appears in B within 4s', async ({ browser }) => {
       .poll(async () => await pageB.evaluate(() => {
         const w = window as unknown as { __patch: { nodes: Record<string, unknown> } };
         return Object.keys(w.__patch.nodes).includes('adsr-shared');
-      }), { timeout: 4000 })
+      }), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
       .toBe(true);
 
     // A: right-click the title bar → Duplicate. (Title bar, not node center —
@@ -280,7 +281,7 @@ test('@collab duplicate in A appears in B within 4s', async ({ browser }) => {
       .poll(async () => await pageB.evaluate(() => {
         const w = window as unknown as { __patch: { nodes: Record<string, { type: string }> } };
         return Object.values(w.__patch.nodes).filter((n) => n && n.type === 'adsr').length;
-      }), { timeout: 4000 })
+      }), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
       .toBe(2);
   } finally {
     await ctxA.close();

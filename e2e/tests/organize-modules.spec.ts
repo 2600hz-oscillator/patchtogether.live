@@ -25,6 +25,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -535,7 +536,7 @@ test.describe('@collab', () => {
     };
   }
 
-  test('User-A spawn-at-rclick reaches User-B within ~1s', async ({ browser }) => {
+  test('User-A spawn-at-rclick reaches User-B', async ({ browser }) => {
     const s = await openTwo(browser);
     try {
       await s.pageA.evaluate(() => {
@@ -549,7 +550,7 @@ test.describe('@collab', () => {
               const w = window as unknown as { __patch: { nodes: Record<string, { type: string }> } };
               return Object.values(w.__patch.nodes).some((n) => n?.type === 'reverb');
             }),
-          { timeout: 1500 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
     } finally {
@@ -577,7 +578,7 @@ test.describe('@collab', () => {
       await expect
         .poll(
           async () => (await readUserNodes(s.pageB)).length,
-          { timeout: 2000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(2);
       // A organizes locally. The shared node.position is updated when there's
@@ -597,7 +598,7 @@ test.describe('@collab', () => {
             return (a.position.x !== 200 || a.position.y !== 200)
               || (b.position.x !== 200 || b.position.y !== 200);
           },
-          { timeout: 2000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
     } finally {

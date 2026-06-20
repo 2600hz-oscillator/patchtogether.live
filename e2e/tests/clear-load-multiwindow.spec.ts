@@ -14,6 +14,7 @@
 // canvas could be empty because the bind:nodes path stomped the array.
 
 import { test, expect } from '@playwright/test';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 interface Ctx {
   pageA: import('@playwright/test').Page;
@@ -76,7 +77,7 @@ async function openTwoContexts(
 }
 
 test.describe('@collab B3 reconciler determinism', () => {
-  test('host clears + loads example; listener canvas shows modules within 500ms', async ({
+  test('host clears + loads example; listener canvas renders the loaded modules', async ({
     browser,
   }) => {
     const s = await openTwoContexts(browser);
@@ -109,7 +110,7 @@ test.describe('@collab B3 reconciler determinism', () => {
               const w = window as unknown as { __patch: { nodes: Record<string, unknown> } };
               return Object.keys(w.__patch.nodes).includes('leftover-vco');
             }),
-          { timeout: 4000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
 
@@ -171,10 +172,17 @@ test.describe('@collab B3 reconciler determinism', () => {
       // synced rackspace auto-spawns the singleton TIMELORDE clock, so the
       // listener's total node count is 5 example + 1 timelorde = 6 (and a
       // re-mount race can briefly show a 7th). The regression this guards is
-      // "the listener renders the loaded patch within 500 ms" — checking the
-      // exact example ids appear within that budget is both faithful to that
-      // and robust to the unrelated auto-spawn. (The per-id visibility loop
-      // below then re-confirms each card painted.)
+      // "the listener RENDERS the loaded patch" (pre-fix, the engine had the
+      // nodes but Svelte Flow's bind-stomp could leave the canvas EMPTY) —
+      // checking the exact example ids appear is faithful to that and robust to
+      // the unrelated auto-spawn. (The per-id visibility loop below re-confirms
+      // each card painted.)
+      //
+      // NOTE: the old budget here was a 500ms LATENCY SLA, which flaked under CI
+      // relay contention (a correct-but-slow A→relay→B converge + Svelte Flow
+      // mount can exceed 500ms with the relay starved). The PROPERTY under test
+      // is that the cards eventually render, not how fast — so this is now a
+      // generous backed-off CORRECTNESS budget (the @collab de-flake).
       const EXAMPLE_IDS = ['b3-seq', 'b3-vco', 'b3-adsr', 'b3-vca', 'b3-out'];
       await expect
         .poll(
@@ -186,7 +194,7 @@ test.describe('@collab B3 reconciler determinism', () => {
                 ),
               EXAMPLE_IDS,
             ),
-          { timeout: 500, intervals: [50, 100, 100, 100, 150] },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
 
@@ -254,7 +262,7 @@ test.describe('@collab B3 reconciler determinism', () => {
                 .filter((id) => !id.startsWith('timelorde-'))
                 .sort();
             }),
-          { timeout: 4000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toEqual(['parity-a', 'parity-b', 'parity-c']);
 

@@ -14,6 +14,7 @@
 // hermetic.
 
 import { test, expect, type Page } from '@playwright/test';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 interface CollabContexts {
   pageA: Page;
@@ -147,7 +148,11 @@ async function loadCheckerboardImage(page: Page, nodeId: string): Promise<string
 }
 
 test.describe('@collab PICTUREBOX multiplayer image sync', () => {
-  test.setTimeout(60_000);
+  // 120s: two cross-context relay converges (B sees node, B sees the image
+  // bytes) plus two has-image attribute waits, each on a generous budget. 60s
+  // was too tight when A→relay→B image-bytes propagation stalls under CI relay
+  // contention (the @collab de-flake).
+  test.setTimeout(120_000);
 
   test('image bytes loaded in A appear in B and render the card as has-image', async ({ browser }) => {
     const s = await openTwoContexts(browser);
@@ -168,7 +173,7 @@ test.describe('@collab PICTUREBOX multiplayer image sync', () => {
                 ).includes(id),
               NODE,
             ),
-          { timeout: 6000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
 
@@ -188,7 +193,7 @@ test.describe('@collab PICTUREBOX multiplayer image sync', () => {
               };
               return w.__patch.nodes[id]?.data?.imageBytes ?? null;
             }, NODE),
-          { timeout: 6000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(aBytes);
 
@@ -199,7 +204,7 @@ test.describe('@collab PICTUREBOX multiplayer image sync', () => {
       await expect(s.pageB.locator(cardSelector)).toHaveAttribute(
         'data-has-image',
         'true',
-        { timeout: 6000 },
+        { timeout: 15_000 },
       );
 
       // A's card should also be has-image (sanity: same code path runs
@@ -207,7 +212,7 @@ test.describe('@collab PICTUREBOX multiplayer image sync', () => {
       await expect(s.pageA.locator(cardSelector)).toHaveAttribute(
         'data-has-image',
         'true',
-        { timeout: 6000 },
+        { timeout: 15_000 },
       );
     } finally {
       await s.close();

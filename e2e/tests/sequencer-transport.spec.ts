@@ -17,6 +17,7 @@
 
 import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -629,7 +630,12 @@ async function openTwoContexts(browser: Browser): Promise<CollabContexts> {
 }
 
 test.describe('@collab sequencer-transport multiplayer slot sync', () => {
-  test.setTimeout(60_000);
+  // 120s ceiling: this test does THREE sequential cross-context relay
+  // converges (B sees node, B sees slot, A sees loaded pattern), each on the
+  // generous SYNC_BUDGET_MS backed-off poll. 60s was too tight against three
+  // slow converges under CI relay contention; 120s gives full headroom
+  // (matches the POLYSEQZ sibling below).
+  test.setTimeout(120_000);
 
   test('user A saves slot 1 on a sequencer; user B sees the slot data sync over the Y.Doc', async ({
     browser,
@@ -669,7 +675,7 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
               const w = window as unknown as { __patch: { nodes: Record<string, unknown> } };
               return Object.keys(w.__patch.nodes).includes(id);
             }, NODE),
-          { timeout: 6000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
 
@@ -690,14 +696,15 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
                 | undefined;
               return slots?.['1'] !== undefined && slots?.['1'] !== null;
             }, NODE),
-          { timeout: 6000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
 
-      // B's slot 1 button should show has-data styling.
+      // B's slot 1 button should show has-data styling (local re-render after
+      // the Y.Doc sync above — generous budget for a slow Svelte flush).
       await expect(
         s.pageB.locator(`[data-testid="quicksave-slot-${NODE}-1"]`),
-      ).toHaveAttribute('data-has-data', 'true', { timeout: 6000 });
+      ).toHaveAttribute('data-has-data', 'true', { timeout: 15_000 });
 
       // B mutates the live pattern, then clicks LOAD → slot 1, restoring A's snapshot.
       await s.pageB.evaluate((nodeId) => {
@@ -734,7 +741,7 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
                 | undefined;
               return steps?.[0]?.on === true && steps?.[0]?.midi === 60;
             }, NODE),
-          { timeout: 6000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
     } finally {

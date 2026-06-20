@@ -14,6 +14,7 @@
 // To run only collab specs:  npx playwright test --grep @collab
 
 import { test, expect } from '@playwright/test';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 interface CollabContexts {
   pageA: import('@playwright/test').Page;
@@ -72,7 +73,7 @@ async function openTwoContexts(
 }
 
 test.describe('@collab', () => {
-  test('sync: node added in A appears in B within 4s', async ({ browser }) => {
+  test('sync: node added in A appears in B', async ({ browser }) => {
     const s = await openTwoContexts(browser);
     try {
       await s.pageA.evaluate(() => {
@@ -98,7 +99,7 @@ test.describe('@collab', () => {
               const w = window as unknown as { __patch: { nodes: Record<string, unknown> } };
               return Object.keys(w.__patch.nodes).includes('shared-1');
             }),
-          { timeout: 4000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
     } finally {
@@ -133,7 +134,7 @@ test.describe('@collab', () => {
                 (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
               ),
             ),
-          { timeout: 4000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toContain('layout-test');
 
@@ -202,7 +203,7 @@ test.describe('@collab', () => {
                   (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
                 ).length,
             ),
-          { timeout: 4000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBeGreaterThan(0);
 

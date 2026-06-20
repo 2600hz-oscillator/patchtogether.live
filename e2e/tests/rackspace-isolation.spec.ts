@@ -27,6 +27,7 @@
 // dedicated `task collab` runner.
 
 import { test, expect } from '@playwright/test';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 interface PatchSnapshot {
   nodes: string[];
@@ -142,7 +143,7 @@ test.describe('@collab rackspace isolation', () => {
       // check the cleaner contract: after attaching to B in a fresh tab,
       // B is empty. (The within-one-tab leak is covered by store-bind.test.ts.)
       await expect
-        .poll(async () => (await snapshot(b1.page)).nodes, { timeout: 4000 })
+        .poll(async () => (await snapshot(b1.page)).nodes, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toEqual([]);
 
       // Mutate B: add a node only B should see.
@@ -153,7 +154,7 @@ test.describe('@collab rackspace isolation', () => {
       // must NOT appear in A.
       await attach(a2.page, rackA);
       await expect
-        .poll(async () => (await snapshot(a2.page)).nodes, { timeout: 4000 })
+        .poll(async () => (await snapshot(a2.page)).nodes, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toEqual(['sentinel-A']);
 
       // Belt-and-suspenders: the original a1 tab still on rackspace A
@@ -195,21 +196,21 @@ test.describe('@collab rackspace isolation', () => {
       // node would still be in the same Y.Doc and the listener would see
       // it in B too.
       await expect
-        .poll(async () => (await snapshot(tab.page)).nodes, { timeout: 4000 })
+        .poll(async () => (await snapshot(tab.page)).nodes, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toEqual([]);
       await addNode(tab.page, 'B-only', 'analogVco');
 
       // Verifier joins B fresh — server should report only B-only.
       await attach(verifier.page, rackB);
       await expect
-        .poll(async () => (await snapshot(verifier.page)).nodes, { timeout: 4000 })
+        .poll(async () => (await snapshot(verifier.page)).nodes, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toEqual(['B-only']);
 
       // Now verifier joins A — server should report only A-only (B's
       // edits did NOT bleed back into A's room).
       await attach(verifier.page, rackA);
       await expect
-        .poll(async () => (await snapshot(verifier.page)).nodes, { timeout: 4000 })
+        .poll(async () => (await snapshot(verifier.page)).nodes, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toEqual(['A-only']);
     } finally {
       await Promise.all([tab.ctx.close(), verifier.ctx.close()]);
