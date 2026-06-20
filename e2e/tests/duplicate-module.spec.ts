@@ -276,21 +276,20 @@ test('@collab duplicate in A appears in B', async ({ browser }) => {
     // a center right-click can land on a control whose contextmenu handler
     // stopPropagation()s the event, opening the per-control menu instead of
     // the module menu; see the non-collab specs above.)
-    // force:true on the right-click — in the 2-context @collab case the
-    // auto-spawned TIMELORDE singleton's display canvas can overlap the ADSR
-    // title in SCREEN space (SvelteFlow fitView re-centers both nodes), so the
-    // contextmenu right-click retried-until-test-timeout on the attest run
-    // (the page never opened the menu → A never got a 2nd ADSR → B never saw 2).
-    // The title is already on-screen; force bypasses the unrelated-overlay check.
+    // dispatchEvent — in the 2-context @collab case the auto-spawned TIMELORDE
+    // singleton's display canvas overlaps the ADSR title in SCREEN space
+    // (SvelteFlow fitView re-centers both nodes). A real pointer click — even
+    // click({force:true}) — still hit-tests to the TOPMOST element (the TIMELORDE
+    // canvas), so it never reaches the title/menuitem (the attest showed the
+    // contextmenu either never opening or the Duplicate landing on nothing → A
+    // stayed at 1 ADSR). dispatchEvent fires the DOM event DIRECTLY on the target
+    // node, bypassing browser hit-testing entirely — the correct remedy for an
+    // unrelated full-overlay. The contextmenu handler lives on .title; the
+    // menuitem click handler on the menu item.
     const adsr = pageA.locator('.svelte-flow__node-adsr').first();
-    await adsr.locator('.title').click({ button: 'right', force: true });
+    await adsr.locator('.title').dispatchEvent('contextmenu');
     await expect(pageA.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
-    // force:true — the module action menu renders inside the SvelteFlow node
-    // layer, so the auto-spawned TIMELORDE display canvas can overlap the
-    // Duplicate menuitem in screen space too (the menu is visible above, but the
-    // click landed on nothing → A stayed at 1 ADSR on the attest run). The
-    // menuitem is confirmed present; force bypasses the overlay intercept.
-    await pageA.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click({ force: true });
+    await pageA.locator('[role="menuitem"]', { hasText: 'Duplicate' }).dispatchEvent('click');
     await expect(pageA.locator('.svelte-flow__node-adsr')).toHaveCount(2);
 
     // B: should see 2 ADSR nodes appear within 4s.
