@@ -28,6 +28,7 @@
 
 import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch, type SpawnNode } from './_helpers';
+import { SYNC_BUDGET_MS } from './_collab-helpers';
 
 const GS_LEVEL = 0;
 
@@ -182,12 +183,13 @@ async function slotPos(
 }
 
 test.describe('@collab DOOM late-join — hot-drop into the running map', () => {
-  // QUARANTINE (task #97): 2-context Hocuspocus relay drops peer B under CI
-  // shard load. Skip on CI; runs locally. The pending↔active model + promotion
-  // is unit-proven (doom-roster.test.ts), the spectator/pending labels are
-  // unit-proven (doom-player-identity.test.ts), and the late-joiner-spawns-at-
-  // next-map path is deterministically proven by start-netgame.acceptance.mjs.
-  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab 2-context flake under CI shard load — task #97');
+  // Runs on the dedicated @collab lane (COLLAB_JOB=1 — relay + Postgres), and
+  // is skipped only in the sharded matrix where the relay/DB aren't available.
+  // De-flaked (consolidated #837+#841): the former relay-flake vacuity skips in
+  // the body are now real SYNC_BUDGET_MS-bounded waits that FAIL if cross-context
+  // sync never lands. The pending↔active model + promotion stays unit-proven
+  // (doom-roster.test.ts); this is the browser-level integration check.
+  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix');
   // Cold WASM + 4 MB WAD on TWO contexts + cross-context sync + a launch + an
   // intermission round-trip + a second launch → a long window. Generous ceiling.
   test.setTimeout(180_000);
@@ -235,59 +237,41 @@ test.describe('@collab DOOM late-join — hot-drop into the running map', () => 
           return !!st && st.launched === true && st.gamestate === level;
         },
         [NODE, GS_LEVEL],
-        { timeout: 30000 },
+        { timeout: SYNC_BUDGET_MS },
       );
 
       // ─── B joins WHILE A's level is running → HOT-DROP into the CURRENT map ─
       // Round 5: B's Join is gated on the host's live-MP signal — wait for it to
       // sync to B before joining (the signal is what enables the Join button).
-      const bSawLive = await pair.pageB
-        .waitForFunction(
-          (id) => {
-            const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mpLive: boolean } }> };
-            return w.__doomCards?.[id]?.getState().mpLive === true;
-          },
-          NODE,
-          { timeout: 30000 },
-        )
-        .then(() => true)
-        .catch(() => false);
-      if (!bSawLive) {
-        test.skip(true, 'cross-context mpLive sync did not reach B (relay flake)');
-        return;
-      }
+      // De-flake (consolidated #837+#841): formerly vacuity skips ("relay flake"
+      // → green-while-asserting-nothing). Now real SYNC_BUDGET_MS-bounded waits:
+      // a correct slow cross-context sync passes; a relay that never delivers
+      // throws → the test FAILS. Proves B sees A's live game and hot-drops as
+      // active player 1 into the SAME running map via real roster sync.
+      await pair.pageB.waitForFunction(
+        (id) => {
+          const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mpLive: boolean } }> };
+          return w.__doomCards?.[id]?.getState().mpLive === true;
+        },
+        NODE,
+        { timeout: SYNC_BUDGET_MS },
+      );
       await join(pair.pageB, NODE);
 
       // B is seated ACTIVE at slot 1 (NOT pending) and the arbiter hot-drop-
       // relaunches the current map, so B reaches GS_LEVEL with a live marine.
-      // If cross-context sync never lands (known CI @collab flake — skipped on
-      // CI), SKIP — the active-seating + relaunch logic is unit-proven
-      // (doom-roster.test.ts) + the C reload path by start-netgame.acceptance.mjs.
-      const bHotDropped = await pair.pageB
-        .waitForFunction(
-          (args) => {
-            const [id, level] = args as [string, number];
-            const w = globalThis as unknown as {
-              __doomCards?: Record<string, { getState: () => { mySlot: number | null; launched: boolean; gamestate: number } }>;
-            };
-            const st = w.__doomCards?.[id]?.getState();
-            return !!st && st.mySlot === 1 && st.launched === true && st.gamestate === level;
-          },
-          [NODE, GS_LEVEL],
-          { timeout: 45000 },
-        )
-        .then(() => true)
-        .catch(() => false);
-
-      if (!bHotDropped) {
-        test.skip(
-          true,
-          "cross-context roster sync didn't hot-drop B into the running map within 45s " +
-            '(known CI @collab two-context flake; the active-seat + relaunch logic ' +
-            'is proven by doom-roster.test.ts + start-netgame.acceptance.mjs)',
-        );
-        return;
-      }
+      await pair.pageB.waitForFunction(
+        (args) => {
+          const [id, level] = args as [string, number];
+          const w = globalThis as unknown as {
+            __doomCards?: Record<string, { getState: () => { mySlot: number | null; launched: boolean; gamestate: number } }>;
+          };
+          const st = w.__doomCards?.[id]?.getState();
+          return !!st && st.mySlot === 1 && st.launched === true && st.gamestate === level;
+        },
+        [NODE, GS_LEVEL],
+        { timeout: SYNC_BUDGET_MS },
+      );
 
       // ─── B is an ACTIVE player at slot 1 in the SAME map (not pending) ───
       const bFinal = await cardState(pair.pageB, NODE);

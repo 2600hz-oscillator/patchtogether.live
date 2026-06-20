@@ -36,6 +36,7 @@
 
 import { test, expect, type Page, type Browser, type BrowserContext } from '@playwright/test';
 import { spawnPatch, claimKeyboard, type SpawnNode } from './_helpers';
+import { SYNC_BUDGET_MS } from './_collab-helpers';
 
 const GS_LEVEL = 0;
 const GS_DEMOSCREEN = 3;
@@ -235,21 +236,18 @@ test.describe('@collab DOOM multiplayer — late-join host freeze', () => {
         { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
       ];
       await spawnPatch(owner.page, nodes, []);
-      const anonSawNode = await anon.page
-        .waitForFunction(
-          (nid) =>
-            Object.keys(
-              (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
-            ).includes(nid),
-          NODE_ID,
-          { timeout: 15000 },
-        )
-        .then(() => true)
-        .catch(() => false);
-      if (!anonSawNode) {
-        test.skip(true, 'cross-context node sync flake');
-        return;
-      }
+      // De-flake (consolidated #837+#841): formerly a "cross-context node sync
+      // flake" vacuity skip (green-while-asserting-nothing). Now a real
+      // SYNC_BUDGET_MS-bounded wait — a correct slow node sync passes; a relay
+      // that never delivers the shared DOOM node to the anon throws → FAILS.
+      await anon.page.waitForFunction(
+        (nid) =>
+          Object.keys(
+            (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
+          ).includes(nid),
+        NODE_ID,
+        { timeout: SYNC_BUDGET_MS },
+      );
       await cardHookReady(owner.page, NODE_ID);
       await cardHookReady(anon.page, NODE_ID);
       await expect
@@ -305,11 +303,13 @@ test.describe('@collab DOOM multiplayer — late-join host freeze', () => {
       const joinBtn = anon.page.locator('[data-testid="doom-join-btn"]');
       await expect(joinBtn, 'anon Join enables once MP is live').toBeEnabled({ timeout: 20000 });
       await joinBtn.click();
-      const anonSeated = await waitForSlot(anon.page, NODE_ID, 1, 30000);
-      if (!anonSeated) {
-        test.skip(true, 'cross-context roster sync did not seat the anon at slot 1 (relay flake)');
-        return;
-      }
+      // De-flake (consolidated #837+#841): formerly a "relay flake" vacuity skip.
+      // Now a real bounded assert — a relay that never seats the anon at slot 1
+      // FAILS the test instead of silently skipping green.
+      expect(
+        await waitForSlot(anon.page, NODE_ID, 1, SYNC_BUDGET_MS),
+        'anon is seated at slot 1 via cross-context roster sync',
+      ).toBe(true);
       // Both peers reload the level via the hot-drop relaunch (G_InitNew at np=2).
       expect(await waitForLevel(anon.page, NODE_ID), 'anon hot-drops into the running map').toBe(true);
       expect(await waitForLevel(owner.page, NODE_ID), 'owner re-enters the level after relaunch').toBe(

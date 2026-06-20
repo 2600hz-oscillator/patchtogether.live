@@ -41,6 +41,7 @@
 
 import { test, expect, type Page, type Browser, type BrowserContext } from '@playwright/test';
 import { spawnPatch, claimKeyboard, type SpawnNode } from './_helpers';
+import { SYNC_BUDGET_MS } from './_collab-helpers';
 
 const GS_LEVEL = 0;
 const NODE_ID = 'doom-ls';
@@ -386,21 +387,18 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
       // Owner adds the shared DOOM node; guest sees it via Yjs node sync.
       const nodes: SpawnNode[] = [{ id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' }];
       await spawnPatch(p1.page, nodes, []);
-      const guestSawNode = await p2.page
-        .waitForFunction(
-          (nid) =>
-            Object.keys((window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes).includes(
-              nid,
-            ),
-          NODE_ID,
-          { timeout: 15000 },
-        )
-        .then(() => true)
-        .catch(() => false);
-      if (!guestSawNode) {
-        test.skip(true, 'cross-context node sync flake');
-        return;
-      }
+      // De-flake (consolidated #837+#841): formerly a "cross-context node sync
+      // flake" vacuity skip (green-while-asserting-nothing). Now a real
+      // SYNC_BUDGET_MS-bounded wait — a correct slow node sync passes; a relay
+      // that never delivers the shared DOOM node to the guest throws → FAILS.
+      await p2.page.waitForFunction(
+        (nid) =>
+          Object.keys((window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes).includes(
+            nid,
+          ),
+        NODE_ID,
+        { timeout: SYNC_BUDGET_MS },
+      );
       await cardHookReady(p1.page, NODE_ID);
       await cardHookReady(p2.page, NODE_ID);
       await expect
@@ -437,11 +435,13 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
           ]!.join(),
         NODE_ID,
       );
-      const guestSeated = await waitForSlot(p2.page, NODE_ID, 1, 30000);
-      if (!guestSeated) {
-        test.skip(true, 'cross-context roster sync did not seat the guest at slot 1 (relay flake)');
-        return;
-      }
+      // De-flake (consolidated #837+#841): formerly a "relay flake" vacuity skip.
+      // Now a real bounded assert — a relay that never seats the guest at slot 1
+      // FAILS the test instead of silently skipping green.
+      expect(
+        await waitForSlot(p2.page, NODE_ID, 1, SYNC_BUDGET_MS),
+        'guest is seated at slot 1 via cross-context roster sync',
+      ).toBe(true);
 
       // ── BOTH peers in the np=2 level with the lockstep barrier ARMED ──
       expect(await waitForLevel(p1.page, NODE_ID), 'P1 in the np=2 coop level').toBe(true);
@@ -643,21 +643,18 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
       // Owner adds the shared DOOM node; guest sees it via Yjs node sync.
       const nodes: SpawnNode[] = [{ id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' }];
       await spawnPatch(p1.page, nodes, []);
-      const guestSawNode = await p2.page
-        .waitForFunction(
-          (nid) =>
-            Object.keys((window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes).includes(
-              nid,
-            ),
-          NODE_ID,
-          { timeout: 15000 },
-        )
-        .then(() => true)
-        .catch(() => false);
-      if (!guestSawNode) {
-        test.skip(true, 'cross-context node sync flake');
-        return;
-      }
+      // De-flake (consolidated #837+#841): formerly a "cross-context node sync
+      // flake" vacuity skip (green-while-asserting-nothing). Now a real
+      // SYNC_BUDGET_MS-bounded wait — a correct slow node sync passes; a relay
+      // that never delivers the shared DOOM node to the guest throws → FAILS.
+      await p2.page.waitForFunction(
+        (nid) =>
+          Object.keys((window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes).includes(
+            nid,
+          ),
+        NODE_ID,
+        { timeout: SYNC_BUDGET_MS },
+      );
       await cardHookReady(p1.page, NODE_ID);
       await cardHookReady(p2.page, NODE_ID);
       await expect
@@ -690,11 +687,13 @@ test.describe('@collab DOOM multiplayer — P1 true lockstep shared state', () =
           ]!.join(),
         NODE_ID,
       );
-      const guestSeated = await waitForSlot(p2.page, NODE_ID, 1, 30000);
-      if (!guestSeated) {
-        test.skip(true, 'cross-context roster sync did not seat the guest at slot 1 (relay flake)');
-        return;
-      }
+      // De-flake (consolidated #837+#841): formerly a "relay flake" vacuity skip.
+      // Now a real bounded assert — a relay that never seats the guest at slot 1
+      // FAILS the test instead of silently skipping green.
+      expect(
+        await waitForSlot(p2.page, NODE_ID, 1, SYNC_BUDGET_MS),
+        'guest is seated at slot 1 via cross-context roster sync',
+      ).toBe(true);
       expect(await waitForLevel(p1.page, NODE_ID), 'P1 in the np=2 coop level').toBe(true);
       expect(await waitForLevel(p2.page, NODE_ID), 'P2 in the np=2 coop level').toBe(true);
       {

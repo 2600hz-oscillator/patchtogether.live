@@ -40,6 +40,11 @@
 
 import { test, expect, type Page, type Browser, type BrowserContext } from '@playwright/test';
 import { spawnPatch, type SpawnNode } from './_helpers';
+// Single source of truth for the cross-context sync budget — see the rationale
+// on `SYNC_BUDGET_MS` in `_collab-helpers.ts`. (Consolidated from this spec's
+// former local `const SYNC_BUDGET_MS = 20_000` when #837's helper budget and
+// #841's doom-mp-real asserts merged onto one branch.)
+import { SYNC_BUDGET_MS } from './_collab-helpers';
 
 const GS_LEVEL = 0;
 // DOOM gamestate_t ordinals (doomdef.h): GS_LEVEL=0, GS_INTERMISSION=1,
@@ -50,14 +55,8 @@ const GS_LEVEL = 0;
 const GS_DEMOSCREEN = 3;
 const NODE_ID = 'doom-mp';
 
-// Deterministic cross-context sync budget. The local Hocuspocus relay delivers
-// node/awareness/roster sync in well under a second on a warm relay; under CI
-// shard load it can take several seconds. 20s is a generous-but-bounded ceiling
-// that a CORRECT slow sync comfortably meets, yet a relay that NEVER delivers
-// (the regression these specs pin) blows through — so the assertion FAILS
-// instead of vacuously skipping. (No SYNC_BUDGET_MS exists in _collab-helpers
-// yet; defined locally per the de-flake plan.)
-const SYNC_BUDGET_MS = 20_000;
+// SYNC_BUDGET_MS (the deterministic cross-context sync budget) is imported from
+// `_collab-helpers.ts` — see the import above and its rationale there.
 
 // Vanilla DOOM player colors (matches $lib/doom/doom-player-identity).
 const SLOT_COLOR = ['#3fa34d', '#5b5bd6'];
