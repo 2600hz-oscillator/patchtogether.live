@@ -43,12 +43,18 @@ import {
   RGB_SCENE,
   RGB_STOP_ACTIVE,
   RGB_STOP_IDLE,
-  RGB_FUNC,
-  RGB_FUNC_ON,
   RGB_TRANSPORT_ON,
   RGB_COPY_BUFFER,
   RGB_NOTE_BY_VEL,
   RGB_NOTE_PLAYHEAD,
+  RGB_DECK_EDIT,
+  RGB_DECK_EDIT_ON,
+  RGB_DECK_COPY,
+  RGB_DECK_COPY_ON,
+  RGB_DECK_DBL,
+  RGB_DECK_LEN,
+  RGB_DECK_NOW,
+  RGB_DECK_NOW_ON,
 } from './launchpad-map';
 import { padNote, SCENE_CCS } from './launchpad-sysex';
 import {
@@ -169,8 +175,8 @@ describe('Unit R — command deck placement + frame', () => {
       bufferArmed: true,
       data: d,
     });
-    expect(eqRgb(at(f, padNote(DECK_COPY_COL, 0)), RGB_FUNC_ON)).toBe(true); // held = bright
-    expect(eqRgb(at(f, padNote(DECK_EDIT_COL, 0)), RGB_FUNC)).toBe(true); // idle
+    expect(eqRgb(at(f, padNote(DECK_COPY_COL, 0)), RGB_DECK_COPY_ON)).toBe(true); // COPY held = bright green
+    expect(eqRgb(at(f, padNote(DECK_EDIT_COL, 0)), RGB_DECK_EDIT)).toBe(true); // EDIT idle = orange
     expect(eqRgb(at(f, CC_TRANSPORT), RGB_TRANSPORT_ON)).toBe(true);
     expect(eqRgb(at(f, CC_STOP_ALL), RGB_STOP_IDLE)).toBe(true);
     // copy-indicator pulses turquoise while the buffer is armed.
@@ -179,6 +185,23 @@ describe('Unit R — command deck placement + frame', () => {
     // SCENE_CCS index 7 = bottom = row 0 = lane 0.
     expect(eqRgb(at(f, SCENE_CCS[7]), RGB_STOP_ACTIVE)).toBe(true);
     expect(eqRgb(at(f, SCENE_CCS[6]), RGB_STOP_IDLE)).toBe(true); // lane1 idle
+  });
+
+  it('deck pads are colour-coded per function (EDIT orange · COPY/PASTE/P-REV green · DBL+NOW purple · LEN yellow)', () => {
+    // Idle frame (nothing held): each function pad shows its own hue.
+    const idle = computeRDeckFrame({ blinkOn: true });
+    expect(eqRgb(at(idle, padNote(DECK_EDIT_COL, 0)), RGB_DECK_EDIT), 'EDIT orange').toBe(true);
+    expect(eqRgb(at(idle, padNote(DECK_COPY_COL, 0)), RGB_DECK_COPY), 'COPY green').toBe(true);
+    expect(eqRgb(at(idle, padNote(DECK_PASTE_COL, 0)), RGB_DECK_COPY), 'PASTE green').toBe(true);
+    expect(eqRgb(at(idle, padNote(DECK_PASTE_REV_COL, 0)), RGB_DECK_COPY), 'P-REV green').toBe(true);
+    expect(eqRgb(at(idle, padNote(DECK_DOUBLE_COL, 0)), RGB_DECK_DBL), 'DBL purple').toBe(true);
+    expect(eqRgb(at(idle, padNote(DECK_LENGTH_COL, 0)), RGB_DECK_LEN), 'LEN yellow').toBe(true);
+    expect(eqRgb(at(idle, padNote(DECK_NOW_COL, 0)), RGB_DECK_NOW), 'NOW purple').toBe(true);
+    // Held hold-modifiers brighten to their *_ON variant (same hue).
+    const held = computeRDeckFrame({ editArmed: true, pasteHeld: true, nowHeld: true });
+    expect(eqRgb(at(held, padNote(DECK_EDIT_COL, 0)), RGB_DECK_EDIT_ON), 'EDIT held bright orange').toBe(true);
+    expect(eqRgb(at(held, padNote(DECK_PASTE_COL, 0)), RGB_DECK_COPY_ON), 'PASTE held bright green').toBe(true);
+    expect(eqRgb(at(held, padNote(DECK_NOW_COL, 0)), RGB_DECK_NOW_ON), 'NOW held bright purple').toBe(true);
   });
 });
 

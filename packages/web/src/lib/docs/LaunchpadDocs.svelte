@@ -18,6 +18,14 @@
     RGB_FUNC_ON,
     RGB_TRANSPORT_ON,
     RGB_SONG_ARRANGE,
+    RGB_DECK_EDIT,
+    RGB_DECK_EDIT_ON,
+    RGB_DECK_COPY,
+    RGB_DECK_COPY_ON,
+    RGB_DECK_DBL,
+    RGB_DECK_LEN,
+    RGB_DECK_NOW,
+    RGB_DECK_NOW_ON,
     RGB_COPY_BUFFER,
     RGB_NOTE_BY_VEL,
     RGB_NOTE_PLAYHEAD,
@@ -55,16 +63,17 @@
   }));
   const lCallouts = [{ label: 'SLOTS  1 → 8', fromCol: 0, toCol: 7 }];
 
-  // ── UNIT R · command deck (session) ──
+  // ── UNIT R · command deck (session) — per-function colours (owner palette):
+  //   EDIT orange · COPY/PASTE/P-REV green · DBL + NOW purple · LEN yellow.
   const rDeckPads = [
-    { x: 0, y: 0, fill: hex(RGB_FUNC) },
-    { x: 1, y: 0, fill: hex(RGB_FUNC) },
-    { x: 2, y: 0, fill: hex(RGB_FUNC) },
-    { x: 3, y: 0, fill: hex(RGB_FUNC) },
+    { x: 0, y: 0, fill: hex(RGB_DECK_EDIT) }, // EDIT — orange
+    { x: 1, y: 0, fill: hex(RGB_DECK_COPY) }, // COPY — green
+    { x: 2, y: 0, fill: hex(RGB_DECK_COPY) }, // PASTE — green
+    { x: 3, y: 0, fill: hex(RGB_DECK_COPY) }, // P-REV — green
     // col 4 = copy-indicator: dark until you hold COPY + grab a clip
-    { x: 5, y: 0, fill: hex(RGB_FUNC) },
-    { x: 6, y: 0, fill: hex(RGB_FUNC) },
-    { x: 7, y: 0, fill: hex(RGB_FUNC) },
+    { x: 5, y: 0, fill: hex(RGB_DECK_DBL) }, // DBL — purple
+    { x: 6, y: 0, fill: hex(RGB_DECK_LEN) }, // LEN — yellow
+    { x: 7, y: 0, fill: hex(RGB_DECK_NOW) }, // NOW — purple
   ];
   const rDeckTop = [
     { col: 0, fill: hex(RGB_RECORDING), label: 'REC' }, // CC 91 — arranger record-arm
@@ -146,8 +155,13 @@
     { state: 'stop lane active', rgb: RGB_STOP_ACTIVE, anim: 'bright red', note: 'that lane is audible' },
   ];
   const DECK_COLORS: { state: string; rgb: Rgb; note: string }[] = [
-    { state: 'function idle', rgb: RGB_FUNC, note: 'DOUBLE / LENGTH / nav / SHIFT' },
-    { state: 'held modifier', rgb: RGB_FUNC_ON, note: 'EDIT / COPY / PASTE / NOW / SHIFT while held' },
+    { state: 'EDIT', rgb: RGB_DECK_EDIT, note: 'orange — hold + tap a clip to open its editor (brightens while held)' },
+    { state: 'COPY / PASTE / P-REV', rgb: RGB_DECK_COPY, note: 'green — hold + tap a clip (brightens while held)' },
+    { state: 'DOUBLE', rgb: RGB_DECK_DBL, note: 'purple — tap to duplicate + double the clip length' },
+    { state: 'LENGTH', rgb: RGB_DECK_LEN, note: 'yellow — tap to open the length page' },
+    { state: 'NOW', rgb: RGB_DECK_NOW, note: 'purple — hold to make launches ignore quantize (brightens while held)' },
+    { state: 'nav / SHIFT (editor)', rgb: RGB_FUNC, note: '▲▼◀▶ / SHIFT idle' },
+    { state: 'held modifier (editor)', rgb: RGB_FUNC_ON, note: 'VEL / SHIFT while held' },
     { state: 'transport / FOLLOW on', rgb: RGB_TRANSPORT_ON, note: 'running / auto-scroll' },
     { state: 'EXIT', rgb: RGB_EXIT, note: 'leave editor / length page (top scene button)' },
   ];
@@ -212,12 +226,12 @@
   top={rDeckTop}
   scene={rDeckScene}
   callouts={rDeckCallouts}
-  caption="UNIT R · bottom row = functions (BUF = copy-buffer indicator, dark until you copy). EDIT/COPY/PASTE/P-REV/NOW are HOLD modifiers. Right column = per-lane STOP. Top row: REC (record-arm the arrangement), SONG (SESSION⇄ARRANGEMENT), SHIFT, PLAY (transport), ALL (stop-all)."
+  caption="UNIT R · bottom row = colour-coded functions: EDIT (orange), COPY/PASTE/P-REV (green), BUF (copy-buffer indicator, dark until you copy), DBL + NOW (purple), LEN (yellow). EDIT/COPY/PASTE/P-REV/NOW are HOLD modifiers (brighten while held). Right column = per-lane STOP. Top row: REC (record-arm the arrangement), SONG (SESSION⇄ARRANGEMENT), SHIFT, PLAY (transport), ALL (stop-all)."
 />
 <ul class="tight">
-  <li><strong>EDIT</strong> (hold) + tap a clip on L → open its note editor on R.</li>
-  <li><strong>COPY / PASTE / PASTE-REV</strong> (hold) + tap a clip on L → copy / paste / paste-reversed.</li>
-  <li><strong>DOUBLE</strong> duplicates the pattern + doubles the length (cap 128). <strong>LENGTH</strong> opens the length page. <strong>NOW</strong> (hold) makes launches ignore quantize.</li>
+  <li><strong>EDIT</strong> <span style="color:{hex(RGB_DECK_EDIT_ON)}">(orange)</span> (hold) + tap a clip on L → open its note editor on R.</li>
+  <li><strong>COPY / PASTE / PASTE-REV</strong> <span style="color:{hex(RGB_DECK_COPY_ON)}">(green)</span> (hold) + tap a clip on L → copy / paste / paste-reversed.</li>
+  <li><strong>DOUBLE</strong> <span style="color:{hex(RGB_DECK_DBL)}">(purple)</span> duplicates the pattern + doubles the length (cap 128). <strong>LENGTH</strong> <span style="color:{hex(RGB_DECK_LEN)}">(yellow)</span> opens the length page. <strong>NOW</strong> <span style="color:{hex(RGB_DECK_NOW_ON)}">(purple)</span> (hold) makes launches ignore quantize.</li>
   <li><strong>REC</strong> (top-left, CC 91) arms the <strong>arranger</strong> — red + pulse while armed; every clip launch is recorded into the song. <strong>SONG</strong> (CC 92) flips <strong>SESSION ⇄ ARRANGEMENT</strong> (white, bright in ARRANGEMENT) to play back the recorded song. Both write the same state the card's REC + SES/ARR buttons do.</li>
 </ul>
 

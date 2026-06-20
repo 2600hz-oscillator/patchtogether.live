@@ -112,6 +112,18 @@ export const RGB_STOP_ACTIVE: Rgb = [104, 23, 23]; // bright red (lane playing)
 export const RGB_FUNC: Rgb = [60, 60, 70]; // function idle (white-ish)
 export const RGB_FUNC_ON: Rgb = [122, 79, 112]; // held modifier (violet, bright)
 export const RGB_FUNC_DIM: Rgb = [10, 10, 14]; // a no-op-right-now function pad
+// ── Per-function DECK colours (owner-chosen) ── each deck pad gets its own hue
+// so the command deck reads at a glance: EDIT orange · COPY/PASTE/P-REV green ·
+// DBL + NOW purple · LEN yellow. Hold-modifiers brighten to the *_ON variant
+// while held (the *_ON keeps the same hue so the colour identity never changes).
+export const RGB_DECK_EDIT: Rgb = [60, 24, 0]; // orange (idle)
+export const RGB_DECK_EDIT_ON: Rgb = [127, 56, 0]; // orange (held, bright)
+export const RGB_DECK_COPY: Rgb = [12, 48, 16]; // green (idle)
+export const RGB_DECK_COPY_ON: Rgb = [28, 110, 36]; // green (held, bright)
+export const RGB_DECK_DBL: Rgb = [40, 14, 60]; // purple (DBL — tap)
+export const RGB_DECK_LEN: Rgb = [56, 48, 6]; // yellow (LEN — tap)
+export const RGB_DECK_NOW: Rgb = [40, 14, 60]; // purple (idle)
+export const RGB_DECK_NOW_ON: Rgb = [104, 40, 127]; // purple (held, bright)
 export const RGB_TRANSPORT_ON: Rgb = [23, 104, 53]; // green (transport running)
 export const RGB_RECORDING_DIM: Rgb = [30, 4, 4]; // down phase of the record-arm pulse
 export const RGB_SONG_SESSION: Rgb = [16, 16, 20]; // SES/ARR idle (SESSION) — dim white
@@ -399,14 +411,17 @@ export interface RSessionOpts {
 export function computeRDeckFrame(opts: RSessionOpts = {}): LaunchpadFrame {
   const frame = emptyFrame();
   const blinkOn = opts.blinkOn ?? true;
-  const deck = (col: number, on: boolean) => put(frame, padNote(col, DECK_ROW), on ? RGB_FUNC_ON : RGB_FUNC);
-  deck(DECK_EDIT_COL, !!opts.editArmed);
-  deck(DECK_COPY_COL, !!opts.copyHeld);
-  deck(DECK_PASTE_COL, !!opts.pasteHeld);
-  deck(DECK_PASTE_REV_COL, !!opts.pasteRevHeld);
-  deck(DECK_NOW_COL, !!opts.nowHeld);
-  put(frame, padNote(DECK_DOUBLE_COL, DECK_ROW), RGB_FUNC);
-  put(frame, padNote(DECK_LENGTH_COL, DECK_ROW), RGB_FUNC);
+  // Per-function colours (owner palette): EDIT orange · COPY/PASTE/P-REV green ·
+  // DBL + NOW purple · LEN yellow. Hold-modifiers brighten to *_ON while held.
+  const mod = (col: number, on: boolean, idle: Rgb, bright: Rgb) =>
+    put(frame, padNote(col, DECK_ROW), on ? bright : idle);
+  mod(DECK_EDIT_COL, !!opts.editArmed, RGB_DECK_EDIT, RGB_DECK_EDIT_ON);
+  mod(DECK_COPY_COL, !!opts.copyHeld, RGB_DECK_COPY, RGB_DECK_COPY_ON);
+  mod(DECK_PASTE_COL, !!opts.pasteHeld, RGB_DECK_COPY, RGB_DECK_COPY_ON);
+  mod(DECK_PASTE_REV_COL, !!opts.pasteRevHeld, RGB_DECK_COPY, RGB_DECK_COPY_ON);
+  mod(DECK_NOW_COL, !!opts.nowHeld, RGB_DECK_NOW, RGB_DECK_NOW_ON);
+  put(frame, padNote(DECK_DOUBLE_COL, DECK_ROW), RGB_DECK_DBL); // DBL — purple (tap)
+  put(frame, padNote(DECK_LENGTH_COL, DECK_ROW), RGB_DECK_LEN); // LEN — yellow (tap)
   // COPY-INDICATOR — turquoise pulse while the buffer holds a clip.
   put(
     frame,
