@@ -13,7 +13,8 @@
 
   interface Pad {
     x: number; // 0..7 (col / slot / step)
-    y: number; // 0..7 from the BOTTOM (lane / pitch)
+    y: number; // 0..7 PHYSICAL row from the BOTTOM (the L matrix flips lane→row
+               // so lane 1 lands on the TOP row to match the on-screen card)
     fill: string; // any CSS colour
     label?: string; // tiny in-pad glyph (e.g. a number)
   }

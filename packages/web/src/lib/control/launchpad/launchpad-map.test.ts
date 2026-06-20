@@ -65,15 +65,22 @@ const at = (frame: { leds: Map<number, [number, number, number]> }, index: numbe
 const eqRgb = (a: [number, number, number] | null, b: readonly number[]) =>
   !!a && a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
 
+// y is the launchpad's BOTTOM-origin row; the matrix maps lane 0 → the TOP row
+// (y=7) to match the on-screen card. So slot/lane → physical (slot, 7-lane).
+const yForLane = (lane: number) => 8 - 1 - lane;
+
 describe('Unit L — clip matrix placement', () => {
-  it('pad (x=slot, y=lane) ↔ clip index lane*8+slot, round-trips', () => {
-    expect(lPadToClipIndex(0, 0)).toBe(0); // bottom-left = lane0 slot0
-    expect(lPadToClipIndex(3, 2)).toBe(clipIndex(3, 2)); // slot3 lane2
+  it('pad (x=slot, y from BOTTOM) ↔ clip index lane*8+slot, card-oriented round-trip', () => {
+    // TOP-left pad (y=7) = lane 0, slot 0 (the card's top-left clip).
+    expect(lPadToClipIndex(0, 7)).toBe(0);
+    // BOTTOM-left pad (y=0) = lane 7, slot 0 (the card's bottom-left clip).
+    expect(lPadToClipIndex(0, 0)).toBe(clipIndex(0, 7));
+    expect(lPadToClipIndex(3, yForLane(2))).toBe(clipIndex(3, 2)); // slot3 lane2
     for (let lane = 0; lane < 8; lane++) {
       for (let slot = 0; slot < 8; slot++) {
         const idx = clipIndex(slot, lane);
         const p = clipIndexToLPad(idx);
-        expect(p).toEqual({ x: slot, y: lane });
+        expect(p).toEqual({ x: slot, y: yForLane(lane) });
         expect(lPadToClipIndex(p.x, p.y)).toBe(idx);
       }
     }
@@ -96,21 +103,21 @@ describe('Unit L — session LED frame (colour language)', () => {
   }
   it('loaded / playing / queued-launch paint the legend colours', () => {
     const onFrame = computeLSessionFrame(data(), { blinkOn: true });
-    // lane1 slot1 is playing → green (pulse up phase = playing).
-    expect(eqRgb(at(onFrame, padNote(1, 1)), RGB_PLAYING)).toBe(true);
-    // lane0 slot0 is queued-launch → green flash (on phase).
-    expect(eqRgb(at(onFrame, padNote(0, 0)), RGB_QUEUED)).toBe(true);
+    // lane1 slot1 is playing → green (pulse up phase = playing). lane→row flipped.
+    expect(eqRgb(at(onFrame, padNote(1, yForLane(1))), RGB_PLAYING)).toBe(true);
+    // lane0 slot0 is queued-launch → green flash (on phase). lane 0 = TOP row.
+    expect(eqRgb(at(onFrame, padNote(0, yForLane(0))), RGB_QUEUED)).toBe(true);
     // an unrelated empty pad is OFF.
-    expect(eqRgb(at(onFrame, padNote(5, 5)), RGB_OFF)).toBe(true);
+    expect(eqRgb(at(onFrame, padNote(5, yForLane(5))), RGB_OFF)).toBe(true);
   });
   it('a loaded-but-idle clip is dim blue (LOADED)', () => {
     const d: ClipPlayerData = { clips: { [clipIndex(2, 3)]: defaultNoteClip() } } as ClipPlayerData;
     const f = computeLSessionFrame(d, { blinkOn: true });
-    expect(eqRgb(at(f, padNote(2, 3)), RGB_LOADED)).toBe(true);
+    expect(eqRgb(at(f, padNote(2, yForLane(3))), RGB_LOADED)).toBe(true);
   });
   it('queued-launch + playing FLASH off on the blink-off phase', () => {
     const f = computeLSessionFrame(data(), { blinkOn: false });
-    expect(eqRgb(at(f, padNote(0, 0)), RGB_OFF)).toBe(true); // queued flashes off
+    expect(eqRgb(at(f, padNote(0, yForLane(0))), RGB_OFF)).toBe(true); // queued flashes off
   });
   it('a queued STOP on a playing lane flashes red', () => {
     const d: ClipPlayerData = {
@@ -118,12 +125,12 @@ describe('Unit L — session LED frame (colour language)', () => {
       playing: [0, null, null, null, null, null, null, null],
       queued: ['stop', null, null, null, null, null, null, null],
     } as ClipPlayerData;
-    expect(eqRgb(at(computeLSessionFrame(d, { blinkOn: true }), padNote(0, 0)), RGB_QUEUED_STOP)).toBe(true);
+    expect(eqRgb(at(computeLSessionFrame(d, { blinkOn: true }), padNote(0, yForLane(0))), RGB_QUEUED_STOP)).toBe(true);
   });
   it('the copy-buffer source clip glows turquoise', () => {
     const d: ClipPlayerData = { clips: { [clipIndex(2, 3)]: defaultNoteClip() } } as ClipPlayerData;
     const f = computeLSessionFrame(d, { blinkOn: true, bufferClipIndex: clipIndex(2, 3) });
-    expect(eqRgb(at(f, padNote(2, 3)), RGB_COPY_BUFFER)).toBe(true);
+    expect(eqRgb(at(f, padNote(2, yForLane(3))), RGB_COPY_BUFFER)).toBe(true);
   });
   it('scene column lights amber (top scene CC 89 → row 7 = slot 7)', () => {
     const f = computeLSessionFrame(data(), {});
