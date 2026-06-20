@@ -385,3 +385,96 @@ describe('clipplayer: transport-start re-align (regression)', () => {
     expect(handle.read!('currentStep:1')).toBe(0);
   });
 });
+
+describe('clipplayer: overdub vs replace record mode', () => {
+  // A pre-seeded arrangement the arm-edge either KEEPS (overdub) or WIPES
+  // (replace). Reads the SYNCED node.data.arrangement — the observable contract.
+  const PRE_EVENTS = [
+    { beat: 0, lane: 2, slot: 0 },
+    { beat: 4, lane: 2, slot: 1 },
+  ];
+  function liveArrangeEvents(): { beat: number; lane: number; slot: number | 'stop' }[] {
+    const a = (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).arrangement as
+      | { events?: { beat: number; lane: number; slot: number | 'stop' }[] }
+      | undefined;
+    return a?.events ?? [];
+  }
+
+  it('REPLACE (default): arming RECORD clears the existing log', async () => {
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 },
+      {
+        clips: { [clipIndex(0, 0)]: noteClip(72) },
+        arrangement: { events: [...PRE_EVENTS], lengthBeats: 8, loop: true },
+        recording: false,
+        // recordMode absent ⇒ replace
+      },
+    );
+    const ctx = new FakeAudioContext();
+    await build(ctx);
+    run(ctx, 0, 0.05);
+    expect(liveArrangeEvents()).toHaveLength(2); // present before arm
+
+    // Arm — the rising edge clears the log.
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).recording = true;
+    run(ctx, 0.05, 0.1);
+    expect(liveArrangeEvents()).toHaveLength(0); // wiped on arm
+  });
+
+  it('OVERDUB: arming RECORD KEEPS the existing log', async () => {
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 },
+      {
+        clips: { [clipIndex(0, 0)]: noteClip(72) },
+        arrangement: { events: [...PRE_EVENTS], lengthBeats: 8, loop: true },
+        recording: false,
+        recordMode: 'overdub',
+      },
+    );
+    const ctx = new FakeAudioContext();
+    await build(ctx);
+    run(ctx, 0, 0.05);
+    expect(liveArrangeEvents()).toHaveLength(2);
+
+    // Arm — overdub must NOT clear.
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).recording = true;
+    run(ctx, 0.05, 0.1);
+    expect(liveArrangeEvents()).toHaveLength(2); // take preserved
+    expect(liveArrangeEvents().map((e) => e.beat)).toEqual([0, 4]);
+  });
+
+  it('OVERDUB: a new launch MERGES into the kept log, beat-sorted', async () => {
+    // Pre-seed a lane-2 launch at beat 0; overdub-arm; then launch lane 0 some
+    // beats in. The new event must insert in song-beat order and NOT replace the
+    // pre-seeded one. quantize off + free-run (no TIMELORDE) → launch applies
+    // immediately and records at the current songBeat.
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 },
+      {
+        clips: { [clipIndex(0, 0)]: noteClip(72), [clipIndex(0, 2)]: noteClip(60) },
+        arrangement: { events: [{ beat: 0, lane: 2, slot: 0 }], lengthBeats: 8, loop: true },
+        recording: false,
+        recordMode: 'overdub',
+      },
+    );
+    const ctx = new FakeAudioContext();
+    await build(ctx);
+    // Arm overdub.
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).recording = true;
+    run(ctx, 0, 1.0); // ~2 beats @120bpm so songBeat advances past 0
+
+    // Now launch lane 0 (queue it) — applies immediately + records at songBeat>0.
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).queued = lane8(0, 0, null);
+    run(ctx, 1.0, 1.1);
+
+    const evs = liveArrangeEvents();
+    // The pre-seeded lane-2 event survives + the new lane-0 event merged in.
+    expect(evs.length).toBeGreaterThanOrEqual(2);
+    expect(evs.some((e) => e.lane === 2 && e.beat === 0)).toBe(true); // kept
+    expect(evs.some((e) => e.lane === 0)).toBe(true); // overdubbed
+    // beats stay non-decreasing (recordEvent inserts in sorted order).
+    for (let i = 1; i < evs.length; i++) expect(evs[i].beat).toBeGreaterThanOrEqual(evs[i - 1].beat);
+    // the overdubbed lane-0 event landed at a beat > 0 (true current song-beat).
+    expect(evs.find((e) => e.lane === 0)!.beat).toBeGreaterThan(0);
+  });
+});

@@ -140,6 +140,11 @@ export interface ClipPlayerData {
    *  appended to `arrangement` at the current song-beat. Local-ish (synced so
    *  peers see the armed state); v1 is single-recorder. */
   recording?: boolean;
+  /** Record mode: 'replace' (default — arming clears the log + restarts song
+   *  time, v1 behaviour) or 'overdub' (arming KEEPS the existing log; new
+   *  launches merge into it by song-beat). Absent/unknown ⇒ 'replace'. Synced
+   *  so peers see the armed mode. */
+  recordMode?: 'replace' | 'overdub';
   creatorId?: string;
 }
 
@@ -171,6 +176,10 @@ export function playingSet(data: ClipPlayerData | undefined): (number | null)[] 
 /** Whether a lane is MONO (one note per column on note entry). Default poly. */
 export function laneMono(data: ClipPlayerData | undefined, lane: number): boolean {
   return data?.mono?.[lane] === true;
+}
+/** Record mode, defaulting to legacy 'replace'. */
+export function clipRecordMode(data: ClipPlayerData | undefined): 'replace' | 'overdub' {
+  return data?.recordMode === 'overdub' ? 'overdub' : 'replace';
 }
 
 // ---------------------------------------------------------------------------

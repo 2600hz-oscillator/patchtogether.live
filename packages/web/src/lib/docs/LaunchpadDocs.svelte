@@ -268,7 +268,7 @@
 </p>
 <ol class="steps">
   <li>Be in <strong>SESSION</strong> (the default — <strong>SONG</strong>/CC 92 is dim white, not bright). Make sure the <strong>transport is running</strong> (▶ PLAY / CC 96, or the card's transport) so song-time advances.</li>
-  <li>Press <strong>REC</strong> (top-left, CC 91). It glows <strong>red and pulses</strong>. <strong>Arming clears any previous recording and restarts the song at bar 1</strong> (v1 = record replaces, it doesn't overdub).</li>
+  <li>Press <strong>REC</strong> (top-left, CC 91). It glows <strong>red and pulses</strong>. In the default <strong>REPLACE</strong> mode, <strong>arming clears any previous recording and restarts the song at bar 1</strong>; switch the record-mode toggle (the RPL/OVR pill next to REC on the card) to <strong>OVERDUB</strong> to keep the existing take and merge new launches into it by song-beat. (Surfacing OVERDUB on the Launchpad's controls is a follow-up; today set it from the card.)</li>
   <li><strong>Perform:</strong> launch / switch / stop clips on the <strong>L matrix</strong> as you normally would. Each launch is captured at the moment it actually applies — so your <strong>quantized</strong> launches land on the boundary and your <strong>NOW</strong> (hold NOW + tap) launches land instantly, exactly as you played them.</li>
   <li>Press <strong>REC</strong> again to <strong>disarm</strong> (the pulse stops). Your performance is now stored as the song.</li>
   <li>Press <strong>SONG</strong> (CC 92) to switch to <strong>ARRANGEMENT</strong> (it lights bright white). Playback runs your recorded launches <strong>from the top</strong>, looping. Press <strong>SONG</strong> again to return to <strong>SESSION</strong> (live) play.</li>
