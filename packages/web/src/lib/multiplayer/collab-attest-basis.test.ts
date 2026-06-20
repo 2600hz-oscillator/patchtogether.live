@@ -100,29 +100,28 @@ describe('relay-vacuity skip classifier', () => {
     for (const r of benign) expect(isRelayVacuitySkip(r)).toBe(false);
   });
 
-  it('matches the LIVE relay-flake skip reasons in the @collab specs', () => {
-    // Scrape every `test.skip(true, '…relay flake…')` reason out of the actual
-    // spec files and assert the classifier flags it. If a NEW relay-flake skip
-    // reason is added with wording the classifier misses, this fails — forcing
-    // the marker list (RELAY_VACUITY_MARKERS) to keep up so a vacuous local run
-    // can never sneak an attestation through.
+  it('has ZERO relay-flake vacuity skips left in the @collab specs (de-flake invariant)', () => {
+    // PR #844 converted every `test.skip(true,'…relay flake…')` vacuity skip in
+    // the @collab specs into a real `expect.poll` assertion (killing the
+    // fake-green DOOM gate). This guard LOCKS THAT IN: if anyone re-adds a
+    // relay/sync-flake skip, this fails — forcing it back to a real assert
+    // instead of a green-while-vacuous skip. (The classifier itself is tested
+    // above with a static positive/benign list, so it stays honest even with no
+    // live samples to scrape. Benign asset/runtime capability skips are NOT
+    // vacuity and remain allowed.)
     const specs = resolveCollabSpecs();
-    const reasons = new Set<string>();
+    const offenders: string[] = [];
     const re = /test\.skip\(\s*true\s*,\s*[`'"]([^`'"]*)[`'"]/g;
     for (const rel of specs) {
       const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
       let m: RegExpExecArray | null;
       while ((m = re.exec(src))) {
-        const reason = m[1];
-        // Only the relay/sync-flake ones (those containing 'relay' or 'sync …
-        // did not' / 'sync flake') must be classified as vacuity. Asset skips
-        // are intentionally NOT vacuity.
-        if (/relay|sync did not|sync flake|never (saw|took)/i.test(reason)) reasons.add(reason);
+        if (isRelayVacuitySkip(m[1])) offenders.push(`${rel}: "${m[1]}"`);
       }
     }
-    expect(reasons.size).toBeGreaterThan(0);
-    for (const r of reasons) {
-      expect(isRelayVacuitySkip(r), `classifier missed relay-flake skip reason: "${r}"`).toBe(true);
-    }
+    expect(
+      offenders,
+      `relay-flake vacuity skips must be 0 — convert each to a real assert:\n${offenders.join('\n')}`,
+    ).toEqual([]);
   });
 });
