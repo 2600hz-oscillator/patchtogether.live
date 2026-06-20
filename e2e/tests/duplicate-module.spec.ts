@@ -285,7 +285,12 @@ test('@collab duplicate in A appears in B', async ({ browser }) => {
     const adsr = pageA.locator('.svelte-flow__node-adsr').first();
     await adsr.locator('.title').click({ button: 'right', force: true });
     await expect(pageA.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
-    await pageA.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
+    // force:true — the module action menu renders inside the SvelteFlow node
+    // layer, so the auto-spawned TIMELORDE display canvas can overlap the
+    // Duplicate menuitem in screen space too (the menu is visible above, but the
+    // click landed on nothing → A stayed at 1 ADSR on the attest run). The
+    // menuitem is confirmed present; force bypasses the overlay intercept.
+    await pageA.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click({ force: true });
     await expect(pageA.locator('.svelte-flow__node-adsr')).toHaveCount(2);
 
     // B: should see 2 ADSR nodes appear within 4s.

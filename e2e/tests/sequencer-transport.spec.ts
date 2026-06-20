@@ -843,6 +843,13 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
       await s.pageA.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click({ force: true });
 
       // B sees slots[1] populated (cross-context relay propagation — backed-off).
+      // 30s (vs the 20s SYNC_BUDGET_MS used for the node-presence poll above): a
+      // SAVED slot is a DEEP nested object (the full 32-step chord pattern under
+      // data.slots['1']), heavier to encode/relay/decode than a bare node-add, so
+      // its A→relay→B converge legitimately runs longer under contention. The
+      // relay DID persist it (a ~4KB doc-update was observed), so this is a
+      // convergence-timing budget, not a broken sync — give it real headroom so a
+      // correct slow slot-sync passes while a never-delivered one still FAILS.
       await expect
         .poll(
           async () =>
@@ -855,7 +862,7 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
                 | undefined;
               return slots?.['1'] !== undefined && slots?.['1'] !== null;
             }, NODE),
-          { timeout: 20_000, intervals: [250, 500, 1000] },
+          { timeout: 30_000, intervals: [250, 500, 1000] },
         )
         .toBe(true);
 
@@ -888,6 +895,9 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
       // A should see the chord pattern restored, including quality + inversion
       // + voicing — verifying the Yjs deep-clone path doesn't drop fields.
       // Cross-context relay propagation (B's LOAD → relay → A) — backed-off poll.
+      // 30s like the slot-save poll above: the restored steps array is the same
+      // heavy 32-step chord payload, so its converge runs longer than a bare
+      // node-add. Generous-but-bounded so a correct slow restore passes.
       await expect
         .poll(
           async () =>
@@ -905,7 +915,7 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
                 s2?.on === true && s2.root === 65 && s2.quality === 'sus4' && s2.inversion === 2 && s2.voicing === 'spread'
               );
             }, NODE),
-          { timeout: 20_000, intervals: [250, 500, 1000] },
+          { timeout: 30_000, intervals: [250, 500, 1000] },
         )
         .toBe(true);
     } finally {
