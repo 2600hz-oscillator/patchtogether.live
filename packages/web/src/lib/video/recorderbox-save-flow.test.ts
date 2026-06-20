@@ -10,8 +10,77 @@
 //   * streamToHandle: opens a writable + streams the OPFS scratch in chunks.
 
 import { describe, expect, it, vi } from 'vitest';
-import { promptSaveDestination, streamToHandle } from '$lib/video/recorderbox-save-flow';
+import {
+  promptSaveDestination,
+  streamToHandle,
+  promptSaveFolder,
+  fileExistsInDir,
+  fileHandleInDir,
+} from '$lib/video/recorderbox-save-flow';
 import type { ChunkSink } from '$lib/video/recorderbox-store';
+
+describe('promptSaveFolder — pick the destination FOLDER once (Tweak 1 + 3)', () => {
+  it('returns the directory handle on picker success (readwrite mode)', async () => {
+    const dir = { getFileHandle: vi.fn() } as unknown as FileSystemDirectoryHandle;
+    let opts: { id?: string; mode?: string } | undefined;
+    const picker = vi.fn(async (o?: { id?: string; mode?: 'read' | 'readwrite' }) => { opts = o; return dir; });
+    const got = await promptSaveFolder({ picker, hasPicker: () => true });
+    expect(got).toBe(dir);
+    expect(opts?.mode).toBe('readwrite');
+  });
+
+  it('returns "cancel" when the user DISMISSES the picker (AbortError)', async () => {
+    const picker = vi.fn(async () => { throw new DOMException('aborted', 'AbortError'); });
+    expect(await promptSaveFolder({ picker, hasPicker: () => true })).toBe('cancel');
+  });
+
+  it('returns "cancel" on any other rejection too (fail safe → revert toggle)', async () => {
+    const picker = vi.fn(async () => { throw new Error('weird'); });
+    expect(await promptSaveFolder({ picker, hasPicker: () => true })).toBe('cancel');
+  });
+
+  it('returns null on a no-directory-picker browser (Firefox/Safari → download)', async () => {
+    const picker = vi.fn();
+    expect(await promptSaveFolder({ picker, hasPicker: () => false })).toBeNull();
+    expect(picker).not.toHaveBeenCalled();
+  });
+});
+
+describe('fileExistsInDir — the OVERWRITE check', () => {
+  it('returns true when getFileHandle(create:false) RESOLVES (file exists)', async () => {
+    const getFileHandle = vi.fn(async (_n: string, o?: { create?: boolean }) => {
+      expect(o).toEqual({ create: false }); // never CREATE during the existence probe
+      return {} as FileSystemFileHandle;
+    });
+    const dir = { getFileHandle } as unknown as FileSystemDirectoryHandle;
+    expect(await fileExistsInDir(dir, 'RECORDING-001-20260620-143005.mp4')).toBe(true);
+  });
+
+  it('returns false on NotFoundError (does not exist)', async () => {
+    const getFileHandle = vi.fn(async () => { throw new DOMException('nope', 'NotFoundError'); });
+    const dir = { getFileHandle } as unknown as FileSystemDirectoryHandle;
+    expect(await fileExistsInDir(dir, 'nope.mp4')).toBe(false);
+  });
+
+  it('returns false (never throws) on any probe error — do not block recording', async () => {
+    const getFileHandle = vi.fn(async () => { throw new Error('flaky'); });
+    const dir = { getFileHandle } as unknown as FileSystemDirectoryHandle;
+    expect(await fileExistsInDir(dir, 'x.mp4')).toBe(false);
+  });
+});
+
+describe('fileHandleInDir — resolve (create) a chunk file handle', () => {
+  it('creates the named file inside the folder', async () => {
+    const fh = {} as FileSystemFileHandle;
+    const getFileHandle = vi.fn(async (n: string, o?: { create?: boolean }) => {
+      expect(n).toBe('RECORDING-002-20260620-144005.mp4');
+      expect(o).toEqual({ create: true });
+      return fh;
+    });
+    const dir = { getFileHandle } as unknown as FileSystemDirectoryHandle;
+    expect(await fileHandleInDir(dir, 'RECORDING-002-20260620-144005.mp4')).toBe(fh);
+  });
+});
 
 describe('promptSaveDestination — prompt at recording START', () => {
   it('returns the chosen handle on picker success, with the sanitized name', async () => {
