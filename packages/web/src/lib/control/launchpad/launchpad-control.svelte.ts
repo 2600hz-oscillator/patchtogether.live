@@ -789,7 +789,6 @@ function renderLeds(): void {
     'L',
     computeLSessionFrame(data, {
       blinkOn,
-      bufferClipIndex: bufferSourceIndex,
       recording: recordArmed(data),
     }),
   );

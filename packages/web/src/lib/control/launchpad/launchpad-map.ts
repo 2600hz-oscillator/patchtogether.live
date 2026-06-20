@@ -343,8 +343,6 @@ function put(frame: LaunchpadFrame, index: number, rgb: Rgb): void {
 // ── UNIT L (the clip matrix) ──
 export interface LSessionOpts {
   blinkOn?: boolean;
-  /** Index of the clip currently in the copy buffer (turquoise), or null. */
-  bufferClipIndex?: number | null;
   /** True if this clip-player is record-armed (paints empty pads dim red). */
   recording?: boolean;
 }
@@ -374,7 +372,13 @@ export function computeLSessionFrame(
       } else if (q === slot) {
         rgb = blinkOn ? RGB_QUEUED : RGB_OFF; // queued-launch flashes
       } else if (clips[String(idx)]) {
-        rgb = opts.bufferClipIndex === idx ? (blinkOn ? RGB_COPY_BUFFER : RGB_COPY_BUFFER_DIM) : RGB_LOADED;
+        // A loaded clip is steady dim blue. We deliberately do NOT flash the
+        // copy-SOURCE clip here: the copy buffer is a frozen SNAPSHOT taken at
+        // copy time (see copyClip in launchpad-control), so the live source is
+        // no longer special — a "source" glow read as a persistent, confusing
+        // link. The buffer-loaded state is shown ONLY by the BUF pad on R (tap
+        // it to clear). The blink is reserved for playing/queued state.
+        rgb = RGB_LOADED;
       } else if (opts.recording) {
         rgb = RGB_STOP_IDLE; // record-armed empty slot = dim red (Ableton idiom)
       }

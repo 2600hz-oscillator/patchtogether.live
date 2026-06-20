@@ -137,10 +137,14 @@ describe('Unit L — session LED frame (colour language)', () => {
     } as ClipPlayerData;
     expect(eqRgb(at(computeLSessionFrame(d, { blinkOn: true }), padNote(0, yForLane(0))), RGB_QUEUED_STOP)).toBe(true);
   });
-  it('the copy-buffer source clip glows turquoise', () => {
+  it('a loaded clip is steady dim blue and does NOT flash as a copy source', () => {
+    // The copy buffer is a frozen snapshot (copyClip), so the live source clip
+    // is no longer special — it must render as a plain loaded clip, never a
+    // turquoise "source" pulse (which read as a confusing persistent link). The
+    // clipboard state shows only on the BUF pad (Unit R), tested below.
     const d: ClipPlayerData = { clips: { [clipIndex(2, 3)]: defaultNoteClip() } } as ClipPlayerData;
-    const f = computeLSessionFrame(d, { blinkOn: true, bufferClipIndex: clipIndex(2, 3) });
-    expect(eqRgb(at(f, padNote(2, yForLane(3))), RGB_COPY_BUFFER)).toBe(true);
+    const f = computeLSessionFrame(d, { blinkOn: true });
+    expect(eqRgb(at(f, padNote(2, yForLane(3))), RGB_LOADED)).toBe(true);
   });
   it('scene column lights amber (top scene CC 89 → row 7 = slot 7)', () => {
     const f = computeLSessionFrame(data(), {});
