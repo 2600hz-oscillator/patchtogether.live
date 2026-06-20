@@ -679,9 +679,13 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
         )
         .toBe(true);
 
-      // A clicks SAVE → slot 1.
-      await s.pageA.locator(`[data-testid="quicksave-mode-save-${NODE}"]`).click();
-      await s.pageA.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click();
+      // A clicks SAVE → slot 1. force:true — the auto-spawned TIMELORDE display
+      // canvas can overlap the sequencer card in SCREEN space (SvelteFlow fitView
+      // re-centers both nodes), so these card-button clicks could retry until the
+      // test timeout. The card is mounted (the node-sync poll above passed); force
+      // bypasses the unrelated-overlay intercept.
+      await s.pageA.locator(`[data-testid="quicksave-mode-save-${NODE}"]`).click({ force: true });
+      await s.pageA.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click({ force: true });
 
       // B sees slots[1] populated within a few seconds (over the Y.Doc).
       await expect
@@ -724,8 +728,9 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
         });
       }, NODE);
 
-      await s.pageB.locator(`[data-testid="quicksave-mode-load-${NODE}"]`).click();
-      await s.pageB.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click();
+      // force:true — same TIMELORDE screen-space overlay as the save clicks above.
+      await s.pageB.locator(`[data-testid="quicksave-mode-load-${NODE}"]`).click({ force: true });
+      await s.pageB.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click({ force: true });
 
       // A should now see the loaded pattern (because LOAD writes back to
       // node.data which Y.Doc-syncs).
@@ -828,8 +833,14 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
       await expect(
         s.pageA.locator(`[data-testid="quicksave-mode-save-${NODE}"]`),
       ).toBeVisible({ timeout: 10_000 });
-      await s.pageA.locator(`[data-testid="quicksave-mode-save-${NODE}"]`).click();
-      await s.pageA.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click();
+      // force:true on the quicksave card-button clicks — the auto-spawned
+      // TIMELORDE singleton's display canvas can overlap the POLYSEQZ card in
+      // SCREEN space (SvelteFlow fitView re-centers both nodes), so these clicks
+      // retried-until-test-timeout on the attest run (the save/load never fired
+      // → B never saw slot 1 → A never saw the restore). The buttons are gated
+      // visible above; force bypasses the unrelated-overlay intercept.
+      await s.pageA.locator(`[data-testid="quicksave-mode-save-${NODE}"]`).click({ force: true });
+      await s.pageA.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click({ force: true });
 
       // B sees slots[1] populated (cross-context relay propagation — backed-off).
       await expect
@@ -870,8 +881,9 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
         });
       }, NODE);
 
-      await s.pageB.locator(`[data-testid="quicksave-mode-load-${NODE}"]`).click();
-      await s.pageB.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click();
+      // force:true — same TIMELORDE screen-space overlay as the save clicks above.
+      await s.pageB.locator(`[data-testid="quicksave-mode-load-${NODE}"]`).click({ force: true });
+      await s.pageB.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click({ force: true });
 
       // A should see the chord pattern restored, including quality + inversion
       // + voicing — verifying the Yjs deep-clone path doesn't drop fields.

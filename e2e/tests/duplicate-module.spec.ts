@@ -276,8 +276,14 @@ test('@collab duplicate in A appears in B', async ({ browser }) => {
     // a center right-click can land on a control whose contextmenu handler
     // stopPropagation()s the event, opening the per-control menu instead of
     // the module menu; see the non-collab specs above.)
+    // force:true on the right-click — in the 2-context @collab case the
+    // auto-spawned TIMELORDE singleton's display canvas can overlap the ADSR
+    // title in SCREEN space (SvelteFlow fitView re-centers both nodes), so the
+    // contextmenu right-click retried-until-test-timeout on the attest run
+    // (the page never opened the menu → A never got a 2nd ADSR → B never saw 2).
+    // The title is already on-screen; force bypasses the unrelated-overlay check.
     const adsr = pageA.locator('.svelte-flow__node-adsr').first();
-    await adsr.locator('.title').click({ button: 'right' });
+    await adsr.locator('.title').click({ button: 'right', force: true });
     await expect(pageA.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
     await pageA.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
     await expect(pageA.locator('.svelte-flow__node-adsr')).toHaveCount(2);

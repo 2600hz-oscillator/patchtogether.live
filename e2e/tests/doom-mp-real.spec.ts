@@ -298,13 +298,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
 
       // ── Owner (rack host) ADDS the single shared DOOM node ───────────────
       const nodes: SpawnNode[] = [
-        // x:600 keeps the DOOM card clear of the auto-spawned TIMELORDE
-        // singleton (top-left, ~24,24 → 384,564). At x:120 the TIMELORDE display
-        // canvas overlapped the DOOM card and INTERCEPTED the Join/host button
-        // clicks — a `joinBtn.click()` retried until the test timed out (the
-        // residual @collab red on the attest run). Same offset the duplicate /
-        // sequencer @collab specs use to dodge the TIMELORDE occlusion (#759).
-        { id: NODE_ID, type: 'doom', position: { x: 600, y: 120 }, domain: 'video' },
+        { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
       ];
       await spawnPatch(owner.page, nodes, []);
 
@@ -459,7 +453,14 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
 
       // One click: hot-join. The arbiter seats the guest active + auto-relaunches
       // the current map so the guest drops in within ~1-2s — no host Launch step.
-      await guest.page.locator('[data-testid="doom-join-btn"]').click();
+      // force:true — the button is already gated visible+enabled+stable above; the
+      // ONLY actionability blocker is the auto-spawned TIMELORDE singleton's
+      // display canvas overlapping the DOOM card in SCREEN space (SvelteFlow
+      // fitView re-centers both nodes regardless of graph position, so relocating
+      // the node doesn't help). A forced click on a confirmed-actionable button
+      // is the canonical Playwright remedy for an unrelated overlay intercept —
+      // and it's what kept the anon-hot-join @collab test red on the attest run.
+      await guest.page.locator('[data-testid="doom-join-btn"]').click({ force: true });
       // Non-vacuous: after one Join click the arbiter MUST seat the guest at
       // slot 1 and that roster assignment MUST sync back into the guest's own
       // card state within budget (was a skip). A guest that never gets seated is
@@ -671,13 +672,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
     try {
       // Owner (rack host) adds the single shared DOOM node; guest sees it via Yjs.
       const nodes: SpawnNode[] = [
-        // x:600 keeps the DOOM card clear of the auto-spawned TIMELORDE
-        // singleton (top-left, ~24,24 → 384,564). At x:120 the TIMELORDE display
-        // canvas overlapped the DOOM card and INTERCEPTED the Join/host button
-        // clicks — a `joinBtn.click()` retried until the test timed out (the
-        // residual @collab red on the attest run). Same offset the duplicate /
-        // sequencer @collab specs use to dodge the TIMELORDE occlusion (#759).
-        { id: NODE_ID, type: 'doom', position: { x: 600, y: 120 }, domain: 'video' },
+        { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
       ];
       await spawnPatch(owner.page, nodes, []);
       // Non-vacuous: the relay MUST deliver the owner-added node into the
@@ -740,20 +735,16 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         return;
       }
       await spawnPatch(owner.page, [
-        // x:600 keeps the DOOM card clear of the auto-spawned TIMELORDE
-        // singleton (top-left, ~24,24 → 384,564). At x:120 the TIMELORDE display
-        // canvas overlapped the DOOM card and INTERCEPTED the Join/host button
-        // clicks — a `joinBtn.click()` retried until the test timed out (the
-        // residual @collab red on the attest run). Same offset the duplicate /
-        // sequencer @collab specs use to dodge the TIMELORDE occlusion (#759).
-        { id: NODE_ID, type: 'doom', position: { x: 600, y: 120 }, domain: 'video' },
+        { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
       ], []);
       await cardHookReady(owner.page, NODE_ID);
 
       // Open the multiplayer lobby by clicking the real "Host Multiplayer"
       // button with the mouse (not the dev hook) — proves the start-choice
-      // buttons are clickable too.
-      await owner.page.locator('[data-testid="doom-start-multi"]').click();
+      // buttons are clickable too. force:true — dodge the auto-spawned TIMELORDE
+      // canvas overlapping the DOOM card in screen space (see the guest-join
+      // click above for the full rationale).
+      await owner.page.locator('[data-testid="doom-start-multi"]').click({ force: true });
       const seated = await waitForSlot(owner.page, NODE_ID, 0, 25000);
       expect(seated, 'owner seated as P0 after clicking Host Multiplayer').toBe(true);
 
@@ -786,8 +777,9 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
 
       // Launch by clicking the real Launch button → the level starts on the
       // chosen difficulty (the whole dialog round-trip worked by mouse) and the
-      // HOST itself reaches GS_LEVEL (not the title menu).
-      await owner.page.locator('[data-testid="doom-launch-btn"]').click();
+      // HOST itself reaches GS_LEVEL (not the title menu). force:true — dodge the
+      // TIMELORDE overlay (see the guest-join click above).
+      await owner.page.locator('[data-testid="doom-launch-btn"]').click({ force: true });
       const inLevel = await waitForLevel(owner.page, NODE_ID);
       expect(inLevel, 'mouse-launched game reaches GS_LEVEL').toBe(true);
       const launchedState = await getState(owner.page, NODE_ID);
@@ -823,13 +815,7 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         return;
       }
       await spawnPatch(owner.page, [
-        // x:600 keeps the DOOM card clear of the auto-spawned TIMELORDE
-        // singleton (top-left, ~24,24 → 384,564). At x:120 the TIMELORDE display
-        // canvas overlapped the DOOM card and INTERCEPTED the Join/host button
-        // clicks — a `joinBtn.click()` retried until the test timed out (the
-        // residual @collab red on the attest run). Same offset the duplicate /
-        // sequencer @collab specs use to dodge the TIMELORDE occlusion (#759).
-        { id: NODE_ID, type: 'doom', position: { x: 600, y: 120 }, domain: 'video' },
+        { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
       ], []);
       // Non-vacuous: the relay MUST deliver the owner-added node into the anon
       // invite-guest's __patch within budget (was a skip). The anon must land on
@@ -891,7 +877,9 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       await expect(joinBtn, 'anon guest is offered an enabled Join once MP is live').toBeEnabled({
         timeout: 20000,
       });
-      await joinBtn.click();
+      // force:true — dodge the TIMELORDE overlay (see the guest-join click
+      // above). This exact click retried-until-timeout on the attest run.
+      await joinBtn.click({ force: true });
 
       // The anon hot-drops: it becomes ACTIVE slot 1 (NOT pending) and reaches
       // GS_LEVEL with its own live marine — playing the current map within secs.

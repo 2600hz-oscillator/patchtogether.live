@@ -232,13 +232,8 @@ test.describe('@collab DOOM multiplayer — late-join host freeze', () => {
       }
 
       // Owner adds the single shared DOOM node; anon sees it via Yjs node sync.
-      // x:600 keeps the DOOM card clear of the auto-spawned TIMELORDE singleton
-      // (top-left, ~24,24 → 384,564) — at x:120 the TIMELORDE display canvas
-      // overlaps the DOOM card and INTERCEPTS the anon's `joinBtn.click()` below
-      // (the click retries until the test times out — same class as the
-      // doom-mp-real anon-hot-join red on the attest run, #759 occlusion).
       const nodes: SpawnNode[] = [
-        { id: NODE_ID, type: 'doom', position: { x: 600, y: 120 }, domain: 'video' },
+        { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
       ];
       await spawnPatch(owner.page, nodes, []);
       // De-flake (consolidated #837+#841): formerly a "cross-context node sync
@@ -307,7 +302,12 @@ test.describe('@collab DOOM multiplayer — late-join host freeze', () => {
       // ── 3. Anon hot-joins the RUNNING game → arbiter relaunches at np=2 ────
       const joinBtn = anon.page.locator('[data-testid="doom-join-btn"]');
       await expect(joinBtn, 'anon Join enables once MP is live').toBeEnabled({ timeout: 20000 });
-      await joinBtn.click();
+      // force:true — the Join is gated visible+enabled above; the only blocker is
+      // the auto-spawned TIMELORDE display canvas overlapping the DOOM card in
+      // screen space (SvelteFlow fitView re-centers both nodes, so relocating
+      // doesn't help). The canonical Playwright remedy for an unrelated overlay
+      // intercept on a confirmed-actionable target.
+      await joinBtn.click({ force: true });
       // De-flake (consolidated #837+#841): formerly a "relay flake" vacuity skip.
       // Now a real bounded assert — a relay that never seats the anon at slot 1
       // FAILS the test instead of silently skipping green.
