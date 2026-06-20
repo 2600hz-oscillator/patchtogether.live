@@ -101,7 +101,7 @@ export const RGB_OFF: Rgb = [0, 0, 0];
 // Session clip states.
 export const RGB_LOADED: Rgb = [14, 20, 28]; // dim blue (idle, has notes)
 export const RGB_PLAYING: Rgb = [23, 104, 53]; // green (playing) — pulses (see blink)
-export const RGB_PLAYING_DIM: Rgb = [8, 40, 20]; // the down phase of the playing pulse
+export const RGB_PLAYING_DIM: Rgb = [8, 40, 20]; // (reserved) dim green — playing now renders SOLID, not pulsed
 export const RGB_QUEUED: Rgb = [23, 104, 53]; // green (queued-launch) — FLASHES on/off
 export const RGB_QUEUED_STOP: Rgb = [104, 23, 23]; // red (queued-stop) — flashes on/off
 export const RGB_RECORDING: Rgb = [127, 16, 16]; // red (record-armed / recording) — pulses
@@ -112,6 +112,18 @@ export const RGB_STOP_ACTIVE: Rgb = [104, 23, 23]; // bright red (lane playing)
 export const RGB_FUNC: Rgb = [60, 60, 70]; // function idle (white-ish)
 export const RGB_FUNC_ON: Rgb = [122, 79, 112]; // held modifier (violet, bright)
 export const RGB_FUNC_DIM: Rgb = [10, 10, 14]; // a no-op-right-now function pad
+// ── Per-function DECK colours (owner-chosen) ── each deck pad gets its own hue
+// so the command deck reads at a glance: EDIT orange · COPY/PASTE/P-REV green ·
+// DBL + NOW purple · LEN yellow. Hold-modifiers brighten to the *_ON variant
+// while held (the *_ON keeps the same hue so the colour identity never changes).
+export const RGB_DECK_EDIT: Rgb = [60, 24, 0]; // orange (idle)
+export const RGB_DECK_EDIT_ON: Rgb = [127, 56, 0]; // orange (held, bright)
+export const RGB_DECK_COPY: Rgb = [12, 48, 16]; // green (idle)
+export const RGB_DECK_COPY_ON: Rgb = [28, 110, 36]; // green (held, bright)
+export const RGB_DECK_DBL: Rgb = [40, 14, 60]; // purple (DBL — tap)
+export const RGB_DECK_LEN: Rgb = [56, 48, 6]; // yellow (LEN — tap)
+export const RGB_DECK_NOW: Rgb = [40, 14, 60]; // purple (idle)
+export const RGB_DECK_NOW_ON: Rgb = [104, 40, 127]; // purple (held, bright)
 export const RGB_TRANSPORT_ON: Rgb = [23, 104, 53]; // green (transport running)
 export const RGB_RECORDING_DIM: Rgb = [30, 4, 4]; // down phase of the record-arm pulse
 export const RGB_SONG_SESSION: Rgb = [16, 16, 20]; // SES/ARR idle (SESSION) — dim white
@@ -331,8 +343,6 @@ function put(frame: LaunchpadFrame, index: number, rgb: Rgb): void {
 // ── UNIT L (the clip matrix) ──
 export interface LSessionOpts {
   blinkOn?: boolean;
-  /** Index of the clip currently in the copy buffer (turquoise), or null. */
-  bufferClipIndex?: number | null;
   /** True if this clip-player is record-armed (paints empty pads dim red). */
   recording?: boolean;
 }
@@ -353,12 +363,22 @@ export function computeLSessionFrame(
       const note = padNote(pad.x, pad.y);
       let rgb: Rgb = RGB_OFF;
       if (pl === slot) {
-        // playing: pulse green; if a stop is queued, flash to red.
-        rgb = q === 'stop' ? (blinkOn ? RGB_QUEUED_STOP : RGB_OFF) : blinkOn ? RGB_PLAYING : RGB_PLAYING_DIM;
+        // PLAYING = SOLID green (steady — the Ableton idiom: a running clip is
+        // solid, a QUEUED clip blinks). A blinking "playing" reads as queued on
+        // the hardware, which confused the owner — so playing never blinks here.
+        // The ONLY blink while playing is a queued-STOP (flashes red until the
+        // boundary), so you can see a stop is pending.
+        rgb = q === 'stop' ? (blinkOn ? RGB_QUEUED_STOP : RGB_OFF) : RGB_PLAYING;
       } else if (q === slot) {
         rgb = blinkOn ? RGB_QUEUED : RGB_OFF; // queued-launch flashes
       } else if (clips[String(idx)]) {
-        rgb = opts.bufferClipIndex === idx ? (blinkOn ? RGB_COPY_BUFFER : RGB_COPY_BUFFER_DIM) : RGB_LOADED;
+        // A loaded clip is steady dim blue. We deliberately do NOT flash the
+        // copy-SOURCE clip here: the copy buffer is a frozen SNAPSHOT taken at
+        // copy time (see copyClip in launchpad-control), so the live source is
+        // no longer special — a "source" glow read as a persistent, confusing
+        // link. The buffer-loaded state is shown ONLY by the BUF pad on R (tap
+        // it to clear). The blink is reserved for playing/queued state.
+        rgb = RGB_LOADED;
       } else if (opts.recording) {
         rgb = RGB_STOP_IDLE; // record-armed empty slot = dim red (Ableton idiom)
       }
@@ -395,14 +415,17 @@ export interface RSessionOpts {
 export function computeRDeckFrame(opts: RSessionOpts = {}): LaunchpadFrame {
   const frame = emptyFrame();
   const blinkOn = opts.blinkOn ?? true;
-  const deck = (col: number, on: boolean) => put(frame, padNote(col, DECK_ROW), on ? RGB_FUNC_ON : RGB_FUNC);
-  deck(DECK_EDIT_COL, !!opts.editArmed);
-  deck(DECK_COPY_COL, !!opts.copyHeld);
-  deck(DECK_PASTE_COL, !!opts.pasteHeld);
-  deck(DECK_PASTE_REV_COL, !!opts.pasteRevHeld);
-  deck(DECK_NOW_COL, !!opts.nowHeld);
-  put(frame, padNote(DECK_DOUBLE_COL, DECK_ROW), RGB_FUNC);
-  put(frame, padNote(DECK_LENGTH_COL, DECK_ROW), RGB_FUNC);
+  // Per-function colours (owner palette): EDIT orange · COPY/PASTE/P-REV green ·
+  // DBL + NOW purple · LEN yellow. Hold-modifiers brighten to *_ON while held.
+  const mod = (col: number, on: boolean, idle: Rgb, bright: Rgb) =>
+    put(frame, padNote(col, DECK_ROW), on ? bright : idle);
+  mod(DECK_EDIT_COL, !!opts.editArmed, RGB_DECK_EDIT, RGB_DECK_EDIT_ON);
+  mod(DECK_COPY_COL, !!opts.copyHeld, RGB_DECK_COPY, RGB_DECK_COPY_ON);
+  mod(DECK_PASTE_COL, !!opts.pasteHeld, RGB_DECK_COPY, RGB_DECK_COPY_ON);
+  mod(DECK_PASTE_REV_COL, !!opts.pasteRevHeld, RGB_DECK_COPY, RGB_DECK_COPY_ON);
+  mod(DECK_NOW_COL, !!opts.nowHeld, RGB_DECK_NOW, RGB_DECK_NOW_ON);
+  put(frame, padNote(DECK_DOUBLE_COL, DECK_ROW), RGB_DECK_DBL); // DBL — purple (tap)
+  put(frame, padNote(DECK_LENGTH_COL, DECK_ROW), RGB_DECK_LEN); // LEN — yellow (tap)
   // COPY-INDICATOR — turquoise pulse while the buffer holds a clip.
   put(
     frame,

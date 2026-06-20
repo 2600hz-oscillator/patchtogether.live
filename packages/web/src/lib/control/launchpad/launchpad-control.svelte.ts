@@ -56,6 +56,8 @@ import {
   rDeckPad,
   rStopLaneForRow,
   computeRDeckFrame,
+  DECK_ROW,
+  DECK_COPY_IND_COL,
   CC_TRANSPORT,
   CC_STOP_ALL,
   CC_REC,
@@ -140,6 +142,14 @@ let followOn = true;
 // Per-machine clip buffer (NOT synced).
 let clipBuffer: NoteClipRecord | null = null;
 let bufferSourceIndex: number | null = null; // which clip index is in the buffer (for the L turquoise glow)
+
+/** Empty the copy buffer — turns off the turquoise source glow on L + the deck
+ *  COPY-INDICATOR. (Tapping the COPY-INDICATOR pad clears it; the buffer also
+ *  survives a re-bind otherwise, so this is the way to dismiss the glow.) */
+function clearBuffer(): void {
+  clipBuffer = null;
+  bufferSourceIndex = null;
+}
 
 /** Reactive version — bump on bind/unbind so card UI re-derives. */
 let bindingVersion = $state(0);
@@ -590,6 +600,13 @@ function handleRDeck(nodeId: string, e: LaunchpadKeyEvent): void {
   const data = liveData(nodeId);
 
   if (ev.type === 'pad') {
+    // Tap the COPY-INDICATOR pad to EMPTY the buffer (turns off the turquoise
+    // source glow on L). It's render-only otherwise, so handle it before the
+    // rDeckPad classifier (which returns null for it).
+    if (ev.x === DECK_COPY_IND_COL && ev.y === DECK_ROW) {
+      if (ev.s === 1) clearBuffer();
+      return;
+    }
     const action = rDeckPad(ev.x, ev.y);
     if (!action) return;
     // EDIT / COPY / PASTE / PASTE-REV / NOW are HELD modifiers (act on both edges).
@@ -772,7 +789,6 @@ function renderLeds(): void {
     'L',
     computeLSessionFrame(data, {
       blinkOn,
-      bufferClipIndex: bufferSourceIndex,
       recording: recordArmed(data),
     }),
   );

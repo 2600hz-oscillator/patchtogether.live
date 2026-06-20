@@ -21,15 +21,20 @@ vi.mock('$lib/audio/scheduler-clock', () => ({
 }));
 
 import { patch as livePatch } from '$lib/graph/store';
+import type { MidiInputLike } from '$lib/audio/modules/midi-cv-buddy';
+import type { MidiOutputLike } from '$lib/audio/modules/midi-out-buddy';
 import {
   installSimulatedLaunchpad,
   __test_resetLaunchpad,
+  __test_setAccess,
   type SimulatedLaunchpad,
+  type MidiFullAccessLike,
 } from './launchpad-device.svelte';
 import {
   bindLaunchpadToClip,
   unbindLaunchpad,
   boundClipNode,
+  startPairing,
   __test_resetBinding,
   __test_mode,
 } from './launchpad-control.svelte';
@@ -39,6 +44,7 @@ import {
   DECK_PASTE_COL,
   DECK_PASTE_REV_COL,
   DECK_NOW_COL,
+  DECK_COPY_IND_COL,
   CC_TRANSPORT,
   CC_STOP_ALL,
   CC_REC,
@@ -360,6 +366,19 @@ describe('Deck DOUBLE / LENGTH-EDIT / copy-paste', () => {
     expect(clipAt(clipIndex(1, 0)).steps.some((s) => s.step === 1 && s.midi === 64)).toBe(true);
   });
 
+  it('tapping the COPY-INDICATOR pad EMPTIES the buffer (turns off the turquoise glow)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    // load the buffer from clip 0.
+    sim.press('R', DECK_COPY_COL, 0); sim.press('L', 0, yForLane(0)); sim.release('R', DECK_COPY_COL, 0);
+    expect(__test_mode().bufferArmed, 'buffer loaded').toBe(true);
+    expect(__test_mode().bufferSourceIndex, 'glow on clip 0').toBe(0);
+    // tap the COPY-INDICATOR pad → buffer cleared, glow off.
+    sim.press('R', DECK_COPY_IND_COL, 0); sim.release('R', DECK_COPY_IND_COL, 0);
+    expect(__test_mode().bufferArmed, 'buffer emptied').toBe(false);
+    expect(__test_mode().bufferSourceIndex, 'turquoise glow cleared').toBeNull();
+  });
+
   it('PASTE-REV pastes a time-reversed copy', () => {
     seedClipPlayer({
       clips: {
@@ -550,5 +569,68 @@ describe('ARRANGER — REC + SES⇄ARR (R deck top row)', () => {
     const song = sim.ledAt('R', CC_SONG);
     expect(song, 'SONG LED painted').not.toBeNull();
     expect(song![0] + song![1] + song![2], 'SONG lit in ARRANGEMENT').toBeGreaterThan(0);
+  });
+});
+
+// ===========================================================================
+// REAL PAIRING HANDSHAKE (the bug the simulated seam HID). installSimulatedLaunchpad
+// binds L→simL, R→simR in order, so it never exercises the L↔R SWAP that
+// finishPairing does when the user picks the provisional-R unit as LEFT. On real
+// hardware that swap nulled the LEFT unit's input handler → LEFT pads dead (no
+// launch / no edit) while RIGHT kept working. This drives the REAL
+// startPairing → press → finishPairing path and asserts the LEFT unit launches.
+// ===========================================================================
+describe('Real L/R pairing handshake — LEFT unit is LIVE after a swap', () => {
+  // A fake input whose onmidimessage is a settable property (real-MIDIAccess
+  // shape), so the test can "press" by reading the handler back + calling it.
+  function fakeInput(id: string): MidiInputLike {
+    return {
+      id, name: 'LPMiniMK3 MIDI In', manufacturer: 'Focusrite - Novation',
+      state: 'connected', onmidimessage: null,
+    } as unknown as MidiInputLike;
+  }
+  function fakeOutput(id: string): MidiOutputLike {
+    return {
+      id, name: 'LPMiniMK3 MIDI Out', manufacturer: 'Focusrite - Novation',
+      state: 'connected', send: () => {},
+    } as unknown as MidiOutputLike;
+  }
+  function press(input: MidiInputLike, note: number) {
+    (input.onmidimessage as ((e: { data: Uint8Array; timeStamp: number }) => void) | null)?.({
+      data: new Uint8Array([0x90, note, 100]), timeStamp: 0,
+    });
+  }
+
+  it('after the user picks the provisional-R unit as LEFT, LEFT pads launch clips', async () => {
+    // Two identical units, distinct ids. (padNote(0,7)=81 = card top-left.)
+    const inA = fakeInput('inA');
+    const inB = fakeInput('inB');
+    const access: MidiFullAccessLike = {
+      inputs: new Map<string, MidiInputLike>([['inA', inA], ['inB', inB]]),
+      outputs: new Map<string, MidiOutputLike>([['outA', fakeOutput('outA')], ['outB', fakeOutput('outB')]]),
+      onstatechange: null,
+    };
+    __test_setAccess(access); // so startPairing's connect() resolves to this access
+
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+
+    // Run the REAL pairing handshake. Provisional: L=inA, R=inB.
+    const started = await startPairing();
+    expect(started, 'pairing started with two ports').toBe(true);
+
+    // The user presses a pad on the unit they want as LEFT — and they press the
+    // unit that was provisionally bound to 'R' (inB). finishPairing then SWAPS:
+    // L=inB, R=inA. This is the path that used to kill inB's handler.
+    press(inB, 81);
+
+    // Bind a clip-player to the freshly-paired units (the card's onPaired flow).
+    bindLaunchpadToClip(NODE_ID);
+
+    // Now press the LEFT physical unit (inB, the card top-left clip) → it MUST
+    // launch lane 0 (proves the LEFT input handler survived the swap).
+    press(inB, 81); // padNote(0,7) → lane 0, slot 0
+    expect(queued()?.[0], 'LEFT unit (inB) launches lane 0 after the swap').toBe(0);
+
+    unbindLaunchpad();
   });
 });
