@@ -276,3 +276,77 @@ describe('synesthesia worklet — BIPOLAR env CV param (a_bipolar)', () => {
     }
   });
 });
+
+// ──────────────────── per-band ENV-OUTPUT DEPTH params ────────────────────
+//
+// Proves the WORKLET wiring of the 8 new a_envdepth1..4 / b_envdepth1..4 k-rate
+// params: each scales BOTH env CV outputs (env_slow=2/3, env_fast=4/5) for that
+// (copy, band), while band-audio (0/1), gate (6/7), trig (8/9) are untouched.
+// The 261 Hz tone lands in band 2 (index 1), so we drive a_envdepth2.
+
+/** Run a 261 Hz tone into copy A for `blocks` quanta with the given per-band
+ *  a_envdepth params, returning summed energy + per-(output,band) max. */
+function runEnvDepth(
+  depths: [number, number, number, number],
+  blocks: number,
+): { sum: number[][]; max: number[][] } {
+  const proc = new Processor();
+  const sum: number[][] = Array.from({ length: NUM_OUT }, () => [0, 0, 0, 0]);
+  const max: number[][] = Array.from({ length: NUM_OUT }, () => [-Infinity, -Infinity, -Infinity, -Infinity]);
+  const params: Record<string, Float32Array> = {};
+  for (let b = 1; b <= 4; b++) params[`a_envdepth${b}`] = new Float32Array([depths[b - 1]!]);
+  let phase = 0;
+  for (let blk = 0; blk < blocks; blk++) {
+    const inA = new Float32Array(QUANTUM);
+    for (let i = 0; i < QUANTUM; i++) inA[i] = 0.8 * Math.sin((2 * Math.PI * 261 * (phase + i)) / SR);
+    phase += QUANTUM;
+    const outputs = mkOutputs();
+    proc.process([[inA], []], outputs, params);
+    for (let o = 0; o < NUM_OUT; o++) {
+      for (let b = 0; b < 4; b++) {
+        const ch = outputs[o]![b]!;
+        for (let i = 0; i < ch.length; i++) {
+          sum[o]![b]! += Math.abs(ch[i]!);
+          if (ch[i]! > max[o]![b]!) max[o]![b] = ch[i]!;
+        }
+      }
+    }
+  }
+  return { sum, max };
+}
+
+describe('synesthesia worklet — per-band ENV-OUTPUT depth (a_envdepth)', () => {
+  it('default (all 1.0) ≡ no params passed (no regression)', () => {
+    const explicit = runEnvDepth([1, 1, 1, 1], 200);
+    // Compare to the no-param run via the existing run() helper's energy on the
+    // lit band's env_fast (output 4, band 2/idx 1).
+    const base = run(261, 200).out;
+    expect(explicit.sum[4]![1]!).toBeCloseTo(base[4]![1]!, 4); // env_fast unchanged
+    expect(explicit.sum[2]![1]!).toBeCloseTo(base[2]![1]!, 4); // env_slow unchanged
+  });
+
+  it('a_envdepth2=0 SILENCES band 2\'s BOTH env CV outputs (slow + fast)', () => {
+    const r = runEnvDepth([1, 0, 1, 1], 200);
+    expect(r.sum[4]![1]!).toBe(0); // env_fast band 2 silenced
+    expect(r.sum[2]![1]!).toBe(0); // env_slow band 2 silenced
+  });
+
+  it('a_envdepth2=2 DOUBLES band 2\'s env CV output (clamped at 1)', () => {
+    const unity = runEnvDepth([1, 1, 1, 1], 200);
+    const doubled = runEnvDepth([1, 2, 1, 1], 200);
+    // The 261 Hz tone's band-2 env saturates the clamp under unity already, so a
+    // strict 2× energy isn't guaranteed — assert it's strictly GREATER (boost)
+    // and the per-sample max never exceeds the 0..1 CV ceiling.
+    expect(doubled.sum[4]![1]!).toBeGreaterThan(unity.sum[4]![1]!);
+    expect(doubled.max[4]![1]!).toBeLessThanOrEqual(1);
+  });
+
+  it('a_envdepth is PER-BAND: cutting band 2 leaves band-audio/gate/trig intact', () => {
+    const base = runEnvDepth([1, 1, 1, 1], 200);
+    const cut = runEnvDepth([1, 0, 1, 1], 200);
+    // band-audio (0), gate (6), trig (8) for the lit band are unchanged.
+    for (const o of [0, 6, 8]) {
+      expect(cut.sum[o]![1]!).toBeCloseTo(base.sum[o]![1]!, 4);
+    }
+  });
+});

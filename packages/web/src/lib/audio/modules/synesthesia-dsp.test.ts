@@ -28,6 +28,10 @@ import {
   ONSET_PULSE_MS,
   CV_MAKEUP,
   applyBipolar,
+  applyEnvDepth,
+  ENVDEPTH_DEFAULT,
+  ENVDEPTH_MIN,
+  ENVDEPTH_MAX,
 } from '../../../../../dsp/src/lib/synesthesia-dsp';
 import { buildCvBridgeMapping, mapCvBridgeValue } from '$lib/video/cv-bridge-map';
 import { outlinesDef } from '$lib/video/modules/outlines';
@@ -832,5 +836,128 @@ describe('synesthesia-dsp — BIPOLAR kick → OUTLINES rotation FULL-RANGE (rea
       }
       expect(hi - lo, `bpm ${bpm} full sweep`).toBeGreaterThanOrEqual(0.9);
     }
+  });
+});
+
+// ───────────────────── per-band ENV-OUTPUT DEPTH ─────────────────────
+//
+// The owner's ask: ONE knob per (copy, band) = 8 total, each scaling UP or DOWN
+// the OUTPUT level of that band's TWO envelopes (env_slow + env_fast). It lets a
+// SYNESTHESIA envelope reach full modulation depth AT THE SOURCE (replacing the
+// scrapped per-cable/edge depth idea). Range 0..2, default 1.0 (= unchanged).
+// Applied to the env CV OUTPUT ONLY — gate / trig / band-audio / VU are untouched.
+
+describe('synesthesia-dsp — applyEnvDepth (pure scale)', () => {
+  it('default 1.0 = pass-through; 0 = silenced; 2 = doubled', () => {
+    expect(ENVDEPTH_DEFAULT).toBe(1);
+    expect(ENVDEPTH_MIN).toBe(0);
+    expect(ENVDEPTH_MAX).toBe(2);
+    expect(applyEnvDepth(0.6, 1)).toBeCloseTo(0.6, 6); // unity
+    expect(applyEnvDepth(0.6, 0)).toBe(0); // cut
+    expect(applyEnvDepth(0.6, 2)).toBeCloseTo(1.2, 6); // doubled (pre-clamp)
+    expect(applyEnvDepth(0.6, 0.5)).toBeCloseTo(0.3, 6); // half
+  });
+});
+
+describe('synesthesia-dsp — per-band ENV-OUTPUT depth (renderSynesthesia, AUDIO)', () => {
+  // A sub-clamp bass tone so depth-scaling is visible without pinning the clamp.
+  const lowTone = (): Float32Array => sine(90, 0.4, 0.35);
+
+  it('default (envDepth=[1,1,1,1]) is BIT-IDENTICAL to omitting it', () => {
+    const buf = lowTone();
+    const base = renderSynesthesia(buf, { sr: SR });
+    const explicit = renderSynesthesia(buf, { sr: SR, envDepth: [1, 1, 1, 1] });
+    for (const k of ['envSlow', 'envFast', 'gate', 'trig', 'audio'] as const) {
+      for (let b = 0; b < SYN_NUM_BANDS; b++) {
+        expect(Array.from(explicit[k][b]!), `${k} band ${b}`).toEqual(Array.from(base[k][b]!));
+      }
+    }
+  });
+
+  it('depth=0 SILENCES that band\'s BOTH env CV outputs (slow + fast)', () => {
+    const buf = lowTone(); // band-1 (bass) tone
+    const r = renderSynesthesia(buf, { sr: SR, envDepth: [0, 1, 1, 1] });
+    // Band 1's env CV outputs are flat zero…
+    expect(rmsTail(r.envFast[0]!)).toBe(0);
+    expect(rmsTail(r.envSlow[0]!)).toBe(0);
+    expect(Math.max(...r.envFast[0]!)).toBe(0);
+    expect(Math.max(...r.envSlow[0]!)).toBe(0);
+  });
+
+  it('depth=2 DOUBLES that band\'s env CV outputs (clamped at the 0..1 ceiling)', () => {
+    const buf = lowTone();
+    const unity = renderSynesthesia(buf, { sr: SR, envDepth: [1, 1, 1, 1] });
+    const doubled = renderSynesthesia(buf, { sr: SR, envDepth: [2, 1, 1, 1] });
+    // The sub-clamp unity bass env (~0.2 RMS) doubles toward ~0.4 (still < 1).
+    const u = rmsTail(unity.envFast[0]!);
+    const d = rmsTail(doubled.envFast[0]!);
+    expect(u).toBeGreaterThan(0); // unity carried energy
+    expect(d).toBeGreaterThan(1.8 * u); // ≈2× (slight clamp loss at peaks)
+    expect(d).toBeLessThan(2.05 * u);
+    // Per-sample: never exceeds the 0..1 CV ceiling.
+    expect(Math.max(...doubled.envFast[0]!)).toBeLessThanOrEqual(1);
+    // The SLOW env doubles too (the knob scales BOTH).
+    expect(rmsTail(doubled.envSlow[0]!)).toBeGreaterThan(1.8 * rmsTail(unity.envSlow[0]!));
+  });
+
+  it('per-band: scaling band 1 does NOT touch the other bands\' env outputs', () => {
+    // Mix a bass (130) + treble (8000) tone, cut ONLY band 1's depth.
+    const a = sine(130, 0.3, 0.5);
+    const b = sine(8000, 0.3, 0.5);
+    const mix = new Float32Array(a.length);
+    for (let i = 0; i < a.length; i++) mix[i] = a[i]! + b[i]!;
+    const base = renderSynesthesia(mix, { sr: SR });
+    const cut1 = renderSynesthesia(mix, { sr: SR, envDepth: [0, 1, 1, 1] });
+    expect(rmsTail(cut1.envFast[0]!)).toBe(0); // band 1 silenced
+    // Band 4 (treble) is untouched — identical to baseline.
+    expect(Array.from(cut1.envFast[3]!)).toEqual(Array.from(base.envFast[3]!));
+    expect(Array.from(cut1.envSlow[3]!)).toEqual(Array.from(base.envSlow[3]!));
+  });
+
+  it('depth only scales the ENV CV — gate / trig / band-audio are unchanged', () => {
+    const buf = kickFloor(150, 6, 1.0);
+    const base = renderSynesthesia(buf, { sr: SR });
+    const scaled = renderSynesthesia(buf, { sr: SR, envDepth: [0, 0.5, 2, 1.5] });
+    for (let b = 0; b < SYN_NUM_BANDS; b++) {
+      expect(Array.from(scaled.gate[b]!), `gate ${b}`).toEqual(Array.from(base.gate[b]!));
+      expect(Array.from(scaled.trig[b]!), `trig ${b}`).toEqual(Array.from(base.trig[b]!));
+      expect(Array.from(scaled.audio[b]!), `audio ${b}`).toEqual(Array.from(base.audio[b]!));
+    }
+  });
+
+  it('composes with BIPOLAR: depth=0 → silent rail (-1), depth=2 → +1 on a kick', () => {
+    const buf = kickFloor(174, 8, 1.2);
+    // depth 0, bipolar on → unipolar 0 → bipolar -1 (the silent rail).
+    const cut = renderSynesthesia(buf, { sr: SR, bipolar: true, envDepth: [0, 1, 1, 1] });
+    for (const v of cut.envFast[0]!) expect(v).toBeCloseTo(-1, 6);
+    // depth 2, bipolar on → a strong kick still pins +1 (clamped unipolar 1).
+    const boost = renderSynesthesia(buf, { sr: SR, bipolar: true, envDepth: [2, 1, 1, 1] });
+    let max = -Infinity;
+    for (const v of boost.envFast[0]!) if (v > max) max = v;
+    expect(max).toBeGreaterThanOrEqual(0.9);
+    expect(max).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('synesthesia-dsp — per-band ENV-OUTPUT depth (VIDEO mode)', () => {
+  it('depth=0 silences the channel\'s env CV; default is unchanged; 2× doubles', () => {
+    // R level chosen so even at 2× the env (R·makeup·2 = 0.25·1.6·2 = 0.8) stays
+    // UNDER the 0..1 clamp ceiling — so the doubling is visible, not clipped.
+    const frame = [[0.25, 0, 0, 0.075]] as const; // sub-clamp R level
+    const hold = Math.round(SR * 0.2);
+    const base = renderSynesthesiaVideo([...frame], { sr: SR, holdSamples: hold });
+    const cut = renderSynesthesiaVideo([...frame], { sr: SR, holdSamples: hold, envDepth: [0, 1, 1, 1] });
+    const dbl = renderSynesthesiaVideo([...frame], { sr: SR, holdSamples: hold, envDepth: [2, 1, 1, 1] });
+    // R channel (idx 0): cut → 0, doubled → ~2× the baseline (still sub-clamp).
+    expect(base.envFast[0]![hold - 1]!).toBeGreaterThan(0);
+    expect(cut.envFast[0]![hold - 1]!).toBe(0);
+    expect(cut.envSlow[0]![hold - 1]!).toBe(0);
+    expect(dbl.envFast[0]![hold - 1]!).toBeCloseTo(2 * base.envFast[0]![hold - 1]!, 4);
+    // The default (omitted) equals envDepth [1,1,1,1].
+    const explicit = renderSynesthesiaVideo([...frame], { sr: SR, holdSamples: hold, envDepth: [1, 1, 1, 1] });
+    expect(explicit.envFast[0]![hold - 1]!).toBe(base.envFast[0]![hold - 1]!);
+    // gate unaffected by depth (R opened in all three).
+    expect(Math.max(...base.gate[0]!)).toBe(1);
+    expect(Math.max(...cut.gate[0]!)).toBe(1);
   });
 });
