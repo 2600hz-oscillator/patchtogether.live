@@ -22,9 +22,19 @@
 //     pattern) — it's just a multiply, valid for either signal class.
 //
 // Outputs:
-//   out (audio): the scaled signal (out = in * amount). Typed `audio` so it can
-//     drive audio inputs directly (and any CV-family port that opts into an
-//     `accepts: ['audio']` widening, e.g. a SCOPE probe).
+//   out (TYPE-TRANSPARENT pass-through, `adoptsUpstreamFrom: 'in'`): the scaled
+//     signal (out = in * amount). Its EMITTED cable type ADOPTS the type of
+//     whatever's patched into `in` — a CV source makes `out` emit `cv`, an audio
+//     source makes it emit `audio`. Declared `type: 'audio'` only as the fallback
+//     when nothing is patched upstream (so a bare SCALER still presents an audio
+//     jack). WHY: the audio→video bridge reads an `audio`-typed source through an
+//     RMS envelope-follower that CLAMPS to 1.0 — so a hard-`audio` output made
+//     SCALER's scaled CV saturate and the AMOUNT knob had ZERO effect at a video
+//     destination (the "dead knob" bug). Adopting the upstream type keeps a CV
+//     signal CV through the bridge → it takes the raw tail-sample path → AMOUNT
+//     scales the real ±CV value. (SCOPE is the sibling "visualizer-not-a-bus"
+//     port-type-widening pattern; here we widen the OUTPUT's emitted type instead
+//     of an input's accepted set.)
 //
 // Params:
 //   amount (log 0.1..10, default 1.0): the scale factor. LOG curve so unity
@@ -49,8 +59,12 @@ export const scalerDef: AudioModuleDef = {
     { id: 'in', type: 'audio', accepts: ['cv', 'pitch', 'gate'] },
   ],
   outputs: [
-    // out = in * amount.
-    { id: 'out', type: 'audio' },
+    // out = in * amount. TYPE-TRANSPARENT: the emitted cable type adopts
+    // whatever's patched into `in` (a CV source → a CV out), so the scaled
+    // signal stays in its own class through the cross-domain video bridge and
+    // the AMOUNT knob actually scales it. `type: 'audio'` is the fallback when
+    // nothing is patched upstream. See the header comment for the full why.
+    { id: 'out', type: 'audio', adoptsUpstreamFrom: 'in' },
   ],
   params: [
     // LOG taper so 1.0 (unity) lands at knob center and x0.1..x10 is symmetric.
