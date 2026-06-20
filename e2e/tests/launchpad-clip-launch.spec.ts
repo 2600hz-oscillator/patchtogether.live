@@ -161,10 +161,12 @@ test('@launchpad a simulated pad press launches a clip → audible RMS at the cl
   const before = await readScopePeakOverWindow(page, 'a-scp', 500);
   expect(before.rms, 'silent before the pad launches a clip').toBeLessThan(0.03);
 
-  // (2) Press the LEFT-unit pad at (slot 0, lane 0) → launches clip 0 in lane 0.
+  // (2) Press the LEFT-unit pad for (slot 0, lane 0) → launches clip 0 in lane 0.
+  // The matrix maps lane 0 → the TOP physical row (y=7) so it matches the
+  // on-screen card (lane 1 is the top grid row), so the top-left pad is (0, 7).
   await page.evaluate(() => {
     const w = globalThis as unknown as { __launchpadSim?: { pressL: (x: number, y: number) => void } };
-    w.__launchpadSim?.pressL(0, 0);
+    w.__launchpadSim?.pressL(0, 7);
   });
 
   // The synced playing set must show lane 0 launched (the binding wrote queued,
