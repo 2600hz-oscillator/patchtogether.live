@@ -44,8 +44,9 @@ import {
   type LaunchpadKeyEvent,
   type LaunchpadPort,
   type LaunchpadUnit,
+  type LaunchpadFrame,
 } from './launchpad-device.svelte';
-import { padNote } from './launchpad-sysex';
+import { padNote, LP_WIDTH, LP_HEIGHT } from './launchpad-sysex';
 import {
   // L matrix
   lPadToClipIndex,
@@ -166,10 +167,27 @@ function start(): void {
   // NOTE: clipBuffer survives a re-bind (it's the machine's clipboard).
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
+  renderLeds(); // paint immediately so binding lights the units without waiting a tick
 }
 function stopLoops(): void {
   if (unsubKey) { unsubKey(); unsubKey = null; }
   if (unsubTick) { unsubTick(); unsubTick = null; }
+}
+/** Ensure the key handler + LED render loop are running WITHOUT resetting the
+ *  edit/mode state (used after pairing so the units keep painting even before a
+ *  clip-player is bound — renderLeds shows a dim "ready" frame while unbound). */
+function ensureRenderLoop(): void {
+  if (!unsubKey) unsubKey = onKey(handleKey);
+  if (!unsubTick) unsubTick = getSchedulerClock().subscribe(renderLeds);
+}
+/** A uniform dim fill across all 8×8 pads — the "paired + alive but no
+ *  clip-player bound yet" idle glow (so the units never sit dead-black). */
+function idleFrame(r: number, g: number, b: number): LaunchpadFrame {
+  const leds = new Map<number, [number, number, number]>();
+  for (let y = 0; y < LP_HEIGHT; y++) {
+    for (let x = 0; x < LP_WIDTH; x++) leds.set(padNote(x, y), [r, g, b]);
+  }
+  return { leds };
 }
 
 /** Bind the Launchpad pair to a clip-player node (persisted per-machine). */
@@ -307,29 +325,36 @@ export async function startPairing(onPaired?: () => void): Promise<boolean> {
   return true;
 }
 
-/** Paint the centred dice-5 "press a pad" prompt on a unit (owner-confirmed
- *  centre near 45/54). Uses individual diffed LED writes. */
+/** Paint the "press a pad" prompt: FILL the whole 8×8 of a candidate unit so
+ *  BOTH units are unmistakably lit during pairing (the proof that both are alive
+ *  + addressable — the thing that was broken when two identical units collapsed
+ *  onto one output). The two provisional candidates get DISTINCT colours so you
+ *  can see there really are two units responding; press any pad on the one you
+ *  want as the LEFT/matrix unit. (Provisional 'L' = green, 'R' = blue — the
+ *  press, not this label, decides the final L/R.) Diffed LED writes. */
 function lightPairPrompt(unit: LaunchpadUnit): void {
-  const dice5: Array<[number, number]> = [
-    [2, 2], [5, 2], // bottom corners
-    [3, 4], [4, 3], // centre pair (45/54 area)
-    [2, 5], [5, 5], // top corners
-  ];
-  for (const [x, y] of dice5) setLed(unit, padNote(x, y), 60, 60, 80);
+  const [r, g, b] = unit === 'L' ? [0, 90, 30] : [0, 30, 100];
+  for (let y = 0; y < LP_HEIGHT; y++) {
+    for (let x = 0; x < LP_WIDTH; x++) setLed(unit, padNote(x, y), r, g, b);
+  }
 }
 
-/** Commit a resolved L/R pair: bind both, persist, blank prompts, render. */
+/** Commit a resolved L/R pair: bind both, persist, then KEEP the units lit. */
 function finishPairing(left: LaunchpadPort, right: LaunchpadPort): void {
   pairing = false;
   if (pairUnsub) { pairUnsub(); pairUnsub = null; }
   bindUnit('L', left.inputId, left.outputId);
   bindUnit('R', right.inputId, right.outputId);
   persistPorts(left, right);
-  clearUnit('L');
-  clearUnit('R');
   bumpPair();
-  // If a node is already bound, start the render loop so LEDs come alive.
-  if (boundNodeId && !unsubTick) start();
+  // Keep BOTH units lit after pairing instead of clearing to black: run the
+  // render loop even with no clip-player bound yet (renderLeds paints a dim
+  // "ready" glow while unbound, the live matrix once bound) and paint one frame
+  // now so they don't sit dark waiting for the first scheduler tick. setFrame
+  // diffs, so this cleanly replaces the green/blue pairing flood. (The card's
+  // onPaired auto-binds a clip-player if one exists, which restarts in live mode.)
+  ensureRenderLoop();
+  renderLeds();
 }
 
 /** Restore a persisted L/R pair (call after connect()). Returns true if both
@@ -704,10 +729,17 @@ function handleRLength(nodeId: string, e: LaunchpadKeyEvent): void {
 // LED render loop — repaint BOTH units each scheduler tick.
 // ---------------------------------------------------------------------------
 function renderLeds(): void {
+  if (!isPairBound()) return; // need both units bound to paint anything
   const nodeId = boundNodeId;
-  if (!nodeId || !isPairBound()) return;
-  const node = livePatch.nodes[nodeId];
-  if (!node) return;
+  const node = nodeId ? livePatch.nodes[nodeId] : null;
+  if (!nodeId || !node) {
+    // Paired but no clip-player bound yet — paint a dim "ready" glow so the
+    // units are visibly alive + connected (add a clip-player to go live).
+    // L (matrix) = dim blue, R (deck) = dim amber.
+    setFrame('L', idleFrame(0, 0, 20));
+    setFrame('R', idleFrame(14, 7, 0));
+    return;
+  }
   tickCount++;
   const blinkOn = Math.floor(tickCount / BLINK_TICKS) % 2 === 0;
   const data = node.data as ClipPlayerData | undefined;

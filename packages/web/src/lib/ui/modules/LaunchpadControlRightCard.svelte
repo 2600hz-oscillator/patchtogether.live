@@ -44,6 +44,10 @@
 
   let bound = $derived((statusRune(), pairRune(), bindingRune(), boundClipNode()));
   let paired = $derived((statusRune(), pairRune(), isPairBound()));
+  // Pairing is ONE shared handshake across both cards — derive the live state
+  // from the singleton so both cards always agree (was per-card local `status`,
+  // which let the two cards show different labels at once).
+  let pairingNow = $derived((statusRune(), pairRune(), isPairing()));
 
   function firstClipplayer(): string | null {
     for (const [nid, n] of Object.entries(patch.nodes)) {
@@ -51,6 +55,10 @@
     }
     return null;
   }
+  // Reactive: is there a clip-player on the canvas to bind to? (Reads the live
+  // patch so it updates as clip-players are added/removed.) The Bind button only
+  // makes sense when one exists — otherwise it's a dead no-op.
+  let hasClip = $derived((bindingRune(), statusRune(), firstClipplayer() !== null));
 
   async function pair() {
     if (!supported) { status = 'no-midi'; return; }
@@ -112,15 +120,15 @@
           data-testid="launchpad-control-right-pair"
           onclick={pair}
         >
-          {#if status === 'pairing'}
-            Press a pad on the LEFT unit…
+          {#if pairingNow}
+            Press a pad on the unit you want as LEFT…
           {:else if paired}
             Re-pair Launchpads
           {:else}
             Pair Launchpads
           {/if}
         </button>
-        {#if paired}
+        {#if paired && (bound || hasClip)}
           <button
             class="lp-btn nodrag"
             type="button"
@@ -132,12 +140,20 @@
         {/if}
       </div>
       <div class="lp-status" data-testid="launchpad-control-right-status">
-        {#if !paired}
+        {#if pairingNow}
+          Both Launchpads should light up (green + blue) — press any pad on the one you want as the LEFT (matrix) unit; the other becomes RIGHT.
+        {:else if status === 'one-unit'}
+          Only one Launchpad detected — connect BOTH units (each shows up as its “… MIDI” port), then Pair again.
+        {:else if status === 'no-midi'}
+          Couldn’t access MIDI — allow the permission prompt and try Pair again.
+        {:else if !paired}
           Not paired.
         {:else if bound}
           Driving clip-player <code>{bound}</code>.
+        {:else if hasClip}
+          Paired ✓ — hit Bind to drive your clip-player.
         {:else}
-          Paired ✓ — add a clip-player, then Bind.
+          Paired ✓ — add a clip-player module to drive (pairing auto-binds it).
         {/if}
       </div>
     {/if}
