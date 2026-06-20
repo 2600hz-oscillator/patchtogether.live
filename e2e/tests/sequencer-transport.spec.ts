@@ -772,9 +772,15 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
     // each under the describe's 60s budget — too tight when A→relay→B converge
     // stalls under CI CPU contention (the cause of the 5× purge retry). Raise
     // each propagation poll to a 20s backed-off budget (matching the
-    // in-card-title rename-sync fix) and the whole test to 120s so four slow
-    // converges still fit with headroom.
-    test.setTimeout(120_000);
+    // in-card-title rename-sync fix).
+    //
+    // De-flake (consolidated #837+#841): 120s did NOT contain the WORST case —
+    // FOUR sequential 20s converges (=80s) PLUS the three gated visible-waits
+    // (10s+15s) and two-context setup blew the 120s TEST timeout under heavy
+    // contention (the residual @collab red on the attest run). Raise to 180s so
+    // four slow converges + the DOM waits fit with real headroom. (A ceiling,
+    // not a sleep — a green test still finishes fast, so no CI delta on success.)
+    test.setTimeout(180_000);
     const s = await openTwoContexts(browser);
     try {
       const NODE = 'polyseqz-collab-1';

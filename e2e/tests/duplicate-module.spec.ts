@@ -211,6 +211,12 @@ test('right-click → Duplicate does not copy edges of the source', async ({ pag
 });
 
 test('@collab duplicate in A appears in B', async ({ browser }) => {
+  // De-flake (consolidated #837+#841): this test chains two 20s SYNC_BUDGET_MS
+  // polls (seed-sync, then duplicate-sync) plus two-context setup — the default
+  // 30s per-test timeout can't contain that, so a slow-but-correct sync tripped
+  // the TEST timeout at teardown (the residual @collab red). Give the
+  // @collab-standard 120s ceiling (a ceiling, not a sleep — no CI delta on green).
+  test.setTimeout(120_000);
   // Two browser contexts on the same rackspace. A duplicates a node; B
   // observes the new node show up. This proves Duplicate goes through the
   // standard add-node path (Y.Doc transact) that the multiplayer provider

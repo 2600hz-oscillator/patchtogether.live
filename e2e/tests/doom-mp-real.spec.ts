@@ -298,7 +298,13 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
 
       // ── Owner (rack host) ADDS the single shared DOOM node ───────────────
       const nodes: SpawnNode[] = [
-        { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
+        // x:600 keeps the DOOM card clear of the auto-spawned TIMELORDE
+        // singleton (top-left, ~24,24 → 384,564). At x:120 the TIMELORDE display
+        // canvas overlapped the DOOM card and INTERCEPTED the Join/host button
+        // clicks — a `joinBtn.click()` retried until the test timed out (the
+        // residual @collab red on the attest run). Same offset the duplicate /
+        // sequencer @collab specs use to dodge the TIMELORDE occlusion (#759).
+        { id: NODE_ID, type: 'doom', position: { x: 600, y: 120 }, domain: 'video' },
       ];
       await spawnPatch(owner.page, nodes, []);
 
@@ -665,7 +671,13 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
     try {
       // Owner (rack host) adds the single shared DOOM node; guest sees it via Yjs.
       const nodes: SpawnNode[] = [
-        { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
+        // x:600 keeps the DOOM card clear of the auto-spawned TIMELORDE
+        // singleton (top-left, ~24,24 → 384,564). At x:120 the TIMELORDE display
+        // canvas overlapped the DOOM card and INTERCEPTED the Join/host button
+        // clicks — a `joinBtn.click()` retried until the test timed out (the
+        // residual @collab red on the attest run). Same offset the duplicate /
+        // sequencer @collab specs use to dodge the TIMELORDE occlusion (#759).
+        { id: NODE_ID, type: 'doom', position: { x: 600, y: 120 }, domain: 'video' },
       ];
       await spawnPatch(owner.page, nodes, []);
       // Non-vacuous: the relay MUST deliver the owner-added node into the
@@ -728,7 +740,13 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         return;
       }
       await spawnPatch(owner.page, [
-        { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
+        // x:600 keeps the DOOM card clear of the auto-spawned TIMELORDE
+        // singleton (top-left, ~24,24 → 384,564). At x:120 the TIMELORDE display
+        // canvas overlapped the DOOM card and INTERCEPTED the Join/host button
+        // clicks — a `joinBtn.click()` retried until the test timed out (the
+        // residual @collab red on the attest run). Same offset the duplicate /
+        // sequencer @collab specs use to dodge the TIMELORDE occlusion (#759).
+        { id: NODE_ID, type: 'doom', position: { x: 600, y: 120 }, domain: 'video' },
       ], []);
       await cardHookReady(owner.page, NODE_ID);
 
@@ -805,7 +823,13 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         return;
       }
       await spawnPatch(owner.page, [
-        { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
+        // x:600 keeps the DOOM card clear of the auto-spawned TIMELORDE
+        // singleton (top-left, ~24,24 → 384,564). At x:120 the TIMELORDE display
+        // canvas overlapped the DOOM card and INTERCEPTED the Join/host button
+        // clicks — a `joinBtn.click()` retried until the test timed out (the
+        // residual @collab red on the attest run). Same offset the duplicate /
+        // sequencer @collab specs use to dodge the TIMELORDE occlusion (#759).
+        { id: NODE_ID, type: 'doom', position: { x: 600, y: 120 }, domain: 'video' },
       ], []);
       // Non-vacuous: the relay MUST deliver the owner-added node into the anon
       // invite-guest's __patch within budget (was a skip). The anon must land on

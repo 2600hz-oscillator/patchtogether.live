@@ -59,6 +59,16 @@ async function openTwoContexts(
 }
 
 test.describe('@collab awareness', () => {
+  // De-flake (consolidated #837+#841): every cross-context wait below uses the
+  // 20s SYNC_BUDGET_MS budget, and a test can chain several of them. The default
+  // 30s per-test timeout cannot contain even one 20s converge plus two-context
+  // setup, so a slow-but-correct sync trips the TEST timeout (not the assert) —
+  // exactly the residual @collab red. Give every test here the @collab-standard
+  // 120s ceiling so the sum of its SYNC_BUDGET_MS waits + setup fits with
+  // headroom. (A ceiling, not a sleep — a green test still finishes fast, so no
+  // CI wall-time delta on passing runs.)
+  test.setTimeout(120_000);
+
   // PRESENCE CONVERGENCE — the headline reliability assertion. The live bug
   // was that two browsers in one rack EACH showed "1/4 members" (each saw only
   // ITSELF in awareness). The Yjs doc synced fine but presence/awareness did

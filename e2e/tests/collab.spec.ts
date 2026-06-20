@@ -73,6 +73,12 @@ async function openTwoContexts(
 }
 
 test.describe('@collab', () => {
+  // De-flake (consolidated #837+#841): the cross-context waits use the 20s
+  // SYNC_BUDGET_MS; the default 30s test timeout can't contain them + 2-context
+  // setup, so a slow-but-correct sync trips the TEST timeout. Give the
+  // @collab-standard 120s ceiling (a ceiling, not a sleep — no CI delta on green).
+  test.setTimeout(120_000);
+
   test('sync: node added in A appears in B', async ({ browser }) => {
     const s = await openTwoContexts(browser);
     try {

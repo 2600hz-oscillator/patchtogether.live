@@ -111,6 +111,12 @@ async function snapshot(page: import('@playwright/test').Page): Promise<PatchSna
 }
 
 test.describe('@collab rackspace isolation', () => {
+  // De-flake (consolidated #837+#841): the cross-context waits use the 20s
+  // SYNC_BUDGET_MS; the default 30s test timeout can't contain them + 2-context
+  // setup, so a slow-but-correct sync trips the TEST timeout. Give the
+  // @collab-standard 120s ceiling (a ceiling, not a sleep — no CI delta on green).
+  test.setTimeout(120_000);
+
   test('mutating rackspace B does NOT leak into rackspace A (separate Hocuspocus rooms)', async ({
     browser,
   }) => {

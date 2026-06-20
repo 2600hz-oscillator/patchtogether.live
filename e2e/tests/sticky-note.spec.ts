@@ -119,6 +119,11 @@ test('sticky reconcile: no console errors when spawning a sticky-only patch', as
 });
 
 test('@collab sticky text edit in A appears in B', async ({ browser }) => {
+  // De-flake (consolidated #837+#841): the cross-context waits use the 20s
+  // SYNC_BUDGET_MS; the default 30s test timeout can't contain them + 2-context
+  // setup, so a slow-but-correct sync trips the TEST timeout. Give the
+  // @collab-standard 120s ceiling (a ceiling, not a sleep — no CI delta on green).
+  test.setTimeout(120_000);
   const rackspaceId = `sticky-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const ctxA = await browser.newContext();
   const ctxB = await browser.newContext();

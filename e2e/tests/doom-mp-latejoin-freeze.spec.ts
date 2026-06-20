@@ -232,8 +232,13 @@ test.describe('@collab DOOM multiplayer — late-join host freeze', () => {
       }
 
       // Owner adds the single shared DOOM node; anon sees it via Yjs node sync.
+      // x:600 keeps the DOOM card clear of the auto-spawned TIMELORDE singleton
+      // (top-left, ~24,24 → 384,564) — at x:120 the TIMELORDE display canvas
+      // overlaps the DOOM card and INTERCEPTS the anon's `joinBtn.click()` below
+      // (the click retries until the test times out — same class as the
+      // doom-mp-real anon-hot-join red on the attest run, #759 occlusion).
       const nodes: SpawnNode[] = [
-        { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
+        { id: NODE_ID, type: 'doom', position: { x: 600, y: 120 }, domain: 'video' },
       ];
       await spawnPatch(owner.page, nodes, []);
       // De-flake (consolidated #837+#841): formerly a "cross-context node sync
