@@ -241,6 +241,20 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (matrixmix-ydoc.test.ts), and the live-chain e2e (matrixmix.spec.ts:
   // spawn matrix + two modules → select axes → click cell → assert edge + dot).
   matrixMix: 'grid body is patch-dependent — solo-spawn shows only the axis dropdowns + a pick-a-module hint (no stable module-specific pixels). Covered by matrixmix-grid.test.ts + matrixmix-ydoc.test.ts + e2e/tests/matrixmix.spec.ts.',
+  // LAUNCHPAD CONTROL LEFT / RIGHT — meta control-surface cards that bind a
+  // physical Novation Launchpad pair to a clip-player. Like CONTROL SURFACE /
+  // ELECTRA, the card body is DEVICE-dependent (Pair / Bind state + a status
+  // line that varies with whether MIDI access + a paired pair exist — all
+  // absent in CI). The deterministic solo-spawn state is just the blurb + a
+  // "Pair Launchpads" button + a colour legend (no module-specific pixels worth
+  // pinning beyond the legend, which is itself driven by the live map constants
+  // exercised in the unit suite). Coverage: launchpad-sysex.test.ts (codec
+  // golden vectors), launchpad-map.test.ts (placement + RGB colour language),
+  // launchpad-control.test.ts (binding mode-machine), and the real-source-chain
+  // e2e launchpad-clip-launch.spec.ts (TIMELORDE → clipplayer → simulated pad →
+  // audible RMS). Same treatment as controlSurface/matrixMix (fully exempt).
+  launchpadControlLeft: 'meta control-surface card; body is device/binding-dependent (Pair/Bind state + status absent in CI), like controlSurface/electraControl. Covered by launchpad-sysex/map/control unit suites + the real-source-chain launchpad-clip-launch e2e (pad → audible RMS).',
+  launchpadControlRight: 'meta control-surface card; body is device/binding-dependent (Pair/Bind state + status absent in CI), like controlSurface/electraControl. Covered by launchpad-sysex/map/control unit suites + the real-source-chain launchpad-clip-launch e2e (pad → audible RMS).',
   // CLOUDS first-slice PR (#166): VRT baseline pending; ART + unit + E2E
   // provide coverage. Promote into MODULES + capture baselines on both
   // platforms in a follow-up PR.

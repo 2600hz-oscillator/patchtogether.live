@@ -1,4 +1,4 @@
-// packages/web/src/lib/grid/mext.ts
+// packages/web/src/lib/control/monome/mext.ts
 //
 // monome grid "mext" (monome extended) serial-protocol CODEC — PURE, hardware-
 // free. This is the byte layer the WebSerial grid-device (grid-device.svelte.ts)

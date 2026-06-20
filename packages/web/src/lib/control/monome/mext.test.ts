@@ -1,4 +1,4 @@
-// packages/web/src/lib/grid/mext.test.ts
+// packages/web/src/lib/control/monome/mext.test.ts
 //
 // Golden-vector unit tests for the mext codec. Hardware-free — these byte
 // vectors ARE the protocol contract; if a refactor changes a byte, the test

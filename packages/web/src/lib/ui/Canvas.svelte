@@ -211,6 +211,8 @@
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { installSimulatedMidiDevice, installSimulatedNoteDevice } from '$lib/midi/midi-learn.svelte';
+  import { installSimulatedLaunchpad } from '$lib/control/launchpad/launchpad-device.svelte';
+  import { bindLaunchpadToClip } from '$lib/control/launchpad/launchpad-control.svelte';
 
   // Stage B PR B-b: when mounted under /r/[id] (multi-user), the parent
   // passes the current user's id so per-user layouts are scoped correctly.
@@ -4542,6 +4544,27 @@
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__midiTestInstall = () => {
         installSimulatedMidiDevice();
+        return true;
+      };
+      // Simulated LAUNCHPAD pair for e2e: installs an in-memory L+R Launchpad
+      // (no Web MIDI prompt), binds the pair to a clip-player node, and returns
+      // a driver that pushes pad/CC presses through the SAME decode/dispatch path
+      // real hardware uses (so the real-source-chain spec drives a pad → clip
+      // launch → audible RMS). DEV-only — stripped from prod bundles.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__launchpadTestInstall = async (clipNodeId: string) => {
+        const sim = await installSimulatedLaunchpad();
+        bindLaunchpadToClip(clipNodeId);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).__launchpadSim = {
+          // press a clip pad on the LEFT (matrix) unit: x=slot, y=lane.
+          pressL: (x: number, y: number) => sim.press('L', x, y),
+          releaseL: (x: number, y: number) => sim.release('L', x, y),
+          pressR: (x: number, y: number) => sim.press('R', x, y),
+          releaseR: (x: number, y: number) => sim.release('R', x, y),
+          ccR: (cc: number, value: number) => sim.cc('R', cc, value),
+          ccL: (cc: number, value: number) => sim.cc('L', cc, value),
+        };
         return true;
       };
       // midi-learn singleton API for e2e. The midi REGRESSION spec needs to

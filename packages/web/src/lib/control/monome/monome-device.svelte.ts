@@ -1,4 +1,4 @@
-// packages/web/src/lib/grid/grid-device.svelte.ts
+// packages/web/src/lib/control/monome/monome-device.svelte.ts
 //
 // monome grid WebSerial device singleton — the browser-native, NO-helper grid
 // I/O layer (the clip-launcher's hardware side). One `navigator.serial`

@@ -1,4 +1,4 @@
-// packages/web/src/lib/grid/kria-grid.test.ts
+// packages/web/src/lib/control/monome/kria-grid.test.ts
 //
 // Integration test for the grid↔KRIA binding, driven through the REAL
 // grid-device (simulated transport) + the REAL graph store. Mocks only the
@@ -21,7 +21,7 @@ vi.mock('$lib/audio/scheduler-clock', () => ({
 }));
 
 import { patch as livePatch } from '$lib/graph/store';
-import { installSimulatedGrid, __test_resetGrid, type SimulatedGrid } from './grid-device.svelte';
+import { installSimulatedGrid, __test_resetGrid, type SimulatedGrid } from './monome-device.svelte';
 import {
   bindGridToKria,
   unbindKriaGrid,

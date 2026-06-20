@@ -1,6 +1,6 @@
-// packages/web/src/lib/grid/grid-clip-binding.svelte.ts
+// packages/web/src/lib/control/monome/monome-control.svelte.ts
 //
-// Binds the monome grid (grid-device) to ONE focused 8-lane clip-player node.
+// Binds the monome grid (monome-device) to ONE focused 8-lane clip-player node.
 //
 // SESSION mode (default):
 //   - clip pad → launch that clip in its lane (or stop the lane if it's the one
@@ -26,7 +26,7 @@
 
 import { patch as livePatch, ydoc } from '$lib/graph/store';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
-import { onKey, setFrame, isConnected, type GridKeyEvent } from './grid-device.svelte';
+import { onKey, setFrame, isConnected, type GridKeyEvent } from './monome-device.svelte';
 import {
   padToClipIndex,
   stopLaneForPad,
@@ -55,7 +55,7 @@ import {
   computeSessionLeds,
   computeEditLeds,
   computeLengthEditLeds,
-} from './grid-clip-map';
+} from './monome-map';
 import {
   CLIP_LANES,
   clipIndex,

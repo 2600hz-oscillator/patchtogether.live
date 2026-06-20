@@ -3,7 +3,7 @@
   // A clean-room reimagining of monome Kria's UX: 4 tracks, a TRIG/NOTE/OCTAVE/
   // DURATION page selector, a 16-step editor for the selected track+page, a
   // 16-slot pattern strip with quantized cueing, and BPM/RUN transport. A
-  // monome grid drives the SAME edits via lib/grid/kria-grid (capability-gated).
+  // monome grid drives the SAME edits via lib/control/monome/kria-grid (capability-gated).
   //
   // All ports live in the shared yellow drill-down <PatchPanel> (post-#767 hard
   // standard — NO raw side <Handle> jacks). Port ids are byte-identical to
@@ -41,13 +41,13 @@
     connect as gridConnect,
     isConnected as gridIsConnected,
     connectedRune as gridConnectedRune,
-  } from '$lib/grid/grid-device.svelte';
+  } from '$lib/control/monome/monome-device.svelte';
   import {
     bindGridToKria,
     unbindKriaGrid,
     boundKriaNode,
     bindingRune,
-  } from '$lib/grid/kria-grid.svelte';
+  } from '$lib/control/monome/kria-grid.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);

@@ -155,6 +155,8 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
 
   // ── meta domain ──
   electraControl: { size: '3u', hp: 2 }, // 519×360px
+  launchpadControlLeft: { size: '3u', hp: 2 }, // ~300px — Launchpad L (clip matrix) control card
+  launchpadControlRight: { size: '3u', hp: 2 }, // ~320px — Launchpad R (deck/editor) control card
 
   // ── video domain ──
   '4plexvid': { size: '3u', hp: 2 }, // 463×280px

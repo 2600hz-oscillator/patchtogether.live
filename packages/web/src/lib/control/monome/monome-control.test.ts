@@ -1,4 +1,4 @@
-// packages/web/src/lib/grid/grid-clip-binding.test.ts
+// packages/web/src/lib/control/monome/monome-control.test.ts
 //
 // Integration test for the grid↔clip-player binding, driven through the REAL
 // grid-device (simulated transport) + the REAL graph store. Mocks only the
@@ -20,14 +20,14 @@ vi.mock('$lib/audio/scheduler-clock', () => ({
 }));
 
 import { patch as livePatch } from '$lib/graph/store';
-import { installSimulatedGrid, __test_resetGrid, type SimulatedGrid } from './grid-device.svelte';
+import { installSimulatedGrid, __test_resetGrid, type SimulatedGrid } from './monome-device.svelte';
 import {
   bindGridToClip,
   unbindGrid,
   boundClipNode,
   __test_resetBinding,
   __test_mode,
-} from './grid-clip-binding.svelte';
+} from './monome-control.svelte';
 import {
   clipIndexToPad,
   editRowToMidi,
@@ -51,7 +51,7 @@ import {
   LENGTH_EDIT_PAD,
   LED_LOADED,
   LED_PLAYING,
-} from './grid-clip-map';
+} from './monome-map';
 import {
   clipIndex,
   defaultNoteClip,
