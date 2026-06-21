@@ -394,6 +394,10 @@ uniform float uLumaPeak;    // 0..1 — decode-side unsharp on Y
 uniform float uTbc;         // 0..1 — line-relock + timebase-jitter correction
 uniform float uBurstStarve; // 0..1 — colour-burst starvation (decoder loses lock)
 uniform float uHue;         // -1..1 — receiver TINT (demod-axis rotation)
+uniform float uBendC;       // -1..1 — CRUSH: posterise the DECODED picture (the
+                            //   composite-domain crush in PASS 2 is smoothed by
+                            //   this pass's horizontal LP, so the visible bit-
+                            //   crush is applied here on the recovered RGB)
 uniform float uTime;        // for the analog timebase wobble TBC corrects
 
 const float PI = 3.14159265;
@@ -517,6 +521,15 @@ void main() {
   }
 
   vec3 rgb = yiq2rgb(vec3(Y, I, Q));
+  // C — CRUSH (visible): posterise the recovered picture. The PASS-2 composite
+  // crush survives only as subtle banding once this pass's horizontal LP averages
+  // it out, so apply the bit-crush here on RGB where it's unmistakable. 256 levels
+  // (≈no-op) at 0 → 3 levels at full.
+  float cc = abs(clamp(uBendC, -1.0, 1.0));
+  if (cc > 1e-4) {
+    float steps = floor(mix(256.0, 3.0, cc) + 0.5);
+    rgb = floor(rgb * steps + 0.5) / steps;
+  }
   outColor = vec4(rgb, 1.0);
 }`;
 
@@ -832,6 +845,7 @@ export const b3ntb0xDef: VideoModuleDef = {
       uTbc: gl.getUniformLocation(decodeProgram, 'uTbc'),
       uBurstStarve: gl.getUniformLocation(decodeProgram, 'uBurstStarve'),
       uHue: gl.getUniformLocation(decodeProgram, 'uHue'),
+      uBendC: gl.getUniformLocation(decodeProgram, 'uBendC'),
       uTime: gl.getUniformLocation(decodeProgram, 'uTime'),
     };
     const cU = {
@@ -875,7 +889,14 @@ export const b3ntb0xDef: VideoModuleDef = {
       draw(frame) {
         const g = frame.gl;
         const inputTex = frame.getInputTexture(node.id, 'in');
-        const tSec = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startWallMs) / 1000;
+        // Subcarrier phase + sync wobble advance with uTime, making the decoded
+        // frame change every tick. A test can PIN uTime via a global so a
+        // per-control pixel diff is deterministic (no carrier-phase drift between
+        // captures); production leaves it unset → live wall-clock time.
+        const freezeT = (globalThis as unknown as { __b3ntb0xFreezeTimeSec?: number }).__b3ntb0xFreezeTimeSec;
+        const tSec = typeof freezeT === 'number' && Number.isFinite(freezeT)
+          ? freezeT
+          : ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startWallMs) / 1000;
 
         // MIRROR gate rising edge flips the matching mirror boolean.
         if (b3ntb0xMirrorGateTick(mirrorGate.x, params.mirrorXGate)) {
@@ -937,6 +958,7 @@ export const b3ntb0xDef: VideoModuleDef = {
         g.uniform1f(dU.uTbc, clamp01(params.tbc));
         g.uniform1f(dU.uBurstStarve, clamp01(params.burst_starve));
         g.uniform1f(dU.uHue, clampSym(params.hue));
+        g.uniform1f(dU.uBendC, clampSym(params.bend_c));
         g.uniform1f(dU.uTime, tSec);
         ctx.drawFullscreenQuad();
 
