@@ -56,6 +56,10 @@ export interface CompositeVrtScene {
   /** Set up the rack: spawn modules + patch cables + apply any harness
    *  hooks. The page is already on `/` with the dev globals available. */
   setup: (page: Page) => Promise<void>;
+  /** SvelteFlow node-card selectors the spec must wait for before snapping.
+   *  Defaults to the NIBBLES→SCOPE pair (the original composite) when omitted,
+   *  so existing scenes keep working unchanged. */
+  cardSelectors?: string[];
 }
 
 // ---- NIBBLES → SCOPE 5-step CV sweep -------------------------------------
@@ -178,6 +182,131 @@ function setupAt(length: number): (page: Page) => Promise<void> {
   };
 }
 
+// ---- VCO → SEQUENCER → SCOPE : baked-in gate-sampled S&H -------------------
+//
+// Shows the new S&H toggle's effect on the pitch CV, side-by-side: a SEQUENCER
+// playing a SPARSE pattern (a note then a rest) → a SCOPE's ch1 (the pitch CV
+// trace) AND → an analogVco's pitch, with the VCO's sine → ch2 (the audible
+// waveform). Captured at a moment landing in a REST:
+//   • S&H ON  → the pitch CV (ch1) HOLDS the note's V/oct across the rest
+//     (the trace sits high), and the sequencer card's S&H badge is lit.
+//   • S&H OFF → the pitch CV (ch1) collapses to 0 on the rest (trace centred),
+//     and the badge is grey.
+// The two baselines together make the held-vs-continuous difference visible.
+//
+// Determinism: a slow BPM + a fixed run window lands the suspend inside a rest;
+// the AudioContext is then SUSPENDED so the held ConstantSourceNode offset (and
+// thus the SCOPE analyser's last buffered samples) stays pixel-stable.
+
+function setupSnhSeqScope(snh: number): (page: Page) => Promise<void> {
+  return async (page) => {
+    await spawnPatch(
+      page,
+      [
+        // Slow BPM (60) so each 16th step ≈ 0.25 s — long enough that a fixed
+        // run window reliably lands the suspend inside the rest step.
+        {
+          id: 'seq',
+          type: 'sequencer',
+          position: { x: 60, y: 70 },
+          params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh },
+        },
+        { id: 'vco', type: 'analogVco', position: { x: 470, y: 70 } },
+        {
+          id: 'sc',
+          type: 'scope',
+          position: { x: 760, y: 70 },
+          domain: 'audio',
+          params: { ch1Range: 1 },
+        },
+      ],
+      [
+        // pitch (polyPitchGate) → SCOPE ch1: the held pitch CV trace.
+        {
+          id: 'e_pitch_sc',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'sc', portId: 'ch1' },
+          sourceType: 'polyPitchGate',
+          targetType: 'audio',
+        },
+        // pitch → VCO pitch (the real source chain).
+        {
+          id: 'e_pitch_vco',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'vco', portId: 'pitch' },
+          sourceType: 'polyPitchGate',
+          targetType: 'pitch',
+        },
+        // VCO sine → SCOPE ch2 (the audible waveform alongside the CV).
+        {
+          id: 'e_vco_sc',
+          from: { nodeId: 'vco', portId: 'sine' },
+          to: { nodeId: 'sc', portId: 'ch2' },
+          sourceType: 'audio',
+          targetType: 'audio',
+        },
+      ],
+    );
+
+    // Sparse pattern: step 0 = C5 (gate on), step 1 = rest.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        w.__patch.nodes['seq'].data = {
+          steps: [
+            { on: true, midi: 72, chord: 'mono' }, // gated note
+            { on: false, midi: 72, chord: 'mono' }, // rest
+          ],
+        };
+      });
+    });
+
+    // Run a fixed window so the playhead reaches the REST step, then suspend.
+    // 60 BPM, 2 steps, 16th → 0.25 s/step, 0.5 s/loop. ~0.7 s lands in a rest.
+    await page.waitForTimeout(700);
+    await page.evaluate(async () => {
+      const w = globalThis as unknown as { __engine?: () => { ctx: AudioContext } | null };
+      const eng = w.__engine?.();
+      if (!eng) return;
+      try { await eng.ctx.suspend(); } catch { /* already suspended */ }
+    });
+    // One rAF so the last pre-suspend frame finishes rendering.
+    await page.evaluate(
+      () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+    );
+  };
+}
+
+const SNH_SEQ_SCOPE_CARDS = [
+  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-analogVco',
+  '.svelte-flow__node-scope',
+];
+
+const SNH_COMPOSITE_SCENES: CompositeVrtScene[] = [
+  {
+    id: 'snh-seq-scope-on',
+    label: 'VCO→SEQUENCER→SCOPE: S&H ON (mid-hold)',
+    blurb:
+      'Sequencer (sparse pattern, S&H ON) → SCOPE ch1: the pitch CV HOLDS the ' +
+      'note across the rest (trace stays high); ch2 = the VCO sine.',
+    setup: setupSnhSeqScope(1),
+    cardSelectors: SNH_SEQ_SCOPE_CARDS,
+  },
+  {
+    id: 'snh-seq-scope-off',
+    label: 'VCO→SEQUENCER→SCOPE: S&H OFF (continuous)',
+    blurb:
+      'Same sparse pattern with S&H OFF → SCOPE ch1: the pitch CV collapses to ' +
+      '0 on the rest (trace centred); the legacy continuous behavior.',
+    setup: setupSnhSeqScope(0),
+    cardSelectors: SNH_SEQ_SCOPE_CARDS,
+  },
+];
+
 /** All composite VRT scenes. Iterated by `vrt-composite.spec.ts`. */
 export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   {
@@ -210,4 +339,5 @@ export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
     blurb: 'NIBBLES.length_cv = +1.00 → SCOPE ch1 trace at its highest Y.',
     setup: setupAt(119),
   },
+  ...SNH_COMPOSITE_SCENES,
 ];

@@ -63,6 +63,9 @@
   let gateLength = $derived((void cardVersion, node?.params.gateLength ?? 0.6));
   let humanize   = $derived((void cardVersion, node?.params.humanize   ?? 0));
   let isPlaying  = $derived((void cardVersion, (node?.params.isPlaying ?? 0) >= 0.5));
+  // Gate-sampled S&H toggle (baked into the per-lane pitch CV; ON by default —
+  // the snh fallback supplies ON for old saves, no schemaVersion bump needed).
+  let snhOn      = $derived((void cardVersion, (node?.params.snh ?? 1) >= 0.5));
 
   // POLYSEQZ readers historically returned a variable-length array (mirrors
   // the persisted steps[] length verbatim). After pages-PR the card wants a
@@ -397,6 +400,19 @@
       data-testid={`polyseqz-play-${id}`}
       title={isPlaying ? 'Stop' : 'Play'}
     >{isPlaying ? '■' : '▶'}</button>
+    <!-- Gate-sampled S&H toggle — inline next to PLAY (the corner patch-trigger
+         owns the absolute top-right). ON by default. -->
+    <button
+      type="button"
+      class="snh-toggle"
+      class:on={snhOn}
+      data-testid={`polyseqz-snh-toggle`}
+      aria-pressed={snhOn}
+      title={snhOn
+        ? 'Sample & Hold ON — each lane\'s pitch latches to its gate edge (pinned to the un-jittered step time; gate keeps humanize). Click for continuous.'
+        : 'Sample & Hold OFF — legacy pre-gate-lead pitch write (can drift under humanize). Click to hold.'}
+      onclick={() => set('snh')(snhOn ? 0 : 1)}
+    >{snhOn ? 'S&H' : 'OFF'}</button>
   </header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
@@ -525,6 +541,26 @@
     background: var(--cable-gate);
     color: #1a1d23;
     border-color: var(--cable-gate);
+  }
+  /* Gate-sampled S&H toggle — inline in the centered header, next to PLAY. */
+  .snh-toggle {
+    height: 22px;
+    background: #2a2f3a;
+    border: 1px solid #404652;
+    color: var(--text);
+    border-radius: 3px;
+    font-size: 0.55rem;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 6px;
+    font-family: ui-monospace, monospace;
+  }
+  .snh-toggle:hover { border-color: #6a7282; }
+  .snh-toggle.on {
+    background: var(--cable-pitch);
+    color: #1a1d23;
+    border-color: var(--cable-pitch);
   }
   .page-nav-row {
     margin: 12px 22px 0;
