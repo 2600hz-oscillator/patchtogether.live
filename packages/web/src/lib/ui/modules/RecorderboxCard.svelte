@@ -9,8 +9,16 @@
   //     recorder encodes (we draw the engine canvas into it each rAF while
   //     armed — keeps the preview small + crisp while recording full-res).
   //   * Filename text field bound to node.data.filename (synced via Y.Doc).
-  //   * Record ON/OFF toggle (node.data.recording). ON starts streaming to
-  //     OPFS scratch; OFF finalizes + Save-As's the MP4.
+  //   * Record ON/OFF toggle (node.data.recording). ON picks a destination
+  //     FOLDER once (showDirectoryPicker), then auto-writes the recording into it
+  //     using the Filename box directly — NO per-save "Save As" prompt. The only
+  //     prompt is an OVERWRITE confirm if a file with the target name already
+  //     exists. The folder is remembered, so the next record needs no prompt.
+  //   * GoPro CHUNKING: a long take rolls to a NEW file every ~10 min, with a 5 s
+  //     AUDIO overlap between consecutive chunks. Chunks are named
+  //     FILENAME-CHUNK#-DATETIME.mp4 (RECORDING-001-…, RECORDING-002-…), unique +
+  //     Finder-sortable. (Firefox/Safari with no directory picker: each chunk
+  //     downloads via <a download> with its chunk name.)
   //   * "no H.264 encoder available" badge when the runtime can't encode
   //     (headless CI / some OSes) — Record disabled, never crashes.
   //   * Recover prompt on mount when a previous take was left mid-flight.
@@ -52,7 +60,14 @@
     canSaveViaPicker,
     type RecorderboxManifest,
   } from '$lib/video/recorderbox-store';
-  import { promptSaveDestination, streamToHandle } from '$lib/video/recorderbox-save-flow';
+  import {
+    promptSaveDestination,
+    streamToHandle,
+    promptSaveFolder,
+    fileExistsInDir,
+    fileHandleInDir,
+  } from '$lib/video/recorderbox-save-flow';
+  import { chunkFileName } from '$lib/video/recorderbox-chunk-name';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -83,6 +98,15 @@
   let recState = $state<RecorderState>('idle');
   let elapsed = $state(0);
   let recorder: RecorderboxRecorder | null = null;
+
+  // ── No-prompt save (Tweak 1) + GoPro chunking (Tweak 3) ──
+  // The destination FOLDER picked ONCE via showDirectoryPicker. Remembered in
+  // component state so subsequent records + every rolling chunk write into it
+  // with NO further prompt. Null until a folder is picked / on a no-picker
+  // browser (then the per-chunk <a download> fallback applies).
+  let saveFolder: FileSystemDirectoryHandle | null = $state(null);
+  // The last chunk file the recorder reported saving (status line / a11y).
+  let lastSavedChunk = $state<string | null>(null);
 
   // Recovery prompt state.
   let recoverable = $state<RecorderboxManifest[]>([]);
@@ -201,14 +225,49 @@
 
     starting = true;
     try {
-      // PROMPT for the destination FIRST — the Record toggle is the user gesture.
-      // 'cancel' → user dismissed the picker → do NOT start; revert the toggle.
-      const dest = await promptSaveDestination(filename);
-      if (dest === 'cancel') {
-        setData('recording', false);
-        return;
+      // ── Resolve the destination FOLDER (Tweak 1: no per-save prompt) ──
+      // Pick a folder ONCE; subsequent records + every rolling chunk auto-write
+      // into it. If we already remember one (re-verify permission) → use it
+      // silently. Else prompt once (the Record press is the user gesture).
+      //   * a dir handle → write FILENAME-CHUNK#-DATETIME chunks into it.
+      //   * null         → no directory picker (Firefox/Safari): per-chunk
+      //                    <a download> fallback (the recorder uses saveBytes).
+      //   * 'cancel'     → user dismissed → do NOT record; revert the toggle.
+      let dirHandle: FileSystemDirectoryHandle | null = saveFolder;
+      if (dirHandle && !(await ensureHandleWritePermission(dirHandle))) {
+        dirHandle = null; // permission lapsed — re-pick below.
       }
-      // The user may have flipped Record OFF while the picker was open.
+      if (!dirHandle) {
+        const picked = await promptSaveFolder();
+        if (picked === 'cancel') {
+          setData('recording', false);
+          return;
+        }
+        // The user may have flipped Record OFF while the picker was open.
+        if (!recording) return;
+        if (picked) {
+          dirHandle = picked;
+          saveFolder = picked; // remember → no prompt next time.
+        }
+        // picked === null → no FS-Access: dirHandle stays null → download path.
+      }
+
+      // ── OVERWRITE prompt (Tweak 1: the ONLY remaining prompt) ──
+      // Chunk names carry a unique DATETIME so a real collision is near-impossible
+      // — this is a genuine safety net. Check the FIRST chunk's resolved name.
+      if (dirHandle) {
+        const firstName = chunkFileName(filename, 1, new Date());
+        if (await fileExistsInDir(dirHandle, firstName)) {
+          const ok =
+            typeof confirm === 'function'
+              ? confirm(`"${firstName}" already exists. Overwrite?`)
+              : true;
+          if (!ok) {
+            setData('recording', false);
+            return;
+          }
+        }
+      }
       if (!recording) return;
 
       const ew = ve.canvas.width || ENGINE_W;
@@ -255,7 +314,9 @@
         audioCapture,   // PREFERRED — sample-accurate worklet tap (lossless).
         audioTrack,     // FALLBACK — legacy MediaStreamAudioTrackSource path.
         filename,
-        destHandle: dest, // null on Firefox/Safari → stop() downloads instead.
+        // FOLDER model: chunks auto-write into the picked folder under their
+        // FILENAME-CHUNK#-DATETIME names; null → per-chunk <a download> fallback.
+        dirHandle,
         videoCodec: profile.videoCodec,
         videoBitrate: profile.videoBitrate,
         keyFrameInterval: profile.keyFrameInterval,
@@ -265,6 +326,7 @@
         height: eh,
         saveBytes,
         onStateChange: (s) => { recState = s; },
+        onChunkSaved: ({ name }) => { lastSavedChunk = name; },
       });
       try {
         await recorder.start();
@@ -305,10 +367,23 @@
 
   async function recoverOne(m: RecorderboxManifest) {
     try {
-      // 1) Persisted destination handle (Chromium): re-acquire write permission
-      //    and STREAM the partial straight back to the ORIGINAL chosen path with
-      //    the correct name — no re-picking. (requestPermission needs a user
-      //    gesture: this runs from the recovery Save button.)
+      // 1a) Persisted destination FOLDER (Chromium, the folder model): re-acquire
+      //     write permission, resolve the chunk's file handle INSIDE the folder
+      //     (FILENAME-CHUNK#-DATETIME.mp4), and STREAM the partial straight back —
+      //     no re-picking. (requestPermission needs a user gesture: the Save btn.)
+      if (m.dirHandle && (await ensureHandleWritePermission(m.dirHandle))) {
+        const name = m.chunkName ?? sanitizeRecordingFilename(m.filename, 'mp4');
+        const fh = await fileHandleInDir(m.dirHandle, name);
+        const written = await streamToHandle(m.opfsPath, fh);
+        if (written > 0) {
+          await retireRecovery(m.opfsPath);
+          await scanRecoverable();
+          return;
+        }
+      }
+
+      // 1b) Legacy persisted single-file handle (Chromium): re-acquire write
+      //     permission + stream the partial back to the original chosen path.
       if (m.destHandle && (await ensureHandleWritePermission(m.destHandle))) {
         const written = await streamToHandle(m.opfsPath, m.destHandle);
         if (written > 0) {
@@ -321,10 +396,12 @@
 
       // 2) Fallback (handle gone / permission denied / Firefox/Safari): prompt
       //    for a NEW destination if the picker is available + stream to it; else
-      //    download the bytes. Either way the suggested name is the right one.
+      //    download the bytes. Either way the suggested name is the chunk name
+      //    (FILENAME-CHUNK#-DATETIME.mp4) when one was recorded.
+      const suggestedName = m.chunkName ?? sanitizeRecordingFilename(m.filename, 'mp4');
       const dest =
-        m.destHandle == null && canSaveViaPicker()
-          ? await promptSaveDestination(m.filename)
+        m.dirHandle == null && m.destHandle == null && canSaveViaPicker()
+          ? await promptSaveDestination(suggestedName)
           : null;
       if (dest && dest !== 'cancel') {
         await streamToHandle(m.opfsPath, dest);
@@ -335,7 +412,7 @@
       } else {
         const bytes = await readOpfsBytes(m.opfsPath);
         if (bytes && bytes.byteLength > 0) {
-          await saveBytes(bytes, m.filename, m.mime);
+          await saveBytes(bytes, suggestedName, m.mime);
         }
       }
       await retireRecovery(m.opfsPath);
@@ -464,6 +541,12 @@
     {:else if support.checked && !support.opfs}
       <span class="badge subtle" data-testid="recorderbox-no-opfs">crash-recovery unavailable (no OPFS)</span>
     {/if}
+
+    <!-- Chunk status: only shown WHILE recording once a chunk has rolled+saved,
+         so the idle card (the VRT baseline state) is unchanged. -->
+    {#if recState === 'recording' && lastSavedChunk}
+      <span class="badge subtle" data-testid="recorderbox-chunk-status">saved {lastSavedChunk}</span>
+    {/if}
   </div>
 
   {#if recoverable.length > 0}
@@ -471,7 +554,7 @@
       <p class="recover-title">Recover unsaved recording?</p>
       {#each recoverable as m (m.opfsPath)}
         <div class="recover-row">
-          <span class="recover-name">{m.filename}.mp4</span>
+          <span class="recover-name">{m.chunkName ?? `${m.filename}.mp4`}</span>
           <button class="recover-save nodrag" onclick={() => recoverOne(m)} data-testid="recorderbox-recover-save">Save</button>
           <button class="recover-discard nodrag" onclick={() => discardOne(m)} data-testid="recorderbox-recover-discard">Discard</button>
         </div>

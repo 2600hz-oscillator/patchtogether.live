@@ -411,6 +411,77 @@ test('RECORDERBOX SIZE selector defaults to BALANCED + maps to a smaller profile
   expect(errors.filter((e) => !e.includes('favicon')), 'no page errors').toEqual([]);
 });
 
+// ── NAME-BOX-DIRECT SAVE (folder model) — STRUCTURAL, CI-safe ──
+//
+// Tweak 1: pressing RECORD picks a destination FOLDER once (showDirectoryPicker)
+// and then auto-writes using the FILE box — there is NO per-record "Save As"
+// file-picker prompt. We can't drive a real recording on CI (no OS H.264
+// encoder), but we CAN assert the no-prompt contract structurally: stub BOTH
+// pickers, arm Record, and assert the DIRECTORY picker is what the card calls
+// (never the single-file save picker). Needs no encoder.
+test('RECORDERBOX RECORD picks a FOLDER (no per-save file prompt)', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(page, [
+    { id: 'rec', type: 'recorderbox', position: { x: 200, y: 80 }, domain: 'video' },
+  ]);
+  await expect(page.locator('[data-testid="recorderbox-card"]')).toBeVisible();
+
+  // Stub both pickers + count which one the card calls. The directory picker
+  // returns a fake folder handle (getFileHandle returns a no-op writable); the
+  // file picker counter must stay 0 (the regression: a per-save "Save As").
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __pick?: { dir: number; file: number };
+      showDirectoryPicker?: unknown;
+      showSaveFilePicker?: unknown;
+    };
+    w.__pick = { dir: 0, file: 0 };
+    const fakeFile = {
+      createWritable: async () => ({ write: async () => {}, close: async () => {} }),
+      queryPermission: async () => 'granted',
+      requestPermission: async () => 'granted',
+    };
+    const fakeDir = {
+      getFileHandle: async () => fakeFile,
+      queryPermission: async () => 'granted',
+      requestPermission: async () => 'granted',
+    };
+    (w as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker = async () => {
+      (w.__pick as { dir: number }).dir++;
+      return fakeDir;
+    };
+    (w as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async () => {
+      (w.__pick as { file: number }).file++;
+      return fakeFile;
+    };
+  });
+
+  // Only proceed past the picker assertion if the runtime can record (else the
+  // card never calls startRecording — Record is disabled with the badge).
+  const supported = await h264EncodeSupported(page);
+  await setRecording(page, 'rec', true);
+
+  if (supported) {
+    // The card must have called the DIRECTORY picker, and NEVER the file picker.
+    await expect.poll(async () =>
+      page.evaluate(() => (globalThis as unknown as { __pick?: { dir: number } }).__pick?.dir ?? 0),
+    ).toBeGreaterThan(0);
+    const fileCalls = await page.evaluate(() => (globalThis as unknown as { __pick?: { file: number } }).__pick?.file ?? 0);
+    expect(fileCalls, 'no per-save "Save As" file-picker prompt — folder model').toBe(0);
+    await setRecording(page, 'rec', false);
+  } else {
+    // CI graceful-degrade: no encoder → Record disabled + badge, no picker call.
+    await expect(page.locator('[data-testid="recorderbox-no-encoder"]')).toBeVisible();
+  }
+
+  expect(errors.filter((e) => !e.includes('favicon')), 'no page errors').toEqual([]);
+});
+
 // QUARANTINED — task #105. CI's headless Chrome reports H.264 support via
 // VideoEncoder.isConfigSupported but produces ZERO encoded fragments (no real OS
 // encoder on the runner), so the "≥1 moof mid-record" assertion gets 0. Real
@@ -471,6 +542,32 @@ test.fixme('RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable M
   }
 
   // ── REAL ENCODING (dev Mac with H.264) ──
+  // The destination FOLDER picker can't be driven headlessly, so stub it BEFORE
+  // arming Record (the folder is picked at START in the folder model) and capture
+  // every byte written into the folder, keyed by the chunk file name the recorder
+  // resolves (FILENAME-CHUNK#-DATETIME.mp4). (NB: a real ~10-min chunk ROLL is
+  // owner-hardware-verified — CI can't sit through 10 min — but the chunk-NAMING +
+  // single-chunk delivery into the folder is exercised here.)
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __recCapture?: { size: number; names: string[] };
+      showDirectoryPicker?: unknown;
+    };
+    w.__recCapture = { size: 0, names: [] };
+    (w as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker = async () => ({
+      queryPermission: async () => 'granted',
+      requestPermission: async () => 'granted',
+      getFileHandle: async (name: string) => {
+        (w.__recCapture as { names: string[] }).names.push(name);
+        return {
+          createWritable: async () => ({
+            write: async (d: BufferSource) => { (w.__recCapture as { size: number }).size += (d as ArrayBufferView).byteLength ?? (d as ArrayBuffer).byteLength ?? 0; },
+            close: async () => {},
+          }),
+        };
+      },
+    });
+  });
   // Arm Record, let it run ~2.5s of real frames + audio, then stop.
   await setRecording(page, 'rec', true);
   // Indicator confirms the recorder actually started.
@@ -494,27 +591,18 @@ test.fixme('RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable M
   expect(truncSniff.ftyp, 'truncated scratch still has ftyp').toBe(true);
   expect(truncSniff.moof, 'truncated scratch still has ≥1 playable moof').toBeGreaterThanOrEqual(1);
 
-  // Stop (finalize). The Save-As picker can't be driven headlessly, so we
-  // override showSaveFilePicker to capture the finalized bytes instead.
-  await page.evaluate(() => {
-    const w = globalThis as unknown as {
-      __recCapture?: { size: number };
-      showSaveFilePicker?: unknown;
-    };
-    w.__recCapture = { size: 0 };
-    (w as unknown as { showSaveFilePicker: unknown }).showSaveFilePicker = async (_o: unknown) => ({
-      createWritable: async () => ({
-        write: async (d: BufferSource) => { (w.__recCapture as { size: number }).size += (d as ArrayBufferView).byteLength ?? (d as ArrayBuffer).byteLength ?? 0; },
-        close: async () => {},
-      }),
-    });
-  });
+  // Stop (finalize). The finalized chunk is written into the picked folder under
+  // its FILENAME-CHUNK#-DATETIME.mp4 name (stubbed above).
   await setRecording(page, 'rec', false);
-  // Finalize + save round-trip.
+  // Finalize + folder-write round-trip.
   await expect(async () => {
     const cap = await page.evaluate(() => (globalThis as unknown as { __recCapture?: { size: number } }).__recCapture?.size ?? 0);
-    expect(cap, 'finalized MP4 was written to the save target').toBeGreaterThan(0);
+    expect(cap, 'finalized MP4 was written into the destination folder').toBeGreaterThan(0);
   }).toPass({ timeout: 15_000 });
+  // The single chunk was named RECORDING-001-<datetime>.mp4 (chunk naming).
+  const names = await page.evaluate(() => (globalThis as unknown as { __recCapture?: { names: string[] } }).__recCapture?.names ?? []);
+  expect(names.length, 'one chunk delivered for a short take').toBeGreaterThanOrEqual(1);
+  expect(names[0], 'chunk name is FILENAME-001-DATETIME.mp4').toMatch(/-001-\d{8}-\d{6}\.mp4$/);
 
   expect(errors.filter((e) => !e.includes('favicon')), 'no page errors during record').toEqual([]);
 });

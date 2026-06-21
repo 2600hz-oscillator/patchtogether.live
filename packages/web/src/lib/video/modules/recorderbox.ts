@@ -15,31 +15,42 @@
 // the encoding pipeline and recorderbox-store.ts for the crash-recovery store.
 //
 // ── Controls (card) ─────────────────────────────────────────────────────────
-//   * Filename  — editable text field (node.data.filename); the suggested
-//                 name in the Save dialog + baked into the OPFS scratch path.
+//   * Filename  — editable text field (node.data.filename). Used DIRECTLY as the
+//                 base of the saved file name — NO per-save "Save As" prompt.
 //                 Synced to rack-mates via Y.Doc.
 //   * Record    — ON/OFF toggle styled like every other module button.
-//                 ON  = (Chromium) PROMPT for the output location up front via
-//                       showSaveFilePicker — the Record press is the user
-//                       gesture — then begin streaming frames+audio to OPFS
-//                       scratch. Cancelling the picker does NOT start recording
-//                       (the toggle reverts). The chosen FileSystemFileHandle is
-//                       persisted to the recovery manifest. (Firefox/Safari with
-//                       no picker: record straight to OPFS, no prompt.)
-//                 OFF = finalize the MP4, then STREAM the OPFS scratch into the
-//                       chosen handle in chunks (correct name at the chosen
-//                       path; never a full in-memory read). No-handle browsers
-//                       download the bytes via <a download> with the right name.
+//                 ON  = (Chromium) pick a destination FOLDER once via
+//                       showDirectoryPicker (the Record press is the user
+//                       gesture), then stream frames+audio to OPFS scratch and
+//                       AUTO-write the finished file(s) into that folder using the
+//                       Filename box — no per-save prompt. The folder is
+//                       remembered, so the next record needs no prompt. The ONLY
+//                       prompt is an OVERWRITE confirm if a file with the target
+//                       name already exists. Cancelling the folder picker does NOT
+//                       start recording. (Firefox/Safari with no directory picker:
+//                       record to OPFS, then per-chunk <a download>.)
+//                 OFF = finalize the current chunk → remux to a flat (moov-based)
+//                       MP4 → write it into the folder under its chunk name.
+//   * Chunking  — a long take ROLLS to a NEW file every ~10 min, with a 5 s AUDIO
+//                 OVERLAP between consecutive chunks (the last 5 s of chunk N is
+//                 duplicated as the start of chunk N+1). Chunks are named
+//                 FILENAME-CHUNK#-DATETIME.mp4 (RECORDING-001-…, RECORDING-002-…),
+//                 unique + Finder-sortable. A take under ~10 min is a single
+//                 RECORDING-001-<datetime>.mp4.
+//   * Timing    — video frames are encoded at a CONSTANT frame rate (PTS on an
+//                 even index/fps grid), not off jittery wall-clock time. This
+//                 fixes the macOS Preview/QuickTime "slow-motion" artifact that an
+//                 irregular (variable-rate) PTS stream produced.
 //   * (badge)   — "no H.264 encoder available" when the runtime can't encode
 //                 H.264 (headless CI, some OSes); Record is disabled, never
 //                 crashes.
 //   * Recover   — on mount, if a previous recording was left mid-flight
 //                 (tab crash before stop), the card offers "recover unsaved
 //                 recording?" — a fragmented MP4 is playable from whatever
-//                 fragments reached disk, so the take is not lost. If a
-//                 destination handle was persisted at start, Save re-requests
-//                 write permission and streams the partial straight back to the
-//                 ORIGINAL chosen path with the correct name (no re-picking);
+//                 fragments reached disk, so the take is not lost. If the
+//                 destination FOLDER was persisted at start, Save re-requests
+//                 write permission and streams the partial straight back into it
+//                 under the chunk's FILENAME-CHUNK#-DATETIME name (no re-picking);
 //                 otherwise it falls back to a picker/download with the right
 //                 suggested filename.
 //
