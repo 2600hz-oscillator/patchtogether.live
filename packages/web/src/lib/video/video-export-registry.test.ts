@@ -20,13 +20,39 @@ describe('video-export-registry', () => {
     expect(registeredVideoExportNodeIds()).toEqual(['v2']);
   });
 
-  it('resolveAll collects bytes from every successful resolver', async () => {
+  it('resolveAll collects bytes from every successful resolver (single-result, slot 0)', async () => {
     registerVideoExport('v1', async () => ({ bytes: new Uint8Array([1, 2, 3]), name: 'a.mp4' }));
     registerVideoExport('v2', async () => ({ bytes: new Uint8Array([4, 5]), name: 'b.mp4' }));
     const out = await resolveAllVideoExports();
-    const byNode = Object.fromEntries(out.map((r) => [r.nodeId, { bytes: Array.from(r.bytes), name: r.name }]));
-    expect(byNode['v1']).toEqual({ bytes: [1, 2, 3], name: 'a.mp4' });
-    expect(byNode['v2']).toEqual({ bytes: [4, 5], name: 'b.mp4' });
+    const byNode = Object.fromEntries(out.map((r) => [r.nodeId, { bytes: Array.from(r.bytes), name: r.name, slot: r.slot }]));
+    // A single result with no slot defaults to slot 0 (single-video back-compat).
+    expect(byNode['v1']).toEqual({ bytes: [1, 2, 3], name: 'a.mp4', slot: 0 });
+    expect(byNode['v2']).toEqual({ bytes: [4, 5], name: 'b.mp4', slot: 0 });
+  });
+
+  it('resolveAll FLATTENS a multi-slot resolver to one entry per populated slot (VIDEOVARISPEED 7 videos)', async () => {
+    // A VIDEOVARISPEED card returns an ARRAY of per-slot results. Each must
+    // surface as its own media entry, tagged with its slot index — the Fix B
+    // repair (before this, only slot 0 travelled into the .ptperf).
+    registerVideoExport('vvs', async () =>
+      Array.from({ length: 7 }, (_, i) => ({ bytes: new Uint8Array([i, i + 1]), name: `s${i}.mp4`, slot: i })),
+    );
+    // An empty slot inside the array is skipped (0-byte), not emitted.
+    registerVideoExport('vvs2', async () => [
+      { bytes: new Uint8Array([9]), name: 'kept.mp4', slot: 2 },
+      { bytes: new Uint8Array(0), name: 'empty.mp4', slot: 5 },
+    ]);
+    const out = await resolveAllVideoExports();
+    const vvs = out.filter((r) => r.nodeId === 'vvs').sort((a, b) => a.slot - b.slot);
+    expect(vvs).toHaveLength(7);
+    for (let i = 0; i < 7; i++) {
+      expect(vvs[i]!.slot).toBe(i);
+      expect(vvs[i]!.name).toBe(`s${i}.mp4`);
+      expect(Array.from(vvs[i]!.bytes)).toEqual([i, i + 1]);
+    }
+    const vvs2 = out.filter((r) => r.nodeId === 'vvs2');
+    expect(vvs2, 'empty slot dropped, populated slot kept').toHaveLength(1);
+    expect(vvs2[0]!.slot).toBe(2);
   });
 
   it('skips a resolver that returns null, throws, or yields empty bytes', async () => {

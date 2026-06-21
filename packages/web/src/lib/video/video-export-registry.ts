@@ -15,14 +15,30 @@
 // it to a module-level map so the top-level "Export performance" handler — which
 // lives in Canvas, not in any one card — can gather bytes across ALL videobox
 // cards on the rack. Dependency-free + DOM-free so it unit-tests cleanly.
+//
+// MULTI-SLOT (Fix B): VIDEOVARISPEED has a 7-slot "Load multiple…" selector,
+// each slot a SEPARATE local video whose bytes live ONLY in a per-slot object
+// URL (never on node.data — only per-slot fileMeta syncs). The single-result
+// resolver dropped slots 1..6 from the portable .zip (only slot 0 travelled),
+// so a perf with 7 videos lost 6 of them. A resolver may therefore return an
+// ARRAY of per-slot results, each tagged with its `slot` index. The single
+// VIDEOBOX path keeps returning ONE result (slot defaults to 0) — back-compat.
 
 /** Resolves a node's currently-loaded video to raw bytes + a filename, or null
- *  when nothing is loaded (the resolver itself decides; e.g. object URL gone). */
+ *  when nothing is loaded (the resolver itself decides; e.g. object URL gone).
+ *  `slot` identifies the asset slot (0 for the single-video VIDEOBOX path; 0..6
+ *  for the VIDEOVARISPEED 7-slot selector). Defaults to 0 when omitted. */
 export interface VideoExportResult {
   bytes: Uint8Array;
   name: string;
+  /** Asset slot index (0..6). Omitted ⇒ slot 0 (single-video back-compat). */
+  slot?: number;
 }
-export type VideoExportResolver = () => Promise<VideoExportResult | null>;
+/** A resolver yields either a single slot's bytes (single-video VIDEOBOX) or an
+ *  array of per-slot results (the VIDEOVARISPEED 7-slot selector). */
+export type VideoExportResolver = () => Promise<
+  VideoExportResult | VideoExportResult[] | null
+>;
 
 const resolvers = new Map<string, VideoExportResolver>();
 
@@ -43,19 +59,24 @@ export function registeredVideoExportNodeIds(): string[] {
 }
 
 /**
- * Resolve bytes for every registered node. Returns one entry per node that
- * successfully yielded bytes (a resolver returning null / throwing is skipped,
- * so a torn-down URL doesn't abort the whole export). Pure orchestration — the
- * resolvers do the I/O.
+ * Resolve bytes for every registered node, FLATTENED to one entry PER POPULATED
+ * SLOT. A resolver returning null / throwing / yielding empty bytes is skipped,
+ * so a torn-down URL doesn't abort the whole export. Pure orchestration — the
+ * resolvers do the I/O. Each entry carries its `slot` (0 for single-video).
  */
 export async function resolveAllVideoExports(): Promise<
-  Array<{ nodeId: string; bytes: Uint8Array; name: string }>
+  Array<{ nodeId: string; slot: number; bytes: Uint8Array; name: string }>
 > {
-  const out: Array<{ nodeId: string; bytes: Uint8Array; name: string }> = [];
+  const out: Array<{ nodeId: string; slot: number; bytes: Uint8Array; name: string }> = [];
   for (const [nodeId, resolve] of resolvers) {
     try {
       const r = await resolve();
-      if (r && r.bytes.length > 0) out.push({ nodeId, bytes: r.bytes, name: r.name });
+      if (!r) continue;
+      const results = Array.isArray(r) ? r : [r];
+      for (const res of results) {
+        if (!res || res.bytes.length === 0) continue;
+        out.push({ nodeId, slot: res.slot ?? 0, bytes: res.bytes, name: res.name });
+      }
     } catch {
       // Skip a node whose bytes can't be resolved (revoked URL, etc.).
     }
