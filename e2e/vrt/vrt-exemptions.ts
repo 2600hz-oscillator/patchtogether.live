@@ -55,6 +55,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // canvas (empty on fresh spawn); mask both canvases so the card chrome
   // diffs deterministically.
   twotracks: [{ selector: 'canvas' }],
+  // TILER: live tiled-OUT preview canvas (non-deterministic per frame) — mask it;
+  // the card chrome (TILE fader + PatchPanel) is VRT'd. Baseline via vrt-update.
+  tiler: [{ selector: 'canvas' }],
   // ----- video domain — every video module renders a preview canvas;
   // mask it and assert the chrome around it.
   lines: [{ selector: 'canvas' }],
@@ -657,17 +660,6 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // + per-module-per-port provide functional coverage. Promote + capture baselines
   // once darwin + linux PNGs are captured via vrt-update.yml workflow_dispatch.
   twotracks: 'VRT baseline pending — 2-reel tape-loop emulator P1. Waveform canvas masked in MODULES. Unit (transport) + e2e (record→play→SCOPE RMS) + per-module-per-port cover function. Promote once darwin + linux baselines captured via vrt-update.yml.',
-  // TILER — video multiscreen / TILE effect processor. The card carries a
-  // LIVE preview canvas blitting the tiled OUT (non-deterministic per frame,
-  // like CELLSHADE/FREEZEFRAME), so a single-frame baseline can't be pinned
-  // reliably from this authoring worktree. Coverage: tiler.test.ts (pure
-  // helpers — knob index→N mapping 0..5→[1,4,6,8,12,16] + the CV
-  // sum-then-snap-to-nearest-N resolve + def/port shape) + the bespoke
-  // e2e/tests/tiler.spec.ts (real source → TILER → output, the tiled grid is
-  // structured + the TILE knob changes the output) + per-module-per-port.
-  // Promote + capture darwin/linux baselines (live preview masked) in a
-  // follow-up PR via vrt-update.yml.
-  tiler: 'VRT baseline pending — video TILE processor with a live tiled-OUT preview canvas (non-deterministic per frame, like CELLSHADE/FREEZEFRAME). tiler.test.ts (knob→N mapping + CV sum-then-snap-to-nearest-N + def shape) + e2e/tests/tiler.spec.ts (real source→TILER→output, grid structured, TILE changes output) + per-module-per-port provide coverage. Promote + capture darwin/linux baselines (preview masked) in a follow-up PR.',
 };
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards
