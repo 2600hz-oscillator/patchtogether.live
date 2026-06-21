@@ -74,6 +74,7 @@
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { createVideoAudioKeepAlive, type VideoAudioKeepAlive } from '$lib/video/video-audio-keepalive';
+import { createKeepAliveRegistry } from '$lib/video/video-keepalive-registry';
 import { ASSET_SLOTS } from '$lib/video/asset-select';
 import type { VideoboxFileMeta } from './videobox-sync';
 
@@ -146,12 +147,20 @@ export const VIDEOVARISPEED_DATA_DEFAULTS: VideoVarispeedData = {
 /** Handle extras — the card calls these to drive the audio wiring once the
  *  local <video> has loaded its file. Mirrors VIDEOBOX. */
 export interface VideoVarispeedHandleExtras {
-  /** Wire the element's audio into the graph (after src + metadata). */
+  /** Wire the ACTIVE element's audio into the graph (after src + metadata).
+   *  Idempotent; re-points audio_l/r when the active element changed. */
   wireAudio(): void;
-  /** Tear down the MediaElementSource (on file swap / destroy). */
+  /** Revert audio_l/r to the silent placeholders (full detach) — does NOT
+   *  destroy any element's persistent keep-alive. */
   unwireAudio(): void;
-  /** True once wireAudio has succeeded. */
+  /** True once the active element's audio is exposed on audio_l/r. */
   isAudioWired(): boolean;
+  /** Create (once) a PERSISTENT keep-alive for a loaded slot element that is
+   *  NOT the active source, so its decode never throttles to ~1 fps while it
+   *  waits to be switched in. Idempotent per element; never torn down on switch
+   *  (only on module dispose). The card calls this for every loaded slot so a
+   *  random/melodic switch pattern always lands on an already-warm element. */
+  keepSlotAlive(el: HTMLVideoElement): void;
 }
 
 interface VideoVarispeedParams {
@@ -285,18 +294,38 @@ export const videoVarispeedDef: VideoModuleDef = {
 
     const params: VideoVarispeedParams = { ...DEFAULTS };
 
-    // ---- Audio plumbing (mirrors VIDEOBOX) ----
+    // ---- Audio plumbing (PERSISTENT per-element keep-alive Map) ----
+    //
+    // The 7-slot asset selector swaps which <video> the engine samples, but the
+    // audio keep-alive for EVERY loaded element must persist for the module's
+    // whole life — NOT be torn down on a switch. `createMediaElementSource` is
+    // permanent + once-per-element (a 2nd call on the same element throws
+    // InvalidStateError) and a hidden, non-audio-pulled <video> decode-throttles
+    // to ~1 fps. The pre-fix engine kept ONE shared keep-alive it destroyed on
+    // every switch, so after one slot cycle every switched-away slot froze on
+    // frame 0 and re-select threw + never recovered (the multi-slot stall). We
+    // now mirror TOYBOX's identity-guarded persistent per-element Map: each
+    // element's keep-alive (createMediaElementSource → gain(0) → destination)
+    // is created AT MOST ONCE and lives until dispose, so every loaded slot
+    // keeps decoding at full rate and re-select is never cold-re-wired.
     const audioSources = new Map<string, { node: AudioNode; output: number }>();
     let silentLeft: ConstantSourceNode | null = null;
     let silentRight: ConstantSourceNode | null = null;
-    let mediaElSrc: MediaElementAudioSourceNode | null = null;
-    let splitter: ChannelSplitterNode | null = null;
-    // Silent keep-alive (src -> gain(0) -> destination) so the AudioContext
-    // pulls this element in real time and Chromium doesn't throttle its decode
-    // to ~1 fps when no audio is patched. WITHOUT this, multiple VIDEOVARISPEED
-    // sources all throttle except one -> "only one video plays at a time".
-    // Shared with VIDEOBOX / CAMERA via video-audio-keepalive.ts.
-    let keepAlive: VideoAudioKeepAlive | null = null;
+    // Persistent per-element keep-alive registry — created once per element,
+    // never torn down on switch (only on module dispose). Injects the audio
+    // plumbing so the identity invariant is unit-testable with a fake create.
+    const keepAlives = createKeepAliveRegistry<VideoAudioKeepAlive>((el) =>
+      ctx.audioCtx ? createVideoAudioKeepAlive(ctx.audioCtx, el) : null,
+    );
+    // Per-element splitter (keep-alive.source → splitter) so audio_l / audio_r
+    // can re-point to whichever element is ACTIVE without disturbing the others'
+    // persistent keep-alives. Keyed by element; built lazily alongside the
+    // keep-alive, torn down only on dispose.
+    const splitters = new Map<HTMLVideoElement, ChannelSplitterNode>();
+    // The element whose splitter audio_l / audio_r currently expose. Lets a
+    // repeated wireAudio() detect when the ACTIVE element changed (so it
+    // re-points + notifies) vs a redundant call (no-op).
+    let wiredEl: HTMLVideoElement | null = null;
     let audioWired = false;
 
     if (ctx.audioCtx) {
@@ -392,57 +421,82 @@ export const videoVarispeedDef: VideoModuleDef = {
       return true;
     }
 
-    function wireAudio(): void {
-      if (audioWired) return;
-      if (!ctx.audioCtx) return;
-      if (!videoEl) return;
-      const ac = ctx.audioCtx;
-      try {
-        // Build the silent keep-alive (src -> gain(0) -> destination + resume
-        // a suspended context). It also hands back the MediaElementSource so we
-        // fan it into our splitter for audio_l / audio_r. The keep-alive is THE
-        // fix for the multi-video throttle: without a path to the destination
-        // the element is never pulled and Chromium drops its decode to ~1 fps.
-        const ka = createVideoAudioKeepAlive(ac, videoEl);
-        const split = ac.createChannelSplitter(2);
-        ka.source.connect(split);
-        keepAlive = ka;
-        mediaElSrc = ka.source;
-        splitter = split;
-        audioSources.set('audio_l', { node: split, output: 0 });
-        audioSources.set('audio_r', { node: split, output: 1 });
-        audioWired = true;
-        // The audio_l / audio_r nodes just changed identity (silent
-        // ConstantSource -> live splitter). Any cross-domain audio bridge that
-        // was connected to the placeholder before this swap (e.g. a saved patch
-        // where audio_l -> AUDIO OUT predates the file load) is now stale; ask
-        // the engine to re-resolve it so the splitter reaches the destination.
-        ctx.notifyAudioSourcesChanged?.(node.id);
-      } catch (err) {
-        // InvalidStateError: the element already has a MediaElementSource (card
-        // hot-reload). Stay on the silent CSN fallback so downstream audio
-        // patches don't pop.
-        console.warn('[videovarispeed] createMediaElementSource failed:', err);
-      }
+    /** Lazily build (once) the splitter fed from `el`'s persistent keep-alive
+     *  so audio_l / audio_r can tap it. Returns null when the element has no
+     *  keep-alive (no AudioContext / createMediaElementSource threw). */
+    function ensureSplitter(el: HTMLVideoElement): ChannelSplitterNode | null {
+      const existing = splitters.get(el);
+      if (existing) return existing;
+      if (!ctx.audioCtx) return null;
+      const ka = keepAlives.ensure(el);
+      if (!ka) return null;
+      const split = ctx.audioCtx.createChannelSplitter(2);
+      ka.source.connect(split);
+      splitters.set(el, split);
+      return split;
     }
 
+    // Wire the ACTIVE element's audio into the graph + keep its (and every other
+    // loaded element's) decode alive. IDEMPOTENT: a repeated call on the same
+    // active element is a no-op; a call after the active element changed
+    // re-points audio_l / audio_r to the new element's splitter and re-resolves
+    // downstream bridges. The keep-alive itself is created at most once per
+    // element (registry identity guard) and is NEVER torn down here — that's
+    // what stops a switched-away slot from throttling + re-select from throwing.
+    function wireAudio(): void {
+      if (!ctx.audioCtx) return;
+      if (!videoEl) return;
+      // Same active element already exposed → nothing to do.
+      if (audioWired && wiredEl === videoEl) return;
+      const split = ensureSplitter(videoEl);
+      if (!split) {
+        // createMediaElementSource failed (e.g. element already has a source
+        // after HMR) — stay on the silent CSN fallback so downstream audio
+        // patches don't pop.
+        console.warn('[videovarispeed] createMediaElementSource failed: keep-alive unavailable for the active element');
+        return;
+      }
+      audioSources.set('audio_l', { node: split, output: 0 });
+      audioSources.set('audio_r', { node: split, output: 1 });
+      wiredEl = videoEl;
+      audioWired = true;
+      // The audio_l / audio_r nodes just changed identity (silent ConstantSource
+      // → this element's live splitter, or another slot's splitter → this one's
+      // on a switch). Any cross-domain audio bridge connected to the previous
+      // node is now stale; ask the engine to re-resolve it so the active
+      // splitter reaches the destination (audio follows the switched video).
+      ctx.notifyAudioSourcesChanged?.(node.id);
+    }
+
+    // Revert audio_l / audio_r to the silent placeholders WITHOUT destroying any
+    // element's persistent keep-alive (that would re-introduce the throttle + the
+    // once-per-element re-create throw on the next select). Used on a full
+    // detach (attachExternalSource(null)) where there is no active element to
+    // expose; switching BETWEEN loaded slots goes through wireAudio() instead and
+    // never lands here. disposeAll() (module dispose) tears the keep-alives down.
     function unwireAudio(): void {
-      if (keepAlive) keepAlive.disconnect();
-      if (splitter) try { splitter.disconnect(); } catch { /* */ }
-      if (mediaElSrc) try { mediaElSrc.disconnect(); } catch { /* */ }
-      keepAlive = null;
-      mediaElSrc = null;
-      splitter = null;
       const wasWired = audioWired;
       audioWired = false;
+      wiredEl = null;
       if (silentLeft && silentRight) {
         audioSources.set('audio_l', { node: silentLeft, output: 0 });
         audioSources.set('audio_r', { node: silentRight, output: 0 });
       }
-      // Reverted audio_l / audio_r back to the silent placeholders; re-resolve
-      // any bridge so it tracks the placeholder rather than the now-disconnected
-      // splitter (keeps downstream from popping on a dangling node).
+      // Re-resolve any bridge so it tracks the placeholder rather than a now
+      // off-air splitter (keeps downstream from popping). The splitters + the
+      // keep-alives themselves stay live so the elements keep decoding.
       if (wasWired) ctx.notifyAudioSourcesChanged?.(node.id);
+    }
+
+    /** Tear DOWN every persistent keep-alive + splitter (module dispose only). */
+    function disposeAudio(): void {
+      for (const split of splitters.values()) {
+        try { split.disconnect(); } catch { /* */ }
+      }
+      splitters.clear();
+      keepAlives.disposeAll();
+      wiredEl = null;
+      audioWired = false;
     }
 
     const surface: VideoNodeSurface = {
@@ -484,7 +538,7 @@ export const videoVarispeedDef: VideoModuleDef = {
       },
       dispose() {
         detachRvfc();
-        unwireAudio();
+        disposeAudio();
         if (silentLeft) try { silentLeft.disconnect(); } catch { /* */ }
         if (silentRight) try { silentRight.disconnect(); } catch { /* */ }
         gl.deleteFramebuffer(fbo);
@@ -501,6 +555,7 @@ export const videoVarispeedDef: VideoModuleDef = {
       wireAudio,
       unwireAudio,
       isAudioWired: () => audioWired,
+      keepSlotAlive: (el) => { keepAlives.ensure(el); },
     };
 
     return {
@@ -518,13 +573,27 @@ export const videoVarispeedDef: VideoModuleDef = {
       },
       attachExternalSource(kind, el) {
         if (kind !== 'video') return;
-        // New element -> tear down rVFC + audio so the old element doesn't
-        // linger; force a re-spec on the first upload against new dimensions.
+        // New ACTIVE element -> move rVFC to it; force a re-spec on the first
+        // upload against new dimensions. We do NOT tear down the OUTGOING
+        // element's audio keep-alive: it persists in the registry so the
+        // switched-away slot keeps decoding at full rate and a later re-select
+        // never re-creates its (permanent) MediaElementSource. A full detach
+        // (el === null, on destroy / slot-clear) reverts audio_l/r to the
+        // silent placeholders; a switch BETWEEN loaded slots leaves audio on
+        // the old splitter until the card's wireAudio() re-points it to the new
+        // element (so audio never drops to silence mid-switch).
         detachRvfc();
-        if (videoEl !== el) unwireAudio();
         sourceTexAllocated = false;
         videoEl = (el as HTMLVideoElement) ?? null;
-        if (videoEl) attachRvfc();
+        if (videoEl) {
+          attachRvfc();
+          // Eagerly create the new element's persistent keep-alive so it never
+          // sat throttled before the card wires audio. Idempotent per element.
+          keepAlives.ensure(videoEl);
+        } else {
+          // True detach (no active element): revert to silent placeholders.
+          unwireAudio();
+        }
       },
       read(key) {
         if (key === 'extras') return extras;
@@ -532,8 +601,12 @@ export const videoVarispeedDef: VideoModuleDef = {
         if (key === 'audioWired') return audioWired;
         // Keep-alive instrumentation: lets the e2e assert the silent
         // gain(0)->destination bridge is live (the thing that stops the
-        // <video> decode from throttling when N sources are unpatched).
-        if (key === 'hasKeepAlive') return keepAlive !== null;
+        // <video> decode from throttling when N sources are unpatched). The
+        // ACTIVE element always has one when audio is wired; `keepAliveCount`
+        // exposes the persistent per-element total so the switch-path e2e can
+        // prove every loaded slot stays warm (never torn down on switch).
+        if (key === 'hasKeepAlive') return videoEl !== null && keepAlives.has(videoEl);
+        if (key === 'keepAliveCount') return keepAlives.size();
         if (key === 'rvfcSupported') return rvfcSupported;
         // Engine-internal liveness for e2e: how many real frame uploads this
         // source has done. Sampling this over a step()-driven window proves the
