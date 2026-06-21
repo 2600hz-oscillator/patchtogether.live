@@ -14,6 +14,7 @@ import {
   b3ntb0xDef,
   b3ntb0xMirrorGateTick,
   makeB3ntb0xMirrorGateState,
+  B3NTB0X_SHADERS,
 } from './b3ntb0x';
 import type { VideoEngineContext } from '$lib/video/engine';
 import type { ModuleNode } from '$lib/graph/types';
@@ -42,6 +43,14 @@ import {
   REGION_BLANK,
   REGION_BURST,
   REGION_ACTIVE,
+  b3ntb0xHueRotate,
+  b3ntb0xDriftPhase,
+  b3ntb0xBendFold,
+  b3ntb0xBendComb,
+  b3ntb0xBendCrush,
+  b3ntb0xBendBleed,
+  HUE_MAX_RAD,
+  DRIFT_PHASE_GAIN,
 } from './b3ntb0x-dsp';
 
 describe('B3NTB0X colour-space round-trip', () => {
@@ -425,5 +434,266 @@ describe('B3NTB0X factory setParam propagates to the live engine param', () => {
     } finally {
       handle.dispose();
     }
+  });
+});
+
+// ===========================================================================
+// LIVE-CONTROLS AUDIT (owner: "a bunch of controls don't seem to do much").
+// Two layers:
+//   (A) CPU-mirror behaviour: each previously-dead/weak control's math, at min
+//       vs max, yields a DIFFERENT result (proves the effect is real + non-
+//       trivial). These mirror the exact GLSL inlined in b3ntb0x.ts.
+//   (B) param→uniform WIRING guard: every control's uniform is not just
+//       declared but CONSUMED in its pass body, and no uniform is multiplied
+//       out by a literal 0 (the old `* 0.0` Bend stub). A static-source guard.
+// ===========================================================================
+
+describe('B3NTB0X HUE — receiver tint (decode-side demod-axis rotation)', () => {
+  it('is the identity at hue=0 (no tint shift)', () => {
+    const r = b3ntb0xHueRotate(0.4, -0.3, 0);
+    expect(r.i).toBeCloseTo(0.4, 6);
+    expect(r.q).toBeCloseTo(-0.3, 6);
+  });
+
+  it('rotates the chroma vector (min vs max give DIFFERENT colour angles)', () => {
+    const i = 0.5, q = 0.0;
+    const lo = b3ntb0xHueRotate(i, q, -1);
+    const hi = b3ntb0xHueRotate(i, q, 1);
+    // The two extremes must land at clearly different (I,Q) → different hue.
+    const d = Math.hypot(hi.i - lo.i, hi.q - lo.q);
+    expect(d).toBeGreaterThan(0.3);
+    // And neither extreme equals the unrotated input (it actually moved).
+    expect(Math.hypot(lo.i - i, lo.q - q)).toBeGreaterThan(0.1);
+    expect(Math.hypot(hi.i - i, hi.q - q)).toBeGreaterThan(0.1);
+  });
+
+  it('preserves saturation (pure rotation: |I,Q| unchanged)', () => {
+    const i = 0.3, q = 0.4; // magnitude 0.5
+    for (const h of [-1, -0.5, 0.5, 1]) {
+      const r = b3ntb0xHueRotate(i, q, h);
+      expect(Math.hypot(r.i, r.q)).toBeCloseTo(0.5, 5);
+    }
+  });
+
+  it('uses HUE_MAX_RAD as the ±1 swing (matches the GLSL constant)', () => {
+    const r = b3ntb0xHueRotate(1, 0, 1);
+    expect(r.i).toBeCloseTo(Math.cos(HUE_MAX_RAD), 6);
+    expect(r.q).toBeCloseTo(Math.sin(HUE_MAX_RAD), 6);
+  });
+});
+
+describe('B3NTB0X SUBCARRIER DRIFT — phase error vs the burst lock', () => {
+  it('is zero at drift=0 (no error → cancels, picture is clean)', () => {
+    for (const f of [0, 0.5, 1]) {
+      for (const t of [0, 1, 5]) {
+        expect(b3ntb0xDriftPhase(f, t, 0)).toBeCloseTo(0, 9);
+      }
+    }
+  });
+
+  it('min vs max drift give a DIFFERENT phase error (non-trivial effect)', () => {
+    const lo = b3ntb0xDriftPhase(0.5, 1, 0);
+    const hi = b3ntb0xDriftPhase(0.5, 1, 1);
+    expect(Math.abs(hi - lo)).toBeGreaterThan(1); // > a radian of slip
+  });
+
+  it('grows across the active line (rainbow swims left→right)', () => {
+    const left = b3ntb0xDriftPhase(0.0, 0, 1);
+    const right = b3ntb0xDriftPhase(1.0, 0, 1);
+    expect(right).toBeGreaterThan(left + 1); // a full picture-width of slip
+  });
+
+  it('wanders in time (animated)', () => {
+    const t0 = b3ntb0xDriftPhase(0.5, 0, 1);
+    const t1 = b3ntb0xDriftPhase(0.5, 1, 1);
+    expect(Math.abs(t1 - t0)).toBeGreaterThan(0.1);
+  });
+});
+
+describe('B3NTB0X BEND NETWORK A–D — each tap is a real, distinct distortion', () => {
+  it('A WAVEFOLD: identity at 0, folds at min/max (different from input + each other)', () => {
+    const v = 0.8;
+    expect(b3ntb0xBendFold(v, 0)).toBeCloseTo(v, 6);
+    const lo = b3ntb0xBendFold(v, -1);
+    const hi = b3ntb0xBendFold(v, 1);
+    expect(Math.abs(lo - v)).toBeGreaterThan(0.05);
+    expect(Math.abs(hi - v)).toBeGreaterThan(0.05);
+    // Sign matters: −1 and +1 fold differently.
+    expect(Math.abs(hi - lo)).toBeGreaterThan(0.01);
+  });
+
+  it('B COMB RIPPLE: identity at 0, mixes the delayed tap at min/max', () => {
+    const v = 0.2, vDelayed = 0.9;
+    expect(b3ntb0xBendComb(v, vDelayed, 0)).toBeCloseTo(v, 6);
+    const hi = b3ntb0xBendComb(v, vDelayed, 1);
+    const lo = b3ntb0xBendComb(v, vDelayed, -1);
+    expect(hi).not.toBeCloseTo(v, 3);
+    expect(lo).not.toBeCloseTo(v, 3);
+    expect(hi).not.toBeCloseTo(lo, 3);
+  });
+
+  it('C CRUSH: ~identity at 0, quantises hard at max (snaps to few steps)', () => {
+    const v = 0.123456;
+    expect(b3ntb0xBendCrush(v, 0)).toBeCloseTo(v, 6);
+    const crushed = b3ntb0xBendCrush(v, 1);
+    // 3 steps at max → value lands on a 1/3 grid, clearly != the raw value.
+    expect(Math.abs(crushed - v)).toBeGreaterThan(0.01);
+    expect(crushed * 3).toBeCloseTo(Math.round(crushed * 3), 6);
+  });
+
+  it('D CHROMA→SYNC BLEED: identity at 0, injects ripple at min/max', () => {
+    const v = 0.5, ripple = 0.3;
+    expect(b3ntb0xBendBleed(v, ripple, 0)).toBeCloseTo(v, 6);
+    const hi = b3ntb0xBendBleed(v, ripple, 1);
+    const lo = b3ntb0xBendBleed(v, ripple, -1);
+    expect(hi).toBeGreaterThan(v);
+    expect(lo).toBeLessThan(v);
+  });
+
+  it('the four taps are NOT the same function (each does something distinct)', () => {
+    const v = 0.6, side = 0.1, ripple = 0.2;
+    const outs = [
+      b3ntb0xBendFold(v, 0.8),
+      b3ntb0xBendComb(v, side, 0.8),
+      b3ntb0xBendCrush(v, 0.8),
+      b3ntb0xBendBleed(v, ripple, 0.8),
+    ];
+    const uniq = new Set(outs.map((x) => x.toFixed(4)));
+    expect(uniq.size, 'all four bend taps produce distinct results').toBe(4);
+  });
+});
+
+// ===========================================================================
+// PARAM → UNIFORM WIRING GUARD. For EVERY param (except mirror gates, which
+// drive a CPU edge-detect, not a uniform) assert the uniform it feeds is
+// referenced in its pass body MORE than once (a declaration + at least one
+// real use), and that NO uniform is killed by a literal-0 multiply. This is
+// the regression guard for the owner's "dead control" class of bug.
+// ===========================================================================
+
+describe('B3NTB0X param→uniform wiring (no dead controls)', () => {
+  // param id → { uniform name, which pass shader(s) must CONSUME it }.
+  const WIRING: Record<string, { uniform: string; shaders: Array<keyof typeof B3NTB0X_SHADERS> }> = {
+    enhance:      { uniform: 'uEnhance',    shaders: ['bend'] },
+    bias:         { uniform: 'uBias',       shaders: ['bend'] },
+    ac_dc:        { uniform: 'uAcDc',       shaders: ['bend'] },
+    sync_crush:   { uniform: 'uSyncCrush',  shaders: ['bend'] },
+    bend_a:       { uniform: 'uBendA',      shaders: ['bend'] },
+    bend_b:       { uniform: 'uBendB',      shaders: ['bend'] },
+    bend_c:       { uniform: 'uBendC',      shaders: ['bend'] },
+    bend_d:       { uniform: 'uBendD',      shaders: ['bend'] },
+    burst_starve: { uniform: 'uBurstStarve', shaders: ['encode', 'decode'] },
+    chroma_leak:  { uniform: 'uChromaLeak', shaders: ['decode'] },
+    luma_peak:    { uniform: 'uLumaPeak',   shaders: ['decode'] },
+    tbc:          { uniform: 'uTbc',        shaders: ['decode'] },
+    hue:          { uniform: 'uHue',        shaders: ['decode'] },
+    sub_drift:    { uniform: 'uSubDrift',   shaders: ['encode'] },
+    feedback:     { uniform: 'uFeedback',   shaders: ['crt'] },
+    tube_bloom:   { uniform: 'uTubeBloom',  shaders: ['crt'] },
+    overscan:     { uniform: 'uOverscan',   shaders: ['crt'] },
+    barrel:       { uniform: 'uBarrel',     shaders: ['crt'] },
+    mirrorX:      { uniform: 'uMirrorX',    shaders: ['crt'] },
+    mirrorY:      { uniform: 'uMirrorY',    shaders: ['crt'] },
+  };
+
+  it('every continuous/visual param maps to a uniform consumed in its pass', () => {
+    for (const [pid, { uniform, shaders }] of Object.entries(WIRING)) {
+      for (const s of shaders) {
+        const src = B3NTB0X_SHADERS[s];
+        const decl = `uniform float ${uniform};`;
+        expect(src.includes(decl), `${pid}: ${uniform} declared in ${s}`).toBe(true);
+        // It must be REFERENCED in the body beyond its declaration → >1 hit.
+        const hits = src.split(uniform).length - 1;
+        expect(hits, `${pid}: ${uniform} used in ${s} body (hits=${hits})`).toBeGreaterThan(1);
+      }
+    }
+  });
+
+  it('NO uniform is multiplied out by a literal 0 (the dead-stub pattern)', () => {
+    // The original Bend stub was `(uBendA + uBendB + uBendC + uBendD) * 0.0;`.
+    // Flag any `<uniform> * 0[.0…]` (direct) — and the exact old group-stub line.
+    // (Matches `* 0`, `* 0.`, `* 0.0`, `* 0.000` but NOT `* 0.5`/`* 0.05` — the
+    // decimal part, if present, must be all zeros.)
+    const zeroMul = (u: string) => new RegExp(`${u}\\s*\\*\\s*0(\\.0*)?(?![.0-9])`);
+    for (const { uniform } of Object.values(WIRING)) {
+      for (const src of Object.values(B3NTB0X_SHADERS)) {
+        expect(zeroMul(uniform).test(src), `${uniform} not multiplied by 0`).toBe(false);
+      }
+    }
+    // Belt-and-suspenders: the exact old dead-stub line is gone.
+    expect(B3NTB0X_SHADERS.bend.includes('uBendD) * 0.0')).toBe(false);
+    expect(B3NTB0X_SHADERS.bend.includes('* 0.0;')).toBe(false);
+  });
+
+  it('every visual param id (minus mirror gates) appears in the wiring table', () => {
+    const gateOnly = new Set(['mirrorXGate', 'mirrorYGate']);
+    for (const p of b3ntb0xDef.params) {
+      if (gateOnly.has(p.id)) continue;
+      expect(Object.keys(WIRING), `${p.id} is covered by the wiring guard`).toContain(p.id);
+    }
+  });
+
+  it('mirror GATES drive the CPU edge-detect (not a uniform) — covered separately', () => {
+    // mirrorXGate/mirrorYGate have NO uniform: they tick b3ntb0xMirrorGateTick
+    // which flips mirrorX/mirrorY (whose uniforms ARE guarded above). Assert the
+    // gate params exist + are excluded from the uniform table on purpose.
+    for (const g of ['mirrorXGate', 'mirrorYGate']) {
+      expect(b3ntb0xDef.params.find((p) => p.id === g), g).toBeDefined();
+    }
+  });
+});
+
+// ===========================================================================
+// FACTORY SMOKE — drive every param through setParam/readParam (the CV hot
+// path) so a broken wiring of ANY control fails fast, GPU-free.
+// ===========================================================================
+
+describe('B3NTB0X factory accepts + round-trips EVERY param', () => {
+  it('setParam/readParam survives a sweep of every declared param', () => {
+    const node = {
+      id: 'bb', type: 'b3ntb0x', domain: 'video', position: { x: 0, y: 0 }, params: {},
+    } as unknown as ModuleNode;
+    const handle = b3ntb0xDef.factory(makeCtx(), node);
+    try {
+      for (const p of b3ntb0xDef.params) {
+        const mid = ((p.min ?? 0) + (p.max ?? 1)) / 2 || 0.5;
+        handle.setParam?.(p.id, mid);
+        expect(handle.readParam?.(p.id), `${p.id} round-trips`).toBe(mid);
+      }
+    } finally {
+      handle.dispose();
+    }
+  });
+});
+
+// ===========================================================================
+// REGRESSION: HUE + DRIFT must NOT cancel (the bug the owner reported). The
+// old encode applied hue/drift to BOTH the carrier AND the burst reference the
+// decoder locks to, so a clean encode→demod round-trip recovered the input
+// unchanged → the controls did nothing. Prove the new wiring is non-cancelling.
+// ===========================================================================
+
+describe('B3NTB0X HUE/DRIFT no-cancel regression (the owner-reported bug)', () => {
+  it('HUE is applied DECODE-side so it cannot cancel an encode carrier shift', () => {
+    // Encode carrier phase no longer carries hue (it would cancel in demod);
+    // the decode shader rotates the recovered I/Q by uHue instead.
+    expect(B3NTB0X_SHADERS.encode.includes('uHue'), 'hue NOT in encode').toBe(false);
+    expect(B3NTB0X_SHADERS.decode.includes('uHue'), 'hue IS in decode').toBe(true);
+    // A non-zero hue actually moves a coloured pixel (CPU mirror of the demod
+    // rotation): the recovered chroma is rotated, so the output colour changes.
+    const moved = b3ntb0xHueRotate(0.4, 0.2, 0.7);
+    expect(Math.hypot(moved.i - 0.4, moved.q - 0.2)).toBeGreaterThan(0.05);
+  });
+
+  it('DRIFT phase error is NOT folded into the burst reference (B channel)', () => {
+    // The encode writes the BURST-LOCKED refPhase to B (phaseRef = fract(refPhase
+    // /…)), and modulates the picture on refPhase + driftErr → the decoder
+    // (demods by B) sees the slip. Guard the source shape so a refactor can't
+    // silently re-fold drift into the reference (which would re-introduce the
+    // cancel bug).
+    const src = B3NTB0X_SHADERS.encode;
+    expect(src.includes('phaseRef = fract(refPhase'), 'B = clean refPhase').toBe(true);
+    expect(src.includes('cos(carrierPhase)'), 'picture on DRIFTED carrier').toBe(true);
+    expect(DRIFT_PHASE_GAIN, 'drift gain is meaningful (> a radian/line)').toBeGreaterThan(1);
   });
 });

@@ -141,12 +141,98 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
     expect(mad, `bent output differs from clean (MAD=${mad.toFixed(2)})`).toBeGreaterThan(3);
   });
 
+  // LIVE-CONTROLS PIXEL GATE (owner: "controls that don't do much/anything").
+  // The per-control param→uniform wiring + per-control behaviour math are unit-
+  // tested GPU-free in b3ntb0x.test.ts. This GL test is the end-to-end proof
+  // that each PREVIOUSLY DEAD/WEAK control — applied through the REAL 4-pass
+  // pipeline — visibly changes the decoded frame vs a clean baseline. One
+  // baseline capture, then one capture per control set to an extreme; each must
+  // differ from the baseline by a renderer-tolerant MAD. (Not run locally — the
+  // main session re-attests this on real-GPU; see CLAUDE.md heavy-WebGL basis.)
+  test('every newly-wired control visibly changes the decoded output', async ({ page }) => {
+    // baseline + 4 representative captures, each a full goto+spawn+warm. On CI's
+    // SwiftShader software renderer each is slow → generous budget. NOTE (CI
+    // wall-time, CLAUDE.md): this is 5 captures (~the cost of 2× the existing
+    // 2-capture test). The FULL per-control matrix (all 4 bend taps + tbc + the
+    // rest) is proven GPU-FREE in b3ntb0x.test.ts (wiring + behaviour); this GL
+    // test samples one representative of each newly-fixed CATEGORY (decode-side
+    // tint, encode-side drift, a bend-network tap, the strengthened AC coupling)
+    // to keep the heavy lane bounded.
+    test.setTimeout(120_000);
+
+    // Clean baseline: all the audited controls at their inert value, TBC=1 so
+    // there's no random jitter to confound the per-control diff.
+    const CLEAN = {
+      sync_crush: 1.0, enhance: 0.0, bias: 0.0, ac_dc: 0.0, chroma_leak: 0.0,
+      luma_peak: 0.0, hue: 0.0, sub_drift: 0.0, tbc: 1.0, feedback: 0.0,
+      bend_a: 0.0, bend_b: 0.0, bend_c: 0.0, bend_d: 0.0,
+    } as const;
+
+    async function capture(params: Record<string, number>): Promise<number[]> {
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await spawnPatch(
+        page,
+        [
+          { id: 'src', type: 'shapes',  position: { x: 100, y: 100 }, domain: 'video', params: { shape: 0, zoom: 1.4 } },
+          { id: 'bb',  type: 'b3ntb0x', position: { x: 540, y: 100 }, domain: 'video', params },
+        ],
+        [
+          { id: 'e_src', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'bb', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
+        ],
+      );
+      const canvas = page.locator('[data-testid="b3ntb0x-canvas"]');
+      await expect(canvas).toHaveCount(1);
+      await page.waitForTimeout(500);
+      return canvas.evaluate((el) => {
+        const c = el as HTMLCanvasElement;
+        const ctx = c.getContext('2d');
+        if (!ctx) return [] as number[];
+        const d = ctx.getImageData(0, 0, c.width, c.height).data;
+        const frame: number[] = [];
+        // Per-channel sample so a pure HUE rotation (chroma-only, ~constant luma)
+        // still registers — a grey-only sampler could miss a tint shift.
+        for (let i = 0; i < d.length; i += 4 * 24) { frame.push(d[i]!, d[i + 1]!, d[i + 2]!); }
+        return frame;
+      });
+    }
+
+    const mad = (a: number[], b: number[]): number => {
+      const m = Math.min(a.length, b.length);
+      let s = 0;
+      for (let k = 0; k < m; k++) s += Math.abs(a[k]! - b[k]!);
+      return m ? s / m : 0;
+    };
+
+    const base = await capture({ ...CLEAN });
+    expect(base.length, 'baseline sampled').toBeGreaterThan(0);
+
+    // One representative of each newly-fixed CATEGORY driven to an extreme,
+    // everything else CLEAN. (Full matrix incl. all 4 bend taps + tbc is unit-
+    // guarded GPU-free; bend_c = CRUSH is the most visually unambiguous tap.)
+    const CASES: Array<[string, Record<string, number>]> = [
+      ['ac_dc',     { ...CLEAN, ac_dc: 1.0 }],     // strengthened AC coupling (DC droop)
+      ['hue',       { ...CLEAN, hue: 0.9 }],        // decode-side tint rotation
+      ['sub_drift', { ...CLEAN, sub_drift: 1.0 }],  // encode-side carrier slip (rainbow)
+      ['bend_c',    { ...CLEAN, bend_c: 1.0 }],     // a live bend-network tap (crush)
+    ];
+
+    // A modest, renderer-tolerant threshold — we only require a CLEAR change,
+    // not a specific look (the module is VRT-exempt + animated).
+    const MIN_MAD = 2;
+    for (const [name, params] of CASES) {
+      const frame = await capture(params);
+      const d = mad(base, frame);
+      expect(d, `${name} visibly changes the decoded output (MAD=${d.toFixed(2)})`).toBeGreaterThan(MIN_MAD);
+    }
+  });
+
   // NOTE (Phase 2 lean, webgl-suite-optimization §1/§2/§7-3): the old test 3
   // ("CV-bending knobs mutate params via the patch store") was a pure store
   // round-trip (wrote node.params, read them BACK from the store; never touched
   // the engine) → DOWNGRADED to b3ntb0x.test.ts ("B3NTB0X factory setParam
   // propagates to the live engine param"), which drives the REAL factory setParam
   // hot-path (GPU-free). t1 (structured non-black decode) + t2 (bend-mangles-
-  // output, the 4-pass NTSC proof) stay here as the ONLY GL pixel gates for this
-  // VRT-exempt + per-port-exempt module (plan §1/§6).
+  // output, the 4-pass NTSC proof) + t3 (every newly-wired control changes the
+  // output) are the GL pixel gates for this VRT-exempt + per-port-exempt module.
 });

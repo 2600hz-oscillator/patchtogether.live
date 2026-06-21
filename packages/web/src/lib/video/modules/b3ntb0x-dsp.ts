@@ -311,3 +311,142 @@ export function b3ntb0xBurstStarve(
   const colourKill = 1 - s;
   return { i: i * colourKill, q: q * colourKill, lumaCrawl: subcarrierEnergy * s * BURST_STARVE_CRAWL };
 }
+
+// ---------------------------------------------------------------------------
+// HUE — receiver tint control (demod-axis rotation).
+//
+// A real TV "Tint/Hue" knob rotates the synchronous-demodulator's reference
+// axis RELATIVE to the burst the receiver locked to. Rotating the I/Q vector
+// by an angle θ is exactly what an analog phase-shift on the demod carrier
+// does. Crucially this is a DECODE-side rotation: it is visible on ANY colour
+// (it does not cancel against the encoder, unlike a carrier-phase change that
+// the decoder also tracks). hue −1..+1 maps to ±π (one full half-turn each
+// way is plenty of tint swing; ±π would alias).
+// ---------------------------------------------------------------------------
+
+/** Max demod-axis rotation (radians) at hue = ±1. ±0.9π ≈ a strong tint shift
+ *  without wrapping all the way around to the same colour. Shared with the
+ *  DECODE GLSL (it inlines the same constant). */
+export const HUE_MAX_RAD = 0.9 * Math.PI;
+
+/** Rotate a chroma (I,Q) vector by the receiver tint angle. `hue` −1..+1 →
+ *  θ = hue·HUE_MAX_RAD. Pure rotation: magnitude (saturation) is preserved,
+ *  only the colour angle (tint) changes. Identity at hue = 0. The DECODE pass
+ *  applies the IDENTICAL rotation to the demodulated I/Q. */
+export function b3ntb0xHueRotate(i: number, q: number, hue: number): { i: number; q: number } {
+  const theta = Math.max(-1, Math.min(1, hue)) * HUE_MAX_RAD;
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  return { i: i * c - q * s, q: i * s + q * c };
+}
+
+// ---------------------------------------------------------------------------
+// SUBCARRIER DRIFT — uncorrected colour-subcarrier instability (rainbow swim).
+//
+// The receiver locks its demod phase to the colour BURST at the START of each
+// line. If the subcarrier oscillator drifts, the carrier phase the picture was
+// actually modulated on diverges from that burst lock progressively ACROSS the
+// active line (and wanders in time) — so the recovered chroma axis is wrong by
+// an angle that GROWS left→right and animates. That is the classic "rainbow
+// swimming over the picture" of an unstable colour reference. Modelled as a
+// phase ERROR added to the encoder carrier but NOT reflected in the burst the
+// decoder locks to (the decoder uses a clean per-line reference), so the
+// mismatch is real and does not cancel.
+// ---------------------------------------------------------------------------
+
+/** Peak drift phase error (radians) per unit of active-line fraction, at
+ *  drift = 1. The error at active-fraction f and time t is
+ *  drift · DRIFT_PHASE_GAIN · (f + t·DRIFT_TIME_RATE). Shared with ENCODE GLSL. */
+export const DRIFT_PHASE_GAIN = 6.0;
+/** How fast the drift error wanders in time (cycles/sec scale). */
+export const DRIFT_TIME_RATE = 0.7;
+
+/** Phase error (radians) the subcarrier drift injects at active-line fraction
+ *  `activeFrac` (0..1) and time `tSec`, for `drift` 0..1. Identity (0) at
+ *  drift = 0. The ENCODE pass adds this to the active carrier phase WITHOUT
+ *  folding it into the burst reference, so the decoder (burst-locked) sees a
+ *  growing, animated demod-axis error → rainbow swim. */
+export function b3ntb0xDriftPhase(activeFrac: number, tSec: number, drift: number): number {
+  const d = Math.max(0, Math.min(1, drift));
+  return d * DRIFT_PHASE_GAIN * (Math.max(0, Math.min(1, activeFrac)) + tSec * DRIFT_TIME_RATE);
+}
+
+// ---------------------------------------------------------------------------
+// BEND NETWORK A–D — the circuit-bent patch points on the composite VOLTAGE.
+//
+// Each is a distinct, classic circuit-bend / video-mangle artifact applied to
+// the analog composite voltage `v` in the BEND pass (after gain/bias, before
+// the diode clamp). All are the IDENTITY at 0 so a fresh patch is clean. The
+// BEND GLSL inlines the identical arithmetic; these are the unit-tested source
+// of truth.
+//
+//   A — WAVEFOLD: reflect the voltage back on itself past a shrinking
+//       threshold (classic wavefolder). Creates extra "creases" / solarised
+//       banding as |bend_a| grows; sign picks fold polarity.
+//   B — COMB RIPPLE: mix a fraction of a horizontally-delayed copy of the
+//       voltage back in (a one-tap comb) → ringing / ghost edges / colour
+//       beating. Needs the neighbour sample, so it lives inline in GLSL; the
+//       CPU mirror takes the delayed sample as an argument.
+//   C — CRUSH: quantise the voltage to a few steps (bit-crush / posterise) →
+//       hard contour banding. Step count shrinks as |bend_c| → 1.
+//   D — CHROMA→SYNC BLEED: add a fraction of the raw subcarrier ripple onto
+//       the DC path (cross-coupling) → the picture modulates the baseline,
+//       reading as luma buzz / rolling contamination.
+// ---------------------------------------------------------------------------
+
+/** A — WAVEFOLD. `amt` −1..+1: pre-gains the voltage then reflects any
+ *  excursion past ±threshold back inward (a wavefolder); the threshold shrinks
+ *  with |amt| so more of the signal folds. Identity at 0. The sign adds a small
+ *  asymmetric DC kick so −/+ read differently. */
+export function b3ntb0xBendFold(v: number, amt: number): number {
+  const a = Math.max(-1, Math.min(1, amt));
+  if (a === 0) return v;
+  const mag = Math.abs(a);
+  // Pre-gain pushes more of the signal past the (shrinking) fold threshold.
+  const t = Math.max(0.1, 1.0 - 0.8 * mag);
+  let folded = v * (1 + 1.5 * mag);
+  // One reflection each side is enough to read as a crease/solarisation.
+  if (folded > t) folded = t - (folded - t);
+  else if (folded < -t) folded = -t - (folded + t);
+  // Blend dry→folded by |a|; sign adds an asymmetric DC kick.
+  return v * (1 - mag) + folded * mag + a * 0.05;
+}
+
+/** B — COMB RIPPLE. Mix `amt`·(delayed sample) into v (a one-tap comb).
+ *  `vDelayed` is the voltage a few oversampled px to the side. Identity at 0. */
+export function b3ntb0xBendComb(v: number, vDelayed: number, amt: number): number {
+  const a = Math.max(-1, Math.min(1, amt));
+  return v + a * 0.6 * (vDelayed - v);
+}
+
+/** C — CRUSH. Quantise v to N steps; N shrinks 64 → 3 as |amt| → 1.
+ *  Identity-ish at 0 (64 steps ≈ smooth). */
+export function b3ntb0xBendCrush(v: number, amt: number): number {
+  const a = Math.abs(Math.max(-1, Math.min(1, amt)));
+  if (a === 0) return v;
+  const steps = Math.max(3, Math.round(64 * (1 - a) + 3 * a));
+  return Math.round(v * steps) / steps;
+}
+
+/** D — CHROMA→SYNC BLEED. Add `amt`·(subcarrier ripple) onto the DC path.
+ *  `ripple` = v minus its local baseline (the HF/chroma content). Identity at
+ *  0; cross-couples the picture into the baseline as |amt| grows. */
+export function b3ntb0xBendBleed(v: number, ripple: number, amt: number): number {
+  const a = Math.max(-1, Math.min(1, amt));
+  return v + a * 0.8 * ripple;
+}
+
+// ---------------------------------------------------------------------------
+// AC/DC COUPLING droop — strengthened so it is visible on a STATIC scene.
+//
+// True capacitive (AC) coupling removes the DC level: a large flat bright area
+// droops back toward mid-grey because the coupling cap can't hold DC. The
+// original leak was so slow that on a still frame baseline ≈ DC ≈ v, so the
+// HP'd signal ≈ 0 → no visible change. We expose the coupling strength and a
+// FAST-enough leak so flat areas visibly lose their DC pedestal.
+// ---------------------------------------------------------------------------
+
+/** Leak coefficient for the AC-coupling one-pole at full coupling. Larger =
+ *  the baseline tracks v faster = more DC removed even within a still frame.
+ *  Shared with the BEND GLSL. */
+export const AC_LEAK_ALPHA = 0.08;
