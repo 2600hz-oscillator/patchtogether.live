@@ -606,3 +606,57 @@ test.fixme('RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable M
 
   expect(errors.filter((e) => !e.includes('favicon')), 'no page errors during record').toEqual([]);
 });
+
+// ── RE-PICKABLE destination folder (the #846 regression fix) ──
+// #846 remembered the first-picked folder with no way to change it (you had to
+// delete the module). This asserts the CHANGE button re-prompts ANY time, the
+// readout updates to the new folder, and a cancelled re-pick (which is also how
+// Chrome's "contains system files" root-block surfaces) leaves the folder
+// unchanged + shows the actionable subfolder hint. Structural / CI-safe — no
+// encoder needed (we never record; we drive the picker + the folder UI).
+test('RECORDERBOX destination folder is RE-PICKABLE (CHANGE re-prompts; cancel → subfolder hint)', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'rec', type: 'recorderbox', position: { x: 200, y: 80 }, domain: 'video' },
+  ]);
+  await expect(page.locator('[data-testid="recorderbox-card"]')).toBeVisible();
+
+  const readout = page.locator('[data-testid="recorderbox-folder"]');
+  const changeBtn = page.locator('[data-testid="recorderbox-change-folder"]');
+  await expect(readout).toHaveText('(chosen on record)');
+
+  // Arm the directory picker to return a NAMED folder with granted permission.
+  const armPicker = (name: string) => page.evaluate((n) => {
+    (globalThis as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker = async () => ({
+      name: n,
+      getFileHandle: async () => ({ createWritable: async () => ({ write: async () => {}, close: async () => {} }) }),
+      queryPermission: async () => 'granted',
+      requestPermission: async () => 'granted',
+    });
+  }, name);
+
+  await armPicker('FirstFolder');
+  await changeBtn.click();
+  await expect(readout).toHaveText('FirstFolder');
+
+  // RE-PICK a DIFFERENT folder — impossible before this fix without deleting the module.
+  await armPicker('SecondFolder');
+  await changeBtn.click();
+  await expect(readout).toHaveText('SecondFolder');
+
+  // Cancel / Chrome root-block: the picker rejects → promptSaveFolder returns
+  // 'cancel' → the remembered folder is UNCHANGED + the subfolder hint shows.
+  await page.evaluate(() => {
+    (globalThis as unknown as { showDirectoryPicker: unknown }).showDirectoryPicker = async () => {
+      throw new DOMException('blocked', 'AbortError');
+    };
+  });
+  await changeBtn.click();
+  await expect(page.locator('[data-testid="recorderbox-folder-hint"]')).toBeVisible();
+  await expect(readout).toHaveText('SecondFolder');
+
+  expect(errors.filter((e) => !e.includes('favicon')), 'no page errors').toEqual([]);
+});
