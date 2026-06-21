@@ -35,6 +35,9 @@
   });
 
   let mode       = $derived((void cardVersion, (node?.params.mode ?? 0) >= 0.5 ? 1 : 0));
+  // Gate-sampled S&H toggle (baked into the pitch CV; ON by default — the snh
+  // fallback supplies ON for old saves, no schemaVersion bump needed).
+  let snhOn      = $derived((void cardVersion, (node?.params.snh ?? 1) >= 0.5));
   let octave     = $derived((void cardVersion, node?.params.octave ?? 0));
   let gateLength = $derived((void cardVersion, node?.params.gateLength ?? 0.5));
   let lfoDiv     = $derived((void cardVersion, node?.params.lfoDiv ?? 3));
@@ -214,6 +217,19 @@
     <button class="mode-btn" class:cart={mode === 1} onclick={toggleMode} title={mode === 1 ? 'Cartesian (X/Y)' : 'Linear'}>
       {mode === 1 ? 'X/Y' : 'LIN'}
     </button>
+    <!-- Gate-sampled S&H toggle — alongside the mode-btn in the centered header
+         (the corner patch-trigger owns the absolute top-right). ON by default. -->
+    <button
+      type="button"
+      class="snh-toggle"
+      class:on={snhOn}
+      data-testid={`cartesian-snh-toggle`}
+      aria-pressed={snhOn}
+      title={snhOn
+        ? 'Sample & Hold ON — pitch CV latches to the gate edge + holds (X/Y-tracking mode); the LFO is never held. Click for continuous.'
+        : 'Sample & Hold OFF — pitch+gate re-emit on every pad change (legacy). Click to hold.'}
+      onclick={() => set('snh')(snhOn ? 0 : 1)}
+    >{snhOn ? 'S&H' : 'OFF'}</button>
   </header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
@@ -328,6 +344,26 @@
     font-family: ui-monospace, monospace;
   }
   .mode-btn.cart {
+    background: var(--cable-pitch);
+    color: #1a1d23;
+    border-color: var(--cable-pitch);
+  }
+  /* Gate-sampled S&H toggle — inline alongside the .mode-btn in the header. */
+  .snh-toggle {
+    height: 22px;
+    background: #2a2f3a;
+    border: 1px solid #404652;
+    color: var(--text);
+    border-radius: 3px;
+    font-size: 0.55rem;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 6px;
+    font-family: ui-monospace, monospace;
+  }
+  .snh-toggle:hover { border-color: #6a7282; }
+  .snh-toggle.on {
     background: var(--cable-pitch);
     color: #1a1d23;
     border-color: var(--cable-pitch);

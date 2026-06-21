@@ -56,11 +56,15 @@ test.describe('VRT: composite-state scenes', () => {
 
       await scene.setup(page);
 
-      // Both cards must be visible before we snap.
-      const nibblesCard = page.locator('.svelte-flow__node-nibbles').first();
-      const scopeCard = page.locator('.svelte-flow__node-scope').first();
-      await nibblesCard.waitFor({ state: 'visible', timeout: 10_000 });
-      await scopeCard.waitFor({ state: 'visible', timeout: 10_000 });
+      // Each scene's cards must be visible before we snap. Default to the
+      // original NIBBLES→SCOPE pair when the scene doesn't declare its own.
+      const cardSelectors = scene.cardSelectors ?? [
+        '.svelte-flow__node-nibbles',
+        '.svelte-flow__node-scope',
+      ];
+      for (const sel of cardSelectors) {
+        await page.locator(sel).first().waitFor({ state: 'visible', timeout: 10_000 });
+      }
 
       // One more rAF after both cards land so any post-mount layout shift
       // settles (Svelte $effects fire async to DOM attach).

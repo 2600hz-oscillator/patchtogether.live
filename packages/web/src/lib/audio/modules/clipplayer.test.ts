@@ -184,6 +184,93 @@ describe('clipplayer: module def', () => {
     expect(ids).not.toContain('bpm');
     expect(clipplayerDef.inputs.map((p) => p.id)).not.toContain('clock');
   });
+  it('declares a discrete s&h param defaulting ON (1), lowercase label', () => {
+    const snh = clipplayerDef.params.find((p) => p.id === 'snh');
+    expect(snh).toBeDefined();
+    expect(snh!.defaultValue).toBe(1);
+    expect(snh!.min).toBe(0);
+    expect(snh!.max).toBe(1);
+    expect(snh!.curve).toBe('discrete');
+    expect(snh!.label).toBe(snh!.label.toLowerCase());
+  });
+});
+
+describe('clipplayer: gate-sampled S&H (pitch holds between gates)', () => {
+  // A sparse clip: a note at step 0 (midi 72) only, then rests. gateLength low
+  // so the gate closes well before step 1. Under S&H the lane's pitch must HOLD
+  // the held value through the empty step (not reset to C4/0).
+  function sparseClip(midi: number): NoteClipRecord {
+    return {
+      kind: 'note',
+      steps: [{ step: 0, midi, velocity: 100, lengthSteps: 1 }],
+      lengthSteps: 4, // step 0 note, steps 1..3 are rests
+      root: 48,
+      loop: true,
+    };
+  }
+
+  it('S&H ON: the lane pitch HOLDS through an empty step (not rewritten to 0)', async () => {
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.2, snh: 1 },
+      { clips: { [clipIndex(0, 0)]: sparseClip(72) }, queued: lane8(0, 0, null) },
+    );
+    seedTimelorde(1); // running
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    // stepDiv 2 @120bpm → 0.25 s/step. Advance through step 0 (note) into step 1
+    // (rest) and step 2 (rest) so the held value is observed across rests.
+    run(ctx, 0, 0.7);
+    expect(handle.read!('activeLane:0')).toBe(0);
+    // Pitch HELD at the step-0 note across the rests (S&H ON).
+    expect(handle.read!('pitchVOct:0')).toBeCloseTo(midiToVOct(72), 5);
+    // The gate went low on the rest (no held-gate).
+    expect(handle.read!('gateValue:0')).toBe(0);
+  });
+
+  it('S&H OFF: the lane pitch is rewritten to 0 (C4) on an empty step', async () => {
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.2, snh: 0 },
+      { clips: { [clipIndex(0, 0)]: sparseClip(72) }, queued: lane8(0, 0, null) },
+    );
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.7);
+    expect(handle.read!('activeLane:0')).toBe(0);
+    // With S&H OFF a rest rewrites pitch to 0 (the legacy continuous drift).
+    expect(handle.read!('pitchVOct:0')).toBeCloseTo(0, 5);
+    expect(handle.read!('gateValue:0')).toBe(0);
+  });
+
+  it('a NEW clip\'s leading rest does NOT hold the prior clip\'s pitch through a gated step', async () => {
+    // Clip A (slot 0): note at step 0 = midi 72. Clip B (slot 1): note at step 1
+    // (a LEADING rest at step 0) = midi 48. After launching A then switching to
+    // B, B's first GATED step must re-latch to 48 (not hold A's 72).
+    const clipB: NoteClipRecord = {
+      kind: 'note',
+      steps: [{ step: 1, midi: 48, velocity: 100, lengthSteps: 1 }],
+      lengthSteps: 4,
+      root: 48,
+      loop: true,
+    };
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.2, snh: 1 },
+      {
+        clips: { [clipIndex(0, 0)]: sparseClip(72), [clipIndex(1, 0)]: clipB },
+        queued: lane8(0, 0, null),
+      },
+    );
+    seedTimelorde(1);
+    const ctx = new FakeAudioContext();
+    const handle = await build(ctx);
+    run(ctx, 0, 0.3); // launch A, sound step 0
+    expect(handle.read!('pitchVOct:0')).toBeCloseTo(midiToVOct(72), 5);
+    // Switch to clip B (immediate, quantize off). Its step 0 is a rest, step 1
+    // is the gated note 48.
+    (livePatch.nodes[NODE_ID]!.data as Record<string, unknown>).queued = lane8(0, 1, null);
+    run(ctx, 0.3, 1.0); // through B's leading rest into its gated step 1
+    expect(handle.read!('pitchVOct:0')).toBeCloseTo(midiToVOct(48), 5);
+  });
 });
 
 describe('clipplayer: per-lane launch', () => {

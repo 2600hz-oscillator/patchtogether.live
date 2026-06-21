@@ -150,6 +150,13 @@ export const cartesianDef: AudioModuleDef = {
     { id: 'lfoDiv',     label: 'Div',  defaultValue: 3,   min: 0,   max: 7,    curve: 'discrete' },
     // LFO waveform morph: 0=sine, 1=tri, 2=saw, 3=square. Continuous between.
     { id: 'lfoShape',   label: 'Wave', defaultValue: 0,   min: 0,   max: 3,    curve: 'linear' },
+    // Gate-sampled Sample & Hold on the PITCH CV (default ON). In the
+    // clock-UNPATCHED X/Y-tracking branch, ON suppresses the pitch+gate
+    // re-emit while the prior gate is still high, so the pitch CV latches to
+    // the gate edge and holds. OFF = continuous re-emit on every pad change
+    // (legacy). The clock-PATCHED branch is already gate-sampled and unchanged;
+    // the free-running lfo_x/lfo_y outputs are NEVER held (S&H is pitch-only).
+    { id: 'snh',        label: 's&h',  defaultValue: 1,   min: 0,   max: 1,    curve: 'discrete' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
@@ -251,6 +258,11 @@ export const cartesianDef: AudioModuleDef = {
     let lastEmittedGate = 0;
     const lastEmittedLaneVOct = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
     const lastEmittedLaneGate = new Array<number>(POLY_CHANNEL_PAIRS).fill(0);
+    // Audio-time the most-recently-emitted gate goes (or went) LOW. Used by the
+    // gate-sampled S&H guard in the clock-unpatched X/Y branch: while the prior
+    // gate is still high we suppress the pitch+gate re-emit so the pitch CV
+    // holds (latched to the gate edge). -Infinity = no gate scheduled yet.
+    let lastGateOffTime = -Infinity;
 
     /** Sample the lfo_clock analyser buffer for rising edges and update the
      *  measured Hz from the time between consecutive edges. */
@@ -336,6 +348,7 @@ export const cartesianDef: AudioModuleDef = {
       if (anyGate) {
         gateSrc.offset.setValueAtTime(1, atTime);
         gateSrc.offset.setValueAtTime(0, atTime + gateOff);
+        lastGateOffTime = atTime + gateOff;
         lastEmittedVOct = lanes[0]?.pitch ?? 0;
         lastEmittedGate = 1;
       } else {
@@ -399,10 +412,21 @@ export const cartesianDef: AudioModuleDef = {
           const row = yPatched ? cvToCell(yIn.buf) : yStep;
           const idx = row * GRID_DIM + col;
           if (idx !== lastSelectedIdx) {
-            playhead.schedule(idx, nowAt + 0.005);
-            emitStep(idx, nowAt + 0.005, gateDur);
+            // Gate-sampled S&H (default ON): keep the VISUAL playhead +
+            // lastSelectedIdx tracking continuous (a playhead-alignment spec
+            // depends on it), but SUPPRESS the pitch+gate re-emit while the
+            // prior gate is still high — so the pitch CV latches to the gate
+            // edge and holds until the prior gate has gone low. S&H OFF →
+            // re-emit on every pad change (legacy continuous behavior).
+            const fireAt = nowAt + 0.005;
+            const snh = readParam('snh', 1) >= 0.5;
+            const priorGateStillHigh = snh && fireAt < lastGateOffTime;
+            playhead.schedule(idx, fireAt);
+            if (!priorGateStillHigh) {
+              emitStep(idx, fireAt, gateDur);
+              totalAdvances++;
+            }
             lastSelectedIdx = idx;
-            totalAdvances++;
           }
           // Keep lastClockSample synced so a later patched-clock doesn't see
           // a stale prev value and mis-detect the first edge.

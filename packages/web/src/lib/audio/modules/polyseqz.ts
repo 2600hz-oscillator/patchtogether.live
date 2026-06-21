@@ -183,6 +183,14 @@ export const polyseqzDef: AudioModuleDef = {
     { id: 'gateLength', label: 'Gate', defaultValue: 0.6, min: 0.1, max: 0.95, curve: 'linear' },
     { id: 'humanize',   label: 'Hum',  defaultValue: 0,   min: 0,   max: 1,    curve: 'linear' },
     { id: 'isPlaying',  label: 'Play', defaultValue: 0,   min: 0,   max: 1,    curve: 'discrete' },
+    // Gate-sampled Sample & Hold on the per-lane pitch CV (default ON). ON →
+    // each lane's pitch is written AT its gate edge (keeping a ~1-sample lead
+    // so single-cycle trigger receivers see a stable V/oct at the gate rise),
+    // pinned to the UN-jittered nominal step time so the pitch latches cleanly
+    // while the gate keeps its humanize jitter. OFF → the legacy pre-gate-lead
+    // write at fireAt-0.001 (pitch can drift ahead of the gate under
+    // humanize). Per-lane: each lane latches on its own gate edge.
+    { id: 'snh',        label: 's&h',  defaultValue: 1,   min: 0,   max: 1,    curve: 'discrete' },
   ],
 
   // Module-grouping Phase 4 — surface PLAY/STOP as a single button a
@@ -377,6 +385,14 @@ export const polyseqzDef: AudioModuleDef = {
         lastHumanizeOffsets[i] = offsets[i] ?? 0;
       }
 
+      // Gate-sampled Sample & Hold (default ON). See the `snh` param doc: ON
+      // pins the per-lane PITCH write to the un-jittered nominal step time
+      // (`atTime`) — keeping only the ~1-sample lead before the gate — so the
+      // pitch latches cleanly to the gate edge while the GATE keeps its
+      // humanize jitter. OFF reproduces the legacy pre-gate-lead write at the
+      // jittered `fireAt - 0.001`.
+      const snh = readParam('snh', 1) >= 0.5;
+
       let anyGate = false;
       for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
         const lane = voices[i] ?? { midi: null, gate: 0 as 0 | 1 };
@@ -391,8 +407,14 @@ export const polyseqzDef: AudioModuleDef = {
           const fireAt = Math.max(ctx.currentTime + 0.001, atTime + offset);
           // Set pitch slightly BEFORE the gate-on so the receiver sees a
           // stable V/oct at the moment the gate rises — matters for
-          // single-cycle envelope triggers.
-          polyVoice.pitchSrc.offset.setValueAtTime(vOct, fireAt - 0.001 < ctx.currentTime ? ctx.currentTime : fireAt - 0.001);
+          // single-cycle envelope triggers. With S&H ON the lead reference is
+          // the UN-jittered `atTime` (so the pitch latch isn't pulled around
+          // by humanize); with S&H OFF it's the jittered `fireAt` (legacy).
+          const pitchLeadFrom = snh ? atTime : fireAt;
+          const pitchAt = pitchLeadFrom - 0.001 < ctx.currentTime
+            ? ctx.currentTime
+            : pitchLeadFrom - 0.001;
+          polyVoice.pitchSrc.offset.setValueAtTime(vOct, pitchAt);
           polyVoice.gateSrc.offset.setValueAtTime(1, fireAt);
           polyVoice.gateSrc.offset.setValueAtTime(0, fireAt + gateOffWindow);
           lastEmittedLaneVOct[i] = vOct;

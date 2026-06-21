@@ -170,3 +170,26 @@ export function sampleHoldStep(
     prevGate: gate,
   };
 }
+
+/**
+ * S&H scheduling predicate, shared verbatim by the four MAIN-THREAD step
+ * sequencers (clipplayer / sequencer / polyseqz / cartesian) that bake-in a
+ * gate-sampled Sample & Hold on their pitch CV output.
+ *
+ * Those modules write pitch ONCE per step into a `ConstantSourceNode.offset`
+ * via `setValueAtTime`, so pitch is ALREADY held between writes. The correct
+ * S&H lives at the SCHEDULING LAYER — not a per-sample hold loop:
+ *
+ *   * enabled (S&H ON)  → only (re)write pitch on a GATED step. Between gates
+ *     the ConstantSource keeps its last value, so the pitch CV LATCHES to the
+ *     gate edge and holds constant until the next gate.
+ *   * !enabled (S&H OFF) → always write pitch (the legacy continuous behavior,
+ *     where pitch can drift / reset on rests between gates).
+ *
+ * @param enabled        whether the module's `snh` toggle is ON.
+ * @param gatedThisStep  whether a gate fires on the step being scheduled.
+ * @returns whether the caller should (re)write the pitch CV this step.
+ */
+export function shouldWritePitch(enabled: boolean, gatedThisStep: boolean): boolean {
+  return enabled ? gatedThisStep : true;
+}

@@ -48,6 +48,16 @@ describe('polyseqz: module def', () => {
     expect(length?.max).toBe(STEP_COUNT);
   });
 
+  it('declares a discrete s&h param defaulting ON (1), lowercase label', () => {
+    const snh = polyseqzDef.params.find((p) => p.id === 'snh');
+    expect(snh).toBeDefined();
+    expect(snh!.defaultValue).toBe(1);
+    expect(snh!.min).toBe(0);
+    expect(snh!.max).toBe(1);
+    expect(snh!.curve).toBe('discrete');
+    expect(snh!.label).toBe(snh!.label.toLowerCase());
+  });
+
   it('voice lane count matches the polyPitchGate cable', () => {
     expect(POLYSEQZ_VOICE_LANES).toBe(POLY_CHANNEL_PAIRS);
     expect(POLYSEQZ_VOICE_LANES).toBe(VOICE_LANES);

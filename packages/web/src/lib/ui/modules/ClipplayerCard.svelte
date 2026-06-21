@@ -106,6 +106,10 @@
   const STEP_LABELS = ['1/4', '1/8', '1/16', '1/32'];
   let stepDiv = $derived((void cardVersion, Math.round(node?.params.stepDiv ?? pdef('stepDiv').defaultValue)));
   let quantize = $derived((void cardVersion, (node?.params.quantize ?? 1) >= 0.5));
+  // Gate-sampled S&H toggle — ONE global toggle for all 8 lanes, baked into the
+  // pitch CV; ON by default (the snh fallback supplies ON for old saves, no
+  // schemaVersion bump needed). Replaces the 8 external S&H modules.
+  let snhOn = $derived((void cardVersion, (node?.params.snh ?? 1) >= 0.5));
   let octave = $derived((void cardVersion, node?.params.octave ?? 0));
   let gateLength = $derived((void cardVersion, node?.params.gateLength ?? 0.9));
 
@@ -499,6 +503,19 @@
   <header class="title">
     <ModuleTitle {id} {data} defaultLabel="CLIP PLAYER" inline />
     <span class="title-btns">
+      <!-- Gate-sampled S&H — ONE global toggle for all 8 lanes (replaces the 8
+           external S&H modules). ON (default) holds each lane's pitch on rests. -->
+      <button
+        type="button"
+        class="snh-toggle"
+        class:on={snhOn}
+        data-testid={`clipplayer-snh-toggle`}
+        aria-pressed={snhOn}
+        title={snhOn
+          ? 'Sample & Hold ON — every lane\'s pitch CV holds on rests (latched to the gate edge). Replaces 8 external S&H. Click for continuous.'
+          : 'Sample & Hold OFF — rests rewrite pitch (legacy continuous). Click to hold.'}
+        onclick={() => setParam('snh')(snhOn ? 0 : 1)}
+      >{snhOn ? 'S&H' : 'OFF'}</button>
       {#if showTransport}
         <button
           class="transport"
@@ -813,6 +830,20 @@
   }
   .grid-btn.on { color: var(--accent, #6cf); border-color: var(--accent, #6cf); }
   .grid-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  /* Gate-sampled S&H toggle — sits in the .title-btns row (upper-right). Same
+     pill styling as the other title toggles; ON = accent-highlighted. */
+  .snh-toggle {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    padding: 3px 5px;
+    cursor: pointer;
+  }
+  .snh-toggle.on { color: var(--accent, #6f9); border-color: var(--accent, #6f9); }
   /* SONG MODE: SES/ARR toggle + RECORD arm */
   .song-mode {
     background: var(--control-bg, #222);
