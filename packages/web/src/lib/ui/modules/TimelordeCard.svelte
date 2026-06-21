@@ -16,6 +16,13 @@
     wizardDisplayMode,
     type WizardDisplayMode,
   } from '$lib/audio/modules/timelorde-wizard';
+  // TAP TEMPO core — the SAME pure, unit-tested helper the Electra hardware
+  // tap path uses (src/lib/electra/tap-tempo.ts). Median-based, 2-tap lock,
+  // ~2s timeout reset, BPM clamp. We feed it performance.now() per tap and
+  // write the result through the normal `bpm` param path (setNodeParam) —
+  // exactly what the BPM knob does — so the value persists + syncs to
+  // rack-mates with no new param or worklet change.
+  import { TapTempo } from '$lib/electra/tap-tempo';
 
   // The owner's folk-art OWL PAINTING — a bundled static asset (served at the
   // site root from packages/web/static/img). Drawn into the big display + used
@@ -24,7 +31,11 @@
   // Image() load.
   const OWL_SRC = '/img/timelorde-owl.png';
 
-  let { id, data }: NodeProps = $props();
+  // `selected` is a Required NodeProps field SvelteFlow passes to every node —
+  // true when this TIMELORDE is the selected node. It scopes the Spacebar→tap
+  // shortcut so space only taps THIS card when it's selected (and never while
+  // typing in an input — see the keydown effect below).
+  let { id, data, selected }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
@@ -407,6 +418,58 @@
     set('running')(running ? 0 : 1);
   }
 
+  // ---------------- TAP TEMPO ----------------
+  //
+  // Tap the TAP button (or Spacebar while this card is selected) in time with
+  // the beat; on the 2nd tap the controller locks a BPM (median of the recent
+  // intervals, ~2s timeout reset, clamped) and we write it through the normal
+  // `bpm` param — the SAME control the BPM knob drives — so it persists +
+  // syncs. When TIMELORDE is locked to an EXTERNAL clock (a cable in the
+  // `clock` input), the internal BPM is owned by the measured external tempo,
+  // so TAP is BOTH greyed out AND a no-op: tapping the hand-set tempo while a
+  // hardware clock drives the rack would just fight the follower.
+  const tapController = new TapTempo();
+  function tap() {
+    if (hasExternalClock) return; // disabled while an external clock owns BPM
+    const now =
+      typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const bpmNow = tapController.tap(now);
+    if (bpmNow !== null) set('bpm')(bpmNow); // same path as the BPM knob
+  }
+
+  // Spacebar → tap, but ONLY when this TIMELORDE is the selected node and the
+  // user isn't typing into a field. Spacebar is otherwise unbound globally
+  // (verified: no transport/canvas-pan binding), so this claims it cleanly for
+  // the selected card and leaves it free everywhere else. We register on
+  // `window` in an $effect (with teardown) — the per-card keyboard pattern
+  // DoomCard/NumpadPlusCard use.
+  function isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
+  }
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    function onKey(e: KeyboardEvent) {
+      if (e.code !== 'Space' && e.key !== ' ') return;
+      if (!selected) return; // only the selected TIMELORDE responds
+      if (e.repeat) return; // ignore key-auto-repeat (one tap per press)
+      if (isEditableTarget(e.target)) return; // don't steal space from inputs
+      if (hasExternalClock) return; // external clock → space is a no-op too
+      // Claim the key: stop the page scrolling / a focused button activating.
+      e.preventDefault();
+      tap();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // If an external clock gets patched mid-tap, forget the in-progress series so
+  // a later un-patch starts clean rather than averaging across the gap.
+  $effect(() => {
+    if (hasExternalClock) tapController.reset();
+  });
+
   const OUT_LABELS = ['1x', '8x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64', 'swing'];
   const SRC_LABELS = ['1x', '8x', '4x', '2x', '1/2', '1/3', '1/4', '1/8', '1/12', '1/16', '1/32', '1/64'];
 
@@ -453,6 +516,18 @@
     <button class="play-btn" class:playing={!muteOutputs} onclick={toggleMute} title={muteOutputs ? 'Unmute (gates fire)' : 'Mute (gates go silent; internal clock keeps running for LIVECODE)'}>
         {muteOutputs ? 'MUTE' : 'ON'}
       </button>
+    <!-- TAP TEMPO: tap twice in time to set the BPM (same control as the BPM
+         knob). Spacebar taps it too while this card is selected. Disabled +
+         greyed while an external clock owns the tempo (a cable in CLOCK IN). -->
+    <button
+      class="play-btn tap-btn"
+      onclick={tap}
+      disabled={hasExternalClock}
+      title={hasExternalClock
+        ? 'TAP disabled — tempo is locked to the external clock'
+        : 'Tap twice in time to set the tempo (or press Space while selected)'}
+      data-testid={`timelorde-tap-${id}`}
+    >TAP</button>
   </header>
 
   <!-- BIG SQUARE DISPLAY — ~4× the old sprite. Normally the owner's beat-pulsing
@@ -531,6 +606,18 @@
     background: var(--cable-gate);
     color: #1a1d23;
     border-color: var(--cable-gate);
+  }
+  /* TAP is wider than the square transport buttons (it holds a 3-char label). */
+  .tap-btn {
+    width: auto;
+    padding: 0 6px;
+    letter-spacing: 0.05em;
+  }
+  /* Greyed-out + non-interactive while an external clock owns the tempo. */
+  .tap-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    color: var(--text-dim);
   }
   /* The global transport reads distinct from MUTE: accent-tinted while running. */
   .run-btn.playing {

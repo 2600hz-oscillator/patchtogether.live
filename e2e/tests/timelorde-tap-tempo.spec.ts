@@ -1,0 +1,187 @@
+// e2e/tests/timelorde-tap-tempo.spec.ts
+//
+// LIVE-patch coverage for TIMELORDE's TAP TEMPO. Claims:
+//
+//   1. TAP button locks the BPM: two clicks ~500 ms apart set bpm ≈ 120 (the
+//      same `bpm` param the knob drives). Tapping ~375 ms apart re-locks ≈ 160.
+//   2. Spacebar taps it WHEN SELECTED: select TIMELORDE, press Space twice at a
+//      known interval → bpm locks to ~that tempo. (Space is otherwise unbound.)
+//   3. Space does NOT tap when TIMELORDE is NOT selected (no bpm change).
+//   4. External-clock DISABLE: with a cable patched into CLOCK IN the TAP button
+//      is `disabled` and BOTH clicking it AND pressing Space are no-ops.
+//
+// The tap-tempo MATH (2-tap lock, rolling/median, ~2s timeout reset, outlier
+// rejection, BPM clamp) is exhaustively unit-tested in
+// src/lib/electra/tap-tempo.test.ts — the shared pure core the card reuses.
+// This spec only proves the BUTTON + SPACE-WHEN-SELECTED + DISABLE wiring drives
+// that core through the real card.
+
+import { test, expect, type Page } from '@playwright/test';
+import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
+
+const TL = 'tl'; // explicit TIMELORDE node id (spawnPatch clears the rack first)
+
+/** Read TIMELORDE's live `bpm` param from the patch store. */
+async function readBpm(page: Page, nodeId: string): Promise<number | null> {
+  return page.evaluate((id) => {
+    const w = globalThis as unknown as {
+      __patch?: { nodes?: Record<string, { params?: Record<string, number> }> };
+    };
+    const v = w.__patch?.nodes?.[id]?.params?.bpm;
+    return typeof v === 'number' ? v : null;
+  }, nodeId);
+}
+
+/** Click the TIMELORDE card to make it the selected node. */
+async function selectTimelorde(page: Page, nodeId: string): Promise<void> {
+  // Click the card title (a non-interactive area) so SvelteFlow selects the
+  // node without toggling a button.
+  await page.locator(`.svelte-flow__node[data-id="${nodeId}"] .title`).click();
+  await expect(page.locator(`.svelte-flow__node[data-id="${nodeId}"]`)).toHaveClass(
+    /selected/,
+  );
+}
+
+/** Tap the TAP button N times with `gapMs` between presses. */
+async function tapButton(
+  page: Page,
+  nodeId: string,
+  n: number,
+  gapMs: number,
+): Promise<void> {
+  const btn = page.locator(`[data-testid="timelorde-tap-${nodeId}"]`);
+  for (let i = 0; i < n; i++) {
+    if (i > 0) await page.waitForTimeout(gapMs);
+    await btn.click();
+  }
+}
+
+/** Press Space N times with `gapMs` between presses. */
+async function pressSpace(page: Page, n: number, gapMs: number): Promise<void> {
+  for (let i = 0; i < n; i++) {
+    if (i > 0) await page.waitForTimeout(gapMs);
+    await page.keyboard.press('Space');
+  }
+}
+
+test.describe('TIMELORDE tap tempo', () => {
+  test('TAP button locks the BPM to the tapped interval', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [{ id: TL, type: 'timelorde', position: { x: 200, y: 80 }, domain: 'audio', params: { bpm: 80 } }],
+      [],
+    );
+
+    const tap = page.locator(`[data-testid="timelorde-tap-${TL}"]`);
+    await expect(tap, 'TAP button present').toHaveCount(1);
+    await expect(tap, 'TAP enabled with no external clock').toBeEnabled();
+
+    // Two taps ~500 ms apart → ~120 BPM. (Real wall-clock gaps; we allow a wide
+    // tolerance for scheduler jitter under CI load.)
+    await tapButton(page, TL, 2, 500);
+    await expect
+      .poll(() => readBpm(page, TL), { timeout: 3000, message: 'bpm locks ~120' })
+      .toBeGreaterThan(95);
+    expect(await readBpm(page, TL)).toBeLessThan(150);
+
+    // Keep tapping FASTER (~375 ms → ~160 BPM) re-locks upward.
+    await tapButton(page, TL, 4, 375);
+    await expect
+      .poll(() => readBpm(page, TL), { timeout: 3000, message: 'bpm re-locks faster' })
+      .toBeGreaterThan(120);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('Spacebar taps the tempo ONLY when TIMELORDE is selected', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [{ id: TL, type: 'timelorde', position: { x: 200, y: 80 }, domain: 'audio', params: { bpm: 80 } }],
+      [],
+    );
+
+    // NOT selected yet: Space must NOT change the tempo.
+    // (Click empty canvas to ensure nothing is selected.)
+    await page.locator('.svelte-flow__pane').click({ position: { x: 5, y: 5 } });
+    const before = await readBpm(page, TL);
+    await pressSpace(page, 2, 500);
+    await page.waitForTimeout(300);
+    expect(
+      await readBpm(page, TL),
+      'space does nothing while unselected',
+    ).toBe(before);
+
+    // SELECT TIMELORDE, then Space twice ~500 ms apart → ~120 BPM.
+    await selectTimelorde(page, TL);
+    await pressSpace(page, 2, 500);
+    await expect
+      .poll(() => readBpm(page, TL), { timeout: 3000, message: 'space taps when selected' })
+      .toBeGreaterThan(95);
+    expect(await readBpm(page, TL)).toBeLessThan(150);
+
+    expect(errors).toEqual([]);
+  });
+
+  test('external clock DISABLES tap (button greyed + click & space are no-ops)', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // A gate clock source → TIMELORDE.clock makes it an externally-clocked
+    // TIMELORDE. The card's `hasExternalClock` is a pure store-edge check (an
+    // edge whose target is the `clock` port), so the disable engages the moment
+    // the edge exists — we use the Moog 960 sequencer's `clock_out` gate (the
+    // documented "chain a clock into TIMELORDE" pairing).
+    const nodes: SpawnNode[] = [
+      { id: 'clk', type: 'moog960', position: { x: 40, y: 360 }, domain: 'audio' },
+      { id: TL, type: 'timelorde', position: { x: 420, y: 80 }, domain: 'audio', params: { bpm: 80 } },
+    ];
+    const edges: SpawnEdge[] = [
+      { id: 'e_clk', from: { nodeId: 'clk', portId: 'clock_out' }, to: { nodeId: TL, portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
+    ];
+    await spawnPatch(page, nodes, edges);
+
+    const tap = page.locator(`[data-testid="timelorde-tap-${TL}"]`);
+    await expect(tap, 'TAP present').toHaveCount(1);
+    // The button is functionally + visually disabled while the external clock owns BPM.
+    await expect(tap, 'TAP disabled under external clock').toBeDisabled();
+
+    // The measured-external-clock follow may write bpm; capture a baseline,
+    // then prove TAP/Space don't ADD a tap-set tempo. We click the disabled
+    // button (no-op) and press Space while selected (no-op for tap).
+    await selectTimelorde(page, TL);
+    const baseline = await readBpm(page, TL);
+
+    // Force-click the disabled button (Playwright bypasses the disabled guard
+    // with force) — the onclick handler itself must still no-op via the
+    // hasExternalClock early-return.
+    await tap.click({ force: true }).catch(() => { /* disabled may reject; that's fine */ });
+    await pressSpace(page, 4, 200); // would lock ~300 BPM if it tapped
+    await page.waitForTimeout(400);
+
+    const after = await readBpm(page, TL);
+    // bpm must NOT have jumped to a fast tap-set tempo (~300). It either stays
+    // at the baseline or tracks the LFO-measured external tempo — never the
+    // would-be 300 BPM from the 200 ms space taps.
+    expect(after, 'no tap-set tempo applied under external clock').toBeLessThan(280);
+    if (baseline !== null && after !== null) {
+      // Sanity: the 200 ms space-tap cadence would imply ~300 BPM; assert we're
+      // clearly below that, i.e. the taps were ignored.
+      expect(Math.abs(after - 300)).toBeGreaterThan(20);
+    }
+
+    expect(errors).toEqual([]);
+  });
+});
