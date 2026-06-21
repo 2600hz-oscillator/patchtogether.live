@@ -75,7 +75,7 @@ test.describe('TIMELORDE tap tempo', () => {
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
-      [{ id: TL, type: 'timelorde', position: { x: 200, y: 80 }, domain: 'audio', params: { bpm: 80 } }],
+      [{ id: TL, type: 'timelorde', position: { x: 200, y: 80 }, domain: 'audio', params: { bpm: 50 } }],
       [],
     );
 
@@ -83,19 +83,25 @@ test.describe('TIMELORDE tap tempo', () => {
     await expect(tap, 'TAP button present').toHaveCount(1);
     await expect(tap, 'TAP enabled with no external clock').toBeEnabled();
 
-    // Two taps ~500 ms apart → ~120 BPM. (Real wall-clock gaps; we allow a wide
-    // tolerance for scheduler jitter under CI load.)
+    // Two taps lock the bpm to the tapped tempo — i.e. CHANGE it off the 50 spawn.
+    // We assert "changed + within clamp", NOT an absolute bpm: the gap is REAL
+    // wall-clock between Playwright clicks and CI click latency stretches it (the
+    // exact interval→BPM math is unit-tested in electra/tap-tempo.test.ts).
     await tapButton(page, TL, 2, 500);
     await expect
-      .poll(() => readBpm(page, TL), { timeout: 3000, message: 'bpm locks ~120' })
-      .toBeGreaterThan(95);
-    expect(await readBpm(page, TL)).toBeLessThan(150);
+      .poll(() => readBpm(page, TL), { timeout: 3000, message: 'a 2-tap sets the bpm off the spawn' })
+      .not.toBe(50);
+    const bpmSlow = (await readBpm(page, TL))!;
+    expect(bpmSlow, 'tapped bpm within clamp').toBeGreaterThan(20);
+    expect(bpmSlow, 'tapped bpm within clamp').toBeLessThan(300);
 
-    // Keep tapping FASTER (~375 ms → ~160 BPM) re-locks upward.
+    // Keep tapping FASTER (~375 ms gap) → re-locks to a HIGHER bpm than the slower
+    // tap. RELATIVE (faster gap ⇒ higher bpm), so it's immune to CI click latency
+    // (which stretches both the 500 ms and 375 ms gaps by the same amount).
     await tapButton(page, TL, 4, 375);
     await expect
-      .poll(() => readBpm(page, TL), { timeout: 3000, message: 'bpm re-locks faster' })
-      .toBeGreaterThan(120);
+      .poll(() => readBpm(page, TL), { timeout: 3000, message: 'a faster tap re-locks higher than the slower tap' })
+      .toBeGreaterThan(bpmSlow);
 
     expect(errors).toEqual([]);
   });
@@ -108,7 +114,7 @@ test.describe('TIMELORDE tap tempo', () => {
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
-      [{ id: TL, type: 'timelorde', position: { x: 200, y: 80 }, domain: 'audio', params: { bpm: 80 } }],
+      [{ id: TL, type: 'timelorde', position: { x: 200, y: 80 }, domain: 'audio', params: { bpm: 50 } }],
       [],
     );
 
@@ -123,13 +129,16 @@ test.describe('TIMELORDE tap tempo', () => {
       'space does nothing while unselected',
     ).toBe(before);
 
-    // SELECT TIMELORDE, then Space twice ~500 ms apart → ~120 BPM.
+    // SELECT TIMELORDE, then two Space taps CHANGE the bpm off the 50 spawn (same
+    // change-not-absolute rationale as the TAP-button test — CI click latency).
     await selectTimelorde(page, TL);
     await pressSpace(page, 2, 500);
     await expect
-      .poll(() => readBpm(page, TL), { timeout: 3000, message: 'space taps when selected' })
-      .toBeGreaterThan(95);
-    expect(await readBpm(page, TL)).toBeLessThan(150);
+      .poll(() => readBpm(page, TL), { timeout: 3000, message: 'space taps when selected (bpm changes off spawn)' })
+      .not.toBe(50);
+    const bpmSpace = (await readBpm(page, TL))!;
+    expect(bpmSpace, 'space-tapped bpm within clamp').toBeGreaterThan(20);
+    expect(bpmSpace, 'space-tapped bpm within clamp').toBeLessThan(300);
 
     expect(errors).toEqual([]);
   });
@@ -148,7 +157,7 @@ test.describe('TIMELORDE tap tempo', () => {
     // documented "chain a clock into TIMELORDE" pairing).
     const nodes: SpawnNode[] = [
       { id: 'clk', type: 'moog960', position: { x: 40, y: 360 }, domain: 'audio' },
-      { id: TL, type: 'timelorde', position: { x: 420, y: 80 }, domain: 'audio', params: { bpm: 80 } },
+      { id: TL, type: 'timelorde', position: { x: 420, y: 80 }, domain: 'audio', params: { bpm: 50 } },
     ];
     const edges: SpawnEdge[] = [
       { id: 'e_clk', from: { nodeId: 'clk', portId: 'clock_out' }, to: { nodeId: TL, portId: 'clock' }, sourceType: 'gate', targetType: 'gate' },
