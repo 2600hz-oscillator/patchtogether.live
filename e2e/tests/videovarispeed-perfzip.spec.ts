@@ -145,7 +145,10 @@ test.describe('VIDEOVARISPEED + PICTUREBOX perf-zip round-trip', () => {
     );
 
     // Open the "Load multiple…" panel (right-click) + load slot 1.
-    await vvsCard.locator('[data-testid="videovarispeed-card"]').click({ button: 'right' });
+    // dispatchEvent (not .click) — the videovarispeed card repaints from its
+    // transport loop so Playwright's actionability "stable" check never settles;
+    // a dispatched contextmenu bubbles to onCardContextMenu regardless.
+    await vvsCard.locator('[data-testid="videovarispeed-card"]').dispatchEvent('contextmenu');
     await expect(vvsCard.locator('[data-testid="videovarispeed-multi-panel"]')).toBeVisible({ timeout: 5000 });
     await vvsCard.locator('[data-testid="videovarispeed-slot-input-1"]').setInputFiles(AV_FIXTURE);
     // Slot 1 holds LOCAL bytes (data-slot-local=true), not just synced meta.
@@ -196,7 +199,7 @@ test.describe('VIDEOVARISPEED + PICTUREBOX perf-zip round-trip', () => {
     // blob handle — NOT merely that the synced slotMeta name survived. THIS is
     // the Fix B repair: before it, slot 1 bytes were never in the bundle.
     const restored = page.locator(`.svelte-flow__node[data-id="${VVS_ID}"]`);
-    await restored.locator('[data-testid="videovarispeed-card"]').click({ button: 'right' });
+    await restored.locator('[data-testid="videovarispeed-card"]').dispatchEvent('contextmenu');
     await expect(restored.locator('[data-testid="videovarispeed-multi-panel"]')).toBeVisible({ timeout: 5000 });
     await expect(restored.locator('[data-testid="videovarispeed-slot-1"]'))
       .toHaveAttribute('data-slot-local', 'true', { timeout: 12000 });
