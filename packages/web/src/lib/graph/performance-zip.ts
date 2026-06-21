@@ -27,9 +27,14 @@
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import type { PerformanceBundle } from './performance-bundle';
 
-/** Reject any single bundled video larger than this on import (mirrors the
- *  TOYBOX preset discipline — video/toybox-preset-io.ts MAX_VIDEO_BYTES). */
-export const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // 50 MB
+/** Reject any single bundled video larger than this on import. This is a
+ *  per-FILE sanity guard, NOT a per-bundle cap: a perf with 7 VIDEOVARISPEED
+ *  slots is intended to be large (the owner explicitly accepts large bundles),
+ *  so we never cap the bundle total or silently drop a populated slot. The
+ *  ceiling matches VIDEOVARISPEED_MAX_SLOT_BYTES (the per-slot load limit the
+ *  card enforces) so any file the card ACCEPTED into a slot also survives the
+ *  round-trip — a 50 MB cap (the old value) would have rejected a legal slot. */
+export const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100 MB (== per-slot load cap)
 
 export const PERFORMANCE_ZIP_FORMAT = 'pt-performance-v1';
 const MANIFEST_JSON = 'performance.json';
@@ -54,6 +59,10 @@ export interface PerformanceMedia {
   name: string;
   /** Raw asset bytes. */
   bytes: Uint8Array;
+  /** Asset slot index (0..6) for the 7-slot VIDEOVARISPEED selector. Omitted /
+   *  0 = the single-video slot (VIDEOBOX, or VIDEOVARISPEED slot 0). Restored
+   *  into the matching slot so all 7 videos come back in the right positions. */
+  slot?: number;
 }
 
 /** Everything needed to reconstruct a whole performance: the manifest (patch
@@ -75,6 +84,8 @@ interface MediaEntry {
   role: 'video' | 'audio';
   name: string;
   path: string;
+  /** Asset slot (0..6); omitted ⇒ 0 (single-video back-compat). */
+  slot?: number;
 }
 
 interface PerformanceManifest {
@@ -99,8 +110,13 @@ export function buildPerformanceZip(input: PerformanceZipBundle): Uint8Array {
     role: m.role,
     name: m.name,
     // include role + `i` + handleId so two assets on the same node (e.g. a
-    // TWOTRACKS reel a + reel b) and same-named clips on different nodes don't collide
+    // TWOTRACKS reel a + reel b, or 7 VIDEOVARISPEED slots) and same-named clips
+    // on different nodes don't collide. (`i` is the global media index, so the
+    // path is unique even before considering handleId/slot.)
     path: `${MEDIA_DIR}${m.role}-${i}-${sanitize(m.handleId)}-${sanitize(m.name)}`,
+    // Only emit slot when non-zero so a single-video manifest stays byte-identical
+    // to the pre-multi-slot format (back-compat + deterministic).
+    ...(m.slot && m.slot > 0 ? { slot: m.slot } : {}),
   }));
   const manifest: PerformanceManifest = {
     format: PERFORMANCE_ZIP_FORMAT,
@@ -157,7 +173,15 @@ export function parsePerformanceZip(zip: ArrayBuffer | Uint8Array): PerformanceZ
         `Bundled ${m.role} '${m.name}' is ${(mbytes.length / 1048576).toFixed(0)} MB — exceeds the ${(MAX_VIDEO_BYTES / 1048576).toFixed(0)} MB limit`,
       );
     }
-    media.push({ nodeId: m.nodeId, handleId: m.handleId, role: m.role, name: m.name, bytes: mbytes });
+    media.push({
+      nodeId: m.nodeId,
+      handleId: m.handleId,
+      role: m.role,
+      name: m.name,
+      bytes: mbytes,
+      // slot absent in older manifests ⇒ 0 (the single-video slot).
+      slot: typeof m.slot === 'number' ? m.slot : 0,
+    });
   }
   return { bundle: manifest.bundle, media, savedAt: manifest.savedAt };
 }

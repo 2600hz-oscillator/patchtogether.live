@@ -297,16 +297,11 @@
     if (slot === 0) {
       objectUrl = url;
       localFileName = file.name;
-      // Register slot-0 bytes resolver for the portable "Export performance"
-      // (.zip) path. Mirrors VIDEOBOX. (Multi-slot export is out of scope.)
-      registerVideoExport(id, async () => {
-        const u = slotUrls[0];
-        if (!u) return null;
-        const resp = await fetch(u);
-        const ab = await (await resp.blob()).arrayBuffer();
-        return { bytes: new Uint8Array(ab), name: slotNames[0] ?? file.name };
-      });
     }
+    // The portable "Export performance" (.zip) resolver is multi-slot: it
+    // resolves EVERY populated slot's bytes (registerSlotExport, once on mount),
+    // so all 7 videos travel in the bundle — not just slot 0 (the data-loss bug
+    // Fix B repairs). Nothing slot-specific to register here.
     if (!el) return;
     el.src = url;
     el.muted = false;
@@ -393,6 +388,46 @@
     if (perm === 'prompt') pendingHandle = handle;
     // 'denied' → re-link prompt covers it.
   }
+
+  // ---- Per-slot reload on perf-zip / patch load (slots 1..6) ----
+  //
+  // The portable .zip now carries EVERY populated slot's bytes (Fix B); on load
+  // Canvas seeds each into the IDB blob store keyed by that slot's
+  // slotMeta[i].handleId. Here each slot whose synced meta carries a handleId
+  // that resolves to a (granted) blob handle in THIS browser is auto-loaded —
+  // so all 7 videos come back with no re-pick. Slot 0 is handled by
+  // tryReloadFromHandle above (it owns the legacy single-video fileMeta path);
+  // a granted blob seeded under a slot's handleId wraps as 'granted' (see
+  // video-file-store.blobHandleFrom), so cross-machine restore works too. A
+  // slot whose handle isn't in this browser (a peer never had that file) is
+  // skipped — the slot stays empty (its synced slotMeta still shows the name).
+  const slotReloadAttempted = new Array<boolean>(ASSET_SLOTS).fill(false);
+  async function tryReloadSlotFromHandle(slot: number): Promise<void> {
+    if (slot <= 0 || slot >= ASSET_SLOTS) return; // slot 0 = single-video path
+    if (slotHasLocalVideo(slot)) return; // already loaded locally
+    const hid = slotMeta[slot]?.handleId;
+    if (!hid) return;
+    const handle = await getVideoFileHandle(hid);
+    if (!handle) return; // not in this browser → stays empty (name still shows)
+    const perm = await queryHandleReadPermission(handle);
+    if (perm !== 'granted') return; // re-pick covers a lapsed/foreign handle
+    try {
+      const file = await handle.getFile();
+      await loadFileIntoSlot(slot, file, { handle, reuseHandleId: hid });
+    } catch { /* file moved/gone — slot stays empty */ }
+  }
+
+  // Run each slot's reload once its synced slotMeta.handleId becomes available
+  // (mirrors the slot-0 $effect below). Independent per-slot attempt flags so a
+  // late-arriving slot still fires.
+  $effect(() => {
+    for (let i = 1; i < ASSET_SLOTS; i++) {
+      const hid = slotMeta[i]?.handleId;
+      if (!hid || slotReloadAttempted[i] || slotHasLocalVideo(i)) continue;
+      slotReloadAttempted[i] = true;
+      void tryReloadSlotFromHandle(i);
+    }
+  });
 
   // One-click "re-allow": request read permission inside this click gesture,
   // then reload. Bound to the re-allow button.
@@ -757,8 +792,36 @@
     }
   });
 
+  /** Resolve ALL populated slots' bytes for the portable "Export performance"
+   *  (.zip) path. Each slot's bytes live ONLY in its local object URL (never on
+   *  node.data — only per-slot fileMeta syncs), so we fetch each loaded URL. The
+   *  registry flattens the array to one media entry per slot, each tagged with
+   *  its `slot` index so the loader restores it into the matching slot. Returns
+   *  null when nothing is loaded. Registered ONCE on mount; it reads the live
+   *  slotUrls/slotNames each export, so it always reflects the current state. */
+  async function resolveAllSlotBytes() {
+    const out: { bytes: Uint8Array; name: string; slot: number }[] = [];
+    for (let i = 0; i < ASSET_SLOTS; i++) {
+      const u = slotUrls[i];
+      if (!u) continue;
+      try {
+        const resp = await fetch(u);
+        const ab = await (await resp.blob()).arrayBuffer();
+        const bytes = new Uint8Array(ab);
+        if (bytes.length === 0) continue;
+        out.push({ bytes, name: slotNames[i] ?? `slot-${i}.mp4`, slot: i });
+      } catch { /* revoked/torn-down URL — skip this slot */ }
+    }
+    return out.length > 0 ? out : null;
+  }
+
   // ---- Mount / unmount ----
   onMount(() => {
+    // Register the multi-slot bytes resolver for the portable .zip export. Done
+    // once on mount (not per slot-0 load) so EVERY populated slot travels in the
+    // bundle — the Fix B repair for "7 videos in, 1 video out".
+    registerVideoExport(id, resolveAllSlotBytes);
+
     let attempts = 0;
     const attach = setInterval(() => {
       attempts++;
@@ -998,7 +1061,11 @@
           <button type="button" class="multi-close" onclick={() => (multiOpen = false)} data-testid="videovarispeed-multi-close" aria-label="Close">✕</button>
         </div>
         {#each ASSET_SLOT_LABELS as label, i (i)}
-          <div class="slot-row" class:active={i === activeSlot} data-testid="videovarispeed-slot-{i}">
+          <!-- data-slot-local: true once THIS browser holds the slot's bytes
+               (slotNames[i] set), distinct from the synced slotMeta name a peer
+               who never had the file would still show. The perf-zip round-trip
+               e2e asserts on this to prove the BYTES reloaded, not just meta. -->
+          <div class="slot-row" class:active={i === activeSlot} data-testid="videovarispeed-slot-{i}" data-slot-local={(slotNames[i] ?? null) !== null}>
             <span class="slot-note">{label}</span>
             <label class="slot-load">
               <input type="file" accept="video/*" onchange={(e) => onSlotFileInputChange(e, i)} data-testid="videovarispeed-slot-input-{i}" />
