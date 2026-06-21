@@ -66,10 +66,16 @@ async function seedTwoLayers(page: Page): Promise<void> {
   });
 }
 
-/** Left-click an editor control by testid (force past the bottombar footer +
- *  noWaitAfter to skip the no-op navigation settle — see combine-editor spec). */
+/** Left-click an editor control by testid. Dispatch the click straight on the
+ *  element: this serves both the HTML toolbar buttons (add-fade/add-map/…) AND the
+ *  bespoke SVG port circles (the toybox-outport- and toybox-inport- dots), whose
+ *  tiny hit areas under svelte-flow's CSS transform intermittently fail to receive a
+ *  coordinate force-click under the serialized real-GPU attest's load — so a chain
+ *  wire would silently no-op. A dispatched event hits the exact node + bubbles to
+ *  Svelte's delegated handler, immune to coordinates/transform (same fix as the
+ *  toybox-node-controls selectNode + the #844 collab gestures). */
 async function clickEd(page: Page, testid: string): Promise<void> {
-  await page.locator(`[data-testid="${testid}"]`).click({ force: true, noWaitAfter: true });
+  await page.locator(`[data-testid="${testid}"]`).first().dispatchEvent('click');
 }
 
 /** Right-click an editor element by testid (opens the contextual menu). Retries
@@ -306,13 +312,26 @@ test.describe('TOYBOX node-map contextual menu', () => {
 
     // Add a 2nd op, then wire a chain: src0 → A.in0, src1 → A.in1, A → B.in0.
     await clickEd(page, 'toybox-add-map');
-    const { nodes } = await readCombine(page);
-    // The two FREE ops we just added (no incoming edges yet).
-    const { edges: edges0 } = await readCombine(page);
-    const wiredTo = new Set(edges0.map((e) => e.to));
-    const freeOps = nodes.filter((n) => (n.kind === 'fade' || n.kind === 'map') && !wiredTo.has(n.id));
-    const a = freeOps[0]!.id;
-    const b = freeOps[1]!.id;
+    // POLL until BOTH free ops (the setup add-fade + this add-map) have landed in
+    // node.data before dereferencing them. Under the serialized real-GPU attest's
+    // load the read raced the add's Yjs write, leaving <2 free ops so `freeOps[1]!.id`
+    // threw "Cannot read properties of undefined (reading 'id')" — crashing BEFORE
+    // the `expect(a && b)` guard (the toybox-node-menu attest flake). Resolve a + b
+    // only once both ops exist.
+    let a = '';
+    let b = '';
+    await expect
+      .poll(async () => {
+        const { nodes, edges } = await readCombine(page);
+        const wiredTo = new Set(edges.map((e) => e.to));
+        const freeOps = nodes.filter((n) => (n.kind === 'fade' || n.kind === 'map') && !wiredTo.has(n.id));
+        if (freeOps.length >= 2) {
+          a = freeOps[0]!.id;
+          b = freeOps[1]!.id;
+        }
+        return freeOps.length;
+      }, { timeout: 10_000, message: 'two free fade/map ops (add-fade + add-map) present in node.data' })
+      .toBeGreaterThanOrEqual(2);
     expect(a && b).toBeTruthy();
 
     // Wire the chain via the existing click-to-wire UX (untouched by this feature).

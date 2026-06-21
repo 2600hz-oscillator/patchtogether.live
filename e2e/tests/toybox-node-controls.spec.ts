@@ -156,9 +156,17 @@ function opGraph(kind: OpKind, opId = 'op'): { nodes: GNode[]; edges: GEdge[] } 
 
 /** Click a combine node's box to select it (the bottom control pane opens). */
 async function selectNode(page: Page, nodeId: string): Promise<void> {
-  await page.locator(`[data-testid="toybox-gnode-${nodeId}"]`).click({ force: true, noWaitAfter: true });
-  // CI-load robustness: under the serialized real-GPU attest the params pane can
-  // lag a slow frame before its data-node settles (toybox-node-controls flake).
+  // Dispatch the click straight on the handler-bearing <rect> (the testid is on the
+  // parent <g>; the `onclick` lives on its `.gnode-rect` child, and the centred
+  // `.gnode-label` is pointer-events:none). A coordinate `force` click computes the
+  // <g> bbox centre and, under the serialized real-GPU attest's load, intermittently
+  // fails to DELIVER to the SVG sub-element through svelte-flow's CSS transform — the
+  // toybox-node-controls attest flake (the click lands but selection never fires, so
+  // the pane never opens). A dispatched event hits the exact node + bubbles to
+  // Svelte's delegated handler, immune to coordinates/transform/occlusion (same fix
+  // as the #844 collab gestures occluded by the TIMELORDE overlay).
+  await page.locator(`[data-testid="toybox-gnode-${nodeId}"] .gnode-rect`).dispatchEvent('click');
+  // The params pane can still lag a slow frame before its data-node settles.
   await expect(page.locator('[data-testid="toybox-combine-params"]')).toHaveAttribute('data-node', nodeId, { timeout: 15_000 });
 }
 
@@ -337,13 +345,15 @@ test.describe('TOYBOX node controls — delete auto-selects the next node', () =
 
     await selectNode(page, 'opA');
     // Delete the SELECTED node (its × affordance) → the pane re-targets the
-    // remaining op (opB) and shows its controls (not an empty pane).
-    await page.locator('[data-testid="toybox-delnode-opA"]').click({ force: true, noWaitAfter: true });
+    // remaining op (opB) and shows its controls (not an empty pane). dispatchEvent
+    // on the testid'd `.gnode-del` <text> (carries the onclick) so the delete lands
+    // regardless of attest-load click-delivery — see selectNode's note.
+    await page.locator('[data-testid="toybox-delnode-opA"]').dispatchEvent('click');
     await expect(page.locator('[data-testid="toybox-combine-params"]')).toHaveAttribute('data-node', 'opB');
     expect(await renderedKnobParams(page)).toContain('mode'); // mirror's MODE knob
 
     // Delete the LAST op → no op nodes remain → the control pane hides.
-    await page.locator('[data-testid="toybox-delnode-opB"]').click({ force: true, noWaitAfter: true });
+    await page.locator('[data-testid="toybox-delnode-opB"]').dispatchEvent('click');
     await expect(page.locator('[data-testid="toybox-combine-params"]')).toHaveCount(0);
 
     noErrors(errors);
@@ -370,8 +380,9 @@ test.describe('TOYBOX node controls — deleting any node kind never crashes', (
       await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
       await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 
-      // DELETE it (the × affordance) — the reported crash path.
-      await page.locator('[data-testid="toybox-delnode-op"]').click({ force: true, noWaitAfter: true });
+      // DELETE it (the × affordance) — the reported crash path. dispatchEvent so the
+      // delete lands every iteration under the 17× SwiftShader loop (see selectNode).
+      await page.locator('[data-testid="toybox-delnode-op"]').dispatchEvent('click');
       // Node is gone from node.data…
       // CI-load robustness: the per-kind delete+render round runs 17× under the
       // SwiftShader software renderer; the per-iteration 6s/default-5s waits race

@@ -182,6 +182,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   mapper: { size: '2u', hp: 1 }, // 250×200px
   mappy: { size: '3u', hp: 2 }, // ~380×300px — 320×180 (16:9) composite preview + GRID toggle + surface legend
   nibbles: { size: '2u', hp: 2 }, // 367×380px
+  onetonine: { size: '3u', hp: 3 }, // ~360×440px — 300×169 (16:9) monitor preview + GRID toggle + IN/OUT1..OUT9 (10-port panel)
   outlines: { size: '3u', hp: 2 }, // 420×260px
   peakstate: { size: '2u', hp: 2 }, // 329×240px
   picturebox: { size: '2u', hp: 2 }, // 240×220px
