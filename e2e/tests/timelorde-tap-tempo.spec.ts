@@ -38,10 +38,16 @@ async function selectTimelorde(page: Page, nodeId: string): Promise<void> {
   // the click bubbles to SvelteFlow's node selection. (The `.title` header wraps
   // the inline-editable ModuleTitle, which captures the click into rename mode
   // and never selects — that was the original flake.)
-  await page.locator(`.svelte-flow__node[data-id="${nodeId}"] .stripe`).click();
-  await expect(page.locator(`.svelte-flow__node[data-id="${nodeId}"]`)).toHaveClass(
-    /selected/,
-  );
+  //
+  // The stripe is only 2px tall, so under heavy CI shard load a single click can
+  // miss the target / lose the pointerdown→selection race and `.selected` never
+  // applies (shard-10 flake, #854). Retry the click until the node actually
+  // reports selected — Playwright's web-first retry for a gesture that must take.
+  const node = page.locator(`.svelte-flow__node[data-id="${nodeId}"]`);
+  await expect(async () => {
+    await node.locator('.stripe').click();
+    await expect(node).toHaveClass(/selected/, { timeout: 1500 });
+  }).toPass({ timeout: 15000 });
 }
 
 /** Tap the TAP button N times with `gapMs` between presses. */
