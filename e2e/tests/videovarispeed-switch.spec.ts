@@ -141,6 +141,16 @@ async function loadSlot(page: Page, slot: number): Promise<void> {
     .toHaveAttribute('data-slot-local', 'true', { timeout: 10000 });
   // Close the panel so it doesn't overlay the transport controls.
   await card.locator('[data-testid="videovarispeed-multi-close"]').dispatchEvent('click');
+  // The synthetic contextmenu that opened the panel ALSO pops the global
+  // selection context-menu backdrop (onCardContextMenu preventDefaults but does
+  // NOT stopPropagation, so the event bubbles to the pane). That full-screen
+  // .ctx-overlay lingers after multi-close and intercepts later transport
+  // clicks — dismiss it (it closes on click, onclick={onclose}).
+  const overlay = page.locator('.ctx-overlay');
+  if ((await overlay.count()) > 0) {
+    await overlay.first().click();
+    await expect(overlay).toHaveCount(0, { timeout: 4000 });
+  }
 }
 
 test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)', () => {
