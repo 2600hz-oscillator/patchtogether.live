@@ -81,6 +81,14 @@ export const clipplayerDef: AudioModuleDef = {
     { id: 'gateLength', label: 'Gate', defaultValue: 0.9, min: 0.1, max: 1, curve: 'linear' },
     // 0 = launch immediately, 1 = quantize to the lane's clip-loop boundary.
     { id: 'quantize', label: 'Qnt', defaultValue: 1, min: 0, max: 1, curve: 'discrete' },
+    // Gate-sampled Sample & Hold on every lane's pitch CV (ONE global toggle
+    // for all 8 lanes — this replaces the 8 external S&H modules). ON
+    // (default): on an EMPTY step (a rest) the per-voice gate still closes but
+    // pitch HOLDS its last value, so each lane's pitch CV latches to the gate
+    // edge instead of resetting to 0/C4 on every rest. OFF: rests rewrite
+    // pitch=0 (the legacy continuous behavior). Default-ON changes existing
+    // patches by design.
+    { id: 'snh', label: 's&h', defaultValue: 1, min: 0, max: 1, curve: 'discrete' },
   ],
 
   exposesSequence: true,
@@ -335,7 +343,18 @@ export const clipplayerDef: AudioModuleDef = {
       const gateOff =
         r.gateSteps > 1 ? Math.max(0.001, span - 0.002) : Math.max(0.001, span * gateFrac);
       const voiced = r.lanes.map((v) => ({ pitch: v.pitch + octave, gate: v.gate }));
-      ln.poly.scheduleStep(atTime, voiced, gateOff);
+      // Gate-sampled Sample & Hold (ONE global toggle for all 8 lanes, default
+      // ON). On a GATED step (r.any) we always write pitch (the gate edge — the
+      // pitch re-latches). On an EMPTY step (a rest) with S&H ON we schedule
+      // ONLY the per-voice gate-close and leave pitchSrc untouched, so the
+      // lane's pitch CV HOLDS its last value (no external S&H needed). With S&H
+      // OFF an empty step rewrites pitch=0 (legacy continuous behavior). Note:
+      // on a clip (re)launch the first note step is r.any, so pitch re-latches
+      // correctly and leading rests of a NEW clip can't hold the prior clip's
+      // pitch through a gated step.
+      const snh = readParam('snh', 1) >= 0.5;
+      const writePitch = r.any || !snh ? true : false;
+      ln.poly.scheduleStep(atTime, voiced, gateOff, { writePitch });
       ln.sched.push({ t: atTime, idx });
       if (ln.sched.length > 32) ln.sched.shift();
       if (r.any) {
@@ -346,6 +365,10 @@ export const clipplayerDef: AudioModuleDef = {
         ln.lastGate = 1;
         ln.lastVel = r.velocity;
       } else {
+        // Empty step: gate goes low. With S&H ON, ln.lastVOct is left at the
+        // HELD value (we didn't rewrite pitch); with S&H OFF pitch was rewritten
+        // to 0, so mirror that.
+        if (!snh) ln.lastVOct = voiced[0]?.pitch ?? 0;
         ln.lastGate = 0;
       }
     }

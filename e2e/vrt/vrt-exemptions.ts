@@ -698,7 +698,7 @@ export const STRICT_VRT_MODULES = new Set<string>([
   // Re-add once linux baseline is re-captured + linux/audioOut removed
   // from EXEMPT_BASELINE_PAIRS.
   'buggles',              // bug-themed audio card
-  'cartesian',            // 2D selector grid card (static)
+  'cartesian',            // X/Y grid sequencer card (S&H header toggle; linux baseline regenerated)
   'charlottesEchos',      // delay/echo knob card
   'destroy',              // destruction/distortion knob card
   'drummergirl',          // drum-sample card (chrome only — sample preview is static post-load)
@@ -710,11 +710,11 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'mixer',                // 4-channel mixer fader card
   'mixmstrs',             // master mixer fader card
   'noise',                // noise-source knob card
-  'polyseqz',             // polyphonic sequencer step grid (static at step 0)
+  'polyseqz',             // poly chord sequencer card (S&H header toggle; linux baseline regenerated)
   'qbrt',                 // q-bit/quantizer knob card
   'reverb',               // reverb knob card
   'score',                // score/note display card
-  'sequencer',            // step sequencer grid (static at step 0)
+  'sequencer',            // 32-step sequencer card (S&H header toggle; linux baseline regenerated)
   'shimmershine',         // shimmer-reverb knob card
   'stereovca',            // stereo VCA fader card
   'sticky',               // sticky-note widget (static)

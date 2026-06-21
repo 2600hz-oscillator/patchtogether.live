@@ -60,6 +60,7 @@ import {
 } from './transport-helpers';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 import { createPlayheadTracker } from './playhead-tracker';
+import { shouldWritePitch } from '../../../../../dsp/src/lib/sample-hold-dsp';
 
 export interface Step {
   on: boolean;
@@ -182,6 +183,12 @@ export const sequencerDef: AudioModuleDef = {
     { id: 'swing',      label: 'Sw',   defaultValue: 0,   min: 0,   max: 0.75, curve: 'linear' },
     // 0 = stopped, 1 = playing. Default stopped — explicit play.
     { id: 'isPlaying',  label: 'Play', defaultValue: 0,   min: 0,   max: 1,    curve: 'discrete' },
+    // Gate-sampled Sample & Hold on the pitch CV. ON (default) → pitch is
+    // (re)written only on a GATED step, so it LATCHES to the gate edge and
+    // HOLDS constant between gates (no external S&H needed). OFF → continuous
+    // (the legacy behavior, where pitch can drift/reset on rests). Default-ON
+    // changes existing patches by design.
+    { id: 'snh',        label: 's&h',  defaultValue: 1,   min: 0,   max: 1,    curve: 'discrete' },
   ],
 
   // Module-grouping Phase 4 — surface PLAY/STOP as a single button a
@@ -373,16 +380,27 @@ export const sequencerDef: AudioModuleDef = {
         l.gate === 1 ? { pitch: l.pitch + octave, gate: 1 as const } : l,
       );
       const gateOff = stepDurForGate * gateLengthFrac;
-      polyPitch.scheduleStep(atTime, lanes, gateOff);
-
-      // Mirror per-lane values for tests / debugging.
-      for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
-        const l = lanes[i] ?? { pitch: 0, gate: 0 };
-        lastEmittedLaneVOct[i] = l.pitch;
-        lastEmittedLaneGate[i] = l.gate;
-      }
       // The mono gate output goes high if ANY lane is gated this step.
       const anyGate = lanes.some((l) => l.gate === 1);
+      // Gate-sampled Sample & Hold (baked-in, default ON): write the per-lane
+      // pitch ONLY on a gated step, so the pitch CV latches to the gate edge
+      // and holds between gates. S&H OFF → write pitch every step (continuous,
+      // legacy). The per-lane gate is ALWAYS scheduled so the gate still
+      // closes on a rest. (Generalizes the prior hold-on-off-gate behavior
+      // from "OFF steps hold" to "any non-gated step holds".)
+      const snh = readParam('snh', 1) >= 0.5;
+      const writePitch = shouldWritePitch(snh, anyGate);
+      polyPitch.scheduleStep(atTime, lanes, gateOff, { writePitch });
+
+      // Mirror per-lane values for tests / debugging. When pitch isn't
+      // rewritten (held), the lane V/oct mirrors keep their previous value so
+      // engine.read('pitchVOctLane:i') reflects the HELD pitch; only the gate
+      // mirror tracks this step.
+      for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+        const l = lanes[i] ?? { pitch: 0, gate: 0 };
+        if (writePitch) lastEmittedLaneVOct[i] = l.pitch;
+        lastEmittedLaneGate[i] = l.gate;
+      }
       // RESET-DEDUP (#224): refuse to schedule a gate-high closer than half a
       // step to the previous one. A clock-divided reset coincident with the
       // natural wrap makes BOTH the lookahead and the post-reset re-anchor try
@@ -408,12 +426,14 @@ export const sequencerDef: AudioModuleDef = {
         lastEmittedVOct = lanes[0]?.pitch ?? 0;
         lastEmittedGate = 1;
       } else {
-        // Gate suppressed (off or invalid pitch). Hold-on-off-gate CV: we do
-        // NOT call polyPitch.scheduleStep() on suppressed steps — the pitch
-        // port keeps its last gated lane values for the duration of the
-        // silent step. lastEmittedVOct + lastEmittedLaneVOct are left alone
-        // for the same reason; lastEmittedGate flips to 0 so JS observers
-        // see the gate go low.
+        // Gate suppressed (off / invalid pitch). With S&H ON (writePitch
+        // false), polyPitch.scheduleStep left every lane's pitchSrc untouched
+        // above, so the pitch port HOLDS its last gated value through this
+        // silent step. With S&H OFF, scheduleStep just rewrote pitch (to 0 on
+        // a rest) — the legacy continuous behavior. Either way the per-lane
+        // gates were scheduled low, so the gate closes. lastEmittedVOct +
+        // lastEmittedLaneVOct were preserved above when held; lastEmittedGate
+        // flips to 0 so JS observers see the gate go low.
         lastEmittedGate = 0;
       }
     }

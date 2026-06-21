@@ -60,6 +60,10 @@
   let gateLength = $derived((void cardVersion, node?.params.gateLength ?? 0.5));
   let swing      = $derived((void cardVersion, node?.params.swing      ?? 0));
   let isPlaying  = $derived((void cardVersion, (node?.params.isPlaying ?? 0) >= 0.5));
+  // Gate-sampled S&H toggle (baked into the pitch CV; ON by default — the
+  // readParam('snh', 1) fallback supplies ON for old saves, so no schemaVersion
+  // bump is needed).
+  let snhOn      = $derived((void cardVersion, (node?.params.snh ?? 1) >= 0.5));
 
   // Widen to STEP_COUNT capacity on read so the page-nav can address page
   // 1..7 even when the persisted steps[] array is shorter (e.g. legacy
@@ -325,6 +329,20 @@
     <button class="play-btn" class:playing={isPlaying} onclick={togglePlay} title={isPlaying ? 'Stop' : 'Play'}>
       {isPlaying ? '■' : '▶'}
     </button>
+    <!-- Gate-sampled S&H toggle. In the centered flex header (the corner patch-
+         trigger occupies the absolute top-right), so it sits inline next to the
+         play button rather than absolute-cornered. ON by default. -->
+    <button
+      type="button"
+      class="snh-toggle"
+      class:on={snhOn}
+      data-testid={`sequencer-snh-toggle`}
+      aria-pressed={snhOn}
+      title={snhOn
+        ? 'Sample & Hold ON — pitch CV holds between gates (latched to the gate edge). Click for continuous.'
+        : 'Sample & Hold OFF — pitch CV is continuous (can drift/reset on rests). Click to hold.'}
+      onclick={() => set('snh')(snhOn ? 0 : 1)}
+    >{snhOn ? 'S&H' : 'OFF'}</button>
   </header>
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
@@ -432,6 +450,27 @@
     background: var(--cable-gate);
     color: #1a1d23;
     border-color: var(--cable-gate);
+  }
+  /* Gate-sampled S&H toggle — inline in the centered header, next to PLAY.
+     Matches the .mode-btn 2-state styling; ON = pitch-cable accent. */
+  .snh-toggle {
+    height: 22px;
+    background: #2a2f3a;
+    border: 1px solid #404652;
+    color: var(--text);
+    border-radius: 3px;
+    font-size: 0.55rem;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 6px;
+    font-family: ui-monospace, monospace;
+  }
+  .snh-toggle:hover { border-color: #6a7282; }
+  .snh-toggle.on {
+    background: var(--cable-pitch);
+    color: #1a1d23;
+    border-color: var(--cable-pitch);
   }
   .page-nav-row {
     margin: 12px 22px 0;

@@ -14,6 +14,7 @@ import {
   SAMPLE_HOLD_MAX_SCALE,
   quantizeVoltage,
   sampleHoldStep,
+  shouldWritePitch,
   clampScaleIndex,
   scaleName,
 } from './sample-hold-dsp';
@@ -193,5 +194,30 @@ describe('sample-hold-dsp / sampleHoldStep — ungated = pure quantizer', () => 
     expect(r.held).toBeCloseTo(0.5, 9);          // cv_out = live input
     const within = ((Math.round(r.quant * 12) % 12) + 12) % 12;
     expect(SAMPLE_HOLD_SCALES[idx('major')]!.degrees).toContain(within);
+  });
+});
+
+describe('sample-hold-dsp / shouldWritePitch — S&H scheduling predicate', () => {
+  // The full truth table: enabled (S&H ON/OFF) × gatedThisStep (gate fires?).
+  it('S&H ON: writes pitch ONLY on a gated step (latch to the gate edge)', () => {
+    expect(shouldWritePitch(true, true)).toBe(true);   // gated → write (latch)
+    expect(shouldWritePitch(true, false)).toBe(false); // rest  → hold (skip)
+  });
+
+  it('S&H OFF: ALWAYS writes pitch (continuous, legacy behavior)', () => {
+    expect(shouldWritePitch(false, true)).toBe(true);  // gated → write
+    expect(shouldWritePitch(false, false)).toBe(true); // rest  → still write
+  });
+
+  it('is a pure boolean function of (enabled, gatedThisStep) — full table', () => {
+    const table: Array<[boolean, boolean, boolean]> = [
+      [true, true, true],
+      [true, false, false],
+      [false, true, true],
+      [false, false, true],
+    ];
+    for (const [enabled, gated, expected] of table) {
+      expect(shouldWritePitch(enabled, gated)).toBe(expected);
+    }
   });
 });
