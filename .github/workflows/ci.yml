@@ -1523,12 +1523,15 @@ jobs:
   # backstop (collab-nightly.yml) runs the FULL real @collab lane on CI daily to
   # surface contention regressions. See the plan doc.
   #
-  # INFORMATIONAL for now (NOT in the `ci` umbrella's failing-condition set) —
-  # exactly how webgl-attest started. `continue-on-error: true` so a miss can't
-  # block merge while the scheme is proven. The owner flips it required later via
-  # ONE ruleset step (see the plan doc §rollout): add `collab-attest` to
-  # ruleset 16042163's required-status-checks AND add the three umbrella edits
-  # (needs:/env:/if). Do NOT touch the ruleset in this PR.
+  # GATING (armed 2026-06-20, the final step of the @collab de-flake campaign) —
+  # this verify job is now in the `ci` umbrella's failing-condition set, EXACTLY
+  # mirroring webgl-attest: added to the umbrella's `needs:`, its result-mapping
+  # `env:` ($COLLAB_ATTEST), AND the failing `if [[ ]]` test, and
+  # `continue-on-error` removed. `needs:` ALONE only makes the umbrella WAIT (it
+  # is `if: always()` and gates via the env+if block) — the env+if edits are what
+  # make a hash MISS fail the required `ci` check. Because gating flows THROUGH
+  # the already-required umbrella (whose name `typecheck + unit + ART + E2E`
+  # never changes), NO ruleset edit is required — same as webgl-attest.
   #
   # Cheap (< 2 min: checkout + flox + one hash). No LFS, no DB, no bundle.
   # -----------------------------------------------------------------------
@@ -1536,10 +1539,13 @@ jobs:
     name: collab-attest (local-relay attestation gate)
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # INFORMATIONAL while the scheme is proven (mirrors webgl-attest's Phase-1
-    # start). A hash miss reports failure on THIS job but does not block the PR,
-    # because this job is NOT in the `ci` umbrella's needs/env/if set yet.
-    continue-on-error: true
+    # GATING (armed 2026-06-20, final step of the @collab de-flake campaign): the
+    # @collab multi-context lane is now a reliable real green lane (#844 — sync
+    # budgets + vacuity-skips→asserts + a basis guard unit test), and a fresh
+    # local-relay+DB attestation (ci-collab-attest/<hash>.json) is committed, so
+    # this verify job now GATES the `ci` umbrella (the `$COLLAB_ATTEST` clause in
+    # the aggregator `if`). No `continue-on-error` (mirrors webgl-attest's
+    # Phase-4). See ci-collab-attest/README.md + the plan doc.
     steps:
       - name: Checkout (no LFS — only needs source + ci-collab-attest/)
         uses: actions/checkout@v4
@@ -1580,13 +1586,16 @@ jobs:
     # collab is intentionally removed from `needs:` so the umbrella does not even
     # WAIT on it (keeps merge latency low). merge-reports/behavioral notes below.
     # webgl-smoke (SwiftShader WebGL floor) + webgl-attest (real-GPU attestation
-    # verify) are REQUIRED — wired via the THREE edits the semaphore plan calls
-    # out (adversarial-review fix V2): added to `needs:` here, to the aggregate
-    # `env:` below, AND to the failing `if [[ ]]` test. `needs:` ALONE only makes
-    # the umbrella WAIT (the umbrella is `if: always()` and gates via the env+if
-    # block, not via needs) — exactly how collab/behavioral sit un-gated. See
-    # .myrobots/plans/webgl-attestation-semaphore.md §7.
-    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest]
+    # verify) + collab-attest (local-relay @collab attestation verify) are
+    # REQUIRED — each wired via the SAME THREE edits the semaphore plan calls out
+    # (adversarial-review fix V2): added to `needs:` here, to the aggregate `env:`
+    # below, AND to the failing `if [[ ]]` test. `needs:` ALONE only makes the
+    # umbrella WAIT (the umbrella is `if: always()` and gates via the env+if
+    # block, not via needs) — exactly how the per-PR collab/behavioral lanes sit
+    # un-gated. collab-attest was armed 2026-06-20 (the final @collab de-flake
+    # step) mirroring webgl-attest. See .myrobots/plans/webgl-attestation-semaphore.md
+    # §7 + .myrobots/plans/collab-attest-2026-06-15.md.
+    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, collab-attest]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -1603,6 +1612,7 @@ jobs:
           E2E: ${{ needs.e2e.result }}
           WEBGL_SMOKE: ${{ needs.webgl-smoke.result }}
           WEBGL_ATTEST: ${{ needs.webgl-attest.result }}
+          COLLAB_ATTEST: ${{ needs.collab-attest.result }}
         run: |
           echo "actionlint:    $ACTIONLINT"
           echo "typecheck:     $TYPECHECK"
@@ -1614,8 +1624,8 @@ jobs:
           echo "e2e:           $E2E"
           echo "webgl-smoke:   $WEBGL_SMOKE"
           echo "webgl-attest:  $WEBGL_ATTEST"
+          echo "collab-attest: $COLLAB_ATTEST"
           echo "collab:        (informational — see collab job; temporarily un-gated, task #69)"
-          echo "collab-attest: (informational — local-relay attestation VERIFY; NOT yet in the failing set, mirrors webgl-attest's Phase-1 start; owner flips it required via the ruleset later)"
           # `e2e` is a matrix; its aggregated result is `success` only if all
           # shards succeeded. (The old `e2e-video` WebGL-heavy lane was deleted
           # 2026-06-20 — it had been dormant/dispatch-only; webgl-smoke +
@@ -1659,17 +1669,27 @@ jobs:
              || "$BUILD" != "success" \
              || "$E2E" != "success" \
              || "$WEBGL_SMOKE" != "success" \
-             || "$WEBGL_ATTEST" != "success" ]]; then
+             || "$WEBGL_ATTEST" != "success" \
+             || "$COLLAB_ATTEST" != "success" ]]; then
           # $WEBGL_ATTEST is GATING (re-armed 2026-06-11, Phase 4): the heavy-WebGL
           # triage campaign is done (#752 green baseline + #753 lean lane) and the
           # first real-GPU attestation (ci-webgl-attest/<hash>.json) is committed,
           # so a WebGL-path change without a re-run `task webgl:attest` → hash
           # mismatch → this fails. webgl-smoke + the coverage guard (in `unit`)
           # are also gating.
-          # collab is UN-GATED (informational, task #69); behavioral is also
-          # INFORMATIONAL (un-gated — the
-          # 1x gate flaked on moog911 on the next PR). Do NOT re-add $BEHAVIORAL
-          # here until the lane is verified 3x-clean (proper flake-purge).
+          # $COLLAB_ATTEST is GATING (armed 2026-06-20, the final step of the
+          # @collab de-flake campaign): the @collab multi-context lane is now a
+          # reliable real green lane (#844) and a fresh local-relay+DB attestation
+          # (ci-collab-attest/<hash>.json) is committed, so a collab/sync/relay-path
+          # change without a re-run `task collab:attest` → hash mismatch → this
+          # fails. Wired exactly like $WEBGL_ATTEST (needs:/env:/if). Like
+          # webgl-attest, graph/sync-layer PRs now owe a collab re-attest (the
+          # accepted treadmill); the nightly backstop (collab-nightly.yml) still
+          # runs the FULL real lane daily for under-load regressions.
+          # `collab` (the per-PR multi-context lane) stays informational here;
+          # behavioral is also INFORMATIONAL (un-gated — the 1x gate flaked on
+          # moog911 on the next PR). Do NOT re-add $BEHAVIORAL here until the lane
+          # is verified 3x-clean (proper flake-purge).
             echo "::error::One or more required CI jobs failed."
             exit 1
           fi
