@@ -259,7 +259,7 @@
         <div class="depth-row" data-testid="synesthesia-depth-a">
           {#each BANDS as b (b)}
             <div class="gcol">
-              <Knob value={param(`a_envdepth${b}`, 1)} min={0} max={2} defaultValue={1} label={`B${b}`}
+              <Knob value={param(`a_envdepth${b}`, 1)} min={0} max={4} defaultValue={1} label={`B${b}`}
                 curve="linear" onchange={set(`a_envdepth${b}`)} moduleId={id} paramId={`a_envdepth${b}`} readLive={live(`a_envdepth${b}`)} />
               <div class="depth-label">DPT</div>
             </div>
@@ -307,7 +307,7 @@
         <div class="depth-row" data-testid="synesthesia-depth-b">
           {#each BANDS as b (b)}
             <div class="gcol">
-              <Knob value={param(`b_envdepth${b}`, 1)} min={0} max={2} defaultValue={1} label={`B${b}`}
+              <Knob value={param(`b_envdepth${b}`, 1)} min={0} max={4} defaultValue={1} label={`B${b}`}
                 curve="linear" onchange={set(`b_envdepth${b}`)} moduleId={id} paramId={`b_envdepth${b}`} readLive={live(`b_envdepth${b}`)} />
               <div class="depth-label">DPT</div>
             </div>

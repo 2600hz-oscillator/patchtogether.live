@@ -25,7 +25,7 @@
 // VU levels are posted to the host via port.postMessage({type:'snapshot', ...}),
 // not as an audio output.
 // Params (k-rate): a_master/b_master (0.5..1.5); a_gain1..4 / b_gain1..4 (1..2);
-//   a_envdepth1..4 / b_envdepth1..4 (0..2, default 1) = per-band env-OUTPUT
+//   a_envdepth1..4 / b_envdepth1..4 (0..4, default 1) = per-band env-OUTPUT
 //     depth — scales BOTH env CV outputs (env_slow + env_fast) for that band;
 //   a_mode/b_mode (0=AUDIO spectral bands, 1=VIDEO R/G/B/Luma channels);
 //   a_bipolar/b_bipolar (0=UNI env CV [0,1] (default), 1=BI env CV [-1,+1]).
