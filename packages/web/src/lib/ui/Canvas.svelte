@@ -1309,25 +1309,58 @@
     // we know which nodes carry out-of-band video before snapshotting the graph.
     const resolved = await resolveAllVideoExports();
 
-    // Ensure every exported video node has a STABLE fileMeta.handleId baked into
-    // its data BEFORE we snapshot the envelope: on reload the restored card's
-    // tryReloadFromHandle looks the seeded blob handle up by THIS id. A file
-    // picked via the plain <input> (no File System Access) never got a handleId,
-    // so we mint a deterministic `bundle-<nodeId>` and write it into the live
-    // node (rides the Yjs snapshot). Done in one transact, before makeEnvelope.
-    const handleIdFor = new Map<string, string>();
+    // Ensure every exported video SLOT has a STABLE handleId baked into its data
+    // BEFORE we snapshot the envelope: on reload the restored card looks the
+    // seeded blob handle up by THIS id. A file picked via the plain <input> (no
+    // File System Access) never got a handleId, so we mint a deterministic id and
+    // write it into the live node (rides the Yjs snapshot). Done in one transact,
+    // before makeEnvelope.
+    //
+    //   * slot 0 → fileMeta.handleId (`bundle-<nodeId>`), the legacy single-video
+    //     path the card's tryReloadFromHandle reads (VIDEOBOX + VVS slot 0).
+    //   * slots 1..6 → slotMeta[slot].handleId (`bundle-<nodeId>-slot-<n>`), the
+    //     VIDEOVARISPEED 7-slot path tryReloadSlotFromHandle reads. WITHOUT this,
+    //     slots 1..6 bytes were dropped from the bundle entirely (Fix B): a perf
+    //     with 7 videos lost 6. The slotMeta clone is PLAIN (never re-insert a
+    //     live Y type — same trap as the sequencer save-to-slot bug).
+    const handleIdFor = new Map<string, string>(); // `${nodeId}#${slot}` → handleId
     ydoc.transact(() => {
       for (const r of resolved) {
         const node = patch.nodes[r.nodeId];
         if (!node) continue;
         if (!node.data) node.data = {} as Record<string, unknown>;
         const d = node.data as Record<string, unknown>;
-        const fm = (d.fileMeta as { handleId?: unknown; name?: unknown; size?: unknown; duration?: unknown } | null | undefined) ?? null;
-        const existing = typeof fm?.handleId === 'string' && fm.handleId.length > 0 ? fm.handleId : null;
-        const handleId = existing ?? `bundle-${r.nodeId}`;
-        handleIdFor.set(r.nodeId, handleId);
-        if (!existing) {
-          d.fileMeta = { ...(fm ?? {}), handleId, name: r.name, size: r.bytes.length };
+        const slot = r.slot ?? 0;
+        if (slot === 0) {
+          const fm = (d.fileMeta as { handleId?: unknown; name?: unknown; size?: unknown; duration?: unknown } | null | undefined) ?? null;
+          const existing = typeof fm?.handleId === 'string' && fm.handleId.length > 0 ? fm.handleId : null;
+          const handleId = existing ?? `bundle-${r.nodeId}`;
+          handleIdFor.set(`${r.nodeId}#0`, handleId);
+          if (!existing) {
+            d.fileMeta = { ...(fm ?? {}), handleId, name: r.name, size: r.bytes.length };
+          }
+        } else {
+          // Per-slot handleId, baked into a PLAIN-cloned slotMeta array.
+          const cur = Array.isArray(d.slotMeta) ? (d.slotMeta as Array<Record<string, unknown> | null>) : [];
+          const arr: Array<Record<string, unknown> | null> = [];
+          const N = 7;
+          for (let i = 0; i < N; i++) {
+            const e = cur[i] as { name?: unknown; duration?: unknown; size?: unknown; handleId?: unknown } | null | undefined;
+            if (i === slot) {
+              const existing = typeof e?.handleId === 'string' && e.handleId.length > 0 ? (e.handleId as string) : null;
+              const handleId = existing ?? `bundle-${r.nodeId}-slot-${slot}`;
+              handleIdFor.set(`${r.nodeId}#${slot}`, handleId);
+              arr.push({
+                name: typeof e?.name === 'string' ? e.name : r.name,
+                duration: typeof e?.duration === 'number' ? e.duration : 0,
+                size: typeof e?.size === 'number' ? e.size : r.bytes.length,
+                handleId,
+              });
+            } else {
+              arr.push(e ? { name: e.name, duration: e.duration, size: e.size, handleId: e.handleId } : null);
+            }
+          }
+          d.slotMeta = arr;
         }
       }
     });
@@ -1345,15 +1378,23 @@
       resolveMidiDevice: resolveMidi,
       resolveGamepad,
     });
-    // Map each resolved video to the handleId now stamped on its node, so the
-    // loader seeds the bytes under the SAME id the restored card looks up.
-    const media: PerformanceMedia[] = resolved.map((r) => ({
-      nodeId: r.nodeId,
-      handleId: handleIdFor.get(r.nodeId) ?? `bundle-${r.nodeId}`,
-      role: 'video' as const,
-      name: r.name,
-      bytes: r.bytes,
-    }));
+    // Map each resolved video SLOT to the handleId now stamped on its node, so
+    // the loader seeds the bytes under the SAME id the restored card/slot looks
+    // up. `slot` rides along so the loader restores into the matching slot index.
+    const media: PerformanceMedia[] = resolved.map((r) => {
+      const slot = r.slot ?? 0;
+      const handleId =
+        handleIdFor.get(`${r.nodeId}#${slot}`) ??
+        (slot === 0 ? `bundle-${r.nodeId}` : `bundle-${r.nodeId}-slot-${slot}`);
+      return {
+        nodeId: r.nodeId,
+        handleId,
+        role: 'video' as const,
+        name: r.name,
+        bytes: r.bytes,
+        slot,
+      };
+    });
     // TWOTRACKS reel tapes: worklet-owned PCM that can't ride the envelope.
     // Dump each reel out-of-band as 'audio' media keyed `<nodeId>:<reel>`.
     media.push(...(await collectTwotracksTapes()));
