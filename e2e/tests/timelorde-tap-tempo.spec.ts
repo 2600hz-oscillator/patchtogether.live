@@ -34,9 +34,11 @@ async function readBpm(page: Page, nodeId: string): Promise<number | null> {
 
 /** Click the TIMELORDE card to make it the selected node. */
 async function selectTimelorde(page: Page, nodeId: string): Promise<void> {
-  // Click the card title (a non-interactive area) so SvelteFlow selects the
-  // node without toggling a button.
-  await page.locator(`.svelte-flow__node[data-id="${nodeId}"] .title`).click();
+  // Select the node by clicking the decorative top STRIPE — it has no handler so
+  // the click bubbles to SvelteFlow's node selection. (The `.title` header wraps
+  // the inline-editable ModuleTitle, which captures the click into rename mode
+  // and never selects — that was the original flake.)
+  await page.locator(`.svelte-flow__node[data-id="${nodeId}"] .stripe`).click();
   await expect(page.locator(`.svelte-flow__node[data-id="${nodeId}"]`)).toHaveClass(
     /selected/,
   );
