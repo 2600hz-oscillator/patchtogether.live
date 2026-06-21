@@ -476,7 +476,12 @@ export const bentboxDef: VideoModuleDef = {
     { id: 'chroma_instability', label: 'Shimmer',   defaultValue: DEFAULTS.chroma_instability, min: 0,  max: 1, curve: 'linear' },
     { id: 'feedback_gain',      label: 'Feedback',  defaultValue: DEFAULTS.feedback_gain,      min: 0,  max: 1, curve: 'linear' },
     { id: 'feedback_delay',     label: 'Delay',     defaultValue: DEFAULTS.feedback_delay,     min: 0,  max: 1, curve: 'linear' },
-    { id: 'wavefold',           label: 'Wavefold',  defaultValue: DEFAULTS.wavefold,           min: 0,  max: 1, curve: 'linear' },
+    // id stays 'wavefold' (persisted patches + the wavefold_cv edge), but the
+    // USER-FACING label is 'Solarize': a triangle wavefold of the composite
+    // voltage reads on screen as tonal reversal/solarization, which is what the
+    // operator actually sees — 'wavefold' is the audio-synth mechanism, not the
+    // visible effect.
+    { id: 'wavefold',           label: 'Solarize',  defaultValue: DEFAULTS.wavefold,           min: 0,  max: 1, curve: 'linear' },
     { id: 'bloom',              label: 'Bloom',     defaultValue: DEFAULTS.bloom,              min: 0,  max: 1, curve: 'linear' },
     { id: 'noise',              label: 'Noise',     defaultValue: DEFAULTS.noise,              min: 0,  max: 1, curve: 'linear' },
     { id: 'master_gain',        label: 'Gain',      defaultValue: DEFAULTS.master_gain,        min: 0,  max: 2, curve: 'linear' },
