@@ -9,8 +9,8 @@
   // Bending controls live BELOW the screen as a 4×3 grid of compact
   // knobs grouped by row: TIMING (HS Drift, HS Loss, VS Drift, Wobble),
   // CHROMA + GAIN (Hue, Shimmer, Gain, Bloom), FEEDBACK + DESTRUCTION
-  // (Feedback, Delay, Wavefold, Noise). The layout intentionally puts
-  // the "make it weirder" knobs (Wavefold, Noise) on the bottom row so
+  // (Feedback, Delay, Solarize, Noise). The layout intentionally puts
+  // the "make it weirder" knobs (Solarize, Noise) on the bottom row so
   // a new user sees them last.
 
   import { onMount, onDestroy } from 'svelte';
@@ -297,7 +297,7 @@
     { id: 'chroma_instability_cv', label: 'SHM',   cable: 'cv' },
     { id: 'feedback_gain_cv',      label: 'FBK',   cable: 'cv' },
     { id: 'feedback_delay_cv',     label: 'DLY',   cable: 'cv' },
-    { id: 'wavefold_cv',           label: 'FOLD',  cable: 'cv' },
+    { id: 'wavefold_cv',           label: 'SOLAR', cable: 'cv' },
     { id: 'bloom_cv',              label: 'BLM',   cable: 'cv' },
     { id: 'noise_cv',              label: 'NSE',   cable: 'cv' },
     { id: 'master_gain_cv',        label: 'GAIN',  cable: 'cv' },
@@ -356,7 +356,7 @@
 
       <Knob value={feedback_gain}      min={0}  max={1} defaultValue={0}    label="Feedback"  curve="linear" onchange={set('feedback_gain')} moduleId={id} paramId="feedback_gain"      readLive={live('feedback_gain')} />
       <Knob value={feedback_delay}     min={0}  max={1} defaultValue={0}    label="Delay"     curve="linear" onchange={set('feedback_delay')} moduleId={id} paramId="feedback_delay"     readLive={live('feedback_delay')} />
-      <Knob value={wavefold}           min={0}  max={1} defaultValue={0}    label="Wavefold"  curve="linear" onchange={set('wavefold')} moduleId={id} paramId="wavefold"           readLive={live('wavefold')} />
+      <Knob value={wavefold}           min={0}  max={1} defaultValue={0}    label="Solarize"  curve="linear" onchange={set('wavefold')} moduleId={id} paramId="wavefold"           readLive={live('wavefold')} />
       <Knob value={noise}              min={0}  max={1} defaultValue={0.05} label="Noise"     curve="linear" onchange={set('noise')} moduleId={id} paramId="noise"              readLive={live('noise')} />
     </div>
 
