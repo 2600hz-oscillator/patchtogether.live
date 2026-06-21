@@ -55,6 +55,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // canvas (empty on fresh spawn); mask both canvases so the card chrome
   // diffs deterministically.
   twotracks: [{ selector: 'canvas' }],
+  // TILER: live tiled-OUT preview canvas (non-deterministic per frame) — mask it;
+  // the card chrome (TILE fader + PatchPanel) is VRT'd. Baseline via vrt-update.
+  tiler: [{ selector: 'canvas' }],
   // ----- video domain — every video module renders a preview canvas;
   // mask it and assert the chrome around it.
   lines: [{ selector: 'canvas' }],
