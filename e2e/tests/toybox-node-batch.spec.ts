@@ -359,7 +359,11 @@ test.describe('TOYBOX batch op nodes — registry + menu', () => {
     }
 
     // Clicking an ADD button inserts a node of that kind into node.data.combine.
-    await page.locator('[data-testid="toybox-add-datamosh"]').click({ force: true, noWaitAfter: true });
+    // dispatchEvent('click') (not force-click): under the serialized real-GPU
+    // webgl-attest load a coordinate force-click on this combine-panel button
+    // intermittently fails to deliver → the node never inserts → the poll below
+    // times out (attest flake, task #151 — same as node-controls/menu/combine).
+    await page.locator('[data-testid="toybox-add-datamosh"]').dispatchEvent('click');
     await expect
       .poll(() => page.evaluate(() => {
         const w = globalThis as unknown as PatchGlobal;
@@ -369,6 +373,11 @@ test.describe('TOYBOX batch op nodes — registry + menu', () => {
 
     // (a') Right-click the graph SVG → the Add submenu lists every op kind. Done
     // LAST so the (possibly modal) node menu doesn't intercept the ADD click above.
+    // Right-click stays a coordinate force-click: the graph-SVG contextmenu
+    // handler reads the event's clientX/Y to place the menu, so a coordinate-less
+    // dispatchEvent('contextmenu') makes it set a non-finite SVGPoint. This block
+    // is best-effort (guarded by isVisible + .catch), so a missed right-click
+    // can't fail the test — unlike the ADD-button click above, which gates a poll.
     await page.locator('[data-testid="toybox-graph-svg"]').click({ button: 'right', force: true, noWaitAfter: true });
     const addMenu = page.locator('[data-testid="toybox-menu-add"]');
     if (await addMenu.isVisible({ timeout: 3_000 }).catch(() => false)) {

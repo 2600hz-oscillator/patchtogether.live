@@ -85,6 +85,7 @@ export const WEBGL_HEAVY_EXCLUDE = [
   '**/video-audio-output.spec.ts', // AnalyserNode RMS on the audio terminal — never reads a canvas
   '**/video-aspect-switch.spec.ts', // engine resolution + routing-survival via __engine hooks; pixel probe omitted on CI by its own header
   '**/videovarispeed-perfzip.spec.ts', // perf-zip round-trip: asserts data-has-local-file / imageBytes / zip bytes / node count — DOM+Y.Doc only, no canvas read (VideoVarispeedCard renders a plain <video>, no WebGL context)
+  '**/videovarispeed-switch.spec.ts', // 7-slot switch-path regression: asserts engine uploadCount / keepAliveCount hooks + <video> currentTime + play/pause DOM state across A→B→A — NO canvas pixel read (renderer-independent by construction), so it runs in the parallel matrix
 ] as const;
 
 /** Resolve the EFFECTIVE heavy spec FILES (concrete repo-relative paths) =

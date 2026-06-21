@@ -105,6 +105,21 @@
   let slotUrls: (string | null)[] = new Array(ASSET_SLOTS).fill(null);
   // Per-slot local filenames (drives the active card's data-has-local-file).
   let slotNames = $state<(string | null)[]>(new Array(ASSET_SLOTS).fill(null));
+  // Per-slot LOCAL duration (seconds), captured from el.duration at
+  // `loadedmetadata`. The synced fileMeta.duration can lag a freshly-loaded
+  // slot by a frame or two (an unsynced slot reads durationSec=0 → resolveWindow
+  // collapses to hasWindow:false → the transport pauses every frame → Play looks
+  // dead). Reading the local element duration closes that window race AND lets
+  // each inactive slot's VIRTUAL playhead wrap against its own duration so the
+  // 7 slots de-sync by their differing lengths (Step 2).
+  let slotDuration: number[] = new Array(ASSET_SLOTS).fill(0);
+  // Per-slot VIRTUAL playhead (seconds). The ACTIVE slot tracks its element's
+  // real currentTime; every OTHER loaded slot advances incrementally each
+  // transport tick (dt × signed effective speed, wrapped via decideEdgeAction)
+  // so a switch JUMPS the output to the selected clip at ITS live time rather
+  // than restarting from 0. Incremental (not closed-form) so it integrates a
+  // time-varying SPEED CV and survives loop wraps/clamps without drift.
+  let slotPos: number[] = new Array(ASSET_SLOTS).fill(0);
   // Legacy single-video accessors map onto slot 0.
   let objectUrl: string | null = null;
   let localFileName = $state<string | null>(null);
@@ -312,6 +327,17 @@
       el.addEventListener('loadedmetadata', onMeta, { once: true });
     });
 
+    // Capture the LOCAL duration now (el.duration is authoritative the instant
+    // metadata loaded — before the synced fileMeta round-trips). Closes the
+    // durationSec=0 window race that left Play looking dead on a fresh slot, and
+    // gives each inactive slot's virtual playhead its own loop length.
+    slotDuration[slot] = Number.isFinite(el.duration) ? el.duration : 0;
+    slotPos[slot] = 0;
+    // Keep this (and every other loaded) slot's decode alive even while it's NOT
+    // the active source, so a later switch lands on an already-warm element
+    // (never the throttled-to-1fps bug). Retries until the engine materializes.
+    ensureAllSlotsAlive();
+
     // Persist the handle (slot 0 only; slots 1..6 keep objectUrl/handle local).
     let handleId: string | undefined = opts?.reuseHandleId;
     if (slot === 0 && opts?.handle && canRememberHandle) {
@@ -487,6 +513,29 @@
     audioWireTimer = setTimeout(() => ensureAudioWired(attempt + 1), 100);
   }
 
+  // Keep EVERY loaded slot's element decoding (persistent per-element keep-alive
+  // in the engine), not just the active one — a melodic/random switch pattern
+  // defeats any "active + predicted-next" hybrid, so every loaded slot must stay
+  // warm or it throttles to ~1 fps and the switch lands on a frozen frame (the
+  // original bug). keepSlotAlive is idempotent per element; retried until the
+  // engine has materialized this node (same race ensureAudioWired guards).
+  let keepAliveTimer: ReturnType<typeof setTimeout> | null = null;
+  function ensureAllSlotsAlive(attempt = 0): void {
+    if (keepAliveTimer) { clearTimeout(keepAliveTimer); keepAliveTimer = null; }
+    const extras = getExtras();
+    let loaded = 0;
+    let wired = 0;
+    for (let i = 0; i < ASSET_SLOTS; i++) {
+      const el = slotEls[i];
+      if (!el || (slotNames[i] ?? null) === null) continue;
+      loaded++;
+      if (extras) { try { extras.keepSlotAlive(el); wired++; } catch { /* not ready */ } }
+    }
+    if (loaded > 0 && wired === loaded) return; // every loaded slot is warm
+    if (attempt >= 50) return; // ~5s of retries; give up quietly
+    keepAliveTimer = setTimeout(() => ensureAllSlotsAlive(attempt + 1), 100);
+  }
+
   function onFileInputChange(ev: Event): void {
     const input = ev.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -580,6 +629,8 @@
       slotUrls[slot] = null;
     }
     slotNames[slot] = null;
+    slotDuration[slot] = 0;
+    slotPos[slot] = 0;
     if (slot === 0) { objectUrl = null; localFileName = null; }
     writeSlotMeta(slot, null);
     // If we cleared the ACTIVE slot, fall back to slot 0 if it has a video.
@@ -592,14 +643,35 @@
       effectiveSpeedKnob(paramVal('speed'), readCv('speedCv')),
     );
   }
-  function currentWindow() {
+  /** Effective duration of slot `i`: prefer the LOCAL element duration (set at
+   *  loadedmetadata) and fall back to the synced fileMeta — closes the
+   *  durationSec=0 race where a fresh slot's synced meta hasn't arrived yet
+   *  (which collapsed resolveWindow → Play looked dead). */
+  function slotDurationSec(i: number): number {
+    const local = slotDuration[i] ?? 0;
+    if (Number.isFinite(local) && local > 0) return local;
+    if (i === activeSlot && Number.isFinite(durationSec) && durationSec > 0) return durationSec;
+    const el = slotEls[i];
+    return el && Number.isFinite(el.duration) ? el.duration : 0;
+  }
+  /** Resolve the playback window for a given duration with the live (CV-summed)
+   *  START/END. Shared by the active transport + every slot's virtual playhead
+   *  so they wrap on the SAME [start,end] (slots de-sync purely by duration). */
+  function windowForDuration(dur: number) {
     const startFrac = effectiveStartFraction(paramVal('start'), readCv('startCv'), startCvConnected);
     const endFrac = effectiveEndFraction(paramVal('end'), readCv('endCv'), endCvConnected);
-    return resolveWindow(durationSec, startFrac, endFrac);
+    return resolveWindow(dur, startFrac, endFrac);
+  }
+  function currentWindow() {
+    return windowForDuration(slotDurationSec(activeSlot));
   }
 
   // ---- Play / pause / seek (manual UI) ----
   function togglePlay(): void {
+    // A click always re-arms the transport: clear the render-local one-shot
+    // latch so a Play after a one-shot ended actually plays again (and so the
+    // latch can never silently swallow the user's intent).
+    oneShotEnded = false;
     if (!videoEl) { writePlaying(!isPlaying); return; }
     writePlaying(!isPlaying);
   }
@@ -607,21 +679,29 @@
     const input = ev.target as HTMLInputElement;
     const target = Number(input.value);
     if (!Number.isFinite(target)) return;
+    oneShotEnded = false; // scrubbing re-arms a one-shot that ran out
+    slotPos[activeSlot] = target;
     if (videoEl && hasLocalFile) { try { videoEl.currentTime = target; } catch { /* */ } }
   }
 
   // ---- Gate actions ----
   function gateStart(): void {
+    oneShotEnded = false; // a START gate re-arms a one-shot that ran out
     const w = currentWindow();
     const pos = w.hasWindow ? w.startSec : (videoEl?.currentTime ?? 0);
     if (videoEl && hasLocalFile) { try { videoEl.currentTime = pos; } catch { /* */ } }
+    if (w.hasWindow) slotPos[activeSlot] = pos;
     writePlaying(w.hasWindow);
   }
-  function gatePause(): void { writePlaying(!isPlaying); }
+  function gatePause(): void {
+    oneShotEnded = false; // un-pausing re-arms; pausing is the normal toggle
+    writePlaying(!isPlaying);
+  }
   function gateReset(): void {
     const w = currentWindow();
     const pos = w.hasWindow ? w.startSec : 0;
     if (videoEl && hasLocalFile) { try { videoEl.currentTime = pos; } catch { /* */ } }
+    slotPos[activeSlot] = pos;
   }
 
   // ---- Asset slot select (gate-driven) -------------------------------
@@ -633,35 +713,51 @@
     return i >= 0 && i < ASSET_SLOTS && (slotNames[i] ?? null) !== null && slotEls[i] != null;
   }
 
-  // Make slot `i` the active source: attach its element to the engine, restart
-  // it from the beginning (currentTime=0), play if the transport is playing,
-  // and re-wire audio to the new element. This is the "start playing from the
-  // beginning as soon as the gate fires" behaviour. No-op if the slot has no
-  // local video or is already active.
+  // Make slot `i` the active source: attach its element to the engine, JUMP the
+  // output to that slot's LIVE virtual time (slotPos[i]) — not 0 — play if the
+  // transport is playing, and re-point audio to the new element. Switching
+  // therefore lands on the selected clip at its current position (clips loop +
+  // de-sync via their differing durations), which is the user's ideal. No-op if
+  // the slot has no local video.
+  //
+  // We do NOT tear down the OUTGOING element's audio keep-alive (the engine's
+  // per-element keep-alive registry persists it) — that's what stops the
+  // switched-away slot from throttling to ~1fps and stops a later re-select from
+  // re-creating the once-per-element MediaElementSource (the multi-slot stall).
   function selectAssetSlot(i: number): void {
     if (!slotHasLocalVideo(i)) return;
     if (i === activeSlot) {
-      // Already active — still restart from the beginning on a re-trigger.
+      // Already active — a re-trigger RESTARTS this slot from its window start
+      // (a fresh strike of the same clip), syncing the virtual playhead.
       const el = slotEls[i];
-      if (el) { try { el.currentTime = 0; } catch { /* */ } }
+      const w = windowForDuration(slotDurationSec(i));
+      const pos = w.hasWindow ? w.startSec : 0;
+      slotPos[i] = pos;
+      if (el) { try { el.currentTime = pos; } catch { /* */ } }
       return;
     }
     const prev = slotEls[activeSlot];
     const next = slotEls[i];
-    // Tear down audio on the OUTGOING element before swapping (idempotent).
-    const extras = getExtras();
-    extras?.unwireAudio();
+    // Snapshot the OUTGOING element's REAL currentTime into its accumulator so a
+    // switch BACK to it later resumes on the right frame (the active slot's
+    // virtual playhead == its element's real time while it was on air).
+    if (prev && Number.isFinite(prev.currentTime)) slotPos[activeSlot] = prev.currentTime;
     if (prev && !prev.paused) { try { prev.pause(); } catch { /* */ } }
     activeSlot = i;
     if (next) {
-      try { next.currentTime = 0; } catch { /* */ }
+      // JUMP to the slot's live virtual time (clamped into its window).
+      const w = windowForDuration(slotDurationSec(i));
+      let pos = slotPos[i] ?? 0;
+      if (w.hasWindow) pos = Math.min(Math.max(pos, w.startSec), w.endSec);
+      slotPos[i] = pos;
+      try { next.currentTime = pos; } catch { /* */ }
       if (isPlaying && effectiveSpeed() >= 0) {
         void next.play().catch(() => { /* autoplay */ });
       }
     }
-    // Re-attach the engine source to the new element + re-wire its audio. The
-    // keep-alive pattern in wireAudio() is idempotent, so the unwire→wire pair
-    // is safe.
+    // Re-attach the engine source to the new element + re-point audio to it.
+    // wireAudio() is idempotent + re-points audio_l/r to the now-active
+    // element's persistent splitter (audio follows the switched video).
     const ve = videoEngine();
     try { ve?.attachExternalSource(id, 'video', next ?? null); } catch { /* */ }
     ensureAudioWired();
@@ -712,6 +808,39 @@
   let reverseActive = false;
   let reverseAccumMs = 0;
   let lastRafMs = 0;
+  // RENDER-LOCAL one-shot latch. When a ONE-SHOT clip reaches END we must STOP
+  // it, but we MUST NOT writePlaying(false) from inside this rAF loop: a live
+  // SyncedStore write per frame is the cv-modulation write-storm bug class, and
+  // worse, it can race + overwrite a Play click the user just made. Instead we
+  // hold the element paused via this transient flag (never synced). togglePlay /
+  // gateStart clear it so a fresh Play re-arms the transport. isPlaying stays
+  // true (the user's intent); the latch just gates auto-play until re-triggered.
+  let oneShotEnded = false;
+
+  /** Advance every loaded NON-active slot's VIRTUAL playhead by `dt` at the
+   *  current signed speed, wrapping each against its own duration. Keeps the
+   *  inactive clips "running" so a switch jumps to a de-synced live position
+   *  (clips loop independently by their differing lengths). Pure bookkeeping —
+   *  no element/DOM/store writes (the inactive elements stay paused + warm). */
+  function advanceVirtualPlayheads(dtMs: number, speed: number): void {
+    if (!isPlaying || oneShotEnded || dtMs <= 0) return;
+    const dtSec = dtMs / 1000;
+    for (let i = 0; i < ASSET_SLOTS; i++) {
+      if (i === activeSlot) continue;
+      if ((slotNames[i] ?? null) === null) continue; // empty slot
+      const dur = slotDurationSec(i);
+      const w = windowForDuration(dur);
+      if (!w.hasWindow) continue;
+      const forward = speed >= 0;
+      let pos = (slotPos[i] ?? 0) + speed * dtSec; // signed advance
+      const action = decideEdgeAction(pos, w, forward, loop);
+      if (action.kind === 'loop') pos = action.seekTo;
+      else if (action.kind === 'stop') pos = action.clampTo;
+      else pos = Math.min(Math.max(pos, w.startSec), w.endSec);
+      slotPos[i] = pos;
+    }
+  }
+
   function transportTick(nowMs: number): void {
     raf = requestAnimationFrame(transportTick);
     if (!videoEl || !hasLocalFile) { lastRafMs = nowMs; return; }
@@ -720,6 +849,12 @@
 
     const speed = effectiveSpeed();
     const w = currentWindow();
+
+    // Keep the ACTIVE slot's virtual playhead synced to its element's real time
+    // (so a switch-AWAY snapshots the right frame), and advance the inactive
+    // slots' virtual playheads so they de-sync.
+    if (Number.isFinite(videoEl.currentTime)) slotPos[activeSlot] = videoEl.currentTime;
+    advanceVirtualPlayheads(dt, speed);
 
     // Empty window (START past END) -> no playback: hold the element paused.
     if (!w.hasWindow) {
@@ -740,7 +875,8 @@
       videoEl.muted = false;
     }
 
-    if (!isPlaying) return;
+    // Not playing, OR a one-shot already ran out: hold paused, don't auto-play.
+    if (!isPlaying || oneShotEnded) return;
 
     if (forward) {
       const rate = Math.max(0.0625, Math.min(16, speed));
@@ -764,11 +900,14 @@
     const action = decideEdgeAction(videoEl.currentTime, w, forward, loop);
     if (action.kind === 'loop') {
       try { videoEl.currentTime = action.seekTo; } catch { /* */ }
+      slotPos[activeSlot] = action.seekTo;
       if (forward && videoEl.paused) void videoEl.play().catch(() => { /* */ });
     } else if (action.kind === 'stop') {
       try { videoEl.currentTime = action.clampTo; } catch { /* */ }
       try { videoEl.pause(); } catch { /* */ }
-      writePlaying(false);
+      slotPos[activeSlot] = action.clampTo;
+      // Render-local latch ONLY — NOT writePlaying(false) (see oneShotEnded).
+      oneShotEnded = true;
     }
   }
   function startTransportLoop(): void {
@@ -781,11 +920,17 @@
   }
 
   // ---- Sync data.isPlaying -> element play/pause (manual + gate) ----
+  // LOOP can never "end", so re-enabling LOOP clears a stale one-shot latch.
+  $effect(() => {
+    if (loop) oneShotEnded = false;
+  });
   $effect(() => {
     void isPlaying;
     if (!videoEl || !hasLocalFile) return;
     const speed = effectiveSpeed();
-    if (isPlaying && videoEl.paused && speed >= 0) {
+    // Don't auto-play a one-shot that already ran out (the render-local latch);
+    // a Play click / START gate clears it first.
+    if (isPlaying && !oneShotEnded && videoEl.paused && speed >= 0) {
       void videoEl.play().catch(() => { /* autoplay blocked */ });
     } else if (!isPlaying && !videoEl.paused) {
       try { videoEl.pause(); } catch { /* */ }
@@ -844,6 +989,7 @@
     stopGateLoop();
     stopTransportLoop();
     if (audioWireTimer) { clearTimeout(audioWireTimer); audioWireTimer = null; }
+    if (keepAliveTimer) { clearTimeout(keepAliveTimer); keepAliveTimer = null; }
     const ve = videoEngine();
     try { ve?.attachExternalSource(id, 'video', null); } catch { /* */ }
     const extras = getExtras();
