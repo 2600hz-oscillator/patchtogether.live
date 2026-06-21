@@ -99,12 +99,13 @@ export function applyBipolar(env01: number, bipolar: boolean): number {
  * SOURCE (this replaces the scrapped per-cable/edge depth idea — depth lives
  * entirely on SYNESTHESIA).
  *
- * Range 0..2: default 1.0 = unchanged (bit-identical current behaviour), 0 =
- * that band's env outputs are silenced, 2 = doubled (then clamped to the 0..1
+ * Range 0..4: default 1.0 = unchanged (bit-identical current behaviour), 0 =
+ * that band's env outputs are silenced, 4 = quadrupled (then clamped to the 0..1
  * CV ceiling). Applied to the UNIPOLAR env value AFTER the CV makeup but BEFORE
  * the [0,1] clamp + the optional bipolar remap, so:
  *   - depth=0 → unipolar 0 → (bipolar) -1, i.e. the band sits at its silent rail;
- *   - depth=2 boosts a weak band's env toward full scale (clamped at 1).
+ *   - depth>1 boosts a weak band's env toward full scale (clamped at 1) — the max
+ *     was raised 2→4 so a band that still wasn't saturating the CV at 2× can.
  * It does NOT touch the gate / onset / band-audio / meter stages (they read the
  * un-scaled env), so triggers + gates + audio + VU are unchanged. Default 1.0
  * everywhere keeps existing patches + ART/VRT baselines byte-for-byte identical.
