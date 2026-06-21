@@ -55,6 +55,9 @@ import {
   type CaptureChunk,
   type CaptureSampleInit,
 } from './recorderbox-capture-drain';
+import { CfrClock, planCfrEmit, DEFICIT_SLACK_FRAMES } from './recorderbox-cfr';
+import { AudioRingBuffer } from './recorderbox-audio-ring';
+import { chunkFileName } from './recorderbox-chunk-name';
 
 // Mediabunny is a real dependency (MPL-2.0). We import its high-level
 // canvas/audio sources + the fragmented-MP4 output. Type-only where possible
@@ -100,6 +103,12 @@ export const DEFAULT_AUDIO_BITRATE = 192_000;
 export const DEFAULT_FPS = 30;
 /** Default keyframe interval, seconds (Mediabunny's own default — HIGH tier). */
 export const DEFAULT_KEYFRAME_INTERVAL = 2;
+/** GoPro-style chunking: roll to a NEW file every ~10 min. Seconds of recorded
+ *  wall time per chunk. (Test-injectable via `RecorderboxRecorderOptions`.) */
+export const MAX_CHUNK_SECONDS = 600;
+/** Seconds of AUDIO that overlap between consecutive chunks: the last N s of
+ *  chunk N is duplicated as the first N s of chunk N+1. */
+export const OVERLAP_SECONDS = 5;
 export const VIDEO_CODEC: VideoCodec = 'avc'; // H.264 — the guaranteed baseline
 export const AUDIO_CODEC = 'aac' as const; // AAC-LC (mp4a.40.2)
 export const CONTAINER_MIME = 'video/mp4';
@@ -288,14 +297,34 @@ export interface RecorderboxRecorderOptions {
    *  scratch path so a recovered/partial file carries the intended name). */
   filename: string;
   /**
-   * The destination the user chose AT START via showSaveFilePicker (Chromium).
-   * When present, stop() STREAMS the OPFS scratch straight into this handle in
-   * chunks (correct name, never a full in-memory read) instead of calling
-   * saveBytes. Persisted to the manifest so crash-recovery can restore to the
-   * same path. Absent on Firefox/Safari (no picker) → stop() falls back to
-   * saveBytes (the <a download> blob path).
+   * LEGACY single-file destination chosen via showSaveFilePicker. When present
+   * (and no `dirHandle`), stop() writes the finalized flat MP4 to this one handle.
+   * Persisted to the manifest for crash-recovery. Mostly superseded by
+   * `dirHandle` (the folder model that enables no-prompt + chunking); kept so a
+   * caller can still target a single file, and the recovery flow keeps working.
+   * Absent on Firefox/Safari (no picker) → saveBytes (<a download>) fallback.
    */
   destHandle?: FileSystemFileHandle | null;
+  /**
+   * The destination FOLDER the user picked ONCE at recording START via
+   * showDirectoryPicker (Chromium) — the model the no-prompt save + GoPro
+   * chunking unify around. When present, each finalized chunk is written INTO
+   * this folder under its `FILENAME-CHUNK#-DATETIME.mp4` name (the recorder
+   * resolves the per-chunk file handle itself), with NO per-save prompt.
+   * Persisted to the manifest so crash-recovery writes the recovered chunk back
+   * into the same folder. Takes precedence over `destHandle`. Absent on
+   * Firefox/Safari (no directory picker) → saveBytes (<a download>) fallback,
+   * still named per chunk.
+   */
+  dirHandle?: FileSystemDirectoryHandle | null;
+  /** Override the ~10-min chunk-roll threshold (seconds). Defaults to
+   *  MAX_CHUNK_SECONDS (600). The e2e shrinks it (e.g. 6 s) to exercise a roll on
+   *  a dev Mac without a 10-minute recording. */
+  maxChunkSeconds?: number;
+  /** Called after each chunk is finalized + delivered (rolled OR final), with the
+   *  1-based chunk index + its resolved file name. Lets the card surface "saved
+   *  RECORDING-001-… (002 recording…)" + drives the download-fallback per chunk. */
+  onChunkSaved?: (info: { index: number; name: string; bytes: number }) => void;
   /** Video codec to encode with (defaults to H.264 'avc'). The card resolves
    *  this per quality tier via pickEncodeProfile (HEVC for BALANCED/SMALL where
    *  the OS has a hardware encoder; H.264 always for HIGH + as the fallback). The
@@ -325,6 +354,14 @@ export interface RecorderboxRecorderOptions {
   /** OPFS-writer factory. Defaults to the real Worker-backed writer; tests
    *  inject an in-memory sink. */
   makeWriter?: (opfsPath: string) => OpfsWriter;
+  /** Mediabunny Output factory for one chunk. Defaults to the real fragmented-MP4
+   *  Output(StreamTarget→writer). Injectable so the chunk-roll unit tests drive
+   *  buildChunkSession + rollChunk WITHOUT a real encoder. */
+  makeOutput?: (writer: OpfsWriter) => MuxOutputLike;
+  /** Build the video track source for one chunk. Defaults to the real
+   *  CanvasSource. Injectable so the chunk-roll unit tests skip the real
+   *  WebCodecs canvas encoder. */
+  makeCanvasSource?: () => CanvasSourceLike;
   /** Factory for the backpressured audio source used by the sample-accurate
    *  capture path (only when `audioCapture` is present). Defaults to the real
    *  mediabunny AudioSampleSource + AudioSample; tests inject a fake so the
@@ -364,6 +401,20 @@ export interface AudioSampleSourceLike {
   add(sample: AudioSample): Promise<void>;
 }
 
+/** The narrow mediabunny Output surface the recorder drives per chunk. Abstracted
+ *  so the chunk-roll unit tests inject a fake (no real encoder/muxer). */
+export interface MuxOutputLike {
+  addVideoTrack(source: unknown, opts?: { frameRate?: number }): void;
+  addAudioTrack(source: unknown): void;
+  start(): Promise<void>;
+  finalize(): Promise<void>;
+}
+
+/** The narrow video-source surface frame() drives. */
+export interface CanvasSourceLike {
+  add(timestamp: number, duration?: number): Promise<void>;
+}
+
 /** The DEFAULT backpressured audio source: a real mediabunny AudioSampleSource.
  *  The drain wraps each planar-f32 chunk in an AudioSample before add(). */
 function defaultMakeAudioSampleSource(encodingConfig: {
@@ -387,6 +438,12 @@ function macrotask(): Promise<void> {
  */
 export class RecorderboxRecorder {
   private opts: RecorderboxRecorderOptions;
+  // ── Current CHUNK session ──
+  // These describe the CHUNK currently being written. A long take ROLLS: on roll
+  // the current session is finalized + delivered and a fresh one replaces these
+  // (see rollChunk). For a take under the roll threshold there is exactly one
+  // chunk (index 001). (The stop/recovery unit tests drive these fields directly,
+  // so they stay first-class.)
   private output: Output | null = null;
   private canvasSource: CanvasSource | null = null;
   private state: RecorderState = 'idle';
@@ -403,6 +460,25 @@ export class RecorderboxRecorder {
    *  don't want to stall the loop — drop instead). */
   private addInFlight = false;
 
+  // ── CONSTANT FRAME RATE (the OSX slow-mo fix) ──
+  /** Drives evenly-spaced grid PTS (index/fps) instead of jittery wall-clock
+   *  PTS — see recorderbox-cfr.ts. */
+  private cfr = new CfrClock(DEFAULT_FPS);
+  /** 1-based index of the chunk currently recording (001, 002, …). */
+  private chunkIndex = 1;
+  /** Consecutive rAF ticks the CFR grid has been BEHIND wall-clock (i.e. we
+   *  emitted while still behind). Drives planCfrEmit's sustained-deficit ramp:
+   *  once it crosses SUSTAINED_DEFICIT_TICKS the per-tick catch-up cap relaxes so
+   *  video DURATION tracks real time under persistently slow rendering (the
+   *  A/V-desync fix). Reset to 0 the moment we're on pace / ahead, and on a roll
+   *  (the new chunk's grid restarts at 0). */
+  private deficitStreak = 0;
+  /** Wall-clock elapsed (s) at which the current chunk started — the roll timer
+   *  measures (elapsed - chunkStartElapsed) against maxChunkSeconds. */
+  private chunkStartElapsed = 0;
+  /** Re-entrancy guard so a roll in flight isn't started twice from rAF. */
+  private rolling = false;
+
   // ── Sample-accurate audio capture (the clicks/pops fix) ──
   /** The worklet port we ARM/DISARM + read planar f32 chunks off (when
    *  audioCapture was provided). Null = the MediaStreamAudioTrackSource fallback
@@ -414,9 +490,39 @@ export class RecorderboxRecorder {
   /** The running drain loop (drain.drain(...)). Awaited in stop() so the final
    *  partial chunk lands before finalize(). */
   private captureDrainLoop: Promise<void> | null = null;
+  /** The CURRENT chunk's backpressured audio source the drain feeds. Swapped on
+   *  roll so the new chunk's samples go to the new muxer. Null = video-only. */
+  private currentAudioSource: AudioSampleSourceLike | null = null;
+  /** Frames written to the CURRENT chunk's audio track (incl. the prepended 5 s
+   *  overlap). Drives the per-chunk audio timestamp so EACH file's audio starts
+   *  at 0 + stays contiguous — independent of the global take clock. */
+  private chunkAudioFrames = 0;
+  /** Rolling buffer of the trailing OVERLAP_SECONDS of emitted audio — prepended
+   *  to the next chunk on roll (the 5 s overlap). Built once the sample rate is
+   *  known (setupCaptureSource). */
+  private audioRing: AudioRingBuffer | null = null;
+  /** Capture sample rate (for the ring + per-chunk audio clock). */
+  private captureSampleRate = 0;
+  /**
+   * HOLD buffer for live samples the long-lived drain pops DURING a chunk roll —
+   * i.e. between detaching the finishing chunk's audio source and installing +
+   * priming chunk N+1's. The old code early-returned (dropped) here, leaving a
+   * real audio gap (the finalize window, tens-to-hundreds ms) at every ~10-min
+   * boundary. We instead STASH each popped sample in order and flush it into the
+   * new chunk's source AFTER the overlap prepend, so ZERO samples are lost across
+   * a roll. Non-null only while a roll is in flight (addAudioToCurrentChunk holds
+   * whenever this is non-null; rollChunk allocates it before the swap, flushes it
+   * after, then nulls it). */
+  private heldDuringRoll: CaptureSampleInit[] | null = null;
 
   constructor(opts: RecorderboxRecorderOptions) {
     this.opts = opts;
+  }
+
+  /** The roll threshold (seconds) — option override else the ~10-min default. */
+  private get maxChunkSeconds(): number {
+    const v = this.opts.maxChunkSeconds;
+    return v && v > 0 ? v : MAX_CHUNK_SECONDS;
   }
 
   getState(): RecorderState {
@@ -446,17 +552,69 @@ export class RecorderboxRecorder {
   async start(): Promise<void> {
     this.startEpoch = Date.now();
     this.t0 = performance.now();
-    // Bake the user's intended name into the scratch path (+ a .partial marker)
-    // so the recovery UI + any recovered file carry it, not just nodeId+epoch.
-    this.opfsPath = opfsScratchPath(this.opts.nodeId, this.startEpoch, this.opts.filename);
+    this.chunkIndex = 1;
+    this.chunkStartElapsed = 0;
+
+    // Build the first chunk session (output + writer + video track + audio
+    // track). buildChunkSession sets this.output/writer/opfsPath/canvasSource and
+    // (for the capture path) wires the drain + the per-chunk audio source.
+    const captureSampleSource = await this.buildChunkSession(this.chunkIndex, new Date(this.startEpoch));
+
+    try {
+      await this.output!.start();
+      this.setState('recording');
+    } catch (err) {
+      this.setState('error');
+      // Roll back the manifest + writer so we don't leave a phantom recover
+      // candidate for a recording that never started.
+      try { await this.writer?.close(); } catch { /* */ }
+      await deleteManifest(this.opfsPath);
+      throw err;
+    }
+
+    // ── ARM the capture worklet + start the lossless drain (after start) ──
+    // The output is now accepting samples, so it's safe to begin draining. The
+    // drain feeds `this.currentAudioSource` (swapped on roll), so ONE long-lived
+    // lossless drain spans every chunk.
+    if (captureSampleSource) this.armCaptureDrain();
+  }
+
+  /**
+   * Build one CHUNK session: the OPFS scratch path + writer, the recovery
+   * manifest, a fresh fragmented-MP4 Output, the video track (CFR-declared), and
+   * the audio track (sample-accurate capture, or the legacy MediaStream
+   * fallback). Sets this.output/writer/opfsPath/canvasSource and (capture path)
+   * this.currentAudioSource. Returns the capture audio source (for the FIRST
+   * chunk's arm step) or null (video-only / fallback path / rolled chunk).
+   *
+   * Used by start() (chunk 001) AND rollChunk() (chunk N+1), so a rolled chunk is
+   * byte-for-byte the same pipeline as a fresh recording.
+   */
+  private async buildChunkSession(
+    chunkIndex: number,
+    when: Date,
+    freshAudio = true,
+  ): Promise<AudioSampleSourceLike | null> {
+    // Each chunk's scratch is a DISTINCT OPFS partial (so recovery can offer them
+    // independently). The first chunk keeps the bare path (back-compat with the
+    // single-chunk recovery flow); rolled chunks carry a -cNNN segment.
+    this.opfsPath = opfsScratchPath(
+      this.opts.nodeId,
+      this.startEpoch,
+      this.opts.filename,
+      chunkIndex > 1 ? chunkIndex : undefined,
+    );
+    // The resolved chunk file name (FILENAME-CHUNK#-DATETIME.mp4) — the delivered
+    // name + what recovery writes a recovered chunk as inside the folder.
+    const chunkName = chunkFileName(this.opts.filename, chunkIndex, when);
 
     // OPFS scratch writer (Worker-backed by default).
     this.writer = (this.opts.makeWriter ?? defaultMakeWriter)(this.opfsPath);
 
     // Recovery manifest — written BEFORE the first byte so a crash 100ms in
-    // still leaves a recover candidate pointing at the (possibly tiny) file.
-    // The destHandle (the path the user picked at START) rides along so
-    // recovery can restore to the original chosen location with the right name.
+    // still leaves a recover candidate pointing at the (possibly tiny) file. The
+    // dirHandle (folder picked once at START) / destHandle (legacy single file)
+    // ride along so recovery can restore to the original chosen location.
     const manifest: RecorderboxManifest = {
       nodeId: this.opts.nodeId,
       filename: this.opts.filename,
@@ -464,61 +622,52 @@ export class RecorderboxRecorder {
       mime: CONTAINER_MIME,
       opfsPath: this.opfsPath,
       status: 'recording',
+      chunkName,
+      ...(this.opts.dirHandle ? { dirHandle: this.opts.dirHandle } : {}),
       ...(this.opts.destHandle ? { destHandle: this.opts.destHandle } : {}),
     };
     await putManifest(manifest);
 
-    // StreamTarget → OPFS writer. Mediabunny writes fragments as
-    // { type:'write', data, position }; we forward data+position to the writer.
-    const writer = this.writer;
-    const writable = new WritableStream<{ type: 'write'; data: Uint8Array; position: number }>({
-      async write(chunk) {
-        await writer.write({ data: chunk.data, position: chunk.position });
-      },
-    });
+    const output = (this.opts.makeOutput ?? defaultMakeOutput)(this.writer);
+    this.output = output as unknown as Output;
 
-    const output = new Output({
-      format: new Mp4OutputFormat({ fastStart: 'fragmented' }),
-      target: new StreamTarget(writable as unknown as WritableStream),
-    });
-    this.output = output;
-
-    // Video track from the hidden capture canvas. Codec + bitrate + keyframe
-    // interval come from the quality tier the card resolved (HIGH = the original
-    // H.264 / 14 Mbps / ~2 s defaults); HEVC for the smaller tiers stays inside
-    // the same fragmented MP4 container.
-    //
-    // hardwareAcceleration:'prefer-hardware' is the audio-glitch fix (2026-06-17):
-    // a SOFTWARE video encoder (AV1/VP9 on a Mac) saturates the CPU and starves
-    // the secondary audio CAPTURE/encode path → clicks/pops baked into the take
-    // (the live speaker monitor stays clean because the OS audio callback has
-    // priority — which is exactly why the glitches were only ever heard on the
-    // recording, not during the session). HEVC/H.264 + the hardware hint keep the
-    // CPU free so the capture path makes its deadlines.
-    const canvasSource = new CanvasSource(this.opts.canvas as HTMLCanvasElement, {
-      codec: this.opts.videoCodec ?? VIDEO_CODEC,
-      bitrate: this.opts.videoBitrate ?? DEFAULT_VIDEO_BITRATE,
-      keyFrameInterval: this.opts.keyFrameInterval ?? DEFAULT_KEYFRAME_INTERVAL,
-      hardwareAcceleration: this.opts.hardwareAcceleration ?? 'prefer-hardware',
-      // The engine canvas keeps a stable size for a recording; deny size
-      // changes mid-stream (the encoder's first-frame box is authoritative).
-      sizeChangeBehavior: 'contain',
-    });
-    this.canvasSource = canvasSource;
+    // Video track from the hidden capture canvas. frameRate: DEFAULT_FPS is now a
+    // TRUTHFUL CFR declaration — frame() emits PTS exactly on the index/fps grid
+    // (recorderbox-cfr.ts), so this is a no-op snap, not a lossy repair of jittery
+    // wall-clock PTS (the OSX slow-mo cause).
+    const canvasSource = this.opts.makeCanvasSource
+      ? this.opts.makeCanvasSource()
+      : this.makeRealCanvasSource();
+    this.canvasSource = canvasSource as unknown as CanvasSource;
     output.addVideoTrack(canvasSource, { frameRate: DEFAULT_FPS });
 
     // ── Audio track — optional, two paths ──
     //   1. PREFERRED: the sample-accurate capture tap (audioCapture). A
     //      backpressured AudioSampleSource we feed worklet-captured planar f32
-    //      chunks through (awaited add = lossless → no clicks/pops). Set up here
-    //      (addAudioTrack), ARMED + drained after output.start() below.
+    //      chunks through (awaited add = lossless → no clicks/pops).
     //   2. FALLBACK: MediaStreamAudioTrackSource(audioTrack) — the legacy path,
     //      which hard-drops samples under encoder backpressure (the bug). Used
-    //      only when no capture tap is available.
+    //      only when no capture tap is available. NOTE: the MediaStream fallback
+    //      can't be re-attached to a rolled chunk (a track can feed one output),
+    //      so chunking's per-chunk audio uses the capture path; the fallback path
+    //      records a single chunk (no roll) for audio continuity.
     //   A null/absent of both records video only (silent MP4).
     let captureSampleSource: AudioSampleSourceLike | null = null;
     if (this.opts.audioCapture) {
-      captureSampleSource = this.setupCaptureSource(output, this.opts.audioCapture);
+      if (freshAudio) {
+        // FIRST chunk: wire the drain + ring + worklet port (one long-lived drain
+        // spans every chunk).
+        captureSampleSource = this.setupCaptureSource(output, this.opts.audioCapture);
+      } else if (this.capturePort) {
+        // ROLLED chunk: the drain/ring/port already exist — just build this
+        // chunk's audio source (the caller installs it as currentAudioSource).
+        try {
+          captureSampleSource = this.makeChunkAudioSource(output);
+        } catch (e) {
+          this.audioEncodeError = e instanceof Error ? e : new Error(String(e));
+          this.opts.onAudioError?.(this.audioEncodeError);
+        }
+      }
     } else if (this.opts.audioTrack) {
       try {
         const audioSource = new MediaStreamAudioTrackSource(
@@ -549,22 +698,7 @@ export class RecorderboxRecorder {
         this.opts.onAudioError?.(this.audioEncodeError);
       }
     }
-
-    try {
-      await output.start();
-      this.setState('recording');
-    } catch (err) {
-      this.setState('error');
-      // Roll back the manifest + writer so we don't leave a phantom recover
-      // candidate for a recording that never started.
-      try { await this.writer.close(); } catch { /* */ }
-      await deleteManifest(this.opfsPath);
-      throw err;
-    }
-
-    // ── ARM the capture worklet + start the lossless drain (after start) ──
-    // The output is now accepting samples, so it's safe to begin draining.
-    if (captureSampleSource) this.armCaptureDrain(captureSampleSource);
+    return captureSampleSource;
   }
 
   /**
@@ -578,28 +712,21 @@ export class RecorderboxRecorder {
     tap: { port: MessagePort; sampleRate: number },
   ): AudioSampleSourceLike | null {
     try {
-      const makeASS = this.opts.makeAudioSampleSource ?? defaultMakeAudioSampleSource;
-      const audioSource = makeASS({
-        codec: AUDIO_CODEC,
-        bitrate: this.opts.audioBitrate ?? DEFAULT_AUDIO_BITRATE,
-      });
-      // Observe the internal encode-error promise (same as the legacy path).
-      try {
-        const ep = (audioSource as unknown as { errorPromise?: Promise<unknown> }).errorPromise;
-        void ep?.catch((e) => {
-          this.audioEncodeError = e instanceof Error ? e : new Error(String(e));
-          this.opts.onAudioError?.(this.audioEncodeError);
-        });
-      } catch { /* older mediabunny without errorPromise — ignore */ }
-      output.addAudioTrack(audioSource as unknown as AudioSampleSource);
+      const audioSource = this.makeChunkAudioSource(output);
+      this.currentAudioSource = audioSource;
       this.capturePort = tap.port;
-      // A/V SYNC: the video CanvasSource timestamps each frame at
-      // (performance.now() - t0)/1000 — i.e. ~0 at the first frame. The drain
-      // clocks audio off the AUDIO sample count from t0=0 too, so audio sample N
-      // lands at N/sampleRate seconds and the two tracks share the same zero
-      // epoch (a small constant lead from the worklet's first batch is fine;
-      // there is NO drift because both clocks are sample/frame-accurate).
+      this.captureSampleRate = tap.sampleRate;
+      // The 5 s overlap ring (planar f32, last OVERLAP_SECONDS at this rate) — the
+      // recorder taps every emitted chunk into it so a roll can prepend the tail.
+      this.audioRing = new AudioRingBuffer(Math.max(1, Math.round(OVERLAP_SECONDS * tap.sampleRate)));
+      // A/V SYNC: the video CanvasSource timestamps each frame at index/fps (CFR)
+      // from 0; the drain clocks audio off the AUDIO sample count from 0 too, so
+      // audio sample N lands at N/sampleRate seconds — both tracks share the zero
+      // epoch (no drift; both clocks are sample/frame-accurate). The PER-CHUNK
+      // audio clock (chunkAudioFrames) lives in the drain's add() so each rolled
+      // file's audio starts at 0 again.
       this.captureDrain = new AudioCaptureDrain(tap.sampleRate, 0);
+      this.chunkAudioFrames = 0;
       const drain = this.captureDrain;
       this.capturePort.onmessage = (e: MessageEvent) => {
         drain.push(e.data as CaptureChunk);
@@ -612,71 +739,352 @@ export class RecorderboxRecorder {
       this.opts.onAudioError?.(this.audioEncodeError);
       this.capturePort = null;
       this.captureDrain = null;
+      this.currentAudioSource = null;
+      this.audioRing = null;
       return null;
     }
   }
 
+  /** Build the REAL CanvasSource for one chunk (the default video-source path).
+   *  Codec + bitrate + keyframe interval come from the resolved quality tier;
+   *  prefer-hardware is the audio-glitch fix (a software video encode starves the
+   *  audio capture path → clicks/pops). Extracted so buildChunkSession can swap in
+   *  a fake via makeCanvasSource for the chunk-roll unit tests. */
+  private makeRealCanvasSource(): CanvasSourceLike {
+    return new CanvasSource(this.opts.canvas as HTMLCanvasElement, {
+      codec: this.opts.videoCodec ?? VIDEO_CODEC,
+      bitrate: this.opts.videoBitrate ?? DEFAULT_VIDEO_BITRATE,
+      keyFrameInterval: this.opts.keyFrameInterval ?? DEFAULT_KEYFRAME_INTERVAL,
+      hardwareAcceleration: this.opts.hardwareAcceleration ?? 'prefer-hardware',
+      // The engine canvas keeps a stable size for a recording; deny size
+      // changes mid-stream (the encoder's first-frame box is authoritative).
+      sizeChangeBehavior: 'contain',
+    }) as unknown as CanvasSourceLike;
+  }
+
+  /** Build a backpressured audio source for ONE chunk's Output + wire its
+   *  error-promise observer. Extracted so rollChunk can build the next chunk's
+   *  source identically. */
+  private makeChunkAudioSource(
+    output: { addAudioTrack: (s: AudioSampleSource) => void },
+  ): AudioSampleSourceLike {
+    const makeASS = this.opts.makeAudioSampleSource ?? defaultMakeAudioSampleSource;
+    const audioSource = makeASS({
+      codec: AUDIO_CODEC,
+      bitrate: this.opts.audioBitrate ?? DEFAULT_AUDIO_BITRATE,
+    });
+    try {
+      const ep = (audioSource as unknown as { errorPromise?: Promise<unknown> }).errorPromise;
+      void ep?.catch((e) => {
+        this.audioEncodeError = e instanceof Error ? e : new Error(String(e));
+        this.opts.onAudioError?.(this.audioEncodeError);
+      });
+    } catch { /* older mediabunny without errorPromise — ignore */ }
+    output.addAudioTrack(audioSource as unknown as AudioSampleSource);
+    return audioSource;
+  }
+
+  /** Add one planar-stereo init to the CURRENT chunk's audio source on the
+   *  PER-CHUNK clock (each file's audio restarts at 0 + stays contiguous), and
+   *  tap it into the overlap ring. Shared by the drain loop + the roll prepend.
+   *
+   *  ROLL SAFETY: while a roll is in flight (`heldDuringRoll` non-null) we do NOT
+   *  write to the source — we STASH the init in order and rollChunk flushes the
+   *  hold (after the overlap prepend) so no sample popped during the finalize
+   *  window is lost OR reordered ahead of the overlap. We must never early-return
+   *  (drop) when the source is momentarily null mid-roll. */
+  private async addAudioToCurrentChunk(init: CaptureSampleInit): Promise<void> {
+    if (this.heldDuringRoll) {
+      // Mid-roll: the finishing chunk's source is detached and the new chunk's
+      // overlap hasn't been primed yet. Hold this live sample (in capture order)
+      // for rollChunk to flush into chunk N+1 after the overlap. No drop.
+      this.heldDuringRoll.push(init);
+      return;
+    }
+    await this.writeAudioToChunk(init);
+  }
+
+  /** Write one planar-stereo init to the CURRENT chunk's audio source on the
+   *  per-chunk clock + tap the overlap ring. The actual write, with NO roll
+   *  gate — only addAudioToCurrentChunk (live drain) and rollChunk's hold-flush
+   *  call this, so the roll-ordering invariant (overlap → held → live) holds. A
+   *  null source (genuine video-only) is a no-op. */
+  private async writeAudioToChunk(init: CaptureSampleInit): Promise<void> {
+    const src = this.currentAudioSource;
+    if (!src) return;
+    const frames = init.data.length / 2; // planar stereo: data = [L…, R…]
+    const timestamp = this.chunkAudioFrames / this.captureSampleRate;
+    this.chunkAudioFrames += frames;
+    // Tap into the rolling overlap window (the next chunk prepends this tail).
+    this.audioRing?.pushChunk({ data: init.data, frames });
+    await src.add(new AudioSample({ ...init, timestamp }));
+  }
+
   /**
    * ARM the worklet (it begins posting batches — idle until now, so nothing
-   * buffers between takes) and start the lossless drain loop. Each chunk is fed
-   * through the BACKPRESSURED add() (awaited), so a busy encoder fills the queue
-   * + drains later — never drops a sample. Extracted from start() for testing.
+   * buffers between takes) and start the lossless drain loop. Each posted chunk
+   * is fed through the BACKPRESSURED add() (awaited), so a busy encoder fills the
+   * queue + drains later — never drops a sample. ONE long-lived drain spans every
+   * chunk: it feeds `this.currentAudioSource`, which rollChunk swaps. Extracted
+   * from start() for testing.
    */
-  private armCaptureDrain(src: AudioSampleSourceLike): void {
+  private armCaptureDrain(): void {
     const drain = this.captureDrain;
     const port = this.capturePort;
     if (!drain || !port) return;
     port.postMessage({ type: 'arm' });
     this.captureDrainLoop = drain.drain(
-      async (init: CaptureSampleInit) => {
-        await src.add(new AudioSample(init));
-      },
+      (init: CaptureSampleInit) => this.addAudioToCurrentChunk(init),
       macrotask,
     ).catch(() => { /* drain errors must not crash the recording */ });
   }
 
   /**
-   * Encode the current canvas contents as one frame. Call once per rAF while
-   * recording. Timestamps are wall-clock seconds since start (shared t0 with
-   * the audio track's synced-zero base → A/V stay in sync). Non-blocking:
-   * drops the frame if the previous encode hasn't drained (backpressure).
+   * Encode the current canvas contents as CFR video frame(s). Call once per rAF
+   * while recording.
+   *
+   * THE OSX SLOW-MO FIX: instead of timestamping each frame off WALL CLOCK
+   * (variable under render load → an irregular PTS stream a player reads as
+   * slow-motion), we drive PTS off a MONOTONIC FRAME INDEX on a fixed grid
+   * (index/fps). Per rAF we ask the CFR clock how many grid frames "should" exist
+   * by now and emit to catch the grid up: skip when ahead (no collision), emit one
+   * on pace, or duplicate the current canvas (bounded) when behind — so the
+   * encoded stream is true CONSTANT frame rate regardless of rAF jitter, and the
+   * muxer's frameRate:30 is a truthful declaration, not a lossy repair.
+   *
+   * Also drives GoPro CHUNKING: once the current chunk reaches the roll threshold
+   * it rolls to a new file (internal — the rAF call site is unchanged).
+   *
+   * Non-blocking: skips this tick if the previous encode hasn't drained
+   * (backpressure) — honored per emitted grid frame.
    */
   frame(): void {
     if (this.state !== 'recording' || !this.canvasSource) return;
-    if (this.addInFlight) return;
-    const ts = (performance.now() - this.t0) / 1000;
+    const elapsed = (performance.now() - this.t0) / 1000;
+
+    // ── GoPro roll: once this chunk hits the threshold, roll to a new file. ──
+    if (!this.rolling && elapsed - this.chunkStartElapsed >= this.maxChunkSeconds) {
+      void this.rollChunk();
+      return; // resume CFR emission on the next rAF, into the new chunk.
+    }
+    if (this.rolling) return; // mid-roll: don't feed a finalizing/closing output.
+
+    if (this.addInFlight) return; // previous grid frame still draining → skip tick.
+
+    // How many grid frames to emit this tick (drop/dup to the CFR grid). The grid
+    // is CHUNK-RELATIVE: frameCount resets to 0 on a roll, so compare against the
+    // elapsed time SINCE this chunk started (else a rolled chunk thinks it's
+    // 10 min behind + floods catch-up frames). PTS is therefore index/fps from 0
+    // for each chunk file. Usually [] (ahead) or one index (on pace); a hitch
+    // duplicates up to a bounded few.
+    const chunkElapsed = elapsed - this.chunkStartElapsed;
+    // Deficit-aware: track how long we've been MEANINGFULLY behind the grid and
+    // pass that streak to planCfrEmit so it relaxes the per-tick catch-up cap once
+    // the deficit is SUSTAINED — otherwise a render persistently below ~10 fps lets
+    // the video frameCount lag the grid forever and the video track ends shorter
+    // than the sample-accurate audio (growing A/V desync). A perfectly on-pace
+    // render is ALWAYS ~1 frame behind (the frame is emitted the tick its slot
+    // becomes due), so we only count a deficit LARGER than DEFICIT_SLACK_FRAMES —
+    // that's what keeps an on-pace / transiently-hitched render from ever tripping
+    // the sustained ramp. Update the streak BEFORE emitting.
+    const due = this.cfr.framesDue(chunkElapsed);
+    this.deficitStreak =
+      due - this.frameCount > DEFICIT_SLACK_FRAMES ? this.deficitStreak + 1 : 0;
+    const plan = planCfrEmit(this.cfr, this.frameCount, chunkElapsed, 2, this.deficitStreak);
+    if (plan.length === 0) return;
+
+    // Emit the first grid frame now (honoring backpressure via addInFlight); any
+    // bounded catch-up duplicates ride the same canvas content + chain after it so
+    // each lands on its own grid slot without colliding.
+    const src = this.canvasSource;
+    const dur = this.cfr.frameDuration;
     this.addInFlight = true;
-    this.frameCount++;
-    // CanvasSource.add(timestamp, duration?) — pass the nominal frame duration
-    // so the muxer has a sensible default if the next frame is late.
-    void this.canvasSource
-      .add(ts, 1 / DEFAULT_FPS)
-      .catch(() => { /* encoder backpressure / closed — drop */ })
-      .finally(() => { this.addInFlight = false; });
+    let p: Promise<void> = Promise.resolve();
+    for (const index of plan) {
+      const ts = this.cfr.ptsForFrame(index); // EVEN grid PTS: 0, 1/fps, 2/fps …
+      this.frameCount++;
+      p = p.then(() => src.add(ts, dur)).catch(() => { /* backpressure/closed — drop */ });
+    }
+    void p.finally(() => { this.addInFlight = false; });
   }
 
   /**
-   * Finalize the recording: flush + finalize the muxer (writes the final
-   * fragment), close the OPFS writer, REMUX the fragmented scratch into a flat
-   * (moov-based) MP4, then deliver the take to its destination:
-   *
-   *   * destHandle present (Chromium, the user picked a path at START) — write
-   *     the flat bytes to the chosen path.
-   *   * no destHandle (Firefox/Safari, or a test capture) — hand the flat bytes
-   *     to saveBytes (the <a download> blob fallback).
+   * Roll to a NEW chunk file (GoPro-style, every ~10 min). Finalizes + delivers
+   * the current chunk, opens a fresh chunk session, and PREPENDS the trailing 5 s
+   * of audio (the overlap) as the start of the new chunk. The single long-lived
+   * drain keeps feeding `this.currentAudioSource` (swapped here), so no captured
+   * sample is lost across the boundary. Video for the new chunk starts fresh at
+   * frame 0 (only AUDIO overlaps, per spec); the visual cut is at the boundary.
+   */
+  private async rollChunk(): Promise<void> {
+    if (this.rolling || this.state !== 'recording') return;
+    this.rolling = true;
+    const rolledIndex = this.chunkIndex;
+    try {
+      // 1) Snapshot the trailing audio BEFORE we swap sources (the overlap tail).
+      const overlap = this.audioRing?.snapshotPlanar() ?? { data: new Float32Array(0), frames: 0 };
+
+      // 2) Wait for any in-flight video frame to drain, then finalize + deliver
+      //    the current chunk. The long-lived drain keeps popping audio (lossless)
+      //    while we finalize — those samples are captured AFTER the roll boundary
+      //    and belong in chunk N+1. We ARM the hold buffer BEFORE detaching the
+      //    finishing source so addAudioToCurrentChunk stashes (never drops) every
+      //    sample popped during the finalize window; step 4 flushes them into the
+      //    new chunk after the overlap, preserving order + sample-accuracy. (Old
+      //    bug: a null source here made addAudioToCurrentChunk early-return-DROP,
+      //    a real audio gap at each ~10-min boundary.)
+      while (this.addInFlight) await macrotask();
+      const finishing = this.output;
+      const finishingPath = this.opfsPath;
+      const finishingWriter = this.writer;
+      // Arm the hold, THEN detach the finishing session's audio source so the
+      // drain stops feeding the finishing muxer but loses nothing in the gap.
+      this.heldDuringRoll = [];
+      this.currentAudioSource = null;
+      try { await finishing?.finalize(); } catch { /* recoverable fragments remain */ }
+      try { await finishingWriter?.close(); } catch { /* */ }
+      void this.deliverChunk(finishingPath, rolledIndex);
+
+      // 3) Open chunk N+1 (a fresh session: new OPFS path, manifest, Output, video
+      //    + audio tracks). freshAudio=false REUSES the long-lived drain/ring/port
+      //    — only a new per-chunk audio source is built. Reset the per-chunk video
+      //    grid + audio clock to 0 so the new file's timestamps start at 0.
+      this.chunkIndex = rolledIndex + 1;
+      const newSrc = await this.buildChunkSession(this.chunkIndex, new Date(), false);
+      this.frameCount = 0;
+      this.deficitStreak = 0; // new chunk's grid restarts at 0 — no carried deficit.
+      this.chunkStartElapsed = (performance.now() - this.t0) / 1000;
+      this.chunkAudioFrames = 0;
+      try {
+        await this.output!.start();
+      } catch {
+        // The new chunk's output failed to start — stop cleanly rather than feed a
+        // dead output. (Rare; the first chunk already proved the encoder works.)
+        this.setState('error');
+        return;
+      }
+      this.currentAudioSource = newSrc;
+
+      // 4) PREPEND the overlap, then FLUSH the hold — both via writeAudioToChunk
+      //    (the direct, NON-roll-gated write) so they land BEFORE live capture
+      //    resumes, in this exact order on the per-chunk clock:
+      //      (a) the retained ≤5 s overlap tail of chunk N (timestamp 0…), then
+      //      (b) the live samples popped DURING the finalize window, in capture
+      //          order (continuing the per-chunk clock right after the overlap).
+      //    Only after the hold is drained do we null heldDuringRoll, so any sample
+      //    the drain pops in the meantime is still held (never reordered ahead of
+      //    the overlap/earlier-held samples). (First chunk has an empty ring → no
+      //    prepend; a video-only take has a null source → writeAudioToChunk no-ops
+      //    and the hold is simply discarded.)
+      if (newSrc && overlap.frames > 0 && this.captureSampleRate > 0) {
+        await this.writeAudioToChunk({
+          data: overlap.data,
+          format: 'f32-planar',
+          numberOfChannels: 2,
+          sampleRate: this.captureSampleRate,
+          timestamp: 0, // recomputed by writeAudioToChunk on the chunk clock
+        });
+      }
+      // Flush every sample held during the finalize window, in order. We swap the
+      // buffer out for a FRESH empty hold each pass so any sample the drain pops
+      // while we await an add() is appended to the fresh hold (still ordered AFTER
+      // these) instead of mutating the array we're iterating. Loop until a pass
+      // adds nothing new, then null the hold so live capture writes directly.
+      for (;;) {
+        const held = this.heldDuringRoll ?? [];
+        if (held.length === 0) break;
+        this.heldDuringRoll = []; // fresh hold catches anything popped during the awaits
+        for (const init of held) await this.writeAudioToChunk(init);
+      }
+      // Roll complete: live capture resumes writing directly (heldDuringRoll null).
+      this.heldDuringRoll = null;
+    } finally {
+      this.rolling = false;
+      this.heldDuringRoll = null;
+    }
+  }
+
+  /** Finalize-delivery for ONE chunk's OPFS scratch: remux → flat MP4 (fall back
+   *  to raw fragmented bytes), then write it to the destination under the chunk's
+   *  name, and retire that scratch on success. Used by rollChunk (rolled chunks)
+   *  and stop() (the final chunk). Reports via onChunkSaved. */
+  private async deliverChunk(opfsPath: string, chunkIndex: number): Promise<string | null> {
+    const chunkName = chunkFileName(this.opts.filename, chunkIndex, new Date());
+
+    // Build the FLAT deliverable (remux fragmented → moov-based; fall back to raw
+    // fragmented bytes so a take is never lost).
+    const remux = this.opts.remuxToFlatMp4 ?? defaultRemuxToFlatMp4;
+    let bytes: Uint8Array | null = null;
+    try { bytes = await remux(opfsPath); } catch { bytes = null; }
+    if (!bytes || bytes.byteLength === 0) {
+      try {
+        const { readOpfsBytes } = await import('./recorderbox-store');
+        bytes = await readOpfsBytes(opfsPath);
+      } catch { bytes = null; }
+    }
+    if (!bytes || bytes.byteLength === 0) {
+      // Nothing to deliver — KEEP the scratch + manifest as a recover candidate.
+      return null;
+    }
+
+    // Deliver. Folder model (Chromium) → write FILENAME-CHUNK#-DATETIME.mp4 into
+    // the picked folder. Legacy single-file handle → write there (first chunk
+    // only). No handle (Firefox/Safari) → saveBytes (<a download>) per chunk.
+    let delivered = false;
+    if (this.opts.dirHandle) {
+      try {
+        const fh = await (this.opts.dirHandle as unknown as {
+          getFileHandle: (n: string, o?: { create?: boolean }) => Promise<FileSystemFileHandle>;
+        }).getFileHandle(chunkName, { create: true });
+        const sink = await createWritableSink(fh);
+        await sink.write(bytes as unknown as BufferSource);
+        await sink.close();
+        delivered = true;
+      } catch {
+        delivered = false;
+      }
+    } else if (this.opts.destHandle && chunkIndex === 1) {
+      try {
+        const sink = await createWritableSink(this.opts.destHandle);
+        await sink.write(bytes as unknown as BufferSource);
+        await sink.close();
+        delivered = true;
+      } catch {
+        delivered = false;
+      }
+    } else {
+      try {
+        await this.opts.saveBytes(bytes, chunkName, CONTAINER_MIME);
+        delivered = true;
+      } catch {
+        delivered = false;
+      }
+    }
+
+    if (!delivered) return null; // KEEP the scratch + manifest as a recover candidate.
+    await this.retireScratch(opfsPath);
+    this.opts.onChunkSaved?.({ index: chunkIndex, name: chunkName, bytes: bytes.byteLength });
+    return chunkName;
+  }
+
+  /**
+   * Finalize the recording: drain the audio tail, finalize the muxer, close the
+   * OPFS writer, then deliver the FINAL chunk to its destination via deliverChunk
+   * (remux → flat MP4 → write under the chunk's FILENAME-CHUNK#-DATETIME name).
    *
    * WHY REMUX (2026-06-17): the OPFS scratch is a FRAGMENTED MP4 — the
    * crash-recovery guarantee (playable from whatever fragments hit disk). But
    * DaVinci Resolve + some NLEs refuse to import fragmented MP4 (they play fine in
-   * a browser / QuickTime, which is exactly the "plays in preview, won't import
-   * into Resolve" symptom). We remux to a standard moov-based MP4 — container
-   * only, codec COPY, no re-encode. If the remux can't run we fall back to
-   * delivering the RAW fragmented bytes so a take is NEVER lost (still playable
-   * everywhere except the picky NLE).
+   * a browser / QuickTime, the "plays in preview, won't import into Resolve"
+   * symptom). We remux to a standard moov-based MP4 — container only, codec COPY,
+   * no re-encode. If the remux can't run we fall back to delivering the RAW
+   * fragmented bytes so a take is NEVER lost.
    *
-   * On success, mark the manifest done + delete the scratch. On a failed save
-   * (picker cancel / permission revoked), KEEP the scratch + manifest as a
-   * recover candidate. Returns the saved filename, or null if nothing landed.
+   * GoPro chunking: stop() finalizes the CURRENT chunk (its real length — 10 min,
+   * or shorter if it's the final/only chunk), so a single take under the roll
+   * threshold yields exactly one file (RECORDING-001-<datetime>.mp4). A failed
+   * save KEEPS the scratch + manifest as a recover candidate. Returns the final
+   * chunk's delivered name, or null if nothing landed.
    */
   async stop(): Promise<string | null> {
     if (this.state !== 'recording' || !this.output) {
@@ -684,6 +1092,9 @@ export class RecorderboxRecorder {
       return null;
     }
     this.setState('finalizing');
+    // Don't race a roll: if one is mid-flight let it settle so we finalize the
+    // chunk it produced, not a half-built output.
+    while (this.rolling) await macrotask();
 
     // ── Drain the capture tail BEFORE finalize ──
     // DISARM flushes the worklet's final partial batch (so the take isn't
@@ -713,73 +1124,21 @@ export class RecorderboxRecorder {
     }
     try { await this.writer?.close(); } catch { /* */ }
 
-    const savedName = this.opts.filename;
-
-    // ── Build the FLAT deliverable: remux the fragmented scratch → moov-based
-    //    MP4 (Resolve-importable). Fall back to the RAW fragmented bytes if the
-    //    remux can't run, so a take is never lost. Reading OPFS is allowed on the
-    //    main thread; only the SyncAccessHandle WRITE is worker-only. ──
-    const remux = this.opts.remuxToFlatMp4 ?? defaultRemuxToFlatMp4;
-    let bytes: Uint8Array | null = null;
-    try {
-      bytes = await remux(this.opfsPath);
-    } catch {
-      bytes = null;
-    }
-    if (!bytes || bytes.byteLength === 0) {
-      try {
-        const { readOpfsBytes } = await import('./recorderbox-store');
-        bytes = await readOpfsBytes(this.opfsPath);
-      } catch {
-        bytes = null;
-      }
-    }
-
-    // Nothing to deliver (remux + raw read both empty) — KEEP the scratch +
-    // manifest as a recover candidate rather than retiring an empty take.
-    if (!bytes || bytes.byteLength === 0) {
-      this.setState('idle');
-      return null;
-    }
-
-    // ── Deliver to the chosen handle (Chromium) ──
-    if (this.opts.destHandle) {
-      try {
-        const sink = await createWritableSink(this.opts.destHandle);
-        await sink.write(bytes as unknown as BufferSource);
-        await sink.close();
-      } catch {
-        // Permission revoked / write failed — KEEP the scratch + manifest so the
-        // user can retry via recovery.
-        this.setState('idle');
-        return null;
-      }
-      await this.retire();
-      this.setState('idle');
-      return savedName;
-    }
-
-    // ── Fallback: saveBytes (<a download> blob, Firefox/Safari) ──
-    try {
-      await this.opts.saveBytes(bytes, savedName, CONTAINER_MIME);
-    } catch {
-      // Save failed — KEEP the scratch + leave the manifest as a recover
-      // candidate so they can try again.
-      this.setState('idle');
-      return null;
-    }
-    await this.retire();
+    // Deliver the final chunk (remux + write under its chunk name; retire on
+    // success). deliverChunk returns null when nothing landed → KEEP the scratch
+    // as a recover candidate.
+    const delivered = await this.deliverChunk(this.opfsPath, this.chunkIndex);
     this.setState('idle');
-    return savedName;
+    return delivered;
   }
 
-  /** Retire the recovery state + delete the OPFS scratch (best-effort). */
-  private async retire(): Promise<void> {
-    await markManifestDone(this.opfsPath);
+  /** Retire the recovery state + delete the OPFS scratch at `path` (best-effort). */
+  private async retireScratch(path: string): Promise<void> {
+    await markManifestDone(path);
     try {
       const { deleteOpfsFile } = await import('./recorderbox-store');
-      await deleteOpfsFile(this.opfsPath);
-      await deleteManifest(this.opfsPath);
+      await deleteOpfsFile(path);
+      await deleteManifest(path);
     } catch {
       /* best-effort cleanup */
     }
@@ -892,6 +1251,22 @@ async function defaultRemuxToFlatMp4(opfsPath: string): Promise<Uint8Array | nul
  *  and writes each fragment to disk synchronously (durable + crash-safe). */
 export function defaultMakeWriter(opfsPath: string): OpfsWriter {
   return new WorkerOpfsWriter(opfsPath);
+}
+
+/** Build the real fragmented-MP4 Output: a StreamTarget piping each fragment
+ *  ({ data, position }) into the OPFS writer, awaiting the writer's ack so the
+ *  muxer won't outrun the disk. fastStart:'fragmented' is the crash-recovery
+ *  guarantee (playable from whatever fragments hit disk before finalize). */
+function defaultMakeOutput(writer: OpfsWriter): MuxOutputLike {
+  const writable = new WritableStream<{ type: 'write'; data: Uint8Array; position: number }>({
+    async write(chunk) {
+      await writer.write({ data: chunk.data, position: chunk.position });
+    },
+  });
+  return new Output({
+    format: new Mp4OutputFormat({ fastStart: 'fragmented' }),
+    target: new StreamTarget(writable as unknown as WritableStream),
+  }) as unknown as MuxOutputLike;
 }
 
 /**

@@ -52,9 +52,22 @@ export interface RecorderboxManifest {
    * here: on crash-recovery we re-acquire write permission + stream the OPFS
    * partial straight back to the ORIGINAL chosen path (no re-picking). Absent on
    * Firefox/Safari (no picker) — recovery falls back to a suggested-name
-   * download. Absent on a `done` manifest after cleanup.
+   * download. Absent on a `done` manifest after cleanup. (LEGACY single-file
+   * model; new recordings persist `dirHandle` + `chunkName` instead.)
    */
   destHandle?: FileSystemFileHandle;
+  /**
+   * The destination FOLDER the user picked ONCE at recording START via
+   * showDirectoryPicker (Chromium). A `FileSystemDirectoryHandle` is
+   * structured-cloneable, so we persist it: on crash-recovery we re-acquire write
+   * permission + write the recovered chunk back INTO the same folder under its
+   * chunk name (no re-picking). The model the no-prompt save + GoPro chunking
+   * unify around. Absent on Firefox/Safari (no directory picker).
+   */
+  dirHandle?: FileSystemDirectoryHandle;
+  /** The resolved chunk file name (FILENAME-CHUNK#-DATETIME.mp4) this scratch
+   *  belongs to — what a recovered chunk is written as inside `dirHandle`. */
+  chunkName?: string;
 }
 
 const DB_NAME = 'patchtogether-recorderbox';
@@ -86,13 +99,18 @@ export function opfsScratchPath(
   nodeId: string,
   startEpoch: number,
   filename?: string | null,
+  chunkIndex?: number,
 ): string {
   const slug = String(nodeId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || 'node';
   // Strip the extension off the (already-sanitized) name + re-slug for the path
   // (a path segment is stricter than a download name — no spaces / dots).
   const baseName = sanitizeRecordingFilename(filename, 'mp4').replace(/\.mp4$/i, '');
   const nameSlug = baseName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || 'recording';
-  return `${OPFS_DIR}/${nameSlug}-${slug}-${startEpoch}.partial.mp4`;
+  // A per-chunk segment so each rolled chunk's scratch is a DISTINCT file (a
+  // 10-min take rolls to chunk 002, 003, … — each gets its own OPFS partial so
+  // recovery can offer them independently). Omitted (back-compat) when undefined.
+  const chunkSeg = chunkIndex && chunkIndex > 0 ? `-c${String(chunkIndex).padStart(3, '0')}` : '';
+  return `${OPFS_DIR}/${nameSlug}-${slug}-${startEpoch}${chunkSeg}.partial.mp4`;
 }
 
 /** Sanitize a user-typed filename into a safe download name with the right
@@ -149,6 +167,18 @@ export function canSaveViaPicker(): boolean {
   return (
     typeof globalThis !== 'undefined' &&
     typeof (globalThis as { showSaveFilePicker?: unknown }).showSaveFilePicker === 'function'
+  );
+}
+
+/** True when the browser can pick a DESTINATION FOLDER (showDirectoryPicker —
+ *  Chromium). This is the model the no-prompt save + GoPro chunking unify around:
+ *  pick a folder once → auto-write FILENAME-CHUNK#-DATETIME chunks into it with no
+ *  further prompts. Firefox/Safari (no directory picker) fall back to the
+ *  per-chunk <a download> blob path. */
+export function canPickDirectory(): boolean {
+  return (
+    typeof globalThis !== 'undefined' &&
+    typeof (globalThis as { showDirectoryPicker?: unknown }).showDirectoryPicker === 'function'
   );
 }
 
@@ -409,7 +439,7 @@ export async function streamOpfsToWritable(
  * stale handle resolves false → caller falls back to the picker/download path).
  */
 export async function ensureHandleWritePermission(
-  handle: FileSystemFileHandle | undefined | null,
+  handle: FileSystemHandle | undefined | null,
 ): Promise<boolean> {
   if (!handle) return false;
   try {

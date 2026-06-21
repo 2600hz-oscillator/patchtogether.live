@@ -6,7 +6,7 @@
 // free pieces: encoder probing (graceful-degrade matrix) + filename
 // sanitization + OPFS scratch path naming.
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   probeEncoders,
   RecorderboxRecorder,
@@ -472,5 +472,88 @@ describe('sample-accurate capture path — lossless drain through backpressured 
     // The capture state is never set up without an audioCapture tap.
     expect(internal.capturePort).toBeNull();
     expect(internal.captureDrain).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CFR frame() — the OSX slow-mo fix. frame() must emit video PTS on an EVEN grid
+// (index/fps) regardless of jittery rAF cadence: no wall-clock PTS, no dup PTS,
+// no sparse stretch. We drive the REAL frame() with a fake CanvasSource capturing
+// (ts, dur) + a stubbed performance.now sequence (fast / slow / hitch).
+// ---------------------------------------------------------------------------
+
+/** Force a recorder into the 'recording' state with a fake CanvasSource that
+ *  captures every add(ts, dur), bypassing start() (no real encoder). */
+function makeCfrRecorder() {
+  const adds: Array<{ ts: number; dur: number }> = [];
+  const rec = new RecorderboxRecorder({
+    nodeId: 'cfr1',
+    canvas: {} as HTMLCanvasElement,
+    audioTrack: null,
+    filename: 'cfr',
+    width: 320,
+    height: 240,
+    saveBytes: async () => {},
+    makeWriter: () => ({ write: async () => {}, close: async () => {} }),
+  });
+  const internal = rec as unknown as {
+    state: string;
+    canvasSource: { add: (ts: number, dur?: number) => Promise<void> };
+    t0: number;
+    chunkStartElapsed: number;
+  };
+  internal.state = 'recording';
+  internal.t0 = 0;
+  internal.chunkStartElapsed = 0;
+  internal.canvasSource = {
+    add: async (ts: number, dur?: number) => { adds.push({ ts, dur: dur ?? 0 }); },
+  };
+  return { rec, adds };
+}
+
+describe('CFR frame() — even-grid PTS (the OSX slow-mo fix)', () => {
+  const FPS = 30;
+  let nowMs = 0;
+  let realNow: () => number;
+  beforeEach(() => {
+    nowMs = 0;
+    realNow = performance.now.bind(performance);
+    performance.now = () => nowMs;
+  });
+  afterEach(() => { performance.now = realNow; });
+
+  it('emits PTS on an EVEN grid (index/fps) under JITTERY rAF — no dup, no gap', async () => {
+    const { rec, adds } = makeCfrRecorder();
+    // A realistic jittery rAF timestamp sequence (fast ticks, a hitch, slow ticks)
+    // — the exact input that produced wall-clock slow-mo before the fix.
+    const ticks = [0, 10, 22, 33, 33, 40, 70, 130, 133, 200, 215, 300, 380, 433, 800, 833, 1000];
+    for (const ms of ticks) {
+      nowMs = ms;
+      rec.frame();
+      // Let the per-frame add() promise chain settle (frame() is non-blocking).
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    }
+    expect(adds.length).toBeGreaterThan(0);
+    // Every duration is exactly 1/fps (constant — no variable timing).
+    for (const a of adds) expect(a.dur).toBeCloseTo(1 / FPS, 9);
+    // PTS strictly increasing (no duplicate / 0-duration collisions).
+    for (let i = 1; i < adds.length; i++) expect(adds[i].ts).toBeGreaterThan(adds[i - 1].ts);
+    // Even grid: each PTS is exactly i/fps (a dense grid, no sparse slow-mo gap).
+    adds.forEach((a, i) => expect(a.ts).toBeCloseTo(i / FPS, 9));
+  });
+
+  it('does NOT collide (no two frames in one slot) on a sustained FAST machine', async () => {
+    const { rec, adds } = makeCfrRecorder();
+    // 120 Hz rAF for ~0.5 s → only ~15 grid frames (not ~60 a per-rAF emit makes).
+    for (let ms = 0; ms <= 500; ms += 8.333) {
+      nowMs = ms;
+      rec.frame();
+      await Promise.resolve(); await Promise.resolve();
+    }
+    expect(adds.length).toBeGreaterThanOrEqual(14);
+    expect(adds.length).toBeLessThanOrEqual(16);
+    // No duplicate PTS.
+    const seen = new Set(adds.map((a) => Math.round(a.ts * FPS)));
+    expect(seen.size).toBe(adds.length);
   });
 });
