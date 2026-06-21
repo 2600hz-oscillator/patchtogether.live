@@ -48,6 +48,18 @@ const DRY = process.argv.includes('--dry-run'); // verify the mechanism w/o the 
 // FAILS ALL RETRIES still refuses; REPEAT>1 (the 3× pre-MR flake-check) forces 0.
 const RETRIES = REPEAT > 1 ? 0 : Math.max(0, parseInt(process.env.WEBGL_ATTEST_RETRIES || '0', 10) || 0);
 
+// Worker count for the real-GPU passes. ROOT CAUSE of the rotating "transient"
+// heavy-spec flakes (different toybox/video spec each saturated run): runPass
+// did NOT pin --workers, so Playwright defaulted to ≈half-cores and ran the heavy
+// WebGL specs IN PARALLEL — multiple browser/ANGLE contexts hammering the ONE
+// GPU. GPU-bound work doesn't speed up under that parallelism; it just STARVES
+// (slow renders → setup/click/viewport races → a different ~1-2 specs stall each
+// run). The earlier comment assumed the lane was "serial" — it wasn't. PIN it to
+// 1 so heavy specs get the GPU SOLO (deterministic, ≈same wall-clock since the
+// GPU serialises the work anyway). Override with WEBGL_ATTEST_WORKERS=N for the
+// worker-count sweep (#136); the 3× flake-check (REPEAT>1) also forces 1.
+const WORKERS = REPEAT > 1 ? 1 : Math.max(1, parseInt(process.env.WEBGL_ATTEST_WORKERS || '1', 10) || 1);
+
 interface PassResult {
   name: string;
   expectedSpecFiles: number;
@@ -85,6 +97,7 @@ function runPass(opts: {
     'test',
     '--reporter=json',
     `--retries=${RETRIES}`,
+    `--workers=${WORKERS}`, // pin: heavy WebGL specs get the GPU solo (no parallel contention)
     ...(REPEAT > 1 ? [`--repeat-each=${REPEAT}`] : []),
     ...opts.args,
   ];
