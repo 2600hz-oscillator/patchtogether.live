@@ -2,8 +2,14 @@
   // ChromakeyCard — proper 2-input chroma-key compositor (FG + BG +
   // configurable key color). Replaces the old CHROMA's single-input
   // "mask only" semantics with a full keyer that composites.
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  //
+  // All ports live in the shared yellow drill-down <PatchPanel> (the post-#767
+  // hard standard — NO raw side <Handle> jacks). Port `id`s are byte-identical
+  // to chromakeyDef so the CV bridge + persisted edges route unchanged.
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { chromakeyDef } from '$lib/video/modules/chromakey';
@@ -38,57 +44,55 @@
     target.params.keyG = g;
     target.params.keyB = b;
   }
+
+  // Ports — ids byte-identical to chromakeyDef (fg/bg = video, keyR/keyG/keyB +
+  // threshold/softness/spillSuppress = cv, out = video).
+  const inputs: PortDescriptor[] = [
+    { id: 'fg', label: 'FG', cable: 'video' },
+    { id: 'bg', label: 'BG', cable: 'video' },
+    { id: 'keyR', label: 'KEY R', cable: 'cv' },
+    { id: 'keyG', label: 'KEY G', cable: 'cv' },
+    { id: 'keyB', label: 'KEY B', cable: 'cv' },
+    { id: 'threshold', label: 'THRESH', cable: 'cv' },
+    { id: 'softness', label: 'SOFT', cable: 'cv' },
+    { id: 'spillSuppress', label: 'SPILL', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [{ id: 'out', label: 'OUT', cable: 'video' }];
 </script>
 
-<div class="card video">
+<div class="card video" data-testid="chromakey-card">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="CHROMAKEY" />
 
-  <Handle type="target" position={Position.Left} id="fg"            style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 50px;">FG</span>
-  <Handle type="target" position={Position.Left} id="bg"            style="top: 88px;  --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 82px;">BG</span>
-  <Handle type="target" position={Position.Left} id="keyR"          style="top: 124px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 118px;">R</span>
-  <Handle type="target" position={Position.Left} id="keyG"          style="top: 156px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 150px;">G</span>
-  <Handle type="target" position={Position.Left} id="keyB"          style="top: 188px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 182px;">B</span>
-  <Handle type="target" position={Position.Left} id="threshold"     style="top: 220px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 214px;">T</span>
-  <Handle type="target" position={Position.Left} id="softness"      style="top: 252px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 246px;">S</span>
-  <Handle type="target" position={Position.Left} id="spillSuppress" style="top: 284px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 278px;">Sp</span>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="body">
+      <div class="picker-row">
+        <label class="swatch-wrap" title="Click to pick key color">
+          <span class="swatch" style="background: {keyHex};"></span>
+          <input
+            type="color"
+            class="color-input"
+            value={keyHex}
+            oninput={onColorChange}
+            data-testid="chromakey-color-picker"
+          />
+          <span class="hex">{keyHex}</span>
+        </label>
+      </div>
 
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
-  <div class="picker-row">
-    <label class="swatch-wrap" title="Click to pick key color">
-      <span class="swatch" style="background: {keyHex};"></span>
-      <input
-        type="color"
-        class="color-input"
-        value={keyHex}
-        oninput={onColorChange}
-        data-testid="chromakey-color-picker"
-      />
-      <span class="hex">{keyHex}</span>
-    </label>
-  </div>
-
-  <div class="fader-grid">
-    <Fader value={p('threshold')}     min={0} max={1}   defaultValue={chromakeyDef.params.find((x) => x.id === 'threshold')!.defaultValue}     label="Thr"   curve="linear" onchange={setParam('threshold')}     moduleId={id} paramId="threshold" />
-    <Fader value={p('softness')}      min={0} max={0.5} defaultValue={chromakeyDef.params.find((x) => x.id === 'softness')!.defaultValue}      label="Soft"  curve="linear" onchange={setParam('softness')}      moduleId={id} paramId="softness" />
-    <Fader value={p('spillSuppress')} min={0} max={1}   defaultValue={chromakeyDef.params.find((x) => x.id === 'spillSuppress')!.defaultValue} label="Spill" curve="linear" onchange={setParam('spillSuppress')} moduleId={id} paramId="spillSuppress" />
-  </div>
+      <div class="fader-grid">
+        <Fader value={p('threshold')}     min={0} max={1}   defaultValue={chromakeyDef.params.find((x) => x.id === 'threshold')!.defaultValue}     label="Thr"   curve="linear" onchange={setParam('threshold')}     moduleId={id} paramId="threshold" />
+        <Fader value={p('softness')}      min={0} max={0.5} defaultValue={chromakeyDef.params.find((x) => x.id === 'softness')!.defaultValue}      label="Soft"  curve="linear" onchange={setParam('softness')}      moduleId={id} paramId="softness" />
+        <Fader value={p('spillSuppress')} min={0} max={1}   defaultValue={chromakeyDef.params.find((x) => x.id === 'spillSuppress')!.defaultValue} label="Spill" curve="linear" onchange={setParam('spillSuppress')} moduleId={id} paramId="spillSuppress" />
+      </div>
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
   .card {
     width: 260px;
-    min-height: 380px;
+    min-height: 220px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -106,11 +110,15 @@
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
   .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
+  .body {
+    /* Clear the PatchPanel's top-left/right trigger affordances. */
+    margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
   .picker-row {
-    margin: 200px 12px 12px;
+    margin: 0 12px;
     display: flex;
     align-items: center;
     gap: 12px;

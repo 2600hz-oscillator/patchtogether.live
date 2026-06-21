@@ -2,8 +2,14 @@
   // LumakeyCard — proper 2-input luma-key compositor (FG + BG +
   // threshold). Replaces the old LUMA's single-input "mask only"
   // semantics with a full keyer that composites.
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  //
+  // All ports live in the shared yellow drill-down <PatchPanel> (the post-#767
+  // hard standard — NO raw side <Handle> jacks). Port `id`s are byte-identical
+  // to lumakeyDef so the CV bridge + persisted edges route unchanged.
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { lumakeyDef } from '$lib/video/modules/lumakey';
@@ -27,43 +33,44 @@
     target.params.invert = (target.params.invert ?? 0) >= 0.5 ? 0 : 1;
   }
   let invertOn = $derived(p('invert') >= 0.5);
+
+  // Ports — ids byte-identical to lumakeyDef (fg/bg = video, threshold/softness/
+  // invert = cv, out = video).
+  const inputs: PortDescriptor[] = [
+    { id: 'fg', label: 'FG', cable: 'video' },
+    { id: 'bg', label: 'BG', cable: 'video' },
+    { id: 'threshold', label: 'THRESH', cable: 'cv' },
+    { id: 'softness', label: 'SOFT', cable: 'cv' },
+    { id: 'invert', label: 'INVERT', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [{ id: 'out', label: 'OUT', cable: 'video' }];
 </script>
 
-<div class="card video">
+<div class="card video" data-testid="lumakey-card">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="LUMAKEY" />
 
-  <Handle type="target" position={Position.Left} id="fg"        style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 50px;">FG</span>
-  <Handle type="target" position={Position.Left} id="bg"        style="top: 88px;  --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 82px;">BG</span>
-  <Handle type="target" position={Position.Left} id="threshold" style="top: 124px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 118px;">T</span>
-  <Handle type="target" position={Position.Left} id="softness"  style="top: 156px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 150px;">S</span>
-  <Handle type="target" position={Position.Left} id="invert"    style="top: 188px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 182px;">I</span>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="body">
+      <button
+        class="invert-btn"
+        class:on={invertOn}
+        onclick={toggleInvert}
+        data-testid="lumakey-invert"
+      >INV</button>
 
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
-  <button
-    class="invert-btn"
-    class:on={invertOn}
-    onclick={toggleInvert}
-    data-testid="lumakey-invert"
-  >INV</button>
-
-  <div class="fader-grid">
-    <Fader value={p('threshold')} min={0} max={1}   defaultValue={lumakeyDef.params.find((x) => x.id === 'threshold')!.defaultValue} label="Thr"  curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
-    <Fader value={p('softness')}  min={0} max={0.5} defaultValue={lumakeyDef.params.find((x) => x.id === 'softness')!.defaultValue}  label="Soft" curve="linear" onchange={setParam('softness')}  moduleId={id} paramId="softness" />
-  </div>
+      <div class="fader-grid">
+        <Fader value={p('threshold')} min={0} max={1}   defaultValue={lumakeyDef.params.find((x) => x.id === 'threshold')!.defaultValue} label="Thr"  curve="linear" onchange={setParam('threshold')} moduleId={id} paramId="threshold" />
+        <Fader value={p('softness')}  min={0} max={0.5} defaultValue={lumakeyDef.params.find((x) => x.id === 'softness')!.defaultValue}  label="Soft" curve="linear" onchange={setParam('softness')}  moduleId={id} paramId="softness" />
+      </div>
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
   .card {
     width: 220px;
-    min-height: 280px;
+    min-height: 220px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -81,11 +88,16 @@
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
   .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
+  .body {
+    /* Clear the PatchPanel's top-left/right trigger affordances. */
+    margin-top: 24px;
+    padding: 0 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+  }
   .invert-btn {
-    margin: 110px auto 0;
     display: block;
     background: var(--module-bg);
     color: var(--text-dim);
@@ -104,7 +116,6 @@
   }
   .invert-btn:hover { border-color: var(--accent-dim); }
   .fader-grid {
-    margin-top: 12px;
     padding: 0 12px;
     display: grid;
     grid-template-columns: 1fr 1fr;
