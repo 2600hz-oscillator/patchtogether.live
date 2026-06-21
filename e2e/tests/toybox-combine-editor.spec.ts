@@ -127,7 +127,12 @@ function dist(a: [number, number, number], b: [number, number, number]): number 
  *  locally balloons past the 30s test budget and the last click times out.
  *  Skipping the no-op post-click navigation wait reclaims that time. */
 async function clickEd(page: Page, testid: string): Promise<void> {
-  await page.locator(`[data-testid="${testid}"]`).click({ force: true, noWaitAfter: true });
+  // Dispatch the click straight on the testid'd element (HTML toolbar buttons +
+  // the SVG port circles / edge paths all carry their own onclick). A coordinate
+  // force-click on the tiny SVG ports under svelte-flow's transform intermittently
+  // fails to DELIVER under the serialized real-GPU attest's load (the toybox
+  // combine-graph attest flake — same fix as node-menu/node-controls, task #151).
+  await page.locator(`[data-testid="${testid}"]`).first().dispatchEvent('click');
 }
 
 /** Read the currently-armed connect source ("pendingFrom") from the on-card
