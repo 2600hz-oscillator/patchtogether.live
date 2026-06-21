@@ -33,14 +33,30 @@ concurrency:
 
 permissions:
   contents: read
+  # The failure-notification step (below) opens a GH issue when a nightly run
+  # goes red or is killed by the timeout ceiling — that issue creation emails
+  # repo watchers (incl. tmayshark@gmail.com), mirroring live-smoke-alert.yml.
+  # Without this the lane rotted red for 5 days UNALERTED (the gap this fixes).
+  issues: write
 
 jobs:
   collab-full:
     name: collab-nightly (full @collab lane, under load)
     runs-on: ubuntu-latest
-    # Generous ceiling: the full ~28-spec @collab suite incl. cold DOOM WASM +
-    # several 2-context boots, PLUS the inline DSP + preview build, at 2 workers.
-    timeout-minutes: 60
+    # Ceiling raised 60 → 90 (P0 fix, 2026-06-21): the de-flake #844 gave the
+    # @collab specs generous per-test timeouts (120s; DOOM up to 180s) so a
+    # slow-but-correct sync surfaces as a clear assert instead of an opaque
+    # test-timeout. Under THIS lane's deliberately-CONTENDED config
+    # (--workers=2 + retries=1, the under-load canary) a struggling spec now
+    # burns its full extended timeout (× the retry) before resolving, so the
+    # whole suite's wall-time grew past 60 min — the first post-#844 nightly
+    # (run 27903306267) was KILLED by the 60-min ceiling mid-run (test step ran
+    # 57 min), producing a `cancelled` with NO artifacts. 90 min gives the
+    # full ~51-test suite (incl. cold-DOOM-WASM boots + inline DSP/preview
+    # build) headroom to finish and report. If it overruns 90 too, the lane is
+    # genuinely too heavy at 2 workers — shard it or drop a slow spec, don't
+    # just keep raising this.
+    timeout-minutes: 90
 
     services:
       postgres:
@@ -175,9 +191,74 @@ jobs:
           retention-days: 30
 
       - name: Upload Playwright test-results on failure (collab-nightly)
-        if: failure()
+        # `failure() || cancelled()`: a timeout-ceiling kill registers as
+        # `cancelled`, NOT `failure`, so a bare `if: failure()` skipped this on
+        # the 60-min-overrun run (27903306267) and left ZERO diagnostics for the
+        # one run that actually exercised the post-#844 lane. Upload on both.
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: collab-nightly-test-results
           path: e2e/test-results
           retention-days: 14
+
+      # --- Failure notification (the alerting gap this PR closes) -------------
+      # The nightly had NO failure alert: it rotted red 06-16 → 06-20 (5 days)
+      # with nobody paged. Mirror live-smoke-alert.yml's mechanism — open a GH
+      # issue, which emails repo watchers (incl. tmayshark@gmail.com) — so a red
+      # OR timeout-cancelled nightly surfaces the same day instead of silently
+      # rotting. No new secret needed (uses the workflow GITHUB_TOKEN +
+      # `issues: write` above). Dedupe: reuse an OPEN issue with the
+      # `collab-nightly-failure` label instead of opening a fresh one each night.
+      - name: Alert on nightly failure (open/refresh a GH issue)
+        if: failure() || cancelled()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const label = 'collab-nightly-failure';
+            const dateUtc = new Date().toISOString().slice(0, 10);
+            const body = [
+              '**collab-nightly went red (or was killed by the timeout ceiling).**',
+              '',
+              'This is the UNDER-LOAD multiplayer backstop (`--grep @collab|@capacity`,',
+              '`--workers=2`, contended single-process relay). A red run is a SIGNAL to',
+              'investigate a contention regression + re-attest — it is not a per-PR merge',
+              'blocker, but it must not rot unalerted (it did for 5 days, 06-16 → 06-20).',
+              '',
+              `**Run:** ${runUrl}`,
+              `**SHA:** ${context.sha}`,
+              '',
+              'Diagnostics: download the `collab-nightly-test-results` + ',
+              '`collab-nightly-playwright-report` artifacts from the run above',
+              '(read `error-context.md` / `trace.zip` — do NOT `gh run view --log-failed`).',
+              '',
+              'Close this issue once the nightly is green again; it will be reused (not',
+              're-opened) on subsequent failures while it stays open.',
+            ].join('\n');
+            // Reuse an already-open failure issue so consecutive red nights don't
+            // spam a new issue each time — just add a dated comment.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+              per_page: 1,
+            });
+            if (existing.data.length > 0) {
+              const num = existing.data[0].number;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: num,
+                body: `Still red (${dateUtc}). Run: ${runUrl}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `[collab-nightly] under-load @collab lane failing (${dateUtc})`,
+                body,
+                labels: ['observability', 'alert', label],
+              });
+            }
