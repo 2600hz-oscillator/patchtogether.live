@@ -58,7 +58,12 @@ for (const c of COPIES) {
   PARAM_DEFAULTS[`${c}_master`] = 1;
   PARAM_DEFAULTS[`${c}_mode`] = 0; // 0 = AUDIO (spectral bands), 1 = VIDEO (R/G/B/Luma)
   PARAM_DEFAULTS[`${c}_bipolar`] = 0; // 0 = UNIPOLAR env CV [0,1], 1 = BIPOLAR [-1,+1]
-  for (const b of BANDS) PARAM_DEFAULTS[`${c}_gain${b}`] = 1;
+  for (const b of BANDS) {
+    PARAM_DEFAULTS[`${c}_gain${b}`] = 1;
+    // Per-band ENV-OUTPUT depth: scales BOTH env CV outputs (env_slow +
+    // env_fast) for that band. Default 1.0 = unchanged.
+    PARAM_DEFAULTS[`${c}_envdepth${b}`] = 1;
+  }
 }
 
 const loadedContexts = new WeakSet<BaseAudioContext>();
@@ -166,6 +171,18 @@ export const synesthesiaDef: AudioModuleDef = {
     { id: 'b_gain2', label: 'B2', defaultValue: 1, min: 1, max: 2, curve: 'linear' },
     { id: 'b_gain3', label: 'B3', defaultValue: 1, min: 1, max: 2, curve: 'linear' },
     { id: 'b_gain4', label: 'B4', defaultValue: 1, min: 1, max: 2, curve: 'linear' },
+    // Per-band ENV-OUTPUT DEPTH (8 = 2 copies × 4 bands). Each knob scales BOTH
+    // env CV outputs (env_slow + env_fast) for that copy/band — the source-side
+    // modulation-depth control. 0×@7:00 (silenced) → 2×@5:00 (doubled, clamped
+    // to the 0..1 CV ceiling); default 1.0 (unity) at 12:00 = unchanged.
+    { id: 'a_envdepth1', label: 'a1 dpt', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
+    { id: 'a_envdepth2', label: 'a2 dpt', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
+    { id: 'a_envdepth3', label: 'a3 dpt', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
+    { id: 'a_envdepth4', label: 'a4 dpt', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
+    { id: 'b_envdepth1', label: 'b1 dpt', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
+    { id: 'b_envdepth2', label: 'b2 dpt', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
+    { id: 'b_envdepth3', label: 'b3 dpt', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
+    { id: 'b_envdepth4', label: 'b4 dpt', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

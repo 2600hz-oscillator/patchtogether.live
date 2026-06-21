@@ -27,6 +27,7 @@
 
 import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch, type SpawnNode } from './_helpers';
+import { SYNC_BUDGET_MS } from './_collab-helpers';
 
 const GS_LEVEL = 0;
 
@@ -174,11 +175,13 @@ async function playerPos(page: Page, nodeId: string): Promise<{ x: number; y: nu
 }
 
 test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
-  // QUARANTINE (task #97): 2-context Hocuspocus relay drops peer B under CI
-  // shard load → "locator.click: Test ended". Skip on CI; runs locally. The
-  // Launch + per-peer-marine-movement path is proven by start-netgame.acceptance.mjs
-  // (C-harness) + unit suites.
-  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab 2-context flake under CI shard load — task #97');
+  // Runs on the dedicated @collab lane (COLLAB_JOB=1 — relay + Postgres), and
+  // is skipped only in the sharded matrix where the relay/DB aren't available.
+  // De-flaked (consolidated #837+#841): the former relay-flake vacuity skip in
+  // the body (B's slot-1 round-trip) is now a real SYNC_BUDGET_MS-bounded wait
+  // that FAILS if cross-context roster sync never lands. The Launch + per-peer
+  // marine path stays proven by start-netgame.acceptance.mjs + unit suites.
+  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix');
   // Cold WASM + 4 MB WAD on TWO contexts + cross-context sync + netgame
   // launch + several seconds of ticks → the same 20-90 s window as the other
   // doom @collab specs. Generous ceiling.
@@ -233,37 +236,26 @@ test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
           return !!st && st.launched === true && st.gamestate === level;
         },
         [NODE, GS_LEVEL],
-        { timeout: 30000 },
+        { timeout: SYNC_BUDGET_MS },
       );
 
       // ─── B hot-joins the RUNNING game → arbiter assigns slot 1 + relaunches ─
       await join(pair.pageB, NODE);
 
-      // Best-effort: wait for B's slot-1 assignment to round-trip back to B.
-      // If cross-context node-data sync doesn't establish (known CI @collab
-      // flake), SKIP — the arbiter slot-assignment correctness is proven by
-      // the vitest suite; here we still assert what's locally provable on A.
-      const bGotSlot1 = await pair.pageB
-        .waitForFunction(
-          (id) => {
-            const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mySlot: number | null } }> };
-            return w.__doomCards?.[id]?.getState().mySlot === 1;
-          },
-          NODE,
-          { timeout: 30000 },
-        )
-        .then(() => true)
-        .catch(() => false);
-
-      if (!bGotSlot1) {
-        test.skip(
-          true,
-          "cross-context roster sync didn't assign B slot 1 within 30s " +
-            '(known CI @collab two-context flake; arbiter slot-assignment is ' +
-            'proven by doom-roster.test.ts + start-netgame.acceptance.mjs)',
-        );
-        return;
-      }
+      // Wait for B's slot-1 assignment to round-trip back to B.
+      // De-flake (consolidated #837+#841): formerly a "relay flake" vacuity skip
+      // (green-while-asserting-nothing). Now a real SYNC_BUDGET_MS-bounded wait —
+      // a correct slow roster sync passes; a relay that never assigns B slot 1
+      // throws → the test FAILS. Proves the arbiter actually seats B at slot 1
+      // via real cross-context node-data sync.
+      await pair.pageB.waitForFunction(
+        (id) => {
+          const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mySlot: number | null } }> };
+          return w.__doomCards?.[id]?.getState().mySlot === 1;
+        },
+        NODE,
+        { timeout: SYNC_BUDGET_MS },
+      );
 
       // Arbiter-authoritative: A=slot0, B=slot1, distinct (the slice-3 clobber
       // would have collided both on slot 0).
@@ -286,7 +278,7 @@ test.describe('@collab DOOM New Game + Launch (slice 4)', () => {
             return !!st && st.launched === true && st.gamestate === level;
           },
           [NODE, GS_LEVEL],
-          { timeout: 30000 },
+          { timeout: SYNC_BUDGET_MS },
         );
       }
 

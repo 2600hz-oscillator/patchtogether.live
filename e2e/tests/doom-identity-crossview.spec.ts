@@ -31,6 +31,7 @@
 
 import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch, type SpawnNode } from './_helpers';
+import { SYNC_BUDGET_MS } from './_collab-helpers';
 
 const GS_LEVEL = 0;
 
@@ -193,10 +194,12 @@ async function canvasHash(page: Page): Promise<number> {
 }
 
 test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
-  // QUARANTINE (task #97): 2-context Hocuspocus relay drops peer B under CI
-  // shard load. Skip on CI; runs locally. Identity mapping + ticcmd cross-feed
-  // are proven by unit suites + start-netgame.acceptance.mjs (C-harness).
-  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab 2-context flake under CI shard load — task #97');
+  // Runs on the dedicated @collab lane (COLLAB_JOB=1 — relay + Postgres), and
+  // is skipped only in the sharded matrix where the relay/DB aren't available.
+  // De-flaked (consolidated #837+#841): the former relay-flake vacuity skips
+  // inside the body are now real SYNC_BUDGET_MS-bounded waits that FAIL if the
+  // cross-context sync never delivers, instead of silently skipping green.
+  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix');
   test.setTimeout(180_000);
 
   test('peers show slot badge + DOOM color; A moving changes B\'s POV (cross-peer)', async ({ browser }) => {
@@ -249,43 +252,29 @@ test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
       );
 
       // ─── B hot-joins the RUNNING game → arbiter assigns slot 1 + relaunches ─
-      const bSawLive = await pair.pageB
-        .waitForFunction(
-          (id) => {
-            const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mpLive: boolean } }> };
-            return w.__doomCards?.[id]?.getState().mpLive === true;
-          },
-          NODE,
-          { timeout: 30000 },
-        )
-        .then(() => true)
-        .catch(() => false);
-      if (!bSawLive) {
-        test.skip(true, 'cross-context mpLive sync did not reach B (relay flake)');
-        return;
-      }
+      // De-flake (consolidated #837+#841): these were vacuity skips ("relay
+      // flake" → green-while-asserting-nothing). They are now REAL waits with a
+      // deterministic SYNC_BUDGET_MS budget — a correct slow cross-context sync
+      // passes; a relay that NEVER delivers throws → the test FAILS (no more
+      // silent skip). Proves B actually observes A's live MP game and is seated
+      // at slot 1 via real Yjs/roster sync.
+      await pair.pageB.waitForFunction(
+        (id) => {
+          const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mpLive: boolean } }> };
+          return w.__doomCards?.[id]?.getState().mpLive === true;
+        },
+        NODE,
+        { timeout: SYNC_BUDGET_MS },
+      );
       await join(pair.pageB, NODE);
-      const bGotSlot1 = await pair.pageB
-        .waitForFunction(
-          (id) => {
-            const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mySlot: number | null } }> };
-            return w.__doomCards?.[id]?.getState().mySlot === 1;
-          },
-          NODE,
-          { timeout: 30000 },
-        )
-        .then(() => true)
-        .catch(() => false);
-
-      if (!bGotSlot1) {
-        test.skip(
-          true,
-          "cross-context roster sync didn't assign B slot 1 within 30s " +
-            '(known CI @collab two-context flake; identity + cross-feed proven by ' +
-            'doom-player-identity.test.ts + doom-netcode.test.ts + start-netgame.acceptance.mjs)',
-        );
-        return;
-      }
+      await pair.pageB.waitForFunction(
+        (id) => {
+          const w = globalThis as unknown as { __doomCards?: Record<string, { getState: () => { mySlot: number | null } }> };
+          return w.__doomCards?.[id]?.getState().mySlot === 1;
+        },
+        NODE,
+        { timeout: SYNC_BUDGET_MS },
+      );
 
       // ─── Both peers are in the level (B hot-joined into the running map) ───
       for (const p of [pair.pageA, pair.pageB]) {
@@ -297,7 +286,7 @@ test.describe('@collab DOOM identity + cross-peer visibility (slice 5)', () => {
             return !!st && st.launched === true && st.gamestate === level;
           },
           [NODE, GS_LEVEL],
-          { timeout: 30000 },
+          { timeout: SYNC_BUDGET_MS },
         );
       }
 

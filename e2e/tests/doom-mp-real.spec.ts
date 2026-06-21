@@ -40,6 +40,11 @@
 
 import { test, expect, type Page, type Browser, type BrowserContext } from '@playwright/test';
 import { spawnPatch, type SpawnNode } from './_helpers';
+// Single source of truth for the cross-context sync budget — see the rationale
+// on `SYNC_BUDGET_MS` in `_collab-helpers.ts`. (Consolidated from this spec's
+// former local `const SYNC_BUDGET_MS = 20_000` when #837's helper budget and
+// #841's doom-mp-real asserts merged onto one branch.)
+import { SYNC_BUDGET_MS } from './_collab-helpers';
 
 const GS_LEVEL = 0;
 // DOOM gamestate_t ordinals (doomdef.h): GS_LEVEL=0, GS_INTERMISSION=1,
@@ -49,6 +54,9 @@ const GS_LEVEL = 0;
 // pass on stale state while the WASM still ran the demo loop).
 const GS_DEMOSCREEN = 3;
 const NODE_ID = 'doom-mp';
+
+// SYNC_BUDGET_MS (the deterministic cross-context sync budget) is imported from
+// `_collab-helpers.ts` — see the import above and its rationale there.
 
 // Vanilla DOOM player colors (matches $lib/doom/doom-player-identity).
 const SLOT_COLOR = ['#3fa34d', '#5b5bd6'];
@@ -295,21 +303,24 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       await spawnPatch(owner.page, nodes, []);
 
       // ── Guest sees the SAME node via Yjs sync (one node per rack) ────────
-      const guestSawNode = await guest.page
-        .waitForFunction(
-          (nid) =>
-            Object.keys(
-              (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
-            ).includes(nid),
-          NODE_ID,
-          { timeout: 15000 },
+      // Non-vacuous: the relay MUST deliver the owner-added node into the
+      // guest's __patch within the sync budget. If it never arrives this FAILS
+      // (was a skip — the DOOM node never crossing the relay is the very
+      // single-shared-instance regression this spec exists to pin).
+      await expect
+        .poll(
+          () =>
+            guest.page.evaluate(
+              (nid) =>
+                Object.keys(
+                  (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch
+                    .nodes,
+                ).includes(nid),
+              NODE_ID,
+            ),
+          { timeout: SYNC_BUDGET_MS, message: 'guest receives the shared DOOM node via Yjs sync' },
         )
-        .then(() => true)
-        .catch(() => false);
-      if (!guestSawNode) {
-        test.skip(true, 'cross-context node sync did not deliver the DOOM node (relay flake)');
-        return;
-      }
+        .toBe(true);
       await cardHookReady(owner.page, NODE_ID);
       await cardHookReady(guest.page, NODE_ID);
       // Let awareness presence converge so both cards see 2 members + the owner flag.
@@ -416,23 +427,25 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       // ── Round 5: with the game live, the guest's Join ENABLES → one click ──
       // hot-joins straight into the running level (no second host action). The
       // mpLive flag the host published flips the guest's button to enabled.
-      const guestSawLive = await guest.page
-        .waitForFunction(
-          (nid) =>
-            (
-              globalThis as unknown as {
-                __doomCards: Record<string, { getState: () => { mpLive: boolean } }>;
-              }
-            ).__doomCards[nid]!.getState().mpLive === true,
-          NODE_ID,
-          { timeout: 20000 },
+      // Non-vacuous: the host's mpLive flag MUST propagate to the guest within
+      // the sync budget (was a skip). If it never crosses, the guest's Join
+      // stays gated forever — the "single-user rack limbo" the host-start flow
+      // was meant to fix — so this FAILS rather than silently passing.
+      await expect
+        .poll(
+          () =>
+            guest.page.evaluate(
+              (nid) =>
+                (
+                  globalThis as unknown as {
+                    __doomCards: Record<string, { getState: () => { mpLive: boolean } }>;
+                  }
+                ).__doomCards[nid]!.getState().mpLive,
+              NODE_ID,
+            ),
+          { timeout: SYNC_BUDGET_MS, message: "host's live-MP signal reaches the guest" },
         )
-        .then(() => true)
-        .catch(() => false);
-      if (!guestSawLive) {
-        test.skip(true, 'cross-context mpLive sync did not reach the guest (relay flake)');
-        return;
-      }
+        .toBe(true);
       await expect(
         guest.page.locator('[data-testid="doom-join-btn"]'),
         'Join is now ENABLED (host is running an MP game)',
@@ -440,12 +453,22 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
 
       // One click: hot-join. The arbiter seats the guest active + auto-relaunches
       // the current map so the guest drops in within ~1-2s — no host Launch step.
-      await guest.page.locator('[data-testid="doom-join-btn"]').click();
-      const guestSeated = await waitForSlot(guest.page, NODE_ID, 1, 30000);
-      if (!guestSeated) {
-        test.skip(true, 'cross-context roster sync did not seat the guest at slot 1 (relay flake)');
-        return;
-      }
+      // dispatchEvent — the auto-spawned TIMELORDE singleton's display canvas
+      // overlaps the DOOM card in SCREEN space (SvelteFlow fitView re-centers both
+      // nodes regardless of graph position, so relocating doesn't help). A real
+      // pointer click — even click({force:true}) — still hit-tests to the TOPMOST
+      // element (the TIMELORDE canvas), so it never reaches the Join button and
+      // the @collab attest stayed red. dispatchEvent fires the click DIRECTLY on
+      // the resolved button node, bypassing browser hit-testing entirely — the
+      // correct remedy for a full unrelated overlay. The same applies to every
+      // DOOM card-surface button click below.
+      await guest.page.locator('[data-testid="doom-join-btn"]').dispatchEvent('click');
+      // Non-vacuous: after one Join click the arbiter MUST seat the guest at
+      // slot 1 and that roster assignment MUST sync back into the guest's own
+      // card state within budget (was a skip). A guest that never gets seated is
+      // the "guest stuck as spectator / pending" regression — assert, don't skip.
+      const guestSeated = await waitForSlot(guest.page, NODE_ID, 1, SYNC_BUDGET_MS);
+      expect(guestSeated, 'arbiter seats the guest at slot 1 (P2) and it syncs back').toBe(true);
       // The guest reaches GS_LEVEL on its OWN runtime via the auto-relaunch —
       // one click, straight into the running map.
       const guestInLevel = await waitForLevel(guest.page, NODE_ID);
@@ -654,21 +677,23 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
         { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
       ];
       await spawnPatch(owner.page, nodes, []);
-      const guestSawNode = await guest.page
-        .waitForFunction(
-          (nid) =>
-            Object.keys(
-              (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
-            ).includes(nid),
-          NODE_ID,
-          { timeout: 15000 },
+      // Non-vacuous: the relay MUST deliver the owner-added node into the
+      // guest's __patch within budget (was a skip). This split-brain test needs
+      // both peers on the SAME shared node to even pose the one-host invariant.
+      await expect
+        .poll(
+          () =>
+            guest.page.evaluate(
+              (nid) =>
+                Object.keys(
+                  (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch
+                    .nodes,
+                ).includes(nid),
+              NODE_ID,
+            ),
+          { timeout: SYNC_BUDGET_MS, message: 'guest receives the shared DOOM node via Yjs sync' },
         )
-        .then(() => true)
-        .catch(() => false);
-      if (!guestSawNode) {
-        test.skip(true, 'cross-context node sync did not deliver the DOOM node (relay flake)');
-        return;
-      }
+        .toBe(true);
       await cardHookReady(owner.page, NODE_ID);
       await cardHookReady(guest.page, NODE_ID);
 
@@ -717,9 +742,10 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       await cardHookReady(owner.page, NODE_ID);
 
       // Open the multiplayer lobby by clicking the real "Host Multiplayer"
-      // button with the mouse (not the dev hook) — proves the start-choice
-      // buttons are clickable too.
-      await owner.page.locator('[data-testid="doom-start-multi"]').click();
+      // button (not the dev hook) — proves the start-choice buttons fire too.
+      // dispatchEvent — dodge the TIMELORDE screen-space overlay (see the
+      // guest-join click above for the full rationale).
+      await owner.page.locator('[data-testid="doom-start-multi"]').dispatchEvent('click');
       const seated = await waitForSlot(owner.page, NODE_ID, 0, 25000);
       expect(seated, 'owner seated as P0 after clicking Host Multiplayer').toBe(true);
 
@@ -751,9 +777,10 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       expect(picked.mode, 'mode shows the mouse-picked deathmatch').toBe('deathmatch');
 
       // Launch by clicking the real Launch button → the level starts on the
-      // chosen difficulty (the whole dialog round-trip worked by mouse) and the
-      // HOST itself reaches GS_LEVEL (not the title menu).
-      await owner.page.locator('[data-testid="doom-launch-btn"]').click();
+      // chosen difficulty and the HOST itself reaches GS_LEVEL (not the title
+      // menu). dispatchEvent — dodge the TIMELORDE overlay (see the guest-join
+      // click above).
+      await owner.page.locator('[data-testid="doom-launch-btn"]').dispatchEvent('click');
       const inLevel = await waitForLevel(owner.page, NODE_ID);
       expect(inLevel, 'mouse-launched game reaches GS_LEVEL').toBe(true);
       const launchedState = await getState(owner.page, NODE_ID);
@@ -791,21 +818,23 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       await spawnPatch(owner.page, [
         { id: NODE_ID, type: 'doom', position: { x: 120, y: 120 }, domain: 'video' },
       ], []);
-      const anonSawNode = await anon.page
-        .waitForFunction(
-          (nid) =>
-            Object.keys(
-              (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch.nodes,
-            ).includes(nid),
-          NODE_ID,
-          { timeout: 15000 },
+      // Non-vacuous: the relay MUST deliver the owner-added node into the anon
+      // invite-guest's __patch within budget (was a skip). The anon must land on
+      // the same shared node to be offered the gated Join at all.
+      await expect
+        .poll(
+          () =>
+            anon.page.evaluate(
+              (nid) =>
+                Object.keys(
+                  (window as unknown as { __patch: { nodes: Record<string, unknown> } }).__patch
+                    .nodes,
+                ).includes(nid),
+              NODE_ID,
+            ),
+          { timeout: SYNC_BUDGET_MS, message: 'anon guest receives the shared DOOM node via Yjs sync' },
         )
-        .then(() => true)
-        .catch(() => false);
-      if (!anonSawNode) {
-        test.skip(true, 'cross-context node sync flake');
-        return;
-      }
+        .toBe(true);
       await cardHookReady(owner.page, NODE_ID);
       await cardHookReady(anon.page, NODE_ID);
       await expect
@@ -849,7 +878,9 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
       await expect(joinBtn, 'anon guest is offered an enabled Join once MP is live').toBeEnabled({
         timeout: 20000,
       });
-      await joinBtn.click();
+      // dispatchEvent — dodge the TIMELORDE overlay (see the guest-join click
+      // above). This exact click stayed red across attest runs under force:true.
+      await joinBtn.dispatchEvent('click');
 
       // The anon hot-drops: it becomes ACTIVE slot 1 (NOT pending) and reaches
       // GS_LEVEL with its own live marine — playing the current map within secs.
@@ -867,14 +898,21 @@ test.describe('@collab DOOM multiplayer — real 2-user', () => {
             return !!st && st.mySlot === 1 && st.myPendingSlot === null && st.launched === true && st.gamestate === lvl;
           },
           [NODE_ID, GS_LEVEL],
-          { timeout: 60000 },
+          // Heavier than pure relay sync: this budget covers the arbiter seating
+          // the anon AND the auto-relaunch driving the anon's OWN WASM into
+          // GS_LEVEL — keep it generous (3× the sync budget) but bounded.
+          { timeout: 3 * SYNC_BUDGET_MS },
         )
         .then(() => true)
         .catch(() => false);
-      if (!anonHotDropped) {
-        test.skip(true, 'cross-context roster/relaunch sync flake under CI shard load');
-        return;
-      }
+      // Non-vacuous: the one-click hot-join MUST seat the anon ACTIVE at slot 1
+      // (not pending) and auto-relaunch it straight into the running level (was
+      // a skip). A never-delivered roster/relaunch is the very hot-join
+      // regression this spec pins — so this FAILS instead of vacuously passing.
+      expect(
+        anonHotDropped,
+        'anon one-click hot-drops as ACTIVE slot 1 into the running level (no host re-launch)',
+      ).toBe(true);
       const a = await getState(anon.page, NODE_ID);
       expect(a.mySlot, 'anon hot-dropped as active player 1').toBe(1);
       // Its own marine is live in the current map.

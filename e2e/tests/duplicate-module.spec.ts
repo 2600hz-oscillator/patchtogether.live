@@ -10,6 +10,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -209,7 +210,13 @@ test('right-click → Duplicate does not copy edges of the source', async ({ pag
   await expect(page.locator('.svelte-flow__edge')).toHaveCount(1);
 });
 
-test('@collab duplicate in A appears in B within 4s', async ({ browser }) => {
+test('@collab duplicate in A appears in B', async ({ browser }) => {
+  // De-flake (consolidated #837+#841): this test chains two 20s SYNC_BUDGET_MS
+  // polls (seed-sync, then duplicate-sync) plus two-context setup — the default
+  // 30s per-test timeout can't contain that, so a slow-but-correct sync tripped
+  // the TEST timeout at teardown (the residual @collab red). Give the
+  // @collab-standard 120s ceiling (a ceiling, not a sleep — no CI delta on green).
+  test.setTimeout(120_000);
   // Two browser contexts on the same rackspace. A duplicates a node; B
   // observes the new node show up. This proves Duplicate goes through the
   // standard add-node path (Y.Doc transact) that the multiplayer provider
@@ -262,17 +269,27 @@ test('@collab duplicate in A appears in B within 4s', async ({ browser }) => {
       .poll(async () => await pageB.evaluate(() => {
         const w = window as unknown as { __patch: { nodes: Record<string, unknown> } };
         return Object.keys(w.__patch.nodes).includes('adsr-shared');
-      }), { timeout: 4000 })
+      }), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
       .toBe(true);
 
     // A: right-click the title bar → Duplicate. (Title bar, not node center —
     // a center right-click can land on a control whose contextmenu handler
     // stopPropagation()s the event, opening the per-control menu instead of
     // the module menu; see the non-collab specs above.)
+    // dispatchEvent — in the 2-context @collab case the auto-spawned TIMELORDE
+    // singleton's display canvas overlaps the ADSR title in SCREEN space
+    // (SvelteFlow fitView re-centers both nodes). A real pointer click — even
+    // click({force:true}) — still hit-tests to the TOPMOST element (the TIMELORDE
+    // canvas), so it never reaches the title/menuitem (the attest showed the
+    // contextmenu either never opening or the Duplicate landing on nothing → A
+    // stayed at 1 ADSR). dispatchEvent fires the DOM event DIRECTLY on the target
+    // node, bypassing browser hit-testing entirely — the correct remedy for an
+    // unrelated full-overlay. The contextmenu handler lives on .title; the
+    // menuitem click handler on the menu item.
     const adsr = pageA.locator('.svelte-flow__node-adsr').first();
-    await adsr.locator('.title').click({ button: 'right' });
+    await adsr.locator('.title').dispatchEvent('contextmenu');
     await expect(pageA.locator('[role="menu"][aria-label="Module actions"]')).toBeVisible();
-    await pageA.locator('[role="menuitem"]', { hasText: 'Duplicate' }).click();
+    await pageA.locator('[role="menuitem"]', { hasText: 'Duplicate' }).dispatchEvent('click');
     await expect(pageA.locator('.svelte-flow__node-adsr')).toHaveCount(2);
 
     // B: should see 2 ADSR nodes appear within 4s.
@@ -280,7 +297,7 @@ test('@collab duplicate in A appears in B within 4s', async ({ browser }) => {
       .poll(async () => await pageB.evaluate(() => {
         const w = window as unknown as { __patch: { nodes: Record<string, { type: string }> } };
         return Object.values(w.__patch.nodes).filter((n) => n && n.type === 'adsr').length;
-      }), { timeout: 4000 })
+      }), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
       .toBe(2);
   } finally {
     await ctxA.close();
