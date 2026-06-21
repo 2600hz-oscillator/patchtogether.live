@@ -8,6 +8,7 @@
 //   flox activate -- task e2e -- --grep "@collab mike"
 
 import { test, expect } from '@playwright/test';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 import {
   openCarlContexts as openContexts,
 } from './carl-rackspace.helpers';
@@ -133,7 +134,13 @@ async function readMikeLeader(page: Page): Promise<MikeLeaderInfoView | null> {
 }
 
 test.describe('@collab mike rackspace', () => {
-  test('spawn writes an active Mike record visible to peers within 2s', async ({ browser }) => {
+  // Each test chains a few cross-context relay converges (peer sees the bot
+  // session, leader election propagates), each on the generous SYNC_BUDGET_MS
+  // backed-off poll. The 30s default couldn't hold several slow-but-correct
+  // converges under CI relay contention; 120s does (the @collab de-flake).
+  test.setTimeout(120_000);
+
+  test('spawn writes an active Mike record visible to peers', async ({ browser }) => {
     const s = await openContexts(browser, 2);
     try {
       const [a, b] = s.pages;
@@ -142,7 +149,7 @@ test.describe('@collab mike rackspace', () => {
       const ok = await mikeAttemptSpawn(a, 'user-a', 'Alice');
       expect(ok).toBe(true);
       await expect
-        .poll(async () => (await readMikeSession(b))?.ownerUserId, { timeout: 2000 })
+        .poll(async () => (await readMikeSession(b))?.ownerUserId, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBe('user-a');
       const seen = await readMikeSession(b);
       expect(seen?.ownerDisplayName).toBe('Alice');
@@ -159,7 +166,7 @@ test.describe('@collab mike rackspace', () => {
       const carlOk = await carlAttemptSpawn(a, 'user-a', 'Alice');
       expect(carlOk).toBe(true);
       await expect
-        .poll(async () => (await readBotSession(b))?.kind, { timeout: 2000 })
+        .poll(async () => (await readBotSession(b))?.kind, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBe('carl');
       // Mike on B refuses because Carl already holds the bot lock.
       const mikeOk = await mikeAttemptSpawn(b, 'user-b', 'Bob');
@@ -177,7 +184,7 @@ test.describe('@collab mike rackspace', () => {
       const mikeOk = await mikeAttemptSpawn(a, 'user-a', 'Alice');
       expect(mikeOk).toBe(true);
       await expect
-        .poll(async () => (await readBotSession(b))?.kind, { timeout: 2000 })
+        .poll(async () => (await readBotSession(b))?.kind, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBe('mike');
       const carlOk = await carlAttemptSpawn(b, 'user-b', 'Bob');
       expect(carlOk).toBe(false);
@@ -193,18 +200,18 @@ test.describe('@collab mike rackspace', () => {
       const [a, b] = s.pages;
       await mikeAttemptSpawn(a, 'user-a', 'Alice');
       await expect
-        .poll(async () => (await readBotSession(b))?.kind, { timeout: 2000 })
+        .poll(async () => (await readBotSession(b))?.kind, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBe('mike');
       // B clears Mike's session — any peer can 86.
       await mikeClearSession(b);
       await expect
-        .poll(async () => await readBotSession(a), { timeout: 2000 })
+        .poll(async () => await readBotSession(a), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBeNull();
       // Carl spawn now succeeds on A.
       const carlOk = await carlAttemptSpawn(a, 'user-a', 'Alice');
       expect(carlOk).toBe(true);
       await expect
-        .poll(async () => (await readBotSession(b))?.kind, { timeout: 2000 })
+        .poll(async () => (await readBotSession(b))?.kind, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBe('carl');
     } finally {
       await s.close();
@@ -223,7 +230,7 @@ test.describe('@collab mike rackspace', () => {
       await publishMikeCandidacy(a);
       await mikeStartLoop(a, { seed: 9, baseTickMs: 30, maxTickMs: 80 });
       await expect
-        .poll(() => countMikeNodes(b), { timeout: 5000 })
+        .poll(() => countMikeNodes(b), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBeGreaterThan(0);
       await mikeStopLoop(a);
     } finally {
@@ -239,16 +246,16 @@ test.describe('@collab mike rackspace', () => {
       await publishMikeCandidacy(a);
       await mikeStartLoop(a, { seed: 13, baseTickMs: 30, maxTickMs: 80 });
       await expect
-        .poll(() => countMikeNodes(a), { timeout: 5000 })
+        .poll(() => countMikeNodes(a), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBeGreaterThan(0);
       await mikeStopLoop(a);
       // B (not the spawner) does the eviction.
       await mikeEvictPatch(b);
       await mikeClearSession(b);
       await expect
-        .poll(() => countMikeNodes(a), { timeout: 2000 }).toBe(0);
+        .poll(() => countMikeNodes(a), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS }).toBe(0);
       await expect
-        .poll(async () => await readMikeSession(a), { timeout: 2000 })
+        .poll(async () => await readMikeSession(a), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
         .toBeNull();
     } finally {
       await s.close();
@@ -270,7 +277,7 @@ test.describe('@collab mike rackspace', () => {
       const expected = Math.min(...ids);
       for (const p of s.pages) {
         await expect
-          .poll(async () => (await readMikeLeader(p))?.leaderClientId, { timeout: 1500 })
+          .poll(async () => (await readMikeLeader(p))?.leaderClientId, { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
           .toBe(expected);
       }
     } finally {

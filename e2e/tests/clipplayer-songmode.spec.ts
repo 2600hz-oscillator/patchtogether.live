@@ -170,3 +170,168 @@ test('song view: renders blocks + select/delete edits the arrangement', async ({
   const evs = (await readData(page, 'cp')).arrangement?.events ?? [];
   expect(evs.length).toBe(2);
 });
+
+test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping it)', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  // quantize off → launches apply immediately. No TIMELORDE → free-run.
+  await spawnPatch(page, [
+    { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } },
+  ]);
+  await seedClips(page, 'cp', [0, 8]); // lane0/slot0 + lane1/slot0
+
+  // Pre-seed a lane-2 launch + set OVERDUB mode (the arm must KEEP this take).
+  await page.evaluate(() => {
+    const w = globalThis as unknown as W;
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['cp'];
+      if (!n.data) n.data = {};
+      n.data.arrangement = {
+        events: [{ beat: 0, lane: 2, slot: 0 }],
+        lengthBeats: 8,
+        loop: true,
+      } as never;
+      (n.data as { recordMode?: string }).recordMode = 'overdub';
+    });
+  });
+  await expect(page.getByTestId('clipplayer-recmode-cp')).toHaveText('OVR');
+
+  // Arm RECORD (overdub: does NOT clear), then launch lane 0 + lane 1 in time.
+  await page.getByTestId('clipplayer-record-cp').click();
+  await page.waitForTimeout(150);
+  await page.locator('.svelte-flow__node-clipplayer [data-clip="0"]').click();
+  await page.waitForTimeout(400);
+  await page.locator('.svelte-flow__node-clipplayer [data-clip="8"]').click();
+  await page.waitForTimeout(300);
+
+  const evs = (await readData(page, 'cp')).arrangement?.events ?? [];
+  // The pre-seeded lane-2 event survived AND the new launches merged in.
+  expect(evs.length, 'overdub kept the take + added launches').toBeGreaterThanOrEqual(3);
+  expect(evs.some((e) => e.lane === 2 && e.beat === 0), 'pre-seeded take kept').toBe(true);
+  expect(evs.some((e) => e.lane === 0), 'lane 0 overdubbed').toBe(true);
+  expect(evs.some((e) => e.lane === 1), 'lane 1 overdubbed').toBe(true);
+  // beats stay non-decreasing (merged in song-beat order).
+  for (let i = 1; i < evs.length; i++) expect(evs[i].beat).toBeGreaterThanOrEqual(evs[i - 1].beat);
+});
+
+test('song mode: REPLACE arming wipes the pre-seeded take (contrast control)', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [
+    { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } },
+  ]);
+  await seedClips(page, 'cp', [0]);
+
+  // Pre-seed a take; recordMode is REPLACE (default/absent) → arming clears it.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as W;
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['cp'];
+      if (!n.data) n.data = {};
+      n.data.arrangement = {
+        events: [{ beat: 0, lane: 2, slot: 0 }, { beat: 4, lane: 3, slot: 1 }],
+        lengthBeats: 8,
+        loop: true,
+      } as never;
+    });
+  });
+  await expect(page.getByTestId('clipplayer-recmode-cp')).toHaveText('RPL');
+
+  await page.getByTestId('clipplayer-record-cp').click();
+  // The engine clears the log on the arm rising edge.
+  await expect
+    .poll(async () => ((await readData(page, 'cp')).arrangement?.events ?? []).length, { timeout: 3000 })
+    .toBe(0);
+});
+
+test('drag-to-move: dragging a block retimes its launch + persists (bar-snapped)', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
+  await seedClips(page, 'cp', [0, 1]); // lane0/slot0 + lane0/slot1
+  // lane 0: slot 0 [0,8) then slot 1 [8,16); lengthBeats 16 so beat-8 → bar-4 = beat 4.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as W;
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['cp'];
+      if (!n.data) n.data = {};
+      n.data.arrangement = {
+        events: [
+          { beat: 0, lane: 0, slot: 0 },
+          { beat: 8, lane: 0, slot: 1 },
+        ],
+        lengthBeats: 16,
+        loop: true,
+      } as never;
+      n.data.clipMode = 'arrangement';
+    });
+  });
+
+  const svg = page.locator('.song-tl');
+  await expect(svg).toBeVisible();
+  const box = (await svg.boundingBox())!;
+  // The beat-8 block (slot 1) sits at svg-x = (8/16)*width = mid; drag it to the
+  // bar-4 position (beat 4 = quarter-width). The card svg width == lengthBeats px
+  // mapping is proportional to the rendered box width.
+  const fromX = box.x + box.width * (8 / 16) + 6; // a few px inside the block
+  const toX = box.x + box.width * (4 / 16);
+  const laneY = box.y + box.height * (0.5 / 8); // center of lane-0 row (row 0 of 8)
+
+  await page.mouse.move(fromX, laneY);
+  await page.mouse.down();
+  await page.mouse.move(toX, laneY, { steps: 8 });
+  await page.mouse.up();
+
+  // The slot-1 launch is now at beat 4 (snapped), and the slot-0 launch is intact.
+  await expect
+    .poll(async () => {
+      const evs = (await readData(page, 'cp')).arrangement?.events ?? [];
+      const moved = evs.find((e) => e.slot === 1);
+      return moved?.beat ?? -1;
+    }, { timeout: 3000 })
+    .toBe(4);
+  const evs = (await readData(page, 'cp')).arrangement?.events ?? [];
+  expect(evs.find((e) => e.slot === 0)?.beat, 'other block untouched').toBe(0);
+  expect(evs.length).toBe(2);
+});
+
+test('pop-out editor: opens, edits the SAME synced arrangement, closes on Esc', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
+  await seedClips(page, 'cp', [0, 8]);
+  await page.evaluate(() => {
+    const w = globalThis as unknown as W;
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['cp'];
+      if (!n.data) n.data = {};
+      n.data.arrangement = {
+        events: [
+          { beat: 0, lane: 0, slot: 0 },
+          { beat: 8, lane: 0, slot: 1 },
+          { beat: 0, lane: 1, slot: 0 },
+        ],
+        lengthBeats: 16,
+        loop: true,
+      } as never;
+      n.data.clipMode = 'arrangement';
+    });
+  });
+
+  // Open the full-window editor.
+  await page.getByTestId('clipplayer-arrange-open-cp').click();
+  const dialog = page.getByTestId('cliparrange-editor');
+  await expect(dialog).toBeVisible();
+
+  // Select a block + delete it → the SHARED synced arrangement shrinks by one.
+  const before = ((await readData(page, 'cp')).arrangement?.events ?? []).length;
+  await dialog.locator('.block').first().click();
+  await page.getByTestId('cliparrange-editor-del').click();
+  await expect
+    .poll(async () => ((await readData(page, 'cp')).arrangement?.events ?? []).length, { timeout: 3000 })
+    .toBe(before - 1);
+
+  // Esc closes the overlay.
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+});

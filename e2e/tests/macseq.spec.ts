@@ -264,12 +264,31 @@ test('macseq → macrooscillator: every MODEL_NAMES entry is reachable via MODEL
   ).toEqual([]);
 
   // Capture audio at the macrooscillator's out — should be non-silent.
-  const snap = await readScopeSnapshot(page, 'scp');
-  expect(snap).not.toBeNull();
-  const sum = summarize(snap!.ch1);
+  //
+  // A SINGLE end-of-run snapshot can land in a quiet gap: the pattern cycles
+  // every model including the percussive ones (KICK/SNARE/HIHAT are short
+  // bursts), and the 50 ms scope window may fall between a step's gate burst
+  // and the next step — so peak/rms read 0 even though the chain is clearly
+  // emitting. That intermittently failed on CI (#834 shard-4, peak=rms=0).
+  // The test's INTENT is "the macrooscillator emits audio while MACSEQ drives
+  // it" — so poll the scope across several steps (~1.2 s ≈ 12 steps at 150 BPM
+  // 16ths) and take the LOUDEST window, breaking as soon as we hear it. This
+  // is phase-independent and still fails correctly if the chain is truly
+  // silent (audio never started).
+  let bestPeak = 0;
+  let bestRms = 0;
+  for (let i = 0; i < 12; i++) {
+    const snap = await readScopeSnapshot(page, 'scp');
+    expect(snap).not.toBeNull();
+    const sum = summarize(snap!.ch1);
+    bestPeak = Math.max(bestPeak, sum.peak);
+    bestRms = Math.max(bestRms, sum.rms);
+    if (bestPeak > 0.005) break;
+    await page.waitForTimeout(100);
+  }
   expect(
-    sum.peak,
-    `macrooscillator must emit audio while MACSEQ drives MODELCV; peak=${sum.peak.toFixed(4)} rms=${sum.rms.toFixed(4)}`,
+    bestPeak,
+    `macrooscillator must emit audio while MACSEQ drives MODELCV; bestPeak=${bestPeak.toFixed(4)} bestRms=${bestRms.toFixed(4)}`,
   ).toBeGreaterThan(0.005);
 
   expect(errors, `console / pageerror during the MACSEQ→MACROOSCILLATOR run: ${errors.join('; ')}`).toEqual([]);

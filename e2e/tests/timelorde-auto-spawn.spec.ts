@@ -16,6 +16,7 @@
 // trips under the same provider-attached harness the @collab suite uses.
 
 import { test, expect } from '@playwright/test';
+import { SYNC_BUDGET_MS } from './_collab-helpers';
 
 interface PatchSnapshot {
   nodes: Record<string, { type: string } | undefined>;
@@ -85,7 +86,13 @@ function readPatchNodes(page: import('@playwright/test').Page) {
 }
 
 test.describe('@collab timelorde auto-spawn', () => {
-  test('fresh rackspace gets a TIMELORDE within 2s of provider sync', async ({ browser }) => {
+  // De-flake (consolidated #837+#841): the cross-context waits use the 20s
+  // SYNC_BUDGET_MS; the default 30s test timeout can't contain them + 2-context
+  // setup, so a slow-but-correct sync trips the TEST timeout. Give the
+  // @collab-standard 120s ceiling (a ceiling, not a sleep — no CI delta on green).
+  test.setTimeout(120_000);
+
+  test('fresh rackspace gets a TIMELORDE after provider sync', async ({ browser }) => {
     const rackspaceId = `timelorde-autospawn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
@@ -105,7 +112,7 @@ test.describe('@collab timelorde auto-spawn', () => {
           return false;
         },
         undefined,
-        { timeout: 4000 },
+        { timeout: SYNC_BUDGET_MS },
       );
 
       const types = await readPatchNodes(page);
@@ -135,7 +142,7 @@ test.describe('@collab timelorde auto-spawn', () => {
           return false;
         },
         undefined,
-        { timeout: 4000 },
+        { timeout: SYNC_BUDGET_MS },
       );
 
       // Second context on the same rackspaceId. After provider sync, it
@@ -155,7 +162,7 @@ test.describe('@collab timelorde auto-spawn', () => {
             return false;
           },
           undefined,
-          { timeout: 4000 },
+          { timeout: SYNC_BUDGET_MS },
         );
 
         // Modest wait so a late spawn would have time to land. 750ms is
@@ -202,7 +209,7 @@ test.describe('@collab timelorde auto-spawn', () => {
           return false;
         },
         undefined,
-        { timeout: 4000 },
+        { timeout: SYNC_BUDGET_MS },
       );
 
       // Inject a SECOND TIMELORDE with a deterministically lex-LARGER id than
@@ -237,7 +244,7 @@ test.describe('@collab timelorde auto-spawn', () => {
           return count === 1;
         },
         undefined,
-        { timeout: 4000 },
+        { timeout: SYNC_BUDGET_MS },
       );
 
       const types = await readPatchNodes(page);

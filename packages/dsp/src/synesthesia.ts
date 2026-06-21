@@ -25,6 +25,8 @@
 // VU levels are posted to the host via port.postMessage({type:'snapshot', ...}),
 // not as an audio output.
 // Params (k-rate): a_master/b_master (0.5..1.5); a_gain1..4 / b_gain1..4 (1..2);
+//   a_envdepth1..4 / b_envdepth1..4 (0..2, default 1) = per-band env-OUTPUT
+//     depth — scales BOTH env CV outputs (env_slow + env_fast) for that band;
 //   a_mode/b_mode (0=AUDIO spectral bands, 1=VIDEO R/G/B/Luma channels);
 //   a_bipolar/b_bipolar (0=UNI env CV [0,1] (default), 1=BI env CV [-1,+1]).
 //
@@ -52,8 +54,12 @@ import {
   MeterBallistics,
   SynesthesiaVideoCopy,
   applyBipolar,
+  applyEnvDepth,
   combinedGain,
   CV_MAKEUP,
+  ENVDEPTH_DEFAULT,
+  ENVDEPTH_MIN,
+  ENVDEPTH_MAX,
   SYN_NUM_BANDS,
   ENV_FAST_REL_MS,
   ENV_FAST_ATK_MS,
@@ -166,6 +172,10 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
     for (const c of ['a', 'b']) {
       for (let n = 1; n <= SYN_NUM_BANDS; n++) {
         p.push({ name: `${c}_gain${n}`, defaultValue: 1, minValue: 1, maxValue: 2, automationRate: 'k-rate' as const });
+        // Per-band ENV-OUTPUT DEPTH: scales BOTH env CV outputs (env_slow +
+        // env_fast) for that band. 0..2, default 1.0 (= unchanged). See
+        // applyEnvDepth in synesthesia-dsp.
+        p.push({ name: `${c}_envdepth${n}`, defaultValue: ENVDEPTH_DEFAULT, minValue: ENVDEPTH_MIN, maxValue: ENVDEPTH_MAX, automationRate: 'k-rate' as const });
       }
     }
     return p;
@@ -181,6 +191,7 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
     input: Float32Array | null,
     master: number,
     gains: number[],
+    envDepth: number[],
     n: number,
     bipolar: boolean,
     audio?: Float32Array[],
@@ -205,10 +216,11 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
         const tr = copy.onset[b]!.step(a);
         const lv = copy.meter[b]!.step(a);
         const mk = CV_MAKEUP[b] ?? 1;
+        const dp = envDepth[b] ?? ENVDEPTH_DEFAULT;
         if (audio?.[b]) audio[b]![s] = a;
-        // env CV: makeup → clamp [0,1] → optional bipolar remap to [-1,+1].
-        if (slow?.[b]) slow[b]![s] = applyBipolar(cvClamp(es * mk), bipolar);
-        if (fast?.[b]) fast[b]![s] = applyBipolar(cvClamp(ef * mk), bipolar);
+        // env CV: makeup → ×envDepth → clamp [0,1] → optional bipolar remap.
+        if (slow?.[b]) slow[b]![s] = applyBipolar(cvClamp(applyEnvDepth(es * mk, dp)), bipolar);
+        if (fast?.[b]) fast[b]![s] = applyBipolar(cvClamp(applyEnvDepth(ef * mk, dp)), bipolar);
         if (gate?.[b]) gate[b]![s] = gt;
         if (trig?.[b]) trig[b]![s] = tr;
         if (lv > peak[b]!) peak[b] = lv;
@@ -228,6 +240,7 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
     copy: Copy,
     master: number,
     gains: number[],
+    envDepth: number[],
     n: number,
     bipolar: boolean,
     audio?: Float32Array[],
@@ -239,8 +252,8 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
   ): void {
     const peak = [0, 0, 0, 0];
     for (let s = 0; s < n; s++) {
-      // bipolar is applied inside copy.video.step (env CV out only).
-      const out = copy.video.step(copy.videoLevels, master, gains, bipolar);
+      // bipolar + envDepth are applied inside copy.video.step (env CV out only).
+      const out = copy.video.step(copy.videoLevels, master, gains, bipolar, envDepth);
       for (let b = 0; b < SYN_NUM_BANDS; b++) {
         if (audio?.[b]) audio[b]![s] = out.audio[b]!;
         if (slow?.[b]) slow[b]![s] = out.envSlow[b]!;
@@ -260,6 +273,10 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
   ): boolean {
     const n = outputs[0]?.[0]?.length ?? 128;
     const gainsOf = (c: string): number[] => [1, 2, 3, 4].map((i) => this.kval(parameters, `${c}_gain${i}`, 1));
+    // Per-band ENV-OUTPUT DEPTH (scales env_slow + env_fast per band). Default
+    // 1.0 = unchanged. See applyEnvDepth in synesthesia-dsp.
+    const envDepthOf = (c: string): number[] =>
+      [1, 2, 3, 4].map((i) => this.kval(parameters, `${c}_envdepth${i}`, ENVDEPTH_DEFAULT));
     // mode >= 0.5 → VIDEO. Independent per copy, so switching A never touches B.
     const aVideo = this.kval(parameters, 'a_mode', 0) >= 0.5;
     const bVideo = this.kval(parameters, 'b_mode', 0) >= 0.5;
@@ -271,23 +288,23 @@ class SynesthesiaProcessor extends AudioWorkletProcessor {
     // 8/9=trig (A/B).
     if (aVideo) {
       this.runVideoCopy(
-        this.a, this.kval(parameters, 'a_master', 1), gainsOf('a'), n, aBipolar,
+        this.a, this.kval(parameters, 'a_master', 1), gainsOf('a'), envDepthOf('a'), n, aBipolar,
         outputs[0], outputs[2], outputs[4], outputs[6], outputs[8], this.levelsA,
       );
     } else {
       this.runCopy(
-        this.a, inputs[0]?.[0] ?? null, this.kval(parameters, 'a_master', 1), gainsOf('a'), n, aBipolar,
+        this.a, inputs[0]?.[0] ?? null, this.kval(parameters, 'a_master', 1), gainsOf('a'), envDepthOf('a'), n, aBipolar,
         outputs[0], outputs[2], outputs[4], outputs[6], outputs[8], this.levelsA,
       );
     }
     if (bVideo) {
       this.runVideoCopy(
-        this.b, this.kval(parameters, 'b_master', 1), gainsOf('b'), n, bBipolar,
+        this.b, this.kval(parameters, 'b_master', 1), gainsOf('b'), envDepthOf('b'), n, bBipolar,
         outputs[1], outputs[3], outputs[5], outputs[7], outputs[9], this.levelsB,
       );
     } else {
       this.runCopy(
-        this.b, inputs[1]?.[0] ?? null, this.kval(parameters, 'b_master', 1), gainsOf('b'), n, bBipolar,
+        this.b, inputs[1]?.[0] ?? null, this.kval(parameters, 'b_master', 1), gainsOf('b'), envDepthOf('b'), n, bBipolar,
         outputs[1], outputs[3], outputs[5], outputs[7], outputs[9], this.levelsB,
       );
     }

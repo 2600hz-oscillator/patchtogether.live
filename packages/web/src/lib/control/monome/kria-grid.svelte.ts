@@ -1,6 +1,6 @@
-// packages/web/src/lib/grid/kria-grid.svelte.ts
+// packages/web/src/lib/control/monome/kria-grid.svelte.ts
 //
-// Binds the monome grid (lib/grid/grid-device) to ONE focused KRIA node. This
+// Binds the monome grid (lib/control/monome/monome-device) to ONE focused KRIA node. This
 // is KRIA's OWN binding (the clip-launcher has its own grid-clip-binding) —
 // last-bound module owns the singleton grid (fine for v1, like ClipplayerCard).
 //
@@ -17,7 +17,7 @@
 
 import { patch as livePatch, ydoc } from '$lib/graph/store';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
-import { onKey, setFrame, isConnected, type GridKeyEvent } from './grid-device.svelte';
+import { onKey, setFrame, isConnected, type GridKeyEvent } from './monome-device.svelte';
 import {
   keyToAction,
   computeKriaLeds,

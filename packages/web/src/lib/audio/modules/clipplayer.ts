@@ -4,7 +4,7 @@
 // LANES. Rows = instruments (8), columns = clip slots (8) → 64 note clips. Each
 // lane independently plays its launched clip out its OWN pitch/gate/velocity
 // outputs, so up to 8 clips sound at once (one per instrument). A monome grid
-// drives it (lib/grid) and the card is the always-available editor + launcher.
+// drives it (lib/control/monome) and the card is the always-available editor + launcher.
 //
 // Clock: LOCKED TO TIMELORDE (the rack transport). The module runs only while
 // TIMELORDE.running, at TIMELORDE.bpm, and freezes when it stops — no internal
@@ -191,6 +191,12 @@ export const clipplayerDef: AudioModuleDef = {
     function isRecording(): boolean {
       return liveData()?.recording === true;
     }
+    /** Record mode, defaulting to legacy 'replace'. In 'overdub' the arm-edge
+     *  KEEPS the existing log + song time (new launches merge in by song-beat);
+     *  'replace' clears + restarts at bar 1. */
+    function recordMode(): 'replace' | 'overdub' {
+      return liveData()?.recordMode === 'overdub' ? 'overdub' : 'replace';
+    }
     /** Append an applied launch to the arrangement log at the current song-beat. */
     function appendArrangeEvent(ev: ArrangeEvent): void {
       writeData((d) => {
@@ -361,12 +367,19 @@ export const clipplayerDef: AudioModuleDef = {
 
         // SONG-MODE origin resets (before advancing songBeat this tick):
         //  - record ARM (replace): clear the log + restart song time at 0.
+        //  - record ARM (overdub): KEEP the log + song time so new launches
+        //    merge into the existing timeline at their true current beat
+        //    (recordEvent inserts them in beat-sorted order — §3.1).
         //  - entering arrangement mode OR pressing play in it: replay from top.
         if (recording && !prevRecording) {
-          writeData((d) => {
-            d.arrangement = clearArrange(coerceArrangeData(d.arrangement));
-          });
-          resetSongOrigin();
+          if (recordMode() === 'replace') {
+            writeData((d) => {
+              d.arrangement = clearArrange(coerceArrangeData(d.arrangement));
+            });
+            resetSongOrigin();
+          }
+          // overdub: keep the existing log; song time keeps running so merged
+          // launches record at their true current beat.
         }
         if (mode === 'arrangement' && (prevClipMode !== 'arrangement' || (running && !prevRunning))) {
           resetSongOrigin();
@@ -500,6 +513,7 @@ export const clipplayerDef: AudioModuleDef = {
         if (key === 'songBeat') return songBeat;
         if (key === 'clipMode') return clipMode() === 'arrangement' ? 1 : 0;
         if (key === 'recording') return isRecording() ? 1 : 0;
+        if (key === 'recordMode') return recordMode() === 'overdub' ? 1 : 0;
         if (key === 'arrangeEvents') return coerceArrangeData(liveData()?.arrangement).events.length;
         if (typeof key === 'string') {
           // per-lane reads: 'activeLane:L' 'pitchVOct:L' 'gateValue:L' 'velValue:L' 'currentStep:L'

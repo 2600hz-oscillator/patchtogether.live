@@ -30,6 +30,12 @@ export const MODULE_GUIDES: Record<string, ModuleGuide> = {
     title: 'DOOM multiplayer',
     blurb: 'How the shared-rack DOOM netgame works — joining, the lockstep model, and its caveats.',
   },
+  launchpadControlLeft: {
+    href: '/docs/modules/launchpadControlLeft',
+    title: 'Launchpad control (clip launcher)',
+    blurb:
+      'Drive the clip player from a pair of Novation Launchpad Mini Mk3 units — the always-live 8×8 matrix on the left, the command deck + note editor on the right. Pairing, pad/CC map, SHIFT windowing, and the full RGB colour language.',
+  },
   vfpgaRunner: {
     href: '/docs/modules/vfpga-runner',
     title: 'VFPGA runner guide',

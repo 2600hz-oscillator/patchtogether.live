@@ -92,6 +92,30 @@ export function applyBipolar(env01: number, bipolar: boolean): number {
   return bipolar ? 2 * env01 - 1 : env01;
 }
 
+/**
+ * Per-band ENVELOPE-OUTPUT DEPTH (the `${c}_envdepth${b}` knob). Scales the
+ * env-follower OUTPUT level — BOTH env_slow AND env_fast for that band — so the
+ * user can dial how strongly a band's envelopes modulate downstream, AT THE
+ * SOURCE (this replaces the scrapped per-cable/edge depth idea — depth lives
+ * entirely on SYNESTHESIA).
+ *
+ * Range 0..2: default 1.0 = unchanged (bit-identical current behaviour), 0 =
+ * that band's env outputs are silenced, 2 = doubled (then clamped to the 0..1
+ * CV ceiling). Applied to the UNIPOLAR env value AFTER the CV makeup but BEFORE
+ * the [0,1] clamp + the optional bipolar remap, so:
+ *   - depth=0 → unipolar 0 → (bipolar) -1, i.e. the band sits at its silent rail;
+ *   - depth=2 boosts a weak band's env toward full scale (clamped at 1).
+ * It does NOT touch the gate / onset / band-audio / meter stages (they read the
+ * un-scaled env), so triggers + gates + audio + VU are unchanged. Default 1.0
+ * everywhere keeps existing patches + ART/VRT baselines byte-for-byte identical.
+ */
+export const ENVDEPTH_MIN = 0;
+export const ENVDEPTH_MAX = 2;
+export const ENVDEPTH_DEFAULT = 1;
+export function applyEnvDepth(env01: number, depth: number): number {
+  return env01 * depth;
+}
+
 // Butterworth damping (Q≈0.707 → k = 1/Q = √2). Cascading two such 2nd-order
 // SVF stages per crossover edge gives a ~24 dB/oct Linkwitz-Riley-style slope —
 // steep enough that a test tone one band away is well rejected.
@@ -417,13 +441,17 @@ export class SynesthesiaVideoCopy {
    * `master`/`gains` apply the same gain law as audio mode. Returns the
    * per-channel audio/env/gate/trig/level scalars for this sample. When
    * `bipolar` is true the env CV outputs are remapped 0..1 → -1..+1 (see
-   * applyBipolar); audio/gate/trig/level are unaffected.
+   * applyBipolar); audio/gate/trig/level are unaffected. `envDepth` (per
+   * channel, default 1.0) scales BOTH env CV outputs (env_slow + env_fast) for
+   * that channel — the env-OUTPUT depth control (see applyEnvDepth); gate/trig/
+   * audio/level read the un-scaled env so they're unaffected.
    */
   step(
     levels: ArrayLike<number>,
     master: number,
     gains: ArrayLike<number>,
     bipolar = false,
+    envDepth?: ArrayLike<number>,
   ): SynesthesiaVideoFrameOut {
     const audio: [number, number, number, number] = [0, 0, 0, 0];
     const envSlow: [number, number, number, number] = [0, 0, 0, 0];
@@ -440,9 +468,10 @@ export class SynesthesiaVideoCopy {
       const ef = this.fast[c]!.step(a);
       const es = this.slow[c]!.step(a);
       const mk = CV_MAKEUP[c] ?? 1;
-      // env CV out: makeup → clamp to [0,1] → optional bipolar remap to [-1,+1].
-      envFast[c] = applyBipolar(cvClamp(ef * mk), bipolar);
-      envSlow[c] = applyBipolar(cvClamp(es * mk), bipolar);
+      const dp = envDepth?.[c] ?? ENVDEPTH_DEFAULT;
+      // env CV out: makeup → ×envDepth → clamp to [0,1] → optional bipolar remap.
+      envFast[c] = applyBipolar(cvClamp(applyEnvDepth(ef * mk, dp)), bipolar);
+      envSlow[c] = applyBipolar(cvClamp(applyEnvDepth(es * mk, dp)), bipolar);
       gate[c] = this.gate[c]!.step(ef);
       trig[c] = this.onset[c]!.step(a);
       level[c] = this.meter[c]!.step(a);
@@ -466,6 +495,8 @@ export function renderSynesthesiaVideo(
     holdSamples?: number;
     /** When true, env CV outputs are bipolar [-1,+1] (default OFF = [0,1]). */
     bipolar?: boolean;
+    /** Per-band env-OUTPUT depth (scales env_slow + env_fast); default all 1.0. */
+    envDepth?: [number, number, number, number];
   },
 ): SynesthesiaRender {
   const { sr } = opts;
@@ -473,6 +504,7 @@ export function renderSynesthesiaVideo(
   const gains = opts.gains ?? [1, 1, 1, 1];
   const hold = opts.holdSamples ?? 1;
   const bipolar = opts.bipolar ?? false;
+  const envDepth = opts.envDepth ?? [1, 1, 1, 1];
   const n = levels.length * hold;
   const idx = [0, 1, 2, 3];
   const mk = (): Float32Array[] => idx.map(() => new Float32Array(n));
@@ -481,7 +513,7 @@ export function renderSynesthesiaVideo(
   let s = 0;
   for (const frame of levels) {
     for (let h = 0; h < hold; h++) {
-      const out = copy.step(frame, master, gains, bipolar);
+      const out = copy.step(frame, master, gains, bipolar, envDepth);
       for (let c = 0; c < SYN_NUM_BANDS; c++) {
         audio[c]![s] = out.audio[c]!;
         envFast[c]![s] = out.envFast[c]!;
@@ -508,12 +540,15 @@ export function renderSynesthesia(
     gains?: [number, number, number, number];
     /** When true, env CV outputs are bipolar [-1,+1] (default OFF = [0,1]). */
     bipolar?: boolean;
+    /** Per-band env-OUTPUT depth (scales env_slow + env_fast); default all 1.0. */
+    envDepth?: [number, number, number, number];
   },
 ): SynesthesiaRender {
   const { sr } = opts;
   const master = opts.master ?? 1;
   const gains = opts.gains ?? [1, 1, 1, 1];
   const bipolar = opts.bipolar ?? false;
+  const envDepth = opts.envDepth ?? [1, 1, 1, 1];
   const n = input.length;
   const splitter = makeBandSplitter(sr);
   const idx = [0, 1, 2, 3];
@@ -535,9 +570,10 @@ export function renderSynesthesia(
       const ef = fast[b]!.step(a);
       const es = slow[b]!.step(a);
       const mk = CV_MAKEUP[b] ?? 1;
-      // env CV out: makeup → clamp to [0,1] → optional bipolar remap to [-1,+1].
-      envFast[b]![i] = applyBipolar(cvClamp(ef * mk), bipolar);
-      envSlow[b]![i] = applyBipolar(cvClamp(es * mk), bipolar);
+      const dp = envDepth[b] ?? ENVDEPTH_DEFAULT;
+      // env CV out: makeup → ×envDepth → clamp to [0,1] → optional bipolar remap.
+      envFast[b]![i] = applyBipolar(cvClamp(applyEnvDepth(ef * mk, dp)), bipolar);
+      envSlow[b]![i] = applyBipolar(cvClamp(applyEnvDepth(es * mk, dp)), bipolar);
       gate[b]![i] = gates[b]!.step(ef);
       trig[b]![i] = onsets[b]!.step(a);
       level[b]![i] = meters[b]!.step(a);

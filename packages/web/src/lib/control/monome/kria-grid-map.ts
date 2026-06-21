@@ -1,4 +1,4 @@
-// packages/web/src/lib/grid/kria-grid-map.ts
+// packages/web/src/lib/control/monome/kria-grid-map.ts
 //
 // PURE mapping between the monome grid's 16×8 surface and KRIA's full-grid
 // layout (clean-room reimagining of monome Kria's grid UX — behavior from the

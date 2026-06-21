@@ -19,6 +19,7 @@ import {
   setBlockSlot,
   deleteBlock,
   setArrangeLength,
+  snapBeat,
   type ArrangeData,
 } from './clip-arrange';
 
@@ -234,5 +235,39 @@ describe('song-view edit ops', () => {
   it('setArrangeLength clamps ≥ 0', () => {
     expect(setArrangeLength(base, 16).lengthBeats).toBe(16);
     expect(setArrangeLength(base, -4).lengthBeats).toBe(0);
+  });
+  it('dragging a same-lane block past a neighbour reorders, no overlap (spans recompute)', () => {
+    // lane 0 has slot-1 @0 and slot-2 @4 (the `base`). Drag slot-2 from 4 to 1
+    // (before its own start but after slot-1's). Blocks re-derive: slot-1 [0,1),
+    // slot-2 [1,8) — no overlap, contiguous, in the new beat order.
+    const d = moveBlock(base, 0, 4, 1);
+    expect(d.events.map((e) => e.beat)).toEqual([0, 1]); // re-sorted
+    const b = arrangeBlocks(d).filter((x) => x.lane === 0);
+    expect(b).toEqual([
+      { lane: 0, startBeat: 0, endBeat: 1, slot: 1 },
+      { lane: 0, startBeat: 1, endBeat: 8, slot: 2 },
+    ]);
+  });
+});
+
+describe('snapBeat (drag-to-move grid snap)', () => {
+  it('bar-snaps (4) to the nearest bar', () => {
+    expect(snapBeat(5.4, 4)).toBe(4);
+    expect(snapBeat(6.1, 4)).toBe(8);
+    expect(snapBeat(1.9, 4)).toBe(0); // below the bar midpoint → 0
+    expect(snapBeat(2, 4)).toBe(4); // exactly half → rounds up (Math.round 0.5→1)
+  });
+  it('beat-snaps (1) to the nearest beat', () => {
+    expect(snapBeat(5.4, 1)).toBe(5);
+    expect(snapBeat(5.6, 1)).toBe(6);
+  });
+  it('clamps ≥ 0', () => {
+    expect(snapBeat(-3, 4)).toBe(0);
+    expect(snapBeat(-0.4, 1)).toBe(0);
+  });
+  it('snapTo ≤ 0 is no snap (just clamp ≥ 0)', () => {
+    expect(snapBeat(5, 0)).toBe(5);
+    expect(snapBeat(5.4, 0)).toBe(5.4);
+    expect(snapBeat(-2, -1)).toBe(0);
   });
 });

@@ -21,6 +21,7 @@
 
 import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch, type SpawnNode } from './_helpers';
+import { SYNC_BUDGET_MS } from './_collab-helpers';
 
 interface DoomPair {
   pageHost: Page;
@@ -148,9 +149,13 @@ async function spawnAndLoadDoom(page: Page, nodeId = 'sut'): Promise<boolean> {
 }
 
 test.describe('@collab DOOM shared-input multiplayer', () => {
-  // QUARANTINE (task #97): 2-context Hocuspocus relay drops peer B under CI
-  // shard load → "locator.click: Test ended". Skip on CI; runs locally.
-  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab 2-context flake under CI shard load — task #97');
+  // Runs on the dedicated @collab lane (COLLAB_JOB=1 — relay + Postgres), and
+  // is skipped only in the sharded matrix where the relay/DB aren't available.
+  // De-flake (consolidated #837+#841): the cross-context host-promotion assert
+  // below now uses the deterministic SYNC_BUDGET_MS budget so a correct slow
+  // awareness re-election still passes under CI contention (and still FAILS if
+  // promotion never lands — this was always a real assert, never a vacuity skip).
+  test.skip(!!process.env.CI && !process.env.COLLAB_JOB, '@collab — runs on the dedicated COLLAB_JOB lane, not the sharded matrix');
   // Cold-start DOOM (WASM fetch + 4 MB WAD + cross-context awareness sync)
   // routinely sits in the 20–40 s window under CI load; give plenty of headroom.
   test.setTimeout(180_000);
@@ -182,7 +187,7 @@ test.describe('@collab DOOM shared-input multiplayer', () => {
       await expect(
         pair.pageSpec.locator('[data-testid="doom-card"] .host-badge'),
         'spec should be promoted to HOST after original host departs',
-      ).toBeVisible({ timeout: 5000 });
+      ).toBeVisible({ timeout: SYNC_BUDGET_MS });
     } finally {
       await pair.close();
     }

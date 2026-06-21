@@ -98,6 +98,119 @@ describe('buildPatchSnapshot', () => {
   });
 });
 
+// ───────────────────── TYPE-TRANSPARENT pass-through (SCALER dead-knob fix) ─────────────────────
+// buildPatchSnapshot accepts an injected def-lookup so the adoptsUpstreamFrom
+// resolution is unit-testable without the real registry. A SCALER-like def
+// declares `out` adopting `in`; the resolver rewrites the edge's sourceType to
+// the UPSTREAM cable's type so a CV source → a CV out (the bug was an
+// audio-typed out hitting the video bridge's RMS follower → dead AMOUNT knob).
+describe('buildPatchSnapshot: adoptsUpstreamFrom output type resolution', () => {
+  // Minimal def fixtures.
+  const SCALER_DEF = {
+    inputs: [{ id: 'in', type: 'audio', accepts: ['cv', 'pitch', 'gate'] }],
+    outputs: [{ id: 'out', type: 'audio', adoptsUpstreamFrom: 'in' }],
+  };
+  const LFO_DEF = { inputs: [], outputs: [{ id: 'phase0', type: 'cv' }] };
+  const VCO_DEF = { inputs: [{ id: 'in', type: 'audio' }], outputs: [{ id: 'out', type: 'audio' }] };
+  // A video module with a cv-typed modulation input (LINES.orient shape).
+  const LINES_DEF = { inputs: [{ id: 'orient', type: 'cv' }], outputs: [{ id: 'out', type: 'mono-video' }] };
+
+  const defs: Record<string, unknown> = {
+    scaler: SCALER_DEF,
+    lfo: LFO_DEF,
+    vco: VCO_DEF,
+    lines: LINES_DEF,
+  };
+  const resolveDef = (t: string) => defs[t] as never;
+
+  function node(patch: ReturnType<typeof freshPatch>['patch'], id: string, type: string) {
+    patch.nodes[id] = { id, type, domain: 'audio', position: { x: 0, y: 0 }, params: {} } as ModuleNode;
+  }
+  function edge(
+    patch: ReturnType<typeof freshPatch>['patch'],
+    id: string,
+    from: [string, string],
+    to: [string, string],
+    sourceType: string,
+    targetType: string,
+  ) {
+    patch.edges[id] = {
+      id,
+      source: { nodeId: from[0], portId: from[1] },
+      target: { nodeId: to[0], portId: to[1] },
+      sourceType,
+      targetType,
+    } as Edge;
+  }
+
+  it('adopts a CV upstream: LFO(cv) → SCALER → LINES.orient makes SCALER.out emit cv', () => {
+    const { patch } = freshPatch();
+    node(patch, 'lfo', 'lfo');
+    node(patch, 'sc', 'scaler');
+    node(patch, 'ln', 'lines');
+    // LFO → SCALER.in (the upstream that out should adopt).
+    edge(patch, 'e1', ['lfo', 'phase0'], ['sc', 'in'], 'cv', 'audio');
+    // SCALER.out → LINES.orient — stored as 'audio' (what a naive connect wrote);
+    // the resolver must rewrite it to 'cv'.
+    edge(patch, 'e2', ['sc', 'out'], ['ln', 'orient'], 'audio', 'cv');
+    const snap = buildPatchSnapshot(patch as never, resolveDef);
+    const out = snap.edges.find((e) => e.id === 'e2')!;
+    expect(out.sourceType).toBe('cv'); // adopted from the LFO upstream — NOT 'audio'
+  });
+
+  it('falls back to the declared audio type when nothing is patched upstream', () => {
+    const { patch } = freshPatch();
+    node(patch, 'sc', 'scaler');
+    node(patch, 'ln', 'lines');
+    // No edge into SCALER.in. SCALER.out → LINES.orient.
+    edge(patch, 'e2', ['sc', 'out'], ['ln', 'orient'], 'audio', 'cv');
+    const snap = buildPatchSnapshot(patch as never, resolveDef);
+    const out = snap.edges.find((e) => e.id === 'e2')!;
+    // Declared fallback type — unchanged (canConnect audio→cv is false anyway,
+    // so even if we tried we wouldn't coerce).
+    expect(out.sourceType).toBe('audio');
+  });
+
+  it('keeps audio when an AUDIO source feeds it into an audio target (no spurious coercion)', () => {
+    const { patch } = freshPatch();
+    node(patch, 'vco', 'vco');
+    node(patch, 'sc', 'scaler');
+    node(patch, 'vco2', 'vco');
+    edge(patch, 'e1', ['vco', 'out'], ['sc', 'in'], 'audio', 'audio');
+    edge(patch, 'e2', ['sc', 'out'], ['vco2', 'in'], 'audio', 'audio');
+    const snap = buildPatchSnapshot(patch as never, resolveDef);
+    expect(snap.edges.find((e) => e.id === 'e2')!.sourceType).toBe('audio');
+  });
+
+  it('does NOT adopt when the upstream type can not legally reach the downstream target', () => {
+    // CV into SCALER.in, but SCALER.out → an AUDIO input. canConnect(cv, audio)
+    // is false, so we must NOT coerce out to cv (that would manufacture an
+    // illegal cable the engine would reject) — keep the declared audio type.
+    const { patch } = freshPatch();
+    node(patch, 'lfo', 'lfo');
+    node(patch, 'sc', 'scaler');
+    node(patch, 'vco', 'vco');
+    edge(patch, 'e1', ['lfo', 'phase0'], ['sc', 'in'], 'cv', 'audio');
+    edge(patch, 'e2', ['sc', 'out'], ['vco', 'in'], 'audio', 'audio');
+    const snap = buildPatchSnapshot(patch as never, resolveDef);
+    expect(snap.edges.find((e) => e.id === 'e2')!.sourceType).toBe('audio');
+  });
+
+  it('resolves transitively through a chain of pass-throughs (SCALER → SCALER → video)', () => {
+    const { patch } = freshPatch();
+    node(patch, 'lfo', 'lfo');
+    node(patch, 'sc1', 'scaler');
+    node(patch, 'sc2', 'scaler');
+    node(patch, 'ln', 'lines');
+    edge(patch, 'e1', ['lfo', 'phase0'], ['sc1', 'in'], 'cv', 'audio');
+    edge(patch, 'e2', ['sc1', 'out'], ['sc2', 'in'], 'audio', 'audio');
+    edge(patch, 'e3', ['sc2', 'out'], ['ln', 'orient'], 'audio', 'cv');
+    const snap = buildPatchSnapshot(patch as never, resolveDef);
+    // The final hop into the video module must carry the original LFO's cv type.
+    expect(snap.edges.find((e) => e.id === 'e3')!.sourceType).toBe('cv');
+  });
+});
+
 describe('createSnapshotBus', () => {
   it('emits the current snapshot synchronously on subscribe', () => {
     const { patch, ydoc } = freshPatch();

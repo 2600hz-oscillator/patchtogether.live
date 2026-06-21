@@ -254,6 +254,17 @@
             </div>
           {/each}
         </div>
+        <!-- Per-band ENV-OUTPUT depth: scales BOTH env CV outputs (slow + fast)
+             for that band — source-side modulation depth. 0=cut, 1=unity, 2=2×. -->
+        <div class="depth-row" data-testid="synesthesia-depth-a">
+          {#each BANDS as b (b)}
+            <div class="gcol">
+              <Knob value={param(`a_envdepth${b}`, 1)} min={0} max={2} defaultValue={1} label={`B${b}`}
+                curve="linear" onchange={set(`a_envdepth${b}`)} moduleId={id} paramId={`a_envdepth${b}`} readLive={live(`a_envdepth${b}`)} />
+              <div class="depth-label">DPT</div>
+            </div>
+          {/each}
+        </div>
       </div>
     </div>
 
@@ -289,6 +300,16 @@
               <Knob value={param(`b_gain${b}`, 1)} min={1} max={2} defaultValue={1} label={`B${b}`}
                 curve="linear" onchange={set(`b_gain${b}`)} moduleId={id} paramId={`b_gain${b}`} readLive={live(`b_gain${b}`)} />
               <div class="band-label" class:video={isVideo('b')}>{isVideo('b') ? VIDEO_LABELS[i] : BAND_LABELS[i]}</div>
+            </div>
+          {/each}
+        </div>
+        <!-- Per-band ENV-OUTPUT depth (see Copy A). -->
+        <div class="depth-row" data-testid="synesthesia-depth-b">
+          {#each BANDS as b (b)}
+            <div class="gcol">
+              <Knob value={param(`b_envdepth${b}`, 1)} min={0} max={2} defaultValue={1} label={`B${b}`}
+                curve="linear" onchange={set(`b_envdepth${b}`)} moduleId={id} paramId={`b_envdepth${b}`} readLive={live(`b_envdepth${b}`)} />
+              <div class="depth-label">DPT</div>
             </div>
           {/each}
         </div>
@@ -368,11 +389,22 @@
     border-radius: 3px;
     background: #0c0e12;
   }
-  .gain-row {
+  .gain-row,
+  .depth-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 6px;
     width: 208px;
+  }
+  .depth-row {
+    border-top: 1px dashed var(--border);
+    padding-top: 4px;
+  }
+  .depth-label {
+    font-size: 0.45rem;
+    color: var(--cable-cv, #f59e0b);
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.06em;
   }
   .gcol {
     display: flex;

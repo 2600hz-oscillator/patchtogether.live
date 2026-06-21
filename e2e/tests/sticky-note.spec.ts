@@ -6,6 +6,7 @@
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -117,7 +118,12 @@ test('sticky reconcile: no console errors when spawning a sticky-only patch', as
   expect(errors, `console errors during sticky-only bootstrap: ${errors.join('; ')}`).toEqual([]);
 });
 
-test('@collab sticky text edit in A appears in B within 4s', async ({ browser }) => {
+test('@collab sticky text edit in A appears in B', async ({ browser }) => {
+  // De-flake (consolidated #837+#841): the cross-context waits use the 20s
+  // SYNC_BUDGET_MS; the default 30s test timeout can't contain them + 2-context
+  // setup, so a slow-but-correct sync trips the TEST timeout. Give the
+  // @collab-standard 120s ceiling (a ceiling, not a sleep — no CI delta on green).
+  test.setTimeout(120_000);
   const rackspaceId = `sticky-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const ctxA = await browser.newContext();
   const ctxB = await browser.newContext();
@@ -164,7 +170,7 @@ test('@collab sticky text edit in A appears in B within 4s', async ({ browser })
       .poll(async () => await pageB.evaluate(() => {
         const w = window as unknown as { __patch: { nodes: Record<string, { type: string }> } };
         return Object.values(w.__patch.nodes).some((n) => n && n.type === 'sticky');
-      }), { timeout: 4000 })
+      }), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
       .toBe(true);
 
     // A edits the textarea.
@@ -179,7 +185,7 @@ test('@collab sticky text edit in A appears in B within 4s', async ({ browser })
           __patch: { nodes: Record<string, { data?: { text?: string } }> };
         };
         return w.__patch.nodes['st-shared']?.data?.text;
-      }), { timeout: 4000 })
+      }), { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS })
       .toBe('hi from A');
   } finally {
     await ctxA.close();

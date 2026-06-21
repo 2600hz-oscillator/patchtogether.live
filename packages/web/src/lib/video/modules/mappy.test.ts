@@ -1,12 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import {
   MAPPY_SURFACE_COUNT,
+  MAPPY_MIN_SURFACES,
+  DEFAULT_SURFACE_COUNT,
   MAPPY_INPUT_IDS,
   MAPPY_SURFACE_COLORS,
   defaultSurface,
   defaultSurfaces,
   normalizeSurfaces,
   surfaceInverseColumnMajor,
+  insetQuadForIndex,
+  clampSurfaceCount,
   mappyDef,
 } from './mappy';
 import {
@@ -42,6 +46,61 @@ describe('mappy module def', () => {
     expect(MAPPY_INPUT_IDS).toHaveLength(6);
     expect(MAPPY_SURFACE_COLORS).toHaveLength(6);
     expect(new Set(MAPPY_SURFACE_COLORS).size).toBe(6);
+  });
+
+  it('exposes a surfaceCount param (1..6) defaulting to one live surface', () => {
+    const p = mappyDef.params.find((q) => q.id === 'surfaceCount');
+    expect(p).toBeDefined();
+    expect(p!.min).toBe(MAPPY_MIN_SURFACES);
+    expect(p!.max).toBe(MAPPY_SURFACE_COUNT);
+    expect(p!.defaultValue).toBe(DEFAULT_SURFACE_COUNT);
+    expect(DEFAULT_SURFACE_COUNT).toBe(1);
+    expect(MAPPY_MIN_SURFACES).toBe(1);
+  });
+});
+
+describe('clampSurfaceCount', () => {
+  it('clamps to [1,6] and rounds; bad values fall back to the default', () => {
+    expect(clampSurfaceCount(0)).toBe(1);
+    expect(clampSurfaceCount(-3)).toBe(1);
+    expect(clampSurfaceCount(1)).toBe(1);
+    expect(clampSurfaceCount(6)).toBe(6);
+    expect(clampSurfaceCount(99)).toBe(6);
+    expect(clampSurfaceCount(2.4)).toBe(2);
+    expect(clampSurfaceCount(2.6)).toBe(3);
+    expect(clampSurfaceCount('nope')).toBe(DEFAULT_SURFACE_COUNT);
+    expect(clampSurfaceCount(undefined)).toBe(DEFAULT_SURFACE_COUNT);
+    expect(clampSurfaceCount(NaN)).toBe(DEFAULT_SURFACE_COUNT);
+  });
+});
+
+describe('insetQuadForIndex', () => {
+  it('returns a non-degenerate inset quad fully inside [0,1] for every surface', () => {
+    for (let i = 0; i < MAPPY_SURFACE_COUNT; i++) {
+      const q = insetQuadForIndex(i);
+      expect(q).toHaveLength(4);
+      for (const [x, y] of q) {
+        expect(x).toBeGreaterThanOrEqual(0);
+        expect(x).toBeLessThanOrEqual(1);
+        expect(y).toBeGreaterThanOrEqual(0);
+        expect(y).toBeLessThanOrEqual(1);
+      }
+      // it's a real rectangle (TL,TR,BR,BL with positive area), so its
+      // homography is invertible (not skipped as degenerate).
+      expect(surfaceInverseColumnMajor(q)).not.toBeNull();
+    }
+  });
+
+  it('is NOT the full-frame default (an added grid is a distinct sub-rect)', () => {
+    const q = insetQuadForIndex(1);
+    expect(q).not.toEqual(defaultSurface().corners);
+    // strictly inside the frame on at least one edge
+    expect(q[0]![0]).toBeGreaterThan(0);
+    expect(q[2]![0]).toBeLessThan(1);
+  });
+
+  it('staggers successive surfaces (added grids do not perfectly overlap)', () => {
+    expect(insetQuadForIndex(0)).not.toEqual(insetQuadForIndex(1));
   });
 });
 

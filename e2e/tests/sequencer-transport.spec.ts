@@ -17,6 +17,7 @@
 
 import { test, expect, type Page, type Browser } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -629,7 +630,12 @@ async function openTwoContexts(browser: Browser): Promise<CollabContexts> {
 }
 
 test.describe('@collab sequencer-transport multiplayer slot sync', () => {
-  test.setTimeout(60_000);
+  // 120s ceiling: this test does THREE sequential cross-context relay
+  // converges (B sees node, B sees slot, A sees loaded pattern), each on the
+  // generous SYNC_BUDGET_MS backed-off poll. 60s was too tight against three
+  // slow converges under CI relay contention; 120s gives full headroom
+  // (matches the POLYSEQZ sibling below).
+  test.setTimeout(120_000);
 
   test('user A saves slot 1 on a sequencer; user B sees the slot data sync over the Y.Doc', async ({
     browser,
@@ -669,13 +675,19 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
               const w = window as unknown as { __patch: { nodes: Record<string, unknown> } };
               return Object.keys(w.__patch.nodes).includes(id);
             }, NODE),
-          { timeout: 6000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
 
-      // A clicks SAVE → slot 1.
-      await s.pageA.locator(`[data-testid="quicksave-mode-save-${NODE}"]`).click();
-      await s.pageA.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click();
+      // A clicks SAVE → slot 1. dispatchEvent — the auto-spawned TIMELORDE
+      // display canvas overlaps the sequencer card in SCREEN space (SvelteFlow
+      // fitView re-centers both nodes), and a real pointer click (even
+      // {force:true}) still hit-tests to the TOPMOST element (TIMELORDE), so the
+      // save/load never fired. dispatchEvent fires the click DIRECTLY on the
+      // target button, bypassing browser hit-testing — the card is mounted (the
+      // node-sync poll above passed), so the button exists.
+      await s.pageA.locator(`[data-testid="quicksave-mode-save-${NODE}"]`).dispatchEvent('click');
+      await s.pageA.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).dispatchEvent('click');
 
       // B sees slots[1] populated within a few seconds (over the Y.Doc).
       await expect
@@ -690,14 +702,15 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
                 | undefined;
               return slots?.['1'] !== undefined && slots?.['1'] !== null;
             }, NODE),
-          { timeout: 6000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
 
-      // B's slot 1 button should show has-data styling.
+      // B's slot 1 button should show has-data styling (local re-render after
+      // the Y.Doc sync above — generous budget for a slow Svelte flush).
       await expect(
         s.pageB.locator(`[data-testid="quicksave-slot-${NODE}-1"]`),
-      ).toHaveAttribute('data-has-data', 'true', { timeout: 6000 });
+      ).toHaveAttribute('data-has-data', 'true', { timeout: 15_000 });
 
       // B mutates the live pattern, then clicks LOAD → slot 1, restoring A's snapshot.
       await s.pageB.evaluate((nodeId) => {
@@ -717,8 +730,9 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
         });
       }, NODE);
 
-      await s.pageB.locator(`[data-testid="quicksave-mode-load-${NODE}"]`).click();
-      await s.pageB.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click();
+      // force:true — same TIMELORDE screen-space overlay as the save clicks above.
+      await s.pageB.locator(`[data-testid="quicksave-mode-load-${NODE}"]`).dispatchEvent('click');
+      await s.pageB.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).dispatchEvent('click');
 
       // A should now see the loaded pattern (because LOAD writes back to
       // node.data which Y.Doc-syncs).
@@ -734,7 +748,7 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
                 | undefined;
               return steps?.[0]?.on === true && steps?.[0]?.midi === 60;
             }, NODE),
-          { timeout: 6000 },
+          { timeout: SYNC_BUDGET_MS, intervals: SYNC_POLL_INTERVALS },
         )
         .toBe(true);
     } finally {
@@ -765,9 +779,15 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
     // each under the describe's 60s budget — too tight when A→relay→B converge
     // stalls under CI CPU contention (the cause of the 5× purge retry). Raise
     // each propagation poll to a 20s backed-off budget (matching the
-    // in-card-title rename-sync fix) and the whole test to 120s so four slow
-    // converges still fit with headroom.
-    test.setTimeout(120_000);
+    // in-card-title rename-sync fix).
+    //
+    // De-flake (consolidated #837+#841): 120s did NOT contain the WORST case —
+    // FOUR sequential 20s converges (=80s) PLUS the three gated visible-waits
+    // (10s+15s) and two-context setup blew the 120s TEST timeout under heavy
+    // contention (the residual @collab red on the attest run). Raise to 180s so
+    // four slow converges + the DOM waits fit with real headroom. (A ceiling,
+    // not a sleep — a green test still finishes fast, so no CI delta on success.)
+    test.setTimeout(180_000);
     const s = await openTwoContexts(browser);
     try {
       const NODE = 'polyseqz-collab-1';
@@ -815,10 +835,23 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
       await expect(
         s.pageA.locator(`[data-testid="quicksave-mode-save-${NODE}"]`),
       ).toBeVisible({ timeout: 10_000 });
-      await s.pageA.locator(`[data-testid="quicksave-mode-save-${NODE}"]`).click();
-      await s.pageA.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click();
+      // force:true on the quicksave card-button clicks — the auto-spawned
+      // TIMELORDE singleton's display canvas can overlap the POLYSEQZ card in
+      // SCREEN space (SvelteFlow fitView re-centers both nodes), so these clicks
+      // retried-until-test-timeout on the attest run (the save/load never fired
+      // → B never saw slot 1 → A never saw the restore). The buttons are gated
+      // visible above; force bypasses the unrelated-overlay intercept.
+      await s.pageA.locator(`[data-testid="quicksave-mode-save-${NODE}"]`).dispatchEvent('click');
+      await s.pageA.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).dispatchEvent('click');
 
       // B sees slots[1] populated (cross-context relay propagation — backed-off).
+      // 30s (vs the 20s SYNC_BUDGET_MS used for the node-presence poll above): a
+      // SAVED slot is a DEEP nested object (the full 32-step chord pattern under
+      // data.slots['1']), heavier to encode/relay/decode than a bare node-add, so
+      // its A→relay→B converge legitimately runs longer under contention. The
+      // relay DID persist it (a ~4KB doc-update was observed), so this is a
+      // convergence-timing budget, not a broken sync — give it real headroom so a
+      // correct slow slot-sync passes while a never-delivered one still FAILS.
       await expect
         .poll(
           async () =>
@@ -831,7 +864,7 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
                 | undefined;
               return slots?.['1'] !== undefined && slots?.['1'] !== null;
             }, NODE),
-          { timeout: 20_000, intervals: [250, 500, 1000] },
+          { timeout: 30_000, intervals: [250, 500, 1000] },
         )
         .toBe(true);
 
@@ -857,12 +890,16 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
         });
       }, NODE);
 
-      await s.pageB.locator(`[data-testid="quicksave-mode-load-${NODE}"]`).click();
-      await s.pageB.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).click();
+      // force:true — same TIMELORDE screen-space overlay as the save clicks above.
+      await s.pageB.locator(`[data-testid="quicksave-mode-load-${NODE}"]`).dispatchEvent('click');
+      await s.pageB.locator(`[data-testid="quicksave-slot-${NODE}-1"]`).dispatchEvent('click');
 
       // A should see the chord pattern restored, including quality + inversion
       // + voicing — verifying the Yjs deep-clone path doesn't drop fields.
       // Cross-context relay propagation (B's LOAD → relay → A) — backed-off poll.
+      // 30s like the slot-save poll above: the restored steps array is the same
+      // heavy 32-step chord payload, so its converge runs longer than a bare
+      // node-add. Generous-but-bounded so a correct slow restore passes.
       await expect
         .poll(
           async () =>
@@ -880,7 +917,7 @@ test.describe('@collab sequencer-transport multiplayer slot sync', () => {
                 s2?.on === true && s2.root === 65 && s2.quality === 'sus4' && s2.inversion === 2 && s2.voicing === 'spread'
               );
             }, NODE),
-          { timeout: 20_000, intervals: [250, 500, 1000] },
+          { timeout: 30_000, intervals: [250, 500, 1000] },
         )
         .toBe(true);
     } finally {

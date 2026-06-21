@@ -120,8 +120,33 @@ export function startPresent(args: StartPresentArgs): PresentSession | null {
     // Same-origin only: ignore anything not from our own popup window.
     if (ev.source !== popup) return;
     const data = ev.data as { type?: string } | null;
-    if (data?.type === 'present:ready') beginBlit();
+    if (data?.type === 'present:ready') {
+      beginBlit();
+      // Try to put the popup into TRUE fullscreen WITHOUT a click by delegating
+      // the opener's transient activation (the menu click that opened it) to the
+      // popup — the Capability Delegation API. If unsupported / the activation
+      // has expired, the popup's own click-anywhere affordance covers it.
+      delegateFullscreen();
+    }
   };
+
+  /** Best-effort: hand the opener's transient activation to the popup so its
+   *  document can call requestFullscreen() with no click (Chromium). `delegate`
+   *  is a Capability-Delegation postMessage option not yet in lib.dom typings. */
+  function delegateFullscreen() {
+    try {
+      const post = popup.postMessage as (
+        message: unknown,
+        options: WindowPostMessageOptions & { delegate?: string },
+      ) => void;
+      post({ type: 'present:go-fullscreen' }, {
+        targetOrigin: window.location.origin,
+        delegate: 'fullscreen',
+      });
+    } catch {
+      /* delegation unsupported — the popup's click-to-fullscreen affordance covers it */
+    }
+  }
 
   /** Locate the popup's sink canvas + 2D ctx, then start the blit loop. The
    *  /present route loads async, so the canvas may not exist the instant the

@@ -11,7 +11,7 @@
   //     velocity through 6 levels. Per-lane MONO replaces-on-add; POLY caps at 5.
   //
   // Clock is LOCKED TO TIMELORDE (no BPM knob, no clock cable). The monome grid
-  // drives the SAME actions via lib/grid. All ports live in the shared yellow
+  // drives the SAME actions via lib/control/monome. All ports live in the shared yellow
   // drill-down <PatchPanel> (post-#767 — NO raw side <Handle> jacks); port ids
   // are byte-identical to clipplayerDef so the CV bridge routes unchanged.
   import type { NodeProps } from '@xyflow/svelte';
@@ -47,12 +47,19 @@
     coerceArrangeData,
     arrangeBlocks,
     arrangeLengthBeats,
-    deleteBlock,
-    setBlockSlot,
-    setArrangeLength,
+    snapBeat,
     type ArrangeBlock,
     type ArrangeData,
   } from '$lib/audio/modules/clip-arrange';
+  import {
+    writeArrange as writeArrangeShared,
+    commitMove,
+    xToBeat,
+    deleteBlock,
+    setBlockSlot,
+    setArrangeLength,
+  } from './clipplayer-arrange-edit';
+  import ClipArrangeEditor from './ClipArrangeEditor.svelte';
   import type { ScaleName } from '$lib/mike/music-theory';
   import { noteNameForMidi } from '$lib/audio/note-entry';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -61,13 +68,13 @@
     connect as gridConnect,
     isConnected as gridIsConnected,
     connectedRune as gridConnectedRune,
-  } from '$lib/grid/grid-device.svelte';
+  } from '$lib/control/monome/monome-device.svelte';
   import {
     bindGridToClip,
     unbindGrid,
     boundClipNode,
     bindingRune,
-  } from '$lib/grid/grid-clip-binding.svelte';
+  } from '$lib/control/monome/monome-control.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -256,18 +263,27 @@
   // --- SONG MODE (arranger) — synced state on node.data ---
   let recording = $derived((void cardVersion, dataObj().recording === true));
   let arrangeMode = $derived((void cardVersion, dataObj().clipMode === 'arrangement'));
+  let recordMode = $derived(
+    (void cardVersion, dataObj().recordMode === 'overdub' ? 'overdub' : 'replace'),
+  );
   let arrangeEvents = $derived(
     (void cardVersion, Array.isArray(dataObj().arrangement?.events) ? dataObj().arrangement!.events!.length : 0),
   );
-  /** Arm/disarm recording. Arming clears the log + restarts song time (engine,
-   *  on the rising edge) — v1 replace semantics. */
+  /** Arm/disarm recording. In REPLACE mode arming clears the log + restarts song
+   *  time (engine, on the rising edge); in OVERDUB it keeps the take + merges. */
   function toggleRecord() {
     writeData((d) => { d.recording = !d.recording; });
+  }
+  /** Flip REPLACE ⇄ OVERDUB record mode. */
+  function toggleRecordMode() {
+    writeData((d) => { d.recordMode = d.recordMode === 'overdub' ? 'replace' : 'overdub'; });
   }
   /** Flip SESSION ⇄ ARRANGEMENT playback. */
   function toggleArrangeMode() {
     writeData((d) => { d.clipMode = d.clipMode === 'arrangement' ? 'session' : 'arrangement'; });
   }
+  /** The full-window pop-out arranger editor (like the MAPPY MAP editor). */
+  let arrangeEditorOpen = $state(false);
 
   // --- SONG VIEW timeline (shown in ARRANGEMENT mode) ---
   const ARR_W = 312; // svg content width (px)
@@ -284,11 +300,70 @@
   const blockW = (b: ArrangeBlock) => Math.max(3, ((b.endBeat - b.startBeat) / arrangeLen) * ARR_W);
   const isSel = (b: ArrangeBlock) =>
     !!selBlock && selBlock.lane === b.lane && Math.abs(selBlock.startBeat - b.startBeat) < 1e-6;
+  /** ONE arrangement write path (delegates to the shared transactional helper so
+   *  card + pop-out editor + the drag commit all go through the same seam). */
   function writeArrange(mut: (a: ArrangeData) => ArrangeData) {
-    writeData((d) => { d.arrangement = mut(coerceArrangeData(d.arrangement)); });
+    writeArrangeShared(id, mut);
   }
   function selectBlock(b: ArrangeBlock) {
     selBlock = isSel(b) ? null : { lane: b.lane, startBeat: b.startBeat };
+  }
+
+  // --- drag-to-move blocks on the timeline (horizontal/time drag, v1) ---
+  // LOCAL render state only during the drag — never a per-pointermove ydoc write
+  // (the live-store-write-storm guard). ONE commitMove write lands on DROP.
+  const SNAP_BARS = 4; // bar-snap (the card timeline always bar-snaps; the
+  //                      pop-out editor exposes a SNAP bar/beat toggle).
+  let svgEl: SVGSVGElement | null = $state(null);
+  let drag = $state<{ lane: number; startBeat: number; previewBeat: number; moved: boolean } | null>(
+    null,
+  );
+  // True for the click that immediately follows a real move-drop, so the
+  // trailing synthetic `click` doesn't toggle the just-moved block's selection.
+  let suppressNextClick = false;
+  /** True if block `b` is the one currently being dragged (render its ghost). */
+  function isDragging(b: ArrangeBlock): boolean {
+    return !!drag && drag.lane === b.lane && Math.abs(drag.startBeat - b.startBeat) < 1e-6;
+  }
+  function dragX(): number {
+    return drag ? (drag.previewBeat / arrangeLen) * ARR_W : 0;
+  }
+  function onBlockDown(b: ArrangeBlock, ev: PointerEvent) {
+    if (ev.button !== 0) return;
+    // Don't select on grab — a plain click selects (onBlockClick); selecting
+    // here too would let the trailing click TOGGLE it back off. The drag ghost
+    // is highlighted via the .dragging class, not selection.
+    drag = { lane: b.lane, startBeat: b.startBeat, previewBeat: b.startBeat, moved: false };
+    (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+  function onBlockMove(ev: PointerEvent) {
+    if (!drag || !svgEl) return;
+    const rect = svgEl.getBoundingClientRect();
+    const raw = xToBeat(ev.clientX - rect.left, rect.width, arrangeLen);
+    const snapped = snapBeat(raw, SNAP_BARS);
+    drag = {
+      ...drag,
+      previewBeat: snapped,
+      moved: drag.moved || Math.abs(snapped - drag.startBeat) > 1e-6,
+    };
+  }
+  function onBlockUp(ev: PointerEvent) {
+    if (!drag) return;
+    if (drag.moved) {
+      commitMove(id, drag.lane, drag.startBeat, drag.previewBeat, SNAP_BARS); // ONE write
+      // Keep the moved block selected at its NEW beat; swallow the trailing
+      // synthetic click so it doesn't toggle that selection back off.
+      selBlock = { lane: drag.lane, startBeat: snapBeat(drag.previewBeat, SNAP_BARS) };
+      suppressNextClick = true;
+    }
+    try { (ev.currentTarget as Element).releasePointerCapture?.(ev.pointerId); } catch { /* */ }
+    drag = null;
+  }
+  function onBlockClick(b: ArrangeBlock) {
+    if (suppressNextClick) { suppressNextClick = false; return; }
+    selectBlock(b);
   }
   function deleteSelected() {
     if (!selBlock) return;
@@ -449,10 +524,30 @@
         onclick={toggleRecord}
         title={recording
           ? 'Recording launches to the arrangement — click to stop'
-          : 'Record clip launches into the arrangement (clears + records fresh)'}
+          : recordMode === 'overdub'
+            ? 'Record clip launches into the arrangement (OVERDUB — keeps the take + merges new launches)'
+            : 'Record clip launches into the arrangement (REPLACE — clears + records fresh)'}
         aria-pressed={recording}
         data-testid={`clipplayer-record-${id}`}
       >●</button>
+      <!-- REPLACE ⇄ OVERDUB record-mode toggle. -->
+      <button
+        class="rec-mode"
+        class:overdub={recordMode === 'overdub'}
+        onclick={toggleRecordMode}
+        title={recordMode === 'overdub'
+          ? 'OVERDUB — arming keeps the take + merges new launches. Click for REPLACE.'
+          : 'REPLACE — arming clears + records fresh. Click for OVERDUB.'}
+        aria-pressed={recordMode === 'overdub'}
+        data-testid={`clipplayer-recmode-${id}`}
+      >{recordMode === 'overdub' ? 'OVR' : 'RPL'}</button>
+      <!-- Pop out the full-window arranger editor (timeline large + all ops). -->
+      <button
+        class="arr-open"
+        onclick={() => (arrangeEditorOpen = true)}
+        title="Open the full-window arranger editor"
+        data-testid={`clipplayer-arrange-open-${id}`}
+      >ARR ⤢</button>
       <button
         class="grid-btn"
         class:on={gridBoundHere}
@@ -478,12 +573,16 @@
              edit with the toolbar. -->
         <div class="song-view" data-testid="clipplayer-songview">
           <svg
+            bind:this={svgEl}
             class="song-tl"
             viewBox={`0 0 ${ARR_W} ${CLIP_LANES * ARR_LANE_H}`}
             width={ARR_W}
             height={CLIP_LANES * ARR_LANE_H}
             role="img"
             aria-label="arrangement timeline"
+            onpointermove={onBlockMove}
+            onpointerup={onBlockUp}
+            onpointercancel={onBlockUp}
           >
             {#each Array(CLIP_LANES) as _l, lane (lane)}
               <rect x="0" y={lane * ARR_LANE_H} width={ARR_W} height={ARR_LANE_H - 1}
@@ -495,10 +594,12 @@
                 x2={(bar * 4 / arrangeLen) * ARR_W} y2={CLIP_LANES * ARR_LANE_H} />
             {/each}
             {#each blocks as b (b.lane + ':' + b.startBeat)}
+              {@const dragging = isDragging(b)}
               <rect
                 class="song-block"
                 class:sel={isSel(b)}
-                x={blockX(b)}
+                class:dragging
+                x={dragging ? dragX() : blockX(b)}
                 y={b.lane * ARR_LANE_H + 1}
                 width={blockW(b)}
                 height={ARR_LANE_H - 3}
@@ -508,7 +609,8 @@
                 aria-label={`lane ${b.lane + 1} clip ${b.slot + 1} at beat ${b.startBeat}`}
                 data-lane={b.lane}
                 data-slot={b.slot}
-                onclick={() => selectBlock(b)}
+                onpointerdown={(ev) => onBlockDown(b, ev)}
+                onclick={() => onBlockClick(b)}
                 onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectBlock(b); } }}
               />
             {/each}
@@ -637,6 +739,10 @@
   </PatchPanel>
 </div>
 
+{#if arrangeEditorOpen}
+  <ClipArrangeEditor {id} {node} onClose={() => (arrangeEditorOpen = false)} />
+{/if}
+
 <style>
   .card {
     width: 300px;
@@ -737,6 +843,32 @@
     animation: rec-blink 1s steps(2) infinite;
   }
   @keyframes rec-blink { 50% { opacity: 0.5; } }
+  /* REPLACE/OVERDUB record-mode pill (next to REC). */
+  .rec-mode {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    padding: 3px 5px;
+    cursor: pointer;
+  }
+  .rec-mode.overdub { color: var(--accent, #e8b35b); border-color: var(--accent, #e8b35b); }
+  /* Pop-out arranger editor open button. */
+  .arr-open {
+    background: var(--control-bg, #222);
+    color: var(--text-dim, #999);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    line-height: 1;
+    padding: 3px 5px;
+    cursor: pointer;
+  }
+  .arr-open:hover { color: var(--accent, #c9f); border-color: var(--accent, #c9f); }
   .body {
     margin-top: 18px;
     padding: 0 12px;
@@ -758,10 +890,11 @@
     fill: hsl(var(--lane-hue) 65% 45%);
     stroke: hsl(var(--lane-hue) 70% 60%);
     stroke-width: 0.5;
-    cursor: pointer;
+    cursor: grab;
     rx: 1;
   }
   .song-block.sel { stroke: #fff; stroke-width: 1.5; }
+  .song-block.dragging { cursor: grabbing; opacity: 0.85; stroke: #fff; stroke-width: 1.5; }
   .song-playhead { stroke: var(--accent, #6cf); stroke-width: 1; opacity: 0.9; pointer-events: none; }
   .song-tools {
     display: flex;

@@ -57,6 +57,15 @@ const SKIP_RENDER: Record<string, string> = {
   // when a ROM is installed); handle count + CV/GATE wiring also covered by
   // the per-module-per-port specs.
   snes9x: 'fetches user-provided ROM (404s on clean checkout); covered by e2e/tests/snes9x.spec.ts',
+  // GIBRIBBON renders DOOM-WAD sprites; the shareware DOOM1.WAD is gitignored
+  // and baked in by the build-web job (SHA-pinned download from an external
+  // mirror). On a clean checkout — OR when that single-mirror download misses
+  // transiently in CI — the spawn-time fetch 404s, which this strict "no console
+  // errors" smoke rejects. Same shape as qbert/snes9x (its siblings were already
+  // exempted; gibribbon was overlooked → a latent flake that fired on PR #832's
+  // shard 4). Render coverage lives in e2e/tests/gibribbon.spec.ts; the real cure
+  // for the flake is hardening the build-web WAD acquisition (task #83).
+  gibribbon: 'renders the gitignored DOOM WAD (404s on clean checkout / transient build-web miss); covered by e2e/tests/gibribbon.spec.ts',
 };
 
 // WebGL-heavy modules whose FIRST-paint is slow on CI's SwiftShader software
