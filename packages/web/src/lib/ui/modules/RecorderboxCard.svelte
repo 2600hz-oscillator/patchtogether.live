@@ -107,6 +107,14 @@
   let saveFolder: FileSystemDirectoryHandle | null = $state(null);
   // The last chunk file the recorder reported saving (status line / a11y).
   let lastSavedChunk = $state<string | null>(null);
+  // Display name of the remembered destination folder (null = none chosen yet).
+  // (Read `.name` via a structural cast — the project's FileSystemDirectoryHandle
+  // typing doesn't surface it, but every real handle has a `.name`.)
+  let folderName = $derived<string | null>(
+    saveFolder ? ((saveFolder as { name?: string }).name ?? null) : null,
+  );
+  // Transient guidance under the folder row (e.g. the Chrome root-block hint).
+  let folderHint = $state<string | null>(null);
 
   // Recovery prompt state.
   let recoverable = $state<RecorderboxManifest[]>([]);
@@ -132,6 +140,32 @@
   function toggleRecord() {
     if (!support.canRecord) return;
     setData('recording', !recording);
+  }
+
+  // Re-pick the destination folder at ANY time (a user gesture — the button
+  // click — so showDirectoryPicker is allowed). Without this the first-picked
+  // folder is sticky and the only way to change it was deleting the module.
+  // showDirectoryPicker swallows BOTH a dismiss AND Chrome's "contains system
+  // files" root-block into 'cancel', so on an empty pick we surface the
+  // actionable subfolder hint (Chrome refuses readwrite on Documents/Desktop/
+  // Downloads/home roots — you must choose a SUBfolder).
+  async function changeFolder() {
+    if (recState === 'recording' || recState === 'finalizing') return;
+    const picked = await promptSaveFolder();
+    if (picked === 'cancel') {
+      folderHint = 'Pick a SUBFOLDER — Chrome blocks Documents/Desktop/Downloads roots ("contains system files").';
+      return;
+    }
+    if (picked == null) {
+      folderHint = 'This browser has no folder picker — recordings download instead.';
+      return;
+    }
+    if (!(await ensureHandleWritePermission(picked))) {
+      folderHint = 'Write permission was denied for that folder.';
+      return;
+    }
+    saveFolder = picked;
+    folderHint = null;
   }
 
   // Prompt the user for the OUTPUT location at the START of recording (the
@@ -509,6 +543,25 @@
       <span class="ext">.mp4</span>
     </label>
 
+    <div class="folder-row">
+      <span class="lbl">DIR</span>
+      <span
+        class="folder-name"
+        data-testid="recorderbox-folder"
+        title={folderName ? `Saving to: ${folderName}` : 'No folder chosen yet — you will be prompted on Record'}
+      >{folderName ?? '(chosen on record)'}</span>
+      <button
+        class="folder-btn nodrag"
+        onclick={changeFolder}
+        disabled={recState === 'recording' || recState === 'finalizing'}
+        data-testid="recorderbox-change-folder"
+        title="Pick a destination subfolder. Chrome blocks Documents/Desktop/Downloads roots."
+      >{folderName ? 'CHANGE' : 'PICK'}</button>
+    </div>
+    {#if folderHint}
+      <span class="badge subtle" data-testid="recorderbox-folder-hint">{folderHint}</span>
+    {/if}
+
     <label class="quality-row">
       <span class="lbl">SIZE</span>
       <select
@@ -620,6 +673,22 @@
   }
   .filename:focus { outline: none; border-color: var(--accent); }
   .ext { font-size: 0.62rem; color: var(--text-dim); font-family: ui-monospace, monospace; }
+  .folder-row { display: flex; align-items: center; gap: 6px; }
+  .folder-row .lbl {
+    font-size: 0.6rem; color: var(--text-dim); font-family: ui-monospace, monospace;
+  }
+  .folder-name {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text); font-size: 0.7rem; font-family: ui-monospace, monospace;
+  }
+  .folder-btn {
+    background: var(--input-bg, #111); color: var(--text-dim);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 3px 7px; font-size: 0.58rem; letter-spacing: 0.04em;
+    font-family: ui-monospace, monospace; cursor: pointer;
+  }
+  .folder-btn:hover:not(:disabled) { border-color: var(--accent-dim); color: var(--text); }
+  .folder-btn:disabled { opacity: 0.45; cursor: not-allowed; }
   .quality-row { display: flex; align-items: center; gap: 6px; }
   .quality-row .lbl {
     font-size: 0.6rem; color: var(--text-dim); font-family: ui-monospace, monospace;
