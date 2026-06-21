@@ -698,15 +698,7 @@ export const STRICT_VRT_MODULES = new Set<string>([
   // Re-add once linux baseline is re-captured + linux/audioOut removed
   // from EXEMPT_BASELINE_PAIRS.
   'buggles',              // bug-themed audio card
-  // cartesian / polyseqz / sequencer: TEMPORARILY demoted from the strict lane
-  // by the baked-in gate-sampled S&H toggle (feat/sequencers). The new S&H
-  // header button changed every card's title bar, so the darwin baselines were
-  // regenerated locally but the LINUX baselines are pending a `vrt-update.yml`
-  // workflow_dispatch (see EXEMPT_BASELINE_PAIRS → linux/cartesian,
-  // linux/polyseqz, linux/sequencer). The strict lane requires BOTH platform
-  // baselines current (vrt-meta self-test), so these three ride the full
-  // (informational) VRT lane until the linux baselines land — then re-add them
-  // here + drop the linux/* pairs from EXEMPT_BASELINE_PAIRS.
+  'cartesian',            // X/Y grid sequencer card (S&H header toggle; linux baseline regenerated)
   'charlottesEchos',      // delay/echo knob card
   'destroy',              // destruction/distortion knob card
   'drummergirl',          // drum-sample card (chrome only — sample preview is static post-load)
@@ -718,13 +710,11 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'mixer',                // 4-channel mixer fader card
   'mixmstrs',             // master mixer fader card
   'noise',                // noise-source knob card
-  // polyseqz: demoted (S&H toggle, linux baseline pending) — see the cartesian
-  // note above.
+  'polyseqz',             // poly chord sequencer card (S&H header toggle; linux baseline regenerated)
   'qbrt',                 // q-bit/quantizer knob card
   'reverb',               // reverb knob card
   'score',                // score/note display card
-  // sequencer: demoted (S&H toggle, linux baseline pending) — see the cartesian
-  // note above.
+  'sequencer',            // 32-step sequencer card (S&H header toggle; linux baseline regenerated)
   'shimmershine',         // shimmer-reverb knob card
   'stereovca',            // stereo VCA fader card
   'sticky',               // sticky-note widget (static)
@@ -755,19 +745,6 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // per-module-per-port + behavioral sweeps + the bespoke real-source-chain
   // clipplayer.spec.ts (TIMELORDE → clip → voice → audible RMS).
   'linux/clipplayer',
-  // CARTESIAN / POLYSEQZ / SEQUENCER: the baked-in gate-sampled S&H toggle
-  // (feat/sequencers) added an S&H header button to each card, changing every
-  // title bar. Darwin baselines regenerated locally (vrt.spec per-card +
-  // playhead.spec for sequencer/polyseqz); linux baselines pending a
-  // `vrt-update.yml` workflow_dispatch on this branch. These three were
-  // TEMPORARILY demoted from STRICT_VRT_MODULES (see the note there) so the
-  // strict gate doesn't fail on the stale linux baseline; re-promote + drop
-  // these pairs once the linux baselines land. Functional coverage:
-  // sequencer-snh / polyseqz-snh / cartesian-snh unit suites + the
-  // snh-hold.spec.ts real-source-chain e2e + the snh-seq-scope composite VRT.
-  'linux/cartesian',
-  'linux/polyseqz',
-  'linux/sequencer',
   // KRIA: darwin baseline (the 4-track grid sequencer card — track/page
   // selectors + a 16-step editor grid + a 16-slot pattern strip + BPM knob; no
   // animated canvas) captured locally; linux baseline pending a `vrt-update.yml`
@@ -1109,17 +1086,6 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/nibbles-cv-50',
   'linux/nibbles-cv-75',
   'linux/nibbles-cv-max',
-  // VCO → SEQUENCER → SCOPE : baked-in gate-sampled S&H (feat/sequencers
-  // S&H toggle). Two scenes (S&H ON mid-hold vs OFF continuous) show the
-  // sequencer's pitch CV HOLDING the note across a rest (ON, trace high) vs
-  // collapsing to 0 (OFF, trace centred), side-by-side with the VCO sine on
-  // ch2. Darwin baselines captured on this machine; linux baselines pending a
-  // `vrt-update.yml` workflow_dispatch (cross-platform paint timing of three
-  // cards in one viewport). The hard regression gate is the per-state
-  // assertion in e2e/tests/snh-hold.spec.ts (SCOPE ch1 held vs continuous) +
-  // the per-module S&H unit suites.
-  'linux/snh-seq-scope-on',
-  'linux/snh-seq-scope-off',
   // MOOG 921A / 921B / 904B (batch 1) — promoted out of EXEMPT_FROM_VRT with
   // darwin baselines captured on this machine (deterministic beige Moog
   // faceplates with now-legible engraved-black labels from the shared MoogPanel
