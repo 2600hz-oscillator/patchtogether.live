@@ -304,6 +304,13 @@ function preflightSolo(): void {
   const load1 = loadavg()[0] ?? 0;
   // GPU co-tenants (browsers / native GL apps) consuming real CPU at pre-flight
   // time — before WE spawn any chromium, so anything here is someone else's.
+  // Threshold = a CLEAR heavy contender, not incidental idle: a backgrounded
+  // browser tab idles at ~5-10% CPU and barely touches the GPU (the attest that
+  // false-refused on "9% Microsoft Edge" at load 2.07 — verified harmless),
+  // whereas the runs that actually starved specs had co-tenants at 28-38% AND
+  // load >5. So gate per-process at 25% and let the aggregate load check
+  // (load > cores·0.5) catch broad contention. Override via WEBGL_ATTEST_BUSY_CPU.
+  const COTENANT_CPU_MIN = Math.max(1, parseFloat(process.env.WEBGL_ATTEST_BUSY_CPU || '25') || 25);
   const COTENANT_RE = /Google Chrome|Microsoft Edge|Safari|Chromium|firefox|Brave|Electron|Patchtogether\.app|Spotify/i;
   let cotenants: string[] = [];
   try {
@@ -312,7 +319,7 @@ function preflightSolo(): void {
       .map((l) => l.trim())
       .filter(Boolean)
       .map((l) => { const i = l.indexOf(' '); return { cpu: parseFloat(l.slice(0, i)) || 0, name: l.slice(i + 1) }; })
-      .filter((p) => p.cpu >= 8 && COTENANT_RE.test(p.name))
+      .filter((p) => p.cpu >= COTENANT_CPU_MIN && COTENANT_RE.test(p.name))
       .sort((a, b) => b.cpu - a.cpu)
       .map((p) => `${p.cpu.toFixed(0)}% ${p.name.split('/').pop()}`);
   } catch { /* ps unavailable → fall back to load only */ }
