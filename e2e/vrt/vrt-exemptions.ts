@@ -94,6 +94,14 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   feedback: [{ selector: 'canvas' }],
   videoMixer: [{ selector: 'canvas' }],
   shapes: [{ selector: 'canvas' }],
+  // SPIROGRAPHS — live spirograph generator with a continuously-animated OUT
+  // preview canvas (each spiro's center drifts + bounces every frame off the
+  // engine clock). Mask the canvas so the deterministic chrome (COUNT fader +
+  // 1/2/3 spiro selector + IN/OUT toggle + chroma colorwheel + per-spiro fader
+  // bank + the sectioned PatchPanel) is the regression gate. Currently in
+  // EXEMPT_FROM_VRT below; the mask covers the live preview if promoted into
+  // MODULES once darwin/linux baselines are captured.
+  spirographs: [{ selector: 'canvas' }],
   monoglitch: [{ selector: 'canvas' }],
   // TOYBOX — swappable fragment-shader source. The card carries a live
   // animated preview canvas (the layer-0 shader runs off the engine clock),
@@ -660,6 +668,18 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // + per-module-per-port provide functional coverage. Promote + capture baselines
   // once darwin + linux PNGs are captured via vrt-update.yml workflow_dispatch.
   twotracks: 'VRT baseline pending — 2-reel tape-loop emulator P1. Waveform canvas masked in MODULES. Unit (transport) + e2e (record→play→SCOPE RMS) + per-module-per-port cover function. Promote once darwin + linux baselines captured via vrt-update.yml.',
+  // SPIROGRAPHS — 1–3 independent spirograph video generator. The card carries
+  // a live OUT preview canvas (each spiro's center drifts + bounces every frame
+  // off the engine clock), so the standard solo-spawn capture is non-
+  // deterministic; the canvas is MASKED in VRT_MODULE_MASKS above and the
+  // deterministic chrome (COUNT fader + 1/2/3 spiro selector + IN/OUT toggle +
+  // chroma colorwheel + per-spiro fader bank + sectioned PatchPanel) is the
+  // regression gate. The curve + bounce math is covered by the pure
+  // spirographs.test.ts (hypotrochoid/epitrochoid points, revolutions-to-close,
+  // reflectIntoBand/advanceCenter, sampleSpiro) + the per-module-per-port sweep.
+  // Promote into MODULES + capture darwin/linux baselines via `task vrt:update`
+  // on each platform in a follow-up PR.
+  spirographs: 'VRT baseline pending — live drifting/bouncing spirograph OUT preview canvas defeats deterministic solo-spawn capture (canvas masked above). Pure spirographs.test.ts (trochoid points + revolutions-to-close + bounce-constraint + sampleSpiro) + per-module-per-port provide coverage. Capture darwin/linux baselines via `task vrt:update` in a follow-up PR.',
 };
 
 /** Strict VRT subset — the deterministic, pure-DOM/CSS knob-and-fader cards
