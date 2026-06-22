@@ -51,23 +51,24 @@
 // reads chased, deterministically.
 //
 // ----------------------------------------------------------------------------
-// DEFERRAL — the VIDEOBOX -> BENTBOX -> VIDEO-OUT test's PIXEL read.
+// RE-ENABLED — the VIDEOBOX -> BENTBOX -> VIDEO-OUT test's PIXEL read.
 // ----------------------------------------------------------------------------
-// BENTBOX is a HARD determinism blocker for the DRS pixel path and CANNOT be
-// frozen:
-//   * it derives its shader `uTime` from `performance.now()` (bentbox.ts
-//     startWallMs + per-draw `performance.now()`), which `__videoEngineFreezeTime`
-//     does NOT pin; and
-//   * it ACCUMULATES state across frames — `framesElapsed` + a ping-pong feedback
-//     ring (uPrev), so each step reads a different ring state.
-// Reading VIDEOBOX's frame DOWNSTREAM of BENTBOX is therefore non-deterministic
-// — this is the exact root cause that sank the prior (Phase-2a) attempt, which
-// sampled the canvas AFTER bentbox. So for the BENTBOX-chain test we do NOT add
-// a DRS pixel read; we keep its engine-state liveness guards (which DO prove the
-// VIDEOBOX -> BENTBOX -> OUT chain is wired + carrying live frames) and leave
-// the VISUAL pixel confirmation on its EXISTING local-only mechanism
-// (canvasStats, gated behind visualChecksEnabled()), with a NOTE. Weakening it
-// to a vacuous DRS read through a non-freezable module is not an option.
+// BENTBOX used to be a HARD determinism blocker for the DRS pixel path because
+// it derived its shader `uTime` from `performance.now()`, which
+// `__videoEngineFreezeTime` does NOT pin. bentbox.ts now ships a flag-gated
+// test seam `__bentboxFreezeTime` (mirroring b3ntb0x's __b3ntb0xFreezeTimeSec):
+// when set to a number it pins the noise/drift clock to a constant. With that
+// plus feedback_gain=0 + noise=0, the only per-frame variation is the
+// field-parity toggle (framesElapsed & 1), which returns to the same state
+// across an EVEN-count burst — so BENTBOX's own out FBO is now a frame-STABLE,
+// freezable DRS target.
+//
+// So the chain test now reads BENTBOX's OWN out FBO via a frozen synchronous
+// burst (a real DRS pixel read), in ADDITION to keeping the engine-state
+// liveness guards that prove the VIDEOBOX -> BENTBOX -> OUT chain is wired +
+// carrying live frames. We prefer reading BENTBOX's own FBO over the downstream
+// videoOut: it is the closest freezable surface and avoids any extra blit
+// non-determinism. The old local-only canvasStats fallback is retired.
 //
 // The first test (VIDEOBOX -> VIDEO-OUT, no bentbox) reads VIDEOBOX's OWN FBO,
 // which IS freezable, so it gets the full DRS treatment.
@@ -75,7 +76,6 @@
 import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
-import { visualChecksEnabled } from './_visual-checks';
 import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/lobby-clip.webm', import.meta.url));
@@ -90,35 +90,17 @@ async function setup(page: import('@playwright/test').Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  // Pause rAF (test owns the frame count) + pin the clock BEFORE boot.
+  // Pause rAF (test owns the frame count) + pin the engine clock BEFORE boot.
   await installRenderSmokeHooks(page);
+  // Also pin BENTBOX's own performance.now()-based noise/drift clock so the
+  // VIDEOBOX -> BENTBOX -> OUT chain test can read a frame-stable BENTBOX FBO.
+  // Harmless for the bentbox-free test (no bentbox node reads the flag).
+  await page.addInitScript(() => {
+    (window as unknown as { __bentboxFreezeTime?: number }).__bentboxFreezeTime = 2.0;
+  });
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   return errors;
-}
-
-/** Mean luminance + per-channel max over a card canvas. LOCAL-ONLY visual
- *  confirmation for the deferred BENTBOX-chain test (its FBO is non-freezable).
- *  NOT used by the DRS path. */
-async function canvasStats(
-  page: import('@playwright/test').Page,
-  testid: string,
-): Promise<{ mean: number; max: number }> {
-  const handle = page.locator(`canvas[data-testid="${testid}"]`);
-  await expect(handle, `${testid} present`).toHaveCount(1);
-  return await handle.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return { mean: 0, max: 0 };
-    const { data } = ctx.getImageData(0, 0, c.width, c.height);
-    let sum = 0, max = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      const v = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
-      sum += v;
-      if (v > max) max = v;
-    }
-    return { mean: sum / (data.length / 4), max };
-  });
 }
 
 /** Drive the video engine's step() over a bounded window with macrotask gaps
@@ -250,7 +232,10 @@ test.describe('VIDEOBOX video output reaches downstream', () => {
     await spawnPatch(page,
       [
         { id: 'vb',  type: 'videobox', position: { x: 40,  y: 40 }, domain: 'video' },
-        { id: 'bb',  type: 'bentbox',  position: { x: 420, y: 40 }, domain: 'video' },
+        // feedback_gain=0 + noise=0 → with __bentboxFreezeTime pinned the only
+        // per-frame variation is the field-parity toggle (stable across an
+        // even-count burst) → BENTBOX's out FBO is a frame-stable DRS target.
+        { id: 'bb',  type: 'bentbox',  position: { x: 420, y: 40 }, domain: 'video', params: { feedback_gain: 0, noise: 0 } },
         { id: 'out', type: 'videoOut', position: { x: 820, y: 40 }, domain: 'video' },
       ],
       [
@@ -273,25 +258,35 @@ test.describe('VIDEOBOX video output reaches downstream', () => {
     expect(live.outSource, 'VIDEO-OUT fed by BENTBOX').toBe('bb');
     expect(live.outHasInput, 'VIDEO-OUT latched an input texture (via BENTBOX)').toBe(true);
 
-    // DRS DEFERRED (NOT weakened): the PIXEL read for this chain stays on its
-    // EXISTING local-only mechanism. BENTBOX is a HARD determinism blocker — its
-    // shader uTime comes from performance.now() (NOT pinned by the freeze hook)
-    // and it accumulates framesElapsed + a ping-pong feedback ring, so its
-    // output FBO is non-deterministic per frame. Reading VIDEOBOX's frame
-    // DOWNSTREAM of BENTBOX is the exact non-determinism that sank the prior
-    // Phase-2a attempt. We therefore do NOT add a frozen DRS read through
-    // BENTBOX (that would be vacuous / flaky); the engine-state liveness guards
-    // above are the deterministic chain proof, and the visual pixel confirmation
-    // runs LOCAL-ONLY (visualChecksEnabled()) on the existing canvasStats read.
-    // A module-source freeze hook on BENTBOX (pin uTime + a settled-frame pin)
-    // would be needed to DRS this read; that is out of scope for a test-only
-    // conversion.
-    if (visualChecksEnabled()) {
-      const stats = await canvasStats(page, 'video-out-canvas');
-      await page.screenshot({ path: 'test-results/videobox-bentbox-output.png' });
-      expect(stats.max, `VIDEO-OUT (via BENTBOX) has bright pixels (mean=${stats.mean.toFixed(1)} max=${stats.max})`).toBeGreaterThan(40);
-      expect(stats.mean, `VIDEO-OUT (via BENTBOX) not near-black (mean=${stats.mean.toFixed(1)})`).toBeGreaterThan(6);
-    }
+    // DRS PIXEL READ (re-enabled — bentbox.ts now ships __bentboxFreezeTime,
+    // pinned in setup()). BENTBOX used to be a HARD determinism blocker because
+    // its shader uTime came from performance.now(), which __videoEngineFreezeTime
+    // does NOT pin. With the bentbox clock now frozen + feedback_gain=0 + noise=0,
+    // the only per-frame variation is the field-parity toggle (framesElapsed & 1),
+    // which returns to the same state across an EVEN-count burst — so BENTBOX's
+    // OWN out FBO is now a freezable, frame-STABLE DRS target.
+    //
+    // We read BENTBOX's OWN out FBO ({ nodeId: 'bb' } → its single `out` FBO),
+    // not the downstream videoOut: it is the closest freezable surface to the
+    // bend pipeline and avoids any extra blit non-determinism. This asserts the
+    // same "VIDEO chain carries non-black, structured content" fact the old
+    // local-only canvasStats read chased, now renderer-tolerant + on CI.
+    const a = await stepAndReadStats(page, { nodeId: 'bb', steps: FIXED_STEPS });
+    assertRenderStats(a, FIXED_STEPS);
+
+    // DETERMINISM: a second independent burst (engine clock + bentbox clock both
+    // frozen, even-count burst → same field parity) reads a frame-STABLE FBO.
+    // NB: BENTBOX's shader is now clock-pure, but its SOURCE is a live decoding
+    // <video> (no freeze seam on the upload path yet), so an rVFC decode CAN land
+    // in the async gap between the two bursts and upload a different frame — we
+    // therefore use a renderer-tolerant epsilon (same rationale as the no-bentbox
+    // test's single-burst note), not a bit-exact equality.
+    const b = await stepAndReadStats(page, { nodeId: 'bb', steps: FIXED_STEPS });
+    expect(b.framesDelta, 'second burst also advanced the exact frame count').toBe(FIXED_STEPS);
+    expect(
+      Math.abs(b.mean - a.mean),
+      `frozen BENTBOX output is frame-stable (mean ${a.mean.toFixed(3)} vs ${b.mean.toFixed(3)})`,
+    ).toBeLessThan(6);
 
     expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
   });
