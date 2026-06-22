@@ -5,14 +5,6 @@
 
 import { expect, type Page, type APIRequestContext } from '@playwright/test';
 
-/** Visual canvas/pixel/frame-advance checks are timing-flaky under LOAD — CI's
- *  SwiftShader rAF throttling AND the real-GPU webgl attest's saturated serial
- *  run (E2E_REAL_GPU=1). Run them only on an UNLOADED interactive local run;
- *  under CI or the attest, the deterministic engine-state guards are the proof. */
-export function visualChecksEnabled(): boolean {
-  return !process.env.CI && process.env.E2E_REAL_GPU !== '1';
-}
-
 export interface SpawnNode {
   id: string;
   type: string;

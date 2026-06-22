@@ -42,7 +42,8 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
-import { spawnPatch, visualChecksEnabled } from './_helpers';
+import { spawnPatch } from './_helpers';
+import { visualChecksEnabled } from './_visual-checks';
 import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
 /** Read AUDIO OUT's terminal tap (the limiter feeding ctx.destination) and

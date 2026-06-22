@@ -23,7 +23,8 @@
 // bug.)
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
-import { spawnPatch, visualChecksEnabled } from './_helpers';
+import { spawnPatch } from './_helpers';
+import { visualChecksEnabled } from './_visual-checks';
 
 /** ENGINE-STATE proof of per-OUTPUT routing. Returns, for each OUTPUT node,
  *  the source node id the video engine resolves as its `in` feed plus whether

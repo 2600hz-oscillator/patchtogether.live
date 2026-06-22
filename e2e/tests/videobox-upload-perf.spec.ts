@@ -35,7 +35,8 @@
 import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
-import { spawnPatch, visualChecksEnabled } from './_helpers';
+import { spawnPatch } from './_helpers';
+import { visualChecksEnabled } from './_visual-checks';
 
 const LOCAL_CLIP =
   "/Users/2600hz/Documents/workspace/vid_resize/Let's All Go To The Lobby [TH2j1YnIne0].webm";

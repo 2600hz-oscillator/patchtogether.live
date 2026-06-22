@@ -19,7 +19,8 @@
 
 import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
-import { spawnPatch, visualChecksEnabled } from './_helpers';
+import { spawnPatch } from './_helpers';
+import { visualChecksEnabled } from './_visual-checks';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/lobby-clip.webm', import.meta.url));
 
