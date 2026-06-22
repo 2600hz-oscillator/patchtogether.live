@@ -68,6 +68,12 @@ export const WEBGL_HEAVY_GLOBS = [
   // serialized heavy lane. (Their `@webgl-smoke` tests still also run in the
   // SwiftShader smoke floor.)
   '**/render-worker-*.spec.ts',
+  // GPU-attest rebuild (plan §5 Layer B): the deterministic render-smoke (DRS)
+  // specs — freeze the engine clock + pause its rAF loop, drive step() a fixed
+  // count synchronously, readPixels the node FBO once. Real-GPU pixel reads, so
+  // they belong in the serialized heavy lane. This glob auto-enrolls every
+  // `<module>-render-smoke.spec.ts` as Phase 1+ migrates modules onto the DRS.
+  '**/*-render-smoke.spec.ts',
 ] as const;
 
 // Phase 2 RE-BIN (webgl-suite-optimization §2/§7-1): these spec files match a
