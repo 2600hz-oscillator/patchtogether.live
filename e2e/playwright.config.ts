@@ -135,8 +135,8 @@ export default defineConfig({
       // live in their own projects below and are unaffected.
       testIgnore:
         WEBGL_HEAVY_MODE === 'exclude'
-          ? ['**/camera-input.spec.ts', '**/audio-in.spec.ts', ...EFFECTIVE_HEAVY_GLOBS]
-          : ['**/camera-input.spec.ts', '**/audio-in.spec.ts'],
+          ? ['**/camera-input.spec.ts', '**/camera-input-integration.spec.ts', '**/audio-in.spec.ts', ...EFFECTIVE_HEAVY_GLOBS]
+          : ['**/camera-input.spec.ts', '**/camera-input-integration.spec.ts', '**/audio-in.spec.ts'],
       ...(WEBGL_HEAVY_MODE === 'only' ? { testMatch: [...EFFECTIVE_HEAVY_GLOBS] } : {}),
       use: {
         ...devices['Desktop Chrome'],
@@ -183,7 +183,14 @@ export default defineConfig({
       // most cases, but --use-fake-ui covers the prompt edge cases).
       // Not WebGL-heavy → functional (sharded) lane; disabled in 'only' mode
       // (empty testMatch) so the e2e-video job runs ONLY the heavy globs.
-      testMatch: WEBGL_HEAVY_MODE === 'only' ? [] : ['**/camera-input.spec.ts'],
+      // camera-input.spec.ts is the deterministic render smoke (also driven by
+      // the attest's Pass C via an explicit positional spec arg);
+      // camera-input-integration.spec.ts is the getUserMedia integration that
+      // runs ONLY here in the lighter sharded lane (kept out of the attest).
+      testMatch:
+        WEBGL_HEAVY_MODE === 'only'
+          ? []
+          : ['**/camera-input.spec.ts', '**/camera-input-integration.spec.ts'],
       use: {
         ...devices['Desktop Chrome'],
         // Grant camera permission in this project so the spec doesn't

@@ -1,29 +1,57 @@
 // e2e/tests/camera-input.spec.ts
 //
-// CAMERA module — end-to-end demo verification.
+// DETERMINISTIC render-smoke (DRS) for CAMERA's render path.
 //
-// Spawns CAMERA → OUTPUT in the patch graph, clicks "Request access" to
-// kick off getUserMedia (Chromium answers with the synthetic fake video
-// device under --use-fake-device-for-media-stream), and asserts:
-//   1. the device dropdown picks up at least the fake device
-//   2. the status row reaches "streaming"
-//   3. the OUTPUT canvas has non-trivial pixel variance (frames are
-//      reaching the engine, getting uploaded as a texture, and rendered
-//      through the pass-through shader)
+// WHY THIS REPLACED THE OLD LIVE-STREAM TEST: the previous version spawned
+// CAMERA → OUTPUT, kicked off getUserMedia (Chromium's fake device), waited for
+// the card's state machine to reach 'streaming', then waitForTimeout(800) and
+// sampled the OUTPUT canvas for live frames. That chain depends on THREE
+// un-synchronized async clocks — getUserMedia delivery, the card state machine,
+// and the rAF render/blit — and under the attest's CUMULATIVE GPU load (Pass C
+// runs after the heavy passes have hammered the GPU) the stream stalled past the
+// 10s 'streaming' timeout → the test hit its 30s ceiling and the worker tore
+// down ("Target page … has been closed"). It passed 10/10 in isolation but
+// flaked under load: a classic wall-clock-sampling-of-an-unsynchronized-signal
+// flake (the GPU-attest-rebuild target).
 //
-// Runs under the `chromium-camera` Playwright project — see
-// playwright.config.ts. The fake-camera flag is project-scoped so
-// other tests don't accidentally see a synthetic webcam.
+// This DRS version pins the engine clock + pauses its rAF loop and injects a
+// DETERMINISTIC synthetic frame via the module's `__camerainputTestFrame` seam,
+// then drives engine.step() a FIXED number of frames synchronously and reads
+// CAMERA's OWN output FBO once with gl.readPixels. It exercises the real render
+// path (source-texture upload → pass-through shader → gain → cover-scale → FBO)
+// with NO dependency on getUserMedia, the 'streaming' state, or rAF timing — so
+// it is bit-stable on every run regardless of GPU load. No waitForTimeout, no
+// poll, no animation-diff, no exact-pixel assert.
+//
+// The getUserMedia INTEGRATION coverage (device enumeration, request flow,
+// 'streaming' state, local-only hint, 'no-cameras-found') lives in
+// camera-input-integration.spec.ts, which runs ONLY in the lighter functional
+// (sharded) e2e lane — where the live-stream flow has always been stable — and
+// is deliberately OUT of the cumulative-load attest basis.
+//
+// Runs under the `chromium-camera` Playwright project (camera permission
+// pre-granted) so the card's onMount auto-acquire succeeds quietly; the injected
+// frame, not the acquired stream, drives the asserted pixels.
 
 import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
-test.describe('CAMERA → OUTPUT (fake webcam)', () => {
-  test('renders the fake device into OUTPUT canvas', async ({ page }) => {
+const FIXED_STEPS = 6;
+
+test.describe('CAMERA → OUTPUT (deterministic render smoke)', () => {
+  test('injected frame renders through the camera pass to a non-black, frame-stable FBO', async ({ page }) => {
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => {
-      if (m.type() === 'error') errors.push(m.text());
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    // Pause the engine rAF loop (the test owns the exact frame count), pin the
+    // clock, AND enable the deterministic camera frame — all BEFORE boot so the
+    // very first draw uploads the synthetic frame.
+    await installRenderSmokeHooks(page);
+    await page.addInitScript(() => {
+      (window as unknown as { __camerainputTestFrame?: boolean }).__camerainputTestFrame = true;
     });
 
     await page.goto('/');
@@ -49,145 +77,22 @@ test.describe('CAMERA → OUTPUT (fake webcam)', () => {
     await expect(page.locator('.svelte-flow__node-cameraInput'), 'CAMERA visible').toBeVisible();
     await expect(page.locator('.svelte-flow__node-videoOut'), 'OUTPUT visible').toBeVisible();
 
-    // The device dropdown should populate from enumerateDevices on mount.
-    // With the fake-device flag, Chromium emits at least one virtual
-    // 'videoinput' entry. Wait for it to land before clicking Request.
-    const select = page.locator('[data-testid="camera-device-select"]');
-    await expect(select).toBeVisible();
-    // Give the async refreshDevices() a beat to populate options.
-    await page.waitForFunction(() => {
-      const el = document.querySelector(
-        '[data-testid="camera-device-select"]',
-      ) as HTMLSelectElement | null;
-      return el ? el.options.length > 0 : false;
-    }, undefined, { timeout: 5_000 });
+    // Drive a FIXED burst synchronously (no rAF, no waitForTimeout) so the
+    // injected frame uploads + renders, then read CAMERA's OWN output texture.
+    // The synthetic checker is dense + saturated → the DEFAULT non-black floor
+    // (2%) and variance floor apply (no sparse override needed).
+    const a = await stepAndReadStats(page, { nodeId: 'v-cam', steps: FIXED_STEPS });
+    assertRenderStats(a, FIXED_STEPS);
 
-    // Under Chromium's --use-fake-ui-for-media-stream + camera permission
-    // pre-granted (project-level), the card's onMount auto-acquire fires
-    // because labels are visible immediately and node.params.enabled is 1
-    // by default. So the state machine may already be 'streaming' before
-    // we get here, OR still 'idle'. Handle both: click Request Access if
-    // visible, then wait for streaming. (If it's not visible, we're
-    // already in streaming/paused/etc.)
-    const requestBtn = page.locator('[data-testid="camera-request-access"]');
-    // Only click when the button is actually ENABLED. On a fast machine the
-    // onMount auto-acquire has often already fired by the time we get here, so
-    // the button is rendered DISABLED and about to detach (it swaps to
-    // Pause/Resume) — a force-click then races the detach and hangs the full
-    // 30s ("element was detached from the DOM, retrying"). A disabled button
-    // means streaming is already on its way, so skip the click and fall through
-    // to the streaming wait. The .catch() covers the residual detach-mid-click
-    // race when the button WAS enabled at check time.
-    if (
-      (await requestBtn.count()) > 0 &&
-      (await requestBtn.isVisible().catch(() => false)) &&
-      (await requestBtn.isEnabled().catch(() => false))
-    ) {
-      await requestBtn.click({ noWaitAfter: true }).catch(() => {
-        /* auto-acquire detached the button — streaming is already starting */
-      });
-    }
-
-    // Wait for the state machine to reach 'streaming'.
-    const status = page.locator('[data-testid="camera-status"]');
-    await expect(status).toHaveAttribute('data-state', 'streaming', {
-      timeout: 10_000,
-    });
-
-    // Allow a few rAF ticks for the engine to upload the texture and
-    // render through OUTPUT to the visible canvas.
-    await page.waitForTimeout(800);
-
-    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
-    await expect(canvas, 'video-out canvas in DOM').toHaveCount(1);
-
-    const stats = await canvas.evaluate((el) => {
-      const c = el as HTMLCanvasElement;
-      const ctx = c.getContext('2d');
-      if (!ctx) return null;
-      const img = ctx.getImageData(0, 0, c.width, c.height);
-      const data = img.data;
-      let n = 0;
-      let sum = 0;
-      let sumSq = 0;
-      let nonZero = 0;
-      let greenAccum = 0;
-      let redAccum = 0;
-      for (let i = 0; i < data.length; i += 16) {
-        const r = data[i]!;
-        const g = data[i + 1]!;
-        const b = data[i + 2]!;
-        const v = (r + g + b) / 3;
-        sum += v;
-        sumSq += v * v;
-        if (v > 8) nonZero++;
-        greenAccum += g;
-        redAccum += r;
-        n++;
-      }
-      const mean = sum / n;
-      const variance = sumSq / n - mean * mean;
-      return {
-        mean,
-        variance,
-        nonZero,
-        samples: n,
-        greenMean: greenAccum / n,
-        redMean: redAccum / n,
-      };
-    });
-
-    expect(stats, 'pixel-stats sample').not.toBeNull();
-    if (!stats) return;
-
-    // Variance > 50: not a flat colour. A successful camera feed should
-    // give us alternating colours from the fake device's spinning ball
-    // pattern.
-    expect(stats.variance, `variance ${stats.variance} > 50`).toBeGreaterThan(50);
-    // Non-zero pixels > 5%: the canvas isn't blank.
-    expect(stats.nonZero / stats.samples, 'fraction of bright pixels > 5%').toBeGreaterThan(0.05);
-
-    // Local-only hint must be visible while streaming. The CAMERA stream
-    // is not multiplayer-streamed (deferred to a future phase — see
-    // .myrobots/plans/module-camera-input.md); the in-card text keeps
-    // user expectations honest.
-    const localOnlyHint = page.locator('[data-testid="camera-local-only-hint"]');
-    await expect(localOnlyHint, 'local-only hint visible while streaming').toBeVisible();
-    await expect(localOnlyHint).toContainText(/local only/i);
-    await expect(localOnlyHint).toContainText(/won't see/i);
-
-    await page.screenshot({ path: 'test-results/camera-input-demo.png', fullPage: false });
+    // DETERMINISM: a second independent burst (clock still frozen, frame fixed)
+    // must produce a frame-stable result — same mean + variance to a tight
+    // epsilon. A genuine black/flat regression still fails; driver pixel
+    // divergence never trips it.
+    const b = await stepAndReadStats(page, { nodeId: 'v-cam', steps: FIXED_STEPS });
+    expect(b.framesDelta, 'second burst also advanced the exact frame count').toBe(FIXED_STEPS);
+    expect(Math.abs(b.mean - a.mean), `frozen camera output is frame-stable (mean ${a.mean.toFixed(3)} vs ${b.mean.toFixed(3)})`).toBeLessThan(0.5);
+    expect(Math.abs(b.variance - a.variance), 'frozen camera output variance is frame-stable').toBeLessThan(1.0);
 
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
-  });
-
-  test('shows "no cameras" if enumerateDevices returns empty', async ({ page }) => {
-    // Override navigator.mediaDevices.enumerateDevices BEFORE any module
-    // mounts so the CAMERA card sees an empty device list. Verifies the
-    // 'no-cameras-found' state is reachable from the UI without us
-    // having to disable the fake-camera flag at the browser level.
-    await page.addInitScript(() => {
-      const md = navigator.mediaDevices;
-      if (!md) return;
-      const orig = md.enumerateDevices.bind(md);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (md as any).enumerateDevices = async () => {
-        const all = await orig();
-        // Strip videoinput entries to simulate no camera.
-        return all.filter((d) => d.kind !== 'videoinput');
-      };
-    });
-
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    await spawnPatch(page, [
-      { id: 'v-cam', type: 'cameraInput', position: { x: 80, y: 60 }, domain: 'video' },
-    ]);
-
-    const status = page.locator('[data-testid="camera-status"]');
-    await expect(status).toHaveAttribute('data-state', 'no-cameras-found', {
-      timeout: 5_000,
-    });
   });
 });
