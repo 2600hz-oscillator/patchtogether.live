@@ -755,7 +755,16 @@ export const b3ntb0xDef: VideoModuleDef = {
       draw(frame) {
         const g = frame.gl;
         const inputTex = frame.getInputTexture(node.id, 'in');
-        const tSec = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startWallMs) / 1000;
+        // Subcarrier-drift clock. Normally wall-clock-relative; a TEST-ONLY seam
+        // (`globalThis.__b3ntb0xFreezeTimeSec`, flag-gated, zero production impact —
+        // parallels camera's __camerainputTestFrame / the engine freeze) pins it to
+        // a constant so the deterministic render-smoke (b3ntb0x-render-smoke.spec.ts)
+        // gets an IDENTICAL uTime phase on every step. Without this the encode pass's
+        // performance.now()-based carrier drift makes the frozen frame irreproducible.
+        const frozenT = (globalThis as { __b3ntb0xFreezeTimeSec?: number }).__b3ntb0xFreezeTimeSec;
+        const tSec = typeof frozenT === 'number'
+          ? frozenT
+          : ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startWallMs) / 1000;
 
         // MIRROR gate rising edge flips the matching mirror boolean.
         if (b3ntb0xMirrorGateTick(mirrorGate.x, params.mirrorXGate)) {
