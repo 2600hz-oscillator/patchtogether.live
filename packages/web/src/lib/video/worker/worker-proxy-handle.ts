@@ -222,6 +222,14 @@ export class WorkerProxyHandle implements VideoNodeHandle {
     // answer a counter read. A spec polls this until ≥N to know the worker render
     // chain is live (a real state, not a wall-clock guess).
     if (key === 'workerFramesDelivered') return this.framesDelivered;
+    // Is the worker the ACTIVE render path RIGHT NOW (spawned AND its WebGL2
+    // context initialized)? `bridge.ready()` is `supported && workerGlOk`, so it
+    // is FALSE on a renderer where worker-WebGL2 can't initialize — notably CI's
+    // SwiftShader software renderer, where the proxy transparently falls back to
+    // the main-thread render. A capability probe for tests: enforce a "the worker
+    // delivered frames" assertion only when this is true; otherwise accept the
+    // non-black main-thread fallback (the proxy's documented degradation).
+    if (key === 'workerActive') return this.bridge.ready();
     // The card preview path (e.g. acidwarp's `read('snapshot')`) is CPU-only and
     // identical regardless of where GL runs. We serve it from the fallback
     // handle, materializing it on demand so the card always has a live preview
