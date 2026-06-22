@@ -171,6 +171,7 @@
     { label: 'out', outputs: [
       { id: 'out', label: 'COLOR', cable: 'video' },
       { id: 'mono_out', label: 'MONO', cable: 'video' },
+      { id: 'overlap', label: 'CANDY', cable: 'video' },
     ] as PortDescriptor[] },
   ];
 </script>

@@ -31,13 +31,19 @@
 //     via spirographs-math.advanceCenter. Only the fixed circle's center+R is
 //     bound; the drawn CURVE may overflow the viewport and clip (desired).
 //
-// OUTPUTS (both video, on the yellow drill-down PATCH PANEL — no raw side jacks):
+// OUTPUTS (all video, on the yellow drill-down PATCH PANEL — no raw side jacks):
 //   • out       (video)      — the full-COLOUR composite (each spiro in its
 //                              chroma hue, additively composited on black). This
 //                              is the canonical surface.
 //   • mono_out  (mono-video) — every spiro stroked WHITE on black (a clean matte
 //                              for keying / luma downstream). Reachable via
 //                              read('outputTexture:mono_out').
+//   • overlap   (video)      — the COLOUR-OVERLAP output: the per-pixel overlap
+//                              DENSITY (how many lines stack there — self-cross +
+//                              multi-spiro) is colour-mapped into a rainbow that
+//                              CASCADES with the count and blooms toward a white
+//                              candy core where many lines pile up ("candy gooey"
+//                              goodness). Reachable via read('outputTexture:overlap').
 //
 // INPUTS (PatchPanel, grouped per-spiro): the global `count` CV plus, per spiro,
 // the ten per-param CVs. The card groups them into spiro1 / spiro2 / spiro3
@@ -50,7 +56,7 @@ import {
   type CenterState,
   type SpiroKind,
 } from './spirographs-math';
-import { drawColorScene, drawMonoScene, type ResolvedSpiro } from './spirographs-draw';
+import { drawColorScene, drawMonoScene, drawOverlapScene, type ResolvedSpiro } from './spirographs-draw';
 
 // ── Per-spiro param ids ─────────────────────────────────────────────────────
 
@@ -201,6 +207,44 @@ void main() {
   outColor = texture(uScene, uv);
 }`;
 
+// ── Overlap colour-map shader (density accumulation → cascading-rainbow candy) ─
+//
+// Samples the grayscale overlap-DENSITY buffer (drawOverlapScene: each pixel's
+// value ∝ how many lines stack there) and cascades it into a rainbow: the hue
+// steps through the spectrum with the count, saturation + brightness rise with
+// it, and a very high pile-up melts toward a white candy core ("candy gooey").
+const OVERLAP_FRAG = `#version 300 es
+precision highp float;
+
+in vec2 vUv;
+out vec4 outColor;
+
+uniform sampler2D uScene;
+
+vec3 hsv2rgb(vec3 c) {
+  vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+
+void main() {
+  vec2 uv = vec2(vUv.x, 1.0 - vUv.y);
+  // Accumulated overlap density (grayscale coverage sum), 0..1.
+  float a = dot(texture(uScene, uv).rgb, vec3(0.3333));
+  if (a <= 0.003) { outColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+  // CASCADE turns each added overlap into a step through the hue wheel; the
+  // 0.58 base seeds the ramp in the cyan/blue range so a single line reads cool
+  // and dense pile-ups race through green→yellow→red→magenta.
+  const float CASCADE = 2.4;
+  float hue = fract(a * CASCADE + 0.58);
+  float sat = clamp(0.55 + a * 0.6, 0.0, 1.0);
+  float val = clamp(0.18 + a * 1.6, 0.0, 1.0);
+  vec3 rgb = hsv2rgb(vec3(hue, sat, val));
+  // Very high overlap blooms toward a white candy core (the gooey highlight).
+  rgb = mix(rgb, vec3(1.0), smoothstep(0.78, 1.0, a) * 0.7);
+  outColor = vec4(rgb, 1.0);
+}`;
+
 // ── Module def ──────────────────────────────────────────────────────────────
 
 export const spirographsDef: VideoModuleDef = {
@@ -214,6 +258,7 @@ export const spirographsDef: VideoModuleDef = {
   outputs: [
     { id: 'out', type: 'video' },           // full-colour composite (canonical)
     { id: 'mono_out', type: 'mono-video' }, // white-on-black matte
+    { id: 'overlap', type: 'video' },       // overlap-density → cascading-rainbow candy
   ],
   params: PARAMS,
 
@@ -221,9 +266,14 @@ export const spirographsDef: VideoModuleDef = {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
     const uScene = gl.getUniformLocation(program, 'uScene');
+    // Separate program for the overlap output: same fullscreen quad, but the
+    // frag colour-maps the density buffer into the cascading-rainbow candy.
+    const overlapProgram = ctx.compileFragment(OVERLAP_FRAG);
+    const uOverlapScene = gl.getUniformLocation(overlapProgram, 'uScene');
 
     const colorFbo = ctx.createFbo();
     const monoFbo = ctx.createFbo();
+    const overlapFbo = ctx.createFbo();
 
     const params: Record<string, number> = { ...DEFAULTS, ...(node.params as Record<string, number>) };
 
@@ -248,11 +298,15 @@ export const spirographsDef: VideoModuleDef = {
     }
     const colorCanvas = makeCanvas();
     const monoCanvas = makeCanvas();
+    const overlapCanvas = makeCanvas();
     const colorCtx = colorCanvas
       ? (colorCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null)
       : null;
     const monoCtx = monoCanvas
       ? (monoCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null)
+      : null;
+    const overlapCtx = overlapCanvas
+      ? (overlapCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null)
       : null;
 
     function makeSceneTex(): WebGLTexture {
@@ -269,6 +323,7 @@ export const spirographsDef: VideoModuleDef = {
     }
     const colorTex = makeSceneTex();
     const monoTex = makeSceneTex();
+    const overlapTex = makeSceneTex();
 
     let framesElapsed = 0;
 
@@ -328,16 +383,22 @@ export const spirographsDef: VideoModuleDef = {
         const W = ctx.res.width;
         const H = ctx.res.height;
 
-        // 1. Paint both scenes (colour + mono) on their 2D canvases.
+        // 1. Paint all three scenes (colour + mono matte + overlap density) on
+        //    their 2D canvases.
         if (colorCtx) drawColorScene(colorCtx, spiros, W, H);
         if (monoCtx) drawMonoScene(monoCtx, spiros, W, H);
+        if (overlapCtx) drawOverlapScene(overlapCtx, spiros, W, H);
 
-        // 2. Upload each painted canvas to its texture, then run the
-        //    fullscreen-quad shader to copy it into the matching FBO.
+        // 2. Upload each painted canvas to its texture, then run a fullscreen-
+        //    quad shader to write it into the matching FBO. The colour + mono
+        //    outputs use the plain copy program; the overlap output uses the
+        //    density→rainbow colour-map program.
         const uploadAndBlit = (
           canvas: OffscreenCanvas | HTMLCanvasElement | null,
           tex: WebGLTexture,
           fbo: WebGLFramebuffer | null,
+          prog: WebGLProgram,
+          uSampler: WebGLUniformLocation | null,
         ) => {
           if (!canvas || !fbo) return;
           g.bindTexture(g.TEXTURE_2D, tex);
@@ -345,15 +406,16 @@ export const spirographsDef: VideoModuleDef = {
           g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, canvas as unknown as TexImageSource);
           g.bindFramebuffer(g.FRAMEBUFFER, fbo);
           g.viewport(0, 0, W, H);
-          g.useProgram(program);
+          g.useProgram(prog);
           g.activeTexture(g.TEXTURE0);
           g.bindTexture(g.TEXTURE_2D, tex);
-          g.uniform1i(uScene, 0);
+          g.uniform1i(uSampler, 0);
           ctx.drawFullscreenQuad();
           g.bindFramebuffer(g.FRAMEBUFFER, null);
         };
-        uploadAndBlit(colorCanvas, colorTex, colorFbo.fbo);
-        uploadAndBlit(monoCanvas, monoTex, monoFbo.fbo);
+        uploadAndBlit(colorCanvas, colorTex, colorFbo.fbo, program, uScene);
+        uploadAndBlit(monoCanvas, monoTex, monoFbo.fbo, program, uScene);
+        uploadAndBlit(overlapCanvas, overlapTex, overlapFbo.fbo, overlapProgram, uOverlapScene);
 
         framesElapsed++;
       },
@@ -362,9 +424,13 @@ export const spirographsDef: VideoModuleDef = {
         gl.deleteTexture(colorFbo.texture);
         gl.deleteFramebuffer(monoFbo.fbo);
         gl.deleteTexture(monoFbo.texture);
+        gl.deleteFramebuffer(overlapFbo.fbo);
+        gl.deleteTexture(overlapFbo.texture);
         gl.deleteTexture(colorTex);
         gl.deleteTexture(monoTex);
+        gl.deleteTexture(overlapTex);
         gl.deleteProgram(program);
+        gl.deleteProgram(overlapProgram);
       },
     };
 
@@ -382,6 +448,7 @@ export const spirographsDef: VideoModuleDef = {
         // edge whose source port id != the canonical 'out').
         if (key === 'outputTexture:out') return colorFbo.texture;
         if (key === 'outputTexture:mono_out') return monoFbo.texture;
+        if (key === 'outputTexture:overlap') return overlapFbo.texture;
         if (key === 'framesElapsed') return framesElapsed;
         // Card preview snapshot hook (mirrors AcidwarpCard/ShapegenCard).
         if (key === 'sceneCanvas') return colorCanvas;

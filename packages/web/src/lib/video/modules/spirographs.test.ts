@@ -30,6 +30,11 @@ import {
   SPIRO_PARAM_STEMS,
   SPIRO_COUNT_MAX,
 } from './spirographs';
+import {
+  drawOverlapScene,
+  OVERLAP_STROKE_GRAY,
+  type ResolvedSpiro,
+} from './spirographs-draw';
 
 const close = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) <= eps;
 
@@ -295,6 +300,53 @@ describe('sampleSpiro', () => {
   });
 });
 
+// Minimal Canvas2D recorder — node has no real 2D context, so we count the
+// stroke ops + capture the compositing/style to assert drawOverlapScene's
+// per-revolution ADDITIVE structure (what makes the overlap output count
+// crossings) without a GPU/canvas.
+function makeRecorderCtx() {
+  const rec = { strokes: 0, composite: 'source-over', styles: [] as string[] };
+  const ctx = {
+    fillStyle: '', strokeStyle: '', lineJoin: '', lineCap: '', lineWidth: 0,
+    globalCompositeOperation: 'source-over',
+    fillRect() {}, save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {},
+    stroke() {
+      rec.strokes++;
+      rec.composite = (ctx as { globalCompositeOperation: string }).globalCompositeOperation;
+      rec.styles.push(String((ctx as { strokeStyle: string }).strokeStyle));
+    },
+  };
+  return { ctx: ctx as unknown as CanvasRenderingContext2D, rec };
+}
+
+describe('drawOverlapScene (overlap-density accumulation)', () => {
+  // 7:3 closes after 3 revolutions.
+  const sp: ResolvedSpiro = {
+    kind: 'inside', R: 7, r: 3, p: 2, rotation: 0, scale: 20,
+    cx: 320, cy: 240, thickness: 2, hue: 0,
+  };
+
+  it('strokes each revolution as its own ADDITIVE sub-path (so crossings sum)', () => {
+    const { ctx, rec } = makeRecorderCtx();
+    drawOverlapScene(ctx, [sp], 640, 480, 120);
+    // 3 revolutions → 3 separate additive sub-paths (a single union stroke would
+    // NOT let self-crossings accumulate).
+    expect(rec.strokes).toBe(3);
+    expect(rec.composite).toBe('lighter');
+    // Uniform low gray so N overlapping strokes sum toward white.
+    const g = OVERLAP_STROKE_GRAY;
+    expect(rec.styles.every((s) => s === `rgb(${g},${g},${g})`)).toBe(true);
+  });
+
+  it('accumulates proportionally more sub-paths as the spiro count grows', () => {
+    const one = makeRecorderCtx();
+    drawOverlapScene(one.ctx, [sp], 640, 480, 120);
+    const two = makeRecorderCtx();
+    drawOverlapScene(two.ctx, [sp, sp], 640, 480, 120);
+    expect(two.rec.strokes).toBe(one.rec.strokes * 2);
+  });
+});
+
 describe('module def metadata (registry shape + per-spiro CV wiring)', () => {
   const def = getVideoModuleDef('spirographs');
 
@@ -307,14 +359,16 @@ describe('module def metadata (registry shape + per-spiro CV wiring)', () => {
     expect(def.label).toBe(def.label.toLowerCase());
   });
 
-  it('declares a colour OUT + a mono OUT, both video-family', () => {
+  it('declares a colour OUT + a mono OUT + the cascading-rainbow OVERLAP out', () => {
     if (!def) return;
     const outIds = def.outputs.map((o) => o.id);
-    expect(outIds).toEqual(expect.arrayContaining(['out', 'mono_out']));
+    expect(outIds).toEqual(expect.arrayContaining(['out', 'mono_out', 'overlap']));
     const out = def.outputs.find((o) => o.id === 'out');
     const mono = def.outputs.find((o) => o.id === 'mono_out');
+    const overlap = def.outputs.find((o) => o.id === 'overlap');
     expect(out?.type).toBe('video');
     expect(mono?.type).toBe('mono-video');
+    expect(overlap?.type).toBe('video');
   });
 
   it('has a global count param + CV', () => {

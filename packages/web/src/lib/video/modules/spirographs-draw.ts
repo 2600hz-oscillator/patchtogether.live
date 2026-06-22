@@ -7,9 +7,12 @@
 // control + round joins/caps — exactly what the 2D stroke pipeline does well,
 // and the same Canvas2D→texture path SHAPEGEN / TEXTMARQUEE use.
 //
-// Two render entry points share the polyline sampling (sampleSpiro):
-//   • drawColorScene — each spiro stroked in ITS chroma hue, composited on black.
-//   • drawMonoScene  — every spiro stroked WHITE on black (the mono-video matte).
+// Three render entry points share the polyline sampling (sampleSpiro):
+//   • drawColorScene   — each spiro stroked in ITS chroma hue, composited on black.
+//   • drawMonoScene    — every spiro stroked WHITE on black (the mono-video matte).
+//   • drawOverlapScene — a grayscale overlap-DENSITY accumulation buffer (each
+//     revolution stroked additively so crossings SUM); spirographs.ts colour-maps
+//     it into the cascading-rainbow "candy" OVERLAP output.
 //
 // All math (the curve points, the bounce-constrained center) is done in the
 // pure spirographs-math layer; this file is purely "given resolved per-spiro
@@ -101,4 +104,54 @@ export function drawMonoScene(
     setupStroke(ctx, sp);
     strokePolyline(ctx, sp, samplesPerRev);
   }
+}
+
+/** Per-stroke gray for the overlap accumulation. With `lighter` compositing the
+ *  8-bit channel saturates at 255, so a gray of G lets ~⌈255/G⌉ overlapping
+ *  strokes reach white: G=22 → ~12 distinguishable overlap levels before the
+ *  candy-white core clips. Exported so the unit test can reason about levels. */
+export const OVERLAP_STROKE_GRAY = 22;
+
+/**
+ * OVERLAP pass — a grayscale overlap-DENSITY accumulation buffer (the source for
+ * the cascading-rainbow "candy gooey" OVERLAP output). Each spiro's curve is
+ * stroked REVOLUTION-BY-REVOLUTION as separate additive sub-paths in a uniform
+ * low gray, so wherever lines cross — a curve's OWN self-intersections AND
+ * different spiros overlapping — the gray SUMS. Brighter pixel ⇒ more lines
+ * stacked there. spirographs.ts maps this density → a rainbow that cascades with
+ * the count and blooms toward a white candy core (OVERLAP_FRAG).
+ *
+ * WHY per-revolution sub-paths: a single ctx.stroke() of a self-crossing path
+ * rasterises the whole path as ONE coverage union, so self-crossings would NOT
+ * accumulate. Stroking each revolution as its own additive stroke is what makes
+ * the self-overlap (and the dense quasi-curve fill) actually count.
+ */
+export function drawOverlapScene(
+  ctx: Ctx2D,
+  spiros: readonly ResolvedSpiro[],
+  w: number,
+  h: number,
+  samplesPerRev = 240,
+): void {
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, w, h);
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const g = OVERLAP_STROKE_GRAY;
+  ctx.strokeStyle = `rgb(${g},${g},${g})`;
+  for (const sp of spiros) {
+    setupStroke(ctx, sp);
+    const pts = sampleSpiro(sp, samplesPerRev);
+    if (pts.length < 2) continue;
+    // One revolution (samplesPerRev segments) per additive sub-path; consecutive
+    // chunks share their boundary point so the stroked line stays continuous.
+    for (let start = 0; start < pts.length - 1; start += samplesPerRev) {
+      const end = Math.min(start + samplesPerRev, pts.length - 1);
+      ctx.beginPath();
+      ctx.moveTo(pts[start]!.x, pts[start]!.y);
+      for (let i = start + 1; i <= end; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
