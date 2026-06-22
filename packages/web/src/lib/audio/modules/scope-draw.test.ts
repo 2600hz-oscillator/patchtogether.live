@@ -97,6 +97,23 @@ function countLit(ops: Op[]): number {
   return ops.filter((o) => o.op === 'stroke').length;
 }
 
+/** Distinct integer scanline rows the TRACE touches (moveTo/lineTo Y coords).
+ *  The trace geometry is what the e2e's "brightRows" / per-row signature
+ *  observes on the rendered FBO; pinning it here (deterministically, GPU-free)
+ *  is the DSP-correctness half of the SCOPE video-out DRS split — see
+ *  e2e/tests/scope-video-out.spec.ts. We round to integer rows to mirror the
+ *  scanline-quantized pixel read. */
+function tracedRows(ops: Op[], h: number): Set<number> {
+  const rows = new Set<number>();
+  for (const o of ops) {
+    if (o.op === 'moveTo' || o.op === 'lineTo') {
+      const y = Math.round(o.y);
+      if (y >= 0 && y < h) rows.add(y);
+    }
+  }
+  return rows;
+}
+
 describe('drawScope phosphor: 12:00 default is PIXEL-IDENTICAL to the legacy render', () => {
   it('NORMAL mode: intensity=0.5 emits the same op-stream as intensity omitted', () => {
     const snap = sineSnap();
@@ -179,5 +196,71 @@ describe('drawScope phosphor: trail length tracks INTENSITY', () => {
     expect(ops.some((o) => o.op === 'clearRect')).toBe(true);
     expect(ops.some((o) => o.op === 'fillRect')).toBe(true);
     expect(countLit(ops)).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DSP CORRECTNESS: waveform → trace geometry. This is the deterministic,
+// GPU-free half of SCOPE's video-out coverage split (see
+// e2e/tests/scope-video-out.spec.ts). SCOPE's video output is drawScope run
+// against the live analyser snapshot, so the trace's row distribution IS the
+// "what the user sees on the OUTPUT" assertion — pinned here without WebGL /
+// SwiftShader / live-audio-analyser timing, where the e2e can only afford a
+// renderer-tolerant non-black + structured floor.
+// ---------------------------------------------------------------------------
+describe('drawScope geometry: a real waveform → a multi-row trace (the flat-line / Bug-2 guard)', () => {
+  it('NORMAL mode: the waveform trace spans MANY distinct rows, not a flat center line', () => {
+    // A flat trace (the Bug-2 regression: a LINEAR-filtered R32F texture
+    // returning all-zeros silently produced a flat line at center) would touch
+    // only the one center row. A real full-amplitude waveform spreads across
+    // many rows. This is the deterministic source of the e2e's
+    // brightRows / occupiedRows assertion.
+    const snap = sineSnap();
+    const { ops, ctx } = mockCtx();
+    drawScope(ctx, snap, baseParams({ intensity: undefined }), W, H);
+    const rows = tracedRows(ops, H);
+    expect(
+      rows.size,
+      `trace must span many rows, not a flat line (got ${rows.size})`,
+    ).toBeGreaterThanOrEqual(20);
+  });
+
+  it('a SILENT input collapses the trace toward the center row (proves the spread is the SIGNAL, not the grid)', () => {
+    // Control: with an all-zero snapshot the channel traces sit on the center
+    // line — so the multi-row spread above is genuinely the waveform, not
+    // background grid/label ops. (Offset=0 → both channels at h/2.)
+    const n = 2048;
+    const silent: ScopeSnapshot = { ch1: new Float32Array(n), ch2: new Float32Array(n), sampleRate: 48000 };
+    const { ops, ctx } = mockCtx();
+    drawScope(ctx, silent, baseParams({ intensity: undefined }), W, H);
+    const rows = tracedRows(ops, H);
+    // The center line + flat traces all land within a couple of rows of h/2.
+    const spread = rows.size === 0 ? 0 : Math.max(...rows) - Math.min(...rows);
+    expect(spread, `silent trace stays near center (spread ${spread})`).toBeLessThanOrEqual(4);
+  });
+});
+
+describe('drawScope geometry: XY mode changes the row distribution vs split (the PR-69 XY-toggle proof)', () => {
+  it('flipping mode 0→1 substantially changes which rows the trace occupies', () => {
+    // The e2e flips the XY toggle and asserts the OUTPUT row distribution
+    // changes (split = two stacked horizontal traces; XY = a Lissajous collapsed
+    // toward center). Pin that same observable here: the set of traced rows
+    // differs substantially between the two modes.
+    const snap = sineSnap();
+    const split = mockCtx();
+    const xy = mockCtx();
+    drawScope(split.ctx, snap, baseParams({ mode: 0, intensity: undefined }), W, H);
+    drawScope(xy.ctx, snap, baseParams({ mode: 1, intensity: undefined }), W, H);
+    const splitRows = tracedRows(split.ops, H);
+    const xyRows = tracedRows(xy.ops, H);
+
+    // Rows occupied by exactly one of the two modes (symmetric difference).
+    let differing = 0;
+    for (const r of splitRows) if (!xyRows.has(r)) differing++;
+    for (const r of xyRows) if (!splitRows.has(r)) differing++;
+    expect(
+      differing,
+      `XY toggle must change the trace row distribution (got ${differing} differing rows)`,
+    ).toBeGreaterThan(10);
   });
 });

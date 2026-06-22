@@ -33,6 +33,37 @@ import type { AudioModuleDef } from '$lib/audio/module-registry';
 import workletUrl from '@patchtogether.live/dsp/dist/synesthesia.js?url';
 import { drawBandRaster } from './synesthesia-draw';
 
+// ---- DETERMINISTIC render-smoke (DRS) seam — zero production impact ----
+// The per-band `*_raster` video output paints the band's LIVE analyser
+// time-domain window (drawBandRaster) each frame. That window carries whatever
+// the audio thread last DMA'd in, which varies by tens of microseconds (= many
+// audio samples) run-to-run — the exact non-determinism class wavesculpt's
+// __wavesculptVrtFreeze cures. There is NO wall-clock / time / accumulation term
+// in the raster draw (it's a stateless function of the current analyser buffer),
+// so the seam is NOT a clock-freeze: when the flag is set we OVERRIDE the live
+// analyser readout with a FIXED synthetic per-band waveform so the rastered frame
+// is byte-stable across runs (non-black + spatially structured by construction).
+// The flag is never set in production; the audio/env/gate/meter path is untouched
+// (only the raster's source buffer is swapped). Parallels wavesculpt's scope
+// freeze + b3ntb0x/bentbox's clock-freeze test seams.
+function synesthesiaVrtFrozen(): boolean {
+  return (
+    (globalThis as unknown as { __synesthesiaVrtFreeze?: boolean }).__synesthesiaVrtFreeze === true
+  );
+}
+
+/** Fill `buf` with a FIXED synthetic per-band waveform (deterministic raster
+ *  source under the VRT-freeze flag). `band` (0..3) picks distinct cycle counts
+ *  so the four bands' rasters are visually distinguishable + non-trivially
+ *  structured; amplitude 0.6 clears drawBandRaster's ×3 → near-full-scale green
+ *  without saturating, so nonZeroFrac + variance floors both hold. */
+function fillFrozenBand(buf: Float32Array, band: number): void {
+  const cycles = (band + 1) * 1.5; // 1.5 / 3 / 4.5 / 6 cycles across the window
+  const amp = 0.6;
+  const n = buf.length;
+  for (let i = 0; i < n; i++) buf[i] = amp * Math.sin((i / n) * Math.PI * 2 * cycles);
+}
+
 const COPIES = ['a', 'b'] as const;
 const BANDS = [1, 2, 3, 4] as const;
 
@@ -244,13 +275,17 @@ export const synesthesiaDef: AudioModuleDef = {
           analyser.connect(keepAlive);
           rasterAnalysers.push(analyser);
           const buf = new Float32Array(analyser.fftSize);
+          const bandIdx = b; // 0..3, captured per band for the deterministic seam
           const drawFrame = (canvas: OffscreenCanvas | HTMLCanvasElement): void => {
             const c2d = canvas.getContext('2d') as
               | CanvasRenderingContext2D
               | OffscreenCanvasRenderingContext2D
               | null;
             if (!c2d) return;
-            analyser.getFloatTimeDomainData(buf);
+            // DRS seam: under __synesthesiaVrtFreeze paint a FIXED synthetic
+            // waveform (deterministic raster); otherwise the LIVE analyser window.
+            if (synesthesiaVrtFrozen()) fillFrozenBand(buf, bandIdx);
+            else analyser.getFloatTimeDomainData(buf);
             drawBandRaster(c2d, buf, canvas.width, canvas.height);
           };
           videoSources.set(`${stream.copy}_band${b + 1}_raster`, {

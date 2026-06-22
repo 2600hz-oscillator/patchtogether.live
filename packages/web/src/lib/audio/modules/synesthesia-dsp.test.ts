@@ -205,6 +205,75 @@ describe('synesthesia-dsp — meter ballistics', () => {
   });
 });
 
+// ───────────── worklet VU SNAPSHOT = sample-and-hold meter peak ─────────────
+//
+// PCU for the VU snapshot the worklet posts (SynesthesiaProcessor.process →
+// port.postMessage({type:'snapshot', levelsA/B})). In VIDEO mode each lane's
+// scalar is the per-frame R/G/B/Luma level the card posts, SAMPLE-AND-HELD across
+// the quantum (SynesthesiaVideoCopy.step is fed the SAME held level every sample);
+// the snapshot value the host reads is the per-channel PEAK of MeterBallistics
+// over that window (the `peak[b]` max-hold in runVideoCopy/runCopy). This proves
+// that snapshot math deterministically, so the e2e (synesthesia-video-mode.spec)
+// only has to confirm the wiring reaches the snapshot — no live-analyser poll
+// needed for correctness. renderSynesthesiaVideo's per-sample `level` arrays are
+// the meter stream; the snapshot = max over the held window, computed here.
+describe('synesthesia-dsp — VU snapshot (sample-and-hold meter peak)', () => {
+  /** The worklet's per-channel snapshot value: max of the meter `level` stream
+   *  over the held window (mirrors the `peak[b]` max-hold in runVideoCopy). */
+  function snapshotFromVideo(
+    frame: [number, number, number, number],
+    holdSamples: number,
+  ): number[] {
+    const r = renderSynesthesiaVideo([frame], { sr: SR, holdSamples });
+    return r.level.map((ch) => {
+      let p = 0;
+      for (let i = 0; i < ch.length; i++) if (ch[i]! > p) p = ch[i]!;
+      return p;
+    });
+  }
+
+  it('a held WHITE frame snapshots all four meters high (every channel peaks)', () => {
+    const snap = snapshotFromVideo([1, 1, 1, 1], Math.round(SR * 0.25));
+    for (let c = 0; c < SYN_NUM_BANDS; c++) {
+      expect(snap[c]!, `channel ${c} peaked`).toBeGreaterThan(0.6);
+      expect(snap[c]!, `channel ${c} clamped in 0..1`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('the snapshot is DETERMINISTIC: identical held levels → byte-identical peaks', () => {
+    const hold = Math.round(SR * 0.2);
+    const a = snapshotFromVideo([0.8, 0.4, 0.2, 0.6], hold);
+    const b = snapshotFromVideo([0.8, 0.4, 0.2, 0.6], hold);
+    expect(a).toEqual(b); // pure function of the held level — no clock, no DMA
+  });
+
+  it('a dark held frame snapshots ~0 on every channel (no spurious peak-hold)', () => {
+    const snap = snapshotFromVideo([0, 0, 0, 0], Math.round(SR * 0.2));
+    for (let c = 0; c < SYN_NUM_BANDS; c++) {
+      expect(snap[c]!, `channel ${c} silent`).toBeLessThan(0.02);
+    }
+  });
+
+  it('the snapshot peak rises MONOTONICALLY with the held level', () => {
+    const hold = Math.round(SR * 0.25);
+    const lo = snapshotFromVideo([0.25, 0, 0, 0], hold)[0]!;
+    const mid = snapshotFromVideo([0.5, 0, 0, 0], hold)[0]!;
+    const hi = snapshotFromVideo([1.0, 0, 0, 0], hold)[0]!;
+    expect(mid).toBeGreaterThan(lo);
+    expect(hi).toBeGreaterThan(mid);
+  });
+
+  it('per-channel ISOLATION: a single lit channel does not bleed its peak into the others', () => {
+    // Only the GREEN (channel 1) level is held high; the snapshot must light
+    // channel 1 alone (the meter stage is per-channel, no cross-talk).
+    const snap = snapshotFromVideo([0, 1, 0, 0], Math.round(SR * 0.25));
+    expect(snap[1]!, 'lit channel peaks').toBeGreaterThan(0.6);
+    expect(snap[0]!, 'channel 0 stays dark').toBeLessThan(0.02);
+    expect(snap[2]!, 'channel 2 stays dark').toBeLessThan(0.02);
+    expect(snap[3]!, 'channel 3 stays dark').toBeLessThan(0.02);
+  });
+});
+
 describe('synesthesia-dsp — render shape', () => {
   it('returns 4 bands per output stream (incl. the new trig stream)', () => {
     const r = renderSynesthesia(sine(440, 0.02), { sr: SR });
