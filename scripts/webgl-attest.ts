@@ -449,7 +449,12 @@ function main() {
       env: { E2E_WEBGL_HEAVY: '' },
       // NB: `--project=X` (with `=`) — the space form `--project X spec.ts`
       // makes Playwright parse the following positional spec as a 2nd project.
-      args: ['--project=chromium-camera', ...WEBGL_CAMERA_SPECS],
+      // `--grep-invert @camera-integration` excludes the getUserMedia integration
+      // describe in camera-input.spec.ts: that flow depends on the live
+      // getUserMedia → 'streaming' chain, which stalls under Pass C's cumulative
+      // GPU load (the camera attest flake). Only the DETERMINISTIC render-smoke
+      // describe attests here; the integration describe runs in the sharded lane.
+      args: ['--project=chromium-camera', '--grep-invert', '@camera-integration', ...WEBGL_CAMERA_SPECS],
       expectedSpecFiles: expectedCamera,
     }),
   );
