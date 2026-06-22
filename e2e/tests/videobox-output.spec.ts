@@ -19,7 +19,7 @@
 
 import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, visualChecksEnabled } from './_helpers';
 
 const FIXTURE = fileURLToPath(new URL('../fixtures/lobby-clip.webm', import.meta.url));
 
@@ -203,7 +203,7 @@ test.describe('VIDEOBOX video output reaches downstream', () => {
     // VISUAL confirmation (LOCAL ONLY) — sampled software-GL canvas content
     // flakes under CI rAF throttling; the engine-state guards above are the
     // deterministic CI proof.
-    if (!process.env.CI) {
+    if (visualChecksEnabled()) {
       const stats = await canvasStats(page, 'video-out-canvas');
       await page.screenshot({ path: 'test-results/videobox-output.png' });
       expect(stats.max, `VIDEO-OUT has bright pixels (mean=${stats.mean.toFixed(1)} max=${stats.max})`).toBeGreaterThan(40);
@@ -261,7 +261,7 @@ test.describe('VIDEOBOX video output reaches downstream', () => {
     expect(live.outHasInput, 'VIDEO-OUT latched an input texture (via BENTBOX)').toBe(true);
 
     // VISUAL confirmation (LOCAL ONLY) — software-GL canvas content flakes on CI.
-    if (!process.env.CI) {
+    if (visualChecksEnabled()) {
       const stats = await canvasStats(page, 'video-out-canvas');
       await page.screenshot({ path: 'test-results/videobox-bentbox-output.png' });
       expect(stats.max, `VIDEO-OUT (via BENTBOX) has bright pixels (mean=${stats.mean.toFixed(1)} max=${stats.max})`).toBeGreaterThan(40);
