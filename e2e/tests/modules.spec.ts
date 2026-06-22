@@ -76,8 +76,8 @@ const SKIP_RENDER: Record<string, string> = {
 // handle-count + non-zero box for these (their cheap, structural coverage);
 // we only grant a longer budget so the heavy first-paint can complete. Their
 // DEEP render behaviour is covered by dedicated heavy-lane specs
-// (b3ntb0x.spec.ts; mandleblot.spec.ts — both routed to the serialized
-// e2e-video lane via WEBGL_HEAVY_GLOBS in playwright.config.ts).
+// (b3ntb0x.spec.ts; mandleblot-render-smoke.spec.ts — both routed to the
+// serialized e2e-video lane via WEBGL_HEAVY_GLOBS in playwright.config.ts).
 // Also includes 'twotracks': xyflow keeps the node wrapper visibility:hidden
 // until ResizeObserver fires; on CI's production preview bundle TwotracksCard
 // (580px wide, complex layout) can take longer than the default 5s.

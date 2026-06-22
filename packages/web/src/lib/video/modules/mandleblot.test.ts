@@ -135,9 +135,9 @@ describe('jsZoomFromKnob — log-mapped 1×..1e6×', () => {
 // the REAL mandleblotDef factory's setParam hot-path (what the CV bridge calls)
 // and asserts the live param + the post-curve zoomFactor the card reads, with no
 // render and no GPU boot — a regression in setParam / jsZoomFromKnob wiring fails
-// this fast unit test. (The single GL PIXEL gate — variance>5 + brightFrac>10%
-// — stays in mandleblot.spec test 1, the only pixel backstop for this VRT-exempt
-// module per plan §6.)
+// this fast unit test. (The GL PIXEL backstop for this VRT-exempt module is the
+// deterministic mandleblot-render-smoke.spec.ts — non-black + structured +
+// frame-stable on the COLOUR output — per plan §6.)
 // ---------------------------------------------------------------------------
 
 function makeFakeGl(): WebGL2RenderingContext {

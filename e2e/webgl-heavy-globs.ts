@@ -58,7 +58,9 @@ export const WEBGL_HEAVY_GLOBS = [
   // e2e-video lane, not the sharded matrix.
   '**/4plexvid.spec.ts', // 4×4 video router — heavy WebGL screenshot
   '**/quadralogical.spec.ts', // 4-input video mixer — heavy WebGL evaluate
-  '**/mandleblot.spec.ts', // GPU Mandelbrot fractal
+  // (mandleblot.spec.ts was deleted — its waitForTimeout pixel gate was fully
+  //  redundant with the deterministic mandleblot-render-smoke.spec.ts, which the
+  //  `**/*-render-smoke.spec.ts` glob below already enrolls in this heavy lane.)
   // Phase 2 GLOB hygiene (webgl-suite-optimization §7-1): the render-worker
   // specs are worker-WebGL2 (OffscreenCanvas) shader-heavies that were
   // MIS-BINNED into the sharded matrix — they only matched `render-worker-*`,
