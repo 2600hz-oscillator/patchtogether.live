@@ -12,7 +12,7 @@
 //      the lighter functional (sharded) e2e lane, NOT in the cumulative-load
 //      attest. (It must stay in THIS file rather than a new file because the
 //      chromium-camera project's testMatch is `camera-input.spec.ts` and adding
-//      a new file there would edit playwright.config.ts — which is in the @collab
+//      a new file there would edit playwright.config.ts — which is in the collab
 //      attest basis, forcing an unrelated collab re-attest.)
 //
 // WHY THE RENDER TEST IS DETERMINISTIC: the old render test depended on the LIVE
