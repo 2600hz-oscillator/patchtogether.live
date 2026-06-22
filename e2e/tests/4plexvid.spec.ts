@@ -1,155 +1,222 @@
 // e2e/tests/4plexvid.spec.ts
 //
-// 4PLEXVID — 4-in / 4-out video router. End-to-end coverage that the
-// per-output selector routes the SELECTED input to the output, that a
-// gate rising edge advances the selector (wrapping 1->2->3->4->1), and
-// that the four outputs route INDEPENDENTLY.
+// 4PLEXVID — 4-in / 4-out video router. DETERMINISTIC render-smoke (DRS),
+// converted IN-PLACE from the old wall-clock / animation-diff shape (plan §3 +
+// §5 Layer B). The old test routed each router output into a VIDEO-OUT sink and
+// then POLLED that 2D-canvas blit's mean luma until a bright/black threshold was
+// seen or a 6s deadline passed (`waitForLuma`), firing gates and hoping enough
+// rAF frames + canvas blits happened in between — three un-synchronized clocks
+// (rAF cadence, the engine clock, the 2D blit), the classic flake.
 //
-// Strategy — deterministic distinguishable inputs:
-//   in1 = SHAPES (a bright shape on black → high luminance).
-//   in2/in3/in4 = UNPATCHED → the router renders black for those.
-// So as a selector rotates in1->in2->in3->in4->in1 the routed OUTPUT
-// goes BRIGHT -> black -> black -> black -> BRIGHT. The bright/black swing
-// is unambiguous under software-GL on CI (no two-bright-sources signature
-// fragility), and the wrap back to bright after 4 gates proves the
-// modulo rotate.
+// DRS conversion (mirrors acidwarp-render-smoke / camera-input / video-chain):
+//   1. installRenderSmokeHooks(page) BEFORE page.goto — PAUSE the engine rAF
+//      loop (the test owns the exact frame count) + PIN the engine clock. SHAPES
+//      (the bright source) reads NO frame.time / RNG / accumulator (verified in
+//      shapes.ts), so frozen → it renders an identical frame every step; the
+//      4PLEXVID copy shader is a pure passthrough of the selected input texture
+//      (no frame.time / RNG / accumulator either — verified in 4plexvid.ts), so
+//      the whole graph is a pure function of the frozen clock + the selector
+//      params.
+//   2. Read each router output's OWN FBO directly via the multi-output escape
+//      hatch `outputTexture(nodeId, 'outN')` (engine.outputTexture →
+//      read('outputTexture:outN')) — NOT downstream of a VIDEO-OUT 2D blit. We
+//      no longer need the sinks at all; the FBO IS the real downstream signal.
+//   3. Fire the advance gate via the video engine's setParam — a clean rising
+//      edge (set 1) then a release (set 0) — the SAME CV-bridge entry point the
+//      old test used, but now followed by a FIXED synchronous step burst so the
+//      advance index is a PURE FUNCTION of the gate/step sequence (plan §3),
+//      never wall-clock. This is the root-cause fix for the prior Phase-2a
+//      failure (the gate-advance routing was being read through a polled blit on
+//      an un-owned frame clock); here the gate fires deterministically and the
+//      next FROZEN read reflects the new routing exactly.
 //
-// We route each router output into its OWN VIDEO-OUT sink so we read the
-// real downstream signal (the multi-output `read('outputTexture:outN')`
-// path), not the card's single-output preview. Gates are fired by setting
-// the synthetic gate{N} param directly via the video engine's setParam —
-// the same entry point the cross-domain CV bridge uses — so the test is
-// deterministic and needs no audio LFO.
+// Distinguishable inputs (unchanged intent): in1 = SHAPES (a bright tiled shape
+// on black → high luma + spatial structure). in2/in3/in4 = UNPATCHED → the
+// router copies its 1×1 black sentinel → that output FBO is FLAT BLACK. So as a
+// selector rotates in1→in2→in3→in4→in1 the routed OUTPUT FBO swings
+// BRIGHT/structured → black → black → black → BRIGHT/structured. The
+// bright/black swing is unambiguous under software-GL on CI.
 //
-// Canvas reads use windowed polling (sample until the expected level is
-// seen or a deadline passes), never two fixed reads — the robust pattern
-// from videobox-output.spec, so a stalled software-GL frame under CI load
-// doesn't false-fail.
+// "param changes the frame" assertions (the gate advances) use TWO FROZEN READS:
+// read(before) → fire gate via the engine domain → step a FIXED burst →
+// read(after) → assert the two FROZEN stats DIFFER by a renderer-tolerant margin
+// (bright→black: nonZeroFrac + variance collapse).
+//
+// Renderer-tolerant floors only (SwiftShader vs real GPU disagree on exact
+// pixels but both clear the floors). No waitForTimeout, no poll, no
+// animation-diff, no exact-pixel equality.
+//
+// NO DEFERRALS: every original assertion is fully DRS-able. 4PLEXVID's draw is a
+// pure passthrough and its selector advance is a pure hysteresis edge detector
+// (plex-select.gateEdge — no clock), so there is no determinism blocker
+// (frame.timeDelta / Math.random / performance.now / unbounded accumulator) to
+// defer.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import {
+  installRenderSmokeHooks,
+  stepAndReadStats,
+  type RenderStats,
+} from './_render-smoke';
 
-async function setup(page: Page): Promise<string[]> {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-  return errors;
+const FIXED_STEPS = 6;
+
+// BRIGHT input (SHAPES) vs BLACK input (unpatched) floors, on the same sparse
+// luma stats the harness computes. SHAPES is a tiled shape on black — sparse but
+// clearly structured — so we use a sparse non-black floor (like RUTTETRA/LINES
+// in video-chain) and lean on the variance floor to reject a flat fill. A
+// FLAT-BLACK output (unpatched input copied through) reads ~0 on both.
+const BRIGHT_MIN_NONZERO = 0.005; // floor: "showing the bright SHAPES input"
+const BRIGHT_MIN_VARIANCE = 15; // floor: structured (not a flat fill)
+const DARK_MAX_NONZERO = 0.002; // ceiling: "showing an unpatched (black) input"
+const DARK_MAX_VARIANCE = 4; // ceiling: flat black, no structure
+
+function expectBright(s: RenderStats, label: string): void {
+  expect(s.fbComplete, `${label}: FBO readable`).toBe(true);
+  expect(s.glErrors, `${label}: no GL errors [${s.glErrors.join(',')}]`).toEqual([]);
+  expect(
+    s.nonZeroFrac,
+    `${label}: shows the bright SHAPES input (nonZeroFrac=${s.nonZeroFrac.toFixed(4)})`,
+  ).toBeGreaterThan(BRIGHT_MIN_NONZERO);
+  expect(
+    s.variance,
+    `${label}: bright input is spatially structured (variance=${s.variance.toFixed(2)})`,
+  ).toBeGreaterThan(BRIGHT_MIN_VARIANCE);
 }
 
-/** Mean luminance over a VIDEO-OUT canvas (identified by its node id). */
-async function meanLuma(page: Page, nodeId: string): Promise<number> {
-  const handle = page.locator(`canvas[data-testid="video-out-canvas"][data-node-id="${nodeId}"]`);
-  await expect(handle, `VIDEO-OUT ${nodeId} canvas present`).toHaveCount(1);
-  return await handle.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return 0;
-    const { data } = ctx.getImageData(0, 0, c.width, c.height);
-    let sum = 0;
-    for (let i = 0; i < data.length; i += 4) sum += (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
-    return sum / (data.length / 4);
-  });
+function expectDark(s: RenderStats, label: string): void {
+  expect(s.fbComplete, `${label}: FBO readable`).toBe(true);
+  expect(s.glErrors, `${label}: no GL errors [${s.glErrors.join(',')}]`).toEqual([]);
+  expect(
+    s.nonZeroFrac,
+    `${label}: shows the unpatched (black) input (nonZeroFrac=${s.nonZeroFrac.toFixed(4)})`,
+  ).toBeLessThan(DARK_MAX_NONZERO);
+  expect(
+    s.variance,
+    `${label}: black input is flat (variance=${s.variance.toFixed(2)})`,
+  ).toBeLessThan(DARK_MAX_VARIANCE);
 }
 
-/** Poll a VIDEO-OUT until its mean luminance satisfies `pred`, or fail
- *  after `timeout`. Returns the last sampled value for the assertion msg. */
-async function waitForLuma(
+/**
+ * Fire a deterministic gate RISING EDGE on a 4PLEXVID node's gate input via the
+ * video engine's setParam (the CV-bridge entry point: set 1 = rising edge →
+ * advance, set 0 = release → re-arm for the next pulse), then drive a FIXED
+ * synchronous step burst so the new routing renders. The advance is a PURE
+ * FUNCTION of this call sequence (plex-select.gateEdge is a clockless hysteresis
+ * detector), so the next FROZEN read reflects the advanced selector exactly.
+ * Returns nothing — the caller reads the affected output FBO afterwards.
+ */
+async function fireGateAndStep(
   page: Page,
-  nodeId: string,
-  pred: (m: number) => boolean,
-  timeout = 6000,
-): Promise<{ ok: boolean; last: number }> {
-  const deadline = Date.now() + timeout;
-  let last = await meanLuma(page, nodeId);
-  if (pred(last)) return { ok: true, last };
-  while (Date.now() < deadline) {
-    await page.waitForTimeout(120);
-    last = await meanLuma(page, nodeId);
-    if (pred(last)) return { ok: true, last };
-  }
-  return { ok: false, last };
-}
-
-// A square tiled across the frame (in1) reads with a high mean luma; an
-// unpatched input renders pure black (mean ~0). The two bands are far
-// apart, so a generous BRIGHT floor + a low DARK ceiling never overlap
-// even under software-GL antialiasing on CI.
-const BRIGHT = 12; // mean-luma floor for "showing the bright SHAPES input"
-const DARK = 6;    // mean-luma ceiling for "showing an unpatched (black) input"
-
-/** Fire a gate pulse on a 4PLEXVID node's gate input via the video
- *  engine's setParam (the CV-bridge entry point). Rising edge advances. */
-async function fireGate(page: Page, nodeId: string, gateId: string): Promise<void> {
-  await page.evaluate(({ nodeId, gateId }) => {
+  opts: { nodeId: string; gateId: string; steps: number },
+): Promise<void> {
+  await page.evaluate(({ nodeId, gateId, steps }) => {
     const w = globalThis as unknown as {
-      __engine?: () => {
-        getDomain?: (d: string) => { setParam?: (n: string, p: string, v: number) => void } | null;
-      } | null;
+      __engine: () => {
+        getDomain: (d: string) => {
+          step: () => void;
+          setParam: (nodeId: string, paramId: string, value: number) => void;
+        };
+      };
     };
-    const ve = w.__engine?.()?.getDomain?.('video');
-    ve?.setParam?.(nodeId, gateId, 1); // rising edge → advance
-    ve?.setParam?.(nodeId, gateId, 0); // release → re-arm for next pulse
-  }, { nodeId, gateId });
+    const vid = w.__engine().getDomain('video');
+    vid.setParam(nodeId, gateId, 1); // rising edge → advance the matching selector
+    vid.setParam(nodeId, gateId, 0); // release → re-arm for the next pulse
+    for (let i = 0; i < steps; i++) vid.step(); // render the new routing (paused rAF → we own the count)
+  }, opts);
 }
 
-test.describe('4PLEXVID — gate-advanced 4x4 video router', () => {
+test.describe('4PLEXVID — gate-advanced 4x4 video router (DRS)', () => {
   test('each output shows its selected input; gate advances + wraps; outputs are independent', async ({ page }) => {
-    const errors = await setup(page);
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
+    });
 
-    // SHAPES into in1 (bright). in2/in3/in4 left unpatched (black). Each
-    // router output → its own VIDEO-OUT sink.
+    // Pause the engine rAF loop (the test owns the exact frame count) + pin the
+    // engine clock (SHAPES + the 4PLEXVID copy shader render an identical frame
+    // every step) BEFORE boot.
+    await installRenderSmokeHooks(page);
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // SHAPES into in1 (bright, structured). in2/in3/in4 left UNPATCHED (the
+    // router copies its 1×1 black sentinel → flat black). We read each router
+    // output's OWN FBO directly (the multi-output escape hatch), so no VIDEO-OUT
+    // sink is needed — the FBO is the real downstream signal.
     await spawnPatch(
       page,
       [
-        { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 4, zoom: 8 } },
+        { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: { shape: 1, tile: 1, tileN: 4, zoom: 0.6 } },
         { id: 'plex', type: '4plexvid', position: { x: 360, y: 40 }, domain: 'video' },
-        { id: 'o1', type: 'videoOut', position: { x: 760, y: 20 }, domain: 'video' },
-        { id: 'o2', type: 'videoOut', position: { x: 760, y: 260 }, domain: 'video' },
       ],
       [
         { id: 'e_src', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'plex', portId: 'in1' }, sourceType: 'mono-video', targetType: 'video' },
-        { id: 'e_o1', from: { nodeId: 'plex', portId: 'out1' }, to: { nodeId: 'o1', portId: 'in' }, sourceType: 'video', targetType: 'video' },
-        { id: 'e_o2', from: { nodeId: 'plex', portId: 'out2' }, to: { nodeId: 'o2', portId: 'in' }, sourceType: 'video', targetType: 'video' },
       ],
     );
 
-    // ---- 1. Default selectors = 0 (in1). Both outputs show the bright
-    //         SHAPES input (out1 + out2 both select in1 by default). ----
+    // Structural (non-fragile): both modules mounted.
+    await expect(page.locator('.svelte-flow__node-shapes'), 'SHAPES visible').toBeVisible();
+    await expect(page.locator('.svelte-flow__node-4plexvid'), '4PLEXVID visible').toBeVisible();
+
+    // ---- 1. Default selectors = 0 (in1). out1 AND out2 both select in1 by
+    //         default → both show the bright, structured SHAPES input. We read
+    //         each output's OWN FBO via outputTexture(nodeId, 'outN'). ----
     {
-      const r1 = await waitForLuma(page, 'o1', (m) => m > BRIGHT);
-      expect(r1.ok, `out1 shows bright in1 at start (mean=${r1.last.toFixed(1)})`).toBe(true);
-      const r2 = await waitForLuma(page, 'o2', (m) => m > BRIGHT);
-      expect(r2.ok, `out2 shows bright in1 at start (mean=${r2.last.toFixed(1)})`).toBe(true);
+      const o1 = await stepAndReadStats(page, { nodeId: 'plex', portId: 'out1', steps: FIXED_STEPS });
+      expect(o1.framesDelta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
+      expectBright(o1, 'out1 at start (default sel1=in1)');
+
+      const o2 = await stepAndReadStats(page, { nodeId: 'plex', portId: 'out2', steps: FIXED_STEPS });
+      expect(o2.framesDelta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
+      expectBright(o2, 'out2 at start (default sel2=in1)');
     }
 
-    // ---- 2. Fire ONE gate into out1 → its selector advances to in2
-    //         (unpatched → black). out1 goes dark. ----
-    await fireGate(page, 'plex', 'gate1');
+    // ---- 2. "param changes the frame" via TWO FROZEN READS: read out1 BRIGHT
+    //         (before), fire ONE gate1 rising edge through the engine domain +
+    //         step a FIXED burst, read out1 AFTER. sel1 advanced in1→in2
+    //         (unpatched → black), so the two FROZEN stats DIFFER: the after
+    //         read is flat black (nonZeroFrac + variance collapsed). The advance
+    //         index is a pure function of this gate/step sequence, not wall
+    //         clock — the root-cause fix for the prior Phase-2a failure. ----
+    const o1Before = await stepAndReadStats(page, { nodeId: 'plex', portId: 'out1', steps: FIXED_STEPS });
+    expectBright(o1Before, 'out1 before gate (in1)');
+
+    await fireGateAndStep(page, { nodeId: 'plex', gateId: 'gate1', steps: FIXED_STEPS });
+
+    const o1After = await stepAndReadStats(page, { nodeId: 'plex', portId: 'out1', steps: FIXED_STEPS });
+    expectDark(o1After, 'out1 after 1 gate (advanced to unpatched in2)');
+    // The two FROZEN reads DIFFER by a renderer-tolerant margin (bright→black).
+    expect(
+      o1Before.nonZeroFrac - o1After.nonZeroFrac,
+      `gate measurably changed out1 (nonZeroFrac ${o1Before.nonZeroFrac.toFixed(4)} → ${o1After.nonZeroFrac.toFixed(4)})`,
+    ).toBeGreaterThan(BRIGHT_MIN_NONZERO);
+
+    // ---- 3. INDEPENDENCE: out2's selector was NEVER gated → still in1 → still
+    //         bright + structured, even though out1 moved off in1. Read out2's
+    //         OWN FBO (frozen, fixed burst). ----
     {
-      const r1 = await waitForLuma(page, 'o1', (m) => m < DARK);
-      expect(r1.ok, `out1 dark after 1 gate (advanced to unpatched in2; mean=${r1.last.toFixed(1)})`).toBe(true);
+      const o2 = await stepAndReadStats(page, { nodeId: 'plex', portId: 'out2', steps: FIXED_STEPS });
+      expectBright(o2, 'out2 still in1 (independent of out1 gate)');
     }
 
-    // ---- 3. INDEPENDENCE: out2's selector was never gated → still in1 →
-    //         still bright, even though out1 moved off in1. ----
+    // ---- 4. WRAP (1→2→3→4→1 modulo): three MORE gate1 rising edges take sel1
+    //         in2→in3→in4→in1. Back at in1 the out1 FBO must be bright +
+    //         structured again — proving the modulo rotate. Each gate is a clean
+    //         rising edge + release + fixed step burst, so the wrap is a pure
+    //         function of the gate count. ----
+    await fireGateAndStep(page, { nodeId: 'plex', gateId: 'gate1', steps: FIXED_STEPS }); // sel1 → in3 (black)
+    await fireGateAndStep(page, { nodeId: 'plex', gateId: 'gate1', steps: FIXED_STEPS }); // sel1 → in4 (black)
+    await fireGateAndStep(page, { nodeId: 'plex', gateId: 'gate1', steps: FIXED_STEPS }); // sel1 → in1 (bright, wrapped)
     {
-      const r2 = await waitForLuma(page, 'o2', (m) => m > BRIGHT);
-      expect(r2.ok, `out2 still bright (independent of out1's gate; mean=${r2.last.toFixed(1)})`).toBe(true);
+      const o1 = await stepAndReadStats(page, { nodeId: 'plex', portId: 'out1', steps: FIXED_STEPS });
+      expectBright(o1, 'out1 bright again after wrap (4 gates → back to in1)');
     }
 
-    // ---- 4. WRAP: three more gates on out1 take it in3 -> in4 -> in1.
-    //         Back at in1 it must be bright again (1->2->3->4->1 modulo). ----
-    await fireGate(page, 'plex', 'gate1'); // → in3 (black)
-    await fireGate(page, 'plex', 'gate1'); // → in4 (black)
-    await fireGate(page, 'plex', 'gate1'); // → in1 (bright, wrapped)
-    {
-      const r1 = await waitForLuma(page, 'o1', (m) => m > BRIGHT);
-      expect(r1.ok, `out1 bright again after wrap (4 gates → back to in1; mean=${r1.last.toFixed(1)})`).toBe(true);
-    }
-
-    await page.screenshot({ path: 'test-results/4plexvid.png' });
-    expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
+    expect(errors, `console/page errors: ${errors.join(' | ')}`).toEqual([]);
   });
 });
