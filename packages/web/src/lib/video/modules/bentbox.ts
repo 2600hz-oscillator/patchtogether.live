@@ -587,7 +587,17 @@ export const bentboxDef: VideoModuleDef = {
         g.uniform1i(uPrev, 1);
 
         g.uniform1f(uHasInput, inputTex ? 1.0 : 0.0);
-        const tSec = ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startWallMs) / 1000;
+        // Noise/scan-drift clock. Normally wall-clock-relative; a TEST-ONLY seam
+        // (`globalThis.__bentboxFreezeTime`, flag-gated, zero production impact —
+        // parallels b3ntb0x's __b3ntb0xFreezeTimeSec / the engine
+        // __videoEngineFreezeTime) pins it to a constant so the deterministic
+        // render-smoke gets an IDENTICAL uTime on every step. Without this the
+        // shader's performance.now()-based noise/drift makes the frozen frame
+        // irreproducible.
+        const frozenT = (globalThis as { __bentboxFreezeTime?: number }).__bentboxFreezeTime;
+        const tSec = typeof frozenT === 'number'
+          ? frozenT
+          : ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startWallMs) / 1000;
         g.uniform1f(uTime, tSec);
         g.uniform1f(uFieldParity, framesElapsed & 1 ? 1.0 : 0.0);
 
