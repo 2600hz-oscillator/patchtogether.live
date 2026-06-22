@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "f80a48557afdb99880dd3d35a6cf42a09b08123f9690ec1f41d6cc6693201258",
-  "attestedAt": "2026-06-22T18:21:06.881Z",
+  "webglContentHash": "6526751b29fbdfc4a3382c850349460688af1af8c8554b4797e74bb15eaff920",
+  "attestedAt": "2026-06-22T19:14:17.219Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "efdc5baa77dae3de0890d74685855f5820304f28",
+  "gitHeadAtAttest": "964204f0faa3f33fc64f478df7705ac9c76f0e19",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "host": "2600hzs-MBP.home.local",
@@ -12,11 +12,17 @@
   "suites": {
     "A-heavy": {
       "specFiles": 54,
-      "passed": 176,
+      "passed": 175,
       "failed": 0,
-      "flaky": 0,
+      "flaky": 1,
       "skipped": 1,
-      "flakyDetails": []
+      "flakyDetails": [
+        {
+          "test": "nibbles-pellet: bridges into scope.ch1 (was silent pre-#414)",
+          "file": "video-audio-cvgate-coverage.spec.ts",
+          "firstError": "Error: expect(received).toBeGreaterThan(expected) |  | Expected: > 0.1 | Received:   0"
+        }
+      ]
     },
     "B-leakers": {
       "specFiles": 5,
@@ -35,5 +41,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 344
+  "durationSec": 355
 }
