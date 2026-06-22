@@ -207,15 +207,20 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
     await switchToSlot(page, SLOT0_VOCT);
     await assertFramesAdvance(page, 'after B→A (re-select must NOT throw + freeze)');
 
-    // (4) Switch-BACK to A landed near A's PROJECTED live time, NOT 0 (the
-    // virtual playhead). A kept advancing virtually while B was active, so it
-    // must be at LEAST where it was when we switched away (minus a small seek
-    // tolerance) — emphatically not reset to ~0.
+    // (4) Switch-BACK to A landed on A's PROJECTED live (virtual) playhead, NOT
+    // reset to ~0 (the Build-B regression). A kept advancing virtually while B
+    // was active. We assert ONLY "not reset to ~0" — NOT a monotonic
+    // advance-past-aTimeBeforeSwitch, because the clip LOOPS: the projected live
+    // time wraps modulo clip duration, so on return it can legitimately be LESS
+    // than where we left (e.g. 1.86s → 0.77s after a wrap). The old
+    // `> aTimeBeforeSwitch - 0.5` threshold was wall-clock-/wrap-coupled and
+    // flaked under SwiftShader's slower clock; a floor cleanly catches the real
+    // reset-to-0 regression (0 < 0.2) without the timing/loop coupling.
     const aTimeAfterReturn = (await activeVideoState(page)).time;
     expect(
       aTimeAfterReturn,
-      `switch-back landed on A's live time (~>=${aTimeBeforeSwitch.toFixed(2)}s), not 0 (was ${aTimeAfterReturn.toFixed(2)}s)`,
-    ).toBeGreaterThan(Math.max(0.2, aTimeBeforeSwitch - 0.5));
+      `switch-back kept A's virtual playhead (not reset to 0); before=${aTimeBeforeSwitch.toFixed(2)}s after=${aTimeAfterReturn.toFixed(2)}s`,
+    ).toBeGreaterThan(0.2);
 
     // (3) Play/pause works AFTER the switches: pause halts, play resumes.
     await page.click('[data-testid="videovarispeed-play-btn"]'); // → pause
