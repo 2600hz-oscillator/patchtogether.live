@@ -36,6 +36,7 @@ import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { spawnPatch } from './_helpers';
+import { visualChecksEnabled } from './_visual-checks';
 
 const LOCAL_CLIP =
   "/Users/2600hz/Documents/workspace/vid_resize/Let's All Go To The Lobby [TH2j1YnIne0].webm";
@@ -169,7 +170,7 @@ test.describe('VIDEOBOX upload perf (rVFC-driven)', () => {
     // actually prove the fix. The before/after numbers in the PR body come
     // from this probe on a dev machine.
     let timing: { achievableFps: number; msPerStep: number } | null = null;
-    if (!process.env.CI) {
+    if (visualChecksEnabled()) {
       timing = await page.evaluate((windowMs) => {
         const w = globalThis as unknown as {
           __engine: () => { getDomain: (d: string) => {
@@ -211,7 +212,7 @@ test.describe('VIDEOBOX upload perf (rVFC-driven)', () => {
     // GPU + AudioContext-resume timing), so this liveness count is chronically
     // flaky on CI ("uploads advanced (0)"). The decoupling assertion above is
     // the stable regression guard; liveness is verified locally / on dev.
-    if (!process.env.CI) {
+    if (visualChecksEnabled()) {
       expect(decode.uploadsDelta, `uploads advanced (${decode.uploadsDelta}) — texture live`).toBeGreaterThan(0);
     }
 

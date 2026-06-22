@@ -24,6 +24,7 @@
 
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { visualChecksEnabled } from './_visual-checks';
 
 /** ENGINE-STATE proof of per-OUTPUT routing. Returns, for each OUTPUT node,
  *  the source node id the video engine resolves as its `in` feed plus whether
@@ -149,7 +150,7 @@ test.describe('video: multi-OUTPUT independent routing', () => {
     // visibly different pixel statistics. CI-skipped — sampled-framebuffer
     // stats flake under software GL + parallel-worker rAF throttling; the
     // routing assertion above is the deterministic CI proof of the same fix.
-    if (!process.env.CI) {
+    if (visualChecksEnabled()) {
       // Allow several rAF ticks for both cards to drive their per-card blits.
       await page.waitForTimeout(800);
 
@@ -243,7 +244,7 @@ test.describe('video: multi-OUTPUT independent routing', () => {
     expect(routing['v-out-b']?.hasInput, 'OUTPUT B has NO input texture (idle)').toBe(false);
 
     // VISUAL confirmation (LOCAL ONLY) — software-GL variance flakes on CI.
-    if (!process.env.CI) {
+    if (visualChecksEnabled()) {
       await page.waitForTimeout(800);
 
       const a = await readCanvasStats(outA);
