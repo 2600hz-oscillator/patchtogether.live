@@ -9,8 +9,8 @@
 // We drive the REAL source → module → output chain (the standard for a new
 // module) and assert:
 //   1. all cards spawn + the OUTPUT preview canvas mounts,
-//   2. at TILE=0 (N=1, 1:1 PASSTHROUGH) the OUTPUT shows non-black content,
-//   3. at TILE=3 (N=8, an 8×8 grid) the OUTPUT shows non-black content AND
+//   2. at TILE=0 (total 1, 1:1 PASSTHROUGH) the OUTPUT shows non-black content,
+//   3. at TILE=5 (total 64, an 8×8 grid) the OUTPUT shows non-black content AND
 //      is SPATIALLY DIFFERENT from the passthrough frame — i.e. the TILE
 //      knob actually changed the rendered output (the whole point of the
 //      module). The 8×8 grid replicates the single shape into many cells, so
@@ -126,10 +126,10 @@ test.describe('TILER — video multiscreen / tile processor', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    // TILE=0 → N=1 → 1:1 passthrough (the single shape).
+    // TILE=0 → total 1 → 1:1 passthrough (the single shape).
     const passthrough = await captureTiler(page, 0);
-    // TILE=3 → N=8 → 8×8 grid (64 copies of the shape).
-    const tiled8 = await captureTiler(page, 3);
+    // TILE=5 → total 64 → 8×8 grid (64 copies of the shape).
+    const tiled8 = await captureTiler(page, 5);
 
     // Both render real (non-black) content.
     expect(passthrough.nonZeroFrac, 'passthrough renders content').toBeGreaterThan(0.01);
@@ -164,7 +164,7 @@ test.describe('TILER — video multiscreen / tile processor', () => {
       w.__ydoc.transact(() => {
         const n = w.__patch.nodes['tlr'];
         if (!n) return;
-        n.params.tile = 4; // → N=12 (12×12)
+        n.params.tile = 4; // → total 16 (4×4)
       });
     });
     await page.waitForTimeout(120);

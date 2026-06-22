@@ -2,58 +2,63 @@
 //
 // TILER — video multiscreen / TILE effect PROCESSOR.
 //
-// Repeats the input frame in an N×N grid: each cell shows the FULL input
-// scaled to 1/N, so the tiled copies are lower-resolution by nature. This
-// is the classic video-mixer "multiscreen / tile" effect — a 4×4 grid is
-// 16 thumbnails of the same source, a 16×16 grid is 256 tiny copies.
+// Repeats the input frame in a cols×rows grid: each cell shows the FULL input
+// scaled to fit, so the tiled copies are lower-resolution by nature. This is
+// the classic video-mixer "multiscreen / tile" effect — a 2×2 grid is 4
+// thumbnails of the same source, an 8×8 grid is 64 tiny copies.
 //
-// Implemented as a single-pass fragment shader. The whole effect is one
-// line: `color = texture(input, fract(uv * N))`. `uv * N` stretches the
-// 0..1 UV across N cells; `fract()` wraps each cell back to the full 0..1
-// input — so every cell samples the entire source. At N=1 fract(uv) == uv
-// (for uv in [0,1)), so N=1 is an exact 1:1 passthrough.
+// The knob value is the TOTAL tile count (1 / 4 / 6 / 12 / 16 / 64). Grids are
+// LANDSCAPE (cols >= rows) so each tiled cell keeps the source video's wide
+// aspect — the standard video-multiscreen look.
 //
-// CELLSHADE is STATELESS per frame — the tiling moves/transforms live with
-// the source (no feedback, no history) — so it's a pure function of the
-// current input frame + the TILE knob (+ its CV).
+// Implemented as a single-pass fragment shader. The whole effect is one line:
+// `color = texture(input, fract(uv * vec2(cols, rows)))`. `uv * vec2(cols,rows)`
+// stretches the 0..1 UV across the cells; `fract()` wraps each cell back to the
+// full 0..1 input — so every cell samples the entire source. At 1×1
+// fract(uv) == uv (for uv in [0,1)), so total 1 is an exact 1:1 passthrough.
+//
+// TILER is STATELESS per frame — the tiling moves/transforms live with the
+// source (no feedback, no history) — so it's a pure function of the current
+// input frame + the TILE knob (+ its CV).
 //
 // ── TILE — DISCRETE grid size (6 steps) ───────────────────────────────
-// One discrete knob snaps to 6 grid sizes. The param value is the STEP
-// INDEX 0..5 (so the discrete fader + the discrete-cvScale CV both snap to
-// the 6 steps); the index maps to a grid dimension N:
+// One discrete knob snaps to 6 grids. The param value is the STEP INDEX 0..5
+// (so the discrete fader + the discrete-cvScale CV both snap to the 6 steps);
+// the index maps to a grid { total, cols, rows }:
 //
-//   idx 0 → N = 1   → 1:1 passthrough (NO tiling — fract(uv)==uv)
-//   idx 1 → N = 4   → 4×4 grid (16 copies)
-//   idx 2 → N = 6   → 6×6 grid (36 copies)
-//   idx 3 → N = 8   → 8×8 grid (64 copies)
-//   idx 4 → N = 12  → 12×12 grid (144 copies)
-//   idx 5 → N = 16  → 16×16 grid (256 copies)
+//   idx 0 → total 1   → 1×1   (1:1 passthrough — NO tiling, fract(uv)==uv)
+//   idx 1 → total 4   → 2×2   (4 copies)
+//   idx 2 → total 6   → 3×2   (6 copies — landscape "2x3")
+//   idx 3 → total 12  → 4×3   (12 copies — landscape "3x4")
+//   idx 4 → total 16  → 4×4   (16 copies)
+//   idx 5 → total 64  → 8×8   (64 copies)
 //
-// The lowest step is deliberately N=1 (passthrough) so a fresh TILER, or a
+// The lowest step is deliberately total 1 (passthrough) so a fresh TILER, or a
 // TILER swept to the bottom of the knob, is a transparent inline node.
 //
-// ── TILE CV (sum-then-snap to the nearest valid N) ────────────────────
+// ── TILE CV (sum-then-snap to the nearest valid step) ─────────────────
 // The TILE CV input uses a DISCRETE cvScale, so the CV bridge snaps the
 // incoming CV onto the index steps and SUMS it into the `tile` index param
-// (the same plumbing every per-param CV input uses). The displaced index
-// can land fractionally between steps (CV resolution + the bridge sum), so
-// the module RESOLVES it to a clean grid via `tilerResolveN`: it converts
-// the (possibly fractional) summed index to an N value and SNAPS to the
-// NEAREST valid N in TILER_GRID_STEPS. So a CV that pushes the knob "a bit
-// past 6" lands cleanly on 8 (the nearest valid N), never on an invalid
-// 7×7. (The snap is to nearest N, NOT nearest index, so the perceived jump
-// matches the grid-size scale the user sees.)
+// (the same plumbing every per-param CV input uses). The displaced index can
+// land fractionally between steps (CV resolution + the bridge sum), so the
+// module RESOLVES it to a clean grid via `tilerResolveGrid`: it interpolates
+// the step TOTAL across the steps for the (possibly fractional) summed index,
+// then SNAPS to the step whose total is NEAREST in TILER_STEPS. So a CV that
+// pushes the knob "a bit past 6" lands cleanly on the 12 step (the nearest
+// valid total), never on an invalid in-between grid. (The snap is to nearest
+// total, NOT nearest index, so the perceived jump matches the tile-count scale
+// the user sees.)
 //
 // Inputs:
 //   in (video): RGB source to tile.
-//   tile_cv (cv, paramTarget=tile): DISCRETE cvScale — snaps + sums into
-//     the TILE index, then the module snaps to the nearest valid N step.
+//   tile_cv (cv, paramTarget=tile): DISCRETE cvScale — snaps + sums into the
+//     TILE index, then the module snaps to the nearest valid step.
 //
 // Outputs:
 //   out (video): the tiled frame.
 //
 // Params:
-//   tile (discrete 0..5): grid-size step index (default 0 = N=1 passthrough).
+//   tile (discrete 0..5): grid-size step index (default 0 = total 1 passthrough).
 
 import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
@@ -62,12 +67,31 @@ import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 // Grid-size model — exported for unit tests + the card readout (no GL).
 // ----------------------------------------------------------------------
 
-/** The 6 grid sizes the TILE knob snaps to. The index into this array ==
- *  the `tile` param value (a discrete 0..5 fader). N is the grid DIMENSION
- *  (N×N cells). N=1 (index 0) is a 1:1 passthrough (no tiling). */
-export const TILER_GRID_STEPS: readonly number[] = [1, 4, 6, 8, 12, 16];
+/** A single TILE step: the TOTAL tile count and its landscape cols×rows
+ *  realization (cols >= rows so each cell keeps the source's wide aspect). */
+export interface TilerStep {
+  total: number;
+  cols: number;
+  rows: number;
+}
 
-/** Default TILE step index — 0 = N=1 = 1:1 passthrough, so a fresh TILER
+/** The 6 grids the TILE knob snaps to. The index into this array == the `tile`
+ *  param value (a discrete 0..5 fader). The knob value the user reads is the
+ *  TOTAL tile count. total 1 (index 0) is a 1:1 passthrough (no tiling). */
+export const TILER_STEPS: readonly TilerStep[] = [
+  { total: 1,  cols: 1, rows: 1 }, // 1:1 passthrough (NO tiling)
+  { total: 4,  cols: 2, rows: 2 }, // 2×2
+  { total: 6,  cols: 3, rows: 2 }, // 3×2 (landscape "2x3")
+  { total: 12, cols: 4, rows: 3 }, // 4×3 (landscape "3x4")
+  { total: 16, cols: 4, rows: 4 }, // 4×4
+  { total: 64, cols: 8, rows: 8 }, // 8×8
+];
+
+/** Back-compat: the step TOTALS in step order ([1,4,6,12,16,64]). The card
+ *  uses this for the tick-rail labels. */
+export const TILER_GRID_STEPS: readonly number[] = TILER_STEPS.map((s) => s.total);
+
+/** Default TILE step index — 0 = total 1 = 1:1 passthrough, so a fresh TILER
  *  is a transparent inline node until the user dials in a grid. */
 export const TILER_DEFAULT_TILE_INDEX = 0;
 
@@ -79,35 +103,35 @@ export const TILER_DEFAULT_TILE_INDEX = 0;
  * bleeding in). Non-finite → the default index.
  */
 export function tilerTileIndex(rawTile: number): number {
-  const n = TILER_GRID_STEPS.length;
+  const n = TILER_STEPS.length;
   if (!Number.isFinite(rawTile)) return TILER_DEFAULT_TILE_INDEX;
   return Math.max(0, Math.min(n - 1, Math.round(rawTile)));
 }
 
 /**
- * The grid dimension N (1/4/6/8/12/16) for a `tile` step INDEX. This is the
- * plain knob → N mapping (0..5 → [1,4,6,8,12,16]) with no CV involved:
- * round the index to a clean step, then read N from TILER_GRID_STEPS.
- * Shared by the shader, the card readout, and the unit tests.
+ * The grid { total, cols, rows } for a `tile` step INDEX. This is the plain
+ * knob → grid mapping (0..5 → TILER_STEPS) with no CV involved: round the
+ * index to a clean step, then read the grid from TILER_STEPS. Shared by the
+ * shader, the card readout, and the unit tests.
  */
-export function tilerStepN(rawTile: number): number {
-  return TILER_GRID_STEPS[tilerTileIndex(rawTile)]!;
+export function tilerStepGrid(rawTile: number): TilerStep {
+  return TILER_STEPS[tilerTileIndex(rawTile)]!;
 }
 
 /**
- * Snap an arbitrary grid dimension to the NEAREST valid N in
- * TILER_GRID_STEPS. Ties (equidistant between two steps) resolve to the
- * SMALLER N (the lower grid — fewer, larger tiles). Shared by the CV
- * resolve path + the unit tests so "nearest valid N" has one definition.
+ * Snap an arbitrary tile TOTAL to the step whose total is NEAREST in
+ * TILER_STEPS. Ties (equidistant between two steps) resolve to the SMALLER
+ * total (the lower grid — fewer, larger tiles). Shared by the CV resolve path
+ * + the unit tests so "nearest valid step" has one definition.
  */
-export function tilerSnapNearestN(n: number): number {
-  if (!Number.isFinite(n)) return TILER_GRID_STEPS[TILER_DEFAULT_TILE_INDEX]!;
-  let best = TILER_GRID_STEPS[0]!;
-  let bestDist = Math.abs(n - best);
-  for (let i = 1; i < TILER_GRID_STEPS.length; i++) {
-    const cand = TILER_GRID_STEPS[i]!;
-    const dist = Math.abs(n - cand);
-    // Strictly-less keeps the SMALLER N on a tie (we iterate ascending).
+export function tilerSnapNearestStep(total: number): TilerStep {
+  if (!Number.isFinite(total)) return TILER_STEPS[TILER_DEFAULT_TILE_INDEX]!;
+  let best = TILER_STEPS[0]!;
+  let bestDist = Math.abs(total - best.total);
+  for (let i = 1; i < TILER_STEPS.length; i++) {
+    const cand = TILER_STEPS[i]!;
+    const dist = Math.abs(total - cand.total);
+    // Strictly-less keeps the SMALLER total on a tie (we iterate ascending).
     if (dist < bestDist) {
       best = cand;
       bestDist = dist;
@@ -117,36 +141,37 @@ export function tilerSnapNearestN(n: number): number {
 }
 
 /**
- * Resolve the effective grid dimension N from the (possibly fractional)
- * summed `tile` index — the CV "sum-then-snap to the nearest valid N" rule.
+ * Resolve the effective grid from the (possibly fractional) summed `tile`
+ * index — the CV "sum-then-snap to the nearest valid step" rule.
  *
  * The CV bridge has already SUMMED the (discrete-snapped) CV into the knob
- * index, so `summedTileIndex` is the knob index displaced by the CV. It can
- * be fractional (CV resolution / the bridge sum). We:
- *   1. interpolate that fractional index across TILER_GRID_STEPS to an N
- *      value (so an index of 1.5 is "halfway between N=4 and N=6" = N≈5),
+ * index, so `summedTileIndex` is the knob index displaced by the CV. It can be
+ * fractional (CV resolution / the bridge sum). We:
+ *   1. interpolate the step TOTAL across TILER_STEPS for that fractional index
+ *      (so an index of 1.5 is "halfway between total 4 and total 6" = 5),
  *      clamping the index to [0, last];
- *   2. SNAP that N to the nearest valid grid (tilerSnapNearestN).
+ *   2. SNAP that total to the nearest valid step (tilerSnapNearestStep).
  *
  * So a CV that nudges the knob a little past the "6" step resolves to the
- * nearest real grid (8), never an invalid 7×7. With NO CV (an integer
- * index) this is exactly `tilerStepN` — the plain knob → N mapping.
+ * nearest real grid, never an invalid in-between. With NO CV (an integer
+ * index) this is exactly `tilerStepGrid` — the plain knob → grid mapping.
  *
- * Exported so the shader's draw() + the unit tests share one source of
- * truth for the resolve rule.
+ * Exported so the shader's draw() + the unit tests share one source of truth
+ * for the resolve rule.
  */
-export function tilerResolveN(summedTileIndex: number): number {
-  const last = TILER_GRID_STEPS.length - 1;
+export function tilerResolveGrid(summedTileIndex: number): TilerStep {
+  const last = TILER_STEPS.length - 1;
   if (!Number.isFinite(summedTileIndex)) {
-    return TILER_GRID_STEPS[TILER_DEFAULT_TILE_INDEX]!;
+    return TILER_STEPS[TILER_DEFAULT_TILE_INDEX]!;
   }
   const idx = Math.max(0, Math.min(last, summedTileIndex));
   const lo = Math.floor(idx);
   const hi = Math.min(last, lo + 1);
   const frac = idx - lo;
-  // Interpolate N across the (unevenly spaced) step values, then snap.
-  const interpN = TILER_GRID_STEPS[lo]! + (TILER_GRID_STEPS[hi]! - TILER_GRID_STEPS[lo]!) * frac;
-  return tilerSnapNearestN(interpN);
+  // Interpolate the TOTAL across the (unevenly spaced) step totals, then snap.
+  const interpTotal =
+    TILER_STEPS[lo]!.total + (TILER_STEPS[hi]!.total - TILER_STEPS[lo]!.total) * frac;
+  return tilerSnapNearestStep(interpTotal);
 }
 
 const FRAG_SRC = `#version 300 es
@@ -157,17 +182,19 @@ out vec4 outColor;
 
 uniform sampler2D uTex;
 uniform float uHasInput;
-uniform float uN;          // grid dimension (1, 4, 6, 8, 12, 16)
+uniform float uCols;       // grid columns (1, 2, 3, 4, 4, 8)
+uniform float uRows;       // grid rows    (1, 2, 2, 3, 4, 8)
 
 void main() {
   if (uHasInput < 0.5) {
     outColor = vec4(0.0, 0.0, 0.0, 1.0);
     return;
   }
-  // Tile: stretch the UV across N cells, wrap each cell back to the full
-  // 0..1 input. fract(uv * N) repeats the whole source N×N times. At N=1
-  // fract(uv) == uv for uv in [0,1), so this is an exact 1:1 passthrough.
-  vec2 tiledUv = fract(vUv * uN);
+  // Tile: stretch the UV across cols×rows cells, wrap each cell back to the
+  // full 0..1 input. fract(uv * vec2(cols, rows)) repeats the whole source
+  // cols×rows times. At 1×1 fract(uv) == uv for uv in [0,1), so this is an
+  // exact 1:1 passthrough.
+  vec2 tiledUv = fract(vUv * vec2(uCols, uRows));
   outColor = vec4(texture(uTex, tiledUv).rgb, 1.0);
 }`;
 
@@ -190,18 +217,18 @@ export const tilerDef: VideoModuleDef = {
   schemaVersion: 1,
   inputs: [
     { id: 'in', type: 'video' },
-    // TILE CV — DISCRETE cvScale so the CV snaps to the index steps and
-    // sums into the `tile` index; the module then snaps the summed (possibly
-    // fractional) index to the nearest valid N step (tilerResolveN).
+    // TILE CV — DISCRETE cvScale so the CV snaps to the index steps and sums
+    // into the `tile` index; the module then snaps the summed (possibly
+    // fractional) index to the nearest valid step (tilerResolveGrid).
     { id: 'tile_cv', type: 'cv', paramTarget: 'tile', cvScale: { mode: 'discrete' } },
   ],
   outputs: [
     { id: 'out', type: 'video' },
   ],
   params: [
-    // The step INDEX 0..5 into TILER_GRID_STEPS (discrete fader). The card
-    // shows the resulting grid (e.g. "8×8") next to it.
-    { id: 'tile', label: 'Tile', defaultValue: TILER_DEFAULTS.tile, min: 0, max: TILER_GRID_STEPS.length - 1, curve: 'discrete' },
+    // The step INDEX 0..5 into TILER_STEPS (discrete fader). The card shows the
+    // resulting grid (e.g. "8×8") next to it.
+    { id: 'tile', label: 'Tile', defaultValue: TILER_DEFAULTS.tile, min: 0, max: TILER_STEPS.length - 1, curve: 'discrete' },
   ],
 
   factory(ctx, node): VideoNodeHandle {
@@ -210,7 +237,8 @@ export const tilerDef: VideoModuleDef = {
 
     const uTex      = gl.getUniformLocation(program, 'uTex');
     const uHasInput = gl.getUniformLocation(program, 'uHasInput');
-    const uN        = gl.getUniformLocation(program, 'uN');
+    const uCols     = gl.getUniformLocation(program, 'uCols');
+    const uRows     = gl.getUniformLocation(program, 'uRows');
 
     const { fbo, texture } = ctx.createFbo();
 
@@ -239,10 +267,12 @@ export const tilerDef: VideoModuleDef = {
           g.uniform1i(uTex, 0);
         }
 
-        // Resolve the grid dimension N: the (CV-summed, possibly fractional)
-        // `tile` index → nearest valid N. With no CV this is exactly the
-        // plain knob → N mapping.
-        g.uniform1f(uN, tilerResolveN(params.tile));
+        // Resolve the grid: the (CV-summed, possibly fractional) `tile` index →
+        // nearest valid step. With no CV this is exactly the plain knob → grid
+        // mapping.
+        const grid = tilerResolveGrid(params.tile);
+        g.uniform1f(uCols, grid.cols);
+        g.uniform1f(uRows, grid.rows);
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);
@@ -265,8 +295,10 @@ export const tilerDef: VideoModuleDef = {
       },
       read(key) {
         if (key === 'fboTexture') return surface.texture;
-        // UI: the resolved grid dimension N (1/4/6/8/12/16), CV included.
-        if (key === 'gridN') return tilerResolveN(params.tile);
+        // UI: the resolved grid (CV included).
+        if (key === 'gridTotal') return tilerResolveGrid(params.tile).total;
+        if (key === 'gridCols') return tilerResolveGrid(params.tile).cols;
+        if (key === 'gridRows') return tilerResolveGrid(params.tile).rows;
         return undefined;
       },
       dispose() { surface.dispose(); },
