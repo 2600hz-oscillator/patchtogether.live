@@ -43,7 +43,7 @@ const EXPECTED_NODE_TYPES = [
   'noise', 'numpadPlus', 'onetonine', 'peaks', 'peakstate', 'peertube', 'picturebox', 'polyhelm', 'polyseqz', 'pong',
   'polarizer', 'qbert', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
   'riotgirls', 'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
-  'scaler', 'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar',
+  'scaler', 'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'spectrograph',
   'skifree', 'slewSwitch', 'snes9x', 'stages', 'stereovca', 'sticky',
   'swolevco', 'symbiote', 'synesthesia', 'tides2', 'timelorde', 'treeohvox', 'tvLibrarian',
   'launchpadControlLeft',

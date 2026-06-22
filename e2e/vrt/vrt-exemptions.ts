@@ -795,6 +795,18 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // (the crush DSP) + ringback.test.ts (def + factory) + the per-port sweep +
   // the bespoke ringback.spec.ts (real VCO → stereo in → audible RMS at L/R out).
   'linux/ringback',
+  // SPECTROGRAPH: darwin baseline (the scrolling-sonogram card — its live
+  // preview canvas is DE-EXEMPTED via the __spectrographVrtFreeze scene in
+  // vrt-scenes.ts, which fills the buffer from a FIXED synthetic spectrum so
+  // the preview is pixel-stable; plus the deterministic chrome: title + GAIN
+  // knob + COLOR/B-W view toggle + the yellow PatchPanel IN/COLOR/B-W
+  // drill-down) captured locally; linux baseline pending a `vrt-update.yml`
+  // workflow_dispatch on this branch (same new-module pattern as RECORDERBOX
+  // above). Functional coverage is spectrograph-draw.test.ts (the pure
+  // log-bin + heat/inverted-grayscale colormap core) + the per-module-per-port
+  // + behavioral sweeps + the bespoke spectrograph.spec.ts (real VCO → IN →
+  // COLOR/B-W OUT → non-black structured frame at the video OUTPUT).
+  'linux/spectrograph',
   // OUTLINES (was CIRCLES): the card gained a SHAPE selector + ROTATION knob
   // (+ their CV input rows + small readouts), so the deterministic chrome
   // changed and the baseline was regenerated. The live COMBINE preview canvas
