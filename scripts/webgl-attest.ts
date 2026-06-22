@@ -21,7 +21,7 @@
 
 import { execFileSync, execSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, existsSync, rmSync } from 'node:fs';
-import { tmpdir, hostname, release, arch } from 'node:os';
+import { tmpdir, hostname, release, arch, cpus, loadavg } from 'node:os';
 import { join } from 'node:path';
 
 import {
@@ -283,6 +283,59 @@ function gitEmail(): string {
 }
 
 // ---------------------------------------------------------------------------
+// Pre-flight: refuse a NON-SOLO machine.
+// ---------------------------------------------------------------------------
+// ROOT CAUSE of the "transients in different files each run" class (NOT a code
+// flake, NOT a per-test bug): the heavy passes drive ONE Metal/ANGLE context
+// with --workers=1, but a CO-TENANT GPU client (a browser, an Electron/native
+// GL app) running at attest time steals GPU cycles from that context. Renders
+// slow → a DIFFERENT 1-2 timing-sensitive WebGL specs stall on each saturated
+// run → retries=0 turns each into a false refusal. Pin-workers (#860) fixed the
+// INTERNAL parallelism; this fixes the EXTERNAL contention the runner couldn't
+// see. We detect heavy GPU co-tenants + high load up front and REFUSE rather
+// than burn a ~6-min run and mislabel a co-tenant stall as a regression.
+// Override (e.g. on a dedicated runner you trust) with WEBGL_ATTEST_ALLOW_BUSY=1.
+function preflightSolo(): void {
+  if (process.env.WEBGL_ATTEST_ALLOW_BUSY === '1') {
+    console.log('Pre-flight: WEBGL_ATTEST_ALLOW_BUSY=1 — skipping the quiet-machine guard.');
+    return;
+  }
+  const ncpu = cpus().length || 1;
+  const load1 = loadavg()[0] ?? 0;
+  // GPU co-tenants (browsers / native GL apps) consuming real CPU at pre-flight
+  // time — before WE spawn any chromium, so anything here is someone else's.
+  const COTENANT_RE = /Google Chrome|Microsoft Edge|Safari|Chromium|firefox|Brave|Electron|Patchtogether\.app|Spotify/i;
+  let cotenants: string[] = [];
+  try {
+    cotenants = execSync('ps -A -o %cpu=,comm=', { encoding: 'utf8' })
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => { const i = l.indexOf(' '); return { cpu: parseFloat(l.slice(0, i)) || 0, name: l.slice(i + 1) }; })
+      .filter((p) => p.cpu >= 8 && COTENANT_RE.test(p.name))
+      .sort((a, b) => b.cpu - a.cpu)
+      .map((p) => `${p.cpu.toFixed(0)}% ${p.name.split('/').pop()}`);
+  } catch { /* ps unavailable → fall back to load only */ }
+  const loadBusy = load1 > ncpu * 0.5;
+  if (cotenants.length === 0 && !loadBusy) {
+    console.log(`Pre-flight: machine looks quiet (load(1m)=${load1.toFixed(2)} on ${ncpu} cores). Proceeding.`);
+    return;
+  }
+  console.error('────────────────────────────────────────────────────────────');
+  console.error('webgl:attest PRE-FLIGHT — machine is NOT quiet; REFUSING to run.');
+  if (cotenants.length) console.error(`  GPU co-tenants: ${cotenants.join('  ·  ')}`);
+  console.error(`  load(1m)=${load1.toFixed(2)} on ${ncpu} cores${loadBusy ? '  (HIGH)' : ''}`);
+  console.error('  The real-GPU attest needs the GPU SOLO. A co-tenant browser or');
+  console.error('  native GL app steals GPU cycles from the attest\'s single ANGLE/');
+  console.error('  Metal context, so a DIFFERENT 1-2 timing-sensitive WebGL specs');
+  console.error('  stall each run — the "transients in different files" false refusal.');
+  console.error('  → Quit heavy browsers / native GL apps, then re-run.');
+  console.error('  → Override (dedicated/trusted runner only): WEBGL_ATTEST_ALLOW_BUSY=1');
+  console.error('────────────────────────────────────────────────────────────');
+  process.exit(2);
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 function main() {
@@ -291,6 +344,8 @@ function main() {
     console.error('E2E_SWIFTSHADER=1 is set — a SwiftShader attestation would be a lie. Unset it and run on the real GPU.');
     process.exit(2);
   }
+  // (1b) Refuse a contended machine (the external-co-tenant transient class).
+  if (!DRY) preflightSolo();
   // Force the real hardware GPU for the probe AND all three Playwright passes.
   // HEADLESS Chromium on macOS defaults to SwiftShader even on a real GPU;
   // E2E_REAL_GPU=1 → playwright.config.ts adds --use-gl=angle --use-angle=metal

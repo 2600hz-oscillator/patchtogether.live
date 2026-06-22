@@ -127,18 +127,27 @@ async function canvasMenuClick(
 }
 
 /** Right-click an edge at its stroke MIDPOINT (screen coords mapped through the
- *  live CTM). The cable now has a wide transparent hit-path, so a coordinate
- *  right-click on the midpoint reliably lands on the stroke. */
+ *  live CTM). The cable has a wide transparent hit-path, so a coordinate
+ *  right-click on the midpoint lands on the stroke. Retries until the menu opens
+ *  — like rightClickEd/rightClickAt — recomputing the midpoint each attempt: a
+ *  single right-click can land before the SVG is interactive on cold SwiftShader
+ *  (the same "dominant toybox-node-menu flake" the node/canvas helpers already
+ *  guard; this edge helper was the last un-hardened one, and it surfaced as the
+ *  webgl-attest's lone red — fixed here, not papered over with an attest retry). */
 async function rightClickEdge(page: Page, edgeId: string): Promise<void> {
-  const p = await page.evaluate((edgeId) => {
-    const el = document.querySelector(`[data-testid="toybox-edge-${edgeId}"]`) as SVGPathElement | null;
-    if (!el) throw new Error(`edge ${edgeId} not found`);
-    const len = el.getTotalLength();
-    const pt = el.getPointAtLength(len / 2);
-    const ctm = el.getScreenCTM()!;
-    return { x: pt.x * ctm.a + pt.y * ctm.c + ctm.e, y: pt.x * ctm.b + pt.y * ctm.d + ctm.f };
-  }, edgeId);
-  await page.mouse.click(p.x, p.y, { button: 'right' });
+  const menuLoc = page.locator('[data-testid="toybox-node-menu"]');
+  await expect(async () => {
+    const p = await page.evaluate((edgeId) => {
+      const el = document.querySelector(`[data-testid="toybox-edge-${edgeId}"]`) as SVGPathElement | null;
+      if (!el) throw new Error(`edge ${edgeId} not found`);
+      const len = el.getTotalLength();
+      const pt = el.getPointAtLength(len / 2);
+      const ctm = el.getScreenCTM()!;
+      return { x: pt.x * ctm.a + pt.y * ctm.c + ctm.e, y: pt.x * ctm.b + pt.y * ctm.d + ctm.f };
+    }, edgeId);
+    await page.mouse.click(p.x, p.y, { button: 'right' });
+    await expect(menuLoc).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 20_000 });
 }
 
 /** Screen-space coords of an EMPTY point inside the SVG — provably clear of every
