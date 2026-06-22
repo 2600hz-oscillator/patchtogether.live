@@ -13,9 +13,100 @@
 // getImageData and compare the bright-pixel centroid / row profile to
 // decide which way is up. No baseline images needed — the geometry of a
 // triangle is self-describing.
+//
+// DETERMINISTIC RENDER-SMOKE (DRS) conversion (plan §3 / Layer B):
+// orientation is GEOMETRIC and fully deterministic once the engine is
+// frozen — a static triangle stays apex-up regardless of how many frames
+// elapse. So instead of `spawn -> waitForTimeout(N) -> read the displayed
+// canvas once and hope enough rAF + present blits happened` (the flaky
+// wall-clock sample), every SHAPES/transform/source test now:
+//
+//   1. installRenderSmokeHooks() BEFORE goto: PAUSE the engine rAF loop
+//      (the test owns the exact engine frame count) + PIN the engine clock
+//      (a time-animated source draws an identical frame every step).
+//   2. spawn the deterministic SHAPES triangle -> module.
+//   3. stepEngineFrames(): drive engine.step() a FIXED number of times
+//      SYNCHRONOUSLY (the engine loop is paused, so the test must drive it
+//      itself) — the module's output FBO now holds the FROZEN frame.
+//   4. settleFrozenCanvas(): the per-card present blit runs on the CARD's
+//      OWN rAF (independent of the paused engine loop), so wait — bounded,
+//      on RENDERED STATE not a fixed budget — until the displayed canvas
+//      has converged to non-black content that is STABLE across two reads.
+//      Because the underlying engine frame is frozen, the only content the
+//      card can ever blit is the frozen one, so this converges
+//      deterministically (no "mid-paint wrong content" race).
+//   5. analyzeTriangleOrientation() on the now-frozen displayed canvas.
+//
+// EXCEPTION — BENTBOX is NOT frame.time-deterministic: its CRT shader reads
+// `performance.now()` directly for its scanline/chroma/noise drift (see
+// bentbox.ts uTime = (performance.now() - startWallMs)/1000), so the engine
+// freeze hook (which only pins `frame.time`) does NOT freeze it. Fixing that
+// is a MODULE-SOURCE change (give BENTBOX its own clock-freeze hook), which
+// this test-only conversion must not make. The BENTBOX-output tests (2/3/4)
+// are therefore LEFT on the wall-clock sample + noted for a later hands-on
+// pass. (Their orientation verdict is robust to the wall-clock jitter — the
+// v>90 threshold rejects the scanline speckle and the apex-up geometry is
+// time-invariant — so they remain meaningful, just not bit-frozen.)
 
-import { test, expect } from '@playwright/test';
-import { spawnPatch, type SpawnNode, type SpawnEdge } from './_helpers';
+import { test, expect, type Page } from '@playwright/test';
+import { spawnPatch } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
+
+const FIXED_STEPS = 6;
+
+/** Drive the video engine `steps` frames SYNCHRONOUSLY (one evaluate, no
+ *  yield). The engine rAF loop is paused by installRenderSmokeHooks, so the
+ *  test owns the exact frame count; this leaves the module's output FBO
+ *  holding the FROZEN frame. Returns the engine frame-count delta so callers
+ *  can assert the loop really was paused (delta === steps). */
+async function stepEngineFrames(page: Page, steps: number): Promise<number> {
+  return page.evaluate((n) => {
+    const w = globalThis as unknown as {
+      __engine: () => {
+        getDomain: (d: string) => { step: () => void; currentFrameCount: () => number };
+      };
+    };
+    const vid = w.__engine().getDomain('video');
+    const before = vid.currentFrameCount();
+    for (let i = 0; i < n; i++) vid.step();
+    return vid.currentFrameCount() - before;
+  }, steps);
+}
+
+/** Wait — BOUNDED, on RENDERED STATE (not a fixed wall-clock budget) — until
+ *  the displayed card canvas has converged to non-black content that is STABLE
+ *  across two consecutive reads. The card's present blit runs on its OWN rAF
+ *  (independent of the paused engine loop), so this absorbs the present cadence
+ *  deterministically: the engine frame is frozen, so the only content the card
+ *  can ever blit is the frozen one — the condition can only flip false->true and
+ *  stay true (no "mid-paint wrong frame" race). Re-drives a single engine step
+ *  each poll so a not-yet-rendered FBO gets filled. */
+async function settleFrozenCanvas(page: Page, testid: string): Promise<void> {
+  const handle = page.locator(`canvas[data-testid="${testid}"]`);
+  await expect(handle, `${testid} present`).toHaveCount(1);
+  // Re-step once between polls so the (paused) engine keeps publishing the
+  // frozen FBO while the card's present rAF picks it up; convergence is on the
+  // canvas having stable non-black content, never on elapsed time.
+  await expect
+    .poll(
+      async () => {
+        await stepEngineFrames(page, 1);
+        return handle.evaluate((el) => {
+          const c = el as HTMLCanvasElement;
+          const ctx = c.getContext('2d');
+          if (!ctx) return 0;
+          const img = ctx.getImageData(0, 0, c.width, c.height).data;
+          let nonZero = 0;
+          for (let i = 0; i < img.length; i += 4 * 16) {
+            if ((img[i]! + img[i + 1]! + img[i + 2]!) / 3 > 8) nonZero++;
+          }
+          return nonZero;
+        });
+      },
+      { timeout: 10_000, message: `${testid} blitted frozen non-black content` },
+    )
+    .toBeGreaterThan(0);
+}
 
 /** Read a card canvas and return, per displayed row band, the count and
  *  mean horizontal spread of bright pixels. A triangle pointing UP (apex
@@ -74,7 +165,23 @@ async function analyzeTriangleOrientation(
 
 const TRIANGLE_PARAMS = { shape: 2, tile: 0, rotate: 0, zoom: 2.2 };
 
-async function setup(page: import('@playwright/test').Page) {
+/** Boot the app with the DRS determinism hooks installed (paused engine loop +
+ *  pinned clock). MUST install before goto. Returns the captured-error sink. */
+async function setupFrozen(page: Page) {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  // Pause the engine rAF loop + pin the clock BEFORE the app boots.
+  await installRenderSmokeHooks(page);
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  return errors;
+}
+
+/** Legacy wall-clock setup — kept ONLY for the BENTBOX-output tests, which can
+ *  not be frozen without a module-source change (BENTBOX reads performance.now()
+ *  directly). Does NOT install the freeze hooks, so the engine rAF loop runs. */
+async function setupLive(page: import('@playwright/test').Page) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -85,7 +192,7 @@ async function setup(page: import('@playwright/test').Page) {
 
 test.describe('video orientation — SHAPES triangle reference', () => {
   test('1. SHAPES(triangle) -> OUTPUT is upright (apex on top)', async ({ page }) => {
-    await setup(page);
+    await setupFrozen(page);
     await spawnPatch(page,
       [
         { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: TRIANGLE_PARAMS },
@@ -93,14 +200,25 @@ test.describe('video orientation — SHAPES triangle reference', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' }],
     );
-    await page.waitForTimeout(600);
+    // Drive a fixed number of FROZEN engine frames synchronously, then settle
+    // the card's present blit on rendered state (no wall-clock wait).
+    const delta = await stepEngineFrames(page, FIXED_STEPS);
+    expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
+    await settleFrozenCanvas(page, 'video-out-canvas');
     const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
     await page.screenshot({ path: 'test-results/orient-1-shapes-output.png' });
     expect(r.verdict, `SHAPES->OUTPUT verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
   });
 
+  // NOTE (deferred — module-source change required): BENTBOX's CRT shader reads
+  // performance.now() for its uTime drift (bentbox.ts), so the engine freeze
+  // hook does NOT make it frame-stable. Tests 2/3/4 (BENTBOX as the read
+  // surface) stay on the live engine + wall-clock sample until BENTBOX gets its
+  // own clock-freeze hook. The orientation verdict is still valid: the v>90
+  // threshold rejects the scanline speckle and apex-up geometry is
+  // time-invariant.
   test('2. SHAPES(triangle) -> BENTBOX is upright', async ({ page }) => {
-    await setup(page);
+    await setupLive(page);
     await spawnPatch(page,
       [
         { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: TRIANGLE_PARAMS },
@@ -114,8 +232,9 @@ test.describe('video orientation — SHAPES triangle reference', () => {
     expect(r.verdict, `SHAPES->BENTBOX verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
   });
 
+  // NOTE (deferred): BENTBOX in the chain — see test 2. Left on the live engine.
   test('3. SHAPES(triangle) -> BENTBOX -> OUTPUT is upright', async ({ page }) => {
-    await setup(page);
+    await setupLive(page);
     await spawnPatch(page,
       [
         { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: TRIANGLE_PARAMS },
@@ -149,7 +268,15 @@ test.describe('video orientation — SHAPES triangle reference', () => {
     // captureStream painted bright in its TOP half (top-left origin).
     // A correctly-oriented pipeline displays that band at the TOP of
     // OUTPUT. This is the load-bearing DOM-source-orientation guard.
-    await setup(page);
+    //
+    // DRS: the injected band is a STATIC bright-top fill (no time
+    // animation), and CAMERA's upload path uses no time uniform, so under
+    // the frozen+paused engine the OUTPUT FBO is deterministic once the
+    // <video> is attached + sampleable. We keep the deterministic
+    // readyState wait (an event-driven wait on the element actually being
+    // sampleable — NOT a wall-clock budget), then drive frozen steps +
+    // settle the present blit on rendered state.
+    await setupFrozen(page);
     await spawnPatch(page,
       [
         { id: 'cam', type: 'cameraInput', position: { x: 40, y: 40 }, domain: 'video', params: { enabled: 1, mirror: 0 } },
@@ -157,10 +284,6 @@ test.describe('video orientation — SHAPES triangle reference', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'cam', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' }],
     );
-    // Let the card's onMount getUserMedia attempt fail + settle first
-    // (the default project has no camera device), so it doesn't clobber
-    // our injected element afterwards.
-    await page.waitForTimeout(600);
     await page.evaluate(async () => {
       const w = globalThis as unknown as {
         __engine?: () => { getDomain: (d: string) => { attachExternalSource: (id: string, k: string, el: HTMLElement | null) => void } } | null;
@@ -181,7 +304,8 @@ test.describe('video orientation — SHAPES triangle reference', () => {
       vid.srcObject = stream;
       document.body.appendChild(vid);
       await vid.play().catch(() => { /* autoplay fallback */ });
-      // Wait for a sampleable frame (readyState >= 2).
+      // DETERMINISTIC readyState wait — event-driven, on the element being
+      // sampleable (readyState>=2 && videoWidth>0), NOT a fixed budget.
       await new Promise<void>((res) => {
         const check = () => { if (vid.readyState >= 2 && vid.videoWidth > 0) res(); else requestAnimationFrame(check); };
         check();
@@ -192,15 +316,20 @@ test.describe('video orientation — SHAPES triangle reference', () => {
       // Keep a reference so GC doesn't reclaim the element/stream mid-test.
       (globalThis as unknown as { __orientVid?: HTMLVideoElement }).__orientVid = vid;
     });
-    await page.waitForTimeout(800);
+    // Drive frozen engine frames so CAMERA's upload + OUTPUT FBO settle, then
+    // settle the present blit on rendered state.
+    const delta = await stepEngineFrames(page, FIXED_STEPS);
+    expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
+    await settleFrozenCanvas(page, 'video-out-canvas');
     const rc = await analyzeTriangleOrientation(page, 'video-out-canvas');
     await page.screenshot({ path: 'test-results/orient-6-camera-output.png' });
     expect(rc.topBright, `CAMERA->OUTPUT bright-top should dominate (top=${rc.topBright} bottom=${rc.bottomBright})`)
       .toBeGreaterThan(rc.bottomBright * 1.5);
   });
 
+  // NOTE (deferred): BENTBOX×2 in the chain — see test 2. Left on the live engine.
   test('4. SHAPES(triangle) -> BENTBOX -> BENTBOX -> OUTPUT is upright', async ({ page }) => {
-    await setup(page);
+    await setupLive(page);
     await spawnPatch(page,
       [
         { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: TRIANGLE_PARAMS },
@@ -228,7 +357,8 @@ test.describe('video orientation — SHAPES triangle reference', () => {
     // render with its narrow apex in the TOP half — like every sibling.
     // Disp params are zeroed so the raster is a clean 1:1 luma map and the
     // verdict isolates ORIENTATION (not the luma heightmap displacement).
-    await setup(page);
+    // RUTTETRA uses NO time uniform → fully deterministic when frozen.
+    await setupFrozen(page);
     await spawnPatch(page,
       [
         { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: TRIANGLE_PARAMS },
@@ -236,7 +366,9 @@ test.describe('video orientation — SHAPES triangle reference', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'src', portId: 'out' }, to: { nodeId: 're', portId: 'z' }, sourceType: 'mono-video', targetType: 'video' }],
     );
-    await page.waitForTimeout(600);
+    const delta = await stepEngineFrames(page, FIXED_STEPS);
+    expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
+    await settleFrozenCanvas(page, 'ruttetra-canvas');
     const r = await analyzeTriangleOrientation(page, 'ruttetra-canvas');
     await page.screenshot({ path: 'test-results/orient-7-shapes-ruttetra.png' });
     expect(r.verdict, `SHAPES->RUTTETRA verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
@@ -254,6 +386,12 @@ test.describe('video orientation — SHAPES triangle reference', () => {
 // verdict 'down' → the test FAILS. This is the load-bearing regression lock:
 // any module that starts (or regresses to) sampling its input upside-down is
 // caught here, module-by-module, with no baseline images needed.
+//
+// DRS: every transform/keyer below uses NO time uniform (pure function of its
+// input) and is driven with neutralized params, so feeding it the FROZEN SHAPES
+// triangle under the paused+pinned engine makes its output deterministic. We
+// drive a fixed step burst + settle the present blit on rendered state instead
+// of the old waitForTimeout + expect.poll-over-a-fixed-budget sample.
 //
 // The discrimination guard below proves the assertion actually distinguishes
 // up from down by injecting a vertically-INVERTED source (bright BOTTOM half)
@@ -300,7 +438,7 @@ const TRANSFORM_CASES: TransformCase[] = [
 test.describe('video orientation — parametrized transform/keyer lock', () => {
   for (const tc of TRANSFORM_CASES) {
     test(`SHAPES(triangle) -> ${tc.label} -> OUTPUT is upright (apex on top)`, async ({ page }) => {
-      await setup(page);
+      await setupFrozen(page);
       await spawnPatch(page,
         [
           { id: 'src', type: 'shapes', position: { x: 40, y: 40 }, domain: 'video', params: TRIANGLE_PARAMS },
@@ -312,24 +450,17 @@ test.describe('video orientation — parametrized transform/keyer lock', () => {
           { id: 'e2', from: { nodeId: 'mod', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
         ],
       );
-      // Feedback/vdelay need a couple of frames for the accumulator to settle
-      // even with feedback zeroed. POLL the verdict until it settles to 'up'
-      // instead of a single read after a flat 800 ms wait: on CI's slow
-      // SwiftShader the canvas can still be mid-paint at 800 ms → an 'ambiguous'
-      // verdict → a retry-only flake. Polling absorbs the slow paint
-      // deterministically (the orientation never legitimately flips to 'down').
-      await page.waitForTimeout(300);
-      let r = await analyzeTriangleOrientation(page, 'video-out-canvas');
-      await expect
-        .poll(
-          async () => {
-            r = await analyzeTriangleOrientation(page, 'video-out-canvas');
-            return r.verdict;
-          },
-          { timeout: 8_000 },
-        )
-        .toBe('up');
+      // Feedback/vdelay/backdraft have a ring that needs a few frames for the
+      // accumulator to settle even with feedback/mix zeroed. Drive a fixed
+      // FROZEN step burst (the engine loop is paused, so the test owns the count)
+      // — deterministic by construction — then settle the present blit on
+      // rendered state. No waitForTimeout, no poll-over-a-fixed-budget.
+      const delta = await stepEngineFrames(page, FIXED_STEPS);
+      expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
+      await settleFrozenCanvas(page, 'video-out-canvas');
+      const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
       await page.screenshot({ path: `test-results/orient-param-${tc.type}.png` });
+      expect(r.verdict, `SHAPES->${tc.label}->OUTPUT verdict (top=${r.topBright} bottom=${r.bottomBright})`).toBe('up');
     });
   }
 
@@ -340,8 +471,13 @@ test.describe('video orientation — parametrized transform/keyer lock', () => {
   // bottom-dominant. If the analyzer instead reported top-dominant here, the
   // 'up' assertions above would be vacuous. This is the live proof that the
   // analyzer (and thus the whole parametrized lock) discriminates orientation.
+  //
+  // DRS: the injected band is a STATIC bright-bottom fill (no time animation)
+  // and CAMERA's upload uses no time uniform, so under the frozen+paused engine
+  // the OUTPUT FBO is deterministic. The deterministic readyState wait (event-
+  // driven, on the element being sampleable) is preserved.
   test('discrimination guard: bright-BOTTOM source reads bottom-dominant', async ({ page }) => {
-    await setup(page);
+    await setupFrozen(page);
     await spawnPatch(page,
       [
         { id: 'cam', type: 'cameraInput', position: { x: 40, y: 40 }, domain: 'video', params: { enabled: 1, mirror: 0 } },
@@ -349,7 +485,6 @@ test.describe('video orientation — parametrized transform/keyer lock', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'cam', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' }],
     );
-    await page.waitForTimeout(600);
     await page.evaluate(async () => {
       const w = globalThis as unknown as {
         __engine?: () => { getDomain: (d: string) => { attachExternalSource: (id: string, k: string, el: HTMLElement | null) => void } } | null;
@@ -370,6 +505,8 @@ test.describe('video orientation — parametrized transform/keyer lock', () => {
       vid.srcObject = stream;
       document.body.appendChild(vid);
       await vid.play().catch(() => { /* autoplay fallback */ });
+      // DETERMINISTIC readyState wait — event-driven, on the element being
+      // sampleable (readyState>=2 && videoWidth>0), NOT a fixed budget.
       await new Promise<void>((res) => {
         const check = () => { if (vid.readyState >= 2 && vid.videoWidth > 0) res(); else requestAnimationFrame(check); };
         check();
@@ -379,7 +516,9 @@ test.describe('video orientation — parametrized transform/keyer lock', () => {
       ve.attachExternalSource('cam', 'video', vid);
       (globalThis as unknown as { __orientVid2?: HTMLVideoElement }).__orientVid2 = vid;
     });
-    await page.waitForTimeout(800);
+    const delta = await stepEngineFrames(page, FIXED_STEPS);
+    expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
+    await settleFrozenCanvas(page, 'video-out-canvas');
     const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
     await page.screenshot({ path: 'test-results/orient-guard-bottom.png' });
     expect(r.bottomBright, `bright-BOTTOM source must read bottom-dominant (top=${r.topBright} bottom=${r.bottomBright}) — else the lock is vacuous`)
@@ -398,10 +537,16 @@ test.describe('video orientation — parametrized transform/keyer lock', () => {
 // Blob-sourced ImageBitmaps, so the bottom-up texel layout was sampled as-is.
 // Fixed by decoding with imageOrientation:'flipY' in base64ToImageBitmap so
 // the existing FLIP_Y=true upload + vUv sampling lands upright like CAMERA.
+//
+// DRS: the injected image is a STATIC bright-top fill and PICTUREBOX's upload
+// uses no time uniform, so under the frozen+paused engine the OUTPUT FBO is
+// deterministic once setImage() has run. We await the real encode/decode
+// helpers (deterministic promise chain, not a wall-clock wait), then drive a
+// fixed frozen step burst + settle the present blit on rendered state.
 // ---------------------------------------------------------------------------
 test.describe('video orientation — PICTUREBOX image source', () => {
   test('PICTUREBOX(bright-top image) -> OUTPUT shows bright on top', async ({ page }) => {
-    await setup(page);
+    await setupFrozen(page);
     await spawnPatch(page,
       [
         { id: 'pic', type: 'picturebox', position: { x: 40, y: 40 }, domain: 'video' },
@@ -409,7 +554,6 @@ test.describe('video orientation — PICTUREBOX image source', () => {
       ],
       [{ id: 'e1', from: { nodeId: 'pic', portId: 'out' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'image', targetType: 'video' }],
     );
-    await page.waitForTimeout(400);
     await page.evaluate(async () => {
       const w = globalThis as unknown as {
         __engine?: () => { getDomain: (d: string) => { read: (id: string, key: string) => unknown } } | null;
@@ -440,7 +584,9 @@ test.describe('video orientation — PICTUREBOX image source', () => {
       if (!extras) throw new Error('no picturebox extras');
       extras.setImage(bmp);
     });
-    await page.waitForTimeout(700);
+    const delta = await stepEngineFrames(page, FIXED_STEPS);
+    expect(delta, 'engine advanced exactly the fixed frame count (loop paused)').toBe(FIXED_STEPS);
+    await settleFrozenCanvas(page, 'video-out-canvas');
     const r = await analyzeTriangleOrientation(page, 'video-out-canvas');
     await page.screenshot({ path: 'test-results/orient-picturebox.png' });
     // The injected band is a solid bright TOP half (not a triangle), so we
