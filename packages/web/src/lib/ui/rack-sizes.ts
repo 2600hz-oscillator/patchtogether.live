@@ -193,6 +193,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   shapedramps: { size: '4u', hp: 2 }, // 641×240px
   shapegen: { size: '2u', hp: 2 }, // 304×300px
   shapes: { size: '2u', hp: 2 }, // 320×220px
+  spirographs: { size: '3u', hp: 2 }, // 260×~360px — 160×120 preview + count/selector + colorwheel + per-spiro fader bank
   tiler: { size: '2u', hp: 2 }, // 200×200px — 160×120 preview + one TILE fader (mirrors cellshade)
   snes9x: { size: '2u', hp: 3 }, // 380×442px
   vdelay: { size: '3u', hp: 2 }, // 431×220px
