@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "webglContentHash": "ae99359c7478cb3e4b10492eed8f7c1926d35da822a44ca9b082621713588f4c",
+  "attestedAt": "2026-06-22T13:46:39.543Z",
+  "attestedBy": "tmayshark@gmail.com",
+  "gitHeadAtAttest": "1331d3420bedc729adb28c6f0854a23a35719d2c",
+  "playwrightVersion": "1.50.0",
+  "os": "darwin 25.4.0 (arm64)",
+  "host": "2600hzs-MBP.home.local",
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "repeatEach": 1,
+  "suites": {
+    "A-heavy": {
+      "specFiles": 50,
+      "passed": 172,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 1,
+      "flakyDetails": []
+    },
+    "B-leakers": {
+      "specFiles": 5,
+      "passed": 13,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "flakyDetails": []
+    },
+    "C-camera": {
+      "specFiles": 1,
+      "passed": 1,
+      "failed": 0,
+      "flaky": 1,
+      "skipped": 0,
+      "flakyDetails": [
+        {
+          "test": "renders the fake device into OUTPUT canvas",
+          "file": "camera-input.spec.ts",
+          "firstError": "Test timeout of 30000ms exceeded."
+        }
+      ]
+    }
+  },
+  "durationSec": 396
+}
