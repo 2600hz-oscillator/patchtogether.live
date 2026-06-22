@@ -20,13 +20,13 @@
 //      RGBA16F is MANDATORY: R swings < -0.3 (sync tip) and > 1.0 (overdrive
 //      headroom) — RGBA8 can't hold it (it degrades — "reduced precision").
 //
-//   2. BendCircuit → fboBend (FLOAT, SAME oversampled size). Processes
-//      fboEncode.R as an analog voltage (AC/DC coupling → gain/ENHANCE →
-//      bias → soft-clip + diode-clamp). Carries G/B/A through unchanged so
-//      the decoder can still recover phase even when sync is crushed. ONE
-//      ping-pong float pair so the AC-coupling leaky baseline (+ Phase-2
-//      sync-feedback) can read last frame's baseline (channel A of the back
-//      buffer — see below). Bend A-D taps + WAVEFOLD are Phase-2 stubs.
+//      processed as an analog voltage (AC/DC coupling → gain/ENHANCE → bias →
+//      BEND NETWORK A-D → soft-clip + diode-clamp). Carries G/B/A through
+//      unchanged so the decoder can still recover phase even when sync is
+//      crushed. ONE ping-pong float pair so the AC-coupling leaky baseline can
+//      read last frame's baseline (channel A of the back buffer — see below).
+//      Bend A-D are LIVE circuit-bend taps: A=wavefold, B=comb ripple,
+//      C=crush/posterise, D=chroma→sync bleed (see BEND_FRAG / b3ntb0x-dsp.ts).
 //
 //   3. DecodeComposite → fboDecode (RGBA8, ENGINE RES). For each output
 //      pixel: recover line-start x-offset from the (damaged) sync, then run a
@@ -58,6 +58,17 @@ import type { VideoModuleDef } from '$lib/video/module-registry';
 import type { VideoNodeHandle, VideoNodeSurface } from '$lib/video/engine';
 import { VIDEO_RES } from '$lib/video/engine';
 import { detectEdge, makeEdgeState, type EdgeState } from '$lib/doom/cv-gate-edge';
+// Constants the GLSL templates below INLINE (so the shaders + the CPU mirror
+// in b3ntb0x-dsp.ts cannot diverge). These are a real import (used at build
+// time to build the shader strings); the `export { … } from` block lower down
+// is a separate RE-export for the unit test (a re-export does not bring names
+// into local scope, so both are needed).
+import {
+  HUE_MAX_RAD,
+  DRIFT_PHASE_GAIN,
+  DRIFT_TIME_RATE,
+  AC_LEAK_ALPHA,
+} from './b3ntb0x-dsp';
 
 /** Active-line pixel count used in the NTSC carrier + texel math below. Equals
  *  the engine FBO width (the encode/bend FBOs are allocated at this width ×
@@ -112,6 +123,16 @@ export {
   regionTagForColumn,
   burstVoltage,
   b3ntb0xMirrorUv,
+  b3ntb0xHueRotate,
+  b3ntb0xDriftPhase,
+  b3ntb0xBendFold,
+  b3ntb0xBendComb,
+  b3ntb0xBendCrush,
+  b3ntb0xBendBleed,
+  HUE_MAX_RAD,
+  DRIFT_PHASE_GAIN,
+  DRIFT_TIME_RATE,
+  AC_LEAK_ALPHA,
 } from './b3ntb0x-dsp';
 
 // ---------- MIRROR gate edge tracking (clean, NOT imported from bentbox) ----------
@@ -144,8 +165,7 @@ uniform sampler2D uIn;       // upstream RGB (active picture)
 uniform float uHasInput;
 uniform float uTime;         // for subcarrier drift
 uniform float uBurstStarve;  // 0..1 — starves the burst phase reference
-uniform float uHue;          // -1..1 — rotates the whole carrier (burst phase)
-uniform float uSubDrift;     // 0..1 — subcarrier drift rate
+uniform float uSubDrift;     // 0..1 — subcarrier drift rate (phase error vs burst)
 
 const float PI = 3.14159265;
 const float TWO_PI = 6.2831853;
@@ -160,6 +180,8 @@ const float BURST_AMP    = 0.15;
 
 const float OVERSAMPLE       = ${OVERSAMPLE}.0;
 const float SUBCARRIER_PERIOD = ${SUBCARRIER_PERIOD}.0;
+const float DRIFT_PHASE_GAIN  = ${DRIFT_PHASE_GAIN}.0;  // mirror b3ntb0x-dsp
+const float DRIFT_TIME_RATE   = ${DRIFT_TIME_RATE};     // mirror b3ntb0x-dsp
 
 vec3 rgb2yiq(vec3 c) {
   return vec3(
@@ -173,8 +195,13 @@ void main() {
   // vUv.x runs across the oversampled width; it IS the line-fraction.
   float lineFrac = vUv.x;
 
-  // Burst phase: 180deg reference + Hue rotation + slow drift.
-  float burstPhase = PI + (uHue * 0.5 + uSubDrift * uTime * 0.15) * TWO_PI;
+  // Burst REFERENCE phase: a fixed 180deg per-line reference. This is what the
+  // receiver locks to (it is written verbatim to B), so HUE is NOT applied here
+  // (a carrier-phase shift the decoder also tracks cancels out — hue must be a
+  // DECODE-side demod-axis rotation to be visible). Drift is NOT folded in here
+  // either — that is the whole point: the active carrier drifts AWAY from this
+  // burst lock, and the mismatch is what the eye sees.
+  float burstPhase = PI;
 
   // Region tag (A channel).
   float region;
@@ -188,7 +215,15 @@ void main() {
   // Map the active span [ACTIVE_START,1) to oversampled column indices.
   float activeFrac = (lineFrac - ACTIVE_START) / (1.0 - ACTIVE_START);
   float activeColIdx = activeFrac * (1.0 - ACTIVE_START) * ${ENGINE_W}.0 * OVERSAMPLE / SUBCARRIER_PERIOD;
-  float phase = activeColIdx * TWO_PI + burstPhase;
+  // The clean burst-locked carrier phase (what B records / the decoder demods by).
+  float refPhase = activeColIdx * TWO_PI + burstPhase;
+  // SUBCARRIER DRIFT: an uncorrected phase ERROR that GROWS across the active
+  // line (activeFrac) and wanders in time — modulating the picture on a carrier
+  // that has slipped away from the burst the decoder is locked to. Mirror of
+  // b3ntb0xDriftPhase(). Added to the ACTUAL modulation carrier only.
+  float driftErr = clamp(uSubDrift, 0.0, 1.0) * DRIFT_PHASE_GAIN
+                   * (clamp(activeFrac, 0.0, 1.0) + uTime * DRIFT_TIME_RATE);
+  float carrierPhase = refPhase + driftErr;
 
   float comp;   // R: composite voltage
   float cleanY = 0.0; // G: undistorted luma helper
@@ -196,22 +231,25 @@ void main() {
   if (region < 0.1) {
     comp = SYNC_TIP_V;               // sync tip below blanking
   } else if (region > 0.4 && region < 0.6) {
-    // Colour burst on the back porch: blanking + starvable carrier.
-    float burst = BURST_AMP * (1.0 - clamp(uBurstStarve, 0.0, 1.0)) * cos(phase + PI);
+    // Colour burst on the back porch: blanking + starvable carrier. Burst is on
+    // the CLEAN reference phase (drift hits the picture carrier, not the burst).
+    float burst = BURST_AMP * (1.0 - clamp(uBurstStarve, 0.0, 1.0)) * cos(refPhase + PI);
     comp = burst;
   } else if (region < 0.9) {
     comp = 0.0;                       // blanking / porches
   } else {
     // ACTIVE: sample the picture at the active fraction (vertical = vUv.y).
+    // Modulate on the DRIFTED carrier so the decode (burst-locked) sees the slip.
     vec3 src = uHasInput > 0.5 ? texture(uIn, vec2(clamp(activeFrac, 0.0, 1.0), vUv.y)).rgb : vec3(0.0);
     vec3 yiq = rgb2yiq(src);
     cleanY = yiq.x;
-    comp = yiq.x + yiq.y * cos(phase) + yiq.z * sin(phase);
+    comp = yiq.x + yiq.y * cos(carrierPhase) + yiq.z * sin(carrierPhase);
   }
 
-  // R = composite voltage, G = clean Y, B = carrier phase reference
-  // (wrapped to [0,1) so it survives RGBA16F), A = region tag.
-  float phaseRef = fract(phase / TWO_PI);
+  // R = composite voltage, G = clean Y, B = the BURST-LOCKED reference phase
+  // (NOT the drifted carrier — that is what makes drift visible), wrapped to
+  // [0,1) so it survives RGBA16F. A = region tag.
+  float phaseRef = fract(refPhase / TWO_PI);
   outColor = vec4(comp, cleanY, phaseRef, region);
 }`;
 
@@ -236,12 +274,13 @@ uniform float uEnhance;    // 0..1 HF peaking
 uniform float uBias;       // -1..1 DC offset before clip
 uniform float uAcDc;       // 0..1 coupling (0=DC passthrough, 1=AC leaky-HP)
 uniform float uSyncCrush;  // 0..2 transistor/master gain into the clip
-uniform float uBendA;      // -1..1 (P1 stub — identity)
-uniform float uBendB;
-uniform float uBendC;
-uniform float uBendD;
+uniform float uBendA;      // -1..1 — WAVEFOLD (reflect past shrinking thresh)
+uniform float uBendB;      // -1..1 — COMB RIPPLE (delayed-tap mix → ringing)
+uniform float uBendC;      // -1..1 — CRUSH (quantise → posterise banding)
+uniform float uBendD;      // -1..1 — CHROMA→SYNC BLEED (HF onto DC path)
 
 const float OVERSAMPLE = ${OVERSAMPLE}.0;
+const float AC_LEAK_ALPHA = ${AC_LEAK_ALPHA}; // mirror b3ntb0x-dsp
 
 float softClip(float v) {
   float v2 = v * v;
@@ -253,18 +292,21 @@ void main() {
   float v = enc.r;          // composite voltage
   float region = enc.a;
 
+  float dx = 1.0 / (${ENGINE_W}.0 * OVERSAMPLE);
+
   // --- 1. INPUT COUPLING (AC/DC). Leaky baseline lives in prev .a. ---
+  // Leak fast ENOUGH (AC_LEAK_ALPHA) that even a STILL frame loses its DC
+  // pedestal: AC coupling can't hold DC, so big flat bright/dark areas droop
+  // back toward mid-grey. (The old 0.02 leak left baseline≈DC on a static scene
+  // → the control did nothing — owner-reported "weak".)
   float baseline = uHasPrev > 0.5 ? texture(uPrevBend, vUv).a : 0.0;
-  // Slow one-pole leak toward v.
-  float alpha = 0.02;
-  float nb = baseline + alpha * (v - baseline);
+  float nb = baseline + AC_LEAK_ALPHA * (v - baseline);
   float vHp = v - nb;
   float c = clamp(uAcDc, 0.0, 1.0);
   float vc = v * (1.0 - c) + vHp * c;
 
   // --- 2. TRANSISTOR GAIN + ENHANCE (HF peaking). ---
   // Neighbour average for the HF high-pass (one oversampled px each side).
-  float dx = 1.0 / (${ENGINE_W}.0 * OVERSAMPLE);
   float vl = texture(uEncode, vec2(vUv.x - dx, vUv.y)).r;
   float vr = texture(uEncode, vec2(vUv.x + dx, vUv.y)).r;
   float neighborAvg = (vl + vr) * 0.5;
@@ -274,15 +316,53 @@ void main() {
   // --- 3. BIAS (asymmetric clip). ---
   vc = vc + uBias;
 
-  // --- 4. NONLINEARITY: soft-clip + one-sided diode clamp. ---
+  // --- 4. BEND NETWORK (Bend A–D) — the circuit-bend patch points, applied to
+  //     the analog composite voltage BEFORE the diode clamp so they interact
+  //     with the nonlinearity. Each is identity at 0. Mirrors b3ntb0x-dsp.ts
+  //     (b3ntb0xBendFold / Comb / Crush / Bleed). ---
+  // A — WAVEFOLD: reflect excursions past a shrinking threshold (solarise).
+  {
+    float a = clamp(uBendA, -1.0, 1.0);
+    if (abs(a) > 1e-4) {
+      float mag = abs(a);
+      float t = max(0.1, 1.0 - 0.8 * mag);
+      float folded = vc * (1.0 + 1.5 * mag);
+      if (folded > t) folded = t - (folded - t);
+      else if (folded < -t) folded = -t - (folded + t);
+      vc = vc * (1.0 - mag) + folded * mag + a * 0.05;
+    }
+  }
+  // B — COMB RIPPLE: mix a horizontally-delayed copy back in (ringing/ghost).
+  {
+    float b = clamp(uBendB, -1.0, 1.0);
+    if (abs(b) > 1e-4) {
+      float vDelayed = texture(uEncode, vec2(vUv.x - 6.0 * dx, vUv.y)).r * uSyncCrush + uBias;
+      vc = vc + b * 0.6 * (vDelayed - vc);
+    }
+  }
+  // C — CRUSH: quantise to a few steps (posterise / bit-crush banding).
+  {
+    float cc = abs(clamp(uBendC, -1.0, 1.0));
+    if (cc > 1e-4) {
+      float steps = max(3.0, floor(64.0 * (1.0 - cc) + 3.0 * cc + 0.5));
+      vc = floor(vc * steps + 0.5) / steps;
+    }
+  }
+  // D — CHROMA→SYNC BLEED: cross-couple the HF ripple onto the DC path so the
+  //     picture modulates the baseline (luma buzz / rolling contamination).
+  {
+    float d = clamp(uBendD, -1.0, 1.0);
+    if (abs(d) > 1e-4) {
+      float ripple = vc - neighborAvg; // local HF/chroma content
+      vc = vc + d * 0.8 * ripple;
+    }
+  }
+
+  // --- 5. NONLINEARITY: soft-clip + one-sided diode clamp. ---
   // No clamp protecting the sync region: high gain/bias drag the sync tip
   // up THROUGH the clamp and crush it -> the decoder later fails to lock.
   vc = softClip(vc);
   vc = clamp(vc, -0.6, 1.4);   // diode clamp (asymmetric ceil/floor)
-
-  // --- 5. BEND NETWORK (Bend A-D) — P1 identity passthrough (uniforms read
-  // so they're not optimized out; live cross-coupling lands in Phase 2). ---
-  vc += (uBendA + uBendB + uBendC + uBendD) * 0.0;
 
   // --- 6. OUTPUT COUPLING (DC restore) — re-center lightly before decode. ---
   vc = vc - nb * c * 0.5;
@@ -311,8 +391,14 @@ uniform sampler2D uBend;    // bent composite (R=v, G=Y, B=phase, A=baseline)
 uniform sampler2D uEncode;  // helper truth (A=region tag, B=clean phase)
 uniform float uChromaLeak;  // 0..1 — chroma the LP leaks into luma (dot crawl)
 uniform float uLumaPeak;    // 0..1 — decode-side unsharp on Y
-uniform float uTbc;         // 0..1 — line-relock strength
+uniform float uTbc;         // 0..1 — line-relock + timebase-jitter correction
 uniform float uBurstStarve; // 0..1 — colour-burst starvation (decoder loses lock)
+uniform float uHue;         // -1..1 — receiver TINT (demod-axis rotation)
+uniform float uBendC;       // -1..1 — CRUSH: posterise the DECODED picture (the
+                            //   composite-domain crush in PASS 2 is smoothed by
+                            //   this pass's horizontal LP, so the visible bit-
+                            //   crush is applied here on the recovered RGB)
+uniform float uTime;        // for the analog timebase wobble TBC corrects
 
 const float PI = 3.14159265;
 const float TWO_PI = 6.2831853;
@@ -320,6 +406,7 @@ const float OVERSAMPLE        = ${OVERSAMPLE}.0;
 const float ACTIVE_START      = 0.16;
 const float SUBCARRIER_PERIOD = ${SUBCARRIER_PERIOD}.0;
 const float N = 6.0;
+const float HUE_MAX_RAD = ${HUE_MAX_RAD};  // mirror b3ntb0x-dsp
 
 vec3 yiq2rgb(vec3 c) {
   return clamp(vec3(
@@ -344,9 +431,16 @@ float recoverLineOffset(float y) {
     if (v > -0.15) { detected = x; break; }
   }
   float rawOffset = detected - nominalEdge;
-  // TBC blends the recovered offset toward 0 (nominal). 0 = trust damaged
-  // sync fully (max glitch); 1 = full time-base-correct (rock steady).
-  return rawOffset * (1.0 - clamp(uTbc, 0.0, 1.0));
+  // ANALOG TIMEBASE WOBBLE: even with intact sync, an un-time-base-corrected
+  // signal has a small per-line horizontal wander (the playback clock isn't
+  // perfectly steady) — lines shimmy left/right and the picture "breathes".
+  // It is keyed off the row + time so it animates and differs per scanline.
+  // TBC=0 lets the FULL wobble + the recovered (damaged) sync offset through;
+  // TBC=1 corrects BOTH to rock-steady. This gives TBC a clear, always-visible
+  // effect on a clean signal, not just on crushed sync.
+  float wobble = 0.012 * sin(y * 47.0 + uTime * 3.3) * sin(y * 11.0 - uTime * 1.7);
+  float tbc = clamp(uTbc, 0.0, 1.0);
+  return (rawOffset + wobble) * (1.0 - tbc);
 }
 
 void main() {
@@ -401,6 +495,20 @@ void main() {
   Q *= colourKill;
   Y += subcarrierEnergy * burstStarve * 0.35;
 
+  // HUE — receiver TINT. A real hue knob rotates the synchronous-demodulator's
+  // reference AXIS relative to the burst the receiver locked to; rotating the
+  // recovered (I,Q) vector by θ = hue·HUE_MAX_RAD is the same operation. This is
+  // DECODE-side on purpose: a carrier-phase shift in ENCODE the decoder also
+  // tracks would cancel out (the old "dead Hue" bug). Mirror of b3ntb0xHueRotate.
+  {
+    float theta = clamp(uHue, -1.0, 1.0) * HUE_MAX_RAD;
+    float ch = cos(theta);
+    float sh = sin(theta);
+    float nI = I * ch - Q * sh;
+    float nQ = I * sh + Q * ch;
+    I = nI; Q = nQ;
+  }
+
   // CHROMA LEAK: let some chroma energy bleed into luma (under-filtered
   // chroma -> dot crawl on the luma). Intentional.
   Y += (abs(I) + abs(Q)) * uChromaLeak * 0.25;
@@ -413,6 +521,15 @@ void main() {
   }
 
   vec3 rgb = yiq2rgb(vec3(Y, I, Q));
+  // C — CRUSH (visible): posterise the recovered picture. The PASS-2 composite
+  // crush survives only as subtle banding once this pass's horizontal LP averages
+  // it out, so apply the bit-crush here on RGB where it's unmistakable. 256 levels
+  // (≈no-op) at 0 → 3 levels at full.
+  float cc = abs(clamp(uBendC, -1.0, 1.0));
+  if (cc > 1e-4) {
+    float steps = floor(mix(256.0, 3.0, cc) + 0.5);
+    rgb = floor(rgb * steps + 0.5) / steps;
+  }
   outColor = vec4(rgb, 1.0);
 }`;
 
@@ -543,6 +660,21 @@ void main() {
 
   outColor = vec4(clamp(cur, 0.0, 1.0), 1.0);
 }`;
+
+/**
+ * The four GLSL pass sources, exported SOLELY so the unit test can statically
+ * verify that EVERY param's uniform is not just declared but actually CONSUMED
+ * in the pass body (the "no dead control" guard) — catching the class of bug
+ * the owner reported (a uniform read into a no-op like `* 0.0`). Not used by the
+ * factory (it inlines these constants directly). The map ties each param id to
+ * the pass(es) whose shader must reference its uniform in a non-trivial way.
+ */
+export const B3NTB0X_SHADERS = {
+  encode: ENCODE_FRAG,
+  bend: BEND_FRAG,
+  decode: DECODE_FRAG,
+  crt: CRT_FRAG,
+} as const;
 
 // ---------- module def ----------
 
@@ -690,7 +822,6 @@ export const b3ntb0xDef: VideoModuleDef = {
       uHasInput: gl.getUniformLocation(encodeProgram, 'uHasInput'),
       uTime: gl.getUniformLocation(encodeProgram, 'uTime'),
       uBurstStarve: gl.getUniformLocation(encodeProgram, 'uBurstStarve'),
-      uHue: gl.getUniformLocation(encodeProgram, 'uHue'),
       uSubDrift: gl.getUniformLocation(encodeProgram, 'uSubDrift'),
     };
     const bU = {
@@ -713,6 +844,9 @@ export const b3ntb0xDef: VideoModuleDef = {
       uLumaPeak: gl.getUniformLocation(decodeProgram, 'uLumaPeak'),
       uTbc: gl.getUniformLocation(decodeProgram, 'uTbc'),
       uBurstStarve: gl.getUniformLocation(decodeProgram, 'uBurstStarve'),
+      uHue: gl.getUniformLocation(decodeProgram, 'uHue'),
+      uBendC: gl.getUniformLocation(decodeProgram, 'uBendC'),
+      uTime: gl.getUniformLocation(decodeProgram, 'uTime'),
     };
     const cU = {
       uDecode: gl.getUniformLocation(crtProgram, 'uDecode'),
@@ -755,15 +889,15 @@ export const b3ntb0xDef: VideoModuleDef = {
       draw(frame) {
         const g = frame.gl;
         const inputTex = frame.getInputTexture(node.id, 'in');
-        // Subcarrier-drift clock. Normally wall-clock-relative; a TEST-ONLY seam
-        // (`globalThis.__b3ntb0xFreezeTimeSec`, flag-gated, zero production impact —
-        // parallels camera's __camerainputTestFrame / the engine freeze) pins it to
-        // a constant so the deterministic render-smoke (b3ntb0x-render-smoke.spec.ts)
-        // gets an IDENTICAL uTime phase on every step. Without this the encode pass's
-        // performance.now()-based carrier drift makes the frozen frame irreproducible.
-        const frozenT = (globalThis as { __b3ntb0xFreezeTimeSec?: number }).__b3ntb0xFreezeTimeSec;
-        const tSec = typeof frozenT === 'number'
-          ? frozenT
+        // Subcarrier-drift clock (subcarrier phase + sync wobble advance with
+        // uTime → the decoded frame changes every tick). A TEST-ONLY seam
+        // (`globalThis.__b3ntb0xFreezeTimeSec`, flag-gated, zero production impact)
+        // PINS it to a constant so both the per-control pixel diff (#859) and the
+        // deterministic render-smoke (b3ntb0x.spec.ts) get an IDENTICAL uTime phase
+        // on every step; production leaves it unset → live wall-clock.
+        const freezeT = (globalThis as unknown as { __b3ntb0xFreezeTimeSec?: number }).__b3ntb0xFreezeTimeSec;
+        const tSec = typeof freezeT === 'number' && Number.isFinite(freezeT)
+          ? freezeT
           : ((typeof performance !== 'undefined' ? performance.now() : Date.now()) - startWallMs) / 1000;
 
         // MIRROR gate rising edge flips the matching mirror boolean.
@@ -784,7 +918,6 @@ export const b3ntb0xDef: VideoModuleDef = {
         g.uniform1f(eU.uHasInput, inputTex ? 1.0 : 0.0);
         g.uniform1f(eU.uTime, tSec);
         g.uniform1f(eU.uBurstStarve, clamp01(params.burst_starve));
-        g.uniform1f(eU.uHue, clampSym(params.hue));
         g.uniform1f(eU.uSubDrift, clamp01(params.sub_drift));
         ctx.drawFullscreenQuad();
 
@@ -826,6 +959,9 @@ export const b3ntb0xDef: VideoModuleDef = {
         g.uniform1f(dU.uLumaPeak, clamp01(params.luma_peak));
         g.uniform1f(dU.uTbc, clamp01(params.tbc));
         g.uniform1f(dU.uBurstStarve, clamp01(params.burst_starve));
+        g.uniform1f(dU.uHue, clampSym(params.hue));
+        g.uniform1f(dU.uBendC, clampSym(params.bend_c));
+        g.uniform1f(dU.uTime, tSec);
         ctx.drawFullscreenQuad();
 
         // ---- PASS 4: CRTDisplay -> CRT ping-pong (engine res RGBA8) ----
