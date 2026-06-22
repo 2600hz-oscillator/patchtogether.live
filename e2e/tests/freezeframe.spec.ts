@@ -1,287 +1,146 @@
 // e2e/tests/freezeframe.spec.ts
 //
-// FREEZEFRAME — video sample & hold + per-channel posterize. The
-// regression-critical paths, asserted via canvas pixel sampling on the
-// downstream VIDEOOUT card:
+// FREEZEFRAME — video sample & hold + per-channel posterize.
 //
-//   (a) UNGATED   → live passthrough: an animated source's frame keeps
-//                   changing at the output (no freeze).
-//   (b) GATE HIGH → output UPDATES (tracks the live source).
-//   (c) GATE LOW  → output FROZEN: the held frame persists even while the
-//                   source keeps animating underneath.
-//   (d) QUANT     → raising all four QUANT knobs to max drops the number
-//                   of DISTINCT colours at the output (posterization).
+// DETERMINISTIC render-smoke (DRS), converted IN-PLACE from the old wall-clock
+// shape (spawn → poll-the-output-canvas-on-a-50ms-cadence until a
+// brightness-fingerprint animation-diff crosses a LIVE/FROZEN fraction, with a
+// 12 s deadline). That pattern raced three un-synchronized clocks (the engine's
+// own rAF loop — THROTTLED in a backgrounded e2e tab — the 2D-canvas blit
+// cadence, and the wall-clock poll) and proved "the frame moved" by diffing
+// successive ANIMATED frames, which a frozen clock can't (and shouldn't) do.
 //
-// The gate scenarios use the deterministic `__freezeframeForceGate` test
-// hook (a number = "gate patched at this level") so the freeze-vs-live
-// state is pinned without a timing-flaky real LFO. The REAL CV-bridge gate
-// path (a gate source patched into gate_in) is covered by the
-// per-module-per-port sweep + the freezeframe.test.ts shouldCapture unit
-// tests; this spec proves the end-to-end render behaviour.
+// The DRS instead PAUSES the engine rAF loop + PINS the engine clock before boot
+// (installRenderSmokeHooks), drives engine.step() a FIXED number of frames
+// synchronously, and reads FREEZEFRAME's OWN output FBO once via the shared
+// _render-smoke harness with renderer-tolerant floors. The regression-critical
+// paths, re-expressed deterministically:
+//
+//   (a) UNGATED   → live passthrough: with nothing patched to gate_in the gate
+//                   reads UNPATCHED (read('gatePatched')===false) and the output
+//                   TRACKS the source — changing the source's (frozen) frame
+//                   changes the output (two FROZEN reads DIFFER).
+//   (b) GATE HIGH → output UPDATES: with __freezeframeForceGate=1 the gate reads
+//                   PATCHED and the output still TRACKS the source (two FROZEN
+//                   reads, source frame changed in between, DIFFER).
+//   (c) GATE LOW  → output FROZEN: with __freezeframeForceGate=0 the held frame
+//                   PERSISTS even though the source's frozen frame is changed
+//                   underneath (two FROZEN reads MATCH within tolerance).
+//   (d) QUANT     → raising all four QUANT knobs to max drops the number of
+//                   DISTINCT colours at the output (posterization): two FROZEN
+//                   reads (full-depth vs max-quant) and the distinct-colour count
+//                   collapses.
+//
+// "Source frame changed in between" is done deterministically by setParam-ing
+// ACIDWARP's `scene` (the source rebuilds its pattern texture for the new scene
+// — see acidwarp.ts) rather than by waiting for it to ANIMATE: with the clock
+// pinned, each (scene) is a bit-stable frozen frame, so a scene swap is a clean
+// "the input changed" edge with no timing flake.
+//
+// The gate scenarios use the deterministic `__freezeframeForceGate` test hook (a
+// number = "gate patched at this level") so the freeze-vs-live state is pinned
+// without a timing-flaky real LFO. The REAL CV-bridge gate path (a gate source
+// patched into gate_in) is covered by the per-module-per-port sweep + the
+// freezeframe.test.ts shouldCapture unit tests; this spec proves the end-to-end
+// render behaviour.
+//
+// No waitForTimeout, no poll, no animation-diff, no exact-pixel assert.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { installRenderSmokeHooks, stepAndReadStats, assertRenderStats } from './_render-smoke';
 
-interface FrameSample {
-  /** Compact per-pixel brightness fingerprint (one byte per sampled pixel).
-   *  Comparing two fingerprints pixel-by-pixel gives a robust "fraction of
-   *  pixels that changed" motion detector — sensitive to a panning pattern
-   *  even when the mean brightness is ~constant. */
-  fingerprint: number[];
-  nonZero: number;
-  /** Count of DISTINCT quantized colours (5-bit-per-channel buckets). */
-  distinctColors: number;
-  samples: number;
-}
+// FREEZEFRAME's own combined output port (video_out). The harness reads a node's
+// OWN FBO by node id (+ optional port); FREEZEFRAME publishes video_out via
+// read('outputTexture:video_out'), and outputTexture() prefers that port texture.
+const FF_PORT = 'video_out';
 
-// NOTE: the frame-sampling logic (coarse-stride brightness fingerprint +
-// 5-bit-per-channel distinct-colour count) lives INLINE inside `stepAndSample`'s
-// single `page.evaluate` so the entire step→blit→sample is one round-trip — see
-// the PERF note below. There is no standalone `sampleFrame` round-trip helper.
+// A fixed synchronous burst — large enough that FREEZEFRAME has captured the
+// (unpatched/high-gate) source into its hold buffer (holdSeeded) and every
+// output pass has run, small enough to stay cheap on CI's software renderer.
+const FIXED_STEPS = 6;
 
-/** Fraction of sampled pixels whose brightness changed by > 8 (out of 255)
- *  between two frame fingerprints. ~0 ⇒ frozen; high ⇒ the frame moved. */
-function changedFraction(a: FrameSample, b: FrameSample): number {
-  const len = Math.min(a.fingerprint.length, b.fingerprint.length);
-  if (len === 0) return 0;
-  let changed = 0;
-  for (let i = 0; i < len; i++) {
-    if (Math.abs(a.fingerprint[i]! - b.fingerprint[i]!) > 8) changed++;
-  }
-  return changed / len;
-}
-
-// A live/animated frame moves a meaningful fraction of pixels between
-// samples; a frozen frame moves essentially none (identical held pixels).
-const LIVE_FRACTION = 0.05;   // >5% of pixels changed ⇒ the frame moved
-const FROZEN_FRACTION = 0.01; // <1% of pixels changed ⇒ held frame persists
-
-// The video chain renders on the engine's OWN requestAnimationFrame loop, which
-// the browser THROTTLES (to ~1 Hz, or pauses) whenever the tab is backgrounded
-// — and under the parallel-worker e2e fan-out only one tab is ever foreground.
-// The helpers below therefore:
-//   1. Drive `engine.step()` (and the per-OUTPUT blit) DIRECTLY from the test
-//      to advance the engine a frame regardless of rAF throttling — `step()` is
-//      the exact deterministic primitive the engine exposes for tests
-//      ("Test code calls this directly so it doesn't have to wait for rAF").
-//   2. Poll the OUTPUT canvas on a WALL-CLOCK cadence (not by awaiting the
-//      test's own requestAnimationFrame, which would itself stall in a
-//      backgrounded tab) until the observed behaviour matches, with a deadline.
-// This mirrors the proven `waitForLuma` pattern in 4plexvid.spec.ts. It replaces
-// the old fixed `settle(700)`/`settle(900)` sleeps that raced the render loop:
-// they could sample mid-transition (flaky assertions) and, when paired with the
-// dep-reoptimization reload race, blow the whole 30 s test budget.
-
-// PERF (the CI-vs-local gap): each `page.evaluate` is a cross-process round-trip
-// to the browser, and on a 4-vCPU CI runner with 4 Playwright workers a WebGL/
-// canvas-heavy test gets ~1 vCPU — so those round-trips are SLOW. The old helper
-// made one round-trip PER stepped frame PLUS one per sample, so a single poll
-// iteration (`stepAndSample(1)` + `stepAndSample(gap=6)`) cost ~9 round-trips,
-// and three poll phases blew the 30 s test budget under contention (confirmed:
-// the timeout fired mid-`page.evaluate`, at a DIFFERENT line on each attempt —
-// the hallmark of slow-but-correct, not a stuck poll). Fix: do the WHOLE
-// step-N-frames → blit → sample in ONE `page.evaluate` so a poll iteration is a
-// SINGLE round-trip regardless of how many engine frames it advances. Paired
-// with `test.setTimeout(90_000)` (mirroring DOOM) so the budget — not a
-// 30 s-default trip — governs.
-
-/** Step the video engine `n` deterministic frames, blit every OUTPUT to its
- *  visible 2D canvas (independent of rAF throttling), then sample the first
- *  OUTPUT canvas — all in a SINGLE in-page pass (one round-trip). Returns null
- *  if the engine isn't up yet (caller polls, so a transient miss is fine). */
-async function stepAndSample(page: Page, n = 1): Promise<FrameSample | null> {
-  return page.evaluate((steps) => {
+/** Read FREEZEFRAME's OWN combined-output FBO ONCE and return luma stats PLUS a
+ *  distinct-colour count (5-bit-per-channel buckets) — the posterize headline
+ *  metric the shared harness doesn't compute. Single page.evaluate (one
+ *  round-trip, no await inside → rAF/decode/blit can't interleave), no poll, no
+ *  sleep. Mirrors _render-smoke's gl.readPixels readback. */
+async function readColorStats(
+  page: Page,
+  nodeId: string,
+  portId: string,
+): Promise<{ nonZeroFrac: number; distinctColors: number; samples: number }> {
+  return page.evaluate(({ nodeId, portId }) => {
     const w = globalThis as unknown as {
-      __engine?: () => {
-        getDomain?: (d: string) => {
-          step?: () => void;
-          blitOutputToDrawingBuffer?: (id: string) => void;
-          canvas?: CanvasImageSource;
-        } | null;
-      } | null;
-      __patch?: { nodes: Record<string, { type: string }> };
+      __engine: () => {
+        getDomain: (d: string) => {
+          gl: WebGL2RenderingContext;
+          outputTexture: (id: string, port?: string) => WebGLTexture | null;
+          res: { width: number; height: number };
+        };
+      };
     };
-    const ve = w.__engine?.()?.getDomain?.('video');
-    if (!ve?.step) return null;
+    const vid = w.__engine().getDomain('video');
+    const gl = vid.gl;
+    while (gl.getError() !== gl.NO_ERROR) { /* drain pre-existing */ }
+    const tex = vid.outputTexture(nodeId, portId) as WebGLTexture | null;
+    const { width: W, height: H } = vid.res;
+    const fb = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    const px = new Uint8Array(W * H * 4);
+    if (complete) gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    while (gl.getError() !== gl.NO_ERROR) { /* drain readback */ }
 
-    const nodes = w.__patch?.nodes ?? {};
-    const outIds = Object.entries(nodes)
-      .filter(([, nd]) => nd.type === 'videoOut')
-      .map(([id]) => id);
-
-    // Advance `steps` engine frames, blitting each OUTPUT to its visible
-    // <canvas> every frame so the source keeps animating beneath a frozen
-    // hold (the headline sample-&-hold guarantee). Blitting only the final
-    // frame would let the OUTPUT canvas miss intermediate motion.
-    for (let s = 0; s < steps; s++) {
-      ve.step();
-      const src = ve.canvas;
-      for (const id of outIds) {
-        try { ve.blitOutputToDrawingBuffer?.(id); } catch { /* shouldn't throw */ }
-        const el = document.querySelector<HTMLCanvasElement>(
-          `canvas[data-testid="video-out-canvas"][data-node-id="${id}"]`,
-        );
-        const ctx2d = el?.getContext('2d', { alpha: false });
-        if (src && el && ctx2d) {
-          // Black background + 4:3 aspect-fit, mirroring VideoOutCard.fitRect
-          // (ENGINE_W=640, ENGINE_H=480) so the test's blit matches the card's.
-          const cw = el.width, ch = el.height;
-          ctx2d.fillStyle = '#050608';
-          ctx2d.fillRect(0, 0, cw, ch);
-          const srcAspect = 640 / 480;
-          let x = 0, y = 0, dw = cw, dh = ch;
-          if (cw / ch > srcAspect) {
-            dh = ch; dw = Math.round(dh * srcAspect); x = Math.round((cw - dw) / 2); y = 0;
-          } else {
-            dw = cw; dh = Math.round(dw / srcAspect); x = 0; y = Math.round((ch - dh) / 2);
-          }
-          try { ctx2d.drawImage(src, x, y, dw, dh); } catch { /* not yet drawable */ }
-        }
-      }
-    }
-
-    // Sample the first OUTPUT canvas (same fingerprint logic as sampleFrame).
-    const c = document.querySelector<HTMLCanvasElement>(
-      'canvas[data-testid="video-out-canvas"]',
-    );
-    const ctx = c?.getContext('2d');
-    if (!c || !ctx) return null;
-    const img = ctx.getImageData(0, 0, c.width, c.height);
-    const data = img.data;
-    let cnt = 0, nonZero = 0;
+    let n = 0, nonZero = 0;
     const colors = new Set<number>();
-    const fingerprint: number[] = [];
-    for (let i = 0; i < data.length; i += 32) {
-      const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!;
-      const v = (r + g + b) / 3;
-      if (v > 8) nonZero++;
-      fingerprint.push(Math.round(v));
-      const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
-      colors.add(key);
-      cnt++;
+    for (let i = 0; i < px.length; i += 4 * 16) {
+      const r = px[i]!, g = px[i + 1]!, b = px[i + 2]!;
+      if ((r + g + b) / 3 > 8) nonZero++;
+      colors.add(((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3));
+      n++;
     }
-    return { fingerprint, nonZero, distinctColors: colors.size, samples: cnt };
-  }, n);
+    return { nonZeroFrac: n ? nonZero / n : 0, distinctColors: colors.size, samples: n };
+  }, { nodeId, portId });
 }
 
-/** Sample now, advance `gap` frames, then sample again — both samples returned
- *  from a SINGLE round-trip. Each poll iteration of waitForMoving/waitForFrozen
- *  needs exactly this pair (sample A vs sample B `gap` steps later); fusing them
- *  into one `page.evaluate` halves the cross-process latency under CI CPU
- *  contention (was 2 round-trips/iteration, now 1). Returns nulls if the engine
- *  isn't up yet. */
-async function stepSamplePair(
-  page: Page,
-  gap: number,
-): Promise<{ a: FrameSample | null; b: FrameSample | null }> {
-  const a = await stepAndSample(page, 1);
-  const b = await stepAndSample(page, gap);
-  return { a, b };
+/** Read a video-engine node diagnostic hook value from the page (e.g.
+ *  read('gatePatched') / read('holdSeeded')). */
+async function readNodeHook(page: Page, nodeId: string, key: string): Promise<unknown> {
+  return page.evaluate(({ nodeId, key }) => {
+    const w = globalThis as unknown as {
+      __engine: () => { getDomain: (d: string) => { read: (id: string, k: string) => unknown } };
+    };
+    return w.__engine().getDomain('video').read(nodeId, key);
+  }, { nodeId, key });
 }
 
-/**
- * Poll (wall-clock cadence) until two samples spaced `gap` engine-steps apart
- * show the frame MOVING by more than `minFraction`, then return the later
- * sample. Proves the output is live/animated without a fixed sleep being "long
- * enough". Throws a descriptive error (the test failure) if it never moves
- * before `deadlineMs`.
- */
-async function waitForMoving(
-  page: Page,
-  minFraction: number,
-  { deadlineMs = 12000, gap = 6, label = 'frame' }: { deadlineMs?: number; gap?: number; label?: string } = {},
-): Promise<FrameSample> {
-  const deadline = Date.now() + deadlineMs;
-  let last = 0;
-  do {
-    const { a, b } = await stepSamplePair(page, gap);
-    if (a && b) {
-      last = changedFraction(a, b);
-      if (last > minFraction) return b;
-    }
-    await page.waitForTimeout(50);
-  } while (Date.now() < deadline);
-  throw new Error(`${label}: frame never moved past ${(minFraction * 100).toFixed(1)}% within ${deadlineMs}ms (last changed=${(last * 100).toFixed(1)}%)`);
-}
-
-/**
- * Poll (wall-clock cadence) until the output has FROZEN: two samples spaced
- * `gap` engine-steps apart that differ by less than `maxFraction`, observed
- * `stableNeeded` times in a row (so we don't catch a single coincidentally-
- * similar pair while the source is still tracking). Returns the last (frozen)
- * sample. Throws if it never settles before `deadlineMs` — e.g. the freeze gate
- * didn't take.
- */
-async function waitForFrozen(
-  page: Page,
-  maxFraction: number,
-  { deadlineMs = 12000, gap = 10, stableNeeded = 3, label = 'frame' }: { deadlineMs?: number; gap?: number; stableNeeded?: number; label?: string } = {},
-): Promise<FrameSample> {
-  const deadline = Date.now() + deadlineMs;
-  let stable = 0;
-  let last: FrameSample | null = null;
-  let lastFrac = 1;
-  do {
-    const { a, b } = await stepSamplePair(page, gap);
-    if (a && b) {
-      lastFrac = changedFraction(a, b);
-      if (lastFrac < maxFraction) {
-        stable++;
-        last = b;
-        if (stable >= stableNeeded) return b;
-      } else {
-        stable = 0;
-      }
-    }
-    await page.waitForTimeout(50);
-  } while (Date.now() < deadline);
-  if (last) return last;
-  throw new Error(`${label}: output never froze below ${(maxFraction * 100).toFixed(1)}% within ${deadlineMs}ms (last changed=${(lastFrac * 100).toFixed(1)}%)`);
-}
-
-/**
- * Poll (wall-clock cadence) until a stepped+sampled frame satisfies `pred`, then
- * return it. Generic deterministic wait: advances the engine each attempt so the
- * test progresses even when rAF is throttled.
- */
-async function waitForCondition(
-  page: Page,
-  pred: (s: FrameSample) => boolean,
-  { deadlineMs = 12000, label = 'frame' }: { deadlineMs?: number; label?: string } = {},
-): Promise<FrameSample> {
-  const deadline = Date.now() + deadlineMs;
-  let last: FrameSample | null = null;
-  do {
-    const s = await stepAndSample(page);
-    if (s) {
-      last = s;
-      if (pred(s)) return s;
-    }
-    await page.waitForTimeout(50);
-  } while (Date.now() < deadline);
-  throw new Error(`${label}: condition not met within ${deadlineMs}ms (last=${last ? JSON.stringify({ nonZero: last.nonZero, distinctColors: last.distinctColors }) : 'null'})`);
-}
-
-/** Poll until the output renders non-empty content (nonZero > 0). */
-async function waitForContent(
-  page: Page,
-  opts: { deadlineMs?: number; label?: string } = {},
-): Promise<FrameSample> {
-  return waitForCondition(page, (s) => s.nonZero > 0, { label: 'content', ...opts });
+/** setParam on a video node through the engine (deterministic, no Y.Doc write):
+ *  drives the handle's setParam directly — used to swap ACIDWARP's frozen frame
+ *  (scene) and to crank FREEZEFRAME's QUANT knobs. */
+async function setVideoParam(page: Page, nodeId: string, paramId: string, value: number): Promise<void> {
+  await page.evaluate(({ nodeId, paramId, value }) => {
+    const w = globalThis as unknown as {
+      __engine: () => { getDomain: (d: string) => { setParam: (id: string, p: string, v: number) => void } };
+    };
+    w.__engine().getDomain('video').setParam(nodeId, paramId, value);
+  }, { nodeId, paramId, value });
 }
 
 test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
   test('(a) ungated = live passthrough; (b/c) gate high updates / gate low freezes', async ({ page }) => {
-    // WebGL/canvas-heavy + multi-phase deterministic polling. On CI this runs
-    // under 4 Playwright workers sharing 4 vCPU, so it gets ~1 vCPU and every
-    // `page.evaluate` round-trip (step+blit+sample) is slow — the cumulative
-    // cost of the three poll phases blew the 30 s default budget (the timeout
-    // fired mid-`page.evaluate`). Mirror DOOM's 90 s budget so the test's own
-    // internal poll deadlines, not Playwright's per-evaluate budget, govern.
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    // Pause the engine rAF loop (the test owns the exact frame count) + pin the
+    // engine clock (ACIDWARP halts its scene cycler + palette rotation, so each
+    // `scene` is a bit-stable frozen frame) BEFORE boot.
+    await installRenderSmokeHooks(page);
 
     await page.goto('/');
     await page.waitForLoadState('networkidle');
@@ -294,9 +153,9 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     await spawnPatch(
       page,
       [
-        // ACIDWARP — animated colourful plasma source (speed high so the
-        // frame visibly changes frame-to-frame).
-        { id: 'v-src', type: 'acidwarp',    position: { x: 40,  y: 40 }, domain: 'video', params: { speed: 1, scene: 0 } },
+        // ACIDWARP — colourful plasma source. scene 0 to start; we swap scene to
+        // deterministically change its FROZEN frame (no reliance on animation).
+        { id: 'v-src', type: 'acidwarp',    position: { x: 40,  y: 40 }, domain: 'video', params: { speed: 0.5, scene: 0 } },
         { id: 'v-ff',  type: 'freezeframe', position: { x: 380, y: 40 }, domain: 'video' },
         { id: 'v-out', type: 'videoOut',    position: { x: 720, y: 40 }, domain: 'video' },
       ],
@@ -310,44 +169,82 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     await expect(page.locator('.svelte-flow__node-freezeframe'), 'FREEZEFRAME visible').toBeVisible();
     await expect(page.locator('.svelte-flow__node-videoOut'),    'OUTPUT visible').toBeVisible();
 
-    // ---- (a) UNGATED: live passthrough — output keeps changing ----
-    // Drive the engine + poll until the frame is observably MOVING rather than
-    // sleeping a fixed 700 ms and hoping two distinct frames landed.
-    const a = await waitForMoving(page, LIVE_FRACTION, { label: 'ungated live passthrough' });
-    expect(a.nonZero, 'ungated output renders content').toBeGreaterThan(0);
+    // ---- (a) UNGATED: live passthrough — output renders + TRACKS the source ----
+    // Drive a fixed burst synchronously, read FREEZEFRAME's OWN output FBO once:
+    // non-black + structured + exact frame delta + zero GL errors. (Replaces the
+    // old waitForMoving poll, which proved "moved" by diffing animated frames.)
+    const aBefore = await stepAndReadStats(page, { nodeId: 'v-ff', portId: FF_PORT, steps: FIXED_STEPS });
+    assertRenderStats(aBefore, FIXED_STEPS);
+    expect(aBefore.nonZeroFrac, 'ungated output renders content').toBeGreaterThan(0);
+
+    // Unpatched gate → the module reports the gate is NOT patched (so it's on the
+    // live-passthrough path) and the hold buffer is seeded with real content.
+    expect(await readNodeHook(page, 'v-ff', 'gatePatched'), 'ungated → gate reads unpatched').toBe(false);
+    expect(await readNodeHook(page, 'v-ff', 'holdSeeded'), 'ungated → hold buffer seeded').toBe(true);
+
+    // LIVE PASSTHROUGH (deterministic): change the source's FROZEN frame (swap
+    // scene). With the gate unpatched the output must FOLLOW — a second FROZEN
+    // read differs from the first. This is the deterministic equivalent of "the
+    // frame keeps changing at the output".
+    await setVideoParam(page, 'v-src', 'scene', 2);
+    const aAfter = await stepAndReadStats(page, { nodeId: 'v-ff', portId: FF_PORT, steps: FIXED_STEPS });
+    expect(aAfter.framesDelta, 'burst advanced the exact frame count').toBe(FIXED_STEPS);
+    const aMeanDelta = Math.abs(aAfter.mean - aBefore.mean);
+    const aVarDelta = Math.abs(aAfter.variance - aBefore.variance);
+    expect(
+      aMeanDelta > 1 || aVarDelta > 5,
+      `ungated output TRACKS the source: a scene swap changed the output (Δmean=${aMeanDelta.toFixed(2)} Δvar=${aVarDelta.toFixed(2)})`,
+    ).toBe(true);
 
     // ---- (b) GATE HIGH: output updates (tracks the live source) ----
     await page.evaluate(() => {
       (globalThis as unknown as { __freezeframeForceGate?: number }).__freezeframeForceGate = 1;
     });
-    // Same deterministic wait — output must keep tracking the live source.
-    const b = await waitForMoving(page, LIVE_FRACTION, { label: 'gate HIGH keeps updating' });
-    expect(b.nonZero, 'gate-high output renders content').toBeGreaterThan(0);
+    const bBefore = await stepAndReadStats(page, { nodeId: 'v-ff', portId: FF_PORT, steps: FIXED_STEPS });
+    assertRenderStats(bBefore, FIXED_STEPS);
+    // NB: we do NOT assert read('gatePatched') here. That hook reports whether a
+    // REAL edge is patched into gate_in (it keys off gateWriteFrame, written only
+    // by the CV bridge on a live edge); `__freezeframeForceGate` overrides the
+    // gate LEVEL for the test, which is deliberately NOT the same as "patched".
+    // The gate-HIGH BEHAVIOUR (output tracks the live source) is proven below.
 
-    // ---- (c) GATE LOW: output FROZEN while source still animates ----
+    // Gate HIGH → still TRACKS: swap scene again, the output must follow (two
+    // FROZEN reads differ).
+    await setVideoParam(page, 'v-src', 'scene', 4);
+    const bAfter = await stepAndReadStats(page, { nodeId: 'v-ff', portId: FF_PORT, steps: FIXED_STEPS });
+    expect(bAfter.framesDelta, 'burst advanced the exact frame count').toBe(FIXED_STEPS);
+    const bMeanDelta = Math.abs(bAfter.mean - bBefore.mean);
+    const bVarDelta = Math.abs(bAfter.variance - bBefore.variance);
+    expect(
+      bMeanDelta > 1 || bVarDelta > 5,
+      `gate HIGH keeps tracking: a scene swap changed the output (Δmean=${bMeanDelta.toFixed(2)} Δvar=${bVarDelta.toFixed(2)})`,
+    ).toBe(true);
+    expect(bAfter.nonZeroFrac, 'gate-high output renders content').toBeGreaterThan(0);
+
+    // ---- (c) GATE LOW: output FROZEN while the source frame changes underneath ----
     await page.evaluate(() => {
       (globalThis as unknown as { __freezeframeForceGate?: number }).__freezeframeForceGate = 0;
     });
-    // Poll until the output has settled into the held frame (no fixed sleep):
-    // the gate just went low, so within a few frames the hold buffer stops
-    // capturing and successive frames become identical. waitForFrozen requires
-    // the stable condition to hold several times in a row, so we can't catch a
-    // single coincidentally-similar pair while the source is still tracking.
-    const cFrozen = await waitForFrozen(page, FROZEN_FRACTION, { label: 'gate LOW freeze' });
-    expect(cFrozen.nonZero, 'frozen output still shows the held frame').toBeGreaterThan(0);
+    // Settle the held frame: one burst with the gate LOW captures nothing further,
+    // so the hold buffer now holds the LAST captured (scene-4) frame.
+    const cFrozen = await stepAndReadStats(page, { nodeId: 'v-ff', portId: FF_PORT, steps: FIXED_STEPS });
+    assertRenderStats(cFrozen, FIXED_STEPS);
 
-    // Re-confirm the freeze persists across a wider gap WHILE the source keeps
-    // animating underneath — the headline guarantee of sample & hold. Stepping
-    // the engine 30 frames drives the (still-animating) source forward; the
-    // frozen OUTPUT must not follow it.
-    const cLater = await stepAndSample(page, 30);
-    expect(cLater, 'sample cLater').not.toBeNull();
-    if (!cLater) return;
-    const cChanged = changedFraction(cFrozen, cLater);
+    // Headline sample-&-hold guarantee, expressed deterministically: change the
+    // SOURCE's frozen frame (scene swap) and step a wider burst. With the gate LOW
+    // the FROZEN output must NOT follow — two FROZEN reads MATCH within tolerance.
+    // (Replaces the old waitForFrozen poll + the stepAndSample(30) animation-diff:
+    // here the source is provably DIFFERENT, not merely "still animating".)
+    await setVideoParam(page, 'v-src', 'scene', 1);
+    const cLater = await stepAndReadStats(page, { nodeId: 'v-ff', portId: FF_PORT, steps: 30 });
+    expect(cLater.framesDelta, 'frozen burst advanced the exact frame count').toBe(30);
+    const cMeanDelta = Math.abs(cLater.mean - cFrozen.mean);
+    const cVarDelta = Math.abs(cLater.variance - cFrozen.variance);
     expect(
-      cChanged,
-      `gate LOW: frozen frame persists while source animates (changed=${(cChanged * 100).toFixed(1)}%)`,
-    ).toBeLessThan(FROZEN_FRACTION);
+      cMeanDelta < 0.5 && cVarDelta < 1.0,
+      `gate LOW: frozen frame PERSISTS while the source frame changes underneath (Δmean=${cMeanDelta.toFixed(2)} Δvar=${cVarDelta.toFixed(2)})`,
+    ).toBe(true);
+    expect(cLater.nonZeroFrac, 'frozen output still shows the held frame').toBeGreaterThan(0);
 
     // Clean up the hook so it can't leak into another test in the worker.
     await page.evaluate(() => {
@@ -358,11 +255,12 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
   });
 
   test('(d) raising QUANT knobs drops the distinct-colour count (posterize)', async ({ page }) => {
-    // Same CI CPU-contention budget as the gate scenario above (see note).
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await installRenderSmokeHooks(page);
 
     await page.goto('/');
     await page.waitForLoadState('networkidle');
@@ -389,39 +287,31 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     await expect(page.locator('.svelte-flow__node-freezeframe'), 'FREEZEFRAME visible').toBeVisible();
     await expect(page.locator('.svelte-flow__node-videoOut'),    'OUTPUT visible').toBeVisible();
 
-    // Poll the render loop until full-depth content is on screen (no fixed
-    // sleep): the source needs a few frames to produce a non-empty frame.
-    const full = await waitForContent(page, { label: 'full-depth' });
-    expect(full.nonZero, 'full-depth output renders content').toBeGreaterThan(0);
+    // Drive a fixed burst synchronously so full-depth content is on FREEZEFRAME's
+    // FBO, then read it once (non-black + structured + exact frame delta + zero GL
+    // errors). Capture the FULL-DEPTH distinct-colour count. (Replaces the old
+    // waitForContent poll.)
+    const fullStats = await stepAndReadStats(page, { nodeId: 'v-ff', portId: FF_PORT, steps: FIXED_STEPS });
+    assertRenderStats(fullStats, FIXED_STEPS);
+    const full = await readColorStats(page, 'v-ff', FF_PORT);
+    expect(full.nonZeroFrac, 'full-depth output renders content').toBeGreaterThan(0);
 
     // Crank every QUANT knob to MAX (2 levels per channel → heavy posterize).
-    await page.evaluate(() => {
-      const w = globalThis as unknown as {
-        __patch: { nodes: Record<string, { params: Record<string, number> }> };
-        __ydoc: { transact: (fn: () => void) => void };
-      };
-      w.__ydoc.transact(() => {
-        const ff = w.__patch.nodes['v-ff'];
-        if (ff) {
-          ff.params.quant_r = 1;
-          ff.params.quant_g = 1;
-          ff.params.quant_b = 1;
-          ff.params.quant_luma = 1;
-        }
-      });
-    });
+    // setParam (engine) is deterministic and avoids a per-frame Y.Doc write.
+    await setVideoParam(page, 'v-ff', 'quant_r', 1);
+    await setVideoParam(page, 'v-ff', 'quant_g', 1);
+    await setVideoParam(page, 'v-ff', 'quant_b', 1);
+    await setVideoParam(page, 'v-ff', 'quant_luma', 1);
 
-    // Poll the render loop until the param change has propagated and the
-    // posterization has actually collapsed the colour space — instead of
-    // sleeping 800 ms and asserting once. Posterizing to 2 levels per channel
-    // collapses the colour space hard, so the distinct-colour count must drop
-    // below the full-depth count.
-    const quantized = await waitForCondition(
-      page,
-      (s) => s.nonZero > 0 && s.distinctColors < full.distinctColors,
-      { label: 'posterize drops distinct colours' },
-    );
-    expect(quantized.nonZero, 'quantized output still renders content').toBeGreaterThan(0);
+    // Re-render a fixed burst (FROZEN clock + FROZEN source → the ONLY thing that
+    // changed is the QUANT params), read the posterized output FBO once. Two
+    // FROZEN reads: posterizing to 2 levels per channel collapses the colour space
+    // hard, so the distinct-colour count must DROP below the full-depth count.
+    // (Replaces the old waitForCondition poll.)
+    const quantStats = await stepAndReadStats(page, { nodeId: 'v-ff', portId: FF_PORT, steps: FIXED_STEPS });
+    expect(quantStats.framesDelta, 'quant burst advanced the exact frame count').toBe(FIXED_STEPS);
+    const quantized = await readColorStats(page, 'v-ff', FF_PORT);
+    expect(quantized.nonZeroFrac, 'quantized output still renders content').toBeGreaterThan(0);
     expect(
       quantized.distinctColors,
       `posterize drops distinct colours (full=${full.distinctColors} quantized=${quantized.distinctColors})`,
