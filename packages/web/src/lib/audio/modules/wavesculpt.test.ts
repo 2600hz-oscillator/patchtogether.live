@@ -336,6 +336,146 @@ describe('distanceGain', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// PCU (pure-core-unit) ports of three deleted WAVESCULPT e2e satellite specs.
+//
+// The e2e specs spawned a real card + LFO/joystick + scope and asserted on
+// audio RMS / WebGL pixel histograms — flaky on CI's SwiftShader software
+// renderer and slow on the serialized heavy-WebGL lane. But the behaviours
+// they pinned are deterministic functions of the SAME pure cores already
+// exported + tested here (eyeFromCamera / distanceGain / WALL_LAYOUT / the
+// module def's CV paramTargets). We fold the real coverage back in as pure
+// unit cases — no GPU, no AudioContext, no scheduler.
+//
+// Thresholds below are derived from the ACTUAL computed values (commented
+// inline at each assert), then set comfortably under the real delta so the
+// test pins behaviour without false-failing on harmless arithmetic drift.
+// ---------------------------------------------------------------------------
+
+/** Per-wall spatial-gain vector at a camera eye position. */
+function wallGainVector(eye: readonly [number, number, number]): number[] {
+  return WALL_LAYOUT.map((w) => distanceGain(w.src, w.vec, eye));
+}
+
+/** L1 distance between two equal-length vectors. */
+function l1(a: readonly number[], b: readonly number[]): number {
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d += Math.abs((a[i] ?? 0) - (b[i] ?? 0));
+  return d;
+}
+
+describe('PCU: spatial pan (ex e2e wavesculpt-spatial-audio.spec.ts)', () => {
+  // The e2e drove the camera through pos_x ∈ {-0.8, 0, +0.8} (its POSITIONS)
+  // and asserted (a) non-trivial audio at every position + (b) RMS left ≠
+  // right (the spatial mix tracks the pan). We reproduce the deterministic
+  // core: per-wall distanceGain at the eye each pos_x maps to.
+  const POSITIONS = [-0.8, 0, 0.8];
+  const gains = POSITIONS.map((x) => wallGainVector(eyeFromCamera(x, 0, 0, 1, 0)));
+
+  it('(a) every camera position lights at least one wall (analogue of "RMS > 0 everywhere")', () => {
+    // Computed at zoom=1/rot=0: exactly 3 of 4 walls are > 0 at every
+    // position — the BLUE wall (+Z) sits behind the default +Z eye, so its
+    // directional dot is ≤ 0 (gain 0) for the whole sweep. So we assert the
+    // stronger, TRUE fact (≥ 3 walls audible) rather than the weaker ≥ 1.
+    //   pos_x=-0.8 → [0.0497, 0.0023, 0,     0.0601]  (3 > 0)
+    //   pos_x= 0   → [0.0532, 0.0480, 0,     0.0703]  (3 > 0)
+    //   pos_x=+0.8 → [0.0253, 0.0527, 0,     0.0601]  (3 > 0)
+    for (let i = 0; i < POSITIONS.length; i++) {
+      const audible = gains[i]!.filter((g) => g > 0).length;
+      expect(
+        audible,
+        `pos_x=${POSITIONS[i]}: ${audible} walls audible (gains: ${gains[i]!.map((g) => g.toFixed(4)).join(', ')})`,
+      ).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('(b) the per-wall mix differs left vs right (analogue of "RMS left ≠ right")', () => {
+    // Real L1(g(pos_x=-0.8) − g(pos_x=+0.8)) = 0.074856. Threshold 0.03 is
+    // well under that (and far above arithmetic noise), so the pan provably
+    // re-weights the wall mix as the camera crosses the box.
+    const dLR = l1(gains[0]!, gains[2]!);
+    expect(
+      dLR,
+      `L1(gain(left=-0.8) − gain(right=+0.8)) = ${dLR.toFixed(6)} (expect > 0.03; real ≈ 0.0749)`,
+    ).toBeGreaterThan(0.03);
+  });
+});
+
+describe('PCU: camera CV axes move the eye + the mix (ex e2e wavesculpt-camera-cv.spec.ts)', () => {
+  // The e2e patched an LFO into each camera CV port (pos_x/pos_y/pos_z/zoom/
+  // rot) and asserted the viewport/engine value moved. The deterministic
+  // half: each axis, swept low→high, must move BOTH the eye position and the
+  // resulting per-wall gain vector. (The live-LFO/analyser/pixel half was
+  // already CI-skipped in that spec — dropped here.)
+  const AXES: { port: string; lo: [number, number, number, number, number]; hi: [number, number, number, number, number] }[] = [
+    // [posX, posY, posZ, zoom, rot]
+    { port: 'pos_x', lo: [-1, 0, 0, 1, 0], hi: [1, 0, 0, 1, 0] },
+    { port: 'pos_y', lo: [0, -1, 0, 1, 0], hi: [0, 1, 0, 1, 0] },
+    { port: 'pos_z', lo: [0, 0, -1, 1, 0], hi: [0, 0, 1, 1, 0] },
+    { port: 'zoom',  lo: [0, 0, 0, 0.3, 0], hi: [0, 0, 0, 3, 0] },
+    { port: 'rot',   lo: [0, 0, 0, 1, 0],  hi: [0, 0, 0, 1, 0.5] },
+  ];
+
+  for (const { port, lo, hi } of AXES) {
+    it(`${port}: low vs high moves the eye AND changes the per-wall gain vector`, () => {
+      const eyeLo = eyeFromCamera(...lo);
+      const eyeHi = eyeFromCamera(...hi);
+      const eyeDelta = l1(eyeLo, eyeHi);
+      const gainDelta = l1(wallGainVector(eyeLo), wallGainVector(eyeHi));
+      // Real eye L1 per axis: pos_x/pos_y/pos_z=3.0, zoom=7.5, rot=2.5 — all
+      // ≥ 2.5; threshold 0.5 is a safe floor for "the eye actually moved".
+      expect(
+        eyeDelta,
+        `${port}: eye L1(lo,hi) = ${eyeDelta.toFixed(4)} (expect > 0.5)`,
+      ).toBeGreaterThan(0.5);
+      // Real gain-vector L1 per axis: pos_x=0.0814, pos_y=0.0641, pos_z=1.55,
+      // zoom=1.68, rot=0.129 — the SMALLEST (pos_y) is 0.064; threshold 0.01
+      // is well under it for every axis, so each CV port provably re-mixes.
+      expect(
+        gainDelta,
+        `${port}: gainVector L1(lo,hi) = ${gainDelta.toFixed(6)} (expect > 0.01; smallest real ≈ 0.064 on pos_y)`,
+      ).toBeGreaterThan(0.01);
+    });
+  }
+});
+
+describe('PCU: camera/morph CV def contract — no double-count (ex e2e wavesculpt-state-unity.spec.ts)', () => {
+  // The e2e asserted readParam vs read('camera') alignment (CV added exactly
+  // once) + that morph1_cv is a patchable port. The architectural invariant
+  // that PREVENTS double-counting is the DEF CONTRACT: every camera/morph CV
+  // input declares a `paramTarget` pointing at its matching param, so the
+  // engine layer folds the CV into that param exactly once. Pin the contract.
+  const CV_PORT_TO_PARAM: Record<string, string> = {
+    pos_x: 'pos_x', pos_y: 'pos_y', pos_z: 'pos_z', zoom: 'zoom', rot: 'rot',
+    morph1_cv: 'morph1', morph2_cv: 'morph2', morph3_cv: 'morph3', morph4_cv: 'morph4',
+    scale: 'scale', wiggle: 'wiggle',
+  };
+
+  for (const [portId, paramId] of Object.entries(CV_PORT_TO_PARAM)) {
+    it(`${portId} is a cv input whose paramTarget === '${paramId}'`, () => {
+      const port = wavesculptDef.inputs.find((p) => p.id === portId);
+      expect(port, `${portId} input exists`).toBeDefined();
+      expect(port!.type, `${portId} is cv-typed`).toBe('cv');
+      expect(
+        (port as { paramTarget?: string }).paramTarget,
+        `${portId} paramTarget points at param '${paramId}' (CV folded in exactly once)`,
+      ).toBe(paramId);
+      // And the targeted param actually exists, so the engine has somewhere
+      // to add the CV (a dangling paramTarget would silently drop the CV).
+      expect(
+        wavesculptDef.params.some((p) => p.id === paramId),
+        `param '${paramId}' exists for ${portId} to target`,
+      ).toBe(true);
+    });
+  }
+
+  it("morph1_cv exists in inputs with type:'cv' (ex e2e: handle is patchable on the card)", () => {
+    const m1 = wavesculptDef.inputs.find((p) => p.id === 'morph1_cv');
+    expect(m1, 'morph1_cv port exists').toBeDefined();
+    expect(m1!.type).toBe('cv');
+  });
+});
+
 describe('lineWallCrossings (luminosity → bandpass geometry)', () => {
   it('a line straight through the box on the Z axis crosses FRONT + BACK at centre', () => {
     // Origin at the −Z wall, aimed +Z → exits at +Z. Both crossings centred
