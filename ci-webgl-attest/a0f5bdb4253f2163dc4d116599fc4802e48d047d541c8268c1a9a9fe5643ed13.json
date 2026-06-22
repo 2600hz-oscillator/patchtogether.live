@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "5d8ad87e8afdd06174ae355d4c009c2a3906936b6ee2d8cef49eaa06be31c87b",
-  "attestedAt": "2026-06-21T22:50:06.688Z",
+  "webglContentHash": "a0f5bdb4253f2163dc4d116599fc4802e48d047d541c8268c1a9a9fe5643ed13",
+  "attestedAt": "2026-06-22T20:57:46.313Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "3e635550b9aa66d25808035f0a6df3108a046f3c",
+  "gitHeadAtAttest": "632980057b15abff76307ead059b9a8a6b4d8bf4",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "host": "2600hzs-MBP.home.local",
@@ -11,26 +11,29 @@
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
-      "specFiles": 42,
-      "passed": 165,
+      "specFiles": 54,
+      "passed": 177,
       "failed": 0,
       "flaky": 0,
-      "skipped": 1
+      "skipped": 1,
+      "flakyDetails": []
     },
     "B-leakers": {
       "specFiles": 5,
       "passed": 13,
       "failed": 0,
       "flaky": 0,
-      "skipped": 0
+      "skipped": 0,
+      "flakyDetails": []
     },
     "C-camera": {
       "specFiles": 1,
-      "passed": 2,
+      "passed": 1,
       "failed": 0,
       "flaky": 0,
-      "skipped": 0
+      "skipped": 0,
+      "flakyDetails": []
     }
   },
-  "durationSec": 144
+  "durationSec": 332
 }
