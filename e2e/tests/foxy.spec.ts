@@ -98,55 +98,65 @@ test.describe('FOXY hybrid module', () => {
       await expect(card.locator(`[data-handleid="${h}"]`), `output ${h}`).toHaveCount(1);
     }
 
-    // Let the internal chain run so the raster fills + the wavetable builds.
-    await page.waitForTimeout(1200);
+    // 1. Real content in every preview — POLL until all fill. A fixed
+    //    waitForTimeout + one-shot read flakes when a GPU transient (the always-
+    //    present WindowServer GPU co-tenant on a real GPU) delays a raster past
+    //    the single sample; the bounded poll absorbs the stall while a genuinely
+    //    dead preview still fails after the timeout.
+    await expect
+      .poll(
+        async () => {
+          const sums = await Promise.all([
+            canvasSum(page, 'foxy-raster-a'),
+            canvasSum(page, 'foxy-raster-b'),
+            canvasSum(page, 'foxy-raster-c'),
+            canvasSum(page, 'foxy-xyz'),
+            canvasSum(page, 'foxy-wavetable'),
+          ]);
+          return Math.min(...sums);
+        },
+        { timeout: 15_000, message: 'every FOXY preview canvas (A/B/C/XYZ/wavetable) fills with content' },
+      )
+      .toBeGreaterThan(0);
 
-    // 1. Real content in every preview.
-    const rasterASum = await canvasSum(page, 'foxy-raster-a');
-    const rasterBSum = await canvasSum(page, 'foxy-raster-b');
-    const rasterCSum = await canvasSum(page, 'foxy-raster-c');
-    const xyzSum = await canvasSum(page, 'foxy-xyz');
+    // 2. The live wavetable animates — poll until a later sample DIFFERS from the
+    //    first (the table regenerates from the evolving XYZ field). Polling
+    //    absorbs a transient frame stall instead of flaking on a single
+    //    fixed-wait diff.
     const wt1 = await canvasSum(page, 'foxy-wavetable');
-    expect(rasterASum, 'RASTER A has content').toBeGreaterThan(0);
-    expect(rasterBSum, 'RASTER B has content').toBeGreaterThan(0);
-    expect(rasterCSum, 'RASTER C has content').toBeGreaterThan(0);
-    expect(xyzSum, 'XYZ has content').toBeGreaterThan(0);
-    expect(wt1, 'WAVETABLE has content').toBeGreaterThan(0);
+    await expect
+      .poll(async () => Math.abs((await canvasSum(page, 'foxy-wavetable')) - wt1), {
+        timeout: 10_000,
+        message: `FOXY wavetable display animates frame-to-frame (wt1 ${wt1})`,
+      })
+      .toBeGreaterThan(0);
 
-    // 2. The live wavetable animates — snapshot again a moment later; because
-    //    the table is regenerated from the evolving XYZ field, the rendered
-    //    pixels differ. (Sampled twice with a settle so it's not a 1-frame
-    //    fluke.)
-    await page.waitForTimeout(700);
-    const wt2 = await canvasSum(page, 'foxy-wavetable');
-    expect(
-      Math.abs(wt2 - wt1),
-      `wavetable display animates (wt1 ${wt1}, wt2 ${wt2})`,
-    ).toBeGreaterThan(0);
-
-    // 3. The wave3d_out video port renders real content into OUTPUT. This
-    //    port is fed by the SAME realtime bridge that posts the live table to
-    //    the internal WAVECEL worklet, so non-trivial pixels here prove the
-    //    audio-side wavetable is live (not a static factory table).
+    // 3. The wave3d_out video port renders real content into OUTPUT. This port is
+    //    fed by the SAME realtime bridge that posts the live table to the
+    //    internal WAVECEL worklet, so non-trivial pixels here prove the audio-
+    //    side wavetable is live (not a static factory table). Poll the variance
+    //    (same transient-tolerance rationale as the previews).
     const voutCanvas = page.locator('canvas[data-testid="video-out-canvas"]');
     await expect(voutCanvas).toHaveCount(1);
-    const voutStats = await voutCanvas.evaluate((el) => {
-      const c = el as HTMLCanvasElement;
-      const ctx = c.getContext('2d');
-      if (!ctx) return null;
-      const img = ctx.getImageData(0, 0, c.width, c.height);
-      let n = 0, sum = 0, sumSq = 0;
-      for (let i = 0; i < img.data.length; i += 4) {
-        const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
-        sum += v; sumSq += v * v; n++;
-      }
-      const mean = sum / n;
-      return { variance: sumSq / n - mean * mean };
-    });
-    expect(voutStats).not.toBeNull();
-    if (voutStats) {
-      expect(voutStats.variance, 'wave3d_out renders live wavetable content').toBeGreaterThan(5);
-    }
+    await expect
+      .poll(
+        async () =>
+          voutCanvas.evaluate((el) => {
+            const c = el as HTMLCanvasElement;
+            const ctx = c.getContext('2d');
+            if (!ctx) return -1;
+            const img = ctx.getImageData(0, 0, c.width, c.height);
+            let n = 0, sum = 0, sumSq = 0;
+            for (let i = 0; i < img.data.length; i += 4) {
+              const v = (img.data[i]! + img.data[i + 1]! + img.data[i + 2]!) / 3;
+              sum += v; sumSq += v * v; n++;
+            }
+            const mean = sum / n;
+            return sumSq / n - mean * mean;
+          }),
+        { timeout: 10_000, message: 'wave3d_out renders live wavetable content (variance)' },
+      )
+      .toBeGreaterThan(5);
 
     expect(errors, 'no console / page errors').toEqual([]);
   });
