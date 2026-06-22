@@ -71,7 +71,9 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // and video-output-resize→video-hide-controls, deleting 2 files: 44 → 42.
 // GPU-attest rebuild Phase 0 (#864): +acidwarp-render-smoke.spec.ts (the DRS
 // foundation proof, matched by the new `**/*-render-smoke.spec.ts` glob): 42 → 43.
-const EXPECTED_HEAVY_SPEC_COUNT = 43;
+// GPU-attest rebuild Phase 1: +7 frame.time-module DRS specs (inwards, lines,
+// mandelbulb, nibbles, vfpga-runner, spirographs, textmarquee): 43 → 50.
+const EXPECTED_HEAVY_SPEC_COUNT = 50;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();
