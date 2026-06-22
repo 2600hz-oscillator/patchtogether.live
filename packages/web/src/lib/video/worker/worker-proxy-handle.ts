@@ -47,6 +47,15 @@ export class WorkerProxyHandle implements VideoNodeHandle {
   /** Whether the worker texture has received at least one bitmap (so we don't
    *  expose an uninitialized texture as a finished frame). */
   private workerTextureReady = false;
+  /** Monotonic count of worker bitmaps successfully uploaded into the main-GL
+   *  texture. A DETERMINISTIC readiness signal for tests: the worker path is an
+   *  inherently async, separate-thread render, so a spec can't synchronously
+   *  step() the first worker frame into existence. Instead it `expect.poll`s
+   *  this counter (via `engine.read(nodeId, 'workerFramesDelivered')`) until the
+   *  worker has actually delivered N frames THROUGH the upload — a real state,
+   *  not a fixed wall-clock budget. Pure test instrumentation: a single integer
+   *  increment on the existing successful-upload path (no prod behaviour). */
+  private framesDelivered = 0;
 
   /** Lazily-materialized main-thread fallback (only when the worker can't / isn't
    *  yet rendering). Null while the worker path is live. */
@@ -160,6 +169,7 @@ export class WorkerProxyHandle implements VideoNodeHandle {
         try {
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bmp);
           this.workerTextureReady = true;
+          this.framesDelivered++;
         } catch {
           // A bad upload shouldn't crash the frame; drop this bitmap.
         }
@@ -206,6 +216,20 @@ export class WorkerProxyHandle implements VideoNodeHandle {
   }
 
   read(key: string): unknown {
+    // Deterministic worker-readiness signal (test instrumentation): how many
+    // worker bitmaps have actually been uploaded into the main-GL texture. Served
+    // BEFORE the fallback path so it never materializes a fallback handle just to
+    // answer a counter read. A spec polls this until ≥N to know the worker render
+    // chain is live (a real state, not a wall-clock guess).
+    if (key === 'workerFramesDelivered') return this.framesDelivered;
+    // Is the worker the ACTIVE render path RIGHT NOW (spawned AND its WebGL2
+    // context initialized)? `bridge.ready()` is `supported && workerGlOk`, so it
+    // is FALSE on a renderer where worker-WebGL2 can't initialize — notably CI's
+    // SwiftShader software renderer, where the proxy transparently falls back to
+    // the main-thread render. A capability probe for tests: enforce a "the worker
+    // delivered frames" assertion only when this is true; otherwise accept the
+    // non-black main-thread fallback (the proxy's documented degradation).
+    if (key === 'workerActive') return this.bridge.ready();
     // The card preview path (e.g. acidwarp's `read('snapshot')`) is CPU-only and
     // identical regardless of where GL runs. We serve it from the fallback
     // handle, materializing it on demand so the card always has a live preview

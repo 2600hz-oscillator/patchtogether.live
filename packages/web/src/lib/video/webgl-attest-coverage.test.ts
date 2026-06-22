@@ -76,7 +76,10 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // GPU-attest rebuild Phase 1b: +4 unblocked-deferred DRS specs (backdraft
 // [freeze=1 after settle], outlines [seed + synchronous gate-spawns], peakstate
 // [__peakstateVrtSeed + warmup], mandleblot [non-black view params]): 50 → 54.
-const EXPECTED_HEAVY_SPEC_COUNT = 54;
+// GPU-attest rebuild render-worker wave: −mandleblot.spec (its waitForTimeout
+// pixel gate consolidated into the deterministic mandleblot-render-smoke.spec,
+// which the *-render-smoke glob still enrolls here): 54 → 53.
+const EXPECTED_HEAVY_SPEC_COUNT = 53;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();
