@@ -34,19 +34,26 @@ import {
 
 const REPEAT = Math.max(1, parseInt(process.env.REPEAT || '1', 10) || 1);
 const DRY = process.argv.includes('--dry-run'); // verify the mechanism w/o the long real-GPU run
-// Per-test retry budget for the real-GPU passes. The heavy lane runs ~210 WebGL
-// specs SERIALLY on a SINGLE Metal/ANGLE context; under that sustained load the
-// driver occasionally drops a single frame on a timing-sensitive viewport/decode
-// assertion (verified: the offenders pass 5/5 in ISOLATION but a different ~1-2
-// of 210 stall on each saturated full run — the documented GPU-serial transient,
-// ci-swiftshader-video-e2e-timeouts). This is an ENVIRONMENT stall, not a code
-// flake, and is why Phase 1 shipped --retries=2 as an interim. Phase 2 (#753)
-// leaned the lane (49→44 specs) and it now passes CLEAN at retries=0 (verified:
-// 0 flaky across all passes), so the DEFAULT is now 0 — a transient stall now
-// correctly REFUSES the attestation, forcing investigation (no-flake-tolerance).
-// Override with WEBGL_ATTEST_RETRIES=N only if the lane ever regrows. A test that
-// FAILS ALL RETRIES still refuses; REPEAT>1 (the 3× pre-MR flake-check) forces 0.
-const RETRIES = REPEAT > 1 ? 0 : Math.max(0, parseInt(process.env.WEBGL_ATTEST_RETRIES || '0', 10) || 0);
+// Per-test retry budget for the real-GPU passes. retries=1 is a THIN BACKSTOP
+// for the irreducible GPU-transient tail: a real GPU ALWAYS shares cycles with
+// the macOS WindowServer, so even a well-written test can drop a single frame on
+// a saturated run. retries=1 lets ONE such transient recover; a test that FAILS
+// BOTH attempts still REFUSES (a real regression is never masked).
+//
+// This is a backstop, NOT a license for flaky tests. EVERY actual recovery is
+// surfaced LOUDLY (the test name + its first-attempt error) AND recorded in the
+// attestation json (suites.*.flakyDetails) so each can be reviewed + confirmed a
+// true transient. And MAX_FLAKY caps how many recoveries ONE run may absorb: an
+// occasional single recovery is fine, but several in one run is NOT a rare
+// transient — it's systemic, so the attest REFUSES (forcing a real fix). The
+// deterministic GPU-attest rebuild drives the underlying rate toward zero so this
+// backstop almost never fires; a rising flakyDetails rate is the signal to fix
+// tests, not to raise retries. REPEAT>1 (the 3× pre-MR flake-check) forces 0 — a
+// NEW/changed test must be clean with NO safety net. Override: WEBGL_ATTEST_RETRIES.
+const RETRIES = REPEAT > 1 ? 0 : Math.max(0, parseInt(process.env.WEBGL_ATTEST_RETRIES || '1', 10) || 0);
+// Max recovered-flaky tests a single run may absorb before refusing (per pass).
+// 0 = ideal; 1 = the rare allowed transient; more in ONE run = systemic → refuse.
+const MAX_FLAKY = REPEAT > 1 ? 0 : Math.max(0, parseInt(process.env.WEBGL_ATTEST_MAX_FLAKY || '1', 10) || 0);
 
 // Worker count for the real-GPU passes. ROOT CAUSE of the rotating "transient"
 // heavy-spec flakes (different toybox/video spec each saturated run): runPass
@@ -60,6 +67,15 @@ const RETRIES = REPEAT > 1 ? 0 : Math.max(0, parseInt(process.env.WEBGL_ATTEST_R
 // worker-count sweep (#136); the 3× flake-check (REPEAT>1) also forces 1.
 const WORKERS = REPEAT > 1 ? 1 : Math.max(1, parseInt(process.env.WEBGL_ATTEST_WORKERS || '1', 10) || 1);
 
+interface FlakyDetail {
+  /** Test that FAILED its first attempt then RECOVERED on retry. */
+  test: string;
+  file: string;
+  /** First-attempt error (truncated) — the WHY, so a human can confirm it was a
+   *  true transient and not a masked real failure. */
+  firstError: string;
+}
+
 interface PassResult {
   name: string;
   expectedSpecFiles: number;
@@ -68,6 +84,8 @@ interface PassResult {
   failed: number;
   flaky: number;
   skipped: number;
+  /** Per-test detail for every recovered-on-retry test (empty on a clean run). */
+  flakyDetails: FlakyDetail[];
 }
 
 /** Run one Playwright pass with the JSON reporter to a temp file and return
@@ -116,6 +134,7 @@ function runPass(opts: {
       failed: 0,
       flaky: 0,
       skipped: 0,
+      flakyDetails: [],
     };
   }
 
@@ -141,6 +160,7 @@ function runPass(opts: {
     failed: counts.failed,
     flaky: counts.flaky,
     skipped: counts.skipped,
+    flakyDetails: counts.flakyDetails,
   };
 
   console.log(
@@ -152,16 +172,23 @@ function runPass(opts: {
     throw new Error(`Pass ${opts.name}: ${result.failed} failed test(s) (failed all ${RETRIES} retries) — attestation refused.`);
   }
   if (result.flaky > 0) {
-    if (RETRIES === 0) {
-      // REPEAT mode (the 3× pre-MR flake-check): retries=0, so a flaky result is
-      // a genuine flake to root-cause — refuse.
-      throw new Error(`Pass ${opts.name}: ${result.flaky} flaky test(s) (retries=0) — root-cause the flake; attestation refused.`);
+    // A "flaky" test FAILED its first attempt then RECOVERED on retry. Surface
+    // EVERY one LOUDLY with its first-attempt error so it can be reviewed and
+    // confirmed a true transient — never silently absorbed.
+    console.error(`\n  ⚠ RETRY FIRED — ${result.flaky} test(s) recovered on retry in Pass ${opts.name}. REVIEW each; confirm it was transient contention, NOT a masked bug:`);
+    for (const d of result.flakyDetails) {
+      console.error(`     • ${d.file} › ${d.test}`);
+      console.error(`       first-attempt error: ${d.firstError}`);
     }
-    // Normal attest with retries: a "flaky" test PASSED on retry — a recovered
-    // GPU-serial transient stall (see RETRIES rationale), not a code flake. Log
-    // it transparently (so a creeping flake rate is visible in the JSON summary)
-    // but do NOT refuse — the original e2e-video lane tolerated the same.
-    console.log(`  ⚠ ${result.flaky} test(s) recovered on retry (transient GPU-serial stall under sustained load) — see suites.${opts.name}.flaky in the attestation.`);
+    console.error(`  (recorded in suites.${opts.name}.flakyDetails of the attestation json)`);
+    if (RETRIES === 0) {
+      // REPEAT mode (the 3× pre-MR flake-check): no safety net — any flake refuses.
+      throw new Error(`Pass ${opts.name}: ${result.flaky} flaky test(s) with retries=0 — root-cause the flake; attestation refused.`);
+    }
+    if (result.flaky > MAX_FLAKY) {
+      // Several recoveries in ONE run is not a rare transient — it's systemic.
+      throw new Error(`Pass ${opts.name}: ${result.flaky} recovered-flaky test(s) exceeds MAX_FLAKY=${MAX_FLAKY} — too many for a rare transient; fix the tests (do NOT raise the ceiling). Attestation refused.`);
+    }
   }
   // COUNT GATE: measured spec-file count must EQUAL the derived expected set.
   if (result.measuredSpecFiles !== result.expectedSpecFiles) {
@@ -177,12 +204,13 @@ function runPass(opts: {
  *  actually ran (so the count-gate compares spec FILES, the stable unit). */
 function summarize(report: {
   suites?: PwSuite[];
-}): { passed: number; failed: number; flaky: number; skipped: number; specFiles: Set<string> } {
+}): { passed: number; failed: number; flaky: number; skipped: number; specFiles: Set<string>; flakyDetails: FlakyDetail[] } {
   let passed = 0;
   let failed = 0;
   let flaky = 0;
   let skipped = 0;
   const specFiles = new Set<string>();
+  const flakyDetails: FlakyDetail[] = [];
 
   const visit = (suite: PwSuite) => {
     for (const spec of suite.specs ?? []) {
@@ -191,18 +219,29 @@ function summarize(report: {
         const status = test.status; // 'expected' | 'unexpected' | 'flaky' | 'skipped'
         if (status === 'expected') passed++;
         else if (status === 'unexpected') failed++;
-        else if (status === 'flaky') flaky++;
-        else if (status === 'skipped') skipped++;
+        else if (status === 'flaky') {
+          flaky++;
+          // Capture the WHY: the first attempt that did NOT pass (the one the
+          // retry recovered from), truncated. So every recovery is reviewable.
+          const firstBad = (test.results ?? []).find((r) => r.status && r.status !== 'passed');
+          const raw = firstBad?.errors?.[0]?.message ?? firstBad?.error?.message ?? '(no error captured)';
+          flakyDetails.push({
+            test: spec.title ?? '(unknown test)',
+            file: spec.file ?? '(unknown file)',
+            firstError: String(raw).replace(/\[[0-9;]*m/g, '').split('\n').slice(0, 4).join(' | ').slice(0, 400),
+          });
+        } else if (status === 'skipped') skipped++;
       }
     }
     for (const child of suite.suites ?? []) visit(child);
   };
   for (const s of report.suites ?? []) visit(s);
-  return { passed, failed, flaky, skipped, specFiles };
+  return { passed, failed, flaky, skipped, specFiles, flakyDetails };
 }
 
+interface PwTestResult { status?: string; error?: { message?: string }; errors?: { message?: string }[] }
 interface PwSuite {
-  specs?: { file?: string; tests?: { status?: string }[] }[];
+  specs?: { file?: string; title?: string; tests?: { status?: string; results?: PwTestResult[] }[] }[];
   suites?: PwSuite[];
 }
 
@@ -456,6 +495,9 @@ function pick(r: PassResult) {
     failed: r.failed,
     flaky: r.flaky,
     skipped: r.skipped,
+    // Per-test detail for every recovered-on-retry test — the permanent record
+    // so a reviewer (and a flake-rate trend) can confirm each was transient.
+    flakyDetails: r.flakyDetails,
   };
 }
 
