@@ -19,4 +19,11 @@ if [[ "${E2E_SWIFTSHADER:-}" == "1" ]]; then
   exit 2
 fi
 
+# Keep the machine fully awake for the whole run. A mid-run display sleep / app
+# nap / system idle-suspend on macOS pauses or throttles the GPU mid-pass →
+# stalled frames → false refusals. caffeinate -dimsu holds display+system+disk
+# awake and prevents idle sleep for the duration of the child.
+if [[ "$(uname)" == "Darwin" ]] && command -v caffeinate >/dev/null 2>&1; then
+  exec caffeinate -dimsu node --import tsx scripts/webgl-attest.ts "$@"
+fi
 exec node --import tsx scripts/webgl-attest.ts "$@"

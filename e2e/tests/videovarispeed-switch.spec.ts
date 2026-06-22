@@ -196,6 +196,7 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
     );
     await page.waitForTimeout(800);
     const aTimeBeforeSwitch = (await activeVideoState(page)).time;
+    const tBeforeMs = Date.now();
 
     // --- SWITCH A → B (slot 0 → slot 1) ---
     await switchToSlot(page, SLOT1_VOCT);
@@ -207,15 +208,47 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
     await switchToSlot(page, SLOT0_VOCT);
     await assertFramesAdvance(page, 'after B→A (re-select must NOT throw + freeze)');
 
-    // (4) Switch-BACK to A landed near A's PROJECTED live time, NOT 0 (the
-    // virtual playhead). A kept advancing virtually while B was active, so it
-    // must be at LEAST where it was when we switched away (minus a small seek
-    // tolerance) — emphatically not reset to ~0.
+    // (4) Switch-BACK to A landed on A's PROJECTED live (virtual) playhead, NOT
+    // reset to ~0 (the Build-B regression). A keeps advancing at its OWN constant
+    // playback rate (2^V/oct) the WHOLE time — live while active, projected while
+    // B is active — so the expected playhead is a CONTINUOUS function of wall time:
+    //   expected = (aTimeBeforeSwitch + elapsedSec * rate) mod duration
+    // We assert the observed playhead matches that projection (circular distance,
+    // since the short clip LOOPS). The reset regression lands at ~0, which differs
+    // from the projection EXCEPT in the rare case the projection itself wraps to
+    // ~0 — so this is flake-FREE (a healthy switch-back ALWAYS matches the model on
+    // any clock) while still catching the reset in the common case. The OLD
+    // `> 0.2` floor flaked precisely because a healthy LOOPED projection can wrap
+    // BELOW 0.2 under a slow (SwiftShader/CI) clock (e.g. before=0.40 → after=0.13,
+    // a legitimate wrap), tripping the floor though nothing reset.
     const aTimeAfterReturn = (await activeVideoState(page)).time;
+    const tAfterMs = Date.now();
+    // Read the ACTUAL playback rate + duration off the live element (the
+    // asset_pitch V/oct only SELECTS the slot — playback speed is the default
+    // 1.0× speed knob — so don't derive rate from the V/oct; read it, robust to a
+    // future default change).
+    const { duration, rate } = await page
+      .locator('[data-testid="videovarispeed-video"]')
+      .evaluate((el) => {
+        const ve = el as HTMLVideoElement;
+        return { duration: ve.duration, rate: ve.playbackRate || 1 };
+      });
+    const elapsedSec = (tAfterMs - tBeforeMs) / 1000;
+    const projected = ((aTimeBeforeSwitch + elapsedSec * rate) % duration + duration) % duration;
+    // Circular distance on the looped timeline.
+    const rawDist = Math.abs(aTimeAfterReturn - projected);
+    const circDist = Math.min(rawDist, duration - rawDist);
+    // Tolerance 0.3s: the observed model error is ~0.005s (the wall-clock Δt vs
+    // the currentTime sample offset cancels between the two reads), so this is a
+    // ~40× flake margin, while a reset-to-0 (circular distance ~0.31s from a
+    // healthy projection landing near the clip end) is still caught.
     expect(
-      aTimeAfterReturn,
-      `switch-back landed on A's live time (~>=${aTimeBeforeSwitch.toFixed(2)}s), not 0 (was ${aTimeAfterReturn.toFixed(2)}s)`,
-    ).toBeGreaterThan(Math.max(0.2, aTimeBeforeSwitch - 0.5));
+      circDist,
+      `switch-back kept A's virtual playhead (matches the continuous-rate projection, not a reset to 0): ` +
+        `before=${aTimeBeforeSwitch.toFixed(2)}s after=${aTimeAfterReturn.toFixed(2)}s ` +
+        `projected=${projected.toFixed(2)}s (elapsed=${elapsedSec.toFixed(2)}s rate=${rate} dur=${duration.toFixed(2)}s) ` +
+        `circDist=${circDist.toFixed(2)}s`,
+    ).toBeLessThan(0.3);
 
     // (3) Play/pause works AFTER the switches: pause halts, play resumes.
     await page.click('[data-testid="videovarispeed-play-btn"]'); // → pause

@@ -120,6 +120,44 @@ export function cameraCoverScale(
   return { sx, sy };
 }
 
+// ── Test-only deterministic frame seam ──────────────────────────────────────
+// When `globalThis.__camerainputTestFrame` is truthy, the module uploads a
+// fixed high-contrast synthetic frame instead of sampling the live <video>.
+// This lets the render-smoke e2e exercise the FULL upload → pass-through shader
+// → FBO path DETERMINISTICALLY, with NO dependency on getUserMedia reaching
+// 'streaming' — which is the root cause of the camera attest flake under
+// cumulative GPU load (the live stream + state machine stall past the timeout).
+// Parallels the engine's __videoEngineFreezeTime / peakstate's __peakstateVrtSeed
+// seams: a tiny, flag-gated hook with zero production or unit-test impact (the
+// flag is never set outside the render-smoke spec). Built from a raw RGBA buffer
+// so it stays DOM-free (no canvas) and works in any WebGL context.
+const TEST_FRAME_W = 64;
+const TEST_FRAME_H = 48;
+let testFramePixels: Uint8Array | null = null;
+
+function testFrameEnabled(): boolean {
+  return !!(globalThis as { __camerainputTestFrame?: unknown }).__camerainputTestFrame;
+}
+
+function buildTestFrame(): Uint8Array {
+  if (testFramePixels) return testFramePixels;
+  const px = new Uint8Array(TEST_FRAME_W * TEST_FRAME_H * 4);
+  // Saturated 8×8 checker over a 5-colour palette → high luma variance and
+  // ~80% bright (non-zero) pixels, identical on every build → frame-stable.
+  const palette = [
+    [230, 30, 30], [30, 220, 60], [40, 80, 240], [240, 240, 240], [8, 8, 8],
+  ];
+  for (let y = 0; y < TEST_FRAME_H; y++) {
+    for (let x = 0; x < TEST_FRAME_W; x++) {
+      const c = palette[((x >> 3) + (y >> 3)) % palette.length]!;
+      const i = (y * TEST_FRAME_W + x) * 4;
+      px[i] = c[0]!; px[i + 1] = c[1]!; px[i + 2] = c[2]!; px[i + 3] = 255;
+    }
+  }
+  testFramePixels = px;
+  return px;
+}
+
 interface CameraParams {
   gain: number;
   enabled: number;   // 0 | 1
@@ -269,6 +307,26 @@ export const cameraInputDef: VideoModuleDef = {
      * uHasInput=1), false otherwise (idle pattern).
      */
     function uploadIfReady(): boolean {
+      // Test-only deterministic frame: upload the fixed synthetic checker once
+      // (it never changes, so re-uploads are unnecessary) and report a frame is
+      // present. Bypasses the live <video> entirely so the render is bit-stable
+      // regardless of getUserMedia / stream timing. See testFrameEnabled() above.
+      if (testFrameEnabled()) {
+        const tex = ensureSourceTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        if (!sourceTexAllocated) {
+          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+          gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+          gl.texImage2D(
+            gl.TEXTURE_2D, 0, gl.RGBA,
+            TEST_FRAME_W, TEST_FRAME_H, 0,
+            gl.RGBA, gl.UNSIGNED_BYTE,
+            buildTestFrame(),
+          );
+          sourceTexAllocated = true;
+        }
+        return true;
+      }
       if (!videoEl) return false;
       // HAVE_CURRENT_DATA = 2; the spec's minimum readiness for a
       // sampleable frame. We don't gate on HAVE_ENOUGH_DATA (4) because

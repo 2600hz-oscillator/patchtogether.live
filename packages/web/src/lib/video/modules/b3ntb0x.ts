@@ -889,10 +889,12 @@ export const b3ntb0xDef: VideoModuleDef = {
       draw(frame) {
         const g = frame.gl;
         const inputTex = frame.getInputTexture(node.id, 'in');
-        // Subcarrier phase + sync wobble advance with uTime, making the decoded
-        // frame change every tick. A test can PIN uTime via a global so a
-        // per-control pixel diff is deterministic (no carrier-phase drift between
-        // captures); production leaves it unset → live wall-clock time.
+        // Subcarrier-drift clock (subcarrier phase + sync wobble advance with
+        // uTime → the decoded frame changes every tick). A TEST-ONLY seam
+        // (`globalThis.__b3ntb0xFreezeTimeSec`, flag-gated, zero production impact)
+        // PINS it to a constant so both the per-control pixel diff (#859) and the
+        // deterministic render-smoke (b3ntb0x.spec.ts) get an IDENTICAL uTime phase
+        // on every step; production leaves it unset → live wall-clock.
         const freezeT = (globalThis as unknown as { __b3ntb0xFreezeTimeSec?: number }).__b3ntb0xFreezeTimeSec;
         const tSec = typeof freezeT === 'number' && Number.isFinite(freezeT)
           ? freezeT

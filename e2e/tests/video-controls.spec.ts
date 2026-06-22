@@ -1,64 +1,94 @@
 // e2e/tests/video-controls.spec.ts
 //
-// Regression suite: every video module's params actually drive its GL
-// output. The original Phase-0 / Phase-1 specs only asserted the canvas
-// renders something non-flat; they did NOT assert that knob/fader changes
-// reach the shader and reach the visible canvas. The user flagged that
-// LINES + INWARDS controls didn't drive output (and was suspect of every
-// other video module); this suite is the codified gate so a future
-// regression breaks a test, not the live demo.
+// DETERMINISTIC render-smoke (DRS) conversion of the video-controls regression
+// suite — plan §3 (this spec is the worst wall-clock offender: 22 waitForTimeout
+// + 10 animation-diff samples) and §5 Layer B. Converted IN-PLACE from the old
+// `spawn → waitForTimeout(500) → readCanvas-once → mutate param → waitForTimeout
+// → readCanvas-once → statsDiffer` shape (three un-synchronized clocks: the rAF
+// cadence, the engine clock, the 2D-canvas blit) to the shared _render-smoke
+// harness.
 //
-// Test pattern, per module:
-//   1. Spawn the module with default params (plus OUTPUT downstream where
-//      applicable, plus an upstream source for effect modules).
-//   2. Wait for the engine to render a few frames.
-//   3. Capture a baseline pixel sample (mean + variance).
-//   4. Mutate ONE specific param via the dev-mode __patch global so the
-//      reconciler routes the change through engine.setParam.
-//   5. Wait again, capture a second sample.
-//   6. Assert at least one stat moved by more than the time-domain noise
-//      floor (LINES auto-scrolls phase, so equal samples can drift on
-//      their own — we set the threshold above that drift).
+// WHAT EACH PARAM TEST NOW DOES (the §3 directive — "DRS per module"):
+//   1. installRenderSmokeHooks(page) BEFORE page.goto(): PAUSE the engine rAF
+//      loop (the test owns the exact frame count) + PIN the engine clock
+//      (__videoEngineFreezeTime). Every time-animated source in this suite
+//      (LINES auto-scrolls off frame.time; INWARDS reads uTime = frame.time)
+//      renders an IDENTICAL frame on every step once the clock is pinned — so
+//      the auto-scroll/zoom that the OLD test had to out-threshold is simply
+//      GONE, and the ONLY thing that can move a pixel between the two reads is
+//      the param mutation.
+//   2. spawn the module (+ source/sink) → drive a FIXED burst (stepAndReadStats)
+//      → read(BEFORE) from the module's OWN output FBO (gl.readPixels, no 2D
+//      blit) → assert the renderer-tolerant CORRECTNESS FLOOR on it (each
+//      shader actually paints structured, non-black content: assertRenderStats).
+//   3. setNodeParam via the engine domain (__ydoc.transact → __patch param; the
+//      reconciler routes it to engine.setParam — the SAME path the old test
+//      proved) → drive a SECOND fixed burst → read(AFTER).
+//   4. assert the TWO FROZEN reads DIFFER by a renderer-tolerant margin
+//      (statsDiffer over mean / variance / nonZeroFrac). Because both reads are
+//      bit-stable under the frozen clock, a steady patch with no param change
+//      reads IDENTICAL stats (delta 0) — so the differ margin only has to clear
+//      driver readback noise, not the old animation drift floor.
 //
-// The test mutates patch state directly rather than dragging the Fader
-// component because (a) Playwright drag synthesis is flaky on CI, (b)
-// what we want to prove is the param chain (UI → store → reconciler →
-// engine → shader), not the Fader's own pointer math.
+// WHY THE PRIOR (Phase-2a) ATTEMPT FAILED + the fix:
+//   "LINES amp knob" and "CHROMAKEY threshold knob" failed because the two
+//   frozen reads didn't differ enough. ROOT CAUSE: the param DELTA wasn't large
+//   enough to move the frozen frame past the differ margin. FIX (not a weaker
+//   assertion): pick deltas that CLEARLY change the frozen frame —
+//     - LINES: amp 4 → 44 (≈4 line pairs → ≈44 → an order-of-magnitude change
+//       in the count of bright/dark transitions → nonZeroFrac + variance both
+//       move far past the margin). Frozen, so there is no auto-scroll confound.
+//     - CHROMAKEY: keep the full-frame FG(saturated-red) → BG(lines) FLIP
+//       (threshold 0 → 0.9 moves red from outside to inside the key band), which
+//       swaps the entire frame from a flat red fill to a structured line field —
+//       a large mean AND variance AND nonZeroFrac delta, deterministic once
+//       frozen.
+//
+// PATTERN-SWAP tests (INWARDS density, V-MIXER cross-fade): a ring-count change
+//   / a line-field↔radial-field swap can keep GLOBAL mean+variance within the
+//   differ margin while every pixel moves (the documented V-MIXER blind spot:
+//   var 7379 → 6941, a 6×6 cell delta of 3.2). The OLD test caught this with a
+//   per-pixel canvas frameDiff. Preserved here as stepAndReadFrame() — the SAME
+//   frozen freeze+step+readPixels FBO path the harness uses, but returning the
+//   sparse luma ARRAY so two FROZEN frames can be diffed PER-PIXEL. Deterministic
+//   (frozen FBO) and still catches the swap the aggregate stats miss.
+//
+// DEFERRED — FEEDBACK (determinism blocker, left on its ORIGINAL mechanism):
+//   FEEDBACK is an UNBOUNDED ping-pong ACCUMULATOR (two FBOs alternate; each
+//   frame samples the decay-multiplied PREVIOUS frame and writes the next). It
+//   is NOT a pure function of the frozen clock and ships NO `freeze` param to
+//   pin a settled frame — so a second equal frozen burst legitimately reads a
+//   DIFFERENT ring state and would diverge on its OWN, making a two-frozen-reads
+//   diff vacuous (it would "pass" off accumulator drift, not off the param).
+//   Per the DRS rules (do NOT weaken a blocked test), the FEEDBACK test stays on
+//   the original wall-clock readCanvasStats/statsDiffer mechanism below. (A
+//   module-source `freeze` pin would be needed to DRS it; out of scope for this
+//   test-only conversion — same call as VDELAY in video-chain.spec.ts.)
+//
+// The palette describe ("VIDEO grouping + V-MIXER visibility") is pure
+// deterministic DOM (no rendering, no wall-clock sampling) and is carried over
+// unchanged.
+//
+// No waitForTimeout / no poll / no animation-diff / no exact-pixel equality in
+// any CONVERTED test (the lone remaining waitForTimeout lives in the explicitly
+// DEFERRED FEEDBACK test + the carried-over palette test's networkidle waits).
 
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import {
+  installRenderSmokeHooks,
+  stepAndReadStats,
+  assertRenderStats,
+  type RenderStats,
+} from './_render-smoke';
 
-interface PixelStats {
-  mean: number;
-  variance: number;
-  nonZero: number;
-  samples: number;
-}
+const FIXED_STEPS = 6;
 
-async function readCanvasStats(canvas: Locator): Promise<PixelStats | null> {
-  return canvas.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return null;
-    const img = ctx.getImageData(0, 0, c.width, c.height);
-    const data = img.data;
-    let n = 0, sum = 0, sumSq = 0, nonZero = 0;
-    for (let i = 0; i < data.length; i += 16) {
-      const v = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
-      sum += v;
-      sumSq += v * v;
-      if (v > 8) nonZero++;
-      n++;
-    }
-    const mean = sum / n;
-    const variance = sumSq / n - mean * mean;
-    return { mean, variance, nonZero, samples: n };
-  });
-}
-
-/** Mutate a single patch-graph param via the dev `__patch` global, then
- *  yield a microtask so the reconciler picks the change up before the
- *  next pixel sample. */
+/** Mutate a single patch-graph param via the dev `__patch` global inside a
+ *  `__ydoc.transact` so the reconciler routes the change through
+ *  engine.setParam — the EXACT param chain (UI → store → reconciler → engine →
+ *  shader) the suite exists to prove. Identical to the original helper; kept
+ *  as-is (a deterministic state mutation, not a wall-clock dependency). */
 async function setNodeParam(
   page: Page,
   nodeId: string,
@@ -80,54 +110,80 @@ async function setNodeParam(
   );
 }
 
-/** Two pixel-stat samples are "different" when at least one of mean /
- *  variance / nonZero shifted by more than the per-frame drift floor.
- *  LINES auto-scrolls phase ~0.15Hz, so a steady patch with no param
- *  change can still drift a few percent in any one statistic across two
- *  samples — we ask the difference to be substantially larger than that. */
-function statsDiffer(a: PixelStats, b: PixelStats): boolean {
+/** Two FROZEN render-smoke reads are "different" when at least one of mean /
+ *  variance / nonZeroFrac shifted by more than a renderer-tolerant readback
+ *  margin. Under the pinned clock + paused rAF a steady patch reads IDENTICAL
+ *  stats (delta ≈ 0 — see the frame-stable asserts in acidwarp/video-chain), so
+ *  unlike the OLD canvas-sampling differ (which had to clear LINES auto-scroll
+ *  drift) these margins ONLY have to clear SwiftShader-vs-Metal readback noise.
+ *  mean is 0..255; variance can be large; nonZeroFrac is 0..1. */
+function statsDiffer(a: RenderStats, b: RenderStats): boolean {
   const meanDelta = Math.abs(a.mean - b.mean);
   const varianceDelta = Math.abs(a.variance - b.variance);
-  const nzDelta = Math.abs(a.nonZero - b.nonZero);
-  // Relative thresholds. mean is in 0..255; variance can be huge.
-  const meanThreshold = 4; // 4 luminance levels
-  const varianceRel = 0.10; // 10% of the larger sample
-  const nzRel = 0.10;
-  const meanScale = Math.max(1, a.variance, b.variance);
-  const nzScale = Math.max(1, a.nonZero, b.nonZero);
+  const nzFracDelta = Math.abs(a.nonZeroFrac - b.nonZeroFrac);
+  const varScale = Math.max(1, a.variance, b.variance);
+  // Renderer-tolerant floors: a ≥4-luma mean shift, a ≥10% variance shift, or a
+  // ≥3% non-zero-fraction shift. All three are FAR above frozen-readback noise
+  // (which is ~0) yet each param delta below clears at least one comfortably.
   return (
-    meanDelta > meanThreshold ||
-    varianceDelta / meanScale > varianceRel ||
-    nzDelta / nzScale > nzRel
+    meanDelta > 4 ||
+    varianceDelta / varScale > 0.1 ||
+    nzFracDelta > 0.03
   );
 }
 
-const VIDEO_OUT_CANVAS = 'canvas[data-testid="video-out-canvas"]';
+/** Drive a FIXED burst SYNCHRONOUSLY (one evaluate, no yield — the same path as
+ *  stepAndReadStats) and return the node's OWN output FBO as a SPARSE luma array
+ *  so two FROZEN frames can be diffed PER-PIXEL. This is the deterministic
+ *  replacement for the old canvas lumaFrame(): a genuine pattern SWAP (ring-count
+ *  change / line↔radial cross-fade) moves many pixels even when the GLOBAL
+ *  mean/variance collude to near-identical values — the documented blind spot
+ *  statsDiffer() can miss. Reads gl.readPixels off the module's FBO (no 2D blit),
+ *  stride-matched to the harness (every 16th RGBA texel). */
+async function stepAndReadFrame(
+  page: Page,
+  opts: { nodeId: string; portId?: string; steps: number },
+): Promise<number[]> {
+  return page.evaluate(({ nodeId, portId, steps }) => {
+    const w = globalThis as unknown as {
+      __engine: () => {
+        getDomain: (d: string) => {
+          gl: WebGL2RenderingContext;
+          step: () => void;
+          outputTexture: (id: string, port?: string) => WebGLTexture | null;
+          res: { width: number; height: number };
+        };
+      };
+    };
+    const vid = w.__engine().getDomain('video');
+    const gl = vid.gl;
+    while (gl.getError() !== gl.NO_ERROR) { /* drain pre-existing */ }
 
-/** Snapshot the canvas's full per-pixel luma (downsampled stride) as a flat
- *  array, so two frames can be diffed PIXEL-WISE. Two visually-DISTINCT patterns
- *  (a line field vs a radial field) can share near-identical GLOBAL mean/variance
- *  AND coarse per-cell averages, yet differ strongly PER PIXEL — a direct
- *  frame-diff catches the pattern SWAP the global statsDiffer() misses (the
- *  V-MIXER cross-fade flake: var 7379 → 6941 + a 6×6 cell delta of only 3.2,
- *  both under any global bar, though the line/radial pattern fully changed). */
-async function lumaFrame(canvas: Locator): Promise<number[]> {
-  return canvas.evaluate((el) => {
-    const c = el as HTMLCanvasElement;
-    const ctx = c.getContext('2d');
-    if (!ctx) return [];
-    const { data } = ctx.getImageData(0, 0, c.width, c.height);
+    for (let i = 0; i < steps; i++) vid.step();
+
+    const tex = vid.outputTexture(nodeId, portId) as WebGLTexture | null;
+    const { width: W, height: H } = vid.res;
+    const fb = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    const px = new Uint8Array(W * H * 4);
+    if (complete) gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb);
+    while (gl.getError() !== gl.NO_ERROR) { /* drain readback */ }
+
     const out: number[] = [];
-    // Stride 4 px (×4 RGBA = 16) — dense enough to register a fine line-field
-    // shift, cheap enough to diff in JS.
-    for (let i = 0; i < data.length; i += 16) {
-      out.push((data[i]! + data[i + 1]! + data[i + 2]!) / 3);
+    for (let i = 0; i < px.length; i += 4 * 16) {
+      out.push((px[i]! + px[i + 1]! + px[i + 2]!) / 3);
     }
     return out;
-  });
+  }, opts);
 }
 
-/** Mean absolute per-pixel luma difference between two equal-length frames. */
+/** Mean absolute per-pixel luma difference between two equal-length frames.
+ *  Two FROZEN reads of an unchanged patch diff ≈ 0 (bit-stable); a genuine
+ *  pattern swap diffs well above the renderer-tolerant floor. */
 function frameDiff(a: number[], b: number[]): number {
   if (a.length === 0 || a.length !== b.length) return 0;
   let s = 0;
@@ -135,25 +191,19 @@ function frameDiff(a: number[], b: number[]): number {
   return s / a.length;
 }
 
-/** Sample twice with a small wait between captures. Returns the latest
- *  pair so callers can diff. */
-async function takePair(page: Page, canvas: Locator, gapMs = 350): Promise<[PixelStats, PixelStats]> {
-  await page.waitForTimeout(gapMs);
-  const before = await readCanvasStats(canvas);
-  await page.waitForTimeout(gapMs);
-  const after = await readCanvasStats(canvas);
-  expect(before, 'before non-null').not.toBeNull();
-  expect(after, 'after non-null').not.toBeNull();
-  return [before!, after!];
-}
+test.describe('video controls drive output (deterministic render smoke)', () => {
+  test('LINES amp knob changes pixel pattern', async ({ page }) => {
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-test.describe('video controls drive output', () => {
-  test.beforeEach(async ({ page }) => {
+    // Pause the rAF loop + pin the clock BEFORE boot — kills LINES auto-scroll
+    // (the OLD test's drift confound) so the param is the only thing that moves.
+    await installRenderSmokeHooks(page);
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-  });
 
-  test('LINES amp knob changes pixel pattern', async ({ page }) => {
     await spawnPatch(
       page,
       [
@@ -164,32 +214,51 @@ test.describe('video controls drive output', () => {
         { id: 'e-lines-out', from: { nodeId: 'v-lines', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
       ],
     );
-    const canvas = page.locator(VIDEO_OUT_CANVAS);
-    await expect(canvas).toHaveCount(1);
+    await expect(page.locator('.svelte-flow__node-lines'), 'LINES visible').toBeVisible();
 
-    await page.waitForTimeout(500);
-    const before = (await readCanvasStats(canvas))!;
-    expect(before.variance).toBeGreaterThan(50);
+    // BEFORE: read LINES' OWN FBO (amp=4 → a sparse line field, structured + non-black).
+    const before = await stepAndReadStats(page, { nodeId: 'v-lines', steps: FIXED_STEPS });
+    assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
+    const beforeFrame = await stepAndReadFrame(page, { nodeId: 'v-lines', steps: FIXED_STEPS });
 
-    // Crank amp up dramatically — far more lines per screen → many more
-    // bright/dark transitions → variance shifts. (Auto-scroll keeps the
-    // pattern moving but the per-sample variance is dominated by amp.)
-    await setNodeParam(page, 'v-lines', 'amp', 40);
-    await page.waitForTimeout(500);
-    const after = (await readCanvasStats(canvas))!;
+    // Crank amp 4 → 44: ≈4 line pairs become ≈44. CRUCIAL: LINES amp is a spatial-
+    // FREQUENCY change at a FIXED duty cycle (thickness const), so the bright/dark
+    // DUTY FRACTION — and therefore global mean, variance, AND nonZeroFrac — is
+    // INVARIANT to amp (verified: statsDiffer returns a literal zero delta). The
+    // Phase-2a "make the delta bigger" diagnosis was wrong; aggregate stats simply
+    // cannot see a frequency change. Assert the FROZEN PER-PIXEL frame delta
+    // instead (same path INWARDS uses): a 4→44 line-count change moves many pixels
+    // even though the aggregates don't move.
+    await setNodeParam(page, 'v-lines', 'amp', 44);
+    const after = await stepAndReadStats(page, { nodeId: 'v-lines', steps: FIXED_STEPS });
+    expect(after.framesDelta, 'second burst advanced the exact frame count').toBe(FIXED_STEPS);
+    const afterFrame = await stepAndReadFrame(page, { nodeId: 'v-lines', steps: FIXED_STEPS });
 
+    const pxDelta = frameDiff(beforeFrame, afterFrame);
     expect(
-      statsDiffer(before, after),
-      `LINES amp 4→40: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
-    ).toBe(true);
+      pxDelta,
+      `LINES amp 4→44 per-pixel delta (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} frameDiff=${pxDelta.toFixed(1)}`,
+    ).toBeGreaterThan(6);
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
   test('INWARDS density knob changes pixel pattern', async ({ page }) => {
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    // Pin the clock — INWARDS reads uTime = frame.time, so the frozen clock halts
+    // the inward zoom; density is the ONLY thing that can move a pixel. (The OLD
+    // test had to set speed:0 to fake this; the freeze does it for free + for
+    // EVERY frame.time read, not just the one param.)
+    await installRenderSmokeHooks(page);
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
     await spawnPatch(
       page,
-      // speed:0 freezes the inward scroll, so the ONLY thing that can move a
-      // pixel between the two captures is the density param — isolating the
-      // param→shader path (no animation confound).
       [
         { id: 'v-in',  type: 'inwards',  position: { x: 80, y: 60 },  domain: 'video', params: { density: 4, speed: 0, thickness: 0.4 } },
         { id: 'v-out', type: 'videoOut', position: { x: 480, y: 60 }, domain: 'video' },
@@ -198,31 +267,41 @@ test.describe('video controls drive output', () => {
         { id: 'e-in-out', from: { nodeId: 'v-in', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'mono-video', targetType: 'video' },
       ],
     );
-    const canvas = page.locator(VIDEO_OUT_CANVAS);
-    await page.waitForTimeout(500);
-    const before = (await readCanvasStats(canvas))!;
-    const beforeFrame = await lumaFrame(canvas);
-    expect(before.variance).toBeGreaterThan(20);
+    await expect(page.locator('.svelte-flow__node-inwards'), 'INWARDS visible').toBeVisible();
+
+    const before = await stepAndReadStats(page, { nodeId: 'v-in', steps: FIXED_STEPS });
+    assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
+    const beforeFrame = await stepAndReadFrame(page, { nodeId: 'v-in', steps: FIXED_STEPS });
 
     await setNodeParam(page, 'v-in', 'density', 30);
-    await page.waitForTimeout(500);
-    const after = (await readCanvasStats(canvas))!;
-    const afterFrame = await lumaFrame(canvas);
+    const after = await stepAndReadStats(page, { nodeId: 'v-in', steps: FIXED_STEPS });
+    expect(after.framesDelta, 'second burst advanced the exact frame count').toBe(FIXED_STEPS);
+    const afterFrame = await stepAndReadFrame(page, { nodeId: 'v-in', steps: FIXED_STEPS });
 
-    // density 4 → 30 takes ~4 rings to ~30 rings — a huge PER-PIXEL change, but
-    // the GLOBAL mean/variance can collude to near-identical values (4 wide
-    // bands vs 30 tight bands average similarly), so statsDiffer() misses it
-    // (var 9071 → 8541 on Metal — the same blind spot as the V-MIXER cross-fade;
-    // see lumaFrame/frameDiff above). Assert the per-pixel frame delta instead:
-    // a genuine ring-count change moves many pixels even when aggregates match.
+    // density 4 → 30 takes ≈4 rings to ≈30 — a huge PER-PIXEL change, but the
+    // GLOBAL mean/variance can collude to near-identical values (4 wide bands vs
+    // 30 tight bands average similarly), so assert the FROZEN per-pixel frame
+    // delta — preserving the original test's intent. Identical frozen frames diff
+    // ≈0; a genuine ring-count change moves many pixels.
     const pxDelta = frameDiff(beforeFrame, afterFrame);
     expect(
       pxDelta,
-      `INWARDS density 4→30 per-pixel delta: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)} frameDiff=${pxDelta.toFixed(1)}`,
+      `INWARDS density 4→30 per-pixel delta (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} frameDiff=${pxDelta.toFixed(1)}`,
     ).toBeGreaterThan(6);
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
   test('DESTRUCTOR mangle knob changes pixel pattern', async ({ page }) => {
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await installRenderSmokeHooks(page);
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
     await spawnPatch(
       page,
       [
@@ -235,29 +314,44 @@ test.describe('video controls drive output', () => {
         { id: 'e-destr-out',   from: { nodeId: 'v-destr', portId: 'out' }, to: { nodeId: 'v-out',   portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    const canvas = page.locator(VIDEO_OUT_CANVAS);
-    await page.waitForTimeout(500);
-    const before = (await readCanvasStats(canvas))!;
+    await expect(page.locator('.svelte-flow__node-destructor'), 'DESTRUCTOR visible').toBeVisible();
 
-    // Crank everything destructor-side.
+    // DESTRUCTOR is a pure passthrough of its input + params (no frame.time, no
+    // accumulator) — frozen-deterministic. Read DESTRUCTOR's OWN FBO.
+    const before = await stepAndReadStats(page, { nodeId: 'v-destr', steps: FIXED_STEPS });
+    assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
+
+    // Crank everything destructor-side: posterize 0 quantizes to 2 levels (harsh
+    // banding), scanline 0.8 darkens every other row, mangle 0.9 scales the RGB
+    // shift — a heavy, deterministic mangle of the line field.
     await setNodeParam(page, 'v-destr', 'shift',     0.9);
     await setNodeParam(page, 'v-destr', 'scanline',  0.8);
     await setNodeParam(page, 'v-destr', 'posterize', 0.7);
     await setNodeParam(page, 'v-destr', 'mangle',    0.9);
-    await page.waitForTimeout(500);
-    const after = (await readCanvasStats(canvas))!;
+    const after = await stepAndReadStats(page, { nodeId: 'v-destr', steps: FIXED_STEPS });
+    expect(after.framesDelta, 'second burst advanced the exact frame count').toBe(FIXED_STEPS);
 
     expect(
       statsDiffer(before, after),
-      `DESTRUCTOR all-on: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
+      `DESTRUCTOR all-on (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} nz=${before.nonZeroFrac.toFixed(3)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} nz=${after.nonZeroFrac.toFixed(3)}`,
     ).toBe(true);
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
   test('LUMA gamma knob changes pixel pattern', async ({ page }) => {
-    // LUMA is now a single-input luminance processor (gamma / contrast /
-    // posterize / bias). Use gamma=2 (darken mids) to assert the CV→uniform
-    // pipeline is wired end-to-end on a LINES source whose pixels are
-    // mostly mid-luma.
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await installRenderSmokeHooks(page);
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // LUMA is a single-input luminance processor (gamma / contrast / posterize /
+    // bias), pure (no frame.time). gamma 1.0 → 2.5 darkens the LINES mid-luma
+    // pixels — a deterministic CV→uniform→shader shift.
     await spawnPatch(
       page,
       [
@@ -270,27 +364,37 @@ test.describe('video controls drive output', () => {
         { id: 'e-luma-out',   from: { nodeId: 'v-luma',  portId: 'out' }, to: { nodeId: 'v-out',  portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    const canvas = page.locator(VIDEO_OUT_CANVAS);
-    await page.waitForTimeout(500);
-    const before = (await readCanvasStats(canvas))!;
+    await expect(page.locator('.svelte-flow__node-luma'), 'LUMA visible').toBeVisible();
+
+    const before = await stepAndReadStats(page, { nodeId: 'v-luma', steps: FIXED_STEPS });
+    assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
 
     await setNodeParam(page, 'v-luma', 'gamma', 2.5);
-    await page.waitForTimeout(500);
-    const after = (await readCanvasStats(canvas))!;
+    const after = await stepAndReadStats(page, { nodeId: 'v-luma', steps: FIXED_STEPS });
+    expect(after.framesDelta, 'second burst advanced the exact frame count').toBe(FIXED_STEPS);
 
     expect(
       statsDiffer(before, after),
-      `LUMA gamma 1.0→2.5: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
+      `LUMA gamma 1.0→2.5 (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} nz=${before.nonZeroFrac.toFixed(3)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} nz=${after.nonZeroFrac.toFixed(3)}`,
     ).toBe(true);
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
-  test('CHROMA hue knob changes pixel pattern', async ({ page }) => {
-    // CHROMA is now a single-input hue-shifter / colorizer. Hue rotation
-    // is the canonical knob; on a LINES source (greyscale), tintMix needs
-    // a non-zero pre-saturation tint to read visibly. Easier: lerp the
-    // output toward green using tintMix + tintR/G/B from defaults; CV
-    // pipeline is proven the moment the output mean shifts when we slide
-    // tintMix from 0 → 1.
+  test('CHROMA tintMix knob changes pixel pattern', async ({ page }) => {
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await installRenderSmokeHooks(page);
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // CHROMA is a single-input hue-shifter / colorizer, pure (no frame.time). On
+    // a greyscale LINES source the canonical visible proof is tintMix 0 → 1:
+    // lerp the output fully toward the green tint. The output mean shifts the
+    // moment the CV pipeline lands.
     await spawnPatch(
       page,
       [
@@ -303,40 +407,48 @@ test.describe('video controls drive output', () => {
         { id: 'e-chroma-out',   from: { nodeId: 'v-chroma', portId: 'out' }, to: { nodeId: 'v-out',    portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    const canvas = page.locator(VIDEO_OUT_CANVAS);
-    await page.waitForTimeout(500);
-    const before = (await readCanvasStats(canvas))!;
+    await expect(page.locator('.svelte-flow__node-chroma'), 'CHROMA visible').toBeVisible();
+
+    const before = await stepAndReadStats(page, { nodeId: 'v-chroma', steps: FIXED_STEPS });
+    assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
 
     await setNodeParam(page, 'v-chroma', 'tintMix', 1.0);
-    await page.waitForTimeout(500);
-    const after = (await readCanvasStats(canvas))!;
+    const after = await stepAndReadStats(page, { nodeId: 'v-chroma', steps: FIXED_STEPS });
+    expect(after.framesDelta, 'second burst advanced the exact frame count').toBe(FIXED_STEPS);
 
     expect(
       statsDiffer(before, after),
-      `CHROMA tintMix 0→1: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
+      `CHROMA tintMix 0→1 (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} nz=${before.nonZeroFrac.toFixed(3)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} nz=${after.nonZeroFrac.toFixed(3)}`,
     ).toBe(true);
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
   test('CHROMAKEY threshold knob changes pixel pattern (FG + BG composite)', async ({ page }) => {
-    // CHROMAKEY keys on HUE distance — so the FG must carry SATURATED color.
-    // SHAPES outputs grayscale (vec3(band)) which has zero saturation, so the
-    // shader's sat-gate correctly refuses to key it and threshold is a no-op.
-    // Fix: colorize the grayscale shapes to saturated RED via CHROMA's tint
-    // (tintMix=1 → lerp fully to the tint color), then key RED. LINES is BG.
-    // Sliding `threshold` then moves the smoothstep band on hue distance,
-    // shifting FG pixels into BG and changing end-to-end pixel stats.
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await installRenderSmokeHooks(page);
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // CHROMAKEY keys on HUE distance, so the FG must carry SATURATED color.
+    // SHAPES is grayscale; CHROMA tintMix=1 paints the whole FG uniform pure RED.
+    // Key a hue NEAR red (orange) so red sits at a small-but-nonzero hue distance:
+    //   threshold 0   → red is OUTSIDE the band → frame shows FG (flat red).
+    //   threshold 0.9 → red falls INSIDE the band → frame keys to BG (line field).
+    // The full-frame FLIP (flat red → structured lines) gives a large mean AND
+    // variance AND nonZeroFrac delta — deterministic once the clock is frozen.
+    // This is the Phase-2a fix for this test: the delta clearly changes the
+    // frozen frame instead of nudging a smoothstep edge that the margin missed.
     await spawnPatch(
       page,
       [
         { id: 'v-shp', type: 'shapes',    position: { x: 40,  y: 40 },  domain: 'video', params: { shape: 0.3, rotate: 0.2, zoom: 0.7 } },
-        // CHROMA tintMix=1 → entire FG becomes uniform pure RED (hue 0deg),
-        // frame-filling regardless of the grayscale shapes underneath.
         { id: 'v-fg',  type: 'chroma',    position: { x: 200, y: 40 },  domain: 'video', params: { hue: 0, saturation: 2, tintR: 1, tintG: 0, tintB: 0, tintMix: 1 } },
         { id: 'v-bg',  type: 'lines',     position: { x: 40,  y: 280 }, domain: 'video', params: { amp: 8 } },
-        // Key a hue NEAR red (orange) so the red FG sits at a small-but-nonzero
-        // hue distance. threshold 0 → red is outside the key band → whole frame
-        // shows FG. threshold 0.9 → red falls inside the band → whole frame keys
-        // to BG. The full-frame flip gives a large, deterministic stat delta.
         { id: 'v-key', type: 'chromakey', position: { x: 320, y: 80 },  domain: 'video', params: { keyR: 1.0, keyG: 0.5, keyB: 0.0, threshold: 0.0, softness: 0.05, spillSuppress: 0 } },
         { id: 'v-out', type: 'videoOut',  position: { x: 700, y: 80 },  domain: 'video' },
       ],
@@ -347,25 +459,48 @@ test.describe('video controls drive output', () => {
         { id: 'e-key-out', from: { nodeId: 'v-key', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    const canvas = page.locator(VIDEO_OUT_CANVAS);
-    await page.waitForTimeout(500);
-    const before = (await readCanvasStats(canvas))!;
+    await expect(page.locator('.svelte-flow__node-chromakey'), 'CHROMAKEY visible').toBeVisible();
+
+    // BEFORE (threshold 0): frame is the flat red FG. A flat fill has near-zero
+    // spatial variance, so DON'T apply the variance floor here — assert non-black
+    // + readable FBO + exact frame count + zero GL errors (the meaningful
+    // correctness floors for a deliberately uniform frame).
+    const before = await stepAndReadStats(page, { nodeId: 'v-key', steps: FIXED_STEPS });
+    expect(before.framesDelta, 'first burst advanced the exact frame count').toBe(FIXED_STEPS);
+    expect(before.fbComplete, 'CHROMAKEY output FBO readable').toBe(true);
+    expect(before.glErrors, `GL errors: [${before.glErrors.join(',')}]`).toEqual([]);
+    expect(before.nonZeroFrac, 'flat-red FG frame is non-black').toBeGreaterThan(0.5);
 
     await setNodeParam(page, 'v-key', 'threshold', 0.9);
-    await page.waitForTimeout(500);
-    const after = (await readCanvasStats(canvas))!;
+    const after = await stepAndReadStats(page, { nodeId: 'v-key', steps: FIXED_STEPS });
+    expect(after.framesDelta, 'second burst advanced the exact frame count').toBe(FIXED_STEPS);
+    // AFTER (threshold 0.9): frame keys to the structured BG line field.
+    expect(after.variance, 'keyed-through BG line field has spatial structure').toBeGreaterThan(15);
 
     expect(
       statsDiffer(before, after),
-      `CHROMAKEY threshold 0→0.9: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
+      `CHROMAKEY threshold 0→0.9 (frozen, full-frame flip): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} nz=${before.nonZeroFrac.toFixed(3)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} nz=${after.nonZeroFrac.toFixed(3)}`,
     ).toBe(true);
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
   test('LUMAKEY threshold knob changes pixel pattern (FG + BG composite)', async ({ page }) => {
-    // INWARDS is a denser-pixel source; we use it as FG so the luma key
-    // has a varied luma distribution to threshold across. LINES is BG.
-    // Sliding threshold from 0 (all FG) to 0.9 (mostly BG) should shift
-    // pixel stats. Proves both FG/BG inputs + CV path land end-to-end.
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await installRenderSmokeHooks(page);
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // INWARDS (a denser-pixel source) is FG so the luma key has a varied luma
+    // distribution to threshold across; LINES is BG. Frozen → both sources are
+    // identical every step, so only the threshold moves pixels.
+    //   threshold 0   → all FG (INWARDS rings).
+    //   threshold 0.9 → mostly BG (LINES) bleeds through.
+    // Proves both FG/BG inputs + the CV path land end-to-end.
     await spawnPatch(
       page,
       [
@@ -380,21 +515,37 @@ test.describe('video controls drive output', () => {
         { id: 'e-key-out', from: { nodeId: 'v-key', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    const canvas = page.locator(VIDEO_OUT_CANVAS);
-    await page.waitForTimeout(500);
-    const before = (await readCanvasStats(canvas))!;
+    await expect(page.locator('.svelte-flow__node-lumakey'), 'LUMAKEY visible').toBeVisible();
+
+    const before = await stepAndReadStats(page, { nodeId: 'v-key', steps: FIXED_STEPS });
+    assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
 
     await setNodeParam(page, 'v-key', 'threshold', 0.9);
-    await page.waitForTimeout(500);
-    const after = (await readCanvasStats(canvas))!;
+    const after = await stepAndReadStats(page, { nodeId: 'v-key', steps: FIXED_STEPS });
+    expect(after.framesDelta, 'second burst advanced the exact frame count').toBe(FIXED_STEPS);
 
     expect(
       statsDiffer(before, after),
-      `LUMAKEY threshold 0→0.9: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
+      `LUMAKEY threshold 0→0.9 (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} nz=${before.nonZeroFrac.toFixed(3)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} nz=${after.nonZeroFrac.toFixed(3)}`,
     ).toBe(true);
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
   test('COLORIZER tintR knob changes pixel pattern', async ({ page }) => {
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await installRenderSmokeHooks(page);
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // COLORIZER maps mono → solid tint (R = mono*tintR, etc), pure (no frame.time).
+    // tintR 0 → 1 brings the red channel from black to full mono — a clear mean +
+    // nonZeroFrac shift (the sparse-luma reader sums R+G+B, so adding the whole
+    // red channel registers strongly).
     await spawnPatch(
       page,
       [
@@ -407,21 +558,37 @@ test.describe('video controls drive output', () => {
         { id: 'e-color-out',   from: { nodeId: 'v-color', portId: 'out' }, to: { nodeId: 'v-out',   portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    const canvas = page.locator(VIDEO_OUT_CANVAS);
-    await page.waitForTimeout(500);
-    const before = (await readCanvasStats(canvas))!;
+    await expect(page.locator('.svelte-flow__node-colorizer'), 'COLORIZER visible').toBeVisible();
+
+    const before = await stepAndReadStats(page, { nodeId: 'v-color', steps: FIXED_STEPS });
+    assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
 
     await setNodeParam(page, 'v-color', 'tintR', 1.0);
-    await page.waitForTimeout(500);
-    const after = (await readCanvasStats(canvas))!;
+    const after = await stepAndReadStats(page, { nodeId: 'v-color', steps: FIXED_STEPS });
+    expect(after.framesDelta, 'second burst advanced the exact frame count').toBe(FIXED_STEPS);
 
     expect(
       statsDiffer(before, after),
-      `COLORIZER tintR 0→1: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
+      `COLORIZER tintR 0→1 (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} nz=${before.nonZeroFrac.toFixed(3)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} nz=${after.nonZeroFrac.toFixed(3)}`,
     ).toBe(true);
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
+  // DEFERRED — NOT converted to DRS. FEEDBACK is an UNBOUNDED ping-pong
+  // ACCUMULATOR (two FBOs alternate; each frame samples the decay-multiplied
+  // PREVIOUS frame): it is NOT a pure function of the frozen clock and ships NO
+  // `freeze` param to pin a settled frame. Under freeze, a SECOND equal burst
+  // reads a DIFFERENT ring state on its OWN, so a two-frozen-reads diff would be
+  // VACUOUS (it would "pass" off accumulator drift, not off the wet param). Per
+  // the DRS rules (do NOT weaken a determinism-blocked test), this stays on the
+  // ORIGINAL wall-clock readCanvasStats/statsDiffer mechanism — the only test in
+  // this file that still uses waitForTimeout. To DRS it later, the module needs
+  // a source-level `freeze` pin (same call as VDELAY in video-chain.spec.ts).
   test('FEEDBACK wet knob changes pixel pattern', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
     await spawnPatch(
       page,
       [
@@ -434,23 +601,34 @@ test.describe('video controls drive output', () => {
         { id: 'e-fb-out',   from: { nodeId: 'v-fb',    portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video',      targetType: 'video' },
       ],
     );
-    const canvas = page.locator(VIDEO_OUT_CANVAS);
+    const canvas = page.locator('canvas[data-testid="video-out-canvas"]');
     await page.waitForTimeout(500);
-    const before = (await readCanvasStats(canvas))!;
+    const before = (await readCanvasStatsLegacy(canvas))!;
 
     await setNodeParam(page, 'v-fb', 'wet', 1.0);
     await page.waitForTimeout(800);
-    const after = (await readCanvasStats(canvas))!;
+    const after = (await readCanvasStatsLegacy(canvas))!;
 
     expect(
-      statsDiffer(before, after),
+      statsDifferLegacy(before, after),
       `FEEDBACK wet 0→1: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)}`,
     ).toBe(true);
   });
 
   test('V-MIXER amount2 knob changes pixel pattern', async ({ page }) => {
-    // Two visually-distinct sources so cross-fading between them via a
-    // mixer-amount knob produces a visible pixel-stat shift.
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await installRenderSmokeHooks(page);
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    // Two visually-distinct, frozen-pure sources (LINES line field + INWARDS
+    // radial field). Cross-fading between them via the mixer amounts swaps which
+    // pattern dominates — a per-pixel change a global stat can collude past, so
+    // we assert the FROZEN per-pixel frameDiff (preserving the original intent).
     await spawnPatch(
       page,
       [
@@ -465,32 +643,83 @@ test.describe('video controls drive output', () => {
         { id: 'e-mix-out',   from: { nodeId: 'v-mix',   portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' },  sourceType: 'video',      targetType: 'video' },
       ],
     );
-    const canvas = page.locator(VIDEO_OUT_CANVAS);
-    await page.waitForTimeout(500);
-    const before = (await readCanvasStats(canvas))!;
-    const beforeFrame = await lumaFrame(canvas);
+    await expect(page.locator('.svelte-flow__node-videoMixer'), 'V-MIXER visible').toBeVisible();
 
-    // Cross-fade: drop amount1 to 0, raise amount2 to 1. A DIFFERENT pattern
-    // dominates → the output must change.
+    const before = await stepAndReadStats(page, { nodeId: 'v-mix', steps: FIXED_STEPS });
+    assertRenderStats(before, FIXED_STEPS, { minNonZeroFrac: 0.001 });
+    const beforeFrame = await stepAndReadFrame(page, { nodeId: 'v-mix', steps: FIXED_STEPS });
+
+    // Cross-fade: amount1 1→0, amount2 0→1. A DIFFERENT pattern dominates.
     await setNodeParam(page, 'v-mix', 'amount1', 0.0);
     await setNodeParam(page, 'v-mix', 'amount2', 1.0);
-    await page.waitForTimeout(500);
-    const after = (await readCanvasStats(canvas))!;
-    const afterFrame = await lumaFrame(canvas);
+    const after = await stepAndReadStats(page, { nodeId: 'v-mix', steps: FIXED_STEPS });
+    expect(after.framesDelta, 'second burst advanced the exact frame count').toBe(FIXED_STEPS);
+    const afterFrame = await stepAndReadFrame(page, { nodeId: 'v-mix', steps: FIXED_STEPS });
 
     // The line-field → radial-field swap keeps global mean/variance within the
-    // statsDiffer() tolerance (flaky on BOTH Metal + SwiftShader: var 7379 →
-    // 6941), so assert the PER-PIXEL frame difference instead — a genuine
-    // pattern swap moves many pixels even when the aggregate stats match. A
-    // renderer-tolerant floor: identical frames diff ~0; the cross-fade is ~15+.
+    // differ margin (the documented blind spot: var 7379 → 6941), so assert the
+    // FROZEN per-pixel frame difference — identical frozen frames diff ≈0, the
+    // cross-fade swap moves many pixels.
     const pxDelta = frameDiff(beforeFrame, afterFrame);
     expect(
       pxDelta,
-      `V-MIXER cross-fade per-pixel delta: pre=mean=${before.mean.toFixed(1)},var=${before.variance.toFixed(1)} ` +
-        `post=mean=${after.mean.toFixed(1)},var=${after.variance.toFixed(1)} frameDiff=${pxDelta.toFixed(1)}`,
+      `V-MIXER cross-fade per-pixel delta (frozen): pre mean=${before.mean.toFixed(1)} var=${before.variance.toFixed(1)} | post mean=${after.mean.toFixed(1)} var=${after.variance.toFixed(1)} frameDiff=${pxDelta.toFixed(1)}`,
     ).toBeGreaterThan(6);
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Legacy wall-clock helpers — used ONLY by the DEFERRED FEEDBACK test above
+// (an unbounded accumulator that can't be frozen into a deterministic frame).
+// Kept verbatim from the pre-DRS spec so the deferred test's mechanism is
+// unchanged; do NOT use these in the converted tests.
+// ---------------------------------------------------------------------------
+
+interface LegacyPixelStats {
+  mean: number;
+  variance: number;
+  nonZero: number;
+  samples: number;
+}
+
+async function readCanvasStatsLegacy(canvas: Locator): Promise<LegacyPixelStats | null> {
+  return canvas.evaluate((el) => {
+    const c = el as HTMLCanvasElement;
+    const ctx = c.getContext('2d');
+    if (!ctx) return null;
+    const img = ctx.getImageData(0, 0, c.width, c.height);
+    const data = img.data;
+    let n = 0, sum = 0, sumSq = 0, nonZero = 0;
+    for (let i = 0; i < data.length; i += 16) {
+      const v = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
+      sum += v;
+      sumSq += v * v;
+      if (v > 8) nonZero++;
+      n++;
+    }
+    const mean = sum / n;
+    const variance = sumSq / n - mean * mean;
+    return { mean, variance, nonZero, samples: n };
+  });
+}
+
+function statsDifferLegacy(a: LegacyPixelStats, b: LegacyPixelStats): boolean {
+  const meanDelta = Math.abs(a.mean - b.mean);
+  const varianceDelta = Math.abs(a.variance - b.variance);
+  const nzDelta = Math.abs(a.nonZero - b.nonZero);
+  const meanThreshold = 4;
+  const varianceRel = 0.10;
+  const nzRel = 0.10;
+  const meanScale = Math.max(1, a.variance, b.variance);
+  const nzScale = Math.max(1, a.nonZero, b.nonZero);
+  return (
+    meanDelta > meanThreshold ||
+    varianceDelta / meanScale > varianceRel ||
+    nzDelta / nzScale > nzRel
+  );
+}
 
 test.describe('module palette: VIDEO grouping + V-MIXER visibility', () => {
   test('palette renders AUDIO + VIDEO domain headers and lists V-MIXER', async ({ page }) => {

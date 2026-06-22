@@ -43,6 +43,7 @@ import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
+import { visualChecksEnabled } from './_visual-checks';
 import { readScopeSnapshot, summarize } from './_module-coverage-helpers';
 
 /** Read AUDIO OUT's terminal tap (the limiter feeding ctx.destination) and
@@ -358,7 +359,7 @@ test.describe('multi-video playback — N sources all decode at once', () => {
     // symptom). CI-skipped: this samples software-GL framebuffer pixels, which
     // flakes under parallel-worker rAF throttling — the uploadCount guard above
     // is the deterministic CI proof of the same fix.
-    if (!process.env.CI) {
+    if (visualChecksEnabled()) {
       const results: Array<{ i: number; moved: boolean; maxBright: number; distinct: number }> = [];
       for (let i = 0; i < 4; i++) {
         const r = await outAdvances(page, `out${i}`);
@@ -382,7 +383,7 @@ test.describe('multi-video playback — N sources all decode at once', () => {
     // ONLY — sampled-pixel check on software GL flakes under CI rAF throttling;
     // the per-source uploadCount liveness above + the audibility assertion
     // below are the deterministic CI guards.
-    if (!process.env.CI) {
+    if (visualChecksEnabled()) {
       const mix = await outAdvances(page, 'mixout');
       expect(
         mix.moved,

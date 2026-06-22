@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "webglContentHash": "5ab87d00e20b47641bdd46122d10116a4a3f2d4e29f8d4b775fdc066ef2be47b",
+  "attestedAt": "2026-06-22T14:44:50.839Z",
+  "attestedBy": "tmayshark@gmail.com",
+  "gitHeadAtAttest": "9f605619a33e9f024452a882aaf66c27b41a968e",
+  "playwrightVersion": "1.50.0",
+  "os": "darwin 25.4.0 (arm64)",
+  "host": "2600hzs-MBP.home.local",
+  "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "repeatEach": 1,
+  "suites": {
+    "A-heavy": {
+      "specFiles": 54,
+      "passed": 175,
+      "failed": 0,
+      "flaky": 1,
+      "skipped": 1,
+      "flakyDetails": [
+        {
+          "test": "nibbles-pellet: bridges into scope.ch1 (was silent pre-#414)",
+          "file": "video-audio-cvgate-coverage.spec.ts",
+          "firstError": "Error: expect(received).toBeGreaterThan(expected) |  | Expected: > 0.1 | Received:   0"
+        }
+      ]
+    },
+    "B-leakers": {
+      "specFiles": 5,
+      "passed": 13,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "flakyDetails": []
+    },
+    "C-camera": {
+      "specFiles": 1,
+      "passed": 2,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "flakyDetails": []
+    }
+  },
+  "durationSec": 385
+}

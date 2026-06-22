@@ -127,18 +127,40 @@ async function canvasMenuClick(
 }
 
 /** Right-click an edge at its stroke MIDPOINT (screen coords mapped through the
- *  live CTM). The cable now has a wide transparent hit-path, so a coordinate
- *  right-click on the midpoint reliably lands on the stroke. */
+ *  live CTM). The cable has a wide transparent hit-path, so a coordinate
+ *  right-click on the midpoint lands on the stroke. Retries until the menu opens
+ *  — like rightClickEd/rightClickAt — recomputing the midpoint each attempt: a
+ *  single right-click can land before the SVG is interactive on cold SwiftShader
+ *  (the same "dominant toybox-node-menu flake" the node/canvas helpers already
+ *  guard; this edge helper was the last un-hardened one, and it surfaced as the
+ *  webgl-attest's lone red — fixed here, not papered over with an attest retry). */
 async function rightClickEdge(page: Page, edgeId: string): Promise<void> {
-  const p = await page.evaluate((edgeId) => {
-    const el = document.querySelector(`[data-testid="toybox-edge-${edgeId}"]`) as SVGPathElement | null;
-    if (!el) throw new Error(`edge ${edgeId} not found`);
-    const len = el.getTotalLength();
-    const pt = el.getPointAtLength(len / 2);
-    const ctm = el.getScreenCTM()!;
-    return { x: pt.x * ctm.a + pt.y * ctm.c + ctm.e, y: pt.x * ctm.b + pt.y * ctm.d + ctm.f };
-  }, edgeId);
-  await page.mouse.click(p.x, p.y, { button: 'right' });
+  const menuLoc = page.locator('[data-testid="toybox-node-menu"]');
+  await expect(async () => {
+    const p = await page.evaluate((edgeId) => {
+      const el = document.querySelector(`[data-testid="toybox-edge-${edgeId}"]`) as SVGPathElement | null;
+      if (!el) throw new Error(`edge ${edgeId} not found`);
+      const len = el.getTotalLength();
+      const pt = el.getPointAtLength(len / 2);
+      const ctm = el.getScreenCTM()!;
+      return { x: pt.x * ctm.a + pt.y * ctm.c + ctm.e, y: pt.x * ctm.b + pt.y * ctm.d + ctm.f };
+    }, edgeId);
+    await page.mouse.click(p.x, p.y, { button: 'right' });
+    await expect(menuLoc).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 20_000 });
+}
+
+/** Press Escape AND wait for the menu to FULLY close before the next action. A
+ *  bare `press('Escape')` doesn't await the close, so the next section's
+ *  right-click could race a still-closing menu: the retry-to-open loop then sees
+ *  the STALE menu still visible, returns immediately, and the new section's
+ *  item assertions fail against the wrong menu — the residual toybox-node-menu
+ *  flake that survived the rightClickEdge fix (fails on a quiet machine too, so
+ *  it's a real close→open race, not GPU contention). Gating every section on a
+ *  confirmed-closed state makes the sequence deterministic. */
+async function closeMenu(page: Page): Promise<void> {
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-testid="toybox-node-menu"]')).toHaveCount(0);
 }
 
 /** Screen-space coords of an EMPTY point inside the SVG — provably clear of every
@@ -234,7 +256,7 @@ test.describe('TOYBOX node-map contextual menu', () => {
     await expect(page.locator('[data-testid="toybox-menu-disconnect"]')).toBeVisible();
     await expect(page.locator('[data-testid="toybox-menu-duplicate"]')).toBeVisible();
     await expect(page.locator('[data-testid="toybox-menu-delete-node"]')).toBeVisible();
-    await page.keyboard.press('Escape');
+    await closeMenu(page);
     await expect(menu(page)).toHaveCount(0);
 
     // ---- NODE (source): Patch to output + Disconnect, NO Delete/Duplicate ----
@@ -244,7 +266,7 @@ test.describe('TOYBOX node-map contextual menu', () => {
     await expect(page.locator('[data-testid="toybox-menu-disconnect"]')).toBeVisible();
     await expect(page.locator('[data-testid="toybox-menu-delete-node"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="toybox-menu-duplicate"]')).toHaveCount(0);
-    await page.keyboard.press('Escape');
+    await closeMenu(page);
 
     // ---- NODE (output): Disconnect only, NO Patch-to-output / Delete ----
     const outId = await findNodeId(page, 'output');
@@ -253,7 +275,7 @@ test.describe('TOYBOX node-map contextual menu', () => {
     await expect(page.locator('[data-testid="toybox-menu-disconnect"]')).toBeVisible();
     await expect(page.locator('[data-testid="toybox-menu-patch-output"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="toybox-menu-delete-node"]')).toHaveCount(0);
-    await page.keyboard.press('Escape');
+    await closeMenu(page);
 
     // ---- PORT (output dot): Patch to output present + Begin wire ----
     await rightClickEd(page, 'toybox-outport-src0');
@@ -261,7 +283,7 @@ test.describe('TOYBOX node-map contextual menu', () => {
     await expect(page.locator('[data-testid="toybox-menu-patch-output"]')).toBeVisible();
     await expect(page.locator('[data-testid="toybox-menu-disconnect-port"]')).toBeVisible();
     await expect(page.locator('[data-testid="toybox-menu-begin-wire"]')).toBeVisible();
-    await page.keyboard.press('Escape');
+    await closeMenu(page);
 
     // ---- PORT (input dot): only Disconnect this port ----
     await rightClickEd(page, `toybox-inport-${outId}-in0`);
@@ -269,7 +291,7 @@ test.describe('TOYBOX node-map contextual menu', () => {
     await expect(page.locator('[data-testid="toybox-menu-disconnect-port"]')).toBeVisible();
     await expect(page.locator('[data-testid="toybox-menu-patch-output"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="toybox-menu-begin-wire"]')).toHaveCount(0);
-    await page.keyboard.press('Escape');
+    await closeMenu(page);
 
     // ---- EDGE: Delete edge ---- (right-click the path's stroke midpoint, since
     // a thin diagonal bezier's bbox centre lands on background).
@@ -279,7 +301,7 @@ test.describe('TOYBOX node-map contextual menu', () => {
     await rightClickEdge(page, anyEdge!.id);
     await expect(menu(page)).toBeVisible();
     await expect(page.locator('[data-testid="toybox-menu-delete-edge"]')).toBeVisible();
-    await page.keyboard.press('Escape');
+    await closeMenu(page);
 
     // ---- CANVAS (empty): Add node submenu + Clear + Reset ----
     const empty = await emptyCanvasScreen(page);
@@ -293,7 +315,7 @@ test.describe('TOYBOX node-map contextual menu', () => {
     for (const k of ['fade', 'lumakey', 'chromakey', 'map']) {
       await expect(page.locator(`[data-testid="toybox-menu-add-${k}"]`)).toBeVisible();
     }
-    await page.keyboard.press('Escape');
+    await closeMenu(page);
     await expect(menu(page)).toHaveCount(0);
 
     expect(errors.filter((e) => !e.includes('AudioContext')), 'no console / page errors').toEqual([]);
