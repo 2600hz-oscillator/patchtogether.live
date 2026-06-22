@@ -700,6 +700,30 @@ export class VideoEngine implements DomainEngine {
     return h?.read ? h.read(key) : undefined;
   }
 
+  /** The engine-level frame counter — advanced exactly once per step() (incl.
+   *  the freeze-render path). With the rAF loop paused (`__videoEnginePause`),
+   *  a test that drives step() owns this count exactly, so a before/after DELTA
+   *  is the deterministic frame-count check for the Layer-B render-smoke (works
+   *  for EVERY module, unlike a per-module `read('framesElapsed')`). */
+  currentFrameCount(): number {
+    return this.frameCount;
+  }
+
+  /** A node's OUTPUT texture, by the same rule edge-resolution uses: a
+   *  multi-output module's per-port `read('outputTexture:<portId>')` if a port
+   *  is given + present, else the single `surface.texture`. The canonical,
+   *  module-agnostic way for the Layer-B render-smoke to read any node's output
+   *  (no per-module `read('fboTexture')` key required). */
+  outputTexture(nodeId: string, portId?: string): WebGLTexture | null {
+    const h = this.nodes.get(nodeId);
+    if (!h) return null;
+    if (portId && h.read) {
+      const t = h.read(`outputTexture:${portId}`) as WebGLTexture | null | undefined;
+      if (t) return t;
+    }
+    return h.surface?.texture ?? null;
+  }
+
   /** Resolve which UPSTREAM source node currently feeds `(thisNodeId,
    *  inputId)`, by the same edge-ordering rule lookupInput() uses to pick the
    *  texture. Returns the source node id, or null if nothing is wired.
@@ -884,6 +908,17 @@ export class VideoEngine implements DomainEngine {
 
   // -------- Render loop --------
 
+  /** E2E DETERMINISM hook (Layer-B render-smoke). When
+   *  `globalThis.__videoEngineFreezeTime` is a finite number, the engine clock
+   *  exposed as `frame.time` (ctx.time) is PINNED to it while draws STILL run —
+   *  so a time-animated module renders an identical frame on every step. This is
+   *  distinct from `__videoEngineFreezeRender`, which SKIPS the draw entirely
+   *  (used by the per-port sweeps). Default-undefined → zero production effect. */
+  private engineFrozenTimeSec(): number | null {
+    const v = (globalThis as unknown as { __videoEngineFreezeTime?: unknown }).__videoEngineFreezeTime;
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+  }
+
   /** Run one frame's worth of draws. Test code calls this directly so it
    *  doesn't have to wait for rAF. */
   step(): void {
@@ -952,7 +987,7 @@ export class VideoEngine implements DomainEngine {
 
     const ctx: VideoFrameContext = {
       gl: this.gl,
-      time: (performance.now() - this.startTime) / 1000,
+      time: this.engineFrozenTimeSec() ?? (performance.now() - this.startTime) / 1000,
       frame: this.frameCount++,
       timeDelta: this.timeDelta,
       frameRate: this.frameRate,
@@ -1295,7 +1330,15 @@ void main() {
     if (typeof requestAnimationFrame !== 'function') return; // SSR / tests
     const tick = () => {
       this.rafId = null;
-      this.step();
+      // E2E DETERMINISM hook (Layer-B render-smoke): when
+      // `globalThis.__videoEnginePause` is true, the rAF loop IDLES — it keeps
+      // re-scheduling (so it resumes on un-pause) but does NOT auto-advance
+      // step(). A test that drives step() ITSELF then owns the EXACT frame count
+      // (framesElapsed becomes a pure function of the test's step() calls, immune
+      // to background rAF ticks — the critique's fix for `framesElapsed === N`).
+      // Direct test step() calls are unaffected. Default-undefined → no effect.
+      const paused = (globalThis as unknown as { __videoEnginePause?: boolean }).__videoEnginePause === true;
+      if (!paused) this.step();
       // Continue while we have nodes; idle out otherwise so the engine
       // doesn't burn CPU on an empty rack.
       if (this.nodes.size > 0) {
