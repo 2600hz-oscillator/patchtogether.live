@@ -2,12 +2,13 @@
   // TilerCard — UI for TILER (video multiscreen / TILE effect processor).
   //
   // Single video input (in) → video output (out). ONE knob: TILE — a 6-step
-  // DISCRETE control snapping the grid size to N = 1 / 4 / 6 / 8 / 12 / 16
-  // (idx 0 = N=1 = 1:1 passthrough). The card shows the resulting grid (e.g.
-  // "8×8") below it. A matching TILE CV input (discrete cvScale) modulates
-  // the grid — it snaps + sums into the index, then the module snaps to the
-  // nearest valid N. A live preview of the tiled OUT is shown (mirrors
-  // CellshadeCard's blit).
+  // DISCRETE control. The knob value is the TOTAL tile count = 1 / 4 / 6 / 12
+  // / 16 / 64, each realized as a LANDSCAPE cols×rows grid (idx 0 = total 1 =
+  // 1:1 passthrough). The card shows the resulting grid (e.g. "8×8 GRID")
+  // below it. A matching TILE CV input (discrete cvScale) modulates the grid —
+  // it snaps + sums into the index, then the module snaps to the nearest valid
+  // step. A live preview of the tiled OUT is shown (mirrors CellshadeCard's
+  // blit).
   //
   // All ports live in the shared yellow drill-down <PatchPanel> (the post-#767
   // hard standard — NO raw side <Handle> jacks). Port `id`s are byte-identical
@@ -19,7 +20,7 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { tilerDef, tilerStepN, TILER_GRID_STEPS } from '$lib/video/modules/tiler';
+  import { tilerDef, tilerStepGrid, TILER_STEPS, TILER_GRID_STEPS } from '$lib/video/modules/tiler';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
@@ -41,19 +42,20 @@
   }
 
   // --- TILE discrete display: the knob value is a step INDEX 0..5; show the
-  // resolved grid (N×N or "1:1") below it. ---
-  const TILE_MAX_INDEX = TILER_GRID_STEPS.length - 1;
-  // Tick rail: one mark per step, labelled with the grid dimension N.
-  const TILE_TICKS = TILER_GRID_STEPS.map((n, i) => ({
+  // resolved grid (cols×rows or "1:1") below it. The labels are the TOTAL tile
+  // count per step. ---
+  const TILE_MAX_INDEX = TILER_STEPS.length - 1;
+  // Tick rail: one mark per step, labelled with the TOTAL tile count.
+  const TILE_TICKS = TILER_GRID_STEPS.map((total, i) => ({
     frac: TILE_MAX_INDEX > 0 ? i / TILE_MAX_INDEX : 0,
-    label: String(n),
+    label: String(total),
   }));
   function formatTile(v: number): string {
-    const n = tilerStepN(v);
-    return n === 1 ? '1:1' : `${n}×${n}`;
+    const g = tilerStepGrid(v);
+    return g.total === 1 ? '1:1' : `${g.cols}×${g.rows}`;
   }
-  let gridN = $derived(tilerStepN(p('tile')));
-  let gridLabel = $derived(gridN === 1 ? '1:1 PASSTHRU' : `${gridN}×${gridN} GRID`);
+  let grid = $derived(tilerStepGrid(p('tile')));
+  let gridLabel = $derived(grid.total === 1 ? '1:1 PASSTHRU' : `${grid.cols}×${grid.rows} GRID`);
 
   // --- Live preview of OUT (the canonical surface.texture). ---
   const ENGINE_W = VIDEO_RES.width;
