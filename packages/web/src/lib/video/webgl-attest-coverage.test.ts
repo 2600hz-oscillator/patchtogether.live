@@ -73,7 +73,10 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // foundation proof, matched by the new `**/*-render-smoke.spec.ts` glob): 42 → 43.
 // GPU-attest rebuild Phase 1: +7 frame.time-module DRS specs (inwards, lines,
 // mandelbulb, nibbles, vfpga-runner, spirographs, textmarquee): 43 → 50.
-const EXPECTED_HEAVY_SPEC_COUNT = 50;
+// GPU-attest rebuild Phase 1b: +4 unblocked-deferred DRS specs (backdraft
+// [freeze=1 after settle], outlines [seed + synchronous gate-spawns], peakstate
+// [__peakstateVrtSeed + warmup], mandleblot [non-black view params]): 50 → 54.
+const EXPECTED_HEAVY_SPEC_COUNT = 54;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();
