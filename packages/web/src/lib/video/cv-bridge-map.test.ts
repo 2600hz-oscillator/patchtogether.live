@@ -11,6 +11,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { buildCvBridgeMapping, mapCvBridgeValue } from './cv-bridge-map';
+import { destructorDef } from './modules/destructor';
 import type { ParamDef, PortDef } from '$lib/graph/types';
 
 describe('buildCvBridgeMapping — gate vs continuous param branch', () => {
@@ -76,5 +77,58 @@ describe('buildCvBridgeMapping — gate vs continuous param branch', () => {
     const m = buildCvBridgeMapping(input, 'mystery_cv', [], {});
     expect(m.scale).toBeUndefined();
     expect(mapCvBridgeValue(m, 0.42)).toBe(0.42);
+  });
+});
+
+// Module-specific contract for DESTRUCTOR.mangle, bound to the REAL def. This
+// is the deterministic half of the deleted video-phase1.spec.ts, which used to
+// prove "an audio LFO on DESTRUCTOR.mangle moves the rendered pixels" by
+// sleeping through LFO phases. That claim splits cleanly:
+//   - the LFO→param MAPPING is pure + lives here (no GL, no wall clock);
+//   - the param→PIXELS half is the new destructor-render-smoke.spec.ts DRS,
+//     which sets two mangle values directly and asserts the frames differ.
+// Binding to destructorDef (not a synthetic param) guards the actual wiring:
+// if someone drops the cvScale hint or changes the mangle range, this fails.
+describe('cv-bridge mapping — DESTRUCTOR.mangle (replaces video-phase1 LFO→param)', () => {
+  const mangleInput = destructorDef.inputs.find((i) => i.id === 'mangle')!;
+
+  it('mangle is wired as a continuous (linear cvScale) cv target over 0..1', () => {
+    expect(mangleInput).toBeDefined();
+    expect(mangleInput.cvScale).toEqual({ mode: 'linear' });
+    const def = destructorDef.params.find((p) => p.id === 'mangle')!;
+    expect(def).toBeDefined();
+    expect(def.min).toBe(0);
+    expect(def.max).toBe(1);
+  });
+
+  it('a bipolar LFO sweep moves mangle across the FULL 0..1 range (knob centred)', () => {
+    // Centre the knob so a ±1 swing reaches both ends (the def default sits at
+    // the max, 1.0). With knob=0.5: cv -1 → 0, cv +1 → 1.
+    const m = buildCvBridgeMapping(mangleInput, 'mangle', destructorDef.params, { mangle: 0.5 });
+    expect(m.targetParamId).toBe('mangle');
+    expect(m.scale).toBeDefined();
+    const lo = mapCvBridgeValue(m, -1);
+    const mid = mapCvBridgeValue(m, 0);
+    const hi = mapCvBridgeValue(m, 1);
+    expect(lo).toBeCloseTo(0, 5);
+    expect(mid).toBeCloseTo(0.5, 5);
+    expect(hi).toBeCloseTo(1, 5);
+    // A swept LFO yields a strictly monotonic continuum — not one quadrant.
+    expect(hi).toBeGreaterThan(mid);
+    expect(mid).toBeGreaterThan(lo);
+  });
+
+  it('a flat LFO (cv held) yields a constant mangle — no motion', () => {
+    const m = buildCvBridgeMapping(mangleInput, 'mangle', destructorDef.params, { mangle: 0.5 });
+    expect(mapCvBridgeValue(m, 0.25)).toBe(mapCvBridgeValue(m, 0.25));
+  });
+
+  it('at the default knob (1.0) a negative-going LFO pulls mangle below max', () => {
+    // No nodeParams ⇒ knob resolves to the def default (1.0). A unipolar-down
+    // LFO reduces mangle; the positive half clamps at the max.
+    const m = buildCvBridgeMapping(mangleInput, 'mangle', destructorDef.params, {});
+    expect(mapCvBridgeValue(m, 0)).toBeCloseTo(1.0, 5); // knob default
+    expect(mapCvBridgeValue(m, -1)).toBeCloseTo(0.5, 5); // 1.0 - (1-0)/2
+    expect(mapCvBridgeValue(m, 1)).toBeCloseTo(1.0, 5); // clamped at max
   });
 });

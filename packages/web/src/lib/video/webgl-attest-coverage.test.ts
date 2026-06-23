@@ -80,6 +80,13 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // pixel gate consolidated into the deterministic mandleblot-render-smoke.spec,
 // which the *-render-smoke glob still enrolls here): 54 → 53.
 // GPU-attest rebuild WAVESCULPT wave: −3 satellite specs (camera-cv/state-unity/spatial-audio → PCU in wavesculpt.test.ts): 53 → 50.
+// GPU-attest rebuild Phase-2 remainder: −video-phase1.spec.ts (its LFO→param
+// claim split into cv-bridge-map.test.ts PCU + the new
+// destructor-render-smoke.spec.ts DRS) +destructor-render-smoke.spec.ts (matched
+// by the *-render-smoke glob). Net heavy count UNCHANGED at 50 — but the basis
+// FILE SET changed (one out, one in), so the attest hash moves → re-attest.
+// (synesthesia-composite.spec.ts was also deleted this wave, but it was a Pass-B
+// LEAKER, not a heavy-glob member, so it does not affect THIS count.)
 const EXPECTED_HEAVY_SPEC_COUNT = 50;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
