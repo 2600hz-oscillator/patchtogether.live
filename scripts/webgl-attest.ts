@@ -20,7 +20,7 @@
 // explicit act). See .myrobots/plans/webgl-attestation-semaphore.md §5.
 
 import { execFileSync, execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdtempSync, existsSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, existsSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir, hostname, release, arch, cpus, loadavg } from 'node:os';
 import { join } from 'node:path';
 
@@ -486,11 +486,25 @@ function main() {
     durationSec,
   };
 
-  const outFile = join(REPO_ROOT, 'ci-webgl-attest', `${hash}.json`);
+  const attestDir = join(REPO_ROOT, 'ci-webgl-attest');
+  const outFile = join(attestDir, `${hash}.json`);
   writeFileSync(outFile, JSON.stringify(attestation, null, 2) + '\n');
   console.log(`\nAttested ${hash}.`);
   console.log(`Wrote ci-webgl-attest/${hash}.json`);
-  console.log(`Now:  git add ci-webgl-attest/${hash}.json  and commit it with your PR.`);
+
+  // PRUNE superseded attestations. CI only ever verifies the ONE hash the
+  // current basis computes to, so older <hash>.json files are dead weight (git
+  // retains the full history regardless). Keeping the working tree to exactly
+  // the live hash kills the unbounded accumulation + the manual
+  // git-rm-the-old-one step. (Across two concurrently-merging webgl PRs the dir
+  // can transiently hold 2 hashes; the next attest re-prunes to 1.)
+  const superseded = readdirSync(attestDir)
+    .filter((f) => f.endsWith('.json') && f !== `${hash}.json`);
+  for (const f of superseded) rmSync(join(attestDir, f));
+  if (superseded.length > 0) {
+    console.log(`Pruned ${superseded.length} superseded attestation(s) — ci-webgl-attest/ now holds only the live hash.`);
+  }
+  console.log(`Now:  git add -A ci-webgl-attest/  and commit it with your PR.`);
 }
 
 function pick(r: PassResult) {
