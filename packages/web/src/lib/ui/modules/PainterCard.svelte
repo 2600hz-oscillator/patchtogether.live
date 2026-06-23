@@ -479,15 +479,17 @@
   .canvas-wrap {
     /* Flex-fill the leftover height between toolbar + palette; the canvas is
        contained (4:3, from its intrinsic w/h) + centred, so the card never
-       overflows regardless of rack tier. */
+       overflows regardless of rack tier. The wrap background is the THEME
+       FACEPLATE (not white) so any letterbox margin around the 4:3 canvas blends
+       into the card instead of flashing a white band below a painted canvas. */
     flex: 1 1 auto;
     min-height: 0;
     margin: 8px 8px 6px;
-    border: 1px solid #000;
-    background: #fff;
+    border: 1px solid var(--border);
+    background: var(--module-bg);
     box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.35);
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: center;
     overflow: hidden;
   }
