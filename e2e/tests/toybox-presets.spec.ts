@@ -13,9 +13,23 @@
 // GPU boot). What stays here is the DOM-only contract a unit test can't see: the
 // in-card dropdown is populated from the manifest and selecting an option
 // applies the preset (incl. the in-place-replace trap) to the live patch.
+//
+// SwiftShader RE-BIN (GPU-attest rebuild): this spec does NO pixel/canvas work —
+// it fetches /toybox/manifest.json, asserts the preset <option> count, drives
+// the dropdown, and polls __patch.nodes['tb'].data. The ONLY reason it was a
+// heavy-lane / slow spec is that spawning TOYBOX spun up the video engine's rAF
+// COMPOSITOR (live render), which starves CI's software renderer (SwiftShader)
+// main thread and blew the per-test budget. We now PAUSE the engine rAF loop
+// BEFORE boot via installRenderSmokeHooks() (sets __videoEnginePause=true in an
+// addInitScript, so the loop idles and never calls step() — see engine.ts
+// ensureLoop). The preset-apply path is a pure in-card onchange that writes
+// node.data; it does not depend on a rendered frame, so EVERY assertion below is
+// preserved bit-for-bit. With the compositor halted the spec is cheap on
+// SwiftShader and runs in the parallel sharded matrix (no real-GPU attest).
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 type PatchGlobal = {
   __patch: {
@@ -57,15 +71,23 @@ async function readData(page: Page) {
 
 test.describe('TOYBOX presets (Phase 6)', () => {
   test('the in-card PRESET dropdown applies a preset to node.data', async ({ page }) => {
-    // TOYBOX's WebGL rAF compositor starves the CI main thread (software
-    // renderer), so the goto + spawn + two preset applies + node.data polls
-    // blow the default 30s budget. Same headroom as the combine-editor specs.
+    // Generous ceiling kept as headroom; the engine rAF compositor is PAUSED
+    // (installRenderSmokeHooks below) so the goto + spawn + two preset applies +
+    // node.data polls no longer compete with a live render loop on CI's software
+    // renderer. The work here is pure DOM / Y.Doc.
     test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
       if (m.type() === 'error') errors.push(m.text());
     });
+
+    // PAUSE the video engine's rAF compositor BEFORE the app boots. TOYBOX's
+    // WebGL rAF render loop is what starved CI's SwiftShader main thread; this
+    // spec reads only node.data (no pixels), so halting the loop removes the
+    // cost without touching any assertion. addInitScript persists across the
+    // page.goto below.
+    await installRenderSmokeHooks(page);
 
     await page.goto('/');
     await page.waitForLoadState('networkidle');
@@ -93,8 +115,8 @@ test.describe('TOYBOX presets (Phase 6)', () => {
     });
     // Sanity: the manifest must declare presets (it carries 12 today).
     expect(manifestPresetCount).toBeGreaterThanOrEqual(5);
-    // + 1 placeholder option. Generous timeout: the WebGL rAF compositor starves
-    // CI's main thread, so the manifest fetch + Svelte option render can lag.
+    // + 1 placeholder option. Generous timeout: the manifest fetch + Svelte
+    // option render can lag on CI even with the compositor paused.
     await expect(sel.locator('option')).toHaveCount(manifestPresetCount + 1, { timeout: 15_000 });
 
     // Select WORLEY BLOOM via the dropdown → applies it to node.data.

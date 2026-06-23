@@ -24,10 +24,23 @@
 // Fixtures are SMALL + committed (CI stays cheap): e2e/fixtures/av-clip.webm
 // (49 KB) + e2e/fixtures/tiny.png (75 B). The user's IMG_5206.MOV + a mountain
 // photo are for MANUAL verification only (see the PR description), NOT committed.
+//
+// RENDER-SMOKE / SwiftShader cost: this is a PURE DATA round-trip — it exports a
+// .zip, clears, re-imports, and asserts DOM / Y.Doc state (imageBytes byte-exact,
+// data-has-local-file, nodeCount). It NEVER reads a canvas / output texture. The
+// only reason it was expensive on CI's SwiftShader software renderer was the
+// live, unbounded VideoEngine rAF render loop grinding away under VIDEOBOX +
+// PICTUREBOX + TOYBOX while the test did its data work — that GPU churn blew the
+// timeout on the software renderer. `installRenderSmokeHooks(page)` BEFORE the
+// app boots IDLES the rAF render loop (`__videoEnginePause`), so no frames are
+// drawn during the data round-trip. Every assertion below is unchanged — we
+// remove the render COST, not the checks. (The frozen clock it also sets is a
+// no-op here: this spec reads no pixels.)
 
 import { test, expect, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { spawnPatch } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 const AV_FIXTURE = fileURLToPath(new URL('../fixtures/av-clip.webm', import.meta.url));
 const IMG_FIXTURE = fileURLToPath(new URL('../fixtures/tiny.png', import.meta.url));
@@ -40,6 +53,10 @@ async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  // Pause the engine rAF render loop BEFORE the app boots. This is a pure DATA
+  // round-trip (no pixel reads), so idling the renderer keeps the heavy rack
+  // cheap on CI's SwiftShader software renderer without touching any assertion.
+  await installRenderSmokeHooks(page);
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   return errors;

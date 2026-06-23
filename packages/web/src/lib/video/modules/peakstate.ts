@@ -262,6 +262,20 @@ export const peakstateDef: VideoModuleDef = {
             for (let i = 0; i < 120; i++) {
               advancePen(pen, 1 / 60, 1);
             }
+            // ONE-SHOT determinism prime (DRS / VRT): clear all three
+            // OffscreenCanvases to FULL-OPAQUE black on the seeding frame so
+            // frame 1 starts from a deterministic clean base instead of
+            // whatever happened to be on the canvas at boot. The comet-trail
+            // residue then settles from an IDENTICAL start on every run /
+            // renderer, so a short warmup converges it — the render-smoke no
+            // longer needs a 48-step warmup to wash out boot garbage.
+            for (const cv of [cvMono, cvRgb, cv3d]) {
+              cv.ctx2d.save();
+              cv.ctx2d.globalAlpha = 1;
+              cv.ctx2d.fillStyle = 'rgb(0, 0, 0)';
+              cv.ctx2d.fillRect(0, 0, INTERNAL_DIM, INTERNAL_DIM);
+              cv.ctx2d.restore();
+            }
             vrtSeeded = true;
           }
           // No further pen / rotation advance — the frame is frozen.

@@ -27,9 +27,24 @@
 // node.data param, polled so the rAF-coalesced commit + idle-sync settle. Budgets
 // scaled per repo memory ci-swiftshader-video-e2e-timeouts (SwiftShader starves
 // the main thread; a toybox boot + many knob drags is heavier than a flat value).
+//
+// SwiftShader-cheap (renders NO canvas — pure DOM/Y.Doc spec): the only reason
+// this timed out on CI's software renderer was TOYBOX's live main-thread rAF
+// render loop grinding UNPAUSED underneath the DOM/store work. `boot()` now calls
+// `installRenderSmokeHooks(page)` BEFORE page.goto — it sets `__videoEnginePause`
+// (the engine rAF loop IDLES, so step() never auto-advances on the background
+// tick → the slow background render cost is gone) + `__videoEngineFreezeTime`
+// (pins the clock). DIRECT step() calls are unaffected (engine.ts:1339), so the
+// `__toyboxFreeze(t)` path in the delete-no-crash test still drives + blits a
+// real frame and the stateful GL rings still allocate exactly as before. NO
+// assertion changed: every control-pane / knob-stick / aria-valuenow /
+// auto-select / delete-no-crash / no-error check is byte-identical. This spec no
+// longer reads pixels and no longer needs the serialized real-GPU heavy lane —
+// it runs in the normal parallel e2e shards.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch, ensureCombineOpen } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 type GNode = { id: string; kind: string; layer?: number; x: number; y: number; params?: Record<string, number> };
 type GEdge = { id: string; from: string; to: string; toPort: string };
@@ -193,6 +208,12 @@ async function boot(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  // SwiftShader-cheap: pause the engine rAF loop + pin the clock BEFORE boot so
+  // TOYBOX's live main-thread render doesn't grind the software renderer under
+  // this pure-DOM/Y.Doc spec (the sole cause of the CI timeout). Direct step()
+  // calls the spec drives via __toyboxFreeze are unaffected, so every render /
+  // ring-alloc / canvas-visible assertion below still holds.
+  await installRenderSmokeHooks(page);
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
@@ -376,6 +397,8 @@ test.describe('TOYBOX node controls — deleting any node kind never crashes', (
       await seed(page, g.nodes, g.edges);
       await selectNode(page, 'op');
       // Pin time + advance a couple frames so a stateful node's ring is live.
+      // (__toyboxFreeze drives a DIRECT engine step() — unaffected by the paused
+      // rAF loop installRenderSmokeHooks set — so the ring still allocates.)
       await page.evaluate(() => (globalThis as unknown as PatchGlobal).__toyboxFreeze?.(2.0));
       await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
       await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));

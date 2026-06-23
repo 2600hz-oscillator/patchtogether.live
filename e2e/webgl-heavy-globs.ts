@@ -99,6 +99,19 @@ export const WEBGL_HEAVY_EXCLUDE = [
   '**/video-aspect-switch.spec.ts', // engine resolution + routing-survival via __engine hooks; pixel probe omitted on CI by its own header
   '**/videovarispeed-perfzip.spec.ts', // perf-zip round-trip: asserts data-has-local-file / imageBytes / zip bytes / node count — DOM+Y.Doc only, no canvas read (VideoVarispeedCard renders a plain <video>, no WebGL context)
   '**/videovarispeed-switch.spec.ts', // 7-slot switch-path regression: asserts engine uploadCount / keepAliveCount hooks + <video> currentTime + play/pause DOM state across A→B→A — NO canvas pixel read (renderer-independent by construction), so it runs in the parallel matrix
+  // GPU-attest rebuild 2026-06-23 (glsmoke-floor-expansion roadmap): these
+  // matched a broad heavy glob (toybox-*/videobox-*) but read NO pixels — they
+  // assert DOM / Y.Doc state. They only TIMED OUT on SwiftShader because the live
+  // render loop ran UNPAUSED underneath; each now calls installRenderSmokeHooks(
+  // page) before goto to idle the render, so they run cheap in the parallel matrix
+  // (3× SwiftShader-clean) and no longer need the real-GPU attest lane.
+  // (toybox-node-menu + video-audio-cvgate-coverage were assessed in the same wave
+  //  but DEFERRED: node-menu's "Clear node map" test has an independent flake, and
+  //  cvgate's nibbles-pellet gate-poll is contention-borderline — both stay on the
+  //  attest until hardened.)
+  '**/toybox-node-controls.spec.ts', // control-pane DOM/Y.Doc — no pixel read (render paused)
+  '**/toybox-presets.spec.ts', // manifest + preset dropdown + node.data — no pixel read
+  '**/videobox-performance-bundle.spec.ts', // perf-zip data round-trip — DOM/Y.Doc only, no canvas read
 ] as const;
 
 /** Resolve the EFFECTIVE heavy spec FILES (concrete repo-relative paths) =
