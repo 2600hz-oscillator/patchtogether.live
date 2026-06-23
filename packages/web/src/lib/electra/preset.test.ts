@@ -22,6 +22,7 @@ import {
   type PresetGenInput,
   type GenParamDef,
 } from './preset';
+import { electraPosOfSlot } from '$lib/graph/electra-control';
 
 // A small known surface: two source modules, mixed curves.
 const defs: Record<string, GenParamDef> = {
@@ -428,6 +429,124 @@ describe('allocation table — deterministic + collision-free', () => {
     const a = generatePreset(baseInput()).allocations;
     const b = generatePreset(baseInput()).allocations;
     expect(a).toEqual(b);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// HARDWARE INVARIANT — no two EMITTED controls share a (deviceId, type,
+// parameterNumber). This is the device-side seam the "two panel knobs move
+// together" bug lives on: the Electra firmware links any two controls that
+// carry the SAME (device, parameterNumber), so a value-echo (the feedback
+// pump's per-CC send) drives BOTH — even when the stored MIDI bindings + the
+// allocation table are 1:1. The allocation-table check above is necessary but
+// NOT sufficient: it asserts the TABLE is collision-free, this asserts the
+// emitted .epr the device actually ingests is collision-free. (Bug report:
+// backdraft offsetX/offsetY on adjacent slots both tracking together.)
+// ──────────────────────────────────────────────────────────────────────────
+describe('generatePreset — emitted controls are device-collision-free', () => {
+  /** Collect a "deviceId:type:parameterNumber" key for every value-message of
+   *  every emitted control, and return any address shared by ≥2 controls. */
+  function controlAddressCollisions(
+    preset: ReturnType<typeof generatePreset>['preset'],
+  ): Array<{ address: string; names: string[] }> {
+    const byAddr = new Map<string, string[]>();
+    for (const c of preset.controls) {
+      for (const v of c.values ?? []) {
+        const m = v.message;
+        if (!m || m.parameterNumber === undefined) continue;
+        const addr = `${m.deviceId}:${m.type}:${m.parameterNumber}`;
+        (byAddr.get(addr) ?? byAddr.set(addr, []).get(addr)!).push(c.name ?? '?');
+      }
+    }
+    return [...byAddr.entries()]
+      .filter(([, names]) => names.length > 1)
+      .map(([address, names]) => ({ address, names }));
+  }
+
+  it('the full default preset emits NO duplicated (device, parameterNumber)', () => {
+    const { preset } = generatePreset(baseInput());
+    expect(controlAddressCollisions(preset)).toEqual([]);
+  });
+
+  it('USER REPRO: two adjacent same-module knobs (offsetX, offsetY) → distinct pots + distinct CCs', () => {
+    // Mirrors the bug bundle EXACTLY: a single backdraft, offsetX in one slot and
+    // offsetY in the very next slot, laid out via the POSITIONAL (ElectraControl)
+    // path. The host derives each binding's page-local `slot` from electraPosOfSlot
+    // (storage slot → controlSetId/potId → genSlot), so we drive it the same way.
+    const backdraftParams = ['offsetX', 'offsetY'] as const;
+    const storageSlots = [9, 10] as const; // row2 col4 + col5 — the user's slots
+    const surfaceBindings = backdraftParams.map((paramId, i) => {
+      const { controlSetId, potId } = electraPosOfSlot(storageSlots[i]!);
+      return {
+        moduleId: 'backdraft-eb39300d',
+        paramId,
+        slot: (controlSetId - 1) * 12 + (potId - 1), // host.ts genSlot derivation
+      };
+    });
+    const { preset, allocations } = generatePreset(
+      baseInput({
+        surfaceBindings,
+        resolveParamDef: (_m, p) => ({ id: p, label: p, min: 0, max: 1, defaultValue: 0, curve: 'linear' }),
+        moduleLabel: () => 'backdraft',
+        mixmstrsId: null,
+        timelordeId: null,
+      }),
+    );
+
+    const page1 = preset.controls.filter((c) => c.pageId === PAGE_CONTROL);
+    expect(page1).toHaveLength(2);
+    const [x, y] = page1;
+    // Distinct ON-SCREEN positions: row2 col4 = cs1/pot10, col5 = cs1/pot11.
+    expect({ cs: x!.controlSetId, pot: x!.potId }).toEqual({ cs: 1, pot: 10 });
+    expect({ cs: y!.controlSetId, pot: y!.potId }).toEqual({ cs: 1, pot: 11 });
+    // Distinct DEVICE parameterNumbers — the actual fix invariant. If these two
+    // ever shared a parameterNumber, BOTH panel knobs would track together.
+    const px = x!.values[0]!.message.parameterNumber;
+    const py = y!.values[0]!.message.parameterNumber;
+    expect(px).not.toBe(py);
+    expect(x!.values[0]!.message.deviceId).toBe(DEVICE_CTRL);
+    expect(y!.values[0]!.message.deviceId).toBe(DEVICE_CTRL);
+    // …and the emitted preset as a whole carries no (device, param) collision.
+    expect(controlAddressCollisions(preset)).toEqual([]);
+    // The allocation table the inbound dispatch + feedback pump consume agrees:
+    // offsetX and offsetY are 1:1 with their own CC.
+    const ax = allocations.find((a) => a.key.endsWith(':offsetX'))!;
+    const ay = allocations.find((a) => a.key.endsWith(':offsetY'))!;
+    expect(ax.number).not.toBe(ay.number);
+    expect(ax.number).toBe(px);
+    expect(ay.number).toBe(py);
+  });
+
+  it('the POSITIONAL grid maps every occupied storage slot to a unique pot AND a unique CC', () => {
+    // Fill all 36 storage slots with distinct params on one module and route them
+    // through the positional path. Every emitted control must own a unique
+    // (controlSetId, potId) AND a unique parameterNumber — no pot or CC reused.
+    const surfaceBindings = Array.from({ length: 36 }, (_, storageSlot) => {
+      const { controlSetId, potId } = electraPosOfSlot(storageSlot);
+      return {
+        moduleId: 'm',
+        paramId: `p${storageSlot}`,
+        slot: (controlSetId - 1) * 12 + (potId - 1),
+      };
+    });
+    const { preset } = generatePreset(
+      baseInput({
+        surfaceBindings,
+        resolveParamDef: (_m, p) => ({ id: p, label: p, min: 0, max: 1, defaultValue: 0, curve: 'linear' }),
+        moduleLabel: () => 'm',
+        mixmstrsId: null,
+        timelordeId: null,
+      }),
+    );
+    const page1 = preset.controls.filter((c) => c.pageId === PAGE_CONTROL);
+    expect(page1).toHaveLength(36);
+    // Unique on-screen positions.
+    const positions = page1.map((c) => `${c.controlSetId}:${c.potId}`);
+    expect(new Set(positions).size).toBe(36);
+    // Unique CCs.
+    const params = page1.map((c) => c.values[0]!.message.parameterNumber);
+    expect(new Set(params).size).toBe(36);
+    expect(controlAddressCollisions(preset)).toEqual([]);
   });
 });
 
