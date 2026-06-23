@@ -470,6 +470,26 @@ export function readControlValue(
   return Number.isFinite(v) ? (v as number) : 0;
 }
 
+/** Raw value of the AXIS currently bound to `outputId` (respects a remap;
+ *  returns 0 when the output is bound to a non-axis control, which isn't
+ *  calibratable). Calibration must sweep + apply on the BOUND axis so a
+ *  non-standard or remapped stick calibrates the SAME axis its output reads.
+ *  The old code swept a HARDCODED pad.axes[2]/[3] for the right stick, so a
+ *  controller whose right stick isn't on axes 2/3 (or one remapped via the UI)
+ *  drove its rx/ry output correctly but folded a DEAD axis into the sweep — the
+ *  range never spanned, so "complete calibration" never enabled. (Left worked
+ *  only because its default axes 0/1 happened to match.) Pure. */
+export function boundAxisRaw(
+  outputId: string,
+  bindings: RemapBindings | undefined,
+  axes: readonly number[],
+): number {
+  const b = bindingForOutput(outputId, bindings);
+  if (!b || b.kind !== 'axis') return 0;
+  const v = axes[b.index];
+  return Number.isFinite(v) ? (v as number) : 0;
+}
+
 /** Short human label for a physical control, used by the card's "remapped"
  *  badge. Known standard-mapping indices get their canonical name (e.g.
  *  axis 2 → "R-X axis", button 0 → "A btn"); anything else falls back to the
@@ -1066,13 +1086,16 @@ export const gamepadDef: AudioModuleDef = {
       const invert = readInvert();
       snapshot.invert = invert;
 
-      // Raw left + right stick axes (spec frame: +X = right, +Y = down) —
-      // surfaced on the snapshot so each stick's calibration sweep folds them in
-      // directly. Left = axes 0,1; right = axes 2,3.
-      const rawLeftX = pad.axes[0] ?? 0;
-      const rawLeftY = pad.axes[1] ?? 0;
-      const rawRightX = pad.axes[2] ?? 0;
-      const rawRightY = pad.axes[3] ?? 0;
+      // Raw left + right stick axes for each stick's calibration sweep + apply
+      // (spec frame: +X = right, +Y = down). Read the axis CURRENTLY BOUND to
+      // each output (respects a remap), NOT a hardcoded pad.axes[2]/[3] — so a
+      // non-standard or remapped stick calibrates the SAME axis its output reads.
+      // (Fix: right-stick "complete calibration" never enabled on such pads
+      // because the old hardcoded sweep folded a dead axis.)
+      const rawLeftX = boundAxisRaw('lx', bindings, reading.axes);
+      const rawLeftY = boundAxisRaw('ly', bindings, reading.axes);
+      const rawRightX = boundAxisRaw('rx', bindings, reading.axes);
+      const rawRightY = boundAxisRaw('ry', bindings, reading.axes);
       snapshot.rawLeftX = rawLeftX;
       snapshot.rawLeftY = rawLeftY;
       snapshot.rawRightX = rawRightX;
@@ -1090,27 +1113,30 @@ export const gamepadDef: AudioModuleDef = {
       // ONLY when that stick's two axis outputs are still bound to their default
       // axes as a PAIR — calibration is a 2D radial map that's meaningless once an
       // axis is remapped elsewhere; that case falls back to the fixed deadzone.
+      // A stick's 2D radial calibration is meaningful whenever BOTH of its axes
+      // are bound to AXES — the default pair OR a remapped pair (e.g. a
+      // non-standard flight stick whose axes aren't 0/1 + 2/3). Only a non-axis
+      // (button) remap makes the radial map meaningless. (Was: required the STD
+      // default axes exactly, which BLOCKED calibration on the very non-standard
+      // sticks calibration exists for — and is paired with the bound-axis sweep
+      // above so the swept range matches the axes the cal is applied to.)
       const lxBind = bindingForOutput('lx', bindings)!;
       const lyBind = bindingForOutput('ly', bindings)!;
-      const leftStickDefault =
-        lxBind.kind === 'axis' && lxBind.index === STD_AXIS.lx &&
-        lyBind.kind === 'axis' && lyBind.index === STD_AXIS.ly;
+      const leftStickCalibratable = lxBind.kind === 'axis' && lyBind.kind === 'axis';
       const rxBind = bindingForOutput('rx', bindings)!;
       const ryBind = bindingForOutput('ry', bindings)!;
-      const rightStickDefault =
-        rxBind.kind === 'axis' && rxBind.index === STD_AXIS.rx &&
-        ryBind.kind === 'axis' && ryBind.index === STD_AXIS.ry;
+      const rightStickCalibratable = rxBind.kind === 'axis' && ryBind.kind === 'axis';
 
       let calLx: number | null = null;
       let calLy: number | null = null;
-      if (cal && leftStickDefault) {
+      if (cal && leftStickCalibratable) {
         const c = applyCalibration(rawLeftX, rawLeftY, cal);
         calLx = c.x;
         calLy = -c.y;
       }
       let calRx: number | null = null;
       let calRy: number | null = null;
-      if (calR && rightStickDefault) {
+      if (calR && rightStickCalibratable) {
         const c = applyCalibration(rawRightX, rawRightY, calR);
         calRx = c.x;
         calRy = -c.y;
