@@ -1365,6 +1365,24 @@ void main() {
   const VRT_FIXED_TSEC = 2.0;       // pinned uTime
   const VRT_FIXED_WAVE_PHASE = 0.0; // pinned per-osc wavetable scroll
 
+  // ---- DRS card-step seam (deterministic render-smoke; e2e only) ----
+  // Independent of __wavesculptVrtFreeze (which only pins shader time for a VRT
+  // screenshot). When __wavesculptStepMode is set true, the card rAF loop STOPS
+  // self-scheduling so a test owns the exact frame count; __wavesculptStep(t)
+  // pins the clock + runs ONE synchronous tick() per call. Every time-derived
+  // input reads clockNow() instead of performance.now(), so a fixed pin makes
+  // the frame deterministic. No effect in production (the flag is never set;
+  // clockNow() falls back to performance.now()).
+  let stepCount = 0;                  // ++ once per tick() in ALL 3 video modes
+  let pinnedClockMs: number | null = null;
+  function cardStepMode(): boolean {
+    return (globalThis as unknown as { __wavesculptStepMode?: boolean })
+      .__wavesculptStepMode === true;
+  }
+  function clockNow(): number {
+    return pinnedClockMs !== null ? pinnedClockMs : performance.now();
+  }
+
   // Per-osc wavetable scroll phase (units: wavetable cycles). Advances
   // each frame by the osc's playback frequency × dt × WAVE_PHASE_GAIN —
   // visually the wave "travels" from the source wall outward through the
@@ -2100,7 +2118,7 @@ void main() {
       } catch { /* engine may not be ready yet */ }
     }
 
-    const now = performance.now();
+    const now = clockNow();
     const dt = Math.max(0, Math.min(0.5, (now - lastFrameMs) / 1000));
     lastFrameMs = now;
     const unison = (node?.params?.unison as number | undefined) ?? 0;
@@ -2315,7 +2333,7 @@ void main() {
       const ab = node?.params?.alpha_brightness as number | undefined;
       g.uniform1f(uAlphaBrightnessLoc, Math.max(0, Math.min(2, ab ?? 1)));
     }
-    const tSec = vrtFrozen() ? VRT_FIXED_TSEC : (performance.now() - renderStartMs) / 1000;
+    const tSec = vrtFrozen() ? VRT_FIXED_TSEC : (clockNow() - renderStartMs) / 1000;
     g.uniform1f(g.getUniformLocation(bentboxProgram, 'uTime'), tSec);
     g.uniform1f(g.getUniformLocation(bentboxProgram, 'uFieldParity'), vrtFrozen() ? 0 : ((frameCount & 1) ? 1 : 0));
     const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -2693,6 +2711,7 @@ void main() {
 
   function tick() {
     rafId = null;
+    stepCount++; // mode-agnostic frame counter for the DRS card-step seam (all 3 modes)
     // Live camera/joystick poll first, every frame, BEFORE the early-return
     // branches below — so the joystick dots track a patched gamepad (or LFO)
     // at the full render cadence in ALL video modes, not just the 3D path.
@@ -2704,10 +2723,10 @@ void main() {
       if (displayCanvas) {
         const dc2 = displayCanvas.getContext('2d', { alpha: false });
         if (dc2) {
-          drawBirdseye(dc2, displayCanvas.width, displayCanvas.height, performance.now());
+          drawBirdseye(dc2, displayCanvas.width, displayCanvas.height, clockNow());
         }
       }
-      rafId = requestAnimationFrame(tick);
+      if (!cardStepMode()) rafId = requestAnimationFrame(tick);
       return;
     }
     if (mode === 2) {
@@ -2719,7 +2738,7 @@ void main() {
           drawSpectrograph(dc2, displayCanvas.width, displayCanvas.height);
         }
       }
-      rafId = requestAnimationFrame(tick);
+      if (!cardStepMode()) rafId = requestAnimationFrame(tick);
       return;
     }
 
@@ -2791,6 +2810,30 @@ void main() {
   onMount(() => {
     initGl();
     installBridgeFrameDrawer();
+    // DRS card-step seam (e2e only). __wavesculptStep(t) pins the clock + runs
+    // ONE synchronous tick() and returns the new step count (for an exact
+    // test-side delta); it sets __wavesculptStepMode so tick() stops
+    // self-scheduling → the test owns the frame count. Call with no arg to
+    // resume the normal rAF loop. Mirrors ToyboxCard's __toyboxFreeze.
+    const g = globalThis as unknown as {
+      __wavesculptStep?: (t?: number) => number;
+      __wavesculptStepCount?: () => number;
+      __wavesculptStepMode?: boolean;
+    };
+    g.__wavesculptStep = (t?: number) => {
+      if (typeof t === 'number') {
+        g.__wavesculptStepMode = true;
+        pinnedClockMs = t;
+        if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+        tick(); // one synchronous frame; tick() won't reschedule in step mode
+      } else {
+        g.__wavesculptStepMode = false;
+        pinnedClockMs = null;
+        if (rafId === null) rafId = requestAnimationFrame(tick);
+      }
+      return stepCount;
+    };
+    g.__wavesculptStepCount = () => stepCount;
     rafId = requestAnimationFrame(tick);
   });
   onDestroy(() => {

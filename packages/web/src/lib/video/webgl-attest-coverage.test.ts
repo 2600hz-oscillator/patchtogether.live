@@ -79,7 +79,8 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // GPU-attest rebuild render-worker wave: −mandleblot.spec (its waitForTimeout
 // pixel gate consolidated into the deterministic mandleblot-render-smoke.spec,
 // which the *-render-smoke glob still enrolls here): 54 → 53.
-const EXPECTED_HEAVY_SPEC_COUNT = 53;
+// GPU-attest rebuild WAVESCULPT wave: −3 satellite specs (camera-cv/state-unity/spatial-audio → PCU in wavesculpt.test.ts): 53 → 50.
+const EXPECTED_HEAVY_SPEC_COUNT = 50;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

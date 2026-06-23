@@ -45,7 +45,12 @@ export const WEBGL_HEAVY_GLOBS = [
   '**/videobox-*.spec.ts',
   '**/videovarispeed-*.spec.ts',
   '**/multi-video-playback.spec.ts',
-  '**/wavesculpt*.spec.ts',
+  // GPU-attest rebuild WAVESCULPT wave: narrowed `wavesculpt*` → `wavesculpt`
+  // (exact). The 3 satellite specs (camera-cv/state-unity/spatial-audio) were
+  // converted to PCU pure-core unit tests in wavesculpt.test.ts and deleted.
+  // Fail-closed: a future wavesculpt-*.spec won't silently re-enter the heavy
+  // lane — it must be added here deliberately (with a fresh attest + count bump).
+  '**/wavesculpt.spec.ts',
   '**/wavecel-video-outs.spec.ts',
   '**/scope-video-out.spec.ts',
   '**/synesthesia-video-mode.spec.ts',
