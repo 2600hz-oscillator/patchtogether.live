@@ -92,9 +92,15 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // videobox-performance-bundle) — they read no pixels and now pause the render
 // loop, so they run cheap in the parallel matrix instead of the real-GPU attest.
 // 50 → 47. (peakstate-render-smoke + wavecel-video-outs stay heavy-glob members +
-// ALSO joined the SwiftShader floor. toybox-node-menu + video-audio-cvgate-coverage
-// were assessed but DEFERRED — node-menu flake / cvgate gate-poll — stay heavy.)
-const EXPECTED_HEAVY_SPEC_COUNT = 47;
+// ALSO joined the SwiftShader floor.)
+// glsmoke-floor-expansion wave 3 (2026-06-23): −3 more RE-BINNED to
+// WEBGL_HEAVY_EXCLUDE (toybox-disk-loading, toybox-video-projection,
+// video-audio-cvgate-coverage [now hardened] → shards). toybox-layer-input stays
+// heavy-glob + ALSO joined the floor (main-thread bounded-step pixel read).
+// toybox-new-content reclassified real-gpu-only (heavy raymarch shader pixels —
+// stays); toybox-shadertoy/-node-batch/-node-menu/-layer-selector DEFERRED
+// (worker-pixel / render-timing / flake — stay heavy). 47 → 44.
+const EXPECTED_HEAVY_SPEC_COUNT = 44;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

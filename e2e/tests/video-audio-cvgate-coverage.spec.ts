@@ -29,9 +29,44 @@
 //     cv/gate output port — DOOM's included — bridges into the audio domain
 //     deterministically at the recording-fake level. NIBBLES keeps the one
 //     LIVE row that proves a real AudioParam receives the bridged ramp.
+//
+// SwiftShader-cheap (GPU-attest rebuild, Phase 3 — glconv3 wave 2-deferred):
+// this spec reads NO video pixels. It spawns a NIBBLES source + a SCOPE and
+// reads SCOPE's analyser SNAPSHOT (audio-domain state) — the video `out`
+// texture is never sampled. NIBBLES is a MAIN-THREAD CPU-rasterised source
+// (no renderLocus → defaults to 'main'; it is NOT the worker-compositor
+// TOYBOX), and forcePulse() drives the source's ConstantSourceNode / gate
+// AudioParams DIRECTLY off ctx.audioCtx — entirely independent of the render
+// loop. The ONLY reason this timed out / flaked on CI's SwiftShader was the
+// live main-thread render loop grinding the software renderer UNPAUSED beneath
+// the audio-graph work. boot() now calls installRenderSmokeHooks(page) BEFORE
+// page.goto: it sets __videoEnginePause (the engine rAF loop IDLES — NIBBLES's
+// per-frame CPU-rasterise + GL blit stops burning the software renderer) +
+// __videoEngineFreezeTime (pins the clock, so dt=0 → advanceGame() never
+// auto-fires → the bot never emits a spurious pellet/death/dir_change gate;
+// the ONLY gate signal is the test's own forcePulse, making the gate read
+// MORE deterministic, not less). The audio graph is fully live throughout, so
+// every assertion below is byte-identical: the CV ramp still lands on the
+// ConstantSourceNode, the 10 ms gate still pulses, and the SCOPE analyser
+// still captures both. This spec no longer reads pixels and no longer needs
+// the serialized real-GPU heavy lane — it runs in the normal parallel shards.
+//
+// Gate-poll hardening (the wave-2 deferral reason — contention-borderline):
+// a 10 ms gate pulse vs SCOPE's 2048-sample analyser window (~43 ms at 48 kHz)
+// is a tight overlap. Under shard load a single fire-then-read round-trip can
+// stretch long enough that the lone pulse scrolls out of the analyser ring
+// before the read captures the window, yielding an all-zero snapshot and a
+// timed-out poll. The fix drives a BURST of pulses per poll round (see
+// firePulse's repeats/spacingMs) spanning MORE than one full analyser window,
+// so whatever 2048-sample window the read happens to capture is guaranteed to
+// contain at least one HIGH region — the peak hold then clears the 0.1 floor
+// deterministically. The pre-#414 silent-drop bug still surfaces identically:
+// if the edge is dropped, NO number of pulses ever reaches the analyser, so
+// the poll times out with peak stuck at 0 — exactly the original failure mode.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 // ---------------- Pair table ----------------------------------------------
 //
@@ -103,19 +138,22 @@ const PAIRS: Pair[] = [
 
 /** Fire the source's CV/gate output via the per-module forcePulse extras
  *  hook. For GATE pulses (10ms wide), `repeats` re-fires the pulse N times
- *  to guarantee at least one HIGH sample lands in SCOPE's analyser buffer
- *  during the post-fire read window (analyser fftSize=2048 at 48kHz =
- *  ~43ms refresh; 5 repeats over 200ms covers 4-5 analyser windows so the
- *  peak hold is reliable). For CV, repeats=1 is sufficient since the ramp
- *  lands a steady DC value. Returns true if the hook ran, false if the
- *  page-side handle wasn't materialised yet (caller polls + retries). */
+ *  spaced `spacingMs` apart to guarantee at least one HIGH sample lands in
+ *  SCOPE's analyser buffer during the post-fire read window (analyser
+ *  fftSize=2048 at 48kHz = ~43ms window; firing a TRAIN of pulses that spans
+ *  MORE than one full analyser window means whatever 2048-sample slice the
+ *  reader captures is guaranteed to overlap a HIGH region, so the peak hold
+ *  is reliable even when a round-trip stretches under shard contention). For
+ *  CV, repeats=1 is sufficient since the ramp lands a steady DC value.
+ *  Returns true if the hook ran, false if the page-side handle wasn't
+ *  materialised yet (caller polls + retries). */
 async function firePulse(
   page: Page,
   sourceNodeId: string,
   port: string,
   value: number | undefined,
   repeats = 1,
-  spacingMs = 40,
+  spacingMs = 12,
 ): Promise<boolean> {
   return await page.evaluate(
     async ({ nodeId, p, v, n, s }) => {
@@ -192,6 +230,15 @@ test.describe('video → audio CV/gate routing: every source/port survives the e
         if (m.type() === 'error') errors.push(m.text());
       });
 
+      // SwiftShader-cheap: pause the engine rAF loop + pin the clock BEFORE
+      // boot so NIBBLES's live main-thread CPU-rasterise + GL blit doesn't
+      // grind the software renderer under this audio-state-only spec (the sole
+      // cause of the CI timeout). forcePulse drives the source's audio-graph
+      // ConstantSourceNodes directly off ctx.audioCtx — unaffected by the
+      // paused render loop — and the frozen clock means the bot never fires a
+      // spurious gate, so every CV-ramp / gate-pulse / analyser assertion below
+      // still holds and is in fact MORE deterministic.
+      await installRenderSmokeHooks(page);
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
@@ -247,12 +294,13 @@ test.describe('video → audio CV/gate routing: every source/port survives the e
       // Drive the source via extras.forcePulse() until the bridged signal is
       // visible on scope.ch1. CV: one ramp suffices (the bridge .connect()s
       // the CSN directly; the analyser samples the DC value steadily).
-      // Gate: a 10ms pulse is borderline against the analyser's ~43ms refill
-      // window — we poll a fire-then-read loop so at least one snapshot is
-      // taken DURING a HIGH window. The poll exits as soon as scope picks
-      // up the bridged signal, so the test is fast on the happy path and
-      // surfaces the pre-#414 silent-drop bug as a 5s timeout (peak stuck
-      // at 0 forever).
+      // Gate: a 10ms pulse is borderline against the analyser's ~43ms window
+      // — we poll a fire-then-read loop, firing a TRAIN of pulses each round
+      // so at least one HIGH window straddles whatever snapshot is taken. The
+      // poll exits as soon as scope picks up the bridged signal, so the test
+      // is fast on the happy path and surfaces the pre-#414 silent-drop bug as
+      // a timeout (peak stuck at 0 forever — no pulse train ever reaches the
+      // analyser when the edge is dropped).
       let after: { peak: number; rms: number } | null = null;
       if (pair.kind === 'cv') {
         await expect.poll(
@@ -262,18 +310,25 @@ test.describe('video → audio CV/gate routing: every source/port survives the e
         await page.waitForTimeout(100);  // CV ramp settles
         after = await readScopePeak(page, scopeNodeId);
       } else {
-        // Gate poll: fire, read, repeat. The expect.poll timeout is the
-        // overall budget; each round-trip is ~50-100ms (one page.evaluate
-        // for fire + one for read), so 50+ rounds in 5s gives ample chances
-        // for an analyser snapshot to land mid-pulse.
+        // Gate poll: fire a pulse TRAIN, read, repeat. The expect.poll timeout
+        // is the overall budget; each round fires `repeats` pulses spaced
+        // `spacingMs` apart so the HIGH train spans MORE than one full analyser
+        // window (2048 samples ≈ 43ms at 48kHz). That guarantees the snapshot
+        // taken right after the burst overlaps a HIGH region regardless of
+        // round-trip jitter under shard contention. The budget is widened
+        // (vs the old single-pulse 6s) so a starved shard still lands the
+        // signal deterministically before timing out.
         await expect.poll(
           async () => {
-            const fired = await firePulse(page, pair.source.nodeId, pair.driverPort, undefined);
+            const fired = await firePulse(
+              page, pair.source.nodeId, pair.driverPort, undefined,
+              /* repeats */ 6, /* spacingMs */ 12,
+            );
             if (!fired) return 0;
             after = await readScopePeak(page, scopeNodeId);
             return after?.peak ?? 0;
           },
-          { timeout: 6000, intervals: [50, 80, 120, 200, 300] },
+          { timeout: 10_000, intervals: [50, 80, 120, 200, 300] },
         ).toBeGreaterThan(0.1);
       }
 

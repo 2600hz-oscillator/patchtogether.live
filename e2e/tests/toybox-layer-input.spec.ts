@@ -18,9 +18,31 @@
 // The .selectOption uses { force, noWaitAfter } (load-bearing on CI): TOYBOX's
 // WebGL rAF compositor starves the main thread so Playwright's default post-
 // action nav-wait is pathologically slow here (mirrors toybox-texture-source).
+//
+// ── GPU-attest rebuild Phase 3 (bounded-step DRS conversion) ───────────────────
+// SwiftShader-cheap, NO assertion changed. This spec reads the MAIN-THREAD on-card
+// 2D canvas (`toybox-canvas`), not worker pixels: TOYBOX is renderLocus:'worker',
+// but on CI's SwiftShader the worker's WebGL2 context never initializes, so the
+// WorkerProxyHandle's `bridge.ready()` is FALSE and it transparently renders the
+// node ON THE MAIN THREAD via the real toybox factory fallback (worker-proxy-
+// handle.ts). `__toyboxFreeze(t)` drives a DIRECT engine `step()` (unaffected by a
+// paused rAF loop) then blits that fallback render into `toybox-canvas`, and the
+// toybox's own iTime comes from `__toyboxFreezeTime` (toybox.ts: `frozenTime() ??
+// frame.time`), so time=1.0 vs time=2.0 stay DISTINCT frames regardless of the
+// engine clock pin. The only reason this timed out on CI was TOYBOX's live main-
+// thread rAF render loop grinding the software renderer UNPAUSED underneath the
+// freeze/read work. `installRenderSmokeHooks(page)` BEFORE page.goto idles that
+// rAF loop (`__videoEnginePause`) + pins the engine clock — the DIRECT step()
+// calls the spec drives via `__toyboxFreeze` are unaffected, so the matcap /
+// unwired-no-op / wired-feedback-textures / loop-stability / no-error assertions
+// are all byte-identical and the real feedback-tap composite is still rendered +
+// read. This spec STILL reads canvas pixels, so it STAYS in the serialized
+// real-GPU heavy lane (it is NOT a DOM/Y.Doc-only re-bin) — it is now a cheap,
+// deterministic, bounded-step pixel read instead of a wall-clock-sampling grind.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 type ObjMaterial = { surfaceSource?: number; [k: string]: number | undefined };
 
@@ -175,6 +197,14 @@ test.describe('TOYBOX LAYER INPUT (feedback-tap source)', () => {
     page.on('console', (m) => {
       if (m.type() === 'error') errors.push(m.text());
     });
+
+    // SwiftShader-cheap: pause the engine rAF loop + pin the engine clock BEFORE
+    // boot so TOYBOX's live main-thread render doesn't grind the software renderer
+    // underneath the freeze/read work below (the sole cause of the CI timeout).
+    // The DIRECT engine step() that __toyboxFreeze(t) drives is UNAFFECTED by the
+    // pause, and the toybox's iTime comes from __toyboxFreezeTime (frozenTime() ??
+    // frame.time), so every frozen-frame render + pixel read below is byte-identical.
+    await installRenderSmokeHooks(page);
 
     await page.goto('/');
     await page.waitForLoadState('networkidle');

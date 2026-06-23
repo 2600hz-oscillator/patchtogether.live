@@ -1463,6 +1463,7 @@ jobs:
             peakstate-render-smoke.spec.ts \
             spirographs-render-smoke.spec.ts \
             textmarquee-render-smoke.spec.ts \
+            toybox-layer-input.spec.ts \
             vfpga-runner-render-smoke.spec.ts \
             wavecel-video-outs.spec.ts \
             --workers=2 \
