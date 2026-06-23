@@ -21,6 +21,8 @@ import {
   applyBindingToData,
   clearBindingOnData,
   toggleInvertOnData,
+  setRightStickZeroOnData,
+  resetRightStickZeroOnData,
   bindingForOutput,
   exportMapping,
   applyMapping,
@@ -63,6 +65,18 @@ function toggleInvert(axisId: InvertibleAxis): void {
   mutateNode(TID, (live) => {
     if (!live.data) live.data = {};
     toggleInvertOnData(live.data as GamepadData, axisId);
+  });
+}
+/** Capture a right-stick axis zero the way the card does (in-place, tracked). */
+function zeroRight(axis: 'x' | 'y', raw: number): void {
+  mutateNode(TID, (live) => {
+    if (!live.data) live.data = {};
+    setRightStickZeroOnData(live.data as GamepadData, axis, raw);
+  });
+}
+function resetRightZero(): void {
+  mutateNode(TID, (live) => {
+    if (live.data) resetRightStickZeroOnData(live.data as GamepadData);
   });
 }
 function readBindings() {
@@ -158,6 +172,53 @@ describe('GAMEPAD remap — real Y.Doc mutation', () => {
     commitRemap('rx', { kind: 'axis', index: 0 });
     expect(readInvert()).toEqual({ ly: true });
     expect(readBindings()?.rx).toEqual({ kind: 'axis', index: 0 });
+  });
+
+  // ---------------- right-stick ZERO — real Y.Doc persistence ----------------
+  // The card captures a right-stick axis zero through
+  // `mutateNode(...) → setRightStickZeroOnData(live.data, ...)` against the LIVE
+  // SyncedStore proxy, so `node.data.rightStickZero` becomes a real integrated Y
+  // type once written. Re-zeroing the SAME axis (or capturing the OTHER axis)
+  // must mutate that leaf IN PLACE — never re-assign an already-integrated Y type
+  // ("reassigning object that already occurs in the tree"). A pure plain-object
+  // test can't catch this (plain objects are never "integrated").
+  it('first zero capture persists rightStickZero on the live doc', () => {
+    makeGamepad();
+    expect(() => zeroRight('x', 0.4)).not.toThrow();
+    expect(readData().rightStickZero).toEqual({ x: 0.4, y: 0 });
+  });
+
+  it('zeroing the OTHER axis after the leaf exists does NOT throw (integrated-type trap)', () => {
+    makeGamepad();
+    zeroRight('x', 0.4); // creates the integrated leaf
+    // Capturing Y now mutates the SAME already-integrated leaf in place.
+    expect(() => zeroRight('y', -0.3)).not.toThrow();
+    expect(readData().rightStickZero).toEqual({ x: 0.4, y: -0.3 });
+  });
+
+  it('RE-zeroing the same axis twice never throws + updates in place', () => {
+    makeGamepad();
+    zeroRight('x', 0.4);
+    expect(() => { zeroRight('x', 0.2); zeroRight('x', -0.1); }).not.toThrow();
+    expect(readData().rightStickZero?.x).toBeCloseTo(-0.1);
+  });
+
+  it('reset clears both offsets on the live doc without throwing', () => {
+    makeGamepad();
+    zeroRight('x', 0.4);
+    zeroRight('y', -0.3);
+    expect(() => resetRightZero()).not.toThrow();
+    expect(readData().rightStickZero).toEqual({ x: 0, y: 0 });
+  });
+
+  it('right-stick zero coexists with remaps + invert on the same node.data', () => {
+    makeGamepad();
+    commitRemap('rx', { kind: 'axis', index: 0 });
+    toggleInvert('ly');
+    expect(() => zeroRight('x', 0.4)).not.toThrow();
+    expect(readData().rightStickZero).toEqual({ x: 0.4, y: 0 });
+    expect(readBindings()?.rx).toEqual({ kind: 'axis', index: 0 });
+    expect(readInvert()).toEqual({ ly: true });
   });
 });
 

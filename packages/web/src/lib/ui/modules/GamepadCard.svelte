@@ -42,6 +42,8 @@
     bindingForOutput,
     describeControl,
     toggleInvertOnData,
+    setRightStickZeroOnData,
+    resetRightStickZeroOnData,
     type StickInvert,
     type InvertibleAxis,
     type RawGamepadReading,
@@ -157,6 +159,27 @@
     mutateNode(id, (live) => {
       if (!live.data) live.data = {};
       toggleInvertOnData(live.data as GamepadData, axisId);
+    });
+  }
+
+  // ---------------- right-stick ZERO (per-axis center-capture) ----------------
+  // RIGHT STICK ONLY. A secondary thumbstick that rests OFF-zero (e.g. a
+  // Gladiator) needs a way to declare "right here is centre" without sweeping its
+  // whole range. "Zero X" / "Zero Y" capture the CURRENT raw right-stick axis
+  // (the latest polled rawRightX/Y, pre-offset) as that axis's zero offset;
+  // "Reset" clears both back to 0. Each is a SINGLE in-place node.data write
+  // (rides the Y.Doc → collab + undo); the factory subtracts the offset before the
+  // deadzone each frame so the stick emits 0 at the captured position.
+  function zeroRightAxis(axis: 'x' | 'y') {
+    const raw = axis === 'x' ? snapshot.rawRightX : snapshot.rawRightY;
+    mutateNode(id, (live) => {
+      if (!live.data) live.data = {};
+      setRightStickZeroOnData(live.data as GamepadData, axis, raw);
+    });
+  }
+  function resetRightZero() {
+    mutateNode(id, (live) => {
+      if (live.data) resetRightStickZeroOnData(live.data as GamepadData);
     });
   }
 
@@ -523,6 +546,32 @@
               title="invert right-stick Y"
               data-testid="gamepad-invert-ry"
             >y</button>
+          </div>
+          <!-- RIGHT STICK ONLY: per-axis ZERO (centre-capture) for an off-centre-
+               resting thumbstick. Captures the current physical position as zero. -->
+          <div class="zero-xy">
+            <span class="zero-label" aria-hidden="true">zero</span>
+            <button
+              type="button"
+              class="zero-btn"
+              onclick={() => zeroRightAxis('x')}
+              title="capture current right-stick X position as zero"
+              data-testid="gamepad-rstick-zero-x"
+            >X</button>
+            <button
+              type="button"
+              class="zero-btn"
+              onclick={() => zeroRightAxis('y')}
+              title="capture current right-stick Y position as zero"
+              data-testid="gamepad-rstick-zero-y"
+            >Y</button>
+            <button
+              type="button"
+              class="zero-reset"
+              onclick={resetRightZero}
+              title="reset right-stick zero offsets"
+              data-testid="gamepad-rstick-zero-reset"
+            >reset</button>
           </div>
         </div>
       </div>
@@ -1056,6 +1105,34 @@
     border-color: var(--accent, #00f0ff);
     color: #000;
   }
+  .zero-xy {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    margin-top: 2px;
+  }
+  .zero-label {
+    font-size: 0.5rem;
+    font-family: ui-monospace, monospace;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+  }
+  .zero-btn,
+  .zero-reset {
+    appearance: none;
+    background: rgba(10, 12, 16, 0.7);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    font-size: 0.55rem;
+    line-height: 1;
+    padding: 2px 5px;
+    cursor: pointer;
+    transition: background 60ms ease-out, color 60ms ease-out, border-color 60ms ease-out;
+  }
+  .zero-btn:hover,
+  .zero-reset:hover { border-color: var(--accent-dim); color: var(--text); }
   .remap-btn {
     appearance: none;
     background: rgba(10, 12, 16, 0.7);

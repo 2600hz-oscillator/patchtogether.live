@@ -68,6 +68,79 @@ export function applyDeadzone(raw: number, dz = STICK_DEADZONE): number {
 }
 
 // ---------------------------------------------------------------------------
+// RIGHT-STICK PER-AXIS ZERO (center-capture) — off-center-resting thumbstick.
+//
+// The full min/max sweep CALIBRATION (above) re-centres from the swept range's
+// midpoint, but it needs the user to sweep the stick through its whole travel.
+// A secondary thumbstick (e.g. a Gladiator whose RIGHT stick rests OFF-zero)
+// just needs to declare "right here is zero" — capture the axis's CURRENT
+// physical position as its zero point (not necessarily the rest position) so a
+// stick parked off-centre stops emitting phantom CV and "centre is centred".
+//
+// This is a per-axis OFFSET (raw-axis units) subtracted before the existing
+// deadzone, so it composes with everything downstream (deadzone / Y-invert /
+// invert / output) without touching the left stick. It is deliberately separate
+// from the right-stick calibration record: a user can ZERO without sweeping, and
+// the two never both apply to the same axis (the read loop prefers calibration
+// when one is committed). RIGHT STICK ONLY — the left stick has no zero affordance.
+// ---------------------------------------------------------------------------
+
+/** Persisted per-axis right-stick ZERO offsets, in raw-axis units. Lives on
+ *  `node.data.rightStickZero` (rides the Y.Doc to rack-mates). `x`/`y` are the
+ *  raw positions captured as "this is centre"; subtracted from the raw axis
+ *  before the deadzone. Default {x:0,y:0} (the stick rests at raw 0). */
+export interface RightStickZero {
+  x: number;
+  y: number;
+}
+
+/** Pure helper — re-zero ONE raw right-stick axis: subtract the captured offset,
+ *  clamp back into the legal [-1,1] band, then apply the SAME deadzone +
+ *  re-normalize as `applyDeadzone` (reused internally so behaviour matches the
+ *  rest of the module). A non-finite offset is treated as 0 (no zero). So a raw
+ *  sample sitting exactly at the captured zero reads 0 (centred), and a sample
+ *  away from it scales like a normal axis. */
+export function applyRightStickZero(raw: number, offset: number, dz = STICK_DEADZONE): number {
+  if (!Number.isFinite(raw)) return 0;
+  const off = Number.isFinite(offset) ? offset : 0;
+  const shifted = Math.max(-1, Math.min(1, raw - off));
+  return applyDeadzone(shifted, dz);
+}
+
+/** True for a structurally valid RightStickZero (finite x + y). Guards a corrupt
+ *  / foreign node.data entry from the read loop. */
+export function isRightStickZero(z: unknown): z is RightStickZero {
+  if (!z || typeof z !== 'object') return false;
+  const o = z as { x?: unknown; y?: unknown };
+  return Number.isFinite(o.x) && Number.isFinite(o.y);
+}
+
+/** Capture ONE right-stick axis's current raw position as its zero offset, on a
+ *  node's `data` IN PLACE (safe against the live SyncedStore proxy — sets a single
+ *  numeric key on a leaf plain object). Creates the `rightStickZero` object ONCE
+ *  if absent, then only ever mutates its `x`/`y` keys in place (never reassigns an
+ *  already-integrated Y type — the [[yjs-save-load-real-ydoc]] trap). `axis`
+ *  selects which component; `raw` is the latest polled pre-offset axis value. */
+export function setRightStickZeroOnData(
+  data: GamepadData,
+  axis: 'x' | 'y',
+  raw: number,
+): void {
+  const v = Number.isFinite(raw) ? raw : 0;
+  if (!data.rightStickZero) data.rightStickZero = { x: 0, y: 0 };
+  data.rightStickZero[axis] = v;
+}
+
+/** Reset BOTH right-stick zero offsets to 0 on a node's `data` IN PLACE (the
+ *  stick rests at raw 0 again). Mutates the existing leaf in place; a safe no-op
+ *  when no zero has been captured. */
+export function resetRightStickZeroOnData(data: GamepadData): void {
+  if (!data.rightStickZero) return;
+  data.rightStickZero.x = 0;
+  data.rightStickZero.y = 0;
+}
+
+// ---------------------------------------------------------------------------
 // LEFT-STICK CALIBRATION (Gladiator NXT support — first deliverable)
 //
 // Prior art (analog-stick calibration; min/max normalization + deadzone):
@@ -696,6 +769,11 @@ export interface GamepadData {
    *  axes). Same StickCalibration shape + flow as the left stick, reading the
    *  right-stick's own axes (2,3). Absent → the fixed-deadzone path. */
   rightStickCalibration?: StickCalibration;
+  /** Per-axis right-stick ZERO offsets (raw-axis units) — the user-captured
+   *  "this is centre" position for an off-centre-resting right thumbstick. Applied
+   *  to rx/ry (subtracted before the deadzone) when no right-stick CALIBRATION is
+   *  committed. RIGHT STICK ONLY. Absent / {0,0} → the stick rests at raw 0. */
+  rightStickZero?: RightStickZero;
   /** Per-output physical-control overrides. Absent → all outputs use their
    *  default standard-mapping control (back-compat: existing patches unchanged). */
   bindings?: RemapBindings;
@@ -1022,6 +1100,14 @@ export const gamepadDef: AudioModuleDef = {
       return inv && typeof inv === 'object' ? inv : {};
     }
 
+    /** Read the live (synced) right-stick ZERO offsets off node.data. Returns
+     *  {0,0} when none captured (the stick rests at raw 0). */
+    function readRightStickZero(): RightStickZero {
+      const data = (livePatch.nodes[node.id]?.data ?? undefined) as GamepadData | undefined;
+      const z = data?.rightStickZero;
+      return isRightStickZero(z) ? z : { x: 0, y: 0 };
+    }
+
     function readPadIndex(): number {
       const v = (node.params ?? {}).padIndex;
       const n = typeof v === 'number' ? Math.round(v) : 0;
@@ -1085,6 +1171,12 @@ export const gamepadDef: AudioModuleDef = {
       // invert composes on top of a remap / calibration / Y-inversion.
       const invert = readInvert();
       snapshot.invert = invert;
+
+      // Per-axis right-stick ZERO offsets (live, synced). Subtracted from the raw
+      // right-stick axes BEFORE the deadzone so an off-centre-resting right stick
+      // emits 0 at its captured position. Only applied to rx/ry on the fixed-
+      // deadzone (un-calibrated) path — a committed calibration already re-centres.
+      const rightZero = readRightStickZero();
 
       // Raw left + right stick axes for each stick's calibration sweep + apply
       // (spec frame: +X = right, +Y = down). Read the axis CURRENTLY BOUND to
@@ -1161,11 +1253,23 @@ export const gamepadDef: AudioModuleDef = {
           v = triggerToCv(control.kind === 'axis' ? Math.abs(raw) : raw);
         } else if (o.type === 'cv') {
           // Stick-axis CV outputs: deadzone. ly/ry invert (so +1 = up) when on
-          // their natural Y axis; a remapped axis keeps its raw sign.
+          // their natural Y axis; a remapped axis keeps its raw sign. The RIGHT
+          // stick's per-axis ZERO offset (an off-centre-resting thumbstick) is
+          // subtracted from rx/ry's raw axis before the deadzone — this is the
+          // un-calibrated path (calRx/calRy already took precedence above).
           const isNaturalY =
             (o.id === 'ly' && control.kind === 'axis' && control.index === STD_AXIS.ly) ||
             (o.id === 'ry' && control.kind === 'axis' && control.index === STD_AXIS.ry);
-          const dz = control.kind === 'axis' ? applyDeadzone(raw) : raw;
+          let dz: number;
+          if (control.kind !== 'axis') {
+            dz = raw;
+          } else if (o.id === 'rx') {
+            dz = applyRightStickZero(raw, rightZero.x);
+          } else if (o.id === 'ry') {
+            dz = applyRightStickZero(raw, rightZero.y);
+          } else {
+            dz = applyDeadzone(raw);
+          }
           v = isNaturalY ? -dz : dz;
         } else {
           // Gate outputs: 1 when the source crosses the pressed threshold. A
