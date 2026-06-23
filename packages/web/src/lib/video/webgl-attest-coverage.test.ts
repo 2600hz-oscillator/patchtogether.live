@@ -87,7 +87,14 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // FILE SET changed (one out, one in), so the attest hash moves → re-attest.
 // (synesthesia-composite.spec.ts was also deleted this wave, but it was a Pass-B
 // LEAKER, not a heavy-glob member, so it does not affect THIS count.)
-const EXPECTED_HEAVY_SPEC_COUNT = 50;
+// glsmoke-floor-expansion 2026-06-23: −3 specs RE-BINNED out of the heavy lane
+// into WEBGL_HEAVY_EXCLUDE (toybox-node-controls, toybox-presets,
+// videobox-performance-bundle) — they read no pixels and now pause the render
+// loop, so they run cheap in the parallel matrix instead of the real-GPU attest.
+// 50 → 47. (peakstate-render-smoke + wavecel-video-outs stay heavy-glob members +
+// ALSO joined the SwiftShader floor. toybox-node-menu + video-audio-cvgate-coverage
+// were assessed but DEFERRED — node-menu flake / cvgate gate-poll — stay heavy.)
+const EXPECTED_HEAVY_SPEC_COUNT = 47;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

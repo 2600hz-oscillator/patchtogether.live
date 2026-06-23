@@ -1443,11 +1443,11 @@ jobs:
       # renderer-tolerant on SwiftShader (empirically 2-8s each on a CI runner —
       # confirmed by the full-heavy-suite timing experiment + a 3× local vet).
       # Running them HERE gives an UN-FORGEABLE on-CI floor for these modules
-      # (the real-GPU `webgl:attest` covers their DEPTH but is hand-forgeable),
-      # without re-attesting (no spec edits — selected by file). PEAKSTATE and
-      # OUTLINES render-smoke are EXCLUDED: peakstate fails on SwiftShader (a
-      # genuine real-GPU dependency → attest-only) and outlines is ~48s (too
-      # close to the budget for a floor). cwd is e2e/ (see the Path note on
+      # (the real-GPU `webgl:attest` covers their DEPTH but is hand-forgeable).
+      # peakstate joined 2026-06-23 after its DRS was tuned (one-shot seed-clear +
+      # warmup 48→18) to converge cheaply on SwiftShader; wavecel-video-outs is an
+      # already-cheap DRS. OUTLINES render-smoke stays EXCLUDED (~48s — too close
+      # to the budget for a floor → attest-only). cwd is e2e/ (see the Path note on
       # merge-reports), so the bare spec filenames resolve under e2e/tests/.
       - name: Run cheap render-smoke floor (SwiftShader)
         run: |
@@ -1460,9 +1460,11 @@ jobs:
             mandelbulb-render-smoke.spec.ts \
             mandleblot-render-smoke.spec.ts \
             nibbles-render-smoke.spec.ts \
+            peakstate-render-smoke.spec.ts \
             spirographs-render-smoke.spec.ts \
             textmarquee-render-smoke.spec.ts \
             vfpga-runner-render-smoke.spec.ts \
+            wavecel-video-outs.spec.ts \
             --workers=2 \
             --retries=1 \
             --reporter=list
