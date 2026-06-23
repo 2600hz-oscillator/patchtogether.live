@@ -22,11 +22,13 @@
 //   * NIBBLES.length_cv → QBRT.cutoff_cv is intentionally covered by
 //     a sibling PR (the composite-VRT NIBBLES→QBRT scene). This file
 //     picks DIFFERENT consumer ports for NIBBLES so we don't duplicate.
-//   * DOOM coverage uses `extras.forcePulse(port)` — the test-only hook
-//     added in this PR that drives the SAME local `pulseGate` helper
-//     `drainAndPulseEvents` uses on a real game event. NO WASM-side
-//     changes. The hook is unit-tested in doom.test.ts to lock its
-//     identity to the published audioSources entries.
+//   * DOOM gate rows used to live here too, but were the flakiest in the
+//     suite (a 10ms WASM-driven gate vs SCOPE's ~43ms analyser refill).
+//     The GPU-attest rebuild dropped them: the engine-bridge UNIT sweep
+//     (audio/engine-video-audio-bridge.test.ts) already proves every video
+//     cv/gate output port — DOOM's included — bridges into the audio domain
+//     deterministically at the recording-fake level. NIBBLES keeps the one
+//     LIVE row that proves a real AudioParam receives the bridged ramp.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -67,8 +69,6 @@ interface Pair {
   /** Source-side driver port (same as source.portId today; declared
    *  separately so a future hook can rename without breaking the table). */
   driverPort: string;
-  /** When true (DOOM), skip cleanly if the WASM asset is absent. */
-  gatedOnDoomWasm?: boolean;
 }
 
 const PAIRS: Pair[] = [
@@ -89,43 +89,17 @@ const PAIRS: Pair[] = [
     source: { type: 'nibbles', nodeId: 'src-nibbles-pellet', portId: 'pellet' },
     driverPort: 'pellet',
   },
-  // ---- DOOM: kill + door + gun_p1 GATES. Each uses extras.forcePulse, no
-  // WASM-side changes. evt_gun_p2..p4 hit the same dispatcher path; the
-  // unit sweep proves their per-port wiring. WASM-asset-gated.
-  {
-    id: 'doom-evt_kill',
-    kind: 'gate',
-    source: { type: 'doom', nodeId: 'src-doom-kill', portId: 'evt_kill' },
-    driverPort: 'evt_kill',
-    gatedOnDoomWasm: true,
-  },
-  {
-    id: 'doom-evt_door',
-    kind: 'gate',
-    source: { type: 'doom', nodeId: 'src-doom-door', portId: 'evt_door' },
-    driverPort: 'evt_door',
-    gatedOnDoomWasm: true,
-  },
-  {
-    id: 'doom-evt_gun_p1',
-    kind: 'gate',
-    source: { type: 'doom', nodeId: 'src-doom-gun1', portId: 'evt_gun_p1' },
-    driverPort: 'evt_gun_p1',
-    gatedOnDoomWasm: true,
-  },
+  // ---- DOOM gates (evt_kill / evt_door / evt_gun_p1..p4) were dropped from
+  // this LIVE table during the GPU-attest rebuild: they were the flakiest rows
+  // (a 10ms WASM-driven gate vs SCOPE's ~43ms analyser refill, polled over a
+  // 6s budget, and WASM-asset-gated). Their per-port bridge wiring is proven
+  // deterministically by the engine-bridge unit sweep
+  // (audio/engine-video-audio-bridge.test.ts, `it.each` over every video
+  // cv/gate output port). NIBBLES.length_cv keeps one LIVE proof that a real
+  // AudioParam actually receives the bridged ramp.
 ];
 
 // ---------------- Page-side helpers ---------------------------------------
-
-/** Probe DOOM-WASM presence. Skip cleanly when the optional asset is
- *  absent (the repo doesn't ship doom.js — `bash packages/web/native/
- *  build-doom-wasm.sh` builds it locally; CI builds it before e2e). */
-async function doomWasmPresent(page: Page): Promise<boolean> {
-  return await page.evaluate(async () => {
-    try { return (await fetch('/doom/doom.js', { method: 'HEAD' })).ok; }
-    catch { return false; }
-  });
-}
 
 /** Fire the source's CV/gate output via the per-module forcePulse extras
  *  hook. For GATE pulses (10ms wide), `repeats` re-fires the pulse N times
@@ -220,14 +194,6 @@ test.describe('video → audio CV/gate routing: every source/port survives the e
 
       await page.goto('/');
       await page.waitForLoadState('networkidle');
-
-      if (pair.gatedOnDoomWasm) {
-        const present = await doomWasmPresent(page);
-        test.skip(
-          !present,
-          'DOOM WASM not built — run `bash packages/web/native/build-doom-wasm.sh`',
-        );
-      }
 
       const scopeNodeId = `cons-scope-${pair.id}`;
 
@@ -331,12 +297,8 @@ test.describe('video → audio CV/gate routing: every source/port survives the e
 
       // Cosmetic: no page errors in the run.
       expect(
-        errors.filter((e) =>
-          !e.includes('AudioContext')
-          && !e.includes('DOOM1.WAD')
-          && !e.includes('doom.js')
-        ),
-        `${pair.id}: no console / page errors (AudioContext + DOOM asset warnings excepted)`,
+        errors.filter((e) => !e.includes('AudioContext')),
+        `${pair.id}: no console / page errors (AudioContext warnings excepted)`,
       ).toEqual([]);
     });
   }

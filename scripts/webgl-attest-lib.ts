@@ -90,7 +90,11 @@ export const WEBGL_LEAKER_SPECS = [
   'foxy.spec.ts',
   // Multi-input mix / viz WebGL specs not in the heavy globs.
   'quadralogical-assign.spec.ts',
-  'synesthesia-composite.spec.ts',
+  // synesthesia-composite.spec.ts deleted in the GPU-attest rebuild — its band
+  // claims are covered deterministically by synesthesia-dsp.test.ts, and its
+  // live a_in path by synesthesia-video-mode.spec.ts + the per-port behavioral
+  // sweep. (resolveWebglBasis guards each entry with existsSync, but keep the
+  // list truthful.)
   'wavecel-viz.spec.ts',
 ];
 
