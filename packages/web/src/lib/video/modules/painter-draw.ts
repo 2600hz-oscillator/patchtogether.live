@@ -171,6 +171,50 @@ export function coerceOps(raw: unknown): PaintOp[] {
   return out;
 }
 
+/** The node-data shape the op-log mutators touch. */
+export interface OpLogData {
+  ops?: PaintOp[];
+}
+
+// ── In-place op-log mutators (Yjs-safe) ──────────────────────────────────────
+//
+// These mutate `data.ops` IN PLACE — push/pop/splice on the existing array — and
+// NEVER reassign an array that already holds live op objects. Under a SyncedStore
+// proxy, `data.ops.slice()` copies references to already-integrated Y types, and
+// assigning that copy back throws "Not supported: reassigning object that already
+// occurs in the tree" on the 2nd+ op (the [[yjs-save-load-real-ydoc]] trap) — which
+// silently dropped every paint op after the first. Call these INSIDE a
+// `mutateNode(id, (live) => …)` so the write lands on the live node + syncs.
+
+/** Append one op (creates the array if missing). Soft-caps at maxOps (drawing
+ *  still shows locally; just stops persisting) so a long session can't bloat the
+ *  Y.Doc unbounded. Uses an IN-PLACE `push` of the PLAIN op — SyncedStore
+ *  integrates the new op without touching the existing (already-integrated) ones,
+ *  so it never trips the re-integration trap (unlike slice()+reassign). */
+export function appendOp(data: OpLogData, op: PaintOp, maxOps = MAX_OPS): void {
+  if (!Array.isArray(data.ops)) data.ops = [];
+  if (data.ops.length >= maxOps) return;
+  data.ops.push(op);
+}
+
+/** Remove the last op (undo). SyncedStore proxies don't support `.pop()`/
+ *  `.splice()`, and slicing then reassigning copies references to live (already-
+ *  integrated) Y op objects → "reassigning object that already occurs in the tree".
+ *  So rebuild a FULLY-PLAIN array (JSON round-trip drops every Y reference) minus
+ *  the last op and assign that — no tree object is ever re-inserted. */
+export function popOp(data: OpLogData): void {
+  if (!Array.isArray(data.ops) || data.ops.length === 0) return;
+  const plain = JSON.parse(JSON.stringify(data.ops)) as PaintOp[];
+  plain.pop();
+  data.ops = plain;
+}
+
+/** Clear the whole log (the canvas repaints to a blank page). Assigns a fresh
+ *  EMPTY plain array — no live Y objects, so it's safe to reassign. */
+export function clearOps(data: OpLogData): void {
+  data.ops = [];
+}
+
 /** A minimal 2D-context surface — the subset applyOp needs. Both
  *  CanvasRenderingContext2D and OffscreenCanvasRenderingContext2D satisfy it. */
 export type Ctx2D = Pick<

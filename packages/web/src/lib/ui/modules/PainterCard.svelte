@@ -31,11 +31,14 @@
     DEFAULT_BRUSH,
     MIN_BRUSH,
     MAX_BRUSH,
-    MAX_OPS,
     coerceOps,
     applyVectorOp,
     floodFill,
     hexToRgba,
+    appendOp,
+    popOp,
+    clearOps,
+    type OpLogData,
   } from '$lib/video/modules/painter-draw';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -79,32 +82,22 @@
     return coerceOps((node?.data as { ops?: unknown } | undefined)?.ops);
   }
 
-  /** Append a committed op to the synced log (in place — Yjs-safe; never reassign
-   *  live.data). The local canvas is already drawn; this persists + syncs it. */
+  /** Append a committed op to the synced log. Mutates `live.data.ops` IN PLACE
+   *  via appendOp — slicing + reassigning an array that holds live (integrated)
+   *  Y op objects throws on the 2nd+ op ([[yjs-save-load-real-ydoc]]), which used
+   *  to silently drop every paint after the first. The local canvas is already
+   *  drawn; this persists + syncs it. */
   function commitOp(op: PaintOp) {
-    mutateNode(id, (live) => {
-      const d = live.data as Record<string, unknown>;
-      const ops = Array.isArray(d.ops) ? (d.ops as unknown[]).slice() : [];
-      if (ops.length >= MAX_OPS) return; // soft cap — drawing still shows locally
-      ops.push(op);
-      d.ops = ops;
-    });
+    mutateNode(id, (live) => appendOp(live.data as OpLogData, op));
   }
 
   function clearAll() {
-    mutateNode(id, (live) => {
-      (live.data as Record<string, unknown>).ops = [];
-    });
+    mutateNode(id, (live) => clearOps(live.data as OpLogData));
     // syncFromOps (effect) repaints to a blank page.
   }
 
   function undo() {
-    mutateNode(id, (live) => {
-      const d = live.data as Record<string, unknown>;
-      const ops = Array.isArray(d.ops) ? (d.ops as unknown[]).slice() : [];
-      ops.pop();
-      d.ops = ops;
-    });
+    mutateNode(id, (live) => popOp(live.data as OpLogData));
   }
 
   // ── Repaint the canvas from the op log ────────────────────────────────────
@@ -412,7 +405,13 @@
 
 <style>
   .mod-card {
+    /* width/height are force-sized by the rack tier (_module-card.css);
+       lay the card out as a column so the canvas can flex to fill whatever
+       vertical space the toolbar + palette leave — no tier ever overflows. */
     width: 300px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -478,14 +477,24 @@
   .act:hover { border-color: var(--accent-dim); }
 
   .canvas-wrap {
+    /* Flex-fill the leftover height between toolbar + palette; the canvas is
+       contained (4:3, from its intrinsic w/h) + centred, so the card never
+       overflows regardless of rack tier. */
+    flex: 1 1 auto;
+    min-height: 0;
     margin: 8px 8px 6px;
     border: 1px solid #000;
     background: #fff;
     box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.35);
-    line-height: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    overflow: hidden;
   }
   .paint {
-    width: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
     height: auto;
     display: block;
     cursor: crosshair;

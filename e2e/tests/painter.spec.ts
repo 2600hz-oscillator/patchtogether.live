@@ -41,18 +41,18 @@ function opCount(page: Page): Promise<number> {
 }
 
 /** Drag the mouse across the painter canvas to paint a thick stroke (brush at a
- *  large size so the painted band is unambiguous under sparse pixel sampling). */
-async function drawStroke(page: Page): Promise<void> {
+ *  large size so the painted band is unambiguous under sparse pixel sampling).
+ *  `yFrac` places the stroke band so multiple strokes don't overlap. */
+async function drawStroke(page: Page, yFrac = 0.5): Promise<void> {
   await page.locator('[data-testid="painter-tool-brush"]').click();
   await page.locator('[data-testid="painter-size"]').fill('48');
   const canvas = page.locator('[data-testid="painter-canvas"]');
   const box = await canvas.boundingBox();
   if (!box) throw new Error('painter canvas has no bounding box');
-  const y = box.y + box.height / 2;
+  const y = box.y + box.height * yFrac;
   await page.mouse.move(box.x + box.width * 0.15, y);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.4, y - box.height * 0.2);
-  await page.mouse.move(box.x + box.width * 0.7, y + box.height * 0.2);
+  await page.mouse.move(box.x + box.width * 0.5, y);
   await page.mouse.move(box.x + box.width * 0.85, y);
   await page.mouse.up();
 }
@@ -76,11 +76,20 @@ test.describe('PAINTER — interactive draw → synced ops', () => {
     expect(await paintedFrac(page)).toBeLessThan(0.02);
     expect(await opCount(page)).toBe(0);
 
-    await drawStroke(page);
+    await drawStroke(page, 0.3);
 
     // The stroke painted the canvas (black on white) + persisted ONE op.
     expect(await paintedFrac(page), 'the drag painted dark pixels on the canvas').toBeGreaterThan(0.01);
     await expect.poll(() => opCount(page), { message: 'one stroke op committed to node.data.ops' }).toBe(1);
+
+    // A SECOND stroke must ALSO commit — the Yjs re-integration trap (slice +
+    // reassign of a live op array) silently dropped every op after the first, so
+    // the canvas rolled back to one stroke. Two strokes ⇒ two persisted ops.
+    await drawStroke(page, 0.7);
+    await expect
+      .poll(() => opCount(page), { message: 'the SECOND stroke commits too (no Yjs re-integration drop)' })
+      .toBe(2);
+    expect(await paintedFrac(page), 'both stroke bands remain painted (no rollback)').toBeGreaterThan(0.02);
 
     expect(errors, `no console / page errors: ${errors.join('; ')}`).toEqual([]);
   });

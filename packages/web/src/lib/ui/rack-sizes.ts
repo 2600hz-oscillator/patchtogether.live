@@ -184,7 +184,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   nibbles: { size: '2u', hp: 2 }, // 367×380px
   onetonine: { size: '3u', hp: 3 }, // ~360×440px — 300×169 (16:9) monitor preview + GRID toggle + IN/OUT1..OUT9 (10-port panel)
   outlines: { size: '3u', hp: 2 }, // 420×260px
-  painter: { size: '2u', hp: 2 }, // 300px card — 4:3 paint canvas (~225px) + 9-tool toolbar + 28-swatch palette ≈ ~400px tall
+  painter: { size: '4u', hp: 3 }, // 540×720 — MS-Paint card: 9-tool toolbar + flex-filled 4:3 paint canvas (~520×390) + 28-swatch palette (canvas flexes to the tier; no overflow)
   peakstate: { size: '2u', hp: 2 }, // 329×240px
   picturebox: { size: '2u', hp: 2 }, // 240×220px
   qbert: { size: '2u', hp: 2 }, // 326×340px

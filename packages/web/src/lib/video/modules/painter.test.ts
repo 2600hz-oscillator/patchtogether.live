@@ -5,7 +5,7 @@
 // e2e; here we lock the serializable op model + the deterministic paint logic
 // that replays identically on every peer.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   WIN95_PALETTE,
   PAINT_BG,
@@ -14,11 +14,18 @@ import {
   coerceOps,
   applyVectorOp,
   floodFill,
+  appendOp,
+  popOp,
+  clearOps,
   type Ctx2D,
   type PaintOp,
+  type OpLogData,
   type RgbaBitmap,
 } from './painter-draw';
 import { painterDef } from './painter';
+import { patch } from '$lib/graph/store';
+import { mutateNode } from '$lib/graph/mutate';
+import type { ModuleNode } from '$lib/graph/types';
 
 describe('painter — palette + colour helpers', () => {
   it('the Win95 palette is 28 valid hex colours (2 rows × 14)', () => {
@@ -204,5 +211,79 @@ describe('painter — module def contract', () => {
     expect(painterDef.domain).toBe('video');
     expect(painterDef.inputs).toEqual([]);
     expect(painterDef.outputs).toEqual([{ id: 'out', type: 'video' }]);
+  });
+});
+
+describe('painter — op-log mutators (in place)', () => {
+  const fill = (n: number): PaintOp => ({ kind: 'fill', color: '#000000', x: n, y: n });
+
+  it('appendOp pushes in place + creates the array when missing', () => {
+    const d: OpLogData = {};
+    appendOp(d, fill(1));
+    appendOp(d, fill(2));
+    expect(d.ops).toHaveLength(2);
+    expect(d.ops![1]).toMatchObject({ kind: 'fill', x: 2 });
+  });
+
+  it('appendOp soft-caps at maxOps (local drawing unaffected; just stops persisting)', () => {
+    const d: OpLogData = { ops: [] };
+    for (let k = 0; k < 5; k++) appendOp(d, fill(k), 3);
+    expect(d.ops).toHaveLength(3);
+  });
+
+  it('popOp removes the last op + is a safe no-op past empty', () => {
+    const d: OpLogData = { ops: [fill(1), fill(2)] };
+    popOp(d);
+    expect(d.ops).toHaveLength(1);
+    popOp(d);
+    popOp(d);
+    expect(d.ops).toHaveLength(0);
+  });
+
+  it('clearOps empties the log', () => {
+    const d: OpLogData = { ops: [fill(1), fill(2), fill(3)] };
+    clearOps(d);
+    expect(d.ops).toEqual([]);
+  });
+});
+
+describe('painter — op log on a REAL Y.Doc (2nd-op re-integration regression)', () => {
+  // The bug: commitOp did `ops = d.ops.slice(); ops.push(op); d.ops = ops` — under
+  // a SyncedStore proxy `.slice()` copies references to already-integrated Y
+  // objects, and reassigning that array throws "Not supported: reassigning object
+  // that already occurs in the tree" on the 2nd+ op → every paint after the first
+  // was silently dropped + the canvas rolled back when a repaint fired. These run
+  // against the SAME syncedStore/Y.Doc the live patch uses, so node.data.ops is a
+  // real Y type — the only way to catch the trap ([[yjs-save-load-real-ydoc]]).
+  const PID = 'painter-ydoc-test';
+  function setup(): void {
+    patch.nodes[PID] = {
+      id: PID, type: 'painter', domain: 'video', position: { x: 0, y: 0 }, params: {}, data: {},
+    } as unknown as ModuleNode;
+  }
+  afterEach(() => {
+    for (const id of Object.keys(patch.nodes)) delete patch.nodes[id];
+    for (const id of Object.keys(patch.edges)) delete patch.edges[id];
+  });
+
+  const stroke = (y: number): PaintOp => ({ kind: 'stroke', tool: 'brush', color: '#ff0000', size: 8, points: [0, y, 100, y] });
+
+  it('commits MANY ops in a row without the re-integration trap (was: only the 1st stuck)', () => {
+    setup();
+    expect(() => {
+      for (let k = 0; k < 6; k++) mutateNode(PID, (live) => appendOp(live.data as OpLogData, stroke(k * 10)));
+    }).not.toThrow();
+    expect(coerceOps(patch.nodes[PID]!.data?.ops)).toHaveLength(6);
+  });
+
+  it('undo + clear mutate the live log in place, and append still works after clear', () => {
+    setup();
+    for (let k = 0; k < 3; k++) mutateNode(PID, (live) => appendOp(live.data as OpLogData, stroke(k)));
+    expect(() => mutateNode(PID, (live) => popOp(live.data as OpLogData))).not.toThrow();
+    expect(coerceOps(patch.nodes[PID]!.data?.ops)).toHaveLength(2);
+    expect(() => mutateNode(PID, (live) => clearOps(live.data as OpLogData))).not.toThrow();
+    expect(coerceOps(patch.nodes[PID]!.data?.ops)).toHaveLength(0);
+    expect(() => mutateNode(PID, (live) => appendOp(live.data as OpLogData, stroke(99)))).not.toThrow();
+    expect(coerceOps(patch.nodes[PID]!.data?.ops)).toHaveLength(1);
   });
 });
