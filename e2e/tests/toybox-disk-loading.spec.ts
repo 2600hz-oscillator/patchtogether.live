@@ -18,9 +18,29 @@
 // fragile pixel-diffs — so they survive the CI SwiftShader renderer. iTime is
 // pinned via window.__toyboxFreeze; generous cold-SwiftShader budgets per the
 // `ci-swiftshader-video-e2e-timeouts` discipline.
+//
+// SwiftShader-cheap (GPU-attest rebuild, glsmoke-floor-expansion): TOYBOX is
+// renderLocus:'worker', BUT the worker path is OFF by default (isWorkerFlagOn()
+// === false unless a spec sets __videoWorkerEnabled / ?videoworker=1 — only the
+// dedicated render-worker-*.spec.ts files do), so this spec renders TOYBOX on the
+// MAIN thread via its standard factory. The pixels it reads come from the on-card
+// 2D `toybox-canvas`, populated by __toyboxFreeze's DIRECT engine.step() +
+// blitOutputToDrawingBuffer — NOT from a free-running worker. The only reason this
+// blew its budget on CI's software renderer was TOYBOX's live main-thread rAF
+// render loop grinding UNPAUSED underneath the deterministic __toyboxFreeze frames.
+// spawnToybox() now calls installRenderSmokeHooks(page) BEFORE page.goto — it sets
+// __videoEnginePause (the background rAF loop IDLES, so step() never auto-advances
+// on the tick → the slow background render cost is gone) + __videoEngineFreezeTime
+// (pins the engine clock). DIRECT step() calls — the __toyboxFreeze path this spec
+// drives every frame — are explicitly UNAFFECTED (engine.ts step() runs in full
+// when called directly), so the engine still compiles the disk-loaded shader/OBJ
+// and blits a real frame. NO assertion changed: every node.data / lit-pixel /
+// colour-channel / no-crash / recovery check is byte-identical. This spec no longer
+// needs the serialized real-GPU heavy lane — it runs in the normal parallel shards.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 type DLGlobal = {
   __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
@@ -84,6 +104,13 @@ async function pinViewport(page: Page): Promise<void> {
 }
 
 async function spawnToybox(page: Page): Promise<void> {
+  // SwiftShader-cheap: pause the engine's background rAF render loop + pin the
+  // engine clock BEFORE boot so TOYBOX's live main-thread render doesn't grind the
+  // software renderer under this deterministic pixel spec (the sole cause of the CI
+  // budget overrun). The DIRECT step() calls the spec drives via __toyboxFreeze are
+  // unaffected, so every disk-loaded shader/OBJ render + lit-pixel/colour assertion
+  // below still holds, byte-identical.
+  await installRenderSmokeHooks(page);
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await spawnPatch(

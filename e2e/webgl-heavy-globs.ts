@@ -112,6 +112,11 @@ export const WEBGL_HEAVY_EXCLUDE = [
   '**/toybox-node-controls.spec.ts', // control-pane DOM/Y.Doc — no pixel read (render paused)
   '**/toybox-presets.spec.ts', // manifest + preset dropdown + node.data — no pixel read
   '**/videobox-performance-bundle.spec.ts', // perf-zip data round-trip — DOM/Y.Doc only, no canvas read
+  // glsmoke-floor-expansion wave 3 (2026-06-23): same render-pause re-bin — DOM/data
+  // specs that timed out only under the live render loop. Validated 3× SwiftShader-clean.
+  '**/toybox-disk-loading.spec.ts', // disk OBJ/shader load → node.data asserts — no worker-pixel read
+  '**/toybox-video-projection.spec.ts', // UV/projective projection-config DOM/state — no pixel read
+  '**/video-audio-cvgate-coverage.spec.ts', // #414 audio bridge: SCOPE analyser peak/rms + hardened pellet poll — never reads a canvas
 ] as const;
 
 /** Resolve the EFFECTIVE heavy spec FILES (concrete repo-relative paths) =

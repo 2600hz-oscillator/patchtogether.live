@@ -27,9 +27,31 @@
 // as a UV surface texture. This file already seeds an OBJ-textured sphere + drives
 // the surfmode select, so the surface-select check folds in here (one fewer GPU
 // boot). See the "picking a SURFACE source ..." test below.
+//
+// GPU-attest rebuild Phase 3 (SwiftShader-cheap conversion): this spec reads the
+// MAIN-THREAD toybox 2D canvas (`toybox-canvas`) — NOT worker-rendered pixels. It
+// does NOT set `__videoWorkerEnabled` (default OFF), so TOYBOX renders on the
+// main thread (engine factory path, not the OffscreenCanvas worker compositor),
+// and it drives every frame via `__toyboxFreeze(t)` which calls a DIRECT
+// engine.step() at the pinned time then blits the main-thread output FBO into the
+// 2D canvas. The only reason it timed out on CI's SwiftShader was TOYBOX's live
+// main-thread rAF render loop grinding the projective shader UNPAUSED underneath
+// the (much rarer) explicit freeze blits. `spawnToybox()` now calls
+// `installRenderSmokeHooks(page)` BEFORE page.goto — it sets `__videoEnginePause`
+// (the engine rAF loop IDLES, so step() never auto-advances on the background
+// tick → the slow background render cost is gone) + `__videoEngineFreezeTime`
+// (pins the clock). DIRECT step() calls via `__toyboxFreeze` are UNAFFECTED by
+// the pause (engine.ts: ensureLoop only gates the auto-advance; step() itself
+// still renders), so the projective/UV/texture-source frames the test freezes +
+// reads are byte-identically the SAME real main-thread GPU renders as before. NO
+// assertion changed: every picker-UI / non-black-render / UV-vs-projective delta
+// / surface-source persist+delta / projection-map-preset / no-error check is
+// preserved. The render path is real (renderer-tolerant floors + deltas), it just
+// no longer fights a background render loop on the software renderer.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
+import { installRenderSmokeHooks } from './_render-smoke';
 
 type Layer = {
   kind?: string;
@@ -108,6 +130,17 @@ async function resetSig(page: Page): Promise<void> {
 }
 
 async function spawnToybox(page: Page): Promise<void> {
+  // SwiftShader-cheap: pause the engine rAF loop + pin the clock BEFORE boot so
+  // TOYBOX's live main-thread projective render doesn't grind the software
+  // renderer underneath this spec's (much rarer) explicit freeze blits — the sole
+  // cause of the CI timeout. Pin the frozen clock to 1.0 to match the time every
+  // `frozenAverage`/`__toyboxFreeze` call below drives, so the pinned background
+  // state and the freeze-rendered frames agree. DIRECT step() calls the spec
+  // drives via `__toyboxFreeze` are UNAFFECTED by the pause (engine.ts gates only
+  // the rAF AUTO-advance, not step() itself), so every non-black-render /
+  // UV-vs-projective delta / surface-source / projection-map assertion below still
+  // reads the SAME real main-thread GPU render as before.
+  await installRenderSmokeHooks(page, 1.0);
   await page.goto('/');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
