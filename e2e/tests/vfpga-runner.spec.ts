@@ -1,13 +1,12 @@
 // e2e/tests/vfpga-runner.spec.ts
 //
-// vfpga-runner host module — end-to-end. Spawns the host (which loads the
-// default smpte-bars VFPGA), wires its canonical vout1 → OUTPUT, and asserts the
-// OUTPUT canvas is NON-BLACK with spatial structure (the colour bars reach
-// downstream presentation). Renderer-tolerant: under CI's SwiftShader software
-// renderer the absolute pixels differ from a real GPU, so we assert a STRUCTURE
-// floor (non-black fraction + variance), not exact colours — matching the
-// acidwarp render-worker gate. Default flag (main-thread render); the worker
-// path is already proven generically by render-worker-acidwarp.spec.ts.
+// vfpga-runner host module — preset hot-swap. The deterministic render-smoke
+// (the default smpte-bars VFPGA reaches a non-black, structured OUTPUT) now
+// lives in vfpga-runner-render-smoke.spec.ts (frozen clock + paused rAF, frame-
+// stable — strictly stronger than the old wall-clock sample-once, which was
+// deleted here in the GPU-attest rebuild Phase 3). This file keeps the UNIQUE
+// non-render path: the load-preset menu lists smpte-bars and re-applying it
+// hot-swaps without crash/blank, with a renderer-tolerant OUTPUT floor.
 
 import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
@@ -35,51 +34,6 @@ async function outputStats(page: Page): Promise<{ nonZeroFrac: number; variance:
 }
 
 test.describe('vfpga-runner host module', () => {
-  test('spawns with smpte-bars loaded; vout1 → OUTPUT is non-black with structure', async ({ page }) => {
-    // Pure-GL bars compile + render fast even on SwiftShader, but give headroom
-    // for boot + spawnPatch + first-frame settle on the preview build.
-    test.setTimeout(45_000);
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    await spawnPatch(
-      page,
-      [
-        { id: 'vf', type: 'vfpgaRunner', position: { x: 80, y: 80 }, domain: 'video' },
-        { id: 'out', type: 'videoOut', position: { x: 600, y: 80 }, domain: 'video' },
-      ],
-      [
-        { id: 'e1', from: { nodeId: 'vf', portId: 'vout1' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
-      ],
-    );
-
-    await expect(page.locator('.svelte-flow__node-vfpgaRunner'), 'vfpga-runner node present').toBeVisible();
-    await expect(page.locator('[data-testid="vfpga-runner-card"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid="video-out-card"]')).toHaveCount(1);
-
-    // The default VFPGA (smpte-bars) is shown as loaded.
-    await expect(page.locator('[data-testid="vfpga-loaded"]')).toHaveText('SMPTE bars');
-
-    // Poll until the OUTPUT shows the bars (first-frame latency varies).
-    let stats = await outputStats(page);
-    for (let i = 0; i < 40 && (!stats || stats.nonZeroFrac <= 0.05); i++) {
-      await page.waitForTimeout(150);
-      stats = await outputStats(page);
-    }
-
-    expect(stats, 'OUTPUT canvas readable').not.toBeNull();
-    // SMPTE bars fill the frame with bright colour bars → a high non-black
-    // fraction (renderer-tolerant floor) + spatial variance (the bar edges).
-    expect(stats!.nonZeroFrac, `bars reach OUTPUT (nonZeroFrac=${stats!.nonZeroFrac})`).toBeGreaterThan(0.3);
-    expect(stats!.variance, `bars have spatial structure (var=${stats!.variance})`).toBeGreaterThan(50);
-
-    expect(errors, 'no console / page errors').toEqual([]);
-  });
-
   test('the load-preset menu lists smpte-bars and re-applies it (hot-swap stays valid)', async ({ page }) => {
     test.setTimeout(45_000);
     await page.goto('/');
