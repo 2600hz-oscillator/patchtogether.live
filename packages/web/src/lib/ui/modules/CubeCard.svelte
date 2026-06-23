@@ -879,6 +879,17 @@
   let lastFrameTs = 0;
   let lastSnapRef: Float32Array | null = null;
 
+  // ---- DRS card-step seam (deterministic render-smoke; e2e only) ----
+  // CUBE's viz is param + audio-snapshot driven (NOT time-animated — rotation is
+  // the view_rot_* params, not a clock), so a deterministic render just needs a
+  // forced SYNCHRONOUS frame that bypasses the 30 FPS throttle + pauses the rAF
+  // self-schedule so the test owns the frame count. __cubeStep() drives one
+  // tick() (full render) and returns the mode-agnostic counter. No prod effect
+  // (the flag is never set). Mirrors WavesculptCard's __wavesculptStep.
+  let cubeStepMode = false;
+  let cubeStepCount = 0;
+  let cubeTickRef: ((ts: number) => void) | null = null;
+
   $effect(() => {
     if (!glReady && !glFailed) initGl();
     if (id) installCubeFrameDrawer(id, videoFrame);
@@ -891,15 +902,19 @@
     slicePainted = false;
     screenOffPainted = false;
     lastSnapRef = null;
+    cubeTickRef = tick;
     function tick(ts: number) {
-      raf = requestAnimationFrame(tick);
+      cubeStepCount++; // mode-agnostic frame counter for the DRS step seam
+      // In step-mode the test drives frames synchronously — don't self-schedule
+      // (the test owns the count) and don't throttle (render every driven frame).
+      if (!cubeStepMode) raf = requestAnimationFrame(tick);
       if (!vizActive) {
         // Visuals are entirely OFF — paint the placeholder ONCE, do no compute.
         paintScreenOff();
         return;
       }
-      // FPS throttle: bail until ~1/30 s has elapsed.
-      if (ts - lastFrameTs < VIZ_FRAME_MS) return;
+      // FPS throttle: bail until ~1/30 s has elapsed (skipped when step-driving).
+      if (!cubeStepMode && ts - lastFrameTs < VIZ_FRAME_MS) return;
       lastFrameTs = ts;
       if (glReady) renderGl();
       const e = engineCtx.get();
@@ -934,6 +949,20 @@
   }
   onMount(() => {
     attachEdgesObserver();
+    // DRS card-step seam (e2e only): drive ONE synchronous viz frame (full
+    // render, throttle bypassed) + halt the rAF self-schedule so the test owns
+    // the frame count. Returns the mode-agnostic counter for an exact delta.
+    const g = globalThis as unknown as {
+      __cubeStep?: (t?: number) => number;
+      __cubeStepCount?: () => number;
+    };
+    g.__cubeStep = (t?: number) => {
+      cubeStepMode = true;
+      if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
+      cubeTickRef?.(typeof t === 'number' ? t : 0);
+      return cubeStepCount;
+    };
+    g.__cubeStepCount = () => cubeStepCount;
   });
   onDestroy(() => {
     if (raf !== null) cancelAnimationFrame(raf);
