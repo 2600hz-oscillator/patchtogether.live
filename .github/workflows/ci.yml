@@ -1438,6 +1438,35 @@ jobs:
             --retries=1 \
             --reporter=list
 
+      # EXPANDED FLOOR (2026-06-23): the bounded-step deterministic render-smoke
+      # (DRS) specs render only ~6 frames + read pixels once, so they're cheap +
+      # renderer-tolerant on SwiftShader (empirically 2-8s each on a CI runner —
+      # confirmed by the full-heavy-suite timing experiment + a 3× local vet).
+      # Running them HERE gives an UN-FORGEABLE on-CI floor for these modules
+      # (the real-GPU `webgl:attest` covers their DEPTH but is hand-forgeable),
+      # without re-attesting (no spec edits — selected by file). PEAKSTATE and
+      # OUTLINES render-smoke are EXCLUDED: peakstate fails on SwiftShader (a
+      # genuine real-GPU dependency → attest-only) and outlines is ~48s (too
+      # close to the budget for a floor). cwd is e2e/ (see the Path note on
+      # merge-reports), so the bare spec filenames resolve under e2e/tests/.
+      - name: Run cheap render-smoke floor (SwiftShader)
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            acidwarp-render-smoke.spec.ts \
+            backdraft-render-smoke.spec.ts \
+            destructor-render-smoke.spec.ts \
+            inwards-render-smoke.spec.ts \
+            lines-render-smoke.spec.ts \
+            mandelbulb-render-smoke.spec.ts \
+            mandleblot-render-smoke.spec.ts \
+            nibbles-render-smoke.spec.ts \
+            spirographs-render-smoke.spec.ts \
+            textmarquee-render-smoke.spec.ts \
+            vfpga-runner-render-smoke.spec.ts \
+            --workers=2 \
+            --retries=1 \
+            --reporter=list
+
       - name: Upload Playwright test-results on failure (webgl-smoke)
         if: failure()
         uses: actions/upload-artifact@v4
