@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "10465d5a939f3e34e8670ffadf203cd6fa7ccd8f989ebde8e2b7e57c905148c3",
-  "attestedAt": "2026-06-23T15:36:46.052Z",
+  "webglContentHash": "8ab53b9abad19450757679cba0bead8a45a6f31be5627b581416894207847a5b",
+  "attestedAt": "2026-06-23T18:41:26.843Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "f9e01b6d6b09a8f2e13e2becc9ffcc5c0b2d37ca",
+  "gitHeadAtAttest": "129149c1089eca6ece2a11035a819ad6fd36340f",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "host": "2600hzs-MBP.home.local",
@@ -18,9 +18,9 @@
       "skipped": 2,
       "flakyDetails": [
         {
-          "test": "flipping XY mode changes the video output (PR-69 user-reported bug fix)",
-          "file": "scope-video-out.spec.ts",
-          "firstError": "Error: flipping XY mode must change the output (got 4 differing rows) |  | expect(received).toBeGreaterThan(expected) | "
+          "test": "per-target menu items are correct + Escape closes",
+          "file": "toybox-node-menu.spec.ts",
+          "firstError": "Error: expect(locator).toBeVisible() failed |  | Locator: locator('[data-testid=\"toybox-node-menu\"]') | Expected: visible"
         }
       ]
     },
@@ -41,5 +41,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 232
+  "durationSec": 254
 }
