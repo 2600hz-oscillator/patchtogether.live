@@ -77,10 +77,17 @@ AND the measured spec-file counts match the derived expected sets.
 ## Do NOT hand-edit these files
 
 They are machine-written. Hand-editing defeats even the accidental-staleness
-property. Growth is fine (each file is ~700 bytes JSON, not LFS); there is **no
-auto-prune on the push critical path** (it can race a merge and delete the file
-main needs). The only file that MUST exist for main CI to stay green is the one
+property. The only file that MUST exist for main CI to stay green is the one
 matching main's current `WEBGL_PATHS` hash.
+
+**Pruning (2026-06-23):** `task webgl:attest` now prunes superseded `<hash>.json`
+files when it writes the new one, so the working tree holds **only the live
+hash** (git retains the full history). This kills the old unbounded growth + the
+manual "git rm the old one" step. The prune runs **only in the LOCAL writer**
+(committed atomically with the new hash, in the same PR) — there is still **no
+auto-prune on the CI push critical path** (that could race a merge and delete the
+file main needs). Across two concurrently-merging WebGL PRs the dir can
+transiently hold 2 hashes; the next attest re-prunes to 1.
 
 ## Migration / retirement
 
