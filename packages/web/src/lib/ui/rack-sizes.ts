@@ -189,6 +189,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   qbert: { size: '2u', hp: 2 }, // 326×340px
   quadralogical: { size: '3u', hp: 4 }, // 540×720px — 2-col (joystick left, preview+edges right)
   recorderbox: { size: '2u', hp: 2 }, // 296×248px
+  spectrograph: { size: '2u', hp: 2 }, // 320×220px — sonogram preview + gain (≈ cellshade/recorderbox)
   scoreboard: { size: '1u', hp: 2 }, // 240×260px  [LOCKED]
   shapedramps: { size: '4u', hp: 2 }, // 641×240px
   shapegen: { size: '2u', hp: 2 }, // 304×300px

@@ -301,6 +301,32 @@ export const VRT_SCENES: Record<string, VrtScene> = {
       );
     },
   },
+  // SPECTROGRAPH (scrolling sonogram video generator): the card preview is
+  // a LIVE scrolling buffer driven by an AnalyserNode — never bit-stable
+  // across runs (column count + buffered FFT both depend on wall-clock
+  // scheduling). We set __spectrographVrtFreeze BEFORE driving rAFs so the
+  // module fills its WHOLE column buffer ONCE from a FIXED synthetic
+  // spectrum (three loud peaks over a quiet floor) and HOLDS it — the
+  // preview canvas then paints identical pixels every run. No audio source
+  // is needed (the freeze overrides the FFT readout entirely), so
+  // freezeAudio is false. Parallels WAVESCULPT's __wavesculptVrtFreeze +
+  // PEAKSTATE's __peakstateVrtSeed.
+  spectrograph: {
+    nodes: [{ id: 'vrt-1', type: 'spectrograph', position: { x: 120, y: 60 }, domain: 'audio' }],
+    edges: [],
+    freezeAudio: false,
+    settleMs: 400,
+    afterSpawn: async (page) => {
+      await page.evaluate(() => {
+        (globalThis as unknown as { __spectrographVrtFreeze?: boolean }).__spectrographVrtFreeze = true;
+      });
+      // A few rAFs so the one-shot frozen fill lands + the preview catches it.
+      for (let i = 0; i < 4; i++) {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      }
+    },
+  },
+
   // CUBE: NO scene. The card's headline visual is now a LIVE, rotating 3D
   // WebGL2 render (issue #2) — the camera + rAF keep animating regardless of an
   // AudioContext freeze, so the canvas can't be pinned to a deterministic single
