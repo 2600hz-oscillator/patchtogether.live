@@ -1447,6 +1447,118 @@ jobs:
           retention-days: 14
 
   # -----------------------------------------------------------------------
+  # webgl-suite-timing — TEMPORARY EXPERIMENT (delete after measuring). Runs the
+  # FULL WebGL-heavy spec set (E2E_WEBGL_HEAVY=only) on ubuntu-latest SwiftShader
+  # to measure wall-time for the "retire webgl:attest → fold heavy specs into a
+  # normal CI job" question. NON-BLOCKING (not in the umbrella `needs`). Lives
+  # only on the experiment/webgl-suite-timing branch; never merges to main.
+  # -----------------------------------------------------------------------
+  webgl-suite-timing:
+    name: webgl-suite-timing (EXPERIMENT — full heavy set on SwiftShader)
+    needs: [dsp-build, build-web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+      E2E_USE_PREVIEW: '1'
+      # Force the exact software renderer CI uses, and run ONLY the heavy globs.
+      E2E_SWIFTSHADER: '1'
+      E2E_WEBGL_HEAVY: only
+
+    steps:
+      - name: Checkout (no LFS — serves the prebuilt bundle)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+
+      - name: Download web preview bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+
+      # The whole point: time the FULL heavy set on SwiftShader. `|| true` so a
+      # failing/skipping spec can't abort before we print the wall-time. 4 workers
+      # matches the e2e shard config (ubuntu-latest = 4 vCPU).
+      - name: Run FULL WebGL-heavy suite (SwiftShader) — TIMED @ 4 workers
+        run: |
+          START=$(date +%s)
+          flox activate -- npx --workspace e2e playwright test \
+            --workers=4 \
+            --retries=0 \
+            --reporter=list || true
+          END=$(date +%s)
+          echo "======================================================"
+          echo "WEBGL-HEAVY SUITE @ 4 workers, SwiftShader, ubuntu-latest"
+          echo "WALL-TIME: $((END - START))s"
+          echo "======================================================"
+
+      - name: Re-run TIMED @ 2 workers (contention check)
+        run: |
+          START=$(date +%s)
+          flox activate -- npx --workspace e2e playwright test \
+            --workers=2 \
+            --retries=0 \
+            --reporter=line || true
+          END=$(date +%s)
+          echo "======================================================"
+          echo "WEBGL-HEAVY SUITE @ 2 workers, SwiftShader, ubuntu-latest"
+          echo "WALL-TIME: $((END - START))s"
+          echo "======================================================"
+
+      - name: Upload Playwright test-results on failure (timing experiment)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-webgl-suite-timing
+          path: e2e/test-results
+          retention-days: 7
+
+  # -----------------------------------------------------------------------
   # webgl-attest — the REAL-GPU attestation VERIFY gate (.myrobots/plans/webgl-
   # attestation-semaphore.md §7). Recomputes the deterministic WebGL content-
   # hash (scripts/webgl-attest-hash.sh) and checks ci-webgl-attest/<hash>.json
