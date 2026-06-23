@@ -26,6 +26,7 @@ import {
   DEFAULT_GAMEPAD_BINDINGS,
   isPhysicalControl,
   bindingForOutput,
+  boundAxisRaw,
   readControlValue,
   setBinding,
   describeControl,
@@ -814,6 +815,58 @@ describe('right-stick calibration (symmetric to left)', () => {
     expect(applyCalibration(-0.6, 0, cal).x).toBeCloseTo(-1, 4);
     expect(applyCalibration(0, 0.6, cal).y).toBeCloseTo(1, 4);
     expect(applyCalibration(0, -0.6, cal).y).toBeCloseTo(-1, 4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BOUND-AXIS calibration (the right-stick-never-completes bug). The card's
+// calibration sweep folds the RAW value of the axis BOUND to each stick output
+// (boundAxisRaw), not a hardcoded pad.axes[2]/[3]. Before this fix, a stick whose
+// axes weren't the STD default (a non-standard controller, or one remapped via
+// the UI) drove its rx/ry output fine but the sweep folded a dead hardcoded axis
+// → the range never spanned → "complete calibration" stayed disabled forever.
+// ---------------------------------------------------------------------------
+describe('boundAxisRaw — calibration sweeps the BOUND axis (right-stick fix)', () => {
+  const axes = [0.11, 0.22, 0.33, 0.44, 0.55, 0.66]; // 6-axis pad
+
+  it('reads the DEFAULT axis when not remapped (rx → axis 2, ry → axis 3)', () => {
+    expect(boundAxisRaw('rx', undefined, axes)).toBeCloseTo(0.33);
+    expect(boundAxisRaw('ry', undefined, axes)).toBeCloseTo(0.44);
+    expect(boundAxisRaw('lx', undefined, axes)).toBeCloseTo(0.11);
+    expect(boundAxisRaw('ly', undefined, axes)).toBeCloseTo(0.22);
+  });
+
+  it('follows a REMAP to a non-default axis (the non-standard-stick case)', () => {
+    const bindings = { rx: { kind: 'axis', index: 4 }, ry: { kind: 'axis', index: 5 } } as const;
+    expect(boundAxisRaw('rx', bindings, axes)).toBeCloseTo(0.55); // axis 4, not the hardcoded 2
+    expect(boundAxisRaw('ry', bindings, axes)).toBeCloseTo(0.66); // axis 5, not the hardcoded 3
+  });
+
+  it('returns 0 for a non-axis (button) binding — not calibratable', () => {
+    const bindings = { rx: { kind: 'button', index: 1 } } as const;
+    expect(boundAxisRaw('rx', bindings, axes)).toBe(0);
+  });
+
+  it('REGRESSION: a remapped right stick now sweeps a USABLE range (old hardcoded read did not)', () => {
+    // Right stick lives on axes 4/5 (e.g. a flight stick), remapped via the UI.
+    const bindings = { rx: { kind: 'axis', index: 4 }, ry: { kind: 'axis', index: 5 } } as const;
+    // Simulate the user sweeping the physical stick: axes 4/5 move full range,
+    // while the OLD hardcoded axes 2/3 stay parked near centre.
+    const frames: number[][] = [
+      [0, 0, 0.02, -0.01, -0.9, 0.85],
+      [0, 0, 0.01, 0.0, 0.92, -0.88],
+      [0, 0, -0.02, 0.01, -0.05, 0.05],
+    ];
+    const bound = newCalibrationSweep();
+    const hardcoded = newCalibrationSweep();
+    for (const ax of frames) {
+      recordCalibrationSample(bound, boundAxisRaw('rx', bindings, ax), boundAxisRaw('ry', bindings, ax));
+      recordCalibrationSample(hardcoded, ax[2] ?? 0, ax[3] ?? 0); // the old behaviour
+    }
+    // The fix: the bound sweep spanned the real stick range → usable → "complete"
+    // enables. The old hardcoded read folded the parked axes 2/3 → NOT usable.
+    expect(sweepIsUsable(bound)).toBe(true);
+    expect(sweepIsUsable(hardcoded)).toBe(false);
   });
 });
 
