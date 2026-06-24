@@ -658,6 +658,16 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // functional coverage. Promote into MODULES once the darwin + linux PNGs are
   // captured.
   moog902: 'VRT baseline pending — deterministic beige Moog faceplate (2 knobs + 2-position LIN/EXP switch, no canvas/animation); capture via `task vrt:update` on each platform. DSP unit + ART (SHA-pinned) + per-module-per-port e2e provide coverage. Promote into MODULES once darwin + linux baselines land.',
+  // PAINTER (new video module) — VRT baseline pending (the new-module pattern).
+  // The card is an interactive MS-Paint surface; its drawing canvas content is
+  // user/op-driven (not deterministic at first paint), and CI runs linux-only so
+  // a darwin baseline can\'t be captured from this authoring machine. Functional
+  // coverage: painter.test.ts (palette/coerceOps/applyVectorOp/floodFill PCU) +
+  // per-module-per-port (handle presence + OUT emits) + painter.spec.ts (the real
+  // draw → canvas → synced-op chain + FILL + CLEAR). Promote into MODULES once a
+  // deterministic darwin + linux baseline is captured via `vrt-update.yml`
+  // (mask the canvas, like the other canvas cards above).
+  painter: 'VRT baseline pending — interactive MS-Paint canvas (op-driven, non-deterministic first paint); covered by painter.test.ts (PCU) + per-module-per-port + painter.spec.ts (draw/fill/clear). Promote into MODULES with a canvas mask once darwin + linux baselines land via vrt-update.yml.',
   // MOOG 921A / 921B / 904B (batch 1) — PROMOTED out of EXEMPT_FROM_VRT: darwin
   // baselines captured in this PR (the shared MoogPanel label fix is what makes
   // the engraved-black control captions legible on the beige faceplate, so the

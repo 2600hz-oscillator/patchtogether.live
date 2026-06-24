@@ -40,7 +40,7 @@ const EXPECTED_NODE_TYPES = [
   'luma', 'lumakey', 'macrooscillator', 'macseq', 'mandleblot', 'mappy', 'marbles', 'matrixMix', 'meowbox',
   'mandelbulb', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'mixer', 'mixmstrs', 'modtris',
   'monoglitch', 'moog902', 'moog904a', 'moog911', 'moog921Vco', 'moogCp3', 'negativity', 'nibbles',
-  'noise', 'numpadPlus', 'onetonine', 'peaks', 'peakstate', 'peertube', 'picturebox', 'polyhelm', 'polyseqz', 'pong',
+  'noise', 'numpadPlus', 'onetonine', 'painter', 'peaks', 'peakstate', 'peertube', 'picturebox', 'polyhelm', 'polyseqz', 'pong',
   'polarizer', 'qbert', 'qbrt', 'rasterize', 'reshaper', 'resofilter', 'reverb', 'ringback', 'rings',
   'riotgirls', 'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
   'scaler', 'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'spectrograph',
