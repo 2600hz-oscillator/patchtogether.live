@@ -313,6 +313,56 @@ export interface ParamDef {
 
 export type ParamSchema = Readonly<ParamDef[]>;
 
+// ---------------- Living docs (contract-pinned documentation) ----------------
+
+/**
+ * A family of DYNAMIC, DOM-only controls that are NOT individual ParamDefs —
+ * the per-step grids and transport clusters a card renders from a count (e.g.
+ * the sequencer's step gates `seq-gate-{n}`, quicksave slots). Declared on the
+ * def so the docs layer + the deterministic contract signature can SEE them
+ * (they otherwise exist only in card markup). A unit guard greps the card
+ * source for `testidPrefix`, so a declared family can't drift off the card and
+ * a card family with no declaration fails. PRESENCE-ONLY: the grep proves the
+ * prefix exists, not that the member COUNT is right (a later DOM-scan oracle
+ * verifies size). See $lib/docs/contract-signature.
+ */
+export interface ControlFamily {
+  /** Stable family key, e.g. 'seq-gate'. The card emits each member as
+   *  `${testidPrefix}-${nodeId}-${i}` (or `${testidPrefix}-${i}`). */
+  id: string;
+  /** Human family label for docs, e.g. 'Step gates'. */
+  label: string;
+  /** What kind of family this is (for doc rendering + the signature). */
+  kind: 'step-grid' | 'transport' | 'quicksave' | 'cell' | 'other';
+  /** The `data-testid` prefix the card emits for each member of the family. */
+  testidPrefix: string;
+  /** Optional param id whose value drives the member COUNT (e.g. 'length'). */
+  countParam?: string;
+}
+
+/**
+ * Co-located AUTHORED documentation for a module — the prose tier of the
+ * living-docs system. Lives ON the def so a port/param change and its doc
+ * edit land in the SAME PR diff. The GENERATED I/O reference (cable types,
+ * ranges, cv/edge sentences) is NOT here — it is derived from PortDef/ParamDef
+ * by io-explain. Every key here is drift-checked: a `ports`/`controls` key
+ * naming a non-existent port/control fails the docs gate (orphan-rot guard),
+ * and any port/param/cable identifier MENTIONED in the prose must resolve
+ * against the live registry (no-unknown-identifier fact-check). AI drafts this
+ * tier; deterministic tooling fact-checks it.
+ */
+export interface ModuleDocs {
+  /** The behavioral overview — what the module does + its mental model. */
+  explanation?: string;
+  /** Per-INPUT/OUTPUT-port behavioral prose, keyed by PortDef.id. */
+  ports?: Record<string, string>;
+  /** Per-control behavioral prose. Keys are param ids (the `control-<id>`
+   *  convention without the prefix — just the paramId), control-family
+   *  templates (`<familyId>-{n}`, interpolated per member), or stable control
+   *  keys for one-off card buttons. */
+  controls?: Record<string, string>;
+}
+
 // ---------------- Patch graph (D8) ----------------
 export interface ModuleNode {
   id: string;

@@ -9,7 +9,14 @@
 // The Canvas's palette UI listing combines BOTH registries — audio first,
 // then video — so users can spawn either kind from one search box.
 
-import type { ModuleType, PortDef, ParamDef, Domain } from '$lib/graph/types';
+import type {
+  ModuleType,
+  PortDef,
+  ParamDef,
+  Domain,
+  ControlFamily,
+  ModuleDocs,
+} from '$lib/graph/types';
 import type { VideoModuleFactory } from './engine';
 import type { PaletteCategory } from '$lib/audio/module-registry';
 
@@ -31,6 +38,10 @@ export interface VideoModuleDef {
    *  (`up`/`down`/…) to their p1 group equivalents (`p1_up`/…) when the single
    *  shared CV input set became four per-slot groups (#353, schemaVersion 1→2). */
   migrateEdgePortId?: (portId: string, fromVersion: number) => string | null;
+  /** Living-docs: co-located AUTHORED prose. See ModuleDocs (audio side). */
+  docs?: ModuleDocs;
+  /** Living-docs: dynamic DOM-only control families. See ControlFamily. */
+  controlFamilies?: readonly ControlFamily[];
   factory: VideoModuleFactory;
   /** Optional hard cap on simultaneous instances (mirrors the audio side).
    *  Phase 0 modules don't enforce caps; Phase 1's INWARDS will (one
