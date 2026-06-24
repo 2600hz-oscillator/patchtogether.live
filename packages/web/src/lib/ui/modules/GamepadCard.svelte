@@ -42,8 +42,8 @@
     bindingForOutput,
     describeControl,
     toggleInvertOnData,
-    setRightStickZeroOnData,
-    resetRightStickZeroOnData,
+    CALIBRATION_DEADZONE,
+    type StickCalibration,
     type StickInvert,
     type InvertibleAxis,
     type RawGamepadReading,
@@ -162,24 +162,41 @@
     });
   }
 
-  // ---------------- right-stick ZERO (per-axis center-capture) ----------------
-  // RIGHT STICK ONLY. A secondary thumbstick that rests OFF-zero (e.g. a
-  // Gladiator) needs a way to declare "right here is centre" without sweeping its
-  // whole range. "Zero X" / "Zero Y" capture the CURRENT raw right-stick axis
-  // (the latest polled rawRightX/Y, pre-offset) as that axis's zero offset;
-  // "Reset" clears both back to 0. Each is a SINGLE in-place node.data write
-  // (rides the Y.Doc → collab + undo); the factory subtracts the offset before the
-  // deadzone each frame so the stick emits 0 at the captured position.
-  function zeroRightAxis(axis: 'x' | 'y') {
-    const raw = axis === 'x' ? snapshot.rawRightX : snapshot.rawRightY;
+  // ---------------- per-stick SET CENTER (true-resting-centre re-zero) ----------------
+  // SYMMETRIC (both sticks). A one-click re-zero: capture the stick's CURRENT
+  // resting raw axes as its calibration's true rest centre (centerX/centerY), so
+  // a stick that physically RESTS off-centre (e.g. a Gladiator secondary
+  // thumbstick) reads 0 at rest. This is the same true-resting-centre the
+  // calibration sweep captures, exposed as a convenient standalone affordance.
+  // A SINGLE in-place node.data write (rides the Y.Doc → collab + undo): when a
+  // calibration already exists we mutate its centerX/centerY IN PLACE (never
+  // reassign an integrated Y type); when none exists we create a fresh full-range
+  // calibration carrying the captured centre, so the re-zero works standalone.
+  function setCenter(stick: 'left' | 'right') {
+    const rawX = stick === 'left' ? snapshot.rawLeftX : snapshot.rawRightX;
+    const rawY = stick === 'left' ? snapshot.rawLeftY : snapshot.rawRightY;
+    const cx = Number.isFinite(rawX) ? rawX : 0;
+    const cy = Number.isFinite(rawY) ? rawY : 0;
     mutateNode(id, (live) => {
       if (!live.data) live.data = {};
-      setRightStickZeroOnData(live.data as GamepadData, axis, raw);
-    });
-  }
-  function resetRightZero() {
-    mutateNode(id, (live) => {
-      if (live.data) resetRightStickZeroOnData(live.data as GamepadData);
+      const d = live.data as GamepadData;
+      const existing = stick === 'left' ? d.leftStickCalibration : d.rightStickCalibration;
+      if (existing) {
+        // Mutate the existing (possibly integrated) leaf IN PLACE — set only the
+        // numeric centre keys, never re-assign the whole object.
+        existing.centerX = cx;
+        existing.centerY = cy;
+      } else {
+        // No calibration yet — create a fresh full-range one carrying the centre
+        // so the re-zero applies even without a sweep.
+        const cal: StickCalibration = {
+          minX: -1, maxX: 1, minY: -1, maxY: 1,
+          deadzone: CALIBRATION_DEADZONE,
+          centerX: cx, centerY: cy,
+        };
+        if (stick === 'left') d.leftStickCalibration = cal;
+        else d.rightStickCalibration = cal;
+      }
     });
   }
 
@@ -244,20 +261,33 @@
     if (e.key === 'Escape' && remap) { e.preventDefault(); cancelRemap(); }
   }
 
+  // The stick's TRUE resting raw position, sampled the instant the user clicks
+  // Calibrate (the stick is at rest then). Threaded into finalizeCalibration so
+  // the committed calibration zeroes the stick at its ACTUAL rest — not the swept
+  // midpoint, which only equals rest for a spring-centred stick.
+  let restCenter = $state<{ x: number; y: number } | null>(null);
   function startCalibration(stick: 'left' | 'right') {
     sweep = newCalibrationSweep();
+    const rawX = stick === 'left' ? snapshot.rawLeftX : snapshot.rawRightX;
+    const rawY = stick === 'left' ? snapshot.rawLeftY : snapshot.rawRightY;
+    // Capture the rest sample only when it's clean/finite; finalizeCalibration
+    // falls back to the swept midpoint per-component when absent (never NaN).
+    restCenter = (Number.isFinite(rawX) && Number.isFinite(rawY))
+      ? { x: rawX, y: rawY }
+      : null;
     calibrating = stick;
   }
   function cancelCalibration() {
     calibrating = null;
     sweep = newCalibrationSweep();
+    restCenter = null;
   }
   /** Lock in the swept range as a ONE-TIME synced write to node.data (the active
    *  stick's calibration field), then leave calibration mode. The factory's poll
    *  picks up the new calibration on its next frame. */
   function completeCalibration() {
     const stick = calibrating;
-    const cal = finalizeCalibration(sweep);
+    const cal = finalizeCalibration(sweep, CALIBRATION_DEADZONE, restCenter ?? undefined);
     if (cal && stick) {
       // SINGLE committed write — never per frame. mutateNode rides the Y.Doc
       // (collab + undo) and mutates node.data IN PLACE (never reassigns an
@@ -271,6 +301,7 @@
     }
     calibrating = null;
     sweep = newCalibrationSweep();
+    restCenter = null;
   }
   /** Clear ONE stick's committed calibration (revert to the fixed-deadzone path). */
   function clearCalibration(stick: 'left' | 'right') {
@@ -492,6 +523,17 @@
               data-testid="gamepad-invert-ly"
             >y</button>
           </div>
+          <!-- SET CENTER: capture the stick's current resting position as its true
+               centre (centerX/centerY) so an off-centre-resting stick reads 0. -->
+          <div class="zero-xy">
+            <button
+              type="button"
+              class="zero-btn"
+              onclick={() => setCenter('left')}
+              title="capture current left-stick position as centre"
+              data-testid="gamepad-left-setcenter"
+            >set center</button>
+          </div>
         </div>
         <div class="stick-block">
           <div class="stick-pad" aria-label="Right stick">
@@ -547,31 +589,16 @@
               data-testid="gamepad-invert-ry"
             >y</button>
           </div>
-          <!-- RIGHT STICK ONLY: per-axis ZERO (centre-capture) for an off-centre-
-               resting thumbstick. Captures the current physical position as zero. -->
+          <!-- SET CENTER: capture the stick's current resting position as its true
+               centre (centerX/centerY) so an off-centre-resting thumbstick reads 0. -->
           <div class="zero-xy">
-            <span class="zero-label" aria-hidden="true">zero</span>
             <button
               type="button"
               class="zero-btn"
-              onclick={() => zeroRightAxis('x')}
-              title="capture current right-stick X position as zero"
-              data-testid="gamepad-rstick-zero-x"
-            >X</button>
-            <button
-              type="button"
-              class="zero-btn"
-              onclick={() => zeroRightAxis('y')}
-              title="capture current right-stick Y position as zero"
-              data-testid="gamepad-rstick-zero-y"
-            >Y</button>
-            <button
-              type="button"
-              class="zero-reset"
-              onclick={resetRightZero}
-              title="reset right-stick zero offsets"
-              data-testid="gamepad-rstick-zero-reset"
-            >reset</button>
+              onclick={() => setCenter('right')}
+              title="capture current right-stick position as centre"
+              data-testid="gamepad-right-setcenter"
+            >set center</button>
           </div>
         </div>
       </div>
@@ -1111,14 +1138,7 @@
     gap: 3px;
     margin-top: 2px;
   }
-  .zero-label {
-    font-size: 0.5rem;
-    font-family: ui-monospace, monospace;
-    color: var(--text-dim);
-    letter-spacing: 0.04em;
-  }
-  .zero-btn,
-  .zero-reset {
+  .zero-btn {
     appearance: none;
     background: rgba(10, 12, 16, 0.7);
     border: 1px solid var(--border);
@@ -1131,8 +1151,7 @@
     cursor: pointer;
     transition: background 60ms ease-out, color 60ms ease-out, border-color 60ms ease-out;
   }
-  .zero-btn:hover,
-  .zero-reset:hover { border-color: var(--accent-dim); color: var(--text); }
+  .zero-btn:hover { border-color: var(--accent-dim); color: var(--text); }
   .remap-btn {
     appearance: none;
     background: rgba(10, 12, 16, 0.7);

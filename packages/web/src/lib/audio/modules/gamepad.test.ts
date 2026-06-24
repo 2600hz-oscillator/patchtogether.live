@@ -7,10 +7,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyDeadzone,
-  applyRightStickZero,
-  isRightStickZero,
-  setRightStickZeroOnData,
-  resetRightStickZeroOnData,
   triggerToCv,
   gamepadDef,
   GAMEPAD_OUTPUTS,
@@ -93,114 +89,6 @@ describe('triggerToCv', () => {
     expect(triggerToCv(0.5)).toBe(0.5);
     expect(triggerToCv(1)).toBe(1);
     expect(triggerToCv(2)).toBe(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// RIGHT-STICK ZERO (per-axis centre-capture) — pure math + in-place mutators.
-//
-// An off-centre-resting right thumbstick (e.g. a Gladiator) rests at a NON-zero
-// raw value, so the fixed deadzone (which assumes rest = raw 0) leaks phantom CV.
-// applyRightStickZero subtracts the captured offset BEFORE the same deadzone +
-// renormalize as applyDeadzone, so the captured position reads 0.
-// ---------------------------------------------------------------------------
-describe('applyRightStickZero', () => {
-  it('a sample AT the captured zero reads 0 (centred)', () => {
-    // Stick rests at raw 0.4; zero it there → 0.
-    expect(applyRightStickZero(0.4, 0.4)).toBe(0);
-    expect(applyRightStickZero(-0.3, -0.3)).toBe(0);
-  });
-
-  it('with a zero offset of 0 it behaves EXACTLY like applyDeadzone', () => {
-    for (const raw of [-1, -0.5, -0.07, 0, 0.07, 0.5, 1]) {
-      expect(applyRightStickZero(raw, 0)).toBeCloseTo(applyDeadzone(raw), 10);
-    }
-  });
-
-  it('values away from the captured zero scale correctly (sign + magnitude)', () => {
-    // Zero at 0.4: a raw of 0.4 + a bit reads a small positive value; well past
-    // reads larger; below the zero reads negative.
-    const off = 0.4;
-    const justOut = applyRightStickZero(off + STICK_DEADZONE + 0.001, off);
-    expect(justOut).toBeGreaterThan(0);
-    expect(justOut).toBeLessThan(0.01);
-    expect(applyRightStickZero(off + 0.5, off)).toBeGreaterThan(0.3);
-    expect(applyRightStickZero(off - 0.5, off)).toBeLessThan(-0.3);
-  });
-
-  it('still applies the deadzone around the NEW (captured) centre', () => {
-    const off = 0.4;
-    // A tiny wobble within the deadzone band of the captured centre → 0.
-    expect(applyRightStickZero(off + STICK_DEADZONE - 0.001, off)).toBe(0);
-    expect(applyRightStickZero(off - STICK_DEADZONE + 0.001, off)).toBe(0);
-  });
-
-  it('clamps the shifted value into [-1, 1] (never exceeds the rails)', () => {
-    // Negative offset shifts a full-right sample past +1 → clamps to +1.
-    expect(applyRightStickZero(1, -0.5)).toBeCloseTo(1, 5);
-    // Positive offset shifts a full-left sample past -1 → clamps to -1.
-    expect(applyRightStickZero(-1, 0.5)).toBeCloseTo(-1, 5);
-  });
-
-  it('handles NaN/Infinity raw + non-finite offset safely', () => {
-    expect(applyRightStickZero(NaN, 0.4)).toBe(0);
-    expect(applyRightStickZero(Infinity, 0.4)).toBe(0);
-    // A non-finite offset is treated as 0 (no zero applied).
-    expect(applyRightStickZero(0.5, NaN)).toBeCloseTo(applyDeadzone(0.5), 10);
-  });
-
-  it('respects a custom deadzone', () => {
-    // Zero at 0.4, custom dz 0.3: 0.4 + 0.2 (shifted 0.2 < dz) → 0.
-    expect(applyRightStickZero(0.6, 0.4, 0.3)).toBe(0);
-    // 0.4 + 0.4 (shifted 0.4 > dz) → positive.
-    expect(applyRightStickZero(0.8, 0.4, 0.3)).toBeGreaterThan(0);
-  });
-});
-
-describe('isRightStickZero', () => {
-  it('accepts a valid {x,y} pair, rejects junk', () => {
-    expect(isRightStickZero({ x: 0, y: 0 })).toBe(true);
-    expect(isRightStickZero({ x: -0.3, y: 0.4 })).toBe(true);
-    expect(isRightStickZero(null)).toBe(false);
-    expect(isRightStickZero({ x: 0 })).toBe(false);
-    expect(isRightStickZero({ x: NaN, y: 0 })).toBe(false);
-    expect(isRightStickZero({ x: 'a', y: 0 })).toBe(false);
-  });
-});
-
-describe('setRightStickZeroOnData / resetRightStickZeroOnData (in-place)', () => {
-  it('captures one axis at a time, creating the leaf once', () => {
-    const data: GamepadData = {};
-    setRightStickZeroOnData(data, 'x', 0.4);
-    expect(data.rightStickZero).toEqual({ x: 0.4, y: 0 });
-    setRightStickZeroOnData(data, 'y', -0.3);
-    expect(data.rightStickZero).toEqual({ x: 0.4, y: -0.3 });
-  });
-
-  it('mutates the existing leaf in place (same object identity) on re-zero', () => {
-    const data: GamepadData = {};
-    setRightStickZeroOnData(data, 'x', 0.4);
-    const leaf = data.rightStickZero;
-    setRightStickZeroOnData(data, 'x', 0.2);
-    expect(data.rightStickZero).toBe(leaf); // never reassigned (Yjs-safe)
-    expect(data.rightStickZero?.x).toBeCloseTo(0.2);
-  });
-
-  it('treats a non-finite captured raw as 0', () => {
-    const data: GamepadData = {};
-    setRightStickZeroOnData(data, 'x', NaN);
-    expect(data.rightStickZero?.x).toBe(0);
-  });
-
-  it('reset clears both offsets in place + is a safe no-op when absent', () => {
-    const data: GamepadData = {};
-    expect(() => resetRightStickZeroOnData(data)).not.toThrow();
-    setRightStickZeroOnData(data, 'x', 0.4);
-    setRightStickZeroOnData(data, 'y', -0.3);
-    const leaf = data.rightStickZero;
-    resetRightStickZeroOnData(data);
-    expect(data.rightStickZero).toBe(leaf); // in place
-    expect(data.rightStickZero).toEqual({ x: 0, y: 0 });
   });
 });
 
@@ -465,6 +353,34 @@ describe('finalizeCalibration', () => {
     expect(finalizeCalibration(s, -1)!.deadzone).toBe(0);
     expect(finalizeCalibration(s, 5)!.deadzone).toBe(0.9);
   });
+
+  it('carries centerX/centerY from a captured rest sample (true resting centre)', () => {
+    // A stick that physically RESTS off-centre at (0.4, -0.2) but sweeps a wide
+    // range. The committed calibration must carry the captured rest position as
+    // its centre — not the swept midpoint.
+    const s = newCalibrationSweep();
+    recordCalibrationSample(s, -0.8, 0.7);
+    recordCalibrationSample(s, 0.85, -0.75);
+    recordCalibrationSample(s, 0.4, -0.2);
+    const cal = finalizeCalibration(s, CALIBRATION_DEADZONE, { x: 0.4, y: -0.2 })!;
+    expect(cal.centerX).toBeCloseTo(0.4);
+    expect(cal.centerY).toBeCloseTo(-0.2);
+  });
+
+  it('omits a non-finite / missing centre component (falls back to midpoint, never NaN)', () => {
+    const s = newCalibrationSweep();
+    recordCalibrationSample(s, -0.8, 0.7);
+    recordCalibrationSample(s, 0.85, -0.75);
+    recordCalibrationSample(s, 0, 0);
+    // No centre at all → both centre fields absent.
+    const noCentre = finalizeCalibration(s)!;
+    expect(noCentre.centerX).toBeUndefined();
+    expect(noCentre.centerY).toBeUndefined();
+    // Only X finite → only centerX carried, centerY dropped (not NaN).
+    const partial = finalizeCalibration(s, CALIBRATION_DEADZONE, { x: 0.3, y: NaN })!;
+    expect(partial.centerX).toBeCloseTo(0.3);
+    expect(partial.centerY).toBeUndefined();
+  });
 });
 
 describe('normalizeAxis (per-axis calibrated mapping)', () => {
@@ -497,6 +413,30 @@ describe('normalizeAxis (per-axis calibrated mapping)', () => {
     expect(justOut).toBeGreaterThan(0);
     expect(justOut).toBeLessThan(0.02);
     expect(normalizeAxis(1, -1, 1, 0.1)).toBeCloseTo(1, 5);
+  });
+
+  it('an explicit off-midpoint centre zeroes the stick at its TRUE rest', () => {
+    // Range [-1, 1] (midpoint 0), but the stick RESTS at raw 0.4. With an
+    // explicit centre of 0.4, raw==0.4 reads 0 (zeroed at true rest) — the bug
+    // the symmetric fix addresses ("centre is not centred").
+    expect(normalizeAxis(0.4, -1, 1, 0, 0.4)).toBeCloseTo(0, 6);
+    // Extremes still reach ±1 with each side normalized about the true centre.
+    expect(normalizeAxis(1, -1, 1, 0, 0.4)).toBeCloseTo(1, 6);
+    expect(normalizeAxis(-1, -1, 1, 0, 0.4)).toBeCloseTo(-1, 6);
+  });
+
+  it('OMITTING the centre reproduces the old midpoint behaviour (back-compat)', () => {
+    // Same range; with no explicit centre the zero point is the swept midpoint 0,
+    // so raw 0.4 reads positive (the pre-fix behaviour) and the midpoint reads 0.
+    expect(normalizeAxis(0, -1, 1, 0)).toBeCloseTo(0, 6);
+    expect(normalizeAxis(0.4, -1, 1, 0)).toBeGreaterThan(0.3);
+    // An asymmetric range: midpoint = (min+max)/2 = 0.15 → reads 0 at 0.15.
+    expect(normalizeAxis(0.15, -0.6, 0.9, 0)).toBeCloseTo(0, 5);
+  });
+
+  it('a non-finite explicit centre falls back to the midpoint (never NaN)', () => {
+    expect(normalizeAxis(0, -1, 1, 0, NaN)).toBeCloseTo(0, 6);
+    expect(Number.isNaN(normalizeAxis(0.4, -1, 1, 0, Infinity))).toBe(false);
   });
 });
 
