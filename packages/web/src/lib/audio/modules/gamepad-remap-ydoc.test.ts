@@ -159,6 +159,99 @@ describe('GAMEPAD remap — real Y.Doc mutation', () => {
     expect(readInvert()).toEqual({ ly: true });
     expect(readBindings()?.rx).toEqual({ kind: 'axis', index: 0 });
   });
+
+  // -------- per-stick SET CENTER + true-resting-centre round-trip (real Y.Doc) --------
+  // The card captures a stick's resting centre into its calibration's
+  // centerX/centerY through `mutateNode(...)` against the LIVE SyncedStore proxy.
+  // Re-writing those keys (a 2nd Set Center) must mutate the already-integrated
+  // calibration leaf IN PLACE — never re-assign it ("reassigning object that
+  // already occurs in the tree"). A pure plain-object test can't catch this.
+  // [[yjs-save-load-real-ydoc]]
+  function setCenterLive(stick: 'left' | 'right', cx: number, cy: number): void {
+    mutateNode(TID, (live) => {
+      if (!live.data) live.data = {};
+      const d = live.data as GamepadData;
+      const existing = stick === 'left' ? d.leftStickCalibration : d.rightStickCalibration;
+      if (existing) {
+        existing.centerX = cx;
+        existing.centerY = cy;
+      } else {
+        const cal: StickCalibration = {
+          minX: -1, maxX: 1, minY: -1, maxY: 1, deadzone: 0.1, centerX: cx, centerY: cy,
+        };
+        if (stick === 'left') d.leftStickCalibration = cal;
+        else d.rightStickCalibration = cal;
+      }
+    });
+  }
+
+  for (const stick of ['left', 'right'] as const) {
+    const field = stick === 'left' ? 'leftStickCalibration' : 'rightStickCalibration';
+
+    it(`Set Center on the ${stick} stick persists centerX/centerY on a fresh node`, () => {
+      makeGamepad();
+      expect(() => setCenterLive(stick, 0.4, -0.2)).not.toThrow();
+      const cal = readData()[field]!;
+      expect(cal.centerX).toBeCloseTo(0.4);
+      expect(cal.centerY).toBeCloseTo(-0.2);
+    });
+
+    it(`re-running Set Center on the ${stick} stick re-writes centre IN PLACE (integrated-type trap)`, () => {
+      makeGamepad();
+      setCenterLive(stick, 0.4, -0.2); // creates the integrated calibration leaf
+      const leaf = readData()[field];
+      expect(() => setCenterLive(stick, -0.1, 0.3)).not.toThrow();
+      // Same object identity — never re-assigned.
+      expect(readData()[field]).toBe(leaf);
+      expect(readData()[field]!.centerX).toBeCloseTo(-0.1);
+      expect(readData()[field]!.centerY).toBeCloseTo(0.3);
+    });
+
+    it(`Set Center over an EXISTING ${stick} calibration updates only the centre in place`, () => {
+      makeGamepad();
+      // Seed a full calibration first (as a completed sweep would), then re-centre.
+      mutateNode(TID, (live) => {
+        if (!live.data) live.data = {};
+        (live.data as GamepadData)[field] = {
+          minX: -0.8, maxX: 0.9, minY: -0.7, maxY: 0.85, deadzone: 0.12,
+        };
+      });
+      const leaf = readData()[field];
+      expect(() => setCenterLive(stick, 0.3, -0.15)).not.toThrow();
+      expect(readData()[field]).toBe(leaf); // in place
+      const cal = readData()[field]!;
+      expect(cal.minX).toBeCloseTo(-0.8); // range untouched
+      expect(cal.maxY).toBeCloseTo(0.85);
+      expect(cal.deadzone).toBeCloseTo(0.12);
+      expect(cal.centerX).toBeCloseTo(0.3);
+      expect(cal.centerY).toBeCloseTo(-0.15);
+    });
+  }
+
+  it('centerX/centerY round-trip through export → re-apply on the live doc for BOTH sticks', () => {
+    makeGamepad();
+    setCenterLive('left', 0.2, -0.1);
+    setCenterLive('right', -0.3, 0.25);
+    const exported = exportMapping(readData());
+    expect(exported.leftStickCalibration?.centerX).toBeCloseTo(0.2);
+    expect(exported.rightStickCalibration?.centerY).toBeCloseTo(0.25);
+    // Re-apply the export back onto the live doc — must not throw + must preserve.
+    expect(() => applyMappingLive(exported)).not.toThrow();
+    expect(readData().leftStickCalibration?.centerX).toBeCloseTo(0.2);
+    expect(readData().leftStickCalibration?.centerY).toBeCloseTo(-0.1);
+    expect(readData().rightStickCalibration?.centerX).toBeCloseTo(-0.3);
+    expect(readData().rightStickCalibration?.centerY).toBeCloseTo(0.25);
+  });
+
+  it('Set Center coexists with remaps + invert on the same node.data', () => {
+    makeGamepad();
+    commitRemap('rx', { kind: 'axis', index: 0 });
+    toggleInvert('ly');
+    expect(() => setCenterLive('right', 0.4, 0)).not.toThrow();
+    expect(readData().rightStickCalibration?.centerX).toBeCloseTo(0.4);
+    expect(readBindings()?.rx).toEqual({ kind: 'axis', index: 0 });
+    expect(readInvert()).toEqual({ ly: true });
+  });
 });
 
 // ---------------------------------------------------------------------------

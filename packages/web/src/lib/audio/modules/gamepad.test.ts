@@ -353,6 +353,34 @@ describe('finalizeCalibration', () => {
     expect(finalizeCalibration(s, -1)!.deadzone).toBe(0);
     expect(finalizeCalibration(s, 5)!.deadzone).toBe(0.9);
   });
+
+  it('carries centerX/centerY from a captured rest sample (true resting centre)', () => {
+    // A stick that physically RESTS off-centre at (0.4, -0.2) but sweeps a wide
+    // range. The committed calibration must carry the captured rest position as
+    // its centre — not the swept midpoint.
+    const s = newCalibrationSweep();
+    recordCalibrationSample(s, -0.8, 0.7);
+    recordCalibrationSample(s, 0.85, -0.75);
+    recordCalibrationSample(s, 0.4, -0.2);
+    const cal = finalizeCalibration(s, CALIBRATION_DEADZONE, { x: 0.4, y: -0.2 })!;
+    expect(cal.centerX).toBeCloseTo(0.4);
+    expect(cal.centerY).toBeCloseTo(-0.2);
+  });
+
+  it('omits a non-finite / missing centre component (falls back to midpoint, never NaN)', () => {
+    const s = newCalibrationSweep();
+    recordCalibrationSample(s, -0.8, 0.7);
+    recordCalibrationSample(s, 0.85, -0.75);
+    recordCalibrationSample(s, 0, 0);
+    // No centre at all → both centre fields absent.
+    const noCentre = finalizeCalibration(s)!;
+    expect(noCentre.centerX).toBeUndefined();
+    expect(noCentre.centerY).toBeUndefined();
+    // Only X finite → only centerX carried, centerY dropped (not NaN).
+    const partial = finalizeCalibration(s, CALIBRATION_DEADZONE, { x: 0.3, y: NaN })!;
+    expect(partial.centerX).toBeCloseTo(0.3);
+    expect(partial.centerY).toBeUndefined();
+  });
 });
 
 describe('normalizeAxis (per-axis calibrated mapping)', () => {
@@ -385,6 +413,30 @@ describe('normalizeAxis (per-axis calibrated mapping)', () => {
     expect(justOut).toBeGreaterThan(0);
     expect(justOut).toBeLessThan(0.02);
     expect(normalizeAxis(1, -1, 1, 0.1)).toBeCloseTo(1, 5);
+  });
+
+  it('an explicit off-midpoint centre zeroes the stick at its TRUE rest', () => {
+    // Range [-1, 1] (midpoint 0), but the stick RESTS at raw 0.4. With an
+    // explicit centre of 0.4, raw==0.4 reads 0 (zeroed at true rest) — the bug
+    // the symmetric fix addresses ("centre is not centred").
+    expect(normalizeAxis(0.4, -1, 1, 0, 0.4)).toBeCloseTo(0, 6);
+    // Extremes still reach ±1 with each side normalized about the true centre.
+    expect(normalizeAxis(1, -1, 1, 0, 0.4)).toBeCloseTo(1, 6);
+    expect(normalizeAxis(-1, -1, 1, 0, 0.4)).toBeCloseTo(-1, 6);
+  });
+
+  it('OMITTING the centre reproduces the old midpoint behaviour (back-compat)', () => {
+    // Same range; with no explicit centre the zero point is the swept midpoint 0,
+    // so raw 0.4 reads positive (the pre-fix behaviour) and the midpoint reads 0.
+    expect(normalizeAxis(0, -1, 1, 0)).toBeCloseTo(0, 6);
+    expect(normalizeAxis(0.4, -1, 1, 0)).toBeGreaterThan(0.3);
+    // An asymmetric range: midpoint = (min+max)/2 = 0.15 → reads 0 at 0.15.
+    expect(normalizeAxis(0.15, -0.6, 0.9, 0)).toBeCloseTo(0, 5);
+  });
+
+  it('a non-finite explicit centre falls back to the midpoint (never NaN)', () => {
+    expect(normalizeAxis(0, -1, 1, 0, NaN)).toBeCloseTo(0, 6);
+    expect(Number.isNaN(normalizeAxis(0.4, -1, 1, 0, Infinity))).toBe(false);
   });
 });
 

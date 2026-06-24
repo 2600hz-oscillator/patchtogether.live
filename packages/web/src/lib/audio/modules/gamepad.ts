@@ -110,6 +110,14 @@ export interface StickCalibration {
   maxY: number;
   /** Radial deadzone as a fraction (0..1) of the calibrated half-range. */
   deadzone: number;
+  /** The stick's TRUE resting position per axis (raw-axis units), captured while
+   *  the stick was at rest at the start of the calibration sweep. The zero point
+   *  the normalize maps to 0 — for a stick that physically RESTS off-centre (a
+   *  secondary thumbstick), this is NOT the swept-range midpoint, so without it
+   *  "centre is not centred" even after a full sweep. Optional for back-compat:
+   *  an already-persisted calibration without it falls back to the midpoint. */
+  centerX?: number;
+  centerY?: number;
 }
 
 /** Live min/max accumulator the card mutates each frame during calibration
@@ -164,48 +172,64 @@ export function sweepIsUsable(sweep: CalibrationSweep, minSpan = 0.2): boolean {
 
 /** Lock a completed sweep into a persisted StickCalibration. Pure — the caller
  *  writes the result to node.data ONCE. `deadzone` defaults to
- *  CALIBRATION_DEADZONE. Returns null when the sweep isn't usable (caller keeps
- *  the prior calibration). */
+ *  CALIBRATION_DEADZONE. `center` (the stick's TRUE resting raw position, sampled
+ *  while at rest before the sweep) is carried as centerX/centerY so normalize
+ *  zeroes the stick at its actual rest — not the swept-range midpoint, which only
+ *  coincides with rest for a spring-centred stick. A non-finite / omitted center
+ *  component is dropped (normalize then falls back to the midpoint), never NaN. */
 export function finalizeCalibration(
   sweep: CalibrationSweep,
   deadzone = CALIBRATION_DEADZONE,
+  center?: { x?: number; y?: number },
 ): StickCalibration | null {
   if (!sweepIsUsable(sweep)) return null;
-  return {
+  const cal: StickCalibration = {
     minX: sweep.minX,
     maxX: sweep.maxX,
     minY: sweep.minY,
     maxY: sweep.maxY,
     deadzone: Math.max(0, Math.min(0.9, deadzone)),
   };
+  if (center && Number.isFinite(center.x)) cal.centerX = center.x as number;
+  if (center && Number.isFinite(center.y)) cal.centerY = center.y as number;
+  return cal;
 }
 
 /** Normalize ONE raw axis sample against its calibrated [min,max] so
- *  observed-min → -1, observed-centre → 0, observed-max → +1, with a
+ *  observed-min → -1, the ZERO point → 0, observed-max → +1, with a
  *  per-axis-half deadzone re-normalized so values just outside the dz start
  *  near 0 (no jump). Outer saturation: past the calibrated extreme pins to ±1.
- *  Pure; used by both axes (the radial guard is applied on top in
- *  applyCalibration). */
+ *  The zero point is the explicit `center` (the stick's TRUE resting position)
+ *  when finite, else the swept-range midpoint `(min+max)/2` — the midpoint only
+ *  equals rest for a spring-centred stick, so a stick that rests off-centre needs
+ *  the captured rest centre to actually read 0 at rest. The optional default
+ *  keeps every existing caller (midpoint behaviour) valid. Pure; used by both
+ *  axes (the radial guard is applied on top in applyCalibration). */
 export function normalizeAxis(
   raw: number,
   min: number,
   max: number,
   dz = CALIBRATION_DEADZONE,
+  center?: number,
 ): number {
   if (!Number.isFinite(raw) || !Number.isFinite(min) || !Number.isFinite(max)) return 0;
   const span = max - min;
   if (span <= 1e-6) return 0; // degenerate calibration → neutral, never NaN
-  const center = (min + max) / 2;
-  // Map to [-1,+1] about the calibrated centre, using each side's own
-  // half-span so an asymmetric stick still reaches ±1 on both ends.
-  const halfPos = max - center;
-  const halfNeg = center - min;
+  // Zero at the captured TRUE rest centre when finite, else the swept midpoint.
+  // Clamp into [min,max] so a stale/foreign centre can't invert a half-span.
+  const c = Number.isFinite(center)
+    ? Math.max(min, Math.min(max, center as number))
+    : (min + max) / 2;
+  // Map to [-1,+1] about the zero centre `c`, using each side's own half-span so
+  // an asymmetric stick still reaches ±1 on both ends.
+  const halfPos = max - c;
+  const halfNeg = c - min;
   const v = Math.max(-1, Math.min(1, raw));
   let n: number;
-  if (v >= center) {
-    n = halfPos > 1e-6 ? (v - center) / halfPos : 0;
+  if (v >= c) {
+    n = halfPos > 1e-6 ? (v - c) / halfPos : 0;
   } else {
-    n = halfNeg > 1e-6 ? (v - center) / halfNeg : 0;
+    n = halfNeg > 1e-6 ? (v - c) / halfNeg : 0;
   }
   n = Math.max(-1, Math.min(1, n));
   // Per-axis deadzone + renormalize (same shape as applyDeadzone).
@@ -229,8 +253,8 @@ export function applyCalibration(
   const dz = Number.isFinite(cal.deadzone) ? Math.max(0, Math.min(0.9, cal.deadzone)) : CALIBRATION_DEADZONE;
   // First normalize WITHOUT a per-axis deadzone so we can measure the true
   // radial magnitude, then apply the radial gate, then the per-axis dz.
-  const nx = normalizeAxis(rawX, cal.minX, cal.maxX, 0);
-  const ny = normalizeAxis(rawY, cal.minY, cal.maxY, 0);
+  const nx = normalizeAxis(rawX, cal.minX, cal.maxX, 0, cal.centerX);
+  const ny = normalizeAxis(rawY, cal.minY, cal.maxY, 0, cal.centerY);
   const mag = Math.hypot(nx, ny);
   if (mag < dz) return { x: 0, y: 0 };
   // Radial re-normalize: scale so magnitude `dz` maps to 0 and 1 stays 1,
@@ -751,13 +775,16 @@ function cloneCalibration(c: unknown): StickCalibration | undefined {
   ) {
     return undefined;
   }
-  return {
+  const cal: StickCalibration = {
     minX: o.minX as number,
     maxX: o.maxX as number,
     minY: o.minY as number,
     maxY: o.maxY as number,
     deadzone: Number.isFinite(o.deadzone) ? (o.deadzone as number) : CALIBRATION_DEADZONE,
   };
+  if (Number.isFinite(o.centerX)) cal.centerX = o.centerX as number;
+  if (Number.isFinite(o.centerY)) cal.centerY = o.centerY as number;
+  return cal;
 }
 
 /** Deep-clone a RemapBindings into a FRESH plain map of FRESH value objects,
@@ -1161,7 +1188,9 @@ export const gamepadDef: AudioModuleDef = {
           v = triggerToCv(control.kind === 'axis' ? Math.abs(raw) : raw);
         } else if (o.type === 'cv') {
           // Stick-axis CV outputs: deadzone. ly/ry invert (so +1 = up) when on
-          // their natural Y axis; a remapped axis keeps its raw sign.
+          // their natural Y axis; a remapped axis keeps its raw sign. (An
+          // off-centre-resting stick is handled by CALIBRATION's captured rest
+          // centre — calLx/calLy/calRx/calRy already took precedence above.)
           const isNaturalY =
             (o.id === 'ly' && control.kind === 'axis' && control.index === STD_AXIS.ly) ||
             (o.id === 'ry' && control.kind === 'axis' && control.index === STD_AXIS.ry);
