@@ -261,33 +261,26 @@
     if (e.key === 'Escape' && remap) { e.preventDefault(); cancelRemap(); }
   }
 
-  // The stick's TRUE resting raw position, sampled the instant the user clicks
-  // Calibrate (the stick is at rest then). Threaded into finalizeCalibration so
-  // the committed calibration zeroes the stick at its ACTUAL rest — not the swept
-  // midpoint, which only equals rest for a spring-centred stick.
-  let restCenter = $state<{ x: number; y: number } | null>(null);
+  // Calibration captures the swept RANGE only (observed min/max → remaps to full
+  // ±1). The zero point stays the swept midpoint; an off-centre-resting stick is
+  // re-zeroed SEPARATELY via the explicit per-stick "set center" button
+  // (centerX/centerY). Auto-capturing rest at calibrate-start was unreliable —
+  // the stick isn't guaranteed to be at rest the instant Calibrate is clicked
+  // (e.g. mid-deflection), which corrupted the ±1 remap.
   function startCalibration(stick: 'left' | 'right') {
     sweep = newCalibrationSweep();
-    const rawX = stick === 'left' ? snapshot.rawLeftX : snapshot.rawRightX;
-    const rawY = stick === 'left' ? snapshot.rawLeftY : snapshot.rawRightY;
-    // Capture the rest sample only when it's clean/finite; finalizeCalibration
-    // falls back to the swept midpoint per-component when absent (never NaN).
-    restCenter = (Number.isFinite(rawX) && Number.isFinite(rawY))
-      ? { x: rawX, y: rawY }
-      : null;
     calibrating = stick;
   }
   function cancelCalibration() {
     calibrating = null;
     sweep = newCalibrationSweep();
-    restCenter = null;
   }
   /** Lock in the swept range as a ONE-TIME synced write to node.data (the active
    *  stick's calibration field), then leave calibration mode. The factory's poll
    *  picks up the new calibration on its next frame. */
   function completeCalibration() {
     const stick = calibrating;
-    const cal = finalizeCalibration(sweep, CALIBRATION_DEADZONE, restCenter ?? undefined);
+    const cal = finalizeCalibration(sweep, CALIBRATION_DEADZONE);
     if (cal && stick) {
       // SINGLE committed write — never per frame. mutateNode rides the Y.Doc
       // (collab + undo) and mutates node.data IN PLACE (never reassigns an
@@ -301,7 +294,6 @@
     }
     calibrating = null;
     sweep = newCalibrationSweep();
-    restCenter = null;
   }
   /** Clear ONE stick's committed calibration (revert to the fixed-deadzone path). */
   function clearCalibration(stick: 'left' | 'right') {
