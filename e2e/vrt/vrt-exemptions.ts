@@ -551,6 +551,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // capture pending. Unit + E2E (video-controls.spec.ts) provide coverage.
   // Promote into MODULES + capture darwin/linux baselines in a follow-up PR.
   chromakey: 'VRT baseline pending; unit + E2E provide coverage. Promote into MODULES + capture darwin/linux baselines in a follow-up PR.',
+  // FADER — new 2-source video mixer (control-only card: 2 faders + 2 transition
+  // dropdowns over a 5-port PatchPanel, no canvas). VRT baseline pending the
+  // new-module pattern; the transition math is unit-tested (fader-transitions)
+  // + the card↔engine wiring by fader.spec.ts. Promote + capture darwin/linux
+  // baselines in a follow-up.
+  fader: 'VRT baseline pending — control-only mixer card (2 faders + 2 transition dropdowns); covered by fader-transitions.test + fader.spec.ts. Promote + capture darwin/linux baselines in a follow-up.',
   // LUMAKEY — new 2-input compositor; same rationale as CHROMAKEY.
   lumakey: 'VRT baseline pending; unit + E2E provide coverage. Promote into MODULES + capture darwin/linux baselines in a follow-up PR.',
   // QUADRALOGICAL — 4-input video mixer (Phase 2: per-edge effects). The SOLO-

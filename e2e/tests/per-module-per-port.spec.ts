@@ -94,6 +94,13 @@ const SKIP_SPAWN: Record<string, string> = {
 // (~5-7 entries). Each has a one-line citation of the dedicated spec
 // that exercises the full path with the real asset present.
 const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
+  // FADER is a two-source video MIXER: both outputs (OUT = dry/wet of the A/B
+  // mix; SEND = a copy of the A/B mix) are a blend of in_a/in_b/return, so with
+  // nothing patched they are opaque black — there is no signal to emit until an
+  // input is driven (which the generic emit sweep doesn't wire). Handle-presence
+  // + input-accept still run here; the blend math is unit-tested
+  // (fader-transitions) and the card↔engine param wiring by fader.spec.ts.
+  fader: 'video mixer; OUT/SEND are blends of in_a/in_b/return — black until an input is driven (not per-output emit-drivable); blend covered by fader-transitions.test + fader.spec.ts',
   // ── Pure analysers whose outputs are input-conditional ──
   // SYNESTHESIA derives per-band audio / envelope CV / gates from its mono
   // inputs — every output is silent until a_in/b_in are driven AND a band
