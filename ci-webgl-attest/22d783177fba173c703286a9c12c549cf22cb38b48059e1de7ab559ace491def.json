@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "8ab53b9abad19450757679cba0bead8a45a6f31be5627b581416894207847a5b",
-  "attestedAt": "2026-06-23T18:41:26.843Z",
+  "webglContentHash": "22d783177fba173c703286a9c12c549cf22cb38b48059e1de7ab559ace491def",
+  "attestedAt": "2026-06-24T12:20:56.249Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "129149c1089eca6ece2a11035a819ad6fd36340f",
+  "gitHeadAtAttest": "08753da2f86062882ac4671ba06eb19dd143347d",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "host": "2600hzs-MBP.home.local",
@@ -12,17 +12,11 @@
   "suites": {
     "A-heavy": {
       "specFiles": 44,
-      "passed": 136,
+      "passed": 138,
       "failed": 0,
-      "flaky": 1,
-      "skipped": 2,
-      "flakyDetails": [
-        {
-          "test": "per-target menu items are correct + Escape closes",
-          "file": "toybox-node-menu.spec.ts",
-          "firstError": "Error: expect(locator).toBeVisible() failed |  | Locator: locator('[data-testid=\"toybox-node-menu\"]') | Expected: visible"
-        }
-      ]
+      "flaky": 0,
+      "skipped": 1,
+      "flakyDetails": []
     },
     "B-leakers": {
       "specFiles": 4,
@@ -41,5 +35,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 254
+  "durationSec": 286
 }
