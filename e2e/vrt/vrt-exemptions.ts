@@ -186,6 +186,14 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // handle rows) is the regression gate. The morph DSP is covered by
   // analog-vco-morph.test.ts; the scope-window logic by analog-vco-scope.test.ts.
   analogVco: [{ selector: 'canvas' }],
+  // BACKDRAFT — video feedback generator, now USER-RESIZABLE with full output
+  // capabilities (Full Frame / Full Screen / Present). The live feedback preview
+  // canvas is non-deterministic (and variable-size), so mask it; the
+  // deterministic frozen capture lives in VRT_SCENES.backdraft (the scene
+  // auto-overrides this mask: `mod.type in VRT_SCENES ? [] : masks`). Currently
+  // in EXEMPT_FROM_VRT below pending a fresh darwin/linux baseline after the
+  // resizable redesign; this mask covers the live preview when re-promoted.
+  backdraft: [{ selector: 'canvas' }],
 };
 
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
@@ -678,6 +686,21 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // + per-module-per-port provide functional coverage. Promote + capture baselines
   // once darwin + linux PNGs are captured via vrt-update.yml workflow_dispatch.
   twotracks: 'VRT baseline pending — 2-reel tape-loop emulator P1. Waveform canvas masked in MODULES. Unit (transport) + e2e (record→play→SCOPE RMS) + per-module-per-port cover function. Promote once darwin + linux baselines captured via vrt-update.yml.',
+  // BACKDRAFT (video feedback generator) — given FULL OUTPUT CAPABILITIES in
+  // this PR (corner-resize + Full Frame / Full Screen / Present on other
+  // display, mirroring videoOut/bentbox). The card is now USER-RESIZABLE, so the
+  // preview canvas has a variable size + the chrome (resize handle, 2-col
+  // layout, default 720×540 footprint) changed — the prior frozen-feedback
+  // darwin baseline is stale, and like the other resizable video cards
+  // (ruttetra/videoOut/toybox) the live feedback preview is non-deterministic
+  // (it's MASKED in VRT_MODULE_MASKS above; the deterministic frozen capture
+  // lives in VRT_SCENES.backdraft for a future re-promotion). Functional
+  // coverage: backdraft.test.ts (PCU) + e2e/tests/backdraft.spec.ts (feedback
+  // render / freeze / spatial-transform / pixelate / mirror / clk-override /
+  // faders) + e2e/tests/backdraft-full-output.spec.ts (resize + Full Frame /
+  // Full Screen / Present menu). Promote back into MODULES (canvas masked) +
+  // capture fresh darwin/linux baselines via vrt-update.yml in a follow-up PR.
+  backdraft: 'given full output capabilities (corner-resize + Full Frame/Full Screen/Present) so the preview is now variable-size + non-deterministic (live feedback), like ruttetra/videoOut/toybox — masked in VRT_MODULE_MASKS, deterministic capture in VRT_SCENES.backdraft. Unit (backdraft.test.ts) + e2e (backdraft.spec.ts + backdraft-full-output.spec.ts) provide coverage. Re-capture darwin/linux baselines via vrt-update.yml in a follow-up.',
   // SPIROGRAPHS is intentionally NOT exempt: its live drifting/bouncing OUT
   // preview canvas is MASKED in VRT_MODULE_MASKS above, and the deterministic
   // card chrome (COUNT fader + 1/2/3 spiro selector + IN/OUT toggle + chroma
@@ -934,13 +957,11 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // a `task vrt:update` run on linux CI. Module also moved out of the strict
   // VRT lane (animated chrome).
   'linux/analogVco',
-  // BACKDRAFT (video feedback generator): darwin baseline captured on this
-  // machine via VRT_SCENES (SHAPES sources → frozen feedback tunnel/spiral,
-  // params.freeze=1 holds the accumulator). The spatial-transform feedback
-  // loop + WebGL bilinear sampling differs sub-thresholdly across GPU
-  // drivers, so the linux baseline is pending a `task vrt:update` run on
-  // linux CI; the deterministic darwin capture is the regression gate here.
-  'linux/backdraft',
+  // BACKDRAFT — moved to EXEMPT_FROM_VRT (above) when it gained full output
+  // capabilities (corner-resize + Full Frame/Full Screen/Present): the preview
+  // is now variable-size + non-deterministic, so the whole module is exempt
+  // pending a fresh darwin/linux baseline. The stale darwin baseline PNG was
+  // deleted; this linux/backdraft pair is no longer needed.
   // LFO (DEPTH knob added): the card grew a knob row + DEPTH input port, so
   // the darwin baseline is re-captured here. The linux baseline is pending a
   // `task vrt:update` run on linux CI (this dev machine is darwin-only).

@@ -57,12 +57,14 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   foxy: { size: '4u', hp: 4 }, // 575×720px
   // NOTE: user-resizable cards (clockedRunner, livecode, wavesculpt, b3ntb0x,
   // bentbox, monoglitch, reshaper, ruttetra, toybox, videobox, videoOut,
-  // archivist) are intentionally ABSENT from this map — they are sized by their
-  // own corner-resize (snapped to whole-u via card-resize.ts), not a fixed
-  // tier, so the rack CSS must NOT clamp them. They live in rack-sizing.test.ts
-  // DYNAMIC_SIZED. Their DEFAULT/MIN constants are rounded to 180-multiples so
-  // they still land on-grid out of the box. (backdraft was promoted to a FIXED
-  // 3u/hp4 tier in #767 and now lives in this map, not the resizable set.)
+  // backdraft, archivist) are intentionally ABSENT from this map — they are
+  // sized by their own corner-resize (snapped to whole-u via card-resize.ts),
+  // not a fixed tier, so the rack CSS must NOT clamp them. They live in
+  // rack-sizing.test.ts DYNAMIC_SIZED. Their DEFAULT/MIN constants are rounded
+  // to 180-multiples so they still land on-grid out of the box. (backdraft was
+  // briefly a FIXED 3u/hp4 tier in #767, then re-made corner-resizable when it
+  // gained full output capabilities — resize + full-frame/fullscreen/present —
+  // so a fixed tier would now CAP its resize.)
   frogger: { size: '2u', hp: 2 }, // 380×260px
   gamepad: { size: '2u', hp: 2 }, // 267×280px
   gatemaiden: { size: '1u', hp: 1 }, // 199×200px
@@ -161,7 +163,6 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   // ── video domain ──
   '4plexvid': { size: '3u', hp: 2 }, // 463×280px
   acidwarp: { size: '3u', hp: 2 }, // 407×380px
-  backdraft: { size: '3u', hp: 4 }, // 720px wide — 2-col (preview left, controls right)  [LOCKED]
   cameraInput: { size: '3u', hp: 2 }, // 370×280px  [LOCKED]
   cellshade: { size: '2u', hp: 2 }, // 369×220px
   chroma: { size: '2u', hp: 2 }, // 360×260px

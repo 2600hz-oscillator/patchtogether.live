@@ -1,20 +1,39 @@
 <script lang="ts">
   // BackdraftCard — UI for BACKDRAFT (video feedback generator).
   //
-  // 2-column 3u layout (mirrors CUBE/HYPERCUBE): a large video PREVIEW on the
+  // 2-column layout (mirrors CUBE/HYPERCUBE): a large video PREVIEW on the
   // LEFT, all controls (mirror toggles + fader grid) on the RIGHT. Every port
   // (2 video + 2 KEY masks + 18 CV/gate inputs + the `out` video output) lives
   // in the yellow PatchPanel drill-down menu. Every Fader is wired with
   // moduleId={id} + paramId so MIDI-Learn binds.
+  //
+  // FULL OUTPUT CAPABILITIES (mirrors VideoOutCard / BentboxCard):
+  //   - Corner-drag resize: the whole card grows; the LEFT preview canvas
+  //     scales with it while the RIGHT controls column keeps a fixed-ish width
+  //     and stays usable. Width/height persist in node.data.width/height
+  //     (Y.Doc-synced), snapped to whole-u (180px) rack tiles via card-resize.
+  //   - Right-click the preview → context menu: Full Frame (in-app borderless,
+  //     persisted node.data.fullFrame, double-click to exit) / Full Screen
+  //     (true browser Fullscreen API) / Present on other display (a separate
+  //     popup on a second monitor; only offered when getScreenDetails + >1
+  //     screen). Full-frame ↔ fullscreen are mutually exclusive. The preview
+  //     keeps rendering live in every mode (the rAF blit is independent).
 
   import { onMount, onDestroy } from 'svelte';
-  import { type NodeProps } from '@xyflow/svelte';
+  import { useStore, type NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc } from '$lib/graph/store';
-  import { setNodeParam } from '$lib/graph/mutate';
+  import { setNodeParam, mutateNode } from '$lib/graph/mutate';
+  import { startCornerResize } from './card-resize';
+  import { createFullscreen } from './use-fullscreen.svelte';
+  import { createFullFrame } from './use-full-frame.svelte';
+  import { createPresent } from './use-present.svelte';
+  import { fullscreenCanvasDims } from './fullscreen-canvas-dims';
+  import { liveEngineAspect } from './video-card-aspect';
+  import VideoCanvasContextMenu from './VideoCanvasContextMenu.svelte';
   import {
     backdraftDef,
     BACKDRAFT_MAX_DELAY_MS,
@@ -34,6 +53,7 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+  const flowStore = useStore();
 
   function pdef(name: string): number {
     return backdraftDef.params.find((d) => d.id === name)!.defaultValue;
@@ -78,15 +98,119 @@
 
   const ENGINE_W = VIDEO_RES.width;
   const ENGINE_H = VIDEO_RES.height;
-  // Big on-card preview that fills the LEFT column of the 3u 2-col layout.
-  const CANVAS_W = 320;
-  const CANVAS_H = Math.round(CANVAS_W * (ENGINE_H / ENGINE_W)); // 4:3
+
+  // ---------------- Resize (mirror VideoOutCard / BentboxCard) ----------------
+  // Default keeps the historic ~720-wide footprint; height = 3u (540px). Min
+  // rounded to whole-u (180px) tiles so the card lands on the rack grid out of
+  // the box (#759) and so the rack CSS doesn't clamp the corner-resize.
+  const DEFAULT_WIDTH = 720;
+  const DEFAULT_HEIGHT = 540;
+  const MIN_WIDTH = 540;
+  const MIN_HEIGHT = 360;
+
+  // The RIGHT controls column stays a sane fixed-ish width so the faders never
+  // collapse; the LEFT preview takes whatever width is left.
+  const CONTROLS_W = 280;
+  // Header + horizontal/vertical paddings + the inter-column gap budget. The
+  // preview gets the remaining width; height tracks the card minus the header.
+  const HEADER_PX = 56;
+  const PAD_PX = 28; // body left/right padding (14 each)
+  const GAP_PX = 16; // inter-column gap
+
+  let cardWidth = $derived<number>(
+    (node?.data?.width as number | undefined) ?? DEFAULT_WIDTH,
+  );
+  let cardHeight = $derived<number>(
+    (node?.data?.height as number | undefined) ?? DEFAULT_HEIGHT,
+  );
+
+  // The LEFT preview's inner box. It absorbs all card growth; the controls
+  // column is fixed. Floor at a sane minimum so a tiny card still shows a
+  // preview (the resize MIN already keeps this comfortably positive).
+  let innerWidth = $derived(
+    Math.max(180, cardWidth - CONTROLS_W - PAD_PX - GAP_PX),
+  );
+  let innerHeight = $derived(Math.max(180, cardHeight - HEADER_PX));
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafId: number | null = null;
 
+  // Live engine canvas dims, mirrored each rAF in draw() (the engine isn't a
+  // reactive store), used by the fullscreen buffer-size derive below.
+  let engineW = $state<number>(ENGINE_W);
+  let engineH = $state<number>(ENGINE_H);
+
+  // ---------- True fullscreen (mirrors VideoOutCard) ----------
+  // The preview-wrap is the fullscreen element; it holds the live <canvas>.
+  // CSS scales the canvas to fill the viewport aspect-fit while fullscreen;
+  // the rAF blit keeps running so the fullscreen view stays live.
+  const fs = createFullscreen();
+  let wrapEl: HTMLDivElement | null = $state(null);
+  $effect(() => {
+    fs.setTarget(wrapEl);
+  });
+  $effect(() => fs.attach());
+
+  // ---------- Present on a second display ----------
+  // Separate popup window on the chosen display fed THIS card's live canvas
+  // via a per-frame canvas blit; the main window stays interactive (unlike
+  // fullscreen). Capability-gated by the menu (getScreenDetails + >1 screen).
+  const present = createPresent({
+    getCanvas: () => canvasEl,
+    fullscreen: fs,
+  });
+
+  // ---------- Full Frame (in-app, NOT browser fullscreen) ----------
+  // Expands the preview to consume the card border, hiding the controls + port
+  // labels + jacks; the card stays in the rack + remains resizable. Persisted
+  // in node.data.fullFrame (Y.Doc-synced, written in place via mutateNode) so a
+  // wall-of-TVs layout survives reload + is shareable. See use-full-frame.
+  let fullFrame = $derived<boolean>((node?.data?.fullFrame as boolean | undefined) ?? false);
+  const ff = createFullFrame({
+    setFullFrame: (on) => {
+      mutateNode(id, (live) => {
+        if (!live.data) live.data = {};
+        live.data.fullFrame = on;
+      });
+    },
+    // Mutual exclusion: entering full-frame drops any active true-fullscreen.
+    exitFullscreen: () => void fs.exit(),
+  });
+  let cardEl: HTMLDivElement | null = $state(null);
+  // Double-click a full-frame card exits back to normal chrome.
+  $effect(() => ff.attach(cardEl, () => fullFrame));
+
+  // Canvas drawing-buffer dims. Rack: preview inner dims. TRUE fullscreen — OR
+  // while PRESENTING / full-frame: the live ENGINE dims so fitRect fills the
+  // buffer edge-to-edge + object-fit:contain height-fills the screen (side
+  // pillarbox only). See fullscreen-canvas-dims.ts.
+  let bufferDims = $derived(
+    fullscreenCanvasDims(
+      fs.isFullscreen || present.isPresenting || fullFrame,
+      { canvas: { width: engineW, height: engineH } },
+      { width: innerWidth, height: innerHeight },
+    ),
+  );
+
+  // Right-click-on-preview context menu (Full Frame / Full Screen / Present).
+  let ctxOpen = $state(false);
+  let ctxX = $state(0);
+  let ctxY = $state(0);
+  function onCanvasContextMenu(e: MouseEvent) {
+    // Claim the right-click on the preview surface so it doesn't bubble to the
+    // SvelteFlow node menu (Docs / Duplicate / Delete). Right-click on the
+    // controls column still falls through to the node menu.
+    e.preventDefault();
+    e.stopPropagation();
+    ctxX = e.clientX;
+    ctxY = e.clientY;
+    ctxOpen = true;
+  }
+
   function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
-    const srcAspect = ENGINE_W / ENGINE_H;
+    // Letterbox at the LIVE engine aspect (mirrored into engineW/engineH each
+    // rAF) so the in-rack thumbnail tracks a 4:3 ↔ 16:9 OUTPUT switch.
+    const srcAspect = liveEngineAspect({ canvas: { width: engineW, height: engineH } });
     const dstAspect = cw / ch;
     if (dstAspect > srcAspect) {
       const h = ch;
@@ -125,11 +249,19 @@
         // Never let an engine error nuke the rAF loop.
       }
       const src = videoEngine.canvas as CanvasImageSource;
+      // Mirror the live engine dims into $state so the fullscreen buffer-size
+      // derive (bufferDims) follows the engine resolution. Cheap change-guard.
+      const ew = videoEngine.canvas.width || ENGINE_W;
+      const eh = videoEngine.canvas.height || ENGINE_H;
+      if (ew !== engineW) engineW = ew;
+      if (eh !== engineH) engineH = eh;
       const cw = canvasEl.width;
       const ch = canvasEl.height;
       ctx2d.fillStyle = '#050608';
       ctx2d.fillRect(0, 0, cw, ch);
       const r = fitRect(cw, ch);
+      // drawImage() from a WebGL canvas already presents upright (the browser
+      // accounts for GL's bottom-left origin). A straight blit is correct.
       ctx2d.drawImage(src, r.x, r.y, r.w, r.h);
     }
     // A rising edge on a mirror gate flips the param INSIDE the engine
@@ -166,8 +298,35 @@
   });
   onDestroy(() => {
     if (rafId !== null) cancelAnimationFrame(rafId);
+    if (resizeAbort) resizeAbort.abort();
+    // Close any present popup + stop the blit loop when the card is gone.
+    present.dispose();
     if (edgesUnobserve) { try { edgesUnobserve(); } catch { /* */ } edgesUnobserve = null; }
   });
+
+  // ---------------- Corner-drag resize handle ----------------
+  let resizing = $state(false);
+  let resizeAbort: AbortController | null = null;
+  function onResizeStart(ev: PointerEvent) {
+    resizeAbort = startCornerResize(ev, {
+      flowStore,
+      minWidth: MIN_WIDTH,
+      minHeight: MIN_HEIGHT,
+      getStartSize: () => ({ width: cardWidth, height: cardHeight }),
+      apply: (w, h) => {
+        // guard:allow-raw-write — fires per pointermove during a resize drag;
+        // a tracked write per frame would storm the doc + flood the undo stack.
+        const target = patch.nodes[id];
+        if (target) {
+          if (!target.data) target.data = {};
+          target.data.width = w;
+          target.data.height = h;
+        }
+      },
+      onStart: () => { resizing = true; },
+      onEnd: () => { resizing = false; resizeAbort = null; },
+    });
+  }
 
   // ---------------- Patch-panel ports ----------------
   // Port ids match the def EXACTLY (handle id === port id — the cross-domain
@@ -202,26 +361,45 @@
   ];
 </script>
 
-<div class="card video" data-testid="backdraft-card" data-node-id={id}>
+<div
+  bind:this={cardEl}
+  class="card video"
+  class:resizing
+  class:full-frame={fullFrame}
+  style="width: {cardWidth}px; height: {cardHeight}px;"
+  data-testid="backdraft-card"
+  data-node-id={id}
+  data-full-frame={fullFrame}
+>
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="BACKDRAFT" />
 
   <PatchPanel nodeId={id} {inputs} {outputs} panelWidth={300}>
     <div class="bd-body">
-      <!-- LEFT column: large video preview. -->
+      <!-- LEFT column: large video preview (scales with the card). -->
       <div class="bd-col bd-col-left">
-        <div class="canvas-wrap">
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          bind:this={wrapEl}
+          class="canvas-wrap"
+          class:fullscreen={fs.isFullscreen}
+          class:full-frame={fullFrame}
+          style="width: {fs.isFullscreen || fullFrame ? '100%' : innerWidth + 'px'}; height: {fs.isFullscreen || fullFrame ? '100%' : innerHeight + 'px'};"
+          data-testid="backdraft-fs-wrap"
+          oncontextmenu={onCanvasContextMenu}
+        >
           <canvas
             bind:this={canvasEl}
-            width={CANVAS_W}
-            height={CANVAS_H}
+            width={bufferDims.width}
+            height={bufferDims.height}
+            style="aspect-ratio: {bufferDims.aspectRatio};"
             data-testid="backdraft-canvas"
             data-node-id={id}
           ></canvas>
         </div>
       </div>
 
-      <!-- RIGHT column: mirror toggles + the fader grid. -->
+      <!-- RIGHT column: mirror toggles + the fader grid (fixed-ish width). -->
       <div class="bd-col bd-col-right">
         <div class="mirror-row" data-testid="backdraft-mirror-row">
           <button
@@ -265,12 +443,41 @@
       </div>
     </div>
   </PatchPanel>
+
+  <!-- Bottom-right corner-drag resize handle. The svelte-flow nodrag class is
+       required so xyflow's node-drag listener doesn't hijack the pointerdown
+       event before we see it. -->
+  <div
+    class="resize-handle nodrag"
+    role="separator"
+    aria-label="Resize BACKDRAFT"
+    data-testid="backdraft-resize-handle"
+    onpointerdown={onResizeStart}
+  ></div>
 </div>
+
+<VideoCanvasContextMenu
+  bind:open={ctxOpen}
+  x={ctxX}
+  y={ctxY}
+  title="BACKDRAFT"
+  availableScreens={fs.availableScreens}
+  onrequestscreens={() => void fs.loadScreens()}
+  onfullscreen={(screenId) => { ff.exit(); void fs.enter(screenId); }}
+  onfullframe={() => ff.toggle(fullFrame)}
+  isFullFrame={fullFrame}
+  onpresent={(screenId) => present.present(screenId)}
+  onstoppresent={() => present.stop()}
+  isPresenting={present.isPresenting}
+  onclose={() => { ctxOpen = false; }}
+/>
 
 <style>
   .card {
-    width: 720px;
-    background: var(--module-bg);
+    /* Solid black underlay + opaque module-bg overlay so no cable routed
+     * behind the preview canvas can bleed through the live video. */
+    background-color: #000;
+    background-image: linear-gradient(var(--module-bg), var(--module-bg));
     border: 1px solid var(--border);
     border-radius: 2px;
     color: var(--text);
@@ -279,11 +486,17 @@
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
+    overflow: hidden;
+    isolation: isolate;
   }
   :global(.svelte-flow__node:hover) .card { border-color: var(--accent-dim); }
   :global(.svelte-flow__node.selected) .card {
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  .card.resizing {
+    /* Avoid hover/selected pulses while the user drags. */
+    transition: none;
   }
   .stripe {
     position: absolute;
@@ -299,7 +512,7 @@
     margin: 0 0 8px;
     letter-spacing: 0.05em;
   }
-  /* 2-column 3u layout: preview LEFT, controls RIGHT (CUBE pattern). */
+  /* 2-column layout: preview LEFT (scales), controls RIGHT (fixed-ish). */
   .bd-body {
     padding: 6px 14px 8px;
     display: flex;
@@ -308,21 +521,100 @@
     align-items: flex-start;
   }
   .bd-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-  .bd-col-left { flex: 0 0 auto; }
-  .bd-col-right { flex: 1 1 auto; min-width: 0; }
+  /* LEFT grows to absorb card resize; RIGHT keeps a sane fixed width so the
+   * faders never collapse. */
+  .bd-col-left { flex: 1 1 auto; min-width: 0; }
+  .bd-col-right { flex: 0 0 280px; min-width: 0; }
   .canvas-wrap {
     border: 1px solid var(--cable-video);
     border-radius: 2px;
     overflow: hidden;
     line-height: 0;
     background: #050608;
+    display: flex;
+    justify-content: center;
+    align-items: center;
   }
   .canvas-wrap canvas {
     display: block;
-    width: 320px;
-    height: 240px;
+    width: 100%;
+    height: 100%;
     image-rendering: pixelated;
     background: #050608;
+  }
+  /* TRUE fullscreen: the wrap IS the fullscreen element (filling the physical
+   * screen). Center the live canvas + scale it to fit with aspect preserved
+   * (object-fit:contain semantics), black bars on the short axis. The rAF blit
+   * keeps feeding the same canvas. */
+  .canvas-wrap.fullscreen {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    border: none;
+    border-radius: 0;
+  }
+  .canvas-wrap.fullscreen canvas {
+    border: none;
+    border-radius: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    cursor: pointer;
+  }
+  /* FULL FRAME (in-app): the preview consumes the whole card border — hide the
+   * chrome (title, controls, stripe) + drop the card padding so the video fills
+   * edge-to-edge. The card stays in the rack + remains resizable; double-click
+   * exits. Distinct from .fullscreen (Fullscreen API) above. */
+  .card.full-frame {
+    padding: 0;
+  }
+  .card.full-frame .title,
+  .card.full-frame .stripe,
+  .card.full-frame .bd-col-right {
+    display: none;
+  }
+  .card.full-frame .bd-body {
+    padding: 0;
+    gap: 0;
+    height: 100%;
+  }
+  .card.full-frame .bd-col-left {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+  }
+  /* Let the PatchPanel host (display:contents) pass through so the preview can
+   * fill the card once the title + controls are gone. */
+  .card.full-frame :global(.patch-panel-host) {
+    display: contents;
+  }
+  /* Hide the card's OWN Svelte Flow jacks + patch-panel triggers while
+   * full-frame — keep handles in the DOM (opacity/pointer-events, not
+   * display:none) so existing cables stay connected; we hide the jacks
+   * visually, not disconnect them. */
+  .card.full-frame :global(.svelte-flow__handle) {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .card.full-frame :global(.patch-trigger) {
+    display: none;
+  }
+  .canvas-wrap.full-frame {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    border: none;
+    border-radius: 0;
+    cursor: pointer;
+  }
+  .canvas-wrap.full-frame canvas {
+    border: none;
+    border-radius: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
   }
   .fader-grid {
     margin-top: 4px;
@@ -379,4 +671,27 @@
     font-family: ui-monospace, monospace;
     pointer-events: none;
   }
+  .resize-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    /* Triangle in the corner so it's visible without dominating the chrome. */
+    background: linear-gradient(
+      135deg,
+      transparent 50%,
+      var(--cable-video) 50%,
+      var(--cable-video) 60%,
+      transparent 60%,
+      transparent 70%,
+      var(--cable-video) 70%,
+      var(--cable-video) 80%,
+      transparent 80%
+    );
+    opacity: 0.7;
+    z-index: 5;
+  }
+  .resize-handle:hover { opacity: 1; }
 </style>
