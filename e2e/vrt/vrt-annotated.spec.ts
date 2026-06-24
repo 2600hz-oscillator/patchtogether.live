@@ -104,12 +104,17 @@ test.describe('VRT-annotated: numbered control device-faces', () => {
       const entries = await annotateControlsOnCard(card);
       expect(entries.length, `${type}: at least one numbered control`).toBeGreaterThan(0);
 
-      // Snap the annotated face. This baseline is a DOC ASSET (committed under
-      // __annotated__/), NOT a VRT regression baseline, so we don't diff it
-      // here — `--update-snapshots` writes it and the doc build serves it.
-      await expect(card).toHaveScreenshot(`${type}.png`, {
-        animations: 'disabled',
-      });
+      // Snap the annotated face. This is a generated DOC ASSET, NOT a VRT
+      // regression baseline, so we WRITE it unconditionally with a plain
+      // element screenshot. (Do NOT use toHaveScreenshot here: even with
+      // --update-snapshots it only rewrites the file when the new render
+      // differs from the old one beyond the comparator tolerance — and the
+      // doc-asset config is deliberately lenient [maxDiffPixelRatio 0.1], so a
+      // small overlay change [moving the numbered callouts] stays under
+      // tolerance and the committed PNG silently never updates.)
+      const facePath = resolve(annotatedDir(), VRT_PLATFORM, `${type}.png`);
+      mkdirSync(dirname(facePath), { recursive: true });
+      await card.screenshot({ path: facePath, animations: 'disabled' });
 
       await removeControlOverlay(card);
 

@@ -95,6 +95,7 @@ export async function annotateControlsOnCard(card: Locator): Promise<ControlEntr
         kind: string;
         cx: number;
         cy: number;
+        h: number;
         y: number;
         x: number;
       }
@@ -110,10 +111,11 @@ export async function annotateControlsOnCard(card: Locator): Promise<ControlEntr
         const testid = explicit ?? `${kind}:${anon++}`;
         if (seen.has(testid)) continue;
         seen.add(testid);
-        // Center in the card's local (untransformed) coordinate space.
+        // Center + height in the card's local (untransformed) coordinate space.
         const cx = (r.left + r.width / 2 - cardRect.left) / scale;
         const cy = (r.top + r.height / 2 - cardRect.top) / scale;
-        boxes.push({ testid, kind, cx, cy, x: cx, y: cy });
+        const h = r.height / scale;
+        boxes.push({ testid, kind, cx, cy, h, x: cx, y: cy });
       }
 
       // Reading order: top→bottom, then left→right (row-major) with a small
@@ -141,25 +143,63 @@ export async function annotateControlsOnCard(card: Locator): Promise<ControlEntr
       const cs = win.getComputedStyle(el);
       if (cs.position === 'static') (el as HTMLElement).style.position = 'relative';
 
+      // CALLOUT style (not a circle ON the control — that hid buttons and
+      // covered sliders). For each control: a tiny anchor dot ON it, a thin
+      // leader line down to a numbered circle rendered just BELOW the control.
+      // If a control sits too close to the card's bottom edge for the circle to
+      // fit, the callout flips ABOVE instead, so it never spills off the face.
+      const R = 9; // numbered-circle radius
+      const LEADER = 8; // gap between the control edge and the circle
       boxes.forEach((b, i) => {
         const g = doc.createElementNS(NS, 'g');
+        const half = b.h / 2;
+        const ctrlBottom = b.cy + half;
+        const ctrlTop = b.cy - half;
+        // Prefer BELOW; flip ABOVE when the circle wouldn't fit before the edge.
+        let circleCy = ctrlBottom + LEADER + R;
+        let anchorY = ctrlBottom;
+        if (circleCy + R > localH - 1) {
+          circleCy = ctrlTop - LEADER - R;
+          anchorY = ctrlTop;
+        }
+        const below = circleCy > b.cy;
+        const circleCx = Math.max(R + 1, Math.min(localW - R - 1, b.cx));
+        // Thin leader line: control edge → circle edge.
+        const line = doc.createElementNS(NS, 'line');
+        line.setAttribute('x1', String(b.cx));
+        line.setAttribute('y1', String(anchorY));
+        line.setAttribute('x2', String(circleCx));
+        line.setAttribute('y2', String(below ? circleCy - R : circleCy + R));
+        line.setAttribute('stroke', '#ff2d6f');
+        line.setAttribute('stroke-width', '1.5');
+        // Small dot ON the control marking what the number points at.
+        const dot = doc.createElementNS(NS, 'circle');
+        dot.setAttribute('cx', String(b.cx));
+        dot.setAttribute('cy', String(anchorY));
+        dot.setAttribute('r', '2.5');
+        dot.setAttribute('fill', '#ff2d6f');
+        dot.setAttribute('stroke', '#ffffff');
+        dot.setAttribute('stroke-width', '1');
+        // The numbered circle, offset clear of the control.
         const circle = doc.createElementNS(NS, 'circle');
-        circle.setAttribute('cx', String(b.cx));
-        circle.setAttribute('cy', String(b.cy));
-        circle.setAttribute('r', '11');
+        circle.setAttribute('cx', String(circleCx));
+        circle.setAttribute('cy', String(circleCy));
+        circle.setAttribute('r', String(R));
         circle.setAttribute('fill', '#ff2d6f');
         circle.setAttribute('stroke', '#ffffff');
         circle.setAttribute('stroke-width', '2');
         const text = doc.createElementNS(NS, 'text');
-        text.setAttribute('x', String(b.cx));
-        text.setAttribute('y', String(b.cy + 0.5));
+        text.setAttribute('x', String(circleCx));
+        text.setAttribute('y', String(circleCy + 0.5));
         text.setAttribute('text-anchor', 'middle');
         text.setAttribute('dominant-baseline', 'central');
         text.setAttribute('font-family', 'monospace');
-        text.setAttribute('font-size', '13');
+        text.setAttribute('font-size', '11');
         text.setAttribute('font-weight', '700');
         text.setAttribute('fill', '#ffffff');
         text.textContent = String(i + 1);
+        g.appendChild(line);
+        g.appendChild(dot);
         g.appendChild(circle);
         g.appendChild(text);
         svg.appendChild(g);
