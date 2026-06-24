@@ -42,11 +42,15 @@ const NO_CARD_BY_DESIGN = new Set(['cadillac']);
 // DEFAULT/MIN size constants (in each *Card.svelte) are rounded to 180-multiples
 // so they still land on the rack grid out of the box.
 //   clockedRunner, livecode, wavesculpt, b3ntb0x, bentbox,
-//   monoglitch, reshaper, ruttetra, toybox, videobox, videoOut, archivist
+//   monoglitch, reshaper, ruttetra, toybox, videobox, videoOut, backdraft,
+//   archivist
 // All are excluded from the size-coverage requirement + the rack CSS.
-// NOTE: backdraft was promoted to a FIXED 3u/hp4 tier (#767 — 2-col
-// preview-left/controls-right layout, no longer corner-resizable), so it
-// lives in RACK_SIZE_DEFAULTS and is NOT listed here.
+// NOTE: backdraft was briefly a FIXED 3u/hp4 tier (#767 — 2-col preview-left/
+// controls-right). When it gained FULL OUTPUT CAPABILITIES (corner-resize +
+// full-frame/fullscreen/present, mirroring videoOut/bentbox) it was re-made
+// corner-resizable (DEFAULT 720×540, MIN 540×360 — all 180-multiples) so a
+// fixed tier would now CAP its resize. It therefore moved back here and OUT of
+// RACK_SIZE_DEFAULTS.
 // archivist — same user-resizable family as videobox/videoOut: a corner-resize
 // handle (card-resize.ts) drives its size, with DEFAULT/MIN constants rounded to
 // 180-multiples (360/540/360/360), so a fixed tier would CAP its resize.
@@ -55,6 +59,11 @@ const DYNAMIC_SIZED = new Set([
   // user-resizable, sized by resize-snap-to-u not a fixed tier:
   'clockedRunner', 'livecode', 'wavesculpt', 'b3ntb0x', 'bentbox',
   'monoglitch', 'reshaper', 'ruttetra', 'toybox', 'videobox', 'videoOut',
+  // backdraft — corner-resizable since it gained full output capabilities
+  // (resize + full-frame/fullscreen/present, mirroring videoOut/bentbox);
+  // DEFAULT/MIN constants are 180-multiples (720/540/540/360) so a fixed tier
+  // would CAP its resize.
+  'backdraft',
   // tvLibrarian — live HLS source card with a country picker + channel list;
   // corner-resizable like videobox (default 360×540, snaps to whole-u), so it
   // takes no fixed tier (forcing one would cap the resize / clip the list).
