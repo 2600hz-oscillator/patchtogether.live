@@ -17,6 +17,7 @@ import {
   defaultSurface,
   insetQuadForIndex,
   clampSurfaceCount,
+  surfaceFitOn,
   type MappySurfaceState,
 } from '$lib/video/modules/mappy';
 import type { Vec2 } from '$lib/video/mappy-homography';
@@ -141,13 +142,46 @@ export function moveSurface(id: string, surfaceIdx: number, dx: number, dy: numb
   ];
 }
 
-/** Reset one surface's corners to full-frame. */
+/** Reset one surface's corners to full-frame. FIT is left untouched (a
+ *  geometry reset, not a mode reset). */
 export function resetSurface(id: string, surfaceIdx: number): void {
   const arr = ensureSurfaces(id);
   if (!arr) return;
   const s = arr[surfaceIdx];
   if (!s) return;
   s.corners = defaultSurface().corners;
+}
+
+/** Read one surface's FIT mode (default ON for old/missing data). */
+export function getSurfaceFit(node: ModuleNode | undefined, surfaceIdx: number): boolean {
+  const arr = (node?.data as { surfaces?: unknown } | undefined)?.surfaces;
+  const s = Array.isArray(arr) ? (arr[surfaceIdx] as { fit?: unknown } | undefined) : undefined;
+  return surfaceFitOn(s);
+}
+
+/** Set one surface's FIT mode (true = zoom-fit, false = crop/window). Surfaces
+ *  are INDEPENDENT — each holds its own `fit`. We write the PRIMITIVE boolean
+ *  in place on the live surface object (assigning a primitive field is NOT the
+ *  "re-spread a live Y child" trap — that only applies to nested Y types like
+ *  the corners array). ensureSurfaces seeds `fit` for every surface, so the
+ *  field always exists before we toggle it. */
+export function setSurfaceFit(id: string, surfaceIdx: number, fit: boolean): void {
+  const arr = ensureSurfaces(id);
+  if (!arr) return;
+  const s = arr[surfaceIdx];
+  if (!s) return;
+  s.fit = fit;
+}
+
+/** Toggle one surface's FIT mode; returns the NEW value. */
+export function toggleSurfaceFit(id: string, surfaceIdx: number): boolean {
+  const arr = ensureSurfaces(id);
+  if (!arr) return true;
+  const s = arr[surfaceIdx];
+  if (!s) return true;
+  const next = !surfaceFitOn(s);
+  s.fit = next;
+  return next;
 }
 
 /** Toggle the global GRID override (force the calibration grid on every live

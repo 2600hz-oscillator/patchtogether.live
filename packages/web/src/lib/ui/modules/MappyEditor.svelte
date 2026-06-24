@@ -15,6 +15,7 @@
     MAPPY_MIN_SURFACES,
     MAPPY_SURFACE_COLORS,
     normalizeSurfaces,
+    surfaceFitOn,
     type MappySurfaceState,
   } from '$lib/video/modules/mappy';
   import {
@@ -25,7 +26,9 @@
     moveSurface,
     resetSurface,
     toggleGrid,
+    toggleSurfaceFit,
   } from './mappy-edit';
+  import { hitTestSurfaces } from './mappy-hit';
 
   let {
     id,
@@ -52,6 +55,8 @@
     Array.from({ length: MAPPY_SURFACE_COUNT }, (_, i) => i < surfaceCount || !!connected[i]),
   );
   let liveCount = $derived(live.filter(Boolean).length);
+  // per-surface FIT (true = zoom-fit default, false = crop/window), independent.
+  let fits = $derived<boolean[]>(surfaces.map((s) => surfaceFitOn(s)));
 
   let selected = $state(0);
   let snap = $state(false);
@@ -65,7 +70,13 @@
   }
 
   // ───────── pointer drag (corner OR whole-surface move) ─────────
+  // ONE SVG-level pointer-down runs the shared hit-test (mappy-hit): within
+  // grab range of a corner → corner-pin; else inside a surface → whole-surface
+  // move. The overlay shapes are pointer-events:none so this handler decides.
   let svgEl: SVGSVGElement | null = $state(null);
+  // grab radius in uv space. The editor handles draw at r≈16 over a VW-wide SVG;
+  // a slightly generous threshold keeps a big handle easy to grab.
+  const GRAB_UV = 18 / VW;
   let drag = $state<
     | { kind: 'corner'; surface: number; corner: number }
     | { kind: 'move'; surface: number; lastX: number; lastY: number }
@@ -83,21 +94,19 @@
     };
   }
 
-  function onCornerDown(s: number, c: number, ev: PointerEvent): void {
+  function onOverlayDown(ev: PointerEvent): void {
     if (ev.button !== 0) return;
-    selected = s;
-    drag = { kind: 'corner', surface: s, corner: c };
-    (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
-    ev.preventDefault();
-    ev.stopPropagation();
-  }
-  function onSurfaceDown(s: number, ev: PointerEvent): void {
-    if (ev.button !== 0) return;
-    selected = s;
     const uv = uvFromPointer(ev);
     if (!uv) return;
-    drag = { kind: 'move', surface: s, lastX: uv.x, lastY: uv.y };
-    (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
+    const hit = hitTestSurfaces(surfaces, live, [uv.x, uv.y], GRAB_UV, selected);
+    if (!hit) return;
+    selected = hit.surface;
+    if (hit.kind === 'corner') {
+      drag = { kind: 'corner', surface: hit.surface, corner: hit.corner };
+    } else {
+      drag = { kind: 'move', surface: hit.surface, lastX: uv.x, lastY: uv.y };
+    }
+    svgEl?.setPointerCapture?.(ev.pointerId);
     ev.preventDefault();
     ev.stopPropagation();
   }
@@ -115,7 +124,7 @@
   }
   function onUp(ev: PointerEvent): void {
     if (!drag) return;
-    try { (ev.currentTarget as Element).releasePointerCapture?.(ev.pointerId); } catch { /* */ }
+    try { svgEl?.releasePointerCapture?.(ev.pointerId); } catch { /* */ }
     drag = null;
   }
 
@@ -231,6 +240,16 @@
       >GRID {showGrid ? 'ON' : 'OFF'}</button>
       <button
         type="button"
+        class="bar-btn fit"
+        class:on={fits[selected]}
+        onclick={() => toggleSurfaceFit(id, selected)}
+        data-testid="mappy-editor-fit"
+        title={fits[selected]
+          ? `Surface ${selected + 1}: FIT ON — zoom-fits the whole source into the box. Click for CROP (window at native scale).`
+          : `Surface ${selected + 1}: CROP — windows the source at native scale (move to pan, resize to crop). Click for FIT (zoom-fit).`}
+      >{fits[selected] ? `FIT ${selected + 1}` : `CROP ${selected + 1}`}</button>
+      <button
+        type="button"
         class="bar-btn"
         class:on={snap}
         onclick={() => (snap = !snap)}
@@ -266,6 +285,7 @@
           class="overlay"
           viewBox={`0 0 ${VW} ${VH}`}
           preserveAspectRatio="none"
+          onpointerdown={onOverlayDown}
           onpointermove={onMove}
           onpointerup={onUp}
           onpointercancel={onUp}
@@ -276,7 +296,8 @@
               {@const color = MAPPY_SURFACE_COLORS[i]}
               {@const isSel = selected === i}
               {@const c = centroid(surf)}
-              <!-- whole-surface move target (interior) -->
+              <!-- whole-surface move target (interior) — visual only; the SVG
+                   owns pointer-down hit-testing (corner-pin vs. interior move) -->
               <polygon
                 points={quadPoints(surf)}
                 fill={color}
@@ -284,8 +305,6 @@
                 stroke={color}
                 stroke-width={isSel ? 3 : 1.5}
                 stroke-opacity={isSel ? 0.95 : 0.45}
-                style="cursor: move;"
-                onpointerdown={(ev) => onSurfaceDown(i, ev)}
                 data-testid={`mappy-editor-quad-${i + 1}`}
               />
               <text
@@ -306,7 +325,6 @@
                   fill-opacity={isSel ? 0.95 : 0.5}
                   stroke="#000a"
                   stroke-width="2"
-                  onpointerdown={(ev) => onCornerDown(i, ci, ev)}
                   data-testid={`mappy-editor-handle-${i + 1}-${ci}`}
                 />
               {/each}
@@ -315,7 +333,8 @@
         </svg>
       </div>
       <p class="hint">
-        Drag a corner to warp · drag inside a surface to move it · {liveCount}
+        Drag a corner to warp · drag inside a surface to move it · FIT zoom-fits
+        the source, CROP windows it at native scale · {liveCount}
         surface{liveCount === 1 ? '' : 's'} live · connect INn to fill surface n
       </p>
     </div>
@@ -394,6 +413,12 @@
     border-color: var(--yellow, #ffd24a);
     color: var(--yellow, #ffd24a);
   }
+  /* FIT is on by default — use the video cyan (info), not the yellow alarm tint */
+  .bar-btn.fit.on {
+    background: rgba(74, 223, 255, 0.14);
+    border-color: var(--cable-video, #4adfff);
+    color: var(--cable-video, #4adfff);
+  }
   .bar-btn.close { color: #ff8a8a; border-color: #5a2c2c; }
   .editor-stage {
     flex: 1;
@@ -426,9 +451,12 @@
     width: 100%;
     height: 100%;
     touch-action: none;
+    /* the SVG owns pointer-down hit-testing; `move` is the interior affordance */
+    cursor: move;
   }
-  .overlay .handle { cursor: grab; }
-  .overlay .handle:active { cursor: grabbing; }
+  /* shapes are visual only — the SVG element handles all pointer events */
+  .overlay polygon,
+  .overlay .handle { pointer-events: none; }
   .surf-num {
     text-anchor: middle;
     dominant-baseline: central;

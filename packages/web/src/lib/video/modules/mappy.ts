@@ -95,15 +95,38 @@ export const MAPPY_SURFACE_COLORS = [
 // ───────────────────────── pure state helpers ─────────────────────────
 
 /** One MAPPY surface's persisted state: its quad's four corners in
- *  NORMALIZED [0,1] output space, corner order TL, TR, BR, BL. */
+ *  NORMALIZED [0,1] output space, corner order TL, TR, BR, BL.
+ *
+ *  `fit` is the per-surface FIT toggle (default true, OPTIONAL so older
+ *  persisted patches that predate the toggle still load — a missing `fit`
+ *  reads as ON via `surfaceFitOn`):
+ *    • FIT ON  (zoom-fit, the original behaviour): the homography maps the
+ *      FULL source [0,1]² into the quad — the whole frame is squeezed/stretched
+ *      to fill the dragged box.
+ *    • FIT OFF (crop/window, NATIVE scale): the quad becomes a WINDOW onto the
+ *      source placed 1:1 in output space — moving the box pans across the
+ *      natively-positioned source, resizing the box crops more/less. The
+ *      homography is still used for the MASK (which output texels belong to the
+ *      quad), but the SAMPLE coordinate is the texel's own output uv. See
+ *      `surfaceFitOn` + the WARP shader's `uFit` branch. */
 export interface MappySurfaceState {
   corners: [Vec2, Vec2, Vec2, Vec2];
+  fit?: boolean;
+}
+
+/** Whether a surface is in FIT (zoom-fit) mode — the default. A persisted
+ *  surface that predates the toggle has no `fit` field; treat that as ON so
+ *  loading an old patch keeps today's zoom-fit behaviour. Shared by the factory,
+ *  the card, and the editor so all three agree on the default. */
+export function surfaceFitOn(s: { fit?: unknown } | undefined): boolean {
+  if (!s) return true;
+  return s.fit === undefined ? true : s.fit !== false;
 }
 
 /** A FRESH (full-frame) surface — its quad is the UNIT_QUAD, so the input
  *  fills the whole output frame un-warped. The default for every surface so a
  *  newly-connected input is immediately visible (and the behavioral sweep's
- *  drive-one-input-and-see-a-delta invariant holds). */
+ *  drive-one-input-and-see-a-delta invariant holds). FIT defaults ON. */
 export function defaultSurface(): MappySurfaceState {
   return {
     corners: [
@@ -112,6 +135,7 @@ export function defaultSurface(): MappySurfaceState {
       [UNIT_QUAD[2][0], UNIT_QUAD[2][1]],
       [UNIT_QUAD[3][0], UNIT_QUAD[3][1]],
     ],
+    fit: true,
   };
 }
 
@@ -179,7 +203,7 @@ export function normalizeSurfaces(raw: unknown): MappySurfaceState[] {
   const arr = Array.isArray(raw) ? raw : [];
   const out: MappySurfaceState[] = [];
   for (let i = 0; i < MAPPY_SURFACE_COUNT; i++) {
-    const s = arr[i] as { corners?: unknown } | undefined;
+    const s = arr[i] as { corners?: unknown; fit?: unknown } | undefined;
     const corners = Array.isArray(s?.corners) && s!.corners.length === 4
       ? ([
           coerceCorner(s!.corners[0]),
@@ -188,7 +212,9 @@ export function normalizeSurfaces(raw: unknown): MappySurfaceState[] {
           coerceCorner(s!.corners[3]),
         ] as [Vec2, Vec2, Vec2, Vec2])
       : defaultSurface().corners;
-    out.push({ corners });
+    // Preserve the per-surface FIT toggle; a missing/old value reads as ON
+    // (surfaceFitOn), so a pre-toggle persisted patch keeps zoom-fit.
+    out.push({ corners, fit: surfaceFitOn(s) });
   }
   return out;
 }
@@ -216,11 +242,24 @@ export function surfaceInverseColumnMajor(corners: Quad): number[] | null {
 //
 // WARP shader — draws ONE surface. The vertex stage is the engine's shared
 // fullscreen quad; vUv is the OUTPUT uv in [0,1]. We back-project vUv through
-// the inverse homography to the SOURCE uv and sample the input there. Outside
-// the source's [0,1] footprint the fragment is transparent (alpha 0) so the
-// composite blend leaves the under-layers untouched. When uShowGrid is on we
-// synthesize a numbered calibration grid in SOURCE space instead of sampling
-// the input.
+// the inverse homography to the SOURCE uv (`s`). `s` always serves as the
+// surface MASK: a texel is part of the quad's footprint iff `s` lands inside
+// [0,1] (else transparent so under-layers show through).
+//
+// FIT (uFit, a per-surface uniform — NOT a new pass/texture/readback):
+//   • uFit > 0.5 (ON, default): ZOOM-FIT. We sample the input at `s`, so the
+//     full source [0,1]² is squeezed into the quad (the original behaviour).
+//   • uFit ≤ 0.5 (OFF): CROP / WINDOW at NATIVE scale. We sample at the texel's
+//     OWN output uv (vUv) instead — the source is pinned 1:1 into output space,
+//     and the quad merely reveals the part of it that falls under the box. So
+//     MOVING the box pans across the natively-placed source; RESIZING crops more
+//     or less. The mask still comes from `s`, so the visible region is exactly
+//     the quad's shape. (We lerp the sample coord by uFit so it stays a single
+//     branchless mix — see main().)
+//
+// When uShowGrid is on we synthesize a numbered calibration grid in SOURCE space
+// (`s`) instead of sampling the input, regardless of FIT — the grid is the
+// surface's footprint guide, which is the homography-mapped quad either way.
 
 const WARP_FRAG_SRC = `#version 300 es
 precision highp float;
@@ -232,6 +271,8 @@ uniform sampler2D uTex; // this surface's input texture
 uniform mat3 uInv;      // inverse homography: output uv -> source uv (homogeneous)
 uniform float uShowGrid;// >0.5 → draw the numbered calibration grid, not the input
 uniform float uIndex;   // surface index 0..5 (drives the grid tint)
+uniform float uFit;     // 1 = zoom-fit (sample at back-projected source uv);
+                        // 0 = crop/window (sample at native output uv vUv)
 
 const vec3 GRID_COLORS[6] = vec3[6](
   vec3(1.0, 0.35, 0.35),
@@ -325,8 +366,10 @@ vec4 calibrationGrid(vec2 s, float idx) {
 }
 
 void main() {
+  // s is the back-projected SOURCE uv — ALWAYS the surface mask (the quad
+  // footprint), whatever FIT mode we are in.
   vec2 s = sourceUv(vUv);
-  // Outside the source footprint → transparent (under-layers show through).
+  // Outside the source footprint -> transparent (under-layers show through).
   if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0) {
     outColor = vec4(0.0);
     return;
@@ -335,7 +378,13 @@ void main() {
     outColor = calibrationGrid(s, uIndex);
     return;
   }
-  vec4 c = texture(uTex, s);
+  // FIT chooses the SAMPLE coordinate (the mask is unchanged):
+  //   uFit=1 -> sample at s    (zoom-fit: full source squeezed into the quad)
+  //   uFit=0 -> sample at vUv  (crop: source pinned 1:1 in output space; the
+  //            box is a moveable/resizable window onto it)
+  // A single mix keeps it branchless — zero extra cost over the original.
+  vec2 sampleUv = mix(vUv, s, uFit);
+  vec4 c = texture(uTex, sampleUv);
   outColor = vec4(c.rgb, 1.0);
 }`;
 
@@ -395,6 +444,7 @@ export const mappyDef: VideoModuleDef = {
       inv: gl.getUniformLocation(program, 'uInv'),
       showGrid: gl.getUniformLocation(program, 'uShowGrid'),
       index: gl.getUniformLocation(program, 'uIndex'),
+      fit: gl.getUniformLocation(program, 'uFit'),
     };
 
     // The canonical composite surface (out port + on-card preview + VRT).
@@ -483,12 +533,19 @@ export const mappyDef: VideoModuleDef = {
           // fills the quad you already mapped.
           const drawGrid = forceGrid || !inputTex;
 
+          // Per-surface FIT (a cheap uniform — no extra pass/texture/readback):
+          // 1 = zoom-fit (default), 0 = crop/window. The grid case forces FIT on
+          // so the calibration grid always fills the quad (it has no native
+          // source to pan/crop).
+          const fitOn = drawGrid ? true : surfaceFitOn(surfaces[i]);
+
           g.activeTexture(g.TEXTURE0);
           g.bindTexture(g.TEXTURE_2D, drawGrid ? emptyTex : inputTex);
           g.uniform1i(u.tex, 0);
           g.uniformMatrix3fv(u.inv, false, new Float32Array(inv));
           g.uniform1f(u.showGrid, drawGrid ? 1.0 : 0.0);
           g.uniform1f(u.index, i);
+          g.uniform1f(u.fit, fitOn ? 1.0 : 0.0);
           ctx.drawFullscreenQuad();
         }
 

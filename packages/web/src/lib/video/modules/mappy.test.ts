@@ -9,6 +9,7 @@ import {
   defaultSurfaces,
   normalizeSurfaces,
   surfaceInverseColumnMajor,
+  surfaceFitOn,
   insetQuadForIndex,
   clampSurfaceCount,
   mappyDef,
@@ -104,8 +105,20 @@ describe('insetQuadForIndex', () => {
   });
 });
 
+describe('surfaceFitOn (per-surface FIT default)', () => {
+  it('defaults to ON for missing/undefined data + an absent `fit` field', () => {
+    expect(surfaceFitOn(undefined)).toBe(true);
+    expect(surfaceFitOn({})).toBe(true);
+    expect(surfaceFitOn({ fit: undefined })).toBe(true);
+  });
+  it('reads an explicit boolean', () => {
+    expect(surfaceFitOn({ fit: true })).toBe(true);
+    expect(surfaceFitOn({ fit: false })).toBe(false);
+  });
+});
+
 describe('defaultSurface / defaultSurfaces', () => {
-  it('defaults each surface to the full-frame UNIT_QUAD (TL,TR,BR,BL)', () => {
+  it('defaults each surface to the full-frame UNIT_QUAD (TL,TR,BR,BL) with FIT on', () => {
     const s = defaultSurface();
     expect(s.corners).toEqual([
       [UNIT_QUAD[0][0], UNIT_QUAD[0][1]],
@@ -113,6 +126,7 @@ describe('defaultSurface / defaultSurfaces', () => {
       [UNIT_QUAD[2][0], UNIT_QUAD[2][1]],
       [UNIT_QUAD[3][0], UNIT_QUAD[3][1]],
     ]);
+    expect(s.fit).toBe(true);
   });
 
   it('returns MAPPY_SURFACE_COUNT independent default surfaces', () => {
@@ -158,6 +172,19 @@ describe('normalizeSurfaces', () => {
       corners: [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2], [0.1, 0.2]],
     }));
     expect(normalizeSurfaces(seven)).toHaveLength(MAPPY_SURFACE_COUNT);
+  });
+
+  it('preserves the per-surface FIT flag; missing/old reads as ON', () => {
+    const out = normalizeSurfaces([
+      { corners: [[0, 0], [1, 0], [1, 1], [0, 1]], fit: false },
+      { corners: [[0, 0], [1, 0], [1, 1], [0, 1]], fit: true },
+      { corners: [[0, 0], [1, 0], [1, 1], [0, 1]] }, // no fit → ON
+    ]);
+    expect(out[0]!.fit).toBe(false);
+    expect(out[1]!.fit).toBe(true);
+    expect(out[2]!.fit).toBe(true);
+    // surfaces that fell back to default are also ON
+    expect(out[5]!.fit).toBe(true);
   });
 });
 
