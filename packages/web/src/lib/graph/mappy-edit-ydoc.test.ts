@@ -19,8 +19,11 @@ import {
   setCorner,
   moveSurface,
   resetSurface,
+  getSurfaceFit,
+  setSurfaceFit,
+  toggleSurfaceFit,
 } from '$lib/ui/modules/mappy-edit';
-import { defaultSurface, insetQuadForIndex } from '$lib/video/modules/mappy';
+import { defaultSurface, insetQuadForIndex, surfaceFitOn } from '$lib/video/modules/mappy';
 
 const MID = 'mappy-ydoc-test';
 
@@ -122,5 +125,70 @@ describe('mappy-edit — real Y.Doc surface mutators', () => {
     setCorner(MID, 0, 0, 0.2, 0.2);
     resetSurface(MID, 0);
     expect(ensureSurfaces(MID)![0]!.corners).toEqual(defaultSurface().corners);
+  });
+});
+
+describe('mappy-edit — per-surface FIT toggle (real Y.Doc)', () => {
+  it('defaults FIT ON for every seeded surface', () => {
+    setup();
+    const arr = ensureSurfaces(MID)!;
+    for (const s of arr) expect(surfaceFitOn(s)).toBe(true);
+    expect(getSurfaceFit(patch.nodes[MID], 0)).toBe(true);
+    expect(getSurfaceFit(patch.nodes[MID], 5)).toBe(true);
+  });
+
+  it('setSurfaceFit persists in place + survives repeated writes (no integrate trap)', () => {
+    setup();
+    expect(() => {
+      setSurfaceFit(MID, 0, false);
+      setSurfaceFit(MID, 0, true);
+      setSurfaceFit(MID, 0, false);
+    }).not.toThrow();
+    expect(getSurfaceFit(patch.nodes[MID], 0)).toBe(false);
+    expect(ensureSurfaces(MID)![0]!.fit).toBe(false);
+  });
+
+  it('toggleSurfaceFit flips + returns the NEW value', () => {
+    setup();
+    expect(toggleSurfaceFit(MID, 2)).toBe(false); // was ON → OFF
+    expect(getSurfaceFit(patch.nodes[MID], 2)).toBe(false);
+    expect(toggleSurfaceFit(MID, 2)).toBe(true); // OFF → ON
+    expect(getSurfaceFit(patch.nodes[MID], 2)).toBe(true);
+  });
+
+  it('surfaces are INDEPENDENT — toggling one does not change another', () => {
+    setup();
+    ensureSurfaces(MID);
+    setSurfaceFit(MID, 1, false);
+    expect(getSurfaceFit(patch.nodes[MID], 1)).toBe(false);
+    expect(getSurfaceFit(patch.nodes[MID], 0)).toBe(true);
+    expect(getSurfaceFit(patch.nodes[MID], 2)).toBe(true);
+  });
+
+  it('FIT survives corner edits + add/remove churn (independent of geometry)', () => {
+    setup();
+    setSurfaceFit(MID, 0, false);
+    // mutate geometry on the same surface — fit must not be clobbered
+    setCorner(MID, 0, 0, 0.3, 0.3);
+    moveSurface(MID, 0, 0.05, 0.05);
+    expect(getSurfaceFit(patch.nodes[MID], 0)).toBe(false);
+    // add/remove churn (re-normalizes / reads) keeps the value
+    addSurface(MID);
+    removeSurface(MID);
+    expect(getSurfaceFit(patch.nodes[MID], 0)).toBe(false);
+  });
+
+  it('an OLD persisted surface with no `fit` field reads as ON', () => {
+    setup();
+    // simulate a pre-toggle patch: surfaces present (length 6) but no fit field.
+    patch.nodes[MID]!.data = {
+      surfaces: Array.from({ length: 6 }, () => ({
+        corners: [[0, 0], [1, 0], [1, 1], [0, 1]],
+      })),
+    } as unknown as Record<string, unknown>;
+    expect(getSurfaceFit(patch.nodes[MID], 0)).toBe(true);
+    // and toggling it from the implicit-ON state writes an explicit false
+    expect(toggleSurfaceFit(MID, 0)).toBe(false);
+    expect(getSurfaceFit(patch.nodes[MID], 0)).toBe(false);
   });
 });

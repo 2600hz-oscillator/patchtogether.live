@@ -116,12 +116,37 @@
   The card has a live composite preview with draggable corner handles + quad
   outlines (coloured per surface), a <code>+</code>/<code>−</code> surface
   counter, a <strong>MAP</strong> button, the GRID toggle, and a per-surface
-  legend (focus · reset · a ● video / ○ grid state). Precise corner-pin work
-  happens in the <strong>MAP editor</strong> — a full-window canvas with big
-  handles, drag-inside-a-surface to move it bodily, surface tabs, and
-  snap-to-grid for matching a real edge. All ports live on the yellow drill-down
-  patch panel — no raw side jacks.
+  legend (focus · <strong>FIT/CROP</strong> · reset · a ● video / ○ grid state).
+  Drag a <strong>corner</strong> to pin it, or grab the surface's
+  <strong>interior</strong> and drag to move the whole quad bodily — on the card
+  preview <em>and</em> in the editor. Precise corner-pin work happens in the
+  <strong>MAP editor</strong> — a full-window canvas with big handles,
+  drag-inside-a-surface to move it bodily, surface tabs, a per-surface FIT/CROP
+  toggle, and snap-to-grid for matching a real edge. All ports live on the
+  yellow drill-down patch panel — no raw side jacks.
 </p>
+
+<h2>FIT vs CROP (per surface)</h2>
+<p>
+  Each surface has its own <strong>FIT</strong> toggle (default <strong>ON</strong>;
+  surfaces are independent). It is one cheap per-surface shader uniform — no extra
+  render pass, no readback.
+</p>
+<ul>
+  <li>
+    <strong>FIT (default) — zoom-fit.</strong> The homography squeezes the
+    <em>whole</em> source <code>[0,1]²</code> into the dragged quad. Resize the box
+    and the entire frame stretches to fill it (the original behaviour).
+  </li>
+  <li>
+    <strong>CROP — window at native scale.</strong> The quad becomes a moveable
+    <em>window</em> onto the source, which is pinned 1:1 into output space:
+    <strong>moving</strong> the box pans across the natively-placed source, and
+    <strong>resizing</strong> it crops more or less. The quad still provides the
+    shape/mask — only the part of the source under the box shows. Use it to frame
+    a region of a feed onto a physical panel without distorting it.
+  </li>
+</ul>
 
 {#if data.inputs.length > 0}
   <h2>inputs</h2>

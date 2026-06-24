@@ -32,6 +32,7 @@
     MAPPY_INPUT_IDS,
     MAPPY_SURFACE_COLORS,
     normalizeSurfaces,
+    surfaceFitOn,
     type MappySurfaceState,
   } from '$lib/video/modules/mappy';
   import {
@@ -39,9 +40,12 @@
     addSurface,
     removeSurface,
     setCorner as editSetCorner,
+    moveSurface as editMoveSurface,
     resetSurface as editResetSurface,
     toggleGrid as editToggleGrid,
+    toggleSurfaceFit as editToggleSurfaceFit,
   } from './mappy-edit';
+  import { hitTestSurfaces } from './mappy-hit';
   import MappyEditor from './MappyEditor.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
 
@@ -78,6 +82,9 @@
   let surfaces = $derived<MappySurfaceState[]>(
     normalizeSurfaces((node?.data as { surfaces?: unknown } | undefined)?.surfaces),
   );
+  // per-surface FIT (true = zoom-fit default, false = crop/window). Independent
+  // per surface — normalizeSurfaces fills `fit` (ON for old/missing data).
+  let fits = $derived<boolean[]>(surfaces.map((s) => surfaceFitOn(s)));
   let showGrid = $derived<boolean>(
     ((node?.data as { showGrid?: unknown } | undefined)?.showGrid as boolean) ?? false,
   );
@@ -101,6 +108,9 @@
   function toggleGrid(): void {
     editToggleGrid(id, showGrid);
   }
+  function onToggleFit(surfaceIdx: number): void {
+    editToggleSurfaceFit(id, surfaceIdx);
+  }
   function onAdd(): void {
     selected = addSurface(id) - 1;
   }
@@ -109,13 +119,22 @@
     if (selected >= surfaceCount - 1) selected = Math.max(0, surfaceCount - 2);
   }
 
-  // ───────── corner drag (pointer ↔ preview rect) ─────────
+  // ───────── pointer drag — corner-pin OR whole-surface move ─────────
+  // A single SVG-level pointer-down runs the shared hit-test (mappy-hit): a
+  // pointer within grab range of a corner pins that corner (unchanged); else a
+  // pointer inside a surface's quad MOVES the whole surface bodily (new). The
+  // overlay shapes are pointer-events:none so this one handler owns hit-testing.
   let svgEl: SVGSVGElement | null = $state(null);
-  let dragging = $state<{ surface: number; corner: number } | null>(null);
+  let drag = $state<
+    | { kind: 'corner'; surface: number; corner: number }
+    | { kind: 'move'; surface: number; lastX: number; lastY: number }
+    | null
+  >(null);
 
   function uvFromPointer(ev: PointerEvent): { x: number; y: number } | null {
     if (!svgEl) return null;
     const rect = svgEl.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
     const x = (ev.clientX - rect.left) / rect.width;
     // y is FLIPPED: corners live in the engine's y-UP uv space (vUv.y=1 = canvas
     // top), so a click near the visual top must map to a HIGH v — else the grid
@@ -123,24 +142,40 @@
     const y = 1 - (ev.clientY - rect.top) / rect.height;
     return { x, y };
   }
-  function onHandleDown(surfaceIdx: number, cornerIdx: number, ev: PointerEvent): void {
+  function onOverlayDown(ev: PointerEvent): void {
     if (ev.button !== 0) return;
-    selected = surfaceIdx;
-    dragging = { surface: surfaceIdx, corner: cornerIdx };
-    (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
+    const uv = uvFromPointer(ev);
+    if (!uv) return;
+    // grab radius in uv space — ~the on-card handle radius (7px) over the preview.
+    const grabUv = 7 / CANVAS_W;
+    const hit = hitTestSurfaces(surfaces, live, [uv.x, uv.y], grabUv, selected);
+    if (!hit) return;
+    selected = hit.surface;
+    if (hit.kind === 'corner') {
+      drag = { kind: 'corner', surface: hit.surface, corner: hit.corner };
+    } else {
+      drag = { kind: 'move', surface: hit.surface, lastX: uv.x, lastY: uv.y };
+    }
+    svgEl?.setPointerCapture?.(ev.pointerId);
     ev.preventDefault();
     ev.stopPropagation();
   }
   function onHandleMove(ev: PointerEvent): void {
-    if (!dragging) return;
+    if (!drag) return;
     const uv = uvFromPointer(ev);
     if (!uv) return;
-    setCorner(dragging.surface, dragging.corner, uv.x, uv.y);
+    if (drag.kind === 'corner') {
+      setCorner(drag.surface, drag.corner, uv.x, uv.y);
+    } else {
+      editMoveSurface(id, drag.surface, uv.x - drag.lastX, uv.y - drag.lastY);
+      drag.lastX = uv.x;
+      drag.lastY = uv.y;
+    }
   }
   function onHandleUp(ev: PointerEvent): void {
-    if (!dragging) return;
-    try { (ev.currentTarget as Element).releasePointerCapture?.(ev.pointerId); } catch { /* */ }
-    dragging = null;
+    if (!drag) return;
+    try { svgEl?.releasePointerCapture?.(ev.pointerId); } catch { /* */ }
+    drag = null;
   }
 
   // ───────── live composite preview ─────────
@@ -223,6 +258,7 @@
           viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
           width={CANVAS_W}
           height={CANVAS_H}
+          onpointerdown={onOverlayDown}
           onpointermove={onHandleMove}
           onpointerup={onHandleUp}
           onpointercancel={onHandleUp}
@@ -232,9 +268,12 @@
             {#if live[i]}
               {@const color = MAPPY_SURFACE_COLORS[i]}
               {@const isSel = selected === i}
+              <!-- quad outline + an interior fill so the move target reads (the
+                   fill is faint; the whole SVG owns pointer-down hit-testing) -->
               <polygon
                 points={quadPoints(surf)}
-                fill="none"
+                fill={color}
+                fill-opacity={isSel ? 0.08 : 0.03}
                 stroke={color}
                 stroke-width={isSel ? 2 : 1}
                 stroke-opacity={isSel ? 0.95 : 0.4}
@@ -251,7 +290,6 @@
                   stroke="#0008"
                   stroke-width="1"
                   data-testid={`mappy-handle-${i + 1}-${ci}`}
-                  onpointerdown={(ev) => onHandleDown(i, ci, ev)}
                 />
               {/each}
             {/if}
@@ -318,6 +356,16 @@
                   <span class="legend-state" class:lit={connected[i]}>{connected[i] ? '● video' : '○ grid'}</span>
                 </button>
                 <button
+                  class="fit-btn nodrag"
+                  class:on={fits[i]}
+                  type="button"
+                  onclick={() => onToggleFit(i)}
+                  title={fits[i]
+                    ? `FIT ON — surface ${i + 1} zoom-fits the whole source into its box. Click for CROP (window the source at native scale).`
+                    : `CROP — surface ${i + 1} windows the source at native scale (move to pan, resize to crop). Click for FIT (zoom-fit).`}
+                  data-testid={`mappy-fit-${i + 1}`}
+                >{fits[i] ? 'FIT' : 'CROP'}</button>
+                <button
                   class="reset-btn nodrag"
                   type="button"
                   onclick={() => resetSurface(i)}
@@ -370,12 +418,15 @@
     position: absolute;
     inset: 0;
     touch-action: none;
+    /* the SVG owns pointer-down hit-testing (corner vs. interior move); the
+       shapes themselves don't intercept, so a single handler decides. `move`
+       is the interior affordance — corners read as the handle dots. */
+    cursor: move;
   }
+  /* shapes are visual only — the SVG element handles all pointer events */
+  .overlay polygon,
   .overlay .handle {
-    cursor: grab;
-  }
-  .overlay .handle:active {
-    cursor: grabbing;
+    pointer-events: none;
   }
   .empty-hint {
     position: absolute;
@@ -502,8 +553,26 @@
   .legend-label {
     letter-spacing: 0.04em;
   }
-  .reset-btn {
+  .fit-btn {
     margin-left: auto;
+    min-width: 40px;
+    background: transparent;
+    border: 1px solid #404652;
+    color: var(--text-dim, #99a);
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-size: 0.6rem;
+    letter-spacing: 0.04em;
+    font-family: ui-monospace, monospace;
+    cursor: pointer;
+  }
+  .fit-btn:hover { color: var(--text); border-color: var(--cable-video); }
+  .fit-btn.on {
+    background: rgba(74, 223, 255, 0.12);
+    border-color: var(--cable-video, #4adfff);
+    color: var(--cable-video, #4adfff);
+  }
+  .reset-btn {
     background: transparent;
     border: 1px solid #404652;
     color: var(--text-dim, #99a);

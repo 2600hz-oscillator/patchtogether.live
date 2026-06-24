@@ -116,6 +116,31 @@ async function warpSurface(page: Page, mappyId: string, idx1: number, corners: n
   }, { mappyId, surfaceIdx: idx1 - 1, corners });
 }
 
+/** Set MAPPY surface `idx1` (1-based) FIT mode (true = zoom-fit, false = crop)
+ *  by writing node.data.surfaces[idx-1].fit IN PLACE — the same path the card's
+ *  per-surface FIT toggle writes. Seeds the 6-surface array if absent. */
+async function setFit(page: Page, mappyId: string, idx1: number, fit: boolean) {
+  await page.evaluate(({ mappyId, surfaceIdx, fit }) => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: { surfaces?: { corners: number[][]; fit?: boolean }[] } }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes[mappyId];
+      if (!n) return;
+      if (!n.data) n.data = {};
+      if (!Array.isArray(n.data.surfaces) || n.data.surfaces.length !== 6) {
+        n.data.surfaces = Array.from({ length: 6 }, () => ({
+          corners: [[0, 0], [1, 0], [1, 1], [0, 1]] as number[][],
+          fit: true,
+        }));
+      }
+      const s = n.data.surfaces[surfaceIdx];
+      if (s) s.fit = fit;
+    });
+  }, { mappyId, surfaceIdx: idx1 - 1, fit });
+}
+
 async function setup(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -174,6 +199,61 @@ test.describe('MAPPY — multi-surface projection mapper output', () => {
     ).toBeLessThan(full!.nonZeroFrac * 0.6);
     // and the spatial signature is demonstrably different.
     expect(warped!.sig, 'warp changes the composite signature').not.toBe(full!.sig);
+
+    expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
+  });
+
+  test('per-surface FIT/CROP: identity for full-frame, both modes render for a warped box', async ({ page }) => {
+    const errors = await setup(page);
+
+    const s1 = source(1, TINT_RED, 40);
+    const nodes: Node[] = [
+      ...s1.nodes,
+      { id: 'mappy', type: 'mappy', position: { x: 560, y: 60 }, domain: 'video' },
+      { id: 'v-out', type: 'videoOut', position: { x: 900, y: 60 }, domain: 'video' },
+    ];
+    const edges: Edge[] = [
+      ...s1.edges,
+      { id: 'm1', from: { nodeId: 'chroma1', portId: 'out' }, to: { nodeId: 'mappy', portId: 'in1' }, sourceType: 'video', targetType: 'video' },
+      { id: 'mo', from: { nodeId: 'mappy', portId: 'out' }, to: { nodeId: 'v-out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+    ];
+    await spawnPatch(page, nodes, edges);
+    await expect(page.locator('[data-testid="mappy-card"]')).toHaveCount(1);
+
+    // INVARIANT: for a FULL-FRAME quad the homography is identity, so the
+    // back-projected source uv == the texel's own output uv. FIT samples at the
+    // back-projected uv, CROP at the output uv — IDENTICAL here. So toggling FIT
+    // on a full-frame surface must NOT change the lit footprint (deterministic +
+    // animation-tolerant: lit fraction is stable even though LINES animates).
+    await setFit(page, 'mappy', 1, true);
+    await page.waitForTimeout(500);
+    const fitFull = await readStats(page);
+    expect(fitFull, 'FIT full-frame readable').not.toBeNull();
+    expect(fitFull!.nonZeroFrac, 'full-frame FIT fills the frame').toBeGreaterThan(0.5);
+
+    await setFit(page, 'mappy', 1, false);
+    await page.waitForTimeout(500);
+    const cropFull = await readStats(page);
+    expect(cropFull, 'CROP full-frame readable').not.toBeNull();
+    // same footprint within a generous tolerance (animation jitters the exact
+    // count slightly; the identity property keeps them close).
+    expect(
+      Math.abs(cropFull!.nonZeroFrac - fitFull!.nonZeroFrac),
+      `full-frame FIT≈CROP (fit=${fitFull!.nonZeroFrac.toFixed(3)} crop=${cropFull!.nonZeroFrac.toFixed(3)})`,
+    ).toBeLessThan(0.06);
+
+    // Now WARP surface 1 to a small top-left box. Both FIT and CROP must render a
+    // non-blank, structured, red-tinted composite (the CROP branch compiles +
+    // runs on the real renderer; it windows the source instead of zoom-fitting).
+    await warpSurface(page, 'mappy', 1, [[0.02, 0.02], [0.42, 0.02], [0.42, 0.42], [0.02, 0.42]]);
+    for (const fit of [true, false]) {
+      await setFit(page, 'mappy', 1, fit);
+      await page.waitForTimeout(500);
+      const st = await readStats(page);
+      expect(st, `${fit ? 'FIT' : 'CROP'} warped readable`).not.toBeNull();
+      expect(st!.nonZeroFrac, `${fit ? 'FIT' : 'CROP'} warped box is non-blank`).toBeGreaterThan(0.02);
+      expect(st!.r, `${fit ? 'FIT' : 'CROP'} stays red-tinted`).toBeGreaterThan(st!.g);
+    }
 
     expect(errors, `no page errors: ${errors.join(' | ')}`).toEqual([]);
   });
