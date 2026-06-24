@@ -9,7 +9,42 @@
 import { describe, expect, it, test } from 'vitest';
 import { buildModuleManifest } from './module-manifest';
 import '$lib/audio/modules'; // side-effect: registers all module defs
+import '$lib/video/modules'; // video defs too — the drift gate covers all domains
+import '$lib/meta/modules'; // meta defs too
 import { getAllModuleSpecs } from '$lib/dev/module-specs';
+import {
+  explainInputPort,
+  explainOutputPort,
+  explainParam,
+  type ExplainPort,
+  type ExplainParam,
+} from './io-explain';
+
+// The cable types io-explain gives a real human label to (cableTypeLabel in
+// io-explain.ts). A port whose type is NOT here falls through to the raw type
+// name — the drift signal: a newly-registered cable type that nobody taught
+// io-explain about. Keep in lock-step with io-explain.ts:cableTypeLabel.
+const KNOWN_CABLE_TYPES = new Set([
+  'audio',
+  'cv',
+  'pitch',
+  'gate',
+  'modsignal',
+  'polyPitchGate',
+  'keys',
+  'image',
+  'mono-video',
+  'video',
+]);
+
+// Registry-driven exclusion: getAllModuleSpecs() reads the LIVE registries,
+// which only contain SPAWNABLE cards (internal `*-engine`/`*-types`/`*-draw`
+// support files never call registerModule, so they're already absent). This
+// explicit list is the escape hatch for any registered-but-special module
+// type that legitimately shouldn't be held to the I/O-explanation contract
+// (e.g. a non-card meta organizational node). Empty today — add a type id
+// with a one-line reason if one ever needs it.
+const DRIFT_EXEMPT = new Set<string>([]);
 
 const m = buildModuleManifest();
 
@@ -63,6 +98,47 @@ describe('buildModuleManifest', () => {
     for (const p of [...seq.inputs, ...seq.outputs]) {
       expect(p.note).toBeTruthy();
     }
+  });
+
+  it('auto I/O section: adsr CV inputs explain modulation + cvScale (docs-overhaul §3c)', () => {
+    const adsr = m.modules.find((x) => x.type === 'adsr');
+    expect(adsr).toBeDefined();
+    if (!adsr) return;
+    // The `io` field is the SINGLE source of truth the doc page renders.
+    const gate = adsr.io.inputs.find((p) => p.id === 'gate');
+    expect(gate?.explain, 'gate explanation').toMatch(/gate \/ trigger/);
+    const attack = adsr.io.inputs.find((p) => p.id === 'attack');
+    expect(attack?.explain, 'attack explanation').toMatch(/modulates attack/);
+    // adsr's attack CV declares cvScale: { mode: 'log' } → multiplicative text.
+    expect(attack?.explain).toMatch(/multiplicative|octaves/);
+    const env = adsr.io.outputs.find((p) => p.id === 'env');
+    expect(env?.explain, 'env output explanation').toMatch(/control voltage/);
+  });
+
+  it('auto I/O section: a stereo-pair module notes L/R normaling', () => {
+    // aquaTank declares stereoPairs [['mix_l','mix_r']] (verified in the
+    // registry manifest). The doc parser should pick it up + io-explain
+    // should note the L-only auto-duplicate on the L side.
+    const aqua = m.modules.find((x) => x.type === 'aquaTank');
+    expect(aqua, 'aquaTank present').toBeDefined();
+    if (!aqua) return;
+    expect(aqua.stereoPairs, 'aquaTank stereoPairs parsed').toEqual([['mix_l', 'mix_r']]);
+    // mix_l / mix_r are OUTPUTS (the stereo mix bus). The output explainer
+    // notes the pair membership.
+    const left = aqua.io.outputs.find((p) => p.id === 'mix_l');
+    expect(left?.explain, 'mix_l explanation').toMatch(/stereo pair with mix_r/);
+
+    // clouds declares two pairs incl. a stereo INPUT pair (in_l/in_r); the
+    // input explainer notes the L-only auto-duplicate-to-R normaling.
+    const clouds = m.modules.find((x) => x.type === 'clouds');
+    expect(clouds, 'clouds present').toBeDefined();
+    if (!clouds) return;
+    expect(clouds.stereoPairs).toEqual([
+      ['in_l', 'in_r'],
+      ['out_l', 'out_r'],
+    ]);
+    const inL = clouds.io.inputs.find((p) => p.id === 'in_l');
+    expect(inL?.explain, 'in_l explanation').toMatch(/auto-duplicates to R/);
   });
 
   it('analogVco exposes saw / square / triangle / sine outputs', () => {
@@ -151,6 +227,71 @@ describe('manifest stays in sync with module defs', () => {
         mod.outputs.map((p) => p.id).sort(),
         `${spec.type} output ids`,
       ).toEqual(spec.outputs.map((p) => p.id).sort());
+    });
+  }
+});
+
+// ----------------------------------------------------------------------------
+// I/O-EXPLANATION DRIFT GATE (docs-overhaul §5).
+//
+// The auto-generated Inputs & Outputs section renders io-explain's output for
+// every declared port + param. This gate FAILS CI the moment a module's port
+// or param can't be explained — so the docs can never silently drift into a
+// "raw type name" or empty cell:
+//   * every port's cable type must be one io-explain gives a human label to
+//     (a NEW registered cable type that nobody taught io-explain fails here),
+//   * every port + param must yield a NON-EMPTY explanation string.
+//
+// Runs against the LIVE registry (getAllModuleSpecs, schemaVersion-2 enriched)
+// across ALL domains — so internal `*-engine`/`*-types` support files (which
+// never registerModule) are inherently excluded, and the explicit DRIFT_EXEMPT
+// set is the registry-driven escape hatch for any special registered type.
+// ----------------------------------------------------------------------------
+describe('I/O-explanation drift gate (every port + param explains)', () => {
+  const specs = getAllModuleSpecs().filter((s) => !DRIFT_EXEMPT.has(s.type));
+
+  it('covers a non-trivial number of spawnable modules across domains', () => {
+    expect(specs.length).toBeGreaterThan(60);
+  });
+
+  for (const spec of specs) {
+    test(`${spec.type}: every port has a known cable type`, () => {
+      const unknown = [...spec.inputs, ...spec.outputs]
+        .filter((p) => !KNOWN_CABLE_TYPES.has(p.type))
+        .map((p) => `${p.id} (${p.type})`);
+      expect(
+        unknown,
+        `${spec.type}: ports with a cable type io-explain can't label ` +
+          `(teach io-explain.ts:cableTypeLabel + KNOWN_CABLE_TYPES): ${unknown.join(', ')}`,
+      ).toEqual([]);
+    });
+
+    test(`${spec.type}: every port + param yields a non-empty explanation`, () => {
+      const empties: string[] = [];
+      for (const p of spec.inputs) {
+        if (!explainInputPort(p as ExplainPort).trim()) empties.push(`input ${p.id}`);
+      }
+      for (const p of spec.outputs) {
+        if (!explainOutputPort(p as ExplainPort).trim()) empties.push(`output ${p.id}`);
+      }
+      for (const p of spec.params) {
+        if (!explainParam(p as ExplainParam).trim()) empties.push(`param ${p.id}`);
+      }
+      expect(
+        empties,
+        `${spec.type}: ports/params with no explanation: ${empties.join(', ')}`,
+      ).toEqual([]);
+    });
+
+    test(`${spec.type}: every cv input with a paramTarget produces a modulation explanation`, () => {
+      const missing = spec.inputs
+        .filter((p) => p.type === 'cv' && p.paramTarget)
+        .filter((p) => !/modulates/.test(explainInputPort(p as ExplainPort)))
+        .map((p) => p.id);
+      expect(
+        missing,
+        `${spec.type}: cv inputs with a paramTarget but no "modulates" explanation: ${missing.join(', ')}`,
+      ).toEqual([]);
     });
   }
 });

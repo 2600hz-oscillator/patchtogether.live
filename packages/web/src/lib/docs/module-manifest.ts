@@ -26,6 +26,8 @@
 // rather than the source tree, breaking prerender. With `import.meta.glob`,
 // Vite walks the registry, embeds each module file's source text, and
 // resolves all paths at build time.
+import { explainInputPort, explainOutputPort, type ExplainPort } from './io-explain';
+
 const MODULE_SOURCES = import.meta.glob('../audio/modules/*.ts', {
   query: '?raw',
   import: 'default',
@@ -37,6 +39,14 @@ export interface ManifestPort {
   type: string;
   paramTarget?: string;
   note?: string;
+  // Enriched PortDef fields (docs-overhaul §3c) — fed to io-explain so the
+  // auto I/O section explains modulation / trigger-vs-gate / type-transparent
+  // outputs without a hand-written note. Optional: a port declares only what
+  // it needs.
+  cvScale?: { mode: 'linear' | 'log' | 'discrete' | 'passthrough' };
+  accepts?: string[];
+  edge?: 'trigger' | 'gate';
+  adoptsUpstreamFrom?: string;
 }
 
 export interface ManifestParam {
@@ -61,6 +71,18 @@ export interface ManifestModule {
   inputs: ManifestPort[];
   outputs: ManifestPort[];
   params: ManifestParam[];
+  /** [leftPortId, rightPortId] stereo-pair tuples declared on the def
+   *  (shared across inputs + outputs). Powers the I/O section's stereo
+   *  L/R normaling note. */
+  stereoPairs?: [string, string][];
+  /** Auto-generated human explanations (docs-overhaul §3c). One entry per
+   *  port (keyed by port id), produced from the enriched PortDef via
+   *  io-explain — the single source of truth the I/O section renders, so it
+   *  can never drift from the def. */
+  io: {
+    inputs: { id: string; type: string; explain: string }[];
+    outputs: { id: string; type: string; explain: string }[];
+  };
 }
 
 export interface Manifest {
@@ -1005,9 +1027,28 @@ function parsePortList(body: string): ManifestPort[] {
     const id = (part.match(/\bid:\s*['"]([^'"]+)['"]/) || [])[1];
     const type = (part.match(/\btype:\s*['"]([^'"]+)['"]/) || [])[1];
     const paramTarget = (part.match(/paramTarget:\s*['"]([^'"]+)['"]/) || [])[1];
+    // Enriched PortDef fields (docs-overhaul). Regex-tolerant of the literal
+    // shapes the def files use, e.g. `cvScale: { mode: 'log' }`,
+    // `edge: 'trigger'`, `adoptsUpstreamFrom: 'in'`, `accepts: ['cv','pitch']`.
+    const cvMode = (part.match(/cvScale:\s*\{[^}]*\bmode:\s*['"]([^'"]+)['"]/) || [])[1];
+    const edge = (part.match(/\bedge:\s*['"](trigger|gate)['"]/) || [])[1] as
+      | 'trigger'
+      | 'gate'
+      | undefined;
+    const adopts = (part.match(/adoptsUpstreamFrom:\s*['"]([^'"]+)['"]/) || [])[1];
+    const acceptsBlock = (part.match(/\baccepts:\s*\[([^\]]*)\]/) || [])[1];
     if (id && type) {
       const port: ManifestPort = { id, type };
       if (paramTarget) port.paramTarget = paramTarget;
+      if (cvMode) {
+        port.cvScale = { mode: cvMode as 'linear' | 'log' | 'discrete' | 'passthrough' };
+      }
+      if (edge) port.edge = edge;
+      if (adopts) port.adoptsUpstreamFrom = adopts;
+      if (acceptsBlock) {
+        const accepts = [...acceptsBlock.matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
+        if (accepts.length > 0) port.accepts = accepts;
+      }
       out.push(port);
     }
   }
@@ -1268,6 +1309,34 @@ interface RawModule {
   inputs: ManifestPort[];
   outputs: ManifestPort[];
   params: ManifestParam[];
+  stereoPairs?: [string, string][];
+}
+
+/** Parse a `stereoPairs: [['a','b'], ['c','d']]` literal off the def source.
+ *  Reuses extractArray() to balance-match the OUTER `[...]` (a plain regex
+ *  can't — the array is nested, so a non-greedy match stops at the first inner
+ *  `]`), then extracts every `['x','y']` tuple from the balanced body. */
+function parseStereoPairs(src: string): [string, string][] | undefined {
+  const body = extractArray(src, 'stereoPairs');
+  if (!body.trim()) return undefined;
+  const pairs: [string, string][] = [];
+  for (const tupleMatch of body.matchAll(/\[\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\]/g)) {
+    pairs.push([tupleMatch[1], tupleMatch[2]]);
+  }
+  return pairs.length > 0 ? pairs : undefined;
+}
+
+/** Resolve the stereo-pair sibling (and which side) for a port id, if any. */
+function stereoInfo(
+  portId: string,
+  pairs: [string, string][] | undefined,
+): { stereoPair?: string; stereoSide?: 'L' | 'R' } {
+  if (!pairs) return {};
+  for (const [l, r] of pairs) {
+    if (portId === l) return { stereoPair: r, stereoSide: 'L' };
+    if (portId === r) return { stereoPair: l, stereoSide: 'R' };
+  }
+  return {};
 }
 
 function readModule(file: string, rawSrc: string): RawModule | null {
@@ -1307,6 +1376,7 @@ function readModule(file: string, rawSrc: string): RawModule | null {
     inputs: parsePortList(extractArray(src, 'inputs')),
     outputs: parsePortList(extractArray(src, 'outputs')),
     params: parseParamList(extractArray(src, 'params')),
+    stereoPairs: parseStereoPairs(src),
   };
 
   // Inputs are computed (e.g. `inputs: INPUTS` or `inputs: buildInputs()`)
@@ -1453,6 +1523,25 @@ export function buildModuleManifest(
       continue;
     }
     const type = m.type;
+    const pairs = m.stereoPairs;
+    // Auto-generated I/O explanations — the SINGLE source of truth the doc
+    // page's Inputs & Outputs section renders (docs-overhaul §3c). io-explain
+    // is pure + unit-tested; feeding it the enriched PortDef means the I/O
+    // section cannot drift from the def.
+    const io = {
+      inputs: m.inputs.map((p) => ({
+        id: p.id,
+        type: p.type,
+        explain: explainInputPort(p as ExplainPort, stereoInfo(p.id, pairs)),
+      })),
+      outputs: m.outputs.map((p) => ({
+        id: p.id,
+        type: p.type,
+        explain: explainOutputPort(p as ExplainPort, {
+          stereoPair: stereoInfo(p.id, pairs).stereoPair,
+        }),
+      })),
+    };
     modules.push({
       file: m.file,
       sourceUrl: m.sourceUrl,
@@ -1465,6 +1554,8 @@ export function buildModuleManifest(
       inputs: m.inputs.map((p) => ({ ...p, note: describePort(type, p.id, p) })),
       outputs: m.outputs.map((p) => ({ ...p, note: describePort(type, p.id, p) })),
       params: m.params,
+      ...(pairs ? { stereoPairs: pairs } : {}),
+      io,
     });
   }
 

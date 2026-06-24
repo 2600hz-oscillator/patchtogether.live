@@ -22,6 +22,26 @@ import { testHooksEnabled } from './test-hooks';
 export interface ModuleSpecPort {
   id: string;
   type: string;
+  /** schemaVersion-2 enrichment — the full PortDef surface the docs I/O
+   *  section + io-explain read. All optional so v1 consumers that only
+   *  read {id,type} keep working unchanged. */
+  paramTarget?: string;
+  cvScale?: { mode: 'linear' | 'log' | 'discrete' | 'passthrough'; depth?: number };
+  accepts?: string[];
+  edge?: 'trigger' | 'gate';
+  adoptsUpstreamFrom?: string;
+}
+
+/** schemaVersion-2 param projection — the ParamDef fields the docs params
+ *  table + io-explain render. */
+export interface ModuleSpecParam {
+  id: string;
+  label: string;
+  defaultValue: number;
+  min: number;
+  max: number;
+  curve: 'linear' | 'log' | 'exp' | 'discrete';
+  units?: string;
 }
 
 export interface ModuleSpec {
@@ -38,6 +58,11 @@ export interface ModuleSpec {
   category: string;
   inputs: ModuleSpecPort[];
   outputs: ModuleSpecPort[];
+  /** schemaVersion-2 enrichment — the module's full ParamDef surface +
+   *  stereo-pair tuples. Powers the docs params table + the stereo L/R
+   *  normaling note. Optional (a def may declare no params / no pairs). */
+  params: ModuleSpecParam[];
+  stereoPairs?: [string, string][];
   /** Derived hints used by manifest-driven test generators (per-module
    *  spec stamper, pair-patch integration, full-system render). Set
    *  here so every downstream test layer sees the same answer for
@@ -51,6 +76,31 @@ export interface ModuleSpec {
 
 function hasOutputType(outputs: readonly ModuleSpecPort[], wanted: string): boolean {
   return outputs.some((p) => p.type === wanted);
+}
+
+/** Project a live PortDef into the schemaVersion-2 ModuleSpecPort. Emits the
+ *  optional enrichment fields ONLY when set so the JSON stays terse and v1
+ *  consumers (which read just {id,type}) are unaffected. */
+function projectPort(p: {
+  id: string;
+  type: unknown;
+  paramTarget?: string;
+  cvScale?: { mode: 'linear' | 'log' | 'discrete' | 'passthrough'; depth?: number };
+  accepts?: readonly unknown[];
+  edge?: 'trigger' | 'gate';
+  adoptsUpstreamFrom?: string;
+}): ModuleSpecPort {
+  const out: ModuleSpecPort = { id: p.id, type: p.type as string };
+  if (p.paramTarget) out.paramTarget = p.paramTarget;
+  if (p.cvScale) {
+    out.cvScale = p.cvScale.depth !== undefined
+      ? { mode: p.cvScale.mode, depth: p.cvScale.depth }
+      : { mode: p.cvScale.mode };
+  }
+  if (p.accepts && p.accepts.length > 0) out.accepts = p.accepts.map((a) => a as string);
+  if (p.edge) out.edge = p.edge;
+  if (p.adoptsUpstreamFrom) out.adoptsUpstreamFrom = p.adoptsUpstreamFrom;
+  return out;
 }
 
 /**
@@ -74,8 +124,23 @@ export function getAllModuleSpecs(): ModuleSpec[] {
   ];
   return all
     .map((def) => {
-      const inputs = def.inputs.map((p) => ({ id: p.id, type: p.type as string }));
-      const outputs = def.outputs.map((p) => ({ id: p.id, type: p.type as string }));
+      const inputs = def.inputs.map(projectPort);
+      const outputs = def.outputs.map(projectPort);
+      const params: ModuleSpecParam[] = (def.params ?? []).map((p) => ({
+        id: p.id,
+        label: p.label,
+        defaultValue: p.defaultValue,
+        min: p.min,
+        max: p.max,
+        curve: p.curve,
+        ...(p.units ? { units: p.units } : {}),
+      }));
+      // stereoPairs may be readonly nested tuples on the def — clone to a
+      // plain mutable [string, string][] for the JSON manifest.
+      const rawPairs = (def as { stereoPairs?: readonly (readonly [string, string])[] }).stereoPairs;
+      const stereoPairs: [string, string][] | undefined = rawPairs
+        ? rawPairs.map(([l, r]) => [l, r] as [string, string])
+        : undefined;
       return {
         type: def.type as string,
         label: (def.label as string) ?? (def.type as string),
@@ -83,6 +148,8 @@ export function getAllModuleSpecs(): ModuleSpec[] {
         category: (def.category as string) ?? 'uncategorized',
         inputs,
         outputs,
+        params,
+        ...(stereoPairs ? { stereoPairs } : {}),
         hasAudioOutput: hasOutputType(outputs, 'audio'),
         hasCvOutput: hasOutputType(outputs, 'cv'),
         hasGateOutput: hasOutputType(outputs, 'gate'),

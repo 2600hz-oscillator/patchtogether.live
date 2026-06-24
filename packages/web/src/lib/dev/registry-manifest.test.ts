@@ -37,13 +37,38 @@ import '$lib/meta/modules';
 
 import { getAllModuleSpecs } from './module-specs';
 
+interface ManifestPortEntry {
+  id: string;
+  type: string;
+  // schemaVersion-2 enrichment (all optional — emitted only when set).
+  paramTarget?: string;
+  cvScale?: { mode: string; depth?: number };
+  accepts?: string[];
+  edge?: 'trigger' | 'gate';
+  adoptsUpstreamFrom?: string;
+}
+
+interface ManifestParamEntry {
+  id: string;
+  label: string;
+  defaultValue: number;
+  min: number;
+  max: number;
+  curve: string;
+  units?: string;
+}
+
 interface ManifestEntry {
   type: string;
   label: string;
   domain: string;
   category: string;
-  inputs: { id: string; type: string }[];
-  outputs: { id: string; type: string }[];
+  inputs: ManifestPortEntry[];
+  outputs: ManifestPortEntry[];
+  // schemaVersion-2 enrichment — full ParamDef surface + stereo pairs, so
+  // the docs I/O section + io-explain read the SINGLE source of truth.
+  params: ManifestParamEntry[];
+  stereoPairs?: [string, string][];
   hasAudioOutput: boolean;
   hasCvOutput: boolean;
   hasGateOutput: boolean;
@@ -53,8 +78,10 @@ interface ManifestEntry {
 interface Manifest {
   /** Schema version. Bump when the entry shape changes — downstream
    *  Playwright fixture refuses to load a manifest whose version it
-   *  doesn't recognise (fail-fast over silent skew). */
-  schemaVersion: 1;
+   *  doesn't recognise (fail-fast over silent skew). schemaVersion 2
+   *  (this slice) carries the full PortDef + ParamDef + stereoPairs per
+   *  module for the docs-overhaul auto I/O section. */
+  schemaVersion: 2;
   /** ISO 8601 timestamp the manifest was emitted. Stable across runs
    *  is not the point — debuggability is: when CI flags a downstream
    *  drift, the timestamp lets you confirm which test invocation
@@ -75,7 +102,7 @@ function manifestPath(): string {
 describe('registry manifest emitter', () => {
   const specs = getAllModuleSpecs();
   const manifest: Manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     modules: specs,
   };
@@ -98,7 +125,28 @@ describe('registry manifest emitter', () => {
       expect(m.category, `${m.type} category`).toBeTruthy();
       expect(Array.isArray(m.inputs), `${m.type} inputs is array`).toBe(true);
       expect(Array.isArray(m.outputs), `${m.type} outputs is array`).toBe(true);
+      // schemaVersion-2: params is always an array (possibly empty).
+      expect(Array.isArray(m.params), `${m.type} params is array`).toBe(true);
     }
+  });
+
+  // schemaVersion-2 enrichment carries the full PortDef/ParamDef surface.
+  // Spot-check ADSR: its CV inputs declare paramTarget + cvScale, and its
+  // params declare label/min/max/curve — the fields the docs I/O section
+  // + io-explain read. This is the manifest-side proof the projection
+  // (module-specs.ts) preserves the def fields end-to-end.
+  it('schemaVersion-2 carries paramTarget/cvScale on ports and full ParamDef', () => {
+    const adsr = specs.find((s) => s.type === 'adsr');
+    expect(adsr, 'adsr present').toBeDefined();
+    if (!adsr) return;
+    const attackIn = adsr.inputs.find((p) => p.id === 'attack');
+    expect(attackIn?.paramTarget, 'adsr.attack paramTarget').toBe('attack');
+    expect(attackIn?.cvScale?.mode, 'adsr.attack cvScale.mode').toBe('log');
+    const attackParam = adsr.params.find((p) => p.id === 'attack');
+    expect(attackParam?.label, 'adsr.attack param label').toBeTruthy();
+    expect(typeof attackParam?.min, 'adsr.attack min is number').toBe('number');
+    expect(typeof attackParam?.max, 'adsr.attack max is number').toBe('number');
+    expect(attackParam?.curve, 'adsr.attack curve').toBeTruthy();
   });
 
   it('module types are unique', () => {
@@ -136,7 +184,7 @@ describe('registry manifest emitter', () => {
     // Sanity: subsequent read returns parsable JSON with the schema
     // we just wrote.
     const written = JSON.parse(JSON.stringify(manifest));
-    expect(written.schemaVersion).toBe(1);
+    expect(written.schemaVersion).toBe(2);
     expect(written.modules.length).toBe(specs.length);
   });
 });
