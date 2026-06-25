@@ -98,6 +98,26 @@ const baseDef: AudioModuleDef = {
     { id: 'depth', label: 'Depth', defaultValue: 0.5, min: 0,    max: 1,   curve: 'linear' },
   ],
 
+  docs: {
+    explanation: "A low-frequency modulation source: one oscillator emits the same wave at four phase taps (0°/90°/180°/270°) so a single LFO can sweep several voices in stereo or quadrature without re-tuning. Rate sets the cycle speed, Shape continuously morphs the waveform (sine → saw → square), and Depth scales the swing. In a shared/multiplayer rack the phase is anchored to the rack's shared clock so every client sees the same value at the same moment; solo on the public canvas it simply free-runs from phase 0.",
+    inputs: {
+      clock: "External clock — each rising edge (crossing above 0.5) hard-resets the oscillator to phase 0, locking the LFO to an incoming pulse train (e.g. a shared sequencer's tempo). The reset is intentionally hard with no smoothing, so a click on the edge is expected; Rate still sets the speed between pulses — the clock only re-zeros the phase, it does not measure the period or change the rate.",
+      rate: "CV that scales the Rate knob on a logarithmic axis — ±1 multiplies the rate by about 100× / one-hundredth (≈ ±6.6 octaves of speed). Sample-and-held once at the start of each audio block so multiple clients stay phase-aligned despite sub-block CV latency differences.",
+      shape: "CV that displaces the Shape control, sliding the waveform morph (sine → saw → square) up or down. Read per-sample (a-rate) so the morph stays smooth.",
+      depth_cv: "CV that sums into the Depth control, modulating the output swing amount the same way the Rate/Shape CV inputs offset their params (labeled DEPTH on the panel).",
+    },
+    outputs: {
+      phase0: "The LFO at 0° (the reference phase). Bipolar wave centered on 0; its swing magnitude is set by Depth (0 = flat/still, 0.5 = unity ±1, 1 = ±2).",
+      phase90: "The same LFO advanced a quarter cycle (phase + 0.25) — the 90° tap, useful as the offset partner for quadrature/stereo modulation.",
+      phase180: "The same LFO advanced half a cycle (phase + 0.5) — the 180° tap; for the sine shape this is a polarity inversion (moves opposite phase0), useful for ping-pong / push-pull modulation.",
+      phase270: "The same LFO advanced three-quarters of a cycle (phase + 0.75) — the 270° tap, completing the 0/90/180/270 quadrature set off one shared oscillator.",
+    },
+    controls: {
+      rate: "How fast the LFO cycles, from 0.01 Hz (one sweep per ~100 s) to 100 Hz (audio-rate for FM-style use), on a log fader. Sets the speed shared by all four phase outputs; the clock input overrides phase, not rate.",
+      shape: "Continuously morphs the waveform across the 0–2 range: 0 = sine, 1 = saw, 2 = square, with smooth crossfades in between (e.g. value 0.5 = halfway sine↔saw). The fader's glyphs mark sine / saw / square.",
+      depth: "Output amplitude / swing, applied as gain = depth × 2 and not clamped: 0 = still (flat at the 0 center, no modulation), 0.5 = unity ±1 (the default, matches legacy patches), 1 = ±2 (deliberately beyond the normal ±1 range). Orthogonal to shape — it only scales the swing, never shifts the center.",
+    },
+  },
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

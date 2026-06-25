@@ -354,8 +354,13 @@ export interface ControlFamily {
 export interface ModuleDocs {
   /** The behavioral overview — what the module does + its mental model. */
   explanation?: string;
-  /** Per-INPUT/OUTPUT-port behavioral prose, keyed by PortDef.id. */
-  ports?: Record<string, string>;
+  /** Per-INPUT-port behavioral prose, keyed by input PortDef.id. (Separate
+   *  from `outputs` because a module may carry the SAME id as both an input
+   *  and an output — e.g. a clock thru — which a single id-keyed map can't
+   *  hold.) */
+  inputs?: Record<string, string>;
+  /** Per-OUTPUT-port behavioral prose, keyed by output PortDef.id. */
+  outputs?: Record<string, string>;
   /** Per-control behavioral prose. Keys are param ids (the `control-<id>`
    *  convention without the prefix — just the paramId), control-family
    *  templates (`<familyId>-{n}`, interpolated per member), or stable control

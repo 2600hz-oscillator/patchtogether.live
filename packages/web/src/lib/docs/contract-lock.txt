@@ -2978,6 +2978,9 @@ sequencer param octave -2..2 discrete default=0
 sequencer param snh 0..1 discrete default=1
 sequencer param swing 0..0.75 linear default=0
 sequencer expose playStop
+sequencer family quicksave-slot kind=quicksave prefix=quicksave-slot
+sequencer family seq-chord kind=cell prefix=seq-chord count=length
+sequencer family seq-gate kind=step-grid prefix=seq-gate count=length
 shapedramps meta domain=video schema=1
 shapedramps in h_freq cv param=h_freq cvScale=linear
 shapedramps in h_phase cv param=h_phase cvScale=linear
