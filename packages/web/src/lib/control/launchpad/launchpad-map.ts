@@ -133,6 +133,10 @@ export const RGB_SONG_ARRANGE: Rgb = [90, 90, 100]; // SES/ARR in ARRANGEMENT �
 export const RGB_COPY_BUFFER: Rgb = [15, 99, 99]; // turquoise (copy buffer loaded) — pulses
 export const RGB_COPY_BUFFER_DIM: Rgb = [4, 30, 30]; // down phase of the copy pulse
 export const RGB_EXIT: Rgb = [104, 23, 23]; // red (EXIT)
+// SINGLE-mode CC-98 VIEW-toggle indicator — a calm cyan so the dedicated
+// view-flip button reads distinct from the function row (single mode only; in
+// pair mode CC 98 is the editor FOLLOW toggle).
+export const RGB_VIEW: Rgb = [10, 60, 60]; // cyan (CLIP ⇄ CONTROL view marker)
 // Editor note colours (velocity buckets) + playhead.
 export const RGB_NOTE_BY_VEL: readonly Rgb[] = [
   [29, 41, 57], // low velocity (dim blue)

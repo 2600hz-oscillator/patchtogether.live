@@ -82,6 +82,7 @@ import {
   rLengthPad,
   computeRLengthFrame,
   EDIT_COLS,
+  RGB_VIEW,
 } from './launchpad-map';
 import {
   CLIP_LANES,
@@ -1182,8 +1183,9 @@ function paintRRole(
 }
 
 /** The CC-98 indicator colour for the active view on the single device (a calm
- *  cyan so the dedicated view-flip button reads distinct from the function row). */
-const VIEW_LED: [number, number, number] = [10, 60, 60];
+ *  cyan so the dedicated view-flip button reads distinct from the function row).
+ *  Sourced from the shared map (`RGB_VIEW`) so the firmware + docs never drift. */
+const VIEW_LED: readonly [number, number, number] = RGB_VIEW;
 
 function renderLeds(): void {
   const single = deployment === 'single';

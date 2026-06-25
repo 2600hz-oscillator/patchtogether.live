@@ -34,6 +34,7 @@
     RGB_EXIT,
     RGB_LEN_BLOCK,
     RGB_LEN_END,
+    RGB_VIEW,
     type Rgb,
   } from '$lib/control/launchpad/launchpad-map';
 
@@ -62,6 +63,27 @@
     label: r === 7 ? 'SCENE' : undefined,
   }));
   const lCallouts = [{ label: 'SLOTS  1 → 8', fromCol: 0, toCol: 7 }];
+
+  // ── SINGLE UNIT · CLIP view with the ARM ROW (one device, top row = the
+  // action-arm strip). The matrix + scene reuse the L-role data so the picture
+  // shows the matrix staying LIVE under the arm row. The 8 top-row cells take
+  // their LIVE arm-strip colours from launchpad-map's paintClipArmStrip:
+  //   CC 91 NEW (orange) · 92 COPY · 93 PASTE · 94 P-REV (green) · 95 NOW
+  //   (purple, sticky) · 96 LEN (yellow) · 97 DBL (purple) · 98 VIEW (cyan).
+  const sArmTop = [
+    { col: 0, fill: hex(RGB_DECK_EDIT), label: 'NEW' }, // CC 91 — orange
+    { col: 1, fill: hex(RGB_DECK_COPY), label: 'COPY' }, // CC 92 — green
+    { col: 2, fill: hex(RGB_DECK_COPY), label: 'PASTE' }, // CC 93 — green
+    { col: 3, fill: hex(RGB_DECK_COPY), label: 'P-REV' }, // CC 94 — green
+    { col: 4, fill: hex(RGB_DECK_NOW), label: 'NOW' }, // CC 95 — purple (sticky)
+    { col: 5, fill: hex(RGB_DECK_LEN), label: 'LEN' }, // CC 96 — yellow
+    { col: 6, fill: hex(RGB_DECK_DBL), label: 'DBL' }, // CC 97 — purple
+    { col: 7, fill: hex(RGB_VIEW), label: 'VIEW' }, // CC 98 — cyan view-flip
+  ];
+  const sArmCallouts = [
+    { label: 'ARM AN ACTION → THEN TAP A CLIP', fromCol: 0, toCol: 6, tier: 0 },
+    { label: 'VIEW', fromCol: 7, tier: 0 },
+  ];
 
   // ── UNIT R · command deck (session) — per-function colours (owner palette):
   //   EDIT orange · COPY/PASTE/P-REV green · DBL + NOW purple · LEN yellow.
@@ -262,6 +284,23 @@
   The arm row is <strong>single-mode only</strong>. In a two-device <strong>pair</strong> the deck lives
   on the RIGHT unit (hold a modifier there + tap a clip on the LEFT), and the top row keeps its
   pair roles (REC / SONG / transport) — nothing here changes pair behaviour.
+</p>
+<p>
+  Here's the whole single-unit <strong>CLIP view</strong> — one device, the arm strip across the top and
+  the live clip matrix beneath it:
+</p>
+<LaunchpadDiagram
+  top={sArmTop}
+  pads={lPads}
+  scene={lScene}
+  callouts={sArmCallouts}
+  accent={hex(RGB_VIEW)}
+  caption="SINGLE UNIT · CLIP view. Top row = the action-arm strip: NEW (orange), COPY/PASTE/P-REV (green), NOW (purple, a sticky toggle), LEN (yellow), DBL (purple). Tap an action to ARM it, then tap a clip to apply — the arm auto-disarms after ~4s (re-tap to cancel). CC 98 / VIEW (cyan, rightmost) flips CLIP ⇄ CONTROL. The 8×8 matrix + scene column stay LIVE the whole time (it's the shared clip-player), so you never lose your performance."
+/>
+<p class="muted">
+  Flip to <strong>CONTROL view</strong> (CC 98 / the on-card toggle) and the same device becomes the
+  command deck + note editor + length page — that view is identical to the pair's <strong>Unit R</strong>
+  deck shown below (same handlers, same colours).
 </p>
 
 <h2>Unit L — the clip matrix (always live)</h2>
