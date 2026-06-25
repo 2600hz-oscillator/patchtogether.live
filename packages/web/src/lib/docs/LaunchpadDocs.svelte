@@ -178,26 +178,38 @@
     { what: '8×8 pads (programmer mode)', addr: 'note = row*10 + col · 11 = bottom-left · 88 = top-right' },
     { what: 'top row ▲ ▼ ◀ ▶ ▣(SHIFT)', addr: 'CC 91 · 92 · 93 · 94 · 95 — editor nav (▲▼◀▶) + SHIFT(95)' },
     { what: 'top row arranger (session) / globals', addr: 'CC 91 = REC · 92 = SONG · 96 = transport · 97 = stop-all' },
+    { what: 'single-unit VIEW toggle', addr: 'CC 98 (rightmost top-row button) — flips CLIP ⇄ CONTROL (single mode only; pair mode = editor FOLLOW)' },
     { what: 'right scene column (top→bottom)', addr: 'CC 89 · 79 · 69 · 59 · 49 · 39 · 29 · 19' },
     { what: 'per-LED full RGB', addr: 'F0 00 20 29 02 0D 03  03 <pad> <R> <G> <B>  F7   (0–127)' },
   ];
 </script>
 
 <section class="hero">
-  <h1>Launchpad Mini Mk3 — clip launcher (L + R)</h1>
+  <h1>Launchpad Mini Mk3 — clip launcher</h1>
   <p class="lede">
-    Two <strong>Novation Launchpad Mini Mk3</strong> units drive the <strong>clip player</strong> over
-    browser-native <strong>Web MIDI</strong> (no helper app). The <strong>left</strong> unit is the
-    always-live <strong>8×8 clip matrix</strong>; the <strong>right</strong> unit is the
-    <strong>command deck</strong> and flips to the <strong>note editor</strong> while you edit — so you
-    never lose the matrix.
+    <strong>Novation Launchpad Mini Mk3</strong> drives the <strong>clip player</strong> over
+    browser-native <strong>Web MIDI</strong> (no helper app). Use <strong>two</strong> units — the
+    <strong>left</strong> is the always-live <strong>8×8 clip matrix</strong>, the <strong>right</strong>
+    is the <strong>command deck</strong> + <strong>note editor</strong> — or just <strong>one</strong>:
+    a single unit does both, flipping between a <strong>CLIP</strong> view (the matrix) and a
+    <strong>CONTROL</strong> view (the deck/editor) on the on-card toggle or hardware <strong>CC 98</strong>.
   </p>
 </section>
 
-<h2>Quick start</h2>
+<h2>One unit or two?</h2>
+<p class="muted">
+  You can drive everything with <strong>one</strong> Launchpad or <strong>two</strong>. With a
+  <strong>pair</strong>, the LEFT unit is permanently the clip matrix and the RIGHT unit is the command
+  deck / editor, so you never lose sight of the matrix. With a <strong>single</strong> unit, that one
+  device does <em>both jobs</em> — you <strong>flip its view</strong> between <strong>CLIP</strong> (the L
+  role: the 8×8 matrix) and <strong>CONTROL</strong> (the R role: the deck, note editor + length page).
+  Everything the pair's RIGHT unit can do, single-mode's CONTROL view does — same handlers, same colours.
+</p>
+
+<h2>Quick start — pair (two units)</h2>
 <ol class="steps">
-  <li>Add a <strong>launchpad control left</strong>, a <strong>launchpad control right</strong>, and a <strong>clip player</strong> to the canvas.</li>
-  <li>Click <strong>Pair Launchpads</strong> on either card (grants Web-MIDI/sysex on first click). <strong>Both units flood with colour</strong> — one green, one blue.</li>
+  <li>Add a <strong>launchpad control</strong> and a <strong>clip player</strong> to the canvas.</li>
+  <li>Click <strong>Pair Launchpads</strong> on the card (grants Web-MIDI/sysex on first click). <strong>Both units flood with colour</strong> — one green, one blue.</li>
   <li><strong>Press any pad on the unit you want as LEFT</strong> (the matrix). The other becomes RIGHT. Pairing auto-binds the first clip player.</li>
   <li><strong>Make your first clip:</strong> <strong>hold EDIT</strong> (bottom-left pad on R) and <strong>tap any pad on L</strong> → that pad gets an empty clip and R flips to the note editor.</li>
   <li>Tap pads on R to add notes, then press <strong>EXIT</strong> (top-right scene button). Back on L, that pad is now a <strong>loaded clip</strong> (dim blue) — <strong>tap it to launch</strong> (green); tap it again to stop its lane.</li>
@@ -206,6 +218,19 @@
   Two identical units are told apart automatically by port order — if L/R come out swapped, just
   <strong>Re-pair</strong> and press the other unit. The <strong>Bind to clip-player</strong> button is
   only needed to re-target a different clip player, bind one you added after pairing, or unbind.
+</p>
+
+<h2>Quick start — single unit (one device, two views)</h2>
+<ol class="steps">
+  <li>Add a <strong>launchpad control</strong> and a <strong>clip player</strong>, then click <strong>Connect single Launchpad</strong> (binds the one device; no L/R press-a-pad handshake).</li>
+  <li>The device starts in <strong>CLIP view</strong> — it's the 8×8 clip matrix, behaving <em>exactly</em> like the LEFT unit of a pair (tap to launch/stop, right column = scene).</li>
+  <li><strong>Flip to CONTROL view</strong> two ways: tap the on-card <strong>Clip / Control</strong> toggle, OR press the hardware <strong>CC 98</strong> button (the <em>rightmost button on the top row</em>). CONTROL view is the command deck + note editor + length page — the full RIGHT-unit functionality. The CC-98 button stays lit to show the active view.</li>
+  <li><strong>Make a clip on one device:</strong> in CONTROL view <strong>hold EDIT</strong>, flip to CLIP view (CC 98) and <strong>tap a pad</strong> → that pad gets a clip and the device enters the note editor; flip back to CONTROL to add notes, then <strong>EXIT</strong> (top scene). Back in CLIP view, <strong>tap to launch</strong>.</li>
+</ol>
+<p class="muted">
+  <strong>Flipping views never resets your editor</strong> — the step window, pitch scroll, FOLLOW state
+  and which clip you're editing all survive a clip↔control flip. The matrix's playing/queued state is
+  always live (it's the shared clip-player), so you never lose your performance by switching views.
 </p>
 
 <h2>Unit L — the clip matrix (always live)</h2>

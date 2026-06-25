@@ -22,26 +22,44 @@
     isPairBound,
     statusRune,
   } from '$lib/control/launchpad/launchpad-device.svelte';
+  import { isSingleBound } from '$lib/control/launchpad/launchpad-device.svelte';
   import {
     startPairing,
+    startSingle,
     cancelPairing,
     isPairing,
     pairRune,
     restoreLaunchpadPair,
+    restoreLaunchpadSingle,
     bindLaunchpadToClip,
     unbindLaunchpad,
     boundClipNode,
     bindingRune,
+    launchpadDeployment,
+    launchpadActiveView,
+    toggleSingleView,
+    restoreLaunchpadDeployment,
+    viewRune,
   } from '$lib/control/launchpad/launchpad-control.svelte';
 
   let { id, data }: NodeProps = $props();
 
+  // Seed the persisted deployment + view (per-machine) so the card shows the
+  // last-used mode on mount. The actual device re-bind still needs a gesture
+  // (Pair / Connect) for Web-MIDI access — this only restores the UI state.
+  restoreLaunchpadDeployment();
+
   const supported = midiAvailable();
-  let status = $state<'idle' | 'pairing' | 'paired' | 'no-midi' | 'one-unit'>('idle');
+  let status = $state<'idle' | 'pairing' | 'paired' | 'no-midi' | 'one-unit' | 'no-device'>('idle');
 
   // Reactive: re-derive on device status / pairing / binding changes.
   let bound = $derived((statusRune(), pairRune(), bindingRune(), boundClipNode()));
-  let paired = $derived((statusRune(), pairRune(), isPairBound()));
+  // "Connected" = a PAIR (two units) OR a SINGLE unit (one device, L slot).
+  let paired = $derived((statusRune(), pairRune(), viewRune(), isPairBound() || isSingleBound()));
+  // Which deployment + (single-mode) which view — drives the toggle UI.
+  let deployment = $derived((statusRune(), pairRune(), viewRune(), launchpadDeployment()));
+  let activeView = $derived((statusRune(), pairRune(), viewRune(), launchpadActiveView()));
+  let isSingle = $derived((statusRune(), pairRune(), viewRune(), isSingleBound()));
   // Pairing is ONE shared handshake — derive the live state from the singleton.
   let pairingNow = $derived((statusRune(), pairRune(), isPairing()));
 
@@ -72,6 +90,23 @@
     }
   }
 
+  /** SINGLE-UNIT connect: bind ONE Launchpad to the L slot; a view toggle flips
+   *  it between the clip matrix (L role) and the command deck/editor (R role). */
+  async function connectSingle() {
+    if (!supported) { status = 'no-midi'; return; }
+    if (isPairing()) { cancelPairing(); }
+    status = 'pairing';
+    const ok = await startSingle(() => {
+      status = 'paired';
+      autoBind();
+    });
+    if (!ok) {
+      // connected but no device? maybe a saved single restores silently.
+      if (restoreLaunchpadSingle()) { status = 'paired'; autoBind(); }
+      else status = supported ? 'no-device' : 'no-midi';
+    }
+  }
+
   function autoBind() {
     const cp = firstClipplayer();
     if (cp && boundClipNode() !== cp) bindLaunchpadToClip(cp);
@@ -80,6 +115,10 @@
   function toggleBind() {
     if (boundClipNode()) { unbindLaunchpad(); return; }
     autoBind();
+  }
+
+  function flipView() {
+    toggleSingleView();
   }
 </script>
 
@@ -90,10 +129,12 @@
 
   <div class="lp-body">
     <p class="lp-blurb">
-      Drives a <b>pair</b> of Launchpad Mini Mk3: the <b>left</b> unit is the always-live
+      Drives Launchpad Mini Mk3. With a <b>pair</b>: the <b>left</b> unit is the always-live
       <b>8×8 clip matrix</b> (tap to launch/stop; right column = scene); the <b>right</b> unit is the
       <b>command deck</b> (EDIT · COPY · PASTE · DOUBLE · LENGTH · NOW + per-lane STOP + transport)
-      and flips to the <b>note editor</b> while you edit.
+      and flips to the <b>note editor</b> while you edit. With a <b>single</b> unit, one device does
+      both — flip it between <b>clip</b> and <b>control</b> views (the <b>CC 98</b> top-right button or
+      the on-card toggle).
     </p>
 
     {#if !supported}
@@ -110,11 +151,19 @@
         >
           {#if pairingNow}
             Press a pad on the unit you want as LEFT…
-          {:else if paired}
+          {:else if paired && deployment === 'pair'}
             Re-pair Launchpads
           {:else}
             Pair Launchpads
           {/if}
+        </button>
+        <button
+          class="lp-btn nodrag"
+          type="button"
+          data-testid="launchpad-control-single"
+          onclick={connectSingle}
+        >
+          {paired && isSingle ? 'Re-connect single' : 'Connect single Launchpad'}
         </button>
         {#if paired && (bound || hasClip)}
           <button
@@ -128,19 +177,46 @@
         {/if}
       </div>
 
+      {#if paired && isSingle}
+        <div class="lp-actions">
+          <button
+            class="lp-btn lp-view-toggle nodrag"
+            class:active-clip={activeView === 'clip'}
+            type="button"
+            data-testid="launchpad-control-view-toggle"
+            aria-pressed={activeView === 'control'}
+            onclick={flipView}
+          >
+            View: <b>{activeView === 'clip' ? 'CLIP' : 'CONTROL'}</b> — tap to flip
+          </button>
+        </div>
+      {/if}
+
       {#if status === 'one-unit'}
         <div class="lp-warn" data-testid="launchpad-control-oneunit">
-          <b>Only ONE Launchpad detected.</b> This card needs BOTH units of the pair — connect the
-          second unit (each shows up as its own “… MIDI” port), then hit <b>Pair</b> again.
+          <b>Only ONE Launchpad detected.</b> For the two-device split you need BOTH units (each shows
+          up as its own “… MIDI” port). Or use <b>Connect single Launchpad</b> to run everything on the
+          one device — flip it between clip + control views.
+        </div>
+      {:else if status === 'no-device'}
+        <div class="lp-warn" data-testid="launchpad-control-nodevice">
+          <b>No Launchpad detected.</b> Plug one in (it shows up as a “… MIDI” port), then hit
+          <b>Connect single Launchpad</b> again.
         </div>
       {:else}
         <div class="lp-status" data-testid="launchpad-control-status">
           {#if pairingNow}
             Both Launchpads should light up (green + blue) — press any pad on the one you want as the LEFT (matrix) unit; the other becomes RIGHT.
           {:else if status === 'no-midi'}
-            Couldn’t access MIDI — allow the permission prompt and try Pair again.
+            Couldn’t access MIDI — allow the permission prompt and try again.
           {:else if !paired}
-            Not paired.
+            Not connected.
+          {:else if isSingle && bound}
+            Single unit driving clip-player <code>{bound}</code> — <b>{activeView === 'clip' ? 'CLIP' : 'CONTROL'}</b> view (CC 98 or the toggle to flip).
+          {:else if isSingle && hasClip}
+            Single unit ✓ — hit Bind to drive your clip-player.
+          {:else if isSingle}
+            Single unit ✓ — add a clip-player module to drive (auto-binds it).
           {:else if bound}
             Driving clip-player <code>{bound}</code>.
           {:else if hasClip}
@@ -184,6 +260,9 @@
     color: var(--accent, #5a7); border-radius: 4px; padding: 4px 10px; font-size: 12px; cursor: pointer;
   }
   .lp-btn:hover { filter: brightness(1.2); }
+  .lp-view-toggle { width: 100%; text-align: center; }
+  .lp-view-toggle.active-clip { border-color: #4a8bd6; color: #7fb3ea; }
+  .lp-view-toggle b { letter-spacing: 0.04em; }
   .lp-status { font-size: 11px; color: #9aa0b2; }
   .lp-status code { color: #cfd3df; }
   .lp-hint { margin: 0; font-size: 10px; color: #6f7488; }

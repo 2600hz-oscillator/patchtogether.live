@@ -37,6 +37,7 @@ import {
   setFrame,
   setLed,
   isPairBound,
+  isSingleBound,
   isUnitBound,
   clearUnit,
   bindUnit,
@@ -46,7 +47,7 @@ import {
   type LaunchpadUnit,
   type LaunchpadFrame,
 } from './launchpad-device.svelte';
-import { padNote, LP_WIDTH, LP_HEIGHT } from './launchpad-sysex';
+import { padNote, LP_WIDTH, LP_HEIGHT, CC_TOP_SPARE_8 } from './launchpad-sysex';
 import {
   // L matrix
   lPadToClipIndex,
@@ -107,6 +108,12 @@ import { getLanePlayhead } from '$lib/audio/modules/clip-playhead';
 export const STORAGE_KEY_NODE = 'pt.launchpad.boundClipNode';
 export const STORAGE_KEY_LEFT = 'pt.launchpad.portLeft';
 export const STORAGE_KEY_RIGHT = 'pt.launchpad.portRight';
+// Single-unit deployment (additive, per-machine). When `deployment === 'single'`
+// ONE physical Launchpad is bound to the L slot and a VIEW toggle flips its role
+// between the L (clip) + R (control) functionality. These keys never affect the
+// pair deployment — pair mode reads neither.
+export const STORAGE_KEY_DEPLOYMENT = 'pt.launchpad.deployment'; // 'pair' | 'single'
+export const STORAGE_KEY_VIEW = 'pt.launchpad.activeView'; // 'clip' | 'control'
 
 // Blink toggles every BLINK_TICKS scheduler ticks (~25ms each) → ~2 Hz.
 const BLINK_TICKS = 10;
@@ -116,6 +123,20 @@ let boundNodeId: string | null = null;
 let unsubKey: (() => void) | null = null;
 let unsubTick: (() => void) | null = null;
 let tickCount = 0;
+
+// Deployment + single-unit VIEW. In 'pair' EVERYTHING below behaves exactly as
+// before (L = the always-live matrix, R = the deck/editor — both physical units).
+// In 'single' ONE device is bound to the L slot and `activeView` flips its role:
+//   'clip'    → the device acts as UNIT L (clip matrix): keys → handleL, LED =
+//               computeLSessionFrame.
+//   'control' → the device acts as UNIT R (deck/editor/length): keys → handleR,
+//               LED = the R frames. R's deck→edit→length sub-modes (the `mode`
+//               machine below) keep working inside control view.
+// The view flips via the on-card toggle OR hardware CC 98 (the spare top-right
+// button — FREE in pair mode, see handleSingleKey). Flipping clip↔control does
+// NOT reset the editor window state (editWindowStart/editRowOffset/followOn).
+let deployment: 'pair' | 'single' = 'pair';
+let activeView: 'clip' | 'control' = 'clip';
 
 // Mode state (R unit's view; L is always the matrix).
 let mode: 'session' | 'edit' | 'lengthEdit' = 'session';
@@ -158,6 +179,61 @@ export function bindingRune(): number {
 }
 export function boundClipNode(): string | null {
   return boundNodeId;
+}
+
+/** Reactive deployment/view version — bump so the card re-derives the toggle. */
+let viewVersion = $state(0);
+export function viewRune(): number {
+  return viewVersion;
+}
+function bumpView(): void {
+  viewVersion++;
+}
+/** The current deployment ('pair' | 'single'). */
+export function launchpadDeployment(): 'pair' | 'single' {
+  return deployment;
+}
+/** The active single-unit view ('clip' | 'control'). Meaningless in pair mode. */
+export function launchpadActiveView(): 'clip' | 'control' {
+  return activeView;
+}
+
+/** Persist deployment + the single-unit view (per-machine, additive). */
+function persistDeployment(): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_DEPLOYMENT, deployment);
+    localStorage.setItem(STORAGE_KEY_VIEW, activeView);
+  } catch {
+    /* private mode — session-only */
+  }
+}
+
+/** Flip the single-unit VIEW between 'clip' and 'control' (no-op in pair mode).
+ *  Preserves the editor window state (editWindowStart/editRowOffset/followOn) +
+ *  the R deck→edit→length sub-mode across the flip — only the painted/routed
+ *  ROLE changes. Repaints the device immediately so the new view lights up. */
+export function toggleSingleView(): void {
+  if (deployment !== 'single') return;
+  setSingleView(activeView === 'clip' ? 'control' : 'clip');
+}
+function setSingleView(view: 'clip' | 'control'): void {
+  if (deployment !== 'single') return;
+  if (activeView === view) return;
+  activeView = view;
+  // Clear the deck's transient HOLD modifiers that can't span a view flip on a
+  // single device — a COPY/PASTE/PASTE-REV/NOW held in control view never sees
+  // its release once we switch to clip view (handleL ignores the release), which
+  // would leave the modifier stuck. (editArmed deliberately SURVIVES: hold EDIT
+  // in control, flip to clip, tap a clip = the single-unit "enter editor"
+  // gesture; handleL consumes + clears editArmed itself.)
+  copyHeld = false;
+  pasteHeld = false;
+  pasteRevHeld = false;
+  nowHeld = false;
+  shiftHeld = false;
+  persistDeployment();
+  bumpView();
+  renderLeds(); // repaint the lone unit in its new role without waiting a tick
 }
 
 function start(): void {
@@ -226,6 +302,8 @@ export function unbindLaunchpad(): void {
   if (isPairBound()) {
     clearUnit('L');
     clearUnit('R');
+  } else if (isSingleBound()) {
+    clearUnit('L');
   }
   bindingVersion++;
 }
@@ -314,6 +392,10 @@ export async function startPairing(onPaired?: () => void): Promise<boolean> {
     // Only one Launchpad → can't pair an L/R. (Owner uses two units.)
     return false;
   }
+  // A pairing handshake commits the PAIR deployment (the default). Reset the
+  // single-unit view so a later single-bind starts clean.
+  deployment = 'pair';
+  activeView = 'clip';
   // Bind the first two candidates provisionally to L and R so each can light a
   // prompt + report which pad the user pressed.
   const a = ports[0];
@@ -358,6 +440,8 @@ function finishPairing(left: LaunchpadPort, right: LaunchpadPort): void {
   bindUnit('L', left.inputId, left.outputId);
   bindUnit('R', right.inputId, right.outputId);
   persistPorts(left, right);
+  deployment = 'pair';
+  persistDeployment();
   bumpPair();
   // Keep BOTH units lit after pairing instead of clearing to black: run the
   // render loop even with no clip-player bound yet (renderLeds paints a dim
@@ -392,6 +476,86 @@ export function cancelPairing(): void {
   if (isUnitBound('L')) clearUnit('L');
   if (isUnitBound('R')) clearUnit('R');
   bumpPair();
+}
+
+// ---------------------------------------------------------------------------
+// SINGLE-UNIT deployment — bind ONE Launchpad (no L/R handshake) to the L slot
+// and flip its role with the VIEW toggle. Connects (sysex, gesture-gated),
+// enumerates the Launchpad-MIDI ports, and binds the FIRST one to the L slot.
+// The single path RELAXES the pair's `ports.length < 2` requirement — it needs
+// just ONE port. The R slot stays UNBOUND (so isSingleBound() is true), and the
+// control layer routes/paints the lone device per `activeView`.
+// ---------------------------------------------------------------------------
+
+/** Bind the SINGLE Launchpad (the first enumerated port) to the L slot. Returns
+ *  false if access can't be acquired or NO Launchpad port is present. */
+export async function startSingle(onBound?: () => void): Promise<boolean> {
+  const ok = await deviceConnect();
+  if (!ok) return false;
+  const ports = enumerateLaunchpadPorts();
+  if (ports.length < 1) return false; // single mode needs ONE device (vs pair's two)
+  const a = ports[0];
+  const okL = bindUnit('L', a.inputId, a.outputId);
+  if (!okL) return false;
+  // Make sure the R slot is clear so isSingleBound() holds (e.g. re-entering
+  // single after a prior pair session left R bound).
+  if (isUnitBound('R')) clearUnit('R');
+  deployment = 'single';
+  activeView = 'clip'; // a fresh single-bind always starts in the clip view
+  persistSinglePort(a);
+  persistDeployment();
+  ensureRenderLoop();
+  renderLeds();
+  bumpPair();
+  bumpView();
+  onBound?.();
+  return true;
+}
+
+/** Persist the single device's port (reuses the LEFT port key — the lone device
+ *  IS the L slot — and clears the RIGHT key so a restore can't mistake it for a
+ *  pair). */
+function persistSinglePort(port: LaunchpadPort): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_LEFT, JSON.stringify({ inputId: port.inputId, outputId: port.outputId }));
+    localStorage.removeItem(STORAGE_KEY_RIGHT);
+  } catch {
+    /* private mode — session-only */
+  }
+}
+
+/** Restore a persisted SINGLE binding (call after connect()). Returns true if
+ *  the lone port resolved + bound to the L slot. Does NOT re-prompt. */
+export function restoreLaunchpadSingle(): boolean {
+  const l = readPersistedPort(STORAGE_KEY_LEFT);
+  if (!l) return false;
+  const okL = bindUnit('L', l.inputId, l.outputId);
+  if (!okL) return false;
+  if (isUnitBound('R')) clearUnit('R');
+  deployment = 'single';
+  // Restore the persisted view so a reload resumes the view the user left.
+  try {
+    activeView = localStorage.getItem(STORAGE_KEY_VIEW) === 'control' ? 'control' : 'clip';
+  } catch {
+    activeView = 'clip';
+  }
+  bumpPair();
+  bumpView();
+  return true;
+}
+
+/** Restore the persisted deployment + view (call once on load, before binding,
+ *  so a re-load resumes single mode in the right view). Pair is the default. */
+export function restoreLaunchpadDeployment(): void {
+  try {
+    const d = localStorage.getItem(STORAGE_KEY_DEPLOYMENT);
+    deployment = d === 'single' ? 'single' : 'pair';
+    const v = localStorage.getItem(STORAGE_KEY_VIEW);
+    activeView = v === 'control' ? 'control' : 'clip';
+  } catch {
+    deployment = 'pair';
+    activeView = 'clip';
+  }
 }
 
 // --- graph helpers (in-place Y discipline; identical to monome-control) ---
@@ -512,7 +676,33 @@ function toggleArrangeMode(nodeId: string): void {
 function handleKey(e: LaunchpadKeyEvent): void {
   const nodeId = boundNodeId;
   if (!nodeId || !livePatch.nodes[nodeId]) return;
+  if (deployment === 'single') {
+    handleSingleKey(nodeId, e);
+    return;
+  }
+  // PAIR mode (unchanged): L = the always-live matrix, R = deck/editor.
   if (e.unit === 'L') handleL(nodeId, e);
+  else handleR(nodeId, e);
+}
+
+/**
+ * SINGLE-UNIT routing. The lone device is bound to the L slot, so every event
+ * arrives tagged unit:'L'; we route it by the ACTIVE VIEW, not the unit tag:
+ *   · CC 98 (the spare top-right button) ALWAYS flips clip↔control — it's free
+ *     in pair mode (pair never reaches this path). On a single device CC 98 is
+ *     the DEDICATED view-flip, so it takes over the slot the pair editor used
+ *     for FOLLOW. FOLLOW is therefore not on a button in single mode; it still
+ *     defaults ON each time you enter the editor (and EXIT/re-enter re-enables
+ *     it), which is the single-unit tradeoff for one device doing both roles.
+ *   · clip view    → handleL (the clip matrix + scene column).
+ *   · control view → handleR (the deck / editor / length — the SAME R brain).
+ */
+function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
+  if (e.ev.type === 'top' && e.ev.cc === CC_TOP_SPARE_8) {
+    if (e.ev.s === 1) toggleSingleView(); // flip on press only (release is a no-op)
+    return;
+  }
+  if (activeView === 'clip') handleL(nodeId, e);
   else handleR(nodeId, e);
 }
 
@@ -766,37 +956,29 @@ function handleRLength(nodeId: string, e: LaunchpadKeyEvent): void {
 }
 
 // ---------------------------------------------------------------------------
-// LED render loop — repaint BOTH units each scheduler tick.
+// LED render loop. PAIR: repaint BOTH units each tick (L = matrix, R = deck).
+// SINGLE: repaint the LONE device (the L slot) in its active-view role.
 // ---------------------------------------------------------------------------
-function renderLeds(): void {
-  if (!isPairBound()) return; // need both units bound to paint anything
-  const nodeId = boundNodeId;
-  const node = nodeId ? livePatch.nodes[nodeId] : null;
-  if (!nodeId || !node) {
-    // Paired but no clip-player bound yet — paint a dim "ready" glow so the
-    // units are visibly alive + connected (add a clip-player to go live).
-    // L (matrix) = dim blue, R (deck) = dim amber.
-    setFrame('L', idleFrame(0, 0, 20));
-    setFrame('R', idleFrame(14, 7, 0));
-    return;
-  }
-  tickCount++;
-  const blinkOn = Math.floor(tickCount / BLINK_TICKS) % 2 === 0;
-  const data = node.data as ClipPlayerData | undefined;
 
-  // UNIT L — ALWAYS the matrix (never the editor).
+/** Paint the L-role (clip matrix) frame onto a physical unit. */
+function paintLRole(target: LaunchpadUnit, data: ClipPlayerData | undefined, blinkOn: boolean): void {
   setFrame(
-    'L',
-    computeLSessionFrame(data, {
-      blinkOn,
-      recording: recordArmed(data),
-    }),
+    target,
+    computeLSessionFrame(data, { blinkOn, recording: recordArmed(data) }),
   );
+}
 
-  // UNIT R — deck / editor / length-edit.
+/** Paint the R-role (deck / editor / length) frame onto a physical unit. The
+ *  `mode` machine (session→edit→length) is the SAME in pair + single. */
+function paintRRole(
+  target: LaunchpadUnit,
+  nodeId: string,
+  data: ClipPlayerData | undefined,
+  blinkOn: boolean,
+): void {
   if (mode === 'lengthEdit') {
     const clip = clipAtIndex(data, editClipIndex);
-    if (clip) { setFrame('R', computeRLengthFrame(clip)); return; }
+    if (clip) { setFrame(target, computeRLengthFrame(clip)); return; }
     mode = 'session';
   }
   if (mode === 'edit') {
@@ -806,7 +988,7 @@ function renderLeds(): void {
       // playhead (-1 when the edited clip isn't playing). The 8-step window
       // starts at the (frozen/followed) absolute step via colOffset (page 0).
       const absPlayhead = editPlayhead(nodeId, data);
-      setFrame('R', computeREditFrame(clip, {
+      setFrame(target, computeREditFrame(clip, {
         rowOffset: editRowOffset,
         colOffset: shownWindowStart(clip),
         page: 0,
@@ -819,7 +1001,7 @@ function renderLeds(): void {
     }
     mode = 'session';
   }
-  setFrame('R', computeRDeckFrame({
+  setFrame(target, computeRDeckFrame({
     blinkOn,
     transportRunning: transportRunning(),
     editArmed,
@@ -834,6 +1016,52 @@ function renderLeds(): void {
   }));
 }
 
+/** The CC-98 indicator colour for the active view on the single device (a calm
+ *  cyan so the dedicated view-flip button reads distinct from the function row). */
+const VIEW_LED: [number, number, number] = [10, 60, 60];
+
+function renderLeds(): void {
+  const single = deployment === 'single';
+  if (!single && !isPairBound()) return; // pair needs both units to paint
+  if (single && !isSingleBound()) return; // single needs the lone L-slot device
+  const nodeId = boundNodeId;
+  const node = nodeId ? livePatch.nodes[nodeId] : null;
+  if (!nodeId || !node) {
+    // Bound device(s) but no clip-player yet — paint a dim "ready" glow so the
+    // surface is visibly alive (add a clip-player to go live).
+    if (single) {
+      // The lone device shows the view it's in: dim blue (clip) / dim amber
+      // (control) + the CC-98 view marker.
+      setFrame('L', activeView === 'clip' ? idleFrame(0, 0, 20) : idleFrame(14, 7, 0));
+      setLed('L', CC_TOP_SPARE_8, VIEW_LED[0], VIEW_LED[1], VIEW_LED[2]);
+    } else {
+      setFrame('L', idleFrame(0, 0, 20)); // L (matrix) = dim blue
+      setFrame('R', idleFrame(14, 7, 0)); // R (deck) = dim amber
+    }
+    return;
+  }
+  tickCount++;
+  const blinkOn = Math.floor(tickCount / BLINK_TICKS) % 2 === 0;
+  const data = node.data as ClipPlayerData | undefined;
+
+  if (single) {
+    // ONE device, role chosen by the active view. The CC-98 view marker is set
+    // AFTER the role frame in EITHER view (and after the R painter's early
+    // returns in edit/length modes), so it always reflects the active view on
+    // the lone device + survives the setFrame diff. (setLed is a per-LED write
+    // that runs after setFrame, so it wins over whatever the frame painted at
+    // CC 98 — e.g. the editor's FOLLOW colour.)
+    if (activeView === 'clip') paintLRole('L', data, blinkOn);
+    else paintRRole('L', nodeId, data, blinkOn);
+    setLed('L', CC_TOP_SPARE_8, VIEW_LED[0], VIEW_LED[1], VIEW_LED[2]);
+    return;
+  }
+
+  // PAIR (unchanged): UNIT L = the matrix ALWAYS, UNIT R = deck/editor/length.
+  paintLRole('L', data, blinkOn);
+  paintRRole('R', nodeId, data, blinkOn);
+}
+
 // ---------------------------------------------------------------------------
 // Test seams.
 // ---------------------------------------------------------------------------
@@ -841,6 +1069,8 @@ export function __test_resetBinding(): void {
   stopLoops();
   boundNodeId = null;
   tickCount = 0;
+  deployment = 'pair';
+  activeView = 'clip';
   mode = 'session';
   editClipIndex = 0;
   editArmed = false;
@@ -859,6 +1089,8 @@ export function __test_resetBinding(): void {
   bufferSourceIndex = null;
 }
 export function __test_mode(): {
+  deployment: 'pair' | 'single';
+  activeView: 'clip' | 'control';
   mode: 'session' | 'edit' | 'lengthEdit';
   editClipIndex: number;
   editArmed: boolean;
@@ -875,6 +1107,8 @@ export function __test_mode(): {
   bufferSourceIndex: number | null;
 } {
   return {
+    deployment,
+    activeView,
     mode,
     editClipIndex,
     editArmed,
@@ -890,4 +1124,11 @@ export function __test_mode(): {
     bufferArmed: clipBuffer !== null,
     bufferSourceIndex,
   };
+}
+
+/** Test seam: force the deployment + view (so a unit test can drive single mode
+ *  without the connect()/enumerate handshake). Does NOT touch the binding. */
+export function __test_setDeployment(d: 'pair' | 'single', view: 'clip' | 'control' = 'clip'): void {
+  deployment = d;
+  activeView = view;
 }
