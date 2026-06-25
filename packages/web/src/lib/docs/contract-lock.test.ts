@@ -21,9 +21,10 @@ import '$lib/audio/modules';
 import '$lib/video/modules';
 import '$lib/meta/modules';
 
-import { serializeContractLock, serializeModuleContract } from './contract-signature';
+import { serializeContractLock, serializeModuleContract, serializeModuleDocsModule } from './contract-signature';
 
 const LOCK_PATH = fileURLToPath(new URL('./contract-lock.txt', import.meta.url));
+const DOCS_MODULE_PATH = fileURLToPath(new URL('./module-docs.generated.ts', import.meta.url));
 
 /** Readable line diff (ignores the `#` header) so a failure shows WHAT changed,
  *  not the whole 1000-line golden. `-` = was committed, `+` = now live. */
@@ -62,6 +63,25 @@ describe('contract-lock (living-docs drift gate)', () => {
         '`flox activate -- task docs:accept`, OR recognize this as a bug/side-effect ' +
         'and fix the def. The golden is packages/web/src/lib/docs/contract-lock.txt.',
     ).toBe('');
+  });
+
+  it('the committed module-docs render module is fresh (matches the live def docs)', () => {
+    const current = serializeModuleDocsModule();
+    if (process.env.DOCS_UPDATE) {
+      writeFileSync(DOCS_MODULE_PATH, current, 'utf8');
+      return;
+    }
+    let committed = '';
+    try {
+      committed = readFileSync(DOCS_MODULE_PATH, 'utf8');
+    } catch {
+      committed = '';
+    }
+    expect(
+      committed === current,
+      'module-docs.generated.ts is stale — a def `docs` field changed without re-emitting. ' +
+        'Run `flox activate -- task docs:accept` (it regenerates this render module the doc page imports).',
+    ).toBe(true);
   });
 });
 

@@ -27,6 +27,10 @@
 
 <p>{mod.description}</p>
 
+{#if mod.docs?.explanation}
+  <p class="authored-explanation" data-testid="docs-explanation">{mod.docs.explanation}</p>
+{/if}
+
 {#if data.guide}
   <a class="guide-callout" href={data.guide.href} data-testid="module-guide-link">
     <span class="guide-icon" aria-hidden="true">📖</span>
@@ -96,7 +100,12 @@
         <tr>
           <td><code>{p.id}</code></td>
           <td>{p.type}</td>
-          <td>{p.explain}</td>
+          <td>
+            {#if mod.docs?.inputs?.[p.id]}
+              {mod.docs.inputs[p.id]}
+              <div class="io-explain">{p.explain}</div>
+            {:else}{p.explain}{/if}
+          </td>
         </tr>
       {/each}
     </tbody>
@@ -114,7 +123,12 @@
         <tr>
           <td><code>{p.id}</code></td>
           <td>{p.type}</td>
-          <td>{p.explain}</td>
+          <td>
+            {#if mod.docs?.outputs?.[p.id]}
+              {mod.docs.outputs[p.id]}
+              <div class="io-explain">{p.explain}</div>
+            {:else}{p.explain}{/if}
+          </td>
         </tr>
       {/each}
     </tbody>
@@ -138,6 +152,23 @@
           </td>
           <td>{p.defaultValue ?? '—'}</td>
           <td>{p.curve}</td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+{/if}
+
+{#if mod.docs?.controls && Object.keys(mod.docs.controls).length > 0}
+  <h2>controls</h2>
+  <table data-testid="docs-controls">
+    <thead>
+      <tr><th>control</th><th>what it does</th></tr>
+    </thead>
+    <tbody>
+      {#each Object.entries(mod.docs.controls) as [k, desc] (k)}
+        <tr>
+          <td><code>{k}</code></td>
+          <td>{desc}</td>
         </tr>
       {/each}
     </tbody>
@@ -198,6 +229,15 @@
   .guide-arrow {
     font-size: 1.2rem;
     color: var(--doc-accent, #2bb6c8);
+  }
+  .authored-explanation {
+    font-size: 1.02em;
+    line-height: 1.55;
+  }
+  .io-explain {
+    color: var(--doc-fg-dim, #6e7a82);
+    font-size: 0.82em;
+    margin-top: 2px;
   }
   .diagram-wrap {
     margin: 1.5rem 0;

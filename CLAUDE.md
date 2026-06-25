@@ -150,6 +150,10 @@ hand-maintained list files that concurrent PRs still collide on are:
 - `e2e/vrt/vrt-exemptions.ts` (`EXEMPT_FROM_VRT` / `EXEMPT_BASELINE_PAIRS`)
 - `packages/web/src/lib/ui/modules-card-map.test.ts` (`EXPECTED_NODE_TYPES`)
 - the per-port / VRT spec lists (`e2e/tests/per-module-per-port*.spec.ts`)
+- `packages/web/src/lib/docs/strict-docs.ts` (`STRICT_DOCS`) — hand-maintained.
+  The two GENERATED living-docs artifacts (`contract-lock.txt`,
+  `module-docs.generated.ts`) also collide: on conflict, take main + re-run
+  `flox activate -- task docs:accept` to regenerate — never hand-merge them.
 
 **Whenever a PR merges to main, look ahead: sweep the other open PRs for conflicts
 the merge just created on those files, and rebase them** before they rot into
@@ -165,6 +169,49 @@ the merge just created on those files, and rebase them** before they rot into
 **Never use `gh pr update-branch`** on PRs touching the shared registry files —
 it silently drops the PR's additions when auto-merge picks main's version of a
 conflict, with no marker. Always `git merge origin/main` locally and diff.
+
+## Living docs: the contract gate + the document-on-touch ratchet
+
+Module documentation is PINNED to the I/O CONTRACT — like ART pins audio to a
+source-SHA and VRT pins a card to a baseline image. When a module's contract
+changes, the build NOTICES and forces a human to re-author the doc or recognize
+a bug. AI may draft the prose; deterministic, zero-flake unit gates hold the line.
+(Design + research: `.myrobots/plans/living-docs-drift-2026-06-24.md`.) Three tiers:
+
+- **GENERATED** — the I/O reference (cable types, ranges, cv/edge sentences):
+  derived from `PortDef`/`ParamDef` by `io-explain.ts`. Never hand-authored.
+- **AUTHORED** — behavioral prose CO-LOCATED on the def in a
+  `docs: { explanation, inputs, outputs, controls }` field (so a port change and
+  its doc edit land in the SAME PR diff). Dynamic DOM-only controls (step grids,
+  transports) declare a `controlFamilies` entry; `docs.controls` keys are param
+  ids or `<familyId>-{n}` templates.
+- **PINNED** — `contract-lock.txt` (the committed contract golden) +
+  `module-docs.generated.ts` (the render module the prerendered doc page imports,
+  since it can't import the live registry). Both GENERATED — never hand-edit.
+
+Gates (pure-unit, `unit` lane, ~0 added CI wall-time):
+- `contract-lock.test.ts` — contract golden + render-module freshness. A
+  port/param/control/flag change flips it red with a readable line diff.
+- `module-docs-lint.test.ts` — orphaned-key consistency, COMPLETENESS for the
+  `STRICT_DOCS` set (every port/param/family documented = deny-missing-docs),
+  edge/gate vocabulary coherence, and the `controlFamilies`→card-testid grep.
+
+Accept loop: after an INTENTIONAL contract or docs change, run
+`flox activate -- task docs:accept` (re-pins the golden + regenerates the render
+module), then **review the `git diff`** (a diff = a contract changed: accept it,
+or recognize a bug). `task docs:check` runs the gate read-only.
+
+**THE RATCHET** (how the bar self-enforces, no migration push):
+- Every **new** module ships with co-located `docs` and is added to `STRICT_DOCS`
+  (`packages/web/src/lib/docs/strict-docs.ts`).
+- Any module you **incidentally touch** for a fix is brought up to the bar then
+  (boy-scout rule) and added to `STRICT_DOCS`.
+- Background batches of ~5 promote the rest over time (author via agents from the
+  real source + memories, then adversarially fact-check against the code).
+
+Doc page rendering is currently AUDIO-only (the doc-page manifest is built by an
+audio-only `?raw` regex parser); VIDEO modules are gated + authored but have no
+`[id]` doc page yet — including them is a known follow-up.
 
 ## Standard/skill updates land with in-flight work
 

@@ -27,6 +27,8 @@
 // Vite walks the registry, embeds each module file's source text, and
 // resolves all paths at build time.
 import { explainInputPort, explainOutputPort, type ExplainPort } from './io-explain';
+import { MODULE_DOCS } from './module-docs.generated';
+import type { ModuleDocs } from '$lib/graph/types';
 
 const MODULE_SOURCES = import.meta.glob('../audio/modules/*.ts', {
   query: '?raw',
@@ -83,6 +85,11 @@ export interface ManifestModule {
     inputs: { id: string; type: string; explain: string }[];
     outputs: { id: string; type: string; explain: string }[];
   };
+  /** AUTHORED, drift-gated prose (living-docs): behavioral overview + per-input/
+   *  output + per-control descriptions. From the def's co-located `docs`, via the
+   *  committed `module-docs.generated.ts` (the page can't import the live registry).
+   *  Undefined for modules not yet documented. */
+  docs?: ModuleDocs;
 }
 
 export interface Manifest {
@@ -1556,6 +1563,7 @@ export function buildModuleManifest(
       params: m.params,
       ...(pairs ? { stereoPairs: pairs } : {}),
       io,
+      ...(MODULE_DOCS[type] ? { docs: MODULE_DOCS[type] } : {}),
     });
   }
 
