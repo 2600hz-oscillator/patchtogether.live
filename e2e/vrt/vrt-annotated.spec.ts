@@ -131,6 +131,7 @@ test.describe('VRT card-faces: numbered card screenshots + key for the docs site
         n: e.n,
         testid: e.testid.split(NODE_ID).join('{id}'),
         kind: e.kind,
+        ...(e.count ? { count: e.count } : {}),
       }));
 
       const legendPath = resolve(annotatedDir(), `${type}.legend.json`);

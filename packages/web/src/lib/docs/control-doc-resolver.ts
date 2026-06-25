@@ -27,6 +27,9 @@ export interface LegendEntry {
   /** Stable test id with the runtime nodeId normalized to the literal `{id}`. */
   testid: string;
   kind: string;
+  /** Member count when this is a COLLAPSED control family (one callout for a
+   *  whole repeated grid); absent for an individual control. */
+  count?: number;
 }
 
 export interface ResolvedControl {
@@ -111,10 +114,17 @@ export function resolveLegend(
     // 2) control family `<prefix>-{id}-<i>`
     const fm = famMatch(e.testid);
     if (fm) {
+      const key = `${fm.prefix}-{n}`;
+      const tmpl = controls[key];
+      // COLLAPSED family (one callout for the whole grid): "Seq gate ×16",
+      // generic blob (template's {n} → "N").
+      if (e.count && e.count > 1) {
+        const desc = tmpl ? tmpl.split('{n}').join('N') : null;
+        return { n: e.n, name: `${humanize(fm.prefix)} ×${e.count}`, desc, kind: e.kind, key, resolved: !!desc };
+      }
       const num = fm.idx - (famMin.get(fm.prefix) ?? 0) + 1;
-      const tmpl = controls[`${fm.prefix}-{n}`];
       const desc = tmpl ? tmpl.split('{n}').join(String(num)) : null;
-      return { n: e.n, name: `${humanize(fm.prefix)} ${num}`, desc, kind: e.kind, key: `${fm.prefix}-{n}`, resolved: !!desc };
+      return { n: e.n, name: `${humanize(fm.prefix)} ${num}`, desc, kind: e.kind, key, resolved: !!desc };
     }
     // 3) static button
     const key = staticKey(e.testid);

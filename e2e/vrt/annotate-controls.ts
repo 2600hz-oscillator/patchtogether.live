@@ -35,6 +35,10 @@ export interface ControlEntry {
   testid: string;
   /** What kind of control this is, for the legend ("knob"/"fader"/"button"/…). */
   kind: string;
+  /** Set when this entry is a COLLAPSED control family (a dense repeated grid
+   *  like seq-gate-<id>-0..15) — the member count. One callout stands in for the
+   *  whole family so the face isn't buried; the doc key resolves the family blob. */
+  count?: number;
 }
 
 const OVERLAY_ID = 'vrt-control-annotations';
@@ -95,9 +99,11 @@ export async function annotateControlsOnCard(card: Locator): Promise<ControlEntr
         kind: string;
         cx: number;
         cy: number;
+        w: number;
         h: number;
         y: number;
         x: number;
+        count?: number;
       }
       const boxes: Box[] = [];
       const seen = new Set<string>();
@@ -111,12 +117,39 @@ export async function annotateControlsOnCard(card: Locator): Promise<ControlEntr
         const testid = explicit ?? `${kind}:${anon++}`;
         if (seen.has(testid)) continue;
         seen.add(testid);
-        // Center + height in the card's local (untransformed) coordinate space.
+        // Center + width/height in the card's local (untransformed) space.
         const cx = (r.left + r.width / 2 - cardRect.left) / scale;
         const cy = (r.top + r.height / 2 - cardRect.top) / scale;
+        const w = r.width / scale;
         const h = r.height / scale;
-        boxes.push({ testid, kind, cx, cy, h, x: cx, y: cy });
+        boxes.push({ testid, kind, cx, cy, w, h, x: cx, y: cy });
       }
+
+      // Collapse dense control FAMILIES to ONE callout. Numbering all 16 cells
+      // of a step grid buries the card; the doc key resolves a single
+      // `<prefix>-{id}-<i>` member to the family blob, so one number suffices.
+      // Group by the test id minus its trailing index; a group of >=FAMILY_MIN
+      // collapses to its first (top-left) cell, carrying the member count.
+      const FAMILY_MIN = 3;
+      const groups = new Map<string, Box[]>();
+      for (const b of boxes) {
+        const base = b.testid.replace(/-\d+$/, '');
+        const g = groups.get(base);
+        if (g) g.push(b);
+        else groups.set(base, [b]);
+      }
+      const collapsed: Box[] = [];
+      for (const grp of groups.values()) {
+        if (grp.length >= FAMILY_MIN) {
+          const first = grp.slice().sort((a, b) => a.y - b.y || a.x - b.x)[0];
+          first.count = grp.length;
+          collapsed.push(first);
+        } else {
+          collapsed.push(...grp);
+        }
+      }
+      boxes.length = 0;
+      boxes.push(...collapsed);
 
       // Reading order: top→bottom, then left→right (row-major) with a small
       // vertical tolerance so controls on the same visual row sort by x.
@@ -145,25 +178,68 @@ export async function annotateControlsOnCard(card: Locator): Promise<ControlEntr
 
       // CALLOUT style (not a circle ON the control — that hid buttons and
       // covered sliders). For each control: a tiny anchor dot ON it, a thin
-      // leader line down to a numbered circle rendered just BELOW the control.
-      // If a control sits too close to the card's bottom edge for the circle to
-      // fit, the callout flips ABOVE instead, so it never spills off the face.
+      // leader line to a numbered circle placed in CLEAR space — never on top of
+      // another control. We prefer BELOW the control, then push the circle down
+      // (a leader line tracks it) past any control it would obscure + away from
+      // already-placed circles; if it can't fit below the card edge it flips
+      // ABOVE and pushes up the same way. This is what keeps a dense step grid's
+      // lower rows of numbers off the controls beneath them.
       const R = 9; // numbered-circle radius
       const LEADER = 8; // gap between the control edge and the circle
+      const PAD = 3; // clearance margin around controls + between circles
+      const STEP = 2; // px increment while searching for clear space
+      const placed: { cx: number; cy: number }[] = [];
+      /** Does a circle at (cx,cy) overlap any control box (except `skip`) or any
+       *  already-placed circle? */
+      const collides = (cx: number, cy: number, skip: number): boolean => {
+        for (let j = 0; j < boxes.length; j++) {
+          if (j === skip) continue;
+          const o = boxes[j];
+          if (
+            cx + R + PAD > o.cx - o.w / 2 &&
+            cx - R - PAD < o.cx + o.w / 2 &&
+            cy + R + PAD > o.cy - o.h / 2 &&
+            cy - R - PAD < o.cy + o.h / 2
+          ) {
+            return true;
+          }
+        }
+        for (const p of placed) {
+          const dx = cx - p.cx;
+          const dy = cy - p.cy;
+          if (dx * dx + dy * dy < (2 * R + PAD) * (2 * R + PAD)) return true;
+        }
+        return false;
+      };
       boxes.forEach((b, i) => {
         const g = doc.createElementNS(NS, 'g');
         const half = b.h / 2;
         const ctrlBottom = b.cy + half;
         const ctrlTop = b.cy - half;
-        // Prefer BELOW; flip ABOVE when the circle wouldn't fit before the edge.
-        let circleCy = ctrlBottom + LEADER + R;
-        let anchorY = ctrlBottom;
-        if (circleCy + R > localH - 1) {
-          circleCy = ctrlTop - LEADER - R;
-          anchorY = ctrlTop;
-        }
-        const below = circleCy > b.cy;
         const circleCx = Math.max(R + 1, Math.min(localW - R - 1, b.cx));
+        // Place the circle in the NEAREST clear slot — expand outward from the
+        // control checking just-below then just-above at each distance, so a
+        // dense grid's two rows split (top row's numbers tuck UP into the label
+        // gap, bottom row's DOWN) instead of all piling far below with long
+        // leaders. Slight downward bias (below is checked first at each step).
+        const belowStart = ctrlBottom + LEADER + R;
+        const aboveStart = ctrlTop - LEADER - R;
+        let circleCy = belowStart;
+        for (let d = 0; d <= localH; d += STEP) {
+          const down = belowStart + d;
+          if (down + R < localH - 1 && !collides(circleCx, down, i)) {
+            circleCy = down;
+            break;
+          }
+          const up = aboveStart - d;
+          if (up - R > 1 && !collides(circleCx, up, i)) {
+            circleCy = up;
+            break;
+          }
+        }
+        placed.push({ cx: circleCx, cy: circleCy });
+        const below = circleCy > b.cy;
+        const anchorY = below ? ctrlBottom : ctrlTop;
         // Thin leader line: control edge → circle edge.
         const line = doc.createElementNS(NS, 'line');
         line.setAttribute('x1', String(b.cx));
@@ -206,7 +282,12 @@ export async function annotateControlsOnCard(card: Locator): Promise<ControlEntr
       });
       el.appendChild(svg);
 
-      return boxes.map((b, i) => ({ n: i + 1, testid: b.testid, kind: b.kind }));
+      return boxes.map((b, i) => ({
+        n: i + 1,
+        testid: b.testid,
+        kind: b.kind,
+        ...(b.count ? { count: b.count } : {}),
+      }));
     },
     { selector: CONTROL_SELECTOR, chromeTestids: CHROME_TESTIDS, overlayId: OVERLAY_ID },
   );
