@@ -477,12 +477,13 @@ tasks:
 
   vrt:annotated:
     desc: |
-      Generate the CLEAN card-FACE doc assets for ALL sample modules: a clean
-      card screenshot → e2e/vrt/__annotated__/{platform}/{type}.png (LFS). The
-      doc page (/docs/modules/[id]) renders it as the card visual; controls are
-      documented from the authored `docs.controls` (no testid legend). The face
-      IS the asset, not a regression baseline. Then copies the darwin faces into
-      static/ via docs:faces. Override the set with ANNOTATED_MODULES="adsr,lfo".
+      Generate the NUMBERED card-FACE doc assets for ALL sample modules: a
+      numbered leader-line card screenshot → e2e/vrt/__annotated__/{platform}/
+      {type}.png (LFS) + number→test-id map → __annotated__/{type}.legend.json.
+      The doc page (/docs/modules/[id]) renders the numbered face + a KEY that
+      RESOLVES each number to its authored `docs.controls` blob. The face IS the
+      asset, not a regression baseline. Then copies the darwin faces into static/
+      via docs:faces. Override the set with ANNOTATED_MODULES="adsr,lfo".
     deps: [dsp:build, test:emit-manifest]
     cmds:
       - npm run vrt:annotated -w {{.E2E}} -- {{.CLI_ARGS}}
@@ -490,7 +491,7 @@ tasks:
 
   vrt:annotated:one:
     desc: |
-      [local dev-loop] Generate ONE module's clean card face by name.
+      [local dev-loop] Generate ONE module's numbered card face + key by name.
       Reuses a long-lived dev server if up (`task e2e:serve`). REPEAT=N
       flake-checks the generation. Example: task vrt:annotated:one -- adsr
     deps: [dsp:ensure, test:emit-manifest]
@@ -508,7 +509,7 @@ tasks:
 
   docs:faces:
     desc: |
-      Copy the canonical (darwin) card faces from
+      Copy the canonical (darwin) numbered card faces from
       e2e/vrt/__annotated__/darwin/*.png into packages/web/static/docs/
       module-faces/{type}.png so the prerendered doc page can <img src> them.
       Idempotent; a no-op when no card faces exist yet.

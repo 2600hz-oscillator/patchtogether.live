@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # scripts/copy-doc-faces.sh
 #
-# Copy the canonical (darwin) clean card-FACE PNGs from the VRT-generated source
-# tree into the web package's static assets so the prerendered doc page
+# Copy the canonical (darwin) numbered card-FACE PNGs from the VRT-generated
+# source tree into the web package's static assets so the prerendered doc page
 # (/docs/modules/[id]) can serve them as <img src>.
 #
 #   source: e2e/vrt/__annotated__/darwin/{type}.png   (LFS, committed)
 #   dest:   packages/web/static/docs/module-faces/{type}.png
 #
 # darwin is the canonical doc image (the linux copy exists only for CI
-# determinism). The doc loader globs the darwin PNGs directly to know which
-# modules have a face; controls are documented from the authored docs.controls.
+# determinism). The legend JSON stays in __annotated__/ — the doc loader globs
+# it to render the numbered KEY (resolved to authored docs.controls).
 #
 # Idempotent + safe on a fresh checkout: if no card faces exist yet it prints a
 # notice and exits 0 (the doc page falls back to the IoDiagram).

@@ -1,0 +1,21 @@
+{
+  "type": "lfo",
+  "platform": "darwin",
+  "controls": [
+    {
+      "n": 1,
+      "testid": "control-rate",
+      "kind": "fader"
+    },
+    {
+      "n": 2,
+      "testid": "control-shape",
+      "kind": "fader"
+    },
+    {
+      "n": 3,
+      "testid": "control-depth",
+      "kind": "knob"
+    }
+  ]
+}

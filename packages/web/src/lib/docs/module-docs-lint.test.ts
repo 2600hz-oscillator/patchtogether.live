@@ -34,16 +34,40 @@ import { listVideoModuleDefs } from '$lib/video/module-registry';
 import { listMetaModuleDefs } from '$lib/meta/module-registry';
 import type { ControlFamily, ModuleDocs } from '$lib/graph/types';
 import { STRICT_DOCS } from './strict-docs';
+import { resolveLegend, staticKey, type LegendEntry } from './control-doc-resolver';
 
 interface DocDef {
   type: string;
   card?: string;
   inputs?: readonly { id: string; edge?: 'trigger' | 'gate' }[];
   outputs?: readonly { id: string; edge?: 'trigger' | 'gate' }[];
-  params?: readonly { id: string }[];
+  params?: readonly { id: string; label?: string }[];
   controlFamilies?: readonly ControlFamily[];
   docs?: ModuleDocs;
 }
+
+/** Committed numbered-face legends (e2e/vrt/__annotated__/<type>.legend.json) →
+ *  the number→stable-test-id map the doc page resolves to authored blobs. This
+ *  is the enumeration of EVERY on-card control (the static buttons have no
+ *  param/family representation in the def, so the legend is their only roster).
+ *  Five `../` from this file (docs → lib → src → web → packages → repo root). */
+function loadLegends(): Record<string, LegendEntry[]> {
+  const dir = fileURLToPath(new URL('../../../../../e2e/vrt/__annotated__/', import.meta.url));
+  const out: Record<string, LegendEntry[]> = {};
+  let files: string[] = [];
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return out;
+  }
+  for (const f of files) {
+    if (!f.endsWith('.legend.json')) continue;
+    const j = JSON.parse(readFileSync(`${dir}${f}`, 'utf8')) as { type?: string; controls?: LegendEntry[] };
+    if (j.type) out[j.type] = j.controls ?? [];
+  }
+  return out;
+}
+const LEGENDS = loadLegends();
 
 /** All UI-component source concatenated — the cross-check corpus for the
  *  controlFamilies grep guard (mirrors webgl-attest's flag-vs-reality grep).
@@ -102,14 +126,20 @@ describe('module-docs lint — consistency (all authored modules)', () => {
       for (const key of Object.keys(def.docs.outputs ?? {})) {
         if (!outIds.has(key)) orphans.push(`${def.type}: docs.outputs['${key}'] → no such output port`);
       }
+      // Static-button doc keys (snh toggle, page-nav, SAVE/LOAD/QUEUE, …) have
+      // no param/family in the def — they're valid iff a numbered control on the
+      // card maps to them (its stable test id, nodeId stripped).
+      const legendStaticKeys = new Set((LEGENDS[def.type] ?? []).map((e) => staticKey(e.testid)));
       for (const key of Object.keys(def.docs.controls ?? {})) {
         const fam = key.match(FAMILY_KEY);
         if (fam) {
           if (!familyIds.has(fam[1])) {
             orphans.push(`${def.type}: docs.controls['${key}'] → no controlFamily '${fam[1]}'`);
           }
-        } else if (!paramIds.has(key)) {
-          orphans.push(`${def.type}: docs.controls['${key}'] → no such param (or use '<family>-{n}')`);
+        } else if (!paramIds.has(key) && !legendStaticKeys.has(key)) {
+          orphans.push(
+            `${def.type}: docs.controls['${key}'] → no such param / family / numbered control`,
+          );
         }
       }
     }
@@ -147,6 +177,30 @@ describe('module-docs lint — completeness (STRICT_DOCS set)', () => {
       }
     }
     expect(missing.join('\n'), 'STRICT_DOCS module(s) missing required docs — author them or unpromote').toBe('');
+  });
+});
+
+describe('module-docs lint — numbered card KEY resolves (STRICT_DOCS set)', () => {
+  it('EVERY numbered control on a promoted module maps to an authored blob', () => {
+    // The faithful "every control documented" bar: the numbered face is the real
+    // on-card roster (incl. static buttons absent from the def). A new button →
+    // a new number with no authored entry → this fails until it's documented.
+    // (Skips a STRICT module with no generated face yet — regenerate it first.)
+    const missing: string[] = [];
+    for (const def of allDefs()) {
+      if (!STRICT_DOCS.has(def.type)) continue;
+      const legend = LEGENDS[def.type];
+      if (!legend?.length) continue;
+      for (const r of resolveLegend(legend, { params: def.params, docs: def.docs })) {
+        if (!r.resolved) {
+          missing.push(`${def.type}: numbered control #${r.n} ('${r.key}') has no authored docs.controls entry`);
+        }
+      }
+    }
+    expect(
+      missing.join('\n'),
+      'numbered control(s) with no authored blob — add a docs.controls entry for each',
+    ).toBe('');
   });
 });
 

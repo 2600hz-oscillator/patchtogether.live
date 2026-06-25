@@ -233,6 +233,19 @@ export const sequencerDef: AudioModuleDef = {
       "seq-gate-{n}": "Step {n} on/off — lit = it plays its note when the playhead reaches it; unlit = a rest (the gate stays low and, with sample & hold on, the pitch just holds the previous note).",
       "seq-chord-{n}": "Step {n}'s chord mode — click to cycle mono (single note) to maj (major triad) to min (minor triad); a chord broadcasts its notes across the poly pitch lanes so a polyphonic voice plays all of them, while a mono pitch sink still hears just the root.",
       "quicksave-slot-{n}": "Pattern slot {n} of 8 — what a click does depends on the armed mode button: SAVE writes the current pattern (steps + BPM/length/octave/gate/swing) into this slot, LOAD switches to it instantly, and QUEUE waits until the current loop finishes and then swaps to it; a filled slot shows differently from an empty one.",
+      // Static buttons (no param / family) — the on-card affordances. Keyed by
+      // their stable test id (runtime nodeId stripped) so the numbered card KEY
+      // on the doc page resolves them.
+      "sequencer-play": "Play / Stop (header) — starts or stops the sequencer; starting snaps the playhead back to step 1. Same run/stop state as the isPlaying control and the transport-row PLAY.",
+      "sequencer-snh-toggle": "Sample & Hold toggle (S&H / OFF) — the button form of the snh control: on (default) latches the pitch CV to the gate edge and holds it through rests, off lets pitch run continuously.",
+      "sequencer-prev": "Page ◀ — view the previous 16-step page of the grid; also engages HOLD so playback won't auto-scroll the view away. A marker on the arrow shows when the playhead is on a page you're not viewing.",
+      "sequencer-next": "Page ▶ — view the next 16-step page (only when the pattern length spans more than 16 steps); also engages HOLD like the ◀ button.",
+      "sequencer-hold": "HOLD — freezes the visible page so the grid stops auto-following the playhead across pages; off lets the view track the playing step.",
+      "quicksave-mode-save": "SAVE arm — click it, then click a slot 1–8 to write the current pattern (steps + BPM/length/octave/gate/swing) into that slot.",
+      "quicksave-mode-load": "LOAD arm — click it, then click a slot to switch to that saved pattern instantly.",
+      "quicksave-mode-queue": "QUEUE arm — click it, then click a slot to queue that pattern; the swap happens cleanly at the end of the current loop instead of immediately.",
+      "quicksave-play": "Play / Stop (transport row) — same run/stop control as the header PLAY button.",
+      "quicksave-reset": "Reset — snaps the playhead back to step 1 without stopping playback.",
     },
   },
   controlFamilies: [

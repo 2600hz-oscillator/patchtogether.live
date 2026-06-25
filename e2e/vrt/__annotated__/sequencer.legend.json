@@ -1,0 +1,281 @@
+{
+  "type": "sequencer",
+  "platform": "darwin",
+  "controls": [
+    {
+      "n": 1,
+      "testid": "sequencer-play-{id}",
+      "kind": "button"
+    },
+    {
+      "n": 2,
+      "testid": "sequencer-snh-toggle",
+      "kind": "button"
+    },
+    {
+      "n": 3,
+      "testid": "sequencer-{id}-prev",
+      "kind": "button"
+    },
+    {
+      "n": 4,
+      "testid": "sequencer-{id}-next",
+      "kind": "button"
+    },
+    {
+      "n": 5,
+      "testid": "sequencer-{id}-hold",
+      "kind": "button"
+    },
+    {
+      "n": 6,
+      "testid": "seq-gate-{id}-0",
+      "kind": "button"
+    },
+    {
+      "n": 7,
+      "testid": "seq-gate-{id}-1",
+      "kind": "button"
+    },
+    {
+      "n": 8,
+      "testid": "seq-gate-{id}-2",
+      "kind": "button"
+    },
+    {
+      "n": 9,
+      "testid": "seq-gate-{id}-3",
+      "kind": "button"
+    },
+    {
+      "n": 10,
+      "testid": "seq-gate-{id}-4",
+      "kind": "button"
+    },
+    {
+      "n": 11,
+      "testid": "seq-gate-{id}-5",
+      "kind": "button"
+    },
+    {
+      "n": 12,
+      "testid": "seq-gate-{id}-6",
+      "kind": "button"
+    },
+    {
+      "n": 13,
+      "testid": "seq-gate-{id}-7",
+      "kind": "button"
+    },
+    {
+      "n": 14,
+      "testid": "seq-gate-{id}-8",
+      "kind": "button"
+    },
+    {
+      "n": 15,
+      "testid": "seq-gate-{id}-9",
+      "kind": "button"
+    },
+    {
+      "n": 16,
+      "testid": "seq-gate-{id}-10",
+      "kind": "button"
+    },
+    {
+      "n": 17,
+      "testid": "seq-gate-{id}-11",
+      "kind": "button"
+    },
+    {
+      "n": 18,
+      "testid": "seq-gate-{id}-12",
+      "kind": "button"
+    },
+    {
+      "n": 19,
+      "testid": "seq-gate-{id}-13",
+      "kind": "button"
+    },
+    {
+      "n": 20,
+      "testid": "seq-gate-{id}-14",
+      "kind": "button"
+    },
+    {
+      "n": 21,
+      "testid": "seq-gate-{id}-15",
+      "kind": "button"
+    },
+    {
+      "n": 22,
+      "testid": "seq-chord-{id}-0",
+      "kind": "button"
+    },
+    {
+      "n": 23,
+      "testid": "seq-chord-{id}-1",
+      "kind": "button"
+    },
+    {
+      "n": 24,
+      "testid": "seq-chord-{id}-2",
+      "kind": "button"
+    },
+    {
+      "n": 25,
+      "testid": "seq-chord-{id}-3",
+      "kind": "button"
+    },
+    {
+      "n": 26,
+      "testid": "seq-chord-{id}-4",
+      "kind": "button"
+    },
+    {
+      "n": 27,
+      "testid": "seq-chord-{id}-5",
+      "kind": "button"
+    },
+    {
+      "n": 28,
+      "testid": "seq-chord-{id}-6",
+      "kind": "button"
+    },
+    {
+      "n": 29,
+      "testid": "seq-chord-{id}-7",
+      "kind": "button"
+    },
+    {
+      "n": 30,
+      "testid": "seq-chord-{id}-8",
+      "kind": "button"
+    },
+    {
+      "n": 31,
+      "testid": "seq-chord-{id}-9",
+      "kind": "button"
+    },
+    {
+      "n": 32,
+      "testid": "seq-chord-{id}-10",
+      "kind": "button"
+    },
+    {
+      "n": 33,
+      "testid": "seq-chord-{id}-11",
+      "kind": "button"
+    },
+    {
+      "n": 34,
+      "testid": "seq-chord-{id}-12",
+      "kind": "button"
+    },
+    {
+      "n": 35,
+      "testid": "seq-chord-{id}-13",
+      "kind": "button"
+    },
+    {
+      "n": 36,
+      "testid": "seq-chord-{id}-14",
+      "kind": "button"
+    },
+    {
+      "n": 37,
+      "testid": "seq-chord-{id}-15",
+      "kind": "button"
+    },
+    {
+      "n": 38,
+      "testid": "control-bpm",
+      "kind": "fader"
+    },
+    {
+      "n": 39,
+      "testid": "control-length",
+      "kind": "fader"
+    },
+    {
+      "n": 40,
+      "testid": "control-octave",
+      "kind": "fader"
+    },
+    {
+      "n": 41,
+      "testid": "control-gateLength",
+      "kind": "fader"
+    },
+    {
+      "n": 42,
+      "testid": "control-swing",
+      "kind": "fader"
+    },
+    {
+      "n": 43,
+      "testid": "quicksave-slot-{id}-1",
+      "kind": "button"
+    },
+    {
+      "n": 44,
+      "testid": "quicksave-slot-{id}-2",
+      "kind": "button"
+    },
+    {
+      "n": 45,
+      "testid": "quicksave-slot-{id}-3",
+      "kind": "button"
+    },
+    {
+      "n": 46,
+      "testid": "quicksave-slot-{id}-4",
+      "kind": "button"
+    },
+    {
+      "n": 47,
+      "testid": "quicksave-slot-{id}-5",
+      "kind": "button"
+    },
+    {
+      "n": 48,
+      "testid": "quicksave-slot-{id}-6",
+      "kind": "button"
+    },
+    {
+      "n": 49,
+      "testid": "quicksave-slot-{id}-7",
+      "kind": "button"
+    },
+    {
+      "n": 50,
+      "testid": "quicksave-slot-{id}-8",
+      "kind": "button"
+    },
+    {
+      "n": 51,
+      "testid": "quicksave-mode-save-{id}",
+      "kind": "button"
+    },
+    {
+      "n": 52,
+      "testid": "quicksave-mode-load-{id}",
+      "kind": "button"
+    },
+    {
+      "n": 53,
+      "testid": "quicksave-mode-queue-{id}",
+      "kind": "button"
+    },
+    {
+      "n": 54,
+      "testid": "quicksave-play-{id}",
+      "kind": "button"
+    },
+    {
+      "n": 55,
+      "testid": "quicksave-reset-{id}",
+      "kind": "button"
+    }
+  ]
+}
