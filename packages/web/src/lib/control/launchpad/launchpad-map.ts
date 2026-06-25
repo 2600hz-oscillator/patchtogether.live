@@ -124,6 +124,8 @@ export const RGB_DECK_DBL: Rgb = [40, 14, 60]; // purple (DBL — tap)
 export const RGB_DECK_LEN: Rgb = [56, 48, 6]; // yellow (LEN — tap)
 export const RGB_DECK_NOW: Rgb = [40, 14, 60]; // purple (idle)
 export const RGB_DECK_NOW_ON: Rgb = [104, 40, 127]; // purple (held, bright)
+export const RGB_DECK_LEN_ON: Rgb = [110, 96, 12]; // yellow (LEN armed, bright)
+export const RGB_DECK_DBL_ON: Rgb = [80, 28, 120]; // purple (DBL armed, bright)
 export const RGB_TRANSPORT_ON: Rgb = [23, 104, 53]; // green (transport running)
 export const RGB_RECORDING_DIM: Rgb = [30, 4, 4]; // down phase of the record-arm pulse
 export const RGB_SONG_SESSION: Rgb = [16, 16, 20]; // SES/ARR idle (SESSION) — dim white
@@ -177,6 +179,50 @@ export function clipIndexToLPad(index: number): { x: number; y: number } {
 export function lSceneSlotForRow(row: number): number | null {
   if (row >= 0 && row < CLIP_SLOTS) return row;
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// SINGLE-UNIT clip-view ARM ROW (top CCs 91..97). In single mode the clip view's
+// top row is otherwise dead (handleL has no `top` branch), so it hosts a 7-cell
+// ACTION-ARM strip: tap a cell to ARM an action, then tap a clip pad to apply it
+// — two-handed deck ops without ever leaving the matrix view. CC 98 stays the
+// view-flip. PAIR mode never reaches this (single-only routing), so the pair
+// top-row roles (REC/SONG/transport/…) are untouched.
+//   CC 91 (▲)      = NEW       · CC 92 (▼) = COPY (+ double-tap = clear buffer)
+//   CC 93 (◀)      = PASTE     · CC 94 (▶) = PASTE-REV
+//   CC 95 (▣)      = NOW       (sticky toggle, not arm-then-tap)
+//   CC 96          = LENGTH    · CC 97 = DOUBLE
+// ---------------------------------------------------------------------------
+export type ClipArmAction =
+  | 'new'
+  | 'copy'
+  | 'paste'
+  | 'pasteRev'
+  | 'now'
+  | 'length'
+  | 'double';
+
+/** Classify a single-mode clip-view top-row CC → its arm-strip action, or null
+ *  for CC 98 (the view-flip) / any non-arm CC. PURE. */
+export function clipArmAction(cc: number): ClipArmAction | null {
+  switch (cc) {
+    case CC_UP:
+      return 'new';
+    case CC_DOWN:
+      return 'copy';
+    case CC_LEFT:
+      return 'paste';
+    case CC_RIGHT:
+      return 'pasteRev';
+    case CC_SESSION:
+      return 'now';
+    case CC_TOP_SPARE_6:
+      return 'length';
+    case CC_TOP_SPARE_7:
+      return 'double';
+    default:
+      return null; // CC_TOP_SPARE_8 (98) = view-flip; everything else ignored
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -345,6 +391,25 @@ export interface LSessionOpts {
   blinkOn?: boolean;
   /** True if this clip-player is record-armed (paints empty pads dim red). */
   recording?: boolean;
+  /** SINGLE-mode clip-view arm strip (undefined / unset in pair mode → the top
+   *  row + matrix paint EXACTLY as before). When provided, the top CCs 91..97
+   *  paint the 7-cell arm palette, and `armedAction` (non-null) overlays the
+   *  aiming wash on the 8×8 (loaded pads one step brighter, empties a faint dot)
+   *  so the user can see where an armed action will land. */
+  arm?: {
+    armedAction: ClipArmAction | null;
+    bufferLoaded: boolean;
+    nowOn: boolean;
+  };
+}
+
+// The faint target dot painted on EMPTY pads under the aiming wash.
+const RGB_AIM_DOT: Rgb = RGB_FUNC_DIM;
+/** Brighten a triple by ~40% (clamped) — the aiming-wash "one step brighter" for
+ *  loaded pads, so the legal targets pop while an action is armed. */
+function brighten(rgb: Rgb): Rgb {
+  const f = (v: number) => Math.min(127, Math.round(v * 1.5) + 4);
+  return [f(rgb[0]), f(rgb[1]), f(rgb[2])];
 }
 
 export function computeLSessionFrame(
@@ -354,6 +419,7 @@ export function computeLSessionFrame(
   const frame = emptyFrame();
   const blinkOn = opts.blinkOn ?? true;
   const clips = data?.clips ?? {};
+  const aiming = !!opts.arm?.armedAction; // overlay the aiming wash when armed
   for (let lane = 0; lane < CLIP_LANES; lane++) {
     const pl = lanePlaying(data, lane);
     const q = laneQueued(data, lane);
@@ -382,6 +448,13 @@ export function computeLSessionFrame(
       } else if (opts.recording) {
         rgb = RGB_STOP_IDLE; // record-armed empty slot = dim red (Ableton idiom)
       }
+      // Aiming wash (single-mode, an action armed): bump loaded/playing pads one
+      // step brighter as legal targets; show a faint dot on empties so the whole
+      // matrix reads as "tap a pad to apply the armed action".
+      if (aiming) {
+        if (rgb === RGB_OFF) rgb = RGB_AIM_DOT;
+        else rgb = brighten(rgb);
+      }
       put(frame, note, rgb);
     }
   }
@@ -391,7 +464,50 @@ export function computeLSessionFrame(
     const row = LP_HEIGHT - 1 - i; // SCENE_CCS[0] = top = row 7
     put(frame, SCENE_CCS[i], row < CLIP_SLOTS ? RGB_SCENE : RGB_OFF);
   }
+  // SINGLE-mode clip-view ARM STRIP (top CCs 91..97). Painted ONLY when opts.arm
+  // is supplied (single mode); pair mode leaves the top row untouched (CC 91..98
+  // are never written here, so the device's top row stays dark in pair clip-role,
+  // exactly as before this change).
+  if (opts.arm) paintClipArmStrip(frame, opts.arm, blinkOn);
   return frame;
+}
+
+/** Paint the 7-cell single-mode arm strip onto the top row (CCs 91..97). Idle
+ *  cells show their hue so the row reads as a palette; the armed cell brightens
+ *  to its *_ON; COPY pulses turquoise while the buffer is loaded; PASTE/PASTE-REV
+ *  dim when no buffer; NOW lights purple while sticky-on. CC 98 is left to the
+ *  caller's view marker. PURE. */
+function paintClipArmStrip(
+  frame: LaunchpadFrame,
+  arm: { armedAction: ClipArmAction | null; bufferLoaded: boolean; nowOn: boolean },
+  blinkOn: boolean,
+): void {
+  const a = arm.armedAction;
+  // NEW (CC 91).
+  put(frame, CC_UP, a === 'new' ? RGB_DECK_EDIT_ON : RGB_DECK_EDIT);
+  // COPY (CC 92) — turquoise pulse when the buffer holds a clip, else green.
+  put(
+    frame,
+    CC_DOWN,
+    a === 'copy'
+      ? RGB_DECK_COPY_ON
+      : arm.bufferLoaded
+      ? (blinkOn ? RGB_COPY_BUFFER : RGB_COPY_BUFFER_DIM)
+      : RGB_DECK_COPY,
+  );
+  // PASTE (CC 93) / PASTE-REV (CC 94) — dim when no buffer (a no-op-right-now).
+  put(frame, CC_LEFT, a === 'paste' ? RGB_DECK_COPY_ON : arm.bufferLoaded ? RGB_DECK_COPY : RGB_FUNC_DIM);
+  put(
+    frame,
+    CC_RIGHT,
+    a === 'pasteRev' ? RGB_DECK_COPY_ON : arm.bufferLoaded ? RGB_DECK_COPY : RGB_FUNC_DIM,
+  );
+  // NOW (CC 95) — sticky toggle: bright purple while on, idle purple otherwise.
+  put(frame, CC_SESSION, arm.nowOn ? RGB_DECK_NOW_ON : RGB_DECK_NOW);
+  // LENGTH (CC 96) — yellow, brightens when armed.
+  put(frame, CC_TOP_SPARE_6, a === 'length' ? RGB_DECK_LEN_ON : RGB_DECK_LEN);
+  // DOUBLE (CC 97) — purple, brightens when armed.
+  put(frame, CC_TOP_SPARE_7, a === 'double' ? RGB_DECK_DBL_ON : RGB_DECK_DBL);
 }
 
 // ── UNIT R (session command deck) ──

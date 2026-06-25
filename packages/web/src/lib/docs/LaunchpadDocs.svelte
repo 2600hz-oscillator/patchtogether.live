@@ -178,6 +178,7 @@
     { what: '8×8 pads (programmer mode)', addr: 'note = row*10 + col · 11 = bottom-left · 88 = top-right' },
     { what: 'top row ▲ ▼ ◀ ▶ ▣(SHIFT)', addr: 'CC 91 · 92 · 93 · 94 · 95 — editor nav (▲▼◀▶) + SHIFT(95)' },
     { what: 'top row arranger (session) / globals', addr: 'CC 91 = REC · 92 = SONG · 96 = transport · 97 = stop-all' },
+    { what: 'single-unit ARM ROW (clip view)', addr: 'CC 91 = NEW · 92 = COPY (dbl-tap = clear) · 93 = PASTE · 94 = PASTE-REV · 95 = NOW (sticky) · 96 = LENGTH · 97 = DOUBLE — arm, then tap a clip (single mode only)' },
     { what: 'single-unit VIEW toggle', addr: 'CC 98 (rightmost top-row button) — flips CLIP ⇄ CONTROL (single mode only; pair mode = editor FOLLOW)' },
     { what: 'right scene column (top→bottom)', addr: 'CC 89 · 79 · 69 · 59 · 49 · 39 · 29 · 19' },
     { what: 'per-LED full RGB', addr: 'F0 00 20 29 02 0D 03  03 <pad> <R> <G> <B>  F7   (0–127)' },
@@ -231,6 +232,36 @@
   <strong>Flipping views never resets your editor</strong> — the step window, pitch scroll, FOLLOW state
   and which clip you're editing all survive a clip↔control flip. The matrix's playing/queued state is
   always live (it's the shared clip-player), so you never lose your performance by switching views.
+</p>
+
+<h2>Single unit — the clip-view ARM ROW (two-handed deck ops, no view flip)</h2>
+<p>
+  On a single device you can't physically hold a deck modifier on one unit while tapping a clip on
+  another — so in <strong>CLIP view</strong> the otherwise-idle <strong>top row</strong> becomes a
+  7-cell <strong>action-arm strip</strong>. <strong>Tap an arm cell to ARM an action, then tap a clip
+  pad to apply it</strong> — the matrix never disappears. While an action is armed the matrix shows an
+  <em>aiming wash</em> (legal targets brighten, empty pads show a faint dot) so you can see where the
+  action will land. An arm <strong>auto-disarms</strong> after ~4 seconds, and re-tapping the armed
+  cell cancels it. <strong>CC 98 (rightmost) stays the view-flip.</strong>
+</p>
+<ul>
+  <li><strong>CC 91 — NEW:</strong> arm, then tap an <em>empty</em> pad → it gets a fresh clip and the
+    device flips to the note editor. (Tapping a loaded pad is a no-op — it won't clobber.)</li>
+  <li><strong>CC 92 — COPY:</strong> arm, then tap a <em>loaded</em> clip → it's copied to the
+    clipboard. <strong>Double-tap COPY</strong> (while a clip is held) <strong>clears the buffer</strong>.</li>
+  <li><strong>CC 93 / CC 94 — PASTE / PASTE-REV:</strong> arm (only lights when the clipboard holds a
+    clip), then tap any pad → the buffer is written there (PASTE-REV mirrors the steps).</li>
+  <li><strong>CC 95 — NOW:</strong> a <em>sticky toggle</em> (not arm-then-tap) — while lit, ordinary
+    clip + scene taps launch <strong>immediately</strong> instead of at the next quantize boundary.
+    Tap again to turn it off.</li>
+  <li><strong>CC 96 — LENGTH:</strong> arm, then tap a loaded clip → opens its length page (the device
+    flips to control to show the ruler).</li>
+  <li><strong>CC 97 — DOUBLE:</strong> arm, then tap a loaded clip → duplicates + doubles its length.</li>
+</ul>
+<p class="muted">
+  The arm row is <strong>single-mode only</strong>. In a two-device <strong>pair</strong> the deck lives
+  on the RIGHT unit (hold a modifier there + tap a clip on the LEFT), and the top row keeps its
+  pair roles (REC / SONG / transport) — nothing here changes pair behaviour.
 </p>
 
 <h2>Unit L — the clip matrix (always live)</h2>

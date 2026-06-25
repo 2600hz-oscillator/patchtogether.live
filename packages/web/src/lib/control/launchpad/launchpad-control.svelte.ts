@@ -53,6 +53,8 @@ import {
   lPadToClipIndex,
   lSceneSlotForRow,
   computeLSessionFrame,
+  clipArmAction,
+  type ClipArmAction,
   // R deck
   rDeckPad,
   rStopLaneForRow,
@@ -164,6 +166,17 @@ let followOn = true;
 let clipBuffer: NoteClipRecord | null = null;
 let bufferSourceIndex: number | null = null; // which clip index is in the buffer (for the L turquoise glow)
 
+// SINGLE-mode clip-view ARM STRIP (top CCs 91..97). Two-handed deck ops without
+// leaving the matrix view: tap an arm cell → arm an action → tap a clip pad →
+// apply. Reuses the existing modifier booleans (copyHeld/pasteHeld/pasteRevHeld)
+// as the substrate where they map; `armedAction` is the only NEW discriminant
+// (NEW/LENGTH/DOUBLE have no boolean). NOW is a sticky toggle (reuses nowHeld),
+// NOT arm-then-tap. Pair mode never sets these (armClip is single-only), so the
+// armed-consume guard in handleL is a dead branch in pair.
+let armedAction: ClipArmAction | null = null; // null when nothing armed
+let armTick = 0; // tickCount snapshot for the 4s auto-disarm
+const ARM_TIMEOUT_TICKS = 160; // ~4s at 25ms/tick — auto-disarm a stale arm
+
 /** Empty the copy buffer — turns off the turquoise source glow on L + the deck
  *  COPY-INDICATOR. (Tapping the COPY-INDICATOR pad clears it; the buffer also
  *  survives a re-bind otherwise, so this is the way to dismiss the glow.) */
@@ -231,6 +244,8 @@ function setSingleView(view: 'clip' | 'control'): void {
   pasteRevHeld = false;
   nowHeld = false;
   shiftHeld = false;
+  // The arm strip is a clip-view-only concept — drop any pending arm on a flip.
+  armedAction = null;
   persistDeployment();
   bumpView();
   renderLeds(); // repaint the lone unit in its new role without waiting a tick
@@ -252,6 +267,8 @@ function start(): void {
   editRowOffset = 0;
   editWindowStart = 0;
   followOn = true;
+  armedAction = null;
+  armTick = 0;
   // NOTE: clipBuffer survives a re-bind (it's the machine's clipboard).
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
@@ -702,8 +719,136 @@ function handleSingleKey(nodeId: string, e: LaunchpadKeyEvent): void {
     if (e.ev.s === 1) toggleSingleView(); // flip on press only (release is a no-op)
     return;
   }
+  // Clip-view ARM ROW: top CCs 91..97 are the single-mode action-arm strip (the
+  // clip view's top row is otherwise dead — handleL has no `top` branch). Route
+  // them to armClip and DON'T fall through to handleL.
+  if (activeView === 'clip' && e.ev.type === 'top' && clipArmAction(e.ev.cc) !== null) {
+    armClip(e.ev.cc, e.ev.s);
+    return;
+  }
   if (activeView === 'clip') handleL(nodeId, e);
   else handleR(nodeId, e);
+}
+
+/** SINGLE-mode clip-view arm-strip handler (press-only). Maps a top CC →
+ *  ClipArmAction, gates PASTE/PASTE-REV on a loaded buffer, toggles NOW sticky,
+ *  and arms (or disarms / clears-buffer on a re-tap) the rest. Sets the matching
+ *  modifier boolean substrate + `armedAction` and snapshots `armTick` for the
+ *  auto-disarm. */
+function armClip(cc: number, s: 0 | 1): void {
+  if (s !== 1) return; // press-only
+  const action = clipArmAction(cc);
+  if (action === null) return;
+
+  // NOW is a STICKY TOGGLE — it does not arm; it flips the launch-immediate flag
+  // that ordinary clip/scene taps already pass into queueLane. (Composes with
+  // launching, matching the pair NOW intent.)
+  if (action === 'now') {
+    nowHeld = !nowHeld;
+    renderLeds();
+    return;
+  }
+
+  // Re-tapping the armed cell DISARMS it (COPY: clears the buffer if loaded).
+  if (armedAction === action) {
+    if (action === 'copy' && clipBuffer !== null) clearBuffer();
+    disarmClip();
+    return;
+  }
+
+  // PASTE / PASTE-REV only arm when there's something to paste; otherwise a
+  // single red blink (no arm) — the strip already shows them dim.
+  if ((action === 'paste' || action === 'pasteRev') && clipBuffer === null) {
+    disarmClip(); // ensure nothing stays armed; LED stays dim (no-op cue)
+    return;
+  }
+
+  // Arm. Reuse the existing modifier booleans as the substrate where they map.
+  copyHeld = action === 'copy';
+  pasteHeld = action === 'paste';
+  pasteRevHeld = action === 'pasteRev';
+  armedAction = action;
+  armTick = tickCount;
+  renderLeds();
+}
+
+/** Clear any armed state (back to plain launching). Leaves NOW (sticky) alone. */
+function disarmClip(): void {
+  armedAction = null;
+  copyHeld = false;
+  pasteHeld = false;
+  pasteRevHeld = false;
+  renderLeds();
+}
+
+/** Apply the armed action to a clip pad tap (single mode). Validates the target
+ *  per action; an illegal target is a no-op that simply disarms (the LED loop
+ *  shows the matrix returning to normal). Runs the SAME helper bodies the pair
+ *  modifier branches use, so behaviour stays consistent across deployments. */
+function consumeArmed(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
+  const action = armedAction;
+  switch (action) {
+    case 'new': {
+      // Only onto an EMPTY pad (don't clobber a loaded clip).
+      if (!data?.clips?.[String(clipIdx)]) {
+        editData(nodeId, (d) => {
+          if (!d.clips) d.clips = {};
+          if (!d.clips[String(clipIdx)]) d.clips[String(clipIdx)] = defaultNoteClip();
+        });
+        editClipIndex = clipIdx;
+        mode = 'edit';
+        editAnchor = null;
+        editSpanned = false;
+        editRowOffset = 0;
+        editWindowStart = 0;
+        followOn = true;
+        velHeld = false;
+        disarmClip();
+        setSingleView('control'); // show the editor (also clears armedAction)
+        return;
+      }
+      break; // loaded pad under NEW = no-op
+    }
+    case 'copy': {
+      const c = clipAtIndex(data, clipIdx);
+      if (c) {
+        clipBuffer = copyClip(c);
+        bufferSourceIndex = clipIdx;
+      }
+      break; // empty pad = no-op
+    }
+    case 'paste': {
+      if (clipBuffer) writeClip(nodeId, copyClip(clipBuffer), clipIdx);
+      break;
+    }
+    case 'pasteRev': {
+      if (clipBuffer) writeClip(nodeId, reverseClipSteps(copyClip(clipBuffer)), clipIdx);
+      break;
+    }
+    case 'length': {
+      // Only onto a LOADED clip; open the length page (control view shows it).
+      if (clipAtIndex(data, clipIdx)) {
+        editClipIndex = clipIdx;
+        mode = 'lengthEdit';
+        disarmClip();
+        setSingleView('control');
+        return;
+      }
+      break; // empty = no-op
+    }
+    case 'double': {
+      const clip = clipAtIndex(data, clipIdx);
+      if (clip) {
+        editClipIndex = clipIdx;
+        const next = doubleNoteClip(clip);
+        if (next !== clip) writeClip(nodeId, next, clipIdx);
+      }
+      break; // empty / at-max = no-op
+    }
+    default:
+      break;
+  }
+  disarmClip();
 }
 
 /** Unit L is ALWAYS the live clip matrix + scene column. */
@@ -715,6 +860,13 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     const clipIdx = lPadToClipIndex(ev.x, ev.y);
     if (clipIdx === null) return;
     if (ev.s !== 1) return; // clip launch acts on press
+    // SINGLE-mode arm strip: an armed action consumes the next clip-pad tap
+    // (two-handed deck op). Pair mode never sets armedAction, so this is a dead
+    // branch in pair → the existing modifier branches below stay byte-for-byte.
+    if (deployment === 'single' && armedAction) {
+      consumeArmed(nodeId, clipIdx, data);
+      return;
+    }
     // Held-modifier branches FIRST (the modifiers live on R, read here).
     if (editArmed) {
       // hold-EDIT (on R) + tap a clip (on L) → enter the editor on R.
@@ -960,11 +1112,24 @@ function handleRLength(nodeId: string, e: LaunchpadKeyEvent): void {
 // SINGLE: repaint the LONE device (the L slot) in its active-view role.
 // ---------------------------------------------------------------------------
 
-/** Paint the L-role (clip matrix) frame onto a physical unit. */
-function paintLRole(target: LaunchpadUnit, data: ClipPlayerData | undefined, blinkOn: boolean): void {
+/** Paint the L-role (clip matrix) frame onto a physical unit. In SINGLE clip
+ *  view, also paint the action-arm strip + aiming wash (the `arm` opt). Pair mode
+ *  passes no `arm`, so the top row + matrix render byte-for-byte as before. */
+function paintLRole(
+  target: LaunchpadUnit,
+  data: ClipPlayerData | undefined,
+  blinkOn: boolean,
+  withArmStrip = false,
+): void {
   setFrame(
     target,
-    computeLSessionFrame(data, { blinkOn, recording: recordArmed(data) }),
+    computeLSessionFrame(data, {
+      blinkOn,
+      recording: recordArmed(data),
+      arm: withArmStrip
+        ? { armedAction, bufferLoaded: clipBuffer !== null, nowOn: nowHeld }
+        : undefined,
+    }),
   );
 }
 
@@ -1044,6 +1209,12 @@ function renderLeds(): void {
   const blinkOn = Math.floor(tickCount / BLINK_TICKS) % 2 === 0;
   const data = node.data as ClipPlayerData | undefined;
 
+  // Auto-disarm a stale clip-view arm after ~4s (single mode only; pair never
+  // arms). Guards against an "armed then walked away" modal trap.
+  if (single && armedAction && tickCount - armTick > ARM_TIMEOUT_TICKS) {
+    disarmClip();
+  }
+
   if (single) {
     // ONE device, role chosen by the active view. The CC-98 view marker is set
     // AFTER the role frame in EITHER view (and after the R painter's early
@@ -1051,7 +1222,7 @@ function renderLeds(): void {
     // the lone device + survives the setFrame diff. (setLed is a per-LED write
     // that runs after setFrame, so it wins over whatever the frame painted at
     // CC 98 — e.g. the editor's FOLLOW colour.)
-    if (activeView === 'clip') paintLRole('L', data, blinkOn);
+    if (activeView === 'clip') paintLRole('L', data, blinkOn, true);
     else paintRRole('L', nodeId, data, blinkOn);
     setLed('L', CC_TOP_SPARE_8, VIEW_LED[0], VIEW_LED[1], VIEW_LED[2]);
     return;
@@ -1085,6 +1256,8 @@ export function __test_resetBinding(): void {
   editRowOffset = 0;
   editWindowStart = 0;
   followOn = true;
+  armedAction = null;
+  armTick = 0;
   clipBuffer = null;
   bufferSourceIndex = null;
 }
@@ -1105,6 +1278,7 @@ export function __test_mode(): {
   followOn: boolean;
   bufferArmed: boolean;
   bufferSourceIndex: number | null;
+  armedAction: ClipArmAction | null;
 } {
   return {
     deployment,
@@ -1123,6 +1297,7 @@ export function __test_mode(): {
     followOn,
     bufferArmed: clipBuffer !== null,
     bufferSourceIndex,
+    armedAction,
   };
 }
 

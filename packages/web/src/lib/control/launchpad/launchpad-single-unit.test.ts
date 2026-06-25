@@ -58,7 +58,18 @@ import {
   CC_EDIT_STEP_RIGHT,
   CC_EDIT_FOLLOW,
 } from './launchpad-map';
-import { SCENE_CCS, padNote, CC_TOP_SPARE_8 } from './launchpad-sysex';
+import {
+  SCENE_CCS,
+  padNote,
+  CC_TOP_SPARE_8,
+  CC_UP,
+  CC_DOWN,
+  CC_LEFT,
+  CC_RIGHT,
+  CC_SESSION,
+  CC_TOP_SPARE_6,
+  CC_TOP_SPARE_7,
+} from './launchpad-sysex';
 import {
   CLIP_LANES,
   clipIndex,
@@ -426,5 +437,225 @@ describe('SINGLE — unbind', () => {
     expect(boundClipNode()).toBeNull();
     sim.press('L', 0, yForLane(0));
     expect(queued()?.[0] ?? null).toBeNull();
+  });
+});
+
+// ===========================================================================
+// SINGLE — clip-view ARM ROW (top CCs 91..97). Two-handed deck ops without
+// leaving the matrix view: tap an arm cell → arm an action → tap a clip pad →
+// apply. CC 98 stays the view-flip; PAIR mode is unaffected (armClip is
+// single-only). Driven via the single sim + __test_mode discriminants.
+// ===========================================================================
+describe('SINGLE — clip-view arm row', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'clip');
+  });
+
+  // A clip with one note (so paste/reverse/double are observable).
+  function clipWithNote(step = 0, midi = 60): NoteClipRecord {
+    const c = noteClip();
+    c.steps = [{ step, midi, velocity: 100, lengthSteps: 1 }];
+    return c;
+  }
+  const clipsOf = () => liveData().clips as Record<string, NoteClipRecord>;
+
+  it('new-clip: arm NEW → tap an empty pad → writes a clip + enters the editor', () => {
+    seedClipPlayer({ clips: {} });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_UP, 127); // arm NEW
+    expect(__test_mode().armedAction).toBe('new');
+    sim.press('L', 0, yForLane(0)); // empty pad
+    const idx = clipIndex(0, 0);
+    expect(clipsOf()[idx]).toBeTruthy();
+    expect(__test_mode().mode).toBe('edit');
+    expect(__test_mode().editClipIndex).toBe(idx);
+    expect(launchpadActiveView()).toBe('control');
+    expect(__test_mode().armedAction).toBeNull();
+  });
+
+  it('new-clip onto a LOADED pad = no-op (does not clobber) + disarms', () => {
+    const original = clipWithNote(3, 64);
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: original } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_UP, 127); // arm NEW
+    sim.press('L', 0, yForLane(0)); // LOADED pad
+    const c = clipsOf()[clipIndex(0, 0)];
+    expect(c.steps).toHaveLength(1);
+    expect(c.steps[0].midi).toBe(64); // unchanged
+    expect(__test_mode().armedAction).toBeNull();
+    expect(launchpadActiveView()).toBe('clip'); // did NOT flip to the editor
+  });
+
+  it('copy → paste: arm COPY → tap loaded → arm PASTE → tap empty → clip copied', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote(2, 67) } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_DOWN, 127); // arm COPY
+    expect(__test_mode().armedAction).toBe('copy');
+    sim.press('L', 0, yForLane(0)); // copy the loaded clip
+    expect(__test_mode().bufferArmed).toBe(true);
+    expect(__test_mode().bufferSourceIndex).toBe(clipIndex(0, 0));
+    expect(__test_mode().armedAction).toBeNull();
+    // arm PASTE onto an empty dest.
+    sim.cc('L', CC_LEFT, 127);
+    expect(__test_mode().armedAction).toBe('paste');
+    sim.press('L', 1, yForLane(1));
+    const dest = clipsOf()[clipIndex(1, 1)];
+    expect(dest).toBeTruthy();
+    expect(dest.steps).toHaveLength(1);
+    expect(dest.steps[0].midi).toBe(67);
+    expect(__test_mode().armedAction).toBeNull();
+  });
+
+  it('paste-reverse: arm PASTE-REV → tap dest → steps mirrored', () => {
+    // a 16-step clip with a note at step 0 → reversed, the span re-anchors to the
+    // mirrored END (lengthSteps − step − span = 16 − 0 − 1 = 15).
+    const src = noteClip();
+    src.lengthSteps = 16;
+    src.steps = [{ step: 0, midi: 60, velocity: 100, lengthSteps: 1 }];
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: src } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_DOWN, 127);
+    sim.press('L', 0, yForLane(0)); // copy
+    sim.cc('L', CC_RIGHT, 127); // arm PASTE-REV
+    expect(__test_mode().armedAction).toBe('pasteRev');
+    sim.press('L', 1, yForLane(1));
+    const dest = clipsOf()[clipIndex(1, 1)];
+    expect(dest.steps).toHaveLength(1);
+    expect(dest.steps[0].step).toBe(15);
+    expect(__test_mode().armedAction).toBeNull();
+  });
+
+  it('paste with an EMPTY buffer does NOT arm — a tap launches normally', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_LEFT, 127); // arm PASTE — no buffer
+    expect(__test_mode().armedAction).toBeNull();
+    sim.press('L', 0, yForLane(0)); // a plain launch
+    expect(queued()![0]).toBe(0);
+  });
+
+  it('NOW is a sticky toggle: it does not arm, and clip taps launch immediate', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_SESSION, 127); // NOW on
+    expect(__test_mode().nowHeld).toBe(true);
+    expect(__test_mode().armedAction).toBeNull(); // NOW does not arm
+    sim.press('L', 0, yForLane(0)); // launch immediate
+    expect(queued()![0]).toBe(0);
+    const imm = liveData().queuedImmediate as boolean[] | undefined;
+    expect(imm?.[0]).toBe(true); // clip index 0 → lane 0
+    sim.cc('L', CC_SESSION, 127); // NOW off
+    expect(__test_mode().nowHeld).toBe(false);
+  });
+
+  it('length: arm LENGTH → tap loaded → length page on the lone device (control)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_TOP_SPARE_6, 127); // arm LENGTH
+    expect(__test_mode().armedAction).toBe('length');
+    sim.press('L', 0, yForLane(0));
+    expect(__test_mode().mode).toBe('lengthEdit');
+    expect(__test_mode().editClipIndex).toBe(clipIndex(0, 0));
+    expect(launchpadActiveView()).toBe('control');
+    expect(__test_mode().armedAction).toBeNull();
+  });
+
+  it('length onto an EMPTY pad = no-op + disarms (stays in clip view)', () => {
+    seedClipPlayer({ clips: {} });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_TOP_SPARE_6, 127);
+    sim.press('L', 0, yForLane(0)); // empty
+    expect(__test_mode().mode).toBe('session');
+    expect(launchpadActiveView()).toBe('clip');
+    expect(__test_mode().armedAction).toBeNull();
+  });
+
+  it('double: arm DOUBLE → tap loaded → lengthSteps doubled', () => {
+    const c = clipWithNote(0, 60);
+    c.lengthSteps = 8;
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: c } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_TOP_SPARE_7, 127); // arm DOUBLE
+    expect(__test_mode().armedAction).toBe('double');
+    sim.press('L', 0, yForLane(0));
+    expect(clipsOf()[clipIndex(0, 0)].lengthSteps).toBe(16);
+    expect(__test_mode().armedAction).toBeNull();
+  });
+
+  it('COPY double-tap clears the buffer', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_DOWN, 127); // arm COPY
+    sim.press('L', 0, yForLane(0)); // copy → buffer loaded, disarmed
+    expect(__test_mode().bufferArmed).toBe(true);
+    sim.cc('L', CC_DOWN, 127); // arm COPY again
+    expect(__test_mode().armedAction).toBe('copy');
+    sim.cc('L', CC_DOWN, 127); // second tap while buffer loaded → clear
+    expect(__test_mode().bufferArmed).toBe(false);
+    expect(__test_mode().armedAction).toBeNull();
+  });
+
+  it('re-tapping an armed cell disarms it', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_TOP_SPARE_7, 127); // arm DOUBLE
+    expect(__test_mode().armedAction).toBe('double');
+    sim.cc('L', CC_TOP_SPARE_7, 127); // re-tap → disarm
+    expect(__test_mode().armedAction).toBeNull();
+  });
+
+  it('auto-disarm: an arm clears after the timeout (>160 ticks)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_DOWN, 127); // arm COPY
+    expect(__test_mode().armedAction).toBe('copy');
+    for (let i = 0; i < 200; i++) hoisted.tick!();
+    expect(__test_mode().armedAction).toBeNull();
+  });
+
+  it('COPY armed onto an EMPTY pad = no buffer + disarms', () => {
+    seedClipPlayer({ clips: {} });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_DOWN, 127); // arm COPY
+    sim.press('L', 0, yForLane(0)); // empty
+    expect(__test_mode().bufferArmed).toBe(false);
+    expect(__test_mode().armedAction).toBeNull();
+  });
+
+  it('the clip-view arm strip is PAINTED on the lone device (top CCs lit)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: clipWithNote() } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    hoisted.tick!();
+    // NEW (CC 91) idle hue is lit.
+    const newCell = sim.ledAt('L', CC_UP);
+    expect(newCell).not.toBeNull();
+    expect(newCell![0] + newCell![1] + newCell![2]).toBeGreaterThan(0);
+    // CC 98 view marker still lit (unchanged).
+    const marker = sim.ledAt('L', CC_TOP_SPARE_8);
+    expect(marker![0] + marker![1] + marker![2]).toBeGreaterThan(0);
+  });
+});
+
+// ===========================================================================
+// PAIR — the arm row does NOT exist in pair mode (armClip is single-only).
+// ===========================================================================
+describe('PAIR — clip-view arm row is single-only', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpad();
+  });
+
+  it('CC 91 (▲) on L in pair does NOT arm; a subsequent L press launches', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.cc('L', CC_UP, 127); // in pair, CC_UP on L is an ignored top event
+    expect(__test_mode().armedAction).toBeNull();
+    sim.press('L', 0, yForLane(0));
+    expect(queued()![0], 'L press launches (no arm intercept)').toBe(0);
+    expect(__test_mode().armedAction).toBeNull();
   });
 });
