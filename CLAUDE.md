@@ -213,6 +213,16 @@ Doc page rendering is currently AUDIO-only (the doc-page manifest is built by an
 audio-only `?raw` regex parser); VIDEO modules are gated + authored but have no
 `[id]` doc page yet — including them is a known follow-up.
 
+**Docs are hash-transparent to the attests** (owner directive: "docs must not
+change attest hashes"). VIDEO module defs live in the WebGL attest basis, so
+authoring their co-located `docs`/`controlFamilies` would otherwise churn the
+WebGL hash and force a GPU re-attest. Wrap every such co-located block (and any
+docs-only addition to a basis file) in `// docs-hash-ignore:start … :end`
+markers — `computeWebglHash` strips those regions before hashing, so doc
+authoring is a no-op for the attest (guarded by webgl-attest-coverage.test.ts).
+Audio defs are NOT in the WebGL basis and don't need markers. (If the attest
+LOGIC or a real contract field changes, that's a legitimate one-time re-attest.)
+
 ## Standard/skill updates land with in-flight work
 
 When a new repository standard or convention is introduced mid-development,

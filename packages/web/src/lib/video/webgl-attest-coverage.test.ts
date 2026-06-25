@@ -47,6 +47,7 @@ import {
   isFullyCollabCapacityGated,
   findAllWebglSourceFiles,
   sourceCreatesWebglContext,
+  stripDocsForHash,
   AUDIO_WEBGL_MODULE_DEFS,
   REPO_ROOT,
 } from '../../../../../scripts/webgl-attest-lib';
@@ -247,5 +248,38 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
         ).toBe(true);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Living-docs is HASH-TRANSPARENT (owner directive 2026-06-24: "docs must not
+// change attest hashes"). Co-located `docs`/`controlFamilies` on a video module
+// — or anything wrapped in `// docs-hash-ignore:start … :end` — is pure
+// documentation and must NOT churn the WebGL attest hash + force a re-attest.
+// stripDocsForHash() removes those regions before hashing; this guard asserts
+// it (a) removes a marked region and (b) is a true no-op (adding/removing a
+// marked block leaves the hashed content byte-identical).
+// ---------------------------------------------------------------------------
+describe('webgl-attest: docs are hash-transparent (stripDocsForHash)', () => {
+  it('removes a // docs-hash-ignore marked region', () => {
+    const src = ['const a = 1;', '// docs-hash-ignore:start', '  docs: { x: "a { b } c" },', '// docs-hash-ignore:end', 'const b = 2;'].join('\n') + '\n';
+    expect(stripDocsForHash(src)).toBe('const a = 1;\nconst b = 2;\n');
+  });
+
+  it('is a true no-op: inserting a marked block does not change hashed content', () => {
+    const base = 'export const x = 1;\nexport const y = 2;\n';
+    const withDocs =
+      'export const x = 1;\n' +
+      '// docs-hash-ignore:start\n' +
+      'export const docs = { a: "has } and { braces", b: \'and apostrophes\' };\n' +
+      '// docs-hash-ignore:end\n' +
+      'export const y = 2;\n';
+    expect(stripDocsForHash(withDocs)).toBe(stripDocsForHash(base));
+    expect(stripDocsForHash(withDocs)).toBe(base);
+  });
+
+  it('leaves a file with no markers untouched', () => {
+    const src = 'export const x = 1;\n// a normal comment\nexport const y = 2;\n';
+    expect(stripDocsForHash(src)).toBe(src);
   });
 });

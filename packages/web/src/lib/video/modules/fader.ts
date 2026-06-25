@@ -107,6 +107,7 @@ export const faderDef: VideoModuleDef = {
     { id: 'dwTransition', label: 'D/W Fx',  defaultValue: 0,   min: 0, max: 4, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
   docs: {
     explanation: "A two-source video mixer with a built-in send/return FX loop, made of two stacked crossfaders. The first fader crossfades IN A and IN B into a mix that is also copied out the SEND jack (patch it through external video FX and return it); the second fader then blends that dry mix against the wet RETURN into the main OUT. Each fader has its own transition-shape dropdown so the crossfade can be a uniform fade or a wipe/dissolve/star/checkerboard sweep, and the whole thing renders as two GPU passes (pass 1 = A/B mix = SEND, pass 2 = dry/wet = OUT).",
     inputs: {
@@ -125,6 +126,7 @@ export const faderDef: VideoModuleDef = {
       dwTransition: "Picks the SHAPE of the dry→wet blend, the same five options as the A/B shape: 0 fade, 1 wipe (left→right), 2 dissolve (per-cell random), 3 star iris, 4 checkerboard. Rounded and clamped to 0..4. Lets you transition into the returned/processed image with a hard wipe or dissolve instead of a flat crossfade.",
     },
   },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

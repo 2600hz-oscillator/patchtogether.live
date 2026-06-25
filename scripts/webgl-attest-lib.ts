@@ -254,15 +254,29 @@ export function resolveWebglBasis(): string[] {
 // The hash
 // -------------------------------------------------------------------------
 
+/** Living-docs is hash-TRANSPARENT: co-located `docs`/`controlFamilies` and
+ *  their type imports are pure DOCUMENTATION (they don't affect GPU rendering),
+ *  so authoring them on a video module must NOT churn the WebGL attest hash and
+ *  force a re-attest. Each such addition is wrapped in
+ *  `// docs-hash-ignore:start … // docs-hash-ignore:end` markers, and the hash
+ *  is computed over content with those regions removed. A file with no markers
+ *  is unaffected. (Owner directive 2026-06-24: "docs must not change attest
+ *  hashes"; see .myrobots/plans/living-docs-drift-2026-06-24.md.) */
+const DOCS_IGNORE_RE = /^[ \t]*\/\/ docs-hash-ignore:start[\s\S]*?^[ \t]*\/\/ docs-hash-ignore:end[ \t]*\r?\n/gm;
+export function stripDocsForHash(src: string): string {
+  return src.replace(DOCS_IGNORE_RE, '');
+}
+
 /** Deterministic content-hash over the basis: for each file in sorted order,
- *  feed `<repo-relative-path>\0<file-bytes>` into one sha256. Mirrors
- *  scripts/dsp-src-hash.sh exactly (path + content, LC_ALL=C sort order). */
+ *  feed `<repo-relative-path>\0<docs-stripped-bytes>` into one sha256. Mirrors
+ *  scripts/dsp-src-hash.sh exactly (path + content, LC_ALL=C sort order), except
+ *  living-docs regions are stripped first so doc authoring is hash-neutral. */
 export function computeWebglHash(): string {
   const h = createHash('sha256');
   for (const rel of resolveWebglBasis()) {
     h.update(rel);
     h.update('\0');
-    h.update(readFileSync(join(REPO_ROOT, rel)));
+    h.update(stripDocsForHash(readFileSync(join(REPO_ROOT, rel), 'utf8')));
   }
   return h.digest('hex');
 }
