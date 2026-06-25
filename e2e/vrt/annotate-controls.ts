@@ -57,6 +57,13 @@ const CONTROL_SELECTOR = [
   'button',
 ].join(', ');
 
+/** Text we must NOT cover with a numbered circle (but never number) — chiefly a
+ *  control's NAME label (Knob/Fader render `.label` just below the control, e.g.
+ *  ATTACK/DELAY) + its live value readout. Treated as collision obstacles so the
+ *  leader line runs PAST the label to a circle below it, keeping the label
+ *  readable. */
+const LABEL_OBSTACLE_SELECTOR = '[class~="label"], .value-tag';
+
 /** Card-CHROME elements that match CONTROL_SELECTOR but are NOT module
  *  controls — the yellow PATCH PANEL drill-down affordances + the editable
  *  name label. We don't number these (they're the same on every card). Matched
@@ -70,7 +77,7 @@ const CHROME_TESTIDS = ['patch-trigger', 'patch-trigger-right', 'name-label-butt
  */
 export async function annotateControlsOnCard(card: Locator): Promise<ControlEntry[]> {
   return card.evaluate(
-    (el, { selector, chromeTestids, overlayId }) => {
+    (el, { selector, labelSelector, chromeTestids, overlayId }) => {
       const NS = 'http://www.w3.org/2000/svg';
       const doc = el.ownerDocument;
       const win = doc.defaultView!;
@@ -123,6 +130,23 @@ export async function annotateControlsOnCard(card: Locator): Promise<ControlEntr
         const w = r.width / scale;
         const h = r.height / scale;
         boxes.push({ testid, kind, cx, cy, w, h, x: cx, y: cy });
+      }
+
+      // Label OBSTACLES: a control's name label / value readout sits right below
+      // it, so the "first clear slot below the control" lands ON the label and
+      // the number covers the text. Collect those rects (never numbered) so the
+      // placement routes the circle PAST the label — the leader line lengthens
+      // and the label stays readable.
+      const labelObstacles: { cx: number; cy: number; w: number; h: number }[] = [];
+      for (const c of Array.from(el.querySelectorAll(labelSelector))) {
+        const r = c.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        labelObstacles.push({
+          cx: (r.left + r.width / 2 - cardRect.left) / scale,
+          cy: (r.top + r.height / 2 - cardRect.top) / scale,
+          w: r.width / scale,
+          h: r.height / scale,
+        });
       }
 
       // Collapse dense control FAMILIES to ONE callout. Numbering all 16 cells
@@ -189,20 +213,22 @@ export async function annotateControlsOnCard(card: Locator): Promise<ControlEntr
       const PAD = 3; // clearance margin around controls + between circles
       const STEP = 2; // px increment while searching for clear space
       const placed: { cx: number; cy: number }[] = [];
-      /** Does a circle at (cx,cy) overlap any control box (except `skip`) or any
-       *  already-placed circle? */
-      const collides = (cx: number, cy: number, skip: number): boolean => {
+      const overlapsRect = (
+        cx: number,
+        cy: number,
+        o: { cx: number; cy: number; w: number; h: number },
+      ): boolean =>
+        cx + R + PAD > o.cx - o.w / 2 &&
+        cx - R - PAD < o.cx + o.w / 2 &&
+        cy + R + PAD > o.cy - o.h / 2 &&
+        cy - R - PAD < o.cy + o.h / 2;
+
+      /** A circle at (cx,cy) overlaps another CONTROL (except `skip`) or an
+       *  already-placed circle — a HARD blocker we must never sit on. */
+      const hitsControl = (cx: number, cy: number, skip: number): boolean => {
         for (let j = 0; j < boxes.length; j++) {
           if (j === skip) continue;
-          const o = boxes[j];
-          if (
-            cx + R + PAD > o.cx - o.w / 2 &&
-            cx - R - PAD < o.cx + o.w / 2 &&
-            cy + R + PAD > o.cy - o.h / 2 &&
-            cy - R - PAD < o.cy + o.h / 2
-          ) {
-            return true;
-          }
+          if (overlapsRect(cx, cy, boxes[j])) return true;
         }
         for (const p of placed) {
           const dx = cx - p.cx;
@@ -211,30 +237,42 @@ export async function annotateControlsOnCard(card: Locator): Promise<ControlEntr
         }
         return false;
       };
+      /** A circle at (cx,cy) overlaps a control's NAME label / value text — we
+       *  slide PAST these (downward) rather than treating them as hard blockers,
+       *  so the label stays readable and the leader line just lengthens. */
+      const hitsLabel = (cx: number, cy: number): boolean =>
+        labelObstacles.some((o) => overlapsRect(cx, cy, o));
       boxes.forEach((b, i) => {
         const g = doc.createElementNS(NS, 'g');
         const half = b.h / 2;
         const ctrlBottom = b.cy + half;
         const ctrlTop = b.cy - half;
         const circleCx = Math.max(R + 1, Math.min(localW - R - 1, b.cx));
-        // Place the circle in the NEAREST clear slot — expand outward from the
-        // control checking just-below then just-above at each distance, so a
-        // dense grid's two rows split (top row's numbers tuck UP into the label
-        // gap, bottom row's DOWN) instead of all piling far below with long
-        // leaders. Slight downward bias (below is checked first at each step).
+        // Prefer DOWN, sliding PAST the control's own name label so the circle
+        // lands in clear space below it (a longer leader line, label readable).
+        // Stop the down-search if a real CONTROL blocks below — then flip UP to
+        // the nearest clear slot (e.g. a dense grid's top row tucks into the
+        // label gap above rather than running a long leader across the card).
         const belowStart = ctrlBottom + LEADER + R;
         const aboveStart = ctrlTop - LEADER - R;
         let circleCy = belowStart;
-        for (let d = 0; d <= localH; d += STEP) {
-          const down = belowStart + d;
-          if (down + R < localH - 1 && !collides(circleCx, down, i)) {
-            circleCy = down;
+        let placedOk = false;
+        for (let cy = belowStart; cy + R < localH - 1; cy += STEP) {
+          if (hitsControl(circleCx, cy, i)) break; // a control blocks below → go up
+          if (!hitsLabel(circleCx, cy)) {
+            circleCy = cy; // clear of controls AND labels
+            placedOk = true;
             break;
           }
-          const up = aboveStart - d;
-          if (up - R > 1 && !collides(circleCx, up, i)) {
-            circleCy = up;
-            break;
+          // only a label here → keep sliding down past it
+        }
+        if (!placedOk) {
+          for (let cy = aboveStart; cy - R > 1; cy -= STEP) {
+            if (!hitsControl(circleCx, cy, i) && !hitsLabel(circleCx, cy)) {
+              circleCy = cy;
+              placedOk = true;
+              break;
+            }
           }
         }
         placed.push({ cx: circleCx, cy: circleCy });
@@ -289,7 +327,12 @@ export async function annotateControlsOnCard(card: Locator): Promise<ControlEntr
         ...(b.count ? { count: b.count } : {}),
       }));
     },
-    { selector: CONTROL_SELECTOR, chromeTestids: CHROME_TESTIDS, overlayId: OVERLAY_ID },
+    {
+      selector: CONTROL_SELECTOR,
+      labelSelector: LABEL_OBSTACLE_SELECTOR,
+      chromeTestids: CHROME_TESTIDS,
+      overlayId: OVERLAY_ID,
+    },
   );
 }
 
