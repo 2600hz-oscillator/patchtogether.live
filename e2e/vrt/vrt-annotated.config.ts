@@ -1,15 +1,13 @@
 // e2e/vrt/vrt-annotated.config.ts
 //
-// Playwright config for the numbered-control DEVICE-FACE generator
-// (vrt-annotated.spec.ts). Reuses the deterministic VRT rendering settings
-// (viewport / DPR / pinned fonts / reduced motion) from vrt.config.ts but:
-//   - matches ONLY vrt-annotated.spec.ts (so the annotated faces never run in
-//     the `task vrt` regression gate, where they'd be diffed as if they were
+// Playwright config for the clean card-FACE generator (vrt-annotated.spec.ts).
+// Reuses the deterministic VRT rendering settings (viewport / DPR / pinned
+// fonts / reduced motion) from vrt.config.ts but:
+//   - matches ONLY vrt-annotated.spec.ts (so the card faces never run in the
+//     `task vrt` regression gate, where they'd be diffed as if they were
 //     regression baselines — they are DOC ASSETS),
-//   - writes the annotated PNGs to e2e/vrt/__annotated__/{platform}/{type}.png
+//   - writes the card PNGs to e2e/vrt/__annotated__/{platform}/{type}.png
 //     (committed via LFS; the doc build copies darwin into static/).
-//
-// The legend JSON ({type}.legend.json) is written by the spec itself.
 
 import { defineConfig, devices } from '@playwright/test';
 

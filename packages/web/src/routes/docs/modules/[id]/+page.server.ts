@@ -3,32 +3,28 @@ import type { EntryGenerator, PageServerLoad } from './$types';
 import { buildModuleManifest } from '$lib/docs/module-manifest';
 import { guideFor } from '$lib/docs/module-guides';
 
-// Numbered-control DEVICE-FACE legends (docs-overhaul §4a). The VRT-annotated
-// pipeline (e2e/vrt/vrt-annotated.spec.ts) writes one {type}.legend.json per
-// module under e2e/vrt/__annotated__/. We glob them at Vite build time so the
-// prerendered doc page can render the numbered legend table beside the face
-// PNG. The PNG itself is build-COPIED into static/docs/module-faces/{type}.png
-// (scripts/copy-doc-faces.sh, wired into `task build`), served as an <img>.
+// Clean card-FACE images. The VRT-annotated pipeline (e2e/vrt/vrt-annotated.spec.ts)
+// writes one CLEAN card screenshot per module to
+// e2e/vrt/__annotated__/darwin/{type}.png. We glob the darwin PNGs at Vite build
+// time purely to know WHICH modules have a face; the PNG itself is build-COPIED
+// into static/docs/module-faces/{type}.png (scripts/copy-doc-faces.sh, wired into
+// `task build`) and served as an <img>. Controls are documented from the
+// authored, drift-gated `docs.controls` — there is no testid legend any more.
 //
 // Seven `../` hops: [id] → modules → docs → routes → src → web → packages →
-// repo root, then e2e/vrt/__annotated__/. (Same cross-package glob pattern as
-// routes/docs/testing/+page.server.ts — fs.allow in vite.config covers the
-// repo root.)
-interface FaceLegend {
-  type: string;
-  platform: string;
-  controls: Array<{ n: number; testid: string; kind: string; label: string; units?: string }>;
-}
-const FACE_LEGENDS = import.meta.glob('../../../../../../../e2e/vrt/__annotated__/*.legend.json', {
-  eager: true,
-}) as Record<string, { default: FaceLegend } | FaceLegend>;
+// repo root, then e2e/vrt/__annotated__/darwin/. (Same cross-package glob pattern
+// as routes/docs/testing/+page.server.ts — fs.allow in vite.config covers the
+// repo root.) darwin is the canonical doc image (linux exists only for CI VRT
+// determinism); we never read it here.
+const FACE_PNGS = import.meta.glob(
+  '../../../../../../../e2e/vrt/__annotated__/darwin/*.png',
+  { eager: true, query: '?url', import: 'default' },
+) as Record<string, string>;
 
-/** type → legend, keyed off the JSON's own `type` field (robust to the path). */
-const LEGEND_BY_TYPE: Record<string, FaceLegend> = {};
-for (const mod of Object.values(FACE_LEGENDS)) {
-  const legend = (mod as { default?: FaceLegend }).default ?? (mod as FaceLegend);
-  if (legend && legend.type) LEGEND_BY_TYPE[legend.type] = legend;
-}
+/** Set of module `type`s that have a committed card face PNG. */
+const FACE_TYPES = new Set(
+  Object.keys(FACE_PNGS).map((p) => p.split('/').pop()!.replace(/\.png$/, '')),
+);
 
 // SvelteKit prerender enumerator — declares every [id] value to bake into
 // static HTML at build time. Without this, the prerender step would skip
@@ -49,12 +45,10 @@ export const load: PageServerLoad = ({ params }) => {
   const prev = idx > 0 ? sameCat[idx - 1] : null;
   const next = idx >= 0 && idx < sameCat.length - 1 ? sameCat[idx + 1] : null;
 
-  // Numbered face: present only when the annotated pipeline has generated a
-  // legend (+ the build copied the PNG). When absent, the page falls back to
-  // the abstract IoDiagram.
-  const legend = LEGEND_BY_TYPE[mod.type] ?? null;
-  const face = legend
-    ? { src: `/docs/module-faces/${mod.type}.png`, controls: legend.controls }
+  // Card face: present only when the pipeline has generated a PNG (+ the build
+  // copied it). When absent, the page falls back to the abstract IoDiagram.
+  const face = FACE_TYPES.has(mod.type)
+    ? { src: `/docs/module-faces/${mod.type}.png` }
     : null;
 
   return {

@@ -1,35 +1,30 @@
 // e2e/vrt/vrt-annotated.spec.ts
 //
-// Numbered-control DEVICE-FACE generator for the docs-overhaul "numbered face"
-// section (.myrobots/plans/docs-overhaul-plan-2026-06-23.md §4a).
+// CLEAN card-FACE generator for the docs site (/docs/modules/[id]).
 //
 // Reuses the VRT card harness (spawn / settle / font-pin from vrt.spec.ts) to
-// render each module card deterministically, injects a TRANSIENT numbered SVG
-// overlay (annotate-controls.ts), screenshots the annotated face to
+// render each module card deterministically and screenshots a CLEAN device face
+// (no overlay) to
 //   e2e/vrt/__annotated__/{platform}/{type}.png
-// and emits the number→control legend to
-//   e2e/vrt/__annotated__/{type}.legend.json
-// which the doc page (/docs/modules/[id]) renders as the legend table beside
-// the numbered face.
+// which the doc page renders as the card visual. (The old numbered-overlay +
+// testid `{type}.legend.json` were removed — the doc page now documents every
+// control from the authored, drift-gated `docs.controls`, not a raw-testid
+// legend.)
 //
-// SCOPE (Phase-1 infra proof): this generates the annotated face for the
-// modules listed in ANNOTATED_MODULES below — a small sample (adsr / sequencer
-// / fader) that exercises the pipeline. Phase 2 (content) widens the list /
-// drives it off the registry. The legend JSON join to ParamDef labels comes
-// from the schemaVersion-2 registry manifest (REGISTRY.params), so the legend
-// shows "1  attack  fader" without re-deriving labels here.
+// SCOPE: generates faces for the modules in ANNOTATED_MODULES below — a small
+// sample (adsr / lfo / sequencer). Override with ANNOTATED_MODULES="adsr,lfo"
+// to regenerate a subset locally.
 //
 // This spec lives in e2e/vrt/ (NOT e2e/tests/), so it is OUTSIDE the WebGL
 // heavy-attest basis (webgl-heavy-globs.ts scans e2e/tests/*.spec.ts only) —
 // no real-GPU re-attest is triggered by adding it.
 
 import { test, expect } from '@playwright/test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { spawnPatch } from '../tests/_helpers';
 import { REGISTRY } from '../tests/_registry';
 import { pinVrtFonts, awaitVrtFonts } from './_fonts';
-import { annotateControlsOnCard, removeControlOverlay } from './annotate-controls';
 
 const VRT_PLATFORM = process.platform === 'darwin' ? 'darwin' : 'linux';
 
@@ -51,11 +46,11 @@ function annotatedDir(): string {
 
 test.describe.configure({ mode: 'default' });
 
-test.describe('VRT-annotated: numbered control device-faces', () => {
+test.describe('VRT card-faces: clean card screenshots for the docs site', () => {
   for (const type of ANNOTATED_MODULES) {
     const mod = REGISTRY.find((m) => m.type === type)!;
 
-    test(`${type} annotated face + legend`, async ({ page }) => {
+    test(`${type} card face`, async ({ page }) => {
       const errors: string[] = [];
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => {
@@ -100,48 +95,17 @@ test.describe('VRT-annotated: numbered control device-faces', () => {
           }),
       );
 
-      // Inject the numbered overlay; capture the number→control map.
-      const entries = await annotateControlsOnCard(card);
-      expect(entries.length, `${type}: at least one numbered control`).toBeGreaterThan(0);
-
-      // Snap the annotated face. This is a generated DOC ASSET, NOT a VRT
+      // Snap the CLEAN card face. This is a generated DOC ASSET, NOT a VRT
       // regression baseline, so we WRITE it unconditionally with a plain
       // element screenshot. (Do NOT use toHaveScreenshot here: even with
       // --update-snapshots it only rewrites the file when the new render
       // differs from the old one beyond the comparator tolerance — and the
       // doc-asset config is deliberately lenient [maxDiffPixelRatio 0.1], so a
-      // small overlay change [moving the numbered callouts] stays under
-      // tolerance and the committed PNG silently never updates.)
+      // small render change stays under tolerance and the committed PNG
+      // silently never updates.)
       const facePath = resolve(annotatedDir(), VRT_PLATFORM, `${type}.png`);
       mkdirSync(dirname(facePath), { recursive: true });
       await card.screenshot({ path: facePath, animations: 'disabled' });
-
-      await removeControlOverlay(card);
-
-      // Join each control to its ParamDef label from the registry manifest so
-      // the legend reads "1  attack  fader". A `control-<paramId>` testid maps
-      // straight to the param id; anything else keeps its raw key.
-      const legend = entries.map((e) => {
-        const paramId = e.testid.startsWith('control-')
-          ? e.testid.slice('control-'.length)
-          : undefined;
-        const param = paramId ? mod.params.find((p) => p.id === paramId) : undefined;
-        return {
-          n: e.n,
-          testid: e.testid,
-          kind: e.kind,
-          label: param?.label ?? paramId ?? e.testid,
-          ...(param?.units ? { units: param.units } : {}),
-        };
-      });
-
-      const legendPath = resolve(annotatedDir(), `${type}.legend.json`);
-      mkdirSync(dirname(legendPath), { recursive: true });
-      writeFileSync(
-        legendPath,
-        JSON.stringify({ type, platform: VRT_PLATFORM, controls: legend }, null, 2) + '\n',
-        'utf8',
-      );
 
       expect(errors, `${type}: no console / page errors`).toEqual([]);
     });
