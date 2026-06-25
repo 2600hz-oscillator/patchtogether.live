@@ -90,6 +90,7 @@ import {
   laneOf,
   slotOf,
   lanePlaying,
+  laneQueued,
   laneMono,
   coerceClipRecord,
   defaultNoteClip,
@@ -189,6 +190,16 @@ const ARM_TIMEOUT_TICKS = 160; // ~4s at 25ms/tick — auto-disarm a stale arm
 // double-tap when the index matches AND the tick gap is within the window.
 let lastTapClipIndex = -1; // -1 = no pending tap to pair with
 let lastTapTick = 0; // tickCount snapshot of the last clip-pad tap
+// The lane's PRIOR intent, snapshotted on the FIRST tap (BEFORE its toggle is
+// applied) so a double-tap can REVERT the lane to exactly the play/queue state it
+// was in before the double-tap began. Owner rule: a double-tap opens the editor
+// WITHOUT changing whether the clip plays — EXCEPT a clip that was already QUEUED
+// to start must still start (restoring the prior queued value leaves it queued).
+//   · lastTapPrevQueued — the lane's `d.queued[lane]` value before the first tap.
+//   · lastTapWasPlaying — whether the lane was already playing THIS clip's slot.
+// See handleL's double-tap branch for how these reconcile the three prior states.
+let lastTapPrevQueued: number | 'stop' | null = null;
+let lastTapWasPlaying = false;
 // ~11 ticks ≈ 275ms at 25ms/tick — between the card's 220ms click-debounce and a
 // comfortable two-finger tap. Long enough to be hittable on hardware, short
 // enough that two deliberate separate launches of the same clip don't trip it.
@@ -288,6 +299,8 @@ function start(): void {
   armTick = 0;
   lastTapClipIndex = -1;
   lastTapTick = 0;
+  lastTapPrevQueued = null;
+  lastTapWasPlaying = false;
   // NOTE: clipBuffer survives a re-bind (it's the machine's clipboard).
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
@@ -624,6 +637,23 @@ function queueLane(nodeId: string, lane: number, action: number | 'stop' | null,
     }
   });
 }
+/** Restore a lane's `d.queued[lane]` to a snapshotted prior value (in-place Y
+ *  write, mirroring queueLane's array build). Used by the double-tap revert: it
+ *  un-does the first tap's queued write so the lane's INTENT matches what it was
+ *  before the double-tap (a queued start stays queued; a queued stop is cancelled;
+ *  a fresh start is un-queued). Does NOT touch queuedImmediate — playback
+ *  reconciliation (the rare "already crossed a boundary" case) is a separate
+ *  explicit queueLane(stop, immediate) call in the caller. */
+function restoreQueued(nodeId: string, lane: number, prev: number | 'stop' | null): void {
+  editData(nodeId, (d) => {
+    const base: (number | 'stop' | null)[] = new Array(CLIP_LANES).fill(null);
+    if (Array.isArray(d.queued)) {
+      for (let i = 0; i < d.queued.length && i < CLIP_LANES; i++) base[i] = d.queued[i];
+    }
+    base[lane] = prev;
+    d.queued = base;
+  });
+}
 function clipAtIndex(data: ClipPlayerData | undefined, index: number): NoteClipRecord | null {
   const c = coerceClipRecord(data?.clips?.[String(index)]);
   return c && c.kind === 'note' ? c : null;
@@ -952,19 +982,43 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     }
     // SINGLE + clip view: a DOUBLE-TAP of a clip pad opens its note editor (the
     // one-device analogue of the card's double-click → edit, since single mode
-    // can't hold-EDIT on a second unit). The FIRST tap already launched below
-    // (immediate — no debounce); a SECOND tap on the SAME clip within
-    // DOUBLE_TAP_TICKS opens the editor instead of re-toggling. Pair mode never
-    // reaches this (deployment !== 'single'), so the pair launch path is
-    // byte-for-byte unchanged.
+    // can't hold-EDIT on a second unit). The FIRST tap launches IMMEDIATELY below
+    // (no debounce — owner: never slow a launch); a SECOND tap on the SAME clip
+    // within DOUBLE_TAP_TICKS opens the editor AND REVERTS the lane to the state
+    // it was in before the first tap (owner rule: a double-tap opens the editor
+    // WITHOUT changing whether the clip plays). Pair mode never reaches this
+    // (deployment !== 'single'), so the pair launch path is byte-for-byte
+    // unchanged.
     if (deployment === 'single' && activeView === 'clip') {
       if (clipIdx === lastTapClipIndex && tickCount - lastTapTick <= DOUBLE_TAP_TICKS) {
         lastTapClipIndex = -1; // consume — don't let a 3rd tap re-trigger off this pair
+        // Revert the lane to its PRIOR intent (snapshotted on the first tap):
+        //   · prior STOPPED   → restoring queued un-queues the first tap's start.
+        //     If a boundary passed and the clip ALREADY started, snap it back with
+        //     an immediate stop (a ≤~275ms blip is the accepted rare edge).
+        //   · prior QUEUED-to-start (not playing) → restoring leaves it QUEUED, so
+        //     it STILL starts at the boundary (the owner's key requirement).
+        //   · prior PLAYING   → restoring cancels the stop the first tap queued, so
+        //     it keeps playing.
+        const lane = laneOf(clipIdx);
+        const slot = slotOf(clipIdx);
+        restoreQueued(nodeId, lane, lastTapPrevQueued);
+        if (!lastTapWasPlaying && lanePlaying(liveData(nodeId), lane) === slot) {
+          // The first tap's queued start crossed a boundary between the two taps —
+          // the clip is now actually playing though it was stopped before the
+          // double-tap. Force it back to stopped immediately.
+          queueLane(nodeId, lane, 'stop', /* immediate */ true);
+        }
         openEditor(nodeId, clipIdx, data);
         return;
       }
-      // First tap (or a stale/different one): record it, then fall through to the
-      // immediate launch below so a single tap is never delayed.
+      // First tap (or a stale/different one): SNAPSHOT the lane's prior intent
+      // BEFORE applying the toggle (so a paired second tap can revert it), record
+      // the tap, then fall through to the immediate launch below.
+      const lane = laneOf(clipIdx);
+      const slot = slotOf(clipIdx);
+      lastTapPrevQueued = laneQueued(data, lane);
+      lastTapWasPlaying = lanePlaying(data, lane) === slot;
       lastTapClipIndex = clipIdx;
       lastTapTick = tickCount;
     }
@@ -1326,6 +1380,8 @@ export function __test_resetBinding(): void {
   armTick = 0;
   lastTapClipIndex = -1;
   lastTapTick = 0;
+  lastTapPrevQueued = null;
+  lastTapWasPlaying = false;
   clipBuffer = null;
   bufferSourceIndex = null;
 }

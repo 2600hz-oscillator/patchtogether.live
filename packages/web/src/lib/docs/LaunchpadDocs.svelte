@@ -201,7 +201,7 @@
     { what: 'top row ▲ ▼ ◀ ▶ ▣(SHIFT)', addr: 'CC 91 · 92 · 93 · 94 · 95 — editor nav (▲▼◀▶) + SHIFT(95)' },
     { what: 'top row arranger (session) / globals', addr: 'CC 91 = REC · 92 = SONG · 96 = transport · 97 = stop-all' },
     { what: 'single-unit ARM ROW (clip view)', addr: 'CC 91 = NEW · 92 = COPY (dbl-tap = clear) · 93 = PASTE · 94 = PASTE-REV · 95 = NOW (sticky) · 96 = LENGTH · 97 = DOUBLE — arm, then tap a clip (single mode only)' },
-    { what: 'single-unit double-tap (clip view)', addr: 'double-tap a clip pad (~¼s) → open its note editor + flip to CONTROL (single mode only; single tap still launches immediately)' },
+    { what: 'single-unit double-tap (clip view)', addr: 'double-tap a clip pad (~¼s) → open its note editor + flip to CONTROL, without changing whether the clip plays (single mode only; single tap still launches immediately)' },
     { what: 'single-unit VIEW toggle', addr: 'CC 98 (rightmost top-row button) — flips CLIP ⇄ CONTROL (single mode only; pair mode = editor FOLLOW)' },
     { what: 'right scene column (top→bottom)', addr: 'CC 89 · 79 · 69 · 59 · 49 · 39 · 29 · 19' },
     { what: 'per-LED full RGB', addr: 'F0 00 20 29 02 0D 03  03 <pad> <R> <G> <B>  F7   (0–127)' },
@@ -250,7 +250,7 @@
   <li>The device starts in <strong>CLIP view</strong> — it's the 8×8 clip matrix, behaving <em>exactly</em> like the LEFT unit of a pair (tap to launch/stop, right column = scene).</li>
   <li><strong>Flip to CONTROL view</strong> two ways: tap the on-card <strong>Clip / Control</strong> toggle, OR press the hardware <strong>CC 98</strong> button (the <em>rightmost button on the top row</em>). CONTROL view is the command deck + note editor + length page — the full RIGHT-unit functionality. The CC-98 button stays lit to show the active view.</li>
   <li><strong>Make a clip on one device:</strong> in CONTROL view <strong>hold EDIT</strong>, flip to CLIP view (CC 98) and <strong>tap a pad</strong> → that pad gets a clip and the device enters the note editor; flip back to CONTROL to add notes, then <strong>EXIT</strong> (top scene). Back in CLIP view, <strong>tap to launch</strong>.</li>
-  <li><strong>Edit an existing clip fast — double-tap it:</strong> in CLIP view, a single tap launches a clip (immediate, never delayed); <strong>double-tap the same pad</strong> (two quick taps, ~¼ second apart) to open its <strong>note editor</strong> — the device flips to CONTROL automatically. (Double-tap an <em>empty</em> pad to make a fresh clip and edit it.) This mirrors the on-card grid: single-click launches, double-click edits — so you never need the two-device hold-EDIT gesture on one Launchpad.</li>
+  <li><strong>Edit an existing clip fast — double-tap it:</strong> in CLIP view, a single tap launches a clip (immediate, never delayed); <strong>double-tap the same pad</strong> (two quick taps, ~¼ second apart) to open its <strong>note editor</strong> — the device flips to CONTROL automatically. <strong>A double-tap never changes whether the clip plays:</strong> double-tap a <em>stopped</em> clip and it stays stopped while you edit; double-tap a clip you'd already <em>queued</em> and it still starts. (Double-tap an <em>empty</em> pad to make a fresh clip and edit it.) This mirrors the on-card grid: single-click launches, double-click edits — so you never need the two-device hold-EDIT gesture on one Launchpad.</li>
 </ol>
 <p class="muted">
   <strong>Flipping views never resets your editor</strong> — the step window, pitch scroll, FOLLOW state
@@ -293,8 +293,12 @@
   taps of the <em>same</em> pad, ~¼ second apart) <strong>opens its note editor</strong> — the device
   flips to CONTROL automatically, exactly like double-clicking a cell on the card. Double-tapping an
   <em>empty</em> pad makes a fresh clip and edits it (the same as arming NEW). The first tap is never
-  delayed — it launches right away — so a double-tap simply <em>also</em> opens the editor on the second
-  tap. (Single-mode only: a pair edits via hold-EDIT on the RIGHT unit.)
+  delayed — it launches right away — but a double-tap then <strong>reverts the lane to exactly the
+  play/queue state it was in before that first tap</strong>, so <strong>editing a clip never changes
+  whether it plays</strong>: double-tap a <em>stopped</em> clip and it stays stopped; double-tap a clip
+  that's <em>playing</em> and it keeps playing; double-tap a clip you'd already <em>queued to start</em>
+  and it still starts (only the editing intent is added, never a launch). (Single-mode only: a pair
+  edits via hold-EDIT on the RIGHT unit.)
 </p>
 <p>
   Here's the whole single-unit <strong>CLIP view</strong> — one device, the arm strip across the top and

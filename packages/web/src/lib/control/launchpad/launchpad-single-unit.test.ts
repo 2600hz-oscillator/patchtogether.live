@@ -737,6 +737,120 @@ describe('SINGLE — clip-view double-tap opens the editor', () => {
 });
 
 // ===========================================================================
+// SINGLE — a double-tap REVERTS the lane to its prior play/queue state. Owner
+// rule: editing a clip via double-tap never changes whether it plays — EXCEPT a
+// clip that was already QUEUED to start must still start. The FIRST tap launches
+// immediately; the SECOND tap (double-tap → editor) restores the lane to exactly
+// the intent it had before the double-tap. Three prior states + the rare
+// boundary-in-gap edge. Helpers: laneQueued/lanePlaying/slotOf/laneOf semantics.
+// ===========================================================================
+describe('SINGLE — double-tap reverts the lane to its prior play/queue state', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'clip');
+  });
+
+  it('STOPPED clip: double-tap opens the editor AND the lane stays stopped (the bug fix)', () => {
+    const idx = clipIndex(1, 1); // lane 1, slot 1
+    seedClipPlayer({ clips: { [idx]: noteClip() } }); // nothing playing, nothing queued
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    // 1st tap launches immediately (queues lane 1 → slot 1).
+    sim.press('L', 1, yForLane(1));
+    expect(queued()![1], 'first tap queued a start').toBe(1);
+    // 2nd tap (double-tap) → editor, AND the lane reverts to its prior STOPPED
+    // intent: the queued start is un-queued (restored to null) and nothing plays.
+    sim.press('L', 1, yForLane(1));
+    expect(__test_mode().mode, 'double-tap opened the editor').toBe('edit');
+    expect(__test_mode().editClipIndex).toBe(idx);
+    expect(launchpadActiveView()).toBe('control');
+    expect(queued()![1], 'lane is NOT queued to start (stays stopped)').toBeNull();
+    // Not playing (no boundary crossed).
+    const playing = (liveData().playing as (number | null)[] | undefined) ?? [];
+    expect(playing[1] ?? null, 'lane is not playing').toBeNull();
+  });
+
+  it('ALREADY-QUEUED-not-playing clip: double-tap opens the editor AND it STILL starts', () => {
+    const idx = clipIndex(2, 1); // lane 1, slot 2
+    seedClipPlayer({ clips: { [idx]: noteClip() } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    // Pre-queue lane 1 to slot 2 (queued-to-start, not yet playing) BEFORE the
+    // double-tap.
+    const pre: (number | 'stop' | null)[] = new Array(CLIP_LANES).fill(null);
+    pre[1] = 2;
+    liveData().queued = pre;
+    // 1st tap: already queued to this slot, not playing → toggle re-queues slot 2.
+    sim.press('L', 2, yForLane(1));
+    expect(queued()![1]).toBe(2);
+    // 2nd tap (double-tap) → editor, AND the lane is STILL queued to slot 2 (the
+    // restore brings back the prior queued value = 2, so it will start).
+    sim.press('L', 2, yForLane(1));
+    expect(__test_mode().mode).toBe('edit');
+    expect(__test_mode().editClipIndex).toBe(idx);
+    expect(queued()![1], 'lane stays queued to its slot → it still starts').toBe(2);
+  });
+
+  it('PLAYING clip: double-tap opens the editor AND it keeps playing (no queued stop)', () => {
+    const idx = clipIndex(0, 1); // lane 1, slot 0
+    const playing: (number | null)[] = new Array(CLIP_LANES).fill(null);
+    playing[1] = 0; // lane 1 is playing slot 0
+    seedClipPlayer({ clips: { [idx]: noteClip() }, playing });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    // 1st tap: lane 1 is playing slot 0 → toggle queues a STOP.
+    sim.press('L', 0, yForLane(1));
+    expect(queued()![1], 'first tap queued a stop').toBe('stop');
+    // 2nd tap (double-tap) → editor, AND the queued stop is cancelled (restored to
+    // the prior null), so it keeps playing.
+    sim.press('L', 0, yForLane(1));
+    expect(__test_mode().mode).toBe('edit');
+    expect(__test_mode().editClipIndex).toBe(idx);
+    expect(queued()![1], 'queued stop cancelled — keeps playing').toBeNull();
+    // Still actually playing.
+    const stillPlaying = (liveData().playing as (number | null)[] | undefined) ?? [];
+    expect(stillPlaying[1], 'lane is still playing its slot').toBe(0);
+  });
+
+  it('BOUNDARY-IN-GAP: a stopped clip that started between the taps snaps back stopped', () => {
+    const idx = clipIndex(0, 1); // lane 1, slot 0
+    seedClipPlayer({ clips: { [idx]: noteClip() } }); // stopped, nothing queued
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    // 1st tap: stopped → queues a start (slot 0).
+    sim.press('L', 0, yForLane(1));
+    expect(queued()![1]).toBe(0);
+    // Simulate a boundary passing in the gap: the engine applied the queued start,
+    // so the lane is now ACTUALLY playing slot 0 (and queued cleared) before the
+    // 2nd tap.
+    const playing: (number | null)[] = new Array(CLIP_LANES).fill(null);
+    playing[1] = 0;
+    liveData().playing = playing;
+    liveData().queued = new Array(CLIP_LANES).fill(null);
+    // 2nd tap (double-tap) → editor. Prior intent was STOPPED, but the clip is now
+    // playing → the revert ALSO applies an immediate stop so it snaps back.
+    sim.press('L', 0, yForLane(1));
+    expect(__test_mode().mode).toBe('edit');
+    expect(queued()![1], 'immediate stop queued to snap the lane back to stopped').toBe('stop');
+    const imm = liveData().queuedImmediate as boolean[] | undefined;
+    expect(imm?.[1], 'the stop is immediate (not boundary-quantized)').toBe(true);
+  });
+
+  it('single tap (no 2nd) still launches/queues immediately — revert only fires on a pair', () => {
+    const idx = clipIndex(0, 0);
+    seedClipPlayer({ clips: { [idx]: noteClip() } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('L', 0, yForLane(0));
+    // A lone tap launches and STAYS launched (no revert — the pair never completes).
+    expect(queued()![0], 'single tap queued a start, not reverted').toBe(0);
+    expect(__test_mode().mode, 'single tap does not open the editor').toBe('session');
+    expect(launchpadActiveView()).toBe('clip');
+  });
+});
+
+// ===========================================================================
 // PAIR — double-tap is single-only; pair clip taps never open the editor.
 // ===========================================================================
 describe('PAIR — clip-view double-tap does NOT open the editor', () => {
