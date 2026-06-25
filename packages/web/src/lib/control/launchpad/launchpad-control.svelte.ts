@@ -178,6 +178,22 @@ let armedAction: ClipArmAction | null = null; // null when nothing armed
 let armTick = 0; // tickCount snapshot for the 4s auto-disarm
 const ARM_TIMEOUT_TICKS = 160; // ~4s at 25ms/tick — auto-disarm a stale arm
 
+// SINGLE-mode clip-view DOUBLE-TAP → open the editor. The on-card UI launches on
+// single-click + opens the note editor on double-click (ClipplayerCard
+// onPadDblClick); single mode has no pair-style hold-EDIT (both halves can't be
+// visible on one device), so a double-tap of a clip pad is the one-device way to
+// open an EXISTING clip's editor. The FIRST tap still launches IMMEDIATELY (no
+// debounce/latency — owner: never slow a launch); a SECOND tap on the SAME clip
+// within the window instead opens the editor (mirroring handleL's editArmed
+// branch). We track the last tap's clip index + tickCount and call it a
+// double-tap when the index matches AND the tick gap is within the window.
+let lastTapClipIndex = -1; // -1 = no pending tap to pair with
+let lastTapTick = 0; // tickCount snapshot of the last clip-pad tap
+// ~11 ticks ≈ 275ms at 25ms/tick — between the card's 220ms click-debounce and a
+// comfortable two-finger tap. Long enough to be hittable on hardware, short
+// enough that two deliberate separate launches of the same clip don't trip it.
+const DOUBLE_TAP_TICKS = 11;
+
 /** Empty the copy buffer — turns off the turquoise source glow on L + the deck
  *  COPY-INDICATOR. (Tapping the COPY-INDICATOR pad clears it; the buffer also
  *  survives a re-bind otherwise, so this is the way to dismiss the glow.) */
@@ -270,6 +286,8 @@ function start(): void {
   followOn = true;
   armedAction = null;
   armTick = 0;
+  lastTapClipIndex = -1;
+  lastTapTick = 0;
   // NOTE: clipBuffer survives a re-bind (it's the machine's clipboard).
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
@@ -787,6 +805,9 @@ function disarmClip(): void {
  *  shows the matrix returning to normal). Runs the SAME helper bodies the pair
  *  modifier branches use, so behaviour stays consistent across deployments. */
 function consumeArmed(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
+  // An armed tap is NOT a launch — clear the double-tap tracker so a stale
+  // pending launch-tap can't later pair with a plain tap of the same clip.
+  lastTapClipIndex = -1;
   const action = armedAction;
   switch (action) {
     case 'new': {
@@ -852,6 +873,29 @@ function consumeArmed(nodeId: string, clipIdx: number, data: ClipPlayerData | un
   disarmClip();
 }
 
+/** Open the note editor on a clip index, creating a default clip if the pad is
+ *  empty. The SAME body as handleL's editArmed branch (pair hold-EDIT) + the
+ *  consumeArmed NEW branch — the canonical "enter the editor" reset. Flips the
+ *  single device to control view so the editor is shown. */
+function openEditor(nodeId: string, clipIdx: number, data: ClipPlayerData | undefined): void {
+  if (!data?.clips?.[String(clipIdx)]) {
+    editData(nodeId, (d) => {
+      if (!d.clips) d.clips = {};
+      if (!d.clips[String(clipIdx)]) d.clips[String(clipIdx)] = defaultNoteClip();
+    });
+  }
+  editClipIndex = clipIdx;
+  mode = 'edit';
+  editArmed = false;
+  editAnchor = null;
+  editSpanned = false;
+  editRowOffset = 0;
+  editWindowStart = 0;
+  followOn = true;
+  velHeld = false;
+  setSingleView('control'); // show the editor on the lone device
+}
+
 /** Unit L is ALWAYS the live clip matrix + scene column. */
 function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
   const ev = e.ev;
@@ -870,7 +914,9 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     }
     // Held-modifier branches FIRST (the modifiers live on R, read here).
     if (editArmed) {
-      // hold-EDIT (on R) + tap a clip (on L) → enter the editor on R.
+      // hold-EDIT (on R) + tap a clip (on L) → enter the editor on R. Not a
+      // launch → clear the double-tap tracker so it can't mis-pair later.
+      lastTapClipIndex = -1;
       if (!data?.clips?.[String(clipIdx)]) {
         editData(nodeId, (d) => {
           if (!d.clips) d.clips = {};
@@ -903,6 +949,24 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
     if (pasteRevHeld && clipBuffer) {
       writeClip(nodeId, reverseClipSteps(copyClip(clipBuffer)), clipIdx);
       return;
+    }
+    // SINGLE + clip view: a DOUBLE-TAP of a clip pad opens its note editor (the
+    // one-device analogue of the card's double-click → edit, since single mode
+    // can't hold-EDIT on a second unit). The FIRST tap already launched below
+    // (immediate — no debounce); a SECOND tap on the SAME clip within
+    // DOUBLE_TAP_TICKS opens the editor instead of re-toggling. Pair mode never
+    // reaches this (deployment !== 'single'), so the pair launch path is
+    // byte-for-byte unchanged.
+    if (deployment === 'single' && activeView === 'clip') {
+      if (clipIdx === lastTapClipIndex && tickCount - lastTapTick <= DOUBLE_TAP_TICKS) {
+        lastTapClipIndex = -1; // consume — don't let a 3rd tap re-trigger off this pair
+        openEditor(nodeId, clipIdx, data);
+        return;
+      }
+      // First tap (or a stale/different one): record it, then fall through to the
+      // immediate launch below so a single tap is never delayed.
+      lastTapClipIndex = clipIdx;
+      lastTapTick = tickCount;
     }
     const lane = laneOf(clipIdx);
     const slot = slotOf(clipIdx);
@@ -1260,6 +1324,8 @@ export function __test_resetBinding(): void {
   followOn = true;
   armedAction = null;
   armTick = 0;
+  lastTapClipIndex = -1;
+  lastTapTick = 0;
   clipBuffer = null;
   bufferSourceIndex = null;
 }

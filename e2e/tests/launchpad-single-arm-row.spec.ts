@@ -165,3 +165,74 @@ test('@launchpad single-unit ARM ROW: NEW->edit->COPY->PASTE on one device, the 
 
   expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
+
+// SINGLE-UNIT DOUBLE-TAP -> editor (PR #892). On one device, CLIP view: a single
+// tap launches, a DOUBLE-tap of the same clip opens its note editor + flips to
+// CONTROL — the one-device analogue of the card's double-click-to-edit. The two
+// taps are fired BACK-TO-BACK inside one page.evaluate (gap ~= 0 scheduler ticks)
+// so the real-clock window is hit deterministically — no inter-tap round-trip
+// latency to flake on. Asserts the editor opened on the right clip.
+test('@launchpad single-unit DOUBLE-TAP a clip pad -> opens its note editor (control view)', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(
+    page,
+    [{ id: 'd-cp', type: 'clipplayer', position: { x: 60, y: 60 }, domain: 'audio', params: {} }],
+    [],
+  );
+  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+
+  const installed = await page.evaluate(async () => {
+    const w = globalThis as unknown as { __launchpadTestInstallSingle?: (id: string) => Promise<boolean> };
+    if (!w.__launchpadTestInstallSingle) return false;
+    return await w.__launchpadTestInstallSingle('d-cp');
+  });
+  expect(installed, 'single simulated Launchpad install hook present').toBe(true);
+
+  const simState = () =>
+    page.evaluate(() =>
+      (globalThis as unknown as {
+        __launchpadSingleSim?: { state: () => { activeView: string; mode: string; editClipIndex: number } };
+      }).__launchpadSingleSim!.state(),
+    );
+
+  // Seed an existing clip at the TOP-LEFT pad (slot 0, lane 0 = y=7) so the
+  // double-tap edits a LOADED clip (not a create).
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { type?: string; data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const cp = Object.values(w.__patch.nodes).find((n) => n.type === 'clipplayer');
+      if (cp) cp.data = { clips: { '0': { kind: 'note', lengthSteps: 16, steps: [] } } };
+    });
+  });
+
+  // Start in CLIP view.
+  await expect.poll(() => simState().then((s) => s.activeView)).toBe('clip');
+
+  // DOUBLE-TAP the top-left pad back-to-back (one round-trip → ~0-tick gap).
+  await page.evaluate(() => {
+    const sim = (globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } })
+      .__launchpadSingleSim!;
+    sim.press(0, 7); // 1st tap → launch
+    sim.press(0, 7); // 2nd tap (same clip, no tick between) → open editor
+  });
+
+  // The editor opened on clip index 0 + the lone device flipped to CONTROL.
+  await expect.poll(() => simState().then((s) => s.mode), { timeout: 5000 }).toBe('edit');
+  await expect.poll(() => simState().then((s) => s.activeView)).toBe('control');
+  await expect.poll(() => simState().then((s) => s.editClipIndex)).toBe(0);
+
+  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
+});

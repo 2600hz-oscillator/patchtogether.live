@@ -641,6 +641,125 @@ describe('SINGLE — clip-view arm row', () => {
 });
 
 // ===========================================================================
+// SINGLE — clip-view DOUBLE-TAP a clip pad → open its note editor. Mirrors the
+// card's single-click-launch / double-click-edit (ClipplayerCard onPadDblClick).
+// The FIRST tap launches IMMEDIATELY (no debounce); a SECOND tap on the SAME
+// clip within the window opens the editor + flips to control view. A slow re-tap
+// (outside the window) just launches-then-stops. Empty-pad double-tap = new +
+// edit. PAIR mode never reaches this path. Timing reference = tickCount, driven
+// via the mocked scheduler clock (hoisted.tick advances it by 1 per call).
+// ===========================================================================
+describe('SINGLE — clip-view double-tap opens the editor', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpadSingle();
+    __test_setDeployment('single', 'clip');
+  });
+
+  it('double-tap a LOADED clip (no ticks between) launches then opens its editor', () => {
+    const idx = clipIndex(1, 1);
+    seedClipPlayer({ clips: { [idx]: noteClip() } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    // 1st tap → immediate launch (no latency: queued written right away).
+    sim.press('L', 1, yForLane(1));
+    expect(queued()![1], 'first tap launched immediately').toBe(1);
+    expect(__test_mode().mode, 'first tap did NOT open the editor').toBe('session');
+    expect(launchpadActiveView()).toBe('clip');
+    // 2nd tap on the SAME clip, within the window → opens the editor.
+    sim.press('L', 1, yForLane(1));
+    expect(__test_mode().mode, 'double-tap → edit mode').toBe('edit');
+    expect(__test_mode().editClipIndex, 'editing the double-tapped clip').toBe(idx);
+    expect(launchpadActiveView(), 'flipped to control to show the editor').toBe('control');
+    // Editor window state reset like the editArmed branch.
+    expect(__test_mode().followOn).toBe(true);
+    expect(__test_mode().editRowOffset).toBe(0);
+    expect(__test_mode().editWindowStart).toBe(0);
+  });
+
+  it('double-tap an EMPTY pad creates a default clip then edits it', () => {
+    const idx = clipIndex(0, 0);
+    seedClipPlayer({ clips: {} });
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('L', 0, yForLane(0)); // 1st tap (empty → no launch, but records the tap)
+    expect(__test_mode().mode).toBe('session');
+    sim.press('L', 0, yForLane(0)); // 2nd tap → create + edit
+    expect((liveData().clips as Record<string, unknown>)[idx], 'a default clip was created').toBeTruthy();
+    expect(__test_mode().mode).toBe('edit');
+    expect(__test_mode().editClipIndex).toBe(idx);
+    expect(launchpadActiveView()).toBe('control');
+  });
+
+  it('a SLOW re-tap (outside the window) launches then stops — NOT edit', () => {
+    const idx = clipIndex(0, 0);
+    seedClipPlayer({ clips: { [idx]: noteClip() } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    // 1st tap → launch (queued = slot 0).
+    sim.press('L', 0, yForLane(0));
+    expect(queued()![0]).toBe(0);
+    // Advance well past the ~11-tick window so the next tap is a fresh tap.
+    for (let i = 0; i < 20; i++) hoisted.tick!();
+    // Simulate the clip actually playing now (so a fresh tap toggles to stop).
+    liveData().playing = [0, null, null, null, null, null, null, null];
+    sim.press('L', 0, yForLane(0));
+    expect(__test_mode().mode, 'slow re-tap did NOT open the editor').toBe('session');
+    expect(launchpadActiveView()).toBe('clip');
+    expect(queued()![0], 'slow re-tap toggled the lane to stop').toBe('stop');
+  });
+
+  it('two DIFFERENT clips in quick succession do NOT count as a double-tap', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip(), [clipIndex(1, 1)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('L', 0, yForLane(0)); // tap clip A
+    sim.press('L', 1, yForLane(1)); // tap clip B (different index)
+    expect(__test_mode().mode, 'different clips never double-tap').toBe('session');
+    expect(queued()![0]).toBe(0);
+    expect(queued()![1]).toBe(1);
+  });
+
+  it('a 3rd quick tap after a consumed double-tap launches (does NOT re-flip to the editor)', () => {
+    const idx = clipIndex(0, 0);
+    seedClipPlayer({ clips: { [idx]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('L', 0, yForLane(0)); // 1st → launch (queued slot 0)
+    sim.press('L', 0, yForLane(0)); // 2nd → editor + control view (tracker consumed → -1)
+    expect(__test_mode().mode).toBe('edit');
+    expect(launchpadActiveView()).toBe('control');
+    // Flip back to clip view (the tracker is consumed, so the next single tap is a
+    // FRESH first tap — a launch — not an immediate re-edit off the spent pair).
+    toggleSingleView(); // → clip
+    sim.press('L', 0, yForLane(0)); // a fresh single tap
+    expect(launchpadActiveView(), 'one fresh tap did NOT flip back to control').toBe('clip');
+    // It registered as a plain launch (queued slot 0 again — clip is not playing).
+    expect(queued()![0]).toBe(0);
+  });
+});
+
+// ===========================================================================
+// PAIR — double-tap is single-only; pair clip taps never open the editor.
+// ===========================================================================
+describe('PAIR — clip-view double-tap does NOT open the editor', () => {
+  let sim: SimulatedLaunchpad;
+  beforeEach(async () => {
+    sim = await installSimulatedLaunchpad();
+  });
+
+  it('two fast L taps of the same clip in pair just launch — no edit flip', () => {
+    seedClipPlayer({
+      clips: { [clipIndex(0, 0)]: noteClip() },
+      playing: [0, null, null, null, null, null, null, null],
+    });
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('L', 0, yForLane(0)); // playing → queue stop
+    expect(queued()![0]).toBe('stop');
+    sim.press('L', 0, yForLane(0)); // still just a toggle, NOT edit
+    expect(__test_mode().mode, 'pair never double-taps to edit').toBe('session');
+    expect(launchpadDeployment()).toBe('pair');
+  });
+});
+
+// ===========================================================================
 // PAIR — the arm row does NOT exist in pair mode (armClip is single-only).
 // ===========================================================================
 describe('PAIR — clip-view arm row is single-only', () => {
