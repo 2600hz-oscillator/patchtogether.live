@@ -107,6 +107,24 @@ export const destructorDef: VideoModuleDef = {
     { id: 'mangle',    label: 'Mangle',    defaultValue: DEFAULTS.mangle,    min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "DESTRUCTOR is a single-pass glitch/mangle effect that runs RGB video in and out. The fragment shader stacks three classic digital-decay artifacts: chromatic aberration (the red channel is sampled slightly left and the blue channel slightly right while green stays put, smearing color along the horizontal axis), scanline disruption (alternating rows of a 240-band horizontal grid are darkened), and posterization (each channel is quantized to a discrete number of levels, crushing smooth gradients into hard color steps). The master Mangle amount scales the chromatic aberration and scanline darkening only — posterization is applied independently from the Posterize control and is NOT affected by Mangle. With no input connected the module outputs solid black. Patch it after a source for a CRT/VHS-style decay, or sweep Mangle with an LFO for a pulsing shift/scanline glitch over a steady posterized base.",
+    inputs: {
+      in: "Video input. The RGB source frame that gets mangled. With nothing patched here the module outputs solid black.",
+      mangle: "CV input that modulates the Mangle control — the master amount scaling chromatic aberration and scanline darkening together (posterization is not affected by Mangle).",
+    },
+    outputs: {
+      out: "Video output carrying the mangled RGB frame: channel-shifted, scanline-darkened, and posterized per the controls.",
+    },
+    controls: {
+      shift: "Chromatic aberration amount (0..1, default 0.5). Pulls the red channel left and the blue channel right by up to ~5% of width; at 0 the channels stay aligned. Effective amount is scaled by Mangle.",
+      scanline: "Scanline disruption depth (0..1, default 0.5). Darkens every other row of a 240-band horizontal grid by up to ~70%; at 0 no scanlines appear. Effective depth is scaled by Mangle.",
+      posterize: "Color quantization (0..1, default 0.7). Maps to 2..32 levels per channel — counterintuitively, 0 is the harshest (2 levels, heavy banding) and 1 is near passthrough (32 levels). Lower values crush gradients into hard steps. NOT scaled by Mangle — posterization is always applied.",
+      mangle: "Master amount (0..1, default 1.0) that scales Shift and Scanline together; at 0 both the channel shift and scanline darkening vanish, but Posterize still applies. CV-controllable via the MANGLE input.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

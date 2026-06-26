@@ -83,6 +83,18 @@ export const videoOutDef: VideoModuleDef = {
   ],
   params: [],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "output is the screen sink of the video chain — the card body itself is the live picture. Whatever video signal you patch into it is copied frame-by-frame into this card's own framebuffer (FBO) and blitted onto the visible canvas, aspect-fit (the engine render is letterboxed into the card; the engine is 4:3 by default). The shader is a plain texture copy: with a signal patched it shows the input verbatim; with nothing patched it draws a static idle pattern — a dark navy field with a subtle vertical brightness gradient (the blue channel rises toward one edge) — so you can tell the card is alive while you drag a cable in. The pattern does not animate; there is no time uniform, so it's a fixed gradient, not a moving sweep. Each output card pulls its OWN input via engine.blitOutputToDrawingBuffer(nodeId) (multiple outputs in a rack each show their own feed, no last-one-wins coupling). Right-click the picture for true fullscreen, in-app full-frame (hides chrome, fills the card), or present-on-a-second-display. Use it as the monitor/projector at the end of a video patch — or mid-chain, since it passes its input straight through. The card body is the live output screen and is resizable by dragging the bottom-right corner handle; the engine render (4:3 by default, 1024×768) is aspect-fit (letterboxed) inside whatever size you choose, and the size (node.data.width/height) syncs to collaborators via Y.Doc.",
+    inputs: {
+      in: "The video signal to display. Polymorphic video input (type video) — it accepts a full video signal, and the engine implicitly upcasts narrower video-domain sources too (keys → mono-video → video, and image → video), so you can wire essentially any video output into it. With nothing patched, the shader's uHasInput branch draws the static navy idle gradient instead of black.",
+    },
+    outputs: {
+      out: "Pass-through of the input. Each frame the card's draw renders its input texture into its own FBO, and out exposes that FBO's texture — effectively a clean copy of in (input → FBO → out). Wire it onward to chain a monitor into downstream video effects without breaking the signal flow; with no input it carries the static idle pattern.",
+    },
+    controls: {},
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(COPY_FRAG_SRC);

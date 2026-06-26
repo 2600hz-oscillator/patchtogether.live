@@ -322,4 +322,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'inwards',
   'shapes',
   'shapegen',
+  // Video batch 4 (2026-06-26): camera source + feedback/datamosh + line/shape gens + OUTPUT sink.
+  'cameraInput',
+  'backdraft',
+  'destructor',
+  'outlines',
+  'lines',
+  'videoOut',
 ]);

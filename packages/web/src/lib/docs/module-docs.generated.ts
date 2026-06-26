@@ -190,6 +190,59 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "master": "Master output level applied to both channels before the limiter, 0 (silence) to 1 (unity), default 0.7. It sets your overall loudness; the limiter downstream is a transparent ceiling, so use this for the actual mix level rather than relying on the limiter to hold things back."
     }
   },
+  "backdraft": {
+    "explanation": "BACKDRAFT is a video feedback generator. It builds a \"source\" image by crossfading two video inputs (IN A / IN B) with MIX, then composites that against a processed copy of its OWN previous output, read from an internal ring of past frames so there is no live GL feedback loop (downstream sees frame N while the tap reads N-1..N-30). The fed-back frame is delayed (DELAY, 0-500ms or a clock pulse), colour-processed (per-channel R/G/B gain, then LUMA brightness, then CHROMA saturation), scaled per-pixel by two key masks (KEY+ lightens / KEY- darkens the effect), and geometrically warped a little each pass (ZOOM/ROTATE/OFF X/OFF Y) so the transform COMPOUNDS into tunnels, spirals, and directional trails. Two MIRROR buttons fold the whole composited frame into a kaleidoscope. As FEEDBACK approaches its max (and a spatial transform is active) the additive trail-accumulator ramps into a pure recursive hall of mirrors. Usage: patch a camera or generator into IN A, raise FEEDBACK toward ~1 and nudge ZOOM off 1.0 (with a little ROTATE) for the classic infinite-tunnel look; add OFF X/Y for smear, PIXELATE for blocky lo-fi, and clock DELAY CLK for rhythmic echo. Output is the OUT video jack. The card shows a large live video preview on the left that is resizable via the bottom-right corner-drag handle (width/height persist, snapped to rack tiles); right-click the preview for Full Frame / Full Screen / Present-on-another-display.",
+    "inputs": {
+      "b": "CV (linear, bipolar) that modulates the B per-channel blue gain of the feedback (range -1..+2).",
+      "chroma": "CV (linear) that modulates the Chr (chroma/saturation) control of the fed-back frame.",
+      "darken": "Video KEY- mask. Read as luma per pixel; where bright it scales the feedback effect DOWN (paired with the Darken control). Unpatched = neutral (no cut).",
+      "darken_cv": "CV (linear) that modulates the Drk (Darken) control, the amount the KEY- mask reduces the feedback effect.",
+      "delay": "CV (linear) that modulates the Delay control, the feedback tap delay in milliseconds (0-500ms).",
+      "delay_clock": "Gate/clock input (raw passthrough, edge-detected). Each rising edge times a pulse; once two edges land, the feedback delay locks to one clock-pulse duration (capped at 500ms = one beat at 120 BPM) and OVERRIDES the Delay control.",
+      "feedback": "CV (linear) that modulates the FB (feedback) amount, the per-frame persistence ratio of the fed-back frame.",
+      "g": "CV (linear, bipolar) that modulates the G per-channel green gain of the feedback (range -1..+2).",
+      "in_a": "Video source A. Crossfaded against IN B by MIX to form the live 'source' image that is re-injected each frame; unpatched it reads black.",
+      "in_b": "Video source B. The other end of the MIX crossfade (MIX=1 selects this input fully); unpatched it reads black.",
+      "lighten": "Video KEY+ mask. Read as luma per pixel; where bright it scales the feedback effect UP (paired with the Lighten control). Unpatched = neutral (no boost).",
+      "lighten_cv": "CV (linear) that modulates the Lgt (Lighten) control, the amount the KEY+ mask boosts the feedback effect.",
+      "luma": "CV (linear) that modulates the Luma control, the feedback's overall brightness gain about black.",
+      "mirror_x_gate": "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES (flips) the Mirror X kaleidoscope fold, so a clock can flip it rhythmically. Edge-triggered, not a held level.",
+      "mirror_y_gate": "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES (flips) the Mirror Y kaleidoscope fold. Edge-triggered, not a held level.",
+      "mix": "CV (linear) that modulates the Mix crossfade between IN A (0) and IN B (1).",
+      "offsetx": "CV (linear, bipolar) that modulates the OffX (Off X) control, the per-pass horizontal translation of the feedback tap (directional trail).",
+      "offsety": "CV (linear, bipolar) that modulates the OffY (Off Y) control, the per-pass vertical translation of the feedback tap (directional trail).",
+      "pixelate": "CV (linear) that modulates the Pix (Pixelate) control, reducing the source's effective resolution (0 = identity, 1 = a single cell).",
+      "r": "CV (linear, bipolar) that modulates the R per-channel red gain of the feedback (range -1..+2).",
+      "rotate": "CV (linear, bipolar) that modulates the Rot (Rotate) control, the per-pass rotation in degrees that turns the feedback into a spiral.",
+      "zoom": "CV (linear) that modulates the Zoom control, the per-pass scale of the feedback tap about centre that builds the tunnel."
+    },
+    "outputs": {
+      "out": "The feedback-rendered video output: the crossfaded source composited with the processed, delayed, spatially-warped, mask-scaled copy of the previous output."
+    },
+    "controls": {
+      "b": "B (-1..+2, default 1.0): per-channel blue gain on the feedback. 1 = neutral.",
+      "chroma": "Chr / Chroma (-1..+2, default 1.0): saturation gain about the pixel's own luma. 1 = neutral, 0 = greyscale, 2 = double saturation, negative = hue-inverted.",
+      "darken": "Drk / Darken (0..1, default 1.0): how much the KEY- mask reduces the feedback effect where the mask is bright.",
+      "delay": "Delay (0..500 ms, default 16): feedback tap delay, snapped to the nearest whole frame (~1 frame at default). Overridden + shown as 'Dly·CLK' with a CLK badge while DELAY CLK is patched.",
+      "delayClock": "Delay Clk (0..1, default 0): hidden synthetic param the DELAY CLK CV bridge writes (raw gate swing). No card knob; the module edge-detects it to measure the pulse period that overrides the Delay control.",
+      "feedback": "FB / Feedback (0..2.0, default 0.85): per-frame feedback persistence. Above 1.0 gives runaway trails; near max (with a spatial transform active) it ramps into a pure recursive hall of mirrors. Each frame is clamped to [0,1] so it cannot blow out.",
+      "freeze": "Freeze (0/1, default 0): hidden determinism toggle. At ≥0.5 draw() is a no-op so the ring + output hold their last frame for deterministic VRT capture. No card control.",
+      "g": "G (-1..+2, default 1.0): per-channel green gain on the feedback. 1 = neutral.",
+      "lighten": "Lgt / Lighten (0..1, default 1.0): how much the KEY+ mask boosts the feedback effect where the mask is bright.",
+      "luma": "Luma (-1..+2, default 1.0): brightness gain of the fed-back frame about black. 1 = neutral, >1 brightens, <1 darkens, negative inverts.",
+      "mirrorX": "Mirror X (0/1, default 0): kaleidoscope toggle that folds the left half of the composited output over the right. Set by the MIRROR X button or flipped by a rising edge on mirror_x_gate.",
+      "mirrorXGate": "Mir X Gate (0..1, default 0): hidden synthetic param the mirror_x_gate CV bridge writes (raw gate swing). No card knob; a rising edge flips Mirror X.",
+      "mirrorY": "Mirror Y (0/1, default 0): kaleidoscope toggle that folds the top half of the output over the bottom (both on = a 4-way quadrant fold). Set by the MIRROR Y button or flipped by mirror_y_gate.",
+      "mirrorYGate": "Mir Y Gate (0..1, default 0): hidden synthetic param the mirror_y_gate CV bridge writes (raw gate swing). No card knob; a rising edge flips Mirror Y.",
+      "mix": "Mix (0..1, default 0.5): crossfade between IN A (0) and IN B (1) to form the live source image.",
+      "offsetX": "OffX / Off X (-0.1..+0.1, default 0): per-pass horizontal translation (UV units) of the feedback tap, making a directional trail/smear; 0 = none.",
+      "offsetY": "OffY / Off Y (-0.1..+0.1, default 0): per-pass vertical translation (UV units) of the feedback tap, making a directional trail/smear; 0 = none.",
+      "pixelate": "Pix / Pixelate (0..1, default 0): reduces the SOURCE resolution. 0 = identity (bit-exact), rising = blockier, 1 = the whole frame collapses to one representative colour.",
+      "r": "R (-1..+2, default 1.0): per-channel red gain on the feedback. 1 = neutral.",
+      "rotate": "Rot / Rotate (-30..+30 °, default 0): per-pass rotation of the feedback tap about centre. Combined with Zoom≠1 the echoes twist into a spiral; 0 = no spiral.",
+      "zoom": "Zoom (0.8..1.2, default 1.0): per-pass scale of the feedback tap about centre. <1 makes echoes recede (expanding tunnel), >1 magnifies them (zoom-in tunnel); 1 = no tunnel."
+    }
+  },
   "bluebox": {
     "explanation": "A DTMF telephone dialer with two phone-phreaking buttons. BLUEBOX is a 12-key touch-tone pad — digits 0–9 plus BLUEBOX and REDBOX — where every key is a press-and-hold tone source with no envelope: hold it down and its tone(s) sound, release and they stop (a ~1 ms ramp at each edge kills the click). Each digit emits the standard Bell-System dual tone (a row frequency 697/770/852/941 Hz plus a column frequency 1209/1336/1477 Hz); BLUEBOX emits a single 2600 Hz supervisory sine (the classic trunk-seizing tone) and REDBOX emits the 1700 + 2200 Hz payphone coin pair. You can hold a key with the mouse OR by patching a gate cable into its gate input — the worklet ORs the two so either drives it. Held keys sum into one mono output, and keys that share a frequency (e.g. 1 and 4 both use 1209 Hz) collapse onto a single shared oscillator so they reinforce instead of beating.",
     "inputs": {
@@ -269,6 +322,22 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "morph": "Harmonic-lock strength (0..1): pulls the tracked partials toward an exact harmonic series of the detected fundamental — 0 leaves them where the analysis found them (inharmonic, faithful), higher values snap them tonal.",
       "note": "Semitone transpose of the whole output (-60 to +60), added to the 1V/oct pitch input — shift the resynth up or down without changing its timing.",
       "timbre": "Smoothing/slew macro (0..1, mapping to roughly 5 ms–2 s): low tracks the input crisply, high smears partials over time for a blurred, evolving texture."
+    }
+  },
+  "cameraInput": {
+    "explanation": "CAMERA is a webcam-as-source video module. The card requests getUserMedia, runs a live <video> element, and hands it to the engine, which samples each decoded frame into a GPU texture and renders a fullscreen pass-through: the shader aspect-fits the camera frame into the engine's canvas (cover-cropping the off-axis by default so a 16:9 webcam fills the frame with no black bars), optionally flips it horizontally for a selfie mirror, and multiplies the RGB by a gain before sending it downstream. When no frame is available, or while disabled/paused, it shows a dark navy idle pattern (a faint vertical gradient, brighter toward the top) rather than black, so an unconfigured card reads as alive. Usage: drop CAMERA in, pick a device and grant access, then patch OUT into any video module (mixer, effect, OUTPUT screen). Use it as the live face/scene layer of a video patch.",
+    "inputs": {
+      "gain": "CV input that modulates the Gain control (linear scale, paramTarget=gain). Patch an LFO or envelope here to pulse the camera's RGB brightness; combines with the on-card Gain fader.",
+      "mirror": "Gate input that drives the Mirror toggle. It is level-sensitive (edge: gate): the image is horizontally flipped while the level is held high (above 0.5) and un-flipped while low, so an LFO/clock/gate flips the mirror in time. With nothing patched, the on-card Mirror button owns the state."
+    },
+    "outputs": {
+      "out": "Video output carrying the live camera frame: aspect-fitted, optionally mirrored, gain-multiplied RGB. Patch into any downstream video module."
+    },
+    "controls": {
+      "enabled": "On (discrete 0/1, default 1 = on). The card's Pause/Resume button: off (Pause) stops the camera track to release the hardware and renders the idle navy pattern; on (Resume) re-requests the stream.",
+      "fillMode": "Fill (discrete 0/1, default 1 = fill). Aspect-fit mode set by the card's Fit toggle: 1 = Fill/cover-crop (fills the canvas, crops the off-axis, no bars), 0 = Letterbox/contain (fits the whole frame with black bars). Neither ever distorts the source aspect; when the source already matches the output aspect the card shows a non-interactive Native badge instead.",
+      "gain": "Gain (linear, 0 to 2, default 1). RGB multiplier applied to the camera frame in the shader (src.rgb * gain, unclamped): 0 = black, 1 = unity, 2 = doubled (bright/clipped) RGB. CV-modulatable via the gain input.",
+      "mirror": "Mirror (discrete 0/1, default 1 = on). Horizontally flips the frame for a selfie mirror (shader thresholds uMirror at 0.5). Settable from the on-card Mirror button or held high by the mirror gate input. The param is shared across collaborators."
     }
   },
   "cartesian": {
@@ -728,6 +797,22 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "bits": "Quantization bit depth (1..16): 16 is pristine (effectively no reduction); lower values quantize the amplitude to fewer steps for the thick, steppy crunch of a low-bit converter — 1 bit is near square-wave destruction.",
       "decimate": "Sample-rate decimation (1..64): hold every Nth input sample. 1 is pristine (no decimation); higher values drop the effective sample rate for aliasing artifacts and a coarse, downsampled grain.",
       "wet": "Dry / wet mix (0..1): 0 is the clean input, 1 is the fully crushed signal, between blends them — useful as a parallel-distortion amount."
+    }
+  },
+  "destructor": {
+    "explanation": "DESTRUCTOR is a single-pass glitch/mangle effect that runs RGB video in and out. The fragment shader stacks three classic digital-decay artifacts: chromatic aberration (the red channel is sampled slightly left and the blue channel slightly right while green stays put, smearing color along the horizontal axis), scanline disruption (alternating rows of a 240-band horizontal grid are darkened), and posterization (each channel is quantized to a discrete number of levels, crushing smooth gradients into hard color steps). The master Mangle amount scales the chromatic aberration and scanline darkening only — posterization is applied independently from the Posterize control and is NOT affected by Mangle. With no input connected the module outputs solid black. Patch it after a source for a CRT/VHS-style decay, or sweep Mangle with an LFO for a pulsing shift/scanline glitch over a steady posterized base.",
+    "inputs": {
+      "in": "Video input. The RGB source frame that gets mangled. With nothing patched here the module outputs solid black.",
+      "mangle": "CV input that modulates the Mangle control — the master amount scaling chromatic aberration and scanline darkening together (posterization is not affected by Mangle)."
+    },
+    "outputs": {
+      "out": "Video output carrying the mangled RGB frame: channel-shifted, scanline-darkened, and posterized per the controls."
+    },
+    "controls": {
+      "mangle": "Master amount (0..1, default 1.0) that scales Shift and Scanline together; at 0 both the channel shift and scanline darkening vanish, but Posterize still applies. CV-controllable via the MANGLE input.",
+      "posterize": "Color quantization (0..1, default 0.7). Maps to 2..32 levels per channel — counterintuitively, 0 is the harshest (2 levels, heavy banding) and 1 is near passthrough (32 levels). Lower values crush gradients into hard steps. NOT scaled by Mangle — posterization is always applied.",
+      "scanline": "Scanline disruption depth (0..1, default 0.5). Darkens every other row of a 240-band horizontal grid by up to ~70%; at 0 no scanlines appear. Effective depth is scaled by Mangle.",
+      "shift": "Chromatic aberration amount (0..1, default 0.5). Pulls the red channel left and the blue channel right by up to ~5% of width; at 0 the channels stay aligned. Effective amount is scaled by Mangle."
     }
   },
   "drummergirl": {
@@ -1706,6 +1791,26 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "shape": "Continuously morphs the waveform across the 0–2 range: 0 = sine, 1 = saw, 2 = square, with smooth crossfades in between (e.g. value 0.5 = halfway sine↔saw). The fader's glyphs mark sine / saw / square."
     }
   },
+  "lines": {
+    "explanation": "LINES is a procedural mono-video source that renders soft-edged parallel stripes whose orientation, count, thickness, and scroll you dial in. The shader rotates the UV space by Orient (0 = horizontal lines, 1 = vertical, anything between = diagonal), then computes wave = abs(sin(2pi * Amp * (position + Phase))) along that axis and lights up bright bands wherever the wave falls under the Thickness threshold, with a smoothstep soft edge straddling it. The result is a grayscale grating written equally to all three RGB channels (alpha 1). The pattern auto-scrolls on its own (Phase advances steadily over time, time * 0.15 wrapped to 0..1) so it is visibly alive without touching a knob; your Phase value adds on top of that drift. Patch the OUT into an OUTPUT screen, a video mixer, or a colorizer; use it as a structural test pattern or as a moving modulation texture for downstream video modules.",
+    "inputs": {
+      "amp": "CV input that modulates the Amp control, changing how many stripes pack across the screen (the spatial frequency of the grating).",
+      "fm": "mono-video FM modulator input. The fmDepth uniform is plumbed but this Phase 0 build does not yet feed the texture into the shader, so patching it has no visible effect for now; the port exists so the I/O surface stays forward-compatible (Phase 3 hookup).",
+      "orient": "CV input that modulates the Orient control, rotating the grating between horizontal (0) and vertical (1) through diagonal in between.",
+      "phase": "CV input that modulates the Phase control, sliding the stripe pattern along its axis on top of the built-in auto-scroll.",
+      "thickness": "CV input that modulates the Thickness control, widening or narrowing the bright bands (the stripe duty cycle)."
+    },
+    "outputs": {
+      "out": "mono-video output carrying the rendered grayscale line/grating pattern. Route it to an OUTPUT screen, a video mixer, or a colorizer."
+    },
+    "controls": {
+      "amp": "Line frequency in lines-per-width (lpx), 0.5 to 50 (linear). Higher values pack more stripes across the frame; low values give a few broad bands. Default 12.",
+      "fmDepth": "Depth of the forward-compatible FM modulator, 0 to 1 (linear). The uniform is plumbed but multiplied by 0.0 in this Phase 0 shader, and there is no CV input or card fader for it, so it currently has no visible effect. Default 0.",
+      "orient": "Line orientation, 0 to 1 (linear). 0 = horizontal lines (the wave varies along Y), 1 = vertical lines (varies along X), intermediate values rotate the grating diagonally through pi/2. Default 0.",
+      "phase": "Phase offset, 0 to 1 (linear), sliding the stripes along their axis. Added on top of the steady built-in auto-scroll, so the pattern drifts even at 0. Default 0.",
+      "thickness": "Band duty cycle, 0 to 1 (linear). It is the threshold below which the wave lights up: 0 = razor-thin bright lines, raising it fattens the bright bands until near 1 the frame goes mostly white. Default 0.35."
+    }
+  },
   "livecode": {
     "explanation": "A live-coding module: a small scripting language that builds and patches the rack from text. Its card is a code editor with a Run button and an output log; the script can spawn modules, set parameters, and wire cables, and it can register clocked(division, fn) callbacks that run in time with the rack clock (each one spawns its own CLOCKED runner module). It has no audio jacks of its own — it's a side tool that mutates the patch graph, and its changes sync to other people in the rackspace through the shared document like any other edit. It's registered in the audio domain only because the rack already has an audio engine; its factory does no audio work."
   },
@@ -2660,6 +2765,37 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "overdub": "Overdub mode (the card's OVD button): when on, every keypress writes its note into the step (quantized to the nearest step while playing, immediately when stopped) without clearing the layer first — layer new notes over what's there.",
       "poly": "Poly recording (the card's POLY button): when on, holding several keys at once records them as a chord into the step (up to 5 voices); when off, only the single key pressed is stored. The mono per-layer outputs always send the lowest note either way.",
       "recArm": "Record arm (the card's ARM button): when armed and play starts from step 1, recording latches and the active layer is cleared, then your keystrokes are written in; it auto-disarms after one 16-step pass."
+    }
+  },
+  "outlines": {
+    "explanation": "A stateful particle video SOURCE in the LZX tradition. Each gate edge (or the internal rate clock) spawns a shape — a circle or a regular N-gon — at a seeded-random position; it drifts in a latched direction at a latched speed and BOUNCES when its center hits a wall, accumulating into a 1024px field. From the per-pixel overlap COUNT of all live shapes it derives four pictures: overlap (white where any shape covers a pixel), contour (just the shape outlines, so stacking shapes read as ripples in a pond), combine (the overlap region colorized by stack depth via a hue ramp with brightness and saturation rising as more shapes pile up), and mapped (the patched video input shown only where two or more shapes overlap). Usage: leave RATE up for a self-running generator, or set RATE to 0 and clock the GATE input to spawn one shape per pulse; patch COMBINE or CONTOUR into a screen and use the CV inputs to animate size, drift, and spin.",
+    "inputs": {
+      "collide": "Live inter-shape collision mode (gate, level — read every frame, not latched). While HIGH (>=0.5) shapes bounce off each other elastically (bounding-circle detection); LOW or unpatched passes through with no inter-shape collisions.",
+      "d": "CV that modulates the D (diameter) control, centered on the knob and swept across its 5..270px range; latched per shape at spawn.",
+      "decay": "CV that modulates the Decay (fade-out time) control across its 0..10s range; latched per shape at spawn.",
+      "gate": "Spawn trigger (edge). A rising edge spawns ONE shape, which latches the LIVE D / V / Spd / Decay / Shape values at the moment of the edge. Patching it lights the [GATED] badge.",
+      "rotation": "CV that modulates the Rot control, a LIVE GLOBAL bipolar spin (center = no spin); applied to every live shape at once, not latched.",
+      "shape": "CV that modulates the Shape selector across its six shapes (circle / triangle / square / pentagon / hexagon / octagon); quantised and latched per shape at spawn.",
+      "spd": "CV that modulates the Spd (speed) control across its 0..300 px/s range; latched per shape at spawn, so a change affects only new shapes.",
+      "v": "CV that modulates the V (vector angle) control across its 0..360 degree range; latched per shape at spawn.",
+      "video": "Video source sampled by the MAPPED output — its pixels appear only where two or more shapes overlap. Unpatched, MAPPED is black."
+    },
+    "outputs": {
+      "combine": "Video: the overlap region colorized by overlap COUNT via a hue ramp (1 = first hue, then 2,3,4... cycle the spectrum), with brightness and saturation rising as the stack deepens. This is the card preview and default output.",
+      "contour": "Mono-video: shape OUTLINES only (ring width 10% of diameter, min 2px), so many stacked shapes read as concentric ripples.",
+      "mapped": "Video: the VIDEO input's contents shown wherever two or more shapes overlap, black everywhere else (black if VIDEO is unpatched).",
+      "overlap": "Mono-video: white wherever at least one shape covers the pixel, black elsewhere (each shape dimmed by its fade alpha)."
+    },
+    "controls": {
+      "cv_collide": "Hidden synthetic gate param backing the COLLIDE jack (not a knob). The engine CV-bridge writes the collide input's LEVEL here; read live every frame, HIGH (>=0.5) makes shapes bounce off each other elastically, LOW passes through.",
+      "cv_gate": "Hidden synthetic gate param backing the GATE jack (not a knob). The engine CV-bridge writes the gate input's sample here; a rising edge spawns ONE shape, latching the live D / V / Spd / Decay / Shape at the moment of the edge.",
+      "d": "Shape DIAMETER (circumdiameter). 0..1 maps to 5..270px; latched per shape at spawn. A polygon is inscribed in this diameter (circumradius = d/2).",
+      "decay": "FADE-OUT time. 0..1 maps to 0..10s; latched per shape. 0 = persist (oldest shapes FIFO-culled at the cap); above 0 fades alpha to 0 and removes the shape over that many seconds.",
+      "rate": "Internal spawn CLOCK (knob only, no CV input). 0 = gate-only; turning it up engages a clock that tightens from slow toward a cap of one shape every 500ms.",
+      "rotation": "ROTATION, a LIVE GLOBAL bipolar spin: center (0.5) = no rotation, left = fast counter-clockwise, right = fast clockwise. Every live shape shares one rotation angle (not latched); the card shows CCW / dot / CW.",
+      "shape": "SHAPE SELECTOR, 0..1 quantised to six shapes: circle, triangle, square, pentagon, hexagon, octagon. Latched per shape at spawn; the card shows the current shape name.",
+      "spd": "SPEED. 0..1 maps to 0..300 px/s (0 = static). The latched velocity drives integration, so a later change affects only shapes spawned after it.",
+      "v": "Spawn VECTOR ANGLE. 0..1 maps to 0..360 degrees, the direction each new shape drifts; latched per shape at spawn."
     }
   },
   "peaks": {
@@ -3925,6 +4061,15 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "amount2": "A2 fader (linear 0..1, default 0.0) sets channel 2's mix level: 0 mutes it, 1 passes it at full brightness. CV at amount2 modulates this.",
       "amount3": "A3 fader (linear 0..1, default 0.0) sets channel 3's mix level: 0 mutes it, 1 passes it at full brightness. CV at amount3 modulates this.",
       "amount4": "A4 fader (linear 0..1, default 0.0) sets channel 4's mix level: 0 mutes it, 1 passes it at full brightness. CV at amount4 modulates this."
+    }
+  },
+  "videoOut": {
+    "explanation": "output is the screen sink of the video chain — the card body itself is the live picture. Whatever video signal you patch into it is copied frame-by-frame into this card's own framebuffer (FBO) and blitted onto the visible canvas, aspect-fit (the engine render is letterboxed into the card; the engine is 4:3 by default). The shader is a plain texture copy: with a signal patched it shows the input verbatim; with nothing patched it draws a static idle pattern — a dark navy field with a subtle vertical brightness gradient (the blue channel rises toward one edge) — so you can tell the card is alive while you drag a cable in. The pattern does not animate; there is no time uniform, so it's a fixed gradient, not a moving sweep. Each output card pulls its OWN input via engine.blitOutputToDrawingBuffer(nodeId) (multiple outputs in a rack each show their own feed, no last-one-wins coupling). Right-click the picture for true fullscreen, in-app full-frame (hides chrome, fills the card), or present-on-a-second-display. Use it as the monitor/projector at the end of a video patch — or mid-chain, since it passes its input straight through. The card body is the live output screen and is resizable by dragging the bottom-right corner handle; the engine render (4:3 by default, 1024×768) is aspect-fit (letterboxed) inside whatever size you choose, and the size (node.data.width/height) syncs to collaborators via Y.Doc.",
+    "inputs": {
+      "in": "The video signal to display. Polymorphic video input (type video) — it accepts a full video signal, and the engine implicitly upcasts narrower video-domain sources too (keys → mono-video → video, and image → video), so you can wire essentially any video output into it. With nothing patched, the shader's uHasInput branch draws the static navy idle gradient instead of black."
+    },
+    "outputs": {
+      "out": "Pass-through of the input. Each frame the card's draw renders its input texture into its own FBO, and out exposes that FBO's texture — effectively a clean copy of in (input → FBO → out). Wire it onward to chain a monitor into downstream video effects without breaking the signal flow; with no input it carries the static idle pattern."
     }
   },
   "warps": {
