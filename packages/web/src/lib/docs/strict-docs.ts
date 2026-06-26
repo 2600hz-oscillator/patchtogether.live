@@ -350,4 +350,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'videobox',
   'videovarispeed',
   'picturebox',
+  // Video batch 8 (2026-06-26): media sources (archive.org / peertube) + recorder + games (gibribbon/nibbles/qbert).
+  'archivist',
+  'peertube',
+  'recorderbox',
+  'gibribbon',
+  'nibbles',
+  'qbert',
 ]);
