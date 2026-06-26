@@ -122,6 +122,40 @@ export const scopeDef: AudioModuleDef = {
     { id: 'intensity', label: 'Inten', defaultValue: 0.5, min: 0,   max: 1,   curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A two-channel oscilloscope for SEEING your signals — it passes audio straight through untouched while drawing the waveform on an on-card screen, so you can patch it inline as a probe without altering the sound. Each channel has its own vertical SCALE, Y OFFSET, and RANGE mode (bipolar audio ±1 or unipolar CV), and a shared TIME knob sets how wide a window of the waveform fills the screen. An XY mode plots channel 1 against channel 2 (Lissajous figures, stereo phase) instead of two stacked traces, and an INTENSITY knob adds phosphor-style persistence from a single moving dot up to a glowing trail. Because it visualizes anything, the signal inputs also accept CV, pitch, and gate cables (not just audio). Every knob has a matching CV input, and the whole trace is also exported as a video output you can patch into the video domain. Display-only — none of the controls touch the audio path.",
+    inputs: {
+      ch1: "Channel-1 probe: the signal drawn on the upper trace (or the X axis in XY mode), and passed through cleanly to CH1 OUT. Typed audio but also accepts CV, pitch, and gate so you can scope LFOs, envelopes, pitch CV, and gates.",
+      ch2: "Channel-2 probe: the lower trace (or the Y axis in XY mode), passed through to CH2 OUT. Also accepts CV/pitch/gate.",
+      timeMs: "CV that modulates the TIME timebase knob — sweep how much of the waveform fits on screen.",
+      ch1Scale: "CV that modulates channel 1's vertical SCALE — zoom the trace's amplitude in or out.",
+      ch1Offset: "CV that modulates channel 1's Y OFFSET — slide the trace up or down on screen.",
+      ch1Range: "CV that modulates channel 1's RANGE mode (≥ 0.5 toggles bipolar↔unipolar display scaling).",
+      ch2Scale: "CV that modulates channel 2's vertical SCALE.",
+      ch2Offset: "CV that modulates channel 2's Y OFFSET.",
+      ch2Range: "CV that modulates channel 2's RANGE mode.",
+      mode: "CV that toggles the display MODE (≥ 0.5 switches into XY plot, below stays time-domain) — e.g. a gate can flip the scope into XY view.",
+      intensity: "CV that modulates the beam INTENSITY / persistence.",
+    },
+    outputs: {
+      ch1_out: "Clean passthrough of the channel-1 input — the scope adds no processing, so you can chain it inline.",
+      ch2_out: "Clean passthrough of the channel-2 input.",
+      out: "A video output carrying the same waveform image the on-card screen shows — patch it into the video domain (OUTPUT, a video mixer) to put the trace on screen.",
+    },
+    controls: {
+      timeMs: "The time window drawn across the screen width (1 to 200 ms, log, default 20): smaller values zoom in on a few cycles, larger values show a longer slice. The TIME CV input modulates this.",
+      ch1Scale: "Channel-1 vertical zoom (0.1× to 10×, log, default 1): magnifies a quiet signal or shrinks a loud one to fit the screen.",
+      ch1Offset: "Channel-1 vertical position (-1 to +1, default 0): nudges the trace up or down so two channels don't overlap.",
+      ch1Range: "Channel-1 display range: 0 = bipolar (±1, audio convention), 1 = unipolar/CV (±5 scaling) so a multi-octave pitch CV sweep is readable without re-zooming.",
+      ch2Scale: "Channel-2 vertical zoom (0.1× to 10×, log, default 1).",
+      ch2Offset: "Channel-2 vertical position (-1 to +1, default 0).",
+      ch2Range: "Channel-2 display range: 0 = bipolar audio, 1 = unipolar/CV.",
+      mode: "Display mode: 0 = two stacked time-domain traces, 1 = XY (channel 1 vs channel 2 — Lissajous / stereo phase plot).",
+      intensity: "Phosphor beam persistence (0 to 1, default 0.5): at 0 the trace is a single moving dot, at 0.5 a full-brightness single-screen trace, toward 1 a ~2-screen glowing persistence trail. Visual feel only.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Per channel: input → gain (passthrough) → output, with a tap to analyser.
     const gain1 = ctx.createGain();

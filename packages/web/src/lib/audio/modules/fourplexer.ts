@@ -78,6 +78,33 @@ export const fourplexerDef: AudioModuleDef = {
     { id: 'sel4', label: 'OUT 4', defaultValue: 3, min: 0, max: 3, curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A 4-in / 4-out discrete signal router (a four-way switch matrix). There are four signal inputs and four signal outputs, and each output independently selects exactly ONE of the four inputs to carry — it is a hard switch, never a blend or mix. You can set each output's selector by hand with its knob, or advance it with a clock: every output also has its own GATE input whose rising edge steps that output's selector to the next input (1→2→3→4→1, wrapping). Out of the box the four selectors are 1,2,3,4 so it passes straight through; from there you can route any input to any outputs, fan one input to several outputs, or clock the selectors to make a rhythmic source-switcher. Audio and CV both route identically through it.",
+    inputs: {
+      in1: "Signal input 1 — available to any output whose selector points at it. Audio or CV route the same way.",
+      in2: "Signal input 2 — selectable by any output.",
+      in3: "Signal input 3 — selectable by any output.",
+      in4: "Signal input 4 — selectable by any output.",
+      gate1: "Clock/advance for output 1: each rising edge steps OUT 1's selector to the next input (1→2→3→4→1, wrapping). The advanced position is saved like a knob turn.",
+      gate2: "Clock/advance for output 2: each rising edge steps OUT 2's selector to the next input, wrapping.",
+      gate3: "Clock/advance for output 3: each rising edge steps OUT 3's selector to the next input, wrapping.",
+      gate4: "Clock/advance for output 4: each rising edge steps OUT 4's selector to the next input, wrapping.",
+    },
+    outputs: {
+      out1: "Output 1 — carries whichever single input OUT 1's selector currently points at.",
+      out2: "Output 2 — carries the single input selected by OUT 2.",
+      out3: "Output 3 — carries the single input selected by OUT 3.",
+      out4: "Output 4 — carries the single input selected by OUT 4.",
+    },
+    controls: {
+      sel1: "Which input (1–4) output 1 carries. Turn it to route by hand; GATE 1's rising edges also advance it. A readout shows the current source (e.g. '← IN 2').",
+      sel2: "Which input (1–4) output 2 carries — set by hand or advanced by GATE 2.",
+      sel3: "Which input (1–4) output 3 carries — set by hand or advanced by GATE 3.",
+      sel4: "Which input (1–4) output 4 carries — set by hand or advanced by GATE 4.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

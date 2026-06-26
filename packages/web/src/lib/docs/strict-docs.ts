@@ -123,4 +123,24 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'moog992',
   'moog993',
   'moogCp3',
+  // Batch 8 — CV/signal utilities & small processors (2026-06-26): a coherent
+  // utility cluster — the STEREOVCA (stereo VCA / ring modulator), GATEMAIDEN
+  // (the gate↔trigger converter), ILLOGIC (attenuverter + sum/diff + digital
+  // logic), ANALOGLOGICMATHS (continuous min/max/diff/sum/product), FOURPLEXER
+  // (4×4 discrete signal router), FLIPPER (gate flip-flop / ÷2), plus the SCOPE
+  // (2-channel oscilloscope) and two processors, SIDECAR (stereo sidechain
+  // ducker) and RESOFILTER (multi-mode resonant filter). The convention-card
+  // members (stereovca / gatemaiden / illogic / analogLogicMaths / sidecar /
+  // resofilter — pure Fader/Knob + PatchPanel) ARE interactive; the others stay
+  // STATIC: fourplexer + flipper carry a `card:` override (defLite can't resolve
+  // it → static face), and scope's card runs a 2D-canvas rAF render loop.
+  'stereovca',
+  'gatemaiden',
+  'illogic',
+  'analogLogicMaths',
+  'fourplexer',
+  'flipper',
+  'scope',
+  'sidecar',
+  'resofilter',
 ]);
