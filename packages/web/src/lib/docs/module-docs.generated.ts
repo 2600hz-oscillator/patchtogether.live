@@ -170,6 +170,26 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "master": "Output gain on the summed bus, linear 0..2 (default 1.0 = unity). Below 1 trims the whole mix down; above 1 boosts the sum INTO the tanh soft-clip for warm saturation rather than a hard clip. Applies only to the MIX output, not the per-channel direct outs."
     }
   },
+  "audioIn": {
+    "explanation": "Brings system audio INTO the patch: it streams from a microphone, line-in, or USB interface you pick on the card and exposes the signal as a stereo L/R pair you can patch into the rack. Mental model: a live external source — sing, plug in a guitar/synth, or capture another app — and treat it like any oscillator output, sending it through filters, effects, and out to AUDIO OUT. The card owns the permission flow and the device dropdown; permission is requested only when you enable it, not on patch load, so loading a patch never pops a mic prompt. Stereo handling is automatic: a stereo device feeds L and R separately, a mono source is duplicated to both sides. (Browser capture caps at a stereo pair — more than two channels per device is native-only — so only L/R are exposed.)",
+    "outputs": {
+      "audio_l_out": "Left channel of the selected input device (channel 1). For a mono source this carries the single channel, duplicated to the right output as well.",
+      "audio_r_out": "Right channel of the selected input device (channel 2). For a mono source it carries a copy of the left channel so both sides have signal."
+    },
+    "controls": {
+      "gain": "Post-source level trim applied equally to both channels, 0 (silence) to 2 (×2, +6 dB), default 1 (unity). Turn it down for a hot line-in that's clipping, up for a quiet condenser mic; there is no per-channel trim."
+    }
+  },
+  "audioOut": {
+    "explanation": "The terminal stereo output — where the patch reaches your speakers. It takes two mono inputs (L and R), each routed to one side of the stereo bus, following the Eurorack convention that every cable is mono and you patch both sides for stereo. Mental model: the last module in the chain; whatever you wire into L and R is what you hear. Two always-on safety stages sit between your signal and the hardware: a 5 Hz DC-blocking high-pass (inaudible, but it stops slow DC drift from a feedback loop or a misrouted LFO from clipping the limiter or stressing your speakers) and a transparent master limiter (a permissive compressor that stays inactive on a properly leveled mix and only catches peaks above the ceiling). The card also lets you choose the output device on browsers that support it. There are no outputs — this is a sink.",
+    "inputs": {
+      "L": "Left-channel audio to the speakers. Patch a mono source here for the left side; for a stereo source wire both L and R.",
+      "R": "Right-channel audio to the speakers. Leave it unpatched for a mono signal in L, or wire the right side of a stereo source here."
+    },
+    "controls": {
+      "master": "Master output level applied to both channels before the limiter, 0 (silence) to 1 (unity), default 0.7. It sets your overall loudness; the limiter downstream is a transparent ceiling, so use this for the actual mix level rather than relying on the limiter to hold things back."
+    }
+  },
   "buggles": {
     "explanation": "A chaotic random-voltage source in the Buchla / Make Noise wogglebug tradition. An internal 'woggle clock' fires at the Rate you set (with Chaos adding timing jitter), and each tick rolls a fresh random voltage that sprays out across five correlated outputs at once: a slowly-slewing SMOOTH voltage, a jumpy sample-and-held STEPPED voltage, a CLOCK gate pulsing on every woggle event, an occasional BURST of clustered triggers, and an audio-rate RING output (the smooth voltage ring-modulated with a sub-oscillator) for Buchla's signature 'complex random' texture. Patch SMOOTH into pitch or filter CV for warbling drift, STEPPED for brittle melodic randomness, CLOCK to clock a sequencer, BURST for stuttered fills, and RING straight to audio. You can also feed it an external clock to lock the chaos to your tempo.",
     "inputs": {
@@ -687,6 +707,32 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "sel4": "Which input (1–4) output 4 carries — set by hand or advanced by GATE 4."
     }
   },
+  "gamepad": {
+    "explanation": "A connected USB or Bluetooth game controller turned into a bank of CV and gate signals — eighteen outputs covering the full standard Xbox-style layout (two analog sticks, two triggers, the bumpers, the four face buttons, the D-pad, and Start/Back). The card polls the controller at ~60 Hz and pushes each axis and button into its own output, so you play the rack with a gamepad: stick axes sweep filters or pan a scene, triggers ride a VCA, face buttons fire drum strikes or scene changes. Sticks come out bipolar (±1) with a small deadzone so a worn stick's rest-drift reads 0, the Y axis flipped so 'up' is +1; triggers are unipolar 0..1; every button is a 0/1 gate. The left stick can be CALIBRATED on the card (sweep it to capture its true range + rest center) for a precise, drift-free mapping. Browser security only reveals a controller after you press a button on it, so the card shows a 'press any button' prompt until a pad appears. These outputs also drive video modules through the cross-domain CV/gate bridge.",
+    "outputs": {
+      "a": "The A face button as a gate: 1 while held, 0 when released — patch it into a strike or scene trigger.",
+      "b": "The B face button as a gate: 1 while held, 0 when released.",
+      "back": "The Back / Select button as a gate: 1 while held, 0 when released.",
+      "dd": "D-pad down as a gate: 1 while held, 0 when released.",
+      "dl": "D-pad left as a gate: 1 while held, 0 when released.",
+      "dr": "D-pad right as a gate: 1 while held, 0 when released.",
+      "du": "D-pad up as a gate: 1 while held, 0 when released.",
+      "lb": "Left bumper as a gate: 1 while the button is held, 0 when released.",
+      "lt": "Left trigger as unipolar CV, 0 fully released to +1 fully pressed — its analog travel, useful as a swell or VCA ride.",
+      "lx": "Left stick X as bipolar CV, −1 (left) through 0 (center) to +1 (right), after a small deadzone and re-normalization (and the left-stick calibration if you've run it).",
+      "ly": "Left stick Y as bipolar CV, −1 (down) through 0 to +1 (up) — the axis is flipped so pushing up reads positive — with the same deadzone/calibration treatment as LX.",
+      "rb": "Right bumper as a gate: 1 while held, 0 when released.",
+      "rt": "Right trigger as unipolar CV, 0 released to +1 pressed.",
+      "rx": "Right stick X as bipolar CV, −1 (left) to +1 (right), with the stick deadzone applied.",
+      "ry": "Right stick Y as bipolar CV, −1 (down) to +1 (up), Y flipped, with the stick deadzone applied.",
+      "start": "The Start button as a gate: 1 while held, 0 when released.",
+      "x": "The X face button as a gate: 1 while held, 0 when released.",
+      "y": "The Y face button as a gate: 1 while held, 0 when released."
+    },
+    "controls": {
+      "padIndex": "Which controller slot to read, 0 to 3 (the Web Gamepad spec allows up to four pads at once). 0 is the first connected controller; raise it to read a second or third pad in a multi-controller setup."
+    }
+  },
   "gatemaiden": {
     "explanation": "The convenience converter between the two interpretations of the unified gate cable: a TRIGGER (a brief blip that fires once on each rising edge — a clock tick, a strike) and a GATE (a held level that stays high while something is on — a note being held, an envelope's sustain). One generic input feeds BOTH outputs simultaneously, with no mode switch: GATE reads the input's level (and a passing trigger is widened into a minimum-width gate set by LEN), while TRIG fires one short pulse on every rising edge of the input (so a held gate becomes a single trigger at its start). Use it to make an external clock open an ADSR's sustain, or to turn a long held gate back into a one-shot strike, or just to fan one signal out as both shapes at once.",
     "inputs": {
@@ -826,6 +872,19 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "att2_amount": "Channel-2 attenuverter (-1 to +1, default +1): scales input 2 into ATT2 and the mix buses; 0 mutes, negative inverts. The logic block still reads the raw input 2.",
       "att3_amount": "Channel-3 attenuverter (-1 to +1, default +1): scales input 3 into ATT3, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts.",
       "att4_amount": "Channel-4 attenuverter (-1 to +1, default +1): scales input 4 into ATT4, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts."
+    }
+  },
+  "joystick": {
+    "explanation": "A manual XY controller: drag the stick anywhere inside the square pad and its position comes out as four bipolar CV signals. The pad's center is (0, 0) and the four corners reach (±1, ±1); dragging UP gives +Y (screen-y is flipped so 'up' reads positive). Two raw outputs (X, Y) plus two pre-inverted outputs (NX = −X, NY = −Y) let you drive mirrored or quadrature modulation from one hand without wiring an external inverter. Mental model: a hands-on two-axis modulation source — sweep filter cutoff and resonance together, pan a sound while changing its tone, or steer a video param. On pointer-release the stick snaps back to center (both axes to 0); the position is stored in the patch like any knob, so it survives a reload.",
+    "outputs": {
+      "nx": "The inverted X output (−X): +1 when the stick is at the left edge, −1 at the right — the mirror image of the X output, for driving two things in opposition from one axis.",
+      "ny": "The inverted Y output (−Y): +1 at the bottom, −1 at the top — the mirror image of the Y output.",
+      "x": "The stick's horizontal position as bipolar CV, −1 at the left edge through 0 at center to +1 at the right edge.",
+      "y": "The stick's vertical position as bipolar CV, −1 at the bottom through 0 at center to +1 at the top (the axis is flipped so dragging up reads positive)."
+    },
+    "controls": {
+      "pos_x": "The stick's stored X position in the −1..+1 range, written by dragging the pad (and snapped back to 0 on release). It is the persisted value behind the X / NX outputs; it survives a patch reload.",
+      "pos_y": "The stick's stored Y position in the −1..+1 range, written by dragging the pad (and snapped back to 0 on release). It is the persisted value behind the Y / NY outputs."
     }
   },
   "kria": {
@@ -984,6 +1043,43 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "level": "Output level from silence to 2x; the Level CV input adds to this.",
       "morph": "The vowel-formant macro (0..1): morphs the timbre across the a/i/u/e/o formant regions, changing the 'shape' of the meow from one vowel-like color to another.",
       "pitch": "Transposes the voice in semitones (-36 to +36), summed on top of the 1V/oct pitch input — use it to set the cat's register or to offset an incoming melody."
+    }
+  },
+  "midiclock": {
+    "explanation": "Brings an external MIDI device's TRANSPORT into the patch as clock and run signals — the transport-only sibling of MIDI-CV-BUDDY (which carries the notes). MIDI sends 24 clock ticks per quarter note, plus Start / Stop / Continue messages; MIDICLOCK divides that tick stream down to a usable pulse and tracks the play state. Mental model: it's the bridge that lets a hardware sequencer, drum machine, or DAW be the master clock for the whole rack — connect a class-compliant USB-MIDI device, pick it from the card's dropdown, and patch its CLOCK output into anything that wants a beat (a SEQUENCER's CLOCK IN, TIMELORDE, an envelope trigger). The card has a device picker and a clock-division select; there are no audio-side knobs because every setting (device + division) is a discrete choice that lives in the saved patch, not a continuous AudioParam.",
+    "outputs": {
+      "clock": "A short ~5 ms pulse whose rising edge fires once every N incoming MIDI ticks, where N is the card's clock-division setting (MIDI runs at a fixed 24 ticks per quarter note, so N=24 gives one pulse per quarter note, 12 an eighth, 6 a sixteenth, 3 a 32nd, and 1 the raw 24-PPQN tick stream). Patch it into a SEQUENCER's CLOCK IN or TIMELORDE to slave the rack's timing to the external transport. On a MIDI Start the divider re-zeros so the first pulse lands cleanly on the downbeat.",
+      "midistart": "A one-shot pulse whose rising edge fires the instant a MIDI Start message (0xFA) arrives — the 'play from the top' signal. It does NOT fire on MIDI Continue, because Continue exists precisely to resume mid-song without re-zeroing downstream loops; patch this into a reset/restart input to snap things back to the beginning when the transport starts fresh.",
+      "midistop": "A one-shot pulse whose rising edge fires when a MIDI Stop message (0xFC) arrives. Patch it where you want something to fire exactly when the external transport halts (mute an envelope, reset a counter, drop a gate).",
+      "run": "A level that sits at 0 while the external transport is stopped and rises to 1 while it is running; it latches to 1 on both MIDI Start and MIDI Continue and drops to 0 on MIDI Stop. Use it as a gate to enable downstream modules only while the master transport is playing."
+    }
+  },
+  "midiCvBuddy": {
+    "explanation": "Turns a hardware MIDI keyboard or controller into the pitch + gate + velocity CV the rest of the rack speaks — the classic MIDI-to-CV interface. It is MONOPHONIC: when you hold a chord it picks one winning note (by the card's voice-priority setting — last-played, lowest, or highest) and tracks that. Mental model: play a key and PITCH follows it as 1V/octave, GATE goes high while you hold and dips briefly on a retrigger so envelopes re-fire, and VELOCITY latches how hard you struck. Pitch-bend is summed into the pitch output. The card owns the device dropdown, channel filter, voice-priority and retrigger choices (all discrete, saved in the patch — no audio-side knobs); Web MIDI permission is requested only when you click Connect, not on patch load. For polyphony, use MIDI LANE's poly output instead; this module is the simple mono workhorse.",
+    "outputs": {
+      "gate": "Stays high while at least one key is held and low when all keys are released. On a retrigger (a fresh strike while the retrigger mode wants a re-fire) it briefly dips to 0 for one audio block before re-rising, so an ADSR or VCA downstream re-fires its envelope cleanly. Patch it into an envelope's gate or a VCA.",
+      "pitch_cv": "The current note as pitch CV in volts-per-octave (the codebase convention 0V = C4 = MIDI note 60), with pitch-bend summed in (default ±2 semitones). It tracks the winning held key per the card's voice-priority mode and latches the last note after you let go, so a downstream VCO holds its pitch through the gate's fall rather than snapping to a default.",
+      "velocity_cv": "How hard the most recent note was struck, as 0..1 CV (MIDI velocity 0..127 scaled by 1/127). It updates on each note-on and latches between events, so you can route it to a VCA level or a filter cutoff for velocity-sensitive dynamics."
+    }
+  },
+  "midiLane": {
+    "explanation": "A per-channel instrument bus that demuxes ONE MIDI channel (or a small set of channels) out of a hardware sequencer into everything the rack needs to play that track — pitch, gate, velocity, two assignable CC taps, a by-note-number gate, AND a polyphonic chord output. The intended workflow is DAW-style 'one MIDI channel = one instrument': assign each track of an external sequencer (Reliq, Cre8audio Programm, Empress ZOIA, …) to its own MIDI channel, drop one MIDI LANE per instrument, and point each lane at its track's channel. It is the channel-aware successor of MIDI-CV-BUDDY: the mono pitch/gate/velocity behave the same (a voice-priority winner of the held stack), but a multi-select channel filter, a learn-assignable CC bank, a by-note gate, and an always-live poly output are added. The card's `mode` setting governs only the MONO outputs — 'mono' collapses a held chord to one winning note on PITCH/GATE, 'poly' leaves those quiet — while the POLY output carries the whole held chord in BOTH modes. Device, channel set, voice priority, retrigger, mode, CC# assignments and the note# are all discrete card settings saved in the patch (no audio-side knobs). The SAME outputs drive video modules for free via the cross-domain CV/gate bridge.",
+    "outputs": {
+      "cc_a": "Learn-assignable Continuous-Controller tap A, output as 0..1 CV: it follows whatever MIDI CC number the card has assigned to slot A (e.g. a mod wheel or a track's automation lane on this channel). Wire it to an audio param — or, via the cross-domain bridge, a video param — for hands-on modulation from the external gear.",
+      "cc_b": "Learn-assignable Continuous-Controller tap B, a second independent 0..1 CV tap following its own card-assigned CC number — a second modulation lane alongside cc_a.",
+      "gate": "High while any key on this lane's channel(s) is held, with a brief retrigger dip so downstream envelopes re-fire. Driven only in 'mono' mode (it sits low in 'poly' mode). Patch it into an envelope or VCA gate.",
+      "note_gate": "A gate that fires when the SPECIFIC MIDI note number selected on the card arrives on this lane's channel(s) (defaults to GM kick, MIDI 36). It generalizes the per-device drum-router pattern (e.g. the Programm's ch10 by-note triggers) through one configurable port — patch it into a drum voice's strike or any trigger input.",
+      "pitch_cv": "The winning held note as pitch CV in volts-per-octave (0V = C4 = MIDI 60), with pitch-bend summed in. Driven only when the card's mode is 'mono' (it follows the voice-priority winner of the held stack and latches the last note); in 'poly' mode it stays quiet and you use the POLY output instead.",
+      "poly": "A polyphonic pitch+gate bus (up to 10 voices) that ALWAYS carries the full held chord, in both 'mono' and 'poly' modes. Wire it to a poly-aware voice — POLYHELM, DX7, CUBE, or a module with a poly input — and the chord plays straight away with no mode toggle. This is the real polyphonic source chain: MIDI LANE.poly → poly synth produces audible chords (it does not need the mono outputs).",
+      "velocity_cv": "How hard the most recent note was struck, as 0..1 CV (MIDI velocity / 127), latched between events. Route it to a VCA level or filter cutoff for velocity dynamics."
+    }
+  },
+  "midiOutBuddy": {
+    "explanation": "The OUTPUT complement of MIDI-CV-BUDDY: it reads gate / pitch / velocity CV from inside the rack and SENDS MIDI notes out to a hardware synth on a chosen device + channel. Mental model: anything in the rack that produces a gate and a pitch — a SEQUENCER, an envelope, an LFO-driven gate — can now play an external instrument. On each rising edge of GATE it sends a MIDI Note On using the pitch + velocity sampled at that instant; on the falling edge it sends Note Off for whatever note it actually started, so a glide under a held gate never strands the wrong note. The output device and MIDI channel are discrete card settings saved in the patch (no audio-side knobs), and Web MIDI permission is requested only when you click Connect. It defends against stuck notes: on dispose and on a device change it sends an all-notes-off plus an explicit Note Off for any tracked note.",
+    "inputs": {
+      "gate": "The note trigger: a rising edge sends a MIDI Note On (sampling PITCH and VELOCITY at that instant), and the following falling edge sends the matching Note Off. Patch a SEQUENCER's gate or an envelope's gate here to drive notes out to the external synth.",
+      "pitch": "The note pitch as 1V/octave CV (0V = C4 = MIDI 60), quantized to the nearest semitone to pick the MIDI note number. It is sampled at the moment of the gate's rising edge, so the note that gets sent is whatever pitch was present when the gate opened (later drift under a held gate doesn't re-trigger).",
+      "velocity": "How hard to strike the outgoing note, as 0..1 CV mapped to MIDI velocity 1..127 (the floor is clamped to 1 because a Note On with velocity 0 is, by spec, a Note Off). Sampled at the rising edge alongside pitch; leave it unpatched for a default level."
     }
   },
   "mixer": {

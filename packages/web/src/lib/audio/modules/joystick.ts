@@ -74,6 +74,24 @@ export const joystickDef: AudioModuleDef = {
     { id: 'pos_y', label: 'Y', defaultValue: 0, min: -1, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A manual XY controller: drag the stick anywhere inside the square pad and its position comes out as four bipolar CV signals. The pad's center is (0, 0) and the four corners reach (±1, ±1); dragging UP gives +Y (screen-y is flipped so 'up' reads positive). Two raw outputs (X, Y) plus two pre-inverted outputs (NX = −X, NY = −Y) let you drive mirrored or quadrature modulation from one hand without wiring an external inverter. Mental model: a hands-on two-axis modulation source — sweep filter cutoff and resonance together, pan a sound while changing its tone, or steer a video param. On pointer-release the stick snaps back to center (both axes to 0); the position is stored in the patch like any knob, so it survives a reload.",
+    inputs: {},
+    outputs: {
+      x: "The stick's horizontal position as bipolar CV, −1 at the left edge through 0 at center to +1 at the right edge.",
+      y: "The stick's vertical position as bipolar CV, −1 at the bottom through 0 at center to +1 at the top (the axis is flipped so dragging up reads positive).",
+      nx: "The inverted X output (−X): +1 when the stick is at the left edge, −1 at the right — the mirror image of the X output, for driving two things in opposition from one axis.",
+      ny: "The inverted Y output (−Y): +1 at the bottom, −1 at the top — the mirror image of the Y output.",
+    },
+    controls: {
+      pos_x:
+        "The stick's stored X position in the −1..+1 range, written by dragging the pad (and snapped back to 0 on release). It is the persisted value behind the X / NX outputs; it survives a patch reload.",
+      pos_y:
+        "The stick's stored Y position in the −1..+1 range, written by dragging the pad (and snapped back to 0 on release). It is the persisted value behind the Y / NY outputs.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initial = node.params ?? {};
     const live = {

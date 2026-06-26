@@ -65,6 +65,20 @@ export const audioOutDef: AudioModuleDef = {
     },
   ],
 
+  docs: {
+    explanation:
+      "The terminal stereo output — where the patch reaches your speakers. It takes two mono inputs (L and R), each routed to one side of the stereo bus, following the Eurorack convention that every cable is mono and you patch both sides for stereo. Mental model: the last module in the chain; whatever you wire into L and R is what you hear. Two always-on safety stages sit between your signal and the hardware: a 5 Hz DC-blocking high-pass (inaudible, but it stops slow DC drift from a feedback loop or a misrouted LFO from clipping the limiter or stressing your speakers) and a transparent master limiter (a permissive compressor that stays inactive on a properly leveled mix and only catches peaks above the ceiling). The card also lets you choose the output device on browsers that support it. There are no outputs — this is a sink.",
+    inputs: {
+      L: "Left-channel audio to the speakers. Patch a mono source here for the left side; for a stereo source wire both L and R.",
+      R: "Right-channel audio to the speakers. Leave it unpatched for a mono signal in L, or wire the right side of a stereo source here.",
+    },
+    outputs: {},
+    controls: {
+      master:
+        "Master output level applied to both channels before the limiter, 0 (silence) to 1 (unity), default 0.7. It sets your overall loudness; the limiter downstream is a transparent ceiling, so use this for the actual mix level rather than relying on the limiter to hold things back.",
+    },
+  },
+
   /**
    * Migrate a v1 Audio Out node (single 'audio' input) to v2 (L+R). Edges that
    * targeted the old 'audio' port get rewritten to 'L' (mono → left). Callers

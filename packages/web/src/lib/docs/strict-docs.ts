@@ -194,4 +194,29 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'grids',
   'numpadPlus',
   'atlantisCatalyst',
+  // Batch 11 — MIDI, external control & audio I/O (2026-06-26): the cluster that
+  // bridges the rack to the outside world — MIDICLOCK (external MIDI transport →
+  // clock/run/start/stop), MIDI-CV-BUDDY (mono MIDI keyboard → pitch/gate/vel),
+  // MIDI LANE (per-channel instrument bus with CC taps, a by-note gate, and an
+  // always-live POLY output), MIDI-OUT-BUDDY (rack CV/gate → MIDI notes out to
+  // hardware), JOYSTICK (manual XY → four bipolar CV), GAMEPAD (a game controller's
+  // 18 axes/buttons → CV/gate), AUDIO IN (system audio capture → stereo L/R), and
+  // AUDIO OUT (the terminal stereo sink with DC-block + limiter). MIDI LANE is the
+  // POLY member — its `poly` output must feed a real poly-aware voice (POLYHELM /
+  // DX7 / CUBE / a module with a poly input), noted in its prose. ALL eight stay
+  // STATIC (off INTERACTIVE_DOC_MODULES): the four MIDI cards run Web-MIDI device
+  // pickers, AUDIO IN carries a `card:` override + getUserMedia, AUDIO OUT's card
+  // enumerates media devices + polls the engine on mount, GAMEPAD's card runs a
+  // ~60 Hz requestAnimationFrame poll of navigator.getGamepads, and JOYSTICK's
+  // pad is an XY drag surface with no `control-<paramId>` Knob/Fader to probe —
+  // all engine-less-doc-sandbox-unsafe or non-probeable, so the static face is
+  // the right fallback for every one of them.
+  'midiclock',
+  'midiCvBuddy',
+  'midiLane',
+  'midiOutBuddy',
+  'joystick',
+  'gamepad',
+  'audioIn',
+  'audioOut',
 ]);
