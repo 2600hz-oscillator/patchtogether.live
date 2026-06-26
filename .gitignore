@@ -108,3 +108,18 @@ packages/web/static/roms/qbert/*
 # documents the source + setup flow.
 packages/web/static/roms/snes9x/*
 !packages/web/static/roms/snes9x/README.md
+
+# Blood game data (user-provided; PROPRIETARY — never commit + never auto-fetch).
+# UNLIKE the DOOM shareware WAD (which id Software licenses for free
+# redistribution), Blood's data has no free-redistribution grant — Warner Bros.
+# owns the IP. Contributors supply their own BLOOD.RFF / TILES*.ART / *.DAT from
+# a game they own via `task setup:blood`; the static dir carries only README.md
+# in git. README in packages/web/static/blood/ documents the legal status +
+# setup flow. Built engine artifacts (blood.{js,wasm}) are also gitignored
+# (deterministic from the pinned NBlood commit — see build-blood-wasm.sh).
+packages/web/static/blood/*
+!packages/web/static/blood/README.md
+
+# NBlood upstream scratch checkout fetched by build-blood-wasm.sh (the engine is
+# fetched at a pinned commit for the WASM build, NOT vendored in this spike).
+packages/web/native/nblood/.upstream/
