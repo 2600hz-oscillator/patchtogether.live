@@ -216,6 +216,45 @@ export const synesthesiaDef: AudioModuleDef = {
     { id: 'b_envdepth4', label: 'b4 dpt', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
   ],
 
+  docs: (() => {
+    const BAND_NAMES: Record<number, string> = {
+      1: 'bass (20–200 Hz)',
+      2: 'low-mid (200 Hz–1 kHz)',
+      3: 'high-mid (1–4 kHz)',
+      4: 'treble (4 kHz+)',
+    };
+    const outputs: Record<string, string> = {};
+    const controls: Record<string, string> = {};
+    for (const c of COPIES) {
+      const C = c.toUpperCase();
+      controls[`${c}_mode`] = `Copy ${C} MODE — AUDIO (analyse the audio input into 4 spectral bands) vs VIDEO (the 4 lanes become R / G / B / Luma of the patched ${c}_video_in frame, sampled card-side). Toggle on the card.`;
+      controls[`${c}_bipolar`] = `Copy ${C} env POLARITY — UNIPOLAR (env CV outputs run 0..1, the default) vs BIPOLAR (−1..+1, so a strong onset sweeps a destination's FULL range through a knob-centred CV→video bridge). Toggle on the card.`;
+      controls[`${c}_master`] = `Copy ${C} MASTER gain (0.5×..1.5×, unity at noon) — raises or lowers the floor of all four of copy ${C}'s bands together.`;
+      for (const b of BANDS) {
+        controls[`${c}_gain${b}`] = `Copy ${C} band ${b} GAIN (1×..2×) — boosts the ${BAND_NAMES[b]} band's level for copy ${C} (affects its audio tap + how hard it drives the envelopes/gate/meter).`;
+        controls[`${c}_envdepth${b}`] = `Copy ${C} band ${b} ENV DEPTH (0×..2×, unity at noon) — scales BOTH env CV outputs (slow + fast) for copy ${C}'s ${BAND_NAMES[b]} band; 0 silences that band's modulation, 2 doubles it (clamped to the CV ceiling).`;
+        outputs[`${c}_band${b}_audio`] = `Copy ${C} band ${b} AUDIO — the isolated ${BAND_NAMES[b]} band of copy ${C}'s input (post gain). Patch it as a band-split audio signal.`;
+        outputs[`${c}_band${b}_env_slow`] = `Copy ${C} band ${b} SLOW envelope CV — a ~500 ms envelope-follower tracking the ${BAND_NAMES[b]} band's level; smooth modulation that rides the band's overall energy. Polarity set by copy ${C}'s POLARITY.`;
+        outputs[`${c}_band${b}_env_fast`] = `Copy ${C} band ${b} FAST envelope CV — a ~50 ms envelope-follower on the ${BAND_NAMES[b]} band; snappier modulation that tracks transients. Polarity set by copy ${C}'s POLARITY.`;
+        outputs[`${c}_band${b}_gate`] = `Copy ${C} band ${b} GATE — goes high while the ${BAND_NAMES[b]} band's level is above a hysteresis threshold and low when it falls below; a level-sensitive gate that follows energy in that band.`;
+        outputs[`${c}_band${b}_trig`] = `Copy ${C} band ${b} TRIGGER — a short ~10 ms pulse on each spectral-flux onset (beat) detected in the ${BAND_NAMES[b]} band (LZX-Sensory-Translator style). Patch into envelopes/drum voices to fire on that band's hits.`;
+        outputs[`${c}_band${b}_raster`] = `Copy ${C} band ${b} RASTER — a mono-video output painting the ${BAND_NAMES[b]} band's live waveform as a raster (audio→video), for patching into video destinations.`;
+      }
+    }
+    return {
+      explanation:
+        "SYNESTHESIA is a dual 4-band audio analyser + envelope/gate/trigger generator — an audio-reactive modulation source. It holds TWO independent copies (A and B); each takes a mono input and splits it into four MUSICAL bands (bass / low-mid / high-mid / treble). For every band of every copy it emits a rich fan of outputs: the isolated band audio, a SLOW (~500 ms) and a FAST (~50 ms) envelope-follower CV, a hysteresis GATE that opens while the band is loud, a beat TRIGGER fired on each spectral-flux onset in that band, and a mono-video RASTER of the band's waveform — 4 bands × 6 kinds × 2 copies = 48 outputs. Each copy can instead run in VIDEO mode, where the 4 lanes become R/G/B/Luma of a patched video frame (sampled card-side) and flow through the same envelope/gate/meter stage. Per-band GAIN, per-copy MASTER, an env-output DEPTH per band, and a UNIPOLAR/BIPOLAR polarity switch shape the modulation; a 10-bar VU meter per band is drawn on the card.",
+      inputs: {
+        a_in: 'Copy A audio input — the mono signal copy A splits into its 4 spectral bands (in AUDIO mode).',
+        b_in: 'Copy B audio input — the mono signal copy B splits into its 4 spectral bands (in AUDIO mode).',
+        a_video_in: "Copy A video input — used only when copy A is in VIDEO mode: the card reads this frame's pixels, averages them to R/G/B/Luma levels, and feeds those through copy A's 4 lanes (the frame handoff happens card-side, not as an audio edge).",
+        b_video_in: 'Copy B video input — the VIDEO-mode frame source for copy B (same card-side handoff as copy A).',
+      },
+      outputs,
+      controls,
+    };
+  })(),
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

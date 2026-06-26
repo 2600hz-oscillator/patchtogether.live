@@ -162,4 +162,19 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   'tides2',
   'stages',
   'qbrt',
+  // Batch 13 — heavy synth voices, effects & utilities (2026-06-26): only the
+  // CONVENTION-card members whose cards are a pure Knob/Fader + buttons +
+  // PatchPanel with NO onMount/$effect, no canvas/rAF/WebGL, no Web-MIDI panel
+  // and no file input — the macrooscillator profile — go here, so each mounts
+  // cleanly in the engine-less doc sandbox. cloudseed (Knobs/Faders + ON/OFF
+  // pills + preset footer) and symbiote (Faders + mode/scale/seed buttons) both
+  // qualify; verified live by docs-virtual-module.spec.ts (cloudseed late_cv→
+  // late_out and symbiote rate_cv→rate exercise the CV→param dual context). The
+  // STATIC siblings stay off this list: foxy/twotracks/synesthesia/warrenspectrum
+  // run a 2D-canvas render in the card, hypercube renders WebGL + has a file
+  // picker, polyhelm mounts a Web-MIDI gear panel, and bluebox has no
+  // control-<paramId> Knob/Fader to hover (its keys are press-and-hold buttons)
+  // — see strict-docs.ts.
+  'cloudseed',
+  'symbiote',
 ]);

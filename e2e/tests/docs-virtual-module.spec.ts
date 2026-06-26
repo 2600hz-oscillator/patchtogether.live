@@ -534,6 +534,30 @@ const PROBES: Probe[] = [
     cvPort: 'cutoff', // CV (paramTarget=cutoff) → CUTOFF
     modulates: /modulates/i,
   },
+  // --- Batch 13 — heavy synth voices, effects & utilities (2026-06-26). Only the
+  // CONVENTION-card members whose cards are a pure Knob/Fader + buttons +
+  // PatchPanel (no canvas/rAF/WebGL, no Web-MIDI panel, no file input) are
+  // interactive; this proves the live card mounts cleanly and a control hover
+  // updates the pane. The CV→param dual-context check runs on each (cloudseed
+  // late_cv→late_out, symbiote rate_cv→rate). The STATIC siblings (foxy /
+  // twotracks / hypercube / synesthesia / warrenspectrum / polyhelm / mixmstrs /
+  // bluebox) have no live-card probe — see interactive-doc-modules.ts. ---
+  {
+    id: 'cloudseed',
+    heading: /cloudseed/i,
+    controlParam: 'late_out',
+    controlDescIncludes: /late|tank|reverb|level/i,
+    cvPort: 'late_cv', // CV (paramTarget=late_out) → LATE output level
+    modulates: /modulates/i,
+  },
+  {
+    id: 'symbiote',
+    heading: /symbiote/i,
+    controlParam: 'rate',
+    controlDescIncludes: /rate|clock|tempo/i,
+    cvPort: 'rate_cv', // CV (paramTarget=rate) → master clock rate
+    modulates: /modulates/i,
+  },
 ];
 
 /** Wait for the live virtual module to finish mounting (the flow host appears

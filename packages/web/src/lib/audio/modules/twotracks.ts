@@ -231,6 +231,55 @@ export const twotracksDef: AudioModuleDef = {
     { id: 'monitor',        label: 'Monitor',   defaultValue: 0,     min: 0,   max: 1,     curve: 'discrete' },
   ],
 
+  docs: (() => {
+    const inputs: Record<string, string> = {};
+    const controls: Record<string, string> = {};
+    const reels = [
+      { suffix: 'a', name: 'A' },
+      { suffix: 'b', name: 'B' },
+    ];
+    for (const { suffix: s, name: R } of reels) {
+      // Per-reel gate inputs (transport).
+      inputs[`audio_l_in_${s}`] = `Left audio into reel ${R}'s record path. While reel ${R} is recording or overdubbing, this is what gets written to the tape; pairs with the right input.`;
+      inputs[`audio_r_in_${s}`] = `Right audio into reel ${R}'s record path, partnering the left input.`;
+      inputs[`rec_start_${s}`] = `Reel ${R} record START gate: a rising edge starts (or restarts) recording onto reel ${R} from the head of the tape. Drive it from a clock/button to capture a take hands-free.`;
+      inputs[`rec_arm_${s}`] = `Reel ${R} record ARM gate: a rising edge arms reel ${R} so the next pass (or the next REC START) drops into record — the "ready to record" toggle.`;
+      inputs[`overdub_${s}`] = `Reel ${R} OVERDUB gate: a rising edge toggles overdub (sound-on-sound) mode, layering new input onto the existing loop instead of erasing it.`;
+      // Per-reel params.
+      controls[`rate_${s}`] = `Reel ${R} tape RATE (−3..+3) — playback/record speed and direction; 1 = normal, fractions slow it down and pitch it lower, negatives play the tape backwards.`;
+      controls[`mode_${s}`] = `Reel ${R} MODE (LOOP vs ONE-SHOT) — whether the reel loops continuously or plays its take once.`;
+      controls[`echoes_${s}`] = `Reel ${R} ECHOES (1..5) — sets the feedback/repeat behavior: how many times the recorded loop re-circulates (and decays) like a tape echo.`;
+      controls[`start_${s}`] = `Reel ${R} loop START (0..1) — the left edge of the playback window within the recorded tape (you can't drag it past the playhead while rolling).`;
+      controls[`end_${s}`] = `Reel ${R} loop END (0..1) — the right edge of the playback window within the recorded tape.`;
+      controls[`overdub_flag_${s}`] = `Reel ${R} overdub state flag (0/1) — the persisted on/off of overdub mode (the button form of the OVERDUB gate); when on, new input layers onto the existing loop.`;
+      controls[`playhead_${s}`] = `Reel ${R} playhead position (0..1) — the live read position on the tape; scrub it to jump within the take (the card draws it on the waveform).`;
+      controls[`eqLow_${s}`] = `Reel ${R} EQ LOW (±12 dB) — low-band shelf on reel ${R}'s playback.`;
+      controls[`eqMid_${s}`] = `Reel ${R} EQ MID (±12 dB) — mid-band on reel ${R}'s playback.`;
+      controls[`eqHigh_${s}`] = `Reel ${R} EQ HIGH (±12 dB) — high-band shelf on reel ${R}'s playback.`;
+      controls[`filterMode_${s}`] = `Reel ${R} FILTER MODE — off / low-pass / high-pass / band-pass selector for reel ${R}'s playback filter.`;
+      controls[`cutoff_${s}`] = `Reel ${R} filter CUTOFF (20 Hz..20 kHz, log) — the corner of reel ${R}'s playback filter (active per FILTER MODE).`;
+      controls[`reso_${s}`] = `Reel ${R} filter RESONANCE (0..1) — emphasis at reel ${R}'s filter cutoff.`;
+    }
+    return {
+      explanation:
+        "A two-reel tape-loop emulator — two independent tape decks (reel A and reel B) in one box, mixed to a stereo output. Each reel records the stereo audio at its inputs onto a fixed-length 'blank tape', then plays the captured take back: you set a loop window (START / END) within the tape, a tape RATE (which slows, speeds, or reverses playback and pitch like a varispeed reel), an ECHOES feedback amount for tape-echo-style repeats, and per-reel 3-band EQ + a multimode filter to colour the playback. Recording is driven hands-free by the per-reel REC START / REC ARM / OVERDUB gate inputs (or the on-card transport), and OVERDUB layers new input onto the existing loop sound-on-sound. The two reels are blended by the global A/B crossfader, can cross-feed into each other (A→B and B→A) for runaway tape-loop textures, and a global LOFI option degrades the sound; MONITOR passes the live input through. The card draws each reel's live waveform + playhead and can export a take to WAV.",
+      inputs,
+      outputs: {
+        out_l: 'Left channel of the mixed stereo output — reels A and B summed per the A/B crossfader (and any cross-feed), post per-reel EQ/filter and the global LOFI stage.',
+        out_r: 'Right channel of the mixed stereo output, the partner of OUT L.',
+      },
+      controls: {
+        ...controls,
+        // Global controls.
+        ab: 'A/B crossfade (0..1) — blends the two reels in the output: 0 = reel A only, 0.5 = both at unity, 1 = reel B only.',
+        a2b: 'Cross-feed A→B (0..1) — routes reel A\'s playback into reel B\'s input/record path; with overdub this builds layered, evolving tape loops (raise carefully — it can run away).',
+        b2a: 'Cross-feed B→A (0..1) — routes reel B\'s playback into reel A\'s input/record path (the mirror of A→B).',
+        lofi: 'LOFI degradation (0..3) — a global tape-degradation amount that adds wow/flutter/bit-grit character; 0 = clean.',
+        monitor: 'MONITOR (on/off) — passes the live input signal through to the output so you can hear what you\'re about to record (input monitoring), independent of playback.',
+      },
+    };
+  })(),
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
