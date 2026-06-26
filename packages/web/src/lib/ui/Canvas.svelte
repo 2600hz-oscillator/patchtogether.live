@@ -127,6 +127,8 @@
   import { canAddModule } from '$lib/doom/doom-gating';
   import SavedGroupsPicker from '$lib/ui/SavedGroupsPicker.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
+  import { MODULE_DOCS } from '$lib/docs/module-docs.generated';
+  import { isAnnotating, toggleAnnotate, clearAnnotate } from '$lib/ui/annotate-mode.svelte';
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
   import SelectionContextMenu from '$lib/ui/SelectionContextMenu.svelte';
   import GroupBuilderModal from '$lib/ui/GroupBuilderModal.svelte';
@@ -211,8 +213,8 @@
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { installSimulatedMidiDevice, installSimulatedNoteDevice } from '$lib/midi/midi-learn.svelte';
-  import { installSimulatedLaunchpad } from '$lib/control/launchpad/launchpad-device.svelte';
-  import { bindLaunchpadToClip } from '$lib/control/launchpad/launchpad-control.svelte';
+  import { installSimulatedLaunchpad, installSimulatedLaunchpadSingle } from '$lib/control/launchpad/launchpad-device.svelte';
+  import { bindLaunchpadToClip, __test_setDeployment, __test_mode as __launchpadTestMode } from '$lib/control/launchpad/launchpad-control.svelte';
 
   // Stage B PR B-b: when mounted under /r/[id] (multi-user), the parent
   // passes the current user's id so per-user layouts are scoped correctly.
@@ -2411,6 +2413,18 @@
     const n = patch.nodes[ctxMenuNodeId];
     return n?.type ?? null;
   });
+
+  // Living-docs: whether the right-clicked module has AUTHORED docs — gates the
+  // "Annotate" entry. MODULE_DOCS is the committed authored-docs registry.
+  let ctxMenuHasDocs = $derived.by<boolean>(() => {
+    void snapshot;
+    return !!ctxMenuNodeType && !!MODULE_DOCS[ctxMenuNodeType];
+  });
+  // Whether annotate mode is currently ON for the right-clicked node (toggle
+  // label). isAnnotating is reactive ($state set), so this re-evals on toggle.
+  let ctxMenuAnnotateActive = $derived<boolean>(
+    !!ctxMenuNodeId && isAnnotating(ctxMenuNodeId),
+  );
   // Module-grouping Phase 2A — track whether the right-clicked group is
   // currently expanded so the menu can label the toggle appropriately.
   let ctxMenuGroupExpanded = $derived.by<boolean>(() => {
@@ -3954,6 +3968,7 @@
     }, LOCAL_ORIGIN);
     // No defensive flow* sync needed: snapshot bus + one-way prop (B3).
     if (topNodeId === nodeId) topNodeId = null;
+    clearAnnotate(nodeId); // drop any personal annotate-mode state for this node
     trace(`deleted ${nodeId}`);
   }
 
@@ -4608,6 +4623,30 @@
         };
         return true;
       };
+      // SINGLE-UNIT Launchpad sim for e2e: installs ONE in-memory device bound to
+      // the L slot, forces the single deployment, then binds the clip-player. The
+      // lone device routes/paints by the active VIEW; every sim event flows on the
+      // one device (sent on unit 'L'), so the driver exposes view-agnostic
+      // press/cc + a viewFlip that drives the hardware CC-98 toggle.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__launchpadTestInstallSingle = async (clipNodeId: string) => {
+        const sim = await installSimulatedLaunchpadSingle();
+        __test_setDeployment('single', 'clip');
+        bindLaunchpadToClip(clipNodeId);
+        const CC_VIEW_FLIP = 98; // CC_TOP_SPARE_8 — the single-unit view toggle.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).__launchpadSingleSim = {
+          // press/cc on the ONE device (it's the L slot); routed by active view.
+          press: (x: number, y: number) => sim.press('L', x, y),
+          release: (x: number, y: number) => sim.release('L', x, y),
+          cc: (cc: number, value: number) => sim.cc('L', cc, value),
+          // flip clip↔control via the hardware CC-98 button (press+release).
+          viewFlip: () => { sim.cc('L', CC_VIEW_FLIP, 127); sim.cc('L', CC_VIEW_FLIP, 0); },
+          // probe the binding's view/mode state (deployment, activeView, mode).
+          state: () => __launchpadTestMode(),
+        };
+        return true;
+      };
       // midi-learn singleton API for e2e. The midi REGRESSION spec needs to
       // drive exportBindings/importBindings/connect against the SAME module
       // singleton the app uses. It previously did `import('/src/lib/midi/...')`
@@ -5244,6 +5283,9 @@
   y={ctxMenuPos.y}
   nodeLabel={ctxMenuLabel}
   nodeType={ctxMenuNodeType}
+  hasDocs={ctxMenuHasDocs}
+  annotateActive={ctxMenuAnnotateActive}
+  onannotate={() => ctxMenuNodeId && toggleAnnotate(ctxMenuNodeId)}
   isGroup={ctxMenuNodeType === 'group'}
   groupExpanded={ctxMenuGroupExpanded}
   locked={ctxMenuLocked}
