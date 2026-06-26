@@ -143,4 +143,26 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'scope',
   'sidecar',
   'resofilter',
+  // Batch 9 — synth voices & percussion sources (2026-06-26): a coherent cluster
+  // of sound-generating modules — DRUMMERGIRL (one-shot synth drum voice),
+  // MEOWBOX (formant cat-vocal voice), TREE.oh.VOX (TB-303 acid-bass voice),
+  // CHOWKICK (physical-model resonant kick), PEAKS (dual drum/env/LFO utility),
+  // BUGGLES (wogglebug chaotic random source), CALLSINE (spectral additive
+  // resynth), and PENTEMELODICA (5-voice poly synth). The convention-card
+  // members (drummergirl / meowbox / treeohvox / peaks / buggles / callsine —
+  // pure Fader/Knob + PatchPanel, peaks adds two static mode buttons) ARE
+  // interactive; the others stay STATIC: chowkick + pentemelodica each run a
+  // 2D-canvas render in the card (chowkick's envelope/filter previews via
+  // onMount + $effect, pentemelodica's per-voice waveform scopes via $effect),
+  // so the engine-less doc sandbox falls back to the static face. PENTEMELODICA
+  // is POLY — its POLY input must be fed by a real poly source (MIDI LANE /
+  // POLYSEQZ / SEQUENCER chord steps), noted in its prose.
+  'drummergirl',
+  'meowbox',
+  'treeohvox',
+  'chowkick',
+  'peaks',
+  'buggles',
+  'callsine',
+  'pentemelodica',
 ]);

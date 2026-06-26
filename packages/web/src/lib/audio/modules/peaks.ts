@@ -247,6 +247,38 @@ export const peaksDef: AudioModuleDef = {
     { id: 'k2_1', label: 'B2', defaultValue: 0.3, min: 0.001, max: 5, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A dual-channel percussion-and-modulation Swiss-army module after Mutable Instruments Peaks. It's two identical channels (A and B), each a self-contained generator you trigger with a gate. Each channel runs in one of five modes — KICK, SNARE, HIHAT (full drum voices), ENV (a one-shot attack/decay envelope), or LFO (a retriggerable sine/triangle/square) — and its two faders change meaning with the mode (the card relabels them: e.g. KICK's are Pitch/Decay, LFO's are Rate/Wave). So one Peaks gives you a kick + snare, a pair of drum voices, two trigger-shaped envelopes, two tempo-able LFOs, or any mix. Each channel's output is audio in the drum modes and control voltage in ENV/LFO. Use the two channels independently; there's no internal cross-link.",
+    inputs: {
+      gate0: "Channel A's trigger: a rising edge fires the active mode once — a drum hit (KICK/SNARE/HIHAT), one attack/decay envelope (ENV), or a phase-reset of the LFO. Length comes from the mode's controls, not how long the gate stays high.",
+      gate1: "Channel B's trigger: same as channel A's gate for the B channel.",
+      mode0_cv: "CV that displaces channel A's Mode selector (discrete), so a stepped CV can switch A between KICK/SNARE/HIHAT/ENV/LFO between hits.",
+      mode1_cv: "CV that displaces channel B's Mode selector (discrete).",
+      k1_0_cv: "CV that adds to channel A's knob 1 (whose meaning follows A's mode — Pitch/Mix/Bright/Attack/Rate).",
+      k2_0_cv: "CV that adds to channel A's knob 2 (Decay in the drum/ENV modes, Wave in LFO mode).",
+      k1_1_cv: "CV that adds to channel B's knob 1 (B's mode-dependent first parameter).",
+      k2_1_cv: "CV that adds to channel B's knob 2 (B's mode-dependent second parameter).",
+    },
+    outputs: {
+      out0: "Channel A's output: audio in the KICK/SNARE/HIHAT modes, or a unipolar control voltage in ENV (an attack/decay shape) and a bipolar one in LFO. Patch to the mixer for drums, or to a CV destination for ENV/LFO.",
+      out1: "Channel B's output, same audio/CV duality as channel A based on B's mode.",
+    },
+    controls: {
+      mode0: "Channel A's mode: KICK, SNARE, HIHAT, ENV (one-shot attack/decay), or LFO (retriggered each gate). Changing it relabels A's two faders to that mode's parameters.",
+      mode1: "Channel B's mode (same five options as channel A).",
+      k1_0: "Channel A's first knob — its meaning follows the mode: Pitch (KICK), Mix of body vs noise (SNARE), Brightness (HIHAT), Attack time (ENV), or Rate (LFO).",
+      k2_0: "Channel A's second knob: Decay time in the KICK/SNARE/HIHAT/ENV modes, or Wave shape (sine→triangle→square) in LFO mode.",
+      k1_1: "Channel B's first knob (mode-dependent, same mapping as channel A's knob 1).",
+      k2_1: "Channel B's second knob (mode-dependent, same mapping as channel A's knob 2).",
+      // NOTE — the two on-card mode buttons (peaks-mode0 / peaks-mode1) are the
+      // UI for the mode0 / mode1 controls above (clicking cycles the param), so
+      // they're documented by those param entries. They carry stable test ids
+      // but have no numbered-face legend yet, so a separate static-button key
+      // would orphan in the consistency lint — keep them folded into mode0/mode1.
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

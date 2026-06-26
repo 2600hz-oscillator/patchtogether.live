@@ -97,6 +97,35 @@ export const treeohvoxDef: AudioModuleDef = {
     { id: 'waveform',  label: 'Wave',     defaultValue: 0,    min: 0,    max: 1,     curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A TB-303 acid-bass voice in one card: a band-limited saw↔square oscillator into the classic 303 ladder-style resonant low-pass, with the cutoff swept by a snappy decay envelope. It's a port of Robin Schmidt's Open303, so the squelch, the resonance scream, and the accent boost behave like the real 303 voice. Play it from a pitch + gate source (a sequencer, keyboard, or MIDI lane): each gate edge re-triggers the filter envelope, and the dedicated ACCENT gate latches an accent on that note for the louder, brighter, more resonant 303 accent character. This card is the VOICE only — the full 303 sequencer/slide/transpose lives in the planned 404 module.",
+    inputs: {
+      pitch_in: "1V/oct pitch input — patch a sequencer or keyboard pitch CV here to set the note; the Tune knob adds a ±12-semitone offset on top.",
+      gate_in: "The note gate: a rising edge triggers the amplitude + filter envelopes for a new note. The 303's gate length affects how the envelopes overlap between consecutive notes; patch a sequencer/clock gate here.",
+      accent_in: "The accent gate, latched at the moment the note gate fires: when it's high on a note, that note gets the 303 accent — louder, with extra filter-envelope drive for the signature accented squelch. Drive it from a sequencer's accent lane.",
+      tune_cv: "CV that adds to the Tune knob, shifting pitch in semitones (on top of the 1V/oct input).",
+      cutoff_cv: "CV that adds to the Cutoff knob — the classic patch point for an LFO or envelope filter-sweep.",
+      res_cv: "CV that adds to the Resonance knob, pushing the filter toward self-oscillating scream.",
+      env_cv: "CV that adds to the EnvMod knob, controlling how hard the envelope drives the cutoff.",
+      decay_cv: "CV that adds to the Decay knob, lengthening or shortening the filter-envelope sweep.",
+      accent_cv: "CV that adds to the Accent knob, scaling how strong an accented note's boost is.",
+      waveform_cv: "CV that adds to the Wave knob, morphing the oscillator between saw and square.",
+    },
+    outputs: {
+      audio_out: "The mono 303 voice — oscillator through the resonant filter and amp envelope. Patch into a distortion/overdrive for a dirtier acid line, or straight to a mixer.",
+    },
+    controls: {
+      tune: "Coarse tune in semitones (-12 to +12), added to the 1V/oct pitch input — for transposing the line or tuning to a track.",
+      cutoff: "The filter corner frequency (40 Hz–6 kHz, log): the main timbre control. The 303 deliberately tops out around 6 kHz for its dark, focused voice; the filter envelope sweeps up from wherever you set this.",
+      resonance: "Filter resonance/emphasis (0..1): low for a round bass, high for the whistling 303 squelch that nearly self-oscillates.",
+      envelope: "Env-mod depth (0..1): how far the filter envelope pushes the cutoff up on each note — 0 is a static filter, high values give the dramatic per-note sweep.",
+      decay: "Filter-envelope decay time (50 ms–3 s, log): short for tight blips, long for sustained sweeps; the canonical 303 range sits around 200 ms–2 s, extended here into doom-y territory.",
+      accent: "Accent amount (0..1): how much louder and brighter an accented note (one whose ACCENT gate is high) gets — 0 makes accents identical to normal notes, 1 is the full 303 accent boost.",
+      waveform: "Morphs the oscillator from saw (0, the classic 303 voice) to square (1) and the blend between.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

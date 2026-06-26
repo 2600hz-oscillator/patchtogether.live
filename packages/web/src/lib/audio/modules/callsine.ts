@@ -554,6 +554,33 @@ export const callsineDef: AudioModuleDef = {
     { id: 'level',     label: 'Level',     defaultValue: 0.8, min: 0,   max: 1,  curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A spectral-analysis additive resynthesizer (a port of Warren's Spectrum / CallSine). It listens to whatever audio you feed in, runs a rolling FFT to find the loudest sinusoidal partials, tracks them over time, and rebuilds the sound with a bank of up to 64 oscillators — so it's a resynth, not a synth from scratch. Because the rebuild is a bank of oscillators, you can transpose the whole thing cleanly (Note / pitch CV), thin it out or fill it in (Harmonics), smear it in time (Timbre), snap its partials to a harmonic series for a more tonal result (Morph), and swap the oscillator waveform for one of 14 voice models (sine, saw, square, formant, metal, etc.). A gate toggles FREEZE, latching the current spectrum so you can stutter or drone on a held moment.",
+    inputs: {
+      audio_in: "The mono audio to analyse and resynthesize — anything: a synth voice, a drum loop, a vocal. CallSine tracks its strongest partials and rebuilds them with the oscillator bank.",
+      pitch: "A 1V/oct pitch input that transposes the entire resynth output after analysis (it shifts the rebuilt partials, so it pitches the sound without time-stretching it). Adds with the Note knob.",
+      gate: "FREEZE toggle: a rising edge flips the freeze latch on or off, snapshotting the bank's current partials (their frequencies + amplitudes) so the output drones on that spectrum even as the input changes. Tap it to freeze a moment; pulse it to glitch-stutter. It reacts to the edge, not the held level.",
+      model_cv: "CV that displaces the voice-Model selector (discrete), so a stepped CV can switch oscillator waveforms.",
+      note_cv: "CV that adds to the Note transpose (linear, ±60 st range), for melodic transposition from an LFO or sequencer.",
+      harm_cv: "CV that adds to the Harmonics macro, opening up or thinning the partial count.",
+      timb_cv: "CV that adds to the Timbre macro, sweeping the analyzer smear/slew.",
+      morph_cv: "CV that adds to the Morph macro, modulating the harmonic-lock strength.",
+      level_cv: "CV that adds to the output Level.",
+    },
+    outputs: {
+      out: "The mono additive-resynth output: the tracked partials rebuilt with the selected voice model, transposed and leveled. Frozen when FREEZE is engaged.",
+    },
+    controls: {
+      model: "The oscillator waveform each partial uses (discrete, 14 models: SINES, SAW, SQR, PULSE25, TRI, RAMP, CHEBY3/5, HARDSYNC, FOLD, NOISE, FORMANT, SUBOSC, METAL) — pick SINES for a clean resynth or a richer model to recolor the spectrum. The current model name is shown under the title.",
+      note: "Semitone transpose of the whole output (-60 to +60), added to the 1V/oct pitch input — shift the resynth up or down without changing its timing.",
+      harmonics: "Partials-count macro (0..1): scales how many of the strongest tracked partials are resynthesized (1 up to all 64) — low for a sparse, hollow reduction, high for a faithful full-spectrum rebuild.",
+      timbre: "Smoothing/slew macro (0..1, mapping to roughly 5 ms–2 s): low tracks the input crisply, high smears partials over time for a blurred, evolving texture.",
+      morph: "Harmonic-lock strength (0..1): pulls the tracked partials toward an exact harmonic series of the detected fundamental — 0 leaves them where the analysis found them (inharmonic, faithful), higher values snap them tonal.",
+      level: "Output gain (0..1); the Level CV input adds to this.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

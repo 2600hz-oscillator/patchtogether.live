@@ -175,6 +175,30 @@ export const bugglesDef: AudioModuleDef = {
     { id: 'level',             label: 'Level',  defaultValue: 0.7, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A chaotic random-voltage source in the Buchla / Make Noise wogglebug tradition. An internal 'woggle clock' fires at the Rate you set (with Chaos adding timing jitter), and each tick rolls a fresh random voltage that sprays out across five correlated outputs at once: a slowly-slewing SMOOTH voltage, a jumpy sample-and-held STEPPED voltage, a CLOCK gate pulsing on every woggle event, an occasional BURST of clustered triggers, and an audio-rate RING output (the smooth voltage ring-modulated with a sub-oscillator) for Buchla's signature 'complex random' texture. Patch SMOOTH into pitch or filter CV for warbling drift, STEPPED for brittle melodic randomness, CLOCK to clock a sequencer, BURST for stuttered fills, and RING straight to audio. You can also feed it an external clock to lock the chaos to your tempo.",
+    inputs: {
+      clock_cv: "CV that sums onto the Rate knob, speeding up or slowing the internal woggle clock (sampled at each woggle event rather than continuously).",
+      chaos_cv: "CV that sums onto the Chaos knob, modulating how random/jittery the voltages and timing get.",
+      external_clock: "External clock input: when patched, its rising edges replace the internal woggle clock — each pulse fires one woggle event (new random voltages + a CLOCK/BURST output), so the chaos locks to your tempo. The internal clock resumes about a second after the pulses stop.",
+    },
+    outputs: {
+      smooth: "A slowly-shifting random voltage: it slews toward each new random target instead of jumping, so it behaves like a lazy random LFO — good for warbling pitch, filter, or pan modulation. The Smooth control sets how lazily it glides.",
+      stepped: "A sample-and-held random voltage that hard-jumps to a fresh value on every woggle event — brittle, steppy modulation for random melodies or jumpy timbres.",
+      clock: "A gate output that pulses (~5 ms) on every woggle event — a chaotic clock you can use to trigger sequencers, envelopes, or drums; its rate and jitter follow Rate + Chaos.",
+      burst: "A gate output that, with probability set by the Burst control, fires a cluster of 3–7 closely-spaced trigger pulses on a woggle event — for ratchets, stutters, and fills.",
+      ring: "An audio-rate output: the smooth voltage ring-modulated against a sub-oscillator tracking the woggle rate — the Buchla 'complex random' texture, patchable straight into the audio path.",
+    },
+    controls: {
+      rate: "Internal woggle-clock speed (0..1, log-mapped to roughly 0.1–50 Hz): how often new random voltages are rolled. The Clock CV input adds to this.",
+      chaos: "Chaos depth (0..1): at 0 the stepped output is a clean S&H of a stable random walk and timing is steady; turning it up makes each step a fresh independent value and adds up to ±50% jitter to the woggle period.",
+      smoothness: "How lazily the SMOOTH output glides toward each new target (0..1): low is almost a step, high stretches the slew to about twice the woggle period for very gentle drift.",
+      burst_probability: "Chance (0..1) that a given woggle event fires a BURST cluster instead of a single pulse — 0 never bursts, 1 bursts every event.",
+      level: "Output scaling (0..1) applied to the SMOOTH, STEPPED, and RING outputs (the CLOCK and BURST gates keep a clean 0/1 swing regardless).",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Per-instance PRNG seeded from the node id so two BUGGLES on the
     // same canvas produce different sequences (and a single BUGGLES is
