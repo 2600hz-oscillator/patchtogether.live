@@ -71,4 +71,16 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   'destroy',
   'warps',
   'ringback',
+  // Batch 6 — Moog System 55/35 sources & utilities (2026-06-26): only the
+  // CONVENTION-card members go here (no `card:` override, so the doc route's
+  // defLite resolves `<Type>Card` and the live virtual module mounts). Each card
+  // is a pure Knob + segmented-switch buttons + PatchPanel — no onMount/$effect,
+  // no canvas/rAF/WebGL, no Web-MIDI panel, no file input — the macrooscillator
+  // profile — so it mounts cleanly in the engine-less doc sandbox. Verified live
+  // by docs-virtual-module.spec.ts. The override-card siblings (903a / 956 / 961
+  // / 962 / 994) stay STATIC — see strict-docs.ts.
+  'moog921Vco',
+  'moog921a',
+  'moog921b',
+  'moog995',
 ]);

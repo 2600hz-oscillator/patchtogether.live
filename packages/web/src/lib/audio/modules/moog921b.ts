@@ -76,6 +76,36 @@ export const moog921bDef: AudioModuleDef = {
     { id: 'level',     label: 'Level', defaultValue: 1, min: 0,   max: 2,  curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 921B Oscillator — the slaved (sound-making) half of the System 55/35 two-part oscillator. It has NO 1V/oct jack of its own: its pitch comes from a 921A driver's FREQ BUS, so several 921Bs sharing one 921A play in unison and you tune the whole bank from the driver. Off one core it presents four fixed-level simultaneous waveform outputs — sine, triangle, saw, rectangular — across ~1 Hz to 40 kHz, with two linear-FM inputs (a DC-coupled and an AC/cap-coupled one) and a hard/soft sync input. The FREQ (fine) and RANGE (octave footage) knobs offset its pitch relative to the bus, so each 921B in a bank can be detuned or octave-shifted off the shared pitch. Mental model: a 921 VCO whose pitch is fed by the bus instead of a knob, built for stacked unison/detune voices.",
+    inputs: {
+      freq_bus:
+        "1V/oct pitch CV from a 921A driver's freq bus (0 = C4) — this is how the 921B gets its pitch. Patch the driver's FREQ BUS output here; the FREQ + RANGE knobs offset on top of it.",
+      width_bus:
+        "Pulse-width CV from a 921A driver's width bus; sets the rectangular output's duty cycle. Unpatched it normals to 0.5 (a 50% square).",
+      dc_mod:
+        "DC-coupled linear FM input: added to the frequency in Hz and scaled by the FM knob. Because it is DC-coupled, a steady offset here shifts the pitch (good for envelope-to-pitch), and audio here gives linear FM.",
+      ac_mod:
+        "AC-coupled (cap-coupled) linear FM input: a DC-blocking high-pass runs first, so a DC offset on the modulator does NOT bend the pitch — only its alternating content modulates. Scaled by the FM knob; use it for vibrato/FM that won't drift the tuning.",
+      sync:
+        "External sync source: each rising edge resets (hard) or nudges (soft) the oscillator's phase per the SYNC switch, locking it to the incoming signal for hard-sync sweeps.",
+    },
+    outputs: {
+      sine: "The pure sine tap (fixed level), the fundamental with no harmonics.",
+      triangle: "The triangle tap (fixed level) — soft and hollow, gentler than the saw.",
+      saw: "The band-limited sawtooth tap (fixed level) — the brightest, all-harmonics waveform.",
+      rect: "The rectangular / pulse tap (fixed level); its duty cycle follows the width bus (50% when unpatched).",
+    },
+    controls: {
+      fine: "FREQ — a ±12-semitone (2-octave) fine tuning offset applied on top of the bus pitch, for detuning this 921B against others in the bank.",
+      range: "RANGE — octave footage, a discrete ±5-octave coarse offset on top of the bus pitch, to stack a 921B an octave (or several) above/below its siblings.",
+      modAmount: "FM — linear-FM depth, ±1, shared by both the DC and AC modulate inputs; at 0 both FM jacks are silent.",
+      syncMode: "SYNC switch: -1 = soft sync (a gentle phase nudge), 0 = off, +1 = hard sync (a full phase reset on each edge of the sync input).",
+      level: "Output gain on every waveform tap, 0 to 2 (1 = unity) — the 921B's built-in VCA.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

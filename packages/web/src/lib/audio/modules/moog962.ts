@@ -60,6 +60,25 @@ export const moog962Def: AudioModuleDef = {
     { id: 'stages', label: 'Stages', defaultValue: 3, min: 2, max: 3, curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 962 Sequential Switch — a gate-advanced signal selector (a routing 'rotary' driven by a clock). Up to three inputs (IN 1–3) feed a single OUTPUT, and exactly one input is connected at a time; each rising edge on the SHIFT gate steps the selector to the next input (1 → 2 → 3 → 1, or 1 ↔ 2 when STAGES is set to 2). It is the 4-plexer's selector trimmed to three inputs and one output. The ports are typed as CV but route audio identically (the engine connects node-to-node regardless of cable type), so it works as a clocked source-switcher for either audio or CV: feed three oscillators (or three CVs) and clock SHIFT to cycle which one reaches the output. Mental model: a one-pole, up-to-3-throw rotary switch advanced by a trigger.",
+    inputs: {
+      in1: "Signal input 1 (audio or CV) — selected and passed to the output when the selector is on position 1.",
+      in2: "Signal input 2 — passed to the output when the selector is on position 2.",
+      in3: "Signal input 3 — passed to the output when the selector is on position 3 (used only when STAGES = 3).",
+      shift:
+        "The advance gate: each rising edge steps the selector to the next input (wrapping after the last active stage). Patch a clock/trigger here to cycle the inputs in time; it acts once per edge, not while held.",
+    },
+    outputs: {
+      out: "Carries whichever input is currently selected — a single output that jumps from input to input on each SHIFT pulse.",
+    },
+    controls: {
+      stages:
+        "How many inputs the selector cycles through: 2 (alternate IN 1 ↔ IN 2, ignoring IN 3) or 3 (rotate IN 1 → 2 → 3 → 1). Default 3.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
