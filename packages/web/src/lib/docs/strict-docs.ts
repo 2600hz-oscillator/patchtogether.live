@@ -301,4 +301,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'skifree',
   'spectrograph',
   'wavesculpt',
+  // Video batch 1 (2026-06-26): classic single-effect video processors.
+  'cellshade',
+  'chromakey',
+  'edges',
+  'colorizer',
+  'luma',
+  'lumakey',
 ]);

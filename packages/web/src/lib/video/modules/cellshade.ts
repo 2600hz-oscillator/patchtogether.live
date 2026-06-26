@@ -454,6 +454,25 @@ export const cellshadeDef: VideoModuleDef = {
     { id: 'bits',      label: 'Bits',   defaultValue: CELLSHADE_DEFAULTS.bits,      min: 0, max: CELLSHADE_BIT_STEPS.length - 1, curve: 'discrete' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "cellshade is a cel-shader: it remakes the incoming video as a flat, toon/retro-game look by quantizing the colour to a small palette and inking the salient contours as solid black outlines. It quantizes two ways depending on the chosen bit depth — low depths (2/4/16 colours) posterize in HSV: brightness is collapsed into a few flat tonal bands while hue and saturation are kept (fully at 2/4 colours, gently stepped at the 16-colour budget) for the hand-painted cel look, whereas the 8-bit and 16-bit steps use the authentic console RGB 3-3-2 and 5-6-5 per-channel allocations for the SNES-era hi-colour look. A reused Sobel edge pass (same gate and width as the EDGES module) finds the luminance contours and composites them as black ink over the quantized colour. It is stateless per frame, so the effect tracks the live source with no feedback; pick a low bit depth for painterly cel art or a high one for retro hi-colour, then dial Thresh/Thick to control how heavily it inks.",
+    inputs: {
+      in: "The RGB video source to cel-shade. Its colour is quantized and its luminance contours are inked as black outlines; with no input the output is solid black.",
+      threshold: "CV input that modulates Thresh, sweeping the edge gate linearly over its full 0..1 range — higher CV inks fewer, stronger contours.",
+      thickness: "CV input that modulates Thick, sweeping the ink stroke width linearly over its 1..max px range — higher CV makes the black outlines wider.",
+      bits: "CV input that modulates Bits using a discrete cvScale, so the CV snaps to the 5 colour-depth steps (1/2/4/8/16-bit) rather than sweeping continuously.",
+    },
+    outputs: {
+      out: "The cel-shaded video frame: the quantized retro-palette colour with black ink strokes drawn over the detected contours.",
+    },
+    controls: {
+      threshold: "Thresh — the edge gate (normalized Sobel gradient magnitude, 0..1, default 0.2, shared with EDGES). Lower inks more/weaker contours; higher inks only the strongest edges, fewer lines.",
+      thickness: "Thick — ink stroke width in pixels (1..max, default 2, shared with EDGES). It dilates the edge mask, so higher values make the black outlines wider; 1 is a thin single-pixel line.",
+      bits: "Bits — a 5-step discrete control selecting colour depth: 1-bit (2 colours), 2-bit (4), 4-bit (16), 8-bit (256, RGB 3-3-2), 16-bit (65536, RGB 5-6-5). Default is 4-bit/16 colours; the card shows the current bit value and colour count. Low steps give a flat luma-band cel look, high steps the hi-colour console look.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

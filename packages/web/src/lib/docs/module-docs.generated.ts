@@ -296,6 +296,23 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "snh": "Sample & hold on the pitch output, on by default: when on (the card's S&H face button), in FREEFORM mode the pitch CV is rewritten only when a gate fires and otherwise holds, so the pitch doesn't smear as the cursor passes over silent pads; turn it off for continuous re-emit on every cursor move. The LFO outputs are never held."
     }
   },
+  "cellshade": {
+    "explanation": "cellshade is a cel-shader: it remakes the incoming video as a flat, toon/retro-game look by quantizing the colour to a small palette and inking the salient contours as solid black outlines. It quantizes two ways depending on the chosen bit depth — low depths (2/4/16 colours) posterize in HSV: brightness is collapsed into a few flat tonal bands while hue and saturation are kept (fully at 2/4 colours, gently stepped at the 16-colour budget) for the hand-painted cel look, whereas the 8-bit and 16-bit steps use the authentic console RGB 3-3-2 and 5-6-5 per-channel allocations for the SNES-era hi-colour look. A reused Sobel edge pass (same gate and width as the EDGES module) finds the luminance contours and composites them as black ink over the quantized colour. It is stateless per frame, so the effect tracks the live source with no feedback; pick a low bit depth for painterly cel art or a high one for retro hi-colour, then dial Thresh/Thick to control how heavily it inks.",
+    "inputs": {
+      "bits": "CV input that modulates Bits using a discrete cvScale, so the CV snaps to the 5 colour-depth steps (1/2/4/8/16-bit) rather than sweeping continuously.",
+      "in": "The RGB video source to cel-shade. Its colour is quantized and its luminance contours are inked as black outlines; with no input the output is solid black.",
+      "thickness": "CV input that modulates Thick, sweeping the ink stroke width linearly over its 1..max px range — higher CV makes the black outlines wider.",
+      "threshold": "CV input that modulates Thresh, sweeping the edge gate linearly over its full 0..1 range — higher CV inks fewer, stronger contours."
+    },
+    "outputs": {
+      "out": "The cel-shaded video frame: the quantized retro-palette colour with black ink strokes drawn over the detected contours."
+    },
+    "controls": {
+      "bits": "Bits — a 5-step discrete control selecting colour depth: 1-bit (2 colours), 2-bit (4), 4-bit (16), 8-bit (256, RGB 3-3-2), 16-bit (65536, RGB 5-6-5). Default is 4-bit/16 colours; the card shows the current bit value and colour count. Low steps give a flat luma-band cel look, high steps the hi-colour console look.",
+      "thickness": "Thick — ink stroke width in pixels (1..max, default 2, shared with EDGES). It dilates the edge mask, so higher values make the black outlines wider; 1 is a thin single-pixel line.",
+      "threshold": "Thresh — the edge gate (normalized Sobel gradient magnitude, 0..1, default 0.2, shared with EDGES). Lower inks more/weaker contours; higher inks only the strongest edges, fewer lines."
+    }
+  },
   "charlottesEchos": {
     "explanation": "A destructive multi-head stereo delay — a four-stage cascade of echoes that colour and degrade the source rather than repeating it cleanly. Each of the four stages tap the delayed signal in turn; FEEDBACK is fed to every stage so repeats compound across the chain into smeared, endless tails, DECAY progressively tapers each later stage's level and adds in-loop high-frequency loss for a darkening, dub-like decay, and PITCHUP shifts each stage up by a fixed ratio so the cascaded echoes climb in pitch — the classic ascending-shimmer effect. It is the audio sibling of the video-domain VDELAY, and roughly the sound of four COCOA DELAYs stacked in serial. Reach for it when you want the wet path to abuse the signal.",
     "inputs": {
@@ -363,6 +380,30 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "tight": "RESONANT FILTER: the tightness macro (0..1) tightening the body's snap; when LINK is on it moves together with Q and Damping.",
       "tone": "Output low-pass tone (50–4000 Hz, log) — rolls off the top end of the whole kick.",
       "width": "PULSE SHAPE: width of the excitation pulse (0.1–50 ms, log) — how long the strike pushes the body before it decays; shown in the envelope preview."
+    }
+  },
+  "chromakey": {
+    "explanation": "chromakey is a two-input green-screen compositor: it takes a foreground video (the layer shot against a key colour) and a background video, and replaces every foreground pixel whose hue is close to the chosen key colour with the matching background pixel. Per pixel it converts foreground and key colour to HSV, measures the hue distance, and builds an alpha via smoothstep over the thr/soft window (alpha 0 = show background, alpha 1 = keep foreground); near-gray pixels are biased toward keep so shadows and highlights are not punched out, and edge pixels are desaturated by the spill amount to kill the key-colour halo. Pick the key colour with the swatch (defaults to pure green), then tune thr until the backdrop drops out cleanly, raise soft to feather the matte edge, and add spill to remove green fringing on the subject; if no foreground is patched it just passes the background through.",
+    "inputs": {
+      "bg": "Background video frame — composited in wherever the foreground is keyed out; shown directly if no foreground is patched.",
+      "fg": "Foreground video frame — the layer shot against the key colour that gets keyed out where its hue matches.",
+      "keyB": "CV input that modulates the B control — the blue component of the key colour (linear 0..1).",
+      "keyG": "CV input that modulates the G control — the green component of the key colour (linear 0..1).",
+      "keyR": "CV input that modulates the R control — the red component of the key colour (linear 0..1).",
+      "softness": "CV input that modulates the Soft control — the feathering width of the matte edge (linear 0..0.5).",
+      "spillSuppress": "CV input that modulates the Spill control — how aggressively key-colour spill is desaturated from foreground edges (linear 0..1).",
+      "threshold": "CV input that modulates the Thr control — how close a pixel's hue must be to the key to be removed (linear 0..1)."
+    },
+    "outputs": {
+      "out": "The composited RGB video frame: foreground over background with the key colour replaced."
+    },
+    "controls": {
+      "keyB": "B — blue channel of the key colour, set via the colour-picker swatch (0..1); default 0 for the green-screen default.",
+      "keyG": "G — green channel of the key colour, set via the colour-picker swatch (0..1); default 1 so the keyer starts on a green screen.",
+      "keyR": "R — red channel of the key colour, set via the colour-picker swatch (0..1); part of the hue being matched, default 0 for the green-screen default.",
+      "softness": "Soft fader — smoothstep feathering of the matte edge (0..0.5, default 0.08); 0 = hard cutoff, higher = softer, more gradual key edge.",
+      "spillSuppress": "Spill fader — desaturates the foreground at edge pixels proportional to (1-alpha)*spill (0..1, default 0.5); 0 = off, 1 = full removal of key-colour halo from the subject.",
+      "threshold": "Thr fader — how close a pixel's hue must be to the key to be keyed out (0..1, default 0.15); higher widens the keyed hue band so more colour drops to background."
     }
   },
   "clipplayer": {
@@ -550,6 +591,23 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "wetVolume": "WET — level of the delayed/echo signal in the output (0–2.0, default 0.5), the amount ducking pulls down and what mix_cv modulates."
     }
   },
+  "colorizer": {
+    "explanation": "colorizer tints a mono (single-channel) video signal into a solid color. Each incoming pixel is reduced to a single brightness value by averaging its R, G and B channels, and that brightness then scales a tint color you set with the R/G/B faders: the output pixel is (mono x R, mono x G, mono x B). The result reads as a one-color image whose intensity follows the input's luma, so dark areas stay black and bright areas hit the full tint. Feed it a luma key, an oscilloscope-style mono shape or any video, then dial the three faders to recolor it; with no input connected the output is solid black.",
+    "inputs": {
+      "in": "The source frame to tint. It is treated as mono: the shader averages the pixel's R, G and B into one brightness value, so plugging in a full RGB video upcasts to its luma before tinting.",
+      "tintB": "CV input that modulates the B fader (the blue component of the tint), 0 to 1. Patch a modulation source here to animate the blue tint.",
+      "tintG": "CV input that modulates the G fader (the green component of the tint), 0 to 1. Patch a modulation source here to animate the green tint.",
+      "tintR": "CV input that modulates the R fader (the red component of the tint), 0 to 1. Patch an LFO or sequencer here to animate the red tint over time."
+    },
+    "outputs": {
+      "out": "The tinted RGB video frame: each pixel is the input's mono brightness multiplied by the (R, G, B) tint, fully opaque alpha."
+    },
+    "controls": {
+      "tintB": "Blue component of the tint color (fader labeled B). 0 = no blue; 1 = full blue at peak input brightness. Defaults to 0.7, which together with the R=1 / G=0.4 defaults gives a pinkish-rose default tint.",
+      "tintG": "Green component of the tint color (fader labeled G). 0 = no green; 1 = full green at peak input brightness. Defaults to 0.4.",
+      "tintR": "Red component of the tint color (fader labeled R). 0 removes red entirely; 1 lets the brightest input pixels reach full red. Defaults to 1."
+    }
+  },
   "cube": {
     "explanation": "A 3D wavetable-terrain oscillator. CUBE stacks THREE e352-style wavetables — FLOOR, WALL, and CEILING (each chosen from a factory table, a baked preset, or a loaded .wav) — into a solid 3D scalar field, then plays the heightmap of an arbitrary flat plane sliced through that field as its waveform. You aim the slicing plane with one height knob (Y) and three rotation knobs (Rot X / Y / Z); as the plane tilts and rises it carves a different surface contour, so sweeping those knobs (or their CV inputs) morphs the timbre continuously. MORPH cross-fades the floor↔ceiling layers, CONNECT (with CONNECT STRENGTH) bulges the field's interior, CRUSH bit-reduces the read-out waveform while SPACE CRUSH voxelizes and SPACE DIFFUSE warps the 3D lookup coordinates, and FOLD is a west-coast wavefolder on the output — together they sculpt the slice from clean to mangled. It is a pitched V/oct oscillator with a stereo ±5% SPREAD (the L and R taps read slightly offset planes for width) and an internal per-voice A/D/S/R envelope that, riding a BASE volume floor, shapes amplitude once a note arrives on the poly bus or the TRIG gate; with nothing patched there it free-runs as a continuous drone. A live WebGL 3D render of the cube, the cut plane, the slice cross-section, and the output waveform is shown on the card and can be sent out the VIDEO port; the screen can be switched off to save GPU when you only want sound.",
     "inputs": {
@@ -735,6 +793,21 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "sustain": "Master-VCA sustain level (0 to 1) — the amplitude a held note settles at after attack+decay, maintained until the gate releases. 1 (default) is full level, i.e. effectively pass-through of the patch's own envelopes.",
       "transpose": "Global pitch offset in semitones (-24 to +24) applied to every voice on top of the preset's own transpose — shift the whole instrument up or down by up to two octaves.",
       "voiceCount": "Polyphony cap, 1 to 5 — how many notes can sound at once before a new note steals the oldest voice. Set it to 1 for a strictly monophonic patch, or up to 5 for full chords."
+    }
+  },
+  "edges": {
+    "explanation": "edges is a stateless Sobel edge-detector for video: it runs a 3x3 luminance gradient (Rec. 601 luma) over the incoming frame and emits a high-contrast mono-video frame that is white wherever a brightness edge was found and black everywhere else. The detection has no feedback or history, so the white outlines track and morph live with whatever moves in the source. After the threshold test it morphologically dilates the mask (max over a square neighbourhood) so 1px contours render as fatter strokes. Use it to pull line-art/outlines from a camera or any video source, feed a key/mask downstream, or stack it with a colorizer for a glowing-wireframe look; if you get too much speckle raise thresh, if outlines are too thin raise thick.",
+    "inputs": {
+      "in": "The video frame to edge-detect. Its per-pixel Rec. 601 luminance is run through the 3x3 Sobel operator; with nothing patched here the output is solid black.",
+      "thickness": "CV input that modulates Thick — drives the rendered edge width / dilation radius in pixels. Linear-scaled into the 1..8 px control range and clamped so it cannot blow up the dilation loop.",
+      "threshold": "CV input that modulates Thresh — raising it via CV keeps only the strongest gradients (fewer white pixels), lowering it lets faint edges through. Linear-scaled into the 0..1 control range."
+    },
+    "outputs": {
+      "out": "A mono-video frame of white edges on a black background (all three RGB channels written to the same value, so plain video consumers also see white)."
+    },
+    "controls": {
+      "thickness": "Thick is the rendered edge width in pixels (1..8 px, default 2). 1 px is the raw single-texel edge with no dilation; higher values dilate the mask by taking the max over a square neighbourhood of radius round(thickness)-1, fattening the strokes up to the set width.",
+      "threshold": "Thresh sets the normalised gradient magnitude (in luma-step units) at or above which a pixel counts as an edge. 0 = every pixel passes so the whole frame floods white; 1 = almost nothing passes (a near-full unit luma step is needed); default 0.2 catches salient contours without low-contrast texture noise."
     }
   },
   "elements": {
@@ -1552,6 +1625,43 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
   },
   "livecode": {
     "explanation": "A live-coding module: a small scripting language that builds and patches the rack from text. Its card is a code editor with a Run button and an output log; the script can spawn modules, set parameters, and wire cables, and it can register clocked(division, fn) callbacks that run in time with the rack clock (each one spawns its own CLOCKED runner module). It has no audio jacks of its own — it's a side tool that mutates the patch graph, and its changes sync to other people in the rackspace through the shared document like any other edit. It's registered in the audio domain only because the rack already has an audio engine; its factory does no audio work."
+  },
+  "luma": {
+    "explanation": "luma is a luminance-domain color processor for a single video stream. It reads the Rec. 601 brightness (0.299/0.587/0.114) of every pixel, runs that luma through a chain of gamma, contrast (scaled around the 0.5 midpoint), posterize (quantize to N steps), then an additive bias, and finally re-applies the new-luma/old-luma ratio to all three RGB channels so chroma (hue and saturation) is preserved while only tonality changes. Patch a video source into in and use it to crush blacks, lift gamma, flatten the image into hard tonal bands, or shift overall brightness; with the defaults (gamma 1, cntr 1, post 16, bias 0) the picture passes through essentially untouched. Note this is NOT a keyer — for foreground/background luma compositing use lumakey instead.",
+    "inputs": {
+      "bias": "CV input that modulates Bias; linear-scaled voltage adds a final brightness offset to the processed luma.",
+      "contrast": "CV input that modulates Cntr; linear-scaled voltage sets how hard the luma is scaled around the 0.5 midpoint.",
+      "gamma": "CV input that modulates Gamma; a linear-scaled control voltage drives the gamma-correction exponent applied to the luma.",
+      "in": "The video frame to process. With nothing patched here the output is solid black; otherwise the luma chain runs on this RGB image.",
+      "posterizeLevels": "CV input that modulates Post; discrete-scaled voltage chooses the number of luma quantization steps (banding amount)."
+    },
+    "outputs": {
+      "out": "The luma-processed video frame: the same RGB image with gamma, contrast, posterize and bias applied to its brightness while chroma (hue and saturation) is preserved (opaque alpha)."
+    },
+    "controls": {
+      "bias": "Bias fader — a final additive luma offset, range -0.5 to 0.5; negative depresses overall brightness, positive lifts it, 0 leaves it unchanged.",
+      "contrast": "Cntr fader — contrast scaling of the luma around 0.5, range 0 to 2; 1.0 is pristine, 0 flattens everything to mid-grey, values above 1 push tones apart for harder contrast.",
+      "gamma": "Gamma fader — gamma correction of the luma via pow(luma, 1/gamma), range 0.1 to 3.0; 1.0 is linear/untouched, below 1 darkens midtones, above 1 brightens them.",
+      "posterizeLevels": "Post fader — number of luma quantization steps, range 2 to 16; 16 is effectively off (no visible banding) and 2 crushes the image to two hard tonal bands."
+    }
+  },
+  "lumakey": {
+    "explanation": "lumakey is a two-input luminance-key compositor: it lays a foreground frame over a background frame and decides, pixel by pixel, which one shows through based on how bright the foreground is. It computes Rec. 601 luma of the foreground, then builds an alpha mask with smoothstep(threshold - softness, threshold + softness, luma) so bright foreground pixels become opaque (alpha 1, foreground shows) and dark ones drop out (alpha 0, background bleeds through), finally mixing background toward foreground by that alpha. Use it to matte out a black or white plate behind a source, drop text/letterbox overlays onto a scene, or composite a bright source over another video; flip invert to key on the dark areas instead. With no foreground patched it passes the background straight through so a half-wired chain is never a black hole.",
+    "inputs": {
+      "bg": "Background video frame that shows through wherever the foreground is keyed out. If unbound it is treated as solid black behind the keyed foreground.",
+      "fg": "Foreground video frame. Its luma drives the key: bright pixels stay opaque, dark pixels are matted out (or the reverse when invert is on). With nothing patched here the module passes the background through unchanged.",
+      "invert": "CV input that modulates the INV control; a high value flips the key so dark foreground becomes opaque instead of bright (discrete scaling).",
+      "softness": "CV input that modulates the Soft control, widening or tightening the edge feather around the key threshold (linear scaling into Soft's 0..0.5 range).",
+      "threshold": "CV input that modulates the Thr control, sliding the luma cut point where the foreground becomes opaque (linear scaling into Thr's 0..1 range)."
+    },
+    "outputs": {
+      "out": "The composited RGB video frame: foreground over background blended per pixel by the luma-derived alpha mask (alpha is fully opaque)."
+    },
+    "controls": {
+      "invert": "INV button flips the key direction: off (0) keeps bright foreground opaque and mattes the dark out; on (1) keeps dark foreground opaque and mattes the bright out (discrete 0/1, default 0/off).",
+      "softness": "Soft fader sets the smoothstep feather around the threshold: 0 (clamped to a tiny minimum) gives a hard, crisp key edge, while higher values blend foreground and background over a wider luma band for a soft matte (0..0.5, default 0.1).",
+      "threshold": "Thr fader sets the foreground luma level at which it becomes opaque. Lower values key in more of the foreground (only the darkest pixels drop out); higher values matte out more of it, letting the background through (0..1, default 0.5)."
+    }
   },
   "macrooscillator": {
     "explanation": "A Plaits-style macro oscillator: one MODEL switch chooses among 14 self-contained synthesis engines (VA, WAVESHAPE, FM 2-OP, FM 6-OP, CHORD, ADDITIVE, STRING, MODAL, KICK, SNARE, HIHAT, WAVETABLE, GRANULAR, SPEECH), and every one of them is driven by the same three universal macro controls — HARMONICS, TIMBRE, MORPH — plus a NOTE offset and a LEVEL. Mental model: PITCH (V/oct, 0 V = C4) sets the fundamental, NOTE transposes it in semitones, the three macros sculpt the spectrum (their exact meaning is model-dependent — e.g. on VA harmonics is detune / timbre is a wavefolder / morph crossfades saw→square→triangle; on FM harmonics picks the carrier:modulator ratio / timbre is the modulation index / morph is feedback; on the drum models the macros shape pitch-sweep, click and decay), and a rising edge into TRIG strikes / restarts the model (phase reset for the oscillators, envelope retrigger for the percussion and string). All 14 engines run every sample so switching MODEL is glitch-free; OUT is the post-LEVEL main signal and AUX is a clean, level-independent secondary tap.",

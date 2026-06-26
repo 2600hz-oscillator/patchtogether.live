@@ -91,6 +91,25 @@ export const colorizerDef: VideoModuleDef = {
     { id: 'tintB', label: 'B', defaultValue: DEFAULTS.tintB, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "colorizer tints a mono (single-channel) video signal into a solid color. Each incoming pixel is reduced to a single brightness value by averaging its R, G and B channels, and that brightness then scales a tint color you set with the R/G/B faders: the output pixel is (mono x R, mono x G, mono x B). The result reads as a one-color image whose intensity follows the input's luma, so dark areas stay black and bright areas hit the full tint. Feed it a luma key, an oscilloscope-style mono shape or any video, then dial the three faders to recolor it; with no input connected the output is solid black.",
+    inputs: {
+      in: "The source frame to tint. It is treated as mono: the shader averages the pixel's R, G and B into one brightness value, so plugging in a full RGB video upcasts to its luma before tinting.",
+      tintR: "CV input that modulates the R fader (the red component of the tint), 0 to 1. Patch an LFO or sequencer here to animate the red tint over time.",
+      tintG: "CV input that modulates the G fader (the green component of the tint), 0 to 1. Patch a modulation source here to animate the green tint.",
+      tintB: "CV input that modulates the B fader (the blue component of the tint), 0 to 1. Patch a modulation source here to animate the blue tint.",
+    },
+    outputs: {
+      out: "The tinted RGB video frame: each pixel is the input's mono brightness multiplied by the (R, G, B) tint, fully opaque alpha.",
+    },
+    controls: {
+      tintR: "Red component of the tint color (fader labeled R). 0 removes red entirely; 1 lets the brightest input pixels reach full red. Defaults to 1.",
+      tintG: "Green component of the tint color (fader labeled G). 0 = no green; 1 = full green at peak input brightness. Defaults to 0.4.",
+      tintB: "Blue component of the tint color (fader labeled B). 0 = no blue; 1 = full blue at peak input brightness. Defaults to 0.7, which together with the R=1 / G=0.4 defaults gives a pinkish-rose default tint.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
