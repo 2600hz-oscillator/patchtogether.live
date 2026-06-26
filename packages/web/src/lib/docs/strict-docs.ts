@@ -56,4 +56,17 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'unityscalemathematik',
   'sampleHold',
   'slewSwitch',
+  // Batch 4 — effects (2026-06-26): the wet-FX cluster — the basic reverb &
+  // delay, the granular CLOUDS, the SHIMMERSHINE/AQUATANK reverb-resonators,
+  // the destructive CHARLOTTE'S ECHOS multi-tap delay, the DESTROY bitcrusher,
+  // the WARPS meta-modulator, and the RINGBACK stereo crush.
+  'reverb',
+  'delay',
+  'clouds',
+  'charlottesEchos',
+  'shimmershine',
+  'aquaTank',
+  'destroy',
+  'warps',
+  'ringback',
 ]);

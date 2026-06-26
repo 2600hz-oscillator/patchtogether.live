@@ -57,4 +57,18 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   'unityscalemathematik',
   'sampleHold',
   'slewSwitch',
+  // Batch 4 — effects (2026-06-26): every card in this cluster is a pure
+  // Knob/Fader + PatchPanel (clouds adds one $derived FREEZE toggle button, no
+  // onMount/$effect) — no canvas/rAF/WebGL, no Web-MIDI panel, no file input,
+  // no `card:` override — the macrooscillator profile — so each mounts cleanly
+  // in the engine-less doc sandbox. Verified live by docs-virtual-module.spec.ts.
+  'reverb',
+  'delay',
+  'clouds',
+  'charlottesEchos',
+  'shimmershine',
+  'aquaTank',
+  'destroy',
+  'warps',
+  'ringback',
 ]);
