@@ -111,13 +111,18 @@ test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV
   await page.screenshot({ path: 'test-results/module-annotate-port-popover.png' });
 });
 
-test('undocumented module (analogVco): NO Annotate entry', async ({ page }) => {
+test('undocumented module (toybox): NO Annotate entry', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await spawnModule(page, 'analogVco', 'Analog VCO');
+  // toybox is the PERMANENT docs exemption (never authored — see the coverage
+  // ratchet), so it stays the stable "no authored docs" fixture as the rollout
+  // documents every other module. analogVco used to be here but is now
+  // documented (batch 1), which would (correctly) surface an Annotate entry.
+  await spawnModule(page, 'toybox', 'toybox');
 
-  const menu = await openModuleMenu(page, 'analogVco');
-  // Docs (external page) still present, but NO on-canvas Annotate entry.
+  const menu = await openModuleMenu(page, 'toybox');
+  // Docs (external page) is always present; the on-canvas Annotate entry is
+  // gated on authored docs, so it must be absent for the exempt module.
   await expect(menu.locator('[role="menuitem"]', { hasText: 'Docs' })).toBeVisible();
   await expect(menu.getByTestId('ctx-annotate')).toHaveCount(0);
 });

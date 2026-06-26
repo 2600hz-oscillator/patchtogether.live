@@ -115,6 +115,48 @@ export const analogVcoDef: AudioModuleDef = {
     { id: 'shape',    label: 'Wave', defaultValue: 0,   min: 0,     max: 1,    curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "The analog VCO is a classic analog-modeled voltage-controlled oscillator that generates four simultaneous waveforms (sawtooth, square, triangle, sine) on separate outputs, plus a continuous morphing output that sweeps from saw through sine to square driven by the shape parameter. It accepts V/oct pitch CV with coarse/fine tuning controls, audio-rate frequency and phase modulation with depth controls, and hard-sync input for phase-locking to another oscillator. The mental model is a single oscillator core with multiple simultaneous taps (like a hardware Moog VCO) plus an interactive waveform morpher — patch the raw waveforms to filters/mixers, use morph for smooth real-time texture, and chain sync ports for rich polysynth interactions.",
+    inputs: {
+      pitch:
+        "V/oct pitch input (0V = C4) that drives the oscillator frequency; modulated by the tune, fine, and FM inputs together to set the final sounding pitch.",
+      fm: "Audio-rate frequency modulation input (typically an LFO or envelope), scaled by the fmAmount parameter to add wobble, vibrato, or dramatic pitch sweeps without changing the coarse tuning.",
+      pm: "Audio-rate phase modulation input (typically an LFO or envelope), scaled by the pmAmount parameter to add timbre modulation and metallic character, especially effective on the square and triangle taps.",
+      sync: "Hard-sync input that resets this oscillator's phase to zero on every rising edge, allowing you to lock its waveform to a master oscillator for rich, metallic, or aliased tones. When unpatched, the VCO output is unchanged from a version with no sync port.",
+      tune: "CV modulation of the tune parameter (semitones); displaces the coarse pitch knob left/right so an external LFO or sequencer can transpose in whole-step intervals without affecting fine tuning.",
+      fine: "CV modulation of the fine parameter (cents); displaces the fine tuning knob left/right for subtle pitch micro-adjustments or vibrato-style modulation around the coarse pitch.",
+      fmAmount:
+        "CV modulation of the FM depth; displaces the FM-depth knob left/right to dynamically scale how much the fm input affects the pitch — turn it up to let an envelope open the frequency sweep, or down to tighten it.",
+      pmAmount:
+        "CV modulation of the PM depth; displaces the PM-depth knob left/right to dynamically scale how much the pm input affects the phase and timbre — open it up from an envelope to add evolving color.",
+      shape:
+        "CV modulation of the morph output waveform (0 = sawtooth, 0.5 = sine, 1 = square); displaces the shape knob left/right so an external LFO, envelope, or sequencer can crossfade the morph output through the three classic waveforms in real time.",
+    },
+    outputs: {
+      saw: "The raw sawtooth waveform (rich harmonic content, bright and buzzy), always sounding at the pitch CV regardless of the shape or morph knob.",
+      square:
+        "The raw square/pulse waveform (hollow, woody tone), pulse width set by the pw parameter — use this tap to feed a filter or as-is for bright synth bass.",
+      triangle:
+        "The raw triangle waveform (softer than square, more mellow), useful for warmth or blended with other taps through a mixer.",
+      sine: "The pure sine waveform (no harmonics, pure fundamental), ideal for clean sub-bass, tone modulation, or as a base mixed with other waveforms.",
+      morph:
+        "Continuous morphing output that sweeps from sawtooth (shape = 0) through sine (shape = 0.5) to square (shape = 1) as the shape parameter changes; shaped by the shape knob and its CV input, and reflects any FM/PM modulation in real time. The on-card scope displays this output live so you see the crossfade happening.",
+      sync: "Hard-sync output — a one-sample +1 pulse at each cycle boundary (phase wrap) so it can clock another VCO's sync input for chained oscillator interactions or external gear. When unplugged, the sync output is silent.",
+    },
+    controls: {
+      tune: "Coarse pitch in semitones (−36 to +36) — shift the whole oscillator up or down by whole-step intervals. With CV modulation on, knob + CV add together, so a sequencer can select octaves while the knob sets a base pitch.",
+      fine: "Fine tuning in cents (−100 to +100, one cent = 1/100 of a semitone) — apply a perfectly-tuned unison detune when stacked with another oscillator, or dial in an exact note without coarse octave shifts.",
+      fmAmount:
+        "Depth of frequency modulation from the FM input (−1 to +1) — 0 means the fm input has no effect. Positive sweeps pitch upward, negative downward; patch an LFO here to add vibrato or ramp it from an envelope for dramatic pitch drops.",
+      pmAmount:
+        "Depth of phase modulation from the PM input (−1 to +1) — 0 means the pm input has no effect. Higher values shift the morph timbre more dramatically per unit of PM signal; use this to add envelope-driven color changes.",
+      pw: "Pulse width of the square waveform (0.05 to 0.95, duty cycle) — 0.5 is a perfect square, lower values create thin nasal pulses, higher values create inverted thin pulses. Animate this with an LFO for a classic PWM (pulse-width modulation) sweep.",
+      shape:
+        "Waveform selector for the morph output (0 to 1) — 0 = sawtooth, 0.5 = sine, 1 = square. Knob + CV modulation add together, so a sequencer or LFO can smoothly sweep through all three classic waveforms.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const faustNode = await instantiateFaustModule(ctx, { name: 'analog-vco', wasmUrl, metaUrl, workletUrl });
 
