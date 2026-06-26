@@ -94,6 +94,15 @@ async function injectScreens(
 }
 
 test.describe('BACKDRAFT — full output capabilities', () => {
+  // Heavy WebGL + fullscreen video spec: the BACKDRAFT preview canvas plus the
+  // requestFullscreen / full-frame transitions run slowly under CI's SwiftShader
+  // software renderer and occasionally spike past the default 30s — a chronic
+  // shard-1 TIMEOUT flake (notably the "Full Frame ↔ Full Screen mutually
+  // exclusive" case). Give the whole spec headroom; it still completes in
+  // ~15-25s on a real GPU, so this adds ~0 typical wall-time and only un-caps
+  // the slow-runner tail (the documented video-on-SwiftShader mitigation).
+  test.describe.configure({ timeout: 60_000 });
+
   test('right-click the preview opens the menu with Full Frame + Full Screen (Present hidden on single screen)', async ({ page }) => {
     const errors = await setup(page);
     await spawnBackdraft(page);

@@ -560,6 +560,16 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "mode": "RESPONSE switch — the gain law. LINEAR rises straight to ×2 at a 6 V control sum; EXPONENTIAL passes through that same ×2 at 6 V then climbs faster toward the ×3 ceiling (~7.5 V), the more musical curve for envelope-shaped amplitude. Defaults to LINEAR."
     }
   },
+  "moog903a": {
+    "explanation": "A clean-room recreation of the Moog 903A Random Signal Generator — the System 55/35 noise source. It generates two independent flavours of noise on two outputs at once: full-spectrum WHITE noise (equal energy per Hz, bright and hissy) and PINK noise (-3 dB/octave, equal energy per octave, darker and more natural-sounding). It has no inputs and no CV — just a single LEVEL knob that scales both taps together. Mental model: an analog noise panel; patch WHITE into a filter for percussion and S&H, or PINK for wind/rumble textures. (As CV, slow random noise into a sample & hold makes random voltages.)",
+    "outputs": {
+      "pink": "Pink noise, rolled off at -3 dB/octave (equal energy per octave) — darker and warmer than white, good for wind/rumble beds and gentler random textures.",
+      "white": "Full-spectrum white noise (equal energy at every frequency) — bright and hissy. Classic source for hi-hats/snares through a filter, or for sampling into a sample & hold."
+    },
+    "controls": {
+      "level": "Master output level applied to BOTH the white and pink taps at once, 0 (silent) to 1 (full). There is no per-output trim — the two taps always share this gain."
+    }
+  },
   "moog904a": {
     "explanation": "A clean-room recreation of the Moog 904A Voltage Controlled Low Pass Filter — the iconic 24 dB/octave transistor-ladder LPF at the heart of the Moog sound. It rolls off everything above the cutoff at a steep four-pole slope, warming and darkening the signal. The CUTOFF knob sets the corner, the RANGE switch shifts that corner in two-octave steps, and REGENERATION is the resonance (internal feedback): turn it up to emphasise the band right at the cutoff, and near maximum the filter self-oscillates into a clean sine — a playable voltage-controlled oscillator in its own right. A summing 1 V/octave control input sweeps the cutoff (patch an envelope or LFO here for the classic filter sweep) and a second CV input modulates the regeneration. The ladder core is the textbook zero-delay-feedback algorithm with a tanh per loop for the analog drive, not a port of any Moog schematic.",
     "inputs": {
@@ -665,6 +675,72 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "lp": "Level of the fixed LOW-PASS section at the bottom of the bank (corner ~100 Hz) — raise to add sub weight, cut to thin the bottom. Defaults to 0.5."
     }
   },
+  "moog921a": {
+    "explanation": "A clean-room recreation of the Moog 921A Oscillator Driver — the master half of the System 55/35 two-part oscillator. It is NOT a sound source: it makes no audio of its own. Instead it generates the two CONTROL VOLTAGES — a 1V/oct pitch bus and a pulse-width bus — that drive one or more slaved 921B oscillators, so a whole bank of 921Bs tracks one set of FREQUENCY/RANGE/WIDTH knobs (and one pitch CV) in perfect unison. Mental model: it is the pitch+width 'brain' you patch into every 921B's FREQ BUS and WIDTH BUS so they play together; tune here, hear it on the 921Bs.",
+    "inputs": {
+      "freq_cv": "1V/oct pitch CV summed onto the FREQ knob (and the RANGE compass) per sample, then sent out on the freq bus — patch a keyboard or sequencer here to play every slaved 921B at once.",
+      "width_cv": "Pulse-width CV summed onto the WIDTH knob per sample and passed through to the width bus, so an LFO here animates the pulse width of every 921B driven by this module simultaneously (ganged PWM)."
+    },
+    "outputs": {
+      "freq_bus": "The 1V/oct frequency control voltage. Patch it into each 921B's FREQ BUS input so they all follow this module's pitch (knob + freq_cv).",
+      "width_bus": "The 0..1 pulse-width control voltage. Patch it into each 921B's WIDTH BUS input so their rectangular outputs share one width (knob + width_cv)."
+    },
+    "controls": {
+      "freqRange": "RANGE switch: 1 = SEMITONE (the FREQUENCY pot spans a narrow ~2-octave window for fine tuning) / 2 = OCTAVE (the pot spans a wide ~12-octave compass for big sweeps).",
+      "frequency": "The FREQUENCY pot, a normalized -1..1 that the RANGE switch maps onto the pitch bus — the coarse tuning for every 921B this driver feeds.",
+      "width": "Pulse width sent on the width bus, 0 to 1 (0.5 = a 50% square), driving the rectangular output of every 921B that reads this bus."
+    }
+  },
+  "moog921b": {
+    "explanation": "A clean-room recreation of the Moog 921B Oscillator — the slaved (sound-making) half of the System 55/35 two-part oscillator. It has NO 1V/oct jack of its own: its pitch comes from a 921A driver's FREQ BUS, so several 921Bs sharing one 921A play in unison and you tune the whole bank from the driver. Off one core it presents four fixed-level simultaneous waveform outputs — sine, triangle, saw, rectangular — across ~1 Hz to 40 kHz, with two linear-FM inputs (a DC-coupled and an AC/cap-coupled one) and a hard/soft sync input. The FREQ (fine) and RANGE (octave footage) knobs offset its pitch relative to the bus, so each 921B in a bank can be detuned or octave-shifted off the shared pitch. Mental model: a 921 VCO whose pitch is fed by the bus instead of a knob, built for stacked unison/detune voices.",
+    "inputs": {
+      "ac_mod": "AC-coupled (cap-coupled) linear FM input: a DC-blocking high-pass runs first, so a DC offset on the modulator does NOT bend the pitch — only its alternating content modulates. Scaled by the FM knob; use it for vibrato/FM that won't drift the tuning.",
+      "dc_mod": "DC-coupled linear FM input: added to the frequency in Hz and scaled by the FM knob. Because it is DC-coupled, a steady offset here shifts the pitch (good for envelope-to-pitch), and audio here gives linear FM.",
+      "freq_bus": "1V/oct pitch CV from a 921A driver's freq bus (0 = C4) — this is how the 921B gets its pitch. Patch the driver's FREQ BUS output here; the FREQ + RANGE knobs offset on top of it.",
+      "sync": "External sync source: each rising edge resets (hard) or nudges (soft) the oscillator's phase per the SYNC switch, locking it to the incoming signal for hard-sync sweeps.",
+      "width_bus": "Pulse-width CV from a 921A driver's width bus; sets the rectangular output's duty cycle. Unpatched it normals to 0.5 (a 50% square)."
+    },
+    "outputs": {
+      "rect": "The rectangular / pulse tap (fixed level); its duty cycle follows the width bus (50% when unpatched).",
+      "saw": "The band-limited sawtooth tap (fixed level) — the brightest, all-harmonics waveform.",
+      "sine": "The pure sine tap (fixed level), the fundamental with no harmonics.",
+      "triangle": "The triangle tap (fixed level) — soft and hollow, gentler than the saw."
+    },
+    "controls": {
+      "fine": "FREQ — a ±12-semitone (2-octave) fine tuning offset applied on top of the bus pitch, for detuning this 921B against others in the bank.",
+      "level": "Output gain on every waveform tap, 0 to 2 (1 = unity) — the 921B's built-in VCA.",
+      "modAmount": "FM — linear-FM depth, ±1, shared by both the DC and AC modulate inputs; at 0 both FM jacks are silent.",
+      "range": "RANGE — octave footage, a discrete ±5-octave coarse offset on top of the bus pitch, to stack a 921B an octave (or several) above/below its siblings.",
+      "syncMode": "SYNC switch: -1 = soft sync (a gentle phase nudge), 0 = off, +1 = hard sync (a full phase reset on each edge of the sync input)."
+    }
+  },
+  "moog921Vco": {
+    "explanation": "A clean-room recreation of the Moog 921 Voltage Controlled Oscillator — the standalone, fully self-contained version of the System 55/35 oscillator (the 921A driver + 921B slave packed into one module). One oscillator core presents FOUR simultaneous waveform jacks off the same pitch — sine, triangle, sawtooth, and a rectangular pulse whose duty cycle you set with WIDTH — so you can take a pure sine to one place and a buzzy saw to another from a single voice. Pitch is exponential 1V/oct (0 V at the PITCH jack = C4), set by the RANGE (octave) and FREQ (fine) knobs and tracked across roughly 1 Hz to 40 kHz, with a dedicated LINEAR FM input for through-zero-style timbral modulation and a sync input that locks the core's phase to an external source. Mental model: it's a normal analog VCO with the Moog-ladder oscillator's band-limited (polyBLEP) waveshapes, four taps instead of a waveform selector.",
+    "inputs": {
+      "level": "CV that displaces the output LEVEL, acting as a built-in VCA on every waveform tap — patch an envelope here to shape the oscillator's amplitude without an external VCA.",
+      "linFmAmount": "CV that displaces the LIN FM depth knob, so you can modulate how much linear FM the lin_fm input applies (e.g. open the FM with an envelope for a percussive attack).",
+      "lin_fm": "Audio-rate LINEAR frequency modulation input — adds to the frequency in Hz (not exponentially), so the modulation depth stays constant in pitch terms across the keyboard rather than widening with pitch. Its depth is set by the LIN FM knob; patch another oscillator here for clangorous FM/bell timbres.",
+      "octave": "CV that displaces the RANGE knob in octaves (coarse pitch); a bipolar LFO/envelope here transposes the oscillator by whole octaves around the knob setting.",
+      "pitch": "1V/oct exponential pitch CV: 0 V plays C4 and every +1.0 raises the oscillator one octave. Patch a keyboard, sequencer, or the 921A driver bus here to play it; it sums on top of the RANGE + FREQ knobs.",
+      "sync": "External sync source: each rising edge resets (hard) or nudges (soft) the oscillator's phase to lock it to the incoming signal, per the SYNC switch — patch a second oscillator here and sweep this one's pitch for the classic hard-sync sweep.",
+      "tune": "CV that displaces the FREQ fine knob in semitones; use it for subtle vibrato or fine detune layered on top of the 1V/oct pitch.",
+      "width_cv": "Pulse-width CV: summed onto the WIDTH knob per sample so an LFO here animates the rectangular output's duty cycle (pulse-width modulation). It only affects the rectangular tap; the sine/triangle/saw stay fixed."
+    },
+    "outputs": {
+      "rectangular": "The rectangular / pulse tap — its duty cycle is set by the WIDTH knob (and width_cv); a 50% square is hollow, off-square pulses get nasal and thin, and sweeping the width is pulse-width modulation.",
+      "sawtooth": "The band-limited sawtooth tap — the brightest, fullest waveform (all harmonics), the staple for subtractive bass and leads.",
+      "sine": "The pure sine tap — the fundamental with no harmonics. Same pitch as the other three taps.",
+      "triangle": "The triangle tap — a soft, hollow tone with only odd harmonics rolling off steeply (mellower than the saw)."
+    },
+    "controls": {
+      "level": "Output gain on every waveform tap, 0 to 2 (1 = unity). Acts as the oscillator's own VCA; the level CV input adds on top.",
+      "linFmAmount": "How much the LINEAR FM input bends the pitch, ±1 — at 0 the lin_fm jack is silent; raise it for FM/bell timbres.",
+      "octave": "Coarse pitch in whole octaves (RANGE), -5 to +5 around the patched 1V/oct pitch. The octave CV input adds on top of this.",
+      "sync": "SYNC mode switch: -1 = soft sync (a gentle phase nudge), 0 = off, +1 = hard sync (a full phase reset on each edge of the sync input).",
+      "tune": "Fine pitch trim in semitones (FREQ), ±12 (one octave each way) for tuning the oscillator against others or detuning for thickness.",
+      "width": "Duty cycle of the rectangular tap, 2% to 98% (0.5 = a 50% square). Only the rectangular output responds; sweep it (or modulate with width_cv) for pulse-width modulation."
+    }
+  },
   "moog923": {
     "explanation": "A recreation of the Moog 923 Filters / Noise Source — a dual-purpose utility panel from the System 35. It does two unrelated jobs at once. First, a NOISE SOURCE: white and pink noise generators on two independent outputs, both scaled by one LEVEL knob — the raw material for percussion, wind, snare bodies, and sample-and-hold. Second, a simple FIXED FILTER section: one external audio input fanned into a low-pass and a high-pass filter, each with its own corner knob and its own output, so you can split a signal into low and high bands or just tame one end. The noise and the filter share no signal path — they are bundled on one panel for convenience. It is pure Web Audio (looping noise buffers + two biquads), no worklet.",
     "inputs": {
@@ -680,6 +756,86 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "hpCutoff": "The HIGH-PASS corner for the filter section's HP output. The 0..1 knob maps log across ~40 Hz to 20 kHz; raise it to thin the HP output, lower it to let more low end through. Defaults to 0.5.",
       "level": "Master gain on BOTH noise taps (white and pink) — sets the loudness of the noise outputs together. Does not affect the filter section. Defaults to 0.8.",
       "lpCutoff": "The LOW-PASS corner for the filter section's LP output. The 0..1 knob maps log across ~40 Hz to 20 kHz; lower it to darken the LP output, raise it to let more through. Defaults to 0.5."
+    }
+  },
+  "moog956": {
+    "explanation": "A clean-room recreation of the Moog 956 Ribbon Controller — a touch strip you play with your finger. Slide along the horizontal ribbon and your finger position maps to a continuous 1V/oct pitch CV; a gate goes HIGH the whole time you are touching it and falls when you lift off. Like the hardware's resistive ribbon, lifting off does NOT reset the pitch — the ribbon HOLDS its last value (only the gate drops), so the patched VCO stays on the last note until you touch again. The ribbon spans SCALE octaves end-to-end, shifted by OFFSET, so pitch (V/oct) = OFFSET + position × SCALE. Mental model: a fretless, glide-friendly keyboard alternative in the same family as joystick/gamepad — drive a VCO's pitch with the pitch output and an envelope/VCA with the gate.",
+    "outputs": {
+      "gate": "Gate that stays HIGH (1.0) the entire time you are touching the ribbon and drops to 0 when you lift off — a hold-while-pressed gate. Patch it into an ADSR's gate or a VCA so a note sounds only while your finger is down.",
+      "pitch": "1V/oct pitch CV set by your finger position along the ribbon: OFFSET at the far left up to OFFSET + SCALE at the far right. It HOLDS its last value after you lift off (no reset), so patch it into a VCO's 1V/oct pitch for smooth ribbon glides."
+    },
+    "controls": {
+      "gate": "The touch state (0/1), written by the ribbon on press/release; it is the same signal carried by the gate output. Normally you play it by touching, not by editing.",
+      "offset": "The base pitch in octaves (V/oct), -2 to +2, that shifts the whole ribbon up or down so its span sits where you want on the keyboard.",
+      "pos": "The ribbon position itself (0..1), normally written by dragging on the strip; it persists with the patch so the last-played position survives a reload. You can also see/set it as a value.",
+      "scale": "How many octaves the ribbon spans end-to-end, 0 to 5 (default 2 = a two-octave strip). Larger = wider pitch range but coarser finger resolution."
+    }
+  },
+  "moog961": {
+    "explanation": "A clean-room recreation of the Moog 961 Interface — the trigger/gate format converter that bridges a Moog modular's S-trigger (switch) and V-trigger (voltage) worlds, plus an audio-to-trigger detector. On the hardware these are different electrical polarities; here every trigger is just a plain gate cable, so polarity is cosmetic and we model the TIMING behaviours. Four little circuits run in parallel: (1) AUDIO IN crossing the SENSITIVITY threshold fires both V outputs; (2) the S input passes straight through to both V outputs; (3) V IN A passes through to S OUT A keeping its incoming width; and (4) V IN B fires S OUT B as a fixed-width one-shot of SWITCH-ON TIME seconds. Mental model: the glue that lets envelopes/clocks/triggers from one part of a patch (or from audio) drive another, reshaping or regenerating the pulse along the way.",
+    "inputs": {
+      "audio_in": "An audio (or any) signal whose level is watched: when it rises past the SENSITIVITY threshold it fires a trigger pulse on BOTH v_out1 and v_out2 — turn an audio transient or an LFO peak into a trigger.",
+      "s_in": "A trigger input (the 'S' format): it passes straight through to BOTH v_out1 and v_out2, so one incoming trigger drives both V outputs (a format pass-through / fan-out).",
+      "v_in_a": "A gate input (the 'V' format) routed to s_out_a: it passes through carrying its OWN width — while v_in_a is high, s_out_a is high (a width-preserving pass-through).",
+      "v_in_b": "A trigger input routed to s_out_b: each rising edge fires a FIXED-WIDTH one-shot of SWITCH-ON TIME seconds on s_out_b, regardless of how long v_in_b stays high — it re-times the pulse to a set length."
+    },
+    "outputs": {
+      "s_out_a": "Mirrors v_in_a with its incoming width — high while v_in_a is high (a width-preserving gate pass-through).",
+      "s_out_b": "A fixed-width one-shot: each rising edge on v_in_b emits a pulse of exactly SWITCH-ON TIME seconds here, so you can standardize ragged triggers to a known gate length.",
+      "v_out1": "A trigger output fired by either the audio level detector (audio_in over SENSITIVITY) or the s_in pass-through — one of the two parallel V outputs.",
+      "v_out2": "The second V trigger output, fired by the same sources as v_out1 (audio detector OR s_in), so you get two simultaneous copies to drive two destinations."
+    },
+    "controls": {
+      "sensitivity": "The threshold the AUDIO IN level must cross to fire the V outputs, 0 to 1. Lower = more sensitive (quiet sounds trigger); higher = only loud transients fire.",
+      "switchOnTime": "The fixed pulse width (in seconds, 0.04 to 4 on a log taper) of the s_out_b one-shot fired by v_in_b — sets how long that regenerated gate stays high."
+    }
+  },
+  "moog962": {
+    "explanation": "A clean-room recreation of the Moog 962 Sequential Switch — a gate-advanced signal selector (a routing 'rotary' driven by a clock). Up to three inputs (IN 1–3) feed a single OUTPUT, and exactly one input is connected at a time; each rising edge on the SHIFT gate steps the selector to the next input (1 → 2 → 3 → 1, or 1 ↔ 2 when STAGES is set to 2). It is the 4-plexer's selector trimmed to three inputs and one output. The ports are typed as CV but route audio identically (the engine connects node-to-node regardless of cable type), so it works as a clocked source-switcher for either audio or CV: feed three oscillators (or three CVs) and clock SHIFT to cycle which one reaches the output. Mental model: a one-pole, up-to-3-throw rotary switch advanced by a trigger.",
+    "inputs": {
+      "in1": "Signal input 1 (audio or CV) — selected and passed to the output when the selector is on position 1.",
+      "in2": "Signal input 2 — passed to the output when the selector is on position 2.",
+      "in3": "Signal input 3 — passed to the output when the selector is on position 3 (used only when STAGES = 3).",
+      "shift": "The advance gate: each rising edge steps the selector to the next input (wrapping after the last active stage). Patch a clock/trigger here to cycle the inputs in time; it acts once per edge, not while held."
+    },
+    "outputs": {
+      "out": "Carries whichever input is currently selected — a single output that jumps from input to input on each SHIFT pulse."
+    },
+    "controls": {
+      "stages": "How many inputs the selector cycles through: 2 (alternate IN 1 ↔ IN 2, ignoring IN 3) or 3 (rotate IN 1 → 2 → 3 → 1). Default 3."
+    }
+  },
+  "moog994": {
+    "explanation": "A clean-room recreation of the Moog 994 Dual Multiples — the console's passive splitter panel. It is two completely independent 1-to-3 fan-outs (group A and group B): patch a signal into a group's input and an exact, unaltered copy appears on each of that group's three output jacks. No level control, no mixing, no summing — it is literally a solder junction (a 'mult'), so it is perfect for sending one oscillator/CV to three destinations or distributing a clock. Each group is signal-agnostic (audio OR CV route identically), and the two groups never interact. Mental model: two passive 3-way splitters in one module.",
+    "inputs": {
+      "a_in": "Group A input — whatever you patch here (audio or CV) is copied unaltered to a1, a2, and a3.",
+      "b_in": "Group B input — copied unaltered to b1, b2, and b3, completely independent of group A."
+    },
+    "outputs": {
+      "a1": "Group A copy 1 — an exact duplicate of a_in.",
+      "a2": "Group A copy 2 — an exact duplicate of a_in.",
+      "a3": "Group A copy 3 — an exact duplicate of a_in.",
+      "b1": "Group B copy 1 — an exact duplicate of b_in.",
+      "b2": "Group B copy 2 — an exact duplicate of b_in.",
+      "b3": "Group B copy 3 — an exact duplicate of b_in."
+    }
+  },
+  "moog995": {
+    "explanation": "A clean-room recreation of the Moog 995 Attenuators — a passive panel of three independent 'turn it down' knobs. Each channel takes one input, scales it by a level pot from full mute (0) up to unity (1), and sends it to its own output — never boosting (a passive panel can only attenuate). There is no mixing, no summing, and no CV: three parallel, fully independent attenuators with no cross-talk. Mental model: three volume trims in one module, used to tame a hot oscillator, set a modulation depth (attenuate an LFO/envelope before it reaches a destination), or balance a signal — exactly what you reach for when a modulation is too strong.",
+    "inputs": {
+      "in1": "Channel 1 input — the signal (audio or CV) to be attenuated by the Att 1 knob.",
+      "in2": "Channel 2 input — attenuated by the Att 2 knob, independent of the other channels.",
+      "in3": "Channel 3 input — attenuated by the Att 3 knob, independent of the other channels."
+    },
+    "outputs": {
+      "out1": "Channel 1 output = in1 × Att 1. Fully independent — no cross-talk with the other channels.",
+      "out2": "Channel 2 output = in2 × Att 2.",
+      "out3": "Channel 3 output = in3 × Att 3."
+    },
+    "controls": {
+      "atten1": "Channel 1 attenuator, 0 (full mute) to 1 (unity — passes the input unaltered). It only attenuates; it cannot boost above the input level.",
+      "atten2": "Channel 2 attenuator, 0 (mute) to 1 (unity).",
+      "atten3": "Channel 3 attenuator, 0 (mute) to 1 (unity)."
     }
   },
   "noise": {

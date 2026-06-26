@@ -77,6 +77,24 @@ export const moog956Def: AudioModuleDef = {
     { id: 'offset', label: 'Offset', defaultValue: 0, min: -2, max: 2, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 956 Ribbon Controller — a touch strip you play with your finger. Slide along the horizontal ribbon and your finger position maps to a continuous 1V/oct pitch CV; a gate goes HIGH the whole time you are touching it and falls when you lift off. Like the hardware's resistive ribbon, lifting off does NOT reset the pitch — the ribbon HOLDS its last value (only the gate drops), so the patched VCO stays on the last note until you touch again. The ribbon spans SCALE octaves end-to-end, shifted by OFFSET, so pitch (V/oct) = OFFSET + position × SCALE. Mental model: a fretless, glide-friendly keyboard alternative in the same family as joystick/gamepad — drive a VCO's pitch with the pitch output and an envelope/VCA with the gate.",
+    inputs: {},
+    outputs: {
+      pitch:
+        "1V/oct pitch CV set by your finger position along the ribbon: OFFSET at the far left up to OFFSET + SCALE at the far right. It HOLDS its last value after you lift off (no reset), so patch it into a VCO's 1V/oct pitch for smooth ribbon glides.",
+      gate:
+        "Gate that stays HIGH (1.0) the entire time you are touching the ribbon and drops to 0 when you lift off — a hold-while-pressed gate. Patch it into an ADSR's gate or a VCA so a note sounds only while your finger is down.",
+    },
+    controls: {
+      pos: "The ribbon position itself (0..1), normally written by dragging on the strip; it persists with the patch so the last-played position survives a reload. You can also see/set it as a value.",
+      gate: "The touch state (0/1), written by the ribbon on press/release; it is the same signal carried by the gate output. Normally you play it by touching, not by editing.",
+      scale: "How many octaves the ribbon spans end-to-end, 0 to 5 (default 2 = a two-octave strip). Larger = wider pitch range but coarser finger resolution.",
+      offset: "The base pitch in octaves (V/oct), -2 to +2, that shifts the whole ribbon up or down so its span sits where you want on the keyboard.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initial = node.params ?? {};
     const live = {

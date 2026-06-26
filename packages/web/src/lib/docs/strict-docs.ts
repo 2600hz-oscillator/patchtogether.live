@@ -87,4 +87,23 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'moog907a',
   'moog914',
   'moog923',
+  // Batch 6 — Moog System 55/35 sources & utility cluster (2026-06-26): the
+  // IIIc oscillator front-end + the passive console panels — the 921 VCO (the
+  // standalone oscillator), the 921A driver + 921B slave (the master/slave
+  // oscillator pair), the 903A random-signal/noise source, the 956 ribbon
+  // controller (a manual pitch+gate source), the 961 interface (trigger/gate
+  // format converter), the 962 sequential switch (gate-advanced selector), and
+  // the passive 994 dual multiples + 995 attenuators. The override-card members
+  // (903a / 956 / 961 / 962 / 994 / cp3) stay OFF INTERACTIVE_DOC_MODULES (the
+  // doc route's defLite can't resolve a `card:` override → static face); the
+  // convention-card members (921a / 921b / 921Vco / 995) ARE interactive.
+  'moog921Vco',
+  'moog921a',
+  'moog921b',
+  'moog903a',
+  'moog956',
+  'moog961',
+  'moog962',
+  'moog994',
+  'moog995',
 ]);

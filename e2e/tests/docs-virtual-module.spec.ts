@@ -252,6 +252,45 @@ const PROBES: Probe[] = [
     cvPort: 'rate', // CV → rate param
     modulates: /modulates/i,
   },
+  // --- Batch 6 — Moog System 55/35 sources & utilities (2026-06-26). Only the
+  // CONVENTION-card members (no `card:` override) are interactive; their cards
+  // are pure Knob + segmented-switch buttons + PatchPanel, so the live card
+  // mounts and a control hover updates the pane. The CV→param dual-context check
+  // runs where a CV input has a paramTarget (921 VCO tune, 921A freq_cv); the
+  // 921B bus inputs and the 995's audio inputs have no paramTarget (cvPort ''
+  // skips it). The override-card siblings (903a/956/961/962/994) stay STATIC. ---
+  {
+    id: 'moog921Vco',
+    heading: /921 vco/i,
+    controlParam: 'tune',
+    controlDescIncludes: /pitch|tune|semitone/i,
+    cvPort: 'tune', // CV → tune param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'moog921a',
+    heading: /921a/i,
+    controlParam: 'frequency',
+    controlDescIncludes: /frequency|tuning|pitch/i,
+    cvPort: 'freq_cv', // CV (paramTarget=frequency) → frequency param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'moog921b',
+    heading: /921b/i,
+    controlParam: 'fine',
+    controlDescIncludes: /fine|tune|semitone|detun/i,
+    cvPort: '', // the freq_bus / width_bus inputs have no paramTarget
+    modulates: /./,
+  },
+  {
+    id: 'moog995',
+    heading: /995/i,
+    controlParam: 'atten1',
+    controlDescIncludes: /attenuat|unity|mute/i,
+    cvPort: '', // the three inputs are raw audio signals (no paramTarget)
+    modulates: /./,
+  },
 ];
 
 /** Wait for the live virtual module to finish mounting (the flow host appears

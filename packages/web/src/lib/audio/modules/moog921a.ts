@@ -69,6 +69,29 @@ export const moog921aDef: AudioModuleDef = {
     { id: 'width',     label: 'Width', defaultValue: 0.5, min: 0,  max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 921A Oscillator Driver — the master half of the System 55/35 two-part oscillator. It is NOT a sound source: it makes no audio of its own. Instead it generates the two CONTROL VOLTAGES — a 1V/oct pitch bus and a pulse-width bus — that drive one or more slaved 921B oscillators, so a whole bank of 921Bs tracks one set of FREQUENCY/RANGE/WIDTH knobs (and one pitch CV) in perfect unison. Mental model: it is the pitch+width 'brain' you patch into every 921B's FREQ BUS and WIDTH BUS so they play together; tune here, hear it on the 921Bs.",
+    inputs: {
+      freq_cv:
+        "1V/oct pitch CV summed onto the FREQ knob (and the RANGE compass) per sample, then sent out on the freq bus — patch a keyboard or sequencer here to play every slaved 921B at once.",
+      width_cv:
+        "Pulse-width CV summed onto the WIDTH knob per sample and passed through to the width bus, so an LFO here animates the pulse width of every 921B driven by this module simultaneously (ganged PWM).",
+    },
+    outputs: {
+      freq_bus:
+        "The 1V/oct frequency control voltage. Patch it into each 921B's FREQ BUS input so they all follow this module's pitch (knob + freq_cv).",
+      width_bus:
+        "The 0..1 pulse-width control voltage. Patch it into each 921B's WIDTH BUS input so their rectangular outputs share one width (knob + width_cv).",
+    },
+    controls: {
+      frequency: "The FREQUENCY pot, a normalized -1..1 that the RANGE switch maps onto the pitch bus — the coarse tuning for every 921B this driver feeds.",
+      freqRange:
+        "RANGE switch: 1 = SEMITONE (the FREQUENCY pot spans a narrow ~2-octave window for fine tuning) / 2 = OCTAVE (the pot spans a wide ~12-octave compass for big sweeps).",
+      width: "Pulse width sent on the width bus, 0 to 1 (0.5 = a 50% square), driving the rectangular output of every 921B that reads this bus.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
