@@ -212,9 +212,9 @@
     position: relative;
   }
   .flow-host {
-    /* Medium-light gray inspector backdrop — SvelteFlow's pane defaults to
-       white, which is jarring against the dark theme. */
-    --vm-backdrop: #b4b9c0;
+    /* Dark slate inspector backdrop — SvelteFlow's pane defaults to white,
+       which is jarring against the dark theme. */
+    --vm-backdrop: #2a2d34;
     position: relative;
     width: 100%;
     height: 420px;
