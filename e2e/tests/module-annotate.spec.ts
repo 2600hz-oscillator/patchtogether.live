@@ -111,18 +111,22 @@ test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV
   await page.screenshot({ path: 'test-results/module-annotate-port-popover.png' });
 });
 
-test('undocumented module (toybox): NO Annotate entry', async ({ page }) => {
+test('undocumented module (negativity): NO Annotate entry', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  // toybox is the PERMANENT docs exemption (never authored — see the coverage
-  // ratchet), so it stays the stable "no authored docs" fixture as the rollout
-  // documents every other module. analogVco used to be here but is now
-  // documented (batch 1), which would (correctly) surface an Annotate entry.
-  await spawnModule(page, 'toybox', 'toybox');
+  // FIXTURE CHOICE: a currently-undocumented, LIGHTWEIGHT audio module (the
+  // `negativity` CV inverter — trivial card, no WebGL). toybox (the permanent
+  // docs exemption) is the conceptually-correct "never documented" fixture but
+  // it's the heaviest WebGL module and TIMES OUT spawning on CI's SwiftShader
+  // renderer (30s) — so we use a light undocumented module instead.
+  // NOTE TO DOCS-BATCH AGENTS: if you ever add `negativity` to STRICT_DOCS,
+  // re-point this fixture at another undocumented lightweight audio module
+  // (grep `undocumented` here). analogVco/toybox both lived here before.
+  await spawnModule(page, 'negativity', 'negativity');
 
-  const menu = await openModuleMenu(page, 'toybox');
+  const menu = await openModuleMenu(page, 'negativity');
   // Docs (external page) is always present; the on-canvas Annotate entry is
-  // gated on authored docs, so it must be absent for the exempt module.
+  // gated on authored docs, so it must be absent for the undocumented module.
   await expect(menu.locator('[role="menuitem"]', { hasText: 'Docs' })).toBeVisible();
   await expect(menu.getByTestId('ctx-annotate')).toHaveCount(0);
 });
