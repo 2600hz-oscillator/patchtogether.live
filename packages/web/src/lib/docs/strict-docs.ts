@@ -329,4 +329,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'outlines',
   'lines',
   'videoOut',
+  // Video batch 5 (2026-06-26): routers/mixers + paint source + audio-reactive viz + text + rutt-etra.
+  '4plexvid',
+  'quadralogical',
+  'painter',
+  'peakstate',
+  'textmarquee',
+  'ruttetra',
 ]);
