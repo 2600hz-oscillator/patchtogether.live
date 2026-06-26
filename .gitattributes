@@ -23,3 +23,12 @@ packages/dsp/wavetables/*.wav filter=lfs diff=lfs merge=lfs -text
 
 # Built WASM is gitignored, but if any pre-built WASM ever gets checked in:
 **/*.wasm filter=lfs diff=lfs merge=lfs -text
+
+# Bundled 1997 Blood SHAREWARE game data (un-ignored in .gitignore so the BLOOD
+# card boots out-of-box on the beta-gated deploys). These are large binary
+# resource files (BLOOD.RFF ~3.2 MB, SOUNDS.RFF ~15 MB, SHARE000.ART ~16 MB), so
+# LFS-track them like the VRT/ART baselines — keeps them out of pack history.
+# Scoped to static/blood so other repo .DAT/.ART (if any) stay ordinary blobs.
+packages/web/static/blood/*.RFF filter=lfs diff=lfs merge=lfs -text
+packages/web/static/blood/*.ART filter=lfs diff=lfs merge=lfs -text
+packages/web/static/blood/*.DAT filter=lfs diff=lfs merge=lfs -text

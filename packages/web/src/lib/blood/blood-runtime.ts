@@ -59,8 +59,26 @@ const WASM_SHIM_URL = '/blood/blood.js';
 const DATA_DIR_URL = '/blood'; // served static dir (user-supplied via task setup:blood)
 
 // The required data files Blood loads at startup (blood.cpp: gSysRes/gGuiRes/
-// gSoundRes.Init). TILES000.ART carries the tile art the renderer needs.
+// gSoundRes.Init). These three MUST be present or the engine aborts in its
+// resource loader; their absence is what the card reports as "missing".
 export const BLOOD_REQUIRED_FILES = ['BLOOD.RFF', 'GUI.RFF', 'SOUNDS.RFF'] as const;
+
+// The full BUNDLED 1997 Blood SHAREWARE data set. The 3 REQUIRED RFFs above
+// plus the engine data tables (SURFACE/TABLES/VOXEL.DAT) and the shareware tile
+// art (SHARE000.ART — the shareware analogue of the full game's TILES000.ART).
+// These ship in static/blood/ (un-ignored in .gitignore, LFS-tracked) so the
+// BLOOD card boots OUT-OF-BOX on the beta-gated deploys with no picker. The
+// extra (non-RFF) files are fetched best-effort: present → written into MEMFS;
+// absent → silently skipped (only the REQUIRED set gates the "missing" prompt).
+export const BLOOD_BUNDLED_FILES = [
+  'BLOOD.RFF',
+  'GUI.RFF',
+  'SOUNDS.RFF',
+  'SURFACE.DAT',
+  'TABLES.DAT',
+  'VOXEL.DAT',
+  'SHARE000.ART',
+] as const;
 
 // ── In-browser injected data (the HOSTED-preview path) ─────────────────────
 // The owner can't drop proprietary Blood data onto the hosted server, so the
@@ -102,19 +120,24 @@ export async function loadBloodData(): Promise<{ files: BloodDataFile[]; missing
     return { files: injectedFiles, missing: [...missing] };
   }
 
-  // Fallback: fetch from the served static dir (local `task setup:blood`).
+  // Fallback: fetch from the served static dir. On the beta-gated deploys this
+  // is the BUNDLED 1997 shareware (committed to static/blood/), so the card
+  // boots OUT-OF-BOX. Locally it's whatever `task setup:blood` populated. We
+  // fetch the FULL bundled set; only the REQUIRED RFFs gate the "missing"
+  // prompt (the extra DAT/ART are best-effort — skipped if absent).
   const files: BloodDataFile[] = [];
   const missing: string[] = [];
-  for (const name of BLOOD_REQUIRED_FILES) {
+  const required = new Set<string>(BLOOD_REQUIRED_FILES);
+  for (const name of BLOOD_BUNDLED_FILES) {
     try {
       const r = await fetch(`${DATA_DIR_URL}/${name}`);
       if (!r.ok) {
-        missing.push(name);
+        if (required.has(name)) missing.push(name);
         continue;
       }
       files.push({ name, bytes: new Uint8Array(await r.arrayBuffer()) });
     } catch {
-      missing.push(name);
+      if (required.has(name)) missing.push(name);
     }
   }
   return { files, missing };

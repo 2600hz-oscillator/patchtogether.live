@@ -13,6 +13,7 @@ import {
   clearInjectedBloodData,
   hasInjectedBloodData,
   BLOOD_REQUIRED_FILES,
+  BLOOD_BUNDLED_FILES,
 } from './blood-runtime';
 
 describe('blood-runtime: injected data vs server fetch', () => {
@@ -31,7 +32,49 @@ describe('blood-runtime: injected data vs server fetch', () => {
     );
     const { files, missing } = await loadBloodData();
     expect(files).toEqual([]);
+    // Only the REQUIRED set gates "missing" — extra bundled DAT/ART that 404
+    // are skipped silently, not reported missing.
     expect(new Set(missing)).toEqual(new Set(BLOOD_REQUIRED_FILES));
+  });
+
+  it('boots OUT-OF-BOX from the bundled shareware: fetches the FULL bundled set, nothing missing', async () => {
+    // Simulate the beta-gated deploy where static/blood/ carries the bundled
+    // 1997 shareware — every bundled file is served 200.
+    const fetchSpy = vi.fn(async (url: string) => {
+      const name = String(url).split('/').pop() ?? '';
+      const known = (BLOOD_BUNDLED_FILES as readonly string[]).includes(name);
+      return {
+        ok: known,
+        status: known ? 200 : 404,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+      } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { files, missing } = await loadBloodData();
+    expect(missing).toEqual([]); // out-of-box: no picker needed
+    expect(files.map((f) => f.name).sort()).toEqual([...BLOOD_BUNDLED_FILES].sort());
+    // It fetched the whole bundled set (the engine needs the DAT/ART too).
+    expect(fetchSpy).toHaveBeenCalledTimes(BLOOD_BUNDLED_FILES.length);
+  });
+
+  it('extra (non-required) bundled files that 404 are skipped, not reported missing', async () => {
+    // Only the 3 REQUIRED RFFs are served; the DAT/ART 404. The card must NOT
+    // flag "missing" (those are best-effort) — boot still proceeds.
+    const fetchSpy = vi.fn(async (url: string) => {
+      const name = String(url).split('/').pop() ?? '';
+      const required = (BLOOD_REQUIRED_FILES as readonly string[]).includes(name);
+      return {
+        ok: required,
+        status: required ? 200 : 404,
+        arrayBuffer: async () => new Uint8Array([9]).buffer,
+      } as unknown as Response;
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const { files, missing } = await loadBloodData();
+    expect(missing).toEqual([]);
+    expect(files.map((f) => f.name).sort()).toEqual([...BLOOD_REQUIRED_FILES].sort());
   });
 
   it('uses injected files instead of fetching (priority over the server path)', async () => {

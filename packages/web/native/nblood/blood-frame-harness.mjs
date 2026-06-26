@@ -41,6 +41,14 @@ async function main() {
     );
   }
 
+  // NODE-ONLY shim: emscripten-SDL2's Emscripten_VideoInit reads the DOM
+  // `screen` to size the default video mode; node has no DOM. A real browser
+  // ALWAYS has `globalThis.screen`, so this is purely a node-harness concern
+  // (PHASE1-STATUS.md §3), NOT a wasm/engine defect. Inject a plausible screen.
+  if (typeof globalThis.screen === 'undefined') {
+    globalThis.screen = { width: 640, height: 480, availWidth: 640, availHeight: 480 };
+  }
+
   const { default: loadBlood } = await import(SHIM);
   // emscripten MODULARIZE factory. We pass no canvas (headless software render).
   const Module = await loadBlood();

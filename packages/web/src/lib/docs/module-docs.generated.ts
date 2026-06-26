@@ -26,7 +26,7 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     }
   },
   "blood": {
-    "explanation": "BLOOD runs the NBlood (Build-engine) port of Blood as an interactive video source. It is owner-only and single-instance — the rack owner spawns it and plays; the video output is the Build software-rendered framebuffer, letterboxed into the engine canvas. Game data (BLOOD.RFF / GUI.RFF / SOUNDS.RFF / TILES000.ART) is USER-SUPPLIED and not redistributable, so the card shows a \"data missing\" overlay until you run `task setup:blood` with a copy you own (GOG/Steam One Unit Whole Blood or Fresh Supply).",
+    "explanation": "BLOOD runs the NBlood (Build-engine) port of Blood as an interactive video source. It is owner-only and single-instance — the rack owner spawns it and plays; the video output is the Build software-rendered framebuffer, letterboxed into the engine canvas. The card boots OUT-OF-BOX: the 1997 Blood SHAREWARE data (\"The Way of All Flesh\", episode 1) is bundled under static/blood/, so no picker is needed. The \"Load full Blood data…\" picker is an OPTIONAL override — point it at a copy of the full game you own (GOG/Steam One Unit Whole Blood or Fresh Supply) to play all episodes.",
     "inputs": {
       "altfire": "CV gate — alternate fire while held HIGH.",
       "crouch": "CV gate — stay crouched while held HIGH.",

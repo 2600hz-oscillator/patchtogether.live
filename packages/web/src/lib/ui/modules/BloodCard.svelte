@@ -174,12 +174,14 @@
   onMount(() => {
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('keyup', onKeyUp, true);
-    // Auto-restore previously-picked data from IndexedDB, then boot straight in
-    // so a reload doesn't make the owner re-pick. If nothing is stored we stay
-    // idle (the "Load BLOOD" / "Load Blood data" affordances handle it).
+    // Boot OUT-OF-BOX: first try any previously-picked FULL-game data from
+    // IndexedDB (so a reload doesn't make the owner re-pick), otherwise fall
+    // straight through to the BUNDLED 1997 shareware data committed under
+    // static/blood/ — either way tryLoad() boots the engine without a picker.
+    // The "Load full Blood data…" picker stays as an optional OVERRIDE.
     void (async () => {
-      const restored = await restoreFromIndexedDb();
-      if (restored) await tryLoad();
+      await restoreFromIndexedDb();
+      await tryLoad();
     })();
   });
   onDestroy(() => {
@@ -207,9 +209,11 @@
       />
 
       {#if loadStatus === 'idle'}
-        <button class="load" data-testid="blood-load" onclick={tryLoad}>Load BLOOD</button>
+        <!-- Boots out-of-box from the bundled shareware; this is just a manual
+             kick if auto-boot hasn't fired yet. -->
+        <button class="load" data-testid="blood-load" onclick={tryLoad}>Boot BLOOD</button>
         <button class="load alt" data-testid="blood-pick-data" onclick={openPicker}>
-          Load Blood data…
+          Load full Blood data (optional)…
         </button>
       {:else if loadStatus === 'loading'}
         <div class="status" data-testid="blood-loading">{importing ? 'Reading data…' : 'Loading…'}</div>
@@ -224,21 +228,23 @@
             <code>BLOOD_LINK=1 bash packages/web/native/build-blood-wasm.sh</code>.
           </div>
         {:else if missing.length > 0}
-          <!-- (2) no game data yet — friendly picker prompt, not a raw error. -->
+          <!-- (2) bundled shareware unexpectedly absent (should not happen on a
+               normal deploy) — friendly picker prompt, not a raw error. -->
           <div class="status err" data-testid="blood-error">
             <div class="data-prompt" data-testid="blood-data-missing">
-              Load your Blood data ({REQUIRED.join(', ')}, plus <code>*.ART</code>/<code>*.DAT</code>).
-              Pick the files — or your whole Blood folder — from a copy you own.
+              Couldn't load the bundled Blood data ({REQUIRED.join(', ')}). You can
+              load your own copy ({REQUIRED.join(', ')}, plus <code>*.ART</code>/<code>*.DAT</code>) —
+              pick the files, or your whole Blood folder, from a copy you own.
             </div>
             <button class="load" data-testid="blood-pick-data" onclick={openPicker} disabled={importing}>
-              {importing ? 'Reading…' : 'Load Blood data…'}
+              {importing ? 'Reading…' : 'Load full Blood data…'}
             </button>
           </div>
         {:else}
           <div class="status err" data-testid="blood-error">
             {loadError}
             <button class="load alt" data-testid="blood-pick-data" onclick={openPicker}>
-              Load Blood data…
+              Load full Blood data…
             </button>
           </div>
         {/if}
