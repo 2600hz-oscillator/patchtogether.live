@@ -14,6 +14,9 @@
   import { TRANSITION_NAMES } from '$lib/video/modules/fader-transitions';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { makeMidiAssignable } from '$lib/ui/controls/midi-assignable.svelte';
+  import ControlContextMenu from '$lib/ui/controls/ControlContextMenu.svelte';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -25,6 +28,40 @@
     return typeof v === 'number' ? v : (paramDef(name)?.defaultValue ?? 0);
   }
   const set = (paramId: string) => (v: number) => setNodeParam(id, paramId, v);
+
+  // ---- MIDI / control-surface / Electra assignability for the two faders ----
+  // The A↔B and dry/wet faders are raw HORIZONTAL sliders (a crossfade reads
+  // naturally horizontal), so they don't use the standard Knob/Fader controls.
+  // Wire the SAME shared makeMidiAssignable factory + ControlContextMenu onto
+  // them so right-click → MIDI Learn / send-to-surface / assign-Electra works,
+  // and a binding restored from storage drives the slider on mount.
+  function faderMidi(pid: string) {
+    return makeMidiAssignable({
+      kind: 'cc',
+      get moduleId() { return id; },
+      get paramId() { return pid; },
+      min: 0,
+      max: 1,
+      get onchange() { return set(pid); },
+    });
+  }
+  const abMidi = faderMidi('fader');
+  const dwMidi = faderMidi('dryWet');
+
+  let ctx = $state<{ which: 'ab' | 'dw'; x: number; y: number } | null>(null);
+  let activeMidi = $derived(ctx ? (ctx.which === 'ab' ? abMidi : dwMidi) : null);
+  function openCtx(which: 'ab' | 'dw') {
+    return (e: MouseEvent) => {
+      const m = which === 'ab' ? abMidi : dwMidi;
+      m.refresh();
+      e.preventDefault();
+      e.stopPropagation();
+      ctx = { which, x: e.clientX, y: e.clientY };
+    };
+  }
+
+  onMount(() => { abMidi.register(); dwMidi.register(); });
+  onDestroy(() => { abMidi.unregister(); dwMidi.unregister(); });
 
   const inputs: PortDescriptor[] = [
     { id: 'in_a',   label: 'A',   cable: 'video' },
@@ -48,9 +85,15 @@
         <div class="row">
           <span class="lbl">A<span class="dim"> ◂▸ </span>B</span>
           <input
-            type="range" class="slider nodrag" min="0" max="1" step="0.01" value={p('fader')}
+            type="range" class="slider nodrag" class:midi-learning={abMidi.learning}
+            min="0" max="1" step="0.01" value={p('fader')}
             data-testid="fader-ab"
+            oncontextmenu={openCtx('ab')}
             oninput={(e) => set('fader')(Number((e.currentTarget as HTMLInputElement).value))} />
+          {#if abMidi.binding}
+            <span class="midi-badge" data-testid="fader-ab-midi-badge"
+              title={`Bound to MIDI ${abMidi.bindingLabel}`}>{abMidi.badge}</span>
+          {/if}
         </div>
         <div class="row">
           <span class="lbl">FX</span>
@@ -71,9 +114,15 @@
         <div class="row">
           <span class="lbl">DRY<span class="dim"> ◂▸ </span>WET</span>
           <input
-            type="range" class="slider nodrag" min="0" max="1" step="0.01" value={p('dryWet')}
+            type="range" class="slider nodrag" class:midi-learning={dwMidi.learning}
+            min="0" max="1" step="0.01" value={p('dryWet')}
             data-testid="fader-drywet"
+            oncontextmenu={openCtx('dw')}
             oninput={(e) => set('dryWet')(Number((e.currentTarget as HTMLInputElement).value))} />
+          {#if dwMidi.binding}
+            <span class="midi-badge" data-testid="fader-drywet-midi-badge"
+              title={`Bound to MIDI ${dwMidi.bindingLabel}`}>{dwMidi.badge}</span>
+          {/if}
         </div>
         <div class="row">
           <span class="lbl">FX</span>
@@ -88,6 +137,26 @@
       </div>
     </div>
   </PatchPanel>
+
+  {#if activeMidi && ctx}
+    <ControlContextMenu
+      open={true}
+      x={ctx.x}
+      y={ctx.y}
+      title={`fader · ${ctx.which === 'ab' ? 'A↔B' : 'dry/wet'}`}
+      hasBinding={!!activeMidi.binding}
+      bindingLabel={activeMidi.bindingLabel}
+      onlearn={activeMidi.learn}
+      onforget={activeMidi.forget}
+      onclose={() => (ctx = null)}
+      surfaces={activeMidi.surfaces}
+      onsendtosurface={activeMidi.sendToSurface}
+      onremovefromsurface={activeMidi.removeFromSurface}
+      electras={activeMidi.electras}
+      onassignelectra={activeMidi.assignElectra}
+      onclearelectra={activeMidi.clearElectra}
+    />
+  {/if}
 </div>
 
 <style>
@@ -121,6 +190,23 @@
   }
   .lbl .dim { color: var(--accent-dim); }
   .slider { flex: 1; min-width: 0; }
+  /* MIDI-learn armed state — matches the standard Knob/Fader pulse. */
+  .slider.midi-learning {
+    outline: 2px solid #f5c248;
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+  .midi-badge {
+    flex: 0 0 auto;
+    font-family: ui-monospace, monospace;
+    font-size: 0.5rem;
+    line-height: 1;
+    padding: 2px 3px;
+    background: rgba(96, 165, 250, 0.18);
+    color: #a8d3ff;
+    border-radius: 2px;
+    letter-spacing: 0.02em;
+  }
   .sel {
     flex: 1;
     min-width: 0;
