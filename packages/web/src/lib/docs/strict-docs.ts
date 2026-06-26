@@ -45,4 +45,15 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'elements',
   'wavetableVco',
   'swolevco',
+  // Batch 3 — CV utilities & modulation shapers (2026-06-26): the bread-and-
+  // butter CV toolbox — attenuverters, polarizers, slew + switch, sample &
+  // hold / quantizer, fixed-gain trim, and the two quad-VCA/mix utilities.
+  'polarizer',
+  'depolarizer',
+  'scaler',
+  'attenumix',
+  'veils',
+  'unityscalemathematik',
+  'sampleHold',
+  'slewSwitch',
 ]);

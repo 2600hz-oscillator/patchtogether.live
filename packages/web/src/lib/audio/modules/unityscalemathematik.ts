@@ -108,6 +108,33 @@ export const unityscalemathematikDef: AudioModuleDef = {
     { id: 'bCurve',     label: 'B Crv', defaultValue: 0, min:  0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A bipolar CV-shaping utility with three independent channels. UNITY is a plain attenuverter — out = in · atten, with atten swinging -1..+1 so it can scale, attenuate, OR invert a signal. A and B are the same attenuverter PLUS a curve morph: each adds a knob that bends the response from linear toward exponential. The shaping math preserves the sign of the input and raises its magnitude to a power: y = sign(x)·|x|^k·atten where k = 1 + 2·curve runs from 1 (linear) to 3 (steep expo). A steep curve compresses small signals while leaving large excursions intact — useful for taming a hot LFO, reshaping an envelope, or turning a triangle into something rounder. The map is continuous through the bipolar zero crossing (no kink). Each atten and each curve also has its own CV input. There is a DSP worklet for the per-sample math.",
+    inputs: {
+      u_in: "UNITY-section signal input. Passed through the linear attenuverter: u_out = u_in · unityAtten.",
+      u_atten_cv: "CV that sums into the UNITY attenuverter amount (linear), modulating how much the UNITY section scales/inverts its input.",
+      a_in: "A-section signal input. Passed through the curve-morphed attenuverter: a_out = sign·|a_in|^k·aAtten.",
+      a_atten_cv: "CV that sums into the A attenuverter amount (linear) — voltage control over A's scale/invert.",
+      a_curve_cv: "CV that sums into the A curve amount (linear), sliding A's response between linear and exponential under modulation.",
+      b_in: "B-section signal input. Same curve-morphed attenuverter shape as A: b_out = sign·|b_in|^k·bAtten.",
+      b_atten_cv: "CV that sums into the B attenuverter amount (linear).",
+      b_curve_cv: "CV that sums into the B curve amount (linear), modulating B's linear↔exponential bend.",
+    },
+    outputs: {
+      u_out: "UNITY-section output, u_in · unityAtten — the plainly attenuverted (scaled, possibly inverted) signal.",
+      a_out: "A-section output, sign(a_in)·|a_in|^k·aAtten with k from the A curve — the sign-preserving curve-shaped attenuvert.",
+      b_out: "B-section output, the same sign-preserving curve-shaped attenuvert as A driven by B's own atten + curve.",
+    },
+    controls: {
+      unityAtten: "UNITY attenuverter, linear -1..+1 (default +1 = unity passthrough). +1 passes the input as-is, 0 mutes, -1 inverts; in between it attenuates (and flips below 0).",
+      aAtten: "A-section attenuverter, linear -1..+1 (default +1). Scales A's curve-shaped output; negative values invert it.",
+      aCurve: "A-section curve, linear 0..1 (default 0 = linear). 0 is a straight attenuvert; turning it up bends the response toward exponential (exponent k goes 1→3), compressing small signals while preserving large ones. Sign is always kept.",
+      bAtten: "B-section attenuverter, linear -1..+1 (default +1). Scales B's curve-shaped output; negative inverts.",
+      bCurve: "B-section curve, linear 0..1 (default 0 = linear), bending B's response from linear toward steep exponential exactly like A's curve.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

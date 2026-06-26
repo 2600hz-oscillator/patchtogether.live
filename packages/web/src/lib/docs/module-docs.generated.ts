@@ -55,6 +55,33 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "tune": "Coarse pitch in semitones (−36 to +36) — shift the whole oscillator up or down by whole-step intervals. With CV modulation on, knob + CV add together, so a sequencer can select octaves while the knob sets a base pitch."
     }
   },
+  "attenumix": {
+    "explanation": "The simple, no-surprises mixer: four channels, each with its own attenuator knob (0..1) and a CV input that sums into that knob, plus a per-channel direct out and one summed MIX output. Per channel out = in · clamp(knob + cv, 0, 1) — the attenuators only ATTENUATE, they never boost or invert (a negative knob+CV mutes, not phase-flips). The four channels sum and pass through a MASTER gain, then a tanh soft-clip: out = tanh(sum · master). Master goes up to ×2, so pushing past unity drives the sum into the tanh for warm saturation instead of a hard digital clip. Compared with VEILS (same quad-VCA-plus-mix topology) ATTENUMIX is the toggle-free 'just the mixer' version — the boost lives on the master, not per channel. There is a DSP worklet for the per-sample math.",
+    "inputs": {
+      "cv1": "CV that sums into the channel-1 attenuator (knob + CV, clamped 0..1). Passed through raw (no scaling), so a ±1 LFO at knob=0 already sweeps the channel full range — the negative half is rejected by the clamp, the positive half fully opens the channel.",
+      "cv2": "CV summed into the channel-2 attenuator (raw, knob + CV clamped 0..1).",
+      "cv3": "CV summed into the channel-3 attenuator (raw, knob + CV clamped 0..1).",
+      "cv4": "CV summed into the channel-4 attenuator (raw, knob + CV clamped 0..1).",
+      "in1": "Channel 1 audio input. Scaled by clamp(Att1 + CV1, 0, 1) into both the channel-1 direct out and the summed mix.",
+      "in2": "Channel 2 audio input. Scaled by clamp(Att2 + CV2, 0, 1).",
+      "in3": "Channel 3 audio input. Scaled by clamp(Att3 + CV3, 0, 1).",
+      "in4": "Channel 4 audio input. Scaled by clamp(Att4 + CV4, 0, 1)."
+    },
+    "outputs": {
+      "mix": "The summing bus: tanh((out1 + out2 + out3 + out4) · master). The four attenuated channels summed, scaled by the MASTER knob, then soft-clipped — driving master above 1 recruits the tanh for warm saturation.",
+      "out1": "Channel 1 direct out — the post-attenuator signal (in1 · att1) BEFORE the summing bus and master, for splitting a channel off on its own.",
+      "out2": "Channel 2 direct out (in2 · att2), pre-mix.",
+      "out3": "Channel 3 direct out (in3 · att3), pre-mix.",
+      "out4": "Channel 4 direct out (in4 · att4), pre-mix."
+    },
+    "controls": {
+      "att1": "Channel 1 attenuator, linear 0..1 (default 0 = muted). Sets the channel's level; sums with CV1 and is clamped to 0..1, so it only ever cuts — there is no boost or polarity flip here.",
+      "att2": "Channel 2 attenuator, linear 0..1 (default 0 = muted). Sums with CV2, clamped 0..1.",
+      "att3": "Channel 3 attenuator, linear 0..1 (default 0 = muted). Sums with CV3, clamped 0..1.",
+      "att4": "Channel 4 attenuator, linear 0..1 (default 0 = muted). Sums with CV4, clamped 0..1.",
+      "master": "Output gain on the summed bus, linear 0..2 (default 1.0 = unity). Below 1 trims the whole mix down; above 1 boosts the sum INTO the tanh soft-clip for warm saturation rather than a hard clip. Applies only to the MIX output, not the per-channel direct outs."
+    }
+  },
   "cocoadelay": {
     "explanation": "A tape-style stereo delay (clean-room port of Tilde Murray's Cocoa Delay): audio is written into a 10-second stereo tape buffer and read back at a fractional, modulated position with 4-point Hermite interpolation. The read time is the base delay (free-running TIME, or a musical division of a clock beat when SYNC is on), warped per-sample by an LFO and a slow random DRIFT, with bipolar feedback feeding the echoes back through an in-loop multi-mode FILTER and saturating DRIVE; PAN modes spread the wet image, DUCKING sidechains the wet level off the dry input, and DRY/WET set the final mix. Mental model: think of it as one tape echo where almost every knob can also be voltage-controlled, and where a patched CLK pulse or the rack/MIDI tempo can lock the delay to the beat.",
     "inputs": {
@@ -154,6 +181,18 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "view_rot_z": "Visualization-only camera rotation about Z — orbits the 3D view (no effect on audio).",
       "view_zoom": "Visualization-only camera zoom for the 3D cube view (does not affect the sound or the selected slice).",
       "wrap": "What happens when the slicing plane reads outside the cube: OFF = those regions are silent, ON = the coordinates mirror-fold back inside so the slice stays full."
+    }
+  },
+  "depolarizer": {
+    "explanation": "The exact inverse of POLARIZER: a one-knob CV utility that folds a BIPOLAR signal back into a UNIPOLAR one, applying out = 0.5 + depth·(in/2). It maps -1..+1 into 0..1 centered on 0.5. Patch it inline to feed a bipolar source (a ±1 LFO, sequencer or modulation CV) into a destination that wants a 0..1 control voltage — a level, depth or mix-amount CV input — with DEPTH trimming how much of the swing reaches it. The output always rests at 0.5 (the natural unipolar center) with nothing patched or at depth 0. There is no DSP worklet — it is a pure scale-plus-fixed-offset Web Audio graph, sample-accurate by construction.",
+    "inputs": {
+      "in": "The bipolar control voltage to depolarize, expected -1..+1 (e.g. an LFO or sequencer output). Any value is mapped linearly; the labeled use is ±1 in, 0..1 out."
+    },
+    "outputs": {
+      "out": "The unipolar result, out = 0.5 + depth·(in/2), centered on 0.5. At depth 1: in=-1 gives 0, in=0 gives 0.5, in=+1 gives 1."
+    },
+    "controls": {
+      "depth": "Sets how far the output departs from the 0.5 center, on a linear 0..1 fader — it scales only the slope, never the center. 1 (default) = the full bipolar→unipolar conversion (in=±1 reaches 0/1); 0.5 = a half-strength swing (output only moves 0.25..0.75); 0 = flat 0.5 regardless of input. So it attenuates the modulation depth around the neutral center."
     }
   },
   "dx7": {
@@ -403,6 +442,18 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "level": "Master gain applied equally to all three noise outputs, from silence (0) to full amplitude (1). Default 0.5 provides moderate headroom; raise it to push the noise through downstream processing, lower it to blend subtly into a mix."
     }
   },
+  "polarizer": {
+    "explanation": "A tiny one-knob CV utility that turns a UNIPOLAR signal into a BIPOLAR one: it takes a 0..1 control voltage and stretches it across -1..+1, applying out = (2·in - 1)·depth. The natural use is converting a 0..1 envelope, LFO or sequencer CV into a ±1 modulation source that can both RAISE and LOWER a destination (an unmodified envelope can only push a parameter up from where it sits; polarize it first and it can swing symmetrically about the knob). It is the exact inverse of DEPOLARIZER. There is no DSP worklet — it is a pure scale-plus-offset Web Audio graph, so the mapping is sample-accurate.",
+    "inputs": {
+      "in": "The unipolar control voltage to polarize, expected 0..1 (e.g. an envelope follower or a 0..1 LFO). The affine map is defined for any value — it just centers and linearly scales whatever arrives — but the labeled use is 0..1 in, ±depth out."
+    },
+    "outputs": {
+      "out": "The bipolar result, out = (2·in - 1)·depth. At depth 1: in=0 gives -1, in=0.5 gives 0, in=1 gives +1. The mid-point of the input (0.5) always maps to 0, so this is the signal centered on zero and ready to add to / subtract from a destination."
+    },
+    "controls": {
+      "depth": "Sets the bipolar swing on a linear 0..1 fader, scaling BOTH the slope and the offset together so the output stays centered on 0. 1 (default) = the full unipolar→bipolar conversion (±1); 0.5 = a half-size ±0.5 swing; 0 = flat 0 regardless of input. Effectively an attenuator on the polarized signal."
+    }
+  },
   "rings": {
     "explanation": "A modal / string RESONATOR — a faithful port of Mutable Instruments Rings. It doesn't make a tone on its own: it RESONATES an exciter into pitched, decaying string and bell voices. Feed it an audio exciter on IN (a noise burst, a click, a drum, anything percussive works best) and it rings that energy out at the pitch set by PITCH; with nothing patched into IN, the STRUM input self-excites it with a short internal noise burst so it still sounds when you pluck it. MODEL switches the resonator type: MODAL is a bank of 24 stiffness-stretched resonant bandpass filters (harmonic at STRUCTURE 0, growing inharmonic and bell-like as STRUCTURE rises), and SYMPATHETIC is a pair of Karplus–Strong plucked strings whose detuning STRUCTURE sets. STRUCTURE/BRIGHTNESS/DAMPING/POSITION are the canonical Rings macros that sculpt the resonance — inharmonicity, high-end content, ring time, and pickup placement — and LEVEL is a soft-limited (tanh) output gain. The two outputs ODD and EVEN are complementary taps of the same resonator; patch both for a wide pseudo-stereo image, or just ODD for mono.",
     "inputs": {
@@ -429,6 +480,32 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "note": "A fixed semitone offset (-60..+60 st) added on top of the PITCH input, so you can tune the resonator without an external pitch source or transpose it relative to one. At 0 the resonator tracks PITCH (or middle C with PITCH unpatched).",
       "position": "The pickup position along the resonator (0..1): it changes which partials are emphasized via a cosine-weighted tap, and because it weights the ODD and EVEN sums differently it also shifts the balance and stereo image between the two outputs.",
       "structure": "The inharmonicity / structure macro (0..1): in MODAL it stretches the partial spacing from harmonic (0) toward bell-/metal-like (1); in SYMPATHETIC it detunes the second string from unison (0) up to about +19 semitones. The single biggest control over how 'tuned' versus 'clangy' the resonance sounds."
+    }
+  },
+  "sampleHold": {
+    "explanation": "Two classic CV tools in one: a sample & hold AND a scale quantizer. Each rising edge at the GATE input grabs the current value at the CV input and holds it steady until the next edge — the staircase-random / random-arpeggio trick when you feed it noise or an LFO and clock it. The QUANT output additionally snaps that held value to the nearest note of the selected musical scale (1V/oct, root = C at 0V, 12-ET semitones per octave). When NOTHING is patched to GATE the module stops holding and instead passes CV through continuously — so QUANT becomes a live, free-running scale quantizer for any incoming pitch CV. The card shows the active scale name above the knob and a S&H / QUANTIZER hint reflecting whether the gate is patched. The sample/hold + quantize math runs in a DSP worklet.",
+    "inputs": {
+      "cv_in": "The value to sample (when gated) or quantize (when ungated). Typically a noise source, LFO or random CV for the classic stepped-random effect, or a pitch CV when used as a pure quantizer.",
+      "gate_in": "The sample clock: each rising edge latches the current cv_in and holds it on the outputs until the next rising edge. Leave it UNPATCHED and the module stops latching and passes cv_in through continuously — turning the module into a live quantizer."
+    },
+    "outputs": {
+      "cv_out": "The held value — cv_in captured at the last gate edge (or, with the gate unpatched, the live passed-through cv_in). This is the raw sample & hold output, NOT quantized.",
+      "cv_quant": "The same held/live value snapped to the nearest note of the selected SCALE (1V/oct, C/0V root). Patch this to an oscillator's pitch input for in-key stepped melodies from random CV."
+    },
+    "controls": {
+      "scale": "Selects the quantize scale used by the QUANT output, as a stepped knob cycling through the built-in scales (e.g. Chromatic, Major, and other modes/scales); the active scale's NAME is shown above the knob. It affects only QUANT — the raw HOLD output is never quantized. Default Major."
+    }
+  },
+  "scaler": {
+    "explanation": "A one-knob signal multiplier — a clean gain trim that can both CUT and BOOST. The single AMOUNT knob multiplies whatever passes through by a factor from ×0.1 (a tenth) up to ×10 (ten times): out = in · amount. Unlike a passive attenuator (which only cuts, 0..1), SCALER can also amplify, and unlike a VCA it has no CV input — it is a fixed, set-and-forget trim. It works on EITHER signal class: the input accepts audio, CV, pitch or gate cables, and the output adopts the cable type of whatever is patched in, so scaling a CV stays CV through the system (this is what makes the knob actually do something at a cross-domain destination). There is no DSP worklet — it is a single Web Audio GainNode, sample-accurate.",
+    "inputs": {
+      "in": "The signal to scale. Typed audio but widened to accept CV / pitch / gate cables too, so the same multiply works on a control voltage, a pitch line or an audio bus — it is just a gain."
+    },
+    "outputs": {
+      "out": "The scaled signal, out = in · amount. Type-transparent: the emitted cable type adopts whatever is patched into IN (a CV source makes this emit CV, an audio source makes it emit audio); with nothing patched it presents as an audio jack."
+    },
+    "controls": {
+      "amount": "The scale factor, on a log fader so unity (×1.0) sits at the knob CENTER and the taper is symmetric: full left = ×0.1 (attenuate to a tenth), full right = ×10 (boost ten-fold). Defaults to ×1.0, so a freshly spawned SCALER is a transparent direct patch until you move it."
     }
   },
   "sequencer": {
@@ -477,6 +554,39 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "swing": "Shuffles the rhythm by lengthening the on-beat steps and shortening the off-beat steps that follow them, which pushes every off-beat later for a looser feel; 0 is dead-straight, higher values deepen the shuffle. Internal-clock only (an external clock sets its own timing)."
     }
   },
+  "slewSwitch": {
+    "explanation": "Two CV utilities in one: a four-channel SLEW LIMITER and a 4-to-1 sequential SWITCH. The slew side smooths each of the four CV inputs independently — its per-channel slew time controls how long the output takes to glide to a new value (a portamento / lag for pitch, an envelope-rounder for gates, a smoother for any steppy CV). The switch side scans those same four slewed channels one at a time: each rising edge at the CLOCK input advances the selection, and the SWITCHED output carries whichever channel is currently chosen (with an equal-power crossfade between channels so the hand-off is glitch-free). The scan can run forward, pendulum (ping-pong) or random, over a settable length of 1-4 steps; a STEP IDX output and an end-of-cycle pulse round it out. The four direct OUT jacks are always live regardless of the switch. The slew + switch math runs in a DSP worklet.",
+    "inputs": {
+      "in1": "Channel 1 CV input into the slew limiter (smoothed by the S1 time). Available at OUT 1 and selectable by the switch.",
+      "in2": "Channel 2 CV input into the slew limiter (smoothed by S2).",
+      "in3": "Channel 3 CV input into the slew limiter (smoothed by S3).",
+      "in4": "Channel 4 CV input into the slew limiter (smoothed by S4).",
+      "reset": "Resets the switch index back to channel 0 on each rising edge, re-syncing the scan to the start of its cycle.",
+      "slew1_cv": "CV that sums into the S1 slew-time amount (log-scaled), modulating how fast channel 1 glides.",
+      "slew2_cv": "CV that sums into the S2 slew-time amount (log-scaled).",
+      "slew3_cv": "CV that sums into the S3 slew-time amount (log-scaled).",
+      "slew4_cv": "CV that sums into the S4 slew-time amount (log-scaled).",
+      "step_clock": "The switch advance clock — each rising edge steps the 4-to-1 sequential switch to the next channel (per the Mode and Len settings). Leave unpatched and the switch holds on its current channel."
+    },
+    "outputs": {
+      "eoc": "End-of-cycle: a short (~5 ms) gate pulse each time the switch WRAPS back to channel 0 (in random mode it pulses on every step). Chain it to another clock/reset to daisy-chain cycles.",
+      "out1": "Channel 1 slewed CV — in1 smoothed by the S1 slew time. Always live, independent of the switch.",
+      "out2": "Channel 2 slewed CV (in2 smoothed by S2).",
+      "out3": "Channel 3 slewed CV (in3 smoothed by S3).",
+      "out4": "Channel 4 slewed CV (in4 smoothed by S4).",
+      "step_idx": "The current switch index as a CV, mapped to -1..+1 across the active channels — for driving a display or for downstream addressing of the scan position.",
+      "switched": "The 4-to-1 switch output: the slewed signal of the currently-selected channel, with an equal-power crossfade (the Xfd time) on each switch so transitions don't click."
+    },
+    "controls": {
+      "length": "How many channels the switch scans, 1-4 (a cycling LEN button). A length of 2, for example, ping-pongs/cycles only channels 0-1 and ignores 2-3. Default 4.",
+      "mode": "The switch scan pattern (a cycling button on the card): FWD = forward 0→1→2→3→0…, PND = pendulum / ping-pong 0→1→2→3→2→1→0…, RND = random (a new channel each clock, never repeating the previous). Default FWD.",
+      "slew1": "Channel 1 slew time, log 0.001..5 s (default 0.5 s) — how long OUT 1 takes to glide to a new value. Short = snappy/near-instant, long = a slow lag/portamento. Sums with the S1 CV input.",
+      "slew2": "Channel 2 slew time, log 0.001..5 s (default 0.5 s). Sums with the S2 CV input.",
+      "slew3": "Channel 3 slew time, log 0.001..5 s (default 0.5 s). Sums with the S3 CV input.",
+      "slew4": "Channel 4 slew time, log 0.001..5 s (default 0.5 s). Sums with the S4 CV input.",
+      "xfadeTime": "The equal-power crossfade time applied to the SWITCHED output when the selection changes, log 0.001..2 s (default 0.05 s). Short = a tight switch, long = a slow morph between the two channels' values."
+    }
+  },
   "swolevco": {
     "explanation": "A complex / West-Coast-style dual oscillator: two oscillators in one module that interact to build harmonically rich timbres rather than just stacking simple shapes. A PRIMARY oscillator (crossfaded across saw / triangle / square by Symmetry, then run through a wavefolder) is the main voice; a sine MODULATOR oscillator, tuned either to a Ratio of the primary's pitch or to its own M.Tune / M.Fine, cross-modulates the primary via audio-rate FM (the Timbre amount). Mental model: start from a near-sine, then warp the wave with Symmetry, fold it with Fold, and pour FM in with Timbre to climb from sweet to screaming — all from one pitch. You can tap the primary alone (OUT), the clean modulator sine alone (MOD OUT), or the two summed together (SUM OUT), and a mono-video oscilloscope of the primary is available on SCOPE.",
     "inputs": {
@@ -505,6 +615,31 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "tune": "Coarse tuning of the PRIMARY oscillator in semitones (-36 to +36, i.e. ±3 octaves) relative to C4; combines with Fine and any pitch CV to set the base pitch."
     }
   },
+  "unityscalemathematik": {
+    "explanation": "A bipolar CV-shaping utility with three independent channels. UNITY is a plain attenuverter — out = in · atten, with atten swinging -1..+1 so it can scale, attenuate, OR invert a signal. A and B are the same attenuverter PLUS a curve morph: each adds a knob that bends the response from linear toward exponential. The shaping math preserves the sign of the input and raises its magnitude to a power: y = sign(x)·|x|^k·atten where k = 1 + 2·curve runs from 1 (linear) to 3 (steep expo). A steep curve compresses small signals while leaving large excursions intact — useful for taming a hot LFO, reshaping an envelope, or turning a triangle into something rounder. The map is continuous through the bipolar zero crossing (no kink). Each atten and each curve also has its own CV input. There is a DSP worklet for the per-sample math.",
+    "inputs": {
+      "a_atten_cv": "CV that sums into the A attenuverter amount (linear) — voltage control over A's scale/invert.",
+      "a_curve_cv": "CV that sums into the A curve amount (linear), sliding A's response between linear and exponential under modulation.",
+      "a_in": "A-section signal input. Passed through the curve-morphed attenuverter: a_out = sign·|a_in|^k·aAtten.",
+      "b_atten_cv": "CV that sums into the B attenuverter amount (linear).",
+      "b_curve_cv": "CV that sums into the B curve amount (linear), modulating B's linear↔exponential bend.",
+      "b_in": "B-section signal input. Same curve-morphed attenuverter shape as A: b_out = sign·|b_in|^k·bAtten.",
+      "u_atten_cv": "CV that sums into the UNITY attenuverter amount (linear), modulating how much the UNITY section scales/inverts its input.",
+      "u_in": "UNITY-section signal input. Passed through the linear attenuverter: u_out = u_in · unityAtten."
+    },
+    "outputs": {
+      "a_out": "A-section output, sign(a_in)·|a_in|^k·aAtten with k from the A curve — the sign-preserving curve-shaped attenuvert.",
+      "b_out": "B-section output, the same sign-preserving curve-shaped attenuvert as A driven by B's own atten + curve.",
+      "u_out": "UNITY-section output, u_in · unityAtten — the plainly attenuverted (scaled, possibly inverted) signal."
+    },
+    "controls": {
+      "aAtten": "A-section attenuverter, linear -1..+1 (default +1). Scales A's curve-shaped output; negative values invert it.",
+      "aCurve": "A-section curve, linear 0..1 (default 0 = linear). 0 is a straight attenuvert; turning it up bends the response toward exponential (exponent k goes 1→3), compressing small signals while preserving large ones. Sign is always kept.",
+      "bAtten": "B-section attenuverter, linear -1..+1 (default +1). Scales B's curve-shaped output; negative inverts.",
+      "bCurve": "B-section curve, linear 0..1 (default 0 = linear), bending B's response from linear toward steep exponential exactly like A's curve.",
+      "unityAtten": "UNITY attenuverter, linear -1..+1 (default +1 = unity passthrough). +1 passes the input as-is, 0 mutes, -1 inverts; in between it attenuates (and flips below 0)."
+    }
+  },
   "vca": {
     "explanation": "A voltage-controlled amplifier that multiplies an input audio signal by a gain factor computed from a base DC offset and CV control voltage scaled by the cvAmount parameter. Mental model: the VCA's output amplitude is set by patching a CV signal into the CV input (typically an envelope or LFO) and tuning the base knob for silent-when-unpatched (0) or passing audio-through at unity (1). A phase-inverted copy of the output is always available on the audio_inv port for stereo widening, sidechain processing, or mid/side decomposition without needing a separate inverter module.",
     "inputs": {
@@ -518,6 +653,36 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     "controls": {
       "base": "A static DC offset added to the CV signal (linear 0 to 1, default 0). Set to 0 for silent when unpatched; set to 1 for unity gain. Typically used as a quick volume control or to set the VCA's baseline attenuation.",
       "cvAmount": "Controls the scale and sign of the CV input (linear −1 to 1, default 1). Positive values amplify normally; negative values invert the CV so a high incoming signal produces low gain. Useful for inverting modulation or creating sidechain-style ducking effects."
+    }
+  },
+  "veils": {
+    "explanation": "A quad VCA and mixer modelled on the Mutable Instruments Veils: four independent voltage-controlled amplifiers that each have a gain knob, a CV input, a direct out, and a linear/exponential response toggle — feeding one summed MIX out. Per channel out = in · shape(knob + cv), where the gain knob spans 0..2: at unity-position knob a ±1V CV sweeps gain from 0 (CV at -1) to 2 (CV at +1). The four channels sum and pass through a tanh soft-clip (mix = tanh(sum)) — gain is NOT clamped at unity, so pushing knob+CV high overdrives into warm saturation rather than digital clipping. Use it as four utility VCAs, a CV-controlled mixer, or four cross-fading/amplitude-modulated voices. There is a DSP worklet for the per-sample VCA + soft-clip math.",
+    "inputs": {
+      "cv1": "Channel 1 gain CV. Summed RAW with the gain knob (no scaling): a ±1V LFO at a unity-position knob sweeps gain 0..2, the natural full-range VCA modulation, so this is the per-channel tremolo / ducking / cross-fade control.",
+      "cv2": "Channel 2 gain CV (raw, summed with gain2).",
+      "cv3": "Channel 3 gain CV (raw, summed with gain3).",
+      "cv4": "Channel 4 gain CV (raw, summed with gain4).",
+      "in1": "Channel 1 audio input — multiplied by its VCA gain shape(gain1 + cv1) into the channel-1 direct out and the mix.",
+      "in2": "Channel 2 audio input, multiplied by shape(gain2 + cv2).",
+      "in3": "Channel 3 audio input, multiplied by shape(gain3 + cv3).",
+      "in4": "Channel 4 audio input, multiplied by shape(gain4 + cv4)."
+    },
+    "outputs": {
+      "mix": "The summed bus, soft-clipped: tanh(out1 + out2 + out3 + out4). Because the sum is not clamped before the tanh, driving channels past unity produces warm saturation — Veils' signature overdrive — instead of a hard clip.",
+      "out1": "Channel 1 direct VCA out — in1 · shape(gain1 + cv1), taken BEFORE the summing bus and soft-clip, so downstream sees the raw post-VCA channel.",
+      "out2": "Channel 2 direct VCA out (pre-mix, pre-clip).",
+      "out3": "Channel 3 direct VCA out (pre-mix, pre-clip).",
+      "out4": "Channel 4 direct VCA out (pre-mix, pre-clip)."
+    },
+    "controls": {
+      "gain1": "Channel 1 VCA gain knob, linear 0..2 (default 0 = silent). Sums with CV1; the past-unity range exists so knob + CV can push the channel into the mix soft-clip.",
+      "gain2": "Channel 2 VCA gain, linear 0..2 (default 0). Sums with CV2.",
+      "gain3": "Channel 3 VCA gain, linear 0..2 (default 0). Sums with CV3.",
+      "gain4": "Channel 4 VCA gain, linear 0..2 (default 0). Sums with CV4.",
+      "resp1": "Channel 1 response toggle: 0 = LINEAR (gain follows knob+CV directly — best for control signals), 1 = EXPONENTIAL (the signal is squared, giving smoother perceptual fades — best for audio). Default LINEAR.",
+      "resp2": "Channel 2 response toggle (0 = linear, 1 = exponential). Default LINEAR.",
+      "resp3": "Channel 3 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL (audio-friendly out of the box).",
+      "resp4": "Channel 4 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL."
     }
   },
   "wavecel": {

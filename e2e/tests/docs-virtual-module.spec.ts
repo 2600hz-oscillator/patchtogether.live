@@ -106,6 +106,76 @@ const PROBES: Probe[] = [
   // (its `card: 'CocoaDelayCard'` override isn't plumbed through the doc route's
   // defLite, so the live card can't resolve and the page uses the static
   // fallback). No live-card probe for it here; see interactive-doc-modules.ts.
+  // --- Batch 3 — CV utilities & modulation shapers (2026-06-26). Each is on
+  // INTERACTIVE_DOC_MODULES; this proves the live card mounts cleanly and a
+  // control hover updates the pane. The CV→param dual-context check runs only
+  // where the module has a CV input with a paramTarget (unityscalemathematik,
+  // slewSwitch); polarizer/depolarizer/scaler/attenumix/veils/sampleHold have no
+  // CV→param link (their CV inputs are raw signals / gates), so cvPort '' skips it. ---
+  {
+    id: 'polarizer',
+    heading: /polarizer/i,
+    controlParam: 'depth',
+    controlDescIncludes: /swing|bipolar|depth/i,
+    cvPort: '',
+    modulates: /./,
+  },
+  {
+    id: 'depolarizer',
+    heading: /depolarizer/i,
+    controlParam: 'depth',
+    controlDescIncludes: /center|unipolar|depth/i,
+    cvPort: '',
+    modulates: /./,
+  },
+  {
+    id: 'scaler',
+    heading: /scaler/i,
+    controlParam: 'amount',
+    controlDescIncludes: /scale|gain|unity/i,
+    cvPort: '',
+    modulates: /./,
+  },
+  {
+    id: 'attenumix',
+    heading: /attenumix/i,
+    controlParam: 'master',
+    controlDescIncludes: /master|bus|gain/i,
+    cvPort: '', // CV inputs are raw per-channel CV (no paramTarget)
+    modulates: /./,
+  },
+  {
+    id: 'veils',
+    heading: /veils/i,
+    controlParam: 'gain1',
+    controlDescIncludes: /gain|vca|channel/i,
+    cvPort: '', // CV inputs are raw gain CV (no paramTarget)
+    modulates: /./,
+  },
+  {
+    id: 'unityscalemathematik',
+    heading: /unityscalemathematik/i,
+    controlParam: 'unityAtten',
+    controlDescIncludes: /attenuvert|unity|invert/i,
+    cvPort: 'u_atten_cv', // CV → unityAtten param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'sampleHold',
+    heading: /sample/i,
+    controlParam: 'scale',
+    controlDescIncludes: /scale|quantize|note/i,
+    cvPort: '', // gate/cv inputs are not param mods
+    modulates: /./,
+  },
+  {
+    id: 'slewSwitch',
+    heading: /slewswitch/i,
+    controlParam: 'slew1',
+    controlDescIncludes: /slew|glide|smooth/i,
+    cvPort: 'slew1_cv', // CV → slew1 param
+    modulates: /modulates/i,
+  },
 ];
 
 /** Wait for the live virtual module to finish mounting (the flow host appears

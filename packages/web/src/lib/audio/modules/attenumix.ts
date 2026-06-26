@@ -150,6 +150,35 @@ export const attenumixDef: AudioModuleDef = {
     { id: 'master', label: 'Master', defaultValue: 1.0, min: 0, max: 2, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "The simple, no-surprises mixer: four channels, each with its own attenuator knob (0..1) and a CV input that sums into that knob, plus a per-channel direct out and one summed MIX output. Per channel out = in · clamp(knob + cv, 0, 1) — the attenuators only ATTENUATE, they never boost or invert (a negative knob+CV mutes, not phase-flips). The four channels sum and pass through a MASTER gain, then a tanh soft-clip: out = tanh(sum · master). Master goes up to ×2, so pushing past unity drives the sum into the tanh for warm saturation instead of a hard digital clip. Compared with VEILS (same quad-VCA-plus-mix topology) ATTENUMIX is the toggle-free 'just the mixer' version — the boost lives on the master, not per channel. There is a DSP worklet for the per-sample math.",
+    inputs: {
+      in1: "Channel 1 audio input. Scaled by clamp(Att1 + CV1, 0, 1) into both the channel-1 direct out and the summed mix.",
+      in2: "Channel 2 audio input. Scaled by clamp(Att2 + CV2, 0, 1).",
+      in3: "Channel 3 audio input. Scaled by clamp(Att3 + CV3, 0, 1).",
+      in4: "Channel 4 audio input. Scaled by clamp(Att4 + CV4, 0, 1).",
+      cv1: "CV that sums into the channel-1 attenuator (knob + CV, clamped 0..1). Passed through raw (no scaling), so a ±1 LFO at knob=0 already sweeps the channel full range — the negative half is rejected by the clamp, the positive half fully opens the channel.",
+      cv2: "CV summed into the channel-2 attenuator (raw, knob + CV clamped 0..1).",
+      cv3: "CV summed into the channel-3 attenuator (raw, knob + CV clamped 0..1).",
+      cv4: "CV summed into the channel-4 attenuator (raw, knob + CV clamped 0..1).",
+    },
+    outputs: {
+      out1: "Channel 1 direct out — the post-attenuator signal (in1 · att1) BEFORE the summing bus and master, for splitting a channel off on its own.",
+      out2: "Channel 2 direct out (in2 · att2), pre-mix.",
+      out3: "Channel 3 direct out (in3 · att3), pre-mix.",
+      out4: "Channel 4 direct out (in4 · att4), pre-mix.",
+      mix: "The summing bus: tanh((out1 + out2 + out3 + out4) · master). The four attenuated channels summed, scaled by the MASTER knob, then soft-clipped — driving master above 1 recruits the tanh for warm saturation.",
+    },
+    controls: {
+      att1: "Channel 1 attenuator, linear 0..1 (default 0 = muted). Sets the channel's level; sums with CV1 and is clamped to 0..1, so it only ever cuts — there is no boost or polarity flip here.",
+      att2: "Channel 2 attenuator, linear 0..1 (default 0 = muted). Sums with CV2, clamped 0..1.",
+      att3: "Channel 3 attenuator, linear 0..1 (default 0 = muted). Sums with CV3, clamped 0..1.",
+      att4: "Channel 4 attenuator, linear 0..1 (default 0 = muted). Sums with CV4, clamped 0..1.",
+      master: "Output gain on the summed bus, linear 0..2 (default 1.0 = unity). Below 1 trims the whole mix down; above 1 boosts the sum INTO the tanh soft-clip for warm saturation rather than a hard clip. Applies only to the MIX output, not the per-channel direct outs.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
