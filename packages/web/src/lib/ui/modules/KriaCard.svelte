@@ -329,6 +329,7 @@
                   role="gridcell"
                   data-step={step}
                   data-row={row}
+                  data-testid={`kria-cell-${step}-${row}`}
                   aria-label={`step ${step} row ${row}`}
                   onclick={() => onCell(step, row)}
                 ></button>

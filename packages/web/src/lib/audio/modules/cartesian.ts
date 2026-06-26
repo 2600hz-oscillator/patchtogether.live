@@ -197,8 +197,14 @@ export const cartesianDef: AudioModuleDef = {
         "Morphs the built-in LFO waveform continuously from sine (0) through triangle (1) and sawtooth (2) to square (3), cross-fading between adjacent shapes at in-between values.",
       snh:
         "Sample & hold on the pitch output, on by default: when on (the card's S&H face button), in FREEFORM mode the pitch CV is rewritten only when a gate fires and otherwise holds, so the pitch doesn't smear as the cursor passes over silent pads; turn it off for continuous re-emit on every cursor move. The LFO outputs are never held.",
+      "cart-pitch-{n}":
+        "Pad {n}'s note — the editable pitch box for this cell of the 4×4 grid. Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to move around the grid; Enter commits and steps to the next pad's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it (empty) turns the pad into a rest even if its gate is lit. When the cursor lands on this pad the note is emitted as V/oct on the PITCH output, shifted by the OCT control and (for a chord pad) used as the chord's root.",
     },
   },
+
+  controlFamilies: [
+    { id: 'cart-pitch', label: 'Per-pad note entry', kind: 'cell', testidPrefix: 'cart-pitch' },
+  ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Stage-1 polyphony: pitch port is polyPitchGate (5 voice pairs).

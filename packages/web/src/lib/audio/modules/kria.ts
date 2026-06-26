@@ -111,8 +111,14 @@ export const kriaDef: AudioModuleDef = {
         "Internal fallback tempo in beats per minute, used only when there is no TIMELORDE node in the rack AND nothing is patched into CLOCK IN; when a TIMELORDE is present its tempo wins, and an external clock overrides both.",
       running:
         "Local play/stop transport (1 = running, 0 = stopped), exposed as the card's RUN button. When a TIMELORDE node exists its run state drives playback instead, and an external clock's pulses can run the tracks regardless.",
+      "kria-cell-{n}":
+        "A cell of the per-step editor grid for the selected track — this is where you enter each step's value, INCLUDING its note. The same grid is reused by the page selector (TRIG / NTE / OCT / DUR): on the NOTE (NTE) page it IS the per-step note entry — the lit row picks that step's scale DEGREE (bottom row = degree 0, up to degree 6), which the shared SCALE + ROOT then quantize into the track's pitch CV; on the other pages the same cell instead sets the step's trigger, octave or gate duration. Click a cell to set/clear it for the active page; the column tracking the playhead is highlighted as it runs. (An attached monome grid drives these same edits.)",
     },
   },
+
+  controlFamilies: [
+    { id: 'kria-cell', label: 'Per-step editor cell (note on the NTE page)', kind: 'cell', testidPrefix: 'kria-cell' },
+  ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;

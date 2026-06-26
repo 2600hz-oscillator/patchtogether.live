@@ -53,6 +53,12 @@ const CONTROL_SELECTOR = [
   '[role="slider"]',
   'input[type="range"]',
   'input[type="number"]',
+  // The per-step NOTE-ENTRY text box (NoteEntry.svelte). Scoped to `data-role="pitch"`
+  // — exclusively the sequencers' editable note cells — so we capture the
+  // note-entry area on a sequencer face WITHOUT sweeping in unrelated text
+  // fields (search / URL / name inputs on other cards). These collapse to one
+  // family callout (seq-pitch / cart-pitch / …) via the dense-family grouping below.
+  'input[data-role="pitch"]',
   'select',
   'button',
 ].join(', ');

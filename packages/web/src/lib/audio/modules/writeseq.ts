@@ -305,8 +305,14 @@ export const writeseqDef: AudioModuleDef = {
         "Arms recording (1) or disarms it (0); the card's REC button. While armed, incoming gates write the sampled pitch onto the nearest step. Also togglable via the rec input.",
       overdub:
         "Recording mode (the card's OVD button): off = one-shot, which clears the pattern and records exactly one pass of `length` steps then auto-stops; on = overdub, which layers newly played notes on top of the existing pattern without clearing and keeps looping until you disarm.",
+      "writeseq-pitch-{n}":
+        "Step {n}'s note — the editable pitch box for this step. As well as being filled in by RECORD (a played CV/gate writes the sampled pitch onto the nearest step), you can type a note name here directly (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to fly across the grid; Enter commits and jumps to the next step's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it (empty) makes the step a rest even if its gate is lit. The note is emitted as V/oct on the PITCH output, shifted by the OCT control.",
     },
   },
+
+  controlFamilies: [
+    { id: 'writeseq-pitch', label: 'Per-step note entry', kind: 'cell', testidPrefix: 'writeseq-pitch', countParam: 'length' },
+  ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;

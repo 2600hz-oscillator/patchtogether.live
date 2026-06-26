@@ -235,8 +235,14 @@ export const polyseqzDef: AudioModuleDef = {
         "The run/stop state: 1 plays, 0 stops and forces the gates low; starting playback snaps the playhead back to step 1. Same control as the card's PLAY button.",
       snh:
         "Sample & hold on the per-voice pitch CV, on by default (the card's S&H face button): when on, each voice's pitch is latched cleanly at its gate edge (pinned to the un-jittered step time) so the note is stable when the gate rises even while Humanize jitters the timing; off reverts to the legacy behavior where pitch can drift ahead of the gate under Humanize.",
+      "polyseqz-root-{n}":
+        "Step {n}'s ROOT note — the editable pitch box that sets the bottom note of this step's chord. Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to move across the step row; Enter commits and advances to the next step's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it (empty) makes the step a rest even if its gate is lit. The chord's quality, inversion and voicing badges build the rest of the chord UP from this root, which is then transposed by the OCT control and broadcast across the poly pitch lanes.",
     },
   },
+
+  controlFamilies: [
+    { id: 'polyseqz-root', label: 'Per-step root note entry', kind: 'cell', testidPrefix: 'polyseqz-root', countParam: 'length' },
+  ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const polyPitch = createPolySender(ctx);
