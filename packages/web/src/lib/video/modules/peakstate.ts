@@ -118,6 +118,28 @@ export const peakstateDef: VideoModuleDef = {
     { id: 'oblong',      label: 'Oblong',     defaultValue: DEFAULTS.oblong,      min: 0,   max: 1,  curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: `peakstate is a self-running mandala/kaleidoscope generator — a video SOURCE with no video input. An internal "pen" traces a deterministic drifting Lissajous path (penAtTime: x = 0.5·cos(0.7t), y = 0.5·sin(1.3t + 0.4·cos(0.3t))) through a centred unit disc, pushing one sample per frame into a 600-sample ring buffer (~10s of comet trail). Each frame the whole trail is redrawn once per kaleidoscope arm — rotated by 2π/complexity and mirrored about the arm axis — over a translucent black overlay that decays the previous frame, giving the classic mirror-arm bloom. MOVE + OBLONG add a slow spirograph orbit of the mandala's centre (period ~20s at Speed 1): MOVE sets orbit radius, OBLONG squashes the orbit's vertical extent from a circle toward a near-horizontal "rolling tube". The module emits three coherent views of the SAME pen trail with different palette/transform. Usage: drop it in for a generative kaleidoscope bloom, patch an LFO or envelope into the CV jacks to pulse the speed/arm-count/hue, and pick the mono, full-colour, or pseudo-3D output to suit the look.`,
+    inputs: {
+      speed_cv: "CV in that modulates the Speed control (linear), scaling how fast the pen advances along its trail and how fast the spirograph orbit and 3D rotation turn. Patch an LFO/envelope to pulse the whole bloom faster or slower.",
+      complexity_cv: "CV in that modulates the Complexity control (linear) — the number of kaleidoscope mirror arms. Modulating it changes the radial symmetry (arm count) live; the value is rounded to a whole number of arms.",
+      color_speed_cv: "CV in that modulates the Color control (linear), the hue-cycling rate of the RGB and 3D outputs. At 0 the hue is frozen; higher values sweep the HSL hue around the wheel faster (hue = t·color·60 mod 360).",
+    },
+    outputs: {
+      mono_out: "Monochrome video out (mono-video cable): the white pen trail (#eee) on black, no hue cycling. The cleanest line-art view of the kaleidoscope, ideal for keying or feeding a colouriser downstream.",
+      rgb_out: "Full-colour video out (video cable) and the module's primary/preview surface: the same mandala stroked in an HSL hue that cycles at the Color rate. This is what the on-card preview screen shows.",
+      out_3d: "Pseudo-3D video out (video cable): the same mandala drawn with a fixed ~15° pitch tilt plus a continuous rotation (omega = Speed·0.3 rad/s, ~20s/turn) and a dimmed vertically-mirrored bowl twin, so it reads as a rotating sculpture on a horizon. Slightly desaturated and with faster trail decay than RGB.",
+    },
+    controls: {
+      speed: "Speed (0.1–4, default 1): rate the pen advances along its trail; also drives the spirograph orbit speed and the 3D output's rotation (omega = Speed·0.3 rad/s). Modulatable via the SPD CV jack.",
+      complexity: "Complexity (4–32, discrete, default 12): number of kaleidoscope mirror arms repeated around the centre — the radial symmetry order. Rounded to an integer. Modulatable via the CMP CV jack.",
+      color_speed: "Color (0–4, default 1): hue-cycling rate for the RGB and 3D outputs (hue = t·color·60 mod 360); 0 freezes the hue, has no effect on the white mono output. Modulatable via the CLR CV jack.",
+      move: "Move (0–1, default 0): spirograph orbit amplitude — at 0 the mandala is pinned dead centre; toward 1 its centre orbits along a path up to 0.25·min(width,height) from centre (period ~20s at Speed 1). No CV jack.",
+      oblong: "Oblong (0–1, default 0): orbit eccentricity — 0 is a perfect circular orbit; toward 1 the orbit's vertical extent collapses to ~5% of its width, turning the spirograph into a near-horizontal rolling tube. Only matters when Move > 0. No CV jack.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(COPY_FRAG_SRC);

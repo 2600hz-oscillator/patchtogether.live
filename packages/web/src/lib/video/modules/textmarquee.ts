@@ -131,6 +131,26 @@ export const textmarqueeDef: VideoModuleDef = {
     { id: 'posY',    label: 'PosY',  defaultValue: TEXTMARQUEE_DEFAULTS.posY,    min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: `A rich-text MARQUEE video SOURCE — it generates its own picture from text you type, with no video input. You author a styled paragraph in the card's tiny editor (system fonts, per-selection text colour, bold/italic/underline, paragraph align, font family + size, and one layer background fill); that model is rasterized to an offscreen canvas of real system glyphs, uploaded as a texture, and painted into the output frame as a single ribbon. The four knobs only move that ribbon: PosX/PosY place its top-left on screen, and ScrlX/ScrlY crawl it continuously, wrapping back in from the opposite edge once it has fully left — a 90s-screensaver text scroller. Background fills the block's bounding box; everything outside the block reads as layer black. A freshly-spawned node shows a built-in "textmarquee" placeholder until you type. Usage: type a short word at a big SIZE for a screen-filling banner, set a bipolar LFO into ScrlX for a classic side-scroll, or sweep PosX/PosY with an LFO to fly the whole banner fully off one edge, across, and back.`,
+    inputs: {
+      scrollX: "CV modulating ScrlX — horizontal scroll speed. Bipolar around the knob (0.5 = static): a ±1 source sweeps the full crawl-speed range, scrolling left below centre and right above, with the ribbon wrapping in from the opposite edge.",
+      scrollY: "CV modulating ScrlY — vertical scroll speed. Bipolar around the knob (0.5 = static): a ±1 source sweeps the full speed range, crawling the ribbon up or down and wrapping it back in from the opposite edge.",
+      posX: "CV modulating PosX — the ribbon's raw horizontal position. Calibrated so a default-centred ±1 LFO drives it fully off the left edge, through centre, to fully off the right edge, and back (a complete margin-to-margin sweep).",
+      posY: "CV modulating PosY — the ribbon's raw vertical position. Calibrated so a default-centred ±1 LFO drives it fully off the top, through centre, to fully off the bottom, and back.",
+    },
+    outputs: {
+      out: "The rendered text layer: the styled ribbon drawn at its scrolled position over its background-filled block, with the rest of the frame as layer black.",
+    },
+    controls: {
+      scrollX: "ScrlX — horizontal scroll speed, bipolar 0..1. 0.5 is static (the text sits where PosX/PosY put it); below 0.5 scrolls one way, above 0.5 the other, faster toward the extremes. The ribbon wraps continuously, re-entering from the opposite edge.",
+      scrollY: "ScrlY — vertical scroll speed, bipolar 0..1. 0.5 is static; below 0.5 crawls up, above 0.5 crawls down (or vice-versa), faster toward the extremes, wrapping the ribbon back in from the opposite edge.",
+      posX: "PosX — raw horizontal position, 0..1. 0 places the ribbon fully off the left edge, 1 fully off the right, 0.5 centred. Combined additively with the ScrlX scroll offset.",
+      posY: "PosY — raw vertical position, 0..1. 0 places the ribbon fully off the top, 1 fully off the bottom, 0.5 centred. Combined additively with the ScrlY scroll offset.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

@@ -5,6 +5,35 @@
 import type { ModuleDocs } from '$lib/graph/types';
 
 export const MODULE_DOCS: Record<string, ModuleDocs> = {
+  "4plexvid": {
+    "explanation": "4PLEXVID is a 4-in / 4-out video router — the video sibling of the audio 4Plexer. It is NOT a blend or mixer: each of the four outputs carries exactly ONE of the four video inputs, a discrete cross-point switch. Every output has its own selector (sel1..sel4 picking IN1..IN4) and its own gate CV input that advances that selector by one on each rising edge (IN1→IN2→IN3→IN4→IN1, wrapping). The fragment shader is a pure passthrough copy of the selected input texture (it writes the input's RGB straight through, or solid black when that input is unpatched), so there is no color processing — pixels pass straight through. All four outputs render their own FBO every frame regardless of patch state, so downstream modules always sample a fresh texture; OUT1 is also exposed as the canonical single-texture surface. Use it to fan one set of sources out to four destinations, to swap which feed reaches a screen, or to drive rhythmic cuts by clocking the gate inputs from an LFO or sequencer.",
+    "inputs": {
+      "gate1": "Gate CV for output 1, edge-triggered (paramTarget gate1). On each rising edge it advances the sel1 selector to the next input, wrapping IN1→IN2→IN3→IN4→IN1. Held-high advances exactly once; hysteresis (rise>0.6, fall<0.4) absorbs LFO/ADSR dead-band chatter.",
+      "gate2": "Gate CV for output 2, edge-triggered (paramTarget gate2). Each rising edge rotates the sel2 selector to the next input, wrapping; held-high fires once via the same hysteresis edge detector.",
+      "gate3": "Gate CV for output 3, edge-triggered (paramTarget gate3). Each rising edge rotates the sel3 selector to the next input, wrapping; held-high fires once via the same hysteresis edge detector.",
+      "gate4": "Gate CV for output 4, edge-triggered (paramTarget gate4). Each rising edge rotates the sel4 selector to the next input, wrapping; held-high fires once via the same hysteresis edge detector.",
+      "in1": "Video input 1. A source you can route to any output by setting that output's selector (sel1..sel4) to IN1.",
+      "in2": "Video input 2. A source you can route to any output by setting that output's selector to IN2.",
+      "in3": "Video input 3. A source you can route to any output by setting that output's selector to IN3.",
+      "in4": "Video input 4. A source you can route to any output by setting that output's selector to IN4."
+    },
+    "outputs": {
+      "out1": "Video output 1 — a discrete tap carrying exactly the input chosen by the sel1 selector (black if that input is unpatched). Also the canonical single-texture surface and the card's live OUT 1 preview.",
+      "out2": "Video output 2 — a discrete tap carrying exactly the input chosen by the sel2 selector (black if that input is unpatched).",
+      "out3": "Video output 3 — a discrete tap carrying exactly the input chosen by the sel3 selector (black if that input is unpatched).",
+      "out4": "Video output 4 — a discrete tap carrying exactly the input chosen by the sel4 selector (black if that input is unpatched)."
+    },
+    "controls": {
+      "gate1": "Hidden synthetic param (linear 0..1) caching the gate1 CV level for output 1's rising-edge detector; driven by the gate1 jack via the CV bridge, not a knob on the card.",
+      "gate2": "Hidden synthetic param (linear 0..1) caching the gate2 CV level for output 2's rising-edge detector; driven by the gate2 jack via the CV bridge, not a knob on the card.",
+      "gate3": "Hidden synthetic param (linear 0..1) caching the gate3 CV level for output 3's rising-edge detector; driven by the gate3 jack via the CV bridge, not a knob on the card.",
+      "gate4": "Hidden synthetic param (linear 0..1) caching the gate4 CV level for output 4's rising-edge detector; driven by the gate4 jack via the CV bridge, not a knob on the card.",
+      "sel1": "OUT 1 selector — a discrete fader choosing which input (IN1..IN4, raw index 0..3) output 1 carries. Snaps to integer indices and displays as IN1..IN4; gate1 rotates it on each rising edge.",
+      "sel2": "OUT 2 selector — a discrete fader choosing which input (IN1..IN4, raw index 0..3) output 2 carries. Snaps to integer indices and displays as IN1..IN4; gate2 rotates it on each rising edge.",
+      "sel3": "OUT 3 selector — a discrete fader choosing which input (IN1..IN4, raw index 0..3) output 3 carries. Snaps to integer indices and displays as IN1..IN4; gate3 rotates it on each rising edge.",
+      "sel4": "OUT 4 selector — a discrete fader choosing which input (IN1..IN4, raw index 0..3) output 4 carries. Snaps to integer indices and displays as IN1..IN4; gate4 rotates it on each rising edge."
+    }
+  },
   "adsr": {
     "explanation": "A classic gate-driven envelope generator: a held gate runs the level up to peak over the attack time, falls to the sustain level over the decay time, holds there for as long as the gate stays high, then falls back to zero over the release time when the gate drops. It outputs a unipolar 0..1 control signal (env) plus its inverse (env_inv = 1 - env) for ducking; patch it into any CV input (a VCA's gain, a filter's cutoff) to shape that destination over the life of each note.",
     "inputs": {
@@ -2798,6 +2827,12 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "v": "Spawn VECTOR ANGLE. 0..1 maps to 0..360 degrees, the direction each new shape drifts; latched per shape at spawn."
     }
   },
+  "painter": {
+    "explanation": "painter is an interactive MS-Paint-style drawing SURFACE that acts as a pure video SOURCE — there is no video input. The card is a tiny Windows-95 Paint: a 9-tool palette (pencil, brush, eraser, fill, pick/eyedropper, line, rect, ellipse, text), the classic 28-colour Win95 swatch grid (2 rows x 14), a SIZE slider, a FILL toggle, and an engine-resolution drawing canvas. The tools work the MS-Paint way — pencil draws a hard 1px stroke; brush/line/rect/ellipse draw at the SIZE width; FILL toggles a filled vs outlined interior for rect/ellipse; fill flood-fills under the click with the FOREGROUND colour; pick (eyedropper) samples a pixel's colour; and text stamps the typed string. Left-click a swatch sets the FOREGROUND (strokes/text/fill), right-click sets the BACKGROUND (eraser + filled-shape interior); tool and colour choices stay LOCAL per collaborator. UNDO removes the last committed op and CLEAR empties the canvas back to a blank white page. Whatever you paint appears in real time on the single video output, 1:1 — the card binds its live canvas to the module once and the engine uploads + blits it into the output FBO every frame (1024x768 in 4:3, 1366x768 in 16:9). Until you draw anything the output is a flat opaque WHITE page (MS-Paint's default blank page), never a dead black frame — the shader returns solid white when no canvas is bound. The drawing is stored as a Y.Doc-synced ordered op log (node.data.ops): each committed stroke/shape/fill/text appends one PaintOp and on mount/remote-edit the card deterministically replays the log, so every collaborator sees the same picture. The card's drawing/preview canvas is resizable (it flex-fills the space between the toolbar and palette and is the actual video output); resizing only scales the on-card display — the output stays at engine resolution. Usage: spawn it, pick a tool and colour, draw, and patch OUT (on the yellow drill-down patch panel) into any video destination (mixer, keyer, effect, output) to use your sketch as a live source or hand-drawn matte.",
+    "outputs": {
+      "out": "Video output carrying the painted canvas at the engine output resolution, blitted 1:1 from the card's live drawing surface every frame (a flat opaque white page before you draw anything). This is the module's only port and lives on the card's drill-down patch panel."
+    }
+  },
   "peaks": {
     "explanation": "A dual-channel percussion-and-modulation Swiss-army module after Mutable Instruments Peaks. It's two identical channels (A and B), each a self-contained generator you trigger with a gate. Each channel runs in one of five modes — KICK, SNARE, HIHAT (full drum voices), ENV (a one-shot attack/decay envelope), or LFO (a retriggerable sine/triangle/square) — and its two faders change meaning with the mode (the card relabels them: e.g. KICK's are Pitch/Decay, LFO's are Rate/Wave). So one Peaks gives you a kick + snare, a pair of drum voices, two trigger-shaped envelopes, two tempo-able LFOs, or any mix. Each channel's output is audio in the drum modes and control voltage in ENV/LFO. Use the two channels independently; there's no internal cross-link.",
     "inputs": {
@@ -2821,6 +2856,26 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "k2_1": "Channel B's second knob (mode-dependent, same mapping as channel A's knob 2).",
       "mode0": "Channel A's mode: KICK, SNARE, HIHAT, ENV (one-shot attack/decay), or LFO (retriggered each gate). Changing it relabels A's two faders to that mode's parameters.",
       "mode1": "Channel B's mode (same five options as channel A)."
+    }
+  },
+  "peakstate": {
+    "explanation": "peakstate is a self-running mandala/kaleidoscope generator — a video SOURCE with no video input. An internal \"pen\" traces a deterministic drifting Lissajous path (penAtTime: x = 0.5·cos(0.7t), y = 0.5·sin(1.3t + 0.4·cos(0.3t))) through a centred unit disc, pushing one sample per frame into a 600-sample ring buffer (~10s of comet trail). Each frame the whole trail is redrawn once per kaleidoscope arm — rotated by 2π/complexity and mirrored about the arm axis — over a translucent black overlay that decays the previous frame, giving the classic mirror-arm bloom. MOVE + OBLONG add a slow spirograph orbit of the mandala's centre (period ~20s at Speed 1): MOVE sets orbit radius, OBLONG squashes the orbit's vertical extent from a circle toward a near-horizontal \"rolling tube\". The module emits three coherent views of the SAME pen trail with different palette/transform. Usage: drop it in for a generative kaleidoscope bloom, patch an LFO or envelope into the CV jacks to pulse the speed/arm-count/hue, and pick the mono, full-colour, or pseudo-3D output to suit the look.",
+    "inputs": {
+      "color_speed_cv": "CV in that modulates the Color control (linear), the hue-cycling rate of the RGB and 3D outputs. At 0 the hue is frozen; higher values sweep the HSL hue around the wheel faster (hue = t·color·60 mod 360).",
+      "complexity_cv": "CV in that modulates the Complexity control (linear) — the number of kaleidoscope mirror arms. Modulating it changes the radial symmetry (arm count) live; the value is rounded to a whole number of arms.",
+      "speed_cv": "CV in that modulates the Speed control (linear), scaling how fast the pen advances along its trail and how fast the spirograph orbit and 3D rotation turn. Patch an LFO/envelope to pulse the whole bloom faster or slower."
+    },
+    "outputs": {
+      "mono_out": "Monochrome video out (mono-video cable): the white pen trail (#eee) on black, no hue cycling. The cleanest line-art view of the kaleidoscope, ideal for keying or feeding a colouriser downstream.",
+      "out_3d": "Pseudo-3D video out (video cable): the same mandala drawn with a fixed ~15° pitch tilt plus a continuous rotation (omega = Speed·0.3 rad/s, ~20s/turn) and a dimmed vertically-mirrored bowl twin, so it reads as a rotating sculpture on a horizon. Slightly desaturated and with faster trail decay than RGB.",
+      "rgb_out": "Full-colour video out (video cable) and the module's primary/preview surface: the same mandala stroked in an HSL hue that cycles at the Color rate. This is what the on-card preview screen shows."
+    },
+    "controls": {
+      "color_speed": "Color (0–4, default 1): hue-cycling rate for the RGB and 3D outputs (hue = t·color·60 mod 360); 0 freezes the hue, has no effect on the white mono output. Modulatable via the CLR CV jack.",
+      "complexity": "Complexity (4–32, discrete, default 12): number of kaleidoscope mirror arms repeated around the centre — the radial symmetry order. Rounded to an integer. Modulatable via the CMP CV jack.",
+      "move": "Move (0–1, default 0): spirograph orbit amplitude — at 0 the mandala is pinned dead centre; toward 1 its centre orbits along a path up to 0.25·min(width,height) from centre (period ~20s at Speed 1). No CV jack.",
+      "oblong": "Oblong (0–1, default 0): orbit eccentricity — 0 is a perfect circular orbit; toward 1 the orbit's vertical extent collapses to ~5% of its width, turning the spirograph into a near-horizontal rolling tube. Only matters when Move > 0. No CV jack.",
+      "speed": "Speed (0.1–4, default 1): rate the pen advances along its trail; also drives the spirograph orbit speed and the 3D output's rotation (omega = Speed·0.3 rad/s). Modulatable via the SPD CV jack."
     }
   },
   "pentemelodica": {
@@ -3033,6 +3088,57 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "mode": "MODE — crossfades the filter response continuously from low-pass (0) to band-pass (1); band-pass narrows the passband around CUTOFF for a more vocal/ringing tone.",
       "pingDecay": "PING DECAY — how long the ring lasts after each PING trigger (5 ms–0.5 s); short for clicky percussive plucks, long for sustained resonant tones.",
       "resonance": "RESONANCE — the filter Q: higher values sharpen the peak and emphasize the ring, approaching self-oscillation near the top."
+    }
+  },
+  "quadralogical": {
+    "explanation": "QUADRALOGICAL is a four-input video mixer driven by a single XY joystick. The pad's position (pos_x, pos_y) is mapped over the unit square to four CORNER weights — one per input: in1 top-left, in2 top-right, in3 bottom-left, in4 bottom-right. A bilinear base gives every corner (one input solo) and every edge (a 2-input blend) for free; outside the central yellow DIAMOND the weights are power-sharpened toward a crisp 2-input region, while inside the diamond all four inputs stay balanced (the all-4 composite zone). The model is \"logical\" because each of the FOUR edges of the joystick cycle (1-2, 2-3, 3-4, 4-1) carries its OWN independently-selectable blend effect (DISSOLVE / ADD / MULTIPLY / WIPE / CHROMA / LUMA / DIFF / IRIS) run on that edge's two adjacent inputs, and the four edge-blends are layered weighted by how active each pair is. Unpatched inputs normal down the chain Eurorack-style (in4 falls to in3 to in2 to in1), so a single source never blends against black. Usage: patch one to four video sources into in1-in4, drag the joystick to a corner for a clean cut to one input, to an edge to crossfade/wipe two of them with that edge's effect, or into the diamond for a four-way composite; set each edge's effect with its FX selector and CV-modulate the joystick or per-edge controls for animated transitions.",
+    "inputs": {
+      "blend_sharp": "CV that modulates Sharp (0 to 8): how aggressively the weights snap to a clean 2-input region once the stick leaves the diamond; higher is a harder transition.",
+      "diamond_margin": "CV that modulates Diamond (0 to 1): the size of the central all-four-blend zone, i.e. how far you can push the stick before it locks into a 2-input edge blend.",
+      "edge1_amount": "CV that modulates the 1-2 edge's primary control (Amt/Angle/Thr/Radius depending on that edge's selected effect).",
+      "edge1_param": "CV that modulates the 1-2 edge's secondary control (wipe/iris/key softness or feather; unused for DISSOLVE/ADD/MULTIPLY/DIFF).",
+      "edge2_amount": "CV that modulates the 2-3 edge's primary control (Amt/Angle/Thr/Radius depending on that edge's selected effect).",
+      "edge2_param": "CV that modulates the 2-3 edge's secondary control (softness/feather; only used by WIPE / CHROMA / LUMA / IRIS).",
+      "edge3_amount": "CV that modulates the 3-4 edge's primary control (Amt/Angle/Thr/Radius depending on that edge's selected effect).",
+      "edge3_param": "CV that modulates the 3-4 edge's secondary control (softness/feather; only used by WIPE / CHROMA / LUMA / IRIS).",
+      "edge4_amount": "CV that modulates the 4-1 edge's primary control (Amt/Angle/Thr/Radius depending on that edge's selected effect).",
+      "edge4_param": "CV that modulates the 4-1 edge's secondary control (softness/feather; only used by WIPE / CHROMA / LUMA / IRIS).",
+      "in1": "Video input 1, mapped to the top-left corner of the joystick pad. If unpatched it falls through to the standalone black sentinel (it is the bottom of the normal chain).",
+      "in2": "Video input 2, mapped to the top-right corner. If unpatched it normals down to the nearest lower patched input (in1).",
+      "in3": "Video input 3, mapped to the bottom-left corner. If unpatched it normals down to the nearest lower patched input (in2 then in1).",
+      "in4": "Video input 4, mapped to the bottom-right corner. If unpatched it normals down to the nearest lower patched input (in3, in2, then in1).",
+      "keyB": "CV that modulates Key B, the blue channel of the shared chroma-key colour used by CHROMA edges.",
+      "keyG": "CV that modulates Key G, the green channel of the shared chroma-key colour (defaults to 1, i.e. green-screen).",
+      "keyR": "CV that modulates Key R, the red channel of the shared chroma-key colour used by any edge set to the CHROMA effect.",
+      "pos_x": "CV that modulates X (horizontal joystick position, -1 to +1): -1 favors the left inputs (in1/in3), +1 favors the right inputs (in2/in4).",
+      "pos_y": "CV that modulates Y (vertical joystick position, -1 to +1): +1 favors the top inputs (in1/in2), -1 favors the bottom inputs (in3/in4)."
+    },
+    "outputs": {
+      "out": "The MIX composite: the joystick-weighted, per-edge-effect blend of the four inputs. This is the canonical surface and what the on-card preview shows.",
+      "preview": "A 2x2 monitor tile of the four RAW inputs (in1 top-left, in2 top-right, in3 bottom-left, in4 bottom-right) with thin separator lines, for cueing sources independent of the mix."
+    },
+    "controls": {
+      "blend_sharp": "Sharp (0 to 8, default 3): power-sharpening strength applied to the weights outside the diamond; higher gives a crisper switch toward a single edge pair.",
+      "diamond_margin": "Diamond (0 to 1, default 0.5): radius of the central all-four-input composite zone; outside it the stick resolves to a 2-input edge blend.",
+      "edge1_amount": "1-2 Amt (0 to 1): the 1-2 edge effect's primary control — add/multiply/diff mix amount, WIPE angle, CHROMA/LUMA key threshold, or IRIS radius.",
+      "edge1_fx": "1-2 FX (discrete 0 to 7): the blend effect for the in1-in2 edge — DISSOLVE, ADD, MULTIPLY, WIPE, CHROMA, LUMA, DIFF, or IRIS.",
+      "edge1_param": "1-2 Prm (0 to 1): the 1-2 edge effect's secondary control — WIPE/IRIS softness/feather or CHROMA/LUMA key softness (hidden for DISSOLVE/ADD/MULTIPLY/DIFF).",
+      "edge2_amount": "2-3 Amt (0 to 1): the 2-3 edge effect's primary control (mix amount, WIPE angle, key threshold, or IRIS radius depending on the effect).",
+      "edge2_fx": "2-3 FX (discrete 0 to 7): the blend effect for the in2-in3 edge — DISSOLVE, ADD, MULTIPLY, WIPE, CHROMA, LUMA, DIFF, or IRIS.",
+      "edge2_param": "2-3 Prm (0 to 1): the 2-3 edge effect's secondary softness/feather control (only used by WIPE / CHROMA / LUMA / IRIS).",
+      "edge3_amount": "3-4 Amt (0 to 1): the 3-4 edge effect's primary control (mix amount, WIPE angle, key threshold, or IRIS radius depending on the effect).",
+      "edge3_fx": "3-4 FX (discrete 0 to 7): the blend effect for the in3-in4 edge — DISSOLVE, ADD, MULTIPLY, WIPE, CHROMA, LUMA, DIFF, or IRIS.",
+      "edge3_param": "3-4 Prm (0 to 1): the 3-4 edge effect's secondary softness/feather control (only used by WIPE / CHROMA / LUMA / IRIS).",
+      "edge4_amount": "4-1 Amt (0 to 1): the 4-1 edge effect's primary control (mix amount, WIPE angle, key threshold, or IRIS radius depending on the effect).",
+      "edge4_fx": "4-1 FX (discrete 0 to 7): the blend effect for the in4-in1 edge — DISSOLVE, ADD, MULTIPLY, WIPE, CHROMA, LUMA, DIFF, or IRIS.",
+      "edge4_param": "4-1 Prm (0 to 1): the 4-1 edge effect's secondary softness/feather control (only used by WIPE / CHROMA / LUMA / IRIS).",
+      "freeze": "Freeze (0 to 1, hidden): a determinism toggle for deterministic capture — at >=0.5 the renderer holds the last frame and stops drawing; no card control.",
+      "invert": "Inv (0 to 1): global key inversion — flips which side of the CHROMA/LUMA key threshold is kept versus revealed.",
+      "keyB": "Key B (0 to 1): blue channel of the shared chroma-key colour matched by CHROMA edges.",
+      "keyG": "Key G (0 to 1, default 1): green channel of the shared chroma-key colour; the default green-screen key.",
+      "keyR": "Key R (0 to 1): red channel of the shared chroma-key colour matched by any edge running the CHROMA effect.",
+      "pos_x": "X joystick position (-1 to +1): horizontal balance between the left inputs (in1/in3) and the right inputs (in2/in4).",
+      "pos_y": "Y joystick position (-1 to +1): vertical balance between the top inputs (in1/in2) and the bottom inputs (in3/in4)."
     }
   },
   "rasterize": {
@@ -3270,6 +3376,36 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "v4_tune": "Voice 4 TUNE (semitones, −36..+36) — coarse tuning of the wavetable oscillator. CV via the pitch4 input.",
       "v4_volume": "Voice 4 VOLUME (0..2) — the voice's level before pan + sends. CV via the v4_volume input.",
       "v4_wavePos": "Voice 4 WAVE POSITION (0..1) — scans through the wavetable frames (saw → square → triangle → sine), morphing the timbre. CV via the v4_wavePos input."
+    }
+  },
+  "ruttetra": {
+    "explanation": "An authentic forward-scatter Rutt/Etra scan-processor. A 320x180 grid of sample points walks the Z source; for each point it reads the source luma, places it along an internally-generated H/V ramp, then displaces that position by (luma - 0.5) so bright pixels push their scanline outward and dark pixels recede - building a 3D heightmap relief out of the picture. Adjacent grid points within each row are joined into horizontal LINE segments, and the whole raster is drawn with additive (phosphor) blending over a black field, exactly like a CRT scope. With everything at default the ramp is a linear 1:1 mapping and Y Disp = -0.3, so the source is read upright and bright areas raise the terrain - the classic Rutt/Etra \"raised landscape\" look. Patch any video, image, or keyer into Z; sweep Y Disp (and X Disp) for relief depth, raise Intensity for a brighter glow, morph the X/Y Shape ramps toward triangle/soft/radial for warped scan geometry, and modulate the params with CV for animated topography. Z left unpatched binds a mid-grey sentinel (luma 0.5 = zero displacement), so the card shows flat scanlines rather than a black void. The card has a live preview screen; hiding the controls turns it into a resizable monitor (drag the bottom-right corner, double-click to restore) — a viewport only, it does not change the output resolution.",
+    "inputs": {
+      "intensity": "Intensity (cv) - modulates the Intensity control, scaling the brightness of the additively-blended scanlines.",
+      "xDisp": "X Disp (cv) - modulates the X Disp control, scaling how far each point is pushed left/right by its luma (bipolar around mid-grey).",
+      "xFreq": "X Freq (cv) - modulates the X Freq control, setting how many horizontal ramp cycles span the frame (0.25..8); higher values repeat the scan pattern across X.",
+      "xShape": "X Shape (cv) - modulates the X Shape control, morphing the horizontal ramp shape (linear -> triangle -> soft-fold -> radial) that positions each scanline across the frame.",
+      "yDisp": "Y Disp (cv) - modulates the Y Disp control, scaling how far each point is pushed up/down by its luma; this is the main relief/height knob of the heightmap.",
+      "yFreq": "Y Freq (cv) - modulates the Y Freq control, setting how many vertical ramp cycles span the frame (0.25..8); higher values repeat the scan pattern down Y.",
+      "yShape": "Y Shape (cv) - modulates the Y Shape control, morphing the vertical ramp shape (linear -> triangle -> soft-fold -> radial) that stacks the scanlines down the frame.",
+      "z": "Z (video) - the source frame. Its per-pixel luma (0.299R+0.587G+0.114B) is sampled at each of the 320x180 grid points and drives that point's outward displacement; the source RGB is also carried through as the scanline color. Accepts video, mono-video, image, or keys (upcast by the engine). Unpatched, a mid-grey 1x1 texture is bound so luma is 0.5 everywhere and the scanlines draw flat instead of going black."
+    },
+    "outputs": {
+      "out": "out (video) - the rendered Rutt/Etra raster: additive horizontal scanlines, luma-displaced into a heightmap, over a black phosphor field. Chainable into any video input and also feeds the on-card preview screen."
+    },
+    "controls": {
+      "intensity": "Intensity (0..2, default 1.5) - multiplies the scanline color before the additive blend; raises or dims the overall glow of the raster (default 1.5 keeps the additive lines from looking too faint). It affects brightness only, not relief depth.",
+      "tintB": "Tint B (0..1, default 1) - blue multiplier applied to every scanline's color. Combine R/G/B to push the whole raster toward a monochrome CRT hue. No CV input (panel knob only).",
+      "tintG": "Tint G (0..1, default 1) - green multiplier applied to every scanline's color. Lower it to drain green from the phosphor tint. No CV input (panel knob only).",
+      "tintR": "Tint R (0..1, default 1) - red multiplier applied to every scanline's color. Lower it to drain red from the phosphor tint. No CV input (panel knob only).",
+      "xDisp": "X Disp (-1..1, default 0) - bipolar amount that luma pushes each point horizontally. (luma - 0.5) * X Disp, so mid-grey never moves; negative and positive deflect bright pixels to opposite sides.",
+      "xFreq": "X Freq (0.25..8, default 1) - horizontal ramp frequency: how many shape-ramp cycles span the frame in X. 1 = one pass; higher values repeat/fold the scan pattern across the width. Lives under the card's ADVANCED disclosure.",
+      "xPhase": "X Phase (0..1, default 0) - phase offset added to the horizontal ramp after the frequency multiply and before shaping, sliding the X scan pattern sideways. Panel knob only (no CV input); under the ADVANCED disclosure.",
+      "xShape": "X Shape (0..1, default 0) - morphs the horizontal ramp shape that lays the source across each scanline. 0 = linear (1:1, the unwarped raster), ~0.33 = triangle, ~0.66 = soft-fold (raised cosine), 1 = radial (distance from center). The card prints the current name (linear / triangle / soft / radial and the crossfades between them).",
+      "yDisp": "Y Disp (-1..1, default -0.3) - bipolar amount that luma pushes each point vertically; this builds the 3D relief. The default -0.3 makes bright pixels rise (the classic raised-terrain look).",
+      "yFreq": "Y Freq (0.25..8, default 1) - vertical ramp frequency: how many shape-ramp cycles span the frame in Y. 1 = one pass; higher values repeat/fold the scanlines down the height. Lives under the card's ADVANCED disclosure.",
+      "yPhase": "Y Phase (0..1, default 0) - phase offset added to the vertical ramp after the frequency multiply and before shaping, sliding the Y scan pattern up/down. Panel knob only (no CV input); under the ADVANCED disclosure.",
+      "yShape": "Y Shape (0..1, default 0) - morphs the vertical ramp shape that stacks the scanlines down the frame, through the same linear -> triangle -> soft-fold -> radial sequence as X Shape, with the current name shown on the card."
     }
   },
   "sampleHold": {
@@ -3796,6 +3932,24 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "b_gain4": "Copy B band 4 GAIN (1×..2×) — boosts the treble (4 kHz+) band's level for copy B (affects its audio tap + how hard it drives the envelopes/gate/meter).",
       "b_master": "Copy B MASTER gain (0.5×..1.5×, unity at noon) — raises or lowers the floor of all four of copy B's bands together.",
       "b_mode": "Copy B MODE — AUDIO (analyse the audio input into 4 spectral bands) vs VIDEO (the 4 lanes become R / G / B / Luma of the patched b_video_in frame, sampled card-side). Toggle on the card."
+    }
+  },
+  "textmarquee": {
+    "explanation": "A rich-text MARQUEE video SOURCE — it generates its own picture from text you type, with no video input. You author a styled paragraph in the card's tiny editor (system fonts, per-selection text colour, bold/italic/underline, paragraph align, font family + size, and one layer background fill); that model is rasterized to an offscreen canvas of real system glyphs, uploaded as a texture, and painted into the output frame as a single ribbon. The four knobs only move that ribbon: PosX/PosY place its top-left on screen, and ScrlX/ScrlY crawl it continuously, wrapping back in from the opposite edge once it has fully left — a 90s-screensaver text scroller. Background fills the block's bounding box; everything outside the block reads as layer black. A freshly-spawned node shows a built-in \"textmarquee\" placeholder until you type. Usage: type a short word at a big SIZE for a screen-filling banner, set a bipolar LFO into ScrlX for a classic side-scroll, or sweep PosX/PosY with an LFO to fly the whole banner fully off one edge, across, and back.",
+    "inputs": {
+      "posX": "CV modulating PosX — the ribbon's raw horizontal position. Calibrated so a default-centred ±1 LFO drives it fully off the left edge, through centre, to fully off the right edge, and back (a complete margin-to-margin sweep).",
+      "posY": "CV modulating PosY — the ribbon's raw vertical position. Calibrated so a default-centred ±1 LFO drives it fully off the top, through centre, to fully off the bottom, and back.",
+      "scrollX": "CV modulating ScrlX — horizontal scroll speed. Bipolar around the knob (0.5 = static): a ±1 source sweeps the full crawl-speed range, scrolling left below centre and right above, with the ribbon wrapping in from the opposite edge.",
+      "scrollY": "CV modulating ScrlY — vertical scroll speed. Bipolar around the knob (0.5 = static): a ±1 source sweeps the full speed range, crawling the ribbon up or down and wrapping it back in from the opposite edge."
+    },
+    "outputs": {
+      "out": "The rendered text layer: the styled ribbon drawn at its scrolled position over its background-filled block, with the rest of the frame as layer black."
+    },
+    "controls": {
+      "posX": "PosX — raw horizontal position, 0..1. 0 places the ribbon fully off the left edge, 1 fully off the right, 0.5 centred. Combined additively with the ScrlX scroll offset.",
+      "posY": "PosY — raw vertical position, 0..1. 0 places the ribbon fully off the top, 1 fully off the bottom, 0.5 centred. Combined additively with the ScrlY scroll offset.",
+      "scrollX": "ScrlX — horizontal scroll speed, bipolar 0..1. 0.5 is static (the text sits where PosX/PosY put it); below 0.5 scrolls one way, above 0.5 the other, faster toward the extremes. The ribbon wraps continuously, re-entering from the opposite edge.",
+      "scrollY": "ScrlY — vertical scroll speed, bipolar 0..1. 0.5 is static; below 0.5 crawls up, above 0.5 crawls down (or vice-versa), faster toward the extremes, wrapping the ribbon back in from the opposite edge."
     }
   },
   "tides2": {
