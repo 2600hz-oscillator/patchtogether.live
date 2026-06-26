@@ -74,6 +74,34 @@ export const filterDef: AudioModuleDef = {
     { id: 'mode',      label: 'Mode',   defaultValue: 0,    min: 0,    max: 2,     curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A multi-mode state-variable filter applying subtractive synthesis' bread-and-butter filtering to an audio signal. Three continuously-selectable modes (lowpass/bandpass/highpass) shape the spectral response; cutoff frequency and resonance (Q/emphasis) are both continuously modulatable via CV inputs for dynamic sweep effects. The cutoff CV input maps -1..+1 to ±5 octaves around the knob position via the Faust DSP itself, enabling smooth audio-rate modulation without requiring a separate CV scale stage. Typical voice structure: VCO → Filter → VCA, with an envelope or LFO patched into the cutoff and resonance CV inputs for expressive timbral shaping.",
+    inputs: {
+      audio:
+        "The signal to be filtered — typically an oscillator output or other harmonically-rich source. The filter operates on this audio-rate signal.",
+      cutoff:
+        "CV input that modulates the cutoff frequency parameter at audio rate. A -1..+1 signal sweeps the frequency symmetrically around your fader setting by ±5 octaves (20 Hz to 20 kHz musical range), mapped internally by the Faust DSP source — no external scaling needed. Typical patch: envelope or LFO output → here, for dynamic sweep effects.",
+      res: "CV input that sums into the resonance (Q) parameter at audio rate, emphasizing energy near the cutoff frequency. Linear scaling over the 0..0.99 range — patch a slow LFO or envelope here to add vocal-like formant sweeps or self-oscillation dynamics.",
+    },
+    outputs: {
+      audio:
+        "The filtered output signal, shaped by the selected mode, cutoff frequency, and resonance amount. Patch into a VCA, VCF, or the next stage of your voice chain.",
+    },
+    controls: {
+      cutoff:
+        "The corner / center frequency of the filter, ranging 20 Hz (sub-bass territory) to 20 kHz (silence / presence peak). Log fader so the travel lives where your ear cares most — most musical action clusters in the mid-range knob positions.",
+      resonance:
+        "Filter Q / peak emphasis, 0..0.99 — 0 is flat (no resonance, just frequency rolloff), raising it peaks the response near the cutoff (boosts that region, adds character), and at high values it can self-oscillate (the filter rings at cutoff indefinitely with no input signal). Resonance interacts with mode: highpass resonance can sculpt upper-midrange sheen, lowpass resonance can warm up oscillators by emphasizing fundamentals.",
+      // The MODE param is a 3-position discrete selector (0=LP, 1=BP, 2=HP),
+      // shown as three buttons on the card. Documented under the param id `mode`
+      // (its three positions described together) — there is no per-position
+      // param/control-family in the def to key separate entries off of.
+      mode:
+        "Discrete 3-position filter type selector (0 = LP, 1 = BP, 2 = HP). Lowpass (LP) lets low frequencies pass and rolls off above the cutoff — the textbook subtractive-synthesis filter, sculpting bright oscillators into warm, mellow tones by removing highs. Bandpass (BP) lets frequencies near the cutoff pass through and attenuates both below and above — useful for isolating a narrow spectral slice or creating resonant peaks for plucks and bells. Highpass (HP) lets high frequencies pass and attenuates below the cutoff — removes bass / rumble and brings out brightness, useful for thinning out sources or creating thin, nasal tones.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const f = await instantiateFaustModule(ctx, { name: 'filter', wasmUrl, metaUrl, workletUrl });
     const merger = ctx.createChannelMerger(3);

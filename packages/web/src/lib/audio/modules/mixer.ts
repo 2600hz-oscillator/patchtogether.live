@@ -50,6 +50,29 @@ export const mixerDef: AudioModuleDef = {
     { id: 'master', label: 'Master', defaultValue: 1, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A simple 4-channel summing mixer: patches four independent audio inputs to a bus where each channel has its own level control, then a master gain shapes the final mixed output. Mental model: stack four signals on top of each other, set each one's volume independently, then turn the master knob to set how loud the whole mix is.",
+    inputs: {
+      in1: "Audio input for channel 1; its level is set by the Ch1 fader.",
+      in2: "Audio input for channel 2; its level is set by the Ch2 fader.",
+      in3: "Audio input for channel 3; its level is set by the Ch3 fader.",
+      in4: "Audio input for channel 4; its level is set by the Ch4 fader.",
+    },
+    outputs: {
+      audio:
+        "The mixed bus: the sum of all four channels (each scaled by its level fader) attenuated by the master gain. Goes silent when all four channels are at 0 or master is at 0.",
+    },
+    controls: {
+      ch1: "Channel 1 level — how loud or quiet channel 1 is in the mix, from mute (0) to full (1).",
+      ch2: "Channel 2 level — how loud or quiet channel 2 is in the mix, from mute (0) to full (1).",
+      ch3: "Channel 3 level — how loud or quiet channel 3 is in the mix, from mute (0) to full (1).",
+      ch4: "Channel 4 level — how loud or quiet channel 4 is in the mix, from mute (0) to full (1).",
+      master:
+        "Master gain on the mixed bus — scales the whole summed signal from silence (0) to unity (1). Turning it down fades all four channels together without changing their relative balance.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const f = await instantiateFaustModule(ctx, { name: 'mixer', wasmUrl, metaUrl, workletUrl });
     const merger = ctx.createChannelMerger(4);

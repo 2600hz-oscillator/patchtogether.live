@@ -25,6 +25,36 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "sustain": "The level the envelope holds at for as long as the gate stays high, after attack and decay complete — 0 (no sustain, decays all the way to silence) up to 1.0 (holds at full peak); linear fader."
     }
   },
+  "analogVco": {
+    "explanation": "The analog VCO is a classic analog-modeled voltage-controlled oscillator that generates four simultaneous waveforms (sawtooth, square, triangle, sine) on separate outputs, plus a continuous morphing output that sweeps from saw through sine to square driven by the shape parameter. It accepts V/oct pitch CV with coarse/fine tuning controls, audio-rate frequency and phase modulation with depth controls, and hard-sync input for phase-locking to another oscillator. The mental model is a single oscillator core with multiple simultaneous taps (like a hardware Moog VCO) plus an interactive waveform morpher — patch the raw waveforms to filters/mixers, use morph for smooth real-time texture, and chain sync ports for rich polysynth interactions.",
+    "inputs": {
+      "fine": "CV modulation of the fine parameter (cents); displaces the fine tuning knob left/right for subtle pitch micro-adjustments or vibrato-style modulation around the coarse pitch.",
+      "fm": "Audio-rate frequency modulation input (typically an LFO or envelope), scaled by the fmAmount parameter to add wobble, vibrato, or dramatic pitch sweeps without changing the coarse tuning.",
+      "fmAmount": "CV modulation of the FM depth; displaces the FM-depth knob left/right to dynamically scale how much the fm input affects the pitch — turn it up to let an envelope open the frequency sweep, or down to tighten it.",
+      "pitch": "V/oct pitch input (0V = C4) that drives the oscillator frequency; modulated by the tune, fine, and FM inputs together to set the final sounding pitch.",
+      "pm": "Audio-rate phase modulation input (typically an LFO or envelope), scaled by the pmAmount parameter to add timbre modulation and metallic character, especially effective on the square and triangle taps.",
+      "pmAmount": "CV modulation of the PM depth; displaces the PM-depth knob left/right to dynamically scale how much the pm input affects the phase and timbre — open it up from an envelope to add evolving color.",
+      "shape": "CV modulation of the morph output waveform (0 = sawtooth, 0.5 = sine, 1 = square); displaces the shape knob left/right so an external LFO, envelope, or sequencer can crossfade the morph output through the three classic waveforms in real time.",
+      "sync": "Hard-sync input that resets this oscillator's phase to zero on every rising edge, allowing you to lock its waveform to a master oscillator for rich, metallic, or aliased tones. When unpatched, the VCO output is unchanged from a version with no sync port.",
+      "tune": "CV modulation of the tune parameter (semitones); displaces the coarse pitch knob left/right so an external LFO or sequencer can transpose in whole-step intervals without affecting fine tuning."
+    },
+    "outputs": {
+      "morph": "Continuous morphing output that sweeps from sawtooth (shape = 0) through sine (shape = 0.5) to square (shape = 1) as the shape parameter changes; shaped by the shape knob and its CV input, and reflects any FM/PM modulation in real time. The on-card scope displays this output live so you see the crossfade happening.",
+      "saw": "The raw sawtooth waveform (rich harmonic content, bright and buzzy), always sounding at the pitch CV regardless of the shape or morph knob.",
+      "sine": "The pure sine waveform (no harmonics, pure fundamental), ideal for clean sub-bass, tone modulation, or as a base mixed with other waveforms.",
+      "square": "The raw square/pulse waveform (hollow, woody tone), pulse width set by the pw parameter — use this tap to feed a filter or as-is for bright synth bass.",
+      "sync": "Hard-sync output — a one-sample +1 pulse at each cycle boundary (phase wrap) so it can clock another VCO's sync input for chained oscillator interactions or external gear. When unplugged, the sync output is silent.",
+      "triangle": "The raw triangle waveform (softer than square, more mellow), useful for warmth or blended with other taps through a mixer."
+    },
+    "controls": {
+      "fine": "Fine tuning in cents (−100 to +100, one cent = 1/100 of a semitone) — apply a perfectly-tuned unison detune when stacked with another oscillator, or dial in an exact note without coarse octave shifts.",
+      "fmAmount": "Depth of frequency modulation from the FM input (−1 to +1) — 0 means the fm input has no effect. Positive sweeps pitch upward, negative downward; patch an LFO here to add vibrato or ramp it from an envelope for dramatic pitch drops.",
+      "pmAmount": "Depth of phase modulation from the PM input (−1 to +1) — 0 means the pm input has no effect. Higher values shift the morph timbre more dramatically per unit of PM signal; use this to add envelope-driven color changes.",
+      "pw": "Pulse width of the square waveform (0.05 to 0.95, duty cycle) — 0.5 is a perfect square, lower values create thin nasal pulses, higher values create inverted thin pulses. Animate this with an LFO for a classic PWM (pulse-width modulation) sweep.",
+      "shape": "Waveform selector for the morph output (0 to 1) — 0 = sawtooth, 0.5 = sine, 1 = square. Knob + CV modulation add together, so a sequencer or LFO can smoothly sweep through all three classic waveforms.",
+      "tune": "Coarse pitch in semitones (−36 to +36) — shift the whole oscillator up or down by whole-step intervals. With CV modulation on, knob + CV add together, so a sequencer can select octaves while the knob sets a base pitch."
+    }
+  },
   "cocoadelay": {
     "explanation": "A tape-style stereo delay (clean-room port of Tilde Murray's Cocoa Delay): audio is written into a 10-second stereo tape buffer and read back at a fractional, modulated position with 4-point Hermite interpolation. The read time is the base delay (free-running TIME, or a musical division of a clock beat when SYNC is on), warped per-sample by an LFO and a slow random DRIFT, with bipolar feedback feeding the echoes back through an in-loop multi-mode FILTER and saturating DRIVE; PAN modes spread the wet image, DUCKING sidechains the wet level off the dry input, and DRY/WET set the final mix. Mental model: think of it as one tape echo where almost every knob can also be voltage-controlled, and where a patched CLK pulse or the rack/MIDI tempo can lock the delay to the beat.",
     "inputs": {
@@ -89,6 +119,22 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "fader": "The A↔B crossfade position: 0 shows only IN A, 1 shows only IN B, and in between the two are blended by the amount the A/B FX dropdown's shape allows (a plain fade at the 0.5 default is a 50/50 mix). Clamped to 0..1, and the result is the mix that feeds both the SEND output and the dry side of the dry/wet stage."
     }
   },
+  "filter": {
+    "explanation": "A multi-mode state-variable filter applying subtractive synthesis' bread-and-butter filtering to an audio signal. Three continuously-selectable modes (lowpass/bandpass/highpass) shape the spectral response; cutoff frequency and resonance (Q/emphasis) are both continuously modulatable via CV inputs for dynamic sweep effects. The cutoff CV input maps -1..+1 to ±5 octaves around the knob position via the Faust DSP itself, enabling smooth audio-rate modulation without requiring a separate CV scale stage. Typical voice structure: VCO → Filter → VCA, with an envelope or LFO patched into the cutoff and resonance CV inputs for expressive timbral shaping.",
+    "inputs": {
+      "audio": "The signal to be filtered — typically an oscillator output or other harmonically-rich source. The filter operates on this audio-rate signal.",
+      "cutoff": "CV input that modulates the cutoff frequency parameter at audio rate. A -1..+1 signal sweeps the frequency symmetrically around your fader setting by ±5 octaves (20 Hz to 20 kHz musical range), mapped internally by the Faust DSP source — no external scaling needed. Typical patch: envelope or LFO output → here, for dynamic sweep effects.",
+      "res": "CV input that sums into the resonance (Q) parameter at audio rate, emphasizing energy near the cutoff frequency. Linear scaling over the 0..0.99 range — patch a slow LFO or envelope here to add vocal-like formant sweeps or self-oscillation dynamics."
+    },
+    "outputs": {
+      "audio": "The filtered output signal, shaped by the selected mode, cutoff frequency, and resonance amount. Patch into a VCA, VCF, or the next stage of your voice chain."
+    },
+    "controls": {
+      "cutoff": "The corner / center frequency of the filter, ranging 20 Hz (sub-bass territory) to 20 kHz (silence / presence peak). Log fader so the travel lives where your ear cares most — most musical action clusters in the mid-range knob positions.",
+      "mode": "Discrete 3-position filter type selector (0 = LP, 1 = BP, 2 = HP). Lowpass (LP) lets low frequencies pass and rolls off above the cutoff — the textbook subtractive-synthesis filter, sculpting bright oscillators into warm, mellow tones by removing highs. Bandpass (BP) lets frequencies near the cutoff pass through and attenuates both below and above — useful for isolating a narrow spectral slice or creating resonant peaks for plucks and bells. Highpass (HP) lets high frequencies pass and attenuates below the cutoff — removes bass / rumble and brings out brightness, useful for thinning out sources or creating thin, nasal tones.",
+      "resonance": "Filter Q / peak emphasis, 0..0.99 — 0 is flat (no resonance, just frequency rolloff), raising it peaks the response near the cutoff (boosts that region, adds character), and at high values it can self-oscillate (the filter rings at cutoff indefinitely with no input signal). Resonance interacts with mode: highpass resonance can sculpt upper-midrange sheen, lowpass resonance can warm up oscillators by emphasizing fundamentals."
+    }
+  },
   "lfo": {
     "explanation": "A low-frequency modulation source: one oscillator emits the same wave at four phase taps (0°/90°/180°/270°) so a single LFO can sweep several voices in stereo or quadrature without re-tuning. Rate sets the cycle speed, Shape continuously morphs the waveform (sine → saw → square), and Depth scales the swing. In a shared/multiplayer rack the phase is anchored to the rack's shared clock so every client sees the same value at the same moment; solo on the public canvas it simply free-runs from phase 0.",
     "inputs": {
@@ -107,6 +153,36 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "depth": "Output amplitude / swing, applied as gain = depth × 2 and not clamped: 0 = still (flat at the 0 center, no modulation), 0.5 = unity ±1 (the default, matches legacy patches), 1 = ±2 (deliberately beyond the normal ±1 range). Orthogonal to shape — it only scales the swing, never shifts the center.",
       "rate": "How fast the LFO cycles, from 0.01 Hz (one sweep per ~100 s) to 100 Hz (audio-rate for FM-style use), on a log fader. Sets the speed shared by all four phase outputs; the clock input overrides phase, not rate.",
       "shape": "Continuously morphs the waveform across the 0–2 range: 0 = sine, 1 = saw, 2 = square, with smooth crossfades in between (e.g. value 0.5 = halfway sine↔saw). The fader's glyphs mark sine / saw / square."
+    }
+  },
+  "mixer": {
+    "explanation": "A simple 4-channel summing mixer: patches four independent audio inputs to a bus where each channel has its own level control, then a master gain shapes the final mixed output. Mental model: stack four signals on top of each other, set each one's volume independently, then turn the master knob to set how loud the whole mix is.",
+    "inputs": {
+      "in1": "Audio input for channel 1; its level is set by the Ch1 fader.",
+      "in2": "Audio input for channel 2; its level is set by the Ch2 fader.",
+      "in3": "Audio input for channel 3; its level is set by the Ch3 fader.",
+      "in4": "Audio input for channel 4; its level is set by the Ch4 fader."
+    },
+    "outputs": {
+      "audio": "The mixed bus: the sum of all four channels (each scaled by its level fader) attenuated by the master gain. Goes silent when all four channels are at 0 or master is at 0."
+    },
+    "controls": {
+      "ch1": "Channel 1 level — how loud or quiet channel 1 is in the mix, from mute (0) to full (1).",
+      "ch2": "Channel 2 level — how loud or quiet channel 2 is in the mix, from mute (0) to full (1).",
+      "ch3": "Channel 3 level — how loud or quiet channel 3 is in the mix, from mute (0) to full (1).",
+      "ch4": "Channel 4 level — how loud or quiet channel 4 is in the mix, from mute (0) to full (1).",
+      "master": "Master gain on the mixed bus — scales the whole summed signal from silence (0) to unity (1). Turning it down fades all four channels together without changing their relative balance."
+    }
+  },
+  "noise": {
+    "explanation": "A pure noise source with three independent spectral flavors: white (flat spectrum), pink (1/f, -3 dB/oct), and brown (1/f², -6 dB/oct). All three noise streams run continuously from a shared 2-second looping buffer and are gain-scaled by a single LEVEL knob. Mental model: patch any combination of the three outputs into different channels to layer different timbres—white for brightness, pink for warmth, brown for rumble—all controlled by one master gain. Since the buffer loop is long and aperiodic noise by nature, the 0.5 Hz loop seam is inaudible.",
+    "outputs": {
+      "brown": "1/f² brown noise at -6 dB per octave slope; the darkest flavor with heavy low-frequency content. One of three independent outputs sharing the LEVEL control.",
+      "pink": "1/f pink noise at -3 dB per octave slope; warmer than white noise with attenuated highs. Useful for smooth, natural-sounding textures. One of three independent outputs sharing the LEVEL control.",
+      "white": "Full-spectrum white noise with flat frequency response; uniform random amplitude across all audible frequencies. One of three independent outputs sharing the LEVEL control."
+    },
+    "controls": {
+      "level": "Master gain applied equally to all three noise outputs, from silence (0) to full amplitude (1). Default 0.5 provides moderate headroom; raise it to push the noise through downstream processing, lower it to blend subtly into a mix."
     }
   },
   "sequencer": {
@@ -153,6 +229,21 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "sequencer-snh-toggle": "Sample & Hold toggle (S&H / OFF) — the button form of the snh control: on (default) latches the pitch CV to the gate edge and holds it through rests, off lets pitch run continuously.",
       "snh": "Sample & hold on the pitch output, on by default: when on, the pitch CV is rewritten only on a step that actually fires a note, so it latches to the gate and holds steady through rests; turn it off for continuous pitch that can change on every step (including back toward rest).",
       "swing": "Shuffles the rhythm by lengthening the on-beat steps and shortening the off-beat steps that follow them, which pushes every off-beat later for a looser feel; 0 is dead-straight, higher values deepen the shuffle. Internal-clock only (an external clock sets its own timing)."
+    }
+  },
+  "vca": {
+    "explanation": "A voltage-controlled amplifier that multiplies an input audio signal by a gain factor computed from a base DC offset and CV control voltage scaled by the cvAmount parameter. Mental model: the VCA's output amplitude is set by patching a CV signal into the CV input (typically an envelope or LFO) and tuning the base knob for silent-when-unpatched (0) or passing audio-through at unity (1). A phase-inverted copy of the output is always available on the audio_inv port for stereo widening, sidechain processing, or mid/side decomposition without needing a separate inverter module.",
+    "inputs": {
+      "audio": "The audio signal to be amplified or gated; typically a voice from an oscillator, sampler, or other sound source.",
+      "cv": "Control voltage that modulates the gain amount; combined with the base parameter and scaled by cvAmount to set the overall amplitude. Typical sources are envelope generators (ADSR), LFOs, sequencer CV outputs, or other modulation sources."
+    },
+    "outputs": {
+      "audio": "The amplified audio signal, computed as audio × (base + cv × cvAmount). When base=0 and nothing is patched into CV, the output is silent; with base=1 and cv=1 (unity gain), the signal passes through unchanged.",
+      "audio_inv": "A phase-inverted (180° flipped) copy of the audio output, useful for stereo width techniques, preventing feedback in sidechain chains, or mid/side processing."
+    },
+    "controls": {
+      "base": "A static DC offset added to the CV signal (linear 0 to 1, default 0). Set to 0 for silent when unpatched; set to 1 for unity gain. Typically used as a quick volume control or to set the VCA's baseline attenuation.",
+      "cvAmount": "Controls the scale and sign of the CV input (linear −1 to 1, default 1). Positive values amplify normally; negative values invert the CV so a high incoming signal produces low gain. Useful for inverting modulation or creating sidechain-style ducking effects."
     }
   }
 };

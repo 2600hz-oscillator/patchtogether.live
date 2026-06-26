@@ -25,4 +25,13 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'sequencer',
   'fader',
   'cocoadelay',
+  // Batch 1 — foundational modules (2026-06-25): the bread-and-butter audio
+  // chain — oscillator, amplifier, mixer, noise source, filter — each now
+  // carrying authored co-located docs. (lfo + cocoadelay, the batch's other two
+  // members, were already promoted in the pilot above.)
+  'analogVco',
+  'vca',
+  'mixer',
+  'noise',
+  'filter',
 ]);

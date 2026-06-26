@@ -54,6 +54,27 @@ export const vcaDef: AudioModuleDef = {
     { id: 'cvAmount', label: 'CV',   defaultValue: 1.0, min: -1, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A voltage-controlled amplifier that multiplies an input audio signal by a gain factor computed from a base DC offset and CV control voltage scaled by the cvAmount parameter. Mental model: the VCA's output amplitude is set by patching a CV signal into the CV input (typically an envelope or LFO) and tuning the base knob for silent-when-unpatched (0) or passing audio-through at unity (1). A phase-inverted copy of the output is always available on the audio_inv port for stereo widening, sidechain processing, or mid/side decomposition without needing a separate inverter module.",
+    inputs: {
+      audio:
+        "The audio signal to be amplified or gated; typically a voice from an oscillator, sampler, or other sound source.",
+      cv: "Control voltage that modulates the gain amount; combined with the base parameter and scaled by cvAmount to set the overall amplitude. Typical sources are envelope generators (ADSR), LFOs, sequencer CV outputs, or other modulation sources.",
+    },
+    outputs: {
+      audio:
+        "The amplified audio signal, computed as audio × (base + cv × cvAmount). When base=0 and nothing is patched into CV, the output is silent; with base=1 and cv=1 (unity gain), the signal passes through unchanged.",
+      audio_inv:
+        "A phase-inverted (180° flipped) copy of the audio output, useful for stereo width techniques, preventing feedback in sidechain chains, or mid/side processing.",
+    },
+    controls: {
+      base: "A static DC offset added to the CV signal (linear 0 to 1, default 0). Set to 0 for silent when unpatched; set to 1 for unity gain. Typically used as a quick volume control or to set the VCA's baseline attenuation.",
+      cvAmount:
+        "Controls the scale and sign of the CV input (linear −1 to 1, default 1). Positive values amplify normally; negative values invert the CV so a high incoming signal produces low gain. Useful for inverting modulation or creating sidechain-style ducking effects.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const f = await instantiateFaustModule(ctx, { name: 'vca', wasmUrl, metaUrl, workletUrl });
     const merger = ctx.createChannelMerger(2);
