@@ -222,6 +222,24 @@ export const pictureboxDef: VideoModuleDef = {
     return out;
   },
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "An image/still source for the video graph. You pick an image file in the card (\"Choose image...\"); it is zoom-fit-cropped to the engine resolution (1024x768, 4:3), JPEG-encoded (q=0.85), and synced across rack-mates so every peer sees the same picture. The fragment shader samples that texture and multiplies its RGB by Gain (idle = a dark teal fill so an empty card reads as alive, not broken). Beyond the single image, picturebox holds a 7-slot asset bank: right-click the card to open the \"Load multiple…\" panel and load one image per slot, labelled by the C-major scale degrees C D E F G A B (slots 1-7). Patch a clip player's note/pitch + gate into asset_pitch / asset_gate and each gate edge switches the displayed slot by pitch class (octave-independent; a black key is ignored). Use it as a still backdrop, an album-art frame, or a note-triggered image sampler feeding downstream video benders.",
+    inputs: {
+      gain: "CV in that modulates Gain (output brightness/RGB multiply); displaces the Gain fader, linear, summed at the param target.",
+      asset_pitch: "Pitch (V/oct) in carrying the raw slot-select value; read on each asset_gate rising edge and mapped by pitch class to one of the 7 C-major slots (C..B). No CV scaling — passed through raw.",
+      asset_gate: "Gate/trigger in: the card edge-detects the RISING edge (level crosses ~0.5) — on each edge it reads asset_pitch, resolves the slot, and switches to it if that slot holds an image. Acts on edges, not the held level.",
+    },
+    outputs: {
+      out: "Image out — the active slot's image as a video-domain image source (RGB multiplied by Gain), at engine resolution; patch into any video module.",
+    },
+    controls: {
+      gain: "Gain — output brightness; multiplies the image's RGB. Linear 0..2 (1.0 = unity). Also modulatable via the gain CV input.",
+      asset_pitch: "Asset pitch — synthetic, hidden param caching the raw V/oct from the asset_pitch input. Not a card knob; the card reads it on each gate edge to choose a slot. Range -10..10.",
+      asset_gate: "Asset gate — synthetic, hidden param caching the raw gate level (0..1) from the asset_gate input. Not a card knob; the card edge-detects its rising edge to fire a slot switch.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
