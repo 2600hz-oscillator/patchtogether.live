@@ -149,6 +149,25 @@ export const acidwarpDef: VideoModuleDef = {
     { id: 'sceneTrig',   label: 'Trig',    defaultValue: DEFAULTS.sceneTrig,   min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "acidwarp is a pure-GPU plasma SOURCE — it has no video input, it synthesizes its picture from math. It is a faithful port of Noah Spurrier's 1992-93 ACIDWARP demo: a 320x240 (NTSC 4:3) buffer of 8-bit palette indices is generated once per scene by a per-pixel formula (distance + angle + scaled sin/cos modulators, plus a few XOR scenes and recursive \"rain\" noise scenes), then every frame a 256-entry color palette is rotated by one or more slots and sampled per pixel. The scrolling palette is what makes the pattern appear to flow and pulse, even though the underlying index field is static until the scene changes. There are 41 scenes (concentric rings, simple rays, peacock, five-arm star, interference fields, rain/noise, interlaced two-screen variants, etc.) and 8 palettes (RGBW rainbow, greyscale, half-grey, pastel — each with an optional sparkle/\"lightning\" variant that brightens every 4th slot). Use it as a generative video bed: patch OUT into a mixer/feedback/output card, ride SPEED for the cycling rate, and nudge SCENE by hand or with a clock into scene_cv for rhythmic pattern changes. Slot 0 is reserved black, so palette rotation cycles only the 255 non-black colors.",
+    inputs: {
+      speed_cv: "CV in that modulates the Speed control (linear): it displaces the palette-rotation rate and, while not frozen, the auto scene-change cadence. Same mapping as the knob — 0 = still, 0.5 = native 1x, 1.0 = 4x.",
+      scene_cv: "CV in that modulates the hidden sceneTrig control; the draw loop edge-detects it, so a rising edge (crossing above 0.5) advances to the NEXT scene once per pulse — it behaves as a trigger. Works whether or not FREEZE is on; patch a clock here for rhythmic scene changes.",
+    },
+    outputs: {
+      out: "Video out: the rendered plasma frame (320x240 internal, 4:3), linearly upsampled to the engine framebuffer. The only output — acidwarp is a generator with no audio path.",
+    },
+    controls: {
+      speed: "Speed knob (linear 0..1, default 0.5). Maps piecewise to a rate multiplier: 0 = stopped, 0.5 = native 1x, 1.0 = 4x. Scales both palette-rotation speed and the auto scene-change interval (~8s at 1x, halving as speed rises). The card shows the live multiplier (e.g. 2.4x, or STOPPED at 0).",
+      freeze: "Freeze toggle (discrete 0/1, default 0). When on, halts only the automatic scene cycler — the palette keeps rotating, so colors still scroll. Manual SCENE button presses and scene_cv triggers still advance the scene while frozen. Card button reads FREEZE / FROZEN.",
+      scene: "Scene index (discrete 0..40, default 0). Picks which of the 41 per-pixel pattern formulas is generated. Advanced automatically (unless frozen, and only while speed > 0), by the SCENE card button, or by a scene_cv rising edge; the card reads SCENE n/41 (1-based). Persisted with the patch.",
+      paletteType: "Palette picker (discrete 0..7, default 0). Selects one of 4 base palettes — RGBW rainbow, GREY, HALF-grey, PASTEL — each with an optional sparkle/lightning variant (base id + 4). The card's PAL button cycles through all 8 (RGBW, GREY, HALF, PASTEL, then the four sparkle versions).",
+      sceneTrig: "One-shot scene-advance trigger (linear 0..1, default 0). Driven by the scene_cv input; the draw loop edge-detects it (a low->high crossing above 0.5 fires once, advancing the scene). Not a hand-turned control — it is the CV-fed trigger that bumps the scene index.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

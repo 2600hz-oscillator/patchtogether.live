@@ -245,6 +245,26 @@ export const mandleblotDef: VideoModuleDef = {
     { id: 'center_y',    label: 'Y',     defaultValue: DEFAULTS.center_y,    min: -2,   max: 2,    curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "MANDLEBLOT is a 2D Mandelbrot fractal generator rendered on the GPU. A WebGL2 fragment shader runs the escape-time loop (z = z² + c, bailout radius 16) per pixel, then smooth-colours it with the standard fractional-iteration trick (mu = i + 1 - log(log|z|)/log2) so colour bands don't stairstep. The same program renders twice per frame: a greyscale escape-time field to mono_out and an RGB-cycling palette to color_out, where hue is driven by iteration band (mu), time, and log(zoom) so each zoom depth feels like its own palette. It is a pure generator with no video input — it synthesizes the fractal from scratch. Frame it with X/Y, drive Zoom by hand or via zoom_cv (LFO/envelope) for an automatic dive into the seahorse valleys, raise Iter for filament detail in deep zooms, and use Color/Rot to animate the look. Single-precision highp-float caps usable zoom near 1e6×, past which the image goes block-y.",
+    inputs: {
+      zoom_cv: "CV input that modulates the Zoom control (linear cvScale onto the 0..1 zoom knob). A bipolar ±1 CV sweeps the knob position ±half its 0..1 range, centred on the current knob value; that resulting knob position is then run through the log map (knob 0→1×, 1→~1e6×) to get the real zoom factor, so a rising CV pushes the view deeper into the fractal. Patch an LFO or envelope here for an automatic dive. Rotation, X, Y, Iter and Color have no CV input (knob-only by design).",
+    },
+    outputs: {
+      mono_out: "Greyscale (mono-video) escape-time field: brightness = clamp(mu / Iter). In the live shader the in-set region renders WHITE (mu pins to Iter → v=1), while freshly-escaped points start dark at low mu and brighten toward the boundary — i.e. the set body is bright and the fast-escape exterior is dark.",
+      color_out: "Colour (video) output: the RGB palette pass, full-saturation hue cycled by iteration band (mu), time, and zoom depth; in-set points are forced black to preserve the set's silhouette. This is the surface texture — the card's live preview and the default/canonical output handle.",
+    },
+    controls: {
+      zoom: "Zoom (ZOOM knob, log curve, 0..1). Mapped exponentially to a real zoom factor via 10^(6·knob) — 0→1× (whole set), 0.5→~1000×, 0.8→~63k×, 1.0→1e6× (the highp-float ceiling, past which the image goes block-y); default 0.2 (~16×). The card shows the live factor as a ×N / Nk× / NM× readout beneath the knob.",
+      rotation: "Rot (ROT knob, linear, 0..1) — rotates the view about its current centre, linearly mapped to 0..2π radians (0 = upright, 1 = a full turn). Knob-only, no CV.",
+      iterations: "Iter (ITER knob, discrete, 50..500, default 150) — maximum escape iterations. Higher values resolve finer filament detail in deep zooms at higher GPU cost; the shader's loop is hard-capped at 500 and the value is rounded/clamped to [50,500].",
+      color_cycle: "Color (COLOR knob, linear, 0..4, default 1) — scales the time and log(zoom) hue terms together. 0 freezes both drifts (hue still varies by iteration band via mu·0.05); higher values speed the continuous time cycle and the per-zoom palette shift. Affects color_out only.",
+      center_x: "X (X knob, linear, -2..2, default -0.7) — real part of the complex-plane view centre; pans the framing horizontally (-0.7 is the classic main-cardioid framing).",
+      center_y: "Y (Y knob, linear, -2..2, default 0) — imaginary part of the view centre; pans the framing vertically.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
