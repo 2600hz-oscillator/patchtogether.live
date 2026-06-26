@@ -115,6 +115,37 @@ export const sidecarDef: AudioModuleDef = {
     { id: 'sc_hpf',    label: 'SC HPF',    defaultValue: 20,   min: 20,  max: 1000, curve: 'log',    units: 'Hz' },
   ],
 
+  docs: {
+    explanation:
+      "A stereo sidechain ducker — the classic 'pumping' compressor where one signal pushes another down. The MAIN pair is the trigger (typically a kick drum); the SIDECHAIN pair is the signal that gets ducked and summed into the output (typically a pad or bass). The sidechain is always present at the output EXCEPT when the main fires, at which point the detector pulls it down by a compressor-style gain computer (threshold, ratio, knee, attack, release) and lets it spring back. Detection is stereo-linked so a transient on either main channel ducks both output channels equally (no image shift), and a sidechain high-pass lets you key off the kick's body without the low end choking the detector. Two extra CV outputs (ENV and ENV INV) expose the live ducking envelope for cross-patching the same pump into other VCAs. Real-source chain: feed a rhythmic source into MAIN and the bus you want pumped into SIDECHAIN.",
+    inputs: {
+      audio_l_in: "Left MAIN / trigger input — the signal whose transients drive the ducking (e.g. a kick). It also passes through to the output untouched. Unpatched: silent.",
+      audio_r_in: "Right MAIN / trigger input. If unpatched it is normalled to MAIN L, so a mono trigger drives both detector channels.",
+      sc_l_in: "Left SIDECHAIN input — the signal that gets ducked and summed to the output (e.g. a pad). If the whole SC pair is unpatched, nothing is ducked and only the MAIN passes through.",
+      sc_r_in: "Right SIDECHAIN input. If unpatched it is normalled to SC L (mono sidechain to both output channels).",
+      threshold_cv: "CV that adds to the THRESHOLD knob — modulate how loud the main must get before ducking begins.",
+      env_mag_cv: "CV that adds to the ENV MAG knob — scale how far the ENV / ENV INV outputs swing for a given amount of gain reduction.",
+      input_level_cv: "CV that adds to the INPUT LVL knob — modulate the sidechain's input gain (how loud the ducked signal sits in the output).",
+    },
+    outputs: {
+      audio_l_out: "Left output: the MAIN left passthrough plus the ducked left sidechain.",
+      audio_r_out: "Right output: the MAIN right passthrough plus the ducked right sidechain.",
+      env_out: "The ducking envelope as CV (rises as gain reduction increases). It is NOT hard-clamped: with ENV MAG above 1 it can exceed 1.0 — patch it where overshoot is tolerated. Use it to drive another VCA's strength so it ducks in time with this one.",
+      env_inv_out: "The inverted ducking envelope (1 − ENV), also un-clamped (can go negative when ENV exceeds 1). Patch it into a downstream VCA's strength to make that VCA CLOSE while this ducker is reducing.",
+    },
+    controls: {
+      threshold: "The main level (in dB) above which ducking kicks in (-60 to 0 dB, default -18): lower it to duck on quieter hits, raise it so only loud transients pump the sidechain. The THR CV input adds to this.",
+      ratio: "How hard the sidechain is pushed down once over threshold (1:1 to 20:1, default 4): higher ratios duck more aggressively.",
+      attack: "How fast the duck clamps down after the main fires (0.1 to 200 ms, log, default 10): short for a snappy pump, longer for a gentler dip.",
+      release: "How fast the sidechain springs back up after the main passes (1 to 2000 ms, log, default 100): this sets the 'breath' / pumping speed.",
+      knee: "The soft-knee width around the threshold in dB (0 to 24, default 6): a wider knee eases ducking in gradually instead of switching hard at the threshold.",
+      envMag: "Scales how far the ENV / ENV INV CV outputs swing for a given gain reduction (0 to 2, default 1). At 1 a 24 dB reduction reaches ENV 1.0; above 1 the env overshoots past 1.0. Display/CV-shaping only — does not change the audio ducking. The MAG CV input adds to this.",
+      inputLevel: "Input gain on the SIDECHAIN signal before ducking (0 to 200%, default 100%): boost a quiet pad into the mix or trim a loud one. The LVL CV input adds to this.",
+      makeup: "A fixed output gain in dB added after ducking (0 to 24, default 0) to bring the overall level back up.",
+      sc_hpf: "A high-pass on the DETECTOR signal only (20 to 1000 Hz, log, default 20 = effectively off): raise it so the detector keys on the main's punch rather than its low end, preventing bass from over-triggering the duck. It does not filter the audio you hear.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

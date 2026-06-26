@@ -25,6 +25,26 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "sustain": "The level the envelope holds at for as long as the gate stays high, after attack and decay complete — 0 (no sustain, decays all the way to silence) up to 1.0 (holds at full peak); linear fader."
     }
   },
+  "analogLogicMaths": {
+    "explanation": "An analog-logic processor that runs five continuous algebraic operations on two inputs at once — the 'analog' counterpart to ILLOGIC's digital 0/1 booleans. Two inputs A and B each pass through a bipolar attenuverter, then the module simultaneously outputs their sample-wise MINIMUM, MAXIMUM, DIFFERENCE (A−B), SUM (soft-clipped with tanh), and PRODUCT (A×B, soft-clipped). Unlike ILLOGIC nothing is ever thresholded — every output is a smooth function of the inputs, so it works equally on CV and on audio. Musically: MIN/MAX of two waveforms gives jagged or smoothed wave-mashing; MAX of two envelopes is an 'either fires' combiner; DIFF of two LFOs makes anti-correlated motion; PRODUCT of two audio signals is ring modulation, of two CVs a smooth crossfade-blend. The two attenuverters can themselves be swept by CV.",
+    "inputs": {
+      "a": "Input A (bipolar CV or audio). Scaled by the ATT A attenuverter before feeding all five math operations.",
+      "attA_cv": "CV control over the ATT A attenuverter knob — patch an LFO or envelope here to sweep how much of input A reaches the outputs (it adds to the knob's position).",
+      "attB_cv": "CV control over the ATT B attenuverter knob — sweep how much of input B reaches the outputs (adds to the knob).",
+      "b": "Input B (bipolar CV or audio). Scaled by the ATT B attenuverter before the math."
+    },
+    "outputs": {
+      "diff": "The signed difference A' − B' — zero when the two match, swinging positive or negative as they diverge.",
+      "max": "The sample-wise maximum, max(A', B') — follows whichever signal is higher; MAX of two envelopes acts as an OR-style 'either triggers'.",
+      "min": "The sample-wise minimum of the two attenuverted inputs, min(A', B') — follows whichever signal is lower at each moment.",
+      "product": "The product A' × B' through the same tanh soft-clip: ring modulation for two audio inputs, or a smooth multiplicative blend for two CVs.",
+      "sum": "The sum A' + B' run through a tanh soft-clipper, so it stays within ±1 and saturates gracefully instead of hard-clipping when both inputs are loud (at low levels it is nearly transparent)."
+    },
+    "controls": {
+      "attA": "Bipolar attenuverter for input A (-1 to +1, default +1): +1 passes A through, 0 removes it from the math, negative values invert its sign. The ATT A CV input adds to this position.",
+      "attB": "Bipolar attenuverter for input B (-1 to +1, default +1): +1 passes B, 0 removes it, negative inverts. The ATT B CV input adds to this position."
+    }
+  },
   "analogVco": {
     "explanation": "The analog VCO is a classic analog-modeled voltage-controlled oscillator that generates four simultaneous waveforms (sawtooth, square, triangle, sine) on separate outputs, plus a continuous morphing output that sweeps from saw through sine to square driven by the shape parameter. It accepts V/oct pitch CV with coarse/fine tuning controls, audio-rate frequency and phase modulation with depth controls, and hard-sync input for phase-locking to another oscillator. The mental model is a single oscillator core with multiple simultaneous taps (like a hardware Moog VCO) plus an interactive waveform morpher — patch the raw waveforms to filters/mixers, use morph for smooth real-time texture, and chain sync ports for rich polysynth interactions.",
     "inputs": {
@@ -411,6 +431,56 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "resonance": "Filter Q / peak emphasis, 0..0.99 — 0 is flat (no resonance, just frequency rolloff), raising it peaks the response near the cutoff (boosts that region, adds character), and at high values it can self-oscillate (the filter rings at cutoff indefinitely with no input signal). Resonance interacts with mode: highpass resonance can sculpt upper-midrange sheen, lowpass resonance can warm up oscillators by emphasizing fundamentals."
     }
   },
+  "flipper": {
+    "explanation": "A gate flip-flop (a toggle / clock-divider building block). It has two gate inputs and two gate outputs, FLIP and FLOP. A rising edge on EITHER input toggles which output is active: the first edge raises FLIP, the next raises FLOP, the next FLIP again, alternating forever — only one of the two is high at a time. Drive a single clock into one input and FLIP/FLOP each pulse at half the clock rate (a divide-by-two), 180° out of phase with each other — useful for alternating two voices, ping-ponging triggers, or generating a half-tempo gate. Feeding both inputs lets two different sources jointly advance the toggle. There are no controls; the alternation logic lives entirely in the worklet.",
+    "inputs": {
+      "in1": "A toggle input: each rising edge flips the active output from FLIP to FLOP or back. Shares the toggle with IN 2 (either input advances the same flip-flop).",
+      "in2": "A second toggle input: each rising edge advances the same FLIP/FLOP alternation as IN 1, so two sources can drive the toggle together."
+    },
+    "outputs": {
+      "flip": "One half of the toggle: goes high on the 1st, 3rd, 5th… incoming edge and low otherwise. Driven from a single clock it is a half-rate gate, opposite to FLOP.",
+      "flop": "The other half: goes high on the 2nd, 4th, 6th… incoming edge — the inverse phase of FLIP, so exactly one of the two is high at any time."
+    }
+  },
+  "fourplexer": {
+    "explanation": "A 4-in / 4-out discrete signal router (a four-way switch matrix). There are four signal inputs and four signal outputs, and each output independently selects exactly ONE of the four inputs to carry — it is a hard switch, never a blend or mix. You can set each output's selector by hand with its knob, or advance it with a clock: every output also has its own GATE input whose rising edge steps that output's selector to the next input (1→2→3→4→1, wrapping). Out of the box the four selectors are 1,2,3,4 so it passes straight through; from there you can route any input to any outputs, fan one input to several outputs, or clock the selectors to make a rhythmic source-switcher. Audio and CV both route identically through it.",
+    "inputs": {
+      "gate1": "Clock/advance for output 1: each rising edge steps OUT 1's selector to the next input (1→2→3→4→1, wrapping). The advanced position is saved like a knob turn.",
+      "gate2": "Clock/advance for output 2: each rising edge steps OUT 2's selector to the next input, wrapping.",
+      "gate3": "Clock/advance for output 3: each rising edge steps OUT 3's selector to the next input, wrapping.",
+      "gate4": "Clock/advance for output 4: each rising edge steps OUT 4's selector to the next input, wrapping.",
+      "in1": "Signal input 1 — available to any output whose selector points at it. Audio or CV route the same way.",
+      "in2": "Signal input 2 — selectable by any output.",
+      "in3": "Signal input 3 — selectable by any output.",
+      "in4": "Signal input 4 — selectable by any output."
+    },
+    "outputs": {
+      "out1": "Output 1 — carries whichever single input OUT 1's selector currently points at.",
+      "out2": "Output 2 — carries the single input selected by OUT 2.",
+      "out3": "Output 3 — carries the single input selected by OUT 3.",
+      "out4": "Output 4 — carries the single input selected by OUT 4."
+    },
+    "controls": {
+      "sel1": "Which input (1–4) output 1 carries. Turn it to route by hand; GATE 1's rising edges also advance it. A readout shows the current source (e.g. '← IN 2').",
+      "sel2": "Which input (1–4) output 2 carries — set by hand or advanced by GATE 2.",
+      "sel3": "Which input (1–4) output 3 carries — set by hand or advanced by GATE 3.",
+      "sel4": "Which input (1–4) output 4 carries — set by hand or advanced by GATE 4."
+    }
+  },
+  "gatemaiden": {
+    "explanation": "The convenience converter between the two interpretations of the unified gate cable: a TRIGGER (a brief blip that fires once on each rising edge — a clock tick, a strike) and a GATE (a held level that stays high while something is on — a note being held, an envelope's sustain). One generic input feeds BOTH outputs simultaneously, with no mode switch: GATE reads the input's level (and a passing trigger is widened into a minimum-width gate set by LEN), while TRIG fires one short pulse on every rising edge of the input (so a held gate becomes a single trigger at its start). Use it to make an external clock open an ADSR's sustain, or to turn a long held gate back into a one-shot strike, or just to fan one signal out as both shapes at once.",
+    "inputs": {
+      "in": "The signal to convert (accepts a gate, a trigger, or any CV/pitch). Its level drives the GATE output while its rising edges drive the TRIG output. A trigger arriving here is stretched up to LEN on GATE; a held gate here passes through on GATE and emits one trigger on TRIG when it goes high."
+    },
+    "outputs": {
+      "gate": "A held gate that stays high while the input is high, but never shorter than the LEN time — so even a momentary trigger on the input produces a usably-wide held gate here. Patch it into anything level-sensitive (an ADSR sustain, a VCA hold).",
+      "trig": "A short fixed-width pulse that fires once on each rising edge of the input — the trigger form. A long held gate on the input yields a single trigger here at its start, not a continuous level."
+    },
+    "controls": {
+      "gateLen": "The minimum width of the GATE output (5 ms to 2 s, log), used when the input is a short trigger: the gate is held at least this long after the strike. With a genuinely held input gate this just sets the floor; the gate otherwise follows the input level.",
+      "trigShape": "The waveform of the TRIG output pulse — toggles between a short triangle (TRI, the gentle default) and a hard square (SQR). Display/feel only; both fire once per rising edge with the same canonical pulse width."
+    }
+  },
   "helm": {
     "explanation": "A full polyphonic subtractive (analog-style) synth voice — a port of Matt Tytel's Helm. The signal chain per voice is: two morphing oscillators (each saw/square/triangle/sine, with their own tune, transpose, unison stack and detune) plus a sub-oscillator and a noise source are mixed, run through one state-variable multimode resonant filter (low-pass / band-pass / high-pass, 12 or 24 dB/oct), and shaped by an amplitude VCA. Three dedicated ADSR envelopes drive it: the AMP envelope shapes loudness, the FILTER envelope sweeps the filter cutoff by an amount you set, and the MOD envelope is a spare modulation source. Two LFOs and a built-in 16-step sequencer add motion. Mental model: hold notes (via MIDI or a patched gate) and each note grabs one of up to 8 voices; voiceCount sets how many notes can sound at once, and voices are stolen oldest-first when you run out. v1 pre-wires the modulators to musical destinations (LFO1→cutoff, LFO2→osc2 pitch, MOD env→osc1 pitch, step sequencer→osc2 transpose) rather than exposing Helm's full mod matrix.",
     "inputs": {
@@ -476,6 +546,33 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "subWave": "Sub-oscillator waveform (0 = saw, 1 = square, 2 = triangle, 3 = sine; defaults to sine). The sub plays two octaves below the note for low-end weight.",
       "voiceCount": "Polyphony cap (1–8): the maximum number of notes that can sound simultaneously. When more notes are held than voices available, the synth steals a voice (a releasing voice first, otherwise the oldest-held note). Set it to 1 for a strictly monophonic patch.",
       "volume": "Master output level for the whole synth (0–2, default 0.7); above 1 it boosts past unity."
+    }
+  },
+  "illogic": {
+    "explanation": "A three-in-one CV utility: a four-channel attenuverter, a sum/difference mixer, and a digital logic block, all sharing the same four inputs. Each input runs through its own bipolar attenuverter knob (-1 to +1) and that attenuverted signal appears on its own ATT output AND feeds two mix buses: SUM (all four added) and DIFF (channels 1+2 minus channels 3+4). Separately, inputs 1 and 2 are treated as gates — thresholded at 0.5 — and combined into clean 0/1 AND, NAND, and OR outputs, while input 1 alone drives a NOT output. So you can attenuvert and mix CV on one half while deriving Boolean gate logic from the first two channels on the other — invert an LFO, blend modulation, and gate-AND two clocks, all from one module. (For continuous min/max/product math instead of digital 0/1 logic, see ANALOGLOGICMATHS.)",
+    "inputs": {
+      "in1": "Signal input 1 (CV or audio, bipolar). Scaled by the ATT1 knob, summed into SUM/DIFF, and also thresholded at 0.5 as the first logic gate (it drives AND, NAND, OR and the NOT output).",
+      "in2": "Signal input 2 (CV or audio, bipolar). Scaled by ATT2, summed into SUM/DIFF, and thresholded at 0.5 as the second logic gate (AND, NAND, OR).",
+      "in3": "Signal input 3 (CV or audio). Scaled by ATT3 and added to SUM, subtracted in DIFF. Not part of the logic block.",
+      "in4": "Signal input 4 (CV or audio). Scaled by ATT4 and added to SUM, subtracted in DIFF. Not part of the logic block."
+    },
+    "outputs": {
+      "and": "Logic AND of inputs 1 and 2 (each thresholded at 0.5): goes high (1) only while BOTH are above threshold, otherwise low. A clean gate.",
+      "att1": "Input 1 after its attenuverter (in1 × Att1) — a per-channel attenuverted/inverted copy.",
+      "att2": "Input 2 after its attenuverter (in2 × Att2).",
+      "att3": "Input 3 after its attenuverter (in3 × Att3).",
+      "att4": "Input 4 after its attenuverter (in4 × Att4).",
+      "diff": "The signed difference (att1 + att2) − (att3 + att4): channels 1–2 lifted, 3–4 subtracted. Good for anti-correlated modulation from two pairs.",
+      "nand": "Logic NAND — the inverse of AND: high (1) unless both inputs 1 and 2 are above threshold, in which case it goes low.",
+      "not": "Logic NOT of input 1 alone: high (1) while input 1 is below threshold, low while it is high — an inverted gate of channel 1.",
+      "or": "Logic OR of inputs 1 and 2: high (1) while EITHER is above threshold, low only when both are below.",
+      "sum": "The signed sum of all four attenuverted channels: att1 + att2 + att3 + att4. A four-input CV mixer with per-channel invert."
+    },
+    "controls": {
+      "att1_amount": "Channel-1 attenuverter (-1 to +1, default +1): scales input 1 on its way to the ATT1 output and the SUM/DIFF buses. +1 passes it through, 0 mutes it, negative values invert its sign. Does not affect the logic threshold (logic always reads the raw input).",
+      "att2_amount": "Channel-2 attenuverter (-1 to +1, default +1): scales input 2 into ATT2 and the mix buses; 0 mutes, negative inverts. The logic block still reads the raw input 2.",
+      "att3_amount": "Channel-3 attenuverter (-1 to +1, default +1): scales input 3 into ATT3, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts.",
+      "att4_amount": "Channel-4 attenuverter (-1 to +1, default +1): scales input 4 into ATT4, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts."
     }
   },
   "lfo": {
@@ -1061,6 +1158,24 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "depth": "Sets the bipolar swing on a linear 0..1 fader, scaling BOTH the slope and the offset together so the output stays centered on 0. 1 (default) = the full unipolar→bipolar conversion (±1); 0.5 = a half-size ±0.5 swing; 0 = flat 0 regardless of input. Effectively an attenuator on the polarized signal."
     }
   },
+  "resofilter": {
+    "explanation": "A clean multi-mode resonant filter (ported from Resonarium's MultiFilter) built on a zero-delay-feedback state-variable topology, so all of its modes share one filter state and switching between them mid-sound is pop-free. One MODE knob picks the response — Low-pass (attenuate above cutoff), High-pass (attenuate below), Band-pass (peak at cutoff), Notch (dip at cutoff), or Allpass (flat magnitude, phase-rotating) — and the card prints the long-form name of the current mode next to the knob. The input is stereo-aware (independent L/R filter state preserves the image), CUTOFF and RESONANCE are CV-modulatable, and a MIX knob crossfades dry to wet (turn it to 0 for bypass). A general-purpose tone-shaper for both subtractive synth voices and full mixes.",
+    "inputs": {
+      "audio": "The signal to filter (mono or stereo). A stereo source keeps its left/right separation through independent per-channel filter state; a mono source feeds both channels.",
+      "cutoff_cv": "CV control of the CUTOFF frequency — patch an envelope or LFO here for filter sweeps (it adds to the knob position).",
+      "reso_cv": "CV control of the RESONANCE — modulate the emphasis at the cutoff for talking/wah-style motion (adds to the knob position)."
+    },
+    "outputs": {
+      "out_l": "Left filtered output (with the dry/wet MIX applied).",
+      "out_r": "Right filtered output. With a mono input it carries the same filtered signal as OUT L."
+    },
+    "controls": {
+      "cutoff": "The corner frequency the filter pivots around (20 Hz to 20 kHz, log, default 1 kHz) — what 'above'/'below'/'at cutoff' refers to for the selected mode. The CUTOFF CV input adds to this.",
+      "mix": "Dry/wet balance (0 to 1, default fully wet): 1 is the pure filtered signal, 0 is full bypass (the unfiltered input), and in between blends the two.",
+      "mode": "Picks the filter response among Low-pass, High-pass, Band-pass, Notch, and Allpass (the chosen name is shown on the card). All five share one filter state so changing mode while audio plays is pop-free.",
+      "resonance": "Emphasis at the cutoff frequency (0 to 1, default 0.3): higher values sharpen the peak and ring more — subtle by default, pronounced toward 1. The RESO CV input adds to this."
+    }
+  },
   "reverb": {
     "explanation": "A simple algorithmic reverb — the minimal-knob room you reach for to 'spray a little space' on a sound or a master bus. A Faust-compiled tank diffuses the input into a decaying reflection cloud whose length you set with SIZE and whose tone you tame with DAMP, then blends that wet tail back against the dry signal with MIX. Mono in / mono out, three knobs, no CV: use two instances (or feed it from a stereo split) if you want width. For a long crystalline octave-up tail reach for SHIMMERSHINE; for a deeply tweakable diffusion engine reach for CLOUDSEED.",
     "inputs": {
@@ -1150,6 +1265,38 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "amount": "The scale factor, on a log fader so unity (×1.0) sits at the knob CENTER and the taper is symmetric: full left = ×0.1 (attenuate to a tenth), full right = ×10 (boost ten-fold). Defaults to ×1.0, so a freshly spawned SCALER is a transparent direct patch until you move it."
     }
   },
+  "scope": {
+    "explanation": "A two-channel oscilloscope for SEEING your signals — it passes audio straight through untouched while drawing the waveform on an on-card screen, so you can patch it inline as a probe without altering the sound. Each channel has its own vertical SCALE, Y OFFSET, and RANGE mode (bipolar audio ±1 or unipolar CV), and a shared TIME knob sets how wide a window of the waveform fills the screen. An XY mode plots channel 1 against channel 2 (Lissajous figures, stereo phase) instead of two stacked traces, and an INTENSITY knob adds phosphor-style persistence from a single moving dot up to a glowing trail. Because it visualizes anything, the signal inputs also accept CV, pitch, and gate cables (not just audio). Every knob has a matching CV input, and the whole trace is also exported as a video output you can patch into the video domain. Display-only — none of the controls touch the audio path.",
+    "inputs": {
+      "ch1": "Channel-1 probe: the signal drawn on the upper trace (or the X axis in XY mode), and passed through cleanly to CH1 OUT. Typed audio but also accepts CV, pitch, and gate so you can scope LFOs, envelopes, pitch CV, and gates.",
+      "ch1Offset": "CV that modulates channel 1's Y OFFSET — slide the trace up or down on screen.",
+      "ch1Range": "CV that modulates channel 1's RANGE mode (≥ 0.5 toggles bipolar↔unipolar display scaling).",
+      "ch1Scale": "CV that modulates channel 1's vertical SCALE — zoom the trace's amplitude in or out.",
+      "ch2": "Channel-2 probe: the lower trace (or the Y axis in XY mode), passed through to CH2 OUT. Also accepts CV/pitch/gate.",
+      "ch2Offset": "CV that modulates channel 2's Y OFFSET.",
+      "ch2Range": "CV that modulates channel 2's RANGE mode.",
+      "ch2Scale": "CV that modulates channel 2's vertical SCALE.",
+      "intensity": "CV that modulates the beam INTENSITY / persistence.",
+      "mode": "CV that toggles the display MODE (≥ 0.5 switches into XY plot, below stays time-domain) — e.g. a gate can flip the scope into XY view.",
+      "timeMs": "CV that modulates the TIME timebase knob — sweep how much of the waveform fits on screen."
+    },
+    "outputs": {
+      "ch1_out": "Clean passthrough of the channel-1 input — the scope adds no processing, so you can chain it inline.",
+      "ch2_out": "Clean passthrough of the channel-2 input.",
+      "out": "A video output carrying the same waveform image the on-card screen shows — patch it into the video domain (OUTPUT, a video mixer) to put the trace on screen."
+    },
+    "controls": {
+      "ch1Offset": "Channel-1 vertical position (-1 to +1, default 0): nudges the trace up or down so two channels don't overlap.",
+      "ch1Range": "Channel-1 display range: 0 = bipolar (±1, audio convention), 1 = unipolar/CV (±5 scaling) so a multi-octave pitch CV sweep is readable without re-zooming.",
+      "ch1Scale": "Channel-1 vertical zoom (0.1× to 10×, log, default 1): magnifies a quiet signal or shrinks a loud one to fit the screen.",
+      "ch2Offset": "Channel-2 vertical position (-1 to +1, default 0).",
+      "ch2Range": "Channel-2 display range: 0 = bipolar audio, 1 = unipolar/CV.",
+      "ch2Scale": "Channel-2 vertical zoom (0.1× to 10×, log, default 1).",
+      "intensity": "Phosphor beam persistence (0 to 1, default 0.5): at 0 the trace is a single moving dot, at 0.5 a full-brightness single-screen trace, toward 1 a ~2-screen glowing persistence trail. Visual feel only.",
+      "mode": "Display mode: 0 = two stacked time-domain traces, 1 = XY (channel 1 vs channel 2 — Lissajous / stereo phase plot).",
+      "timeMs": "The time window drawn across the screen width (1 to 200 ms, log, default 20): smaller values zoom in on a few cycles, larger values show a longer slice. The TIME CV input modulates this."
+    }
+  },
   "sequencer": {
     "explanation": "A step sequencer that walks a playhead across up to 128 steps (8 pages of 16), emitting each lit step's note as pitch CV plus a gate, driven by its own BPM clock or an external clock fed into CLOCK IN. Mental model: every step holds a note + an on/off gate + an optional chord; the playhead advances one 16th-note step per beat-subdivision (or one step per incoming clock edge), playing lit steps and resting on dark ones, and you can save up to 8 whole patterns into quicksave slots and switch between them live (instantly, or queued to swap cleanly at the loop's end). The whole transport (play/stop, reset, slot switching, next/prev/random navigation) is also drivable hands-free by patching gates into the CV inputs.",
     "inputs": {
@@ -1218,6 +1365,35 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "size": "Reverb space size (0..1): scales the comb/allpass delays for a smaller or larger-sounding room."
     }
   },
+  "sidecar": {
+    "explanation": "A stereo sidechain ducker — the classic 'pumping' compressor where one signal pushes another down. The MAIN pair is the trigger (typically a kick drum); the SIDECHAIN pair is the signal that gets ducked and summed into the output (typically a pad or bass). The sidechain is always present at the output EXCEPT when the main fires, at which point the detector pulls it down by a compressor-style gain computer (threshold, ratio, knee, attack, release) and lets it spring back. Detection is stereo-linked so a transient on either main channel ducks both output channels equally (no image shift), and a sidechain high-pass lets you key off the kick's body without the low end choking the detector. Two extra CV outputs (ENV and ENV INV) expose the live ducking envelope for cross-patching the same pump into other VCAs. Real-source chain: feed a rhythmic source into MAIN and the bus you want pumped into SIDECHAIN.",
+    "inputs": {
+      "audio_l_in": "Left MAIN / trigger input — the signal whose transients drive the ducking (e.g. a kick). It also passes through to the output untouched. Unpatched: silent.",
+      "audio_r_in": "Right MAIN / trigger input. If unpatched it is normalled to MAIN L, so a mono trigger drives both detector channels.",
+      "env_mag_cv": "CV that adds to the ENV MAG knob — scale how far the ENV / ENV INV outputs swing for a given amount of gain reduction.",
+      "input_level_cv": "CV that adds to the INPUT LVL knob — modulate the sidechain's input gain (how loud the ducked signal sits in the output).",
+      "sc_l_in": "Left SIDECHAIN input — the signal that gets ducked and summed to the output (e.g. a pad). If the whole SC pair is unpatched, nothing is ducked and only the MAIN passes through.",
+      "sc_r_in": "Right SIDECHAIN input. If unpatched it is normalled to SC L (mono sidechain to both output channels).",
+      "threshold_cv": "CV that adds to the THRESHOLD knob — modulate how loud the main must get before ducking begins."
+    },
+    "outputs": {
+      "audio_l_out": "Left output: the MAIN left passthrough plus the ducked left sidechain.",
+      "audio_r_out": "Right output: the MAIN right passthrough plus the ducked right sidechain.",
+      "env_inv_out": "The inverted ducking envelope (1 − ENV), also un-clamped (can go negative when ENV exceeds 1). Patch it into a downstream VCA's strength to make that VCA CLOSE while this ducker is reducing.",
+      "env_out": "The ducking envelope as CV (rises as gain reduction increases). It is NOT hard-clamped: with ENV MAG above 1 it can exceed 1.0 — patch it where overshoot is tolerated. Use it to drive another VCA's strength so it ducks in time with this one."
+    },
+    "controls": {
+      "attack": "How fast the duck clamps down after the main fires (0.1 to 200 ms, log, default 10): short for a snappy pump, longer for a gentler dip.",
+      "envMag": "Scales how far the ENV / ENV INV CV outputs swing for a given gain reduction (0 to 2, default 1). At 1 a 24 dB reduction reaches ENV 1.0; above 1 the env overshoots past 1.0. Display/CV-shaping only — does not change the audio ducking. The MAG CV input adds to this.",
+      "inputLevel": "Input gain on the SIDECHAIN signal before ducking (0 to 200%, default 100%): boost a quiet pad into the mix or trim a loud one. The LVL CV input adds to this.",
+      "knee": "The soft-knee width around the threshold in dB (0 to 24, default 6): a wider knee eases ducking in gradually instead of switching hard at the threshold.",
+      "makeup": "A fixed output gain in dB added after ducking (0 to 24, default 0) to bring the overall level back up.",
+      "ratio": "How hard the sidechain is pushed down once over threshold (1:1 to 20:1, default 4): higher ratios duck more aggressively.",
+      "release": "How fast the sidechain springs back up after the main passes (1 to 2000 ms, log, default 100): this sets the 'breath' / pumping speed.",
+      "sc_hpf": "A high-pass on the DETECTOR signal only (20 to 1000 Hz, log, default 20 = effectively off): raise it so the detector keys on the main's punch rather than its low end, preventing bass from over-triggering the duck. It does not filter the audio you hear.",
+      "threshold": "The main level (in dB) above which ducking kicks in (-60 to 0 dB, default -18): lower it to duck on quieter hits, raise it so only loud transients pump the sidechain. The THR CV input adds to this."
+    }
+  },
   "slewSwitch": {
     "explanation": "Two CV utilities in one: a four-channel SLEW LIMITER and a 4-to-1 sequential SWITCH. The slew side smooths each of the four CV inputs independently — its per-channel slew time controls how long the output takes to glide to a new value (a portamento / lag for pitch, an envelope-rounder for gates, a smoother for any steppy CV). The switch side scans those same four slewed channels one at a time: each rising edge at the CLOCK input advances the selection, and the SWITCHED output carries whichever channel is currently chosen (with an equal-power crossfade between channels so the hand-off is glitch-free). The scan can run forward, pendulum (ping-pong) or random, over a settable length of 1-4 steps; a STEP IDX output and an end-of-cycle pulse round it out. The four direct OUT jacks are always live regardless of the switch. The slew + switch math runs in a DSP worklet.",
     "inputs": {
@@ -1249,6 +1425,23 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "slew3": "Channel 3 slew time, log 0.001..5 s (default 0.5 s). Sums with the S3 CV input.",
       "slew4": "Channel 4 slew time, log 0.001..5 s (default 0.5 s). Sums with the S4 CV input.",
       "xfadeTime": "The equal-power crossfade time applied to the SWITCHED output when the selection changes, log 0.001..2 s (default 0.05 s). Short = a tight switch, long = a slow morph between the two channels' values."
+    }
+  },
+  "stereovca": {
+    "explanation": "A dual (stereo) voltage-controlled amplifier that doubles as a ring modulator — no mode switch, the behavior is purely a function of how fast the control signal is. Each channel computes out = in × (strength + offset) × level: when the STRENGTH input is slow (an LFO, an envelope, a sequencer step) it acts as a VCA, gating and shaping the audio's volume; when STRENGTH is audio-rate it acts as a ring modulator, multiplying two audio signals into clangorous sum-and-difference tones (this matches the hardware truth that 'CV is just slow audio'). The two channels share the LEVEL and OFFSET knobs but have independent audio and strength inputs, with smart normalling so you can drive both sides from one cable: leave IN R unpatched and it mirrors IN L (mono in, stereo out), leave STRENGTH R unpatched and it mirrors STRENGTH L (one modulator drives both VCAs). The STRENGTH inputs take raw bipolar CV directly with no scaling.",
+    "inputs": {
+      "in_l": "Left audio carrier — the signal the left channel multiplies by its strength. For ring modulation patch an audio oscillator here.",
+      "in_r": "Right audio carrier. If you leave this unpatched it is normalled to IN L, so a single mono source fans out to both output channels (mono-to-stereo).",
+      "strength_l": "Left multiplier / modulator (raw bipolar CV, consumed with no scaling). A slow signal makes the channel behave as a VCA (volume control); an audio-rate signal makes it a ring modulator. At strength +1 (and offset 0) the channel passes at unity; at 0 it mutes; negative values invert.",
+      "strength_r": "Right multiplier / modulator. If unpatched it is normalled to STRENGTH L, so one CV or LFO controls both VCAs at once; patch it for independent left/right modulation."
+    },
+    "outputs": {
+      "out_l": "Left result: in_l × (strength_l + offset) × level. Audio (or ring-mod) out for the left channel.",
+      "out_r": "Right result: in_r × (strength_r + offset) × level, honoring the IN R and STRENGTH R normalling above."
+    },
+    "controls": {
+      "level": "Master output gain applied after the per-channel multiply (0 to 1, default unity) — a final trim on both channels at once without touching the modulation depth.",
+      "offset": "A bipolar DC term added to each strength signal before multiplying (-1 to +1, default 0). At 0 an unpatched strength (0 V) mutes the channel; turn offset up toward +1 to lift the floor so the channel stays open at unity even with no modulator, and a strength signal then only ducks it — handy for 'always on with optional duck' patches."
     }
   },
   "swolevco": {

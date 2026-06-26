@@ -93,4 +93,20 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // siblings (911a / 912 / 960 / 992 / 993 / cp3) stay STATIC — see strict-docs.ts.
   'moog911',
   'moog984',
+  // Batch 8 — CV/signal utilities & small processors (2026-06-26): only the
+  // CONVENTION-card members go here (no `card:` override, so the doc route's
+  // defLite resolves `<Type>Card` and the live virtual module mounts). Each card
+  // is a pure Fader/Knob + PatchPanel — no onMount/$effect, no canvas/rAF/WebGL,
+  // no Web-MIDI panel, no file input — the macrooscillator profile — so it mounts
+  // cleanly in the engine-less doc sandbox. Verified live by
+  // docs-virtual-module.spec.ts (analogLogicMaths / sidecar / resofilter also
+  // exercise the CV→param dual context). The STATIC siblings stay off this list:
+  // fourplexer + flipper carry a `card:` override (defLite can't resolve it), and
+  // scope's card runs a 2D-canvas rAF render loop — see strict-docs.ts.
+  'stereovca',
+  'gatemaiden',
+  'illogic',
+  'analogLogicMaths',
+  'sidecar',
+  'resofilter',
 ]);

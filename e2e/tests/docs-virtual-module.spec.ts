@@ -314,6 +314,62 @@ const PROBES: Probe[] = [
     cvPort: '', // the four inputs are raw audio (no paramTarget)
     modulates: /./,
   },
+  // --- Batch 8 — CV/signal utilities & small processors (2026-06-26). Each is
+  // on INTERACTIVE_DOC_MODULES (convention card, pure Fader/Knob + PatchPanel);
+  // this proves the live card mounts cleanly and a control hover updates the
+  // pane. The CV→param dual-context check runs where the module has a CV input
+  // with a paramTarget (analogLogicMaths attA_cv→attA, sidecar threshold_cv→
+  // threshold, resofilter cutoff_cv→cutoff); stereovca/gatemaiden/illogic have
+  // no CV→param link (their CV/gate inputs are raw signals), so cvPort '' skips
+  // it. The STATIC siblings (fourplexer/flipper/scope) have no live-card probe. ---
+  {
+    id: 'stereovca',
+    heading: /stereovca/i,
+    controlParam: 'level',
+    controlDescIncludes: /master|gain|output/i,
+    cvPort: '', // strength inputs are raw CV multipliers (no paramTarget)
+    modulates: /./,
+  },
+  {
+    id: 'gatemaiden',
+    heading: /gatemaiden/i,
+    controlParam: 'gateLen',
+    controlDescIncludes: /gate|width|minimum/i,
+    cvPort: '', // the single `in` has no paramTarget
+    modulates: /./,
+  },
+  {
+    id: 'illogic',
+    heading: /illogic/i,
+    controlParam: 'att1_amount',
+    controlDescIncludes: /attenuverter|invert|channel/i,
+    cvPort: '', // in1..in4 are raw signal inputs (no paramTarget)
+    modulates: /./,
+  },
+  {
+    id: 'analogLogicMaths',
+    heading: /analoglogicmaths/i,
+    controlParam: 'attA',
+    controlDescIncludes: /attenuverter|invert/i,
+    cvPort: 'attA_cv', // CV (paramTarget=attA) → attenuverter A
+    modulates: /modulates/i,
+  },
+  {
+    id: 'sidecar',
+    heading: /sidecar/i,
+    controlParam: 'threshold',
+    controlDescIncludes: /threshold|duck|main/i,
+    cvPort: 'threshold_cv', // CV (paramTarget=threshold) → threshold
+    modulates: /modulates/i,
+  },
+  {
+    id: 'resofilter',
+    heading: /resofilter/i,
+    controlParam: 'cutoff',
+    controlDescIncludes: /cutoff|corner|frequency/i,
+    cvPort: 'cutoff_cv', // CV (paramTarget=cutoff) → cutoff
+    modulates: /modulates/i,
+  },
 ];
 
 /** Wait for the live virtual module to finish mounting (the flow host appears

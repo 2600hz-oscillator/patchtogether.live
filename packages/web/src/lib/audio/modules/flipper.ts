@@ -30,6 +30,20 @@ export const flipperDef: AudioModuleDef = {
   ],
   params: [],
 
+  docs: {
+    explanation:
+      "A gate flip-flop (a toggle / clock-divider building block). It has two gate inputs and two gate outputs, FLIP and FLOP. A rising edge on EITHER input toggles which output is active: the first edge raises FLIP, the next raises FLOP, the next FLIP again, alternating forever — only one of the two is high at a time. Drive a single clock into one input and FLIP/FLOP each pulse at half the clock rate (a divide-by-two), 180° out of phase with each other — useful for alternating two voices, ping-ponging triggers, or generating a half-tempo gate. Feeding both inputs lets two different sources jointly advance the toggle. There are no controls; the alternation logic lives entirely in the worklet.",
+    inputs: {
+      in1: "A toggle input: each rising edge flips the active output from FLIP to FLOP or back. Shares the toggle with IN 2 (either input advances the same flip-flop).",
+      in2: "A second toggle input: each rising edge advances the same FLIP/FLOP alternation as IN 1, so two sources can drive the toggle together.",
+    },
+    outputs: {
+      flip: "One half of the toggle: goes high on the 1st, 3rd, 5th… incoming edge and low otherwise. Driven from a single clock it is a half-rate gate, opposite to FLOP.",
+      flop: "The other half: goes high on the 2nd, 4th, 6th… incoming edge — the inverse phase of FLIP, so exactly one of the two is high at any time.",
+    },
+    controls: {},
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     void node;
     if (!loadedContexts.has(ctx)) {

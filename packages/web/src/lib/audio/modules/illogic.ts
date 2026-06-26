@@ -144,6 +144,35 @@ export const illogicDef: AudioModuleDef = {
     { id: 'att4_amount', label: 'Att4', defaultValue: 1, min: -1, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A three-in-one CV utility: a four-channel attenuverter, a sum/difference mixer, and a digital logic block, all sharing the same four inputs. Each input runs through its own bipolar attenuverter knob (-1 to +1) and that attenuverted signal appears on its own ATT output AND feeds two mix buses: SUM (all four added) and DIFF (channels 1+2 minus channels 3+4). Separately, inputs 1 and 2 are treated as gates — thresholded at 0.5 — and combined into clean 0/1 AND, NAND, and OR outputs, while input 1 alone drives a NOT output. So you can attenuvert and mix CV on one half while deriving Boolean gate logic from the first two channels on the other — invert an LFO, blend modulation, and gate-AND two clocks, all from one module. (For continuous min/max/product math instead of digital 0/1 logic, see ANALOGLOGICMATHS.)",
+    inputs: {
+      in1: "Signal input 1 (CV or audio, bipolar). Scaled by the ATT1 knob, summed into SUM/DIFF, and also thresholded at 0.5 as the first logic gate (it drives AND, NAND, OR and the NOT output).",
+      in2: "Signal input 2 (CV or audio, bipolar). Scaled by ATT2, summed into SUM/DIFF, and thresholded at 0.5 as the second logic gate (AND, NAND, OR).",
+      in3: "Signal input 3 (CV or audio). Scaled by ATT3 and added to SUM, subtracted in DIFF. Not part of the logic block.",
+      in4: "Signal input 4 (CV or audio). Scaled by ATT4 and added to SUM, subtracted in DIFF. Not part of the logic block.",
+    },
+    outputs: {
+      att1: "Input 1 after its attenuverter (in1 × Att1) — a per-channel attenuverted/inverted copy.",
+      att2: "Input 2 after its attenuverter (in2 × Att2).",
+      att3: "Input 3 after its attenuverter (in3 × Att3).",
+      att4: "Input 4 after its attenuverter (in4 × Att4).",
+      sum: "The signed sum of all four attenuverted channels: att1 + att2 + att3 + att4. A four-input CV mixer with per-channel invert.",
+      diff: "The signed difference (att1 + att2) − (att3 + att4): channels 1–2 lifted, 3–4 subtracted. Good for anti-correlated modulation from two pairs.",
+      and: "Logic AND of inputs 1 and 2 (each thresholded at 0.5): goes high (1) only while BOTH are above threshold, otherwise low. A clean gate.",
+      nand: "Logic NAND — the inverse of AND: high (1) unless both inputs 1 and 2 are above threshold, in which case it goes low.",
+      or: "Logic OR of inputs 1 and 2: high (1) while EITHER is above threshold, low only when both are below.",
+      not: "Logic NOT of input 1 alone: high (1) while input 1 is below threshold, low while it is high — an inverted gate of channel 1.",
+    },
+    controls: {
+      att1_amount: "Channel-1 attenuverter (-1 to +1, default +1): scales input 1 on its way to the ATT1 output and the SUM/DIFF buses. +1 passes it through, 0 mutes it, negative values invert its sign. Does not affect the logic threshold (logic always reads the raw input).",
+      att2_amount: "Channel-2 attenuverter (-1 to +1, default +1): scales input 2 into ATT2 and the mix buses; 0 mutes, negative inverts. The logic block still reads the raw input 2.",
+      att3_amount: "Channel-3 attenuverter (-1 to +1, default +1): scales input 3 into ATT3, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts.",
+      att4_amount: "Channel-4 attenuverter (-1 to +1, default +1): scales input 4 into ATT4, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // ---------------- Attenuverters (per channel) ----------------
     //
