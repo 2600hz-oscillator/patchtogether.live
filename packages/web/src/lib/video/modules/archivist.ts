@@ -182,6 +182,28 @@ export const archivistDef: VideoModuleDef = {
     { id: 'cv_play_trigger', label: 'Play trigger', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "ARCHIVIST is a universal Internet Archive (archive.org) media source for the VIDEO domain. You pick a media type (image / audio / video / any) and a search term (plus an optional year-from/year-to range), and the card runs an archive.org advancedsearch query, picks a RANDOM matching public item, and loads it into a resizable preview. Restricted/lending items are always excluded from the query, and the file picker only chooses HTML5-playable derivatives (jpg/png/gif/webp for images; mp3/ogg/m4a/flac/wav for audio; h.264/theora/webm-class video, rejecting bare MPEG-4-Part-2 / HEVC), auto-advancing to another random match if a chosen derivative will not decode — so it lands on something that plays instead of hanging on \"Loading\". CORS BEHAVIOR IS PER-TYPE: only IMAGE and AUDIO items are CORS-clean and deliver real downstream signal — an image becomes a clean WebGL texture on the `image` output (and free-upcasts to `video` so it can drive video inputs), and an audio item routes clean stereo to `audio_l`/`audio_r` via the cross-domain audio bridge. VIDEO items are PLAY-ONLY: archive.org video lacks CORS on the served file, so the texture is tainted and the `video` output stays the idle pattern (the card shows a \"play-only (no clean output)\" warning), and a video item's audio track is likewise CORS-tainted so its audio jacks are effectively dead. So archivist is video-output-only for VIDEO items, but its audio jacks ARE live and clean for genuine AUDIO items. Search and metadata are CORS-open and fetched directly with no proxy. Usage: choose \"image\" to feed clean stills into the video graph, or \"audio\" to pull found-sound stereo into the audio graph; use \"video\" only for in-card preview/scrubbing. Multiplayer-aware: the loaded item, search inputs, and play state mirror on the node so peers see and drive the same item. The card is corner-drag resizable (handle bottom-right, min 360x360, default 360x540), with a 16:9 preview screen inside showing the loaded image, the playing video, or a cover-art placeholder for audio items.",
+    inputs: {
+      play_trigger: "Gate input (declared edge=gate, routed on the gate cable): the card reads its level and toggles play/pause for the loaded time-media item (audio or video) when the level crosses above mid-scale (high). No-op for an image item. It targets the cv_play_trigger param internally, so the same toggle can be driven from that synthetic param.",
+    },
+    outputs: {
+      image: "Image-type texture output carrying the loaded still image as a clean WebGL texture. Live only for IMAGE items (archive.org images are CORS-clean); idle pattern otherwise.",
+      video: "Video-type texture output. An IMAGE item free-upcasts here to drive video inputs. For an actual VIDEO item this stays the idle pattern because archive.org video is CORS-tainted (play-only, no clean texture).",
+      audio_l: "Left channel of stereo audio, routed via the cross-domain audio bridge (channel splitter on a MediaElementSource). Live and clean for AUDIO items; for VIDEO items the audio track is CORS-tainted so it is best-effort / typically dead; silent for images.",
+      audio_r: "Right channel of stereo audio (same bridge/splitter as audio_l, output 1). Live and clean for AUDIO items only; dead for video items and images.",
+      loaded: "Trigger out (edge=trigger): a short rising-edge pulse fired once each time a new item finishes loading and attaching.",
+      ended: "Trigger out (edge=trigger): a short rising-edge pulse fired once when a time-media item plays through to its `ended` event.",
+      playing: "Gate out (edge=gate): held HIGH while a time-media item is actively playing (not paused, not ended); LOW otherwise.",
+      playhead: "CV out: the normalized 0..1 playback position of the loaded time-media item, updated each frame while playing/seeking.",
+    },
+    controls: {
+      gain: "Output gain, linear 0..2 (default 1). Reserved in v1 — declared on the module but not yet consumed in the signal path.",
+      cv_play_trigger: "Synthetic edge-detector param (linear 0..1, default 0) mirroring the play_trigger gate input; the card polls it and edge-detects a rising crossing of mid-scale (0.5) to toggle play/pause. Normally driven through the play_trigger jack rather than directly.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

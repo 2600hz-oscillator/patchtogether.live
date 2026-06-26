@@ -179,6 +179,25 @@ export const nibblesDef: VideoModuleDef = {
     },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "A playable QBasic-Nibbles snake game rendered as a patchable video source. The classic snake roams an 80x50 grid (CPU-rasterised to a 320x200 frame with a gentle CRT scanline darken) eating one pellet at a time, growing its body, and dying on a wall or self collision. Drive it two ways: click the card to focus it and steer with the arrow keys, or flip AUTO on to let the built-in greedy bot self-play (it walks toward the pellet, avoiding its own tail, with no foresight so it eventually traps and dies — then auto-restarts). The game advances at the rate set by Tick. Beyond the video frame, the snake's life becomes control voltage and sound: gate pulses fire on pellet/death/direction-change, a length CV tracks how long the snake has grown, and two square-wave audio outs are pitched by the snake's length (length 4 = A2/110 Hz, every +12 length = +1 octave). Patch the gates into envelopes/triggers and the length CV into pitch or filter cutoff to sonify the game. The card also has a RESET button, a 1x-4x zoom button, and a live LEN readout (a dagger appears when the snake is dead). The card's game screen is resizable: the on-card scale button cycles the 320x200 source through 1x / 2x / 3x / 4x zoom (image-rendering: pixelated, so it stays crisp); the knobs, buttons, and patch jacks stay fixed-size while only the screen grows.",
+    inputs: {},
+    outputs: {
+      out: "Video output — the 320x200 rasterised game frame (dark-slate board, red pellet, lime head, green body) with every other scanline dimmed ~15% for a mild CRT look.",
+      pellet: "Gate output — a 10 ms HIGH pulse fired each time the snake eats a pellet. Patch into an envelope trigger to sound an eat hit.",
+      death: "Gate output — a 10 ms HIGH pulse fired when the snake dies (wall or self collision). One pulse per death; in AUTO mode the game then auto-restarts.",
+      dir_change: "Gate output — a 10 ms HIGH pulse on every accepted direction change (human arrow press or AUTO bot decision); repeated presses of the same direction do not pulse.",
+      length_cv: "CV output — the snake length mapped bipolar to about [-1, +1] (mid = NIBBLES_MAX_LENGTH/2 = 59.5; length 119+ clamps to +1). Steps are smoothed with a ~20 ms ramp at the game-tick rate. Patch into pitch or filter cutoff.",
+      snake: "Audio output — a continuous square wave whose pitch tracks the live snake length (length 4 = A2/110 Hz, +12 length = +1 octave), at ~0.2 amplitude. Always on while the module lives.",
+      gated: "Audio output — the same length-pitched square wave routed through an envelope (15 ms attack, 100 ms plateau, exponential decay tail) that fits inside a 500 ms total window and retriggers on every pellet eat, so it sounds only when the snake feeds.",
+    },
+    controls: {
+      auto: "Auto — discrete 0/1 toggle (also the on-card AUTO button). When ON, the built-in greedy bot drives the snake and auto-restarts it on death; arrow-key steering is ignored. When OFF, you steer with the arrow keys (card must hold focus).",
+      tick_ms: "Tick — the game-tick period in milliseconds (40-200, default 80; ~12 Hz at default). Lower is a faster snake; clamped to the 40-200 ms window. Exposed as the TICK knob on the card.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

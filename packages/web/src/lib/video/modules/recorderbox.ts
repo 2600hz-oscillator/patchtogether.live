@@ -162,6 +162,20 @@ export const recorderboxDef: VideoModuleDef = {
   ],
   params: [],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: `RECORDERBOX is a video-domain SINK that records whatever you patch into it — picture plus a left/right soundtrack — to a high-quality, crash-recoverable H.264/HEVC MP4. Modelled on OUTPUT, it draws its \`in\` video into a per-instance framebuffer every frame so the card can show a live preview AND so \`out\` can pass the picture through unbroken; meanwhile each audio input feeds a gain into a stereo channel-merger that drives a MediaStreamAudioDestinationNode, and a sample-accurate audio-thread worklet taps that stereo signal so the recorder muxes it as the MP4's AAC track, A/V-synced to the captured frames. Arm recording with the on-card RECORD/STOP button: on Chromium the first press asks you to pick a destination FOLDER once (then every take and rolling chunk auto-writes into it with no further Save-As prompt — the only prompt is an overwrite confirm), while Firefox/Safari fall back to a per-chunk download. Typical use: chain it inline anywhere in a video patch (preview on the card, signal continues to \`out\`), patch your stereo mix into A·L/A·R, type a base FILE name, pick a SIZE tier (HIGH = original ~14 Mbps H.264; BALANCED/SMALL prefer hardware HEVC), and hit RECORD. The audio is TAP-ONLY and inaudible — it is captured (via a silent gain-0 keep-alive that never reaches your speakers) but NOT monitored, so route the same source to AUDIO OUT separately if you want to hear it. Long takes auto-roll to a new FILENAME-CHUNK#-DATETIME.mp4 every ~10 min (with a 5 s audio overlap), and a take left mid-flight by a crash can be recovered on reload.`,
+    inputs: {
+      in: "The picture to record and monitor — a polymorphic video input (video / mono-video / image are upcast, like OUTPUT.in). It is drawn into the card's preview, into the hidden full-resolution capture canvas the encoder reads, and passed through unchanged to the `out` jack. With nothing patched the card shows a slow dark-crimson idle sweep.",
+      audio_l: "Left channel of the soundtrack to record. An audio-typed input on a video module (the cross-domain audio→video bridge): the upstream audio source feeds a gain that is summed into channel 0 of a stereo merger, captured as the left side of the AAC track. Capture is tap-only/inaudible — recorded but not monitored to the speakers.",
+      audio_r: "Right channel of the soundtrack to record. Like audio_l but summed into channel 1 of the merger (the right side of the stereo AAC track the recorder encodes). Patch a stereo mixer/VCO across A·L and A·R for a stereo MP4; tap-only, so route the source to AUDIO OUT separately to hear it.",
+    },
+    outputs: {
+      out: "Pass-through of the `in` picture (input → framebuffer → out), so RECORDERBOX can be chained inline anywhere in a video patch without breaking the downstream signal — it monitors and records while the video keeps flowing.",
+    },
+    controls: {},
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(COPY_FRAG_SRC);
