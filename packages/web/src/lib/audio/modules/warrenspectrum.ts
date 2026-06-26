@@ -165,6 +165,51 @@ export const warrenspectrumDef: AudioModuleDef = {
     { id: 'bleed',       label: 'Bld',  defaultValue: 1,  min: 0,  max: 1,   curve: 'linear' },
   ],
 
+  docs: (() => {
+    const inputs: Record<string, string> = {
+      in_l: 'Left audio input feeding all 8 bandpass resonators. Pairs with IN R as the stereo source.',
+      in_r: 'Right audio input feeding all 8 bandpass resonators, partnering IN L.',
+      global_ping: 'A trigger that pings ALL 8 bands at once: each rising edge fires the vactrol-style excitation into every resonator simultaneously, ringing the whole bank — patch a clock or drum trigger here for a tuned-bank "chord" on every hit.',
+      viznoise_cv: 'CV that offsets the HUE visualizer parameter, animating the acidwarp render\'s hue/noise mix (visual only).',
+      root_cv: 'CV that offsets the ROOT param — the harmonic-mode fundamental MIDI note; sweep it to transpose the partials (harmonic mode only).',
+      spread_cv: 'CV that offsets the SPREAD param, widening or narrowing the per-band stereo pan as it moves.',
+      q_cv: 'CV that offsets the Q param — the resonator sharpness; raise it for longer, more pitched rings.',
+      decay_cv: 'CV that offsets the ping DECAY param — how long each vactrol ping rings out.',
+    };
+    const controls: Record<string, string> = {};
+    for (let b = 1; b <= NUM_BANDS; b++) {
+      inputs[`level${b}_cv`] = `CV that offsets band ${b}'s LEVEL — raise or lower resonator ${b}'s contribution to the stereo mix.`;
+      inputs[`ping${b}`] = `Per-band ping trigger for resonator ${b}: each rising edge fires a vactrol-style excitation into band ${b} (and bleeds into bands ${b}±2 per the BLEED knob), making it ring at its centre frequency. Patch a clock/trigger here to strike this partial.`;
+      inputs[`band${b}_in`] = `Band ${b} SEND-return input: patch external processing back into band ${b} here. When this is connected, band ${b}'s contribution to the mix becomes this return signal (replaces the internal band) — pair it with the band ${b}_out send to insert per-partial FX.`;
+      controls[`level${b}`] = `Band ${b} LEVEL (0..2) — resonator ${b}'s level in the stereo mix. CV via the band-${b} level input.`;
+    }
+    const outputs: Record<string, string> = {
+      out_l: 'Left channel of the stereo mix bus (all 8 bands, panned by SPREAD, post per-band level + master).',
+      out_r: 'Right channel of the stereo mix bus, the partner of OUT L.',
+      viz_out: 'A mono-video output carrying the acidwarp EQ-curve visualization (the same render shown on the card) — patch it into a video destination.',
+    };
+    for (let b = 1; b <= NUM_BANDS; b++) {
+      outputs[`band${b}_out`] = `Band ${b} mono SEND tap — resonator ${b}'s internal signal, pre-pan and post-envelope/level. Patch it through an external effect and back into the matching band${b}_in return for per-partial processing.`;
+    }
+    return {
+      explanation:
+        "A stereo 8-band resonator bank you play by striking it — like a tuned set of 8 ringing filters. Audio into the stereo inputs runs through 8 bandpass resonators, tuned either as octave-spaced log bands (a spectral EQ, ~80 Hz–10 kHz) or as harmonic partials of a ROOT note (harmonic mode). Each band has its own PING trigger: a rising edge fires a vactrol-style excitation envelope (soft attack, exponential decay, slightly jittered) that both pings the bandpass into ringing at its centre frequency and pumps its gain — and the energy BLEEDs into the neighbouring bands (n±2) for a more natural, coupled response. GLOBAL PING strikes all 8 at once. Per-band sends/returns (band{N}_out / band{N}_in) let you route each partial through external effects; per-band LEVEL, plus Q (resonance), SPREAD (stereo pan width), and DECAY (ring length) shape the whole bank. A built-in acidwarp video visualizer draws the live spectral curve.",
+      inputs,
+      outputs,
+      controls: {
+        ...controls,
+        master: 'MASTER output gain on the whole bank (0..2; 1 = unity).',
+        viznoise: 'HUE — the acidwarp visualizer\'s hue/noise amount (0..1); a visual-only control that animates the on-card render. CV via the HUE input.',
+        ping_decay: 'Ping DECAY (0..1) — how long each vactrol ping rings out (short plucks vs long sustained rings). CV via the DECAY input.',
+        tuning_mode: 'TUNING MODE — LOG (octave-spaced log bands, a spectral EQ) vs HARM (harmonic partials of the ROOT note). Toggle on the card.',
+        root: 'ROOT (MIDI note 24..108; 60 = middle C) — the fundamental for harmonic mode; the 8 bands tune to its partials. Ignored in log mode. CV via the ROOT input.',
+        q: 'Q (1..40) — resonator sharpness/resonance: higher Q = narrower bands that ring longer and more pitched. CV via the Q input.',
+        spread: 'SPREAD (0..1) — stereo-pan width across the 8 bands (0 = all centred, up = spread across the field). CV via the SPREAD input.',
+        bleed: 'BLEED (0..1) — how much a ping into one band spills into its neighbours (bands n±2); 0 = strike only the targeted band, up = a more coupled, natural bank response.',
+      },
+    };
+  })(),
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

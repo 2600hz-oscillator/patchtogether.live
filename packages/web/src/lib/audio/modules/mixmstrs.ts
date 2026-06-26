@@ -189,6 +189,62 @@ export const mixmstrsDef: AudioModuleDef = {
   ],
   params: PARAMS,
 
+  docs: (() => {
+    const inputs: Record<string, string> = {};
+    const controls: Record<string, string> = {};
+    for (const ch of MIXMSTRS_CHANNELS) {
+      // Stereo audio inputs.
+      inputs[`ch${ch}L`] = `Channel ${ch} left audio input. Pairs with ${`ch${ch}R`} as the stereo source for mixer channel ${ch}.`;
+      inputs[`ch${ch}R`] = `Channel ${ch} right audio input, partnering ch${ch}L.`;
+      // Per-channel param controls.
+      controls[`ch${ch}_volume`] = `Channel ${ch} VOLUME fader (0..1) — the channel's level into the master bus + aux sends. CV via the ch${ch}_volume input.`;
+      controls[`ch${ch}_low`] = `Channel ${ch} LOW EQ band (±12 dB) — boost/cut the lows on channel ${ch}. CV via the ch${ch}_low input.`;
+      controls[`ch${ch}_mid`] = `Channel ${ch} MID EQ band (±12 dB) — boost/cut the mids on channel ${ch}. CV via the ch${ch}_mid input.`;
+      controls[`ch${ch}_high`] = `Channel ${ch} HIGH EQ band (±12 dB) — boost/cut the highs on channel ${ch}. CV via the ch${ch}_high input.`;
+      controls[`ch${ch}_thresh`] = `Channel ${ch} compressor THRESHOLD (−36..0 dB) — the level above which channel ${ch}'s compressor starts gain-reduction (only when COMP ENABLE / the COMP macro is on). CV via the ch${ch}_thresh input.`;
+      controls[`ch${ch}_ratio`] = `Channel ${ch} compressor RATIO (1..10) — how hard channel ${ch}'s compressor reduces gain above the threshold (1 = none, 10 = strong). CV via the ch${ch}_ratio input.`;
+      controls[`ch${ch}_compEnable`] = `Channel ${ch} compressor ENABLE (on/off) — bypasses or engages channel ${ch}'s compressor directly (the manual control under the COMP macro). CV via the ch${ch}_compEnable input.`;
+      controls[`comp${ch}`] = `Channel ${ch} COMP macro (0..1) — one knob that collapses the per-channel compressor: 0 = bypass, and (0,1] enables it while interpolating the threshold from 0 dB down to −20 dB and the ratio from 1:1 up to 4:1, for a quick "isolate this channel" amount. Overrides the manual thresh/ratio/enable when moved. CV via the comp${ch} input.`;
+      controls[`ch${ch}_send1`] = `Channel ${ch} SEND 1 amount (0..1) — how much of channel ${ch} is tapped to aux-send bus 1 (the send1L/R outputs, e.g. for an external reverb). CV via the ch${ch}_send1 input.`;
+      controls[`ch${ch}_send2`] = `Channel ${ch} SEND 2 amount (0..1) — how much of channel ${ch} feeds aux-send bus 2. CV via the ch${ch}_send2 input.`;
+      // Per-channel CV inputs (paramTarget = the same id).
+      inputs[`ch${ch}_volume`] = `CV that offsets channel ${ch}'s VOLUME fader (±1 CV sweeps the full 0..1 span around the knob).`;
+      inputs[`ch${ch}_low`] = `CV that offsets channel ${ch}'s LOW EQ band.`;
+      inputs[`ch${ch}_mid`] = `CV that offsets channel ${ch}'s MID EQ band.`;
+      inputs[`ch${ch}_high`] = `CV that offsets channel ${ch}'s HIGH EQ band.`;
+      inputs[`ch${ch}_thresh`] = `CV that offsets channel ${ch}'s compressor THRESHOLD.`;
+      inputs[`ch${ch}_ratio`] = `CV that offsets channel ${ch}'s compressor RATIO.`;
+      inputs[`ch${ch}_compEnable`] = `CV (discrete) that toggles channel ${ch}'s compressor ENABLE.`;
+      inputs[`comp${ch}`] = `CV that offsets channel ${ch}'s COMP macro amount.`;
+      inputs[`ch${ch}_send1`] = `CV that offsets channel ${ch}'s SEND 1 amount.`;
+      inputs[`ch${ch}_send2`] = `CV that offsets channel ${ch}'s SEND 2 amount.`;
+    }
+    // Stereo aux returns.
+    inputs.ret1L = 'Aux RETURN 1 left input — the wet signal coming back from the effect on send 1; summed (stereo) into the master bus.';
+    inputs.ret1R = 'Aux RETURN 1 right input, partnering ret1L.';
+    inputs.ret2L = 'Aux RETURN 2 left input — the wet return for send 2; summed into the master bus.';
+    inputs.ret2R = 'Aux RETURN 2 right input, partnering ret2L.';
+    // Master CV.
+    inputs.master_volume = 'CV that offsets the MASTER volume — modulate the overall output level of the whole mix.';
+    return {
+      explanation:
+        "A 6-channel stereo mixer with a channel strip on every input — the master bus of a patch. Each of the six channels takes a stereo pair, runs it through a 3-band EQ (low/mid/high, ±12 dB), an optional compressor, and a volume fader, then sums into the stereo MASTER output. Two stereo AUX SENDS tap each channel (per-channel SEND 1 / SEND 2 amounts) out to send1L/R and send2L/R — patch an external reverb/delay off a send and bring its wet signal back into the matching stereo RETURN, which sums into the master. The compressor is exposed two ways: manual THRESH / RATIO / ENABLE per channel, OR a single COMP macro knob that collapses all three into one 'amount' (0 = bypass, up to a moderate −20 dB / 4:1 at full). EVERY parameter also has a CV input (so an LFO can ride a fader, EQ band, or send), and the card shows a post-fader VU meter per channel. Multiple MIXMSTRS instances are allowed for submixes / parallel buses — each sums additively into its destination.",
+      inputs,
+      outputs: {
+        masterL: 'MASTER bus left output — all six channels (post EQ/comp/fader) plus the two aux returns, summed. The main stereo mix out.',
+        masterR: 'MASTER bus right output, the partner of masterL.',
+        send1L: 'AUX SEND 1 left output — the sum of every channel scaled by its SEND 1 amount. Patch it into an external effect, then return the wet to ret1L/R.',
+        send1R: 'AUX SEND 1 right output, the partner of send1L.',
+        send2L: 'AUX SEND 2 left output — the sum of every channel scaled by its SEND 2 amount. Return its wet to ret2L/R.',
+        send2R: 'AUX SEND 2 right output, the partner of send2L.',
+      },
+      controls: {
+        ...controls,
+        master_volume: 'MASTER output level (0..1) — the overall gain of the whole mix bus. CV via the master_volume input.',
+      },
+    };
+  })(),
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const f = await instantiateFaustModule(ctx, { name: 'mixmstrs', wasmUrl, metaUrl, workletUrl });
 

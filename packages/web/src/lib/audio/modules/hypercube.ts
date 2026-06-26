@@ -180,6 +180,58 @@ export const hypercubeDef: AudioModuleDef = {
     { id: 'view_rot_z', label: 'View Z', defaultValue: 0,   min: -3.1416, max: 3.1416, curve: 'linear' },
     { id: 'screen_on',  label: 'Screen', defaultValue: 1, min: 0, max: 1, curve: 'discrete' },
   ],
+  // docs-hash-ignore:start
+  // HYPERCUBE's card renders WebGL (rendersWebGL: true), so its def is in the
+  // WebGL attest basis. Living-docs is hash-transparent: these markers make
+  // computeWebglHash strip the co-located docs so authoring them does NOT churn
+  // the GPU attest hash. (Owner directive: "docs must not change attest hashes";
+  // sibling cube.ts uses the same markers — see scripts/webgl-attest-lib.ts
+  // stripDocsForHash.)
+  docs: {
+    explanation:
+      "A 4D-tesseract wavetable-terrain oscillator — the 4-dimensional sibling of CUBE. CUBE stacks three wavetables (FLOOR / WALL / CEILING) into a 3D scalar field and plays the heightmap of a flat plane sliced through it as its waveform; HYPERCUBE adds a FOURTH wavetable (HOLO) and an ALPHA axis that is the slice's 4th-dimension (w) coordinate. As you raise ALPHA the field's occupancy blends toward the HOLO cell (f4 = (1−alpha)·f3 + alpha·dH) — a genuine tesseract cross-section, where ALPHA selects WHICH 3D field the still-2D plane is cut from. At ALPHA = 0 the render collapses to a plain three-table CUBE, byte-for-byte. You aim the slicing plane with the Y height knob and three rotation knobs (Rot X / Y / Z), each CV-able; MORPH cross-fades the layers, CONNECT bulges the interior, CRUSH bit-reduces the read-out, FOLD is a west-coast wavefolder, and WRAP/MATERIAL choose how the slice reads outside the cube and how dense the field is. It is a pitched V/oct oscillator with a stereo ±SPREAD (L/R read slightly offset planes), and the card shows a live WebGL render of the 4D cube, the cut plane, and the output waveform — patchable out the VIDEO port, and switchable off to save GPU.",
+    inputs: {
+      pitch: 'Mono V/oct pitch control voltage — the standard 1V-per-octave oscillator pitch input, read directly by the worklet. Summed with the TUNE/FINE offsets (and the TUNE CV) to set the playback fundamental.',
+      slice_y: 'CV that offsets the Y param — raises or lowers the slicing plane through the cube, scanning the cut across the floor→ceiling stack.',
+      slice_rx: 'CV that offsets the Rot X param — tilts the slicing plane about the X axis (±π), changing the surface contour it reads.',
+      slice_ry: 'CV that offsets the Rot Y param — tilts the slicing plane about the Y axis (±π).',
+      slice_rz: 'CV that offsets the Rot Z param — rotates the slicing plane about the Z axis (±π).',
+      morph_fc: 'CV that offsets the Morph param, cross-fading the floor↔ceiling wavetable layers of the field.',
+      connect: 'CV that offsets the Connect param, blending the floor and ceiling into a connected interior shape.',
+      crush: 'CV that offsets the Crush param, driving the bit/sample reduction applied to the slice\'s read-out waveform.',
+      fold_cv: 'CV that offsets the Fold param, modulating the output wavefolder depth (added harmonics).',
+      alpha: 'CV that offsets the ALPHA param — the slice\'s 4th-dimension (w) coordinate. Sweeping it morphs the cross-section from the plain 3-table CUBE (alpha 0) toward the HOLO field, the signature HYPERCUBE motion.',
+      tune: 'CV that offsets the Tune param, shifting pitch in semitones around the base note (summed with the PITCH input and the FINE knob).',
+    },
+    outputs: {
+      L: 'Left audio channel of the sliced oscillator, including the −SPREAD plane offset, post-FOLD and post-LEVEL. Split out as its own mono port so the stereo width survives even into a mono input.',
+      R: 'Right audio channel, including the +SPREAD plane offset (the partner of L). Together L and R carry the spread stereo image.',
+      video_out: 'A mono-video output carrying a live render of the 4D cube view — the field volume, the cut plane positioned by Y + the rotation knobs (and ALPHA\'s 4th-dimension slice), and the output waveform. Patch it into VIDEOOUT or any video module; it keeps emitting frames even when the on-card SCREEN is off.',
+    },
+    controls: {
+      tune: 'Coarse pitch in semitones (−36..+36), summed with the FINE offset and the PITCH/TUNE CV to set the oscillator fundamental.',
+      fine: 'Fine pitch trim in cents (−100..+100) for tuning between the semitone steps of TUNE.',
+      morph_fc: 'Cross-fades the FLOOR↔CEILING wavetable layers of the 3D field (0 = floor, 1 = ceiling), reshaping the terrain the plane slices through. CV via the MORPH input.',
+      connect: 'Blends the floor and ceiling layers into a single connected interior shape (0 = separate, 1 = fully connected). CV via the CONNECT input.',
+      crush: 'Bit/sample reduction applied to the slice\'s read-out waveform (0 = clean, max = heavily crushed) for digital grit. CV via the CRUSH input.',
+      fold: 'West-coast wavefolder on the output (0 = pass-through, max = hard fold), applied after the slice is sampled and before LEVEL on both L and R, adding harmonics. CV via the FOLD input.',
+      alpha: 'ALPHA — the 4th-dimension (w) coordinate that makes HYPERCUBE a tesseract: 0 = identity to a 3-table CUBE render (the HOLO table is inert), and raising it blends the field toward the HOLO cell, selecting a different 3D cross-section to slice. CV via the ALPHA input.',
+      spread: 'Stereo width (0..1): at higher values the L and R taps read planes offset by up to ±5% of depth, so the two channels diverge (0 = mono, both channels identical).',
+      slice_y: 'Height of the slicing plane through the cube (0..1) — scans the cut from the floor up to the ceiling. CV via the Y input.',
+      slice_rx: 'Rotation of the slicing plane about the X axis (±π radians), tilting which surface contour it reads. CV via the ROT X input.',
+      slice_ry: 'Rotation of the slicing plane about the Y axis (±π radians). CV via the ROT Y input.',
+      slice_rz: 'Rotation of the slicing plane about the Z axis (±π radians). CV via the ROT Z input.',
+      level: 'Output gain on the sliced audio (0..2, applied after FOLD); 1 = unity, above 1 boosts.',
+      wrap: 'What happens when the slicing plane reads outside the cube: OFF = those regions are silent, ON = the coordinates mirror-fold back inside so the slice stays full.',
+      material: 'Field density model: SMOOTH (0) = continuous density gradients, HARD (1) = a binary solid (sharp inside/outside), which makes the sliced waveform edgier.',
+      view_zoom: 'Visualization-only camera zoom for the 4D cube view (no effect on sound or the selected slice).',
+      view_rot_x: 'Visualization-only camera rotation about X — orbits the 3D view (no effect on audio).',
+      view_rot_y: 'Visualization-only camera rotation about Y — orbits the 3D view (no effect on audio).',
+      view_rot_z: 'Visualization-only camera rotation about Z — orbits the 3D view (no effect on audio).',
+      screen_on: 'Turns the on-card WebGL viz screen on/off. When OFF and the VIDEO output is unpatched, the card skips the render to save GPU — audio keeps running untouched. A patched VIDEO output still receives live frames even with the screen off.',
+    },
+  },
+  // docs-hash-ignore:end
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initialParams = (node.params ?? {}) as Record<string, number>;

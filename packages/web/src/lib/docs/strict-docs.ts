@@ -245,4 +245,33 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'rasterize',
   'clockedRunner',
   'livecode',
+  // Batch 13 — heavy synth voices, effects & utilities (near the end of the
+  // audio catalog, 2026-06-26): the previously-deferred large-param modules and
+  // the remaining substantive voices/processors — CLOUDSEED (Ghost-Note algo
+  // reverb, 7 macro + 38 message-port params), FOXY (hybrid realtime-wavetable
+  // oscillator), POLYHELM (the polyphonic Helm voice), SYMBIOTE (Marbles
+  // alt-firmware Grids+TB-3PO brain), TWOTRACKS (two-reel tape looper), HYPERCUBE
+  // (4D-tesseract wavetable oscillator), SYNESTHESIA (dual 4-band audio→CV/video
+  // analyser, 48 outputs), WARRENSPECTRUM (8-band ping resonator bank), MIXMSTRS
+  // (6-ch stereo mixer, 61 params), and BLUEBOX (DTMF/phreaker dialer). Only the
+  // CONVENTION-card pure-Knob/Fader+PatchPanel members go INTERACTIVE: cloudseed
+  // + symbiote (verified live by docs-virtual-module.spec.ts). The rest stay
+  // STATIC: foxy/twotracks/synesthesia/warrenspectrum run a 2D-canvas render in
+  // the card, hypercube renders WebGL (rendersWebGL — its docs are wrapped in
+  // docs-hash-ignore markers like sibling cube so authoring stays attest-neutral)
+  // and its card adds a file-upload picker, polyhelm mounts a Web-MIDI gear panel,
+  // and bluebox has no `control-<paramId>` Knob/Fader to probe (its keys are
+  // press-and-hold buttons) — so the static face is the right fallback for each.
+  // POLYHELM is POLY: its `poly` input must be fed by a real poly source (MIDI
+  // LANE / POLYSEQZ / a chord sequencer), noted in its prose.
+  'cloudseed',
+  'foxy',
+  'polyhelm',
+  'symbiote',
+  'twotracks',
+  'hypercube',
+  'synesthesia',
+  'warrenspectrum',
+  'mixmstrs',
+  'bluebox',
 ]);

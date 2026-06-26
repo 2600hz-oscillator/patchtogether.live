@@ -170,6 +170,82 @@ export const polyhelmDef: AudioModuleDef = {
     { id: 'spread',      label: 'Spr',         defaultValue: 0.3,   min: 0,   max: 1,     curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "POLYHELM is the HELM polyphonic subtractive synth — a faithful port of Matt Tytel's open-source Helm — with a true POLY input bus. It is a full voice: two morphable oscillators plus a sub and a noise source, a multi-mode state-variable filter, three ADSR envelopes (amp / filter / a free 'mod' env), two LFOs, and an internal step sequencer, mixed across up to 8 allocator voices into a stereo output. The whole point vs. plain HELM is the `poly` input: feed it the project's 10-channel poly bus from a real polyphonic source (MIDI LANE in poly mode, POLYSEQZ, or a chord sequencer) and each gated lane lights up its own voice so it plays genuine chords. A mono pitch+gate pair is the single-voice fallback when nothing polyphonic is patched, and a hardware MIDI keyboard can also play it via the card's Web-MIDI gear panel. Every panel knob maps to the same Helm parameter it does in the standalone module, so patches/MIDI-learn transfer.",
+    inputs: {
+      poly: 'The preferred polyphonic input: the 10-channel poly bus (5 lanes of pitch + gate) from MIDI LANE / POLYSEQZ / a chord sequencer. Each gated lane drives its own Helm voice, so POLYHELM plays chords. This MUST be fed by a real poly source to hear polyphony — patch MIDI LANE → poly, or POLYSEQZ → poly. While any lane is gated this bus takes priority over the mono PITCH/GATE fallback.',
+      pitch_cv: 'Mono V/oct pitch — the single-voice fallback used when nothing is patched into POLY (and no MIDI). Sets the pitch of the one voice the GATE input articulates.',
+      gate: 'Mono gate for the single-voice fallback: a rising edge starts a note (envelopes attack), and the falling edge releases it. Used together with PITCH when POLY/MIDI are not driving the synth.',
+      midi_in: 'A visual-only MIDI marker port. Actual MIDI flows in over the Web-MIDI API via the card\'s gear/settings panel (device + channel picker), not through a patch cable — this jack just shows that MIDI is a supported source.',
+      seq_reset: 'Reset trigger for the internal step sequencer: a rising edge restarts the modulation sequence from step 1, re-syncing it to your groove.',
+    },
+    outputs: {
+      out_l: 'Left channel of the mixed polyphonic voices (after the stereo SPREAD). Pair with OUT R to keep the width.',
+      out_r: 'Right channel of the mixed voices, the partner of OUT L.',
+    },
+    controls: {
+      voiceCount: 'Polyphony: the maximum number of simultaneous voices the allocator will sound (1..8). Lower it for mono/duo behavior or to save CPU; raise it for thicker chords.',
+      volume: 'Master output gain across all voices (0..2; 1 = unity).',
+      // OSC 1
+      osc1Wave: 'Oscillator 1 waveform (sine / triangle / saw / square).',
+      osc1Trans: 'Oscillator 1 coarse transpose in semitones (−24..+24).',
+      osc1Tune: 'Oscillator 1 fine tune in cents (−100..+100) for detuning between semitones.',
+      osc1Unison: 'Oscillator 1 unison voice count (1..7) — stacks detuned copies for a fatter tone.',
+      osc1Detune: 'Oscillator 1 unison detune spread in cents — how far apart the stacked unison copies are spread.',
+      osc1Vol: 'Oscillator 1 level in the per-voice mix (0..1).',
+      // OSC 2
+      osc2Wave: 'Oscillator 2 waveform (sine / triangle / saw / square).',
+      osc2Trans: 'Oscillator 2 coarse transpose in semitones (−24..+24).',
+      osc2Tune: 'Oscillator 2 fine tune in cents (−100..+100); default +7 c for a slight detune-beat against OSC 1.',
+      osc2Unison: 'Oscillator 2 unison voice count (1..7).',
+      osc2Detune: 'Oscillator 2 unison detune spread in cents.',
+      osc2Vol: 'Oscillator 2 level in the per-voice mix (0..1).',
+      // Sub + noise
+      subWave: 'Sub-oscillator waveform (sine / triangle / saw / square), one octave below — adds low-end weight.',
+      subVol: 'Sub-oscillator level in the mix (0..1).',
+      noiseVol: 'White-noise level in the mix (0..1) — adds breath/grit, useful for percussion and texture.',
+      // Filter
+      filterCutoff: 'Filter cutoff/corner frequency (20 Hz..20 kHz, log) — the main brightness control; the filter envelope and key-track add to it.',
+      filterRes: 'Filter resonance (0.5..16) — emphasises the cutoff frequency; high values self-oscillate.',
+      filterBlend: 'Filter mode blend (0 = low-pass, 1 = band-pass, 2 = high-pass) — morphs the state-variable filter response continuously.',
+      filterStyle: 'Filter pole/style — switches the filter slope/character (a 1-pole vs steeper response).',
+      filterDrive: 'Filter input drive (0.5..6) — pushes the filter harder for saturation and a fatter, dirtier tone.',
+      filterKeyTrack: 'Filter keyboard tracking (−1..+1) — how much the played note offsets the cutoff, keeping timbre consistent across the keyboard (positive opens the filter for higher notes).',
+      // Amp env
+      ampAttack: 'Amp envelope ATTACK time (s) — how fast each note rises to full from note-on.',
+      ampDecay: 'Amp envelope DECAY time (s) — fall from the attack peak down to the sustain level.',
+      ampSustain: 'Amp envelope SUSTAIN level (0..1) — the level held while the note\'s gate stays high.',
+      ampRelease: 'Amp envelope RELEASE time (s) — fade to silence after the gate falls.',
+      // Filter env
+      filAttack: 'Filter envelope ATTACK time (s) — how fast the filter-cutoff modulation rises on note-on.',
+      filDecay: 'Filter envelope DECAY time (s) — fall to the filter-env sustain level.',
+      filSustain: 'Filter envelope SUSTAIN level (0..1) — held filter-modulation level while the gate is high.',
+      filRelease: 'Filter envelope RELEASE time (s) — how fast the filter modulation fades after the gate falls.',
+      filEnvDepth: 'Filter envelope DEPTH (−1..+1) — how much (and which polarity) the filter envelope sweeps the cutoff; 0 = no sweep.',
+      // Mod env
+      modAttack: 'Mod envelope ATTACK time (s) — the free assignable envelope, used as a modulation source.',
+      modDecay: 'Mod envelope DECAY time (s).',
+      modSustain: 'Mod envelope SUSTAIN level (0..1).',
+      modRelease: 'Mod envelope RELEASE time (s).',
+      modEnvDepth: 'Mod envelope DEPTH (−1..+1) — the amount of the free mod-envelope routed to its destination.',
+      // LFOs
+      lfo1Wave: 'LFO 1 waveform (sine / triangle / saw / square).',
+      lfo1Freq: 'LFO 1 rate (0.01..30 Hz, log).',
+      lfo1Amp: 'LFO 1 amount/depth (0..1) — how much LFO 1 modulates its destination.',
+      lfo2Wave: 'LFO 2 waveform (sine / triangle / saw / square).',
+      lfo2Freq: 'LFO 2 rate (0.01..30 Hz, log).',
+      lfo2Amp: 'LFO 2 amount/depth (0..1).',
+      // Step sequencer
+      stepNumSteps: 'Internal step-sequencer length (1..16 steps) — the modulation pattern\'s period.',
+      stepRate: 'Step-sequencer rate (0.1..30 Hz, log) — how fast it advances through its steps.',
+      stepSmooth: 'Step-sequencer smoothing (0..1) — glides between step values instead of stepping abruptly (0 = hard steps, up = slewed).',
+      stepDepth: 'Step-sequencer modulation DEPTH (−1..+1) — how much the step pattern modulates its destination; reset its phase with the SEQ RESET input.',
+      // Stereo
+      spread: 'Stereo SPREAD (0..1) — pans the voices across the field for width (0 = mono/center, up = wider).',
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
