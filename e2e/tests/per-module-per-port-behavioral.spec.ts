@@ -177,6 +177,7 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   pong:     'gameplay-conditional outputs; covered by pong-related specs',
   modtris:  'gameplay-conditional outputs; covered by modtris-related specs',
   snes9x:   'ROM-gated emulator: all outputs (incl. measured audio_l) need a loaded ROM (user-provided, gitignored, absent in CI) so control + patched both read silence; covered by snes9x.spec.ts + snes9x-gameplay-gates.spec.ts (skip when ROM absent) + snes-input/clock-multiplier/smw-events unit tests',
+  blood:    'data-gated emulator: outputs need user-supplied, non-redistributable Blood data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF, gitignored, absent in CI) — the NBlood engine aborts in its resource loader without it, so driven + control inputs both observe the idle shader / silent PCM stub; covered by blood-keys.test.ts + the blood-frame-harness (run locally with owned data). See native/nblood/PHASE1-STATUS.md.',
   frogger:  'gameplay-conditional outputs; covered by frogger specs',
   skifree:  'gate fires only on in-game crash/eaten; out is animated canvas; covered by e2e/tests/skifree.spec.ts',
   gibribbon: 'gameplay-conditional outputs (evt_hit/miss/fire/kill/gameover fire on in-game judgement; health_cv is idle DC); covered by gibribbon.spec.ts (forcePulse) + gibribbon-events.test.ts',

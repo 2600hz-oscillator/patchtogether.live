@@ -1,91 +1,70 @@
-# Blood game data — user-provided asset instructions
+# Blood game data — bundled shareware + optional full-game override
 
-The (planned) BLOOD module ships **without** any Blood game data in the repo.
-Unlike DOOM — whose shareware `DOOM1.WAD` id Software **explicitly licensed
-for free redistribution**, so we can fetch it on demand — **Blood's data is
-proprietary and is NOT freely redistributable** (see "Legal status" below).
-You must supply your own files from a copy of the game you own.
+The BLOOD module **boots out-of-box**: this directory ships the **1997 Blood
+SHAREWARE** data set ("The Way of All Flesh", episode 1), so the card renders
+without any picker on the beta-gated deploys. The full game stays a user-supplied
+*override* (its data is not redistributable).
 
-This mirrors the QBERT / SNES9X "user-provided ROM" pattern, not the DOOM
-"we fetch the shareware WAD for you" pattern.
+> The owner explicitly authorised shipping the shareware here; everything in this
+> repo is beta-gated / pre-public / non-commercial. License implications are the
+> owner's call (see "Legal status" below).
 
-## Required files
+## What's bundled (the committed shareware set)
 
-Drop the data files from your **One Unit Whole Blood** / **Blood: Fresh
-Supply** (the GOG/Steam release bundles the original DOS data) install into
-this directory:
+Committed under `packages/web/static/blood/` (un-ignored in `.gitignore`,
+LFS-tracked via `.gitattributes`):
 
 ```
-packages/web/static/blood/
-  BLOOD.RFF      # main resource file (sounds, sequences, palettes, ...)
-  TILES000.ART   # art tiles 0 (… TILES001.ART, TILES002.ART, … as present)
-  GUI.RFF        # UI resource file
-  SOUNDS.RFF     # sound resource file
-  *.MAP          # the episode maps (E1M1.MAP … shipped inside BLOOD.RFF on
-                 #   some releases; standalone .MAP on others)
-  *.DAT          # any sequence / definition DATs the release ships
+BLOOD.RFF      # shareware main resource (~3.2 MB; the FULL game's is ~10 MB+)
+GUI.RFF        # UI resources
+SOUNDS.RFF     # sound resources
+SURFACE.DAT    # surface/material table
+TABLES.DAT     # engine lookup tables
+VOXEL.DAT      # voxel table
+SHARE000.ART   # SHAREWARE tile art (the full game ships TILES000.ART instead)
 ```
 
-> The exact file set varies by release (1.21 full vs One Unit Whole Blood vs
-> Fresh Supply's bundled DOS data). The module's loader (Phase 1) will report
-> precisely which files it could not find. NBlood's own documentation
-> (the upstream README + the `*.GRP`/`*.RFF` notes) is the canonical list of
-> what a given Blood release provides; match that.
+Plus the built engine artifacts `blood.js` + `blood.wasm` (deterministic from the
+pinned NBlood commit — see `build-blood-wasm.sh`; carry no game IP).
 
-## Install via the setup task (recommended)
+The `SHARE000.ART` filename (vs the full game's `TILES000.ART`) and the small
+`BLOOD.RFF` are the shareware giveaways. The shareware `BLOOD.RFF` contains 8
+single-player maps (E1M1–E1M8) and **no dedicated BloodBath/deathmatch maps**
+(shareware BloodBath reuses the episode maps).
 
-From the repo root:
+### Source
+
+Extracted from the official 1997 retail-shareware CD image
+("BLOOD: Spill Some! — Retail Shareware"),
+<https://archive.org/details/blood-31197> (`BLOOD31197.iso`), unpacked from the
+InstallShield 3 `DATA.Z` archive on the disc. All extracted file sizes match the
+archive's table-of-contents exactly.
+
+## Full-game override (optional)
+
+To play **all episodes**, supply data from a copy of the full game you own:
 
 ```bash
 flox activate -- task setup:blood BLOOD_ASSETS=/path/to/your/blood/install
 ```
 
-That validates the directory contains at least `BLOOD.RFF` and copies the
-recognised data files here. The files are **`.gitignore`d** (only this
-`README.md` is tracked) so a stray `git add` can't commit copyrighted data.
+…or use the **"Load full Blood data…"** picker on the card (it caches your files
+in IndexedDB so you only pick once). The full game is sold today as **One Unit
+Whole Blood** and **Blood: Fresh Supply** (GOG / Steam). Full-game data is
+`.gitignore`d — only the specific shareware files above are un-ignored.
 
-## SHA-1 checksums (for validation)
+## Legal status
 
-Checksums depend on the exact release you own; the most common references are:
-
-| File         | Release                      | SHA-1                                      |
-| ------------ | ---------------------------- | ------------------------------------------ |
-| `BLOOD.RFF`  | One Unit Whole Blood (v1.21) | _TODO: pin once the Phase-1 loader exists_ |
-| `BLOOD.RFF`  | Fresh Supply (DOS data)      | _TODO_                                     |
-
-> These are intentionally left as TODO for the Phase-0 spike — pinning them
-> requires a legally-owned copy to hash, and the loader that validates them
-> doesn't exist yet. Phase 1 fills them in (the same way DOOM's
-> `DOWNLOAD_INSTRUCTIONS.md` pins `DOOM1.WAD`'s SHA-1).
-
-## Where to buy
-
-Blood is sold today as **One Unit Whole Blood** and **Blood: Fresh Supply**:
-
-- GOG: <https://www.gog.com/en/game/blood_fresh_supply> (Fresh Supply
-  includes the original DOS *One Unit Whole Blood* as a bonus).
-- Steam: *Blood: Fresh Supply* (the original DOS *One Unit Whole Blood* was
-  re-listed on Steam in 2023).
-
-## Legal status — why we do NOT ship or auto-fetch Blood data
-
-- **IP owner:** Warner Bros. Games (via its Monolith Productions subsidiary)
-  owns the Blood trademark and intellectual property. GT Interactive (later
-  Infogrames → Atari) only ever held *publishing* rights, not the IP.
+- **IP owner:** Warner Bros. Games (via Monolith Productions). GT Interactive
+  (later Infogrames → Atari) held only publishing rights.
   <https://en.wikipedia.org/wiki/Blood_(video_game)>
-- **No free-redistribution grant for the data:** id Software's DOOM shareware
-  license *explicitly* permits free redistribution of `DOOM1.WAD` — which is
-  why this repo can fetch it for you. **No equivalent affirmative grant
-  exists for Blood's shareware or full data.** The Blood shareware episode
-  ("The Way of All Flesh", `SHARE000.ART`) circulates on Archive.org / ModDB
-  in a legally-gray "abandonware" status, and period shareware license files
-  commonly *restricted* third-party redistribution (e.g. no CD-compilation
-  inclusion without permission). We treat it as **not redistributable by us**.
-- **Therefore:** the project never ships Blood data, never pre-fetches it from
-  any CDN, and CI never downloads it. The BLOOD module renders a graceful
-  "Blood data missing — run `task setup:blood`" card when the files are
-  absent (same as QBERT / SNES9X).
-- The **engine** (NBlood, reverse-engineered, GPL-2.0 + the Build engine
-  under Ken Silverman's BUILDLIC) is shipped/loaded as a separate WASM blob;
-  see `packages/web/native/nblood/PHASE0-STATUS.md` for the licensing analysis.
-  We **never** vendor or reference the leaked 1996 Blood source.
+- The 1997 Blood shareware ("The Way of All Flesh") circulates widely as
+  abandonware. Unlike id's DOOM shareware, it has no explicit free-redistribution
+  grant; shipping it here is a deliberate owner decision for this beta-gated,
+  non-commercial preview — **not** a claim that it is freely redistributable.
+- The **full game's** data is never shipped or auto-fetched — it is the
+  user-supplied override only.
+- The **engine** (NBlood, GPL-2.0 + the Build engine under Ken Silverman's
+  BUILDLIC) ships as the separate WASM blob; see
+  `packages/web/native/nblood/PHASE0-STATUS.md` for the licensing analysis. We
+  never vendor or reference the leaked 1996 Blood source.

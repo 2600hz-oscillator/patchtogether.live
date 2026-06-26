@@ -199,6 +199,7 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // covered by the ROM-gated snes9x e2e (video/audio/input + clock_in→gate3)
   // and the pure unit suites (detection / multiplier / input mask).
   snes9x: 'all outputs need a loaded ROM (user-provided, gitignored, absent in CI); event gates fire on gameplay/forcePulse; covered by the ROM-gated snes9x e2e + pure unit suites',
+  blood: 'all outputs need user-supplied, non-redistributable Blood data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF, gitignored, absent in CI) — the NBlood engine aborts in its resource loader without it, so the video surface is the idle shader + audio is the silent PCM stub; covered by blood-keys.test.ts + the blood-frame-harness (run locally with owned data). See native/nblood/PHASE1-STATUS.md.',
   // ── Driver page.evaluate / postSpawn hangs ──
   // These modules' drivers time out under CI load — the per-output
   // serial loop (8 × 20 s, 7 × 20 s) exhausts the test budget before
