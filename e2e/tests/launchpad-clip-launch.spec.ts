@@ -289,3 +289,180 @@ test('@launchpad arming REC on the deck captures a launch to the arrangement; SO
 
   expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
 });
+
+// ===========================================================================
+// SINGLE-UNIT mode — ONE Launchpad does everything the two-device pair does:
+// the clip view (L role) launches a clip → audible RMS through the SAME real
+// TIMELORDE→clipplayer→VCO→VCA→SCOPE chain; flipping to the control view (R
+// role) via the hardware CC-98 toggle drives the editor; flipping back relaunches
+// → RMS returns. Proves the single device + view toggle + the real source chain
+// end to end (silent-before / audible-after, the green-but-silent guard).
+// ===========================================================================
+test('@launchpad single-unit: clip view launches (audible), CC-98 flips to control (editor), round-trip relaunches', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+
+  await spawnPatch(
+    page,
+    [
+      { id: 's-cp', type: 'clipplayer', position: { x: 60, y: 60 }, domain: 'audio',
+        params: { quantize: 0, stepDiv: 2, gateLength: 0.9, octave: 0 } },
+      { id: 's-vco', type: 'analogVco', position: { x: 360, y: 60 }, domain: 'audio' },
+      { id: 's-vca', type: 'vca', position: { x: 640, y: 60 }, domain: 'audio',
+        params: { base: 0, cvAmount: 1 } },
+      { id: 's-scp', type: 'scope', position: { x: 920, y: 60 }, domain: 'audio',
+        params: { timeMs: 200 } },
+    ],
+    [
+      { id: 'g1', from: { nodeId: 's-cp', portId: 'pitch1' }, to: { nodeId: 's-vco', portId: 'pitch' },
+        sourceType: 'polyPitchGate', targetType: 'pitch' },
+      { id: 'g2', from: { nodeId: 's-vco', portId: 'sine' }, to: { nodeId: 's-vca', portId: 'audio' },
+        sourceType: 'audio', targetType: 'audio' },
+      { id: 'g3', from: { nodeId: 's-cp', portId: 'gate1' }, to: { nodeId: 's-vca', portId: 'cv' },
+        sourceType: 'gate', targetType: 'cv' },
+      { id: 'g4', from: { nodeId: 's-vca', portId: 'audio' }, to: { nodeId: 's-scp', portId: 'ch1' },
+        sourceType: 'audio', targetType: 'audio' },
+    ],
+  );
+
+  await expect(page.locator('.svelte-flow__node-clipplayer')).toHaveCount(1);
+
+  // Seed a clip in lane 0 / slot 0.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+      __ydoc: { transact: (fn: () => void) => void };
+    };
+    w.__ydoc.transact(() => {
+      const n = w.__patch.nodes['s-cp'];
+      if (!n.data) n.data = {};
+      n.data.clips = {
+        '0': {
+          kind: 'note', lengthSteps: 4, root: 48, loop: true, scale: 'major',
+          steps: [
+            { step: 0, midi: 72, velocity: 127, lengthSteps: 1 },
+            { step: 1, midi: 74, velocity: 127, lengthSteps: 1 },
+            { step: 2, midi: 76, velocity: 127, lengthSteps: 1 },
+            { step: 3, midi: 79, velocity: 127, lengthSteps: 1 },
+          ],
+        },
+      };
+    });
+  });
+
+  // Install the SINGLE simulated Launchpad (one device on the L slot, single
+  // deployment) + bind it to the clip-player. No Web MIDI prompt.
+  const installed = await page.evaluate(async () => {
+    const w = globalThis as unknown as { __launchpadTestInstallSingle?: (id: string) => Promise<boolean> };
+    if (!w.__launchpadTestInstallSingle) return false;
+    return await w.__launchpadTestInstallSingle('s-cp');
+  });
+  expect(installed, 'single-unit Launchpad install hook present (VITE_E2E_HOOKS)').toBe(true);
+
+  // (1) Silent before the launch (transport runs but nothing launched yet).
+  await setTransport(page, 1);
+  const before = await readScopePeakOverWindow(page, 's-scp', 500);
+  expect(before.rms, 'silent before the single-unit pad launches a clip').toBeLessThan(0.03);
+
+  // (2) Clip view: press the top-left pad (slot 0, lane 0 = physical y=7) → launch.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } };
+    w.__launchpadSingleSim?.press(0, 7);
+  });
+  await expect.poll(() => lane0Playing(page), { timeout: 5000 }).toBe(0);
+
+  // (3) The launch produces structured, audible RMS through the real chain.
+  const after = await readScopePeakOverWindow(page, 's-scp', 1500);
+  expect(after.rms, 'audible gated RMS after the single-unit pad launch').toBeGreaterThan(0.03);
+  expect(after.nonzeroSamples, 'structured signal, not a glitch').toBeGreaterThan(50);
+  expect(after.rms, 'the pad launch raised the output').toBeGreaterThan(before.rms + 0.02);
+
+  // (4) Flip to CONTROL view via the hardware CC-98 toggle, then drive the
+  //     editor (the R functionality on the one device): hold EDIT + flip back to
+  //     clip + tap the clip → enter the editor; flip to control + place a note.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __launchpadSingleSim?: { viewFlip: () => void } };
+    w.__launchpadSingleSim?.viewFlip(); // clip → control
+  });
+  // hold EDIT on the deck (col 0, row 0), flip to clip, tap the clip, release.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as {
+      __launchpadSingleSim?: {
+        press: (x: number, y: number) => void;
+        release: (x: number, y: number) => void;
+        viewFlip: () => void;
+      };
+    };
+    const s = w.__launchpadSingleSim!;
+    s.press(0, 0); // hold EDIT (control view)
+    s.viewFlip(); // control → clip (editArmed survives)
+    s.press(0, 7); // tap the clip (top-left) → enter the editor
+    s.release(0, 0);
+    s.viewFlip(); // clip → control (now driving the editor)
+  });
+  // Confirm the single device is in the editor role (control view + edit mode) —
+  // the R functionality is now live on the one device.
+  const editState = await page.evaluate(() => {
+    const w = globalThis as unknown as { __launchpadSingleSim?: { state: () => { activeView: string; mode: string } } };
+    return w.__launchpadSingleSim?.state();
+  });
+  expect(editState?.activeView, 'single device in CONTROL view').toBe('control');
+  expect(editState?.mode, 'single device in the note EDITOR (R role)').toBe('edit');
+
+  // The editor (R functionality) is live on the single device. Prove it with a
+  // WINDOW-INDEPENDENT editor action: SCALE (CC 97) cycles the clip's scale
+  // (major → minor). This depends only on being in the editor (the R role on the
+  // single device), not on the playhead-driven note-grid window.
+  const CC_EDIT_SCALE = 97;
+  await page.evaluate((cc) => {
+    const w = globalThis as unknown as { __launchpadSingleSim?: { cc: (cc: number, v: number) => void } };
+    w.__launchpadSingleSim?.cc(cc, 127); // SCALE cycle in the editor: major → minor
+  }, CC_EDIT_SCALE);
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const w = globalThis as unknown as {
+            __patch: { nodes: Record<string, { data?: { clips?: Record<string, { scale?: string }> } }> };
+          };
+          return w.__patch.nodes['s-cp']?.data?.clips?.['0']?.scale ?? null;
+        }),
+      { timeout: 5000 },
+    )
+    .toBe('minor');
+
+  // (5) Round-trip back to clip view, stop then relaunch → RMS returns.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __launchpadSingleSim?: { viewFlip: () => void; press: (x: number, y: number) => void } };
+    const s = w.__launchpadSingleSim!;
+    s.viewFlip(); // control → clip
+    s.press(0, 7); // the clip is playing → this queues a STOP
+  });
+  await expect.poll(() => lane0Playing(page), { timeout: 5000 }).toBeNull();
+  // Poll for the audio to actually fall silent — the synced `playing=null` flip
+  // leads the audio by the VCA release tail, so a single short window can still
+  // catch the decay (a ~0.034 vs 0.03 tail race). Poll a fresh window until the
+  // gate has fully decayed.
+  await expect
+    .poll(async () => (await readScopePeakOverWindow(page, 's-scp', 400)).rms, { timeout: 5000 })
+    .toBeLessThan(0.03);
+
+  // relaunch in clip view → audible again.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __launchpadSingleSim?: { press: (x: number, y: number) => void } };
+    w.__launchpadSingleSim?.press(0, 7);
+  });
+  await expect.poll(() => lane0Playing(page), { timeout: 5000 }).toBe(0);
+  const relaunched = await readScopePeakOverWindow(page, 's-scp', 1500);
+  expect(relaunched.rms, 'RMS returns after the round-trip relaunch').toBeGreaterThan(0.03);
+
+  expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
+});

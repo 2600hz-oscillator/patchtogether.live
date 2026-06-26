@@ -211,8 +211,8 @@
   import type { HocuspocusProvider } from '@hocuspocus/provider';
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { installSimulatedMidiDevice, installSimulatedNoteDevice } from '$lib/midi/midi-learn.svelte';
-  import { installSimulatedLaunchpad } from '$lib/control/launchpad/launchpad-device.svelte';
-  import { bindLaunchpadToClip } from '$lib/control/launchpad/launchpad-control.svelte';
+  import { installSimulatedLaunchpad, installSimulatedLaunchpadSingle } from '$lib/control/launchpad/launchpad-device.svelte';
+  import { bindLaunchpadToClip, __test_setDeployment, __test_mode as __launchpadTestMode } from '$lib/control/launchpad/launchpad-control.svelte';
 
   // Stage B PR B-b: when mounted under /r/[id] (multi-user), the parent
   // passes the current user's id so per-user layouts are scoped correctly.
@@ -4605,6 +4605,30 @@
           releaseR: (x: number, y: number) => sim.release('R', x, y),
           ccR: (cc: number, value: number) => sim.cc('R', cc, value),
           ccL: (cc: number, value: number) => sim.cc('L', cc, value),
+        };
+        return true;
+      };
+      // SINGLE-UNIT Launchpad sim for e2e: installs ONE in-memory device bound to
+      // the L slot, forces the single deployment, then binds the clip-player. The
+      // lone device routes/paints by the active VIEW; every sim event flows on the
+      // one device (sent on unit 'L'), so the driver exposes view-agnostic
+      // press/cc + a viewFlip that drives the hardware CC-98 toggle.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__launchpadTestInstallSingle = async (clipNodeId: string) => {
+        const sim = await installSimulatedLaunchpadSingle();
+        __test_setDeployment('single', 'clip');
+        bindLaunchpadToClip(clipNodeId);
+        const CC_VIEW_FLIP = 98; // CC_TOP_SPARE_8 — the single-unit view toggle.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (globalThis as any).__launchpadSingleSim = {
+          // press/cc on the ONE device (it's the L slot); routed by active view.
+          press: (x: number, y: number) => sim.press('L', x, y),
+          release: (x: number, y: number) => sim.release('L', x, y),
+          cc: (cc: number, value: number) => sim.cc('L', cc, value),
+          // flip clip↔control via the hardware CC-98 button (press+release).
+          viewFlip: () => { sim.cc('L', CC_VIEW_FLIP, 127); sim.cc('L', CC_VIEW_FLIP, 0); },
+          // probe the binding's view/mode state (deployment, activeView, mode).
+          state: () => __launchpadTestMode(),
         };
         return true;
       };

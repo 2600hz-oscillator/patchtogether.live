@@ -149,6 +149,13 @@ export function isPairBound(): boolean {
   return isUnitBound('L') && isUnitBound('R');
 }
 
+/** True once the SINGLE unit (the L slot) is bound — the single-unit deployment.
+ *  The lone device always binds to the L slot (see launchpad-control's single
+ *  bind path); the control layer flips its role between clip + control views. */
+export function isSingleBound(): boolean {
+  return isUnitBound('L') && !isUnitBound('R');
+}
+
 // ---------------------------------------------------------------------------
 // Connect (acquire sysex access) — lazy, idempotent, gesture-gated.
 // ---------------------------------------------------------------------------
@@ -537,6 +544,80 @@ export async function installSimulatedLaunchpad(): Promise<SimulatedLaunchpad> {
     writes: (unit) => (writesByPort.get(outIdFor(unit)) ?? []).slice(),
     ledAt: (unit, index) => {
       const k = units[unit].lastRgb.get(index);
+      if (!k) return null;
+      const [r, g, b] = k.split(',').map((n) => parseInt(n, 10));
+      return [r, g, b];
+    },
+  };
+  return simInstalled;
+}
+
+/**
+ * Single-unit simulated Launchpad — installs an in-memory access holding ONE
+ * Launchpad-MIDI port pair and binds it to the L slot (the single-unit
+ * deployment: one device, the control layer flips its role). Parallel to
+ * installSimulatedLaunchpad, but with a single port + L-only senders. The
+ * control layer routes presses to handleL/handleR by the active VIEW (not the
+ * unit tag), so every sim event is sent on unit 'L'.
+ */
+export async function installSimulatedLaunchpadSingle(): Promise<SimulatedLaunchpad> {
+  if (simInstalled) return simInstalled;
+
+  const writesByPort = new Map<string, Uint8Array[]>();
+  const handlers = new Map<string, ((ev: MidiEventLike) => void) | null>();
+  const inputs = new Map<string, MidiInputLike>();
+  const outputs = new Map<string, MidiOutputLike>();
+
+  const inId = 'pt-sim-lp-single-in';
+  const outId = 'pt-sim-lp-single-out';
+  writesByPort.set(outId, []);
+  handlers.set(inId, null);
+  const input: MidiInputLike = {
+    id: inId,
+    name: `LPMiniMK3 MIDI In`,
+    manufacturer: 'Focusrite - Novation',
+    state: 'connected',
+    get onmidimessage() {
+      return handlers.get(inId) ?? null;
+    },
+    set onmidimessage(h) {
+      handlers.set(inId, h);
+    },
+  };
+  const output: MidiOutputLike = {
+    id: outId,
+    name: `LPMiniMK3 MIDI Out`,
+    manufacturer: 'Focusrite - Novation',
+    state: 'connected',
+    send(d: number[] | Uint8Array) {
+      writesByPort.get(outId)!.push(d instanceof Uint8Array ? d.slice() : new Uint8Array(d));
+    },
+  };
+  inputs.set(inId, input);
+  outputs.set(outId, output);
+
+  const fake: MidiFullAccessLike = { inputs, outputs, onstatechange: null };
+  access = fake;
+  connectStarted = true;
+  connectFailed = false;
+
+  // Bind the lone device to the L slot — the single-unit deployment.
+  bindUnit('L', inId, outId);
+
+  const feed = (bytes: number[]) => {
+    const h = handlers.get(inId);
+    if (h) h({ data: new Uint8Array(bytes), timeStamp: 0 });
+  };
+
+  simInstalled = {
+    // The lone device is the L slot; all sim events flow on unit 'L'. (The unit
+    // tag passed by callers is ignored here — there is only one device.)
+    press: (_unit, x, y, velocity = 100) => feed([0x90, padNote(x, y), velocity & 0x7f]),
+    release: (_unit, x, y) => feed([0x80, padNote(x, y), 0]),
+    cc: (_unit, cc, value) => feed([0xb0, cc & 0x7f, value & 0x7f]),
+    writes: () => (writesByPort.get(outId) ?? []).slice(),
+    ledAt: (_unit, index) => {
+      const k = units.L.lastRgb.get(index);
       if (!k) return null;
       const [r, g, b] = k.split(',').map((n) => parseInt(n, 10));
       return [r, g, b];
