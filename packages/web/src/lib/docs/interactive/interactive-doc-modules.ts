@@ -148,4 +148,18 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   'marbles',
   'grids',
   'atlantisCatalyst',
+  // Batch 12 — modulation, function generators, clocks & live-control utilities
+  // (2026-06-26): only the CONVENTION-card members whose cards are a pure
+  // Fader/button + PatchPanel with NO onMount/$effect, no canvas/rAF/WebGL, no
+  // Web-MIDI panel and no file input — the macrooscillator profile — go here, so
+  // each mounts cleanly in the engine-less doc sandbox. Verified live by
+  // docs-virtual-module.spec.ts (tides2 freq_cv→FREQ, stages primary0_cv→P1, and
+  // qbrt cutoff→CUTOFF each exercise the CV→param dual context). The STATIC
+  // siblings stay off this list: timelorde + rasterize run a 2D-canvas render,
+  // score's card is an SVG staff with mouse note-entry, clipplayer runs a
+  // playhead render loop + the WebSerial monome grid, and clockedRunner + livecode
+  // mount a CodeMirror editor — see strict-docs.ts.
+  'tides2',
+  'stages',
+  'qbrt',
 ]);

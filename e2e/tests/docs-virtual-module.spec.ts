@@ -502,6 +502,38 @@ const PROBES: Probe[] = [
     cvPort: '', // queue/nudge/freeze/seed inputs have no paramTarget
     modulates: /./,
   },
+  // --- Batch 12 — modulation, function generators, clocks & live-control
+  // utilities (2026-06-26). Only the CONVENTION-card members (pure Fader/button +
+  // PatchPanel, no canvas/rAF/onMount) are interactive; this proves the live card
+  // mounts cleanly and a control hover updates the pane. The CV→param dual-context
+  // check runs on each (tides2 freq_cv→frequency, stages primary0_cv→primary0,
+  // qbrt cutoff→cutoff). The STATIC siblings (timelorde / rasterize / score /
+  // clipplayer / clockedRunner / livecode) have no live-card probe — see
+  // interactive-doc-modules.ts. ---
+  {
+    id: 'tides2',
+    heading: /tides2/i,
+    controlParam: 'frequency',
+    controlDescIncludes: /rate|ramp|freq/i,
+    cvPort: 'freq_cv', // CV (paramTarget=frequency) → FREQ macro
+    modulates: /modulates/i,
+  },
+  {
+    id: 'stages',
+    heading: /stages/i,
+    controlParam: 'primary0',
+    controlDescIncludes: /time|level|primary|segment/i,
+    cvPort: 'primary0_cv', // CV (paramTarget=primary0) → segment 1 primary
+    modulates: /modulates/i,
+  },
+  {
+    id: 'qbrt',
+    heading: /qbrt/i,
+    controlParam: 'cutoff',
+    controlDescIncludes: /cutoff|corner|frequency|ring/i,
+    cvPort: 'cutoff', // CV (paramTarget=cutoff) → CUTOFF
+    modulates: /modulates/i,
+  },
 ];
 
 /** Wait for the live virtual module to finish mounting (the flow host appears

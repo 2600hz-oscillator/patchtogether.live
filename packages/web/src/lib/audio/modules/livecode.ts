@@ -35,6 +35,11 @@ export const livecodeDef: AudioModuleDef = {
   // syncs to other rack-mates via Y.Doc.
   params: [],
 
+  docs: {
+    explanation:
+      "A live-coding module: a small scripting language that builds and patches the rack from text. Its card is a code editor with a Run button and an output log; the script can spawn modules, set parameters, and wire cables, and it can register clocked(division, fn) callbacks that run in time with the rack clock (each one spawns its own CLOCKED runner module). It has no audio jacks of its own — it's a side tool that mutates the patch graph, and its changes sync to other people in the rackspace through the shared document like any other edit. It's registered in the audio domain only because the rack already has an audio engine; its factory does no audio work.",
+  },
+
   async factory(_ctx, _node): Promise<AudioDomainNodeHandle> {
     return {
       domain: 'audio',

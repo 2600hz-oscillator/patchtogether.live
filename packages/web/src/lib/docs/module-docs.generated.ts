@@ -331,6 +331,51 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "width": "PULSE SHAPE: width of the excitation pulse (0.1–50 ms, log) — how long the strike pushes the body before it decays; shown in the envelope preview."
     }
   },
+  "clipplayer": {
+    "explanation": "A clip launcher in the style of Ableton's Session view, with 8 instrument lanes. The grid's rows are the 8 lanes (instruments) and the columns are 8 clip slots, for 64 note clips in all; each lane independently plays whichever clip you launch out its OWN pitch/gate/velocity outputs, so up to 8 clips can sound at once (one per lane). Click a pad to launch its clip, double-click to open the piano-roll editor and draw notes into it. There's no internal clock or BPM — CLIP PLAYER is locked to TIMELORDE (the rack transport): it runs at TIMELORDE's tempo, only while TIMELORDE is running, and the STEP control sets how many steps fall per beat. Launches can fire immediately or be quantized to snap cleanly at the playing clip's loop boundary. It also has a SONG / arrangement mode that records your launches onto a timeline for non-real-time playback, and pairs with a monome grid for hardware launching. Drive its lanes into eight voices for a full multitrack clip-based performance instrument.",
+    "inputs": {
+      "stop_all": "Stop-all trigger: a rising edge immediately stops every lane (a panic/stop button), in both session and arrangement modes."
+    },
+    "outputs": {
+      "gate1": "Lane 1's gate — goes high while a note in lane 1's clip plays (its width set by GATE; tied/held notes stay high across their span); low on rests. Patch into an envelope/VCA.",
+      "gate2": "Lane 2's gate — high while lane 2's notes play, low on rests.",
+      "gate3": "Lane 3's gate — high while lane 3's notes play, low on rests.",
+      "gate4": "Lane 4's gate — high while lane 4's notes play, low on rests.",
+      "gate5": "Lane 5's gate — high while lane 5's notes play, low on rests.",
+      "gate6": "Lane 6's gate — high while lane 6's notes play, low on rests.",
+      "gate7": "Lane 7's gate — high while lane 7's notes play, low on rests.",
+      "gate8": "Lane 8's gate — high while lane 8's notes play, low on rests.",
+      "pitch1": "Lane 1's pitch output — the launched clip's notes as a poly chord cable (a mono pitch input receives just the root; a poly voice plays the whole chord), shifted by the OCT control.",
+      "pitch2": "Lane 2's pitch output (poly chord cable), from lane 2's launched clip.",
+      "pitch3": "Lane 3's pitch output (poly chord cable), from lane 3's launched clip.",
+      "pitch4": "Lane 4's pitch output (poly chord cable), from lane 4's launched clip.",
+      "pitch5": "Lane 5's pitch output (poly chord cable), from lane 5's launched clip.",
+      "pitch6": "Lane 6's pitch output (poly chord cable), from lane 6's launched clip.",
+      "pitch7": "Lane 7's pitch output (poly chord cable), from lane 7's launched clip.",
+      "pitch8": "Lane 8's pitch output (poly chord cable), from lane 8's launched clip.",
+      "vel1": "Lane 1's velocity CV — each note's velocity as a control voltage, for velocity-sensitive patching (e.g. into a VCA or filter depth).",
+      "vel2": "Lane 2's velocity CV.",
+      "vel3": "Lane 3's velocity CV.",
+      "vel4": "Lane 4's velocity CV.",
+      "vel5": "Lane 5's velocity CV.",
+      "vel6": "Lane 6's velocity CV.",
+      "vel7": "Lane 7's velocity CV.",
+      "vel8": "Lane 8's velocity CV."
+    },
+    "controls": {
+      "clipplayer-cell-{n}": "A note cell in the piano-roll editor (rows are scale degrees/pitches, columns are steps). Click to toggle a note on or off at that pitch and step; right-click cycles the note's velocity. The cells make up the clip you're editing for the selected lane+slot.",
+      "clipplayer-mono-{n}": "Lane {n}'s mono/poly toggle — switches that lane between MONO (one note per column) and POLY (up to five notes per column, played as a chord out the lane's poly pitch output).",
+      "clipplayer-pad-{n}": "A clip slot in the launch grid (one cell of the 8 lanes × 8 slots). Click to launch that lane's clip (immediately or quantized per QNT), click the playing pad to stop the lane, and double-click to open the clip in the piano-roll editor. An empty pad shows differently from a filled or playing one.",
+      "gateLength": "GATE — how much of each step the per-note gate stays high, from short staccato stabs to near-legato (held/tied notes ignore this and stay high across their full span).",
+      "octave": "OCT — transposes every lane's pitch output up or down by whole octaves (-2..+2).",
+      "quantize": "QNT — launch quantization: on, a clip you launch waits and drops in cleanly at the playing lane's next loop boundary; off, it launches immediately. (A first launch into an empty lane is always immediate.)",
+      "snh": "S&H — one global sample-and-hold toggle for all 8 lanes' pitch outputs: on (default), on a rest the gate closes but each lane's pitch HOLDS its last note (latched to the gate edge); off, rests reset pitch to 0 (the legacy continuous behavior).",
+      "stepDiv": "STEP — how many steps fall per TIMELORDE beat (1/4, 1/8, 1/16, 1/32), i.e. the playback resolution of the clips."
+    }
+  },
+  "clockedRunner": {
+    "explanation": "A self-contained mini-LIVECODE that owns a single clocked() callback. You don't add it from the palette — a LIVECODE module spawns one for you when your script calls clocked(division, fn), and the runner stores that function body plus its musical division (e.g. 1/16) on its own state. It subscribes to the rack's shared clock and re-runs the body on every tick that crosses the next division boundary, locked to TIMELORDE's tempo (so a clock.bpm(140) call retimes it on the next tick, and a MIDI-locked tempo follows automatically). Its card shows the body in a code editor with a status line, and you can edit the body inline — it recompiles on change. It has no audio jacks: like LIVECODE itself, it acts by mutating the rack through the patch graph each tick. Deleting it cancels its clock subscription."
+  },
   "clouds": {
     "explanation": "A granular texture processor after Mutable Instruments' Clouds. It continuously records the incoming stereo audio into a short ring buffer, then sprays overlapping grains — tiny windowed snippets — out of that buffer to recombine the sound into a shimmering cloud, a smeared pad, a pitch-shifted drone, or a frozen ambient texture. POSITION picks where in the buffer the grains read from, SIZE sets each grain's length, DENSITY sets how many grains overlap, TEXTURE morphs the grain window from soft to hard, PITCH transposes the grains, and FREEZE latches the buffer so the texture keeps playing with no fresh input. BLEND crossfades the grain cloud against the dry signal. Mental model: it turns any source into a controllable swarm of micro-loops.",
     "inputs": {
@@ -930,6 +975,9 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "rate": "How fast the LFO cycles, from 0.01 Hz (one sweep per ~100 s) to 100 Hz (audio-rate for FM-style use), on a log fader. Sets the speed shared by all four phase outputs; the clock input overrides phase, not rate.",
       "shape": "Continuously morphs the waveform across the 0–2 range: 0 = sine, 1 = saw, 2 = square, with smooth crossfades in between (e.g. value 0.5 = halfway sine↔saw). The fader's glyphs mark sine / saw / square."
     }
+  },
+  "livecode": {
+    "explanation": "A live-coding module: a small scripting language that builds and patches the rack from text. Its card is a code editor with a Run button and an output log; the script can spawn modules, set parameters, and wire cables, and it can register clocked(division, fn) callbacks that run in time with the rack clock (each one spawns its own CLOCKED runner module). It has no audio jacks of its own — it's a side tool that mutates the patch graph, and its changes sync to other people in the rackspace through the shared document like any other edit. It's registered in the audio domain only because the rack already has an audio engine; its factory does no audio work."
   },
   "macrooscillator": {
     "explanation": "A Plaits-style macro oscillator: one MODEL switch chooses among 14 self-contained synthesis engines (VA, WAVESHAPE, FM 2-OP, FM 6-OP, CHORD, ADDITIVE, STRING, MODAL, KICK, SNARE, HIHAT, WAVETABLE, GRANULAR, SPEECH), and every one of them is driven by the same three universal macro controls — HARMONICS, TIMBRE, MORPH — plus a NOTE offset and a LEVEL. Mental model: PITCH (V/oct, 0 V = C4) sets the fundamental, NOTE transposes it in semitones, the three macros sculpt the spectrum (their exact meaning is model-dependent — e.g. on VA harmonics is detune / timbre is a wavefolder / morph crossfades saw→square→triangle; on FM harmonics picks the carrier:modulator ratio / timbre is the modulation index / morph is feedback; on the drum models the macros shape pitch-sweep, click and decay), and a rising edge into TRIG strikes / restarts the model (phase reset for the oscillators, envelope retrigger for the percussion and string). All 14 engines run every sample so switching MODEL is glitch-free; OUT is the post-LEVEL main signal and AUX is a clean, level-independent secondary tap.",
@@ -1775,6 +1823,48 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "snh": "Sample & hold on the per-voice pitch CV, on by default (the card's S&H face button): when on, each voice's pitch is latched cleanly at its gate edge (pinned to the un-jittered step time) so the note is stable when the gate rises even while Humanize jitters the timing; off reverts to the legacy behavior where pitch can drift ahead of the gate under Humanize."
     }
   },
+  "qbrt": {
+    "explanation": "A stereo resonant filter with a 'ping' excitation input — the project's big-knob VCF, also used as a pluck/drum resonator. Each channel runs a state-variable filter whose mode crossfades continuously between low-pass and band-pass, with a big resonance (Q) control that can sing right up to self-oscillation. The twist is the PING input: a trigger fires a short vactrol-shaped impulse into the filter, so it rings at its cutoff frequency for a moment and then settles — patch a drum sequencer into PING and sweep CUTOFF and you get kick/tom-style pluck-resonator sounds with no oscillator at all. Ignore PING and it's an ordinary stereo filter you patch audio through. (This is the resonator RIOTGIRLS uses internally.)",
+    "inputs": {
+      "L": "Left audio input — the signal fed through the left filter channel.",
+      "R": "Right audio input — the signal fed through the right filter channel.",
+      "cutoff": "CV that displaces the CUTOFF (center frequency) around the knob, log-scaled so ±1 sweeps about ±5 octaves — patch an envelope or LFO here for filter sweeps, or to pitch the ping resonance.",
+      "mode": "CV that picks the filter MODE (low-pass vs. band-pass) in discrete steps — useful for switching response under gate control.",
+      "ping": "Ping trigger: each rising edge fires a short vactrol-shaped excitation impulse into both channels, making the filter ring at its cutoff frequency (a pluck). Drive it from a clock or drum sequencer for resonator-style drum hits; the PING DECAY control sets how long each ring lasts.",
+      "pingDecay": "CV that displaces the PING DECAY (ring length) around the knob, log-scaled — modulate it to make ping hits longer or shorter per trigger.",
+      "resonance": "CV that displaces the RESONANCE (Q) around the knob, so a modulator can push the filter toward or away from self-oscillation."
+    },
+    "outputs": {
+      "L": "Left filtered output — the left channel after the resonant filter (and any ping ring).",
+      "R": "Right filtered output — the right channel after the resonant filter (and any ping ring)."
+    },
+    "controls": {
+      "cutoff": "CUTOFF — the filter's center/corner frequency (20 Hz–20 kHz); also the pitch the filter rings at when PING fires.",
+      "mode": "MODE — crossfades the filter response continuously from low-pass (0) to band-pass (1); band-pass narrows the passband around CUTOFF for a more vocal/ringing tone.",
+      "pingDecay": "PING DECAY — how long the ring lasts after each PING trigger (5 ms–0.5 s); short for clicky percussive plucks, long for sustained resonant tones.",
+      "resonance": "RESONANCE — the filter Q: higher values sharpen the peak and emphasize the ring, approaching self-oscillation near the top."
+    }
+  },
+  "rasterize": {
+    "explanation": "An audio→video raster mapper — it crosses the streams by writing your audio signal directly into a video frame as voltage-per-pixel. Every video frame it takes a fixed run of audio samples and paints them, in raster (left-to-right, top-to-bottom) scan order, into the 640×480 frame: each sample's value becomes a pixel's brightness, and a scan cursor advances and wraps through the frame across frames. This is the FAITHFUL raster mapping (like an analog scan-converter), NOT an oscilloscope trace — a steady tone paints horizontal bands whose spacing and drift track the audio frequency against the line/frame rate, and anything noisy paints texture. It is deliberately untamed: no limiter, no anti-aliasing, no feedback guard — the only ceiling is the 8-bit pixel saturation. The audio also passes through clean (THRU), so RASTERIZE can sit inline on a signal chain while feeding a video module from its OUT.",
+    "inputs": {
+      "cursor": "CV that displaces the SCAN cursor (the pixel offset where painting starts each frame), so you can scrub the running scan position with an envelope or LFO.",
+      "gain": "CV that displaces the GAIN applied to each sample before the brightness map, so a modulator can swing the image from dim to blown-out.",
+      "in": "The audio signal to rasterize — its samples are painted as pixel brightness into the video frame.",
+      "samplesPerFrame": "CV that displaces the SAMP/F control (how many samples are painted per frame), modulating how fast the scan sweeps the frame.",
+      "wrap": "CV that toggles the WRAP mode (accumulate-and-wrap vs. clear-on-wrap) under gate control."
+    },
+    "outputs": {
+      "out": "The painted raster frame as a mono video texture for downstream video modules.",
+      "thru": "Clean audio passthrough — the input signal unchanged (the raster path is non-destructive), so RASTERIZE can sit inline in an audio chain."
+    },
+    "controls": {
+      "cursor": "SCAN — the starting pixel offset of the scan cursor into the 640×480 frame; move it to scrub where painting begins, or leave it and let the cursor drift on its own.",
+      "gain": "GAIN — a linear gain applied to each sample before it's mapped to pixel brightness; raise it to brighten/clip the image, lower it to darken (0–8).",
+      "samplesPerFrame": "SAMP/F — how many audio samples are painted per video frame (16–8000, default ~800 ≈ one-and-a-quarter scanlines at 48k/60fps); higher values sweep the frame faster and pack more signal per frame.",
+      "wrap": "WRAP — what happens when the scan cursor reaches the end of the frame: 0 wraps around and keeps accumulating (toroidal drift), 1 clears on wrap for a clean top-to-bottom repaint sweep."
+    }
+  },
   "resofilter": {
     "explanation": "A clean multi-mode resonant filter (ported from Resonarium's MultiFilter) built on a zero-delay-feedback state-variable topology, so all of its modes share one filter state and switching between them mid-sound is pop-free. One MODE knob picks the response — Low-pass (attenuate above cutoff), High-pass (attenuate below), Band-pass (peak at cutoff), Notch (dip at cutoff), or Allpass (flat magnitude, phase-rotating) — and the card prints the long-form name of the current mode next to the knob. The input is stereo-aware (independent L/R filter state preserves the image), CUTOFF and RESONANCE are CV-modulatable, and a MIX knob crossfades dry to wet (turn it to 0 for bypass). A general-purpose tone-shaper for both subtractive synth voices and full mixes.",
     "inputs": {
@@ -1914,6 +2004,39 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "timeMs": "The time window drawn across the screen width (1 to 200 ms, log, default 20): smaller values zoom in on a few cycles, larger values show a longer slice. The TIME CV input modulates this."
     }
   },
+  "score": {
+    "explanation": "A sheet-music sequencer — you write notes onto an actual staff and SCORE plays it back as pitch + gate + envelope CV. The page is up to 4 pages of four rows by four bars in 4/4; click on the staff to place notes with the toolbar's note-value tools (whole down to sixteenth), add sharps/flats, tie notes together to hold them across beats, and drop dynamic markings (pp..ff) that scale the envelope's loudness. A playhead walks the score at a 16th-note resolution from its own BPM (or from an external clock patched into CLOCK IN). It carries a built-in ADSR envelope (the A/D/S/R knobs and CV inputs) that shapes the ENV output for each note; tied notes hold a single envelope across the whole tie. An optional stop-music marker ends or (with loop on) wraps the piece. The four pitch/gate/env/clock outputs drive a voice exactly like the step SEQUENCER, but the pattern is real notation rather than a step grid.",
+    "inputs": {
+      "attack": "CV that displaces the built-in ADSR's ATTACK time (log-scaled around the knob) — modulate it to make notes swell faster or slower.",
+      "clock": "External clock: each rising edge advances the playhead one 16th-note. While patched the internal BPM is ignored; unpatch to fall back to the BPM clock.",
+      "decay": "CV that displaces the ADSR's DECAY time around the knob.",
+      "play_cv": "A rising edge toggles play/stop (each pulse flips the transport state).",
+      "queue1_cv": "A rising edge queues saved pattern slot 1: it finishes the current pass, then switches to slot 1 and plays from the top (does nothing if slot 1 is empty).",
+      "queue2_cv": "A rising edge queues saved pattern slot 2 — applied at the end of the current pass, then plays slot 2 from the top.",
+      "queue3_cv": "A rising edge queues saved pattern slot 3 — applied at the end of the current pass, then plays slot 3 from the top.",
+      "queue4_cv": "A rising edge queues saved pattern slot 4 — applied at the end of the current pass, then plays slot 4 from the top.",
+      "release": "CV that displaces the ADSR's RELEASE time around the knob.",
+      "reset_cv": "A rising edge snaps the playhead back to the top of the piece and restarts.",
+      "sustain": "CV that displaces the ADSR's SUSTAIN level around the knob."
+    },
+    "outputs": {
+      "clock": "A short pulse on every 16th-note advance — the chained clock-out; patch it into another sequencer's CLOCK IN to keep them in step.",
+      "env": "The built-in ADSR envelope CV, scaled by the dynamic marking in force at that point in the score (pp..ff) — a ready-made loudness contour you can patch straight into a VCA.",
+      "gate": "Goes high while a note sounds and low between notes; a tie holds the gate high across the whole tied span (one held note) so a single envelope shapes the entire tie. Patch it into an envelope or VCA.",
+      "pitch": "The current note's pitch as V/oct — emitted as each note is played, following the notes and accidentals you wrote on the staff."
+    },
+    "controls": {
+      "attack": "ATTACK — the built-in ADSR's rise time, how quickly each note swells in (also reachable via the ATTACK CV input).",
+      "bpm": "BPM — the internal tempo the playhead walks the score at (each step is a 16th note); used only when nothing is patched into CLOCK IN.",
+      "decay": "DECAY — the ADSR's fall time from the peak down to the sustain level after the attack.",
+      "isPlaying": "PLAY — the transport state: 1 plays from the playhead, 0 stops and forces the gate low. Starting playback returns the playhead to the top.",
+      "release": "RELEASE — the ADSR's fade time after a note's gate releases.",
+      "score-dyn-{n}": "A dynamic marking (pp, p, mp, mf, f, ff) placed on the staff — from where it sits onward it scales the ENV output's loudness (forward-filled until the next marking; mf is the default before any marking). Drop them with the dynamics tools.",
+      "score-note-{n}": "A note on the staff — its vertical position sets the pitch and its note-head/flag sets the duration. Click an empty staff position with a note-value tool selected to add one, click a note to select/remove it; sharp/flat tools toggle its accidental. Each note is played as V/oct on the PITCH output with a gate, in score order, when the playhead reaches it.",
+      "score-tie-{n}": "A tie joining two adjacent notes of the same pitch into one held note: the gate stays high across the tied span and a single envelope shapes the whole duration (only the last note in a tie chain releases the gate). Add ties with the tie tool.",
+      "sustain": "SUSTAIN — the ADSR's held level while a note's gate stays high."
+    }
+  },
   "sequencer": {
     "explanation": "A step sequencer that walks a playhead across up to 128 steps (8 pages of 16), emitting each lit step's note as pitch CV plus a gate, driven by its own BPM clock or an external clock fed into CLOCK IN. Mental model: every step holds a note + an on/off gate + an optional chord; the playhead advances one 16th-note step per beat-subdivision (or one step per incoming clock edge), playing lit steps and resting on dark ones, and you can save up to 8 whole patterns into quicksave slots and switch between them live (instantly, or queued to swap cleanly at the loop's end). The whole transport (play/stop, reset, slot switching, next/prev/random navigation) is also drivable hands-free by patching gates into the CV inputs.",
     "inputs": {
@@ -2045,6 +2168,63 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "xfadeTime": "The equal-power crossfade time applied to the SWITCHED output when the selection changes, log 0.001..2 s (default 0.05 s). Short = a tight switch, long = a slow morph between the two channels' values."
     }
   },
+  "stages": {
+    "explanation": "A six-segment cascadable function generator after Mutable Instruments' Stages — six column strips, each an independent envelope/CV segment with its own TYPE, two knobs, a GATE input and a CV output. Each segment's TYPE button cycles RAMP (a timed slope, the knob sets TIME), HOLD (a settled level, the knob sets LEVEL) or STEP (a stepped level/sample-and-hold). The real power is LINKING: the five toggles between adjacent columns chain segments into one multi-stage shape, so e.g. a RAMP+HOLD+RAMP chain becomes a single attack-hold-release envelope. A linked chain fires from its first segment's gate, then each subsequent linked segment takes over in turn as the previous one finishes; every segment in the chain reads the chain's current value out its own CV output, so you can tap any stage. The global TRIG fires every chain's leader at once. Unlinked segments stay independent — six separate one-segment envelopes/CVs.",
+    "inputs": {
+      "gate0": "Segment 1's gate: a rising edge fires this segment (or, when it's a chain leader, the whole linked chain that starts here). For a HOLD/STEP segment the held level latches; for a RAMP it starts the timed slope.",
+      "gate1": "Segment 2's gate — fires segment 2 (or the chain it leads) on a rising edge. When segment 2 is linked to segment 1, segment 1's chain hands off to it automatically and this input is the manual re-fire.",
+      "gate2": "Segment 3's gate — a rising edge fires segment 3, or the linked chain it leads.",
+      "gate3": "Segment 4's gate — a rising edge fires segment 4, or the linked chain it leads.",
+      "gate4": "Segment 5's gate — a rising edge fires segment 5, or the linked chain it leads.",
+      "gate5": "Segment 6's gate — a rising edge fires segment 6, or the linked chain it leads.",
+      "primary0_cv": "CV that displaces segment 1's PRIMARY knob (its TIME for RAMP, or LEVEL for HOLD/STEP) around the knob position.",
+      "primary1_cv": "CV that displaces segment 2's PRIMARY knob (TIME or LEVEL) around the knob position.",
+      "primary2_cv": "CV that displaces segment 3's PRIMARY knob (TIME or LEVEL) around the knob position.",
+      "primary3_cv": "CV that displaces segment 4's PRIMARY knob (TIME or LEVEL) around the knob position.",
+      "primary4_cv": "CV that displaces segment 5's PRIMARY knob (TIME or LEVEL) around the knob position.",
+      "primary5_cv": "CV that displaces segment 6's PRIMARY knob (TIME or LEVEL) around the knob position.",
+      "shape0_cv": "CV that displaces segment 1's SHAPE knob (slope curve for RAMP, portamento glide for HOLD/STEP).",
+      "shape1_cv": "CV that displaces segment 2's SHAPE knob (slope curve or portamento).",
+      "shape2_cv": "CV that displaces segment 3's SHAPE knob (slope curve or portamento).",
+      "shape3_cv": "CV that displaces segment 4's SHAPE knob (slope curve or portamento).",
+      "shape4_cv": "CV that displaces segment 5's SHAPE knob (slope curve or portamento).",
+      "shape5_cv": "CV that displaces segment 6's SHAPE knob (slope curve or portamento).",
+      "trig": "Global trigger: a rising edge fires the leader (first segment) of every chain group at once, so one pulse re-triggers all six segments / all linked envelopes together."
+    },
+    "outputs": {
+      "out0": "Segment 1's CV output — its own value when unlinked, or the current value of the chain it belongs to when linked (so any segment in a chain mirrors the chain's running envelope).",
+      "out1": "Segment 2's CV output — its own value, or the value of the chain it's linked into.",
+      "out2": "Segment 3's CV output — its own value, or the value of the chain it's linked into.",
+      "out3": "Segment 4's CV output — its own value, or the value of the chain it's linked into.",
+      "out4": "Segment 5's CV output — its own value, or the value of the chain it's linked into.",
+      "out5": "Segment 6's CV output — its own value, or the value of the chain it's linked into."
+    },
+    "controls": {
+      "link0": "Link toggle between segments 1 and 2 — when on, they chain into one multi-stage shape (segment 1 hands off to segment 2 as it finishes); off keeps them independent.",
+      "link1": "Link toggle between segments 2 and 3 — chains them into the same group when on.",
+      "link2": "Link toggle between segments 3 and 4 — chains them into the same group when on.",
+      "link3": "Link toggle between segments 4 and 5 — chains them into the same group when on.",
+      "link4": "Link toggle between segments 5 and 6 — chains them into the same group when on.",
+      "primary0": "Segment 1's PRIMARY fader — TIME when the segment is a RAMP (how long the slope takes), or LEVEL when it's HOLD/STEP (the target value, bipolar -1..+1).",
+      "primary1": "Segment 2's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
+      "primary2": "Segment 3's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
+      "primary3": "Segment 4's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
+      "primary4": "Segment 5's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
+      "primary5": "Segment 6's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
+      "shape0": "Segment 1's SHAPE fader — the slope curve for a RAMP (from logarithmic through linear to exponential), or the portamento glide time for a HOLD/STEP segment.",
+      "shape1": "Segment 2's SHAPE fader — slope curve (RAMP) or portamento glide (HOLD/STEP).",
+      "shape2": "Segment 3's SHAPE fader — slope curve or portamento glide.",
+      "shape3": "Segment 4's SHAPE fader — slope curve or portamento glide.",
+      "shape4": "Segment 5's SHAPE fader — slope curve or portamento glide.",
+      "shape5": "Segment 6's SHAPE fader — slope curve or portamento glide.",
+      "type0": "Segment 1's TYPE — cycles RAMP (a timed slope, the knob below becomes TIME), HOLD (a steady level, the knob becomes LEVEL) or STEP (a stepped level / sample-and-hold). The card's column button cycles it.",
+      "type1": "Segment 2's TYPE — RAMP / HOLD / STEP, exactly as segment 1's type control.",
+      "type2": "Segment 3's TYPE — RAMP / HOLD / STEP.",
+      "type3": "Segment 4's TYPE — RAMP / HOLD / STEP.",
+      "type4": "Segment 5's TYPE — RAMP / HOLD / STEP.",
+      "type5": "Segment 6's TYPE — RAMP / HOLD / STEP."
+    }
+  },
   "stereovca": {
     "explanation": "A dual (stereo) voltage-controlled amplifier that doubles as a ring modulator — no mode switch, the behavior is purely a function of how fast the control signal is. Each channel computes out = in × (strength + offset) × level: when the STRENGTH input is slow (an LFO, an envelope, a sequencer step) it acts as a VCA, gating and shaping the audio's volume; when STRENGTH is audio-rate it acts as a ring modulator, multiplying two audio signals into clangorous sum-and-difference tones (this matches the hardware truth that 'CV is just slow audio'). The two channels share the LEVEL and OFFSET knobs but have independent audio and strength inputs, with smart normalling so you can drive both sides from one cable: leave IN R unpatched and it mirrors IN L (mono in, stereo out), leave STRENGTH R unpatched and it mirrors STRENGTH L (one modulator drives both VCAs). The STRENGTH inputs take raw bipolar CV directly with no scaling.",
     "inputs": {
@@ -2088,6 +2268,69 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "symmetry": "Morphs the PRIMARY waveform across a three-way crossfade (0 to 1): 0 = saw, 0.5 = triangle, 1 = square, with a linear blend of the two neighboring shapes in between. Default 0.5 (pure triangle).",
       "timbre": "Audio-rate FM amount: how much the modulator deviates the primary's frequency (0 to 1, where 1 ≈ ±200 Hz at C4). 0 leaves the primary clean; turning it up grows the sidebands from a gentle vibrato-like shimmer into clangorous, bell-like and noisy Buchla-style timbres.",
       "tune": "Coarse tuning of the PRIMARY oscillator in semitones (-36 to +36, i.e. ±3 octaves) relative to C4; combines with Fine and any pitch CV to set the base pitch."
+    }
+  },
+  "tides2": {
+    "explanation": "A tidal modulator / poly-slope generator after Mutable Instruments' Tides — at heart a single rising-then-falling ramp whose speed, contour and symmetry you sculpt with five macro knobs, exposed not once but as FOUR related copies on outputs 1–4. It works as an LFO, an envelope, an oscillator, or a clockable ramp depending on three mode switches. RANGE picks the speed band (slow LFO, audio-rate, or external-clock-synced TEMPO). MODE picks how the ramp behaves: AD fires a one-shot rising-then-falling shape on each trigger, LOOP free-runs as an oscillating LFO/oscillator, and AR follows a held gate (rises while held, releases when let go). OUTPUT mode sets the relationship between the four outputs — GATES gives the main slope plus a variant and two end-of-rise/end-of-fall pulses; AMP, PHASE and FREQ give four copies staggered in amplitude, phase or frequency, with SHIFT spreading them apart. Every macro also has a CV input so the whole shape can be modulated. (Note: the SHAPE morph is a faithful sine→triangle→ramp→expo bank, not a bit-exact wavetable copy of the original.)",
+    "inputs": {
+      "clock": "External clock input used by the TEMPO range: TIDES2 measures the time between rising edges and phase-locks the ramp period to it, so the LFO/cycle stays in tempo with the rack. Has no effect in the LFO/AUDIO ranges.",
+      "freq_cv": "CV that displaces the FREQ macro around its knob setting (full-range bipolar sweep), so an LFO or envelope can speed up and slow down the ramp continuously.",
+      "shape_cv": "CV that displaces the SHAPE macro, morphing the waveform contour (sine→triangle→ramp→expo) under modulation.",
+      "shift_cv": "CV that displaces the SHIFT macro, sweeping the relationship between the four outputs (the amplitude/phase/frequency spread, or the GATES variant) under modulation.",
+      "slope_cv": "CV that displaces the SLOPE macro, sweeping the rise/fall symmetry from fast-attack/slow-decay through to the reverse.",
+      "smooth_cv": "CV that displaces the SMOOTH macro, modulating how rounded vs. sharp the slope's corners are (from smoothed curves to crisp folded edges).",
+      "trig": "Trigger input: a rising edge fires the ramp once in AD mode (one full rise-then-fall) and re-starts/syncs the cycle in LOOP mode. Patch a clock or gate sequencer here to make TIDES2 an envelope per note.",
+      "voct": "1V/oct pitch input that displaces the FREQ macro — most useful in the AUDIO range, where TIDES2 tracks a keyboard/sequencer like an oscillator (±1 maps to ±5 octaves). In the LFO/TEMPO ranges it still shifts the rate up and down by octaves."
+    },
+    "outputs": {
+      "out0": "Output 1 — the main slope. In GATES output mode this is the primary rising-then-falling ramp; in AMP/PHASE/FREQ mode it is the first of four related copies (the reference, with no amplitude/phase/frequency offset).",
+      "out1": "Output 2 — a variant of the main slope. In GATES mode this is an alternate contour of the same ramp; in AMP/PHASE/FREQ mode it is the second copy, offset from output 1 by the amount SHIFT sets.",
+      "out2": "Output 3 — in GATES mode an end-of-attack pulse (a short trigger when the rise completes); in AMP/PHASE/FREQ mode the third staggered copy.",
+      "out3": "Output 4 — in GATES mode an end-of-release pulse (a short trigger when the fall completes); in AMP/PHASE/FREQ mode the fourth staggered copy."
+    },
+    "controls": {
+      "frequency": "FREQ — the base rate of the ramp, scaled by the RANGE band: slow LFO cycles, audio-rate pitch, or the clock-synced period in TEMPO. Pitch/freq CV and the V/oct input add to this.",
+      "outputMode": "OUT — the relationship between outputs 1–4: GATES (main slope + variant + end-of-rise + end-of-fall pulses), AMP (four amplitude-staggered copies), PHASE (four phase-staggered copies), or FREQ (four frequency-divided/multiplied copies). The card's OUT button cycles these.",
+      "rampMode": "MODE — how the ramp is driven: AD fires a one-shot rise-then-fall on each trigger (an envelope), LOOP free-runs as a repeating LFO/oscillator, and AR follows a held gate (rises while high, releases on the falling edge). The card's MODE button cycles these.",
+      "range": "RANGE — the speed band: LFO (slow, sub-audio cycles), AUDIO (audio-rate, so TIDES2 acts as an oscillator and tracks V/oct), or TEMPO (the cycle locks to the external CLOCK input). The card's RNG button cycles these.",
+      "shape": "SHAPE — morphs the waveform contour continuously from sine through triangle and ramp to a near-exponential curve, cross-fading between adjacent shapes at in-between settings.",
+      "shift": "SHIFT — spreads the four outputs apart: in AMP it pans amplitude across the four, in PHASE it spreads their phase, in FREQ it picks the frequency-division ratios, and in GATES it morphs the variant/pulse relationship.",
+      "slope": "SLOPE — the rise/fall symmetry of the ramp: centred is a symmetric triangle, one way is fast-attack/slow-decay (a plucky envelope), the other is slow-attack/fast-decay.",
+      "smoothness": "SMOOTH — how rounded vs. sharp the slope's corners are; low values give crisp, even folded edges, high values smooth the curve into gentle bends."
+    }
+  },
+  "timelorde": {
+    "explanation": "The rack's master clock — one canonical tempo source per patch (it's a singleton and can't be deleted; a rack that opens without one gets one dropped in automatically). Set a BPM and TIMELORDE fans out a whole family of clock outputs at standard musical divisions of that tempo, from a quarter-note pulse up through sixteenths and down to multi-bar pulses, plus a swung tap — so any sequencer, LFO, or trigger consumer can patch the exact division it needs without a separate clock divider. Patch an external clock into CLOCK IN and it locks its tempo to the incoming pulses (and follows that measured BPM everywhere, including LIVECODE's clock). Its transport is drivable hands-free via START/STOP gate inputs (wire a MIDICLOCK's start/stop to slave the rack to hardware), and the big card display shows a beat-pulsing neon WIZARD — or, if you patch a video feed into VIDEO IN, it becomes a live monitor that also passes the feed through VIDEO OUT, so TIMELORDE can sit inline in a video chain.",
+    "inputs": {
+      "clock": "External clock input: while patched, TIMELORDE locks its master tempo to the measured period between incoming rising edges, so every division output tracks the external pulse train. Unpatch and it falls back to the internal BPM after a couple of beats.",
+      "gate": "Wizard show/hide control — a level-sensitive (not edge-triggered) gate: while it is held high the neon WIZARD graphic is shown, while it is low the wizard is hidden. It converges on the same state as the on-card wizard toggle (the button is a manual override, this input is external control). Card-visual only — the clock ignores it.",
+      "start_in": "Transport START: a rising edge resumes the clock from wherever it was last stopped (musical position is preserved, like a DAW play button). Wire MIDICLOCK's start here to slave the rack's transport to a hardware MIDI device.",
+      "stop_in": "Transport STOP: a rising edge halts the clock — phase, sample counter and pending pulses all freeze and the outputs go low. This is a real transport stop (distinct from the card's MUTE, which silences the gates but keeps the clock turning). Wire MIDICLOCK's stop here for the matching stop side.",
+      "video_in": "Cross-domain video input: patch a video feed here and the card's big display becomes a live monitor of that feed (the wizard steps aside) and the feed passes through to VIDEO OUT, so TIMELORDE can sit inline in a video chain."
+    },
+    "outputs": {
+      "1/12": "One pulse every twelve beats — once every three bars.",
+      "1/16": "One pulse every sixteen beats — once every four bars.",
+      "1/2": "Half-note clock — one pulse every two beats.",
+      "1/3": "One pulse every three beats (dotted/triplet-feel longer division).",
+      "1/32": "One pulse every thirty-two beats — once every eight bars.",
+      "1/4": "One pulse every four beats — once per bar in 4/4.",
+      "1/64": "One pulse every sixty-four beats — once every sixteen bars (the slowest tap, for very long-form modulation).",
+      "1/8": "One pulse every eight beats — once every two bars.",
+      "1x": "Quarter-note clock — one pulse per beat at the master BPM. The reference division everything else is built from.",
+      "2x": "Eighth-note clock — two pulses per beat.",
+      "4x": "Sixteenth-note clock — four pulses per beat.",
+      "8x": "32nd-note clock — eight pulses per beat (the fastest subdivision tap).",
+      "swing": "A swung version of the eighth-note (2x) clock, offset by the SWING amount and taken from the division the SRC control selects — patch it where you want a shuffled rather than straight clock.",
+      "video_out": "Cross-domain video output: the picture the card's big display shows — the live feed when something is patched into VIDEO IN, otherwise the beat-pulsing wizard — passed on for downstream video modules."
+    },
+    "controls": {
+      "bpm": "BPM — the master tempo every division output is derived from (10–300). When an external clock is patched it's overridden by the measured external tempo.",
+      "muteOutputs": "MUTE — silences every gate output while the internal clock keeps running underneath (so LIVECODE's clocked() callbacks and other tick subscribers stay alive). Bound to the card's MUTE button. Different from a transport STOP, which actually halts the clock.",
+      "running": "RUN — the transport state (1 = clock advancing, 0 = halted with phase frozen). It is driven by the START/STOP gate inputs rather than a card knob, and is saved so a stopped rack reloads stopped.",
+      "swingAmount": "SWING — how far the SWING output's off-beats are pushed late (0–90°); 0 is dead-straight, higher values deepen the shuffle.",
+      "swingSource": "SRC — which clock division feeds the SWING tap, so you can swing a faster or slower subdivision than the default eighth.",
+      "wizardOn": "WIZARD — whether the neon WIZARD card graphic is shown (1) or hidden (0); it pulses with the beat while running. Driven by both the on-card wizard toggle and the level on the gate input. Card-visual only — not used by the clock."
     }
   },
   "treeohvox": {
