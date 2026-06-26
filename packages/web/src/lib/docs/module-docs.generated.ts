@@ -543,6 +543,145 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "master": "Master gain on the mixed bus — scales the whole summed signal from silence (0) to unity (1). Turning it down fades all four channels together without changing their relative balance."
     }
   },
+  "moog902": {
+    "explanation": "A clean-room recreation of the Moog 902 Voltage Controlled Amplifier — the System 35/55 VCA that turns a control voltage into level. The signal you feed in is amplified by a gain that is the SUM, in volts, of the manual GAIN pot plus the two summing CONTROL INPUTS (CV scaled by the CV-depth knob, and FCV added straight). Overall gain reaches ×2 (+6 dB) when that control sum hits 6 V and tops out at a ×3 ceiling around 7.5 V. A RESPONSE switch picks the gain law: LINEAR rises straight to ×2 at 6 V, EXPONENTIAL passes through the same ×2 at 6 V but climbs faster toward the ceiling. Like the hardware it has a true differential output pair — the normal output and its phase-inverted twin. Patch an envelope or LFO into CV to shape dynamics or tremolo; leave everything unpatched and the GAIN pot is a static volume.",
+    "inputs": {
+      "audio": "The SIGNAL input — the audio to be amplified by the VCA.",
+      "cv": "Summing CONTROL INPUT to gain (audio-rate). It is scaled by the CV-depth knob and added, in volts, to the control sum the worklet maps through the gain law, so an envelope here makes the VCA an amplitude shaper and an LFO makes tremolo. Bipolar CV with a negative CV-depth can duck the signal.",
+      "fcv": "A second summing CONTROL INPUT to gain — a fixed-control-voltage bias added straight onto the control sum (no depth knob). Use it to offset the operating point, or to sum a second modulation source alongside CV."
+    },
+    "outputs": {
+      "audio": "The amplified signal — the input scaled by the gain the control sum produces.",
+      "audio_inv": "The differential − output: a sample-accurate phase-inverted twin of the main output (the same level, 180° out of phase). Handy for difference patches or driving a balanced pair."
+    },
+    "controls": {
+      "cvAmount": "Depth and SIGN of the CV control input: it scales how much the CV jack moves the gain. Full right (+1) is full positive depth, center is none, full left (−1) inverts the CV so a rising envelope ducks instead of opening. Defaults to +1.",
+      "gain": "The manual GAIN pot (the spec's fixed control voltage), mapped across 0..6 V of the control sum — at the top it alone gives ×2 (+6 dB). Its volts add to whatever CV/FCV contribute. Defaults to 0.5 (mid).",
+      "mode": "RESPONSE switch — the gain law. LINEAR rises straight to ×2 at a 6 V control sum; EXPONENTIAL passes through that same ×2 at 6 V then climbs faster toward the ×3 ceiling (~7.5 V), the more musical curve for envelope-shaped amplitude. Defaults to LINEAR."
+    }
+  },
+  "moog904a": {
+    "explanation": "A clean-room recreation of the Moog 904A Voltage Controlled Low Pass Filter — the iconic 24 dB/octave transistor-ladder LPF at the heart of the Moog sound. It rolls off everything above the cutoff at a steep four-pole slope, warming and darkening the signal. The CUTOFF knob sets the corner, the RANGE switch shifts that corner in two-octave steps, and REGENERATION is the resonance (internal feedback): turn it up to emphasise the band right at the cutoff, and near maximum the filter self-oscillates into a clean sine — a playable voltage-controlled oscillator in its own right. A summing 1 V/octave control input sweeps the cutoff (patch an envelope or LFO here for the classic filter sweep) and a second CV input modulates the regeneration. The ladder core is the textbook zero-delay-feedback algorithm with a tanh per loop for the analog drive, not a port of any Moog schematic.",
+    "inputs": {
+      "audio": "The signal to be filtered — the audio fed into the ladder.",
+      "cutoff_cv": "Summing 1 V/octave CONTROL INPUT to the cutoff (audio-rate). It adds exponentially onto the CUTOFF knob inside the worklet, so this is the jack for the classic filter sweep — an envelope opens/closes the corner, an LFO wobbles it, a pitch CV makes the cutoff track played notes.",
+      "reso_cv": "CONTROL INPUT to REGENERATION (audio-rate, summed per-sample). Modulate the resonance — e.g. an envelope that pushes the filter toward self-oscillation on each note for a chirp or zap."
+    },
+    "outputs": {
+      "audio": "The 24 dB/octave low-passed output. With REGENERATION near maximum and nothing patched in, it emits a clean self-oscillating sine at the cutoff frequency."
+    },
+    "controls": {
+      "cutoff": "The FIXED CONTROL VOLTAGE pot — the filter's corner frequency, 20 Hz to 20 kHz on a log taper. Everything above it is attenuated at the four-pole slope; lower it to darken, raise it to open up. CV adds on top of this setting. Defaults to 1 kHz.",
+      "range": "RANGE switch (1 / 2 / 3) — shifts the whole cutoff sweep in two-octave steps, so you can place the CUTOFF pot's travel in the bass, mids, or highs. Defaults to position 2 (the middle range).",
+      "regeneration": "REGENERATION — the resonance / internal feedback (variable Q). At 0 the filter is flat; turning it up emphasises a peak at the cutoff; near 1 the filter self-oscillates and rings as a sine VCO. Defaults to 0 (no resonance)."
+    }
+  },
+  "moog904b": {
+    "explanation": "A clean-room recreation of the Moog 904B Voltage Controlled High Pass Filter — the high-pass companion to the 904A. It is a 24 dB/octave transistor-ladder HIGH-pass, built by subtracting the ladder's low-passed output from the input (input − four-pole-lowpass = the complementary four-pole highpass), so everything BELOW the cutoff is rolled off at a steep slope and the highs pass through. Use it to thin out a sound, remove rumble, or — paired with a 904A — bracket a band. Unlike the 904A there is NO resonance/regeneration knob (the hardware 904B has none): just a CUTOFF pot, a two-position RANGE switch, and a summing 1 V/octave control input for sweeping the corner with an envelope or LFO. It consumes the same shared ladder core as the 904A.",
+    "inputs": {
+      "audio": "The signal to be filtered — the audio fed into the ladder.",
+      "cutoff_cv": "Summing 1 V/octave CONTROL INPUT to the cutoff (audio-rate). It adds exponentially onto the CUTOFF knob inside the worklet, so an envelope or LFO patched here sweeps the high-pass corner — opening up the lows as it falls, thinning the sound as it rises."
+    },
+    "outputs": {
+      "audio": "The 24 dB/octave high-passed output — the input with everything below the cutoff rolled off at the four-pole slope."
+    },
+    "controls": {
+      "cutoff": "The FIXED CONTROL VOLTAGE pot — the high-pass corner frequency, 4 Hz to 20 kHz on a log taper. Content below it is attenuated at the four-pole slope; raise it to thin the sound and strip bass, lower it to let more low end through. CV adds on top of this. Defaults to 1 kHz.",
+      "range": "RANGE switch — LOW (the full 4 Hz–20 kHz span) or HIGH (the same sweep shifted up about 1.5 octaves), so you can place the CUTOFF pot's travel where you need it. Defaults to LOW."
+    }
+  },
+  "moog904c": {
+    "explanation": "A clean-room recreation of the Moog 904C Voltage Controlled Filter Coupler — a single module that couples a 904A-style low-pass and a 904B-style high-pass around ONE shared cutoff, so the pair tracks together as a voltage-controlled BAND-PASS: the low-pass keeps the lows under the corner, the high-pass keeps the highs over it, and you hear the band between them. WIDTH spreads the two corners apart (a wide, gentle band) or pulls them together (a narrow, vocal peak), and MODE crossfades the whole thing from band-PASS to its complement, a band-REJECT notch that scoops out the band instead. A single CV input sweeps the band centre. It is built on the same transistor-ladder core as the 904A and 904B, so the band has the Moog ladder's character.",
+    "inputs": {
+      "audio": "The signal to be band-passed (or band-rejected at MODE = 1).",
+      "cutoff_cv": "CV → the band CENTRE (cutoff). Wired through the worklet's cutoff AudioParam with a log scaling, so a bipolar ±1 CV sweeps the band across its full octave span — patch an envelope or LFO here to make the band-pass move (a wah, a vowel sweep)."
+    },
+    "outputs": {
+      "audio": "The band-passed output (or, at MODE = 1, the band-rejected / notched output)."
+    },
+    "controls": {
+      "cutoff": "The band CENTRE frequency, 20 Hz to 20 kHz on a log taper — where the low-pass and high-pass meet, i.e. the centre of the pass band (or the notch). CV adds on top of this. Defaults to 800 Hz.",
+      "mode": "Crossfade from band-PASS (0) to band-REJECT / notch (1). At 0 you hear only the band; at 1 the band is subtracted from the input so it is scooped OUT; in between is a partial blend. Defaults to 0 (band-pass).",
+      "width": "How far the low-pass and high-pass corners are spread around the centre. Low = the corners pull together for a narrow, resonant, vocal band; high = a wide, gentle band that passes more of the spectrum. Defaults to 0.5."
+    }
+  },
+  "moog905": {
+    "explanation": "A recreation of the Moog 905 spring reverberation tank — the classic metallic, splashy spring reverb with the characteristic boing and chirp on transients. It is an in-house dispersive-allpass model (own code, not a physical PDE or a port of any reverb): a cascade of Schroeder all-pass sections gives the frequency-dependent group delay that IS the spring's dispersion and chirp, feeding a modulated feedback delay line with in-loop damping for the tail. The MIX knob blends the dry input with the spring's wet output, DECAY sets how long the tail rings, and SIZE sets the spring length — short and tight, or long and boingy. Patch a signal in and dial MIX up for a splash of vintage spring on drums, guitar, or synth.",
+    "inputs": {
+      "audio": "The dry signal to reverberate — the audio fed into the spring tank."
+    },
+    "outputs": {
+      "audio": "The dry/wet mix: the dry input blended with the spring-reverb wet tail, ratio set by the MIX knob."
+    },
+    "controls": {
+      "decay": "Tail length / feedback — how long the spring rings before fading. Low gives a short metallic splash; high gives a long, sustained wash. Defaults to 0.6.",
+      "mix": "Dry↔wet blend — 0 is fully dry (the spring is silent), 1 is fully wet (only the reverberated tail). Lower for a subtle ambience, higher for a drenched, surfy spring. Defaults to 0.35.",
+      "size": "Spring length / dispersion — how much chirp and boing the tank has. Small is a tight, bright spring; large stretches the dispersion for the long, wobbly, more dramatic spring character. Defaults to 0.5."
+    }
+  },
+  "moog907a": {
+    "explanation": "A recreation of the Moog 907A Fixed Filter Bank — the System 35's smaller fixed filter bank, a kind of fixed graphic EQ for spectral and formant shaping. The signal fans into ten parallel filter sections whose centre frequencies DO NOT move: a fixed low-pass shelf at the bottom, eight fixed band-pass sections marching up the spectrum (250 Hz, 350, 500, 700, 1 kHz, 1.4 k, 2 k, 2.8 k), and a fixed high-pass shelf at the top. Each section has its own LEVEL knob, and all of them sum to one output, so you sculpt a sound by boosting and cutting fixed regions — emphasise a formant, notch out a harsh band, or carve a vocal/telephone tone. Unlike a voltage-controlled filter the bands never move and there is no CV: it is a pure Web Audio biquad + gain graph (the larger 914 is the same module with twelve bands). At the default 0.5 every band passes at half level, a neutral middle you can boost or cut from.",
+    "inputs": {
+      "audio": "The signal to filter — fanned in parallel into every fixed filter section."
+    },
+    "outputs": {
+      "audio": "The summed multi-band output — every section's contribution added together, the shaped spectrum."
+    },
+    "controls": {
+      "band1": "Level of the fixed 250 Hz band-pass section (low mids / body). Defaults to 0.5.",
+      "band2": "Level of the fixed 350 Hz band-pass section (lower mids). Defaults to 0.5.",
+      "band3": "Level of the fixed 500 Hz band-pass section (mids). Defaults to 0.5.",
+      "band4": "Level of the fixed 700 Hz band-pass section (mids). Defaults to 0.5.",
+      "band5": "Level of the fixed 1 kHz band-pass section (presence). Defaults to 0.5.",
+      "band6": "Level of the fixed 1.4 kHz band-pass section (presence / nasal). Defaults to 0.5.",
+      "band7": "Level of the fixed 2 kHz band-pass section (upper mids / bite). Defaults to 0.5.",
+      "band8": "Level of the fixed 2.8 kHz band-pass section (high presence). Defaults to 0.5.",
+      "hp": "Level of the fixed HIGH-PASS section at the top of the bank (corner ~6.6 kHz) — raise to add air and let the highs through, cut to tame them. Defaults to 0.5.",
+      "lp": "Level of the fixed LOW-PASS section at the bottom of the bank (corner ~175 Hz) — raise to add weight and lows, cut to thin the bottom. Defaults to 0.5."
+    }
+  },
+  "moog914": {
+    "explanation": "A recreation of the Moog 914 Extended Fixed Filter Bank — the System 55's full fixed filter bank, the bigger sibling of the 907A and a kind of fixed graphic EQ for spectral and formant shaping. The signal fans into fourteen parallel filter sections whose centre frequencies DO NOT move: a fixed low-pass shelf at the bottom, TWELVE fixed band-pass sections in the classic 1/3-octave series (125 Hz, 175, 250, 350, 500, 700, 1 kHz, 1.4 k, 2 k, 2.8 k, 4 k, 5.6 k), and a fixed high-pass shelf at the top. Each section has its own LEVEL knob and all sum to one output, so you sculpt a sound by boosting and cutting fixed regions — emphasise formants, notch harsh bands, or carve detailed vocal/telephone tones with finer resolution than the 907A. The bands never move and there is no CV: a pure Web Audio biquad + gain graph, identical wiring to the 907A with twelve bands instead of eight. At the default 0.5 every band passes at half level, a neutral middle to boost or cut from.",
+    "inputs": {
+      "audio": "The signal to filter — fanned in parallel into every fixed filter section."
+    },
+    "outputs": {
+      "audio": "The summed multi-band output — every section's contribution added together, the shaped spectrum."
+    },
+    "controls": {
+      "band1": "Level of the fixed 125 Hz band-pass section (bass / fundamental). Defaults to 0.5.",
+      "band10": "Level of the fixed 2.8 kHz band-pass section (high presence). Defaults to 0.5.",
+      "band11": "Level of the fixed 4 kHz band-pass section (clarity / edge). Defaults to 0.5.",
+      "band12": "Level of the fixed 5.6 kHz band-pass section (brilliance / sizzle). Defaults to 0.5.",
+      "band2": "Level of the fixed 175 Hz band-pass section (low end / warmth). Defaults to 0.5.",
+      "band3": "Level of the fixed 250 Hz band-pass section (low mids / body). Defaults to 0.5.",
+      "band4": "Level of the fixed 350 Hz band-pass section (lower mids). Defaults to 0.5.",
+      "band5": "Level of the fixed 500 Hz band-pass section (mids). Defaults to 0.5.",
+      "band6": "Level of the fixed 700 Hz band-pass section (mids). Defaults to 0.5.",
+      "band7": "Level of the fixed 1 kHz band-pass section (presence). Defaults to 0.5.",
+      "band8": "Level of the fixed 1.4 kHz band-pass section (presence / nasal). Defaults to 0.5.",
+      "band9": "Level of the fixed 2 kHz band-pass section (upper mids / bite). Defaults to 0.5.",
+      "hp": "Level of the fixed HIGH-PASS section at the top of the bank (corner ~7.5 kHz) — raise to add air and brightness, cut to soften the top. Defaults to 0.5.",
+      "lp": "Level of the fixed LOW-PASS section at the bottom of the bank (corner ~100 Hz) — raise to add sub weight, cut to thin the bottom. Defaults to 0.5."
+    }
+  },
+  "moog923": {
+    "explanation": "A recreation of the Moog 923 Filters / Noise Source — a dual-purpose utility panel from the System 35. It does two unrelated jobs at once. First, a NOISE SOURCE: white and pink noise generators on two independent outputs, both scaled by one LEVEL knob — the raw material for percussion, wind, snare bodies, and sample-and-hold. Second, a simple FIXED FILTER section: one external audio input fanned into a low-pass and a high-pass filter, each with its own corner knob and its own output, so you can split a signal into low and high bands or just tame one end. The noise and the filter share no signal path — they are bundled on one panel for convenience. It is pure Web Audio (looping noise buffers + two biquads), no worklet.",
+    "inputs": {
+      "audio": "The external signal fed through the filter section — it fans into BOTH the low-pass and the high-pass at once (the signal being filtered, not a modulator)."
+    },
+    "outputs": {
+      "hp": "The audio input passed through the HIGH-PASS filter, corner set by the HI PASS knob — the high band of the input.",
+      "lp": "The audio input passed through the LOW-PASS filter, corner set by the LO PASS knob — the low band of the input.",
+      "pink": "Pink (1/f) noise, scaled by LEVEL — −3 dB/octave, warmer and more natural-sounding than white, good for wind and rumble.",
+      "white": "Full-spectrum white noise, scaled by the LEVEL knob — equal energy per Hz, bright and hissy."
+    },
+    "controls": {
+      "hpCutoff": "The HIGH-PASS corner for the filter section's HP output. The 0..1 knob maps log across ~40 Hz to 20 kHz; raise it to thin the HP output, lower it to let more low end through. Defaults to 0.5.",
+      "level": "Master gain on BOTH noise taps (white and pink) — sets the loudness of the noise outputs together. Does not affect the filter section. Defaults to 0.8.",
+      "lpCutoff": "The LOW-PASS corner for the filter section's LP output. The 0..1 knob maps log across ~40 Hz to 20 kHz; lower it to darken the LP output, raise it to let more through. Defaults to 0.5."
+    }
+  },
   "noise": {
     "explanation": "A pure noise source with three independent spectral flavors: white (flat spectrum), pink (1/f, -3 dB/oct), and brown (1/f², -6 dB/oct). All three noise streams run continuously from a shared 2-second looping buffer and are gain-scaled by a single LEVEL knob. Mental model: patch any combination of the three outputs into different channels to layer different timbres—white for brightness, pink for warmth, brown for rumble—all controlled by one master gain. Since the buffer loop is long and aperiodic noise by nature, the 0.5 Hz loop seam is inaudible.",
     "outputs": {

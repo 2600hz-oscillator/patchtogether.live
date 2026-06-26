@@ -75,6 +75,33 @@ export const moog914Def: AudioModuleDef = {
     { id: 'lp', label: 'LP', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A recreation of the Moog 914 Extended Fixed Filter Bank — the System 55's full fixed filter bank, the bigger sibling of the 907A and a kind of fixed graphic EQ for spectral and formant shaping. The signal fans into fourteen parallel filter sections whose centre frequencies DO NOT move: a fixed low-pass shelf at the bottom, TWELVE fixed band-pass sections in the classic 1/3-octave series (125 Hz, 175, 250, 350, 500, 700, 1 kHz, 1.4 k, 2 k, 2.8 k, 4 k, 5.6 k), and a fixed high-pass shelf at the top. Each section has its own LEVEL knob and all sum to one output, so you sculpt a sound by boosting and cutting fixed regions — emphasise formants, notch harsh bands, or carve detailed vocal/telephone tones with finer resolution than the 907A. The bands never move and there is no CV: a pure Web Audio biquad + gain graph, identical wiring to the 907A with twelve bands instead of eight. At the default 0.5 every band passes at half level, a neutral middle to boost or cut from.",
+    inputs: {
+      audio: "The signal to filter — fanned in parallel into every fixed filter section.",
+    },
+    outputs: {
+      audio: "The summed multi-band output — every section's contribution added together, the shaped spectrum.",
+    },
+    controls: {
+      hp: "Level of the fixed HIGH-PASS section at the top of the bank (corner ~7.5 kHz) — raise to add air and brightness, cut to soften the top. Defaults to 0.5.",
+      band1: "Level of the fixed 125 Hz band-pass section (bass / fundamental). Defaults to 0.5.",
+      band2: "Level of the fixed 175 Hz band-pass section (low end / warmth). Defaults to 0.5.",
+      band3: "Level of the fixed 250 Hz band-pass section (low mids / body). Defaults to 0.5.",
+      band4: "Level of the fixed 350 Hz band-pass section (lower mids). Defaults to 0.5.",
+      band5: "Level of the fixed 500 Hz band-pass section (mids). Defaults to 0.5.",
+      band6: "Level of the fixed 700 Hz band-pass section (mids). Defaults to 0.5.",
+      band7: "Level of the fixed 1 kHz band-pass section (presence). Defaults to 0.5.",
+      band8: "Level of the fixed 1.4 kHz band-pass section (presence / nasal). Defaults to 0.5.",
+      band9: "Level of the fixed 2 kHz band-pass section (upper mids / bite). Defaults to 0.5.",
+      band10: "Level of the fixed 2.8 kHz band-pass section (high presence). Defaults to 0.5.",
+      band11: "Level of the fixed 4 kHz band-pass section (clarity / edge). Defaults to 0.5.",
+      band12: "Level of the fixed 5.6 kHz band-pass section (brilliance / sizzle). Defaults to 0.5.",
+      lp: "Level of the fixed LOW-PASS section at the bottom of the bank (corner ~100 Hz) — raise to add sub weight, cut to thin the bottom. Defaults to 0.5.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     return buildFilterBank(
       ctx,

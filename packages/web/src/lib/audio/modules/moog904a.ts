@@ -68,6 +68,24 @@ export const moog904aDef: AudioModuleDef = {
     { id: 'regeneration', label: 'Regen', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 904A Voltage Controlled Low Pass Filter — the iconic 24 dB/octave transistor-ladder LPF at the heart of the Moog sound. It rolls off everything above the cutoff at a steep four-pole slope, warming and darkening the signal. The CUTOFF knob sets the corner, the RANGE switch shifts that corner in two-octave steps, and REGENERATION is the resonance (internal feedback): turn it up to emphasise the band right at the cutoff, and near maximum the filter self-oscillates into a clean sine — a playable voltage-controlled oscillator in its own right. A summing 1 V/octave control input sweeps the cutoff (patch an envelope or LFO here for the classic filter sweep) and a second CV input modulates the regeneration. The ladder core is the textbook zero-delay-feedback algorithm with a tanh per loop for the analog drive, not a port of any Moog schematic.",
+    inputs: {
+      audio: "The signal to be filtered — the audio fed into the ladder.",
+      cutoff_cv: "Summing 1 V/octave CONTROL INPUT to the cutoff (audio-rate). It adds exponentially onto the CUTOFF knob inside the worklet, so this is the jack for the classic filter sweep — an envelope opens/closes the corner, an LFO wobbles it, a pitch CV makes the cutoff track played notes.",
+      reso_cv: "CONTROL INPUT to REGENERATION (audio-rate, summed per-sample). Modulate the resonance — e.g. an envelope that pushes the filter toward self-oscillation on each note for a chirp or zap.",
+    },
+    outputs: {
+      audio: "The 24 dB/octave low-passed output. With REGENERATION near maximum and nothing patched in, it emits a clean self-oscillating sine at the cutoff frequency.",
+    },
+    controls: {
+      cutoff: "The FIXED CONTROL VOLTAGE pot — the filter's corner frequency, 20 Hz to 20 kHz on a log taper. Everything above it is attenuated at the four-pole slope; lower it to darken, raise it to open up. CV adds on top of this setting. Defaults to 1 kHz.",
+      range: "RANGE switch (1 / 2 / 3) — shifts the whole cutoff sweep in two-octave steps, so you can place the CUTOFF pot's travel in the bass, mids, or highs. Defaults to position 2 (the middle range).",
+      regeneration: "REGENERATION — the resonance / internal feedback (variable Q). At 0 the filter is flat; turning it up emphasises a peak at the cutoff; near 1 the filter self-oscillates and rings as a sine VCO. Defaults to 0 (no resonance).",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

@@ -63,6 +63,23 @@ export const moog904cDef: AudioModuleDef = {
     { id: 'mode', label: 'Mode', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 904C Voltage Controlled Filter Coupler — a single module that couples a 904A-style low-pass and a 904B-style high-pass around ONE shared cutoff, so the pair tracks together as a voltage-controlled BAND-PASS: the low-pass keeps the lows under the corner, the high-pass keeps the highs over it, and you hear the band between them. WIDTH spreads the two corners apart (a wide, gentle band) or pulls them together (a narrow, vocal peak), and MODE crossfades the whole thing from band-PASS to its complement, a band-REJECT notch that scoops out the band instead. A single CV input sweeps the band centre. It is built on the same transistor-ladder core as the 904A and 904B, so the band has the Moog ladder's character.",
+    inputs: {
+      audio: "The signal to be band-passed (or band-rejected at MODE = 1).",
+      cutoff_cv: "CV → the band CENTRE (cutoff). Wired through the worklet's cutoff AudioParam with a log scaling, so a bipolar ±1 CV sweeps the band across its full octave span — patch an envelope or LFO here to make the band-pass move (a wah, a vowel sweep).",
+    },
+    outputs: {
+      audio: "The band-passed output (or, at MODE = 1, the band-rejected / notched output).",
+    },
+    controls: {
+      cutoff: "The band CENTRE frequency, 20 Hz to 20 kHz on a log taper — where the low-pass and high-pass meet, i.e. the centre of the pass band (or the notch). CV adds on top of this. Defaults to 800 Hz.",
+      width: "How far the low-pass and high-pass corners are spread around the centre. Low = the corners pull together for a narrow, resonant, vocal band; high = a wide, gentle band that passes more of the spectrum. Defaults to 0.5.",
+      mode: "Crossfade from band-PASS (0) to band-REJECT / notch (1). At 0 you hear only the band; at 1 the band is subtracted from the input so it is scooped OUT; in between is a partial blend. Defaults to 0 (band-pass).",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

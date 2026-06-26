@@ -69,4 +69,22 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'destroy',
   'warps',
   'ringback',
+  // Batch 5 — Moog System 35/55 signal-processing cluster (2026-06-26): the
+  // classic Moog filtering & processing chain — the 902 VCA, the 904A low-pass
+  // and 904B high-pass transistor-ladder filters, the 904C filter coupler
+  // (VC band-pass / notch), the 905 spring reverb, the 907A and 914 fixed
+  // filter banks (graphic-EQ-style spectral shapers), and the 923 noise +
+  // filter utility. Every one of these is a `card:`-override module (its card
+  // name doesn't match the conventional `<type>Card`), so — like cocoadelay —
+  // they stay OFF the INTERACTIVE_DOC_MODULES allowlist (the doc route's
+  // defLite can't resolve an override card → static face fallback). Documented
+  // (STRICT) without being live-card-interactive.
+  'moog902',
+  'moog904a',
+  'moog904b',
+  'moog904c',
+  'moog905',
+  'moog907a',
+  'moog914',
+  'moog923',
 ]);

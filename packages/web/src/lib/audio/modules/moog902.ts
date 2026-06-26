@@ -80,6 +80,25 @@ export const moog902Def: AudioModuleDef = {
     { id: 'mode',     label: 'Mode', defaultValue: 0,   min: 0,  max: 1, curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 902 Voltage Controlled Amplifier — the System 35/55 VCA that turns a control voltage into level. The signal you feed in is amplified by a gain that is the SUM, in volts, of the manual GAIN pot plus the two summing CONTROL INPUTS (CV scaled by the CV-depth knob, and FCV added straight). Overall gain reaches ×2 (+6 dB) when that control sum hits 6 V and tops out at a ×3 ceiling around 7.5 V. A RESPONSE switch picks the gain law: LINEAR rises straight to ×2 at 6 V, EXPONENTIAL passes through the same ×2 at 6 V but climbs faster toward the ceiling. Like the hardware it has a true differential output pair — the normal output and its phase-inverted twin. Patch an envelope or LFO into CV to shape dynamics or tremolo; leave everything unpatched and the GAIN pot is a static volume.",
+    inputs: {
+      audio: "The SIGNAL input — the audio to be amplified by the VCA.",
+      cv: "Summing CONTROL INPUT to gain (audio-rate). It is scaled by the CV-depth knob and added, in volts, to the control sum the worklet maps through the gain law, so an envelope here makes the VCA an amplitude shaper and an LFO makes tremolo. Bipolar CV with a negative CV-depth can duck the signal.",
+      fcv: "A second summing CONTROL INPUT to gain — a fixed-control-voltage bias added straight onto the control sum (no depth knob). Use it to offset the operating point, or to sum a second modulation source alongside CV.",
+    },
+    outputs: {
+      audio: "The amplified signal — the input scaled by the gain the control sum produces.",
+      audio_inv: "The differential − output: a sample-accurate phase-inverted twin of the main output (the same level, 180° out of phase). Handy for difference patches or driving a balanced pair.",
+    },
+    controls: {
+      gain: "The manual GAIN pot (the spec's fixed control voltage), mapped across 0..6 V of the control sum — at the top it alone gives ×2 (+6 dB). Its volts add to whatever CV/FCV contribute. Defaults to 0.5 (mid).",
+      cvAmount: "Depth and SIGN of the CV control input: it scales how much the CV jack moves the gain. Full right (+1) is full positive depth, center is none, full left (−1) inverts the CV so a rising envelope ducks instead of opening. Defaults to +1.",
+      mode: "RESPONSE switch — the gain law. LINEAR rises straight to ×2 at a 6 V control sum; EXPONENTIAL passes through that same ×2 at 6 V then climbs faster toward the ×3 ceiling (~7.5 V), the more musical curve for envelope-shaped amplitude. Defaults to LINEAR.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

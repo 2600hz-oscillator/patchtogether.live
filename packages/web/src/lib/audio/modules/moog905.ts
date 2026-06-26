@@ -53,6 +53,22 @@ export const moog905Def: AudioModuleDef = {
     { id: 'size',  label: 'Size',  defaultValue: 0.5,  min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A recreation of the Moog 905 spring reverberation tank — the classic metallic, splashy spring reverb with the characteristic boing and chirp on transients. It is an in-house dispersive-allpass model (own code, not a physical PDE or a port of any reverb): a cascade of Schroeder all-pass sections gives the frequency-dependent group delay that IS the spring's dispersion and chirp, feeding a modulated feedback delay line with in-loop damping for the tail. The MIX knob blends the dry input with the spring's wet output, DECAY sets how long the tail rings, and SIZE sets the spring length — short and tight, or long and boingy. Patch a signal in and dial MIX up for a splash of vintage spring on drums, guitar, or synth.",
+    inputs: {
+      audio: "The dry signal to reverberate — the audio fed into the spring tank.",
+    },
+    outputs: {
+      audio: "The dry/wet mix: the dry input blended with the spring-reverb wet tail, ratio set by the MIX knob.",
+    },
+    controls: {
+      mix: "Dry↔wet blend — 0 is fully dry (the spring is silent), 1 is fully wet (only the reverberated tail). Lower for a subtle ambience, higher for a drenched, surfy spring. Defaults to 0.35.",
+      decay: "Tail length / feedback — how long the spring rings before fading. Low gives a short metallic splash; high gives a long, sustained wash. Defaults to 0.6.",
+      size: "Spring length / dispersion — how much chirp and boing the tank has. Small is a tight, bright spring; large stretches the dispersion for the long, wobbly, more dramatic spring character. Defaults to 0.5.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
