@@ -190,12 +190,24 @@ static int s_app_started = 0;
 // PHASE1-STATUS.md — "memory access out of bounds in sm::Allocator::Allocate".)
 extern void engineSetupAllocator(void);
 
+// r_maxfps (baselayer.cpp) is the engine's frame-rate limiter. -2 is the special
+// "no throttle — engineFPSLimit() always returns true" value, so app_main's main
+// loop DRAWS + presents on EVERY iteration. We need this for the ASYNCIFY seam:
+// our videoShowFrame yields the call stack on each present (emscripten_sleep(0)),
+// and JS controls pacing by when it resumes. With the default wall-clock limiter
+// (-1), the loop SPINS between presents without ever calling videoShowFrame, so
+// the asyncify stack never suspends → the JS event loop is starved and the engine
+// never yields a frame (the menu/title would never appear). Setting -2 makes the
+// loop cooperative: one present (one yield) per iteration.
+extern int r_maxfps;
+
 extern "C" void bpt_init(int rff_len)
 {
     (void)rff_len;
     if (s_app_started) return;
     s_app_started = 1;
     engineSetupAllocator();   // create g_sm_heap before any Xmalloc/Xstrdup
+    r_maxfps = -2;            // present-per-iteration; JS drives pacing (see above)
     // argv lives in static storage so it outlives the (suspended) call.
     static char arg0[] = "blood";
     static char arg1[] = "-nosetup";

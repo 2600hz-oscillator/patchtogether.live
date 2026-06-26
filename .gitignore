@@ -141,6 +141,9 @@ packages/web/static/blood/*
 !packages/web/static/blood/TABLES.DAT
 !packages/web/static/blood/VOXEL.DAT
 !packages/web/static/blood/SHARE000.ART
+# BLOOD.INI — the shareware episode/level descriptor (plain text, NOT in the RFF;
+# the engine aborts without it). Small text file → ordinary git, not LFS.
+!packages/web/static/blood/BLOOD.INI
 
 # NBlood upstream scratch checkout fetched by build-blood-wasm.sh (the engine is
 # fetched at a pinned commit for the WASM build, NOT vendored in this spike).

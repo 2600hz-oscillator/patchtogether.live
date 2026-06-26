@@ -41,17 +41,78 @@ async function main() {
     );
   }
 
-  // NODE-ONLY shim: emscripten-SDL2's Emscripten_VideoInit reads the DOM
-  // `screen` to size the default video mode; node has no DOM. A real browser
-  // ALWAYS has `globalThis.screen`, so this is purely a node-harness concern
-  // (PHASE1-STATUS.md §3), NOT a wasm/engine defect. Inject a plausible screen.
+  // ── NODE-ONLY headless DOM shim ──────────────────────────────────────────
+  // emscripten's SDL2 port + Browser library reach into the DOM (`screen`,
+  // `document`, a `<canvas>`, `window`) to size the video mode, create the
+  // window and register pointerlock/fullscreen event handlers
+  // (scrSetGameMode → videoSetMode → SDL_CreateWindow →
+  // Emscripten_RegisterEventHandlers → document.body.requestPointerLock …).
+  // node has no DOM, so we inject just enough of one. A REAL BROWSER has all of
+  // this natively — so every shim here is purely a node-harness concern
+  // (PHASE1-STATUS.md §3), NOT a wasm/engine defect. We render with the SOFTWARE
+  // rasteriser (USE_OPENGL off), so the canvas's GL/2D context is never actually
+  // used for pixels — the frame is read SDL-independently via softsurface_blitBuffer
+  // through our bpt_get_framebuffer seam.
   if (typeof globalThis.screen === 'undefined') {
     globalThis.screen = { width: 640, height: 480, availWidth: 640, availHeight: 480 };
   }
+  let fakeCanvas;
+  if (typeof globalThis.document === 'undefined') {
+    const noop = () => {};
+    const makeStyle = () => new Proxy({}, { get: () => '', set: () => true });
+    const makeEl = (tag = 'div') => ({
+      tagName: String(tag).toUpperCase(),
+      style: makeStyle(),
+      addEventListener: noop,
+      removeEventListener: noop,
+      appendChild: (c) => c,
+      removeChild: (c) => c,
+      setAttribute: noop,
+      getBoundingClientRect: () => ({ left: 0, top: 0, right: 640, bottom: 480, width: 640, height: 480 }),
+      getContext: () => null, // software render: SDL never draws pixels through this
+      requestPointerLock: noop,
+      requestFullscreen: noop,
+      focus: noop,
+      width: 640,
+      height: 480,
+      clientWidth: 640,
+      clientHeight: 480,
+    });
+    fakeCanvas = makeEl('canvas');
+    const body = makeEl('body');
+    globalThis.document = {
+      body,
+      documentElement: makeEl('html'),
+      addEventListener: noop,
+      removeEventListener: noop,
+      createElement: (t) => makeEl(t),
+      querySelector: () => fakeCanvas,
+      getElementById: () => fakeCanvas,
+      getElementsByTagName: () => [fakeCanvas],
+      // fullscreen / pointerlock state accessors SDL2 reads
+      fullscreenElement: null,
+      pointerLockElement: null,
+      exitPointerLock: noop,
+      exitFullscreen: noop,
+      fullscreenEnabled: false,
+    };
+  }
+  if (typeof globalThis.window === 'undefined') {
+    globalThis.window = {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      devicePixelRatio: 1,
+      innerWidth: 640,
+      innerHeight: 480,
+      screen: globalThis.screen,
+      document: globalThis.document,
+    };
+  }
 
   const { default: loadBlood } = await import(SHIM);
-  // emscripten MODULARIZE factory. We pass no canvas (headless software render).
-  const Module = await loadBlood();
+  // emscripten MODULARIZE factory. Hand it our fake canvas so SDL2's
+  // Module.canvas resolution uses it instead of probing the DOM further.
+  const Module = await loadBlood(fakeCanvas ? { canvas: fakeCanvas } : {});
 
   // Write user-supplied data files into MEMFS under /blood (if provided).
   let wroteData = 0;
@@ -77,9 +138,12 @@ async function main() {
   }
   console.log(`[blood-harness] data files written to MEMFS: ${wroteData}`);
 
-  // bpt_init kicks app_main onto the ASYNCIFY call stack; it runs until the
-  // first videoShowFrame (our shim) snapshots a frame + suspends. Because
-  // app_main is ASYNCIFY-suspended, the ccall returns control here.
+  // bpt_init kicks app_main onto the ASYNCIFY call stack. The shim sets
+  // r_maxfps=-2 so the engine presents + YIELDS (emscripten_sleep) on EVERY
+  // main-loop iteration; with real shareware data app_main runs all the way
+  // through palette/data/weapon/choke/game init and into the main MENU loop,
+  // which clears to gMenuColor + rotatesprite()s the menu and presents — so the
+  // snapshot we read is the real BLOOD main menu.
   console.log('[blood-harness] bpt_init …');
   try {
     Module.ccall('bpt_init', null, ['number'], [0]);
@@ -87,53 +151,59 @@ async function main() {
     fail(`bpt_init threw: ${e && e.message ? e.message : e}`);
   }
 
-  // Pump a bounded number of frames to give the engine time to reach a paint
-  // (the menu / pre-game screen blits each frame). Each bpt_tick resumes the
-  // suspended app_main to the next videoShowFrame.
-  const MAX_FRAMES = 240;
-  let hasFrame = 0;
-  for (let i = 0; i < MAX_FRAMES; i++) {
-    hasFrame = Module.ccall('bpt_has_frame', 'number', [], []);
-    if (hasFrame) break;
-    try {
-      Module.ccall('bpt_tick', null, [], []);
-    } catch (e) {
-      fail(`bpt_tick threw at frame ${i}: ${e && e.message ? e.message : e}`);
+  // Sample the framebuffer as the engine cooperatively advances. With
+  // r_maxfps=-2 the asyncify stack auto-resumes across the JS event loop on each
+  // yield, so we just await the loop and read the latest snapshot. We keep the
+  // RICHEST frame we see (the menu, vs the near-black cleared backbuffer the very
+  // first present at SDL window-create produces). Bounded by wall-clock.
+  const readFrameStats = () => {
+    const w = Module.ccall('bpt_get_resx', 'number', [], []);
+    const h = Module.ccall('bpt_get_resy', 'number', [], []);
+    const fbPtr = Module.ccall('bpt_get_framebuffer', 'number', [], []);
+    const fbSize = Module.ccall('bpt_get_framebuffer_size', 'number', [], []);
+    if (!fbPtr || fbSize <= 0 || fbSize !== w * h * 4) return { w, h, fbPtr, fbSize, nonZero: 0, distinct: 0 };
+    const fb = new Uint8Array(Module.HEAPU8.buffer, fbPtr, fbSize);
+    let nonZero = 0;
+    const distinct = new Set();
+    for (let i = 0; i < fbSize; i += 4) {
+      if (fb[i] | fb[i + 1] | fb[i + 2]) nonZero++;
+      if (distinct.size < 256) distinct.add((fb[i] << 16) | (fb[i + 1] << 8) | fb[i + 2]);
     }
-    // Let any pending asyncify continuation + microtasks flush.
-    await new Promise((r) => setTimeout(r, 0));
+    return { w, h, fbPtr, fbSize, nonZero, distinct: distinct.size };
+  };
+
+  // A real rendered SCREEN (menu/title/E1M1) has THOUSANDS of non-black pixels +
+  // many colors. The near-black cleared backbuffer (the first present) does not —
+  // so this threshold is what proves we rendered actual content, not a blank
+  // surface. (Empirically the shareware main menu is ~15k non-black / ~32 colors.)
+  const MIN_NONZERO = 2000;
+  const MIN_DISTINCT = 4;
+  const DEADLINE_MS = 20000;
+  let best = { nonZero: -1, distinct: 0, w: 0, h: 0, fbPtr: 0, fbSize: 0 };
+  const start = Date.now();
+  while (Date.now() - start < DEADLINE_MS) {
+    await new Promise((r) => setTimeout(r, 4));
+    const s = readFrameStats();
+    if (s.nonZero > best.nonZero) best = s;
+    if (best.nonZero >= MIN_NONZERO && best.distinct >= MIN_DISTINCT) break;
   }
 
-  hasFrame = Module.ccall('bpt_has_frame', 'number', [], []);
-  if (!hasFrame) fail(`no frame presented after ${MAX_FRAMES} bpt_tick frames`);
-
-  const w = Module.ccall('bpt_get_resx', 'number', [], []);
-  const h = Module.ccall('bpt_get_resy', 'number', [], []);
-  const fbPtr = Module.ccall('bpt_get_framebuffer', 'number', [], []);
-  const fbSize = Module.ccall('bpt_get_framebuffer_size', 'number', [], []);
-  console.log(`[blood-harness] frame presented: ${w}x${h}, fbPtr=${fbPtr}, fbSize=${fbSize}`);
-
+  const { w, h, fbPtr, fbSize, nonZero, distinct } = best;
+  console.log(`[blood-harness] best frame: ${w}x${h}, fbPtr=${fbPtr}, fbSize=${fbSize}`);
   if (w <= 0 || h <= 0) fail(`implausible resolution ${w}x${h}`);
   if (!fbPtr || fbSize !== w * h * 4) fail(`framebuffer ptr/size inconsistent (${fbSize} vs ${w * h * 4})`);
 
-  // Validate the framebuffer is non-empty: count non-black, non-uniform pixels.
-  const fb = new Uint8Array(Module.HEAPU8.buffer, fbPtr, fbSize);
-  let nonZero = 0;
-  let distinct = new Set();
-  for (let i = 0; i < fbSize; i += 4) {
-    const r = fb[i], g = fb[i + 1], b = fb[i + 2];
-    if (r | g | b) nonZero++;
-    if (distinct.size < 64) distinct.add((r << 16) | (g << 8) | b);
-  }
   const pct = ((nonZero / (fbSize / 4)) * 100).toFixed(1);
-  console.log(`[blood-harness] non-black pixels: ${nonZero}/${fbSize / 4} (${pct}%), distinct colors (sampled): ${distinct.size}`);
+  console.log(`[blood-harness] non-black pixels: ${nonZero}/${fbSize / 4} (${pct}%), distinct colors (sampled): ${distinct}`);
 
-  // A valid rendered frame has SOME non-black pixels AND more than one color
-  // (a uniform fill would be a stuck/blank surface, not a render).
   if (nonZero === 0) fail('framebuffer is entirely black — no pixels rendered');
-  if (distinct.size < 2) fail('framebuffer is a single uniform color — not a real render');
+  if (nonZero < MIN_NONZERO || distinct < MIN_DISTINCT)
+    fail(
+      `frame too sparse (${nonZero} non-black / ${distinct} colors) — engine reached a paint but did not render a real screen ` +
+        `within ${DEADLINE_MS}ms (expected the menu: >=${MIN_NONZERO} non-black, >=${MIN_DISTINCT} colors)`,
+    );
 
-  console.log('[blood-harness] PASS: blood.wasm linked + rendered one valid frame.');
+  console.log('[blood-harness] PASS: blood.wasm linked + rendered a real content frame (main menu).');
   process.exit(0);
 }
 

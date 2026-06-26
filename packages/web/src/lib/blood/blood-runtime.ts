@@ -64,12 +64,18 @@ const DATA_DIR_URL = '/blood'; // served static dir (user-supplied via task setu
 export const BLOOD_REQUIRED_FILES = ['BLOOD.RFF', 'GUI.RFF', 'SOUNDS.RFF'] as const;
 
 // The full BUNDLED 1997 Blood SHAREWARE data set. The 3 REQUIRED RFFs above
-// plus the engine data tables (SURFACE/TABLES/VOXEL.DAT) and the shareware tile
-// art (SHARE000.ART — the shareware analogue of the full game's TILES000.ART).
-// These ship in static/blood/ (un-ignored in .gitignore, LFS-tracked) so the
-// BLOOD card boots OUT-OF-BOX on the beta-gated deploys with no picker. The
-// extra (non-RFF) files are fetched best-effort: present → written into MEMFS;
-// absent → silently skipped (only the REQUIRED set gates the "missing" prompt).
+// plus the engine data tables (SURFACE/TABLES/VOXEL.DAT), the shareware tile
+// art (SHARE000.ART — the shareware analogue of the full game's TILES000.ART),
+// and the episode descriptor BLOOD.INI. These ship in static/blood/ (un-ignored
+// in .gitignore, LFS-tracked) so the BLOOD card boots OUT-OF-BOX on the
+// beta-gated deploys with no picker. The extra (non-RFF) files are fetched
+// best-effort: present → written into MEMFS; absent → silently skipped (only the
+// REQUIRED set gates the "missing" prompt).
+//
+// BLOOD.INI is the plain-text episode/level table the game reads on boot
+// (levels.cpp → levelLoadDefaults); without it the engine aborts at
+// "Initialization: BLOOD.INI does not exist". It is NOT inside BLOOD.RFF — the
+// shareware ships it as a separate on-disk file — so it MUST be in this bundle.
 export const BLOOD_BUNDLED_FILES = [
   'BLOOD.RFF',
   'GUI.RFF',
@@ -78,6 +84,7 @@ export const BLOOD_BUNDLED_FILES = [
   'TABLES.DAT',
   'VOXEL.DAT',
   'SHARE000.ART',
+  'BLOOD.INI',
 ] as const;
 
 // ── In-browser injected data (the HOSTED-preview path) ─────────────────────

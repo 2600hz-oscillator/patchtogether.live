@@ -2,24 +2,84 @@
 
 **Read `PHASE0-STATUS.md` first** (feasibility + license + the build recipe).
 
-**Bottom line:** **KILL-GATE: LINK = PASS; FIRST-FRAME = blocked ONLY by the
-non-redistributable Blood data, NOT by any engine/WASM/link defect.**
+**Bottom line:** **KILL-GATE PASSED — the engine renders a REAL frame (the BLOOD
+main menu) from the bundled 1997 shareware.** Link = PASS; first-frame = PASS.
 
 - `blood.wasm` (≈5.8 MB) + `blood.js` glue **fully link** from 152 NBlood TUs
-  (software renderer, `-DNOASM`, `-sASYNCIFY`, emscripten SDL2). The Phase-0
-  §2.4 self-modifying-asm `mprotect` wall is gone (`-DNOASM`). Reproduce:
+  (software renderer, `-DNOASM`, `-sASYNCIFY`, emscripten SDL2). Reproduce:
   ```sh
   BLOOD_LINK=1 flox activate -- bash packages/web/native/build-blood-wasm.sh
   # → [build-blood-wasm] LINK OK — wrote: …/static/blood/blood.{js,wasm}
   ```
-- A node headless harness boots the engine **all the way through** loguru
-  logging, SDL2 video init (`Using 'emscripten' video driver`), and OSD init,
-  into the Blood game **resource loader** — where it deliberately aborts
-  because the user-supplied, **non-redistributable** game data is absent.
+- A node headless harness boots the engine **all the way through** palette init,
+  data load, weapon/choke init, and game init into the **main MENU loop**, and
+  `bpt_get_framebuffer` returns the real 640×480 **BLOOD main menu** (≈15 243
+  non-black pixels, ≈32 colors: the "BLOOD" title + NEW GAME / MULTIPLAYER /
+  OPTIONS / LOAD GAME / HELP / CREDITS / QUIT). Reproduce:
+  ```sh
+  BLOOD_LINK=1 BLOOD_OUT=blood-node BLOOD_ENVIRONMENT=node \
+    flox activate -- bash packages/web/native/build-blood-wasm.sh
+  BLOOD_DATA=packages/web/static/blood \
+    flox activate -- node packages/web/native/nblood/blood-frame-harness.mjs
+  # → [blood-harness] PASS: blood.wasm linked + rendered a real content frame (main menu).
+  ```
 
-So both halves of the kill-gate are addressed: the link is real and the engine
-runs in WASM; the only thing standing between this and a rendered frame is
-lawfully-owned Blood data, which by design we never ship (PHASE0-STATUS §3).
+---
+
+## 0. The palette-init OOB (root cause + fix) — the Phase-1 first-frame blocker
+
+With the shareware data bundled (so the RFF/INI/DAT/ART all load), the engine hit
+a `memory access out of bounds` during Build's palette-table init, right after
+`screen.cpp:242 "Loading translucency table"`. Pinpointed with `-sSAFE_HEAP=1`:
+
+```
+palettePostLoadTables → paletteGetClosestColorWithBlacklist
+                      → paletteGetClosestColorWithBlacklistNoCache   ← OOB read
+```
+
+**Root cause — a `char`-signedness bounds bug, NOT a memory ceiling.** Build's
+closest-color matcher (`colmatch.cpp`) indexes its `rdist`/`gdist`/`bdist`
+distance LUTs by raw palette BYTES, e.g. `rdist[pal1[0]+r]` where `pal1` is a
+`char const *` into the 768-byte palette. **NBlood's upstream `Common.mak`
+compiles the whole engine with `-funsigned-char`**, so those bytes read 0..255
+and the index stays in `[0, 512]` (the LUT is `FASTPALCOLDEPTH*2+1 = 513` wide).
+`build-blood-wasm.sh` did NOT pass `-funsigned-char`, and **wasm32's default
+`char` is SIGNED** — so any palette component ≥128 read as a NEGATIVE index →
+out-of-bounds heap read. (This is the platform-dependent footgun the CLAUDE.md
+"capability/renderer-dependent" lesson warns about, in `char`-signedness form.)
+
+**Fix:** add `-funsigned-char` to `build-blood-wasm.sh`'s `CFLAGS` + `LINK_CFLAGS`
+(matching upstream). No source patch needed for the OOB. After this the engine
+sails past palette init.
+
+### Two follow-on SHAREWARE-data walls fixed (the bundled set differs from the
+full game), as minimal `__EMSCRIPTEN__`-style upstream patches in the build script:
+
+1. **`BLOOD.INI` missing** → `levels.cpp:71 "Initialization: BLOOD.INI does not
+   exist"`. The episode/level descriptor is a plain-text file the engine reads on
+   boot; it is NOT inside `BLOOD.RFF` (the shareware ships it separately) and was
+   absent from the bundle. **Fix (data, not code):** added the shareware
+   `BLOOD.INI` (Episode1 = E1M1..E1M8, the 8 maps the shareware RFF actually
+   contains — verified from the RFF directory) to `static/blood/`, the
+   `.gitignore` un-ignore list, and `BLOOD_BUNDLED_FILES` in `blood-runtime.ts`.
+2. **Reduced shareware arsenal** → `weapon.cpp:235 "Could not load QAV 113"` and
+   `choke.cpp "Could not load QAV 518"`. The shareware RFF has QAV ids 0..112
+   (+512..515) only; ids 113..124 (full-game weapons) and 518 (the choke overlay)
+   are absent. `WeaponInit` / `CChoke::Init` hard-`ThrowError` on the first
+   missing one. **Fix (build-script source patch):** make both shareware-tolerant
+   — a missing QAV logs a warning and leaves the slot NULL instead of aborting.
+   Safe: every consumer already NULL-guards (`WeaponPrecache`, `CChoke::Draw`),
+   and those weapons/overlays can never be selected on shareware data. Full-game
+   data still loads all ids unchanged.
+
+### The ASYNCIFY frame-drive fix (shim)
+After init, app_main's main loop only presents (→ our `videoShowFrame` → snapshot
++ `emscripten_sleep(0)` yield) when the wall-clock FPS limiter
+(`engineFPSLimit`, default `r_maxfps=-1`) allows it; between presents the loop
+SPINS without yielding, starving the JS event loop so the asyncify stack never
+resumes and the menu never paints. **Fix:** the shim sets `r_maxfps = -2` in
+`bpt_init` (the "no-throttle, always present" mode), so the engine yields one
+frame per iteration and JS drives pacing. With this, the menu renders.
 
 ---
 
@@ -89,54 +149,46 @@ imgui GL3/win32/demo backends, and the OS audio-output drivers (keep `driver_sdl
 
 ```
 [blood-harness] bpt_init …
-… loguru.cpp INFO| Started …
-… blood.cpp:1658 INFO| NBlood r(?)
-… print.h:196  INFO| Built …, clang 22.1.2, 32-bit
-… sdlayer.cpp:679 INFO| Initializing SDL 2.32.10
 … sdlayer.cpp:747 INFO| Using 'emscripten' video driver.   ← SDL2 video init OK
-… common.cpp:185 WARN| Could not find main data file "nblood.pk3"!
-… blood.cpp:1724 INFO| Initializing OSD...                 ← OSD init OK
-… resource.cpp(99): File not found BLOOD.RFF               ← deliberate engine abort
-Aborted(native code called abort())
-  _ThrowError → raise → abort   (Resource::Init, the game's RFF loader)
+… blood.cpp:1747 INFO| Initializing Build 3D engine
+… screen.cpp:210  INFO| Loading palettes
+… screen.cpp:242  INFO| Loading translucency table          ← (was) the palette OOB
+… screen.cpp:327  INFO| Loading gamma correction table      ← now PAST palette init
+… blood.cpp:1753  INFO| Loading tiles
+… cache1d.cpp:98  INFO| Initialized 96.0M cache
+… blood.cpp:1789  INFO| Initializing view subsystem
+… weapon.cpp:239  WARN| weapon QAV 113..124 not in RFF (shareware data?) - skipping
+… choke.cpp:65    WARN| choke QAV 518 not in RFF (shareware data?) - disabling
+… blood.cpp:1866  INFO| Waiting for network players!        ← into the MENU loop
+[blood-harness] best frame: 640x480, fbPtr=…, fbSize=1228800
+[blood-harness] non-black pixels: 15243/307200 (5.0%), distinct colors (sampled): 32
+[blood-harness] PASS: blood.wasm linked + rendered a real content frame (main menu).
 ```
 
-So the engine boots through platform + SDL2 + OSD and into `Resource::Init`,
-then **`_ThrowError("File not found BLOOD.RFF")` → `abort()`** — a clean,
-deliberate engine abort on **missing, non-redistributable** data, not a fault.
+So the engine boots through platform + SDL2 + OSD + the WHOLE Build 3D engine +
+Blood game init, into the **main menu loop**, and renders the real **BLOOD main
+menu** (the "BLOOD" title + the NEW GAME / MULTIPLAYER / OPTIONS / LOAD GAME /
+HELP / CREDITS / QUIT items). The frame is read SDL-independently via
+`softsurface_blitBuffer` through `bpt_get_framebuffer` (RGBA8). The render is
+deterministic across runs (exactly 15 243 non-black pixels). **Both halves of the
+kill-gate now PASS: the link is real AND a real frame renders.**
 
-**Data is a CHAIN, all in the RFF (which holds the palette + menu art):**
-`blood.cpp` loads `BLOOD.RFF` → `GUI.RFF` → `SOUNDS.RFF` in sequence
-(`gSysRes/gGuiRes/gSoundRes.Init`), each hard-aborting via `_ThrowError`.
-Confirmed empirically: feeding a **valid empty `BLOOD.RFF`** (correct
-`"RFF\x1a"` header, version 0x300, 0 files) gets past the first check — the
-engine then aborts on **`GUI.RFF`**. Because Blood's **menu/console art + the
-palette live inside the RFFs**, there is **no pre-game (menu/console) frame to
-render without real assets** — unlike DOOM (whose IWAD we may ship a shareware
-copy of, and whose title screen renders from that WAD). This is the
-PHASE0-STATUS §3 "user-supplied only, no out-of-box play" reality, now confirmed
-at runtime.
-
-**Therefore the "render ONE valid frame" half of the kill-gate is blocked
-strictly by the lawful-data requirement, with a precise, deliberate engine
-abort as the boundary — exactly the documented-blocker outcome the task's STOP
-CONDITION calls a success.** When a user supplies a real `BLOOD.RFF`/`GUI.RFF`/
-`SOUNDS.RFF` (via `task setup:blood`), the harness should drive the engine to
-the real menu render; the `bpt_*` framebuffer path + the JS module are wired for
-exactly that (§4). The headless harness
-(`packages/web/native/nblood/blood-frame-harness.mjs`) takes a `BLOOD_DATA` dir
-and asserts a non-empty, multi-color frame — runnable the moment a tester drops
-in owned data.
+(The `SDL Audio: error in Init` and `window gamma ramp not supported` lines are
+benign node-headless SDL noise — audio is the silent v1 stub, gamma is cosmetic.)
 
 ---
 
 ## 3. Runtime faults found + fixed on the boot path (all real, all resolved)
 
-| Fault (with `-sASSERTIONS`) | Cause | Fix |
+| Fault | Cause | Fix |
 | --- | --- | --- |
-| `memory access out of bounds` in `sm::Allocator::Allocate`, from `OSD_SetLogFile → xstrdup` | smmalloc heap `g_sm_heap` not yet created — the real entry calls `engineSetupAllocator()` in its bootstrap BEFORE `app_main`; we bypass that bootstrap | shim calls `engineSetupAllocator()` at the top of `bpt_init` |
-| `screen is not defined` in `_emscripten_get_screen_size` (SDL `Emscripten_VideoInit`) | **node-harness only** — node has no DOM `screen`. In a browser this exists | harness injects `globalThis.screen = {width,height}`. NOT a wasm/engine issue (a browser has `screen`) |
-| `_ThrowError → abort` on `BLOOD.RFF` / `GUI.RFF` | **missing, non-redistributable game data** | by design — user-supplied (PHASE0-STATUS §3). This is the data wall, not a defect |
+| `memory access out of bounds` in `sm::Allocator::Allocate`, from `OSD_SetLogFile → xstrdup` | smmalloc heap `g_sm_heap` not yet created — the real entry calls `engineSetupAllocator()` BEFORE `app_main`; we bypass that bootstrap | shim calls `engineSetupAllocator()` at the top of `bpt_init` |
+| `screen is not defined` in `_emscripten_get_screen_size` (SDL `Emscripten_VideoInit`) | **node-harness only** — node has no DOM `screen` (a browser does) | harness injects `globalThis.screen` |
+| `memory access out of bounds` in `paletteGetClosestColorWithBlacklistNoCache` (from `palettePostLoadTables`), right after `screen.cpp:242 "Loading translucency table"` | **the Phase-1 palette OOB.** Build's colmatch indexes `rdist/gdist/bdist` by raw palette BYTES; wasm32's default SIGNED `char` makes bytes ≥128 a negative index. Upstream builds the engine `-funsigned-char` | add `-funsigned-char` to `build-blood-wasm.sh` CFLAGS + LINK_CFLAGS (§0) |
+| `levels.cpp:71 BLOOD.INI does not exist` | shareware ships `BLOOD.INI` as a separate on-disk file (not in the RFF); it was missing from the bundle | bundle the shareware `BLOOD.INI` (§0.1) |
+| `weapon.cpp:235 Could not load QAV 113`; `choke.cpp Could not load QAV 518` | shareware RFF has a reduced arsenal (QAV 0..112 only; 113..124 + 518 are full-game-only) and `WeaponInit`/`CChoke::Init` hard-abort on the first missing one | shareware-tolerant patches: missing QAV → warn + NULL slot, not abort (§0.2) |
+| `document is not defined` in `Emscripten_RegisterEventHandlers` (SDL `SDL_CreateWindow`) | **node-harness only** — SDL2 registers pointerlock/fullscreen handlers on the DOM `document`/canvas; node has neither (a browser does) | harness injects a minimal headless `document`/`window`/canvas shim |
+| engine reaches a paint but only the near-black CLEARED backbuffer; the menu never appears | the main loop's wall-clock FPS limiter (`engineFPSLimit`, `r_maxfps=-1`) SPINS between presents without yielding → starves the JS event loop so the ASYNCIFY stack never resumes | shim sets `r_maxfps = -2` (present-per-iteration); JS drives pacing (§0) |
 
 ---
 
@@ -153,11 +205,15 @@ in owned data.
 
 ---
 
-## 5. Remaining blockers / recommended next moves (NO-GO items are only data)
+## 5. Remaining blockers / recommended next moves
 
-1. **Data (the only hard blocker to a frame):** none lawfully shippable. A
-   tester with *One Unit Whole Blood* / *Fresh Supply* runs `task setup:blood`,
-   then the harness/card render. (Owner tests Blood manually, like DOOM.)
+0. **First frame — DONE.** The engine renders the real menu from the bundled
+   shareware (§2). No data/engine/link blocker remains for the kill-gate. (Full
+   episodes still need user-supplied *One Unit Whole Blood* / *Fresh Supply* via
+   `task setup:blood` — the bundled set is shareware Episode 1 only.)
+1. **Pacing/perf:** the shim runs `r_maxfps=-2` (present-per-iteration); the JS
+   `bpt_tick` cadence governs the effective frame rate. A follow-up can pace this
+   to the rack clock / rAF and re-evaluate whether to keep `-2` or set a real cap.
 2. **Audio:** v1 ships the PCM stub silent (mirrors DOOM slice-8). Wire
    `driver_sdl`/`multivoc` output into the `bpt_get_pcm_buffer` ring + the
    reused doom PCM worklet in a follow-up.

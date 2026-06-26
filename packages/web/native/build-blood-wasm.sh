@@ -148,6 +148,40 @@ apply_phase0_patches() {
     perl -0pi -e 's/(#if !defined _WIN32 && defined __GNUC__ && !defined __OpenBSD__)/$1 && !defined __EMSCRIPTEN__ \/* no execinfo *\//' "$SDL"
     echo "[build-blood-wasm] patched sdlayer.cpp execinfo guard for __EMSCRIPTEN__"
   fi
+
+  # ── SHAREWARE-tolerant weapon QAV init ───────────────────────────────────
+  # WeaponInit (weapon.cpp) hard-loops QAV ids 0..kQAVEndVanilla-1 (=124) and
+  # ThrowError()s on the FIRST one missing from the RFF. The 1997 Blood
+  # SHAREWARE BLOOD.RFF ships a REDUCED arsenal: it contains QAV ids 0..112
+  # only — the full-game-exclusive weapon animations 113..124 are absent. So on
+  # shareware data the engine aborts at weapon.cpp:235 "Could not load QAV 113".
+  # Those 12 QAVs belong to weapons the shareware player can never equip, the
+  # weaponQAV[] slots are NULL-initialised globals, and every consumer already
+  # NULL-guards (WeaponPrecache: `if (weaponQAV[i])`; WeaponRaise/-Lower index
+  # by the player's CURRENT weapon, which on shareware never selects a missing
+  # id). So we make WeaponInit shareware-TOLERANT: a missing vanilla QAV logs a
+  # warning and leaves the slot NULL instead of aborting. Surgical + reversible
+  # (throwaway checkout only); full-game data still loads all ids unchanged.
+  local WEAP="$NBLOOD_SRC/source/blood/src/weapon.cpp"
+  if ! grep -q 'shareware: missing QAV' "$WEAP"; then
+    perl -0pi -e 's/        hRes = gSysRes\.Lookup\(i, "QAV"\);\n        if \(!hRes\)\n            ThrowError\("Could not load QAV %d\\n", i\);\n        weaponQAV\[i\] = \(QAV\*\)gSysRes\.Lock\(hRes\);\n        weaponQAV\[i\]->nSprite = -1;/        hRes = gSysRes.Lookup(i, "QAV");\n        if (!hRes)\n        {\n            \/\/ shareware: missing QAV (full-game-only arsenal 113..124 absent\n            \/\/ from the shareware RFF). Leave the slot NULL (consumers NULL-guard)\n            \/\/ instead of aborting, so shareware data boots to the menu + E1Mx.\n            LOG_F(WARNING, "weapon QAV %d not in RFF (shareware data?) - skipping", i);\n            weaponQAV[i] = NULL;\n            continue;\n        }\n        weaponQAV[i] = (QAV*)gSysRes.Lock(hRes);\n        weaponQAV[i]->nSprite = -1;/' "$WEAP"
+    echo "[build-blood-wasm] patched weapon.cpp WeaponInit for shareware-tolerant QAV load"
+  fi
+
+  # ── SHAREWARE-tolerant choke-hand QAV init ───────────────────────────────
+  # blood.cpp calls gChoke.Init(518, playerHandChoke) — the "drowning/choking"
+  # hand overlay animation (QAV id 518). The shareware RFF has QAV ids 512..515
+  # but NOT 518 (full-game-only), so CChoke::Init(int,…) ThrowError()s "Could
+  # not load QAV 518" right after the weapon QAVs. CChoke::Draw already
+  # NULL-guards (`if (!hQav) return;`) and the choke overlay can only trigger in
+  # gameplay (never at the title/menu), so on a missing QAV we leave hQav NULL
+  # (the animation is simply absent) instead of aborting — same shareware-
+  # tolerance rationale as the weapon-QAV patch. Surgical + reversible.
+  local CHOKE="$NBLOOD_SRC/source/blood/src/choke.cpp"
+  if ! grep -q 'shareware: choke QAV' "$CHOKE"; then
+    perl -0pi -e 's/        hQav = gSysRes\.Lookup\(qavId, "QAV"\);\n        if \(!hQav\)\n            ThrowError\("Could not load QAV %d\\n", qavId\);\n        pQav = \(QAV\*\)gSysRes\.Lock\(hQav\);/        hQav = gSysRes.Lookup(qavId, "QAV");\n        if (!hQav)\n        {\n            \/\/ shareware: choke QAV (id 518) absent from the shareware RFF. Leave\n            \/\/ hQav NULL (CChoke::Draw already NULL-guards) instead of aborting.\n            LOG_F(WARNING, "choke QAV %d not in RFF (shareware data?) - disabling", qavId);\n            return;\n        }\n        pQav = (QAV*)gSysRes.Lock(hQav);/' "$CHOKE"
+    echo "[build-blood-wasm] patched choke.cpp CChoke::Init for shareware-tolerant QAV load"
+  fi
 }
 apply_phase0_patches
 
@@ -171,6 +205,13 @@ CFLAGS=(
   -O1
   -DNORMALUNIX
   -DRENDERTYPESDL
+  -funsigned-char   # REQUIRED: upstream builds the whole engine -funsigned-char
+                    # (Common.mak). The Build palette color-match code indexes
+                    # rdist/gdist/bdist by raw palette BYTES (`rdist[pal1[0]+r]`
+                    # in paletteGetClosestColorWithBlacklistNoCache). On wasm32
+                    # `char` is SIGNED, so palette bytes >=128 read negative and
+                    # the index goes out of bounds → OOB read in palette init
+                    # (palettePostLoadTables). See build-blood-wasm comment block.
   -sUSE_SDL=2
   -Wno-everything   # 1997 codebase; warnings here are noise, not signal
 )
@@ -243,6 +284,16 @@ LINK_CFLAGS=(
   -DRENDERTYPESDL
   -DNOASM
   -DBLOOD_PT_SHIM
+  # REQUIRED: upstream Common.mak builds the ENTIRE engine with -funsigned-char.
+  # The Build palette closest-color matcher indexes the rdist/gdist/bdist
+  # distance LUTs by raw palette BYTES (e.g. `rdist[pal1[0]+r]` in
+  # paletteGetClosestColorWithBlacklistNoCache). wasm32's default `char` is
+  # SIGNED, so any palette component >=128 reads as a NEGATIVE index → an
+  # out-of-bounds heap read during palette init (palettePostLoadTables, right
+  # after screen.cpp "Loading translucency table"). This flag — matching
+  # upstream — keeps every `char` palette byte 0..255 so the index stays in
+  # bounds. (Root cause of the Phase-1 palette-init OOB; do NOT drop it.)
+  -funsigned-char
   -sUSE_SDL=2
   -fno-strict-aliasing
   -Wno-everything
