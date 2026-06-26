@@ -882,6 +882,34 @@ export const samsloopDef: AudioModuleDef = {
     { id: 'end',   label: 'End',   defaultValue: 1e6,  min: 0, max: 1e6, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A single-sample loop player. Load one audio file (drag/drop or the upload button — wav, mp3, m4a/aac, ogg, flac, opus, up to 2 MB) OR record straight from the microphone or a patched audio input; either way the source is decoded into one buffer that the on-card waveform shows. SAMSLOOP holds exactly ONE sample at a time — a new upload or recording REPLACES it (no playlist, no slots). After loading it sits SILENT and waits: it does NOT auto-play. A TRIGGER (a rising edge on the TRIG input, or the on-card TRIGGER button) starts playback, and what 'start' means depends on MODE — in one-shot mode the sample plays through the window once and returns to idle; in loop mode the trigger starts a continuous loop and a re-trigger restarts it from the window edge. Playback uses a fractional read-cursor with linear interpolation, so the RATE control is a full varispeed: positive = forward, negative = REVERSE, |value| = speed (2 = double speed / one octave up, 0.5 = half). The START and END markers crop which slice of the sample plays/loops (draggable on the waveform). The output is mono.",
+    inputs: {
+      trig:
+        "Rising-edge trigger that STARTS playback per the current MODE: in one-shot mode it plays the cropped window through once; in loop mode it starts the loop (and a re-trigger restarts it from the window edge — START for forward, END for reverse). Works alongside the on-card TRIGGER button. While idle (no trigger yet) the module is silent.",
+      rate_cv:
+        "CV that offsets the RATE param (linear): ±1 V swings the playback rate by ±1 unit on top of the slider, so an LFO here does pitch/speed wobble, tape-stop, or reverse sweeps. The summed rate is clamped to the worklet's [−3, +3] range; crossing zero flips playback direction.",
+      audio_l_in:
+        "Left audio RECORD input — patch a source here and arm recording to capture it into the sample buffer (replacing whatever was loaded). Mono sources work with just this jack.",
+      audio_r_in:
+        "Right audio RECORD input — the second channel for a stereo recording (it's mono-mixed into the single buffer on stop). Normalizes to audio_l_in when left unpatched, so a mono source needs only the left jack.",
+    },
+    outputs: {
+      out: "Mono audio output — the played/looped sample at the current RATE (forward or reversed), cropped to the START..END window. Silent until a trigger starts playback.",
+    },
+    controls: {
+      rate:
+        "Varispeed playback RATE (−2..+2, default +1 = forward unity). Positive plays forward, negative plays in REVERSE; |value| is the speed (2 = 2× / +1 octave, 0.5 = half / −1 octave). Center (+1) is the no-op unity speed. CV via the rate_cv input (summed, clamped to ±3).",
+      mode:
+        "Playback MODE: LOOP (1, default) = a trigger starts a continuous loop that keeps going (re-trigger restarts it); ONE-SHOT (0) = a trigger plays the window through once and returns to idle/silent.",
+      start:
+        "START of the playback window, in sample frames from the buffer's beginning (the left waveform marker). Crops where playback/looping begins (and where reverse playback ends). Auto-clamped to the loaded sample's length.",
+      end:
+        "END of the playback window, in sample frames (the right waveform marker). Crops where playback/looping ends (and where reverse playback begins). Together START..END select the slice that plays or loops; auto-clamped to the sample length.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

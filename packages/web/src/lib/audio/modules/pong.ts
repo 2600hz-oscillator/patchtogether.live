@@ -96,6 +96,26 @@ export const pongDef: AudioModuleDef = {
     },
   ],
 
+  docs: {
+    explanation:
+      "A playable two-paddle Pong game wrapped as a CV/gate module — the rally drives the patch. A ball bounces between a left and right paddle; you position each paddle with a CV input (so an LFO, sequencer, envelope follower, or a JOYSTICK CV plays it — wire one side to a slow LFO for an auto-rally, or two players each on their own CV), and the game emits a gate pulse whenever a side scores (the ball gets past the opposite paddle). So Pong becomes a generative trigger source whose pulse timing depends on the back-and-forth. The court renders on the card's 2D canvas; since the module is vizPassthrough, that canvas can be portaled into a containing GROUP card for cross-domain video. SPEED scales the ball velocity, PADDLE sets paddle height, and SERVE sets how wide the serve angle varies.",
+    inputs: {
+      paddle_left:
+        "Bipolar CV (−1..+1) setting the LEFT paddle's vertical position — −1 = top, 0 = center, +1 = bottom. Read at scheduler-tick rate (it's a continuous position, not a gate). Drive it with an LFO for an auto-rally, a sequencer for stepped jumps, or a JOYSTICK/MIDI CV to play by hand.",
+      paddle_right: "Bipolar CV (−1..+1) setting the RIGHT paddle's vertical position (−1 top, 0 center, +1 bottom). The opponent's paddle — drive it the same way as the left.",
+    },
+    outputs: {
+      score_left:
+        "Fires a 5 ms pulse each time the LEFT side scores (the ball passes the RIGHT paddle). A trigger you can route to a sound, counter, or scene change to sonify the rally's outcome.",
+      score_right: "Fires a 5 ms pulse each time the RIGHT side scores (the ball passes the LEFT paddle).",
+    },
+    controls: {
+      speed: "Ball speed multiplier (0.25..4, log, default 1) — scales how fast the ball travels, so faster = quicker rallies and a denser stream of SCORE pulses.",
+      paddleH: "Paddle height as a fraction of the court (0.05..0.5, default 0.2) — taller paddles are easier to defend with (longer rallies, fewer scores); shorter paddles miss more often.",
+      serveAngle: "Serve-angle variance (0..1, default 0.3) — how much the launch angle randomly varies on each serve. 0 = nearly flat, predictable serves; 1 = wide, steep, unpredictable serves.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // ---- CV input taps ---------------------------------------------------
     // Mirrors BUGGLES' pattern: a small-fftSize AnalyserNode tap per CV

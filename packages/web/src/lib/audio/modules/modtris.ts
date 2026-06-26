@@ -93,6 +93,30 @@ export const modtrisDef: AudioModuleDef = {
     },
   ],
 
+  docs: {
+    explanation:
+      "A playable Tetris-style block-stacking game wrapped as a CV/gate module — the falling-block gameplay drives the patch. Pieces drop into a 10×20 well at a tempo you set (DROP); you steer and rotate them with five gate inputs, and the game emits gate pulses on the events it produces: every line cleared and an overfill (game over). So a sequencer or clock pattern playing the game becomes a generative trigger source whose rhythm follows the stacking — a four-line 'Tetris' fires four separate LINE pulses in quick succession. You play entirely over the patch (the card just shows the well + next-piece preview on a 2D canvas); since the module is vizPassthrough, that canvas can be portaled into a containing GROUP card for cross-domain video. DROP sets the gravity tempo and LVL sets how many cleared lines bump the difficulty.",
+    inputs: {
+      rotate_l: "Rotate the current piece counter-clockwise on each rising edge — one quarter-turn per pulse (acts on the leading edge only, so a held gate rotates once).",
+      rotate_r: "Rotate the current piece clockwise on each rising edge — one quarter-turn per pulse.",
+      drop_fast: "Hard/fast-drop the current piece on each rising edge — slams it down a step (or to the bottom) per pulse, locking it sooner.",
+      move_l: "Move the current piece one column LEFT on each rising edge — one cell per pulse.",
+      move_r: "Move the current piece one column RIGHT on each rising edge — one cell per pulse.",
+    },
+    outputs: {
+      line_cleared:
+        "Fires a 5 ms pulse for each line cleared — a single clear is one pulse, a Tetris (four lines at once) emits FOUR distinct staggered pulses so a downstream counter or envelope sees each line. Patch into a drum/envelope trigger to sonify clears.",
+      overfill:
+        "Fires a single 5 ms pulse when the well overfills (a piece locks above the top = game over). Use it as an end-of-run trigger — fire a sound, reset a scene, or restart another module.",
+    },
+    controls: {
+      gravityBpm:
+        "DROP gravity tempo in BPM (30..240, log, default 60) — how fast pieces fall on their own. Higher = faster, more frantic stacking (and a denser stream of LINE/OVERFILL pulses).",
+      levelStep:
+        "LVL threshold (1..20, default 10) — how many cleared lines it takes to advance a level and ramp the difficulty (gravity speeds up each level). Lower = a steeper difficulty curve.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // ---- Gate-in analyser taps (5 of them) -----------------------------
     // Mirrors PONG. Each tap is a small-fftSize AnalyserNode; we read the
