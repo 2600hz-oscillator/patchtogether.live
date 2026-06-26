@@ -186,6 +186,14 @@ export const cameraInputDef: VideoModuleDef = {
     // docs manifest in sync; the cross-domain CV bridge looks up the
     // target via port id directly.
     { id: 'gain', type: 'cv', paramTarget: 'gain', cvScale: { mode: 'linear' } },
+    // Gate input that drives the MIRROR toggle: while the gate level is HIGH the
+    // image is mirrored, while it's LOW it isn't (level-sensitive — edge:'gate',
+    // matching the on-card Mirror button which is a held state, not a one-shot).
+    // No cvScale ⇒ the cv bridge passes the RAW gate level straight to the
+    // `mirror` param (see cv-bridge-map.ts), and the shader thresholds it at 0.5
+    // (uMirror > 0.5) — so patch an LFO / clock / gate here to flip the mirror in
+    // time with the music. With nothing patched, the Mirror button still owns it.
+    { id: 'mirror', type: 'gate', paramTarget: 'mirror', edge: 'gate' },
   ],
   outputs: [
     { id: 'out', type: 'video' },
