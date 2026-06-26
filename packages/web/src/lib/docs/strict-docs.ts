@@ -308,4 +308,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'colorizer',
   'luma',
   'lumakey',
+  // Video batch 2 (2026-06-26): single-effect processors + delay.
+  'chroma',
+  'monoglitch',
+  'vdelay',
+  'reshaper',
+  'tiler',
+  'freezeframe',
 ]);

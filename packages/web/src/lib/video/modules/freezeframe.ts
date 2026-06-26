@@ -298,6 +298,29 @@ export const freezeframeDef: VideoModuleDef = {
     { id: 'gateLevel',  label: 'GATE',       defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "FREEZEFRAME fuses two video effects in one card. First, a SAMPLE & HOLD \"freeze\": with nothing patched to GATE the source passes through live; patch a gate and the module captures the current frame only while the gate is HIGH (level >= 0.5) and FREEZES the last-captured frame whenever it drops low — so an LFO square plays while open and stutter-freezes the instant it closes (a continuously-high gate looks live). The first frame always captures so the buffer seeds with real content instead of black. Second, a PER-CHANNEL POSTERIZE: four QUANT knobs each reduce one channel's colour depth, mapping the sweep geometrically in log2 from 256 levels (full depth) at min, through 32 at midway, to 2 (on/off) at max — crank all four for a hard few-bit posterized look. The shader posterizes each channel with floor(c*levels)/(levels-1); the combined output also applies the QUANT-luma reduction as a hue-preserving luma ratio so that knob still shapes the main out. Five outputs let you tap the recombined image, each isolated channel as a grey intensity image, or the Rec.601 luma. Usage hint: drive GATE from an LFO or clock to strobe/freeze a video feed, then dial the QUANT knobs for VHS/8-bit colour crushing; fan the R/G/B/LUMA taps into separate processors for channel-split effects.",
+    inputs: {
+      video_in: "The source video frame fed into the sample-and-hold buffer and posterizer.",
+      gate_in: "Sample-and-hold gate. Unpatched = continuous live passthrough; patched = captures a fresh frame only while the gate is HIGH (>= 0.5) and freezes the held frame while it is LOW. Reads on both edges as a gate, not a one-shot trigger.",
+    },
+    outputs: {
+      video_out: "The recombined R/G/B image with each channel's posterize applied, plus the QUANT-LUMA reduction as a hue-preserving luma ratio. The card's on-screen preview shows this output.",
+      r_out: "The posterized RED channel alone, rendered as a grey intensity image (R copied to all three channels).",
+      g_out: "The posterized GREEN channel alone, rendered as a grey intensity image.",
+      b_out: "The posterized BLUE channel alone, rendered as a grey intensity image.",
+      luma_out: "The Rec.601 luma (0.299R+0.587G+0.114B), posterized by QUANT LUMA, rendered as a grey intensity image.",
+    },
+    controls: {
+      quant_r: "QUANT R — posterize amount for the red channel. min = 256 levels (full depth / passthrough), midway = 32 levels, max = 2 levels (on/off). Affects video_out and r_out.",
+      quant_g: "QUANT G — posterize amount for the green channel, 256 levels at min down to 2 at max. Affects video_out and g_out.",
+      quant_b: "QUANT B — posterize amount for the blue channel, 256 levels at min down to 2 at max. Affects video_out and b_out.",
+      quant_luma: "QUANT LUMA — posterize amount for the Rec.601 luma, 256 levels at min down to 2 at max. Drives luma_out and applies an overall luma-depth reduction to video_out as a hue-preserving ratio.",
+      gateLevel: "GATE — hidden synthetic param the cross-domain CV bridge writes from gate_in every frame; it carries the live gate level into the sample-and-hold decision (and its per-frame write is how the module detects the gate is patched). Exposed only as the gate cv jack, not as a knob.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

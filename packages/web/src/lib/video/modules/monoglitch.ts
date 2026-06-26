@@ -170,6 +170,30 @@ export const monoglitchDef: VideoModuleDef = {
     { id: 'tintB',     label: 'Tint B',    defaultValue: DEFAULTS.tintB,     min: 0,  max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "MONOGLITCH is a luma-driven scanline-displacement glitch effect that doubles as a chainable video OUTPUT. It quantizes the incoming video into a stack of horizontal scanlines (Lines count) and, per line, samples the source luminance at the row center and lifts that line's vertical position upward by luma x Z, so bright pixels bow the lines up while dark areas leave them flat. Each line is rendered as a thin tinted band whose thickness is set by Gap and whose color comes from the R/G/B tint (default a green-phosphor look); the source luminance also gives bright bands a subtle brightness bonus (band color scales by 0.4 + luma x 0.8). H Ramp and V Ramp pan the sampled image horizontally/vertically and wrap at the edges, so feeding them saw LFOs scrolls the whole field. Despite the historical RUTTETRA name it is NOT a true Rutt/Etra raster remap (see reshaper/ruttetra for that) - it is a stylized oscilloscope/CRT-glitch aesthetic. Patch a video source into IN, dial Lines and Z for the scan density and warp, tint to taste, then take OUT into another video module or to screen. With nothing patched it shows a dark-navy idle sweep. The card has an on-card video preview screen showing this module's own glitched output; in hide-controls mode the preview is resizable by dragging the corner handle.",
+    inputs: {
+      in: "Video source. Its per-pixel luminance (sampled once per scanline at the row center) is what drives every scanline's vertical displacement; with no input the card shows a dark-navy idle sweep. Accepts video/image/keys via the engine's implicit upcasts.",
+      hRamp: "CV that modulates the H Ramp control (horizontal pan). Sampling wraps at the edges, so a saw LFO here scrolls the image left/right seamlessly.",
+      vRamp: "CV that modulates the V Ramp control (vertical pan). Wraps at the edges, so a saw LFO here scrolls the scanline field up/down seamlessly.",
+      intensity: "CV that modulates the Z control (luma-to-displacement scale) - the amount each scanline lifts upward in response to source brightness.",
+    },
+    outputs: {
+      out: "Glitched RGB video: the tinted, luma-displaced scanline field rendered into this module's own per-instance FBO. Chainable into downstream video modules or to an OUTPUT/screen.",
+    },
+    controls: {
+      hRamp: "H Ramp (labeled H, -1..1): horizontal pan offset applied to the sampled image; wraps at the edges so it scrolls rather than clips. 0 = no pan.",
+      vRamp: "V Ramp (labeled V, -1..1): vertical pan offset applied to the sampled image; wraps at the edges so it scrolls rather than clips. 0 = no pan.",
+      intensity: "Z (labeled Z, 0..1): luma-to-displacement scale. Higher values lift bright scanlines further upward (max upward shift = luma x Z x 0.4 of canvas height, so a fully-bright line at Z=1 won't overlap the line above by more than ~half a band); 0 leaves all lines flat at their nominal positions. Default 0.6.",
+      lines: "Lines (labeled Lines, 8..240): number of horizontal scanlines the image is quantized into. More lines = a denser, finer scan; band thickness auto-shrinks as the count rises to stay readable. Default 96.",
+      spacing: "Spacing (labeled Gap, 0..0.95): scanline gap / band thinning. 0 = thickest bands; toward 0.95 = thin lines with wide dark gaps between them (band height scales by 1 - spacing). Default 0.2.",
+      tintR: "Tint R (labeled R, 0..1): red component of the band color. Default 0.4 (part of the green-phosphor default tint).",
+      tintG: "Tint G (labeled G, 0..1): green component of the band color. Default 1.0 (part of the green-phosphor default tint).",
+      tintB: "Tint B (labeled B, 0..1): blue component of the band color. Default 0.5 (part of the green-phosphor default tint).",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

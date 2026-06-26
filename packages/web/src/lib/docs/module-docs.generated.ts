@@ -382,6 +382,29 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "width": "PULSE SHAPE: width of the excitation pulse (0.1–50 ms, log) — how long the strike pushes the body before it decays; shown in the envelope preview."
     }
   },
+  "chroma": {
+    "explanation": "CHROMA is a single-input hue-shifter / colorizer (not a keyer — use CHROMAKEY to composite a foreground over a background). For every pixel of the incoming video it converts RGB to HSV, rotates the hue by the Hue control (in degrees, wrapped with fract() so it cycles cleanly around the color wheel including negative shifts), multiplies the saturation by the Sat control (0 desaturates to grayscale, 1 leaves color untouched, above 1 intensifies toward fully-saturated color — the result is clamped at maximum saturation so it can't exceed it), converts back to RGB, then lerps the result toward the tint color (tintR/tintG/tintB) by the Mix amount. With Mix at 0 the tint is bypassed and you get a pure hue/saturation pass; at 1 every pixel becomes the flat tint color, with values in between producing a duotone-style wash that biases the image toward the chosen color. Use it to recolor a clip, sweep a video through the spectrum (patch an LFO into hue), drain it to black-and-white, or apply a colored grade. With no input connected the output is opaque black.",
+    "inputs": {
+      "hue": "CV input that modulates the Hue control (linear -180..180 degrees of hue rotation); patch an LFO to cycle the image through the color spectrum.",
+      "in": "Video input: the RGB frame to recolorize. When nothing is patched here the module outputs opaque black.",
+      "saturation": "CV input that modulates the Sat control (linear 0..2 saturation multiplier): 0 drains to grayscale, 1 is unchanged, above 1 intensifies toward full (clamped) saturation.",
+      "tintB": "CV input that modulates the blue channel of the tint color (linear 0..1); also written by the card's color picker.",
+      "tintG": "CV input that modulates the green channel of the tint color (linear 0..1); also written by the card's color picker.",
+      "tintMix": "CV input that modulates the Mix control (linear 0..1), the blend amount toward the tint color: 0 bypasses the tint, 1 forces every pixel to the flat tint.",
+      "tintR": "CV input that modulates the red channel of the tint color (linear 0..1); also written by the card's color picker."
+    },
+    "outputs": {
+      "out": "Video output: the hue-shifted, saturation-scaled, and tint-blended RGB frame (opaque alpha)."
+    },
+    "controls": {
+      "hue": "Hue: rotates the input's hue around the color wheel, -180 to +180 degrees (default 0 = no shift). The rotation wraps, so it cycles cleanly through the spectrum.",
+      "saturation": "Sat: saturation multiplier from 0 to 2 (default 1). 0 collapses to grayscale, 1 leaves color untouched, above 1 pushes toward vivid (clamped so it cannot exceed full saturation).",
+      "tintB": "B: blue channel of the tint color, 0 to 1 (default 1). The card sets it via the color picker; it stays exposed for CV. Only affects output when Mix > 0.",
+      "tintG": "G: green channel of the tint color, 0 to 1 (default 1). The card sets it via the color picker; it stays exposed for CV. Only affects output when Mix > 0.",
+      "tintMix": "Mix: blend toward the tint color, 0 to 1 (default 0). 0 bypasses the tint entirely, intermediate values wash the image toward the tint, 1 replaces every pixel with the flat tint color.",
+      "tintR": "R: red channel of the tint color, 0 to 1 (default 1). The card sets it via the color picker; it stays exposed for CV. Only affects output when Mix > 0."
+    }
+  },
   "chromakey": {
     "explanation": "chromakey is a two-input green-screen compositor: it takes a foreground video (the layer shot against a key colour) and a background video, and replaces every foreground pixel whose hue is close to the chosen key colour with the matching background pixel. Per pixel it converts foreground and key colour to HSV, measures the hue distance, and builds an alpha via smoothstep over the thr/soft window (alpha 0 = show background, alpha 1 = keep foreground); near-gray pixels are biased toward keep so shadows and highlights are not punched out, and edge pixels are desaturated by the spill amount to kill the key-colour halo. Pick the key colour with the swatch (defaults to pure green), then tune thr until the backdrop drops out cleanly, raise soft to feather the matte edge, and add spill to remove green fringing on the subject; if no foreground is patched it just passes the background through.",
     "inputs": {
@@ -977,6 +1000,27 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "xyz_yshape": "XYZ Y-SHAPE (0..1) — legacy XYZ-window control affecting the on-card scope draw.",
       "xyz_zheight": "Z-HEIGHT (0..1) — how much raster C adds a secondary vertical displacement on top of B's primary heightmap, deepening the 3D relief of the field.",
       "xyz_zoom": "ZOOM (1..8) — crops the displayed/scanned field to a centered sub-region of the box, giving fewer, larger peaks (4 = the default \"zoomed-in\" look)."
+    }
+  },
+  "freezeframe": {
+    "explanation": "FREEZEFRAME fuses two video effects in one card. First, a SAMPLE & HOLD \"freeze\": with nothing patched to GATE the source passes through live; patch a gate and the module captures the current frame only while the gate is HIGH (level >= 0.5) and FREEZES the last-captured frame whenever it drops low — so an LFO square plays while open and stutter-freezes the instant it closes (a continuously-high gate looks live). The first frame always captures so the buffer seeds with real content instead of black. Second, a PER-CHANNEL POSTERIZE: four QUANT knobs each reduce one channel's colour depth, mapping the sweep geometrically in log2 from 256 levels (full depth) at min, through 32 at midway, to 2 (on/off) at max — crank all four for a hard few-bit posterized look. The shader posterizes each channel with floor(c*levels)/(levels-1); the combined output also applies the QUANT-luma reduction as a hue-preserving luma ratio so that knob still shapes the main out. Five outputs let you tap the recombined image, each isolated channel as a grey intensity image, or the Rec.601 luma. Usage hint: drive GATE from an LFO or clock to strobe/freeze a video feed, then dial the QUANT knobs for VHS/8-bit colour crushing; fan the R/G/B/LUMA taps into separate processors for channel-split effects.",
+    "inputs": {
+      "gate_in": "Sample-and-hold gate. Unpatched = continuous live passthrough; patched = captures a fresh frame only while the gate is HIGH (>= 0.5) and freezes the held frame while it is LOW. Reads on both edges as a gate, not a one-shot trigger.",
+      "video_in": "The source video frame fed into the sample-and-hold buffer and posterizer."
+    },
+    "outputs": {
+      "b_out": "The posterized BLUE channel alone, rendered as a grey intensity image.",
+      "g_out": "The posterized GREEN channel alone, rendered as a grey intensity image.",
+      "luma_out": "The Rec.601 luma (0.299R+0.587G+0.114B), posterized by QUANT LUMA, rendered as a grey intensity image.",
+      "r_out": "The posterized RED channel alone, rendered as a grey intensity image (R copied to all three channels).",
+      "video_out": "The recombined R/G/B image with each channel's posterize applied, plus the QUANT-LUMA reduction as a hue-preserving luma ratio. The card's on-screen preview shows this output."
+    },
+    "controls": {
+      "gateLevel": "GATE — hidden synthetic param the cross-domain CV bridge writes from gate_in every frame; it carries the live gate level into the sample-and-hold decision (and its per-frame write is how the module detects the gate is patched). Exposed only as the gate cv jack, not as a knob.",
+      "quant_b": "QUANT B — posterize amount for the blue channel, 256 levels at min down to 2 at max. Affects video_out and b_out.",
+      "quant_g": "QUANT G — posterize amount for the green channel, 256 levels at min down to 2 at max. Affects video_out and g_out.",
+      "quant_luma": "QUANT LUMA — posterize amount for the Rec.601 luma, 256 levels at min down to 2 at max. Drives luma_out and applies an overall luma-depth reduction to video_out as a hue-preserving ratio.",
+      "quant_r": "QUANT R — posterize amount for the red channel. min = 256 levels (full depth / passthrough), midway = 32 levels, max = 2 levels (on/off). Affects video_out and r_out."
     }
   },
   "frogger": {
@@ -2009,6 +2053,28 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "levelStep": "LVL threshold (1..20, default 10) — how many cleared lines it takes to advance a level and ramp the difficulty (gravity speeds up each level). Lower = a steeper difficulty curve."
     }
   },
+  "monoglitch": {
+    "explanation": "MONOGLITCH is a luma-driven scanline-displacement glitch effect that doubles as a chainable video OUTPUT. It quantizes the incoming video into a stack of horizontal scanlines (Lines count) and, per line, samples the source luminance at the row center and lifts that line's vertical position upward by luma x Z, so bright pixels bow the lines up while dark areas leave them flat. Each line is rendered as a thin tinted band whose thickness is set by Gap and whose color comes from the R/G/B tint (default a green-phosphor look); the source luminance also gives bright bands a subtle brightness bonus (band color scales by 0.4 + luma x 0.8). H Ramp and V Ramp pan the sampled image horizontally/vertically and wrap at the edges, so feeding them saw LFOs scrolls the whole field. Despite the historical RUTTETRA name it is NOT a true Rutt/Etra raster remap (see reshaper/ruttetra for that) - it is a stylized oscilloscope/CRT-glitch aesthetic. Patch a video source into IN, dial Lines and Z for the scan density and warp, tint to taste, then take OUT into another video module or to screen. With nothing patched it shows a dark-navy idle sweep. The card has an on-card video preview screen showing this module's own glitched output; in hide-controls mode the preview is resizable by dragging the corner handle.",
+    "inputs": {
+      "hRamp": "CV that modulates the H Ramp control (horizontal pan). Sampling wraps at the edges, so a saw LFO here scrolls the image left/right seamlessly.",
+      "in": "Video source. Its per-pixel luminance (sampled once per scanline at the row center) is what drives every scanline's vertical displacement; with no input the card shows a dark-navy idle sweep. Accepts video/image/keys via the engine's implicit upcasts.",
+      "intensity": "CV that modulates the Z control (luma-to-displacement scale) - the amount each scanline lifts upward in response to source brightness.",
+      "vRamp": "CV that modulates the V Ramp control (vertical pan). Wraps at the edges, so a saw LFO here scrolls the scanline field up/down seamlessly."
+    },
+    "outputs": {
+      "out": "Glitched RGB video: the tinted, luma-displaced scanline field rendered into this module's own per-instance FBO. Chainable into downstream video modules or to an OUTPUT/screen."
+    },
+    "controls": {
+      "hRamp": "H Ramp (labeled H, -1..1): horizontal pan offset applied to the sampled image; wraps at the edges so it scrolls rather than clips. 0 = no pan.",
+      "intensity": "Z (labeled Z, 0..1): luma-to-displacement scale. Higher values lift bright scanlines further upward (max upward shift = luma x Z x 0.4 of canvas height, so a fully-bright line at Z=1 won't overlap the line above by more than ~half a band); 0 leaves all lines flat at their nominal positions. Default 0.6.",
+      "lines": "Lines (labeled Lines, 8..240): number of horizontal scanlines the image is quantized into. More lines = a denser, finer scan; band thickness auto-shrinks as the count rises to stay readable. Default 96.",
+      "spacing": "Spacing (labeled Gap, 0..0.95): scanline gap / band thinning. 0 = thickest bands; toward 0.95 = thin lines with wide dark gaps between them (band height scales by 1 - spacing). Default 0.2.",
+      "tintB": "Tint B (labeled B, 0..1): blue component of the band color. Default 0.5 (part of the green-phosphor default tint).",
+      "tintG": "Tint G (labeled G, 0..1): green component of the band color. Default 1.0 (part of the green-phosphor default tint).",
+      "tintR": "Tint R (labeled R, 0..1): red component of the band color. Default 0.4 (part of the green-phosphor default tint).",
+      "vRamp": "V Ramp (labeled V, -1..1): vertical pan offset applied to the sampled image; wraps at the edges so it scrolls rather than clips. 0 = no pan."
+    }
+  },
   "moog902": {
     "explanation": "A clean-room recreation of the Moog 902 Voltage Controlled Amplifier — the System 35/55 VCA that turns a control voltage into level. The signal you feed in is amplified by a gain that is the SUM, in volts, of the manual GAIN pot plus the two summing CONTROL INPUTS (CV scaled by the CV-depth knob, and FCV added straight). Overall gain reaches ×2 (+6 dB) when that control sum hits 6 V and tops out at a ×3 ceiling around 7.5 V. A RESPONSE switch picks the gain law: LINEAR rises straight to ×2 at 6 V, EXPONENTIAL passes through the same ×2 at 6 V but climbs faster toward the ceiling. Like the hardware it has a true differential output pair — the normal output and its phase-inverted twin. Patch an envelope or LFO into CV to shape dynamics or tremolo; leave everything unpatched and the GAIN pot is a static volume.",
     "inputs": {
@@ -2800,6 +2866,28 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "wrap": "WRAP — what happens when the scan cursor reaches the end of the frame: 0 wraps around and keeps accumulating (toroidal drift), 1 clears on wrap for a clean top-to-bottom repaint sweep."
     }
   },
+  "reshaper": {
+    "explanation": "RESHAPER is a coordinate-remap video processor that emulates a CRT raster scan whose horizontal and vertical sweeps are patchable instead of fixed. For every output pixel it reads a horizontal coordinate from the X field and a vertical coordinate from the Y field (the red channel of each mono-video texture), then samples the Z source video at that remapped position. With X and Y unpatched it falls back to identity ramps (screen-u, screen-v), so Z passes straight through like a normal display. Feed X/Y from shaped ramps (e.g. SHAPEDRAMPS folds, triangles, or radial fields) and the source video is rebuilt inside that deformed coordinate space — folded, mirrored, or circularised. On top of the field remap, the source's own brightness at each screen pixel pushes the lookup: luma above mid-grey lifts, below pushes back, scaled by X Disp / Y Disp — the classic Rutt/Etra \"raised terrain\" displacement. The final color is multiplied by Intensity and the R/G/B tint. Usage: patch a video into Z for a quick scanline display; drive X and/or Y from a ramp generator to warp it, or just dial X Disp / Y Disp for a luma-relief effect from Z alone. Output is a standard video texture, so chain it downstream (e.g. LINES into RESHAPER into MONOGLITCH). The card shows a live preview of the remapped output; in hide-controls mode the preview becomes a resizable screen (drag the bottom-right corner; double-click the frame to restore defaults).",
+    "inputs": {
+      "intensity": "intensity — CV input that modulates the Intensity control (linear), scaling the output brightness/contribution of the remapped video.",
+      "x": "X — mono-video horizontal coordinate field. Its red channel replaces the linear horizontal scan ramp, so each output pixel reads its source u from this texture. Unpatched, it defaults to the identity ramp (no horizontal remap); patch a shaped ramp here to fold, mirror, or warp the image along X.",
+      "xDisp": "xDisp — CV input that modulates the X Disp control (linear), driving the horizontal luma-displacement amount from automation or another module.",
+      "y": "Y — mono-video vertical coordinate field. Its red channel replaces the linear vertical scan ramp, supplying the source v for each output pixel. Unpatched, it defaults to the identity ramp (no vertical remap); patch a shaped ramp here to deform the image along Y.",
+      "yDisp": "yDisp — CV input that modulates the Y Disp control (linear), driving the vertical luma-displacement amount from automation or another module.",
+      "z": "Z — source video to be remapped (polymorphic video; mono-video, image, or keys upcast in cleanly). It is sampled at the remapped (X, Y) coordinate. Unpatched, RESHAPER shows flat mid-grey rather than black so a cold-spawned card isn't a void."
+    },
+    "outputs": {
+      "out": "out — the remapped RGB video (the rendered FBO texture, same image shown in the on-card preview). Chain it into any downstream video module."
+    },
+    "controls": {
+      "intensity": "Intensity (0..2, default 1) — overall output gain on the remapped video; 0 blacks the output, 1 is unity, above 1 boosts toward clipping (the result is clamped).",
+      "tintB": "Tint B (0..1, default 1) — multiplies the blue channel of the output; lower to remove blue from the tint.",
+      "tintG": "Tint G (0..1, default 1) — multiplies the green channel of the output; lower to remove green from the tint.",
+      "tintR": "Tint R (0..1, default 1) — multiplies the red channel of the output; lower to remove red from the tint.",
+      "xDisp": "X Disp (-1..1, default 0) — horizontal luma displacement. Each pixel's source u is shifted by (sourceLuma − 0.5) × this amount, so bright areas of Z push one way and dark areas the other (Rutt/Etra raised-terrain); 0 disables horizontal displacement.",
+      "yDisp": "Y Disp (-1..1, default 0) — vertical luma displacement. Each pixel's source v is shifted by (sourceLuma − 0.5) × this amount, lifting bright pixels and pushing dark ones vertically; 0 disables vertical displacement."
+    }
+  },
   "resofilter": {
     "explanation": "A clean multi-mode resonant filter (ported from Resonarium's MultiFilter) built on a zero-delay-feedback state-variable topology, so all of its modes share one filter state and switching between them mid-sound is pop-free. One MODE knob picks the response — Low-pass (attenuate above cutoff), High-pass (attenuate below), Band-pass (peak at cutoff), Notch (dip at cutoff), or Allpass (flat magnitude, phase-rotating) — and the card prints the long-form name of the current mode next to the knob. The input is stereo-aware (independent L/R filter state preserves the image), CUTOFF and RESONANCE are CV-modulatable, and a MIX knob crossfades dry to wet (turn it to 0 for bypass). A general-purpose tone-shaper for both subtractive synth voices and full mixes.",
     "inputs": {
@@ -3513,6 +3601,19 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "smoothness": "SMOOTH — how rounded vs. sharp the slope's corners are; low values give crisp, even folded edges, high values smooth the curve into gentle bends."
     }
   },
+  "tiler": {
+    "explanation": "TILER is the classic video-mixer \"multiscreen / tile\" effect: it repeats the incoming frame across a landscape cols×rows grid, where every cell shows the FULL source scaled down to fit, so each tile is a lower-resolution thumbnail of the same picture. A 2×2 grid is 4 copies, an 8×8 grid is 64 tiny copies. It's a single-pass shader whose whole effect is one line — fract(uv * vec2(cols, rows)) stretches the UV across the cells and wraps each cell back to the full 0..1 input, so each tile samples the entire source; at the 1×1 step fract(uv)==uv, making it an exact 1:1 passthrough. TILER is stateless per frame (no feedback or history), so tiled copies move and transform live with whatever feeds it. Drop it inline on a video chain and dial the TILE knob up for a quick multiscreen wall, or sweep it (or modulate it via CV) to step between grid densities. With no input it outputs solid black.",
+    "inputs": {
+      "in": "Video source to tile. Each grid cell shows this entire frame scaled to fit the cell, so the picture is repeated cols×rows times across the output. With nothing patched here the output is solid black.",
+      "tile_cv": "CV that modulates the Tile control. It uses a discrete scale, so the incoming CV snaps to the grid steps and sums into the Tile index; the module then resolves the (possibly fractional) summed index to the nearest valid grid step, so it always lands on a real grid (1/4/6/12/16/64), never an in-between."
+    },
+    "outputs": {
+      "out": "The tiled frame — the source repeated across the resolved cols×rows landscape grid. At the lowest Tile step (total 1) this is an exact 1:1 passthrough of the input."
+    },
+    "controls": {
+      "tile": "Grid size — a 6-step discrete knob selecting the TOTAL tile count: 1, 4, 6, 12, 16, or 64. Each maps to a landscape grid (1×1, 2×2, 3×2, 4×3, 4×4, 8×8) so each cell keeps the source's wide aspect. Default is step 0 (total 1 = 1:1 passthrough, no tiling); higher steps pack more, smaller copies of the source."
+    }
+  },
   "timelorde": {
     "explanation": "The rack's master clock — one canonical tempo source per patch (it's a singleton and can't be deleted; a rack that opens without one gets one dropped in automatically). Set a BPM and TIMELORDE fans out a whole family of clock outputs at standard musical divisions of that tempo, from a quarter-note pulse up through sixteenths and down to multi-bar pulses, plus a swung tap — so any sequencer, LFO, or trigger consumer can patch the exact division it needs without a separate clock divider. Patch an external clock into CLOCK IN and it locks its tempo to the incoming pulses (and follows that measured BPM everywhere, including LIVECODE's clock). Its transport is drivable hands-free via START/STOP gate inputs (wire a MIDICLOCK's start/stop to slave the rack to hardware), and the big card display shows a beat-pulsing neon WIZARD — or, if you patch a video feed into VIDEO IN, it becomes a live monitor that also passes the feed through VIDEO OUT, so TIMELORDE can sit inline in a video chain.",
     "inputs": {
@@ -3664,6 +3765,24 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     "controls": {
       "base": "A static DC offset added to the CV signal (linear 0 to 1, default 0). Set to 0 for silent when unpatched; set to 1 for unity gain. Typically used as a quick volume control or to set the VCA's baseline attenuation.",
       "cvAmount": "Controls the scale and sign of the CV input (linear −1 to 1, default 1). Positive values amplify normally; negative values invert the CV so a high incoming signal produces low gain. Useful for inverting modulation or creating sidechain-style ducking effects."
+    }
+  },
+  "vdelay": {
+    "explanation": "A video delay line with feedback echo — the visual analog of a tape/analog audio echo for the picture domain. VDELAY keeps a ring of 32 frame buffers; each frame a WRITE pass renders a new head slot equal to the live input plus a feedback-attenuated copy of the slot one delay-time ago, so the same image re-enters the ring and decays into a chain of repeats spaced by the delay length (this frame, then N frames later, then 2N, 3N...). A separate COMPOSE pass produces the visible output as a dry/wet mix between the live input and that delayed tap, so at low Mix you see the source with a faint trailing ghost and at high Mix you see mostly the echoes. With short Time and high Feedback you get fast, dense smearing/trails; long Time gives discrete stutter-style repeats. Color multiplicatively tints the feedback path toward a warm magenta, and because it is applied each pass the trails drift in hue (and darken slightly) as they age. Wire a video source into IN and route OUT into an OUTPUT, MONOGLITCH, or RUTTETRA card to watch the trails; push Feedback toward 0.95 for long-lived feedback ghosts without runaway.",
+    "inputs": {
+      "feedback_cv": "Linear CV that modulates the Feedback control, summed onto the knob over its 0..0.95 range to swell or starve the number of surviving repeats.",
+      "in": "Video source to delay. Its RGB is written into the ring buffer and is also the dry signal blended against the delayed tap in the compose pass; with nothing patched the card outputs black.",
+      "mix_cv": "Linear CV that modulates the Mix control, summed onto the knob over 0..1 to crossfade between the dry input and the wet echo trail.",
+      "time_cv": "Linear CV that modulates the Time control, summing on top of the knob to sweep the delay length across its full 1..32 frame range — modulate it to make the echo spacing breathe."
+    },
+    "outputs": {
+      "out": "The composited result: mix(input, delayed tap, Mix). The dry source blended with the feedback echo trail, ready to wire into an output or further video processor."
+    },
+    "controls": {
+      "colorShift": "Color (0..1, linear). Tints the fed-back echo path toward a warm magenta multiplier (0.9, 0.3, 0.7); applied per pass it compounds so successive repeats drift in hue (and dim). 0 leaves echoes untinted. Default 0.",
+      "delayTime": "Time (1..32 frames, linear). Sets how many frames back the echo tap reads, i.e. the spacing between repeats; ~533ms max at 60fps. Default 8 frames.",
+      "feedback": "Feedback (0..0.95, linear). How much of the previous tap is fed back into the ring slot each frame; higher values build longer, denser repeat chains, capped below 1 to avoid runaway. Default 0.4.",
+      "mix": "Mix (0..1, linear). Dry/wet crossfade in the visible output between the live input (0) and the delayed echo tap (1). Default 0.5."
     }
   },
   "veils": {
