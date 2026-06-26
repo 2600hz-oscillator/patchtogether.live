@@ -91,6 +91,23 @@ export const sampleHoldDef: AudioModuleDef = {
     },
   ],
 
+  docs: {
+    explanation:
+      "Two classic CV tools in one: a sample & hold AND a scale quantizer. Each rising edge at the GATE input grabs the current value at the CV input and holds it steady until the next edge — the staircase-random / random-arpeggio trick when you feed it noise or an LFO and clock it. The QUANT output additionally snaps that held value to the nearest note of the selected musical scale (1V/oct, root = C at 0V, 12-ET semitones per octave). When NOTHING is patched to GATE the module stops holding and instead passes CV through continuously — so QUANT becomes a live, free-running scale quantizer for any incoming pitch CV. The card shows the active scale name above the knob and a S&H / QUANTIZER hint reflecting whether the gate is patched. The sample/hold + quantize math runs in a DSP worklet.",
+    inputs: {
+      cv_in: "The value to sample (when gated) or quantize (when ungated). Typically a noise source, LFO or random CV for the classic stepped-random effect, or a pitch CV when used as a pure quantizer.",
+      gate_in:
+        "The sample clock: each rising edge latches the current cv_in and holds it on the outputs until the next rising edge. Leave it UNPATCHED and the module stops latching and passes cv_in through continuously — turning the module into a live quantizer.",
+    },
+    outputs: {
+      cv_out: "The held value — cv_in captured at the last gate edge (or, with the gate unpatched, the live passed-through cv_in). This is the raw sample & hold output, NOT quantized.",
+      cv_quant: "The same held/live value snapped to the nearest note of the selected SCALE (1V/oct, C/0V root). Patch this to an oscillator's pitch input for in-key stepped melodies from random CV.",
+    },
+    controls: {
+      scale: "Selects the quantize scale used by the QUANT output, as a stepped knob cycling through the built-in scales (e.g. Chromatic, Major, and other modes/scales); the active scale's NAME is shown above the knob. It affects only QUANT — the raw HOLD output is never quantized. Default Major.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

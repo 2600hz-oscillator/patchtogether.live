@@ -42,4 +42,19 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // any of which can misbehave in the engine-less doc sandbox — face fallback is
   // the safe default.
   'macrooscillator',
+  // Batch 3 — CV utilities & modulation shapers (2026-06-26): every one of these
+  // cards is a pure Knob/Fader/button + PatchPanel with NO onMount/$effect, no
+  // canvas/rAF/WebGL, no Web-MIDI panel, no file input, and no `card:` override —
+  // the macrooscillator profile — so each mounts cleanly in the engine-less doc
+  // sandbox. Verified live by e2e/tests/docs-virtual-module.spec.ts (a control
+  // hover updates the pane with no page error; unityscalemathematik + slewSwitch
+  // also exercise the CV→param dual context).
+  'polarizer',
+  'depolarizer',
+  'scaler',
+  'attenumix',
+  'veils',
+  'unityscalemathematik',
+  'sampleHold',
+  'slewSwitch',
 ]);

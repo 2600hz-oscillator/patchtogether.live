@@ -159,6 +159,38 @@ export const veilsDef: AudioModuleDef = {
     { id: 'resp4', label: 'Resp4', defaultValue: 1, min: 0, max: 1, curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A quad VCA and mixer modelled on the Mutable Instruments Veils: four independent voltage-controlled amplifiers that each have a gain knob, a CV input, a direct out, and a linear/exponential response toggle — feeding one summed MIX out. Per channel out = in · shape(knob + cv), where the gain knob spans 0..2: at unity-position knob a ±1V CV sweeps gain from 0 (CV at -1) to 2 (CV at +1). The four channels sum and pass through a tanh soft-clip (mix = tanh(sum)) — gain is NOT clamped at unity, so pushing knob+CV high overdrives into warm saturation rather than digital clipping. Use it as four utility VCAs, a CV-controlled mixer, or four cross-fading/amplitude-modulated voices. There is a DSP worklet for the per-sample VCA + soft-clip math.",
+    inputs: {
+      in1: "Channel 1 audio input — multiplied by its VCA gain shape(gain1 + cv1) into the channel-1 direct out and the mix.",
+      in2: "Channel 2 audio input, multiplied by shape(gain2 + cv2).",
+      in3: "Channel 3 audio input, multiplied by shape(gain3 + cv3).",
+      in4: "Channel 4 audio input, multiplied by shape(gain4 + cv4).",
+      cv1: "Channel 1 gain CV. Summed RAW with the gain knob (no scaling): a ±1V LFO at a unity-position knob sweeps gain 0..2, the natural full-range VCA modulation, so this is the per-channel tremolo / ducking / cross-fade control.",
+      cv2: "Channel 2 gain CV (raw, summed with gain2).",
+      cv3: "Channel 3 gain CV (raw, summed with gain3).",
+      cv4: "Channel 4 gain CV (raw, summed with gain4).",
+    },
+    outputs: {
+      out1: "Channel 1 direct VCA out — in1 · shape(gain1 + cv1), taken BEFORE the summing bus and soft-clip, so downstream sees the raw post-VCA channel.",
+      out2: "Channel 2 direct VCA out (pre-mix, pre-clip).",
+      out3: "Channel 3 direct VCA out (pre-mix, pre-clip).",
+      out4: "Channel 4 direct VCA out (pre-mix, pre-clip).",
+      mix: "The summed bus, soft-clipped: tanh(out1 + out2 + out3 + out4). Because the sum is not clamped before the tanh, driving channels past unity produces warm saturation — Veils' signature overdrive — instead of a hard clip.",
+    },
+    controls: {
+      gain1: "Channel 1 VCA gain knob, linear 0..2 (default 0 = silent). Sums with CV1; the past-unity range exists so knob + CV can push the channel into the mix soft-clip.",
+      gain2: "Channel 2 VCA gain, linear 0..2 (default 0). Sums with CV2.",
+      gain3: "Channel 3 VCA gain, linear 0..2 (default 0). Sums with CV3.",
+      gain4: "Channel 4 VCA gain, linear 0..2 (default 0). Sums with CV4.",
+      resp1: "Channel 1 response toggle: 0 = LINEAR (gain follows knob+CV directly — best for control signals), 1 = EXPONENTIAL (the signal is squared, giving smoother perceptual fades — best for audio). Default LINEAR.",
+      resp2: "Channel 2 response toggle (0 = linear, 1 = exponential). Default LINEAR.",
+      resp3: "Channel 3 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL (audio-friendly out of the box).",
+      resp4: "Channel 4 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

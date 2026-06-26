@@ -66,6 +66,20 @@ export const polarizerDef: AudioModuleDef = {
     { id: 'depth', label: 'DEPTH', defaultValue: 1, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A tiny one-knob CV utility that turns a UNIPOLAR signal into a BIPOLAR one: it takes a 0..1 control voltage and stretches it across -1..+1, applying out = (2·in - 1)·depth. The natural use is converting a 0..1 envelope, LFO or sequencer CV into a ±1 modulation source that can both RAISE and LOWER a destination (an unmodified envelope can only push a parameter up from where it sits; polarize it first and it can swing symmetrically about the knob). It is the exact inverse of DEPOLARIZER. There is no DSP worklet — it is a pure scale-plus-offset Web Audio graph, so the mapping is sample-accurate.",
+    inputs: {
+      in: "The unipolar control voltage to polarize, expected 0..1 (e.g. an envelope follower or a 0..1 LFO). The affine map is defined for any value — it just centers and linearly scales whatever arrives — but the labeled use is 0..1 in, ±depth out.",
+    },
+    outputs: {
+      out: "The bipolar result, out = (2·in - 1)·depth. At depth 1: in=0 gives -1, in=0.5 gives 0, in=1 gives +1. The mid-point of the input (0.5) always maps to 0, so this is the signal centered on zero and ready to add to / subtract from a destination.",
+    },
+    controls: {
+      depth: "Sets the bipolar swing on a linear 0..1 fader, scaling BOTH the slope and the offset together so the output stays centered on 0. 1 (default) = the full unipolar→bipolar conversion (±1); 0.5 = a half-size ±0.5 swing; 0 = flat 0 regardless of input. Effectively an attenuator on the polarized signal.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Affine graph: out = scale·in + offset, with scale = 2·depth, offset = −depth.
     //   in ──▶ inScale (gain = 2·depth) ──▶ out
