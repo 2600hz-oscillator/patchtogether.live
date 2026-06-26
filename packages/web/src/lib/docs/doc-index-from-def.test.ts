@@ -12,8 +12,8 @@ import { describe, it, expect } from 'vitest';
 import { buildDocIndexFromDef } from './doc-index-from-def';
 import { buildDocIndex } from './doc-index';
 import { buildModuleManifest } from './module-manifest';
+import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { adsrDef } from '$lib/audio/modules/adsr';
-import { analogVcoDef } from '$lib/audio/modules/analog-vco';
 
 describe('buildDocIndexFromDef — documented module (adsr)', () => {
   const index = buildDocIndexFromDef(adsrDef);
@@ -65,10 +65,21 @@ describe('buildDocIndexFromDef — documented module (adsr)', () => {
 });
 
 describe('buildDocIndexFromDef — undocumented module', () => {
-  it('returns null when the def has no authored docs (analogVco)', () => {
-    // analogVco is intentionally NOT in MODULE_DOCS — annotate is unavailable.
-    expect(analogVcoDef.docs).toBeUndefined();
-    expect(buildDocIndexFromDef(analogVcoDef)).toBeNull();
+  it('returns null when the def has no authored docs', () => {
+    // BEHAVIOR, not a specific module: a def with no `docs` block is
+    // annotate-ineligible. A synthetic def keeps this stable as the docs
+    // rollout documents more real modules over time (we used to point this at
+    // analogVco, which is now documented — see batch 1).
+    const undocumented = {
+      type: 'synthetic-undocumented',
+      label: 'synthetic',
+      inputs: [],
+      outputs: [],
+      params: [],
+      // intentionally no `docs` field
+    } as unknown as AudioModuleDef;
+    expect(undocumented.docs).toBeUndefined();
+    expect(buildDocIndexFromDef(undocumented)).toBeNull();
   });
 
   it('returns null for an undefined def', () => {

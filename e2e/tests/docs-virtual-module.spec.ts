@@ -49,6 +49,63 @@ const PROBES: Probe[] = [
     cvPort: '',
     modulates: /./,
   },
+  // --- Batch 1 — foundational modules (2026-06-25). Each is on the
+  // INTERACTIVE_DOC_MODULES allowlist; this proves the live card mounts cleanly
+  // and a control hover updates the pane. A CV→param dual-context check runs only
+  // where the module has a CV input with a paramTarget (analogVco, filter, lfo,
+  // cocoadelay); vca/mixer/noise have no CV→param link (cvPort: '' skips it). ---
+  {
+    id: 'analogVco',
+    heading: /analog vco/i,
+    controlParam: 'tune',
+    controlDescIncludes: /pitch|tune|semitone/i,
+    cvPort: 'tune', // CV → tune param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'vca',
+    heading: /vca/i,
+    controlParam: 'base',
+    controlDescIncludes: /offset|unity|base/i,
+    cvPort: '', // the `cv` input has no paramTarget (it's the gain CV, not a param mod)
+    modulates: /./,
+  },
+  {
+    id: 'mixer',
+    heading: /mixer/i,
+    controlParam: 'master',
+    controlDescIncludes: /master|bus|gain/i,
+    cvPort: '', // no CV inputs
+    modulates: /./,
+  },
+  {
+    id: 'noise',
+    heading: /noise/i,
+    controlParam: 'level',
+    controlDescIncludes: /gain|level|noise/i,
+    cvPort: '', // pure source, no inputs
+    modulates: /./,
+  },
+  {
+    id: 'filter',
+    heading: /filter/i,
+    controlParam: 'cutoff',
+    controlDescIncludes: /cutoff|frequency|corner/i,
+    cvPort: 'cutoff', // CV → cutoff param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'lfo',
+    heading: /lfo/i,
+    controlParam: 'rate',
+    controlDescIncludes: /rate|knob/i,
+    cvPort: 'rate', // CV → rate param
+    modulates: /modulates/i,
+  },
+  // NOTE — cocoadelay is documented + STRICT but NOT on INTERACTIVE_DOC_MODULES
+  // (its `card: 'CocoaDelayCard'` override isn't plumbed through the doc route's
+  // defLite, so the live card can't resolve and the page uses the static
+  // fallback). No live-card probe for it here; see interactive-doc-modules.ts.
 ];
 
 /** Wait for the live virtual module to finish mounting (the flow host appears
@@ -71,6 +128,12 @@ async function openInputs(page: Page) {
 
 for (const probe of PROBES) {
   test(`virtual module: live card + hover pane (${probe.id})`, async ({ page }) => {
+    // A module only earns the INTERACTIVE_DOC_MODULES allowlist if its live card
+    // mounts with NO uncaught page error (a card that throws on the doc sandbox
+    // stays on the static face). Collect uncaught errors for the whole flow.
+    const pageErrors: string[] = [];
+    page.on('pageerror', (e) => pageErrors.push(String(e)));
+
     await page.goto(`/docs/modules/${probe.id}`);
     await expect(page.getByRole('heading', { name: probe.heading, level: 1 })).toBeVisible();
 
@@ -117,6 +180,12 @@ for (const probe of PROBES) {
       path: `test-results/docs-virtual-module-${probe.id}.png`,
       fullPage: true,
     });
+
+    // The live card + hover flow must not have thrown — this is the gate that
+    // qualifies the module for the interactive allowlist.
+    expect(pageErrors, `page errors on /docs/modules/${probe.id}: ${pageErrors.join('\n')}`).toEqual(
+      [],
+    );
   });
 }
 
