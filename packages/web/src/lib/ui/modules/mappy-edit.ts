@@ -184,6 +184,36 @@ export function toggleSurfaceFit(id: string, surfaceIdx: number): boolean {
   return next;
 }
 
+/** Apply a whole imported surface LAYOUT (an IMPORTED MAP): REPLACE every
+ *  surface's corners + FIT and set the live count, all IN PLACE on the live Y
+ *  types (never spread-reassigning an integrated child — corners are rebuilt as
+ *  fresh plain arrays, `fit`/`surfaceCount` are primitives). Import REPLACES the
+ *  current layout. `layout.surfaces` is the canonical full 6-surface array
+ *  (already normalized by applyMap). */
+export function applyMapLayout(
+  id: string,
+  layout: { count: number; surfaces: MappySurfaceState[] },
+): void {
+  const arr = ensureSurfaces(id);
+  if (!arr) return;
+  for (let i = 0; i < MAPPY_SURFACE_COUNT; i++) {
+    const src = layout.surfaces[i];
+    if (!src) continue;
+    const s = arr[i];
+    if (!s) continue;
+    const c = src.corners;
+    // fresh plain corner array (SyncedStore arrays reject index-assignment)
+    s.corners = [
+      [clamp01(c[0]![0]), clamp01(c[0]![1])],
+      [clamp01(c[1]![0]), clamp01(c[1]![1])],
+      [clamp01(c[2]![0]), clamp01(c[2]![1])],
+      [clamp01(c[3]![0]), clamp01(c[3]![1])],
+    ];
+    s.fit = surfaceFitOn(src);
+  }
+  setSurfaceCount(id, layout.count);
+}
+
 /** Toggle the global GRID override (force the calibration grid on every live
  *  surface). Mirrored to the param so it persists + the factory reads it. */
 export function toggleGrid(id: string, current: boolean): void {
