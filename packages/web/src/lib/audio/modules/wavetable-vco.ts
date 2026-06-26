@@ -123,6 +123,30 @@ export const wavetableVcoDef: AudioModuleDef = {
     { id: 'pmAmount', label: 'PM',   defaultValue: 0,   min: -1,   max: 1,   curve: 'linear' },
   ],
 
+  docs: {
+    explanation: "A single-cycle wavetable oscillator. Instead of one fixed shape, it reads from a built-in 16-frame table that morphs continuously saw → square → triangle → sine, and the WAVE control scans across those frames so you can sweep the timbre in real time (or modulate the scan with CV for a moving, evolving tone). Pitch is 1V/oct (0V = C4) trimmed by TUNE (coarse semitones) and FINE (cents). On top of the basic oscillator it has two audio-rate modulation inputs that make it sound complex or metallic: an FM input (frequency modulation, scaled by the FM AMT control) and a PM input (phase modulation, scaled by PM AMT). The table is the fixed shape set shipped with the module — there is no per-frame selector or upload here (use WAVECEL or WAVVIZ for custom wavetables); WAVE only scans the table that's already loaded.",
+    inputs: {
+      pitch: "1V/oct pitch input — 0V plays C4 and each ±1 shifts the oscillator a full octave. Sums with the TUNE and FINE controls (and the TUNE/FINE CV inputs) to set the playback frequency, which is clamped to roughly 1 Hz–20 kHz.",
+      fm: "Audio-rate frequency-modulation input, depth set by the FM AMT control (FM AMT 0 = no effect). Modulation is EXPONENTIAL, not linear/through-zero: the incoming signal is added in the semitone domain (±1 in × FM AMT = up to ±12 semitones of pitch wobble), so a positive input raises pitch and a negative input lowers it, but the frequency is floored at 1 Hz and never crosses to the other side of zero. A negative FM AMT flips the modulator's polarity.",
+      pm: "Audio-rate phase-modulation input, depth set by the PM AMT control (PM AMT 0 = no effect). It offsets where the oscillator reads into the wavetable without changing the underlying frequency: ±1 in × PM AMT = ±1 up to a full cycle of phase shift, which adds harmonics for FM/DX-style metallic and bell-like tones. A negative PM AMT inverts the direction of the offset.",
+      wavePos: "CV that scans the wavetable, summing with the WAVE control to pick the morph frame (saw → square → triangle → sine). Audio-rate and clamped to 0..1, so an LFO or envelope here continuously sweeps the timbre; full-scale ±1 covers the whole table from the WAVE setting.",
+      tune: "CV that displaces the TUNE control, shifting coarse pitch in semitones (its full natural range of about ±36 semitones, centered on the knob).",
+      fine: "CV that displaces the FINE control, shifting pitch in cents (its full natural range of about ±100 cents, centered on the knob) for detuning.",
+      fmAmount: "CV that displaces the FM AMT control, modulating how deep the FM input drives the pitch.",
+      pmAmount: "CV that displaces the PM AMT control, modulating how deep the PM input shifts the readout phase.",
+    },
+    outputs: {
+      audio: "The oscillator's audio output — the interpolated wavetable signal at the current pitch and WAVE position, including any FM and PM applied. Mono, roughly ±1 in level; patch it into a filter, VCA, or mixer.",
+    },
+    controls: {
+      tune: "Coarse tuning in semitones, ±36 (±3 octaves), added to the 1V/oct pitch input. 0 leaves the incoming pitch untouched.",
+      fine: "Fine tuning in cents, ±100 (±1 semitone), for detuning or beating against another oscillator. 0 is no offset.",
+      wavePos: "Scans the position into the 16-frame table from 0 (the first frame) to 1 (the last), morphing the timbre saw → square → triangle → sine; the WAVE POSITION CV input sums on top of this. Sets where in the table the oscillator reads — the table itself is fixed.",
+      fmAmount: "Depth of the FM input: how strongly the audio-rate signal at the FM input modulates pitch (up to ±12 semitones at full input). 0 ignores the FM input; negative values invert the modulator's polarity.",
+      pmAmount: "Depth of the PM input: how strongly the audio-rate signal at the PM input offsets the wavetable readout phase (up to a full cycle at full input). 0 ignores the PM input; negative values invert the direction of the phase offset.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

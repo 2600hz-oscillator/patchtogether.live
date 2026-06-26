@@ -308,6 +308,36 @@ export const ringsDef: AudioModuleDef = {
     { id: 'level',      label: 'Level',      defaultValue: 0.8,  min: 0,   max: 1,  curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A modal / string RESONATOR — a faithful port of Mutable Instruments Rings. It doesn't make a tone on its own: it RESONATES an exciter into pitched, decaying string and bell voices. Feed it an audio exciter on IN (a noise burst, a click, a drum, anything percussive works best) and it rings that energy out at the pitch set by PITCH; with nothing patched into IN, the STRUM input self-excites it with a short internal noise burst so it still sounds when you pluck it. MODEL switches the resonator type: MODAL is a bank of 24 stiffness-stretched resonant bandpass filters (harmonic at STRUCTURE 0, growing inharmonic and bell-like as STRUCTURE rises), and SYMPATHETIC is a pair of Karplus–Strong plucked strings whose detuning STRUCTURE sets. STRUCTURE/BRIGHTNESS/DAMPING/POSITION are the canonical Rings macros that sculpt the resonance — inharmonicity, high-end content, ring time, and pickup placement — and LEVEL is a soft-limited (tanh) output gain. The two outputs ODD and EVEN are complementary taps of the same resonator; patch both for a wide pseudo-stereo image, or just ODD for mono.",
+    inputs: {
+      in: "The audio EXCITER — the energy the resonator rings out. Patch a percussive, broadband signal here (a noise burst, an impulse/click, a drum hit, even another oscillator) and the body resonates it into pitched string/modal voices; sustained input keeps it continuously excited (a bowed/blown character). When nothing is patched here the resonator is silent until struck, so use STRUM (or an external exciter) to make it sound.",
+      pitch: "1V/oct pitch. Sets the fundamental the resonator is tuned to (1 unit = 1 octave, 0 V = middle C); it sums with the NOTE offset before the body is configured. Sweeping it retunes every partial / both strings together.",
+      strum: "A TRIGGER: each rising edge re-ignites the resonator with a short (~10 ms) internal noise burst, plucking/striking it once per pulse — like physically strumming the strings. It fires on the edge only and ignores how long the level stays high, so any clock, gate, or button pulse re-strikes it. STRUM works even with nothing patched into IN, making the module a self-contained plucked voice.",
+      model_cv: "CV into the MODEL selector (discrete): it displaces the resonator-model choice, jumping between MODAL (0) and SYMPATHETIC (1) — e.g. a gate or step CV can switch resonator type mid-patch.",
+      note_cv: "CV into the NOTE offset: it displaces the semitone offset that sums with PITCH (NOTE spans ±60 st), so an envelope or LFO here bends the tuning around the V/oct fundamental.",
+      str_cv: "CV into STRUCTURE (0..1): it displaces the inharmonicity/structure macro — sweeping the modal partials from harmonic toward bell-like, or detuning the sympathetic string pair.",
+      bright_cv: "CV into BRIGHTNESS (0..1): it displaces the high-end character of the resonance, opening or closing the brightness of the rung partials.",
+      damp_cv: "CV into DAMPING (0..1): it displaces the ring time — low values resonate long, high values damp the partials quickly (a useful target for an envelope to shape per-note decay).",
+      pos_cv: "CV into POSITION (0..1): it displaces the pickup position along the resonator, changing which partials are emphasized and shifting the ODD/EVEN balance.",
+      level_cv: "CV into LEVEL (0..1): it displaces the soft-limited output gain, letting an envelope or LFO swell or duck the output.",
+    },
+    outputs: {
+      odd: "One of the resonator's two complementary output taps (the cosine-weighted ODD-indexed partial sum in MODAL, the position-crossfaded string mix in SYMPATHETIC), passed through a tanh soft-limiter. Use it alone for a mono resonator output, or pair it with EVEN.",
+      even: "The companion tap to ODD — the EVEN-indexed partial sum / opposite string-mix, also tanh soft-limited. ODD and EVEN carry different partial content from the same resonator, so patching both into a stereo bus gives a wide pseudo-stereo image; summing them back to mono recombines the body.",
+    },
+    controls: {
+      model: "The resonator MODEL selector (the on-card button cycles it): MODAL (0) is a 24-partial stiffness-stretched resonant bandpass bank — a struck bar / bell / metal character — and SYMPATHETIC (1) is a pair of Karplus–Strong plucked strings detuned by STRUCTURE. The other macros mean the same thing in both models but the timbre changes substantially between them.",
+      note: "A fixed semitone offset (-60..+60 st) added on top of the PITCH input, so you can tune the resonator without an external pitch source or transpose it relative to one. At 0 the resonator tracks PITCH (or middle C with PITCH unpatched).",
+      structure: "The inharmonicity / structure macro (0..1): in MODAL it stretches the partial spacing from harmonic (0) toward bell-/metal-like (1); in SYMPATHETIC it detunes the second string from unison (0) up to about +19 semitones. The single biggest control over how 'tuned' versus 'clangy' the resonance sounds.",
+      brightness: "Sculpts the high-frequency content of the resonance (0..1): low values are dark and muted, high values let the upper partials sing through. In SYMPATHETIC it also opens the brightness shaper on each string's input.",
+      damping: "Sets the ring/decay time (0..1): low DAMPING resonates long (high Q in MODAL, a near-lossless string loop in SYMPATHETIC), high DAMPING damps the energy quickly for a short, plucky decay. A natural target for an envelope to vary decay per note.",
+      position: "The pickup position along the resonator (0..1): it changes which partials are emphasized via a cosine-weighted tap, and because it weights the ODD and EVEN sums differently it also shifts the balance and stereo image between the two outputs.",
+      level: "Output gain (0..1) feeding a tanh soft-limiter, so pushing it adds gentle saturation rather than hard clipping. Sets the overall loudness of both ODD and EVEN.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

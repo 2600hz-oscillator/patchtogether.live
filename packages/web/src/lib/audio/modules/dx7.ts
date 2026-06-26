@@ -76,7 +76,10 @@ export const dx7Def: AudioModuleDef = {
     { id: 'poly',     type: 'polyPitchGate' },
     // mono fallbacks for legacy single-voice patching:
     { id: 'pitch_cv', type: 'cv' },
-    { id: 'gate',     type: 'gate' },
+    // gate is LEVEL-SENSITIVE (declared edge: 'gate'): the worklet triggers a
+    // note-on on the rising edge, holds the note while the level stays high
+    // (and tracks pitch_cv for glides), and releases on the falling edge.
+    { id: 'gate',     type: 'gate', edge: 'gate' },
   ],
   outputs: [
     { id: 'out', type: 'audio' },
@@ -94,6 +97,40 @@ export const dx7Def: AudioModuleDef = {
     { id: 'decay',   label: 'Dec', defaultValue: 0.1,   min: 0.001, max: 5, curve: 'log', units: 's' },
     { id: 'sustain', label: 'Sus', defaultValue: 1,     min: 0,     max: 1, curve: 'linear' },
     { id: 'release', label: 'Rel', defaultValue: 0.005, min: 0.001, max: 5, curve: 'log', units: 's' },
+  ],
+
+  docs: {
+    explanation: "A 6-operator FM synthesizer modeled on the Yamaha DX7. Each of its six operators is a sine oscillator with its own pitch ratio and 4-stage envelope; instead of filtering a rich waveform, the operators modulate each other's frequency — one of 32 fixed ALGORITHM wiring diagrams decides which operators are CARRIERS (heard at the output) and which are MODULATORS bending a carrier's pitch faster than you can hear, which is what sculpts FM's metallic, bell-like, and electric-piano timbres. Pick a classic DX7 voice from the PRESET menu (or load your own .syx cartridge), choose an algorithm, and play it polyphonically: it allocates up to 5 voices, one per incoming note. A player-dialable master ADSR sits on top of each loaded patch's built-in operator envelopes for extra swell and release shaping.",
+    inputs: {
+      poly: "The polyphonic note source and the preferred way to play this synth: a poly cable carrying up to 5 pitch+gate voice pairs (patch a poly sequencer, MIDI LANE, or keyboard here). Each lane drives one voice — a rising gate on a lane triggers a fresh note-on at that lane's pitch, the falling gate releases it, and while a lane's gate stays high its pitch is tracked live so the note glides. When all voices are busy a new note steals the oldest.",
+      pitch_cv: "Mono V/oct pitch for legacy single-voice playing — used only when nothing is patched into POLY. It drives voice 0's pitch, paired with the mono GATE input. 0 V is middle C; transpose and the patch's own transpose offset it.",
+      gate: "Mono note-on/off gate for the single-voice (PITCH CV) path — level-sensitive: the rising edge triggers a note-on on voice 0, the note sustains while the level stays high (and follows PITCH CV for glides), and the falling edge releases it. Patch an envelope/clock gate or a keyboard gate here; the POLY input is preferred for polyphony.",
+    },
+    outputs: {
+      out: "Mono audio: the summed carrier output of every active voice, after the per-voice master ADSR and the LEVEL control. It's attenuated internally so all 5 voices sounding at once stay clear of clipping. Patch it into a VCA, filter, mixer, or straight to the output.",
+    },
+    controls: {
+      algorithm: "Which of the 32 DX7 algorithms wires the six operators together (1–32) — each algorithm fixes the carrier/modulator routing, so this is the biggest single shaper of the timbre's character (stacked FM chains vs. parallel additive tones). Editable live while playing; the loaded preset starts from its own stored algorithm. Shown on the ALG readout above the knobs.",
+      voiceCount: "Polyphony cap, 1 to 5 — how many notes can sound at once before a new note steals the oldest voice. Set it to 1 for a strictly monophonic patch, or up to 5 for full chords.",
+      level: "Master output gain for the whole synth, 0 to 2 (1 = unity); scales the summed voice bus feeding OUT.",
+      transpose: "Global pitch offset in semitones (-24 to +24) applied to every voice on top of the preset's own transpose — shift the whole instrument up or down by up to two octaves.",
+      attack: "Master output-VCA attack time (per voice) layered on top of the preset's built-in operator envelopes: how long each note takes to swell to full amplitude after note-on. Near the 0.001 s minimum it's effectively instant (the default, so loaded patches sound as designed); raise it for a slow fade-in.",
+      decay: "Master-VCA decay time — how long each note takes to fall from its peak to the sustain level after the attack. Part of the player-dialable amplitude envelope on top of the patch's operator EGs.",
+      sustain: "Master-VCA sustain level (0 to 1) — the amplitude a held note settles at after attack+decay, maintained until the gate releases. 1 (default) is full level, i.e. effectively pass-through of the patch's own envelopes.",
+      release: "Master-VCA release time — how long a note takes to fade to silence after its gate falls. Near the 0.001 s minimum (default) the note ends quickly; raise it for long tails. The voice frees only once both this master envelope and the operator EGs have faded.",
+      // Card controls with no param/family of their own — each declared as a
+      // single-member control family below and keyed here as `<familyId>-{n}`.
+      "dx7-preset-select-{n}": "Voice/preset selector — pick a built-in DX7-style patch (e.g. E.PIANO 1) or, once you've loaded a .syx cartridge, one of its voices. Choosing a preset loads its operators, feedback, and stored algorithm into all voices. Use the LOAD .SYX BANK button below to import real DX7 cartridge files, which then appear in this menu.",
+      "dx7-syx-input-{n}": "Load .syx bank — import a real Yamaha DX7 cartridge (.syx) file; its 32 voices are parsed and added to the preset menu above so you can select them. A status line reports how many voices loaded (or any parse warnings).",
+    },
+  },
+
+  controlFamilies: [
+    // Single static/dynamic card controls (a dropdown + a file button) with no
+    // backing param. Declared as one-member families so the docs gate can key
+    // authored prose to them; the testidPrefix is grep-verified against the card.
+    { id: 'dx7-preset-select', label: 'Preset / voice selector', kind: 'other', testidPrefix: 'dx7-preset-select' },
+    { id: 'dx7-syx-input',     label: 'Load .syx bank',          kind: 'other', testidPrefix: 'dx7-syx-input' },
   ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {

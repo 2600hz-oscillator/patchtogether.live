@@ -16,4 +16,12 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // step grid.
   'adsr',
   'sequencer',
+  // Batch 2 (2026-06-25): macrooscillator's card is a pure PatchPanel + six
+  // Faders + a derived label — no onMount/effect, no canvas/rAF, no Web MIDI or
+  // file input — so it mounts cleanly in the doc sandbox. The other batch-2
+  // voices stay STATIC: their cards run rAF/WebGL render loops (cube, wavecel),
+  // a Web-MIDI settings panel (helm), or a file-upload picker (dx7, wavecel),
+  // any of which can misbehave in the engine-less doc sandbox — face fallback is
+  // the safe default.
+  'macrooscillator',
 ]);

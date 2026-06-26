@@ -868,7 +868,7 @@ drumseqz param trk4_octave -2..2 discrete default=0
 drumseqz param trk4_root 33..114 discrete default=48
 drumseqz expose playStop
 dx7 meta domain=audio schema=1
-dx7 in gate gate
+dx7 in gate gate edge=gate
 dx7 in pitch_cv cv
 dx7 in poly polyPitchGate
 dx7 out out audio
@@ -880,6 +880,8 @@ dx7 param release 0.001..5 log default=0.005 unit=s
 dx7 param sustain 0..1 linear default=1
 dx7 param transpose -24..24 linear default=0 unit=st
 dx7 param voiceCount 1..5 discrete default=5
+dx7 family dx7-preset-select kind=other prefix=dx7-preset-select
+dx7 family dx7-syx-input kind=other prefix=dx7-syx-input
 edges meta domain=video schema=1
 edges in in video
 edges in thickness cv param=thickness cvScale=linear
@@ -1192,6 +1194,10 @@ helm param subVol 0..1 linear default=0.4
 helm param subWave 0..3 discrete default=3
 helm param voiceCount 1..8 discrete default=6
 helm param volume 0..2 linear default=0.7
+helm family helm-gear-btn kind=other prefix=helm-gear-btn
+helm family helm-seq-onoff kind=other prefix=helm-seq-onoff
+helm family helm-seq-reset kind=other prefix=helm-seq-reset
+helm family helm-step kind=step-grid prefix=helm-step count=stepNumSteps
 hydrogen meta domain=audio schema=1 exposesSequence
 hydrogen in clock_in gate
 hydrogen in cv_a_0 cv param=A0 cvScale=log
@@ -1691,6 +1697,7 @@ macrooscillator param model 0..13 discrete default=0
 macrooscillator param morph 0..1 linear default=0.5
 macrooscillator param note -60..60 linear default=0 unit=st
 macrooscillator param timbre 0..1 linear default=0.3
+macrooscillator family macro-model-name kind=other prefix=macro-model-name
 macseq meta domain=audio schema=1 exposesSequence
 macseq in clock gate
 macseq in next_cv gate
@@ -3781,6 +3788,10 @@ wavecel param spread 1..5 linear default=1
 wavecel param sustain 0..1 linear default=1
 wavecel param tune -36..36 linear default=0 unit=st
 wavecel stereo out_l+out_r
+wavecel family wavecel-preset-select kind=other prefix=wavecel-preset-select
+wavecel family wavecel-source-select kind=other prefix=wavecel-source-select
+wavecel family wavecel-viz-toggle kind=other prefix=wavecel-viz-toggle
+wavecel family wavecel-wav-input kind=other prefix=wavecel-wav-input
 wavesculpt meta domain=audio schema=2
 wavesculpt in alpha_in video
 wavesculpt in gate1 gate

@@ -25,4 +25,15 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'sequencer',
   'fader',
   'cocoadelay',
+  // Batch 2 (2026-06-25): the synth voices — macro/wavetable/FM oscillators and
+  // the MI modal/physical-modeling resonators.
+  'macrooscillator',
+  'cube',
+  'wavecel',
+  'dx7',
+  'helm',
+  'rings',
+  'elements',
+  'wavetableVco',
+  'swolevco',
 ]);
