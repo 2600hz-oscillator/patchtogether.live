@@ -261,6 +261,23 @@ export const edgesDef: VideoModuleDef = {
     { id: 'thickness', label: 'Thick',  defaultValue: EDGES_DEFAULTS.thickness, min: 1, max: EDGES_MAX_THICKNESS, curve: 'linear', units: 'px' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "edges is a stateless Sobel edge-detector for video: it runs a 3x3 luminance gradient (Rec. 601 luma) over the incoming frame and emits a high-contrast mono-video frame that is white wherever a brightness edge was found and black everywhere else. The detection has no feedback or history, so the white outlines track and morph live with whatever moves in the source. After the threshold test it morphologically dilates the mask (max over a square neighbourhood) so 1px contours render as fatter strokes. Use it to pull line-art/outlines from a camera or any video source, feed a key/mask downstream, or stack it with a colorizer for a glowing-wireframe look; if you get too much speckle raise thresh, if outlines are too thin raise thick.",
+    inputs: {
+      in: "The video frame to edge-detect. Its per-pixel Rec. 601 luminance is run through the 3x3 Sobel operator; with nothing patched here the output is solid black.",
+      threshold: "CV input that modulates Thresh — raising it via CV keeps only the strongest gradients (fewer white pixels), lowering it lets faint edges through. Linear-scaled into the 0..1 control range.",
+      thickness: "CV input that modulates Thick — drives the rendered edge width / dilation radius in pixels. Linear-scaled into the 1..8 px control range and clamped so it cannot blow up the dilation loop.",
+    },
+    outputs: {
+      out: "A mono-video frame of white edges on a black background (all three RGB channels written to the same value, so plain video consumers also see white).",
+    },
+    controls: {
+      threshold: "Thresh sets the normalised gradient magnitude (in luma-step units) at or above which a pixel counts as an edge. 0 = every pixel passes so the whole frame floods white; 1 = almost nothing passes (a near-full unit luma step is needed); default 0.2 catches salient contours without low-contrast texture noise.",
+      thickness: "Thick is the rendered edge width in pixels (1..8 px, default 2). 1 px is the raw single-texel edge with no dilation; higher values dilate the mask by taking the max over a square neighbourhood of radius round(thickness)-1, fattening the strokes up to the set width.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

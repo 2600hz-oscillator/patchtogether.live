@@ -139,6 +139,27 @@ export const lumaDef: VideoModuleDef = {
     { id: 'bias',            label: 'Bias',   defaultValue: DEFAULTS.bias,            min: -0.5, max: 0.5,  curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "luma is a luminance-domain color processor for a single video stream. It reads the Rec. 601 brightness (0.299/0.587/0.114) of every pixel, runs that luma through a chain of gamma, contrast (scaled around the 0.5 midpoint), posterize (quantize to N steps), then an additive bias, and finally re-applies the new-luma/old-luma ratio to all three RGB channels so chroma (hue and saturation) is preserved while only tonality changes. Patch a video source into in and use it to crush blacks, lift gamma, flatten the image into hard tonal bands, or shift overall brightness; with the defaults (gamma 1, cntr 1, post 16, bias 0) the picture passes through essentially untouched. Note this is NOT a keyer — for foreground/background luma compositing use lumakey instead.",
+    inputs: {
+      in: "The video frame to process. With nothing patched here the output is solid black; otherwise the luma chain runs on this RGB image.",
+      gamma: "CV input that modulates Gamma; a linear-scaled control voltage drives the gamma-correction exponent applied to the luma.",
+      contrast: "CV input that modulates Cntr; linear-scaled voltage sets how hard the luma is scaled around the 0.5 midpoint.",
+      posterizeLevels: "CV input that modulates Post; discrete-scaled voltage chooses the number of luma quantization steps (banding amount).",
+      bias: "CV input that modulates Bias; linear-scaled voltage adds a final brightness offset to the processed luma.",
+    },
+    outputs: {
+      out: "The luma-processed video frame: the same RGB image with gamma, contrast, posterize and bias applied to its brightness while chroma (hue and saturation) is preserved (opaque alpha).",
+    },
+    controls: {
+      gamma: "Gamma fader — gamma correction of the luma via pow(luma, 1/gamma), range 0.1 to 3.0; 1.0 is linear/untouched, below 1 darkens midtones, above 1 brightens them.",
+      contrast: "Cntr fader — contrast scaling of the luma around 0.5, range 0 to 2; 1.0 is pristine, 0 flattens everything to mid-grey, values above 1 push tones apart for harder contrast.",
+      posterizeLevels: "Post fader — number of luma quantization steps, range 2 to 16; 16 is effectively off (no visible banding) and 2 crushes the image to two hard tonal bands.",
+      bias: "Bias fader — a final additive luma offset, range -0.5 to 0.5; negative depresses overall brightness, positive lifts it, 0 leaves it unchanged.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
