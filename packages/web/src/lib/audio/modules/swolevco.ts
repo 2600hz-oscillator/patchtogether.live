@@ -194,6 +194,35 @@ export const swolevcoDef: AudioModuleDef = {
     { id: 'fold',     label: 'Fold',  defaultValue: 0,   min: 0,    max: 1,   curve: 'linear' },
   ],
 
+  docs: {
+    explanation: "A complex / West-Coast-style dual oscillator: two oscillators in one module that interact to build harmonically rich timbres rather than just stacking simple shapes. A PRIMARY oscillator (crossfaded across saw / triangle / square by Symmetry, then run through a wavefolder) is the main voice; a sine MODULATOR oscillator, tuned either to a Ratio of the primary's pitch or to its own M.Tune / M.Fine, cross-modulates the primary via audio-rate FM (the Timbre amount). Mental model: start from a near-sine, then warp the wave with Symmetry, fold it with Fold, and pour FM in with Timbre to climb from sweet to screaming — all from one pitch. You can tap the primary alone (OUT), the clean modulator sine alone (MOD OUT), or the two summed together (SUM OUT), and a mono-video oscilloscope of the primary is available on SCOPE.",
+    inputs: {
+      pitch: "1V/oct pitch CV for the PRIMARY oscillator (0V = C4 = 261.626 Hz), summed on top of the Tune / Fine knobs. When Ratio is greater than 0 the modulator tracks this pitch (modulator frequency = primary × Ratio), so a sequencer or keyboard patched here moves both oscillators together.",
+      mod_pitch: "1V/oct pitch CV for the MODULATOR oscillator (0V = C4), summed on top of M.Tune / M.Fine. Most useful in free-run mode (Ratio = 0) where the modulator has its own pitch; with Ratio greater than 0 the modulator is largely slaved to the primary and this adds on top of that base.",
+      fm: "External audio-rate FM into the PRIMARY oscillator: an incoming audio signal is scaled (full-scale ±1 ≈ ±200 Hz of deviation) and summed into the primary's frequency, on top of the internal Timbre FM. Drive it from a VCA or another oscillator for cross-FM beyond the built-in modulator.",
+      timbre: "CV that displaces the Timbre control (audio-rate FM amount from the modulator into the primary); an LFO or envelope here opens and closes the FM brightness over time.",
+      symmetry: "CV that displaces the Symmetry control, sliding the saw → triangle → square waveform crossfade of the primary oscillator up or down.",
+      fold: "CV that displaces the Fold control, modulating how hard the West-Coast wavefolder folds the primary signal — patch an envelope here for evolving fold timbres.",
+      ratio: "CV that displaces the Ratio control, sweeping the modulator-to-primary frequency ratio. Pushing it through 0 toggles the modulator between free-run (its own M.Tune / M.Fine pitch) and ratio-locked (a multiple of the primary's pitch).",
+    },
+    outputs: {
+      out: "The PRIMARY oscillator: the symmetry-crossfaded saw/tri/square wave after the wavefolder, including any Timbre / external FM. This is the main voice and the signal the SCOPE traces.",
+      mod_out: "The MODULATOR oscillator's raw sine output, before it is mixed in — a clean sine tap you can patch anywhere as an independent oscillator (e.g. as an LFO or a second voice) at the modulator's pitch.",
+      sum_out: "The PRIMARY and MODULATOR summed into one signal (each at half level to leave headroom). With Timbre up this is the cross-modulated mix — the primary already FM'd by the modulator, plus the modulator's own sine on top — for a thicker, two-oscillator blend.",
+      scope: "A mono-video oscilloscope trace of the primary signal (OUT), tapped post-fold. Patch a video cable from here into a scope / display module to watch the waveform; it is a video output, not audio.",
+    },
+    controls: {
+      tune: "Coarse tuning of the PRIMARY oscillator in semitones (-36 to +36, i.e. ±3 octaves) relative to C4; combines with Fine and any pitch CV to set the base pitch.",
+      fine: "Fine tuning of the PRIMARY oscillator in cents (-100 to +100, ±1 semitone) for beating / detune against the modulator or other voices.",
+      mod_tune: "Coarse tuning of the MODULATOR oscillator in semitones (±3 octaves). Active when Ratio = 0 (free-run); when Ratio is greater than 0 the modulator follows the primary × Ratio and this is ignored.",
+      mod_fine: "Fine tuning of the MODULATOR oscillator in cents (±1 semitone), for free-run detune. Like M.Tune, it only takes effect when Ratio = 0.",
+      ratio: "Modulator-to-primary frequency ratio (0 to 8). At 0 the modulator free-runs at its own M.Tune / M.Fine pitch; above 0 the modulator frequency is the primary's frequency × this value (1 = unison, 2 = octave up, etc.), so it tracks the primary's pitch for harmonically related FM.",
+      timbre: "Audio-rate FM amount: how much the modulator deviates the primary's frequency (0 to 1, where 1 ≈ ±200 Hz at C4). 0 leaves the primary clean; turning it up grows the sidebands from a gentle vibrato-like shimmer into clangorous, bell-like and noisy Buchla-style timbres.",
+      symmetry: "Morphs the PRIMARY waveform across a three-way crossfade (0 to 1): 0 = saw, 0.5 = triangle, 1 = square, with a linear blend of the two neighboring shapes in between. Default 0.5 (pure triangle).",
+      fold: "West-Coast wavefolder amount on the primary (0 to 1): 0 is no folding; raising it folds the wave back on itself, adding harmonics and that characteristic complex-oscillator brightness/buzz even on a plain triangle.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initialParams = node.params ?? {};
     const initial = {

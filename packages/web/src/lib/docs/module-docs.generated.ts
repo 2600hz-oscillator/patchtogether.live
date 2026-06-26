@@ -101,6 +101,131 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "wetVolume": "WET — level of the delayed/echo signal in the output (0–2.0, default 0.5), the amount ducking pulls down and what mix_cv modulates."
     }
   },
+  "cube": {
+    "explanation": "A 3D wavetable-terrain oscillator. CUBE stacks THREE e352-style wavetables — FLOOR, WALL, and CEILING (each chosen from a factory table, a baked preset, or a loaded .wav) — into a solid 3D scalar field, then plays the heightmap of an arbitrary flat plane sliced through that field as its waveform. You aim the slicing plane with one height knob (Y) and three rotation knobs (Rot X / Y / Z); as the plane tilts and rises it carves a different surface contour, so sweeping those knobs (or their CV inputs) morphs the timbre continuously. MORPH cross-fades the floor↔ceiling layers, CONNECT (with CONNECT STRENGTH) bulges the field's interior, CRUSH bit-reduces the read-out waveform while SPACE CRUSH voxelizes and SPACE DIFFUSE warps the 3D lookup coordinates, and FOLD is a west-coast wavefolder on the output — together they sculpt the slice from clean to mangled. It is a pitched V/oct oscillator with a stereo ±5% SPREAD (the L and R taps read slightly offset planes for width) and an internal per-voice A/D/S/R envelope that, riding a BASE volume floor, shapes amplitude once a note arrives on the poly bus or the TRIG gate; with nothing patched there it free-runs as a continuous drone. A live WebGL 3D render of the cube, the cut plane, the slice cross-section, and the output waveform is shown on the card and can be sent out the VIDEO port; the screen can be switched off to save GPU when you only want sound.",
+    "inputs": {
+      "connect": "CV that offsets the Connect param, blending the floor and ceiling into a connected interior shape.",
+      "connect_strength": "CV that offsets the Connect Strength param, pushing the connector's interior control point further out for a more dramatic swell.",
+      "crush": "CV that offsets the Crush param, driving the bit/sample reduction applied to the slice's read-out waveform.",
+      "fold_cv": "CV that offsets the Fold param, modulating the output wavefolder depth (added harmonics).",
+      "morph_fc": "CV that offsets the Morph param, cross-fading the floor↔ceiling wavetable layers of the field.",
+      "pitch": "Mono V/oct pitch control voltage — the standard 1V-per-octave oscillator pitch input, read directly by the worklet. This is the fallback voice when nothing is patched into POLY; summed with the TUNE and FINE offsets to set the playback fundamental.",
+      "poly": "Polyphonic chord bus (the 10-channel pitch+gate cable from MIDI LANE in poly mode or POLYSEQZ). Each gated lane renders its own phase accumulator through the same sliced waveform at that lane's pitch and they sum — so CUBE plays a whole chord. While any lane is gated this bus drives the voices; with nothing patched here the mono PITCH path runs instead (back-compat).",
+      "slice_rx": "CV that offsets the Rot X param — tilts the slicing plane about the X axis (±π), changing the surface contour it reads.",
+      "slice_ry": "CV that offsets the Rot Y param — tilts the slicing plane about the Y axis (±π).",
+      "slice_rz": "CV that offsets the Rot Z param — rotates the slicing plane about the Z axis (±π).",
+      "slice_y": "CV that offsets the Y param — raises or lowers the slicing plane's height through the cube, scanning it across the floor→ceiling stack.",
+      "space_crush": "CV that offsets the Space Crush param, quantizing (voxelizing) the 3D field-lookup coordinates into chunky blocks.",
+      "space_diffuse": "CV that offsets the Space Diffuse param, warping the lookup coordinates toward the cube's emptiest wall.",
+      "trigger": "Mono gate for the per-voice amplitude envelope: while the level is high the ADSR holds open (attack→decay→sustain) and on the falling edge it releases. The first rising edge ever seen converts CUBE from a free-running drone into a gated voice shaped by the lane-0 envelope; before any note (and when unpatched) it drones continuously.",
+      "tune": "CV that offsets the Tune param, shifting pitch in semitones around the base note (summed with the PITCH input and the FINE knob)."
+    },
+    "outputs": {
+      "L": "Left audio channel of the sliced oscillator, including the −5% SPREAD plane offset, post-FOLD and post-LEVEL. Split out as its own mono port so the stereo width survives even when patched into a mono input.",
+      "R": "Right audio channel, including the +5% SPREAD plane offset (the partner of L). Together L and R carry the spread stereo image; pan/mix them to keep the width.",
+      "sync": "A pure SINE at the playback fundamental, phase-locked to the L/R slice read-out (it reads off the same phase accumulator). Use it to hard-sync another oscillator to CUBE, or as a clean reference / sub-oscillator tone.",
+      "video_out": "A mono-video output carrying a live render of the 3D cube view — the translucent field volume, the cut plane positioned by Y + the rotation knobs, and the output waveform. Patch it into VIDEOOUT or any video module; it keeps emitting frames even when the on-card SCREEN is switched off."
+    },
+    "controls": {
+      "attack": "Per-voice amplitude envelope ATTACK time (0.001..5 s, log) — how long each note takes to rise to full from note-on. Drives both the poly lane envelopes and the mono TRIG voice.",
+      "base_vol": "Per-voice VCA floor the ADSR rides on top of (gain = base + (1−base)·env). 1 (default) = the envelope does nothing and CUBE plays its raw drone; 0 = pure ADSR (silent between notes); 0.5 = floors at 0.5 and rises to 1.0 as the envelope peaks.",
+      "connect": "Blends the floor and ceiling layers into a single connected interior shape (0 = today's separate shape, 1 = fully connected); CV via the CONNECT input.",
+      "connect_strength": "Overshoots the connector's interior control point 'out of the cube' for a dramatic base swell (0 = the exact CONNECT shape, max = pushed furthest out). Works alongside CONNECT.",
+      "crush": "Bit/sample reduction applied to the slice's read-out waveform (0 = clean, max = heavily crushed) for digital grit.",
+      "decay": "Per-voice envelope DECAY time (0.001..5 s, log) — how long the level falls from the attack peak down to the SUSTAIN level.",
+      "fine": "Fine pitch trim in cents (−100..+100) for tuning between the semitone steps of TUNE.",
+      "fold": "West-coast wavefolder on the output (0 = pass-through, max = hard fold), applied after the slice is sampled and before LEVEL on both L and R, adding harmonics; CV via the FOLD input.",
+      "level": "Output gain on the sliced audio (0..2, applied after FOLD); 1 = unity, above 1 boosts.",
+      "material": "Field density model: SMOOTH (0) = continuous density gradients, HARD (1) = a binary solid (sharp inside/outside), which makes the sliced waveform edgier.",
+      "morph_fc": "Cross-fades the FLOOR↔CEILING wavetable layers of the 3D field (0 = floor, 1 = ceiling), reshaping the terrain the plane slices through.",
+      "release": "Per-voice envelope RELEASE time (0.001..5 s, log) — how long the level fades to silence after the note's gate falls.",
+      "screen_on": "Turns the on-card 3D viz screen on/off. When OFF and the VIDEO output is unpatched, the card skips all visual computation (the render loop and the field/slice/wave draws) to save GPU — audio keeps running untouched. A patched VIDEO output still receives live frames even with the screen off.",
+      "slice_rx": "Rotation of the slicing plane about the X axis (±π radians), tilting which surface contour it reads. CV via the ROT X input.",
+      "slice_ry": "Rotation of the slicing plane about the Y axis (±π radians). CV via the ROT Y input.",
+      "slice_rz": "Rotation of the slicing plane about the Z axis (±π radians). CV via the ROT Z input.",
+      "slice_y": "Height of the slicing plane through the cube (0..1) — scans the cut from the floor up to the ceiling. CV via the Y input.",
+      "space_crush": "Voxelizes the 3D field-lookup coordinates into chunky blocks (0 = transparent/smooth, max = blocky), aliasing the spatial sampling for a chunkier timbre.",
+      "space_diffuse": "Adds a 'gravity' that pulls the field sample cloud toward the cube's emptiest wall (0 = off), smearing the lookup coordinates.",
+      "spread": "Stereo width: at higher values the L and R taps read planes offset by up to ±5% of depth, so the two channels diverge (0 = mono, both channels identical).",
+      "sustain": "Per-voice envelope SUSTAIN level (0..1) — the level held while the note's gate stays high after the decay stage.",
+      "tune": "Coarse pitch in semitones (−36..+36), summed with the FINE offset and the PITCH/TUNE CV to set the oscillator fundamental.",
+      "view_rot_x": "Visualization-only camera rotation about X — orbits the 3D view (no effect on audio).",
+      "view_rot_y": "Visualization-only camera rotation about Y — orbits the 3D view (no effect on audio).",
+      "view_rot_z": "Visualization-only camera rotation about Z — orbits the 3D view (no effect on audio).",
+      "view_zoom": "Visualization-only camera zoom for the 3D cube view (does not affect the sound or the selected slice).",
+      "wrap": "What happens when the slicing plane reads outside the cube: OFF = those regions are silent, ON = the coordinates mirror-fold back inside so the slice stays full."
+    }
+  },
+  "dx7": {
+    "explanation": "A 6-operator FM synthesizer modeled on the Yamaha DX7. Each of its six operators is a sine oscillator with its own pitch ratio and 4-stage envelope; instead of filtering a rich waveform, the operators modulate each other's frequency — one of 32 fixed ALGORITHM wiring diagrams decides which operators are CARRIERS (heard at the output) and which are MODULATORS bending a carrier's pitch faster than you can hear, which is what sculpts FM's metallic, bell-like, and electric-piano timbres. Pick a classic DX7 voice from the PRESET menu (or load your own .syx cartridge), choose an algorithm, and play it polyphonically: it allocates up to 5 voices, one per incoming note. A player-dialable master ADSR sits on top of each loaded patch's built-in operator envelopes for extra swell and release shaping.",
+    "inputs": {
+      "gate": "Mono note-on/off gate for the single-voice (PITCH CV) path — level-sensitive: the rising edge triggers a note-on on voice 0, the note sustains while the level stays high (and follows PITCH CV for glides), and the falling edge releases it. Patch an envelope/clock gate or a keyboard gate here; the POLY input is preferred for polyphony.",
+      "pitch_cv": "Mono V/oct pitch for legacy single-voice playing — used only when nothing is patched into POLY. It drives voice 0's pitch, paired with the mono GATE input. 0 V is middle C; transpose and the patch's own transpose offset it.",
+      "poly": "The polyphonic note source and the preferred way to play this synth: a poly cable carrying up to 5 pitch+gate voice pairs (patch a poly sequencer, MIDI LANE, or keyboard here). Each lane drives one voice — a rising gate on a lane triggers a fresh note-on at that lane's pitch, the falling gate releases it, and while a lane's gate stays high its pitch is tracked live so the note glides. When all voices are busy a new note steals the oldest."
+    },
+    "outputs": {
+      "out": "Mono audio: the summed carrier output of every active voice, after the per-voice master ADSR and the LEVEL control. It's attenuated internally so all 5 voices sounding at once stay clear of clipping. Patch it into a VCA, filter, mixer, or straight to the output."
+    },
+    "controls": {
+      "algorithm": "Which of the 32 DX7 algorithms wires the six operators together (1–32) — each algorithm fixes the carrier/modulator routing, so this is the biggest single shaper of the timbre's character (stacked FM chains vs. parallel additive tones). Editable live while playing; the loaded preset starts from its own stored algorithm. Shown on the ALG readout above the knobs.",
+      "attack": "Master output-VCA attack time (per voice) layered on top of the preset's built-in operator envelopes: how long each note takes to swell to full amplitude after note-on. Near the 0.001 s minimum it's effectively instant (the default, so loaded patches sound as designed); raise it for a slow fade-in.",
+      "decay": "Master-VCA decay time — how long each note takes to fall from its peak to the sustain level after the attack. Part of the player-dialable amplitude envelope on top of the patch's operator EGs.",
+      "dx7-preset-select-{n}": "Voice/preset selector — pick a built-in DX7-style patch (e.g. E.PIANO 1) or, once you've loaded a .syx cartridge, one of its voices. Choosing a preset loads its operators, feedback, and stored algorithm into all voices. Use the LOAD .SYX BANK button below to import real DX7 cartridge files, which then appear in this menu.",
+      "dx7-syx-input-{n}": "Load .syx bank — import a real Yamaha DX7 cartridge (.syx) file; its 32 voices are parsed and added to the preset menu above so you can select them. A status line reports how many voices loaded (or any parse warnings).",
+      "level": "Master output gain for the whole synth, 0 to 2 (1 = unity); scales the summed voice bus feeding OUT.",
+      "release": "Master-VCA release time — how long a note takes to fade to silence after its gate falls. Near the 0.001 s minimum (default) the note ends quickly; raise it for long tails. The voice frees only once both this master envelope and the operator EGs have faded.",
+      "sustain": "Master-VCA sustain level (0 to 1) — the amplitude a held note settles at after attack+decay, maintained until the gate releases. 1 (default) is full level, i.e. effectively pass-through of the patch's own envelopes.",
+      "transpose": "Global pitch offset in semitones (-24 to +24) applied to every voice on top of the preset's own transpose — shift the whole instrument up or down by up to two octaves.",
+      "voiceCount": "Polyphony cap, 1 to 5 — how many notes can sound at once before a new note steals the oldest voice. Set it to 1 for a strictly monophonic patch, or up to 5 for full chords."
+    }
+  },
+  "elements": {
+    "explanation": "A modal physical-modeling voice (a port of Mutable Instruments Elements): instead of an oscillator you have THREE exciters that inject energy into a tuned modal resonator, like rubbing, blowing, or hitting a physical object. BOW is continuous friction (a smooth, sustained scrape, as on a bowed string). BLOW is breath/air noise shaped by a tube (its Flow + Timbre give everything from a flute to a rush of wind). STRIKE is a percussive impact (a mallet hit, scattered particles, or a plucked pluck). You blend the three by their LEVEL knobs and they sum into the RESONATOR — a bank of tuned filters whose GEOMETRY, BRIGHTNESS, DAMPING, and POSITION sculpt the virtual body (string vs. plate vs. bell, how bright, how long it rings, where it's struck). The resonator's output then runs through SPACE, a single meta-knob that goes from bone-dry, through stereo widening, into reverb, and finally a frozen infinite tail. A GATE plays the note (it opens the exciter envelope); PITCH (V/oct) and the Note knob tune it. You can also feed an external signal into the resonator instead of (or alongside) the built-in exciters to 'play' the body with any sound. Two outputs (MAIN + AUX) form a stereo pair.",
+    "inputs": {
+      "blowlvl_cv": "CV that displaces the Blow control, modulating how much of the breath/air BLOW exciter feeds the resonator.",
+      "blowmeta_cv": "CV that displaces the Flow control (the BLOW exciter's meta/character — the granularity and turbulence of the breath).",
+      "blowtim_cv": "CV that displaces the Blow Tmb control, modulating the BLOW exciter's tone (the air noise's spectral tilt / tube colour).",
+      "bowlvl_cv": "CV that displaces the Bow control, modulating how much of the continuous-friction BOW exciter feeds the resonator.",
+      "bowtim_cv": "CV that displaces the Bow Tmb control, modulating the BOW exciter's tone (its friction-table brightness, also tracked by the resonator's brightness).",
+      "bright_cv": "CV that displaces the Brightness control, modulating the resonator's high-frequency content (how much energy survives in the upper partials).",
+      "damp_cv": "CV that displaces the Damping control, modulating how fast the resonator's partials decay (short, muted ring vs. long sustain).",
+      "env_cv": "CV that displaces the Env control, modulating the exciter envelope's shape (how percussive vs. sustained the excitation is).",
+      "gate": "The note gate (a GATE, level-sensitive on both edges): while it is high the BOW and BLOW exciters sustain and the exciter envelope holds open; its rising edge also retriggers/strikes the STRIKE exciter, and its falling edge starts the release. Hold it for a sustained bow/blow tone, pulse it for plucks and hits.",
+      "geom_cv": "CV that displaces the Geometry control, reshaping the resonator's modal layout (the inharmonicity / 'body shape' — string toward plate/bell).",
+      "in": "External excitation input — an audio signal mixed in alongside the BOW/BLOW/STRIKE exciters so you can drive the modal resonator with any external sound (a drum loop, another voice, noise) and hear it 'resonated' through the body. Unpatched it contributes nothing and the built-in exciters play the voice on their own.",
+      "note_cv": "CV that displaces the Note control, transposing the played pitch in semitones (sums on top of the pitch input).",
+      "pitch": "1V/oct pitch CV. Sums with the Note knob to set the resonator's fundamental frequency; 0V plays the base note (≈ C4) and each volt shifts an octave.",
+      "pos_cv": "CV that displaces the Position control, moving the virtual pickup point along the body and combing the partials (changes which harmonics are emphasised).",
+      "space_cv": "CV that displaces the Space control, sweeping the dry → stereo-spread → reverb → freeze meta-amount.",
+      "strength_cv": "CV that displaces the Strength control, modulating the excitation strength / accent (how hard the voice is driven).",
+      "strike_in": "External per-strike impulse input — an audio signal injected at the STRIKE stage to excite the resonator with an outside transient (e.g. a click or click-track) in place of the internal mallet/particle exciter. Unpatched it does nothing; the internal STRIKE exciter still fires on the gate.",
+      "strklvl_cv": "CV that displaces the Strike control, modulating how much of the percussive STRIKE exciter feeds the resonator (high values bleed extra raw impact into the body).",
+      "strkmeta_cv": "CV that displaces the Mallet control (the STRIKE exciter's meta — it morphs the impact model from a soft mallet through to scattered particles).",
+      "strktim_cv": "CV that displaces the Strike Tmb control, modulating the STRIKE exciter's tone (the hardness/brightness of the impact)."
+    },
+    "outputs": {
+      "aux": "The stereo partner of MAIN — the resonator's side/left channel (a slightly different pickup tap via a slow internal LFO), so MAIN + AUX together give a stereo image whose width grows with SPACE. At very low SPACE this channel also carries the dry, un-resonated exciter signal (the 'raw' tap), so AUX can double as a direct exciter output. The two share the stereoPairs grouping (MAIN = right, AUX = left).",
+      "main": "The primary modal-voice output — the resonator's centre/right channel after the SPACE mixdown and soft-limiting. Use it on its own for a mono patch."
+    },
+    "controls": {
+      "blowLevel": "BLOW exciter level (labeled Blow): how much breath/air-noise excitation (shaped by a tube model) is injected into the resonator. 0 = no blow.",
+      "blowMeta": "BLOW character (labeled Flow): the meta-parameter of the breath model — the granularity and turbulence of the air, from a smooth steady stream to a rough, bubbling flow.",
+      "blowTimbre": "BLOW tone (labeled Blow Tmb): the spectral tilt / tube colour of the breath noise — from a dark, hollow air sound to a bright, hissy one.",
+      "bowLevel": "BOW exciter level (labeled Bow): how much continuous-friction excitation (a smooth, sustained scrape, like a bow on a string) is injected into the resonator. 0 = no bow.",
+      "bowTimbre": "BOW tone (labeled Bow Tmb): the brightness/character of the friction excitation — from a soft, dark bow to a scratchy, bright one. The resonator's brightness also colours it.",
+      "brightness": "Resonator brightness: how much energy survives in the upper partials — dark and woody at low settings, bright and metallic at high settings. Also feeds the BOW timbre.",
+      "damping": "Resonator damping: how fast the partials lose energy — low values ring long and sustain, high values decay quickly into a short, muted body.",
+      "envShape": "Exciter envelope shape (labeled Env): morphs the excitation from a short percussive blip (fast decay, no sustain) up through to a held, fully-sustained excitation while the gate is high — i.e. how plucked vs. bowed the voice feels.",
+      "geometry": "Resonator geometry: reshapes the modal layout / inharmonicity of the virtual body, sweeping from a near-harmonic string toward plate-, bar-, and bell-like stretched/clustered partials.",
+      "note": "Coarse tune of the played note in semitones (sums with the pitch input's V/oct); sets the resonator's fundamental.",
+      "position": "Pickup position along the resonator body: combs the partials (emphasising or notching harmonics) the way moving where you pluck/listen changes a string's tone; also sets the stereo side-channel offset.",
+      "space": "SPACE meta-knob (0–2): one knob that sweeps the ambience. Near 0 the voice is bone-dry (and AUX carries the raw exciter); rising into the low range adds stereo SPREAD (widening MAIN/AUX); past the midpoint it crossfades in a REVERB whose tail lengthens as you go up; near the top (~1.75+) the reverb FREEZES into an infinite, self-sustaining tail.",
+      "strength": "Excitation strength / accent: scales how hard the exciters drive the resonator (an overall accent/intensity), from a gentle, soft voice to a hard-driven, louder one.",
+      "strikeLevel": "STRIKE exciter level (labeled Strike): how much percussive-impact excitation (mallet / particles / pluck) is injected into the resonator on each gate. Past unity it also bleeds extra raw impact straight into the body.",
+      "strikeMeta": "STRIKE character (labeled Mallet): the meta-parameter that morphs the impact model — from a soft, single mallet hit through to scattered, granular particles.",
+      "strikeTimbre": "STRIKE tone (labeled Strike Tmb / Strk Tmb): the hardness/brightness of the impact — from a soft, muffled thud to a sharp, bright click."
+    }
+  },
   "fader": {
     "explanation": "A two-source video mixer with a built-in send/return FX loop, made of two stacked crossfaders. The first fader crossfades IN A and IN B into a mix that is also copied out the SEND jack (patch it through external video FX and return it); the second fader then blends that dry mix against the wet RETURN into the main OUT. Each fader has its own transition-shape dropdown so the crossfade can be a uniform fade or a wipe/dissolve/star/checkerboard sweep, and the whole thing renders as two GPU passes (pass 1 = A/B mix = SEND, pass 2 = dry/wet = OUT).",
     "inputs": {
@@ -135,6 +260,73 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "resonance": "Filter Q / peak emphasis, 0..0.99 — 0 is flat (no resonance, just frequency rolloff), raising it peaks the response near the cutoff (boosts that region, adds character), and at high values it can self-oscillate (the filter rings at cutoff indefinitely with no input signal). Resonance interacts with mode: highpass resonance can sculpt upper-midrange sheen, lowpass resonance can warm up oscillators by emphasizing fundamentals."
     }
   },
+  "helm": {
+    "explanation": "A full polyphonic subtractive (analog-style) synth voice — a port of Matt Tytel's Helm. The signal chain per voice is: two morphing oscillators (each saw/square/triangle/sine, with their own tune, transpose, unison stack and detune) plus a sub-oscillator and a noise source are mixed, run through one state-variable multimode resonant filter (low-pass / band-pass / high-pass, 12 or 24 dB/oct), and shaped by an amplitude VCA. Three dedicated ADSR envelopes drive it: the AMP envelope shapes loudness, the FILTER envelope sweeps the filter cutoff by an amount you set, and the MOD envelope is a spare modulation source. Two LFOs and a built-in 16-step sequencer add motion. Mental model: hold notes (via MIDI or a patched gate) and each note grabs one of up to 8 voices; voiceCount sets how many notes can sound at once, and voices are stolen oldest-first when you run out. v1 pre-wires the modulators to musical destinations (LFO1→cutoff, LFO2→osc2 pitch, MOD env→osc1 pitch, step sequencer→osc2 transpose) rather than exposing Helm's full mod matrix.",
+    "inputs": {
+      "gate": "Note on/off gate for the fallback CV/gate path (level-sensitive): a rising edge starts a note at the current pitch_cv and a falling edge releases it. It is ALSO the sequencer's clock — every rising edge here advances the built-in step sequencer one step (and re-attacks the envelopes), so the same gate that plays notes also walks the pattern.",
+      "midi_in": "A presentation-only port that exists so MIDI shows up as a first-class cable on the panel; it carries no audio or CV and nothing is read from it. Actual MIDI flows through the Web MIDI API (open the gear icon to pick a device and receive channels), not through this cable.",
+      "pitch_cv": "Monophonic V/oct pitch for the fallback CV/gate path used when no MIDI device is connected: while the GATE input is high it plays a single voice at midi note 60 + (pitch_cv × 12 semitones). MIDI note input (via the gear-icon device picker) takes priority and drives true polyphony; this CV path is a single-note fallback for patching from a sequencer or keyboard CV.",
+      "seq_reset": "Reset gate for the built-in step sequencer (trigger): a rising edge snaps the step pointer back so the next gate advance lands on step 0. Honored whether or not the sequencer is switched on, so you can sync the pattern's start to a clock or another sequencer."
+    },
+    "outputs": {
+      "out_l": "Left channel of the stereo mix of all sounding voices. The stereo image comes from spreading each oscillator's unison voices across the field by the SPR (spread) amount; with no unison and spread at 0 the output is effectively centered/mono.",
+      "out_r": "Right channel of the stereo mix of all sounding voices (the spread partner of out_l). Patch both out_l and out_r to keep the unison/pan stereo image."
+    },
+    "controls": {
+      "ampAttack": "Amplitude envelope attack time in seconds (0–8): how quickly each note fades in on note-on.",
+      "ampDecay": "Amplitude envelope decay time in seconds (0–8): how quickly the level falls from peak to the sustain level after the attack.",
+      "ampRelease": "Amplitude envelope release time in seconds (0–8): how long the note takes to fade out after note-off.",
+      "ampSustain": "Amplitude envelope sustain level (0–1): the steady loudness held while the note is on, after the decay.",
+      "filAttack": "Filter envelope attack time in seconds (0–8): how fast the filter-env contour rises on note-on (its effect on cutoff is scaled by F Dpth).",
+      "filDecay": "Filter envelope decay time in seconds (0–8): fall from the envelope's peak to its sustain.",
+      "filEnvDepth": "How much (and which direction) the filter envelope modulates the cutoff (−1 to +1, labeled F Dpth): positive sweeps the cutoff up with the envelope, negative sweeps it down, 0 disables the filter envelope's effect.",
+      "filRelease": "Filter envelope release time in seconds (0–8) after note-off.",
+      "filSustain": "Filter envelope sustain level (0–1) held while the note is on (default 0, so by default the filter sweep decays away).",
+      "filterBlend": "Continuously crossfades the filter response across 0 = low-pass, 1 = band-pass, 2 = high-pass, so in-between values are blends of two modes (labeled MODE on the panel).",
+      "filterCutoff": "Filter cutoff frequency (20 Hz–20 kHz, log) — the corner where the filter starts acting. The filter envelope and LFO 1 add to this around the knob value.",
+      "filterDrive": "Pre-filter drive/gain (0.5–6) pushing harder into the filter for added saturation and bite.",
+      "filterKeyTrack": "How much the cutoff follows the played pitch (−1 to +1): positive opens the filter as you play higher (keeping brightness consistent up the keyboard), negative inverts it, 0 is no tracking.",
+      "filterRes": "Filter resonance / emphasis at the cutoff (0.5–16); higher values peak harder and can self-oscillate-like ring.",
+      "filterStyle": "Filter slope / pole count: 0 = 12 dB/oct (2-pole, gentler) and 1 = 24 dB/oct (4-pole, steeper, more aggressive). Labeled POLE.",
+      "helm-gear-btn-{n}": "Gear icon (header) — opens the MIDI settings panel: pick the input device and which MIDI channels to receive on, and view the last note / active-voice count.",
+      "helm-seq-onoff-{n}": "SEQ ON/OFF — switches the built-in step sequencer on or off. When off the pattern contributes no modulation and doesn't advance; default off.",
+      "helm-seq-reset-{n}": "RST — resets the step pointer so the next gate advance starts the pattern at step 0 (same effect as a rising edge on the SEQ RESET input).",
+      "helm-step-{n}": "Step {n} value slider — sets this step's modulation amount (−1..+1). With the sequencer on, the step values are walked one-per-gate and sent to the sequencer's destination (osc-2 transpose, scaled by St Dpth/Amt).",
+      "lfo1Amp": "LFO 1 depth (0–1): how much LFO 1 modulates its destination — the filter cutoff in v1 (0 = off).",
+      "lfo1Freq": "LFO 1 rate in Hz (0.01–30, log).",
+      "lfo1Wave": "LFO 1 waveform (0 = saw, 1 = square, 2 = triangle, 3 = sine, default sine).",
+      "lfo2Amp": "LFO 2 depth (0–1): how much LFO 2 modulates its destination — oscillator-2 pitch (±1 semitone) in v1 (0 = off).",
+      "lfo2Freq": "LFO 2 rate in Hz (0.01–30, log, default 4 Hz).",
+      "lfo2Wave": "LFO 2 waveform (0 = saw, 1 = square, 2 = triangle, 3 = sine, default sine).",
+      "modAttack": "Mod envelope attack time in seconds (0–8). The mod envelope is a spare ADSR; in v1 it is pre-wired to oscillator-1 pitch (depth set by M Dpth).",
+      "modDecay": "Mod envelope decay time in seconds (0–8).",
+      "modEnvDepth": "How much the mod envelope modulates its destination — oscillator-1 pitch in v1 — over ±12 semitones (−1 to +1, labeled M Dpth); 0 disables it.",
+      "modRelease": "Mod envelope release time in seconds (0–8) after note-off.",
+      "modSustain": "Mod envelope sustain level (0–1, default 0).",
+      "noiseVol": "White-noise level in the mix (0–1, default 0) — adds breath/hiss or, through a resonant filter, percussive/wind textures.",
+      "osc1Detune": "How far apart the oscillator 1 unison copies are spread in cents (0–50); 0 stacks them in tune, higher values fatten and detune the stack. No effect when unison is 1.",
+      "osc1Trans": "Oscillator 1 coarse transpose in semitones (−24 to +24), shifting it by whole steps relative to the played note.",
+      "osc1Tune": "Oscillator 1 fine tune in cents (−100 to +100) for slight detuning or beating against osc 2.",
+      "osc1Unison": "Number of stacked unison copies of oscillator 1 (1–7); higher counts thicken the tone and, with detune, widen it.",
+      "osc1Vol": "Oscillator 1 level in the pre-filter mix (0–1).",
+      "osc1Wave": "Oscillator 1 waveform, morphing across 0 = saw, 1 = square, 2 = triangle, 3 = sine (the knob crossfades between adjacent shapes at in-between values).",
+      "osc2Detune": "Cents spread between oscillator 2's unison copies (0–50); no effect when unison is 1.",
+      "osc2Trans": "Oscillator 2 coarse transpose in semitones (−24 to +24) — e.g. +12 for an octave-up layer.",
+      "osc2Tune": "Oscillator 2 fine tune in cents (−100 to +100); defaults to +7 c so the two oscillators beat slightly out of the box.",
+      "osc2Unison": "Number of stacked unison copies of oscillator 2 (1–7).",
+      "osc2Vol": "Oscillator 2 level in the pre-filter mix (0–1).",
+      "osc2Wave": "Oscillator 2 waveform, morphing across 0 = saw, 1 = square, 2 = triangle, 3 = sine, just like osc 1 (defaults to square).",
+      "spread": "Stereo width (0–1): how far each oscillator's unison voices are panned across the stereo field. 0 collapses toward center/mono; higher values widen the image.",
+      "stepDepth": "How much the step sequencer modulates its destination — oscillator-2 transpose over ±12 semitones (−1 to +1, labeled Amt); 0 disables it.",
+      "stepNumSteps": "Number of active steps in the built-in step sequencer (1–16) before the pattern loops.",
+      "stepRate": "Step sequencer rate knob (0.1–30 Hz). Retained from v1's free-running mode; in the current gate-clocked mode the sequencer advances on GATE rising edges, so this is effectively inactive.",
+      "stepSmooth": "Glide/smoothing between step values (0–1): 0 jumps instantly between steps, higher values slew the modulation for portamento-like motion.",
+      "subVol": "Sub-oscillator level in the mix (0–1).",
+      "subWave": "Sub-oscillator waveform (0 = saw, 1 = square, 2 = triangle, 3 = sine; defaults to sine). The sub plays two octaves below the note for low-end weight.",
+      "voiceCount": "Polyphony cap (1–8): the maximum number of notes that can sound simultaneously. When more notes are held than voices available, the synth steals a voice (a releasing voice first, otherwise the oldest-held note). Set it to 1 for a strictly monophonic patch.",
+      "volume": "Master output level for the whole synth (0–2, default 0.7); above 1 it boosts past unity."
+    }
+  },
   "lfo": {
     "explanation": "A low-frequency modulation source: one oscillator emits the same wave at four phase taps (0°/90°/180°/270°) so a single LFO can sweep several voices in stereo or quadrature without re-tuning. Rate sets the cycle speed, Shape continuously morphs the waveform (sine → saw → square), and Depth scales the swing. In a shared/multiplayer rack the phase is anchored to the rack's shared clock so every client sees the same value at the same moment; solo on the public canvas it simply free-runs from phase 0.",
     "inputs": {
@@ -153,6 +345,32 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "depth": "Output amplitude / swing, applied as gain = depth × 2 and not clamped: 0 = still (flat at the 0 center, no modulation), 0.5 = unity ±1 (the default, matches legacy patches), 1 = ±2 (deliberately beyond the normal ±1 range). Orthogonal to shape — it only scales the swing, never shifts the center.",
       "rate": "How fast the LFO cycles, from 0.01 Hz (one sweep per ~100 s) to 100 Hz (audio-rate for FM-style use), on a log fader. Sets the speed shared by all four phase outputs; the clock input overrides phase, not rate.",
       "shape": "Continuously morphs the waveform across the 0–2 range: 0 = sine, 1 = saw, 2 = square, with smooth crossfades in between (e.g. value 0.5 = halfway sine↔saw). The fader's glyphs mark sine / saw / square."
+    }
+  },
+  "macrooscillator": {
+    "explanation": "A Plaits-style macro oscillator: one MODEL switch chooses among 14 self-contained synthesis engines (VA, WAVESHAPE, FM 2-OP, FM 6-OP, CHORD, ADDITIVE, STRING, MODAL, KICK, SNARE, HIHAT, WAVETABLE, GRANULAR, SPEECH), and every one of them is driven by the same three universal macro controls — HARMONICS, TIMBRE, MORPH — plus a NOTE offset and a LEVEL. Mental model: PITCH (V/oct, 0 V = C4) sets the fundamental, NOTE transposes it in semitones, the three macros sculpt the spectrum (their exact meaning is model-dependent — e.g. on VA harmonics is detune / timbre is a wavefolder / morph crossfades saw→square→triangle; on FM harmonics picks the carrier:modulator ratio / timbre is the modulation index / morph is feedback; on the drum models the macros shape pitch-sweep, click and decay), and a rising edge into TRIG strikes / restarts the model (phase reset for the oscillators, envelope retrigger for the percussion and string). All 14 engines run every sample so switching MODEL is glitch-free; OUT is the post-LEVEL main signal and AUX is a clean, level-independent secondary tap.",
+    "inputs": {
+      "harm_cv": "CV that displaces the HARMONICS macro (0..1). Its sonic effect depends on the active model (detune, FM ratio, chord shape, inharmonicity, string stiffness, kick pitch-sweep range, etc.).",
+      "level_cv": "CV that displaces the LEVEL control (0..1), scaling the main OUT amplitude. It only affects OUT — the AUX tap is deliberately left unscaled.",
+      "model_cv": "CV that displaces the MODEL selector on a discrete (stepped) scale, switching which of the 14 engines is active. Because model select is a switch and not a continuous control, a smoothly-changing source (an LFO) will step rapidly through engines and sound glitchy — drive it with stepped/held voltages (a sequencer, sample-and-hold) for clean model changes.",
+      "morph_cv": "CV that displaces the MORPH macro (0..1) — the third model-dependent axis (waveshape crossfade, FM feedback / decay, chord spread, even/odd balance, damping, body-decay length, grain envelope, etc.).",
+      "note_cv": "CV that displaces the NOTE control, adding a semitone offset (the param spans ±60 st) on top of the PITCH V/oct input — useful for sequenced transposition that rides above the main pitch tracking.",
+      "pitch": "1V/octave pitch CV — 0 V plays C4 (261.63 Hz) and each +1 raises the note one octave. It sums with the NOTE control before the engine, so PITCH does the musical tracking while NOTE trims a fixed offset; the resulting frequency is clamped to roughly 1 Hz..20 kHz.",
+      "timb_cv": "CV that displaces the TIMBRE macro (0..1) — the second model-dependent axis (wavefolder drive, FM mod index, voice waveform, spectral tilt, filter cutoff, click amount, and so on).",
+      "trig": "Strike / restart trigger: each rising edge (crossing above 0.5) resets the selected engine — phase accumulators snap to zero on the pitched models, and the percussion (KICK/SNARE/HIHAT), STRING and other excited models retrigger their attack/burst. It is sampled per-edge, so it fires once per pulse; hold it high or leave it unpatched and the model simply free-runs (sustained tones keep ringing, drums decay once)."
+    },
+    "outputs": {
+      "aux": "A model-dependent auxiliary tap carrying a clean / raw variant of the same voice — the sub-octave triangle on VA, the pre-distortion body on WAVESHAPE, the clean carrier on FM, the root voice on CHORD, the fundamental mode on MODAL, the glottal pulse on SPEECH, and so on. It is NOT scaled by LEVEL (Plaits convention), so it stays a steady reference for use as a sidechain trigger, a scope/sync reference, or a second timbre to mix in.",
+      "out": "The main audio output of the selected model, after the LEVEL scalar is applied. This is the primary voice to patch into a filter / VCA / mixer."
+    },
+    "controls": {
+      "harmonics": "The first of the three universal macros (0..1). Its meaning is model-specific: e.g. detune (VA), sub mix (WAVESHAPE), carrier:modulator ratio (FM 2-OP), chord shape (CHORD), inharmonicity (ADDITIVE), string stiffness (STRING), preset (MODAL), pitch-sweep range (KICK), noise/tone balance (SNARE), bandpass centre (HIHAT), wavetable frame (WAVETABLE), grain density (GRANULAR), vowel (SPEECH).",
+      "level": "Output level (0..1) applied to the main OUT only; the AUX tap is left at full scale regardless of this control.",
+      "macro-model-name-{n}": "Read-only model readout under the title — shows the name of the currently selected MODEL (e.g. VA, FM 6OP, SPEECH) so you can confirm which engine the discrete MODEL fader has landed on.",
+      "model": "Picks which of the 14 synthesis engines is active, as a discrete (stepped) fader from 0 to 13: 0 VA, 1 WAVESHAPE, 2 FM 2-OP, 3 FM 6-OP, 4 CHORD, 5 ADDITIVE, 6 STRING, 7 MODAL, 8 KICK, 9 SNARE, 10 HIHAT, 11 WAVETABLE, 12 GRANULAR, 13 SPEECH. The fader snaps to integer steps and the model readout above the panel names the current selection; switching is glitch-free because every engine runs continuously underneath.",
+      "morph": "The third universal macro (0..1), model-specific: saw→square→triangle morph (VA), folder↔tanh crossfade (WAVESHAPE), feedback (FM 2-OP) / envelope decay (FM 6-OP), chord spread (CHORD), even/odd balance (ADDITIVE), damping (STRING), mode-amp morph (MODAL), body decay (KICK/SNARE), decay length (HIHAT), phase-distortion (WAVETABLE), grain-envelope shape (GRANULAR), pitched→whispered source (SPEECH).",
+      "note": "Fixed pitch offset in semitones (−60..+60 st) added on top of the PITCH V/oct input — a manual transpose for tuning the oscillator without re-patching, separate from the per-note tracking that PITCH provides.",
+      "timbre": "The second universal macro (0..1), model-specific: wavefolder drive (VA), distortion drive (WAVESHAPE), FM modulation index (FM), voice waveform sine→saw (CHORD), spectral tilt (ADDITIVE), excitation brightness (STRING), resonance Q (MODAL), click amount (KICK), noise hi-pass (SNARE), metallic↔noise blend (HIHAT), LP filter (WAVETABLE), pitch jitter (GRANULAR), formant Q (SPEECH)."
     }
   },
   "mixer": {
@@ -183,6 +401,34 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     },
     "controls": {
       "level": "Master gain applied equally to all three noise outputs, from silence (0) to full amplitude (1). Default 0.5 provides moderate headroom; raise it to push the noise through downstream processing, lower it to blend subtly into a mix."
+    }
+  },
+  "rings": {
+    "explanation": "A modal / string RESONATOR — a faithful port of Mutable Instruments Rings. It doesn't make a tone on its own: it RESONATES an exciter into pitched, decaying string and bell voices. Feed it an audio exciter on IN (a noise burst, a click, a drum, anything percussive works best) and it rings that energy out at the pitch set by PITCH; with nothing patched into IN, the STRUM input self-excites it with a short internal noise burst so it still sounds when you pluck it. MODEL switches the resonator type: MODAL is a bank of 24 stiffness-stretched resonant bandpass filters (harmonic at STRUCTURE 0, growing inharmonic and bell-like as STRUCTURE rises), and SYMPATHETIC is a pair of Karplus–Strong plucked strings whose detuning STRUCTURE sets. STRUCTURE/BRIGHTNESS/DAMPING/POSITION are the canonical Rings macros that sculpt the resonance — inharmonicity, high-end content, ring time, and pickup placement — and LEVEL is a soft-limited (tanh) output gain. The two outputs ODD and EVEN are complementary taps of the same resonator; patch both for a wide pseudo-stereo image, or just ODD for mono.",
+    "inputs": {
+      "bright_cv": "CV into BRIGHTNESS (0..1): it displaces the high-end character of the resonance, opening or closing the brightness of the rung partials.",
+      "damp_cv": "CV into DAMPING (0..1): it displaces the ring time — low values resonate long, high values damp the partials quickly (a useful target for an envelope to shape per-note decay).",
+      "in": "The audio EXCITER — the energy the resonator rings out. Patch a percussive, broadband signal here (a noise burst, an impulse/click, a drum hit, even another oscillator) and the body resonates it into pitched string/modal voices; sustained input keeps it continuously excited (a bowed/blown character). When nothing is patched here the resonator is silent until struck, so use STRUM (or an external exciter) to make it sound.",
+      "level_cv": "CV into LEVEL (0..1): it displaces the soft-limited output gain, letting an envelope or LFO swell or duck the output.",
+      "model_cv": "CV into the MODEL selector (discrete): it displaces the resonator-model choice, jumping between MODAL (0) and SYMPATHETIC (1) — e.g. a gate or step CV can switch resonator type mid-patch.",
+      "note_cv": "CV into the NOTE offset: it displaces the semitone offset that sums with PITCH (NOTE spans ±60 st), so an envelope or LFO here bends the tuning around the V/oct fundamental.",
+      "pitch": "1V/oct pitch. Sets the fundamental the resonator is tuned to (1 unit = 1 octave, 0 V = middle C); it sums with the NOTE offset before the body is configured. Sweeping it retunes every partial / both strings together.",
+      "pos_cv": "CV into POSITION (0..1): it displaces the pickup position along the resonator, changing which partials are emphasized and shifting the ODD/EVEN balance.",
+      "str_cv": "CV into STRUCTURE (0..1): it displaces the inharmonicity/structure macro — sweeping the modal partials from harmonic toward bell-like, or detuning the sympathetic string pair.",
+      "strum": "A TRIGGER: each rising edge re-ignites the resonator with a short (~10 ms) internal noise burst, plucking/striking it once per pulse — like physically strumming the strings. It fires on the edge only and ignores how long the level stays high, so any clock, gate, or button pulse re-strikes it. STRUM works even with nothing patched into IN, making the module a self-contained plucked voice."
+    },
+    "outputs": {
+      "even": "The companion tap to ODD — the EVEN-indexed partial sum / opposite string-mix, also tanh soft-limited. ODD and EVEN carry different partial content from the same resonator, so patching both into a stereo bus gives a wide pseudo-stereo image; summing them back to mono recombines the body.",
+      "odd": "One of the resonator's two complementary output taps (the cosine-weighted ODD-indexed partial sum in MODAL, the position-crossfaded string mix in SYMPATHETIC), passed through a tanh soft-limiter. Use it alone for a mono resonator output, or pair it with EVEN."
+    },
+    "controls": {
+      "brightness": "Sculpts the high-frequency content of the resonance (0..1): low values are dark and muted, high values let the upper partials sing through. In SYMPATHETIC it also opens the brightness shaper on each string's input.",
+      "damping": "Sets the ring/decay time (0..1): low DAMPING resonates long (high Q in MODAL, a near-lossless string loop in SYMPATHETIC), high DAMPING damps the energy quickly for a short, plucky decay. A natural target for an envelope to vary decay per note.",
+      "level": "Output gain (0..1) feeding a tanh soft-limiter, so pushing it adds gentle saturation rather than hard clipping. Sets the overall loudness of both ODD and EVEN.",
+      "model": "The resonator MODEL selector (the on-card button cycles it): MODAL (0) is a 24-partial stiffness-stretched resonant bandpass bank — a struck bar / bell / metal character — and SYMPATHETIC (1) is a pair of Karplus–Strong plucked strings detuned by STRUCTURE. The other macros mean the same thing in both models but the timbre changes substantially between them.",
+      "note": "A fixed semitone offset (-60..+60 st) added on top of the PITCH input, so you can tune the resonator without an external pitch source or transpose it relative to one. At 0 the resonator tracks PITCH (or middle C with PITCH unpatched).",
+      "position": "The pickup position along the resonator (0..1): it changes which partials are emphasized via a cosine-weighted tap, and because it weights the ODD and EVEN sums differently it also shifts the balance and stereo image between the two outputs.",
+      "structure": "The inharmonicity / structure macro (0..1): in MODAL it stretches the partial spacing from harmonic (0) toward bell-/metal-like (1); in SYMPATHETIC it detunes the second string from unison (0) up to about +19 semitones. The single biggest control over how 'tuned' versus 'clangy' the resonance sounds."
     }
   },
   "sequencer": {
@@ -231,6 +477,34 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "swing": "Shuffles the rhythm by lengthening the on-beat steps and shortening the off-beat steps that follow them, which pushes every off-beat later for a looser feel; 0 is dead-straight, higher values deepen the shuffle. Internal-clock only (an external clock sets its own timing)."
     }
   },
+  "swolevco": {
+    "explanation": "A complex / West-Coast-style dual oscillator: two oscillators in one module that interact to build harmonically rich timbres rather than just stacking simple shapes. A PRIMARY oscillator (crossfaded across saw / triangle / square by Symmetry, then run through a wavefolder) is the main voice; a sine MODULATOR oscillator, tuned either to a Ratio of the primary's pitch or to its own M.Tune / M.Fine, cross-modulates the primary via audio-rate FM (the Timbre amount). Mental model: start from a near-sine, then warp the wave with Symmetry, fold it with Fold, and pour FM in with Timbre to climb from sweet to screaming — all from one pitch. You can tap the primary alone (OUT), the clean modulator sine alone (MOD OUT), or the two summed together (SUM OUT), and a mono-video oscilloscope of the primary is available on SCOPE.",
+    "inputs": {
+      "fm": "External audio-rate FM into the PRIMARY oscillator: an incoming audio signal is scaled (full-scale ±1 ≈ ±200 Hz of deviation) and summed into the primary's frequency, on top of the internal Timbre FM. Drive it from a VCA or another oscillator for cross-FM beyond the built-in modulator.",
+      "fold": "CV that displaces the Fold control, modulating how hard the West-Coast wavefolder folds the primary signal — patch an envelope here for evolving fold timbres.",
+      "mod_pitch": "1V/oct pitch CV for the MODULATOR oscillator (0V = C4), summed on top of M.Tune / M.Fine. Most useful in free-run mode (Ratio = 0) where the modulator has its own pitch; with Ratio greater than 0 the modulator is largely slaved to the primary and this adds on top of that base.",
+      "pitch": "1V/oct pitch CV for the PRIMARY oscillator (0V = C4 = 261.626 Hz), summed on top of the Tune / Fine knobs. When Ratio is greater than 0 the modulator tracks this pitch (modulator frequency = primary × Ratio), so a sequencer or keyboard patched here moves both oscillators together.",
+      "ratio": "CV that displaces the Ratio control, sweeping the modulator-to-primary frequency ratio. Pushing it through 0 toggles the modulator between free-run (its own M.Tune / M.Fine pitch) and ratio-locked (a multiple of the primary's pitch).",
+      "symmetry": "CV that displaces the Symmetry control, sliding the saw → triangle → square waveform crossfade of the primary oscillator up or down.",
+      "timbre": "CV that displaces the Timbre control (audio-rate FM amount from the modulator into the primary); an LFO or envelope here opens and closes the FM brightness over time."
+    },
+    "outputs": {
+      "mod_out": "The MODULATOR oscillator's raw sine output, before it is mixed in — a clean sine tap you can patch anywhere as an independent oscillator (e.g. as an LFO or a second voice) at the modulator's pitch.",
+      "out": "The PRIMARY oscillator: the symmetry-crossfaded saw/tri/square wave after the wavefolder, including any Timbre / external FM. This is the main voice and the signal the SCOPE traces.",
+      "scope": "A mono-video oscilloscope trace of the primary signal (OUT), tapped post-fold. Patch a video cable from here into a scope / display module to watch the waveform; it is a video output, not audio.",
+      "sum_out": "The PRIMARY and MODULATOR summed into one signal (each at half level to leave headroom). With Timbre up this is the cross-modulated mix — the primary already FM'd by the modulator, plus the modulator's own sine on top — for a thicker, two-oscillator blend."
+    },
+    "controls": {
+      "fine": "Fine tuning of the PRIMARY oscillator in cents (-100 to +100, ±1 semitone) for beating / detune against the modulator or other voices.",
+      "fold": "West-Coast wavefolder amount on the primary (0 to 1): 0 is no folding; raising it folds the wave back on itself, adding harmonics and that characteristic complex-oscillator brightness/buzz even on a plain triangle.",
+      "mod_fine": "Fine tuning of the MODULATOR oscillator in cents (±1 semitone), for free-run detune. Like M.Tune, it only takes effect when Ratio = 0.",
+      "mod_tune": "Coarse tuning of the MODULATOR oscillator in semitones (±3 octaves). Active when Ratio = 0 (free-run); when Ratio is greater than 0 the modulator follows the primary × Ratio and this is ignored.",
+      "ratio": "Modulator-to-primary frequency ratio (0 to 8). At 0 the modulator free-runs at its own M.Tune / M.Fine pitch; above 0 the modulator frequency is the primary's frequency × this value (1 = unison, 2 = octave up, etc.), so it tracks the primary's pitch for harmonically related FM.",
+      "symmetry": "Morphs the PRIMARY waveform across a three-way crossfade (0 to 1): 0 = saw, 0.5 = triangle, 1 = square, with a linear blend of the two neighboring shapes in between. Default 0.5 (pure triangle).",
+      "timbre": "Audio-rate FM amount: how much the modulator deviates the primary's frequency (0 to 1, where 1 ≈ ±200 Hz at C4). 0 leaves the primary clean; turning it up grows the sidebands from a gentle vibrato-like shimmer into clangorous, bell-like and noisy Buchla-style timbres.",
+      "tune": "Coarse tuning of the PRIMARY oscillator in semitones (-36 to +36, i.e. ±3 octaves) relative to C4; combines with Fine and any pitch CV to set the base pitch."
+    }
+  },
   "vca": {
     "explanation": "A voltage-controlled amplifier that multiplies an input audio signal by a gain factor computed from a base DC offset and CV control voltage scaled by the cvAmount parameter. Mental model: the VCA's output amplitude is set by patching a CV signal into the CV input (typically an envelope or LFO) and tuning the base knob for silent-when-unpatched (0) or passing audio-through at unity (1). A phase-inverted copy of the output is always available on the audio_inv port for stereo widening, sidechain processing, or mid/side decomposition without needing a separate inverter module.",
     "inputs": {
@@ -244,6 +518,63 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     "controls": {
       "base": "A static DC offset added to the CV signal (linear 0 to 1, default 0). Set to 0 for silent when unpatched; set to 1 for unity gain. Typically used as a quick volume control or to set the VCA's baseline attenuation.",
       "cvAmount": "Controls the scale and sign of the CV input (linear −1 to 1, default 1). Positive values amplify normally; negative values invert the CV so a high incoming signal produces low gain. Useful for inverting modulation or creating sidechain-style ducking effects."
+    }
+  },
+  "wavecel": {
+    "explanation": "A stereo WAVETABLE oscillator: it scans through a stack of single-cycle waveforms (a wavetable) and plays back the one MORPH points at, smoothly cross-fading between adjacent frames so turning MORPH sweeps the timbre. SPREAD layers several detuned copies of the voice across the stereo field for a wide, chorused image, and FOLD runs the result through a wavefolder to fold the peaks back on themselves and add bright harmonics. It is polyphonic: patch a poly chord bus into POLY and it renders one wavetable voice per gated lane at that lane's pitch and sums them (the morph/spread/fold timbre is shared across all voices); with nothing in POLY it plays the single mono PITCH. A per-voice amplitude ADSR (A/D/S/R) rides on top of a BASE-volume floor and shapes each note once a poly lane or the TRIG gate fires — at the default BASE of 1 the envelope does nothing and WAVECEL is a continuous drone. Load one of the factory wavetables, pick a built-in preset, or upload your own WAV, and watch the on-card screen as either an oscilloscope trace or an animated 3D view of the whole table.",
+    "inputs": {
+      "fm": "Audio-rate frequency-modulation input: the incoming signal modulates the oscillator's pitch for FM/cross-mod timbres (patch another oscillator here for classic FM sidebands).",
+      "fold_cv": "CV that offsets the Fold control, driving the wavefolder harder or softer over time for evolving brightness (added to the knob, then clamped to 0..1).",
+      "morph_cv": "CV that offsets the Morph control, sliding the wavetable scan position up or down so an LFO or envelope can sweep the timbre hands-free (added to the knob, then clamped to 0..1).",
+      "pitch": "1V/octave pitch CV setting the oscillator's frequency (0V = C4), summed with the Tune and Fine knobs. This is the MONO voice and is used whenever nothing is gating the POLY input.",
+      "poly": "The polyphonic chord bus from a poly source (MIDI LANE in poly mode / POLYSEQZ): each lane carries a pitch plus a note-on/off gate, and while a lane's gate is high WAVECEL renders one wavetable voice at that lane's pitch and sums all the gated voices into the stereo output — so a held chord plays a chord. The per-voice ADSR opens on each lane's note-on and releases on its note-off. When nothing is patched here (or no lane is gated) WAVECEL falls back to the single mono PITCH path unchanged.",
+      "spread_cv": "CV that offsets the Spread control, widening or narrowing the detuned stereo spread under modulation (added to the knob, then clamped to the 1..5 range).",
+      "trigger": "A mono note GATE for the per-voice amplitude envelope: while the level is high the note is held — a rising edge starts the ADSR attack (note-on) and the falling edge starts its release (note-off) — so it is level-sensitive, not just a one-shot. The first rising edge turns WAVECEL into a gated voice (it tracks the gate from then on); before any gate, and when this input is unpatched, the amplitude env is bypassed and WAVECEL free-runs as a continuous drone."
+    },
+    "outputs": {
+      "out_l": "Left channel of the stereo wavetable output (the lower-detuned half of the spread voices); pair it with OUT R for the full wide stereo image.",
+      "out_r": "Right channel of the stereo wavetable output (the upper-detuned half of the spread voices); the L/R pair widens as Spread increases.",
+      "scope_out": "A mono-video oscilloscope trace of the currently-morphed waveform (single-color line on a dark background). It ALWAYS renders this scope view regardless of which mode the on-card preview toggle is showing — patch it into a video destination to see the wave even while the card shows the 3D view.",
+      "wave3d_out": "A video output rendering the whole wavetable as a 3D stack of frames in perspective, with the active frame highlighted; the surface animates as Morph (and its CV) scans across the table. Like SCOPE VIDEO it ALWAYS renders its own (3D) view regardless of the card's preview toggle."
+    },
+    "controls": {
+      "attack": "Attack time of the per-voice amplitude ADSR (1 ms to 5 s, log): how long each note takes to ramp up to full after its gate opens (a poly lane note-on or a TRIG rising edge). The same A/D/S/R feeds every poly voice and the mono trigger.",
+      "base_vol": "The per-voice VCA floor the amplitude ADSR rides on top of (gain = base + (1-base)×env): at 1 (default) gain is always full so the envelope does nothing and WAVECEL is a raw, continuous drone; at 0 the envelope has full control (silent between notes); 0.5 floors each voice at half and the env swells it up to full on note-on.",
+      "decay": "Decay time of the amplitude ADSR (1 ms to 5 s, log): how long the note takes to fall from the attack peak down to the Sustain level after attack completes.",
+      "fine": "Fine tuning in cents (-100 to +100, one semitone each way) for detuning and beating against other voices; stacks on top of Tune and the pitch CV.",
+      "fold": "Wavefolder amount from 0 (clean, no folding) to 1 (heavy folding): it folds the waveform's peaks back on themselves to add bright upper harmonics, getting more aggressive as you turn it up. Fold CV adds to this knob.",
+      "morph": "The wavetable scan position from 0 to 1: it picks which single-cycle frame plays and smoothly cross-fades between adjacent frames, so sweeping it morphs the timbre across the loaded table (the active frame is highlighted in the visualizer). Morph CV adds to this knob.",
+      "release": "Release time of the amplitude ADSR (1 ms to 5 s, log): how long the note takes to fade to silence after its gate closes (a poly lane note-off or the TRIG falling edge).",
+      "spread": "Stereo spread / detune width from 1 (a single centered voice, no spread) to 5 (several voices detuned and panned hard across L/R) for a wide, chorused image. Spread CV adds to this knob.",
+      "sustain": "Sustain level of the amplitude ADSR (0 to 1): the held amplitude a note stays at while its gate remains high, after the decay stage. At 1 the note holds at full; at 0 it decays to silence even while held.",
+      "tune": "Coarse tuning in semitones (-36 to +36, three octaves each way), added to the incoming pitch CV. Zero is unity; use it to transpose the oscillator in musical steps.",
+      "wavecel-preset-select-{n}": "Built-in preset loader — a dropdown of baked-in wavetable presets; picking one fetches and parses that table and loads it as a USER table (it resets itself afterward so re-picking the same preset reloads it). A quick way to try fancier tables without uploading a file.",
+      "wavecel-source-select-{n}": "Factory wavetable picker — a dropdown of the bundled tables (BASIC SHAPES, HARMONIC SWEEP, …); choosing one loads it as the oscillator's wavetable. If you've uploaded a WAV or loaded a preset it also shows a USER entry for the current custom table. The choice is saved with the patch and synced to everyone in the rack.",
+      "wavecel-viz-toggle-{n}": "Toggles the on-card preview screen between the SCOPE oscilloscope trace and the 3D wavetable view (the button shows the current mode). This only changes what the card displays — the SCOPE VIDEO and 3D VIDEO output ports always emit their own respective views regardless of this toggle.",
+      "wavecel-wav-input-{n}": "Load WAV — uploads your own wavetable from an E352-format WAV file (single-cycle frames concatenated); the parsed frames become the active USER table and persist with the patch. A status line confirms the frame count, or shows a parse error if the file isn't valid."
+    }
+  },
+  "wavetableVco": {
+    "explanation": "A single-cycle wavetable oscillator. Instead of one fixed shape, it reads from a built-in 16-frame table that morphs continuously saw → square → triangle → sine, and the WAVE control scans across those frames so you can sweep the timbre in real time (or modulate the scan with CV for a moving, evolving tone). Pitch is 1V/oct (0V = C4) trimmed by TUNE (coarse semitones) and FINE (cents). On top of the basic oscillator it has two audio-rate modulation inputs that make it sound complex or metallic: an FM input (frequency modulation, scaled by the FM AMT control) and a PM input (phase modulation, scaled by PM AMT). The table is the fixed shape set shipped with the module — there is no per-frame selector or upload here (use WAVECEL or WAVVIZ for custom wavetables); WAVE only scans the table that's already loaded.",
+    "inputs": {
+      "fine": "CV that displaces the FINE control, shifting pitch in cents (its full natural range of about ±100 cents, centered on the knob) for detuning.",
+      "fm": "Audio-rate frequency-modulation input, depth set by the FM AMT control (FM AMT 0 = no effect). Modulation is EXPONENTIAL, not linear/through-zero: the incoming signal is added in the semitone domain (±1 in × FM AMT = up to ±12 semitones of pitch wobble), so a positive input raises pitch and a negative input lowers it, but the frequency is floored at 1 Hz and never crosses to the other side of zero. A negative FM AMT flips the modulator's polarity.",
+      "fmAmount": "CV that displaces the FM AMT control, modulating how deep the FM input drives the pitch.",
+      "pitch": "1V/oct pitch input — 0V plays C4 and each ±1 shifts the oscillator a full octave. Sums with the TUNE and FINE controls (and the TUNE/FINE CV inputs) to set the playback frequency, which is clamped to roughly 1 Hz–20 kHz.",
+      "pm": "Audio-rate phase-modulation input, depth set by the PM AMT control (PM AMT 0 = no effect). It offsets where the oscillator reads into the wavetable without changing the underlying frequency: ±1 in × PM AMT = ±1 up to a full cycle of phase shift, which adds harmonics for FM/DX-style metallic and bell-like tones. A negative PM AMT inverts the direction of the offset.",
+      "pmAmount": "CV that displaces the PM AMT control, modulating how deep the PM input shifts the readout phase.",
+      "tune": "CV that displaces the TUNE control, shifting coarse pitch in semitones (its full natural range of about ±36 semitones, centered on the knob).",
+      "wavePos": "CV that scans the wavetable, summing with the WAVE control to pick the morph frame (saw → square → triangle → sine). Audio-rate and clamped to 0..1, so an LFO or envelope here continuously sweeps the timbre; full-scale ±1 covers the whole table from the WAVE setting."
+    },
+    "outputs": {
+      "audio": "The oscillator's audio output — the interpolated wavetable signal at the current pitch and WAVE position, including any FM and PM applied. Mono, roughly ±1 in level; patch it into a filter, VCA, or mixer."
+    },
+    "controls": {
+      "fine": "Fine tuning in cents, ±100 (±1 semitone), for detuning or beating against another oscillator. 0 is no offset.",
+      "fmAmount": "Depth of the FM input: how strongly the audio-rate signal at the FM input modulates pitch (up to ±12 semitones at full input). 0 ignores the FM input; negative values invert the modulator's polarity.",
+      "pmAmount": "Depth of the PM input: how strongly the audio-rate signal at the PM input offsets the wavetable readout phase (up to a full cycle at full input). 0 ignores the PM input; negative values invert the direction of the phase offset.",
+      "tune": "Coarse tuning in semitones, ±36 (±3 octaves), added to the 1V/oct pitch input. 0 leaves the incoming pitch untouched.",
+      "wavePos": "Scans the position into the 16-frame table from 0 (the first frame) to 1 (the last), morphing the timbre saw → square → triangle → sine; the WAVE POSITION CV input sums on top of this. Sets where in the table the oscillator reads — the table itself is fixed."
     }
   }
 };

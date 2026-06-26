@@ -889,6 +889,60 @@ export const macrooscillatorDef: AudioModuleDef = {
     { id: 'level',     label: 'Level',     defaultValue: 0.8, min: 0,   max: 1,  curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A Plaits-style macro oscillator: one MODEL switch chooses among 14 self-contained synthesis engines (VA, WAVESHAPE, FM 2-OP, FM 6-OP, CHORD, ADDITIVE, STRING, MODAL, KICK, SNARE, HIHAT, WAVETABLE, GRANULAR, SPEECH), and every one of them is driven by the same three universal macro controls — HARMONICS, TIMBRE, MORPH — plus a NOTE offset and a LEVEL. Mental model: PITCH (V/oct, 0 V = C4) sets the fundamental, NOTE transposes it in semitones, the three macros sculpt the spectrum (their exact meaning is model-dependent — e.g. on VA harmonics is detune / timbre is a wavefolder / morph crossfades saw→square→triangle; on FM harmonics picks the carrier:modulator ratio / timbre is the modulation index / morph is feedback; on the drum models the macros shape pitch-sweep, click and decay), and a rising edge into TRIG strikes / restarts the model (phase reset for the oscillators, envelope retrigger for the percussion and string). All 14 engines run every sample so switching MODEL is glitch-free; OUT is the post-LEVEL main signal and AUX is a clean, level-independent secondary tap.",
+    inputs: {
+      pitch:
+        "1V/octave pitch CV — 0 V plays C4 (261.63 Hz) and each +1 raises the note one octave. It sums with the NOTE control before the engine, so PITCH does the musical tracking while NOTE trims a fixed offset; the resulting frequency is clamped to roughly 1 Hz..20 kHz.",
+      trig:
+        "Strike / restart trigger: each rising edge (crossing above 0.5) resets the selected engine — phase accumulators snap to zero on the pitched models, and the percussion (KICK/SNARE/HIHAT), STRING and other excited models retrigger their attack/burst. It is sampled per-edge, so it fires once per pulse; hold it high or leave it unpatched and the model simply free-runs (sustained tones keep ringing, drums decay once).",
+      model_cv:
+        "CV that displaces the MODEL selector on a discrete (stepped) scale, switching which of the 14 engines is active. Because model select is a switch and not a continuous control, a smoothly-changing source (an LFO) will step rapidly through engines and sound glitchy — drive it with stepped/held voltages (a sequencer, sample-and-hold) for clean model changes.",
+      note_cv:
+        "CV that displaces the NOTE control, adding a semitone offset (the param spans ±60 st) on top of the PITCH V/oct input — useful for sequenced transposition that rides above the main pitch tracking.",
+      harm_cv:
+        "CV that displaces the HARMONICS macro (0..1). Its sonic effect depends on the active model (detune, FM ratio, chord shape, inharmonicity, string stiffness, kick pitch-sweep range, etc.).",
+      timb_cv:
+        "CV that displaces the TIMBRE macro (0..1) — the second model-dependent axis (wavefolder drive, FM mod index, voice waveform, spectral tilt, filter cutoff, click amount, and so on).",
+      morph_cv:
+        "CV that displaces the MORPH macro (0..1) — the third model-dependent axis (waveshape crossfade, FM feedback / decay, chord spread, even/odd balance, damping, body-decay length, grain envelope, etc.).",
+      level_cv:
+        "CV that displaces the LEVEL control (0..1), scaling the main OUT amplitude. It only affects OUT — the AUX tap is deliberately left unscaled.",
+    },
+    outputs: {
+      out:
+        "The main audio output of the selected model, after the LEVEL scalar is applied. This is the primary voice to patch into a filter / VCA / mixer.",
+      aux:
+        "A model-dependent auxiliary tap carrying a clean / raw variant of the same voice — the sub-octave triangle on VA, the pre-distortion body on WAVESHAPE, the clean carrier on FM, the root voice on CHORD, the fundamental mode on MODAL, the glottal pulse on SPEECH, and so on. It is NOT scaled by LEVEL (Plaits convention), so it stays a steady reference for use as a sidechain trigger, a scope/sync reference, or a second timbre to mix in.",
+    },
+    controls: {
+      model:
+        "Picks which of the 14 synthesis engines is active, as a discrete (stepped) fader from 0 to 13: 0 VA, 1 WAVESHAPE, 2 FM 2-OP, 3 FM 6-OP, 4 CHORD, 5 ADDITIVE, 6 STRING, 7 MODAL, 8 KICK, 9 SNARE, 10 HIHAT, 11 WAVETABLE, 12 GRANULAR, 13 SPEECH. The fader snaps to integer steps and the model readout above the panel names the current selection; switching is glitch-free because every engine runs continuously underneath.",
+      note:
+        "Fixed pitch offset in semitones (−60..+60 st) added on top of the PITCH V/oct input — a manual transpose for tuning the oscillator without re-patching, separate from the per-note tracking that PITCH provides.",
+      harmonics:
+        "The first of the three universal macros (0..1). Its meaning is model-specific: e.g. detune (VA), sub mix (WAVESHAPE), carrier:modulator ratio (FM 2-OP), chord shape (CHORD), inharmonicity (ADDITIVE), string stiffness (STRING), preset (MODAL), pitch-sweep range (KICK), noise/tone balance (SNARE), bandpass centre (HIHAT), wavetable frame (WAVETABLE), grain density (GRANULAR), vowel (SPEECH).",
+      timbre:
+        "The second universal macro (0..1), model-specific: wavefolder drive (VA), distortion drive (WAVESHAPE), FM modulation index (FM), voice waveform sine→saw (CHORD), spectral tilt (ADDITIVE), excitation brightness (STRING), resonance Q (MODAL), click amount (KICK), noise hi-pass (SNARE), metallic↔noise blend (HIHAT), LP filter (WAVETABLE), pitch jitter (GRANULAR), formant Q (SPEECH).",
+      morph:
+        "The third universal macro (0..1), model-specific: saw→square→triangle morph (VA), folder↔tanh crossfade (WAVESHAPE), feedback (FM 2-OP) / envelope decay (FM 6-OP), chord spread (CHORD), even/odd balance (ADDITIVE), damping (STRING), mode-amp morph (MODAL), body decay (KICK/SNARE), decay length (HIHAT), phase-distortion (WAVETABLE), grain-envelope shape (GRANULAR), pitched→whispered source (SPEECH).",
+      level:
+        "Output level (0..1) applied to the main OUT only; the AUX tap is left at full scale regardless of this control.",
+      // Read-only on-card readout (no backing param) — declared as a one-member
+      // control family below and keyed as `<familyId>-{n}`.
+      "macro-model-name-{n}":
+        "Read-only model readout under the title — shows the name of the currently selected MODEL (e.g. VA, FM 6OP, SPEECH) so you can confirm which engine the discrete MODEL fader has landed on.",
+    },
+  },
+
+  controlFamilies: [
+    // The model-name readout has no backing param; declared as a one-member
+    // family so the docs gate can key prose to it (testidPrefix grep-verified
+    // against the card).
+    { id: 'macro-model-name', label: 'Model readout', kind: 'other', testidPrefix: 'macro-model-name' },
+  ],
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
