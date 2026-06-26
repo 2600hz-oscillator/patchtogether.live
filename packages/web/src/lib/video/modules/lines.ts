@@ -128,6 +128,28 @@ export const linesDef: VideoModuleDef = {
     { id: 'fmDepth',   label: 'FM Depth',  defaultValue: DEFAULTS.fmDepth,   min: 0,    max: 1,  curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "LINES is a procedural mono-video source that renders soft-edged parallel stripes whose orientation, count, thickness, and scroll you dial in. The shader rotates the UV space by Orient (0 = horizontal lines, 1 = vertical, anything between = diagonal), then computes wave = abs(sin(2pi * Amp * (position + Phase))) along that axis and lights up bright bands wherever the wave falls under the Thickness threshold, with a smoothstep soft edge straddling it. The result is a grayscale grating written equally to all three RGB channels (alpha 1). The pattern auto-scrolls on its own (Phase advances steadily over time, time * 0.15 wrapped to 0..1) so it is visibly alive without touching a knob; your Phase value adds on top of that drift. Patch the OUT into an OUTPUT screen, a video mixer, or a colorizer; use it as a structural test pattern or as a moving modulation texture for downstream video modules.",
+    inputs: {
+      fm: "mono-video FM modulator input. The fmDepth uniform is plumbed but this Phase 0 build does not yet feed the texture into the shader, so patching it has no visible effect for now; the port exists so the I/O surface stays forward-compatible (Phase 3 hookup).",
+      orient: "CV input that modulates the Orient control, rotating the grating between horizontal (0) and vertical (1) through diagonal in between.",
+      amp: "CV input that modulates the Amp control, changing how many stripes pack across the screen (the spatial frequency of the grating).",
+      thickness: "CV input that modulates the Thickness control, widening or narrowing the bright bands (the stripe duty cycle).",
+      phase: "CV input that modulates the Phase control, sliding the stripe pattern along its axis on top of the built-in auto-scroll.",
+    },
+    outputs: {
+      out: "mono-video output carrying the rendered grayscale line/grating pattern. Route it to an OUTPUT screen, a video mixer, or a colorizer.",
+    },
+    controls: {
+      orient: "Line orientation, 0 to 1 (linear). 0 = horizontal lines (the wave varies along Y), 1 = vertical lines (varies along X), intermediate values rotate the grating diagonally through pi/2. Default 0.",
+      amp: "Line frequency in lines-per-width (lpx), 0.5 to 50 (linear). Higher values pack more stripes across the frame; low values give a few broad bands. Default 12.",
+      thickness: "Band duty cycle, 0 to 1 (linear). It is the threshold below which the wave lights up: 0 = razor-thin bright lines, raising it fattens the bright bands until near 1 the frame goes mostly white. Default 0.35.",
+      phase: "Phase offset, 0 to 1 (linear), sliding the stripes along their axis. Added on top of the steady built-in auto-scroll, so the pattern drifts even at 0. Default 0.",
+      fmDepth: "Depth of the forward-compatible FM modulator, 0 to 1 (linear). The uniform is plumbed but multiplied by 0.0 in this Phase 0 shader, and there is no CV input or card fader for it, so it currently has no visible effect. Default 0.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

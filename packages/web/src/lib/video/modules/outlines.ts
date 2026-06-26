@@ -225,6 +225,39 @@ export const outlinesDef: VideoModuleDef = {
     { id: OUTLINES_COLLIDE_PARAM_ID, label: 'COLLIDE', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "A stateful particle video SOURCE in the LZX tradition. Each gate edge (or the internal rate clock) spawns a shape — a circle or a regular N-gon — at a seeded-random position; it drifts in a latched direction at a latched speed and BOUNCES when its center hits a wall, accumulating into a 1024px field. From the per-pixel overlap COUNT of all live shapes it derives four pictures: overlap (white where any shape covers a pixel), contour (just the shape outlines, so stacking shapes read as ripples in a pond), combine (the overlap region colorized by stack depth via a hue ramp with brightness and saturation rising as more shapes pile up), and mapped (the patched video input shown only where two or more shapes overlap). Usage: leave RATE up for a self-running generator, or set RATE to 0 and clock the GATE input to spawn one shape per pulse; patch COMBINE or CONTOUR into a screen and use the CV inputs to animate size, drift, and spin.",
+    inputs: {
+      gate: "Spawn trigger (edge). A rising edge spawns ONE shape, which latches the LIVE D / V / Spd / Decay / Shape values at the moment of the edge. Patching it lights the [GATED] badge.",
+      collide: "Live inter-shape collision mode (gate, level — read every frame, not latched). While HIGH (>=0.5) shapes bounce off each other elastically (bounding-circle detection); LOW or unpatched passes through with no inter-shape collisions.",
+      d: "CV that modulates the D (diameter) control, centered on the knob and swept across its 5..270px range; latched per shape at spawn.",
+      v: "CV that modulates the V (vector angle) control across its 0..360 degree range; latched per shape at spawn.",
+      spd: "CV that modulates the Spd (speed) control across its 0..300 px/s range; latched per shape at spawn, so a change affects only new shapes.",
+      decay: "CV that modulates the Decay (fade-out time) control across its 0..10s range; latched per shape at spawn.",
+      shape: "CV that modulates the Shape selector across its six shapes (circle / triangle / square / pentagon / hexagon / octagon); quantised and latched per shape at spawn.",
+      rotation: "CV that modulates the Rot control, a LIVE GLOBAL bipolar spin (center = no spin); applied to every live shape at once, not latched.",
+      video: "Video source sampled by the MAPPED output — its pixels appear only where two or more shapes overlap. Unpatched, MAPPED is black.",
+    },
+    outputs: {
+      overlap: "Mono-video: white wherever at least one shape covers the pixel, black elsewhere (each shape dimmed by its fade alpha).",
+      contour: "Mono-video: shape OUTLINES only (ring width 10% of diameter, min 2px), so many stacked shapes read as concentric ripples.",
+      combine: "Video: the overlap region colorized by overlap COUNT via a hue ramp (1 = first hue, then 2,3,4... cycle the spectrum), with brightness and saturation rising as the stack deepens. This is the card preview and default output.",
+      mapped: "Video: the VIDEO input's contents shown wherever two or more shapes overlap, black everywhere else (black if VIDEO is unpatched).",
+    },
+    controls: {
+      d: "Shape DIAMETER (circumdiameter). 0..1 maps to 5..270px; latched per shape at spawn. A polygon is inscribed in this diameter (circumradius = d/2).",
+      v: "Spawn VECTOR ANGLE. 0..1 maps to 0..360 degrees, the direction each new shape drifts; latched per shape at spawn.",
+      spd: "SPEED. 0..1 maps to 0..300 px/s (0 = static). The latched velocity drives integration, so a later change affects only shapes spawned after it.",
+      decay: "FADE-OUT time. 0..1 maps to 0..10s; latched per shape. 0 = persist (oldest shapes FIFO-culled at the cap); above 0 fades alpha to 0 and removes the shape over that many seconds.",
+      shape: "SHAPE SELECTOR, 0..1 quantised to six shapes: circle, triangle, square, pentagon, hexagon, octagon. Latched per shape at spawn; the card shows the current shape name.",
+      rotation: "ROTATION, a LIVE GLOBAL bipolar spin: center (0.5) = no rotation, left = fast counter-clockwise, right = fast clockwise. Every live shape shares one rotation angle (not latched); the card shows CCW / dot / CW.",
+      rate: "Internal spawn CLOCK (knob only, no CV input). 0 = gate-only; turning it up engages a clock that tightens from slow toward a cap of one shape every 500ms.",
+      cv_gate: "Hidden synthetic gate param backing the GATE jack (not a knob). The engine CV-bridge writes the gate input's sample here; a rising edge spawns ONE shape, latching the live D / V / Spd / Decay / Shape at the moment of the edge.",
+      cv_collide: "Hidden synthetic gate param backing the COLLIDE jack (not a knob). The engine CV-bridge writes the collide input's LEVEL here; read live every frame, HIGH (>=0.5) makes shapes bounce off each other elastically, LOW passes through.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const copyProgram = ctx.compileFragment(COPY_FRAG_SRC);
