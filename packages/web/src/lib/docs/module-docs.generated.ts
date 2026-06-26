@@ -898,6 +898,29 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "fader": "The A↔B crossfade position: 0 shows only IN A, 1 shows only IN B, and in between the two are blended by the amount the A/B FX dropdown's shape allows (a plain fade at the 0.5 default is a 50/50 mix). Clamped to 0..1, and the result is the mix that feeds both the SEND output and the dry side of the dry/wet stage."
     }
   },
+  "feedback": {
+    "explanation": "Analog-video-style feedback loop, the on-screen equivalent of pointing a camera at its own monitor. Each frame it re-samples its OWN previous output from a ping-pong framebuffer through a small affine warp — rotate and scale the UV about the canvas center, plus a tiny XY offset — multiplies that warped tap by Decay, then adds the fresh input (weighted by 1 minus the clamped decay) to form a recursive accumulator. That accumulator is cross-faded against the dry input by Wet and clamped to [0,1] so destructive Decay over 1.0 saturates white instead of NaN-ing. With Zoom slightly above 1 and a touch of Rotate you get the classic infinite spiraling \"tunnel\"; the prior frame is sampled black outside the canvas (no edge smear) so trails decay into darkness rather than melting along the borders. Patch a camera or any video source into IN, feed OUT back to a monitor, and modulate the warp via the CV inputs for evolving, self-oscillating imagery.",
+    "inputs": {
+      "decay": "CV that modulates the Decay control (the per-frame gain on the previous-frame tap, i.e. how long trails persist).",
+      "in": "Video input — the source frame fed into the feedback ring each render. When unpatched the loop runs dry (uHasInput=0, input ignored) and only the recirculating prior frame contributes, so it can self-oscillate from whatever residue is already in the buffer.",
+      "offsetX": "CV that modulates the OffsX control (horizontal drift of the feedback tap each frame).",
+      "offsetY": "CV that modulates the OffsY control (vertical drift of the feedback tap each frame).",
+      "rotate": "CV that modulates the Rotate control (per-frame rotation of the feedback tap about the canvas center).",
+      "wet": "CV that modulates the Wet control (wet/dry mix between the raw input and the recursive accumulator).",
+      "zoom": "CV that modulates the Zoom control (per-frame scale of the feedback tap about center — the tunnel push/pull)."
+    },
+    "outputs": {
+      "out": "Video output — the wet/dry feedback render (recursive accumulator mixed with the input by Wet), clamped to [0,1]. This is also the just-written ping-pong frame that becomes next frame's feedback source."
+    },
+    "controls": {
+      "decay": "Decay — per-frame multiplier on the previous-frame tap, 0 to 2. Below 1 trails fade out; near 1 they persist for a long tunnel; above 1 the loop is destructive and saturates toward clipped white (output is clamped so it can't blow up). Default 0.95.",
+      "offsetX": "OffsX — horizontal translation of the feedback tap per frame, -1 to 1 (scaled to a small ±0.05 UV shift), drifting the recirculating image sideways. Default 0.",
+      "offsetY": "OffsY — vertical translation of the feedback tap per frame, -1 to 1 (scaled to a small ±0.05 UV shift), drifting the recirculating image up or down. Default 0.",
+      "rotate": "Rotate — per-frame rotation of the feedback tap about center, -π to π radians (≈ -3.14159 to 3.14159). Small values spin trails into spirals; large values whip the tunnel hard each frame. Default 0.05.",
+      "wet": "Wet — wet/dry mix from 0 to 1. At 0 the output is the pure input passthrough; at 1 it is the pure recursive feedback accumulator. Default 0.5.",
+      "zoom": "Zoom — per-frame scale of the feedback tap about the canvas center, 0.9 to 1.1. The shader divides the sample UV by Zoom, so above 1 the recirculating image magnifies and content flows outward toward the edges (the classic infinite zoom-in tunnel); below 1 it shrinks toward center; 1.0 holds size. Default 1.02."
+    }
+  },
   "filter": {
     "explanation": "A multi-mode state-variable filter applying subtractive synthesis' bread-and-butter filtering to an audio signal. Three continuously-selectable modes (lowpass/bandpass/highpass) shape the spectral response; cutoff frequency and resonance (Q/emphasis) are both continuously modulatable via CV inputs for dynamic sweep effects. The cutoff CV input maps -1..+1 to ±5 octaves around the knob position via the Faust DSP itself, enabling smooth audio-rate modulation without requiring a separate CV scale stage. Typical voice structure: VCO → Filter → VCA, with an envelope or LFO patched into the cutoff and resonance CV inputs for expressive timbral shaping.",
     "inputs": {
@@ -1612,6 +1635,22 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "att4_amount": "Channel-4 attenuverter (-1 to +1, default +1): scales input 4 into ATT4, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts."
     }
   },
+  "inwards": {
+    "explanation": "A procedural source that synthesizes a field of concentric rings centered on the frame, with their phase scrolling inward over time so the bands appear to zoom toward the center (positive Speed) or outward (negative). The shader takes the radial distance from center, multiplies it by Density to set how many rings fit on screen, then subtracts time*Speed to animate the sweep; an abs(sin) wave is soft-banded by Thickness to render alternating bright and dark grayscale rings. There is no video input — it generates its image entirely from time and the three params, so it works without camera permissions. Use it as a hypnotic radial backdrop or a moving mask/wipe source: patch an LFO or envelope into Speed for pulsing zoom, or sweep Density for a tunnel-breathing effect.",
+    "inputs": {
+      "density": "CV input that modulates the Density control, setting how many concentric rings are packed onto the screen. Higher CV tightens the spacing into a finer pattern.",
+      "speed": "CV input that modulates the Speed control — the zoom rate of the inward ring sweep. Positive values pull rings toward the center, negative push them outward.",
+      "thickness": "CV input that modulates the Thickness control — the duty cycle of the bright bands, i.e. how wide the lit rings are versus the dark gaps between them."
+    },
+    "outputs": {
+      "out": "Mono-video output carrying the rendered grayscale concentric-rings frame (bright bands on a dark field), ready to patch into any video input."
+    },
+    "controls": {
+      "density": "Density (1 to 50, default 10): the number of rings per screen. Low values give a few broad rings; high values pack the frame with many tight, fine concentric bands.",
+      "speed": "Speed (-2 to 2, default 0.5): the zoom rate of the rings. Positive values sweep the pattern inward toward the center, negative values sweep it outward; 0 freezes the rings still.",
+      "thickness": "Thickness (0 to 1, default 0.35): the bright-ring duty cycle. Low values give thin bright rings on a wide dark field; higher values widen the lit bands and shrink the gaps between them."
+    }
+  },
   "joystick": {
     "explanation": "A manual XY controller: drag the stick anywhere inside the square pad and its position comes out as four bipolar CV signals. The pad's center is (0, 0) and the four corners reach (±1, ±1); dragging UP gives +Y (screen-y is flipped so 'up' reads positive). Two raw outputs (X, Y) plus two pre-inverted outputs (NX = −X, NY = −Y) let you drive mirrored or quadrature modulation from one hand without wiring an external inverter. Mental model: a hands-on two-axis modulation source — sweep filter cutoff and resonance together, pan a sound while changing its tone, or steer a video param. On pointer-release the stick snaps back to center (both axes to 0); the position is stored in the patch like any knob, so it survives a reload.",
     "outputs": {
@@ -1765,6 +1804,20 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "macseq-model-{n}": "Step {n}'s MODEL — the per-step value-entry dropdown that picks which MACROOSCILLATOR engine this step selects (— = unset, otherwise a model name). The chosen model index is emitted on the MODEL CV output, made to land on MACROOSCILLATOR's discrete model_cv input; an unset (—) step HOLDS the previous step's model rather than snapping to model 0, so you only switch engines on the steps you mark.",
       "macseq-pitch-{n}": "Step {n}'s note — the editable pitch box for this step. Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to fly across the grid; Enter commits and jumps to the next step's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it makes the step play the C3 fallback. The note is emitted as V/oct on the PITCH output, shifted by the OCT control — patch PITCH into a MACROOSCILLATOR's pitch input.",
       "octave": "Shifts every step's pitch up or down by whole octaves at once (-2 to +2)."
+    }
+  },
+  "mapper": {
+    "explanation": "MAPPER is a per-frame video keyer / matte processor. It shows the VID source only where the KEY input is bright, and paints black everywhere else. For each output texel the shader reads the KEY frame's Rec. 601 luminance (0.299 R + 0.587 G + 0.114 B), builds a mask = smoothstep(threshold - 0.03, threshold + 0.03, keyLuma), and outputs video * mask — so above the cutoff the video shows through, below it fades to black, with a sub-pixel soft edge that kills 1-texel aliasing on a moving key. It is STATELESS per frame: no feedback, no history, so the keyed region tracks the key source live. This generalises OUTLINES' hard-coded \"mapped\" output (video where >=2 shapes overlap) to an arbitrary luminance gate. A mono-video key (white-on-black from SHAPES / LINES / EDGES) is the common matte. Usage: patch a moving picture into VID, a white-on-black shape/mask into KEY, and turn Thresh to trim how much of the matte passes. Note: it is intentionally a black hole when half-patched — with either VID or KEY missing the output is solid black.",
+    "inputs": {
+      "key": "KEY — the matte. The shader takes this frame's Rec. 601 luminance as the mask, so bright key pixels reveal the video and dark ones matte it to black. Commonly a white-on-black mono-video shape (SHAPES / LINES / EDGES), but a colour video source works too via the engine upcast. Unpatched KEY makes the whole output black.",
+      "threshold": "CV input that modulates the Thresh control. Linear-scaled per-param CV (port id equals the param id) driving the key cutoff over its 0..1 range, so you can sweep how much of the matte passes from another modulation source.",
+      "video": "VID — the RGB source shown inside the keyed region. Its pixels appear wherever the key passes; with this input unpatched the whole output is black."
+    },
+    "outputs": {
+      "out": "OUT — the keyed video: the VID source shown where key luminance is at or above the threshold, and black below it. A pure video output (solid black when either input is unpatched)."
+    },
+    "controls": {
+      "threshold": "Thresh (0..1, linear, default 0.5) — the key luminance cutoff. Raising it shrinks the keyed area so only the brightest parts of the key pass; lowering it grows the keyed area so dimmer key regions show video too. A sub-pixel soft edge (+/-0.03 luma) around the cutoff keeps the key crisp while removing aliasing on a moving matte."
     }
   },
   "marbles": {
@@ -3239,6 +3292,43 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "swing": "Shuffles the rhythm by lengthening the on-beat steps and shortening the off-beat steps that follow them, which pushes every off-beat later for a looser feel; 0 is dead-straight, higher values deepen the shuffle. Internal-clock only (an external clock sets its own timing)."
     }
   },
+  "shapegen": {
+    "explanation": "shapegen is a generative 3D-shape video synthesizer (extracted from FOXY's shape path). It has no straight video pass-through input: instead it reads three incoming rasters as control surfaces and synthesizes a scene of up to 8 lit primitives (sphere, cube, cone, cylinder, ring/torus, tetrahedron) floating inside a vaporwave wireframe bounding box with a faint perspective floor grid. Each raster is downsampled to an 80x60 RGBA buffer and fed to generateShapes: A's 16x16 mean-luma feature grid yields the top-8 peaks (non-max-suppressed) that place shapes in XY (if A is flat below the variance floor, NO shapes are drawn), B's luma at each peak sets Z depth, and C's luma picks the primitive type bucket (floor(c*6)), the baseline radius (0.05+c*0.25) and the hue (=c). The product of A and B luma at each peak gives a per-shape size factor of 0.5x-2x. The whole scene is painted to an OffscreenCanvas, uploaded as a texture, and blitted out a fullscreen quad. Usage: patch any three video sources into A/B/C, twist ROT to orbit the camera, raise SIZE to fatten the primitives, and flip SOLIDS for shaded vs neon-wireframe looks; patch a gate into CLK to freeze the shape set and only re-roll it on each rising edge (a visual sample-and-hold) while the camera keeps rotating.",
+    "inputs": {
+      "clock_in": "Optional sample-and-hold gate (a gate input feeding the hidden cv_clock param). Unpatched: shapes regenerate every frame. Patched: shapes re-roll only on each rising edge (hysteresis ~0.6/0.4) and freeze in between, while ROT keeps orbiting the held set. Card shows a [CLOCKED] badge when wired.",
+      "raster_a": "Video raster A. Its 16x16 mean-luma feature grid yields the top-8 peaks (non-max suppressed) that place the shapes in XY across the box; if A is nearly flat (variance below the floor), no shapes are emitted. A's luma sampled at each peak pixel also feeds the per-shape size factor (A*B → 0.5x-2x).",
+      "raster_b": "Video raster B. Its luma sampled at each A peak sets that shape's Z depth (front/back in the box, mapped to [-1,1] via b*2-1). Brighter B pushes shapes toward the viewer; B also feeds the A*B per-shape size factor alongside A.",
+      "raster_c": "Video raster C. Its luma at each peak selects the primitive type (floor(c*6): sphere/cube/cone/cylinder/ring/tetra), the baseline radius (0.05 + c*0.25) and the hue (=c). Brighter, more varied C yields bigger, more colorful, more diverse shapes."
+    },
+    "outputs": {
+      "out": "Video output: the rendered 3D-shapes-in-a-box scene (engine resolution, 640x480 by default) with the vaporwave wireframe cage, floor grid, and the synthesized primitives, ready to chain into any video input."
+    },
+    "controls": {
+      "cv_clock": "Hidden synthetic gate param backing the CLK jack (not a knob). The engine CV-bridge writes the clock_in gate sample here; a rising edge (hysteresis rise>0.6 / fall<0.4) triggers the next-frame shape regeneration for the sample-and-hold behavior.",
+      "rotate": "ROT (0-1, default 0): camera Y-axis rotation as a fraction of a full turn (0..2pi radians). Applies live every frame even while the clock holds the shape list, so you can orbit a frozen scene.",
+      "size": "SIZE (0.1-3, default 1): global multiplier on each shape's final radius (the C-baseline already scaled by the A*B factor), then hard-clamped to 0.6 so a maxed knob can't fill the whole box. Applied at regeneration time, so under a held clock a twist shows on the next pulse.",
+      "solids": "SOLIDS (toggle, default 0=off): 0 = vaporwave wireframe look (neon HSL gradient silhouettes / strokes); 1 = per-primitive lit canvas2D solids for all six types (shaded sphere/cube/cylinder/cone, filled torus with punched hole, Lambert-shaded tetrahedron). The wireframe box and floor grid stay in both modes."
+    }
+  },
+  "shapes": {
+    "explanation": "SHAPES is a procedural geometry source: it has no video input and synthesizes a mono-video stream entirely in its fragment shader. Each frame the shader evaluates a signed-distance field for one of three primitives — a circle, a square, or an equilateral triangle pointing up — and renders it white-on-black, antialiased with a soft edge band. The shape is picked discretely (the Shape value is rounded to the nearest integer; there is no morph or blend between primitives). The frame's UV coordinates are rotated and divided by the zoom factor before the SDF is evaluated, so larger zoom grows the shape's footprint while rotation spins it about its cell center; the antialiasing band is scaled by 1/zoom so the outline stays crisp even when the shape fills the frame. With Tile off the whole frame is a single cell holding one centered shape; with Tile on the frame is repeated (via fract of the UVs) into a Grid×Grid array of identical cells, each carrying its own centered copy. Use it as a clean mask/matte or pattern generator feeding compositors, displacement, or feedback stages; patch CV into shape/tile/rotate/zoom to animate the geometry from the audio side.",
+    "inputs": {
+      "rotate": "CV input (linear) that modulates the Rotate control, spinning the shape about its cell center from -π to +π radians.",
+      "shape": "CV input (linear) that modulates the Shape control, selecting the rendered primitive — circle (0), square (1), or triangle (2); the shader rounds the incoming value to the nearest integer and hard-switches between SDFs (no blend).",
+      "tile": "CV input (linear) that modulates the Tile control; values at or above 0.5 switch on the repeating Grid×Grid tiling, below 0.5 render a single centered shape.",
+      "zoom": "CV input (log-scaled) that modulates the Zoom control, scaling the shape's footprint within the cell from tiny up to overflowing the frame."
+    },
+    "outputs": {
+      "out": "Mono-video output carrying the rendered shape pattern — white shape on a black field (grayscale, alpha 1), antialiased; feed it to compositors, masks, displacement, or feedback stages."
+    },
+    "controls": {
+      "rotate": "Global rotation, -π..π (≈-3.14159..3.14159) linear: rotates the shape about its cell center; default 0 (upright).",
+      "shape": "Shape picker, 0..2 linear, rounded to the nearest integer: 0 = circle, 1 = square, 2 = triangle (no blend between them). On the card a CIRCLE/SQUARE/TRI button cycles through the three; default 0 (circle).",
+      "tile": "Tile toggle, 0..1 linear: <0.5 = a single shape centered in the whole frame; >=0.5 = repeat the shape into a Grid×Grid array of cells. Card exposes it as a TILE ON/OFF button; default 0 (off).",
+      "tileN": "Grid count, 1..16 linear (fader labeled 'Grid', rounded to an integer): how many cells per axis when Tile is on, e.g. 4 = a 4×4 array. Has no effect while Tile is off; default 4.",
+      "zoom": "Scale factor, 0.05..10 log-curve: 1.0 fits the shape in its cell with margin (reference radius ~0.4 of the cell), smaller shrinks it toward a dot, larger overflows the cell/frame; default 1.0."
+    }
+  },
   "shimmershine": {
     "explanation": "A stereo shimmer reverb — the project's ambient-halo space. A Schroeder reverb tank (four comb filters and two allpasses per channel) builds a lush decaying tail, and a pitch-shifted feedback loop sends that tail back through an octave-up (+12 semitone) granular shifter, so the reverb slowly blooms upward into a crystalline, ever-rising shimmer. Bigger and dreamier than the basic REVERB, it's the reach-for reverb when you want pads, guitars, or vocals to dissolve into a glittering cloud. DECAY sets the tail length, SHIMMER sets how much octave-up energy regenerates (the defining control), SIZE sets the space, DAMP tames the highs, and MIX blends wet against dry.",
     "inputs": {
@@ -3813,6 +3903,28 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "resp2": "Channel 2 response toggle (0 = linear, 1 = exponential). Default LINEAR.",
       "resp3": "Channel 3 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL (audio-friendly out of the box).",
       "resp4": "Channel 4 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL."
+    }
+  },
+  "videoMixer": {
+    "explanation": "A 4-channel additive video mixer. Each frame it samples up to four input textures at the same UV and sums them, scaling each by its own amount fader: out = in1*A1 + in2*A2 + in3*A3 + in4*A4, with the final RGB clamped to [0,1] and alpha forced opaque. Unpatched inputs contribute pure black (they read a 1x1 sentinel texture, not the mixer's own output, so there is no feedback loop). Because the sum is linear, it doubles as a crossfader (push A1 up while pulling A2 down for a two-source dissolve) and as a brightness/level control on a single source. Bright sources or amounts summing above 1.0 clip to white per channel. Usage hint: keep the active amounts summing near 1.0 for clean compositing; drive amount1..amount4 from LFOs or envelopes for automated fades and pulses.",
+    "inputs": {
+      "amount1": "CV input that modulates A1 (channel 1 level), linearly scaled into the 0..1 range; patch an LFO or envelope here to automate channel 1's fade.",
+      "amount2": "CV input that modulates A2 (channel 2 level), linearly scaled into the 0..1 range; patch an LFO or envelope here to automate channel 2's fade.",
+      "amount3": "CV input that modulates A3 (channel 3 level), linearly scaled into the 0..1 range; patch an LFO or envelope here to automate channel 3's fade.",
+      "amount4": "CV input that modulates A4 (channel 4 level), linearly scaled into the 0..1 range; patch an LFO or envelope here to automate channel 4's fade.",
+      "in1": "Video input for channel 1. Sampled at the output UV and scaled by amount A1 into the sum. Unpatched contributes black.",
+      "in2": "Video input for channel 2. Sampled at the output UV and scaled by amount A2 into the sum. Unpatched contributes black.",
+      "in3": "Video input for channel 3. Sampled at the output UV and scaled by amount A3 into the sum. Unpatched contributes black.",
+      "in4": "Video input for channel 4. Sampled at the output UV and scaled by amount A4 into the sum. Unpatched contributes black."
+    },
+    "outputs": {
+      "out": "Video output carrying the per-channel weighted sum of the four inputs, clamped to [0,1] RGB with full opaque alpha."
+    },
+    "controls": {
+      "amount1": "A1 fader (linear 0..1, default 1.0) sets channel 1's mix level: 0 mutes it, 1 passes it at full brightness. CV at amount1 modulates this.",
+      "amount2": "A2 fader (linear 0..1, default 0.0) sets channel 2's mix level: 0 mutes it, 1 passes it at full brightness. CV at amount2 modulates this.",
+      "amount3": "A3 fader (linear 0..1, default 0.0) sets channel 3's mix level: 0 mutes it, 1 passes it at full brightness. CV at amount3 modulates this.",
+      "amount4": "A4 fader (linear 0..1, default 0.0) sets channel 4's mix level: 0 mutes it, 1 passes it at full brightness. CV at amount4 modulates this."
     }
   },
   "warps": {

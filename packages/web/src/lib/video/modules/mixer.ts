@@ -103,6 +103,31 @@ export const mixerVideoDef: VideoModuleDef = {
     { id: 'amount4', label: 'A4', defaultValue: DEFAULTS.amount4, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation:
+      "A 4-channel additive video mixer. Each frame it samples up to four input textures at the same UV and sums them, scaling each by its own amount fader: out = in1*A1 + in2*A2 + in3*A3 + in4*A4, with the final RGB clamped to [0,1] and alpha forced opaque. Unpatched inputs contribute pure black (they read a 1x1 sentinel texture, not the mixer's own output, so there is no feedback loop). Because the sum is linear, it doubles as a crossfader (push A1 up while pulling A2 down for a two-source dissolve) and as a brightness/level control on a single source. Bright sources or amounts summing above 1.0 clip to white per channel. Usage hint: keep the active amounts summing near 1.0 for clean compositing; drive amount1..amount4 from LFOs or envelopes for automated fades and pulses.",
+    inputs: {
+      in1: "Video input for channel 1. Sampled at the output UV and scaled by amount A1 into the sum. Unpatched contributes black.",
+      in2: "Video input for channel 2. Sampled at the output UV and scaled by amount A2 into the sum. Unpatched contributes black.",
+      in3: "Video input for channel 3. Sampled at the output UV and scaled by amount A3 into the sum. Unpatched contributes black.",
+      in4: "Video input for channel 4. Sampled at the output UV and scaled by amount A4 into the sum. Unpatched contributes black.",
+      amount1: "CV input that modulates A1 (channel 1 level), linearly scaled into the 0..1 range; patch an LFO or envelope here to automate channel 1's fade.",
+      amount2: "CV input that modulates A2 (channel 2 level), linearly scaled into the 0..1 range; patch an LFO or envelope here to automate channel 2's fade.",
+      amount3: "CV input that modulates A3 (channel 3 level), linearly scaled into the 0..1 range; patch an LFO or envelope here to automate channel 3's fade.",
+      amount4: "CV input that modulates A4 (channel 4 level), linearly scaled into the 0..1 range; patch an LFO or envelope here to automate channel 4's fade.",
+    },
+    outputs: {
+      out: "Video output carrying the per-channel weighted sum of the four inputs, clamped to [0,1] RGB with full opaque alpha.",
+    },
+    controls: {
+      amount1: "A1 fader (linear 0..1, default 1.0) sets channel 1's mix level: 0 mutes it, 1 passes it at full brightness. CV at amount1 modulates this.",
+      amount2: "A2 fader (linear 0..1, default 0.0) sets channel 2's mix level: 0 mutes it, 1 passes it at full brightness. CV at amount2 modulates this.",
+      amount3: "A3 fader (linear 0..1, default 0.0) sets channel 3's mix level: 0 mutes it, 1 passes it at full brightness. CV at amount3 modulates this.",
+      amount4: "A4 fader (linear 0..1, default 0.0) sets channel 4's mix level: 0 mutes it, 1 passes it at full brightness. CV at amount4 modulates this.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

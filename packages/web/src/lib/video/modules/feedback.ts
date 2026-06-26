@@ -122,6 +122,32 @@ export const feedbackDef: VideoModuleDef = {
     { id: 'offsetY', label: 'OffsY',  defaultValue: DEFAULTS.offsetY, min: -1,   max: 1,      curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation:
+      "Analog-video-style feedback loop, the on-screen equivalent of pointing a camera at its own monitor. Each frame it re-samples its OWN previous output from a ping-pong framebuffer through a small affine warp — rotate and scale the UV about the canvas center, plus a tiny XY offset — multiplies that warped tap by Decay, then adds the fresh input (weighted by 1 minus the clamped decay) to form a recursive accumulator. That accumulator is cross-faded against the dry input by Wet and clamped to [0,1] so destructive Decay over 1.0 saturates white instead of NaN-ing. With Zoom slightly above 1 and a touch of Rotate you get the classic infinite spiraling \"tunnel\"; the prior frame is sampled black outside the canvas (no edge smear) so trails decay into darkness rather than melting along the borders. Patch a camera or any video source into IN, feed OUT back to a monitor, and modulate the warp via the CV inputs for evolving, self-oscillating imagery.",
+    inputs: {
+      in: "Video input — the source frame fed into the feedback ring each render. When unpatched the loop runs dry (uHasInput=0, input ignored) and only the recirculating prior frame contributes, so it can self-oscillate from whatever residue is already in the buffer.",
+      wet: "CV that modulates the Wet control (wet/dry mix between the raw input and the recursive accumulator).",
+      decay: "CV that modulates the Decay control (the per-frame gain on the previous-frame tap, i.e. how long trails persist).",
+      zoom: "CV that modulates the Zoom control (per-frame scale of the feedback tap about center — the tunnel push/pull).",
+      rotate: "CV that modulates the Rotate control (per-frame rotation of the feedback tap about the canvas center).",
+      offsetX: "CV that modulates the OffsX control (horizontal drift of the feedback tap each frame).",
+      offsetY: "CV that modulates the OffsY control (vertical drift of the feedback tap each frame).",
+    },
+    outputs: {
+      out: "Video output — the wet/dry feedback render (recursive accumulator mixed with the input by Wet), clamped to [0,1]. This is also the just-written ping-pong frame that becomes next frame's feedback source.",
+    },
+    controls: {
+      wet: "Wet — wet/dry mix from 0 to 1. At 0 the output is the pure input passthrough; at 1 it is the pure recursive feedback accumulator. Default 0.5.",
+      decay: "Decay — per-frame multiplier on the previous-frame tap, 0 to 2. Below 1 trails fade out; near 1 they persist for a long tunnel; above 1 the loop is destructive and saturates toward clipped white (output is clamped so it can't blow up). Default 0.95.",
+      zoom: "Zoom — per-frame scale of the feedback tap about the canvas center, 0.9 to 1.1. The shader divides the sample UV by Zoom, so above 1 the recirculating image magnifies and content flows outward toward the edges (the classic infinite zoom-in tunnel); below 1 it shrinks toward center; 1.0 holds size. Default 1.02.",
+      rotate: "Rotate — per-frame rotation of the feedback tap about center, -π to π radians (≈ -3.14159 to 3.14159). Small values spin trails into spirals; large values whip the tunnel hard each frame. Default 0.05.",
+      offsetX: "OffsX — horizontal translation of the feedback tap per frame, -1 to 1 (scaled to a small ±0.05 UV shift), drifting the recirculating image sideways. Default 0.",
+      offsetY: "OffsY — vertical translation of the feedback tap per frame, -1 to 1 (scaled to a small ±0.05 UV shift), drifting the recirculating image up or down. Default 0.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
