@@ -63,6 +63,8 @@
   //      route unchanged; only the rendering moved into the panel. ----
   const inputs: PortDescriptor[] = [
     { id: 'gain', label: 'GAIN', cable: 'cv' },
+    // Gate that mirrors the image while held high (drives the `mirror` param).
+    { id: 'mirror', label: 'MIRROR', cable: 'gate' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'out', label: 'OUT', cable: 'video' },
