@@ -92,8 +92,12 @@ export interface BloodHandleExtras {
    *  true if the code is mapped. */
   pushKeyboardKey(code: string, pressed: boolean): boolean;
   /** Names of any REQUIRED Blood data files that were missing at load (so the
-   *  card can show the "run task setup:blood" overlay). Empty once loaded OK. */
+   *  card can show the "load your data" prompt). Empty once loaded OK. */
   missingDataFiles(): string[];
+  /** Discard a prior (failed) load so a fresh ensureLoaded() re-attempts — used
+   *  after the owner supplies in-browser data, so the data-missing result can be
+   *  retried without re-spawning the node. Disposes any partly-booted runtime. */
+  resetLoad(): void;
 }
 
 export const bloodDef: VideoModuleDef = {
@@ -257,6 +261,24 @@ export const bloodDef: VideoModuleDef = {
       return work;
     }
 
+    function resetLoad(): void {
+      // Tear down a partly-booted runtime + clear the load latch so a fresh
+      // ensureLoaded() (after the owner supplies in-browser data) re-attempts.
+      if (runtime) {
+        try {
+          runtime.dispose();
+        } catch {
+          /* */
+        }
+      }
+      runtime = null;
+      loaded = false;
+      loadError = null;
+      loadPending = null;
+      missingFiles = [];
+      hasFrame = false;
+    }
+
     function pushKeyboardKey(code: string, pressed: boolean): boolean {
       if (!runtime) return false;
       // Lazy import avoided — the card already has the map; here we re-derive
@@ -338,6 +360,7 @@ export const bloodDef: VideoModuleDef = {
       missingDataFiles() {
         return missingFiles;
       },
+      resetLoad,
     };
 
     return {

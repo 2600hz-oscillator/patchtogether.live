@@ -115,10 +115,20 @@ packages/web/static/roms/snes9x/*
 # owns the IP. Contributors supply their own BLOOD.RFF / TILES*.ART / *.DAT from
 # a game they own via `task setup:blood`; the static dir carries only README.md
 # in git. README in packages/web/static/blood/ documents the legal status +
-# setup flow. Built engine artifacts (blood.{js,wasm}) are also gitignored
-# (deterministic from the pinned NBlood commit — see build-blood-wasm.sh).
+# setup flow.
+#
+# EXCEPTION — the BUILT ENGINE artifacts (blood.js + blood.wasm) ARE committed
+# (blood.wasm auto-routes to Git LFS via the `**/*.wasm filter=lfs` rule in
+# .gitattributes). They carry NO game IP (they are the engine, deterministic
+# from the pinned NBlood commit — see build-blood-wasm.sh), so committing them
+# is what makes the hosted CF Pages preview actually LOAD the module without a
+# CI emscripten build step. Game DATA (*.RFF / *.ART / *.DAT) stays ignored and
+# is supplied in-browser via the BLOOD card's "Load Blood data" picker (or
+# locally via `task setup:blood`).
 packages/web/static/blood/*
 !packages/web/static/blood/README.md
+!packages/web/static/blood/blood.js
+!packages/web/static/blood/blood.wasm
 
 # NBlood upstream scratch checkout fetched by build-blood-wasm.sh (the engine is
 # fetched at a pinned commit for the WASM build, NOT vendored in this spike).

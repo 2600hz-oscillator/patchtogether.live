@@ -62,10 +62,47 @@ const DATA_DIR_URL = '/blood'; // served static dir (user-supplied via task setu
 // gSoundRes.Init). TILES000.ART carries the tile art the renderer needs.
 export const BLOOD_REQUIRED_FILES = ['BLOOD.RFF', 'GUI.RFF', 'SOUNDS.RFF'] as const;
 
-/** Fetch the user-supplied Blood data files from /blood/. Returns the files
- *  present + a list of any REQUIRED ones that are missing (the card surfaces
- *  "data missing"). We never ship these — they're user-provided. */
+// ── In-browser injected data (the HOSTED-preview path) ─────────────────────
+// The owner can't drop proprietary Blood data onto the hosted server, so the
+// card lets them PICK their files in-browser; those bytes are registered here.
+// `loadBloodData()` prefers injected files over the server fetch — so the same
+// runtime works both locally (where `task setup:blood` populated static/blood)
+// AND on the hosted CF Pages preview (where the owner supplies their own data).
+let injectedFiles: BloodDataFile[] = [];
+
+/** Register user-picked / IndexedDB-restored Blood data. These take PRIORITY
+ *  over the server fetch in loadBloodData(). Names are canonicalised UPPER to
+ *  match the engine's resource loader (it looks for BLOOD.RFF, not blood.rff). */
+export function setInjectedBloodData(files: BloodDataFile[]): void {
+  injectedFiles = files.map((f) => ({ name: f.name.toUpperCase(), bytes: f.bytes }));
+}
+
+/** Clear any injected data (back to the server-fetch path). */
+export function clearInjectedBloodData(): void {
+  injectedFiles = [];
+}
+
+/** True when in-browser data has been injected this session. */
+export function hasInjectedBloodData(): boolean {
+  return injectedFiles.length > 0;
+}
+
+/** Resolve the Blood data files + any REQUIRED ones still missing.
+ *  PRIORITY: injected (in-browser-picked / IndexedDB-restored) files first;
+ *  only fall back to the /blood/ server fetch when nothing is injected (the
+ *  local `task setup:blood` path). The card surfaces `missing` as the
+ *  "load your data" prompt. We never ship these — they're user-provided. */
 export async function loadBloodData(): Promise<{ files: BloodDataFile[]; missing: string[] }> {
+  // Injected (in-browser) data wins — this is the hosted-preview path.
+  if (injectedFiles.length > 0) {
+    const byName = new Map(injectedFiles.map((f) => [f.name.toUpperCase(), f]));
+    const missing = BLOOD_REQUIRED_FILES.filter((n) => !byName.has(n));
+    // Pass ALL injected files through (extra ART/DAT the owner included are
+    // written into MEMFS too), but report only the REQUIRED ones as missing.
+    return { files: injectedFiles, missing: [...missing] };
+  }
+
+  // Fallback: fetch from the served static dir (local `task setup:blood`).
   const files: BloodDataFile[] = [];
   const missing: string[] = [];
   for (const name of BLOOD_REQUIRED_FILES) {

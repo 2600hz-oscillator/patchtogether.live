@@ -23,6 +23,16 @@
   import type { ModuleNode } from '$lib/graph/types';
   import { bloodDef, type BloodHandleExtras } from '$lib/video/modules/blood';
   import { SCANCODE_FOR_KEYBOARD_CODE } from '$lib/blood/blood-keys';
+  import {
+    setInjectedBloodData,
+    BLOOD_REQUIRED_FILES,
+    type BloodDataFile,
+  } from '$lib/blood/blood-runtime';
+  import {
+    getBloodFiles,
+    putBloodFiles,
+    canonicalBloodName,
+  } from '$lib/blood/blood-data-store';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -33,9 +43,15 @@
   const engineCtx = useEngine();
 
   let cardEl: HTMLDivElement | null = $state(null);
+  let fileInputEl: HTMLInputElement | null = $state(null);
   let loadStatus = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
   let loadError = $state<string | null>(null);
   let missing = $state<string[]>([]);
+  // Names of in-browser data files currently injected (picked or IDB-restored).
+  let loadedDataNames = $state<string[]>([]);
+  let importing = $state(false);
+
+  const REQUIRED = [...BLOOD_REQUIRED_FILES];
 
   // PatchPanel descriptors derived straight from the def ports.
   const inputs: PortDescriptor[] = bloodDef.inputs.map((p) => ({
@@ -81,6 +97,59 @@
     }
   }
 
+  // ---- In-browser Blood data loading (the HOSTED-preview path) ----
+  // The owner can't drop proprietary Blood data on the hosted server, so they
+  // pick their own files here; we register the bytes with the runtime + cache
+  // them in IndexedDB so they only pick ONCE.
+
+  function registerInjected(files: BloodDataFile[]): void {
+    setInjectedBloodData(files);
+    loadedDataNames = files.map((f) => f.name.toUpperCase());
+  }
+
+  /** Auto-restore previously-picked data from IndexedDB (so a reload boots
+   *  straight in). Returns true if any data was restored. */
+  async function restoreFromIndexedDb(): Promise<boolean> {
+    try {
+      const stored = await getBloodFiles();
+      if (stored.length === 0) return false;
+      registerInjected(stored.map((f) => ({ name: f.name, bytes: f.bytes })));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Handle the file picker selection: read each file → register + persist. */
+  async function onFilesPicked(e: Event): Promise<void> {
+    const input = e.target as HTMLInputElement;
+    const fileList = input.files;
+    if (!fileList || fileList.length === 0) return;
+    importing = true;
+    try {
+      const picked: BloodDataFile[] = [];
+      for (const file of Array.from(fileList)) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        picked.push({ name: canonicalBloodName(file.name), bytes });
+      }
+      // Persist for next reload, register with the runtime, then boot.
+      await putBloodFiles(picked.map((f) => ({ name: f.name, bytes: f.bytes })));
+      registerInjected(picked);
+      // A prior attempt may have latched the data-missing result — reset so the
+      // fresh data is actually used.
+      getExtras()?.resetLoad();
+      await tryLoad();
+    } finally {
+      importing = false;
+      // Allow re-picking the same file/folder later.
+      if (input) input.value = '';
+    }
+  }
+
+  function openPicker(): void {
+    fileInputEl?.click();
+  }
+
   // ---- Capture-phase keyboard routing (focused card only) ----
   function shouldClaimKey(): boolean {
     return selected === true && loadStatus === 'ready';
@@ -105,6 +174,13 @@
   onMount(() => {
     window.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('keyup', onKeyUp, true);
+    // Auto-restore previously-picked data from IndexedDB, then boot straight in
+    // so a reload doesn't make the owner re-pick. If nothing is stored we stay
+    // idle (the "Load BLOOD" / "Load Blood data" affordances handle it).
+    void (async () => {
+      const restored = await restoreFromIndexedDb();
+      if (restored) await tryLoad();
+    })();
   });
   onDestroy(() => {
     window.removeEventListener('keydown', onKeyDown, true);
@@ -118,21 +194,54 @@
 
   <PatchPanel nodeId={id} {inputs} {outputs}>
     <div class="body">
+      <!-- Hidden picker: `multiple` for file-by-file, `webkitdirectory` so the
+           owner can point at a whole Blood folder in one go. -->
+      <input
+        bind:this={fileInputEl}
+        class="file-input"
+        type="file"
+        multiple
+        webkitdirectory
+        data-testid="blood-data-input"
+        onchange={onFilesPicked}
+      />
+
       {#if loadStatus === 'idle'}
         <button class="load" data-testid="blood-load" onclick={tryLoad}>Load BLOOD</button>
+        <button class="load alt" data-testid="blood-pick-data" onclick={openPicker}>
+          Load Blood data…
+        </button>
       {:else if loadStatus === 'loading'}
-        <div class="status" data-testid="blood-loading">Loading…</div>
+        <div class="status" data-testid="blood-loading">{importing ? 'Reading data…' : 'Loading…'}</div>
       {:else if loadStatus === 'ready'}
         <div class="status ok" data-testid="blood-ready">Running — click + use arrows/Ctrl/Space</div>
       {:else if loadStatus === 'error'}
-        <div class="status err" data-testid="blood-error">
-          {#if missing.length > 0}
-            Blood data missing ({missing.join(', ')}).<br />
-            Run <code>task setup:blood</code> with a copy you own.
-          {:else}
+        {#if loadError && loadError.includes('WASM not built')}
+          <!-- (1) engine/wasm missing — a clear, actionable message. -->
+          <div class="status err" data-testid="blood-error">
+            BLOOD engine not built. The hosted build ships <code>blood.js</code> +
+            <code>blood.wasm</code>; if you see this locally, run
+            <code>BLOOD_LINK=1 bash packages/web/native/build-blood-wasm.sh</code>.
+          </div>
+        {:else if missing.length > 0}
+          <!-- (2) no game data yet — friendly picker prompt, not a raw error. -->
+          <div class="status err" data-testid="blood-error">
+            <div class="data-prompt" data-testid="blood-data-missing">
+              Load your Blood data ({REQUIRED.join(', ')}, plus <code>*.ART</code>/<code>*.DAT</code>).
+              Pick the files — or your whole Blood folder — from a copy you own.
+            </div>
+            <button class="load" data-testid="blood-pick-data" onclick={openPicker} disabled={importing}>
+              {importing ? 'Reading…' : 'Load Blood data…'}
+            </button>
+          </div>
+        {:else}
+          <div class="status err" data-testid="blood-error">
             {loadError}
-          {/if}
-        </div>
+            <button class="load alt" data-testid="blood-pick-data" onclick={openPicker}>
+              Load Blood data…
+            </button>
+          </div>
+        {/if}
       {/if}
 
       <div class="knob-row">
@@ -170,6 +279,19 @@
     border: 1px solid #602020;
     border-radius: 4px;
     padding: 4px 8px;
+  }
+  .load.alt {
+    background: #2a0c0c;
+  }
+  .load:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .file-input {
+    display: none;
+  }
+  .data-prompt {
+    margin-bottom: 4px;
   }
   .status {
     font-size: 10px;
