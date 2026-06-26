@@ -173,6 +173,26 @@ export const vdelayDef: VideoModuleDef = {
     { id: 'colorShift', label: 'Color',    defaultValue: DEFAULTS.colorShift, min: 0, max: 1,                curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "A video delay line with feedback echo — the visual analog of a tape/analog audio echo for the picture domain. VDELAY keeps a ring of 32 frame buffers; each frame a WRITE pass renders a new head slot equal to the live input plus a feedback-attenuated copy of the slot one delay-time ago, so the same image re-enters the ring and decays into a chain of repeats spaced by the delay length (this frame, then N frames later, then 2N, 3N...). A separate COMPOSE pass produces the visible output as a dry/wet mix between the live input and that delayed tap, so at low Mix you see the source with a faint trailing ghost and at high Mix you see mostly the echoes. With short Time and high Feedback you get fast, dense smearing/trails; long Time gives discrete stutter-style repeats. Color multiplicatively tints the feedback path toward a warm magenta, and because it is applied each pass the trails drift in hue (and darken slightly) as they age. Wire a video source into IN and route OUT into an OUTPUT, MONOGLITCH, or RUTTETRA card to watch the trails; push Feedback toward 0.95 for long-lived feedback ghosts without runaway.",
+    inputs: {
+      in: "Video source to delay. Its RGB is written into the ring buffer and is also the dry signal blended against the delayed tap in the compose pass; with nothing patched the card outputs black.",
+      time_cv: "Linear CV that modulates the Time control, summing on top of the knob to sweep the delay length across its full 1..32 frame range — modulate it to make the echo spacing breathe.",
+      feedback_cv: "Linear CV that modulates the Feedback control, summed onto the knob over its 0..0.95 range to swell or starve the number of surviving repeats.",
+      mix_cv: "Linear CV that modulates the Mix control, summed onto the knob over 0..1 to crossfade between the dry input and the wet echo trail.",
+    },
+    outputs: {
+      out: "The composited result: mix(input, delayed tap, Mix). The dry source blended with the feedback echo trail, ready to wire into an output or further video processor.",
+    },
+    controls: {
+      delayTime: "Time (1..32 frames, linear). Sets how many frames back the echo tap reads, i.e. the spacing between repeats; ~533ms max at 60fps. Default 8 frames.",
+      feedback: "Feedback (0..0.95, linear). How much of the previous tap is fed back into the ring slot each frame; higher values build longer, denser repeat chains, capped below 1 to avoid runaway. Default 0.4.",
+      mix: "Mix (0..1, linear). Dry/wet crossfade in the visible output between the live input (0) and the delayed echo tap (1). Default 0.5.",
+      colorShift: "Color (0..1, linear). Tints the fed-back echo path toward a warm magenta multiplier (0.9, 0.3, 0.7); applied per pass it compounds so successive repeats drift in hue (and dim). 0 leaves echoes untinted. Default 0.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const writeProgram   = ctx.compileFragment(WRITE_FRAG_SRC);

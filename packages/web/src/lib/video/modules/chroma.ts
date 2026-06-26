@@ -194,6 +194,31 @@ export const chromaDef: VideoModuleDef = {
     { id: 'tintMix',    label: 'Mix',  defaultValue: DEFAULTS.tintMix,    min: 0,    max: 1,   curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "CHROMA is a single-input hue-shifter / colorizer (not a keyer — use CHROMAKEY to composite a foreground over a background). For every pixel of the incoming video it converts RGB to HSV, rotates the hue by the Hue control (in degrees, wrapped with fract() so it cycles cleanly around the color wheel including negative shifts), multiplies the saturation by the Sat control (0 desaturates to grayscale, 1 leaves color untouched, above 1 intensifies toward fully-saturated color — the result is clamped at maximum saturation so it can't exceed it), converts back to RGB, then lerps the result toward the tint color (tintR/tintG/tintB) by the Mix amount. With Mix at 0 the tint is bypassed and you get a pure hue/saturation pass; at 1 every pixel becomes the flat tint color, with values in between producing a duotone-style wash that biases the image toward the chosen color. Use it to recolor a clip, sweep a video through the spectrum (patch an LFO into hue), drain it to black-and-white, or apply a colored grade. With no input connected the output is opaque black.",
+    inputs: {
+      in: "Video input: the RGB frame to recolorize. When nothing is patched here the module outputs opaque black.",
+      hue: "CV input that modulates the Hue control (linear -180..180 degrees of hue rotation); patch an LFO to cycle the image through the color spectrum.",
+      saturation: "CV input that modulates the Sat control (linear 0..2 saturation multiplier): 0 drains to grayscale, 1 is unchanged, above 1 intensifies toward full (clamped) saturation.",
+      tintR: "CV input that modulates the red channel of the tint color (linear 0..1); also written by the card's color picker.",
+      tintG: "CV input that modulates the green channel of the tint color (linear 0..1); also written by the card's color picker.",
+      tintB: "CV input that modulates the blue channel of the tint color (linear 0..1); also written by the card's color picker.",
+      tintMix: "CV input that modulates the Mix control (linear 0..1), the blend amount toward the tint color: 0 bypasses the tint, 1 forces every pixel to the flat tint.",
+    },
+    outputs: {
+      out: "Video output: the hue-shifted, saturation-scaled, and tint-blended RGB frame (opaque alpha).",
+    },
+    controls: {
+      hue: "Hue: rotates the input's hue around the color wheel, -180 to +180 degrees (default 0 = no shift). The rotation wraps, so it cycles cleanly through the spectrum.",
+      saturation: "Sat: saturation multiplier from 0 to 2 (default 1). 0 collapses to grayscale, 1 leaves color untouched, above 1 pushes toward vivid (clamped so it cannot exceed full saturation).",
+      tintR: "R: red channel of the tint color, 0 to 1 (default 1). The card sets it via the color picker; it stays exposed for CV. Only affects output when Mix > 0.",
+      tintG: "G: green channel of the tint color, 0 to 1 (default 1). The card sets it via the color picker; it stays exposed for CV. Only affects output when Mix > 0.",
+      tintB: "B: blue channel of the tint color, 0 to 1 (default 1). The card sets it via the color picker; it stays exposed for CV. Only affects output when Mix > 0.",
+      tintMix: "Mix: blend toward the tint color, 0 to 1 (default 0). 0 bypasses the tint entirely, intermediate values wash the image toward the tint, 1 replaces every pixel with the flat tint color.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
