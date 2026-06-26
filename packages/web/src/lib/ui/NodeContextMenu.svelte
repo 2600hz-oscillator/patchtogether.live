@@ -24,6 +24,13 @@
     nodeLabel: string;
     /** Module type id (e.g. "analogVco"). Used to build the /docs URL. */
     nodeType?: string | null;
+    /** Living-docs: whether this module has AUTHORED docs (MODULE_DOCS entry).
+     *  Gates the "Annotate" entry — only documented modules can be annotated. */
+    hasDocs?: boolean;
+    /** Whether annotate mode is currently ON for this node (toggle label). */
+    annotateActive?: boolean;
+    /** Toggle on-canvas annotate mode for this node (hover → authored docs). */
+    onannotate?: () => void;
     /** Module-grouping Phase 1: when true the menu surfaces "Ungroup" and
      *  group-specific actions (Phase 2 adds Edit knob positions, Edit
      *  exposed jacks, Duplicate). */
@@ -85,6 +92,9 @@
     y,
     nodeLabel,
     nodeType = null,
+    hasDocs = false,
+    annotateActive = false,
+    onannotate,
     isGroup = false,
     groupExpanded = false,
     locked = false,
@@ -179,6 +189,10 @@
     window.open(`/docs/modules/${nodeType}`, '_blank', 'noopener');
     onclose();
   }
+  function pickAnnotate() {
+    onannotate?.();
+    onclose();
+  }
   function pickUngroup() {
     onungroup?.();
     onclose();
@@ -224,6 +238,20 @@
       <button class="ctx-item" onclick={pickDocs} role="menuitem">
         Docs
       </button>
+      {#if hasDocs && onannotate}
+        <!-- Living-docs: toggle on-canvas Annotate mode (hover a control/port
+             → its authored doc in an anchored popover). Only shown for modules
+             that actually have authored docs. -->
+        <button
+          class="ctx-item"
+          onclick={pickAnnotate}
+          role="menuitemcheckbox"
+          aria-checked={annotateActive}
+          data-testid="ctx-annotate"
+        >
+          {annotateActive ? 'Annotate ✓' : 'Annotate'}
+        </button>
+      {/if}
       {#if canSeeSnesOutputDef}
         <button
           class="ctx-item"
