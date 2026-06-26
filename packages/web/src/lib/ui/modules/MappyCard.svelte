@@ -44,7 +44,9 @@
     resetSurface as editResetSurface,
     toggleGrid as editToggleGrid,
     toggleSurfaceFit as editToggleSurfaceFit,
+    applyMapLayout,
   } from './mappy-edit';
+  import { serializeMap, parseMap, applyMap } from './mappy-map-io';
   import { hitTestSurfaces } from './mappy-hit';
   import MappyEditor from './MappyEditor.svelte';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -117,6 +119,71 @@
   function onRemove(): void {
     removeSurface(id);
     if (selected >= surfaceCount - 1) selected = Math.max(0, surfaceCount - 2);
+  }
+
+  // ───────── export / import the surface LAYOUT (the venue map) ─────────
+  // The "map" is the venue's projector-alignment: the COUNT of surfaces + each
+  // surface's geometry + per-surface FIT. EXPORT downloads it as JSON; IMPORT
+  // reads a file, validates it (foreign/garbage rejected with a non-crashing
+  // message), and REPLACES the current layout via the in-place Yjs seam.
+  // The (de)serialize/validate logic is the PURE mappy-map-io helper; only the
+  // Blob/URL/file-picker glue lives here.
+  let mapStatus = $state<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  let importInput: HTMLInputElement | null = $state(null);
+  let statusTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function flashStatus(kind: 'ok' | 'err', text: string): void {
+    mapStatus = { kind, text };
+    if (statusTimer) clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { mapStatus = null; statusTimer = null; }, 4000);
+  }
+
+  function onExportMap(): void {
+    try {
+      const map = serializeMap(node?.data as { surfaces?: unknown; surfaceCount?: unknown } | undefined);
+      const json = JSON.stringify(map, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `mappy-map-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // revoke on the next tick so the click has surely started the download
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      flashStatus('ok', `exported ${map.count} surface${map.count === 1 ? '' : 's'}`);
+    } catch {
+      flashStatus('err', 'export failed');
+    }
+  }
+
+  function onImportClick(): void {
+    importInput?.click();
+  }
+
+  async function onImportFile(ev: Event): Promise<void> {
+    const input = ev.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    // reset so picking the SAME file again re-fires change
+    input.value = '';
+    if (!file) return;
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      flashStatus('err', 'could not read file');
+      return;
+    }
+    const parsed = parseMap(text);
+    if (!parsed.ok) {
+      flashStatus('err', `not a MAPPY map: ${parsed.error}`);
+      return; // do NOT mutate on a foreign/garbage file
+    }
+    const layout = applyMap(parsed.map);
+    applyMapLayout(id, layout);
+    if (selected >= layout.count) selected = Math.max(0, layout.count - 1);
+    flashStatus('ok', `imported ${layout.count} surface${layout.count === 1 ? '' : 's'}`);
   }
 
   // ───────── pointer drag — corner-pin OR whole-surface move ─────────
@@ -213,6 +280,7 @@
   onDestroy(() => {
     if (drawRaf !== null) cancelAnimationFrame(drawRaf);
     edgesObserver?.();
+    if (statusTimer) clearTimeout(statusTimer);
   });
 
   // ───────── overlay geometry helpers (uv [0,1] → preview px) ─────────
@@ -337,6 +405,43 @@
             data-testid="mappy-grid-toggle"
             title="Force the numbered calibration grid on every surface"
           >GRID {showGrid ? 'ON' : 'OFF'}</button>
+        </div>
+
+        <!-- map I/O: save the surface LAYOUT (the venue projector-alignment) to
+             disk + load it into a different patch at the same venue -->
+        <div class="map-io" data-testid="mappy-map-io">
+          <button
+            class="map-io-btn nodrag"
+            type="button"
+            onclick={onExportMap}
+            data-testid="mappy-export-map"
+            title="Save the surface layout (count + corners + FIT) to a .json file — reuse it in another patch at the same venue"
+          >export map</button>
+          <button
+            class="map-io-btn nodrag"
+            type="button"
+            onclick={onImportClick}
+            data-testid="mappy-import-map"
+            title="Load a surface layout from a .json file — REPLACES the current layout"
+          >import map</button>
+          <input
+            bind:this={importInput}
+            class="map-io-file"
+            type="file"
+            accept="application/json,.json"
+            onchange={onImportFile}
+            data-testid="mappy-import-file"
+            tabindex="-1"
+            aria-hidden="true"
+          />
+          {#if mapStatus}
+            <span
+              class="map-io-status"
+              class:err={mapStatus.kind === 'err'}
+              data-testid="mappy-map-status"
+              data-status-kind={mapStatus.kind}
+            >{mapStatus.text}</span>
+          {/if}
         </div>
 
         <div class="legend" data-testid="mappy-legend">
@@ -508,6 +613,44 @@
     background: rgba(255, 220, 0, 0.15);
     border-color: var(--yellow, #ffd24a);
     color: var(--yellow, #ffd24a);
+  }
+  .map-io {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .map-io-btn {
+    background: #2a2f3a;
+    color: var(--text);
+    border: 1px solid #404652;
+    border-radius: 3px;
+    padding: 3px 10px;
+    font-size: 0.64rem;
+    font-family: ui-monospace, monospace;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+  .map-io-btn:hover {
+    background: #353c49;
+    border-color: var(--cable-video, #4adfff);
+  }
+  .map-io-file {
+    /* visually hidden but still focusable/clickable programmatically */
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .map-io-status {
+    font-size: 0.6rem;
+    font-family: ui-monospace, monospace;
+    color: var(--cable-video, #4adfff);
+  }
+  .map-io-status.err {
+    color: var(--red, #ff5a5a);
   }
   .legend-state {
     margin-left: 6px;
