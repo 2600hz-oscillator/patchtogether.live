@@ -53,6 +53,11 @@ export const clockedRunnerDef: AudioModuleDef = {
   outputs: [],
   params: [],
 
+  docs: {
+    explanation:
+      "A self-contained mini-LIVECODE that owns a single clocked() callback. You don't add it from the palette — a LIVECODE module spawns one for you when your script calls clocked(division, fn), and the runner stores that function body plus its musical division (e.g. 1/16) on its own state. It subscribes to the rack's shared clock and re-runs the body on every tick that crosses the next division boundary, locked to TIMELORDE's tempo (so a clock.bpm(140) call retimes it on the next tick, and a MIDI-locked tempo follows automatically). Its card shows the body in a code editor with a status line, and you can edit the body inline — it recompiles on change. It has no audio jacks: like LIVECODE itself, it acts by mutating the rack through the patch graph each tick. Deleting it cancels its clock subscription.",
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
     let alive = true;

@@ -149,6 +149,52 @@ export const scoreDef: AudioModuleDef = {
   // Instruments v1 — the score sheet is an atomically-exposable surface.
   exposesSequence: true,
 
+  docs: {
+    explanation:
+      "A sheet-music sequencer — you write notes onto an actual staff and SCORE plays it back as pitch + gate + envelope CV. The page is up to 4 pages of four rows by four bars in 4/4; click on the staff to place notes with the toolbar's note-value tools (whole down to sixteenth), add sharps/flats, tie notes together to hold them across beats, and drop dynamic markings (pp..ff) that scale the envelope's loudness. A playhead walks the score at a 16th-note resolution from its own BPM (or from an external clock patched into CLOCK IN). It carries a built-in ADSR envelope (the A/D/S/R knobs and CV inputs) that shapes the ENV output for each note; tied notes hold a single envelope across the whole tie. An optional stop-music marker ends or (with loop on) wraps the piece. The four pitch/gate/env/clock outputs drive a voice exactly like the step SEQUENCER, but the pattern is real notation rather than a step grid.",
+    inputs: {
+      clock:
+        "External clock: each rising edge advances the playhead one 16th-note. While patched the internal BPM is ignored; unpatch to fall back to the BPM clock.",
+      attack:
+        "CV that displaces the built-in ADSR's ATTACK time (log-scaled around the knob) — modulate it to make notes swell faster or slower.",
+      decay: "CV that displaces the ADSR's DECAY time around the knob.",
+      sustain: "CV that displaces the ADSR's SUSTAIN level around the knob.",
+      release: "CV that displaces the ADSR's RELEASE time around the knob.",
+      play_cv: "A rising edge toggles play/stop (each pulse flips the transport state).",
+      reset_cv: "A rising edge snaps the playhead back to the top of the piece and restarts.",
+      queue1_cv: "A rising edge queues saved pattern slot 1: it finishes the current pass, then switches to slot 1 and plays from the top (does nothing if slot 1 is empty).",
+      queue2_cv: "A rising edge queues saved pattern slot 2 — applied at the end of the current pass, then plays slot 2 from the top.",
+      queue3_cv: "A rising edge queues saved pattern slot 3 — applied at the end of the current pass, then plays slot 3 from the top.",
+      queue4_cv: "A rising edge queues saved pattern slot 4 — applied at the end of the current pass, then plays slot 4 from the top.",
+    },
+    outputs: {
+      pitch: "The current note's pitch as V/oct — emitted as each note is played, following the notes and accidentals you wrote on the staff.",
+      gate: "Goes high while a note sounds and low between notes; a tie holds the gate high across the whole tied span (one held note) so a single envelope shapes the entire tie. Patch it into an envelope or VCA.",
+      env: "The built-in ADSR envelope CV, scaled by the dynamic marking in force at that point in the score (pp..ff) — a ready-made loudness contour you can patch straight into a VCA.",
+      clock: "A short pulse on every 16th-note advance — the chained clock-out; patch it into another sequencer's CLOCK IN to keep them in step.",
+    },
+    controls: {
+      bpm: "BPM — the internal tempo the playhead walks the score at (each step is a 16th note); used only when nothing is patched into CLOCK IN.",
+      attack: "ATTACK — the built-in ADSR's rise time, how quickly each note swells in (also reachable via the ATTACK CV input).",
+      decay: "DECAY — the ADSR's fall time from the peak down to the sustain level after the attack.",
+      sustain: "SUSTAIN — the ADSR's held level while a note's gate stays high.",
+      release: "RELEASE — the ADSR's fade time after a note's gate releases.",
+      isPlaying: "PLAY — the transport state: 1 plays from the playhead, 0 stops and forces the gate low. Starting playback returns the playhead to the top.",
+      "score-note-{n}":
+        "A note on the staff — its vertical position sets the pitch and its note-head/flag sets the duration. Click an empty staff position with a note-value tool selected to add one, click a note to select/remove it; sharp/flat tools toggle its accidental. Each note is played as V/oct on the PITCH output with a gate, in score order, when the playhead reaches it.",
+      "score-tie-{n}":
+        "A tie joining two adjacent notes of the same pitch into one held note: the gate stays high across the tied span and a single envelope shapes the whole duration (only the last note in a tie chain releases the gate). Add ties with the tie tool.",
+      "score-dyn-{n}":
+        "A dynamic marking (pp, p, mp, mf, f, ff) placed on the staff — from where it sits onward it scales the ENV output's loudness (forward-filled until the next marking; mf is the default before any marking). Drop them with the dynamics tools.",
+    },
+  },
+
+  controlFamilies: [
+    { id: 'score-note', label: 'Staff notes', kind: 'cell', testidPrefix: 'score-note' },
+    { id: 'score-tie', label: 'Note ties', kind: 'cell', testidPrefix: 'score-tie' },
+    { id: 'score-dyn', label: 'Dynamic markings', kind: 'cell', testidPrefix: 'score-dyn' },
+  ],
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
 

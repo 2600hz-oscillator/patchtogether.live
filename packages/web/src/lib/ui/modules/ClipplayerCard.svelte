@@ -674,6 +674,7 @@
                   data-lane={lane}
                   data-slot={slot}
                   data-state={st}
+                  data-testid={`clipplayer-pad-${idx}`}
                   onclick={(e) => onPadClick(idx, e)}
                   ondblclick={() => onPadDblClick(idx)}
                 ></button>
@@ -723,6 +724,7 @@
                     data-row={row}
                     aria-label={`step ${step} row ${row}`}
                     title="Click: note on/off · Right-click: cycle velocity"
+                    data-testid={`clipplayer-cell-${row}-${step}`}
                     onclick={() => toggleNote(step, row)}
                     oncontextmenu={(e) => { e.preventDefault(); cycleCellVelocity(step, row); }}
                   ></button>

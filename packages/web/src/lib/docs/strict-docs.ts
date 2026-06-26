@@ -219,4 +219,30 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'gamepad',
   'audioIn',
   'audioOut',
+  // Batch 12 — modulation, function generators, clocks & live-control utilities
+  // (2026-06-26): the MI-style function generators TIDES2 (tidal modulator /
+  // poly-slope) and STAGES (6-segment cascadable FG), the rack master clock
+  // TIMELORDE, the sheet-music sequencer SCORE and the Ableton-style clip
+  // launcher CLIP PLAYER, the ping-able stereo resonant filter QBRT, the
+  // audio→video raster mapper RASTERIZE, and the LIVECODE scripting pair
+  // (LIVECODE + the CLOCKED runner it spawns). The convention-card members whose
+  // cards are pure Knob/Fader + PatchPanel — tides2, stages, qbrt — ARE on
+  // INTERACTIVE_DOC_MODULES. The rest stay STATIC: timelorde + rasterize run a
+  // 2D-canvas render in the card (the wizard display / the raster framebuffer),
+  // score's card is an SVG staff with mouse note-entry + an onMount/$effect
+  // render, clipplayer's card runs a playhead-polling render loop and pairs with
+  // the WebSerial monome grid, and clockedRunner + livecode mount a CodeMirror
+  // editor — all engine-less-doc-sandbox-unwise, so the static face is the right
+  // fallback. SCORE declares note/tie/dynamic cell families; CLIP PLAYER declares
+  // the lane mono toggles + the launch-grid pads + the piano-roll note cells (a
+  // stable indexed data-testid was added to the pads + cells, which had none).
+  'tides2',
+  'stages',
+  'timelorde',
+  'score',
+  'clipplayer',
+  'qbrt',
+  'rasterize',
+  'clockedRunner',
+  'livecode',
 ]);

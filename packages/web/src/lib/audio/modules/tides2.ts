@@ -181,6 +181,57 @@ export const tides2Def: AudioModuleDef = {
     { id: 'range', label: 'RANGE', defaultValue: 0, min: 0, max: 2, curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A tidal modulator / poly-slope generator after Mutable Instruments' Tides — at heart a single rising-then-falling ramp whose speed, contour and symmetry you sculpt with five macro knobs, exposed not once but as FOUR related copies on outputs 1–4. It works as an LFO, an envelope, an oscillator, or a clockable ramp depending on three mode switches. RANGE picks the speed band (slow LFO, audio-rate, or external-clock-synced TEMPO). MODE picks how the ramp behaves: AD fires a one-shot rising-then-falling shape on each trigger, LOOP free-runs as an oscillating LFO/oscillator, and AR follows a held gate (rises while held, releases when let go). OUTPUT mode sets the relationship between the four outputs — GATES gives the main slope plus a variant and two end-of-rise/end-of-fall pulses; AMP, PHASE and FREQ give four copies staggered in amplitude, phase or frequency, with SHIFT spreading them apart. Every macro also has a CV input so the whole shape can be modulated. (Note: the SHAPE morph is a faithful sine→triangle→ramp→expo bank, not a bit-exact wavetable copy of the original.)",
+    inputs: {
+      voct:
+        "1V/oct pitch input that displaces the FREQ macro — most useful in the AUDIO range, where TIDES2 tracks a keyboard/sequencer like an oscillator (±1 maps to ±5 octaves). In the LFO/TEMPO ranges it still shifts the rate up and down by octaves.",
+      trig:
+        "Trigger input: a rising edge fires the ramp once in AD mode (one full rise-then-fall) and re-starts/syncs the cycle in LOOP mode. Patch a clock or gate sequencer here to make TIDES2 an envelope per note.",
+      clock:
+        "External clock input used by the TEMPO range: TIDES2 measures the time between rising edges and phase-locks the ramp period to it, so the LFO/cycle stays in tempo with the rack. Has no effect in the LFO/AUDIO ranges.",
+      freq_cv:
+        "CV that displaces the FREQ macro around its knob setting (full-range bipolar sweep), so an LFO or envelope can speed up and slow down the ramp continuously.",
+      shape_cv:
+        "CV that displaces the SHAPE macro, morphing the waveform contour (sine→triangle→ramp→expo) under modulation.",
+      slope_cv:
+        "CV that displaces the SLOPE macro, sweeping the rise/fall symmetry from fast-attack/slow-decay through to the reverse.",
+      smooth_cv:
+        "CV that displaces the SMOOTH macro, modulating how rounded vs. sharp the slope's corners are (from smoothed curves to crisp folded edges).",
+      shift_cv:
+        "CV that displaces the SHIFT macro, sweeping the relationship between the four outputs (the amplitude/phase/frequency spread, or the GATES variant) under modulation.",
+    },
+    outputs: {
+      out0:
+        "Output 1 — the main slope. In GATES output mode this is the primary rising-then-falling ramp; in AMP/PHASE/FREQ mode it is the first of four related copies (the reference, with no amplitude/phase/frequency offset).",
+      out1:
+        "Output 2 — a variant of the main slope. In GATES mode this is an alternate contour of the same ramp; in AMP/PHASE/FREQ mode it is the second copy, offset from output 1 by the amount SHIFT sets.",
+      out2:
+        "Output 3 — in GATES mode an end-of-attack pulse (a short trigger when the rise completes); in AMP/PHASE/FREQ mode the third staggered copy.",
+      out3:
+        "Output 4 — in GATES mode an end-of-release pulse (a short trigger when the fall completes); in AMP/PHASE/FREQ mode the fourth staggered copy.",
+    },
+    controls: {
+      frequency:
+        "FREQ — the base rate of the ramp, scaled by the RANGE band: slow LFO cycles, audio-rate pitch, or the clock-synced period in TEMPO. Pitch/freq CV and the V/oct input add to this.",
+      shape:
+        "SHAPE — morphs the waveform contour continuously from sine through triangle and ramp to a near-exponential curve, cross-fading between adjacent shapes at in-between settings.",
+      slope:
+        "SLOPE — the rise/fall symmetry of the ramp: centred is a symmetric triangle, one way is fast-attack/slow-decay (a plucky envelope), the other is slow-attack/fast-decay.",
+      smoothness:
+        "SMOOTH — how rounded vs. sharp the slope's corners are; low values give crisp, even folded edges, high values smooth the curve into gentle bends.",
+      shift:
+        "SHIFT — spreads the four outputs apart: in AMP it pans amplitude across the four, in PHASE it spreads their phase, in FREQ it picks the frequency-division ratios, and in GATES it morphs the variant/pulse relationship.",
+      rampMode:
+        "MODE — how the ramp is driven: AD fires a one-shot rise-then-fall on each trigger (an envelope), LOOP free-runs as a repeating LFO/oscillator, and AR follows a held gate (rises while high, releases on the falling edge). The card's MODE button cycles these.",
+      outputMode:
+        "OUT — the relationship between outputs 1–4: GATES (main slope + variant + end-of-rise + end-of-fall pulses), AMP (four amplitude-staggered copies), PHASE (four phase-staggered copies), or FREQ (four frequency-divided/multiplied copies). The card's OUT button cycles these.",
+      range:
+        "RANGE — the speed band: LFO (slow, sub-audio cycles), AUDIO (audio-rate, so TIDES2 acts as an oscillator and tracks V/oct), or TEMPO (the cycle locks to the external CLOCK input). The card's RNG button cycles these.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

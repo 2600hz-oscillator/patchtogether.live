@@ -83,6 +83,32 @@ export const rasterizeDef: AudioModuleDef = {
     { id: 'wrap',            label: 'Wrap',   defaultValue: 0,   min: 0,   max: 1,      curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "An audio→video raster mapper — it crosses the streams by writing your audio signal directly into a video frame as voltage-per-pixel. Every video frame it takes a fixed run of audio samples and paints them, in raster (left-to-right, top-to-bottom) scan order, into the 640×480 frame: each sample's value becomes a pixel's brightness, and a scan cursor advances and wraps through the frame across frames. This is the FAITHFUL raster mapping (like an analog scan-converter), NOT an oscilloscope trace — a steady tone paints horizontal bands whose spacing and drift track the audio frequency against the line/frame rate, and anything noisy paints texture. It is deliberately untamed: no limiter, no anti-aliasing, no feedback guard — the only ceiling is the 8-bit pixel saturation. The audio also passes through clean (THRU), so RASTERIZE can sit inline on a signal chain while feeding a video module from its OUT.",
+    inputs: {
+      in: "The audio signal to rasterize — its samples are painted as pixel brightness into the video frame.",
+      cursor:
+        "CV that displaces the SCAN cursor (the pixel offset where painting starts each frame), so you can scrub the running scan position with an envelope or LFO.",
+      samplesPerFrame:
+        "CV that displaces the SAMP/F control (how many samples are painted per frame), modulating how fast the scan sweeps the frame.",
+      gain:
+        "CV that displaces the GAIN applied to each sample before the brightness map, so a modulator can swing the image from dim to blown-out.",
+      wrap:
+        "CV that toggles the WRAP mode (accumulate-and-wrap vs. clear-on-wrap) under gate control.",
+    },
+    outputs: {
+      thru: "Clean audio passthrough — the input signal unchanged (the raster path is non-destructive), so RASTERIZE can sit inline in an audio chain.",
+      out: "The painted raster frame as a mono video texture for downstream video modules.",
+    },
+    controls: {
+      cursor: "SCAN — the starting pixel offset of the scan cursor into the 640×480 frame; move it to scrub where painting begins, or leave it and let the cursor drift on its own.",
+      samplesPerFrame: "SAMP/F — how many audio samples are painted per video frame (16–8000, default ~800 ≈ one-and-a-quarter scanlines at 48k/60fps); higher values sweep the frame faster and pack more signal per frame.",
+      gain: "GAIN — a linear gain applied to each sample before it's mapped to pixel brightness; raise it to brighten/clip the image, lower it to darken (0–8).",
+      wrap: "WRAP — what happens when the scan cursor reaches the end of the frame: 0 wraps around and keeps accumulating (toroidal drift), 1 clears on wrap for a clean top-to-bottom repaint sweep.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Audio input → gain (passthrough) → thru output, with an analyser tap
     // for the per-frame sample run.
