@@ -236,6 +236,57 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "master": "Master output level applied to both channels before the limiter, 0 (silence) to 1 (unity), default 0.7. It sets your overall loudness; the limiter downstream is a transparent ceiling, so use this for the actual mix level rather than relying on the limiter to hold things back."
     }
   },
+  "b3ntb0x": {
+    "explanation": "A circuit-level NTSC/composite video destroyer. Where the original BENTBOX does one symbolic RGB/YIQ pass, B3NTB0X runs a real four-stage analog pipeline: it ENCODES the incoming picture into a per-column composite VOLTAGE on a 3.58 MHz subcarrier (with sync tip, blanking, colour burst, and active video), runs that voltage through an analog BEND CIRCUIT (AC/DC coupling, gain, bias, soft-clip + diode clamp, plus four circuit-bend taps), DECODES it back to RGB with a quadrature demodulator and recovered sync, then renders it on a curved CRT (beam blur, phosphor grille, scanlines/interlace, bloom, persistence, overscan, barrel). Sync crush, dot-crawl, rainbow swim and rolling all EMERGE from the signal path — they are not cosmetic filters. Patch a video source into IN and it is the chainable, CRT-rendered OUT. Crank Sync Crush + Bias to tear and roll the picture, starve the Burst to kill colour and bring on herringbone, push Drift for swimming rainbow, and use Bend A–D for wavefold/comb/crush/bleed mangling. The preview is a resizable CRT screen (drag the bottom-right handle; default 540x540, min 360x540) that letterboxes at the live engine aspect with the 4:3 active area, overscan and barrel applied inside the shader; right-click for fullscreen / full-frame / present-on-second-display, and a \"reduced precision\" badge appears if the GPU cannot allocate the float buffers the composite voltage needs.",
+    "inputs": {
+      "ac_dc_cv": "Modulates AC/DC (input-coupling blend, DC passthrough to leaky AC-coupled so flat areas droop toward grey).",
+      "barrel_cv": "Modulates Barrel (CRT glass bulge / barrel distortion and corner vignette).",
+      "bend_a_cv": "Modulates Bend A (WAVEFOLD — reflect the composite voltage past a shrinking threshold for solarised creases).",
+      "bend_b_cv": "Modulates Bend B (COMB RIPPLE — mix a horizontally-delayed copy back in for ringing/ghost edges).",
+      "bend_c_cv": "Modulates Bend C (CRUSH — quantise/posterise the picture into hard contour bands).",
+      "bend_d_cv": "Modulates Bend D (CHROMA→SYNC BLEED — cross-couple HF ripple onto the DC path for luma buzz/rolling).",
+      "bias_cv": "Modulates Bias (the DC offset added before the soft-clip/diode-clamp; drives sync crush and tearing).",
+      "burst_starve_cv": "Modulates Burst Starve (attenuates the colour-burst reference: desaturation toward mono plus subcarrier dot-crawl into luma).",
+      "chroma_leak_cv": "Modulates Chroma Leak (how much chroma energy bleeds into luma in the decoder, i.e. dot-crawl amount).",
+      "enhance_cv": "Modulates Enhance (HF peaking / edge over-ring in the bend circuit).",
+      "feedback_cv": "Modulates Feedback (CRT phosphor persistence / motion-trail amount).",
+      "in": "Video input — the upstream RGB picture that becomes the active-video region of the synthesized NTSC line. With nothing patched the encoder feeds black (a clean blanked raster you can still bend).",
+      "luma_peak_cv": "Modulates Luma Peak (decode-side unsharp sharpening on the recovered luma).",
+      "mirror_x_gate": "Gate input on the CV cable (edge-detected): a RISING edge TOGGLES the Mirror X kaleidoscope fold — it fires on the rising edge, not on the held level. Feeds the mirrorXGate param.",
+      "mirror_y_gate": "Gate input on the CV cable (edge-detected): a RISING edge TOGGLES the Mirror Y kaleidoscope fold — it fires on the rising edge, not on the held level. Feeds the mirrorYGate param.",
+      "overscan_cv": "Modulates Overscan (how far the image is pushed past the visible CRT edge).",
+      "sync_crush_cv": "Modulates Sync Crush (master transistor gain into the clip; high gain drags the sync tip through the clamp so the decoder loses lock).",
+      "tbc_cv": "Modulates TBC/Lock (time-base correction; 1 is rock-steady, 0 lets sync offset + timebase wobble shimmy the lines).",
+      "tube_bloom_cv": "Modulates Tube Bloom (highlight halation/glow spilling into neighbours)."
+    },
+    "outputs": {
+      "out": "Video output — the final CRT-rendered frame (decoded RGB after the full encode→bend→decode→CRT chain, with overscan, barrel, scanlines, phosphor and persistence baked in). Chainable into any video input."
+    },
+    "controls": {
+      "ac_dc": "AC/DC (0–1): input-coupling blend. 0 = DC passthrough; 1 = leaky AC coupling that loses the DC pedestal so big flat bright/dark areas droop back toward mid-grey.",
+      "barrel": "Barrel (0–1, default 0.25): CRT glass barrel distortion (outward bulge about center) plus the matching corner vignette.",
+      "bend_a": "Bend A — Wavefold (-1–1): reflects the composite voltage back on itself past a shrinking threshold for solarised banding/creases. Identity at 0; sign picks fold polarity.",
+      "bend_b": "Bend B — Comb Ripple (-1–1): mixes a horizontally-delayed copy of the voltage back in (one-tap comb) for ringing, ghost edges and colour beating. Identity at 0.",
+      "bend_c": "Bend C — Crush (-1–1): quantises/posterises the picture into a few hard steps (bit-crush banding); the visible crush is applied on the recovered RGB, stepping from ~256 levels down toward 3 as magnitude approaches 1. Identity at 0.",
+      "bend_d": "Bend D — Chroma→Sync Bleed (-1–1): cross-couples the HF/chroma ripple onto the DC/baseline path, so the picture modulates the baseline as luma buzz / rolling contamination. Identity at 0.",
+      "bias": "Bias (-1–1): DC offset added before the nonlinear clip. Pushes the signal asymmetrically into the soft-clip/diode-clamp; with Sync Crush it drags the sync tip up and crushes it (tearing/rolling).",
+      "burst_starve": "Burst Starve (0–1): starves the colour-burst phase reference. Desaturates the picture toward monochrome (colour killer) AND leaks raw subcarrier energy into luma as dot-crawl/herringbone.",
+      "chroma_leak": "Chroma Leak (0–1, default 0.15): amount of under-filtered chroma energy that bleeds into the recovered luma in the decoder — visible dot-crawl on the picture.",
+      "enhance": "Enhance (0–1): high-frequency peaking on the composite voltage; sharpens edges and adds over-ringing. 0 is flat.",
+      "feedback": "Feedback (0–1): CRT phosphor persistence; blends a decayed copy of the previous frame for motion trails. 0 is no trails.",
+      "hue": "Hue (-1–1): receiver TINT — rotates the synchronous-demodulator reference axis (the recovered I/Q chroma vector) up to ±0.9π. Shifts colour angle while preserving saturation. 0 is no shift.",
+      "luma_peak": "Luma Peak (0–1): decode-side unsharp masking on the recovered luma; sharpens detail using the bent neighbours. 0 is off.",
+      "mirrorX": "Mirror X (0/1): kaleidoscope toggle that folds the left half over the right. Driven by the card's MIRROR X button and by a rising edge on the Mir X Gate input.",
+      "mirrorXGate": "Mir X Gate (0–1): the synthetic gate level fed by the mirror_x_gate input; a rising edge on it toggles Mirror X. Read for edge detection, not as a continuous control.",
+      "mirrorY": "Mirror Y (0/1): kaleidoscope toggle that folds the top half over the bottom. Driven by the card's MIRROR Y button and by a rising edge on the Mir Y Gate input.",
+      "mirrorYGate": "Mir Y Gate (0–1): the synthetic gate level fed by the mirror_y_gate input; a rising edge on it toggles Mirror Y. Read for edge detection, not as a continuous control.",
+      "overscan": "Overscan (0–1, default 0.2): scales the image slightly past the visible CRT edge so borders fall outside the active area, like a real TV.",
+      "sub_drift": "Drift (0–1): subcarrier instability. Injects an uncorrected carrier phase error that grows across each line and wanders in time, so chroma swims as a rainbow over the picture. 0 is stable.",
+      "sync_crush": "Sync Crush (0–2, default 1): master transistor gain into the clip. At 1 it is unity; above 1 it overdrives and can crush the sync tip so the decoder fails to lock; below 1 it underdrives.",
+      "tbc": "TBC/Lock (0–1, default 1): time-base correction. 1 corrects the recovered sync offset and analog timebase wobble to rock-steady; 0 lets both through so lines shimmy left/right and the picture breathes.",
+      "tube_bloom": "Tube Bloom (0–1, default 0.35): highlight halation — bright phosphors spill warm glow into neighbours and blow out toward white. 0 is off."
+    }
+  },
   "backdraft": {
     "explanation": "BACKDRAFT is a video feedback generator. It builds a \"source\" image by crossfading two video inputs (IN A / IN B) with MIX, then composites that against a processed copy of its OWN previous output, read from an internal ring of past frames so there is no live GL feedback loop (downstream sees frame N while the tap reads N-1..N-30). The fed-back frame is delayed (DELAY, 0-500ms or a clock pulse), colour-processed (per-channel R/G/B gain, then LUMA brightness, then CHROMA saturation), scaled per-pixel by two key masks (KEY+ lightens / KEY- darkens the effect), and geometrically warped a little each pass (ZOOM/ROTATE/OFF X/OFF Y) so the transform COMPOUNDS into tunnels, spirals, and directional trails. Two MIRROR buttons fold the whole composited frame into a kaleidoscope. As FEEDBACK approaches its max (and a spatial transform is active) the additive trail-accumulator ramps into a pure recursive hall of mirrors. Usage: patch a camera or generator into IN A, raise FEEDBACK toward ~1 and nudge ZOOM off 1.0 (with a little ROTATE) for the classic infinite-tunnel look; add OFF X/Y for smear, PIXELATE for blocky lo-fi, and clock DELAY CLK for rhythmic echo. Output is the OUT video jack. The card shows a large live video preview on the left that is resizable via the bottom-right corner-drag handle (width/height persist, snapped to rack tiles); right-click the preview for Full Frame / Full Screen / Present-on-another-display.",
     "inputs": {
@@ -287,6 +338,47 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "r": "R (-1..+2, default 1.0): per-channel red gain on the feedback. 1 = neutral.",
       "rotate": "Rot / Rotate (-30..+30 °, default 0): per-pass rotation of the feedback tap about centre. Combined with Zoom≠1 the echoes twist into a spiral; 0 = no spiral.",
       "zoom": "Zoom (0.8..1.2, default 1.0): per-pass scale of the feedback tap about centre. <1 makes echoes recede (expanding tunnel), >1 magnifies them (zoom-in tunnel); 1 = no tunnel."
+    }
+  },
+  "bentbox": {
+    "explanation": "A virtual CRT driven by a hand-bent analog composite line. The patched RGB image is resampled to a 240-line raster, converted to NTSC YIQ, given a modeled chroma-subcarrier phase, run through a triangle wavefolder + soft-clip on the composite \"voltage\", decoded back to RGB, blended with the previous frame (ping-pong feedback, max-blend trails), then painted through a CRT phosphor pipeline: scanline-gap mask (with odd/even field parity), RGB-triad subpixel mask, luma bloom, and RF grain. The result is timing-domain glitch (sync tearing, hue shimmer, ghosting, solarization) rather than pixel mosh. With nothing patched into IN it shows a dim blue idle field so you can see it is alive. Card layout: a resizable 4:3-letterboxed CRT screen over a 4x3 knob grid (timing / chroma+gain / feedback+destruction rows) plus two MIRROR toggle buttons. The image is always letterboxed at the live engine aspect (4:3 by default) and never stretched; the screen has DOM-only chrome (right-click for fullscreen, full-frame in-app expand, and present-on-second-display); OUT is a chainable video pass-through so you can stack BENTBOX into another video processor.",
+    "inputs": {
+      "bloom_cv": "CV (linear) modulates Bloom — the brightness threshold glow on bright pixels.",
+      "chroma_instability_cv": "CV (linear) modulates Shimmer — per-line random chroma-phase wobble for unstable, shimmering color.",
+      "chroma_phase_cv": "CV (linear) modulates Hue — rotates the whole image's color in the YIQ plane (bipolar).",
+      "feedback_delay_cv": "CV (linear) modulates Delay — the sub-frame line offset of the feedback tap, between line- and field-level recursion.",
+      "feedback_gain_cv": "CV (linear) modulates Feedback — how much of the previous frame is mixed back in (recursive trails).",
+      "hsync_drift_cv": "CV (linear) modulates HS Drift — adds high-frequency per-scanline random horizontal jitter.",
+      "hsync_loss_cv": "CV (linear) modulates HS Loss — raises the chance a scanline loses lock entirely and tears far sideways.",
+      "in": "Video input — the RGB image bent through the CRT/NTSC pipeline. Unpatched, the screen shows a dim blue idle field.",
+      "master_gain_cv": "CV (linear) modulates Gain — the composite signal level driving wavefold/soft-clip (overdrive into white smear).",
+      "mirror_x_gate": "Gate input (edge / trigger): a rising edge TOGGLES Mirror X on/off. Reads as a rising edge, not a held level — a clock can flip the kaleidoscope rhythmically (hysteresis rise>0.6 / fall<0.4).",
+      "mirror_y_gate": "Gate input (edge / trigger): a rising edge TOGGLES Mirror Y on/off. Edge-triggered (hysteresis rise>0.6 / fall<0.4), not level-held.",
+      "noise_cv": "CV (linear) modulates Noise — the RF/film grain added at the end of the chain.",
+      "scan_wobble_cv": "CV (linear) modulates Wobble — the slow, swept low-frequency horizontal scanline waviness.",
+      "vsync_drift_cv": "CV (linear) modulates VS Drift — the vertical roll/scroll speed of the picture over time.",
+      "wavefold_cv": "CV (linear) modulates Solarize — the triangle-wavefold amount on the composite voltage (tonal reversal / ghost edges)."
+    },
+    "outputs": {
+      "out": "Video output — the rendered bent CRT field (after mirror fold, NTSC bend, feedback and phosphor pass), chainable into another video processor."
+    },
+    "controls": {
+      "bloom": "Bloom (0..1, default 0.4) — luma-weighted glow boost on bright pixels; CRTs always have some glow even at rest.",
+      "chroma_instability": "Shimmer (0..1) — per-line random chroma-phase noise for unstable, shimmering color.",
+      "chroma_phase": "Hue (-1..1) — constant rotation of color in the NTSC YIQ plane; a global hue shift (bipolar).",
+      "feedback_delay": "Delay (0..1) — sub-frame Y offset of the feedback tap, sliding between line-level and field-level recursion.",
+      "feedback_gain": "Feedback (0..1) — amount of the previous frame blended back in (max-blend) for recursive image trails.",
+      "hsync_drift": "HS Drift (0..1) — high-frequency per-scanline random horizontal jitter; the beam wanders line to line.",
+      "hsync_loss": "HS Loss (0..1) — probability a scanline drops lock and tears hard sideways as a discrete glitch.",
+      "master_gain": "Gain (0..2, default 1) — composite signal level into the wavefold/soft-clip stage; higher overdrives into white smear.",
+      "mirrorX": "Mirror X (0/1, default off; MIRROR X button) — kaleidoscope fold of the left half over the right. Also toggled by a rising edge on mirror_x_gate.",
+      "mirrorXGate": "Hidden synthetic gate param written by the mirror_x_gate CV bridge (raw 0..1). No knob; the module edge-detects its rising edge to flip Mirror X.",
+      "mirrorY": "Mirror Y (0/1, default off; MIRROR Y button) — kaleidoscope fold of the top half over the bottom (both on = quadrant fold). Also toggled by a rising edge on mirror_y_gate.",
+      "mirrorYGate": "Hidden synthetic gate param written by the mirror_y_gate CV bridge (raw 0..1). No knob; the module edge-detects its rising edge to flip Mirror Y.",
+      "noise": "Noise (0..1, default 0.05) — RF/film grain added last so it doesn't self-reinforce through the feedback path.",
+      "scan_wobble": "Wobble (0..1) — slow, swept low-frequency horizontal waviness across the scanlines.",
+      "vsync_drift": "VS Drift (0..1) — vertical roll/scroll of the whole picture, like a CRT losing vertical hold.",
+      "wavefold": "Solarize (0..1; param id 'wavefold') — triangle wavefold of the composite voltage; reads on screen as tonal reversal/solarization and color tearing."
     }
   },
   "bluebox": {
@@ -3017,6 +3109,22 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "wetdry": "Embedded filter wet/dry mix (0 = dry/bypassed … 1 = fully filtered)."
     }
   },
+  "picturebox": {
+    "explanation": "An image/still source for the video graph. You pick an image file in the card (\"Choose image...\"); it is zoom-fit-cropped to the engine resolution (1024x768, 4:3), JPEG-encoded (q=0.85), and synced across rack-mates so every peer sees the same picture. The fragment shader samples that texture and multiplies its RGB by Gain (idle = a dark teal fill so an empty card reads as alive, not broken). Beyond the single image, picturebox holds a 7-slot asset bank: right-click the card to open the \"Load multiple…\" panel and load one image per slot, labelled by the C-major scale degrees C D E F G A B (slots 1-7). Patch a clip player's note/pitch + gate into asset_pitch / asset_gate and each gate edge switches the displayed slot by pitch class (octave-independent; a black key is ignored). Use it as a still backdrop, an album-art frame, or a note-triggered image sampler feeding downstream video benders.",
+    "inputs": {
+      "asset_gate": "Gate/trigger in: the card edge-detects the RISING edge (level crosses ~0.5) — on each edge it reads asset_pitch, resolves the slot, and switches to it if that slot holds an image. Acts on edges, not the held level.",
+      "asset_pitch": "Pitch (V/oct) in carrying the raw slot-select value; read on each asset_gate rising edge and mapped by pitch class to one of the 7 C-major slots (C..B). No CV scaling — passed through raw.",
+      "gain": "CV in that modulates Gain (output brightness/RGB multiply); displaces the Gain fader, linear, summed at the param target."
+    },
+    "outputs": {
+      "out": "Image out — the active slot's image as a video-domain image source (RGB multiplied by Gain), at engine resolution; patch into any video module."
+    },
+    "controls": {
+      "asset_gate": "Asset gate — synthetic, hidden param caching the raw gate level (0..1) from the asset_gate input. Not a card knob; the card edge-detects its rising edge to fire a slot switch.",
+      "asset_pitch": "Asset pitch — synthetic, hidden param caching the raw V/oct from the asset_pitch input. Not a card knob; the card reads it on each gate edge to choose a slot. Range -10..10.",
+      "gain": "Gain — output brightness; multiplies the image's RGB. Linear 0..2 (1.0 = unity). Also modulatable via the gain CV input."
+    }
+  },
   "polarizer": {
     "explanation": "A tiny one-knob CV utility that turns a UNIPOLAR signal into a BIPOLAR one: it takes a 0..1 control voltage and stretches it across -1..+1, applying out = (2·in - 1)·depth. The natural use is converting a 0..1 envelope, LFO or sequencer CV into a ±1 modulation source that can both RAISE and LOWER a destination (an unmodified envelope can only push a parameter up from where it sits; polarize it first and it can swing symmetrically about the knob). It is the exact inverse of DEPOLARIZER. There is no DSP worklet — it is a pure scale-plus-offset Web Audio graph, so the mapping is sample-accurate.",
     "inputs": {
@@ -4248,6 +4356,25 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "waveform": "Morphs the oscillator from saw (0, the classic 303 voice) to square (1) and the blend between."
     }
   },
+  "tvLibrarian": {
+    "explanation": "An international live-TV source: pick a country (click the 2D equirectangular world map, which snaps to the nearest country centroid that has channels, or use the country dropdown), pick a channel from that country's list, and the card attaches its HLS (.m3u8) stream via hls.js to an internal crossorigin video element. The engine samples that element into a WebGL framebuffer — the fragment shader is a straight passthrough of the live frame (when no stream is up it draws a dim near-black idle gradient so the card reads as \"alive but empty\"), so the video output is a genuine downstream-usable texture, not play-only. Frames are uploaded at the source's decode cadence (requestVideoFrameCallback, Firefox falls back to a currentTime-advance check) and downscaled to the engine resolution, so a high-bitrate stream doesn't flood GPU texture traffic. The stream's audio track is split into a stereo pair on the audio outs, with a silent gain-0 keep-alive that keeps the element decoding at full rate even when audio isn't patched. Channel metadata (country + channel name + stream URL) is persisted to the node so rack-mates tune to the SAME stream; geo-blocked entries are kept and marked, youtube-only entries are dropped, and a stream that fails to load (no CORS/ACAO under COEP, or 12s with no frame) is marked unavailable and auto-skips to the next channel rather than hanging. The card has a resizable 16:9 preview screen (corner-drag handle, persisted size, default 360x540, min 360x360) with a map/list segmented toggle, a now-playing label, a channel list (geo-blocked entries badged) and \"random\" / \"next ▸\" buttons (DOM-only, not module params), plus a legal disclaimer and Famelack/iptv-org attribution. Usage: drop it as a video source and feed its output into a mixer or any video module; patch a clock into next to channel-surf hands-free, or random to roulette.",
+    "inputs": {
+      "next": "Trigger (gate cable, edge:'trigger'): a rising edge advances to the NEXT channel in the current country's list, wrapping to the first. Level-while-high does nothing; it fires once per rising edge. Patch a clock here to channel-surf in time.",
+      "random": "Trigger (gate cable, edge:'trigger'): a rising edge tunes a RANDOM channel from the current country (picked from the OTHERS when more than one exists, so it reliably changes). Fires once per rising edge, not while held."
+    },
+    "outputs": {
+      "audio_l": "Left channel of the tuned stream's stereo audio (split from the stream's MediaElementSource). Silent (gain-0 constant source) when no stream is playing.",
+      "audio_r": "Right channel of the tuned stream's stereo audio. Silent (gain-0 constant source) when no stream is playing.",
+      "channel_changed": "Trigger out (gate cable, edge:'trigger'): one short rising-edge pulse each time a new channel is tuned. Patch into a downstream clock/reset/sample-and-hold.",
+      "stream_online": "Gate out (gate cable, edge:'gate'): held high while the stream is actually playing, low while loading, idle, or unavailable.",
+      "video": "The live stream's frame as a video texture (untainted/downstream-usable for streams that send CORS/ACAO). Dim near-black gradient when nothing is tuned."
+    },
+    "controls": {
+      "cv_next": "Next (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the next input's gate level here; the card polls readParam and edge-detects a rising edge (<0.5 → >=0.5) to advance one channel. Not a user-facing knob.",
+      "cv_random": "Random (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the random input's gate level here; the card polls readParam and edge-detects a rising edge to tune a random channel. Not a user-facing knob.",
+      "gain": "Gain — declared output-level param (0 to 2, linear; default 1.0). NOTE: the passthrough shader does not currently read it (no uGain uniform / draw() never applies it), so it is carried on the module but inert in v1 — it does not yet brighten or scale the video output."
+    }
+  },
   "twotracks": {
     "explanation": "A two-reel tape-loop emulator — two independent tape decks (reel A and reel B) in one box, mixed to a stereo output. Each reel records the stereo audio at its inputs onto a fixed-length 'blank tape', then plays the captured take back: you set a loop window (START / END) within the tape, a tape RATE (which slows, speeds, or reverses playback and pitch like a varispeed reel), an ECHOES feedback amount for tape-echo-style repeats, and per-reel 3-band EQ + a multimode filter to colour the playback. Recording is driven hands-free by the per-reel REC START / REC ARM / OVERDUB gate inputs (or the on-card transport), and OVERDUB layers new input onto the existing loop sound-on-sound. The two reels are blended by the global A/B crossfader, can cross-feed into each other (A→B and B→A) for runaway tape-loop textures, and a global LOFI option degrades the sound; MONITOR passes the live input through. The card draws each reel's live waveform + playhead and can export a take to WAV.",
     "inputs": {
@@ -4388,6 +4515,21 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "resp4": "Channel 4 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL."
     }
   },
+  "videobox": {
+    "explanation": "videobox is a local-file VIDEO PLAYER: you drop (or pick) a video file from disk and it decodes the file each frame into the module's video output, while the file's stereo audio track is split out to the audio_l / audio_r jacks for patching back into the audio domain. The card owns the actual HTMLVideoElement and object-URL; the engine samples that element through a decode-rate frame uploader (only re-uploading when a genuinely new frame lands, downscaled to the engine resolution) so playback stays smooth even at 1080p. Behind the file picker the card uses File System Access handles (Chromium) to remember your pick and one-click-reload it next session; other browsers and other peers fall back to a \"Re-link: drop <name>\" prompt. The playhead is multiplayer-synced: play, pause and seek write a shared (isPlaying / lastSyncTime / lastSyncPosition) triple to the node so every peer's local copy follows, drift-correcting whenever it slips more than ~0.5s off the expected position. The card is drag-resizable from the bottom-right corner (whole-rack-unit tiles, default and minimum 360x360) so several videoboxes can be tiled into a wall of TVs; size persists on the node and syncs to peers, and the 16:9 video preview grows to fill the resized card. Right-click the preview for Fullscreen (a LOCAL per-peer state, NOT multiplayer-synced) or Full Frame (in-app, the video consumes the whole card, hiding the title/picker/transport/seekbar; double-click to exit), where ONLY Full Frame is synced to peers. Usage: drop a clip, hit Play, and patch video into a mixer/output and audio_l/audio_r into your audio chain; pulse the TRIG input from a clock or button to toggle play/pause hands-free. Idle (no file) shows a faint blue gradient so an empty card reads as alive-but-empty.",
+    "inputs": {
+      "play_trigger": "TRIG (gate cable, edge: trigger). A rising edge across the gate threshold toggles play/pause — it does NOT hold; only the moment the level crosses high fires the toggle, so a clock or button pulse flips between Play and Pause. Routed through the CV bridge as the synthetic cv_play_trigger param, which the card edge-detects and writes into the shared multiplayer play state."
+    },
+    "outputs": {
+      "audio_l": "A-L (audio cable) — the LEFT channel of the loaded file's audio track, split out of a MediaElementSource once a file is loaded. Emits silence (a flat ConstantSource placeholder) before any file is loaded or if audio wiring fails.",
+      "audio_r": "A-R (audio cable) — the RIGHT channel of the file's audio track. Same silent placeholder until a file is loaded; a mono file effectively feeds the same content to both channels via the splitter.",
+      "video": "VID (video cable) — the decoded video frames of the loaded file, sampled into the output at the engine resolution. Shows the faint blue idle gradient until a file is loaded and a frame has uploaded."
+    },
+    "controls": {
+      "cv_play_trigger": "Play trigger (linear, 0 to 1, default 0). Synthetic hidden param — not a visible control. It is the bridge target for the play_trigger gate input: the CV bridge writes the gate level here and the card polls it for a rising edge across 0.5 to toggle play/pause. Has no on-card UI.",
+      "gain": "Gain (linear, 0 to 2, default 1.0). Reserved output-gain param carried on the module for future CV control; it is not yet consumed by the v1 engine or exposed as a knob on the card, so changing it currently has no audible/visible effect."
+    }
+  },
   "videoMixer": {
     "explanation": "A 4-channel additive video mixer. Each frame it samples up to four input textures at the same UV and sums them, scaling each by its own amount fader: out = in1*A1 + in2*A2 + in3*A3 + in4*A4, with the final RGB clamped to [0,1] and alpha forced opaque. Unpatched inputs contribute pure black (they read a 1x1 sentinel texture, not the mixer's own output, so there is no feedback loop). Because the sum is linear, it doubles as a crossfader (push A1 up while pulling A2 down for a two-source dissolve) and as a brightness/level control on a single source. Bright sources or amounts summing above 1.0 clip to white per channel. Usage hint: keep the active amounts summing near 1.0 for clean compositing; drive amount1..amount4 from LFOs or envelopes for automated fades and pulses.",
     "inputs": {
@@ -4417,6 +4559,39 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     },
     "outputs": {
       "out": "Pass-through of the input. Each frame the card's draw renders its input texture into its own FBO, and out exposes that FBO's texture — effectively a clean copy of in (input → FBO → out). Wire it onward to chain a monitor into downstream video effects without breaking the signal flow; with no input it carries the static idle pattern."
+    }
+  },
+  "videovarispeed": {
+    "explanation": "A local-file video player with a performant varispeed transport. Drop or pick a video and it decodes into the VIDEO output (rVFC-driven, so the texture streams at ANY speed without freezing). The SPEED knob is an asymmetric analog-clock face: full-left = -4x (reverse), 12 o'clock = +1x normal, full-right = +4x — forward speeds drive native <video>.playbackRate (audio pitch/tempo-shifts like tape varispeed) while reverse scrubs currentTime at a throttled ~10 Hz (audio muted in reverse). START/END sliders carve a play window into the clip; at the END edge LOOP jumps back to START while ONE-SHOT stops. The source aspect is letterboxed/pillarboxed into the 4:3 FBO so clips never stretch. DOM-only buttons (not patch params) handle file loading and transport: \"Choose video…\" / drag-drop / Chromium re-link, Play/Pause, a seek scrubber, and a LOOP↔1-SHOT toggle. Right-click the card to open the \"Load multiple…\" panel — up to 7 preloaded slots mapped to the C-major scale rows C..B; a clip player or any pitch+gate source can then switch which clip plays via the ASSET ports, each slot running its own virtual playhead so a switch jumps to that clip's live, de-synced position. Use it to scratch, reverse, freeze, and loop-window a clip live, or as a 7-clip melodic video switcher feeding BENTBOX / a CRT chain.",
+    "inputs": {
+      "asset_gate": "Gate (rising-edge / trigger). On the edge it reads ASSET PITCH, maps it to a slot, and if that slot holds a loaded video makes it the active source — jumping the output to that slot's live virtual position (re-triggering the already-active slot restarts it from the window start). Empty or out-of-key selections are ignored.",
+      "asset_pitch": "Pitch (raw V/oct passthrough, no cvScale). Selects which of 7 asset slots plays: pitch class C=slot1 D E F G A B=slot7 (octave-independent); a black-key class selects no slot. Read on each ASSET GATE rising edge.",
+      "cv_loop_toggle": "Gate (rising-edge / trigger). Each rising edge flips the transport between LOOP (jump to START at END) and ONE-SHOT (stop at END), the same state the LOOP button shows.",
+      "cv_pause": "Gate (rising-edge / trigger). Each rising edge toggles pause/unpause — it flips the play state on the edge, it is not level-held.",
+      "cv_reset": "Gate (rising-edge / trigger). On the edge it seeks the playhead back to the START point (or 0 if there is no valid window) without changing play/pause state.",
+      "cv_start": "Gate (rising-edge / trigger). On the edge it (re)starts playback from the START window point and begins playing; if the window is empty (START past END) it instead seeks the current spot and stays paused.",
+      "endCv": "CV (bipolar -1..+1, modulates End). Sums into the END slider only while patched (unpatched normals to full duration); negative CV pulls the window's end point earlier.",
+      "speedCv": "CV (bipolar -1..+1, modulates Speed). Sums into the SPEED knob position before the varispeed map, so +-1 sweeps the full reverse-to-forward span centred on the knob setting.",
+      "startCv": "CV (bipolar -1..+1, modulates Start). Sums into the START slider only while patched (unpatched normals to 0), shifting the window's start/reset point earlier or later."
+    },
+    "outputs": {
+      "audio_l": "Audio (left). Left channel of the ACTIVE slot's audio, tapped from its media-element source; varispeed pitch/tempo-shifts it on forward play and it is muted during reverse.",
+      "audio_r": "Audio (right). Right channel of the active slot's audio, following the same active slot as audio_l and re-pointed automatically when the asset slot switches.",
+      "video": "Video. The decoded clip at the current transport state (speed, scrub, window), aspect-preserved (letterbox/pillarbox) into the engine FBO; an idle dark gradient before a file loads."
+    },
+    "controls": {
+      "asset_gate": "Synthetic Asset-gate cache (0..1, default 0). Holds the asset_gate level the card edge-detects to trigger a slot switch; not shown on the card UI.",
+      "asset_pitch": "Synthetic Asset-pitch cache (raw V/oct, default 0, range -10..10). Holds the raw asset_pitch value the card reads on each asset-gate edge to pick a slot; not shown on the card UI.",
+      "cv_loop_toggle": "Synthetic Loop-gate cache (0..1, default 0). Holds the cv_loop_toggle gate level the card edge-detects to flip LOOP vs ONE-SHOT; not shown on the card UI.",
+      "cv_pause": "Synthetic Pause-gate cache (0..1, default 0). Holds the cv_pause gate level the card edge-detects to toggle pause/unpause; not shown on the card UI.",
+      "cv_reset": "Synthetic Reset-gate cache (0..1, default 0). Holds the cv_reset gate level the card edge-detects to seek to START; not shown on the card UI.",
+      "cv_start": "Synthetic Start-gate cache (0..1, default 0). Holds the cv_start gate level the card polls and edge-detects to fire a window-start restart; not shown on the card UI.",
+      "end": "End slider (0..1 of duration, default 1). The end of the playback window; if START passes END the window is empty and playback halts. Summed with End CV when patched (unpatched normals to full duration).",
+      "endCv": "Cached End CV value (-1..+1, default 0). Holds the live bipolar sample from the endCv input, summed into the END slider only while patched; not a user-facing control.",
+      "speed": "Speed knob (0..1, default 0.5). Asymmetric varispeed: 0 = -4x reverse, 0.5 = +1x normal forward, 1 = +4x; readout shows the live multiplier. Summed with Speed CV.",
+      "speedCv": "Cached Speed CV value (-1..+1, default 0). Holds the live bipolar sample from the speedCv input, summed into the SPEED knob; not a user-facing control.",
+      "start": "Start slider (0..1 of duration, default 0). The play-from and reset-to point of the playback window. Summed with Start CV when patched.",
+      "startCv": "Cached Start CV value (-1..+1, default 0). Holds the live bipolar sample from the startCv input, summed into the START slider while patched; not a user-facing control."
     }
   },
   "warps": {

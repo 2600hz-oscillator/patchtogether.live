@@ -343,4 +343,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'mandelbulb',
   'mandleblot',
   'scoreboard',
+  // Video batch 7 (2026-06-26): NTSC/composite destroyers + media players (tv/video/varispeed/picture).
+  'b3ntb0x',
+  'bentbox',
+  'tvLibrarian',
+  'videobox',
+  'videovarispeed',
+  'picturebox',
 ]);

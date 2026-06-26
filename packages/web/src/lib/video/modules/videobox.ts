@@ -140,6 +140,23 @@ export const videoboxDef: VideoModuleDef = {
     { id: 'cv_play_trigger', label: 'Play trigger', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "videobox is a local-file VIDEO PLAYER: you drop (or pick) a video file from disk and it decodes the file each frame into the module's video output, while the file's stereo audio track is split out to the audio_l / audio_r jacks for patching back into the audio domain. The card owns the actual HTMLVideoElement and object-URL; the engine samples that element through a decode-rate frame uploader (only re-uploading when a genuinely new frame lands, downscaled to the engine resolution) so playback stays smooth even at 1080p. Behind the file picker the card uses File System Access handles (Chromium) to remember your pick and one-click-reload it next session; other browsers and other peers fall back to a \"Re-link: drop <name>\" prompt. The playhead is multiplayer-synced: play, pause and seek write a shared (isPlaying / lastSyncTime / lastSyncPosition) triple to the node so every peer's local copy follows, drift-correcting whenever it slips more than ~0.5s off the expected position. The card is drag-resizable from the bottom-right corner (whole-rack-unit tiles, default and minimum 360x360) so several videoboxes can be tiled into a wall of TVs; size persists on the node and syncs to peers, and the 16:9 video preview grows to fill the resized card. Right-click the preview for Fullscreen (a LOCAL per-peer state, NOT multiplayer-synced) or Full Frame (in-app, the video consumes the whole card, hiding the title/picker/transport/seekbar; double-click to exit), where ONLY Full Frame is synced to peers. Usage: drop a clip, hit Play, and patch video into a mixer/output and audio_l/audio_r into your audio chain; pulse the TRIG input from a clock or button to toggle play/pause hands-free. Idle (no file) shows a faint blue gradient so an empty card reads as alive-but-empty.",
+    inputs: {
+      play_trigger: "TRIG (gate cable, edge: trigger). A rising edge across the gate threshold toggles play/pause — it does NOT hold; only the moment the level crosses high fires the toggle, so a clock or button pulse flips between Play and Pause. Routed through the CV bridge as the synthetic cv_play_trigger param, which the card edge-detects and writes into the shared multiplayer play state.",
+    },
+    outputs: {
+      video: "VID (video cable) — the decoded video frames of the loaded file, sampled into the output at the engine resolution. Shows the faint blue idle gradient until a file is loaded and a frame has uploaded.",
+      audio_l: "A-L (audio cable) — the LEFT channel of the loaded file's audio track, split out of a MediaElementSource once a file is loaded. Emits silence (a flat ConstantSource placeholder) before any file is loaded or if audio wiring fails.",
+      audio_r: "A-R (audio cable) — the RIGHT channel of the file's audio track. Same silent placeholder until a file is loaded; a mono file effectively feeds the same content to both channels via the splitter.",
+    },
+    controls: {
+      gain: "Gain (linear, 0 to 2, default 1.0). Reserved output-gain param carried on the module for future CV control; it is not yet consumed by the v1 engine or exposed as a knob on the card, so changing it currently has no audible/visible effect.",
+      cv_play_trigger: "Play trigger (linear, 0 to 1, default 0). Synthetic hidden param — not a visible control. It is the bridge target for the play_trigger gate input: the CV bridge writes the gate level here and the card polls it for a rising edge across 0.5 to toggle play/pause. Has no on-card UI.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
