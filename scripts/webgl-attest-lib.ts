@@ -228,19 +228,24 @@ export function resolveWebglBasis(): string[] {
     if (existsSync(join(REPO_ROOT, f))) files.add(f);
   }
 
-  // (4) The heavy WebGL specs (resolved from the exported glob), the Pass-B
-  //     leaker specs + the Pass-C camera spec (so editing any attested spec
-  //     forces a re-attest), and the shared e2e helpers/registry (small, rarely
-  //     churns; over-cover is safe).
-  for (const f of resolveHeavyWebglSpecs()) files.add(f);
-  for (const base of [...WEBGL_LEAKER_SPECS, ...WEBGL_CAMERA_SPECS]) {
-    const p = `e2e/tests/${base}`;
-    if (existsSync(join(REPO_ROOT, p))) files.add(p);
-  }
-  for (const f of walk('e2e/tests/_helpers')) files.add(f);
-  if (existsSync(join(REPO_ROOT, 'e2e/tests/_registry.ts'))) {
-    files.add('e2e/tests/_registry.ts');
-  }
+  // (4) E2E TEST FILES ARE DELIBERATELY EXCLUDED from the hash (owner directive
+  //     2026-06-26: "changing tests should not change our attest hashes").
+  //     The attest is a SEMAPHORE certifying that the GL *content* (module /
+  //     shader / engine source, swept in (1)-(3)) renders correctly on a real
+  //     GPU — the e2e spec is only the DRIVER. Editing a spec (adding a test,
+  //     fixing a flake, a comment) changes ZERO rendered pixels, so it must NOT
+  //     churn the hash and force a 10-min GPU re-attest. (The camera-recovery
+  //     fix burned a re-attest precisely because camera-input.spec.ts used to be
+  //     hashed here.) What a spec change could LEGITIMATELY invalidate is still
+  //     tracked WITHOUT the spec bytes:
+  //       - the attested SET (add/remove a heavy spec) → e2e/webgl-heavy-globs.ts
+  //         (STANDALONE_BASIS_FILES) moves the hash;
+  //       - the renderer/engine version → the toolchain pins + playwright.config.
+  //     The §12 coverage guard still RUNS every heavy spec and asserts every
+  //     WebGL module HAS one — that lives in the test runner, not the hash.
+  //     This mirrors the docs-hash-ignore rule: documentation AND test edits are
+  //     hash-transparent. (Guarded by webgl-attest-coverage.test.ts: the basis
+  //     contains NO file under e2e/tests/.)
 
   // (5) Standalone basis files + toolchain pins.
   for (const f of [...STANDALONE_BASIS_FILES, ...TOOLCHAIN_PIN_FILES]) {

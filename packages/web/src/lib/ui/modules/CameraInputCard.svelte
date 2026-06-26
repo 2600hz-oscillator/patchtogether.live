@@ -34,6 +34,7 @@
   import type { PresenceUser } from '$lib/multiplayer/presence';
   import { setNodeParam, mutateNode } from '$lib/graph/mutate';
   import { cameraInputDef } from '$lib/video/modules/camera-input';
+  import { shouldReacquireOnPick, savedDeviceMissing } from '$lib/video/camera-device';
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import ModuleTitle from './ModuleTitle.svelte';
@@ -73,6 +74,13 @@
   let errorMsg = $state<string | null>(null);
   let devices = $state<MediaDeviceInfo[]>([]);
   let selectedDeviceId = $state<string | null>(null);
+  // True once enumerateDevices returns real labels — i.e. camera permission has
+  // been granted in this origin. Before that, deviceIds are redacted to '' so we
+  // can't tell whether the saved camera is actually present.
+  let hasDeviceLabels = $state(false);
+  // The saved camera no longer resolves to an available device (loaded a patch
+  // on a different machine / camera unplugged). Drives the dropdown placeholder.
+  let savedMissing = $derived(savedDeviceMissing(selectedDeviceId, devices, hasDeviceLabels));
   // Awareness: who else (if anyone) has THIS card's CAMERA active. The
   // stream itself is local-only, so we render a presence badge instead of
   // pixels. Null = no remote user; non-null = the first remote user we
@@ -129,7 +137,9 @@
       const all = await navigator.mediaDevices.enumerateDevices();
       const cams = all.filter((d) => d.kind === 'videoinput');
       devices = cams;
-      return { hasLabels: cams.some((d) => d.label !== '') };
+      const hasLabels = cams.some((d) => d.label !== '');
+      hasDeviceLabels = hasLabels;
+      return { hasLabels };
     } catch (err) {
       console.warn('[cameraInput] enumerateDevices failed:', err);
       devices = [];
@@ -259,8 +269,13 @@
   function onPickDevice(deviceId: string): void {
     selectedDeviceId = deviceId;
     setSavedDeviceId(deviceId);
-    if (camState === 'streaming' || camState === 'paused' || camState === 'device-in-use' || camState === 'error') {
-      // Re-acquire on the new device.
+    // An explicit pick is a user gesture + a clear intent to use THAT camera —
+    // (re)acquire from any state except where a request can't/shouldn't fire
+    // (requesting / unsupported). Critically this now includes
+    // 'no-cameras-found' (loaded a patch whose saved camera is gone) and
+    // 'permission-denied' / 'idle' — previously the card stayed stuck there:
+    // switching cameras saved the id but never started the stream.
+    if (shouldReacquireOnPick(camState)) {
       requestStream();
     }
   }
@@ -320,11 +335,23 @@
       if (devices.length === 0) {
         camState = 'no-cameras-found';
         errorMsg = 'No cameras detected.';
+        return;
       }
       // If labels are already visible (permission previously granted in
       // this origin) AND the persisted toggle says enabled, auto-acquire.
       if (res.hasLabels && p('enabled') > 0.5) {
-        requestStream();
+        // Guard: if a patch saved a deviceId that's no longer present (loaded on
+        // a different machine / the camera was unplugged), DON'T fire the doomed
+        // exact-deviceId request — it just OverconstrainedErrors. Surface "pick
+        // a camera" directly so the (now working) device dropdown is the path
+        // forward. A null saved id falls through to an unconstrained request
+        // (the browser's default camera).
+        if (savedDeviceMissing(selectedDeviceId, devices, res.hasLabels)) {
+          camState = 'no-cameras-found';
+          errorMsg = 'Saved camera not found — pick another from the list.';
+        } else {
+          requestStream();
+        }
       }
     });
 
@@ -438,6 +465,11 @@
         {:else}
           {#if !selectedDeviceId}
             <option value="" disabled selected>(pick one)</option>
+          {:else if savedMissing}
+            <!-- Saved camera is gone — show it as a disabled placeholder so the
+                 select's displayed value matches state and picking ANY real
+                 device below fires an onchange (the recovery path). -->
+            <option value={selectedDeviceId} disabled selected>(saved camera not found — pick one)</option>
           {/if}
           {#each devices as d (d.deviceId)}
             <option value={d.deviceId} selected={d.deviceId === selectedDeviceId}>
