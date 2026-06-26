@@ -110,6 +110,24 @@ export const spectrographDef: AudioModuleDef = {
     { id: 'gain', label: 'Gain', defaultValue: 1, min: 0.25, max: 4, curve: 'log' },
   ],
 
+  docs: {
+    explanation:
+      "A real-time scrolling spectrograph (sonogram) — it turns any audio signal into a video image of its frequency content over time. The mono input is FFT-analysed and rendered as a log-binned plot: frequency runs up the vertical axis (20 Hz at the bottom to 20 kHz at the top, log scale), time scrolls horizontally with the newest column on the RIGHT, and the loudness at each frequency sets each pixel's brightness/color. It produces the SAME spectrograph as two simultaneous video outputs over two colormaps — a COLOR heat ramp (blue→cyan→yellow→red, loud = hot) and an INVERTED B/W (quiet = white, loud = black, the classic printed-sonogram look). The card shows a live preview with a button to flip the preview between the two looks (preview only — both outputs are always live). Patch COLOR or B/W into VIDEO OUT or any video module. GAIN trims the input level into the analyser's display window.",
+    inputs: {
+      in: "The mono audio signal to analyse — its frequency content is FFT-analysed and drawn as the scrolling spectrograph. Patch any audio source here (a synth voice, a mix, a drum bus).",
+    },
+    outputs: {
+      color:
+        "The spectrograph rendered with the COLOR heat ramp — quiet = dark blue, getting louder through cyan → yellow → red. A mono-video output; patch it into VIDEO OUT or any video module for a vivid, colorful sonogram.",
+      bw:
+        "The SAME spectrograph rendered as INVERTED grayscale — quiet = white, loud = black — the classic printed-sonogram look (light page, dark traces). A mono-video output, drawn from the same FFT plane as COLOR, so the two are time-aligned.",
+    },
+    controls: {
+      gain:
+        "Pre-analysis input trim (0.25..4, log, default 1) — boosts a quiet source up into the −90..−10 dB display window so its traces are visible (or tames a hot one). Applied before the FFT tap; it shapes the IMAGE contrast, not the audio (there's no audio output).",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Input trim → analyser tap. A muted keep-alive path is NOT needed:
     // an AnalyserNode is a passive tap (it doesn't need a path to

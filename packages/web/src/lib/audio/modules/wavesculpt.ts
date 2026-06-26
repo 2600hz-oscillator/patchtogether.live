@@ -855,6 +855,111 @@ export const wavesculptDef: AudioModuleDef = {
     ps.push({ id: 'wall6_distort', label: 'W6 Dst', defaultValue: 0,   min: 0, max: 1,   curve: 'linear' });
     return ps;
   })(),
+  // docs-hash-ignore:start
+  // WAVESCULPT's card renders WebGL2, so its def is in the WebGL attest basis
+  // (AUDIO_WEBGL_MODULE_DEFS). Living-docs is hash-transparent: these markers
+  // make computeWebglHash strip the co-located docs + controlFamilies so
+  // authoring them does NOT churn the GPU attest hash (the cube/hypercube
+  // precedent; owner directive "docs must not change attest hashes" — see
+  // scripts/webgl-attest-lib.ts stripDocsForHash).
+  docs: (() => {
+    const OSC = ['RED', 'GREEN', 'BLUE', 'ALPHA']; // index 0..3
+    const WALL = ['FRONT (−Z)', 'BACK (+Z)', 'LEFT (−X)', 'RIGHT (+X)', 'FLOOR (−Y)', 'CEILING (+Y)'];
+    const inputs: Record<string, string> = {};
+    const controls: Record<string, string> = {};
+    for (let i = 1; i <= 4; i++) {
+      const c = OSC[i - 1];
+      inputs[`gate${i}`]     = `Oscillator ${i} (${c}) GATE — its per-osc amp ADSR holds open WHILE this gate is high and releases on the falling edge, so a held gate sustains ${c}'s ribbon/voice.`;
+      inputs[`pitch_cv${i}`] = `Oscillator ${i} (${c}) V/oct PITCH input — sets that oscillator's pitch (summed with TUNE${i} + FINE${i}).`;
+      inputs[`morph${i}_cv`] = `CV that offsets oscillator ${i}'s MORPH (wavetable frame position), sweeping ${c}'s timbre.`;
+      controls[`tune${i}`]      = `Oscillator ${i} (${c}) TUNE — coarse pitch in semitones (−36..+36). Summed with FINE${i} and the pitch_cv${i} input.`;
+      controls[`fine${i}`]      = `Oscillator ${i} (${c}) FINE tune in cents (−100..+100) for tuning between TUNE${i}'s semitones.`;
+      controls[`morph${i}`]     = `Oscillator ${i} (${c}) MORPH (0..1) — wavetable frame position; scans through the loaded wavetable's frames to morph the timbre. CV via the morph${i}_cv input.`;
+      controls[`spread${i}`]    = `Oscillator ${i} (${c}) SPREAD (1..5) — stereo tap spread; higher values widen ${c}'s stereo image by reading offset taps.`;
+      controls[`fold${i}`]      = `Oscillator ${i} (${c}) FOLD (0..1) — west-coast wavefolder on ${c}'s output (0 = clean, 1 = heavily folded harmonics).`;
+      controls[`A${i}`]         = `Oscillator ${i} (${c}) envelope ATTACK (0.001..5 s, log) — rise time after its GATE opens.`;
+      controls[`D${i}`]         = `Oscillator ${i} (${c}) envelope DECAY (0.001..5 s, log) — fall from the attack peak to SUSTAIN${i}.`;
+      controls[`S${i}`]         = `Oscillator ${i} (${c}) envelope SUSTAIN level (0..1) — held while GATE${i} stays high.`;
+      controls[`R${i}`]         = `Oscillator ${i} (${c}) envelope RELEASE (0.001..5 s, log) — fade after GATE${i} falls.`;
+      controls[`thickness${i}`] = `Oscillator ${i} (${c}) THICKNESS (0..1) — how far the wave ribbon is extruded perpendicular to its direction (visual weight of ${c}'s ribbon).`;
+      controls[`fxType${i}`]    = `Oscillator ${i} (${c}) per-osc FX slot type: 0 = OFF, 1 = REVERB, 2 = DELAY. Sits PRE-spatial-mix, so it shapes ${c}'s raw oscillator before env/distance/pan.`;
+      controls[`fxAmount${i}`]  = `Oscillator ${i} (${c}) FX AMOUNT (0..1) — wet/mix of the per-osc FX slot selected by FX${i}.`;
+    }
+    // Camera + global CV inputs.
+    inputs.pos_x  = 'CV that offsets the camera X position (drives the XY pad horizontally).';
+    inputs.pos_y  = 'CV that offsets the camera Y position (drives the XY pad vertically).';
+    inputs.pos_z  = 'CV that offsets the camera Z position / HEIGHT (depth into the box).';
+    inputs.zoom   = "CV that offsets the camera ZOOM (distance scalar) — closer = bigger ribbons AND louder (the distance gain is shared by audio + visual).";
+    inputs.rot    = 'CV that offsets the camera ROTATION about the Y axis (visual only).';
+    inputs.scale  = "CV that offsets the BLINK SCALE — the amplitude/zoom of the scope waveform render.";
+    inputs.wiggle = "CV that offsets WIGGLE — the pitch-driven 3D rotation strength of each ribbon/scope/tube.";
+    inputs.alpha_in = 'Optional VIDEO input blended as an alpha mask over the 3D render (a cross-domain video stream shaping transparency).';
+    for (let w = 1; w <= 6; w++) {
+      inputs[`wall${w}`] = `VIDEO input textured onto the ${WALL[w - 1]} face of the 3D room (the camera is inside the box). Blended by WALL ${w} α (transparency) and morphable flat→dome by WALL ${w} DISTORT. Self-patching video_out → wall${w} makes recursive video feedback.`;
+      controls[`wall${w}_alpha`]   = `WALL ${w} (${WALL[w - 1]}) TRANSPARENCY (0..100%) — 0 = the wall's video is invisible, 100 = fully opaque over the scene.`;
+      controls[`wall${w}_distort`] = `WALL ${w} (${WALL[w - 1]}) DISTORT (0..1) — morphs the wall from a flat quad (0) to a convex dome bulging toward the room centre (1), a fisheye we look up into.`;
+    }
+    // Camera + master + look controls.
+    controls.pos_x = 'Camera X position (−1..+1) — the horizontal axis of the on-card XY pad. Moves the viewpoint left/right through the box.';
+    controls.pos_y = 'Camera Y position (−1..+1) — the vertical axis of the XY pad.';
+    controls.pos_z = 'Camera Z position / HEIGHT (−1..+1) — depth into the box (the HEIGHT slider).';
+    controls.zoom  = 'Camera ZOOM / distance scalar (0.3..3, log) — closer (smaller) = bigger ribbons visually AND louder audibly (closer = louder, one shared distance number). CV via the zoom input.';
+    controls.rot   = 'Camera ROTATION about the Y axis (−1 full left .. +1 full right). Visual only — audio is rotation-invariant. CV via the rot input.';
+    controls.unison = 'UNISON (on/off) — stacks the oscillators on one pitch (detuned by DETUNE) for a fat, layered tone instead of four independent voices.';
+    controls.detune = 'DETUNE (−1..+1) — the spread applied between voices when UNISON is on.';
+    controls.chord_mode    = 'CHORD MODE (on/off) — when on, every voice reads voice 1\'s pitch and voices 2/3/4 are offset to build a chord (the quality set by QUALITY); each voice\'s TUNE becomes the chord offset.';
+    controls.chord_quality = 'CHORD QUALITY — picks the chord built in CHORD MODE: 0 = major, 1 = minor.';
+    controls.video_mode = 'VIEW / video mode for the render + the video_out: 0 = PROXIMITY (the 3D ribbon scene, default), 1 = BIRDSEYE (top-down 2D floorplan of the spatial system), 2 = SPECTROGRAPH (scrolling STFT of the combined audio).';
+    controls.blink_mode = 'BLINK render mode within the 3D view: 0 = wavetable RIBBONS (default), 1 = SCOPES TRIAL (each osc\'s live oscilloscope trace from the floor corners), 2 = REALITY BASED COMMUNITY (the scopes rendered as 3D neon tubes).';
+    controls.scale  = 'SCALE (0.1..10, log, unity at 1) — amplitude/zoom of the BLINK scope waveform (matches the SCOPE module\'s scale). Applies in the scope/tube blink modes. CV via the scale input.';
+    controls.wiggle = 'WIGGLE (0..1, 0 = OFF) — pitch-driven 3D rotation of each osc\'s ribbon/scope/tube; speed + magnitude scale with the detected pitch. CV via the wiggle input.';
+    controls.alpha_brightness = 'ALPHA BRIGHTNESS (0..2) — brightness of the ALPHA oscillator / alpha-mask layer in the render.';
+    controls.lum_depth = 'LUMINOSITY → BANDPASS depth (0..1) — how strongly the wall video\'s brightness at each line\'s wall-crossing points shapes a band-pass on that line\'s audio (bright = open, dark = narrow). 0 = OFF.';
+    controls.red_color = 'RED oscillator base COLOUR (a colour-wheel picker) — tints the RED osc\'s ribbon, scope line, and neon tube. Packed 0xRRGGBB; chosen via a native colour picker (not a CV knob).';
+    controls.grn_color = 'GREEN oscillator base COLOUR (colour picker) — tints the GREEN osc in every blink mode. Packed 0xRRGGBB.';
+    controls.blu_color = 'BLUE oscillator base COLOUR (colour picker) — tints the BLUE osc in every blink mode. Packed 0xRRGGBB.';
+    // BENTBOX-style CRT post-process + master.
+    controls.hsync_drift = 'HSYNC DRIFT (0..1) — horizontal-sync drift of the CRT post-process (the picture skews/tears horizontally).';
+    controls.hsync_loss  = 'HSYNC LOSS (0..1) — horizontal-sync loss; the image rolls/breaks up horizontally as it rises.';
+    controls.vsync_drift = 'VSYNC DRIFT (0..1) — vertical-sync drift; the picture rolls vertically.';
+    controls.scan_wobble = 'SCAN WOBBLE (0..1) — wobbles the scanlines for an unstable-CRT shimmer.';
+    controls.chroma_phase = 'HUE / chroma phase (−1..+1) — rotates the colour hue of the rendered image.';
+    controls.chroma_instability = 'SHIMMER / chroma instability (0..1) — adds unstable colour-fringing shimmer to the image.';
+    controls.feedback_gain  = 'FEEDBACK gain (0..1) — frame-feedback amount of the video post-process (video echoes/trails).';
+    controls.feedback_delay = 'Feedback DELAY (0..1) — the delay of the video frame-feedback (longer = more spaced trails).';
+    controls.wavefold = 'WAVEFOLD (0..1) — a video-domain wavefold of the rendered image (folds bright values back for a posterized look).';
+    controls.bloom = 'BLOOM (0..1, default 0.4) — glow/bloom on bright parts of the render.';
+    controls.noise = 'NOISE (0..1, default 0.05) — analog-style video noise/grain over the image.';
+    controls.master_gain = 'MASTER GAIN (0..2, default 1) — overall output level of the summed audio mix (L/R).';
+    // Per-oscillator wavetable selector (DOM-only family).
+    controls['wavesculpt-osc-{n}'] =
+      "Oscillator {n}'s wavetable-source strip: a colour-wheel swatch (its base tint), a PRESET dropdown, a FACTORY-table dropdown, and a LOAD button to upload your own .wav as that oscillator's wavetable. The chosen table is the wave each oscillator plays + draws as its ribbon; selection persists on the patch.";
+    return {
+      explanation:
+        "A hybrid 4-oscillator 3D video synth — it makes sound AND a live 3D image from the same engine. A unit box holds four 'wall oscillators' (RED / GREEN / BLUE / ALPHA), each emitting a wave ribbon along a vector into the box. One user camera renders the scene; you fly it with an XY pad (X/Y), a HEIGHT slider (Z), ZOOM, and ROTATION. Closer = bigger ribbons AND louder — the same distance number drives both visual size and audio gain, so 'lean in' is consistently louder. Each oscillator is a full wavetable voice: pick its table (preset / factory / your own .wav), set TUNE/FINE/MORPH/SPREAD/FOLD, and shape it with a per-osc ADSR gated by its GATE input and pitched by its PITCH input, plus a pre-mix per-osc FX slot (reverb/delay). The audio output is the summed stereo mix (L/R), with four per-oscillator AUDIO taps (out_red/grn/blu/alp) for routing one voice out independently. The render goes out video_out (a mono-video with a BENTBOX-style CRT post-process baked in — sync drift, hue, bloom, noise, feedback) and can be viewed as 3D ribbons, a birds-eye floorplan, or a spectrograph (VIEW). Six VIDEO WALL inputs texture the faces of the room — self-patch video_out → a wall for recursive video feedback, and LUMINOSITY→BANDPASS lets a wall's brightness shape the audio. UNISON/DETUNE and CHORD MODE turn the four voices into a stacked or harmonized instrument; everything is CV-modulatable.",
+      inputs,
+      outputs: {
+        L: 'Left channel of the summed stereo audio mix — the four oscillators after per-osc env, distance gain, and pan, post MASTER GAIN.',
+        R: 'Right channel of the summed stereo audio mix (the partner of L).',
+        out_red: "RED oscillator's individual AUDIO tap — that single voice post env/distance/pan (the exact node the visualizer reads). Patch it to route or process the RED voice independently of the L/R mix.",
+        out_grn: "GREEN oscillator's individual AUDIO tap — that single voice post env/distance/pan, routable independently of the mix.",
+        out_blu: "BLUE oscillator's individual AUDIO tap — that single voice post env/distance/pan, routable independently of the mix.",
+        out_alp: "ALPHA oscillator's individual AUDIO tap — that single voice post env/distance/pan, routable independently of the mix.",
+        video_out: 'The 3D render as a mono-video output (with the CRT post-process baked in). Patch it into VIDEO OUT or any video module — or back into a WALL input for recursive feedback.',
+      },
+      controls,
+    };
+  })(),
+
+  controlFamilies: [
+    // Per-oscillator wavetable-source strip (data-testid
+    // `wavesculpt-osc-<nodeId>-<n>` for n=1..4). Each holds the colour swatch +
+    // preset/factory selectors + a LOAD-your-own-.wav button; the chosen table
+    // is the wave that oscillator plays + draws. DOM-driven (selection rides
+    // node.data), not a ParamDef — declared so the docs layer sees it.
+    { id: 'wavesculpt-osc', label: 'Per-oscillator wavetable source', kind: 'cell', testidPrefix: 'wavesculpt-osc' },
+  ],
+  // docs-hash-ignore:end
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initialParams = (node.params ?? {}) as Record<string, number>;

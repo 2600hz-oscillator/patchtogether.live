@@ -177,4 +177,18 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   // — see strict-docs.ts.
   'cloudseed',
   'symbiote',
+  // Batch 14 — FINAL audio batch (2026-06-26): only the two CONVENTION-card
+  // members that mount cleanly in the engine-less doc sandbox go here. riotgirls
+  // is a pure Knob + PatchPanel card (no onMount/$effect, no canvas/rAF/WebGL,
+  // no file input). hydrogen is transport buttons + the 16×16 step grid +
+  // per-voice Knobs + PatchPanel; its only side effect is a setInterval poll of
+  // engine.read('currentStep'), which no-ops in the doc sandbox (the engine is
+  // null), so it mounts cleanly. Verified live by docs-virtual-module.spec.ts
+  // (riotgirls v1_volume→v1_volume and hydrogen cv_vol_0→vol0 exercise the
+  // CV→param dual context). The STATIC siblings stay off this list: the four
+  // games (frogger/modtris/pong/skifree) + spectrograph run a 2D-canvas rAF
+  // render loop, samsloop adds a waveform canvas + file-upload + mic record, and
+  // wavesculpt renders WebGL2 + has a per-osc .wav picker — see strict-docs.ts.
+  'hydrogen',
+  'riotgirls',
 ]);

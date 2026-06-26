@@ -1556,6 +1556,7 @@ hydrogen param vol7 0..2 linear default=1
 hydrogen param vol8 0..2 linear default=1
 hydrogen param vol9 0..2 linear default=1
 hydrogen expose playStop
+hydrogen family hydrogen-cell kind=step-grid prefix=hydrogen-cell
 hypercube meta domain=audio schema=1
 hypercube in alpha cv param=alpha cvScale=linear
 hypercube in connect cv param=connect cvScale=linear
@@ -3930,6 +3931,7 @@ wavesculpt param wall6_distort 0..1 linear default=0
 wavesculpt param wavefold 0..1 linear default=0
 wavesculpt param wiggle 0..1 linear default=0
 wavesculpt param zoom 0.3..3 log default=1
+wavesculpt family wavesculpt-osc kind=cell prefix=wavesculpt-osc
 wavetableVco meta domain=audio schema=3
 wavetableVco in fine cv param=fine cvScale=linear
 wavetableVco in fm audio

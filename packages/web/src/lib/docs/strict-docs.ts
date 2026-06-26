@@ -274,4 +274,31 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'warrenspectrum',
   'mixmstrs',
   'bluebox',
+  // Batch 14 — FINAL audio batch: the last undocumented AUDIO modules, which
+  // completes the audio catalog (2026-06-26). The arcade GAME modules FROGGER /
+  // MODTRIS / PONG / SKIFREE (gameplay-as-CV: gate inputs steer the game, gate
+  // outputs pulse on its events), the 16-instrument × 16-step drum machine
+  // HYDROGEN, the 4-voice drum/synth + FX-rack RIOTGIRLS, the single-sample loop
+  // player SAMSLOOP, the scrolling-sonogram video generator SPECTROGRAPH, and the
+  // hybrid 4-oscillator 3D video synth WAVESCULPT. Only the CONVENTION-card
+  // pure-Knob/Fader+PatchPanel members go INTERACTIVE: riotgirls (pure
+  // Knob+PatchPanel) and hydrogen (transport buttons + a step grid + PatchPanel,
+  // its currentStep poll no-ops in the engine-less doc sandbox). The rest stay
+  // STATIC: the four games + spectrograph run a 2D-canvas rAF render loop,
+  // samsloop adds a waveform canvas + file-upload + mic record, and wavesculpt
+  // renders WebGL2 (rendersWebGL — its docs + controlFamilies are wrapped in
+  // docs-hash-ignore markers like cube/hypercube so authoring stays
+  // attest-neutral) plus a per-osc .wav file picker. HYDROGEN declares the 16×16
+  // step-pattern grid family (hydrogen-cell); WAVESCULPT declares the per-osc
+  // wavetable-source strip family (wavesculpt-osc). (negativity stays
+  // undocumented on purpose — it is the e2e "undocumented module" fixture.)
+  'frogger',
+  'hydrogen',
+  'modtris',
+  'pong',
+  'riotgirls',
+  'samsloop',
+  'skifree',
+  'spectrograph',
+  'wavesculpt',
 ]);

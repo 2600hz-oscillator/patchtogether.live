@@ -330,6 +330,93 @@ export const riotgirlsDef: AudioModuleDef = {
   ],
   params: PARAMS,
 
+  docs: (() => {
+    const inputs: Record<string, string> = {};
+    const controls: Record<string, string> = {};
+    // Voices 1-3: DRUMMERGIRL synth-drum voices.
+    for (const v of [1, 2, 3]) {
+      inputs[`trig${v}`]  = `Voice ${v} TRIGGER — a rising edge fires voice ${v} once (one drum hit). trig${v} and gate${v} land on the same input, so a sequencer gate or an external trigger can drive either.`;
+      inputs[`gate${v}`]  = `Voice ${v} GATE — a rising edge re-triggers voice ${v} (the DRUMMERGIRL voices are one-shot, so they restart on the leading edge). Shares its input node with trig${v}.`;
+      inputs[`pitch${v}`] = `Voice ${v} V/oct PITCH input — sets the drum voice's tuning; summed with the V${v} PIT knob.`;
+      controls[`v${v}_pitch`]  = `Voice ${v} PITCH (semitones, −36..+36) — coarse tuning of the synth-drum voice. CV via the pitch${v} input.`;
+      controls[`v${v}_tone`]   = `Voice ${v} TONE (0..1) — DRUMMERGIRL's tonal/click character. CV via the v${v}_tone input.`;
+      controls[`v${v}_shape`]  = `Voice ${v} SHAPE (0..1) — the voice's waveshape/timbre morph. CV via the v${v}_shape input.`;
+      controls[`v${v}_decay`]  = `Voice ${v} DECAY (0.001..0.5 s, log) — how long the drum hit rings out. CV via the v${v}_decay input.`;
+      controls[`v${v}_volume`] = `Voice ${v} VOLUME (0..2) — the voice's level before pan + sends. CV via the v${v}_volume input.`;
+      controls[`v${v}_pan`]    = `Voice ${v} PAN (−1 left .. +1 right) in the stereo mix. CV via the v${v}_pan input.`;
+      controls[`v${v}_sendA`]  = `Voice ${v} SEND A (0..1) — how much of voice ${v} is tapped to aux bus A (→ DESTROY bitcrusher). CV via the v${v}_sendA input.`;
+      controls[`v${v}_sendB`]  = `Voice ${v} SEND B (0..1) — how much of voice ${v} is tapped to aux bus B (→ reverb). CV via the v${v}_sendB input.`;
+      inputs[`v${v}_tone`]   = `CV that offsets voice ${v}'s TONE.`;
+      inputs[`v${v}_shape`]  = `CV that offsets voice ${v}'s SHAPE.`;
+      inputs[`v${v}_decay`]  = `CV that offsets voice ${v}'s DECAY (log).`;
+      inputs[`v${v}_volume`] = `CV that offsets voice ${v}'s VOLUME.`;
+      inputs[`v${v}_pan`]    = `CV that offsets voice ${v}'s PAN.`;
+      inputs[`v${v}_sendA`]  = `CV that offsets voice ${v}'s SEND A amount.`;
+      inputs[`v${v}_sendB`]  = `CV that offsets voice ${v}'s SEND B amount.`;
+    }
+    // Voice 4: wavetable VCO + ADSR + VCA (a sustaining melodic voice).
+    inputs.trig4  = "Voice 4 TRIGGER — a rising edge fires voice 4's ADSR (attack→decay→sustain). Shares its input with gate4.";
+    inputs.gate4  = "Voice 4 GATE — voice 4's amp ADSR holds open WHILE this gate is high (sustain), and releases on the falling edge. The level-sensitive gate that lets V4 play sustained pad/bass notes (unlike the one-shot voices 1-3). Shares its input with trig4.";
+    inputs.pitch4 = "Voice 4 V/oct PITCH input — sets the wavetable oscillator's pitch; summed with the V4 TUN + FIN knobs.";
+    inputs.v4_fm  = "Voice 4 FM input (audio-rate) — an external audio signal that frequency-modulates voice 4's oscillator (depth set by the FM amount).";
+    controls.v4_tune     = "Voice 4 TUNE (semitones, −36..+36) — coarse tuning of the wavetable oscillator. CV via the pitch4 input.";
+    controls.v4_fine     = "Voice 4 FINE tune (cents, −100..+100) — fine pitch trim between the semitone steps of TUNE.";
+    controls.v4_wavePos  = "Voice 4 WAVE POSITION (0..1) — scans through the wavetable frames (saw → square → triangle → sine), morphing the timbre. CV via the v4_wavePos input.";
+    controls.v4_fmAmount = "Voice 4 FM AMOUNT (0..1) — depth of the audio-rate frequency modulation from the v4_fm input.";
+    controls.v4_attack   = "Voice 4 ATTACK (0.001..2 s, log) — amp-envelope rise time from note-on. CV via the v4_attack input.";
+    controls.v4_decay    = "Voice 4 DECAY (0.001..4 s, log) — fall from the attack peak to the sustain level. CV via the v4_decay input.";
+    controls.v4_sustain  = "Voice 4 SUSTAIN level (0..1) — the level held while the V4 gate stays high. CV via the v4_sustain input.";
+    controls.v4_release  = "Voice 4 RELEASE (0.001..8 s, log) — fade to silence after the gate falls. CV via the v4_release input.";
+    controls.v4_volume   = "Voice 4 VOLUME (0..2) — the voice's level before pan + sends. CV via the v4_volume input.";
+    controls.v4_pan      = "Voice 4 PAN (−1 left .. +1 right). CV via the v4_pan input.";
+    controls.v4_sendA    = "Voice 4 SEND A (0..1) — amount tapped to aux bus A (→ DESTROY). CV via the v4_sendA input.";
+    controls.v4_sendB    = "Voice 4 SEND B (0..1) — amount tapped to aux bus B (→ reverb). CV via the v4_sendB input.";
+    inputs.v4_wavePos = "CV that offsets voice 4's WAVE POSITION.";
+    inputs.v4_attack  = "CV that offsets voice 4's ATTACK (log).";
+    inputs.v4_decay   = "CV that offsets voice 4's DECAY (log).";
+    inputs.v4_sustain = "CV that offsets voice 4's SUSTAIN.";
+    inputs.v4_release = "CV that offsets voice 4's RELEASE (log).";
+    inputs.v4_volume  = "CV that offsets voice 4's VOLUME.";
+    inputs.v4_pan     = "CV that offsets voice 4's PAN.";
+    inputs.v4_sendA   = "CV that offsets voice 4's SEND A amount.";
+    inputs.v4_sendB   = "CV that offsets voice 4's SEND B amount.";
+    // Master FX rack.
+    controls.bc_decimate   = "DESTROY DECIMATE (1..64) — sample-rate reduction on the aux-A bus (downsampling grit). CV via the bc_decimate input.";
+    controls.bc_bits       = "DESTROY BITS (1..16) — bit-depth reduction on the aux-A bus (quantization crunch); 16 = clean. CV via the bc_bits input.";
+    controls.bc_wet        = "DESTROY WET (0..1) — dry/wet of the bitcrusher on the aux-A bus. CV via the bc_wet input.";
+    controls.rv_size       = "REVERB SIZE (0..1) — the aux-B reverb tank's room size / decay length. CV via the rv_size input.";
+    controls.rv_damp       = "REVERB DAMP (0..1) — high-frequency damping of the reverb tail (darker as it rises). CV via the rv_damp input.";
+    controls.rv_mix        = "REVERB MIX (0..1) — dry/wet of the aux-B reverb. CV via the rv_mix input.";
+    controls.flt_cutoff    = "MASTER FILTER (QBRT) CUTOFF (20 Hz..20 kHz, log) — the corner frequency of the master resonant filter the whole mix passes through. CV via the flt_cutoff input.";
+    controls.flt_resonance = "MASTER FILTER RESONANCE (0..0.99) — emphasis at the cutoff; high values ring/self-oscillate. CV via the flt_resonance input.";
+    controls.flt_mode      = "MASTER FILTER MODE (0..1) — morphs the QBRT filter's response (e.g. low-pass ↔ band-pass character). CV via the flt_mode input.";
+    controls.flt_pingDecay = "MASTER FILTER PING DECAY (0.005..0.5 s, log) — how long the resonant filter 'pings'/rings when struck. CV via the flt_pingDecay input.";
+    controls.returnA       = "RETURN A level (0..1) — how much of the DESTROY (aux-A) wet bus returns into the master mix. CV via the returnA input.";
+    controls.returnB       = "RETURN B level (0..1) — how much of the reverb (aux-B) wet bus returns into the master mix. CV via the returnB input.";
+    inputs.bc_decimate   = "CV that offsets DESTROY DECIMATE.";
+    inputs.bc_bits       = "CV that offsets DESTROY BITS.";
+    inputs.bc_wet        = "CV that offsets DESTROY WET.";
+    inputs.rv_size       = "CV that offsets REVERB SIZE.";
+    inputs.rv_damp       = "CV that offsets REVERB DAMP.";
+    inputs.rv_mix        = "CV that offsets REVERB MIX.";
+    inputs.flt_cutoff    = "CV that offsets the MASTER FILTER CUTOFF (log).";
+    inputs.flt_resonance = "CV that offsets the MASTER FILTER RESONANCE.";
+    inputs.flt_mode      = "CV that offsets the MASTER FILTER MODE.";
+    inputs.flt_pingDecay = "CV that offsets the MASTER FILTER PING DECAY (log).";
+    inputs.returnA       = "CV (audio-rate) — the aux-A wet RETURN bus; also accepts an external wet signal patched back from an outboard effect.";
+    inputs.returnB       = "CV (audio-rate) — the aux-B wet RETURN bus; also accepts an external wet signal patched back from an outboard effect.";
+    return {
+      explanation:
+        "A 4-voice drum/synth machine with a built-in aux-FX rack. Voices 1-3 are DRUMMERGIRL synth-drum voices (one-shot, tuned, with tone/shape/decay), and voice 4 is a sustaining melodic voice — a wavetable oscillator → ADSR → VCA — so RIOTGIRLS covers both percussion AND a playable pad/bass. Each voice has its own TRIGGER and GATE input plus a V/oct PITCH input (voices 1-3 retrigger on the edge; voice 4 holds its envelope while the gate is high), and a full mix strip (pitch/tone/shape/decay or tune/wave/ADSR, plus VOLUME, PAN, and two aux SENDS). The two aux buses feed an internal effects rack: SEND A → a DESTROY bitcrusher, SEND B → a reverb, each with a level RETURN back into the master. The summed stereo mix then runs through a master QBRT resonant filter (cutoff / resonance / mode / ping-decay) out to outL/outR. Every knob also has a CV input, so an LFO or sequencer can modulate any voice or FX parameter. Drive the voices from a SEQUENCER, DRUMSEQZ, or any gate source.",
+      inputs,
+      outputs: {
+        outL: "Master mix output, LEFT — all four voices (post per-voice vol/pan/sends), the two aux returns, summed and passed through the master QBRT filter.",
+        outR: "Master mix output, RIGHT — the partner of outL (carries the pan-positioned right side of the stereo image).",
+      },
+      controls,
+    };
+  })(),
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initial = (key: string, fb: number): number => {
       const v = (node.params ?? {})[key];

@@ -101,6 +101,32 @@ export const froggerDef: AudioModuleDef = {
     { id: 'initialTime', label: 'Time', defaultValue: DEFAULT_TIME, min: 10, max: 120, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A playable Frogger arcade game wrapped as a CV/gate module — the gameplay IS the patch's modulation source. A frog at the bottom hops up a 13-row board (grass banks → a 5-lane road of cars/lorries → a river of logs/turtles → the five home pads at the top), avoiding traffic and drowning, before a per-life timer runs out. You DON'T touch the card to play — you patch gates into its four direction inputs (a sequencer, clock, LFO-through-comparator, or manual gate buttons drive the frog), and the game emits gate pulses on the events it produces: every home pad reached, every death, and every level cleared. So a clock pattern steering the frog becomes a generative trigger source whose rhythm depends on how the game unfolds. The game auto-starts once when the module is first placed (a synthetic START pulse) so you see it running immediately; the START input restarts it any time. The board renders on the card's 2D canvas and, because the module is vizPassthrough, that canvas can be portaled into a containing GROUP card for cross-domain video — there is no dedicated video output port. The TIME knob sets the per-life countdown ceiling.",
+    inputs: {
+      up_gate:
+        "Move the frog UP one row on each rising edge — one hop toward the home pads per pulse (the move only fires on the gate's leading edge, so a held-high gate hops once, not continuously).",
+      down_gate: "Move the frog DOWN one row on each rising edge — one hop back toward the start bank per pulse.",
+      left_gate: "Move the frog LEFT one column on each rising edge — one hop per pulse.",
+      right_gate: "Move the frog RIGHT one column on each rising edge — one hop per pulse.",
+      start_gate:
+        "Start a fresh game on each rising edge — resets the board, lives, score and timer and begins a new run. One synthetic pulse is auto-fired the first time the module is placed (so a game is already running by default); after that, pulse this to restart at any time (e.g. wire DEAD or LEVEL back here for an endless self-restarting loop).",
+    },
+    outputs: {
+      home_gate:
+        "Fires a 5 ms pulse each time the frog reaches a home pad — if a single move scores more than one home (e.g. the last pad completing a level), it emits that many distinct staggered pulses so a downstream counter or envelope sees each one. Patch into a drum/envelope trigger to sonify successful crossings.",
+      dead_gate:
+        "Fires a single 5 ms pulse each time the frog dies (hit by traffic, drowned in the river, or the life timer expired). A trigger you can route to a crash sound, a sample, or back into START for auto-restart.",
+      level_gate:
+        "Fires a single 5 ms pulse each time a level is cleared (all five home pads filled). Use it as a progression trigger — bump a sequence, change a scene, or fire a fanfare.",
+    },
+    controls: {
+      initialTime:
+        "The per-life countdown ceiling in seconds (10..120, default 60) — how long the frog has before the timer runs out and DEAD fires. Lower it for a frantic game (faster death pulses), raise it for a relaxed run. MIDI-learnable via the on-card knob.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // ---- Gate-in analyser taps -----------------------------------------
     // Same pattern as MODTRIS — one small-fftSize AnalyserNode per gate.

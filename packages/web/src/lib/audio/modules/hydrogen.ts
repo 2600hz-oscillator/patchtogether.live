@@ -280,6 +280,74 @@ export const hydrogenDef: AudioModuleDef = {
     ]).flat(),
   ],
 
+  docs: (() => {
+    const inputs: Record<string, string> = {
+      clock_in:
+        "External clock: each rising edge advances the pattern playhead one step (16th-note cell). Patch a clock here and the internal BPM is ignored — the incoming pulses set the pace.",
+      reset_in: "A rising edge snaps the pattern playhead back to step 1 (the downbeat) without stopping playback.",
+      play_cv: "A rising edge toggles play/stop (each pulse flips the run state). Hands-free transport from a patched gate.",
+      reset_cv: "A rising edge resets the playhead to step 1 — an alias of RESET IN (both reset on a rising edge); use whichever port is convenient.",
+      queue1_cv: "A rising edge queues preset slot 1 — the pattern + tempo swap cleanly at the end of the current loop (does nothing if slot 1 is empty).",
+      queue2_cv: "A rising edge queues preset slot 2 — applied at the next loop wrap (no-op if slot 2 is empty).",
+      queue3_cv: "A rising edge queues preset slot 3 — applied at the next loop wrap (no-op if slot 3 is empty).",
+      queue4_cv: "A rising edge queues preset slot 4 — applied at the next loop wrap (no-op if slot 4 is empty).",
+    };
+    const controls: Record<string, string> = {
+      bpm: "Internal tempo in BPM (30..300, default 120). Each pattern step is a 16th note. Used only when nothing is patched into CLOCK IN; an external clock overrides it.",
+      swing: "Shuffle amount (0..0.75) — delays the off-beat (even) steps relative to the on-beats for a swung groove. 0 = dead straight. Internal-clock only.",
+      gain: "Master output gain (0..2, default 1) on the summed stereo mix (out_l/out_r); 1 = unity, above 1 boosts.",
+      isPlaying: "Run/stop state (the PLAY button): 1 plays, 0 stops and silences the playhead. Starting playback resets to step 1. An external clock can still advance steps while stopped.",
+      kit: "Drum-kit selector (discrete) — switches the loaded sample/synth kit (TR-808, TR-909, LinnDrum, CR-78, and others). Per-instrument tuning (vol/pan/pitch/env/etc.) PERSISTS across kit swaps, like a hardware drum machine where 'channel 5 volume' doesn't reset when you load a new kit.",
+      'hydrogen-cell-{n}':
+        "A single step cell in the 16×16 pattern grid (instrument row × 16 steps). Click to toggle whether that instrument fires on that step — lit = a hit, unlit = a rest. The playhead walks the 16 steps and plays every lit cell of every row; the currently-sounding step is highlighted. CLEAR empties the whole grid.",
+    };
+    for (let i = 0; i < HYDROGEN_INSTRUMENT_COUNT; i++) {
+      const ch = i + 1; // human-facing 1-based channel number
+      // Per-instrument knobs (expand a row by clicking its name on the card).
+      controls[`vol${i}`]    = `Instrument ${ch} VOLUME (0..2) — the channel's level into the master mix. CV via the cv_vol_${i} input.`;
+      controls[`pan${i}`]    = `Instrument ${ch} PAN (−1 left .. +1 right) in the stereo field. CV via the cv_pan_${i} input.`;
+      controls[`pitch${i}`]  = `Instrument ${ch} PITCH offset in semitones (−24..+24) — repitch the drum sample/voice up or down. CV via the cv_pi_${i} input.`;
+      controls[`cutoff${i}`] = `Instrument ${ch} per-voice low-pass CUTOFF (20 Hz..20 kHz, log; default fully open) — darkens this voice. CV via the cv_cf_${i} input.`;
+      controls[`q${i}`]      = `Instrument ${ch} filter RESONANCE/Q (0.1..20) — emphasis at the cutoff frequency. CV via the cv_q_${i} input.`;
+      controls[`A${i}`]      = `Instrument ${ch} amp-envelope ATTACK (0..2 s, log) — how fast each hit rises. CV via the cv_a_${i} input.`;
+      controls[`D${i}`]      = `Instrument ${ch} amp-envelope DECAY (0..2 s, log) — fall time from the attack peak to the sustain level. CV via the cv_d_${i} input.`;
+      controls[`S${i}`]      = `Instrument ${ch} amp-envelope SUSTAIN level (0..1) — the level held while the trigger is high. CV via the cv_s_${i} input.`;
+      controls[`R${i}`]      = `Instrument ${ch} amp-envelope RELEASE (0.01..5 s, log) — fade time after the trigger ends; sets how long the tail rings. CV via the cv_r_${i} input.`;
+      controls[`mute${i}`]   = `Instrument ${ch} MUTE (the row's M button) — silences this instrument when on, without erasing its pattern.`;
+      controls[`solo${i}`]   = `Instrument ${ch} SOLO (the row's S button) — when any instrument is soloed only soloed instruments sound; un-solo to hear the full kit again.`;
+      // Per-voice trig + the 9 per-voice CV inputs.
+      inputs[`trig${i}`] = `Instrument ${ch} direct TRIGGER — a rising edge fires this voice once (one hit), independent of the step grid. Patch a sequencer/clock here to play this drum directly.`;
+      inputs[`cv_vol_${i}`] = `CV that offsets instrument ${ch}'s VOLUME (linear).`;
+      inputs[`cv_pan_${i}`] = `CV that offsets instrument ${ch}'s PAN (linear).`;
+      inputs[`cv_pi_${i}`]  = `CV that offsets instrument ${ch}'s PITCH (linear).`;
+      inputs[`cv_cf_${i}`]  = `CV that offsets instrument ${ch}'s filter CUTOFF (log).`;
+      inputs[`cv_q_${i}`]   = `CV that offsets instrument ${ch}'s filter RESONANCE/Q (log).`;
+      inputs[`cv_a_${i}`]   = `CV that offsets instrument ${ch}'s envelope ATTACK (log).`;
+      inputs[`cv_d_${i}`]   = `CV that offsets instrument ${ch}'s envelope DECAY (log).`;
+      inputs[`cv_s_${i}`]   = `CV that offsets instrument ${ch}'s envelope SUSTAIN (linear).`;
+      inputs[`cv_r_${i}`]   = `CV that offsets instrument ${ch}'s envelope RELEASE (log).`;
+    }
+    return {
+      explanation:
+        "A multi-kit 16-instrument × 16-step drum machine (named after the open-source Hydrogen sequencer). Each of 16 instrument rows holds a 16-step on/off pattern grid; the playhead walks the steps at the BPM tempo (or an external CLOCK IN) and fires each lit step's drum voice. Pick a kit (TR-808 / TR-909 / LinnDrum / CR-78 / …) with the kit button; every instrument has its own VOLUME, PAN, PITCH, a per-voice low-pass FILTER (cutoff + Q), a full amp ADSR, and MUTE/SOLO — exposed by clicking an instrument's name to expand its knob strip (the patch panel also carries every per-voice CV input + direct TRIG). The whole transport (play/stop, reset, 4 preset slots) is drivable hands-free via the CV inputs, and SWING shuffles the groove. Output is a stereo mix (out_l/out_r) through the master GAIN. Each instrument can also be triggered directly by a gate on its trig{i} input, bypassing the grid — so you can drive HYDROGEN purely as a 16-voice sample player from external sequencers.",
+      inputs,
+      outputs: {
+        out_l: "Left channel of the stereo drum mix — all 16 instruments summed (post per-voice vol/pan/filter/env and master GAIN).",
+        out_r: "Right channel of the stereo drum mix, the partner of out_l (carries the pan-positioned right side).",
+      },
+      controls,
+    };
+  })(),
+
+  controlFamilies: [
+    // The 16×16 pattern grid: each instrument row has 16 step cells
+    // (data-testid `hydrogen-cell-<nodeId>-<step>`). Click a cell to toggle
+    // that step's hit on/off for that instrument. DOM-only state (lives on
+    // node.data.tracks), not a ParamDef — declared so the docs layer + the
+    // contract signature see the grid.
+    { id: 'hydrogen-cell', label: 'Step pattern grid (16 instruments × 16 steps)', kind: 'step-grid', testidPrefix: 'hydrogen-cell' },
+  ],
+
   exposableControls: [
     { id: 'playStop', label: 'Play', kind: 'button', paramId: 'isPlaying' },
   ],
