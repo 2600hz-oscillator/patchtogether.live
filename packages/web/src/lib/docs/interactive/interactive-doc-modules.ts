@@ -109,4 +109,21 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   'analogLogicMaths',
   'sidecar',
   'resofilter',
+  // Batch 9 — synth voices & percussion sources (2026-06-26): only the
+  // CONVENTION-card members (no `card:` override, so the doc route's defLite
+  // resolves `<Type>Card` and the live virtual module mounts). Each card is a
+  // pure Fader/Knob + PatchPanel with NO onMount/$effect, no canvas/rAF/WebGL,
+  // no Web-MIDI panel, no file input — the macrooscillator profile — so it
+  // mounts cleanly in the engine-less doc sandbox (peaks also carries two
+  // static mode buttons, no dynamic mount work). Verified live by
+  // docs-virtual-module.spec.ts (treeohvox / callsine also exercise the CV→param
+  // dual context). The STATIC siblings stay off this list: chowkick runs a
+  // 2D-canvas envelope/filter preview (onMount + $effect) and pentemelodica
+  // runs per-voice waveform scopes ($effect) — see strict-docs.ts.
+  'drummergirl',
+  'meowbox',
+  'treeohvox',
+  'peaks',
+  'buggles',
+  'callsine',
 ]);

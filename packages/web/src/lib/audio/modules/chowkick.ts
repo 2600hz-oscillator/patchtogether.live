@@ -115,6 +115,58 @@ export const chowkickDef: AudioModuleDef = {
     { id: 'drive',         label: 'Drive',     defaultValue: 0.5,   min: 0,   max: 1,    curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A physical-modeling synth-kick voice, ported from Chowdhury DSP's ChowKick. Instead of a simple sine + envelope, it strikes a tuned 2-pole resonant filter with a shaped pulse plus a noise burst — the filter rings like a struck drum body, so the character comes from how you excite and tune that resonator. The signal path is two bands you tune separately: a PULSE SHAPE band (the click/transient and its noise) feeds a RESONANT FILTER band (the pitched body), then a pitch-sweep 'punch', drive saturation, and tone/level on the way out. The card draws a live preview of the pulse envelope and the filter's resonant peak so you can see the kick you're sculpting. Trigger it from a gate; tune the body with the Freq knob or a 1V/oct CV. Every knob also has a CV input for animated, per-hit kicks.",
+    inputs: {
+      gate_in: "The trigger: a rising edge strikes the resonator (fires the pulse + noise burst that excite the body). Each edge is one kick; the hit's length comes from the decay/damping controls, not how long the gate stays high.",
+      pitch_cv: "A 1V/oct pitch input applied as a multiplier on the body Freq (the worklet does freq × 2^pitch_cv), so it tracks pitch correctly across octaves — patch a sequencer here to tune kicks melodically. This is separate from the freq_cv summing input.",
+      width_cv: "CV that scales the pulse Width (log).",
+      amplitude_cv: "CV that adds to the pulse Amp (the excitation strength).",
+      decay_cv: "CV that adds to the pulse Decay.",
+      sustain_cv: "CV that adds to the pulse Sustain floor.",
+      noise_amount_cv: "CV that adds to the Noise Amount (how much transient noise is mixed into the strike).",
+      noise_decay_cv: "CV that adds to the Noise Decay.",
+      noise_cutoff_cv: "CV that scales the Noise Cutoff (log) — the brightness of the click.",
+      freq_cv: "CV that scales the body Freq (log, summed) — for filter/pitch sweeps that aren't 1V/oct-tracked (use pitch_cv for true octave tracking).",
+      q_cv: "CV that scales the resonator Q (log) — the sharpness/ring of the body.",
+      damping_cv: "CV that adds to Damping (the ring time: long boom vs short thud).",
+      tight_cv: "CV that adds to Tight (the tightness macro affecting the body's snap).",
+      bounce_cv: "CV that adds to Bounce (extra resonant feedback/saturation character).",
+      tone_cv: "CV that scales the output Tone low-pass cutoff (log).",
+      portamento_cv: "CV that scales the Portamento glide time (log).",
+      level_cv: "CV that adds to the output Level (dB).",
+      pitch_amount_cv: "CV that adds to the Pitch Amount (depth of the per-hit downward pitch sweep — the 'punch').",
+      pitch_decay_cv: "CV that adds to the Pitch Decay (how fast that sweep settles).",
+      drive_cv: "CV that adds to Drive (the body saturation/overdrive).",
+    },
+    outputs: {
+      audio_out: "The mono kick voice — the excited resonant body, pitch-swept, driven, and tone/level-shaped. Patch to a mixer or bus.",
+    },
+    controls: {
+      width: "PULSE SHAPE: width of the excitation pulse (0.1–50 ms, log) — how long the strike pushes the body before it decays; shown in the envelope preview.",
+      amplitude: "PULSE SHAPE: strength of the excitation pulse (0..2) — how hard the body is struck.",
+      decay: "PULSE SHAPE: how quickly the pulse falls after its hold (0..1).",
+      sustain: "PULSE SHAPE: the floor the pulse decays toward (0..1) — raise it to sustain the strike rather than let it die fully.",
+      noise_amount: "PULSE SHAPE: how much filtered noise is added to the strike (0..1) — adds click/snap and grit to the attack.",
+      noise_decay: "PULSE SHAPE: decay time of the noise burst (0..1).",
+      noise_cutoff: "PULSE SHAPE: low-pass cutoff of the noise (20–8000 Hz, log) — the brightness/color of the click.",
+      noise_type: "PULSE SHAPE: the noise color (discrete: Uniform, Gaussian, Pink, Velvet) — different textures for the strike's noise.",
+      freq: "RESONANT FILTER: the body's tuned frequency (20–500 Hz, log) — the kick's pitch; the resonant peak is shown in the filter preview. The pitch_cv input tracks this in 1V/oct.",
+      q: "RESONANT FILTER: resonance sharpness (0.1–10, log) — higher Q rings longer and more tonally.",
+      damping: "RESONANT FILTER: the ring time / pole radius (0..1) — low = a long boom, high = a short thud.",
+      tight: "RESONANT FILTER: the tightness macro (0..1) tightening the body's snap; when LINK is on it moves together with Q and Damping.",
+      bounce: "RESONANT FILTER: extra resonant feedback/saturation character on the body (0..1) for a livelier, springier ring.",
+      tone: "Output low-pass tone (50–4000 Hz, log) — rolls off the top end of the whole kick.",
+      portamento: "Pitch glide time between consecutive notes (0–100 ms, log) — for sliding kick tunings.",
+      level: "Output level in dB (-60 to 0).",
+      link: "Tightness LINK toggle (0 = off, 1 = on): when on, Q and Damping move together as one 'tightness' macro, the upstream plugin's coupled behavior.",
+      pitch_amount: "PUNCH: depth of the fast downward pitch sweep at the start of each hit (0..1) — the chirp that gives the kick its punch.",
+      pitch_decay: "PUNCH: how fast that pitch sweep settles to the body Freq (0..1) — short for a sharp click, longer for a deeper drop.",
+      drive: "PUNCH: body saturation/overdrive (0..1) — adds harmonics and loudness/heat to the kick.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

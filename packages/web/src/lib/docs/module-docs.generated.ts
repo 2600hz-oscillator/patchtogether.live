@@ -135,6 +135,53 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "master": "Output gain on the summed bus, linear 0..2 (default 1.0 = unity). Below 1 trims the whole mix down; above 1 boosts the sum INTO the tanh soft-clip for warm saturation rather than a hard clip. Applies only to the MIX output, not the per-channel direct outs."
     }
   },
+  "buggles": {
+    "explanation": "A chaotic random-voltage source in the Buchla / Make Noise wogglebug tradition. An internal 'woggle clock' fires at the Rate you set (with Chaos adding timing jitter), and each tick rolls a fresh random voltage that sprays out across five correlated outputs at once: a slowly-slewing SMOOTH voltage, a jumpy sample-and-held STEPPED voltage, a CLOCK gate pulsing on every woggle event, an occasional BURST of clustered triggers, and an audio-rate RING output (the smooth voltage ring-modulated with a sub-oscillator) for Buchla's signature 'complex random' texture. Patch SMOOTH into pitch or filter CV for warbling drift, STEPPED for brittle melodic randomness, CLOCK to clock a sequencer, BURST for stuttered fills, and RING straight to audio. You can also feed it an external clock to lock the chaos to your tempo.",
+    "inputs": {
+      "chaos_cv": "CV that sums onto the Chaos knob, modulating how random/jittery the voltages and timing get.",
+      "clock_cv": "CV that sums onto the Rate knob, speeding up or slowing the internal woggle clock (sampled at each woggle event rather than continuously).",
+      "external_clock": "External clock input: when patched, its rising edges replace the internal woggle clock — each pulse fires one woggle event (new random voltages + a CLOCK/BURST output), so the chaos locks to your tempo. The internal clock resumes about a second after the pulses stop."
+    },
+    "outputs": {
+      "burst": "A gate output that, with probability set by the Burst control, fires a cluster of 3–7 closely-spaced trigger pulses on a woggle event — for ratchets, stutters, and fills.",
+      "clock": "A gate output that pulses (~5 ms) on every woggle event — a chaotic clock you can use to trigger sequencers, envelopes, or drums; its rate and jitter follow Rate + Chaos.",
+      "ring": "An audio-rate output: the smooth voltage ring-modulated against a sub-oscillator tracking the woggle rate — the Buchla 'complex random' texture, patchable straight into the audio path.",
+      "smooth": "A slowly-shifting random voltage: it slews toward each new random target instead of jumping, so it behaves like a lazy random LFO — good for warbling pitch, filter, or pan modulation. The Smooth control sets how lazily it glides.",
+      "stepped": "A sample-and-held random voltage that hard-jumps to a fresh value on every woggle event — brittle, steppy modulation for random melodies or jumpy timbres."
+    },
+    "controls": {
+      "burst_probability": "Chance (0..1) that a given woggle event fires a BURST cluster instead of a single pulse — 0 never bursts, 1 bursts every event.",
+      "chaos": "Chaos depth (0..1): at 0 the stepped output is a clean S&H of a stable random walk and timing is steady; turning it up makes each step a fresh independent value and adds up to ±50% jitter to the woggle period.",
+      "level": "Output scaling (0..1) applied to the SMOOTH, STEPPED, and RING outputs (the CLOCK and BURST gates keep a clean 0/1 swing regardless).",
+      "rate": "Internal woggle-clock speed (0..1, log-mapped to roughly 0.1–50 Hz): how often new random voltages are rolled. The Clock CV input adds to this.",
+      "smoothness": "How lazily the SMOOTH output glides toward each new target (0..1): low is almost a step, high stretches the slew to about twice the woggle period for very gentle drift."
+    }
+  },
+  "callsine": {
+    "explanation": "A spectral-analysis additive resynthesizer (a port of Warren's Spectrum / CallSine). It listens to whatever audio you feed in, runs a rolling FFT to find the loudest sinusoidal partials, tracks them over time, and rebuilds the sound with a bank of up to 64 oscillators — so it's a resynth, not a synth from scratch. Because the rebuild is a bank of oscillators, you can transpose the whole thing cleanly (Note / pitch CV), thin it out or fill it in (Harmonics), smear it in time (Timbre), snap its partials to a harmonic series for a more tonal result (Morph), and swap the oscillator waveform for one of 14 voice models (sine, saw, square, formant, metal, etc.). A gate toggles FREEZE, latching the current spectrum so you can stutter or drone on a held moment.",
+    "inputs": {
+      "audio_in": "The mono audio to analyse and resynthesize — anything: a synth voice, a drum loop, a vocal. CallSine tracks its strongest partials and rebuilds them with the oscillator bank.",
+      "gate": "FREEZE toggle: a rising edge flips the freeze latch on or off, snapshotting the bank's current partials (their frequencies + amplitudes) so the output drones on that spectrum even as the input changes. Tap it to freeze a moment; pulse it to glitch-stutter. It reacts to the edge, not the held level.",
+      "harm_cv": "CV that adds to the Harmonics macro, opening up or thinning the partial count.",
+      "level_cv": "CV that adds to the output Level.",
+      "model_cv": "CV that displaces the voice-Model selector (discrete), so a stepped CV can switch oscillator waveforms.",
+      "morph_cv": "CV that adds to the Morph macro, modulating the harmonic-lock strength.",
+      "note_cv": "CV that adds to the Note transpose (linear, ±60 st range), for melodic transposition from an LFO or sequencer.",
+      "pitch": "A 1V/oct pitch input that transposes the entire resynth output after analysis (it shifts the rebuilt partials, so it pitches the sound without time-stretching it). Adds with the Note knob.",
+      "timb_cv": "CV that adds to the Timbre macro, sweeping the analyzer smear/slew."
+    },
+    "outputs": {
+      "out": "The mono additive-resynth output: the tracked partials rebuilt with the selected voice model, transposed and leveled. Frozen when FREEZE is engaged."
+    },
+    "controls": {
+      "harmonics": "Partials-count macro (0..1): scales how many of the strongest tracked partials are resynthesized (1 up to all 64) — low for a sparse, hollow reduction, high for a faithful full-spectrum rebuild.",
+      "level": "Output gain (0..1); the Level CV input adds to this.",
+      "model": "The oscillator waveform each partial uses (discrete, 14 models: SINES, SAW, SQR, PULSE25, TRI, RAMP, CHEBY3/5, HARDSYNC, FOLD, NOISE, FORMANT, SUBOSC, METAL) — pick SINES for a clean resynth or a richer model to recolor the spectrum. The current model name is shown under the title.",
+      "morph": "Harmonic-lock strength (0..1): pulls the tracked partials toward an exact harmonic series of the detected fundamental — 0 leaves them where the analysis found them (inharmonic, faithful), higher values snap them tonal.",
+      "note": "Semitone transpose of the whole output (-60 to +60), added to the 1V/oct pitch input — shift the resynth up or down without changing its timing.",
+      "timbre": "Smoothing/slew macro (0..1, mapping to roughly 5 ms–2 s): low tracks the input crisply, high smears partials over time for a blurred, evolving texture."
+    }
+  },
   "charlottesEchos": {
     "explanation": "A destructive multi-head stereo delay — a four-stage cascade of echoes that colour and degrade the source rather than repeating it cleanly. Each of the four stages tap the delayed signal in turn; FEEDBACK is fed to every stage so repeats compound across the chain into smeared, endless tails, DECAY progressively tapers each later stage's level and adds in-loop high-frequency loss for a darkening, dub-like decay, and PITCHUP shifts each stage up by a fixed ratio so the cascaded echoes climb in pitch — the classic ascending-shimmer effect. It is the audio sibling of the video-domain VDELAY, and roughly the sound of four COCOA DELAYs stacked in serial. Reach for it when you want the wet path to abuse the signal.",
     "inputs": {
@@ -152,6 +199,56 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "feedback": "Feedback amount fed to EVERY stage (0..1). Because it compounds across the four-stage chain, even moderate settings build long tails and high settings smear into near-infinite, self-sustaining echoes.",
       "mix": "Dry / wet balance (0..1): 0 is the clean input, 1 is the cascade only, between crossfades the two.",
       "pitchUp": "Per-stage upward pitch shift (0..0.2). At 0 the echoes repeat at pitch; above 0 each successive stage is shifted up by a compounding ratio so the cascaded echoes climb in pitch — the signature ascending shimmer. Uses the same interpolation as the delay reads, so pitchUp=0 patches are bit-for-bit unchanged."
+    }
+  },
+  "chowkick": {
+    "explanation": "A physical-modeling synth-kick voice, ported from Chowdhury DSP's ChowKick. Instead of a simple sine + envelope, it strikes a tuned 2-pole resonant filter with a shaped pulse plus a noise burst — the filter rings like a struck drum body, so the character comes from how you excite and tune that resonator. The signal path is two bands you tune separately: a PULSE SHAPE band (the click/transient and its noise) feeds a RESONANT FILTER band (the pitched body), then a pitch-sweep 'punch', drive saturation, and tone/level on the way out. The card draws a live preview of the pulse envelope and the filter's resonant peak so you can see the kick you're sculpting. Trigger it from a gate; tune the body with the Freq knob or a 1V/oct CV. Every knob also has a CV input for animated, per-hit kicks.",
+    "inputs": {
+      "amplitude_cv": "CV that adds to the pulse Amp (the excitation strength).",
+      "bounce_cv": "CV that adds to Bounce (extra resonant feedback/saturation character).",
+      "damping_cv": "CV that adds to Damping (the ring time: long boom vs short thud).",
+      "decay_cv": "CV that adds to the pulse Decay.",
+      "drive_cv": "CV that adds to Drive (the body saturation/overdrive).",
+      "freq_cv": "CV that scales the body Freq (log, summed) — for filter/pitch sweeps that aren't 1V/oct-tracked (use pitch_cv for true octave tracking).",
+      "gate_in": "The trigger: a rising edge strikes the resonator (fires the pulse + noise burst that excite the body). Each edge is one kick; the hit's length comes from the decay/damping controls, not how long the gate stays high.",
+      "level_cv": "CV that adds to the output Level (dB).",
+      "noise_amount_cv": "CV that adds to the Noise Amount (how much transient noise is mixed into the strike).",
+      "noise_cutoff_cv": "CV that scales the Noise Cutoff (log) — the brightness of the click.",
+      "noise_decay_cv": "CV that adds to the Noise Decay.",
+      "pitch_amount_cv": "CV that adds to the Pitch Amount (depth of the per-hit downward pitch sweep — the 'punch').",
+      "pitch_cv": "A 1V/oct pitch input applied as a multiplier on the body Freq (the worklet does freq × 2^pitch_cv), so it tracks pitch correctly across octaves — patch a sequencer here to tune kicks melodically. This is separate from the freq_cv summing input.",
+      "pitch_decay_cv": "CV that adds to the Pitch Decay (how fast that sweep settles).",
+      "portamento_cv": "CV that scales the Portamento glide time (log).",
+      "q_cv": "CV that scales the resonator Q (log) — the sharpness/ring of the body.",
+      "sustain_cv": "CV that adds to the pulse Sustain floor.",
+      "tight_cv": "CV that adds to Tight (the tightness macro affecting the body's snap).",
+      "tone_cv": "CV that scales the output Tone low-pass cutoff (log).",
+      "width_cv": "CV that scales the pulse Width (log)."
+    },
+    "outputs": {
+      "audio_out": "The mono kick voice — the excited resonant body, pitch-swept, driven, and tone/level-shaped. Patch to a mixer or bus."
+    },
+    "controls": {
+      "amplitude": "PULSE SHAPE: strength of the excitation pulse (0..2) — how hard the body is struck.",
+      "bounce": "RESONANT FILTER: extra resonant feedback/saturation character on the body (0..1) for a livelier, springier ring.",
+      "damping": "RESONANT FILTER: the ring time / pole radius (0..1) — low = a long boom, high = a short thud.",
+      "decay": "PULSE SHAPE: how quickly the pulse falls after its hold (0..1).",
+      "drive": "PUNCH: body saturation/overdrive (0..1) — adds harmonics and loudness/heat to the kick.",
+      "freq": "RESONANT FILTER: the body's tuned frequency (20–500 Hz, log) — the kick's pitch; the resonant peak is shown in the filter preview. The pitch_cv input tracks this in 1V/oct.",
+      "level": "Output level in dB (-60 to 0).",
+      "link": "Tightness LINK toggle (0 = off, 1 = on): when on, Q and Damping move together as one 'tightness' macro, the upstream plugin's coupled behavior.",
+      "noise_amount": "PULSE SHAPE: how much filtered noise is added to the strike (0..1) — adds click/snap and grit to the attack.",
+      "noise_cutoff": "PULSE SHAPE: low-pass cutoff of the noise (20–8000 Hz, log) — the brightness/color of the click.",
+      "noise_decay": "PULSE SHAPE: decay time of the noise burst (0..1).",
+      "noise_type": "PULSE SHAPE: the noise color (discrete: Uniform, Gaussian, Pink, Velvet) — different textures for the strike's noise.",
+      "pitch_amount": "PUNCH: depth of the fast downward pitch sweep at the start of each hit (0..1) — the chirp that gives the kick its punch.",
+      "pitch_decay": "PUNCH: how fast that pitch sweep settles to the body Freq (0..1) — short for a sharp click, longer for a deeper drop.",
+      "portamento": "Pitch glide time between consecutive notes (0–100 ms, log) — for sliding kick tunings.",
+      "q": "RESONANT FILTER: resonance sharpness (0.1–10, log) — higher Q rings longer and more tonally.",
+      "sustain": "PULSE SHAPE: the floor the pulse decays toward (0..1) — raise it to sustain the strike rather than let it die fully.",
+      "tight": "RESONANT FILTER: the tightness macro (0..1) tightening the body's snap; when LINK is on it moves together with Q and Damping.",
+      "tone": "Output low-pass tone (50–4000 Hz, log) — rolls off the top end of the whole kick.",
+      "width": "PULSE SHAPE: width of the excitation pulse (0.1–50 ms, log) — how long the strike pushes the body before it decays; shown in the envelope preview."
     }
   },
   "clouds": {
@@ -325,6 +422,27 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "bits": "Quantization bit depth (1..16): 16 is pristine (effectively no reduction); lower values quantize the amplitude to fewer steps for the thick, steppy crunch of a low-bit converter — 1 bit is near square-wave destruction.",
       "decimate": "Sample-rate decimation (1..64): hold every Nth input sample. 1 is pristine (no decimation); higher values drop the effective sample rate for aliasing artifacts and a coarse, downsampled grain.",
       "wet": "Dry / wet mix (0..1): 0 is the clean input, 1 is the fully crushed signal, between blends them — useful as a parallel-distortion amount."
+    }
+  },
+  "drummergirl": {
+    "explanation": "A one-shot synth drum voice: fire a gate and it plays a single percussion hit. Mental model — a pitched body oscillator crossfaded against a noise/transient layer, gain-shaped by an internal attack/decay envelope, so one module covers everything from a tuned tom or kick to a noisy snare or hat. There is no separate trigger and tone path to wire: pitch, tone, shape, level, and decay are all on the faceplate (and CV-modulatable), and the gate edge is the only thing you have to patch. It's also the per-voice engine inside RIOTGIRLS, so the timbre you dial here is the same one those voices use.",
+    "inputs": {
+      "decay": "CV that scales the envelope Decay time (logarithmic), shortening or lengthening the tail of each hit.",
+      "gate": "The trigger: a rising edge fires exactly one drum hit and restarts the internal amplitude envelope. Patch a sequencer gate, a clock, or any pulse here — its level isn't sustained, only the rising edge matters, so hit length is set by the Decay control rather than how long the gate stays high.",
+      "pitch": "CV that adds to the Pitch fader (bipolar, ±1 sweeps the full ±36-semitone range from the knob's center), so an LFO or sequencer can re-tune the body per hit; sampled at the gate edge that fires the note.",
+      "shape": "CV that adds to the Shape fader, sliding the hit between its pitched-body and noise/transient extremes for accents or fills.",
+      "tone": "CV that adds to the Tone fader, brightening or darkening the body timbre as it moves.",
+      "volume": "CV that adds to the Volume fader (±1 sweeps ±1.0 of gain), for per-hit accent/velocity dynamics."
+    },
+    "outputs": {
+      "audio": "The mono drum-hit waveform — the body oscillator and noise layer summed and shaped by the amplitude envelope. Patch into a mixer, a bus, or further FX."
+    },
+    "controls": {
+      "decay": "Sets the attack/decay envelope's decay time (1 ms to 0.5 s, log-tapered), so the hit goes from a tight click to a long boom; the Decay CV input scales this.",
+      "pitch": "Tunes the body oscillator in semitones (-36 to +36 from its base), turning the same voice into a deep kick, a mid tom, or a high blip; the Pitch CV input adds on top of this.",
+      "shape": "Crossfades the hit between its pitched body and its noise/transient layer (0 = mostly body, 1 = mostly noise) — low for toms/kicks, high for snares/hats.",
+      "tone": "The body-timbre macro (0..1): shifts the oscillator's brightness/character from dark and round toward bright and edgy.",
+      "volume": "Per-hit output gain from silence to 2x, used to set the voice's level in a kit or to drive accents."
     }
   },
   "dx7": {
@@ -619,6 +737,26 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "morph": "The third universal macro (0..1), model-specific: saw→square→triangle morph (VA), folder↔tanh crossfade (WAVESHAPE), feedback (FM 2-OP) / envelope decay (FM 6-OP), chord spread (CHORD), even/odd balance (ADDITIVE), damping (STRING), mode-amp morph (MODAL), body decay (KICK/SNARE), decay length (HIHAT), phase-distortion (WAVETABLE), grain-envelope shape (GRANULAR), pitched→whispered source (SPEECH).",
       "note": "Fixed pitch offset in semitones (−60..+60 st) added on top of the PITCH V/oct input — a manual transpose for tuning the oscillator without re-patching, separate from the per-note tracking that PITCH provides.",
       "timbre": "The second universal macro (0..1), model-specific: wavefolder drive (VA), distortion drive (WAVESHAPE), FM modulation index (FM), voice waveform sine→saw (CHORD), spectral tilt (ADDITIVE), excitation brightness (STRING), resonance Q (MODAL), click amount (KICK), noise hi-pass (SNARE), metallic↔noise blend (HIHAT), LP filter (WAVETABLE), pitch jitter (GRANULAR), formant Q (SPEECH)."
+    }
+  },
+  "meowbox": {
+    "explanation": "A gate-triggered cat-vocal synth voice: fire a gate and it sings one 'meow' at the patched pitch. Under the hood it's a formant synth — a harmonic + noise excitation pushed through a bank of vowel formants, with a stereo-decorrelated tail so the result spreads across the L/R outputs. The Morph control sweeps the vowel (the a/e/i/o/u regions) so a single meow can sound like different vocal shapes, and Decay sets how long the tail rings. Pitch tracks a true 1V/oct input so you can play it from a keyboard or sequencer like any other oscillator, with the Pitch knob acting as a transposition on top.",
+    "inputs": {
+      "decay": "CV that scales the tail Decay time (logarithmic), for shorter chirps or longer wails.",
+      "gate": "The trigger: a rising edge fires one meow event and re-excites the voice. It responds to the edge, not how long the level stays up — the meow's length comes from the Decay control.",
+      "level": "CV that adds to the output Level for per-hit dynamics.",
+      "morph": "CV that adds to the Morph control, sweeping the vowel formant in real time (e.g. an envelope opening the 'mouth' across the meow).",
+      "pitch": "A true 1V/oct pitch input (0 V = middle C). The DSP reads the volts directly and the Pitch knob is added on top as a transposition, so patch a sequencer or keyboard pitch CV here to play melodies; with nothing patched it sits at C4."
+    },
+    "outputs": {
+      "L": "Left channel of the stereo-decorrelated meow — the two channels carry the same voice with a decorrelated tail, so summing to mono is fine but keeping them split gives a wider sound.",
+      "R": "Right channel of the stereo-decorrelated meow (the decorrelated partner of L)."
+    },
+    "controls": {
+      "decay": "Tail decay time (0.05–2 s, log-tapered): short for a clipped chirp, long for a drawn-out wail.",
+      "level": "Output level from silence to 2x; the Level CV input adds to this.",
+      "morph": "The vowel-formant macro (0..1): morphs the timbre across the a/i/u/e/o formant regions, changing the 'shape' of the meow from one vowel-like color to another.",
+      "pitch": "Transposes the voice in semitones (-36 to +36), summed on top of the 1V/oct pitch input — use it to set the cat's register or to offset an incoming melody."
     }
   },
   "mixer": {
@@ -1146,6 +1284,101 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "level": "Master gain applied equally to all three noise outputs, from silence (0) to full amplitude (1). Default 0.5 provides moderate headroom; raise it to push the noise through downstream processing, lower it to blend subtly into a mix."
     }
   },
+  "peaks": {
+    "explanation": "A dual-channel percussion-and-modulation Swiss-army module after Mutable Instruments Peaks. It's two identical channels (A and B), each a self-contained generator you trigger with a gate. Each channel runs in one of five modes — KICK, SNARE, HIHAT (full drum voices), ENV (a one-shot attack/decay envelope), or LFO (a retriggerable sine/triangle/square) — and its two faders change meaning with the mode (the card relabels them: e.g. KICK's are Pitch/Decay, LFO's are Rate/Wave). So one Peaks gives you a kick + snare, a pair of drum voices, two trigger-shaped envelopes, two tempo-able LFOs, or any mix. Each channel's output is audio in the drum modes and control voltage in ENV/LFO. Use the two channels independently; there's no internal cross-link.",
+    "inputs": {
+      "gate0": "Channel A's trigger: a rising edge fires the active mode once — a drum hit (KICK/SNARE/HIHAT), one attack/decay envelope (ENV), or a phase-reset of the LFO. Length comes from the mode's controls, not how long the gate stays high.",
+      "gate1": "Channel B's trigger: same as channel A's gate for the B channel.",
+      "k1_0_cv": "CV that adds to channel A's knob 1 (whose meaning follows A's mode — Pitch/Mix/Bright/Attack/Rate).",
+      "k1_1_cv": "CV that adds to channel B's knob 1 (B's mode-dependent first parameter).",
+      "k2_0_cv": "CV that adds to channel A's knob 2 (Decay in the drum/ENV modes, Wave in LFO mode).",
+      "k2_1_cv": "CV that adds to channel B's knob 2 (B's mode-dependent second parameter).",
+      "mode0_cv": "CV that displaces channel A's Mode selector (discrete), so a stepped CV can switch A between KICK/SNARE/HIHAT/ENV/LFO between hits.",
+      "mode1_cv": "CV that displaces channel B's Mode selector (discrete)."
+    },
+    "outputs": {
+      "out0": "Channel A's output: audio in the KICK/SNARE/HIHAT modes, or a unipolar control voltage in ENV (an attack/decay shape) and a bipolar one in LFO. Patch to the mixer for drums, or to a CV destination for ENV/LFO.",
+      "out1": "Channel B's output, same audio/CV duality as channel A based on B's mode."
+    },
+    "controls": {
+      "k1_0": "Channel A's first knob — its meaning follows the mode: Pitch (KICK), Mix of body vs noise (SNARE), Brightness (HIHAT), Attack time (ENV), or Rate (LFO).",
+      "k1_1": "Channel B's first knob (mode-dependent, same mapping as channel A's knob 1).",
+      "k2_0": "Channel A's second knob: Decay time in the KICK/SNARE/HIHAT/ENV modes, or Wave shape (sine→triangle→square) in LFO mode.",
+      "k2_1": "Channel B's second knob (mode-dependent, same mapping as channel A's knob 2).",
+      "mode0": "Channel A's mode: KICK, SNARE, HIHAT, ENV (one-shot attack/decay), or LFO (retriggered each gate). Changing it relabels A's two faders to that mode's parameters.",
+      "mode1": "Channel B's mode (same five options as channel A)."
+    }
+  },
+  "pentemelodica": {
+    "explanation": "A complete five-voice polyphonic analog-style synth in one card. A poly chord bus drives five independent VCO voices (lane i → voice i, a fixed 1:1 mapping with no allocator), each a band-limited oscillator with a continuous triangle→saw→square WAVE morph, coarse Tune + Fine detune, exponential FM and through-phase PM (from that voice's own FM jack), and a pulse-width control. The five voices share ONE amplitude ADSR (the gate edge comes from each poly lane), get summed through a per-voice level + pan stereo mixer, then pass through an embedded multimode filter (LP→BP→HP→Notch MODE dial, Cutoff/Resonance, Wet/Dry) to the stereo OUT. Each voice is also tapped pre-mixer to its own VOICE output for separate processing. To play chords you must feed the POLY input from a real poly source — patch MIDI LANE (in poly mode) or POLYSEQZ (or a SEQUENCER set to chord steps) into POLY; a single mono note source only lights one voice.",
+    "inputs": {
+      "fm1": "Voice 1's audio-rate modulator jack: it feeds both that voice's exponential FM and its phase modulation, with the depths set by voice 1's FM and PM faders — so one patched modulator gives either or both flavours.",
+      "fm2": "Voice 2's audio-rate FM/PM modulator jack (depths set by voice 2's FM/PM faders).",
+      "fm3": "Voice 3's audio-rate FM/PM modulator jack (depths set by voice 3's FM/PM faders).",
+      "fm4": "Voice 4's audio-rate FM/PM modulator jack (depths set by voice 4's FM/PM faders).",
+      "fm5": "Voice 5's audio-rate FM/PM modulator jack (depths set by voice 5's FM/PM faders).",
+      "poly": "The 5-lane poly pitch/gate chord bus that plays the voices: lane i drives voice i (fixed mapping). Patch a real poly source here — MIDI LANE in poly mode, POLYSEQZ, or SEQUENCER with chord steps — so each held note opens a voice's shared ADSR; a mono pitch source only plays voice 1."
+    },
+    "outputs": {
+      "out_l": "Left channel of the stereo mix: all five voices, post-ADSR, through the per-voice level/pan mixer and the embedded filter, at master level. (Pairs with out_r as the main stereo output.)",
+      "out_r": "Right channel of the stereo mix (the partner of out_l, carrying the per-voice pan spread).",
+      "voice1": "Voice 1's individual signal, tapped post-ADSR but BEFORE the mixer's level/pan and the shared filter — patch it to send just this voice to its own VCA/filter/FX.",
+      "voice2": "Voice 2's pre-mixer mono tap (post-ADSR, before level/pan/filter).",
+      "voice3": "Voice 3's pre-mixer mono tap (post-ADSR, before level/pan/filter).",
+      "voice4": "Voice 4's pre-mixer mono tap (post-ADSR, before level/pan/filter).",
+      "voice5": "Voice 5's pre-mixer mono tap (post-ADSR, before level/pan/filter)."
+    },
+    "controls": {
+      "attack": "Shared amplitude-envelope attack time (0.001–5 s, log): how fast each voice fades in when its poly lane's gate opens. One ADSR feeds all five voices.",
+      "cutoff": "Embedded filter cutoff frequency (20 Hz–20 kHz, log) applied to the summed five-voice mix.",
+      "decay": "Shared amplitude-envelope decay time (0.001–5 s, log): the fall from the attack peak down to the sustain level.",
+      "mode": "Embedded filter MODE dial (0..1): continuously morphs the SVF response low-pass → band-pass → high-pass → notch.",
+      "release": "Shared amplitude-envelope release time (0.001–5 s, log): how long each voice takes to fade out after its gate closes.",
+      "resonance": "Embedded filter resonance (0–0.99): emphasis at the cutoff, up to near self-oscillation.",
+      "sustain": "Shared amplitude-envelope sustain level (0..1): the held level while a note's gate stays open.",
+      "v1_fine": "Voice 1 fine tune in cents (-100 to +100) — for subtle detune/beating against the other voices.",
+      "v1_fm": "Voice 1 exponential-FM depth (-1..+1) from its FM 1 jack — adds inharmonic/clangy modulation.",
+      "v1_level": "Voice 1 mixer level (0..1) into the stereo bus.",
+      "v1_pan": "Voice 1 stereo pan (-1 = left … +1 = right), equal-power, placing the voice in the OUT image.",
+      "v1_pm": "Voice 1 phase-modulation depth (-1..+1) from its FM 1 jack — the DX-style PM flavour of the same modulator.",
+      "v1_pw": "Voice 1 pulse width (0.05–0.95) — shapes the square end of the WAVE morph (50% is a true square).",
+      "v1_tune": "Voice 1 coarse tune in semitones (-36 to +36) — set per voice for unison, octaves, or chord-spread detuning.",
+      "v1_wave": "Voice 1 waveform morph (0..1): continuously blends triangle → saw → square; the per-voice scope shows the resulting shape.",
+      "v2_fine": "Voice 2 fine tune in cents (-100 to +100).",
+      "v2_fm": "Voice 2 exponential-FM depth (-1..+1) from its FM 2 jack.",
+      "v2_level": "Voice 2 mixer level (0..1) into the stereo bus.",
+      "v2_pan": "Voice 2 stereo pan (-1 left … +1 right).",
+      "v2_pm": "Voice 2 phase-modulation depth (-1..+1) from its FM 2 jack.",
+      "v2_pw": "Voice 2 pulse width (0.05–0.95).",
+      "v2_tune": "Voice 2 coarse tune in semitones (-36 to +36).",
+      "v2_wave": "Voice 2 waveform morph (triangle → saw → square).",
+      "v3_fine": "Voice 3 fine tune in cents (-100 to +100).",
+      "v3_fm": "Voice 3 exponential-FM depth (-1..+1) from its FM 3 jack.",
+      "v3_level": "Voice 3 mixer level (0..1) into the stereo bus.",
+      "v3_pan": "Voice 3 stereo pan (-1 left … +1 right).",
+      "v3_pm": "Voice 3 phase-modulation depth (-1..+1) from its FM 3 jack.",
+      "v3_pw": "Voice 3 pulse width (0.05–0.95).",
+      "v3_tune": "Voice 3 coarse tune in semitones (-36 to +36).",
+      "v3_wave": "Voice 3 waveform morph (triangle → saw → square).",
+      "v4_fine": "Voice 4 fine tune in cents (-100 to +100).",
+      "v4_fm": "Voice 4 exponential-FM depth (-1..+1) from its FM 4 jack.",
+      "v4_level": "Voice 4 mixer level (0..1) into the stereo bus.",
+      "v4_pan": "Voice 4 stereo pan (-1 left … +1 right).",
+      "v4_pm": "Voice 4 phase-modulation depth (-1..+1) from its FM 4 jack.",
+      "v4_pw": "Voice 4 pulse width (0.05–0.95).",
+      "v4_tune": "Voice 4 coarse tune in semitones (-36 to +36).",
+      "v4_wave": "Voice 4 waveform morph (triangle → saw → square).",
+      "v5_fine": "Voice 5 fine tune in cents (-100 to +100).",
+      "v5_fm": "Voice 5 exponential-FM depth (-1..+1) from its FM 5 jack.",
+      "v5_level": "Voice 5 mixer level (0..1) into the stereo bus.",
+      "v5_pan": "Voice 5 stereo pan (-1 left … +1 right).",
+      "v5_pm": "Voice 5 phase-modulation depth (-1..+1) from its FM 5 jack.",
+      "v5_pw": "Voice 5 pulse width (0.05–0.95).",
+      "v5_tune": "Voice 5 coarse tune in semitones (-36 to +36).",
+      "v5_wave": "Voice 5 waveform morph (triangle → saw → square).",
+      "wetdry": "Embedded filter wet/dry mix (0 = dry/bypassed … 1 = fully filtered)."
+    }
+  },
   "polarizer": {
     "explanation": "A tiny one-knob CV utility that turns a UNIPOLAR signal into a BIPOLAR one: it takes a 0..1 control voltage and stretches it across -1..+1, applying out = (2·in - 1)·depth. The natural use is converting a 0..1 envelope, LFO or sequencer CV into a ±1 modulation source that can both RAISE and LOWER a destination (an unmodified envelope can only push a parameter up from where it sits; polarize it first and it can swing symmetrically about the knob). It is the exact inverse of DEPOLARIZER. There is no DSP worklet — it is a pure scale-plus-offset Web Audio graph, so the mapping is sample-accurate.",
     "inputs": {
@@ -1470,6 +1703,33 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "symmetry": "Morphs the PRIMARY waveform across a three-way crossfade (0 to 1): 0 = saw, 0.5 = triangle, 1 = square, with a linear blend of the two neighboring shapes in between. Default 0.5 (pure triangle).",
       "timbre": "Audio-rate FM amount: how much the modulator deviates the primary's frequency (0 to 1, where 1 ≈ ±200 Hz at C4). 0 leaves the primary clean; turning it up grows the sidebands from a gentle vibrato-like shimmer into clangorous, bell-like and noisy Buchla-style timbres.",
       "tune": "Coarse tuning of the PRIMARY oscillator in semitones (-36 to +36, i.e. ±3 octaves) relative to C4; combines with Fine and any pitch CV to set the base pitch."
+    }
+  },
+  "treeohvox": {
+    "explanation": "A TB-303 acid-bass voice in one card: a band-limited saw↔square oscillator into the classic 303 ladder-style resonant low-pass, with the cutoff swept by a snappy decay envelope. It's a port of Robin Schmidt's Open303, so the squelch, the resonance scream, and the accent boost behave like the real 303 voice. Play it from a pitch + gate source (a sequencer, keyboard, or MIDI lane): each gate edge re-triggers the filter envelope, and the dedicated ACCENT gate latches an accent on that note for the louder, brighter, more resonant 303 accent character. This card is the VOICE only — the full 303 sequencer/slide/transpose lives in the planned 404 module.",
+    "inputs": {
+      "accent_cv": "CV that adds to the Accent knob, scaling how strong an accented note's boost is.",
+      "accent_in": "The accent gate, latched at the moment the note gate fires: when it's high on a note, that note gets the 303 accent — louder, with extra filter-envelope drive for the signature accented squelch. Drive it from a sequencer's accent lane.",
+      "cutoff_cv": "CV that adds to the Cutoff knob — the classic patch point for an LFO or envelope filter-sweep.",
+      "decay_cv": "CV that adds to the Decay knob, lengthening or shortening the filter-envelope sweep.",
+      "env_cv": "CV that adds to the EnvMod knob, controlling how hard the envelope drives the cutoff.",
+      "gate_in": "The note gate: a rising edge triggers the amplitude + filter envelopes for a new note. The 303's gate length affects how the envelopes overlap between consecutive notes; patch a sequencer/clock gate here.",
+      "pitch_in": "1V/oct pitch input — patch a sequencer or keyboard pitch CV here to set the note; the Tune knob adds a ±12-semitone offset on top.",
+      "res_cv": "CV that adds to the Resonance knob, pushing the filter toward self-oscillating scream.",
+      "tune_cv": "CV that adds to the Tune knob, shifting pitch in semitones (on top of the 1V/oct input).",
+      "waveform_cv": "CV that adds to the Wave knob, morphing the oscillator between saw and square."
+    },
+    "outputs": {
+      "audio_out": "The mono 303 voice — oscillator through the resonant filter and amp envelope. Patch into a distortion/overdrive for a dirtier acid line, or straight to a mixer."
+    },
+    "controls": {
+      "accent": "Accent amount (0..1): how much louder and brighter an accented note (one whose ACCENT gate is high) gets — 0 makes accents identical to normal notes, 1 is the full 303 accent boost.",
+      "cutoff": "The filter corner frequency (40 Hz–6 kHz, log): the main timbre control. The 303 deliberately tops out around 6 kHz for its dark, focused voice; the filter envelope sweeps up from wherever you set this.",
+      "decay": "Filter-envelope decay time (50 ms–3 s, log): short for tight blips, long for sustained sweeps; the canonical 303 range sits around 200 ms–2 s, extended here into doom-y territory.",
+      "envelope": "Env-mod depth (0..1): how far the filter envelope pushes the cutoff up on each note — 0 is a static filter, high values give the dramatic per-note sweep.",
+      "resonance": "Filter resonance/emphasis (0..1): low for a round bass, high for the whistling 303 squelch that nearly self-oscillates.",
+      "tune": "Coarse tune in semitones (-12 to +12), added to the 1V/oct pitch input — for transposing the line or tuning to a track.",
+      "waveform": "Morphs the oscillator from saw (0, the classic 303 voice) to square (1) and the blend between."
     }
   },
   "unityscalemathematik": {

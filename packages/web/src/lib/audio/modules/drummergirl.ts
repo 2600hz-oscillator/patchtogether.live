@@ -67,6 +67,29 @@ export const drummergirlDef: AudioModuleDef = {
     { id: 'decay',  label: 'Decay',  defaultValue: 0.15, min: 0.001,  max: 0.5, curve: 'log',    units: 's' },
   ],
 
+  docs: {
+    explanation:
+      "A one-shot synth drum voice: fire a gate and it plays a single percussion hit. Mental model — a pitched body oscillator crossfaded against a noise/transient layer, gain-shaped by an internal attack/decay envelope, so one module covers everything from a tuned tom or kick to a noisy snare or hat. There is no separate trigger and tone path to wire: pitch, tone, shape, level, and decay are all on the faceplate (and CV-modulatable), and the gate edge is the only thing you have to patch. It's also the per-voice engine inside RIOTGIRLS, so the timbre you dial here is the same one those voices use.",
+    inputs: {
+      gate: "The trigger: a rising edge fires exactly one drum hit and restarts the internal amplitude envelope. Patch a sequencer gate, a clock, or any pulse here — its level isn't sustained, only the rising edge matters, so hit length is set by the Decay control rather than how long the gate stays high.",
+      pitch: "CV that adds to the Pitch fader (bipolar, ±1 sweeps the full ±36-semitone range from the knob's center), so an LFO or sequencer can re-tune the body per hit; sampled at the gate edge that fires the note.",
+      tone: "CV that adds to the Tone fader, brightening or darkening the body timbre as it moves.",
+      shape: "CV that adds to the Shape fader, sliding the hit between its pitched-body and noise/transient extremes for accents or fills.",
+      volume: "CV that adds to the Volume fader (±1 sweeps ±1.0 of gain), for per-hit accent/velocity dynamics.",
+      decay: "CV that scales the envelope Decay time (logarithmic), shortening or lengthening the tail of each hit.",
+    },
+    outputs: {
+      audio: "The mono drum-hit waveform — the body oscillator and noise layer summed and shaped by the amplitude envelope. Patch into a mixer, a bus, or further FX.",
+    },
+    controls: {
+      pitch: "Tunes the body oscillator in semitones (-36 to +36 from its base), turning the same voice into a deep kick, a mid tom, or a high blip; the Pitch CV input adds on top of this.",
+      tone: "The body-timbre macro (0..1): shifts the oscillator's brightness/character from dark and round toward bright and edgy.",
+      shape: "Crossfades the hit between its pitched body and its noise/transient layer (0 = mostly body, 1 = mostly noise) — low for toms/kicks, high for snares/hats.",
+      volume: "Per-hit output gain from silence to 2x, used to set the voice's level in a kit or to drive accents.",
+      decay: "Sets the attack/decay envelope's decay time (1 ms to 0.5 s, log-tapered), so the hit goes from a tight click to a long boom; the Decay CV input scales this.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const f = await instantiateFaustModule(ctx, { name: 'drummergirl', wasmUrl, metaUrl, workletUrl });
     // Single audio-rate input (gate). Use a 1-channel merger with silence so

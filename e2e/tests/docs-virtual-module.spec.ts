@@ -370,6 +370,62 @@ const PROBES: Probe[] = [
     cvPort: 'cutoff_cv', // CV (paramTarget=cutoff) → cutoff
     modulates: /modulates/i,
   },
+  // --- Batch 9 — synth voices & percussion sources (2026-06-26). Each is on
+  // INTERACTIVE_DOC_MODULES (convention card: pure Fader/Knob + PatchPanel; peaks
+  // adds two static mode buttons); this proves the live card mounts cleanly and a
+  // control hover updates the pane. The CV→param dual-context check runs where the
+  // module has a CV input with a paramTarget (drummergirl pitch→pitch, meowbox
+  // morph→morph, treeohvox cutoff_cv→cutoff, peaks k1_0_cv→k1_0, callsine
+  // note_cv→note); buggles' CV inputs are raw sampled values (no paramTarget), so
+  // cvPort '' skips it. chowkick + pentemelodica stay STATIC (canvas) — no probe. ---
+  {
+    id: 'drummergirl',
+    heading: /drummergirl/i,
+    controlParam: 'tone',
+    controlDescIncludes: /timbre|brightness|tone/i,
+    cvPort: 'pitch', // CV (paramTarget=pitch) → pitch param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'meowbox',
+    heading: /meowbox/i,
+    controlParam: 'morph',
+    controlDescIncludes: /vowel|formant|morph/i,
+    cvPort: 'morph', // CV (paramTarget=morph) → morph param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'treeohvox',
+    heading: /tree\.oh\.vox/i,
+    controlParam: 'cutoff',
+    controlDescIncludes: /cutoff|corner|filter|timbre/i,
+    cvPort: 'cutoff_cv', // CV (paramTarget=cutoff) → cutoff param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'peaks',
+    heading: /peaks/i,
+    controlParam: 'k1_0',
+    controlDescIncludes: /pitch|mix|bright|attack|rate|knob/i,
+    cvPort: 'k1_0_cv', // CV (paramTarget=k1_0) → channel A knob 1
+    modulates: /modulates/i,
+  },
+  {
+    id: 'buggles',
+    heading: /buggles/i,
+    controlParam: 'chaos',
+    controlDescIncludes: /chaos|random|jitter/i,
+    cvPort: '', // clock_cv / chaos_cv are raw sampled values (no paramTarget)
+    modulates: /./,
+  },
+  {
+    id: 'callsine',
+    heading: /callsine/i,
+    controlParam: 'harmonics',
+    controlDescIncludes: /partial|harmonic|count/i,
+    cvPort: 'note_cv', // CV (paramTarget=note) → note transpose
+    modulates: /modulates/i,
+  },
 ];
 
 /** Wait for the live virtual module to finish mounting (the flow host appears
