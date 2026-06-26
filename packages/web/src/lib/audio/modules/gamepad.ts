@@ -985,6 +985,36 @@ export const gamepadDef: AudioModuleDef = {
     { id: 'padIndex', label: 'Slot', defaultValue: 0, min: 0, max: 3, curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A connected USB or Bluetooth game controller turned into a bank of CV and gate signals — eighteen outputs covering the full standard Xbox-style layout (two analog sticks, two triggers, the bumpers, the four face buttons, the D-pad, and Start/Back). The card polls the controller at ~60 Hz and pushes each axis and button into its own output, so you play the rack with a gamepad: stick axes sweep filters or pan a scene, triggers ride a VCA, face buttons fire drum strikes or scene changes. Sticks come out bipolar (±1) with a small deadzone so a worn stick's rest-drift reads 0, the Y axis flipped so 'up' is +1; triggers are unipolar 0..1; every button is a 0/1 gate. The left stick can be CALIBRATED on the card (sweep it to capture its true range + rest center) for a precise, drift-free mapping. Browser security only reveals a controller after you press a button on it, so the card shows a 'press any button' prompt until a pad appears. These outputs also drive video modules through the cross-domain CV/gate bridge.",
+    inputs: {},
+    outputs: {
+      lx: "Left stick X as bipolar CV, −1 (left) through 0 (center) to +1 (right), after a small deadzone and re-normalization (and the left-stick calibration if you've run it).",
+      ly: "Left stick Y as bipolar CV, −1 (down) through 0 to +1 (up) — the axis is flipped so pushing up reads positive — with the same deadzone/calibration treatment as LX.",
+      rx: "Right stick X as bipolar CV, −1 (left) to +1 (right), with the stick deadzone applied.",
+      ry: "Right stick Y as bipolar CV, −1 (down) to +1 (up), Y flipped, with the stick deadzone applied.",
+      lt: "Left trigger as unipolar CV, 0 fully released to +1 fully pressed — its analog travel, useful as a swell or VCA ride.",
+      rt: "Right trigger as unipolar CV, 0 released to +1 pressed.",
+      lb: "Left bumper as a gate: 1 while the button is held, 0 when released.",
+      rb: "Right bumper as a gate: 1 while held, 0 when released.",
+      a: "The A face button as a gate: 1 while held, 0 when released — patch it into a strike or scene trigger.",
+      b: "The B face button as a gate: 1 while held, 0 when released.",
+      x: "The X face button as a gate: 1 while held, 0 when released.",
+      y: "The Y face button as a gate: 1 while held, 0 when released.",
+      du: "D-pad up as a gate: 1 while held, 0 when released.",
+      dd: "D-pad down as a gate: 1 while held, 0 when released.",
+      dl: "D-pad left as a gate: 1 while held, 0 when released.",
+      dr: "D-pad right as a gate: 1 while held, 0 when released.",
+      start: "The Start button as a gate: 1 while held, 0 when released.",
+      back: "The Back / Select button as a gate: 1 while held, 0 when released.",
+    },
+    controls: {
+      padIndex:
+        "Which controller slot to read, 0 to 3 (the Web Gamepad spec allows up to four pads at once). 0 is the first connected controller; raise it to read a second or third pad in a multi-controller setup.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // ConstantSourceNode per output. setValueAtTime() writes happen
     // on the main thread from the poll loop below; the engine layer
