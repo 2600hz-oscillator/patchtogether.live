@@ -376,6 +376,7 @@
       class="track"
       role="slider"
       tabindex="0"
+      data-testid={paramId ? `control-${paramId}` : undefined}
       aria-label={label}
       aria-valuemin={min}
       aria-valuemax={max}

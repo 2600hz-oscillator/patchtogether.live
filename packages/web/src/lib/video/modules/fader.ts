@@ -107,6 +107,26 @@ export const faderDef: VideoModuleDef = {
     { id: 'dwTransition', label: 'D/W Fx',  defaultValue: 0,   min: 0, max: 4, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "A two-source video mixer with a built-in send/return FX loop, made of two stacked crossfaders. The first fader crossfades IN A and IN B into a mix that is also copied out the SEND jack (patch it through external video FX and return it); the second fader then blends that dry mix against the wet RETURN into the main OUT. Each fader has its own transition-shape dropdown so the crossfade can be a uniform fade or a wipe/dissolve/star/checkerboard sweep, and the whole thing renders as two GPU passes (pass 1 = A/B mix = SEND, pass 2 = dry/wet = OUT).",
+    inputs: {
+      in_a: "The A video source — what shows when the A/B fader is at 0. Left unpatched it reads as opaque black, so an unpatched A with the fader toward A gives a black frame.",
+      in_b: "The B video source — what shows when the A/B fader is at 1. Left unpatched it reads as opaque black.",
+      return: "The wet RETURN of the send/return loop: bring the processed video back in here after sending the A/B mix out SEND through external FX. It becomes the wet side of the dry/wet fader. Unpatched it reads as opaque black, so raising DRY/WET toward WET with nothing returned fades to black.",
+    },
+    outputs: {
+      out: "The main mix output: the dry A/B mix blended against the wet RETURN by the dry/wet fader and its transition shape (the second render pass, the module's canonical surface). With nothing patched into any input this is black.",
+      send: "A pre-FX copy of the A/B mix (the first render pass, taken before the dry/wet stage): patch this out to an external video FX chain and bring the result back into RETURN to build a send/return loop. Reflects only the A/B fader and its transition shape; with no A/B sources patched it is black.",
+    },
+    controls: {
+      fader: "The A↔B crossfade position: 0 shows only IN A, 1 shows only IN B, and in between the two are blended by the amount the A/B FX dropdown's shape allows (a plain fade at the 0.5 default is a 50/50 mix). Clamped to 0..1, and the result is the mix that feeds both the SEND output and the dry side of the dry/wet stage.",
+      abTransition: "Picks the SHAPE of the A→B crossfade as the fader moves: 0 fade (uniform dissolve across the whole frame), 1 wipe (a soft vertical edge sweeping left→right), 2 dissolve (a fixed random per-cell reveal that fills in more B as the fader rises), 3 star (a 5-point star iris of B growing from the centre outward), 4 checkerboard (even cells switch over during the first half of the fader travel, odd cells during the second). The stored value is rounded and clamped to 0..4, so anything out of range snaps to the nearest valid shape; at the very ends (fader fully A or fully B) every shape collapses to a clean A or B regardless of the dropdown.",
+      dryWet: "The dry↔wet blend that produces the final OUT: 0 shows only the dry A/B mix, 1 shows only the wet signal coming back into RETURN, with the in-between shaped by the D/W FX dropdown. Defaults to 0 (fully dry), so the send/return loop has no effect until you raise it. Clamped to 0..1, letting you fade an external effect in and out or transition into it with a wipe/dissolve.",
+      dwTransition: "Picks the SHAPE of the dry→wet blend, the same five options as the A/B shape: 0 fade, 1 wipe (left→right), 2 dissolve (per-cell random), 3 star iris, 4 checkerboard. Rounded and clamped to 0..4. Lets you transition into the returned/processed image with a hard wipe or dissolve instead of a flat crossfade.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

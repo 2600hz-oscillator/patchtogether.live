@@ -23,6 +23,23 @@ import { resolve } from 'node:path';
 export interface RegistryPort {
   id: string;
   type: string;
+  // schemaVersion-2 enrichment (all optional). E2E specs that only need
+  // {id,type} keep working; the docs-overhaul I/O surface reads these.
+  paramTarget?: string;
+  cvScale?: { mode: string; depth?: number };
+  accepts?: string[];
+  edge?: 'trigger' | 'gate';
+  adoptsUpstreamFrom?: string;
+}
+
+export interface RegistryParam {
+  id: string;
+  label: string;
+  defaultValue: number;
+  min: number;
+  max: number;
+  curve: string;
+  units?: string;
 }
 
 export interface RegistryModule {
@@ -34,6 +51,9 @@ export interface RegistryModule {
   category: string;
   inputs: RegistryPort[];
   outputs: RegistryPort[];
+  // schemaVersion-2 enrichment — full ParamDef surface + stereo pairs.
+  params: RegistryParam[];
+  stereoPairs?: [string, string][];
   hasAudioOutput: boolean;
   hasCvOutput: boolean;
   hasGateOutput: boolean;
@@ -46,7 +66,7 @@ interface ManifestFile {
   modules: RegistryModule[];
 }
 
-const EXPECTED_SCHEMA = 1;
+const EXPECTED_SCHEMA = 2;
 
 function manifestPath(): string {
   // This file lives at e2e/tests/_registry.ts; the manifest lives at

@@ -10,7 +10,8 @@
     "ai:debug": "playwright test --reporter=list ai-debug.spec.ts",
     "vrt": "playwright test --config=vrt/vrt.config.ts",
     "vrt:strict": "VRT_STRICT=1 playwright test --config=vrt/vrt.config.ts",
-    "vrt:update": "playwright test --config=vrt/vrt.config.ts --update-snapshots"
+    "vrt:update": "playwright test --config=vrt/vrt.config.ts --update-snapshots",
+    "vrt:annotated": "playwright test --config=vrt/vrt-annotated.config.ts --update-snapshots"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0"

@@ -1,0 +1,99 @@
+{
+  "type": "sequencer",
+  "platform": "darwin",
+  "controls": [
+    {
+      "n": 1,
+      "testid": "sequencer-play-{id}",
+      "kind": "button"
+    },
+    {
+      "n": 2,
+      "testid": "sequencer-snh-toggle",
+      "kind": "button"
+    },
+    {
+      "n": 3,
+      "testid": "sequencer-{id}-prev",
+      "kind": "button"
+    },
+    {
+      "n": 4,
+      "testid": "sequencer-{id}-next",
+      "kind": "button"
+    },
+    {
+      "n": 5,
+      "testid": "sequencer-{id}-hold",
+      "kind": "button"
+    },
+    {
+      "n": 6,
+      "testid": "seq-gate-{id}-0",
+      "kind": "button",
+      "count": 16
+    },
+    {
+      "n": 7,
+      "testid": "seq-chord-{id}-0",
+      "kind": "button",
+      "count": 16
+    },
+    {
+      "n": 8,
+      "testid": "control-bpm",
+      "kind": "fader"
+    },
+    {
+      "n": 9,
+      "testid": "control-length",
+      "kind": "fader"
+    },
+    {
+      "n": 10,
+      "testid": "control-octave",
+      "kind": "fader"
+    },
+    {
+      "n": 11,
+      "testid": "control-gateLength",
+      "kind": "fader"
+    },
+    {
+      "n": 12,
+      "testid": "control-swing",
+      "kind": "fader"
+    },
+    {
+      "n": 13,
+      "testid": "quicksave-slot-{id}-1",
+      "kind": "button",
+      "count": 8
+    },
+    {
+      "n": 14,
+      "testid": "quicksave-mode-save-{id}",
+      "kind": "button"
+    },
+    {
+      "n": 15,
+      "testid": "quicksave-mode-load-{id}",
+      "kind": "button"
+    },
+    {
+      "n": 16,
+      "testid": "quicksave-mode-queue-{id}",
+      "kind": "button"
+    },
+    {
+      "n": 17,
+      "testid": "quicksave-play-{id}",
+      "kind": "button"
+    },
+    {
+      "n": 18,
+      "testid": "quicksave-reset-{id}",
+      "kind": "button"
+    }
+  ]
+}

@@ -29,22 +29,37 @@ test('docs modules gallery loads with diagrams', async ({ page }) => {
   await expect.poll(async () => diagrams.count()).toBeGreaterThanOrEqual(19);
 });
 
-test('docs per-module page renders diagram + port counts (sequencer)', async ({ page }) => {
+test('docs per-module page renders its I/O (sequencer)', async ({ page }) => {
   await page.goto('/docs/modules/sequencer');
   await expect(page.getByRole('heading', { name: 'Sequencer' })).toBeVisible();
 
+  // A per-module page leads with the interactive LIVE virtual module (the
+  // primary view for promoted modules like sequencer), OR — before it mounts /
+  // for non-promoted modules / with no JS — the numbered control FACE, OR the
+  // abstract I/O diagram fallback. Any of the three proves the visual renders.
+  const live = page.locator('[data-testid="virtual-module"]');
+  const face = page.locator('[data-testid="module-face"]');
   const diagram = page.locator('[data-testid="module-diagram"] [data-testid="io-diagram"]');
-  await expect(diagram).toBeVisible();
+  await expect(live.or(face).or(diagram)).toBeVisible();
 
-  // Sequencer registry today: 1 input (clock) + 2 outputs (pitch, gate).
-  // Per-port note text comes from the manifest builder's PORT_NOTES table.
+  // The auto-generated I/O tables are the ground truth for every module —
+  // sequencer has many gate inputs and pitch/gate/clock outputs.
+  await expect(page.locator('[data-testid="io-inputs"]')).toBeVisible();
+  await expect(page.locator('[data-testid="io-outputs"]')).toBeVisible();
+  await expect(page.locator('[data-testid="io-outputs"]')).toContainText('pitch');
+  await expect(page.locator('[data-testid="io-inputs"]')).toContainText('clock');
+});
+
+test('docs per-module page falls back to the I/O diagram + port counts (no face)', async ({
+  page,
+}) => {
+  // analogVco has no generated numbered face, so the page renders the abstract
+  // IoDiagram + port-count summary — covers the fallback render path.
+  await page.goto('/docs/modules/analogVco');
+  await expect(page.getByRole('heading', { name: 'Analog VCO' })).toBeVisible();
+  await expect(page.locator('[data-testid="module-diagram"] [data-testid="io-diagram"]')).toBeVisible();
   await expect(page.locator('[data-testid="input-count"]')).toContainText(/\d+ inputs/);
   await expect(page.locator('[data-testid="output-count"]')).toContainText(/\d+ outputs/);
-
-  // SVG pin elements ground-truth the I/O wiring (one stroke line per port).
-  const pins = page.locator('.io-svg .pin-audio, .io-svg .pin-cv, .io-svg .pin-gate, .io-svg .pin-pitch, .io-svg .pin-polyPitchGate');
-  // pitch + gate outputs + clock input = at least 3 pin lines.
-  await expect.poll(async () => pins.count()).toBeGreaterThanOrEqual(3);
 });
 
 test('docs page is not behind the Clerk auth wall', async ({ page }) => {

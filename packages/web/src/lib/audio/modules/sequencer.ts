@@ -199,6 +199,60 @@ export const sequencerDef: AudioModuleDef = {
   // Instruments v1 — full step grid is atomically exposable.
   exposesSequence: true,
 
+  docs: {
+    explanation: "A step sequencer that walks a playhead across up to 128 steps (8 pages of 16), emitting each lit step's note as pitch CV plus a gate, driven by its own BPM clock or an external clock fed into CLOCK IN. Mental model: every step holds a note + an on/off gate + an optional chord; the playhead advances one 16th-note step per beat-subdivision (or one step per incoming clock edge), playing lit steps and resting on dark ones, and you can save up to 8 whole patterns into quicksave slots and switch between them live (instantly, or queued to swap cleanly at the loop's end). The whole transport (play/stop, reset, slot switching, next/prev/random navigation) is also drivable hands-free by patching gates into the CV inputs.",
+    inputs: {
+      clock: "External clock: each rising edge advances the playhead exactly one step. While anything is patched here the internal BPM is ignored and the incoming pulses set the pace; unpatch to fall back to the BPM clock. Patching a clock alone also runs the sequencer (the pulses act as the play signal).",
+      play_cv: "A rising edge toggles play/stop (each pulse flips the current run state); when patched it takes priority over the clock-as-play behavior.",
+      reset_cv: "A rising edge snaps the playhead back to step 1 and restarts the loop. If the sequence happens to be wrapping to step 1 on its own right then, the reset is a no-op so you don't get a doubled downbeat.",
+      queue1_cv: "A rising edge queues pattern slot 1: it finishes the current loop, then switches to slot 1 and restarts from step 1. An explicit slot queue overrides any pending next/prev/random navigation.",
+      queue2_cv: "A rising edge queues pattern slot 2 — applied at the end of the current loop, then plays slot 2 from step 1 (does nothing if slot 2 is empty).",
+      queue3_cv: "A rising edge queues pattern slot 3 — applied at the end of the current loop, then plays slot 3 from step 1 (does nothing if slot 3 is empty).",
+      queue4_cv: "A rising edge queues pattern slot 4 — applied at the end of the current loop, then plays slot 4 from step 1 (does nothing if slot 4 is empty).",
+      queue5_cv: "A rising edge queues pattern slot 5 — applied at the end of the current loop, then plays slot 5 from step 1 (does nothing if slot 5 is empty).",
+      queue6_cv: "A rising edge queues pattern slot 6 — applied at the end of the current loop, then plays slot 6 from step 1 (does nothing if slot 6 is empty).",
+      queue7_cv: "A rising edge queues pattern slot 7 — applied at the end of the current loop, then plays slot 7 from step 1 (does nothing if slot 7 is empty).",
+      queue8_cv: "A rising edge queues pattern slot 8 — applied at the end of the current loop, then plays slot 8 from step 1 (does nothing if slot 8 is empty).",
+      next_cv: "A rising edge latches a 'move to the next filled slot' request that is applied at the end of the current loop (quantized, not instant); it skips empty slots and wraps around. A later explicit slot queue cancels it; a later nav pulse replaces it.",
+      prev_cv: "A rising edge latches a 'move to the previous filled slot' request, applied at the end of the current loop (skips empties, wraps around).",
+      random_cv: "A rising edge latches a 'jump to a random filled slot' request, applied at the end of the current loop.",
+    },
+    outputs: {
+      pitch: "The current step's note as pitch CV (V/oct) across the poly chord lanes; a mono pitch input automatically receives just the root note. With sample & hold on (the default) it only updates on steps that fire and holds steady through rests, so a held note doesn't glitch.",
+      gate: "Goes high while a lit step is playing (high if any chord note fires this step) and low on rests; how long it stays high within the step is set by the gate-length control — patch this into an envelope or VCA to shape each note.",
+      clock: "A short ~10 ms pulse fired on every step advance, regardless of whether that step is on or off — it's the 'I just stepped' signal. Patch it into another sequencer's CLOCK IN to chain them in lockstep.",
+    },
+    controls: {
+      bpm: "Internal tempo in beats per minute (each step is a 16th note, so the step rate is 4x the BPM), used only when nothing is patched into CLOCK IN; with an external clock patched, BPM no longer sets the pace and just feeds the gate-length math.",
+      length: "How many steps the playhead walks before wrapping back to step 1; raising it past 16 reveals more pages, lowering it shortens the loop (steps beyond the length still hold their notes but are skipped and shown dimmed).",
+      octave: "Shifts every step's pitch up or down by whole octaves at once (-2 to +2); chords transpose as a block so their internal intervals stay intact.",
+      gateLength: "How much of each step the gate stays high, from a short 10% stab to a near-legato 95% (it always closes just before the next step, never overlapping it); longer values keep envelopes open most of the step.",
+      swing: "Shuffles the rhythm by lengthening the on-beat steps and shortening the off-beat steps that follow them, which pushes every off-beat later for a looser feel; 0 is dead-straight, higher values deepen the shuffle. Internal-clock only (an external clock sets its own timing).",
+      isPlaying: "The run/stop state: 1 plays, 0 stops and forces the gate low. Starting playback snaps the playhead back to step 1. (If an external clock is patched, the clock edges can drive stepping even while this reads stopped.)",
+      snh: "Sample & hold on the pitch output, on by default: when on, the pitch CV is rewritten only on a step that actually fires a note, so it latches to the gate and holds steady through rests; turn it off for continuous pitch that can change on every step (including back toward rest).",
+      "seq-gate-{n}": "Step {n} on/off — lit = it plays its note when the playhead reaches it; unlit = a rest (the gate stays low and, with sample & hold on, the pitch just holds the previous note).",
+      "seq-chord-{n}": "Step {n}'s chord mode — click to cycle mono (single note) to maj (major triad) to min (minor triad); a chord broadcasts its notes across the poly pitch lanes so a polyphonic voice plays all of them, while a mono pitch sink still hears just the root.",
+      "quicksave-slot-{n}": "Pattern slot {n} of 8 — what a click does depends on the armed mode button: SAVE writes the current pattern (steps + BPM/length/octave/gate/swing) into this slot, LOAD switches to it instantly, and QUEUE waits until the current loop finishes and then swaps to it; a filled slot shows differently from an empty one.",
+      // Static buttons (no param / family) — the on-card affordances. Keyed by
+      // their stable test id (runtime nodeId stripped) so the numbered card KEY
+      // on the doc page resolves them.
+      "sequencer-play": "Play / Stop (header) — starts or stops the sequencer; starting snaps the playhead back to step 1. Same run/stop state as the isPlaying control and the transport-row PLAY.",
+      "sequencer-snh-toggle": "Sample & Hold toggle (S&H / OFF) — the button form of the snh control: on (default) latches the pitch CV to the gate edge and holds it through rests, off lets pitch run continuously.",
+      "sequencer-prev": "Page ◀ — view the previous 16-step page of the grid; also engages HOLD so playback won't auto-scroll the view away. A marker on the arrow shows when the playhead is on a page you're not viewing.",
+      "sequencer-next": "Page ▶ — view the next 16-step page (only when the pattern length spans more than 16 steps); also engages HOLD like the ◀ button.",
+      "sequencer-hold": "HOLD — freezes the visible page so the grid stops auto-following the playhead across pages; off lets the view track the playing step.",
+      "quicksave-mode-save": "SAVE arm — click it, then click a slot 1–8 to write the current pattern (steps + BPM/length/octave/gate/swing) into that slot.",
+      "quicksave-mode-load": "LOAD arm — click it, then click a slot to switch to that saved pattern instantly.",
+      "quicksave-mode-queue": "QUEUE arm — click it, then click a slot to queue that pattern; the swap happens cleanly at the end of the current loop instead of immediately.",
+      "quicksave-play": "Play / Stop (transport row) — same run/stop control as the header PLAY button.",
+      "quicksave-reset": "Reset — snaps the playhead back to step 1 without stopping playback.",
+    },
+  },
+  controlFamilies: [
+    { id: 'seq-gate', label: 'Step on/off grid', kind: 'step-grid', testidPrefix: 'seq-gate', countParam: 'length' },
+    { id: 'seq-chord', label: 'Per-step chord cell', kind: 'cell', testidPrefix: 'seq-chord', countParam: 'length' },
+    { id: 'quicksave-slot', label: 'Quicksave pattern slot', kind: 'quicksave', testidPrefix: 'quicksave-slot' },
+  ],
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Stage-1 polyphony: the pitch port is a polyPitchGate cable carrying 5
     // voice pairs (10 channels). The mono gate port stays a single ConstantSource

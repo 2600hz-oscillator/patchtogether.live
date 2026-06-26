@@ -5,7 +5,16 @@
 //
 // Module defs auto-register from `./modules/index.ts` on first import.
 
-import type { ModuleDef, ModuleType, ParamDef, PortDef, Domain, RackSize } from '$lib/graph/types';
+import type {
+  ModuleDef,
+  ModuleType,
+  ParamDef,
+  PortDef,
+  Domain,
+  RackSize,
+  ControlFamily,
+  ModuleDocs,
+} from '$lib/graph/types';
 import type { AudioModuleFactory } from './engine';
 
 /**
@@ -150,6 +159,19 @@ export interface AudioModuleDef {
    * match the actual component filename. Resolved by $lib/ui/modules-card-map.
    */
   card?: string;
+  /**
+   * Living-docs: co-located AUTHORED prose (overview + per-port + per-control).
+   * See ModuleDocs. Drift-checked by the docs gate; the GENERATED I/O reference
+   * is derived from inputs/outputs/params by io-explain, NOT authored here.
+   */
+  docs?: ModuleDocs;
+  /**
+   * Living-docs: dynamic DOM-only control families (step grids, transports)
+   * that are not individual ParamDefs. Declared so the docs layer + the
+   * contract signature can see them; a grep guard ties each `testidPrefix` to
+   * the card source. See ControlFamily.
+   */
+  controlFamilies?: readonly ControlFamily[];
   factory: AudioModuleFactory;
 }
 

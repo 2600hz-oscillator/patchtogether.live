@@ -180,11 +180,13 @@ tasks:
     desc: Production build (DSP + web)
     cmds:
       - task: dsp:build
+      - task: docs:faces
       - npm run build -w {{.WEB}}
 
   build:web:
     desc: Build web only
     cmds:
+      - task: docs:faces
       - npm run build -w {{.WEB}}
 
   # ---------------- DSP ----------------
@@ -472,6 +474,64 @@ tasks:
         else
           npm run vrt -w {{.E2E}} -- --workers=1 $HEADED_FLAG $REPEAT_FLAG "$@"
         fi
+
+  vrt:annotated:
+    desc: |
+      Generate the NUMBERED card-FACE doc assets for ALL sample modules: a
+      numbered leader-line card screenshot → e2e/vrt/__annotated__/{platform}/
+      {type}.png (LFS) + number→test-id map → __annotated__/{type}.legend.json.
+      The doc page (/docs/modules/[id]) renders the numbered face + a KEY that
+      RESOLVES each number to its authored `docs.controls` blob. The face IS the
+      asset, not a regression baseline. Then copies the darwin faces into static/
+      via docs:faces. Override the set with ANNOTATED_MODULES="adsr,lfo".
+    deps: [dsp:build, test:emit-manifest]
+    cmds:
+      - npm run vrt:annotated -w {{.E2E}} -- {{.CLI_ARGS}}
+      - task: docs:faces
+
+  vrt:annotated:one:
+    desc: |
+      [local dev-loop] Generate ONE module's numbered card face + key by name.
+      Reuses a long-lived dev server if up (`task e2e:serve`). REPEAT=N
+      flake-checks the generation. Example: task vrt:annotated:one -- adsr
+    deps: [dsp:ensure, test:emit-manifest]
+    cmds:
+      - |
+        eval "set -- {{.CLI_ARGS}}"
+        REPEAT_FLAG=""; [ "${REPEAT:-1}" -gt 1 ] && REPEAT_FLAG="--repeat-each=${REPEAT}"
+        # A bare module name → ANNOTATED_MODULES env (the spec's selector).
+        case "${1:-}" in
+          ''|-*) ANNOTATED_MODULES="" ;;
+          *)     ANNOTATED_MODULES="$1"; shift ;;
+        esac
+        ANNOTATED_MODULES="$ANNOTATED_MODULES" \
+          npm run vrt:annotated -w {{.E2E}} -- --workers=1 $REPEAT_FLAG "$@"
+
+  docs:faces:
+    desc: |
+      Copy the canonical (darwin) numbered card faces from
+      e2e/vrt/__annotated__/darwin/*.png into packages/web/static/docs/
+      module-faces/{type}.png so the prerendered doc page can <img src> them.
+      Idempotent; a no-op when no card faces exist yet.
+    cmds:
+      - bash scripts/copy-doc-faces.sh
+
+  docs:accept:
+    desc: |
+      [accept-loop] Re-pin the module I/O CONTRACT golden (contract-lock.txt) to
+      the live registry — the living-docs drift accept loop (the ART/VRT *:update
+      analog). Run AFTER an INTENTIONAL contract change, having re-authored the
+      affected module's co-located `docs`. ALWAYS review `git diff` of
+      contract-lock.txt before committing (it is CODEOWNERS-gated): a diff means a
+      module contract changed — accept it, or recognize it as a bug.
+    cmds:
+      - DOCS_UPDATE=1 npm exec -w {{.WEB}} -- vitest run --config vitest.config.ts contract-lock
+      - 'echo "[docs:accept] re-pinned contract-lock.txt — review the git diff before committing"'
+
+  docs:check:
+    desc: Run the living-docs drift gate (contract-lock) read-only — the same check CI runs.
+    cmds:
+      - npm exec -w {{.WEB}} -- vitest run --config vitest.config.ts contract-lock
 
   vrt:gallery:
     desc: Build the VRT gallery HTML (docs/vrt/) from the latest baselines + last test-results

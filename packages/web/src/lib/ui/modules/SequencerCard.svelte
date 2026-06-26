@@ -326,7 +326,7 @@
   <div class="stripe" style="background: var(--cable-gate);"></div>
   <header class="title">
     <ModuleTitle {id} {data} defaultLabel="Sequencer" inline />
-    <button class="play-btn" class:playing={isPlaying} onclick={togglePlay} title={isPlaying ? 'Stop' : 'Play'}>
+    <button class="play-btn" class:playing={isPlaying} onclick={togglePlay} data-testid={`sequencer-play-${id}`} title={isPlaying ? 'Stop' : 'Play'}>
       {isPlaying ? '■' : '▶'}
     </button>
     <!-- Gate-sampled S&H toggle. In the centered flex header (the corner patch-
