@@ -127,6 +127,8 @@
   import { canAddModule } from '$lib/doom/doom-gating';
   import SavedGroupsPicker from '$lib/ui/SavedGroupsPicker.svelte';
   import NodeContextMenu from '$lib/ui/NodeContextMenu.svelte';
+  import { MODULE_DOCS } from '$lib/docs/module-docs.generated';
+  import { isAnnotating, toggleAnnotate, clearAnnotate } from '$lib/ui/annotate-mode.svelte';
   import PortContextMenu from '$lib/ui/PortContextMenu.svelte';
   import SelectionContextMenu from '$lib/ui/SelectionContextMenu.svelte';
   import GroupBuilderModal from '$lib/ui/GroupBuilderModal.svelte';
@@ -2411,6 +2413,18 @@
     const n = patch.nodes[ctxMenuNodeId];
     return n?.type ?? null;
   });
+
+  // Living-docs: whether the right-clicked module has AUTHORED docs — gates the
+  // "Annotate" entry. MODULE_DOCS is the committed authored-docs registry.
+  let ctxMenuHasDocs = $derived.by<boolean>(() => {
+    void snapshot;
+    return !!ctxMenuNodeType && !!MODULE_DOCS[ctxMenuNodeType];
+  });
+  // Whether annotate mode is currently ON for the right-clicked node (toggle
+  // label). isAnnotating is reactive ($state set), so this re-evals on toggle.
+  let ctxMenuAnnotateActive = $derived<boolean>(
+    !!ctxMenuNodeId && isAnnotating(ctxMenuNodeId),
+  );
   // Module-grouping Phase 2A — track whether the right-clicked group is
   // currently expanded so the menu can label the toggle appropriately.
   let ctxMenuGroupExpanded = $derived.by<boolean>(() => {
@@ -3954,6 +3968,7 @@
     }, LOCAL_ORIGIN);
     // No defensive flow* sync needed: snapshot bus + one-way prop (B3).
     if (topNodeId === nodeId) topNodeId = null;
+    clearAnnotate(nodeId); // drop any personal annotate-mode state for this node
     trace(`deleted ${nodeId}`);
   }
 
@@ -5244,6 +5259,9 @@
   y={ctxMenuPos.y}
   nodeLabel={ctxMenuLabel}
   nodeType={ctxMenuNodeType}
+  hasDocs={ctxMenuHasDocs}
+  annotateActive={ctxMenuAnnotateActive}
+  onannotate={() => ctxMenuNodeId && toggleAnnotate(ctxMenuNodeId)}
   isGroup={ctxMenuNodeType === 'group'}
   groupExpanded={ctxMenuGroupExpanded}
   locked={ctxMenuLocked}
