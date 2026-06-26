@@ -1,8 +1,43 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
   import IoDiagram from '$lib/docs/IoDiagram.svelte';
+  import DocHoverPane from '$lib/docs/interactive/DocHoverPane.svelte';
+  import type VirtualModuleComponent from '$lib/docs/interactive/VirtualModule.svelte';
+  import type { DocHoverState } from '$lib/docs/interactive/use-doc-hover.svelte';
 
   let { data } = $props();
   const mod = $derived(data.mod);
+
+  // ---- Interactive virtual module (the redesign's PRIMARY view) ----
+  //
+  // The live card touches `window`/xyflow on mount, so it must NEVER run during
+  // SSR/prerender. We gate it behind onMount AND the per-module allowlist
+  // (data.interactive); until it mounts (and for non-prototype modules) the LEFT
+  // column shows the static numbered face / IoDiagram fallback, which is exactly
+  // what the prerendered (no-JS) HTML carries. The RIGHT pane's authored text is
+  // SSR-rendered too (DocHoverPane is pure presentational), so the doc is fully
+  // readable without JS.
+  let mounted = $state(false);
+  let VirtualModule = $state<typeof VirtualModuleComponent | null>(null);
+
+  // Shared hover state between the live card's hover action + the pane.
+  let hoverState = $state<DocHoverState>({ hovered: null });
+  const docIndex = $derived(data.docIndex);
+
+  // Show the live card only when: in the browser, mounted, allowlisted, and the
+  // card module finished loading.
+  let showLive = $derived(browser && mounted && data.interactive && !!VirtualModule);
+
+  onMount(() => {
+    if (!data.interactive) return;
+    // Dynamic import keeps VirtualModule (xyflow + cards) out of the prerender
+    // server bundle entirely.
+    import('$lib/docs/interactive/VirtualModule.svelte').then((m) => {
+      VirtualModule = m.default;
+      mounted = true;
+    });
+  });
 
   /** Friendly display name for a `docs.controls` key: a real param uses its
    *  ParamDef label; a control-family template (`foo-{n}`) or any other key is
@@ -56,49 +91,63 @@
   </a>
 {/if}
 
-{#if data.face}
-  <!-- THE CARD — a NUMBERED screenshot of the real rendered card (leader-line
-       overlay from the VRT card-face pipeline) + a KEY that maps each number to
-       its AUTHORED docs.controls blob (friendly name + what it does). NOT a raw
-       test-id legend. -->
-  <h2>the card</h2>
-  <div class="face-wrap" data-testid="module-face">
-    <img
-      class="face-img"
-      src={data.face.src}
-      alt={`Numbered control face for ${mod.label}`}
-      loading="lazy"
-    />
-    {#if data.face.controls.length > 0}
-      <table class="face-key" data-testid="module-face-key">
-        <thead>
-          <tr><th>#</th><th>control</th><th>what it does</th></tr>
-        </thead>
-        <tbody>
-          {#each data.face.controls as c (c.n)}
-            <tr>
-              <td class="key-n">{c.n}</td>
-              <td class="ctrl-name">{c.name}</td>
-              <td>{c.desc ?? '—'}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
+<!-- THE CARD — 2-column interactive view (the redesign): LEFT a live, hoverable
+     virtual module (the PRIMARY view), RIGHT a pane that explains whatever
+     faceplate control / patch port you hover. The static numbered face is the
+     no-JS / prerender / not-yet-promoted FALLBACK shown on the left until the
+     live card mounts (or for modules not on the interactive allowlist). -->
+<h2>the card</h2>
+<div class="card-explore" data-testid="card-explore" class:has-live={showLive}>
+  <div class="card-explore-left">
+    {#if showLive && VirtualModule}
+      {@const VM = VirtualModule}
+      <VM type={mod.type} {docIndex} {hoverState} def={data.defLite} />
+    {:else if data.face}
+      <!-- FALLBACK: numbered screenshot of the real rendered card + its KEY. -->
+      <div class="face-wrap" data-testid="module-face">
+        <img
+          class="face-img"
+          src={data.face.src}
+          alt={`Numbered control face for ${mod.label}`}
+          loading="lazy"
+        />
+        {#if data.face.controls.length > 0}
+          <table class="face-key" data-testid="module-face-key">
+            <thead>
+              <tr><th>#</th><th>control</th><th>what it does</th></tr>
+            </thead>
+            <tbody>
+              {#each data.face.controls as c (c.n)}
+                <tr>
+                  <td class="key-n">{c.n}</td>
+                  <td class="ctrl-name">{c.name}</td>
+                  <td>{c.desc ?? '—'}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      </div>
+    {:else}
+      <!-- FALLBACK: no numbered face generated yet → the abstract pin diagram. -->
+      <div class="diagram-wrap" data-testid="module-diagram">
+        <IoDiagram mod={mod} />
+        <div class="port-counts">
+          <span data-testid="input-count">{mod.inputs.length} inputs</span>
+          ·
+          <span data-testid="output-count">{mod.outputs.length} outputs</span>
+          ·
+          <span data-testid="param-count">{mod.params.length} params</span>
+        </div>
+      </div>
     {/if}
   </div>
-{:else}
-  <!-- Fallback: no numbered face generated yet → the abstract pin diagram. -->
-  <div class="diagram-wrap" data-testid="module-diagram">
-    <IoDiagram mod={mod} />
-    <div class="port-counts">
-      <span data-testid="input-count">{mod.inputs.length} inputs</span>
-      ·
-      <span data-testid="output-count">{mod.outputs.length} outputs</span>
-      ·
-      <span data-testid="param-count">{mod.params.length} params</span>
-    </div>
+  <!-- RIGHT pane: SSR-rendered (pure presentational) so the prerendered HTML
+       carries the authored explanation with NO JS, then live-updates on hover. -->
+  <div class="card-explore-right">
+    <DocHoverPane hovered={hoverState.hovered} docIndex={data.docIndex} />
   </div>
-{/if}
+</div>
 
 <!-- INPUTS & OUTPUTS — AUTO-GENERATED from the enriched module def via
      io-explain (docs-overhaul §3c). The `explain` column is the single source
@@ -250,6 +299,23 @@
   .authored-explanation {
     font-size: 1.02em;
     line-height: 1.55;
+  }
+  /* 2-column interactive explorer: live/static card LEFT, hover pane RIGHT. */
+  .card-explore {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(240px, 1fr);
+    gap: 1.25rem;
+    align-items: start;
+    margin: 1rem 0 1.5rem;
+  }
+  .card-explore-left {
+    min-width: 0;
+  }
+  /* On narrow viewports stack the pane below the card. */
+  @media (max-width: 760px) {
+    .card-explore {
+      grid-template-columns: 1fr;
+    }
   }
   .io-explain {
     color: var(--doc-fg-dim, #6e7a82);

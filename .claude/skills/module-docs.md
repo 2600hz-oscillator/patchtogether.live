@@ -1,14 +1,39 @@
 ---
 name: module-docs
-description: How to give a module page great docs — author the co-located `docs` (explanation + every input/output/control), generate the NUMBERED card face + authored KEY, keep the drift gate green, and roll it out per-module. Use whenever adding/updating module documentation, fixing a doc page, or when the numbered-face overlay needs tuning.
+description: How to give a module page great docs — author the co-located `docs` (explanation + every input/output/control), keep the drift gate green, and roll it out per-module. The PRIMARY view is the interactive virtual module + hover pane; the numbered card face is the no-JS/fallback. Use whenever adding/updating module documentation, fixing a doc page, the interactive explorer, or the numbered-face fallback overlay.
 ---
 
-# Module docs: numbered face + authored key
+# Module docs: interactive virtual module (primary) + numbered face (fallback)
 
-Every AUDIO module's doc page (`/docs/modules/<id>`) leads with a **numbered
-card screenshot** + a **KEY that maps each number to its AUTHORED blob** (a
-friendly name + a "what it does" sentence). NEVER a raw-test-id legend — that
-was explicitly rejected. Owner wants this shape for ALL modules.
+Every AUDIO module's doc page (`/docs/modules/<id>`) is a **2-column explorer**:
+- **LEFT** — the **interactive virtual module**: the REAL card component (mounted
+  client-only in a throwaway sandbox rackspace), which you can hover and open
+  patch panels on. Because it renders the real card, faceplate changes show up
+  automatically — no screenshot to regenerate.
+- **RIGHT** — a **hover pane** (`DocHoverPane`) that explains whatever faceplate
+  control OR patch port you hover, from the AUTHORED `docs`. A CV input that
+  modulates a param shows the DUAL context ("modulates Attack — <what the Attack
+  fader does>"). Empty state = the module explanation.
+
+The card renders live; the prose is authored + drift-gated. The **numbered card
+screenshot + authored KEY** is now the **no-JS / prerender / not-yet-promoted
+FALLBACK** (the static face the prerendered HTML carries so the page is readable
+without JS, and the view for modules not yet on the live-card allowlist). NEVER a
+raw-test-id legend — that was explicitly rejected.
+
+Interactive pieces (prototype on adsr + sequencer): `$lib/docs/doc-index.ts`
+(`buildDocIndex` — the flat, prerender-safe payload the pane indexes),
+`$lib/docs/interactive/{VirtualModule,DocHoverPane}.svelte` +
+`use-doc-hover.svelte.ts` (the hover action: resolves a hovered element to a port
+via `data-port-id`+`data-direction`, else a control via `control-<id>` /
+control-family / button testid, reusing `control-doc-resolver`), and
+`interactive-doc-modules.ts` (the `INTERACTIVE_DOC_MODULES` allowlist — promote a
+module here once its live card is vetted in the doc sandbox; a module can be
+STRICT-documented yet not yet on this list). Sandbox isolation: VirtualModule
+`bindRackspace`es a throwaway LOCAL Y.Doc (bindRackspace never attaches the
+relay — only the rackspace page does), seeds one stub node, provides a null
+engine, and tears the binding down on unmount, so a doc card can NEVER mutate a
+real rack or open a multiplayer room. e2e: `tests/docs-virtual-module.spec.ts`.
 
 See also: `running-tests`, `module-development`, `vrt-failures`. Design memory:
 `docs-numbered-key-system`.
@@ -55,7 +80,10 @@ See also: `running-tests`, `module-development`, `vrt-failures`. Design memory:
    `contract-lock.txt` + `module-docs.generated.ts`).
 6. **Verify**: `flox activate -- task typecheck` +
    `flox activate -- task test:one -- src/lib/docs/` (lint completeness will name
-   any numbered control with no authored blob) + `task e2e:one -- tests/docs.spec.ts`.
+   any numbered control with no authored blob; the doc-index test covers the flat
+   payload + CV→param dual link) + `task e2e:one -- tests/docs.spec.ts`. When the
+   module is on the live-card allowlist, also run
+   `task e2e:one -- tests/docs-virtual-module.spec.ts`.
 7. **EYEBALL the face PNG** (`__annotated__/darwin/<t>.png`). Numbers must not
    obscure controls — see Layout below.
 

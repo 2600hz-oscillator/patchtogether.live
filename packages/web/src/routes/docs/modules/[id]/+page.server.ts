@@ -3,6 +3,8 @@ import type { EntryGenerator, PageServerLoad } from './$types';
 import { buildModuleManifest } from '$lib/docs/module-manifest';
 import { guideFor } from '$lib/docs/module-guides';
 import { resolveLegend, type LegendEntry } from '$lib/docs/control-doc-resolver';
+import { buildDocIndex } from '$lib/docs/doc-index';
+import { INTERACTIVE_DOC_MODULES } from '$lib/docs/interactive/interactive-doc-modules';
 
 // NUMBERED card-FACE legends. The VRT pipeline (e2e/vrt/vrt-annotated.spec.ts)
 // writes one {type}.legend.json (number → stable test id) per module under
@@ -64,9 +66,25 @@ export const load: PageServerLoad = ({ params }) => {
       }
     : null;
 
+  // Interactive virtual-module payload (the redesign): a flat, client-resolvable
+  // doc index + the minimal def shape the live card needs to seed a sandbox
+  // node. PRERENDER-SAFE — buildDocIndex is pure (no live-registry import). The
+  // live card only mounts for prototype modules in INTERACTIVE_DOC_MODULES; all
+  // others keep the static numbered-face primary view.
+  const docIndex = buildDocIndex(mod);
+  const interactive = INTERACTIVE_DOC_MODULES.has(mod.type);
+  const defLite = {
+    type: mod.type,
+    domain: 'audio' as const,
+    params: mod.params.map((p) => ({ id: p.id, defaultValue: p.defaultValue })),
+  };
+
   return {
     mod,
     face,
+    docIndex,
+    interactive,
+    defLite,
     guide: guideFor(mod.type),
     prev: prev ? { type: prev.type, label: prev.label } : null,
     next: next ? { type: next.type, label: next.label } : null,

@@ -33,12 +33,14 @@ test('docs per-module page renders its I/O (sequencer)', async ({ page }) => {
   await page.goto('/docs/modules/sequencer');
   await expect(page.getByRole('heading', { name: 'Sequencer' })).toBeVisible();
 
-  // A per-module page leads with EITHER a numbered control FACE (when the
-  // annotated pipeline has generated one — sequencer has one) or the fallback
-  // abstract I/O diagram. Either proves the visual renders.
+  // A per-module page leads with the interactive LIVE virtual module (the
+  // primary view for promoted modules like sequencer), OR — before it mounts /
+  // for non-promoted modules / with no JS — the numbered control FACE, OR the
+  // abstract I/O diagram fallback. Any of the three proves the visual renders.
+  const live = page.locator('[data-testid="virtual-module"]');
   const face = page.locator('[data-testid="module-face"]');
   const diagram = page.locator('[data-testid="module-diagram"] [data-testid="io-diagram"]');
-  await expect(face.or(diagram)).toBeVisible();
+  await expect(live.or(face).or(diagram)).toBeVisible();
 
   // The auto-generated I/O tables are the ground truth for every module —
   // sequencer has many gate inputs and pitch/gate/clock outputs.
