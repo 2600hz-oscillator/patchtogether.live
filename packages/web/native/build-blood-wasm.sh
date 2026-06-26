@@ -121,11 +121,33 @@ apply_phase0_patches() {
     perl -0pi -e 's{        auto const pw = getpwuid\(getuid\(\)\);\n        if \(pw == NULL \|\| \(e = pw->pw_dir\) == NULL \|\| e\[0\] == .\\0.\)\n            return NULL;}{\x23ifdef __EMSCRIPTEN__\n        return NULL;  // spike: WASM has no passwd db (MEMFS uses \$HOME)\n\x23else\n        auto const pw = getpwuid(getuid());\n        if (pw == NULL || (e = pw->pw_dir) == NULL || e[0] == \x27\\0\x27)\n            return NULL;\n\x23endif}' "$COMPAT"
     echo "[build-blood-wasm] patched compat.cpp getpwuid for __EMSCRIPTEN__"
   fi
-  # (3) baselayer.cpp self-modifying-asm mprotect: WASM has no RWX memory and
-  #     we use the C software renderer (a-c.cpp), so the unprotect is a no-op.
-  #     The Phase-0 spike does NOT compile baselayer.cpp (it's part of the
-  #     platform/main-loop layer the Phase-1 shim replaces wholesale), so this
-  #     patch is documented but deferred to the Phase-1 shim patch series.
+  # (3) baselayer.cpp self-modifying-asm mprotect (PHASE0-STATUS.md §2.4):
+  #     RESOLVED upstream-free by building with -DNOASM (see CFLAGS). NOASM
+  #     compiles out baselayer.cpp's whole nx_unprotect/mprotect/#error block
+  #     (`#if !defined(NOASM)`) AND selects the portable C software rasteriser
+  #     a-c.cpp via ENGINE_USING_A_C (a.h auto-defines it under NOASM). No
+  #     source patch needed — the Phase-1 full link below builds baselayer.cpp
+  #     directly with -DNOASM and it compiles clean.
+
+  # ── Phase-1 LINK patch: rename sdlayer's videoShowFrame ──────────────────
+  # The full-link path (BLOOD_LINK=1) keeps emscripten's SDL2 sdlayer.cpp
+  # (window/input/audio/timing) but needs OUR videoShowFrame
+  # (bloodgeneric_patchtogether.cpp) to win — it snapshots the software frame
+  # + yields the asyncify stack to JS. sdlayer.cpp also DEFINES videoShowFrame,
+  # so we rename sdlayer's copy to videoShowFrame_sdl (unused) to avoid a
+  # duplicate-symbol link error. Surgical, reversible, throwaway-checkout only.
+  local SDL="$NBLOOD_SRC/source/build/src/sdlayer.cpp"
+  if ! grep -q 'videoShowFrame_sdl' "$SDL"; then
+    perl -0pi -e 's/\bvoid videoShowFrame\(int32_t w\)/void videoShowFrame_sdl(int32_t w)/' "$SDL"
+    echo "[build-blood-wasm] patched sdlayer.cpp videoShowFrame -> videoShowFrame_sdl (Phase-1 link)"
+  fi
+  # sdlayer's SIGSEGV-backtrace block pulls in <execinfo.h> (glibc-only) when
+  # __GNUC__ is set — emscripten defines __GNUC__ but has no execinfo. Exclude
+  # __EMSCRIPTEN__ from the PRINTSTACKONSEGV guard (we don't backtrace in wasm).
+  if ! grep -q 'defined __EMSCRIPTEN__ /\* no execinfo' "$SDL"; then
+    perl -0pi -e 's/(#if !defined _WIN32 && defined __GNUC__ && !defined __OpenBSD__)/$1 && !defined __EMSCRIPTEN__ \/* no execinfo *\//' "$SDL"
+    echo "[build-blood-wasm] patched sdlayer.cpp execinfo guard for __EMSCRIPTEN__"
+  fi
 }
 apply_phase0_patches
 
@@ -141,6 +163,9 @@ INCLUDES=(
   -I "$NBLOOD_SRC/source/blood/src"
   -I "$NBLOOD_SRC/source/mact/include"
   -I "$NBLOOD_SRC/source/audiolib/include"
+  # sdlayer.cpp pulls in dear-imgui unconditionally under SDL2; NBlood vendors
+  # it here. (The Phase-1 link compiles a minimal imgui subset; see LINK_DIRS.)
+  -I "$NBLOOD_SRC/source/imgui/include"
 )
 CFLAGS=(
   -O1
@@ -169,7 +194,7 @@ SPIKE_TUS=(
   source/audiolib/src/multivoc.cpp     # audio mixer
 )
 
-if [ "$BLOOD_SPIKE" = "1" ]; then
+if [ "$BLOOD_SPIKE" = "1" ] && [ "${BLOOD_LINK:-0}" != "1" ]; then
   echo "[build-blood-wasm] PHASE-0 spike: compile-feasibility check of ${#SPIKE_TUS[@]} representative TUs ..."
   TMP_OBJ="$(mktemp -d)"
   trap 'rm -rf "$TMP_OBJ"' EXIT
@@ -191,11 +216,176 @@ if [ "$BLOOD_SPIKE" = "1" ]; then
     echo "[build-blood-wasm] PHASE-0 RESULT: some TUs failed — see errors above + PHASE0-STATUS.md §2.3." >&2
     exit 1
   fi
-  exit 0
+  if [ "${BLOOD_LINK:-0}" != "1" ]; then
+    exit 0
+  fi
+  echo "[build-blood-wasm] BLOOD_LINK=1 → proceeding to Phase-1 full link ..."
 fi
 
-# ── Phase 1 (NOT YET IMPLEMENTED): full link to blood.{js,wasm} ─────────────
-echo "error: full link (BLOOD_SPIKE=0) is Phase 1 and not implemented in this spike." >&2
-echo "       It needs the bloodgeneric_patchtogether.cpp platform shim (bpt_* exports)" >&2
-echo "       mirroring doomgeneric_patchtogether.c. See native/nblood/PHASE0-STATUS.md." >&2
-exit 2
+# ── Phase 1: full link to blood.{js,wasm} (BLOOD_LINK=1) ────────────────────
+# Mirrors build-doom-wasm.sh's link step, scaled to the EDuke32/Build stack.
+# Strategy (see bloodgeneric_patchtogether.cpp header for the full rationale):
+#   * Software renderer ONLY: USE_OPENGL is NOT defined → polymost/glbuild/
+#     glsurface/glad drop out; a-c.cpp (C rasteriser) is the render path.
+#   * -DNOASM: no self-modifying-asm mprotect (PHASE0-STATUS.md §2.4 wall),
+#     selects ENGINE_USING_A_C.
+#   * Keep emscripten SDL2 (-sUSE_SDL=2) for window/input/audio/timing; our
+#     shim overrides videoShowFrame (sdlayer's renamed to _sdl) to snapshot
+#     the frame + yield via ASYNCIFY.
+#   * -sASYNCIFY: lets the blocking app_main() loop suspend at each frame.
+#
+# This compiles the whole build-engine + Blood game + mact + audiolib source
+# trees, EXCLUDING the GL/asm/platform-duplicate/optional TUs (see SKIP).
+LINK_CFLAGS=(
+  -O1
+  -g2
+  -DNORMALUNIX
+  -DRENDERTYPESDL
+  -DNOASM
+  -DBLOOD_PT_SHIM
+  -sUSE_SDL=2
+  -fno-strict-aliasing
+  -Wno-everything
+  -std=gnu++17
+)
+
+# Source dirs whose .cpp we sweep wholesale, minus SKIP below.
+LINK_DIRS=(
+  source/build/src
+  source/blood/src
+  source/mact/src
+  source/audiolib/src
+  source/imgui/src
+)
+
+# TUs to EXCLUDE from the link. Rationale per group:
+#   GL renderer (USE_OPENGL off): polymost, polymer, glbuild, mdsprite,
+#     texcache, hightile, glsurface, voxmodel(GL parts via build2d? keep 2d).
+#   ASM: a.masm/a.nasm are not .cpp (sweep is .cpp only) — a-c.cpp stays.
+#   Platform we DON'T want: winlayer/sdlayer12 (we use sdlayer.cpp), startgtk,
+#     *_gtk, the editor TUs (build2d/buildvox/roach — editor-only).
+#   Optional heavy: imgui glue, smacker (libsmackerdec), xmp, mimalloc
+#     (smmalloc_generic), the various audio DRIVERS except SDL+null.
+#   Duplicate mains / standalone tools.
+# GL renderer (USE_OPENGL off, so engine.cpp never calls into these). voxmodel/
+# mdsprite/texcache/glsurface/glbuild/polymost/polymer are the GL path; dxtfilter
+# + animvpx are GL/vpx asset codecs. hightile/screenshot/communityapi/smmalloc
+# are referenced UNCONDITIONALLY by baselayer/engine — KEEP them (do NOT skip).
+SKIP_REGEX='polymost|polymer|glbuild|glsurface|mdsprite|texcache|voxmodel|dxtfilter|animvpx'
+# Non-wasm platform layers (we keep sdlayer.cpp only).
+SKIP_REGEX="$SKIP_REGEX"'|winlayer|winbits|rawinput|wiibits|dynamicgtk|gtkbits|startgtk|startwin|sdlayer12|sdlkeytrans|cpuid'
+# Editor main + tile-packer asset tool.
+SKIP_REGEX="$SKIP_REGEX"'|tilepacker|^build\.cpp$'
+# Netplay transport mmulti.cpp (defer to Phase-2 MP; its single-player
+# connection globals are stubbed in the shim). KEEP enet.cpp — blood/network.cpp
+# calls into ENet even in single-player init; ENet is portable C and links on
+# wasm (emscripten BSD sockets), so it's cheaper to link than to stub.
+SKIP_REGEX="$SKIP_REGEX"'|mmulti'
+# Editor-only Blood TUs + M32-script editor fragments + the Smacker intro
+# (credits.cpp needs libsmackerdec). These are NOT part of the GAME link.
+# m32structures/nnextsif are #include fragments, not standalone TUs.
+SKIP_REGEX="$SKIP_REGEX"'|^mapedit\.cpp$|m32exec|m32common|m32def|m32structures|m32vars|nnextsif|^credits\.cpp$'
+# OS-specific audio OUTPUT drivers we don't have on wasm (keep driver_sdl as the
+# output backend). KEEP driver_adlib (the OPL3 FM SOFTWARE-synth MIDI driver) —
+# fx_man.cpp references AL_*/AdLibDrv_* unconditionally + opl3.cpp is portable
+# DSP that links on wasm.
+SKIP_REGEX="$SKIP_REGEX"'|driver_alsa|driver_directsound|driver_winmm|driver_jack|driver_coreaudio|driver_rtaudio'
+# music_external.cpp is an ALTERNATIVE MUSIC_* backend (external player); it
+# collides with music.cpp's MUSIC_*. Keep music.cpp (the standard backend).
+SKIP_REGEX="$SKIP_REGEX"'|music_external'
+# Dear-imgui backends we don't use (GL3 / win32) + the demo window. Keep the
+# core (imgui/draw/tables/widgets) + the SDL2 platform backend sdlayer uses.
+SKIP_REGEX="$SKIP_REGEX"'|imgui_impl_opengl3|imgui_impl_win32|imgui_demo'
+
+OUT_LINK_DIR="$OUT_DIR"
+mkdir -p "$OUT_LINK_DIR"
+LINK_SRCS=()
+for d in "${LINK_DIRS[@]}"; do
+  while IFS= read -r f; do
+    base="$(basename "$f")"
+    if echo "$base" | grep -qE "$SKIP_REGEX"; then continue; fi
+    LINK_SRCS+=("$f")
+  # Sweep BOTH .cpp and the vendored C libs (.c: lz4 / miniz / xxhash live in
+  # build/src and are referenced unconditionally — cache1d/tiles compression).
+  done < <(find "$NBLOOD_SRC/$d" -maxdepth 1 \( -name '*.cpp' -o -name '*.c' \) | sort)
+done
+# Our platform shim.
+LINK_SRCS+=("$SCRIPT_DIR/nblood/bloodgeneric_patchtogether.cpp")
+
+echo "[build-blood-wasm] LINK: ${#LINK_SRCS[@]} TUs (software renderer, NOASM, ASYNCIFY) ..."
+
+# Compile each TU to a cached .o first (so re-runs are fast + a compile error
+# names the exact file instead of aborting the whole emcc invocation). Object
+# cache lives in the gitignored scratch tree.
+OBJ_DIR="$SCRIPT_DIR/nblood/.objcache"
+mkdir -p "$OBJ_DIR"
+OBJS=()
+cfail=0
+for src in "${LINK_SRCS[@]}"; do
+  # Namespace the object name by its module dir (build/blood/mact/audiolib/
+  # imgui) so build/src/common.cpp and blood/src/common.cpp (DIFFERENT files,
+  # same basename) don't collide in the flat cache → a spurious wasm-ld
+  # "duplicate symbol" at link. dirname twice strips the trailing /src.
+  moddir="$(basename "$(dirname "$(dirname "$src")")")"
+  base="${moddir}__$(basename "$src")"   # keep extension → .c/.cpp stay distinct
+  obj="$OBJ_DIR/$base.o"
+  # The vendored C libs (lz4/miniz/xxhash) must NOT get the C++ std flag.
+  TU_FLAGS=("${LINK_CFLAGS[@]}")
+  case "$src" in
+    *.c) TU_FLAGS=("${LINK_CFLAGS[@]/-std=gnu++17/}") ;;
+  esac
+  # Recompile if the object is missing or older than the source.
+  if [ ! -f "$obj" ] || [ "$src" -nt "$obj" ]; then
+    if ! emcc -c "${TU_FLAGS[@]}" "${INCLUDES[@]}" "$src" -o "$obj" 2>"$OBJ_DIR/.err"; then
+      printf '  CFAIL %s\n' "$base"
+      grep -m3 'error:' "$OBJ_DIR/.err" | sed 's/^/          /'
+      cfail=1
+      continue
+    fi
+  fi
+  OBJS+=("$obj")
+done
+if [ "$cfail" = 1 ]; then
+  echo "[build-blood-wasm] LINK: some TUs failed to COMPILE (see CFAIL above) — fix SKIP_REGEX or patch." >&2
+  exit 1
+fi
+echo "[build-blood-wasm] LINK: all ${#OBJS[@]} TUs compiled; linking ..."
+
+BPT_EXPORTS='[
+  "_bpt_init","_bpt_tick","_bpt_get_framebuffer","_bpt_get_framebuffer_size",
+  "_bpt_get_resx","_bpt_get_resy","_bpt_has_frame","_bpt_set_key",
+  "_bpt_get_pcm_buffer","_bpt_get_pcm_buffer_size","_malloc","_free"
+]'
+BPT_RUNTIME_METHODS='["HEAPU8","HEAPU32","HEAPF32","ccall","cwrap","FS"]'
+
+# BLOOD_DEBUG=1 enables emscripten assertions + a JS stack on traps (for
+# diagnosing engine-init faults like a divide-by-zero). Off by default.
+DEBUG_FLAGS=()
+if [ "${BLOOD_DEBUG:-0}" = "1" ]; then
+  DEBUG_FLAGS=(-sASSERTIONS=2 -sSAFE_HEAP=0)
+  echo "[build-blood-wasm] BLOOD_DEBUG=1 → assertions on"
+fi
+
+emcc \
+  "${LINK_CFLAGS[@]}" \
+  "${OBJS[@]}" \
+  ${DEBUG_FLAGS[@]+"${DEBUG_FLAGS[@]}"} \
+  -sMODULARIZE=1 \
+  -sEXPORT_ES6=1 \
+  -sEXPORT_NAME=loadBlood \
+  -sALLOW_MEMORY_GROWTH=1 \
+  -sINITIAL_MEMORY=134217728 \
+  -sSTACK_SIZE=5242880 \
+  -sFORCE_FILESYSTEM=1 \
+  -sASYNCIFY=1 \
+  -sASYNCIFY_STACK_SIZE=131072 \
+  -sENVIRONMENT="$BLOOD_ENVIRONMENT" \
+  -sEXIT_RUNTIME=0 \
+  -sERROR_ON_UNDEFINED_SYMBOLS=1 \
+  -sEXPORTED_FUNCTIONS="$BPT_EXPORTS" \
+  -sEXPORTED_RUNTIME_METHODS="$BPT_RUNTIME_METHODS" \
+  -o "$OUT_LINK_DIR/$OUT_NAME.js"
+
+echo "[build-blood-wasm] LINK OK — wrote:"
+ls -lh "$OUT_LINK_DIR/$OUT_NAME.js" "$OUT_LINK_DIR/$OUT_NAME.wasm"
+exit 0

@@ -25,6 +25,33 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "sustain": "The level the envelope holds at for as long as the gate stays high, after attack and decay complete — 0 (no sustain, decays all the way to silence) up to 1.0 (holds at full peak); linear fader."
     }
   },
+  "blood": {
+    "explanation": "BLOOD runs the NBlood (Build-engine) port of Blood as an interactive video source. It is owner-only and single-instance — the rack owner spawns it and plays; the video output is the Build software-rendered framebuffer, letterboxed into the engine canvas. Game data (BLOOD.RFF / GUI.RFF / SOUNDS.RFF / TILES000.ART) is USER-SUPPLIED and not redistributable, so the card shows a \"data missing\" overlay until you run `task setup:blood` with a copy you own (GOG/Steam One Unit Whole Blood or Fresh Supply).",
+    "inputs": {
+      "altfire": "CV gate — alternate fire while held HIGH.",
+      "crouch": "CV gate — stay crouched while held HIGH.",
+      "down": "CV gate — move backward while held HIGH.",
+      "enter": "CV trigger — confirm the highlighted menu item (fires once per rising edge).",
+      "esc": "CV trigger — open / back out of the menu (fires once per rising edge).",
+      "fire": "CV gate — fire the current weapon while the gate is held HIGH.",
+      "jump": "CV gate — jump while held HIGH.",
+      "left": "CV gate — turn left while held HIGH.",
+      "right": "CV gate — turn right while held HIGH.",
+      "up": "CV gate — move forward while the gate is held HIGH.",
+      "use": "CV gate — open doors / use switches while held HIGH.",
+      "weapnext": "CV gate — select the next weapon while held HIGH.",
+      "weapprev": "CV gate — select the previous weapon while held HIGH."
+    },
+    "outputs": {
+      "audio_l": "Left channel of the game audio (silent in v1 — PCM bridge is stubbed).",
+      "audio_r": "Right channel of the game audio (silent in v1 — PCM bridge is stubbed).",
+      "out": "The Build software-rendered game framebuffer, aspect-correct letterboxed into the canvas."
+    },
+    "controls": {
+      "audioGain": "Trims the game-audio level feeding audio_l/audio_r (0..2, default 1).",
+      "fillMode": "Letterbox (preserve aspect, default) vs fill (cover-crop) the canvas."
+    }
+  },
   "cocoadelay": {
     "explanation": "A tape-style stereo delay (clean-room port of Tilde Murray's Cocoa Delay): audio is written into a 10-second stereo tape buffer and read back at a fractional, modulated position with 4-point Hermite interpolation. The read time is the base delay (free-running TIME, or a musical division of a clock beat when SYNC is on), warped per-sample by an LFO and a slow random DRIFT, with bipolar feedback feeding the echoes back through an in-loop multi-mode FILTER and saturating DRIVE; PAN modes spread the wet image, DUCKING sidechains the wet level off the dry input, and DRY/WET set the final mix. Mental model: think of it as one tape echo where almost every knob can also be voltage-controlled, and where a patched CLK pulse or the rack/MIDI tempo can lock the delay to the beat.",
     "inputs": {

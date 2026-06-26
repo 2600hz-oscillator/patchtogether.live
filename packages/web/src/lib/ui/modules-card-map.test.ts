@@ -31,7 +31,7 @@ import { buildNodeTypes, conventionalCardName, type CardDefLike } from './module
 const EXPECTED_NODE_TYPES = [
   '4plexvid', 'acidwarp', 'adsr', 'analogLogicMaths', 'analogVco', 'aquaTank', 'archivist',
   'atlantisCatalyst', 'attenumix', 'audioIn', 'audioOut', 'backdraft', 'bentbox',
-  'bluebox', 'buggles', 'callsine', 'cameraInput', 'cartesian',
+  'blood', 'bluebox', 'buggles', 'callsine', 'cameraInput', 'cartesian',
   'charlottesEchos', 'chowkick', 'chroma', 'chromakey', 'clipplayer', 'clockedRunner', 'clouds',
   'cloudseed', 'cocoadelay', 'colorizer', 'cube', 'delay', 'depolarizer', 'destroy', 'destructor',
   'doom', 'drummergirl', 'drumseqz', 'dx7', 'elements', 'fader', 'feedback', 'filter',
