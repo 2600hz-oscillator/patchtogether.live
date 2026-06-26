@@ -105,6 +105,12 @@
   </p>
 </section>
 
+<p class="ref-callout">
+  This is the illustrated guide for the <strong>clip player</strong> module. For
+  its auto-generated port / param / source reference, see the
+  <a href="/docs/modules/clipplayer">clip player module page →</a>
+</p>
+
 <h2>The mental model in one minute</h2>
 <ul>
   <li><strong>Rows = instruments</strong> (8 lanes), <strong>columns = clip slots</strong> (8 per instrument) → 64 note clips.</li>
@@ -471,6 +477,13 @@
 <style>
   .lede { font-size: 1.05rem; line-height: 1.6; }
   .aside { opacity: 0.8; font-style: italic; }
+  .ref-callout {
+    border: 1px solid var(--doc-border-dim, #062b32);
+    border-left: 3px solid var(--doc-accent, #00f0ff);
+    padding: 10px 14px;
+    margin: 1rem 0 0;
+    font-size: 0.9em;
+  }
   .caption { opacity: 0.85; font-size: 0.92rem; }
   .led {
     display: inline-block;
