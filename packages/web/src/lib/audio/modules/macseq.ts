@@ -331,8 +331,17 @@ export const macseqDef: AudioModuleDef = {
       gateLength: "How much of each step the gate stays high, from a short 10% stab to a near-legato 95% (it always closes just before the next step).",
       isPlaying:
         "The run/stop state: 1 plays, 0 stops and forces the gate low; starting playback snaps the playhead back to step 1. Same control as the card's PLAY button. (An external clock can drive stepping even while this reads stopped.)",
+      "macseq-pitch-{n}":
+        "Step {n}'s note — the editable pitch box for this step. Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to fly across the grid; Enter commits and jumps to the next step's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it makes the step play the C3 fallback. The note is emitted as V/oct on the PITCH output, shifted by the OCT control — patch PITCH into a MACROOSCILLATOR's pitch input.",
+      "macseq-model-{n}":
+        "Step {n}'s MODEL — the per-step value-entry dropdown that picks which MACROOSCILLATOR engine this step selects (— = unset, otherwise a model name). The chosen model index is emitted on the MODEL CV output, made to land on MACROOSCILLATOR's discrete model_cv input; an unset (—) step HOLDS the previous step's model rather than snapping to model 0, so you only switch engines on the steps you mark.",
     },
   },
+
+  controlFamilies: [
+    { id: 'macseq-pitch', label: 'Per-step note entry', kind: 'cell', testidPrefix: 'macseq-pitch', countParam: 'length' },
+    { id: 'macseq-model', label: 'Per-step model picker', kind: 'cell', testidPrefix: 'macseq-model', countParam: 'length' },
+  ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;

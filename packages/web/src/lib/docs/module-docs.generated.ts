@@ -253,6 +253,7 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "pitch": "The selected pad's note as pitch CV (V/oct) across the poly chord lanes; a mono pitch input automatically receives just the root note. With sample & hold on (the default) it only updates when a gate fires and holds steady on rests, so the pitch doesn't glitch as the cursor crosses silent pads."
     },
     "controls": {
+      "cart-pitch-{n}": "Pad {n}'s note — the editable pitch box for this cell of the 4×4 grid. Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to move around the grid; Enter commits and steps to the next pad's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it (empty) turns the pad into a rest even if its gate is lit. When the cursor lands on this pad the note is emitted as V/oct on the PITCH output, shifted by the OCT control and (for a chord pad) used as the chord's root.",
       "gateLength": "How much of each step the gate stays high, from a short 10% stab to a near-legato 95%; longer values hold downstream envelopes open for most of the step.",
       "lfoDiv": "Division/multiplication of the built-in LFO relative to the lfo_clock rate, stepped through 1/8, 1/4, 1/2, 1/1, ×1.5, ×2, ×4, ×8 (default 1/1) — lower indices make the LFO sweep slowly across several clocks, higher indices run it faster than the clock.",
       "lfoShape": "Morphs the built-in LFO waveform continuously from sine (0) through triangle (1) and sawtooth (2) to square (3), cross-fading between adjacent shapes at in-between values.",
@@ -548,6 +549,7 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     },
     "controls": {
       "bpm": "Internal tempo in beats per minute (each step is a 16th note, so the step rate is 4× the BPM), used only when nothing is patched into CLOCK IN; with an external clock patched it no longer sets the pace.",
+      "drumseqz-pitch-{n}": "A step's per-step note OVERRIDE — the editable pitch box inside each track's step cell (next to that step's gate toggle). Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to fly across the track grid; Enter commits and advances to the next step's box. Leaving it EMPTY (the default) makes the step fall through to that track's ROOT note, so an unfilled drum row just plays its root on every hit; filling it in pitches that single step independently (handy for tom runs or melodic per-step lines on a track). The note feeds the track's PITCH out as V/oct, shifted by the track and global octave controls.",
       "gateLength": "How much of each step every track's gate stays high, from a short 10% trigger to a near-legato 95% (it always closes just before the next step).",
       "isPlaying": "The run/stop state: 1 plays, 0 stops and forces every gate low. Starting playback snaps the playhead back to step 1. (With an external clock patched, the clock edges can drive stepping even while this reads stopped.) Same control as the card's PLAY button.",
       "length": "How many steps the playhead walks before wrapping back to step 1; raising it past 16 reveals more pages, lowering it shortens the loop (steps beyond the length still hold their data but are skipped and shown dimmed).",
@@ -905,6 +907,7 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     },
     "controls": {
       "bpm": "Internal fallback tempo in beats per minute, used only when there is no TIMELORDE node in the rack AND nothing is patched into CLOCK IN; when a TIMELORDE is present its tempo wins, and an external clock overrides both.",
+      "kria-cell-{n}": "A cell of the per-step editor grid for the selected track — this is where you enter each step's value, INCLUDING its note. The same grid is reused by the page selector (TRIG / NTE / OCT / DUR): on the NOTE (NTE) page it IS the per-step note entry — the lit row picks that step's scale DEGREE (bottom row = degree 0, up to degree 6), which the shared SCALE + ROOT then quantize into the track's pitch CV; on the other pages the same cell instead sets the step's trigger, octave or gate duration. Click a cell to set/clear it for the active page; the column tracking the playhead is highlighted as it runs. (An attached monome grid drives these same edits.)",
       "running": "Local play/stop transport (1 = running, 0 = stopped), exposed as the card's RUN button. When a TIMELORDE node exists its run state drives playback instead, and an external clock's pulses can run the tracks regardless."
     }
   },
@@ -983,6 +986,8 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "gateLength": "How much of each step the gate stays high, from a short 10% stab to a near-legato 95% (it always closes just before the next step).",
       "isPlaying": "The run/stop state: 1 plays, 0 stops and forces the gate low; starting playback snaps the playhead back to step 1. Same control as the card's PLAY button. (An external clock can drive stepping even while this reads stopped.)",
       "length": "How many steps the playhead walks before wrapping to step 1; raising it past 16 reveals more pages, lowering it shortens the loop.",
+      "macseq-model-{n}": "Step {n}'s MODEL — the per-step value-entry dropdown that picks which MACROOSCILLATOR engine this step selects (— = unset, otherwise a model name). The chosen model index is emitted on the MODEL CV output, made to land on MACROOSCILLATOR's discrete model_cv input; an unset (—) step HOLDS the previous step's model rather than snapping to model 0, so you only switch engines on the steps you mark.",
+      "macseq-pitch-{n}": "Step {n}'s note — the editable pitch box for this step. Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to fly across the grid; Enter commits and jumps to the next step's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it makes the step play the C3 fallback. The note is emitted as V/oct on the PITCH output, shifted by the OCT control — patch PITCH into a MACROOSCILLATOR's pitch input.",
       "octave": "Shifts every step's pitch up or down by whole octaves at once (-2 to +2)."
     }
   },
@@ -1628,6 +1633,7 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "activeLayer": "Which of the four layers is active for playing and recording (0..3 = layers 1–4), exposed as the card's L1–L4 buttons. The layer CV input overrides this when patched.",
       "bpm": "Internal tempo in beats per minute (each step is a 16th note), used only when nothing is patched into CLOCK IN.",
       "isPlaying": "Run/stop transport (1 = playing, 0 = stopped). When stopped the playhead holds at step 1 but live keys still sound; the card's PLAY button toggles it.",
+      "numpad-cell-{n}": "Step {n}'s note cell in the active layer's 4×4 grid — this IS the per-step note-entry area for the numpad sequencer (distinct from the keymap keys below it). It shows the step's note name when lit (a · when empty/off); clicking toggles the step on/off, and click-and-dragging up/down on the cell changes its note by hand. Steps are also filled in by RECORD / OVERDUB as you play the keypad, and a lit cell's note is what that step emits on the active layer's pitch output (base octave + key remapping applied). The current playhead step is highlighted while playing.",
       "octave": "The keypad's base octave (0..8, default 4); shifts which actual pitches the 12 note-keys produce. The remappable octave-up/down keys nudge it by one.",
       "overdub": "Overdub mode (the card's OVD button): when on, every keypress writes its note into the step (quantized to the nearest step while playing, immediately when stopped) without clearing the layer first — layer new notes over what's there.",
       "poly": "Poly recording (the card's POLY button): when on, holding several keys at once records them as a chord into the step (up to 5 voices); when off, only the single key pressed is stored. The mono per-layer outputs always send the lowest note either way.",
@@ -1765,6 +1771,7 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "isPlaying": "The run/stop state: 1 plays, 0 stops and forces the gates low; starting playback snaps the playhead back to step 1. Same control as the card's PLAY button.",
       "length": "How many steps (chords) the playhead walks before wrapping to step 1; raising it past 16 reveals more pages.",
       "octave": "Shifts every chord up or down by whole octaves at once (-2 to +2); the chord transposes as a block so its voicing stays intact.",
+      "polyseqz-root-{n}": "Step {n}'s ROOT note — the editable pitch box that sets the bottom note of this step's chord. Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to move across the step row; Enter commits and advances to the next step's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it (empty) makes the step a rest even if its gate is lit. The chord's quality, inversion and voicing badges build the rest of the chord UP from this root, which is then transposed by the OCT control and broadcast across the poly pitch lanes.",
       "snh": "Sample & hold on the per-voice pitch CV, on by default (the card's S&H face button): when on, each voice's pitch is latched cleanly at its gate edge (pinned to the un-jittered step time) so the note is stable when the gate rises even while Humanize jitters the timing; off reverts to the legacy behavior where pitch can drift ahead of the gate under Humanize."
     }
   },
@@ -1944,6 +1951,7 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "quicksave-slot-{n}": "Pattern slot {n} of 8 — what a click does depends on the armed mode button: SAVE writes the current pattern (steps + BPM/length/octave/gate/swing) into this slot, LOAD switches to it instantly, and QUEUE waits until the current loop finishes and then swaps to it; a filled slot shows differently from an empty one.",
       "seq-chord-{n}": "Step {n}'s chord mode — click to cycle mono (single note) to maj (major triad) to min (minor triad); a chord broadcasts its notes across the poly pitch lanes so a polyphonic voice plays all of them, while a mono pitch sink still hears just the root.",
       "seq-gate-{n}": "Step {n} on/off — lit = it plays its note when the playhead reaches it; unlit = a rest (the gate stays low and, with sample & hold on, the pitch just holds the previous note).",
+      "seq-pitch-{n}": "Step {n}'s note — the editable pitch box for this step. Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to fly across the grid; Enter commits and jumps to the next step's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it (empty) makes the step a rest even if its gate is lit. The note is emitted as V/oct on the PITCH output, shifted by the OCT control and (for a chord step) used as the chord's root; with sample & hold on it's latched to the gate so it only changes when this step actually fires.",
       "sequencer-hold": "HOLD — freezes the visible page so the grid stops auto-following the playhead across pages; off lets the view track the playing step.",
       "sequencer-next": "Page ▶ — view the next 16-step page (only when the pattern length spans more than 16 steps); also engages HOLD like the ◀ button.",
       "sequencer-play": "Play / Stop (header) — starts or stops the sequencer; starting snaps the playhead back to step 1. Same run/stop state as the isPlaying control and the transport-row PLAY.",
@@ -2286,7 +2294,8 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "length": "How many steps the playhead walks before wrapping to step 1; raising it past 16 reveals more pages. A one-shot recording captures exactly this many steps before stopping.",
       "octave": "Shifts every step's pitch up or down by whole octaves at once (-2 to +2).",
       "overdub": "Recording mode (the card's OVD button): off = one-shot, which clears the pattern and records exactly one pass of `length` steps then auto-stops; on = overdub, which layers newly played notes on top of the existing pattern without clearing and keeps looping until you disarm.",
-      "recArm": "Arms recording (1) or disarms it (0); the card's REC button. While armed, incoming gates write the sampled pitch onto the nearest step. Also togglable via the rec input."
+      "recArm": "Arms recording (1) or disarms it (0); the card's REC button. While armed, incoming gates write the sampled pitch onto the nearest step. Also togglable via the rec input.",
+      "writeseq-pitch-{n}": "Step {n}'s note — the editable pitch box for this step. As well as being filled in by RECORD (a played CV/gate writes the sampled pitch onto the nearest step), you can type a note name here directly (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to fly across the grid; Enter commits and jumps to the next step's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it (empty) makes the step a rest even if its gate is lit. The note is emitted as V/oct on the PITCH output, shifted by the OCT control."
     }
   }
 };

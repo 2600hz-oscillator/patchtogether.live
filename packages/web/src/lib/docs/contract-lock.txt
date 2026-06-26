@@ -374,6 +374,7 @@ cartesian param lfoShape 0..3 linear default=0
 cartesian param mode 0..1 discrete default=0
 cartesian param octave -2..2 discrete default=0
 cartesian param snh 0..1 discrete default=1
+cartesian family cart-pitch kind=cell prefix=cart-pitch
 cellshade meta domain=video schema=1
 cellshade in bits cv param=bits cvScale=discrete
 cellshade in in video
@@ -867,6 +868,7 @@ drumseqz param trk4_euclid 0..16 discrete default=0
 drumseqz param trk4_octave -2..2 discrete default=0
 drumseqz param trk4_root 33..114 discrete default=48
 drumseqz expose playStop
+drumseqz family drumseqz-pitch kind=cell prefix=drumseqz-pitch count=length
 dx7 meta domain=audio schema=1
 dx7 in gate gate edge=gate
 dx7 in pitch_cv cv
@@ -1633,6 +1635,7 @@ kria out pitch3 pitch
 kria out pitch4 pitch
 kria param bpm 30..300 linear default=120
 kria param running 0..1 discrete default=0
+kria family kria-cell kind=cell prefix=kria-cell
 launchpadControlLeft meta domain=meta schema=1
 lfo meta domain=audio schema=1
 lfo in clock gate
@@ -1723,6 +1726,8 @@ macseq param isPlaying 0..1 discrete default=0
 macseq param length 1..128 discrete default=16
 macseq param octave -2..2 discrete default=0
 macseq expose playStop
+macseq family macseq-model kind=cell prefix=macseq-model count=length
+macseq family macseq-pitch kind=cell prefix=macseq-pitch count=length
 mandelbulb meta domain=video schema=1
 mandelbulb in detail_cv cv param=detail cvScale=linear
 mandelbulb in hue_cv cv param=hue cvScale=linear
@@ -2366,6 +2371,7 @@ numpadPlus param octave 0..8 discrete default=4
 numpadPlus param overdub 0..1 discrete default=0
 numpadPlus param poly 0..1 discrete default=0
 numpadPlus param recArm 0..1 discrete default=0
+numpadPlus family numpad-cell kind=cell prefix=numpad-cell
 onetonine meta domain=video schema=1
 onetonine in in video
 onetonine out out1 video
@@ -2596,6 +2602,7 @@ polyseqz param length 1..128 discrete default=8
 polyseqz param octave -2..2 discrete default=0
 polyseqz param snh 0..1 discrete default=1
 polyseqz expose playStop
+polyseqz family polyseqz-root kind=cell prefix=polyseqz-root count=length
 pong meta domain=audio schema=1
 pong in paddle_left cv
 pong in paddle_right cv
@@ -2988,6 +2995,7 @@ sequencer expose playStop
 sequencer family quicksave-slot kind=quicksave prefix=quicksave-slot
 sequencer family seq-chord kind=cell prefix=seq-chord count=length
 sequencer family seq-gate kind=step-grid prefix=seq-gate count=length
+sequencer family seq-pitch kind=cell prefix=seq-pitch count=length
 shapedramps meta domain=video schema=1
 shapedramps in h_freq cv param=h_freq cvScale=linear
 shapedramps in h_phase cv param=h_phase cvScale=linear
@@ -3953,3 +3961,4 @@ writeseq param octave -2..2 discrete default=0
 writeseq param overdub 0..1 discrete default=0
 writeseq param recArm 0..1 discrete default=0
 writeseq expose playStop
+writeseq family writeseq-pitch kind=cell prefix=writeseq-pitch count=length

@@ -35,63 +35,69 @@
     },
     {
       "n": 7,
+      "testid": "seq-pitch-{id}-0",
+      "kind": "text-input",
+      "count": 16
+    },
+    {
+      "n": 8,
       "testid": "seq-chord-{id}-0",
       "kind": "button",
       "count": 16
     },
     {
-      "n": 8,
+      "n": 9,
       "testid": "control-bpm",
       "kind": "fader"
     },
     {
-      "n": 9,
+      "n": 10,
       "testid": "control-length",
       "kind": "fader"
     },
     {
-      "n": 10,
+      "n": 11,
       "testid": "control-octave",
       "kind": "fader"
     },
     {
-      "n": 11,
+      "n": 12,
       "testid": "control-gateLength",
       "kind": "fader"
     },
     {
-      "n": 12,
+      "n": 13,
       "testid": "control-swing",
       "kind": "fader"
     },
     {
-      "n": 13,
+      "n": 14,
       "testid": "quicksave-slot-{id}-1",
       "kind": "button",
       "count": 8
     },
     {
-      "n": 14,
+      "n": 15,
       "testid": "quicksave-mode-save-{id}",
       "kind": "button"
     },
     {
-      "n": 15,
+      "n": 16,
       "testid": "quicksave-mode-load-{id}",
       "kind": "button"
     },
     {
-      "n": 16,
+      "n": 17,
       "testid": "quicksave-mode-queue-{id}",
       "kind": "button"
     },
     {
-      "n": 17,
+      "n": 18,
       "testid": "quicksave-play-{id}",
       "kind": "button"
     },
     {
-      "n": 18,
+      "n": 19,
       "testid": "quicksave-reset-{id}",
       "kind": "button"
     }

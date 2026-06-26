@@ -311,8 +311,14 @@ export const drumseqzDef: AudioModuleDef = {
       trk4_euclid: "Track 4's Euclidean fill: 0 keeps the hand-drawn row; 1..16 spreads that many hits evenly across the page.",
       trk4_root: "Track 4's root note (MIDI 33..114) — used when a lit step has no note of its own.",
       trk4_octave: "Track 4's octave offset, added on top of the global octave (-2 to +2).",
+      "drumseqz-pitch-{n}":
+        "A step's per-step note OVERRIDE — the editable pitch box inside each track's step cell (next to that step's gate toggle). Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to fly across the track grid; Enter commits and advances to the next step's box. Leaving it EMPTY (the default) makes the step fall through to that track's ROOT note, so an unfilled drum row just plays its root on every hit; filling it in pitches that single step independently (handy for tom runs or melodic per-step lines on a track). The note feeds the track's PITCH out as V/oct, shifted by the track and global octave controls.",
     },
   },
+
+  controlFamilies: [
+    { id: 'drumseqz-pitch', label: 'Per-step note entry', kind: 'cell', testidPrefix: 'drumseqz-pitch', countParam: 'length' },
+  ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;

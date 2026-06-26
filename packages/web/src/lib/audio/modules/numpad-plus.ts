@@ -339,8 +339,14 @@ export const numpadPlusDef: AudioModuleDef = {
       overdub: "Overdub mode (the card's OVD button): when on, every keypress writes its note into the step (quantized to the nearest step while playing, immediately when stopped) without clearing the layer first — layer new notes over what's there.",
       octave: "The keypad's base octave (0..8, default 4); shifts which actual pitches the 12 note-keys produce. The remappable octave-up/down keys nudge it by one.",
       poly: "Poly recording (the card's POLY button): when on, holding several keys at once records them as a chord into the step (up to 5 voices); when off, only the single key pressed is stored. The mono per-layer outputs always send the lowest note either way.",
+      "numpad-cell-{n}":
+        "Step {n}'s note cell in the active layer's 4×4 grid — this IS the per-step note-entry area for the numpad sequencer (distinct from the keymap keys below it). It shows the step's note name when lit (a · when empty/off); clicking toggles the step on/off, and click-and-dragging up/down on the cell changes its note by hand. Steps are also filled in by RECORD / OVERDUB as you play the keypad, and a lit cell's note is what that step emits on the active layer's pitch output (base octave + key remapping applied). The current playhead step is highlighted while playing.",
     },
   },
+
+  controlFamilies: [
+    { id: 'numpad-cell', label: 'Per-step note cell', kind: 'cell', testidPrefix: 'numpad-cell' },
+  ],
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
