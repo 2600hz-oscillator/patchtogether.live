@@ -176,6 +176,82 @@ const PROBES: Probe[] = [
     cvPort: 'slew1_cv', // CV → slew1 param
     modulates: /modulates/i,
   },
+  // --- Batch 4 — effects (2026-06-26). Each is on INTERACTIVE_DOC_MODULES; the
+  // live card (pure Knob/Fader + PatchPanel; clouds adds a $derived button) must
+  // mount cleanly and a control hover updates the pane. The CV→param dual-context
+  // check runs on a CV input with a paramTarget (every batch-4 module has one). ---
+  {
+    id: 'reverb',
+    heading: /reverb/i,
+    controlParam: 'size',
+    controlDescIncludes: /tank|decay|size/i,
+    cvPort: '', // reverb has no CV inputs (three knobs only)
+    modulates: /./,
+  },
+  {
+    id: 'delay',
+    heading: /delay/i,
+    controlParam: 'feedback',
+    controlDescIncludes: /feedback|echo|repeat/i,
+    cvPort: 'time', // CV → time param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'clouds',
+    heading: /clouds/i,
+    controlParam: 'density',
+    controlDescIncludes: /grain|density|trigger/i,
+    cvPort: 'position_cv', // CV → position param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'charlottesEchos',
+    heading: /charlotte/i,
+    controlParam: 'decay',
+    controlDescIncludes: /decay|colour|taper|degrade/i,
+    cvPort: 'delay', // CV → delay param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'shimmershine',
+    heading: /shimmershine/i,
+    controlParam: 'shimmer',
+    controlDescIncludes: /shimmer|octave/i,
+    cvPort: 'decay_cv', // CV → decay param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'aquaTank',
+    heading: /aquatank/i,
+    controlParam: 'fb1',
+    controlDescIncludes: /feedback|resonance|recirculat/i,
+    cvPort: 'fb1_cv', // CV → fb1 param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'destroy',
+    heading: /destroy/i,
+    controlParam: 'bits',
+    controlDescIncludes: /quantiz|bit|crunch/i,
+    cvPort: 'decimate', // CV → decimate param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'warps',
+    heading: /warps/i,
+    controlParam: 'timbre',
+    controlDescIncludes: /intensity|algorithm|mix/i,
+    cvPort: 'timbre_cv', // CV → timbre param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'ringback',
+    heading: /ringback/i,
+    controlParam: 'size',
+    controlDescIncludes: /ring|comb|grain|sample/i,
+    cvPort: 'rate', // CV → rate param
+    modulates: /modulates/i,
+  },
 ];
 
 /** Wait for the live virtual module to finish mounting (the flow host appears

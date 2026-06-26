@@ -55,6 +55,39 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "tune": "Coarse pitch in semitones (−36 to +36) — shift the whole oscillator up or down by whole-step intervals. With CV modulation on, knob + CV add together, so a sequencer can select octaves while the knob sets a base pitch."
     }
   },
+  "aquaTank": {
+    "explanation": "A 4-channel Hadamard feedback-delay-network (FDN) — a feedback matrix that takes four audio inputs, runs them through delay lines whose outputs are mixed back into each other through a Hadamard matrix, and recirculates them. Depending on settings it behaves as a dense reverb, a metallic resonator, a chorus, or a self-oscillating feedback-resonance instrument. Each channel has its own feedback ratio (F1..F4) and a direct out, plus there's a stereo MIX bus that spreads the four channels across the field. TILT shapes the LF/HF balance in the loop, DAMP rolls off the highs, CROSS sets how strongly channels couple through the matrix, and SPREAD/OUT shape the stereo mix. It's one of the three ATLANTIS-PATCH support modules but stands alone as a reverb/feedback box.",
+    "inputs": {
+      "fb1_cv": "CV that displaces the F1 feedback-ratio knob, modulating channel 1's loop gain (resonance / decay).",
+      "fb2_cv": "CV that displaces the F2 knob, modulating channel 2's feedback ratio.",
+      "fb3_cv": "CV that displaces the F3 knob, modulating channel 3's feedback ratio.",
+      "fb4_cv": "CV that displaces the F4 knob, modulating channel 4's feedback ratio.",
+      "in1": "Audio input to channel 1 of the Hadamard FDN matrix.",
+      "in2": "Audio input to channel 2.",
+      "in3": "Audio input to channel 3.",
+      "in4": "Audio input to channel 4. (Patch fewer than four — empty channels still resonate via the matrix coupling.)",
+      "tilt_cv": "CV that displaces the TILT knob, modulating the LF/HF balance inside the feedback loop."
+    },
+    "outputs": {
+      "mix_l": "Left side of the stereo MIX bus: out1..4 summed and panned across the field by SPREAD, scaled by OUT.",
+      "mix_r": "Right side of the stereo MIX bus.",
+      "out1": "Channel 1's direct post-matrix output — use these four for parallel/multi-tap routing of the resonator.",
+      "out2": "Channel 2's direct post-matrix output.",
+      "out3": "Channel 3's direct post-matrix output.",
+      "out4": "Channel 4's direct post-matrix output."
+    },
+    "controls": {
+      "crossMix": "Inter-channel matrix coupling (0..1): how strongly the four channels feed into each other through the Hadamard mix. Low keeps channels independent (parallel combs); high binds them into a dense, diffuse reverb.",
+      "damp": "High-frequency damping inside the matrix (0..1): higher values bleed off the highs each pass, taming harshness and shortening bright resonances.",
+      "fb1": "Channel 1 feedback ratio (0..0.95): how much of the loop recirculates. Low = short decay / subtle ambience; near 0.95 = long ringing resonance approaching self-oscillation.",
+      "fb2": "Channel 2 feedback ratio (0..0.95).",
+      "fb3": "Channel 3 feedback ratio (0..0.95).",
+      "fb4": "Channel 4 feedback ratio (0..0.95).",
+      "outLevel": "Output gain of the stereo MIX bus (0..1). The direct out1..4 taps are unaffected by this.",
+      "spread": "Per-channel stereo-pan width on the MIX bus (0..1): 0 collapses the four channels to center, 1 spreads them wide across the stereo field.",
+      "tilt": "LF/HF balance in the loop (-1..+1): negative tilts the recirculating energy toward the lows (darker, boomier resonance), positive toward the highs (brighter, more metallic)."
+    }
+  },
   "attenumix": {
     "explanation": "The simple, no-surprises mixer: four channels, each with its own attenuator knob (0..1) and a CV input that sums into that knob, plus a per-channel direct out and one summed MIX output. Per channel out = in · clamp(knob + cv, 0, 1) — the attenuators only ATTENUATE, they never boost or invert (a negative knob+CV mutes, not phase-flips). The four channels sum and pass through a MASTER gain, then a tanh soft-clip: out = tanh(sum · master). Master goes up to ×2, so pushing past unity drives the sum into the tanh for warm saturation instead of a hard digital clip. Compared with VEILS (same quad-VCA-plus-mix topology) ATTENUMIX is the toggle-free 'just the mixer' version — the boost lives on the master, not per channel. There is a DSP worklet for the per-sample math.",
     "inputs": {
@@ -80,6 +113,53 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "att3": "Channel 3 attenuator, linear 0..1 (default 0 = muted). Sums with CV3, clamped 0..1.",
       "att4": "Channel 4 attenuator, linear 0..1 (default 0 = muted). Sums with CV4, clamped 0..1.",
       "master": "Output gain on the summed bus, linear 0..2 (default 1.0 = unity). Below 1 trims the whole mix down; above 1 boosts the sum INTO the tanh soft-clip for warm saturation rather than a hard clip. Applies only to the MIX output, not the per-channel direct outs."
+    }
+  },
+  "charlottesEchos": {
+    "explanation": "A destructive multi-head stereo delay — a four-stage cascade of echoes that colour and degrade the source rather than repeating it cleanly. Each of the four stages tap the delayed signal in turn; FEEDBACK is fed to every stage so repeats compound across the chain into smeared, endless tails, DECAY progressively tapers each later stage's level and adds in-loop high-frequency loss for a darkening, dub-like decay, and PITCHUP shifts each stage up by a fixed ratio so the cascaded echoes climb in pitch — the classic ascending-shimmer effect. It is the audio sibling of the video-domain VDELAY, and roughly the sound of four COCOA DELAYs stacked in serial. Reach for it when you want the wet path to abuse the signal.",
+    "inputs": {
+      "L": "Left-channel input feeding the multi-head delay cascade.",
+      "R": "Right-channel input feeding the cascade.",
+      "delay": "CV that scales the DELAY-time knob (log-scaled), shifting all tap times together — sweep it for tape-warble and pitch-bend smears on the echoes."
+    },
+    "outputs": {
+      "L": "Left-channel output: the dry signal blended with the four-stage wet cascade per MIX.",
+      "R": "Right-channel output: the dry signal blended with the wet cascade per MIX."
+    },
+    "controls": {
+      "decay": "Per-tap colour-decay (0..1): progressively tapers each later stage's wet level and adds high-frequency loss inside the loop, so the repeats darken and degrade as they fade — the 'destructive', dub-delay character.",
+      "delay": "Base tap time in seconds, log-scaled 1 ms..1.5 s — the spacing of the first echo (the cascade stages derive from it). Summed with the DELAY CV input.",
+      "feedback": "Feedback amount fed to EVERY stage (0..1). Because it compounds across the four-stage chain, even moderate settings build long tails and high settings smear into near-infinite, self-sustaining echoes.",
+      "mix": "Dry / wet balance (0..1): 0 is the clean input, 1 is the cascade only, between crossfades the two.",
+      "pitchUp": "Per-stage upward pitch shift (0..0.2). At 0 the echoes repeat at pitch; above 0 each successive stage is shifted up by a compounding ratio so the cascaded echoes climb in pitch — the signature ascending shimmer. Uses the same interpolation as the delay reads, so pitchUp=0 patches are bit-for-bit unchanged."
+    }
+  },
+  "clouds": {
+    "explanation": "A granular texture processor after Mutable Instruments' Clouds. It continuously records the incoming stereo audio into a short ring buffer, then sprays overlapping grains — tiny windowed snippets — out of that buffer to recombine the sound into a shimmering cloud, a smeared pad, a pitch-shifted drone, or a frozen ambient texture. POSITION picks where in the buffer the grains read from, SIZE sets each grain's length, DENSITY sets how many grains overlap, TEXTURE morphs the grain window from soft to hard, PITCH transposes the grains, and FREEZE latches the buffer so the texture keeps playing with no fresh input. BLEND crossfades the grain cloud against the dry signal. Mental model: it turns any source into a controllable swarm of micro-loops.",
+    "inputs": {
+      "blend_cv": "CV that displaces the BLEND knob, modulating the dry/wet balance.",
+      "density_cv": "CV that displaces the DENSITY knob, modulating how many grains spawn — sweep it for swelling/thinning clouds.",
+      "freeze_gate": "A gate that toggles FREEZE on each rising edge: high-going flips the buffer between live-recording and frozen (looping the captured snapshot). Use it to capture a moment and hold the texture hands-free.",
+      "in_l": "Left channel of the stereo source continuously written into the granular ring buffer (unless FREEZE is engaged, which stops new writes).",
+      "in_r": "Right channel of the stereo source written into the buffer alongside in_l.",
+      "pitch": "V/oct pitch input that sums with the PITCH knob, transposing every grain — patch a sequencer or keyboard here to play the granular cloud melodically.",
+      "pitch_cv": "CV that displaces the PITCH knob in semitones (separate from the V/oct pitch input, which sums on top).",
+      "position_cv": "CV that displaces the POSITION knob, sweeping the grain read-head through the buffer — modulate it for scanning/scrubbing textures.",
+      "size_cv": "CV that displaces the SIZE knob, modulating grain length (short grains = granular stutter, long grains = smooth smear).",
+      "texture_cv": "CV that displaces the TEXTURE knob, morphing the grain-window shape (soft Hann-like to hard rectangular)."
+    },
+    "outputs": {
+      "out_l": "Left channel of the overlap-add granular output (the summed, normalised cloud of all active grains), blended with the dry input per BLEND.",
+      "out_r": "Right channel of the granular output, blended with the dry input per BLEND."
+    },
+    "controls": {
+      "blend": "Dry / wet balance (0..1): 0 passes the input through, 1 is the granular cloud only, between crossfades the two.",
+      "density": "How densely grains are triggered (0..1). Low density leaves audible gaps (sparse, pointillist); high density packs grains into a continuous wash.",
+      "freeze": "Freeze toggle (0/1): when 1, the module stops writing new audio into the buffer and loops the captured snapshot, so the texture sustains indefinitely with no fresh input. Mirrored by the FREEZE button on the card and the FRZ gate input.",
+      "pitch": "Per-grain pitch shift in semitones (-24..+24). Sums with the V/oct PITCH input; pitch the grains up for shimmer, down for sub-octave drones.",
+      "position": "Playhead position into the recorded buffer (0..1): where grains are sampled from. Sweep it to scrub through the captured audio; with FREEZE on it scans the held snapshot.",
+      "size": "Grain length (0..1). Short grains give a fine granular stutter/buzz; long grains overlap into a smooth, time-stretched smear.",
+      "texture": "Grain-window shape macro (0..1): morphs the envelope each grain fades in/out with, from a soft rounded window (gentle, smooth) to a harder edge (grittier, more pronounced grain attacks)."
     }
   },
   "cocoadelay": {
@@ -183,6 +263,21 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "wrap": "What happens when the slicing plane reads outside the cube: OFF = those regions are silent, ON = the coordinates mirror-fold back inside so the slice stays full."
     }
   },
+  "delay": {
+    "explanation": "A clean single-tap delay line: input → delay → feedback loop → output, mixed against the dry signal. The canonical topology every delay is built from — feed audio in, it comes back out TIME seconds later, and FEEDBACK decides how many times the echo repeats before fading. TIME is patchable as CV so you can sweep the delay for tape-warble and pitch-bend effects (the read head moves, smoothly crossfaded to avoid clicks). Use it for slapback, rhythmic echoes, or — with high feedback — long ambient washes. The same delay engine backs WAVESCULPT's FX slot, so the character matches when you pull DELAY out into a patch wire. For a thicker, degrading multi-tap delay see CHARLOTTE'S ECHOS.",
+    "inputs": {
+      "audio": "The dry signal feeding the delay line. It is passed straight to the dry side of the mix and also into the delay buffer + feedback loop that produces the echoes.",
+      "time": "CV that displaces the TIME knob (linear), moving the delay read head live. Smoothed by ~10 ms so a swept delay time crossfades cleanly instead of clicking — patch an LFO here for chorus/flange-style warble or an envelope for pitch dives. Clamped to the 1 ms..2 s range."
+    },
+    "outputs": {
+      "audio": "The dry signal and the delayed/feedback echoes summed, balanced by MIX (an equal-power crossfade so the perceived loudness stays roughly constant from full-dry to full-wet)."
+    },
+    "controls": {
+      "feedback": "How much of the delayed output is fed back into the line (0..0.95). 0 is a single echo; higher values stack more repeats; near the 0.95 ceiling the tail rings for dozens of reps. Hard-capped below self-oscillation so a runaway patch can't blow your speakers.",
+      "mix": "Dry / wet balance (0..1) via an equal-power crossfade: 0 is the untouched dry signal, 1 is echoes only, and halfway keeps both at full perceptual level without sagging.",
+      "time": "Delay time in seconds, log-scaled from 1 ms up to 2 s — short for slapback and comb effects, long for distinct rhythmic echoes or ambient tails. Summed with anything patched into the TIME CV input."
+    }
+  },
   "depolarizer": {
     "explanation": "The exact inverse of POLARIZER: a one-knob CV utility that folds a BIPOLAR signal back into a UNIPOLAR one, applying out = 0.5 + depth·(in/2). It maps -1..+1 into 0..1 centered on 0.5. Patch it inline to feed a bipolar source (a ±1 LFO, sequencer or modulation CV) into a destination that wants a 0..1 control voltage — a level, depth or mix-amount CV input — with DEPTH trimming how much of the swing reaches it. The output always rests at 0.5 (the natural unipolar center) with nothing patched or at depth 0. There is no DSP worklet — it is a pure scale-plus-fixed-offset Web Audio graph, sample-accurate by construction.",
     "inputs": {
@@ -193,6 +288,23 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     },
     "controls": {
       "depth": "Sets how far the output departs from the 0.5 center, on a linear 0..1 fader — it scales only the slope, never the center. 1 (default) = the full bipolar→unipolar conversion (in=±1 reaches 0/1); 0.5 = a half-strength swing (output only moves 0.25..0.75); 0 = flat 0.5 regardless of input. So it attenuates the modulation depth around the neutral center."
+    }
+  },
+  "destroy": {
+    "explanation": "A bitcrusher / sample-rate decimator — the project's grungy lo-fi destroyer. Two classic digital-degradation stages run in series on the input: DECIMATE holds every Nth sample (a sample-rate reduction that adds aliasing and a slo-mo grainy texture), and BITS quantizes the amplitude to fewer bits (the gritty, steppy crunch of low bit-depth). A WET knob crossfades the mangled signal against the clean dry, so it doubles as a parallel-distortion send. Pull DECIMATE up for aliasing grain, pull BITS down for thick quantization grit. Both controls are CV-patchable for rhythmic crush sweeps.",
+    "inputs": {
+      "audio": "The dry signal fed into the decimator + bit-reducer chain. Also passed to the dry side of the WET blend.",
+      "bits": "CV that displaces the BITS knob (linear), modulating the quantization depth live.",
+      "decimate": "CV that displaces the DECIMATE knob (linear), modulating the sample-rate reduction — patch an envelope or LFO for rhythmic aliasing sweeps. A ±1V CV sweeps roughly ±31 steps from the knob position.",
+      "wet": "CV that displaces the WET knob, modulating the dry/wet crush amount."
+    },
+    "outputs": {
+      "audio": "The processed (destroyed) signal blended with the dry input per WET."
+    },
+    "controls": {
+      "bits": "Quantization bit depth (1..16): 16 is pristine (effectively no reduction); lower values quantize the amplitude to fewer steps for the thick, steppy crunch of a low-bit converter — 1 bit is near square-wave destruction.",
+      "decimate": "Sample-rate decimation (1..64): hold every Nth input sample. 1 is pristine (no decimation); higher values drop the effective sample rate for aliasing artifacts and a coarse, downsampled grain.",
+      "wet": "Dry / wet mix (0..1): 0 is the clean input, 1 is the fully crushed signal, between blends them — useful as a parallel-distortion amount."
     }
   },
   "dx7": {
@@ -454,6 +566,41 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "depth": "Sets the bipolar swing on a linear 0..1 fader, scaling BOTH the slope and the offset together so the output stays centered on 0. 1 (default) = the full unipolar→bipolar conversion (±1); 0.5 = a half-size ±0.5 swing; 0 = flat 0 regardless of input. Effectively an attenuator on the polarized signal."
     }
   },
+  "reverb": {
+    "explanation": "A simple algorithmic reverb — the minimal-knob room you reach for to 'spray a little space' on a sound or a master bus. A Faust-compiled tank diffuses the input into a decaying reflection cloud whose length you set with SIZE and whose tone you tame with DAMP, then blends that wet tail back against the dry signal with MIX. Mono in / mono out, three knobs, no CV: use two instances (or feed it from a stereo split) if you want width. For a long crystalline octave-up tail reach for SHIMMERSHINE; for a deeply tweakable diffusion engine reach for CLOUDSEED.",
+    "inputs": {
+      "audio": "The dry mono signal fed into the reverb tank. Whatever you patch here is diffused into the reflection cloud and also passed straight to the dry side of the MIX blend."
+    },
+    "outputs": {
+      "audio": "The mono output: the dry signal and the reverb tail summed in the proportion set by MIX (at MIX=0 you hear only the dry input; at MIX=1 only the wet tank). The tail's length and brightness follow SIZE and DAMP."
+    },
+    "controls": {
+      "damp": "High-frequency damping inside the tank (0..1). At 0 the tail stays bright and metallic; turning it up rolls off the highs as the reverb decays, for a warmer, darker, more natural-sounding room that doesn't hiss.",
+      "mix": "Dry / wet balance (0..1). 0 is the untouched dry signal, 1 is reverb only, and values between crossfade the two — set it low on a master bus for a touch of air, high on a send for a fully wet ambience.",
+      "size": "Tank size / decay-time macro (0..1). Low values give a short, tight room that dies away fast; high values stretch the tank into a long hall-like tail. This is the single \"how big is the space\" control."
+    }
+  },
+  "ringback": {
+    "explanation": "A stereo crush effect built from the exact glitch that used to make TWOTRACKS' monitor sound bitcrushed while recording, turned into a deliberate instrument. Each channel writes the input into a short ring buffer at an integer-cell varispeed (set by RATE) and reads it back with fractional interpolation at the same moving cursor, with FEEDBACK re-injecting the read-back into the ring. The mismatch between the stair-stepped write and the smooth read produces a crushed, comb-filtered, grainy texture whose character ranges from subtle aliasing to harsh digital smear. RATE sets the crush hardness, SIZE the ring length (comb pitch ↔ grainy smear), FEEDBACK the regenerating tail, and MIX the dry/wet. All four are a-rate, so every knob is CV-patchable.",
+    "inputs": {
+      "feedback": "CV that displaces the FEEDBACK knob, modulating how much read-back re-injects (the regenerating tail amount).",
+      "in_l": "Left-channel audio into the crush ring buffer. (A mono source is mirrored to both channels.)",
+      "in_r": "Right-channel audio into the crush ring buffer.",
+      "mix": "CV that displaces the MIX knob, modulating the dry/wet crush balance.",
+      "rate": "CV that displaces the RATE knob (linear), modulating the varispeed write rate — sweep it for shifting crush intensity and pitched-comb artifacts.",
+      "size": "CV that displaces the SIZE knob (log-scaled), modulating the ring length live (comb-filter pitch ↔ grain size)."
+    },
+    "outputs": {
+      "out_l": "Left channel of the crushed stereo output (dry blended with the crushed ring read-back per MIX).",
+      "out_r": "Right channel of the crushed stereo output."
+    },
+    "controls": {
+      "feedback": "How much of the read-back is re-injected into the ring (0..0.98). 0 is a single pass; higher values build a regenerating, resonant crushed tail; near 0.98 it rings for a long time.",
+      "mix": "Dry / wet balance (0..1): 0 is the clean input, 1 is full crush, between blends the two.",
+      "rate": "Crush amount via the varispeed write rate (0.05..4). 1 is the mildest (write and read nearly aligned); values below 1 stair-step the write hardest for the coarsest crush; higher values speed the cursor for brighter, pitched artifacts.",
+      "size": "Ring buffer length in samples, log-scaled 2..4096. Tiny sizes give a high-pitched comb-filter tone; larger sizes spread into a grainy, smeared echo-like texture."
+    }
+  },
   "rings": {
     "explanation": "A modal / string RESONATOR — a faithful port of Mutable Instruments Rings. It doesn't make a tone on its own: it RESONATES an exciter into pitched, decaying string and bell voices. Feed it an audio exciter on IN (a noise burst, a click, a drum, anything percussive works best) and it rings that energy out at the pitch set by PITCH; with nothing patched into IN, the STRUM input self-excites it with a short internal noise burst so it still sounds when you pluck it. MODEL switches the resonator type: MODAL is a bank of 24 stiffness-stretched resonant bandpass filters (harmonic at STRUCTURE 0, growing inharmonic and bell-like as STRUCTURE rises), and SYMPATHETIC is a pair of Karplus–Strong plucked strings whose detuning STRUCTURE sets. STRUCTURE/BRIGHTNESS/DAMPING/POSITION are the canonical Rings macros that sculpt the resonance — inharmonicity, high-end content, ring time, and pickup placement — and LEVEL is a soft-limited (tanh) output gain. The two outputs ODD and EVEN are complementary taps of the same resonator; patch both for a wide pseudo-stereo image, or just ODD for mono.",
     "inputs": {
@@ -552,6 +699,28 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "sequencer-snh-toggle": "Sample & Hold toggle (S&H / OFF) — the button form of the snh control: on (default) latches the pitch CV to the gate edge and holds it through rests, off lets pitch run continuously.",
       "snh": "Sample & hold on the pitch output, on by default: when on, the pitch CV is rewritten only on a step that actually fires a note, so it latches to the gate and holds steady through rests; turn it off for continuous pitch that can change on every step (including back toward rest).",
       "swing": "Shuffles the rhythm by lengthening the on-beat steps and shortening the off-beat steps that follow them, which pushes every off-beat later for a looser feel; 0 is dead-straight, higher values deepen the shuffle. Internal-clock only (an external clock sets its own timing)."
+    }
+  },
+  "shimmershine": {
+    "explanation": "A stereo shimmer reverb — the project's ambient-halo space. A Schroeder reverb tank (four comb filters and two allpasses per channel) builds a lush decaying tail, and a pitch-shifted feedback loop sends that tail back through an octave-up (+12 semitone) granular shifter, so the reverb slowly blooms upward into a crystalline, ever-rising shimmer. Bigger and dreamier than the basic REVERB, it's the reach-for reverb when you want pads, guitars, or vocals to dissolve into a glittering cloud. DECAY sets the tail length, SHIMMER sets how much octave-up energy regenerates (the defining control), SIZE sets the space, DAMP tames the highs, and MIX blends wet against dry.",
+    "inputs": {
+      "decay_cv": "CV that displaces the DECAY knob, modulating tank decay time — automate it for swelling/collapsing tails.",
+      "in_l": "Left channel of the stereo input fed into the reverb tank.",
+      "in_r": "Right channel of the stereo input fed into the tank.",
+      "mix_cv": "CV that displaces the MIX knob, modulating the dry/wet balance.",
+      "shimmer_cv": "CV that displaces the SHIMMER knob, modulating the octave-up feedback amount (the shimmer intensity).",
+      "size_cv": "CV that displaces the SIZE knob, modulating the reverb space size."
+    },
+    "outputs": {
+      "out_l": "Left channel of the stereo wet+dry output (reverb tail with its octave-up shimmer, blended against the dry input per MIX).",
+      "out_r": "Right channel of the stereo wet+dry output."
+    },
+    "controls": {
+      "damp": "High-frequency damping in the tank (0..1): higher values roll off the tail's highs as it decays, for a warmer, darker reverb that keeps the shimmer from getting harsh.",
+      "decay": "Tank decay-time macro (0..1): how long the reverb tail rings before fading — short for a room, long for an endless ambient wash.",
+      "mix": "Dry / wet balance (0..1): 0 is the untouched input, 1 is reverb only, between crossfades the two.",
+      "shimmer": "The +1-octave feedback amount (0..1) — the module's signature control. At 0 it's an ordinary reverb; turning it up feeds more of the tail through the octave-up pitch shifter so the reverb regenerates upward into the rising crystalline shimmer. High settings approach self-sustaining drones.",
+      "size": "Reverb space size (0..1): scales the comb/allpass delays for a smaller or larger-sounding room."
     }
   },
   "slewSwitch": {
@@ -683,6 +852,30 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "resp2": "Channel 2 response toggle (0 = linear, 1 = exponential). Default LINEAR.",
       "resp3": "Channel 3 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL (audio-friendly out of the box).",
       "resp4": "Channel 4 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL."
+    }
+  },
+  "warps": {
+    "explanation": "A meta-modulator after Mutable Instruments' Warps: it cross-modulates two audio signals — a CARRIER and a MODULATOR — through a chosen modulation algorithm. ALGORITHM picks the cross-mod type (XFADE = equal-power crossfade between the two; RING-MOD = ring modulation for metallic/bell tones; XOR = a 16-bit bit-mash for digital grit; COMPARATOR = waveshaping comparison modes), TIMBRE sets that algorithm's intensity/mix, and LEVEL 1 / LEVEL 2 set the carrier and modulator input gains. When nothing is patched into CARRIER IN, an internal oscillator takes over — SHAPE morphs its waveform, NOTE offsets its pitch, and the V/OCT input plays it — so WARPS doubles as a playable cross-mod synth voice, not just an effect on two external sources.",
+    "inputs": {
+      "algorithm_cv": "CV (discrete) that displaces the ALGORITHM selector, switching the cross-mod type live — step it with a sequencer to jump between XFADE / RING-MOD / XOR / COMPARATOR.",
+      "carrier_in": "External carrier audio. When patched it is the carrier the algorithm modulates; when left unpatched the internal oscillator (set by SHAPE / NOTE / V/OCT) takes its place so WARPS becomes a self-contained voice.",
+      "carrier_shape_cv": "CV that displaces the SHAPE knob, morphing the internal carrier waveform.",
+      "level_1_cv": "CV that displaces the LEVEL 1 knob, modulating carrier input gain (and the crossfade weight in XFADE mode).",
+      "level_2_cv": "CV that displaces the LEVEL 2 knob, modulating modulator input gain.",
+      "modulator_in": "External modulator audio — the second operand of the cross-modulation. Unpatched, the modulator side is silent (so e.g. RING-MOD with no modulator passes the carrier through).",
+      "pitch": "V/oct pitch input for the internal carrier oscillator. Summed with the NOTE offset; only audible when CARRIER IN is unpatched (the internal osc is in use).",
+      "timbre_cv": "CV that displaces the TIMBRE knob, modulating the active algorithm's intensity — the main \"wiggle this\" input for evolving cross-mod textures."
+    },
+    "outputs": {
+      "out": "The mono cross-modulated result of the carrier and modulator through the selected algorithm at the chosen TIMBRE intensity."
+    },
+    "controls": {
+      "algorithm": "Cross-modulation algorithm selector (discrete): 0 = XFADE (equal-power crossfade between carrier and modulator), 1 = RING-MOD (ring modulation — metallic, inharmonic tones), 2 = XOR (16-bit bitwise XOR mash — harsh digital grit), 3 = COMPARATOR (waveshaping comparison sub-modes). The card shows the current name.",
+      "carrier_shape": "Internal-carrier waveform morph (0..1): sweeps the built-in oscillator's timbre (only in play when CARRIER IN is unpatched).",
+      "level_1": "Carrier input gain (0..1) — and, in XFADE mode, its crossfade weight. Turn down to attenuate the carrier going into the cross-mod.",
+      "level_2": "Modulator input gain (0..1): how hot the modulator drives the cross-modulation.",
+      "note": "Internal-carrier pitch offset in semitones (-60..+60). Sums with the V/OCT input to set the internal oscillator's frequency (used when CARRIER IN is unpatched).",
+      "timbre": "The active algorithm's intensity / mix (0..1): in XFADE it's the carrier↔modulator balance; in RING-MOD/XOR/COMPARATOR it scales how aggressively the modulation is applied. The primary expressive control."
     }
   },
   "wavecel": {

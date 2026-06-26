@@ -68,6 +68,23 @@ export const delayDef: AudioModuleDef = {
     { id: 'mix',      label: 'Mix',  defaultValue: 0.35, min: 0,     max: 1,            curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean single-tap delay line: input → delay → feedback loop → output, mixed against the dry signal. The canonical topology every delay is built from — feed audio in, it comes back out TIME seconds later, and FEEDBACK decides how many times the echo repeats before fading. TIME is patchable as CV so you can sweep the delay for tape-warble and pitch-bend effects (the read head moves, smoothly crossfaded to avoid clicks). Use it for slapback, rhythmic echoes, or — with high feedback — long ambient washes. The same delay engine backs WAVESCULPT's FX slot, so the character matches when you pull DELAY out into a patch wire. For a thicker, degrading multi-tap delay see CHARLOTTE'S ECHOS.",
+    inputs: {
+      audio: 'The dry signal feeding the delay line. It is passed straight to the dry side of the mix and also into the delay buffer + feedback loop that produces the echoes.',
+      time: 'CV that displaces the TIME knob (linear), moving the delay read head live. Smoothed by ~10 ms so a swept delay time crossfades cleanly instead of clicking — patch an LFO here for chorus/flange-style warble or an envelope for pitch dives. Clamped to the 1 ms..2 s range.',
+    },
+    outputs: {
+      audio: 'The dry signal and the delayed/feedback echoes summed, balanced by MIX (an equal-power crossfade so the perceived loudness stays roughly constant from full-dry to full-wet).',
+    },
+    controls: {
+      time: 'Delay time in seconds, log-scaled from 1 ms up to 2 s — short for slapback and comb effects, long for distinct rhythmic echoes or ambient tails. Summed with anything patched into the TIME CV input.',
+      feedback: 'How much of the delayed output is fed back into the line (0..0.95). 0 is a single echo; higher values stack more repeats; near the 0.95 ceiling the tail rings for dozens of reps. Hard-capped below self-oscillation so a runaway patch can\'t blow your speakers.',
+      mix: 'Dry / wet balance (0..1) via an equal-power crossfade: 0 is the untouched dry signal, 1 is echoes only, and halfway keeps both at full perceptual level without sagging.',
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const inputGain = ctx.createGain();
     inputGain.gain.value = 1;
