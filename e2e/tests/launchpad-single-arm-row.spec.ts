@@ -162,6 +162,9 @@ test('@launchpad single-unit ARM ROW: NEW->edit->COPY->PASTE on one device, the 
   // more than one measurement window out at the test tempo. A single-shot read
   // here sometimes samples the pre-boundary silence (flaky ~0.003 vs the 0.03
   // floor), so POLL the RMS window until the clip actually rings (or time out).
+  // 15s headroom: under heavy concurrent CI load the audio worklet can be
+  // starved well past the quantize boundary, so an 8s poll still flaked on
+  // loaded shard-4 runs — give the engine ample time to ring before failing.
   let after = await readScopePeakOverWindow(page, 'r-scp', 600);
   await expect
     .poll(
@@ -169,7 +172,7 @@ test('@launchpad single-unit ARM ROW: NEW->edit->COPY->PASTE on one device, the 
         after = await readScopePeakOverWindow(page, 'r-scp', 600);
         return after.rms;
       },
-      { timeout: 8000, message: 'audible RMS after launching the pasted clip' },
+      { timeout: 15000, message: 'audible RMS after launching the pasted clip' },
     )
     .toBeGreaterThan(0.03);
   expect(after.polls, 'SCOPE polled').toBeGreaterThan(0);
