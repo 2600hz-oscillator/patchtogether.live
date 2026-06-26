@@ -57,6 +57,22 @@ export const moog904bDef: AudioModuleDef = {
     { id: 'range', label: 'Range', defaultValue: 1, min: 1, max: 2, curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 904B Voltage Controlled High Pass Filter — the high-pass companion to the 904A. It is a 24 dB/octave transistor-ladder HIGH-pass, built by subtracting the ladder's low-passed output from the input (input − four-pole-lowpass = the complementary four-pole highpass), so everything BELOW the cutoff is rolled off at a steep slope and the highs pass through. Use it to thin out a sound, remove rumble, or — paired with a 904A — bracket a band. Unlike the 904A there is NO resonance/regeneration knob (the hardware 904B has none): just a CUTOFF pot, a two-position RANGE switch, and a summing 1 V/octave control input for sweeping the corner with an envelope or LFO. It consumes the same shared ladder core as the 904A.",
+    inputs: {
+      audio: "The signal to be filtered — the audio fed into the ladder.",
+      cutoff_cv: "Summing 1 V/octave CONTROL INPUT to the cutoff (audio-rate). It adds exponentially onto the CUTOFF knob inside the worklet, so an envelope or LFO patched here sweeps the high-pass corner — opening up the lows as it falls, thinning the sound as it rises.",
+    },
+    outputs: {
+      audio: "The 24 dB/octave high-passed output — the input with everything below the cutoff rolled off at the four-pole slope.",
+    },
+    controls: {
+      cutoff: "The FIXED CONTROL VOLTAGE pot — the high-pass corner frequency, 4 Hz to 20 kHz on a log taper. Content below it is attenuated at the four-pole slope; raise it to thin the sound and strip bass, lower it to let more low end through. CV adds on top of this. Defaults to 1 kHz.",
+      range: "RANGE switch — LOW (the full 4 Hz–20 kHz span) or HIGH (the same sweep shifted up about 1.5 octaves), so you can place the CUTOFF pot's travel where you need it. Defaults to LOW.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
