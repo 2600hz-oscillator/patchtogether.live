@@ -315,4 +315,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'reshaper',
   'tiler',
   'freezeframe',
+  // Video batch 3 (2026-06-26): feedback/keyer/mixer/zoom + shape generators.
+  'feedback',
+  'mapper',
+  'videoMixer',
+  'inwards',
+  'shapes',
+  'shapegen',
 ]);

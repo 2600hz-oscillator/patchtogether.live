@@ -174,6 +174,27 @@ export const shapegenDef: VideoModuleDef = {
     { id: SHAPEGEN_CLOCK_PARAM_ID, label: 'CLK', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation:
+      "shapegen is a generative 3D-shape video synthesizer (extracted from FOXY's shape path). It has no straight video pass-through input: instead it reads three incoming rasters as control surfaces and synthesizes a scene of up to 8 lit primitives (sphere, cube, cone, cylinder, ring/torus, tetrahedron) floating inside a vaporwave wireframe bounding box with a faint perspective floor grid. Each raster is downsampled to an 80x60 RGBA buffer and fed to generateShapes: A's 16x16 mean-luma feature grid yields the top-8 peaks (non-max-suppressed) that place shapes in XY (if A is flat below the variance floor, NO shapes are drawn), B's luma at each peak sets Z depth, and C's luma picks the primitive type bucket (floor(c*6)), the baseline radius (0.05+c*0.25) and the hue (=c). The product of A and B luma at each peak gives a per-shape size factor of 0.5x-2x. The whole scene is painted to an OffscreenCanvas, uploaded as a texture, and blitted out a fullscreen quad. Usage: patch any three video sources into A/B/C, twist ROT to orbit the camera, raise SIZE to fatten the primitives, and flip SOLIDS for shaded vs neon-wireframe looks; patch a gate into CLK to freeze the shape set and only re-roll it on each rising edge (a visual sample-and-hold) while the camera keeps rotating.",
+    inputs: {
+      raster_a: "Video raster A. Its 16x16 mean-luma feature grid yields the top-8 peaks (non-max suppressed) that place the shapes in XY across the box; if A is nearly flat (variance below the floor), no shapes are emitted. A's luma sampled at each peak pixel also feeds the per-shape size factor (A*B → 0.5x-2x).",
+      raster_b: "Video raster B. Its luma sampled at each A peak sets that shape's Z depth (front/back in the box, mapped to [-1,1] via b*2-1). Brighter B pushes shapes toward the viewer; B also feeds the A*B per-shape size factor alongside A.",
+      raster_c: "Video raster C. Its luma at each peak selects the primitive type (floor(c*6): sphere/cube/cone/cylinder/ring/tetra), the baseline radius (0.05 + c*0.25) and the hue (=c). Brighter, more varied C yields bigger, more colorful, more diverse shapes.",
+      clock_in: "Optional sample-and-hold gate (a gate input feeding the hidden cv_clock param). Unpatched: shapes regenerate every frame. Patched: shapes re-roll only on each rising edge (hysteresis ~0.6/0.4) and freeze in between, while ROT keeps orbiting the held set. Card shows a [CLOCKED] badge when wired.",
+    },
+    outputs: {
+      out: "Video output: the rendered 3D-shapes-in-a-box scene (engine resolution, 640x480 by default) with the vaporwave wireframe cage, floor grid, and the synthesized primitives, ready to chain into any video input.",
+    },
+    controls: {
+      size: "SIZE (0.1-3, default 1): global multiplier on each shape's final radius (the C-baseline already scaled by the A*B factor), then hard-clamped to 0.6 so a maxed knob can't fill the whole box. Applied at regeneration time, so under a held clock a twist shows on the next pulse.",
+      rotate: "ROT (0-1, default 0): camera Y-axis rotation as a fraction of a full turn (0..2pi radians). Applies live every frame even while the clock holds the shape list, so you can orbit a frozen scene.",
+      solids: "SOLIDS (toggle, default 0=off): 0 = vaporwave wireframe look (neon HSL gradient silhouettes / strokes); 1 = per-primitive lit canvas2D solids for all six types (shaded sphere/cube/cylinder/cone, filled torus with punched hole, Lambert-shaded tetrahedron). The wireframe box and floor grid stay in both modes.",
+      cv_clock: "Hidden synthetic gate param backing the CLK jack (not a knob). The engine CV-bridge writes the clock_in gate sample here; a rising edge (hysteresis rise>0.6 / fall<0.4) triggers the next-frame shape regeneration for the sample-and-hold behavior.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

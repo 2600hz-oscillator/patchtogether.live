@@ -101,6 +101,25 @@ export const inwardsDef: VideoModuleDef = {
     { id: 'thickness', label: 'Thickness', defaultValue: DEFAULTS.thickness, min: 0,    max: 1,   curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation:
+      "A procedural source that synthesizes a field of concentric rings centered on the frame, with their phase scrolling inward over time so the bands appear to zoom toward the center (positive Speed) or outward (negative). The shader takes the radial distance from center, multiplies it by Density to set how many rings fit on screen, then subtracts time*Speed to animate the sweep; an abs(sin) wave is soft-banded by Thickness to render alternating bright and dark grayscale rings. There is no video input — it generates its image entirely from time and the three params, so it works without camera permissions. Use it as a hypnotic radial backdrop or a moving mask/wipe source: patch an LFO or envelope into Speed for pulsing zoom, or sweep Density for a tunnel-breathing effect.",
+    inputs: {
+      speed: "CV input that modulates the Speed control — the zoom rate of the inward ring sweep. Positive values pull rings toward the center, negative push them outward.",
+      density: "CV input that modulates the Density control, setting how many concentric rings are packed onto the screen. Higher CV tightens the spacing into a finer pattern.",
+      thickness: "CV input that modulates the Thickness control — the duty cycle of the bright bands, i.e. how wide the lit rings are versus the dark gaps between them.",
+    },
+    outputs: {
+      out: "Mono-video output carrying the rendered grayscale concentric-rings frame (bright bands on a dark field), ready to patch into any video input.",
+    },
+    controls: {
+      speed: "Speed (-2 to 2, default 0.5): the zoom rate of the rings. Positive values sweep the pattern inward toward the center, negative values sweep it outward; 0 freezes the rings still.",
+      density: "Density (1 to 50, default 10): the number of rings per screen. Low values give a few broad rings; high values pack the frame with many tight, fine concentric bands.",
+      thickness: "Thickness (0 to 1, default 0.35): the bright-ring duty cycle. Low values give thin bright rings on a wide dark field; higher values widen the lit bands and shrink the gaps between them.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
