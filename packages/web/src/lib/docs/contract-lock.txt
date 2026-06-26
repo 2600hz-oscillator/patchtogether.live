@@ -353,6 +353,7 @@ callsine param note -60..60 linear default=0 unit=st
 callsine param timbre 0..1 linear default=0.4
 cameraInput meta domain=video schema=1 maxInstances=4
 cameraInput in gain cv param=gain cvScale=linear
+cameraInput in mirror gate param=mirror edge=gate
 cameraInput out out video
 cameraInput param enabled 0..1 discrete default=1
 cameraInput param fillMode 0..1 discrete default=1
