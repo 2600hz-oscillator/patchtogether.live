@@ -1,6 +1,7 @@
 <script lang="ts">
   import IoDiagram from '$lib/docs/IoDiagram.svelte';
   import type { ManifestModule } from '$lib/docs/module-manifest';
+  import { GUIDE_PAGES } from '$lib/docs/module-guides';
 
   let { data } = $props();
   const CAT_ORDER = ['sources', 'modulation', 'filters', 'effects', 'utilities', 'output'];
@@ -42,6 +43,23 @@
   (violet); video cables (image / mono-video / video / keys) follow the same audio-cyan tone
   for now.
 </p>
+
+<section class="guides" data-testid="guides">
+  <h2 id="guides">guides &amp; hardware</h2>
+  <p class="guides-intro">
+    Hand-written, illustrated walkthroughs that live alongside the auto-generated
+    cards above — clip-launcher hardware (monome grid, Novation Launchpad), video
+    mapping, and other modules with a dedicated guide.
+  </p>
+  <div class="guide-grid">
+    {#each GUIDE_PAGES as g (g.slug)}
+      <a class="guide-card" href="/docs/modules/{g.slug}" data-testid="guide-link">
+        <span class="guide-title">{g.title}</span>
+        <span class="guide-blurb">{g.blurb}</span>
+      </a>
+    {/each}
+  </div>
+</section>
 
 <div class="cat-list" data-testid="cat-list">
   {#each cats as c (c)}
@@ -119,3 +137,45 @@
     </div>
   </section>
 {/each}
+
+<style>
+  /* Guides & hardware — the hand-written walkthrough pages (custom routes) that
+     the auto-generated catalog can't list, so they aren't orphaned. */
+  .guides {
+    margin: 1rem 0 2rem;
+  }
+  .guides-intro {
+    color: var(--doc-fg-dim, #6e7a82);
+  }
+  .guide-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+    margin: 1rem 0 0;
+  }
+  .guide-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border: 1px solid var(--doc-border-dim, #062b32);
+    background: var(--doc-bg, #000);
+    padding: 12px 14px;
+    transition: border-color 160ms, box-shadow 160ms;
+    /* override the layout's global underline-on-hover for these card links */
+    border-bottom: 1px solid var(--doc-border-dim, #062b32);
+  }
+  .guide-card:hover {
+    border-color: var(--doc-accent, #00f0ff);
+    box-shadow: 0 0 0 1px var(--doc-accent-glow, rgba(0, 240, 255, 0.45));
+  }
+  .guide-title {
+    font-family: var(--doc-sans, 'Inter', system-ui, sans-serif);
+    color: var(--doc-accent, #00f0ff);
+    font-size: 0.95rem;
+    letter-spacing: 0.02em;
+  }
+  .guide-blurb {
+    color: var(--doc-fg, #c8d4dc);
+    font-size: 0.82em;
+  }
+</style>
