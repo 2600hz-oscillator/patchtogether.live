@@ -294,6 +294,46 @@ export const macseqDef: AudioModuleDef = {
   // Instruments v1 — full 16-step grid is atomically exposable.
   exposesSequence: true,
 
+  docs: {
+    explanation:
+      "A step sequencer built to play and TIMBRE-sequence a MACROOSCILLATOR: alongside the usual note + gate, every step also picks one of the macro oscillator's synthesis models, so the sound can morph from step to step. It walks a playhead across up to 128 steps (16 per page, 8 pages), emitting pitch CV, a gate, and a dedicated MODEL CV — patch MODEL CV into a macrooscillator's model_cv input and the oscillator switches engine on each step (a step left blank holds the previous step's model). It runs on its own BPM clock or an external clock fed into CLOCK IN, supports swing-free 16th-note stepping, and carries the full transport toolkit: play/reset CV, eight quicksave pattern slots, and next/prev/random navigation gates that switch patterns quantized to the loop's end.",
+    inputs: {
+      clock:
+        "External clock: each rising edge advances the playhead exactly one step. While anything is patched here the internal BPM is ignored and the incoming pulses set the pace (and run the sequencer); unpatch to fall back to the BPM clock.",
+      play_cv: "A rising edge toggles play/stop (each pulse flips the run state).",
+      reset_cv: "A rising edge snaps the playhead back to step 1 and restarts the loop.",
+      queue1_cv: "A rising edge queues pattern slot 1 — applied at the end of the current loop, then plays it from step 1 (no-op if empty).",
+      queue2_cv: "A rising edge queues pattern slot 2 — applied at the end of the current loop (no-op if empty).",
+      queue3_cv: "A rising edge queues pattern slot 3 — applied at the end of the current loop (no-op if empty).",
+      queue4_cv: "A rising edge queues pattern slot 4 — applied at the end of the current loop (no-op if empty).",
+      queue5_cv: "A rising edge queues pattern slot 5 — applied at the end of the current loop (no-op if empty).",
+      queue6_cv: "A rising edge queues pattern slot 6 — applied at the end of the current loop (no-op if empty).",
+      queue7_cv: "A rising edge queues pattern slot 7 — applied at the end of the current loop (no-op if empty).",
+      queue8_cv: "A rising edge queues pattern slot 8 — applied at the end of the current loop (no-op if empty).",
+      next_cv:
+        "A rising edge latches a 'move to the next filled slot' request applied at the end of the current loop (quantized, not instant); it skips empty slots and wraps around.",
+      prev_cv: "A rising edge latches a 'move to the previous filled slot' request, applied at the end of the current loop (skips empties, wraps).",
+      random_cv: "A rising edge latches a 'jump to a random filled slot' request, applied at the end of the current loop.",
+    },
+    outputs: {
+      pitch: "The current step's note as pitch CV (V/oct), transposed by the octave control; falls back to C3 when a step has no note.",
+      gate:
+        "Goes high on each ON step and low on rests or when stopped; how long it stays high within the step is set by the gate-length control — patch into an envelope or VCA.",
+      modelcv:
+        "The current step's MACROOSCILLATOR model index as CV — patch into a macrooscillator's model_cv input to switch its synthesis engine per step. A step with no model set holds the previously emitted index, so the sound only changes when you change it.",
+      clock: "A short ~10 ms pulse on every step advance, regardless of whether the step is on — chain it into another sequencer's clock in.",
+    },
+    controls: {
+      bpm:
+        "Internal tempo in beats per minute (each step is a 16th note, so the step rate is 4× the BPM), used only when nothing is patched into CLOCK IN.",
+      length: "How many steps the playhead walks before wrapping to step 1; raising it past 16 reveals more pages, lowering it shortens the loop.",
+      octave: "Shifts every step's pitch up or down by whole octaves at once (-2 to +2).",
+      gateLength: "How much of each step the gate stays high, from a short 10% stab to a near-legato 95% (it always closes just before the next step).",
+      isPlaying:
+        "The run/stop state: 1 plays, 0 stops and forces the gate low; starting playback snaps the playhead back to step 1. Same control as the card's PLAY button. (An external clock can drive stepping even while this reads stopped.)",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
 

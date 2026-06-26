@@ -108,6 +108,41 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "tilt": "LF/HF balance in the loop (-1..+1): negative tilts the recirculating energy toward the lows (darker, boomier resonance), positive toward the highs (brighter, more metallic)."
     }
   },
+  "atlantisCatalyst": {
+    "explanation": "A slow-drift 'macro brain' (displayed as SCENECHANGE) that nudges a whole patch into new states without you touching every knob. It emits EIGHT correlated CV outputs (drift1–drift8), each a smooth band-limited random walk; a Coherence control sets how tightly the eight tracks move together versus wandering independently, and a Chaos control sets how much they jitter. On a timer (Drift sets the spacing, from a few seconds to minutes) — or on demand via the NUDGE button/gate — it transitions to a fresh 'scene', ramping all eight outputs smoothly to new targets. A scene_pulse gate fires on each transition and a scene_idx CV reports which scene is current, so downstream sequencers can follow along. You can save up to four scenes and recall them deterministically (the queue CV inputs jump straight to a scene), and FREEZE latches every output where it stands. Patch the drift outputs into filter cutoffs, mix levels, FX depths — anywhere you'd want hands-free, slowly-evolving modulation.",
+    "inputs": {
+      "freeze": "While this gate is held high, all eight drift outputs latch at their current values and stop wandering; drop it low (or toggle the card's FREEZE button) to release them.",
+      "nudge": "A rising edge manually triggers the next scene transition (the same as the card's NUDGE button), cycling the scene index forward. Ignored while frozen.",
+      "play_cv": "Shared transport play gate (reserved for transport sync); ATLANTIS-CATALYST takes its scene jumps from the queue inputs below.",
+      "queue1_cv": "A rising edge jumps to scene 1 — recalling its saved snapshot if one exists, otherwise making a fresh transition toward scene-index 1.",
+      "queue2_cv": "A rising edge jumps to scene 2 — recalling its saved snapshot if one exists, else a fresh transition.",
+      "queue3_cv": "A rising edge jumps to scene 3 — recalling its saved snapshot if one exists, else a fresh transition.",
+      "queue4_cv": "A rising edge jumps to scene 4 — recalling its saved snapshot if one exists, else a fresh transition.",
+      "reset_cv": "Shared transport reset gate (reserved for transport sync).",
+      "seed_cv": "Per-instance seed CV: latches the random-walk generator's seed so the drift sequence can be made reproducible across sessions."
+    },
+    "outputs": {
+      "drift1": "Smooth band-limited random-walk CV (-1..+1), channel 1; ramps toward a new target on each scene change and jitters within it by the Chaos amount. Patch into any modulation destination.",
+      "drift2": "Random-walk CV channel 2 — correlated with the others by the Coherence amount.",
+      "drift3": "Random-walk CV channel 3.",
+      "drift4": "Random-walk CV channel 4.",
+      "drift5": "Random-walk CV channel 5.",
+      "drift6": "Random-walk CV channel 6.",
+      "drift7": "Random-walk CV channel 7.",
+      "drift8": "Random-walk CV channel 8 — the eighth of the correlated drift bank.",
+      "scene_idx": "CV that reports the current scene as a voltage (-1..+1 across scenes 0..3), so another module can address its own scene/snapshot selector from this one.",
+      "scene_pulse": "A short gate pulse that fires on every scene transition (timer, manual nudge, or queued recall) — patch it where you want a downstream event to mark 'a new scene just started'."
+    },
+    "controls": {
+      "autoMode": "Whether scenes change on their own: on (default) transitions automatically on the Drift timer; off means scenes only change when you nudge or send a queue CV.",
+      "bias": "A DC offset added to all eight drift outputs (-1..+1), tilting the whole bank's average higher or lower.",
+      "chaos": "How much micro-jitter the eight outputs add even while holding a scene (0..1): 0 is glassy-smooth, higher values keep the voltages subtly alive.",
+      "coherence": "How tightly the eight channels move together (0..1): 0 makes them fully independent random walks, 1 locks them onto one shared 'weather' voltage, and 0.55 (default) is a balanced blend.",
+      "driftRate": "How long between automatic scene changes, from a few seconds (high) to several minutes (low) — how restlessly the brain explores new states (the card's Drift fader).",
+      "level": "Overall output amplitude of the eight drift CVs (0..1), ramped smoothly when changed to avoid clicks.",
+      "sceneDepth": "How far each scene transition moves the outputs (0..1) — small for gentle shifts, large for dramatic jumps between scenes."
+    }
+  },
   "attenumix": {
     "explanation": "The simple, no-surprises mixer: four channels, each with its own attenuator knob (0..1) and a CV input that sums into that knob, plus a per-channel direct out and one summed MIX output. Per channel out = in · clamp(knob + cv, 0, 1) — the attenuators only ATTENUATE, they never boost or invert (a negative knob+CV mutes, not phase-flips). The four channels sum and pass through a MASTER gain, then a tanh soft-clip: out = tanh(sum · master). Master goes up to ×2, so pushing past unity drives the sum into the tanh for warm saturation instead of a hard digital clip. Compared with VEILS (same quad-VCA-plus-mix topology) ATTENUMIX is the toggle-free 'just the mixer' version — the boost lives on the master, not per channel. There is a DSP worklet for the per-sample math.",
     "inputs": {
@@ -180,6 +215,30 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "morph": "Harmonic-lock strength (0..1): pulls the tracked partials toward an exact harmonic series of the detected fundamental — 0 leaves them where the analysis found them (inharmonic, faithful), higher values snap them tonal.",
       "note": "Semitone transpose of the whole output (-60 to +60), added to the 1V/oct pitch input — shift the resynth up or down without changing its timing.",
       "timbre": "Smoothing/slew macro (0..1, mapping to roughly 5 ms–2 s): low tracks the input crisply, high smears partials over time for a blurred, evolving texture."
+    }
+  },
+  "cartesian": {
+    "explanation": "A 4×4 grid sequencer (16 pads) that picks notes by their X/Y position rather than by a single playhead line. Each pad holds a note plus an on/off gate and an optional chord (mono / major / minor); whichever pad is currently selected is what plays. There are two ways to move across the grid: in FREEFORM mode the X and Y CV inputs steer the cursor continuously (a gate fires whenever the selected pad changes), and in CLOCKED mode an incoming clock advances the cursor one step (an axis with nothing patched auto-increments around its 0..3 lane). Built in is a clock-locked LFO with two outputs 90° apart — patch lfo_x → x_cv and lfo_y → y_cv and the cursor draws a circle/Lissajous around the grid. The pitch output is a poly chord cable, so a polyphonic voice can play a pad's whole chord while a mono pitch input still hears just the root.",
+    "inputs": {
+      "clock": "Step clock for CLOCKED mode: each rising edge advances the cursor one pad (an axis with no X/Y CV patched auto-increments 0→1→2→3→0). Patching a clock here also acts as the play signal. Leave it unpatched to run in FREEFORM mode, where the X/Y CV inputs steer the cursor instead.",
+      "lfo_clock": "Tempo reference for the built-in LFO: the time between successive rising edges sets the LFO's base rate (multiplied by the Div control). It only paces the LFO outputs — it does NOT advance the grid cursor.",
+      "x_cv": "Bipolar CV (-1..+1) that selects the grid COLUMN by quantizing into four equal bands (0..3). In FREEFORM mode it tracks continuously; in CLOCKED mode, if this is patched it sets the column directly while the unpatched axis auto-increments on each clock.",
+      "y_cv": "Bipolar CV (-1..+1) that selects the grid ROW the same way the X CV selects the column. Patch lfo_y here (with lfo_x → x_cv) to sweep rows in quadrature for circular cursor motion."
+    },
+    "outputs": {
+      "clock": "A short ~10 ms pulse fired on every cursor advance, regardless of whether that pad is on or off — the 'I just stepped' signal. Patch it into another sequencer's clock in to chain them.",
+      "gate": "Goes high when the selected pad changes (FREEFORM) or on each clock edge (CLOCKED), then back low after the fraction of the step set by the gate-length control — patch it into an envelope or VCA to articulate each note.",
+      "lfo_x": "The built-in LFO's first phase. Its rate follows the lfo_clock input (or a default when unpatched) scaled by Div, and its shape is set by Wave. Never sample-and-held — it free-runs. Patch into x_cv for self-driven cursor motion.",
+      "lfo_y": "The built-in LFO's second phase, a quarter-cycle (90°) behind lfo_x. Patch lfo_x → x_cv and lfo_y → y_cv to walk the cursor in a circle/Lissajous figure across the grid.",
+      "pitch": "The selected pad's note as pitch CV (V/oct) across the poly chord lanes; a mono pitch input automatically receives just the root note. With sample & hold on (the default) it only updates when a gate fires and holds steady on rests, so the pitch doesn't glitch as the cursor crosses silent pads."
+    },
+    "controls": {
+      "gateLength": "How much of each step the gate stays high, from a short 10% stab to a near-legato 95%; longer values hold downstream envelopes open for most of the step.",
+      "lfoDiv": "Division/multiplication of the built-in LFO relative to the lfo_clock rate, stepped through 1/8, 1/4, 1/2, 1/1, ×1.5, ×2, ×4, ×8 (default 1/1) — lower indices make the LFO sweep slowly across several clocks, higher indices run it faster than the clock.",
+      "lfoShape": "Morphs the built-in LFO waveform continuously from sine (0) through triangle (1) and sawtooth (2) to square (3), cross-fading between adjacent shapes at in-between values.",
+      "mode": "Cursor-advance mode: FREEFORM (0) lets the X/Y CV inputs steer the cursor continuously and fires a gate on each change; CLOCKED (1) advances one pad per incoming clock edge, auto-incrementing whichever axis has no CV patched. The card's LIN/X-Y face button toggles this same setting.",
+      "octave": "Shifts every pad's pitch up or down by whole octaves at once (-2 to +2); chords transpose as a block so their internal intervals stay intact.",
+      "snh": "Sample & hold on the pitch output, on by default: when on (the card's S&H face button), in FREEFORM mode the pitch CV is rewritten only when a gate fires and otherwise holds, so the pitch doesn't smear as the cursor passes over silent pads; turn it off for continuous re-emit on every cursor move. The LFO outputs are never held."
     }
   },
   "charlottesEchos": {
@@ -445,6 +504,49 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "volume": "Per-hit output gain from silence to 2x, used to set the voice's level in a kit or to drive accents."
     }
   },
+  "drumseqz": {
+    "explanation": "A four-track drum/trigger sequencer: four independent rows of steps (16 visible per page, up to 128 across 8 pages) that all share one playhead and one tempo. Each row emits its own gate + pitch pair, so it's the natural drive for a four-voice drum rack (it pairs with RIOTGIRLS' four voices). Per step in a row you set on/off and an optional pitch (a lit step with no note plays the row's root note), and each row also has a Euclidean fill that scatters N evenly-spread hits across the page for instant rhythms. The playhead steps on its own BPM clock or on an external clock fed into CLOCK IN, with swing to shuffle the feel; a transport row plus the CV inputs (play / reset / queue) let you drive and switch four saved patterns hands-free.",
+    "inputs": {
+      "clock": "External clock: each rising edge advances the shared playhead exactly one step. While anything is patched here the internal BPM is ignored and the incoming pulses set the pace (and act as the play signal); unpatch to fall back to the BPM clock.",
+      "play_cv": "A rising edge toggles play/stop (each pulse flips the current run state); when patched it takes priority over the clock-as-play behavior.",
+      "queue1_cv": "A rising edge queues quicksave slot 1: it finishes the current loop, then switches to that saved pattern and restarts from step 1 (does nothing if the slot is empty).",
+      "queue2_cv": "A rising edge queues quicksave slot 2 — applied at the end of the current loop, then plays that pattern from step 1 (no-op if the slot is empty).",
+      "queue3_cv": "A rising edge queues quicksave slot 3 — applied at the end of the current loop, then plays that pattern from step 1 (no-op if the slot is empty).",
+      "queue4_cv": "A rising edge queues quicksave slot 4 — applied at the end of the current loop, then plays that pattern from step 1 (no-op if the slot is empty).",
+      "reset_cv": "A rising edge snaps the playhead back to step 1 and restarts the loop for all four tracks at once."
+    },
+    "outputs": {
+      "clock": "A short ~10 ms pulse fired on every step advance, regardless of which steps are lit — the 'I just stepped' signal. Patch it into another sequencer's clock in to chain them in lockstep.",
+      "gate1": "Track 1's gate: goes high on each lit step of row 1 (low on rests and off-steps), staying high for the fraction of the step set by the gate-length control. Patch into a drum voice's trigger or an envelope.",
+      "gate2": "Track 2's gate — high on each lit step of row 2, shaped by the gate-length control.",
+      "gate3": "Track 3's gate — high on each lit step of row 3, shaped by the gate-length control.",
+      "gate4": "Track 4's gate — high on each lit step of row 4, shaped by the gate-length control.",
+      "pitch1": "Track 1's pitch CV (V/oct): the lit step's note if it has one, otherwise track 1's root note, transposed by the track and global octave controls.",
+      "pitch2": "Track 2's pitch CV (V/oct): the step's note, or track 2's root note, plus the octave offsets.",
+      "pitch3": "Track 3's pitch CV (V/oct): the step's note, or track 3's root note, plus the octave offsets.",
+      "pitch4": "Track 4's pitch CV (V/oct): the step's note, or track 4's root note, plus the octave offsets."
+    },
+    "controls": {
+      "bpm": "Internal tempo in beats per minute (each step is a 16th note, so the step rate is 4× the BPM), used only when nothing is patched into CLOCK IN; with an external clock patched it no longer sets the pace.",
+      "gateLength": "How much of each step every track's gate stays high, from a short 10% trigger to a near-legato 95% (it always closes just before the next step).",
+      "isPlaying": "The run/stop state: 1 plays, 0 stops and forces every gate low. Starting playback snaps the playhead back to step 1. (With an external clock patched, the clock edges can drive stepping even while this reads stopped.) Same control as the card's PLAY button.",
+      "length": "How many steps the playhead walks before wrapping back to step 1; raising it past 16 reveals more pages, lowering it shortens the loop (steps beyond the length still hold their data but are skipped and shown dimmed).",
+      "octave": "Global octave transposition added on top of every track's own octave offset (-2 to +2), shifting all four rows together.",
+      "swing": "Shuffles the rhythm by lengthening the on-beat steps and shortening the off-beat steps after them, pushing the off-beats later for a looser feel; 0 is dead-straight, higher values deepen the shuffle. Internal-clock only.",
+      "trk1_euclid": "Track 1's Euclidean fill: 0 leaves the row's hand-drawn pattern alone; 1..16 replaces the page with that many hits spread as evenly as possible across the 16 steps (the classic Euclidean rhythm), repeated on every page.",
+      "trk1_octave": "Track 1's octave offset, added after the note-to-V/oct conversion (-2 to +2), on top of the global octave.",
+      "trk1_root": "Track 1's root note (MIDI 33..114) — the pitch a lit step plays when that step has no note of its own.",
+      "trk2_euclid": "Track 2's Euclidean fill: 0 keeps the hand-drawn row; 1..16 spreads that many hits evenly across the page.",
+      "trk2_octave": "Track 2's octave offset, added on top of the global octave (-2 to +2).",
+      "trk2_root": "Track 2's root note (MIDI 33..114) — used when a lit step has no note of its own.",
+      "trk3_euclid": "Track 3's Euclidean fill: 0 keeps the hand-drawn row; 1..16 spreads that many hits evenly across the page.",
+      "trk3_octave": "Track 3's octave offset, added on top of the global octave (-2 to +2).",
+      "trk3_root": "Track 3's root note (MIDI 33..114) — used when a lit step has no note of its own.",
+      "trk4_euclid": "Track 4's Euclidean fill: 0 keeps the hand-drawn row; 1..16 spreads that many hits evenly across the page.",
+      "trk4_octave": "Track 4's octave offset, added on top of the global octave (-2 to +2).",
+      "trk4_root": "Track 4's root note (MIDI 33..114) — used when a lit step has no note of its own."
+    }
+  },
   "dx7": {
     "explanation": "A 6-operator FM synthesizer modeled on the Yamaha DX7. Each of its six operators is a sine oscillator with its own pitch ratio and 4-stage envelope; instead of filtering a rich waveform, the operators modulate each other's frequency — one of 32 fixed ALGORITHM wiring diagrams decides which operators are CARRIERS (heard at the output) and which are MODULATORS bending a carrier's pitch faster than you can hear, which is what sculpts FM's metallic, bell-like, and electric-piano timbres. Pick a classic DX7 voice from the PRESET menu (or load your own .syx cartridge), choose an algorithm, and play it polyphonically: it allocates up to 5 voices, one per incoming note. A player-dialable master ADSR sits on top of each loaded patch's built-in operator envelopes for extra swell and release shaping.",
     "inputs": {
@@ -599,6 +701,39 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "trigShape": "The waveform of the TRIG output pulse — toggles between a short triangle (TRI, the gentle default) and a hard square (SQR). Display/feel only; both fire once per rising edge with the same canonical pulse width."
     }
   },
+  "grids": {
+    "explanation": "A topographic drum-pattern generator (a port of Mutable Instruments Grids) that produces three drum trigger streams — kick (BD), snare (SD), hi-hat (HH) — plus an accent. Instead of drawing steps, you steer an X/Y pad across a built-in map of drum patterns: the X/Y position blends between many curated 32-step grooves, and a per-instrument Density knob decides how many of that groove's hits actually fire (low = sparse, high = busy). A Chaos control sprinkles in random variation each loop, and Swing shuffles the off-beats. It clocks from its own BPM or an external CLOCK IN, and there's an alternate Euclidean mode that swaps the drum map for evenly-spread Euclidean rhythms. Patch BD/SD/HH into three drum voices and the accent into a VCA/velocity input for dynamics.",
+    "inputs": {
+      "bdDensity_cv": "CV that sums onto the kick (BD) Density — modulate how many kick hits fire.",
+      "chaos_cv": "CV that sums onto Chaos — modulate how much random variation is sprinkled into the pattern.",
+      "clock": "External clock: each rising edge advances the 32-step pattern one step. While patched it sets the pace; unpatch to run on the internal tempo.",
+      "hhDensity_cv": "CV that sums onto the hi-hat (HH) Density — modulate how many hat hits fire.",
+      "mapX_cv": "CV that sums onto the X pad coordinate, sweeping the drum map left-right to morph the groove's character.",
+      "mapY_cv": "CV that sums onto the Y pad coordinate, sweeping the drum map top-bottom to morph the groove's character.",
+      "reset": "A rising edge resets the pattern back to step 0, realigning the groove to the downbeat.",
+      "sdDensity_cv": "CV that sums onto the snare (SD) Density — modulate how many snare hits fire.",
+      "swing_cv": "CV that sums onto Swing — modulate the off-beat shuffle (0..0.75)."
+    },
+    "outputs": {
+      "accent": "Accent gate: fires on the loud steps (any instrument's accent bit set this step) — patch into a VCA or velocity input to emphasize the strong hits.",
+      "bd": "Kick / bass-drum trigger gate: fires on each step whose map level clears the BD density threshold. Patch into a kick voice's trigger.",
+      "clock": "A short pulse on every step advance — chain it into another module's clock in to lock everything to the Grids tempo.",
+      "hh": "Hi-hat trigger gate: fires when the step level clears the HH density threshold.",
+      "sd": "Snare trigger gate: fires when the step level clears the SD density threshold."
+    },
+    "controls": {
+      "bdDensity": "How busy the kick is (0..1): 0 plays almost no kicks, 1 plays the groove's full kick pattern.",
+      "chaos": "How much random variation is mixed into the pattern each loop (0..1): 0 is the clean curated groove, higher values perturb the hits for evolving fills.",
+      "hhDensity": "How busy the hi-hat is (0..1), from sparse to the full hat pattern.",
+      "isPlaying": "Run/stop transport (1 = running, 0 = stopped); the card's RUN button. Note this defaults to running.",
+      "mapX": "The X coordinate of the pad on the drum map (0..1) — selects the groove's character along one axis (summed with the mapX_cv input).",
+      "mapY": "The Y coordinate of the pad on the drum map (0..1) — selects the groove's character along the other axis (summed with the mapY_cv input).",
+      "mode": "Pattern engine: DRUMS (the default) walks the curated X/Y drum map; EUCLIDEAN swaps it for evenly-spread Euclidean rhythms whose fill follows the density knobs. The card's mode button toggles this.",
+      "sdDensity": "How busy the snare is (0..1), from sparse to the full snare pattern.",
+      "swing": "Off-beat shuffle (0..0.75): 0 is dead-straight, higher values push the off-beat steps later for a swung feel.",
+      "tempo": "Internal tempo in beats per minute, used when nothing is patched into CLOCK IN."
+    }
+  },
   "helm": {
     "explanation": "A full polyphonic subtractive (analog-style) synth voice — a port of Matt Tytel's Helm. The signal chain per voice is: two morphing oscillators (each saw/square/triangle/sine, with their own tune, transpose, unison stack and detune) plus a sub-oscillator and a noise source are mixed, run through one state-variable multimode resonant filter (low-pass / band-pass / high-pass, 12 or 24 dB/oct), and shaped by an amplitude VCA. Three dedicated ADSR envelopes drive it: the AMP envelope shapes loudness, the FILTER envelope sweeps the filter cutoff by an amount you set, and the MOD envelope is a spare modulation source. Two LFOs and a built-in 16-step sequencer add motion. Mental model: hold notes (via MIDI or a patched gate) and each note grabs one of up to 8 voices; voiceCount sets how many notes can sound at once, and voices are stolen oldest-first when you run out. v1 pre-wires the modulators to musical destinations (LFO1→cutoff, LFO2→osc2 pitch, MOD env→osc1 pitch, step sequencer→osc2 transpose) rather than exposing Helm's full mod matrix.",
     "inputs": {
@@ -693,6 +828,27 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "att4_amount": "Channel-4 attenuverter (-1 to +1, default +1): scales input 4 into ATT4, adds it to SUM and subtracts it in DIFF; 0 mutes, negative inverts."
     }
   },
+  "kria": {
+    "explanation": "A four-track grid sequencer modelled on the monome Kria, where each track is not one pattern but several layered ones: separate per-step lanes for trigger, note, octave, duration, probability, glide and ratchet, plus its own loop window (start + length), clock division and play direction (forward / reverse / ping-pong / drunk / random). All four tracks share a base 16th-note clock (from a TIMELORDE node, an external CLOCK IN, or the local BPM) but each can run at its own division and loop length, so the tracks drift in and out of phase to build long evolving lines. A shared scale and root quantize the note + octave lanes into pitch CV, and you can stash 16 whole patterns and cue between them quantized to the loop boundary. Each track emits a pitch CV (with optional glide) and a gate (shaped by its duration and subdivided by its ratchet). The card edits one track/page at a time; an optional monome grid drives the same edits.",
+    "inputs": {
+      "clock": "External base clock: each rising edge advances the shared 16th-note grid one tick, from which every track derives its own stepping via its clock division. When patched it overrides the internal BPM for step timing (the rack tempo still sets gate/glide durations), and the pulses themselves run the sequencer.",
+      "reset": "A rising edge (a trigger) re-anchors all four tracks to the start of their loop windows at once and clears any pending pattern cue, so everything restarts cleanly together."
+    },
+    "outputs": {
+      "gate1": "Track 1's gate: goes high on steps whose trigger lane is set and whose probability roll passes; the duration lane sets how wide it stays high and the ratchet lane subdivides it into 1–4 evenly-spaced re-hits within the step.",
+      "gate2": "Track 2's gate, shaped by track 2's duration, probability and ratchet lanes.",
+      "gate3": "Track 3's gate, shaped by track 3's duration, probability and ratchet lanes.",
+      "gate4": "Track 4's gate, shaped by track 4's duration, probability and ratchet lanes.",
+      "pitch1": "Track 1's pitch CV (V/oct): the current step's note + octave lanes mapped through the shared scale and root, with the glide lane slewing the ramp between steps for portamento.",
+      "pitch2": "Track 2's pitch CV (V/oct), quantized through the shared scale/root with its own glide slew.",
+      "pitch3": "Track 3's pitch CV (V/oct), quantized through the shared scale/root with its own glide slew.",
+      "pitch4": "Track 4's pitch CV (V/oct), quantized through the shared scale/root with its own glide slew."
+    },
+    "controls": {
+      "bpm": "Internal fallback tempo in beats per minute, used only when there is no TIMELORDE node in the rack AND nothing is patched into CLOCK IN; when a TIMELORDE is present its tempo wins, and an external clock overrides both.",
+      "running": "Local play/stop transport (1 = running, 0 = stopped), exposed as the card's RUN button. When a TIMELORDE node exists its run state drives playback instead, and an external clock's pulses can run the tracks regardless."
+    }
+  },
   "lfo": {
     "explanation": "A low-frequency modulation source: one oscillator emits the same wave at four phase taps (0°/90°/180°/270°) so a single LFO can sweep several voices in stereo or quadrature without re-tuning. Rate sets the cycle speed, Shape continuously morphs the waveform (sine → saw → square), and Depth scales the swing. In a shared/multiplayer rack the phase is anchored to the rack's shared clock so every client sees the same value at the same moment; solo on the public canvas it simply free-runs from phase 0.",
     "inputs": {
@@ -737,6 +893,77 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "morph": "The third universal macro (0..1), model-specific: saw→square→triangle morph (VA), folder↔tanh crossfade (WAVESHAPE), feedback (FM 2-OP) / envelope decay (FM 6-OP), chord spread (CHORD), even/odd balance (ADDITIVE), damping (STRING), mode-amp morph (MODAL), body decay (KICK/SNARE), decay length (HIHAT), phase-distortion (WAVETABLE), grain-envelope shape (GRANULAR), pitched→whispered source (SPEECH).",
       "note": "Fixed pitch offset in semitones (−60..+60 st) added on top of the PITCH V/oct input — a manual transpose for tuning the oscillator without re-patching, separate from the per-note tracking that PITCH provides.",
       "timbre": "The second universal macro (0..1), model-specific: wavefolder drive (VA), distortion drive (WAVESHAPE), FM modulation index (FM), voice waveform sine→saw (CHORD), spectral tilt (ADDITIVE), excitation brightness (STRING), resonance Q (MODAL), click amount (KICK), noise hi-pass (SNARE), metallic↔noise blend (HIHAT), LP filter (WAVETABLE), pitch jitter (GRANULAR), formant Q (SPEECH)."
+    }
+  },
+  "macseq": {
+    "explanation": "A step sequencer built to play and TIMBRE-sequence a MACROOSCILLATOR: alongside the usual note + gate, every step also picks one of the macro oscillator's synthesis models, so the sound can morph from step to step. It walks a playhead across up to 128 steps (16 per page, 8 pages), emitting pitch CV, a gate, and a dedicated MODEL CV — patch MODEL CV into a macrooscillator's model_cv input and the oscillator switches engine on each step (a step left blank holds the previous step's model). It runs on its own BPM clock or an external clock fed into CLOCK IN, supports swing-free 16th-note stepping, and carries the full transport toolkit: play/reset CV, eight quicksave pattern slots, and next/prev/random navigation gates that switch patterns quantized to the loop's end.",
+    "inputs": {
+      "clock": "External clock: each rising edge advances the playhead exactly one step. While anything is patched here the internal BPM is ignored and the incoming pulses set the pace (and run the sequencer); unpatch to fall back to the BPM clock.",
+      "next_cv": "A rising edge latches a 'move to the next filled slot' request applied at the end of the current loop (quantized, not instant); it skips empty slots and wraps around.",
+      "play_cv": "A rising edge toggles play/stop (each pulse flips the run state).",
+      "prev_cv": "A rising edge latches a 'move to the previous filled slot' request, applied at the end of the current loop (skips empties, wraps).",
+      "queue1_cv": "A rising edge queues pattern slot 1 — applied at the end of the current loop, then plays it from step 1 (no-op if empty).",
+      "queue2_cv": "A rising edge queues pattern slot 2 — applied at the end of the current loop (no-op if empty).",
+      "queue3_cv": "A rising edge queues pattern slot 3 — applied at the end of the current loop (no-op if empty).",
+      "queue4_cv": "A rising edge queues pattern slot 4 — applied at the end of the current loop (no-op if empty).",
+      "queue5_cv": "A rising edge queues pattern slot 5 — applied at the end of the current loop (no-op if empty).",
+      "queue6_cv": "A rising edge queues pattern slot 6 — applied at the end of the current loop (no-op if empty).",
+      "queue7_cv": "A rising edge queues pattern slot 7 — applied at the end of the current loop (no-op if empty).",
+      "queue8_cv": "A rising edge queues pattern slot 8 — applied at the end of the current loop (no-op if empty).",
+      "random_cv": "A rising edge latches a 'jump to a random filled slot' request, applied at the end of the current loop.",
+      "reset_cv": "A rising edge snaps the playhead back to step 1 and restarts the loop."
+    },
+    "outputs": {
+      "clock": "A short ~10 ms pulse on every step advance, regardless of whether the step is on — chain it into another sequencer's clock in.",
+      "gate": "Goes high on each ON step and low on rests or when stopped; how long it stays high within the step is set by the gate-length control — patch into an envelope or VCA.",
+      "modelcv": "The current step's MACROOSCILLATOR model index as CV — patch into a macrooscillator's model_cv input to switch its synthesis engine per step. A step with no model set holds the previously emitted index, so the sound only changes when you change it.",
+      "pitch": "The current step's note as pitch CV (V/oct), transposed by the octave control; falls back to C3 when a step has no note."
+    },
+    "controls": {
+      "bpm": "Internal tempo in beats per minute (each step is a 16th note, so the step rate is 4× the BPM), used only when nothing is patched into CLOCK IN.",
+      "gateLength": "How much of each step the gate stays high, from a short 10% stab to a near-legato 95% (it always closes just before the next step).",
+      "isPlaying": "The run/stop state: 1 plays, 0 stops and forces the gate low; starting playback snaps the playhead back to step 1. Same control as the card's PLAY button. (An external clock can drive stepping even while this reads stopped.)",
+      "length": "How many steps the playhead walks before wrapping to step 1; raising it past 16 reveals more pages, lowering it shortens the loop.",
+      "octave": "Shifts every step's pitch up or down by whole octaves at once (-2 to +2)."
+    }
+  },
+  "marbles": {
+    "explanation": "A random sampler and clock generator (a port of Mutable Instruments Marbles) with two halves driven by one master clock. The T section makes random GATES (two outputs, t1/t2) whose character is set by a model — coin-toss, clusters, drum-like, independent, three-state, or Markov — plus bias and jitter. The X section makes three random CONTROL VOLTAGES (x1/x2/x3) whose Spread sets how wide they wander, Bias sets their average, Steps adds lag/portamento, and a Scale quantizes them to musical notes. The killer feature is Déjà Vu: turn it up and the otherwise-random stream LOCKS into a repeating loop (length set per section), so you can dial smoothly from pure chance to a fixed pattern and anywhere in between. Every control also has a dedicated CV input so the randomness itself can be modulated.",
+    "inputs": {
+      "dejavu_cv": "CV that modulates the T-section Déjà Vu (0..1) — sweeps the gate stream from fully random toward a locked, repeating loop.",
+      "length_cv": "CV that modulates the T loop Length (1..16 steps) used when Déjà Vu locks the gate pattern.",
+      "rate_cv": "CV that modulates the master clock Rate (in semitones, summed with the knob) — speeds up or slows down both the T and X sections together.",
+      "scale_cv": "Discrete CV that modulates the X-section quantizer Scale select (C major, C minor, pentatonic, Pelog, Raag Bhairav, Raag Shri).",
+      "spread_cv": "CV that modulates the X-section Spread (0..1) — widens or narrows how far the three random voltages wander from the mean.",
+      "steps_cv": "CV that modulates the X-section Steps (0..1) — adds lag/portamento so the voltages glide between values instead of jumping.",
+      "tbias_cv": "CV that modulates the T-section Bias (0..1, summed with the knob) — skews the gate distribution sparser or denser.",
+      "tjitter_cv": "CV that modulates the T-section Jitter (0..1) — adds or removes timing humanization on the random gates.",
+      "tmodel_cv": "Discrete CV that modulates the T-section Model select, stepping between COIN / CLUSTERS / DRUMS / INDEP / 3-STATE / MARKOV.",
+      "xbias_cv": "CV that modulates the X-section Bias (0..1) — shifts the average level of the three random voltages.",
+      "xdejavu_cv": "CV that modulates the X-section Déjà Vu (0..1) — sweeps the voltage stream from random toward a locked loop."
+    },
+    "outputs": {
+      "clk": "The master clock output that paces both sections — patch it out to clock other modules in time with Marbles.",
+      "t1": "First random gate from the T section, firing per the selected model's logic, bias and jitter. Patch into a drum/envelope trigger.",
+      "t2": "Second random gate from the T section — complementary or independent of t1 depending on the model. The two together build call-and-response rhythms.",
+      "x1": "First quantized random control voltage from the X section, shaped by Spread/Bias/Steps and snapped to the chosen Scale. Patch into a pitch input.",
+      "x2": "Second random control voltage, decorrelated from x1 — a different but related stream for a second voice or parameter.",
+      "x3": "Third random control voltage, decorrelated from x1 and x2 — a third independent stream."
+    },
+    "controls": {
+      "deja_vu": "The T-section randomness lock (0..1): 0 is fully random gates, 1 repeats a fixed loop of Length steps, and in between it occasionally re-rolls — the heart of Marbles' 'controlled chance'.",
+      "length": "How many steps long the T-section loop is (1..16) when Déjà Vu locks the gate pattern.",
+      "pw_mean": "The average pulse width of the T-section gates (0..1) — how wide each gate stays high relative to the clock.",
+      "rate": "Master clock rate in semitones (-60..+60); sets the tempo that drives both the T gates and the X voltages, and the rate of the clk output.",
+      "scale": "The quantizer scale the X voltages snap to: C major, C minor, pentatonic, Pelog, Raag Bhairav, or Raag Shri (the card's scale button cycles these).",
+      "spread": "How far the three X voltages wander from the mean (0..1): low is tight around the center, high explores the full range.",
+      "steps": "Lag/portamento on the X voltages (0..1): 0 jumps instantly between values, higher values glide smoothly between them.",
+      "t_bias": "Skews the T gates sparser or denser (0..1) — low values fire rarely, high values fire often, 0.5 is balanced.",
+      "t_jitter": "Adds timing humanization to the T gates (0..1): 0 is metronomic, higher values loosen the placement.",
+      "t_model": "Picks the T-section gate model: COIN (independent coin tosses), CLUSTERS (bursts), DRUMS (drum-pattern-like), INDEP (two independent streams), 3-STATE, or MARKOV (state-machine sequences). The card's T-model button cycles these.",
+      "x_bias": "The average level the three X voltages center on (0..1) — shifts the whole random spread up or down.",
+      "x_deja_vu": "The X-section randomness lock (0..1): like Déjà Vu but for the three control voltages — sweeps from random to a repeating loop.",
+      "x_length": "How many steps long the X-section loop is (1..16) when X Déjà Vu locks the voltage pattern."
     }
   },
   "meowbox": {
@@ -1284,6 +1511,33 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "level": "Master gain applied equally to all three noise outputs, from silence (0) to full amplitude (1). Default 0.5 provides moderate headroom; raise it to push the noise through downstream processing, lower it to blend subtly into a mix."
     }
   },
+  "numpadPlus": {
+    "explanation": "A live-recording step sequencer you play from your computer's numeric keypad: the keys map to a chromatic octave (12 notes), and pressing them performs notes in real time AND, when armed, records them into a 16-step pattern. It has four independent LAYERS sharing one playhead and tempo, so you can build up four parallel lines; the active layer is the one you're playing and recording into. Each layer has its own pitch + gate output pair, and there's also a single POLY output that carries the active layer's notes — in poly mode you can hold several keys to record a chord, and the POLY cable feeds a poly-aware voice so every note sounds. The playhead runs on internal BPM or an external CLOCK IN; recording quantizes your keystrokes to the nearest step while playing, or writes immediately when stopped. While the card is focused it captures the Numpad keys exclusively so they don't leak to other modules.",
+    "inputs": {
+      "clock": "External clock: each rising edge advances the shared playhead one step. While patched it sets the pace and runs the sequencer; unpatch to fall back to the internal BPM.",
+      "layer": "CV that selects the active layer (0..1 mapped to layers 1–4); when patched it takes priority over the Layer control, so you can switch which line you're recording/playing from a CV source."
+    },
+    "outputs": {
+      "l1_gate": "Layer 1's gate: high on a lit step (or while a key is held on layer 1), low otherwise.",
+      "l1_pitch": "Layer 1's pitch CV (V/oct): the current step's note, or the live-held key's pitch when you're playing on layer 1.",
+      "l2_gate": "Layer 2's gate: high on a lit step or held key, low otherwise.",
+      "l2_pitch": "Layer 2's pitch CV (V/oct): its current step's note, or a live-held key when layer 2 is active.",
+      "l3_gate": "Layer 3's gate: high on a lit step or held key, low otherwise.",
+      "l3_pitch": "Layer 3's pitch CV (V/oct): its current step's note, or a live-held key when layer 3 is active.",
+      "l4_gate": "Layer 4's gate: high on a lit step or held key, low otherwise.",
+      "l4_pitch": "Layer 4's pitch CV (V/oct): its current step's note, or a live-held key when layer 4 is active.",
+      "poly": "The ACTIVE layer's notes as a POLY cable (up to 5 voices, each with its own pitch CV + gate): in poly mode this carries the held/recorded chord, otherwise the single current note. Patch into a poly-aware voice (POLYHELM / any module with a poly input) so every voice sounds; a mono pitch input automatically receives just the lowest (root) note."
+    },
+    "controls": {
+      "activeLayer": "Which of the four layers is active for playing and recording (0..3 = layers 1–4), exposed as the card's L1–L4 buttons. The layer CV input overrides this when patched.",
+      "bpm": "Internal tempo in beats per minute (each step is a 16th note), used only when nothing is patched into CLOCK IN.",
+      "isPlaying": "Run/stop transport (1 = playing, 0 = stopped). When stopped the playhead holds at step 1 but live keys still sound; the card's PLAY button toggles it.",
+      "octave": "The keypad's base octave (0..8, default 4); shifts which actual pitches the 12 note-keys produce. The remappable octave-up/down keys nudge it by one.",
+      "overdub": "Overdub mode (the card's OVD button): when on, every keypress writes its note into the step (quantized to the nearest step while playing, immediately when stopped) without clearing the layer first — layer new notes over what's there.",
+      "poly": "Poly recording (the card's POLY button): when on, holding several keys at once records them as a chord into the step (up to 5 voices); when off, only the single key pressed is stored. The mono per-layer outputs always send the lowest note either way.",
+      "recArm": "Record arm (the card's ARM button): when armed and play starts from step 1, recording latches and the active layer is cleared, then your keystrokes are written in; it auto-disarms after one 16-step pass."
+    }
+  },
   "peaks": {
     "explanation": "A dual-channel percussion-and-modulation Swiss-army module after Mutable Instruments Peaks. It's two identical channels (A and B), each a self-contained generator you trigger with a gate. Each channel runs in one of five modes — KICK, SNARE, HIHAT (full drum voices), ENV (a one-shot attack/decay envelope), or LFO (a retriggerable sine/triangle/square) — and its two faders change meaning with the mode (the card relabels them: e.g. KICK's are Pitch/Decay, LFO's are Rate/Wave). So one Peaks gives you a kick + snare, a pair of drum voices, two trigger-shaped envelopes, two tempo-able LFOs, or any mix. Each channel's output is audio in the drum modes and control voltage in ENV/LFO. Use the two channels independently; there's no internal cross-link.",
     "inputs": {
@@ -1389,6 +1643,33 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     },
     "controls": {
       "depth": "Sets the bipolar swing on a linear 0..1 fader, scaling BOTH the slope and the offset together so the output stays centered on 0. 1 (default) = the full unipolar→bipolar conversion (±1); 0.5 = a half-size ±0.5 swing; 0 = flat 0 regardless of input. Effectively an attenuator on the polarized signal."
+    }
+  },
+  "polyseqz": {
+    "explanation": "A polyphonic CHORD sequencer: instead of one note per step it stores a whole chord — a root note plus a quality (major/minor/etc.), an inversion, and a voicing strategy (closed / open / spread) — and plays the lot at once. It walks a playhead across up to 128 steps (16 per page, 8 pages) on its own BPM clock or an external clock, emitting a 5-voice POLY cable that carries the full chord per step. To hear it you feed that POLY output into a poly-aware voice (RIOTGIRLS, DX7, POLYHELM, or any module with a poly input) so each chord tone gets its own voice; a mono pitch input still works and just receives the chord's root. A convenience mono GATE goes high whenever any voice is sounding (handy for one shared envelope), and a Humanize control adds per-voice timing jitter so chords don't land perfectly machine-tight. Eight quicksave slots and the transport CV inputs let you build and switch chord progressions live.",
+    "inputs": {
+      "clock": "External clock: each rising edge advances the playhead exactly one step (one chord). While anything is patched here the internal BPM is ignored and the incoming pulses set the pace (and run the sequencer); unpatch to fall back to the BPM clock.",
+      "humanize_cv": "CV that modulates the Humanize amount (0..1, summed with the knob): a positive voltage adds more per-voice timing jitter so the chord's notes don't all strike on exactly the same instant. Patch an LFO or envelope here to make the looseness breathe.",
+      "play_cv": "A rising edge toggles play/stop (each pulse flips the run state).",
+      "queue1_cv": "A rising edge queues pattern slot 1 — applied at the end of the current loop, then plays it from step 1 (no-op if empty).",
+      "queue2_cv": "A rising edge queues pattern slot 2 — applied at the end of the current loop (no-op if empty).",
+      "queue3_cv": "A rising edge queues pattern slot 3 — applied at the end of the current loop (no-op if empty).",
+      "queue4_cv": "A rising edge queues pattern slot 4 — applied at the end of the current loop (no-op if empty).",
+      "reset_cv": "A rising edge snaps the playhead back to step 1 and restarts the progression."
+    },
+    "outputs": {
+      "clock": "A short ~10 ms pulse on every step advance, regardless of whether the step is on — chain it into another sequencer's clock in.",
+      "gate": "A convenience mono gate that goes high while ANY voice of the current chord is sounding and low between chords — drive one shared ADSR/VCA from it without unpacking the poly cable. Its high time within the step follows the gate-length control.",
+      "poly": "The current step's chord as a 5-voice POLY cable (each lane carries its own pitch CV + gate). Patch into a poly-aware voice (RIOTGIRLS / DX7 / POLYHELM / any module with a poly input) so each chord tone gets its own voice; a mono pitch input automatically receives just lane 0, the chord's root."
+    },
+    "controls": {
+      "bpm": "Internal tempo in beats per minute (each step is an 8th note here — slower than the mono sequencer's 16th-note grid, which suits chords), used only when nothing is patched into CLOCK IN.",
+      "gateLength": "How much of each step the voices' gates stay high, from a short 10% stab to a near-legato 95% (always closing just before the next step).",
+      "humanize": "Spreads each voice's onset slightly in time so a chord strums/loosens instead of hitting perfectly together: 0 is machine-tight, higher values add more random per-voice jitter (up to a few tens of milliseconds). Also modulatable via the humanize_cv input.",
+      "isPlaying": "The run/stop state: 1 plays, 0 stops and forces the gates low; starting playback snaps the playhead back to step 1. Same control as the card's PLAY button.",
+      "length": "How many steps (chords) the playhead walks before wrapping to step 1; raising it past 16 reveals more pages.",
+      "octave": "Shifts every chord up or down by whole octaves at once (-2 to +2); the chord transposes as a block so its voicing stays intact.",
+      "snh": "Sample & hold on the per-voice pitch CV, on by default (the card's S&H face button): when on, each voice's pitch is latched cleanly at its gate edge (pinned to the un-jittered step time) so the note is stable when the gate rises even while Humanize jitters the timing; off reverts to the legacy behavior where pitch can drift ahead of the gate under Humanize."
     }
   },
   "resofilter": {
@@ -1881,6 +2162,35 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "pmAmount": "Depth of the PM input: how strongly the audio-rate signal at the PM input offsets the wavetable readout phase (up to a full cycle at full input). 0 ignores the PM input; negative values invert the direction of the phase offset.",
       "tune": "Coarse tuning in semitones, ±36 (±3 octaves), added to the 1V/oct pitch input. 0 leaves the incoming pitch untouched.",
       "wavePos": "Scans the position into the 16-frame table from 0 (the first frame) to 1 (the last), morphing the timbre saw → square → triangle → sine; the WAVE POSITION CV input sums on top of this. Sets where in the table the oscillator reads — the table itself is fixed."
+    }
+  },
+  "writeseq": {
+    "explanation": "A write-in step sequencer: as well as drawing notes into the grid by hand, you can RECORD a melody live by playing a pitch+gate into its CV and GATE inputs (from a keyboard, a MIDI→CV converter, or any gate source). Armed for recording, each incoming gate writes the sampled pitch onto the nearest step, quantized to the grid so what you play lands on the beat the clock is hitting (no off-by-one against a partner drum sequencer). It plays back the captured pattern (up to 128 steps over 8 pages) on its own BPM clock or an external clock, emits pitch + gate + a chained clock-out, and a held live gate always passes straight through and overrides playback — so the module doubles as a live keyboard monitor. One-shot recording clears and re-records exactly one pass; overdub layers new notes on top of what's there without clearing.",
+    "inputs": {
+      "clock": "External step clock: each rising edge advances the playhead one step. While patched it sets the pace (and runs the sequencer); unpatch to fall back to the internal BPM. Recording quantizes to the same step the clock is hitting.",
+      "cv": "Pitch CV in (V/oct, 0V = C4). While recording, it's sampled at each incoming gate edge and written to the nearest step; whenever a live gate is held it also passes straight through to the pitch output.",
+      "gate": "Gate in. A rising edge while recording writes the sampled pitch+gate to the nearest step; a rising edge while stopped and record-armed starts the sequencer and recording; and whenever the gate is held high it passes through live and overrides the sequenced output (so you can play over playback).",
+      "play_cv": "A rising edge toggles play/stop (each pulse flips the run state).",
+      "queue1_cv": "A rising edge queues pattern slot 1 — applied at the end of the current loop, then plays it from step 1 (no-op if empty).",
+      "queue2_cv": "A rising edge queues pattern slot 2 — applied at the end of the current loop (no-op if empty).",
+      "queue3_cv": "A rising edge queues pattern slot 3 — applied at the end of the current loop (no-op if empty).",
+      "queue4_cv": "A rising edge queues pattern slot 4 — applied at the end of the current loop (no-op if empty).",
+      "rec": "Record arm: a rising edge toggles the record-arm state on/off (the same latch as the card's REC button), so you can drop in and out of recording hands-free from a footswitch or gate.",
+      "reset_cv": "A rising edge snaps the playhead back to step 1 and resets the record position."
+    },
+    "outputs": {
+      "clock": "A short ~10 ms pulse on every step advance — chain it into another sequencer's clock in.",
+      "gate": "Goes high on each ON step (its width set by the gate-length control) — unless a live gate is held in, which passes through and overrides the sequenced gate.",
+      "pitch": "The current step's note as pitch CV (V/oct), transposed by the octave control — unless a live gate is held in, in which case the live pitch passes straight through and wins."
+    },
+    "controls": {
+      "bpm": "Internal tempo in beats per minute (each step is a 16th note, so the step rate is 4× the BPM), used only when nothing is patched into CLOCK IN.",
+      "gateLength": "How much of each step the gate stays high, from a short 10% stab to a near-legato 95% (it always closes just before the next step).",
+      "isPlaying": "The run/stop state: 1 plays, 0 stops and forces the gate low; starting playback snaps the playhead back to step 1. Same control as the card's PLAY button.",
+      "length": "How many steps the playhead walks before wrapping to step 1; raising it past 16 reveals more pages. A one-shot recording captures exactly this many steps before stopping.",
+      "octave": "Shifts every step's pitch up or down by whole octaves at once (-2 to +2).",
+      "overdub": "Recording mode (the card's OVD button): off = one-shot, which clears the pattern and records exactly one pass of `length` steps then auto-stops; on = overdub, which layers newly played notes on top of the existing pattern without clearing and keeps looping until you disarm.",
+      "recArm": "Arms recording (1) or disarms it (0); the card's REC button. While armed, incoming gates write the sampled pitch onto the nearest step. Also togglable via the rec input."
     }
   }
 };

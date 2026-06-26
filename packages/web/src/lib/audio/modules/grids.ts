@@ -118,6 +118,41 @@ export const gridsDef: AudioModuleDef = {
     { id: 'playStop', label: 'Run', kind: 'button', paramId: 'isPlaying' },
   ],
 
+  docs: {
+    explanation:
+      "A topographic drum-pattern generator (a port of Mutable Instruments Grids) that produces three drum trigger streams — kick (BD), snare (SD), hi-hat (HH) — plus an accent. Instead of drawing steps, you steer an X/Y pad across a built-in map of drum patterns: the X/Y position blends between many curated 32-step grooves, and a per-instrument Density knob decides how many of that groove's hits actually fire (low = sparse, high = busy). A Chaos control sprinkles in random variation each loop, and Swing shuffles the off-beats. It clocks from its own BPM or an external CLOCK IN, and there's an alternate Euclidean mode that swaps the drum map for evenly-spread Euclidean rhythms. Patch BD/SD/HH into three drum voices and the accent into a VCA/velocity input for dynamics.",
+    inputs: {
+      clock: "External clock: each rising edge advances the 32-step pattern one step. While patched it sets the pace; unpatch to run on the internal tempo.",
+      reset: "A rising edge resets the pattern back to step 0, realigning the groove to the downbeat.",
+      mapX_cv: "CV that sums onto the X pad coordinate, sweeping the drum map left-right to morph the groove's character.",
+      mapY_cv: "CV that sums onto the Y pad coordinate, sweeping the drum map top-bottom to morph the groove's character.",
+      bdDensity_cv: "CV that sums onto the kick (BD) Density — modulate how many kick hits fire.",
+      sdDensity_cv: "CV that sums onto the snare (SD) Density — modulate how many snare hits fire.",
+      hhDensity_cv: "CV that sums onto the hi-hat (HH) Density — modulate how many hat hits fire.",
+      chaos_cv: "CV that sums onto Chaos — modulate how much random variation is sprinkled into the pattern.",
+      swing_cv: "CV that sums onto Swing — modulate the off-beat shuffle (0..0.75).",
+    },
+    outputs: {
+      bd: "Kick / bass-drum trigger gate: fires on each step whose map level clears the BD density threshold. Patch into a kick voice's trigger.",
+      sd: "Snare trigger gate: fires when the step level clears the SD density threshold.",
+      hh: "Hi-hat trigger gate: fires when the step level clears the HH density threshold.",
+      accent: "Accent gate: fires on the loud steps (any instrument's accent bit set this step) — patch into a VCA or velocity input to emphasize the strong hits.",
+      clock: "A short pulse on every step advance — chain it into another module's clock in to lock everything to the Grids tempo.",
+    },
+    controls: {
+      tempo: "Internal tempo in beats per minute, used when nothing is patched into CLOCK IN.",
+      mode: "Pattern engine: DRUMS (the default) walks the curated X/Y drum map; EUCLIDEAN swaps it for evenly-spread Euclidean rhythms whose fill follows the density knobs. The card's mode button toggles this.",
+      mapX: "The X coordinate of the pad on the drum map (0..1) — selects the groove's character along one axis (summed with the mapX_cv input).",
+      mapY: "The Y coordinate of the pad on the drum map (0..1) — selects the groove's character along the other axis (summed with the mapY_cv input).",
+      bdDensity: "How busy the kick is (0..1): 0 plays almost no kicks, 1 plays the groove's full kick pattern.",
+      sdDensity: "How busy the snare is (0..1), from sparse to the full snare pattern.",
+      hhDensity: "How busy the hi-hat is (0..1), from sparse to the full hat pattern.",
+      chaos: "How much random variation is mixed into the pattern each loop (0..1): 0 is the clean curated groove, higher values perturb the hits for evolving fills.",
+      swing: "Off-beat shuffle (0..0.75): 0 is dead-straight, higher values push the off-beat steps later for a swung feel.",
+      isPlaying: "Run/stop transport (1 = running, 0 = stopped); the card's RUN button. Note this defaults to running.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
 

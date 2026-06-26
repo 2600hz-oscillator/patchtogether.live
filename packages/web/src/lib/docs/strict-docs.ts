@@ -165,4 +165,33 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'buggles',
   'callsine',
   'pentemelodica',
+  // Batch 10 — sequencers, clocks & pattern generators (2026-06-26): the
+  // off-cluster sequencer family — CARTESIAN (4×4 X/Y grid sequencer), DRUMSEQZ
+  // (4-track drum/trigger sequencer), KRIA (monome-Kria multi-track grid),
+  // MACSEQ (MACROOSCILLATOR model+note sequencer), POLYSEQZ (polyphonic chord
+  // sequencer), WRITESEQ (write-in / live-record step sequencer), MARBLES (MI
+  // random sampler + clock), GRIDS (MI topographic drum-pattern generator),
+  // NUMPAD+ (numpad live-record layered sequencer), and ATLANTIS-CATALYST /
+  // SCENECHANGE (8-channel correlated random-walk macro brain). The
+  // convention-card members whose cards are pure Knob/Fader/buttons + PatchPanel
+  // (a playhead-polling requestAnimationFrame is fine — the sequencer itself
+  // does it and is interactive; the engine-less doc sandbox just no-ops the
+  // read) are on INTERACTIVE_DOC_MODULES: cartesian / drumseqz / macseq /
+  // polyseqz / writeseq / marbles / grids / atlantisCatalyst. Two stay STATIC:
+  // KRIA's card touches the WebSerial monome-grid API at init, and NUMPAD+'s
+  // card installs a document-level capturing keydown listener to own the Numpad
+  // keys — both side effects we keep out of the shared doc sandbox (face
+  // fallback). POLYSEQZ and NUMPAD+ are POLY: their poly output must feed a real
+  // poly-aware voice (RIOTGIRLS / DX7 / POLYHELM / a module with a poly input),
+  // noted in their prose.
+  'cartesian',
+  'drumseqz',
+  'kria',
+  'macseq',
+  'polyseqz',
+  'writeseq',
+  'marbles',
+  'grids',
+  'numpadPlus',
+  'atlantisCatalyst',
 ]);
