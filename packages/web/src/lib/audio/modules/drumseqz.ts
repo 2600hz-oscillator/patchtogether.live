@@ -251,6 +251,69 @@ export const drumseqzDef: AudioModuleDef = {
   // surface (single checkbox in the configure modal).
   exposesSequence: true,
 
+  docs: {
+    explanation:
+      "A four-track drum/trigger sequencer: four independent rows of steps (16 visible per page, up to 128 across 8 pages) that all share one playhead and one tempo. Each row emits its own gate + pitch pair, so it's the natural drive for a four-voice drum rack (it pairs with RIOTGIRLS' four voices). Per step in a row you set on/off and an optional pitch (a lit step with no note plays the row's root note), and each row also has a Euclidean fill that scatters N evenly-spread hits across the page for instant rhythms. The playhead steps on its own BPM clock or on an external clock fed into CLOCK IN, with swing to shuffle the feel; a transport row plus the CV inputs (play / reset / queue) let you drive and switch four saved patterns hands-free.",
+    inputs: {
+      clock:
+        "External clock: each rising edge advances the shared playhead exactly one step. While anything is patched here the internal BPM is ignored and the incoming pulses set the pace (and act as the play signal); unpatch to fall back to the BPM clock.",
+      play_cv:
+        "A rising edge toggles play/stop (each pulse flips the current run state); when patched it takes priority over the clock-as-play behavior.",
+      reset_cv:
+        "A rising edge snaps the playhead back to step 1 and restarts the loop for all four tracks at once.",
+      queue1_cv:
+        "A rising edge queues quicksave slot 1: it finishes the current loop, then switches to that saved pattern and restarts from step 1 (does nothing if the slot is empty).",
+      queue2_cv:
+        "A rising edge queues quicksave slot 2 — applied at the end of the current loop, then plays that pattern from step 1 (no-op if the slot is empty).",
+      queue3_cv:
+        "A rising edge queues quicksave slot 3 — applied at the end of the current loop, then plays that pattern from step 1 (no-op if the slot is empty).",
+      queue4_cv:
+        "A rising edge queues quicksave slot 4 — applied at the end of the current loop, then plays that pattern from step 1 (no-op if the slot is empty).",
+    },
+    outputs: {
+      gate1:
+        "Track 1's gate: goes high on each lit step of row 1 (low on rests and off-steps), staying high for the fraction of the step set by the gate-length control. Patch into a drum voice's trigger or an envelope.",
+      pitch1:
+        "Track 1's pitch CV (V/oct): the lit step's note if it has one, otherwise track 1's root note, transposed by the track and global octave controls.",
+      gate2: "Track 2's gate — high on each lit step of row 2, shaped by the gate-length control.",
+      pitch2: "Track 2's pitch CV (V/oct): the step's note, or track 2's root note, plus the octave offsets.",
+      gate3: "Track 3's gate — high on each lit step of row 3, shaped by the gate-length control.",
+      pitch3: "Track 3's pitch CV (V/oct): the step's note, or track 3's root note, plus the octave offsets.",
+      gate4: "Track 4's gate — high on each lit step of row 4, shaped by the gate-length control.",
+      pitch4: "Track 4's pitch CV (V/oct): the step's note, or track 4's root note, plus the octave offsets.",
+      clock:
+        "A short ~10 ms pulse fired on every step advance, regardless of which steps are lit — the 'I just stepped' signal. Patch it into another sequencer's clock in to chain them in lockstep.",
+    },
+    controls: {
+      bpm:
+        "Internal tempo in beats per minute (each step is a 16th note, so the step rate is 4× the BPM), used only when nothing is patched into CLOCK IN; with an external clock patched it no longer sets the pace.",
+      length:
+        "How many steps the playhead walks before wrapping back to step 1; raising it past 16 reveals more pages, lowering it shortens the loop (steps beyond the length still hold their data but are skipped and shown dimmed).",
+      octave:
+        "Global octave transposition added on top of every track's own octave offset (-2 to +2), shifting all four rows together.",
+      gateLength:
+        "How much of each step every track's gate stays high, from a short 10% trigger to a near-legato 95% (it always closes just before the next step).",
+      swing:
+        "Shuffles the rhythm by lengthening the on-beat steps and shortening the off-beat steps after them, pushing the off-beats later for a looser feel; 0 is dead-straight, higher values deepen the shuffle. Internal-clock only.",
+      isPlaying:
+        "The run/stop state: 1 plays, 0 stops and forces every gate low. Starting playback snaps the playhead back to step 1. (With an external clock patched, the clock edges can drive stepping even while this reads stopped.) Same control as the card's PLAY button.",
+      trk1_euclid:
+        "Track 1's Euclidean fill: 0 leaves the row's hand-drawn pattern alone; 1..16 replaces the page with that many hits spread as evenly as possible across the 16 steps (the classic Euclidean rhythm), repeated on every page.",
+      trk1_root:
+        "Track 1's root note (MIDI 33..114) — the pitch a lit step plays when that step has no note of its own.",
+      trk1_octave: "Track 1's octave offset, added after the note-to-V/oct conversion (-2 to +2), on top of the global octave.",
+      trk2_euclid: "Track 2's Euclidean fill: 0 keeps the hand-drawn row; 1..16 spreads that many hits evenly across the page.",
+      trk2_root: "Track 2's root note (MIDI 33..114) — used when a lit step has no note of its own.",
+      trk2_octave: "Track 2's octave offset, added on top of the global octave (-2 to +2).",
+      trk3_euclid: "Track 3's Euclidean fill: 0 keeps the hand-drawn row; 1..16 spreads that many hits evenly across the page.",
+      trk3_root: "Track 3's root note (MIDI 33..114) — used when a lit step has no note of its own.",
+      trk3_octave: "Track 3's octave offset, added on top of the global octave (-2 to +2).",
+      trk4_euclid: "Track 4's Euclidean fill: 0 keeps the hand-drawn row; 1..16 spreads that many hits evenly across the page.",
+      trk4_root: "Track 4's root note (MIDI 33..114) — used when a lit step has no note of its own.",
+      trk4_octave: "Track 4's octave offset, added on top of the global octave (-2 to +2).",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
 

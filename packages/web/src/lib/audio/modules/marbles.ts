@@ -203,6 +203,50 @@ export const marblesDef: AudioModuleDef = {
     { id: 'scale', label: 'Scale', defaultValue: 0, min: 0, max: MARBLES_SCALE_NAMES.length - 1, curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A random sampler and clock generator (a port of Mutable Instruments Marbles) with two halves driven by one master clock. The T section makes random GATES (two outputs, t1/t2) whose character is set by a model — coin-toss, clusters, drum-like, independent, three-state, or Markov — plus bias and jitter. The X section makes three random CONTROL VOLTAGES (x1/x2/x3) whose Spread sets how wide they wander, Bias sets their average, Steps adds lag/portamento, and a Scale quantizes them to musical notes. The killer feature is Déjà Vu: turn it up and the otherwise-random stream LOCKS into a repeating loop (length set per section), so you can dial smoothly from pure chance to a fixed pattern and anywhere in between. Every control also has a dedicated CV input so the randomness itself can be modulated.",
+    inputs: {
+      rate_cv: "CV that modulates the master clock Rate (in semitones, summed with the knob) — speeds up or slows down both the T and X sections together.",
+      tmodel_cv: "Discrete CV that modulates the T-section Model select, stepping between COIN / CLUSTERS / DRUMS / INDEP / 3-STATE / MARKOV.",
+      tbias_cv: "CV that modulates the T-section Bias (0..1, summed with the knob) — skews the gate distribution sparser or denser.",
+      tjitter_cv: "CV that modulates the T-section Jitter (0..1) — adds or removes timing humanization on the random gates.",
+      dejavu_cv: "CV that modulates the T-section Déjà Vu (0..1) — sweeps the gate stream from fully random toward a locked, repeating loop.",
+      length_cv: "CV that modulates the T loop Length (1..16 steps) used when Déjà Vu locks the gate pattern.",
+      spread_cv: "CV that modulates the X-section Spread (0..1) — widens or narrows how far the three random voltages wander from the mean.",
+      xbias_cv: "CV that modulates the X-section Bias (0..1) — shifts the average level of the three random voltages.",
+      steps_cv: "CV that modulates the X-section Steps (0..1) — adds lag/portamento so the voltages glide between values instead of jumping.",
+      xdejavu_cv: "CV that modulates the X-section Déjà Vu (0..1) — sweeps the voltage stream from random toward a locked loop.",
+      scale_cv: "Discrete CV that modulates the X-section quantizer Scale select (C major, C minor, pentatonic, Pelog, Raag Bhairav, Raag Shri).",
+    },
+    outputs: {
+      t1: "First random gate from the T section, firing per the selected model's logic, bias and jitter. Patch into a drum/envelope trigger.",
+      t2: "Second random gate from the T section — complementary or independent of t1 depending on the model. The two together build call-and-response rhythms.",
+      x1: "First quantized random control voltage from the X section, shaped by Spread/Bias/Steps and snapped to the chosen Scale. Patch into a pitch input.",
+      x2: "Second random control voltage, decorrelated from x1 — a different but related stream for a second voice or parameter.",
+      x3: "Third random control voltage, decorrelated from x1 and x2 — a third independent stream.",
+      clk: "The master clock output that paces both sections — patch it out to clock other modules in time with Marbles.",
+    },
+    controls: {
+      rate: "Master clock rate in semitones (-60..+60); sets the tempo that drives both the T gates and the X voltages, and the rate of the clk output.",
+      t_model:
+        "Picks the T-section gate model: COIN (independent coin tosses), CLUSTERS (bursts), DRUMS (drum-pattern-like), INDEP (two independent streams), 3-STATE, or MARKOV (state-machine sequences). The card's T-model button cycles these.",
+      t_bias: "Skews the T gates sparser or denser (0..1) — low values fire rarely, high values fire often, 0.5 is balanced.",
+      t_jitter: "Adds timing humanization to the T gates (0..1): 0 is metronomic, higher values loosen the placement.",
+      deja_vu:
+        "The T-section randomness lock (0..1): 0 is fully random gates, 1 repeats a fixed loop of Length steps, and in between it occasionally re-rolls — the heart of Marbles' 'controlled chance'.",
+      length: "How many steps long the T-section loop is (1..16) when Déjà Vu locks the gate pattern.",
+      pw_mean: "The average pulse width of the T-section gates (0..1) — how wide each gate stays high relative to the clock.",
+      spread: "How far the three X voltages wander from the mean (0..1): low is tight around the center, high explores the full range.",
+      x_bias: "The average level the three X voltages center on (0..1) — shifts the whole random spread up or down.",
+      steps: "Lag/portamento on the X voltages (0..1): 0 jumps instantly between values, higher values glide smoothly between them.",
+      x_deja_vu: "The X-section randomness lock (0..1): like Déjà Vu but for the three control voltages — sweeps from random to a repeating loop.",
+      x_length: "How many steps long the X-section loop is (1..16) when X Déjà Vu locks the voltage pattern.",
+      scale:
+        "The quantizer scale the X voltages snap to: C major, C minor, pentatonic, Pelog, Raag Bhairav, or Raag Shri (the card's scale button cycles these).",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

@@ -426,6 +426,82 @@ const PROBES: Probe[] = [
     cvPort: 'note_cv', // CV (paramTarget=note) → note transpose
     modulates: /modulates/i,
   },
+  // --- Batch 10 — sequencers, clocks & pattern generators (2026-06-26). Each is
+  // on INTERACTIVE_DOC_MODULES (convention card: pure Knob/Fader/buttons +
+  // PatchPanel; the only mount-time work is a playhead-polling rAF that no-ops in
+  // the engine-less doc sandbox, exactly like SequencerCard); this proves the
+  // live card mounts cleanly and a control hover updates the pane. The CV→param
+  // dual-context check runs where the module has a CV input with a paramTarget
+  // (polyseqz humanize_cv→humanize, marbles rate_cv→rate); cartesian / drumseqz /
+  // macseq / writeseq / grids / scenechange have no CV→param link (their CVs are
+  // clock/transport/X-Y/density/scene gates), so cvPort '' skips it. KRIA +
+  // NUMPAD+ stay STATIC (WebSerial grid / document keydown capture) — no probe. ---
+  {
+    id: 'cartesian',
+    heading: /cartesian/i,
+    controlParam: 'gateLength',
+    controlDescIncludes: /gate|step|stab/i,
+    cvPort: '', // clock/x_cv/y_cv/lfo_clock are not param mods
+    modulates: /./,
+  },
+  {
+    id: 'drumseqz',
+    heading: /drumseqz/i,
+    controlParam: 'bpm',
+    controlDescIncludes: /tempo|bpm/i,
+    cvPort: '', // transport CVs are gates, no paramTarget
+    modulates: /./,
+  },
+  {
+    id: 'macseq',
+    heading: /macseq/i,
+    controlParam: 'bpm',
+    controlDescIncludes: /tempo|bpm/i,
+    cvPort: '', // transport CVs are gates, no paramTarget
+    modulates: /./,
+  },
+  {
+    id: 'polyseqz',
+    heading: /polyseqz/i,
+    controlParam: 'humanize',
+    controlDescIncludes: /humani[sz]e|jitter|loosen|tight/i,
+    cvPort: 'humanize_cv', // CV (paramTarget=humanize) → humanize
+    modulates: /modulates/i,
+  },
+  {
+    id: 'writeseq',
+    heading: /writeseq/i,
+    // recArm/overdub/play are card buttons, not control-<id> faders — probe a
+    // real Fader param (bpm/length/octave/gateLength) for the live-card hover.
+    controlParam: 'gateLength',
+    controlDescIncludes: /gate|step|stab/i,
+    cvPort: '', // cv/gate/clock/rec/transport are not param mods
+    modulates: /./,
+  },
+  {
+    id: 'marbles',
+    heading: /marbles/i,
+    controlParam: 'rate',
+    controlDescIncludes: /rate|clock|tempo/i,
+    cvPort: 'rate_cv', // CV (paramTarget=rate) → master clock rate
+    modulates: /modulates/i,
+  },
+  {
+    id: 'grids',
+    heading: /grids/i,
+    controlParam: 'chaos',
+    controlDescIncludes: /chaos|random|variation/i,
+    cvPort: '', // CV inputs sum onto knobs but have no paramTarget
+    modulates: /./,
+  },
+  {
+    id: 'atlantisCatalyst',
+    heading: /scenechange/i, // the module's label is 'scenechange' (type stays atlantisCatalyst)
+    controlParam: 'coherence',
+    controlDescIncludes: /coheren|together|weather|independent/i,
+    cvPort: '', // queue/nudge/freeze/seed inputs have no paramTarget
+    modulates: /./,
+  },
 ];
 
 /** Wait for the live virtual module to finish mounting (the flow host appears

@@ -126,4 +126,26 @@ export const INTERACTIVE_DOC_MODULES: ReadonlySet<string> = new Set<string>([
   'peaks',
   'buggles',
   'callsine',
+  // Batch 10 — sequencers, clocks & pattern generators (2026-06-26): the
+  // convention-card members (no `card:` override, so the doc route's defLite
+  // resolves `<Type>Card` and the live virtual module mounts). Each card is a
+  // pure Knob/Fader/buttons + PatchPanel; the only mount-time work is a
+  // playhead-polling requestAnimationFrame that reads engine.read(node,…) — and
+  // SequencerCard (the canonical interactive card) does exactly that, so in the
+  // engine-less doc sandbox the read simply no-ops. Verified live by
+  // docs-virtual-module.spec.ts (polyseqz humanize_cv→humanize and marbles
+  // rate_cv→rate also exercise the CV→param dual context; the other six have no
+  // paramTarget CV input, so their probe skips the dual check). The STATIC
+  // siblings stay off this list: KRIA's card touches the WebSerial monome-grid
+  // API at init, and NUMPAD+'s card installs a document-level capturing keydown
+  // listener — both are doc-sandbox-unsafe side effects, so they use the static
+  // face fallback (see strict-docs.ts).
+  'cartesian',
+  'drumseqz',
+  'macseq',
+  'polyseqz',
+  'writeseq',
+  'marbles',
+  'grids',
+  'atlantisCatalyst',
 ]);
