@@ -133,6 +133,23 @@ export const scoreboardDef: VideoModuleDef = {
     { id: 'resetTrig', label: 'RESET', defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "A 4-digit neon 7-segment counter widget, rendered as a digital-alarm-clock face: a zero-padded value (0000-9999) drawn as chamfered hexagonal segments in a hue-tinted glow on soft black (#0a0a0a), with off segments fully invisible (no LCD ghost). It is a pure CV-driven generator with NO video input — a 2D OffscreenCanvas rasterizes the digits via the drawScoreboard helper and uploads them as an RGBA texture; a trivial fragment shader letterboxes that 8:3 source into the 4:3 engine frame, width-locked and centered vertically with pure-black bands top and bottom (and a dark fallback fill before the first paint). Each rising edge on SCORE adds 1 to the counter; it wraps from 9999 back to 0 (a periodic counter, handy for sequencing). RESET zeros it. The COLOR knob sets the lit-segment and glow hue. Patch a clock or sequencer gate into SCORE to count beats/events on screen, and a reset gate to zero it on a bar/loop boundary; the counter always starts at 0 on spawn (it is not persisted).",
+    inputs: {
+      score: "Trigger (edge-only). A cv-typed input routed through the audio-to-video CV bridge into the synthetic scoreTrig param, where a hysteresis edge detector lives (rise above 0.6, fall below 0.4, so a CV hovering in the dead band never chatters): each rising edge increments the counter by 1, wrapping from 9999 back to 0. The level while held is ignored — only the edge counts. The card renders this jack in the gate cable color.",
+      reset: "Trigger (edge-only). A cv-typed input through the same bridge into the synthetic resetTrig param: each rising edge (hysteresis rise above 0.6, fall below 0.4) sets the counter back to 0. Edge-only, not level-sensitive; the held level is ignored. Rendered in the gate cable color on the card.",
+    },
+    outputs: {
+      out: "Video. The rendered 4-digit display: the current counter value drawn as glowing hue-tinted 7-segment digits on soft black, letterboxed (width-locked, vertically centered, black bands top and bottom) into the engine frame. This is the module's only output — there is no audio output.",
+    },
+    controls: {
+      color: "Hue of the lit segments and their neon glow halo, 0 to 1 mapped onto 0-360 degrees linearly (default ≈0.333 = green); segments render at high saturation (95%) and mid lightness (55%), with a shadow-blur glow scaled to the digit height. Set via the COLOR knob only — there is no CV input jack for color, though the knob remains MIDI-/automation-assignable like any other.",
+      scoreTrig: "Synthetic gate param (hidden from the card, exposed as the SCORE cv jack via paramTarget). The CV bridge writes incoming gate values here via setParam, and the factory's hysteresis edge detector turns each rising edge into a +1 increment, wrapping at 10000 back to 0.",
+      resetTrig: "Synthetic gate param (hidden from the card, exposed as the RESET cv jack via paramTarget). The CV bridge writes incoming gate values here via setParam, and the factory's hysteresis edge detector turns each rising edge into a reset of the counter to 0.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

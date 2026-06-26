@@ -34,6 +34,23 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "sel4": "OUT 4 selector — a discrete fader choosing which input (IN1..IN4, raw index 0..3) output 4 carries. Snaps to integer indices and displays as IN1..IN4; gate4 rotates it on each rising edge."
     }
   },
+  "acidwarp": {
+    "explanation": "acidwarp is a pure-GPU plasma SOURCE — it has no video input, it synthesizes its picture from math. It is a faithful port of Noah Spurrier's 1992-93 ACIDWARP demo: a 320x240 (NTSC 4:3) buffer of 8-bit palette indices is generated once per scene by a per-pixel formula (distance + angle + scaled sin/cos modulators, plus a few XOR scenes and recursive \"rain\" noise scenes), then every frame a 256-entry color palette is rotated by one or more slots and sampled per pixel. The scrolling palette is what makes the pattern appear to flow and pulse, even though the underlying index field is static until the scene changes. There are 41 scenes (concentric rings, simple rays, peacock, five-arm star, interference fields, rain/noise, interlaced two-screen variants, etc.) and 8 palettes (RGBW rainbow, greyscale, half-grey, pastel — each with an optional sparkle/\"lightning\" variant that brightens every 4th slot). Use it as a generative video bed: patch OUT into a mixer/feedback/output card, ride SPEED for the cycling rate, and nudge SCENE by hand or with a clock into scene_cv for rhythmic pattern changes. Slot 0 is reserved black, so palette rotation cycles only the 255 non-black colors.",
+    "inputs": {
+      "scene_cv": "CV in that modulates the hidden sceneTrig control; the draw loop edge-detects it, so a rising edge (crossing above 0.5) advances to the NEXT scene once per pulse — it behaves as a trigger. Works whether or not FREEZE is on; patch a clock here for rhythmic scene changes.",
+      "speed_cv": "CV in that modulates the Speed control (linear): it displaces the palette-rotation rate and, while not frozen, the auto scene-change cadence. Same mapping as the knob — 0 = still, 0.5 = native 1x, 1.0 = 4x."
+    },
+    "outputs": {
+      "out": "Video out: the rendered plasma frame (320x240 internal, 4:3), linearly upsampled to the engine framebuffer. The only output — acidwarp is a generator with no audio path."
+    },
+    "controls": {
+      "freeze": "Freeze toggle (discrete 0/1, default 0). When on, halts only the automatic scene cycler — the palette keeps rotating, so colors still scroll. Manual SCENE button presses and scene_cv triggers still advance the scene while frozen. Card button reads FREEZE / FROZEN.",
+      "paletteType": "Palette picker (discrete 0..7, default 0). Selects one of 4 base palettes — RGBW rainbow, GREY, HALF-grey, PASTEL — each with an optional sparkle/lightning variant (base id + 4). The card's PAL button cycles through all 8 (RGBW, GREY, HALF, PASTEL, then the four sparkle versions).",
+      "scene": "Scene index (discrete 0..40, default 0). Picks which of the 41 per-pixel pattern formulas is generated. Advanced automatically (unless frozen, and only while speed > 0), by the SCENE card button, or by a scene_cv rising edge; the card reads SCENE n/41 (1-based). Persisted with the patch.",
+      "sceneTrig": "One-shot scene-advance trigger (linear 0..1, default 0). Driven by the scene_cv input; the draw loop edge-detects it (a low->high crossing above 0.5 fires once, advancing the scene). Not a hand-turned control — it is the CV-fed trigger that bumps the scene index.",
+      "speed": "Speed knob (linear 0..1, default 0.5). Maps piecewise to a rate multiplier: 0 = stopped, 0.5 = native 1x, 1.0 = 4x. Scales both palette-rotation speed and the auto scene-change interval (~8s at 1x, halving as speed rises). The card shows the live multiplier (e.g. 2.4x, or STOPPED at 0)."
+    }
+  },
   "adsr": {
     "explanation": "A classic gate-driven envelope generator: a held gate runs the level up to peak over the attack time, falls to the sustain level over the decay time, holds there for as long as the gate stays high, then falls back to zero over the release time when the gate drops. It outputs a unipolar 0..1 control signal (env) plus its inverse (env_inv = 1 - env) for ducking; patch it into any CV input (a VCA's gain, a filter's cutoff) to shape that destination over the life of each note.",
     "inputs": {
@@ -1940,6 +1957,58 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "octave": "Shifts every step's pitch up or down by whole octaves at once (-2 to +2)."
     }
   },
+  "mandelbulb": {
+    "explanation": "A WebGL2 ray-marched 3D Mandelbulb fractal source that doubles as an audio oscillator. A single full-screen-quad fragment shader marches the power-8 Mandelbulb distance estimate, shades the hit surface with finite-difference normals, diffuse + Phong specular and a soft shadow, tints it with the Hue palette, and emits the render on video_out (4:3, ray-marched internally at half engine resolution — 512x384 at the 1024x768 default — and LINEAR-upscaled). An orbit camera (Zoom dolly + Rot X pitch / Rot Y yaw) frames the bulb; Power morphs the fractal shape and Detail sets the iteration budget (higher = crisper, costlier). Turn SLICE on to bridge into audio: a fixed-size plane (camera-independent) is marched through the bulb's distance field to read its cross-section as a 256-sample wavetable, played as an oscillator on audio_out and shown as a second on-card readout with a draggable yellow select box. Usage: patch a slow LFO into rotate_y_cv (or just leave SPIN on) for a tumbling fractal, modulate power_cv for shape-morphing, and enable SLICE to play the bulb's geometry as an evolving waveform.",
+    "inputs": {
+      "detail_cv": "Modulates Detail: linear CV sweeps the fractal iteration budget over 4..30 (discrete). Higher = sharper surface detail at more cost; shared with the slice, so it also affects audio_out when SLICE is on.",
+      "hue_cv": "Modulates Hue: linear CV rotates the palette over 0..1, tinting both the lit surface and the sky background. Color only; no effect on geometry or the audio slice.",
+      "power_cv": "Modulates Power: linear CV sweeps the fractal exponent over 1..12 (8 = classic bulb), morphing the whole shape. Power is shared by the picture AND the slice, so this also reshapes audio_out when SLICE is on.",
+      "rotate_x_cv": "Modulates Rot X: linear CV sweeps the orbit camera's pitch over -pi..pi. Camera-only, so it never changes the slice waveform on audio_out.",
+      "rotate_y_cv": "Modulates Rot Y: linear CV sweeps the orbit camera's yaw over -pi..pi (added on top of any auto-spin). Camera-only; does not affect the audio slice.",
+      "slice_rx_cv": "Modulates the slice plane pitch (S Rot X): linear CV rotates the readout plane over -pi..pi about X, re-orienting which cross-section is scanned. Shapes audio_out; camera unaffected.",
+      "slice_ry_cv": "Modulates the slice plane yaw (S Rot Y): linear CV rotates the readout plane over -pi..pi about Y (this is also the horizontal axis of the on-card yellow select box). Shapes audio_out; camera unaffected.",
+      "slice_rz_cv": "Modulates the slice plane roll (S Rot Z): linear CV rotates the readout plane over -pi..pi about Z, spinning the scanned cross-section in its own plane. Shapes audio_out; camera unaffected.",
+      "slice_y_cv": "Modulates the slice plane offset (Y): linear CV slides the readout plane along its rotated normal over +/-1.2 fractal units, scanning it through the whole bulb. Drives the audio_out waveform; no effect on the camera view.",
+      "zoom_cv": "Modulates Zoom: a linear-scaled CV dollies the orbit camera toward (higher) or away from the bulb over its 0.3..3 range; affects framing only, not the audio slice."
+    },
+    "outputs": {
+      "audio_out": "Mono audio out: the bulb's slice cross-section played as a 256-sample wavetable oscillator. Silent unless the SLICE toggle is on (with SLICE off, no audio node exists); driven by the slice_y / slice_rx / slice_ry / slice_rz / Power / Detail controls.",
+      "video_out": "Mono-video out: the shaded Mandelbulb render (4:3, ray-marched at half engine resolution — 512x384 at the 1024x768 default — and LINEAR-upscaled to the engine output res). Always live; when SCRN is off AND this port is unpatched the raymarch is skipped to save performance."
+    },
+    "controls": {
+      "autospin": "Spin (SPIN toggle): 0/1 discrete, default 1 (on). When on, continuously rotates the yaw at ~0.25 rad/sec, keeping the bulb tumbling (and the scene perpetually re-rendering). View-only, no CV.",
+      "detail": "Detail (DETAIL knob): fractal iteration budget, 4..30, discrete, default 20. Higher resolves more surface detail at greater cost; shared by both the render and the audio slice (shader caps the loop at 16).",
+      "hue": "Hue (HUE knob): palette shift, 0..1, default 0.55. Rotates the HSV tint applied to the lit surface and the sky background. Color only.",
+      "power": "Power (POWER knob): fractal exponent, 1..12, default 8 (the classic Mandelbulb). Morphs the overall shape and lobe count; shared by both the render and the audio slice.",
+      "rotate_x": "Rot X (ROT X knob): orbit camera pitch in radians, -pi..pi, default 0.5. Tilts the view up/down around the bulb. Camera-only.",
+      "rotate_y": "Rot Y (ROT Y knob): orbit camera yaw in radians, -pi..pi, default 0.6. Spins the view left/right; auto-spin adds to this value when SPIN is on. Camera-only.",
+      "screen_on": "Screen (SCRN toggle): 0/1 discrete, default 1 (on). Perf gate for the preview; when off AND video_out is unpatched the raymarch is skipped entirely and a flat 'SCREEN OFF' panel is shown. View-only, no CV.",
+      "slice": "Slice (SLICE toggle): 0/1 discrete, default 0 (off). Off = video-only with no audio node. On = reveals the slice-plane UI (yellow select box + 2D readout + slice knobs) and stands up the oscillator so audio_out carries the bulb's cross-section waveform.",
+      "slice_rx": "S Rot X (slice knob): slice plane pitch in radians, -pi..pi, linear, default 0. Re-orients which cross-section of the bulb is read out as audio. Slice-only; does not move the camera.",
+      "slice_ry": "S Rot Y (slice knob): slice plane yaw in radians, -pi..pi, linear, default 0. Re-orients the readout cross-section; also the horizontal axis of the on-card yellow select box. Slice-only.",
+      "slice_rz": "S Rot Z (slice knob): slice plane roll in radians, -pi..pi, linear, default 0. Spins the scanned cross-section within its own plane, reshaping the audio waveform. Slice-only.",
+      "slice_y": "Y (slice knob): slice plane offset along its rotated normal, +/-1.2 fractal units, linear, default 0 (centered on the bulb). Scans the readout plane through the whole bulb; drives the audio waveform. Also set by dragging the yellow box vertically.",
+      "zoom": "Zoom (ZOOM knob): camera dolly, 0.3..3, log curve, default 1. Larger values map to a closer eye distance, framing the bulb tighter. Camera-only; does not change the audio slice."
+    }
+  },
+  "mandleblot": {
+    "explanation": "MANDLEBLOT is a 2D Mandelbrot fractal generator rendered on the GPU. A WebGL2 fragment shader runs the escape-time loop (z = z² + c, bailout radius 16) per pixel, then smooth-colours it with the standard fractional-iteration trick (mu = i + 1 - log(log|z|)/log2) so colour bands don't stairstep. The same program renders twice per frame: a greyscale escape-time field to mono_out and an RGB-cycling palette to color_out, where hue is driven by iteration band (mu), time, and log(zoom) so each zoom depth feels like its own palette. It is a pure generator with no video input — it synthesizes the fractal from scratch. Frame it with X/Y, drive Zoom by hand or via zoom_cv (LFO/envelope) for an automatic dive into the seahorse valleys, raise Iter for filament detail in deep zooms, and use Color/Rot to animate the look. Single-precision highp-float caps usable zoom near 1e6×, past which the image goes block-y.",
+    "inputs": {
+      "zoom_cv": "CV input that modulates the Zoom control (linear cvScale onto the 0..1 zoom knob). A bipolar ±1 CV sweeps the knob position ±half its 0..1 range, centred on the current knob value; that resulting knob position is then run through the log map (knob 0→1×, 1→~1e6×) to get the real zoom factor, so a rising CV pushes the view deeper into the fractal. Patch an LFO or envelope here for an automatic dive. Rotation, X, Y, Iter and Color have no CV input (knob-only by design)."
+    },
+    "outputs": {
+      "color_out": "Colour (video) output: the RGB palette pass, full-saturation hue cycled by iteration band (mu), time, and zoom depth; in-set points are forced black to preserve the set's silhouette. This is the surface texture — the card's live preview and the default/canonical output handle.",
+      "mono_out": "Greyscale (mono-video) escape-time field: brightness = clamp(mu / Iter). In the live shader the in-set region renders WHITE (mu pins to Iter → v=1), while freshly-escaped points start dark at low mu and brighten toward the boundary — i.e. the set body is bright and the fast-escape exterior is dark."
+    },
+    "controls": {
+      "center_x": "X (X knob, linear, -2..2, default -0.7) — real part of the complex-plane view centre; pans the framing horizontally (-0.7 is the classic main-cardioid framing).",
+      "center_y": "Y (Y knob, linear, -2..2, default 0) — imaginary part of the view centre; pans the framing vertically.",
+      "color_cycle": "Color (COLOR knob, linear, 0..4, default 1) — scales the time and log(zoom) hue terms together. 0 freezes both drifts (hue still varies by iteration band via mu·0.05); higher values speed the continuous time cycle and the per-zoom palette shift. Affects color_out only.",
+      "iterations": "Iter (ITER knob, discrete, 50..500, default 150) — maximum escape iterations. Higher values resolve finer filament detail in deep zooms at higher GPU cost; the shader's loop is hard-capped at 500 and the value is rounded/clamped to [50,500].",
+      "rotation": "Rot (ROT knob, linear, 0..1) — rotates the view about its current centre, linearly mapped to 0..2π radians (0 = upright, 1 = a full turn). Knob-only, no CV.",
+      "zoom": "Zoom (ZOOM knob, log curve, 0..1). Mapped exponentially to a real zoom factor via 10^(6·knob) — 0→1× (whole set), 0.5→~1000×, 0.8→~63k×, 1.0→1e6× (the highp-float ceiling, past which the image goes block-y); default 0.2 (~16×). The card shows the live factor as a ×N / Nk× / NM× readout beneath the knob."
+    }
+  },
   "mapper": {
     "explanation": "MAPPER is a per-frame video keyer / matte processor. It shows the VID source only where the KEY input is bright, and paints black everywhere else. For each output texel the shader reads the KEY frame's Rec. 601 luminance (0.299 R + 0.587 G + 0.114 B), builds a mask = smoothstep(threshold - 0.03, threshold + 0.03, keyLuma), and outputs video * mask — so above the cutoff the video shows through, below it fades to black, with a sub-pixel soft edge that kills 1-texel aliasing on a moving key. It is STATELESS per frame: no feedback, no history, so the keyed region tracks the key source live. This generalises OUTLINES' hard-coded \"mapped\" output (video where >=2 shapes overlap) to an arbitrary luminance gate. A mono-video key (white-on-black from SHAPES / LINES / EDGES) is the common matte. Usage: patch a moving picture into VID, a white-on-black shape/mask into KEY, and turn Thresh to trim how much of the matte passes. Note: it is intentionally a black hole when half-patched — with either VID or KEY missing the output is solid black.",
     "inputs": {
@@ -3517,6 +3586,21 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "sustain": "SUSTAIN — the ADSR's held level while a note's gate stays high."
     }
   },
+  "scoreboard": {
+    "explanation": "A 4-digit neon 7-segment counter widget, rendered as a digital-alarm-clock face: a zero-padded value (0000-9999) drawn as chamfered hexagonal segments in a hue-tinted glow on soft black (#0a0a0a), with off segments fully invisible (no LCD ghost). It is a pure CV-driven generator with NO video input — a 2D OffscreenCanvas rasterizes the digits via the drawScoreboard helper and uploads them as an RGBA texture; a trivial fragment shader letterboxes that 8:3 source into the 4:3 engine frame, width-locked and centered vertically with pure-black bands top and bottom (and a dark fallback fill before the first paint). Each rising edge on SCORE adds 1 to the counter; it wraps from 9999 back to 0 (a periodic counter, handy for sequencing). RESET zeros it. The COLOR knob sets the lit-segment and glow hue. Patch a clock or sequencer gate into SCORE to count beats/events on screen, and a reset gate to zero it on a bar/loop boundary; the counter always starts at 0 on spawn (it is not persisted).",
+    "inputs": {
+      "reset": "Trigger (edge-only). A cv-typed input through the same bridge into the synthetic resetTrig param: each rising edge (hysteresis rise above 0.6, fall below 0.4) sets the counter back to 0. Edge-only, not level-sensitive; the held level is ignored. Rendered in the gate cable color on the card.",
+      "score": "Trigger (edge-only). A cv-typed input routed through the audio-to-video CV bridge into the synthetic scoreTrig param, where a hysteresis edge detector lives (rise above 0.6, fall below 0.4, so a CV hovering in the dead band never chatters): each rising edge increments the counter by 1, wrapping from 9999 back to 0. The level while held is ignored — only the edge counts. The card renders this jack in the gate cable color."
+    },
+    "outputs": {
+      "out": "Video. The rendered 4-digit display: the current counter value drawn as glowing hue-tinted 7-segment digits on soft black, letterboxed (width-locked, vertically centered, black bands top and bottom) into the engine frame. This is the module's only output — there is no audio output."
+    },
+    "controls": {
+      "color": "Hue of the lit segments and their neon glow halo, 0 to 1 mapped onto 0-360 degrees linearly (default ≈0.333 = green); segments render at high saturation (95%) and mid lightness (55%), with a shadow-blur glow scaled to the digit height. Set via the COLOR knob only — there is no CV input jack for color, though the knob remains MIDI-/automation-assignable like any other.",
+      "resetTrig": "Synthetic gate param (hidden from the card, exposed as the RESET cv jack via paramTarget). The CV bridge writes incoming gate values here via setParam, and the factory's hysteresis edge detector turns each rising edge into a reset of the counter to 0.",
+      "scoreTrig": "Synthetic gate param (hidden from the card, exposed as the SCORE cv jack via paramTarget). The CV bridge writes incoming gate values here via setParam, and the factory's hysteresis edge detector turns each rising edge into a +1 increment, wrapping at 10000 back to 0."
+    }
+  },
   "sequencer": {
     "explanation": "A step sequencer that walks a playhead across up to 128 steps (8 pages of 16), emitting each lit step's note as pitch CV plus a gate, driven by its own BPM clock or an external clock fed into CLOCK IN. Mental model: every step holds a note + an on/off gate + an optional chord; the playhead advances one 16th-note step per beat-subdivision (or one step per incoming clock edge), playing lit steps and resting on dark ones, and you can save up to 8 whole patterns into quicksave slots and switch between them live (instantly, or queued to swap cleanly at the loop's end). The whole transport (play/stop, reset, slot switching, next/prev/random navigation) is also drivable hands-free by patching gates into the CV inputs.",
     "inputs": {
@@ -3562,6 +3646,41 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "sequencer-snh-toggle": "Sample & Hold toggle (S&H / OFF) — the button form of the snh control: on (default) latches the pitch CV to the gate edge and holds it through rests, off lets pitch run continuously.",
       "snh": "Sample & hold on the pitch output, on by default: when on, the pitch CV is rewritten only on a step that actually fires a note, so it latches to the gate and holds steady through rests; turn it off for continuous pitch that can change on every step (including back toward rest).",
       "swing": "Shuffles the rhythm by lengthening the on-beat steps and shortening the off-beat steps that follow them, which pushes every off-beat later for a looser feel; 0 is dead-straight, higher values deepen the shuffle. Internal-clock only (an external clock sets its own timing)."
+    }
+  },
+  "shapedramps": {
+    "explanation": "SHAPEDRAMPS is a sync-locked parametric ramp generator for video coordinate synthesis — it draws gradients across the raster rather than processing an incoming picture. It emits four mono-video ramps: h_lin/v_lin are stable identity ramps (red channel = screen u or v, untouched by any knob or CV) for clean raster passthrough into geometry modules like RUTTETRA; h_out/v_out are shaped ramps that morph through four canonical shapes via H Shape / V Shape (0..1): linear (t), triangle (abs(2t-1)), soft-fold (0.5 - 0.5*cos(2pi*t)), and radial (H = distance from center scaled so corners read 1, V = angle around center), blending linearly between adjacent shapes. H/V Phase shift the ramp before shaping; H/V Freq scale the axis variable and fract-wrap it, so freq=2 repeats the shape twice across the canvas (a triangle becomes a two-peak zigzag). It also packs two general-purpose 2-channel video crossfade mixers (out = (1-amount)*A + amount*B) so you can blend ramp shapes without an external V-MIXER, though they accept any mono-video signal. Typical use: feed h_lin/v_lin into a coordinate consumer for an identity raster, then crossfade toward h_out/v_out to warp the geometry; all four ramps and both mixers render every frame so downstream consumers always read fresh textures.",
+    "inputs": {
+      "h_freq": "CV (linear) — modulates H Freq, scaling the horizontal ramp's repeat count (0.5..8); higher values tile the shape more times across the canvas.",
+      "h_phase": "CV (linear) — modulates H Phase, shifting the h_out ramp along the horizontal axis before shaping (0..1).",
+      "h_shape": "CV (linear) — modulates H Shape, morphing the h_out ramp through linear / triangle / soft-fold / radial as it sweeps 0..1.",
+      "mix1_a": "Mono-video — the A input of onboard mixer 1; crossfaded toward mix1_b by Mix 1. If unpatched, mixer 1 outputs B alone (black if both A and B are unpatched).",
+      "mix1_b": "Mono-video — the B input of onboard mixer 1; mix1_a is crossfaded toward it by Mix 1. If unpatched, mixer 1 outputs A alone.",
+      "mix1_cv": "CV (linear) — modulates the Mix 1 crossfade amount (0 = all A, 1 = all B).",
+      "mix2_a": "Mono-video — the A input of onboard mixer 2; crossfaded toward mix2_b by Mix 2. If unpatched, mixer 2 outputs B alone (black if both A and B are unpatched).",
+      "mix2_b": "Mono-video — the B input of onboard mixer 2; mix2_a is crossfaded toward it by Mix 2. If unpatched, mixer 2 outputs A alone.",
+      "mix2_cv": "CV (linear) — modulates the Mix 2 crossfade amount (0 = all A, 1 = all B).",
+      "v_freq": "CV (linear) — modulates V Freq, scaling the vertical ramp's repeat count (0.5..8); higher values tile the shape more times across the canvas.",
+      "v_phase": "CV (linear) — modulates V Phase, shifting the v_out ramp along the vertical axis before shaping (0..1).",
+      "v_shape": "CV (linear) — modulates V Shape, morphing the v_out ramp through linear / triangle / soft-fold / radial as it sweeps 0..1."
+    },
+    "outputs": {
+      "h_lin": "Mono-video — stable horizontal identity ramp (red channel = screen u, left=0 to right=1). Ignores every knob and CV; ideal as a clean raster passthrough.",
+      "h_out": "Mono-video — shaped horizontal ramp, morphed by H Shape and offset/scaled by H Phase and H Freq.",
+      "mix1_out": "Mono-video — onboard mixer 1 output: (1-amount)*mix1_a + amount*mix1_b, amount set by Mix 1 / mix1_cv.",
+      "mix2_out": "Mono-video — onboard mixer 2 output: (1-amount)*mix2_a + amount*mix2_b, amount set by Mix 2 / mix2_cv.",
+      "v_lin": "Mono-video — stable vertical identity ramp (red channel = screen v, top=0 to bottom=1). Ignores every knob and CV; ideal as a clean raster passthrough.",
+      "v_out": "Mono-video — shaped vertical ramp, morphed by V Shape and offset/scaled by V Phase and V Freq."
+    },
+    "controls": {
+      "h_freq": "H Freq (fader HF, 0.5..8, default 1) — scales the horizontal ramp's repeat count so the chosen shape tiles periodically across the canvas.",
+      "h_phase": "H Phase (fader HP, 0..1) — shifts the h_out ramp along the horizontal axis before shaping.",
+      "h_shape": "H Shape (fader HS, 0..1) — morphs the h_out ramp through linear, triangle, soft-fold, then radial; adjacent shapes blend linearly.",
+      "mix1": "Mix 1 (fader M1, 0..1, default 0.5) — crossfade amount for onboard mixer 1 (0 = all mix1_a, 1 = all mix1_b).",
+      "mix2": "Mix 2 (fader M2, 0..1, default 0.5) — crossfade amount for onboard mixer 2 (0 = all mix2_a, 1 = all mix2_b).",
+      "v_freq": "V Freq (fader VF, 0.5..8, default 1) — scales the vertical ramp's repeat count so the chosen shape tiles periodically across the canvas.",
+      "v_phase": "V Phase (fader VP, 0..1) — shifts the v_out ramp along the vertical axis before shaping.",
+      "v_shape": "V Shape (fader VS, 0..1) — morphs the v_out ramp through linear, triangle, soft-fold, then radial; adjacent shapes blend linearly."
     }
   },
   "shapegen": {
@@ -3707,6 +3826,80 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
     },
     "controls": {
       "gain": "Pre-analysis input trim (0.25..4, log, default 1) — boosts a quiet source up into the −90..−10 dB display window so its traces are visible (or tames a hot one). Applied before the FFT tap; it shapes the IMAGE contrast, not the audio (there's no audio output)."
+    }
+  },
+  "spirographs": {
+    "explanation": "A pure video source (no input) that renders 1-3 independent classic spirographs and uploads them to the GPU each frame. Each spiro is a trochoid traced by a pen at offset p inside a rolling circle of radius r that rolls without slipping on a fixed circle of radius R: inside=hypotrochoid (rolling circle inside the fixed one), outside=epitrochoid (rolling circle outside it). The R:r ratio sets how many petals/loops the figure makes and how many revolutions it takes to close (a rational ratio closes; a near-irrational one densely fills the annulus, capped at a sane max). Each spiro has its own full parameter bank (R, r, pen, in/out, rotation, scale, X/Y, thickness, hue) and its own center that drifts independently across the frame, with the fixed-radius circle bouncing elastically off the four edges (only the fixed circle is kept fully in-frame; the drawn curve may overflow and clip, which is intended). The COLOR out composites each curve in its hue additively (lighter blend) on black so crossings glow toward white; switch its output port to get a white-on-black matte or a density-mapped rainbow \"candy\" overlap instead. Usage: pick a count, then use the per-spiro tabs to dial each figure (try a 5:2 inside spiro for a 5-petal star), and feed an LFO into a rotation or scale CV for slow living motion.",
+    "inputs": {
+      "count": "modulates Count (discrete CV, 1-3): how many of the three spiros render this frame.",
+      "s1_R": "modulates spiro 1 Fixed radius (R, 1-12): the fixed outer circle; with r sets the petal ratio.",
+      "s1_chroma": "modulates spiro 1 Hue (0-1 colorwheel): the curve's color in the COLOR output.",
+      "s1_inside": "modulates spiro 1 In/Out (discrete CV): high = inside (hypotrochoid), low = outside (epitrochoid).",
+      "s1_p": "modulates spiro 1 Pen offset (p, 0-8): pen distance from the rolling circle's center.",
+      "s1_r": "modulates spiro 1 Roll radius (r, 0.5-11): the rolling circle's radius; R:r drives the figure.",
+      "s1_rotation": "modulates spiro 1 Rotation (0-2pi radians): spins the whole figure about its center.",
+      "s1_scale": "modulates spiro 1 Scale (4-60): spiro-space-to-pixels zoom of the figure.",
+      "s1_thickness": "modulates spiro 1 Width (0.5-12 px): stroke line width of the curve.",
+      "s1_xOffset": "modulates spiro 1 X offset (-1..1): nudges its drift home position horizontally.",
+      "s1_yOffset": "modulates spiro 1 Y offset (-1..1): nudges its drift home position vertically.",
+      "s2_R": "modulates spiro 2 Fixed radius (R, 1-12): the fixed outer circle; with r sets the petal ratio.",
+      "s2_chroma": "modulates spiro 2 Hue (0-1 colorwheel): the curve's color in the COLOR output.",
+      "s2_inside": "modulates spiro 2 In/Out (discrete CV): high = inside (hypotrochoid), low = outside (epitrochoid).",
+      "s2_p": "modulates spiro 2 Pen offset (p, 0-8): pen distance from the rolling circle's center.",
+      "s2_r": "modulates spiro 2 Roll radius (r, 0.5-11): the rolling circle's radius; R:r drives the figure.",
+      "s2_rotation": "modulates spiro 2 Rotation (0-2pi radians): spins the whole figure about its center.",
+      "s2_scale": "modulates spiro 2 Scale (4-60): spiro-space-to-pixels zoom of the figure.",
+      "s2_thickness": "modulates spiro 2 Width (0.5-12 px): stroke line width of the curve.",
+      "s2_xOffset": "modulates spiro 2 X offset (-1..1): nudges its drift home position horizontally.",
+      "s2_yOffset": "modulates spiro 2 Y offset (-1..1): nudges its drift home position vertically.",
+      "s3_R": "modulates spiro 3 Fixed radius (R, 1-12): the fixed outer circle; with r sets the petal ratio.",
+      "s3_chroma": "modulates spiro 3 Hue (0-1 colorwheel): the curve's color in the COLOR output.",
+      "s3_inside": "modulates spiro 3 In/Out (discrete CV): high = inside (hypotrochoid), low = outside (epitrochoid).",
+      "s3_p": "modulates spiro 3 Pen offset (p, 0-8): pen distance from the rolling circle's center.",
+      "s3_r": "modulates spiro 3 Roll radius (r, 0.5-11): the rolling circle's radius; R:r drives the figure.",
+      "s3_rotation": "modulates spiro 3 Rotation (0-2pi radians): spins the whole figure about its center.",
+      "s3_scale": "modulates spiro 3 Scale (4-60): spiro-space-to-pixels zoom of the figure.",
+      "s3_thickness": "modulates spiro 3 Width (0.5-12 px): stroke line width of the curve.",
+      "s3_xOffset": "modulates spiro 3 X offset (-1..1): nudges its drift home position horizontally.",
+      "s3_yOffset": "modulates spiro 3 Y offset (-1..1): nudges its drift home position vertically."
+    },
+    "outputs": {
+      "mono_out": "MONO: every spiro stroked white on black, a clean matte for keying or luma effects downstream.",
+      "out": "COLOR: the canonical full-color composite, each spiro stroked in its hue and additively blended (lighter) on black so overlaps glow toward white.",
+      "overlap": "CANDY: the per-pixel line-stack density mapped to a cascading rainbow that blooms to a white core where many lines pile up (hue-independent: driven by density, not the chroma controls)."
+    },
+    "controls": {
+      "count": "Count (1-3, discrete): how many of the three spiros render. Independent of which tab you are editing.",
+      "s1_R": "Spiro 1 Fixed (R, 1-12): the fixed outer circle radius; with Roll it sets the petal/loop ratio.",
+      "s1_chroma": "Spiro 1 Hue (0-1 colorwheel): the curve's color in the COLOR output (MONO and CANDY ignore it).",
+      "s1_inside": "Spiro 1 In/Out toggle: INSIDE = hypotrochoid (rolling circle inside), OUTSIDE = epitrochoid (rolling circle outside).",
+      "s1_p": "Spiro 1 Pen (p, 0-8): pen offset in the rolling circle; 0 traces a plain circle, larger makes deeper loops.",
+      "s1_r": "Spiro 1 Roll (r, 0.5-11): the rolling circle radius; the R:r ratio defines the figure and revolutions to close.",
+      "s1_rotation": "Spiro 1 Rot (0-2pi radians): static rotation of the whole figure about its center.",
+      "s1_scale": "Spiro 1 Scale (4-60): zoom from spiro-space units to pixels; with R it also sets the fixed circle's bounce inset.",
+      "s1_thickness": "Spiro 1 Width (0.5-12 px): stroke line width, drawn with round joins and caps.",
+      "s1_xOffset": "Spiro 1 X (-1..1): nudges the drift home position horizontally (center still drifts and bounces).",
+      "s1_yOffset": "Spiro 1 Y (-1..1): nudges the drift home position vertically (center still drifts and bounces).",
+      "s2_R": "Spiro 2 Fixed (R, 1-12): the fixed outer circle radius; with Roll it sets the petal/loop ratio.",
+      "s2_chroma": "Spiro 2 Hue (0-1 colorwheel): the curve's color in the COLOR output (MONO and CANDY ignore it).",
+      "s2_inside": "Spiro 2 In/Out toggle: INSIDE = hypotrochoid (rolling circle inside), OUTSIDE = epitrochoid (rolling circle outside).",
+      "s2_p": "Spiro 2 Pen (p, 0-8): pen offset in the rolling circle; 0 traces a plain circle, larger makes deeper loops.",
+      "s2_r": "Spiro 2 Roll (r, 0.5-11): the rolling circle radius; the R:r ratio defines the figure and revolutions to close.",
+      "s2_rotation": "Spiro 2 Rot (0-2pi radians): static rotation of the whole figure about its center.",
+      "s2_scale": "Spiro 2 Scale (4-60): zoom from spiro-space units to pixels; with R it also sets the fixed circle's bounce inset.",
+      "s2_thickness": "Spiro 2 Width (0.5-12 px): stroke line width, drawn with round joins and caps.",
+      "s2_xOffset": "Spiro 2 X (-1..1): nudges the drift home position horizontally (center still drifts and bounces).",
+      "s2_yOffset": "Spiro 2 Y (-1..1): nudges the drift home position vertically (center still drifts and bounces).",
+      "s3_R": "Spiro 3 Fixed (R, 1-12): the fixed outer circle radius; with Roll it sets the petal/loop ratio.",
+      "s3_chroma": "Spiro 3 Hue (0-1 colorwheel): the curve's color in the COLOR output (MONO and CANDY ignore it).",
+      "s3_inside": "Spiro 3 In/Out toggle: INSIDE = hypotrochoid (rolling circle inside), OUTSIDE = epitrochoid (rolling circle outside).",
+      "s3_p": "Spiro 3 Pen (p, 0-8): pen offset in the rolling circle; 0 traces a plain circle, larger makes deeper loops.",
+      "s3_r": "Spiro 3 Roll (r, 0.5-11): the rolling circle radius; the R:r ratio defines the figure and revolutions to close.",
+      "s3_rotation": "Spiro 3 Rot (0-2pi radians): static rotation of the whole figure about its center.",
+      "s3_scale": "Spiro 3 Scale (4-60): zoom from spiro-space units to pixels; with R it also sets the fixed circle's bounce inset.",
+      "s3_thickness": "Spiro 3 Width (0.5-12 px): stroke line width, drawn with round joins and caps.",
+      "s3_xOffset": "Spiro 3 X (-1..1): nudges the drift home position horizontally (center still drifts and bounces).",
+      "s3_yOffset": "Spiro 3 Y (-1..1): nudges the drift home position vertically (center still drifts and bounces)."
     }
   },
   "stages": {

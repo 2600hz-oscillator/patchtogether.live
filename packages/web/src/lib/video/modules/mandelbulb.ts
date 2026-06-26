@@ -391,6 +391,42 @@ export const mandelbulbDef: VideoModuleDef = {
     { id: 'slice_rz',  label: 'S Rot Z',defaultValue: DEFAULTS.slice_rz, min: -Math.PI,       max: Math.PI,       curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "A WebGL2 ray-marched 3D Mandelbulb fractal source that doubles as an audio oscillator. A single full-screen-quad fragment shader marches the power-8 Mandelbulb distance estimate, shades the hit surface with finite-difference normals, diffuse + Phong specular and a soft shadow, tints it with the Hue palette, and emits the render on video_out (4:3, ray-marched internally at half engine resolution — 512x384 at the 1024x768 default — and LINEAR-upscaled). An orbit camera (Zoom dolly + Rot X pitch / Rot Y yaw) frames the bulb; Power morphs the fractal shape and Detail sets the iteration budget (higher = crisper, costlier). Turn SLICE on to bridge into audio: a fixed-size plane (camera-independent) is marched through the bulb's distance field to read its cross-section as a 256-sample wavetable, played as an oscillator on audio_out and shown as a second on-card readout with a draggable yellow select box. Usage: patch a slow LFO into rotate_y_cv (or just leave SPIN on) for a tumbling fractal, modulate power_cv for shape-morphing, and enable SLICE to play the bulb's geometry as an evolving waveform.",
+    inputs: {
+      zoom_cv: "Modulates Zoom: a linear-scaled CV dollies the orbit camera toward (higher) or away from the bulb over its 0.3..3 range; affects framing only, not the audio slice.",
+      rotate_x_cv: "Modulates Rot X: linear CV sweeps the orbit camera's pitch over -pi..pi. Camera-only, so it never changes the slice waveform on audio_out.",
+      rotate_y_cv: "Modulates Rot Y: linear CV sweeps the orbit camera's yaw over -pi..pi (added on top of any auto-spin). Camera-only; does not affect the audio slice.",
+      power_cv: "Modulates Power: linear CV sweeps the fractal exponent over 1..12 (8 = classic bulb), morphing the whole shape. Power is shared by the picture AND the slice, so this also reshapes audio_out when SLICE is on.",
+      detail_cv: "Modulates Detail: linear CV sweeps the fractal iteration budget over 4..30 (discrete). Higher = sharper surface detail at more cost; shared with the slice, so it also affects audio_out when SLICE is on.",
+      hue_cv: "Modulates Hue: linear CV rotates the palette over 0..1, tinting both the lit surface and the sky background. Color only; no effect on geometry or the audio slice.",
+      slice_y_cv: "Modulates the slice plane offset (Y): linear CV slides the readout plane along its rotated normal over +/-1.2 fractal units, scanning it through the whole bulb. Drives the audio_out waveform; no effect on the camera view.",
+      slice_rx_cv: "Modulates the slice plane pitch (S Rot X): linear CV rotates the readout plane over -pi..pi about X, re-orienting which cross-section is scanned. Shapes audio_out; camera unaffected.",
+      slice_ry_cv: "Modulates the slice plane yaw (S Rot Y): linear CV rotates the readout plane over -pi..pi about Y (this is also the horizontal axis of the on-card yellow select box). Shapes audio_out; camera unaffected.",
+      slice_rz_cv: "Modulates the slice plane roll (S Rot Z): linear CV rotates the readout plane over -pi..pi about Z, spinning the scanned cross-section in its own plane. Shapes audio_out; camera unaffected.",
+    },
+    outputs: {
+      video_out: "Mono-video out: the shaded Mandelbulb render (4:3, ray-marched at half engine resolution — 512x384 at the 1024x768 default — and LINEAR-upscaled to the engine output res). Always live; when SCRN is off AND this port is unpatched the raymarch is skipped to save performance.",
+      audio_out: "Mono audio out: the bulb's slice cross-section played as a 256-sample wavetable oscillator. Silent unless the SLICE toggle is on (with SLICE off, no audio node exists); driven by the slice_y / slice_rx / slice_ry / slice_rz / Power / Detail controls.",
+    },
+    controls: {
+      zoom: "Zoom (ZOOM knob): camera dolly, 0.3..3, log curve, default 1. Larger values map to a closer eye distance, framing the bulb tighter. Camera-only; does not change the audio slice.",
+      rotate_x: "Rot X (ROT X knob): orbit camera pitch in radians, -pi..pi, default 0.5. Tilts the view up/down around the bulb. Camera-only.",
+      rotate_y: "Rot Y (ROT Y knob): orbit camera yaw in radians, -pi..pi, default 0.6. Spins the view left/right; auto-spin adds to this value when SPIN is on. Camera-only.",
+      power: "Power (POWER knob): fractal exponent, 1..12, default 8 (the classic Mandelbulb). Morphs the overall shape and lobe count; shared by both the render and the audio slice.",
+      detail: "Detail (DETAIL knob): fractal iteration budget, 4..30, discrete, default 20. Higher resolves more surface detail at greater cost; shared by both the render and the audio slice (shader caps the loop at 16).",
+      hue: "Hue (HUE knob): palette shift, 0..1, default 0.55. Rotates the HSV tint applied to the lit surface and the sky background. Color only.",
+      autospin: "Spin (SPIN toggle): 0/1 discrete, default 1 (on). When on, continuously rotates the yaw at ~0.25 rad/sec, keeping the bulb tumbling (and the scene perpetually re-rendering). View-only, no CV.",
+      screen_on: "Screen (SCRN toggle): 0/1 discrete, default 1 (on). Perf gate for the preview; when off AND video_out is unpatched the raymarch is skipped entirely and a flat 'SCREEN OFF' panel is shown. View-only, no CV.",
+      slice: "Slice (SLICE toggle): 0/1 discrete, default 0 (off). Off = video-only with no audio node. On = reveals the slice-plane UI (yellow select box + 2D readout + slice knobs) and stands up the oscillator so audio_out carries the bulb's cross-section waveform.",
+      slice_y: "Y (slice knob): slice plane offset along its rotated normal, +/-1.2 fractal units, linear, default 0 (centered on the bulb). Scans the readout plane through the whole bulb; drives the audio waveform. Also set by dragging the yellow box vertically.",
+      slice_rx: "S Rot X (slice knob): slice plane pitch in radians, -pi..pi, linear, default 0. Re-orients which cross-section of the bulb is read out as audio. Slice-only; does not move the camera.",
+      slice_ry: "S Rot Y (slice knob): slice plane yaw in radians, -pi..pi, linear, default 0. Re-orients the readout cross-section; also the horizontal axis of the on-card yellow select box. Slice-only.",
+      slice_rz: "S Rot Z (slice knob): slice plane roll in radians, -pi..pi, linear, default 0. Spins the scanned cross-section within its own plane, reshaping the audio waveform. Slice-only.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
 
