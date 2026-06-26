@@ -291,6 +291,29 @@ const PROBES: Probe[] = [
     cvPort: '', // the three inputs are raw audio signals (no paramTarget)
     modulates: /./,
   },
+  // --- Batch 7 — Moog System 35/55 modulation & routing (2026-06-26). Only the
+  // CONVENTION-card members (no `card:` override) are interactive: moog911 (four
+  // Knobs) and moog984 (a 4×4 Knob matrix), each a pure Knob + PatchPanel via
+  // MoogPanel, so the live card mounts and a control hover updates the pane. The
+  // CV→param dual-context check runs on moog911 (t1_cv has paramTarget=t1); the
+  // 984's audio inputs have no paramTarget (cvPort '' skips it). The override-card
+  // siblings (911a/912/960/992/993/cp3) stay STATIC. ---
+  {
+    id: 'moog911',
+    heading: /911 eg/i,
+    controlParam: 't1',
+    controlDescIncludes: /attack|rise|swell/i,
+    cvPort: 't1_cv', // CV (paramTarget=t1) → attack-time param
+    modulates: /modulates/i,
+  },
+  {
+    id: 'moog984',
+    heading: /984 matrix/i,
+    controlParam: 'm11',
+    controlDescIncludes: /cross-point|mix|input 1/i,
+    cvPort: '', // the four inputs are raw audio (no paramTarget)
+    modulates: /./,
+  },
 ];
 
 /** Wait for the live virtual module to finish mounting (the flow host appears

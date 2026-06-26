@@ -77,6 +77,35 @@ export const moog911Def: AudioModuleDef = {
     { id: 't3',   label: 'T3',   defaultValue: 0.4,  min: 0.0001, max: 10, curve: 'log', units: 's' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 911 Envelope Generator — the classic Moog 'contour generator', NOT a literal ADSR. It's a unipolar (0..1) envelope shaped by three time constants and one sustain LEVEL: when the TRIG gate goes high it rises to full over the ATTACK time (T1), then falls to the SUSTAIN level over the INITIAL-DECAY time (T2) and holds there for as long as the gate stays high; when the gate falls it returns to zero over the FINAL-DECAY time (T3). So the contour is attack → initial-decay-to-sustain → (hold) → final-decay, rather than A-D-S-R. Patch the OUT envelope into a VCA or filter cutoff to shape a note, and use the inverted OUT to duck or sidechain. Mental model: a transient-shaping contour fired by a gate, with separate up/settle/release slopes and a held middle.",
+    inputs: {
+      gate:
+        "The trigger/sustain gate (an S-trigger). A rising edge starts the contour (ATTACK → INITIAL DECAY → hold at SUSTAIN); the envelope holds at the sustain level while the gate stays high, and the falling edge starts the FINAL DECAY (T3) back to zero. A short gate that falls before settling still triggers a clean release.",
+      t1_cv:
+        "CV that scales the ATTACK time (T1) around the knob setting: a positive voltage lengthens the rise, a negative one shortens it (log-scaled, so the full natural decade range sweeps centered on where you set the knob).",
+      t2_cv:
+        "CV that scales the INITIAL-DECAY time (T2) — how fast the envelope falls from its peak down to the sustain level — around the knob setting (log-scaled).",
+      esus_cv:
+        "CV that displaces the SUSTAIN LEVEL (Esus, 0..1) up or down from the knob position, changing the level the contour holds at while the gate is held (linear, unipolar).",
+      t3_cv:
+        "CV that scales the FINAL-DECAY time (T3) — the release slope back to zero after the gate falls — around the knob setting (log-scaled).",
+    },
+    outputs: {
+      env:
+        "The contour itself, a unipolar 0..1 control voltage. Patch it into a VCA's gain or a filter's cutoff to shape each note's loudness/brightness over time.",
+      env_inv:
+        "The inverted contour (1 − env): high when the envelope is low and vice-versa. The standard Eurorack ducking/sidechain tap — patch it into a VCA to pull a level DOWN whenever the envelope fires.",
+    },
+    controls: {
+      t1: "ATTACK time (T1): how long the envelope takes to rise to full when the gate opens — from an instant click to a slow ~10 s swell (log taper).",
+      t2: "INITIAL-DECAY time (T2): how long the envelope takes to fall from its peak down to the SUSTAIN level after the attack completes (log taper). This is the 'decay' stage of the contour.",
+      esus: "SUSTAIN LEVEL (Esus): the level the envelope holds at while the gate is held, from 0 (decays all the way to silence, an AD-style pluck) to 1 (holds at full, no initial decay).",
+      t3: "FINAL-DECAY time (T3): the release — how long the envelope takes to fall back to zero after the gate falls (log taper). A trigger close forces T3 from whatever stage the contour was in.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

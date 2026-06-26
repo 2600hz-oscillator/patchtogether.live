@@ -650,6 +650,56 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "lp": "Level of the fixed LOW-PASS section at the bottom of the bank (corner ~175 Hz) — raise to add weight and lows, cut to thin the bottom. Defaults to 0.5."
     }
   },
+  "moog911": {
+    "explanation": "A clean-room recreation of the Moog 911 Envelope Generator — the classic Moog 'contour generator', NOT a literal ADSR. It's a unipolar (0..1) envelope shaped by three time constants and one sustain LEVEL: when the TRIG gate goes high it rises to full over the ATTACK time (T1), then falls to the SUSTAIN level over the INITIAL-DECAY time (T2) and holds there for as long as the gate stays high; when the gate falls it returns to zero over the FINAL-DECAY time (T3). So the contour is attack → initial-decay-to-sustain → (hold) → final-decay, rather than A-D-S-R. Patch the OUT envelope into a VCA or filter cutoff to shape a note, and use the inverted OUT to duck or sidechain. Mental model: a transient-shaping contour fired by a gate, with separate up/settle/release slopes and a held middle.",
+    "inputs": {
+      "esus_cv": "CV that displaces the SUSTAIN LEVEL (Esus, 0..1) up or down from the knob position, changing the level the contour holds at while the gate is held (linear, unipolar).",
+      "gate": "The trigger/sustain gate (an S-trigger). A rising edge starts the contour (ATTACK → INITIAL DECAY → hold at SUSTAIN); the envelope holds at the sustain level while the gate stays high, and the falling edge starts the FINAL DECAY (T3) back to zero. A short gate that falls before settling still triggers a clean release.",
+      "t1_cv": "CV that scales the ATTACK time (T1) around the knob setting: a positive voltage lengthens the rise, a negative one shortens it (log-scaled, so the full natural decade range sweeps centered on where you set the knob).",
+      "t2_cv": "CV that scales the INITIAL-DECAY time (T2) — how fast the envelope falls from its peak down to the sustain level — around the knob setting (log-scaled).",
+      "t3_cv": "CV that scales the FINAL-DECAY time (T3) — the release slope back to zero after the gate falls — around the knob setting (log-scaled)."
+    },
+    "outputs": {
+      "env": "The contour itself, a unipolar 0..1 control voltage. Patch it into a VCA's gain or a filter's cutoff to shape each note's loudness/brightness over time.",
+      "env_inv": "The inverted contour (1 − env): high when the envelope is low and vice-versa. The standard Eurorack ducking/sidechain tap — patch it into a VCA to pull a level DOWN whenever the envelope fires."
+    },
+    "controls": {
+      "esus": "SUSTAIN LEVEL (Esus): the level the envelope holds at while the gate is held, from 0 (decays all the way to silence, an AD-style pluck) to 1 (holds at full, no initial decay).",
+      "t1": "ATTACK time (T1): how long the envelope takes to rise to full when the gate opens — from an instant click to a slow ~10 s swell (log taper).",
+      "t2": "INITIAL-DECAY time (T2): how long the envelope takes to fall from its peak down to the SUSTAIN level after the attack completes (log taper). This is the 'decay' stage of the contour.",
+      "t3": "FINAL-DECAY time (T3): the release — how long the envelope takes to fall back to zero after the gate falls (log taper). A trigger close forces T3 from whatever stage the contour was in."
+    }
+  },
+  "moog911a": {
+    "explanation": "A clean-room recreation of the Moog 911A Dual Trigger Delay — two independent timers that each take an incoming trigger and re-emit it a programmed time later. A rising edge on a TRIG input starts that channel's countdown; when the DELAY time elapses the matching OUT emits a short (~1 ms) trigger pulse. The MODE switch couples the two channels: OFF runs them as two separate delays (each its own trigger in/out), PARALLEL fans one trigger into BOTH delays at once (one input fires two outputs, useful for staggered double-hits), and SERIES chains them so OUT 1 re-triggers delay 2 (the total delay before OUT 2 fires is delay1 + delay2). Mental model: a pair of 'echo' timers for gates/triggers — patch a clock or strike in, get a time-shifted copy out, to offset a second voice or build rhythmic delays of events (not audio).",
+    "inputs": {
+      "trig1": "Trigger input for delay 1, and the master trigger in PARALLEL and SERIES modes. A rising edge here starts delay 1's countdown (and, in PARALLEL, delay 2's too); it fires once per edge, not while held.",
+      "trig2": "Trigger input for delay 2 — used only in OFF mode (where the two delays are independent). In PARALLEL and SERIES this input is ignored because delay 2 is driven from TRIG 1 / OUT 1 instead."
+    },
+    "outputs": {
+      "out1": "Delay 1's output: a short (~1 ms) trigger pulse emitted once, DELAY 1 seconds after its trigger arrived. In SERIES mode this pulse also re-triggers delay 2.",
+      "out2": "Delay 2's output: a short trigger pulse, DELAY 2 seconds after delay 2 was triggered (from TRIG 2 in OFF, from TRIG 1 in PARALLEL, or from OUT 1 in SERIES — giving a total delay1 + delay2 from the original trigger)."
+    },
+    "controls": {
+      "delay1": "Delay time for channel 1: how long after its trigger before OUT 1 fires, from 2 ms up to 10 s (log taper).",
+      "delay2": "Delay time for channel 2: how long before OUT 2 fires, from 2 ms up to 10 s (log taper). In SERIES this stacks on top of delay 1.",
+      "mode": "Coupling between the two delays: OFF = independent (each its own trigger in/out), PARALLEL = TRIG 1 fires both delays at once (one in, two staggered outs), SERIES = OUT 1 re-triggers delay 2 so the two times add up (delay1 then delay2)."
+    }
+  },
+  "moog912": {
+    "explanation": "A clean-room recreation of the Moog 912 Envelope Follower — a passive ANALYSIS utility that listens to an incoming audio signal's loudness and turns it into a smooth control voltage (an 'envelope') plus a gate that's high while the input is sounding. Internally the audio is full-wave rectified (|x|, turning the bipolar waveform into a magnitude) and lowpass-filtered into a slowly-varying level; a steep threshold on that level produces the gate. Patch a drum loop, vocal, or any live source in, and use ENV to open a VCA/filter that tracks the input's dynamics, or GATE to fire an envelope generator from an external sound. Mental model: 'how loud is this right now?' as a CV, plus a 'is it playing?' on/off gate. The two knobs trade off how hard the signal is measured (SENS) and how lazily the envelope reacts (SMOOTH).",
+    "inputs": {
+      "audio": "The signal to follow — the audio being measured (not a modulator). Its amplitude drives both the ENV and GATE outputs; louder material gives a bigger envelope. Patch a drum, vocal, or full mix here."
+    },
+    "outputs": {
+      "env": "The smoothed amplitude envelope as a control voltage: the rectified, lowpass-filtered loudness of the input. Patch it into a VCA's gain or a filter's cutoff to make them track how loud the source is.",
+      "gate": "Goes high (~1) while the followed envelope is above the detection threshold (the input is audibly playing) and low (~0) when it falls quiet — an auto-gate derived from the sound itself. Patch it into an envelope generator or VCA to trigger from a live source."
+    },
+    "controls": {
+      "sensitivity": "Input gain into the follower — how hard the incoming signal hits the detector. Higher SENS makes quiet material produce a bigger envelope (and opens the gate more readily); lower SENS only responds to loud peaks.",
+      "smoothing": "How lazily the envelope reacts: more SMOOTH lowers the detector's lowpass cutoff so the CV glides slowly and ignores fast transients (a smooth contour); less SMOOTH speeds it up so the envelope snaps to each peak (a punchy, percussive follow)."
+    }
+  },
   "moog914": {
     "explanation": "A recreation of the Moog 914 Extended Fixed Filter Bank — the System 55's full fixed filter bank, the bigger sibling of the 907A and a kind of fixed graphic EQ for spectral and formant shaping. The signal fans into fourteen parallel filter sections whose centre frequencies DO NOT move: a fixed low-pass shelf at the bottom, TWELVE fixed band-pass sections in the classic 1/3-octave series (125 Hz, 175, 250, 350, 500, 700, 1 kHz, 1.4 k, 2 k, 2.8 k, 4 k, 5.6 k), and a fixed high-pass shelf at the top. Each section has its own LEVEL knob and all sum to one output, so you sculpt a sound by boosting and cutting fixed regions — emphasise formants, notch harsh bands, or carve detailed vocal/telephone tones with finer resolution than the 907A. The bands never move and there is no CV: a pure Web Audio biquad + gain graph, identical wiring to the 907A with twelve bands instead of eight. At the default 0.5 every band passes at half level, a neutral middle to boost or cut from.",
     "inputs": {
@@ -771,6 +821,58 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "scale": "How many octaves the ribbon spans end-to-end, 0 to 5 (default 2 = a two-octave strip). Larger = wider pitch range but coarser finger resolution."
     }
   },
+  "moog960": {
+    "explanation": "A clean-room recreation of the Moog 960 Sequential Controller — the System 55's analog step sequencer. It's a 3-row × 8-column grid of knobs: a single shared column pointer sweeps the 8 columns (steps), and on each advance every row outputs its current column's knob value as a held control voltage on ROW 1/2/3 OUT. So one pass of the sequence produces three parallel CV streams (e.g. ROW 1 → oscillator pitch, ROW 2 → filter cutoff, ROW 3 → VCA level), all stepping in lockstep. The pointer advances on each rising edge of an external CLOCK, or, when CLOCK is unpatched, at the internal RATE. Per-row RANGE switches scale that row's CV (×1/×2/×4), and a per-COLUMN MODE switch can make a step SKIP (jump past it) or STOP (halt holding that column) for non-linear patterns. A clock pulse is emitted on CLOCK OUT each advance for chaining. It auto-runs on placement. Mental model: three knob-banks read out a column at a time, like three sequencers sharing one playhead. Drive it from a clock (or its own internal rate) and patch the row outputs as stepped modulation/pitch.",
+    "inputs": {
+      "clock": "External clock: each rising edge advances the column pointer exactly one step. While anything is patched here the internal RATE is ignored and the incoming pulses set the pace; unpatch to fall back to the RATE knob.",
+      "start": "A rising edge starts the sequencer running from column 1 (re-zeros the pointer and resumes advancing).",
+      "stop": "A rising edge halts the sequencer; the pointer and the three row CVs hold their last column's values (an analog hold, not a reset)."
+    },
+    "outputs": {
+      "clock_out": "A short (~10 ms) pulse fired on every column advance — the 'I just stepped' signal. Patch it into another sequencer's clock to chain them in lockstep.",
+      "row1": "Row 1's stepped control voltage: the current column's ROW 1 knob value, scaled by RANGE 1, held until the next advance. Patch it as pitch CV or any per-step modulation.",
+      "row2": "Row 2's stepped control voltage: the current column's ROW 2 knob value × RANGE 2, held between steps.",
+      "row3": "Row 3's stepped control voltage: the current column's ROW 3 knob value × RANGE 3, held between steps."
+    },
+    "controls": {
+      "mode1": "Column 1 MODE: NORMAL (play this step), SKIP (jump straight past it), or STOP (halt holding this column when the pointer lands here).",
+      "mode2": "Column 2 MODE: NORMAL / SKIP / STOP.",
+      "mode3": "Column 3 MODE: NORMAL / SKIP / STOP.",
+      "mode4": "Column 4 MODE: NORMAL / SKIP / STOP.",
+      "mode5": "Column 5 MODE: NORMAL / SKIP / STOP.",
+      "mode6": "Column 6 MODE: NORMAL / SKIP / STOP.",
+      "mode7": "Column 7 MODE: NORMAL / SKIP / STOP.",
+      "mode8": "Column 8 MODE: NORMAL / SKIP / STOP — set this to make column 8 the loop's last step (STOP) or to shorten the run (earlier STOP/SKIP columns).",
+      "r1s1": "Row 1, step 1 level: the CV row 1 outputs when the pointer is on column 1 (0..1, before the RANGE 1 multiplier).",
+      "r1s2": "Row 1, step 2 level — row 1's output on column 2.",
+      "r1s3": "Row 1, step 3 level — row 1's output on column 3.",
+      "r1s4": "Row 1, step 4 level — row 1's output on column 4.",
+      "r1s5": "Row 1, step 5 level — row 1's output on column 5.",
+      "r1s6": "Row 1, step 6 level — row 1's output on column 6.",
+      "r1s7": "Row 1, step 7 level — row 1's output on column 7.",
+      "r1s8": "Row 1, step 8 level — row 1's output on column 8.",
+      "r2s1": "Row 2, step 1 level: the CV row 2 outputs on column 1 (0..1, before RANGE 2).",
+      "r2s2": "Row 2, step 2 level — row 2's output on column 2.",
+      "r2s3": "Row 2, step 3 level — row 2's output on column 3.",
+      "r2s4": "Row 2, step 4 level — row 2's output on column 4.",
+      "r2s5": "Row 2, step 5 level — row 2's output on column 5.",
+      "r2s6": "Row 2, step 6 level — row 2's output on column 6.",
+      "r2s7": "Row 2, step 7 level — row 2's output on column 7.",
+      "r2s8": "Row 2, step 8 level — row 2's output on column 8.",
+      "r3s1": "Row 3, step 1 level: the CV row 3 outputs on column 1 (0..1, before RANGE 3).",
+      "r3s2": "Row 3, step 2 level — row 3's output on column 2.",
+      "r3s3": "Row 3, step 3 level — row 3's output on column 3.",
+      "r3s4": "Row 3, step 4 level — row 3's output on column 4.",
+      "r3s5": "Row 3, step 5 level — row 3's output on column 5.",
+      "r3s6": "Row 3, step 6 level — row 3's output on column 6.",
+      "r3s7": "Row 3, step 7 level — row 3's output on column 7.",
+      "r3s8": "Row 3, step 8 level — row 3's output on column 8.",
+      "range1": "Row 1 RANGE: scales row 1's whole output — ×1 (0..1), ×2 (0..2), or ×4 (0..4). Use it to widen ROW 1's CV span (e.g. more octaves of pitch).",
+      "range2": "Row 2 RANGE: ×1 / ×2 / ×4 multiplier on row 2's output span.",
+      "range3": "Row 3 RANGE: ×1 / ×2 / ×4 multiplier on row 3's output span.",
+      "rate": "Internal clock speed in Hz (steps per second), used only when nothing is patched into CLOCK IN; an external clock overrides it."
+    }
+  },
   "moog961": {
     "explanation": "A clean-room recreation of the Moog 961 Interface — the trigger/gate format converter that bridges a Moog modular's S-trigger (switch) and V-trigger (voltage) worlds, plus an audio-to-trigger detector. On the hardware these are different electrical polarities; here every trigger is just a plain gate cable, so polarity is cosmetic and we model the TIMING behaviours. Four little circuits run in parallel: (1) AUDIO IN crossing the SENSITIVITY threshold fires both V outputs; (2) the S input passes straight through to both V outputs; (3) V IN A passes through to S OUT A keeping its incoming width; and (4) V IN B fires S OUT B as a fixed-width one-shot of SWITCH-ON TIME seconds. Mental model: the glue that lets envelopes/clocks/triggers from one part of a patch (or from audio) drive another, reshaping or regenerating the pulse along the way.",
     "inputs": {
@@ -805,6 +907,78 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "stages": "How many inputs the selector cycles through: 2 (alternate IN 1 ↔ IN 2, ignoring IN 3) or 3 (rotate IN 1 → 2 → 3 → 1). Default 3."
     }
   },
+  "moog984": {
+    "explanation": "A clean-room recreation of the Moog 984 Matrix Mixer — a 4×4 cross-point router that lets any of the four inputs be mixed, at an independent level, into any of the four outputs. The faceplate is the matrix itself: rows are inputs (IN 1–4), columns are outputs (OUT 1–4), and each of the 16 cross-point knobs sets how much of that row's input reaches that column's output (each output is the sum of its column). Every cross-point starts at 0, so a freshly placed matrix is silent until you dial in connections — exactly how a patch matrix behaves. Mental model: 16 independent send levels arranged in a grid, so one source can fan out to several destinations and several sources can be blended into one — patch four oscillators or effect sends and freely route/blend them to four destinations. Works for audio or CV (the mix is DC-transparent).",
+    "inputs": {
+      "in1": "Input row 1 — fed to OUT 1–4 by the amounts set in matrix row 1 (the m1* knobs).",
+      "in2": "Input row 2 — fed to the four outputs by the amounts in matrix row 2 (m2*).",
+      "in3": "Input row 3 — fed to the four outputs by the amounts in matrix row 3 (m3*).",
+      "in4": "Input row 4 — fed to the four outputs by the amounts in matrix row 4 (m4*)."
+    },
+    "outputs": {
+      "out1": "Output column 1 — the sum of every input scaled by its 'i→1' cross-point (m11 + m21 + m31 + m41 contributions).",
+      "out2": "Output column 2 — the sum of every input scaled by its 'i→2' cross-point.",
+      "out3": "Output column 3 — the sum of every input scaled by its 'i→3' cross-point.",
+      "out4": "Output column 4 — the sum of every input scaled by its 'i→4' cross-point."
+    },
+    "controls": {
+      "m11": "Cross-point IN 1 → OUT 1: how much of input 1 is mixed into output 1 (0 = no connection, 1 = unity).",
+      "m12": "Cross-point IN 1 → OUT 2: amount of input 1 sent to output 2.",
+      "m13": "Cross-point IN 1 → OUT 3: amount of input 1 sent to output 3.",
+      "m14": "Cross-point IN 1 → OUT 4: amount of input 1 sent to output 4.",
+      "m21": "Cross-point IN 2 → OUT 1: amount of input 2 sent to output 1.",
+      "m22": "Cross-point IN 2 → OUT 2: amount of input 2 sent to output 2.",
+      "m23": "Cross-point IN 2 → OUT 3: amount of input 2 sent to output 3.",
+      "m24": "Cross-point IN 2 → OUT 4: amount of input 2 sent to output 4.",
+      "m31": "Cross-point IN 3 → OUT 1: amount of input 3 sent to output 1.",
+      "m32": "Cross-point IN 3 → OUT 2: amount of input 3 sent to output 2.",
+      "m33": "Cross-point IN 3 → OUT 3: amount of input 3 sent to output 3.",
+      "m34": "Cross-point IN 3 → OUT 4: amount of input 3 sent to output 4.",
+      "m41": "Cross-point IN 4 → OUT 1: amount of input 4 sent to output 1.",
+      "m42": "Cross-point IN 4 → OUT 2: amount of input 4 sent to output 2.",
+      "m43": "Cross-point IN 4 → OUT 3: amount of input 4 sent to output 3.",
+      "m44": "Cross-point IN 4 → OUT 4: amount of input 4 sent to output 4 (0 = no connection, 1 = unity)."
+    }
+  },
+  "moog992": {
+    "explanation": "A clean-room recreation of the Moog 992 Control Voltage Panel — a passive 4-into-1 CV mixer/attenuator. Each of the four CV inputs passes through its own attenuator (0 = off, 1 = unity) and the four are summed onto a single CV OUT. Channel 4 is signal-INVERTING: its attenuator subtracts from the sum, so the panel can both add and subtract control voltages — handy for offsetting one CV by another, blending modulation sources, or building a difference (cv1 − cv4). Mental model: a small CV mixing desk — set how much of each source reaches the output, with channel 4 wired backwards so it cancels rather than adds. CV-only (no audio in or out).",
+    "inputs": {
+      "cv1": "Control-voltage input 1 — scaled by ATT 1 and added to the summed output.",
+      "cv2": "Control-voltage input 2 — scaled by ATT 2 and added to the summed output.",
+      "cv3": "Control-voltage input 3 — scaled by ATT 3 and added to the summed output.",
+      "cv4": "Control-voltage input 4 — scaled by ATT 4 and SUBTRACTED from the summed output (this channel is inverting), so it offsets or cancels the other three."
+    },
+    "outputs": {
+      "cv_out": "The summed control voltage: cv1·ATT1 + cv2·ATT2 + cv3·ATT3 − cv4·ATT4. Patch it wherever a single combined CV is wanted (a filter cutoff, an oscillator's pitch, another module's CV input)."
+    },
+    "controls": {
+      "atten1": "Attenuator for input 1: how much of cv1 reaches the sum, from 0 (muted) to 1 (unity / full level).",
+      "atten2": "Attenuator for input 2: how much of cv2 reaches the sum, 0 (muted) to 1 (unity).",
+      "atten3": "Attenuator for input 3: how much of cv3 reaches the sum, 0 (muted) to 1 (unity).",
+      "atten4": "Attenuator for the INVERTING input 4: how much of cv4 is subtracted from the sum, 0 (no effect) to 1 (full inverted level). Use it to offset or cancel the other channels."
+    }
+  },
+  "moog993": {
+    "explanation": "A clean-room recreation of the Moog 993 Trigger & Envelope Voltages panel — a passive patch-bay convenience panel with two jobs. (1) A TRIGGER ROUTER: two trigger SOURCES (FROM 1 / FROM 2) feed three trigger OUTPUTS, and each output's ROUTE switch independently selects which source it carries — OFF (silent), FROM 1, or FROM 2. A single source can drive all three outs at once, so it works as a 1→3 trigger multiple, or you can split the three outs between two clocks. (2) Two unity ENVELOPE passthroughs: ENV IN 1/2 are copied straight to ENV OUT 1/2 (a tidy normalled feed-through for routing envelope CVs across a patch). Mental model: a small trigger switchboard (pick a source per output) bundled with two CV thru-jacks. Passive routing — no DSP, no audio.",
+    "inputs": {
+      "env_in1": "Envelope CV input 1 — passed straight through (unity) to ENV OUT 1. A normalled feed-through for routing an envelope across the patch.",
+      "env_in2": "Envelope CV input 2 — passed straight through (unity) to ENV OUT 2.",
+      "trig_from1": "Trigger SOURCE 1: a trigger/gate signal made available to any of the three outputs whose ROUTE is set to FROM 1. Patch a clock or trigger here.",
+      "trig_from2": "Trigger SOURCE 2: a second trigger/gate source, selected by any output whose ROUTE is set to FROM 2."
+    },
+    "outputs": {
+      "env_out1": "A unity copy of ENV IN 1 — the routed-through envelope CV.",
+      "env_out2": "A unity copy of ENV IN 2 — the routed-through envelope CV.",
+      "trig_out1": "Trigger output 1 — carries whichever source its ROUTE 1 switch selects (OFF, FROM 1, or FROM 2).",
+      "trig_out2": "Trigger output 2 — carries whichever source its ROUTE 2 switch selects.",
+      "trig_out3": "Trigger output 3 — carries whichever source its ROUTE 3 switch selects."
+    },
+    "controls": {
+      "route1": "Source select for trigger OUT 1: OFF (output silent), FROM 1 (carry source 1), or FROM 2 (carry source 2).",
+      "route2": "Source select for trigger OUT 2: OFF, FROM 1, or FROM 2.",
+      "route3": "Source select for trigger OUT 3: OFF, FROM 1, or FROM 2."
+    }
+  },
   "moog994": {
     "explanation": "A clean-room recreation of the Moog 994 Dual Multiples — the console's passive splitter panel. It is two completely independent 1-to-3 fan-outs (group A and group B): patch a signal into a group's input and an exact, unaltered copy appears on each of that group's three output jacks. No level control, no mixing, no summing — it is literally a solder junction (a 'mult'), so it is perfect for sending one oscillator/CV to three destinations or distributing a clock. Each group is signal-agnostic (audio OR CV route identically), and the two groups never interact. Mental model: two passive 3-way splitters in one module.",
     "inputs": {
@@ -836,6 +1010,32 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "atten1": "Channel 1 attenuator, 0 (full mute) to 1 (unity — passes the input unaltered). It only attenuates; it cannot boost above the input level.",
       "atten2": "Channel 2 attenuator, 0 (mute) to 1 (unity).",
       "atten3": "Channel 3 attenuator, 0 (mute) to 1 (unity)."
+    }
+  },
+  "moogCp3": {
+    "explanation": "A clean-room recreation of the Moog CP3 / CP3A Console Panel mixer — the System's multi-function summing mixer. Four channels (IN 1–4) each have their own level fader and are summed to a (+) OUTPUT; a (−) OUTPUT carries the same mix phase-inverted (for difference/cancellation patches or feeding a second chain out of phase). The 4th channel adds an EXTERNAL jack (EXT 4) that's summed with IN 4 then trimmed by its own attenuator. The panel also provides a 1→3 MULTIPLE (IN 1 fanned, unaltered, to three jacks for splitting a signal) and two constant trunk reference voltages (+12 V and −6 V, normalized) for offsetting CVs. It mixes audio AND CV transparently (the sum is DC- and polarity-correct). Mental model: a four-into-one mixer with a built-in inverter, a signal splitter, and a couple of fixed-voltage 'rails' on the side.",
+    "inputs": {
+      "ext4": "The 4th channel's EXTERNAL input jack — summed with IN 4 and scaled by the ATT 4 attenuator (at unity it passes a direct patch unaltered). Accepts audio or CV; it's the signal being attenuated, not a knob modulator.",
+      "in1": "Mixer channel 1 input — scaled by the CH1 fader and summed into both the (+) and (−) outputs. (This is also the signal fed to the 1→3 MULTIPLE.)",
+      "in2": "Mixer channel 2 input — scaled by CH2 and summed into the output buses.",
+      "in3": "Mixer channel 3 input — scaled by CH3 and summed into the output buses.",
+      "in4": "Mixer channel 4 (panel jack) — summed with the EXT 4 jack, trimmed by ATT 4, then scaled by CH4 into the output buses."
+    },
+    "outputs": {
+      "minus_six": "A constant −6 V reference trunk (normalized): a fixed negative CV offset.",
+      "multiple_one": "MULTIPLE tap 1 — IN 1 passed through unaltered (the 1→3 signal splitter, independent of the CH1 fader).",
+      "multiple_three": "MULTIPLE tap 3 — a third unaltered copy of IN 1.",
+      "multiple_two": "MULTIPLE tap 2 — a second unaltered copy of IN 1.",
+      "out_negative": "The (−) output: the same mix, phase-inverted. Use it for cancellation/difference patches or to feed a parallel chain out of phase.",
+      "out_positive": "The (+) summed mix bus: CH1·in1 + CH2·in2 + CH3·in3 + CH4·(in4 + ext4·ATT4). The main mixer output.",
+      "plus_twelve": "A constant +12 V reference trunk (normalized): a fixed positive CV for offsetting/biasing other control voltages."
+    },
+    "controls": {
+      "attenuator4": "The 4th input's EXTERNAL attenuator: trims the EXT 4 jack before it joins IN 4 (1.0 = unity, a direct patch passes unaltered).",
+      "ch1": "Channel 1 level (0..×2 gain; ~0.5 is unity, 1.0 is ×2), shown 0–10 on the faceplate — how much of IN 1 reaches the output buses.",
+      "ch2": "Channel 2 level (0..×2; ~0.5 unity, 1.0 ×2).",
+      "ch3": "Channel 3 level (0..×2; ~0.5 unity, 1.0 ×2).",
+      "ch4": "Channel 4 level (0..×2; ~0.5 unity, 1.0 ×2) — applied to the summed IN 4 + EXT 4 signal."
     }
   },
   "noise": {

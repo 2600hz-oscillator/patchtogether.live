@@ -76,6 +76,41 @@ export const moog984Def: AudioModuleDef = {
   ],
   params: CROSS_PARAMS,
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 984 Matrix Mixer — a 4×4 cross-point router that lets any of the four inputs be mixed, at an independent level, into any of the four outputs. The faceplate is the matrix itself: rows are inputs (IN 1–4), columns are outputs (OUT 1–4), and each of the 16 cross-point knobs sets how much of that row's input reaches that column's output (each output is the sum of its column). Every cross-point starts at 0, so a freshly placed matrix is silent until you dial in connections — exactly how a patch matrix behaves. Mental model: 16 independent send levels arranged in a grid, so one source can fan out to several destinations and several sources can be blended into one — patch four oscillators or effect sends and freely route/blend them to four destinations. Works for audio or CV (the mix is DC-transparent).",
+    inputs: {
+      in1: "Input row 1 — fed to OUT 1–4 by the amounts set in matrix row 1 (the m1* knobs).",
+      in2: "Input row 2 — fed to the four outputs by the amounts in matrix row 2 (m2*).",
+      in3: "Input row 3 — fed to the four outputs by the amounts in matrix row 3 (m3*).",
+      in4: "Input row 4 — fed to the four outputs by the amounts in matrix row 4 (m4*).",
+    },
+    outputs: {
+      out1: "Output column 1 — the sum of every input scaled by its 'i→1' cross-point (m11 + m21 + m31 + m41 contributions).",
+      out2: "Output column 2 — the sum of every input scaled by its 'i→2' cross-point.",
+      out3: "Output column 3 — the sum of every input scaled by its 'i→3' cross-point.",
+      out4: "Output column 4 — the sum of every input scaled by its 'i→4' cross-point.",
+    },
+    controls: {
+      m11: "Cross-point IN 1 → OUT 1: how much of input 1 is mixed into output 1 (0 = no connection, 1 = unity).",
+      m12: "Cross-point IN 1 → OUT 2: amount of input 1 sent to output 2.",
+      m13: "Cross-point IN 1 → OUT 3: amount of input 1 sent to output 3.",
+      m14: "Cross-point IN 1 → OUT 4: amount of input 1 sent to output 4.",
+      m21: "Cross-point IN 2 → OUT 1: amount of input 2 sent to output 1.",
+      m22: "Cross-point IN 2 → OUT 2: amount of input 2 sent to output 2.",
+      m23: "Cross-point IN 2 → OUT 3: amount of input 2 sent to output 3.",
+      m24: "Cross-point IN 2 → OUT 4: amount of input 2 sent to output 4.",
+      m31: "Cross-point IN 3 → OUT 1: amount of input 3 sent to output 1.",
+      m32: "Cross-point IN 3 → OUT 2: amount of input 3 sent to output 2.",
+      m33: "Cross-point IN 3 → OUT 3: amount of input 3 sent to output 3.",
+      m34: "Cross-point IN 3 → OUT 4: amount of input 3 sent to output 4.",
+      m41: "Cross-point IN 4 → OUT 1: amount of input 4 sent to output 1.",
+      m42: "Cross-point IN 4 → OUT 2: amount of input 4 sent to output 2.",
+      m43: "Cross-point IN 4 → OUT 3: amount of input 4 sent to output 3.",
+      m44: "Cross-point IN 4 → OUT 4: amount of input 4 sent to output 4 (0 = no connection, 1 = unity).",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initial = node.params ?? {};
     const readInitial = (id: string): number => {

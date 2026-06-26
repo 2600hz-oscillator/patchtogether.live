@@ -133,6 +133,27 @@ export const moog912Def: AudioModuleDef = {
     { id: 'smoothing',   label: 'Smooth', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 912 Envelope Follower — a passive ANALYSIS utility that listens to an incoming audio signal's loudness and turns it into a smooth control voltage (an 'envelope') plus a gate that's high while the input is sounding. Internally the audio is full-wave rectified (|x|, turning the bipolar waveform into a magnitude) and lowpass-filtered into a slowly-varying level; a steep threshold on that level produces the gate. Patch a drum loop, vocal, or any live source in, and use ENV to open a VCA/filter that tracks the input's dynamics, or GATE to fire an envelope generator from an external sound. Mental model: 'how loud is this right now?' as a CV, plus a 'is it playing?' on/off gate. The two knobs trade off how hard the signal is measured (SENS) and how lazily the envelope reacts (SMOOTH).",
+    inputs: {
+      audio:
+        "The signal to follow — the audio being measured (not a modulator). Its amplitude drives both the ENV and GATE outputs; louder material gives a bigger envelope. Patch a drum, vocal, or full mix here.",
+    },
+    outputs: {
+      env:
+        "The smoothed amplitude envelope as a control voltage: the rectified, lowpass-filtered loudness of the input. Patch it into a VCA's gain or a filter's cutoff to make them track how loud the source is.",
+      gate:
+        "Goes high (~1) while the followed envelope is above the detection threshold (the input is audibly playing) and low (~0) when it falls quiet — an auto-gate derived from the sound itself. Patch it into an envelope generator or VCA to trigger from a live source.",
+    },
+    controls: {
+      sensitivity:
+        "Input gain into the follower — how hard the incoming signal hits the detector. Higher SENS makes quiet material produce a bigger envelope (and opens the gate more readily); lower SENS only responds to loud peaks.",
+      smoothing:
+        "How lazily the envelope reacts: more SMOOTH lowers the detector's lowpass cutoff so the CV glides slowly and ignores fast transients (a smooth contour); less SMOOTH speeds it up so the envelope snaps to each peak (a punchy, percussive follow).",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initial = node.params ?? {};
     const valueOf = (id: string): number =>

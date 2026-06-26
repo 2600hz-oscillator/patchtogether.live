@@ -61,6 +61,31 @@ export const moog993Def: AudioModuleDef = {
     { id: 'route3', label: 'Route 3', defaultValue: 1, min: 0, max: 2, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 993 Trigger & Envelope Voltages panel — a passive patch-bay convenience panel with two jobs. (1) A TRIGGER ROUTER: two trigger SOURCES (FROM 1 / FROM 2) feed three trigger OUTPUTS, and each output's ROUTE switch independently selects which source it carries — OFF (silent), FROM 1, or FROM 2. A single source can drive all three outs at once, so it works as a 1→3 trigger multiple, or you can split the three outs between two clocks. (2) Two unity ENVELOPE passthroughs: ENV IN 1/2 are copied straight to ENV OUT 1/2 (a tidy normalled feed-through for routing envelope CVs across a patch). Mental model: a small trigger switchboard (pick a source per output) bundled with two CV thru-jacks. Passive routing — no DSP, no audio.",
+    inputs: {
+      trig_from1:
+        "Trigger SOURCE 1: a trigger/gate signal made available to any of the three outputs whose ROUTE is set to FROM 1. Patch a clock or trigger here.",
+      trig_from2:
+        "Trigger SOURCE 2: a second trigger/gate source, selected by any output whose ROUTE is set to FROM 2.",
+      env_in1: "Envelope CV input 1 — passed straight through (unity) to ENV OUT 1. A normalled feed-through for routing an envelope across the patch.",
+      env_in2: "Envelope CV input 2 — passed straight through (unity) to ENV OUT 2.",
+    },
+    outputs: {
+      trig_out1: "Trigger output 1 — carries whichever source its ROUTE 1 switch selects (OFF, FROM 1, or FROM 2).",
+      trig_out2: "Trigger output 2 — carries whichever source its ROUTE 2 switch selects.",
+      trig_out3: "Trigger output 3 — carries whichever source its ROUTE 3 switch selects.",
+      env_out1: "A unity copy of ENV IN 1 — the routed-through envelope CV.",
+      env_out2: "A unity copy of ENV IN 2 — the routed-through envelope CV.",
+    },
+    controls: {
+      route1: "Source select for trigger OUT 1: OFF (output silent), FROM 1 (carry source 1), or FROM 2 (carry source 2).",
+      route2: "Source select for trigger OUT 2: OFF, FROM 1, or FROM 2.",
+      route3: "Source select for trigger OUT 3: OFF, FROM 1, or FROM 2.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // The two trigger SOURCE inputs: a fan-out point each. Per-out "select"
     // gains tap these and sum into each output bus, so a single source can
