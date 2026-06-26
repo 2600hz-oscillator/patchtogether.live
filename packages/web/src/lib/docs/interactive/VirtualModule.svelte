@@ -212,13 +212,23 @@
     position: relative;
   }
   .flow-host {
+    /* Medium-light gray inspector backdrop — SvelteFlow's pane defaults to
+       white, which is jarring against the dark theme. */
+    --vm-backdrop: #b4b9c0;
     position: relative;
     width: 100%;
     height: 420px;
     border: 1px solid var(--doc-border-dim, #062b32);
     border-radius: 6px;
-    background: #0a0a0a;
+    background: var(--vm-backdrop);
+    --xy-background-color: var(--vm-backdrop);
     overflow: hidden;
+  }
+  /* Override SvelteFlow's pane background (the white that bleeds behind the
+     card) with the gray backdrop. Scoped to this component's flow-host. */
+  .flow-host :global(.svelte-flow),
+  .flow-host :global(.svelte-flow__pane) {
+    background: var(--vm-backdrop);
   }
   /* Keep the card legible in the doc viewport: xyflow's fitView handles scale. */
   .flow-host :global(.svelte-flow__attribution) {

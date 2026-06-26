@@ -96,7 +96,7 @@
      faceplate control / patch port you hover. The static numbered face is the
      no-JS / prerender / not-yet-promoted FALLBACK shown on the left until the
      live card mounts (or for modules not on the interactive allowlist). -->
-<h2>the card</h2>
+<h2>the faceplate</h2>
 <div class="card-explore" data-testid="card-explore" class:has-live={showLive}>
   <div class="card-explore-left">
     {#if showLive && VirtualModule}
