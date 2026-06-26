@@ -106,4 +106,21 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'moog962',
   'moog994',
   'moog995',
+  // Batch 7 — Moog System 35/55 modulation & routing (2026-06-26): the cluster
+  // that completes the Moog System rollout — the 911 contour generator (EG), the
+  // 911A dual trigger delay, the 912 envelope follower, the 960 sequential
+  // controller (3×8 analog step sequencer), the 984 4×4 matrix mixer, the 992 CV
+  // panel (4→1 summer with an inverting channel), the 993 trigger & envelope
+  // panel, and the CP3 console mixer. The convention-card members (moog911 /
+  // moog984 — pure Knob + PatchPanel via MoogPanel) ARE interactive; the
+  // override-card members (911a / 912 / 960 / 992 / 993 / cp3) stay STATIC (the
+  // doc route's defLite can't resolve a `card:` override → static face fallback).
+  'moog911',
+  'moog911a',
+  'moog912',
+  'moog960',
+  'moog984',
+  'moog992',
+  'moog993',
+  'moogCp3',
 ]);

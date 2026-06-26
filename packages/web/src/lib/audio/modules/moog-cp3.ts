@@ -83,6 +83,35 @@ export const moogCp3Def: AudioModuleDef = {
     { id: 'attenuator4', label: 'Att 4', defaultValue: 1, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog CP3 / CP3A Console Panel mixer — the System's multi-function summing mixer. Four channels (IN 1–4) each have their own level fader and are summed to a (+) OUTPUT; a (−) OUTPUT carries the same mix phase-inverted (for difference/cancellation patches or feeding a second chain out of phase). The 4th channel adds an EXTERNAL jack (EXT 4) that's summed with IN 4 then trimmed by its own attenuator. The panel also provides a 1→3 MULTIPLE (IN 1 fanned, unaltered, to three jacks for splitting a signal) and two constant trunk reference voltages (+12 V and −6 V, normalized) for offsetting CVs. It mixes audio AND CV transparently (the sum is DC- and polarity-correct). Mental model: a four-into-one mixer with a built-in inverter, a signal splitter, and a couple of fixed-voltage 'rails' on the side.",
+    inputs: {
+      in1: "Mixer channel 1 input — scaled by the CH1 fader and summed into both the (+) and (−) outputs. (This is also the signal fed to the 1→3 MULTIPLE.)",
+      in2: "Mixer channel 2 input — scaled by CH2 and summed into the output buses.",
+      in3: "Mixer channel 3 input — scaled by CH3 and summed into the output buses.",
+      in4: "Mixer channel 4 (panel jack) — summed with the EXT 4 jack, trimmed by ATT 4, then scaled by CH4 into the output buses.",
+      ext4:
+        "The 4th channel's EXTERNAL input jack — summed with IN 4 and scaled by the ATT 4 attenuator (at unity it passes a direct patch unaltered). Accepts audio or CV; it's the signal being attenuated, not a knob modulator.",
+    },
+    outputs: {
+      out_positive: "The (+) summed mix bus: CH1·in1 + CH2·in2 + CH3·in3 + CH4·(in4 + ext4·ATT4). The main mixer output.",
+      out_negative: "The (−) output: the same mix, phase-inverted. Use it for cancellation/difference patches or to feed a parallel chain out of phase.",
+      multiple_one: "MULTIPLE tap 1 — IN 1 passed through unaltered (the 1→3 signal splitter, independent of the CH1 fader).",
+      multiple_two: "MULTIPLE tap 2 — a second unaltered copy of IN 1.",
+      multiple_three: "MULTIPLE tap 3 — a third unaltered copy of IN 1.",
+      plus_twelve: "A constant +12 V reference trunk (normalized): a fixed positive CV for offsetting/biasing other control voltages.",
+      minus_six: "A constant −6 V reference trunk (normalized): a fixed negative CV offset.",
+    },
+    controls: {
+      ch1: "Channel 1 level (0..×2 gain; ~0.5 is unity, 1.0 is ×2), shown 0–10 on the faceplate — how much of IN 1 reaches the output buses.",
+      ch2: "Channel 2 level (0..×2; ~0.5 unity, 1.0 ×2).",
+      ch3: "Channel 3 level (0..×2; ~0.5 unity, 1.0 ×2).",
+      ch4: "Channel 4 level (0..×2; ~0.5 unity, 1.0 ×2) — applied to the summed IN 4 + EXT 4 signal.",
+      attenuator4: "The 4th input's EXTERNAL attenuator: trims the EXT 4 jack before it joins IN 4 (1.0 = unity, a direct patch passes unaltered).",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);
