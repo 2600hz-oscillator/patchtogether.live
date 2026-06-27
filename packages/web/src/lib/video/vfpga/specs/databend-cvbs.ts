@@ -17,6 +17,7 @@
 // the corruption seed.
 
 import type { VfpgaSpec } from '$lib/video/vfpga/types';
+import { compileLut } from '$lib/video/vfpga/techmap';
 
 export const databendCvbsSpec: VfpgaSpec = {
   id: 'databend-cvbs',
@@ -40,7 +41,10 @@ export const databendCvbsSpec: VfpgaSpec = {
     { slot: 1, label: 'RE-ROLL', countUniform: 'uSeed', doc: 'A TRIGGER: each rising edge re-rolls the corruption seed → a fresh databend.' },
   ],
   params: [
-    { slot: 1, label: 'xor-mask', uniform: 'uLutInit', min: 0, max: 65535, defaultValue: 0x6996, curve: 'linear', doc: 'The 16-bit LUT truth table (the XOR mask 0x6996 = 4-input parity by default).' },
+    // The 16-bit LUT truth table, GENERATED from readable logic via the A5
+    // tech-mapper instead of a magic literal: `a ^ b ^ c ^ d` (4-input parity)
+    // compiles to 0x6996 — byte-identical to the old constant, now self-documenting.
+    { slot: 1, label: 'xor-mask', uniform: 'uLutInit', min: 0, max: 65535, defaultValue: compileLut('a ^ b ^ c ^ d'), curve: 'linear', doc: 'The 16-bit LUT truth table (the XOR mask = 4-input parity a^b^c^d = 0x6996 by default).' },
     { slot: 2, label: 'byte-shift', uniform: 'uByteShift', min: 0, max: 0.5, defaultValue: 0.04, curve: 'linear', doc: 'Horizontal sample (byte) shift — a smear offset.' },
     { slot: 3, label: 'dropout', uniform: 'uDropout', min: 0, max: 1, defaultValue: 0.15, curve: 'linear', doc: 'Per-column probability of a sample-hold dropout (frozen streaks).' },
     { slot: 4, label: 'wrap', uniform: 'uWrapLevel', min: 0, max: 1, defaultValue: 0.2, curve: 'linear', doc: 'Level wrap-around: scaled luma past 1.0 wraps mod 1 (overflow glitch).' },
