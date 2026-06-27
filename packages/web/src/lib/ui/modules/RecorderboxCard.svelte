@@ -67,6 +67,10 @@
     fileExistsInDir,
     fileHandleInDir,
   } from '$lib/video/recorderbox-save-flow';
+  import {
+    planRecordStartFolder,
+    mayShowOverwriteConfirm,
+  } from './recorderbox-present-policy';
   import { chunkFileName } from '$lib/video/recorderbox-chunk-name';
 
   let { id, data }: NodeProps = $props();
@@ -267,11 +271,22 @@
       //   * null         → no directory picker (Firefox/Safari): per-chunk
       //                    <a download> fallback (the recorder uses saveBytes).
       //   * 'cancel'     → user dismissed → do NOT record; revert the toggle.
+      // ── PRESENTATION-SAFE folder resolution ──
+      // While in element-fullscreen, opening ANY modal (the folder picker, a
+      // permission prompt, or the overwrite confirm) makes Chrome EXIT fullscreen
+      // — kicking the performer out, re-flashing the "is now full screen" overlay,
+      // and forcing a re-click. So while presenting we never open a modal: use an
+      // already-chosen folder, else fall back to the download path with a
+      // non-modal hint. (planRecordStartFolder / mayShowOverwriteConfirm are pure
+      // + unit-tested in recorderbox-save-flow.ts. See presentation-fullscreen-plan.)
+      const isFullscreen = typeof document !== 'undefined' && !!document.fullscreenElement;
+
       let dirHandle: FileSystemDirectoryHandle | null = saveFolder;
       if (dirHandle && !(await ensureHandleWritePermission(dirHandle))) {
-        dirHandle = null; // permission lapsed — re-pick below.
+        dirHandle = null; // permission lapsed — re-resolve below.
       }
-      if (!dirHandle) {
+      const plan = planRecordStartFolder(!!dirHandle, isFullscreen);
+      if (plan.action === 'prompt') {
         const picked = await promptSaveFolder();
         if (picked === 'cancel') {
           setData('recording', false);
@@ -284,12 +299,19 @@
           saveFolder = picked; // remember → no prompt next time.
         }
         // picked === null → no FS-Access: dirHandle stays null → download path.
+      } else if (plan.action === 'download') {
+        // Presenting with no pre-chosen folder: do NOT pop the picker (it would
+        // drop fullscreen). Record to the download fallback and nudge the user to
+        // set a folder BEFORE presenting next time.
+        folderHint =
+          'Recording to downloads — set a folder before presenting to save straight to disk.';
       }
+      // plan.action === 'use' → keep the already-granted dirHandle, no prompt.
 
-      // ── OVERWRITE prompt (Tweak 1: the ONLY remaining prompt) ──
-      // Chunk names carry a unique DATETIME so a real collision is near-impossible
-      // — this is a genuine safety net. Check the FIRST chunk's resolved name.
-      if (dirHandle) {
+      // ── OVERWRITE prompt — a modal, so SKIP it while presenting. ──
+      // Chunk names carry a unique DATETIME so a real collision is near-impossible;
+      // outside fullscreen this stays a genuine safety net.
+      if (dirHandle && mayShowOverwriteConfirm(isFullscreen)) {
         const firstName = chunkFileName(filename, 1, new Date());
         if (await fileExistsInDir(dirHandle, firstName)) {
           const ok =
