@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "42f4dd3998bb8f372d84ce0f662aa9517f0c71504854e0d839a8e060ded48988",
-  "attestedAt": "2026-06-27T16:29:46.592Z",
+  "webglContentHash": "66840b1f74c8f4d9841c78657f4353dc50c70e2dbfeabdf0370604a8bbd37b4f",
+  "attestedAt": "2026-06-27T16:51:26.499Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "0846673c6c2392f76b7e6a76af47d82e183f7b64",
+  "gitHeadAtAttest": "6eeb3ff07f890a1f23d9579e29833b179c344161",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "host": "2600hzs-MBP.home.local",
