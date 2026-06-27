@@ -35,7 +35,7 @@ const EXPECTED_NODE_TYPES = [
   'charlottesEchos', 'chowkick', 'chroma', 'chromakey', 'clipplayer', 'clockedRunner', 'clouds',
   'cloudseed', 'cocoadelay', 'colorizer', 'cube', 'delay', 'depolarizer', 'destroy', 'destructor',
   'doom', 'drummergirl', 'drumseqz', 'dx7', 'elements', 'fader', 'feedback', 'filter',
-  'fourplexer', 'foxy', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'grids', 'group',
+  'fourplexer', 'foxy', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'graphicEq', 'grids', 'group',
   'helm', 'hydrogen', 'hypercube', 'illogic', 'inwards', 'joystick', 'kria', 'lfo', 'lines', 'livecode',
   'luma', 'lumakey', 'macrooscillator', 'macseq', 'mandleblot', 'mappy', 'marbles', 'matrixMix', 'meowbox',
   'mandelbulb', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'mixer', 'mixmstrs', 'modtris',
