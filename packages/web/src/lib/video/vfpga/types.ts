@@ -263,6 +263,26 @@ export interface VfpgaFabric {
   /** Resource caps (authentic "doesn't fit" budget + a CI-walltime guardrail):
    *  max DSP tiles, max BRAM rows, max compiled passes. */
   budget?: { dsp?: number; bramRows?: number; passes?: number };
+  /** OPTIONAL fixed-device census target (hardware-accuracy A2). Unlike `budget`
+   *  (a self-declared CI guardrail), this names the resources of a FIXED silicon
+   *  part the fabric is "placed into" — LUTs, FFs, DSP slices, per-net fan-out —
+   *  so `census.ts` can report whether the design FITS (a real FPGA's "doesn't
+   *  fit the part" reality). ADVISORY only (it does not reject the fabric); see
+   *  `fabricAdvisories`. */
+  device?: VfpgaDevice;
+}
+
+/** A fixed silicon part's resource budget — the census target (A2). */
+export interface VfpgaDevice {
+  /** Total LUTs available (clb + lut16 tiles each consume one). */
+  luts?: number;
+  /** Total flip-flops available (each reg tile consumes one). */
+  ffs?: number;
+  /** Total hard DSP slices (each dsp tile consumes one). */
+  dsp?: number;
+  /** Max fan-out a single routed source may legally drive (real interconnect is
+   *  finite; high fan-out needs replication/buffering). */
+  maxFanout?: number;
 }
 
 export interface VfpgaSpec {
