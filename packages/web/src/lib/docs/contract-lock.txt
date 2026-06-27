@@ -1118,6 +1118,15 @@ gibribbon param cv2 0..1 linear default=0
 gibribbon param cv3 0..1 linear default=0
 gibribbon param cv4 0..1 linear default=0
 gibribbon param gate 0..1 linear default=0
+graphicEq meta domain=video schema=1
+graphicEq in audio_l audio
+graphicEq in audio_r audio
+graphicEq out out video
+graphicEq param display 0..1 discrete default=1
+graphicEq param gain 0.5..4 linear default=1.6
+graphicEq param hue 0..1 linear default=0
+graphicEq param peak 0.5..0.99 linear default=0.92
+graphicEq param style 0..1 discrete default=1
 grids meta domain=audio schema=1
 grids in bdDensity_cv cv
 grids in chaos_cv cv

@@ -1507,6 +1507,23 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "gate": "The beat-gate level (0..1, high above 0.5) that biases per-beat spawn selection; normally driven by the GATE input jack."
     }
   },
+  "graphicEq": {
+    "explanation": "A full-screen Winamp-style graphic-EQ / VU-meter video output. Patch a STEREO signal into the L and R audio inputs and GRAPHIC EQ analyses each channel with an FFT, folds it into 8 log-spaced frequency bands (roughly 40 Hz up to 16 kHz, an octave-ish per band), and draws each band as a vertical level meter that rises and falls with the music. A green→yellow→red colour ramp climbs each meter (rotate the whole palette with Hue), and a peak-hold cap floats above each bar and falls back at a rate set by Peak. Two switches shape the look: STYLE toggles between SOLID BARS (one smooth filled bar per band) and STACKED BOXES (the classic LED-ladder of discrete segments); DISPLAY toggles between MONO (8 meters across the full width, the L/R average) and STEREO (the screen splits down the middle — the LEFT channel's 8 meters fill the left half, the RIGHT channel's fill the right half). Gain sets sensitivity. With nothing patched the meter frame still draws dim so the card is never black. The render feeds the chainable video out and the on-card preview; hide the controls to use the card as a resizable full-screen monitor.",
+    "inputs": {
+      "audio_l": "Left channel of the stereo signal to visualize. An audio-typed input on a video module (the cross-domain audio→video bridge): the source is connected straight into an AnalyserNode the module owns, whose FFT drives the LEFT meters (and half of the MONO average). Tap-only/inaudible — route the source to AUDIO OUT separately to hear it.",
+      "audio_r": "Right channel of the stereo signal to visualize. Like audio_l but feeds the RIGHT meters (and the other half of the MONO average). Patch a stereo mix across L and R; in MONO display the two are averaged. Tap-only/inaudible."
+    },
+    "outputs": {
+      "out": "out (video) - the rendered meters: 8 (mono) or 2x8 (stereo) frequency bars/boxes with a green→yellow→red gradient and peak-hold caps, over a dark field. Chainable into any video input and also feeds the on-card preview screen."
+    },
+    "controls": {
+      "display": "Display (0..1 switch, default stereo): toggles the layout. 0 = MONO (8 meters across the full width, fed by the L/R average). 1 = STEREO (the screen splits L|R — the left channel's 8 meters on the left half, the right channel's on the right half). The card's MONO/STEREO button flips it.",
+      "gain": "Gain (0.5..4, default 1.6): sensitivity. Multiplies each band magnitude before it drives the meter height (FFT bands read low, so the default lifts them); higher makes quiet material reach further up the meters, clamped at the top.",
+      "hue": "Hue (0..1, default 0): rotates the whole green→yellow→red colour ramp around the hue wheel (0 = classic VU colours, 0.5 = ~180° opposite), tinting both bars and peak caps.",
+      "peak": "Peak (0.5..0.99, default 0.92): peak-hold decay. A cap marker jumps up instantly to each band's latest peak then falls back, multiplying by this factor per frame — 0.5 falls fast, 0.99 lingers near the top.",
+      "style": "Style (0..1 switch, default boxes): toggles the meter look. 0 = SOLID BARS (each band is one smooth filled bar). 1 = STACKED BOXES (each band is an LED ladder of discrete lit segments). The card's STYLE button flips it."
+    }
+  },
   "grids": {
     "explanation": "A topographic drum-pattern generator (a port of Mutable Instruments Grids) that produces three drum trigger streams — kick (BD), snare (SD), hi-hat (HH) — plus an accent. Instead of drawing steps, you steer an X/Y pad across a built-in map of drum patterns: the X/Y position blends between many curated 32-step grooves, and a per-instrument Density knob decides how many of that groove's hits actually fire (low = sparse, high = busy). A Chaos control sprinkles in random variation each loop, and Swing shuffles the off-beats. It clocks from its own BPM or an external CLOCK IN, and there's an alternate Euclidean mode that swaps the drum map for evenly-spread Euclidean rhythms. Patch BD/SD/HH into three drum voices and the accent into a VCA/velocity input for dynamics.",
     "inputs": {
