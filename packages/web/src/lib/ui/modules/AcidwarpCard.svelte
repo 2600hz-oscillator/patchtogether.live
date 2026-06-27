@@ -7,7 +7,8 @@
   // the ImageData until scene/palette changes.
 
   import type { NodeProps } from '@xyflow/svelte';
-  import { Handle, Position } from '@xyflow/svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import Knob from '$lib/ui/controls/Knob.svelte';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
@@ -32,6 +33,16 @@
   const set = (k: string) => (v: number) => {
     setNodeParam(id, k, v);
   };
+
+  // Patch ports for the yellow drill-down PatchPanel (ids match acidwarpDef
+  // I/O — speed_cv/scene_cv CV inputs + the video out). No raw side <Handle>s.
+  const inputs: PortDescriptor[] = [
+    { id: 'speed_cv', label: 'SPEED', cable: 'cv' },
+    { id: 'scene_cv', label: 'SCENE', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT', cable: 'video' },
+  ];
 
   // ----- Display canvas: pull the engine's per-frame snapshot -----
   let canvasEl: HTMLCanvasElement | null = $state(null);
@@ -81,14 +92,7 @@
   <div class="stripe" style="background: var(--cable-video);"></div>
   <ModuleTitle {id} {data} defaultLabel="ACIDWARP" />
 
-  <Handle type="target" position={Position.Left}  id="speed_cv" style="top: 56px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left"  style="top: 50px;">SPD</span>
-  <Handle type="target" position={Position.Left}  id="scene_cv" style="top: 88px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left"  style="top: 82px;">SCN</span>
-
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="screen-wrap">
     <canvas bind:this={canvasEl} class="screen" data-testid="acidwarp-screen"></canvas>
   </div>
@@ -126,6 +130,7 @@
       <div class="scene-readout">SCENE {Math.round(paramVal('scene')) + 1}/{SCENE_COUNT}</div>
     </div>
   </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -147,10 +152,6 @@
     box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; }
-  .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .screen-wrap {
     margin: 8px auto 12px;
     width: 320px;
