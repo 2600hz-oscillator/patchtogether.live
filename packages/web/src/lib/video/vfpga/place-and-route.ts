@@ -334,6 +334,41 @@ export function validateFabric(fabric: VfpgaFabric): FabricError[] {
     }
   }
 
+  // --- placement: positioned tiles in-bounds + no two on the same cell ---
+  // `pos`/`grid` were data-model-only until now (the compiler reads neither — they
+  // do not affect emitted passes). Validating them makes placement a real
+  // constraint instead of decoration: a placed tile must sit INSIDE the grid, and
+  // no two tiles may occupy the same (row,col) — the floorplan analog of "two
+  // blocks can't share a site." (Hardware-accuracy plan A1; this is the gate that
+  // caught framestore-howl's out-of-bounds `out`.) Tiles WITHOUT a `pos` are
+  // unplaced (auto-place) and skipped.
+  const { rows, cols } = fabric.grid;
+  if (rows < 1 || cols < 1) {
+    errors.push({ message: `fabric grid must be at least 1×1 (got ${rows}×${cols})`, path: `grid` });
+  }
+  const cellOccupant = new Map<string, string>(); // "row,col" -> first tile id placed there
+  for (const t of fabric.tiles) {
+    if (!t.pos) continue;
+    const { row, col } = t.pos;
+    if (row < 0 || row >= rows || col < 0 || col >= cols) {
+      errors.push({
+        message: `tile "${t.id}" pos (row ${row}, col ${col}) is outside the ${rows}×${cols} grid`,
+        path: `tiles/${t.id}`,
+      });
+      continue;
+    }
+    const key = `${row},${col}`;
+    const prev = cellOccupant.get(key);
+    if (prev !== undefined) {
+      errors.push({
+        message: `tiles "${prev}" and "${t.id}" are both placed at grid cell (row ${row}, col ${col})`,
+        path: `tiles/${t.id}`,
+      });
+    } else {
+      cellOccupant.set(key, t.id);
+    }
+  }
+
   return errors;
 }
 

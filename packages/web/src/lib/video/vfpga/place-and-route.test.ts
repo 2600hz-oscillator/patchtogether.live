@@ -14,6 +14,7 @@ import {
 } from './place-and-route';
 import type { VfpgaFabric, VfpgaTile, VfpgaNet } from './types';
 import { smpteBarsSpec } from './specs/smpte-bars';
+import { framestoreHowlSpec } from './specs/framestore-howl';
 
 // ----------------------------------------------------------------------
 // Fixtures.
@@ -164,6 +165,53 @@ describe('validateFabric', () => {
       f.tiles.push({ id: 'lb', type: 'bram', config: { op: 'linebuf', rows: 64 }, inputs: ['a'] });
       f.budget = { bramRows: 32 };
       expect(findError(validateFabric(f), /BRAM-rows budget exceeded: 64 rows > budget 32/)).toBeTruthy();
+    });
+  });
+
+  describe('placement validation', () => {
+    it('accepts tiles placed within the grid on distinct cells', () => {
+      const f = chainFabric(); // grid 1×3
+      f.tiles[0]!.pos = { row: 0, col: 0 };
+      f.tiles[1]!.pos = { row: 0, col: 1 };
+      expect(validateFabric(f)).toEqual([]);
+    });
+
+    it('rejects a tile placed outside the grid', () => {
+      const f = chainFabric(); // grid 1×3 → valid cols 0..2
+      f.tiles[1]!.pos = { row: 0, col: 3 };
+      expect(
+        findError(validateFabric(f), /tile "th" pos \(row 0, col 3\) is outside the 1×3 grid/),
+      ).toBeTruthy();
+    });
+
+    it('rejects a negative coordinate', () => {
+      const f = chainFabric();
+      f.tiles[0]!.pos = { row: -1, col: 0 };
+      expect(findError(validateFabric(f), /is outside the 1×3 grid/)).toBeTruthy();
+    });
+
+    it('rejects two tiles placed on the same grid cell', () => {
+      const f = chainFabric();
+      f.tiles[0]!.pos = { row: 0, col: 0 };
+      f.tiles[1]!.pos = { row: 0, col: 0 };
+      expect(
+        findError(validateFabric(f), /both placed at grid cell \(row 0, col 0\)/),
+      ).toBeTruthy();
+    });
+
+    it('ignores unplaced (no-pos) tiles', () => {
+      const f = chainFabric(); // neither tile has a pos
+      expect(validateFabric(f)).toEqual([]);
+    });
+
+    it('rejects a degenerate (sub-1×1) grid', () => {
+      const f = passthruFabric();
+      f.grid = { rows: 0, cols: 1 };
+      expect(findError(validateFabric(f), /grid must be at least 1×1/)).toBeTruthy();
+    });
+
+    it('framestore-howl validates clean (regression: was out-of-bounds `out` at col 3)', () => {
+      expect(validateFabric(framestoreHowlSpec.fabric!)).toEqual([]);
     });
   });
 });
