@@ -357,4 +357,10 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'gibribbon',
   'nibbles',
   'qbert',
+  // Video batch 9 (2026-06-26): emulators + mappers/router (doom/snes9x/mappy/onetonine/vfpgaRunner) — completes the video catalog.
+  'doom',
+  'snes9x',
+  'mappy',
+  'onetonine',
+  'vfpgaRunner',
 ]);

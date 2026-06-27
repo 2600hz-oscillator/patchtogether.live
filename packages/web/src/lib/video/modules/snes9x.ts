@@ -186,6 +186,55 @@ export const snes9xDef: VideoModuleDef = {
     })),
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "A Super Nintendo emulator turned into a patchable video+audio module. It runs the snes9x2005 (CAT SFC) libretro core compiled to WASM, rendering the SNES screen (locked 256×224/239, 4:3) to the video out and 32 kHz stereo to audio_l/audio_r. The ROM is user-provided and gitignored: if /roms/snes9x/game.sfc isn't autoloaded the card shows a LOAD A ROM dropzone/file-picker (drop or click a .sfc/.smc — it stays local in your browser). Beyond the picture and sound, it reads the live SNES WRAM each frame to emit game-event CV/GATE: for Super Mario World it pulses on kills and deaths, holds a CV for the current world, and turns clock_in into a clock multiplied by (world+level). Drive it by wiring a GAMEPAD module's gate outputs straight into the 12 SNES button inputs (du→up, a→a, …) plus a clock into clock_in. Single-instance per rack (the WASM core is heavy). DOM-only affordances with no patch port: the ROM dropzone/file picker, and a right-click \"see output definition for CV/GATES\" panel that explains every game-event output for the loaded ROM; the card's OUTPUT FIT toggle sets the fillMode param (letterbox vs fill). Non-SMW ROMs still boot and show video/audio but the game-event outputs stay inert.",
+    inputs: {
+      "clock_in": "Clock input (gate cable). Each rising edge is treated as a clock pulse that feeds the gate3 multiplier: the period between edges is measured and replayed as (world+level) evenly-spaced sub-pulses on gate3 (×1 passthrough when not in a level).",
+      "up": "Holds the SNES D-pad UP button while the gate level is high (held, not edge). Maps to the controller's UP bit; wire a GAMEPAD up gate straight in.",
+      "down": "Holds the SNES D-pad DOWN button while the gate level is high (held). Maps to the controller's DOWN bit.",
+      "left": "Holds the SNES D-pad LEFT button while the gate level is high (held). Maps to the controller's LEFT bit.",
+      "right": "Holds the SNES D-pad RIGHT button while the gate level is high (held). Maps to the controller's RIGHT bit.",
+      "b": "Holds the SNES B face button while the gate level is high (held, not edge). Maps to the controller's B bit.",
+      "a": "Holds the SNES A face button while the gate level is high (held). Maps to the controller's A bit.",
+      "y": "Holds the SNES Y face button while the gate level is high (held, not edge). Maps to the controller's Y bit.",
+      "x": "Holds the SNES X face button while the gate level is high (held). Maps to the controller's X bit.",
+      "l": "Holds the SNES left shoulder (L) button while the gate level is high (held). Maps to the controller's L bit.",
+      "r": "Holds the SNES right shoulder (R) button while the gate level is high (held). Maps to the controller's R bit.",
+      "start": "Holds the SNES START button while the gate level is high (held). Pauses / advances menus; maps to the controller's START bit.",
+      "select": "Holds the SNES SELECT button while the gate level is high (held). Maps to the controller's SELECT bit.",
+    },
+    outputs: {
+      "out": "Video output: the live SNES screen, letterboxed/pillarboxed into the engine framebuffer (Y-flipped, 4:3). Shows a faint scanline void until a ROM frame is available.",
+      "audio_l": "Left audio channel of the emulator's 32 kHz stereo output, split off a ChannelSplitter from the PCM worklet. Patch into the audio domain.",
+      "audio_r": "Right audio channel of the emulator's 32 kHz stereo output (the other split of the PCM worklet). Patch into the audio domain.",
+      "gate1": "KILL gate: a short (~10 ms) pulse each time Mario kills a monster in SMW (sprite-status table transitions, debounced per slot). Idle for non-SMW ROMs.",
+      "gate2": "DEATH gate: a short pulse each time Mario dies in SMW (death-animation trigger, with a lives-decrement fallback). Idle for non-SMW ROMs.",
+      "gate3": "CLOCK ×(world+level): clock_in multiplied — (world+level) evenly-spaced pulses per input period, in-phase first sub-pulse so ×1 is a clean passthrough. Clamped to ×32 max; ×1 when not in a level.",
+      "gate4": "Reserved gate output: present so a cable can be wired, but idle for SMW (no signal driven). Held at 0.",
+      "cv1": "WORLD CV: a steady constant for the current SMW world (world/7 → ~0.143 at world 1 up to 1.0 at world 7, 0 when idle). Only changes on a world change.",
+      "cv2": "Reserved CV output: present for patching but idle (held at 0) for SMW.",
+      "cv3": "Reserved CV output: present for patching but idle (held at 0) for SMW.",
+      "cv4": "Reserved CV output: present for patching but idle (held at 0) for SMW.",
+    },
+    controls: {
+      "cv_clock_in": "CLOCK (0..1, linear). Synthetic param target of the clock_in gate input; its rising edge drives the gate3 clock multiplier. Set by patching clock_in, not a user knob.",
+      "fillMode": "Fill (0..1, discrete). Output fit mode: 0 = letterbox/pillarbox (default, aspect-preserving), 1 = fill/cover-crop. Driven by the card's OUTPUT FIT toggle; only matters when the output aspect isn't 4:3.",
+      "cv_up": "UP (0..1, linear). Synthetic gate param backing the up input — its level sets whether the SNES UP button is held. Set by patching the up gate, not a knob.",
+      "cv_down": "DOWN (0..1, linear). Synthetic gate param backing the down input; its level sets whether the SNES DOWN button is held.",
+      "cv_left": "LEFT (0..1, linear). Synthetic gate param backing the left input; its level sets whether the SNES LEFT button is held.",
+      "cv_right": "RIGHT (0..1, linear). Synthetic gate param backing the right input; its level sets whether the SNES RIGHT button is held.",
+      "cv_b": "B (0..1, linear). Synthetic gate param backing the b input; its level sets whether the SNES B button is held.",
+      "cv_a": "A (0..1, linear). Synthetic gate param backing the a input; its level sets whether the SNES A button is held.",
+      "cv_y": "Y (0..1, linear). Synthetic gate param backing the y input; its level sets whether the SNES Y button is held.",
+      "cv_x": "X (0..1, linear). Synthetic gate param backing the x input; its level sets whether the SNES X button is held.",
+      "cv_l": "L (0..1, linear). Synthetic gate param backing the l input; its level sets whether the SNES L shoulder button is held.",
+      "cv_r": "R (0..1, linear). Synthetic gate param backing the r input; its level sets whether the SNES R shoulder button is held.",
+      "cv_start": "START (0..1, linear). Synthetic gate param backing the start input; its level sets whether the SNES START button is held.",
+      "cv_select": "SELECT (0..1, linear). Synthetic gate param backing the select input; its level sets whether the SNES SELECT button is held.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);
