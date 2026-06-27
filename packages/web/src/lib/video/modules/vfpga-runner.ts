@@ -185,6 +185,47 @@ export const vfpgaRunnerDef: VideoModuleDef = {
     })),
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "vfpga-runner is a runtime that executes a loaded .vfpga declarative spec — a \"virtual FPGA bitstream\" — as a WebGL video effect. ONE registered host module declares the full I/O superset it can ever wire (4 video ins, 4 CV, 4 gates, 2 video outs, an 8-slot generic param bank); the loaded VfpgaSpec selects which subset is ACTIVE and what render-graph runs, the way a bitstream reconfigures an FPGA fabric. A fabric-described spec (a grid of typed tiles wired by a routing netlist) is place-and-routed into the GL pass pipeline; a spec may also carry a legacy hand-authored render graph as an escape hatch, and when a spec declares both, the fabric path wins at runtime (smpte-bars ships both — its fabric lowers byte-identically to its legacy effect — to dogfood place-and-route on the reference VFPGA). Changing the preset hot-swaps the effect: the old GL pipeline is disposed and a new one built, with the new spec's param-slot defaults seeded. Usage: pick a VFPGA from the card's \"load preset…\" menu (the bundled catalog ships smpte-bars as the default test-pattern generator plus glitch/datamosh-style effects: chroma-rot, databend-cvbs, framestore-howl, macroblock-mosh, scaler-glitch, sync-bender and tmds-sparkle). The card preview shows the REAL output of whatever VFPGA is loaded (a live blit of this node's own output FBO, not a frozen CPU snapshot); the \"fabric\" button toggles a read-only floorplan view (tile grid + lit routing nets). The card surfaces controls only for the loaded spec's active roles — a knob per mapped param slot, a SCALE attenuverter + OFFSET + always-on scope per active CV input, and an activity LED per active gate input — while the PatchPanel still renders the full superset of jacks (inactive ports dimmed). The def declares the off-main-thread worker render locus (every catalog VFPGA is pure-GL, so it is eligible to render off the main thread).",
+    inputs: {
+      "vin1": "Video input 1. Bound to the loaded spec's first declared video-in sampler (a spec consumes 0–4 of these); a pattern generator like smpte-bars consumes none. Unpatched here samples a 1×1 transparent-black fallback so the shader never reads garbage.",
+      "vin2": "Video input 2. Sampled by the loaded VFPGA only if its spec declares a video-in for this slot; otherwise dimmed/inactive and a transparent-black fallback is bound.",
+      "vin3": "Video input 3. Sampled by the loaded VFPGA only if its spec declares a video-in for this slot; otherwise inactive with a transparent-black fallback.",
+      "vin4": "Video input 4. The last of the four superset video ins; active only when the loaded spec maps a video-in role onto it, else dimmed with a transparent-black fallback.",
+      "cv1": "CV input 1 (linear). Modulates whatever target the loaded VFPGA maps onto CV input 1 via its cvRoles, written into that role's shader uniform after the card's per-input SCALE attenuverter + OFFSET. Routes through the synthetic cv1_val param.",
+      "cv2": "CV input 2 (linear). Modulates the loaded spec's CV-role-2 modulation target (whatever uniform that VFPGA maps onto cv2), post SCALE + OFFSET. Inactive if the loaded spec declares no CV role here. Routes through synthetic param cv2_val.",
+      "cv3": "CV input 3 (linear). Modulates the loaded spec's CV-role-3 target, applied as a uniform after the per-input SCALE attenuverter + OFFSET. Routes through synthetic param cv3_val.",
+      "cv4": "CV input 4 (linear). Modulates the loaded spec's CV-role-4 target, applied post SCALE + OFFSET. Inactive if the loaded VFPGA declares no CV role for this slot. Routes through synthetic param cv4_val.",
+      "g1": "Gate input 1. The host both holds its level and counts rising edges (hysteresis edge-detect); the loaded spec's gate role for this slot chooses level (gate, hold-while-high via heldUniform) or rising-edge count (trigger, advance-per-pulse via countUniform). Routes through synthetic param g1_evt.",
+      "g2": "Gate input 2. Raw passthrough plus factory edge-detect; the loaded spec's gate-role-2 reads the held level and/or the rising-edge count. Acts as a gate or a trigger per which role uniforms it declares. Routes through synthetic param g2_evt.",
+      "g3": "Gate input 3. Held level (gate) and rising-edge count (trigger) both available to the loaded spec's gate-role-3; interpretation is the role's choice of heldUniform/countUniform. Routes through synthetic param g3_evt.",
+      "g4": "Gate input 4. The last superset gate; level + edge-count exposed to the loaded spec's gate-role-4 (gate vs trigger per its uniforms). Inactive if no gate role is mapped here. Routes through synthetic param g4_evt.",
+    },
+    outputs: {
+      "vout1": "Primary video output — the canonical surface texture. The loaded spec's vout1 FBO (the final pass writing 'output'); always present, and what downstream modules and OUTPUT sample.",
+      "vout2": "Secondary video output. Exposed only when the loaded spec declares a vout2 FBO (read('outputTexture:vout2')); otherwise null/inactive. Lets a multi-output effect tap a second buffer.",
+    },
+    controls: {
+      "p1": "Generic param slot 1 (host 0..1). A loaded VFPGA maps and labels one of its params onto this slot; the card renders a knob in the spec's [min,max] range only when the loaded spec uses the slot. The mapped value drives the bound shader uniform.",
+      "p2": "Generic param slot 2. Surfaced as a labeled knob (in the spec's mapped range) only if the loaded VFPGA maps a param onto it; otherwise hidden. CV patched to the same uniform adds on top of this base.",
+      "p3": "Generic param slot 3. A labeled knob appears only when the loaded spec maps a param here; the host slot is generic 0..1, shown to the user in the spec's [min,max] range.",
+      "p4": "Generic param slot 4. Mapped + labeled by the loaded VFPGA when used; renders a knob in the spec's range, otherwise inactive.",
+      "p5": "Generic param slot 5. Labeled and ranged by whichever spec param the loaded VFPGA maps onto it; no knob when the slot is unused by the loaded spec.",
+      "p6": "Generic param slot 6. Surfaced as a knob (spec label + range) only when the loaded VFPGA uses the slot; the underlying host value is a 0..1 generic slot.",
+      "p7": "Generic param slot 7. Mapped + labeled per the loaded spec; renders a knob in the mapped range when active, otherwise dimmed/hidden.",
+      "p8": "Generic param slot 8 — the last of the p1..p8 bank. Labeled and ranged by the loaded VFPGA's mapped param when used; no knob otherwise.",
+      "cv1_val": "Synthetic CV param for the cv1 jack (no knob). Carries the raw CV sample written by the cv1 input; read as the loaded spec's CV-role-1 modulation uniform after the card's SCALE attenuverter + OFFSET.",
+      "cv2_val": "Synthetic CV param for the cv2 jack (no knob). Holds the raw cv2 sample, surfaced to the loaded spec's CV-role-2 uniform post SCALE + OFFSET.",
+      "cv3_val": "Synthetic CV param for the cv3 jack (no knob). Holds the raw cv3 sample, read by the loaded spec's CV-role-3 uniform after SCALE + OFFSET.",
+      "cv4_val": "Synthetic CV param for the cv4 jack (no knob). Holds the raw cv4 sample, read by the loaded spec's CV-role-4 uniform after SCALE + OFFSET.",
+      "g1_evt": "Synthetic gate param for the g1 jack (no knob). The factory hysteresis edge-detector turns this raw sample into the held-level and rising-edge-count uniforms the loaded spec's gate-role-1 reads.",
+      "g2_evt": "Synthetic gate param for the g2 jack (no knob). Edge-detected into the held-level and rising-edge-count uniforms consumed by the loaded spec's gate-role-2.",
+      "g3_evt": "Synthetic gate param for the g3 jack (no knob). Edge-detected into the held-level / rising-edge-count uniforms the loaded spec's gate-role-3 reads.",
+      "g4_evt": "Synthetic gate param for the g4 jack (no knob). Edge-detected into the held-level / rising-edge-count uniforms the loaded spec's gate-role-4 reads.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const { fbo: outFbo, texture: outTexture } = ctx.createFbo();

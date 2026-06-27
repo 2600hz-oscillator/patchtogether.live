@@ -973,6 +973,125 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "shift": "Chromatic aberration amount (0..1, default 0.5). Pulls the red channel left and the blue channel right by up to ~5% of width; at 0 the channels stay aligned. Effective amount is scaled by Mangle."
     }
   },
+  "doom": {
+    "explanation": "DOOM runs the 1993 shareware game compiled to WebAssembly (doomgeneric) and renders each peer's OWN first-person view to the video 'out' jack, with the WASM SFX mixer bridged to stereo audio outputs. It is a host-only, single-node module (maxInstances 1, ownerOnly): the rack owner adds one DOOM card, clicks the surface to download/cache the ~4 MB shareware WAD and boot the WASM, then either plays solo or hosts a true-lockstep co-op netgame that up to 3 rack-mates one-click hot-join (4 marines total — the owner is player 1) — every peer runs its own runtime and the deterministic tic stream keeps all marines byte-identical. Play with the keyboard once the card is focused (arrows move/turn, Ctrl/F fire, Space uses doors), or drive it from CV: the per-slot gate inputs p1..p4 act as held keypresses (movement/fire/strafe/menu) so an LFO, sequencer, or GAMEPAD can play the marine — each peer applies only its own seated slot's group (own-slot rule), and in single-player only the p1 group is live. Two extra cheat gates inject IDDQD (god mode) and IDKFA (full arsenal) on a rising edge. Game events feed the audio domain as 10 ms gate pulses — per-player weapon fire, door opens, the any-monster kill plus per-monster-type kills, and per-player deaths — so DOOM's action can trigger synths, drums, or a SCOREBOARD. The card's load button, the Single Player / Host Multiplayer start choice, the guest Join button, the click-to-capture-keyboard hint, and the arbiter's New Game dialog (mode/skill/episode/map custom dropdowns + a Launch / Next Map button) are UI controls, not patchable params. There is no host framebuffer mirror — an unjoined spectator simply shows the dark attract screen until it JOINS.",
+    "inputs": {
+      "iddqd_in": "Cheat gate (rising-edge trigger): a LOW->HIGH crossing injects the 'iddqd' keypress sequence into the WASM, flipping the local player's god-mode flag. One-shot — holding HIGH does not re-fire; the gate must fall and rise again.",
+      "idkfa_in": "Cheat gate (rising-edge trigger): a LOW->HIGH crossing injects the 'idkfa' sequence (all keys, all weapons, full ammo) for the local player. One-shot per rising edge; not replicated to other peers.",
+      "p1_alt": "Player 1 gate: while HIGH, holds the strafe modifier (Alt) for slot 1; released when LOW. Slot-1 peer only; active in single-player.",
+      "p1_ctrl": "Player 1 gate: while HIGH, holds FIRE (Ctrl) for slot 1's weapon; released when LOW. Slot-1 peer only; the active group in single-player.",
+      "p1_down": "Player 1 gate: while HIGH, holds backward (ArrowDown) for slot 1; released when LOW. Applied only by the slot-1 peer (also the active group in single-player).",
+      "p1_enter": "Player 1 gate: while HIGH, holds ENTER (menu select / confirm) for slot 1; released when LOW. Slot-1 peer only; active in single-player.",
+      "p1_esc": "Player 1 gate: while HIGH, holds ESC (open/toggle the pause menu) for slot 1; released when LOW. Slot-1 peer only; active in single-player.",
+      "p1_left": "Player 1 gate: while HIGH, holds turn-left (ArrowLeft) for slot 1; released when LOW. Slot-1 peer only; the active group in single-player.",
+      "p1_right": "Player 1 gate: while HIGH, holds turn-right (ArrowRight) for slot 1; released when LOW. Slot-1 peer only; the active group in single-player.",
+      "p1_space": "Player 1 gate: while HIGH, holds USE / open-door / switch (Space) for slot 1; released when LOW. Slot-1 peer only; active in single-player.",
+      "p1_up": "Player 1 movement gate: while HIGH, holds DOOM's forward key (ArrowUp) for slot-1's marine; releases on the falling edge. Honored only by the peer in slot 1, and it is the active group in single-player.",
+      "p2_alt": "Player 2 gate: while HIGH, holds the strafe modifier (Alt) for slot 2; released when LOW. Applied only by the peer in slot 2.",
+      "p2_ctrl": "Player 2 gate: while HIGH, holds FIRE (Ctrl) for slot 2's weapon; released when LOW. Applied only by the peer in slot 2.",
+      "p2_down": "Player 2 gate: while HIGH, holds backward (ArrowDown) for slot 2; released when LOW. Applied only by the peer in slot 2.",
+      "p2_enter": "Player 2 gate: while HIGH, holds ENTER (menu confirm) for slot 2; released when LOW. Applied only by the peer in slot 2.",
+      "p2_esc": "Player 2 gate: while HIGH, holds ESC (menu/pause) for slot 2; released when LOW. Applied only by the peer in slot 2.",
+      "p2_left": "Player 2 gate: while HIGH, holds turn-left (ArrowLeft) for slot 2; released when LOW. Applied only by the peer in slot 2.",
+      "p2_right": "Player 2 gate: while HIGH, holds turn-right (ArrowRight) for slot 2; released when LOW. Applied only by the peer in slot 2.",
+      "p2_space": "Player 2 gate: while HIGH, holds USE / open-door (Space) for slot 2; released when LOW. Applied only by the peer in slot 2.",
+      "p2_up": "Player 2 movement gate: while HIGH, holds forward (ArrowUp) for slot-2's marine; released when LOW. Applied only by the peer seated in slot 2.",
+      "p3_alt": "Player 3 gate: while HIGH, holds the strafe modifier (Alt) for slot 3; released when LOW. Applied only by the peer in slot 3.",
+      "p3_ctrl": "Player 3 gate: while HIGH, holds FIRE (Ctrl) for slot 3's weapon; released when LOW. Applied only by the peer in slot 3.",
+      "p3_down": "Player 3 gate: while HIGH, holds backward (ArrowDown) for slot 3; released when LOW. Applied only by the peer in slot 3.",
+      "p3_enter": "Player 3 gate: while HIGH, holds ENTER (menu confirm) for slot 3; released when LOW. Applied only by the peer in slot 3.",
+      "p3_esc": "Player 3 gate: while HIGH, holds ESC (menu/pause) for slot 3; released when LOW. Applied only by the peer in slot 3.",
+      "p3_left": "Player 3 gate: while HIGH, holds turn-left (ArrowLeft) for slot 3; released when LOW. Applied only by the peer in slot 3.",
+      "p3_right": "Player 3 gate: while HIGH, holds turn-right (ArrowRight) for slot 3; released when LOW. Applied only by the peer in slot 3.",
+      "p3_space": "Player 3 gate: while HIGH, holds USE / open-door (Space) for slot 3; released when LOW. Applied only by the peer in slot 3.",
+      "p3_up": "Player 3 movement gate: while HIGH, holds forward (ArrowUp) for slot-3's marine; released when LOW. Applied only by the peer seated in slot 3.",
+      "p4_alt": "Player 4 gate: while HIGH, holds the strafe modifier (Alt) for slot 4; released when LOW. Applied only by the peer in slot 4.",
+      "p4_ctrl": "Player 4 gate: while HIGH, holds FIRE (Ctrl) for slot 4's weapon; released when LOW. Applied only by the peer in slot 4.",
+      "p4_down": "Player 4 gate: while HIGH, holds backward (ArrowDown) for slot 4; released when LOW. Applied only by the peer in slot 4.",
+      "p4_enter": "Player 4 gate: while HIGH, holds ENTER (menu confirm) for slot 4; released when LOW. Applied only by the peer in slot 4.",
+      "p4_esc": "Player 4 gate: while HIGH, holds ESC (menu/pause) for slot 4; released when LOW. Applied only by the peer in slot 4.",
+      "p4_left": "Player 4 gate: while HIGH, holds turn-left (ArrowLeft) for slot 4; released when LOW. Applied only by the peer in slot 4.",
+      "p4_right": "Player 4 gate: while HIGH, holds turn-right (ArrowRight) for slot 4; released when LOW. Applied only by the peer in slot 4.",
+      "p4_space": "Player 4 gate: while HIGH, holds USE / open-door (Space) for slot 4; released when LOW. Applied only by the peer in slot 4.",
+      "p4_up": "Player 4 movement gate: while HIGH, holds forward (ArrowUp) for slot-4's marine; released when LOW. Applied only by the peer seated in slot 4."
+    },
+    "outputs": {
+      "audio_l": "Left audio: the DOOM SFX/PCM mixer stream (mono internally, split to two channels) scaled by the Gain knob, bridged into the audio graph via the video->audio bridge.",
+      "audio_r": "Right audio: the same DOOM PCM mixer stream as audio_l (duplicated channel) scaled by Gain, so downstream patches can route the two sides independently.",
+      "evt_door": "Door gate: a 10 ms HIGH pulse when a door opens (EV_DoDoor / EV_VerticalDoor).",
+      "evt_gun_p1": "Weapon-fire gate for player 1: a 10 ms HIGH pulse each time slot 1 fires its weapon.",
+      "evt_gun_p2": "Weapon-fire gate for player 2: a 10 ms HIGH pulse each time slot 2 fires its weapon.",
+      "evt_gun_p3": "Weapon-fire gate for player 3: a 10 ms HIGH pulse each time slot 3 fires its weapon.",
+      "evt_gun_p4": "Weapon-fire gate for player 4: a 10 ms HIGH pulse each time slot 4 fires its weapon.",
+      "evt_kill": "Any-monster kill gate: a 10 ms HIGH pulse each time a counted monster dies, firing alongside the matching per-type kill gate.",
+      "evt_kill_arachnotron": "Typed kill gate: a 10 ms HIGH pulse when an Arachnotron is killed (full-WAD monster).",
+      "evt_kill_baron": "Typed kill gate: a 10 ms HIGH pulse when a Baron of Hell is killed (shareware monster).",
+      "evt_kill_caco": "Typed kill gate: a 10 ms HIGH pulse when a Cacodemon is killed (shareware monster).",
+      "evt_kill_chainguy": "Typed kill gate: a 10 ms HIGH pulse when a Chaingunner is killed (full-WAD monster).",
+      "evt_kill_cyber": "Typed kill gate: a 10 ms HIGH pulse when the Cyberdemon is killed (full-WAD monster).",
+      "evt_kill_demon": "Typed kill gate: a 10 ms HIGH pulse when a Demon (pinky) is killed (shareware monster).",
+      "evt_kill_imp": "Typed kill gate: a 10 ms HIGH pulse when an Imp is killed (shareware monster).",
+      "evt_kill_keen": "Typed kill gate: a 10 ms HIGH pulse when a Commander Keen is killed (full-WAD monster).",
+      "evt_kill_knight": "Typed kill gate: a 10 ms HIGH pulse when a Hell Knight is killed (full-WAD monster).",
+      "evt_kill_lostsoul": "Typed kill gate: a 10 ms HIGH pulse when a Lost Soul is killed (shareware monster).",
+      "evt_kill_mancubus": "Typed kill gate: a 10 ms HIGH pulse when a Mancubus is killed (full-WAD monster).",
+      "evt_kill_pain": "Typed kill gate: a 10 ms HIGH pulse when a Pain Elemental is killed (full-WAD monster).",
+      "evt_kill_revenant": "Typed kill gate: a 10 ms HIGH pulse when a Revenant is killed (full-WAD monster).",
+      "evt_kill_shotguy": "Typed kill gate: a 10 ms HIGH pulse when a Shotgunner (Shotgun Guy) is killed (shareware monster).",
+      "evt_kill_spectre": "Typed kill gate: a 10 ms HIGH pulse when a Spectre is killed (shareware monster).",
+      "evt_kill_spidermind": "Typed kill gate: a 10 ms HIGH pulse when the Spider Mastermind is killed (full-WAD monster).",
+      "evt_kill_vile": "Typed kill gate: a 10 ms HIGH pulse when an Arch-Vile is killed (full-WAD monster).",
+      "evt_kill_wolfss": "Typed kill gate: a 10 ms HIGH pulse when a Wolfenstein SS is killed (full-WAD monster).",
+      "evt_kill_zombieman": "Typed kill gate: a 10 ms HIGH pulse when a Zombieman is killed (shareware monster).",
+      "evt_p1_dies": "Death gate: a 10 ms HIGH pulse when player 1's marine dies.",
+      "evt_p2_dies": "Death gate: a 10 ms HIGH pulse when player 2's marine dies.",
+      "evt_p3_dies": "Death gate: a 10 ms HIGH pulse when player 3's marine dies.",
+      "evt_p4_dies": "Death gate: a 10 ms HIGH pulse when player 4's marine dies.",
+      "out": "Video out: this peer's own first-person DOOM framebuffer (640x400 BGRA, swizzled BGRA->RGBA) letterboxed/pillarboxed into the engine's 4:3 FBO. Shows the dark attract screen until this peer loads or JOINS."
+    },
+    "controls": {
+      "audioGain": "Gain (0..2, linear, default 1): volume trim on the DOOM SFX -> audio_l/audio_r bus, on top of the worklet's fixed makeup gain. Rendered as the card's Volume knob and forwarded live to the PCM worklet on change.",
+      "cv_iddqd_in": "Hidden synthetic param (label 'IDDQD') behind the iddqd_in cheat gate; a rising-edge setParam injects the 'iddqd' god-mode keypress sequence into the WASM. One-shot, hidden from the card.",
+      "cv_idkfa_in": "Hidden synthetic param (label 'IDKFA') behind the idkfa_in cheat gate; a rising-edge setParam injects the 'idkfa' (all keys/weapons/ammo) keypress sequence. One-shot, hidden from the card.",
+      "cv_p1_alt": "Hidden synthetic param (label 'P1 ALT') behind the p1_alt gate input; edge-detected to press/release slot 1's strafe modifier. No card row.",
+      "cv_p1_ctrl": "Hidden synthetic param (label 'P1 CTRL') behind the p1_ctrl gate input; edge-detected to press/release slot 1's FIRE key. No card row.",
+      "cv_p1_down": "Hidden synthetic param (label 'P1 DOWN') behind the p1_down gate input; edge-detected to press/release slot 1's backward key. No card row.",
+      "cv_p1_enter": "Hidden synthetic param (label 'P1 ENTER') behind the p1_enter gate input; edge-detected to press/release slot 1's ENTER key. No card row.",
+      "cv_p1_esc": "Hidden synthetic param (label 'P1 ESC') behind the p1_esc gate input; edge-detected to press/release slot 1's ESC (menu) key. No card row.",
+      "cv_p1_left": "Hidden synthetic param (label 'P1 LEFT') behind the p1_left gate input; edge-detected to press/release slot 1's turn-left key. No card row.",
+      "cv_p1_right": "Hidden synthetic param (label 'P1 RIGHT') behind the p1_right gate input; edge-detected to press/release slot 1's turn-right key. No card row.",
+      "cv_p1_space": "Hidden synthetic param (label 'P1 SPACE') behind the p1_space gate input; edge-detected to press/release slot 1's USE key. No card row.",
+      "cv_p1_up": "Hidden synthetic param (label 'P1 UP') behind the p1_up gate input; setParam values are hysteresis edge-detected to press/release slot 1's forward key. No card row.",
+      "cv_p2_alt": "Hidden synthetic param (label 'P2 ALT') behind the p2_alt gate input; edge-detected to press/release slot 2's strafe modifier. No card row.",
+      "cv_p2_ctrl": "Hidden synthetic param (label 'P2 CTRL') behind the p2_ctrl gate input; edge-detected to press/release slot 2's FIRE key. No card row.",
+      "cv_p2_down": "Hidden synthetic param (label 'P2 DOWN') behind the p2_down gate input; edge-detected to press/release slot 2's backward key. No card row.",
+      "cv_p2_enter": "Hidden synthetic param (label 'P2 ENTER') behind the p2_enter gate input; edge-detected to press/release slot 2's ENTER key. No card row.",
+      "cv_p2_esc": "Hidden synthetic param (label 'P2 ESC') behind the p2_esc gate input; edge-detected to press/release slot 2's ESC (menu) key. No card row.",
+      "cv_p2_left": "Hidden synthetic param (label 'P2 LEFT') behind the p2_left gate input; edge-detected to press/release slot 2's turn-left key. No card row.",
+      "cv_p2_right": "Hidden synthetic param (label 'P2 RIGHT') behind the p2_right gate input; edge-detected to press/release slot 2's turn-right key. No card row.",
+      "cv_p2_space": "Hidden synthetic param (label 'P2 SPACE') behind the p2_space gate input; edge-detected to press/release slot 2's USE key. No card row.",
+      "cv_p2_up": "Hidden synthetic param (label 'P2 UP') behind the p2_up gate input; edge-detected to press/release slot 2's forward key. No card row.",
+      "cv_p3_alt": "Hidden synthetic param (label 'P3 ALT') behind the p3_alt gate input; edge-detected to press/release slot 3's strafe modifier. No card row.",
+      "cv_p3_ctrl": "Hidden synthetic param (label 'P3 CTRL') behind the p3_ctrl gate input; edge-detected to press/release slot 3's FIRE key. No card row.",
+      "cv_p3_down": "Hidden synthetic param (label 'P3 DOWN') behind the p3_down gate input; edge-detected to press/release slot 3's backward key. No card row.",
+      "cv_p3_enter": "Hidden synthetic param (label 'P3 ENTER') behind the p3_enter gate input; edge-detected to press/release slot 3's ENTER key. No card row.",
+      "cv_p3_esc": "Hidden synthetic param (label 'P3 ESC') behind the p3_esc gate input; edge-detected to press/release slot 3's ESC (menu) key. No card row.",
+      "cv_p3_left": "Hidden synthetic param (label 'P3 LEFT') behind the p3_left gate input; edge-detected to press/release slot 3's turn-left key. No card row.",
+      "cv_p3_right": "Hidden synthetic param (label 'P3 RIGHT') behind the p3_right gate input; edge-detected to press/release slot 3's turn-right key. No card row.",
+      "cv_p3_space": "Hidden synthetic param (label 'P3 SPACE') behind the p3_space gate input; edge-detected to press/release slot 3's USE key. No card row.",
+      "cv_p3_up": "Hidden synthetic param (label 'P3 UP') behind the p3_up gate input; edge-detected to press/release slot 3's forward key. No card row.",
+      "cv_p4_alt": "Hidden synthetic param (label 'P4 ALT') behind the p4_alt gate input; edge-detected to press/release slot 4's strafe modifier. No card row.",
+      "cv_p4_ctrl": "Hidden synthetic param (label 'P4 CTRL') behind the p4_ctrl gate input; edge-detected to press/release slot 4's FIRE key. No card row.",
+      "cv_p4_down": "Hidden synthetic param (label 'P4 DOWN') behind the p4_down gate input; edge-detected to press/release slot 4's backward key. No card row.",
+      "cv_p4_enter": "Hidden synthetic param (label 'P4 ENTER') behind the p4_enter gate input; edge-detected to press/release slot 4's ENTER key. No card row.",
+      "cv_p4_esc": "Hidden synthetic param (label 'P4 ESC') behind the p4_esc gate input; edge-detected to press/release slot 4's ESC (menu) key. No card row.",
+      "cv_p4_left": "Hidden synthetic param (label 'P4 LEFT') behind the p4_left gate input; edge-detected to press/release slot 4's turn-left key. No card row.",
+      "cv_p4_right": "Hidden synthetic param (label 'P4 RIGHT') behind the p4_right gate input; edge-detected to press/release slot 4's turn-right key. No card row.",
+      "cv_p4_space": "Hidden synthetic param (label 'P4 SPACE') behind the p4_space gate input; edge-detected to press/release slot 4's USE key. No card row.",
+      "cv_p4_up": "Hidden synthetic param (label 'P4 UP') behind the p4_up gate input; edge-detected to press/release slot 4's forward key. No card row.",
+      "fillMode": "Fill (0..1, discrete, default 0): output aspect fit — 0 = letterbox/pillarbox preserving DOOM's native 8:5, 1 = fill (cover-crop). Rendered as the card's OUTPUT FIT toggle, not a knob."
+    }
+  },
   "drummergirl": {
     "explanation": "A one-shot synth drum voice: fire a gate and it plays a single percussion hit. Mental model — a pitched body oscillator crossfaded against a noise/transient layer, gain-shaped by an internal attack/decay envelope, so one module covers everything from a tuned tom or kick to a noisy snare or hat. There is no separate trigger and tone path to wire: pitch, tone, shape, level, and decay are all on the faceplate (and CV-modulatable), and the gate edge is the only thing you have to patch. It's also the per-voice engine inside RIOTGIRLS, so the timbre you dial here is the same one those voices use.",
     "inputs": {
@@ -2176,6 +2295,24 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "threshold": "Thresh (0..1, linear, default 0.5) — the key luminance cutoff. Raising it shrinks the keyed area so only the brightest parts of the key pass; lowering it grows the keyed area so dimmer key regions show video too. A sub-pixel soft edge (+/-0.03 luma) around the cutoff keeps the key crisp while removing aliasing on a moving matte."
     }
   },
+  "mappy": {
+    "explanation": "MAPPY is a multi-surface MANUAL projection mapper (corner-pin homography). It hosts up to six SURFACES; each surface i is fed by video input in(i+1), warped onto its own draggable four-corner QUAD in normalized [0,1] output space (corner order TL, TR, BR, BL), then composited painter's-order OVER into ONE video output you send to a projector — in1 paints first (bottom), in6 last (top). Per surface a homography (unit-square → that quad) defines the projective warp; the shader runs per output texel, applies the INVERSE homography to find the matching source uv, and samples there only where it lands inside [0,1] (else transparent so under-layers show). Use one surface to DE-SKEW an awkwardly-angled projection, or up to six to map each face of a white cube/stage set. GRIDS-FIRST: a fresh MAPPY shows one surface, and any live surface with no input patched renders a NUMBERED calibration grid (per-surface-tinted checker + bright border + cross-hairs + a big seven-segment digit naming the input that will feed it) — so set the geometry on the physical faces FIRST (drag corners, add surfaces), THEN patch video and surface N swaps grid→warped feed in the quad you already mapped (surface↔input is fixed, no reassignment). DOM-only card affordances (NOT params): drag a corner HANDLE to pin it or drag a surface's INTERIOR to move the whole quad bodily; a MAP button opens a full-window editor (large canvas, big precise handles, drag-to-move, surface tabs, snap-to-grid); a per-surface FIT/CROP toggle in the legend (FIT zoom-fits the whole source into the quad, CROP windows it at native 1:1 scale — move to pan, resize to crop); a per-surface reset (corners→full-frame) and focus/select; and export map / import map buttons that save and reload the venue layout (count + corners + FIT) as JSON. This is the manual mapper — camera-assisted auto-align is a later phase, so there is no camera input and no CV by design.",
+    "inputs": {
+      "in1": "Video feed for surface 1, composited FIRST (the bottom layer) and warped into surface 1's quad. With nothing patched, surface 1 shows its numbered calibration grid (digit 1).",
+      "in2": "Video feed for surface 2, warped into surface 2's quad and composited OVER surface 1 where they overlap. Patching it auto-activates surface 2; unconnected it shows the grid (digit 2).",
+      "in3": "Video feed for surface 3, warped into surface 3's quad and composited over the earlier surfaces. Patching it auto-activates surface 3; unconnected it shows the calibration grid (digit 3).",
+      "in4": "Video feed for surface 4, warped into surface 4's quad and composited over the earlier surfaces. Patching it auto-activates surface 4; unconnected it shows the calibration grid (digit 4).",
+      "in5": "Video feed for surface 5, warped into surface 5's quad and composited over the earlier surfaces. Patching it auto-activates surface 5; unconnected it shows the calibration grid (digit 5).",
+      "in6": "Video feed for surface 6, composited LAST (the top layer) and warped into surface 6's quad. Patching it auto-activates surface 6; unconnected it shows the calibration grid (digit 6)."
+    },
+    "outputs": {
+      "out": "The composite video output — all live surfaces warped and blended painter's-order OVER onto an opaque black floor. Send it to a projector (videoOut); it is also the on-card live preview."
+    },
+    "controls": {
+      "showGrid": "GRID toggle (param showGrid, 0/1; surfaced as the GRID ON/OFF button). When ON it FORCES the numbered calibration grid onto every live surface in place of its video — a re-alignment override. OFF lets each connected input show its warped feed; an unpatched surface still shows its grid regardless.",
+      "surfaceCount": "Number of LIVE surfaces, 1–6 (param surfaceCount; the +/− counter on the card). Each live surface renders its calibration grid until its input is patched, then the warped video. Newly added surfaces drop in as a staggered inset quad; connecting inN auto-activates surface N even beyond this count."
+    }
+  },
   "marbles": {
     "explanation": "A random sampler and clock generator (a port of Mutable Instruments Marbles) with two halves driven by one master clock. The T section makes random GATES (two outputs, t1/t2) whose character is set by a model — coin-toss, clusters, drum-like, independent, three-state, or Markov — plus bias and jitter. The X section makes three random CONTROL VOLTAGES (x1/x2/x3) whose Spread sets how wide they wander, Bias sets their average, Steps adds lag/portamento, and a Scale quantizes them to musical notes. The killer feature is Déjà Vu: turn it up and the otherwise-random stream LOCKS into a repeating loop (length set per section), so you can dial smoothly from pure chance to a fixed pattern and anywhere in between. Every control also has a dedicated CV input so the randomness itself can be modulated.",
     "inputs": {
@@ -3032,6 +3169,26 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "overdub": "Overdub mode (the card's OVD button): when on, every keypress writes its note into the step (quantized to the nearest step while playing, immediately when stopped) without clearing the layer first — layer new notes over what's there.",
       "poly": "Poly recording (the card's POLY button): when on, holding several keys at once records them as a chord into the step (up to 5 voices); when off, only the single key pressed is stored. The mono per-layer outputs always send the lowest note either way.",
       "recArm": "Record arm (the card's ARM button): when armed and play starts from step 1, recording latches and the active layer is cleared, then your keystrokes are written in; it auto-disarms after one 16-step pass."
+    }
+  },
+  "onetonine": {
+    "explanation": "ONE TO NINE is a fixed 3×3 video splitter: it takes one source on `in` and divides the frame into nine equal sub-rectangles, exposing each cell on its own output (out1..out9) magnified to fill the whole output frame — a clean, grid-line-free crop of one ninth. Cells are numbered in reading order (1 = top-left, 5 = centre, 9 = bottom-right). The module's canonical surface is a MONITOR that shows the input with an amber 3×3 grid and a big upright 7-segment digit drawn in each cell, so the operator can see which cell feeds which output before patching — the grid and numbers appear ONLY on the monitor, never in the nine outputs (those stay clean). Use it alongside (not wired to) MAPPY to feed up to nine projectors a different ninth of one source, or fan one feed across a video wall. The on-card GRID button toggles the monitor overlay only.",
+    "inputs": {
+      "in": "The single video source to split. The frame is divided into a fixed 3×3 grid of nine equal cells; each cell feeds its matching output, and the whole frame (with the optional grid overlay) feeds the monitor. With nothing patched the nine crop outputs are pure black, while the monitor shows a near-black dark field (still drawing the amber grid + cell numbers when Grid is on)."
+    },
+    "outputs": {
+      "out1": "Cell 1 — the top-left ninth of the input, magnified to fill the frame. A clean crop with no grid lines or numbers.",
+      "out2": "Cell 2 — the top-center ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out3": "Cell 3 — the top-right ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out4": "Cell 4 — the mid-left ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out5": "Cell 5 — the centre ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out6": "Cell 6 — the mid-right ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out7": "Cell 7 — the bottom-left ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out8": "Cell 8 — the bottom-center ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out9": "Cell 9 — the bottom-right ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers."
+    },
+    "controls": {
+      "showGrid": "Grid (0/1 toggle, min 0 / max 1, linear, default ON; the card's GRID ON/OFF button). When on, the monitor draws the amber 3×3 grid plus a big upright 7-segment digit 1..9 in each cell so you can see which cell feeds which output; when off, the monitor is a raw input passthrough. Affects the monitor only — the nine crop outputs are always clean. Mirrored to node.data so the button and the persisted param stay in agreement."
     }
   },
   "outlines": {
@@ -4054,6 +4211,53 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "xfadeTime": "The equal-power crossfade time applied to the SWITCHED output when the selection changes, log 0.001..2 s (default 0.05 s). Short = a tight switch, long = a slow morph between the two channels' values."
     }
   },
+  "snes9x": {
+    "explanation": "A Super Nintendo emulator turned into a patchable video+audio module. It runs the snes9x2005 (CAT SFC) libretro core compiled to WASM, rendering the SNES screen (locked 256×224/239, 4:3) to the video out and 32 kHz stereo to audio_l/audio_r. The ROM is user-provided and gitignored: if /roms/snes9x/game.sfc isn't autoloaded the card shows a LOAD A ROM dropzone/file-picker (drop or click a .sfc/.smc — it stays local in your browser). Beyond the picture and sound, it reads the live SNES WRAM each frame to emit game-event CV/GATE: for Super Mario World it pulses on kills and deaths, holds a CV for the current world, and turns clock_in into a clock multiplied by (world+level). Drive it by wiring a GAMEPAD module's gate outputs straight into the 12 SNES button inputs (du→up, a→a, …) plus a clock into clock_in. Single-instance per rack (the WASM core is heavy). DOM-only affordances with no patch port: the ROM dropzone/file picker, and a right-click \"see output definition for CV/GATES\" panel that explains every game-event output for the loaded ROM; the card's OUTPUT FIT toggle sets the fillMode param (letterbox vs fill). Non-SMW ROMs still boot and show video/audio but the game-event outputs stay inert.",
+    "inputs": {
+      "a": "Holds the SNES A face button while the gate level is high (held). Maps to the controller's A bit.",
+      "b": "Holds the SNES B face button while the gate level is high (held, not edge). Maps to the controller's B bit.",
+      "clock_in": "Clock input (gate cable). Each rising edge is treated as a clock pulse that feeds the gate3 multiplier: the period between edges is measured and replayed as (world+level) evenly-spaced sub-pulses on gate3 (×1 passthrough when not in a level).",
+      "down": "Holds the SNES D-pad DOWN button while the gate level is high (held). Maps to the controller's DOWN bit.",
+      "l": "Holds the SNES left shoulder (L) button while the gate level is high (held). Maps to the controller's L bit.",
+      "left": "Holds the SNES D-pad LEFT button while the gate level is high (held). Maps to the controller's LEFT bit.",
+      "r": "Holds the SNES right shoulder (R) button while the gate level is high (held). Maps to the controller's R bit.",
+      "right": "Holds the SNES D-pad RIGHT button while the gate level is high (held). Maps to the controller's RIGHT bit.",
+      "select": "Holds the SNES SELECT button while the gate level is high (held). Maps to the controller's SELECT bit.",
+      "start": "Holds the SNES START button while the gate level is high (held). Pauses / advances menus; maps to the controller's START bit.",
+      "up": "Holds the SNES D-pad UP button while the gate level is high (held, not edge). Maps to the controller's UP bit; wire a GAMEPAD up gate straight in.",
+      "x": "Holds the SNES X face button while the gate level is high (held). Maps to the controller's X bit.",
+      "y": "Holds the SNES Y face button while the gate level is high (held, not edge). Maps to the controller's Y bit."
+    },
+    "outputs": {
+      "audio_l": "Left audio channel of the emulator's 32 kHz stereo output, split off a ChannelSplitter from the PCM worklet. Patch into the audio domain.",
+      "audio_r": "Right audio channel of the emulator's 32 kHz stereo output (the other split of the PCM worklet). Patch into the audio domain.",
+      "cv1": "WORLD CV: a steady constant for the current SMW world (world/7 → ~0.143 at world 1 up to 1.0 at world 7, 0 when idle). Only changes on a world change.",
+      "cv2": "Reserved CV output: present for patching but idle (held at 0) for SMW.",
+      "cv3": "Reserved CV output: present for patching but idle (held at 0) for SMW.",
+      "cv4": "Reserved CV output: present for patching but idle (held at 0) for SMW.",
+      "gate1": "KILL gate: a short (~10 ms) pulse each time Mario kills a monster in SMW (sprite-status table transitions, debounced per slot). Idle for non-SMW ROMs.",
+      "gate2": "DEATH gate: a short pulse each time Mario dies in SMW (death-animation trigger, with a lives-decrement fallback). Idle for non-SMW ROMs.",
+      "gate3": "CLOCK ×(world+level): clock_in multiplied — (world+level) evenly-spaced pulses per input period, in-phase first sub-pulse so ×1 is a clean passthrough. Clamped to ×32 max; ×1 when not in a level.",
+      "gate4": "Reserved gate output: present so a cable can be wired, but idle for SMW (no signal driven). Held at 0.",
+      "out": "Video output: the live SNES screen, letterboxed/pillarboxed into the engine framebuffer (Y-flipped, 4:3). Shows a faint scanline void until a ROM frame is available."
+    },
+    "controls": {
+      "cv_a": "A (0..1, linear). Synthetic gate param backing the a input; its level sets whether the SNES A button is held.",
+      "cv_b": "B (0..1, linear). Synthetic gate param backing the b input; its level sets whether the SNES B button is held.",
+      "cv_clock_in": "CLOCK (0..1, linear). Synthetic param target of the clock_in gate input; its rising edge drives the gate3 clock multiplier. Set by patching clock_in, not a user knob.",
+      "cv_down": "DOWN (0..1, linear). Synthetic gate param backing the down input; its level sets whether the SNES DOWN button is held.",
+      "cv_l": "L (0..1, linear). Synthetic gate param backing the l input; its level sets whether the SNES L shoulder button is held.",
+      "cv_left": "LEFT (0..1, linear). Synthetic gate param backing the left input; its level sets whether the SNES LEFT button is held.",
+      "cv_r": "R (0..1, linear). Synthetic gate param backing the r input; its level sets whether the SNES R shoulder button is held.",
+      "cv_right": "RIGHT (0..1, linear). Synthetic gate param backing the right input; its level sets whether the SNES RIGHT button is held.",
+      "cv_select": "SELECT (0..1, linear). Synthetic gate param backing the select input; its level sets whether the SNES SELECT button is held.",
+      "cv_start": "START (0..1, linear). Synthetic gate param backing the start input; its level sets whether the SNES START button is held.",
+      "cv_up": "UP (0..1, linear). Synthetic gate param backing the up input — its level sets whether the SNES UP button is held. Set by patching the up gate, not a knob.",
+      "cv_x": "X (0..1, linear). Synthetic gate param backing the x input; its level sets whether the SNES X button is held.",
+      "cv_y": "Y (0..1, linear). Synthetic gate param backing the y input; its level sets whether the SNES Y button is held.",
+      "fillMode": "Fill (0..1, discrete). Output fit mode: 0 = letterbox/pillarbox (default, aspect-preserving), 1 = fill/cover-crop. Driven by the card's OUTPUT FIT toggle; only matters when the output aspect isn't 4:3."
+    }
+  },
   "spectrograph": {
     "explanation": "A real-time scrolling spectrograph (sonogram) — it turns any audio signal into a video image of its frequency content over time. The mono input is FFT-analysed and rendered as a log-binned plot: frequency runs up the vertical axis (20 Hz at the bottom to 20 kHz at the top, log scale), time scrolls horizontally with the newest column on the RIGHT, and the loudness at each frequency sets each pixel's brightness/color. It produces the SAME spectrograph as two simultaneous video outputs over two colormaps — a COLOR heat ramp (blue→cyan→yellow→red, loud = hot) and an INVERTED B/W (quiet = white, loud = black, the classic printed-sonogram look). The card shows a live preview with a button to flip the preview between the two looks (preview only — both outputs are always live). Patch COLOR or B/W into VIDEO OUT or any video module. GAIN trims the input level into the analyser's display window.",
     "inputs": {
@@ -4644,6 +4848,45 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "resp2": "Channel 2 response toggle (0 = linear, 1 = exponential). Default LINEAR.",
       "resp3": "Channel 3 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL (audio-friendly out of the box).",
       "resp4": "Channel 4 response toggle (0 = linear, 1 = exponential). Default EXPONENTIAL."
+    }
+  },
+  "vfpgaRunner": {
+    "explanation": "vfpga-runner is a runtime that executes a loaded .vfpga declarative spec — a \"virtual FPGA bitstream\" — as a WebGL video effect. ONE registered host module declares the full I/O superset it can ever wire (4 video ins, 4 CV, 4 gates, 2 video outs, an 8-slot generic param bank); the loaded VfpgaSpec selects which subset is ACTIVE and what render-graph runs, the way a bitstream reconfigures an FPGA fabric. A fabric-described spec (a grid of typed tiles wired by a routing netlist) is place-and-routed into the GL pass pipeline; a spec may also carry a legacy hand-authored render graph as an escape hatch, and when a spec declares both, the fabric path wins at runtime (smpte-bars ships both — its fabric lowers byte-identically to its legacy effect — to dogfood place-and-route on the reference VFPGA). Changing the preset hot-swaps the effect: the old GL pipeline is disposed and a new one built, with the new spec's param-slot defaults seeded. Usage: pick a VFPGA from the card's \"load preset…\" menu (the bundled catalog ships smpte-bars as the default test-pattern generator plus glitch/datamosh-style effects: chroma-rot, databend-cvbs, framestore-howl, macroblock-mosh, scaler-glitch, sync-bender and tmds-sparkle). The card preview shows the REAL output of whatever VFPGA is loaded (a live blit of this node's own output FBO, not a frozen CPU snapshot); the \"fabric\" button toggles a read-only floorplan view (tile grid + lit routing nets). The card surfaces controls only for the loaded spec's active roles — a knob per mapped param slot, a SCALE attenuverter + OFFSET + always-on scope per active CV input, and an activity LED per active gate input — while the PatchPanel still renders the full superset of jacks (inactive ports dimmed). The def declares the off-main-thread worker render locus (every catalog VFPGA is pure-GL, so it is eligible to render off the main thread).",
+    "inputs": {
+      "cv1": "CV input 1 (linear). Modulates whatever target the loaded VFPGA maps onto CV input 1 via its cvRoles, written into that role's shader uniform after the card's per-input SCALE attenuverter + OFFSET. Routes through the synthetic cv1_val param.",
+      "cv2": "CV input 2 (linear). Modulates the loaded spec's CV-role-2 modulation target (whatever uniform that VFPGA maps onto cv2), post SCALE + OFFSET. Inactive if the loaded spec declares no CV role here. Routes through synthetic param cv2_val.",
+      "cv3": "CV input 3 (linear). Modulates the loaded spec's CV-role-3 target, applied as a uniform after the per-input SCALE attenuverter + OFFSET. Routes through synthetic param cv3_val.",
+      "cv4": "CV input 4 (linear). Modulates the loaded spec's CV-role-4 target, applied post SCALE + OFFSET. Inactive if the loaded VFPGA declares no CV role for this slot. Routes through synthetic param cv4_val.",
+      "g1": "Gate input 1. The host both holds its level and counts rising edges (hysteresis edge-detect); the loaded spec's gate role for this slot chooses level (gate, hold-while-high via heldUniform) or rising-edge count (trigger, advance-per-pulse via countUniform). Routes through synthetic param g1_evt.",
+      "g2": "Gate input 2. Raw passthrough plus factory edge-detect; the loaded spec's gate-role-2 reads the held level and/or the rising-edge count. Acts as a gate or a trigger per which role uniforms it declares. Routes through synthetic param g2_evt.",
+      "g3": "Gate input 3. Held level (gate) and rising-edge count (trigger) both available to the loaded spec's gate-role-3; interpretation is the role's choice of heldUniform/countUniform. Routes through synthetic param g3_evt.",
+      "g4": "Gate input 4. The last superset gate; level + edge-count exposed to the loaded spec's gate-role-4 (gate vs trigger per its uniforms). Inactive if no gate role is mapped here. Routes through synthetic param g4_evt.",
+      "vin1": "Video input 1. Bound to the loaded spec's first declared video-in sampler (a spec consumes 0–4 of these); a pattern generator like smpte-bars consumes none. Unpatched here samples a 1×1 transparent-black fallback so the shader never reads garbage.",
+      "vin2": "Video input 2. Sampled by the loaded VFPGA only if its spec declares a video-in for this slot; otherwise dimmed/inactive and a transparent-black fallback is bound.",
+      "vin3": "Video input 3. Sampled by the loaded VFPGA only if its spec declares a video-in for this slot; otherwise inactive with a transparent-black fallback.",
+      "vin4": "Video input 4. The last of the four superset video ins; active only when the loaded spec maps a video-in role onto it, else dimmed with a transparent-black fallback."
+    },
+    "outputs": {
+      "vout1": "Primary video output — the canonical surface texture. The loaded spec's vout1 FBO (the final pass writing 'output'); always present, and what downstream modules and OUTPUT sample.",
+      "vout2": "Secondary video output. Exposed only when the loaded spec declares a vout2 FBO (read('outputTexture:vout2')); otherwise null/inactive. Lets a multi-output effect tap a second buffer."
+    },
+    "controls": {
+      "cv1_val": "Synthetic CV param for the cv1 jack (no knob). Carries the raw CV sample written by the cv1 input; read as the loaded spec's CV-role-1 modulation uniform after the card's SCALE attenuverter + OFFSET.",
+      "cv2_val": "Synthetic CV param for the cv2 jack (no knob). Holds the raw cv2 sample, surfaced to the loaded spec's CV-role-2 uniform post SCALE + OFFSET.",
+      "cv3_val": "Synthetic CV param for the cv3 jack (no knob). Holds the raw cv3 sample, read by the loaded spec's CV-role-3 uniform after SCALE + OFFSET.",
+      "cv4_val": "Synthetic CV param for the cv4 jack (no knob). Holds the raw cv4 sample, read by the loaded spec's CV-role-4 uniform after SCALE + OFFSET.",
+      "g1_evt": "Synthetic gate param for the g1 jack (no knob). The factory hysteresis edge-detector turns this raw sample into the held-level and rising-edge-count uniforms the loaded spec's gate-role-1 reads.",
+      "g2_evt": "Synthetic gate param for the g2 jack (no knob). Edge-detected into the held-level and rising-edge-count uniforms consumed by the loaded spec's gate-role-2.",
+      "g3_evt": "Synthetic gate param for the g3 jack (no knob). Edge-detected into the held-level / rising-edge-count uniforms the loaded spec's gate-role-3 reads.",
+      "g4_evt": "Synthetic gate param for the g4 jack (no knob). Edge-detected into the held-level / rising-edge-count uniforms the loaded spec's gate-role-4 reads.",
+      "p1": "Generic param slot 1 (host 0..1). A loaded VFPGA maps and labels one of its params onto this slot; the card renders a knob in the spec's [min,max] range only when the loaded spec uses the slot. The mapped value drives the bound shader uniform.",
+      "p2": "Generic param slot 2. Surfaced as a labeled knob (in the spec's mapped range) only if the loaded VFPGA maps a param onto it; otherwise hidden. CV patched to the same uniform adds on top of this base.",
+      "p3": "Generic param slot 3. A labeled knob appears only when the loaded spec maps a param here; the host slot is generic 0..1, shown to the user in the spec's [min,max] range.",
+      "p4": "Generic param slot 4. Mapped + labeled by the loaded VFPGA when used; renders a knob in the spec's range, otherwise inactive.",
+      "p5": "Generic param slot 5. Labeled and ranged by whichever spec param the loaded VFPGA maps onto it; no knob when the slot is unused by the loaded spec.",
+      "p6": "Generic param slot 6. Surfaced as a knob (spec label + range) only when the loaded VFPGA uses the slot; the underlying host value is a 0..1 generic slot.",
+      "p7": "Generic param slot 7. Mapped + labeled per the loaded spec; renders a knob in the mapped range when active, otherwise dimmed/hidden.",
+      "p8": "Generic param slot 8 — the last of the p1..p8 bank. Labeled and ranged by the loaded VFPGA's mapped param when used; no knob otherwise."
     }
   },
   "videobox": {
