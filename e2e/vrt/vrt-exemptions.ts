@@ -120,6 +120,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // (vrt.spec.ts: `mod.type in VRT_SCENES ? [] : masks`), kept here as the
   // no-scene fallback.
   ruttetra: [{ selector: 'canvas' }],
+  // GRAPHIC EQ carries a live audio-reactive preview canvas; mask it (it is
+  // also EXEMPT_FROM_VRT — animated bars defeat deterministic capture).
+  graphicEq: [{ selector: 'canvas' }],
   shapedramps: [{ selector: 'canvas' }],
   vdelay: [{ selector: 'canvas' }],
   // FREEZEFRAME carries a live video_out preview canvas; mask it so the
@@ -214,6 +217,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (milkdrop-render-smoke.spec.ts: freeze + fixed delta + synthetic audio +
   // fixed steps → non-black/structured/no-GL-error) is the real pixel gate.
   milkdrop: 'continuously-animating multi-pass butterchurn visualizer (chaotic/time-based) defeats deterministic single-frame capture; covered by milkdrop-render-smoke.spec.ts (freeze + fixed delta + synthetic audio) + the modules-card-map / contract-lock / docs-lint unit gates',
+  // GRAPHIC EQ — Winamp-style VU-meter video output. The card preview is a
+  // live audio-reactive bar/box meter render (heights driven by the patched
+  // signal's FFT) — animated + input-dependent, so a single-frame baseline
+  // can't be pinned. Coverage: graphic-eq-core.test.ts (pure bin→8-band fold,
+  // mono fold, segment quantization, stereo split-rect layout, colour ramp) +
+  // e2e/tests/graphic-eq-render-smoke.spec.ts (deterministic non-black /
+  // structured / zero-GL-error render smoke).
+  graphicEq: 'animated audio-reactive bars defeat deterministic capture; pure-core unit tests (bin→8-band fold / mono / segment / split-rect / colour) + deterministic render-smoke e2e cover it',
   // ARCHIVIST — Internet Archive (archive.org) media source. LIVE external
   // network source (search + stream of random items) + a live <video>/<audio>
   // element + ticking playhead readout + a per-item preview that depends on

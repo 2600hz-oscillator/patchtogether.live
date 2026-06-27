@@ -366,4 +366,6 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // Milkdrop (feat/milkdrop): butterchurn (Winamp Milkdrop) music visualizer —
   // CV-instrumented per-band overrides + reactivity/speed/preset/morph + NEXT.
   'milkdrop',
+  // GRAPHIC EQ (2026-06-27): Winamp-style graphic-EQ / VU-meter video output.
+  'graphicEq',
 ]);

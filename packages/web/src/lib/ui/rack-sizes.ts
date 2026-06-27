@@ -69,6 +69,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   frogger: { size: '2u', hp: 2 }, // 380×260px
   gamepad: { size: '2u', hp: 2 }, // 267×280px
   gatemaiden: { size: '1u', hp: 1 }, // 199×200px
+  graphicEq: { size: '2u', hp: 2 }, // 360×360px — Winamp-style VU-meter video output
   grids: { size: '3u', hp: 2 }, // 463×320px
   helm: { size: '3u', hp: 4 }, // 536×720px
   hydrogen: { size: '4u', hp: 4 }, // 687×660px
