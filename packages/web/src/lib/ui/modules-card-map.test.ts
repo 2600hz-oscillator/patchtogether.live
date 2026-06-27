@@ -45,7 +45,7 @@ const EXPECTED_NODE_TYPES = [
   'riotgirls', 'ruttetra', 'sampleHold', 'samsloop', 'scope', 'score', 'scoreboard',
   'scaler', 'sequencer', 'shapedramps', 'shapegen', 'shapes', 'shimmershine', 'sidecar', 'spectrograph',
   'skifree', 'slewSwitch', 'snes9x', 'stages', 'stereovca', 'sticky',
-  'swolevco', 'symbiote', 'synesthesia', 'tides2', 'timelorde', 'treeohvox', 'tvLibrarian',
+  'swolevco', 'symbiote', 'synesthesia', 'tempest', 'tides2', 'timelorde', 'treeohvox', 'tvLibrarian',
   'launchpadControlLeft',
   'unityscalemathematik', 'vca', 'vdelay', 'veils', 'vfpgaRunner', 'videoMixer', 'videoOut',
   'videobox', 'videovarispeed', 'warps', 'warrenspectrum', 'wavecel', 'wavesculpt',

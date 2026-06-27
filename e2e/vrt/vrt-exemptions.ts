@@ -444,6 +444,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // is impossible without freezing the engine clock. Pattern/palette unit
   // coverage in acidwarp-patterns.test.ts; integration coverage via E2E.
   acidwarp: 'animated palette rotation + auto scene cycler defeats deterministic capture; unit + E2E provide coverage',
+  // TEMPEST (P1) — additive-line vector well; the live preview is an animated GL
+  // render (claw/CV-driven, later enemies). Geometry is unit-tested GL-free
+  // (tempest-core.test.ts + tempest.test.ts) + a render-smoke E2E; a masked/baselined
+  // card can replace this exemption in a later phase.
+  tempest: 'animated additive-line vector render defeats deterministic capture; unit (tempest-core/tempest) + render-smoke E2E provide coverage',
   // VFPGA-RUNNER — host module shipping the smpte-bars VFPGA. The card carries
   // a live preview canvas + per-CV always-on scope canvases (animated off the
   // card rAF), so the standard solo-spawn capture is non-deterministic. Unit
