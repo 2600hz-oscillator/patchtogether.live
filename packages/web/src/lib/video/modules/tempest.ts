@@ -122,7 +122,7 @@ export function buildTempestLines(rimParam: number, shapeParam: number, aspect: 
 
 export const tempestDef: VideoModuleDef = {
   type: 'tempest',
-  palette: { top: 'Video modules', sub: 'Games' },
+  palette: { top: 'Games', sub: 'Arcade' },
   domain: 'video',
   label: 'tempest',
   category: 'output',
