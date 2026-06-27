@@ -148,6 +148,50 @@ tasks:
         echo "SNES9X: game.sfc is .gitignored — your local copy will not enter git history."
         echo "SNES9X: run \`task setup:snes9x:build\` once to build the emulator WASM."
 
+  setup:blood:
+    desc: 'Install Blood game DATA (BLOOD.RFF + TILES*.ART + RFF/DAT/MAP) into packages/web/static/blood/ for the (planned) BLOOD module. Blood data is PROPRIETARY + user-provided (NOT freely redistributable, unlike the DOOM shareware WAD — see static/blood/README.md). Usage: `task setup:blood BLOOD_ASSETS=/path/to/your/blood/install` — defaults to ~/blood.'
+    vars:
+      BLOOD_ASSETS: '{{.BLOOD_ASSETS | default "~/blood"}}'
+    cmds:
+      - mkdir -p packages/web/static/blood
+      - |
+        # Expand ~ manually — Taskfile's shell doesn't always do it.
+        SRC="{{.BLOOD_ASSETS}}"
+        SRC="${SRC/#\~/$HOME}"
+        if [ ! -d "$SRC" ]; then
+          echo "BLOOD: asset directory not found at $SRC"
+          echo "       Pass BLOOD_ASSETS=/path/to/your/blood/install explicitly, or put your"
+          echo "       Blood install (with BLOOD.RFF) at ~/blood and re-run \`task setup:blood\`."
+          echo "       Blood data is proprietary + user-provided — see"
+          echo "       packages/web/static/blood/README.md for the legal status + file list."
+          exit 1
+        fi
+        # BLOOD.RFF is the required anchor file — fail clearly if it's absent
+        # (case-insensitive: DOS releases ship uppercase, some installs lowercase).
+        RFF="$(find "$SRC" -maxdepth 2 -iname 'BLOOD.RFF' | head -1)"
+        if [ -z "$RFF" ]; then
+          echo "BLOOD: no BLOOD.RFF found under $SRC — that's the required main resource file."
+          echo "       Make sure BLOOD_ASSETS points at an extracted Blood install (e.g. the"
+          echo "       One Unit Whole Blood / Fresh Supply DOS data). See static/blood/README.md."
+          exit 1
+        fi
+        BASE="$(dirname "$RFF")"
+        DEST=packages/web/static/blood
+        echo "BLOOD: found data dir $BASE"
+        # Copy the recognised Blood data files (case-insensitive). We DON'T copy
+        # the whole dir — only the known game-data extensions — to avoid pulling
+        # in EXEs / config / saves.
+        copied=0
+        while IFS= read -r f; do
+          cp "$f" "$DEST/"
+          echo "BLOOD:   + $(basename "$f")"
+          copied=$((copied+1))
+        done < <(find "$BASE" -maxdepth 1 -type f \( \
+          -iname '*.RFF' -o -iname '*.ART' -o -iname '*.DAT' -o -iname '*.MAP' \))
+        echo "BLOOD: installed $copied data file(s) → $DEST"
+        echo "BLOOD: these files are .gitignored — your local copy will not enter git history."
+        echo "BLOOD: Blood data is PROPRIETARY (Warner Bros. IP) — never commit or redistribute it."
+
   # ---------------- Dev loop ----------------
   dev:
     desc: Start SvelteKit dev server (DSP built once up-front; use dev:full for live Faust watch)
