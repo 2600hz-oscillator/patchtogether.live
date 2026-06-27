@@ -5,7 +5,9 @@
   "description": "A multiplayer browser-native modular synthesizer.",
   "license": "AGPL-3.0-or-later",
   "workspaces": [
-    "packages/*",
+    "packages/dsp",
+    "packages/server",
+    "packages/web",
     "art",
     "e2e"
   ],
