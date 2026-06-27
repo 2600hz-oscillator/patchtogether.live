@@ -57,7 +57,11 @@ export const framestoreHowlSpec: VfpgaSpec = {
     { slot: 4, label: 'decay', uniform: 'uWarpGain', min: 0.8, max: 1.0, defaultValue: 0.96, curve: 'linear', doc: 'Per-frame feedback decay (<1 trails fade, →1 runaway).' },
   ],
   fabric: {
-    grid: { rows: 1, cols: 3 },
+    // 4 placed compute tiles in a row (mix@0, warp@1, store@2, out@3) → cols:4.
+    // (Was cols:3, leaving `out` at col 3 out of bounds — caught once placement
+    // validation landed; pos/grid don't affect the compiled passes, so this is a
+    // pure floorplan-metadata fix with no pixel change.)
+    grid: { rows: 1, cols: 4 },
     tiles: [
       // WARP the recirculated previous frame (zoom/rot/hue/decay). rot is a small
       // static const so the howl spirals; zoom/hue/gain are param-bound; CIN1 adds
