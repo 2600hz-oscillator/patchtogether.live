@@ -194,11 +194,26 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // in EXEMPT_FROM_VRT below pending a fresh darwin/linux baseline after the
   // resizable redesign; this mask covers the live preview when re-promoted.
   backdraft: [{ selector: 'canvas' }],
+  // MILKDROP — butterchurn music visualizer. The card carries a live preview
+  // canvas (blitOutputToDrawingBuffer off the engine clock + an async-loaded
+  // preset that animates continuously), so the canvas region is non-deterministic
+  // in the solo-spawn VRT; mask it and gate on the deterministic chrome (port
+  // handle rows + RCT/SPD/PST/MPH knobs + preset readout). Currently in
+  // EXEMPT_FROM_VRT below (chaotic/time-based, like doom/mandelbulb); this mask
+  // covers the live preview if it is ever promoted into MODULES.
+  milkdrop: [{ selector: 'canvas' }],
 };
 
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
  *  ≥10-char reason — the vrt-meta self-test enforces this. */
 export const EXEMPT_FROM_VRT: Record<string, string> = {
+  // MILKDROP — butterchurn (Winamp Milkdrop) visualizer. The live preview is a
+  // continuously-animating multi-pass warp-mesh render driven off the engine
+  // clock + an async-loaded preset; pixel-exact VRT would flake on every frame
+  // (chaotic/time-based, like doom/mandelbulb). The deterministic render-smoke
+  // (milkdrop-render-smoke.spec.ts: freeze + fixed delta + synthetic audio +
+  // fixed steps → non-black/structured/no-GL-error) is the real pixel gate.
+  milkdrop: 'continuously-animating multi-pass butterchurn visualizer (chaotic/time-based) defeats deterministic single-frame capture; covered by milkdrop-render-smoke.spec.ts (freeze + fixed delta + synthetic audio) + the modules-card-map / contract-lock / docs-lint unit gates',
   // ARCHIVIST — Internet Archive (archive.org) media source. LIVE external
   // network source (search + stream of random items) + a live <video>/<audio>
   // element + ticking playhead readout + a per-item preview that depends on

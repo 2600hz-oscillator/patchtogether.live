@@ -105,7 +105,10 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // toybox-new-content reclassified real-gpu-only (heavy raymarch shader pixels —
 // stays); toybox-shadertoy/-node-batch/-node-menu/-layer-selector DEFERRED
 // (worker-pixel / render-timing / flake — stay heavy). 47 → 44.
-const EXPECTED_HEAVY_SPEC_COUNT = 44;
+// MILKDROP (feat/milkdrop): +milkdrop-render-smoke.spec.ts (matched by the
+// `**/*-render-smoke.spec.ts` glob — deterministic non-black/structured pixel
+// gate for the butterchurn visualizer): 44 → 45.
+const EXPECTED_HEAVY_SPEC_COUNT = 45;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

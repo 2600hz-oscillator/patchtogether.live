@@ -74,6 +74,10 @@ const DYNAMIC_SIZED = new Set([
   // DEFAULT/MIN constants rounded to 180-multiples (360/540/360/360), so a
   // fixed tier would CAP its resize / clip the federated results list.
   'peertube',
+  // milkdrop — butterchurn visualizer with a live preview screen + hide-controls
+  // resizable monitor (corner-resize via card-resize.ts, same family as
+  // ruttetra/videoOut), so it is dynamically sized, not a fixed tier.
+  'milkdrop',
 ]);
 
 interface SizedDef {

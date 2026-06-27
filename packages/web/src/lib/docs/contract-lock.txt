@@ -1850,6 +1850,25 @@ midiOutBuddy meta domain=audio schema=1
 midiOutBuddy in gate gate
 midiOutBuddy in pitch cv
 midiOutBuddy in velocity cv
+milkdrop meta domain=video schema=1
+milkdrop in audio audio
+milkdrop in bass cv param=bass cvScale=linear
+milkdrop in mid cv param=mid cvScale=linear
+milkdrop in morph cv param=morph cvScale=linear
+milkdrop in next gate param=nextTrig edge=trigger
+milkdrop in presetSelect cv param=presetSelect cvScale=linear
+milkdrop in reactivity cv param=reactivity cvScale=linear
+milkdrop in speed cv param=speed cvScale=linear
+milkdrop in treb cv param=treb cvScale=linear
+milkdrop out out video
+milkdrop param bass 0..2 linear default=1
+milkdrop param mid 0..2 linear default=1
+milkdrop param morph 0..8 linear default=2
+milkdrop param nextTrig 0..1 linear default=0
+milkdrop param presetSelect 0..19 linear default=0
+milkdrop param reactivity 0..2 linear default=1
+milkdrop param speed 0..2 linear default=1
+milkdrop param treb 0..2 linear default=1
 mixer meta domain=audio schema=1
 mixer in in1 audio
 mixer in in2 audio

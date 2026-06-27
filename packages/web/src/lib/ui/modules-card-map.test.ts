@@ -50,6 +50,7 @@ const EXPECTED_NODE_TYPES = [
   'unityscalemathematik', 'vca', 'vdelay', 'veils', 'vfpgaRunner', 'videoMixer', 'videoOut',
   'videobox', 'videovarispeed', 'warps', 'warrenspectrum', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq', 'textmarquee', 'tiler', 'spirographs',
+  'milkdrop',
 
 
 
