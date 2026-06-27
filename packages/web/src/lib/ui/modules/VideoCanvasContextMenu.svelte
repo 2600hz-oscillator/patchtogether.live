@@ -47,6 +47,10 @@
      *  Only offered for NON-current displays in multi-monitor mode. When
      *  omitted (or single-monitor / unsupported), no present items show. */
     onpresent?: (screenId: string) => void;
+    /** Optional "Present on ALL displays" handler: open a popup on every
+     *  secondary display in ONE click (the multi-projector case). Shown only
+     *  when wired AND there's more than one secondary display. */
+    onpresentall?: () => void;
     /** Stop an active present session (close the popup + release the capture).
      *  When provided AND `isPresenting`, a "Stop presenting" item shows. */
     onstoppresent?: () => void;
@@ -67,6 +71,7 @@
     onfullframe,
     isFullFrame = false,
     onpresent,
+    onpresentall,
     onstoppresent,
     isPresenting = false,
     onclose,
@@ -166,6 +171,11 @@
     onclose();
   }
 
+  function pickPresentAll() {
+    onpresentall?.();
+    onclose();
+  }
+
   function pickStopPresent() {
     onstoppresent?.();
     onclose();
@@ -245,6 +255,17 @@
       {/if}
       {#if presentScreens.length > 0}
         <div class="ctx-sep" role="separator"></div>
+        {#if onpresentall && presentScreens.length > 1}
+          <!-- One click lights up every secondary display (multi-projector). -->
+          <button
+            class="ctx-item"
+            onclick={pickPresentAll}
+            role="menuitem"
+            data-testid="ctx-present-all"
+          >
+            Present on all displays ({presentScreens.length})
+          </button>
+        {/if}
         {#each presentScreens as screen (screen.id)}
           <button
             class="ctx-item"
