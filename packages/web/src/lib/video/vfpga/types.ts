@@ -241,7 +241,15 @@ export interface VfpgaNet {
   to: string;
 }
 
-/** The fabric configuration — the FPGA bitstream the host loads + P&R compiles. */
+// docs-hash-ignore:start
+/** The fabric configuration — the post-synthesis NETLIST (the FPGA authoring
+ *  surface): a grid of typed tiles wired by a routing netlist. This is NOT the
+ *  packed bitstream — `pack()` in ./bitstream.ts encodes THIS object into the
+ *  real BITSTREAM image (iCE40-style config frames + frame addresses + CRC) and
+ *  `unpack()` reverses it losslessly; place-and-route (`fabricToEffect`) compiles
+ *  the netlist into render passes. (Doc-only; wrapped so it stays hash-transparent
+ *  to the WebGL attest per CLAUDE.md.) */
+// docs-hash-ignore:end
 export interface VfpgaFabric {
   /** Floorplan dimensions (for the card viz + auto-placement). */
   grid: { rows: number; cols: number };
