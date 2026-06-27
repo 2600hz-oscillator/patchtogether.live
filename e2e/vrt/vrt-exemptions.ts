@@ -846,6 +846,18 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // + behavioral sweeps + the bespoke spectrograph.spec.ts (real VCO → IN →
   // COLOR/B-W OUT → non-black structured frame at the video OUTPUT).
   'linux/spectrograph',
+  // FEATURECV: darwin baseline (the audio→CV feature-extractor card — title +
+  // LOUD/BRIGHT/PUNCH meter bars + ONSET led (all snapshot-driven; with nothing
+  // patched the features read 0 so the chrome is pixel-stable, NO canvas to
+  // mask) + GAIN/ATK/REL knobs + the BI/UNI polarity toggle + SENS/DEBNCE knobs
+  // over the yellow PatchPanel IN/LOUD/BRIGHT/PUNCH/ONSET drill-down) captured
+  // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on this
+  // branch (same new-module pattern as SPECTROGRAPH above). Functional coverage
+  // is featurecv-dsp.test.ts (the pure rms/zcr/crest/flux/onset core) + the ART
+  // scenario + the per-module-per-port + behavioral sweeps + the bespoke
+  // featurecv-source-chain.spec.ts (noise → featurecv.bright → filter.cutoff →
+  // audible RMS change).
+  'linux/featurecv',
   // OUTLINES (was CIRCLES): the card gained a SHAPE selector + ROTATION knob
   // (+ their CV input rows + small readouts), so the deterministic chrome
   // changed and the baseline was regenerated. The live COMBINE preview canvas

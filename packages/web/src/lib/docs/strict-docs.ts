@@ -363,4 +363,6 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'mappy',
   'onetonine',
   'vfpgaRunner',
+  // Audio analysis / modulation (2026-06-27): the audio→CV feature extractor.
+  'featurecv',
 ]);

@@ -1260,6 +1260,26 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "fader": "The A↔B crossfade position: 0 shows only IN A, 1 shows only IN B, and in between the two are blended by the amount the A/B FX dropdown's shape allows (a plain fade at the 0.5 default is a 50/50 mix). Clamped to 0..1, and the result is the mix that feeds both the SEND output and the dry side of the dry/wet stage."
     }
   },
+  "featurecv": {
+    "explanation": "FEATURECV listens to one audio signal and turns its TIMBRE and DYNAMICS into control voltages — an audio-reactive modulation source. Unlike SYNESTHESIA (which splits the sound into frequency bands), featurecv measures the WHOLE signal, in the time domain only (no FFT) so it is fully deterministic. It derives three continuous features — LOUD (broadband RMS = how loud), BRIGHT (zero-crossing rate, a cheap spectral-brightness proxy = how bright/hissy vs dark/bassy), and PUNCH (crest factor = peak ÷ RMS = how spiky/transient vs sustained) — plus an ONSET trigger that pulses on each fresh attack in the sound. The three feature CVs are emitted BIPOLAR (−1..+1) by default so a strong feature sweeps a knob-centred destination's FULL range; flip POLARITY to UNIPOLAR (0..1) for classic envelope-style modulation. GAIN trims the input into the analyser; ATTACK / RELEASE smooth how quickly the CVs react. Patch LOUD into a VCA or filter to track dynamics, BRIGHT into a filter cutoff so the timbre opens up as the source gets brighter, PUNCH into anything you want to react to transients, and ONSET into an envelope generator or drum voice to fire on each hit. The card shows live meters for the three features (display only).",
+    "inputs": {
+      "in": "The audio signal to analyse — the measured signal, not a modulator. Its loudness, brightness, and transients drive every output. Patch a drum bus, vocal, synth voice, or full mix here."
+    },
+    "outputs": {
+      "bright": "BRIGHT CV — a brightness proxy from the zero-crossing rate: high when the sound is hissy / trebly (cymbals, noise, bright synths), low when it is dark / bassy. Patch into a filter cutoff so the timbre opens with the source's brightness. Polarity set by POLARITY.",
+      "loud": "LOUD CV — the broadband RMS (overall energy / loudness) of the input, smoothed by ATTACK/RELEASE. Patch into a VCA gain or filter cutoff to make a destination track how loud the source is. Polarity set by the POLARITY toggle.",
+      "onset": "ONSET trigger — fires a short pulse ONCE on each detected attack (a fresh transient / hit) in the input, a clean rising edge that crosses the gate threshold. Patch into an envelope generator, VCA, or drum voice to strike it from the live source. SENS sets how readily it fires; DEBNCE sets the minimum gap between pulses.",
+      "punch": "PUNCH CV — the crest factor (peak ÷ RMS): high for spiky, transient, percussive material and low for sustained, compressed tones. Patch into modulation you want to react to how punchy the source is. Polarity set by POLARITY."
+    },
+    "controls": {
+      "attack": "How fast the feature CVs RISE toward a new value (ms, log) — short attack snaps to transients, long attack glides smoothly past them. Applies to LOUD, BRIGHT, and PUNCH.",
+      "bipolar": "POLARITY of the three feature CV outputs — BIPOLAR (−1..+1, the default, so a strong feature sweeps a knob-centred destination's full range) vs UNIPOLAR (0..1, classic envelope-style). Toggle on the card; does not affect the ONSET trigger.",
+      "gain": "Input trim into the analyser (×0.25..×4, log, unity at noon) — boost a quiet source so its features reach a usable CV range, or tame a hot one. It shapes the ANALYSIS level, not an audio output (there is none).",
+      "onset_debounce": "ONSET debounce (ms, log) — the minimum time between onset triggers, a lockout that blocks a re-trigger on a transient's ringing tail so one hit makes exactly one pulse.",
+      "onset_sens": "ONSET sensitivity — higher lowers the detector's adaptive threshold so it fires on smaller transients; lower only triggers on strong, clear attacks. Tune to taste against your source.",
+      "release": "How fast the feature CVs FALL back when the input quietens or changes (ms, log) — short release tracks every dip, long release holds a smooth contour. Applies to LOUD, BRIGHT, and PUNCH."
+    }
+  },
   "feedback": {
     "explanation": "Analog-video-style feedback loop, the on-screen equivalent of pointing a camera at its own monitor. Each frame it re-samples its OWN previous output from a ping-pong framebuffer through a small affine warp — rotate and scale the UV about the canvas center, plus a tiny XY offset — multiplies that warped tap by Decay, then adds the fresh input (weighted by 1 minus the clamped decay) to form a recursive accumulator. That accumulator is cross-faded against the dry input by Wet and clamped to [0,1] so destructive Decay over 1.0 saturates white instead of NaN-ing. With Zoom slightly above 1 and a touch of Rotate you get the classic infinite spiraling \"tunnel\"; the prior frame is sampled black outside the canvas (no edge smear) so trails decay into darkness rather than melting along the borders. Patch a camera or any video source into IN, feed OUT back to a monitor, and modulate the warp via the CV inputs for evolving, self-oscillating imagery.",
     "inputs": {
