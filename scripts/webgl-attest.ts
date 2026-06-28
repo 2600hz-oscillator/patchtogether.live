@@ -67,6 +67,22 @@ const MAX_FLAKY = REPEAT > 1 ? 0 : Math.max(0, parseInt(process.env.WEBGL_ATTEST
 // worker-count sweep (#136); the 3× flake-check (REPEAT>1) also forces 1.
 const WORKERS = REPEAT > 1 ? 1 : Math.max(1, parseInt(process.env.WEBGL_ATTEST_WORKERS || '1', 10) || 1);
 
+// Per-pass WALL-CLOCK cap (Playwright --global-timeout). BACKSTOP for the
+// runaway-grind class: a healthy real-GPU run of the full heavy set is ~4 min
+// (durationSec≈252 for ~150 tests on this M5), but a run that starts on a
+// momentarily-quiet machine and is THEN swamped by co-tenant CPU (e.g. ~9
+// concurrent build/workflow agents spinning up AFTER pre-flight) slows EVERY
+// test 30–60× while none individually exceeds its inflated per-test budget
+// (render-smoke=60s, toybox up to 240s). With NO overall cap the run ground for
+// 3.6 HOURS before the operator gave up — pure CPU/GPU starvation, not cost.
+// preflightSolo() catches contention that is present AT START; this catches
+// contention that RAMPS UP mid-run, which a point-in-time guard structurally
+// cannot. The cap is generous (default 30 min/pass — ~7× the healthy ~4-min
+// Pass A) so it NEVER fires on a healthy run, and scales with REPEAT (the 3×
+// flake-check runs each test 3×). Override: WEBGL_ATTEST_PASS_TIMEOUT_MS.
+const PASS_TIMEOUT_MS =
+  Math.max(60_000, parseInt(process.env.WEBGL_ATTEST_PASS_TIMEOUT_MS || '', 10) || 30 * 60_000) * REPEAT;
+
 interface FlakyDetail {
   /** Test that FAILED its first attempt then RECOVERED on retry. */
   test: string;
@@ -116,6 +132,7 @@ function runPass(opts: {
     '--reporter=json',
     `--retries=${RETRIES}`,
     `--workers=${WORKERS}`, // pin: heavy WebGL specs get the GPU solo (no parallel contention)
+    `--global-timeout=${PASS_TIMEOUT_MS}`, // wall-clock cap: abort a contention-starved grind, never hang for hours
     ...(REPEAT > 1 ? [`--repeat-each=${REPEAT}`] : []),
     ...opts.args,
   ];
@@ -139,10 +156,28 @@ function runPass(opts: {
   }
 
   let runExit = 0;
+  const passStart = Date.now();
   try {
     execFileSync('npx', fullArgs, { cwd: REPO_ROOT, env, stdio: 'inherit' });
   } catch {
     runExit = 1; // non-zero = at least one failure; we still parse JSON for detail
+  }
+  const passElapsed = Date.now() - passStart;
+
+  // If the pass burned ~the whole wall-clock cap, --global-timeout fired: the run
+  // was starved (contention), NOT a genuine regression. Attribute it explicitly
+  // instead of letting it surface as a confusing failed/shortfall refusal hours
+  // later — and fail FAST (the cap) instead of grinding for hours (the 3.6h
+  // incident this backstop exists for). preflightSolo() guards the START; this
+  // guards mid-run ramp-up it cannot see.
+  if (runExit !== 0 && passElapsed >= PASS_TIMEOUT_MS * 0.95) {
+    throw new Error(
+      `Pass ${opts.name}: hit the ${Math.round(PASS_TIMEOUT_MS / 60_000)}-min wall-clock cap ` +
+        `(--global-timeout) — the GPU passes were almost certainly STARVED by co-tenant CPU ` +
+        `(a healthy full run is ~4 min). This is contention, not a regression: quit heavy ` +
+        `browsers / build agents and re-run on a quiet machine. ` +
+        `Override the cap with WEBGL_ATTEST_PASS_TIMEOUT_MS. Attestation refused.`,
+    );
   }
 
   if (!existsSync(jsonOut)) {
