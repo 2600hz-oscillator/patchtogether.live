@@ -207,6 +207,7 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // covered by the ROM-gated snes9x e2e (video/audio/input + clock_in→gate3)
   // and the pure unit suites (detection / multiplier / input mask).
   snes9x: 'all outputs need a loaded ROM (user-provided, gitignored, absent in CI); event gates fire on gameplay/forcePulse; covered by the ROM-gated snes9x e2e + pure unit suites',
+  blood: 'all outputs need user-supplied, non-redistributable Blood data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF, gitignored, absent in CI) — the NBlood engine aborts in its resource loader without it, so the video surface is the idle shader + audio is the silent PCM stub; covered by blood-keys.test.ts + the blood-frame-harness (run locally with owned data). See native/nblood/PHASE1-STATUS.md.',
   // ── Driver page.evaluate / postSpawn hangs ──
   // These modules' drivers time out under CI load — the per-output
   // serial loop (8 × 20 s, 7 × 20 s) exhausts the test budget before
@@ -426,7 +427,7 @@ test('RATCHET: output-emit exemption lists only shrink', () => {
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).length,
     'EXEMPT_OUTPUT_EMIT_MODULES grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(41); // +1 featurecv (new module, input-conditional outputs — covered by featurecv-source-chain.spec.ts)
+  ).toBeLessThanOrEqual(42); // +1 featurecv (input-conditional outputs); +1 blood (data-gated emulator — outputs idle without the non-redistributable WAD, absent in CI)
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT).length,
     'EXEMPT_OUTPUT_EMIT grew past its frozen cap — see the RATCHET rule above',

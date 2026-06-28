@@ -80,6 +80,13 @@ const SKIP_OUTPUT_ALIVE: Record<string, string> = {
   //   - module def shape:    doom.test.ts
   //   - video runtime:       doom-wasm.spec.ts (canvas pixel variance)
   doom: 'WASM load + game init + first sound effect exceeds 800ms smoke window; covered by doom-wasm.spec.ts',
+  // BLOOD — like DOOM, the NBlood engine needs the non-redistributable Blood
+  // data (BLOOD.RFF / *.MAP / *.ART), which is gitignored and absent on CI.
+  // Without it the engine idles, so audio_l/audio_r never cross the bare-spawn
+  // peak floor. Dedicated coverage: blood-runtime.test.ts (PCM fill once the
+  // engine ticks) + blood-keys.test.ts / blood-data-store.test.ts (input + data
+  // gating), and blood-mount.spec.ts (card mount + spawn smoke).
+  blood: 'NBlood needs the non-redistributable Blood data (BLOOD.RFF/*.MAP, gitignored + absent on CI); the engine idles without it so audio_l/audio_r stay silent. Covered by blood-runtime.test.ts + blood-mount.spec.ts.',
   // QBERT — audio_out is fed by the synthesized SFX stream which only
   // fires when the runtime ticks a `move` event. The bare 800 ms smoke
   // can't drive coin + start + held joystick within the window, so
