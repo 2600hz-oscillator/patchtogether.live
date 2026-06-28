@@ -243,3 +243,19 @@ describe('VRT coverage self-test', () => {
     ).toEqual([]);
   });
 });
+
+describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
+  // STRICT_VRT_MODULES is an OPT-IN allowlist: the deterministic VRT cards
+  // promoted into the required `task ci` strict lane (see vrt-exemptions.ts).
+  // This cap FREEZES the set at today's size so it can only GROW — DEMOTING a
+  // card (shrinking the strict gate) fails this test on purpose.
+  //   RATCHET RULE: strict lists only grow. RAISE the number when you promote a
+  //   card. Only LOWER it for a real, justified demotion (a card that flaked in
+  //   CI) — NEVER to make a red gate go green.
+  it('STRICT_VRT_MODULES never shrinks below its frozen floor', () => {
+    expect(
+      STRICT_VRT_MODULES.size,
+      'STRICT_VRT_MODULES shrank below its frozen floor — see the RATCHET rule above',
+    ).toBeGreaterThanOrEqual(25);
+  });
+});

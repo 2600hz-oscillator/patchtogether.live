@@ -6,7 +6,12 @@
 // an AudioWorklet under vitest (it returns a synthetic stub). This is the real
 // signal-coverage gate for the poly→voices behavior, the same approach the
 // helm + dx7 ART scenarios take (host-side render mirror, property assertions —
-// no .f32/.sha pin). The worklet-source SHA pin lives next door in sha-pin.test.ts.
+// no .f32/.sha pin). (The former sha-pin.test.ts next door was DELETED in the
+// test-honesty quick-win: its `render()`-stub baseline was a 440 Hz sine shared
+// byte-for-byte with ~10 other stubs — a gate comparing a stub against itself.
+// POLYHELM's poly path stays covered by THIS engine-driven scenario; the worklet
+// build-SHA is still pinned by the dsp-build job. A real per-module ART render
+// for polyhelm can be re-added once render.ts renders actual worklets.)
 //
 // Property assertions:
 //   - A 3-note chord has Goertzel energy at all 3 fundamentals.
