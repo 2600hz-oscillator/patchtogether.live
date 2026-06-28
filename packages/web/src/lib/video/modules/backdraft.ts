@@ -174,6 +174,20 @@ export const BACKDRAFT_ROTATE_MAX = 30;
 export const BACKDRAFT_OFFSET_MIN = -0.1;
 export const BACKDRAFT_OFFSET_MAX = 0.1;
 
+/** SHAPE — the geometric screen-mask options, in the EXACT order the SHAPE
+ *  button + the shape_gate input cycle through them. SQUARE (index 0) is the
+ *  FULL-FRAME identity (mask = 1 everywhere → no crop), so the DEFAULT output is
+ *  unchanged from pre-SHAPE backdraft; the rounder/pointier shapes crop the
+ *  frame into that shape. */
+export const BACKDRAFT_SHAPES = ['square', 'circle', 'pentagon', 'triangle', 'octagon'] as const;
+export type BackdraftShape = (typeof BACKDRAFT_SHAPES)[number];
+export const BACKDRAFT_SHAPE_COUNT = BACKDRAFT_SHAPES.length; // 5
+/** Inscribed-shape size in ASPECT-CORRECTED centre-relative UV units: the circle
+ *  RADIUS / the polygon CIRCUMRADIUS. 0.5 reaches the top/bottom frame edges, so
+ *  the corners (centre-distance > 0.5) are always cut — that's the visible crop
+ *  the SHAPE mask makes. */
+export const BACKDRAFT_SHAPE_RADIUS = 0.5;
+
 const FRAG_SRC = `#version 300 es
 precision highp float;
 
@@ -222,10 +236,48 @@ uniform float uMirrorY;
 uniform float uPixelate; // 0..1
 uniform float uRes;      // source resolution in cells (e.g. fbo width)
 
+// SHAPE geometry mask — a regular-polygon / circle screen mask.
+//   uShape:   0=square(full frame) 1=circle 2=pentagon 3=triangle 4=octagon.
+//   uPureGeo: 1 = mask the FINAL OUTPUT in SCREEN space (a FIXED shape that cuts
+//             content outside at ALL zooms); 0 = mask the SOURCE in the ZOOMED
+//             feedback space so the shape SCALES with ZOOM and the cropped source
+//             spills through the feedback loop.
+//   uAspect:  frame width/height so the shape is round (not stretched).
+uniform float uShape;
+uniform float uPureGeo;
+uniform float uAspect;
+
 const float MAX_EFFECT_SCALE = ${BACKDRAFT_MAX_EFFECT_SCALE.toFixed(1)};
+const float BD_PI = 3.14159265359;
 
 float luma(vec3 c) {
   return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+// SHAPE mask — 1.0 INSIDE the shape, 0.0 outside, antialiased. `uv` is the
+// coordinate to test (the screen vUv for PURE GEO ON, the zoomed feedback UV for
+// OFF). SQUARE (uShape<=0) is the full-frame identity (always 1.0). p is
+// aspect-corrected centre-relative so circles stay round + polygons stay regular
+// regardless of the frame's aspect ratio.
+float shapeMask(vec2 uv) {
+  int s = int(uShape + 0.5);
+  if (s <= 0) return 1.0; // SQUARE = full frame (no crop)
+  vec2 p = (uv - vec2(0.5)) * vec2(uAspect, 1.0);
+  float r = ${BACKDRAFT_SHAPE_RADIUS.toFixed(3)};
+  float d;
+  if (s == 1) {
+    d = length(p) - r; // circle: signed distance to radius r
+  } else {
+    // pentagon (5) / triangle (3) / octagon (8). iq regular-polygon SDF:
+    // apothem = circumradius * cos(PI/n); d = (dist to nearest edge) - apothem.
+    float n = s == 2 ? 5.0 : (s == 3 ? 3.0 : 8.0);
+    float apothem = r * cos(BD_PI / n);
+    float ang = atan(p.x, p.y);
+    float seg = (2.0 * BD_PI) / n;
+    d = cos(seg * floor(0.5 + ang / seg) - ang) * length(p) - apothem;
+  }
+  float aa = max(fwidth(d), 1e-4);
+  return 1.0 - smoothstep(-aa, aa, d); // 1 inside (d<0) → 0 outside
 }
 
 // Map an output UV to the FEEDBACK-TAP UV. The forward "look" of the
@@ -263,6 +315,11 @@ void main() {
   // composited frame (source + feedback), so the DISPLAYED content mirrors.
   vec2 uv = mirrorUv(vUv);
 
+  // SHAPE mask in SCREEN space (used by PURE GEO ON) — a FIXED shape on the
+  // canvas, independent of ZOOM. Computed here in uniform flow so its fwidth()
+  // antialias derivative is well-defined.
+  float maskScreen = shapeMask(vUv);
+
   // PIXELATE — snap the SOURCE sampling UV to a coarse grid BEFORE sampling
   // in_a/in_b, reducing the input's effective resolution. The
   // "if (uPixelate > 0.0)" gate is LOAD-BEARING: at PIXELATE=0 we do NOT snap,
@@ -287,6 +344,15 @@ void main() {
   // past the edge reading the edge pixel. Zero on cold start.
   vec2 fbUv = feedbackUv(uv);
   vec3 fb = uHasFb > 0.5 ? texture(uFb, fbUv).rgb : vec3(0.0);
+
+  // SHAPE mask in the ZOOMED feedback space (used by PURE GEO OFF) — the shape
+  // SCALES with ZOOM (and follows the rotate/offset of the feedback geometry).
+  float maskSource = shapeMask(fbUv);
+  // PURE GEO OFF: crop the live SOURCE in the zoomed space so the cropped shape
+  // feeds back through the tunnel — zoom-IN spills its content toward the corners
+  // (the OUTPUT stays unmasked so the periphery fills), zoom-OUT shrinks it. At
+  // SQUARE (maskSource==1) this is a no-op, so the default output is unchanged.
+  if (uPureGeo < 0.5) source *= maskSource;
 
   // Per-channel gain.
   fb *= vec3(uR, uG, uBlue);
@@ -345,6 +411,12 @@ void main() {
   vec3 hall = inRing ? source : fb * hallGain;
 
   vec3 outc = mix(additive, hall, hallAmt);
+
+  // PURE GEO ON: crop the FINAL OUTPUT in SCREEN space → a FIXED shape that cuts
+  // content outside at ALL zooms (the black border feeds back as black, so the
+  // crop stays stable frame-to-frame). At SQUARE (maskScreen==1) this is a no-op.
+  if (uPureGeo > 0.5) outc *= maskScreen;
+
   outColor = vec4(clamp(outc, 0.0, 1.0), 1.0);
 }`;
 
@@ -377,6 +449,18 @@ export interface BackdraftParams {
   // a rising edge to FLIP mirrorX / mirrorY.
   mirrorXGate: number; // 0..1 raw gate sample
   mirrorYGate: number; // 0..1 raw gate sample
+  // SHAPE geometry mask. `shape` is a discrete index into BACKDRAFT_SHAPES
+  // (0=square=full frame). `pureGeo` (0/1) picks the masking SPACE: 1 = screen
+  // (fixed shape), 0 = zoomed feedback (shape scales with zoom, spills). Both
+  // default to the no-op (square + off). Buttons set them; the gate inputs cycle
+  // / toggle them on a rising edge.
+  shape: number;     // 0..BACKDRAFT_SHAPE_COUNT-1 (discrete)
+  pureGeo: number;   // 0/1
+  // Synthetic gate params the shape_gate / pure_geo_gate CV bridge writes (raw
+  // 0..1 swing). Hidden — no card knob; the module edge-detects a rising edge to
+  // CYCLE shape / TOGGLE pureGeo.
+  shapeGate: number;   // 0..1 raw gate sample
+  pureGeoGate: number; // 0..1 raw gate sample
   freeze: number;    // 0/1 (VRT determinism)
 }
 
@@ -405,6 +489,12 @@ const DEFAULTS: BackdraftParams = {
   mirrorY: 0,
   mirrorXGate: 0,
   mirrorYGate: 0,
+  // SHAPE neutral = square (full frame) + pure-geo OFF → no crop at defaults, so
+  // the out-of-box behaviour matches pre-SHAPE backdraft exactly.
+  shape: 0,
+  pureGeo: 0,
+  shapeGate: 0,
+  pureGeoGate: 0,
   freeze: 0,
 };
 
@@ -625,6 +715,50 @@ export function backdraftMirrorGateTick(edge: EdgeState, sample: number): boolea
 }
 
 /**
+ * Pure SHAPE-cycle math: the NEXT shape index after `shape`, wrapping back to 0
+ * past the last. The SHAPE button + a rising edge on the shape_gate input both
+ * advance via this. Rounds the (possibly fractional) stored value first.
+ */
+export function backdraftNextShape(shape: number, count: number = BACKDRAFT_SHAPE_COUNT): number {
+  return (((Math.round(shape) % count) + count) % count + 1) % count;
+}
+
+/**
+ * Pure SHAPE-mask value — the exact CPU mirror of the shader's `shapeMask()`.
+ * Returns 1.0 INSIDE the shape, 0.0 outside. (The shader adds a sub-pixel
+ * antialias band that never affects the inside/corner classification, so the CPU
+ * mirror is binary.) Shared so the unit tests + the shader pin one definition of
+ * the geometry.
+ *
+ *   shape 0 (square)            → FULL FRAME: always 1.0 (the no-crop identity).
+ *   shape 1 (circle)            → |p| <= R.
+ *   shapes 2/3/4 (pentagon/triangle/octagon) → regular n-gon, circumradius R.
+ *
+ * `p` is the ASPECT-CORRECTED centre-relative coordinate
+ *   p = (uv - 0.5) * (aspect, 1),  aspect = frame width / height.
+ */
+export function backdraftShapeMask(
+  u: number,
+  v: number,
+  shape: number,
+  aspect: number,
+  radius: number = BACKDRAFT_SHAPE_RADIUS,
+): number {
+  const s = Math.round(shape);
+  if (s <= 0) return 1; // SQUARE = full frame
+  const px = (u - 0.5) * aspect;
+  const py = v - 0.5;
+  const len = Math.hypot(px, py);
+  if (s === 1) return len <= radius ? 1 : 0; // circle
+  const n = s === 2 ? 5 : s === 3 ? 3 : 8; // pentagon / triangle / octagon
+  const apothem = radius * Math.cos(Math.PI / n);
+  const ang = Math.atan2(px, py);
+  const seg = (2 * Math.PI) / n;
+  const d = Math.cos(seg * Math.round(ang / seg) - ang) * len - apothem;
+  return d <= 0 ? 1 : 0;
+}
+
+/**
  * Per-instance DELAY-CLOCK tracker state. A rising edge on the (hysteresis)
  * gate timestamps `time` (wall-clock seconds from the engine frame); the
  * period is the interval between the last two rising edges. We keep only the
@@ -743,6 +877,11 @@ export const backdraftDef: VideoModuleDef = {
     // flip the kaleidoscope rhythmically. The module edge-detects them.
     { id: 'mirror_x_gate', type: 'cv', paramTarget: 'mirrorXGate' },
     { id: 'mirror_y_gate', type: 'cv', paramTarget: 'mirrorYGate' },
+    // SHAPE gate inputs — gate/clock style (NO cvScale => raw passthrough). A
+    // RISING edge on shape_gate CYCLES the shape; on pure_geo_gate TOGGLES the
+    // pure-geometry masking space. The module edge-detects them.
+    { id: 'shape_gate',    type: 'cv', paramTarget: 'shapeGate' },
+    { id: 'pure_geo_gate', type: 'cv', paramTarget: 'pureGeoGate' },
   ],
   outputs: [
     { id: 'out', type: 'video' },
@@ -778,13 +917,22 @@ export const backdraftDef: VideoModuleDef = {
     // hidden (no card knob); the module edge-detects a rising edge to FLIP.
     { id: 'mirrorXGate', label: 'Mir X Gate', defaultValue: DEFAULTS.mirrorXGate, min: 0, max: 1, curve: 'linear' },
     { id: 'mirrorYGate', label: 'Mir Y Gate', defaultValue: DEFAULTS.mirrorYGate, min: 0, max: 1, curve: 'linear' },
+    // SHAPE geometry mask. `shape` is a DISCRETE index (0=square=full frame …
+    // 4=octagon); the SHAPE button + shape_gate cycle it. `pureGeo` (0/1) picks
+    // the masking space; the PURE GEO button + pure_geo_gate toggle it.
+    { id: 'shape',   label: 'Shape',    defaultValue: DEFAULTS.shape,   min: 0, max: BACKDRAFT_SHAPE_COUNT - 1, curve: 'discrete' },
+    { id: 'pureGeo', label: 'Pure Geo', defaultValue: DEFAULTS.pureGeo, min: 0, max: 1, curve: 'linear' },
+    // Synthetic gate params the shape_gate / pure_geo_gate bridge writes — hidden
+    // (no card knob); the module edge-detects a rising edge to CYCLE / TOGGLE.
+    { id: 'shapeGate',   label: 'Shape Gate',   defaultValue: DEFAULTS.shapeGate,   min: 0, max: 1, curve: 'linear' },
+    { id: 'pureGeoGate', label: 'PureGeo Gate', defaultValue: DEFAULTS.pureGeoGate, min: 0, max: 1, curve: 'linear' },
     // freeze is a hidden VRT/determinism toggle — no card control.
     { id: 'freeze',   label: 'Freeze',   defaultValue: DEFAULTS.freeze,   min: 0,  max: 1,                     curve: 'linear' },
   ],
 
   // docs-hash-ignore:start
   docs: {
-    explanation: `BACKDRAFT is a video feedback generator. It builds a "source" image by crossfading two video inputs (IN A / IN B) with MIX, then composites that against a processed copy of its OWN previous output, read from an internal ring of past frames so there is no live GL feedback loop (downstream sees frame N while the tap reads N-1..N-30). The fed-back frame is delayed (DELAY, 0-500ms or a clock pulse), colour-processed (per-channel R/G/B gain, then LUMA brightness, then CHROMA saturation), scaled per-pixel by two key masks (KEY+ lightens / KEY- darkens the effect), and geometrically warped a little each pass (ZOOM/ROTATE/OFF X/OFF Y) so the transform COMPOUNDS into tunnels, spirals, and directional trails. Two MIRROR buttons fold the whole composited frame into a kaleidoscope. As FEEDBACK approaches its max (and a spatial transform is active) the additive trail-accumulator ramps into a pure recursive hall of mirrors. Usage: patch a camera or generator into IN A, raise FEEDBACK toward ~1 and nudge ZOOM off 1.0 (with a little ROTATE) for the classic infinite-tunnel look; add OFF X/Y for smear, PIXELATE for blocky lo-fi, and clock DELAY CLK for rhythmic echo. Output is the OUT video jack. The card shows a large live video preview on the left that is resizable via the bottom-right corner-drag handle (width/height persist, snapped to rack tiles); right-click the preview for Full Frame / Full Screen / Present-on-another-display.`,
+    explanation: `BACKDRAFT is a video feedback generator. It builds a "source" image by crossfading two video inputs (IN A / IN B) with MIX, then composites that against a processed copy of its OWN previous output, read from an internal ring of past frames so there is no live GL feedback loop (downstream sees frame N while the tap reads N-1..N-30). The fed-back frame is delayed (DELAY, 0-500ms or a clock pulse), colour-processed (per-channel R/G/B gain, then LUMA brightness, then CHROMA saturation), scaled per-pixel by two key masks (KEY+ lightens / KEY- darkens the effect), and geometrically warped a little each pass (ZOOM/ROTATE/OFF X/OFF Y) so the transform COMPOUNDS into tunnels, spirals, and directional trails. Two MIRROR buttons fold the whole composited frame into a kaleidoscope. A SHAPE button cuts the frame to a geometric mask (square = full frame, then circle / pentagon / triangle / octagon), and a PURE GEO button picks the masking SPACE: ON masks the FINAL OUTPUT in screen space (a fixed shape that cuts everything outside it at all zooms), OFF masks the SOURCE in the zoomed feedback space so the shape scales with ZOOM and its content spills out through the feedback tunnel (zoom-in pushes it toward the corners, zoom-out shrinks it). As FEEDBACK approaches its max (and a spatial transform is active) the additive trail-accumulator ramps into a pure recursive hall of mirrors. Usage: patch a camera or generator into IN A, raise FEEDBACK toward ~1 and nudge ZOOM off 1.0 (with a little ROTATE) for the classic infinite-tunnel look; add OFF X/Y for smear, PIXELATE for blocky lo-fi, a SHAPE for a geometric vignette, and clock DELAY CLK for rhythmic echo. Output is the OUT video jack. The card shows a large live video preview on the left that is resizable via the bottom-right corner-drag handle (width/height persist, snapped to rack tiles); right-click the preview for Full Frame / Full Screen / Present-on-another-display.`,
     inputs: {
       in_a: "Video source A. Crossfaded against IN B by MIX to form the live 'source' image that is re-injected each frame; unpatched it reads black.",
       in_b: "Video source B. The other end of the MIX crossfade (MIX=1 selects this input fully); unpatched it reads black.",
@@ -808,6 +956,8 @@ export const backdraftDef: VideoModuleDef = {
       offsety: "CV (linear, bipolar) that modulates the OffY (Off Y) control, the per-pass vertical translation of the feedback tap (directional trail).",
       mirror_x_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES (flips) the Mirror X kaleidoscope fold, so a clock can flip it rhythmically. Edge-triggered, not a held level.",
       mirror_y_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES (flips) the Mirror Y kaleidoscope fold. Edge-triggered, not a held level.",
+      shape_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge CYCLES the Shape mask to the next geometry (square → circle → pentagon → triangle → octagon → square). Edge-triggered, not a held level.",
+      pure_geo_gate: "Gate/clock input (raw passthrough, edge-detected). A RISING edge TOGGLES the Pure Geo masking space (screen-space crop ↔ zoomed-source crop). Edge-triggered, not a held level.",
     },
     outputs: {
       out: "The feedback-rendered video output: the crossfaded source composited with the processed, delayed, spatially-warped, mask-scaled copy of the previous output.",
@@ -833,6 +983,10 @@ export const backdraftDef: VideoModuleDef = {
       mirrorY: "Mirror Y (0/1, default 0): kaleidoscope toggle that folds the top half of the output over the bottom (both on = a 4-way quadrant fold). Set by the MIRROR Y button or flipped by mirror_y_gate.",
       mirrorXGate: "Mir X Gate (0..1, default 0): hidden synthetic param the mirror_x_gate CV bridge writes (raw gate swing). No card knob; a rising edge flips Mirror X.",
       mirrorYGate: "Mir Y Gate (0..1, default 0): hidden synthetic param the mirror_y_gate CV bridge writes (raw gate swing). No card knob; a rising edge flips Mirror Y.",
+      shape: "Shape (discrete 0..4, default 0 = square): the geometric mask cut over the frame — square (full frame, no crop), circle, pentagon, triangle, octagon. The SHAPE button cycles it; shape_gate cycles it on a rising edge.",
+      pureGeo: "Pure Geo (0/1, default 0 = off): the SHAPE masking SPACE. ON masks the FINAL OUTPUT in screen space (a fixed shape that cuts content outside it at all zooms); OFF masks the SOURCE in the zoomed feedback space, so the shape scales with Zoom and its content spills out through the feedback tunnel. The PURE GEO button toggles it; pure_geo_gate toggles it on a rising edge.",
+      shapeGate: "Shape Gate (0..1, default 0): hidden synthetic param the shape_gate CV bridge writes (raw gate swing). No card knob; a rising edge cycles Shape.",
+      pureGeoGate: "PureGeo Gate (0..1, default 0): hidden synthetic param the pure_geo_gate CV bridge writes (raw gate swing). No card knob; a rising edge toggles Pure Geo.",
       freeze: "Freeze (0/1, default 0): hidden determinism toggle. At ≥0.5 draw() is a no-op so the ring + output hold their last frame for deterministic VRT capture. No card control.",
     },
   },
@@ -870,6 +1024,9 @@ export const backdraftDef: VideoModuleDef = {
     const uMirrorY = u('uMirrorY');
     const uPixelate = u('uPixelate');
     const uRes = u('uRes');
+    const uShape = u('uShape');
+    const uPureGeo = u('uPureGeo');
+    const uAspect = u('uAspect');
 
     // Ring buffer of OUTPUT frames + a dedicated current-output FBO. We
     // render the composite into ring[head] (which IS this frame's output),
@@ -915,6 +1072,13 @@ export const backdraftDef: VideoModuleDef = {
     // patched, so an unpatched gate never spuriously fires.
     const mirrorGate = makeBackdraftMirrorGateState();
 
+    // ── SHAPE / PURE GEO gate tracking ────────────────────────────────
+    // A rising edge on shape_gate CYCLES the shape; on pure_geo_gate TOGGLES
+    // pureGeo. Same edge-detect convention as the mirror gates; the bridge only
+    // writes while patched, so an unpatched gate never spuriously fires.
+    const shapeGate = makeEdgeState();
+    const pureGeoGate = makeEdgeState();
+
     const surface: VideoNodeSurface = {
       fbo: ring[0]!.fbo,
       texture: ring[0]!.texture,
@@ -944,6 +1108,16 @@ export const backdraftDef: VideoModuleDef = {
         }
         if (backdraftMirrorGateTick(mirrorGate.y, params.mirrorYGate)) {
           params.mirrorY = params.mirrorY >= 0.5 ? 0 : 1;
+        }
+
+        // SHAPE gate: a rising edge CYCLES the shape. PURE GEO gate: a rising
+        // edge TOGGLES the masking space. The button/UI reflects the resulting
+        // (possibly gate-driven) state because we mutate the shared `params`.
+        if (detectEdge(shapeGate, params.shapeGate)?.pressed) {
+          params.shape = backdraftNextShape(params.shape);
+        }
+        if (detectEdge(pureGeoGate, params.pureGeoGate)?.pressed) {
+          params.pureGeo = params.pureGeo >= 0.5 ? 0 : 1;
         }
 
         // Effective delay (ms): the DELAY knob, OR — when a DELAY CLOCK is
@@ -1025,6 +1199,12 @@ export const backdraftDef: VideoModuleDef = {
         // gate keeps pixelate=0 bit-identical. At 1 → 1 cell → flat colour.
         g.uniform1f(uPixelate, Math.max(0, Math.min(1, params.pixelate)));
         g.uniform1f(uRes, ctx.res.width);
+
+        // SHAPE geometry mask. Round the discrete shape index, pass pureGeo as a
+        // 0/1 flag, and the frame aspect so circles/polygons stay un-stretched.
+        g.uniform1f(uShape, Math.max(0, Math.min(BACKDRAFT_SHAPE_COUNT - 1, Math.round(params.shape))));
+        g.uniform1f(uPureGeo, params.pureGeo >= 0.5 ? 1.0 : 0.0);
+        g.uniform1f(uAspect, ctx.res.height > 0 ? ctx.res.width / ctx.res.height : 1.0);
 
         ctx.drawFullscreenQuad();
         g.bindFramebuffer(g.FRAMEBUFFER, null);
