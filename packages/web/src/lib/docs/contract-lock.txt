@@ -946,6 +946,18 @@ fader param abTransition 0..4 linear default=0
 fader param dryWet 0..1 linear default=0
 fader param dwTransition 0..4 linear default=0
 fader param fader 0..1 linear default=0.5
+featurecv meta domain=audio schema=1
+featurecv in in audio
+featurecv out bright cv
+featurecv out loud cv
+featurecv out onset gate edge=trigger
+featurecv out punch cv
+featurecv param attack 0.5..500 log default=10 unit=ms
+featurecv param bipolar 0..1 discrete default=1
+featurecv param gain 0.25..4 log default=1
+featurecv param onset_debounce 20..1000 log default=80 unit=ms
+featurecv param onset_sens 0..1 linear default=0.5
+featurecv param release 1..2000 log default=100 unit=ms
 feedback meta domain=video schema=1
 feedback in decay cv param=decay cvScale=linear
 feedback in in video

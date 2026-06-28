@@ -108,6 +108,14 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // dedicated composite spec (VCO→VCA→ADSR←SEQUENCER→SYNESTHESIA) asserts that
   // the correct bands trigger. Handle-presence + input-drive still run here.
   synesthesia: 'outputs are input-conditional (band audio/env/gate); signal flow covered by the synesthesia composite spec',
+  // FEATURECV is a pure broadband analyser: loud/bright/punch CV + the onset
+  // trigger are all silent (the bipolar CVs sit at the -1 silence rail) until
+  // its `in` is driven, which the generic emit sweep doesn't wire. Handle-
+  // presence + input-drive still run here; the REAL source→featurecv→param
+  // signal flow is asserted by e2e/tests/featurecv-source-chain.spec.ts
+  // (noise → featurecv.bright → filter.cutoff → audible change) and the pure
+  // core by packages/dsp/src/lib/featurecv-dsp.test.ts + the ART scenario.
+  featurecv: 'outputs are input-conditional (broadband RMS/ZCR/crest CV + flux onset, silent until `in` is driven); signal flow covered by featurecv-source-chain.spec.ts + featurecv-dsp.test.ts',
   // FLIPPER is a gate flip-flop: each output only fires on alternate input
   // rising edges (FLIP on the 1st, FLOP on the 2nd, …), so the generic
   // "drive input → measure this output emits" sweep can't trigger the right
@@ -418,7 +426,7 @@ test('RATCHET: output-emit exemption lists only shrink', () => {
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).length,
     'EXEMPT_OUTPUT_EMIT_MODULES grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(40);
+  ).toBeLessThanOrEqual(41); // +1 featurecv (new module, input-conditional outputs — covered by featurecv-source-chain.spec.ts)
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT).length,
     'EXEMPT_OUTPUT_EMIT grew past its frozen cap — see the RATCHET rule above',
