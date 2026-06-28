@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "f33712fb34ec78d45c792885f79672cb4753f89a8fa5106d886fcc23121f0c46",
-  "attestedAt": "2026-06-28T14:13:29.942Z",
+  "webglContentHash": "2bd981648d17cb475d91aea2f1d9a304b672574c60e30ab5ed05b90837e63194",
+  "attestedAt": "2026-06-28T14:50:34.234Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "a6a5194651ccb0b4e4951c3c47dcea8ab8ac3524",
+  "gitHeadAtAttest": "83856fc97046dfdc778940ca22183e8134c612ce",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "host": "2600hzs-MBP.home.local",
@@ -11,16 +11,16 @@
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
-      "specFiles": 46,
-      "passed": 140,
+      "specFiles": 47,
+      "passed": 141,
       "failed": 0,
       "flaky": 1,
       "skipped": 1,
       "flakyDetails": [
         {
-          "test": "per-target menu items are correct + Escape closes",
-          "file": "toybox-node-menu.spec.ts",
-          "firstError": "Error: expect(locator).toBeVisible() failed |  | Locator: locator('[data-testid=\"toybox-node-menu\"]') | Expected: visible"
+          "test": "SCOPE patched into OUTPUT renders a non-black, structured waveform trace",
+          "file": "scope-video-out.spec.ts",
+          "firstError": "Error: output FBO readable |  | expect(received).toBe(expected) // Object.is equality | "
         }
       ]
     },
@@ -41,5 +41,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 120
+  "durationSec": 116
 }

@@ -190,6 +190,13 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // unit-tested + e2e mocks Sepia + the stream.
   peertube:       'needs a resolved + attached PeerTube stream for any output; no network stream in the sweep (mirrors tvLibrarian/videobox); covered by peertube-query.test.ts + network-mocked peertube e2e',
   archivist:      'all outputs (image/video/audio/gates/playhead) are idle until an archive.org item loads (external network); covered by archivist-query.test.ts + archivist-scrub.test.ts + route-mocked archivist.spec.ts',
+  // MILKDROP — the single `out` video needs the async preset chunk
+  // (dynamic import of the butterchurn preset pack) loaded AND a few butterchurn
+  // warmup frames before it emits a non-black frame; that exceeds the generic
+  // ~2s emit window on CI. The deterministic non-black/structured render is
+  // proven by milkdrop-render-smoke.spec.ts (it polls read('ready') for the
+  // preset load, then drives fixed steps with synthetic audio + a fixed delta).
+  milkdrop:       'video out needs the async preset chunk loaded + butterchurn warmup before it emits, exceeding the generic emit window; deterministic non-black render proven by milkdrop-render-smoke.spec.ts',
   // ── Game modules whose outputs ONLY fire on rare in-game events ──
   // MODTRIS line clears require ~10 piece drops + a full row filled;
   // PONG scores require a ball-miss after several bounces. Both exceed
@@ -427,7 +434,7 @@ test('RATCHET: output-emit exemption lists only shrink', () => {
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).length,
     'EXEMPT_OUTPUT_EMIT_MODULES grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(42); // +1 featurecv (input-conditional outputs); +1 blood (data-gated emulator — outputs idle without the non-redistributable WAD, absent in CI)
+  ).toBeLessThanOrEqual(43); // +1 featurecv (input-conditional outputs); +1 blood (data-gated emulator — outputs idle without the non-redistributable WAD, absent in CI); +1 milkdrop (video out needs async butterchurn preset-chunk load + warmup before emit; covered by milkdrop-render-smoke.spec.ts)
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT).length,
     'EXEMPT_OUTPUT_EMIT grew past its frozen cap — see the RATCHET rule above',

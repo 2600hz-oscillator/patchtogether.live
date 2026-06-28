@@ -156,6 +156,15 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // in CI). Same as tvLibrarian/videobox. Covered by peertube-query unit tests + a
   // network-mocked peertube e2e.
   peertube:       'needs a resolved + attached PeerTube stream to emit; no network stream in the sweep (mirrors tvLibrarian/videobox); covered by peertube-query.test.ts + network-mocked peertube e2e',
+  // MILKDROP — the butterchurn visualizer self-animates CONTINUOUSLY (a
+  // multi-pass warp-mesh + feedback render running on its own internal clock)
+  // regardless of input, so the `out` luma-variance has a huge per-frame jitter
+  // floor that swamps any single-input footprint across the short snapshot
+  // window (the bentbox / b3ntb0x / backdraft animated-video variance class).
+  // Whole-module exempt. Covered by milkdrop-render-smoke.spec.ts (deterministic
+  // non-black/structured render: freeze + fixed delta + synthetic audio) + the
+  // contract-lock / docs-lint / modules-card-map unit gates.
+  milkdrop:       'self-animating multi-pass visualizer (animated-video variance class, cf. bentbox/b3ntb0x): the out luma-variance jitter floor swamps any per-input delta; covered by milkdrop-render-smoke.spec.ts + unit gates',
 
   // ── User-toggled sequencer-like sources: output silent until steps are
   //    toggled by user interaction (which our spawnPatch doesn't model).
@@ -1428,7 +1437,7 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_MODULE_EXEMPT).length,
     'BEHAVIORAL_MODULE_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(64); // +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI)
+  ).toBeLessThanOrEqual(65); // +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI); +1 milkdrop (self-animating multi-pass visualizer — out luma-variance jitter floor swamps any per-input delta, cf. bentbox/b3ntb0x; covered by milkdrop-render-smoke.spec.ts)
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
