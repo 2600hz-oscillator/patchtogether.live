@@ -45,11 +45,12 @@ const VIDEO_PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // detects rising edges to advance the plasma scene. speed_cv (the one
   // CONTINUOUS input) correctly carries cvScale.
   acidwarp: ['scene_cv'],
-  // BACKDRAFT delay_clock / mirror_x_gate / mirror_y_gate: GATE/clock inputs
-  // onto synthetic delayClock / mirrorXGate / mirrorYGate params the module
-  // edge-detects (clock → delay period; rising edge → flip mirror axis). Every
-  // CONTINUOUS backdraft input already carries cvScale.
-  backdraft: ['delay_clock', 'mirror_x_gate', 'mirror_y_gate'],
+  // BACKDRAFT delay_clock / mirror_x_gate / mirror_y_gate / shape_gate /
+  // pure_geo_gate: GATE/clock inputs onto synthetic delayClock / mirrorXGate /
+  // mirrorYGate / shapeGate / pureGeoGate params the module edge-detects (clock →
+  // delay period; rising edge → flip mirror axis / cycle shape / toggle pure
+  // geo). Every CONTINUOUS backdraft input already carries cvScale.
+  backdraft: ['delay_clock', 'mirror_x_gate', 'mirror_y_gate', 'shape_gate', 'pure_geo_gate'],
   // B3NTB0X mirror_x_gate / mirror_y_gate: GATE inputs onto synthetic
   // mirrorXGate/mirrorYGate params; a rising edge toggles the mirror axis. All
   // continuous *_cv inputs already carry cvScale.
