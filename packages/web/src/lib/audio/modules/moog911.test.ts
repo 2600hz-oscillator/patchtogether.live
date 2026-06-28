@@ -113,12 +113,11 @@ async function loadProcessor(): Promise<ProcCtor> {
   const prev = g.registerProcessor;
   let registered: ProcCtor | null = null;
   g.registerProcessor = (_n, ctor) => { registered = ctor; };
-  // moog911.ts is an import-less worklet entry (no top-level import/export, per
-  // dsp-worklet-no-top-level-export), so TS treats it as "not a module" (TS2306).
-  // We import it solely for its registerProcessor side-effect (vitest runs the
-  // module body); unlike cube/resofilter (which import a DSP lib and so ARE
-  // modules), this entry is self-contained. The directive is intentional.
-  // @ts-expect-error import-less worklet has no module shape; side-effect import only.
+  // moog911.ts imports its contour core (lib/moog911-eg-dsp), so — like
+  // cube/resofilter — it IS a module; we import it solely for its
+  // registerProcessor side-effect (vitest runs the module body). It still never
+  // top-level-exports its Processor class (dsp-worklet-no-top-level-export), so
+  // the registration happens via the import side-effect captured above.
   await import('../../../../../dsp/src/moog911');
   g.registerProcessor = prev;
   if (!registered) throw new Error('moog911 processor did not register');
