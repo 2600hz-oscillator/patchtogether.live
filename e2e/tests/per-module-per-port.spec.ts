@@ -405,6 +405,26 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   'gibribbon.health_cv':    'idle DC (healthy=0.75) is constant + AC-coupled below the scope floor; covered by gibribbon-events.test.ts (healthToCv) + gibribbon.spec.ts',
 };
 
+// ─── RATCHET — output-emit exemption caps ────────────────────────────────
+// EXEMPT_OUTPUT_EMIT_MODULES (whole-module) + EXEMPT_OUTPUT_EMIT (per-port)
+// let a module/port OPT OUT of the per-port output-emit signal-flow assertion.
+// Every entry is coverage we still owe. These caps FREEZE the lists at today's
+// size so they can only SHRINK as coverage is reconciled — adding a NEW
+// exemption fails this test on purpose.
+//   RATCHET RULE: exemptions only shrink. LOWER the number when you fix
+//   coverage and delete an entry. Only RAISE it for a genuinely new,
+//   documented exemption — NEVER to make a red sweep go green.
+test('RATCHET: output-emit exemption lists only shrink', () => {
+  expect(
+    Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).length,
+    'EXEMPT_OUTPUT_EMIT_MODULES grew past its frozen cap — see the RATCHET rule above',
+  ).toBeLessThanOrEqual(40);
+  expect(
+    Object.keys(EXEMPT_OUTPUT_EMIT).length,
+    'EXEMPT_OUTPUT_EMIT grew past its frozen cap — see the RATCHET rule above',
+  ).toBeLessThanOrEqual(65);
+});
+
 // ────────── Per-port input-drive exemptions ──────────
 // Format: `<moduleType>.<portId>` → human-readable reason.
 // These inputs DECLARE themselves but their downstream effect from a

@@ -87,7 +87,12 @@ const CONFIGS: Array<{ id: string; sp: SliceParams; depthOffset?: number }> = [
   { id: 'morph-ceiling', sp: baseSlice({ morphFC: 1 }) },
   { id: 'connect-vee',   sp: baseSlice({ connect: 1, morphFC: 0.5 }) },
   { id: 'hard-material',  sp: baseSlice({ material: 'hard', morphFC: 0.5 }) },
-  { id: 'crushed',       sp: baseSlice({ crush: 1 }) },
+  // 'crushed' (crush:1) removed: it renders a CONSTANT −1.0 (the DC floor) —
+  // byte-identical to the equally-degenerate 'space-diffuse-max' config below,
+  // so the two were duplicate (non-distinct) baselines that the
+  // baseline-uniqueness guard flags. CRUSH coverage stays via the
+  // "CRUSH at k=1 produces far fewer distinct levels" assertion further down,
+  // which drives sampleSlice(crush:1) directly (no baseline). (honesty quick-win)
   { id: 'wrap-outside',  sp: baseSlice({ sliceY: 1.4, wrap: true }) },
   { id: 'spread-right',  sp: baseSlice({ rx: 0.7 }), depthOffset: 0.05 },
   // ── SPACE CRUSH — voxelize the field LOOKUP coords (independent of CRUSH). ──
@@ -96,7 +101,11 @@ const CONFIGS: Array<{ id: string; sp: SliceParams; depthOffset?: number }> = [
   { id: 'space-crush-and-crush', sp: baseSlice({ spaceCrush: 0.6, crush: 0.6 }) },
   // ── SPACE DIFFUSE — gravity toward the emptiest wall (latched target). ──
   { id: 'space-diffuse-mid',     sp: baseSlice({ spaceDiffuse: 0.5, morphFC: 0.5 }) },
-  { id: 'space-diffuse-max',     sp: baseSlice({ spaceDiffuse: 1, morphFC: 0.5 }) },
+  // 'space-diffuse-max' (spaceDiffuse:1) removed: like 'crushed' above it
+  // renders a CONSTANT −1.0 (the DC floor) and was byte-identical to it — a
+  // duplicate baseline (flagged by the baseline-uniqueness guard). space-diffuse
+  // coverage stays via the -mid / -rotated / -wrap configs (all unique). FOLLOW-UP:
+  // both extremes collapsing to the silent floor may be worth a DSP review.
   { id: 'space-diffuse-rotated', sp: baseSlice({ spaceDiffuse: 0.7, rx: 0.7, ry: 0.4 }) },
   { id: 'space-diffuse-wrap',    sp: baseSlice({ spaceDiffuse: 0.7, wrap: true, morphFC: 0.5 }) },
   // ── CONNECT STRENGTH — overshoot the connector's interior control point. ──

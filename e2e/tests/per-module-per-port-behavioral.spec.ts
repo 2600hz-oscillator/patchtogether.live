@@ -1405,6 +1405,26 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
 
 };
 
+// ─── RATCHET — behavioral exemption caps ─────────────────────────────────
+// BEHAVIORAL_MODULE_EXEMPT (whole-module) + BEHAVIORAL_SWEEP_EXEMPT (per-port)
+// let a module/port OPT OUT of the behavioral CV→output sweep. Every entry is
+// reconciliation BACKLOG (see the "every exemption is BACKLOG" law above).
+// These caps FREEZE the lists at today's size so they can only SHRINK —
+// adding a NEW exemption fails this test on purpose.
+//   RATCHET RULE: exemptions only shrink. LOWER the number when you fix
+//   coverage and delete an entry. Only RAISE it for a genuinely new,
+//   documented exemption — NEVER to make a red sweep go green.
+test('RATCHET: behavioral exemption lists only shrink', () => {
+  expect(
+    Object.keys(BEHAVIORAL_MODULE_EXEMPT).length,
+    'BEHAVIORAL_MODULE_EXEMPT grew past its frozen cap — see the RATCHET rule above',
+  ).toBeLessThanOrEqual(63);
+  expect(
+    Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
+    'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
+  ).toBeLessThanOrEqual(160);
+});
+
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the
 // behavioral-coverage TODO in .github/workflows/ci.yml): the Class-A
 // near-threshold entries above (cube*/hypercube.*, chowkick.q_cv/decay_cv,
