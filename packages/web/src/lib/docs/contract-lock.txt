@@ -235,8 +235,10 @@ backdraft in mix cv param=mix cvScale=linear
 backdraft in offsetx cv param=offsetX cvScale=linear
 backdraft in offsety cv param=offsetY cvScale=linear
 backdraft in pixelate cv param=pixelate cvScale=linear
+backdraft in pure_geo_gate cv param=pureGeoGate
 backdraft in r cv param=r cvScale=linear
 backdraft in rotate cv param=rotate cvScale=linear
+backdraft in shape_gate cv param=shapeGate
 backdraft in zoom cv param=zoom cvScale=linear
 backdraft out out video
 backdraft param b -1..2 linear default=1
@@ -257,9 +259,13 @@ backdraft param mix 0..1 linear default=0.5
 backdraft param offsetX -0.1..0.1 linear default=0
 backdraft param offsetY -0.1..0.1 linear default=0
 backdraft param pixelate 0..1 linear default=0
+backdraft param pureGeo 0..1 linear default=0
+backdraft param pureGeoGate 0..1 linear default=0
 backdraft param r -1..2 linear default=1
 backdraft param rotate -30..30 linear default=0
-backdraft param zoom 0.8..1.2 linear default=1
+backdraft param shape 0..4 discrete default=0
+backdraft param shapeGate 0..1 linear default=0
+backdraft param zoom 0.4..1.6 linear default=1
 bentbox meta domain=video schema=1
 bentbox in bloom_cv cv param=bloom cvScale=linear
 bentbox in chroma_instability_cv cv param=chroma_instability cvScale=linear

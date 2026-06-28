@@ -19,7 +19,12 @@ import {
   BACKDRAFT_ROTATE_MAX,
   BACKDRAFT_OFFSET_MIN,
   BACKDRAFT_OFFSET_MAX,
+  BACKDRAFT_SHAPES,
+  BACKDRAFT_SHAPE_COUNT,
+  BACKDRAFT_SHAPE_RADIUS,
   backdraftDef,
+  backdraftNextShape,
+  backdraftShapeMask,
   backdraftDelayFrames,
   backdraftEffectScale,
   backdraftHallComposite,
@@ -392,6 +397,67 @@ describe('backdraftMirrorGateTick — rising edge flips the axis', () => {
   });
 });
 
+describe('backdraftNextShape — SHAPE button / shape_gate cycle', () => {
+  it('cycles square→circle→pentagon→triangle→octagon→square', () => {
+    expect(BACKDRAFT_SHAPE_COUNT).toBe(5);
+    expect(BACKDRAFT_SHAPES).toEqual(['square', 'circle', 'pentagon', 'triangle', 'octagon']);
+    let s = 0;
+    const seen: number[] = [s];
+    for (let i = 0; i < BACKDRAFT_SHAPE_COUNT; i++) {
+      s = backdraftNextShape(s);
+      seen.push(s);
+    }
+    // 0→1→2→3→4→0 (wraps after the last).
+    expect(seen).toEqual([0, 1, 2, 3, 4, 0]);
+  });
+
+  it('rounds a fractional / out-of-range stored value before advancing', () => {
+    expect(backdraftNextShape(2.4)).toBe(3);
+    expect(backdraftNextShape(4)).toBe(0);     // wrap
+    expect(backdraftNextShape(-1)).toBe(0);    // normalised then +1 wraps
+  });
+});
+
+describe('backdraftShapeMask — geometry mask (CPU mirror of the shader)', () => {
+  // 16:9-ish aspect; corners sit well outside a R=0.5 inscribed shape.
+  const ASPECT = 16 / 9;
+
+  it('SQUARE (0) is the FULL-FRAME identity — 1.0 everywhere incl. the corners', () => {
+    for (const [u, v] of [[0.5, 0.5], [0, 0], [1, 1], [1, 0], [0, 1]] as const) {
+      expect(backdraftShapeMask(u, v, 0, ASPECT)).toBe(1);
+    }
+  });
+
+  it('CIRCLE (1) keeps the centre and CUTS the corners', () => {
+    expect(backdraftShapeMask(0.5, 0.5, 1, ASPECT)).toBe(1); // centre in
+    for (const [u, v] of [[0, 0], [1, 1], [1, 0], [0, 1]] as const) {
+      expect(backdraftShapeMask(u, v, 1, ASPECT), `corner ${u},${v}`).toBe(0);
+    }
+  });
+
+  it('the circle radius reaches the top/bottom mid-edges but not the corners', () => {
+    // A point at the inscribed radius straight up (aspect-corrected y) is the
+    // boundary; the very top-centre (v small) is inside, the corner is outside.
+    expect(backdraftShapeMask(0.5, 0.5 - (BACKDRAFT_SHAPE_RADIUS - 0.02), 1, ASPECT)).toBe(1);
+    expect(backdraftShapeMask(0.5, 0.5 - (BACKDRAFT_SHAPE_RADIUS + 0.02), 1, ASPECT)).toBe(0);
+  });
+
+  it('POLYGONS (pentagon/triangle/octagon) keep the centre + cut the far corners', () => {
+    for (const shp of [2, 3, 4]) {
+      expect(backdraftShapeMask(0.5, 0.5, shp, ASPECT), `centre shape ${shp}`).toBe(1);
+      for (const [u, v] of [[0, 0], [1, 1], [1, 0], [0, 1]] as const) {
+        expect(backdraftShapeMask(u, v, shp, ASPECT), `corner ${u},${v} shape ${shp}`).toBe(0);
+      }
+    }
+  });
+
+  it('cuts corners independent of aspect (square frame too)', () => {
+    // Even on a 1:1 frame the corner distance (0.707) exceeds R=0.5 → cut.
+    expect(backdraftShapeMask(0.5, 0.5, 1, 1)).toBe(1);
+    expect(backdraftShapeMask(1, 1, 1, 1)).toBe(0);
+  });
+});
+
 describe('backdraft module def — params + ports', () => {
   it('declares the expected param ranges + neutral defaults', () => {
     const byId = Object.fromEntries(backdraftDef.params.map((p) => [p.id, p]));
@@ -468,6 +534,31 @@ describe('backdraft module def — params + ports', () => {
     const byId = Object.fromEntries(backdraftDef.params.map((p) => [p.id, p]));
     expect(byId.mirrorX).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
     expect(byId.mirrorY).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
+  });
+
+  it('exposes shape_gate / pure_geo_gate as raw (no cvScale) gate inputs + SHAPE/PURE GEO params', () => {
+    for (const [port, target] of [
+      ['shape_gate', 'shapeGate'],
+      ['pure_geo_gate', 'pureGeoGate'],
+    ] as const) {
+      const g = backdraftDef.inputs.find((p) => p.id === port);
+      expect(g, port).toBeDefined();
+      expect(g?.type).toBe('cv');
+      expect(g?.cvScale).toBeUndefined(); // gate semantics — raw passthrough
+      expect(g?.paramTarget).toBe(target);
+    }
+    const byId = Object.fromEntries(backdraftDef.params.map((p) => [p.id, p]));
+    // SHAPE is a DISCRETE selector spanning all BACKDRAFT_SHAPES; default square.
+    expect(byId.shape).toMatchObject({
+      min: 0,
+      max: BACKDRAFT_SHAPE_COUNT - 1,
+      defaultValue: 0,
+      curve: 'discrete',
+    });
+    // PURE GEO + the synthetic gate params are 0/1, default off.
+    expect(byId.pureGeo).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
+    expect(byId.shapeGate).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
+    expect(byId.pureGeoGate).toMatchObject({ min: 0, max: 1, defaultValue: 0 });
   });
 
   it('ring buffer holds 500ms — one beat at 120 BPM — the clock cap', () => {

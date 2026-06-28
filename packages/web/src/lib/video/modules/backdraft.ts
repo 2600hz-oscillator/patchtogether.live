@@ -254,7 +254,7 @@ float luma(vec3 c) {
   return dot(c, vec3(0.299, 0.587, 0.114));
 }
 
-// SHAPE mask — 1.0 INSIDE the shape, 0.0 outside, antialiased. `uv` is the
+// SHAPE mask — 1.0 INSIDE the shape, 0.0 outside, antialiased. The uv arg is the
 // coordinate to test (the screen vUv for PURE GEO ON, the zoomed feedback UV for
 // OFF). SQUARE (uShape<=0) is the full-frame identity (always 1.0). p is
 // aspect-corrected centre-relative so circles stay round + polygons stay regular
@@ -974,7 +974,7 @@ export const backdraftDef: VideoModuleDef = {
       lighten: "Lgt / Lighten (0..1, default 1.0): how much the KEY+ mask boosts the feedback effect where the mask is bright.",
       darken: "Drk / Darken (0..1, default 1.0): how much the KEY- mask reduces the feedback effect where the mask is bright.",
       pixelate: "Pix / Pixelate (0..1, default 0): reduces the SOURCE resolution. 0 = identity (bit-exact), rising = blockier, 1 = the whole frame collapses to one representative colour.",
-      zoom: "Zoom (0.8..1.2, default 1.0): per-pass scale of the feedback tap about centre. <1 makes echoes recede (expanding tunnel), >1 magnifies them (zoom-in tunnel); 1 = no tunnel.",
+      zoom: "Zoom (0.4..1.6, default 1.0): per-pass scale of the feedback tap about centre. <1 makes echoes recede (expanding tunnel), >1 magnifies them (zoom-in tunnel); 1 = no tunnel.",
       rotate: "Rot / Rotate (-30..+30 °, default 0): per-pass rotation of the feedback tap about centre. Combined with Zoom≠1 the echoes twist into a spiral; 0 = no spiral.",
       offsetX: "OffX / Off X (-0.1..+0.1, default 0): per-pass horizontal translation (UV units) of the feedback tap, making a directional trail/smear; 0 = none.",
       offsetY: "OffY / Off Y (-0.1..+0.1, default 0): per-pass vertical translation (UV units) of the feedback tap, making a directional trail/smear; 0 = none.",

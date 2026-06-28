@@ -44,6 +44,8 @@
     BACKDRAFT_ROTATE_MAX,
     BACKDRAFT_OFFSET_MIN,
     BACKDRAFT_OFFSET_MAX,
+    BACKDRAFT_SHAPES,
+    backdraftNextShape,
   } from '$lib/video/modules/backdraft';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -76,6 +78,23 @@
     return () => {
       setNodeParam(id, paramId, (p(paramId) ?? 0) >= 0.5 ? 0 : 1);
     };
+  }
+
+  // ---- SHAPE (cycle) + PURE GEO (toggle) geometry mask ----
+  // The SHAPE button cycles square→circle→pentagon→triangle→octagon (also
+  // driven by a rising edge on shape_gate); the PURE GEO button toggles the
+  // masking space (also driven by pure_geo_gate). The buttons reflect the
+  // (possibly gate-driven) engine value via syncShapeFromEngine below.
+  let shapeIdx = $derived(
+    Math.max(0, Math.min(BACKDRAFT_SHAPES.length - 1, Math.round(p('shape')))),
+  );
+  let shapeName = $derived(BACKDRAFT_SHAPES[shapeIdx] ?? 'square');
+  let pureGeoOn = $derived(p('pureGeo') >= 0.5);
+  function cycleShape() {
+    setNodeParam(id, 'shape', backdraftNextShape(p('shape')));
+  }
+  function togglePureGeo() {
+    setNodeParam(id, 'pureGeo', pureGeoOn ? 0 : 1);
   }
 
   // ---- DELAY CLOCK override indicator ----
@@ -271,19 +290,29 @@
     rafId = requestAnimationFrame(draw);
   }
 
-  // Reconcile the engine's live mirrorX/mirrorY (possibly gate-toggled) into
-  // the patch store. Only writes when the engine value differs from the store,
-  // so user clicks (store → engine via setParam) and gate flips (engine →
-  // store here) converge without fighting.
+  // Reconcile the engine's live mirrorX/mirrorY + pureGeo (possibly gate-toggled)
+  // and the gate-CYCLED shape into the patch store. Only writes when the engine
+  // value differs from the store, so user clicks (store → engine via setParam)
+  // and gate flips (engine → store here) converge without fighting.
   function syncMirrorFromEngine(e: ReturnType<typeof engineCtx.get>, n: ModuleNode | undefined): void {
     if (!e || !n) return;
-    for (const k of ['mirrorX', 'mirrorY'] as const) {
+    // Boolean toggles: compare on the 0.5 threshold.
+    for (const k of ['mirrorX', 'mirrorY', 'pureGeo'] as const) {
       const live = e.readParam(n, k);
       if (typeof live !== 'number') continue;
       const stored = (patch.nodes[id]?.params[k] ?? 0);
       if ((live >= 0.5) !== (stored >= 0.5)) {
         const target = patch.nodes[id];
         if (target) target.params[k] = live >= 0.5 ? 1 : 0; // guard:allow-raw-write — per-frame engine→store reflect, must NOT pollute undo
+      }
+    }
+    // Discrete shape index: compare on the rounded value.
+    const liveShape = e.readParam(n, 'shape');
+    if (typeof liveShape === 'number') {
+      const storedShape = Math.round(patch.nodes[id]?.params.shape ?? 0);
+      if (Math.round(liveShape) !== storedShape) {
+        const target = patch.nodes[id];
+        if (target) target.params.shape = Math.round(liveShape); // guard:allow-raw-write — per-frame engine→store reflect, must NOT pollute undo
       }
     }
   }
@@ -355,6 +384,8 @@
     { id: 'offsety',     label: 'OFF Y',     cable: 'cv' },
     { id: 'mirror_x_gate', label: 'MIRROR X', cable: 'gate' },
     { id: 'mirror_y_gate', label: 'MIRROR Y', cable: 'gate' },
+    { id: 'shape_gate',    label: 'SHAPE',    cable: 'gate' },
+    { id: 'pure_geo_gate', label: 'PURE GEO', cable: 'gate' },
   ];
   const outputs: PortDescriptor[] = [
     { id: 'out', label: 'OUT', cable: 'video' },
@@ -418,6 +449,25 @@
             title="MIRROR Y — fold the top half over the bottom (kaleidoscope)"
             onclick={toggleMirror('mirrorY')}
           >MIRROR Y</button>
+        </div>
+
+        <div class="mirror-row" data-testid="backdraft-shape-row">
+          <button
+            type="button"
+            class="mirror-btn nodrag"
+            class:on={shapeIdx > 0}
+            data-testid="backdraft-shape"
+            title="SHAPE — cycle the geometry mask (square = full frame, then circle / pentagon / triangle / octagon)"
+            onclick={cycleShape}
+          >SHAPE: {shapeName.toUpperCase()}</button>
+          <button
+            type="button"
+            class="mirror-btn nodrag"
+            class:on={pureGeoOn}
+            data-testid="backdraft-pure-geo"
+            title="PURE GEO — masking space. ON: fixed shape in screen space (cuts content outside at all zooms). OFF: shape in the zoomed feedback space (scales with Zoom, spills through the tunnel)."
+            onclick={togglePureGeo}
+          >PURE GEO</button>
         </div>
 
         <div class="fader-grid" data-testid="backdraft-controls">
