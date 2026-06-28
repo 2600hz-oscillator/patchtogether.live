@@ -142,40 +142,78 @@ extern "C" void videoShowFrame(int32_t w)
 #endif
 }
 
-// ───────────────────────────── input queue ──────────────────────────────
+// ──────────────────────────── keyboard injection ────────────────────────
 //
-// Bounded ring of Build scancode events. Each entry: low 8 bits = scancode,
-// bit 8 = pressed. Drained into KB_KeyDown[] by our handleevents tap. For
-// the kill-gate (render-one-frame) input is inert; it exists so the JS API
-// surface is stable for Phase-1 card wiring.
+// bpt_set_key feeds a Build scancode event STRAIGHT into the engine's keyboard
+// layer (build/src/baselayer.cpp) — exactly what sdlayer.cpp's handleevents
+// does for a real SDL_KEYDOWN/KEYUP. This is what makes the front-end keyboard
+// capture AND the CV-gate ports actually drive the game + the in-game menus.
+//
+// We are called from JS (Module.ccall) while app_main is SUSPENDED inside our
+// videoShowFrame asyncify yield. wasm is single-threaded, so app_main is not
+// running concurrently — writing the engine's keyboard globals here is race
+// free, and the engine observes them the instant it resumes (gameHandleEvents /
+// CGameMenuMgr::Process run on the resumed stack). We deliberately do NOT queue
+// + drain at bpt_tick time: with r_maxfps=-2 the engine FREE-RUNS across the JS
+// event loop on each emscripten_sleep(0) yield (it is not gated by bpt_tick), so
+// a tick-time drain would be poorly timed. Applying the key immediately is both
+// simpler and correctly ordered.
+//
+// We mirror BOTH of sdlayer's keyboard sinks:
+//   * keySetState(sc, pressed): sets keystatus[sc] (the held-key poll the
+//     gameplay/CONTROL layer reads) and, on key-DOWN, pushes the scancode into
+//     the SCAN fifo g_keyFIFO that keyGetScan() drains. Blood's menu
+//     (CGameMenuMgr::Process -> keyGetScan, gamemenu.cpp) reads BOTH navigation
+//     (arrows) AND confirm (sc_Enter) from THIS fifo — so feeding it is what
+//     makes ENTER / ESC / every menu key register. (The earlier Phase-1
+//     scaffold queued scancodes then DISCARDED them, so this fifo was never fed
+//     and "no keys worked".)
+//   * keyBufferInsert(ascii): on key-DOWN for keys that carry a character, push
+//     into the ASCII fifo g_keyAsciiFIFO that keyGetChar() drains (text-entry
+//     screens — save-game names, console). Enter='\r', Esc=27, Tab='\t', etc.
 
-#define BPT_KEY_QUEUE_SIZE 256
-static uint16_t s_keyq[BPT_KEY_QUEUE_SIZE];
-static int s_keyq_head = 0;
-static int s_keyq_tail = 0;
+static int s_app_started = 0;
+
+// Build scancode -> ASCII char for the keys the front-end can emit (0 = none).
+// Mirrors sdlayer.cpp's special-key chars (Enter/Esc/Tab/Backspace) plus the
+// printable keys in blood-keys.ts (SCANCODE_FOR_KEYBOARD_CODE / _CV_GATE).
+static char bpt_scancode_ascii(int sc)
+{
+    switch (sc)
+    {
+        case 0x1c: return '\r';  // sc_Enter
+        case 0x01: return 27;    // sc_Escape
+        case 0x0f: return '\t';  // sc_Tab
+        case 0x0e: return '\b';  // sc_BackSpace
+        case 0x39: return ' ';   // sc_Space
+        case 0x33: return ',';   // sc_comma
+        case 0x34: return '.';   // sc_period
+        case 0x2c: return 'z';
+        case 0x2d: return 'x';
+        case 0x2e: return 'c';
+        default:   return 0;
+    }
+}
 
 extern "C" void bpt_set_key(int scancode, int pressed)
 {
-    uint16_t e = (uint16_t)((scancode & 0xff) | ((pressed ? 1 : 0) << 8));
-    int next = (s_keyq_tail + 1) % BPT_KEY_QUEUE_SIZE;
-    if (next == s_keyq_head) s_keyq_head = (s_keyq_head + 1) % BPT_KEY_QUEUE_SIZE; // drop oldest
-    s_keyq[s_keyq_tail] = e;
-    s_keyq_tail = next;
-}
+    if (!s_app_started) return;          // keyboard layer is not up before bpt_init
+    scancode &= 0xff;
+    if (scancode == 0) return;
 
-// Drain queued keys. Phase-1 will route these into Build's keyboard state
-// (mact keystatus[] / the CONTROL layer) so CV gates + the keyboard drive
-// the marine. For the kill-gate (render-one-frame) input is inert, so we
-// just clear the queue — keeping the bpt_set_key API surface stable for the
-// card wiring without coupling the shim to the mact keyboard global yet.
-static void bpt_drain_keys(void)
-{
-    s_keyq_head = s_keyq_tail;
+    // keystatus[] poll + (on press) the scan fifo keyGetScan() drains.
+    keySetState(scancode, pressed ? 1 : 0);
+
+    // On press, also feed the ASCII char fifo keyGetChar() drains (text entry).
+    if (pressed)
+    {
+        char const ascii = bpt_scancode_ascii(scancode);
+        if (ascii && !keyBufferFull())
+            keyBufferInsert(ascii);
+    }
 }
 
 // ───────────────────────────── bpt_* exports ────────────────────────────
-
-static int s_app_started = 0;
 
 // Boot the engine. JS has already written the user-supplied data files into
 // MEMFS (/blood/…). We chdir there + start app_main. Under ASYNCIFY,
@@ -221,9 +259,10 @@ extern "C" void bpt_init(int rff_len)
 // videoShowFrame, runs to the next videoShowFrame, snapshots, suspends.
 extern "C" void bpt_tick(void)
 {
-    bpt_drain_keys();
-    // No body needed: the asyncify rewind happens because app_main is still
-    // on the (suspended) stack. bpt_tick is the JS re-entry point; the actual
+    // No body needed: keyboard input is applied immediately in bpt_set_key (the
+    // engine free-runs across the JS event loop, so there is nothing to drain
+    // here), and the asyncify rewind happens because app_main is still on the
+    // (suspended) stack. bpt_tick is the JS re-entry point; the actual
     // continuation runs inside the resumed videoShowFrame. (If app_main has
     // exited, this is a harmless no-op.)
 }
