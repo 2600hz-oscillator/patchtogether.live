@@ -225,6 +225,30 @@ export const shimmershineDef: AudioModuleDef = {
     { id: 'mix',     label: 'Mix',     defaultValue: 0.4, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A stereo shimmer reverb — the project's ambient-halo space. A Schroeder reverb tank (four comb filters and two allpasses per channel) builds a lush decaying tail, and a pitch-shifted feedback loop sends that tail back through an octave-up (+12 semitone) granular shifter, so the reverb slowly blooms upward into a crystalline, ever-rising shimmer. Bigger and dreamier than the basic REVERB, it's the reach-for reverb when you want pads, guitars, or vocals to dissolve into a glittering cloud. DECAY sets the tail length, SHIMMER sets how much octave-up energy regenerates (the defining control), SIZE sets the space, DAMP tames the highs, and MIX blends wet against dry.",
+    inputs: {
+      in_l: 'Left channel of the stereo input fed into the reverb tank.',
+      in_r: 'Right channel of the stereo input fed into the tank.',
+      decay_cv: 'CV that displaces the DECAY knob, modulating tank decay time — automate it for swelling/collapsing tails.',
+      shimmer_cv: 'CV that displaces the SHIMMER knob, modulating the octave-up feedback amount (the shimmer intensity).',
+      size_cv: 'CV that displaces the SIZE knob, modulating the reverb space size.',
+      mix_cv: 'CV that displaces the MIX knob, modulating the dry/wet balance.',
+    },
+    outputs: {
+      out_l: 'Left channel of the stereo wet+dry output (reverb tail with its octave-up shimmer, blended against the dry input per MIX).',
+      out_r: 'Right channel of the stereo wet+dry output.',
+    },
+    controls: {
+      decay: 'Tank decay-time macro (0..1): how long the reverb tail rings before fading — short for a room, long for an endless ambient wash.',
+      shimmer: "The +1-octave feedback amount (0..1) — the module's signature control. At 0 it's an ordinary reverb; turning it up feeds more of the tail through the octave-up pitch shifter so the reverb regenerates upward into the rising crystalline shimmer. High settings approach self-sustaining drones.",
+      size: 'Reverb space size (0..1): scales the comb/allpass delays for a smaller or larger-sounding room.',
+      damp: "High-frequency damping in the tank (0..1): higher values roll off the tail's highs as it decays, for a warmer, darker reverb that keeps the shimmer from getting harsh.",
+      mix: 'Dry / wet balance (0..1): 0 is the untouched input, 1 is reverb only, between crossfades the two.',
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

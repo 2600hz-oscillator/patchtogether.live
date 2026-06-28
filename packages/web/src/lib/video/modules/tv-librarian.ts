@@ -144,6 +144,27 @@ export const tvLibrarianDef: VideoModuleDef = {
     { id: 'cv_random', label: 'Random',       defaultValue: 0, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "An international live-TV source: pick a country (click the 2D equirectangular world map, which snaps to the nearest country centroid that has channels, or use the country dropdown), pick a channel from that country's list, and the card attaches its HLS (.m3u8) stream via hls.js to an internal crossorigin video element. The engine samples that element into a WebGL framebuffer — the fragment shader is a straight passthrough of the live frame (when no stream is up it draws a dim near-black idle gradient so the card reads as \"alive but empty\"), so the video output is a genuine downstream-usable texture, not play-only. Frames are uploaded at the source's decode cadence (requestVideoFrameCallback, Firefox falls back to a currentTime-advance check) and downscaled to the engine resolution, so a high-bitrate stream doesn't flood GPU texture traffic. The stream's audio track is split into a stereo pair on the audio outs, with a silent gain-0 keep-alive that keeps the element decoding at full rate even when audio isn't patched. Channel metadata (country + channel name + stream URL) is persisted to the node so rack-mates tune to the SAME stream; geo-blocked entries are kept and marked, youtube-only entries are dropped, and a stream that fails to load (no CORS/ACAO under COEP, or 12s with no frame) is marked unavailable and auto-skips to the next channel rather than hanging. The card has a resizable 16:9 preview screen (corner-drag handle, persisted size, default 360x540, min 360x360) with a map/list segmented toggle, a now-playing label, a channel list (geo-blocked entries badged) and \"random\" / \"next ▸\" buttons (DOM-only, not module params), plus a legal disclaimer and Famelack/iptv-org attribution. Usage: drop it as a video source and feed its output into a mixer or any video module; patch a clock into next to channel-surf hands-free, or random to roulette.",
+    inputs: {
+      next: "Trigger (gate cable, edge:'trigger'): a rising edge advances to the NEXT channel in the current country's list, wrapping to the first. Level-while-high does nothing; it fires once per rising edge. Patch a clock here to channel-surf in time.",
+      random: "Trigger (gate cable, edge:'trigger'): a rising edge tunes a RANDOM channel from the current country (picked from the OTHERS when more than one exists, so it reliably changes). Fires once per rising edge, not while held.",
+    },
+    outputs: {
+      video: "The live stream's frame as a video texture (untainted/downstream-usable for streams that send CORS/ACAO). Dim near-black gradient when nothing is tuned.",
+      audio_l: "Left channel of the tuned stream's stereo audio (split from the stream's MediaElementSource). Silent (gain-0 constant source) when no stream is playing.",
+      audio_r: "Right channel of the tuned stream's stereo audio. Silent (gain-0 constant source) when no stream is playing.",
+      channel_changed: "Trigger out (gate cable, edge:'trigger'): one short rising-edge pulse each time a new channel is tuned. Patch into a downstream clock/reset/sample-and-hold.",
+      stream_online: "Gate out (gate cable, edge:'gate'): held high while the stream is actually playing, low while loading, idle, or unavailable.",
+    },
+    controls: {
+      gain: "Gain — declared output-level param (0 to 2, linear; default 1.0). NOTE: the passthrough shader does not currently read it (no uGain uniform / draw() never applies it), so it is carried on the module but inert in v1 — it does not yet brighten or scale the video output.",
+      cv_next: "Next (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the next input's gate level here; the card polls readParam and edge-detects a rising edge (<0.5 → >=0.5) to advance one channel. Not a user-facing knob.",
+      cv_random: "Random (hidden synthetic param, 0 to 1, default 0): the CV bridge writes the random input's gate level here; the card polls readParam and edge-detects a rising edge to tune a random channel. Not a user-facing knob.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

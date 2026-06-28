@@ -230,6 +230,48 @@ export const symbioteDef: AudioModuleDef = {
     { id: 'seed_lock', label: 'Seed Lock', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A self-running generative rhythm + melody brain — a Mutable Instruments Marbles core running the 'Symbiote' alt-firmware, which fuses two classic Eurorack patterns into one module. There is NO audio input and no clock input: an internal master clock (set by RATE) drives everything. The T-SECTION is a Grids drum engine that emits three correlated drum triggers — BD (t1), SD (t2), HH (t3) — whose busy-ness you steer with the MAP X / MAP Y drum-map coordinate and the per-channel densities, or switch to a Euclidean pattern generator. The X-SECTION is a TB-3PO acid sequencer that emits a master clock (x1), a 1V/oct pitch CV (x2), a note gate (x3) and an accent gate (y), with controls for note density, transposition, loop length and a musical scale. CHAOS adds randomness/variation to the drums; SEED LOCK freezes the current generated pattern so it stops re-rolling on each cycle. Patch the trigger/gate outs into drum voices and the pitch+gate into a synth voice to get a complete evolving pattern from one box.",
+    inputs: {
+      rate_cv: 'CV that offsets the RATE macro — speeds up or slows down the internal master clock that drives both the drum and acid sections.',
+      submode_cv: 'CV that offsets the MODE selector (discrete), switching the T-section between the DRUMS map and the EUCLID pattern generator.',
+      bd_cv: 'CV that offsets the BD density — raises or lowers how often the bass-drum trigger (t1) fires.',
+      sd_cv: 'CV that offsets the SD density — how often the snare trigger (t2) fires.',
+      hh_cv: 'CV that offsets the HH density — how often the hi-hat trigger (t3) fires.',
+      chaos_cv: 'CV that offsets the CHAOS amount — adds or removes randomness/variation in the generated drum pattern (and, in Euclid mode, fill/rotation).',
+      aciddensity_cv: 'CV that offsets the ACID DENSITY — how many of the TB-3PO steps play a note vs. rest.',
+      transpose_cv: 'CV that offsets the TRANSPOSE — shifts the acid sequence up or down (1V/oct-style pitch passthrough on the worklet param).',
+      acidlength_cv: 'CV that offsets the ACID LENGTH — the number of steps in the TB-3PO loop before it repeats.',
+      scale_cv: 'CV that offsets the SCALE selector (discrete) — picks the musical scale the acid pitch CV is quantized to.',
+    },
+    outputs: {
+      t1: 'Grids BD trigger — a rising-edge pulse on each bass-drum hit of the generated drum pattern. Patch into a kick voice.',
+      t2: 'Grids SD trigger — a rising-edge pulse on each snare hit. Patch into a snare voice.',
+      t3: 'Grids HH trigger — a rising-edge pulse on each hi-hat hit. Patch into a hat/percussion voice.',
+      x1: 'TB-3PO master clock — a rising-edge pulse on each acid step. Use it to clock other sequencers/envelopes in sync with the acid line.',
+      x2: 'TB-3PO pitch CV (1V/oct) — the current acid note, quantized to the selected SCALE and shifted by TRANSPOSE. Patch into an oscillator\'s pitch input.',
+      x3: 'TB-3PO note gate — goes high while the current acid step plays a note (and low on rests). Patch into an envelope/VCA to articulate each note.',
+      y: 'TB-3PO accent gate — a pulse on accented acid steps. Patch into a second envelope, a VCA boost, or a filter ping to emphasise accented notes (classic 303 accent).',
+    },
+    controls: {
+      rate: 'Master clock RATE macro (−60..+60 semitones of tempo, i.e. a wide ±5-octave speed range) — the single tempo control for the whole module; everything (drums + acid) runs off this internal clock.',
+      sub_mode: 'T-section MODE — DRUMS (the Grids drum-map engine, steered by MAP X/Y) vs EUCLID (a Euclidean pattern generator, where CHAOS becomes fill/rotation and E.LEN sets the length). Toggle on the card.',
+      map_x: 'Grids drum-map X coordinate (DRUMS mode): scans across the 2-D map of pre-baked drum patterns, morphing the FEEL/style of the three drum channels together.',
+      map_y: 'Grids drum-map Y coordinate (DRUMS mode): the other axis of the drum-pattern map; MAP X and MAP Y together pick a point in the pattern space.',
+      bd_density: 'Bass-drum fill density (0..1) — how busy the BD (t1) trigger pattern is. CV via the BD input.',
+      sd_density: 'Snare fill density (0..1) — how busy the SD (t2) trigger pattern is. CV via the SD input.',
+      hh_density: 'Hi-hat fill density (0..1) — how busy the HH (t3) trigger pattern is. CV via the HH input.',
+      chaos: 'CHAOS (−1..+1) — injects randomness/variation into the drum pattern (its magnitude is the randomness amount). In EUCLID mode negative values add T2 fill and positive values add rotation. CV via the CHAOS input.',
+      euclid_length: 'Euclidean loop LENGTH (1..16 steps) — used only in EUCLID mode; sets the period of the Euclidean drum pattern.',
+      acid_density: 'TB-3PO note DENSITY (0..1) — what fraction of the acid steps play a note rather than rest. CV via the ACID DENS input.',
+      transpose: 'TB-3PO TRANSPOSE (−18..+18 semitones) — shifts the whole acid melody up or down. CV via the TRANSPOSE input.',
+      acid_length: 'TB-3PO loop LENGTH (1..32 steps) — the number of steps in the acid sequence before it repeats. CV via the ACID LEN input.',
+      scale: 'TB-3PO SCALE — the musical scale the acid pitch CV is quantized to (C major / C minor / Pentatonic / Pelog / Raag Bhairav / Raag Shri). Cycle on the card; CV via the SCALE input.',
+      seed_lock: 'SEED LOCK — when on, freezes the current generated pattern seed so the drums + acid stop re-randomizing on each cycle (a repeatable loop); off lets the pattern keep evolving.',
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

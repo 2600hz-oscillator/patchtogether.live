@@ -158,6 +158,22 @@ export const skifreeDef: AudioModuleDef = {
   ],
   params: [],
 
+  docs: {
+    explanation:
+      "The classic SkiFree game wrapped as a hybrid audio/video module — ski downhill, dodge trees, rocks, and snowboarders, and outrun the yeti that eventually chases and EATS you. The skier always heads down the mountain and steers toward a cursor; you supply that cursor with two CV inputs (X and Y), so an LFO, sequencer, JOYSTICK, or envelope plays the slope. (When nothing is patched and the card has focus you can also steer with the real mouse on the canvas; any patched CV overrides the mouse.) The game produces one trigger output — a gate that pulses on every crash or yeti-eat — and one VIDEO output carrying the live game canvas, so SKIFREE can drive VIDEO OUT, BENTBOX, or any video module. It has no parameters and no internal audio (the gate is the sound source you build the patch around); it's single-instance per rack (only one SKIFREE can run at a time).",
+    inputs: {
+      x: "Bipolar CV (−1..+1) → the cursor's X position the skier steers toward. −1 = far left, 0 = straight down the fall line, +1 = far right. Read at scheduler-tick rate (a continuous position, not a gate). Patching it overrides on-card mouse steering.",
+      y: "Bipolar CV (−1..+1) → the cursor's Y position the skier steers toward. −1 = top, 0 = center, +1 = bottom — pulling the cursor lower makes the skier point more steeply downhill (faster). Continuous position, read each tick; patching it overrides the mouse.",
+    },
+    outputs: {
+      gate:
+        "Fires a 10 ms pulse on every crash event — hitting a tree, rock, snowboarder, or a failed jump — AND when the yeti finally eats the skier. A rising-edge trigger you can route to a crash sound, a drum hit, or a sample; the rhythm of pulses tracks how cleanly (or not) the run is going.",
+      out:
+        "The live game canvas as a cross-domain video source — each video frame the skier/mountain image is blitted into the audio→video bridge. Patch it into VIDEO OUT, BENTBOX, or any video module to display or further process the game.",
+    },
+    controls: {},
+  },
+
   async factory(ctx, _node): Promise<AudioDomainNodeHandle> {
     // ---- CV input taps (x / y) -----------------------------------------
     // AnalyserNode tap per axis, read tail-sample each scheduler tick.

@@ -1,0 +1,15 @@
+{
+  "name": "@patchtogether.live/present-shell",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Electron kiosk shell for live multi-projector presentation: a borderless, born-fullscreen window per display loading the live patchtogether.live web app. Removes the browser fullscreen overlay + the per-screen click. Loads the same web app (no runtime bridge).",
+  "license": "AGPL-3.0-or-later",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test parse-features.test.cjs"
+  },
+  "devDependencies": {
+    "electron": "^32.3.3"
+  }
+}

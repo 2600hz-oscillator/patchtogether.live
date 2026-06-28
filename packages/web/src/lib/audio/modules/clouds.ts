@@ -288,6 +288,36 @@ export const cloudsDef: AudioModuleDef = {
     { id: 'freeze',   label: 'Freeze',   defaultValue: 0,   min: 0,   max: 1,  curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A granular texture processor after Mutable Instruments' Clouds. It continuously records the incoming stereo audio into a short ring buffer, then sprays overlapping grains — tiny windowed snippets — out of that buffer to recombine the sound into a shimmering cloud, a smeared pad, a pitch-shifted drone, or a frozen ambient texture. POSITION picks where in the buffer the grains read from, SIZE sets each grain's length, DENSITY sets how many grains overlap, TEXTURE morphs the grain window from soft to hard, PITCH transposes the grains, and FREEZE latches the buffer so the texture keeps playing with no fresh input. BLEND crossfades the grain cloud against the dry signal. Mental model: it turns any source into a controllable swarm of micro-loops.",
+    inputs: {
+      in_l: 'Left channel of the stereo source continuously written into the granular ring buffer (unless FREEZE is engaged, which stops new writes).',
+      in_r: 'Right channel of the stereo source written into the buffer alongside in_l.',
+      pitch: 'V/oct pitch input that sums with the PITCH knob, transposing every grain — patch a sequencer or keyboard here to play the granular cloud melodically.',
+      freeze_gate: 'A gate that toggles FREEZE on each rising edge: high-going flips the buffer between live-recording and frozen (looping the captured snapshot). Use it to capture a moment and hold the texture hands-free.',
+      position_cv: 'CV that displaces the POSITION knob, sweeping the grain read-head through the buffer — modulate it for scanning/scrubbing textures.',
+      size_cv: "CV that displaces the SIZE knob, modulating grain length (short grains = granular stutter, long grains = smooth smear).",
+      pitch_cv: 'CV that displaces the PITCH knob in semitones (separate from the V/oct pitch input, which sums on top).',
+      density_cv: 'CV that displaces the DENSITY knob, modulating how many grains spawn — sweep it for swelling/thinning clouds.',
+      texture_cv: 'CV that displaces the TEXTURE knob, morphing the grain-window shape (soft Hann-like to hard rectangular).',
+      blend_cv: 'CV that displaces the BLEND knob, modulating the dry/wet balance.',
+    },
+    outputs: {
+      out_l: 'Left channel of the overlap-add granular output (the summed, normalised cloud of all active grains), blended with the dry input per BLEND.',
+      out_r: 'Right channel of the granular output, blended with the dry input per BLEND.',
+    },
+    controls: {
+      position: 'Playhead position into the recorded buffer (0..1): where grains are sampled from. Sweep it to scrub through the captured audio; with FREEZE on it scans the held snapshot.',
+      size: 'Grain length (0..1). Short grains give a fine granular stutter/buzz; long grains overlap into a smooth, time-stretched smear.',
+      pitch: 'Per-grain pitch shift in semitones (-24..+24). Sums with the V/oct PITCH input; pitch the grains up for shimmer, down for sub-octave drones.',
+      density: 'How densely grains are triggered (0..1). Low density leaves audible gaps (sparse, pointillist); high density packs grains into a continuous wash.',
+      texture: 'Grain-window shape macro (0..1): morphs the envelope each grain fades in/out with, from a soft rounded window (gentle, smooth) to a harder edge (grittier, more pronounced grain attacks).',
+      blend: 'Dry / wet balance (0..1): 0 passes the input through, 1 is the granular cloud only, between crossfades the two.',
+      freeze: 'Freeze toggle (0/1): when 1, the module stops writing new audio into the buffer and loops the captured snapshot, so the texture sustains indefinitely with no fresh input. Mirrored by the FREEZE button on the card and the FRZ gate input.',
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

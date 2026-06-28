@@ -106,6 +106,26 @@ export const resofilterDef: AudioModuleDef = {
     { id: 'mix',       label: 'Mix',    defaultValue: 1,    min: 0,  max: 1,     curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean multi-mode resonant filter (ported from Resonarium's MultiFilter) built on a zero-delay-feedback state-variable topology, so all of its modes share one filter state and switching between them mid-sound is pop-free. One MODE knob picks the response — Low-pass (attenuate above cutoff), High-pass (attenuate below), Band-pass (peak at cutoff), Notch (dip at cutoff), or Allpass (flat magnitude, phase-rotating) — and the card prints the long-form name of the current mode next to the knob. The input is stereo-aware (independent L/R filter state preserves the image), CUTOFF and RESONANCE are CV-modulatable, and a MIX knob crossfades dry to wet (turn it to 0 for bypass). A general-purpose tone-shaper for both subtractive synth voices and full mixes.",
+    inputs: {
+      audio: "The signal to filter (mono or stereo). A stereo source keeps its left/right separation through independent per-channel filter state; a mono source feeds both channels.",
+      cutoff_cv: "CV control of the CUTOFF frequency — patch an envelope or LFO here for filter sweeps (it adds to the knob position).",
+      reso_cv: "CV control of the RESONANCE — modulate the emphasis at the cutoff for talking/wah-style motion (adds to the knob position).",
+    },
+    outputs: {
+      out_l: "Left filtered output (with the dry/wet MIX applied).",
+      out_r: "Right filtered output. With a mono input it carries the same filtered signal as OUT L.",
+    },
+    controls: {
+      cutoff: "The corner frequency the filter pivots around (20 Hz to 20 kHz, log, default 1 kHz) — what 'above'/'below'/'at cutoff' refers to for the selected mode. The CUTOFF CV input adds to this.",
+      resonance: "Emphasis at the cutoff frequency (0 to 1, default 0.3): higher values sharpen the peak and ring more — subtle by default, pronounced toward 1. The RESO CV input adds to this.",
+      mode: "Picks the filter response among Low-pass, High-pass, Band-pass, Notch, and Allpass (the chosen name is shown on the card). All five share one filter state so changing mode while audio plays is pop-free.",
+      mix: "Dry/wet balance (0 to 1, default fully wet): 1 is the pure filtered signal, 0 is full bypass (the unfiltered input), and in between blends the two.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

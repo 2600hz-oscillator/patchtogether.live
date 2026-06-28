@@ -495,6 +495,49 @@ export const bentboxDef: VideoModuleDef = {
     { id: 'mirrorYGate',        label: 'Mir Y Gate', defaultValue: DEFAULTS.mirrorYGate,       min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "A virtual CRT driven by a hand-bent analog composite line. The patched RGB image is resampled to a 240-line raster, converted to NTSC YIQ, given a modeled chroma-subcarrier phase, run through a triangle wavefolder + soft-clip on the composite \"voltage\", decoded back to RGB, blended with the previous frame (ping-pong feedback, max-blend trails), then painted through a CRT phosphor pipeline: scanline-gap mask (with odd/even field parity), RGB-triad subpixel mask, luma bloom, and RF grain. The result is timing-domain glitch (sync tearing, hue shimmer, ghosting, solarization) rather than pixel mosh. With nothing patched into IN it shows a dim blue idle field so you can see it is alive. Card layout: a resizable 4:3-letterboxed CRT screen over a 4x3 knob grid (timing / chroma+gain / feedback+destruction rows) plus two MIRROR toggle buttons. The image is always letterboxed at the live engine aspect (4:3 by default) and never stretched; the screen has DOM-only chrome (right-click for fullscreen, full-frame in-app expand, and present-on-second-display); OUT is a chainable video pass-through so you can stack BENTBOX into another video processor.",
+    inputs: {
+      in: "Video input — the RGB image bent through the CRT/NTSC pipeline. Unpatched, the screen shows a dim blue idle field.",
+      hsync_drift_cv: "CV (linear) modulates HS Drift — adds high-frequency per-scanline random horizontal jitter.",
+      hsync_loss_cv: "CV (linear) modulates HS Loss — raises the chance a scanline loses lock entirely and tears far sideways.",
+      vsync_drift_cv: "CV (linear) modulates VS Drift — the vertical roll/scroll speed of the picture over time.",
+      chroma_phase_cv: "CV (linear) modulates Hue — rotates the whole image's color in the YIQ plane (bipolar).",
+      chroma_instability_cv: "CV (linear) modulates Shimmer — per-line random chroma-phase wobble for unstable, shimmering color.",
+      feedback_gain_cv: "CV (linear) modulates Feedback — how much of the previous frame is mixed back in (recursive trails).",
+      feedback_delay_cv: "CV (linear) modulates Delay — the sub-frame line offset of the feedback tap, between line- and field-level recursion.",
+      wavefold_cv: "CV (linear) modulates Solarize — the triangle-wavefold amount on the composite voltage (tonal reversal / ghost edges).",
+      scan_wobble_cv: "CV (linear) modulates Wobble — the slow, swept low-frequency horizontal scanline waviness.",
+      bloom_cv: "CV (linear) modulates Bloom — the brightness threshold glow on bright pixels.",
+      noise_cv: "CV (linear) modulates Noise — the RF/film grain added at the end of the chain.",
+      master_gain_cv: "CV (linear) modulates Gain — the composite signal level driving wavefold/soft-clip (overdrive into white smear).",
+      mirror_x_gate: "Gate input (edge / trigger): a rising edge TOGGLES Mirror X on/off. Reads as a rising edge, not a held level — a clock can flip the kaleidoscope rhythmically (hysteresis rise>0.6 / fall<0.4).",
+      mirror_y_gate: "Gate input (edge / trigger): a rising edge TOGGLES Mirror Y on/off. Edge-triggered (hysteresis rise>0.6 / fall<0.4), not level-held.",
+    },
+    outputs: {
+      out: "Video output — the rendered bent CRT field (after mirror fold, NTSC bend, feedback and phosphor pass), chainable into another video processor.",
+    },
+    controls: {
+      hsync_drift: "HS Drift (0..1) — high-frequency per-scanline random horizontal jitter; the beam wanders line to line.",
+      hsync_loss: "HS Loss (0..1) — probability a scanline drops lock and tears hard sideways as a discrete glitch.",
+      vsync_drift: "VS Drift (0..1) — vertical roll/scroll of the whole picture, like a CRT losing vertical hold.",
+      scan_wobble: "Wobble (0..1) — slow, swept low-frequency horizontal waviness across the scanlines.",
+      chroma_phase: "Hue (-1..1) — constant rotation of color in the NTSC YIQ plane; a global hue shift (bipolar).",
+      chroma_instability: "Shimmer (0..1) — per-line random chroma-phase noise for unstable, shimmering color.",
+      feedback_gain: "Feedback (0..1) — amount of the previous frame blended back in (max-blend) for recursive image trails.",
+      feedback_delay: "Delay (0..1) — sub-frame Y offset of the feedback tap, sliding between line-level and field-level recursion.",
+      wavefold: "Solarize (0..1; param id 'wavefold') — triangle wavefold of the composite voltage; reads on screen as tonal reversal/solarization and color tearing.",
+      bloom: "Bloom (0..1, default 0.4) — luma-weighted glow boost on bright pixels; CRTs always have some glow even at rest.",
+      noise: "Noise (0..1, default 0.05) — RF/film grain added last so it doesn't self-reinforce through the feedback path.",
+      master_gain: "Gain (0..2, default 1) — composite signal level into the wavefold/soft-clip stage; higher overdrives into white smear.",
+      mirrorX: "Mirror X (0/1, default off; MIRROR X button) — kaleidoscope fold of the left half over the right. Also toggled by a rising edge on mirror_x_gate.",
+      mirrorY: "Mirror Y (0/1, default off; MIRROR Y button) — kaleidoscope fold of the top half over the bottom (both on = quadrant fold). Also toggled by a rising edge on mirror_y_gate.",
+      mirrorXGate: "Hidden synthetic gate param written by the mirror_x_gate CV bridge (raw 0..1). No knob; the module edge-detects its rising edge to flip Mirror X.",
+      mirrorYGate: "Hidden synthetic gate param written by the mirror_y_gate CV bridge (raw 0..1). No knob; the module edge-detects its rising edge to flip Mirror Y.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

@@ -68,6 +68,41 @@ export const aquaTankDef: AudioModuleDef = {
     { id: 'outLevel', label: 'Out',   defaultValue: 0.6,  min: 0,  max: 1,    curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A 4-channel Hadamard feedback-delay-network (FDN) — a feedback matrix that takes four audio inputs, runs them through delay lines whose outputs are mixed back into each other through a Hadamard matrix, and recirculates them. Depending on settings it behaves as a dense reverb, a metallic resonator, a chorus, or a self-oscillating feedback-resonance instrument. Each channel has its own feedback ratio (F1..F4) and a direct out, plus there's a stereo MIX bus that spreads the four channels across the field. TILT shapes the LF/HF balance in the loop, DAMP rolls off the highs, CROSS sets how strongly channels couple through the matrix, and SPREAD/OUT shape the stereo mix. It's one of the three ATLANTIS-PATCH support modules but stands alone as a reverb/feedback box.",
+    inputs: {
+      in1: 'Audio input to channel 1 of the Hadamard FDN matrix.',
+      in2: 'Audio input to channel 2.',
+      in3: 'Audio input to channel 3.',
+      in4: 'Audio input to channel 4. (Patch fewer than four — empty channels still resonate via the matrix coupling.)',
+      fb1_cv: 'CV that displaces the F1 feedback-ratio knob, modulating channel 1\'s loop gain (resonance / decay).',
+      fb2_cv: "CV that displaces the F2 knob, modulating channel 2's feedback ratio.",
+      fb3_cv: "CV that displaces the F3 knob, modulating channel 3's feedback ratio.",
+      fb4_cv: "CV that displaces the F4 knob, modulating channel 4's feedback ratio.",
+      tilt_cv: 'CV that displaces the TILT knob, modulating the LF/HF balance inside the feedback loop.',
+    },
+    outputs: {
+      out1: "Channel 1's direct post-matrix output — use these four for parallel/multi-tap routing of the resonator.",
+      out2: "Channel 2's direct post-matrix output.",
+      out3: "Channel 3's direct post-matrix output.",
+      out4: "Channel 4's direct post-matrix output.",
+      mix_l: 'Left side of the stereo MIX bus: out1..4 summed and panned across the field by SPREAD, scaled by OUT.',
+      mix_r: 'Right side of the stereo MIX bus.',
+    },
+    controls: {
+      fb1: "Channel 1 feedback ratio (0..0.95): how much of the loop recirculates. Low = short decay / subtle ambience; near 0.95 = long ringing resonance approaching self-oscillation.",
+      fb2: 'Channel 2 feedback ratio (0..0.95).',
+      fb3: 'Channel 3 feedback ratio (0..0.95).',
+      fb4: 'Channel 4 feedback ratio (0..0.95).',
+      tilt: 'LF/HF balance in the loop (-1..+1): negative tilts the recirculating energy toward the lows (darker, boomier resonance), positive toward the highs (brighter, more metallic).',
+      damp: 'High-frequency damping inside the matrix (0..1): higher values bleed off the highs each pass, taming harshness and shortening bright resonances.',
+      crossMix: 'Inter-channel matrix coupling (0..1): how strongly the four channels feed into each other through the Hadamard mix. Low keeps channels independent (parallel combs); high binds them into a dense, diffuse reverb.',
+      spread: 'Per-channel stereo-pan width on the MIX bus (0..1): 0 collapses the four channels to center, 1 spreads them wide across the stereo field.',
+      outLevel: 'Output gain of the stereo MIX bus (0..1). The direct out1..4 taps are unaffected by this.',
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

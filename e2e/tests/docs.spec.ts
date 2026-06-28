@@ -29,6 +29,36 @@ test('docs modules gallery loads with diagrams', async ({ page }) => {
   await expect.poll(async () => diagrams.count()).toBeGreaterThanOrEqual(19);
 });
 
+test('docs catalog surfaces the custom guide pages (grid-clip-launcher is reachable)', async ({
+  page,
+}) => {
+  // The catalog is built from the AUDIO-only manifest, so the hand-written
+  // walkthrough pages at custom routes (grid-clip-launcher, the Launchpad guide,
+  // the video mappers, …) would be orphaned without an explicit "guides" section.
+  await page.goto('/docs/modules');
+  const guides = page.locator('[data-testid="guides"]');
+  await expect(guides).toBeVisible();
+  // The monome grid clip-launcher guide is linked here and navigates.
+  const gridLink = guides.getByRole('link', { name: /clip player \+ monome grid/i });
+  await expect(gridLink).toBeVisible();
+  await gridLink.click();
+  await expect(page).toHaveURL(/\/docs\/modules\/grid-clip-launcher\/?$/);
+  await expect(
+    page.getByRole('heading', { name: 'Clip player + monome grid', level: 1 }),
+  ).toBeVisible();
+  // …and the guide links back to the clip player module reference page.
+  await expect(page.getByRole('link', { name: /clip player module page/i })).toBeVisible();
+});
+
+test('clip player module page surfaces the grid-clip-launcher guide callout', async ({ page }) => {
+  // The auto `[id]` page for `clipplayer` must point at its illustrated guide via
+  // the MODULE_GUIDES callout (the forward cross-link the owner asked for).
+  await page.goto('/docs/modules/clipplayer');
+  const guideLink = page.locator('[data-testid="module-guide-link"]');
+  await expect(guideLink).toBeVisible();
+  await expect(guideLink).toHaveAttribute('href', '/docs/modules/grid-clip-launcher');
+});
+
 test('docs per-module page renders its I/O (sequencer)', async ({ page }) => {
   await page.goto('/docs/modules/sequencer');
   await expect(page.getByRole('heading', { name: 'Sequencer' })).toBeVisible();
@@ -50,16 +80,23 @@ test('docs per-module page renders its I/O (sequencer)', async ({ page }) => {
   await expect(page.locator('[data-testid="io-inputs"]')).toContainText('clock');
 });
 
-test('docs per-module page falls back to the I/O diagram + port counts (no face)', async ({
-  page,
-}) => {
-  // analogVco has no generated numbered face, so the page renders the abstract
-  // IoDiagram + port-count summary — covers the fallback render path.
-  await page.goto('/docs/modules/analogVco');
-  await expect(page.getByRole('heading', { name: 'Analog VCO' })).toBeVisible();
-  await expect(page.locator('[data-testid="module-diagram"] [data-testid="io-diagram"]')).toBeVisible();
-  await expect(page.locator('[data-testid="input-count"]')).toContainText(/\d+ inputs/);
-  await expect(page.locator('[data-testid="output-count"]')).toContainText(/\d+ outputs/);
+test.describe('no-JS / SSR fallback', () => {
+  // The live virtual-module is onMount-gated (browser-only), so with JavaScript
+  // DISABLED the prerendered fallback always renders. This verifies the static
+  // IoDiagram + port-count path independently of whether the module is on the
+  // interactive allowlist — analogVco IS interactive now, so a JS-on visit would
+  // mount the live card and (correctly) hide the diagram. Testing the no-JS path
+  // keeps this durable as the rollout promotes more modules.
+  test.use({ javaScriptEnabled: false });
+  test('docs per-module page falls back to the I/O diagram + port counts (no face, no JS)', async ({
+    page,
+  }) => {
+    await page.goto('/docs/modules/analogVco');
+    await expect(page.getByRole('heading', { name: 'Analog VCO' })).toBeVisible();
+    await expect(page.locator('[data-testid="module-diagram"] [data-testid="io-diagram"]')).toBeVisible();
+    await expect(page.locator('[data-testid="input-count"]')).toContainText(/\d+ inputs/);
+    await expect(page.locator('[data-testid="output-count"]')).toContainText(/\d+ outputs/);
+  });
 });
 
 test('docs page is not behind the Clerk auth wall', async ({ page }) => {

@@ -241,6 +241,21 @@ export const midiOutBuddyDef: AudioModuleDef = {
   // No AudioParam knobs — channel + device are discrete and live in node.data.
   params: [],
 
+  docs: {
+    explanation:
+      "The OUTPUT complement of MIDI-CV-BUDDY: it reads gate / pitch / velocity CV from inside the rack and SENDS MIDI notes out to a hardware synth on a chosen device + channel. Mental model: anything in the rack that produces a gate and a pitch — a SEQUENCER, an envelope, an LFO-driven gate — can now play an external instrument. On each rising edge of GATE it sends a MIDI Note On using the pitch + velocity sampled at that instant; on the falling edge it sends Note Off for whatever note it actually started, so a glide under a held gate never strands the wrong note. The output device and MIDI channel are discrete card settings saved in the patch (no audio-side knobs), and Web MIDI permission is requested only when you click Connect. It defends against stuck notes: on dispose and on a device change it sends an all-notes-off plus an explicit Note Off for any tracked note.",
+    inputs: {
+      gate:
+        "The note trigger: a rising edge sends a MIDI Note On (sampling PITCH and VELOCITY at that instant), and the following falling edge sends the matching Note Off. Patch a SEQUENCER's gate or an envelope's gate here to drive notes out to the external synth.",
+      pitch:
+        "The note pitch as 1V/octave CV (0V = C4 = MIDI 60), quantized to the nearest semitone to pick the MIDI note number. It is sampled at the moment of the gate's rising edge, so the note that gets sent is whatever pitch was present when the gate opened (later drift under a held gate doesn't re-trigger).",
+      velocity:
+        "How hard to strike the outgoing note, as 0..1 CV mapped to MIDI velocity 1..127 (the floor is clamped to 1 because a Note On with velocity 0 is, by spec, a Note Off). Sampled at the rising edge alongside pitch; leave it unpatched for a default level.",
+    },
+    outputs: {},
+    controls: {},
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // ---------------- Input taps (gate / pitch / velocity) ----------------
     //

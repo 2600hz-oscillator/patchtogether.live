@@ -132,6 +132,64 @@ export const moog960Def: AudioModuleDef = {
     { id: 'rate', label: 'Rate', defaultValue: 2, min: 0.1, max: 20, curve: 'log', units: 'Hz' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 960 Sequential Controller — the System 55's analog step sequencer. It's a 3-row × 8-column grid of knobs: a single shared column pointer sweeps the 8 columns (steps), and on each advance every row outputs its current column's knob value as a held control voltage on ROW 1/2/3 OUT. So one pass of the sequence produces three parallel CV streams (e.g. ROW 1 → oscillator pitch, ROW 2 → filter cutoff, ROW 3 → VCA level), all stepping in lockstep. The pointer advances on each rising edge of an external CLOCK, or, when CLOCK is unpatched, at the internal RATE. Per-row RANGE switches scale that row's CV (×1/×2/×4), and a per-COLUMN MODE switch can make a step SKIP (jump past it) or STOP (halt holding that column) for non-linear patterns. A clock pulse is emitted on CLOCK OUT each advance for chaining. It auto-runs on placement. Mental model: three knob-banks read out a column at a time, like three sequencers sharing one playhead. Drive it from a clock (or its own internal rate) and patch the row outputs as stepped modulation/pitch.",
+    inputs: {
+      clock:
+        "External clock: each rising edge advances the column pointer exactly one step. While anything is patched here the internal RATE is ignored and the incoming pulses set the pace; unpatch to fall back to the RATE knob.",
+      start: "A rising edge starts the sequencer running from column 1 (re-zeros the pointer and resumes advancing).",
+      stop: "A rising edge halts the sequencer; the pointer and the three row CVs hold their last column's values (an analog hold, not a reset).",
+    },
+    outputs: {
+      row1: "Row 1's stepped control voltage: the current column's ROW 1 knob value, scaled by RANGE 1, held until the next advance. Patch it as pitch CV or any per-step modulation.",
+      row2: "Row 2's stepped control voltage: the current column's ROW 2 knob value × RANGE 2, held between steps.",
+      row3: "Row 3's stepped control voltage: the current column's ROW 3 knob value × RANGE 3, held between steps.",
+      clock_out: "A short (~10 ms) pulse fired on every column advance — the 'I just stepped' signal. Patch it into another sequencer's clock to chain them in lockstep.",
+    },
+    controls: {
+      // Step pots: 3 rows × 8 columns. Each holds that step's level for its row.
+      r1s1: "Row 1, step 1 level: the CV row 1 outputs when the pointer is on column 1 (0..1, before the RANGE 1 multiplier).",
+      r1s2: "Row 1, step 2 level — row 1's output on column 2.",
+      r1s3: "Row 1, step 3 level — row 1's output on column 3.",
+      r1s4: "Row 1, step 4 level — row 1's output on column 4.",
+      r1s5: "Row 1, step 5 level — row 1's output on column 5.",
+      r1s6: "Row 1, step 6 level — row 1's output on column 6.",
+      r1s7: "Row 1, step 7 level — row 1's output on column 7.",
+      r1s8: "Row 1, step 8 level — row 1's output on column 8.",
+      r2s1: "Row 2, step 1 level: the CV row 2 outputs on column 1 (0..1, before RANGE 2).",
+      r2s2: "Row 2, step 2 level — row 2's output on column 2.",
+      r2s3: "Row 2, step 3 level — row 2's output on column 3.",
+      r2s4: "Row 2, step 4 level — row 2's output on column 4.",
+      r2s5: "Row 2, step 5 level — row 2's output on column 5.",
+      r2s6: "Row 2, step 6 level — row 2's output on column 6.",
+      r2s7: "Row 2, step 7 level — row 2's output on column 7.",
+      r2s8: "Row 2, step 8 level — row 2's output on column 8.",
+      r3s1: "Row 3, step 1 level: the CV row 3 outputs on column 1 (0..1, before RANGE 3).",
+      r3s2: "Row 3, step 2 level — row 3's output on column 2.",
+      r3s3: "Row 3, step 3 level — row 3's output on column 3.",
+      r3s4: "Row 3, step 4 level — row 3's output on column 4.",
+      r3s5: "Row 3, step 5 level — row 3's output on column 5.",
+      r3s6: "Row 3, step 6 level — row 3's output on column 6.",
+      r3s7: "Row 3, step 7 level — row 3's output on column 7.",
+      r3s8: "Row 3, step 8 level — row 3's output on column 8.",
+      // Per-row range switches.
+      range1: "Row 1 RANGE: scales row 1's whole output — ×1 (0..1), ×2 (0..2), or ×4 (0..4). Use it to widen ROW 1's CV span (e.g. more octaves of pitch).",
+      range2: "Row 2 RANGE: ×1 / ×2 / ×4 multiplier on row 2's output span.",
+      range3: "Row 3 RANGE: ×1 / ×2 / ×4 multiplier on row 3's output span.",
+      // Per-column mode switches.
+      mode1: "Column 1 MODE: NORMAL (play this step), SKIP (jump straight past it), or STOP (halt holding this column when the pointer lands here).",
+      mode2: "Column 2 MODE: NORMAL / SKIP / STOP.",
+      mode3: "Column 3 MODE: NORMAL / SKIP / STOP.",
+      mode4: "Column 4 MODE: NORMAL / SKIP / STOP.",
+      mode5: "Column 5 MODE: NORMAL / SKIP / STOP.",
+      mode6: "Column 6 MODE: NORMAL / SKIP / STOP.",
+      mode7: "Column 7 MODE: NORMAL / SKIP / STOP.",
+      mode8: "Column 8 MODE: NORMAL / SKIP / STOP — set this to make column 8 the loop's last step (STOP) or to shorten the run (earlier STOP/SKIP columns).",
+      rate: "Internal clock speed in Hz (steps per second), used only when nothing is patched into CLOCK IN; an external clock overrides it.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
 

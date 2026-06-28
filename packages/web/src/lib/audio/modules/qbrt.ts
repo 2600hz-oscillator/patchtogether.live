@@ -76,6 +76,35 @@ export const qbrtDef: AudioModuleDef = {
     { id: 'pingDecay', label: 'Ping', defaultValue: 0.15, min: 0.005, max: 0.5,   curve: 'log',    units: 's' },
   ],
 
+  docs: {
+    explanation:
+      "A stereo resonant filter with a 'ping' excitation input — the project's big-knob VCF, also used as a pluck/drum resonator. Each channel runs a state-variable filter whose mode crossfades continuously between low-pass and band-pass, with a big resonance (Q) control that can sing right up to self-oscillation. The twist is the PING input: a trigger fires a short vactrol-shaped impulse into the filter, so it rings at its cutoff frequency for a moment and then settles — patch a drum sequencer into PING and sweep CUTOFF and you get kick/tom-style pluck-resonator sounds with no oscillator at all. Ignore PING and it's an ordinary stereo filter you patch audio through. (This is the resonator RIOTGIRLS uses internally.)",
+    inputs: {
+      L: "Left audio input — the signal fed through the left filter channel.",
+      R: "Right audio input — the signal fed through the right filter channel.",
+      ping:
+        "Ping trigger: each rising edge fires a short vactrol-shaped excitation impulse into both channels, making the filter ring at its cutoff frequency (a pluck). Drive it from a clock or drum sequencer for resonator-style drum hits; the PING DECAY control sets how long each ring lasts.",
+      cutoff:
+        "CV that displaces the CUTOFF (center frequency) around the knob, log-scaled so ±1 sweeps about ±5 octaves — patch an envelope or LFO here for filter sweeps, or to pitch the ping resonance.",
+      resonance:
+        "CV that displaces the RESONANCE (Q) around the knob, so a modulator can push the filter toward or away from self-oscillation.",
+      mode:
+        "CV that picks the filter MODE (low-pass vs. band-pass) in discrete steps — useful for switching response under gate control.",
+      pingDecay:
+        "CV that displaces the PING DECAY (ring length) around the knob, log-scaled — modulate it to make ping hits longer or shorter per trigger.",
+    },
+    outputs: {
+      L: "Left filtered output — the left channel after the resonant filter (and any ping ring).",
+      R: "Right filtered output — the right channel after the resonant filter (and any ping ring).",
+    },
+    controls: {
+      cutoff: "CUTOFF — the filter's center/corner frequency (20 Hz–20 kHz); also the pitch the filter rings at when PING fires.",
+      resonance: "RESONANCE — the filter Q: higher values sharpen the peak and emphasize the ring, approaching self-oscillation near the top.",
+      mode: "MODE — crossfades the filter response continuously from low-pass (0) to band-pass (1); band-pass narrows the passband around CUTOFF for a more vocal/ringing tone.",
+      pingDecay: "PING DECAY — how long the ring lasts after each PING trigger (5 ms–0.5 s); short for clicky percussive plucks, long for sustained resonant tones.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const f = await instantiateFaustModule(ctx, { name: 'qbrt', wasmUrl, metaUrl, workletUrl });
     const merger = ctx.createChannelMerger(3);

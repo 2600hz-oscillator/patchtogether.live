@@ -72,6 +72,20 @@ export const scalerDef: AudioModuleDef = {
     { id: 'amount', label: 'AMOUNT', defaultValue: 1, min: 0.1, max: 10, curve: 'log' },
   ],
 
+  docs: {
+    explanation:
+      "A one-knob signal multiplier — a clean gain trim that can both CUT and BOOST. The single AMOUNT knob multiplies whatever passes through by a factor from ×0.1 (a tenth) up to ×10 (ten times): out = in · amount. Unlike a passive attenuator (which only cuts, 0..1), SCALER can also amplify, and unlike a VCA it has no CV input — it is a fixed, set-and-forget trim. It works on EITHER signal class: the input accepts audio, CV, pitch or gate cables, and the output adopts the cable type of whatever is patched in, so scaling a CV stays CV through the system (this is what makes the knob actually do something at a cross-domain destination). There is no DSP worklet — it is a single Web Audio GainNode, sample-accurate.",
+    inputs: {
+      in: "The signal to scale. Typed audio but widened to accept CV / pitch / gate cables too, so the same multiply works on a control voltage, a pitch line or an audio bus — it is just a gain.",
+    },
+    outputs: {
+      out: "The scaled signal, out = in · amount. Type-transparent: the emitted cable type adopts whatever is patched into IN (a CV source makes this emit CV, an audio source makes it emit audio); with nothing patched it presents as an audio jack.",
+    },
+    controls: {
+      amount: "The scale factor, on a log fader so unity (×1.0) sits at the knob CENTER and the taper is symmetric: full left = ×0.1 (attenuate to a tenth), full right = ×10 (boost ten-fold). Defaults to ×1.0, so a freshly spawned SCALER is a transparent direct patch until you move it.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Pure Web Audio: one GainNode whose gain IS the AMOUNT. in -> gain -> out.
     const gain = ctx.createGain();

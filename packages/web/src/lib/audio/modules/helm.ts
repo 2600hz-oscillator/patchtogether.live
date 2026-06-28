@@ -365,6 +365,116 @@ export const helmDef: AudioModuleDef = {
     { id: 'spread',      label: 'Spr',         defaultValue: 0.3,   min: 0,   max: 1,     curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A full polyphonic subtractive (analog-style) synth voice — a port of Matt Tytel's Helm. The signal chain per voice is: two morphing oscillators (each saw/square/triangle/sine, with their own tune, transpose, unison stack and detune) plus a sub-oscillator and a noise source are mixed, run through one state-variable multimode resonant filter (low-pass / band-pass / high-pass, 12 or 24 dB/oct), and shaped by an amplitude VCA. Three dedicated ADSR envelopes drive it: the AMP envelope shapes loudness, the FILTER envelope sweeps the filter cutoff by an amount you set, and the MOD envelope is a spare modulation source. Two LFOs and a built-in 16-step sequencer add motion. Mental model: hold notes (via MIDI or a patched gate) and each note grabs one of up to 8 voices; voiceCount sets how many notes can sound at once, and voices are stolen oldest-first when you run out. v1 pre-wires the modulators to musical destinations (LFO1→cutoff, LFO2→osc2 pitch, MOD env→osc1 pitch, step sequencer→osc2 transpose) rather than exposing Helm's full mod matrix.",
+    inputs: {
+      pitch_cv:
+        "Monophonic V/oct pitch for the fallback CV/gate path used when no MIDI device is connected: while the GATE input is high it plays a single voice at midi note 60 + (pitch_cv × 12 semitones). MIDI note input (via the gear-icon device picker) takes priority and drives true polyphony; this CV path is a single-note fallback for patching from a sequencer or keyboard CV.",
+      gate:
+        "Note on/off gate for the fallback CV/gate path (level-sensitive): a rising edge starts a note at the current pitch_cv and a falling edge releases it. It is ALSO the sequencer's clock — every rising edge here advances the built-in step sequencer one step (and re-attacks the envelopes), so the same gate that plays notes also walks the pattern.",
+      midi_in:
+        "A presentation-only port that exists so MIDI shows up as a first-class cable on the panel; it carries no audio or CV and nothing is read from it. Actual MIDI flows through the Web MIDI API (open the gear icon to pick a device and receive channels), not through this cable.",
+      seq_reset:
+        "Reset gate for the built-in step sequencer (trigger): a rising edge snaps the step pointer back so the next gate advance lands on step 0. Honored whether or not the sequencer is switched on, so you can sync the pattern's start to a clock or another sequencer.",
+    },
+    outputs: {
+      out_l:
+        "Left channel of the stereo mix of all sounding voices. The stereo image comes from spreading each oscillator's unison voices across the field by the SPR (spread) amount; with no unison and spread at 0 the output is effectively centered/mono.",
+      out_r:
+        "Right channel of the stereo mix of all sounding voices (the spread partner of out_l). Patch both out_l and out_r to keep the unison/pan stereo image.",
+    },
+    controls: {
+      voiceCount:
+        "Polyphony cap (1–8): the maximum number of notes that can sound simultaneously. When more notes are held than voices available, the synth steals a voice (a releasing voice first, otherwise the oldest-held note). Set it to 1 for a strictly monophonic patch.",
+      volume: "Master output level for the whole synth (0–2, default 0.7); above 1 it boosts past unity.",
+
+      osc1Wave:
+        "Oscillator 1 waveform, morphing across 0 = saw, 1 = square, 2 = triangle, 3 = sine (the knob crossfades between adjacent shapes at in-between values).",
+      osc1Trans: "Oscillator 1 coarse transpose in semitones (−24 to +24), shifting it by whole steps relative to the played note.",
+      osc1Tune: "Oscillator 1 fine tune in cents (−100 to +100) for slight detuning or beating against osc 2.",
+      osc1Unison: "Number of stacked unison copies of oscillator 1 (1–7); higher counts thicken the tone and, with detune, widen it.",
+      osc1Detune: "How far apart the oscillator 1 unison copies are spread in cents (0–50); 0 stacks them in tune, higher values fatten and detune the stack. No effect when unison is 1.",
+      osc1Vol: "Oscillator 1 level in the pre-filter mix (0–1).",
+
+      osc2Wave: "Oscillator 2 waveform, morphing across 0 = saw, 1 = square, 2 = triangle, 3 = sine, just like osc 1 (defaults to square).",
+      osc2Trans: "Oscillator 2 coarse transpose in semitones (−24 to +24) — e.g. +12 for an octave-up layer.",
+      osc2Tune: "Oscillator 2 fine tune in cents (−100 to +100); defaults to +7 c so the two oscillators beat slightly out of the box.",
+      osc2Unison: "Number of stacked unison copies of oscillator 2 (1–7).",
+      osc2Detune: "Cents spread between oscillator 2's unison copies (0–50); no effect when unison is 1.",
+      osc2Vol: "Oscillator 2 level in the pre-filter mix (0–1).",
+
+      subWave: "Sub-oscillator waveform (0 = saw, 1 = square, 2 = triangle, 3 = sine; defaults to sine). The sub plays two octaves below the note for low-end weight.",
+      subVol: "Sub-oscillator level in the mix (0–1).",
+      noiseVol: "White-noise level in the mix (0–1, default 0) — adds breath/hiss or, through a resonant filter, percussive/wind textures.",
+
+      filterCutoff: "Filter cutoff frequency (20 Hz–20 kHz, log) — the corner where the filter starts acting. The filter envelope and LFO 1 add to this around the knob value.",
+      filterRes: "Filter resonance / emphasis at the cutoff (0.5–16); higher values peak harder and can self-oscillate-like ring.",
+      filterBlend: "Continuously crossfades the filter response across 0 = low-pass, 1 = band-pass, 2 = high-pass, so in-between values are blends of two modes (labeled MODE on the panel).",
+      filterStyle: "Filter slope / pole count: 0 = 12 dB/oct (2-pole, gentler) and 1 = 24 dB/oct (4-pole, steeper, more aggressive). Labeled POLE.",
+      filterDrive: "Pre-filter drive/gain (0.5–6) pushing harder into the filter for added saturation and bite.",
+      filterKeyTrack: "How much the cutoff follows the played pitch (−1 to +1): positive opens the filter as you play higher (keeping brightness consistent up the keyboard), negative inverts it, 0 is no tracking.",
+
+      ampAttack: "Amplitude envelope attack time in seconds (0–8): how quickly each note fades in on note-on.",
+      ampDecay: "Amplitude envelope decay time in seconds (0–8): how quickly the level falls from peak to the sustain level after the attack.",
+      ampSustain: "Amplitude envelope sustain level (0–1): the steady loudness held while the note is on, after the decay.",
+      ampRelease: "Amplitude envelope release time in seconds (0–8): how long the note takes to fade out after note-off.",
+
+      filAttack: "Filter envelope attack time in seconds (0–8): how fast the filter-env contour rises on note-on (its effect on cutoff is scaled by F Dpth).",
+      filDecay: "Filter envelope decay time in seconds (0–8): fall from the envelope's peak to its sustain.",
+      filSustain: "Filter envelope sustain level (0–1) held while the note is on (default 0, so by default the filter sweep decays away).",
+      filRelease: "Filter envelope release time in seconds (0–8) after note-off.",
+      filEnvDepth: "How much (and which direction) the filter envelope modulates the cutoff (−1 to +1, labeled F Dpth): positive sweeps the cutoff up with the envelope, negative sweeps it down, 0 disables the filter envelope's effect.",
+
+      modAttack: "Mod envelope attack time in seconds (0–8). The mod envelope is a spare ADSR; in v1 it is pre-wired to oscillator-1 pitch (depth set by M Dpth).",
+      modDecay: "Mod envelope decay time in seconds (0–8).",
+      modSustain: "Mod envelope sustain level (0–1, default 0).",
+      modRelease: "Mod envelope release time in seconds (0–8) after note-off.",
+      modEnvDepth: "How much the mod envelope modulates its destination — oscillator-1 pitch in v1 — over ±12 semitones (−1 to +1, labeled M Dpth); 0 disables it.",
+
+      lfo1Wave: "LFO 1 waveform (0 = saw, 1 = square, 2 = triangle, 3 = sine, default sine).",
+      lfo1Freq: "LFO 1 rate in Hz (0.01–30, log).",
+      lfo1Amp: "LFO 1 depth (0–1): how much LFO 1 modulates its destination — the filter cutoff in v1 (0 = off).",
+      lfo2Wave: "LFO 2 waveform (0 = saw, 1 = square, 2 = triangle, 3 = sine, default sine).",
+      lfo2Freq: "LFO 2 rate in Hz (0.01–30, log, default 4 Hz).",
+      lfo2Amp: "LFO 2 depth (0–1): how much LFO 2 modulates its destination — oscillator-2 pitch (±1 semitone) in v1 (0 = off).",
+
+      stepNumSteps: "Number of active steps in the built-in step sequencer (1–16) before the pattern loops.",
+      stepRate: "Step sequencer rate knob (0.1–30 Hz). Retained from v1's free-running mode; in the current gate-clocked mode the sequencer advances on GATE rising edges, so this is effectively inactive.",
+      stepSmooth: "Glide/smoothing between step values (0–1): 0 jumps instantly between steps, higher values slew the modulation for portamento-like motion.",
+      stepDepth: "How much the step sequencer modulates its destination — oscillator-2 transpose over ±12 semitones (−1 to +1, labeled Amt); 0 disables it.",
+
+      spread:
+        "Stereo width (0–1): how far each oscillator's unison voices are panned across the stereo field. 0 collapses toward center/mono; higher values widen the image.",
+
+      // Static card controls. These have no param/family of their own, so each
+      // is declared as a single-member control family below (kind 'other') and
+      // keyed here as a `<familyId>-{n}` template (a lone button substitutes
+      // nothing for {n}).
+      "helm-gear-btn-{n}": "Gear icon (header) — opens the MIDI settings panel: pick the input device and which MIDI channels to receive on, and view the last note / active-voice count.",
+      "helm-seq-onoff-{n}": "SEQ ON/OFF — switches the built-in step sequencer on or off. When off the pattern contributes no modulation and doesn't advance; default off.",
+      "helm-seq-reset-{n}": "RST — resets the step pointer so the next gate advance starts the pattern at step 0 (same effect as a rising edge on the SEQ RESET input).",
+      "helm-step-{n}":
+        "Step {n} value slider — sets this step's modulation amount (−1..+1). With the sequencer on, the step values are walked one-per-gate and sent to the sequencer's destination (osc-2 transpose, scaled by St Dpth/Amt).",
+    },
+  },
+
+  controlFamilies: [
+    {
+      id: 'helm-step',
+      label: 'Step sequencer value slider',
+      kind: 'step-grid',
+      testidPrefix: 'helm-step',
+      countParam: 'stepNumSteps',
+    },
+    // Single static buttons (no param/family of their own). Declared as
+    // one-member families so the docs gate can key authored prose to them; the
+    // testidPrefix is grep-verified against the card by the lint.
+    { id: 'helm-gear-btn',  label: 'MIDI settings',     kind: 'other', testidPrefix: 'helm-gear-btn' },
+    { id: 'helm-seq-onoff', label: 'Step sequencer on', kind: 'other', testidPrefix: 'helm-seq-onoff' },
+    { id: 'helm-seq-reset', label: 'Step sequencer rst', kind: 'other', testidPrefix: 'helm-seq-reset' },
+  ],
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

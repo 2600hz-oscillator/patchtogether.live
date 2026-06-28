@@ -219,6 +219,68 @@ export const stagesDef: AudioModuleDef = {
     { id: 'link4', label: 'L5', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A six-segment cascadable function generator after Mutable Instruments' Stages — six column strips, each an independent envelope/CV segment with its own TYPE, two knobs, a GATE input and a CV output. Each segment's TYPE button cycles RAMP (a timed slope, the knob sets TIME), HOLD (a settled level, the knob sets LEVEL) or STEP (a stepped level/sample-and-hold). The real power is LINKING: the five toggles between adjacent columns chain segments into one multi-stage shape, so e.g. a RAMP+HOLD+RAMP chain becomes a single attack-hold-release envelope. A linked chain fires from its first segment's gate, then each subsequent linked segment takes over in turn as the previous one finishes; every segment in the chain reads the chain's current value out its own CV output, so you can tap any stage. The global TRIG fires every chain's leader at once. Unlinked segments stay independent — six separate one-segment envelopes/CVs.",
+    inputs: {
+      trig:
+        "Global trigger: a rising edge fires the leader (first segment) of every chain group at once, so one pulse re-triggers all six segments / all linked envelopes together.",
+      gate0:
+        "Segment 1's gate: a rising edge fires this segment (or, when it's a chain leader, the whole linked chain that starts here). For a HOLD/STEP segment the held level latches; for a RAMP it starts the timed slope.",
+      gate1:
+        "Segment 2's gate — fires segment 2 (or the chain it leads) on a rising edge. When segment 2 is linked to segment 1, segment 1's chain hands off to it automatically and this input is the manual re-fire.",
+      gate2: "Segment 3's gate — a rising edge fires segment 3, or the linked chain it leads.",
+      gate3: "Segment 4's gate — a rising edge fires segment 4, or the linked chain it leads.",
+      gate4: "Segment 5's gate — a rising edge fires segment 5, or the linked chain it leads.",
+      gate5: "Segment 6's gate — a rising edge fires segment 6, or the linked chain it leads.",
+      primary0_cv: "CV that displaces segment 1's PRIMARY knob (its TIME for RAMP, or LEVEL for HOLD/STEP) around the knob position.",
+      primary1_cv: "CV that displaces segment 2's PRIMARY knob (TIME or LEVEL) around the knob position.",
+      primary2_cv: "CV that displaces segment 3's PRIMARY knob (TIME or LEVEL) around the knob position.",
+      primary3_cv: "CV that displaces segment 4's PRIMARY knob (TIME or LEVEL) around the knob position.",
+      primary4_cv: "CV that displaces segment 5's PRIMARY knob (TIME or LEVEL) around the knob position.",
+      primary5_cv: "CV that displaces segment 6's PRIMARY knob (TIME or LEVEL) around the knob position.",
+      shape0_cv: "CV that displaces segment 1's SHAPE knob (slope curve for RAMP, portamento glide for HOLD/STEP).",
+      shape1_cv: "CV that displaces segment 2's SHAPE knob (slope curve or portamento).",
+      shape2_cv: "CV that displaces segment 3's SHAPE knob (slope curve or portamento).",
+      shape3_cv: "CV that displaces segment 4's SHAPE knob (slope curve or portamento).",
+      shape4_cv: "CV that displaces segment 5's SHAPE knob (slope curve or portamento).",
+      shape5_cv: "CV that displaces segment 6's SHAPE knob (slope curve or portamento).",
+    },
+    outputs: {
+      out0: "Segment 1's CV output — its own value when unlinked, or the current value of the chain it belongs to when linked (so any segment in a chain mirrors the chain's running envelope).",
+      out1: "Segment 2's CV output — its own value, or the value of the chain it's linked into.",
+      out2: "Segment 3's CV output — its own value, or the value of the chain it's linked into.",
+      out3: "Segment 4's CV output — its own value, or the value of the chain it's linked into.",
+      out4: "Segment 5's CV output — its own value, or the value of the chain it's linked into.",
+      out5: "Segment 6's CV output — its own value, or the value of the chain it's linked into.",
+    },
+    controls: {
+      type0: "Segment 1's TYPE — cycles RAMP (a timed slope, the knob below becomes TIME), HOLD (a steady level, the knob becomes LEVEL) or STEP (a stepped level / sample-and-hold). The card's column button cycles it.",
+      type1: "Segment 2's TYPE — RAMP / HOLD / STEP, exactly as segment 1's type control.",
+      type2: "Segment 3's TYPE — RAMP / HOLD / STEP.",
+      type3: "Segment 4's TYPE — RAMP / HOLD / STEP.",
+      type4: "Segment 5's TYPE — RAMP / HOLD / STEP.",
+      type5: "Segment 6's TYPE — RAMP / HOLD / STEP.",
+      primary0: "Segment 1's PRIMARY fader — TIME when the segment is a RAMP (how long the slope takes), or LEVEL when it's HOLD/STEP (the target value, bipolar -1..+1).",
+      primary1: "Segment 2's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
+      primary2: "Segment 3's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
+      primary3: "Segment 4's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
+      primary4: "Segment 5's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
+      primary5: "Segment 6's PRIMARY fader — TIME (RAMP) or LEVEL (HOLD/STEP).",
+      shape0: "Segment 1's SHAPE fader — the slope curve for a RAMP (from logarithmic through linear to exponential), or the portamento glide time for a HOLD/STEP segment.",
+      shape1: "Segment 2's SHAPE fader — slope curve (RAMP) or portamento glide (HOLD/STEP).",
+      shape2: "Segment 3's SHAPE fader — slope curve or portamento glide.",
+      shape3: "Segment 4's SHAPE fader — slope curve or portamento glide.",
+      shape4: "Segment 5's SHAPE fader — slope curve or portamento glide.",
+      shape5: "Segment 6's SHAPE fader — slope curve or portamento glide.",
+      link0: "Link toggle between segments 1 and 2 — when on, they chain into one multi-stage shape (segment 1 hands off to segment 2 as it finishes); off keeps them independent.",
+      link1: "Link toggle between segments 2 and 3 — chains them into the same group when on.",
+      link2: "Link toggle between segments 3 and 4 — chains them into the same group when on.",
+      link3: "Link toggle between segments 4 and 5 — chains them into the same group when on.",
+      link4: "Link toggle between segments 5 and 6 — chains them into the same group when on.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

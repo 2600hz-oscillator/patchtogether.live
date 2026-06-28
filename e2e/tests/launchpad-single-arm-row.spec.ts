@@ -157,10 +157,25 @@ test('@launchpad single-unit ARM ROW: NEW->edit->COPY->PASTE on one device, the 
   await drive('press', 1, 7);
   await expect.poll(() => lane0Playing(page), { timeout: 5000 }).toBe(1);
 
-  // (7) The pasted clip RUNS -> AUDIBLE structured RMS.
-  const after = await readScopePeakOverWindow(page, 'r-scp', 1500);
+  // (7) The pasted clip RUNS -> AUDIBLE structured RMS. The launch is QUANTIZED,
+  // so the audio doesn't start until the next quantize boundary — which can be
+  // more than one measurement window out at the test tempo. A single-shot read
+  // here sometimes samples the pre-boundary silence (flaky ~0.003 vs the 0.03
+  // floor), so POLL the RMS window until the clip actually rings (or time out).
+  // 15s headroom: under heavy concurrent CI load the audio worklet can be
+  // starved well past the quantize boundary, so an 8s poll still flaked on
+  // loaded shard-4 runs — give the engine ample time to ring before failing.
+  let after = await readScopePeakOverWindow(page, 'r-scp', 600);
+  await expect
+    .poll(
+      async () => {
+        after = await readScopePeakOverWindow(page, 'r-scp', 600);
+        return after.rms;
+      },
+      { timeout: 15000, message: 'audible RMS after launching the pasted clip' },
+    )
+    .toBeGreaterThan(0.03);
   expect(after.polls, 'SCOPE polled').toBeGreaterThan(0);
-  expect(after.rms, 'audible RMS after launching the pasted clip').toBeGreaterThan(0.03);
   expect(after.rms, 'the pasted-clip launch raised the output').toBeGreaterThan(before.rms + 0.02);
 
   expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);

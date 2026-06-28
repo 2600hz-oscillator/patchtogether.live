@@ -45,6 +45,22 @@ export const reverbDef: AudioModuleDef = {
     { id: 'mix',  label: 'Mix',  defaultValue: 0.3, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A simple algorithmic reverb — the minimal-knob room you reach for to 'spray a little space' on a sound or a master bus. A Faust-compiled tank diffuses the input into a decaying reflection cloud whose length you set with SIZE and whose tone you tame with DAMP, then blends that wet tail back against the dry signal with MIX. Mono in / mono out, three knobs, no CV: use two instances (or feed it from a stereo split) if you want width. For a long crystalline octave-up tail reach for SHIMMERSHINE; for a deeply tweakable diffusion engine reach for CLOUDSEED.",
+    inputs: {
+      audio: 'The dry mono signal fed into the reverb tank. Whatever you patch here is diffused into the reflection cloud and also passed straight to the dry side of the MIX blend.',
+    },
+    outputs: {
+      audio: "The mono output: the dry signal and the reverb tail summed in the proportion set by MIX (at MIX=0 you hear only the dry input; at MIX=1 only the wet tank). The tail's length and brightness follow SIZE and DAMP.",
+    },
+    controls: {
+      size: 'Tank size / decay-time macro (0..1). Low values give a short, tight room that dies away fast; high values stretch the tank into a long hall-like tail. This is the single "how big is the space" control.',
+      damp: 'High-frequency damping inside the tank (0..1). At 0 the tail stays bright and metallic; turning it up rolls off the highs as the reverb decays, for a warmer, darker, more natural-sounding room that doesn\'t hiss.',
+      mix: 'Dry / wet balance (0..1). 0 is the untouched dry signal, 1 is reverb only, and values between crossfade the two — set it low on a master bus for a touch of air, high on a send for a fully wet ambience.',
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const f = await instantiateFaustModule(ctx, { name: 'reverb', wasmUrl, metaUrl, workletUrl });
     const silence = ctx.createConstantSource();

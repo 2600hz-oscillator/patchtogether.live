@@ -12,6 +12,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildCvBridgeMapping, mapCvBridgeValue } from './cv-bridge-map';
 import { destructorDef } from './modules/destructor';
+import { cameraInputDef } from './modules/camera-input';
 import type { ParamDef, PortDef } from '$lib/graph/types';
 
 describe('buildCvBridgeMapping — gate vs continuous param branch', () => {
@@ -130,5 +131,29 @@ describe('cv-bridge mapping — DESTRUCTOR.mangle (replaces video-phase1 LFO→p
     expect(mapCvBridgeValue(m, 0)).toBeCloseTo(1.0, 5); // knob default
     expect(mapCvBridgeValue(m, -1)).toBeCloseTo(0.5, 5); // 1.0 - (1-0)/2
     expect(mapCvBridgeValue(m, 1)).toBeCloseTo(1.0, 5); // clamped at max
+  });
+});
+
+describe('CAMERA mirror GATE input (real def) — level-sensitive raw passthrough', () => {
+  // A gate patched into CAMERA's MIRROR input flips the mirror WHILE held high.
+  // It must be raw passthrough (no scale) to the real `mirror` param, which the
+  // shader thresholds at 0.5 — NOT scaled across a range (that would smear the
+  // toggle). Regression guard for the gate-for-mirror feature.
+  const mirrorIn = cameraInputDef.inputs.find((p) => p.id === 'mirror')!;
+
+  it('is declared as a level-sensitive gate targeting the mirror param', () => {
+    expect(mirrorIn).toBeDefined();
+    expect(mirrorIn.type).toBe('gate');
+    expect(mirrorIn.edge).toBe('gate');
+    expect(mirrorIn.paramTarget).toBe('mirror');
+    expect(mirrorIn.cvScale).toBeUndefined(); // no scale → raw passthrough
+  });
+
+  it('maps raw: gate HIGH (≥1) → mirror on (>0.5), gate LOW (0) → mirror off', () => {
+    const m = buildCvBridgeMapping(mirrorIn, 'mirror', cameraInputDef.params, {});
+    expect(m.targetParamId).toBe('mirror');
+    expect(m.scale).toBeUndefined();
+    expect(mapCvBridgeValue(m, 1)).toBe(1); // held high → mirror param 1 → shader uMirror>0.5
+    expect(mapCvBridgeValue(m, 0)).toBe(0); // low → 0 → not mirrored
   });
 });

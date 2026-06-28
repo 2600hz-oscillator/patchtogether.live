@@ -47,3 +47,65 @@ export const MODULE_GUIDES: Record<string, ModuleGuide> = {
 export function guideFor(type: string): ModuleGuide | null {
   return MODULE_GUIDES[type] ?? null;
 }
+
+// GUIDE_PAGES — the hand-written walkthrough pages that live at custom routes
+// under /docs/modules/<slug>/ (NOT auto-generated from a module def). The
+// catalog (/docs/modules) is built from `buildModuleManifest()`, which globs
+// ONLY `audio/modules/*.ts`, so these pages are otherwise UNREACHABLE from the
+// catalog or nav:
+//   - grid-clip-launcher / launchpadControlLeft / doom-multiplayer / vfpga-runner
+//     have no module def at all (no `[id]` page);
+//   - mappy / onetonine are VIDEO modules — absent from the audio-only catalog;
+//   - livecode is an audio module already in the catalog, listed here too so the
+//     guides section is a complete index of the illustrated walkthroughs.
+// An explicit small list (intentionally NOT auto-derived from the audio manifest)
+// keeps each guide one click away. `slug` is the route segment under
+// /docs/modules/.
+export interface GuidePage {
+  /** Route segment under /docs/modules/ (the custom static route). */
+  slug: string;
+  /** Display title for the catalog's guides section. */
+  title: string;
+  /** One-line description of what the guide covers. */
+  blurb: string;
+}
+
+export const GUIDE_PAGES: GuidePage[] = [
+  {
+    slug: 'grid-clip-launcher',
+    title: 'Clip player + monome grid',
+    blurb:
+      'Launch clips, scenes & quantize, edit notes on the pads, drive it from a monome grid 128, and record a session into a song-mode arrangement.',
+  },
+  {
+    slug: 'launchpadControlLeft',
+    title: 'Launchpad control (clip launcher)',
+    blurb:
+      'Drive the clip player from a pair of Novation Launchpad Mini Mk3 units — pairing, the pad/CC map, SHIFT windowing, and the full RGB colour language.',
+  },
+  {
+    slug: 'mappy',
+    title: 'mappy (projection mapping)',
+    blurb: 'Warp and place video onto real-world surfaces — corner-pin / mesh mapping for projectors.',
+  },
+  {
+    slug: 'onetonine',
+    title: 'one to nine (3×3 screen splitter)',
+    blurb: 'Split one video source into nine equal cells, each on its own output — feed up to nine projectors.',
+  },
+  {
+    slug: 'livecode',
+    title: 'livecode',
+    blurb: 'The in-rack live-coding module — write code that drives the patch.',
+  },
+  {
+    slug: 'doom-multiplayer',
+    title: 'DOOM multiplayer',
+    blurb: 'How the shared-rack DOOM netgame works — joining, the lockstep model, and its caveats.',
+  },
+  {
+    slug: 'vfpga-runner',
+    title: 'vfpga runner',
+    blurb: 'The video-FPGA effect runner — the tile model, the catalog, and how to wire it.',
+  },
+];

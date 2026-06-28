@@ -72,6 +72,29 @@ export const ringbackDef: AudioModuleDef = {
     { id: 'mix',      label: 'Mix',      defaultValue: 1,   min: 0,    max: 1,    curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A stereo crush effect built from the exact glitch that used to make TWOTRACKS' monitor sound bitcrushed while recording, turned into a deliberate instrument. Each channel writes the input into a short ring buffer at an integer-cell varispeed (set by RATE) and reads it back with fractional interpolation at the same moving cursor, with FEEDBACK re-injecting the read-back into the ring. The mismatch between the stair-stepped write and the smooth read produces a crushed, comb-filtered, grainy texture whose character ranges from subtle aliasing to harsh digital smear. RATE sets the crush hardness, SIZE the ring length (comb pitch ↔ grainy smear), FEEDBACK the regenerating tail, and MIX the dry/wet. All four are a-rate, so every knob is CV-patchable.",
+    inputs: {
+      in_l: 'Left-channel audio into the crush ring buffer. (A mono source is mirrored to both channels.)',
+      in_r: 'Right-channel audio into the crush ring buffer.',
+      rate: 'CV that displaces the RATE knob (linear), modulating the varispeed write rate — sweep it for shifting crush intensity and pitched-comb artifacts.',
+      size: 'CV that displaces the SIZE knob (log-scaled), modulating the ring length live (comb-filter pitch ↔ grain size).',
+      feedback: 'CV that displaces the FEEDBACK knob, modulating how much read-back re-injects (the regenerating tail amount).',
+      mix: 'CV that displaces the MIX knob, modulating the dry/wet crush balance.',
+    },
+    outputs: {
+      out_l: 'Left channel of the crushed stereo output (dry blended with the crushed ring read-back per MIX).',
+      out_r: 'Right channel of the crushed stereo output.',
+    },
+    controls: {
+      rate: 'Crush amount via the varispeed write rate (0.05..4). 1 is the mildest (write and read nearly aligned); values below 1 stair-step the write hardest for the coarsest crush; higher values speed the cursor for brighter, pitched artifacts.',
+      size: 'Ring buffer length in samples, log-scaled 2..4096. Tiny sizes give a high-pitched comb-filter tone; larger sizes spread into a grainy, smeared echo-like texture.',
+      feedback: 'How much of the read-back is re-injected into the ring (0..0.98). 0 is a single pass; higher values build a regenerating, resonant crushed tail; near 0.98 it rings for a long time.',
+      mix: 'Dry / wet balance (0..1): 0 is the clean input, 1 is full crush, between blends the two.',
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

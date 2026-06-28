@@ -143,6 +143,22 @@ export const audioInDef: AudioModuleDef = {
     },
   ],
 
+  docs: {
+    explanation:
+      "Brings system audio INTO the patch: it streams from a microphone, line-in, or USB interface you pick on the card and exposes the signal as a stereo L/R pair you can patch into the rack. Mental model: a live external source — sing, plug in a guitar/synth, or capture another app — and treat it like any oscillator output, sending it through filters, effects, and out to AUDIO OUT. The card owns the permission flow and the device dropdown; permission is requested only when you enable it, not on patch load, so loading a patch never pops a mic prompt. Stereo handling is automatic: a stereo device feeds L and R separately, a mono source is duplicated to both sides. (Browser capture caps at a stereo pair — more than two channels per device is native-only — so only L/R are exposed.)",
+    inputs: {},
+    outputs: {
+      audio_l_out:
+        "Left channel of the selected input device (channel 1). For a mono source this carries the single channel, duplicated to the right output as well.",
+      audio_r_out:
+        "Right channel of the selected input device (channel 2). For a mono source it carries a copy of the left channel so both sides have signal.",
+    },
+    controls: {
+      gain:
+        "Post-source level trim applied equally to both channels, 0 (silence) to 2 (×2, +6 dB), default 1 (unity). Turn it down for a hot line-in that's clipping, up for a quiet condenser mic; there is no per-channel trim.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // ---------- Per-instance audio graph ----------
     //

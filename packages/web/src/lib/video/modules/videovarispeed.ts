@@ -264,6 +264,41 @@ export const videoVarispeedDef: VideoModuleDef = {
     { id: 'asset_gate',  label: 'Asset gate',  defaultValue: 0, min: 0,   max: 1,  curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "A local-file video player with a performant varispeed transport. Drop or pick a video and it decodes into the VIDEO output (rVFC-driven, so the texture streams at ANY speed without freezing). The SPEED knob is an asymmetric analog-clock face: full-left = -4x (reverse), 12 o'clock = +1x normal, full-right = +4x — forward speeds drive native <video>.playbackRate (audio pitch/tempo-shifts like tape varispeed) while reverse scrubs currentTime at a throttled ~10 Hz (audio muted in reverse). START/END sliders carve a play window into the clip; at the END edge LOOP jumps back to START while ONE-SHOT stops. The source aspect is letterboxed/pillarboxed into the 4:3 FBO so clips never stretch. DOM-only buttons (not patch params) handle file loading and transport: \"Choose video…\" / drag-drop / Chromium re-link, Play/Pause, a seek scrubber, and a LOOP↔1-SHOT toggle. Right-click the card to open the \"Load multiple…\" panel — up to 7 preloaded slots mapped to the C-major scale rows C..B; a clip player or any pitch+gate source can then switch which clip plays via the ASSET ports, each slot running its own virtual playhead so a switch jumps to that clip's live, de-synced position. Use it to scratch, reverse, freeze, and loop-window a clip live, or as a 7-clip melodic video switcher feeding BENTBOX / a CRT chain.",
+    inputs: {
+      cv_start: "Gate (rising-edge / trigger). On the edge it (re)starts playback from the START window point and begins playing; if the window is empty (START past END) it instead seeks the current spot and stays paused.",
+      cv_pause: "Gate (rising-edge / trigger). Each rising edge toggles pause/unpause — it flips the play state on the edge, it is not level-held.",
+      cv_reset: "Gate (rising-edge / trigger). On the edge it seeks the playhead back to the START point (or 0 if there is no valid window) without changing play/pause state.",
+      cv_loop_toggle: "Gate (rising-edge / trigger). Each rising edge flips the transport between LOOP (jump to START at END) and ONE-SHOT (stop at END), the same state the LOOP button shows.",
+      asset_pitch: "Pitch (raw V/oct passthrough, no cvScale). Selects which of 7 asset slots plays: pitch class C=slot1 D E F G A B=slot7 (octave-independent); a black-key class selects no slot. Read on each ASSET GATE rising edge.",
+      asset_gate: "Gate (rising-edge / trigger). On the edge it reads ASSET PITCH, maps it to a slot, and if that slot holds a loaded video makes it the active source — jumping the output to that slot's live virtual position (re-triggering the already-active slot restarts it from the window start). Empty or out-of-key selections are ignored.",
+      speedCv: "CV (bipolar -1..+1, modulates Speed). Sums into the SPEED knob position before the varispeed map, so +-1 sweeps the full reverse-to-forward span centred on the knob setting.",
+      startCv: "CV (bipolar -1..+1, modulates Start). Sums into the START slider only while patched (unpatched normals to 0), shifting the window's start/reset point earlier or later.",
+      endCv: "CV (bipolar -1..+1, modulates End). Sums into the END slider only while patched (unpatched normals to full duration); negative CV pulls the window's end point earlier.",
+    },
+    outputs: {
+      video: "Video. The decoded clip at the current transport state (speed, scrub, window), aspect-preserved (letterbox/pillarbox) into the engine FBO; an idle dark gradient before a file loads.",
+      audio_l: "Audio (left). Left channel of the ACTIVE slot's audio, tapped from its media-element source; varispeed pitch/tempo-shifts it on forward play and it is muted during reverse.",
+      audio_r: "Audio (right). Right channel of the active slot's audio, following the same active slot as audio_l and re-pointed automatically when the asset slot switches.",
+    },
+    controls: {
+      speed: "Speed knob (0..1, default 0.5). Asymmetric varispeed: 0 = -4x reverse, 0.5 = +1x normal forward, 1 = +4x; readout shows the live multiplier. Summed with Speed CV.",
+      start: "Start slider (0..1 of duration, default 0). The play-from and reset-to point of the playback window. Summed with Start CV when patched.",
+      end: "End slider (0..1 of duration, default 1). The end of the playback window; if START passes END the window is empty and playback halts. Summed with End CV when patched (unpatched normals to full duration).",
+      speedCv: "Cached Speed CV value (-1..+1, default 0). Holds the live bipolar sample from the speedCv input, summed into the SPEED knob; not a user-facing control.",
+      startCv: "Cached Start CV value (-1..+1, default 0). Holds the live bipolar sample from the startCv input, summed into the START slider while patched; not a user-facing control.",
+      endCv: "Cached End CV value (-1..+1, default 0). Holds the live bipolar sample from the endCv input, summed into the END slider only while patched; not a user-facing control.",
+      cv_start: "Synthetic Start-gate cache (0..1, default 0). Holds the cv_start gate level the card polls and edge-detects to fire a window-start restart; not shown on the card UI.",
+      cv_pause: "Synthetic Pause-gate cache (0..1, default 0). Holds the cv_pause gate level the card edge-detects to toggle pause/unpause; not shown on the card UI.",
+      cv_reset: "Synthetic Reset-gate cache (0..1, default 0). Holds the cv_reset gate level the card edge-detects to seek to START; not shown on the card UI.",
+      cv_loop_toggle: "Synthetic Loop-gate cache (0..1, default 0). Holds the cv_loop_toggle gate level the card edge-detects to flip LOOP vs ONE-SHOT; not shown on the card UI.",
+      asset_pitch: "Synthetic Asset-pitch cache (raw V/oct, default 0, range -10..10). Holds the raw asset_pitch value the card reads on each asset-gate edge to pick a slot; not shown on the card UI.",
+      asset_gate: "Synthetic Asset-gate cache (0..1, default 0). Holds the asset_gate level the card edge-detects to trigger a slot switch; not shown on the card UI.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

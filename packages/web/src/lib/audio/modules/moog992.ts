@@ -64,6 +64,27 @@ export const moog992Def: AudioModuleDef = {
     { id: 'atten4', label: 'Att 4', defaultValue: 1, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 992 Control Voltage Panel — a passive 4-into-1 CV mixer/attenuator. Each of the four CV inputs passes through its own attenuator (0 = off, 1 = unity) and the four are summed onto a single CV OUT. Channel 4 is signal-INVERTING: its attenuator subtracts from the sum, so the panel can both add and subtract control voltages — handy for offsetting one CV by another, blending modulation sources, or building a difference (cv1 − cv4). Mental model: a small CV mixing desk — set how much of each source reaches the output, with channel 4 wired backwards so it cancels rather than adds. CV-only (no audio in or out).",
+    inputs: {
+      cv1: "Control-voltage input 1 — scaled by ATT 1 and added to the summed output.",
+      cv2: "Control-voltage input 2 — scaled by ATT 2 and added to the summed output.",
+      cv3: "Control-voltage input 3 — scaled by ATT 3 and added to the summed output.",
+      cv4: "Control-voltage input 4 — scaled by ATT 4 and SUBTRACTED from the summed output (this channel is inverting), so it offsets or cancels the other three.",
+    },
+    outputs: {
+      cv_out:
+        "The summed control voltage: cv1·ATT1 + cv2·ATT2 + cv3·ATT3 − cv4·ATT4. Patch it wherever a single combined CV is wanted (a filter cutoff, an oscillator's pitch, another module's CV input).",
+    },
+    controls: {
+      atten1: "Attenuator for input 1: how much of cv1 reaches the sum, from 0 (muted) to 1 (unity / full level).",
+      atten2: "Attenuator for input 2: how much of cv2 reaches the sum, 0 (muted) to 1 (unity).",
+      atten3: "Attenuator for input 3: how much of cv3 reaches the sum, 0 (muted) to 1 (unity).",
+      atten4: "Attenuator for the INVERTING input 4: how much of cv4 is subtracted from the sum, 0 (no effect) to 1 (full inverted level). Use it to offset or cancel the other channels.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // One attenuating GainNode per channel. Channel 4 inverts (−atten4).
     const initial = node.params ?? {};

@@ -229,6 +229,49 @@ export const gibribbonDef: VideoModuleDef = {
     { id: 'btn_y', label: 'Y (btn)', defaultValue: 0, min: 0, max: 1, curve: 'linear' as const },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: `A Vib-Ribbon-style rhythm side-scroller rendered as a patchable VIDEO source: a single white vector ribbon scrolls right-to-left on black, obstacles deform the line (loop=a pit-V dip, jump=a hump) while enemies (imps/zombies) ride it in as real DOOM shareware-WAD sprites (with a wireframe line-art fallback when DOOM1.WAD is absent — the card shows a "line-art (no WAD)" badge). A DOOM marine stands left-of-centre at the judgement point; you clear each event by pulsing its mapped ABXY button within a timing window as it arrives (loop=A, jump=B, imp=X, zombie=Y). A fixed top "lookahead lane" shows the next four buttons left-to-right (nearest first) so the queue is readable. Hits score (combo-multiplied, cap x8) and can heal or reach SUPER; misses degrade the marine down a DOOM health ladder (super/healthy/wounded/critical/dead) to GAME OVER. Drive it three ways: AUTOPLAY (default ON) runs an internal ~0.42 s-beat clock so a freshly-dropped card self-plays with synthesized rotating CV; patching an external CLOCK + GATE + CV1-4 takes over for musical mode (each clock edge advances a beat and spawns from whichever eligible CV channel is hottest above threshold) and suppresses autoplay for ~1.5 s; and keyboard play (click the card to focus, then F/D/J/K or arrow keys = A/B/X/Y, R = restart). Patch the X/Y axes to aim, and the event gate outputs feed the cross-domain video-to-audio bridge so hits/kills/game-over can trigger synths. (The on-card preview is a fixed-size screen, not resizable; RESET/RESTART are DOM buttons, not params.)`,
+    inputs: {
+      cv1: "CV that drives loop-event (button A) generation: on each beat, channels above the spawn threshold (~0.42) compete and the strongest spawns its mapped event. Patch a slow envelope here so an energetic band spawns loops. Modulates the CV1 control.",
+      cv2: "CV that drives jump-event (button B) generation; eligible when its level exceeds the spawn threshold (~0.42) and it wins the per-beat strongest-channel contest. Modulates the CV2 control.",
+      cv3: "CV that drives imp-event (button X) generation — imps render as DOOM imp sprites that the marine fires on and kills when cleared. Modulates the CV3 control.",
+      cv4: "CV that drives zombie-event (button Y) generation — former-human sprites the marine fires on and kills on a successful clear. Modulates the CV4 control.",
+      clock: "The transport beat (a 1x clock train, declared gate-typed but EDGE-detected, i.e. a trigger). Each rising edge advances the ribbon one authoritative beat and runs spawn generation, and switches the game into external/musical mode, suppressing the internal AUTOPLAY clock for ~1.5 s.",
+      gate: "The beat gate, read as a sampled level (gate, high above 0.5), not edge-judged: when high the strongest eligible CV channel spawns on the beat; when low, only a notably-strong channel spawns, so off-beat spawns are sparser.",
+      x: "Joystick X axis (bipolar -1..1) consumed as AIM: re-centres the judgement point by up to one hit-window (stick left = clear events slightly early, right = slightly late). A timing aid that shifts, not widens, the window. Modulates the axis_x control.",
+      y: "Joystick Y axis (bipolar -1..1) consumed as the marine's VERTICAL position: push up to raise the marine off the ribbon (aim high), down to crouch (up to +/-26 px). Modulates the axis_y control.",
+      a: "The A player button (rising edge = a trigger): on the edge it judges the nearest in-window LOOP event and clears it on a match. Spare presses with no matching event are ignored (no penalty).",
+      b: "The B player button (rising edge / trigger): judges the nearest in-window JUMP event on the edge, clearing it on a match.",
+      x_btn: "The X player button (rising edge / trigger): judges the nearest in-window IMP event on the edge. Named x_btn to disambiguate from the x AXIS port.",
+      y_btn: "The Y player button (rising edge / trigger): judges the nearest in-window ZOMBIE event on the edge. Named y_btn to disambiguate from the y AXIS port.",
+    },
+    outputs: {
+      out: "The rendered game frame (video): the 16:9 ribbon scene rasterised and letterboxed (bars top/bottom) into the engine's 4:3 output.",
+      evt_hit: "A ~10 ms gate pulse on every successful clear (any in-window button match), for triggering hit feedback in the audio domain.",
+      evt_miss: "A ~10 ms gate pulse on every missed event (one that scrolled past the marine uncleared), as the marine degrades a health rung.",
+      evt_fire: "A ~10 ms gate pulse when the marine FIRES — emitted on a successful enemy (imp/zombie) clear.",
+      evt_kill: "A ~10 ms gate pulse when an enemy DIES (its death animation), emitted alongside evt_fire on an enemy clear.",
+      evt_gameover: "A ~10 ms gate pulse fired once when the marine reaches GAME OVER (health hits dead).",
+      health_cv: "The marine's vitality as a 0..1 CV (super=1, healthy=0.75, wounded=0.5, critical=0.25, dead=0), ramped smoothly on each health change.",
+    },
+    controls: {
+      cv1: "Sets/holds the loop-channel CV level read on each beat for spawn generation (0..1); normally driven by the CV1 input jack.",
+      cv2: "Sets/holds the jump-channel CV level read on each beat (0..1); normally driven by the CV2 input jack.",
+      cv3: "Sets/holds the imp-channel CV level read on each beat (0..1); normally driven by the CV3 input jack.",
+      cv4: "Sets/holds the zombie-channel CV level read on each beat (0..1); normally driven by the CV4 input jack.",
+      clock: "The clock port's target value (0..1); a rising edge here advances one beat and runs spawn generation. Normally driven by the CLOCK input jack.",
+      gate: "The beat-gate level (0..1, high above 0.5) that biases per-beat spawn selection; normally driven by the GATE input jack.",
+      autoplay: "Autoplay toggle (0/1, default 1 = ON): when on and no external clock is active, an internal clock (~0.42 s beat) self-plays the game with synthesized rotating CV. Set 0 to require an external clock for pure deterministic/musical control.",
+      axis_x: "The joystick X aim value (-1..1, default 0): re-centres the judgement point by up to one hit-window for leading/lagging the beat. Normally driven by the X axis input jack.",
+      axis_y: "The joystick Y value (-1..1, default 0): raises/lowers the marine on the ribbon (up to +/-26 px). Normally driven by the Y axis input jack.",
+      btn_a: "The A-button target value (0..1); a rising edge judges the nearest in-window loop event. Normally driven by the A input jack (or keyboard F / left-arrow).",
+      btn_b: "The B-button target value (0..1); a rising edge judges the nearest in-window jump event. Normally driven by the B input jack (or keyboard D / down-arrow).",
+      btn_x: "The X-button target value (0..1); a rising edge judges the nearest in-window imp event. Normally driven by the x_btn input jack (or keyboard J / right-arrow).",
+      btn_y: "The Y-button target value (0..1); a rising edge judges the nearest in-window zombie event. Normally driven by the y_btn input jack (or keyboard K / up-arrow).",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

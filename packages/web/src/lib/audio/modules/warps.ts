@@ -199,6 +199,32 @@ export const warpsDef: AudioModuleDef = {
     { id: 'note',          label: 'Note',      defaultValue: 0,   min: -60, max: 60,                  curve: 'linear', units: 'st' },
   ],
 
+  docs: {
+    explanation:
+      "A meta-modulator after Mutable Instruments' Warps: it cross-modulates two audio signals — a CARRIER and a MODULATOR — through a chosen modulation algorithm. ALGORITHM picks the cross-mod type (XFADE = equal-power crossfade between the two; RING-MOD = ring modulation for metallic/bell tones; XOR = a 16-bit bit-mash for digital grit; COMPARATOR = waveshaping comparison modes), TIMBRE sets that algorithm's intensity/mix, and LEVEL 1 / LEVEL 2 set the carrier and modulator input gains. When nothing is patched into CARRIER IN, an internal oscillator takes over — SHAPE morphs its waveform, NOTE offsets its pitch, and the V/OCT input plays it — so WARPS doubles as a playable cross-mod synth voice, not just an effect on two external sources.",
+    inputs: {
+      carrier_in: "External carrier audio. When patched it is the carrier the algorithm modulates; when left unpatched the internal oscillator (set by SHAPE / NOTE / V/OCT) takes its place so WARPS becomes a self-contained voice.",
+      modulator_in: 'External modulator audio — the second operand of the cross-modulation. Unpatched, the modulator side is silent (so e.g. RING-MOD with no modulator passes the carrier through).',
+      pitch: 'V/oct pitch input for the internal carrier oscillator. Summed with the NOTE offset; only audible when CARRIER IN is unpatched (the internal osc is in use).',
+      algorithm_cv: 'CV (discrete) that displaces the ALGORITHM selector, switching the cross-mod type live — step it with a sequencer to jump between XFADE / RING-MOD / XOR / COMPARATOR.',
+      carrier_shape_cv: 'CV that displaces the SHAPE knob, morphing the internal carrier waveform.',
+      timbre_cv: 'CV that displaces the TIMBRE knob, modulating the active algorithm\'s intensity — the main "wiggle this" input for evolving cross-mod textures.',
+      level_1_cv: 'CV that displaces the LEVEL 1 knob, modulating carrier input gain (and the crossfade weight in XFADE mode).',
+      level_2_cv: 'CV that displaces the LEVEL 2 knob, modulating modulator input gain.',
+    },
+    outputs: {
+      out: 'The mono cross-modulated result of the carrier and modulator through the selected algorithm at the chosen TIMBRE intensity.',
+    },
+    controls: {
+      algorithm: 'Cross-modulation algorithm selector (discrete): 0 = XFADE (equal-power crossfade between carrier and modulator), 1 = RING-MOD (ring modulation — metallic, inharmonic tones), 2 = XOR (16-bit bitwise XOR mash — harsh digital grit), 3 = COMPARATOR (waveshaping comparison sub-modes). The card shows the current name.',
+      carrier_shape: 'Internal-carrier waveform morph (0..1): sweeps the built-in oscillator\'s timbre (only in play when CARRIER IN is unpatched).',
+      timbre: "The active algorithm's intensity / mix (0..1): in XFADE it's the carrier↔modulator balance; in RING-MOD/XOR/COMPARATOR it scales how aggressively the modulation is applied. The primary expressive control.",
+      level_1: 'Carrier input gain (0..1) — and, in XFADE mode, its crossfade weight. Turn down to attenuate the carrier going into the cross-mod.',
+      level_2: 'Modulator input gain (0..1): how hot the modulator drives the cross-modulation.',
+      note: 'Internal-carrier pitch offset in semitones (-60..+60). Sums with the V/OCT input to set the internal oscillator\'s frequency (used when CARRIER IN is unpatched).',
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

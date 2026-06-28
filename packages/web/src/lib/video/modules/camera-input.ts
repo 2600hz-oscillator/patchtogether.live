@@ -186,6 +186,14 @@ export const cameraInputDef: VideoModuleDef = {
     // docs manifest in sync; the cross-domain CV bridge looks up the
     // target via port id directly.
     { id: 'gain', type: 'cv', paramTarget: 'gain', cvScale: { mode: 'linear' } },
+    // Gate input that drives the MIRROR toggle: while the gate level is HIGH the
+    // image is mirrored, while it's LOW it isn't (level-sensitive — edge:'gate',
+    // matching the on-card Mirror button which is a held state, not a one-shot).
+    // No cvScale ⇒ the cv bridge passes the RAW gate level straight to the
+    // `mirror` param (see cv-bridge-map.ts), and the shader thresholds it at 0.5
+    // (uMirror > 0.5) — so patch an LFO / clock / gate here to flip the mirror in
+    // time with the music. With nothing patched, the Mirror button still owns it.
+    { id: 'mirror', type: 'gate', paramTarget: 'mirror', edge: 'gate' },
   ],
   outputs: [
     { id: 'out', type: 'video' },
@@ -202,6 +210,24 @@ export const cameraInputDef: VideoModuleDef = {
   // sane when someone spawns ten CAMERA cards by accident.
   maxInstances: 4,
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "CAMERA is a webcam-as-source video module. The card requests getUserMedia, runs a live <video> element, and hands it to the engine, which samples each decoded frame into a GPU texture and renders a fullscreen pass-through: the shader aspect-fits the camera frame into the engine's canvas (cover-cropping the off-axis by default so a 16:9 webcam fills the frame with no black bars), optionally flips it horizontally for a selfie mirror, and multiplies the RGB by a gain before sending it downstream. When no frame is available, or while disabled/paused, it shows a dark navy idle pattern (a faint vertical gradient, brighter toward the top) rather than black, so an unconfigured card reads as alive. Usage: drop CAMERA in, pick a device and grant access, then patch OUT into any video module (mixer, effect, OUTPUT screen). Use it as the live face/scene layer of a video patch.",
+    inputs: {
+      gain: "CV input that modulates the Gain control (linear scale, paramTarget=gain). Patch an LFO or envelope here to pulse the camera's RGB brightness; combines with the on-card Gain fader.",
+      mirror: "Gate input that drives the Mirror toggle. It is level-sensitive (edge: gate): the image is horizontally flipped while the level is held high (above 0.5) and un-flipped while low, so an LFO/clock/gate flips the mirror in time. With nothing patched, the on-card Mirror button owns the state.",
+    },
+    outputs: {
+      out: "Video output carrying the live camera frame: aspect-fitted, optionally mirrored, gain-multiplied RGB. Patch into any downstream video module.",
+    },
+    controls: {
+      gain: "Gain (linear, 0 to 2, default 1). RGB multiplier applied to the camera frame in the shader (src.rgb * gain, unclamped): 0 = black, 1 = unity, 2 = doubled (bright/clipped) RGB. CV-modulatable via the gain input.",
+      enabled: "On (discrete 0/1, default 1 = on). The card's Pause/Resume button: off (Pause) stops the camera track to release the hardware and renders the idle navy pattern; on (Resume) re-requests the stream.",
+      mirror: "Mirror (discrete 0/1, default 1 = on). Horizontally flips the frame for a selfie mirror (shader thresholds uMirror at 0.5). Settable from the on-card Mirror button or held high by the mirror gate input. The param is shared across collaborators.",
+      fillMode: "Fill (discrete 0/1, default 1 = fill). Aspect-fit mode set by the card's Fit toggle: 1 = Fill/cover-crop (fills the canvas, crops the off-axis, no bars), 0 = Letterbox/contain (fits the whole frame with black bars). Neither ever distorts the source aspect; when the source already matches the output aspect the card shows a non-interactive Native badge instead.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, _node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

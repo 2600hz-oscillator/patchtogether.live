@@ -93,6 +93,59 @@ export const clipplayerDef: AudioModuleDef = {
 
   exposesSequence: true,
 
+  docs: {
+    explanation:
+      "A clip launcher in the style of Ableton's Session view, with 8 instrument lanes. The grid's rows are the 8 lanes (instruments) and the columns are 8 clip slots, for 64 note clips in all; each lane independently plays whichever clip you launch out its OWN pitch/gate/velocity outputs, so up to 8 clips can sound at once (one per lane). Click a pad to launch its clip, double-click to open the piano-roll editor and draw notes into it. There's no internal clock or BPM — CLIP PLAYER is locked to TIMELORDE (the rack transport): it runs at TIMELORDE's tempo, only while TIMELORDE is running, and the STEP control sets how many steps fall per beat. Launches can fire immediately or be quantized to snap cleanly at the playing clip's loop boundary. It also has a SONG / arrangement mode that records your launches onto a timeline for non-real-time playback, and pairs with a monome grid for hardware launching. Drive its lanes into eight voices for a full multitrack clip-based performance instrument.",
+    inputs: {
+      stop_all: "Stop-all trigger: a rising edge immediately stops every lane (a panic/stop button), in both session and arrangement modes.",
+    },
+    outputs: {
+      pitch1: "Lane 1's pitch output — the launched clip's notes as a poly chord cable (a mono pitch input receives just the root; a poly voice plays the whole chord), shifted by the OCT control.",
+      pitch2: "Lane 2's pitch output (poly chord cable), from lane 2's launched clip.",
+      pitch3: "Lane 3's pitch output (poly chord cable), from lane 3's launched clip.",
+      pitch4: "Lane 4's pitch output (poly chord cable), from lane 4's launched clip.",
+      pitch5: "Lane 5's pitch output (poly chord cable), from lane 5's launched clip.",
+      pitch6: "Lane 6's pitch output (poly chord cable), from lane 6's launched clip.",
+      pitch7: "Lane 7's pitch output (poly chord cable), from lane 7's launched clip.",
+      pitch8: "Lane 8's pitch output (poly chord cable), from lane 8's launched clip.",
+      gate1: "Lane 1's gate — goes high while a note in lane 1's clip plays (its width set by GATE; tied/held notes stay high across their span); low on rests. Patch into an envelope/VCA.",
+      gate2: "Lane 2's gate — high while lane 2's notes play, low on rests.",
+      gate3: "Lane 3's gate — high while lane 3's notes play, low on rests.",
+      gate4: "Lane 4's gate — high while lane 4's notes play, low on rests.",
+      gate5: "Lane 5's gate — high while lane 5's notes play, low on rests.",
+      gate6: "Lane 6's gate — high while lane 6's notes play, low on rests.",
+      gate7: "Lane 7's gate — high while lane 7's notes play, low on rests.",
+      gate8: "Lane 8's gate — high while lane 8's notes play, low on rests.",
+      vel1: "Lane 1's velocity CV — each note's velocity as a control voltage, for velocity-sensitive patching (e.g. into a VCA or filter depth).",
+      vel2: "Lane 2's velocity CV.",
+      vel3: "Lane 3's velocity CV.",
+      vel4: "Lane 4's velocity CV.",
+      vel5: "Lane 5's velocity CV.",
+      vel6: "Lane 6's velocity CV.",
+      vel7: "Lane 7's velocity CV.",
+      vel8: "Lane 8's velocity CV.",
+    },
+    controls: {
+      stepDiv: "STEP — how many steps fall per TIMELORDE beat (1/4, 1/8, 1/16, 1/32), i.e. the playback resolution of the clips.",
+      octave: "OCT — transposes every lane's pitch output up or down by whole octaves (-2..+2).",
+      gateLength: "GATE — how much of each step the per-note gate stays high, from short staccato stabs to near-legato (held/tied notes ignore this and stay high across their full span).",
+      quantize: "QNT — launch quantization: on, a clip you launch waits and drops in cleanly at the playing lane's next loop boundary; off, it launches immediately. (A first launch into an empty lane is always immediate.)",
+      snh: "S&H — one global sample-and-hold toggle for all 8 lanes' pitch outputs: on (default), on a rest the gate closes but each lane's pitch HOLDS its last note (latched to the gate edge); off, rests reset pitch to 0 (the legacy continuous behavior).",
+      "clipplayer-mono-{n}":
+        "Lane {n}'s mono/poly toggle — switches that lane between MONO (one note per column) and POLY (up to five notes per column, played as a chord out the lane's poly pitch output).",
+      "clipplayer-pad-{n}":
+        "A clip slot in the launch grid (one cell of the 8 lanes × 8 slots). Click to launch that lane's clip (immediately or quantized per QNT), click the playing pad to stop the lane, and double-click to open the clip in the piano-roll editor. An empty pad shows differently from a filled or playing one.",
+      "clipplayer-cell-{n}":
+        "A note cell in the piano-roll editor (rows are scale degrees/pitches, columns are steps). Click to toggle a note on or off at that pitch and step; right-click cycles the note's velocity. The cells make up the clip you're editing for the selected lane+slot.",
+    },
+  },
+
+  controlFamilies: [
+    { id: 'clipplayer-mono', label: 'Per-lane mono/poly toggle', kind: 'other', testidPrefix: 'clipplayer-mono' },
+    { id: 'clipplayer-pad', label: 'Clip launch grid', kind: 'cell', testidPrefix: 'clipplayer-pad' },
+    { id: 'clipplayer-cell', label: 'Piano-roll note cells', kind: 'cell', testidPrefix: 'clipplayer-cell' },
+  ],
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
     const LANES = CLIP_LANES;

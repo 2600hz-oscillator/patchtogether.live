@@ -190,6 +190,32 @@ export const chromakeyDef: VideoModuleDef = {
     { id: 'spillSuppress', label: 'Spill',defaultValue: DEFAULTS.spillSuppress, min: 0, max: 1,   curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "chromakey is a two-input green-screen compositor: it takes a foreground video (the layer shot against a key colour) and a background video, and replaces every foreground pixel whose hue is close to the chosen key colour with the matching background pixel. Per pixel it converts foreground and key colour to HSV, measures the hue distance, and builds an alpha via smoothstep over the thr/soft window (alpha 0 = show background, alpha 1 = keep foreground); near-gray pixels are biased toward keep so shadows and highlights are not punched out, and edge pixels are desaturated by the spill amount to kill the key-colour halo. Pick the key colour with the swatch (defaults to pure green), then tune thr until the backdrop drops out cleanly, raise soft to feather the matte edge, and add spill to remove green fringing on the subject; if no foreground is patched it just passes the background through.",
+    inputs: {
+      fg: "Foreground video frame — the layer shot against the key colour that gets keyed out where its hue matches.",
+      bg: "Background video frame — composited in wherever the foreground is keyed out; shown directly if no foreground is patched.",
+      keyR: "CV input that modulates the R control — the red component of the key colour (linear 0..1).",
+      keyG: "CV input that modulates the G control — the green component of the key colour (linear 0..1).",
+      keyB: "CV input that modulates the B control — the blue component of the key colour (linear 0..1).",
+      threshold: "CV input that modulates the Thr control — how close a pixel's hue must be to the key to be removed (linear 0..1).",
+      softness: "CV input that modulates the Soft control — the feathering width of the matte edge (linear 0..0.5).",
+      spillSuppress: "CV input that modulates the Spill control — how aggressively key-colour spill is desaturated from foreground edges (linear 0..1).",
+    },
+    outputs: {
+      out: "The composited RGB video frame: foreground over background with the key colour replaced.",
+    },
+    controls: {
+      keyR: "R — red channel of the key colour, set via the colour-picker swatch (0..1); part of the hue being matched, default 0 for the green-screen default.",
+      keyG: "G — green channel of the key colour, set via the colour-picker swatch (0..1); default 1 so the keyer starts on a green screen.",
+      keyB: "B — blue channel of the key colour, set via the colour-picker swatch (0..1); default 0 for the green-screen default.",
+      threshold: "Thr fader — how close a pixel's hue must be to the key to be keyed out (0..1, default 0.15); higher widens the keyed hue band so more colour drops to background.",
+      softness: "Soft fader — smoothstep feathering of the matte edge (0..0.5, default 0.08); 0 = hard cutoff, higher = softer, more gradual key edge.",
+      spillSuppress: "Spill fader — desaturates the foreground at edge pixels proportional to (1-alpha)*spill (0..1, default 0.5); 0 = off, 1 = full removal of key-colour halo from the subject.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

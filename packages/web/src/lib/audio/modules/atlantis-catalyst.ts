@@ -240,6 +240,43 @@ export const atlantisCatalystDef: AudioModuleDef = {
     { id: 'level',      label: 'Level',  defaultValue: DEFAULTS.level,      min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A slow-drift 'macro brain' (displayed as SCENECHANGE) that nudges a whole patch into new states without you touching every knob. It emits EIGHT correlated CV outputs (drift1–drift8), each a smooth band-limited random walk; a Coherence control sets how tightly the eight tracks move together versus wandering independently, and a Chaos control sets how much they jitter. On a timer (Drift sets the spacing, from a few seconds to minutes) — or on demand via the NUDGE button/gate — it transitions to a fresh 'scene', ramping all eight outputs smoothly to new targets. A scene_pulse gate fires on each transition and a scene_idx CV reports which scene is current, so downstream sequencers can follow along. You can save up to four scenes and recall them deterministically (the queue CV inputs jump straight to a scene), and FREEZE latches every output where it stands. Patch the drift outputs into filter cutoffs, mix levels, FX depths — anywhere you'd want hands-free, slowly-evolving modulation.",
+    inputs: {
+      nudge: "A rising edge manually triggers the next scene transition (the same as the card's NUDGE button), cycling the scene index forward. Ignored while frozen.",
+      freeze: "While this gate is held high, all eight drift outputs latch at their current values and stop wandering; drop it low (or toggle the card's FREEZE button) to release them.",
+      seed_cv: "Per-instance seed CV: latches the random-walk generator's seed so the drift sequence can be made reproducible across sessions.",
+      play_cv: "Shared transport play gate (reserved for transport sync); ATLANTIS-CATALYST takes its scene jumps from the queue inputs below.",
+      reset_cv: "Shared transport reset gate (reserved for transport sync).",
+      queue1_cv: "A rising edge jumps to scene 1 — recalling its saved snapshot if one exists, otherwise making a fresh transition toward scene-index 1.",
+      queue2_cv: "A rising edge jumps to scene 2 — recalling its saved snapshot if one exists, else a fresh transition.",
+      queue3_cv: "A rising edge jumps to scene 3 — recalling its saved snapshot if one exists, else a fresh transition.",
+      queue4_cv: "A rising edge jumps to scene 4 — recalling its saved snapshot if one exists, else a fresh transition.",
+    },
+    outputs: {
+      drift1: "Smooth band-limited random-walk CV (-1..+1), channel 1; ramps toward a new target on each scene change and jitters within it by the Chaos amount. Patch into any modulation destination.",
+      drift2: "Random-walk CV channel 2 — correlated with the others by the Coherence amount.",
+      drift3: "Random-walk CV channel 3.",
+      drift4: "Random-walk CV channel 4.",
+      drift5: "Random-walk CV channel 5.",
+      drift6: "Random-walk CV channel 6.",
+      drift7: "Random-walk CV channel 7.",
+      drift8: "Random-walk CV channel 8 — the eighth of the correlated drift bank.",
+      scene_pulse: "A short gate pulse that fires on every scene transition (timer, manual nudge, or queued recall) — patch it where you want a downstream event to mark 'a new scene just started'.",
+      scene_idx: "CV that reports the current scene as a voltage (-1..+1 across scenes 0..3), so another module can address its own scene/snapshot selector from this one.",
+    },
+    controls: {
+      driftRate: "How long between automatic scene changes, from a few seconds (high) to several minutes (low) — how restlessly the brain explores new states (the card's Drift fader).",
+      chaos: "How much micro-jitter the eight outputs add even while holding a scene (0..1): 0 is glassy-smooth, higher values keep the voltages subtly alive.",
+      coherence: "How tightly the eight channels move together (0..1): 0 makes them fully independent random walks, 1 locks them onto one shared 'weather' voltage, and 0.55 (default) is a balanced blend.",
+      sceneDepth: "How far each scene transition moves the outputs (0..1) — small for gentle shifts, large for dramatic jumps between scenes.",
+      autoMode: "Whether scenes change on their own: on (default) transitions automatically on the Drift timer; off means scenes only change when you nudge or send a queue CV.",
+      bias: "A DC offset added to all eight drift outputs (-1..+1), tilting the whole bank's average higher or lower.",
+      level: "Overall output amplitude of the eight drift CVs (0..1), ramped smoothly when changed to avoid clicks.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Per-instance deterministic PRNG seed from node id.
     let seed = 0;

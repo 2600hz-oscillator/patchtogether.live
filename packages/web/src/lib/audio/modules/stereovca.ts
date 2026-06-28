@@ -115,6 +115,25 @@ export const stereovcaDef: AudioModuleDef = {
     { id: 'offset', label: 'Offset', defaultValue: 0.0, min: -1, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A dual (stereo) voltage-controlled amplifier that doubles as a ring modulator — no mode switch, the behavior is purely a function of how fast the control signal is. Each channel computes out = in × (strength + offset) × level: when the STRENGTH input is slow (an LFO, an envelope, a sequencer step) it acts as a VCA, gating and shaping the audio's volume; when STRENGTH is audio-rate it acts as a ring modulator, multiplying two audio signals into clangorous sum-and-difference tones (this matches the hardware truth that 'CV is just slow audio'). The two channels share the LEVEL and OFFSET knobs but have independent audio and strength inputs, with smart normalling so you can drive both sides from one cable: leave IN R unpatched and it mirrors IN L (mono in, stereo out), leave STRENGTH R unpatched and it mirrors STRENGTH L (one modulator drives both VCAs). The STRENGTH inputs take raw bipolar CV directly with no scaling.",
+    inputs: {
+      in_l: "Left audio carrier — the signal the left channel multiplies by its strength. For ring modulation patch an audio oscillator here.",
+      in_r: "Right audio carrier. If you leave this unpatched it is normalled to IN L, so a single mono source fans out to both output channels (mono-to-stereo).",
+      strength_l: "Left multiplier / modulator (raw bipolar CV, consumed with no scaling). A slow signal makes the channel behave as a VCA (volume control); an audio-rate signal makes it a ring modulator. At strength +1 (and offset 0) the channel passes at unity; at 0 it mutes; negative values invert.",
+      strength_r: "Right multiplier / modulator. If unpatched it is normalled to STRENGTH L, so one CV or LFO controls both VCAs at once; patch it for independent left/right modulation.",
+    },
+    outputs: {
+      out_l: "Left result: in_l × (strength_l + offset) × level. Audio (or ring-mod) out for the left channel.",
+      out_r: "Right result: in_r × (strength_r + offset) × level, honoring the IN R and STRENGTH R normalling above.",
+    },
+    controls: {
+      level: "Master output gain applied after the per-channel multiply (0 to 1, default unity) — a final trim on both channels at once without touching the modulation depth.",
+      offset: "A bipolar DC term added to each strength signal before multiplying (-1 to +1, default 0). At 0 an unpatched strength (0 V) mutes the channel; turn offset up toward +1 to lift the floor so the channel stays open at unity even with no modulator, and a strength signal then only ducks it — handy for 'always on with optional duck' patches.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

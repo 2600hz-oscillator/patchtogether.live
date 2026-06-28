@@ -230,6 +230,7 @@ export const sequencerDef: AudioModuleDef = {
       swing: "Shuffles the rhythm by lengthening the on-beat steps and shortening the off-beat steps that follow them, which pushes every off-beat later for a looser feel; 0 is dead-straight, higher values deepen the shuffle. Internal-clock only (an external clock sets its own timing).",
       isPlaying: "The run/stop state: 1 plays, 0 stops and forces the gate low. Starting playback snaps the playhead back to step 1. (If an external clock is patched, the clock edges can drive stepping even while this reads stopped.)",
       snh: "Sample & hold on the pitch output, on by default: when on, the pitch CV is rewritten only on a step that actually fires a note, so it latches to the gate and holds steady through rests; turn it off for continuous pitch that can change on every step (including back toward rest).",
+      "seq-pitch-{n}": "Step {n}'s note — the editable pitch box for this step. Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to fly across the grid; Enter commits and jumps to the next step's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it (empty) makes the step a rest even if its gate is lit. The note is emitted as V/oct on the PITCH output, shifted by the OCT control and (for a chord step) used as the chord's root; with sample & hold on it's latched to the gate so it only changes when this step actually fires.",
       "seq-gate-{n}": "Step {n} on/off — lit = it plays its note when the playhead reaches it; unlit = a rest (the gate stays low and, with sample & hold on, the pitch just holds the previous note).",
       "seq-chord-{n}": "Step {n}'s chord mode — click to cycle mono (single note) to maj (major triad) to min (minor triad); a chord broadcasts its notes across the poly pitch lanes so a polyphonic voice plays all of them, while a mono pitch sink still hears just the root.",
       "quicksave-slot-{n}": "Pattern slot {n} of 8 — what a click does depends on the armed mode button: SAVE writes the current pattern (steps + BPM/length/octave/gate/swing) into this slot, LOAD switches to it instantly, and QUEUE waits until the current loop finishes and then swaps to it; a filled slot shows differently from an empty one.",
@@ -249,6 +250,7 @@ export const sequencerDef: AudioModuleDef = {
     },
   },
   controlFamilies: [
+    { id: 'seq-pitch', label: 'Per-step note entry', kind: 'cell', testidPrefix: 'seq-pitch', countParam: 'length' },
     { id: 'seq-gate', label: 'Step on/off grid', kind: 'step-grid', testidPrefix: 'seq-gate', countParam: 'length' },
     { id: 'seq-chord', label: 'Per-step chord cell', kind: 'cell', testidPrefix: 'seq-chord', countParam: 'length' },
     { id: 'quicksave-slot', label: 'Quicksave pattern slot', kind: 'quicksave', testidPrefix: 'quicksave-slot' },

@@ -154,6 +154,23 @@ export const midiclockDef: AudioModuleDef = {
   ],
   params: [],
 
+  docs: {
+    explanation:
+      "Brings an external MIDI device's TRANSPORT into the patch as clock and run signals — the transport-only sibling of MIDI-CV-BUDDY (which carries the notes). MIDI sends 24 clock ticks per quarter note, plus Start / Stop / Continue messages; MIDICLOCK divides that tick stream down to a usable pulse and tracks the play state. Mental model: it's the bridge that lets a hardware sequencer, drum machine, or DAW be the master clock for the whole rack — connect a class-compliant USB-MIDI device, pick it from the card's dropdown, and patch its CLOCK output into anything that wants a beat (a SEQUENCER's CLOCK IN, TIMELORDE, an envelope trigger). The card has a device picker and a clock-division select; there are no audio-side knobs because every setting (device + division) is a discrete choice that lives in the saved patch, not a continuous AudioParam.",
+    inputs: {},
+    outputs: {
+      clock:
+        "A short ~5 ms pulse whose rising edge fires once every N incoming MIDI ticks, where N is the card's clock-division setting (MIDI runs at a fixed 24 ticks per quarter note, so N=24 gives one pulse per quarter note, 12 an eighth, 6 a sixteenth, 3 a 32nd, and 1 the raw 24-PPQN tick stream). Patch it into a SEQUENCER's CLOCK IN or TIMELORDE to slave the rack's timing to the external transport. On a MIDI Start the divider re-zeros so the first pulse lands cleanly on the downbeat.",
+      run:
+        "A level that sits at 0 while the external transport is stopped and rises to 1 while it is running; it latches to 1 on both MIDI Start and MIDI Continue and drops to 0 on MIDI Stop. Use it as a gate to enable downstream modules only while the master transport is playing.",
+      midistart:
+        "A one-shot pulse whose rising edge fires the instant a MIDI Start message (0xFA) arrives — the 'play from the top' signal. It does NOT fire on MIDI Continue, because Continue exists precisely to resume mid-song without re-zeroing downstream loops; patch this into a reset/restart input to snap things back to the beginning when the transport starts fresh.",
+      midistop:
+        "A one-shot pulse whose rising edge fires when a MIDI Stop message (0xFC) arrives. Patch it where you want something to fire exactly when the external transport halts (mute an envelope, reset a counter, drop a gate).",
+    },
+    controls: {},
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Four ConstantSource outputs, all starting at 0.
     const clockSrc = ctx.createConstantSource(); clockSrc.offset.value = 0; clockSrc.start();

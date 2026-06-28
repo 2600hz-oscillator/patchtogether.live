@@ -22,8 +22,9 @@ import {
   getSurfaceFit,
   setSurfaceFit,
   toggleSurfaceFit,
+  applyMapLayout,
 } from '$lib/ui/modules/mappy-edit';
-import { defaultSurface, insetQuadForIndex, surfaceFitOn } from '$lib/video/modules/mappy';
+import { defaultSurface, insetQuadForIndex, surfaceFitOn, normalizeSurfaces } from '$lib/video/modules/mappy';
 
 const MID = 'mappy-ydoc-test';
 
@@ -190,5 +191,48 @@ describe('mappy-edit — per-surface FIT toggle (real Y.Doc)', () => {
     // and toggling it from the implicit-ON state writes an explicit false
     expect(toggleSurfaceFit(MID, 0)).toBe(false);
     expect(getSurfaceFit(patch.nodes[MID], 0)).toBe(false);
+  });
+});
+
+describe('mappy-edit — applyMapLayout (import a map, real Y.Doc)', () => {
+  it('REPLACES every surface + count in place; no integrate trap on a live doc', () => {
+    setup();
+    // give the node a pre-existing (different) layout first, so apply must REPLACE
+    setCorner(MID, 0, 0, 0.9, 0.9);
+    setSurfaceCount(MID, 3);
+
+    const layout = {
+      count: 2,
+      surfaces: normalizeSurfaces([
+        { corners: [[0.1, 0.2], [0.4, 0.2], [0.4, 0.5], [0.1, 0.5]], fit: false },
+        { corners: [[0.6, 0.6], [0.9, 0.6], [0.9, 0.9], [0.6, 0.9]], fit: true },
+      ]),
+    };
+    expect(() => applyMapLayout(MID, layout)).not.toThrow();
+
+    expect(getSurfaceCount(patch.nodes[MID])).toBe(2);
+    const arr = ensureSurfaces(MID)!;
+    expect(arr[0]!.corners).toEqual([[0.1, 0.2], [0.4, 0.2], [0.4, 0.5], [0.1, 0.5]]);
+    expect(arr[0]!.fit).toBe(false);
+    expect(arr[1]!.corners).toEqual([[0.6, 0.6], [0.9, 0.6], [0.9, 0.9], [0.6, 0.9]]);
+    expect(arr[1]!.fit).toBe(true);
+  });
+
+  it('apply then mutate corners again survives (no Type-already-integrated)', () => {
+    setup();
+    const layout = {
+      count: 2,
+      surfaces: normalizeSurfaces([
+        { corners: [[0.1, 0.1], [0.3, 0.1], [0.3, 0.3], [0.1, 0.3]], fit: true },
+        { corners: [[0.5, 0.5], [0.7, 0.5], [0.7, 0.7], [0.5, 0.7]], fit: false },
+      ]),
+    };
+    applyMapLayout(MID, layout);
+    expect(() => {
+      setCorner(MID, 0, 1, 0.35, 0.12);
+      moveSurface(MID, 1, 0.05, 0.05);
+      applyMapLayout(MID, layout); // re-apply, again in place
+    }).not.toThrow();
+    expect(getSurfaceCount(patch.nodes[MID])).toBe(2);
   });
 });

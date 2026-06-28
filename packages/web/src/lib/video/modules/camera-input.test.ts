@@ -30,11 +30,19 @@ describe('CAMERA — module def shape', () => {
     expect(def.schemaVersion).toBe(1);
   });
 
-  it('input port surface: a single CV gain input', () => {
+  it('input port surface: a CV gain input + a level-sensitive mirror gate', () => {
     const def = getVideoModuleDef('cameraInput')!;
-    expect(def.inputs).toHaveLength(1);
+    expect(def.inputs).toHaveLength(2);
     const gain = def.inputs.find((p) => p.id === 'gain');
     expect(gain?.type).toBe('cv');
+    expect(gain?.paramTarget).toBe('gain');
+    // MIRROR gate: while held high the image mirrors (drives the `mirror` param,
+    // raw passthrough → shader thresholds at 0.5). edge:'gate' = level-sensitive.
+    const mirror = def.inputs.find((p) => p.id === 'mirror');
+    expect(mirror?.type).toBe('gate');
+    expect(mirror?.edge).toBe('gate');
+    expect(mirror?.paramTarget).toBe('mirror');
+    expect(mirror?.cvScale).toBeUndefined();
   });
 
   it('output port surface: a single video output', () => {

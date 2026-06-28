@@ -159,6 +159,53 @@ export const cartesianDef: AudioModuleDef = {
     { id: 'snh',        label: 's&h',  defaultValue: 1,   min: 0,   max: 1,    curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A 4×4 grid sequencer (16 pads) that picks notes by their X/Y position rather than by a single playhead line. Each pad holds a note plus an on/off gate and an optional chord (mono / major / minor); whichever pad is currently selected is what plays. There are two ways to move across the grid: in FREEFORM mode the X and Y CV inputs steer the cursor continuously (a gate fires whenever the selected pad changes), and in CLOCKED mode an incoming clock advances the cursor one step (an axis with nothing patched auto-increments around its 0..3 lane). Built in is a clock-locked LFO with two outputs 90° apart — patch lfo_x → x_cv and lfo_y → y_cv and the cursor draws a circle/Lissajous around the grid. The pitch output is a poly chord cable, so a polyphonic voice can play a pad's whole chord while a mono pitch input still hears just the root.",
+    inputs: {
+      clock:
+        "Step clock for CLOCKED mode: each rising edge advances the cursor one pad (an axis with no X/Y CV patched auto-increments 0→1→2→3→0). Patching a clock here also acts as the play signal. Leave it unpatched to run in FREEFORM mode, where the X/Y CV inputs steer the cursor instead.",
+      x_cv:
+        "Bipolar CV (-1..+1) that selects the grid COLUMN by quantizing into four equal bands (0..3). In FREEFORM mode it tracks continuously; in CLOCKED mode, if this is patched it sets the column directly while the unpatched axis auto-increments on each clock.",
+      y_cv:
+        "Bipolar CV (-1..+1) that selects the grid ROW the same way the X CV selects the column. Patch lfo_y here (with lfo_x → x_cv) to sweep rows in quadrature for circular cursor motion.",
+      lfo_clock:
+        "Tempo reference for the built-in LFO: the time between successive rising edges sets the LFO's base rate (multiplied by the Div control). It only paces the LFO outputs — it does NOT advance the grid cursor.",
+    },
+    outputs: {
+      pitch:
+        "The selected pad's note as pitch CV (V/oct) across the poly chord lanes; a mono pitch input automatically receives just the root note. With sample & hold on (the default) it only updates when a gate fires and holds steady on rests, so the pitch doesn't glitch as the cursor crosses silent pads.",
+      gate:
+        "Goes high when the selected pad changes (FREEFORM) or on each clock edge (CLOCKED), then back low after the fraction of the step set by the gate-length control — patch it into an envelope or VCA to articulate each note.",
+      clock:
+        "A short ~10 ms pulse fired on every cursor advance, regardless of whether that pad is on or off — the 'I just stepped' signal. Patch it into another sequencer's clock in to chain them.",
+      lfo_x:
+        "The built-in LFO's first phase. Its rate follows the lfo_clock input (or a default when unpatched) scaled by Div, and its shape is set by Wave. Never sample-and-held — it free-runs. Patch into x_cv for self-driven cursor motion.",
+      lfo_y:
+        "The built-in LFO's second phase, a quarter-cycle (90°) behind lfo_x. Patch lfo_x → x_cv and lfo_y → y_cv to walk the cursor in a circle/Lissajous figure across the grid.",
+    },
+    controls: {
+      mode:
+        "Cursor-advance mode: FREEFORM (0) lets the X/Y CV inputs steer the cursor continuously and fires a gate on each change; CLOCKED (1) advances one pad per incoming clock edge, auto-incrementing whichever axis has no CV patched. The card's LIN/X-Y face button toggles this same setting.",
+      octave:
+        "Shifts every pad's pitch up or down by whole octaves at once (-2 to +2); chords transpose as a block so their internal intervals stay intact.",
+      gateLength:
+        "How much of each step the gate stays high, from a short 10% stab to a near-legato 95%; longer values hold downstream envelopes open for most of the step.",
+      lfoDiv:
+        "Division/multiplication of the built-in LFO relative to the lfo_clock rate, stepped through 1/8, 1/4, 1/2, 1/1, ×1.5, ×2, ×4, ×8 (default 1/1) — lower indices make the LFO sweep slowly across several clocks, higher indices run it faster than the clock.",
+      lfoShape:
+        "Morphs the built-in LFO waveform continuously from sine (0) through triangle (1) and sawtooth (2) to square (3), cross-fading between adjacent shapes at in-between values.",
+      snh:
+        "Sample & hold on the pitch output, on by default: when on (the card's S&H face button), in FREEFORM mode the pitch CV is rewritten only when a gate fires and otherwise holds, so the pitch doesn't smear as the cursor passes over silent pads; turn it off for continuous re-emit on every cursor move. The LFO outputs are never held.",
+      "cart-pitch-{n}":
+        "Pad {n}'s note — the editable pitch box for this cell of the 4×4 grid. Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to move around the grid; Enter commits and steps to the next pad's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it (empty) turns the pad into a rest even if its gate is lit. When the cursor lands on this pad the note is emitted as V/oct on the PITCH output, shifted by the OCT control and (for a chord pad) used as the chord's root.",
+    },
+  },
+
+  controlFamilies: [
+    { id: 'cart-pitch', label: 'Per-pad note entry', kind: 'cell', testidPrefix: 'cart-pitch' },
+  ],
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Stage-1 polyphony: pitch port is polyPitchGate (5 voice pairs).
     const polyPitch = createPolySender(ctx);

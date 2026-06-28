@@ -138,6 +138,28 @@ export const shapesDef: VideoModuleDef = {
     { id: 'zoom',   label: 'Zoom',   defaultValue: DEFAULTS.zoom,   min: 0.05, max: 10,        curve: 'log' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation:
+      "SHAPES is a procedural geometry source: it has no video input and synthesizes a mono-video stream entirely in its fragment shader. Each frame the shader evaluates a signed-distance field for one of three primitives — a circle, a square, or an equilateral triangle pointing up — and renders it white-on-black, antialiased with a soft edge band. The shape is picked discretely (the Shape value is rounded to the nearest integer; there is no morph or blend between primitives). The frame's UV coordinates are rotated and divided by the zoom factor before the SDF is evaluated, so larger zoom grows the shape's footprint while rotation spins it about its cell center; the antialiasing band is scaled by 1/zoom so the outline stays crisp even when the shape fills the frame. With Tile off the whole frame is a single cell holding one centered shape; with Tile on the frame is repeated (via fract of the UVs) into a Grid×Grid array of identical cells, each carrying its own centered copy. Use it as a clean mask/matte or pattern generator feeding compositors, displacement, or feedback stages; patch CV into shape/tile/rotate/zoom to animate the geometry from the audio side.",
+    inputs: {
+      shape: "CV input (linear) that modulates the Shape control, selecting the rendered primitive — circle (0), square (1), or triangle (2); the shader rounds the incoming value to the nearest integer and hard-switches between SDFs (no blend).",
+      tile: "CV input (linear) that modulates the Tile control; values at or above 0.5 switch on the repeating Grid×Grid tiling, below 0.5 render a single centered shape.",
+      rotate: "CV input (linear) that modulates the Rotate control, spinning the shape about its cell center from -π to +π radians.",
+      zoom: "CV input (log-scaled) that modulates the Zoom control, scaling the shape's footprint within the cell from tiny up to overflowing the frame.",
+    },
+    outputs: {
+      out: "Mono-video output carrying the rendered shape pattern — white shape on a black field (grayscale, alpha 1), antialiased; feed it to compositors, masks, displacement, or feedback stages.",
+    },
+    controls: {
+      shape: "Shape picker, 0..2 linear, rounded to the nearest integer: 0 = circle, 1 = square, 2 = triangle (no blend between them). On the card a CIRCLE/SQUARE/TRI button cycles through the three; default 0 (circle).",
+      tile: "Tile toggle, 0..1 linear: <0.5 = a single shape centered in the whole frame; >=0.5 = repeat the shape into a Grid×Grid array of cells. Card exposes it as a TILE ON/OFF button; default 0 (off).",
+      tileN: "Grid count, 1..16 linear (fader labeled 'Grid', rounded to an integer): how many cells per axis when Tile is on, e.g. 4 = a 4×4 array. Has no effect while Tile is off; default 4.",
+      rotate: "Global rotation, -π..π (≈-3.14159..3.14159) linear: rotates the shape about its cell center; default 0 (upright).",
+      zoom: "Scale factor, 0.05..10 log-curve: 1.0 fits the shape in its cell with margin (reference radius ~0.4 of the cell), smaller shrinks it toward a dot, larger overflows the cell/frame; default 1.0.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

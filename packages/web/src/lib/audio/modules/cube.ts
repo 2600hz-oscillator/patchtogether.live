@@ -272,6 +272,86 @@ export const cubeDef: AudioModuleDef = {
     // it). Persisted on node.params so the toggle survives reload. (v4 perf.)
     { id: 'screen_on',  label: 'Screen', defaultValue: 1, min: 0, max: 1, curve: 'discrete' },
   ],
+  // docs-hash-ignore:start
+  // CUBE's card renders WebGL, so its def is in the WebGL attest basis
+  // (AUDIO_WEBGL_MODULE_DEFS). Living-docs is hash-transparent: these markers
+  // make computeWebglHash strip the co-located docs so authoring them does NOT
+  // churn the GPU attest hash. (Owner directive: "docs must not change attest
+  // hashes" — see scripts/webgl-attest-lib.ts stripDocsForHash.)
+  docs: {
+    explanation:
+      "A 3D wavetable-terrain oscillator. CUBE stacks THREE e352-style wavetables — FLOOR, WALL, and CEILING (each chosen from a factory table, a baked preset, or a loaded .wav) — into a solid 3D scalar field, then plays the heightmap of an arbitrary flat plane sliced through that field as its waveform. You aim the slicing plane with one height knob (Y) and three rotation knobs (Rot X / Y / Z); as the plane tilts and rises it carves a different surface contour, so sweeping those knobs (or their CV inputs) morphs the timbre continuously. MORPH cross-fades the floor↔ceiling layers, CONNECT (with CONNECT STRENGTH) bulges the field's interior, CRUSH bit-reduces the read-out waveform while SPACE CRUSH voxelizes and SPACE DIFFUSE warps the 3D lookup coordinates, and FOLD is a west-coast wavefolder on the output — together they sculpt the slice from clean to mangled. It is a pitched V/oct oscillator with a stereo ±5% SPREAD (the L and R taps read slightly offset planes for width) and an internal per-voice A/D/S/R envelope that, riding a BASE volume floor, shapes amplitude once a note arrives on the poly bus or the TRIG gate; with nothing patched there it free-runs as a continuous drone. A live WebGL 3D render of the cube, the cut plane, the slice cross-section, and the output waveform is shown on the card and can be sent out the VIDEO port; the screen can be switched off to save GPU when you only want sound.",
+    inputs: {
+      pitch:
+        "Mono V/oct pitch control voltage — the standard 1V-per-octave oscillator pitch input, read directly by the worklet. This is the fallback voice when nothing is patched into POLY; summed with the TUNE and FINE offsets to set the playback fundamental.",
+      poly:
+        "Polyphonic chord bus (the 10-channel pitch+gate cable from MIDI LANE in poly mode or POLYSEQZ). Each gated lane renders its own phase accumulator through the same sliced waveform at that lane's pitch and they sum — so CUBE plays a whole chord. While any lane is gated this bus drives the voices; with nothing patched here the mono PITCH path runs instead (back-compat).",
+      trigger:
+        "Mono gate for the per-voice amplitude envelope: while the level is high the ADSR holds open (attack→decay→sustain) and on the falling edge it releases. The first rising edge ever seen converts CUBE from a free-running drone into a gated voice shaped by the lane-0 envelope; before any note (and when unpatched) it drones continuously.",
+      slice_y:
+        "CV that offsets the Y param — raises or lowers the slicing plane's height through the cube, scanning it across the floor→ceiling stack.",
+      slice_rx:
+        "CV that offsets the Rot X param — tilts the slicing plane about the X axis (±π), changing the surface contour it reads.",
+      slice_ry:
+        "CV that offsets the Rot Y param — tilts the slicing plane about the Y axis (±π).",
+      slice_rz:
+        "CV that offsets the Rot Z param — rotates the slicing plane about the Z axis (±π).",
+      morph_fc:
+        "CV that offsets the Morph param, cross-fading the floor↔ceiling wavetable layers of the field.",
+      connect:
+        "CV that offsets the Connect param, blending the floor and ceiling into a connected interior shape.",
+      connect_strength:
+        "CV that offsets the Connect Strength param, pushing the connector's interior control point further out for a more dramatic swell.",
+      crush:
+        "CV that offsets the Crush param, driving the bit/sample reduction applied to the slice's read-out waveform.",
+      space_crush:
+        "CV that offsets the Space Crush param, quantizing (voxelizing) the 3D field-lookup coordinates into chunky blocks.",
+      space_diffuse:
+        "CV that offsets the Space Diffuse param, warping the lookup coordinates toward the cube's emptiest wall.",
+      fold_cv:
+        "CV that offsets the Fold param, modulating the output wavefolder depth (added harmonics).",
+      tune:
+        "CV that offsets the Tune param, shifting pitch in semitones around the base note (summed with the PITCH input and the FINE knob).",
+    },
+    outputs: {
+      L: "Left audio channel of the sliced oscillator, including the −5% SPREAD plane offset, post-FOLD and post-LEVEL. Split out as its own mono port so the stereo width survives even when patched into a mono input.",
+      R: "Right audio channel, including the +5% SPREAD plane offset (the partner of L). Together L and R carry the spread stereo image; pan/mix them to keep the width.",
+      sync:
+        "A pure SINE at the playback fundamental, phase-locked to the L/R slice read-out (it reads off the same phase accumulator). Use it to hard-sync another oscillator to CUBE, or as a clean reference / sub-oscillator tone.",
+      video_out:
+        "A mono-video output carrying a live render of the 3D cube view — the translucent field volume, the cut plane positioned by Y + the rotation knobs, and the output waveform. Patch it into VIDEOOUT or any video module; it keeps emitting frames even when the on-card SCREEN is switched off.",
+    },
+    controls: {
+      tune: "Coarse pitch in semitones (−36..+36), summed with the FINE offset and the PITCH/TUNE CV to set the oscillator fundamental.",
+      fine: "Fine pitch trim in cents (−100..+100) for tuning between the semitone steps of TUNE.",
+      morph_fc: "Cross-fades the FLOOR↔CEILING wavetable layers of the 3D field (0 = floor, 1 = ceiling), reshaping the terrain the plane slices through.",
+      connect: "Blends the floor and ceiling layers into a single connected interior shape (0 = today's separate shape, 1 = fully connected); CV via the CONNECT input.",
+      connect_strength: "Overshoots the connector's interior control point 'out of the cube' for a dramatic base swell (0 = the exact CONNECT shape, max = pushed furthest out). Works alongside CONNECT.",
+      crush: "Bit/sample reduction applied to the slice's read-out waveform (0 = clean, max = heavily crushed) for digital grit.",
+      space_crush: "Voxelizes the 3D field-lookup coordinates into chunky blocks (0 = transparent/smooth, max = blocky), aliasing the spatial sampling for a chunkier timbre.",
+      space_diffuse: "Adds a 'gravity' that pulls the field sample cloud toward the cube's emptiest wall (0 = off), smearing the lookup coordinates.",
+      fold: "West-coast wavefolder on the output (0 = pass-through, max = hard fold), applied after the slice is sampled and before LEVEL on both L and R, adding harmonics; CV via the FOLD input.",
+      spread: "Stereo width: at higher values the L and R taps read planes offset by up to ±5% of depth, so the two channels diverge (0 = mono, both channels identical).",
+      slice_y: "Height of the slicing plane through the cube (0..1) — scans the cut from the floor up to the ceiling. CV via the Y input.",
+      slice_rx: "Rotation of the slicing plane about the X axis (±π radians), tilting which surface contour it reads. CV via the ROT X input.",
+      slice_ry: "Rotation of the slicing plane about the Y axis (±π radians). CV via the ROT Y input.",
+      slice_rz: "Rotation of the slicing plane about the Z axis (±π radians). CV via the ROT Z input.",
+      level: "Output gain on the sliced audio (0..2, applied after FOLD); 1 = unity, above 1 boosts.",
+      attack: "Per-voice amplitude envelope ATTACK time (0.001..5 s, log) — how long each note takes to rise to full from note-on. Drives both the poly lane envelopes and the mono TRIG voice.",
+      decay: "Per-voice envelope DECAY time (0.001..5 s, log) — how long the level falls from the attack peak down to the SUSTAIN level.",
+      sustain: "Per-voice envelope SUSTAIN level (0..1) — the level held while the note's gate stays high after the decay stage.",
+      release: "Per-voice envelope RELEASE time (0.001..5 s, log) — how long the level fades to silence after the note's gate falls.",
+      base_vol: "Per-voice VCA floor the ADSR rides on top of (gain = base + (1−base)·env). 1 (default) = the envelope does nothing and CUBE plays its raw drone; 0 = pure ADSR (silent between notes); 0.5 = floors at 0.5 and rises to 1.0 as the envelope peaks.",
+      wrap: "What happens when the slicing plane reads outside the cube: OFF = those regions are silent, ON = the coordinates mirror-fold back inside so the slice stays full.",
+      material: "Field density model: SMOOTH (0) = continuous density gradients, HARD (1) = a binary solid (sharp inside/outside), which makes the sliced waveform edgier.",
+      view_zoom: "Visualization-only camera zoom for the 3D cube view (does not affect the sound or the selected slice).",
+      view_rot_x: "Visualization-only camera rotation about X — orbits the 3D view (no effect on audio).",
+      view_rot_y: "Visualization-only camera rotation about Y — orbits the 3D view (no effect on audio).",
+      view_rot_z: "Visualization-only camera rotation about Z — orbits the 3D view (no effect on audio).",
+      screen_on: "Turns the on-card 3D viz screen on/off. When OFF and the VIDEO output is unpatched, the card skips all visual computation (the render loop and the field/slice/wave draws) to save GPU — audio keeps running untouched. A patched VIDEO output still receives live frames even with the screen off.",
+    },
+  },
+  // docs-hash-ignore:end
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initialParams = (node.params ?? {}) as Record<string, number>;

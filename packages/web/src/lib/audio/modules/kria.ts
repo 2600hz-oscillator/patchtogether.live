@@ -85,6 +85,41 @@ export const kriaDef: AudioModuleDef = {
     { id: 'running', label: 'Run', defaultValue: 0, min: 0, max: 1, curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A four-track grid sequencer modelled on the monome Kria, where each track is not one pattern but several layered ones: separate per-step lanes for trigger, note, octave, duration, probability, glide and ratchet, plus its own loop window (start + length), clock division and play direction (forward / reverse / ping-pong / drunk / random). All four tracks share a base 16th-note clock (from a TIMELORDE node, an external CLOCK IN, or the local BPM) but each can run at its own division and loop length, so the tracks drift in and out of phase to build long evolving lines. A shared scale and root quantize the note + octave lanes into pitch CV, and you can stash 16 whole patterns and cue between them quantized to the loop boundary. Each track emits a pitch CV (with optional glide) and a gate (shaped by its duration and subdivided by its ratchet). The card edits one track/page at a time; an optional monome grid drives the same edits.",
+    inputs: {
+      clock:
+        "External base clock: each rising edge advances the shared 16th-note grid one tick, from which every track derives its own stepping via its clock division. When patched it overrides the internal BPM for step timing (the rack tempo still sets gate/glide durations), and the pulses themselves run the sequencer.",
+      reset:
+        "A rising edge (a trigger) re-anchors all four tracks to the start of their loop windows at once and clears any pending pattern cue, so everything restarts cleanly together.",
+    },
+    outputs: {
+      pitch1:
+        "Track 1's pitch CV (V/oct): the current step's note + octave lanes mapped through the shared scale and root, with the glide lane slewing the ramp between steps for portamento.",
+      gate1:
+        "Track 1's gate: goes high on steps whose trigger lane is set and whose probability roll passes; the duration lane sets how wide it stays high and the ratchet lane subdivides it into 1–4 evenly-spaced re-hits within the step.",
+      pitch2: "Track 2's pitch CV (V/oct), quantized through the shared scale/root with its own glide slew.",
+      gate2: "Track 2's gate, shaped by track 2's duration, probability and ratchet lanes.",
+      pitch3: "Track 3's pitch CV (V/oct), quantized through the shared scale/root with its own glide slew.",
+      gate3: "Track 3's gate, shaped by track 3's duration, probability and ratchet lanes.",
+      pitch4: "Track 4's pitch CV (V/oct), quantized through the shared scale/root with its own glide slew.",
+      gate4: "Track 4's gate, shaped by track 4's duration, probability and ratchet lanes.",
+    },
+    controls: {
+      bpm:
+        "Internal fallback tempo in beats per minute, used only when there is no TIMELORDE node in the rack AND nothing is patched into CLOCK IN; when a TIMELORDE is present its tempo wins, and an external clock overrides both.",
+      running:
+        "Local play/stop transport (1 = running, 0 = stopped), exposed as the card's RUN button. When a TIMELORDE node exists its run state drives playback instead, and an external clock's pulses can run the tracks regardless.",
+      "kria-cell-{n}":
+        "A cell of the per-step editor grid for the selected track — this is where you enter each step's value, INCLUDING its note. The same grid is reused by the page selector (TRIG / NTE / OCT / DUR): on the NOTE (NTE) page it IS the per-step note entry — the lit row picks that step's scale DEGREE (bottom row = degree 0, up to degree 6), which the shared SCALE + ROOT then quantize into the track's pitch CV; on the other pages the same cell instead sets the step's trigger, octave or gate duration. Click a cell to set/clear it for the active page; the column tracking the playhead is highlighted as it runs. (An attached monome grid drives these same edits.)",
+    },
+  },
+
+  controlFamilies: [
+    { id: 'kria-cell', label: 'Per-step editor cell (note on the NTE page)', kind: 'cell', testidPrefix: 'kria-cell' },
+  ],
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
 

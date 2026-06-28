@@ -258,6 +258,28 @@ export const oneToNineDef: VideoModuleDef = {
     { id: 'showGrid', label: 'Grid', defaultValue: DEFAULTS.showGrid, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "ONE TO NINE is a fixed 3×3 video splitter: it takes one source on `in` and divides the frame into nine equal sub-rectangles, exposing each cell on its own output (out1..out9) magnified to fill the whole output frame — a clean, grid-line-free crop of one ninth. Cells are numbered in reading order (1 = top-left, 5 = centre, 9 = bottom-right). The module's canonical surface is a MONITOR that shows the input with an amber 3×3 grid and a big upright 7-segment digit drawn in each cell, so the operator can see which cell feeds which output before patching — the grid and numbers appear ONLY on the monitor, never in the nine outputs (those stay clean). Use it alongside (not wired to) MAPPY to feed up to nine projectors a different ninth of one source, or fan one feed across a video wall. The on-card GRID button toggles the monitor overlay only.",
+    inputs: {
+      "in": "The single video source to split. The frame is divided into a fixed 3×3 grid of nine equal cells; each cell feeds its matching output, and the whole frame (with the optional grid overlay) feeds the monitor. With nothing patched the nine crop outputs are pure black, while the monitor shows a near-black dark field (still drawing the amber grid + cell numbers when Grid is on).",
+    },
+    outputs: {
+      "out1": "Cell 1 — the top-left ninth of the input, magnified to fill the frame. A clean crop with no grid lines or numbers.",
+      "out2": "Cell 2 — the top-center ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out3": "Cell 3 — the top-right ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out4": "Cell 4 — the mid-left ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out5": "Cell 5 — the centre ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out6": "Cell 6 — the mid-right ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out7": "Cell 7 — the bottom-left ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out8": "Cell 8 — the bottom-center ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+      "out9": "Cell 9 — the bottom-right ninth of the input, magnified to fill the frame. Clean crop, no grid or numbers.",
+    },
+    controls: {
+      "showGrid": "Grid (0/1 toggle, min 0 / max 1, linear, default ON; the card's GRID ON/OFF button). When on, the monitor draws the amber 3×3 grid plus a big upright 7-segment digit 1..9 in each cell so you can see which cell feeds which output; when off, the monitor is a raw input passthrough. Affects the monitor only — the nine crop outputs are always clean. Mirrored to node.data so the button and the persisted param stay in agreement.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
 

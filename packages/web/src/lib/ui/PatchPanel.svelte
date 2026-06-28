@@ -78,6 +78,8 @@
   import { getModuleDef } from '$lib/audio/module-registry';
   import { getVideoModuleDef } from '$lib/video/module-registry';
   import { getMetaModuleDef } from '$lib/meta/module-registry';
+  import { buildDocIndexFromDef } from '$lib/docs/doc-index-from-def';
+  import AnnotateLayer from '$lib/ui/AnnotateLayer.svelte';
   import { portConnections } from '$lib/ui/port-patch-helpers';
   import type { ModuleNode } from '$lib/graph/types';
   import type { Snippet } from 'svelte';
@@ -214,6 +216,21 @@
     const name = (node?.data as { name?: unknown } | null | undefined)?.name;
     if (typeof name === 'string' && name.trim().length > 0) return name;
     return node?.type ?? nodeId;
+  });
+
+  // ---------------- Annotate mode (authored-doc hover) ----------------
+  //
+  // Build the flat DocIndex for THIS card's module straight from the live audio
+  // def + MODULE_DOCS (reusing the doc-page builder). Null when the module has no
+  // authored docs → AnnotateLayer is inert and the right-click "Annotate" entry
+  // is hidden. Re-derives on graph change so a duplicated/retyped node stays
+  // correct. Audio-only: MODULE_DOCS covers audio modules (video defs aren't
+  // documented on the doc page yet).
+  let annotateDocIndex = $derived.by(() => {
+    void edgeVersion;
+    const node = patch.nodes[nodeId] as ModuleNode | undefined;
+    if (!node) return null;
+    return buildDocIndexFromDef(getModuleDef(node.type));
   });
 
   /** Remote endpoint strings for one port (empty when unpatched). */
@@ -979,6 +996,11 @@
     onclearelectra={gateMidi.clearElectra}
   />
 {/if}
+
+<!-- Annotate mode (personal authored-doc hover lens) — inert unless toggled ON
+     for this node via the right-click "Annotate" entry; null docIndex (no
+     authored docs) makes it a no-op. -->
+<AnnotateLayer {nodeId} docIndex={annotateDocIndex} />
 
 <style>
   .patch-panel-host {

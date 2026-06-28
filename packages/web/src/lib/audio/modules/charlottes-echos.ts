@@ -61,6 +61,27 @@ export const charlottesEchosDef: AudioModuleDef = {
     { id: 'mix',      label: 'Mix',    defaultValue: 0.5, min: 0,     max: 1,   curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A destructive multi-head stereo delay — a four-stage cascade of echoes that colour and degrade the source rather than repeating it cleanly. Each of the four stages tap the delayed signal in turn; FEEDBACK is fed to every stage so repeats compound across the chain into smeared, endless tails, DECAY progressively tapers each later stage's level and adds in-loop high-frequency loss for a darkening, dub-like decay, and PITCHUP shifts each stage up by a fixed ratio so the cascaded echoes climb in pitch — the classic ascending-shimmer effect. It is the audio sibling of the video-domain VDELAY, and roughly the sound of four COCOA DELAYs stacked in serial. Reach for it when you want the wet path to abuse the signal.",
+    inputs: {
+      L: 'Left-channel input feeding the multi-head delay cascade.',
+      R: 'Right-channel input feeding the cascade.',
+      delay: 'CV that scales the DELAY-time knob (log-scaled), shifting all tap times together — sweep it for tape-warble and pitch-bend smears on the echoes.',
+    },
+    outputs: {
+      L: 'Left-channel output: the dry signal blended with the four-stage wet cascade per MIX.',
+      R: 'Right-channel output: the dry signal blended with the wet cascade per MIX.',
+    },
+    controls: {
+      delay: 'Base tap time in seconds, log-scaled 1 ms..1.5 s — the spacing of the first echo (the cascade stages derive from it). Summed with the DELAY CV input.',
+      feedback: 'Feedback amount fed to EVERY stage (0..1). Because it compounds across the four-stage chain, even moderate settings build long tails and high settings smear into near-infinite, self-sustaining echoes.',
+      decay: "Per-tap colour-decay (0..1): progressively tapers each later stage's wet level and adds high-frequency loss inside the loop, so the repeats darken and degrade as they fade — the 'destructive', dub-delay character.",
+      pitchUp: 'Per-stage upward pitch shift (0..0.2). At 0 the echoes repeat at pitch; above 0 each successive stage is shifted up by a compounding ratio so the cascaded echoes climb in pitch — the signature ascending shimmer. Uses the same interpolation as the delay reads, so pitchUp=0 patches are bit-for-bit unchanged.',
+      mix: 'Dry / wet balance (0..1): 0 is the clean input, 1 is the cascade only, between crossfades the two.',
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

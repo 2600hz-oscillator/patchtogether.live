@@ -364,6 +364,7 @@
   onfullframe={() => ff.toggle(fullFrame)}
   isFullFrame={fullFrame}
   onpresent={(screenId) => present.present(screenId)}
+  onpresentall={() => present.presentAll(fs.availableScreens.filter((s) => !s.isPrimary).map((s) => s.id))}
   onstoppresent={() => present.stop()}
   isPresenting={present.isPresenting}
   onclose={() => { ctxOpen = false; }}

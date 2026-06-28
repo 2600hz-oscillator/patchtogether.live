@@ -114,6 +114,28 @@ export const analogLogicMathsDef: AudioModuleDef = {
     { id: 'attB', label: 'Att B', defaultValue: 1, min: -1, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "An analog-logic processor that runs five continuous algebraic operations on two inputs at once — the 'analog' counterpart to ILLOGIC's digital 0/1 booleans. Two inputs A and B each pass through a bipolar attenuverter, then the module simultaneously outputs their sample-wise MINIMUM, MAXIMUM, DIFFERENCE (A−B), SUM (soft-clipped with tanh), and PRODUCT (A×B, soft-clipped). Unlike ILLOGIC nothing is ever thresholded — every output is a smooth function of the inputs, so it works equally on CV and on audio. Musically: MIN/MAX of two waveforms gives jagged or smoothed wave-mashing; MAX of two envelopes is an 'either fires' combiner; DIFF of two LFOs makes anti-correlated motion; PRODUCT of two audio signals is ring modulation, of two CVs a smooth crossfade-blend. The two attenuverters can themselves be swept by CV.",
+    inputs: {
+      a: "Input A (bipolar CV or audio). Scaled by the ATT A attenuverter before feeding all five math operations.",
+      b: "Input B (bipolar CV or audio). Scaled by the ATT B attenuverter before the math.",
+      attA_cv: "CV control over the ATT A attenuverter knob — patch an LFO or envelope here to sweep how much of input A reaches the outputs (it adds to the knob's position).",
+      attB_cv: "CV control over the ATT B attenuverter knob — sweep how much of input B reaches the outputs (adds to the knob).",
+    },
+    outputs: {
+      min: "The sample-wise minimum of the two attenuverted inputs, min(A', B') — follows whichever signal is lower at each moment.",
+      max: "The sample-wise maximum, max(A', B') — follows whichever signal is higher; MAX of two envelopes acts as an OR-style 'either triggers'.",
+      diff: "The signed difference A' − B' — zero when the two match, swinging positive or negative as they diverge.",
+      sum: "The sum A' + B' run through a tanh soft-clipper, so it stays within ±1 and saturates gracefully instead of hard-clipping when both inputs are loud (at low levels it is nearly transparent).",
+      product: "The product A' × B' through the same tanh soft-clip: ring modulation for two audio inputs, or a smooth multiplicative blend for two CVs.",
+    },
+    controls: {
+      attA: "Bipolar attenuverter for input A (-1 to +1, default +1): +1 passes A through, 0 removes it from the math, negative values invert its sign. The ATT A CV input adds to this position.",
+      attB: "Bipolar attenuverter for input B (-1 to +1, default +1): +1 passes B, 0 removes it, negative inverts. The ATT B CV input adds to this position.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

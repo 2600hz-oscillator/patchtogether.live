@@ -85,6 +85,25 @@ export const moog923Def: AudioModuleDef = {
     { id: 'hpCutoff', label: 'Hi Pass', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A recreation of the Moog 923 Filters / Noise Source — a dual-purpose utility panel from the System 35. It does two unrelated jobs at once. First, a NOISE SOURCE: white and pink noise generators on two independent outputs, both scaled by one LEVEL knob — the raw material for percussion, wind, snare bodies, and sample-and-hold. Second, a simple FIXED FILTER section: one external audio input fanned into a low-pass and a high-pass filter, each with its own corner knob and its own output, so you can split a signal into low and high bands or just tame one end. The noise and the filter share no signal path — they are bundled on one panel for convenience. It is pure Web Audio (looping noise buffers + two biquads), no worklet.",
+    inputs: {
+      audio: "The external signal fed through the filter section — it fans into BOTH the low-pass and the high-pass at once (the signal being filtered, not a modulator).",
+    },
+    outputs: {
+      white: "Full-spectrum white noise, scaled by the LEVEL knob — equal energy per Hz, bright and hissy.",
+      pink: "Pink (1/f) noise, scaled by LEVEL — −3 dB/octave, warmer and more natural-sounding than white, good for wind and rumble.",
+      lp: "The audio input passed through the LOW-PASS filter, corner set by the LO PASS knob — the low band of the input.",
+      hp: "The audio input passed through the HIGH-PASS filter, corner set by the HI PASS knob — the high band of the input.",
+    },
+    controls: {
+      level: "Master gain on BOTH noise taps (white and pink) — sets the loudness of the noise outputs together. Does not affect the filter section. Defaults to 0.8.",
+      lpCutoff: "The LOW-PASS corner for the filter section's LP output. The 0..1 knob maps log across ~40 Hz to 20 kHz; lower it to darken the LP output, raise it to let more through. Defaults to 0.5.",
+      hpCutoff: "The HIGH-PASS corner for the filter section's HP output. The 0..1 knob maps log across ~40 Hz to 20 kHz; raise it to thin the HP output, lower it to let more low end through. Defaults to 0.5.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const initial = node.params ?? {};
     const paramOf = (id: string): number =>

@@ -202,6 +202,52 @@ export const timelordeDef: AudioModuleDef = {
     { id: 'swingSource', label: 'Src',   kind: 'knob', paramId: 'swingSource' },
   ],
 
+  docs: {
+    explanation:
+      "The rack's master clock — one canonical tempo source per patch (it's a singleton and can't be deleted; a rack that opens without one gets one dropped in automatically). Set a BPM and TIMELORDE fans out a whole family of clock outputs at standard musical divisions of that tempo, from a quarter-note pulse up through sixteenths and down to multi-bar pulses, plus a swung tap — so any sequencer, LFO, or trigger consumer can patch the exact division it needs without a separate clock divider. Patch an external clock into CLOCK IN and it locks its tempo to the incoming pulses (and follows that measured BPM everywhere, including LIVECODE's clock). Its transport is drivable hands-free via START/STOP gate inputs (wire a MIDICLOCK's start/stop to slave the rack to hardware), and the big card display shows a beat-pulsing neon WIZARD — or, if you patch a video feed into VIDEO IN, it becomes a live monitor that also passes the feed through VIDEO OUT, so TIMELORDE can sit inline in a video chain.",
+    inputs: {
+      clock:
+        "External clock input: while patched, TIMELORDE locks its master tempo to the measured period between incoming rising edges, so every division output tracks the external pulse train. Unpatch and it falls back to the internal BPM after a couple of beats.",
+      start_in:
+        "Transport START: a rising edge resumes the clock from wherever it was last stopped (musical position is preserved, like a DAW play button). Wire MIDICLOCK's start here to slave the rack's transport to a hardware MIDI device.",
+      stop_in:
+        "Transport STOP: a rising edge halts the clock — phase, sample counter and pending pulses all freeze and the outputs go low. This is a real transport stop (distinct from the card's MUTE, which silences the gates but keeps the clock turning). Wire MIDICLOCK's stop here for the matching stop side.",
+      gate:
+        "Wizard show/hide control — a level-sensitive (not edge-triggered) gate: while it is held high the neon WIZARD graphic is shown, while it is low the wizard is hidden. It converges on the same state as the on-card wizard toggle (the button is a manual override, this input is external control). Card-visual only — the clock ignores it.",
+      video_in:
+        "Cross-domain video input: patch a video feed here and the card's big display becomes a live monitor of that feed (the wizard steps aside) and the feed passes through to VIDEO OUT, so TIMELORDE can sit inline in a video chain.",
+    },
+    outputs: {
+      "1x": "Quarter-note clock — one pulse per beat at the master BPM. The reference division everything else is built from.",
+      "8x": "32nd-note clock — eight pulses per beat (the fastest subdivision tap).",
+      "4x": "Sixteenth-note clock — four pulses per beat.",
+      "2x": "Eighth-note clock — two pulses per beat.",
+      "1/2": "Half-note clock — one pulse every two beats.",
+      "1/3": "One pulse every three beats (dotted/triplet-feel longer division).",
+      "1/4": "One pulse every four beats — once per bar in 4/4.",
+      "1/8": "One pulse every eight beats — once every two bars.",
+      "1/12": "One pulse every twelve beats — once every three bars.",
+      "1/16": "One pulse every sixteen beats — once every four bars.",
+      "1/32": "One pulse every thirty-two beats — once every eight bars.",
+      "1/64": "One pulse every sixty-four beats — once every sixteen bars (the slowest tap, for very long-form modulation).",
+      swing:
+        "A swung version of the eighth-note (2x) clock, offset by the SWING amount and taken from the division the SRC control selects — patch it where you want a shuffled rather than straight clock.",
+      video_out:
+        "Cross-domain video output: the picture the card's big display shows — the live feed when something is patched into VIDEO IN, otherwise the beat-pulsing wizard — passed on for downstream video modules.",
+    },
+    controls: {
+      bpm: "BPM — the master tempo every division output is derived from (10–300). When an external clock is patched it's overridden by the measured external tempo.",
+      swingAmount: "SWING — how far the SWING output's off-beats are pushed late (0–90°); 0 is dead-straight, higher values deepen the shuffle.",
+      swingSource: "SRC — which clock division feeds the SWING tap, so you can swing a faster or slower subdivision than the default eighth.",
+      muteOutputs:
+        "MUTE — silences every gate output while the internal clock keeps running underneath (so LIVECODE's clocked() callbacks and other tick subscribers stay alive). Bound to the card's MUTE button. Different from a transport STOP, which actually halts the clock.",
+      running:
+        "RUN — the transport state (1 = clock advancing, 0 = halted with phase frozen). It is driven by the START/STOP gate inputs rather than a card knob, and is saved so a stopped rack reloads stopped.",
+      wizardOn:
+        "WIZARD — whether the neon WIZARD card graphic is shown (1) or hidden (0); it pulses with the beat while running. Driven by both the on-card wizard toggle and the level on the gate input. Card-visual only — not used by the clock.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

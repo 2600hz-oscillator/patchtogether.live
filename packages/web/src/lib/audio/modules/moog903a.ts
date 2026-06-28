@@ -56,6 +56,19 @@ export const moog903aDef: AudioModuleDef = {
     { id: 'level', label: 'Level', defaultValue: 0.8, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 903A Random Signal Generator — the System 55/35 noise source. It generates two independent flavours of noise on two outputs at once: full-spectrum WHITE noise (equal energy per Hz, bright and hissy) and PINK noise (-3 dB/octave, equal energy per octave, darker and more natural-sounding). It has no inputs and no CV — just a single LEVEL knob that scales both taps together. Mental model: an analog noise panel; patch WHITE into a filter for percussion and S&H, or PINK for wind/rumble textures. (As CV, slow random noise into a sample & hold makes random voltages.)",
+    inputs: {},
+    outputs: {
+      white: "Full-spectrum white noise (equal energy at every frequency) — bright and hissy. Classic source for hi-hats/snares through a filter, or for sampling into a sample & hold.",
+      pink: "Pink noise, rolled off at -3 dB/octave (equal energy per octave) — darker and warmer than white, good for wind/rumble beds and gentler random textures.",
+    },
+    controls: {
+      level: "Master output level applied to BOTH the white and pink taps at once, 0 (silent) to 1 (full). There is no per-output trim — the two taps always share this gain.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const sampleRate = ctx.sampleRate;
     const bufferLen = Math.floor(BUFFER_SECONDS * sampleRate);

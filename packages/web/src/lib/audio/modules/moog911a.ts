@@ -66,6 +66,28 @@ export const moog911aDef: AudioModuleDef = {
     { id: 'mode',   label: 'Mode',    defaultValue: 0,   min: 0,     max: MOOG911A_MAX_MODE, curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 911A Dual Trigger Delay — two independent timers that each take an incoming trigger and re-emit it a programmed time later. A rising edge on a TRIG input starts that channel's countdown; when the DELAY time elapses the matching OUT emits a short (~1 ms) trigger pulse. The MODE switch couples the two channels: OFF runs them as two separate delays (each its own trigger in/out), PARALLEL fans one trigger into BOTH delays at once (one input fires two outputs, useful for staggered double-hits), and SERIES chains them so OUT 1 re-triggers delay 2 (the total delay before OUT 2 fires is delay1 + delay2). Mental model: a pair of 'echo' timers for gates/triggers — patch a clock or strike in, get a time-shifted copy out, to offset a second voice or build rhythmic delays of events (not audio).",
+    inputs: {
+      trig1:
+        "Trigger input for delay 1, and the master trigger in PARALLEL and SERIES modes. A rising edge here starts delay 1's countdown (and, in PARALLEL, delay 2's too); it fires once per edge, not while held.",
+      trig2:
+        "Trigger input for delay 2 — used only in OFF mode (where the two delays are independent). In PARALLEL and SERIES this input is ignored because delay 2 is driven from TRIG 1 / OUT 1 instead.",
+    },
+    outputs: {
+      out1:
+        "Delay 1's output: a short (~1 ms) trigger pulse emitted once, DELAY 1 seconds after its trigger arrived. In SERIES mode this pulse also re-triggers delay 2.",
+      out2:
+        "Delay 2's output: a short trigger pulse, DELAY 2 seconds after delay 2 was triggered (from TRIG 2 in OFF, from TRIG 1 in PARALLEL, or from OUT 1 in SERIES — giving a total delay1 + delay2 from the original trigger).",
+    },
+    controls: {
+      delay1: "Delay time for channel 1: how long after its trigger before OUT 1 fires, from 2 ms up to 10 s (log taper).",
+      delay2: "Delay time for channel 2: how long before OUT 2 fires, from 2 ms up to 10 s (log taper). In SERIES this stacks on top of delay 1.",
+      mode: "Coupling between the two delays: OFF = independent (each its own trigger in/out), PARALLEL = TRIG 1 fires both delays at once (one in, two staggered outs), SERIES = OUT 1 re-triggers delay 2 so the two times add up (delay1 then delay2).",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

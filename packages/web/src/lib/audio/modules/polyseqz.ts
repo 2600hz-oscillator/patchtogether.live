@@ -201,6 +201,49 @@ export const polyseqzDef: AudioModuleDef = {
   // Instruments v1 — full step grid is atomically exposable.
   exposesSequence: true,
 
+  docs: {
+    explanation:
+      "A polyphonic CHORD sequencer: instead of one note per step it stores a whole chord — a root note plus a quality (major/minor/etc.), an inversion, and a voicing strategy (closed / open / spread) — and plays the lot at once. It walks a playhead across up to 128 steps (16 per page, 8 pages) on its own BPM clock or an external clock, emitting a 5-voice POLY cable that carries the full chord per step. To hear it you feed that POLY output into a poly-aware voice (RIOTGIRLS, DX7, POLYHELM, or any module with a poly input) so each chord tone gets its own voice; a mono pitch input still works and just receives the chord's root. A convenience mono GATE goes high whenever any voice is sounding (handy for one shared envelope), and a Humanize control adds per-voice timing jitter so chords don't land perfectly machine-tight. Eight quicksave slots and the transport CV inputs let you build and switch chord progressions live.",
+    inputs: {
+      clock:
+        "External clock: each rising edge advances the playhead exactly one step (one chord). While anything is patched here the internal BPM is ignored and the incoming pulses set the pace (and run the sequencer); unpatch to fall back to the BPM clock.",
+      play_cv: "A rising edge toggles play/stop (each pulse flips the run state).",
+      reset_cv: "A rising edge snaps the playhead back to step 1 and restarts the progression.",
+      queue1_cv: "A rising edge queues pattern slot 1 — applied at the end of the current loop, then plays it from step 1 (no-op if empty).",
+      queue2_cv: "A rising edge queues pattern slot 2 — applied at the end of the current loop (no-op if empty).",
+      queue3_cv: "A rising edge queues pattern slot 3 — applied at the end of the current loop (no-op if empty).",
+      queue4_cv: "A rising edge queues pattern slot 4 — applied at the end of the current loop (no-op if empty).",
+      humanize_cv:
+        "CV that modulates the Humanize amount (0..1, summed with the knob): a positive voltage adds more per-voice timing jitter so the chord's notes don't all strike on exactly the same instant. Patch an LFO or envelope here to make the looseness breathe.",
+    },
+    outputs: {
+      poly:
+        "The current step's chord as a 5-voice POLY cable (each lane carries its own pitch CV + gate). Patch into a poly-aware voice (RIOTGIRLS / DX7 / POLYHELM / any module with a poly input) so each chord tone gets its own voice; a mono pitch input automatically receives just lane 0, the chord's root.",
+      gate:
+        "A convenience mono gate that goes high while ANY voice of the current chord is sounding and low between chords — drive one shared ADSR/VCA from it without unpacking the poly cable. Its high time within the step follows the gate-length control.",
+      clock: "A short ~10 ms pulse on every step advance, regardless of whether the step is on — chain it into another sequencer's clock in.",
+    },
+    controls: {
+      bpm:
+        "Internal tempo in beats per minute (each step is an 8th note here — slower than the mono sequencer's 16th-note grid, which suits chords), used only when nothing is patched into CLOCK IN.",
+      length: "How many steps (chords) the playhead walks before wrapping to step 1; raising it past 16 reveals more pages.",
+      octave: "Shifts every chord up or down by whole octaves at once (-2 to +2); the chord transposes as a block so its voicing stays intact.",
+      gateLength: "How much of each step the voices' gates stay high, from a short 10% stab to a near-legato 95% (always closing just before the next step).",
+      humanize:
+        "Spreads each voice's onset slightly in time so a chord strums/loosens instead of hitting perfectly together: 0 is machine-tight, higher values add more random per-voice jitter (up to a few tens of milliseconds). Also modulatable via the humanize_cv input.",
+      isPlaying:
+        "The run/stop state: 1 plays, 0 stops and forces the gates low; starting playback snaps the playhead back to step 1. Same control as the card's PLAY button.",
+      snh:
+        "Sample & hold on the per-voice pitch CV, on by default (the card's S&H face button): when on, each voice's pitch is latched cleanly at its gate edge (pinned to the un-jittered step time) so the note is stable when the gate rises even while Humanize jitters the timing; off reverts to the legacy behavior where pitch can drift ahead of the gate under Humanize.",
+      "polyseqz-root-{n}":
+        "Step {n}'s ROOT note — the editable pitch box that sets the bottom note of this step's chord. Type a note name (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to move across the step row; Enter commits and advances to the next step's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it (empty) makes the step a rest even if its gate is lit. The chord's quality, inversion and voicing badges build the rest of the chord UP from this root, which is then transposed by the OCT control and broadcast across the poly pitch lanes.",
+    },
+  },
+
+  controlFamilies: [
+    { id: 'polyseqz-root', label: 'Per-step root note entry', kind: 'cell', testidPrefix: 'polyseqz-root', countParam: 'length' },
+  ],
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const polyPitch = createPolySender(ctx);
     const gateSrc = ctx.createConstantSource();

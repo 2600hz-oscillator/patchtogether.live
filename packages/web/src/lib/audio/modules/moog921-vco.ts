@@ -85,6 +85,45 @@ export const moog921VcoDef: AudioModuleDef = {
     { id: 'level',       label: 'Level', defaultValue: 1,   min: 0,     max: 2,    curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 921 Voltage Controlled Oscillator — the standalone, fully self-contained version of the System 55/35 oscillator (the 921A driver + 921B slave packed into one module). One oscillator core presents FOUR simultaneous waveform jacks off the same pitch — sine, triangle, sawtooth, and a rectangular pulse whose duty cycle you set with WIDTH — so you can take a pure sine to one place and a buzzy saw to another from a single voice. Pitch is exponential 1V/oct (0 V at the PITCH jack = C4), set by the RANGE (octave) and FREQ (fine) knobs and tracked across roughly 1 Hz to 40 kHz, with a dedicated LINEAR FM input for through-zero-style timbral modulation and a sync input that locks the core's phase to an external source. Mental model: it's a normal analog VCO with the Moog-ladder oscillator's band-limited (polyBLEP) waveshapes, four taps instead of a waveform selector.",
+    inputs: {
+      pitch:
+        "1V/oct exponential pitch CV: 0 V plays C4 and every +1.0 raises the oscillator one octave. Patch a keyboard, sequencer, or the 921A driver bus here to play it; it sums on top of the RANGE + FREQ knobs.",
+      lin_fm:
+        "Audio-rate LINEAR frequency modulation input — adds to the frequency in Hz (not exponentially), so the modulation depth stays constant in pitch terms across the keyboard rather than widening with pitch. Its depth is set by the LIN FM knob; patch another oscillator here for clangorous FM/bell timbres.",
+      sync:
+        "External sync source: each rising edge resets (hard) or nudges (soft) the oscillator's phase to lock it to the incoming signal, per the SYNC switch — patch a second oscillator here and sweep this one's pitch for the classic hard-sync sweep.",
+      width_cv:
+        "Pulse-width CV: summed onto the WIDTH knob per sample so an LFO here animates the rectangular output's duty cycle (pulse-width modulation). It only affects the rectangular tap; the sine/triangle/saw stay fixed.",
+      octave:
+        "CV that displaces the RANGE knob in octaves (coarse pitch); a bipolar LFO/envelope here transposes the oscillator by whole octaves around the knob setting.",
+      tune:
+        "CV that displaces the FREQ fine knob in semitones; use it for subtle vibrato or fine detune layered on top of the 1V/oct pitch.",
+      linFmAmount:
+        "CV that displaces the LIN FM depth knob, so you can modulate how much linear FM the lin_fm input applies (e.g. open the FM with an envelope for a percussive attack).",
+      level:
+        "CV that displaces the output LEVEL, acting as a built-in VCA on every waveform tap — patch an envelope here to shape the oscillator's amplitude without an external VCA.",
+    },
+    outputs: {
+      sine: "The pure sine tap — the fundamental with no harmonics. Same pitch as the other three taps.",
+      triangle: "The triangle tap — a soft, hollow tone with only odd harmonics rolling off steeply (mellower than the saw).",
+      sawtooth: "The band-limited sawtooth tap — the brightest, fullest waveform (all harmonics), the staple for subtractive bass and leads.",
+      rectangular:
+        "The rectangular / pulse tap — its duty cycle is set by the WIDTH knob (and width_cv); a 50% square is hollow, off-square pulses get nasal and thin, and sweeping the width is pulse-width modulation.",
+    },
+    controls: {
+      octave: "Coarse pitch in whole octaves (RANGE), -5 to +5 around the patched 1V/oct pitch. The octave CV input adds on top of this.",
+      tune: "Fine pitch trim in semitones (FREQ), ±12 (one octave each way) for tuning the oscillator against others or detuning for thickness.",
+      width:
+        "Duty cycle of the rectangular tap, 2% to 98% (0.5 = a 50% square). Only the rectangular output responds; sweep it (or modulate with width_cv) for pulse-width modulation.",
+      linFmAmount: "How much the LINEAR FM input bends the pitch, ±1 — at 0 the lin_fm jack is silent; raise it for FM/bell timbres.",
+      sync: "SYNC mode switch: -1 = soft sync (a gentle phase nudge), 0 = off, +1 = hard sync (a full phase reset on each edge of the sync input).",
+      level: "Output gain on every waveform tap, 0 to 2 (1 = unity). Acts as the oscillator's own VCA; the level CV input adds on top.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     if (!loadedContexts.has(ctx)) {
       await ctx.audioWorklet.addModule(workletUrl);

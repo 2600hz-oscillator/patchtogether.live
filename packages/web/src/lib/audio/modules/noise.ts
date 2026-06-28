@@ -138,6 +138,23 @@ export const noiseDef: AudioModuleDef = {
     { id: 'level', label: 'Level', defaultValue: 0.5, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A pure noise source with three independent spectral flavors: white (flat spectrum), pink (1/f, -3 dB/oct), and brown (1/f², -6 dB/oct). All three noise streams run continuously from a shared 2-second looping buffer and are gain-scaled by a single LEVEL knob. Mental model: patch any combination of the three outputs into different channels to layer different timbres—white for brightness, pink for warmth, brown for rumble—all controlled by one master gain. Since the buffer loop is long and aperiodic noise by nature, the 0.5 Hz loop seam is inaudible.",
+    inputs: {},
+    outputs: {
+      white:
+        "Full-spectrum white noise with flat frequency response; uniform random amplitude across all audible frequencies. One of three independent outputs sharing the LEVEL control.",
+      pink: "1/f pink noise at -3 dB per octave slope; warmer than white noise with attenuated highs. Useful for smooth, natural-sounding textures. One of three independent outputs sharing the LEVEL control.",
+      brown:
+        "1/f² brown noise at -6 dB per octave slope; the darkest flavor with heavy low-frequency content. One of three independent outputs sharing the LEVEL control.",
+    },
+    controls: {
+      level:
+        "Master gain applied equally to all three noise outputs, from silence (0) to full amplitude (1). Default 0.5 provides moderate headroom; raise it to push the noise through downstream processing, lower it to blend subtly into a mix.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const sampleRate = ctx.sampleRate;
     const bufferLen = Math.floor(BUFFER_SECONDS * sampleRate);

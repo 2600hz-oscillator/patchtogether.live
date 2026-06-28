@@ -285,6 +285,38 @@ export const ruttetraDef: VideoModuleDef = {
     { id: 'yPhase',    label: 'Y Phase',   defaultValue: DEFAULTS.yPhase,    min: 0,    max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: `An authentic forward-scatter Rutt/Etra scan-processor. A 320x180 grid of sample points walks the Z source; for each point it reads the source luma, places it along an internally-generated H/V ramp, then displaces that position by (luma - 0.5) so bright pixels push their scanline outward and dark pixels recede - building a 3D heightmap relief out of the picture. Adjacent grid points within each row are joined into horizontal LINE segments, and the whole raster is drawn with additive (phosphor) blending over a black field, exactly like a CRT scope. With everything at default the ramp is a linear 1:1 mapping and Y Disp = -0.3, so the source is read upright and bright areas raise the terrain - the classic Rutt/Etra "raised landscape" look. Patch any video, image, or keyer into Z; sweep Y Disp (and X Disp) for relief depth, raise Intensity for a brighter glow, morph the X/Y Shape ramps toward triangle/soft/radial for warped scan geometry, and modulate the params with CV for animated topography. Z left unpatched binds a mid-grey sentinel (luma 0.5 = zero displacement), so the card shows flat scanlines rather than a black void. The card has a live preview screen; hiding the controls turns it into a resizable monitor (drag the bottom-right corner, double-click to restore) — a viewport only, it does not change the output resolution.`,
+    inputs: {
+      z: "Z (video) - the source frame. Its per-pixel luma (0.299R+0.587G+0.114B) is sampled at each of the 320x180 grid points and drives that point's outward displacement; the source RGB is also carried through as the scanline color. Accepts video, mono-video, image, or keys (upcast by the engine). Unpatched, a mid-grey 1x1 texture is bound so luma is 0.5 everywhere and the scanlines draw flat instead of going black.",
+      xShape: "X Shape (cv) - modulates the X Shape control, morphing the horizontal ramp shape (linear -> triangle -> soft-fold -> radial) that positions each scanline across the frame.",
+      yShape: "Y Shape (cv) - modulates the Y Shape control, morphing the vertical ramp shape (linear -> triangle -> soft-fold -> radial) that stacks the scanlines down the frame.",
+      xDisp: "X Disp (cv) - modulates the X Disp control, scaling how far each point is pushed left/right by its luma (bipolar around mid-grey).",
+      yDisp: "Y Disp (cv) - modulates the Y Disp control, scaling how far each point is pushed up/down by its luma; this is the main relief/height knob of the heightmap.",
+      intensity: "Intensity (cv) - modulates the Intensity control, scaling the brightness of the additively-blended scanlines.",
+      xFreq: "X Freq (cv) - modulates the X Freq control, setting how many horizontal ramp cycles span the frame (0.25..8); higher values repeat the scan pattern across X.",
+      yFreq: "Y Freq (cv) - modulates the Y Freq control, setting how many vertical ramp cycles span the frame (0.25..8); higher values repeat the scan pattern down Y.",
+    },
+    outputs: {
+      out: "out (video) - the rendered Rutt/Etra raster: additive horizontal scanlines, luma-displaced into a heightmap, over a black phosphor field. Chainable into any video input and also feeds the on-card preview screen.",
+    },
+    controls: {
+      xShape: "X Shape (0..1, default 0) - morphs the horizontal ramp shape that lays the source across each scanline. 0 = linear (1:1, the unwarped raster), ~0.33 = triangle, ~0.66 = soft-fold (raised cosine), 1 = radial (distance from center). The card prints the current name (linear / triangle / soft / radial and the crossfades between them).",
+      yShape: "Y Shape (0..1, default 0) - morphs the vertical ramp shape that stacks the scanlines down the frame, through the same linear -> triangle -> soft-fold -> radial sequence as X Shape, with the current name shown on the card.",
+      xDisp: "X Disp (-1..1, default 0) - bipolar amount that luma pushes each point horizontally. (luma - 0.5) * X Disp, so mid-grey never moves; negative and positive deflect bright pixels to opposite sides.",
+      yDisp: "Y Disp (-1..1, default -0.3) - bipolar amount that luma pushes each point vertically; this builds the 3D relief. The default -0.3 makes bright pixels rise (the classic raised-terrain look).",
+      intensity: "Intensity (0..2, default 1.5) - multiplies the scanline color before the additive blend; raises or dims the overall glow of the raster (default 1.5 keeps the additive lines from looking too faint). It affects brightness only, not relief depth.",
+      tintR: "Tint R (0..1, default 1) - red multiplier applied to every scanline's color. Lower it to drain red from the phosphor tint. No CV input (panel knob only).",
+      tintG: "Tint G (0..1, default 1) - green multiplier applied to every scanline's color. Lower it to drain green from the phosphor tint. No CV input (panel knob only).",
+      tintB: "Tint B (0..1, default 1) - blue multiplier applied to every scanline's color. Combine R/G/B to push the whole raster toward a monochrome CRT hue. No CV input (panel knob only).",
+      xFreq: "X Freq (0.25..8, default 1) - horizontal ramp frequency: how many shape-ramp cycles span the frame in X. 1 = one pass; higher values repeat/fold the scan pattern across the width. Lives under the card's ADVANCED disclosure.",
+      yFreq: "Y Freq (0.25..8, default 1) - vertical ramp frequency: how many shape-ramp cycles span the frame in Y. 1 = one pass; higher values repeat/fold the scanlines down the height. Lives under the card's ADVANCED disclosure.",
+      xPhase: "X Phase (0..1, default 0) - phase offset added to the horizontal ramp after the frequency multiply and before shaping, sliding the X scan pattern sideways. Panel knob only (no CV input); under the ADVANCED disclosure.",
+      yPhase: "Y Phase (0..1, default 0) - phase offset added to the vertical ramp after the frequency multiply and before shaping, sliding the Y scan pattern up/down. Panel knob only (no CV input); under the ADVANCED disclosure.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
 

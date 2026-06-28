@@ -64,6 +64,14 @@ export const painterDef: VideoModuleDef = {
   ],
   params: [],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: `painter is an interactive MS-Paint-style drawing SURFACE that acts as a pure video SOURCE — there is no video input. The card is a tiny Windows-95 Paint: a 9-tool palette (pencil, brush, eraser, fill, pick/eyedropper, line, rect, ellipse, text), the classic 28-colour Win95 swatch grid (2 rows x 14), a SIZE slider, a FILL toggle, and an engine-resolution drawing canvas. The tools work the MS-Paint way — pencil draws a hard 1px stroke; brush/line/rect/ellipse draw at the SIZE width; FILL toggles a filled vs outlined interior for rect/ellipse; fill flood-fills under the click with the FOREGROUND colour; pick (eyedropper) samples a pixel's colour; and text stamps the typed string. Left-click a swatch sets the FOREGROUND (strokes/text/fill), right-click sets the BACKGROUND (eraser + filled-shape interior); tool and colour choices stay LOCAL per collaborator. UNDO removes the last committed op and CLEAR empties the canvas back to a blank white page. Whatever you paint appears in real time on the single video output, 1:1 — the card binds its live canvas to the module once and the engine uploads + blits it into the output FBO every frame (1024x768 in 4:3, 1366x768 in 16:9). Until you draw anything the output is a flat opaque WHITE page (MS-Paint's default blank page), never a dead black frame — the shader returns solid white when no canvas is bound. The drawing is stored as a Y.Doc-synced ordered op log (node.data.ops): each committed stroke/shape/fill/text appends one PaintOp and on mount/remote-edit the card deterministically replays the log, so every collaborator sees the same picture. The card's drawing/preview canvas is resizable (it flex-fills the space between the toolbar and palette and is the actual video output); resizing only scales the on-card display — the output stays at engine resolution. Usage: spawn it, pick a tool and colour, draw, and patch OUT (on the yellow drill-down patch panel) into any video destination (mixer, keyer, effect, output) to use your sketch as a live source or hand-drawn matte.`,
+    outputs: {
+      out: "Video output carrying the painted canvas at the engine output resolution, blitted 1:1 from the card's live drawing surface every frame (a flat opaque white page before you draw anything). This is the module's only port and lives on the card's drill-down patch panel.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     void node;
     const gl = ctx.gl;

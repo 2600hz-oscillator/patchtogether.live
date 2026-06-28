@@ -130,17 +130,19 @@ describe('warrenspectrum / ping rings the band', () => {
     const msg = `mags=${mags.map((m) => m.toExponential(2)).join(', ')}`;
     // ROBUST (non-flaky) assertion: band 5 must be the dominant ringing band,
     // but we don't demand it be the strict argmax. The bandpass bleeds 0.35
-    // into n±1, so the n-1 neighbour (band 4) sometimes edges band 5 by a few
-    // percent in the ±5% DFT window — that near-tie is acoustically identical
-    // and was the chronic CI flake here (idx 4 vs idx 5 at ~2.6% apart). What a
-    // REAL regression looks like (ringing at the wrong band, e.g. the fixed-
-    // before silent/mis-tuned excitation) is band 5 NOT dominating the far
-    // bands. So we assert:
-    //   - band 5 is in the top 2 bins (it or its immediate neighbour peaks),
+    // into BOTH n±1 neighbours, so in the ±5% DFT window band 4 AND band 6 can
+    // each edge band 5 by a few percent — a 3-way near-tie among {4,5,6} that is
+    // acoustically identical and was the chronic CI flake here (band 5 landing
+    // 3rd by ~2-3%, e.g. mags 5.04e-4 / 4.91e-4 / 4.97e-4 → top-2 was {4,6}).
+    // A top-2 check still flaked when BOTH neighbours tied; widen to top-3 (the
+    // center + its two immediate bleed-neighbours). What a REAL regression looks
+    // like (ringing at the wrong band, e.g. silent/mis-tuned excitation) is band
+    // 5 NOT dominating the far bands. So we assert:
+    //   - band 5 is in the top 3 bins (it or either immediate neighbour peaks),
     //   - band 5 dominates every band ≥2 away by a wide margin.
     const sortedIdx = mags.map((m, i) => [m, i] as const).sort((a, b) => b[0] - a[0]).map(([, i]) => i);
-    const top2 = new Set([sortedIdx[0], sortedIdx[1]]);
-    expect(top2.has(5), `band 5 (2560Hz) is among the two strongest bands; ${msg}`).toBe(true);
+    const top3 = new Set([sortedIdx[0], sortedIdx[1], sortedIdx[2]]);
+    expect(top3.has(5), `band 5 (2560Hz) is among the three strongest bands; ${msg}`).toBe(true);
     // Dominance over distant bands — catches "rings at the wrong place".
     for (const far of [0, 1, 2, 3, 7]) {
       expect(

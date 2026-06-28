@@ -385,6 +385,7 @@ callsine param note -60..60 linear default=0 unit=st
 callsine param timbre 0..1 linear default=0.4
 cameraInput meta domain=video schema=1 maxInstances=4
 cameraInput in gain cv param=gain cvScale=linear
+cameraInput in mirror gate param=mirror edge=gate
 cameraInput out out video
 cameraInput param enabled 0..1 discrete default=1
 cameraInput param fillMode 0..1 discrete default=1
@@ -406,6 +407,7 @@ cartesian param lfoShape 0..3 linear default=0
 cartesian param mode 0..1 discrete default=0
 cartesian param octave -2..2 discrete default=0
 cartesian param snh 0..1 discrete default=1
+cartesian family cart-pitch kind=cell prefix=cart-pitch
 cellshade meta domain=video schema=1
 cellshade in bits cv param=bits cvScale=discrete
 cellshade in in video
@@ -531,6 +533,9 @@ clipplayer param octave -2..2 discrete default=0
 clipplayer param quantize 0..1 discrete default=1
 clipplayer param snh 0..1 discrete default=1
 clipplayer param stepDiv 0..3 discrete default=2
+clipplayer family clipplayer-cell kind=cell prefix=clipplayer-cell
+clipplayer family clipplayer-mono kind=other prefix=clipplayer-mono
+clipplayer family clipplayer-pad kind=cell prefix=clipplayer-pad
 clockedRunner meta domain=audio schema=1
 clouds meta domain=audio schema=1
 clouds in blend_cv cv param=blend cvScale=linear
@@ -899,8 +904,9 @@ drumseqz param trk4_euclid 0..16 discrete default=0
 drumseqz param trk4_octave -2..2 discrete default=0
 drumseqz param trk4_root 33..114 discrete default=48
 drumseqz expose playStop
+drumseqz family drumseqz-pitch kind=cell prefix=drumseqz-pitch count=length
 dx7 meta domain=audio schema=1
-dx7 in gate gate
+dx7 in gate gate edge=gate
 dx7 in pitch_cv cv
 dx7 in poly polyPitchGate
 dx7 out out audio
@@ -912,6 +918,8 @@ dx7 param release 0.001..5 log default=0.005 unit=s
 dx7 param sustain 0..1 linear default=1
 dx7 param transpose -24..24 linear default=0 unit=st
 dx7 param voiceCount 1..5 discrete default=5
+dx7 family dx7-preset-select kind=other prefix=dx7-preset-select
+dx7 family dx7-syx-input kind=other prefix=dx7-syx-input
 edges meta domain=video schema=1
 edges in in video
 edges in thickness cv param=thickness cvScale=linear
@@ -1142,6 +1150,15 @@ gibribbon param cv2 0..1 linear default=0
 gibribbon param cv3 0..1 linear default=0
 gibribbon param cv4 0..1 linear default=0
 gibribbon param gate 0..1 linear default=0
+graphicEq meta domain=video schema=1
+graphicEq in audio_l audio
+graphicEq in audio_r audio
+graphicEq out out video
+graphicEq param display 0..1 discrete default=1
+graphicEq param gain 0.5..4 linear default=1.6
+graphicEq param hue 0..1 linear default=0
+graphicEq param peak 0.5..0.99 linear default=0.92
+graphicEq param style 0..1 discrete default=1
 grids meta domain=audio schema=1
 grids in bdDensity_cv cv
 grids in chaos_cv cv
@@ -1224,6 +1241,10 @@ helm param subVol 0..1 linear default=0.4
 helm param subWave 0..3 discrete default=3
 helm param voiceCount 1..8 discrete default=6
 helm param volume 0..2 linear default=0.7
+helm family helm-gear-btn kind=other prefix=helm-gear-btn
+helm family helm-seq-onoff kind=other prefix=helm-seq-onoff
+helm family helm-seq-reset kind=other prefix=helm-seq-reset
+helm family helm-step kind=step-grid prefix=helm-step count=stepNumSteps
 hydrogen meta domain=audio schema=1 exposesSequence
 hydrogen in clock_in gate
 hydrogen in cv_a_0 cv param=A0 cvScale=log
@@ -1577,6 +1598,7 @@ hydrogen param vol7 0..2 linear default=1
 hydrogen param vol8 0..2 linear default=1
 hydrogen param vol9 0..2 linear default=1
 hydrogen expose playStop
+hydrogen family hydrogen-cell kind=step-grid prefix=hydrogen-cell
 hypercube meta domain=audio schema=1
 hypercube in alpha cv param=alpha cvScale=linear
 hypercube in connect cv param=connect cvScale=linear
@@ -1659,6 +1681,7 @@ kria out pitch3 pitch
 kria out pitch4 pitch
 kria param bpm 30..300 linear default=120
 kria param running 0..1 discrete default=0
+kria family kria-cell kind=cell prefix=kria-cell
 launchpadControlLeft meta domain=meta schema=1
 lfo meta domain=audio schema=1
 lfo in clock gate
@@ -1723,6 +1746,7 @@ macrooscillator param model 0..13 discrete default=0
 macrooscillator param morph 0..1 linear default=0.5
 macrooscillator param note -60..60 linear default=0 unit=st
 macrooscillator param timbre 0..1 linear default=0.3
+macrooscillator family macro-model-name kind=other prefix=macro-model-name
 macseq meta domain=audio schema=1 exposesSequence
 macseq in clock gate
 macseq in next_cv gate
@@ -1748,6 +1772,8 @@ macseq param isPlaying 0..1 discrete default=0
 macseq param length 1..128 discrete default=16
 macseq param octave -2..2 discrete default=0
 macseq expose playStop
+macseq family macseq-model kind=cell prefix=macseq-model count=length
+macseq family macseq-pitch kind=cell prefix=macseq-pitch count=length
 mandelbulb meta domain=video schema=1
 mandelbulb in detail_cv cv param=detail cvScale=linear
 mandelbulb in hue_cv cv param=hue cvScale=linear
@@ -2391,6 +2417,7 @@ numpadPlus param octave 0..8 discrete default=4
 numpadPlus param overdub 0..1 discrete default=0
 numpadPlus param poly 0..1 discrete default=0
 numpadPlus param recArm 0..1 discrete default=0
+numpadPlus family numpad-cell kind=cell prefix=numpad-cell
 onetonine meta domain=video schema=1
 onetonine in in video
 onetonine out out1 video
@@ -2621,6 +2648,7 @@ polyseqz param length 1..128 discrete default=8
 polyseqz param octave -2..2 discrete default=0
 polyseqz param snh 0..1 discrete default=1
 polyseqz expose playStop
+polyseqz family polyseqz-root kind=cell prefix=polyseqz-root count=length
 pong meta domain=audio schema=1
 pong in paddle_left cv
 pong in paddle_right cv
@@ -2977,6 +3005,9 @@ score param isPlaying 0..1 discrete default=0
 score param release 0.001..10 log default=0.3 unit=s
 score param sustain 0..1 linear default=0.7
 score expose playStop
+score family score-dyn kind=cell prefix=score-dyn
+score family score-note kind=cell prefix=score-note
+score family score-tie kind=cell prefix=score-tie
 scoreboard meta domain=video schema=1
 scoreboard in reset cv param=resetTrig
 scoreboard in score cv param=scoreTrig
@@ -3013,6 +3044,7 @@ sequencer expose playStop
 sequencer family quicksave-slot kind=quicksave prefix=quicksave-slot
 sequencer family seq-chord kind=cell prefix=seq-chord count=length
 sequencer family seq-gate kind=step-grid prefix=seq-gate count=length
+sequencer family seq-pitch kind=cell prefix=seq-pitch count=length
 shapedramps meta domain=video schema=1
 shapedramps in h_freq cv param=h_freq cvScale=linear
 shapedramps in h_phase cv param=h_phase cvScale=linear
@@ -3813,6 +3845,10 @@ wavecel param spread 1..5 linear default=1
 wavecel param sustain 0..1 linear default=1
 wavecel param tune -36..36 linear default=0 unit=st
 wavecel stereo out_l+out_r
+wavecel family wavecel-preset-select kind=other prefix=wavecel-preset-select
+wavecel family wavecel-source-select kind=other prefix=wavecel-source-select
+wavecel family wavecel-viz-toggle kind=other prefix=wavecel-viz-toggle
+wavecel family wavecel-wav-input kind=other prefix=wavecel-wav-input
 wavesculpt meta domain=audio schema=2
 wavesculpt in alpha_in video
 wavesculpt in gate1 gate
@@ -3937,6 +3973,7 @@ wavesculpt param wall6_distort 0..1 linear default=0
 wavesculpt param wavefold 0..1 linear default=0
 wavesculpt param wiggle 0..1 linear default=0
 wavesculpt param zoom 0.3..3 log default=1
+wavesculpt family wavesculpt-osc kind=cell prefix=wavesculpt-osc
 wavetableVco meta domain=audio schema=3
 wavetableVco in fine cv param=fine cvScale=linear
 wavetableVco in fm audio
@@ -3974,3 +4011,4 @@ writeseq param octave -2..2 discrete default=0
 writeseq param overdub 0..1 discrete default=0
 writeseq param recArm 0..1 discrete default=0
 writeseq expose playStop
+writeseq family writeseq-pitch kind=cell prefix=writeseq-pitch count=length

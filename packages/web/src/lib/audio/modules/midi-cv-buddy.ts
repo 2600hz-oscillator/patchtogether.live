@@ -326,6 +326,21 @@ export const midiCvBuddyDef: AudioModuleDef = {
   // not continuous, so they don't fit the AudioParam shape.)
   params: [],
 
+  docs: {
+    explanation:
+      "Turns a hardware MIDI keyboard or controller into the pitch + gate + velocity CV the rest of the rack speaks — the classic MIDI-to-CV interface. It is MONOPHONIC: when you hold a chord it picks one winning note (by the card's voice-priority setting — last-played, lowest, or highest) and tracks that. Mental model: play a key and PITCH follows it as 1V/octave, GATE goes high while you hold and dips briefly on a retrigger so envelopes re-fire, and VELOCITY latches how hard you struck. Pitch-bend is summed into the pitch output. The card owns the device dropdown, channel filter, voice-priority and retrigger choices (all discrete, saved in the patch — no audio-side knobs); Web MIDI permission is requested only when you click Connect, not on patch load. For polyphony, use MIDI LANE's poly output instead; this module is the simple mono workhorse.",
+    inputs: {},
+    outputs: {
+      pitch_cv:
+        "The current note as pitch CV in volts-per-octave (the codebase convention 0V = C4 = MIDI note 60), with pitch-bend summed in (default ±2 semitones). It tracks the winning held key per the card's voice-priority mode and latches the last note after you let go, so a downstream VCO holds its pitch through the gate's fall rather than snapping to a default.",
+      gate:
+        "Stays high while at least one key is held and low when all keys are released. On a retrigger (a fresh strike while the retrigger mode wants a re-fire) it briefly dips to 0 for one audio block before re-rising, so an ADSR or VCA downstream re-fires its envelope cleanly. Patch it into an envelope's gate or a VCA.",
+      velocity_cv:
+        "How hard the most recent note was struck, as 0..1 CV (MIDI velocity 0..127 scaled by 1/127). It updates on each note-on and latches between events, so you can route it to a VCA level or a filter cutoff for velocity-sensitive dynamics.",
+    },
+    controls: {},
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // ---------------- ConstantSource outputs ----------------
     //

@@ -98,6 +98,28 @@ export const meowboxDef: AudioModuleDef = {
     { id: 'level', label: 'Lvl',   defaultValue: 1,    min: 0,     max: 2,   curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A gate-triggered cat-vocal synth voice: fire a gate and it sings one 'meow' at the patched pitch. Under the hood it's a formant synth — a harmonic + noise excitation pushed through a bank of vowel formants, with a stereo-decorrelated tail so the result spreads across the L/R outputs. The Morph control sweeps the vowel (the a/e/i/o/u regions) so a single meow can sound like different vocal shapes, and Decay sets how long the tail rings. Pitch tracks a true 1V/oct input so you can play it from a keyboard or sequencer like any other oscillator, with the Pitch knob acting as a transposition on top.",
+    inputs: {
+      gate: "The trigger: a rising edge fires one meow event and re-excites the voice. It responds to the edge, not how long the level stays up — the meow's length comes from the Decay control.",
+      pitch: "A true 1V/oct pitch input (0 V = middle C). The DSP reads the volts directly and the Pitch knob is added on top as a transposition, so patch a sequencer or keyboard pitch CV here to play melodies; with nothing patched it sits at C4.",
+      morph: "CV that adds to the Morph control, sweeping the vowel formant in real time (e.g. an envelope opening the 'mouth' across the meow).",
+      decay: "CV that scales the tail Decay time (logarithmic), for shorter chirps or longer wails.",
+      level: "CV that adds to the output Level for per-hit dynamics.",
+    },
+    outputs: {
+      L: "Left channel of the stereo-decorrelated meow — the two channels carry the same voice with a decorrelated tail, so summing to mono is fine but keeping them split gives a wider sound.",
+      R: "Right channel of the stereo-decorrelated meow (the decorrelated partner of L).",
+    },
+    controls: {
+      pitch: "Transposes the voice in semitones (-36 to +36), summed on top of the 1V/oct pitch input — use it to set the cat's register or to offset an incoming melody.",
+      morph: "The vowel-formant macro (0..1): morphs the timbre across the a/i/u/e/o formant regions, changing the 'shape' of the meow from one vowel-like color to another.",
+      decay: "Tail decay time (0.05–2 s, log-tapered): short for a clipped chirp, long for a drawn-out wail.",
+      level: "Output level from silence to 2x; the Level CV input adds to this.",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const f = await instantiateFaustModule(ctx, { name: 'meowbox', wasmUrl, metaUrl, workletUrl });
     // Two audio-rate inputs: channel 0 = gate, channel 1 = pitch (V/oct).

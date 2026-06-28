@@ -103,6 +103,26 @@ export const lumakeyDef: VideoModuleDef = {
     { id: 'invert',    label: 'Inv',  defaultValue: DEFAULTS.invert,    min: 0, max: 1,   curve: 'discrete' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "lumakey is a two-input luminance-key compositor: it lays a foreground frame over a background frame and decides, pixel by pixel, which one shows through based on how bright the foreground is. It computes Rec. 601 luma of the foreground, then builds an alpha mask with smoothstep(threshold - softness, threshold + softness, luma) so bright foreground pixels become opaque (alpha 1, foreground shows) and dark ones drop out (alpha 0, background bleeds through), finally mixing background toward foreground by that alpha. Use it to matte out a black or white plate behind a source, drop text/letterbox overlays onto a scene, or composite a bright source over another video; flip invert to key on the dark areas instead. With no foreground patched it passes the background straight through so a half-wired chain is never a black hole.",
+    inputs: {
+      fg: "Foreground video frame. Its luma drives the key: bright pixels stay opaque, dark pixels are matted out (or the reverse when invert is on). With nothing patched here the module passes the background through unchanged.",
+      bg: "Background video frame that shows through wherever the foreground is keyed out. If unbound it is treated as solid black behind the keyed foreground.",
+      threshold: "CV input that modulates the Thr control, sliding the luma cut point where the foreground becomes opaque (linear scaling into Thr's 0..1 range).",
+      softness: "CV input that modulates the Soft control, widening or tightening the edge feather around the key threshold (linear scaling into Soft's 0..0.5 range).",
+      invert: "CV input that modulates the INV control; a high value flips the key so dark foreground becomes opaque instead of bright (discrete scaling).",
+    },
+    outputs: {
+      out: "The composited RGB video frame: foreground over background blended per pixel by the luma-derived alpha mask (alpha is fully opaque).",
+    },
+    controls: {
+      threshold: "Thr fader sets the foreground luma level at which it becomes opaque. Lower values key in more of the foreground (only the darkest pixels drop out); higher values matte out more of it, letting the background through (0..1, default 0.5).",
+      softness: "Soft fader sets the smoothstep feather around the threshold: 0 (clamped to a tiny minimum) gives a hard, crisp key edge, while higher values blend foreground and background over a wider luma band for a soft matte (0..0.5, default 0.1).",
+      invert: "INV button flips the key direction: off (0) keeps bright foreground opaque and mattes the dark out; on (1) keeps dark foreground opaque and mattes the bright out (discrete 0/1, default 0/off).",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

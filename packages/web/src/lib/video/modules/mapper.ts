@@ -196,6 +196,23 @@ export const mapperDef: VideoModuleDef = {
     { id: 'threshold', label: 'Thresh', defaultValue: MAPPER_DEFAULTS.threshold, min: 0, max: 1, curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation:
+      "MAPPER is a per-frame video keyer / matte processor. It shows the VID source only where the KEY input is bright, and paints black everywhere else. For each output texel the shader reads the KEY frame's Rec. 601 luminance (0.299 R + 0.587 G + 0.114 B), builds a mask = smoothstep(threshold - 0.03, threshold + 0.03, keyLuma), and outputs video * mask — so above the cutoff the video shows through, below it fades to black, with a sub-pixel soft edge that kills 1-texel aliasing on a moving key. It is STATELESS per frame: no feedback, no history, so the keyed region tracks the key source live. This generalises OUTLINES' hard-coded \"mapped\" output (video where >=2 shapes overlap) to an arbitrary luminance gate. A mono-video key (white-on-black from SHAPES / LINES / EDGES) is the common matte. Usage: patch a moving picture into VID, a white-on-black shape/mask into KEY, and turn Thresh to trim how much of the matte passes. Note: it is intentionally a black hole when half-patched — with either VID or KEY missing the output is solid black.",
+    inputs: {
+      video: "VID — the RGB source shown inside the keyed region. Its pixels appear wherever the key passes; with this input unpatched the whole output is black.",
+      key: "KEY — the matte. The shader takes this frame's Rec. 601 luminance as the mask, so bright key pixels reveal the video and dark ones matte it to black. Commonly a white-on-black mono-video shape (SHAPES / LINES / EDGES), but a colour video source works too via the engine upcast. Unpatched KEY makes the whole output black.",
+      threshold: "CV input that modulates the Thresh control. Linear-scaled per-param CV (port id equals the param id) driving the key cutoff over its 0..1 range, so you can sweep how much of the matte passes from another modulation source.",
+    },
+    outputs: {
+      out: "OUT — the keyed video: the VID source shown where key luminance is at or above the threshold, and black below it. A pure video output (solid black when either input is unpatched).",
+    },
+    controls: {
+      threshold: "Thresh (0..1, linear, default 0.5) — the key luminance cutoff. Raising it shrinks the keyed area so only the brightest parts of the key pass; lowering it grows the keyed area so dimmer key regions show video too. A sub-pixel soft edge (+/-0.03 luma) around the cutoff keeps the key crisp while removing aliasing on a moving matte.",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

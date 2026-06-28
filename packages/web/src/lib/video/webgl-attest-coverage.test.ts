@@ -16,10 +16,14 @@
 //   (1) every domain:'video' module def (mechanically, from the registry),
 //   (2) every audio module def flagged `rendersWebGL: true` (CUBE/HYPERCUBE/
 //       WAVESCULPT),
-//   (3) every CARD whose source creates a WebGL context (getContext('webgl…')),
-//   (4) every heavy WebGL spec the exported glob resolves.
+//   (3) every CARD whose source creates a WebGL context (getContext('webgl…')).
 // It ALSO asserts:
-//   (5) NO `*.test.ts` is in the basis (node-env unit tests must stay OUT — V6),
+//   (4) the heavy WebGL spec glob still resolves the expected COUNT (so a spec is
+//       never silently dropped/mis-classified) — but e2e specs are NOT hashed,
+//   (5) NO `*.test.ts` AND NO `e2e/tests/**` file is in the basis — node-env unit
+//       tests stay OUT (V6) and e2e test code stays OUT (2026-06-26: "changing
+//       tests should not change our attest hashes"; the spec is the DRIVER, not
+//       the rendered content),
 //   (6) the rendersWebGL flag ↔ card-getContext cross-check holds in BOTH
 //       directions, so the marker can't drift away from reality.
 //
@@ -101,7 +105,9 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // toybox-new-content reclassified real-gpu-only (heavy raymarch shader pixels —
 // stays); toybox-shadertoy/-node-batch/-node-menu/-layer-selector DEFERRED
 // (worker-pixel / render-timing / flake — stay heavy). 47 → 44.
-const EXPECTED_HEAVY_SPEC_COUNT = 44;
+// GRAPHIC EQ (new Winamp-style VU-meter video output): +graphic-eq-render-smoke.spec.ts
+// (matched by the *-render-smoke glob). 44 → 45.
+const EXPECTED_HEAVY_SPEC_COUNT = 45;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();
@@ -158,16 +164,24 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
     ).toEqual([]);
   });
 
-  it('(4) every heavy WebGL spec the exported glob resolves is in the basis', () => {
+  it('(4) the heavy WebGL spec glob resolves the expected count — but specs are NOT hashed', () => {
     const specs = resolveHeavyWebglSpecs();
     expect(
       specs.length,
       `heavy glob resolved ${specs.length} specs, expected exactly ${EXPECTED_HEAVY_SPEC_COUNT} ` +
         `— if you intentionally added/removed/consolidated a heavy spec, update ` +
-        `EXPECTED_HEAVY_SPEC_COUNT + re-attest; if not, a spec was silently dropped/mis-classified.`,
+        `EXPECTED_HEAVY_SPEC_COUNT (the SET changed → e2e/webgl-heavy-globs.ts moves ` +
+        `the hash → re-attest); if not, a spec was silently dropped/mis-classified.`,
     ).toBe(EXPECTED_HEAVY_SPEC_COUNT);
-    const uncovered = specs.filter((f) => !basisSet.has(f));
-    expect(uncovered, `heavy specs not in basis: ${uncovered.join(', ')}`).toEqual([]);
+    // Specs are the attest DRIVER, not the rendered content, so they are
+    // DELIBERATELY EXCLUDED from the hash basis — editing a test must never force
+    // a GPU re-attest (2026-06-26). Assert the INVERSE of the old invariant: no
+    // resolved heavy spec leaked into the basis.
+    const leaked = specs.filter((f) => basisSet.has(f));
+    expect(
+      leaked,
+      `heavy specs must NOT be in the hash basis (test edits must be hash-transparent): ${leaked.join(', ')}`,
+    ).toEqual([]);
   });
 
   it('(4b) the ATTESTABLE heavy set excludes fully @collab/@capacity-gated specs', () => {
@@ -200,12 +214,23 @@ describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
     expect(attestable.length).toBeLessThanOrEqual(all.length);
   });
 
-  it('(5) NO node-env *.test.ts file leaked into the basis (fix V6)', () => {
+  it('(5) NO node-env *.test.ts AND no e2e/tests/** file leaked into the basis', () => {
     const tests = basis.filter((p) => p.endsWith('.test.ts'));
     expect(
       tests,
       `node-env unit tests must NOT be in the WebGL basis (they would force a ` +
         `10-min real-GPU re-attest on every node-only edit):\n  ${tests.join('\n  ')}`,
+    ).toEqual([]);
+    // E2E test files (specs, _helpers, _registry) are the attest DRIVER, not the
+    // rendered content — excluded from the hash so editing a test is
+    // hash-transparent (owner directive 2026-06-26). The attested SET is tracked
+    // by e2e/webgl-heavy-globs.ts + playwright.config.ts (kept in-basis), not by
+    // the spec bytes; the §12 spec-count gate above still catches silent drops.
+    const e2eFiles = basis.filter((p) => p.startsWith('e2e/tests/'));
+    expect(
+      e2eFiles,
+      `e2e/tests files must NOT be in the WebGL hash basis (a test edit must not ` +
+        `force a GPU re-attest):\n  ${e2eFiles.join('\n  ')}`,
     ).toEqual([]);
   });
 

@@ -55,6 +55,26 @@ export const moog995Def: AudioModuleDef = {
     { id: 'atten3', label: 'Att 3', defaultValue: 1, min: 0, max: 1, curve: 'linear' },
   ],
 
+  docs: {
+    explanation:
+      "A clean-room recreation of the Moog 995 Attenuators — a passive panel of three independent 'turn it down' knobs. Each channel takes one input, scales it by a level pot from full mute (0) up to unity (1), and sends it to its own output — never boosting (a passive panel can only attenuate). There is no mixing, no summing, and no CV: three parallel, fully independent attenuators with no cross-talk. Mental model: three volume trims in one module, used to tame a hot oscillator, set a modulation depth (attenuate an LFO/envelope before it reaches a destination), or balance a signal — exactly what you reach for when a modulation is too strong.",
+    inputs: {
+      in1: "Channel 1 input — the signal (audio or CV) to be attenuated by the Att 1 knob.",
+      in2: "Channel 2 input — attenuated by the Att 2 knob, independent of the other channels.",
+      in3: "Channel 3 input — attenuated by the Att 3 knob, independent of the other channels.",
+    },
+    outputs: {
+      out1: "Channel 1 output = in1 × Att 1. Fully independent — no cross-talk with the other channels.",
+      out2: "Channel 2 output = in2 × Att 2.",
+      out3: "Channel 3 output = in3 × Att 3.",
+    },
+    controls: {
+      atten1: "Channel 1 attenuator, 0 (full mute) to 1 (unity — passes the input unaltered). It only attenuates; it cannot boost above the input level.",
+      atten2: "Channel 2 attenuator, 0 (mute) to 1 (unity).",
+      atten3: "Channel 3 attenuator, 0 (mute) to 1 (unity).",
+    },
+  },
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     // Three independent passive attenuator channels: in_N → GainNode → out_N.
     const gain1 = ctx.createGain();

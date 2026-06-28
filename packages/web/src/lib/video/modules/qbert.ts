@@ -152,6 +152,30 @@ export const qbertDef: VideoModuleDef = {
     { id: 'cv_joy_y',    label: 'JOY_Y', defaultValue: 0, min: -1, max: 1, curve: 'linear' as const },
   ],
 
+  // docs-hash-ignore:start
+  docs: {
+    explanation: "QBERT is a patchable arcade module modeled on Q*Bert (Gottlieb, 1982) and rendered as a video signal — the premise is hopping the little orange creature around an isometric cube pyramid, recoloring cubes while dodging enemies. It is a VIDEO source that ALSO bridges into the audio domain (same shape as DOOM and NIBBLES). Control is entirely via CV/gate cables — there are NO knobs or sliders on the card by design. Patch a gate into COIN to drop in a quarter (rising edge), a gate into START to begin a credited game (only works once a coin is in), and bipolar CV (-1..+1) into JOY_X / JOY_Y to steer. Because Q*Bert's stick is a 45-degree-rotated 4-way DIAGONAL, the two axes are resolved together into one of NE/NW/SE/SW each frame: only when BOTH axes sit inside the 0.3 dead-band is the result NEUTRAL (no direction) — a single axis past 0.3 still resolves to a diagonal, biasing the inactive axis toward down/right. The card shows a fixed 256x240 screen with INSERT COIN / PRESS START prompts, or a ROM MISSING overlay telling you to run `task setup:qbert` when the ROM zip isn't on the static server. The framebuffer is letterboxed (full height, black side bars) into the engine's 16:9 FBO. Note: this v1 ships the engine SHAPE — the memory map, ROM-name surface, framebuffer pipe, and gate/audio plumbing are real and end-to-end, while full Z80 opcode coverage and the I8039 sound CPU are follow-ups; the move/die/level events and the hop SFX are currently driven by a faithful synthetic stream (move every 8 tics a direction is held, die after a held-NEUTRAL timeout, level every 28 moves) so the outputs are exercisable today. Emulator state is LOCAL per client (no Yjs replication) — each user in a shared rackspace runs their own runtime, like DOOM.",
+    inputs: {
+      coin_in: "Gate (edge-triggered): a rising edge above 0.6 inserts one quarter (the Gottlieb COIN1 dip). Patch a clock or button gate here to add a credit; only the rising transition fires, with hysteresis (must fall below 0.4 before it can fire again) to absorb chatter. Holding it high does nothing further.",
+      start_in: "Gate (edge-triggered): a rising edge above 0.6 presses 1P START, which begins the game only when at least one coin has already been inserted. Acts on the rising edge with the same 0.6 rise / 0.4 fall hysteresis as COIN; holding it high does nothing further.",
+      joy_x: "CV (-1..+1): the horizontal joystick axis. Negative = left, positive = right. Sampled on every write and combined with JOY_Y into a Q*Bert diagonal. Both axes inside the 0.3 dead-band reads as NEUTRAL; a deflection of |x| >= 0.3 alone still resolves to a diagonal (the unset axis biases toward down).",
+      joy_y: "CV (-1..+1): the vertical joystick axis in screen coords — negative = up, positive = down. Combined with JOY_X into one of NE/NW/SE/SW each write; only when BOTH axes are inside the 0.3 dead-band is no direction held. Modulate from an LFO/sequencer to auto-hop.",
+    },
+    outputs: {
+      out: "Video: the 256x240 RGBA game framebuffer, letterboxed (full height, black side bars) into the engine's 640x360 FBO with aspect preserved. Shows the magenta diamond test pattern until a real ROM writes VRAM.",
+      audio_out: "Audio (mono): the synthesized SFX stream played back through the DOOM PCM worklet. v1 emits a 1 kHz square-wave blip (50 ms linear decay) on every completed hop, mirroring Q*Bert's hop sound; the real I8039 sound chip is a follow-up but this path is live and patchable.",
+      evt_die: "Gate (trigger): a 10 ms pulse fired on Q*Bert's death — in v1 a synthetic 'fell off the pyramid' event when NEUTRAL is held for ~200 tics after a credited game started (it also re-arms by requiring another coin/start). Patch to trigger an envelope, sample, or stinger on each death.",
+      evt_move: "Gate (trigger): a 10 ms pulse on every completed hop — fires every 8 tics that a non-NEUTRAL direction is held after the game starts (about 4 hops/sec). Use as a gameplay-derived rhythmic clock to trigger drums or envelopes.",
+      evt_level: "Gate (trigger): a 10 ms pulse on level advance — fires once every 28 moves (one full cube-pyramid pass in v1). Patch to mark progress: step a sequencer, swap a scene, or trigger a fill on each new level.",
+    },
+    controls: {
+      cv_coin_in: "Hidden synthetic param (0..1) backing the COIN gate input. Not shown on the card; the engine's CV bridge writes it via setParam and a rising edge past 0.6 inserts a coin. Patch the COIN jack rather than setting it directly.",
+      cv_start_in: "Hidden synthetic param (0..1) backing the START gate input. Not a card control; written by the CV bridge, its rising edge past 0.6 presses 1P START (only effective once a coin is in).",
+      cv_joy_x: "Hidden synthetic param (-1..+1) backing the JOY_X CV input. Not shown on the card; the engine writes it from the patched JOY_X cable, and it is resolved together with cv_joy_y into the joystick diagonal on every write (0.3 dead-band per axis).",
+      cv_joy_y: "Hidden synthetic param (-1..+1) backing the JOY_Y CV input. Not a card control; written by the CV bridge from the JOY_Y cable and combined with cv_joy_x into the NE/NW/SE/SW direction (NEUTRAL only when both axes are inside the 0.3 dead-band).",
+    },
+  },
+  // docs-hash-ignore:end
   factory(ctx: VideoEngineContext, node): VideoNodeHandle {
     const gl = ctx.gl;
     const program = ctx.compileFragment(FRAG_SRC);

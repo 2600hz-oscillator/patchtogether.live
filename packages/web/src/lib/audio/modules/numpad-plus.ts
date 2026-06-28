@@ -309,6 +309,45 @@ export const numpadPlusDef: AudioModuleDef = {
     { id: 'poly',        label: 'Poly', defaultValue: 0,   min: 0,  max: 1,   curve: 'discrete' },
   ],
 
+  docs: {
+    explanation:
+      "A live-recording step sequencer you play from your computer's numeric keypad: the keys map to a chromatic octave (12 notes), and pressing them performs notes in real time AND, when armed, records them into a 16-step pattern. It has four independent LAYERS sharing one playhead and tempo, so you can build up four parallel lines; the active layer is the one you're playing and recording into. Each layer has its own pitch + gate output pair, and there's also a single POLY output that carries the active layer's notes — in poly mode you can hold several keys to record a chord, and the POLY cable feeds a poly-aware voice so every note sounds. The playhead runs on internal BPM or an external CLOCK IN; recording quantizes your keystrokes to the nearest step while playing, or writes immediately when stopped. While the card is focused it captures the Numpad keys exclusively so they don't leak to other modules.",
+    inputs: {
+      clock: "External clock: each rising edge advances the shared playhead one step. While patched it sets the pace and runs the sequencer; unpatch to fall back to the internal BPM.",
+      layer:
+        "CV that selects the active layer (0..1 mapped to layers 1–4); when patched it takes priority over the Layer control, so you can switch which line you're recording/playing from a CV source.",
+    },
+    outputs: {
+      l1_pitch: "Layer 1's pitch CV (V/oct): the current step's note, or the live-held key's pitch when you're playing on layer 1.",
+      l1_gate: "Layer 1's gate: high on a lit step (or while a key is held on layer 1), low otherwise.",
+      l2_pitch: "Layer 2's pitch CV (V/oct): its current step's note, or a live-held key when layer 2 is active.",
+      l2_gate: "Layer 2's gate: high on a lit step or held key, low otherwise.",
+      l3_pitch: "Layer 3's pitch CV (V/oct): its current step's note, or a live-held key when layer 3 is active.",
+      l3_gate: "Layer 3's gate: high on a lit step or held key, low otherwise.",
+      l4_pitch: "Layer 4's pitch CV (V/oct): its current step's note, or a live-held key when layer 4 is active.",
+      l4_gate: "Layer 4's gate: high on a lit step or held key, low otherwise.",
+      poly:
+        "The ACTIVE layer's notes as a POLY cable (up to 5 voices, each with its own pitch CV + gate): in poly mode this carries the held/recorded chord, otherwise the single current note. Patch into a poly-aware voice (POLYHELM / any module with a poly input) so every voice sounds; a mono pitch input automatically receives just the lowest (root) note.",
+    },
+    controls: {
+      bpm: "Internal tempo in beats per minute (each step is a 16th note), used only when nothing is patched into CLOCK IN.",
+      isPlaying: "Run/stop transport (1 = playing, 0 = stopped). When stopped the playhead holds at step 1 but live keys still sound; the card's PLAY button toggles it.",
+      activeLayer:
+        "Which of the four layers is active for playing and recording (0..3 = layers 1–4), exposed as the card's L1–L4 buttons. The layer CV input overrides this when patched.",
+      recArm:
+        "Record arm (the card's ARM button): when armed and play starts from step 1, recording latches and the active layer is cleared, then your keystrokes are written in; it auto-disarms after one 16-step pass.",
+      overdub: "Overdub mode (the card's OVD button): when on, every keypress writes its note into the step (quantized to the nearest step while playing, immediately when stopped) without clearing the layer first — layer new notes over what's there.",
+      octave: "The keypad's base octave (0..8, default 4); shifts which actual pitches the 12 note-keys produce. The remappable octave-up/down keys nudge it by one.",
+      poly: "Poly recording (the card's POLY button): when on, holding several keys at once records them as a chord into the step (up to 5 voices); when off, only the single key pressed is stored. The mono per-layer outputs always send the lowest note either way.",
+      "numpad-cell-{n}":
+        "Step {n}'s note cell in the active layer's 4×4 grid — this IS the per-step note-entry area for the numpad sequencer (distinct from the keymap keys below it). It shows the step's note name when lit (a · when empty/off); clicking toggles the step on/off, and click-and-dragging up/down on the cell changes its note by hand. Steps are also filled in by RECORD / OVERDUB as you play the keypad, and a lit cell's note is what that step emits on the active layer's pitch output (base octave + key remapping applied). The current playhead step is highlighted while playing.",
+    },
+  },
+
+  controlFamilies: [
+    { id: 'numpad-cell', label: 'Per-step note cell', kind: 'cell', testidPrefix: 'numpad-cell' },
+  ],
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
 

@@ -270,6 +270,50 @@ export const writeseqDef: AudioModuleDef = {
   // Instruments v1 — the full step grid is atomically exposable.
   exposesSequence: true,
 
+  docs: {
+    explanation:
+      "A write-in step sequencer: as well as drawing notes into the grid by hand, you can RECORD a melody live by playing a pitch+gate into its CV and GATE inputs (from a keyboard, a MIDI→CV converter, or any gate source). Armed for recording, each incoming gate writes the sampled pitch onto the nearest step, quantized to the grid so what you play lands on the beat the clock is hitting (no off-by-one against a partner drum sequencer). It plays back the captured pattern (up to 128 steps over 8 pages) on its own BPM clock or an external clock, emits pitch + gate + a chained clock-out, and a held live gate always passes straight through and overrides playback — so the module doubles as a live keyboard monitor. One-shot recording clears and re-records exactly one pass; overdub layers new notes on top of what's there without clearing.",
+    inputs: {
+      cv:
+        "Pitch CV in (V/oct, 0V = C4). While recording, it's sampled at each incoming gate edge and written to the nearest step; whenever a live gate is held it also passes straight through to the pitch output.",
+      gate:
+        "Gate in. A rising edge while recording writes the sampled pitch+gate to the nearest step; a rising edge while stopped and record-armed starts the sequencer and recording; and whenever the gate is held high it passes through live and overrides the sequenced output (so you can play over playback).",
+      clock:
+        "External step clock: each rising edge advances the playhead one step. While patched it sets the pace (and runs the sequencer); unpatch to fall back to the internal BPM. Recording quantizes to the same step the clock is hitting.",
+      rec:
+        "Record arm: a rising edge toggles the record-arm state on/off (the same latch as the card's REC button), so you can drop in and out of recording hands-free from a footswitch or gate.",
+      play_cv: "A rising edge toggles play/stop (each pulse flips the run state).",
+      reset_cv: "A rising edge snaps the playhead back to step 1 and resets the record position.",
+      queue1_cv: "A rising edge queues pattern slot 1 — applied at the end of the current loop, then plays it from step 1 (no-op if empty).",
+      queue2_cv: "A rising edge queues pattern slot 2 — applied at the end of the current loop (no-op if empty).",
+      queue3_cv: "A rising edge queues pattern slot 3 — applied at the end of the current loop (no-op if empty).",
+      queue4_cv: "A rising edge queues pattern slot 4 — applied at the end of the current loop (no-op if empty).",
+    },
+    outputs: {
+      pitch: "The current step's note as pitch CV (V/oct), transposed by the octave control — unless a live gate is held in, in which case the live pitch passes straight through and wins.",
+      gate: "Goes high on each ON step (its width set by the gate-length control) — unless a live gate is held in, which passes through and overrides the sequenced gate.",
+      clock: "A short ~10 ms pulse on every step advance — chain it into another sequencer's clock in.",
+    },
+    controls: {
+      bpm: "Internal tempo in beats per minute (each step is a 16th note, so the step rate is 4× the BPM), used only when nothing is patched into CLOCK IN.",
+      length: "How many steps the playhead walks before wrapping to step 1; raising it past 16 reveals more pages. A one-shot recording captures exactly this many steps before stopping.",
+      octave: "Shifts every step's pitch up or down by whole octaves at once (-2 to +2).",
+      gateLength: "How much of each step the gate stays high, from a short 10% stab to a near-legato 95% (it always closes just before the next step).",
+      isPlaying:
+        "The run/stop state: 1 plays, 0 stops and forces the gate low; starting playback snaps the playhead back to step 1. Same control as the card's PLAY button.",
+      recArm:
+        "Arms recording (1) or disarms it (0); the card's REC button. While armed, incoming gates write the sampled pitch onto the nearest step. Also togglable via the rec input.",
+      overdub:
+        "Recording mode (the card's OVD button): off = one-shot, which clears the pattern and records exactly one pass of `length` steps then auto-stops; on = overdub, which layers newly played notes on top of the existing pattern without clearing and keeps looping until you disarm.",
+      "writeseq-pitch-{n}":
+        "Step {n}'s note — the editable pitch box for this step. As well as being filled in by RECORD (a played CV/gate writes the sampled pitch onto the nearest step), you can type a note name here directly (e.g. C3, F#4, Bb2) or focus it and use the arrow keys to fly across the grid; Enter commits and jumps to the next step's box. The box shows the canonical note name, glows green while valid and red while not, and clearing it (empty) makes the step a rest even if its gate is lit. The note is emitted as V/oct on the PITCH output, shifted by the OCT control.",
+    },
+  },
+
+  controlFamilies: [
+    { id: 'writeseq-pitch', label: 'Per-step note entry', kind: 'cell', testidPrefix: 'writeseq-pitch', countParam: 'length' },
+  ],
+
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const nodeId = node.id;
     const CLOCK_THRESHOLD = 0.5;

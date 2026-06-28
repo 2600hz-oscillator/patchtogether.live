@@ -186,6 +186,91 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
     expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
   });
 
+  test('recovers from "no-cameras-found": picking an available camera starts the stream', async ({
+    page,
+  }) => {
+    // Reproduce the reported bug: load a patch whose saved camera is gone (or on
+    // a different machine), land in 'no-cameras-found' — then switch to an
+    // AVAILABLE camera and confirm the stream actually starts (it used to stay
+    // stuck because the re-acquire guard omitted 'no-cameras-found').
+    //
+    // Deterministic, no reliance on a bogus exact-deviceId: stub getUserMedia to
+    // reject (OverconstrainedError — exactly what a missing saved device throws)
+    // while a window flag is set, then flip the flag and let the real Chromium
+    // fake device satisfy the pick.
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
+    });
+
+    await page.addInitScript(() => {
+      const md = navigator.mediaDevices;
+      if (!md) return;
+      (window as unknown as { __camFailRequest?: boolean }).__camFailRequest = true;
+      const orig = md.getUserMedia.bind(md);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (md as any).getUserMedia = (constraints: MediaStreamConstraints) => {
+        if ((window as unknown as { __camFailRequest?: boolean }).__camFailRequest) {
+          return Promise.reject(
+            new DOMException('saved camera not present', 'OverconstrainedError'),
+          );
+        }
+        return orig(constraints);
+      };
+    });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+
+    await spawnPatch(page, [
+      { id: 'v-cam', type: 'cameraInput', position: { x: 80, y: 60 }, domain: 'video' },
+    ]);
+
+    await expect(page.locator('.svelte-flow__node-cameraInput'), 'CAMERA visible').toBeVisible();
+
+    // The mount auto-acquire hit the stubbed reject → stuck in 'no-cameras-found'
+    // (the screenshot state). The dropdown still lists the available camera(s).
+    const status = page.locator('[data-testid="camera-status"]');
+    await expect(status).toHaveAttribute('data-state', 'no-cameras-found', { timeout: 10_000 });
+
+    const select = page.locator('[data-testid="camera-device-select"]');
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector(
+          '[data-testid="camera-device-select"]',
+        ) as HTMLSelectElement | null;
+        // At least one real (enabled, non-empty-value) camera option to pick.
+        return !!el && Array.from(el.options).some((o) => !o.disabled && o.value !== '');
+      },
+      undefined,
+      { timeout: 5_000 },
+    );
+
+    // Stop failing requests — the device is "available" again from here on.
+    await page.evaluate(() => {
+      (window as unknown as { __camFailRequest?: boolean }).__camFailRequest = false;
+    });
+
+    // Switch to the first available camera. This is the action that used to do
+    // nothing; it must now (re)acquire and reach 'streaming'.
+    const firstRealValue = await select.evaluate((el) => {
+      const sel = el as HTMLSelectElement;
+      const opt = Array.from(sel.options).find((o) => !o.disabled && o.value !== '');
+      return opt ? opt.value : '';
+    });
+    expect(firstRealValue, 'an available camera to switch to').not.toBe('');
+    await select.selectOption(firstRealValue);
+
+    await expect(status, 'switching to an available camera starts the stream').toHaveAttribute(
+      'data-state',
+      'streaming',
+      { timeout: 10_000 },
+    );
+
+    expect(errors, `console/page errors: ${errors.join('; ')}`).toEqual([]);
+  });
+
   test('shows "no cameras" if enumerateDevices returns empty', async ({ page }) => {
     // Override navigator.mediaDevices.enumerateDevices BEFORE any module
     // mounts so the CAMERA card sees an empty device list. Verifies the
