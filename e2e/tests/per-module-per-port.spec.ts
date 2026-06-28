@@ -434,7 +434,7 @@ test('RATCHET: output-emit exemption lists only shrink', () => {
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).length,
     'EXEMPT_OUTPUT_EMIT_MODULES grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(42); // +1 featurecv (input-conditional outputs); +1 blood (data-gated emulator — outputs idle without the non-redistributable WAD, absent in CI)
+  ).toBeLessThanOrEqual(43); // +1 featurecv (input-conditional outputs); +1 blood (data-gated emulator — outputs idle without the non-redistributable WAD, absent in CI); +1 milkdrop (video out needs async butterchurn preset-chunk load + warmup before emit; covered by milkdrop-render-smoke.spec.ts)
   expect(
     Object.keys(EXEMPT_OUTPUT_EMIT).length,
     'EXEMPT_OUTPUT_EMIT grew past its frozen cap — see the RATCHET rule above',

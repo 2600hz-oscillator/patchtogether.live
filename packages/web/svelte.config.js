@@ -14,6 +14,21 @@ const config = {
         exclude: ['<all>'],
       },
     }),
+    prerender: {
+      // Module-face PNGs (/docs/module-faces/<id>.png) are GENERATED from the
+      // VRT-annotated baselines (docs:faces, sourced from e2e/vrt/__annotated__,
+      // LFS) and may be absent in a partial/local checkout. A missing decorative
+      // face image must NOT fail the whole prerender (it was hard-killing the
+      // prod build — e.g. the collab-attest build — since #891). Degrade those
+      // 404s to a warning; everything else still fails the build.
+      handleHttpError: ({ path, referrer, message }) => {
+        if (path.startsWith('/docs/module-faces/')) {
+          console.warn(`[prerender] missing doc face (non-fatal): ${path}${referrer ? ` (from ${referrer})` : ''}`);
+          return;
+        }
+        throw new Error(message);
+      },
+    },
   },
   compilerOptions: {
     runes: true,
