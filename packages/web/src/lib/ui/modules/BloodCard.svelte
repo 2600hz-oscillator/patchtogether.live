@@ -251,7 +251,7 @@
       {/if}
 
       <div class="knob-row">
-        <Knob value={audioGain} min={0} max={2} defaultValue={1} onchange={setAudioGain} label="Gain" />
+        <Knob moduleId={id} paramId="audioGain" value={audioGain} min={0} max={2} defaultValue={1} onchange={setAudioGain} label="Gain" />
       </div>
     </div>
   </PatchPanel>
