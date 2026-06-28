@@ -145,6 +145,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   swolevco: { size: '2u', hp: 2 }, // 262×360px
   symbiote: { size: '1u', hp: 3 }, // 199×440px
   synesthesia: { size: '3u', hp: 2 }, // 540×360 — was 3hp, trimmed empty right margin
+  tempest: { size: '2u', hp: 2 }, // 320×360px — vector-well preview + RIM knob + SHAPE
   textmarquee: { size: '3u', hp: 2 }, // 280×~450px — rich-text editor + preview + 4 knobs
   tides2: { size: '2u', hp: 2 }, // 221×380px
   timelorde: { size: '3u', hp: 2 }, // 152×280px  [LOCKED]

@@ -3471,6 +3471,11 @@ synesthesia param b_gain3 1..2 linear default=1
 synesthesia param b_gain4 1..2 linear default=1
 synesthesia param b_master 0.5..1.5 linear default=1
 synesthesia param b_mode 0..1 discrete default=0
+tempest meta domain=video schema=1
+tempest in rim cv param=rim cvScale=linear
+tempest out out video
+tempest param rim 0..1 linear default=0
+tempest param shape 0..2 discrete default=0
 textmarquee meta domain=video schema=1
 textmarquee in posX cv param=posX cvScale=linear
 textmarquee in posY cv param=posY cvScale=linear

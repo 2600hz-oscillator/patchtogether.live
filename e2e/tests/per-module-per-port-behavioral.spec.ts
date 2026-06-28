@@ -1358,6 +1358,15 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'acidwarp.speed_cv': 'palette-rotation RATE of an already-full-screen high-variance plasma; frame-variance unchanged (video-variance class); covered by acidwarp VRT/specs',
   'acidwarp.scene_cv': 'infrequent scene transitions may not land inside the 1.5s window; covered by acidwarp VRT/specs',
 
+  // ── TEMPEST (tempest.ts): the rim CV moves the player CLAW — a glowing yellow
+  //    claw spanning ONE of 16 lanes — around the rim. The claw DOES move (proven
+  //    GL-free in tempest.test.ts: buildTempestLines claw vertices shift with the
+  //    rim param), but a claw occupying ~1/16 of the rim sliding one lane barely
+  //    changes the GLOBAL frame variance/non-black metric — the same
+  //    video-variance class as acidwarp. Covered by tempest.test.ts + the
+  //    tempest-render-smoke E2E.
+  'tempest.rim': 'claw occupies ~1 of 16 lanes; sliding it does not move global frame-variance (video-variance class); claw motion unit-proven in tempest.test.ts + render-smoke',
+
   // ── MANDLEBLOT (mandleblot.ts): self-running Mandelbrot fractal whose
   //    color_out frame is already high-variance at every zoom level. zoom_cv
   //    zooms the fractal, but the per-frame variance/non-black metric stays
@@ -1423,7 +1432,7 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(160);
+  ).toBeLessThanOrEqual(161); // +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke)
 });
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the
