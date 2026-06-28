@@ -1357,14 +1357,14 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'acidwarp.speed_cv': 'palette-rotation RATE of an already-full-screen high-variance plasma; frame-variance unchanged (video-variance class); covered by acidwarp VRT/specs',
   'acidwarp.scene_cv': 'infrequent scene transitions may not land inside the 1.5s window; covered by acidwarp VRT/specs',
 
-  // ── TEMPEST (tempest.ts): the rim CV moves the player CLAW — a sparse bright
-  //    line marker spanning ONE of 16 lanes — around the rim. The claw DOES move
-  //    (proven GL-free in tempest.test.ts: buildTempestLines claw vertices shift
-  //    with the rim param), but a few-line marker sliding one lane barely changes
-  //    the GLOBAL frame variance/non-black metric (Δμvar≈0.35) — the same
+  // ── TEMPEST (tempest.ts): the rim CV moves the player CLAW — a glowing yellow
+  //    claw spanning ONE of 16 lanes — around the rim. The claw DOES move (proven
+  //    GL-free in tempest.test.ts: buildTempestLines claw vertices shift with the
+  //    rim param), but a claw occupying ~1/16 of the rim sliding one lane barely
+  //    changes the GLOBAL frame variance/non-black metric — the same
   //    video-variance class as acidwarp. Covered by tempest.test.ts + the
   //    tempest-render-smoke E2E.
-  'tempest.rim': 'claw is a sparse 1-of-16-lane line marker; sliding it does not move global frame-variance (video-variance class); claw motion unit-proven in tempest.test.ts + render-smoke',
+  'tempest.rim': 'claw occupies ~1 of 16 lanes; sliding it does not move global frame-variance (video-variance class); claw motion unit-proven in tempest.test.ts + render-smoke',
 
   // ── MANDLEBLOT (mandleblot.ts): self-running Mandelbrot fractal whose
   //    color_out frame is already high-variance at every zoom level. zoom_cv
