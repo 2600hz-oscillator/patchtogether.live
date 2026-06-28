@@ -62,6 +62,10 @@ this repository's licensing.
 | `shaders/frag-pixelate.frag.glsl` | MIT | Original — lo-fi mosaic (grid-snapped UV) + colour quantisation + hashed block-smear corruption of iChannel0 | (this project) |
 | `shaders/frag-ascii.frag.glsl` | MIT | Original — ASCII text-mode renderer (cell-bin + brightness→procedural-glyph-density, NO font atlas) of iChannel0 | (this project) |
 | `shaders/frag-mirror-fold.frag.glsl` | MIT | Original — planar triangle-wave mirror-kaleidoscope tiling of iChannel0 (distinct from the polar FRAG kaleido) | (this project) |
+| `shaders/doom-spectrum.frag.glsl` | MIT | Original clean-room — audio-reactive spectrum bars (band1..band6) over a value-noise fire field + hell heat ramp. Aesthetic homage to the local `doom_viz` SPECTRUM-mode visualiser idea; NO game source/shaders/sprites copied (doom_viz ships none) | (this project) |
+| `shaders/checker-floor.frag.glsl` | MIT | Original clean-room — perspective rotating checkerboard floor (v = horizon/y projection) + sky gradient; 90s-mascot-platformer HOMAGE, no copyrighted sprites/tiles/logos | (this project) |
+| `shaders/wolf-maze.frag.glsl` | MIT | Original clean-room — first-person brick corridor (rectangular box-tunnel projection + procedural brick pattern + fog); 90s-raycaster HOMAGE, no copyrighted textures/level data | (this project) |
+| `shaders/block-cascade.frag.glsl` | MIT | Original clean-room — falling-blocks well (per-column hashed fall + bevelled cells + tetromino palette); falling-blocks-puzzler HOMAGE, no copyrighted shapes/logos | (this project) |
 
 > NOTE on Seascape / Raymarching-Primitives: the canonical Shadertoy shaders of
 > those names are **CC BY-NC-SA 3.0 (non-commercial)** and are NOT compatible
@@ -122,6 +126,7 @@ entire OBJ layer has zero copied-asset license surface.
 | `models/chess-pawn.obj` (chess pawn prop) | CC0-1.0 | drummyfish — "32 Low Poly Models"; file header: "by drummyfish, released under CC0 1.0, public domain" | https://opengameart.org/content/32-low-poly-models |
 | `models/banana.obj` (low-poly banana) | CC0-1.0 | drummyfish — "32 Low Poly Models"; file header: "by drummyfish, released under CC0 1.0, public domain" | https://opengameart.org/content/32-low-poly-models |
 | `models/snowman.obj` (low-poly snowman) | CC0-1.0 | drummyfish — "32 Low Poly Models"; file header: "by drummyfish, released under CC0 1.0, public domain" | https://opengameart.org/content/32-low-poly-models |
+| `models/star.obj` (3D 5-point star) | CC0-1.0 (public domain) | Original — this project; procedurally generated (10-point star rim bipyramid), no third-party asset | (this project) |
 
 Built-in primitives (no asset file) — procedurally generated, this project's
 own code (`packages/web/src/lib/video/primitives.ts`), ZERO copied-asset

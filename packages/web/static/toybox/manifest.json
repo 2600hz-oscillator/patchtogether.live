@@ -590,6 +590,61 @@
         { "id": "speed",  "label": "SPEED",  "min": 0.0, "max": 3.0, "default": 0.7, "curve": "linear" },
         { "id": "bright", "label": "BRIGHT", "min": 0.0, "max": 1.5, "default": 0.6, "curve": "linear" }
       ]
+    },
+    {
+      "id": "doom-spectrum",
+      "label": "DOOM SPECTRUM",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/doom-spectrum.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "band1", "label": "BAND 1", "min": 0.0, "max": 1.0, "default": 0.3, "curve": "linear" },
+        { "id": "band2", "label": "BAND 2", "min": 0.0, "max": 1.0, "default": 0.3, "curve": "linear" },
+        { "id": "band3", "label": "BAND 3", "min": 0.0, "max": 1.0, "default": 0.3, "curve": "linear" },
+        { "id": "band4", "label": "BAND 4", "min": 0.0, "max": 1.0, "default": 0.3, "curve": "linear" },
+        { "id": "band5", "label": "BAND 5", "min": 0.0, "max": 1.0, "default": 0.3, "curve": "linear" },
+        { "id": "band6", "label": "BAND 6", "min": 0.0, "max": 1.0, "default": 0.3, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "checker-floor",
+      "label": "CHECKER FLOOR",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/checker-floor.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "speed", "label": "SPEED", "min": 0.0, "max": 3.0, "default": 0.7, "curve": "linear" },
+        { "id": "rot",   "label": "ROT",   "min": -1.0, "max": 1.0, "default": 0.2, "curve": "linear" },
+        { "id": "scale", "label": "SCALE", "min": 0.0, "max": 1.0, "default": 0.4, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "wolf-maze",
+      "label": "WOLF MAZE",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/wolf-maze.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "speed",  "label": "SPEED",  "min": 0.0, "max": 3.0, "default": 0.6, "curve": "linear" },
+        { "id": "fov",    "label": "FOV",    "min": 0.0, "max": 1.0, "default": 0.4, "curve": "linear" },
+        { "id": "bright", "label": "BRIGHT", "min": 0.0, "max": 1.0, "default": 0.75, "curve": "linear" }
+      ]
+    },
+    {
+      "id": "block-cascade",
+      "label": "BLOCK CASCADE",
+      "family": "GEN",
+      "glsl": "/toybox/shaders/block-cascade.frag.glsl",
+      "shadertoy": true,
+      "input": "none",
+      "params": [
+        { "id": "speed",   "label": "SPEED",   "min": 0.0, "max": 3.0, "default": 0.7, "curve": "linear" },
+        { "id": "density", "label": "DENSITY", "min": 0.0, "max": 1.0, "default": 0.6, "curve": "linear" },
+        { "id": "hue",     "label": "HUE",     "min": 0.0, "max": 1.0, "default": 0.55, "curve": "linear" }
+      ]
     }
   ],
   "models": [
@@ -607,7 +662,8 @@
     { "id": "cone",        "label": "CONE",        "builtin": "cone",        "matcap": 1, "license": "builtin" },
     { "id": "torus-knot",  "label": "TORUS KNOT",  "builtin": "torus-knot",  "matcap": 2, "license": "builtin" },
     { "id": "banana",      "label": "BANANA",      "obj": "/toybox/models/banana.obj",  "matcap": 1, "license": "CC0-1.0" },
-    { "id": "snowman",     "label": "SNOWMAN",     "obj": "/toybox/models/snowman.obj", "matcap": 0, "license": "CC0-1.0" }
+    { "id": "snowman",     "label": "SNOWMAN",     "obj": "/toybox/models/snowman.obj", "matcap": 0, "license": "CC0-1.0" },
+    { "id": "star",        "label": "STAR",        "obj": "/toybox/models/star.obj",    "matcap": 1, "license": "CC0-1.0" }
   ],
   "presets": [
     {
@@ -1423,6 +1479,163 @@
         "cv1": { "target": "layer", "layer": 1, "param": "spin" },
         "cv2": { "target": "layer", "layer": 0, "param": "speed" },
         "cv6": { "target": "layer", "layer": 1, "param": "drift" }
+      }
+    },
+    {
+      "id": "doom-spectrum",
+      "label": "DOOM SPECTRUM (audio)",
+      "note": "90s-FPS AUDIO VISUALISER (homage to the local doom_viz SPECTRUM mode): the DOOM-SPECTRUM GEN (layer 0) draws spectrum BARS rising from a hellish fire pit, with band1..band6 (low→high) PATCHED FROM AUDIO via cv1..cv6 — patch an audio out (or a multiband split) into the cv ports and the bars PUMP with the music. The BLOOM FRAG (layer 1) makes the hot bars glow, then a FEEDBACK op in ADDITIVE mode (fb1) accumulates fiery trails. OUTPUT = the feedback. cv1..cv6 → the six audio bands. No copyrighted DOOM content; original clean-room hell aesthetic.",
+      "layers": [
+        { "kind": "gen",  "contentId": "doom-spectrum", "params": { "band1": 0.3, "band2": 0.3, "band3": 0.3, "band4": 0.3, "band5": 0.3, "band6": 0.3 } },
+        { "kind": "frag", "contentId": "frag-bloom",    "params": { "thresh": 0.35, "glow": 1.6, "radius": 0.5 } },
+        { "kind": "off",  "contentId": null, "params": {} },
+        { "kind": "off",  "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "fb1", "kind": "feedback", "x": 120, "y": 40, "params": { "mode": 3, "zoom": 0.99, "decay": 0.85, "gain": 1.0, "intensity": 0.6 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "fb1", "toPort": "in0" },
+          { "id": "e1", "from": "fb1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 0, "param": "band1" },
+        "cv2": { "target": "layer", "layer": 0, "param": "band2" },
+        "cv3": { "target": "layer", "layer": 0, "param": "band3" },
+        "cv4": { "target": "layer", "layer": 0, "param": "band4" },
+        "cv5": { "target": "layer", "layer": 0, "param": "band5" },
+        "cv6": { "target": "layer", "layer": 0, "param": "band6" }
+      }
+    },
+    {
+      "id": "sonic-special-stage",
+      "label": "SONIC SPECIAL STAGE",
+      "note": "Homage to a 90s mascot platformer's rotating SPECIAL STAGE: the CHECKER-FLOOR GEN (layer 0, emerald + sky-blue perspective checkerboard) is folded into a kaleidoscopic maze by a MIRROR op (mirr1, KALEIDO), with a gold STAR OBJ (layer 1, the collectible) LUMA-KEYED over it (lk1). OUTPUT = the keyed composite. cv1 → floor SPEED, cv2 → kaleido ROTATION, cv3 spins the star. Original art only; no copyrighted sprites/logos.",
+      "layers": [
+        { "kind": "gen", "contentId": "checker-floor", "params": { "speed": 0.7, "rot": 0.25, "scale": 0.4 } },
+        { "kind": "obj", "contentId": null, "params": {}, "material": { "modelId": "star", "rotX": 0.2, "rotY": 0.4, "rotZ": 0.0, "scale": 1.1, "spin": 0.8, "matcap": 1, "tintR": 1.0, "tintG": 0.84, "tintB": 0.0 } },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "mirr1", "kind": "mirror", "x": 120, "y": 14, "params": { "mode": 3, "segments": 6, "rotation": 0.2 } },
+          { "id": "lk1", "kind": "lumakey", "x": 196, "y": 40, "params": { "amount": 0.35, "soft": 0.15, "invert": 0 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "mirr1", "toPort": "in0" },
+          { "id": "e1", "from": "mirr1", "to": "lk1", "toPort": "in0" },
+          { "id": "e2", "from": "src1", "to": "lk1", "toPort": "in1" },
+          { "id": "e3", "from": "lk1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 0, "param": "speed" },
+        "cv2": { "target": "combine", "nodeId": "mirr1", "param": "rotation" },
+        "cv3": { "target": "layer", "layer": 1, "param": "material:spin" }
+      }
+    },
+    {
+      "id": "kombat-pit",
+      "label": "KOMBAT PIT",
+      "note": "Homage to a 90s digitized fighter's lava/dungeon stage: the LAVA-LAMP GEN (layer 0, blood-red molten pit) is warped by a DISPLACE op (disp1) driven by a NOISE-FBM field (layer 1) for heat-haze shimmer, then a FEEDBACK op in ADDITIVE mode (fb1) accumulates lightning-strike trails. OUTPUT = the feedback. cv1 → lava SPEED, cv2 → heat DISPLACE amount, cv3 → lightning DECAY. Original art only.",
+      "layers": [
+        { "kind": "gen", "contentId": "lava-lamp", "params": { "speed": 0.5, "blobs": 5.0, "heat": 0.95 } },
+        { "kind": "gen", "contentId": "noise-fbm", "params": { "scale": 0.6, "speed": 0.4, "warp": 0.7 } },
+        { "kind": "off", "contentId": null, "params": {} },
+        { "kind": "off", "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "disp1", "kind": "displace", "x": 120, "y": 40, "params": { "amount": 0.12, "channel": 1 } },
+          { "id": "fb1", "kind": "feedback", "x": 196, "y": 40, "params": { "mode": 3, "zoom": 0.97, "decay": 0.9, "gain": 1.1, "intensity": 0.7 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src0", "to": "disp1", "toPort": "in0" },
+          { "id": "e1", "from": "src1", "to": "disp1", "toPort": "in1" },
+          { "id": "e2", "from": "disp1", "to": "fb1", "toPort": "in0" },
+          { "id": "e3", "from": "fb1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 0, "param": "speed" },
+        "cv2": { "target": "combine", "nodeId": "disp1", "param": "amount" },
+        "cv3": { "target": "combine", "nodeId": "fb1", "param": "decay" }
+      }
+    },
+    {
+      "id": "wolf-corridor",
+      "label": "WOLF CORRIDOR",
+      "note": "Homage to a 90s raycaster maze shooter: the WOLF-MAZE GEN (layer 0, first-person brick corridor rushing forward) is reduced to chunky VGA blocks by the PIXELATE FRAG (layer 1) reading it, then shot off a tube monitor by the CRT FRAG (layer 2) reading that — phosphor mask, scanlines, barrel curve. OUTPUT = the CRT corridor. cv1 → walk SPEED, cv2 → pixel BLOCKS, cv5 → CRT SCAN. Original art only; no game textures/level data.",
+      "layers": [
+        { "kind": "gen",  "contentId": "wolf-maze",     "params": { "speed": 0.6, "fov": 0.4, "bright": 0.75 } },
+        { "kind": "frag", "contentId": "frag-pixelate", "params": { "blocks": 0.4, "bits": 0.5, "smear": 0.15 } },
+        { "kind": "frag", "contentId": "frag-crt",      "params": { "curve": 0.3, "scan": 0.5, "mask": 0.5 } },
+        { "kind": "off",  "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src2", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 0, "param": "speed" },
+        "cv2": { "target": "layer", "layer": 1, "param": "blocks" },
+        "cv5": { "target": "layer", "layer": 2, "param": "scan" }
+      }
+    },
+    {
+      "id": "tetris-cascade",
+      "label": "TETRIS CASCADE",
+      "note": "Homage to the 80s/90s falling-blocks puzzler: the BLOCK-CASCADE GEN (layer 0, tetromino-coloured blocks falling down a recessed well) is given a neon glow by the BLOOM FRAG (layer 1) reading it, then a FRAMEDELAY op (fd1, a STATEFUL history node) echoes the falling pieces into motion trails. OUTPUT = the delayed composite. cv1 → fall SPEED, cv2 → echo DELAY, cv3 → bloom GLOW. Original art only; no copyrighted shapes/logos.",
+      "layers": [
+        { "kind": "gen",  "contentId": "block-cascade", "params": { "speed": 0.7, "density": 0.6, "hue": 0.55 } },
+        { "kind": "frag", "contentId": "frag-bloom",    "params": { "thresh": 0.4, "glow": 1.3, "radius": 0.4 } },
+        { "kind": "off",  "contentId": null, "params": {} },
+        { "kind": "off",  "contentId": null, "params": {} }
+      ],
+      "combine": {
+        "nodes": [
+          { "id": "src0", "kind": "source", "layer": 0, "x": 14, "y": 14 },
+          { "id": "src1", "kind": "source", "layer": 1, "x": 14, "y": 66 },
+          { "id": "src2", "kind": "source", "layer": 2, "x": 14, "y": 118 },
+          { "id": "src3", "kind": "source", "layer": 3, "x": 14, "y": 170 },
+          { "id": "fd1", "kind": "framedelay", "x": 120, "y": 40, "params": { "delay": 8, "mix": 0.6 } },
+          { "id": "out", "kind": "output", "x": 286, "y": 40 }
+        ],
+        "edges": [
+          { "id": "e0", "from": "src1", "to": "fd1", "toPort": "in0" },
+          { "id": "e1", "from": "fd1", "to": "out", "toPort": "in0" }
+        ]
+      },
+      "cvRoutes": {
+        "cv1": { "target": "layer", "layer": 0, "param": "speed" },
+        "cv2": { "target": "combine", "nodeId": "fd1", "param": "delay" },
+        "cv3": { "target": "layer", "layer": 1, "param": "glow" }
       }
     }
   ]
