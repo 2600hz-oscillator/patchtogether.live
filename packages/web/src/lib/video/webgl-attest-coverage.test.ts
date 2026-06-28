@@ -107,10 +107,11 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // (worker-pixel / render-timing / flake — stay heavy). 47 → 44.
 // GRAPHIC EQ (new Winamp-style VU-meter video output): +graphic-eq-render-smoke.spec.ts
 // (matched by the *-render-smoke glob). 44 → 45.
-// MILKDROP (feat/milkdrop): +milkdrop-render-smoke.spec.ts (matched by the
-// `**/*-render-smoke.spec.ts` glob — deterministic non-black/structured pixel
-// gate for the butterchurn visualizer): 45 → 46.
-const EXPECTED_HEAVY_SPEC_COUNT = 46;
+// +1 tempest-render-smoke.spec.ts (TEMPEST P1 vector well, already in main) and
+// +1 milkdrop-render-smoke.spec.ts (butterchurn visualizer) both join via the
+// `**/*-render-smoke.spec.ts` DRS glob — deterministic non-black/structured
+// pixel gates. 45 → 47.
+const EXPECTED_HEAVY_SPEC_COUNT = 47;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

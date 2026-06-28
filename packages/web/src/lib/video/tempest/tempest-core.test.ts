@@ -15,6 +15,9 @@ import {
   rimAt,
   projectToScreen,
   bandsToRadii,
+  scaleRadial,
+  buildClawSegments,
+  CLAW_DEFAULTS,
 } from './tempest-core';
 
 const len = (p: { x: number; y: number }) => Math.hypot(p.x, p.y);
@@ -116,6 +119,69 @@ describe('projectToScreen', () => {
     const c = len(projectToScreen(rim, 0, 0.75));
     expect(a).toBeLessThan(b);
     expect(b).toBeLessThan(c);
+  });
+});
+
+describe('scaleRadial', () => {
+  it('scales a point away from / toward the origin', () => {
+    expect(scaleRadial({ x: 0.5, y: -0.5 }, 2)).toEqual({ x: 1, y: -1 });
+    expect(scaleRadial({ x: 1, y: 1 }, 0.5)).toEqual({ x: 0.5, y: 0.5 });
+  });
+});
+
+describe('buildClawSegments', () => {
+  it('returns the 5 claw strokes (2 prongs + back bar + 2 blades) with finite points', () => {
+    const rim = rimVertices('circle', 16);
+    const segs = buildClawSegments(rim, 0, 16);
+    expect(segs).toHaveLength(5);
+    for (const s of segs) {
+      for (const p of [s.a, s.b]) {
+        expect(Number.isFinite(p.x) && Number.isFinite(p.y)).toBe(true);
+      }
+    }
+  });
+
+  it('snaps the continuous lane to its integer segment and sits the back bar on the rim', () => {
+    const rim = rimVertices('circle', 16);
+    // lane 4.7 snaps to li=4: the back bar (segs[2]) spans rim corners 4..5.
+    const segs = buildClawSegments(rim, 4.7, 16);
+    const back = segs[2]!;
+    expect(back.a).toEqual(rimAt(rim, 4));
+    expect(back.b).toEqual(rimAt(rim, 5));
+  });
+
+  it('prong tips splay OUTSIDE the rim; blade tips reach INSIDE toward the pit', () => {
+    const rim = rimVertices('circle', 16); // every rim point is unit-radius
+    const segs = buildClawSegments(rim, 0, 16);
+    const radius = (p: { x: number; y: number }) => Math.hypot(p.x, p.y);
+    // prongs (segs 0,1): outer end (b) is past the rim (radius > 1).
+    expect(radius(segs[0]!.b)).toBeGreaterThan(1);
+    expect(radius(segs[1]!.b)).toBeGreaterThan(1);
+    // blades (segs 3,4): inner end (b) sits inside the rim (radius < 1).
+    expect(radius(segs[3]!.b)).toBeLessThan(1);
+    expect(radius(segs[4]!.b)).toBeLessThan(1);
+  });
+
+  it('the open mouth leaves a gap between the two blade tips (faces into the tube)', () => {
+    const rim = rimVertices('circle', 16);
+    const segs = buildClawSegments(rim, 0, 16);
+    const inL = segs[3]!.b;
+    const inR = segs[4]!.b;
+    expect(Math.hypot(inL.x - inR.x, inL.y - inR.y)).toBeGreaterThan(0);
+  });
+
+  it('a larger `out` spec pushes the prong tips further past the rim (tweakable)', () => {
+    const rim = rimVertices('circle', 16);
+    const near = buildClawSegments(rim, 0, 16, { out: 1.05 });
+    const far = buildClawSegments(rim, 0, 16, { out: 1.4 });
+    const r = (p: { x: number; y: number }) => Math.hypot(p.x, p.y);
+    expect(r(far[0]!.b)).toBeGreaterThan(r(near[0]!.b));
+  });
+
+  it('exposes tunable defaults', () => {
+    expect(CLAW_DEFAULTS.out).toBeGreaterThan(1);
+    expect(CLAW_DEFAULTS.bodyDepth).toBeGreaterThan(0);
+    expect(CLAW_DEFAULTS.bodyDepth).toBeLessThanOrEqual(1);
   });
 });
 

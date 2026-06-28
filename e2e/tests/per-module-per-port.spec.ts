@@ -108,6 +108,14 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // dedicated composite spec (VCO→VCA→ADSR←SEQUENCER→SYNESTHESIA) asserts that
   // the correct bands trigger. Handle-presence + input-drive still run here.
   synesthesia: 'outputs are input-conditional (band audio/env/gate); signal flow covered by the synesthesia composite spec',
+  // FEATURECV is a pure broadband analyser: loud/bright/punch CV + the onset
+  // trigger are all silent (the bipolar CVs sit at the -1 silence rail) until
+  // its `in` is driven, which the generic emit sweep doesn't wire. Handle-
+  // presence + input-drive still run here; the REAL source→featurecv→param
+  // signal flow is asserted by e2e/tests/featurecv-source-chain.spec.ts
+  // (noise → featurecv.bright → filter.cutoff → audible change) and the pure
+  // core by packages/dsp/src/lib/featurecv-dsp.test.ts + the ART scenario.
+  featurecv: 'outputs are input-conditional (broadband RMS/ZCR/crest CV + flux onset, silent until `in` is driven); signal flow covered by featurecv-source-chain.spec.ts + featurecv-dsp.test.ts',
   // FLIPPER is a gate flip-flop: each output only fires on alternate input
   // rising edges (FLIP on the 1st, FLOP on the 2nd, …), so the generic
   // "drive input → measure this output emits" sweep can't trigger the right
@@ -206,6 +214,7 @@ const EXEMPT_OUTPUT_EMIT_MODULES: Record<string, string> = {
   // covered by the ROM-gated snes9x e2e (video/audio/input + clock_in→gate3)
   // and the pure unit suites (detection / multiplier / input mask).
   snes9x: 'all outputs need a loaded ROM (user-provided, gitignored, absent in CI); event gates fire on gameplay/forcePulse; covered by the ROM-gated snes9x e2e + pure unit suites',
+  blood: 'all outputs need user-supplied, non-redistributable Blood data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF, gitignored, absent in CI) — the NBlood engine aborts in its resource loader without it, so the video surface is the idle shader + audio is the silent PCM stub; covered by blood-keys.test.ts + the blood-frame-harness (run locally with owned data). See native/nblood/PHASE1-STATUS.md.',
   // ── Driver page.evaluate / postSpawn hangs ──
   // These modules' drivers time out under CI load — the per-output
   // serial loop (8 × 20 s, 7 × 20 s) exhausts the test budget before
@@ -411,6 +420,26 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   // healthToCv() unit test + the bespoke spec asserts it MOVES on a miss.
   'gibribbon.health_cv':    'idle DC (healthy=0.75) is constant + AC-coupled below the scope floor; covered by gibribbon-events.test.ts (healthToCv) + gibribbon.spec.ts',
 };
+
+// ─── RATCHET — output-emit exemption caps ────────────────────────────────
+// EXEMPT_OUTPUT_EMIT_MODULES (whole-module) + EXEMPT_OUTPUT_EMIT (per-port)
+// let a module/port OPT OUT of the per-port output-emit signal-flow assertion.
+// Every entry is coverage we still owe. These caps FREEZE the lists at today's
+// size so they can only SHRINK as coverage is reconciled — adding a NEW
+// exemption fails this test on purpose.
+//   RATCHET RULE: exemptions only shrink. LOWER the number when you fix
+//   coverage and delete an entry. Only RAISE it for a genuinely new,
+//   documented exemption — NEVER to make a red sweep go green.
+test('RATCHET: output-emit exemption lists only shrink', () => {
+  expect(
+    Object.keys(EXEMPT_OUTPUT_EMIT_MODULES).length,
+    'EXEMPT_OUTPUT_EMIT_MODULES grew past its frozen cap — see the RATCHET rule above',
+  ).toBeLessThanOrEqual(42); // +1 featurecv (input-conditional outputs); +1 blood (data-gated emulator — outputs idle without the non-redistributable WAD, absent in CI)
+  expect(
+    Object.keys(EXEMPT_OUTPUT_EMIT).length,
+    'EXEMPT_OUTPUT_EMIT grew past its frozen cap — see the RATCHET rule above',
+  ).toBeLessThanOrEqual(65);
+});
 
 // ────────── Per-port input-drive exemptions ──────────
 // Format: `<moduleType>.<portId>` → human-readable reason.

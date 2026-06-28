@@ -401,6 +401,33 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "wavefold": "Solarize (0..1; param id 'wavefold') — triangle wavefold of the composite voltage; reads on screen as tonal reversal/solarization and color tearing."
     }
   },
+  "blood": {
+    "explanation": "BLOOD runs the NBlood (Build-engine) port of Blood as an interactive video source. It is owner-only and single-instance — the rack owner spawns it and plays; the video output is the Build software-rendered framebuffer, letterboxed into the engine canvas. The card boots OUT-OF-BOX: the 1997 Blood SHAREWARE data (\"The Way of All Flesh\", episode 1) is bundled under static/blood/, so no picker is needed. The \"Load full Blood data…\" picker is an OPTIONAL override — point it at a copy of the full game you own (GOG/Steam One Unit Whole Blood or Fresh Supply) to play all episodes.",
+    "inputs": {
+      "altfire": "CV gate — alternate fire while held HIGH.",
+      "crouch": "CV gate — stay crouched while held HIGH.",
+      "down": "CV gate — move backward while held HIGH.",
+      "enter": "CV trigger — confirm the highlighted menu item (fires once per rising edge).",
+      "esc": "CV trigger — open / back out of the menu (fires once per rising edge).",
+      "fire": "CV gate — fire the current weapon while the gate is held HIGH.",
+      "jump": "CV gate — jump while held HIGH.",
+      "left": "CV gate — turn left while held HIGH.",
+      "right": "CV gate — turn right while held HIGH.",
+      "up": "CV gate — move forward while the gate is held HIGH.",
+      "use": "CV gate — open doors / use switches while held HIGH.",
+      "weapnext": "CV gate — select the next weapon while held HIGH.",
+      "weapprev": "CV gate — select the previous weapon while held HIGH."
+    },
+    "outputs": {
+      "audio_l": "Left channel of the game audio (silent in v1 — PCM bridge is stubbed).",
+      "audio_r": "Right channel of the game audio (silent in v1 — PCM bridge is stubbed).",
+      "out": "The Build software-rendered game framebuffer, aspect-correct letterboxed into the canvas."
+    },
+    "controls": {
+      "audioGain": "Trims the game-audio level feeding audio_l/audio_r (0..2, default 1).",
+      "fillMode": "Letterbox (preserve aspect, default) vs fill (cover-crop) the canvas."
+    }
+  },
   "bluebox": {
     "explanation": "A DTMF telephone dialer with two phone-phreaking buttons. BLUEBOX is a 12-key touch-tone pad — digits 0–9 plus BLUEBOX and REDBOX — where every key is a press-and-hold tone source with no envelope: hold it down and its tone(s) sound, release and they stop (a ~1 ms ramp at each edge kills the click). Each digit emits the standard Bell-System dual tone (a row frequency 697/770/852/941 Hz plus a column frequency 1209/1336/1477 Hz); BLUEBOX emits a single 2600 Hz supervisory sine (the classic trunk-seizing tone) and REDBOX emits the 1700 + 2200 Hz payphone coin pair. You can hold a key with the mouse OR by patching a gate cable into its gate input — the worklet ORs the two so either drives it. Held keys sum into one mono output, and keys that share a frequency (e.g. 1 and 4 both use 1209 Hz) collapse onto a single shared oscillator so they reinforce instead of beating.",
     "inputs": {
@@ -1258,6 +1285,26 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "dryWet": "The dry↔wet blend that produces the final OUT: 0 shows only the dry A/B mix, 1 shows only the wet signal coming back into RETURN, with the in-between shaped by the D/W FX dropdown. Defaults to 0 (fully dry), so the send/return loop has no effect until you raise it. Clamped to 0..1, letting you fade an external effect in and out or transition into it with a wipe/dissolve.",
       "dwTransition": "Picks the SHAPE of the dry→wet blend, the same five options as the A/B shape: 0 fade, 1 wipe (left→right), 2 dissolve (per-cell random), 3 star iris, 4 checkerboard. Rounded and clamped to 0..4. Lets you transition into the returned/processed image with a hard wipe or dissolve instead of a flat crossfade.",
       "fader": "The A↔B crossfade position: 0 shows only IN A, 1 shows only IN B, and in between the two are blended by the amount the A/B FX dropdown's shape allows (a plain fade at the 0.5 default is a 50/50 mix). Clamped to 0..1, and the result is the mix that feeds both the SEND output and the dry side of the dry/wet stage."
+    }
+  },
+  "featurecv": {
+    "explanation": "FEATURECV listens to one audio signal and turns its TIMBRE and DYNAMICS into control voltages — an audio-reactive modulation source. Unlike SYNESTHESIA (which splits the sound into frequency bands), featurecv measures the WHOLE signal, in the time domain only (no FFT) so it is fully deterministic. It derives three continuous features — LOUD (broadband RMS = how loud), BRIGHT (zero-crossing rate, a cheap spectral-brightness proxy = how bright/hissy vs dark/bassy), and PUNCH (crest factor = peak ÷ RMS = how spiky/transient vs sustained) — plus an ONSET trigger that pulses on each fresh attack in the sound. The three feature CVs are emitted BIPOLAR (−1..+1) by default so a strong feature sweeps a knob-centred destination's FULL range; flip POLARITY to UNIPOLAR (0..1) for classic envelope-style modulation. GAIN trims the input into the analyser; ATTACK / RELEASE smooth how quickly the CVs react. Patch LOUD into a VCA or filter to track dynamics, BRIGHT into a filter cutoff so the timbre opens up as the source gets brighter, PUNCH into anything you want to react to transients, and ONSET into an envelope generator or drum voice to fire on each hit. The card shows live meters for the three features (display only).",
+    "inputs": {
+      "in": "The audio signal to analyse — the measured signal, not a modulator. Its loudness, brightness, and transients drive every output. Patch a drum bus, vocal, synth voice, or full mix here."
+    },
+    "outputs": {
+      "bright": "BRIGHT CV — a brightness proxy from the zero-crossing rate: high when the sound is hissy / trebly (cymbals, noise, bright synths), low when it is dark / bassy. Patch into a filter cutoff so the timbre opens with the source's brightness. Polarity set by POLARITY.",
+      "loud": "LOUD CV — the broadband RMS (overall energy / loudness) of the input, smoothed by ATTACK/RELEASE. Patch into a VCA gain or filter cutoff to make a destination track how loud the source is. Polarity set by the POLARITY toggle.",
+      "onset": "ONSET trigger — fires a short pulse ONCE on each detected attack (a fresh transient / hit) in the input, a clean rising edge that crosses the gate threshold. Patch into an envelope generator, VCA, or drum voice to strike it from the live source. SENS sets how readily it fires; DEBNCE sets the minimum gap between pulses.",
+      "punch": "PUNCH CV — the crest factor (peak ÷ RMS): high for spiky, transient, percussive material and low for sustained, compressed tones. Patch into modulation you want to react to how punchy the source is. Polarity set by POLARITY."
+    },
+    "controls": {
+      "attack": "How fast the feature CVs RISE toward a new value (ms, log) — short attack snaps to transients, long attack glides smoothly past them. Applies to LOUD, BRIGHT, and PUNCH.",
+      "bipolar": "POLARITY of the three feature CV outputs — BIPOLAR (−1..+1, the default, so a strong feature sweeps a knob-centred destination's full range) vs UNIPOLAR (0..1, classic envelope-style). Toggle on the card; does not affect the ONSET trigger.",
+      "gain": "Input trim into the analyser (×0.25..×4, log, unity at noon) — boost a quiet source so its features reach a usable CV range, or tame a hot one. It shapes the ANALYSIS level, not an audio output (there is none).",
+      "onset_debounce": "ONSET debounce (ms, log) — the minimum time between onset triggers, a lockout that blocks a re-trigger on a transient's ringing tail so one hit makes exactly one pulse.",
+      "onset_sens": "ONSET sensitivity — higher lowers the detector's adaptive threshold so it fires on smaller transients; lower only triggers on strong, clear attacks. Tune to taste against your source.",
+      "release": "How fast the feature CVs FALL back when the input quietens or changes (ms, log) — short release tracks every dip, long release holds a smooth contour. Applies to LOUD, BRIGHT, and PUNCH."
     }
   },
   "feedback": {

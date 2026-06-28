@@ -51,6 +51,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   drumseqz: { size: '4u', hp: 5 }, // 604×820px
   dx7: { size: '2u', hp: 2 }, // 326×320px
   elements: { size: '2u', hp: 3 }, // 298×460px
+  featurecv: { size: '2u', hp: 2 }, // ~260 wide — 3 feature meters + ONSET led + 6 knobs/toggle over a 5-port PatchPanel (≈ spectrograph)
   fader: { size: '2u', hp: 2 }, // ~360 wide — 2 long faders + 2 transition dropdowns (A/B + dry/wet) over a 5-port PatchPanel
   filter: { size: '1u', hp: 1 }, // 180×200px  [LOCKED]
   flipper: { size: '1u', hp: 1 }, // 90×176px
@@ -144,6 +145,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   swolevco: { size: '2u', hp: 2 }, // 262×360px
   symbiote: { size: '1u', hp: 3 }, // 199×440px
   synesthesia: { size: '3u', hp: 2 }, // 540×360 — was 3hp, trimmed empty right margin
+  tempest: { size: '2u', hp: 2 }, // 320×360px — vector-well preview + RIM knob + SHAPE
   textmarquee: { size: '3u', hp: 2 }, // 280×~450px — rich-text editor + preview + 4 knobs
   tides2: { size: '2u', hp: 2 }, // 221×380px
   timelorde: { size: '3u', hp: 2 }, // 152×280px  [LOCKED]
@@ -171,6 +173,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   chromakey: { size: '3u', hp: 2 }, // 389×260px
   colorizer: { size: '2u', hp: 2 }, // 270×240px
   destructor: { size: '1u', hp: 2 }, // 180×360px — 4 knobs in one row
+  blood: { size: '2u', hp: 2 }, // BLOOD — DOOM-class Build-engine game (matches doom)
   doom: { size: '2u', hp: 2 }, // 377×360px
   edges: { size: '1u', hp: 2 }, // 180×360px — 2 faders one row beside handles
   feedback: { size: '3u', hp: 2 }, // 411×320px
