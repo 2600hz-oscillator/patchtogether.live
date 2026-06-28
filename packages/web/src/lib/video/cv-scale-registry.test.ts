@@ -64,6 +64,11 @@ const VIDEO_PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // would distort the rise/fall the detector keys off. (The list is generated
   // from CV_GATE_PORT_IDS_BY_SLOT, so it's resolved at runtime below.)
   doom: ['iddqd_in', 'idkfa_in'], // p{slot}_{base} gates added programmatically below
+  // BLOOD cv-gate inputs: the 13 game-control gates/triggers targeting synthetic
+  // cv_* params that drive the NBlood key FIFO via an edge detector — raw
+  // passthrough by design (like DOOM), no continuous knob; scaling would distort
+  // the rise/fall the detector keys off.
+  blood: ['up', 'down', 'left', 'right', 'fire', 'altfire', 'use', 'jump', 'crouch', 'weapnext', 'weapprev', 'esc', 'enter'],
   // QBERT joy_x / joy_y: RAW analog joystick AXES (−1..+1) onto synthetic
   // cv_joy_x/cv_joy_y params, resolved by joyCvToDiagonal into one of the four
   // diagonal directions each tick. The CV IS the stick position, not a knob

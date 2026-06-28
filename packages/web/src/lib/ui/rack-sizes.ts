@@ -173,6 +173,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   chromakey: { size: '3u', hp: 2 }, // 389×260px
   colorizer: { size: '2u', hp: 2 }, // 270×240px
   destructor: { size: '1u', hp: 2 }, // 180×360px — 4 knobs in one row
+  blood: { size: '2u', hp: 2 }, // BLOOD — DOOM-class Build-engine game (matches doom)
   doom: { size: '2u', hp: 2 }, // 377×360px
   edges: { size: '1u', hp: 2 }, // 180×360px — 2 faders one row beside handles
   feedback: { size: '3u', hp: 2 }, // 411×320px
