@@ -36,6 +36,7 @@
     "fflate": "^0.8.2",
     "hls.js": "^1.6.16",
     "mediabunny": "^1.46.0",
+    "milkdrop-preset-converter": "^0.1.2",
     "svelte-clerk": "^1.1.6",
     "yjs": "^13.6.0"
   },

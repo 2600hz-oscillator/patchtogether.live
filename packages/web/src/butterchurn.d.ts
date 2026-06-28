@@ -72,3 +72,12 @@ declare module 'butterchurn-presets/lib/butterchurnPresetsMinimal.min.js' {
   const presets: { getPresets(): Record<string, unknown> };
   export default presets;
 }
+
+declare module 'milkdrop-preset-converter' {
+  /** Convert a classic Winamp Milkdrop `.milk` preset (raw INI + EEL + HLSL
+   *  text) into a butterchurn preset object suitable for
+   *  `visualizer.loadPreset`. Async (it transpiles the EEL/HLSL). The card
+   *  lazy-imports this behind a dynamic import() so the ~770 KB bundle is its
+   *  own chunk. */
+  export function convertPreset(milkText: string): Promise<unknown>;
+}

@@ -118,6 +118,12 @@ const CURATED_ORDER: readonly string[] = [
  *  shorter after a pack drift — the runtime clamps to it). */
 const CURATED_COUNT = CURATED_ORDER.length;
 
+/** The curated preset NAMES, exported (names only — no preset bodies, so this
+ *  pulls nothing from the lazy pack chunk) so MilkdropCard's picker can populate
+ *  its dropdown immediately, before the engine's live list (`read('presetNames')`)
+ *  resolves behind the dynamic import. */
+export const MILKDROP_CURATED_NAMES: readonly string[] = CURATED_ORDER;
+
 interface MilkdropParams {
   /** CV-only band override targets (no card fader → only the CV bridge writes
    *  them, so "written this frame" == "patched"). */
@@ -209,7 +215,7 @@ export const milkdropDef: VideoModuleDef = {
 
   // docs-hash-ignore:start
   docs: {
-    explanation: `MILKDROP is a Winamp-style Milkdrop music visualizer as a fully CV-instrumented video SOURCE. It wraps the open-source butterchurn engine (a WebGL2 reimplementation of Ryan Geiss's Milkdrop) and a curated set of ~20 classic Flexi/Geiss/Martin presets, then exposes the parts that actually drive the look as patchable CV. Patch any audio into the AUDIO input and the visuals react to it: a mono mix plus left/right channels are tapped (the audio is TAP-ONLY and inaudible — a silent gain-0 keep-alive runs the tap without routing to the speakers, so feed AUDIO OUT separately to hear it). The novel part is the per-band CV: butterchurn drives nearly all preset motion from three audio scalars — bass, mid, treb — and MILKDROP lets a cable REPLACE any of them. Patch a CV/LFO/envelope into BASS, MID, or TREB and that band is driven by the cable instead of the live audio (an unpatched band still follows the audio); the REACT control scales all three at once. SPEED is a time-warp (it scales how fast butterchurn's internal clock advances, clamped at zero — turn it down to slow the motion, up to speed it up). PRESET selects which of the curated presets is showing (a quantized index, knob or CV), MORPH sets the crossfade time when the preset changes, and a rising edge on NEXT advances to the next preset hands-free (clock it from a sequencer to switch presets in time). The output is a normal downstream video texture: route OUT into a mixer, keyer, effect, or OUTPUT. With nothing patched it still animates (the preset runs on its own clock) and shows the current preset; the card has a live preview screen and a preset name/index readout, and hiding the controls turns it into a resizable monitor (drag the bottom-right corner, double-click to restore).`,
+    explanation: `MILKDROP is a Winamp-style Milkdrop music visualizer as a fully CV-instrumented video SOURCE. It wraps the open-source butterchurn engine (a WebGL2 reimplementation of Ryan Geiss's Milkdrop) and a curated set of ~20 classic Flexi/Geiss/Martin presets, then exposes the parts that actually drive the look as patchable CV. Patch any audio into the AUDIO input and the visuals react to it: a mono mix plus left/right channels are tapped (the audio is TAP-ONLY and inaudible — a silent gain-0 keep-alive runs the tap without routing to the speakers, so feed AUDIO OUT separately to hear it). The novel part is the per-band CV: butterchurn drives nearly all preset motion from three audio scalars — bass, mid, treb — and MILKDROP lets a cable REPLACE any of them. Patch a CV/LFO/envelope into BASS, MID, or TREB and that band is driven by the cable instead of the live audio (an unpatched band still follows the audio); the REACT control scales all three at once. SPEED is a time-warp (it scales how fast butterchurn's internal clock advances, clamped at zero — turn it down to slow the motion, up to speed it up). PRESET selects which of the curated presets is showing (a quantized index, knob or CV), MORPH sets the crossfade time when the preset changes, and a rising edge on NEXT advances to the next preset hands-free (clock it from a sequencer to switch presets in time). The output is a normal downstream video texture: route OUT into a mixer, keyer, effect, or OUTPUT. With nothing patched it still animates (the preset runs on its own clock) and shows the current preset; the card has a live preview screen and a preset name/index readout, and hiding the controls turns it into a resizable monitor (drag the bottom-right corner, double-click to restore). To LOAD/BROWSE presets directly, the card has a searchable preset PICKER (a dropdown listing every curated preset by name) — picking one loads it with a MORPH-second crossfade and is the same selection the PRESET knob, the PRESET CV jack, and the NEXT trigger drive (they stay in sync). A "Load .milk…" button imports a classic Winamp Milkdrop \`.milk\` preset file straight from disk: the file is converted to butterchurn's format in the browser (via milkdrop-preset-converter) and appended to the picker for the rest of the session (custom imports are in-session only and are not saved with the patch; the curated PRESET index IS saved).`,
     inputs: {
       audio: 'AUDIO (audio cable) - the signal the visuals react to. A GainNode sink (published for the cross-domain audio bridge) fans into a mono analyser plus a left/right analyser pair (fftSize 1024, butterchurn\'s window); each frame the raw bytes are fed to the engine so it reacts to YOUR audio rather than its own internal sampler. The tap is inaudible (a silent gain-0 keep-alive keeps it running); unpatched, the analyser reads flat silence so the preset animates on its own clock. Patch a stereo or mono mix here.',
       bass: 'BASS (cv) - REPLACES the bass band the visualizer reacts to. While patched, the mapped CV value drives every preset equation that reads bass (low-frequency motion); left unpatched, the bass band follows the live AUDIO input. Centered around an "average" level so an LFO sweeps the band roughly 0..2. Scaled by REACT.',
@@ -372,6 +378,22 @@ export const milkdropDef: VideoModuleDef = {
       currentIndex = i;
       currentName = entry.name;
       presetLoaded = true;
+    }
+
+    /** Append a user-loaded CUSTOM preset (already converted to butterchurn JSON
+     *  by the card via milkdrop-preset-converter) to the in-session list and
+     *  load it. In-session only — the converted bytes are NOT written to the
+     *  Y.Doc, so a custom preset is lost on reload (the curated index DOES
+     *  persist via the presetSelect param). Returns the new entry's index so the
+     *  card can reflect/re-select it. Exposed to the card via
+     *  read('loadCustomPreset'). */
+    function loadCustomPreset(preset: unknown, name: string, blendSeconds: number): number {
+      if (preset == null) return -1;
+      const label = name && name.trim() ? name.trim() : `custom ${presetList.length + 1}`;
+      presetList.push({ name: label, preset });
+      const idx = presetList.length - 1;
+      void loadByIndex(idx, Math.max(0, blendSeconds));
+      return idx;
     }
 
     if (audioCtx && bcCanvas) {
@@ -558,6 +580,15 @@ export const milkdropDef: VideoModuleDef = {
         if (key === 'presetIndex') return currentIndex;
         if (key === 'presetName') return currentName;
         if (key === 'presetCount') return presetList.length || CURATED_COUNT;
+        // The LIVE preset names (curated, pack-drift-filtered, + in-session
+        // customs) in presetList order — the picker's dropdown source once the
+        // lazy pack chunk has resolved. Empty before then (card falls back to
+        // MILKDROP_CURATED_NAMES). Re-read by the card only when presetCount
+        // changes (not per frame), so the per-call array alloc is cheap.
+        if (key === 'presetNames') return presetList.map((e) => e.name);
+        // A stable command closure: convert-then-append a custom .milk preset.
+        // The card calls it on file pick (NOT per frame).
+        if (key === 'loadCustomPreset') return loadCustomPreset;
         return undefined;
       },
       dispose() {

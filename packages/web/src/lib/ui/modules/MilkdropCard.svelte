@@ -18,7 +18,8 @@
   import { useEngine } from '$lib/audio/engine-context';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
-  import { milkdropDef } from '$lib/video/modules/milkdrop';
+  import { milkdropDef, MILKDROP_CURATED_NAMES } from '$lib/video/modules/milkdrop';
+  import { convertMilkPreset, resolvePresetNames } from '$lib/video/milkdrop-preset-loader';
   import { startCornerResize } from './card-resize';
   import type { VideoEngine } from '$lib/video/engine';
   import { VIDEO_RES } from '$lib/video/engine';
@@ -84,6 +85,69 @@
   let presetCount = $state(0);
   let ready = $state(false);
 
+  // ---- Preset PICKER state ----
+  // The engine's LIVE name list (curated, pack-drift-filtered, + in-session
+  // customs), re-read ONLY when the count changes (cheap), never per frame.
+  let liveNames = $state<string[]>([]);
+  let lastNamesKey = -1;
+  // The names the dropdown shows: live list once ready, else the curated
+  // fallback so the picker is populated before the lazy pack chunk resolves.
+  let pickerNames = $derived(resolvePresetNames(liveNames, MILKDROP_CURATED_NAMES));
+  // Custom .milk import status line (transient UI feedback).
+  let milkStatus = $state('');
+  let milkBusy = $state(false);
+
+  function getVideoEngine(): VideoEngine | null {
+    const e = engineCtx.get();
+    if (!e) return null;
+    try {
+      return e.getDomain<VideoEngine>('video') ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Picker → select a preset by its index in the live list. Routes through the
+  // SAME presetSelect param the PST knob / PRESET CV / NEXT trigger drive, so
+  // the selection stays in sync everywhere (and persists with the patch).
+  function onPickPreset(ev: Event) {
+    const idx = Number((ev.currentTarget as HTMLSelectElement).value);
+    if (!Number.isFinite(idx)) return;
+    setNodeParam(id, 'presetSelect', idx);
+  }
+
+  // "Load .milk…" → read the file, convert it to butterchurn JSON in-browser,
+  // and hand it to the engine handle's loadCustomPreset command (which appends
+  // it to the in-session picker list + loads it with a MORPH-second crossfade).
+  async function onPickMilk(ev: Event) {
+    const input = ev.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // allow re-picking the same file
+    if (!file) return;
+    milkBusy = true;
+    milkStatus = `converting ${file.name}…`;
+    try {
+      const text = await file.text();
+      const preset = await convertMilkPreset(text);
+      const engine = getVideoEngine();
+      const loader = engine?.read(id, 'loadCustomPreset') as
+        | ((preset: unknown, name: string, blend: number) => number)
+        | undefined;
+      if (typeof loader !== 'function') {
+        milkStatus = 'engine not ready — try again';
+        return;
+      }
+      const name = file.name.replace(/\.milk$/i, '');
+      loader(preset, name, p('morph'));
+      milkStatus = `loaded ${name}`;
+    } catch (e) {
+      console.warn('[milkdrop] .milk import failed:', e);
+      milkStatus = "couldn't load that .milk file";
+    } finally {
+      milkBusy = false;
+    }
+  }
+
   function fitRect(cw: number, ch: number): { x: number; y: number; w: number; h: number } {
     const srcAspect = ENGINE_W / ENGINE_H;
     const dstAspect = cw / ch;
@@ -122,6 +186,13 @@
       presetName = (videoEngine.read(id, 'presetName') as string) ?? '';
       presetIndex = (videoEngine.read(id, 'presetIndex') as number) ?? 0;
       presetCount = (videoEngine.read(id, 'presetCount') as number) ?? 0;
+      // Refresh the picker's live name list ONLY when the list size changes
+      // (first load, or a custom .milk appended) — not the per-frame array alloc.
+      const namesKey = ready ? presetCount : -1;
+      if (namesKey !== lastNamesKey) {
+        liveNames = (videoEngine.read(id, 'presetNames') as string[]) ?? [];
+        lastNamesKey = namesKey;
+      }
     } catch {
       /* engine churn — ignore */
     }
@@ -260,6 +331,35 @@
     </div>
 
     <div class="controls" data-testid="milkdrop-controls">
+      <!-- Preset PICKER: browse/load by name. Drives the SAME presetSelect param
+           as the PST knob / PRESET CV / NEXT trigger, so all stay in sync. A
+           <select> + file <button> are exempt from the MIDI-learn audit. -->
+      <div class="picker" data-testid="milkdrop-picker">
+        <select
+          class="preset-select nodrag"
+          data-testid="milkdrop-preset-select"
+          aria-label="Milkdrop preset"
+          onchange={onPickPreset}
+        >
+          {#each pickerNames as name, i (i + ':' + name)}
+            <option value={i} selected={i === presetIndex}>{i + 1}. {name}</option>
+          {/each}
+        </select>
+        <label class="milk-load nodrag" title="Load a classic Winamp Milkdrop .milk preset file">
+          <input
+            type="file"
+            accept=".milk"
+            data-testid="milkdrop-milk-input"
+            onchange={onPickMilk}
+            disabled={milkBusy}
+          />
+          <span>{milkBusy ? '…' : 'Load .milk…'}</span>
+        </label>
+      </div>
+      {#if milkStatus}
+        <p class="milk-status" data-testid="milkdrop-milk-status">{milkStatus}</p>
+      {/if}
+
       <div class="fader-grid four">
         <Fader value={p('reactivity')} min={0} max={2} defaultValue={pdef('reactivity')} label="RCT" curve="linear" onchange={setParam('reactivity')} moduleId={id} paramId="reactivity" />
         <Fader value={p('speed')} min={0} max={2} defaultValue={pdef('speed')} label="SPD" curve="linear" onchange={setParam('speed')} moduleId={id} paramId="speed" />
@@ -267,6 +367,10 @@
         <Fader value={p('morph')} min={0} max={8} defaultValue={pdef('morph')} label="MPH" curve="linear" onchange={setParam('morph')} moduleId={id} paramId="morph" />
       </div>
       <p class="hint">BAS/MID/TRB jacks REPLACE that band (open = live audio).</p>
+      <p
+        class="credit"
+        title="Milkdrop visualizer © Ryan Geiss (Winamp Milkdrop). Rendering engine: butterchurn by jberg / the @webamp/butterchurn fork (MIT). Preset import: milkdrop-preset-converter (MIT)."
+      >Milkdrop © Ryan Geiss · engine: butterchurn (jberg / @webamp) MIT</p>
     </div>
   {/if}
   </PatchPanel>
@@ -346,6 +450,62 @@
     white-space: nowrap;
   }
   .controls { padding: 0 14px; }
+  .picker {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .preset-select {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: ui-monospace, monospace;
+    font-size: 0.6rem;
+    color: var(--text);
+    background: var(--control-bg, #0c0e12);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 3px 4px;
+    cursor: pointer;
+  }
+  .preset-select:hover { border-color: var(--cable-video); }
+  .milk-load {
+    position: relative;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    font-family: ui-monospace, monospace;
+    font-size: 0.58rem;
+    color: var(--text-dim);
+    background: var(--control-bg, #0c0e12);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 3px 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .milk-load:hover { color: var(--text); border-color: var(--cable-video); }
+  /* The native file input fills the label but is visually hidden (the label
+     text is the affordance). */
+  .milk-load input[type='file'] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .milk-load input[type='file']:disabled { cursor: default; }
+  .milk-status {
+    margin: 6px 0 0;
+    font-size: 0.55rem;
+    line-height: 1.3;
+    color: var(--text-dim);
+    font-family: ui-monospace, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .fader-grid {
     margin-top: 10px;
     display: grid;
@@ -360,6 +520,18 @@
     line-height: 1.3;
     color: var(--text-dim);
     font-family: ui-monospace, monospace;
+  }
+  .credit {
+    margin: 8px 0 0;
+    font-size: 0.5rem;
+    line-height: 1.2;
+    color: var(--text-dim);
+    opacity: 0.6;
+    font-family: ui-monospace, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: help;
   }
   .hide-toggle {
     position: absolute;
