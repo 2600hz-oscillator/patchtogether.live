@@ -133,6 +133,82 @@ export function projectToScreen(
   return { x: p.x * s, y: p.y * s };
 }
 
+/** Scale a point radially from the tube centre (origin). k>1 pushes it OUTSIDE
+ *  the rim (toward the player), k<1 pulls it toward the centre. */
+export function scaleRadial(p: Vec2, k: number): Vec2 {
+  return { x: p.x * k, y: p.y * k };
+}
+
+/** One claw line segment in normalized tube space (origin-centred, extent ≈ 1) —
+ *  the same space `projectToScreen` returns, so the renderer aspect-fits + glows
+ *  it exactly like the tube lines. */
+export interface ClawSeg {
+  a: Vec2;
+  b: Vec2;
+}
+
+/** Tunable CLAW geometry. All fields default (see CLAW_DEFAULTS) and exist so the
+ *  owner can refine the ship's silhouette from a preview without touching math. */
+export interface ClawSpec {
+  /** Radial scale of the prong tips past the rim (1 = on the rim, >1 = outside,
+   *  toward the player — the "splay outward past the rim"). */
+  out?: number;
+  /** How far the prong tips fan past their lane boundary, in LANE units. */
+  widen?: number;
+  /** Depth z the body blades reach INTO the tube (1 = rim, 0 = pit). */
+  bodyDepth?: number;
+  /** Lane inset of the open mouth from each lane boundary, in LANE units (the gap
+   *  between the two blade tips = the claw's open end facing into the tube). */
+  mouthInset?: number;
+}
+
+export const CLAW_DEFAULTS: Required<ClawSpec> = {
+  out: 1.08,
+  widen: 0.18,
+  bodyDepth: 0.5,
+  mouthInset: 0.28,
+};
+
+/** Build the player CLAW spanning the near-rim lane the CV selects, as a list of
+ *  line segments in normalized tube space. A recognisable Tempest claw/blaster:
+ *
+ *      tipL          tipR        ← two outer prongs, splayed OUTWARD past the rim
+ *        \            /              (toward the player)
+ *       cornerL====cornerR        ← back bar across the rim (the closed back)
+ *         \          /
+ *          inL  ..  inR           ← two body blades into the tube, OPEN mouth
+ *                                    between them (the firing end, faces the pit)
+ *
+ *  `lane` is the CONTINUOUS rim coordinate (cvToLane); the claw snaps to the
+ *  integer lane segment [li, li+1] it sits in, so it tracks the rim CV. Pure +
+ *  GL-free so it unit-tests; the renderer expands each segment into a glow quad. */
+export function buildClawSegments(
+  rim: readonly Vec2[],
+  lane: number,
+  lanes: number = rim.length,
+  spec: ClawSpec = {},
+): ClawSeg[] {
+  const { out, widen, bodyDepth, mouthInset } = { ...CLAW_DEFAULTS, ...spec };
+  const li = Math.floor(wrapLane(lane, lanes));
+  const ri = li + 1;
+  // Rim corners at the lane boundaries (z=1 → exactly on the rim).
+  const cornerL = projectToScreen(rim, li, 1);
+  const cornerR = projectToScreen(rim, ri, 1);
+  // Prong tips: a touch past each boundary in lane AND radially outside the rim.
+  const tipL = scaleRadial(rimAt(rim, li - widen), out);
+  const tipR = scaleRadial(rimAt(rim, ri + widen), out);
+  // Body blades reaching into the tube; the gap between inL/inR is the open mouth.
+  const inL = projectToScreen(rim, li + mouthInset, bodyDepth);
+  const inR = projectToScreen(rim, ri - mouthInset, bodyDepth);
+  return [
+    { a: cornerL, b: tipL }, // left outer prong (splays outward, past the rim)
+    { a: cornerR, b: tipR }, // right outer prong
+    { a: cornerL, b: cornerR }, // back bar across the rim (closed back)
+    { a: cornerL, b: inL }, // left body blade into the tube
+    { a: cornerR, b: inR }, // right body blade into the tube
+  ];
+}
+
 /** Audio-breathing hook (P4): turn analyser band magnitudes (0..~1) into per-lane
  *  rim radii. `base` is the resting radius; `depth` how far bands push it. One
  *  band per lane; fewer/more bands are resampled by nearest index. */

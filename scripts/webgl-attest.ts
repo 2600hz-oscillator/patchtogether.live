@@ -55,17 +55,30 @@ const RETRIES = REPEAT > 1 ? 0 : Math.max(0, parseInt(process.env.WEBGL_ATTEST_R
 // 0 = ideal; 1 = the rare allowed transient; more in ONE run = systemic → refuse.
 const MAX_FLAKY = REPEAT > 1 ? 0 : Math.max(0, parseInt(process.env.WEBGL_ATTEST_MAX_FLAKY || '1', 10) || 0);
 
-// Worker count for the real-GPU passes. ROOT CAUSE of the rotating "transient"
-// heavy-spec flakes (different toybox/video spec each saturated run): runPass
-// did NOT pin --workers, so Playwright defaulted to ≈half-cores and ran the heavy
-// WebGL specs IN PARALLEL — multiple browser/ANGLE contexts hammering the ONE
-// GPU. GPU-bound work doesn't speed up under that parallelism; it just STARVES
-// (slow renders → setup/click/viewport races → a different ~1-2 specs stall each
-// run). The earlier comment assumed the lane was "serial" — it wasn't. PIN it to
-// 1 so heavy specs get the GPU SOLO (deterministic, ≈same wall-clock since the
-// GPU serialises the work anyway). Override with WEBGL_ATTEST_WORKERS=N for the
-// worker-count sweep (#136); the 3× flake-check (REPEAT>1) also forces 1.
-const WORKERS = REPEAT > 1 ? 1 : Math.max(1, parseInt(process.env.WEBGL_ATTEST_WORKERS || '1', 10) || 1);
+// Worker count for the real-GPU passes. PARALLELISM IS REQUIRED FOR SPEED.
+// The previous code pinned this to 1 ("GPU serialises the work anyway") which
+// was WRONG: most of each heavy spec's wall-time is NON-GPU overhead — page
+// boot + `networkidle` + `spawnPatch` + card mount + teardown — and that does
+// NOT overlap under --workers=1. Serialising all ~49 heavy specs took 60-90 min
+// vs ~5 min parallel (the proven config from before #941). The #161 3.6h
+// blow-up was EXTERNAL contention (a 9-agent swarm oversubscribing the GPU while
+// the attest ran), NOT the attest's own parallelism — and that case is now
+// guarded two ways: (a) the pre-flight load check below refuses to attest on a
+// busy machine, and (b) GLOBAL_TIMEOUT_MS bounds any stall to minutes (not
+// hours). So default to ≈half-cores (Playwright's own default formula); the 3×
+// flake-check (REPEAT>1) still forces 1. Override with WEBGL_ATTEST_WORKERS=N.
+const DEFAULT_WORKERS = Math.max(2, Math.ceil((cpus().length || 4) / 2));
+const WORKERS = REPEAT > 1 ? 1 : Math.max(1, parseInt(process.env.WEBGL_ATTEST_WORKERS || String(DEFAULT_WORKERS), 10) || DEFAULT_WORKERS);
+
+// Global-timeout backstop (ms): bounds the WORST case so a wedged/contended run
+// aborts cleanly in minutes instead of running for hours (the #161 failure mode
+// had NO backstop). Applied per Playwright pass. Generous vs the ~5-min normal
+// run so a legitimately slow real-GPU pass never trips it. Override with
+// WEBGL_ATTEST_GLOBAL_TIMEOUT_MS=N.
+const GLOBAL_TIMEOUT_MS = Math.max(
+  60_000,
+  parseInt(process.env.WEBGL_ATTEST_GLOBAL_TIMEOUT_MS || '900000', 10) || 900_000,
+);
 
 interface FlakyDetail {
   /** Test that FAILED its first attempt then RECOVERED on retry. */
@@ -75,18 +88,6 @@ interface FlakyDetail {
    *  true transient and not a masked real failure. */
   firstError: string;
 }
-
-// Worker count for the real-GPU passes. ROOT CAUSE of the rotating "transient"
-// heavy-spec flakes (different toybox/video spec each saturated run): runPass
-// did NOT pin --workers, so Playwright defaulted to ≈half-cores and ran the heavy
-// WebGL specs IN PARALLEL — multiple browser/ANGLE contexts hammering the ONE
-// GPU. GPU-bound work doesn't speed up under that parallelism; it just STARVES
-// (slow renders → setup/click/viewport races → a different ~1-2 specs stall each
-// run). The earlier comment assumed the lane was "serial" — it wasn't. PIN it to
-// 1 so heavy specs get the GPU SOLO (deterministic, ≈same wall-clock since the
-// GPU serialises the work anyway). Override with WEBGL_ATTEST_WORKERS=N for the
-// worker-count sweep (#136); the 3× flake-check (REPEAT>1) also forces 1.
-const WORKERS = REPEAT > 1 ? 1 : Math.max(1, parseInt(process.env.WEBGL_ATTEST_WORKERS || '1', 10) || 1);
 
 interface PassResult {
   name: string;
@@ -127,7 +128,8 @@ function runPass(opts: {
     'test',
     '--reporter=json',
     `--retries=${RETRIES}`,
-    `--workers=${WORKERS}`, // pin: heavy WebGL specs get the GPU solo (no parallel contention)
+    `--workers=${WORKERS}`, // ≈half-cores parallel (speed); contention guarded by pre-flight + global-timeout
+    `--global-timeout=${GLOBAL_TIMEOUT_MS}`, // backstop: abort a wedged/contended pass in minutes, not hours
     ...(REPEAT > 1 ? [`--repeat-each=${REPEAT}`] : []),
     ...opts.args,
   ];

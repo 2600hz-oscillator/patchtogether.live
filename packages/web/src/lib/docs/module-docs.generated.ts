@@ -407,6 +407,33 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "wavefold": "Solarize (0..1; param id 'wavefold') — triangle wavefold of the composite voltage; reads on screen as tonal reversal/solarization and color tearing."
     }
   },
+  "blood": {
+    "explanation": "BLOOD runs the NBlood (Build-engine) port of Blood as an interactive video source. It is owner-only and single-instance — the rack owner spawns it and plays; the video output is the Build software-rendered framebuffer, letterboxed into the engine canvas. The card boots OUT-OF-BOX: the 1997 Blood SHAREWARE data (\"The Way of All Flesh\", episode 1) is bundled under static/blood/, so no picker is needed. The \"Load full Blood data…\" picker is an OPTIONAL override — point it at a copy of the full game you own (GOG/Steam One Unit Whole Blood or Fresh Supply) to play all episodes.",
+    "inputs": {
+      "altfire": "CV gate — alternate fire while held HIGH.",
+      "crouch": "CV gate — stay crouched while held HIGH.",
+      "down": "CV gate — move backward while held HIGH.",
+      "enter": "CV trigger — confirm the highlighted menu item (fires once per rising edge).",
+      "esc": "CV trigger — open / back out of the menu (fires once per rising edge).",
+      "fire": "CV gate — fire the current weapon while the gate is held HIGH.",
+      "jump": "CV gate — jump while held HIGH.",
+      "left": "CV gate — turn left while held HIGH.",
+      "right": "CV gate — turn right while held HIGH.",
+      "up": "CV gate — move forward while the gate is held HIGH.",
+      "use": "CV gate — open doors / use switches while held HIGH.",
+      "weapnext": "CV gate — select the next weapon while held HIGH.",
+      "weapprev": "CV gate — select the previous weapon while held HIGH."
+    },
+    "outputs": {
+      "audio_l": "Left channel of the game audio (silent in v1 — PCM bridge is stubbed).",
+      "audio_r": "Right channel of the game audio (silent in v1 — PCM bridge is stubbed).",
+      "out": "The Build software-rendered game framebuffer, aspect-correct letterboxed into the canvas."
+    },
+    "controls": {
+      "audioGain": "Trims the game-audio level feeding audio_l/audio_r (0..2, default 1).",
+      "fillMode": "Letterbox (preserve aspect, default) vs fill (cover-crop) the canvas."
+    }
+  },
   "bluebox": {
     "explanation": "A DTMF telephone dialer with two phone-phreaking buttons. BLUEBOX is a 12-key touch-tone pad — digits 0–9 plus BLUEBOX and REDBOX — where every key is a press-and-hold tone source with no envelope: hold it down and its tone(s) sound, release and they stop (a ~1 ms ramp at each edge kills the click). Each digit emits the standard Bell-System dual tone (a row frequency 697/770/852/941 Hz plus a column frequency 1209/1336/1477 Hz); BLUEBOX emits a single 2600 Hz supervisory sine (the classic trunk-seizing tone) and REDBOX emits the 1700 + 2200 Hz payphone coin pair. You can hold a key with the mouse OR by patching a gate cable into its gate input — the worklet ORs the two so either drives it. Held keys sum into one mono output, and keys that share a frequency (e.g. 1 and 4 both use 1209 Hz) collapse onto a single shared oscillator so they reinforce instead of beating.",
     "inputs": {

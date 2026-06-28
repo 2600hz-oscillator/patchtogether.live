@@ -299,6 +299,38 @@ bentbox param noise 0..1 linear default=0.05
 bentbox param scan_wobble 0..1 linear default=0
 bentbox param vsync_drift 0..1 linear default=0
 bentbox param wavefold 0..1 linear default=0
+blood meta domain=video schema=1 maxInstances=1 ownerOnly
+blood in altfire cv param=cv_altfire edge=gate
+blood in crouch cv param=cv_crouch edge=gate
+blood in down cv param=cv_down edge=gate
+blood in enter cv param=cv_enter edge=trigger
+blood in esc cv param=cv_esc edge=trigger
+blood in fire cv param=cv_fire edge=gate
+blood in jump cv param=cv_jump edge=gate
+blood in left cv param=cv_left edge=gate
+blood in right cv param=cv_right edge=gate
+blood in up cv param=cv_up edge=gate
+blood in use cv param=cv_use edge=gate
+blood in weapnext cv param=cv_weapnext edge=gate
+blood in weapprev cv param=cv_weapprev edge=gate
+blood out audio_l audio
+blood out audio_r audio
+blood out out video
+blood param audioGain 0..2 linear default=1
+blood param cv_altfire 0..1 linear default=0
+blood param cv_crouch 0..1 linear default=0
+blood param cv_down 0..1 linear default=0
+blood param cv_enter 0..1 linear default=0
+blood param cv_esc 0..1 linear default=0
+blood param cv_fire 0..1 linear default=0
+blood param cv_jump 0..1 linear default=0
+blood param cv_left 0..1 linear default=0
+blood param cv_right 0..1 linear default=0
+blood param cv_up 0..1 linear default=0
+blood param cv_use 0..1 linear default=0
+blood param cv_weapnext 0..1 linear default=0
+blood param cv_weapprev 0..1 linear default=0
+blood param fillMode 0..1 discrete default=0
 bluebox meta domain=audio schema=1
 bluebox in gate_0 gate
 bluebox in gate_1 gate
@@ -3445,6 +3477,11 @@ synesthesia param b_gain3 1..2 linear default=1
 synesthesia param b_gain4 1..2 linear default=1
 synesthesia param b_master 0.5..1.5 linear default=1
 synesthesia param b_mode 0..1 discrete default=0
+tempest meta domain=video schema=1
+tempest in rim cv param=rim cvScale=linear
+tempest out out video
+tempest param rim 0..1 linear default=0
+tempest param shape 0..2 discrete default=0
 textmarquee meta domain=video schema=1
 textmarquee in posX cv param=posX cvScale=linear
 textmarquee in posY cv param=posY cvScale=linear

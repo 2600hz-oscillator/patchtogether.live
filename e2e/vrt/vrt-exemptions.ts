@@ -455,6 +455,11 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // is impossible without freezing the engine clock. Pattern/palette unit
   // coverage in acidwarp-patterns.test.ts; integration coverage via E2E.
   acidwarp: 'animated palette rotation + auto scene cycler defeats deterministic capture; unit + E2E provide coverage',
+  // TEMPEST (P1) — additive-line vector well; the live preview is an animated GL
+  // render (claw/CV-driven, later enemies). Geometry is unit-tested GL-free
+  // (tempest-core.test.ts + tempest.test.ts) + a render-smoke E2E; a masked/baselined
+  // card can replace this exemption in a later phase.
+  tempest: 'animated additive-line vector render defeats deterministic capture; unit (tempest-core/tempest) + render-smoke E2E provide coverage',
   // VFPGA-RUNNER — host module shipping the smpte-bars VFPGA. The card carries
   // a live preview canvas + per-CV always-on scope canvases (animated off the
   // card rAF), so the standard solo-spawn capture is non-deterministic. Unit
@@ -514,6 +519,14 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (doom-runtime, doom-presence, cv-gate-edge); a multi-tab e2e for
   // host migration + spectator-frame relay is the follow-up.
   doom: 'live game-loop framebuffer defeats deterministic capture; unit suites cover TS shim + presence + CV-gate edge detector',
+  // BLOOD — NBlood (Build engine) port. Same rationale as DOOM: a live
+  // game-loop framebuffer defeats deterministic capture. Additionally the
+  // game data (BLOOD.RFF/GUI.RFF/SOUNDS.RFF/TILES000.ART) is user-supplied +
+  // gitignored + NOT redistributable, so CI has no data — the card only ever
+  // shows the "data missing — run task setup:blood" overlay on the runner, and
+  // there is no rendered frame to baseline. Unit suites cover the TS shim
+  // (blood-runtime) + the CV-gate scancode map (blood-keys).
+  blood: 'live game-loop framebuffer + user-supplied non-redistributable data (no frame on CI) defeats deterministic capture; unit suites cover blood-runtime shim + blood-keys scancode map',
   // QBERT — Q*Bert (Gottlieb 1982) arcade emulator. Same rationale as
   // DOOM: the canvas is a live game framebuffer (test pattern when no
   // ROM is loaded, ROM-driven once present) that defeats deterministic

@@ -108,3 +108,45 @@ packages/web/static/roms/qbert/*
 # documents the source + setup flow.
 packages/web/static/roms/snes9x/*
 !packages/web/static/roms/snes9x/README.md
+
+# Blood game data. The broad ignore stays (so a stray FULL-GAME copy or the
+# node-only build artifacts can't be committed), but the 1997 Blood SHAREWARE
+# data set ("The Way of All Flesh" shareware, episode 1) IS bundled + un-ignored
+# below so the BLOOD card boots OUT-OF-BOX on the beta-gated deploys. The owner
+# explicitly authorised shipping the shareware; everything here is beta-gated /
+# pre-public / non-commercial (license implications are the owner's call).
+#
+# The bundled shareware set (the engine-required boot files, all SHAREWARE
+# versions — note SHARE000.ART, not the full game's TILES000.ART; the ~3.2 MB
+# BLOOD.RFF, not the full game's ~10 MB one):
+#   BLOOD.RFF GUI.RFF SOUNDS.RFF  (resource files)
+#   SURFACE.DAT TABLES.DAT VOXEL.DAT  (engine data tables)
+#   SHARE000.ART  (shareware tile art)
+# The big binaries route to Git LFS via the .gitattributes rules for
+# static/blood/*.RFF / *.ART / *.DAT.
+#
+# The BUILT ENGINE artifacts (blood.js + blood.wasm) are committed too
+# (blood.wasm via the `**/*.wasm filter=lfs` rule). The "Load Blood data…"
+# picker stays as an OVERRIDE for the full game (its data is NOT redistributable
+# and stays ignored — only the specific shareware files below are un-ignored).
+packages/web/static/blood/*
+!packages/web/static/blood/README.md
+!packages/web/static/blood/blood.js
+!packages/web/static/blood/blood.wasm
+# Bundled 1997 Blood shareware data (un-ignore the exact shareware set only).
+!packages/web/static/blood/BLOOD.RFF
+!packages/web/static/blood/GUI.RFF
+!packages/web/static/blood/SOUNDS.RFF
+!packages/web/static/blood/SURFACE.DAT
+!packages/web/static/blood/TABLES.DAT
+!packages/web/static/blood/VOXEL.DAT
+!packages/web/static/blood/SHARE000.ART
+# BLOOD.INI — the shareware episode/level descriptor (plain text, NOT in the RFF;
+# the engine aborts without it). Small text file → ordinary git, not LFS.
+!packages/web/static/blood/BLOOD.INI
+
+# NBlood upstream scratch checkout fetched by build-blood-wasm.sh (the engine is
+# fetched at a pinned commit for the WASM build, NOT vendored in this spike).
+packages/web/native/nblood/.upstream/
+# Phase-1 link object cache (build-blood-wasm.sh BLOOD_LINK=1).
+packages/web/native/nblood/.objcache/
