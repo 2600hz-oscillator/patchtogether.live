@@ -165,8 +165,8 @@ export const BACKDRAFT_HALL_LO = 0.7;
 
 /** Spatial-transform knob ranges (per feedback iteration). A small
  *  deviation compounds over the loop into a strong tunnel/spiral/trail. */
-export const BACKDRAFT_ZOOM_MIN = 0.8;
-export const BACKDRAFT_ZOOM_MAX = 1.2;
+export const BACKDRAFT_ZOOM_MIN = 0.4;
+export const BACKDRAFT_ZOOM_MAX = 1.6;
 /** ROTATE in degrees per iteration (signed). */
 export const BACKDRAFT_ROTATE_MIN = -30;
 export const BACKDRAFT_ROTATE_MAX = 30;
