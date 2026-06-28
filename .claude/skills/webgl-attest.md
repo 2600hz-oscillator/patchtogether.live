@@ -59,10 +59,16 @@ owner requests would just invalidate it again.
 
 If a branch adds an npm dep (e.g. `milkdrop-preset-converter`) and you haven't
 `npm install`ed it, **vite can't build → the app boots into an error overlay →
-EVERY spec's `waitForFunction` times out** (60–120s × retries × ~49 specs). This
+EVERY spec fails/times out** (`passed=0, failed=N, skipped=M` over 15+ min). This
 masquerades as a slow/hung attest. **Run `flox activate -- npm install` first.**
-To confirm this is the cause, read a failing spec's `e2e/test-results/*/error-context.md`
-— the page snapshot shows the vite `Failed to resolve import` overlay.
+To confirm, read a failing spec's `e2e/test-results/*/error-context.md` — the page
+snapshot shows the vite `Failed to resolve import` overlay.
+
+**Branch-switch prune trap (bit us twice):** `node_modules` is SHARED across all
+branches/worktrees of a checkout. Running `npm install` on branch B (whose
+`package.json` lacks a dep) PRUNES that dep — so when you switch back to branch A
+that needs it, it's gone. **ALWAYS `npm install` again right after switching to
+the branch you're about to attest**, especially after attesting a sibling branch.
 
 ## RULE 5 — `scope-video-out` can flake under parallel (re-run, don't serialize)
 
