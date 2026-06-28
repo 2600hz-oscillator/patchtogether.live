@@ -51,6 +51,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   drumseqz: { size: '4u', hp: 5 }, // 604×820px
   dx7: { size: '2u', hp: 2 }, // 326×320px
   elements: { size: '2u', hp: 3 }, // 298×460px
+  featurecv: { size: '2u', hp: 2 }, // ~260 wide — 3 feature meters + ONSET led + 6 knobs/toggle over a 5-port PatchPanel (≈ spectrograph)
   fader: { size: '2u', hp: 2 }, // ~360 wide — 2 long faders + 2 transition dropdowns (A/B + dry/wet) over a 5-port PatchPanel
   filter: { size: '1u', hp: 1 }, // 180×200px  [LOCKED]
   flipper: { size: '1u', hp: 1 }, // 90×176px
@@ -69,6 +70,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   frogger: { size: '2u', hp: 2 }, // 380×260px
   gamepad: { size: '2u', hp: 2 }, // 267×280px
   gatemaiden: { size: '1u', hp: 1 }, // 199×200px
+  graphicEq: { size: '2u', hp: 2 }, // 360×360px — Winamp-style VU-meter video output
   grids: { size: '3u', hp: 2 }, // 463×320px
   helm: { size: '3u', hp: 4 }, // 536×720px
   hydrogen: { size: '4u', hp: 4 }, // 687×660px

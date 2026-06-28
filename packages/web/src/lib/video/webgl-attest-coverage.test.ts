@@ -105,9 +105,11 @@ const FROM_TEST_ROOT = resolve(__dirname, '../../../../..');
 // toybox-new-content reclassified real-gpu-only (heavy raymarch shader pixels —
 // stays); toybox-shadertoy/-node-batch/-node-menu/-layer-selector DEFERRED
 // (worker-pixel / render-timing / flake — stay heavy). 47 → 44.
+// GRAPHIC EQ (new Winamp-style VU-meter video output): +graphic-eq-render-smoke.spec.ts
+// (matched by the *-render-smoke glob). 44 → 45.
 // +1: tempest-render-smoke.spec.ts joins via the `**/*-render-smoke.spec.ts` DRS
-// glob (TEMPEST P1 vector well — deterministic render-smoke). 44 → 45.
-const EXPECTED_HEAVY_SPEC_COUNT = 45;
+// glob (TEMPEST P1 vector well — deterministic render-smoke). 45 → 46.
+const EXPECTED_HEAVY_SPEC_COUNT = 46;
 
 describe('WebGL attestation — fail-closed coverage guard (§12)', () => {
   const basis = resolveWebglBasis();

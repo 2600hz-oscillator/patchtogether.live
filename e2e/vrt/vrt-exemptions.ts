@@ -120,6 +120,9 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
   // (vrt.spec.ts: `mod.type in VRT_SCENES ? [] : masks`), kept here as the
   // no-scene fallback.
   ruttetra: [{ selector: 'canvas' }],
+  // GRAPHIC EQ carries a live audio-reactive preview canvas; mask it (it is
+  // also EXEMPT_FROM_VRT — animated bars defeat deterministic capture).
+  graphicEq: [{ selector: 'canvas' }],
   shapedramps: [{ selector: 'canvas' }],
   vdelay: [{ selector: 'canvas' }],
   // FREEZEFRAME carries a live video_out preview canvas; mask it so the
@@ -199,6 +202,14 @@ export const VRT_MODULE_MASKS: Record<string, MaskRect[]> = {
 /** Modules intentionally skipped from VRT entirely. Each entry needs a
  *  ≥10-char reason — the vrt-meta self-test enforces this. */
 export const EXEMPT_FROM_VRT: Record<string, string> = {
+  // GRAPHIC EQ — Winamp-style VU-meter video output. The card preview is a
+  // live audio-reactive bar/box meter render (heights driven by the patched
+  // signal's FFT) — animated + input-dependent, so a single-frame baseline
+  // can't be pinned. Coverage: graphic-eq-core.test.ts (pure bin→8-band fold,
+  // mono fold, segment quantization, stereo split-rect layout, colour ramp) +
+  // e2e/tests/graphic-eq-render-smoke.spec.ts (deterministic non-black /
+  // structured / zero-GL-error render smoke).
+  graphicEq: 'animated audio-reactive bars defeat deterministic capture; pure-core unit tests (bin→8-band fold / mono / segment / split-rect / colour) + deterministic render-smoke e2e cover it',
   // ARCHIVIST — Internet Archive (archive.org) media source. LIVE external
   // network source (search + stream of random items) + a live <video>/<audio>
   // element + ticking playhead readout + a per-item preview that depends on
@@ -851,6 +862,18 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // + behavioral sweeps + the bespoke spectrograph.spec.ts (real VCO → IN →
   // COLOR/B-W OUT → non-black structured frame at the video OUTPUT).
   'linux/spectrograph',
+  // FEATURECV: darwin baseline (the audio→CV feature-extractor card — title +
+  // LOUD/BRIGHT/PUNCH meter bars + ONSET led (all snapshot-driven; with nothing
+  // patched the features read 0 so the chrome is pixel-stable, NO canvas to
+  // mask) + GAIN/ATK/REL knobs + the BI/UNI polarity toggle + SENS/DEBNCE knobs
+  // over the yellow PatchPanel IN/LOUD/BRIGHT/PUNCH/ONSET drill-down) captured
+  // locally; linux baseline pending a `vrt-update.yml` workflow_dispatch on this
+  // branch (same new-module pattern as SPECTROGRAPH above). Functional coverage
+  // is featurecv-dsp.test.ts (the pure rms/zcr/crest/flux/onset core) + the ART
+  // scenario + the per-module-per-port + behavioral sweeps + the bespoke
+  // featurecv-source-chain.spec.ts (noise → featurecv.bright → filter.cutoff →
+  // audible RMS change).
+  'linux/featurecv',
   // OUTLINES (was CIRCLES): the card gained a SHAPE selector + ROTATION knob
   // (+ their CV input rows + small readouts), so the deterministic chrome
   // changed and the baseline was regenerated. The live COMBINE preview canvas
