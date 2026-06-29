@@ -104,14 +104,58 @@ export const COLLAB_STANDALONE_HELPER = [
 
 /** Toolchain pins that can change relay/sync/runtime behavior (a Hocuspocus /
  *  yjs / Playwright bump can move sync semantics or the multi-context harness).
- *  Hashed wholesale; they rarely churn, so over-coverage is the safe direction.
- *  Mirrors webgl-attest-lib's TOOLCHAIN_PIN_FILES. */
+ *  The package.json pins are hashed NARROWLY — only the collab-relevant deps in
+ *  COLLAB_DEP_ALLOW (see `collabDepDigest`), NOT the whole file. This kills the
+ *  "re-attest treadmill" (task #160): #939 (MILKDROP) added a *video* dep
+ *  (butterchurn) to packages/web/package.json and, because the file was hashed
+ *  WHOLESALE, drifted the collab content-hash → collab-attest went red on a
+ *  change that cannot possibly affect sync. The `.flox/env/manifest.toml` pin
+ *  IS still hashed wholesale (no dep allowlist applies; the Node toolchain it
+ *  pins rarely churns). Mirrors webgl-attest-lib's TOOLCHAIN_PIN_FILES. */
 export const TOOLCHAIN_PIN_FILES = [
-  'packages/server/package.json', // pins @hocuspocus/server, yjs, pg
-  'packages/web/package.json', // pins the client provider + syncedStore
-  'e2e/package.json', // pins @playwright/test (the multi-context harness)
-  '.flox/env/manifest.toml', // pins the Node toolchain
+  'packages/server/package.json', // narrowed: pins yjs / pg / @hocuspocus/*
+  'packages/web/package.json', // narrowed: pins yjs + the client sync deps
+  'e2e/package.json', // narrowed: pins @playwright/test (multi-context harness)
+  '.flox/env/manifest.toml', // pins the Node toolchain (hashed wholesale)
 ];
+
+/** A package.json dependency can move sync / relay / multi-context-harness
+ *  behavior ONLY if it's one of these — the Yjs core + protocols, the
+ *  syncedStore glue, the relay's Postgres + websocket, and the Playwright
+ *  harness. A bump to ANY other dep (a video/audio/UI lib like butterchurn)
+ *  must NOT drift the collab hash. An omission here is non-fatal: the nightly
+ *  full @collab lane (collab-nightly.yml) is the backstop for a real regression
+ *  from a dep that isn't listed. Keep generous. */
+export const COLLAB_DEP_ALLOW: RegExp[] = [
+  /^@hocuspocus\//,
+  /^yjs$/, /^y-/, /^lib0$/, // Yjs core + protocols (y-protocols, y-websocket, …)
+  /^@syncedstore\//, /^syncedstore$/, // client store glue
+  /^pg$/, // relay snapshot persistence
+  /^ws$/, // relay websocket transport
+  /^@playwright\/test$/, // the multi-context @collab harness
+];
+
+/** Is this basis entry a package.json toolchain pin (→ narrow-hashed by deps)? */
+function isPackageJsonPin(rel: string): boolean {
+  return TOOLCHAIN_PIN_FILES.includes(rel) && rel.endsWith('package.json');
+}
+
+/** Deterministic digest of ONLY the collab-relevant deps (COLLAB_DEP_ALLOW) in
+ *  a package.json's dependencies + devDependencies — sorted `name@range` lines.
+ *  Used in place of the whole file in the content hash so a collab-irrelevant
+ *  dep change can't drift it. Exported for the basis guard test. */
+export function collabDepDigest(pkgRel: string): string {
+  const raw = JSON.parse(readFileSync(join(REPO_ROOT, pkgRel), 'utf8')) as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  const all = { ...(raw.dependencies ?? {}), ...(raw.devDependencies ?? {}) };
+  return Object.keys(all)
+    .filter((name) => COLLAB_DEP_ALLOW.some((re) => re.test(name)))
+    .sort()
+    .map((name) => `${name}@${all[name]}`)
+    .join('\n');
+}
 
 // -------------------------------------------------------------------------
 // File-walk helpers (mirror webgl-attest-lib).
@@ -202,7 +246,15 @@ export function computeCollabHash(): string {
   for (const rel of resolveCollabBasis()) {
     h.update(rel);
     h.update('\0');
-    h.update(readFileSync(join(REPO_ROOT, rel)));
+    // package.json toolchain pins are hashed NARROWLY — only the collab-relevant
+    // deps (collabDepDigest) — so a collab-irrelevant dep bump (e.g. a video lib
+    // like butterchurn, #939) can't drift the collab hash. Every other basis
+    // file (sources, specs, schema, manifest.toml) is hashed by raw bytes.
+    if (isPackageJsonPin(rel)) {
+      h.update(collabDepDigest(rel));
+    } else {
+      h.update(readFileSync(join(REPO_ROOT, rel)));
+    }
   }
   return h.digest('hex');
 }

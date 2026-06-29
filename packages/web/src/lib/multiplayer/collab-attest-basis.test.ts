@@ -25,6 +25,7 @@ import {
   resolveCollabBasis,
   resolveCollabSpecs,
   computeCollabHash,
+  collabDepDigest,
   isRelayVacuitySkip,
   COLLAB_GREP,
 } from '../../../../../scripts/collab-attest-lib';
@@ -70,6 +71,26 @@ describe('collab-attest basis', () => {
     const h = computeCollabHash();
     expect(h).toMatch(/^[0-9a-f]{64}$/);
     expect(computeCollabHash()).toBe(h); // deterministic across calls
+  });
+
+  it('NARROWS package.json pins to collab-relevant deps (no false drift — #939/#160)', () => {
+    // #939 added a VIDEO dep (butterchurn) to packages/web/package.json; because
+    // the file was hashed WHOLESALE the collab content-hash drifted → collab-attest
+    // went red on a change that can't affect sync. The pins are now hashed by
+    // collabDepDigest (only COLLAB_DEP_ALLOW deps), so a non-collab dep bump
+    // can't drift the hash.
+    const web = collabDepDigest('packages/web/package.json');
+    const srv = collabDepDigest('packages/server/package.json');
+    // Collab-relevant deps ARE captured (so the pin still forces a re-attest on
+    // a real sync-layer dep bump) …
+    expect(web, 'web pin keeps yjs').toMatch(/(^|\n)yjs@/);
+    expect(srv, 'server pin keeps pg').toMatch(/(^|\n)pg@/);
+    expect(srv, 'server pin keeps yjs').toMatch(/(^|\n)yjs@/);
+    // … and collab-IRRELEVANT deps are NOT (so bumping them can't drift it):
+    expect(web, 'butterchurn (the #939 culprit) excluded').not.toMatch(/butterchurn/);
+    expect(web, 'svelte (UI, not sync) excluded').not.toMatch(/(^|\n)svelte@/);
+    // The digest is a clean sorted name@range list (no JSON punctuation leaked).
+    expect(web).not.toMatch(/[{}"]/);
   });
 });
 
