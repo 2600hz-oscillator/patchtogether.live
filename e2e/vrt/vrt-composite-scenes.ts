@@ -325,15 +325,17 @@ const SNH_COMPOSITE_SCENES: CompositeVrtScene[] = [
 // coverage of the envelope shape lives in adsr.test.ts; this scene locks the
 // SCOPE *rendering* of a held sustain level — the composite-state observable.)
 //
-// Determinism: there is NO legato (the sequencer gate "always closes just
-// before the next step", gateLength ≤ 0.95), so we use a SINGLE gated step —
-// the gate rises once and holds high for ~0.475 s (0.95 of the 0.5 s step at
-// the BPM-30 floor) before the first loop retrigger. ADSR decay is pinned
-// SHORT (20 ms) so the env reaches sustain within ~25 ms of the rising edge,
-// making the settled plateau nearly the whole gate-high window — a wide,
-// start-latency-tolerant target for the fixed suspend. The AudioContext is
-// then SUSPENDED so the held env (and the SCOPE analyser's last buffered
-// samples) stays pixel-stable, mirroring the S&H scene above.
+// Determinism: a SINGLE gated step at the BPM-30 floor pulses the gate
+// (~0.475 s high per 0.5 s loop; gateLength ≤ 0.95 always closes before the
+// next step, so there is no legato), and a SHORT decay (10 ms) gives a long
+// flat sustain plateau each cycle. We do NOT use a fixed wall-clock suspend:
+// linux CI boots the audio graph ~300 ms slower than darwin, so a tuned
+// timeout caught the env mid-transient there (a sloped, flaky trace) — the
+// exact failure the skeptical-first-baseline pass surfaced. Instead we warm
+// up past the boot, then SUSPEND only once the SCOPE canvas is FRAME-STABLE
+// (a settled DC sustain renders byte-identically frame-to-frame; the
+// transient + the 25 ms gate-gap do not) — landing the capture in the
+// sustain plateau on either platform by construction, not by timing luck.
 
 function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
   return async (page) => {
@@ -355,9 +357,10 @@ function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
           type: 'adsr',
           position: { x: 470, y: 70 },
           domain: 'audio',
-          // Fast decay (20 ms) so env settles to `sustain` ~25 ms after the
-          // gate rises — widens the settled plateau for the fixed suspend.
-          params: { attack: 0.005, decay: 0.02, sustain, release: 0.3 },
+          // Fast decay (10 ms) so the env settles to `sustain` quickly after
+          // the gate rises — a long, frame-stable sustain plateau for the
+          // settle-poll below to lock onto.
+          params: { attack: 0.005, decay: 0.01, sustain, release: 0.3 },
         },
         // SCOPE in AUDIO display mode (default ch1Range = 0, ±1 fills the
         // half-height) — the natural axis for a unipolar 0..1 envelope, and
@@ -399,17 +402,54 @@ function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
       });
     });
 
-    // Run a fixed window that lands inside the FIRST step's sustain plateau
-    // (gate high since ~t0, env settled by ~t0+25 ms, gate falls at ~t0+475 ms),
-    // then suspend so the held env freezes pixel-stable.
-    await page.waitForTimeout(300);
+    // WARM UP past the audio-engine cold boot. A FIXED wall-clock suspend is
+    // NOT safe: linux CI boots the audio graph ~300 ms slower than darwin, so
+    // a 300 ms suspend caught the env mid-attack/decay there (a sloped, flaky
+    // trace) while darwin captured a clean flat sustain. 1200 ms comfortably
+    // exceeds the observed linux boot, after which the sequencer is steadily
+    // pulsing the gate (so the only frame-stable region the poll below can
+    // find is a real SUSTAIN plateau, never the boot-time flat-zero).
+    await page.waitForTimeout(1200);
+
+    // Wait until the SCOPE canvas is FRAME-STABLE: a settled DC sustain
+    // renders byte-identically frame-to-frame, whereas the attack/decay ramp
+    // and the brief gate-off retrigger (gateLength 0.95 → ~25 ms gap, far
+    // shorter than this stability window) do not. This lands the capture in
+    // the sustain plateau regardless of the engine's platform-dependent start
+    // latency — robust BY CONSTRUCTION, not by a tuned timeout. Polls every
+    // 80 ms; 5 unchanged samples ≈ 320 ms of stability, well inside the
+    // ~450 ms plateau yet far longer than any transient.
+    await page.waitForFunction(
+      () => {
+        const c = document.querySelector(
+          '[data-testid="scope-canvas"]',
+        ) as HTMLCanvasElement | null;
+        if (!c) return false;
+        const ctx = c.getContext('2d');
+        if (!ctx) return false;
+        const { data } = ctx.getImageData(0, 0, c.width, c.height);
+        let hash = 0;
+        for (let i = 0; i < data.length; i += 97) hash = (hash * 31 + data[i]!) | 0;
+        const w = window as unknown as {
+          __adsrScopeHash?: number;
+          __adsrScopeStable?: number;
+        };
+        if (w.__adsrScopeHash === hash) w.__adsrScopeStable = (w.__adsrScopeStable ?? 0) + 1;
+        else { w.__adsrScopeHash = hash; w.__adsrScopeStable = 0; }
+        return (w.__adsrScopeStable ?? 0) >= 5;
+      },
+      undefined,
+      { timeout: 8000, polling: 80 },
+    );
+
+    // SUSPEND so the held env (and the SCOPE analyser's last buffered samples)
+    // freeze pixel-stable, then one rAF so the final frame finishes rendering.
     await page.evaluate(async () => {
       const w = globalThis as unknown as { __engine?: () => { ctx: AudioContext } | null };
       const eng = w.__engine?.();
       if (!eng) return;
       try { await eng.ctx.suspend(); } catch { /* already suspended */ }
     });
-    // One rAF so the last pre-suspend frame finishes rendering.
     await page.evaluate(
       () => new Promise<void>((r) => requestAnimationFrame(() => r())),
     );
