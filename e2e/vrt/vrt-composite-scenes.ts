@@ -594,6 +594,117 @@ const NEGATIVITY_COMPOSITE_SCENES: CompositeVrtScene[] = [
   },
 ];
 
+// ---- SEQUENCER → DEPOLARIZER → SCOPE : bipolar→unipolar made visible -----
+//
+// Sibling of the NEGATIVITY scene for another CV util (#144). The sequencer's
+// S&H-latched pitch CV (here a clearly-NEGATIVE V/oct, C3 = −1) fans out onto a
+// SCOPE in CV mode:
+//   • ch2 = the RAW pitch CV (a flat line clearly BELOW centre, at −1)
+//   • ch1 = the pitch through DEPOLARIZER (out = (in+1)/2 at depth 1 → −1 maps
+//     to 0) → a flat line AT centre.
+// The two lines sit at DIFFERENT heights (raw below, depolarized at centre) —
+// the visible proof the bipolar→unipolar remap happened. A pass-through
+// regression would put ch1 on ch2 (both at −1). Steady-state (latched DC) +
+// pure-DOM cards → linux-gating, same template as the NEGATIVITY scene.
+
+function setupDepolarizerScope(): (page: Page) => Promise<void> {
+  return async (page) => {
+    await spawnPatch(
+      page,
+      [
+        {
+          id: 'seq',
+          type: 'sequencer',
+          position: { x: 60, y: 70 },
+          params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
+        },
+        { id: 'depol', type: 'depolarizer', position: { x: 470, y: 70 }, domain: 'audio' },
+        {
+          id: 'sc',
+          type: 'scope',
+          position: { x: 760, y: 70 },
+          domain: 'audio',
+          params: { ch1Range: 1, ch2Range: 1 },
+        },
+      ],
+      [
+        // pitch (polyPitchGate) → DEPOLARIZER in (the CV under test).
+        {
+          id: 'e_pitch_depol',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'depol', portId: 'in' },
+          sourceType: 'polyPitchGate',
+          targetType: 'cv',
+        },
+        // DEPOLARIZER out (= (in+1)/2) → SCOPE ch1 (the remapped trace).
+        {
+          id: 'e_depol_sc',
+          from: { nodeId: 'depol', portId: 'out' },
+          to: { nodeId: 'sc', portId: 'ch1' },
+          sourceType: 'cv',
+          targetType: 'audio',
+        },
+        // RAW pitch → SCOPE ch2 (the reference trace, below centre).
+        {
+          id: 'e_pitch_sc',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'sc', portId: 'ch2' },
+          sourceType: 'polyPitchGate',
+          targetType: 'audio',
+        },
+      ],
+    );
+
+    // step 0 = C3 (midi 48 = −1 V/oct, a clearly-NEGATIVE pitch), step 1 = rest;
+    // S&H holds −1 through the rest the fixed suspend lands in. depolarizer maps
+    // −1 → 0 (centre), distinct from the raw −1 (below centre).
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        w.__patch.nodes['seq'].data = {
+          steps: [
+            { on: true, midi: 48, chord: 'mono' }, // C3 = −1 V/oct
+            { on: false, midi: 48, chord: 'mono' }, // rest (S&H holds the pitch)
+          ],
+        };
+      });
+    });
+
+    await page.waitForTimeout(700);
+    await page.evaluate(async () => {
+      const w = globalThis as unknown as { __engine?: () => { ctx: AudioContext } | null };
+      const eng = w.__engine?.();
+      if (!eng) return;
+      try { await eng.ctx.suspend(); } catch { /* already suspended */ }
+    });
+    await page.evaluate(
+      () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+    );
+  };
+}
+
+const DEPOLARIZER_SCOPE_CARDS = [
+  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-depolarizer',
+  '.svelte-flow__node-scope',
+];
+
+const DEPOLARIZER_COMPOSITE_SCENES: CompositeVrtScene[] = [
+  {
+    id: 'depolarizer-cv-unipolar',
+    label: 'SEQUENCER→DEPOLARIZER→SCOPE: bipolar→unipolar remap',
+    blurb:
+      'A latched −1 pitch CV fans out: ch2 = raw (line below centre at −1), ' +
+      'ch1 = through DEPOLARIZER (out = (in+1)/2 → −1 maps to 0, a line at ' +
+      'centre). Different heights = the remap worked; coincident = a regression.',
+    setup: setupDepolarizerScope(),
+    cardSelectors: DEPOLARIZER_SCOPE_CARDS,
+  },
+];
+
 /** All composite VRT scenes. Iterated by `vrt-composite.spec.ts`. */
 export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   {
@@ -629,4 +740,5 @@ export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   ...SNH_COMPOSITE_SCENES,
   ...ADSR_SUSTAIN_SCENES,
   ...NEGATIVITY_COMPOSITE_SCENES,
+  ...DEPOLARIZER_COMPOSITE_SCENES,
 ];
