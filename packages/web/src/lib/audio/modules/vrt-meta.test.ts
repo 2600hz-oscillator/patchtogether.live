@@ -292,8 +292,9 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
         'Capture linux baselines (vrt-update.yml workflow_dispatch) + drop the pairs to LOWER ' +
         'this number; only RAISE it for a deliberate, commented darwin-first new module.',
       // 98→99 for NINE LIVES (2026-06-28, deliberate darwin-first 9-output LFO).
-      // 99→95 (2026-06-29): captured linux baselines for the CV-util batch
-      // (scaler/polarizer/depolarizer/negativity) — first Track-2 deficit paydown.
-    ).toBeLessThanOrEqual(95);
+      // 99→95 (2026-06-29): CV-util batch linux baselines (Track-2 batch 1).
+      // 95→75 (2026-06-29): the 20-card MOOG cluster linux baselines (Track-2
+      // batch 2) — deterministic beige-faceplate cards, captured on linux CI.
+    ).toBeLessThanOrEqual(75);
   });
 });

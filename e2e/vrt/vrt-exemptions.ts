@@ -1196,43 +1196,12 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   'linux/nibbles-cv-50',
   'linux/nibbles-cv-75',
   'linux/nibbles-cv-max',
-  // MOOG 921A / 921B / 904B (batch 1) — promoted out of EXEMPT_FROM_VRT with
-  // darwin baselines captured on this machine (deterministic beige Moog
-  // faceplates with now-legible engraved-black labels from the shared MoogPanel
-  // fix; no canvas/animation). Linux baselines pending a `task vrt:update` run
-  // on linux CI (sub-pixel text AA differs across platforms) — darwin is the
-  // regression gate here. Same darwin-only pattern as the other 5 Moog cards'
-  // eventual capture.
-  'linux/moog921a',
-  'linux/moog921b',
-  'linux/moog904b',
-  // Moog batch-2 (992/993/994/995/984): darwin baselines captured locally;
-  // linux pending a `task vrt:update` on linux CI. Static beige faceplates
-  // (no animation); functional coverage is moog99x/moog984.test.ts.
-  'linux/moog992',
-  'linux/moog993',
-  'linux/moog994',
-  'linux/moog995',
-  'linux/moog984',
-  // Moog batch 3+4 (903A noise, 923 noise+filters, 904C coupler, 907A/914
-  // filter banks): darwin baselines captured locally; linux pending a
-  // `task vrt:update` on linux CI. Functional coverage is the per-module
-  // unit tests + per-port sweep.
-  'linux/moog903a',
-  'linux/moog923',
-  'linux/moog904c',
-  'linux/moog907a',
-  'linux/moog914',
-  // Moog batch 5 (911A trig delay, 961 interface, 962 seq switch, 912 env
-  // follower): darwin baselines captured locally; linux pending CI capture.
-  'linux/moog911a',
-  'linux/moog961',
-  'linux/moog962',
-  'linux/moog912',
-  // Moog 960 sequencer (batch 6): darwin baseline captured locally; linux pending.
-  'linux/moog960',
-  'linux/moog956',
-  'linux/moog905',
+  // MOOG cluster (921a/921b/904b/992/993/994/995/984/903a/923/904c/907a/914/
+  // 911a/961/962/912/960/956/905) — 20 deterministic beige-faceplate knob/fader/
+  // seq cards (no canvas/animation). linux baselines CAPTURED via a linux-only
+  // grep-scoped vrt-update.yml dispatch, so their pairs are dropped here: they
+  // now diff on BOTH platforms in the full `vrt` lane. Track-2 batch 2; promoted
+  // to STRICT_VRT_MODULES once proven stable on CI.
   // ELECTRA CONTROL — fixed 6×6 Electra-laid-out control surface. Unlike CONTROL
   // SURFACE (binding-dependent body → VRT-exempt), the empty grid is fully
   // DETERMINISTIC (fixed chrome + 3 bank groups + 36 dim placeholder dials, no
