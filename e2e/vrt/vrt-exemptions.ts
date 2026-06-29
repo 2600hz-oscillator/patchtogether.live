@@ -848,24 +848,11 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // binding edits + LED frame) + the per-module-per-port + behavioral sweeps +
   // the bespoke real-source-chain kria.spec.ts (TIMELORDE → KRIA → voice → RMS).
   'linux/kria',
-  // SCALER: darwin baseline (the tiny 1-in/1-out multiplier card — title + the
-  // single AMOUNT knob + the yellow PatchPanel IN/OUT drill-down; no animated
-  // canvas) captured locally; linux baseline pending a `vrt-update.yml`
-  // workflow_dispatch on this branch. Functional coverage is scaler.test.ts
-  // (def + factory + out=in×amount across 0.1..10) + the per-module-per-port +
-  // behavioral sweeps.
-  'linux/scaler',
-  // POLARIZER / DEPOLARIZER / NEGATIVITY: the CV-polarity utility trio (tiny
-  // 1-in/1-out CV-math cards — title + a single DEPTH knob (POLARIZER /
-  // DEPOLARIZER) or a fixed −1× glyph (NEGATIVITY) + the yellow PatchPanel
-  // IN/OUT drill-down; no animated canvas). Darwin baselines captured locally;
-  // linux baselines pending a `vrt-update.yml` workflow_dispatch on this branch
-  // (same as SCALER above). Functional coverage is polarizer.test.ts /
-  // depolarizer.test.ts / negativity.test.ts (def + factory + the CV math) +
-  // the per-module-per-port + behavioral sweeps.
-  'linux/polarizer',
-  'linux/depolarizer',
-  'linux/negativity',
+  // SCALER / POLARIZER / DEPOLARIZER / NEGATIVITY: the tiny CV-utility cards
+  // (1-in/1-out, ≤1 knob, no canvas) — linux baselines CAPTURED (vrt-update.yml
+  // linux dispatch), so their pairs are dropped from here: they now DIFF on both
+  // platforms in the full `vrt` lane (informational). First Track-2 linux-coverage
+  // batch; once these prove stable on CI they get promoted to STRICT_VRT_MODULES.
   // RINGBACK: darwin baseline (the static stereo-crush card — title + subtitle +
   // L/R IN + L/R OUT handles + RATE/SIZE/FB/MIX knobs; no animated canvas)
   // captured locally; linux baseline pending a `vrt-update.yml`
