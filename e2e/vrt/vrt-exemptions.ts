@@ -825,6 +825,13 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'vca',                  // mono VCA card
   'wavecel',              // wave-cell knob card
   'wavetableVco',         // wavetable VCO card
+  // CV-utility cards — promoted to the strict gate after Track-2 batch 1 (#951)
+  // captured + validated their linux baselines (both platforms now committed;
+  // pure-DOM, ≤1 knob, no canvas → deterministic). They diff on darwin+linux.
+  'depolarizer',          // bipolar→unipolar CV util (DEPTH knob)
+  'negativity',           // −1× CV inverter (no knob)
+  'polarizer',            // unipolar→bipolar CV util (DEPTH knob)
+  'scaler',               // 1-in/1-out CV multiplier (AMOUNT knob)
 ]);
 
 /** Per-(platform, type) baselines intentionally missing while a follow-
