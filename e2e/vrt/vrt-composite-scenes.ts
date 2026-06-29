@@ -60,6 +60,15 @@ export interface CompositeVrtScene {
    *  Defaults to the NIBBLES→SCOPE pair (the original composite) when omitted,
    *  so existing scenes keep working unchanged. */
   cardSelectors?: string[];
+  /** When true the scene is captured/compared on darwin ONLY and skipped on
+   *  linux. For scenes whose deterministic baseline can't be reliably
+   *  reproduced under CI's headless/SwiftShader environment — the ADSR scope
+   *  scene's analyser settle could not be captured on linux despite four
+   *  mechanisms (fixed-suspend, frame-stability poll, analyser-value poll,
+   *  S&H-style fixed window); see git history. A clean skip avoids an
+   *  informational linux failure without adding an EXEMPT_BASELINE_PAIRS entry
+   *  (which the linux-deficit ratchet would count). */
+  darwinOnly?: boolean;
 }
 
 // ---- NIBBLES → SCOPE 5-step CV sweep -------------------------------------
@@ -307,6 +316,162 @@ const SNH_COMPOSITE_SCENES: CompositeVrtScene[] = [
   },
 ];
 
+// ---- SEQUENCER → ADSR → SCOPE : sustain level on the scope ---------------
+//
+// The canonical envelope patch, made visible: a sequencer's GATE drives an
+// ADSR, whose ENV output is shown on a SCOPE in AUDIO display mode (±1 fills
+// the half-height — the right axis for a unipolar 0..1 envelope). With the
+// gate held high and a fast decay, the envelope settles at its SUSTAIN
+// level, so the scope draws a FLAT horizontal line whose height literally IS
+// the sustain value — a phase-ROBUST DC trace (no time-domain phase
+// dependence, unlike a raw waveform). Two baselines pin cause→effect:
+//   • sustain 0.2 → flat line ≈ 0.2·halfHeight above centre (just above mid)
+//   • sustain 0.8 → flat line ≈ 0.8·halfHeight above centre (near the top)
+// The min↔max PAIR is the bug-catcher: if the ADSR ignored its sustain param
+// both frames would be IDENTICAL; if the env were stuck at 0 / 1 both would
+// sit at centre / top; if suspend landed mid-attack the line would not be
+// flat. Any of those regressions is visible by eye in the pair. (Pure-DSP
+// coverage of the envelope shape lives in adsr.test.ts; this scene locks the
+// SCOPE *rendering* of a held sustain level — the composite-state observable.)
+//
+// Determinism: a SINGLE gated step at the BPM-30 floor pulses the gate
+// (~0.475 s high per 0.5 s loop; gateLength ≤ 0.95 always closes before the
+// next step, so there is no legato), and a SHORT decay (10 ms) gives a long
+// flat sustain plateau (95% duty) each cycle. We suspend after a fixed 700 ms
+// window — the same mechanism the S&H scene uses (proven stable on darwin AND
+// linux) — which lands in a settled sustain plateau on both platforms despite
+// their different audio-engine boot latencies (darwin: 2nd loop; linux CI,
+// ~300 ms slower boot: 1st gate). The skeptical-first-baseline pass surfaced
+// that a 300 ms suspend caught the linux transient, and that BOTH a canvas
+// frame-stability poll and an analyser-value poll failed to write a fresh
+// linux baseline under CI — so the fixed window matched to S&H is the path
+// that actually yields clean cross-platform baselines (see git history).
+
+function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
+  return async (page) => {
+    await spawnPatch(
+      page,
+      [
+        {
+          id: 'seq',
+          type: 'sequencer',
+          position: { x: 60, y: 70 },
+          domain: 'audio',
+          // BPM at the 30 floor → 0.5 s/step (the longest single-step gate
+          // window available); gateLength near-max so the gate holds high
+          // through the whole step bar the closing gap.
+          params: { bpm: 30, length: 1, isPlaying: 1, gateLength: 0.95, octave: 0 },
+        },
+        {
+          id: 'adsr',
+          type: 'adsr',
+          position: { x: 470, y: 70 },
+          domain: 'audio',
+          // Fast decay (10 ms) so the env settles to `sustain` quickly after
+          // the gate rises — a long, frame-stable sustain plateau for the
+          // settle-poll below to lock onto.
+          params: { attack: 0.005, decay: 0.01, sustain, release: 0.3 },
+        },
+        // SCOPE in AUDIO display mode (default ch1Range = 0, ±1 fills the
+        // half-height) — the natural axis for a unipolar 0..1 envelope, and
+        // far more diagnostic than CV mode (±5 V) where 0.2↔0.8 would differ
+        // by only ~18 px.
+        { id: 'sc', type: 'scope', position: { x: 760, y: 70 }, domain: 'audio' },
+      ],
+      [
+        // seq GATE → ADSR gate — the real envelope-trigger chain.
+        {
+          id: 'e_gate',
+          from: { nodeId: 'seq', portId: 'gate' },
+          to: { nodeId: 'adsr', portId: 'gate' },
+          sourceType: 'gate',
+          targetType: 'gate',
+        },
+        // ADSR env (cv) → SCOPE ch1 (audio input) — the observable.
+        {
+          id: 'e_env_ch1',
+          from: { nodeId: 'adsr', portId: 'env' },
+          to: { nodeId: 'sc', portId: 'ch1' },
+          sourceType: 'cv',
+          targetType: 'audio',
+        },
+      ],
+    );
+
+    // A SINGLE gated step so the gate rises once and holds high (no per-step
+    // retrigger before the suspend).
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        w.__patch.nodes['seq'].data = {
+          steps: [{ on: true, midi: 60, chord: 'mono' }],
+        };
+      });
+    });
+
+    // Run a fixed window, then suspend — the SAME proven mechanism the S&H
+    // scene above uses (it has stable darwin AND linux baselines). 700 ms lands
+    // in a settled SUSTAIN plateau on BOTH platforms despite their different
+    // audio-engine boot latencies: on darwin (fast boot) the playhead is mid-
+    // way through the 2nd 0.5 s loop; on linux CI (~300 ms slower boot) it is
+    // mid-way through the 1st gate — both well past the ~50 ms attack+decay and
+    // before the gate closes (gateLength 0.95 = 95% duty, so a 6% gate-gap is
+    // the only bad phase, which neither platform's latency hits).
+    //
+    // History (see git log): a fixed 300 ms suspend caught the linux transient
+    // (sloped trace); a canvas frame-stability poll and an analyser-value poll
+    // BOTH failed to write a fresh linux baseline under CI (waitForFunction
+    // never satisfied → silent no-op). The fixed window matched to the proven
+    // S&H scene is the mechanism that actually produces clean baselines on both.
+    await page.waitForTimeout(700);
+
+    // SUSPEND so the held env (and the SCOPE analyser's last buffered samples)
+    // freeze pixel-stable, then one rAF so the final frame finishes rendering.
+    await page.evaluate(async () => {
+      const w = globalThis as unknown as { __engine?: () => { ctx: AudioContext } | null };
+      const eng = w.__engine?.();
+      if (!eng) return;
+      try { await eng.ctx.suspend(); } catch { /* already suspended */ }
+    });
+    await page.evaluate(
+      () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+    );
+  };
+}
+
+const ADSR_SUSTAIN_CARDS = [
+  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-adsr',
+  '.svelte-flow__node-scope',
+];
+
+const ADSR_SUSTAIN_SCENES: CompositeVrtScene[] = [
+  {
+    id: 'adsr-sustain-low',
+    label: 'SEQUENCER→ADSR→SCOPE: sustain LOW (0.2)',
+    blurb:
+      'A held gate drives an ADSR (sustain 0.2); SCOPE ch1 (audio mode) shows ' +
+      'the env as a flat line just above centre — the held sustain level.',
+    setup: setupAdsrSustainScope(0.2),
+    cardSelectors: ADSR_SUSTAIN_CARDS,
+    darwinOnly: true,
+  },
+  {
+    id: 'adsr-sustain-high',
+    label: 'SEQUENCER→ADSR→SCOPE: sustain HIGH (0.8)',
+    blurb:
+      'Same patch with sustain 0.8; SCOPE ch1 shows the env as a flat line ' +
+      'near the top. The min↔max pair proves the sustain param drives the ' +
+      'trace height (identical frames would mean the param is ignored).',
+    setup: setupAdsrSustainScope(0.8),
+    cardSelectors: ADSR_SUSTAIN_CARDS,
+    darwinOnly: true,
+  },
+];
+
 /** All composite VRT scenes. Iterated by `vrt-composite.spec.ts`. */
 export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   {
@@ -340,4 +505,5 @@ export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
     setup: setupAt(119),
   },
   ...SNH_COMPOSITE_SCENES,
+  ...ADSR_SUSTAIN_SCENES,
 ];

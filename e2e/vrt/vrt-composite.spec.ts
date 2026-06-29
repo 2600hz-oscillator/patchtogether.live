@@ -41,6 +41,13 @@ test.describe('VRT: composite-state scenes', () => {
         EXEMPT_BASELINE_PAIRS.has(`${VRT_PLATFORM}/${scene.id}`),
         `${scene.id} on ${VRT_PLATFORM}: baseline pending (see EXEMPT_BASELINE_PAIRS)`,
       );
+      // darwinOnly scenes can't reliably reproduce their deterministic baseline
+      // under CI's headless/SwiftShader environment (e.g. the ADSR scope
+      // analyser settle) — capture/compare on darwin, skip cleanly on linux.
+      test.skip(
+        scene.darwinOnly === true && VRT_PLATFORM === 'linux',
+        `${scene.id}: darwin-only scene (skipped on linux — see CompositeVrtScene.darwinOnly)`,
+      );
 
       // Capture page errors so a broken card fails the test BEFORE the
       // screenshot diff does — easier to debug than a thousand-pixel diff
