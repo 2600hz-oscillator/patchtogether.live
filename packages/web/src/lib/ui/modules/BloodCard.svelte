@@ -167,15 +167,18 @@
   // our node is still SF-`.selected`, a key destined for a text input flows
   // through untouched.
 
-  /** Is this card the focused/selected SvelteFlow node? focus-within covers a
-   *  real click-to-focus; the `.selected` wrapper class covers SF's arrow-key
-   *  node-move (which fires on the selected node regardless of focus), so we
-   *  claim then too — otherwise the arrows slide the card across the canvas. */
+  /** Is this card FOCUSED? focus-within ONLY — deliberately NOT the SvelteFlow
+   *  `.selected` class. Gating on `.selected` swallowed keys aimed at OTHER
+   *  inputs: the BLOOD node stays SF-selected while the right-click "new module"
+   *  menu is open, so the window-capture listener ate the search box's typing
+   *  (owner-reported). A key only belongs to BLOOD when the card itself holds
+   *  focus. The card is focusable (role=application + tabindex + click→focus),
+   *  so click it to play; focus an input / click away and keys flow normally.
+   *  (Trade-off vs the old `.selected` branch: a merely-SELECTED-but-unfocused
+   *  card lets arrows do SF node-move — fine, you're positioning it, not
+   *  playing.) */
   function cardIsFocused(): boolean {
-    if (!cardEl) return false;
-    if (cardEl.contains(document.activeElement)) return true;
-    const sfNode = cardEl.closest('.svelte-flow__node');
-    return sfNode?.classList.contains('selected') === true;
+    return !!cardEl && cardEl.contains(document.activeElement);
   }
 
   function claim(e: KeyboardEvent): boolean {
