@@ -13,29 +13,38 @@
 // is main-thread-only, which is exactly why the engine must move INTO the worklet
 // rather than just emitting ticks from a Worker.
 //
-// This core reproduces the sequencer's internal-clock musical semantics EXACTLY
-// (sequencer.ts:714-755 + emitStep):
+// Reproduces the sequencer's internal-clock semantics EXACTLY (sequencer.ts
+// emitStep + 714-755):
 //   • step duration = 60/bpm/4  (a 16th-note step)
 //   • swing: on-beat (even) steps lengthen ×(1 + swing/2), off-beat (odd) steps
 //     shorten ×(1 - swing/2)  — pushes every off-beat later
 //   • gate: high for stepDur × gateLength from the step's start, else low
-//   • pitch: V/oct = (midi - 60)/12 + octave   (C4=60 ⇒ 0 V; +1 V per octave)
-//   • sample & hold: snh on (default) rewrites pitch only on a step that FIRES a
-//     note and holds it through rests; snh off lets a firing step rewrite it
-//     (a rest carries no note value, so the held pitch is kept either way)
+//   • POLY pitch: each step's mono/maj/min chord → 5 V/oct lanes via
+//     chordLanesVOct (seq-voicing.ts, the ported poly.ts voicing), octave folded in
+//   • mono gate: high while ANY lane is gated (the sequencer's `gate` output)
+//   • clock: a short pulse at every step boundary (the `clock` chain output)
+//   • sample & hold: snh on (default) rewrites lane pitch only on a step that
+//     FIRES (anyGate); snh off rewrites every step
 //   • length: active steps clamped to [1, SEQ_MAX_STEPS]; index wraps at length
 //
-// MONO pilot: this core emits the ROOT note + a single gate (the spine that makes
-// timing immune to drag). Poly/chord lanes are layered on at wire-up time
-// (PR-B), where ART pins the audio against the current sequencer output.
-//
-// PURE + deterministic (no RNG, no wall-clock, no Web Audio API) so vitest can
-// pin every boundary. The worklet imports + runs THIS code — no mirror, no drift.
+// PURE + deterministic (no RNG / wall-clock / Web Audio API) so vitest can pin
+// every boundary. The worklet imports + runs THIS code — no mirror, no drift.
 
-/** A single sequencer step: gated on/off + an optional MIDI note (null = rest). */
+import {
+  chordLanesVOct,
+  midiToVOct,
+  SEQ_POLY_LANES,
+  type SeqChordQuality,
+  type VoiceLaneVOct,
+} from './seq-voicing';
+
+export { SEQ_POLY_LANES, midiToVOct, type SeqChordQuality };
+
+/** A single sequencer step. `chord` defaults to 'mono'. */
 export interface SeqStep {
   on: boolean;
   midi: number | null;
+  chord?: SeqChordQuality;
 }
 
 /** Live config pushed to the engine on edit (NOT per audio block). */
@@ -50,16 +59,26 @@ export interface SeqClockConfig {
   running: boolean;
 }
 
+/** The poly + gate + clock output buffers the engine fills each block. */
+export interface SeqClockOut {
+  /** Per-lane pitch (V/oct), length SEQ_POLY_LANES. */
+  lanePitch: Float32Array[];
+  /** Per-lane gate (0|1), length SEQ_POLY_LANES. */
+  laneGate: Float32Array[];
+  /** Mono gate: high while ANY lane is gated. */
+  gate: Float32Array;
+  /** Clock pulse: a short high pulse at each step boundary. */
+  clock: Float32Array;
+}
+
 /** Hard cap on steps — mirrors the sequencer's STEP_COUNT. */
 export const SEQ_MAX_STEPS = 16;
 
 /** MIDI note that maps to 0 V/oct (C4), the sequencer's pitch-CV reference. */
 export const SEQ_C4_MIDI = 60;
 
-/** MIDI note → V/oct (1 V per octave; C4=60 ⇒ 0 V). */
-export function midiToVoct(midi: number): number {
-  return (midi - SEQ_C4_MIDI) / 12;
-}
+/** Clock-pulse width in seconds (sequencer.ts emits clock 1 then 0 after 10 ms). */
+export const SEQ_CLOCK_PULSE_S = 0.01;
 
 /** Seconds a given step lasts at `bpm`, with `swing` applied by step parity.
  *  16th-note base; even (on-beat) steps lengthen, odd (off-beat) steps shorten —
@@ -91,10 +110,8 @@ const DEFAULT_CONFIG: SeqClockConfig = {
 };
 
 /**
- * Sample-accurate sequencer step engine. Drive it from an AudioWorklet's
- * `process()` (or a test loop) via `process(pitchOut, gateOut, frames)`.
- *
- * Output per sample: pitch (V/oct, held) on `pitchOut`, gate (0|1) on `gateOut`.
+ * Sample-accurate POLY sequencer step engine. Drive it from an AudioWorklet's
+ * `process()` (or a test loop) via `process(out, frames)`.
  */
 export class SeqClockCore {
   readonly sampleRate: number;
@@ -102,13 +119,17 @@ export class SeqClockCore {
   private cfg: SeqClockConfig = { ...DEFAULT_CONFIG };
   private stepIndex = 0;
   private tInStep = 0; // seconds elapsed within the current step
-  private heldPitch = 0; // last written V/oct
   private wasRunning = false;
+
+  // Per-lane HELD pitch (V/oct) — survives rests under S&H.
+  private heldLanePitch = new Float32Array(SEQ_POLY_LANES);
+  // Per-lane gate for the CURRENT step (the gate still closes on a rest).
+  private curLaneGate = new Uint8Array(SEQ_POLY_LANES);
 
   // Latched state for the CURRENT step (recomputed on each step boundary +
   // whenever config changes, so live bpm/swing/gate edits take effect smoothly).
   private curStepDur = stepDurationSeconds(120, 0, 0);
-  private curGateActive = false;
+  private curAnyGate = false;
   private curGateOff = this.curStepDur * 0.5;
 
   constructor(sampleRate: number, cfg?: Partial<SeqClockConfig>) {
@@ -137,8 +158,9 @@ export class SeqClockCore {
   get currentStep(): number {
     return this.stepIndex;
   }
-  get currentPitch(): number {
-    return this.heldPitch;
+  /** Held V/oct for a given lane (0..SEQ_POLY_LANES-1) — for tests. */
+  lanePitch(lane: number): number {
+    return this.heldLanePitch[lane] ?? 0;
   }
 
   // Recompute the latched dur/gate for the current step WITHOUT re-evaluating the
@@ -151,41 +173,56 @@ export class SeqClockCore {
   }
 
   // Evaluate the current step: latch its duration/gate AND (per S&H) maybe write
-  // a new held pitch. Called on every step boundary + on reset.
+  // new held lane pitches. Called on every step boundary + on reset.
   private latchStep(): void {
     const { steps, snh, octave } = this.cfg;
     const step = steps[this.stepIndex];
     const hasNote = !!step && step.on && step.midi !== null;
+    const quality: SeqChordQuality = step?.chord ?? 'mono';
+    const lanes: VoiceLaneVOct[] = chordLanesVOct(hasNote ? (step!.midi as number) : null, quality, octave);
+    const anyGate = lanes.some((l) => l.gate === 1);
     // shouldWritePitch: snh ON → only on a firing step; snh OFF → every step.
-    const writePitch = snh ? hasNote : true;
-    if (writePitch && hasNote && step) {
-      this.heldPitch = midiToVoct(step.midi as number) + octave;
+    const writePitch = snh ? anyGate : true;
+    for (let l = 0; l < SEQ_POLY_LANES; l++) {
+      const lane = lanes[l] ?? { pitch: 0, gate: 0 };
+      this.curLaneGate[l] = lane.gate;
+      if (writePitch) this.heldLanePitch[l] = lane.pitch;
     }
-    this.curGateActive = hasNote;
+    this.curAnyGate = anyGate;
     this.relatch();
   }
 
-  /** Render `frames` samples of pitch (V/oct) + gate (0|1). */
-  process(pitchOut: Float32Array, gateOut: Float32Array, frames: number): void {
+  /** Render `frames` samples of poly pitch + per-lane gate + mono gate + clock. */
+  process(out: SeqClockOut, frames: number): void {
     // Transport edge: a fresh start restarts from step 0.
     if (this.cfg.running && !this.wasRunning) this.reset();
     this.wasRunning = this.cfg.running;
 
-    const n = Math.min(frames, pitchOut.length, gateOut.length);
+    const { lanePitch, laneGate, gate, clock } = out;
+    const n = Math.min(frames, gate.length, clock.length);
 
     if (!this.cfg.running) {
-      // Stopped: hold the last pitch, gate closed, phase frozen.
+      // Stopped: hold lane pitches, all gates + clock low, phase frozen.
       for (let i = 0; i < n; i++) {
-        pitchOut[i] = this.heldPitch;
-        gateOut[i] = 0;
+        for (let l = 0; l < SEQ_POLY_LANES; l++) {
+          lanePitch[l]![i] = this.heldLanePitch[l]!;
+          laneGate[l]![i] = 0;
+        }
+        gate[i] = 0;
+        clock[i] = 0;
       }
       return;
     }
 
     const dt = 1 / this.sampleRate;
     for (let i = 0; i < n; i++) {
-      gateOut[i] = this.curGateActive && this.tInStep < this.curGateOff ? 1 : 0;
-      pitchOut[i] = this.heldPitch;
+      const gateHi = this.tInStep < this.curGateOff;
+      for (let l = 0; l < SEQ_POLY_LANES; l++) {
+        lanePitch[l]![i] = this.heldLanePitch[l]!;
+        laneGate[l]![i] = this.curLaneGate[l] && gateHi ? 1 : 0;
+      }
+      gate[i] = this.curAnyGate && gateHi ? 1 : 0;
+      clock[i] = this.tInStep < SEQ_CLOCK_PULSE_S ? 1 : 0;
 
       this.tInStep += dt;
       // Advance across as many step boundaries as this sample crossed (guards a

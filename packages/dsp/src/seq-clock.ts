@@ -9,8 +9,13 @@
 // AudioParam scheduling is main-thread-only, which is why the engine must live in
 // the worklet rather than being driven by a main-thread lookahead loop.
 //
-// I/O:
-//   • output[0] = 2 channels: ch0 = pitch CV (V/oct), ch1 = gate (0|1).
+// I/O (matches the sequencer's three internal-clock outputs):
+//   • output[0] = 10 channels = the POLY pitch/gate bus (POLYHELM-compatible):
+//     interleaved [lane0 pitch, lane0 gate, … lane4 pitch, lane4 gate]. Lane 0
+//     IS the mono pitch (mono = root in lane 0, the rest silent), so a mono
+//     patch just reads ch0/ch1.
+//   • output[1] = 1 channel = the mono GATE (high while ANY lane is gated).
+//   • output[2] = 1 channel = the CLOCK pulse (short high at each step boundary).
 //   • config (bpm / length / steps / gateLength / swing / octave / snh / running)
 //     arrives via port messages on EDIT — never per audio block — so a config
 //     update dropped during a main-thread drag just applies a frame late and
@@ -76,12 +81,36 @@ class SeqClockProcessor extends AudioWorkletProcessor {
     outputs: Float32Array[][],
     _parameters: Record<string, Float32Array>,
   ): boolean {
-    const out = outputs[0];
-    const pitchOut = out?.[0];
-    const gateOut = out?.[1];
-    if (!pitchOut || !gateOut) return true;
-    this.core.process(pitchOut, gateOut, pitchOut.length);
+    // output[0] = 10ch poly bus (lane pitch/gate interleaved), [1] = mono gate,
+    // [2] = clock. The host (sequencer.ts) creates the node with
+    // outputChannelCount [10, 1, 1]; a single channel on output[0] still works
+    // (mono-only host) because lane 0 carries the mono voice.
+    const poly = outputs[0];
+    const gateOut = outputs[1]?.[0];
+    const clockOut = outputs[2]?.[0];
+    if (!poly || poly.length < 2 || !gateOut || !clockOut) return true;
+
+    // Map the (possibly <10) poly channels onto the core's per-lane buffers.
+    // A scratch zero buffer backs any lane the host didn't allocate so the core
+    // can always write SEQ_POLY_LANES lanes without bounds checks.
+    const frames = poly[0].length;
+    const scratch = this.laneScratch(frames);
+    const lanePitch: Float32Array[] = [];
+    const laneGate: Float32Array[] = [];
+    for (let l = 0; l < 5; l++) {
+      lanePitch.push(poly[2 * l] ?? scratch);
+      laneGate.push(poly[2 * l + 1] ?? scratch);
+    }
+    this.core.process({ lanePitch, laneGate, gate: gateOut, clock: clockOut }, frames);
     return true;
+  }
+
+  // A reusable throwaway buffer for poly lanes the host didn't wire (keeps the
+  // core's fixed 5-lane write branchless without allocating per block).
+  private scratch = new Float32Array(128);
+  private laneScratch(frames: number): Float32Array {
+    if (this.scratch.length < frames) this.scratch = new Float32Array(frames);
+    return this.scratch;
   }
 }
 
