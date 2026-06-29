@@ -817,6 +817,116 @@ const SCALER_COMPOSITE_SCENES: CompositeVrtScene[] = [
   },
 ];
 
+// ---- SEQUENCER → POLARIZER → SCOPE : unipolar→bipolar made visible --------
+//
+// Fourth + final CV-util scope composite (#144) — the inverse of depolarizer.
+// The sequencer's S&H-latched pitch is set to +0.25 V/oct, which is numerically
+// a valid UNIPOLAR 0.25 level — fed straight into POLARIZER (out = (2·in−1)·depth,
+// depth 1 → 0.25 maps to −0.5). On a SCOPE in CV mode:
+//   • ch2 = the RAW 0.25 level (a flat line just ABOVE centre)
+//   • ch1 = the POLARIZED result (a flat line clearly BELOW centre, at −0.5)
+// The sign-flip (a sub-0.5 unipolar input → a negative bipolar output) is the
+// visible proof of the [0,1]→[−1,+1] remap; a regression would move ch1.
+// Steady-state + pure-DOM (cv-typed, like the negativity/depolarizer scenes) →
+// linux-gating.
+
+function setupPolarizerScope(): (page: Page) => Promise<void> {
+  return async (page) => {
+    await spawnPatch(
+      page,
+      [
+        {
+          id: 'seq',
+          type: 'sequencer',
+          position: { x: 60, y: 70 },
+          params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
+        },
+        { id: 'pol', type: 'polarizer', position: { x: 470, y: 70 }, domain: 'audio' },
+        {
+          id: 'sc',
+          type: 'scope',
+          position: { x: 760, y: 70 },
+          domain: 'audio',
+          params: { ch1Range: 1, ch2Range: 1 },
+        },
+      ],
+      [
+        // pitch (= 0.25 level) → POLARIZER in (cv) — the unipolar value under test.
+        {
+          id: 'e_pitch_pol',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'pol', portId: 'in' },
+          sourceType: 'polyPitchGate',
+          targetType: 'cv',
+        },
+        // POLARIZER out (= (2·in−1) → −0.5) → SCOPE ch1 (the bipolar result).
+        {
+          id: 'e_pol_sc',
+          from: { nodeId: 'pol', portId: 'out' },
+          to: { nodeId: 'sc', portId: 'ch1' },
+          sourceType: 'cv',
+          targetType: 'audio',
+        },
+        // RAW 0.25 level → SCOPE ch2 (the reference trace, just above centre).
+        {
+          id: 'e_pitch_sc',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'sc', portId: 'ch2' },
+          sourceType: 'polyPitchGate',
+          targetType: 'audio',
+        },
+      ],
+    );
+
+    // step 0 = D#4 (midi 63 = +0.25 V/oct = a 0.25 unipolar level), step 1 = rest;
+    // S&H holds 0.25. polarizer maps 0.25 → (2·0.25−1) = −0.5.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        w.__patch.nodes['seq'].data = {
+          steps: [
+            { on: true, midi: 63, chord: 'mono' }, // D#4 = +0.25 V/oct = 0.25 level
+            { on: false, midi: 63, chord: 'mono' }, // rest (S&H holds the level)
+          ],
+        };
+      });
+    });
+
+    await page.waitForTimeout(700);
+    await page.evaluate(async () => {
+      const w = globalThis as unknown as { __engine?: () => { ctx: AudioContext } | null };
+      const eng = w.__engine?.();
+      if (!eng) return;
+      try { await eng.ctx.suspend(); } catch { /* already suspended */ }
+    });
+    await page.evaluate(
+      () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+    );
+  };
+}
+
+const POLARIZER_SCOPE_CARDS = [
+  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-polarizer',
+  '.svelte-flow__node-scope',
+];
+
+const POLARIZER_COMPOSITE_SCENES: CompositeVrtScene[] = [
+  {
+    id: 'polarizer-cv-bipolar',
+    label: 'SEQUENCER→POLARIZER→SCOPE: unipolar→bipolar remap',
+    blurb:
+      'A latched 0.25 level fans out: ch2 = raw (line just above centre), ch1 = ' +
+      'through POLARIZER (out = (2·in−1) → 0.25 maps to −0.5, clearly below ' +
+      'centre). The sign-flip proves the [0,1]→[−1,+1] remap; coincident = a regression.',
+    setup: setupPolarizerScope(),
+    cardSelectors: POLARIZER_SCOPE_CARDS,
+  },
+];
+
 /** All composite VRT scenes. Iterated by `vrt-composite.spec.ts`. */
 export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   {
@@ -854,4 +964,5 @@ export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   ...NEGATIVITY_COMPOSITE_SCENES,
   ...DEPOLARIZER_COMPOSITE_SCENES,
   ...SCALER_COMPOSITE_SCENES,
+  ...POLARIZER_COMPOSITE_SCENES,
 ];
