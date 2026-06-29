@@ -331,11 +331,12 @@ const SNH_COMPOSITE_SCENES: CompositeVrtScene[] = [
 // flat sustain plateau each cycle. We do NOT use a fixed wall-clock suspend:
 // linux CI boots the audio graph ~300 ms slower than darwin, so a tuned
 // timeout caught the env mid-transient there (a sloped, flaky trace) — the
-// exact failure the skeptical-first-baseline pass surfaced. Instead we warm
-// up past the boot, then SUSPEND only once the SCOPE canvas is FRAME-STABLE
-// (a settled DC sustain renders byte-identically frame-to-frame; the
-// transient + the 25 ms gate-gap do not) — landing the capture in the
-// sustain plateau on either platform by construction, not by timing luck.
+// exact failure the skeptical-first-baseline pass surfaced. Instead we SUSPEND
+// only once the SCOPE's ch1 analyser buffer (read directly via
+// `__engine().read`, renderer-independent — canvas frame-stability is
+// unreliable under SwiftShader) is a FLAT, clearly-non-zero DC sustain. That
+// lands the capture in the sustain plateau on either platform by the audio
+// state itself, not by timing luck or pixel readback.
 
 function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
   return async (page) => {
@@ -402,44 +403,47 @@ function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
       });
     });
 
-    // WARM UP past the audio-engine cold boot. A FIXED wall-clock suspend is
-    // NOT safe: linux CI boots the audio graph ~300 ms slower than darwin, so
-    // a 300 ms suspend caught the env mid-attack/decay there (a sloped, flaky
-    // trace) while darwin captured a clean flat sustain. 1200 ms comfortably
-    // exceeds the observed linux boot, after which the sequencer is steadily
-    // pulsing the gate (so the only frame-stable region the poll below can
-    // find is a real SUSTAIN plateau, never the boot-time flat-zero).
-    await page.waitForTimeout(1200);
-
-    // Wait until the SCOPE canvas is FRAME-STABLE: a settled DC sustain
-    // renders byte-identically frame-to-frame, whereas the attack/decay ramp
-    // and the brief gate-off retrigger (gateLength 0.95 → ~25 ms gap, far
-    // shorter than this stability window) do not. This lands the capture in
-    // the sustain plateau regardless of the engine's platform-dependent start
-    // latency — robust BY CONSTRUCTION, not by a tuned timeout. Polls every
-    // 80 ms; 5 unchanged samples ≈ 320 ms of stability, well inside the
-    // ~450 ms plateau yet far longer than any transient.
+    // Let the engine start, then wait until the SCOPE's ch1 analyser buffer is
+    // a SETTLED, clearly-non-zero DC sustain — read the AUDIO DATA directly
+    // (`__engine().read(node,'snapshot')`), NOT the canvas. The first attempt
+    // suspended at a fixed 300 ms and caught the env mid-transient on linux CI
+    // (which boots the audio graph ~300 ms slower than darwin) → a sloped,
+    // flaky trace; the second attempt polled the CANVAS for frame-stability,
+    // which is unreliable under CI's SwiftShader (getImageData jitter never
+    // stabilises → the poll times out and no fresh baseline is written). The
+    // analyser buffer IS what the scope draws, so a FLAT buffer (max−min tiny)
+    // at a clearly-non-zero peak means the env has attacked, decayed, and is
+    // holding at `sustain` with the gate high. Boot silence (peak≈0) and the
+    // attack/decay ramp (large range) are both rejected — this lands the
+    // capture in the sustain plateau on ANY platform, renderer-independent.
+    await page.waitForTimeout(300);
     await page.waitForFunction(
       () => {
-        const c = document.querySelector(
-          '[data-testid="scope-canvas"]',
-        ) as HTMLCanvasElement | null;
-        if (!c) return false;
-        const ctx = c.getContext('2d');
-        if (!ctx) return false;
-        const { data } = ctx.getImageData(0, 0, c.width, c.height);
-        let hash = 0;
-        for (let i = 0; i < data.length; i += 97) hash = (hash * 31 + data[i]!) | 0;
-        const w = window as unknown as {
-          __adsrScopeHash?: number;
-          __adsrScopeStable?: number;
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
+          } | null;
+          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
         };
-        if (w.__adsrScopeHash === hash) w.__adsrScopeStable = (w.__adsrScopeStable ?? 0) + 1;
-        else { w.__adsrScopeHash = hash; w.__adsrScopeStable = 0; }
-        return (w.__adsrScopeStable ?? 0) >= 5;
+        const eng = w.__engine?.();
+        const node = w.__patch?.nodes?.['sc'];
+        if (!eng || !node) return false;
+        const snap = eng.read(node, 'snapshot') as { ch1?: Float32Array } | undefined;
+        const buf = snap?.ch1;
+        if (!buf || buf.length === 0) return false;
+        let mn = Infinity, mx = -Infinity, peak = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = buf[i]!;
+          if (v < mn) mn = v;
+          if (v > mx) mx = v;
+          const a = v < 0 ? -v : v;
+          if (a > peak) peak = a;
+        }
+        // Flat (settled DC) AND clearly non-zero (gate high, at sustain).
+        return (mx - mn) < 0.02 && peak > 0.05;
       },
       undefined,
-      { timeout: 8000, polling: 80 },
+      { timeout: 10000, polling: 50 },
     );
 
     // SUSPEND so the held env (and the SCOPE analyser's last buffered samples)
