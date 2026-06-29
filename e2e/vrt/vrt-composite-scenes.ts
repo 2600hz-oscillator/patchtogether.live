@@ -927,6 +927,132 @@ const POLARIZER_COMPOSITE_SCENES: CompositeVrtScene[] = [
   },
 ];
 
+// ---- SEQUENCER → MIXER (sum) → SCOPE : level-weighted summing made visible ---
+//
+// First COMBINATIONAL scope composite (beyond the affine CV utils). The
+// sequencer's S&H-latched +1 V/oct pitch FANS OUT into TWO mixer inputs — in1 at
+// Ch1=1.0 and in2 at Ch2=0.5 — and MIXER sums them:
+//   out = (in1·ch1 + in2·ch2)·master = (1·1 + 1·0.5)·1 = +1.5
+// On a SCOPE in CV mode:
+//   • ch2 = the RAW +1 level (a flat line 20% above centre)
+//   • ch1 = the MIXED sum +1.5 (a flat line 30% above centre — distinctly higher)
+// ch1 ABOVE ch2 is the visible proof that the mixer SUMS its inputs AND weights
+// each by its per-channel level. A mixer that passed only one input, or AVERAGED
+// instead of summing, would put ch1 AT or BELOW ch2 — caught as a diff.
+// mixer.dsp is a pure si.smoo-smoothed gain-sum (no DC blocker), so it passes the
+// latched CV cleanly; steady-state + worklet (like the CV-util scenes) → linux-gating.
+
+function setupMixerSumScope(): (page: Page) => Promise<void> {
+  return async (page) => {
+    await spawnPatch(
+      page,
+      [
+        {
+          id: 'seq',
+          type: 'sequencer',
+          position: { x: 60, y: 70 },
+          params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
+        },
+        // Ch2 at 0.5 so the two summed copies of pitch land at distinct weights.
+        {
+          id: 'mix',
+          type: 'mixer',
+          position: { x: 470, y: 70 },
+          domain: 'audio',
+          params: { ch2: 0.5 },
+        },
+        {
+          id: 'sc',
+          type: 'scope',
+          position: { x: 760, y: 70 },
+          domain: 'audio',
+          params: { ch1Range: 1, ch2Range: 1 },
+        },
+      ],
+      [
+        // pitch (= +1 level) fans into mixer in1 (Ch1=1.0) …
+        {
+          id: 'e_pitch_in1',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'mix', portId: 'in1' },
+          sourceType: 'polyPitchGate',
+          targetType: 'audio',
+        },
+        // … and in2 (Ch2=0.5) — the SAME source at a second weight.
+        {
+          id: 'e_pitch_in2',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'mix', portId: 'in2' },
+          sourceType: 'polyPitchGate',
+          targetType: 'audio',
+        },
+        // MIXER out (= 1·1 + 1·0.5 = +1.5) → SCOPE ch1 (the summed result).
+        {
+          id: 'e_mix_sc',
+          from: { nodeId: 'mix', portId: 'audio' },
+          to: { nodeId: 'sc', portId: 'ch1' },
+          sourceType: 'audio',
+          targetType: 'audio',
+        },
+        // RAW +1 level → SCOPE ch2 (the reference trace, 20% above centre).
+        {
+          id: 'e_pitch_sc',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'sc', portId: 'ch2' },
+          sourceType: 'polyPitchGate',
+          targetType: 'audio',
+        },
+      ],
+    );
+
+    // step 0 = C5 (midi 72 = +1 V/oct = a +1 level), step 1 = rest; S&H holds +1.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        w.__patch.nodes['seq'].data = {
+          steps: [
+            { on: true, midi: 72, chord: 'mono' }, // C5 = +1 V/oct = +1 level
+            { on: false, midi: 72, chord: 'mono' }, // rest (S&H holds the level)
+          ],
+        };
+      });
+    });
+
+    await page.waitForTimeout(700);
+    await page.evaluate(async () => {
+      const w = globalThis as unknown as { __engine?: () => { ctx: AudioContext } | null };
+      const eng = w.__engine?.();
+      if (!eng) return;
+      try { await eng.ctx.suspend(); } catch { /* already suspended */ }
+    });
+    await page.evaluate(
+      () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+    );
+  };
+}
+
+const MIXER_SUM_SCOPE_CARDS = [
+  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-mixer',
+  '.svelte-flow__node-scope',
+];
+
+const MIXER_COMPOSITE_SCENES: CompositeVrtScene[] = [
+  {
+    id: 'mixer-cv-sum',
+    label: 'SEQUENCER→MIXER→SCOPE: level-weighted summing',
+    blurb:
+      'A latched +1 level fans into two mixer inputs at Ch1=1.0 and Ch2=0.5; ' +
+      'MIXER sums to +1.5. ch2 = raw +1 (20% above centre), ch1 = the sum +1.5 ' +
+      '(30% above — distinctly higher). ch1 at/below ch2 = a summing regression.',
+    setup: setupMixerSumScope(),
+    cardSelectors: MIXER_SUM_SCOPE_CARDS,
+  },
+];
+
 /** All composite VRT scenes. Iterated by `vrt-composite.spec.ts`. */
 export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   {
@@ -965,4 +1091,5 @@ export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   ...DEPOLARIZER_COMPOSITE_SCENES,
   ...SCALER_COMPOSITE_SCENES,
   ...POLARIZER_COMPOSITE_SCENES,
+  ...MIXER_COMPOSITE_SCENES,
 ];
