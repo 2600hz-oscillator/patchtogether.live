@@ -288,6 +288,9 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
         'actually diffed on CI — landing fewer linux baselines is a real coverage regression. ' +
         'Capture linux baselines (vrt-update.yml workflow_dispatch) + drop the pairs to LOWER ' +
         'this number; only RAISE it for a deliberate, commented darwin-first new module.',
-    ).toBeLessThanOrEqual(98);
+      // Raised 98→99 for NINE LIVES (2026-06-28): a deliberate darwin-first new
+      // module (9-output LFO). Darwin baseline captured; linux/ninelives is in
+      // EXEMPT_BASELINE_PAIRS pending a vrt-update.yml workflow_dispatch.
+    ).toBeLessThanOrEqual(99);
   });
 });

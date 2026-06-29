@@ -370,4 +370,8 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'featurecv',
   // GRAPHIC EQ (2026-06-27): Winamp-style graphic-EQ / VU-meter video output.
   'graphicEq',
+  // NINE LIVES (2026-06-28): 9-output LFO on a geometric 1/3 rate ladder
+  // (out_n = rate × (1/3)^(n-1), out9 = rate/6561) sharing one waveform, with a
+  // reset trigger. Pure Fader + PatchPanel card (no canvas) — ships documented.
+  'ninelives',
 ]);

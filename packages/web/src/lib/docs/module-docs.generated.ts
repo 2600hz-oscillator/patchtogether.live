@@ -3229,6 +3229,27 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "tick_ms": "Tick — the game-tick period in milliseconds (40-200, default 80; ~12 Hz at default). Lower is a faster snake; clamped to the 40-200 ms window. Exposed as the TICK knob on the card."
     }
   },
+  "ninelives": {
+    "explanation": "Nine LFOs in one — a single oscillator fanned out to NINE bipolar CV outputs whose rates form a geometric ⅓ ladder. OUT 1 runs at the Rate knob, exactly like a normal LFO (same 0.01–100 Hz log range and the same sine→saw→square waveform). Each output below it runs at one-THIRD the rate of the one above, so OUT 2 = Rate/3, OUT 3 = Rate/9, and the slowest, OUT 9 = (1/3)^8 = Rate/6561 (about 0.0001524× — a single slow drift over many minutes when Rate is near 1 Hz). All nine taps share ONE Waveform shape. It's a quick way to get a spread of slowly-detuning modulators — clock-like at the top, glacial at the bottom — from one knob. RESET re-syncs the whole stack: each rising edge snaps all nine phases back to 0 at once so they restart together.",
+    "inputs": {
+      "reset": "A trigger input: each rising edge (crossing above 0.5) re-zeroes all nine phase accumulators at once, so every output restarts from phase 0 together (a hard re-sync of the whole ladder). Edge-triggered — it fires once per rising edge and ignores how long the level stays high, so holding it high does not freeze the outputs. Patch a clock or gate here to lock the stack's restart to a tempo."
+    },
+    "outputs": {
+      "out1": "The fastest tap: a bipolar LFO at the full Rate knob frequency — identical to a normal LFO at the same Rate and Waveform. The reference rate the rest of the ladder divides down from.",
+      "out2": "Rate ÷ 3 — one third the speed of OUT 1, same shared waveform.",
+      "out3": "Rate ÷ 9 — (1/3)^2 of OUT 1.",
+      "out4": "Rate ÷ 27 — (1/3)^3 of OUT 1.",
+      "out5": "Rate ÷ 81 — (1/3)^4 of OUT 1.",
+      "out6": "Rate ÷ 243 — (1/3)^5 of OUT 1.",
+      "out7": "Rate ÷ 729 — (1/3)^6 of OUT 1.",
+      "out8": "Rate ÷ 2187 — (1/3)^7 of OUT 1.",
+      "out9": "The slowest tap: Rate ÷ 6561 — (1/3)^8 of OUT 1 (≈ 0.0001524×). At Rate ≈ 1 Hz this is one slow sweep every ~109 minutes — a glacial drift source."
+    },
+    "controls": {
+      "rate": "Sets OUT 1's frequency from 0.01 Hz (one sweep per ~100 s) to 100 Hz, on a log fader — the same range and curve as the LFO. Every other output tracks it on the fixed ⅓ ladder (OUT n = Rate × (1/3)^(n-1)), so this one knob speeds up or slows down the entire stack together.",
+      "shape": "The shared waveform for all nine outputs: morphs continuously across 0–2 (0 = sine, 1 = saw, 2 = square), with smooth crossfades in between (e.g. 0.5 = halfway sine↔saw). The fader's glyphs mark sine / saw / square."
+    }
+  },
   "noise": {
     "explanation": "A pure noise source with three independent spectral flavors: white (flat spectrum), pink (1/f, -3 dB/oct), and brown (1/f², -6 dB/oct). All three noise streams run continuously from a shared 2-second looping buffer and are gain-scaled by a single LEVEL knob. Mental model: patch any combination of the three outputs into different channels to layer different timbres—white for brightness, pink for warmth, brown for rumble—all controlled by one master gain. Since the buffer loop is long and aperiodic noise by nature, the 0.5 Hz loop seam is inaudible.",
     "outputs": {

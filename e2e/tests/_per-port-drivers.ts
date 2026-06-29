@@ -176,6 +176,19 @@ const DRIVERS: Record<string, PerPortDriver> = {
     params: { frequency: 0.9, rampMode: 1 /* LOOP */, outputMode: 2 /* PHASE */ },
     note: 'TIDES2: high freq + LOOP mode + PHASE output; out0..3 sweep',
   },
+  //
+  // NINE LIVES: a 9-output LFO on a geometric ⅓ rate ladder (out_n = rate ×
+  // (1/3)^(n-1)). Every output is ALWAYS live, but the slow taps run at
+  // rate/2187 (out8) and rate/6561 (out9), so at the default sine shape they
+  // sit near phase 0 (where sine ≈ 0) for the whole ~800 ms scope window and
+  // read below the emit floor — the output IS emitting, it's just near a zero
+  // crossing. Drive rate to the top of the range AND set shape=2 (square), so
+  // every tap reads its full ±1 amplitude immediately regardless of its rate.
+  // This is the honest fix: it proves all nine outputs carry signal.
+  ninelives: {
+    params: { rate: 100, shape: 2 },
+    note: 'NINE LIVES: rate=100 + square wave so all 9 taps (incl. the rate/6561 slow tap) read ±1 within the poll window',
+  },
 
   // STAGES: needs a TRIG pulse to start a segment. Use SEQUENCER.gate
   // → STAGES.trig (the global TRIG fires every chain group's leader).

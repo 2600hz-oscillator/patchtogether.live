@@ -2430,6 +2430,19 @@ nibbles out pellet gate
 nibbles out snake audio
 nibbles param auto 0..1 discrete default=0
 nibbles param tick_ms 40..200 linear default=80
+ninelives meta domain=audio schema=1
+ninelives in reset gate edge=trigger
+ninelives out out1 cv
+ninelives out out2 cv
+ninelives out out3 cv
+ninelives out out4 cv
+ninelives out out5 cv
+ninelives out out6 cv
+ninelives out out7 cv
+ninelives out out8 cv
+ninelives out out9 cv
+ninelives param rate 0.01..100 log default=1 unit=Hz
+ninelives param shape 0..2 linear default=0
 noise meta domain=audio schema=1
 noise out brown audio
 noise out pink audio
