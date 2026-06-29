@@ -3,11 +3,13 @@
 # WHY this exists: per-PR @collab gating moved to the cheap content-hash VERIFY
 # (the `collab-attest` job in ci.yml), which trusts a local FRESH-dedicated-relay
 # run. That keeps the per-PR path fast (~2 min verify vs ~6.5-8 min real lane),
-# but a CALM LOCAL relay is merely LESS CONTENDED than CI's, not strictly
-# superior — it can MASK an under-load multiplayer race (the caveat in
-# .myrobots/plans/collab-attest-2026-06-15.md + ci-collab-attest/README.md). This
-# scheduled job runs the FULL real @collab lane on CI every day so contention
-# regressions still surface daily, without paying that cost on every PR.
+# but the per-PR `collab` job downloads CACHED artifacts (WASM + preview bundle),
+# so build-script rot + relay/DB infra drift can hide there. This scheduled job
+# runs the FULL real @collab lane (SERIAL, --workers=1) on CI every day, built
+# FROM SCRATCH, so those surface daily off the PR critical path. NOTE: this is
+# NOT an under-load/contention canary — the relay is a single in-memory process
+# and deadlocks at >1 worker (the #97 flake), so genuine concurrency coverage
+# needs a concurrency-capable relay (deferred, task #160), not this lane.
 #
 # It is a DIAGNOSTIC backstop, NOT a per-PR gate: a red run here is a signal to
 # investigate (and re-attest after a fix), not a merge blocker. It mirrors the
@@ -43,20 +45,23 @@ jobs:
   collab-full:
     name: collab-nightly (full @collab lane, under load)
     runs-on: ubuntu-latest
-    # Ceiling raised 60 → 90 (P0 fix, 2026-06-21): the de-flake #844 gave the
-    # @collab specs generous per-test timeouts (120s; DOOM up to 180s) so a
-    # slow-but-correct sync surfaces as a clear assert instead of an opaque
-    # test-timeout. Under THIS lane's deliberately-CONTENDED config
-    # (--workers=2 + retries=1, the under-load canary) a struggling spec now
-    # burns its full extended timeout (× the retry) before resolving, so the
-    # whole suite's wall-time grew past 60 min — the first post-#844 nightly
-    # (run 27903306267) was KILLED by the 60-min ceiling mid-run (test step ran
-    # 57 min), producing a `cancelled` with NO artifacts. 90 min gives the
-    # full ~51-test suite (incl. cold-DOOM-WASM boots + inline DSP/preview
-    # build) headroom to finish and report. If it overruns 90 too, the lane is
-    # genuinely too heavy at 2 workers — shard it or drop a slow spec, don't
-    # just keep raising this.
-    timeout-minutes: 90
+    # timeout-minutes 90 → 60 + --workers=2 → 1 (FIX 2026-06-29): the lane ran
+    # --workers=2 as an "under-load contention" canary, but the relay is a
+    # SINGLE in-memory process — two multi-context specs hitting it at once
+    # DEADLOCK (the #97 contention flake). Each then burns its full extended
+    # per-test timeout (120s; DOOM up to 180s, granted by de-flake #844) × the
+    # retry, so the suite blew past the ceiling: EVERY nightly 06-18 → 06-29 was
+    # KILLED at 90 min (`cancelled`, NO useful signal) — a dead backstop for ~12
+    # days. The per-PR `collab` job in ci.yml hit this exact wall and settled on
+    # --workers=1 (fully serial), which runs the whole lane reliably in
+    # ~7-17 min; we now match it (see the test step below). Real UNDER-LOAD
+    # contention coverage is not achievable against a single-process relay
+    # without deadlock — that needs a concurrency-capable relay (deferred; see
+    # task #160 / relay infra), not a bigger number here. 60 min is a FAIL-FAST
+    # ceiling (a serial run that hits it is genuinely broken — shard or drop a
+    # slow spec, don't raise this) with headroom over the realistic ~25-40 min
+    # (serial lane + inline DOOM/SNES WASM + preview build).
+    timeout-minutes: 60
 
     services:
       postgres:
@@ -169,17 +174,22 @@ jobs:
       - name: Build web (preview bundle, test hooks enabled)
         run: flox activate -- task build:web
 
-      # --- The full real @collab lane (the under-load coverage) ---
-      # Mirrors `task collab` / the ci.yml collab job exactly: same grep, same
-      # workers, same DATABASE_URL + COLLAB_JOB + E2E_USE_PREVIEW. html reporter
-      # so the run is as inspectable as the per-PR collab lane.
-      - name: Run full @collab lane (under load, html report)
+      # --- The full real @collab lane (daily fresh-build canary) ---
+      # Mirrors the ci.yml `collab` JOB exactly: same grep, --workers=1 (SERIAL —
+      # the single-process relay deadlocks at >1, see the timeout note above),
+      # same DATABASE_URL + COLLAB_JOB + E2E_USE_PREVIEW + retries=1 transient-net.
+      # html reporter so the run is as inspectable as the per-PR collab lane.
+      # The DISTINCT daily value vs the per-PR job: this builds DOOM/SNES WASM +
+      # the preview bundle FROM SCRATCH (the per-PR job downloads cached
+      # artifacts), so build-script rot and relay/DB infra drift surface here
+      # daily, off the PR critical path.
+      - name: Run full @collab lane (serial, html report)
         env:
           PLAYWRIGHT_HTML_OPEN: never
         run: |
           flox activate -- npx --workspace e2e playwright test \
             --grep "@collab|@capacity" \
-            --workers=2 \
+            --workers=1 \
             --reporter=list,html
 
       - name: Upload Playwright HTML report (collab-nightly)
