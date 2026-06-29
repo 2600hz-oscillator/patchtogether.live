@@ -57,6 +57,19 @@ export interface SeqClockConfig {
   octave: number;
   snh: boolean;
   running: boolean;
+  /** 'internal' (default) → the engine advances on its own BPM phase.
+   *  'external' → the engine holds phase and advances ONLY on externalTrigger()
+   *  (one step per incoming clock edge). The gate width still derives from BPM. */
+  clockMode: 'internal' | 'external';
+}
+
+/** What a block of process() / an external trigger advanced — so the host's
+ *  shadow engine can mirror playhead + quicksave-on-wrap without re-deriving it. */
+export interface SeqAdvance {
+  /** Step boundaries crossed this block. */
+  advances: number;
+  /** Of those, how many wrapped the index back to 0 (sequence ends). */
+  wraps: number;
 }
 
 /** The poly + gate + clock output buffers the engine fills each block. */
@@ -107,6 +120,7 @@ const DEFAULT_CONFIG: SeqClockConfig = {
   octave: 0,
   snh: true,
   running: false,
+  clockMode: 'internal',
 };
 
 /**
@@ -120,6 +134,10 @@ export class SeqClockCore {
   private stepIndex = 0;
   private tInStep = 0; // seconds elapsed within the current step
   private wasRunning = false;
+  // External mode: true means "the next externalTrigger sounds the CURRENT index
+  // (step 0) WITHOUT first advancing" — so the first incoming edge plays step 0,
+  // the second plays step 1, … (matches the legacy external-clock emitStep order).
+  private extArmed = true;
 
   // Per-lane HELD pitch (V/oct) — survives rests under S&H.
   private heldLanePitch = new Float32Array(SEQ_POLY_LANES);
@@ -153,14 +171,44 @@ export class SeqClockCore {
     this.stepIndex = 0;
     this.tInStep = 0;
     this.latchStep();
+    this.extArmed = true;
+    // External mode: hold step 0 SILENT (gate + clock low, pitch held) until the
+    // first incoming clock edge. Park the phase past the gate/clock envelope.
+    if (this.cfg.clockMode === 'external') this.tInStep = this.curStepDur;
+  }
+
+  /** External clock edge: sound the next step (the first edge after a reset
+   *  sounds step 0). Restarts the gate/clock envelope for the sounded step.
+   *  Returns whether the index wrapped back to 0 (a sequence end). */
+  externalTrigger(): { wrapped: boolean } {
+    let wrapped = false;
+    if (this.extArmed) {
+      this.extArmed = false; // first edge sounds the current index (step 0)
+    } else {
+      const len = clampLength(this.cfg.length, this.cfg.steps.length);
+      this.stepIndex = (this.stepIndex + 1) % len;
+      wrapped = this.stepIndex === 0;
+    }
+    this.tInStep = 0;
+    this.latchStep();
+    return { wrapped };
   }
 
   get currentStep(): number {
     return this.stepIndex;
   }
-  /** Held V/oct for a given lane (0..SEQ_POLY_LANES-1) — for tests. */
+  /** Held V/oct for a given lane (0..SEQ_POLY_LANES-1) — for tests + host reads. */
   lanePitch(lane: number): number {
     return this.heldLanePitch[lane] ?? 0;
+  }
+  /** Step-level: is ANY lane gated on the current step? (Mirrors the legacy
+   *  read('gateValue') = lastEmittedGate, which is step-level not instantaneous.) */
+  currentGated(): boolean {
+    return this.curAnyGate;
+  }
+  /** Step-level gate for one lane (mirrors read('gateLane:i')). */
+  currentLaneGated(lane: number): boolean {
+    return this.curLaneGate[lane] === 1;
   }
 
   // Recompute the latched dur/gate for the current step WITHOUT re-evaluating the
@@ -192,8 +240,10 @@ export class SeqClockCore {
     this.relatch();
   }
 
-  /** Render `frames` samples of poly pitch + per-lane gate + mono gate + clock. */
-  process(out: SeqClockOut, frames: number): void {
+  /** Render `frames` samples of poly pitch + per-lane gate + mono gate + clock.
+   *  Returns how many step boundaries (and wraps) were crossed — internal mode
+   *  only; external mode advances via externalTrigger() and returns zeros. */
+  process(out: SeqClockOut, frames: number): SeqAdvance {
     // Transport edge: a fresh start restarts from step 0.
     if (this.cfg.running && !this.wasRunning) this.reset();
     this.wasRunning = this.cfg.running;
@@ -211,10 +261,13 @@ export class SeqClockCore {
         gate[i] = 0;
         clock[i] = 0;
       }
-      return;
+      return { advances: 0, wraps: 0 };
     }
 
+    const external = this.cfg.clockMode === 'external';
     const dt = 1 / this.sampleRate;
+    let advances = 0;
+    let wraps = 0;
     for (let i = 0; i < n; i++) {
       const gateHi = this.tInStep < this.curGateOff;
       for (let l = 0; l < SEQ_POLY_LANES; l++) {
@@ -225,6 +278,9 @@ export class SeqClockCore {
       clock[i] = this.tInStep < SEQ_CLOCK_PULSE_S ? 1 : 0;
 
       this.tInStep += dt;
+      // EXTERNAL mode: phase only plays out the current step's envelope; the
+      // index advances solely on externalTrigger(), never on a phase boundary.
+      if (external) continue;
       // Advance across as many step boundaries as this sample crossed (guards a
       // degenerate near-zero stepDur from a runaway bpm so we can't infinite-loop).
       let guard = 0;
@@ -232,9 +288,12 @@ export class SeqClockCore {
         this.tInStep -= this.curStepDur;
         const len = clampLength(this.cfg.length, this.cfg.steps.length);
         this.stepIndex = (this.stepIndex + 1) % len;
+        if (this.stepIndex === 0) wraps++;
         this.latchStep();
+        advances++;
         guard++;
       }
     }
+    return { advances, wraps };
   }
 }

@@ -192,6 +192,119 @@ describe('SeqClockCore clock pulse', () => {
   });
 });
 
+describe('SeqClockCore external clock mode', () => {
+  // Same 4-step pattern, but the engine advances ONLY on externalTrigger().
+  const cfg = {
+    bpm: 120, // 6000 samples/step; gate 0.5 → 3000-sample gate window
+    length: 4,
+    steps: [on(60), on(64), REST, on(67)], // C4, E4, rest, G4
+    gateLength: 0.5,
+    swing: 0,
+    octave: 0,
+    snh: true,
+    running: true,
+    clockMode: 'external' as const,
+  };
+
+  it('holds silent until the first edge, then sounds step 0', () => {
+    const core = new SeqClockCore(SR, cfg);
+    // Before any edge: gate + clock low (parked past the envelope).
+    let { gate, clock, lanePitch } = render(core, 500);
+    expect(Array.from(gate).every((g) => g === 0)).toBe(true);
+    expect(Array.from(clock).every((c) => c === 0)).toBe(true);
+    // First edge sounds step 0 (C4).
+    core.externalTrigger();
+    ({ gate, clock, lanePitch } = render(core, 500));
+    expect(lanePitch[0][10]).toBeCloseTo(0); // C4 = 0 V
+    expect(gate[10]).toBe(1);
+    expect(clock[10]).toBe(1); // a fresh clock pulse on the edge
+    expect(core.currentStep).toBe(0);
+  });
+
+  it('advances exactly one step per edge and reports wrap at the loop end', () => {
+    const core = new SeqClockCore(SR, cfg);
+    core.externalTrigger(); // step 0
+    expect(core.currentStep).toBe(0);
+    let r = core.externalTrigger(); // step 1
+    expect(core.currentStep).toBe(1);
+    expect(r.wrapped).toBe(false);
+    core.externalTrigger(); // step 2
+    core.externalTrigger(); // step 3
+    expect(core.currentStep).toBe(3);
+    r = core.externalTrigger(); // wraps to step 0
+    expect(core.currentStep).toBe(0);
+    expect(r.wrapped).toBe(true);
+  });
+
+  it('process() never auto-advances in external mode', () => {
+    const core = new SeqClockCore(SR, cfg);
+    core.externalTrigger(); // step 0
+    // Render far longer than a step duration — index must NOT move on its own.
+    const adv = core.process(
+      {
+        lanePitch: Array.from({ length: SEQ_POLY_LANES }, () => new Float32Array(20000)),
+        laneGate: Array.from({ length: SEQ_POLY_LANES }, () => new Float32Array(20000)),
+        gate: new Float32Array(20000),
+        clock: new Float32Array(20000),
+      },
+      20000,
+    );
+    expect(adv.advances).toBe(0);
+    expect(core.currentStep).toBe(0);
+  });
+
+  it('derives gate width from BPM (closes after stepDur × gateLength)', () => {
+    const core = new SeqClockCore(SR, cfg);
+    render(core, 500); // consume the transport-running edge (process() → reset)
+    core.externalTrigger(); // step 0
+    const { gate } = render(core, 6000);
+    expect(gate[0]).toBe(1);
+    expect(gate[2999]).toBe(1); // gateOff = 3000 samples
+    expect(gate[3001]).toBe(0);
+  });
+});
+
+describe('SeqClockCore getters + advance count', () => {
+  const cfg = {
+    bpm: 120,
+    length: 4,
+    steps: [{ on: true, midi: 60, chord: 'maj' as const }, REST, on(64), REST],
+    gateLength: 0.5,
+    swing: 0,
+    octave: 0,
+    snh: true,
+    running: true,
+  };
+
+  it('reports step-level gate + per-lane gate for the current step', () => {
+    const core = new SeqClockCore(SR, cfg);
+    render(core, 100); // inside step 0 (C maj)
+    expect(core.currentGated()).toBe(true);
+    expect(core.currentLaneGated(0)).toBe(true); // root
+    expect(core.currentLaneGated(2)).toBe(true); // fifth
+    expect(core.currentLaneGated(4)).toBe(false); // unused triad lane
+  });
+
+  it('process() returns the boundary + wrap counts crossed', () => {
+    const core = new SeqClockCore(SR, cfg);
+    // 4 steps × 6000 samples = 24000/loop. Render past the 6th boundary with a
+    // margin (float-accumulated phase lands boundaries a sub-sample late, so an
+    // exact 36000 window would clip the 6th — see the internal-timing tests).
+    const N = 37000;
+    const adv = core.process(
+      {
+        lanePitch: Array.from({ length: SEQ_POLY_LANES }, () => new Float32Array(N)),
+        laneGate: Array.from({ length: SEQ_POLY_LANES }, () => new Float32Array(N)),
+        gate: new Float32Array(N),
+        clock: new Float32Array(N),
+      },
+      N,
+    );
+    expect(adv.advances).toBe(6); // 6 boundaries crossed (6×6000 = 36000 < 37000)
+    expect(adv.wraps).toBe(1); // one full loop wrap (step 3→0) in the window
+  });
+});
+
 describe('SeqClockCore transport', () => {
   const cfg = {
     bpm: 120,
