@@ -832,6 +832,29 @@ export const STRICT_VRT_MODULES = new Set<string>([
   'negativity',           // −1× CV inverter (no knob)
   'polarizer',            // unipolar→bipolar CV util (DEPTH knob)
   'scaler',               // 1-in/1-out CV multiplier (AMOUNT knob)
+  // MOOG cluster — promoted to the strict gate after Track-2 batch 2 (#953)
+  // captured + validated their linux baselines (both platforms; deterministic
+  // beige-faceplate knob/fader/seq cards, no canvas/animation). 20 cards.
+  'moog903a',             // random-source card
+  'moog904b',             // band-pass filter
+  'moog904c',             // hi/lo coupler
+  'moog905',              // spring reverb
+  'moog907a',             // fixed filter bank (System 35)
+  'moog911a',             // dual trigger delay
+  'moog912',              // envelope follower
+  'moog914',              // extended fixed filter bank (1/3-oct band column)
+  'moog921a',             // oscillator driver
+  'moog921b',             // oscillator
+  'moog923',              // noise/filter
+  'moog956',              // ribbon controller
+  'moog960',              // sequential controller (8×3 step grid)
+  'moog961',              // interface
+  'moog962',              // sequential switch
+  'moog984',              // 4×4 matrix mixer
+  'moog992',              // control voltages
+  'moog993',              // trigger/envelope
+  'moog994',              // multiples
+  'moog995',              // attenuators
 ]);
 
 /** Per-(platform, type) baselines intentionally missing while a follow-
