@@ -328,15 +328,15 @@ const SNH_COMPOSITE_SCENES: CompositeVrtScene[] = [
 // Determinism: a SINGLE gated step at the BPM-30 floor pulses the gate
 // (~0.475 s high per 0.5 s loop; gateLength ≤ 0.95 always closes before the
 // next step, so there is no legato), and a SHORT decay (10 ms) gives a long
-// flat sustain plateau each cycle. We do NOT use a fixed wall-clock suspend:
-// linux CI boots the audio graph ~300 ms slower than darwin, so a tuned
-// timeout caught the env mid-transient there (a sloped, flaky trace) — the
-// exact failure the skeptical-first-baseline pass surfaced. Instead we SUSPEND
-// only once the SCOPE's ch1 analyser buffer (read directly via
-// `__engine().read`, renderer-independent — canvas frame-stability is
-// unreliable under SwiftShader) is a FLAT, clearly-non-zero DC sustain. That
-// lands the capture in the sustain plateau on either platform by the audio
-// state itself, not by timing luck or pixel readback.
+// flat sustain plateau (95% duty) each cycle. We suspend after a fixed 700 ms
+// window — the same mechanism the S&H scene uses (proven stable on darwin AND
+// linux) — which lands in a settled sustain plateau on both platforms despite
+// their different audio-engine boot latencies (darwin: 2nd loop; linux CI,
+// ~300 ms slower boot: 1st gate). The skeptical-first-baseline pass surfaced
+// that a 300 ms suspend caught the linux transient, and that BOTH a canvas
+// frame-stability poll and an analyser-value poll failed to write a fresh
+// linux baseline under CI — so the fixed window matched to S&H is the path
+// that actually yields clean cross-platform baselines (see git history).
 
 function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
   return async (page) => {
@@ -403,48 +403,21 @@ function setupAdsrSustainScope(sustain: number): (page: Page) => Promise<void> {
       });
     });
 
-    // Let the engine start, then wait until the SCOPE's ch1 analyser buffer is
-    // a SETTLED, clearly-non-zero DC sustain — read the AUDIO DATA directly
-    // (`__engine().read(node,'snapshot')`), NOT the canvas. The first attempt
-    // suspended at a fixed 300 ms and caught the env mid-transient on linux CI
-    // (which boots the audio graph ~300 ms slower than darwin) → a sloped,
-    // flaky trace; the second attempt polled the CANVAS for frame-stability,
-    // which is unreliable under CI's SwiftShader (getImageData jitter never
-    // stabilises → the poll times out and no fresh baseline is written). The
-    // analyser buffer IS what the scope draws, so a FLAT buffer (max−min tiny)
-    // at a clearly-non-zero peak means the env has attacked, decayed, and is
-    // holding at `sustain` with the gate high. Boot silence (peak≈0) and the
-    // attack/decay ramp (large range) are both rejected — this lands the
-    // capture in the sustain plateau on ANY platform, renderer-independent.
-    await page.waitForTimeout(300);
-    await page.waitForFunction(
-      () => {
-        const w = globalThis as unknown as {
-          __engine?: () => {
-            read: (n: { id: string; type: string; domain: string }, k: string) => unknown;
-          } | null;
-          __patch: { nodes: Record<string, { id: string; type: string; domain: string }> };
-        };
-        const eng = w.__engine?.();
-        const node = w.__patch?.nodes?.['sc'];
-        if (!eng || !node) return false;
-        const snap = eng.read(node, 'snapshot') as { ch1?: Float32Array } | undefined;
-        const buf = snap?.ch1;
-        if (!buf || buf.length === 0) return false;
-        let mn = Infinity, mx = -Infinity, peak = 0;
-        for (let i = 0; i < buf.length; i++) {
-          const v = buf[i]!;
-          if (v < mn) mn = v;
-          if (v > mx) mx = v;
-          const a = v < 0 ? -v : v;
-          if (a > peak) peak = a;
-        }
-        // Flat (settled DC) AND clearly non-zero (gate high, at sustain).
-        return (mx - mn) < 0.02 && peak > 0.05;
-      },
-      undefined,
-      { timeout: 10000, polling: 50 },
-    );
+    // Run a fixed window, then suspend — the SAME proven mechanism the S&H
+    // scene above uses (it has stable darwin AND linux baselines). 700 ms lands
+    // in a settled SUSTAIN plateau on BOTH platforms despite their different
+    // audio-engine boot latencies: on darwin (fast boot) the playhead is mid-
+    // way through the 2nd 0.5 s loop; on linux CI (~300 ms slower boot) it is
+    // mid-way through the 1st gate — both well past the ~50 ms attack+decay and
+    // before the gate closes (gateLength 0.95 = 95% duty, so a 6% gate-gap is
+    // the only bad phase, which neither platform's latency hits).
+    //
+    // History (see git log): a fixed 300 ms suspend caught the linux transient
+    // (sloped trace); a canvas frame-stability poll and an analyser-value poll
+    // BOTH failed to write a fresh linux baseline under CI (waitForFunction
+    // never satisfied → silent no-op). The fixed window matched to the proven
+    // S&H scene is the mechanism that actually produces clean baselines on both.
+    await page.waitForTimeout(700);
 
     // SUSPEND so the held env (and the SCOPE analyser's last buffered samples)
     // freeze pixel-stable, then one rAF so the final frame finishes rendering.
