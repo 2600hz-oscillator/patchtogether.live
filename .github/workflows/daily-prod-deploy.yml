@@ -241,7 +241,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-        with: { ref: ${{ needs.find-green.outputs.sha }} }
+        with:
+          ref: ${{ needs.find-green.outputs.sha }}
       - uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Deploy relay (prod)
         env:
