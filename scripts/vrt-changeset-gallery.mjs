@@ -51,6 +51,7 @@ import {
   mkdirSync,
   rmSync,
   existsSync,
+  readdirSync,
 } from 'node:fs';
 import { join, dirname, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -71,6 +72,15 @@ function parseArgs(argv) {
     pr: process.env.PR_NUMBER || null,
     title: null,
     json: null,
+    // --from-results <dir>: build the gallery from a Playwright RUN's output
+    // (test-results/**/{*-expected,*-actual,*-diff}.png) instead of git-diff.
+    // This is the "fail → see what changed" half: a code change that SHIFTS a
+    // render fails the VRT job with the diff in the run output, but commits no
+    // PNGs, so the git-diff mode finds nothing. fromResults surfaces it.
+    fromResults: null,
+    // Platform label for the run-driven cards (the runner's OS). Defaults to the
+    // same darwin|linux split vrt.config.ts uses.
+    platform: process.platform === 'darwin' ? 'darwin' : 'linux',
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -79,9 +89,11 @@ function parseArgs(argv) {
     else if (a === '--pr') args.pr = argv[++i];
     else if (a === '--title') args.title = argv[++i];
     else if (a === '--json') args.json = argv[++i];
+    else if (a === '--from-results') args.fromResults = argv[++i];
+    else if (a === '--platform') args.platform = argv[++i];
     else if (a === '--help' || a === '-h') {
       console.log(
-        'Usage: node scripts/vrt-changeset-gallery.mjs [--base <ref>] [--out <dir>] [--pr <n>] [--title <s>] [--json <file>]',
+        'Usage: node scripts/vrt-changeset-gallery.mjs [--base <ref>] [--from-results <dir>] [--platform <os>] [--out <dir>] [--pr <n>] [--title <s>] [--json <file>]',
       );
       process.exit(0);
     }
@@ -169,6 +181,61 @@ function changedBaselines(baseSha) {
       entries.push({ status: norm, oldPath: path, path });
     }
   }
+  return entries;
+}
+
+// ---- run-driven collection (--from-results) -------------------------------
+
+// Recursively list every file under `dir` (portable; avoids readdir
+// {recursive} Dirent.parentPath version differences).
+function walk(dir) {
+  const out = [];
+  for (const d of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, d.name);
+    if (d.isDirectory()) out.push(...walk(p));
+    else out.push(p);
+  }
+  return out;
+}
+
+// Build entries from a Playwright RUN's output dir. On a screenshot mismatch
+// Playwright writes, per failed assertion, a sibling triplet next to the test's
+// output folder: `<name>-expected.png` (the baseline = OLD), `<name>-actual.png`
+// (this run's render = NEW), and `<name>-diff.png` (its own diff, which we
+// ignore — we recompute with pixelmatch for a consistent diff + px stats). A
+// brand-new/missing baseline yields only `-actual` (status A). Entries carry the
+// decoded buffers directly (no git), so the shared render loop treats them
+// uniformly with the git-diff entries. `platform` is the runner OS label.
+function collectFromResults(dir, platform) {
+  const absDir = isAbsolute(dir) ? dir : join(ROOT, dir);
+  if (!existsSync(absDir)) {
+    console.error(`[vrt-changeset] --from-results dir not found: ${dir}`);
+    return [];
+  }
+  const actuals = walk(absDir).filter((f) => f.endsWith('-actual.png'));
+  const entries = [];
+  for (const actualPath of actuals) {
+    const stem = actualPath.slice(0, -'-actual.png'.length);
+    const expectedPath = `${stem}-expected.png`;
+    const card = stem.split('/').pop(); // screenshot name, e.g. mixer-cv-sum
+    // The test's output folder name encodes spec + test title + project; strip
+    // the trailing project tag for a readable spec/test label.
+    const folder = dirname(actualPath).split('/').pop() || 'playwright-run';
+    const spec = folder.replace(/-(chromium|webkit|firefox)[-\w]*$/i, '');
+    const newBuf = readFileSync(actualPath);
+    const oldBuf = existsSync(expectedPath) ? readFileSync(expectedPath) : null;
+    // Synthetic baseline path so describe() yields spec/platform/card uniformly.
+    const synthetic = `${BASELINE_GLOB}/${spec}/${platform}/${card}.png`;
+    entries.push({
+      status: oldBuf ? 'M' : 'A',
+      path: synthetic,
+      oldPath: synthetic,
+      oldBuf,
+      newBuf,
+    });
+  }
+  // Stable order so the gallery is deterministic across runs.
+  entries.sort((a, b) => a.path.localeCompare(b.path));
   return entries;
 }
 
@@ -321,7 +388,25 @@ function renderHtml({ cards, meta }) {
             ${cell('OLD (base)', c.oldSrc, 'old')}
             ${cell('NEW (this PR)', c.newSrc, 'new')}
             ${cell('DIFF', c.diffSrc, 'diff')}
-          </div>
+          </div>${
+            c.oldSrc && c.newSrc
+              ? `
+          <details class="cmp">
+            <summary>↔ slider / onion-skin compare</summary>
+            <div class="compare" style="--split:50%">
+              <div class="cmp-stage">
+                <img class="cmp-old" src="${esc(c.oldSrc)}" alt="old ${esc(c.card)}">
+                <img class="cmp-new" src="${esc(c.newSrc)}" alt="new ${esc(c.card)}">
+                <div class="cmp-divider"></div>
+              </div>
+              <div class="cmp-ctl">
+                <label>swipe <input type="range" class="cmp-swipe" min="0" max="100" value="50"></label>
+                <label>onion <input type="range" class="cmp-onion" min="0" max="100" value="100"></label>
+              </div>
+            </div>
+          </details>`
+              : ''
+          }
         </section>`;
         })
         .join('\n');
@@ -367,6 +452,17 @@ function renderHtml({ cards, meta }) {
   figure.diff img { background:#000; }
   figure.empty .ph { display:flex; align-items:center; justify-content:center; min-height:80px; color:#4a4f57; font-size:24px; }
   @media (max-width:900px){ .triptych{ grid-template-columns:1fr; } }
+  /* slider / onion-skin compare (OLD under, NEW clipped over) */
+  details.cmp { margin-top:12px; }
+  details.cmp summary { cursor:pointer; color:#8ab4f8; font-size:11px; text-transform:uppercase; letter-spacing:1px; user-select:none; }
+  details.cmp[open] summary { margin-bottom:10px; }
+  .compare { max-width:560px; }
+  .cmp-stage { position:relative; width:100%; touch-action:none; border:1px solid #2a2a2e; border-radius:6px; overflow:hidden; cursor:ew-resize; background:repeating-conic-gradient(#1a1a1d 0% 25%,#202024 0% 50%) 0/16px 16px; }
+  .cmp-stage img { display:block; width:100%; height:auto; image-rendering:pixelated; }
+  .cmp-new { position:absolute; inset:0; clip-path:inset(0 calc(100% - var(--split)) 0 0); }
+  .cmp-divider { position:absolute; top:0; bottom:0; left:var(--split); width:2px; margin-left:-1px; background:#8ab4f8; box-shadow:0 0 0 1px #000; pointer-events:none; }
+  .cmp-ctl { display:flex; gap:20px; margin-top:8px; font-size:11px; color:#9aa0a6; align-items:center; }
+  .cmp-ctl input[type=range] { vertical-align:middle; width:120px; }
 </style>
 </head>
 <body>
@@ -377,6 +473,31 @@ function renderHtml({ cards, meta }) {
 <main>
 ${cards.length ? cardHtml : '<p style="color:#9aa0a6;padding:40px 0">No VRT baseline changes vs base. (Nothing to review.)</p>'}
 </main>
+<script>
+// Wire each compare widget: range "swipe" + pointer-drag move the clip divider
+// (OLD under, NEW clipped over); "onion" sets NEW opacity for an overlay blink.
+for (const cmp of document.querySelectorAll('.compare')) {
+  const stage = cmp.querySelector('.cmp-stage');
+  const neu = cmp.querySelector('.cmp-new');
+  const swipe = cmp.querySelector('.cmp-swipe');
+  const onion = cmp.querySelector('.cmp-onion');
+  const clamp = (v) => Math.max(0, Math.min(100, v));
+  const setSplit = (v) => cmp.style.setProperty('--split', clamp(v) + '%');
+  if (swipe) swipe.addEventListener('input', () => setSplit(+swipe.value));
+  if (onion) onion.addEventListener('input', () => { neu.style.opacity = (+onion.value) / 100; });
+  let dragging = false;
+  const moveTo = (clientX) => {
+    const r = stage.getBoundingClientRect();
+    const pct = clamp(((clientX - r.left) / r.width) * 100);
+    setSplit(pct);
+    if (swipe) swipe.value = String(pct);
+  };
+  stage.addEventListener('pointerdown', (e) => { dragging = true; try { stage.setPointerCapture(e.pointerId); } catch {} moveTo(e.clientX); });
+  stage.addEventListener('pointermove', (e) => { if (dragging) moveTo(e.clientX); });
+  stage.addEventListener('pointerup', () => { dragging = false; });
+  stage.addEventListener('pointercancel', () => { dragging = false; });
+}
+</script>
 </body>
 </html>
 `;
@@ -386,18 +507,35 @@ ${cards.length ? cardHtml : '<p style="color:#9aa0a6;padding:40px 0">No VRT base
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const { ref: baseRef, sha: baseSha } = resolveBase(args.base);
-  const headSha = git(['rev-parse', 'HEAD']);
 
-  const outDir = join(ROOT, args.out);
+  let baseRef, baseSha, headSha, entries;
+  if (args.fromResults) {
+    // Run-driven: diff = expected (OLD) vs actual (NEW) from the Playwright run.
+    baseRef = 'playwright-run';
+    baseSha = null;
+    try {
+      headSha = git(['rev-parse', 'HEAD']);
+    } catch {
+      headSha = 'unknown';
+    }
+    entries = collectFromResults(args.fromResults, args.platform);
+    console.error(
+      `[vrt-changeset] from-results=${args.fromResults} platform=${args.platform} — ${entries.length} mismatch(es)`,
+    );
+  } else {
+    // Git-driven: diff = base ref (OLD) vs working tree (NEW).
+    ({ ref: baseRef, sha: baseSha } = resolveBase(args.base));
+    headSha = git(['rev-parse', 'HEAD']);
+    entries = changedBaselines(baseSha);
+    console.error(
+      `[vrt-changeset] base=${baseRef}@${baseSha.slice(0, 8)} head=${headSha.slice(0, 8)} — ${entries.length} changed baseline(s)`,
+    );
+  }
+
+  const outDir = isAbsolute(args.out) ? args.out : join(ROOT, args.out);
   const imgDir = join(outDir, 'img');
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(imgDir, { recursive: true });
-
-  const entries = changedBaselines(baseSha);
-  console.error(
-    `[vrt-changeset] base=${baseRef}@${baseSha.slice(0, 8)} head=${headSha.slice(0, 8)} — ${entries.length} changed baseline(s)`,
-  );
 
   const cards = [];
   const meta = { added: 0, modified: 0, deleted: 0, renamed: 0 };
@@ -411,9 +549,20 @@ async function main() {
     const { spec, platform, card } = describe(e.path);
     const id = slugify(e.path);
 
+    // Run-driven entries carry decoded buffers already; git-driven entries read
+    // OLD from the base ref + NEW from the working tree.
     const oldBuf =
-      e.status === 'A' ? null : readBasePng(baseSha, e.oldPath || e.path);
-    const newBuf = e.status === 'D' ? null : readWorkingPng(e.path);
+      e.oldBuf !== undefined
+        ? e.oldBuf
+        : e.status === 'A'
+          ? null
+          : readBasePng(baseSha, e.oldPath || e.path);
+    const newBuf =
+      e.newBuf !== undefined
+        ? e.newBuf
+        : e.status === 'D'
+          ? null
+          : readWorkingPng(e.path);
 
     let oldSrc = null,
       newSrc = null,
@@ -488,8 +637,8 @@ async function main() {
       ...meta,
       pr: args.pr,
       baseRef,
-      baseShaShort: baseSha.slice(0, 8),
-      headShaShort: headSha.slice(0, 8),
+      baseShaShort: baseSha ? baseSha.slice(0, 8) : '—',
+      headShaShort: headSha ? headSha.slice(0, 8) : '—',
       generatedAt: new Date().toISOString().replace('T', ' ').slice(0, 19) + 'Z',
     },
   });
