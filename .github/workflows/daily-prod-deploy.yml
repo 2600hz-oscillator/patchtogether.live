@@ -1,0 +1,276 @@
+name: Daily Prod Deploy (latest fully-green main)
+
+# Once a day, deploy the LATEST commit on main whose ENTIRE CI run is green —
+# INCLUDING the informational jobs (collab-attest, behavioral, full vrt,
+# webgl-attest, …), not just the required `ci` umbrella.
+#
+# Why "every job", not the run conclusion: the informational jobs run with
+# `continue-on-error: true`, so the CI *run* concludes `success` even when one of
+# them is red. To honor "deploy only if informational is ALSO green" we inspect
+# every JOB's conclusion on the CI run for the candidate SHA (a continue-on-error
+# job still reports its own `failure`), and require them all success/skipped.
+#
+# "Latest fully-green version": we walk recent main commits newest-first and pick
+# the FIRST one that is fully green. So a red-informational HEAD doesn't block the
+# nightly ship — it falls back to the newest green commit beneath it.
+#
+# Idempotent: the last-shipped SHA is recorded in the lightweight `prod-deployed`
+# git tag; if the newest fully-green SHA already equals it, the run no-ops (no
+# redundant nightly rebuild/redeploy). The relay (Fly) is redeployed ONLY when
+# packages/server/** or fly.prod.toml changed since the last ship — a relay
+# redeploy briefly drops live Yjs/WS connections, so we don't do it for a
+# web-only delta.
+#
+# This is ADDITIVE to deploy.yml's existing prod path (an explicit
+# package.json version bump still ships prod immediately). Secrets reused from
+# deploy.yml: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, FLY_API_TOKEN (opt),
+# SENTRY_AUTH_TOKEN (opt).
+
+on:
+  schedule:
+    # 04:00 UTC = 00:00 America/New_York during EDT (midnight Eastern, current
+    # season). GitHub cron is fixed-UTC (no DST), so in EST winter this fires at
+    # 23:00 ET the prior day — change to '0 5 * * *' if you want midnight EST.
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Find the latest fully-green SHA but do NOT deploy'
+        type: boolean
+        default: false
+      force:
+        description: 'Deploy even if the green SHA == the last-deployed tag'
+        type: boolean
+        default: false
+
+concurrency:
+  group: daily-prod-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: write # to move the `prod-deployed` tag after a successful ship
+
+jobs:
+  # ---- 1. Find the newest main commit whose ENTIRE CI run is green ----
+  find-green:
+    name: Find latest fully-green main commit
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.scan.outputs.sha }}
+      short: ${{ steps.scan.outputs.short }}
+      found: ${{ steps.scan.outputs.found }}
+      changed: ${{ steps.scan.outputs.changed }}
+      relay_changed: ${{ steps.scan.outputs.relay_changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 60
+          fetch-tags: true
+      - id: scan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Last-shipped SHA (empty on first ever run → treat everything as new).
+          LAST=$(git rev-parse -q --verify refs/tags/prod-deployed^{commit} 2>/dev/null || echo "")
+          echo "last-deployed: ${LAST:-<none>}"
+
+          GREEN=""
+          for sha in $(git rev-list --max-count=40 origin/main); do
+            # The CI workflow run for this exact SHA (newest if re-run).
+            run_id=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$sha&per_page=1" \
+              --jq '.workflow_runs[0].id // empty' 2>/dev/null || echo "")
+            if [ -z "$run_id" ]; then
+              echo "· ${sha:0:9}  no CI run — skip"
+              continue
+            fi
+            status=$(gh api "repos/$REPO/actions/runs/$run_id" --jq '.status' 2>/dev/null || echo "")
+            if [ "$status" != "completed" ]; then
+              echo "· ${sha:0:9}  CI status=$status — skip"
+              continue
+            fi
+            # EVERY job (incl continue-on-error informational ones) must be
+            # success or skipped. A red informational job → not fully green.
+            bad=$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" \
+              --jq '[.jobs[] | select(.conclusion != "success" and .conclusion != "skipped" and .conclusion != null)] | length')
+            still=$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" \
+              --jq '[.jobs[] | select(.conclusion == null)] | length')
+            if [ "$bad" != "0" ] || [ "$still" != "0" ]; then
+              echo "· ${sha:0:9}  CI not fully green (bad=$bad, in-flight=$still) — skip"
+              continue
+            fi
+            # Sanity: the required umbrella actually ran (guards against a run
+            # that only has, say, a docs-skipped subset).
+            has_umbrella=$(gh api "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" \
+              --jq '[.jobs[] | select(.name | test("typecheck . unit . ART . E2E"))] | length')
+            if [ "$has_umbrella" = "0" ]; then
+              echo "· ${sha:0:9}  no umbrella job in CI run — skip"
+              continue
+            fi
+            GREEN="$sha"
+            echo "✓ ${sha:0:9}  FULLY GREEN (every CI job success/skipped)"
+            break
+          done
+
+          if [ -z "$GREEN" ]; then
+            echo "::warning::No fully-green main commit found in the last 40 — nothing to deploy."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "relay_changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "sha=$GREEN" >> "$GITHUB_OUTPUT"
+          echo "short=${GREEN:0:9}" >> "$GITHUB_OUTPUT"
+
+          if [ "$GREEN" = "$LAST" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Latest fully-green commit ${GREEN:0:9} is already deployed — no-op."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Will ship ${GREEN:0:9} (was ${LAST:0:9})."
+          fi
+
+          # Relay redeploy only if its sources changed since the last ship.
+          RELAY=false
+          if [ -n "$LAST" ] && [ "$GREEN" != "$LAST" ]; then
+            if git diff --name-only "$LAST" "$GREEN" -- packages/server/ fly.prod.toml | grep -q .; then
+              RELAY=true
+            fi
+          elif [ -z "$LAST" ]; then
+            RELAY=true # first ship: bring the relay in lockstep too
+          fi
+          echo "relay_changed=$RELAY" >> "$GITHUB_OUTPUT"
+
+  # ---- 2. Build + deploy the green SHA's web bundle to prod ----
+  deploy-web:
+    name: Deploy → patchtogether.live (web)
+    needs: [find-green]
+    if: >-
+      needs.find-green.outputs.found == 'true'
+      && needs.find-green.outputs.changed == 'true'
+      && ! inputs.dry_run
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.find-green.outputs.sha }} # the fully-green commit, not HEAD
+          lfs: true
+      - uses: flox/install-flox-action@v2
+      - uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+      - name: Cache DOOM WASM artifact
+        id: cache-doom-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/doom/doom.js
+            packages/web/static/doom/doom.wasm
+          key: ${{ runner.os }}-doom-wasm-${{ hashFiles('packages/web/native/build-doom-wasm.sh', 'packages/web/native/doomgeneric/**') }}
+      - name: Build DOOM WASM (emcc)
+        if: steps.cache-doom-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-doom-wasm.sh
+      - name: Cache SNES9X WASM artifact
+        id: cache-snes9x-wasm
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/web/static/snes9x/snes9x.js
+            packages/web/static/snes9x/snes9x.wasm
+          key: ${{ runner.os }}-snes9x-wasm-${{ hashFiles('packages/web/native/build-snes9x-wasm.sh', 'packages/web/native/snes9x/**') }}
+      - name: Build SNES9X WASM (emcc)
+        if: steps.cache-snes9x-wasm.outputs.cache-hit != 'true'
+        run: flox activate -- bash packages/web/native/build-snes9x-wasm.sh
+      - name: Cache DOOM1.WAD (shareware)
+        id: cache-doom-wad
+        uses: actions/cache@v4
+        with:
+          path: packages/web/static/doom/DOOM1.WAD
+          key: doom-wad-shareware-v1
+      - name: Download DOOM1.WAD (shareware)
+        if: steps.cache-doom-wad.outputs.cache-hit != 'true'
+        run: |
+          curl -L --fail --silent --show-error \
+            -o packages/web/static/doom/DOOM1.WAD \
+            https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad
+          echo "5b2e249b9c5133ec987b3ea77596381dc0d6bc1d  packages/web/static/doom/DOOM1.WAD" \
+            | shasum -a 1 -c -
+      - run: flox activate -- task install
+      - name: Compute app version
+        id: appver
+        run: echo "v=$(jq -r .version package.json)-prod" >> "$GITHUB_OUTPUT"
+      - run: flox activate -- task build
+        env:
+          VITE_SERVER_WS_URL: wss://patchtogether-server.fly.dev
+          VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
+          VITE_SENTRY_SOURCEMAPS: '1'
+      - name: Sentry release (source maps)
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_RELEASE: ${{ steps.appver.outputs.v }}
+        run: flox activate -- bash scripts/sentry-release.sh
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: packages/web
+          command: pages deploy .svelte-kit/cloudflare --project-name=patchtogether-live --branch=main --commit-message=daily-${{ needs.find-green.outputs.short }}
+      # Post-deploy: assert the beta gate is UP (HTTP 401 at `/`). Same safety
+      # net as deploy.yml — a wiped plain_text BETA_GATE_PASS would silently open
+      # prod; this fails the ship loudly if `/` ever serves non-401.
+      - name: Verify beta gate is up (prod)
+        run: flox activate -- bash scripts/assert-beta-gate.sh https://www.patchtogether.live/
+
+  # ---- 3. Relay (Fly) — only when its sources changed since the last ship ----
+  deploy-relay:
+    name: Deploy relay → prod (only if changed)
+    needs: [find-green, deploy-web]
+    if: >-
+      always()
+      && needs.deploy-web.result == 'success'
+      && needs.find-green.outputs.relay_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.find-green.outputs.sha }}
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy relay (prod)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo "::warning::FLY_API_TOKEN not set — skipping prod relay deploy."
+            exit 0
+          fi
+          flyctl deploy --config fly.prod.toml --remote-only
+
+  # ---- 4. Record the shipped SHA so tomorrow's run is idempotent ----
+  record:
+    name: Record shipped SHA (move prod-deployed tag)
+    needs: [find-green, deploy-web]
+    if: >-
+      always()
+      && needs.deploy-web.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 1 }
+      - name: Move prod-deployed tag → ${{ needs.find-green.outputs.short }}
+        env:
+          SHA: ${{ needs.find-green.outputs.sha }}
+        run: |
+          git tag -f prod-deployed "$SHA"
+          git push -f origin "refs/tags/prod-deployed"
+          echo "::notice::prod-deployed now → ${SHA:0:9}"
