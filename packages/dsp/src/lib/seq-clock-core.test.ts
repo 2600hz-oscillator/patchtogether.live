@@ -355,6 +355,50 @@ describe('SeqClockCore main-thread-stall immunity (the PR-B regression lock)', (
   });
 });
 
+describe('SeqClockCore long patterns (no 16-step truncation — adversarial-review #6)', () => {
+  // SEQ_MAX_STEPS must equal the sequencer's STEP_COUNT (128). A smaller cap
+  // (it was 16) makes clampLength wrap a long pattern early once the worklet
+  // drives the audio — a 32-step sequence would loop at step 16. Drive a length-32
+  // pattern PAST step 16 and assert the playhead actually reaches the high steps.
+  it('length 32: the playhead advances past step 16 (does not wrap at 16)', () => {
+    const steps = Array.from({ length: 32 }, (_, i) => on(60 + (i % 24)));
+    const core = new SeqClockCore(SR, {
+      bpm: 120, // 6000 samples/step
+      length: 32,
+      steps,
+      gateLength: 0.5,
+      swing: 0,
+      octave: 0,
+      snh: true,
+      running: true,
+    });
+    // 20 steps × 6000 = 120000 samples; render a margin past it.
+    render(core, 6000 * 20 + 3000);
+    // With the bug (cap 16) this wrapped and currentStep would be ~4; fixed it's ~20.
+    expect(core.currentStep).toBeGreaterThan(16);
+    expect(core.currentStep).toBeLessThanOrEqual(32);
+    // The held lane-0 pitch matches the CURRENT (high) step's note — all-on +
+    // S&H means lane 0 holds the latest gated step's pitch.
+    expect(core.lanePitch(0)).toBeCloseTo(midiToVOct(60 + (core.currentStep % 24)), 5);
+  });
+
+  it('length 128: reaches the last page (step > 100)', () => {
+    const steps = Array.from({ length: 128 }, (_, i) => on(36 + (i % 60)));
+    const core = new SeqClockCore(SR, {
+      bpm: 600, // fast: 60/600/4 = 0.025 s = 1200 samples/step
+      length: 128,
+      steps,
+      gateLength: 0.5,
+      swing: 0,
+      octave: 0,
+      snh: true,
+      running: true,
+    });
+    render(core, 1200 * 110 + 600); // ~110 steps in
+    expect(core.currentStep).toBeGreaterThan(100);
+  });
+});
+
 describe('SeqClockCore transport', () => {
   const cfg = {
     bpm: 120,

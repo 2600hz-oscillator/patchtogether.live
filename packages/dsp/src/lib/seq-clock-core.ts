@@ -84,8 +84,11 @@ export interface SeqClockOut {
   clock: Float32Array;
 }
 
-/** Hard cap on steps — mirrors the sequencer's STEP_COUNT. */
-export const SEQ_MAX_STEPS = 16;
+/** Hard cap on steps — MUST equal the sequencer's STEP_COUNT (8 pages × 16 = 128).
+ *  clampLength() caps `length` at this, so a smaller value would silently
+ *  TRUNCATE long patterns (a 32-step sequence would wrap at 16) once the worklet
+ *  drives the audio. Guarded by the length-32 core test. */
+export const SEQ_MAX_STEPS = 128;
 
 /** MIDI note that maps to 0 V/oct (C4), the sequencer's pitch-CV reference. */
 export const SEQ_C4_MIDI = 60;
