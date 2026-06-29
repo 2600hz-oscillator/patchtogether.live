@@ -1761,6 +1761,13 @@ jobs:
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Scoped explicitly: contents/actions read for checkout+LFS+artifact download,
+    # pull-requests write so the on-failure VRT diff-gallery step can upsert its
+    # PR comment (the repo has no top-level permissions block → default applies).
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
 
     services:
       postgres:
@@ -1913,6 +1920,103 @@ jobs:
           name: vrt-test-results
           path: e2e/vrt/test-results
           retention-days: 14
+
+      # --- On VRT FAILURE (PRs only): publish a "what changed" diff gallery -----
+      # The full `vrt` lane is informational, so a render-shifting change is easy
+      # to miss. When it fails on a PR, build the OLD/NEW/DIFF + slider/onion-skin
+      # gallery FROM THIS RUN's Playwright results (expected vs actual), publish
+      # it to CF Pages, and upsert a loud PR comment with the accept command.
+      # failure() + pull_request only → zero added cost on green PRs and pushes.
+      - name: Build VRT failure diff gallery (from this run's results)
+        id: failgallery
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          COUNT=$(flox activate -- node scripts/vrt-changeset-gallery.mjs \
+            --from-results e2e/vrt/test-results \
+            --platform linux \
+            --pr "${PR_NUMBER}" \
+            --out docs/vrt-failure \
+            --json /tmp/vrt-failure.json)
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "VRT mismatch images: $COUNT"
+
+      - name: Deploy failure gallery to Cloudflare Pages
+        id: faildeploy
+        if: failure() && github.event_name == 'pull_request' && steps.failgallery.outputs.count != '0'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: >-
+            pages deploy docs/vrt-failure
+            --project-name=patchtogether-live-autotest
+            --branch=vrt-fail-pr-${{ github.event.pull_request.number }}
+            --commit-message=vrt-failure-${{ github.sha }}
+
+      - name: Compute failure gallery URL
+        id: failurl
+        if: failure() && github.event_name == 'pull_request' && steps.failgallery.outputs.count != '0'
+        run: |
+          URL="${{ steps.faildeploy.outputs.deployment-url }}"
+          if [ -z "$URL" ]; then
+            URL="https://vrt-fail-pr-${{ github.event.pull_request.number }}.patchtogether-live-autotest.pages.dev"
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Upsert PR comment with the VRT failure gallery
+        if: failure() && github.event_name == 'pull_request' && steps.failgallery.outputs.count != '0'
+        uses: actions/github-script@v7
+        env:
+          GALLERY_URL: ${{ steps.failurl.outputs.url }}
+          COUNT: ${{ steps.failgallery.outputs.count }}
+          HEAD_REF: ${{ github.head_ref }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- vrt-failure-gallery -->';
+            const url = process.env.GALLERY_URL;
+            const count = process.env.COUNT;
+            const headRef = process.env.HEAD_REF;
+            let summary = '';
+            try {
+              const j = JSON.parse(fs.readFileSync('/tmp/vrt-failure.json', 'utf8'));
+              const bits = [];
+              if (j.modified) bits.push(`${j.modified} changed`);
+              if (j.added) bits.push(`${j.added} new`);
+              summary = bits.length ? ` (${bits.join(', ')})` : '';
+            } catch {}
+            const body = [
+              marker,
+              `### ⚠️ VRT changed — review before merge`,
+              ``,
+              `The informational \`vrt\` lane rendered **${count}** baseline${count === '1' ? '' : 's'} differently${summary}. Review each as OLD / NEW / DIFF, with a draggable slider + onion-skin:`,
+              ``,
+              `**[▶ View the VRT diff gallery →](${url})**`,
+              ``,
+              `If the change is INTENTIONAL, accept the new baselines by running:`,
+              ``,
+              '```',
+              `gh workflow run vrt-update.yml -f ref=${headRef}`,
+              '```',
+              ``,
+              `<sub>Built from this run's Playwright results by \`scripts/vrt-changeset-gallery.mjs --from-results\`. Re-renders on every push. The full \`vrt\` lane is informational (does not block merge); \`vrt-strict\` remains the required gate.</sub>`,
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              core.info(`Updated existing comment ${existing.id}`);
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+              core.info('Created new failure-gallery comment');
+            }
 
   # -----------------------------------------------------------------------
   # VRT (strict subset) — fast, deterministic gate. Runs ONLY the pure-DOM
