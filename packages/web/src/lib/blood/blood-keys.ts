@@ -85,3 +85,71 @@ export const SCANCODE_FOR_KEYBOARD_CODE: Readonly<Record<string, number>> = {
   Comma: SC_COMMA,
   Period: SC_PERIOD,
 };
+
+// ---------------- Focused-card keyboard-capture gating ----------------
+//
+// BloodCard installs a window-level CAPTURE-phase keydown/keyup listener (it
+// fires BEFORE SvelteFlow's node-keyboard-move + the canvas pan/zoom shortcuts,
+// the same load-bearing trick as DoomCard). These PURE predicates decide whether
+// that listener should CLAIM an event (preventDefault + stopPropagation + route
+// it to the engine) vs. let it through. They live here — not inside the .svelte
+// component — so the gating logic unit-tests without mounting the (engine-bound)
+// card; the BLOOD analogue of doom-input-mode.ts's `isCvGatePatched`.
+
+/** Structural subset of a DOM element this predicate reads. Duck-typed (instead
+ *  of `instanceof HTMLElement`) so it unit-tests in the node env while still
+ *  accepting a real DOM `EventTarget` / `Element` at runtime. */
+export interface EditableLike {
+  tagName?: string;
+  isContentEditable?: boolean;
+  getAttribute?(name: string): string | null;
+}
+
+/** True iff `target` is a text-editable element — a real <input>/<textarea>/
+ *  <select>, a contenteditable host, or an ARIA textbox/searchbox/combobox. The
+ *  capture listener must NEVER swallow keys headed for one of these, so typing in
+ *  the right-click "new module" SEARCH box (or a module-title rename) keeps
+ *  working while a BLOOD card is on screen. Mirrors Canvas.svelte's shouldIgnore. */
+export function isEditableTarget(
+  target: EditableLike | EventTarget | null | undefined,
+): boolean {
+  if (!target || typeof target !== 'object') return false;
+  const el = target as EditableLike;
+  const tag = typeof el.tagName === 'string' ? el.tagName.toUpperCase() : '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (el.isContentEditable === true) return true;
+  const role = el.getAttribute?.('role') ?? null;
+  return role === 'textbox' || role === 'searchbox' || role === 'combobox';
+}
+
+/** Inputs to the capture-gating decision (pure mirror of DoomCard.shouldClaimKey). */
+export interface BloodKeyClaim {
+  /** loadStatus === 'ready' — a game is running to receive the key. */
+  ready: boolean;
+  /** The card is the focused/selected SF node (focus-within OR the SvelteFlow
+   *  `.selected` wrapper — SF's arrow-key node-move fires on the selected node
+   *  regardless of focus, so we must claim then too to stop the card sliding). */
+  focused: boolean;
+  /** The event target (or active element) is an editable element. */
+  editableTarget: boolean;
+  /** The KeyboardEvent.code. */
+  code: string;
+}
+
+/** Decide whether BloodCard's capture listener should CLAIM this key event:
+ *    - editableTarget ⇒ never claim (let the text field keep the key);
+ *    - the runtime must be `ready`;
+ *    - the card must be `focused`/selected;
+ *    - the code must be one BLOOD actually consumes.
+ *  All four must hold — any miss lets the event flow through untouched. */
+export function shouldClaimBloodKey({
+  ready,
+  focused,
+  editableTarget,
+  code,
+}: BloodKeyClaim): boolean {
+  if (editableTarget) return false;
+  if (!ready) return false;
+  if (!focused) return false;
+  return SCANCODE_FOR_KEYBOARD_CODE[code] !== undefined;
+}

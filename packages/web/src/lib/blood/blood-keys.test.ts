@@ -15,6 +15,9 @@ import {
   SC_SPACE,
   SC_ESCAPE,
   SC_ENTER,
+  isEditableTarget,
+  shouldClaimBloodKey,
+  type EditableLike,
 } from './blood-keys';
 import { bloodDef } from '$lib/video/modules/blood';
 
@@ -83,5 +86,82 @@ describe('blood module def ↔ keys consistency', () => {
     expect(bloodDef.ownerOnly).toBe(true);
     expect(bloodDef.domain).toBe('video');
     expect(bloodDef.label).toBe('blood'); // lowercase label rule
+  });
+});
+
+// The window-level capture listener must claim arrows/Enter/Space ONLY while
+// BLOOD is the focused/selected node + a game is running, and must NEVER swallow
+// a key headed for a text field (the right-click "new module" search box). These
+// pin the pure gating predicate — the BLOOD analogue of doom-input-mode's tests.
+describe('isEditableTarget — never swallow keys for text fields', () => {
+  const el = (over: Partial<EditableLike>): EditableLike => ({
+    tagName: 'DIV',
+    isContentEditable: false,
+    getAttribute: () => null,
+    ...over,
+  });
+
+  it('detects a real <input>, <textarea>, <select> (case-insensitive)', () => {
+    expect(isEditableTarget(el({ tagName: 'INPUT' }))).toBe(true);
+    expect(isEditableTarget(el({ tagName: 'textarea' }))).toBe(true);
+    expect(isEditableTarget(el({ tagName: 'SELECT' }))).toBe(true);
+  });
+
+  it('detects a contenteditable host', () => {
+    expect(isEditableTarget(el({ tagName: 'DIV', isContentEditable: true }))).toBe(true);
+  });
+
+  it('detects ARIA textbox/searchbox/combobox roles', () => {
+    expect(isEditableTarget(el({ getAttribute: () => 'textbox' }))).toBe(true);
+    expect(isEditableTarget(el({ getAttribute: () => 'searchbox' }))).toBe(true);
+    expect(isEditableTarget(el({ getAttribute: () => 'combobox' }))).toBe(true);
+  });
+
+  it('a plain non-editable element (a button, the canvas) is NOT editable', () => {
+    expect(isEditableTarget(el({ tagName: 'BUTTON' }))).toBe(false);
+    expect(isEditableTarget(el({ tagName: 'CANVAS' }))).toBe(false);
+    expect(isEditableTarget(el({ tagName: 'DIV', getAttribute: () => 'button' }))).toBe(false);
+  });
+
+  it('tolerates null / non-object targets', () => {
+    expect(isEditableTarget(null)).toBe(false);
+    expect(isEditableTarget(undefined)).toBe(false);
+    expect(isEditableTarget({} as EditableLike)).toBe(false);
+  });
+});
+
+describe('shouldClaimBloodKey — focus-gated capture (mirrors DoomCard)', () => {
+  const base = { ready: true, focused: true, editableTarget: false, code: 'ArrowUp' };
+
+  it('CLAIMS arrows when focused + ready (symptom 1: arrows drive the menu, not the card)', () => {
+    expect(shouldClaimBloodKey({ ...base, code: 'ArrowUp' })).toBe(true);
+    expect(shouldClaimBloodKey({ ...base, code: 'ArrowDown' })).toBe(true);
+    expect(shouldClaimBloodKey({ ...base, code: 'ArrowLeft' })).toBe(true);
+    expect(shouldClaimBloodKey({ ...base, code: 'ArrowRight' })).toBe(true);
+  });
+
+  it('CLAIMS Enter when focused + ready (symptom 2: Enter starts a new game)', () => {
+    expect(shouldClaimBloodKey({ ...base, code: 'Enter' })).toBe(true);
+    expect(shouldClaimBloodKey({ ...base, code: 'Space' })).toBe(true);
+  });
+
+  it('does NOT claim when an editable element is the target (symptom 3: search box typeable)', () => {
+    // Even when focused + selected + ready + a mapped key, an editable target
+    // wins so the new-module SEARCH box keeps the keystroke.
+    expect(shouldClaimBloodKey({ ...base, code: 'ArrowUp', editableTarget: true })).toBe(false);
+    expect(shouldClaimBloodKey({ ...base, code: 'Enter', editableTarget: true })).toBe(false);
+  });
+
+  it('does NOT claim when the card is not focused/selected (keys flow to the canvas)', () => {
+    expect(shouldClaimBloodKey({ ...base, focused: false })).toBe(false);
+  });
+
+  it('does NOT claim before the game is ready (no runtime to receive the key)', () => {
+    expect(shouldClaimBloodKey({ ...base, ready: false })).toBe(false);
+  });
+
+  it('does NOT claim an unmapped key even when focused + ready (lets it through)', () => {
+    expect(shouldClaimBloodKey({ ...base, code: 'F5' })).toBe(false); // reload stays usable
+    expect(shouldClaimBloodKey({ ...base, code: 'KeyB' })).toBe(false);
   });
 });

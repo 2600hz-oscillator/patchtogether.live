@@ -22,7 +22,10 @@
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import { bloodDef, type BloodHandleExtras } from '$lib/video/modules/blood';
-  import { SCANCODE_FOR_KEYBOARD_CODE } from '$lib/blood/blood-keys';
+  import {
+    isEditableTarget,
+    shouldClaimBloodKey,
+  } from '$lib/blood/blood-keys';
   import {
     setInjectedBloodData,
     BLOOD_REQUIRED_FILES,
@@ -38,7 +41,7 @@
   import ModuleTitle from './ModuleTitle.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
 
-  let { id, data, selected }: NodeProps = $props();
+  let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
@@ -151,21 +154,48 @@
   }
 
   // ---- Capture-phase keyboard routing (focused card only) ----
-  function shouldClaimKey(): boolean {
-    return selected === true && loadStatus === 'ready';
+  //
+  // Mirrors DoomCard's shouldClaimKey gating (distilled to the pure
+  // shouldClaimBloodKey predicate). We CLAIM a key — preventDefault +
+  // stopPropagation so SvelteFlow's arrow-key node-move + the canvas pan/zoom
+  // shortcuts never see it — ONLY when ALL of:
+  //   • a game is running (loadStatus === 'ready'),
+  //   • THIS card is the focused/selected SF node, and
+  //   • the event is NOT headed for an editable element.
+  // The editable-element guard is the load-bearing fix for "can't type in the
+  // right-click new-module SEARCH box while a BLOOD card is on screen": even if
+  // our node is still SF-`.selected`, a key destined for a text input flows
+  // through untouched.
+
+  /** Is this card the focused/selected SvelteFlow node? focus-within covers a
+   *  real click-to-focus; the `.selected` wrapper class covers SF's arrow-key
+   *  node-move (which fires on the selected node regardless of focus), so we
+   *  claim then too — otherwise the arrows slide the card across the canvas. */
+  function cardIsFocused(): boolean {
+    if (!cardEl) return false;
+    if (cardEl.contains(document.activeElement)) return true;
+    const sfNode = cardEl.closest('.svelte-flow__node');
+    return sfNode?.classList.contains('selected') === true;
   }
+
+  function claim(e: KeyboardEvent): boolean {
+    return shouldClaimBloodKey({
+      ready: loadStatus === 'ready',
+      focused: cardIsFocused(),
+      editableTarget:
+        isEditableTarget(e.target) || isEditableTarget(document.activeElement),
+      code: e.code,
+    });
+  }
+
   function onKeyDown(e: KeyboardEvent): void {
-    if (!shouldClaimKey()) return;
-    const sc = SCANCODE_FOR_KEYBOARD_CODE[e.code];
-    if (sc === undefined) return;
+    if (!claim(e)) return;
     e.preventDefault();
     e.stopPropagation();
     getExtras()?.pushKeyboardKey(e.code, true);
   }
   function onKeyUp(e: KeyboardEvent): void {
-    if (!shouldClaimKey()) return;
-    const sc = SCANCODE_FOR_KEYBOARD_CODE[e.code];
-    if (sc === undefined) return;
+    if (!claim(e)) return;
     e.preventDefault();
     e.stopPropagation();
     getExtras()?.pushKeyboardKey(e.code, false);
@@ -190,7 +220,25 @@
   });
 </script>
 
-<div class="blood-card" bind:this={cardEl} data-testid="blood-card" data-card-type="blood">
+<!-- role="application" + tabindex + onclick→focus: the card OWNS the keyboard
+     while focused (same as DoomCard). Focusing it makes shouldClaimBloodKey's
+     focus-within branch reliable so arrows/Enter reach the game, not SF's
+     node-move. Key handling is the window-level CAPTURE listener (see <script>)
+     because xyflow's own keydown fires on the document and we must
+     preventDefault BEFORE it. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<div
+  class="blood-card"
+  bind:this={cardEl}
+  data-testid="blood-card"
+  data-card-type="blood"
+  role="application"
+  aria-label="BLOOD video module — keyboard input on focus"
+  tabindex="0"
+  onclick={() => cardEl?.focus()}
+>
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="BLOOD" />
 
