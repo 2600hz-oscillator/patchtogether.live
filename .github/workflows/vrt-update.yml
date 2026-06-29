@@ -25,6 +25,20 @@ on:
         description: Branch to regenerate VRT baselines for
         required: true
         type: string
+      platform:
+        description: Which platform(s) to regenerate — pick one to skip the redundant runner (mind CI wall-time)
+        required: false
+        default: both
+        type: choice
+        options:
+          - both
+          - linux
+          - darwin
+      grep:
+        description: Optional Playwright --grep to scope capture to specific cards (leaves other baselines untouched)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write        # commit + push regenerated baselines back to the branch
@@ -41,6 +55,7 @@ jobs:
   # ---------------------------------------------------------------------------
   linux:
     name: regenerate linux baselines
+    if: ${{ inputs.platform != 'darwin' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     services:
@@ -100,7 +115,14 @@ jobs:
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
 
       - name: Regenerate VRT baselines (linux)
-        run: flox activate -- task vrt:update
+        env:
+          GREP: ${{ inputs.grep }}
+        run: |
+          if [ -n "$GREP" ]; then
+            flox activate -- task vrt:update -- --grep "$GREP"
+          else
+            flox activate -- task vrt:update
+          fi
 
       - name: Commit + push linux baselines
         run: flox activate -- bash .github/scripts/vrt-commit-baselines.sh "${{ inputs.ref }}" "linux"
@@ -112,8 +134,9 @@ jobs:
   # ---------------------------------------------------------------------------
   darwin:
     name: regenerate darwin baselines
-    runs-on: macos-latest
     needs: linux
+    if: ${{ always() && inputs.platform != 'linux' && (needs.linux.result == 'success' || needs.linux.result == 'skipped') }}
+    runs-on: macos-latest
     timeout-minutes: 60
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
@@ -170,7 +193,14 @@ jobs:
         run: flox activate -- bash packages/web/native/build-doom-wasm.sh
 
       - name: Regenerate VRT baselines (darwin)
-        run: flox activate -- task vrt:update
+        env:
+          GREP: ${{ inputs.grep }}
+        run: |
+          if [ -n "$GREP" ]; then
+            flox activate -- task vrt:update -- --grep "$GREP"
+          else
+            flox activate -- task vrt:update
+          fi
 
       - name: Commit + push darwin baselines
         run: flox activate -- bash .github/scripts/vrt-commit-baselines.sh "${{ inputs.ref }}" "darwin"
