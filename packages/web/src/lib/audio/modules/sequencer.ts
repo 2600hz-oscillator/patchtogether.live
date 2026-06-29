@@ -61,6 +61,17 @@ import {
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 import { createPlayheadTracker } from './playhead-tracker';
 import { shouldWritePitch } from '../../../../../dsp/src/lib/sample-hold-dsp';
+// PR-B (clock-worklet-scheduler): an AudioWorklet runs the INTERNAL-clock step
+// engine on the AUDIO thread so a canvas-drag main-thread stall can't drain the
+// lookahead and drop steps (the "dragging slows the tempo" bug). The existing
+// main-thread path below STAYS — it remains the source for read()/playhead/
+// quicksave/transport AND for the EXTERNAL-clock audio (deferred to a later
+// phase); when the worklet is available we just switch the INTERNAL-clock AUDIO
+// over to it via the per-port gain switch built in the factory. In test/SSR
+// contexts (no AudioWorklet) the main path drives audio exactly as before, so
+// every existing sequencer unit test is unaffected.
+import seqClockWorkletUrl from '@patchtogether.live/dsp/dist/seq-clock.js?url';
+import type { SeqClockConfig } from '../../../../../dsp/src/lib/seq-clock-core';
 
 export interface Step {
   on: boolean;
@@ -269,6 +280,64 @@ export const sequencerDef: AudioModuleDef = {
     gateSrc.start();
     clockOutSrc.start();
 
+    // --- PR-B switched outputs (main-thread path ↔ seq-clock worklet) ------
+    // Each output port is a passthrough BUS fed by two gain-gated sources: the
+    // main-thread path (createPolySender / gateSrc / clockOutSrc, driven by the
+    // lookahead emitStep below) and — when an AudioWorklet exists — the seq-clock
+    // worklet. setAudioPath() crossfades 0↔1 between them: the worklet drives ONLY
+    // the INTERNAL-clock audio (drag-immune); external clock + observability stay
+    // on the main path. In test/SSR (no AudioWorklet) the worklet is never made,
+    // so the main path keeps gain 1 and audio + the inspected ConstantSource event
+    // streams are byte-identical to before.
+    const POLY_CH = POLY_CHANNEL_PAIRS * 2;
+    const discreteGain = (channels: number): GainNode => {
+      const g = ctx.createGain();
+      try {
+        // Preserve the discrete 10-lane poly cable (no speaker down/up-mix).
+        g.channelCount = channels;
+        g.channelCountMode = 'explicit';
+        g.channelInterpretation = 'discrete';
+      } catch {
+        /* fake ctx in unit tests ignores channel config */
+      }
+      return g;
+    };
+    const pitchBus = discreteGain(POLY_CH);
+    const gateBus = ctx.createGain();
+    const clockBus = ctx.createGain();
+    // Main path → bus (default ON — the only path in test/SSR).
+    const mainPitchG = discreteGain(POLY_CH);
+    const mainGateG = ctx.createGain();
+    const mainClockG = ctx.createGain();
+    polyPitch.output.connect(mainPitchG);
+    mainPitchG.connect(pitchBus);
+    gateSrc.connect(mainGateG);
+    mainGateG.connect(gateBus);
+    clockOutSrc.connect(mainClockG);
+    mainClockG.connect(clockBus);
+    // Worklet path → bus (worklet connected async below; gains default OFF).
+    const wPitchG = discreteGain(POLY_CH);
+    const wGateG = ctx.createGain();
+    const wClockG = ctx.createGain();
+    wPitchG.gain.value = 0;
+    wGateG.gain.value = 0;
+    wClockG.gain.value = 0;
+    wPitchG.connect(pitchBus);
+    wGateG.connect(gateBus);
+    wClockG.connect(clockBus);
+
+    /** Crossfade audio between the main-thread path (false) and the worklet (true). */
+    function setAudioPath(useWorklet: boolean): void {
+      const m = useWorklet ? 0 : 1;
+      const w = useWorklet ? 1 : 0;
+      mainPitchG.gain.value = m;
+      mainGateG.gain.value = m;
+      mainClockG.gain.value = m;
+      wPitchG.gain.value = w;
+      wGateG.gain.value = w;
+      wClockG.gain.value = w;
+    }
+
     // Clock input: a GainNode acts as the patch port. Anything routed in flows
     // through to an AnalyserNode that the tick polls for rising edges.
     // Latency budget: ~TICK_MS (25 ms) from upstream pulse to step advance.
@@ -350,6 +419,9 @@ export const sequencerDef: AudioModuleDef = {
     let stepIndex = 0;
     let nextStepTime = ctx.currentTime + 0.05;
     let prevPlaying = false;
+    // PR-B: last-seen clock source, so a patch/unpatch of CLOCK IN re-aligns the
+    // worklet phase (and flips the audio path) exactly once on the transition.
+    let prevExternalClock = false;
     // #224: audio-time of the most-recent gate-high we scheduled. emitStep
     // drops any gate-high scheduled within half a step of this, killing the
     // clock-divided-reset double-hit at the scheduling layer (grid-independent).
@@ -548,6 +620,8 @@ export const sequencerDef: AudioModuleDef = {
           stepIndex = 0;
           playhead.reset();
           nextStepTime = ctx.currentTime + 0.05;
+          // Restart the worklet phase too (internal-clock audio path).
+          resetWorklet();
         }
       }
       const queued = pickQueuedSlotFromEvents(ev);
@@ -623,6 +697,10 @@ export const sequencerDef: AudioModuleDef = {
       stepIndex = 0;
       playhead.reset();
       nextStepTime = ctx.currentTime + 0.005;
+      // Restart the worklet at step 0 too (the end-of-tick postWorkletConfig
+      // then sends the swapped-in pattern), so the worklet's drag-immune audio
+      // starts the new pattern in lockstep.
+      resetWorklet();
       return true;
     }
 
@@ -654,6 +732,8 @@ export const sequencerDef: AudioModuleDef = {
           lastClockSampleTime = ctx.currentTime;
           transportCv.resetEdges();
           lastTransportPollTime = ctx.currentTime;
+          // Restart the worklet phase in lockstep with this fresh play.
+          resetWorklet();
         } else if (!shouldRun && prevPlaying) {
           // Transitioned to stopped: cancel pending events, force gate low
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
@@ -662,11 +742,25 @@ export const sequencerDef: AudioModuleDef = {
         }
         prevPlaying = shouldRun;
 
+        // PR-B: select the audio path + keep the worklet's config current. The
+        // worklet drives ONLY internal-clock audio WHILE RUNNING (drag-immune);
+        // external clock, the stopped state, and all observability stay on the
+        // main path so those behaviors are byte-identical to before. setAudioPath
+        // is a no-op in test/SSR (no worklet → useWorklet false → main at gain 1).
+        const useWorklet = workletReady && !externalClock && shouldRun;
+        setAudioPath(useWorklet);
+        if (externalClock !== prevExternalClock) {
+          // CLOCK IN was just patched/unpatched: realign the worklet phase.
+          resetWorklet();
+          prevExternalClock = externalClock;
+        }
+
         if (!shouldRun) {
           // No timeoutId self-loop here: HEAD switched the sequencer over to
           // getSchedulerClock().subscribe(tick) (Worker tick, immune to main-
           // thread jank), so simply returning leaves the next invocation to
           // the shared scheduler.
+          postWorkletConfig(false, externalClock ? 'external' : 'internal');
           return;
         }
 
@@ -754,6 +848,11 @@ export const sequencerDef: AudioModuleDef = {
             totalAdvances++;
           }
         }
+
+        // PR-B: push the (possibly edited / quicksave-swapped) live config to the
+        // worklet AFTER processing this tick, so its drag-immune audio tracks the
+        // pattern. Coalesced — only posts when something actually changed.
+        postWorkletConfig(true, externalClock ? 'external' : 'internal');
       } catch (err) {
         console.error('[sequencer] tick error', err);
       }
@@ -776,6 +875,64 @@ export const sequencerDef: AudioModuleDef = {
     //     canary (gate-agnostic, so it trips even on all-off default steps).
     let lateStepsDropped = 0;
     let pastDueEmits = 0;
+    // --- PR-B: seq-clock worklet (INTERNAL-clock audio, drag-immune) -------
+    // Created async (addModule fetch). Until ready — and always in test/SSR
+    // where there's no AudioWorklet — useWorklet stays false and the main path
+    // drives audio. The worklet runs the SAME SeqClockCore the DSP tests pin,
+    // fed `config` on edit (coalesced) + `reset` on transport/quicksave so its
+    // audio matches the main path while being immune to main-thread stalls.
+    let seqWorklet: AudioWorkletNode | null = null;
+    let workletReady = false;
+    let lastWorkletConfigJson = '';
+    const canWorklet =
+      typeof AudioWorkletNode !== 'undefined' &&
+      typeof (ctx as Partial<BaseAudioContext>).audioWorklet?.addModule === 'function';
+    if (canWorklet) {
+      try {
+        await ctx.audioWorklet.addModule(seqClockWorkletUrl);
+        seqWorklet = new AudioWorkletNode(ctx, 'seq-clock', {
+          numberOfInputs: 0,
+          numberOfOutputs: 3,
+          outputChannelCount: [POLY_CH, 1, 1],
+        });
+        seqWorklet.connect(wPitchG, 0);
+        seqWorklet.connect(wGateG, 1);
+        seqWorklet.connect(wClockG, 2);
+        workletReady = true;
+      } catch (err) {
+        // Degrade to the main-thread clock (functional, just not drag-immune).
+        console.warn('[sequencer] seq-clock worklet unavailable — main-thread clock', err);
+        seqWorklet = null;
+        workletReady = false;
+      }
+    }
+
+    /** Post the current live config to the worklet (coalesced to edit-frequency
+     *  via a JSON compare — never per-tick traffic). */
+    function postWorkletConfig(running: boolean, clockMode: 'internal' | 'external'): void {
+      if (!seqWorklet) return;
+      const cfg: Partial<SeqClockConfig> = {
+        bpm: readParam('bpm', 120),
+        length: Math.max(1, Math.min(STEP_COUNT, Math.round(readParam('length', 16)))),
+        steps: readSteps().map((s) => ({ on: s.on, midi: s.midi, chord: s.chord })),
+        gateLength: readParam('gateLength', 0.5),
+        swing: readParam('swing', 0),
+        octave: readParam('octave', 0),
+        snh: readParam('snh', 1) >= 0.5,
+        running,
+        clockMode,
+      };
+      const json = JSON.stringify(cfg);
+      if (json === lastWorkletConfigJson) return;
+      lastWorkletConfigJson = json;
+      seqWorklet.port.postMessage({ type: 'config', config: cfg });
+    }
+    /** Restart the worklet's phase at step 0 (transport reset / quicksave swap /
+     *  clock-source flip) so it stays in lockstep with the main-thread shadow. */
+    function resetWorklet(): void {
+      seqWorklet?.port.postMessage({ type: 'reset' });
+    }
+
     // Subscribe to the shared scheduler-clock — a Worker tick that's
     // immune to main-thread blocking. Replaces the legacy
     // `setTimeout(tick, TICK_MS)` self-loop, which would queue up behind
@@ -793,11 +950,13 @@ export const sequencerDef: AudioModuleDef = {
       domain: 'audio',
       inputs: inputsMap,
       outputs: new Map([
-        // Pitch is now a 10-channel polyPitchGate. Backward-compat with mono
-        // pitch sinks is handled in engine.addEdge via resolveConnection().
-        ['pitch', { node: polyPitch.output, output: 0 }],
-        ['gate', { node: gateSrc, output: 0 }],
-        ['clock', { node: clockOutSrc, output: 0 }],
+        // Pitch is a 10-channel polyPitchGate. Backward-compat with mono pitch
+        // sinks is handled in engine.addEdge via resolveConnection(). The port
+        // nodes are the PR-B switch buses (main-thread path ↔ worklet), not the
+        // raw sources, so internal-clock audio can move to the drag-immune worklet.
+        ['pitch', { node: pitchBus, output: 0 }],
+        ['gate', { node: gateBus, output: 0 }],
+        ['clock', { node: clockBus, output: 0 }],
       ]),
       setParam(_paramId, _value) {
         // No AudioParam to write — the tick reads node.params each iteration.
@@ -846,6 +1005,12 @@ export const sequencerDef: AudioModuleDef = {
         clockInSilence.disconnect();
         clockInGain.disconnect();
         clockInAnalyser.disconnect();
+        // PR-B switch buses + worklet.
+        try { seqWorklet?.disconnect(); } catch { /* */ }
+        try { seqWorklet?.port.close(); } catch { /* */ }
+        for (const g of [pitchBus, gateBus, clockBus, mainPitchG, mainGateG, mainClockG, wPitchG, wGateG, wClockG]) {
+          try { g.disconnect(); } catch { /* */ }
+        }
         transportCv.dispose();
       },
     };

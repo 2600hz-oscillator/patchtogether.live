@@ -45,6 +45,13 @@ vi.mock('$lib/audio/scheduler-clock', () => ({
 // same singleton and mutate it directly — the proven pattern from
 // timelorde.test.ts — rather than mocking the store.
 import { patch as livePatch } from '$lib/graph/store';
+import { POLY_CHANNELS } from '$lib/audio/poly';
+
+// The gate ConstantSource is created immediately after createPolySender's
+// POLY_CHANNELS (10) poly-lane sources, so it's at this index in the fake's
+// constantSources[]. (PR-B routes the `gate` output port through a switch-bus
+// GainNode, so the port node is no longer the gate source directly.)
+const GATE_CS_INDEX = POLY_CHANNELS;
 
 // ---- Minimal fake AudioContext --------------------------------------------
 // A ConstantSource whose offset records every setValueAtTime(value, time) so
@@ -163,8 +170,16 @@ class FakeAnalyser {
 class FakeAudioContext {
   currentTime = 0;
   sampleRate = 48000;
+  // Track every ConstantSource so the test can reach the gate source directly:
+  // PR-B routes outputs through switch-bus GainNodes (main path ↔ worklet), so
+  // `handle.outputs.get('gate').node` is now a bus gain, not the gate source.
+  // The gate ConstantSource is created right after createPolySender's 10 poly
+  // lane sources (5 pairs), i.e. index POLY_CHANNELS — see GATE_CS_INDEX.
+  constantSources: FakeConstantSource[] = [];
   createConstantSource() {
-    return new FakeConstantSource() as unknown as ConstantSourceNode;
+    const c = new FakeConstantSource();
+    this.constantSources.push(c);
+    return c as unknown as ConstantSourceNode;
   }
   createGain() {
     return new FakeGain() as unknown as GainNode;
@@ -240,8 +255,7 @@ describe('sequencer #224: clock-divided reset produces no double-hit', () => {
     expect(hoisted.tick).toBeTruthy();
 
     // The gate ConstantSource is the `gate` output.
-    const gateOut = handle.outputs.get('gate')!.node as unknown as FakeConstantSource;
-    const gateParam = gateOut.offset as unknown as FakeParam;
+    const gateParam = ctx.constantSources[GATE_CS_INDEX]!.offset as unknown as FakeParam;
     // The reset_cv input is a FakeGain; we inject pulses on it.
     const resetGain = handle.inputs.get('reset_cv')!.node as unknown as FakeGain;
 
@@ -300,8 +314,7 @@ describe('sequencer #224: clock-divided reset produces no double-hit', () => {
       ctx as unknown as AudioContext,
       { id: NODE_ID, type: 'sequencer', params: livePatch.nodes[NODE_ID]!.params } as never,
     );
-    const gateOut = handle.outputs.get('gate')!.node as unknown as FakeConstantSource;
-    const gateParam = gateOut.offset as unknown as FakeParam;
+    const gateParam = ctx.constantSources[GATE_CS_INDEX]!.offset as unknown as FakeParam;
     const resetGain = handle.inputs.get('reset_cv')!.node as unknown as FakeGain;
 
     const stepDur = 60 / 120 / 4;

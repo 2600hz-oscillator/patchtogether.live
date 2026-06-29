@@ -72,6 +72,10 @@ class SeqClockProcessor extends AudioWorkletProcessor {
       const data = e.data as { type?: string; config?: Partial<SeqClockConfig> } | undefined;
       if (data?.type === 'config' && data.config) {
         this.core.setConfig(data.config);
+      } else if (data?.type === 'reset') {
+        // Transport reset / pattern restart from the host: restart phase at step 0
+        // so the worklet stays in lockstep with the main-thread shadow.
+        this.core.reset();
       }
     };
   }
