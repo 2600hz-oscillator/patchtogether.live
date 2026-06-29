@@ -203,6 +203,36 @@ apply_phase0_patches() {
     perl -0pi -e 's/        hQav = gSysRes\.Lookup\(qavId, "QAV"\);\n        if \(!hQav\)\n            ThrowError\("Could not load QAV %d\\n", qavId\);\n        pQav = \(QAV\*\)gSysRes\.Lock\(hQav\);/        hQav = gSysRes.Lookup(qavId, "QAV");\n        if (!hQav)\n        {\n            \/\/ shareware: choke QAV (id 518) absent from the shareware RFF. Leave\n            \/\/ hQav NULL (CChoke::Draw already NULL-guards) instead of aborting.\n            LOG_F(WARNING, "choke QAV %d not in RFF (shareware data?) - disabling", qavId);\n            return;\n        }\n        pQav = (QAV*)gSysRes.Lock(hQav);/' "$CHOKE"
     echo "[build-blood-wasm] patched choke.cpp CChoke::Init for shareware-tolerant QAV load"
   fi
+
+  # ── SHAREWARE-tolerant SEQ load (the IN-GAME black-screen fix) ────────────
+  # Starting a level BLACK-SCREENS on the bundled 1997 shareware data. Root cause:
+  # StartLevel -> playerStart calls seqSpawn(pDudeInfo->seqStartID=12032, ...) and
+  # seqSpawn ThrowError()s "Missing sequence #12032" -> abort() KILLS the wasm.
+  # The video module's per-frame runFrame() try/catch then swallows the trap, so
+  # JS keeps presenting a DEAD (black) framebuffer — exactly the "menu renders but
+  # the game is black" report. The player's seqStartID 12032 (and 51 of 59 dude
+  # seqStartIDs) are FULL-GAME-only ids: the 1997 shareware BLOOD.RFF (RFF version
+  # 0x200, uncrypted) only carries SEQ ids 0..4124, so NBlood's hard-coded v1.21
+  # dudeInfo SEQ ids are simply absent from this older shareware set. (Verified by
+  # dumping the RFF dictionary: 263 SEQ entries, max id 4124, no 12000-range ids.)
+  #
+  # Fix (same shareware-tolerance pattern as the weapon/choke QAV patches above):
+  # on a missing SEQ, seqSpawn logs a warning and RETURNS instead of aborting, so
+  # the level loads + the 3D scene renders. The SEQINST simply stays not-playing
+  # (an un-animated sprite) — cosmetic, and harmless in first person where the
+  # player sprite isn't drawn. This is a NO-OP once full-game data (One Unit Whole
+  # Blood / Fresh Supply, loaded via the card's picker) is present, since every SEQ
+  # then resolves. We patch BOTH "Missing sequence" abort sites (seqSpawn + the
+  # savegame-restore loop) so neither a fresh start nor a load black-screens.
+  # Surgical + reversible (throwaway checkout only).
+  local SEQ="$NBLOOD_SRC/source/blood/src/seq.cpp"
+  if ! grep -q 'shareware data?) - skipping seqSpawn' "$SEQ"; then
+    # (a) seqSpawn: 4/4/8-space, brace-less `if (!hSeq) ThrowError(...)`.
+    perl -0pi -e 's/    DICTNODE \*hSeq = gSysRes\.Lookup\(nSeq, "SEQ"\);\n    if \(!hSeq\)\n        ThrowError\("Missing sequence \x23%d", nSeq\);/    DICTNODE *hSeq = gSysRes.Lookup(nSeq, "SEQ");\n    if (!hSeq)\n    {\n        \/\/ shareware: full-game-only SEQ (e.g. the player start seq \x2312032) is\n        \/\/ absent from the 1997 shareware RFF (SEQ ids top out at \x234124). Aborting\n        \/\/ here BLACK-SCREENS a started game (playerStart -> seqSpawn). Skip the\n        \/\/ missing animation instead so the level loads + renders; the SEQINST stays\n        \/\/ not-playing. No-op once full-game data is loaded. (weapon\/choke pattern.)\n        \/\/ Log ONCE: the player start seq is re-requested every tic, so an\n        \/\/ unguarded warning would flood the browser console ~30x\/s.\n        static bool bWarnedMissingSeq = false;\n        if (!bWarnedMissingSeq) { bWarnedMissingSeq = true;\n            LOG_F(WARNING, "SEQ %d not in RFF (shareware data?) - skipping seqSpawn (further warnings suppressed)", nSeq); }\n        return;\n    }/' "$SEQ"
+    # (b) savegame-restore loop: 12-space `if (!hSeq) {` with a following `continue;`.
+    perl -0pi -e 's/            if \(!hSeq\) \{\n                ThrowError\("Missing sequence \x23%d", nSeq\);\n                continue;\n            \}/            if (!hSeq) {\n                LOG_F(WARNING, "SEQ %d not in RFF (shareware data?) - skipping restore", nSeq);\n                continue;\n            }/' "$SEQ"
+    echo "[build-blood-wasm] patched seq.cpp seqSpawn/restore for shareware-tolerant SEQ load"
+  fi
 }
 apply_phase0_patches
 

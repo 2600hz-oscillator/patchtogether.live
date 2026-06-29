@@ -12,12 +12,19 @@
 //     a text input holds focus (the `.selected`→focus-within fix). #2 (BloodCard
 //     part) ✅
 //   • CONTROL: the +Add-module palette receives typing with no BLOOD present.
+//   • with a BLOOD card RUNNING, the palette search STILL receives typing — the
+//     second cause (the running engine grabbing the keyboard) is now fixed too.
 //
-// STILL OPEN (the .fixme below): with a BLOOD card RUNNING, the palette search
-// receives NO typing even though BLOOD's capture claims nothing (calls:[]) and
-// the palette input is focused — i.e. a SECOND cause beyond BloodCard, in the
-// running engine (emscripten SDL focus-steal / engine-level key grab). Root
-// cause TBD; this test pins the repro so it isn't lost.
+// ROOT CAUSE of the running-engine swallow (now FIXED): emscripten's SDL2 port
+// registers a document-/window-level keydown handler (SDL_emscriptenevents.c,
+// EMSCRIPTEN_EVENT_TARGET_WINDOW) that preventDefault()s nearly every key while
+// the engine runs, which cancels the character insertion into the palette <input>.
+// (BloodCard's own listener is already focus-gated, so it was NOT the cause — see
+// the "calls:[]" assertion below.) DOOM has no analogue because doomgeneric
+// registers no DOM keyboard handler. Fix: the BLOOD wasm shim sets
+// SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT to a selector that matches no element, so
+// SDL's keyboard registration no-ops (input still reaches the engine via the
+// bpt_set_key seam). See native/nblood/bloodgeneric_patchtogether.cpp.
 //
 // Renderer-independent (spies the JS forward + reads input values) → SwiftShader
 // safe. Gated on the engine reaching 'ready' + e2e hooks (skips on prod-preview).
@@ -106,16 +113,15 @@ test('BLOOD: focused card forwards keys; capture releases when card unfocused', 
   expect(claimed, 'BLOOD must not claim keys while a text input is focused').toEqual([]);
 });
 
-// OPEN BUG (owner-reported, repro PINNED): with BLOOD RUNNING, the +Add-module
-// palette receives NO typing — even though BloodCard claims nothing (proven in
-// the test above: calls:[]) and the palette input is focused. ROOT CAUSE: the
-// emscripten SDL build grabs document-wide keydowns and preventDefault()s them
-// while the engine runs (blood.js JSEvents). Setting Module.keyboardListening-
-// Element off `document` did NOT neutralize it (this SDL build re-binds document
-// regardless), so the real fix is build-level (disable SDL keyboard capture —
-// input already reaches the engine via bpt_set_key) or stripping the JSEvents
-// keyboard registration. Tracked here until then.
-test.fixme('BLOOD running: +Add-module palette still receives typing', async ({ page }) => {
+// REGRESSION (was owner-reported #965): with BLOOD RUNNING, the +Add-module
+// palette must STILL receive typing. The fix sets SDL_HINT_EMSCRIPTEN_KEYBOARD_-
+// ELEMENT to a non-matching selector so emscripten's SDL2 keyboard handler is
+// never registered on window → its preventDefault() can't swallow the palette
+// keystrokes (input still reaches the engine via bpt_set_key). Before the fix
+// this typed nothing; the previous attempt (Module.keyboardListeningElement) was
+// the wrong knob — that property is for the legacy SDL1/library_browser path, not
+// the HTML5/SDL2 emscripten_set_keydown_callback path this build uses.
+test('BLOOD running: +Add-module palette still receives typing', async ({ page }) => {
   const ready = await spawnBloodReady(page);
   test.skip(!ready, 'engine not ready');
   await page.getByTestId('blood-card').click();

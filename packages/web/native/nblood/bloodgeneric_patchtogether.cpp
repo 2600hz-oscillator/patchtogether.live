@@ -241,6 +241,33 @@ extern void engineSetupAllocator(void);
 // loop cooperative: one present (one yield) per iteration.
 extern int r_maxfps;
 
+// ─────────────── stop SDL2 from grabbing the GLOBAL keyboard ──────────────
+//
+// emscripten's SDL2 port (SDL_emscriptenevents.c Emscripten_RegisterEventHandlers)
+// registers a keydown/keyup handler on EMSCRIPTEN_EVENT_TARGET_WINDOW (window,
+// BUBBLE phase) and `Emscripten_HandleKey` returns prevent_default=true for nearly
+// every key (true unless SDL_TEXTINPUT is enabled). emscripten's keyEventHandler
+// then calls `e.preventDefault()` — which SWALLOWS keystrokes destined for OTHER
+// page elements (most visibly the +Add-module palette's <input> search box: a
+// preventDefault'd keydown cancels the character insertion). Because the handler
+// is bound to `window` for the whole lifetime of the WASM module, the swallow
+// persists the entire time a BLOOD module exists. DOOM has NO analogue of this bug
+// because doomgeneric registers no DOM keyboard handler at all (input is 100% the
+// dgpt_set_key seam).
+//
+// BLOOD likewise does NOT need SDL's keyboard: every key reaches the engine via
+// the bpt_set_key seam below (keySetState + the keyGetScan / keyGetChar fifos), so
+// SDL's keyboard registration is pure redundancy. We disable it by pointing SDL's
+// keyboard element (SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, read in
+// Emscripten_RegisterEventHandlers) at a CSS selector that matches NO element.
+// emscripten's findEventTarget() then returns null and registerOrRemoveHandler()
+// no-ops (returns -4, adds NO addEventListener) — so SDL never touches the global
+// keyboard and palette/other-input typing flows through untouched. The hint must
+// be set BEFORE SDL initialises its video (which happens inside app_main); we set
+// it at the top of bpt_init. SDL_SetHint + SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT
+// are already in scope here — baselayer.h (above) pulls in <SDL2/SDL.h> via
+// timer.h/osd.h (this TU links against emscripten's -sUSE_SDL=2 port).
+
 // ─────────────────────── shareware ART → TILES alias ────────────────────
 //
 // The Build engine loads its tile art from "tiles%03i.art" (build.cpp:
@@ -274,6 +301,11 @@ extern "C" void bpt_init(int rff_len)
     (void)rff_len;
     if (s_app_started) return;
     s_app_started = 1;
+#ifdef __EMSCRIPTEN__
+    // Disable SDL2's global keyboard grab BEFORE app_main triggers SDL video init
+    // (see the SDL_SetHint note above). Input reaches the engine via bpt_set_key.
+    SDL_SetHint(SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#__blood_no_sdl_keyboard__");
+#endif
     bpt_alias_shareware_art();   // shareware SHARE000.ART -> TILES000.ART (see above)
     engineSetupAllocator();   // create g_sm_heap before any Xmalloc/Xstrdup
     r_maxfps = -2;            // present-per-iteration; JS drives pacing (see above)
