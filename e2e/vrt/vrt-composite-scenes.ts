@@ -705,6 +705,118 @@ const DEPOLARIZER_COMPOSITE_SCENES: CompositeVrtScene[] = [
   },
 ];
 
+// ---- SEQUENCER → SCALER → SCOPE : gain trim made visible ------------------
+//
+// Third CV-util scope composite (#144). The sequencer's S&H-latched pitch CV
+// (+1 V/oct, C5) fans out onto a SCOPE in CV mode:
+//   • ch2 = the RAW pitch CV (a flat line above centre, at +1)
+//   • ch1 = the pitch through SCALER at AMOUNT 0.5 (out = in·0.5 → +0.5) → a
+//     flat line HALF as far above centre.
+// ch1 sitting at half ch2's height is the visible proof the AMOUNT knob scales;
+// a regression that ignored AMOUNT would put ch1 on ch2. SCALER is a plain
+// GainNode whose IN is type 'audio' (accepts cv/pitch) and whose OUT adopts the
+// upstream type — so the ground-truth read (git history) is the real check the
+// type-transparent path carries the CV value through the multiply.
+// Steady-state + pure-DOM → linux-gating, same template as the sibling scenes.
+
+function setupScalerScope(): (page: Page) => Promise<void> {
+  return async (page) => {
+    await spawnPatch(
+      page,
+      [
+        {
+          id: 'seq',
+          type: 'sequencer',
+          position: { x: 60, y: 70 },
+          params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
+        },
+        // AMOUNT 0.5 → halves the pitch CV so the scaled trace is clearly
+        // distinct (half-height) from the raw one.
+        { id: 'scl', type: 'scaler', position: { x: 470, y: 70 }, domain: 'audio', params: { amount: 0.5 } },
+        {
+          id: 'sc',
+          type: 'scope',
+          position: { x: 760, y: 70 },
+          domain: 'audio',
+          params: { ch1Range: 1, ch2Range: 1 },
+        },
+      ],
+      [
+        // pitch → SCALER in (type 'audio', accepts pitch) — the signal under test.
+        {
+          id: 'e_pitch_scl',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'scl', portId: 'in' },
+          sourceType: 'polyPitchGate',
+          targetType: 'audio',
+        },
+        // SCALER out (= in·0.5) → SCOPE ch1 (the scaled trace, half-height).
+        {
+          id: 'e_scl_sc',
+          from: { nodeId: 'scl', portId: 'out' },
+          to: { nodeId: 'sc', portId: 'ch1' },
+          sourceType: 'audio',
+          targetType: 'audio',
+        },
+        // RAW pitch → SCOPE ch2 (the reference trace, full height).
+        {
+          id: 'e_pitch_sc',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'sc', portId: 'ch2' },
+          sourceType: 'polyPitchGate',
+          targetType: 'audio',
+        },
+      ],
+    );
+
+    // step 0 = C5 (midi 72 = +1 V/oct), step 1 = rest; S&H holds +1.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        w.__patch.nodes['seq'].data = {
+          steps: [
+            { on: true, midi: 72, chord: 'mono' }, // C5 = +1 V/oct
+            { on: false, midi: 72, chord: 'mono' }, // rest (S&H holds the pitch)
+          ],
+        };
+      });
+    });
+
+    await page.waitForTimeout(700);
+    await page.evaluate(async () => {
+      const w = globalThis as unknown as { __engine?: () => { ctx: AudioContext } | null };
+      const eng = w.__engine?.();
+      if (!eng) return;
+      try { await eng.ctx.suspend(); } catch { /* already suspended */ }
+    });
+    await page.evaluate(
+      () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+    );
+  };
+}
+
+const SCALER_SCOPE_CARDS = [
+  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-scaler',
+  '.svelte-flow__node-scope',
+];
+
+const SCALER_COMPOSITE_SCENES: CompositeVrtScene[] = [
+  {
+    id: 'scaler-cv-gain',
+    label: 'SEQUENCER→SCALER→SCOPE: gain trim (×0.5)',
+    blurb:
+      'A latched +1 pitch CV fans out: ch2 = raw (full-height line above centre), ' +
+      'ch1 = through SCALER at AMOUNT 0.5 (out = in·0.5 → +0.5, half-height). ' +
+      'Half height = the trim works; coincident lines = AMOUNT ignored.',
+    setup: setupScalerScope(),
+    cardSelectors: SCALER_SCOPE_CARDS,
+  },
+];
+
 /** All composite VRT scenes. Iterated by `vrt-composite.spec.ts`. */
 export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   {
@@ -741,4 +853,5 @@ export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   ...ADSR_SUSTAIN_SCENES,
   ...NEGATIVITY_COMPOSITE_SCENES,
   ...DEPOLARIZER_COMPOSITE_SCENES,
+  ...SCALER_COMPOSITE_SCENES,
 ];
