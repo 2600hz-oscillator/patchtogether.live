@@ -253,10 +253,13 @@ describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
   //   card. Only LOWER it for a real, justified demotion (a card that flaked in
   //   CI) — NEVER to make a red gate go green.
   it('STRICT_VRT_MODULES never shrinks below its frozen floor', () => {
+    // 25→29 (2026-06-29): promoted the 4 CV-utility cards (scaler/polarizer/
+    // depolarizer/negativity) after Track-2 batch 1 (#951) landed their linux
+    // baselines + they passed the informational lane — first strict-gate growth.
     expect(
       STRICT_VRT_MODULES.size,
       'STRICT_VRT_MODULES shrank below its frozen floor — see the RATCHET rule above',
-    ).toBeGreaterThanOrEqual(25);
+    ).toBeGreaterThanOrEqual(29);
   });
 });
 
