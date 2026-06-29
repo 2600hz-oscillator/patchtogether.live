@@ -91,7 +91,13 @@ test('BLOOD card mounts, idle surface paints, and boots out-of-box from bundled 
   //     (CLOCK_MONOTONIC) makes the idle menu animate, so the framebuffer
   //     changes over time with NO input.
   const booted = await page.getByTestId('blood-ready').isVisible().catch(() => false);
-  if (booted) {
+  // The render probe reads the runtime via the __engine test hook (VITE_E2E_HOOKS,
+  // same as the DOOM specs). If hooks are stripped (e.g. a prod-preview run) there
+  // is nothing to read — skip rather than false-fail.
+  const hooks = await page.evaluate(
+    () => typeof (globalThis as unknown as { __engine?: unknown }).__engine === 'function',
+  );
+  if (booted && hooks) {
     const NODE_ID = bloodId;
     const sample = () =>
       page.evaluate((id) => {
