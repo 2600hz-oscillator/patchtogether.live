@@ -305,6 +305,56 @@ describe('SeqClockCore getters + advance count', () => {
   });
 });
 
+describe('SeqClockCore main-thread-stall immunity (the PR-B regression lock)', () => {
+  // THE BUG: the old sequencer refilled a 200ms lookahead from a MAIN-THREAD
+  // tick; a canvas drag pinned the main thread, the lookahead drained, and steps
+  // were dropped → audible tempo freeze. The worklet runs THIS core on the AUDIO
+  // thread, where process() advances purely by its own sample counter — no
+  // main-thread tick, setConfig, or message is needed between blocks.
+  //
+  // This test models a FROZEN main thread: we render block-by-block (the audio
+  // thread's render quantum) with ZERO interaction in between (no setConfig, no
+  // externalTrigger) and assert the gate fires the tempo-correct number of times.
+  // If anyone reintroduces a main-thread dependency into the advance, the count
+  // drifts and this fails.
+  it('emits the tempo-correct gate count when the main thread never touches it', () => {
+    // length 1, all-on at 120bpm → one gate per 16th = 8 gates/sec.
+    const core = new SeqClockCore(SR, {
+      bpm: 120,
+      length: 1,
+      steps: [on(60)],
+      gateLength: 0.5,
+      swing: 0,
+      octave: 0,
+      snh: true,
+      running: true,
+    });
+    const BLOCK = 128; // the worklet render quantum
+    const SECONDS = 1;
+    const totalFrames = SR * SECONDS;
+    const lanePitch = Array.from({ length: SEQ_POLY_LANES }, () => new Float32Array(BLOCK));
+    const laneGate = Array.from({ length: SEQ_POLY_LANES }, () => new Float32Array(BLOCK));
+    const gate = new Float32Array(BLOCK);
+    const clock = new Float32Array(BLOCK);
+    let prev = 0;
+    let risingEdges = 0;
+    let rendered = 0;
+    while (rendered < totalFrames) {
+      // NO setConfig / externalTrigger here — a stalled main thread does nothing.
+      core.process({ lanePitch, laneGate, gate, clock }, BLOCK);
+      for (let i = 0; i < BLOCK; i++) {
+        const cur = gate[i]!;
+        if (prev < 0.5 && cur >= 0.5) risingEdges++;
+        prev = cur;
+      }
+      rendered += BLOCK;
+    }
+    // 120bpm 16th-notes → 8 steps/sec. Allow ±1 for the window's edge alignment.
+    expect(risingEdges).toBeGreaterThanOrEqual(7);
+    expect(risingEdges).toBeLessThanOrEqual(8);
+  });
+});
+
 describe('SeqClockCore transport', () => {
   const cfg = {
     bpm: 120,
