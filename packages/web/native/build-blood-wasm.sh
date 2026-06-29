@@ -149,6 +149,27 @@ apply_phase0_patches() {
     echo "[build-blood-wasm] patched sdlayer.cpp execinfo guard for __EMSCRIPTEN__"
   fi
 
+  # ── ENGINE CLOCK fix: CLOCK_MONOTONIC_RAW is UNSUPPORTED by emscripten ────
+  # timer.cpp picks `CLOCK_TYPE = CLOCK_MONOTONIC_RAW` whenever the *macro* is
+  # defined (`#ifdef CLOCK_MONOTONIC_RAW`). emscripten DEFINES the macro but its
+  # clock_gettime(CLOCK_MONOTONIC_RAW) returns -1 and leaves the timespec
+  # untouched — so the engine's whole timebase (timerGetNanoTicks →
+  # timerUpdateClock → `totalclock`) reads stack garbage that never advances.
+  # A frozen `totalclock` FREEZES every time-driven thing: the main-menu
+  # selection-cursor pulse (CGameMenuItemChain::Draw shade = 32-(totalclock&63),
+  # so the focused item is INDISTINGUISHABLE from the rest → "menu won't
+  # navigate"), all menu/HUD animation, AND the gameplay tic loop
+  # (`totalclock >= gNetFifoClock` in app_main → a started game never advances).
+  # Verified empirically: clock_gettime(CLOCK_MONOTONIC) DOES advance on
+  # emscripten while CLOCK_MONOTONIC_RAW returns -1. So force the portable
+  # CLOCK_MONOTONIC under __EMSCRIPTEN__. Surgical + reversible (throwaway
+  # checkout); native builds keep CLOCK_MONOTONIC_RAW.
+  local TIMER="$NBLOOD_SRC/source/build/src/timer.cpp"
+  if ! grep -q 'EMSCRIPTEN.*CLOCK_MONOTONIC_RAW unsupported' "$TIMER"; then
+    perl -0pi -e 's/#ifdef CLOCK_MONOTONIC_RAW\n# define CLOCK_TYPE CLOCK_MONOTONIC_RAW/#if defined CLOCK_MONOTONIC_RAW \&\& !defined __EMSCRIPTEN__ \/* CLOCK_MONOTONIC_RAW unsupported on wasm *\/\n# define CLOCK_TYPE CLOCK_MONOTONIC_RAW/' "$TIMER"
+    echo "[build-blood-wasm] patched timer.cpp CLOCK_TYPE -> CLOCK_MONOTONIC for __EMSCRIPTEN__"
+  fi
+
   # ── SHAREWARE-tolerant weapon QAV init ───────────────────────────────────
   # WeaponInit (weapon.cpp) hard-loops QAV ids 0..kQAVEndVanilla-1 (=124) and
   # ThrowError()s on the FIRST one missing from the RFF. The 1997 Blood

@@ -66,6 +66,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <unistd.h>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -239,11 +241,40 @@ extern void engineSetupAllocator(void);
 // loop cooperative: one present (one yield) per iteration.
 extern int r_maxfps;
 
+// ─────────────────────── shareware ART → TILES alias ────────────────────
+//
+// The Build engine loads its tile art from "tiles%03i.art" (build.cpp:
+// artLoadFiles("tiles%03i.art")) — i.e. TILES000.ART. The 1997 Blood SHAREWARE
+// ships its tile art as SHARE000.ART instead, so on shareware data NO game ART
+// tiles load: tilesiz[*] stays 0, and every art-backed sprite (the main-menu
+// blood-drip border + framed title + animated droplets, every HUD/backdrop pic)
+// renders BLACK — the menu shows only the RFF-resident bitmap font on a void.
+// (Diagnosed: with the ART present as TILES000.ART, tilesiz[2046]=320x200 and
+// the drip chrome appears; without it tilesiz[2046]=0 and the screen is black.)
+//
+// The cwd is the data dir (JS chdir'd to /blood before bpt_init), and the files
+// JS wrote are already on MEMFS. Symlink SHARE00x.ART → TILES00x.ART so the
+// engine's default loader finds the art. This is data-agnostic: FULL-game data
+// already ships TILES000.ART (SHARE absent → no alias), shareware ships SHARE
+// (aliased). Idempotent + harmless if neither exists.
+static void bpt_alias_shareware_art(void)
+{
+    for (int i = 0; i < 20; i++)
+    {
+        char share[24], tiles[24];
+        snprintf(share, sizeof share, "SHARE%03d.ART", i);
+        snprintf(tiles, sizeof tiles, "TILES%03d.ART", i);
+        if (access(share, F_OK) == 0 && access(tiles, F_OK) != 0)
+            symlink(share, tiles);
+    }
+}
+
 extern "C" void bpt_init(int rff_len)
 {
     (void)rff_len;
     if (s_app_started) return;
     s_app_started = 1;
+    bpt_alias_shareware_art();   // shareware SHARE000.ART -> TILES000.ART (see above)
     engineSetupAllocator();   // create g_sm_heap before any Xmalloc/Xstrdup
     r_maxfps = -2;            // present-per-iteration; JS drives pacing (see above)
     // argv lives in static storage so it outlives the (suspended) call.
