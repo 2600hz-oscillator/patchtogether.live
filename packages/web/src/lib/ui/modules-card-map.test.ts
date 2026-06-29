@@ -38,6 +38,7 @@ const EXPECTED_NODE_TYPES = [
   'featurecv',
   'fourplexer', 'foxy', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'graphicEq', 'grids', 'group',
   'helm', 'hydrogen', 'hypercube', 'illogic', 'inwards', 'joystick', 'kria', 'lfo', 'lines', 'livecode',
+  'ninelives',
   'luma', 'lumakey', 'macrooscillator', 'macseq', 'mandleblot', 'mappy', 'marbles', 'matrixMix', 'meowbox',
   'mandelbulb', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'mixer', 'mixmstrs', 'modtris',
   'monoglitch', 'moog902', 'moog904a', 'moog911', 'moog921Vco', 'moogCp3', 'negativity', 'nibbles',

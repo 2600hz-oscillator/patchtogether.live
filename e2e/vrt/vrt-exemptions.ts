@@ -1298,4 +1298,14 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // display-mode) + timelorde.test.ts (gate→wizardOn factory write-through) +
   // the per-module-per-port sweep + timelorde-video.spec.ts (owl ↔ feed).
   'linux/timelorde',
+  // NINE LIVES (2026-06-28): darwin baseline captured locally (the 9-output LFO
+  // card is deterministic chrome — Rate + Waveform faders over the yellow
+  // PatchPanel RESET/OUT1..OUT9 drill-down, NO canvas/animation); linux baseline
+  // pending a `vrt-update.yml` workflow_dispatch on this branch (the darwin-first
+  // new-module pattern, same as SCALER / RINGBACK / FEATURECV above). Functional
+  // coverage: packages/dsp/src/lib/ninelives-dsp.test.ts (the ⅓ rate ladder +
+  // reset re-sync + no-NaN sweep) + ninelives.test.ts (def shape + factory
+  // wiring) + the per-module-per-port emit/handle sweep (all 9 outputs always
+  // emit; reset accepts a gate source).
+  'linux/ninelives',
 ]);

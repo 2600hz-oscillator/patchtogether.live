@@ -115,6 +115,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   moog995: { size: '1u', hp: 1 }, // 124×200px
   moogCp3: { size: '1u', hp: 2 }, // 187×264px
   negativity: { size: '1u', hp: 1 }, // 160×150px (tiny 1-in/1-out CV inverter, no knob)
+  ninelives: { size: '2u', hp: 2 }, // 292×240px — Rate/Waveform faders + 9-out PatchPanel + reset
   noise: { size: '1u', hp: 1 }, // 154×160px
   numpadPlus: { size: '4u', hp: 4 }, // 714×722px
   peaks: { size: '3u', hp: 2 }, // 197×320px  [LOCKED]
