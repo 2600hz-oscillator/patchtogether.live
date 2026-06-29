@@ -1,67 +1,63 @@
-# collab-nightly — the UNDER-LOAD backstop for the @collab attestation scheme.
+# collab-nightly — the daily FULL-@collab backstop, SHARDED so it completes.
 #
 # WHY this exists: per-PR @collab gating moved to the cheap content-hash VERIFY
-# (the `collab-attest` job in ci.yml), which trusts a local FRESH-dedicated-relay
-# run. That keeps the per-PR path fast (~2 min verify vs ~6.5-8 min real lane),
-# but the per-PR `collab` job downloads CACHED artifacts (WASM + preview bundle),
-# so build-script rot + relay/DB infra drift can hide there. This scheduled job
-# runs the FULL real @collab lane (SERIAL, --workers=1) on CI every day, built
-# FROM SCRATCH, so those surface daily off the PR critical path. NOTE: this is
-# NOT an under-load/contention canary — the relay is a single in-memory process
-# and deadlocks at >1 worker (the #97 flake), so genuine concurrency coverage
-# needs a concurrency-capable relay (deferred, task #160), not this lane.
+# (the `collab-attest` job in ci.yml). The per-PR `collab` job downloads CACHED
+# artifacts (WASM + preview bundle), so build-script rot + relay/DB infra drift
+# can hide there. This scheduled job runs the FULL real @collab lane on CI every
+# day, built FROM SCRATCH, so those surface daily off the PR critical path.
 #
-# It is a DIAGNOSTIC backstop, NOT a per-PR gate: a red run here is a signal to
-# investigate (and re-attest after a fix), not a merge blocker. It mirrors the
-# ci.yml `collab` job's setup (DB + DOOM/SNES/WAD assets + DSP + preview bundle),
-# but is self-contained (builds its own artifacts inline) since it runs off the
-# ci.yml job graph.
+# WHY SHARDED (FIX 2026-06-29): run-step timing on the validation run
+# (28381443028) showed the inline builds finish in ~3 min but the SERIAL
+# @collab lane itself ran 57+ min and was cancelled at the ceiling — i.e. the
+# bottleneck is the lane (slow/hanging specs — the heavy COLLAB_JOB=1 DOOM set),
+# NOT the worker count or the builds. (--workers=2 was ALSO wrong: the relay is a
+# single in-memory process and deadlocks at >1 — the #97 flake.) So: keep
+# --workers=1 (serial, no relay deadlock) and SPLIT the lane across 4 parallel
+# shard jobs via `--shard=i/4`, each with its OWN relay+DB+ceiling. Each shard
+# runs ~1/4 of the specs (~15 min) and fits comfortably under a 30-min FAIL-FAST
+# ceiling — so the nightly COMPLETES and REPORTS (green/red per shard + the
+# alert) instead of dying as an opaque `cancelled`. A shard that still overruns
+# 30 min is a genuinely-hung spec to fix (the `alert` job surfaces it), not a
+# ceiling to raise. (Truly fast <10-min coverage + de-flaking the slow specs is
+# the deeper task #69; this makes the backstop functional again first.)
+#
+# DIAGNOSTIC backstop, NOT a per-PR gate: a red shard is a signal to investigate
+# (and re-attest after a fix), not a merge blocker.
 #
 # Dispatch manually any time:  gh workflow run collab-nightly.yml --ref <branch>
 name: collab-nightly
 
 on:
   schedule:
-    # 09:00 UTC daily (off-peak; well clear of typical PR-CI bursts so the
-    # full @collab lane isn't itself contending with PR runs).
+    # 09:00 UTC daily (off-peak; clear of typical PR-CI bursts).
     - cron: '0 9 * * *'
   workflow_dispatch: {}
 
-# Never let two nightly runs (or a nightly + a manual re-dispatch) collide on the
-# shared relay assumptions.
+# Never let two nightly runs (or a nightly + a manual re-dispatch) collide.
 concurrency:
   group: collab-nightly
   cancel-in-progress: false
 
 permissions:
   contents: read
-  # The failure-notification step (below) opens a GH issue when a nightly run
-  # goes red or is killed by the timeout ceiling — that issue creation emails
-  # repo watchers (incl. tmayshark@gmail.com), mirroring live-smoke-alert.yml.
-  # Without this the lane rotted red for 5 days UNALERTED (the gap this fixes).
+  # The `alert` job opens a GH issue when any shard fails — that issue creation
+  # emails repo watchers (incl. tmayshark@gmail.com), mirroring live-smoke-alert.
+  # Without it the lane rotted red for days UNALERTED (the gap this closes).
   issues: write
 
 jobs:
-  collab-full:
-    name: collab-nightly (full @collab lane, under load)
+  collab-shard:
+    name: collab-nightly (shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    # timeout-minutes 90 → 60 + --workers=2 → 1 (FIX 2026-06-29): the lane ran
-    # --workers=2 as an "under-load contention" canary, but the relay is a
-    # SINGLE in-memory process — two multi-context specs hitting it at once
-    # DEADLOCK (the #97 contention flake). Each then burns its full extended
-    # per-test timeout (120s; DOOM up to 180s, granted by de-flake #844) × the
-    # retry, so the suite blew past the ceiling: EVERY nightly 06-18 → 06-29 was
-    # KILLED at 90 min (`cancelled`, NO useful signal) — a dead backstop for ~12
-    # days. The per-PR `collab` job in ci.yml hit this exact wall and settled on
-    # --workers=1 (fully serial), which runs the whole lane reliably in
-    # ~7-17 min; we now match it (see the test step below). Real UNDER-LOAD
-    # contention coverage is not achievable against a single-process relay
-    # without deadlock — that needs a concurrency-capable relay (deferred; see
-    # task #160 / relay infra), not a bigger number here. 60 min is a FAIL-FAST
-    # ceiling (a serial run that hits it is genuinely broken — shard or drop a
-    # slow spec, don't raise this) with headroom over the realistic ~25-40 min
-    # (serial lane + inline DOOM/SNES WASM + preview build).
-    timeout-minutes: 60
+    # FAIL-FAST ceiling per shard: ~1/4 of the serial lane (~15 min) + inline
+    # builds (~3 min, cached) + setup. A shard that hits 30 min has a genuinely
+    # hung spec — fix it (the alert surfaces which), don't raise this.
+    timeout-minutes: 30
+    strategy:
+      # One slow/red shard must NOT cancel the others — we want the full picture.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     services:
       postgres:
@@ -82,9 +78,8 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
-      # Opt the COLLAB_JOB-gated @collab DOOM specs back IN (same as the ci.yml
-      # collab job): RUN here (serial-ish, reliable), skipped in the sharded
-      # matrix.
+      # Opt the COLLAB_JOB-gated @collab DOOM specs IN (same as the ci.yml collab
+      # job) — they are the heavy specs this nightly exists to exercise.
       COLLAB_JOB: '1'
       # Run @collab against `vite preview` (built bundle), not the dev server —
       # kills the HMR-reload flake class (#232/#225). Requires a web build below.
@@ -174,54 +169,50 @@ jobs:
       - name: Build web (preview bundle, test hooks enabled)
         run: flox activate -- task build:web
 
-      # --- The full real @collab lane (daily fresh-build canary) ---
-      # Mirrors the ci.yml `collab` JOB exactly: same grep, --workers=1 (SERIAL —
-      # the single-process relay deadlocks at >1, see the timeout note above),
-      # same DATABASE_URL + COLLAB_JOB + E2E_USE_PREVIEW + retries=1 transient-net.
-      # html reporter so the run is as inspectable as the per-PR collab lane.
-      # The DISTINCT daily value vs the per-PR job: this builds DOOM/SNES WASM +
-      # the preview bundle FROM SCRATCH (the per-PR job downloads cached
-      # artifacts), so build-script rot and relay/DB infra drift surface here
-      # daily, off the PR critical path.
-      - name: Run full @collab lane (serial, html report)
+      # --- One shard of the full real @collab lane (serial within the shard) ---
+      # Same grep + --workers=1 as the ci.yml `collab` job; `--shard=i/4` runs
+      # only this shard's quarter of the spec list, so the shard fits the ceiling.
+      # --workers=1 keeps the single-process relay from deadlocking (#97).
+      - name: Run @collab lane (shard ${{ matrix.shard }}/4, serial, html report)
         env:
           PLAYWRIGHT_HTML_OPEN: never
         run: |
           flox activate -- npx --workspace e2e playwright test \
             --grep "@collab|@capacity" \
+            --shard=${{ matrix.shard }}/4 \
             --workers=1 \
             --reporter=list,html
 
-      - name: Upload Playwright HTML report (collab-nightly)
+      - name: Upload Playwright HTML report (shard ${{ matrix.shard }})
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: collab-nightly-playwright-report
+          name: collab-nightly-playwright-report-${{ matrix.shard }}
           path: e2e/playwright-report
           retention-days: 30
 
-      - name: Upload Playwright test-results on failure (collab-nightly)
-        # `failure() || cancelled()`: a timeout-ceiling kill registers as
-        # `cancelled`, NOT `failure`, so a bare `if: failure()` skipped this on
-        # the 60-min-overrun run (27903306267) and left ZERO diagnostics for the
-        # one run that actually exercised the post-#844 lane. Upload on both.
+      - name: Upload Playwright test-results on failure (shard ${{ matrix.shard }})
+        # `failure() || cancelled()`: a per-shard timeout-ceiling kill can register
+        # as `cancelled`, NOT `failure` — upload on both so a hung shard still
+        # leaves diagnostics.
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
-          name: collab-nightly-test-results
+          name: collab-nightly-test-results-${{ matrix.shard }}
           path: e2e/test-results
           retention-days: 14
 
-      # --- Failure notification (the alerting gap this PR closes) -------------
-      # The nightly had NO failure alert: it rotted red 06-16 → 06-20 (5 days)
-      # with nobody paged. Mirror live-smoke-alert.yml's mechanism — open a GH
-      # issue, which emails repo watchers (incl. tmayshark@gmail.com) — so a red
-      # OR timeout-cancelled nightly surfaces the same day instead of silently
-      # rotting. No new secret needed (uses the workflow GITHUB_TOKEN +
-      # `issues: write` above). Dedupe: reuse an OPEN issue with the
-      # `collab-nightly-failure` label instead of opening a fresh one each night.
+  # --- Failure notification ------------------------------------------------
+  # Runs after ALL shards. `if: failure()` fires when ANY shard failed (or was
+  # ceiling-cancelled). Opens/refreshes a single GH issue (emails repo watchers),
+  # so a red OR hung nightly surfaces the same day instead of rotting unalerted.
+  alert:
+    name: collab-nightly alert (any shard failed)
+    runs-on: ubuntu-latest
+    needs: collab-shard
+    if: failure()
+    steps:
       - name: Alert on nightly failure (open/refresh a GH issue)
-        if: failure() || cancelled()
         uses: actions/github-script@v7
         with:
           script: |
@@ -229,21 +220,21 @@ jobs:
             const label = 'collab-nightly-failure';
             const dateUtc = new Date().toISOString().slice(0, 10);
             const body = [
-              '**collab-nightly went red (or was killed by the timeout ceiling).**',
+              '**collab-nightly: one or more shards failed (or hit the per-shard ceiling).**',
               '',
-              'This is the UNDER-LOAD multiplayer backstop (`--grep @collab|@capacity`,',
-              '`--workers=2`, contended single-process relay). A red run is a SIGNAL to',
-              'investigate a contention regression + re-attest — it is not a per-PR merge',
-              'blocker, but it must not rot unalerted (it did for 5 days, 06-16 → 06-20).',
+              'Daily FULL-@collab backstop (`--grep @collab|@capacity`, `--workers=1`,',
+              'sharded `--shard=i/4`). A red shard is a SIGNAL to investigate a',
+              'multiplayer/relay regression + re-attest — it is not a per-PR merge',
+              'blocker, but it must not rot unalerted.',
               '',
               `**Run:** ${runUrl}`,
               `**SHA:** ${context.sha}`,
               '',
-              'Diagnostics: download the `collab-nightly-test-results` + ',
-              '`collab-nightly-playwright-report` artifacts from the run above',
+              'Diagnostics: download the per-shard `collab-nightly-test-results-<n>` +',
+              '`collab-nightly-playwright-report-<n>` artifacts from the run above',
               '(read `error-context.md` / `trace.zip` — do NOT `gh run view --log-failed`).',
               '',
-              'Close this issue once the nightly is green again; it will be reused (not',
+              'Close this issue once the nightly is green again; it is reused (not',
               're-opened) on subsequent failures while it stays open.',
             ].join('\n');
             // Reuse an already-open failure issue so consecutive red nights don't
@@ -261,13 +252,13 @@ jobs:
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: num,
-                body: `Still red (${dateUtc}). Run: ${runUrl}`,
+                body: `Still failing (${dateUtc}). Run: ${runUrl}`,
               });
             } else {
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: `[collab-nightly] under-load @collab lane failing (${dateUtc})`,
+                title: `[collab-nightly] @collab shard(s) failing (${dateUtc})`,
                 body,
                 labels: ['observability', 'alert', label],
               });
