@@ -259,3 +259,35 @@ describe('vrt-meta — STRICT_VRT_MODULES RATCHET (only grows)', () => {
     ).toBeGreaterThanOrEqual(25);
   });
 });
+
+describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
+  // HONESTY GATE. CI runs on linux. A module that has only a darwin baseline +
+  // a `linux/<m>` entry in EXEMPT_BASELINE_PAIRS is rendered on darwin only and
+  // is SKIPPED on CI (vrt.spec.ts) — so it NEVER actually diffs on the platform
+  // that gates. The either-platform "covered" check above therefore OVERSTATES
+  // real CI protection by exactly this count: the linux deficit is the gap
+  // between "looks covered" and "actually gated".
+  //
+  // This ceiling makes the deficit visible + ratchets it toward ZERO: it may
+  // only SHRINK. LOWER the number when you land linux baselines (capture via
+  // `vrt-update.yml` + drop the pairs). Only RAISE it for a DELIBERATE,
+  // commented darwin-first new module — NEVER to make a red gate go green.
+  // (Mirrors the STRICT_VRT_MODULES ratchet above, inverted: that floor only
+  // grows, this ceiling only shrinks; both converge on full linux coverage.)
+  // Most deferrals are `linux/*` (darwin-first authoring); a handful of
+  // `darwin/*` deferrals exist for scene-variant captures + a module whose
+  // linux baseline already gates. The CI-protection metric is the LINUX count:
+  // CI runs on linux, so a linux-pending module never diffs on the gating
+  // platform — that count is the gap between "looks covered" and "actually
+  // gated". This ceiling ratchets it toward ZERO.
+  it('the linux-baseline deficit only shrinks toward zero', () => {
+    const linuxPending = [...EXEMPT_BASELINE_PAIRS].filter((p) => p.startsWith('linux/')).length;
+    expect(
+      linuxPending,
+      'the linux-baseline deficit GREW. CI is linux, so a linux-pending module is never ' +
+        'actually diffed on CI — landing fewer linux baselines is a real coverage regression. ' +
+        'Capture linux baselines (vrt-update.yml workflow_dispatch) + drop the pairs to LOWER ' +
+        'this number; only RAISE it for a deliberate, commented darwin-first new module.',
+    ).toBeLessThanOrEqual(98);
+  });
+});
