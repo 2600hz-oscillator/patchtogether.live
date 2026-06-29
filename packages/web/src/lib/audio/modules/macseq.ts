@@ -409,11 +409,19 @@ export const macseqDef: AudioModuleDef = {
     let alive = true;
     let unsubscribeTick: (() => void) | null = null;
     const LOOKAHEAD_S = 0.2;
+    // #229 / clock-drag parity (matches sequencer.ts): if a sustained canvas
+    // drag starves the main thread past the lookahead, nextStepTime falls behind
+    // ctx.currentTime; emitting it would clamp the backlog onto "now" (an audible
+    // bunch/lurch). Past-due steps are DROPPED (phase still advances) so macseq
+    // resumes in-tempo from the present instead of lurching. 5 ms slack keeps
+    // ordinary near-now jitter sounding (a hair late) rather than dropped.
+    const LATE_DROP_EPS = 0.005;
     void SCHEDULER_TICK_MS; // referenced by the shared scheduler-clock
 
     const playhead = createPlayheadTracker();
     let totalAdvances = 0;
     let totalSequenceEnds = 0;
+    let lateStepsDropped = 0;
     let lastEmittedVOct = 0;
     let lastEmittedGate = 0;
     // Last MODELCV value we actually wrote to modelCvSrc. Used for HOLD-LAST
@@ -609,7 +617,13 @@ export const macseqDef: AudioModuleDef = {
           // post-PR widening default) can't sample past the data array.
           const length = Math.max(1, Math.min(STEP_COUNT, Math.round(readParam('length', 16))));
             const stepDur = 60 / bpm / 4; // 16th-note grid
-            emitStep(stepIndex, nextStepTime, stepDur);
+            // Drop, don't bunch: skip the gate for a past-due step (drag stall >
+            // lookahead) while still advancing phase/index below.
+            if (nextStepTime < ctx.currentTime - LATE_DROP_EPS) {
+              lateStepsDropped++;
+            } else {
+              emitStep(stepIndex, nextStepTime, stepDur);
+            }
             const nextIdx = (stepIndex + 1) % length;
             const nextStartTime = nextStepTime + stepDur;
             if (nextIdx === 0) {
@@ -661,6 +675,7 @@ export const macseqDef: AudioModuleDef = {
         if (key === 'currentStep') return playhead.currentAt(ctx.currentTime);
         if (key === 'totalAdvances') return totalAdvances;
         if (key === 'totalSequenceEnds') return totalSequenceEnds;
+        if (key === 'lateStepsDropped') return lateStepsDropped;
         if (key === 'pitchVOct')   return lastEmittedVOct;
         if (key === 'gateValue')   return lastEmittedGate;
         if (key === 'modelCv')     return lastEmittedModelCv;

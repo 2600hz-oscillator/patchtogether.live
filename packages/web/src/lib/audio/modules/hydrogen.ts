@@ -659,6 +659,10 @@ export const hydrogenDef: AudioModuleDef = {
     let alive = true;
     let unsubscribeTick: (() => void) | null = null;
     const LOOKAHEAD_S = 0.2;
+    // #229 / clock-drag parity with sequencer.ts: drop (don't bunch) steps that
+    // fall this far behind ctx.currentTime when a drag stalls the main thread.
+    const LATE_DROP_EPS = 0.005;
+    let lateStepsDropped = 0;
     const playhead = createPlayheadTracker();
 
     function readParam(id: string, fallback: number): number {
@@ -824,7 +828,15 @@ export const hydrogenDef: AudioModuleDef = {
           if (stepIndex === 0) maybeApplyQueuedSlot();
           const isOddStep = (stepIndex % 2) === 1;
           const swungAt = isOddStep ? nextStepTime + swing * baseStepS * 0.5 : nextStepTime;
-          emitStep(stepIndex, swungAt);
+          // #229 / clock-drag parity (matches sequencer.ts): DROP a past-due step
+          // (sustained drag stalled the main thread past the lookahead) instead of
+          // emitting it at a time Web Audio would clamp onto "now" — that clamp is
+          // the audible bunch/lurch. Phase still advances so tempo resumes cleanly.
+          if (swungAt >= ctx.currentTime - LATE_DROP_EPS) {
+            emitStep(stepIndex, swungAt);
+          } else {
+            lateStepsDropped++;
+          }
           stepIndex = (stepIndex + 1) % STEP_COUNT;
           nextStepTime += baseStepS;
         }
@@ -883,6 +895,7 @@ export const hydrogenDef: AudioModuleDef = {
       read(key: string): unknown {
         if (key === 'currentStep') return playhead.currentAt(ctx.currentTime);
         if (key === 'stepIndex') return stepIndex;
+        if (key === 'lateStepsDropped') return lateStepsDropped;
         return undefined;
       },
       dispose() {
