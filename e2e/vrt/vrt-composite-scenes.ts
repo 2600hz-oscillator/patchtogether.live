@@ -472,6 +472,128 @@ const ADSR_SUSTAIN_SCENES: CompositeVrtScene[] = [
   },
 ];
 
+// ---- SEQUENCER → NEGATIVITY → SCOPE : CV inversion made visible ----------
+//
+// A CV-utility composite. The sequencer's pitch CV — S&H-LATCHED so it HOLDS a
+// steady DC level through a rest — fans out two ways onto a SCOPE in CV mode:
+//   • ch2 = the RAW pitch CV (a flat line ABOVE centre — a positive V/oct)
+//   • ch1 = the pitch CV through NEGATIVITY (out = −in) → a flat line the SAME
+//     distance BELOW centre.
+// The two traces are MIRROR images across the 0 V centre line — the visible
+// proof that NEGATIVITY inverts. If it ever regressed to a pass-through, ch1
+// would sit ON ch2 (both above centre) and the mirror collapses — a real gate
+// for a recently-added CV util (task #144).
+//
+// Steady-state BY CONSTRUCTION (a latched DC level, exactly like the S&H scene
+// above — NOT a transient envelope), and every card is pure-DOM (sequencer /
+// negativity / scope), so it captures deterministically on linux with the same
+// fixed-suspend approach. (Contrast the ADSR-env scene, whose TRANSIENT settle
+// made it un-capturable on linux — lesson logged in the skeptical-first-baseline
+// memory: scope composites want a steady observable, not a transient one.)
+
+function setupNegativityScope(): (page: Page) => Promise<void> {
+  return async (page) => {
+    await spawnPatch(
+      page,
+      [
+        {
+          id: 'seq',
+          type: 'sequencer',
+          position: { x: 60, y: 70 },
+          // S&H ON (snh:1) latches the note's V/oct and HOLDS it through the
+          // rest the suspend lands in — a steady DC source.
+          params: { bpm: 60, length: 2, isPlaying: 1, gateLength: 0.4, octave: 0, snh: 1 },
+        },
+        { id: 'neg', type: 'negativity', position: { x: 470, y: 70 }, domain: 'audio' },
+        {
+          id: 'sc',
+          type: 'scope',
+          position: { x: 760, y: 70 },
+          domain: 'audio',
+          // Both channels in CV display mode (±5 V) so the ±pitch CV renders to
+          // clean horizontal lines symmetric about centre.
+          params: { ch1Range: 1, ch2Range: 1 },
+        },
+      ],
+      [
+        // pitch (polyPitchGate) → NEGATIVITY in (the CV under test).
+        {
+          id: 'e_pitch_neg',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'neg', portId: 'in' },
+          sourceType: 'polyPitchGate',
+          targetType: 'cv',
+        },
+        // NEGATIVITY out (= −pitch) → SCOPE ch1 (the inverted trace, below centre).
+        {
+          id: 'e_neg_sc',
+          from: { nodeId: 'neg', portId: 'out' },
+          to: { nodeId: 'sc', portId: 'ch1' },
+          sourceType: 'cv',
+          targetType: 'audio',
+        },
+        // RAW pitch → SCOPE ch2 (the reference trace, above centre).
+        {
+          id: 'e_pitch_sc',
+          from: { nodeId: 'seq', portId: 'pitch' },
+          to: { nodeId: 'sc', portId: 'ch2' },
+          sourceType: 'polyPitchGate',
+          targetType: 'audio',
+        },
+      ],
+    );
+
+    // step 0 = a clearly-positive note (gate on), step 1 = rest; S&H holds the
+    // note's V/oct through the rest the fixed suspend lands in.
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { data?: Record<string, unknown> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => {
+        w.__patch.nodes['seq'].data = {
+          steps: [
+            { on: true, midi: 72, chord: 'mono' }, // C5 — a clearly-positive V/oct
+            { on: false, midi: 72, chord: 'mono' }, // rest (S&H holds the pitch)
+          ],
+        };
+      });
+    });
+
+    // Same proven fixed window + suspend as the S&H scene (60 BPM, 2 steps →
+    // ~0.7 s lands in the rest with the pitch S&H-held), then freeze.
+    await page.waitForTimeout(700);
+    await page.evaluate(async () => {
+      const w = globalThis as unknown as { __engine?: () => { ctx: AudioContext } | null };
+      const eng = w.__engine?.();
+      if (!eng) return;
+      try { await eng.ctx.suspend(); } catch { /* already suspended */ }
+    });
+    await page.evaluate(
+      () => new Promise<void>((r) => requestAnimationFrame(() => r())),
+    );
+  };
+}
+
+const NEGATIVITY_SCOPE_CARDS = [
+  '.svelte-flow__node-sequencer',
+  '.svelte-flow__node-negativity',
+  '.svelte-flow__node-scope',
+];
+
+const NEGATIVITY_COMPOSITE_SCENES: CompositeVrtScene[] = [
+  {
+    id: 'negativity-cv-invert',
+    label: 'SEQUENCER→NEGATIVITY→SCOPE: CV inversion (mirror across centre)',
+    blurb:
+      'A latched pitch CV fans out: ch2 = raw (line above centre), ch1 = through ' +
+      'NEGATIVITY (out = −in, the same distance below centre). The mirror is the ' +
+      'visible proof the inverter works; a pass-through regression collapses it.',
+    setup: setupNegativityScope(),
+    cardSelectors: NEGATIVITY_SCOPE_CARDS,
+  },
+];
+
 /** All composite VRT scenes. Iterated by `vrt-composite.spec.ts`. */
 export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   {
@@ -506,4 +628,5 @@ export const COMPOSITE_VRT_SCENES: CompositeVrtScene[] = [
   },
   ...SNH_COMPOSITE_SCENES,
   ...ADSR_SUSTAIN_SCENES,
+  ...NEGATIVITY_COMPOSITE_SCENES,
 ];
