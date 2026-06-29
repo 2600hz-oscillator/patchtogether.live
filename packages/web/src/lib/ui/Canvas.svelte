@@ -5089,6 +5089,7 @@
       {nodeTypes}
       fitView
       colorMode="dark"
+      onlyRenderVisibleElements={true}
       zoomOnDoubleClick={false}
       onconnect={handleConnect}
       {isValidConnection}
