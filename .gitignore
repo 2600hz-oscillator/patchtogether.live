@@ -133,6 +133,11 @@ packages/web/static/blood/*
 !packages/web/static/blood/README.md
 !packages/web/static/blood/blood.js
 !packages/web/static/blood/blood.wasm
+# The blood-pcm AudioWorklet (the live game-audio capture bridge feeding
+# audio_l/audio_r). A REQUIRED runtime asset like blood.js — un-ignore it or the
+# blanket `static/blood/*` rule above drops it from the commit, so CI's build
+# serves no worklet (addModule 404 → audio_l silent) though local dev works.
+!packages/web/static/blood/blood-pcm-worklet.js
 # Bundled 1997 Blood shareware data (un-ignore the exact shareware set only).
 !packages/web/static/blood/BLOOD.RFF
 !packages/web/static/blood/GUI.RFF
