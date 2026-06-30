@@ -66,6 +66,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <unistd.h>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -239,11 +241,72 @@ extern void engineSetupAllocator(void);
 // loop cooperative: one present (one yield) per iteration.
 extern int r_maxfps;
 
+// ─────────────── stop SDL2 from grabbing the GLOBAL keyboard ──────────────
+//
+// emscripten's SDL2 port (SDL_emscriptenevents.c Emscripten_RegisterEventHandlers)
+// registers a keydown/keyup handler on EMSCRIPTEN_EVENT_TARGET_WINDOW (window,
+// BUBBLE phase) and `Emscripten_HandleKey` returns prevent_default=true for nearly
+// every key (true unless SDL_TEXTINPUT is enabled). emscripten's keyEventHandler
+// then calls `e.preventDefault()` — which SWALLOWS keystrokes destined for OTHER
+// page elements (most visibly the +Add-module palette's <input> search box: a
+// preventDefault'd keydown cancels the character insertion). Because the handler
+// is bound to `window` for the whole lifetime of the WASM module, the swallow
+// persists the entire time a BLOOD module exists. DOOM has NO analogue of this bug
+// because doomgeneric registers no DOM keyboard handler at all (input is 100% the
+// dgpt_set_key seam).
+//
+// BLOOD likewise does NOT need SDL's keyboard: every key reaches the engine via
+// the bpt_set_key seam below (keySetState + the keyGetScan / keyGetChar fifos), so
+// SDL's keyboard registration is pure redundancy. We disable it by pointing SDL's
+// keyboard element (SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, read in
+// Emscripten_RegisterEventHandlers) at a CSS selector that matches NO element.
+// emscripten's findEventTarget() then returns null and registerOrRemoveHandler()
+// no-ops (returns -4, adds NO addEventListener) — so SDL never touches the global
+// keyboard and palette/other-input typing flows through untouched. The hint must
+// be set BEFORE SDL initialises its video (which happens inside app_main); we set
+// it at the top of bpt_init. SDL_SetHint + SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT
+// are already in scope here — baselayer.h (above) pulls in <SDL2/SDL.h> via
+// timer.h/osd.h (this TU links against emscripten's -sUSE_SDL=2 port).
+
+// ─────────────────────── shareware ART → TILES alias ────────────────────
+//
+// The Build engine loads its tile art from "tiles%03i.art" (build.cpp:
+// artLoadFiles("tiles%03i.art")) — i.e. TILES000.ART. The 1997 Blood SHAREWARE
+// ships its tile art as SHARE000.ART instead, so on shareware data NO game ART
+// tiles load: tilesiz[*] stays 0, and every art-backed sprite (the main-menu
+// blood-drip border + framed title + animated droplets, every HUD/backdrop pic)
+// renders BLACK — the menu shows only the RFF-resident bitmap font on a void.
+// (Diagnosed: with the ART present as TILES000.ART, tilesiz[2046]=320x200 and
+// the drip chrome appears; without it tilesiz[2046]=0 and the screen is black.)
+//
+// The cwd is the data dir (JS chdir'd to /blood before bpt_init), and the files
+// JS wrote are already on MEMFS. Symlink SHARE00x.ART → TILES00x.ART so the
+// engine's default loader finds the art. This is data-agnostic: FULL-game data
+// already ships TILES000.ART (SHARE absent → no alias), shareware ships SHARE
+// (aliased). Idempotent + harmless if neither exists.
+static void bpt_alias_shareware_art(void)
+{
+    for (int i = 0; i < 20; i++)
+    {
+        char share[24], tiles[24];
+        snprintf(share, sizeof share, "SHARE%03d.ART", i);
+        snprintf(tiles, sizeof tiles, "TILES%03d.ART", i);
+        if (access(share, F_OK) == 0 && access(tiles, F_OK) != 0)
+            symlink(share, tiles);
+    }
+}
+
 extern "C" void bpt_init(int rff_len)
 {
     (void)rff_len;
     if (s_app_started) return;
     s_app_started = 1;
+#ifdef __EMSCRIPTEN__
+    // Disable SDL2's global keyboard grab BEFORE app_main triggers SDL video init
+    // (see the SDL_SetHint note above). Input reaches the engine via bpt_set_key.
+    SDL_SetHint(SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#__blood_no_sdl_keyboard__");
+#endif
+    bpt_alias_shareware_art();   // shareware SHARE000.ART -> TILES000.ART (see above)
     engineSetupAllocator();   // create g_sm_heap before any Xmalloc/Xstrdup
     r_maxfps = -2;            // present-per-iteration; JS drives pacing (see above)
     // argv lives in static storage so it outlives the (suspended) call.
@@ -339,10 +402,29 @@ void credLogosDos(void) { /* skip DOS intro logos */ }
 void credReset(void) { /* no cutscene state to reset */ }
 char credPlaySmk(const char *, const char *, int) { return 0; /* not played */ }
 
-// ───────────────────────────── audio stub ───────────────────────────────
-// v1 ships audio DISABLED (mirrors the DOOM slice-8 stub). The stereo PCM
-// ring exists so the JS API surface (audio_l/audio_r) is stable.
-#define BPT_PCM_SAMPLES 4096
-static float s_pcm[BPT_PCM_SAMPLES * 2];
+// ───────────────────────────── audio capture ─────────────────────────────
+// MultiVoc (SFX) + the OPL3 software-MIDI synth (music) mix into interleaved
+// 16-bit stereo pages. On wasm we don't open a real SDL audio device (see the
+// driver_sdl __EMSCRIPTEN__ patch in build-blood-wasm.sh); instead the JS
+// AudioWorklet drives this pump at audio-frame cadence + reads s_pcm, then
+// routes it to the module's audio_l / audio_r outputs. Mirrors DOOM's
+// i_pcmgen -> dg_get_pcm_buffer -> worklet bridge (real stereo, not mono-dup).
+extern "C" void bpt_sdl_audio_pump(unsigned char *dest, int bytes);  // driver_sdl.cpp (wasm)
+
+// Scratch sized for several JS pump ticks: a 60 Hz pump asks for ~735 stereo
+// frames; 8192 frames = ~186 ms of headroom. Interleaved L,R int16.
+#define BPT_PCM_FRAMES 8192
+static int16_t s_pcm[BPT_PCM_FRAMES * 2];
+
+// Mix + drain `frames` interleaved-stereo frames from MultiVoc into s_pcm.
+// Returns the number of frames written (clamped to capacity). Blood requests
+// stereo (config.cpp NumChannels=2), so MV_SampleSize == 4 bytes/frame.
+extern "C" int bpt_pump_audio(int frames)
+{
+    if (frames <= 0) return 0;
+    if (frames > BPT_PCM_FRAMES) frames = BPT_PCM_FRAMES;
+    bpt_sdl_audio_pump((unsigned char *)s_pcm, frames * 4 /* stereo int16 */);
+    return frames;
+}
 extern "C" uint8_t *bpt_get_pcm_buffer(void) { return (uint8_t *)s_pcm; }
-extern "C" int bpt_get_pcm_buffer_size(void) { return BPT_PCM_SAMPLES; }
+extern "C" int bpt_get_pcm_buffer_size(void) { return BPT_PCM_FRAMES; }

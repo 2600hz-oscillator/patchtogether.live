@@ -128,7 +128,11 @@ async function setScopeParam(page: Page, nodeId: string, param: string, value: n
   );
 }
 
-test.describe('SCOPE.out (mono-video) -> OUTPUT', () => {
+// @webgl-serial — the output-FBO readback races other GL workers under the
+// attest's parallel Pass A-heavy; this spec is green in isolation
+// (E2E_REAL_GPU=1 REPEAT=3 task e2e:one -- scope-video-out), so the attest runs
+// it in the SERIAL bucket (workers=1) instead. See WEBGL_SERIAL_SPECS.
+test.describe('SCOPE.out (mono-video) -> OUTPUT @webgl-serial', () => {
   test('SCOPE patched into OUTPUT renders a non-black, structured waveform trace', async ({ page }) => {
     test.setTimeout(60_000);
     const errors: string[] = [];

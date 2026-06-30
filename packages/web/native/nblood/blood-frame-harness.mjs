@@ -204,6 +204,70 @@ async function main() {
     );
 
   console.log('[blood-harness] PASS: blood.wasm linked + rendered a real content frame (main menu).');
+
+  // ── REGRESSION CHECKS (only meaningful with real game data + the menu) ─────
+  // Both guard against the two BLOOD bugs fixed alongside the bpt_* shim. They
+  // read ONLY the stable bpt_get_framebuffer surface (no debug exports).
+  if (wroteData > 0) {
+    const grabRGBA = () => {
+      const fp = Module.ccall('bpt_get_framebuffer', 'number', [], []);
+      const fs = Module.ccall('bpt_get_framebuffer_size', 'number', [], []);
+      return new Uint8Array(Module.HEAPU8.buffer, fp, fs).slice();
+    };
+
+    // BUG #2 (black scene): the engine loads tiles000.art but the shareware
+    // ships SHARE000.ART; the shim aliases it so the main-menu blood-drip border
+    // (top of screen) renders. With the ART missing the top band was ~black.
+    const topRows = Math.floor(h * 0.1);
+    let topNonBlack = 0;
+    {
+      const fb = grabRGBA();
+      for (let y = 0; y < topRows; y++)
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          if (fb[i] | fb[i + 1] | fb[i + 2]) topNonBlack++;
+        }
+    }
+    const TOP_MIN = Math.floor(w * topRows * 0.05); // >=5% of the top band lit
+    console.log(`[blood-harness] top-band (drip border) non-black: ${topNonBlack} (need >=${TOP_MIN})`);
+    if (topNonBlack < TOP_MIN)
+      fail(
+        `bug #2 regression: top band is ~black (${topNonBlack}) — game ART (tiles000.art) did not load; ` +
+          `the shareware SHARE000.ART -> TILES000.ART alias is broken`,
+      );
+
+    // BUG #1 (frozen engine clock): clock_gettime(CLOCK_MONOTONIC_RAW) is
+    // unsupported on emscripten, so totalclock never advanced and the menu was
+    // FROZEN (no cursor pulse, no animation, game tics dead). With the
+    // CLOCK_MONOTONIC fix the idle menu ANIMATES (drip droplets + cursor pulse),
+    // so the framebuffer changes over time with NO input.
+    const hash = (fb) => {
+      let hsh = 0x811c9dc5;
+      for (let i = 0; i < fb.length; i += 4) {
+        hsh ^= fb[i];
+        hsh = (hsh * 0x01000193) >>> 0;
+      }
+      return hsh >>> 0;
+    };
+    const h0 = hash(grabRGBA());
+    let changed = false;
+    const aStart = Date.now();
+    while (Date.now() - aStart < 2000) {
+      await new Promise((r) => setTimeout(r, 50));
+      if (hash(grabRGBA()) !== h0) {
+        changed = true;
+        break;
+      }
+    }
+    console.log(`[blood-harness] idle menu animates (engine clock advancing): ${changed}`);
+    if (!changed)
+      fail(
+        'bug #1 regression: idle menu framebuffer is FROZEN over 2s — the engine clock (totalclock) ' +
+          'is not advancing (CLOCK_MONOTONIC_RAW unsupported on wasm); the menu cursor/animation is dead',
+      );
+
+    console.log('[blood-harness] PASS: ART loaded (drip border renders) + engine clock advances (menu animates).');
+  }
   process.exit(0);
 }
 

@@ -19,7 +19,8 @@
 //   esc, enter — rising edges enqueue Build scancodes into the WASM input queue.
 // Outputs:
 //   out (video): the Build software framebuffer (aspect-correct letterboxed).
-//   audio_l / audio_r (audio): stereo bridges (silent in v1 — PCM stub).
+//   audio_l / audio_r (audio): the live game-audio mixer (MultiVoc SFX + OPL3
+//     music), captured via a blood-pcm AudioWorklet (see setupPcmWorklet).
 //
 // NOTE (kill-gate status): blood.wasm LINKS + the engine boots in WASM; the
 // only thing gating a rendered frame is the user-supplied data
@@ -79,6 +80,22 @@ const DEFAULTS: BloodParams = { audioGain: 1.0, fillMode: 0 };
 // Default Build framebuffer size (320×200) until the engine reports a real one.
 const DEFAULT_W = 320;
 const DEFAULT_H = 200;
+
+// AudioWorkletProcessor URL — served as a static asset under
+// /blood/blood-pcm-worklet.js. Loaded lazily per AudioContext (WeakSet avoids a
+// double-add on hot-reload / second spawn within the same context; addModule
+// twice in ONE context throws). maxInstances:1 means we hit this once per page.
+const BLOOD_PCM_WORKLET_URL = '/blood/blood-pcm-worklet.js';
+const PCM_WORKLET_LOADED = new WeakSet<BaseAudioContext>();
+
+async function ensureBloodPcmWorklet(ac: BaseAudioContext): Promise<void> {
+  if (PCM_WORKLET_LOADED.has(ac)) return;
+  await ac.audioWorklet.addModule(BLOOD_PCM_WORKLET_URL);
+  PCM_WORKLET_LOADED.add(ac);
+}
+
+// MultiVoc mixes at 44100 (Blood config.cpp MixRate); pump ~60 Hz like DOOM.
+const PCM_MIX_RATE = 44100;
 
 /** Card-facing handle (engine.read(id, 'extras')). The BLOOD analogue of
  *  DoomHandleExtras, trimmed to the single-player Phase-1 surface. */
@@ -166,11 +183,11 @@ export const bloodDef: VideoModuleDef = {
     },
     outputs: {
       out: 'The Build software-rendered game framebuffer, aspect-correct letterboxed into the canvas.',
-      audio_l: 'Left channel of the game audio (silent in v1 — PCM bridge is stubbed).',
-      audio_r: 'Right channel of the game audio (silent in v1 — PCM bridge is stubbed).',
+      audio_l: 'Left channel of the live game audio — MultiVoc SFX + the OPL3 software-FM music synth, captured from the engine mixer and scaled by Gain. Patch it into a SCOPE, RECORDERBOX, or your output bus.',
+      audio_r: 'Right channel of the same live game-audio mixer stream (real stereo, not a duplicated channel), scaled by Gain, so the two sides can be routed independently downstream.',
     },
     controls: {
-      audioGain: 'Trims the game-audio level feeding audio_l/audio_r (0..2, default 1).',
+      audioGain: 'Trims the game-audio level feeding audio_l/audio_r (0..2, default 1), applied live on top of the worklet makeup gain.',
       fillMode: 'Letterbox (preserve aspect, default) vs fill (cover-crop) the canvas.',
     },
   },
@@ -213,11 +230,21 @@ export const bloodDef: VideoModuleDef = {
       ...(node.params as Partial<BloodParams>),
     };
 
-    // Persistent audio bridges (silent v1 — PCM stub). Same identity contract as
-    // DOOM so an early-wired cable lights up if/when audio lands.
+    // Persistent audio bridges. MultiVoc (SFX) + the OPL3 music synth mix into
+    // interleaved-stereo pages drained by a blood-pcm AudioWorklet into these
+    // gains. Same identity contract as DOOM so an early-wired cable lights up
+    // once the worklet loads (the cable captures the ref at addEdge time).
     const audioSources = new Map<string, { node: AudioNode; output: number }>();
     let leftGain: GainNode | null = null;
     let rightGain: GainNode | null = null;
+    let pcmWorklet: AudioWorkletNode | null = null;
+    let pumpInterval: ReturnType<typeof setInterval> | null = null;
+    // Silent keep-alive (worklet -> gain(0) -> destination): without ANY path to
+    // ctx.destination Chromium treats the worklet as an orphan + process() never
+    // runs, so posted PCM never reaches a downstream SCOPE (its AnalyserNode is a
+    // sink but doesn't terminate the graph). Gain 0 = inaudible here; the real
+    // signal flows through leftGain/rightGain in parallel. Mirrors DOOM.
+    let pcmKeepAlive: GainNode | null = null;
     if (ctx.audioCtx) {
       const ac = ctx.audioCtx;
       leftGain = ac.createGain();
@@ -226,6 +253,44 @@ export const bloodDef: VideoModuleDef = {
       rightGain.gain.value = 1;
       audioSources.set('audio_l', { node: leftGain, output: 0 });
       audioSources.set('audio_r', { node: rightGain, output: 0 });
+      void setupPcmWorklet(ac);
+    }
+
+    // Wire the blood-pcm worklet: split its stereo output to audio_l/audio_r,
+    // keep it alive, and pump the WASM mixer at ~60 Hz. Defined after the call
+    // site (function-declaration hoisting); `runtime` is filled in by
+    // ensureLoaded and the pump no-ops until it is initialized.
+    async function setupPcmWorklet(ac: BaseAudioContext): Promise<void> {
+      try {
+        await ensureBloodPcmWorklet(ac);
+        const node = new AudioWorkletNode(ac, 'blood-pcm', {
+          numberOfInputs: 0,
+          numberOfOutputs: 1,
+          outputChannelCount: [2],
+        });
+        pcmWorklet = node;
+        const splitter = ac.createChannelSplitter(2);
+        node.connect(splitter);
+        if (leftGain) splitter.connect(leftGain, 0);
+        if (rightGain) splitter.connect(rightGain, 1);
+        if ('destination' in ac && ac.destination) {
+          pcmKeepAlive = ac.createGain();
+          pcmKeepAlive.gain.value = 0;
+          node.connect(pcmKeepAlive);
+          pcmKeepAlive.connect(ac.destination);
+        }
+        const framesPerPump = Math.round(PCM_MIX_RATE / 60);
+        pumpInterval = setInterval(() => {
+          if (!runtime || !runtime.isInitialized() || !pcmWorklet) return;
+          const frames = runtime.getPcmFrames(framesPerPump);
+          if (frames.length > 0) pcmWorklet.port.postMessage({ type: 'pcm', samples: frames });
+        }, 16);
+        try { pcmWorklet.port.postMessage({ type: 'gain', value: params.audioGain }); } catch { /* */ }
+      } catch (e) {
+        // Worklet load failed (CSP / static asset missing) — audio_l/r stay silent.
+        // eslint-disable-next-line no-console
+        console.warn('[BLOOD] AudioWorklet load failed; audio_l/r will be silent', e);
+      }
     }
 
     async function ensureLoaded(): Promise<string | null> {
@@ -345,6 +410,13 @@ export const bloodDef: VideoModuleDef = {
         gl.deleteTexture(texture);
         gl.deleteTexture(sourceTex);
         gl.deleteProgram(program);
+        if (pumpInterval !== null) { clearInterval(pumpInterval); pumpInterval = null; }
+        if (pcmWorklet) {
+          try { pcmWorklet.port.postMessage({ type: 'reset' }); } catch { /* */ }
+          try { pcmWorklet.disconnect(); } catch { /* */ }
+          pcmWorklet = null;
+        }
+        if (pcmKeepAlive) { try { pcmKeepAlive.disconnect(); } catch { /* */ } pcmKeepAlive = null; }
         if (leftGain) try { leftGain.disconnect(); } catch { /* */ }
         if (rightGain) try { rightGain.disconnect(); } catch { /* */ }
         if (runtime) runtime.dispose();
@@ -370,6 +442,10 @@ export const bloodDef: VideoModuleDef = {
       audioSources,
       setParam(paramId, value) {
         if (paramId in params) (params as Record<string, number>)[paramId] = value;
+        // Forward the Gain knob to the worklet's makeup multiplier live.
+        if (paramId === 'audioGain' && pcmWorklet) {
+          try { pcmWorklet.port.postMessage({ type: 'gain', value }); } catch { /* */ }
+        }
         // CV-gate edge → scancode key. Single group (single-player).
         if (paramId.startsWith('cv_')) {
           const base = paramId.slice(3) as BloodCvGatePortId;

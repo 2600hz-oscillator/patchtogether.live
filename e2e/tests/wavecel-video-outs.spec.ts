@@ -94,7 +94,11 @@ async function stepAndReadFrame(
   }, opts);
 }
 
-test.describe('WAVECEL video outputs (cross-domain bridge)', () => {
+// @webgl-serial — the output-FBO readback races other GL workers under the
+// attest's parallel Pass A-heavy; this spec is green in isolation
+// (E2E_REAL_GPU=1 REPEAT=3 task e2e:one -- wavecel-video-outs), so the attest
+// runs it in the SERIAL bucket (workers=1) instead. See WEBGL_SERIAL_SPECS.
+test.describe('WAVECEL video outputs (cross-domain bridge) @webgl-serial', () => {
   test('WAVECEL.scope_out -> OUTPUT renders a structured, frame-stable waveform trace', async ({ page }) => {
     test.setTimeout(60_000);
     const errors: string[] = [];

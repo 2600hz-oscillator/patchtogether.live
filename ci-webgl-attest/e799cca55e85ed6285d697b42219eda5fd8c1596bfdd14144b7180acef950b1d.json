@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "webglContentHash": "2bd981648d17cb475d91aea2f1d9a304b672574c60e30ab5ed05b90837e63194",
-  "attestedAt": "2026-06-28T14:50:34.234Z",
+  "webglContentHash": "e799cca55e85ed6285d697b42219eda5fd8c1596bfdd14144b7180acef950b1d",
+  "attestedAt": "2026-06-30T21:00:58.339Z",
   "attestedBy": "tmayshark@gmail.com",
-  "gitHeadAtAttest": "83856fc97046dfdc778940ca22183e8134c612ce",
+  "gitHeadAtAttest": "bacff6fcf229b110037d87de2f636044d31f59b0",
   "playwrightVersion": "1.50.0",
   "os": "darwin 25.4.0 (arm64)",
   "host": "2600hzs-MBP.home.local",
@@ -11,18 +11,20 @@
   "repeatEach": 1,
   "suites": {
     "A-heavy": {
-      "specFiles": 47,
-      "passed": 141,
+      "specFiles": 45,
+      "passed": 138,
       "failed": 0,
-      "flaky": 1,
+      "flaky": 0,
       "skipped": 1,
-      "flakyDetails": [
-        {
-          "test": "SCOPE patched into OUTPUT renders a non-black, structured waveform trace",
-          "file": "scope-video-out.spec.ts",
-          "firstError": "Error: output FBO readable |  | expect(received).toBe(expected) // Object.is equality | "
-        }
-      ]
+      "flakyDetails": []
+    },
+    "A-serial": {
+      "specFiles": 2,
+      "passed": 4,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "flakyDetails": []
     },
     "B-leakers": {
       "specFiles": 4,
@@ -41,5 +43,5 @@
       "flakyDetails": []
     }
   },
-  "durationSec": 116
+  "durationSec": 119
 }
