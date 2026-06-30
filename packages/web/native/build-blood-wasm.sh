@@ -233,6 +233,23 @@ apply_phase0_patches() {
     perl -0pi -e 's/            if \(!hSeq\) \{\n                ThrowError\("Missing sequence \x23%d", nSeq\);\n                continue;\n            \}/            if (!hSeq) {\n                LOG_F(WARNING, "SEQ %d not in RFF (shareware data?) - skipping restore", nSeq);\n                continue;\n            }/' "$SEQ"
     echo "[build-blood-wasm] patched seq.cpp seqSpawn/restore for shareware-tolerant SEQ load"
   fi
+
+  # ── ARROWS → MOVEMENT (the editable-control-layout fix) ───────────────────
+  # Blood's default keydefaults (_functio.h) bind Move_Forward/Backward to
+  # W/Kpad8 and S/Kpad2; the arrow keys are TURN-only, so up/down arrows do
+  # NOTHING in gameplay (owner-reported "up arrow not forward"). Movement is read
+  # entirely via the gamefunc button map (controls.cpp BUTTON(gamefunc_Move_*));
+  # there is no raw-arrow movement fallback, and the JS layer correctly sends the
+  # real arrow scancodes (needed for menu nav via keyGetScan). So rebind the
+  # SECOND key slot of forward/back to the arrows (Up/Down) — KEEPING W/S in the
+  # first slot — so arrows drive movement in gameplay while menus (raw-scancode,
+  # binding-independent) still navigate. Mirrors Blood's own classic
+  # `oldkeydefaults` arrow layout. Surgical + reversible (throwaway checkout only).
+  local FUNC="$NBLOOD_SRC/source/blood/src/_functio.h"
+  if grep -q '"W", "Kpad8",' "$FUNC"; then
+    perl -0pi -e 's/(keydefaults\[NUMGAMEFUNCTIONS\*2\]\[MAXGAMEFUNCLEN\] =\s*\n\s*\{\s*\n)(\s*)"W", "Kpad8",(\s*\n\s*)"S", "Kpad2",/${1}${2}"W", "Up",${3}"S", "Down",/' "$FUNC"
+    echo "[build-blood-wasm] patched _functio.h keydefaults: arrows Up/Down -> Move_Forward/Backward (keeps W/S)"
+  fi
 }
 apply_phase0_patches
 

@@ -86,7 +86,31 @@ test('blood in-game: drive the menu into a level + read the in-game framebuffer'
       const post: ReturnType<typeof sample>[] = [];
       for (let i = 0; i < 12; i++) { post.push(sample()); await sleep(220); }
 
-      return { ok: true, menu, timeline, post };
+      // --- 4. MOVEMENT PROBE: forward (SC_UP_ARROW, now bound to Move_Forward by
+      // the keydefaults patch) should scroll the whole 3D view → far more
+      // frame-to-frame pixel change than standing idle. Measures avg changed
+      // pixels/frame idle vs with up-arrow held. ---
+      const SC_UP_ARROW = 0xc8;
+      const avgFrameDelta = async (n: number): Promise<number> => {
+        let prev = rt.getFramebuffer()?.slice() ?? null;
+        let total = 0, c = 0;
+        for (let i = 0; i < n; i++) {
+          await sleep(120);
+          const cur = rt.getFramebuffer();
+          if (prev && cur && cur.length === prev.length) {
+            let d = 0;
+            for (let j = 0; j < cur.length; j += 16) if (Math.abs(cur[j] - prev[j]) > 24) d++;
+            total += d; c++; prev = cur.slice();
+          } else if (cur) { prev = cur.slice(); }
+        }
+        return c ? total / c : 0;
+      };
+      const idleDelta = await avgFrameDelta(6);
+      rt.setKey(SC_UP_ARROW, true);
+      const moveDelta = await avgFrameDelta(6);
+      rt.setKey(SC_UP_ARROW, false);
+
+      return { ok: true, menu, timeline, post, idleDelta, moveDelta };
     },
     { id: BLOOD_ID, SC_ENTER, SC_DOWN, SC_SPACE },
   );
@@ -112,7 +136,8 @@ test('blood in-game: drive the menu into a level + read the in-game framebuffer'
     `[blood-ingame] res=${res?.s?.w ?? '?'}x${res?.s?.h ?? '?'} | ` +
       `MENU: nonZero=${menuNonZero} animating=${menuAnimating} (distinctHashes=${distinctHashes(result.menu)}) | ` +
       `timeline=${result.timeline.map((t) => `k${t.key.toString(16)}:${t.s.nonZero}${t.s.alive ? '' : '✗'}`).join(' ')} | ` +
-      `POST-START: alive=${postAlive} nonZero=${postNonZero} animating=${postAnimating} (distinctHashes=${distinctHashes(result.post)})`,
+      `POST-START: alive=${postAlive} nonZero=${postNonZero} animating=${postAnimating} (distinctHashes=${distinctHashes(result.post)}) | ` +
+      `MOVE(up=fwd): idleDelta=${result.idleDelta.toFixed(0)} upHeldDelta=${result.moveDelta.toFixed(0)}`,
   );
 
   const total = Math.max(...result.post.map((x) => x.total ?? 0), ...result.menu.map((x) => x.total ?? 0), 1);
@@ -127,4 +152,12 @@ test('blood in-game: drive the menu into a level + read the in-game framebuffer'
   expect(postAlive, 'engine died after starting a game (aborted)').toBe(true);
   expect(postAnimating, 'framebuffer FROZE after starting a game — engine aborted (the black-screen bug)').toBe(true);
   expect(postFill, `in-game frame only ${(postFill * 100).toFixed(0)}% non-black — game did not reach a level (still at menu or black)`).toBeGreaterThan(0.5);
+
+  // up-arrow → Move_Forward (the keydefaults patch): holding up must scroll the
+  // whole 3D view far more than standing idle. Empirically idle≈0, up-held≈34k.
+  expect(
+    result.moveDelta,
+    `up-arrow did not move the player — idle frame-delta ${result.idleDelta.toFixed(0)} vs ` +
+      `up-held ${result.moveDelta.toFixed(0)}; the arrows→Move_Forward keydefaults binding is not active`,
+  ).toBeGreaterThan(result.idleDelta + 2000);
 });
