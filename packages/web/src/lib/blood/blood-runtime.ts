@@ -177,6 +177,11 @@ export class BloodRuntime {
   private fbSize = 0;
   private resX = 0;
   private resY = 0;
+  /** Cached pointer to the shim's interleaved-stereo S16 PCM scratch. Its
+   *  address is a stable static (memory growth detaches the ArrayBuffer but
+   *  keeps the pointer valid into the new one); the Int16Array VIEW is rebuilt
+   *  each pull. 0 = not yet fetched. */
+  private pcmPtr = 0;
 
   constructor(module: BloodModule) {
     this.mod = module;
@@ -258,6 +263,32 @@ export class BloodRuntime {
     if (!this.initialized || !this.fbPtr || this.fbSize <= 0) return null;
     const heap = this.mod.HEAPU8;
     return new Uint8ClampedArray(heap.buffer, this.fbPtr, this.fbSize);
+  }
+
+  // ---------------- PCM pull (audio_l / audio_r bridge) ----------------
+  //
+  // MultiVoc (SFX) + the OPL3 music synth mix into interleaved 16-bit stereo
+  // pages. `bpt_pump_audio(frames)` drives the mixer + writes `frames`
+  // interleaved-stereo S16 frames into a shim scratch buffer; we read it via
+  // `bpt_get_pcm_buffer`, convert s16 -> f32, and return an INTERLEAVED
+  // Float32Array (L,R,L,R...). The BLOOD module posts this to a blood-pcm
+  // AudioWorklet which de-interleaves into audio_l / audio_r. Mirrors DOOM's
+  // getPcmFrames (which is mono); Blood is real stereo.
+  //
+  // Returns a freshly-allocated Float32Array (length frames*2) — NOT a heap
+  // view: the next pull overwrites the scratch + memory growth detaches the
+  // buffer, so a view would dangle once posted to the worklet.
+  getPcmFrames(frames: number): Float32Array {
+    if (!this.initialized || frames <= 0) return new Float32Array(0);
+    const got = this.mod.ccall('bpt_pump_audio', 'number', ['number'], [frames]);
+    if (got <= 0) return new Float32Array(0);
+    if (!this.pcmPtr) this.pcmPtr = this.mod.ccall('bpt_get_pcm_buffer', 'number', [], []);
+    if (!this.pcmPtr) return new Float32Array(0);
+    // interleaved S16 stereo (got frames * 2 channels), rebuilt each call.
+    const i16 = new Int16Array(this.mod.HEAPU8.buffer, this.pcmPtr, got * 2);
+    const out = new Float32Array(got * 2);
+    for (let i = 0; i < out.length; i++) out[i] = i16[i]! / 32768;
+    return out;
   }
 
   dispose(): void {

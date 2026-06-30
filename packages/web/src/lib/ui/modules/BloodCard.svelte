@@ -22,7 +22,10 @@
   import type { VideoEngine } from '$lib/video/engine';
   import type { ModuleNode } from '$lib/graph/types';
   import { bloodDef, type BloodHandleExtras } from '$lib/video/modules/blood';
-  import { SCANCODE_FOR_KEYBOARD_CODE } from '$lib/blood/blood-keys';
+  import {
+    isEditableTarget,
+    shouldClaimBloodKey,
+  } from '$lib/blood/blood-keys';
   import {
     setInjectedBloodData,
     BLOOD_REQUIRED_FILES,
@@ -151,21 +154,58 @@
   }
 
   // ---- Capture-phase keyboard routing (focused card only) ----
-  function shouldClaimKey(): boolean {
-    return selected === true && loadStatus === 'ready';
+  //
+  // Mirrors DoomCard's shouldClaimKey gating (distilled to the pure
+  // shouldClaimBloodKey predicate). We CLAIM a key — preventDefault +
+  // stopPropagation so SvelteFlow's arrow-key node-move + the canvas pan/zoom
+  // shortcuts never see it — ONLY when ALL of:
+  //   • a game is running (loadStatus === 'ready'),
+  //   • THIS card is the focused/selected SF node, and
+  //   • the event is NOT headed for an editable element.
+  // The editable-element guard is the load-bearing fix for "can't type in the
+  // right-click new-module SEARCH box while a BLOOD card is on screen": even if
+  // our node is still SF-`.selected`, a key destined for a text input flows
+  // through untouched.
+
+  /** Is this card FOCUSED? focus-within ONLY — deliberately NOT the SvelteFlow
+   *  `.selected` class. Gating on `.selected` swallowed keys aimed at OTHER
+   *  inputs: the BLOOD node stays SF-selected while the right-click "new module"
+   *  menu is open, so the window-capture listener ate the search box's typing
+   *  (owner-reported). A key only belongs to BLOOD when the card itself holds
+   *  focus. The card is focusable (role=application + tabindex + click→focus),
+   *  so click it to play; focus an input / click away and keys flow normally.
+   *  (Trade-off vs the old `.selected` branch: a merely-SELECTED-but-unfocused
+   *  card lets arrows do SF node-move — fine, you're positioning it, not
+   *  playing.) */
+  function cardIsFocused(): boolean {
+    return !!cardEl && cardEl.contains(document.activeElement);
   }
+
+  function claim(e: KeyboardEvent): boolean {
+    return shouldClaimBloodKey({
+      ready: loadStatus === 'ready',
+      // SELECTED (SvelteFlow's reliable selection state) OR focus-within. We
+      // must claim when merely SELECTED because SvelteFlow's arrow-key node-move
+      // fires on the selected node regardless of DOM focus — and focus-within is
+      // fragile (a card re-render drops it, after which arrows slid the BLOOD
+      // module instead of driving the game; owner-reported). The editableTarget
+      // guard below still lets keys headed for a text field (the +Add palette /
+      // a rename box) flow through, so claim-on-selected can't swallow typing.
+      focused: selected === true || cardIsFocused(),
+      editableTarget:
+        isEditableTarget(e.target) || isEditableTarget(document.activeElement),
+      code: e.code,
+    });
+  }
+
   function onKeyDown(e: KeyboardEvent): void {
-    if (!shouldClaimKey()) return;
-    const sc = SCANCODE_FOR_KEYBOARD_CODE[e.code];
-    if (sc === undefined) return;
+    if (!claim(e)) return;
     e.preventDefault();
     e.stopPropagation();
     getExtras()?.pushKeyboardKey(e.code, true);
   }
   function onKeyUp(e: KeyboardEvent): void {
-    if (!shouldClaimKey()) return;
-    const sc = SCANCODE_FOR_KEYBOARD_CODE[e.code];
-    if (sc === undefined) return;
+    if (!claim(e)) return;
     e.preventDefault();
     e.stopPropagation();
     getExtras()?.pushKeyboardKey(e.code, false);
@@ -190,7 +230,25 @@
   });
 </script>
 
-<div class="blood-card" bind:this={cardEl} data-testid="blood-card" data-card-type="blood">
+<!-- role="application" + tabindex + onclick→focus: the card OWNS the keyboard
+     while focused (same as DoomCard). Focusing it makes shouldClaimBloodKey's
+     focus-within branch reliable so arrows/Enter reach the game, not SF's
+     node-move. Key handling is the window-level CAPTURE listener (see <script>)
+     because xyflow's own keydown fires on the document and we must
+     preventDefault BEFORE it. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<div
+  class="blood-card"
+  bind:this={cardEl}
+  data-testid="blood-card"
+  data-card-type="blood"
+  role="application"
+  aria-label="BLOOD video module — keyboard input on focus"
+  tabindex="0"
+  onclick={() => cardEl?.focus()}
+>
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="BLOOD" />
 

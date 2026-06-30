@@ -76,4 +76,86 @@ test('BLOOD card mounts, idle surface paints, and boots out-of-box from bundled 
   // No uncaught page error from spawning the module, compiling its shader, or
   // the boot attempt — the engine-boot path is handled, not thrown to the page.
   expect(errors, `unexpected page errors:\n${errors.join('\n')}`).toEqual([]);
+
+  // ── RENDER REGRESSION (only when the engine actually booted) ───────────────
+  // These read the SOFTWARE-rendered Build framebuffer via the stable bpt_*
+  // surface (CPU pixels — renderer-INDEPENDENT, so SwiftShader-safe), gated on
+  // the engine reaching 'ready' so CI runners that can't boot the heap/renderer-
+  // sensitive engine stay lenient (same contract as the boot-state poll above).
+  //   • bug #2 (black scene): the engine loads tiles000.art but the shareware
+  //     ships SHARE000.ART; bpt_init aliases it so the main-menu blood-drip
+  //     border renders. Missing ART left the top of the screen ~black.
+  //   • bug #1 (frozen engine clock): clock_gettime(CLOCK_MONOTONIC_RAW) is
+  //     unsupported on emscripten, so totalclock never advanced → the menu was
+  //     FROZEN (no cursor pulse / animation, dead game tics). The fix
+  //     (CLOCK_MONOTONIC) makes the idle menu animate, so the framebuffer
+  //     changes over time with NO input.
+  const booted = await page.getByTestId('blood-ready').isVisible().catch(() => false);
+  // The render probe reads the runtime via the __engine test hook (VITE_E2E_HOOKS,
+  // same as the DOOM specs). If hooks are stripped (e.g. a prod-preview run) there
+  // is nothing to read — skip rather than false-fail.
+  const hooks = await page.evaluate(
+    () => typeof (globalThis as unknown as { __engine?: unknown }).__engine === 'function',
+  );
+  if (booted && hooks) {
+    const NODE_ID = bloodId;
+    const sample = () =>
+      page.evaluate((id) => {
+        const w = globalThis as unknown as {
+          __engine?: () => {
+            getDomain?: (d: string) => { read?: (i: string, k: string) => unknown } | null;
+          } | null;
+        };
+        const ve = w.__engine?.()?.getDomain?.('video');
+        const ex = ve?.read?.(id, 'extras') as
+          | { getRuntime?: () => { getFramebuffer?: () => ArrayLike<number> | null; resolution?: () => { width: number; height: number } } | null }
+          | undefined;
+        const rt = ex?.getRuntime?.();
+        const fb = rt?.getFramebuffer?.();
+        const res = rt?.resolution?.();
+        if (!fb || !res || !res.width || !res.height) return null;
+        let hash = 0x811c9dc5;
+        let topNonBlack = 0;
+        const topRows = Math.floor(res.height * 0.1);
+        for (let i = 0; i < fb.length; i += 4) {
+          hash ^= fb[i];
+          hash = (hash * 0x01000193) >>> 0;
+        }
+        for (let y = 0; y < topRows; y++)
+          for (let x = 0; x < res.width; x++) {
+            const i = (y * res.width + x) * 4;
+            if (fb[i] | fb[i + 1] | fb[i + 2]) topNonBlack++;
+          }
+        return { hash: hash >>> 0, topNonBlack, w: res.width, h: res.height };
+      }, NODE_ID);
+
+    // Give the menu a moment to settle, then sample.
+    await page.waitForTimeout(800);
+    const s0 = await sample();
+    expect(s0, 'runtime framebuffer is readable once booted').not.toBeNull();
+    if (s0) {
+      // bug #2: the drip border (top 10% of the screen) must be substantially lit.
+      const topMin = Math.floor(s0.w * Math.floor(s0.h * 0.1) * 0.02);
+      expect(
+        s0.topNonBlack,
+        `bug #2 regression: the main-menu blood-drip border is ~black (${s0.topNonBlack}) — ` +
+          `game ART (tiles000.art) did not load (SHARE000.ART→TILES000.ART alias broken)`,
+      ).toBeGreaterThan(topMin);
+
+      // bug #1: the idle menu must ANIMATE (cursor pulse + drip droplets) — i.e.
+      // the framebuffer changes over ~1.5s with no input. A frozen engine clock
+      // (the CLOCK_MONOTONIC_RAW bug) leaves it byte-for-byte identical.
+      let animated = false;
+      for (let i = 0; i < 8 && !animated; i++) {
+        await page.waitForTimeout(200);
+        const s = await sample();
+        if (s && s.hash !== s0.hash) animated = true;
+      }
+      expect(
+        animated,
+        'bug #1 regression: the idle menu framebuffer is FROZEN — the engine clock (totalclock) is ' +
+          'not advancing (CLOCK_MONOTONIC_RAW unsupported on wasm); the menu cursor/animation is dead',
+      ).toBe(true);
+    }
+  }
 });
