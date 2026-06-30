@@ -102,6 +102,24 @@ export const WEBGL_LEAKER_SPECS = [
  *  whose testMatch includes camera-input under `=only` mode it would be []). */
 export const WEBGL_CAMERA_SPECS = ['camera-input.spec.ts'];
 
+/** Pass A-SERIAL — heavy WebGL specs that are CORRECT + deterministic in
+ *  ISOLATION but flake ONLY under Pass A-heavy's parallel GPU load (N workers
+ *  racing the FBO readback). They run in a dedicated SERIAL pass (--workers=1)
+ *  on a quiet GPU instead of being absorbed by retries — which would mask a real
+ *  regression. Tag the spec's `test.describe` title with `@webgl-serial` so the
+ *  grep matches (A-heavy `--grep-invert`s it; A-serial `--grep`s it).
+ *
+ *  ENTRY CRITERIA — keep this list STRICT; serial wall-time is ADDITIVE:
+ *    1. The spec is in the heavy attestable set (runs in Pass A today).
+ *    2. It is PROVEN green in isolation on the real GPU — e.g.
+ *       `E2E_REAL_GPU=1 REPEAT=3 flox activate -- task e2e:one -- <spec>`.
+ *    3. It only flakes under Pass A-heavy's parallel load (an FBO-readback /
+ *       GPU-contention race), NOT a real bug.
+ *  A spec that fails in isolation is BROKEN — fix it, don't park it here.
+ *  Basenames (like the other lists). The runner logs this bucket's wall-time
+ *  each run so growth stays visible. */
+export const WEBGL_SERIAL_SPECS = ['scope-video-out.spec.ts', 'wavecel-video-outs.spec.ts'];
+
 /** Toolchain pins that can change bundled/rendered WebGL output (a bundler or
  *  Playwright/renderer bump can move shader-string emission — the Clerk #464
  *  bundler class). Hashed wholesale; they rarely churn, so over-coverage is the

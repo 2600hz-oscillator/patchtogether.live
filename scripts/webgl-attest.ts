@@ -30,6 +30,7 @@ import {
   resolveAttestableHeavyWebglSpecs,
   WEBGL_LEAKER_SPECS,
   WEBGL_CAMERA_SPECS,
+  WEBGL_SERIAL_SPECS,
 } from './webgl-attest-lib';
 
 const REPEAT = Math.max(1, parseInt(process.env.REPEAT || '1', 10) || 1);
@@ -108,6 +109,9 @@ function runPass(opts: {
   env: Record<string, string>;
   args: string[];
   expectedSpecFiles: number;
+  /** Per-pass worker override. Defaults to WORKERS (the parallel passes). The
+   *  serial bucket sets workers=1 to run on a quiet GPU (no FBO-readback race). */
+  workers?: number;
 }): PassResult {
   const tmp = mkdtempSync(join(tmpdir(), 'webgl-attest-'));
   const jsonOut = join(tmp, 'report.json');
@@ -128,7 +132,7 @@ function runPass(opts: {
     'test',
     '--reporter=json',
     `--retries=${RETRIES}`,
-    `--workers=${WORKERS}`, // ≈half-cores parallel (speed); contention guarded by pre-flight + global-timeout
+    `--workers=${opts.workers ?? WORKERS}`, // ≈half-cores parallel (speed); contention guarded by pre-flight + global-timeout. Serial bucket overrides to 1.
     `--global-timeout=${GLOBAL_TIMEOUT_MS}`, // backstop: abort a wedged/contended pass in minutes, not hours
     ...(REPEAT > 1 ? [`--repeat-each=${REPEAT}`] : []),
     ...opts.args,
@@ -429,21 +433,56 @@ function main() {
   //     the raw glob count. Use the ATTESTABLE set (glob minus fully-gated) so
   //     the count-gate matches what Pass A actually runs.
   const heavySpecs = resolveAttestableHeavyWebglSpecs(); // repo-relative
-  const expectedHeavy = heavySpecs.length;
+  // Split the SERIAL bucket out of the parallel heavy pass: a @webgl-serial spec
+  // runs in Pass A-serial (workers=1) instead of A-heavy, so A-heavy's spec-file
+  // count drops by the number of serial specs present in the heavy set.
+  const serialInHeavy = heavySpecs.filter((p) => WEBGL_SERIAL_SPECS.some((b) => p.endsWith('/' + b) || p === b));
+  const expectedHeavy = heavySpecs.length - serialInHeavy.length;
+  const expectedSerial = serialInHeavy.length;
   const expectedLeakers = WEBGL_LEAKER_SPECS.length;
   const expectedCamera = WEBGL_CAMERA_SPECS.length;
+  if (expectedSerial !== WEBGL_SERIAL_SPECS.length) {
+    // A serial spec is no longer in the heavy attestable set (renamed / removed /
+    // newly @collab-gated). Fail LOUDLY rather than silently mis-count a pass.
+    console.error(
+      `Serial-bucket drift: ${expectedSerial}/${WEBGL_SERIAL_SPECS.length} WEBGL_SERIAL_SPECS are in the heavy set ` +
+        `— reconcile WEBGL_SERIAL_SPECS in webgl-attest-lib.ts.`,
+    );
+    process.exit(2);
+  }
 
   const startedAt = Date.now();
   const results: PassResult[] = [];
 
-  // Pass A — heavy set (E2E_WEBGL_HEAVY=only). @collab/@capacity excluded.
+  // Pass A — heavy set (E2E_WEBGL_HEAVY=only). @collab/@capacity excluded, AND
+  // @webgl-serial excluded (those run serially in Pass A-serial below).
   results.push(
     runPass({
       name: 'A-heavy',
       env: { E2E_WEBGL_HEAVY: 'only' },
-      args: ['--grep-invert', '@collab|@capacity'],
+      args: ['--grep-invert', '@collab|@capacity|@webgl-serial'],
       expectedSpecFiles: expectedHeavy,
     }),
+  );
+
+  // Pass A-serial — the SERIAL bucket: heavy specs that are green-in-isolation
+  // but flake under A-heavy's parallel GPU load (FBO-readback race). workers=1 =
+  // a quiet GPU, so they pass honestly instead of being papered over by retries.
+  // Wall-time is ADDITIVE — WEBGL_SERIAL_SPECS is kept strict + logged below.
+  const serialStartedAt = Date.now();
+  results.push(
+    runPass({
+      name: 'A-serial',
+      env: { E2E_WEBGL_HEAVY: 'only' },
+      args: ['--grep', '@webgl-serial'],
+      workers: 1,
+      expectedSpecFiles: expectedSerial,
+    }),
+  );
+  const serialDurationSec = Math.round((Date.now() - serialStartedAt) / 1000);
+  console.log(
+    `\n  ⏱  Serial bucket: ${expectedSerial} spec file(s) in ${serialDurationSec}s (ADDITIVE, workers=1). ` +
+      `Keep WEBGL_SERIAL_SPECS strict — each addition lengthens every attest.`,
   );
 
   // Pass B — leakers/uncovered (E2E_WEBGL_HEAVY UNSET; explicit spec files).
@@ -494,8 +533,9 @@ function main() {
     repeatEach: REPEAT,
     suites: {
       'A-heavy': pick(results[0]),
-      'B-leakers': pick(results[1]),
-      'C-camera': pick(results[2]),
+      'A-serial': pick(results[1]),
+      'B-leakers': pick(results[2]),
+      'C-camera': pick(results[3]),
     },
     durationSec,
   };
