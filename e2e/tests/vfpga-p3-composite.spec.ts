@@ -89,6 +89,25 @@ async function pollStats(page: Page): Promise<{ mean: number; nonZeroFrac: numbe
   return stats!;
 }
 
+/** Mean per-pixel saturation (max(R,G,B) - min(R,G,B), 0..255) over the OUTPUT — a
+ *  renderer-tolerant "how colourful is it" measure (0 = greyscale, high = vivid). */
+async function outputSaturation(page: Page): Promise<number> {
+  const canvas = page.locator('[data-testid="video-out-canvas"]');
+  return canvas.evaluate((el) => {
+    const c = el as HTMLCanvasElement;
+    const ctx = c.getContext('2d');
+    if (!ctx) return 0;
+    const data = ctx.getImageData(0, 0, c.width, c.height).data;
+    let sum = 0, n = 0;
+    for (let i = 0; i < data.length; i += 16) {
+      const r = data[i]!, g = data[i + 1]!, b = data[i + 2]!;
+      sum += Math.max(r, g, b) - Math.min(r, g, b);
+      n++;
+    }
+    return n ? sum / n : 0;
+  });
+}
+
 test.describe('vfpga P3 composite-era bent VFPGAs', () => {
   for (const program of BENT) {
     test(`${program}: bends the smpte source into distinct non-black output`, async ({ page }) => {
@@ -248,5 +267,123 @@ test.describe('vfpga P3 composite-era bent VFPGAs', () => {
       expect(heap1 - heap0, `JS heap growth bounded (Δ=${((heap1 - heap0) / 1e6).toFixed(1)}MB)`).toBeLessThan(10_000_000);
     }
     expect(errors, 'no console / page errors over the sustained run').toEqual([]);
+  });
+
+  // chroma-rot Y/C TRANSPLANT (the multi-input flagship): luma from IIN1, chroma
+  // from IIN2. This wires TWO REAL sources and proves the SECOND input's CHROMA
+  // reaches the output at runtime (the multi-input analog of the poly real-source-
+  // chain rule). The discriminator isolates the transplant path: make IIN1 colourful
+  // and IIN2 GREYSCALE (saturation 0). With p5 cxfer=0 the output keeps IIN1's own
+  // (colourful) chroma; with cxfer=1 it takes IIN2's (zero) chroma → the output
+  // desaturates to ~greyscale. A dead vin2 binding would leave it colourful.
+  test('chroma-rot: clip B (vin2) chroma transplants onto image A (Y/C, two-source)', async ({ page }) => {
+    test.setTimeout(75_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [
+        { id: 'srcA', type: 'vfpgaRunner', position: { x: 40, y: 80 }, domain: 'video' },
+        { id: 'srcB', type: 'vfpgaRunner', position: { x: 40, y: 360 }, domain: 'video' },
+        { id: 'bent', type: 'vfpgaRunner', position: { x: 460, y: 80 }, domain: 'video' },
+        { id: 'out', type: 'videoOut', position: { x: 900, y: 80 }, domain: 'video' },
+      ],
+      [
+        { id: 'e1', from: { nodeId: 'srcA', portId: 'vout1' }, to: { nodeId: 'bent', portId: 'vin1' }, sourceType: 'video', targetType: 'video' },
+        { id: 'e2', from: { nodeId: 'srcB', portId: 'vout1' }, to: { nodeId: 'bent', portId: 'vin2' }, sourceType: 'video', targetType: 'video' },
+        { id: 'e3', from: { nodeId: 'bent', portId: 'vout1' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+      ],
+      { mountTimeout: 15_000 },
+    );
+    await loadPreset(page, 'srcA', 'smpte-bars', 'SMPTE bars');
+    await loadPreset(page, 'srcB', 'smpte-bars', 'SMPTE bars');
+    await loadPreset(page, 'bent', 'chroma-rot', 'chroma-rot');
+
+    // Full transplant (cxfer=1) throughout — the output's chroma is ENTIRELY clip
+    // B's. No chroma gain overdrive (p2=1) and no crawl (p4=0) so the measured
+    // saturation tracks B's chroma directly. The discriminator is then srcB's OWN
+    // saturation: colourful B → colourful output; greyscale B → greyscale output.
+    const setSrcBSat = (sat: number) =>
+      page.evaluate((s) => {
+        const w = globalThis as unknown as {
+          __patch: { nodes: Record<string, { params: Record<string, number> }> };
+          __ydoc: { transact: (fn: () => void) => void };
+        };
+        w.__ydoc.transact(() => { const b = w.__patch.nodes['srcB']; if (b) b.params.p2 = s; });
+      }, sat);
+    await page.evaluate(() => {
+      const w = globalThis as unknown as {
+        __patch: { nodes: Record<string, { params: Record<string, number> }> };
+        __ydoc: { transact: (fn: () => void) => void };
+      };
+      w.__ydoc.transact(() => { const m = w.__patch.nodes['bent']; if (m) { m.params.p2 = 1; m.params.p4 = 0; m.params.p5 = 1; } });
+    });
+
+    // Phase 1 — colourful chroma source (B saturated).
+    await setSrcBSat(1);
+    await pollStats(page);
+    await page.waitForTimeout(600);
+    const satColorB = await outputSaturation(page);
+
+    // Phase 2 — greyscale chroma source (B desaturated). Same luma (IIN1), same
+    // cxfer; only B's chroma changed → the output must desaturate.
+    await setSrcBSat(0);
+    await page.waitForTimeout(600);
+    let satGrayB = await outputSaturation(page);
+    for (let i = 0; i < 20 && !(satGrayB < satColorB * 0.7); i++) {
+      await page.waitForTimeout(150);
+      satGrayB = await outputSaturation(page);
+    }
+    // eslint-disable-next-line no-console
+    console.log(`[chroma-transplant] satColorB=${satColorB.toFixed(1)} satGrayB=${satGrayB.toFixed(1)}`);
+
+    // Clip B's chroma drives the output's colour: a vivid B gives a vivid output, a
+    // greyscale B desaturates it decisively (a ≥30% swing observed ~41%). A dead
+    // vin2 binding would leave the output's colour unchanged between the two.
+    expect(satColorB, `colourful chroma source → colourful output (sat=${satColorB.toFixed(1)})`).toBeGreaterThan(12);
+    expect(satGrayB, `greyscale chroma source desaturates the output (satGrayB=${satGrayB.toFixed(1)} < satColorB=${satColorB.toFixed(1)})`).toBeLessThan(satColorB * 0.7);
+    expect(errors, 'no console / page errors').toEqual([]);
+  });
+
+  // chroma-rot SECOND OUTPUT: vout2 = the separated LUMA (Y) plane (the S-video Y
+  // tap). Route vout2 → OUTPUT and require it non-black + structured AND ~greyscale
+  // (it is luma replicated to RGB, so saturation ≈ 0) — distinguishing it from the
+  // colourful vout1 composite.
+  test('chroma-rot: vout2 (the separated Y/luma plane) flows to a sink, non-black + greyscale', async ({ page }) => {
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [
+        { id: 'src', type: 'vfpgaRunner', position: { x: 60, y: 80 }, domain: 'video' },
+        { id: 'bent', type: 'vfpgaRunner', position: { x: 460, y: 80 }, domain: 'video' },
+        { id: 'out', type: 'videoOut', position: { x: 900, y: 80 }, domain: 'video' },
+      ],
+      [
+        { id: 'e1', from: { nodeId: 'src', portId: 'vout1' }, to: { nodeId: 'bent', portId: 'vin1' }, sourceType: 'video', targetType: 'video' },
+        // The discriminator: route the SECOND output (vout2 = the Y/luma plane).
+        { id: 'e2', from: { nodeId: 'bent', portId: 'vout2' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+      ],
+      { mountTimeout: 15_000 },
+    );
+    await loadPreset(page, 'src', 'smpte-bars', 'SMPTE bars');
+    await loadPreset(page, 'bent', 'chroma-rot', 'chroma-rot');
+    const stats = await pollStats(page);
+
+    expect(stats.nonZeroFrac, `vout2 Y-plane reaches OUTPUT non-black (frac=${stats.nonZeroFrac})`).toBeGreaterThan(0.1);
+    expect(stats.variance, `vout2 Y-plane has spatial structure (var=${stats.variance})`).toBeGreaterThan(20);
+    // It is the LUMA plane (greyscale), not the colourful composite — saturation ~0.
+    const sat = await outputSaturation(page);
+    expect(sat, `vout2 is the luma (Y) plane → ~greyscale (sat=${sat.toFixed(1)})`).toBeLessThan(8);
+    expect(errors, 'no console / page errors').toEqual([]);
   });
 });
