@@ -220,17 +220,20 @@
 
   // ---------------- Annotate mode (authored-doc hover) ----------------
   //
-  // Build the flat DocIndex for THIS card's module straight from the live audio
-  // def + MODULE_DOCS (reusing the doc-page builder). Null when the module has no
-  // authored docs → AnnotateLayer is inert and the right-click "Annotate" entry
+  // Build the flat DocIndex for THIS card's module straight from the live def +
+  // its co-located `docs` (reusing the doc-page builder). Null when the module has
+  // no authored docs → AnnotateLayer is inert and the right-click "Annotate" entry
   // is hidden. Re-derives on graph change so a duplicated/retyped node stays
-  // correct. Audio-only: MODULE_DOCS covers audio modules (video defs aren't
-  // documented on the doc page yet).
+  // correct. ANY-DOMAIN: resolve via the same multi-domain `defLookup` this panel
+  // already uses, NOT the audio-only getModuleDef — otherwise Annotate is dead on
+  // VIDEO modules (bentbox, chroma, …) whose defs live in the video registry even
+  // though they carry co-located docs. buildDocIndexFromDef only reads
+  // docs/inputs/params/controls (present on video defs too), so the cast is structural.
   let annotateDocIndex = $derived.by(() => {
     void edgeVersion;
     const node = patch.nodes[nodeId] as ModuleNode | undefined;
     if (!node) return null;
-    return buildDocIndexFromDef(getModuleDef(node.type));
+    return buildDocIndexFromDef(defLookup(node.type) as Parameters<typeof buildDocIndexFromDef>[0]);
   });
 
   /** Remote endpoint strings for one port (empty when unpatched). */
