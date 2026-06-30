@@ -233,33 +233,45 @@ test('dx7: switching algorithm changes the audible scope content', async ({ page
     });
   });
 
-  // Give the worklet ~1.5s to clear voices, retrigger under algo 32 and
-  // refill the scope buffer.
-  await page.waitForTimeout(1500);
+  // Give the worklet a moment to clear voices + retrigger, then poll the scope
+  // until the waveform has ACTUALLY changed from algo 1 — not merely until it's
+  // non-silent. The switch chain (Y.Doc → reconciler → setParam → worklet
+  // postMessage → voice retrigger → scope ring refill) has variable latency, and
+  // it is SLOWER under CI load: capturing the first non-silent frame could still
+  // grab leftover algo-1 content in the scope ring and read a false ~0 distance
+  // (the CI flake this hardens). So compare INSIDE the poll and break only once the
+  // frame is both audible AND measurably distinct. A genuinely dead switch (the
+  // regression this test guards — algorithm is not an AudioParam, it travels via
+  // postMessage) never satisfies the distinctness check, so the loop times out and
+  // the final assertion still fails decisively with ratio≈0.
+  await page.waitForTimeout(800);
   let frameAlgo32: number[] = [];
-  deadline = Date.now() + 4000;
+  let ratio = 0;
+  deadline = Date.now() + 6000;
   while (Date.now() < deadline) {
     frameAlgo32 = await readScopeFrame(page, 'scp');
+    const len = Math.min(frameAlgo1.length, frameAlgo32.length);
     let energy = 0;
+    let diffSq = 0;
+    let normSq = 0;
     for (const v of frameAlgo32) energy += v * v;
-    if (Math.sqrt(energy / Math.max(1, frameAlgo32.length)) > 0.005) break;
+    for (let i = 0; i < len; i++) {
+      const d = frameAlgo1[i]! - frameAlgo32[i]!;
+      diffSq += d * d;
+      normSq += frameAlgo1[i]! * frameAlgo1[i]! + frameAlgo32[i]! * frameAlgo32[i]!;
+    }
+    const rms32 = Math.sqrt(energy / Math.max(1, frameAlgo32.length));
+    // normalized L2 distance — robust to scale + envelope drift between captures
+    // while still reading ~0 when the two frames are (near-)identical.
+    ratio = Math.sqrt(diffSq) / Math.max(Math.sqrt(normSq), 1e-9);
+    if (rms32 > 0.005 && ratio > 0.1) break; // algo-32 audible AND distinct from algo-1
     await page.waitForTimeout(100);
   }
   expect(frameAlgo32.length, 'algo-32 scope frame is non-empty').toBeGreaterThan(0);
 
-  // Compare: the two frames should be measurably different. Use a
-  // normalized L2 distance — robust to scale + envelope drift between
-  // captures while still failing decisively if the two are byte-identical
-  // (the no-op case before the fix).
-  const len = Math.min(frameAlgo1.length, frameAlgo32.length);
-  let diffSq = 0;
-  let normSq = 0;
-  for (let i = 0; i < len; i++) {
-    const d = frameAlgo1[i]! - frameAlgo32[i]!;
-    diffSq += d * d;
-    normSq += frameAlgo1[i]! * frameAlgo1[i]! + frameAlgo32[i]! * frameAlgo32[i]!;
-  }
-  const ratio = Math.sqrt(diffSq) / Math.max(Math.sqrt(normSq), 1e-9);
+  // The two algorithms must produce measurably different waveforms. (Polled above,
+  // so a slow-to-manifest switch is tolerated; a switch that never changes the
+  // sound — the no-op regression — still fails here with ratio≈0.)
   expect(ratio, `algo-1 vs algo-32 frame normalized L2 distance (got ${ratio.toFixed(3)})`).toBeGreaterThan(0.1);
 });
 
