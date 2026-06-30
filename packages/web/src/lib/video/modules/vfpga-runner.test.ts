@@ -232,7 +232,9 @@ describe('vfpgaRunnerDef.factory — preset + snapshot + outputs', () => {
 // ---------------------------------------------------------------------------
 
 describe('vfpgaRunnerDef.factory — P3 bent VFPGAs hot-swap + draw', () => {
-  for (const id of ['sync-bender', 'chroma-rot', 'framestore-howl', 'databend-cvbs']) {
+  // framestore-howl is now a 2-OUTPUT spec (vout2 = the frame-store send) — it
+  // gets its own multi-output assertion below; the rest stay single-output.
+  for (const id of ['sync-bender', 'chroma-rot', 'databend-cvbs']) {
     it(`loads ${id} via node.data and draws repeatedly with a valid vout1`, () => {
       const h = spawn({ vfpga: id });
       expect(h.read?.('vfpga')).toBe(id);
@@ -248,14 +250,17 @@ describe('vfpgaRunnerDef.factory — P3 bent VFPGAs hot-swap + draw', () => {
     });
   }
 
-  it('framestore-howl allocates the register pair, draws (swaps), and disposes cleanly', () => {
+  it('framestore-howl allocates the register pair, draws (swaps), drives BOTH outputs, and disposes cleanly', () => {
     // The feedback flagship's frame-store is a register ping-pong pair: build →
     // draw (which runs the end-of-frame swapRegisters) → dispose, all without
     // throwing. This exercises the no-leak path (fixed FBOs swapped in place, then
-    // freed on dispose) the leak-audit covers.
+    // freed on dispose) the leak-audit covers. It is also the catalog's FIRST
+    // 2-output spec: vout1 = the composited howl, vout2 = the frame-store send
+    // (the warped recirculated frame). Both must resolve to a texture.
     const h = spawn({ vfpga: 'framestore-howl' });
     for (let i = 0; i < 3; i++) h.surface.draw(makeFrame());
     expect(h.read?.('outputTexture:vout1')).toBeTruthy();
+    expect(h.read?.('outputTexture:vout2'), 'framestore-howl vout2 (frame-store send) resolves').toBeTruthy();
     expect(() => h.dispose?.()).not.toThrow();
   });
 });

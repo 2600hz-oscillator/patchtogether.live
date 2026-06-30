@@ -25,6 +25,16 @@
 // (the howl motion; a small constant rotation rides along for a spiral), p3 hue-
 // shift per frame (rainbow howl), p4 decay (the warp gain — <1 trails fade, →1
 // runaway). CIN1 adds onto the zoom CV; GIN1 is a HELD gate that CLEARS the store.
+//
+// MULTI-IO (vfpga multi-output, design research 2026-06-30): the runner exposes 2
+// video outs; framestore-howl now drives BOTH. vout1 is the composited howl (the
+// final mix, UNCHANGED — byte-identical to the single-out version). vout2 is the
+// FRAME-STORE SEND: a tap of the warped recirculated frame (`warp`) — i.e. what is
+// actually feeding back this frame, BEFORE it remixes with the live input. Patch
+// vout2 into a SCOPE to watch the feedback content, into a RECORDERBOX to capture
+// the howl in isolation, or downstream to process it (a future `fb` return input
+// would close that loop externally). The 2nd output is purely ADDITIVE — vout1's
+// pipeline is unchanged; vout2 adds one passthru tap pass.
 
 import type { VfpgaSpec } from '$lib/video/vfpga/types';
 
@@ -40,10 +50,12 @@ export const framestoreHowlSpec: VfpgaSpec = {
     'drives a tunnel/spiral howl and the per-frame hue-shift a rainbow howl. CIN1 ' +
     'adds onto the zoom; GIN1 is a held gate that clears the store. The register ' +
     'ping-pong FBOs are render-local GPU state, swapped in place (no leak, no ' +
-    'Y.Doc writes).',
+    'Y.Doc writes). vout1 is the composited howl; vout2 is the FRAME-STORE SEND — ' +
+    'the warped recirculated frame (the feedback content before it remixes with the ' +
+    'live input) — so you can scope, record, or externally process the howl loop.',
   docSlug: 'framestore-howl',
   videoIn: 1,
-  videoOut: 1,
+  videoOut: 2,
   cvRoles: [
     { slot: 1, label: 'ZOOM', uniform: 'uWarpZoom', doc: 'Adds onto the per-frame zoom (patch an LFO to breathe the howl).' },
   ],
@@ -61,7 +73,8 @@ export const framestoreHowlSpec: VfpgaSpec = {
     // (Was cols:3, leaving `out` at col 3 out of bounds — caught once placement
     // validation landed; pos/grid don't affect the compiled passes, so this is a
     // pure floorplan-metadata fix with no pixel change.)
-    grid: { rows: 1, cols: 4 },
+    // 5 placed compute tiles in a row (mix@0, warp@1, store@2, out@3, out2@4).
+    grid: { rows: 1, cols: 5 },
     tiles: [
       // WARP the recirculated previous frame (zoom/rot/hue/decay). rot is a small
       // static const so the howl spirals; zoom/hue/gain are param-bound; CIN1 adds
@@ -98,6 +111,11 @@ export const framestoreHowlSpec: VfpgaSpec = {
       // The vout1 driver — a passthru so `mix` keeps its own FBO for `store`.
       { id: 'out', type: 'clb', config: { op: 'passthru' }, pos: { row: 0, col: 3 }, inputs: ['a'] },
       { id: 'o1', type: 'iob_out', config: { op: 'OUT1' } },
+      // The vout2 driver — the FRAME-STORE SEND: a passthru tap of the warped
+      // recirculated frame (`warp`). A passthru so `warp` keeps its own FBO for
+      // `mix:b` (same discipline as `out` for vout1). Purely additive.
+      { id: 'out2', type: 'clb', config: { op: 'passthru' }, pos: { row: 0, col: 4 }, inputs: ['a'] },
+      { id: 'o2', type: 'iob_out', config: { op: 'OUT2' } },
     ],
     nets: [
       { from: 'store:prev', to: 'warp:a' }, // read LAST frame (cuts the cycle)
@@ -105,9 +123,11 @@ export const framestoreHowlSpec: VfpgaSpec = {
       { from: 'warp', to: 'mix:b' }, // warped recirculated frame
       { from: 'mix', to: 'store:a' }, // re-store the composite
       { from: 'mix', to: 'out:a' }, // feed the output passthru
-      { from: 'out', to: 'OUT1' }, // output the composite
+      { from: 'out', to: 'OUT1' }, // output the composite (vout1)
+      { from: 'warp', to: 'out2:a' }, // tap the warped feedback frame (the SEND)
+      { from: 'out2', to: 'OUT2' }, // output the frame-store send (vout2)
     ],
-    outputs: { vout1: 'o1' },
-    budget: { passes: 4 },
+    outputs: { vout1: 'o1', vout2: 'o2' },
+    budget: { passes: 5 },
   },
 };

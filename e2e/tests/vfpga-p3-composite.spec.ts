@@ -158,6 +158,45 @@ test.describe('vfpga P3 composite-era bent VFPGAs', () => {
     });
   }
 
+  // framestore-howl MULTI-OUTPUT: the catalog's first 2-output spec. vout2 is the
+  // FRAME-STORE SEND (the warped recirculated feedback frame). This proves the
+  // host's SECOND video output actually flows through the patch graph to a real
+  // sink — the first spec to exercise vout2 end-to-end (the runner's vout2 path
+  // existed but no spec drove it). We wire bent.vout2 (NOT vout1) → OUTPUT and
+  // require a non-black, structured frame: the feedback send is live + patchable.
+  test('framestore-howl: vout2 (frame-store send) flows to a real sink, non-black', async ({ page }) => {
+    test.setTimeout(60_000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await spawnPatch(
+      page,
+      [
+        { id: 'src', type: 'vfpgaRunner', position: { x: 60, y: 80 }, domain: 'video' },
+        { id: 'bent', type: 'vfpgaRunner', position: { x: 460, y: 80 }, domain: 'video' },
+        { id: 'out', type: 'videoOut', position: { x: 900, y: 80 }, domain: 'video' },
+      ],
+      [
+        { id: 'e1', from: { nodeId: 'src', portId: 'vout1' }, to: { nodeId: 'bent', portId: 'vin1' }, sourceType: 'video', targetType: 'video' },
+        // The discriminator: route the SECOND output (vout2 = frame-store send).
+        { id: 'e2', from: { nodeId: 'bent', portId: 'vout2' }, to: { nodeId: 'out', portId: 'in' }, sourceType: 'video', targetType: 'video' },
+      ],
+      { mountTimeout: 15_000 },
+    );
+    await expect(page.locator('.svelte-flow__node-vfpgaRunner')).toHaveCount(2);
+    await loadPreset(page, 'bent', 'framestore-howl', 'framestore-howl');
+    // Feed the howl a few frames so the recirculated (warped) frame builds up on
+    // the send tap, then require the OUTPUT (driven by vout2) to be non-black +
+    // structured — proving the 2nd output carries real signal downstream.
+    const stats = await pollStats(page);
+    expect(stats.nonZeroFrac, `vout2 send reaches OUTPUT non-black (frac=${stats.nonZeroFrac})`).toBeGreaterThan(0.1);
+    expect(stats.variance, `vout2 send has spatial structure (var=${stats.variance})`).toBeGreaterThan(20);
+    expect(errors, 'no console / page errors').toEqual([]);
+  });
+
   // framestore-howl LEAK AUDIT (the flagship's feedback FBOs): under sustained
   // feedback the register ping-pong pair is allocated ONCE and swapped in place
   // (swapRegisters exchanges the {fbo,texture} map entries — no per-frame GL
