@@ -298,3 +298,43 @@ describe('vrt-meta — LINUX-baseline deficit RATCHET (only shrinks)', () => {
     ).toBeLessThanOrEqual(75);
   });
 });
+
+describe('vrt-meta — STALE EXEMPT_BASELINE_PAIRS RATCHET (only shrinks)', () => {
+  // HYGIENE GATE for the OTHER rot direction. An EXEMPT_BASELINE_PAIRS entry
+  // means "baseline PENDING — vrt.spec.ts SKIPS this card on this platform". But
+  // a pair often outlives its reason: the baseline lands (e.g. a `vrt-update.yml`
+  // CI dispatch commits it) yet nobody removes the pair, so the card stays
+  // SKIPPED on that platform DESPITE a committed baseline — silent coverage loss.
+  // (This is distinct from EXEMPT_FROM_VRT, which skips a card ENTIRELY on
+  // purpose, with a reason; a "pending" pair whose baseline exists is just rot.)
+  //
+  // We detect a pair as STALE when its vrt.spec.ts baseline PNG exists on disk.
+  // (Composite/scope SCENE pairs store baselines under a different spec dir, so
+  // they have no vrt.spec.ts path and are never counted here — this ratchet only
+  // governs plain module-card pairs, the unambiguous case.) `task vrt:audit`
+  // prints the full classified list for the cleanup pass.
+  //
+  // This ceiling makes the rot visible + ratchets it toward ZERO: it may only
+  // SHRINK. LOWER the number when you drop a stale pair (after confirming the
+  // committed baseline still matches the render — else `task vrt:commit` to
+  // regenerate first). Re-introducing a pair for a card that already has a
+  // baseline RAISES it → fails. Mirrors the deficit ratchet above, inverted.
+  it('the stale-exemption count (pair listed but baseline already exists) only shrinks', () => {
+    const stale = [...EXEMPT_BASELINE_PAIRS]
+      .filter((p) => {
+        const [platform, type] = p.split('/');
+        return existsSync(baselinePath(type, platform));
+      })
+      .sort();
+    expect(
+      stale.length,
+      `EXEMPT_BASELINE_PAIRS lists pairs whose vrt.spec.ts baseline ALREADY exists — the ` +
+        `card is SKIPPED on that platform despite a committed baseline (silent coverage ` +
+        `loss). Drop the stale pair(s) to LOWER this ceiling (see \`task vrt:audit\`): ` +
+        `${stale.join(', ')}`,
+      // Frozen at today's debt (2026-06-30). Drive it to 0 by reconciling each
+      // pair: confirm the committed baseline matches the current render, then
+      // remove the pair from EXEMPT_BASELINE_PAIRS and lower this number.
+    ).toBeLessThanOrEqual(18);
+  });
+});
