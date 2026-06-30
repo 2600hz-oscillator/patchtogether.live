@@ -425,12 +425,12 @@ export const MODULE_DOCS: Record<string, ModuleDocs> = {
       "weapprev": "CV gate — select the previous weapon while held HIGH."
     },
     "outputs": {
-      "audio_l": "Left channel of the game audio (silent in v1 — PCM bridge is stubbed).",
-      "audio_r": "Right channel of the game audio (silent in v1 — PCM bridge is stubbed).",
+      "audio_l": "Left channel of the live game audio — MultiVoc SFX + the OPL3 software-FM music synth, captured from the engine mixer and scaled by Gain. Patch it into a SCOPE, RECORDERBOX, or your output bus.",
+      "audio_r": "Right channel of the same live game-audio mixer stream (real stereo, not a duplicated channel), scaled by Gain, so the two sides can be routed independently downstream.",
       "out": "The Build software-rendered game framebuffer, aspect-correct letterboxed into the canvas."
     },
     "controls": {
-      "audioGain": "Trims the game-audio level feeding audio_l/audio_r (0..2, default 1).",
+      "audioGain": "Trims the game-audio level feeding audio_l/audio_r (0..2, default 1), applied live on top of the worklet makeup gain.",
       "fillMode": "Letterbox (preserve aspect, default) vs fill (cover-crop) the canvas."
     }
   },
