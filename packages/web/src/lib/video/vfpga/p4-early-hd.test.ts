@@ -115,22 +115,34 @@ describe('P4 specs — validate + place through place-and-route', () => {
 // ----------------------------------------------------------------------
 
 describe('macroblock-mosh — register reference frame-store feedback', () => {
-  it('declares ONE register pair (the reference store) swapped at end of frame', () => {
+  it('declares TWO register pairs (the reference store + clip-B motion store) swapped at end of frame', () => {
     const eff = fabricToEffect(spec('macroblock-mosh').fabric!);
-    expect(eff.registers).toHaveLength(1);
-    const reg = eff.registers![0]!;
-    expect(reg.id).toBe('store');
-    expect(reg.front).toBe('fbo_store__a');
-    expect(reg.back).toBe('fbo_store__b');
+    expect(eff.registers).toHaveLength(2);
+    const byId = new Map(eff.registers!.map((r) => [r.id, r]));
+    // the reference frame-store (image-A feedback reference)
+    expect(byId.get('store')).toMatchObject({ front: 'fbo_store__a', back: 'fbo_store__b' });
+    // the clip-B motion-source store (holds B's previous frame for motion estimation)
+    expect(byId.get('storeB')).toMatchObject({ front: 'fbo_storeB__a', back: 'fbo_storeB__b' });
     const ids = new Set((eff.fbos ?? []).map((f) => f.id));
-    expect(ids.has('fbo_store__a')).toBe(true);
-    expect(ids.has('fbo_store__b')).toBe(true);
+    for (const id of ['fbo_store__a', 'fbo_store__b', 'fbo_storeB__a', 'fbo_storeB__b']) {
+      expect(ids.has(id), `${id} allocated`).toBe(true);
+    }
   });
 
   it('the mosh pass reads the register BACK buffer (last frame = the reference) — the cut edge', () => {
     const eff = fabricToEffect(spec('macroblock-mosh').fabric!);
     const moshPass = eff.passes.find((p) => p.frag.includes('uMoshMvect'))!;
     expect(moshPass.inputs).toContainEqual({ source: 'fbo_store__b', uniform: cellInputUniform('a') });
+  });
+
+  it('the mosh pass also reads clip B now (IIN2→vin2) + clip B last frame (storeB:prev) for two-clip motion transfer', () => {
+    const eff = fabricToEffect(spec('macroblock-mosh').fabric!);
+    const moshPass = eff.passes.find((p) => p.frag.includes('uMoshMvectB'))!;
+    // b = clip B now (the host vin2 sampler), bprev = clip B last frame (storeB back buffer).
+    expect(moshPass.inputs).toContainEqual({ source: 'vin2', uniform: cellInputUniform('b') });
+    expect(moshPass.inputs).toContainEqual({ source: 'fbo_storeB__b', uniform: cellInputUniform('bprev') });
+    // the transferred-motion gain reaches the pass (param p5 / CIN2 both drive it).
+    expect(moshPass.uniforms).toContain('uMoshMvectB');
   });
 
   it('orders passes mosh → mix → {store, out} (producers before consumers)', () => {
