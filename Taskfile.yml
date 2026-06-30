@@ -479,10 +479,55 @@ tasks:
       - npm run vrt:strict -w {{.E2E}} -- {{.CLI_ARGS}}
 
   vrt:update:
-    desc: Refresh VRT baselines (e2e/vrt/__screenshots__/**). Inspect the diff and commit.
+    desc: Refresh VRT baselines (e2e/vrt/__screenshots__/**) LOCALLY (this platform only). Inspect the diff and commit. For cross-platform (linux + darwin) baselines, use `task vrt:commit` (CI job) instead.
     deps: [dsp:build, test:emit-manifest]
     cmds:
       - npm run vrt:update -w {{.E2E}} -- {{.CLI_ARGS}}
+
+  vrt:commit:
+    desc: |
+      [accept VRT changes] Trigger the vrt-update.yml CI job (workflow_dispatch)
+      for THIS branch — regenerates linux + darwin baselines on CI, commits them
+      back to the branch, then close+reopens the PR so the required checks re-fire
+      against the fresh baselines. This is the cross-platform "accept the new
+      look" button: a darwin dev box can't produce linux baselines locally, so
+      the loud VRT-diff PR comment points here instead of `task vrt:update`.
+      The `vrt` lane is INFORMATIONAL (never blocks merge); inspect the diff
+      gallery the comment links BEFORE accepting.
+      Examples:
+        task vrt:commit                       # both platforms, current branch
+        PLATFORM=linux task vrt:commit        # only linux baselines (skip the macOS runner)
+        GREP=adsr   task vrt:commit           # scope capture to matching cards (single token)
+        task vrt:commit -- some-other-branch  # explicit branch override
+    cmds:
+      - |
+        set -eu
+        BRANCH="{{.CLI_ARGS}}"
+        [ -n "$BRANCH" ] || BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+        if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "HEAD" ]; then
+          echo "Refusing to regenerate VRT baselines for '$BRANCH' — check out the PR branch first, or pass one: task vrt:commit -- <branch>." >&2
+          exit 1
+        fi
+        FLAGS="-f ref=$BRANCH"
+        [ -n "${PLATFORM:-}" ] && FLAGS="$FLAGS -f platform=$PLATFORM"
+        [ -n "${GREP:-}" ] && FLAGS="$FLAGS -f grep=$GREP"
+        echo "Dispatching vrt-update.yml for branch '$BRANCH'${PLATFORM:+ platform=$PLATFORM}${GREP:+ grep=$GREP} …"
+        # gh reads vrt-update.yml from the DEFAULT branch and passes `ref` as an
+        # input (a workflow_dispatch run on a non-default ref does NOT count
+        # toward a PR's required-status gate — the workflow's `revalidate` job
+        # close+reopens the PR to re-fire pull_request; see vrt-update.yml).
+        gh workflow run vrt-update.yml $FLAGS
+        echo "Dispatched. Track it with:  gh run list --workflow=vrt-update.yml"
+
+  vrt:audit:
+    desc: |
+      [read-only] Report EXEMPT_BASELINE_PAIRS hygiene: STALE pairs (baseline PNG
+      already on disk → the card is needlessly SKIPPED on that platform = silent
+      coverage loss; drop the pair) vs PENDING/scene pairs (no vrt.spec.ts
+      baseline yet → land it with `task vrt:commit`). The vrt-meta unit test
+      ratchets the stale count toward zero; this lists the offenders to clean.
+    cmds:
+      - node scripts/vrt-exemptions-audit.mjs
 
   vrt:one:
     desc: |
