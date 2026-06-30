@@ -41,7 +41,7 @@
   import ModuleTitle from './ModuleTitle.svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
 
-  let { id, data }: NodeProps = $props();
+  let { id, data, selected }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
 
@@ -184,7 +184,14 @@
   function claim(e: KeyboardEvent): boolean {
     return shouldClaimBloodKey({
       ready: loadStatus === 'ready',
-      focused: cardIsFocused(),
+      // SELECTED (SvelteFlow's reliable selection state) OR focus-within. We
+      // must claim when merely SELECTED because SvelteFlow's arrow-key node-move
+      // fires on the selected node regardless of DOM focus — and focus-within is
+      // fragile (a card re-render drops it, after which arrows slid the BLOOD
+      // module instead of driving the game; owner-reported). The editableTarget
+      // guard below still lets keys headed for a text field (the +Add palette /
+      // a rename box) flow through, so claim-on-selected can't swallow typing.
+      focused: selected === true || cardIsFocused(),
       editableTarget:
         isEditableTarget(e.target) || isEditableTarget(document.activeElement),
       code: e.code,

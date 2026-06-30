@@ -29,22 +29,53 @@ export const SC_C = 0x2e;
 export const SC_COMMA = 0x33; // weapon prev
 export const SC_PERIOD = 0x34; // weapon next
 
+// Letter/number/modifier scancodes (standard PC set-1, build/include/scancodes.h)
+// added so the keyboard map can send each PHYSICAL key's OWN scancode — matching
+// Blood's ACTUAL default bindings (the in-game KEY SETUP), instead of the prior
+// map's guesses (W→up-arrow, Space→use, LCtrl→fire) which didn't match the engine.
+export const SC_W = 0x11; // MOVE FORWARD
+export const SC_E = 0x12; // OPEN / USE
+export const SC_A = 0x1e; // STRAFE LEFT
+export const SC_S = 0x1f; // MOVE BACKWARD
+export const SC_D = 0x20; // STRAFE RIGHT
+export const SC_LSHIFT = 0x2a; // RUN
+export const SC_RSHIFT = 0x36; // RUN
+export const SC_CAPSLOCK = 0x3a; // AUTORUN
+export const SC_RIGHT_ALT = 0xb8; // STRAFE (modifier)
+export const SC_BACKSPACE = 0x0e; // TURN AROUND
+// Weapon-select number row 1..0.
+export const SC_1 = 0x02;
+export const SC_2 = 0x03;
+export const SC_3 = 0x04;
+export const SC_4 = 0x05;
+export const SC_5 = 0x06;
+export const SC_6 = 0x07;
+export const SC_7 = 0x08;
+export const SC_8 = 0x09;
+export const SC_9 = 0x0a;
+export const SC_0 = 0x0b;
+
 // ---------------- CV-gate port id → Build scancode ----------------
 //
 // The Phase-1 BLOOD module exposes these semantic CV-gate inputs (single
 // player — one input group, unlike DOOM's 4 per-slot groups). A rising edge on
 // `up` feels like holding ArrowUp. esc/enter drive the menu. Mirrors the plan's
 // port list.
+// Scancodes corrected to Blood's ACTUAL default bindings (the in-game KEY SETUP):
+// FIRE=RCTRL, SPECIAL FIRE=X, OPEN/USE=E, JUMP=SPACE, CROUCH=LCTRL. (The prior
+// values had fire→LCtrl=crouch, use→Space=jump, etc. — gates fired the wrong
+// action.) up/down/left/right stay the arrow keys (turn + menu); dedicated
+// forward/back/strafe movement gates are a follow-up port-set expansion.
 export const SCANCODE_FOR_CV_GATE: Readonly<Record<string, number>> = {
   up: SC_UP_ARROW,
   down: SC_DOWN_ARROW,
   left: SC_LEFT_ARROW,
   right: SC_RIGHT_ARROW,
-  fire: SC_LEFT_CONTROL,
-  altfire: SC_RIGHT_CONTROL,
-  use: SC_SPACE,
-  jump: SC_LEFT_ALT,
-  crouch: SC_Z,
+  fire: SC_RIGHT_CONTROL,
+  altfire: SC_X,
+  use: SC_E,
+  jump: SC_SPACE,
+  crouch: SC_LEFT_CONTROL,
   weapnext: SC_PERIOD,
   weapprev: SC_COMMA,
   esc: SC_ESCAPE,
@@ -64,26 +95,44 @@ export type BloodCvGatePortId = (typeof CV_GATE_PORT_IDS)[number];
 // The card's focused keyboard listener maps KeyboardEvent.code → scancode.
 // Layout-stable (physical positions). We stay off the numpad (NUMPAD+'s
 // exclusive collision surface — same rule as doomkeys.ts).
+// Each physical key sends its OWN Build scancode so Blood's default bindings
+// (the in-game KEY SETUP) fire the right action. WASD = forward/strafe, arrows =
+// turn (+ menu nav), and the action keys match the KEY SETUP exactly. (up-arrow
+// → in-game MOVE FORWARD specifically depends on the engine's gamefunc bindings
+// — if Blood doesn't bind the up-arrow to forward by default, that's the
+// fully-editable-layout follow-up; W always moves forward.)
 export const SCANCODE_FOR_KEYBOARD_CODE: Readonly<Record<string, number>> = {
-  ArrowUp: SC_UP_ARROW,
-  ArrowDown: SC_DOWN_ARROW,
-  ArrowLeft: SC_LEFT_ARROW,
-  ArrowRight: SC_RIGHT_ARROW,
-  KeyW: SC_UP_ARROW,
-  KeyS: SC_DOWN_ARROW,
-  KeyA: SC_LEFT_ARROW,
-  KeyD: SC_RIGHT_ARROW,
-  ControlLeft: SC_LEFT_CONTROL, // fire
-  ControlRight: SC_RIGHT_CONTROL,
-  Space: SC_SPACE, // use / open
-  AltLeft: SC_LEFT_ALT, // jump
-  AltRight: SC_LEFT_ALT,
-  KeyZ: SC_Z, // crouch
+  // Movement
+  KeyW: SC_W, // MOVE FORWARD
+  KeyS: SC_S, // MOVE BACKWARD
+  KeyA: SC_A, // STRAFE LEFT
+  KeyD: SC_D, // STRAFE RIGHT
+  ArrowUp: SC_UP_ARROW, // forward (if bound) / menu up
+  ArrowDown: SC_DOWN_ARROW, // back (if bound) / menu down
+  ArrowLeft: SC_LEFT_ARROW, // TURN LEFT
+  ArrowRight: SC_RIGHT_ARROW, // TURN RIGHT
+  // Actions — match the in-game KEY SETUP
+  ControlLeft: SC_LEFT_CONTROL, // CROUCH
+  ControlRight: SC_RIGHT_CONTROL, // WEAPON FIRE
+  Space: SC_SPACE, // JUMP
+  KeyE: SC_E, // OPEN / USE
+  KeyX: SC_X, // WEAPON SPECIAL FIRE
+  KeyZ: SC_Z,
+  ShiftLeft: SC_LSHIFT, // RUN
+  ShiftRight: SC_RSHIFT, // RUN
+  AltLeft: SC_LEFT_ALT, // STRAFE (modifier)
+  AltRight: SC_RIGHT_ALT, // STRAFE (modifier)
+  Backspace: SC_BACKSPACE, // TURN AROUND
+  CapsLock: SC_CAPSLOCK, // AUTORUN
+  // Weapon select 1..0
+  Digit1: SC_1, Digit2: SC_2, Digit3: SC_3, Digit4: SC_4, Digit5: SC_5,
+  Digit6: SC_6, Digit7: SC_7, Digit8: SC_8, Digit9: SC_9, Digit0: SC_0,
+  // Weapon cycle + menu/system
+  Comma: SC_COMMA,
+  Period: SC_PERIOD,
   Enter: SC_ENTER,
   Escape: SC_ESCAPE,
   Tab: SC_TAB,
-  Comma: SC_COMMA,
-  Period: SC_PERIOD,
 };
 
 // ---------------- Focused-card keyboard-capture gating ----------------

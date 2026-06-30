@@ -121,6 +121,43 @@ test('BLOOD: focused card forwards keys; capture releases when card unfocused', 
 // this typed nothing; the previous attempt (Module.keyboardListeningElement) was
 // the wrong knob — that property is for the legacy SDL1/library_browser path, not
 // the HTML5/SDL2 emscripten_set_keydown_callback path this build uses.
+// REGRESSION (owner-reported): after a moment / clicking off-and-back, arrow
+// keys slid the BLOOD MODULE around the canvas instead of driving the game — the
+// focus-within gate is fragile (a card re-render drops DOM focus while the node
+// stays SvelteFlow-SELECTED, and SF's arrow-key node-move fires on the selected
+// node). Fix: claim on SELECTED (not just focus-within). This reproduces the
+// exact state (selected + blurred) and asserts the module does NOT slide and the
+// arrows still reach the game.
+test('BLOOD selected but unfocused: arrows still claimed (module does not slide)', async ({ page }) => {
+  const ready = await spawnBloodReady(page);
+  test.skip(!ready, 'engine not ready');
+  const spied = await installForwardSpy(page, BLOOD_ID);
+  test.skip(!spied, 'extras unavailable');
+
+  await page.getByTestId('blood-card').click(); // selects + focuses the node
+  // Drop DOM focus while the node stays SELECTED — the re-render bug condition.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+
+  const transformOf = () =>
+    page.evaluate((id) => {
+      const el = document.querySelector(`.svelte-flow__node[data-id="${id}"]`) as HTMLElement | null;
+      return el?.style.transform ?? '';
+    }, BLOOD_ID);
+
+  await page.evaluate(() => ((globalThis as unknown as { __bloodKbCalls?: string[] }).__bloodKbCalls = []));
+  const before = await transformOf();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowLeft');
+  const after = await transformOf();
+  const calls = await page.evaluate(
+    () => (globalThis as unknown as { __bloodKbCalls?: string[] }).__bloodKbCalls ?? [],
+  );
+
+  expect(after, 'BLOOD module slid under arrows while selected — capture not claiming on selection').toBe(before);
+  expect(calls, 'arrows must reach the game even when selected-but-unfocused').toContain('ArrowRight');
+});
+
 test('BLOOD running: +Add-module palette still receives typing', async ({ page }) => {
   const ready = await spawnBloodReady(page);
   test.skip(!ready, 'engine not ready');

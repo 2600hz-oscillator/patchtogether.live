@@ -12,9 +12,12 @@ import {
   SCANCODE_FOR_KEYBOARD_CODE,
   SC_UP_ARROW,
   SC_LEFT_CONTROL,
+  SC_RIGHT_CONTROL,
   SC_SPACE,
   SC_ESCAPE,
   SC_ENTER,
+  SC_W,
+  SC_E,
   isEditableTarget,
   shouldClaimBloodKey,
   type EditableLike,
@@ -36,12 +39,15 @@ describe('blood-keys — CV-gate → Build scancode map', () => {
     }
   });
 
-  it('pins the load-bearing movement/action scancodes (regression)', () => {
-    // These exact values come from build/include/scancodes.h; a drift here
-    // would silently misroute input to the wrong key.
+  it('pins the load-bearing CV-gate scancodes to Blood’s real bindings (regression)', () => {
+    // Pinned to the engine's ACTUAL default bindings (the in-game KEY SETUP), not
+    // the prior guesses: FIRE=RCTRL (was wrongly LCtrl=crouch), OPEN/USE=E (was
+    // wrongly Space=jump). A drift here misroutes a gate to the wrong action.
     expect(SCANCODE_FOR_CV_GATE.up).toBe(SC_UP_ARROW); // 0xc8
-    expect(SCANCODE_FOR_CV_GATE.fire).toBe(SC_LEFT_CONTROL); // 0x1d
-    expect(SCANCODE_FOR_CV_GATE.use).toBe(SC_SPACE); // 0x39
+    expect(SCANCODE_FOR_CV_GATE.fire).toBe(SC_RIGHT_CONTROL); // WEAPON FIRE = RCTRL
+    expect(SCANCODE_FOR_CV_GATE.use).toBe(SC_E); // OPEN = E
+    expect(SCANCODE_FOR_CV_GATE.crouch).toBe(SC_LEFT_CONTROL); // CROUCH = LCTRL
+    expect(SCANCODE_FOR_CV_GATE.jump).toBe(SC_SPACE); // JUMP = SPACE
     expect(SCANCODE_FOR_CV_GATE.esc).toBe(SC_ESCAPE); // 0x01
     expect(SCANCODE_FOR_CV_GATE.enter).toBe(SC_ENTER); // 0x1c
   });
@@ -54,6 +60,18 @@ describe('blood-keys — KeyboardEvent.code → Build scancode map', () => {
     expect(SCANCODE_FOR_KEYBOARD_CODE.Space).toBe(SC_SPACE);
     expect(SCANCODE_FOR_KEYBOARD_CODE.Escape).toBe(SC_ESCAPE);
     expect(SCANCODE_FOR_KEYBOARD_CODE.Enter).toBe(SC_ENTER);
+  });
+
+  it('each physical key sends its OWN scancode to match Blood’s bindings', () => {
+    // The prior map sent KeyW→up-arrow / Space→use / LCtrl→fire, none of which
+    // matched the engine, so the controls did the wrong thing. Pin the corrected
+    // physical-key → scancode mapping (KEY SETUP: forward=W, fire=RCtrl, open=E).
+    expect(SCANCODE_FOR_KEYBOARD_CODE.KeyW).toBe(SC_W); // MOVE FORWARD
+    expect(SCANCODE_FOR_KEYBOARD_CODE.ControlRight).toBe(SC_RIGHT_CONTROL); // WEAPON FIRE
+    expect(SCANCODE_FOR_KEYBOARD_CODE.KeyE).toBe(SC_E); // OPEN / USE
+    // Weapon-select number row is mapped (was entirely absent before).
+    expect(SCANCODE_FOR_KEYBOARD_CODE.Digit1).toBeTypeOf('number');
+    expect(SCANCODE_FOR_KEYBOARD_CODE.Digit0).toBeTypeOf('number');
   });
 
   it('stays off the numpad (NUMPAD+ exclusive collision surface)', () => {
