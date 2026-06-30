@@ -232,9 +232,10 @@ describe('vfpgaRunnerDef.factory — preset + snapshot + outputs', () => {
 // ---------------------------------------------------------------------------
 
 describe('vfpgaRunnerDef.factory — P3 bent VFPGAs hot-swap + draw', () => {
-  // framestore-howl is now a 2-OUTPUT spec (vout2 = the frame-store send) — it
-  // gets its own multi-output assertion below; the rest stay single-output.
-  for (const id of ['sync-bender', 'chroma-rot', 'databend-cvbs']) {
+  // framestore-howl + chroma-rot are now 2-OUTPUT specs (the frame-store send / the
+  // Y plane) — they get their own multi-output assertions below; the rest stay
+  // single-output.
+  for (const id of ['sync-bender', 'databend-cvbs']) {
     it(`loads ${id} via node.data and draws repeatedly with a valid vout1`, () => {
       const h = spawn({ vfpga: id });
       expect(h.read?.('vfpga')).toBe(id);
@@ -261,6 +262,23 @@ describe('vfpgaRunnerDef.factory — P3 bent VFPGAs hot-swap + draw', () => {
     for (let i = 0; i < 3; i++) h.surface.draw(makeFrame());
     expect(h.read?.('outputTexture:vout1')).toBeTruthy();
     expect(h.read?.('outputTexture:vout2'), 'framestore-howl vout2 (frame-store send) resolves').toBeTruthy();
+    expect(() => h.dispose?.()).not.toThrow();
+  });
+
+  it('chroma-rot is 2-input + 2-output: draws and drives BOTH outputs (the Y/C split)', () => {
+    // The Y/C transplant flagship: IIN1 = luma source, IIN2 = chroma source; vout1 =
+    // the chroma-corrupted composite, vout2 = the separated luma (Y) plane. Both must
+    // resolve to a texture (vin2 unpatched here is fine — the cell falls back to A's
+    // own chroma; the real two-source transplant is the e2e's job).
+    const h = spawn({ vfpga: 'chroma-rot' });
+    expect(h.read?.('vfpga')).toBe('chroma-rot');
+    h.setParam('cv1_val', 0.5);
+    h.setParam('g1_evt', 1);
+    for (let i = 0; i < 3; i++) h.surface.draw(makeFrame());
+    h.setParam('g1_evt', 0);
+    h.surface.draw(makeFrame());
+    expect(h.read?.('outputTexture:vout1'), 'chroma-rot vout1 (composite) resolves').toBeTruthy();
+    expect(h.read?.('outputTexture:vout2'), 'chroma-rot vout2 (luma Y plane) resolves').toBeTruthy();
     expect(() => h.dispose?.()).not.toThrow();
   });
 });
