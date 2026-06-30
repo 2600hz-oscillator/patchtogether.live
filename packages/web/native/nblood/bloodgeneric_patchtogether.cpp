@@ -402,10 +402,29 @@ void credLogosDos(void) { /* skip DOS intro logos */ }
 void credReset(void) { /* no cutscene state to reset */ }
 char credPlaySmk(const char *, const char *, int) { return 0; /* not played */ }
 
-// ───────────────────────────── audio stub ───────────────────────────────
-// v1 ships audio DISABLED (mirrors the DOOM slice-8 stub). The stereo PCM
-// ring exists so the JS API surface (audio_l/audio_r) is stable.
-#define BPT_PCM_SAMPLES 4096
-static float s_pcm[BPT_PCM_SAMPLES * 2];
+// ───────────────────────────── audio capture ─────────────────────────────
+// MultiVoc (SFX) + the OPL3 software-MIDI synth (music) mix into interleaved
+// 16-bit stereo pages. On wasm we don't open a real SDL audio device (see the
+// driver_sdl __EMSCRIPTEN__ patch in build-blood-wasm.sh); instead the JS
+// AudioWorklet drives this pump at audio-frame cadence + reads s_pcm, then
+// routes it to the module's audio_l / audio_r outputs. Mirrors DOOM's
+// i_pcmgen -> dg_get_pcm_buffer -> worklet bridge (real stereo, not mono-dup).
+extern "C" void bpt_sdl_audio_pump(unsigned char *dest, int bytes);  // driver_sdl.cpp (wasm)
+
+// Scratch sized for several JS pump ticks: a 60 Hz pump asks for ~735 stereo
+// frames; 8192 frames = ~186 ms of headroom. Interleaved L,R int16.
+#define BPT_PCM_FRAMES 8192
+static int16_t s_pcm[BPT_PCM_FRAMES * 2];
+
+// Mix + drain `frames` interleaved-stereo frames from MultiVoc into s_pcm.
+// Returns the number of frames written (clamped to capacity). Blood requests
+// stereo (config.cpp NumChannels=2), so MV_SampleSize == 4 bytes/frame.
+extern "C" int bpt_pump_audio(int frames)
+{
+    if (frames <= 0) return 0;
+    if (frames > BPT_PCM_FRAMES) frames = BPT_PCM_FRAMES;
+    bpt_sdl_audio_pump((unsigned char *)s_pcm, frames * 4 /* stereo int16 */);
+    return frames;
+}
 extern "C" uint8_t *bpt_get_pcm_buffer(void) { return (uint8_t *)s_pcm; }
-extern "C" int bpt_get_pcm_buffer_size(void) { return BPT_PCM_SAMPLES; }
+extern "C" int bpt_get_pcm_buffer_size(void) { return BPT_PCM_FRAMES; }

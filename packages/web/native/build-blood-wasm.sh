@@ -250,6 +250,106 @@ apply_phase0_patches() {
     perl -0pi -e 's/(keydefaults\[NUMGAMEFUNCTIONS\*2\]\[MAXGAMEFUNCLEN\] =\s*\n\s*\{\s*\n)(\s*)"W", "Kpad8",(\s*\n\s*)"S", "Kpad2",/${1}${2}"W", "Up",${3}"S", "Down",/' "$FUNC"
     echo "[build-blood-wasm] patched _functio.h keydefaults: arrows Up/Down -> Move_Forward/Backward (keeps W/S)"
   fi
+
+  # ── AUDIO CAPTURE: device-less PCM driver on wasm ─────────────────────────
+  # MultiVoc (SFX) + the OPL3 software-MIDI synth (music) mix into interleaved
+  # 16-bit stereo pages, normally pushed to a real SDL audio device. On wasm we
+  # do NOT open one; instead the JS AudioWorklet drives a pump that pulls the
+  # already-mixed pages (driver_sdl's static fillData) into the module's
+  # audio_l/audio_r outputs. Mirrors DOOM's i_pcmgen -> worklet bridge. Three
+  # surgical, reversible edits to driver_sdl.cpp (throwaway checkout only):
+  local SDLDRV="$NBLOOD_SRC/source/audiolib/src/driver_sdl.cpp"
+  # (1) SDLDrv_PCM_Init: accept the requested format WITHOUT opening a device,
+  #     so MV_Init proceeds and MV_StartPlayback hands us the page buffer.
+  if ! grep -q 'wasm device-less capture path' "$SDLDRV"; then
+    perl -0pi -e 's/    UNREFERENCED_PARAMETER\(initdata\);\n\n    Uint32 inited;\n    int err = 0;/    UNREFERENCED_PARAMETER(initdata);\n\n\x23ifdef __EMSCRIPTEN__\n    \/\/ patchtogether wasm: no real audio device. Accept the requested format so\n    \/\/ MV_Init proceeds; the JS AudioWorklet pulls mixed pages via bpt_pump_audio\n    \/\/ (nblood\/bloodgeneric_patchtogether.cpp). The SDL device calls below are\n    \/\/ audio_dev-guarded (audio_dev stays 0 since we never open a device).\n    if (Initialised) SDLDrv_PCM_Shutdown();\n    if (*numchannels != 1 && *numchannels != 2) *numchannels = 2;\n    Initialised = 1;\n    return SDLErr_Ok; \/\/ wasm device-less capture path\n\x23endif\n\n    Uint32 inited;\n    int err = 0;/' "$SDLDRV"
+    echo "[build-blood-wasm] patched driver_sdl.cpp SDLDrv_PCM_Init (device-less wasm capture)"
+  fi
+  # (2) Guard the SDL device pause/lock/unlock calls (audio_dev==0 on wasm).
+  if ! grep -q 'if (audio_dev) SDL_PauseAudioDevice' "$SDLDRV"; then
+    perl -0pi -e 's/    SDL_PauseAudioDevice\(audio_dev, 0\);/    if (audio_dev) SDL_PauseAudioDevice(audio_dev, 0);/; s/    SDL_PauseAudioDevice\(audio_dev, 1\);/    if (audio_dev) SDL_PauseAudioDevice(audio_dev, 1);/; s/    SDL_LockAudioDevice\(audio_dev\);/    if (audio_dev) SDL_LockAudioDevice(audio_dev);/; s/    SDL_UnlockAudioDevice\(audio_dev\);/    if (audio_dev) SDL_UnlockAudioDevice(audio_dev);/' "$SDLDRV"
+    echo "[build-blood-wasm] patched driver_sdl.cpp device calls with audio_dev guards"
+  fi
+  # (3) Append the capture pump (calls the static fillData in the same TU).
+  if ! grep -q 'bpt_sdl_audio_pump' "$SDLDRV"; then
+    cat >> "$SDLDRV" <<'PUMP_EOF'
+
+#ifdef __EMSCRIPTEN__
+// patchtogether: device-less capture pump. Pull `bytes` of already-mixed
+// interleaved-S16 audio from MultiVoc (driving MV_ServiceVoc as pages drain)
+// into `dest`. The blood shim's bpt_pump_audio calls this at the JS
+// AudioWorklet's cadence (-> audio_l / audio_r). Silence before MV_StartPlayback
+// (MixBuffer/MixCallBack null -> fillData early-returns; we pre-zero dest).
+extern "C" void bpt_sdl_audio_pump(unsigned char *dest, int bytes)
+{
+    memset(dest, 0, (size_t)bytes);
+    fillData(nullptr, dest, bytes);
+}
+#endif
+PUMP_EOF
+    echo "[build-blood-wasm] appended driver_sdl.cpp bpt_sdl_audio_pump (capture pump)"
+  fi
+
+  # ── SHAREWARE SFX FIX: the 1997 Blood SHAREWARE v1.0 SFX struct ───────────
+  # The bundled shareware SOUNDS.RFF stores SFX descriptors in the Blood v1.0
+  # layout, which has NO `format` field — so rawName sits at offset 16 and
+  # loopStart at 12. NBlood reads the v1.21 layout (format@12, loopStart@16,
+  # rawName@20), so on shareware data EVERY sound's rawName is garbage → the RAW
+  # lookup fails → total silence (the owner-reported "sounds all say missing"),
+  # and a misread loopStart (huge) would crash FX_PlayLoopedRaw on a looped
+  # ambient sound. Fix = a shared sfxResolveRaw() helper that resolves rawName@20
+  # and, only when that FAILS, falls back to the v1.0 offsets (rawName@16,
+  # loopStart@12) — provably safe for v1.21 (the fallback never runs when @20
+  # resolves). Plus a sndGetRate() range-clamp so the missing/garbage v1.0 format
+  # can't OOB-index soundRates[]. Verified by blood-audio-output.spec (audible
+  # RMS on audio_l in-game). Full-game (v1.21) data is unaffected.
+  local SNDH="$NBLOOD_SRC/source/blood/src/sound.h"
+  local SNDC="$NBLOOD_SRC/source/blood/src/sound.cpp"
+  local SFXC="$NBLOOD_SRC/source/blood/src/sfx.cpp"
+  local ASNDC="$NBLOOD_SRC/source/blood/src/asound.cpp"
+  if ! grep -q 'sfxResolveRaw' "$SNDH"; then
+    perl -0pi -e 's/int sndGetRate\(int format\);/int sndGetRate(int format);\nDICTNODE *sfxResolveRaw(SFX *pEffect, int *pLoopStart);/' "$SNDH"
+    echo "[build-blood-wasm] patched sound.h: sfxResolveRaw decl"
+  fi
+  if ! grep -q 'format < 0 || format >= 13' "$SNDC"; then
+    perl -0pi -e 's/    if \(format < 13\)\n        return soundRates\[format\];\n    return 11025;/    if (format < 0 || format >= 13)\n        return 11025;\n    return soundRates[format];/' "$SNDC"
+    echo "[build-blood-wasm] patched sound.cpp: sndGetRate range clamp"
+  fi
+  if ! grep -q 'sfxResolveRaw(SFX' "$SNDC"; then
+    cat >> "$SNDC" <<'SFXR_EOF'
+
+// patchtogether: resolve an SFX's RAW sample, handling BOTH the NBlood v1.21 SFX
+// struct (rawName@20, loopStart@16, format@12) and the 1997 Blood SHAREWARE v1.0
+// struct, which has NO `format` field so rawName sits at offset 16 + loopStart at
+// 12. v1.21 data resolves rawName@20; only when that FAILS do we fall back to the
+// v1.0 offsets (cannot corrupt v1.21 reads). Returns the RAW node (or NULL) and,
+// if pLoopStart != NULL, the loopStart for whichever layout matched.
+DICTNODE *sfxResolveRaw(SFX *pEffect, int *pLoopStart)
+{
+    DICTNODE *hRaw = gSoundRes.Lookup(pEffect->rawName, "RAW");
+    if (hRaw) { if (pLoopStart) *pLoopStart = pEffect->loopStart; return hRaw; }
+    const char *rawName16 = (const char *)pEffect + 16;
+    hRaw = gSoundRes.Lookup(rawName16, "RAW");
+    if (hRaw && pLoopStart) *pLoopStart = ((const int *)pEffect)[3];
+    return hRaw;
+}
+SFXR_EOF
+    echo "[build-blood-wasm] appended sound.cpp: sfxResolveRaw helper"
+  fi
+  if ! grep -q 'pChannel->at5 = sfxResolveRaw' "$SNDC"; then
+    perl -0pi -e 's/    pChannel->at5 = gSoundRes\.Lookup\(pEffect->rawName, "RAW"\);/    int bptLoop = pEffect->loopStart; pChannel->at5 = sfxResolveRaw(pEffect, &bptLoop);/' "$SNDC"
+    perl -0pi -e 's/pData \+ pEffect->loopStart/pData + bptLoop/g' "$SNDC"
+    echo "[build-blood-wasm] patched sound.cpp: sndStartSample rawName fallback + loopStart"
+  fi
+  if ! grep -q 'sfxResolveRaw(pEffect' "$SFXC"; then
+    perl -0pi -e 's/    hRes = gSoundRes\.Lookup\(pEffect->rawName, "RAW"\);/    int bptLoop = 0; hRes = sfxResolveRaw(pEffect, &bptLoop);/g' "$SFXC"
+    perl -0pi -e 's/    int loopStart = pEffect->loopStart;/    int loopStart = bptLoop;/g' "$SFXC"
+    echo "[build-blood-wasm] patched sfx.cpp: 3D sound rawName fallback + loopStart"
+  fi
+  if ! grep -q 'sfxResolveRaw(pSFX' "$ASNDC"; then
+    perl -0pi -e 's/DICTNODE \*pRAWNode = gSoundRes\.Lookup\(pSFX->rawName, "RAW"\);/DICTNODE *pRAWNode = sfxResolveRaw(pSFX, NULL);/' "$ASNDC"
+    echo "[build-blood-wasm] patched asound.cpp: ambient rawName fallback"
+  fi
 }
 apply_phase0_patches
 
@@ -473,7 +573,7 @@ echo "[build-blood-wasm] LINK: all ${#OBJS[@]} TUs compiled; linking ..."
 BPT_EXPORTS='[
   "_bpt_init","_bpt_tick","_bpt_get_framebuffer","_bpt_get_framebuffer_size",
   "_bpt_get_resx","_bpt_get_resy","_bpt_has_frame","_bpt_set_key",
-  "_bpt_get_pcm_buffer","_bpt_get_pcm_buffer_size","_malloc","_free"
+  "_bpt_pump_audio","_bpt_get_pcm_buffer","_bpt_get_pcm_buffer_size","_malloc","_free"
 ]'
 BPT_RUNTIME_METHODS='["HEAPU8","HEAPU32","HEAPF32","ccall","cwrap","FS"]'
 
