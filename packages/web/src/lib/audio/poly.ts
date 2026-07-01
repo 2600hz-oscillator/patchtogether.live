@@ -159,7 +159,7 @@ export interface PolySender {
     at: number,
     lanes: ReadonlyArray<{ pitch: number; gate: 0 | 1 }>,
     gateOffSec: number,
-    opts?: { writePitch?: boolean },
+    opts?: { writePitch?: boolean; writeGate?: boolean },
   ): void;
   /** Force every lane's gate to 0 immediately (cancels future gate events). */
   silence(now: number): void;
@@ -189,19 +189,31 @@ export function createPolySender(ctx: BaseAudioContext): PolySender {
     at: number,
     lanes: ReadonlyArray<{ pitch: number; gate: 0 | 1 }>,
     gateOffSec: number,
-    opts?: { writePitch?: boolean },
+    opts?: { writePitch?: boolean; writeGate?: boolean },
   ): void {
     // writePitch defaults to true — fully backward-compatible with every
     // existing caller. When false (S&H ON on a rest), the gate(s) still close
     // but pitchSrc.offset is left untouched so pitch holds its last value.
+    //
+    // writeGate defaults to true — also fully backward-compatible. When false
+    // the per-lane gate is left ENTIRELY untouched (no value, no close), so a
+    // held/tied note's gate stays HIGH across a caller's rest steps instead of
+    // being re-zeroed. This is what lets clipplayer's poly output match its mono
+    // output for a lengthSteps>1 note (the mono gate is only written on note
+    // steps; without this the poly gate fell a step early — the bug the
+    // gate/held-note plan Phase 1 fixes). A note always schedules its OWN close
+    // (gateOffSec) on its note step, so a skipped rest never leaves a gate stuck.
     const writePitch = opts?.writePitch !== false;
+    const writeGate = opts?.writeGate !== false;
     for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
       const v = voices[i]!;
       const lane = lanes[i] ?? { pitch: 0, gate: 0 as const };
       if (writePitch) v.pitchSrc.offset.setValueAtTime(lane.pitch, at);
-      v.gateSrc.offset.setValueAtTime(lane.gate, at);
-      if (lane.gate === 1 && gateOffSec > 0) {
-        v.gateSrc.offset.setValueAtTime(0, at + gateOffSec);
+      if (writeGate) {
+        v.gateSrc.offset.setValueAtTime(lane.gate, at);
+        if (lane.gate === 1 && gateOffSec > 0) {
+          v.gateSrc.offset.setValueAtTime(0, at + gateOffSec);
+        }
       }
     }
   }

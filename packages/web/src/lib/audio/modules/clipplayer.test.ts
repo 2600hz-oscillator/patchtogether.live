@@ -49,12 +49,20 @@ class FakeConstantSource {
   offset = new FakeParam();
   start() {}
   stop() {}
-  connect() {}
+  // Track which merger channel this source feeds so tests can reach the per-lane
+  // poly gate/pitch params (createPolySender does gateSrc.connect(merger,0,ch)).
+  connect(target?: unknown, _output?: number, input?: number) {
+    const t = target as { _inputs?: Record<number, FakeConstantSource> } | undefined;
+    if (t && t._inputs && typeof input === 'number') t._inputs[input] = this;
+  }
   disconnect() {}
 }
 class FakeGain {
   gain = new FakeParam();
   injected: Float32Array | null = null;
+  // Populated when this node is used as a ChannelMerger (poly sender output):
+  // channel index → the ConstantSource feeding it.
+  _inputs: Record<number, FakeConstantSource> = {};
   connect(node: unknown) {
     if (node instanceof FakeAnalyser) node._source = this;
   }
@@ -141,6 +149,17 @@ function gateOf(handle: { outputs: Map<string, { node: unknown }> }, lane: numbe
 }
 function hasHighEvent(param: FakeParam): boolean {
   return param.events.some((e) => e.value >= 0.5);
+}
+/** The POLY-bus gate FakeParam for a lane's voice (default voice 0). Reaches the
+ *  per-voice ConstantSource behind the lane's ChannelMerger (pitchN output) via
+ *  the merger-input tracking in FakeConstantSource.connect. */
+function polyGateOf(
+  handle: { outputs: Map<string, { node: unknown }> },
+  lane: number,
+  voice = 0,
+): FakeParam {
+  const merger = handle.outputs.get(`pitch${lane + 1}`)!.node as unknown as FakeGain;
+  return (merger._inputs[voice * 2 + 1] as unknown as FakeConstantSource).offset as unknown as FakeParam;
 }
 async function build(ctx: FakeAudioContext) {
   return clipplayerDef.factory(
@@ -637,6 +656,45 @@ describe('clipplayer: live audition (KEYS)', () => {
     pushAudition(NODE_ID, { lane: 0, midi: 67, velocity: 0, on: false });
     hoisted.tick!();
     expect(gate.events.at(-1)!.value, 'gate closes on release').toBe(0);
+  });
+});
+
+// ===========================================================================
+// TIED-NOTE POLY GATE (gate/held-note plan Phase 1). A held/tied note
+// (lengthSteps>1) must hold its POLY-bus gate across the whole span exactly like
+// its MONO gate — before the fix, poly.scheduleStep re-zeroed the gate on every
+// rest step, so a tied note released a step early into poly synths while the
+// mono bus sustained. Assert the two gates' close schedules AGREE.
+// ===========================================================================
+describe('clipplayer: tied-note poly gate (Phase 1)', () => {
+  it('a tied note holds the POLY gate across its span, matching the MONO gate (no early poly close)', async () => {
+    clearAudition(NODE_ID);
+    // one 2-step tied note at step 0 of a long clip (so the short run stays well
+    // inside it — no loop wrap, no clip-end stop to add unrelated gate events).
+    const tied: NoteClipRecord = {
+      kind: 'note',
+      steps: [{ step: 0, midi: 60, velocity: 127, lengthSteps: 2 }],
+      lengthSteps: 16,
+      root: 48,
+      loop: true,
+    };
+    seed(
+      { stepDiv: 4, quantize: 0, octave: 0, gateLength: 0.9, snh: 1 },
+      { clips: { [clipIndex(0, 0)]: tied }, playing: lane8(0, 0, null) },
+    );
+    seedTimelorde(1); // transport running → the clip is scheduled
+    const ctx = ctx0();
+    const handle = await build(ctx);
+    const mono = gateOf(handle as never, 0);
+    const poly = polyGateOf(handle as never, 0);
+    run(ctx, 0, 0.5); // crosses the tied note's 2 steps + a couple of rests
+    const closes = (p: FakeParam) =>
+      p.events.filter((e) => e.value === 0).map((e) => Math.round(e.time * 1e6) / 1e6);
+    expect(hasHighEvent(poly), 'poly gate opened for the tied note').toBe(true);
+    // The crux: the poly gate must NOT be re-zeroed at the step-1 boundary; its
+    // close schedule must EQUAL the mono gate's (whose rest-step else-branch never
+    // writes). Pre-fix, poly carried an extra 0 one step early.
+    expect(closes(poly), 'poly gate closes agree with the mono gate').toEqual(closes(mono));
   });
 });
 

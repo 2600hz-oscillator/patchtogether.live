@@ -13,8 +13,45 @@ import {
   chordVoicing,
   voicingToVOct,
   resolveConnection,
+  createPolySender,
 } from './poly';
 import { MAX_MIDI, MIN_MIDI, midiToVOct, noteNameForMidi } from './note-entry';
+
+// ---- Minimal fake AudioContext for the scheduleStep gate/pitch primitive ----
+interface Sched {
+  value: number;
+  time: number;
+}
+class FakeParam {
+  value = 0;
+  events: Sched[] = [];
+  setValueAtTime(value: number, time: number) {
+    this.events.push({ value, time });
+    this.value = value;
+    return this;
+  }
+  cancelScheduledValues(time: number) {
+    this.events = this.events.filter((e) => e.time < time);
+    return this;
+  }
+}
+class FakeConstantSource {
+  offset = new FakeParam();
+  start() {}
+  stop() {}
+  connect() {}
+  disconnect() {}
+}
+class FakeMerger {
+  connect() {}
+  disconnect() {}
+}
+const fakeCtx = {
+  createConstantSource: () => new FakeConstantSource(),
+  createChannelMerger: () => new FakeMerger(),
+} as unknown as BaseAudioContext;
+const gateEvents = (sender: ReturnType<typeof createPolySender>, lane = 0): Sched[] =>
+  (sender.voices[lane]!.gateSrc.offset as unknown as FakeParam).events;
 
 describe('poly: constants', () => {
   it('5 voice pairs = 10 channels', () => {
@@ -254,5 +291,40 @@ describe('poly: resolveConnection backward-compat rules', () => {
     expect(resolveConnection('polyPitchGate', 'gate').rule).toContain('OR-sum');
     expect(resolveConnection('polyPitchGate', 'pitch').rule).toContain('lane 0');
     expect(resolveConnection('pitch', 'polyPitchGate').rule).toContain('lane 0');
+  });
+});
+
+describe('poly: scheduleStep writeGate gating (Phase 1 — held/tied note fix)', () => {
+  it('default writes the gate high + schedules its close at gateOffSec', () => {
+    const s = createPolySender(fakeCtx);
+    s.scheduleStep(0, [{ pitch: 0, gate: 1 }], 0.25);
+    expect(gateEvents(s)).toEqual([
+      { value: 1, time: 0 },
+      { value: 0, time: 0.25 },
+    ]);
+  });
+
+  it('writeGate:false leaves the per-lane gate ENTIRELY untouched (held gate persists across a rest)', () => {
+    const s = createPolySender(fakeCtx);
+    // open lane 0 at t=0 (no auto-close: gateOffSec 0)
+    s.scheduleStep(0, [{ pitch: 1, gate: 1 }], 0);
+    const openCount = gateEvents(s).length;
+    expect(openCount).toBe(1);
+    expect(gateEvents(s).at(-1)!.value).toBe(1);
+    // a "rest" step with writeGate:false must add NO gate events — the held gate
+    // stays HIGH (this is what makes clipplayer's poly gate match its mono gate).
+    s.scheduleStep(0.1, [], 0.5, { writeGate: false });
+    expect(gateEvents(s).length, 'no gate events added on a writeGate:false rest').toBe(openCount);
+    expect(gateEvents(s).at(-1)!.value, 'gate still HIGH after the rest').toBe(1);
+  });
+
+  it('writeGate:false still honours writePitch (pitch S&H is independent of the gate skip)', () => {
+    const s = createPolySender(fakeCtx);
+    s.scheduleStep(0, [{ pitch: 2, gate: 1 }], 0);
+    const pitch = (s.voices[0]!.pitchSrc.offset as unknown as FakeParam).events;
+    const before = pitch.length;
+    s.scheduleStep(0.1, [{ pitch: 5, gate: 0 }], 0.5, { writeGate: false });
+    expect(pitch.length, 'pitch still written when writeGate:false').toBe(before + 1);
+    expect(pitch.at(-1)!.value).toBe(5);
   });
 });
