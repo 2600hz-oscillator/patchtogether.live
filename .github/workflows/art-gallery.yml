@@ -1,42 +1,38 @@
-name: Deploy GitHub Pages (VRT gallery + ART gallery + Test Reconciliation)
+name: ART gallery (GitHub Pages)
 
-# Builds + publishes the GitHub Pages site on every push to main. There is ONE
-# Pages site per repo, so this single workflow owns the whole `docs/` tree:
+# Renders the ART audio-baseline gallery (waveform + spectrogram of every
+# art/baselines/**/*.f32 via art/build_gallery.py) and publishes it to GitHub
+# Pages alongside the VRT gallery + Test Reconciliation report.
 #
-#   docs/vrt/                  — VRT gallery (e2e/vrt/build_gallery.py renders
-#                                docs/vrt/index.html from
-#                                e2e/vrt/__screenshots__/**). LFS checkout is
-#                                required or the gallery embeds pointer-file PNGs
-#                                that render as broken images.
-#   docs/art/                  — ART gallery (art/build_gallery.py renders
-#                                docs/art/index.html + waveform/spectrogram PNGs
-#                                from art/baselines/**/*.f32; also LFS-tracked).
-#                                An ART-baseline change instead triggers the
-#                                sibling art-gallery.yml (both build the full
-#                                docs/ tree + share the `pages` concurrency lock,
-#                                so the deployed site is always complete).
-#   docs/test-reconciliation/  — Test Reconciliation report
-#                                (scripts/build-test-reconciliation-page.mjs
-#                                renders index.html from the committed
-#                                changelog.json history + a FRESH live snapshot
-#                                computed at deploy time so the counts stay
-#                                honest). The committed history is tracked;
-#                                only the generated index.html is .gitignored.
-#   docs/index.html            — landing page linking both.
+# Modeled on .github/workflows/vrt-changeset-gallery.yml (LFS-restore + render +
+# publish) but the PUBLISH is GitHub Pages — the SAME mechanism the docs/vrt
+# gallery uses (upload-pages-artifact + deploy-pages in pages.yml), NOT the CF
+# Pages path the per-PR VRT changeset gallery uses.
 #
-# Idempotent: a green run just rewrites the generated HTML with the same inputs +
-# an updated commit short-SHA. No state on the runner survives between runs.
+# WHY THIS WORKFLOW REBUILDS THE WHOLE docs/ TREE (not just docs/art):
+#   A repo has exactly ONE GitHub Pages site, and each `deploy-pages` publishes
+#   its uploaded artifact as the ENTIRE site — there is no partial deploy. If
+#   this workflow uploaded only docs/art it would wipe docs/vrt +
+#   docs/test-reconciliation from the live site. So, exactly like pages.yml, it
+#   builds the full docs/ tree (VRT gallery + ART gallery + Test Reconciliation +
+#   landing page) and deploys it once. pages.yml (VRT/reconciliation-triggered)
+#   also builds the ART gallery, so whichever workflow fires, the published site
+#   stays complete. The two share the `pages` concurrency group and trigger on
+#   DISJOINT path sets (this one owns art/**), so they never double-fire.
+#
+# LFS: the ART baselines (art/baselines/**/*.f32) + the VRT screenshots are
+# git-LFS-tracked. Restore the ART objects via the ci.yml cache pattern
+# (actions/cache on .git/lfs keyed by the baseline SHAs + `git lfs pull
+# --include`), and pull the VRT screenshots too so the VRT gallery embeds real
+# PNG bytes, not the ~130-byte pointer files.
 
 on:
   push:
     branches: [main]
     paths:
-      - 'e2e/vrt/__screenshots__/**'
-      - 'e2e/vrt/build_gallery.py'
-      - 'docs/test-reconciliation/changelog.json'
-      - 'scripts/test-reconciliation.mjs'
-      - 'scripts/build-test-reconciliation-page.mjs'
-      - '.github/workflows/pages.yml'
+      - 'art/baselines/**'
+      - 'art/build_gallery.py'
+      - '.github/workflows/art-gallery.yml'
   workflow_dispatch:
 
 permissions:
@@ -44,24 +40,31 @@ permissions:
   pages: write
   id-token: write
 
+# Share the single-Pages-site lock with pages.yml so the two deploys serialize
+# rather than race. Do NOT cancel in-progress — every deploy should complete.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
   deploy:
+    name: Build + publish ART gallery
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Checkout (with LFS for baseline PNGs)
+      # Checkout WITHOUT LFS; restore the LFS object store from cache + a
+      # scoped `git lfs pull` below (the ci.yml `art` job pattern), which cuts
+      # repeated full-payload LFS downloads.
+      - name: Checkout (LFS objects restored from cache below)
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -71,8 +74,8 @@ jobs:
       - name: Install numpy + matplotlib (ART gallery render deps)
         run: python3 -m pip install --upgrade numpy matplotlib
 
-      - name: Install Flox
-        uses: flox/install-flox-action@v2
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
       - name: Cache npm
         uses: actions/cache@v4
@@ -82,14 +85,28 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-deps-
 
+      # Cache the git-LFS object store keyed on the ART baseline file contents
+      # (mirrors the ci.yml `art` job). HIT → `git lfs pull` is a near-no-op.
+      - name: Cache git-LFS objects (ART baselines)
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfs-art-${{ hashFiles('art/baselines/**/*.f32', 'art/baselines/**/*.wav') }}
+          restore-keys: |
+            ${{ runner.os }}-lfs-art-
+
+      - name: Fetch ART baseline LFS objects (no-op on cache hit)
+        run: flox activate -- git lfs pull --include "art/baselines/**"
+
+      # The VRT gallery (built below) needs the screenshot PNGs as REAL bytes or
+      # it embeds pointer files that render as broken images.
+      - name: Fetch VRT baseline LFS objects
+        run: flox activate -- git lfs pull --include "e2e/vrt/__screenshots__/**" || true
+
       - name: Install deps (npm only — no Playwright browser needed for the page build)
         run: flox activate -- npm install
 
       - name: Emit the registry manifest (for live parametrized counts)
-        # Non-fatal: the page builder degrades gracefully (warns + parametrized
-        # counts shown as 0) if the manifest is unavailable, so a hiccup here
-        # never breaks the deploy. svelte-kit sync runs via `npm install`'s
-        # prepare hook so tsconfig resolves.
         continue-on-error: true
         run: flox activate -- task test:emit-manifest
 
@@ -112,8 +129,6 @@ jobs:
 
       - name: Write the docs/ landing page
         run: |
-          # Landing page links both sub-sites. Banner header + footer match the
-          # gallery/report treatment for a consistent landing page.
           cat > docs/index.html <<'HTML'
           <!doctype html>
           <html lang="en">
