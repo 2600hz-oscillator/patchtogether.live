@@ -1,3 +1,11 @@
+<script lang="ts">
+  // Live-build stamp — baked at build/prerender time (see $lib/build-info).
+  // Shows which build actually serves this page (version · SHA · deploy time),
+  // so "is prod current?" is answerable at a glance. Local builds render the
+  // "local dev build" fallback.
+  import { formatBuildInfo } from '$lib/build-info';
+</script>
+
 <svelte:head>
   <title>deploy · patchtogether.live</title>
   <meta name="description" content="3-tier deploy topology and Workers↔Postgres caveats." />
@@ -6,7 +14,17 @@
 <section class="hero">
   <h1>deploy + ops</h1>
   <div class="sub">3 tiers · Cloudflare Pages · Fly.io · Neon Postgres</div>
+  <div class="sub build-stamp"><span class="tag">live build</span>{formatBuildInfo()}</div>
 </section>
+
+<style>
+  .build-stamp {
+    margin-top: 0.5rem;
+  }
+  .build-stamp .tag {
+    margin-right: 0.5rem;
+  }
+</style>
 
 <h2>Tier topology</h2>
 <table>
