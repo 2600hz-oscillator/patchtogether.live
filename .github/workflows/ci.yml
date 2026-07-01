@@ -1143,7 +1143,9 @@ jobs:
     # pull_request type above re-fires CI). Normal PRs SKIP it. Main-merge
     # frequency + the on-demand label give enough coverage while it's still a
     # tuning lane. Re-add it (sharded) to the per-PR gate when it becomes a real
-    # required check (#42).
+    # required check (#42). (A fast REQUIRED SUBSET of it — the `behavioral-smoke`
+    # job below — now gates every PR on the rock-solid core modules; the FULL
+    # sweep stays informational here.)
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'behavioral'))
     needs: [dsp-build, build-web]
     runs-on: ubuntu-latest
@@ -1594,6 +1596,101 @@ jobs:
         run: flox activate -- bash scripts/collab-attest-verify.sh
 
   # -----------------------------------------------------------------------
+  # behavioral-smoke — the FAST, REQUIRED pre-merge SUBSET of the behavioral
+  # input-coverage sweep. The full per-module-per-port-behavioral lane
+  # (behavioral-coverage above) stays INFORMATIONAL + push/label-only (~168
+  # modules × 6 shards, too slow for every PR). This job runs on EVERY PR a
+  # small hand-picked subset of rock-solid CORE signal-path modules — adsr,
+  # analogVco, filter, lfo, noise, vca, stereovca — whose behavioral deltas are
+  # large + deterministic (validated 3× locally: 21/21 green, e.g. vca.audio
+  # 0→0.347 rms, adsr/gate 0→0.79). It's the canary that catches a gross
+  # "a core module's input went DEAD" regression at PR time, cheaply.
+  #
+  # GATES the `ci` umbrella (the $BEHAVIORAL_SMOKE clause in the aggregator
+  # `if`). Safe to gate now: the behavioral stabilization campaign (#981-#985)
+  # drove the FULL lane reliably-green (first fully-green main run + a 30-job
+  # flake-purge down to 1/30), and this subset is the most bulletproof slice of
+  # it. retries=1 = gate-realistic (matches playwright.config CI retries).
+  # Reuses the shared dsp-dist + web-preview-dist artifacts (needs
+  # dsp-build + build-web) + runs in parallel with the e2e shards (the long
+  # pole), so it adds ~0 to critical-path wall-time.
+  # -----------------------------------------------------------------------
+  behavioral-smoke:
+    name: behavioral smoke (required subset)
+    needs: [dsp-build, build-web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        # AWS ECR Public mirror (same as the other DB-backed jobs) — avoids the
+        # flaky Docker Hub service-container pull.
+        image: public.ecr.aws/docker/library/postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: patchtogether_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/patchtogether_test
+    steps:
+      - name: Checkout (no LFS — serves the prebuilt bundle)
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+      - name: Install Flox
+        uses: flox/install-flox-action@v2
+      - name: Cache npm + Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ${{ runner.os }}-deps-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+      - name: Cache .svelte-kit
+        uses: actions/cache@v4
+        with:
+          path: packages/web/.svelte-kit
+          key: ${{ runner.os }}-svelte-kit-${{ hashFiles('packages/web/svelte.config.js', 'packages/web/src/routes/**', 'packages/web/package.json') }}
+      - name: Install workspace deps + Playwright Chromium
+        run: flox activate -- task setup
+      - name: Download DSP dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dsp-dist
+          path: packages/dsp/dist
+      - name: Download web preview bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-preview-dist
+          path: packages/web/.svelte-kit/output
+      - name: Apply DB schema
+        run: flox activate -- psql "$DATABASE_URL" -f db/schema/001_init.sql
+      - name: Emit registry manifest for E2E
+        run: flox activate -- task test:emit-manifest
+      # The SUBSET grep. `<mod>: each declared` anchors to the per-module row
+      # title; `vca` also matches `stereovca` (intended — both are in the set).
+      # retries=1 mirrors the real CI gate. If this ever flakes, fix or narrow
+      # the subset — do NOT bump retries to mask it (it's meant to be bulletproof).
+      - name: Run behavioral smoke subset (core signal-path modules)
+        env:
+          E2E_USE_PREVIEW: '1'
+        run: |
+          flox activate -- npx --workspace e2e playwright test \
+            per-module-per-port-behavioral.spec.ts \
+            --grep "(adsr|analogVco|filter|lfo|noise|stereovca|vca): each declared" \
+            --workers=4 \
+            --retries=1 \
+            --reporter=line
+
+  # -----------------------------------------------------------------------
   # ci (umbrella) — gates branch protection. Required status check named
   # `typecheck + unit + ART + E2E` (see ruleset 16042163). This job exists
   # ONLY to preserve that name and aggregate the pass/fail of the split
@@ -1627,7 +1724,7 @@ jobs:
     # un-gated. collab-attest was armed 2026-06-20 (the final @collab de-flake
     # step) mirroring webgl-attest. See .myrobots/plans/webgl-attestation-semaphore.md
     # §7 + .myrobots/plans/collab-attest-2026-06-15.md.
-    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, collab-attest]
+    needs: [actionlint, typecheck, unit, dsp-build, build-web, art, build, e2e, webgl-smoke, webgl-attest, collab-attest, behavioral-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -1645,6 +1742,7 @@ jobs:
           WEBGL_SMOKE: ${{ needs.webgl-smoke.result }}
           WEBGL_ATTEST: ${{ needs.webgl-attest.result }}
           COLLAB_ATTEST: ${{ needs.collab-attest.result }}
+          BEHAVIORAL_SMOKE: ${{ needs.behavioral-smoke.result }}
         run: |
           echo "actionlint:    $ACTIONLINT"
           echo "typecheck:     $TYPECHECK"
@@ -1657,6 +1755,7 @@ jobs:
           echo "webgl-smoke:   $WEBGL_SMOKE"
           echo "webgl-attest:  $WEBGL_ATTEST"
           echo "collab-attest: $COLLAB_ATTEST"
+          echo "behavioral-smoke: $BEHAVIORAL_SMOKE"
           echo "collab:        (informational — see collab job; temporarily un-gated, task #69)"
           # `e2e` is a matrix; its aggregated result is `success` only if all
           # shards succeeded. (The old `e2e-video` WebGL-heavy lane was deleted
@@ -1701,7 +1800,8 @@ jobs:
              || "$BUILD" != "success" \
              || "$E2E" != "success" \
              || "$WEBGL_SMOKE" != "success" \
-             || "$WEBGL_ATTEST" != "success" ]]; then
+             || "$WEBGL_ATTEST" != "success" \
+             || "$BEHAVIORAL_SMOKE" != "success" ]]; then
           # collab-attest UN-GATED (2026-06-28): rolled back the #847 gating. It
           # hinges on a LOCAL relay+DB `task collab:attest` whose flakiest specs
           # (DOOM-MP lockstep/late-join) fail at retries=0 on anything but the
