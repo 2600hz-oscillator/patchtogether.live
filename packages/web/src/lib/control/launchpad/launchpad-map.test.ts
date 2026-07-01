@@ -55,8 +55,35 @@ import {
   RGB_DECK_LEN,
   RGB_DECK_NOW,
   RGB_DECK_NOW_ON,
+  // KEYS mode
+  keysPad,
+  rDeckKeysHold,
+  computeKeysFrame,
+  KEYS_PH_ROW,
+  KEYS_CTRL_ROW,
+  KEYS_EXIT_COL,
+  KEYS_QREC_COL,
+  KEYS_OVERDUB_COL,
+  KEYS_LEN_COL,
+  DECK_KEYS_REC_COL,
+  DECK_KEYS_OVERDUB_COL,
+  DECK_KEYS_ROW,
+  RGB_KEY_ROOT,
+  RGB_KEY_INSCALE,
+  RGB_KEY_OUTSCALE,
+  RGB_KEY_PRESSED,
+  RGB_KEYS_PH_CUR,
+  RGB_KEYS_PH_BASE,
+  RGB_QREC_IDLE,
+  RGB_QREC_ARMED,
+  RGB_QREC_REC,
+  RGB_OD,
+  RGB_OD_ON,
+  RGB_EXIT,
+  RGB_KEYS_REC_HOLD_ON,
 } from './launchpad-map';
 import { padNote, SCENE_CCS } from './launchpad-sysex';
+import { keyboardCellToMidi } from '$lib/audio/modules/keyboard-map';
 import {
   clipIndex,
   defaultNoteClip,
@@ -299,5 +326,106 @@ describe('Unit R — length-edit page', () => {
     expect(at(f, padNote(2, 0))).not.toBeNull(); // block 3 (bright)
     // step ruler row 1: step 5 should be the bright END.
     expect(at(f, padNote(4, 1))).not.toBeNull(); // step 5 (index 4)
+  });
+});
+
+// ===========================================================================
+// KEYS mode (dual-Launchpad note/keyboard + clip-record) placement + frames.
+// ===========================================================================
+describe('KEYS mode — placement classifiers', () => {
+  it('keysPad: top row = playhead, mid 6 rows = keyboard (continuous across L|R), bottom = controls (L only)', () => {
+    // top row (y=7) on either unit = playhead (display-only).
+    expect(keysPad('L', 3, KEYS_PH_ROW)).toEqual({ kind: 'playhead' });
+    expect(keysPad('R', 3, KEYS_PH_ROW)).toEqual({ kind: 'playhead' });
+    // keyboard band: y=1 = row 0; unit L col = x, unit R col = x+8 (continuous).
+    expect(keysPad('L', 0, 1)).toEqual({ kind: 'note', col: 0, row: 0 });
+    expect(keysPad('L', 7, 6)).toEqual({ kind: 'note', col: 7, row: 5 });
+    expect(keysPad('R', 0, 1)).toEqual({ kind: 'note', col: 8, row: 0 });
+    expect(keysPad('R', 7, 6)).toEqual({ kind: 'note', col: 15, row: 5 });
+    // the L|R seam is continuous: L col 7 → 7, R col 0 → 8 (adjacent).
+    // bottom row controls live on unit L only.
+    expect(keysPad('L', KEYS_EXIT_COL, KEYS_CTRL_ROW)).toEqual({ kind: 'exit' });
+    expect(keysPad('L', KEYS_QREC_COL, KEYS_CTRL_ROW)).toEqual({ kind: 'qrec' });
+    expect(keysPad('L', KEYS_OVERDUB_COL, KEYS_CTRL_ROW)).toEqual({ kind: 'overdub' });
+    expect(keysPad('L', KEYS_LEN_COL, KEYS_CTRL_ROW)).toEqual({ kind: 'len' });
+    // unit R's bottom row is dark (no controls).
+    expect(keysPad('R', KEYS_EXIT_COL, KEYS_CTRL_ROW)).toBeNull();
+    // an unused L bottom-row cell is null.
+    expect(keysPad('L', 4, KEYS_CTRL_ROW)).toBeNull();
+  });
+
+  it('rDeckKeysHold: the KEYS-entry hold buttons on deck row 1', () => {
+    expect(rDeckKeysHold(DECK_KEYS_REC_COL, DECK_KEYS_ROW)).toBe('keysRec');
+    expect(rDeckKeysHold(DECK_KEYS_OVERDUB_COL, DECK_KEYS_ROW)).toBe('keysOverdub');
+    expect(rDeckKeysHold(DECK_KEYS_REC_COL, 0)).toBeNull(); // row 0 = the function row
+    expect(rDeckKeysHold(5, DECK_KEYS_ROW)).toBeNull();
+  });
+});
+
+describe('KEYS mode — LED frame (keyboard + playhead + controls)', () => {
+  const clip = defaultNoteClip(); // root C3 (48), major
+  it('keyboard lights: root cyan, in-scale green, out-of-scale dim; a pressed pad white', () => {
+    const rootMidi = clip.root;
+    // press the bottom-left root (col 0 row 0 = the root itself).
+    const pressed = new Set<number>([keyboardCellToMidi(0, 0, rootMidi)]);
+    const f = computeKeysFrame({
+      unit: 'L', keyboardRoot: rootMidi, scale: 'major', playheadStep: -1,
+      lengthSteps: clip.lengthSteps, pressed, blinkOn: true,
+    });
+    // (0,0) is pressed → white.
+    expect(eqRgb(at(f, padNote(0, 1)), RGB_KEY_PRESSED)).toBe(true);
+    // an octave-root cell that ISN'T pressed → cyan. col=0,row=2 = root + 2*5 = +10, not root.
+    // find a root pad: col 2,row 2 = root + 2 + 10 = +12 = octave root → cyan.
+    expect(eqRgb(at(f, padNote(2, 3)), RGB_KEY_ROOT)).toBe(true);
+    // an in-scale non-root (e.g. col 2 row 0 = root+2 = D, in C major) → green.
+    expect(eqRgb(at(f, padNote(2, 1)), RGB_KEY_INSCALE)).toBe(true);
+    // an out-of-scale (col 1 row 0 = root+1 = C#, not in C major) → dim.
+    expect(eqRgb(at(f, padNote(1, 1)), RGB_KEY_OUTSCALE)).toBe(true);
+  });
+
+  it('unit R keyboard is the continuation (col+8) — a shape crossing the seam is unbroken', () => {
+    const rootMidi = clip.root;
+    // The R unit's leftmost keyboard cell (x=0,row0) is keyboard col 8.
+    const f = computeKeysFrame({
+      unit: 'R', keyboardRoot: rootMidi, scale: undefined, playheadStep: -1,
+      lengthSteps: 16, pressed: new Set([keyboardCellToMidi(8, 0, rootMidi)]), blinkOn: true,
+    });
+    expect(eqRgb(at(f, padNote(0, 1)), RGB_KEY_PRESSED)).toBe(true);
+  });
+
+  it('playhead strip: L cells 0..7, R cells 8..15; the current cell is white', () => {
+    // 16-step clip, sounding step 3 → cell 3 (on unit L).
+    const fL = computeKeysFrame({ unit: 'L', keyboardRoot: 48, playheadStep: 3, lengthSteps: 16 });
+    expect(eqRgb(at(fL, padNote(3, KEYS_PH_ROW)), RGB_KEYS_PH_CUR)).toBe(true);
+    expect(eqRgb(at(fL, padNote(4, KEYS_PH_ROW)), RGB_KEYS_PH_BASE)).toBe(true);
+    // step 11 → cell 11 → on unit R at x=3.
+    const fR = computeKeysFrame({ unit: 'R', keyboardRoot: 48, playheadStep: 11, lengthSteps: 16 });
+    expect(eqRgb(at(fR, padNote(3, KEYS_PH_ROW)), RGB_KEYS_PH_CUR)).toBe(true);
+    // step -1 (not playing) → nothing current, all baseline.
+    const fOff = computeKeysFrame({ unit: 'L', keyboardRoot: 48, playheadStep: -1, lengthSteps: 16 });
+    expect(eqRgb(at(fOff, padNote(0, KEYS_PH_ROW)), RGB_KEYS_PH_BASE)).toBe(true);
+  });
+
+  it('controls (unit L bottom row): EXIT red · QUEUE-REC colour-codes idle/armed/recording · OVERDUB purple', () => {
+    const base = { unit: 'L' as const, keyboardRoot: 48, playheadStep: -1, lengthSteps: 16, blinkOn: true };
+    const idle = computeKeysFrame(base);
+    expect(eqRgb(at(idle, padNote(KEYS_EXIT_COL, 0)), RGB_EXIT)).toBe(true);
+    expect(eqRgb(at(idle, padNote(KEYS_QREC_COL, 0)), RGB_QREC_IDLE)).toBe(true);
+    expect(eqRgb(at(idle, padNote(KEYS_OVERDUB_COL, 0)), RGB_OD)).toBe(true);
+    // armed (blink on) → bright yellow.
+    const armed = computeKeysFrame({ ...base, recArmed: true });
+    expect(eqRgb(at(armed, padNote(KEYS_QREC_COL, 0)), RGB_QREC_ARMED)).toBe(true);
+    // recording (blink on) → red; overdub on → bright purple.
+    const rec = computeKeysFrame({ ...base, recording: true, overdub: true });
+    expect(eqRgb(at(rec, padNote(KEYS_QREC_COL, 0)), RGB_QREC_REC)).toBe(true);
+    expect(eqRgb(at(rec, padNote(KEYS_OVERDUB_COL, 0)), RGB_OD_ON)).toBe(true);
+    // unit R has NO controls on its bottom row (it's dark / part of no control).
+    const rFrame = computeKeysFrame({ ...base, unit: 'R' });
+    expect(at(rFrame, padNote(KEYS_EXIT_COL, 0))).toBeNull();
+  });
+
+  it('the deck frame lights the KEYS-entry hold buttons when held', () => {
+    const f = computeRDeckFrame({ keysRecHeld: true });
+    expect(eqRgb(at(f, padNote(DECK_KEYS_REC_COL, DECK_KEYS_ROW)), RGB_KEYS_REC_HOLD_ON)).toBe(true);
   });
 });

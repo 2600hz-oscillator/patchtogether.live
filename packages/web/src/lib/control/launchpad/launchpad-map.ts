@@ -74,6 +74,9 @@ import {
   lengthRulers,
   type LengthEditAction,
 } from '../clip-surface-map';
+import { keyboardCellToMidi, noteRole } from '$lib/audio/modules/keyboard-map';
+import { playheadCell } from '$lib/audio/modules/clip-record';
+import type { ScaleName } from '$lib/mike/music-theory';
 import {
   LP_WIDTH,
   LP_HEIGHT,
@@ -88,7 +91,7 @@ import {
   CC_TOP_SPARE_8,
   SCENE_CCS,
 } from './launchpad-sysex';
-import { type LaunchpadFrame, emptyFrame } from './launchpad-device.svelte';
+import { type LaunchpadFrame, type LaunchpadUnit, emptyFrame } from './launchpad-device.svelte';
 
 export { editPageCount, type LengthEditAction } from '../clip-surface-map';
 
@@ -149,6 +152,29 @@ export const RGB_ROOT_GUIDE: Rgb = [10, 12, 16]; // faint marker on root-pitch-c
 // LENGTH-EDIT page.
 export const RGB_LEN_BLOCK: Rgb = [20, 28, 38]; // a counted block/step (dim)
 export const RGB_LEN_END: Rgb = [63, 91, 127]; // the END block/step (bright)
+// ── KEYS mode (dual-Launchpad note/keyboard + clip-record) ──
+// Isomorphic-keyboard lighting (LinnStrument scheme): root cyan, in-scale green
+// dimmed, out-of-scale very dim, a sounding/pressed pad white.
+export const RGB_KEY_ROOT: Rgb = [0, 100, 127]; // cyan — every octave's root
+export const RGB_KEY_INSCALE: Rgb = [0, 45, 0]; // green (dimmed so roots pop)
+export const RGB_KEY_OUTSCALE: Rgb = [4, 4, 6]; // very dim (still playable — chromatic)
+export const RGB_KEY_PRESSED: Rgb = [127, 127, 127]; // white — sounding now
+// Playhead strip (top row): the whole clip across 16 cells (L 0..7 + R 8..15).
+export const RGB_KEYS_PH_BASE: Rgb = [0, 6, 22]; // dull blue baseline
+export const RGB_KEYS_PH_CUR: Rgb = [96, 96, 110]; // the current cell (white-ish)
+// Bottom-row controls. QUEUE-REC differs by COLOUR not blink rate: dull yellow
+// idle → flashing (bright) yellow armed → red recording.
+export const RGB_QREC_IDLE: Rgb = [40, 34, 0]; // dull yellow (idle)
+export const RGB_QREC_ARMED: Rgb = [110, 96, 0]; // bright yellow (armed, flashes)
+export const RGB_QREC_REC: Rgb = [127, 16, 16]; // red (recording, pulses)
+export const RGB_OD: Rgb = [40, 14, 60]; // light purple (overdub OFF)
+export const RGB_OD_ON: Rgb = [104, 40, 127]; // bright purple (overdub ON)
+// SESSION deck KEYS-entry hold buttons (dark deck pads, row 1 — NOT the arranger
+// CC_REC). Distinct hue + name; brighten while held.
+export const RGB_KEYS_REC_HOLD: Rgb = [50, 6, 6]; // dim red (idle)
+export const RGB_KEYS_REC_HOLD_ON: Rgb = [127, 16, 16]; // red (held)
+export const RGB_KEYS_OD_HOLD: Rgb = [30, 10, 45]; // dim purple (idle)
+export const RGB_KEYS_OD_HOLD_ON: Rgb = [104, 40, 127]; // purple (held)
 
 // ---------------------------------------------------------------------------
 // UNIT L — the clip matrix placement (PURE classifiers).
@@ -295,6 +321,21 @@ export function rStopLaneForRow(row: number): number | null {
   return null;
 }
 
+// ── SESSION deck KEYS-entry hold buttons (dual-Launchpad note/keyboard mode).
+// Placed on currently-DARK deck pads (row 1, above the function row) — NOT the
+// arranger CC_REC. HOLD one + double-tap a clip on L → open the KEYS view for
+// that clip: hold-REC enters overdub OFF, hold-OVERDUB enters overdub ON.
+export const DECK_KEYS_ROW = 1;
+export const DECK_KEYS_REC_COL = 0; // note-RECORD hold (overdub OFF entry)
+export const DECK_KEYS_OVERDUB_COL = 1; // note-OVERDUB hold (overdub ON entry)
+/** Classify a SESSION-deck pad → a KEYS-entry hold button, or null. Row 1 only. */
+export function rDeckKeysHold(x: number, y: number): 'keysRec' | 'keysOverdub' | null {
+  if (y !== DECK_KEYS_ROW) return null;
+  if (x === DECK_KEYS_REC_COL) return 'keysRec';
+  if (x === DECK_KEYS_OVERDUB_COL) return 'keysOverdub';
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // UNIT R — EDIT note-grid placement (8 pitch rows × 8 step columns).
 // ---------------------------------------------------------------------------
@@ -376,6 +417,57 @@ export function rLengthPad(x: number, y: number): LengthEditAction | null {
   if (y === LEN_STEP_HI_ROW) {
     return lengthEditAction(1, x + STEPS_PER_PAGE / 2, false); // steps 9..16
   }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// KEYS mode (dual-Launchpad note/keyboard + clip-record). BOTH units flip here
+// together, side-by-side = 16 wide:
+//   · top row (y=7) = PLAYHEAD strip, 16 cells (L cols 0..7 = clip cells 0..7,
+//     R cols 0..7 = cells 8..15) — the whole clip.
+//   · middle 6 rows (y=1..6) = isomorphic KEYBOARD, 6×16 (LinnStrument chromatic
+//     fourths), CONTINUOUS across the L|R seam (L col x = keyboard col x, R col x
+//     = keyboard col x+8; y=1 = keyboard row 0 up to y=6 = row 5).
+//   · bottom row (y=0) = CONTROLS (on unit L only): EXIT · QUEUE-REC · OVERDUB ·
+//     LEN; the rest dark (and unit R's bottom row is dark).
+// ---------------------------------------------------------------------------
+export const KEYS_PH_ROW = LP_HEIGHT - 1; // top row (y=7) = playhead strip
+export const KEYS_KB_ROW_LO = 1; // keyboard band y=1..6 (row 0 = y=1)
+export const KEYS_KB_ROW_HI = LP_HEIGHT - 2; // 6
+export const KEYS_KB_ROWS = KEYS_KB_ROW_HI - KEYS_KB_ROW_LO + 1; // 6
+export const KEYS_CTRL_ROW = 0; // bottom row (y=0) = controls (unit L only)
+export const KEYS_PH_CELLS = LP_WIDTH * 2; // 16 playhead cells across the pair
+// Bottom-row control columns (unit L).
+export const KEYS_EXIT_COL = 0;
+export const KEYS_QREC_COL = 1;
+export const KEYS_OVERDUB_COL = 2;
+export const KEYS_LEN_COL = LP_WIDTH - 1; // 7 (far right)
+
+/** What a KEYS-mode pad does on a given unit. `note` carries the CONTINUOUS
+ *  keyboard column (0..15) + row (0..5). Controls are on unit L's bottom row;
+ *  `playhead` is display-only (a tap there is a no-op). PURE. */
+export type KeysPad =
+  | { kind: 'note'; col: number; row: number }
+  | { kind: 'exit' }
+  | { kind: 'qrec' }
+  | { kind: 'overdub' }
+  | { kind: 'len' }
+  | { kind: 'playhead' }
+  | null;
+
+export function keysPad(unit: LaunchpadUnit, x: number, y: number): KeysPad {
+  if (x < 0 || x >= LP_WIDTH || y < 0 || y >= LP_HEIGHT) return null;
+  if (y === KEYS_PH_ROW) return { kind: 'playhead' };
+  if (y >= KEYS_KB_ROW_LO && y <= KEYS_KB_ROW_HI) {
+    const col = unit === 'L' ? x : x + LP_WIDTH; // continuous across the L|R seam
+    return { kind: 'note', col, row: y - KEYS_KB_ROW_LO };
+  }
+  // y === KEYS_CTRL_ROW (bottom row) — controls live on unit L only.
+  if (unit !== 'L') return null;
+  if (x === KEYS_EXIT_COL) return { kind: 'exit' };
+  if (x === KEYS_QREC_COL) return { kind: 'qrec' };
+  if (x === KEYS_OVERDUB_COL) return { kind: 'overdub' };
+  if (x === KEYS_LEN_COL) return { kind: 'len' };
   return null;
 }
 
@@ -528,6 +620,9 @@ export interface RSessionOpts {
   recording?: boolean;
   /** Arrangement mode (node.data.clipMode === 'arrangement') — lights SONG white. */
   arrangeMode?: boolean;
+  /** KEYS-entry hold buttons held (dual-Launchpad note mode) — brighten them. */
+  keysRecHeld?: boolean;
+  keysOverdubHeld?: boolean;
   /** Which lanes are playing (lights per-lane STOP active). */
   data?: ClipPlayerData | undefined;
 }
@@ -546,6 +641,17 @@ export function computeRDeckFrame(opts: RSessionOpts = {}): LaunchpadFrame {
   mod(DECK_NOW_COL, !!opts.nowHeld, RGB_DECK_NOW, RGB_DECK_NOW_ON);
   put(frame, padNote(DECK_DOUBLE_COL, DECK_ROW), RGB_DECK_DBL); // DBL — purple (tap)
   put(frame, padNote(DECK_LENGTH_COL, DECK_ROW), RGB_DECK_LEN); // LEN — yellow (tap)
+  // KEYS-entry hold buttons (row 1, dark deck pads): note-REC + note-OVERDUB.
+  put(
+    frame,
+    padNote(DECK_KEYS_REC_COL, DECK_KEYS_ROW),
+    opts.keysRecHeld ? RGB_KEYS_REC_HOLD_ON : RGB_KEYS_REC_HOLD,
+  );
+  put(
+    frame,
+    padNote(DECK_KEYS_OVERDUB_COL, DECK_KEYS_ROW),
+    opts.keysOverdubHeld ? RGB_KEYS_OD_HOLD_ON : RGB_KEYS_OD_HOLD,
+  );
   // COPY-INDICATOR — turquoise pulse while the buffer holds a clip.
   put(
     frame,
@@ -667,6 +773,80 @@ export function computeRLengthFrame(clip: NoteClipRecord): LaunchpadFrame {
   for (let i = 0; i < SCENE_CCS.length; i++) {
     const row = LP_HEIGHT - 1 - i;
     put(frame, SCENE_CCS[i], row === EDIT_EXIT_SCENE_ROW ? RGB_EXIT : RGB_OFF);
+  }
+  return frame;
+}
+
+// ── KEYS mode (note/keyboard + clip-record) — one unit's 8×8 frame ──
+export interface KeysFrameOpts {
+  /** Which physical unit — decides the keyboard column offset (L 0..7, R 8..15)
+   *  + the playhead cell range (L 0..7, R 8..15), and whether controls paint. */
+  unit: LaunchpadUnit;
+  /** Bottom-left keyboard cell pitch (MIDI); the clip's root anchors the scale. */
+  keyboardRoot: number;
+  /** The clip's scale (undefined = chromatic — nothing out-of-scale). */
+  scale?: ScaleName;
+  /** Live sounding step (-1 = not playing) — drives the playhead strip. */
+  playheadStep?: number;
+  /** Clip length in steps — scales the 16-cell playhead strip. */
+  lengthSteps?: number;
+  /** MIDI notes currently sounding (KEYS keypresses) — painted white. */
+  pressed?: ReadonlySet<number>;
+  /** Queue-REC armed (flashing yellow). */
+  recArmed?: boolean;
+  /** Recording now (red). */
+  recording?: boolean;
+  /** Overdub ON (bright purple) vs OFF (light purple). */
+  overdub?: boolean;
+  blinkOn?: boolean;
+}
+
+export function computeKeysFrame(opts: KeysFrameOpts): LaunchpadFrame {
+  const frame = emptyFrame();
+  const blinkOn = opts.blinkOn ?? true;
+  const root = opts.keyboardRoot;
+  const scale = opts.scale;
+  const pressed = opts.pressed;
+  const colBase = opts.unit === 'L' ? 0 : LP_WIDTH; // keyboard col offset
+  const phBase = opts.unit === 'L' ? 0 : LP_WIDTH; // playhead cell offset
+
+  // Keyboard band (y = KEYS_KB_ROW_LO..KEYS_KB_ROW_HI, row 0..5 bottom→up).
+  for (let ry = 0; ry < KEYS_KB_ROWS; ry++) {
+    const y = KEYS_KB_ROW_LO + ry;
+    for (let x = 0; x < LP_WIDTH; x++) {
+      const midi = keyboardCellToMidi(colBase + x, ry, root);
+      let rgb: Rgb;
+      if (pressed?.has(midi)) {
+        rgb = RGB_KEY_PRESSED;
+      } else {
+        const role = noteRole(midi, root, scale);
+        rgb = role === 'root' ? RGB_KEY_ROOT : role === 'inscale' ? RGB_KEY_INSCALE : RGB_KEY_OUTSCALE;
+      }
+      put(frame, padNote(x, y), rgb);
+    }
+  }
+
+  // Playhead strip (top row, y=7): the whole clip across 16 cells.
+  const step = opts.playheadStep ?? -1;
+  const len = opts.lengthSteps ?? 16;
+  const cur = step >= 0 ? playheadCell(step, len, KEYS_PH_CELLS) : -1;
+  for (let x = 0; x < LP_WIDTH; x++) {
+    const cell = phBase + x;
+    put(frame, padNote(x, KEYS_PH_ROW), cell === cur ? RGB_KEYS_PH_CUR : RGB_KEYS_PH_BASE);
+  }
+
+  // Bottom-row controls (unit L only; unit R's bottom row stays dark).
+  if (opts.unit === 'L') {
+    put(frame, padNote(KEYS_EXIT_COL, KEYS_CTRL_ROW), RGB_EXIT);
+    // QUEUE-REC differs by COLOUR: idle dull yellow → armed bright yellow (flash)
+    // → recording red (pulse). One global blink phase carries flash + pulse.
+    let qrec: Rgb;
+    if (opts.recording) qrec = blinkOn ? RGB_QREC_REC : RGB_RECORDING_DIM;
+    else if (opts.recArmed) qrec = blinkOn ? RGB_QREC_ARMED : RGB_OFF;
+    else qrec = RGB_QREC_IDLE;
+    put(frame, padNote(KEYS_QREC_COL, KEYS_CTRL_ROW), qrec);
+    put(frame, padNote(KEYS_OVERDUB_COL, KEYS_CTRL_ROW), opts.overdub ? RGB_OD_ON : RGB_OD);
+    put(frame, padNote(KEYS_LEN_COL, KEYS_CTRL_ROW), RGB_DECK_LEN);
   }
   return frame;
 }
