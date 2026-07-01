@@ -1,8 +1,10 @@
 // packages/web/src/lib/docs/module-manifest.ts
 //
 // Build-time module catalog. Reads packages/web/src/lib/audio/modules/*.ts
-// and returns a structured manifest for the in-app docs site
-// (/docs/modules and /docs/modules/[id]).
+// AND packages/web/src/lib/video/modules/*.ts and returns a structured manifest
+// for the in-app docs site (/docs/modules and /docs/modules/[id]). Each entry is
+// tagged with its `domain` ('audio' | 'video'); the parse + explain pipeline is
+// domain-agnostic (video defs flow through the same regex extractor).
 //
 // Why a regex parser, not the TS compiler API or a runtime import:
 //   1. The audio module factories import .wasm / worklet ?url assets that
@@ -36,6 +38,17 @@ const MODULE_SOURCES = import.meta.glob('../audio/modules/*.ts', {
   eager: true,
 }) as Record<string, string>;
 
+// VIDEO module sources — the same `?raw` build-time inline as the audio glob
+// above, over the video registry tree. Wiring these into buildModuleManifest
+// (additively, alongside the audio sources) is what lights up the video
+// /docs/modules/[id] pages; the whole downstream (io-explain, buildDocIndex,
+// the route + render) is already domain-agnostic.
+const VIDEO_SOURCES = import.meta.glob('../video/modules/*.ts', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+
 export interface ManifestPort {
   id: string;
   type: string;
@@ -64,6 +77,9 @@ export interface ManifestParam {
 export interface ManifestModule {
   file: string;
   sourceUrl: string;
+  /** Which registry domain this module was parsed from. 'audio' for the
+   *  packages/web/src/lib/audio/modules glob, 'video' for the video glob. */
+  domain: 'audio' | 'video';
   type: string;
   label: string;
   category: string;
@@ -103,8 +119,13 @@ export interface Manifest {
 const SRC_BASE =
   'https://github.com/2600hz-oscillator/patchtogether.live/blob/main/packages/web/src/lib/audio/modules';
 
+const VIDEO_SRC_BASE =
+  'https://github.com/2600hz-oscillator/patchtogether.live/blob/main/packages/web/src/lib/video/modules';
+
 const DESCRIPTIONS: Record<string, string> = {
   analogVco: 'Analog-style oscillator with saw / square / triangle / sine outputs and FM input.',
+  tempest:
+    "TEMPEST (P1) — a Tempest-style vector-tube shooter as a video SOURCE. This phase renders the glowing additive-line \"well\" (the QuadraScan vector look): a bright near rim ring, a dim far pit ring, and radial lane lines, with the player CLAW riding the near rim. The CV input `rim` (0..1, wraps) drives the claw's position around the rim — the authentic rotary-spinner control, e.g. a gamepad joystick axis — and the SHAPE param picks the tube cross-section (circle / square / star). Every line segment is expanded on the CPU into a glowing quad (1px gl.LINES clamp to a dim, dotted stipple on the real GPU), so the web reads solid + luminous at any orientation. `out` is a normal downstream video texture. Enemies, fire, scoring, the audio-breathing tube and the video-textured surface land in later phases; the pure geometry/projection core lives in tempest-core.ts.",
   milkdrop:
     'MILKDROP — a Winamp/Milkdrop music visualizer (wrapping the open-source butterchurn WebGL2 engine + ~20 curated classic presets) as a fully CV-instrumented video SOURCE. Patch audio into AUDIO and the visuals react (the tap is inaudible). The novel part: butterchurn drives nearly all preset motion from three audio scalars — bass/mid/treb — and MILKDROP lets a cable REPLACE any of them. Patch CV into BASS/MID/TREB to drive that band from the cable instead of the live audio (an unpatched band still follows the audio); REACT scales all three. SPEED time-warps the engine clock (clamped at 0), PRESET selects the active preset (quantized knob/CV), MORPH sets the crossfade seconds, and a rising edge on NEXT advances presets hands-free. OUT is a normal downstream video texture (route into a mixer / keyer / OUTPUT). The card has a live preview + preset name/index readout + RCT/SPD/PST/MPH knobs, and hide-controls turns it into a resizable monitor. The butterchurn engine lives in node_modules (not vendored into the WebGL attest basis) and the preset pack loads behind a dynamic import() as a separate chunk. All ports live on the yellow drill-down PATCH PANEL (no raw side jacks, #767).',
   archivist:
@@ -1308,6 +1329,12 @@ function describePort(moduleType: string, portId: string, port: ManifestPort): s
 function describeModule(type: string): string {
   return (
     DESCRIPTIONS[type] ||
+    // Fall back to the AUTHORED co-located docs overview (drift-gated) when a
+    // module carries no hand-written DESCRIPTIONS one-liner. This is what lets
+    // most video modules render a real intro without duplicating their prose
+    // into DESCRIPTIONS. AUDIO is byte-unchanged: every audio module already has
+    // a DESCRIPTIONS entry, so the `||` short-circuits before this branch.
+    MODULE_DOCS[type]?.explanation ||
     `Audio module (${type}). Add a one-line description in packages/web/src/lib/docs/module-manifest.ts:DESCRIPTIONS.`
   );
 }
@@ -1359,9 +1386,10 @@ function readModule(file: string, rawSrc: string): RawModule | null {
   // Match either `export const xxxDef: AudioModuleDef = {` OR a non-exported
   // `const xxxDef: AudioModuleDef = {` — the latter case picks up internal
   // base defs (e.g. lfo's `baseDef` that gets spread into a wrapper
-  // SyncedModuleDef). Catalog dedupes by `type`, so two matches in one file
-  // collapse to one entry.
-  const declRe = /(?:export\s+)?const\s+(\w+Def)\s*:\s*(?:AudioModuleDef|SyncedModuleDef)\s*=\s*\{/;
+  // SyncedModuleDef). VideoModuleDef is matched too so the video registry's
+  // defs parse through the SAME extractor (the parse logic is domain-agnostic).
+  // Catalog dedupes by `type`, so two matches in one file collapse to one entry.
+  const declRe = /(?:export\s+)?const\s+(\w+Def)\s*:\s*(?:AudioModuleDef|SyncedModuleDef|VideoModuleDef)\s*=\s*\{/;
   const declMatch = declRe.exec(fullSrc);
   if (!declMatch) return null;
   const startBrace = declMatch.index + declMatch[0].length - 1;
@@ -1430,11 +1458,12 @@ function readModule(file: string, rawSrc: string): RawModule | null {
  */
 export function buildModuleManifest(
   sources: Record<string, string> = MODULE_SOURCES,
+  videoSources: Record<string, string> = VIDEO_SOURCES,
 ): Manifest {
-  const entries = Object.entries(sources)
+  const audioEntries = Object.entries(sources)
     .map(([path, src]) => {
       const file = path.split('/').pop() ?? path;
-      return { file, src };
+      return { file, src, domain: 'audio' as const };
     })
     .filter(({ file }) => {
       if (!file.endsWith('.ts') || file === 'index.ts') return false;
@@ -1523,13 +1552,37 @@ export function buildModuleManifest(
     })
     .sort((a, b) => a.file.localeCompare(b.file));
 
+  // VIDEO entries (additive). The video source tree carries a large "helper zoo"
+  // (…-query / …-dsp / …-sim / …-math / …-events / …-transitions / …) with
+  // irregular names, so instead of an exhaustive per-suffix denylist (as the
+  // audio filter above uses) we INCLUDE a video file only when it actually
+  // declares a `VideoModuleDef` — every non-def helper is skipped by content,
+  // and the filter is robust to new helpers landing later.
+  const videoEntries = Object.entries(videoSources)
+    .map(([path, src]) => {
+      const file = path.split('/').pop() ?? path;
+      return { file, src, domain: 'video' as const };
+    })
+    .filter(({ file, src }) => {
+      if (!file.endsWith('.ts') || file === 'index.ts') return false;
+      if (file.includes(' ')) return false; // sync-conflict siblings ("foo 2.ts")
+      if (file.endsWith('.test.ts')) return false;
+      return /:\s*VideoModuleDef\s*=/.test(src);
+    })
+    .sort((a, b) => a.file.localeCompare(b.file));
+
+  // Audio first, then video: both are re-sorted by category/label below, so this
+  // only affects tie-break order among equal (category,label) pairs — keeping
+  // the audio output byte-stable.
+  const entries = [...audioEntries, ...videoEntries];
+
   const modules: ManifestModule[] = [];
   const warnings: string[] = [];
 
-  for (const { file, src } of entries) {
+  for (const { file, src, domain } of entries) {
     const m = readModule(file, src);
     if (!m) {
-      warnings.push(`skipping ${file}: no AudioModuleDef found`);
+      warnings.push(`skipping ${file}: no module def found`);
       continue;
     }
     if (!m.type || !m.label || !m.category) {
@@ -1558,7 +1611,10 @@ export function buildModuleManifest(
     };
     modules.push({
       file: m.file,
-      sourceUrl: m.sourceUrl,
+      // readModule stamps the AUDIO SRC_BASE; rebase to the video tree for video
+      // entries so the "view source" link points at the right file.
+      sourceUrl: domain === 'video' ? `${VIDEO_SRC_BASE}/${m.file}` : m.sourceUrl,
+      domain,
       type,
       label: m.label,
       category: m.category,
