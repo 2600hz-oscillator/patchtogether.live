@@ -14,6 +14,8 @@ import { buildDocIndex } from './doc-index';
 import { buildModuleManifest } from './module-manifest';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { adsrDef } from '$lib/audio/modules/adsr';
+import '$lib/video/modules'; // side-effect: populate the video registry
+import { getVideoModuleDef } from '$lib/video/module-registry';
 
 describe('buildDocIndexFromDef — documented module (adsr)', () => {
   const index = buildDocIndexFromDef(adsrDef);
@@ -84,5 +86,25 @@ describe('buildDocIndexFromDef — undocumented module', () => {
 
   it('returns null for an undefined def', () => {
     expect(buildDocIndexFromDef(undefined)).toBeNull();
+  });
+});
+
+describe('buildDocIndexFromDef — VIDEO module (any-domain Annotate)', () => {
+  // Regression for the on-canvas Annotate lens being DEAD on video modules
+  // (bentbox, chroma, …): PatchPanel used to resolve the doc index via the
+  // audio-only getModuleDef, so video defs — which carry co-located `docs` —
+  // produced a null index and Annotate did nothing. The fix resolves through the
+  // multi-domain defLookup; buildDocIndexFromDef only reads docs/inputs/params/
+  // controls, which video defs also have. This pins that a documented VIDEO def
+  // builds a real DocIndex via the SAME path (getVideoModuleDef → builder).
+  it('builds a non-null index for a documented video def (bentbox)', () => {
+    const def = getVideoModuleDef('bentbox');
+    expect(def, 'bentbox video def is registered').toBeDefined();
+    const index = buildDocIndexFromDef(def as Parameters<typeof buildDocIndexFromDef>[0]);
+    expect(index, 'a documented video def yields a DocIndex (Annotate works on video)').not.toBeNull();
+    expect(index!.explanation, 'carries the authored module explanation').toBeTruthy();
+    // at least one declared port/control surfaces authored prose (the lens target).
+    const ports = { ...index!.inputs, ...index!.outputs };
+    expect(Object.keys(ports).length, 'has documented ports').toBeGreaterThan(0);
   });
 });
