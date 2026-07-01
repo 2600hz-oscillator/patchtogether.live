@@ -83,7 +83,14 @@ import {
   computeRLengthFrame,
   EDIT_COLS,
   RGB_VIEW,
+  // KEYS mode (dual-Launchpad note/keyboard + clip-record)
+  rDeckKeysHold,
+  keysPad,
+  computeKeysFrame,
 } from './launchpad-map';
+import { keyboardCellToMidi } from '$lib/audio/modules/keyboard-map';
+import { clearStep, recordNoteAt, extendRecordedNote } from '$lib/audio/modules/clip-record';
+import { pushAudition } from '$lib/audio/modules/clip-audition';
 import {
   CLIP_LANES,
   clipIndex,
@@ -104,8 +111,13 @@ import {
   copyClip,
   lengthFromBlockTap,
   lengthFromStepTap,
+  readNoteRec,
+  velLevelIndex,
+  VEL_LEVELS,
+  VEL_DEFAULT,
   type ClipPlayerData,
   type NoteClipRecord,
+  type NoteRecState,
 } from '$lib/audio/modules/clip-types';
 import { getLanePlayhead } from '$lib/audio/modules/clip-playhead';
 
@@ -142,8 +154,10 @@ let tickCount = 0;
 let deployment: 'pair' | 'single' = 'pair';
 let activeView: 'clip' | 'control' = 'clip';
 
-// Mode state (R unit's view; L is always the matrix).
-let mode: 'session' | 'edit' | 'lengthEdit' = 'session';
+// Mode state (R unit's view; L is always the matrix — EXCEPT 'keys', which takes
+// BOTH units for the note/keyboard + clip-record view, owner-locked Q4).
+type LaunchpadMode = 'session' | 'edit' | 'lengthEdit' | 'keys';
+let mode: LaunchpadMode = 'session';
 let editClipIndex = 0;
 // Held modifiers on R's deck.
 let editArmed = false; // EDIT pad held → next L clip tap edits it
@@ -163,6 +177,19 @@ let editSpanned = false;
 let editRowOffset = 0; // pitch-window scroll (scale degrees)
 let editWindowStart = 0; // absolute step of the leftmost shown column (frozen value)
 let followOn = true;
+// Which mode the LENGTH-EDIT page returns to on EXIT ('edit' = the note editor,
+// the legacy caller; 'keys' = the KEYS view, when LEN was opened from KEYS).
+let lengthReturnMode: 'edit' | 'keys' = 'edit';
+
+// ── KEYS mode (dual-Launchpad note/keyboard + clip-record). Pair-only v1 (the
+// single-unit port is a documented follow-up). ──
+let keysClipIndex = 0; // the clip being played/recorded in KEYS
+let keysRecHeld = false; // SESSION deck note-REC hold (overdub-OFF entry)
+let keysOverdubHeld = false; // SESSION deck note-OVERDUB hold (overdub-ON entry)
+const keysPressed = new Set<number>(); // MIDI notes currently sounding (for LED)
+const keysOnsets = new Map<number, number>(); // midi → the step its onset recorded on
+let keysPrevStep = -1; // last serviced playhead step (edge-detect wrap/crossing)
+let keysStopAtWrap = false; // overdub toggled OFF mid-record → finish this loop, then stop
 
 // Per-machine clip buffer (NOT synced).
 let clipBuffer: NoteClipRecord | null = null;
@@ -295,12 +322,14 @@ function start(): void {
   editRowOffset = 0;
   editWindowStart = 0;
   followOn = true;
+  lengthReturnMode = 'edit';
   armedAction = null;
   armTick = 0;
   lastTapClipIndex = -1;
   lastTapTick = 0;
   lastTapPrevQueued = null;
   lastTapWasPlaying = false;
+  resetKeysState();
   // NOTE: clipBuffer survives a re-bind (it's the machine's clipboard).
   unsubKey = onKey(handleKey);
   unsubTick = getSchedulerClock().subscribe(renderLeds);
@@ -309,6 +338,16 @@ function start(): void {
 function stopLoops(): void {
   if (unsubKey) { unsubKey(); unsubKey = null; }
   if (unsubTick) { unsubTick(); unsubTick = null; }
+}
+/** Clear all KEYS-mode transient state (not the synced node.data.noteRec). */
+function resetKeysState(): void {
+  keysClipIndex = 0;
+  keysRecHeld = false;
+  keysOverdubHeld = false;
+  keysPressed.clear();
+  keysOnsets.clear();
+  keysPrevStep = -1;
+  keysStopAtWrap = false;
 }
 /** Ensure the key handler + LED render loop are running WITHOUT resetting the
  *  edit/mode state (used after pairing so the units keep painting even before a
@@ -737,6 +776,270 @@ function toggleArrangeMode(nodeId: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// KEYS mode (dual-Launchpad note/keyboard + clip-record). Pair-only v1.
+// ---------------------------------------------------------------------------
+
+/** The bottom-left keyboard cell pitch for a clip — the clip's root, so every
+ *  octave of the clip root lights cyan and the scale-lighting is anchored. */
+function keysKeyboardRoot(clip: NoteClipRecord): number {
+  return clip.root;
+}
+/** Snap a note-on velocity to a stored VEL level. Velocity-insensitive pads
+ *  (velocity 0/absent) fall back to VEL_DEFAULT (no device fork — a Launchpad X
+ *  is expressive automatically). */
+function keysCaptureVel(velocity: number): number {
+  if (!Number.isFinite(velocity) || velocity <= 0) return VEL_DEFAULT;
+  return VEL_LEVELS[velLevelIndex(velocity)] ?? VEL_DEFAULT;
+}
+
+/** Write a fresh KEYS note-record state (armed/recording OFF). */
+function initNoteRec(nodeId: string, lane: number, slot: number, overdub: boolean): void {
+  editData(nodeId, (d) => {
+    d.noteRec = { lane, slot, armed: false, recording: false, overdub };
+  });
+}
+/** Patch the existing KEYS note-record state (no-op if none). */
+function patchNoteRec(nodeId: string, patch: Partial<NoteRecState>): void {
+  editData(nodeId, (d) => {
+    const cur = readNoteRec(d);
+    if (!cur) return;
+    d.noteRec = { ...cur, ...patch };
+  });
+}
+/** Drop the KEYS note-record state entirely (EXIT to session). */
+function clearNoteRecField(nodeId: string): void {
+  editData(nodeId, (d) => {
+    d.noteRec = null;
+  });
+}
+/** Make a lane active on `slot` + clear any pending launch/immediate on it (so a
+ *  queued clip can't yank the take mid-record). The engine adopts `playing`. */
+function activateLaneClearQueue(nodeId: string, lane: number, slot: number): void {
+  editData(nodeId, (d) => {
+    const playing: (number | null)[] = new Array(CLIP_LANES).fill(null);
+    if (Array.isArray(d.playing)) {
+      for (let i = 0; i < d.playing.length && i < CLIP_LANES; i++) playing[i] = d.playing[i];
+    }
+    playing[lane] = slot;
+    d.playing = playing;
+    const q: (number | 'stop' | null)[] = new Array(CLIP_LANES).fill(null);
+    if (Array.isArray(d.queued)) {
+      for (let i = 0; i < d.queued.length && i < CLIP_LANES; i++) q[i] = d.queued[i];
+    }
+    q[lane] = null;
+    d.queued = q;
+    const imm = new Array<boolean>(CLIP_LANES).fill(false);
+    if (Array.isArray(d.queuedImmediate)) {
+      for (let i = 0; i < d.queuedImmediate.length && i < CLIP_LANES; i++) imm[i] = !!d.queuedImmediate[i];
+    }
+    imm[lane] = false;
+    d.queuedImmediate = imm;
+  });
+}
+
+/** Open the KEYS view for a clip index (materialize a default clip if empty),
+ *  launch it playing, keyboard live, record armed-but-idle. `overdub` is preset
+ *  by the entry gesture (hold-REC = OFF, hold-OVERDUB = ON). */
+function enterKeys(
+  nodeId: string,
+  clipIdx: number,
+  overdub: boolean,
+  data: ClipPlayerData | undefined,
+): void {
+  if (!data?.clips?.[String(clipIdx)]) {
+    editData(nodeId, (d) => {
+      if (!d.clips) d.clips = {};
+      if (!d.clips[String(clipIdx)]) d.clips[String(clipIdx)] = defaultNoteClip();
+    });
+  }
+  keysClipIndex = clipIdx;
+  mode = 'keys';
+  keysRecHeld = false;
+  keysOverdubHeld = false;
+  keysPressed.clear();
+  keysOnsets.clear();
+  keysPrevStep = -1;
+  keysStopAtWrap = false;
+  editArmed = false;
+  lastTapClipIndex = -1;
+  const lane = laneOf(clipIdx);
+  const slot = slotOf(clipIdx);
+  // Launch the clip so KEYS opens with it PLAYING (immediate — never delay).
+  if (lanePlaying(liveData(nodeId), lane) !== slot) queueLane(nodeId, lane, slot, true);
+  initNoteRec(nodeId, lane, slot, overdub);
+}
+
+/** EXIT tap in KEYS: recording → stop record (stay in KEYS); armed → cancel arm
+ *  (stay in KEYS, idle); idle → back to session. */
+function keysExit(nodeId: string, data: ClipPlayerData | undefined): void {
+  const rec = readNoteRec(data);
+  if (rec?.recording) {
+    patchNoteRec(nodeId, { recording: false, armed: false });
+    keysStopAtWrap = false;
+    // flush any held onsets' spans so a note held across EXIT isn't left open
+    finishHeldOnsets(nodeId, data, rec.lane);
+    return;
+  }
+  if (rec?.armed) {
+    patchNoteRec(nodeId, { armed: false });
+    return;
+  }
+  // Idle → session. Blank the KEYS state; the matrix + deck repaint next tick.
+  mode = 'session';
+  clearNoteRecField(nodeId);
+  resetKeysState();
+}
+
+/** QUEUE-REC tap: arm (flashing yellow) → recording begins on the next loop wrap
+ *  (auto-start the transport if stopped). Re-tap while armed cancels. Blocked
+ *  while the arranger is armed or in arrangement mode (so the two never cross). */
+function keysQueueRec(nodeId: string, data: ClipPlayerData | undefined): void {
+  const rec = readNoteRec(data);
+  if (!rec) return;
+  if (rec.recording) return; // EXIT stops a recording, not QUEUE-REC
+  if (rec.armed) {
+    patchNoteRec(nodeId, { armed: false });
+    return;
+  }
+  if (recordArmed(data) || arrangeMode(data)) return; // arranger guard
+  patchNoteRec(nodeId, { armed: true });
+  keysPrevStep = getLanePlayhead(nodeId, rec.lane);
+  if (!transportRunning()) toggleTransport(); // auto-start at step 0
+}
+
+/** OVERDUB toggle (the in-view purple control). OFF→ON = additive from now; ON→
+ *  OFF while recording = finish the current loop then stop (owner: overdub loops
+ *  endlessly until toggled off, stopping at the loop end). */
+function keysToggleOverdub(nodeId: string, data: ClipPlayerData | undefined): void {
+  const rec = readNoteRec(data);
+  if (!rec) return;
+  const next = !rec.overdub;
+  patchNoteRec(nodeId, { overdub: next });
+  if (rec.recording && rec.overdub && !next) keysStopAtWrap = true; // ON→OFF mid-record
+  else keysStopAtWrap = false;
+}
+
+/** Open the LENGTH page from KEYS (returns to KEYS on EXIT). */
+function openLengthFromKeys(nodeId: string, data: ClipPlayerData | undefined): void {
+  if (!clipAtIndex(data, keysClipIndex)) return;
+  editClipIndex = keysClipIndex;
+  lengthReturnMode = 'keys';
+  mode = 'lengthEdit';
+}
+
+/** Close any still-open recorded onsets (their spans) — called on stop/EXIT so a
+ *  note held when recording stops still gets a length. */
+function finishHeldOnsets(nodeId: string, data: ClipPlayerData | undefined, lane: number): void {
+  if (keysOnsets.size === 0) return;
+  const offStep = getLanePlayhead(nodeId, lane);
+  if (offStep < 0) { keysOnsets.clear(); return; }
+  for (const [midi, onStep] of keysOnsets) {
+    const clip = clipAtIndex(liveData(nodeId), keysClipIndex);
+    if (!clip) break;
+    const next = extendRecordedNote(clip, onStep, midi, offStep);
+    if (next !== clip) writeClip(nodeId, next, keysClipIndex);
+  }
+  keysOnsets.clear();
+}
+
+/** Route a KEYS-mode key event on a unit (both units are the keyboard). */
+function handleKeysUnit(nodeId: string, unit: LaunchpadUnit, e: LaunchpadKeyEvent): void {
+  const ev = e.ev;
+  if (ev.type !== 'pad') return; // KEYS uses the 8×8 only (top/scene ignored)
+  const p = keysPad(unit, ev.x, ev.y);
+  if (!p) return;
+  if (p.kind === 'note') {
+    handleKeysNote(nodeId, p.col, p.row, ev.s, ev.velocity);
+    return;
+  }
+  if (ev.s !== 1) return; // controls act on press
+  const data = liveData(nodeId);
+  if (p.kind === 'exit') keysExit(nodeId, data);
+  else if (p.kind === 'qrec') keysQueueRec(nodeId, data);
+  else if (p.kind === 'overdub') keysToggleOverdub(nodeId, data);
+  else if (p.kind === 'len') openLengthFromKeys(nodeId, data);
+  // p.kind === 'playhead' → display only, no-op.
+}
+
+/** A keyboard note press/release in KEYS: audition live (always) + capture into
+ *  the clip while recording. */
+function handleKeysNote(nodeId: string, col: number, row: number, s: 0 | 1, velocity: number): void {
+  const data = liveData(nodeId);
+  const clip = clipAtIndex(data, keysClipIndex);
+  if (!clip) return;
+  const lane = laneOf(keysClipIndex);
+  const midi = keyboardCellToMidi(col, row, keysKeyboardRoot(clip));
+  const rec = readNoteRec(data);
+  if (s === 1) {
+    if (keysPressed.has(midi)) return; // already down (dedupe)
+    keysPressed.add(midi);
+    const vel = keysCaptureVel(velocity);
+    pushAudition(nodeId, { lane, midi, velocity: vel, on: true });
+    if (rec?.recording) {
+      const step = getLanePlayhead(nodeId, lane);
+      if (step >= 0) {
+        const mono = laneMono(data, lane);
+        const next = recordNoteAt(clip, step, midi, { mono, velocity: vel });
+        if (next !== clip) {
+          writeClip(nodeId, next, keysClipIndex);
+          keysOnsets.set(midi, step); // track for note-off span capture
+        }
+      }
+    }
+  } else {
+    keysPressed.delete(midi);
+    pushAudition(nodeId, { lane, midi, velocity: 0, on: false });
+    if (rec?.recording && keysOnsets.has(midi)) {
+      const onStep = keysOnsets.get(midi)!;
+      const offStep = getLanePlayhead(nodeId, lane);
+      if (offStep >= 0) {
+        const next = extendRecordedNote(clip, onStep, midi, offStep);
+        if (next !== clip) writeClip(nodeId, next, keysClipIndex);
+      }
+      keysOnsets.delete(midi);
+    }
+  }
+}
+
+/** Per-tick KEYS record servicing (driven by the LED render loop). Handles the
+ *  arm→record transition on the loop wrap, the TRUE-REPLACE clear as the playhead
+ *  crosses each step (overdub OFF), and the overdub finish-at-loop-end stop. */
+function serviceKeysRecord(nodeId: string, data: ClipPlayerData | undefined): void {
+  const rec = readNoteRec(data);
+  if (!rec) return;
+  const lane = rec.lane;
+  const step = getLanePlayhead(nodeId, lane);
+  const wrapped = step === 0 && keysPrevStep !== 0; // entered step 0 (start/loop)
+  if (rec.armed && !rec.recording) {
+    if (wrapped) {
+      // START: make the target active + clear queue, flip armed→recording.
+      activateLaneClearQueue(nodeId, lane, rec.slot);
+      patchNoteRec(nodeId, { armed: false, recording: true });
+      keysOnsets.clear();
+    }
+  } else if (rec.recording) {
+    if (step !== keysPrevStep && step >= 0) {
+      // TRUE REPLACE (overdub OFF, not finishing): clear the step we just entered
+      // so this pass's keypresses replace its onsets; an un-played step wipes.
+      if (!rec.overdub && !keysStopAtWrap) {
+        const clip = clipAtIndex(liveData(nodeId), keysClipIndex);
+        if (clip) {
+          const next = clearStep(clip, step);
+          if (next !== clip) writeClip(nodeId, next, keysClipIndex);
+        }
+      }
+      // Overdub finished (toggled OFF mid-record): stop at the loop end.
+      if (wrapped && keysStopAtWrap) {
+        finishHeldOnsets(nodeId, liveData(nodeId), lane);
+        patchNoteRec(nodeId, { recording: false });
+        keysStopAtWrap = false;
+      }
+    }
+  }
+  keysPrevStep = step;
+}
+
+// ---------------------------------------------------------------------------
 // Inbound key routing — split by unit.
 // ---------------------------------------------------------------------------
 function handleKey(e: LaunchpadKeyEvent): void {
@@ -746,7 +1049,18 @@ function handleKey(e: LaunchpadKeyEvent): void {
     handleSingleKey(nodeId, e);
     return;
   }
-  // PAIR mode (unchanged): L = the always-live matrix, R = deck/editor.
+  // PAIR mode: L = the always-live matrix, R = deck/editor — EXCEPT KEYS, which
+  // takes BOTH units as the note/keyboard + clip-record view.
+  if (mode === 'keys') {
+    handleKeysUnit(nodeId, e.unit, e);
+    return;
+  }
+  // LENGTH page opened FROM keys: L keeps the live keyboard, R is the ruler.
+  if (mode === 'lengthEdit' && lengthReturnMode === 'keys') {
+    if (e.unit === 'L') handleKeysUnit(nodeId, 'L', e);
+    else handleR(nodeId, e);
+    return;
+  }
   if (e.unit === 'L') handleL(nodeId, e);
   else handleR(nodeId, e);
 }
@@ -942,6 +1256,21 @@ function handleL(nodeId: string, e: LaunchpadKeyEvent): void {
       consumeArmed(nodeId, clipIdx, data);
       return;
     }
+    // KEYS ENTRY (pair only): holding note-REC or note-OVERDUB on the R deck
+    // SUPPRESSES the launch on L taps (mirror editArmed) and a DOUBLE-TAP of a
+    // clip opens the KEYS view for it — hold-REC = overdub OFF, hold-OVERDUB =
+    // overdub ON. The double-tap (two taps of the same clip within the window) is
+    // the safety layer against accidental entry into a destructive mode.
+    if (deployment === 'pair' && (keysRecHeld || keysOverdubHeld)) {
+      if (clipIdx === lastTapClipIndex && tickCount - lastTapTick <= DOUBLE_TAP_TICKS) {
+        lastTapClipIndex = -1;
+        enterKeys(nodeId, clipIdx, keysOverdubHeld, data);
+        return;
+      }
+      lastTapClipIndex = clipIdx;
+      lastTapTick = tickCount;
+      return; // single tap while a KEYS-hold is held = suppressed (no launch)
+    }
     // Held-modifier branches FIRST (the modifiers live on R, read here).
     if (editArmed) {
       // hold-EDIT (on R) + tap a clip (on L) → enter the editor on R. Not a
@@ -1067,6 +1396,13 @@ function handleRDeck(nodeId: string, e: LaunchpadKeyEvent): void {
     if (ev.x === DECK_COPY_IND_COL && ev.y === DECK_ROW) {
       if (ev.s === 1) clearBuffer();
       return;
+    }
+    // KEYS-entry hold buttons (dark deck pads, row 1) — pair only. HELD modifiers
+    // (act on both edges): hold one + double-tap a clip on L → open KEYS.
+    if (deployment === 'pair') {
+      const keysHold = rDeckKeysHold(ev.x, ev.y);
+      if (keysHold === 'keysRec') { keysRecHeld = ev.s === 1; return; }
+      if (keysHold === 'keysOverdub') { keysOverdubHeld = ev.s === 1; return; }
     }
     const action = rDeckPad(ev.x, ev.y);
     if (!action) return;
@@ -1205,19 +1541,23 @@ function scrollStep(clip: NoteClipRecord, delta: number): void {
   editWindowStart = Math.max(0, Math.min(maxWindowStart(clip), editWindowStart + delta));
 }
 
+/** Where LENGTH-EDIT EXIT returns to: KEYS if opened from KEYS, else the editor. */
+function lengthExitMode(): 'edit' | 'keys' {
+  return lengthReturnMode === 'keys' ? 'keys' : 'edit';
+}
 function handleRLength(nodeId: string, e: LaunchpadKeyEvent): void {
   const ev = e.ev;
   const clip = clipAtIndex(liveData(nodeId), editClipIndex);
   if (!clip) { mode = 'session'; return; }
   if (ev.type === 'scene') {
     if (ev.s !== 1) return;
-    if (isEditExitSceneRow(ev.row)) { mode = 'edit'; clampWindow(clip); }
+    if (isEditExitSceneRow(ev.row)) { mode = lengthExitMode(); clampWindow(clip); }
     return;
   }
   if (ev.type !== 'pad' || ev.s !== 1) return;
   const act = rLengthPad(ev.x, ev.y);
   if (!act) return;
-  if (act.kind === 'exit') { mode = 'edit'; clampWindow(clip); return; }
+  if (act.kind === 'exit') { mode = lengthExitMode(); clampWindow(clip); return; }
   const nextLen =
     act.kind === 'block' ? lengthFromBlockTap(act.block) : lengthFromStepTap(clip.lengthSteps, act.step);
   editData(nodeId, (d) => {
@@ -1296,8 +1636,41 @@ function paintRRole(
     bufferArmed: clipBuffer !== null,
     recording: recordArmed(data),
     arrangeMode: arrangeMode(data),
+    keysRecHeld,
+    keysOverdubHeld,
     data,
   }));
+}
+
+/** Paint the KEYS view onto a unit (both units are the keyboard). Returns false
+ *  when the KEYS clip has vanished (caller should drop back to session). */
+function paintKeysRole(
+  target: LaunchpadUnit,
+  nodeId: string,
+  data: ClipPlayerData | undefined,
+  blinkOn: boolean,
+): boolean {
+  const clip = clipAtIndex(data, keysClipIndex);
+  if (!clip) return false;
+  const lane = laneOf(keysClipIndex);
+  const ph = lanePlaying(data, lane) === slotOf(keysClipIndex) ? getLanePlayhead(nodeId, lane) : -1;
+  const rec = readNoteRec(data);
+  setFrame(
+    target,
+    computeKeysFrame({
+      unit: target,
+      keyboardRoot: keysKeyboardRoot(clip),
+      scale: clip.scale,
+      playheadStep: ph,
+      lengthSteps: clip.lengthSteps,
+      pressed: keysPressed,
+      recArmed: rec?.armed,
+      recording: rec?.recording,
+      overdub: rec?.overdub,
+      blinkOn,
+    }),
+  );
+  return true;
 }
 
 /** The CC-98 indicator colour for the active view on the single device (a calm
@@ -1348,6 +1721,23 @@ function renderLeds(): void {
     return;
   }
 
+  // KEYS mode (pair-only): both units are the note/keyboard + clip-record view.
+  // Service the record state machine first (arm→record on wrap, true-replace
+  // clear, overdub finish), then paint both units.
+  if (mode === 'keys') {
+    serviceKeysRecord(nodeId, data);
+    if (paintKeysRole('L', nodeId, data, blinkOn) && paintKeysRole('R', nodeId, data, blinkOn)) return;
+    mode = 'session'; // the KEYS clip vanished — fall through to the matrix/deck
+  }
+  // LENGTH page opened FROM keys: L keeps the live keyboard, R is the ruler.
+  if (mode === 'lengthEdit' && lengthReturnMode === 'keys') {
+    if (paintKeysRole('L', nodeId, data, blinkOn)) {
+      paintRRole('R', nodeId, data, blinkOn);
+      return;
+    }
+    mode = 'session';
+  }
+
   // PAIR (unchanged): UNIT L = the matrix ALWAYS, UNIT R = deck/editor/length.
   paintLRole('L', data, blinkOn);
   paintRRole('R', nodeId, data, blinkOn);
@@ -1376,6 +1766,7 @@ export function __test_resetBinding(): void {
   editRowOffset = 0;
   editWindowStart = 0;
   followOn = true;
+  lengthReturnMode = 'edit';
   armedAction = null;
   armTick = 0;
   lastTapClipIndex = -1;
@@ -1384,11 +1775,12 @@ export function __test_resetBinding(): void {
   lastTapWasPlaying = false;
   clipBuffer = null;
   bufferSourceIndex = null;
+  resetKeysState();
 }
 export function __test_mode(): {
   deployment: 'pair' | 'single';
   activeView: 'clip' | 'control';
-  mode: 'session' | 'edit' | 'lengthEdit';
+  mode: LaunchpadMode;
   editClipIndex: number;
   editArmed: boolean;
   copyHeld: boolean;
@@ -1403,6 +1795,10 @@ export function __test_mode(): {
   bufferArmed: boolean;
   bufferSourceIndex: number | null;
   armedAction: ClipArmAction | null;
+  lengthReturnMode: 'edit' | 'keys';
+  keysClipIndex: number;
+  keysRecHeld: boolean;
+  keysOverdubHeld: boolean;
 } {
   return {
     deployment,
@@ -1422,6 +1818,10 @@ export function __test_mode(): {
     bufferArmed: clipBuffer !== null,
     bufferSourceIndex,
     armedAction,
+    lengthReturnMode,
+    keysClipIndex,
+    keysRecHeld,
+    keysOverdubHeld,
   };
 }
 
