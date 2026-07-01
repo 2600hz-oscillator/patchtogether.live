@@ -428,7 +428,14 @@ export const clipplayerDef: AudioModuleDef = {
       // pitch through a gated step.
       const snh = readParam('snh', 1) >= 0.5;
       const writePitch = r.any || !snh ? true : false;
-      ln.poly.scheduleStep(atTime, voiced, gateOff, { writePitch });
+      // writeGate: r.any — only NOTE steps touch the poly gate; rest steps leave
+      // it untouched so a held/tied note (gateSteps>1) keeps its poly gate HIGH
+      // across the span, exactly like the mono gate below (which the else branch
+      // never re-zeroes). Before this, poly.scheduleStep re-wrote gate=0 on every
+      // rest step → a tied note released a step early on the poly bus while the
+      // mono bus sustained (gate/held-note plan Phase 1). A note self-closes via
+      // gateOff on its own note step, so a skipped rest never sticks a gate high.
+      ln.poly.scheduleStep(atTime, voiced, gateOff, { writePitch, writeGate: r.any });
       ln.sched.push({ t: atTime, idx });
       if (ln.sched.length > 32) ln.sched.shift();
       if (r.any) {
