@@ -8,7 +8,7 @@
   // Model dropdown has a default "—" / unset option that emits null →
   // HOLD-LAST MODELCV (see macseq.ts file header for the rationale).
 
-  import { onDestroy } from 'svelte';
+  import { onMeterFrame } from '$lib/ui/meter-frame';
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import NoteEntry from '$lib/ui/controls/NoteEntry.svelte';
@@ -88,24 +88,18 @@
   let visiblePage = $derived(visiblePageFor(userPage, currentStep, length, hold));
   let pageStart = $derived(pageRange(visiblePage).start);
 
-  let raf: number | null = null;
+  // Playhead follow via the shared meter ticker (one rAF for every card, not
+  // one-per-card — see $lib/ui/meter-frame). The read is cheap, so pass null
+  // (no visibility gate needed).
   $effect(() => {
-    function tickFrame() {
+    const h = onMeterFrame(null, () => {
       const e = engineCtx.get();
       if (e && node) {
         const cs = e.read(node, 'currentStep');
         if (typeof cs === 'number') currentStep = cs;
       }
-      raf = requestAnimationFrame(tickFrame);
-    }
-    raf = requestAnimationFrame(tickFrame);
-    return () => {
-      if (raf !== null) cancelAnimationFrame(raf);
-      raf = null;
-    };
-  });
-  onDestroy(() => {
-    if (raf !== null) cancelAnimationFrame(raf);
+    });
+    return () => h.stop();
   });
 
   function readStepsCopy(): MacseqStep[] {
