@@ -445,6 +445,31 @@ tasks:
             || { echo "[art:one] FAILED on run $r/$N (flake or real failure)"; exit 1; }
         done
 
+  art:fingerprints:accept:
+    desc: |
+      [accept-loop] Re-pin the ART fingerprint manifest
+      (packages/web/src/lib/art/fingerprints.generated.json) — the ART "Spectral
+      Column Print" GENERATED/PINNED artifact (the ART analog of docs:accept).
+      Read-only over the committed art/baselines/**/*.f32 (numpy only, NO audio
+      render). Run AFTER an INTENTIONAL baseline/compute change, then ALWAYS
+      review `git diff` of the manifest before committing (a diff means the
+      baselines or the fingerprint compute changed — accept it, or recognize a
+      bug). Never hand-edit the manifest.
+    cmds:
+      - python3 art/build_gallery.py
+          --baseline-dir art/baselines
+          --fingerprints-out {{.WEB}}/src/lib/art/fingerprints.generated.json
+      - 'echo "[art:fingerprints:accept] re-pinned fingerprints.generated.json — review the git diff before committing"'
+
+  art:fingerprints:check:
+    desc: |
+      Run the ART fingerprint DRIFT GATE read-only (byte-exact regen == committed)
+      + the pure-fs consistency guard — the same checks the unit lane runs. The
+      byte-exact gate skips cleanly when python3+numpy or the materialized .f32
+      baselines are absent.
+    cmds:
+      - npm exec -w {{.WEB}} -- vitest run --config vitest.config.ts fingerprints.check fingerprints.consistency
+
   # ---------------- Visual Regression Tests (Playwright VRT) ----------------
   # Baselines live under e2e/vrt/__screenshots__/ and are LFS-tracked (see
   # .gitattributes). Modeled on the doomviz VRT pattern — same gallery shape,

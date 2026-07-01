@@ -35,19 +35,49 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
+import math
 import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
 
-# Headless, deterministic rendering — set the backend BEFORE importing pyplot.
-import matplotlib
+# matplotlib is imported LAZILY (inside render_png) so the FINGERPRINT-only mode
+# (`--fingerprints-out`, numpy-only) does not require matplotlib to be installed.
+# The gallery-render path still gets a headless, deterministic Agg backend.
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
+
+def _pyplot():
+    """Lazily import matplotlib.pyplot with the headless Agg backend.
+
+    Kept out of module import so the fingerprint drift gate + `art:fingerprints:*`
+    tasks depend on numpy alone (the flox env has both, but the fingerprint
+    manifest compute genuinely needs no plotting)."""
+    import matplotlib
+
+    matplotlib.use("Agg")  # set BEFORE importing pyplot
+    import matplotlib.pyplot as plt  # noqa: E402
+
+    return plt
+
 
 SAMPLE_RATE = 48000  # matches art/setup/render.ts SAMPLE_RATE
+
+# --- fingerprint manifest knobs (Spectral Column Print — plan §1.4 / Phase 3) --
+# A read-only, deterministic reduction of every committed `.f32` baseline to a
+# small uint8 fingerprint. Emitted to the committed
+# `packages/web/src/lib/art/fingerprints.generated.json` (a GENERATED/PINNED
+# artifact — never hand-edited; regenerate via `task art:fingerprints:accept`).
+FP_VERSION = 1
+FP_COLUMN_COUNT = 48  # log-spaced spectrum columns per baseline
+FP_FREQ_LO = 20.0  # Hz — low edge of the shared log-frequency range
+FP_FREQ_HI = 24000.0  # Hz — Nyquist at SAMPLE_RATE=48000
+# Feature → uint8 fixed physical ranges (documented + reproducible; see the
+# owner-confirmed defaults in the plan). Each maps a physical value onto 0..255.
+FP_CREST_DB_MAX = 26.0  # crest factor 0..26 dB → 0..255
+FP_ZCR_FRAC_MAX = 0.5  # zero-crossing fraction 0..0.5 → 0..255
+# spectral centroid: log(FP_FREQ_LO)..log(FP_FREQ_HI) → 0..255
 
 # --- deterministic render knobs -------------------------------------------
 FIG_W_IN = 7.0
@@ -168,8 +198,151 @@ def stats(x: np.ndarray) -> dict[str, float]:
     }
 
 
+# ─────────────────────────── FINGERPRINT COMPUTE ──────────────────────────
+# All read-only over the committed `.f32`. No new audio render, numpy only. The
+# output is byte-stable across runs (fixed STFT + fixed log bins + uint8 core +
+# fixed float rounding), so the committed manifest is an exact-diff drift ratchet.
+
+
+def mean_spectrum(x: np.ndarray, nperseg: int, noverlap: int):
+    """Long-term average magnitude spectrum: STFT (same Hann framing as the
+    gallery spectrogram), then MEAN over the time axis → a 1-D magnitude curve.
+    Returns (freqs, mean_mag)."""
+    hop = nperseg - noverlap
+    if x.size < nperseg:
+        x = np.pad(x, (0, nperseg - x.size))
+    win = np.hanning(nperseg).astype(np.float64)
+    n_frames = 1 + (x.size - nperseg) // hop
+    idx = np.arange(nperseg)[None, :] + hop * np.arange(n_frames)[:, None]
+    frames = x[idx].astype(np.float64) * win[None, :]
+    spec = np.fft.rfft(frames, axis=1)
+    mag = np.abs(spec)  # (time, freq)
+    freqs = np.fft.rfftfreq(nperseg, 1.0 / SAMPLE_RATE)
+    return freqs, mag.mean(axis=0)  # (freq,)
+
+
+def log_bin(freqs: np.ndarray, mag: np.ndarray, n_cols: int, lo: float, hi: float):
+    """Collapse a magnitude-vs-frequency curve onto `n_cols` log-spaced columns
+    over [lo, hi]. Each column = the MEAN of the rFFT bins falling in its band;
+    a band too narrow for the current FFT resolution to contain a bin falls back
+    to linear interpolation at the band's geometric center (so every column is
+    always defined, independent of the per-baseline `nperseg`)."""
+    edges = np.geomspace(lo, hi, n_cols + 1)
+    centers = np.sqrt(edges[:-1] * edges[1:])  # geometric band centers
+    out = np.empty(n_cols, dtype=np.float64)
+    for i in range(n_cols):
+        band_lo, band_hi = edges[i], edges[i + 1]
+        # Half-open bands; the top band is closed so the Nyquist bin is captured.
+        if i == n_cols - 1:
+            sel = (freqs >= band_lo) & (freqs <= band_hi)
+        else:
+            sel = (freqs >= band_lo) & (freqs < band_hi)
+        out[i] = mag[sel].mean() if np.any(sel) else float(np.interp(centers[i], freqs, mag))
+    return out
+
+
+def spectral_centroid(freqs: np.ndarray, mag: np.ndarray) -> float:
+    """Σ(f·mag)/Σ(mag) over the mean spectrum — the spectral center of mass (Hz).
+    Silence (Σmag≈0) → FP_FREQ_LO."""
+    total = float(mag.sum())
+    if total <= 1e-12:
+        return FP_FREQ_LO
+    return float((freqs * mag).sum() / total)
+
+
+def zero_crossing_rate(x: np.ndarray) -> float:
+    """Fraction (0..1) of adjacent sample pairs that change sign — mirrors the
+    featurecv module's `zcr` (0 counts as positive: `(prev>=0)!=(cur>=0)`)."""
+    if x.size < 2:
+        return 0.0
+    signs = x >= 0.0
+    return float(np.count_nonzero(signs[1:] != signs[:-1])) / (x.size - 1)
+
+
+def _u8(v01: float) -> int:
+    """Clamp a 0..1 value and quantize to a uint8 (0..255)."""
+    return int(round(min(1.0, max(0.0, v01)) * 255))
+
+
+def compute_fingerprint(x: np.ndarray) -> dict:
+    """Reduce one baseline buffer to its committed fingerprint entry:
+      * spectrum — 48 log-binned, per-baseline peak-normalized uint8 columns
+      * features — crest (dB) / zcr (fraction) / centroid (logHz), each uint8
+      * labels   — human-readable scalars (peakDb/rmsDb/durS/samples), rounded
+                   to fixed precision so the JSON stays byte-stable.
+    """
+    n = int(x.size)
+    st = stats(x)
+    peak, rms = st["peak"], st["rms"]
+
+    # --- spectrum: mean magnitude → log-bin → peak-normalize → uint8 ---------
+    nperseg = pick_nperseg(n)
+    noverlap = (nperseg * 3) // 4
+    freqs, mag = mean_spectrum(x, nperseg, noverlap)
+    cols = log_bin(freqs, mag, FP_COLUMN_COUNT, FP_FREQ_LO, FP_FREQ_HI)
+    col_peak = float(cols.max())
+    norm = cols / col_peak if col_peak > 0 else np.zeros_like(cols)
+    spectrum = [_u8(v) for v in norm]
+
+    # --- scalar features → uint8 (fixed physical ranges) ---------------------
+    crest = (peak / rms) if rms > 1e-9 else 1.0
+    crest_db = 20.0 * math.log10(crest) if crest > 0 else 0.0
+    zcr = zero_crossing_rate(x)
+    centroid = spectral_centroid(freqs, mag)
+    cen_lo, cen_hi = math.log(FP_FREQ_LO), math.log(FP_FREQ_HI)
+    cen_clamped = min(FP_FREQ_HI, max(FP_FREQ_LO, centroid))
+    cen01 = (math.log(cen_clamped) - cen_lo) / (cen_hi - cen_lo)
+
+    features = {
+        "crest": _u8(crest_db / FP_CREST_DB_MAX),
+        "zcr": _u8(zcr / FP_ZCR_FRAC_MAX),
+        "centroid": _u8(cen01),
+    }
+
+    labels = {
+        "peakDb": round(st["peak_db"], 2) if math.isfinite(st["peak_db"]) else None,
+        "rmsDb": round(st["rms_db"], 2) if math.isfinite(st["rms_db"]) else None,
+        "durS": round(n / SAMPLE_RATE, 6),
+        "samples": n,
+    }
+    return {"spectrum": spectrum, "features": features, "labels": labels}
+
+
+def build_fingerprints(grouped: dict[str, list[Path]]) -> dict:
+    """Compute the whole manifest (keyed `<scenario>/<name>`, sorted)."""
+    fingerprints: dict[str, dict] = {}
+    for scenario, files in grouped.items():
+        for f32 in files:
+            key = f"{scenario}/{f32.stem}"
+            fingerprints[key] = compute_fingerprint(read_f32(f32))
+    return {
+        "version": FP_VERSION,
+        "columnCount": FP_COLUMN_COUNT,
+        "freqRange": [int(FP_FREQ_LO), int(FP_FREQ_HI)],
+        "sampleRate": SAMPLE_RATE,
+        "features": {
+            "crest": {"unit": "dB", "range": [0, FP_CREST_DB_MAX]},
+            "zcr": {"unit": "fraction", "range": [0, FP_ZCR_FRAC_MAX]},
+            "centroid": {"unit": "logHz", "range": [int(FP_FREQ_LO), int(FP_FREQ_HI)]},
+        },
+        # dict insertion order is sorted (grouped is sorted, files are sorted).
+        "fingerprints": dict(sorted(fingerprints.items())),
+    }
+
+
+def write_fingerprints(grouped: dict[str, list[Path]], out_path: Path) -> int:
+    """Serialize the manifest deterministically to `out_path`. Returns count."""
+    manifest = build_fingerprints(grouped)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Fixed 2-space indent + trailing newline → byte-stable, review-friendly diff.
+    text = json.dumps(manifest, indent=2, ensure_ascii=True) + "\n"
+    out_path.write_text(text)
+    return len(manifest["fingerprints"])
+
+
 def render_png(x: np.ndarray, out_path: Path) -> None:
     """Combined waveform (top) + spectrogram (bottom) → deterministic PNG."""
+    plt = _pyplot()
     n = x.size
     fig, (ax_w, ax_s) = plt.subplots(
         2,
@@ -394,15 +567,33 @@ def render_html(sections: list[tuple[str, list[str]]], n_total: int, commit: str
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--baseline-dir", type=Path, required=True)
-    p.add_argument("--output-dir", type=Path, required=True)
+    p.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Render the matplotlib waveform+spectrogram HTML gallery here.",
+    )
+    p.add_argument(
+        "--fingerprints-out",
+        type=Path,
+        default=None,
+        help=(
+            "Also emit the committed uint8 Spectral-Column-Print manifest "
+            "(fingerprints.generated.json) at this path. numpy-only; no render."
+        ),
+    )
     args = p.parse_args()
+
+    if args.output_dir is None and args.fingerprints_out is None:
+        sys.stderr.write(
+            "error: pass --output-dir (render gallery) and/or "
+            "--fingerprints-out (emit manifest); at least one is required.\n"
+        )
+        return 2
 
     if not args.baseline_dir.is_dir():
         sys.stderr.write(f"error: baseline dir not found: {args.baseline_dir}\n")
         return 1
-
-    img_dir = args.output_dir / "img"
-    img_dir.mkdir(parents=True, exist_ok=True)
 
     grouped = list_baselines(args.baseline_dir)
     n_total = sum(len(v) for v in grouped.values())
@@ -411,6 +602,18 @@ def main() -> int:
             f"warning: no .f32 baselines under {args.baseline_dir} — "
             "run `task art:update` first.\n"
         )
+
+    # --- fingerprint manifest (numpy-only; no matplotlib) --------------------
+    if args.fingerprints_out is not None:
+        n_fp = write_fingerprints(grouped, args.fingerprints_out)
+        print(f"  wrote {args.fingerprints_out} (fingerprints={n_fp})")
+
+    # --- matplotlib gallery (only when an output dir is requested) -----------
+    if args.output_dir is None:
+        return 0
+
+    img_dir = args.output_dir / "img"
+    img_dir.mkdir(parents=True, exist_ok=True)
 
     sections: list[tuple[str, list[str]]] = []
     n_rendered = 0
