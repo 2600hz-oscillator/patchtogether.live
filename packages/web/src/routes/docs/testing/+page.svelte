@@ -1,4 +1,9 @@
 <script lang="ts">
+  // Live-build stamp — baked at build/prerender time (see $lib/build-info).
+  // The ART / E2E / spec counts below are derived from the source tree at build
+  // time, so this doubles as an "as of" freshness stamp for those numbers.
+  import { formatBuildInfo } from '$lib/build-info';
+
   let { data } = $props();
 </script>
 
@@ -10,7 +15,19 @@
 <section class="hero">
   <h1>testing</h1>
   <div class="sub">Multi-layer regression coverage. Each layer scoped at a different boundary.</div>
+  <div class="sub build-stamp">
+    <span class="tag">as of</span>counts below reflect {formatBuildInfo()}
+  </div>
 </section>
+
+<style>
+  .build-stamp {
+    margin-top: 0.5rem;
+  }
+  .build-stamp .tag {
+    margin-right: 0.5rem;
+  }
+</style>
 
 <p>
   Three layers in CI today, by ascending integration scope: <strong>unit</strong> →
