@@ -185,7 +185,9 @@ describe('both modules register with the correct type ids', () => {
 
   it('ruttetra = authentic scope (schemaVersion 2)', () => {
     const def = getVideoModuleDef('ruttetra');
-    expect(def?.label).toBe('ruttetra');
+    // type id stays 'ruttetra' (patches/registry key unchanged); the DISPLAY
+    // label was renamed to 'xyz' (shallow app-facing rename — see ruttetra.ts).
+    expect(def?.label).toBe('xyz');
     expect(def?.schemaVersion).toBe(2);
     expect(def?.inputs.find((p) => p.id === 'z')?.type).toBe('video');
   });

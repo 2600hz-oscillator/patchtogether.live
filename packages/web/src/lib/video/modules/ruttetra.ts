@@ -244,7 +244,9 @@ export const ruttetraDef: VideoModuleDef = {
   type: 'ruttetra',
   palette: { top: 'Video modules', sub: 'Processors' },
   domain: 'video',
-  label: 'ruttetra',
+  // Display name only — the type id stays 'ruttetra' so existing patches/edges
+  // /persistence and all test/VRT/registry keys are untouched (shallow rename).
+  label: 'xyz',
   category: 'output',
   // schemaVersion 2: the type id `ruttetra` previously belonged to the
   // coord-remap (now RESHAPER, schemaVersion 1). Patches saved before the

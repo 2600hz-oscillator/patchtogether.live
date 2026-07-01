@@ -270,17 +270,17 @@ test.describe('OUTPUT regression', () => {
   });
 });
 
-test.describe('PR-113 regression - handle dblclick still opens patch-to', () => {
-  // Uses CHROMA — a RAW-handle card (visible side jacks). RUTTETRA was the
-  // original fixture, but the #767 sweep moved it onto the yellow PatchPanel
-  // menu, where the patch-trigger button covers the hidden handle stack and
-  // intercepts the dblclick (only the real-GPU attest lane runs this heavy spec,
-  // so regular shards never caught the regression — it blocked re-pinning the
-  // attest for lib/video PRs, which is why it's fixed here alongside vfpga P2).
-  // PatchPanel cards patch via the drill-down menu (covered by
-  // cable-drag-drilldown.spec); THIS test asserts the raw-handle
-  // dblclick→patch-to cascade still works, so it needs a raw-handle card.
-  test('dblclick on a Handle inside a raw-handle card opens the port menu', async ({ page }) => {
+test.describe('dblclick a PatchPanel corner-trigger opens the port cascade', () => {
+  // Every video card was migrated onto the yellow PatchPanel (#767), so the
+  // dblclick→"patch to" cascade is now reached via a corner PATCH-TRIGGER
+  // (triggerInfoFromEvent in Canvas.svelte → resolves to the module's first
+  // output), NOT a raw <Handle> — no card exposes raw source jacks anymore.
+  // (Was: a chroma raw-handle fixture, which the #767 sweep orphaned when
+  // chroma itself moved to the PatchPanel; that stale assertion failed ONLY on
+  // the real-GPU attest lane, silently blocking every lib/video re-attest.)
+  // The drag-to-patch drill-down is covered by cable-drag-drilldown.spec; THIS
+  // guards the dblclick→port-menu shortcut, which no other spec exercises.
+  test('dblclick on a PatchPanel corner-trigger opens the port menu', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -292,15 +292,15 @@ test.describe('PR-113 regression - handle dblclick still opens patch-to', () => 
     const card = page.locator('.svelte-flow__node-chroma');
     await expect(card).toHaveCount(1);
 
-    const handle = page
-      .locator('.svelte-flow__node-chroma .svelte-flow__handle.source')
-      .first();
-    await expect(handle).toBeVisible();
-    await handle.dblclick();
+    // The output-side corner trigger (right); a dblclick resolves to the
+    // module's first output and opens the "patch to" cascade.
+    const trigger = card.locator('[data-testid="patch-trigger-right"]').first();
+    await expect(trigger).toBeVisible();
+    await trigger.dblclick();
 
     await expect(
       page.locator('[data-testid="port-context-menu"]'),
-      'port-to cascade opened from handle dblclick',
+      'port-to cascade opened from PatchPanel corner-trigger dblclick',
     ).toBeVisible();
   });
 });
