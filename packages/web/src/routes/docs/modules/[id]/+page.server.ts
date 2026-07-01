@@ -75,7 +75,7 @@ export const load: PageServerLoad = ({ params }) => {
   const interactive = INTERACTIVE_DOC_MODULES.has(mod.type);
   const defLite = {
     type: mod.type,
-    domain: 'audio' as const,
+    domain: mod.domain,
     params: mod.params.map((p) => ({ id: p.id, defaultValue: p.defaultValue })),
   };
 

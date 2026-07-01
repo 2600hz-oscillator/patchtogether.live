@@ -230,6 +230,15 @@ jobs:
       - name: Compute app version
         id: appver
         run: echo "v=$(jq -r .version package.json)-prod" >> "$GITHUB_OUTPUT"
+      # Live-build stamp — short git SHA + build timestamp, baked into the
+      # client bundle so the /docs pages can show WHICH build is live (the
+      # health version alone doesn't reveal the commit). Additive: local
+      # builds leave these unset and fall back to "local dev build".
+      - name: Compute build stamp
+        id: buildstamp
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           # VITE_* vars are baked into the client bundle at build time;
@@ -241,6 +250,9 @@ jobs:
           # monitor / smoke can confirm which build is live (+ detect a stale
           # web↔relay version drift). Baked at build like the WS URL above.
           VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
+          # Live-build stamp (see the Compute build stamp step) → /docs pages.
+          VITE_BUILD_SHA: ${{ steps.buildstamp.outputs.sha }}
+          VITE_BUILD_TIME: ${{ steps.buildstamp.outputs.time }}
           # Emit HIDDEN source maps so the Sentry step below can upload them
           # (deleted before deploy; see scripts/sentry-release.sh). No-op for the
           # bundle unless SENTRY_AUTH_TOKEN is also set.
@@ -343,12 +355,21 @@ jobs:
       - name: Compute app version
         id: appver
         run: echo "v=$(jq -r .version package.json)-preview" >> "$GITHUB_OUTPUT"
+      # Live-build stamp for the /docs pages (see deploy-prod for rationale).
+      - name: Compute build stamp
+        id: buildstamp
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           # Previews share the autotest tier's Hocuspocus instance.
           VITE_SERVER_WS_URL: wss://patchtogether-server-autotest.fly.dev
           # Deployed web build version surfaced on /api/health.version.
           VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
+          # Live-build stamp (see the Compute build stamp step) → /docs pages.
+          VITE_BUILD_SHA: ${{ steps.buildstamp.outputs.sha }}
+          VITE_BUILD_TIME: ${{ steps.buildstamp.outputs.time }}
           # Re-expose the dev-only window globals (__patch / __ydoc /
           # __ensureEngine / __listModuleDefs) on the built bundle so the
           # chaos runner + e2e suites can drive a deployed preview. Gated
@@ -490,6 +511,12 @@ jobs:
       - name: Compute app version
         id: appver
         run: echo "v=$(jq -r .version package.json)-autotest" >> "$GITHUB_OUTPUT"
+      # Live-build stamp for the /docs pages (see deploy-prod for rationale).
+      - name: Compute build stamp
+        id: buildstamp
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           VITE_SERVER_WS_URL: wss://patchtogether-server-autotest.fly.dev
@@ -498,6 +525,9 @@ jobs:
           VITE_E2E_HOOKS: '1'
           # Deployed web build version surfaced on /api/health.version.
           VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
+          # Live-build stamp (see the Compute build stamp step) → /docs pages.
+          VITE_BUILD_SHA: ${{ steps.buildstamp.outputs.sha }}
+          VITE_BUILD_TIME: ${{ steps.buildstamp.outputs.time }}
           # Hidden source maps for the Sentry step below (deleted before deploy).
           VITE_SENTRY_SOURCEMAPS: '1'
       # Sentry release — skips cleanly (::warning::) without SENTRY_AUTH_TOKEN.
@@ -586,6 +616,12 @@ jobs:
       - name: Compute app version
         id: appver
         run: echo "v=$(jq -r .version package.json)-dev" >> "$GITHUB_OUTPUT"
+      # Live-build stamp for the /docs pages (see deploy-prod for rationale).
+      - name: Compute build stamp
+        id: buildstamp
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           VITE_SERVER_WS_URL: wss://patchtogether-server-dev.fly.dev
@@ -593,6 +629,9 @@ jobs:
           VITE_E2E_HOOKS: '1'
           # Deployed web build version surfaced on /api/health.version.
           VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
+          # Live-build stamp (see the Compute build stamp step) → /docs pages.
+          VITE_BUILD_SHA: ${{ steps.buildstamp.outputs.sha }}
+          VITE_BUILD_TIME: ${{ steps.buildstamp.outputs.time }}
           # Hidden source maps for the Sentry step below (deleted before deploy).
           VITE_SENTRY_SOURCEMAPS: '1'
       # Sentry release — skips cleanly (::warning::) without SENTRY_AUTH_TOKEN.
