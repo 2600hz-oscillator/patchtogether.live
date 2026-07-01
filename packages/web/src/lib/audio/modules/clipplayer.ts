@@ -21,8 +21,10 @@ import { patch as livePatch } from '$lib/graph/store';
 import { createPolySender, POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { createEdgeCounter } from '$lib/audio/edge-detect';
+import { midiToVOct } from '$lib/audio/note-entry';
 import { isInputPortConnected } from './transport-helpers';
 import { setLanePlayhead, clearPlayheads } from './clip-playhead';
+import { drainAudition, clearAudition } from './clip-audition';
 import {
   readClip,
   lanesForStep,
@@ -164,6 +166,13 @@ export const clipplayerDef: AudioModuleDef = {
       // Ring of recently-scheduled (audio time → step) for an audio-accurate
       // visual playhead (steps are scheduled LOOKAHEAD_S ahead of currentTime).
       sched: { t: number; idx: number }[];
+      // LIVE AUDITION (KEYS keyboard): the MIDI notes currently held down via
+      // the clip-audition side-channel, in press order — index 0 is the primary
+      // voice (poly→mono pitch pulls lane 0). Rebuilt into the poly voicing on
+      // every drain so the live keyboard sounds immediately, transport or not.
+      audHeld: number[];
+      /** velocity 0..1 of the most-recent live-audition note-on. */
+      audVel: number;
     }
     const lanes: Lane[] = Array.from({ length: LANES }, () => {
       const poly = createPolySender(ctx);
@@ -184,6 +193,8 @@ export const clipplayerDef: AudioModuleDef = {
         lastGate: 0,
         lastVel: 0,
         sched: [],
+        audHeld: [],
+        audVel: 0,
       };
     });
 
@@ -426,6 +437,50 @@ export const clipplayerDef: AudioModuleDef = {
       }
     }
 
+    /**
+     * LIVE AUDITION drain (KEYS keyboard). Applies every queued note on/off to
+     * each lane's held-note set, then reschedules that lane's poly voicing +
+     * gate/vel at `now` so a keypress SOUNDS immediately. Held notes fill voices
+     * 0..n-1 (voice 0 = primary, so a poly→mono pitch pull hears it); the lane
+     * gate is high while ANY note is held. Called BEFORE the transport `running`
+     * gate, so keys play with the transport stopped. A no-op when nothing was
+     * queued (the held gates stay high — we never re-write on an empty drain).
+     */
+    function serviceAudition(): void {
+      const events = drainAudition(nodeId);
+      if (events.length === 0) return;
+      const octave = readParam('octave', 0);
+      const touched = new Set<number>();
+      for (const ev of events) {
+        const L = ev.lane;
+        if (L < 0 || L >= LANES) continue;
+        const ln = lanes[L];
+        if (ev.on) {
+          if (!ln.audHeld.includes(ev.midi)) ln.audHeld.push(ev.midi);
+          ln.audVel = Math.max(0, Math.min(1, ev.velocity / 127));
+        } else {
+          const i = ln.audHeld.indexOf(ev.midi);
+          if (i >= 0) ln.audHeld.splice(i, 1);
+        }
+        touched.add(L);
+      }
+      const now = ctx.currentTime;
+      for (const L of touched) {
+        const ln = lanes[L];
+        const voiced = Array.from({ length: POLY_CHANNEL_PAIRS }, (_, i) => {
+          const midi = ln.audHeld[i];
+          return midi === undefined
+            ? { pitch: 0, gate: 0 as const }
+            : { pitch: midiToVOct(midi) + octave, gate: 1 as const };
+        });
+        // gateOff 0 → gates stay HIGH (held) until the next drain changes them.
+        ln.poly.scheduleStep(now, voiced, 0);
+        const anyOn = ln.audHeld.length > 0;
+        ln.gateSrc.offset.setValueAtTime(anyOn ? 1 : 0, now);
+        ln.velSrc.offset.setValueAtTime(anyOn ? ln.audVel : 0, now);
+      }
+    }
+
     function laneLength(L: number): number {
       const ln = lanes[L];
       if (ln.active === null) return 1;
@@ -525,6 +580,10 @@ export const clipplayerDef: AudioModuleDef = {
         // the card editor + grid LEDs read it to draw the moving playhead).
         for (let L = 0; L < LANES; L++) setLanePlayhead(nodeId, L, laneDisplayStep(L));
 
+        // LIVE AUDITION (KEYS keyboard) — drained BEFORE the transport gate so
+        // the keys sound even with the transport STOPPED.
+        serviceAudition();
+
         if (!running) return;
 
         const stepDur = 60 / transportBpm() / (STEP_DIV_SPB[readParam('stepDiv', 2)] ?? 4);
@@ -612,6 +671,7 @@ export const clipplayerDef: AudioModuleDef = {
       dispose() {
         alive = false;
         clearPlayheads(nodeId);
+        clearAudition(nodeId);
         if (unsubscribeTick) {
           unsubscribeTick();
           unsubscribeTick = null;
