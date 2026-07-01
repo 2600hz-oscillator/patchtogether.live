@@ -25,7 +25,7 @@
   // their <video> stays in the "drop a file to play locally" state.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, useStore, type NodeProps } from '@xyflow/svelte';
+  import { useStore, type NodeProps } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
   import { startCornerResize } from './card-resize';
@@ -60,6 +60,8 @@
     unregisterVideoExport,
   } from '$lib/video/video-export-registry';
   import ModuleTitle from './ModuleTitle.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
 
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
@@ -630,8 +632,8 @@
 
   // ---------- Full Frame (in-app, NOT browser fullscreen) ----------
   // Expands the <video> preview to consume the card border, hiding the file
-  // picker / transport / seekbar / port labels + jacks; the card stays in
-  // the rack + remains resizable. Persisted in node.data.fullFrame (Y.Doc-
+  // picker / transport / seekbar + the patch-panel jack affordances; the card
+  // stays in the rack + remains resizable. Persisted in node.data.fullFrame (Y.Doc-
   // synced) so a wall-of-TVs layout survives reload + is shareable.
   let fullFrame = $derived<boolean>((node?.data?.fullFrame as boolean | undefined) ?? false);
   const ff = createFullFrame({
@@ -681,6 +683,19 @@
     });
   }
   onDestroy(() => { if (resizeAbort) resizeAbort.abort(); });
+
+  // Ports — all I/O lives in the shared yellow drill-down <PatchPanel> (the
+  // post-#767 hard standard — NO raw side <Handle> jacks). Port `id`s are
+  // byte-identical to videoboxDef so the CV bridge + persisted edges route
+  // unchanged (play_trigger = gate; video/audio_l/audio_r = video/audio outs).
+  const inputs: PortDescriptor[] = [
+    { id: 'play_trigger', label: 'TRIG', cable: 'gate' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'video', label: 'VID', cable: 'video' },
+    { id: 'audio_l', label: 'A-L', cable: 'audio' },
+    { id: 'audio_r', label: 'A-R', cable: 'audio' },
+  ];
 </script>
 
 <div
@@ -703,16 +718,7 @@
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="VIDEOBOX" />
 
-  <Handle type="target" position={Position.Left}  id="play_trigger" style="top: 56px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 50px;">TRIG</span>
-
-  <Handle type="source" position={Position.Right} id="video"   style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">VID</span>
-  <Handle type="source" position={Position.Right} id="audio_l" style="top: 84px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 78px;">A-L</span>
-  <Handle type="source" position={Position.Right} id="audio_r" style="top: 112px; --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 106px;">A-R</span>
-
+  <PatchPanel nodeId={id} {inputs} {outputs}>
   <div class="body">
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
@@ -821,6 +827,7 @@
       </div>
     {/if}
   </div>
+  </PatchPanel>
 
   <!-- Bottom-right corner-drag resize handle (nodrag so xyflow's node-drag
        doesn't hijack the pointerdown). -->
@@ -887,16 +894,6 @@
     margin: 0 0 8px;
     letter-spacing: 0.05em;
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.55rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-  }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
-
   .body {
     margin-top: 28px;
     padding: 0 12px;
@@ -1070,14 +1067,13 @@
 
   /* ---------- FULL FRAME (in-app, NOT browser fullscreen) ---------- */
   /* The <video> preview consumes the whole card border; hide the title,
-   * stripe, port labels, file picker, transport + seekbar so the card shows
-   * only video. Stays in the rack + resizable; double-click exits. */
+   * stripe, file picker, transport + seekbar so the card shows only video.
+   * Stays in the rack + resizable; double-click exits. */
   .card.full-frame {
     padding: 0;
   }
   .card.full-frame .title,
   .card.full-frame .stripe,
-  .card.full-frame .port-label,
   .card.full-frame .pick-btn,
   .card.full-frame .transport,
   .card.full-frame .seek,
@@ -1085,12 +1081,20 @@
   .card.full-frame .error {
     display: none;
   }
-  /* Hide the card's OWN Svelte Flow jacks while full-frame — keep them in
-   * the DOM (opacity/pointer-events, not display:none) so existing cables
-   * stay connected; we hide, not remove. */
+  /* Hide the card's OWN PatchPanel jack affordances + Svelte Flow handles
+   * while full-frame — keep the handles in the DOM (opacity/pointer-events,
+   * not display:none) so existing cables stay connected; we hide, not
+   * remove. The host stays display:contents so the body fills the card. */
+  .card.full-frame :global(.patch-trigger) {
+    opacity: 0;
+    pointer-events: none;
+  }
   .card.full-frame :global(.svelte-flow__handle) {
     opacity: 0;
     pointer-events: none;
+  }
+  .card.full-frame :global(.patch-panel-host) {
+    display: contents;
   }
   .card.full-frame .body {
     margin-top: 0;

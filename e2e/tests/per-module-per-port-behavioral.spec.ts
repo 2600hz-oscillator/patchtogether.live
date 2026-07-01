@@ -165,6 +165,22 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // non-black/structured render: freeze + fixed delta + synthetic audio) + the
   // contract-lock / docs-lint / modules-card-map unit gates.
   milkdrop:       'self-animating multi-pass visualizer (animated-video variance class, cf. bentbox/b3ntb0x): the out luma-variance jitter floor swamps any per-input delta; covered by milkdrop-render-smoke.spec.ts + unit gates',
+  // SPIROGRAPHS — a line-GENERATOR that draws up to 3 hypotrochoid curves. Its
+  // 30 geometry CV inputs (s1/s2/s3 × R / r / pen / inside / rotation / scale /
+  // X / Y / thickness / chroma) RESHAPE the drawn curve, but reshaping a thin
+  // line preserves the frame's global variance + neighbour-brightness: the
+  // behavioral flake-purge (run 28486495363) measured 25 of 31 inputs with
+  // Δμvar 0.03–1.87 against a ±0.3–4.7 per-spawn variance floor and Δμnb ≈ 0.0000
+  // — sub-threshold on the coarse video-variance metric (the SAME class as
+  // milkdrop / bentbox / acidwarp.speed_cv / tempest.rim). Deterministic (failed
+  // all 5 purge passes on shard 5), so this is a metric-resolution gap, not a
+  // flake and not dead CV (SpirographsCard wires every stem as a `cv` input;
+  // spirographs-math/draw consume them). Whole-module exempt. RE-ENABLE PATH: a
+  // shape-sensitive metric (edge/contour or centroid displacement) or per-port
+  // calibration to each stem's measured jitter floor — the systemic
+  // video-variance-metric follow-up. Covered by spirographs.test.ts +
+  // spirographs-render-smoke.spec.ts (deterministic structured render).
+  spirographs:    'line generator: 25/31 geometry CV inputs reshape a thin curve but keep global frame-variance/neighbour-brightness sub-threshold (Δμvar 0.03–1.87 vs ±0.3–4.7 floor) — video-variance-metric gap, cf. milkdrop/tempest.rim; deterministic (not flake), CV is wired. RE-ENABLE via a shape-sensitive/per-port-calibrated metric. Covered by spirographs.test.ts + spirographs-render-smoke.spec.ts',
 
   // ── User-toggled sequencer-like sources: output silent until steps are
   //    toggled by user interaction (which our spawnPatch doesn't model).
@@ -1158,6 +1174,42 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    dense pulse train vs a silent control. trig2 is the legit no-op:
   'moog911a.trig2': 'in the default OFF mode trig2 → out2 ONLY (independent channels: trig1→out1, trig2→out2), and the behavioral sink observes the FIRST output out1 — so trig2 can never perturb out1 (the same per-channel-isolation no-op as moog993.trig_from2 / shapedramps); the trig2→out2 delay path is pinned by moog911a.test.ts',
 
+  // ── MOOG 962 Sequential Switch: SHIFT advances the selector across in1..in3.
+  //    The behavioral sweep drives ONE input at a time, so SHIFT is exercised
+  //    with in1..in3 UNPATCHED (idle): advancing the selector routes near-idle →
+  //    near-idle, giving Δμrms=0.004 — well inside the `out` CV's own ±0.089
+  //    noise floor. Pass/fail is then decided by noise, i.e. FLAKY: it was green
+  //    in all 5 flake-purge passes (run 28486495363) yet failed shard 4 on a real
+  //    main run (28488538570). in1/in2/in3 pass (they route their own probe to
+  //    out). RE-ENABLE: drive SHIFT WITH distinct sources patched to in1..in3
+  //    (BEHAVIORAL_PORT_TEST_SOURCE) so advancing switches between them → a real
+  //    attributable delta. Covered by moog962.test.ts (selector advance / routing).
+  'moog962.shift': 'SHIFT advances the sequential-switch selector; the sweep drives it against UNPATCHED in1..in3 (idle→idle routing) → Δμrms=0.004 inside the out ±0.089 noise floor → near-threshold FLAKE (green in all 5 flake-purge passes, failed one real main run). in1/in2/in3 stay gated. RE-ENABLE: drive SHIFT with distinct sources on in1..in3. Covered by moog962.test.ts',
+
+  // ── MOOG 911 Envelope Generator: esus_cv displaces the SUSTAIN level, which
+  //    only shapes the env's HELD (gated-sustain) portion. The behavioral sweep's
+  //    short 5-snapshot window over a retriggering env is dominated by attack/
+  //    release, where sustain barely registers → Δμrms=0.003 inside the env's
+  //    ±0.105 noise floor → near-threshold FLAKE (green in the flake-purge, failed
+  //    shard 3 on a real main run 28490403808). t1/t2/t3 (times) + gate stay
+  //    gated. RE-ENABLE: hold the gate through the sustain phase + widen the
+  //    window so the sustain-level displacement is observable. Covered by
+  //    moog911.test.ts (envelope contour / sustain math).
+  'moog911.esus_cv': 'sustain-LEVEL CV only shapes the env\'s held-sustain phase; the short retriggering behavioral window is attack/release-dominated → Δμrms=0.003 inside the env ±0.105 noise floor → near-threshold flake (green in the purge, failed one real run); t1/t2/t3/gate stay gated. RE-ENABLE: hold the gate through sustain + widen the window. Covered by moog911.test.ts',
+
+  // ── MOOG 921B (slaved VCO): freq_bus is its 1V/oct pitch CV from a 921A
+  //    driver (the 921B has no 1V/oct jack of its own). The pitch DOES respond —
+  //    driving freq_bus with the sweep's time-varying probe SWEEPS the pitch
+  //    (perturbed cent jitters ±13–24 Hz vs the control's ±1 Hz, mean 264→255),
+  //    but the delta metric compares MEAN cent, and a symmetric sweep around a
+  //    similar mean collapses to Δμcent 3–10 Hz — inside the metric's own noise →
+  //    near-threshold flake (failed 2 flake-purge passes). This is a
+  //    metric-mismatch, NOT dead CV (the ±24 Hz perturbed jitter proves the pitch
+  //    moves). width_bus + fine/range stay gated. RE-ENABLE: drive freq_bus with
+  //    a STEP (not a sweep) so the mean pitch shifts, or score the zero-cross /
+  //    cent-RANGE. Covered by moog921b.test.ts (bus→pitch/octave math).
+  'moog921b.freq_bus': '1V/oct pitch bus — the pitch DOES respond (perturbed cent jitters ±13–24 Hz vs control ±1 Hz, mean 264→255) but a symmetric sweep collapses the MEAN-cent metric to Δμcent 3–10 Hz → near-threshold metric-mismatch flake (not dead CV); width_bus/fine/range stay gated. RE-ENABLE: STEP the bus (not sweep) or score cent-RANGE/zero-cross. Covered by moog921b.test.ts',
+
   // ── PEAKS channel-1 inputs (re-enabled module, behavioral-recon #3). PEAKS is
   //    TWO INDEPENDENT channels (Émilie Gillet's dual-mode Peaks): gate0/mode0/
   //    k1_0/k2_0 drive worklet output 0 (out0), and gate1/mode1/k1_1/k2_1 drive
@@ -1280,6 +1332,16 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   'elements.blowlvl_cv': 'blow exciter is summed at ×0.4·env (intrinsically quiet); its level CV sits below threshold under the dominant struck tone; covered by elements.test.ts',
   'elements.blowmeta_cv':'blow-meta (flow) CV: blow exciter (×0.4) shape shift below centroid threshold under the struck tone; covered by elements.test.ts',
   'elements.blowtim_cv': 'blow-timbre CV: blow exciter (×0.4) shape shift below centroid threshold on the struck transient; covered by elements.test.ts',
+  // pos_cv = PICKUP POSITION (0..1): where the pickup samples the resonator — a
+  // subtle timbral colour, not a level/pitch change. Under the dominant struck
+  // tone it shifts the spectrum below the centroid/cent threshold: the purge saw
+  // Δμrms=0.000 / Δcent=19 Hz inside a ±101 Hz cent-noise floor on a near-silent
+  // (rms 0.002) resonator → near-threshold flake (9/10 elements inputs pass; only
+  // pos_cv, one of the subtle-spectral class alongside bow/blow above). RE-ENABLE:
+  // drive pos_cv WITH a sustained/held excitation so the pickup colours an
+  // actively-sounding resonator, or score a spectral-centroid metric. Covered by
+  // elements.test.ts (elementsMath per-param response).
+  'elements.pos_cv':     'pickup POSITION is a subtle spectral colour below the centroid/cent threshold under the dominant struck tone (Δμrms 0.000 / Δcent 19 Hz vs ±101 Hz on a near-silent resonator) → near-threshold flake, same subtle-spectral class as elements bow/blow CVs; the other 9 inputs stay gated. RE-ENABLE: drive with a held excitation or score spectral centroid. Covered by elements.test.ts',
   // env_cv (exciter envelope macro) + geom_cv (resonator mode-spacing
   // geometry) shift the spectral CHARACTER of the struck transient subtly —
   // at the fast 240-BPM context-gate the envelope barely completes its
@@ -1383,6 +1445,39 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    the SAME video-variance class as acidwarp.speed_cv. Covered by the
   //    mandleblot VRT coverage which screenshots distinct zoom depths.
   'mandleblot.zoom_cv': 'zooms a self-running high-variance fractal; frame-variance metric stays saturated across zoom (video-variance class); covered by mandleblot VRT/specs',
+  // ── LINES (lines.ts): phase offset SCROLLS the procedural line pattern. Shifting
+  //    the phase TRANSLATES the bands but preserves the frame's overall variance /
+  //    non-black statistic (Δμvar=2.36 vs a ±63.7 per-snapshot variance floor) →
+  //    near-threshold FLAKE, same video-variance class as tempest.rim/spirographs
+  //    (green in the flake-purge, failed shard 3 on a real main run 28490403808).
+  //    orient/amp/thickness stay gated (they reshape band structure → real delta).
+  //    RE-ENABLE via a phase-correlation / centroid metric. Covered by
+  //    lines-render-smoke.spec.ts.
+  'lines.phase': 'phase offset scrolls/translates the procedural line bands but preserves global frame-variance (Δμvar 2.36 vs ±63.7 noise) → near-threshold flake, video-variance class (cf. tempest.rim); orient/amp/thickness stay gated. RE-ENABLE via a phase-correlation/centroid metric. Covered by lines-render-smoke.spec.ts',
+
+  // ── TEXTMARQUEE (textmarquee.ts): posY translates the scrolling text band
+  //    VERTICALLY. The other 3 CV inputs (scrollX / scrollY / posX) reliably
+  //    perturb the metric; posY does NOT, because a horizontal text band moved
+  //    up/down covers a near-identical pixel area → global frame-variance is
+  //    unchanged (var ≈ 308.8 in both control and perturbed; the flake-purge saw
+  //    Δμvar straddle the threshold 0.02→3.19 against a ±0.0–4.4 floor, failing
+  //    3 of 5 purge passes on shard 6 — a near-threshold FLAKE). Same
+  //    video-variance class as tempest.rim: the effect is real (posY has a Knob +
+  //    a `cv` input in TextmarqueeCard; textmarquee-layout.test.ts proves the
+  //    vertical offset) but sub-resolution for the coarse metric. Per-PORT exempt
+  //    (posX/scrollX/scrollY stay gated). RE-ENABLE via a centroid-displacement /
+  //    row-band metric. Covered by textmarquee.test.ts + textmarquee-layout.test.ts
+  //    (vertical-position math) + textmarquee-render-smoke.spec.ts.
+  'textmarquee.posY': 'vertical text translation keeps the covered pixel-area (and thus global frame-variance ≈ 308.8) unchanged → Δμvar straddles the threshold (flaky 3/5 purge passes), same video-variance class as tempest.rim; posX/scrollX stay gated. RE-ENABLE via a centroid/row-band metric. Covered by textmarquee.test.ts + textmarquee-layout.test.ts + textmarquee-render-smoke.spec.ts',
+  // scrollY = VERTICAL scroll of the same horizontal text band — same geometry
+  // as posY: it shifts the band up/down through a near-identical covered pixel
+  // area, so global frame-variance barely moves (Δμvar 1.45–2.08 vs a ±0.0–5.7
+  // floor; the control is a static var=308.8±0.0) → near-threshold flake (failed
+  // 2 flake-purge passes on shard 6). The HORIZONTAL inputs posX/scrollX move
+  // glyphs across columns → real variance delta, so they stay gated. RE-ENABLE
+  // via the same centroid/row-band metric as posY. Covered by textmarquee.test.ts
+  // + textmarquee-layout.test.ts (scroll math) + textmarquee-render-smoke.spec.ts.
+  'textmarquee.scrollY': 'vertical scroll of the horizontal text band keeps the covered pixel-area/frame-variance ≈ constant (Δμvar 1.45–2.08 vs ±0–5.7, control static 308.8) → near-threshold flake, same geometry class as posY; posX/scrollX (horizontal → real delta) stay gated. RE-ENABLE via a centroid/row-band metric. Covered by textmarquee-layout.test.ts + textmarquee-render-smoke.spec.ts',
 
   // (b3ntb0x is WHOLE-MODULE exempt in BEHAVIORAL_MODULE_EXEMPT — its animated
   //  composite's ±580 variance floor swamps EVERY input, not just a few, so a
@@ -1437,11 +1532,11 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_MODULE_EXEMPT).length,
     'BEHAVIORAL_MODULE_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(65); // +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI); +1 milkdrop (self-animating multi-pass visualizer — out luma-variance jitter floor swamps any per-input delta, cf. bentbox/b3ntb0x; covered by milkdrop-render-smoke.spec.ts)
+  ).toBeLessThanOrEqual(66); // +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI); +1 milkdrop (self-animating multi-pass visualizer — out luma-variance jitter floor swamps any per-input delta, cf. bentbox/b3ntb0x; covered by milkdrop-render-smoke.spec.ts); +1 spirographs (line generator — 25/31 geometry CV inputs reshape a thin curve sub-threshold on the coarse video-variance metric, cf. milkdrop/tempest.rim; deterministic, CV wired; covered by spirographs.test.ts + render-smoke)
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(161); // +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke)
+  ).toBeLessThanOrEqual(168); // +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts); +1 textmarquee.scrollY (vertical scroll of the horizontal band keeps frame-variance ≈ constant, Δμvar 1.45–2.08 → near-threshold flake, same geometry as posY; posX/scrollX stay gated; covered by textmarquee-layout.test.ts); +1 moog921b.freq_bus (1V/oct pitch bus responds — perturbed cent jitters ±24Hz — but a symmetric sweep collapses the mean-cent metric to Δμcent 3–10Hz → metric-mismatch flake, not dead CV; width_bus/fine/range stay gated; covered by moog921b.test.ts); +1 elements.pos_cv (pickup POSITION is a subtle spectral colour below the centroid/cent threshold under the dominant struck tone, Δμrms 0.000/Δcent 19Hz vs ±101Hz on a near-silent resonator → near-threshold flake, same subtle-spectral class as elements bow/blow CVs; other 9 inputs stay gated; covered by elements.test.ts)
 });
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the

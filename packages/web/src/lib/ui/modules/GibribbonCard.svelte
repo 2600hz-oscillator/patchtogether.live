@@ -11,10 +11,9 @@
 
   import type { NodeProps } from '@xyflow/svelte';
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position } from '@xyflow/svelte';
-  import { patch } from '$lib/graph/store';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import {
-    gibribbonDef,
     INTERNAL_W as GIB_W,
     INTERNAL_H as GIB_H,
     type GibribbonHandleExtras,
@@ -110,6 +109,33 @@
     health === 'wounded' ? 'WOUNDED' :
     health === 'critical' ? 'CRITICAL' : 'GAME OVER',
   );
+
+  // Ports — ids byte-identical to gibribbonDef so the CV bridge + persisted
+  // edges route unchanged. modsignal modulation inputs (cv1..cv4, x, y) map to
+  // the panel's `cv` row; clock/gate + ABXY buttons are gates.
+  const inputs: PortDescriptor[] = [
+    { id: 'cv1', label: 'CV1', cable: 'cv' },
+    { id: 'cv2', label: 'CV2', cable: 'cv' },
+    { id: 'cv3', label: 'CV3', cable: 'cv' },
+    { id: 'cv4', label: 'CV4', cable: 'cv' },
+    { id: 'clock', label: 'CLOCK', cable: 'gate' },
+    { id: 'gate', label: 'GATE', cable: 'gate' },
+    { id: 'x', label: 'X', cable: 'cv' },
+    { id: 'y', label: 'Y', cable: 'cv' },
+    { id: 'a', label: 'A', cable: 'gate' },
+    { id: 'b', label: 'B', cable: 'gate' },
+    { id: 'x_btn', label: 'X BTN', cable: 'gate' },
+    { id: 'y_btn', label: 'Y BTN', cable: 'gate' },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT', cable: 'video' },
+    { id: 'evt_hit', label: 'HIT', cable: 'gate' },
+    { id: 'evt_miss', label: 'MISS', cable: 'gate' },
+    { id: 'evt_fire', label: 'FIRE', cable: 'gate' },
+    { id: 'evt_kill', label: 'KILL', cable: 'gate' },
+    { id: 'evt_gameover', label: 'GAME OVER', cable: 'gate' },
+    { id: 'health_cv', label: 'HEALTH', cable: 'cv' },
+  ];
 </script>
 
 <div
@@ -126,73 +152,35 @@
   <div class="stripe" style="background: var(--cable-video);"></div>
   <ModuleTitle {id} {data} defaultLabel="GIBRIBBON" />
 
-  <!-- INPUT handles (left edge): event-gen CV, transport, axes, ABXY buttons. -->
-  <Handle type="target" position={Position.Left} id="cv1"   style="top: 56px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 50px;">CV1</span>
-  <Handle type="target" position={Position.Left} id="cv2"   style="top: 80px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 74px;">CV2</span>
-  <Handle type="target" position={Position.Left} id="cv3"   style="top: 104px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 98px;">CV3</span>
-  <Handle type="target" position={Position.Left} id="cv4"   style="top: 128px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 122px;">CV4</span>
-  <Handle type="target" position={Position.Left} id="clock" style="top: 152px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 146px;">CLK</span>
-  <Handle type="target" position={Position.Left} id="gate"  style="top: 176px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 170px;">GTE</span>
-  <Handle type="target" position={Position.Left} id="x"     style="top: 200px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 194px;">X</span>
-  <Handle type="target" position={Position.Left} id="y"     style="top: 224px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 218px;">Y</span>
-  <Handle type="target" position={Position.Left} id="a"     style="top: 248px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 242px;">A</span>
-  <Handle type="target" position={Position.Left} id="b"     style="top: 272px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 266px;">B</span>
-  <Handle type="target" position={Position.Left} id="x_btn" style="top: 296px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 290px;">XB</span>
-  <Handle type="target" position={Position.Left} id="y_btn" style="top: 320px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 314px;">YB</span>
-
-  <!-- OUTPUT handles (right edge): video, event gates, health CV. -->
-  <Handle type="source" position={Position.Right} id="out"          style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-  <Handle type="source" position={Position.Right} id="evt_hit"      style="top: 84px;  --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 78px;">HIT</span>
-  <Handle type="source" position={Position.Right} id="evt_miss"     style="top: 112px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 106px;">MIS</span>
-  <Handle type="source" position={Position.Right} id="evt_fire"     style="top: 140px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 134px;">FIR</span>
-  <Handle type="source" position={Position.Right} id="evt_kill"     style="top: 168px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 162px;">KIL</span>
-  <Handle type="source" position={Position.Right} id="evt_gameover" style="top: 196px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 190px;">GO</span>
-  <Handle type="source" position={Position.Right} id="health_cv"    style="top: 224px; --handle-color: var(--cable-cv);" />
-  <span class="port-label right" style="top: 218px;">HP</span>
-
-  <div class="header-row">
-    <div class="hud" data-testid="gibribbon-score">SCORE {score}</div>
-    <div class="hud" class:dead={health === 'dead'} data-testid="gibribbon-health">{healthLabel}</div>
-    <div class="hud" data-testid="gibribbon-combo">x{combo}</div>
-  </div>
-
-  <div class="screen-wrap">
-    <canvas bind:this={canvasEl} class="screen" data-testid="gibribbon-screen"></canvas>
-    {#if health === 'dead'}
-      <div class="gameover-overlay" data-testid="gibribbon-gameover">
-        <div class="go-title">GAME OVER</div>
-        <div class="go-sub">press R or RESET to play again</div>
-        <button type="button" class="go-btn" onclick={resetGame} data-testid="gibribbon-restart">RESTART</button>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="body">
+      <div class="header-row">
+        <div class="hud" data-testid="gibribbon-score">SCORE {score}</div>
+        <div class="hud" class:dead={health === 'dead'} data-testid="gibribbon-health">{healthLabel}</div>
+        <div class="hud" data-testid="gibribbon-combo">x{combo}</div>
       </div>
-    {/if}
-  </div>
 
-  <div class="row">
-    <button type="button" class="btn" onclick={resetGame} data-testid="gibribbon-reset">RESET</button>
-    {#if loadErr}
-      <span class="warn" data-testid="gibribbon-loaderr" title={loadErr}>line-art (no WAD)</span>
-    {/if}
-  </div>
+      <div class="screen-wrap">
+        <canvas bind:this={canvasEl} class="screen" data-testid="gibribbon-screen"></canvas>
+        {#if health === 'dead'}
+          <div class="gameover-overlay" data-testid="gibribbon-gameover">
+            <div class="go-title">GAME OVER</div>
+            <div class="go-sub">press R or RESET to play again</div>
+            <button type="button" class="go-btn" onclick={resetGame} data-testid="gibribbon-restart">RESTART</button>
+          </div>
+        {/if}
+      </div>
 
-  <div class="tip">Click to focus → F/D/J/K (or arrows) = A/B/X/Y, R = restart. Read the top lane for the next buttons. Patch X/Y to aim, CV1-4 + CLOCK + GATE to auto-generate.</div>
+      <div class="row">
+        <button type="button" class="btn" onclick={resetGame} data-testid="gibribbon-reset">RESET</button>
+        {#if loadErr}
+          <span class="warn" data-testid="gibribbon-loaderr" title={loadErr}>line-art (no WAD)</span>
+        {/if}
+      </div>
+
+      <div class="tip">Click to focus → F/D/J/K (or arrows) = A/B/X/Y, R = restart. Read the top lane for the next buttons. Patch X/Y to aim, CV1-4 + CLOCK + GATE to auto-generate.</div>
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -217,12 +205,10 @@
     box-shadow: 0 0 0 1px var(--accent), 0 2px 12px rgba(135, 200, 255, 0.4);
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; }
-  .port-label {
-    position: absolute; font-size: 0.55rem; color: var(--text-dim);
-    pointer-events: none; font-family: ui-monospace, monospace;
+  .body {
+    /* Clear the PatchPanel's top-left/right trigger affordances. */
+    margin-top: 24px;
   }
-  .port-label.left { left: 6px; }
-  .port-label.right { right: 6px; }
   .header-row {
     display: flex; justify-content: space-between; align-items: center;
     margin: 4px 0 8px; padding: 0 4px; gap: 12px;

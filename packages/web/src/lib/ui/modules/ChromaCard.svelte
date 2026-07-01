@@ -2,8 +2,14 @@
   // ChromaCard — single-input HUE-SHIFTER / COLORIZER. Use CHROMAKEY for
   // the proper 2-input chroma-key compositor (this card's old role
   // before the v3 rework — see chroma.ts header).
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  //
+  // All ports live in the shared yellow drill-down <PatchPanel> (the post-#767
+  // hard standard — NO raw side <Handle> jacks). Port `id`s are byte-identical
+  // to chromaDef so the CV bridge + persisted edges route unchanged.
+  import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { chromaDef } from '$lib/video/modules/chroma';
@@ -39,55 +45,54 @@
     target.params.tintG = g;
     target.params.tintB = b;
   }
+
+  // Ports — ids byte-identical to chromaDef (in = video, hue/saturation/tintR/
+  // tintG/tintB/tintMix = cv, out = video).
+  const inputs: PortDescriptor[] = [
+    { id: 'in',         label: 'IN',  cable: 'video' },
+    { id: 'hue',        label: 'HUE', cable: 'cv' },
+    { id: 'saturation', label: 'SAT', cable: 'cv' },
+    { id: 'tintR',      label: 'R',   cable: 'cv' },
+    { id: 'tintG',      label: 'G',   cable: 'cv' },
+    { id: 'tintB',      label: 'B',   cable: 'cv' },
+    { id: 'tintMix',    label: 'MIX', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [{ id: 'out', label: 'OUT', cable: 'video' }];
 </script>
 
 <div class="card video">
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="CHROMA" />
 
-  <Handle type="target" position={Position.Left} id="in"         style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 50px;">IN</span>
-  <Handle type="target" position={Position.Left} id="hue"        style="top: 92px;  --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 86px;">H</span>
-  <Handle type="target" position={Position.Left} id="saturation" style="top: 124px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 118px;">S</span>
-  <Handle type="target" position={Position.Left} id="tintR"      style="top: 156px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 150px;">R</span>
-  <Handle type="target" position={Position.Left} id="tintG"      style="top: 188px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 182px;">G</span>
-  <Handle type="target" position={Position.Left} id="tintB"      style="top: 220px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 214px;">B</span>
-  <Handle type="target" position={Position.Left} id="tintMix"    style="top: 252px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 246px;">M</span>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="body">
+      <div class="picker-row">
+        <label class="swatch-wrap" title="Click to pick tint color">
+          <span class="swatch" style="background: {tintHex};"></span>
+          <input
+            type="color"
+            class="color-input"
+            value={tintHex}
+            oninput={onColorChange}
+            data-testid="chroma-tint-picker"
+          />
+          <span class="hex">{tintHex}</span>
+        </label>
+      </div>
 
-  <Handle type="source" position={Position.Right} id="out" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
-  <div class="picker-row">
-    <label class="swatch-wrap" title="Click to pick tint color">
-      <span class="swatch" style="background: {tintHex};"></span>
-      <input
-        type="color"
-        class="color-input"
-        value={tintHex}
-        oninput={onColorChange}
-        data-testid="chroma-tint-picker"
-      />
-      <span class="hex">{tintHex}</span>
-    </label>
-  </div>
-
-  <div class="fader-grid">
-    <Fader value={p('hue')}        min={-180} max={180} defaultValue={chromaDef.params.find((x) => x.id === 'hue')!.defaultValue}        label="Hue"  curve="linear" onchange={setParam('hue')}        moduleId={id} paramId="hue" />
-    <Fader value={p('saturation')} min={0}    max={2}   defaultValue={chromaDef.params.find((x) => x.id === 'saturation')!.defaultValue} label="Sat"  curve="linear" onchange={setParam('saturation')} moduleId={id} paramId="saturation" />
-    <Fader value={p('tintMix')}    min={0}    max={1}   defaultValue={chromaDef.params.find((x) => x.id === 'tintMix')!.defaultValue}    label="Mix"  curve="linear" onchange={setParam('tintMix')}    moduleId={id} paramId="tintMix" />
-  </div>
+      <div class="fader-grid">
+        <Fader value={p('hue')}        min={-180} max={180} defaultValue={chromaDef.params.find((x) => x.id === 'hue')!.defaultValue}        label="Hue"  curve="linear" onchange={setParam('hue')}        moduleId={id} paramId="hue" />
+        <Fader value={p('saturation')} min={0}    max={2}   defaultValue={chromaDef.params.find((x) => x.id === 'saturation')!.defaultValue} label="Sat"  curve="linear" onchange={setParam('saturation')} moduleId={id} paramId="saturation" />
+        <Fader value={p('tintMix')}    min={0}    max={1}   defaultValue={chromaDef.params.find((x) => x.id === 'tintMix')!.defaultValue}    label="Mix"  curve="linear" onchange={setParam('tintMix')}    moduleId={id} paramId="tintMix" />
+      </div>
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
   .card {
     width: 260px;
-    min-height: 360px;
+    min-height: 220px;
     background: var(--module-bg);
     border: 1px solid var(--border);
     border-radius: 2px;
@@ -105,11 +110,15 @@
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--cable-video); }
   .title { font-size: 0.85rem; font-weight: 500; text-align: center; margin: 0 0 8px; letter-spacing: 0.05em; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
+  .body {
+    /* Clear the PatchPanel's top-left/right trigger affordances. */
+    margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
   .picker-row {
-    margin: 165px 12px 12px;
+    margin: 0 12px;
     display: flex;
     align-items: center;
     gap: 12px;

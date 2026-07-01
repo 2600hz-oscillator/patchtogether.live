@@ -15,8 +15,9 @@
 
   import type { NodeProps } from '@xyflow/svelte';
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import type { ModuleNode } from '$lib/graph/types';
   import { QBERT_WIDTH, QBERT_HEIGHT } from '$lib/qbert/qbert-runtime';
   import type { QbertHandleExtras } from '$lib/video/modules/qbert';
@@ -25,6 +26,23 @@
   let { id, data }: NodeProps = $props();
   let node = $derived(data?.node as ModuleNode);
   const engineCtx = useEngine();
+
+  // Ports — ids byte-identical to qbertDef so the CV bridge + persisted edges
+  // route unchanged. Inputs: coin_in/start_in (gate), joy_x/joy_y (cv).
+  // Outputs: out (video), audio_out (audio), evt_die/evt_move/evt_level (gate).
+  const inputs: PortDescriptor[] = [
+    { id: 'coin_in',  label: 'COIN',  cable: 'gate' },
+    { id: 'start_in', label: 'START', cable: 'gate' },
+    { id: 'joy_x',    label: 'JOY X', cable: 'cv'   },
+    { id: 'joy_y',    label: 'JOY Y', cable: 'cv'   },
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out',       label: 'OUT',   cable: 'video' },
+    { id: 'audio_out', label: 'AUDIO', cable: 'audio' },
+    { id: 'evt_die',   label: 'DIE',   cable: 'gate'  },
+    { id: 'evt_move',  label: 'MOVE',  cable: 'gate'  },
+    { id: 'evt_level', label: 'LEVEL', cable: 'gate'  },
+  ];
 
   let cardEl: HTMLDivElement | null = $state(null);
   let canvasEl: HTMLCanvasElement | null = $state(null);
@@ -130,54 +148,36 @@
   <div class="stripe" style="background: var(--cable-video);"></div>
   <ModuleTitle {id} {data} defaultLabel="QBERT" />
 
-  <!-- INPUT handles, LEFT edge. coin / start (gates), joy_x / joy_y (CV). -->
-  <Handle type="target" position={Position.Left} id="coin_in"  style="top: 56px;  --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 50px;">COIN</span>
-  <Handle type="target" position={Position.Left} id="start_in" style="top: 84px;  --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 78px;">START</span>
-  <Handle type="target" position={Position.Left} id="joy_x"    style="top: 112px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 106px;">JOY_X</span>
-  <Handle type="target" position={Position.Left} id="joy_y"    style="top: 140px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 134px;">JOY_Y</span>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="body">
+      <div class="screen-wrap">
+        <canvas
+          bind:this={canvasEl}
+          class="screen"
+          data-testid="qbert-screen"
+        ></canvas>
 
-  <!-- OUTPUT handles, RIGHT edge. video / audio / 3 event gates. -->
-  <Handle type="source" position={Position.Right} id="out"       style="top: 56px;  --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-  <Handle type="source" position={Position.Right} id="audio_out" style="top: 84px;  --handle-color: var(--cable-audio);" />
-  <span class="port-label right" style="top: 78px;">AUD</span>
-  <Handle type="source" position={Position.Right} id="evt_die"   style="top: 112px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 106px;">DIE</span>
-  <Handle type="source" position={Position.Right} id="evt_move"  style="top: 140px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 134px;">MOV</span>
-  <Handle type="source" position={Position.Right} id="evt_level" style="top: 168px; --handle-color: var(--cable-gate);" />
-  <span class="port-label right" style="top: 162px;">LVL</span>
-
-  <div class="screen-wrap">
-    <canvas
-      bind:this={canvasEl}
-      class="screen"
-      data-testid="qbert-screen"
-    ></canvas>
-
-    {#if showRomMissing}
-      <div class="overlay rom-missing" data-testid="qbert-rom-missing">
-        <div class="overlay-title">ROM MISSING</div>
-        <div class="overlay-body">{loadError}</div>
-        <div class="overlay-hint">Run <code>task setup:qbert</code></div>
+        {#if showRomMissing}
+          <div class="overlay rom-missing" data-testid="qbert-rom-missing">
+            <div class="overlay-title">ROM MISSING</div>
+            <div class="overlay-body">{loadError}</div>
+            <div class="overlay-hint">Run <code>task setup:qbert</code></div>
+          </div>
+        {:else if !loaded}
+          <div class="overlay loading">
+            <div class="overlay-title">LOADING…</div>
+          </div>
+        {:else}
+          <div class="overlay-stack">
+            <div class="overlay-line" data-testid="qbert-insert-coin">INSERT COIN</div>
+            <div class="overlay-line" data-testid="qbert-press-start">PRESS START</div>
+          </div>
+        {/if}
       </div>
-    {:else if !loaded}
-      <div class="overlay loading">
-        <div class="overlay-title">LOADING…</div>
-      </div>
-    {:else}
-      <div class="overlay-stack">
-        <div class="overlay-line" data-testid="qbert-insert-coin">INSERT COIN</div>
-        <div class="overlay-line" data-testid="qbert-press-start">PRESS START</div>
-      </div>
-    {/if}
-  </div>
 
-  <div class="tip">CV-driven. Patch COIN + START gates + joy_x / joy_y CV.</div>
+      <div class="tip">CV-driven. Patch COIN + START gates + joy_x / joy_y CV.</div>
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -205,12 +205,10 @@
     position: absolute; top: 0; left: 0; right: 0; height: 2px;
     border-radius: 2px 2px 0 0;
   }
-  .port-label {
-    position: absolute; font-size: 0.55rem; color: var(--text-dim);
-    pointer-events: none; font-family: ui-monospace, monospace;
+  .body {
+    /* Clear the PatchPanel's top-left/right trigger affordances. */
+    margin-top: 24px;
   }
-  .port-label.left  { left: 14px; }
-  .port-label.right { right: 14px; }
   .screen-wrap {
     position: relative;
     margin: 20px auto 8px;
