@@ -207,10 +207,21 @@ jobs:
       - name: Compute app version
         id: appver
         run: echo "v=$(jq -r .version package.json)-prod" >> "$GITHUB_OUTPUT"
+      # Live-build stamp for the /docs pages (see deploy.yml deploy-prod). The
+      # tree is checked out at the fully-green SHA above, so `git rev-parse HEAD`
+      # here is that shipped commit. Without this, a daily prod deploy would
+      # render the "local dev build" fallback on /docs — the exact blind spot.
+      - name: Compute build stamp
+        id: buildstamp
+        run: |
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - run: flox activate -- task build
         env:
           VITE_SERVER_WS_URL: wss://patchtogether-server.fly.dev
           VITE_APP_VERSION: ${{ steps.appver.outputs.v }}
+          VITE_BUILD_SHA: ${{ steps.buildstamp.outputs.sha }}
+          VITE_BUILD_TIME: ${{ steps.buildstamp.outputs.time }}
           VITE_SENTRY_SOURCEMAPS: '1'
       - name: Sentry release (source maps)
         env:
