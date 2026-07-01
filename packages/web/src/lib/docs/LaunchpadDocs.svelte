@@ -35,8 +35,23 @@
     RGB_LEN_BLOCK,
     RGB_LEN_END,
     RGB_VIEW,
+    // KEYS mode (note/keyboard + clip-record)
+    RGB_KEY_ROOT,
+    RGB_KEY_INSCALE,
+    RGB_KEY_OUTSCALE,
+    RGB_KEY_PRESSED,
+    RGB_KEYS_PH_CUR,
+    RGB_KEYS_PH_BASE,
+    RGB_QREC_IDLE,
+    RGB_QREC_ARMED,
+    RGB_QREC_REC,
+    RGB_OD,
+    RGB_OD_ON,
+    RGB_KEYS_REC_HOLD,
+    RGB_KEYS_OD_HOLD,
     type Rgb,
   } from '$lib/control/launchpad/launchpad-map';
+  import { keyboardCellToMidi, noteRole } from '$lib/audio/modules/keyboard-map';
 
   // Render the EXACT RGB the firmware receives (0..127 → 0..255 for the screen).
   const hex = (c: Rgb) =>
@@ -96,6 +111,9 @@
     { x: 5, y: 0, fill: hex(RGB_DECK_DBL) }, // DBL — purple
     { x: 6, y: 0, fill: hex(RGB_DECK_LEN) }, // LEN — yellow
     { x: 7, y: 0, fill: hex(RGB_DECK_NOW) }, // NOW — purple
+    // row 1 = the KEYS-entry hold buttons (note/keyboard + clip-record mode)
+    { x: 0, y: 1, fill: hex(RGB_KEYS_REC_HOLD), label: 'K●' }, // note-REC hold
+    { x: 1, y: 1, fill: hex(RGB_KEYS_OD_HOLD), label: 'KO' }, // note-OVERDUB hold
   ];
   const rDeckTop = [
     { col: 0, fill: hex(RGB_RECORDING), label: 'REC' }, // CC 91 — arranger record-arm
@@ -162,6 +180,51 @@
   const rLenScene = [{ row: 7, fill: hex(RGB_EXIT), label: 'EXIT' }];
   const rLenCallouts = [{ label: 'END BLOCK  1 → 8', fromCol: 0, toCol: 7 }];
 
+  // ── KEYS view (note/keyboard + clip-record) — spans BOTH units, continuous.
+  // Generated from the LIVE keyboard-map + role colours so the picture can't
+  // drift from the firmware. C3 major, an illustrative held chord + a playhead.
+  const KEYS_ROOT = 48; // C3
+  const KEYS_SCALE = 'major' as const;
+  const keysPressed = new Set<number>([
+    keyboardCellToMidi(2, 1, KEYS_ROOT), // a held note (unit L)
+    keyboardCellToMidi(4, 2, KEYS_ROOT),
+    keyboardCellToMidi(9, 0, KEYS_ROOT), // a held note (unit R, col 9)
+  ]);
+  const keyFill = (col: number, ry: number) => {
+    const midi = keyboardCellToMidi(col, ry, KEYS_ROOT);
+    if (keysPressed.has(midi)) return hex(RGB_KEY_PRESSED);
+    const role = noteRole(midi, KEYS_ROOT, KEYS_SCALE);
+    return hex(role === 'root' ? RGB_KEY_ROOT : role === 'inscale' ? RGB_KEY_INSCALE : RGB_KEY_OUTSCALE);
+  };
+  const KEYS_PH_CUR_CELL = 3; // illustrative current playhead cell (unit L)
+  function keysUnitPads(unit: 'L' | 'R') {
+    const colBase = unit === 'L' ? 0 : 8;
+    const pads: { x: number; y: number; fill: string; label?: string }[] = [];
+    // keyboard band y=1..6 (row 0..5)
+    for (let ry = 0; ry < 6; ry++) {
+      for (let x = 0; x < 8; x++) pads.push({ x, y: 1 + ry, fill: keyFill(colBase + x, ry) });
+    }
+    // playhead strip y=7 (L cells 0..7, R cells 8..15)
+    for (let x = 0; x < 8; x++) {
+      const cell = colBase + x;
+      pads.push({ x, y: 7, fill: hex(cell === KEYS_PH_CUR_CELL ? RGB_KEYS_PH_CUR : RGB_KEYS_PH_BASE) });
+    }
+    // bottom-row controls (unit L only)
+    if (unit === 'L') {
+      pads.push({ x: 0, y: 0, fill: hex(RGB_EXIT), label: 'EXT' });
+      pads.push({ x: 1, y: 0, fill: hex(RGB_QREC_ARMED), label: 'REC' });
+      pads.push({ x: 2, y: 0, fill: hex(RGB_OD), label: 'OVR' });
+      pads.push({ x: 7, y: 0, fill: hex(RGB_DECK_LEN), label: 'LEN' });
+    }
+    return pads;
+  }
+  const keysLPads = keysUnitPads('L');
+  const keysRPads = keysUnitPads('R');
+  const keysLCallouts = [
+    { label: 'PLAYHEAD  (whole clip)', fromCol: 0, toCol: 7, tier: 0 },
+  ];
+  const keysRCallouts = [{ label: 'KEYBOARD continues  (cols 8 → 15)', fromCol: 0, toCol: 7 }];
+
   // ── colour legends ──
   const SESSION_COLORS: { state: string; rgb: Rgb; anim: string; note: string }[] = [
     { state: 'empty slot', rgb: [0, 0, 0], anim: 'off', note: 'no clip here' },
@@ -196,8 +259,23 @@
     { state: 'length: counted / END', rgb: RGB_LEN_END, note: 'bright pad = current end' },
   ];
 
+  const KEYS_COLORS: { state: string; rgb: Rgb; note: string }[] = [
+    { state: 'key · root', rgb: RGB_KEY_ROOT, note: 'cyan — every octave of the clip root' },
+    { state: 'key · in-scale', rgb: RGB_KEY_INSCALE, note: 'green (dimmed) — a scale note' },
+    { state: 'key · out-of-scale', rgb: RGB_KEY_OUTSCALE, note: 'very dim — still playable (chromatic)' },
+    { state: 'key · pressed', rgb: RGB_KEY_PRESSED, note: 'white — sounding now' },
+    { state: 'playhead cell', rgb: RGB_KEYS_PH_CUR, note: 'the current step (dull blue elsewhere)' },
+    { state: 'QUEUE-REC idle', rgb: RGB_QREC_IDLE, note: 'dull yellow — not armed' },
+    { state: 'QUEUE-REC armed', rgb: RGB_QREC_ARMED, note: 'bright yellow, flashes — waiting for the loop wrap' },
+    { state: 'recording', rgb: RGB_QREC_REC, note: 'red, pulses — capturing now' },
+    { state: 'OVERDUB off / on', rgb: RGB_OD_ON, note: 'light purple (off) → bright purple (on, additive)' },
+    { state: 'note-REC / OVERDUB hold', rgb: RGB_KEYS_REC_HOLD, note: 'session deck row 1 — hold + double-tap a clip to enter KEYS' },
+  ];
+
   const PAD_MAP: { what: string; addr: string }[] = [
     { what: '8×8 pads (programmer mode)', addr: 'note = row*10 + col · 11 = bottom-left · 88 = top-right' },
+    { what: 'KEYS entry (pair)', addr: 'hold note-REC / note-OVERDUB (deck row 1, cols 0/1) + DOUBLE-TAP a clip on L → KEYS view (REC = overdub off · OVERDUB = overdub on)' },
+    { what: 'KEYS layout (both units)', addr: 'top row = 16-cell playhead · middle 6 rows = isomorphic keyboard (chromatic fourths, continuous L|R) · bottom row (unit L) = EXIT · QUEUE-REC · OVERDUB · LEN' },
     { what: 'top row ▲ ▼ ◀ ▶ ▣(SHIFT)', addr: 'CC 91 · 92 · 93 · 94 · 95 — editor nav (▲▼◀▶) + SHIFT(95)' },
     { what: 'top row arranger (session) / globals', addr: 'CC 91 = REC · 92 = SONG · 96 = transport · 97 = stop-all' },
     { what: 'single-unit ARM ROW (clip view)', addr: 'CC 91 = NEW · 92 = COPY (dbl-tap = clear) · 93 = PASTE · 94 = PASTE-REV · 95 = NOW (sticky) · 96 = LENGTH · 97 = DOUBLE — arm, then tap a clip (single mode only)' },
@@ -411,6 +489,74 @@
   caption="Open with LEN on the deck · bottom row = end BLOCK (1–8); the next two rows = end STEP (1–8, then 9–16). The bright pad is the current end — tap a pad to set the clip length (non-destructive). EXIT top-right."
 />
 
+<h2>KEYS — play + record notes (both units, pair)</h2>
+<p class="muted">
+  <strong>KEYS</strong> turns the <strong>pair</strong> into a playable <strong>isomorphic keyboard</strong>
+  (LinnStrument-style) routed live to a clip's track, <em>and</em> a <strong>loop recorder</strong> — with a
+  clip playhead across the top. Both units flip to KEYS together (the matrix is hidden until you EXIT), and the
+  keyboard is <strong>continuous across the L|R seam</strong> so a chord shape crossing the two units is the
+  same shape. (KEYS is a <strong>two-unit</strong> feature today; a single-unit port is a follow-up.)
+</p>
+<h3>Getting in — a two-step safety gesture</h3>
+<ol class="steps">
+  <li><strong>Hold</strong> the <strong>note-REC</strong> or <strong>note-OVERDUB</strong> button on the RIGHT
+    deck (<em>row 1</em>, the two pads just above EDIT/COPY — <span style="color:{hex(RGB_KEYS_REC_HOLD)}">dim red</span>
+    /<span style="color:{hex(RGB_KEYS_OD_HOLD)}">dim purple</span>). While held, taps on the LEFT matrix
+    <strong>don't launch</strong>.</li>
+  <li><strong>Double-tap</strong> a clip on the LEFT (two quick taps of the same pad) → both units flip to
+    <strong>KEYS</strong> for that clip. Entering via <strong>note-REC</strong> presets <strong>overdub OFF</strong>
+    (true replace); via <strong>note-OVERDUB</strong> presets <strong>overdub ON</strong> (additive). An empty pad
+    makes a fresh clip. The clip starts <strong>playing</strong> and the keyboard is <strong>live</strong> — but
+    <strong>recording is armed-but-idle</strong> until you press QUEUE-REC.</li>
+</ol>
+<div class="diagram-pair">
+  <LaunchpadDiagram
+    pads={keysLPads}
+    callouts={keysLCallouts}
+    accent={hex(RGB_QREC_REC)}
+    caption="KEYS · UNIT L. Top row = the 16-cell playhead strip (this unit shows clip cells 0–7). The middle 6 rows are the keyboard (root cyan, in-scale green, out-of-scale dim, a pressed pad white). Bottom row = controls: EXIT (red), QUEUE-REC (yellow → red), OVERDUB (purple), LEN (yellow)."
+  />
+  <LaunchpadDiagram
+    pads={keysRPads}
+    callouts={keysRCallouts}
+    caption="KEYS · UNIT R. The keyboard continues (columns 8–15) so a shape crossing the seam is unbroken; the top row shows playhead cells 8–15. Unit R's bottom row is dark — the controls live on unit L."
+  />
+</div>
+<h3>Record a loop</h3>
+<ul class="tight">
+  <li><strong>QUEUE-REC</strong> (bottom-row, unit L): tap to <strong>arm</strong> — it flashes yellow. Recording
+    begins when the clip's playhead <strong>wraps to step 1</strong> (the transport auto-starts if it was
+    stopped); the pad turns <strong>red</strong>. A queued clip can't yank the take — the lane is pinned to the
+    clip you're recording.</li>
+  <li><strong>Record (overdub OFF) = TRUE REPLACE:</strong> as the playhead crosses each step it is
+    <strong>cleared</strong>, then filled by whatever you play that pass — so an un-played region wipes. Play a
+    monophonic lane and the first note per step wins; a poly lane captures a chord.</li>
+  <li><strong>OVERDUB (on) = additive:</strong> each pass layers onto the last and it loops endlessly; toggle
+    OVERDUB off to finish (it stops at the end of the current loop). The in-view <strong>OVERDUB</strong> pad
+    (light → bright purple) mirrors + changes the mode you entered with.</li>
+  <li><strong>Velocity</strong> is captured from how hard you hit the pad (a Launchpad X is expressive
+    automatically; a velocity-flat Mini records a default level).</li>
+  <li><strong>LEN</strong> opens the length page (it returns to KEYS on EXIT), so you can set the clip length
+    without leaving.</li>
+</ul>
+<h3>Getting out</h3>
+<ul class="tight">
+  <li><strong>EXIT while recording</strong> = stop recording but <strong>stay in KEYS</strong> (the clip keeps
+    playing); a <strong>second EXIT</strong> = back to the session matrix.</li>
+  <li><strong>EXIT while armed-but-not-recording</strong> = cancel the arm (idle KEYS).</li>
+  <li><strong>EXIT while idle</strong> = back to the session matrix (both units return to L = matrix, R = deck).</li>
+</ul>
+<h3>What the KEYS colours mean</h3>
+<div class="swatch-grid">
+  {#each KEYS_COLORS as c (c.state)}
+    <div class="swatch-row two">
+      <span class="chip" style:background={hex(c.rgb)}></span>
+      <span class="s-state">{c.state}</span>
+      <span class="s-note">{c.note}</span>
+    </div>
+  {/each}
+</div>
+
 <h2>LED colour language</h2>
 <p class="muted">
   Every swatch is the exact RGB the firmware receives (type-3 lighting SysEx, 0–127 per channel). State
@@ -462,6 +608,7 @@
 
 <style>
   .hero { margin-bottom: 1.25rem; }
+  .diagram-pair { display: flex; flex-wrap: wrap; gap: 1.25rem; align-items: flex-start; }
   .lede { color: var(--muted, #9aa0b2); line-height: 1.5; max-width: 62ch; }
   .muted { color: var(--muted, #9aa0b2); font-size: 0.9rem; max-width: 70ch; }
   h2 { margin-top: 1.8rem; }
