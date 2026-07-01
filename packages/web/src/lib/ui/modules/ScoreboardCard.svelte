@@ -2,20 +2,27 @@
   // ScoreboardCard — 4-digit neon 7-segment counter widget.
   //
   // I/O:
-  //   - 2 cv-typed gate inputs (SCORE, RESET) on the left.
-  //   - 1 video output (OUT) on the right.
+  //   - 2 cv-typed gate inputs (SCORE, RESET).
+  //   - 1 video output (OUT).
   //   - 1 colour-wheel knob (the `color` param) — 0..1 maps 0..360° hue.
   //
+  // All ports live in the shared yellow drill-down <PatchPanel> (the post-#767
+  // hard standard — NO raw side <Handle> jacks; this also gives the card its
+  // rear-view back panel). Port `id`s are byte-identical to scoreboardDef so the
+  // CV bridge + persisted edges route unchanged.
+  //
   // Layout:
-  //   - Small preview canvas (200×80) showing the live counter, drawn via
+  //   - Small preview canvas (200×56) showing the live counter, drawn via
   //     the same drawScoreboard helper the engine uploads to GL.
   //   - The preview polls the engine at rAF cadence via engine.read('score')
   //     so the displayed number tracks the live counter, regardless of
   //     which peer drove the gate.
 
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position, type NodeProps } from '@xyflow/svelte';
+  import type { NodeProps } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { setNodeParam } from '$lib/graph/mutate';
   import { useEngine } from '$lib/audio/engine-context';
   import { scoreboardDef } from '$lib/video/modules/scoreboard';
@@ -38,7 +45,7 @@
     setNodeParam(id, k, v);
   };
 
-  // -------- Live preview canvas (200×80) --------
+  // -------- Live preview canvas (200×56) --------
   const PREVIEW_W = 200;
   // Rack-compaction (#759): trimmed 80 → 56 so the card fits its 1u tier.
   // drawScoreboard scales the 7-segment readout to the canvas dimensions, so
@@ -71,43 +78,40 @@
     raf = requestAnimationFrame(tick);
   });
   onDestroy(() => { if (raf !== null) cancelAnimationFrame(raf); });
+
+  // Ports — ids byte-identical to scoreboardDef (score/reset = cv, out = video).
+  const inputs: PortDescriptor[] = [
+    { id: 'score', label: 'SCORE', cable: 'cv' },
+    { id: 'reset', label: 'RESET', cable: 'cv' },
+  ];
+  const outputs: PortDescriptor[] = [{ id: 'out', label: 'OUT', cable: 'video' }];
 </script>
 
 <div class="mod-card scoreboard-card" data-testid="scoreboard-card" data-node-id={id}>
   <div class="stripe"></div>
   <ModuleTitle {id} {data} defaultLabel="SCOREBOARD" />
 
-  <!-- Gate inputs (left) -->
-  <Handle type="target" position={Position.Left} id="score"
-          style="top: 56px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 50px;">SCORE</span>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="body">
+      <div class="screen-wrap">
+        <canvas
+          bind:this={canvasEl}
+          class="screen"
+          data-testid="scoreboard-screen"
+          data-node-id={id}
+        ></canvas>
+      </div>
 
-  <Handle type="target" position={Position.Left} id="reset"
-          style="top: 96px; --handle-color: var(--cable-gate);" />
-  <span class="port-label left" style="top: 90px;">RESET</span>
-
-  <!-- Video output (right) -->
-  <Handle type="source" position={Position.Right} id="out"
-          style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 50px;">OUT</span>
-
-  <div class="screen-wrap">
-    <canvas
-      bind:this={canvasEl}
-      class="screen"
-      data-testid="scoreboard-screen"
-      data-node-id={id}
-    ></canvas>
-  </div>
-
-  <div class="knob-row">
-    <Knob
-      value={paramVal('color')}
-      min={0} max={1} defaultValue={defaultFor('color')}
-      label="COLOR" curve="linear"
-      onchange={set('color')} moduleId={id} paramId="color"
-    />
-  </div>
+      <div class="knob-row">
+        <Knob
+          value={paramVal('color')}
+          min={0} max={1} defaultValue={defaultFor('color')}
+          label="COLOR" curve="linear"
+          onchange={set('color')} moduleId={id} paramId="color"
+        />
+      </div>
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -136,21 +140,14 @@
     border-radius: 2px 2px 0 0;
     background: var(--cable-video);
   }
-  .port-label {
-    position: absolute;
-    font-size: 0.6rem;
-    color: var(--text-dim);
-    pointer-events: none;
-    font-family: ui-monospace, monospace;
-    letter-spacing: 0.04em;
+  .body {
+    /* Clear the PatchPanel's top-left/right trigger affordances. */
+    margin-top: 24px;
   }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
   .screen-wrap {
     /* Rack-compaction (#759): tighter vertical margin + shorter readout to
-     * fit the 1u tier. Top margin keeps the canvas clear of the SCORE/RESET
-     * input handles (top: 56/96px). */
-    margin: 14px auto 6px;
+     * fit the 1u tier. */
+    margin: 0 auto 6px;
     width: 200px;
     height: 56px;
     border: 1px solid #000;

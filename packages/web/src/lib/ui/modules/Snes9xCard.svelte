@@ -13,7 +13,6 @@
 
   import type { NodeProps } from '@xyflow/svelte';
   import { onMount, onDestroy } from 'svelte';
-  import { Handle, Position } from '@xyflow/svelte';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import {
@@ -24,6 +23,8 @@
   import type { GameOutputDef } from '$lib/snes9x/output-definitions';
   import { SNES_BUTTONS } from '$lib/snes9x/snes-input';
   import { patch } from '$lib/graph/store';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import ModuleTitle from './ModuleTitle.svelte';
   import NativeFillToggle from './NativeFillToggle.svelte';
 
@@ -125,25 +126,26 @@
     if (pollTimer) clearInterval(pollTimer);
   });
 
-  // Input port rows: clock_in + the 12 gamepad buttons.
-  const INPUT_ROWS = ['clock_in', ...SNES_BUTTONS];
-  const OUTPUT_ROWS = ['out', 'audio_l', 'audio_r', 'gate1', 'gate2', 'gate3', 'gate4', 'cv1', 'cv2', 'cv3', 'cv4'];
-
-  function inColor(p: string): string {
-    return p === 'clock_in' ? 'var(--cable-gate)' : 'var(--cable-gate)';
-  }
-  function outColor(p: string): string {
-    if (p === 'out') return 'var(--cable-video)';
-    if (p.startsWith('audio')) return 'var(--cable-audio)';
-    if (p.startsWith('cv')) return 'var(--cable-cv)';
-    return 'var(--cable-gate)';
-  }
-  function rowTop(i: number): number {
-    return 50 + i * 22;
-  }
-  function labelFor(p: string): string {
-    return p.replace('_in', '').replace('audio_', 'A').replace('_', '').toUpperCase();
-  }
+  // Ports — ids byte-identical to snes9xDef so the CV bridge + persisted edges
+  // route unchanged. Inputs: clock_in + the 12 SNES gamepad buttons (all gate).
+  // Outputs: out (video), audio_l/audio_r (audio), gate1..4 (gate), cv1..4 (cv).
+  const inputs: PortDescriptor[] = [
+    { id: 'clock_in', label: 'CLOCK', cable: 'gate' },
+    ...SNES_BUTTONS.map((b) => ({ id: b, label: b.toUpperCase(), cable: 'gate' })),
+  ];
+  const outputs: PortDescriptor[] = [
+    { id: 'out', label: 'OUT', cable: 'video' },
+    { id: 'audio_l', label: 'AUDIO L', cable: 'audio' },
+    { id: 'audio_r', label: 'AUDIO R', cable: 'audio' },
+    { id: 'gate1', label: 'GATE 1', cable: 'gate' },
+    { id: 'gate2', label: 'GATE 2', cable: 'gate' },
+    { id: 'gate3', label: 'GATE 3', cable: 'gate' },
+    { id: 'gate4', label: 'GATE 4', cable: 'gate' },
+    { id: 'cv1', label: 'CV 1', cable: 'cv' },
+    { id: 'cv2', label: 'CV 2', cable: 'cv' },
+    { id: 'cv3', label: 'CV 3', cable: 'cv' },
+    { id: 'cv4', label: 'CV 4', cable: 'cv' },
+  ];
 </script>
 
 <div
@@ -156,19 +158,9 @@
   <div class="stripe" style="background: var(--cable-video);"></div>
   <ModuleTitle {id} {data} defaultLabel="SNES9X" />
 
-  <!-- INPUT handles, LEFT edge -->
-  {#each INPUT_ROWS as p, i (p)}
-    <Handle type="target" position={Position.Left} id={p} style="top: {rowTop(i)}px; --handle-color: {inColor(p)};" />
-    <span class="port-label left" style="top: {rowTop(i) - 6}px;">{labelFor(p)}</span>
-  {/each}
-
-  <!-- OUTPUT handles, RIGHT edge -->
-  {#each OUTPUT_ROWS as p, i (p)}
-    <Handle type="source" position={Position.Right} id={p} style="top: {rowTop(i)}px; --handle-color: {outColor(p)};" />
-    <span class="port-label right" style="top: {rowTop(i) - 6}px;">{labelFor(p)}</span>
-  {/each}
-
-  <div class="screen-wrap">
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="body">
+      <div class="screen-wrap">
     <canvas bind:this={canvasEl} class="screen" data-testid="snes9x-screen"></canvas>
 
     {#if !loaded}
@@ -223,14 +215,16 @@
     {/if}
   </div>
 
-  <div class="fit-row" data-testid="snes9x-fit-row">
-    <span class="fit-label">OUTPUT FIT</span>
-    <NativeFillToggle {fillMode} srcAspect={4 / 3} onchange={setFillMode} />
-  </div>
+      <div class="fit-row" data-testid="snes9x-fit-row">
+        <span class="fit-label">OUTPUT FIT</span>
+        <NativeFillToggle {fillMode} srcAspect={4 / 3} onchange={setFillMode} />
+      </div>
 
-  <div class="tip">
-    Right-click → “see output definition for CV/GATES”. Patch clock_in + a GAMEPAD’s gates.
-  </div>
+      <div class="tip">
+        Right-click → “see output definition for CV/GATES”. Patch clock_in + a GAMEPAD’s gates.
+      </div>
+    </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -243,10 +237,14 @@
     border-radius: 2px;
     color: var(--text);
     /* Rack-compaction (#759): tighter top padding to fit the 2u tier. */
-    padding: 10px 40px 9px;
+    padding: 10px 12px 9px;
     position: relative;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     outline: none;
+  }
+  .body {
+    /* Clear the PatchPanel's top-left/right trigger affordances. */
+    margin-top: 24px;
   }
   .fit-row {
     display: flex;
@@ -268,12 +266,6 @@
     box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; }
-  .port-label {
-    position: absolute; font-size: 0.5rem; color: var(--text-dim);
-    pointer-events: none; font-family: ui-monospace, monospace;
-  }
-  .port-label.left  { left: 6px; }
-  .port-label.right { right: 6px; }
   .screen-wrap {
     position: relative;
     /* Rack-compaction (#759): tighter vertical margin to fit 2u. */

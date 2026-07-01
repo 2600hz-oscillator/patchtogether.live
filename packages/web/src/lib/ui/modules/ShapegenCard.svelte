@@ -13,8 +13,9 @@
   // drawImage of an already-painted canvas, no recomputation here.
 
   import type { NodeProps } from '@xyflow/svelte';
-  import { Handle, Position } from '@xyflow/svelte';
   import Knob from '$lib/ui/controls/Knob.svelte';
+  import PatchPanel from '$lib/ui/PatchPanel.svelte';
+  import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
   import { shapegenDef, SHAPEGEN_CLOCK_PORT_ID } from '$lib/video/modules/shapegen';
@@ -81,59 +82,58 @@
       (e) => e?.target?.nodeId === id && e?.target?.portId === SHAPEGEN_CLOCK_PORT_ID,
     ),
   );
+
+  // Ports — ids byte-identical to shapegenDef (raster_a/b/c = video,
+  // clock_in = gate, out = video). All jacks render in the shared yellow
+  // drill-down <PatchPanel> (post-#767 hard standard — NO raw side <Handle>).
+  const inputs: PortDescriptor[] = [
+    { id: 'raster_a', label: 'A', cable: 'video' },
+    { id: 'raster_b', label: 'B', cable: 'video' },
+    { id: 'raster_c', label: 'C', cable: 'video' },
+    { id: SHAPEGEN_CLOCK_PORT_ID, label: 'CLK', cable: 'gate' },
+  ];
+  const outputs: PortDescriptor[] = [{ id: 'out', label: 'OUT', cable: 'video' }];
 </script>
 
 <div class="mod-card shapegen-card" data-testid="shapegen-card">
   <div class="stripe" style="background: var(--cable-video);"></div>
   <ModuleTitle {id} {data} defaultLabel="SHAPEGEN" />
 
-  <!-- Three video inputs on the left, plus a gate clock input below them. -->
-  <Handle type="target" position={Position.Left} id="raster_a" style="top: 56px; --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 50px;">A</span>
-  <Handle type="target" position={Position.Left} id="raster_b" style="top: 88px; --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 82px;">B</span>
-  <Handle type="target" position={Position.Left} id="raster_c" style="top: 120px; --handle-color: var(--cable-video);" />
-  <span class="port-label left" style="top: 114px;">C</span>
-  <!-- Clock gate input — sample-and-hold shape regeneration. Cable colour
-       follows the standard CV/gate visual; unpatched = identity behaviour. -->
-  <Handle type="target" position={Position.Left} id={SHAPEGEN_CLOCK_PORT_ID} style="top: 152px; --handle-color: var(--cable-cv);" />
-  <span class="port-label left" style="top: 146px;">CLK</span>
+  <PatchPanel nodeId={id} {inputs} {outputs}>
+    <div class="body">
+      <div class="screen-wrap">
+        {#if clockPatched}
+          <span class="clocked-badge" data-testid="shapegen-clocked-badge">[CLOCKED]</span>
+        {/if}
+        <canvas bind:this={previewEl} class="screen" data-testid="shapegen-screen"></canvas>
+      </div>
 
-  <!-- One video output on the right. -->
-  <Handle type="source" position={Position.Right} id="out" style="top: 88px; --handle-color: var(--cable-video);" />
-  <span class="port-label right" style="top: 82px;">OUT</span>
-
-  <div class="screen-wrap">
-    {#if clockPatched}
-      <span class="clocked-badge" data-testid="shapegen-clocked-badge">[CLOCKED]</span>
-    {/if}
-    <canvas bind:this={previewEl} class="screen" data-testid="shapegen-screen"></canvas>
-  </div>
-
-  <div class="row">
-    <Knob
-      value={paramVal('size')}
-      min={0.1} max={3} defaultValue={defaultFor('size')}
-      label="SIZE" curve="linear"
-      onchange={set('size')} moduleId={id} paramId="size"
-    />
-    <Knob
-      value={paramVal('rotate')}
-      min={0} max={1} defaultValue={defaultFor('rotate')}
-      label="ROT" curve="linear"
-      onchange={set('rotate')} moduleId={id} paramId="rotate"
-    />
-    <div class="buttons">
-      <button
-        class="btn"
-        class:on={solidsOn}
-        onclick={toggleSolids}
-        data-testid="shapegen-solids"
-        aria-pressed={solidsOn}
-        title="Toggle between wireframe (vaporwave) and lit-solid rendering"
-      >{solidsLabel}</button>
+      <div class="row">
+        <Knob
+          value={paramVal('size')}
+          min={0.1} max={3} defaultValue={defaultFor('size')}
+          label="SIZE" curve="linear"
+          onchange={set('size')} moduleId={id} paramId="size"
+        />
+        <Knob
+          value={paramVal('rotate')}
+          min={0} max={1} defaultValue={defaultFor('rotate')}
+          label="ROT" curve="linear"
+          onchange={set('rotate')} moduleId={id} paramId="rotate"
+        />
+        <div class="buttons">
+          <button
+            class="btn"
+            class:on={solidsOn}
+            onclick={toggleSolids}
+            data-testid="shapegen-solids"
+            aria-pressed={solidsOn}
+            title="Toggle between wireframe (vaporwave) and lit-solid rendering"
+          >{solidsLabel}</button>
+        </div>
+      </div>
     </div>
-  </div>
+  </PatchPanel>
 </div>
 
 <style>
@@ -155,9 +155,10 @@
     box-shadow: 0 0 0 1px var(--accent-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   .stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; }
-  .port-label { position: absolute; font-size: 0.6rem; color: var(--text-dim); pointer-events: none; font-family: ui-monospace, monospace; }
-  .port-label.left { left: 14px; }
-  .port-label.right { right: 14px; }
+  .body {
+    /* Clear the PatchPanel's top-left/right trigger affordances. */
+    margin-top: 24px;
+  }
   .screen-wrap {
     margin: 12px auto 12px;
     width: 200px;
