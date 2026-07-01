@@ -4620,6 +4620,8 @@
           releaseR: (x: number, y: number) => sim.release('R', x, y),
           ccR: (cc: number, value: number) => sim.cc('R', cc, value),
           ccL: (cc: number, value: number) => sim.cc('L', cc, value),
+          // probe the binding's mode/keys state (for the KEYS real-source-chain spec).
+          state: () => __launchpadTestMode(),
         };
         return true;
       };

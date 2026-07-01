@@ -43,8 +43,10 @@ import {
   lengthEndStep,
   lengthFromBlockTap,
   lengthFromStepTap,
+  readNoteRec,
   type NoteClipRecord,
   type NoteEvent,
+  type ClipPlayerData,
 } from './clip-types';
 
 describe('dimensions', () => {
@@ -519,5 +521,27 @@ describe('LENGTH-EDIT page math', () => {
     expect(lengthFromStepTap(17, 5)).toBe(21);
     // in block 1 → tapping step 8 → 8.
     expect(lengthFromStepTap(16, 8)).toBe(8);
+  });
+});
+
+describe('readNoteRec — KEYS note-record state normalization', () => {
+  it('returns null when absent/null/non-object', () => {
+    expect(readNoteRec(undefined)).toBeNull();
+    expect(readNoteRec({} as ClipPlayerData)).toBeNull();
+    expect(readNoteRec({ noteRec: null } as ClipPlayerData)).toBeNull();
+  });
+  it('coerces + clamps lane/slot and reads the boolean flags', () => {
+    const r = readNoteRec({
+      noteRec: { lane: 2, slot: 5, armed: true, recording: false, overdub: true },
+    } as ClipPlayerData);
+    expect(r).toEqual({ lane: 2, slot: 5, armed: true, recording: false, overdub: true });
+    // out-of-range lane/slot clamp into the grid.
+    const c = readNoteRec({ noteRec: { lane: 99, slot: -3 } } as unknown as ClipPlayerData);
+    expect(c!.lane).toBe(7);
+    expect(c!.slot).toBe(0);
+    expect(c!.armed).toBe(false); // missing flags default false
+  });
+  it('rejects a non-numeric lane/slot', () => {
+    expect(readNoteRec({ noteRec: { lane: 'x', slot: 1 } } as unknown as ClipPlayerData)).toBeNull();
   });
 });
