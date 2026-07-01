@@ -795,10 +795,10 @@ function addManifestDescriptionEntry(type: string, label: string): void {
   // "NO module falls through to the description placeholder" assertion
   // in module-manifest.test.ts.
   const camel = toCamel(type);
-  // Only audio defs flow through buildModuleManifest()'s glob; video +
-  // meta don't, so the test only asserts on audio. We add the entry
-  // regardless because future-proofing (the same map is used to render
-  // any module page that the docs site picks up).
+  // Both audio AND video defs flow through buildModuleManifest()'s globs, so a
+  // DESCRIPTIONS one-liner (or an authored co-located `docs.explanation`, which
+  // describeModule falls back to) keeps a new module off the description
+  // placeholder for its docs page. Meta defs don't render a page yet.
   const entry =
     `  ${camel}: '${label} — TODO write a one-line description. Scaffolded by scripts/new-module.ts.', // [new-module:${type}]\n`;
   const src = readFileSync(MANIFEST_PATH, 'utf8');
