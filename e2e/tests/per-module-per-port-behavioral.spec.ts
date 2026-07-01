@@ -1186,6 +1186,17 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    attributable delta. Covered by moog962.test.ts (selector advance / routing).
   'moog962.shift': 'SHIFT advances the sequential-switch selector; the sweep drives it against UNPATCHED in1..in3 (idle→idle routing) → Δμrms=0.004 inside the out ±0.089 noise floor → near-threshold FLAKE (green in all 5 flake-purge passes, failed one real main run). in1/in2/in3 stay gated. RE-ENABLE: drive SHIFT with distinct sources on in1..in3. Covered by moog962.test.ts',
 
+  // ── MOOG 911 Envelope Generator: esus_cv displaces the SUSTAIN level, which
+  //    only shapes the env's HELD (gated-sustain) portion. The behavioral sweep's
+  //    short 5-snapshot window over a retriggering env is dominated by attack/
+  //    release, where sustain barely registers → Δμrms=0.003 inside the env's
+  //    ±0.105 noise floor → near-threshold FLAKE (green in the flake-purge, failed
+  //    shard 3 on a real main run 28490403808). t1/t2/t3 (times) + gate stay
+  //    gated. RE-ENABLE: hold the gate through the sustain phase + widen the
+  //    window so the sustain-level displacement is observable. Covered by
+  //    moog911.test.ts (envelope contour / sustain math).
+  'moog911.esus_cv': 'sustain-LEVEL CV only shapes the env\'s held-sustain phase; the short retriggering behavioral window is attack/release-dominated → Δμrms=0.003 inside the env ±0.105 noise floor → near-threshold flake (green in the purge, failed one real run); t1/t2/t3/gate stay gated. RE-ENABLE: hold the gate through sustain + widen the window. Covered by moog911.test.ts',
+
   // ── PEAKS channel-1 inputs (re-enabled module, behavioral-recon #3). PEAKS is
   //    TWO INDEPENDENT channels (Émilie Gillet's dual-mode Peaks): gate0/mode0/
   //    k1_0/k2_0 drive worklet output 0 (out0), and gate1/mode1/k1_1/k2_1 drive
@@ -1411,6 +1422,15 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    the SAME video-variance class as acidwarp.speed_cv. Covered by the
   //    mandleblot VRT coverage which screenshots distinct zoom depths.
   'mandleblot.zoom_cv': 'zooms a self-running high-variance fractal; frame-variance metric stays saturated across zoom (video-variance class); covered by mandleblot VRT/specs',
+  // ── LINES (lines.ts): phase offset SCROLLS the procedural line pattern. Shifting
+  //    the phase TRANSLATES the bands but preserves the frame's overall variance /
+  //    non-black statistic (Δμvar=2.36 vs a ±63.7 per-snapshot variance floor) →
+  //    near-threshold FLAKE, same video-variance class as tempest.rim/spirographs
+  //    (green in the flake-purge, failed shard 3 on a real main run 28490403808).
+  //    orient/amp/thickness stay gated (they reshape band structure → real delta).
+  //    RE-ENABLE via a phase-correlation / centroid metric. Covered by
+  //    lines-render-smoke.spec.ts.
+  'lines.phase': 'phase offset scrolls/translates the procedural line bands but preserves global frame-variance (Δμvar 2.36 vs ±63.7 noise) → near-threshold flake, video-variance class (cf. tempest.rim); orient/amp/thickness stay gated. RE-ENABLE via a phase-correlation/centroid metric. Covered by lines-render-smoke.spec.ts',
 
   // ── TEXTMARQUEE (textmarquee.ts): posY translates the scrolling text band
   //    VERTICALLY. The other 3 CV inputs (scrollX / scrollY / posX) reliably
@@ -1484,7 +1504,7 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(163); // +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX/scrollY stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts)
+  ).toBeLessThanOrEqual(165); // +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX/scrollY stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts); +1 lines.phase (phase scroll translates the line bands but preserves frame-variance, Δμvar 2.36 vs ±63.7 → near-threshold flake, video-variance class; orient/amp/thickness stay gated; covered by lines-render-smoke.spec.ts); +1 moog911.esus_cv (sustain-level CV only shapes the held-sustain phase; short retriggering window is attack/release-dominated, Δμrms 0.003 inside ±0.105 → near-threshold flake; t1/t2/t3/gate stay gated; covered by moog911.test.ts)
 });
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the
