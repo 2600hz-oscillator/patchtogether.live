@@ -826,13 +826,21 @@ export function computeKeysFrame(opts: KeysFrameOpts): LaunchpadFrame {
     }
   }
 
-  // Playhead strip (top row, y=7): the whole clip across 16 cells.
+  // Playhead strip (top row, y=7): the whole clip across 16 cells. The current
+  // cell DENOTES the record state by COLOUR — red (pulse) while recording,
+  // yellow (flash) while armed, white otherwise — so the moving dot itself reads
+  // as a "recording now" indicator across the top of both units.
   const step = opts.playheadStep ?? -1;
   const len = opts.lengthSteps ?? 16;
   const cur = step >= 0 ? playheadCell(step, len, KEYS_PH_CELLS) : -1;
+  const curRgb: Rgb = opts.recording
+    ? blinkOn ? RGB_QREC_REC : RGB_RECORDING_DIM
+    : opts.recArmed
+      ? blinkOn ? RGB_QREC_ARMED : RGB_KEYS_PH_BASE
+      : RGB_KEYS_PH_CUR;
   for (let x = 0; x < LP_WIDTH; x++) {
     const cell = phBase + x;
-    put(frame, padNote(x, KEYS_PH_ROW), cell === cur ? RGB_KEYS_PH_CUR : RGB_KEYS_PH_BASE);
+    put(frame, padNote(x, KEYS_PH_ROW), cell === cur ? curRgb : RGB_KEYS_PH_BASE);
   }
 
   // Bottom-row controls (unit L only; unit R's bottom row stays dark).

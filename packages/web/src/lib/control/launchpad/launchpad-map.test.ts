@@ -406,6 +406,13 @@ describe('KEYS mode — LED frame (keyboard + playhead + controls)', () => {
     expect(eqRgb(at(fOff, padNote(0, KEYS_PH_ROW)), RGB_KEYS_PH_BASE)).toBe(true);
   });
 
+  it('the playhead current cell DENOTES the record state (white idle · yellow armed · red recording)', () => {
+    const base = { unit: 'L' as const, keyboardRoot: 48, playheadStep: 3, lengthSteps: 16, blinkOn: true };
+    expect(eqRgb(at(computeKeysFrame(base), padNote(3, KEYS_PH_ROW)), RGB_KEYS_PH_CUR)).toBe(true);
+    expect(eqRgb(at(computeKeysFrame({ ...base, recArmed: true }), padNote(3, KEYS_PH_ROW)), RGB_QREC_ARMED)).toBe(true);
+    expect(eqRgb(at(computeKeysFrame({ ...base, recording: true }), padNote(3, KEYS_PH_ROW)), RGB_QREC_REC)).toBe(true);
+  });
+
   it('controls (unit L bottom row): EXIT red · QUEUE-REC colour-codes idle/armed/recording · OVERDUB purple', () => {
     const base = { unit: 'L' as const, keyboardRoot: 48, playheadStep: -1, lengthSteps: 16, blinkOn: true };
     const idle = computeKeysFrame(base);

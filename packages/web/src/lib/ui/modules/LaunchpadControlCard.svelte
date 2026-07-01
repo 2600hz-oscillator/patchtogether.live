@@ -132,9 +132,11 @@
       Drives Launchpad Mini Mk3. With a <b>pair</b>: the <b>left</b> unit is the always-live
       <b>8×8 clip matrix</b> (tap to launch/stop; right column = scene); the <b>right</b> unit is the
       <b>command deck</b> (EDIT · COPY · PASTE · DOUBLE · LENGTH · NOW + per-lane STOP + transport)
-      and flips to the <b>note editor</b> while you edit. With a <b>single</b> unit, one device does
-      both — flip it between <b>clip</b> and <b>control</b> views (the <b>CC 98</b> top-right button or
-      the on-card toggle).
+      and flips to the <b>note editor</b> while you edit. On the deck, <b>note-REC</b> / <b>note-OVERDUB</b>
+      (the two pads on row 1, above EDIT) + a <b>double-tap</b> of a clip open <b>KEYS</b> — a playable
+      keyboard across both units that plays the clip's track live and records a loop (record / overdub).
+      With a <b>single</b> unit, one device does both — flip it between <b>clip</b> and <b>control</b>
+      views (the <b>CC 98</b> top-right button or the on-card toggle).
     </p>
 
     {#if !supported}

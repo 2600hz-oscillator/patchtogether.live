@@ -395,6 +395,16 @@ export const clipplayerDef: AudioModuleDef = {
     function emitLaneStep(L: number, idx: number, atTime: number, stepDur: number): void {
       const ln = lanes[L];
       if (ln.active === null) return;
+      // LIVE AUDITION owns the lane while KEYS keys are held: advance the visual
+      // playhead (push to sched so the launchpad record capture still sees the
+      // step move) but DON'T write the poly/gate/vel — otherwise the scheduled
+      // clip playback would stomp the held keyboard note's gate open→shut. When
+      // no keys are held, playback resumes normally.
+      if (ln.audHeld.length > 0) {
+        ln.sched.push({ t: atTime, idx });
+        if (ln.sched.length > 32) ln.sched.shift();
+        return;
+      }
       const clip = readClip(liveData(), clipIndex(ln.active, L));
       if (!clip || clip.kind !== 'note') return;
       const r = lanesForStep(clip, idx);
@@ -467,17 +477,29 @@ export const clipplayerDef: AudioModuleDef = {
       const now = ctx.currentTime;
       for (const L of touched) {
         const ln = lanes[L];
+        // Cancel any playback events already scheduled in the lookahead window
+        // (from before this key edge) so the held note takes over the gate/pitch
+        // IMMEDIATELY (they'd otherwise fire in the next ~0.2s and cut it off).
+        for (const v of ln.poly.voices) {
+          v.pitchSrc.offset.cancelScheduledValues(now);
+          v.gateSrc.offset.cancelScheduledValues(now);
+        }
+        ln.gateSrc.offset.cancelScheduledValues(now);
+        ln.velSrc.offset.cancelScheduledValues(now);
         const voiced = Array.from({ length: POLY_CHANNEL_PAIRS }, (_, i) => {
           const midi = ln.audHeld[i];
           return midi === undefined
             ? { pitch: 0, gate: 0 as const }
             : { pitch: midiToVOct(midi) + octave, gate: 1 as const };
         });
-        // gateOff 0 → gates stay HIGH (held) until the next drain changes them.
+        // gateOff 0 → gates stay HIGH (held) until the next key edge changes them
+        // (while held, emitLaneStep goes SILENT so nothing re-schedules a close).
         ln.poly.scheduleStep(now, voiced, 0);
         const anyOn = ln.audHeld.length > 0;
         ln.gateSrc.offset.setValueAtTime(anyOn ? 1 : 0, now);
         ln.velSrc.offset.setValueAtTime(anyOn ? ln.audVel : 0, now);
+        ln.lastGate = anyOn ? 1 : 0;
+        if (anyOn) { ln.lastVel = ln.audVel; ln.lastVOct = voiced[0]!.pitch; }
       }
     }
 
