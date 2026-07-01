@@ -212,10 +212,55 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+// Better Stack Logs HTTP ingest for the PROD web access log. Pure gating helper
+// (unit-tested): returns the POST target only when BOTH the source token and
+// ingest host are set. Unset in dev / CI / prod-before-provisioning → null → the
+// ship is a straight no-op, so nothing changes until the secret is set on the CF
+// Pages prod project. Kept separate from the fetch so the env-gating logic is
+// deterministically testable without mocking the network.
+export function accessLogShipTarget(
+  token: string | undefined,
+  host: string | undefined,
+): { url: string; token: string } | null {
+  if (!token || !host) return null;
+  // host may be a bare ingest host ("sNNN.…betterstackdata.com") or a full URL.
+  const url = /^https?:\/\//.test(host) ? host : `https://${host}`;
+  return { url, token };
+}
+
+// Fire-and-forget ship of one access-log line to Better Stack. Uses the CF
+// runtime's waitUntil so the POST flushes without delaying the response (and the
+// isolate doesn't tear down mid-request), and swallows its own errors —
+// telemetry must never slow or break a request. This is what turns the console
+// access-log line below into a queryable prod-traffic + error-rate signal (the
+// Better Stack dashboard); see infra-docs runbooks/observability.md.
+function shipAccessLog(
+  event: Parameters<Handle>[0]['event'],
+  entry: Record<string, unknown>,
+): void {
+  const target = accessLogShipTarget(
+    privateEnv.BETTERSTACK_WEB_SOURCE_TOKEN,
+    privateEnv.BETTERSTACK_WEB_INGEST_HOST,
+  );
+  if (!target) return;
+  const ship = fetch(target.url, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${target.token}`,
+    },
+    body: JSON.stringify(entry),
+  }).catch(() => {
+    // best-effort telemetry: a slow/failed drain must never surface to the user
+  });
+  event.platform?.context?.waitUntil?.(ship);
+}
+
 // Per-request correlation id + structured access log. Runs FIRST so it wraps
 // every handle (logging the FINAL status — incl beta-gate 401s) and stamps
-// x-request-id on the response. The single-line JSON is what a Better Stack
-// Logs drain (CF tail-worker / Logpush) parses to alert on web 5xx rate and to
+// x-request-id on the response. The single-line JSON is emitted to the CF tail
+// AND shipped to Better Stack (when provisioned) so we can chart prod traffic,
+// 401-vs-200 (rejected vs authed beta), 5xx rate, top paths + latency, and
 // stitch a browser error report to its server-side request via request_id.
 const requestIdAndLog: Handle = async ({ event, resolve }) => {
   const requestId = crypto.randomUUID();
@@ -223,19 +268,19 @@ const requestIdAndLog: Handle = async ({ event, resolve }) => {
   const start = Date.now();
   const response = await resolve(event);
   response.headers.set('x-request-id', requestId);
+  const entry = {
+    dt: new Date().toISOString(),
+    level: response.status >= 500 ? 'error' : 'info',
+    msg: 'request',
+    request_id: requestId,
+    method: event.request.method,
+    path: event.url.pathname,
+    status: response.status,
+    ms: Date.now() - start,
+  };
   // eslint-disable-next-line no-console
-  console.log(
-    JSON.stringify({
-      ts: new Date().toISOString(),
-      level: response.status >= 500 ? 'error' : 'info',
-      msg: 'request',
-      request_id: requestId,
-      method: event.request.method,
-      path: event.url.pathname,
-      status: response.status,
-      ms: Date.now() - start,
-    }),
-  );
+  console.log(JSON.stringify(entry));
+  shipAccessLog(event, entry);
   return response;
 };
 

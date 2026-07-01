@@ -27,7 +27,7 @@ vi.mock('$lib/observability/sentry-server', () => ({
   captureServerError,
 }));
 
-import { handleError, isBetaGatePublic } from './hooks.server';
+import { accessLogShipTarget, handleError, isBetaGatePublic } from './hooks.server';
 
 describe('isBetaGatePublic', () => {
   it('exempts /api/health (uptime probe)', () => {
@@ -55,6 +55,30 @@ describe('isBetaGatePublic', () => {
     expect(isBetaGatePublic('/sign-in')).toBe(false);
     expect(isBetaGatePublic('/r/abc123')).toBe(false);
     expect(isBetaGatePublic('/api/rackspaces')).toBe(false);
+  });
+});
+
+describe('accessLogShipTarget — Better Stack ship gating', () => {
+  it('is null (no-op) when the token OR host is unset — the default prod-pre-provisioning case', () => {
+    expect(accessLogShipTarget(undefined, undefined)).toBeNull();
+    expect(accessLogShipTarget('tok', undefined)).toBeNull();
+    expect(accessLogShipTarget(undefined, 'sNNN.betterstackdata.com')).toBeNull();
+    expect(accessLogShipTarget('', 'sNNN.betterstackdata.com')).toBeNull();
+    expect(accessLogShipTarget('tok', '')).toBeNull();
+  });
+
+  it('returns the POST target when both are set (bare host → https URL)', () => {
+    expect(accessLogShipTarget('tok', 's123.eu-fsn-3.betterstackdata.com')).toEqual({
+      url: 'https://s123.eu-fsn-3.betterstackdata.com',
+      token: 'tok',
+    });
+  });
+
+  it('accepts a full-URL host verbatim (no double scheme)', () => {
+    expect(accessLogShipTarget('tok', 'https://in.logs.betterstack.com')).toEqual({
+      url: 'https://in.logs.betterstack.com',
+      token: 'tok',
+    });
   });
 });
 
