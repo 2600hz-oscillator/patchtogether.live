@@ -21,6 +21,16 @@ declare global {
     // from process.env (shimmed by nodejs_compat on Workers). If we wire
     // Hyperdrive later (needs Fly Postgres with TLS), bring back a typed
     // HYPERDRIVE binding here.
+    interface Platform {
+      /** Cloudflare Pages Functions execution context. adapter-cloudflare
+       *  exposes `context.waitUntil` — used by requestIdAndLog to fire-and-
+       *  forget the Better Stack access-log ship without blocking/delaying the
+       *  response (and without the isolate tearing down mid-POST). Optional:
+       *  undefined in dev / non-CF runtimes, where the ship is skipped. */
+      context?: {
+        waitUntil(promise: Promise<unknown>): void;
+      };
+    }
   }
 }
 
