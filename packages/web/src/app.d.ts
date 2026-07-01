@@ -8,6 +8,12 @@
 import type { SessionAuthObject } from '@clerk/backend';
 
 declare global {
+  /** Product version string (e.g. `"1.1.0"`), inlined at build time from the
+   *  ROOT package.json by Vite's `define` (see packages/web/vite.config.ts).
+   *  Rendered in the topbar brand heading. Always defined in a Vite/Vitest
+   *  build — never `undefined` at runtime. */
+  const __APP_VERSION__: string;
+
   namespace App {
     interface Locals {
       auth: () => SessionAuthObject;

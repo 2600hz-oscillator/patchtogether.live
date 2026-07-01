@@ -17,10 +17,26 @@ const HOISTED_NODE_MODULES = path.dirname(
   path.dirname(require.resolve('@sveltejs/kit/package.json')),
 );
 
+// Product version, inlined into the client bundle at build time so the topbar
+// brand heading can render `patchtogether v<version>` with no runtime fetch.
+// Sourced from the ROOT package.json — the "patchtogether.live" product version
+// (the web package.json is a 0.0.0 placeholder). Exposed to app code as the
+// compile-time constant `__APP_VERSION__` via the `define` below (typed in
+// src/app.d.ts). Unlike BUILD_INFO's deploy stamp (VITE_APP_VERSION, unset ⇒
+// 'dev' on a local build), this is always a real X.Y.Z from the tagged package,
+// which the version-heading e2e asserts against verbatim.
+const APP_VERSION: string = require('../../package.json').version;
+
 // COOP/COEP headers required for SharedArrayBuffer (Faust may want it).
 // Phase 1 dev sets these; Phase 2 sets them in production via _headers.
 export default defineConfig({
   plugins: [sveltekit()],
+  // Inline the product version as a compile-time constant (see APP_VERSION
+  // above). Applies in both `dev` (serve) and `build`, so the topbar heading
+  // renders the real X.Y.Z locally, in e2e, and in the deployed bundle.
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+  },
   // Default esbuild minification. Faust's worklet stitching that previously
   // broke under minification is now sidestepped by pre-bundling the worklet
   // at DSP build time (packages/dsp/scripts/build-worklet.mjs); the parent
