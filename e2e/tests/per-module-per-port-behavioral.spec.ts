@@ -1174,6 +1174,18 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    dense pulse train vs a silent control. trig2 is the legit no-op:
   'moog911a.trig2': 'in the default OFF mode trig2 → out2 ONLY (independent channels: trig1→out1, trig2→out2), and the behavioral sink observes the FIRST output out1 — so trig2 can never perturb out1 (the same per-channel-isolation no-op as moog993.trig_from2 / shapedramps); the trig2→out2 delay path is pinned by moog911a.test.ts',
 
+  // ── MOOG 962 Sequential Switch: SHIFT advances the selector across in1..in3.
+  //    The behavioral sweep drives ONE input at a time, so SHIFT is exercised
+  //    with in1..in3 UNPATCHED (idle): advancing the selector routes near-idle →
+  //    near-idle, giving Δμrms=0.004 — well inside the `out` CV's own ±0.089
+  //    noise floor. Pass/fail is then decided by noise, i.e. FLAKY: it was green
+  //    in all 5 flake-purge passes (run 28486495363) yet failed shard 4 on a real
+  //    main run (28488538570). in1/in2/in3 pass (they route their own probe to
+  //    out). RE-ENABLE: drive SHIFT WITH distinct sources patched to in1..in3
+  //    (BEHAVIORAL_PORT_TEST_SOURCE) so advancing switches between them → a real
+  //    attributable delta. Covered by moog962.test.ts (selector advance / routing).
+  'moog962.shift': 'SHIFT advances the sequential-switch selector; the sweep drives it against UNPATCHED in1..in3 (idle→idle routing) → Δμrms=0.004 inside the out ±0.089 noise floor → near-threshold FLAKE (green in all 5 flake-purge passes, failed one real main run). in1/in2/in3 stay gated. RE-ENABLE: drive SHIFT with distinct sources on in1..in3. Covered by moog962.test.ts',
+
   // ── PEAKS channel-1 inputs (re-enabled module, behavioral-recon #3). PEAKS is
   //    TWO INDEPENDENT channels (Émilie Gillet's dual-mode Peaks): gate0/mode0/
   //    k1_0/k2_0 drive worklet output 0 (out0), and gate1/mode1/k1_1/k2_1 drive
@@ -1472,7 +1484,7 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(162); // +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX/scrollY stay gated; covered by textmarquee-layout.test.ts + render-smoke)
+  ).toBeLessThanOrEqual(163); // +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX/scrollY stay gated; covered by textmarquee-layout.test.ts + render-smoke); +1 moog962.shift (advancing the seq-switch selector across UNPATCHED in1..in3 gives Δμrms 0.004 inside the ±0.089 out-noise floor → near-threshold flake; in1/in2/in3 stay gated; covered by moog962.test.ts)
 });
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the
