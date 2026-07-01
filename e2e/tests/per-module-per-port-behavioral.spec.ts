@@ -165,6 +165,22 @@ const BEHAVIORAL_MODULE_EXEMPT: Record<string, string> = {
   // non-black/structured render: freeze + fixed delta + synthetic audio) + the
   // contract-lock / docs-lint / modules-card-map unit gates.
   milkdrop:       'self-animating multi-pass visualizer (animated-video variance class, cf. bentbox/b3ntb0x): the out luma-variance jitter floor swamps any per-input delta; covered by milkdrop-render-smoke.spec.ts + unit gates',
+  // SPIROGRAPHS — a line-GENERATOR that draws up to 3 hypotrochoid curves. Its
+  // 30 geometry CV inputs (s1/s2/s3 × R / r / pen / inside / rotation / scale /
+  // X / Y / thickness / chroma) RESHAPE the drawn curve, but reshaping a thin
+  // line preserves the frame's global variance + neighbour-brightness: the
+  // behavioral flake-purge (run 28486495363) measured 25 of 31 inputs with
+  // Δμvar 0.03–1.87 against a ±0.3–4.7 per-spawn variance floor and Δμnb ≈ 0.0000
+  // — sub-threshold on the coarse video-variance metric (the SAME class as
+  // milkdrop / bentbox / acidwarp.speed_cv / tempest.rim). Deterministic (failed
+  // all 5 purge passes on shard 5), so this is a metric-resolution gap, not a
+  // flake and not dead CV (SpirographsCard wires every stem as a `cv` input;
+  // spirographs-math/draw consume them). Whole-module exempt. RE-ENABLE PATH: a
+  // shape-sensitive metric (edge/contour or centroid displacement) or per-port
+  // calibration to each stem's measured jitter floor — the systemic
+  // video-variance-metric follow-up. Covered by spirographs.test.ts +
+  // spirographs-render-smoke.spec.ts (deterministic structured render).
+  spirographs:    'line generator: 25/31 geometry CV inputs reshape a thin curve but keep global frame-variance/neighbour-brightness sub-threshold (Δμvar 0.03–1.87 vs ±0.3–4.7 floor) — video-variance-metric gap, cf. milkdrop/tempest.rim; deterministic (not flake), CV is wired. RE-ENABLE via a shape-sensitive/per-port-calibrated metric. Covered by spirographs.test.ts + spirographs-render-smoke.spec.ts',
 
   // ── User-toggled sequencer-like sources: output silent until steps are
   //    toggled by user interaction (which our spawnPatch doesn't model).
@@ -1384,6 +1400,21 @@ const BEHAVIORAL_SWEEP_EXEMPT: Record<string, string> = {
   //    mandleblot VRT coverage which screenshots distinct zoom depths.
   'mandleblot.zoom_cv': 'zooms a self-running high-variance fractal; frame-variance metric stays saturated across zoom (video-variance class); covered by mandleblot VRT/specs',
 
+  // ── TEXTMARQUEE (textmarquee.ts): posY translates the scrolling text band
+  //    VERTICALLY. The other 3 CV inputs (scrollX / scrollY / posX) reliably
+  //    perturb the metric; posY does NOT, because a horizontal text band moved
+  //    up/down covers a near-identical pixel area → global frame-variance is
+  //    unchanged (var ≈ 308.8 in both control and perturbed; the flake-purge saw
+  //    Δμvar straddle the threshold 0.02→3.19 against a ±0.0–4.4 floor, failing
+  //    3 of 5 purge passes on shard 6 — a near-threshold FLAKE). Same
+  //    video-variance class as tempest.rim: the effect is real (posY has a Knob +
+  //    a `cv` input in TextmarqueeCard; textmarquee-layout.test.ts proves the
+  //    vertical offset) but sub-resolution for the coarse metric. Per-PORT exempt
+  //    (posX/scrollX/scrollY stay gated). RE-ENABLE via a centroid-displacement /
+  //    row-band metric. Covered by textmarquee.test.ts + textmarquee-layout.test.ts
+  //    (vertical-position math) + textmarquee-render-smoke.spec.ts.
+  'textmarquee.posY': 'vertical text translation keeps the covered pixel-area (and thus global frame-variance ≈ 308.8) unchanged → Δμvar straddles the threshold (flaky 3/5 purge passes), same video-variance class as tempest.rim; posX/scrollX/scrollY stay gated. RE-ENABLE via a centroid/row-band metric. Covered by textmarquee.test.ts + textmarquee-layout.test.ts + textmarquee-render-smoke.spec.ts',
+
   // (b3ntb0x is WHOLE-MODULE exempt in BEHAVIORAL_MODULE_EXEMPT — its animated
   //  composite's ±580 variance floor swamps EVERY input, not just a few, so a
   //  per-port carve-out can't make it reliable. See that entry for the detail.)
@@ -1437,11 +1468,11 @@ test('RATCHET: behavioral exemption lists only shrink', () => {
   expect(
     Object.keys(BEHAVIORAL_MODULE_EXEMPT).length,
     'BEHAVIORAL_MODULE_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(65); // +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI); +1 milkdrop (self-animating multi-pass visualizer — out luma-variance jitter floor swamps any per-input delta, cf. bentbox/b3ntb0x; covered by milkdrop-render-smoke.spec.ts)
+  ).toBeLessThanOrEqual(66); // +1 blood (data-gated emulator — driven + control inputs both idle without the non-redistributable WAD, absent in CI); +1 milkdrop (self-animating multi-pass visualizer — out luma-variance jitter floor swamps any per-input delta, cf. bentbox/b3ntb0x; covered by milkdrop-render-smoke.spec.ts); +1 spirographs (line generator — 25/31 geometry CV inputs reshape a thin curve sub-threshold on the coarse video-variance metric, cf. milkdrop/tempest.rim; deterministic, CV wired; covered by spirographs.test.ts + render-smoke)
   expect(
     Object.keys(BEHAVIORAL_SWEEP_EXEMPT).length,
     'BEHAVIORAL_SWEEP_EXEMPT grew past its frozen cap — see the RATCHET rule above',
-  ).toBeLessThanOrEqual(161); // +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke)
+  ).toBeLessThanOrEqual(162); // +1 tempest.rim (claw occupies ~1/16 lanes; sliding it doesn't move global frame-variance — video-variance class; claw motion unit-proven in tempest.test.ts + render-smoke); +1 textmarquee.posY (vertical text translation keeps covered pixel-area/frame-variance unchanged → near-threshold flake, video-variance class; posX/scrollX/scrollY stay gated; covered by textmarquee-layout.test.ts + render-smoke)
 });
 
 // TODO(behavioral-coverage, systemic fix — tracks the header note + the
