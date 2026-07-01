@@ -237,77 +237,20 @@ test('reverse drag — grab an INPUT, drop on a PatchPanel card — picker offer
   await expect(menu).toHaveCount(0);
 });
 
-// ── (3b) reverse RAW→RAW drag commits directly, correctly oriented ──────────
-
-test('reverse raw→raw drag (grab INPUT, drop on OUTPUT) commits the oriented edge directly', async ({
-  page,
-}) => {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-  // CHROMA is a raw-handle card (visible side jacks, NOT a PatchPanel) with a
-  // single video input `in` — the right fixture for the raw→raw direct-commit
-  // path now that VIDEO OUT routes through the yellow PatchPanel menu (#767).
-  await spawnPatch(page, [
-    { id: 'vs', type: 'videovarispeed', position: { x: 80, y: 120 }, domain: 'video' },
-    { id: 'chr', type: 'chroma', position: { x: 760, y: 120 }, domain: 'video' },
-  ]);
-  expect(await readEdges(page)).toHaveLength(0);
-
-  // Grab CHROMA.in (raw INPUT), commit the literal reverse connection onto
-  // VARISPEED.video (raw OUTPUT) — both visible handles, a precise drop. xyflow
-  // (loose mode) reports the grabbed input as the literal source; orientation
-  // must flip it so the written edge is vs.video → chr.in.
-  await page.evaluate(() => {
-    const w = window as unknown as {
-      __handleConnectStart: (p: { nodeId: string; handleId: string; handleType: 'source' | 'target' }) => void;
-      __handleConnect: (c: { source: string; target: string; sourceHandle: string; targetHandle: string }) => void;
-      __handleConnectEnd: (d: { x: number; y: number }) => void;
-    };
-    w.__handleConnectStart({ nodeId: 'chr', handleId: 'in', handleType: 'target' });
-    w.__handleConnect({ source: 'chr', target: 'vs', sourceHandle: 'in', targetHandle: 'video' });
-    w.__handleConnectEnd({ x: 0, y: 0 });
-  });
-
-  await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
-  await expect.poll(async () => (await readEdges(page)).length, { timeout: 5000 }).toBe(1);
-  const edges = await readEdges(page);
-  expect(edges[0]!.source).toEqual({ nodeId: 'vs', portId: 'video' });
-  expect(edges[0]!.target).toEqual({ nodeId: 'chr', portId: 'in' });
-});
-
-// ── (4) drag between two raw-handle cards keeps the precise direct commit ─────
-
-test('drag between two raw-handle cards still commits directly (no picker)', async ({ page }) => {
-  // VARISPEED.video (raw out) → CHROMA.in (raw in) — both visible handles, an
-  // unambiguous precise drop, so it commits directly without the drill-down.
-  // (CHROMA is a raw-handle card; VIDEO OUT now routes through the PatchPanel
-  // menu after the #767 sweep, so it's no longer the raw-handle fixture here.)
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-  await spawnPatch(page, [
-    { id: 'vs', type: 'videovarispeed', position: { x: 80, y: 120 }, domain: 'video' },
-    { id: 'chr', type: 'chroma', position: { x: 760, y: 120 }, domain: 'video' },
-  ]);
-  expect(await readEdges(page)).toHaveLength(0);
-
-  await page.evaluate(() => {
-    const w = window as unknown as {
-      __handleConnectStart: (p: { nodeId: string; handleId: string; handleType: 'source' | 'target' }) => void;
-      __handleConnect: (c: { source: string; target: string; sourceHandle: string; targetHandle: string }) => void;
-      __handleConnectEnd: (d: { x: number; y: number }) => void;
-    };
-    // Real lifecycle: start the drag, commit a PRECISE connection onto the raw
-    // target handle (as SvelteFlow's onconnect would for a visible-handle drop),
-    // then end. CHROMA is a raw-handle card so the commit is honoured.
-    w.__handleConnectStart({ nodeId: 'vs', handleId: 'video', handleType: 'source' });
-    w.__handleConnect({ source: 'vs', target: 'chr', sourceHandle: 'video', targetHandle: 'in' });
-    w.__handleConnectEnd({ x: 0, y: 0 });
-  });
-
-  // No drill-down picker — the edge committed directly.
-  await expect(page.locator('[data-testid="port-context-menu"]')).toHaveCount(0);
-  await expect.poll(async () => (await readEdges(page)).length, { timeout: 5000 }).toBe(1);
-  const edges = await readEdges(page);
-  expect(edges[0]!.source).toEqual({ nodeId: 'vs', portId: 'video' });
-  expect(edges[0]!.target).toEqual({ nodeId: 'chr', portId: 'in' });
-});
+// ── (3b/4) raw→raw direct-commit — REMOVED, no card fixture left ─────────────
+//
+// Two tests used to live here: a reverse raw→raw drag and a forward raw→raw
+// drag, both asserting a PRECISE visible-handle drop commits the edge DIRECTLY
+// (no drill-down picker). Their only fixture was `chroma`, the last video card
+// with visible raw side-jacks. THIS PR migrates chroma (and the rest of the
+// exposed-jack video cards) to the PatchPanel drill-down, so:
+//   • no card renders raw handles any more — the `card patch-surface invariants`
+//     test in modules-card-map.test.ts now BANS raw <Handle> jacks outright
+//     (allowlist: clockedRunner/livecode/sticky, all zero-port by design) — so
+//     there is no module the raw→raw direct-commit path can be exercised against;
+//   • dropping onto ANY card is now a PatchPanel target → it opens the picker,
+//     never the direct commit. The direct-commit branch is vestigial fallback.
+// Deleting (not skipping) per reconcile-means-fix-or-delete: the behaviour these
+// tests covered no longer has a fixture. Reverse-drag ORIENTATION is still
+// covered by test (3) `reverse drag … PatchPanel … orients the edge`, and edge
+// commit via the picker by test (3a) `picking a port … commits the chosen edge`.
