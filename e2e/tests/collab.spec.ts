@@ -39,7 +39,7 @@ async function openTwoContexts(
   // __attachProvider is exposed in +layout.svelte for both authed and
   // unauthed routes (the layout always runs).
   for (const p of [pageA, pageB]) {
-    await p.goto('/');
+    await p.goto('/rack');
     await p.waitForLoadState('networkidle');
     await p.waitForFunction(
       () =>

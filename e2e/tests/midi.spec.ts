@@ -71,7 +71,7 @@ test('@midi REGRESSION: page load never requests Web-MIDI access', async ({ page
 
   // Count requestMIDIAccess calls from before the very first navigation.
   await installMidiMock(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // (a) Bare page load — nothing mounted yet, must not have prompted.
@@ -116,7 +116,7 @@ test('@midi plain CC reception drives a learned param across the full range', as
   // Install BEFORE navigation so the app's first requestMIDIAccess() resolves
   // against the mock instead of the (Linux-CI-absent) Web MIDI implementation.
   await installMidiMock(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await clearMidiBindings(page);
 
@@ -195,7 +195,7 @@ test('@midi REGRESSION: save patch → reload → CC values still fire (PR #389 
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
   await installMidiMock(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await clearMidiBindings(page);
 
@@ -339,7 +339,7 @@ test('@midi NoteOn / NoteOff drives MIDI-CV-BUDDY gate', async ({ page }) => {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
   await installMidiMock(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await clearMidiBindings(page);
 
@@ -421,7 +421,7 @@ test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ 
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
   await installMidiMock(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // COCOADELAY's engine factory constructs the MIDI clock-source singleton,

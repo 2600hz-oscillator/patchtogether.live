@@ -16,7 +16,7 @@ test('SWOLEVCO renders + scope feeds OUTPUT canvas', async ({ page }) => {
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -70,7 +70,7 @@ test('SWOLEVCO renders + scope feeds OUTPUT canvas', async ({ page }) => {
 });
 
 test('SWOLEVCO ratio knob change updates the rendered scope content', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

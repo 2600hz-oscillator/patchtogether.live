@@ -149,7 +149,7 @@ test.describe('TV LIBRARIAN — tuned-stream audio reaches the destination @vide
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installMocks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // TV LIBRARIAN → AUDIO OUT (the audibility probe) + a SCOPE (the weak probe,

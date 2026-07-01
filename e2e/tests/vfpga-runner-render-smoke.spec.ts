@@ -43,7 +43,7 @@ test.describe('vfpga-runner — deterministic render smoke', () => {
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // vfpga-runner defaults to the smpte-bars generator (0 video in) → OUTPUT so

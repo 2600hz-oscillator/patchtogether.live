@@ -35,7 +35,7 @@ test.describe('@aut PatchPanel acceptance flow', () => {
   test('ADSR click-open, verbose labels, patch via carry, outside-click closes', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -92,7 +92,7 @@ test.describe('@aut PatchPanel acceptance flow', () => {
   test('RIOTGIRLS spawn → click-open → section nav rows + drill shows verbose labels', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', position: { x: 200, y: 100 } }]);

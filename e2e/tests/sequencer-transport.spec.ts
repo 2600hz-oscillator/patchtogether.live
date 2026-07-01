@@ -60,7 +60,7 @@ const SEQUENCERS: Array<{ type: string; nodeId: string; spawnParams: Record<stri
 for (const s of SEQUENCERS) {
   test.describe(`${s.type}: quicksave + transport`, () => {
     test(`${s.type}: SAVE then LOAD round-trips the pattern snapshot`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: s.spawnParams }]);
 
@@ -214,7 +214,7 @@ for (const s of SEQUENCERS) {
     test(`${s.type}: saves to ALL 8 slots in sequence (regression — slot ≥2 silently failed)`, async ({
       page,
     }) => {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: s.spawnParams }]);
 
@@ -244,7 +244,7 @@ for (const s of SEQUENCERS) {
     });
 
     test(`${s.type}: QUEUE arms queuedSlot in node.data`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: s.spawnParams }]);
 
@@ -272,7 +272,7 @@ for (const s of SEQUENCERS) {
     });
 
     test(`${s.type}: PLAY button toggles isPlaying`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: s.spawnParams }]);
 
@@ -294,7 +294,7 @@ for (const s of SEQUENCERS) {
     });
 
     test(`${s.type}: RESET button is wired (queuedSlot cleared, isPlaying not stuck)`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: s.spawnParams }]);
 
@@ -340,7 +340,7 @@ const NAV_SEQUENCERS: Array<{ type: string; nodeId: string; mkStep: (on: boolean
 for (const s of NAV_SEQUENCERS) {
   test.describe(`${s.type}: 8-slot quicksave + quantized NEXT/PREV/RANDOM nav`, () => {
     test(`${s.type}: slots 5..8 exist + a SAVE click into slot 5 round-trips (8-slot capacity)`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: { isPlaying: 0, length: 4 } }]);
 
@@ -392,7 +392,7 @@ for (const s of NAV_SEQUENCERS) {
     });
 
     test(`${s.type}: NEXT/PREV/RANDOM nav ports render handles + queuedNav latches`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: { isPlaying: 0 } }]);
 
@@ -408,7 +408,7 @@ for (const s of NAV_SEQUENCERS) {
     });
 
     test(`${s.type}: queued NEXT applies at sequence-end → walks occupied slots (wraps)`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       // Short pattern (length 2) at fast BPM so sequence-ends come quickly.
       await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: { isPlaying: 0, length: 2, bpm: 300 } }]);
@@ -474,7 +474,7 @@ for (const s of NAV_SEQUENCERS) {
     });
 
     test(`${s.type}: queued PREV from first occupied wraps to the last occupied slot`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: { isPlaying: 0, length: 2, bpm: 300 } }]);
 
@@ -526,7 +526,7 @@ for (const s of NAV_SEQUENCERS) {
     });
 
     test(`${s.type}: queued RANDOM lands on an OCCUPIED slot`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: s.nodeId, type: s.type, params: { isPlaying: 0, length: 2, bpm: 300 } }]);
 
@@ -607,7 +607,7 @@ async function openTwoContexts(browser: Browser): Promise<CollabContexts> {
   const pageA = await ctxA.newPage();
   const pageB = await ctxB.newPage();
   for (const p of [pageA, pageB]) {
-    await p.goto('/');
+    await p.goto('/rack');
     await p.waitForLoadState('networkidle');
     await p.waitForFunction(
       () => typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',

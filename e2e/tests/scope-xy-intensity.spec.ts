@@ -81,7 +81,7 @@ test.describe('SCOPE X/Y mode + INTENSITY persistence', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // vco1 → ch1 (X), vco2 (a perfect fifth up, ~3:2) → ch2 (Y).
@@ -125,7 +125,7 @@ test.describe('SCOPE X/Y mode + INTENSITY persistence', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Single tone on ch1, NORMAL (split) mode. Longer timebase so a 2-screen

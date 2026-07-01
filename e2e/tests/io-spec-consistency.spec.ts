@@ -128,7 +128,7 @@ test.describe('I/O spec consistency: def <-> rendered card UI handles', () => {
       // VideoEngine.step()'s __videoEngineFreezeRender branch. No-op for
       // non-video modules (only the video engine reads the flag).
       if (mod.domain === 'video') await freezeVideoRender(page);
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       await spawnPatch(page, [

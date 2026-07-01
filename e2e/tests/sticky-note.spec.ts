@@ -27,7 +27,7 @@ async function readNodes(page: Page): Promise<PatchNode[]> {
 }
 
 test('sticky spawn + type into the textarea + persisted in node.data.text', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -51,7 +51,7 @@ test('sticky spawn + type into the textarea + persisted in node.data.text', asyn
 });
 
 test('sticky save + load round-trips the text', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'st-2', type: 'sticky', position: { x: 80, y: 80 }, domain: 'meta' },
@@ -105,7 +105,7 @@ test('sticky reconcile: no console errors when spawning a sticky-only patch', as
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -131,7 +131,7 @@ test('@collab sticky text edit in A appears in B', async ({ browser }) => {
   const pageB = await ctxB.newPage();
   try {
     for (const p of [pageA, pageB]) {
-      await p.goto('/');
+      await p.goto('/rack');
       await p.waitForLoadState('networkidle');
       await p.waitForFunction(
         () =>

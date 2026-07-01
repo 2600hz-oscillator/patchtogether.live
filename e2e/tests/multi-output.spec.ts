@@ -102,7 +102,7 @@ test.describe('video: multi-OUTPUT independent routing', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Two visually-distinct procedural sources, each piped into its
@@ -209,7 +209,7 @@ test.describe('video: multi-OUTPUT independent routing', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

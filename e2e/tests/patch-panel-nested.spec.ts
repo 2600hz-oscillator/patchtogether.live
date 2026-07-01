@@ -56,7 +56,7 @@ test.describe('PatchPanel: overlay-replace nested sections', () => {
   test('RIOTGIRLS: section nav rows at root; drill shows ports; back + re-drill replaces', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', position: { x: 200, y: 200 } }]);
     await openMenu(page, 'rg');
@@ -90,7 +90,7 @@ test.describe('PatchPanel: overlay-replace nested sections', () => {
   });
 
   test('RIOTGIRLS: section nav rows carry port-count badges', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', position: { x: 200, y: 200 } }]);
     await openMenu(page, 'rg');
@@ -100,7 +100,7 @@ test.describe('PatchPanel: overlay-replace nested sections', () => {
   });
 
   test('MIXMSTRS: 6 channel nav rows; drill/back overlay behaviour', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'mm', type: 'mixmstrs', position: { x: 100, y: 100 } }]);
     await openMenu(page, 'mm');
@@ -120,7 +120,7 @@ test.describe('PatchPanel: overlay-replace nested sections', () => {
 
   test('MIXMSTRS: collapsed root menu fits on a 1366×768 viewport', async ({ page }) => {
     await page.setViewportSize({ width: 1366, height: 768 });
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'mm', type: 'mixmstrs', position: { x: 100, y: 100 } }]);
     await openMenu(page, 'mm');
@@ -135,7 +135,7 @@ test.describe('PatchPanel: overlay-replace nested sections', () => {
   test('handles remain in the card DOM with the menu closed (io-spec parity)', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', position: { x: 200, y: 200 } }]);

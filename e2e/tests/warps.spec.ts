@@ -17,7 +17,7 @@ test('WARPS renders + audio flows from VCO modulator through warps to OUTPUT', a
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -99,7 +99,7 @@ test('WARPS survives extreme-param mutation via __patch (no crashes)', async ({ 
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

@@ -173,7 +173,7 @@ async function setupFrozen(page: Page) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   // Pause the engine rAF loop + pin the clock BEFORE the app boots.
   await installRenderSmokeHooks(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   return errors;
 }
@@ -185,7 +185,7 @@ async function setupLive(page: import('@playwright/test').Page) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   return errors;
 }

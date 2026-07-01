@@ -79,7 +79,7 @@ async function readExtra<T>(page: Page, nodeId: string, fn: string, ...args: num
 
 test.describe('SNES9X (ROM-gated)', () => {
   test('boots SMW: video renders, L/R audio present, input reaches game, clock_in multiplies → gate3', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     if (!(await isRomPresent(page))) {
@@ -237,7 +237,7 @@ test('SNES9X: spawns + shows LOAD A ROM dropzone (no autoload ROM)', async ({ pa
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   if (await isRomPresent(page)) {

@@ -134,7 +134,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -164,7 +164,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
   });
 
   test('UNISON toggle flips the unison param', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -190,7 +190,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
   });
 
   test('camera XY pad drags update pos_x / pos_y in the patch store', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -231,7 +231,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
   test('zoom/rot pad: drag-right → zoom > 1; drag-up → rot > 0', async ({ page }) => {
     // The new second joystick. X = zoom (log-mapped to [0.3..3]); Y = rot
     // ([-1..+1]). At the pad center the dot sits at zoom=1, rot=0.
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -272,7 +272,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
   });
 
   test('ribbons render pre-ADSR — canvas is non-empty even without any gate', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -325,7 +325,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     // and rotates the camera to ~36° (rot=0.2). With the bug the ALPHA
     // region would collapse; with the fix it renders. We count near-white
     // pixels and require a substantial fraction of the head-on baseline.
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // SHAPES → alpha_in supplies the ALPHA composite image (a bright
@@ -404,7 +404,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     // resulting ribbon shape must visually change. We sample a coarse
     // intensity histogram before + after, and assert a substantial L1
     // distance — not pixel-exact, just a clear shape change.
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -492,7 +492,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -532,7 +532,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
   });
 
   test('per-osc thickness param routes through the patch store', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -576,7 +576,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     // [-90..-10] dB display range = dark blue, not pure black). This is a
     // pure-2D-canvas heatmap (no WebGL), so the blue FLOOR is renderer-
     // independent.
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -641,7 +641,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     // The single VIEW button click-cycles through all three video
     // modes. Verify each click bumps the video_mode param and the
     // label updates accordingly.
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -676,7 +676,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
   });
 
   test('bentscreen wiggle knobs route through the patch store', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -722,7 +722,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
   });
 
   test('BLINK button cycles blink_mode 0 → 1 → 2 → 0 and shows the mode name', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -765,7 +765,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     //   * the two modes produce DIFFERENT pixels (tube shading ≠ flat line).
     // The VRT freeze pins the scope trace content to fixed synthetic values so
     // the per-mode read is deterministic.
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const setup = async (mode: number): Promise<void> => {
@@ -827,7 +827,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // SHAPES (a bright static test pattern) → wall1 (FRONT face), full
@@ -889,7 +889,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Drive a gate so the ribbons have energy that the feedback loop can
@@ -961,7 +961,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     // all 6 walls opaque (camera enclosed) must STILL light a substantial
     // fraction of the frame (the bright traces punch through the backdrop-
     // dimmed wall).
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const wallParams: Record<string, number> = {};
@@ -1040,7 +1040,7 @@ test.describe('WAVESCULPT v2 — wavetable-engine 3D-camera video synth', () => 
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [

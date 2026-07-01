@@ -55,7 +55,7 @@ test('diner-card: VCA card under the DINER skin (curved + neon glow + sprite fad
 }) => {
   skipIfNoBaseline(test, 'diner-card');
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await hideJitterers(page);
 

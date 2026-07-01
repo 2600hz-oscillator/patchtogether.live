@@ -239,7 +239,7 @@ test.describe('video → audio CV/gate routing: every source/port survives the e
       // spurious gate, so every CV-ramp / gate-pulse / analyser assertion below
       // still holds and is in fact MORE deterministic.
       await installRenderSmokeHooks(page);
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       const scopeNodeId = `cons-scope-${pair.id}`;

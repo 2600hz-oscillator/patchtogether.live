@@ -27,7 +27,7 @@ interface PatchEnvelope {
 test('save-load: round-trip preserves nodes, edges, params, and sequencer step data', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Build the canonical voice chain (5 nodes, 6 edges, sequencer with steps).
@@ -152,7 +152,7 @@ test('save-load: round-trip preserves nodes, edges, params, and sequencer step d
 });
 
 test('save-load: __persistence.save() emits a valid PatchEnvelope JSON', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
@@ -177,7 +177,7 @@ test('save-load: __persistence.save() emits a valid PatchEnvelope JSON', async (
 });
 
 test('save-load: __persistence.load() restores the patch from a saved envelope', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Start with a known patch and capture its envelope.

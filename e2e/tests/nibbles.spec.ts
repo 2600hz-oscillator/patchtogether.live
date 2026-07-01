@@ -35,7 +35,7 @@ test('nibbles: card mounts cleanly + canvas renders', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'n', type: 'nibbles', position: { x: 200, y: 200 }, domain: 'video' },
@@ -56,7 +56,7 @@ test('nibbles: card mounts cleanly + canvas renders', async ({ page }) => {
 });
 
 test('nibbles: AUTO on → game advances within 5s (length_cv leaves default; snake grows or dies)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'n', type: 'nibbles', position: { x: 200, y: 200 }, domain: 'video', params: { auto: 1 } },

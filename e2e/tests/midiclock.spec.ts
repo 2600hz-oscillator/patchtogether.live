@@ -14,7 +14,7 @@ test('midiclock: drop module → card mounts with no console errors', async ({ p
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'mc', type: 'midiclock', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiclock');
@@ -24,7 +24,7 @@ test('midiclock: drop module → card mounts with no console errors', async ({ p
 });
 
 test('midiclock: Connect MIDI… button is visible + interactive', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'mc', type: 'midiclock', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiclock');
@@ -38,7 +38,7 @@ test('midiclock: clicking Connect does not crash the card', async ({ page }) => 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'mc', type: 'midiclock', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiclock');
@@ -51,7 +51,7 @@ test('midiclock: clicking Connect does not crash the card', async ({ page }) => 
 });
 
 test('midiclock: card exposes the four documented output ports', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'mc', type: 'midiclock', position: { x: 200, y: 200 } }]);
   // Each output renders as a port-labelled row inside the patch panel. Under

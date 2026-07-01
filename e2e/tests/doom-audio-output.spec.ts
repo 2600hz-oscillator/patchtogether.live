@@ -148,7 +148,7 @@ async function readScopePeak(
 test.describe('DOOM loudness: makeup gain lifts audio_l RMS above the old −42 dB floor', () => {
   test('in-level SFX (pistol) produce audible RMS on a downstream SCOPE', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const hasWasm = await doomWasmPresent(page);
@@ -271,7 +271,7 @@ test.describe('DOOM audio output regression: A-L / A-R reach a downstream SCOPE'
         if (m.type() === 'error') errors.push(m.text());
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       const hasWasm = await doomWasmPresent(page);

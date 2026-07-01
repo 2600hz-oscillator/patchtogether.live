@@ -26,6 +26,18 @@ const config = {
           console.warn(`[prerender] missing doc face (non-fatal): ${path}${referrer ? ` (from ${referrer})` : ''}`);
           return;
         }
+        // The landing page (and shared nav) link to the Clerk-gated auth/app
+        // routes (/sign-in, /sign-up, /dashboard). Those are fully client-
+        // rendered, and in any build env WITHOUT Clerk secrets (CI + the CF
+        // Pages preview build) hooks.server.ts renders them as a diagnostic
+        // 503 — which the prerender crawler follows and would hard-fail on.
+        // They are never prerendered content, so degrade their crawl errors to
+        // a warning (this turned fatal the moment the landing added a link from
+        // / to /sign-in, breaking the preview build with no site to review).
+        if (/^\/(sign-in|sign-up|dashboard)(\/|$)/.test(path)) {
+          console.warn(`[prerender] skipping client-only auth route (non-fatal): ${path}${referrer ? ` (from ${referrer})` : ''}`);
+          return;
+        }
         throw new Error(message);
       },
     },

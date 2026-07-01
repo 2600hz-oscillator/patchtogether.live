@@ -37,7 +37,7 @@ interface PatchSnapshot {
 async function bootTab(browser: import('@playwright/test').Browser) {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(
     () =>

@@ -15,7 +15,7 @@ import { spawnPatch } from './_helpers';
 test.describe.configure({ mode: 'parallel' });
 
 test('topbar: removed Save/Load/Save Perf/Load Perf buttons are gone', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   const header = page.locator('header');
@@ -33,7 +33,7 @@ test('topbar: removed Save/Load/Save Perf/Load Perf buttons are gone', async ({ 
 });
 
 test('topbar: Clear + zip Export/Load survivors remain', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   const header = page.locator('header');
@@ -54,7 +54,7 @@ test('topbar: Clear + zip Export/Load survivors remain', async ({ page }) => {
 // the old Save/Load buttons gave). Present in the top-RIGHT actions cluster
 // with exactly two actions.
 test('topbar: Raw JSON menu present with Export/Import JSON options', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   const select = page.getByTestId('raw-json-select');
@@ -68,7 +68,7 @@ test('topbar: Raw JSON menu present with Export/Import JSON options', async ({ p
 // Drives the REAL menu (selectOption fires the onchange action), captures the
 // download, and asserts the bytes are a valid envelopeVersion=1 envelope.
 test('topbar: Raw JSON → Export JSON downloads a valid envelope', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // A minimal patch so the export has content.
@@ -101,7 +101,7 @@ test('topbar: Raw JSON → Export JSON downloads a valid envelope', async ({ pag
 // the exact node/edge set. This exercises the REAL menu wiring end-to-end (the
 // new surface), not just the underlying envelope contract.
 test('topbar: Raw JSON Export → Import round-trips the patch via the menu', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

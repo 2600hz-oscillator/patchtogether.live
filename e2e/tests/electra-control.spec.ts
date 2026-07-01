@@ -38,7 +38,7 @@ async function readSlots(page: Page, electraId: string) {
 }
 
 async function setup(page: Page) {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'ec-1', type: 'electraControl', position: { x: 700, y: 60 }, domain: 'meta' },

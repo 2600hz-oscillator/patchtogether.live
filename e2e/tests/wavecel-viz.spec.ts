@@ -130,7 +130,7 @@ test.describe('WAVECEL on-card 3D visualizer', () => {
     // Pin the engine clock so any CV modulator the card folds in (readModulatorTap)
     // is constant — the only thing moving the highlight is the morph we set.
     await installRenderSmokeHooks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -175,7 +175,7 @@ test.describe('WAVECEL on-card 3D visualizer', () => {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

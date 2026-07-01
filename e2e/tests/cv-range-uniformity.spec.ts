@@ -79,7 +79,7 @@ async function sampleParamSweep(
 }
 
 test('LFO sweeps ADSR attack (log) across multiple orders of magnitude', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -113,7 +113,7 @@ test('LFO sweeps ADSR attack (log) across multiple orders of magnitude', async (
 });
 
 test('LFO sweeps QBRT cutoff (log) across multiple octaves', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -138,7 +138,7 @@ test('LFO sweeps QBRT cutoff (log) across multiple octaves', async ({ page }) =>
 });
 
 test('LFO sweeps DRUMMERGIRL volume (linear 0..2) across full range', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -162,7 +162,7 @@ test('LFO sweeps DRUMMERGIRL volume (linear 0..2) across full range', async ({ p
 });
 
 test('LFO sweeps MIXMSTRS ch1 EQ low (-12..+12 dB linear) across full range', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -186,7 +186,7 @@ test('LFO sweeps MIXMSTRS ch1 EQ low (-12..+12 dB linear) across full range', as
 });
 
 test('LFO sweeps DESTROY decimate (1..64 linear) across most of range', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -210,7 +210,7 @@ test('LFO sweeps DESTROY decimate (1..64 linear) across most of range', async ({
 });
 
 test('LFO sweeps RINGBACK mix (0..1 linear) across most of range', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

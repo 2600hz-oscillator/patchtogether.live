@@ -45,7 +45,7 @@ test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', ()
       if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Pre-flight: WASM + WAD on the dev server. Skip clean if missing —
@@ -251,7 +251,7 @@ test.describe('DOOM — aspect / letterbox shape in the 4:3 engine pipeline', ()
     // active band and assert at least 3 are non-black. Even a static
     // title (intermission frozen) would satisfy this; a clipped FBO
     // would not.
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const wasmShim = await page.request.get('/doom/doom.js');

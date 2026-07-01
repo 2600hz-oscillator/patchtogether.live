@@ -20,7 +20,7 @@ type W = {
 test('clip player: per-lane MONO toggle flips data + replaces-on-add in the editor', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
 
@@ -60,7 +60,7 @@ test('clip player: per-lane MONO toggle flips data + replaces-on-add in the edit
 });
 
 test('TIMELORDE: the global transport (run) button flips running', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'tl', type: 'timelorde', position: { x: 80, y: 80 }, domain: 'audio' }]);
 
@@ -78,7 +78,7 @@ test('TIMELORDE: the global transport (run) button flips running', async ({ page
 test('TIMELORDE: the run button hides when an external transport (start_in) owns it', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

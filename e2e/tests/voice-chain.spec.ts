@@ -36,7 +36,7 @@ test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Deterministic patch: known step pattern + known knob values.
@@ -137,7 +137,7 @@ test('voice-chain: Seq → VCO + ADSR → VCA → Scope → Out produces audible
 });
 
 test('voice-chain: stopping the sequencer silences the output (gate goes low)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

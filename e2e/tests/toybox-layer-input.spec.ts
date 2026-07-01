@@ -206,7 +206,7 @@ test.describe('TOYBOX LAYER INPUT (feedback-tap source)', () => {
     // frame.time), so every frozen-frame render + pixel read below is byte-identical.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,

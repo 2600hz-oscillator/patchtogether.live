@@ -179,7 +179,7 @@ test('skifree: card mounts, canvas renders, x/y inputs + gate/out outputs presen
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 's', type: 'skifree', position: { x: 200, y: 160 } }]);
 
@@ -206,7 +206,7 @@ test('skifree: card mounts, canvas renders, x/y inputs + gate/out outputs presen
 });
 
 test('skifree: CV patched into x flips cvDriven true (CV overrides mouse)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // BUGGLES.smooth is a continuous ±1 CV source — patch it into x so the
   // factory's CV tap sees a non-zero connection and flips cvDriven.
@@ -228,7 +228,7 @@ test('skifree: CV patched into x flips cvDriven true (CV overrides mouse)', asyn
 });
 
 test('skifree: crash → gate pulse reaches a downstream SCOPE + crash counter increments', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -274,7 +274,7 @@ test('skifree: crash → gate pulse reaches a downstream SCOPE + crash counter i
 });
 
 test('skifree: eaten-by-yeti → gate pulse + eaten counter increments', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

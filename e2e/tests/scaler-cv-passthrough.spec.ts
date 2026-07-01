@@ -115,7 +115,7 @@ test('AMOUNT scales the CV reaching LINES.orient — high AMOUNT moves orient mo
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

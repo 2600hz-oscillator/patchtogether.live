@@ -57,7 +57,7 @@ async function setup(page: Page): Promise<string[]> {
   // round-trip (no pixel reads), so idling the renderer keeps the heavy rack
   // cheap on CI's SwiftShader software renderer without touching any assertion.
   await installRenderSmokeHooks(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   return errors;
 }
