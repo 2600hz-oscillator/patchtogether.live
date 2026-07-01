@@ -698,6 +698,95 @@ describe('clipplayer: tied-note poly gate (Phase 1)', () => {
   });
 });
 
+// ===========================================================================
+// STABLE VOICE ALLOCATOR (gate/held-note plan Phase 2a). Held KEYS-audition
+// notes each keep their OWN poly voice-lane for their whole life. Releasing a
+// LOWER held note must free ONLY its voice and NOT shift/re-write a still-held
+// HIGHER note (the old positional repack shifted the survivors down a lane,
+// rewriting pitch on a sounding voice → glitch/retrigger). We assert directly on
+// the per-voice poly params via the merger-input tracking.
+// ===========================================================================
+describe('clipplayer: stable voice allocator (KEYS audition, Phase 2a)', () => {
+  function polyPitchOf(
+    handle: { outputs: Map<string, { node: unknown }> },
+    lane: number,
+    voice = 0,
+  ): FakeParam {
+    const merger = handle.outputs.get(`pitch${lane + 1}`)!.node as unknown as FakeGain;
+    return (merger._inputs[voice * 2] as unknown as FakeConstantSource).offset as unknown as FakeParam;
+  }
+
+  it('releasing a LOWER held note does NOT shift/re-write a still-held HIGHER note', async () => {
+    clearAudition(NODE_ID);
+    // Pure live audition on lane 0 with the transport STOPPED (no clip launched),
+    // so the only writes come from the audition drain.
+    seed({ stepDiv: 2, quantize: 0, octave: 0 }, { clips: {} });
+    seedTimelorde(0);
+    const ctx = ctx0();
+    const handle = await build(ctx);
+
+    // Press A (low, midi 60) then B (higher, midi 64): A → voice 0, B → voice 1.
+    pushAudition(NODE_ID, { lane: 0, midi: 60, velocity: 100, on: true });
+    hoisted.tick!();
+    pushAudition(NODE_ID, { lane: 0, midi: 64, velocity: 100, on: true });
+    hoisted.tick!();
+
+    const v0gate = polyGateOf(handle as never, 0, 0);
+    const v1gate = polyGateOf(handle as never, 0, 1);
+    const v1pitch = polyPitchOf(handle as never, 0, 1);
+    // B is on voice 1 at its own pitch, gate high (it took the SECOND lane, not 0).
+    expect(v1pitch.value).toBeCloseTo(midiToVOct(64), 5);
+    expect(v1gate.value).toBe(1);
+    const v1GateEvents = v1gate.events.length;
+    const v1PitchEvents = v1pitch.events.length;
+
+    // Release the LOWER note A. Its voice (0) falls; B (voice 1) is UNTOUCHED.
+    pushAudition(NODE_ID, { lane: 0, midi: 60, velocity: 0, on: false });
+    hoisted.tick!();
+
+    // A's voice closed cleanly.
+    expect(v0gate.events.at(-1)!.value, "A's voice fell on release").toBe(0);
+    // B's voice: NO new gate or pitch events — not shifted down to voice 0, not
+    // re-written. This is the positional-repack glitch the allocator fixes.
+    expect(v1gate.events.length, 'B gate not re-written').toBe(v1GateEvents);
+    expect(v1pitch.events.length, 'B pitch not re-written').toBe(v1PitchEvents);
+    expect(v1gate.value, 'B still sounding on voice 1').toBe(1);
+    expect(v1pitch.value, 'B still at its own pitch').toBeCloseTo(midiToVOct(64), 5);
+    // B did NOT migrate onto A's freed voice 0 (voice 0 keeps A's stale pitch;
+    // its gate is closed so it is silent).
+    const v0pitch = polyPitchOf(handle as never, 0, 0);
+    expect(v0pitch.value, 'voice 0 not overwritten with B').toBeCloseTo(midiToVOct(60), 5);
+  });
+
+  it('a released voice-lane is REUSED (lowest-free) by the next held note', async () => {
+    clearAudition(NODE_ID);
+    seed({ stepDiv: 2, quantize: 0, octave: 0 }, { clips: {} });
+    seedTimelorde(0);
+    const ctx = ctx0();
+    const handle = await build(ctx);
+    // Hold three notes → voices 0,1,2.
+    for (const m of [60, 64, 67]) {
+      pushAudition(NODE_ID, { lane: 0, midi: m, velocity: 100, on: true });
+      hoisted.tick!();
+    }
+    const v1pitch = polyPitchOf(handle as never, 0, 1);
+    expect(v1pitch.value).toBeCloseTo(midiToVOct(64), 5);
+    // Release the MIDDLE note (voice 1), then press a new note — it takes the
+    // freed voice 1 (lowest free) with a clean rising edge at the new pitch.
+    pushAudition(NODE_ID, { lane: 0, midi: 64, velocity: 0, on: false });
+    hoisted.tick!();
+    expect(polyGateOf(handle as never, 0, 1).events.at(-1)!.value).toBe(0);
+    pushAudition(NODE_ID, { lane: 0, midi: 72, velocity: 100, on: true });
+    hoisted.tick!();
+    // New note landed on the reused voice 1 at its own pitch, gate high.
+    expect(v1pitch.value, 'reused voice 1 now plays the new note').toBeCloseTo(midiToVOct(72), 5);
+    expect(polyGateOf(handle as never, 0, 1).value).toBe(1);
+    // Voices 0 and 2 (60, 67) are untouched — still sounding.
+    expect(polyGateOf(handle as never, 0, 0).value).toBe(1);
+    expect(polyGateOf(handle as never, 0, 2).value).toBe(1);
+  });
+});
+
 // A fresh advanceable context per audition test (currentTime already at 0).
 function ctx0(): FakeAudioContext {
   return new FakeAudioContext();
