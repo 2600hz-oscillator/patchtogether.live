@@ -34,7 +34,7 @@ test.describe('GRAPHIC EQ — deterministic render smoke', () => {
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // GRAPHIC EQ standalone → OUTPUT so it definitely renders. We read GRAPHIC

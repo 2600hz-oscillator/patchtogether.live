@@ -41,7 +41,7 @@ test('noise: drop module → card mounts with no console errors', async ({ page 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'n', type: 'noise', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-noise');
@@ -51,7 +51,7 @@ test('noise: drop module → card mounts with no console errors', async ({ page 
 });
 
 test('noise: WHITE output produces non-zero audio at scope', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -73,7 +73,7 @@ test('noise: WHITE output produces non-zero audio at scope', async ({ page }) =>
 });
 
 test('noise: PINK output produces non-zero audio at scope', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -94,7 +94,7 @@ test('noise: PINK output produces non-zero audio at scope', async ({ page }) => 
 });
 
 test('noise: BROWN output produces non-zero audio at scope', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -115,7 +115,7 @@ test('noise: BROWN output produces non-zero audio at scope', async ({ page }) =>
 });
 
 test('noise: LEVEL=0 silences output', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

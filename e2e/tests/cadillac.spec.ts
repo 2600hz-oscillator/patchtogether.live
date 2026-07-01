@@ -33,7 +33,7 @@ async function nodeTypes(page: Page): Promise<string[]> {
 }
 
 async function bootEngine(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(() => {
     const w = globalThis as unknown as {

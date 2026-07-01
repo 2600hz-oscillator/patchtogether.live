@@ -104,7 +104,7 @@ async function ariaValueNow(control: Locator): Promise<number> {
 test.describe('knob/slider value propagates to store + UI + engine', () => {
   for (const c of CASES) {
     test(c.label, async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(page, [{ id: 'm', type: c.type, params: { [c.param]: c.spawn } }]);
 

@@ -55,7 +55,7 @@ function undoDepth(page: Page): Promise<number> {
 }
 
 async function setup(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: MM, type: 'matrixMix', position: { x: 520, y: 80 }, domain: 'meta' },
@@ -233,7 +233,7 @@ test('RED ✕ (inputTaken) is clickable: cancel no-ops; accept REPLACES the fore
 test('GRAY ✕ (outputFanout) is clickable: accept ADDS a cable, the foreign consumer stays', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: MM, type: 'matrixMix', position: { x: 520, y: 80 }, domain: 'meta' },
@@ -288,7 +288,7 @@ test('Sequenced VCO: matrix unpatch + re-patch, then Cmd-Z all the way back to t
   // store). The flat 30s default timed out under CI load (main run 1b897a3c,
   // cleared on rerun → flake, not a real break). Give it room.
   test.setTimeout(90_000);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Load the REAL "Sequenced VCO" example (5 modules, 6 edges) — the example

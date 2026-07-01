@@ -20,7 +20,7 @@ import { spawnPatch } from './_helpers';
 test.describe.configure({ mode: 'parallel' });
 
 test('note-entry: typing valid notes into Sequencer steps normalizes display + drives V/oct', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -66,7 +66,7 @@ test('note-entry: typing valid notes into Sequencer steps normalizes display + d
 });
 
 test('note-entry: invalid input keeps midi null + the input ring goes red on focus', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -91,7 +91,7 @@ test('note-entry: invalid input keeps midi null + the input ring goes red on foc
 });
 
 test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4 } }]);
 
@@ -109,7 +109,7 @@ test('note-entry: out-of-range note (c#8 above c8) becomes null', async ({ page 
 });
 
 test('note-entry: Cartesian cell accepts text-entry note names', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -138,7 +138,7 @@ test('note-entry: Cartesian cell accepts text-entry note names', async ({ page }
 });
 
 test('note-entry: gate button toggles step.on without touching the pitch input', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'seq', type: 'sequencer', params: { bpm: 120, length: 4 } }]);
 
@@ -159,7 +159,7 @@ test('note-entry: gate button toggles step.on without touching the pitch input',
 });
 
 test('note-entry: legacy {on, pitch} step shape migrates to {on, midi} at read time', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -193,7 +193,7 @@ test('note-entry: legacy {on, pitch} step shape migrates to {on, midi} at read t
 });
 
 test('note-entry: a4 step drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 semis up)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -246,7 +246,7 @@ test('note-entry: a4 step drives the pitch port to V/oct 0.75 (MIDI 69 - 60 = 9 
 });
 
 test('hold-cv: pitch port retains last gated V/oct across an off step', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // 3 steps: a4 (on), e4 (off), a4-different (gated again later). After the
@@ -307,7 +307,7 @@ test('hold-cv: pitch port retains last gated V/oct across an off step', async ({
 });
 
 test('note-entry: invalid step (midi=null) suppresses gate output even when on=true', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [

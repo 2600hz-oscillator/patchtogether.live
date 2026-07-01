@@ -17,7 +17,7 @@ const FIXED_STEPS = 4;
 test('TEMPEST — vector well renders non-black + structured (deterministic smoke)', async ({ page }) => {
   test.setTimeout(60_000);
   await installRenderSmokeHooks(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

@@ -62,7 +62,7 @@ async function readScopePeak(page: Page, scopeId: string): Promise<{ peak: numbe
 test('BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-game', async ({ page }) => {
   test.setTimeout(90_000);
   page.on('pageerror', (e) => console.error('pageerror:', e.message));
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -178,7 +178,7 @@ test('BLOOD audio_l → SCOPE: the game-audio mixer produces audible signal in-g
 // sample, whereas sparse ambient SFX would not. Asserts the SUSTAINED fraction.
 test('BLOOD music: in-level OPL3 music produces SUSTAINED audio on audio_l (standing still)', async ({ page }) => {
   test.setTimeout(90_000);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

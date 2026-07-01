@@ -11,7 +11,7 @@ import { spawnPatch } from './_helpers';
 
 test.describe('AI smoke check', () => {
   test('app: HTTP 200 + COOP/COEP headers @smoke', async ({ page }) => {
-    const response = await page.goto('/');
+    const response = await page.goto('/rack');
     expect(response, 'no response').toBeTruthy();
     expect(response!.status(), `status ${response!.status()}`).toBe(200);
     const headers = response!.headers();
@@ -31,19 +31,19 @@ test.describe('AI smoke check', () => {
   });
 
   test('app: title is patchtogether.live @smoke', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await expect(page).toHaveTitle('patchtogether.live');
   });
 
   test('app: cross-origin-isolated context (Faust SharedArrayBuffer prereq) @smoke', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     const isolated = await page.evaluate(() => globalThis.crossOriginIsolated);
     expect(isolated, 'crossOriginIsolated must be true').toBe(true);
   });
 
   test('canvas: topbar + Load example dropdown render', async ({ page }) => {
     const cc = captureConsole(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const h1 = page.locator('h1', { hasText: '2600hz' });
@@ -65,7 +65,7 @@ test.describe('AI smoke check', () => {
   // the live autotest env once main is deployed, catching regressions where a
   // refactor removes the entry point or a layout change hides it.
   test('auth: landing page exposes a sign-in entry point @smoke', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const link = page.getByTestId('signin-link');
@@ -79,7 +79,7 @@ test.describe('AI smoke check', () => {
   });
 
   test('canvas: Load example creates 5 Svelte Flow nodes @smoke', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     const nodes = page.locator('.svelte-flow__node');
@@ -89,7 +89,7 @@ test.describe('AI smoke check', () => {
   });
 
   test('canvas: spawned nodes are VISUALLY rendered (non-zero bounding rect)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
@@ -120,7 +120,7 @@ test.describe('AI smoke check', () => {
   });
 
   test('fader: dragging visibly moves the thumb (motorized state reflection)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
@@ -158,7 +158,7 @@ test.describe('AI smoke check', () => {
   });
 
   test('connect-replaces-existing: patching to an occupied input replaces the prior cable', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -194,7 +194,7 @@ test.describe('AI smoke check', () => {
     // detaches the existing cable + picks it up for re-patching. We assert
     // the detach half here (the cable is removed the moment the input row is
     // clicked); Esc then drops the carried cable so no new edge forms.
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -245,7 +245,7 @@ test.describe('AI smoke check', () => {
     // deleteElements → ondelete path, which Canvas's handleDelete mirrors back
     // into the patch graph. So this asserts the full select→Backspace→teardown
     // behaviour, just with a deterministic selection step.
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -303,7 +303,7 @@ test.describe('AI smoke check', () => {
   });
 
   test('clear: Clear button removes all nodes + edges from patch + DOM', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
@@ -320,7 +320,7 @@ test.describe('AI smoke check', () => {
   });
 
   test('node-drag: dragging a card persists position back to the patch graph', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
@@ -352,7 +352,7 @@ test.describe('AI smoke check', () => {
 
   test('canvas: spawned patch produces audio (peak meter > 0) @smoke', async ({ page }) => {
     const cc = captureConsole(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
 

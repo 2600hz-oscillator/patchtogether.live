@@ -25,7 +25,7 @@ async function setupPage(page: import('@playwright/test').Page): Promise<string[
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   return errors;
 }

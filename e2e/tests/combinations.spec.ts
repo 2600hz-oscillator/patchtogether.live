@@ -15,7 +15,7 @@ test('chain: VCO → Filter → Audio Out plays with no errors', async ({ page }
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -44,7 +44,7 @@ test('chain: ADSR-shaped voice (VCO + ADSR → VCA → Audio Out)', async ({ pag
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -74,7 +74,7 @@ test('chain: VCO → Mixer (one channel) → Reverb → Audio Out', async ({ pag
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -104,7 +104,7 @@ test('chain: Sequencer → VCO → VCA (gated by ADSR) → Audio Out plays a rif
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -141,7 +141,7 @@ test('chain: Sequencer → VCO → VCA (gated by ADSR) → Audio Out plays a rif
 });
 
 test('sequencer: clicking the gate button toggles its visual on-state', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [{ id: 'seq', type: 'sequencer' }]);
@@ -160,7 +160,7 @@ test('chain: VCO → Scope → Audio Out — Scope passes through', async ({ pag
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

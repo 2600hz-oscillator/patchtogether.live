@@ -62,7 +62,7 @@ test('midi-out-buddy: drops + card mounts with the 3 input handles, no console e
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await installFakeMidiOut(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: TYPE, position: { x: 200, y: 200 } }]);
 
@@ -77,7 +77,7 @@ test('midi-out-buddy: drops + card mounts with the 3 input handles, no console e
 
 test('midi-out-buddy: Connect MIDI… reveals the OUT device + channel selectors', async ({ page }) => {
   await installFakeMidiOut(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: TYPE, position: { x: 200, y: 200 } }]);
 
@@ -98,7 +98,7 @@ test('midi-out-buddy: SEQUENCER gate/pitch → captured MIDI NoteOn on the fake 
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await installFakeMidiOut(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // SEQUENCER (fast, playing) → midiOutBuddy gate + pitch.

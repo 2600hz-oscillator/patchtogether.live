@@ -34,7 +34,7 @@ async function readScopeRms(page: Page, scopeId: string): Promise<number> {
 test('dx7: spawns + renders card with preset selector + 4 knobs + 4 handles', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [{ id: 'dx', type: 'dx7' }]);
@@ -63,7 +63,7 @@ test('dx7: spawns + renders card with preset selector + 4 knobs + 4 handles', as
 });
 
 test('dx7: sequencer (poly) → DX7 → audioOut produces audible RMS', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -161,7 +161,7 @@ test('dx7: switching algorithm changes the audible scope content', async ({ page
   // knob silently no-op'd. This test asserts the scope tap reports a
   // measurably different waveform after we change algorithm 1 → 32 on the
   // SAME preset / sequencer feed.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -276,7 +276,7 @@ test('dx7: switching algorithm changes the audible scope content', async ({ page
 });
 
 test('dx7: changing preset updates the dropdown value', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [{ id: 'dx', type: 'dx7' }]);

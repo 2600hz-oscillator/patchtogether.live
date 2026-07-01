@@ -54,7 +54,7 @@ test('pong: drop module → card mounts with no console errors', async ({ page }
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'p', type: 'pong', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-pong');
@@ -73,7 +73,7 @@ test('pong: drop module → card mounts with no console errors', async ({ page }
 });
 
 test('pong: ball moves across simulated time (game-loop ticks)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'p', type: 'pong', position: { x: 200, y: 200 } }]);
 
@@ -103,7 +103,7 @@ test('pong: ball moves across simulated time (game-loop ticks)', async ({ page }
 });
 
 test('pong: CV source patched into paddle_left moves the on-screen paddle', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // BUGGLES is the simplest CV source we have. Its `smooth` output is a
   // slow-changing voltage in roughly [-1, +1] — exactly what we feed into

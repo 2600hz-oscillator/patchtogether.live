@@ -32,7 +32,7 @@ async function readNodes(page: Page): Promise<PatchNode[]> {
 test('right-click → Duplicate creates a clone with same params, fresh id, offset position', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -91,7 +91,7 @@ test('right-click → Duplicate deep-clones data (mutating dup does not affect s
   // "reassigning object that already occurs in the tree" gotcha only fires
   // when the same JS reference ends up at two paths — so a mutation through
   // one MUST not be visible at the other.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -183,7 +183,7 @@ test('right-click → Duplicate deep-clones data (mutating dup does not affect s
 test('right-click → Duplicate does not copy edges of the source', async ({ page }) => {
   // Patch: VCO → VCA. Duplicate the VCO. Expect: 1 edge still (VCO → VCA),
   // duplicated VCO has no edges.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -228,7 +228,7 @@ test('@collab duplicate in A appears in B', async ({ browser }) => {
   const pageB = await ctxB.newPage();
   try {
     for (const p of [pageA, pageB]) {
-      await p.goto('/');
+      await p.goto('/rack');
       await p.waitForLoadState('networkidle');
       await p.waitForFunction(
         () =>

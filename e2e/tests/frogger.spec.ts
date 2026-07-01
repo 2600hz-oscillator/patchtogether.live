@@ -64,7 +64,7 @@ test('frogger: drop module → card mounts with no console errors', async ({ pag
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'f', type: 'frogger', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-frogger');
@@ -82,7 +82,7 @@ test('frogger: drop module → card mounts with no console errors', async ({ pag
 });
 
 test('frogger: auto-starts on spawn (no user input — isGameInPlay flips + sprites advance)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'f', type: 'frogger', position: { x: 200, y: 200 } }]);
   // Resume the AudioContext so the scheduler-clock subscribes start firing.
@@ -108,7 +108,7 @@ test('frogger: auto-starts on spawn (no user input — isGameInPlay flips + spri
 });
 
 test('frogger: BUGGLES.clock patched into start_gate restarts the game', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // BUGGLES.clock is a real gate source (5 ms pulses at ~1-2 Hz). Each
   // pulse should re-fire startGame() and reset the world; the tick keeps

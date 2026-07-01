@@ -19,7 +19,7 @@ import { spawnPatch } from './_helpers';
 test('in-card title: user-given name renders inside card.title (no overhead badge)', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'sculpt', type: 'wavesculpt', position: { x: 200, y: 200 } },
@@ -51,7 +51,7 @@ test('in-card title: user-given name renders inside card.title (no overhead badg
 test('in-card title: click → edit → blur commits and persists on data.name', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'vco', type: 'analogVco', position: { x: 200, y: 200 } },
@@ -139,7 +139,7 @@ test.describe('@collab', () => {
     const pageB = await ctxB.newPage();
     try {
       for (const p of [pageA, pageB]) {
-        await p.goto('/');
+        await p.goto('/rack');
         // NB: no waitForLoadState('networkidle') here — with the live
         // Hocuspocus relay WebSocket open, the network never goes idle, so
         // networkidle hangs to the test timeout under CI contention (the

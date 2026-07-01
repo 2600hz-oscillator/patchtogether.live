@@ -29,7 +29,7 @@ test.describe.configure({ mode: 'parallel' });
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('reverb: input → output emits audio with mix > 0', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -51,7 +51,7 @@ test('reverb: input → output emits audio with mix > 0', async ({ page }) => {
 });
 
 test('charlottesEchos: stereo L → out_L produces a delayed audio tail', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -73,7 +73,7 @@ test('charlottesEchos: stereo L → out_L produces a delayed audio tail', async 
 });
 
 test('shimmershine: stereo input → out_l + out_r emit audio', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -95,7 +95,7 @@ test('shimmershine: stereo input → out_l + out_r emit audio', async ({ page })
 });
 
 test('qbrt: ping → resonant L output emits audio', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // QBRT is a comb / Karplus-Strong-ish resonator. A gate ping excites
@@ -134,7 +134,7 @@ test('qbrt: ping → resonant L output emits audio', async ({ page }) => {
 });
 
 test('warrenspectrum: stereo input → out_l emits audio', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -159,7 +159,7 @@ test('warrenspectrum: stereo input → out_l emits audio', async ({ page }) => {
 test('integration (Group 6): voice → reverb → audioOut produces wider/longer tail than dry', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Generate a transient gate from a sequencer driving a drum voice
@@ -200,7 +200,7 @@ test('integration (Group 6): voice → reverb → audioOut produces wider/longer
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('drummergirl: gate ping → audio burst', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -233,7 +233,7 @@ test('drummergirl: gate ping → audio burst', async ({ page }) => {
 });
 
 test('meowbox: gate → stereo L emits audio', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -269,7 +269,7 @@ test('riotgirls: trigger voices via test hook → outL emits audio', async ({ pa
   // Mirrors the established pattern in e2e/tests/riotgirls.spec.ts:
   // high volume + low cutoff + audioOut on the chain + poll-and-break
   // loop so we don't fail on analyser-window timing.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -426,7 +426,7 @@ for (const src of VIDEO_SOURCES) {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const nodes: SpawnNode[] = [
@@ -469,7 +469,7 @@ test('cameraInput: spawns without errors (no live camera in headless CI; just sm
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Just spawn it — getUserMedia will fail in headless Chromium and
@@ -493,7 +493,7 @@ test('picturebox: spawns without errors (no image loaded; verify card mounts)', 
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [{ id: 'pb', type: 'picturebox', domain: 'video' }]);
@@ -513,7 +513,7 @@ test('integration (Group 8): shapes → destructor → chroma → videoOut rende
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -552,7 +552,7 @@ test('cross-domain: lfo cv → lines.amp modulates video output over time', asyn
   // cross-domain CV bridge in PatchEngine samples the LFO each frame
   // and pushes it into VideoEngine.setParam('amp', value). The
   // resulting video should evolve over time as the LFO sweeps.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -588,7 +588,7 @@ test('cross-domain: scope.out (mono-video) → videoOut renders the waveform', a
   // Scope's mono-video output is rendered via drawFrame each video
   // frame from the live analyser snapshot. A noise input should
   // produce visible variance in the rendered scope trace.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

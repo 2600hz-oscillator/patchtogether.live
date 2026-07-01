@@ -68,7 +68,7 @@ test.describe('VRT card-faces: numbered card screenshots + key for the docs site
 
       // Deterministic fonts + viewport (same as vrt.spec.ts).
       await pinVrtFonts(page);
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await awaitVrtFonts(page);
       await page.addStyleTag({

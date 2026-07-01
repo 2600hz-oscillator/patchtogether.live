@@ -26,7 +26,7 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -100,7 +100,7 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -175,7 +175,7 @@ test.describe('SHAPEGEN — 3D-shape-generator video module', () => {
   });
 
   test('SIZE + ROT knobs mutate params via the patch store', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [

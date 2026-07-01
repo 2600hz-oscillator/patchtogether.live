@@ -110,7 +110,7 @@ test('bluebox: card mounts with no console errors', async ({ page }) => {
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'bb', type: 'bluebox', position: { x: 100, y: 100 } }]);
 
@@ -127,7 +127,7 @@ test('bluebox: card mounts with no console errors', async ({ page }) => {
 });
 
 test('bluebox: clicking "5" produces 770 + 1336 Hz peaks at the scope', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -185,7 +185,7 @@ test('bluebox: clicking "5" produces 770 + 1336 Hz peaks at the scope', async ({
 });
 
 test('bluebox: clicking BLUEBOX produces a 2600 Hz dominant peak', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -218,7 +218,7 @@ test('bluebox: clicking BLUEBOX produces a 2600 Hz dominant peak', async ({ page
 });
 
 test('bluebox: clicking REDBOX produces 1700 + 2200 Hz peaks', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -257,7 +257,7 @@ test('bluebox: setting btn_5 param directly drives the tone (no UI click)', asyn
   // Sanity-check the param→worklet path independent of the keypad UI —
   // this is the same path the Instruments / Group-controls layer uses
   // to surface BLUEBOX's keys on a containing group's bar.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

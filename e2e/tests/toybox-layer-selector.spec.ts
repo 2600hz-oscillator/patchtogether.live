@@ -174,7 +174,7 @@ test.describe('TOYBOX per-layer editing — LAYER selector', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,

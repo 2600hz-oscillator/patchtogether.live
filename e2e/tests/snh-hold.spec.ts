@@ -99,7 +99,7 @@ const NOTE_VOCT = (72 - 60) / 12; // 1.0
 test.describe('baked-in gate-sampled S&H: SEQUENCER pitch → SCOPE', () => {
   /** Spawn sequencer → scope.ch1, set a sparse 2-step pattern (note, rest). */
   async function setup(page: Page, snh: number): Promise<void> {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -200,7 +200,7 @@ test.describe('baked-in gate-sampled S&H: SEQUENCER pitch → SCOPE', () => {
 test.describe('baked-in gate-sampled S&H: CLIPPLAYER pitch → SCOPE (8 lanes, one global toggle)', () => {
   /** Spawn clipplayer.pitch1 → scope.ch1 + a sparse clip on lane 0. */
   async function setup(page: Page, snh: number): Promise<void> {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,

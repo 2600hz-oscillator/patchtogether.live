@@ -18,7 +18,7 @@ test.describe('PatchPanel: click-open / outside-click-close', () => {
   test('click opens the menu; hover alone does not; outside-click closes', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
 
@@ -50,7 +50,7 @@ test.describe('PatchPanel: click-open / outside-click-close', () => {
   }: {
     page: Page;
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
     await expect(chrome(page, 'adsr')).toHaveCount(0);

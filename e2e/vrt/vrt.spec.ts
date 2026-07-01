@@ -78,7 +78,7 @@ test.describe('VRT: every module card matches its baseline', () => {
       // See e2e/vrt/_fonts.ts for the full root-cause writeup.
       await pinVrtFonts(page);
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       // Decode + apply the bundled faces, then await document.fonts.ready,
       // so no screenshot is taken while a face is still pending. (Bravura,

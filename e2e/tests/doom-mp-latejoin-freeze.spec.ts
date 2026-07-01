@@ -73,7 +73,7 @@ async function boot(
     out.push({ ctx, page, ...s });
   }
   for (const p of out) {
-    await p.page.goto('/');
+    await p.page.goto('/rack');
     await p.page.waitForLoadState('networkidle');
     await p.page.waitForFunction(
       () => typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',

@@ -125,7 +125,7 @@ for (const m of MODULES) {
         if (msg.type() === 'error') errors.push(msg.text());
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       await spawnPatch(page, [
@@ -198,7 +198,7 @@ for (const m of MODULES) {
 
 test.describe('OUTPUT regression', () => {
   test('videoOut keeps existing data.width/data.height resize behavior', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -230,7 +230,7 @@ test.describe('OUTPUT regression', () => {
   // We set the size directly via patch mutation (skip the drag) so the aspect-fit
   // math is testable independent of the drag harness.
   test('inner canvas keeps aspect-fit after resize (engine 4:3)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -281,7 +281,7 @@ test.describe('dblclick a PatchPanel corner-trigger opens the port cascade', () 
   // The drag-to-patch drill-down is covered by cable-drag-drilldown.spec; THIS
   // guards the dblclick→port-menu shortcut, which no other spec exercises.
   test('dblclick on a PatchPanel corner-trigger opens the port menu', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [

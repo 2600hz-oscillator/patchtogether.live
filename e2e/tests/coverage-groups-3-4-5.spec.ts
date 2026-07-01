@@ -54,7 +54,7 @@ test('lfo: phase outputs emit cv that crosses zero', async ({ page }) => {
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // LFO at 5 Hz with shape=0 (sine). Patch phase0 → scope.ch1 as a `cv`
@@ -102,7 +102,7 @@ test('adsr: gate ping triggers an attack-then-decay envelope on env output', asy
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // 240 BPM sequencer at gateLength=0.5 → gate cycles every ~125 ms.
@@ -148,7 +148,7 @@ test('adsr: gate ping triggers an attack-then-decay envelope on env output', asy
 });
 
 test('adsr: env_inv is the 1-env complement', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // We can't easily subtract two CV streams in the patch graph from a
@@ -186,7 +186,7 @@ test('buggles: smooth/stepped CV outputs emit chaotic non-constant signals', asy
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -250,7 +250,7 @@ test('illogic: in1=0.5, in2=0 → sum≈0.5, diff≈0.5; gates fire on in1>thres
   // their outputs are deterministic given the input. We drive in1 + in2
   // from two LFOs at different rates so the chaining produces measurable
   // motion at the outputs.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -285,7 +285,7 @@ test('illogic: in1=0.5, in2=0 → sum≈0.5, diff≈0.5; gates fire on in1>thres
 });
 
 test('unityscalemathematik: u_in passthrough scaled by unityAtten', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // LFO drives u_in. unityAtten=1 means full passthrough; output should
@@ -315,7 +315,7 @@ test('unityscalemathematik: u_in passthrough scaled by unityAtten', async ({ pag
 test('timelorde: external clock drives gate-divider outputs', async ({ page }) => {
   // Drive timelorde.clock from a sequencer's clock_out. Verify that
   // any one of timelorde's divider outputs fires.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -361,7 +361,7 @@ test('integration (Group 3): lfo modulates filter cutoff → audible spectrum sw
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // analogVco (sine) → filter.audio. lfo.phase0 → filter.cutoff. Scope at
@@ -422,7 +422,7 @@ for (const seq of [
   { type: 'drumseqz',  stepsCount: 4 },
 ]) {
   test(`sequencer ${seq.type}: currentStep advances when isPlaying=1`, async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // 480 BPM → step every 31 ms; 4 steps fit easily in 250 ms.
@@ -490,7 +490,7 @@ for (const seq of [
 // last-sounding value), so this is monotonic — no before/after race remains. The
 // poll backs off (250→500→1000ms) so we don't hammer engine.read under contention.
 test('score: tickIndex advances + currentNoteId resolves to laid-down note', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -530,7 +530,7 @@ test('score: tickIndex advances + currentNoteId resolves to laid-down note', asy
 });
 
 test('cartesian: external clock drives pitch output (poly cable, lane 0 = pitch)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Drive cartesian.clock from sequencer.clock_out. Its pitch output is
@@ -577,7 +577,7 @@ test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixe
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // sequencer.gate -> drummergirl + meowbox + qbrt (gate/ping inputs).
@@ -636,7 +636,7 @@ test('integration (Group 4): sequencer drives 3 drum voices in parallel via mixe
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('vca: cv=0 silences output; cv=1 passes audio through', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // noise (loud) -> vca.audio. lfo.shape param fixed; CV input held at 0
@@ -669,7 +669,7 @@ test('vca: cv=0 silences output; cv=1 passes audio through', async ({ page }) =>
 });
 
 test('vca: audio_inv is the phase-flipped twin of audio', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Send audio + audio_inv into the two scope channels with the same
@@ -710,7 +710,7 @@ test('filter: cutoff=300Hz removes more of a 4kHz noise spectrum than cutoff=8kH
   // Drive noise through the filter; record RMS at two cutoff settings.
   // Low cutoff should produce a substantially smaller signal than high
   // cutoff (the filter removes everything above its cutoff).
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -744,7 +744,7 @@ test('filter: cutoff=300Hz removes more of a 4kHz noise spectrum than cutoff=8kH
 });
 
 test('mixer: each input contributes; master fader scales output', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -776,7 +776,7 @@ test('mixer: each input contributes; master fader scales output', async ({ page 
 });
 
 test('mixmstrs: routing a single channel produces audio at masterL', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -801,7 +801,7 @@ test('mixmstrs: routing a single channel produces audio at masterL', async ({ pa
 });
 
 test('stereovca: independent L/R strength CV', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Drive in_l from noise.white, in_r from noise.pink. strength_l = 0

@@ -29,7 +29,7 @@ async function openTwoContexts(
   const pageB = await ctxB.newPage();
 
   for (const p of [pageA, pageB]) {
-    await p.goto('/');
+    await p.goto('/rack');
     await p.waitForLoadState('networkidle');
     await p.waitForFunction(
       () =>
@@ -150,7 +150,7 @@ test.describe('@collab awareness', () => {
     const pageB = await ctxB.newPage();
     try {
       // A connects + publishes identity FIRST.
-      await pageA.goto('/');
+      await pageA.goto('/rack');
       await pageA.waitForLoadState('networkidle');
       await pageA.waitForFunction(
         () => typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',
@@ -163,7 +163,7 @@ test.describe('@collab awareness', () => {
       }, rackspaceId);
 
       // THEN B connects — it must backfill A's already-published presence.
-      await pageB.goto('/');
+      await pageB.goto('/rack');
       await pageB.waitForLoadState('networkidle');
       await pageB.waitForFunction(
         () => typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',

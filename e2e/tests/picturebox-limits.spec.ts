@@ -48,7 +48,7 @@ test.describe('PICTUREBOX spawn limits', () => {
   test.setTimeout(60_000);
 
   test('per-workspace cap = 8: ninth pick is blocked and the palette greys it out', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Spawn 8 PICTUREBOXes — all should succeed.

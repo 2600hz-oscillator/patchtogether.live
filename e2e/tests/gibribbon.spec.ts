@@ -182,7 +182,7 @@ test('gibribbon: card mounts cleanly + 1024×576 canvas renders the white ribbon
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
@@ -238,7 +238,7 @@ test('gibribbon: AUTOPLAY — a bare card (no clock/CV patched) self-plays', asy
   // clock edge. The internal autoplay clock must drive the game with nothing
   // patched. With no button presses the spawned events MISS → the health ladder
   // degrades from the initial 'healthy', proving the game is actually running.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
@@ -263,7 +263,7 @@ test('gibribbon: AUTOPLAY shows a VARIED, READABLE stream — ≥3 distinct kind
   // kinds visible in the lane over the opening seconds and assert ≥3 of the four
   // kinds (loop/jump/imp/zombie) appear, AND that the lane is actually populated
   // (a non-empty readable queue), within ~5s.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
@@ -300,7 +300,7 @@ test('gibribbon: joystick X/Y axes are consumed (no dead ports) — aim engaged,
   // path consumes the values without throwing or dropping the press).
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
@@ -355,7 +355,7 @@ test('gibribbon: GAME OVER overlay + in-card RESTART returns to a fresh healthy 
   // death (autoplay off, three controlled misses), assert the on-canvas GAME
   // OVER overlay appears, then RESTART in-card → health 'healthy', score 0,
   // game live again.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
@@ -391,7 +391,7 @@ test('gibribbon: GAME OVER overlay + in-card RESTART returns to a fresh healthy 
 });
 
 test('gibribbon: clock+gate+CV spawns an imp → a correct ABXY press clears it (score up)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
@@ -453,7 +453,7 @@ test('gibribbon: clock+gate+CV spawns an imp → a correct ABXY press clears it 
 });
 
 test('gibribbon: a missed event degrades the marine (health drops below healthy)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'g', type: 'gibribbon', position: { x: 200, y: 200 }, domain: 'video' },
@@ -487,7 +487,7 @@ const GATE_PORTS = ['evt_hit', 'evt_miss', 'evt_fire', 'evt_kill', 'evt_gameover
 
 for (const port of GATE_PORTS) {
   test(`gibribbon: ${port} bridges into scope.ch1 (forcePulse)`, async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const scopeId = `scope-${port}`;

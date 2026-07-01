@@ -21,7 +21,7 @@ test('midi-lane: drop module → card mounts with no console errors + output han
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: 'midiLane', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiLane');
@@ -35,7 +35,7 @@ test('midi-lane: drop module → card mounts with no console errors + output han
 });
 
 test('midi-lane: Connect MIDI… button is visible + interactive', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: 'midiLane', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiLane');
@@ -49,7 +49,7 @@ test('midi-lane: clicking Connect does not crash the card', async ({ page }) => 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: 'midiLane', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiLane');

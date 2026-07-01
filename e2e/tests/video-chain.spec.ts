@@ -63,7 +63,7 @@ test.describe('Video chain — chainable outputs on RUTTETRA / MONOGLITCH / OUTP
     // engine clock (LINES renders an identical frame every step) BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -123,7 +123,7 @@ test.describe('Video chain — chainable outputs on RUTTETRA / MONOGLITCH / OUTP
     // burst is VDELAY's own ring (exactly what we want to exercise).
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

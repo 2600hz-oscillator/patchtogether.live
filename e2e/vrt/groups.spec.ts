@@ -45,7 +45,7 @@ async function hideJitterers(page: Page): Promise<void> {
 }
 
 async function bootCanvas(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await hideJitterers(page);
 }

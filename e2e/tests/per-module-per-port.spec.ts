@@ -769,7 +769,7 @@ test.describe('per-module per-port: handle presence', () => {
       // with a GL viewport (WAVESCULPT) also skip the per-frame draw.
       if (touchesVideo(mod)) await freezeVideoRender(page);
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       await spawnSolo(page, mod);
@@ -1052,7 +1052,7 @@ test.describe('per-module per-port: outputs emit signal', () => {
           continue;
         }
 
-        await page.goto('/');
+        await page.goto('/rack');
         await page.waitForLoadState('networkidle');
 
         const sink = pickOutputSink(port.type);
@@ -1367,7 +1367,7 @@ test.describe('per-module per-port: inputs accept signal (wire-up)', () => {
         if (m.type() === 'error') errors.push(`console: ${m.text()}`);
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       // DOOM-asset skip — when the WASM blob isn't present the module

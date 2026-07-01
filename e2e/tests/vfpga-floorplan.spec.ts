@@ -52,7 +52,7 @@ test.describe('vfpga-runner — fabric floorplan view (P5)', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnRunner(page);
 
@@ -86,7 +86,7 @@ test.describe('vfpga-runner — fabric floorplan view (P5)', () => {
 
   test('switching to a richer fabric (sync-bender) re-draws the floorplan with its legend', async ({ page }) => {
     test.setTimeout(45_000);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnRunner(page);
 

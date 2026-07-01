@@ -79,7 +79,7 @@ interface SlaveCapture {
 }
 
 async function captureSlave(page: Page, syncWired: boolean): Promise<SlaveCapture> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   const edges = [

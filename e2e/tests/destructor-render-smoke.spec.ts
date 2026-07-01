@@ -39,7 +39,7 @@ async function setVideoParam(page: Page, nodeId: string, paramId: string, value:
 }
 
 async function spawnLinesDestructor(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // shift + scanline cranked so mangle (the master CV that scales them) has a
   // large effect between 0 and 1 — maximises the renderer-tolerant frame delta.

@@ -32,7 +32,7 @@ test.describe('TEXTMARQUEE — deterministic render smoke', () => {
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // TEXTMARQUEE is a pure generated SOURCE (renders its default placeholder

@@ -80,7 +80,7 @@ async function midpointOfEdge(page: Page, edgeId: string): Promise<{ x: number; 
 }
 
 test('palette drop within 12px of cable midpoint splices a compatible module', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // LFO (cv outputs) → FILTER (cv input on cutoff). Wide separation so
@@ -146,7 +146,7 @@ test('palette drop within 12px of cable midpoint splices a compatible module', a
 });
 
 test('palette drop near cable falls back to normal spawn when new module has no compatible input', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Same cv-typed cable, but NOISE has no inputs at all — splice must
@@ -192,7 +192,7 @@ test('palette drop near cable falls back to normal spawn when new module has no 
 });
 
 test('palette drop outside 12px tolerance does NOT splice', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

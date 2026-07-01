@@ -28,7 +28,7 @@ async function readVar(
 }
 
 test('matrixcowboy: selectable from switcher + applies phosphor palette', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Open switcher + select MATRIXCOWBOY.
@@ -68,7 +68,7 @@ test('matrixcowboy: selectable from switcher + applies phosphor palette', async 
 });
 
 test('matrixcowboy: choice survives a reload + page stays functional', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.getByTestId('skin-switcher-trigger').click();
   await page.getByTestId('skin-option-matrixcowboy').click();
@@ -92,7 +92,7 @@ test('matrixcowboy: choice survives a reload + page stays functional', async ({ 
 });
 
 test('matrixcowboy: switching back to default clears data-skin overlay hook', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await page.getByTestId('skin-switcher-trigger').click();

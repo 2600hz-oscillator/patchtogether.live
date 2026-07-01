@@ -68,7 +68,7 @@ async function portIdsInPicker(page: Page): Promise<string[]> {
 test.describe.configure({ mode: 'parallel' });
 
 test('happy path: LFO.phase0 → FILTER.cutoff via carry → picker', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
@@ -89,7 +89,7 @@ test('happy path: LFO.phase0 → FILTER.cutoff via carry → picker', async ({ p
 });
 
 test('type filtering: cv source → AudioOut shows "No compatible ports"', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
@@ -104,7 +104,7 @@ test('type filtering: cv source → AudioOut shows "No compatible ports"', async
 test('destructive overwrite: occupied input → "!" prefix + replaces the edge', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -141,7 +141,7 @@ test('destructive overwrite: occupied input → "!" prefix + replaces the edge',
 });
 
 test('disabled when no other modules exist', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lfo1', type: 'lfo', position: { x: 200, y: 200 } }]);
 
@@ -155,7 +155,7 @@ test('disabled when no other modules exist', async ({ page }) => {
 test('compatible direction: carry an INPUT → picker lists OUTPUTs of the target', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
@@ -181,7 +181,7 @@ test('compatible direction: carry an INPUT → picker lists OUTPUTs of the targe
 test('overlay-replace: clicking a module replaces the modules list with its ports; back returns', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
@@ -199,7 +199,7 @@ test('overlay-replace: clicking a module replaces the modules list with its port
 });
 
 test('persists through pointer movement; closes on Escape', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
@@ -218,7 +218,7 @@ test('persists through pointer movement; closes on Escape', async ({ page }) => 
 });
 
 test('closes on commit (port click)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'lfo1', type: 'lfo', position: { x: 100, y: 200 } },
@@ -235,7 +235,7 @@ test('closes on commit (port click)', async ({ page }) => {
 test('ADSR.env → Analog VCO shows tune/fine/fmAmount/pmAmount as cv destinations', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'adsr', type: 'adsr', position: { x: 100, y: 200 } },
@@ -253,7 +253,7 @@ test('ADSR.env → Analog VCO shows tune/fine/fmAmount/pmAmount as cv destinatio
 test('ADSR.env → Wavetable VCO shows tune/fine/fmAmount/pmAmount/wavePos as cv destinations', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'adsr', type: 'adsr', position: { x: 100, y: 200 } },
