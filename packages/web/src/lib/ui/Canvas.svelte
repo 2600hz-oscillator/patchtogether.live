@@ -4932,11 +4932,17 @@
   let nodeCount = $derived(flowNodes.length);
   let edgeCount = $derived(flowEdges.length);
   let availableModules = $derived(listModuleDefs().length + listVideoModuleDefs().length);
+
+  // Product version, inlined at build time from the root package.json (Vite
+  // `define: { __APP_VERSION__ }`; see packages/web/vite.config.ts). Rendered
+  // in the topbar brand heading below; the version-heading e2e asserts the
+  // rendered `[data-testid="app-version"]` text equals `v<package version>`.
+  const appVersion = __APP_VERSION__;
 </script>
 
 <div class="root" class:lasso-mode={lassoMode} data-testid="canvas-root">
   <header class="topbar">
-    <h1>2600hz</h1>
+    <h1>patchtogether <span class="app-version" data-testid="app-version">v{appVersion}</span></h1>
     <!-- Quick-switch PRESET SLOTS (top-left): five numbered buttons.
          EMPTY = red, OCCUPIED = green. Left-click a green slot to switch to it
          instantly; right-click any slot for Load / Replace / Clear. Save Set /
@@ -5440,6 +5446,15 @@
     margin: 0;
     font-weight: 500;
     font-size: 1.05rem;
+  }
+  /* Version suffix: a subtle, dimmer, smaller tag after the brand word. Stays
+     on the same single line so it never grows the topbar row height (see the
+     .topbar > * flex-shrink:0 note above). The VRT masks this element so a
+     version bump can't churn the topbar snapshot. */
+  .topbar h1 .app-version {
+    color: var(--text-dim);
+    font-weight: 400;
+    font-size: 0.8rem;
   }
   .topbar .caption {
     color: var(--text-dim);
