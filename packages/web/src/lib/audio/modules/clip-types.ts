@@ -145,7 +145,45 @@ export interface ClipPlayerData {
    *  launches merge into it by song-beat). Absent/unknown ⇒ 'replace'. Synced
    *  so peers see the armed mode. */
   recordMode?: 'replace' | 'overdub';
+  /** DUAL-LAUNCHPAD KEYS note-record state (design: clip-record-note-mode). A
+   *  DISTINCT field from `recording` above (that is the ARRANGER launch-recorder
+   *  in clip-arrange.ts — sharing it would break both). Set by the launchpad
+   *  binding while the KEYS keyboard is armed/recording a clip; peers + the card
+   *  see it. Absent/null = not note-recording. v1 single-recorder per clip. */
+  noteRec?: NoteRecState | null;
   creatorId?: string;
+}
+
+/** DUAL-LAUNCHPAD KEYS note-record state (see ClipPlayerData.noteRec). */
+export interface NoteRecState {
+  /** Instrument lane being recorded (0..CLIP_LANES-1). */
+  lane: number;
+  /** Clip slot within the lane being recorded (0..CLIP_SLOTS-1). */
+  slot: number;
+  /** Queue-armed (flashing yellow) — recording begins on the next loop wrap. */
+  armed: boolean;
+  /** Actively recording (red). */
+  recording: boolean;
+  /** OVERDUB (additive, endless) vs OFF (TRUE REPLACE — clear each step as the
+   *  playhead crosses it, then fill from what's played). */
+  overdub: boolean;
+}
+
+/** Read + normalize the KEYS note-record state, or null if not note-recording. */
+export function readNoteRec(data: ClipPlayerData | undefined): NoteRecState | null {
+  const r = data?.noteRec;
+  if (!r || typeof r !== 'object') return null;
+  const raw = r as unknown as Record<string, unknown>;
+  const lane = Number(raw.lane);
+  const slot = Number(raw.slot);
+  if (!Number.isFinite(lane) || !Number.isFinite(slot)) return null;
+  return {
+    lane: Math.max(0, Math.min(CLIP_LANES - 1, Math.trunc(lane))),
+    slot: Math.max(0, Math.min(CLIP_SLOTS - 1, Math.trunc(slot))),
+    armed: raw.armed === true,
+    recording: raw.recording === true,
+    overdub: raw.overdub === true,
+  };
 }
 
 /** Normalize a per-lane state array to exactly CLIP_LANES entries. */

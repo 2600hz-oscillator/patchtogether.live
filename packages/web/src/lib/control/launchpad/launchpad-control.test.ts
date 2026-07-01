@@ -60,8 +60,20 @@ import {
   editPadToNote,
   lPadToClipIndex,
   clipIndexToLPad,
+  // KEYS mode
+  DECK_KEYS_REC_COL,
+  DECK_KEYS_OVERDUB_COL,
+  DECK_KEYS_ROW,
+  KEYS_QREC_COL,
+  KEYS_OVERDUB_COL,
+  KEYS_EXIT_COL,
+  KEYS_LEN_COL,
+  KEYS_CTRL_ROW,
+  KEYS_PH_ROW,
 } from './launchpad-map';
 import { SCENE_CCS, padNote } from './launchpad-sysex';
+import { setLanePlayhead, clearPlayheads } from '$lib/audio/modules/clip-playhead';
+import { drainAudition, clearAudition } from '$lib/audio/modules/clip-audition';
 import {
   CLIP_LANES,
   clipIndex,
@@ -109,6 +121,8 @@ beforeEach(async () => {
   __test_resetBinding();
   __test_resetLaunchpad();
   clearPatch();
+  clearPlayheads(NODE_ID);
+  clearAudition(NODE_ID);
   sim = await installSimulatedLaunchpad();
 });
 
@@ -632,5 +646,262 @@ describe('Real L/R pairing handshake — LEFT unit is LIVE after a swap', () => 
     expect(queued()?.[0], 'LEFT unit (inB) launches lane 0 after the swap').toBe(0);
 
     unbindLaunchpad();
+  });
+});
+
+// ===========================================================================
+// KEYS mode (dual-Launchpad note/keyboard + clip-record). Pair-only v1. The
+// launchpad binding is a global singleton with no engine, so the record capture
+// reads the playhead from clip-playhead (which the engine normally publishes);
+// tests set it directly via setLanePlayhead + step the LED render loop manually
+// (hoisted.tick) to drive the arm→record + true-replace state machine.
+// ===========================================================================
+describe('KEYS mode — entry (hold REC/OVERDUB on R deck + double-tap a clip on L)', () => {
+  const noteRec = () => liveData().noteRec as
+    | { lane: number; slot: number; armed: boolean; recording: boolean; overdub: boolean }
+    | null
+    | undefined;
+
+  it('hold note-REC + double-tap a clip enters KEYS overdub OFF; a single tap while held does NOT launch', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('R', DECK_KEYS_REC_COL, DECK_KEYS_ROW); // hold note-REC (deck row 1)
+    expect(__test_mode().keysRecHeld).toBe(true);
+    // first tap: suppressed (no launch, still session).
+    sim.press('L', 0, yForLane(0));
+    expect(queued()?.[0] ?? null, 'single tap while held does NOT launch').toBeNull();
+    expect(__test_mode().mode).toBe('session');
+    // second tap (same clip, same tick window) → enter KEYS.
+    sim.press('L', 0, yForLane(0));
+    expect(__test_mode().mode).toBe('keys');
+    expect(__test_mode().keysClipIndex).toBe(0);
+    expect(noteRec()!.overdub, 'hold-REC entry = overdub OFF').toBe(false);
+    expect(noteRec()!.recording).toBe(false);
+    // the clip is launched (queued immediate) so KEYS opens with it playing.
+    expect(queued()![0]).toBe(0);
+  });
+
+  it('hold note-OVERDUB → KEYS overdub ON', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('R', DECK_KEYS_OVERDUB_COL, DECK_KEYS_ROW);
+    sim.press('L', 0, yForLane(0));
+    sim.press('L', 0, yForLane(0));
+    expect(__test_mode().mode).toBe('keys');
+    expect(noteRec()!.overdub, 'hold-OVERDUB entry = overdub ON').toBe(true);
+  });
+
+  it('entry MATERIALIZES a default clip when the slot is empty', () => {
+    seedClipPlayer({ clips: {} });
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('R', DECK_KEYS_REC_COL, DECK_KEYS_ROW);
+    sim.press('L', 2, yForLane(1)); // empty pad lane1 slot2
+    sim.press('L', 2, yForLane(1));
+    const idx = clipIndex(2, 1);
+    expect((liveData().clips as Record<string, unknown>)[String(idx)], 'clip materialized').toBeTruthy();
+    expect(__test_mode().keysClipIndex).toBe(idx);
+  });
+});
+
+describe('KEYS mode — live audition + record capture', () => {
+  const noteRec = () => liveData().noteRec as
+    | { armed: boolean; recording: boolean; overdub: boolean }
+    | null
+    | undefined;
+  const clipAt = (idx: number) => (liveData().clips as Record<string, NoteClipRecord>)[String(idx)];
+  function enterKeysVia(hold: number = DECK_KEYS_REC_COL, slot = 0, lane = 0) {
+    sim.press('R', hold, DECK_KEYS_ROW);
+    sim.press('L', slot, yForLane(lane));
+    sim.press('L', slot, yForLane(lane));
+    sim.release('R', hold, DECK_KEYS_ROW);
+  }
+
+  it('a keyboard press in KEYS pushes a live-audition note (transport-independent)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    enterKeysVia();
+    drainAudition(NODE_ID); // discard anything from setup
+    // press keyboard pad (L, x=2, y=1) → col 2 row 0 → midi = root(48)+2 = 50.
+    sim.press('L', 2, 1);
+    const ev = drainAudition(NODE_ID);
+    expect(ev).toHaveLength(1);
+    expect(ev[0]).toMatchObject({ lane: 0, midi: 50, on: true });
+    sim.release('L', 2, 1);
+    expect(drainAudition(NODE_ID)[0]).toMatchObject({ midi: 50, on: false });
+  });
+
+  it('QUEUE-REC arms (flashing yellow) then records on the loop wrap; a keypress lands in the clip', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    seedTimelorde(0);
+    bindLaunchpadToClip(NODE_ID);
+    enterKeysVia();
+    // tap QUEUE-REC (L bottom row) → armed (+ auto-start transport).
+    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
+    expect(noteRec()!.armed, 'QUEUE-REC arms').toBe(true);
+    expect((livePatch.nodes['tl']!.params as Record<string, number>).running, 'auto-started').toBe(1);
+    // simulate the lane playhead wrapping to step 0 → recording begins.
+    setLanePlayhead(NODE_ID, 0, 0);
+    hoisted.tick!();
+    expect(noteRec()!.recording, 'records on the wrap').toBe(true);
+    expect(noteRec()!.armed).toBe(false);
+    // now sounding step 5; a keyboard press records there.
+    setLanePlayhead(NODE_ID, 0, 5);
+    sim.press('L', 3, 2); // col 3 row 1 → midi = 48 + 3 + 5 = 56
+    sim.release('L', 3, 2);
+    expect(clipAt(0).steps.some((s) => s.step === 5 && s.midi === 56), 'note captured at step 5').toBe(true);
+  });
+
+  it('TRUE-REPLACE (overdub OFF): the playhead crossing a step CLEARS its prior onsets', () => {
+    seedClipPlayer({
+      clips: { [clipIndex(0, 0)]: { ...noteClip(), steps: [{ step: 5, midi: 60, lengthSteps: 1 }] } },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    enterKeysVia(); // overdub OFF
+    // force recording (arm + wrap).
+    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
+    setLanePlayhead(NODE_ID, 0, 0);
+    hoisted.tick!();
+    expect(noteRec()!.recording).toBe(true);
+    // playhead approaches then enters step 5 → its prior note is punched out.
+    setLanePlayhead(NODE_ID, 0, 4); hoisted.tick!();
+    expect(clipAt(0).steps.some((s) => s.step === 5), 'note still there before crossing').toBe(true);
+    setLanePlayhead(NODE_ID, 0, 5); hoisted.tick!();
+    expect(clipAt(0).steps.some((s) => s.step === 5), 'true-replace cleared step 5').toBe(false);
+  });
+
+  it('OVERDUB ON is additive — the playhead crossing does NOT clear', () => {
+    seedClipPlayer({
+      clips: { [clipIndex(0, 0)]: { ...noteClip(), steps: [{ step: 5, midi: 60, lengthSteps: 1 }] } },
+    });
+    bindLaunchpadToClip(NODE_ID);
+    enterKeysVia(DECK_KEYS_OVERDUB_COL); // overdub ON
+    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
+    setLanePlayhead(NODE_ID, 0, 0);
+    hoisted.tick!();
+    setLanePlayhead(NODE_ID, 0, 4); hoisted.tick!();
+    setLanePlayhead(NODE_ID, 0, 5); hoisted.tick!();
+    expect(clipAt(0).steps.some((s) => s.step === 5), 'overdub keeps the prior note').toBe(true);
+  });
+
+  it('MONO lane records first-note-priority (one note per step)', () => {
+    seedClipPlayer({
+      clips: { [clipIndex(0, 0)]: noteClip() },
+      mono: [true, false, false, false, false, false, false, false],
+    });
+    bindLaunchpadToClip(NODE_ID);
+    enterKeysVia();
+    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
+    setLanePlayhead(NODE_ID, 0, 0);
+    hoisted.tick!();
+    setLanePlayhead(NODE_ID, 0, 2);
+    sim.press('L', 1, 2); sim.release('L', 1, 2); // midi 48+1+5 = 54
+    sim.press('L', 3, 2); sim.release('L', 3, 2); // midi 56 — dropped (mono)
+    const here = clipAt(0).steps.filter((s) => s.step === 2);
+    expect(here, 'mono: one note per step').toHaveLength(1);
+    expect(here[0].midi).toBe(54);
+  });
+});
+
+describe('KEYS mode — EXIT / QUEUE-REC cancel / LEN return', () => {
+  const noteRec = () => liveData().noteRec as { armed: boolean; recording: boolean } | null | undefined;
+  function enterKeysVia() {
+    sim.press('R', DECK_KEYS_REC_COL, DECK_KEYS_ROW);
+    sim.press('L', 0, yForLane(0));
+    sim.press('L', 0, yForLane(0));
+    sim.release('R', DECK_KEYS_REC_COL, DECK_KEYS_ROW);
+  }
+
+  it('EXIT while recording stops record but STAYS in KEYS; a 2nd EXIT → session', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    enterKeysVia();
+    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
+    setLanePlayhead(NODE_ID, 0, 0);
+    hoisted.tick!();
+    expect(noteRec()!.recording).toBe(true);
+    sim.press('L', KEYS_EXIT_COL, KEYS_CTRL_ROW); // 1st EXIT
+    expect(__test_mode().mode, 'stays in KEYS').toBe('keys');
+    expect(noteRec()!.recording, 'recording stopped').toBe(false);
+    sim.press('L', KEYS_EXIT_COL, KEYS_CTRL_ROW); // 2nd EXIT
+    expect(__test_mode().mode, 'back to session').toBe('session');
+    expect(liveData().noteRec ?? null, 'noteRec cleared').toBeNull();
+  });
+
+  it('EXIT while queued-but-not-recording CANCELS the arm (idle KEYS)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    enterKeysVia();
+    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
+    expect(noteRec()!.armed).toBe(true);
+    sim.press('L', KEYS_EXIT_COL, KEYS_CTRL_ROW);
+    expect(__test_mode().mode, 'stays in KEYS').toBe('keys');
+    expect(noteRec()!.armed, 'arm cancelled').toBe(false);
+  });
+
+  it('QUEUE-REC re-tap while armed cancels the arm', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    enterKeysVia();
+    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
+    expect(noteRec()!.armed).toBe(true);
+    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
+    expect(noteRec()!.armed).toBe(false);
+  });
+
+  it('OVERDUB control toggles the overdub flag', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    enterKeysVia(); // overdub OFF
+    sim.press('L', KEYS_OVERDUB_COL, KEYS_CTRL_ROW);
+    expect((liveData().noteRec as { overdub: boolean }).overdub).toBe(true);
+    sim.press('L', KEYS_OVERDUB_COL, KEYS_CTRL_ROW);
+    expect((liveData().noteRec as { overdub: boolean }).overdub).toBe(false);
+  });
+
+  it('LEN opens the length page and EXITs back to KEYS (not the editor)', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    bindLaunchpadToClip(NODE_ID);
+    enterKeysVia();
+    sim.press('L', KEYS_LEN_COL, KEYS_CTRL_ROW);
+    expect(__test_mode().mode).toBe('lengthEdit');
+    expect(__test_mode().lengthReturnMode).toBe('keys');
+    // a block tap sets the length (R length page still works).
+    sim.press('R', 1, 0); sim.release('R', 1, 0); // block 2 → 32 steps
+    expect((liveData().clips as Record<string, NoteClipRecord>)['0'].lengthSteps).toBe(32);
+    // EXIT (top scene on R) → back to KEYS.
+    sim.cc('R', sceneCcForRow(EDIT_EXIT_SCENE_ROW), 127);
+    expect(__test_mode().mode, 'LEN EXIT returns to KEYS').toBe('keys');
+  });
+});
+
+describe('KEYS mode — arranger guard + render', () => {
+  it('QUEUE-REC is blocked while the arranger is record-armed', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() }, recording: true });
+    bindLaunchpadToClip(NODE_ID);
+    // enter KEYS (recording=true is the ARRANGER field, not noteRec).
+    sim.press('R', DECK_KEYS_REC_COL, DECK_KEYS_ROW);
+    sim.press('L', 0, yForLane(0));
+    sim.press('L', 0, yForLane(0));
+    sim.release('R', DECK_KEYS_REC_COL, DECK_KEYS_ROW);
+    sim.press('L', KEYS_QREC_COL, KEYS_CTRL_ROW);
+    expect((liveData().noteRec as { armed: boolean }).armed, 'blocked by the arranger').toBe(false);
+  });
+
+  it('KEYS repaints BOTH units (keyboard + playhead) each tick', () => {
+    seedClipPlayer({ clips: { [clipIndex(0, 0)]: noteClip() } });
+    seedTimelorde(1);
+    bindLaunchpadToClip(NODE_ID);
+    sim.press('R', DECK_KEYS_REC_COL, DECK_KEYS_ROW);
+    sim.press('L', 0, yForLane(0));
+    sim.press('L', 0, yForLane(0));
+    sim.release('R', DECK_KEYS_REC_COL, DECK_KEYS_ROW);
+    hoisted.tick!();
+    // both units light their keyboard band (y=1..6) — a mid pad is non-black.
+    const l = sim.ledAt('L', padNote(0, 3));
+    const r = sim.ledAt('R', padNote(0, 3));
+    expect((l?.[0] ?? 0) + (l?.[1] ?? 0) + (l?.[2] ?? 0), 'L keyboard lit').toBeGreaterThan(0);
+    expect((r?.[0] ?? 0) + (r?.[1] ?? 0) + (r?.[2] ?? 0), 'R keyboard lit').toBeGreaterThan(0);
+    // the top row (playhead strip) is painted on both units.
+    expect(sim.ledAt('L', padNote(0, KEYS_PH_ROW)), 'L playhead strip painted').not.toBeNull();
   });
 });

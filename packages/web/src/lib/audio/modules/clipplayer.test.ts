@@ -96,6 +96,7 @@ function pulseBuffer(len = 2048): Float32Array {
 
 import { clipplayerDef } from './clipplayer';
 import { clipIndex, type NoteClipRecord } from './clip-types';
+import { pushAudition, clearAudition } from './clip-audition';
 
 const NODE_ID = 'cp1';
 
@@ -565,3 +566,81 @@ describe('clipplayer: overdub vs replace record mode', () => {
     expect(evs.find((e) => e.lane === 0)!.beat).toBeGreaterThan(0);
   });
 });
+
+// ===========================================================================
+// LIVE AUDITION (dual-Launchpad KEYS keyboard side-channel). The binding pushes
+// note on/off into clip-audition; the factory tick DRAINS it BEFORE the
+// transport gate + drives the lane's gate/vel/poly, so keys sound with the
+// transport STOPPED. (The audible end-to-end chain is the e2e's job; here we pin
+// the drain drives the lane outputs.)
+// ===========================================================================
+describe('clipplayer: live audition (KEYS)', () => {
+  function velOf(handle: { outputs: Map<string, { node: unknown }> }, lane: number): FakeParam {
+    return (handle.outputs.get(`vel${lane + 1}`)!.node as unknown as FakeConstantSource)
+      .offset as unknown as FakeParam;
+  }
+
+  it('a pushed note-on raises the lane gate + velocity even with the transport STOPPED', async () => {
+    clearAudition(NODE_ID);
+    seed({ stepDiv: 2, quantize: 0, octave: 0 }, { clips: { [clipIndex(0, 0)]: noteClip(60) } });
+    seedTimelorde(0); // transport STOPPED
+    const handle = await build(ctx0());
+    const gate = gateOf(handle as never, 0);
+    const vel = velOf(handle as never, 0);
+    // press a key on lane 0 (audition on).
+    pushAudition(NODE_ID, { lane: 0, midi: 67, velocity: 127, on: true });
+    hoisted.tick!();
+    expect(hasHighEvent(gate), 'audition drove the lane gate high (transport stopped)').toBe(true);
+    expect(vel.events.some((e) => e.value > 0), 'velocity CV written').toBe(true);
+    // release → gate returns to 0.
+    pushAudition(NODE_ID, { lane: 0, midi: 67, velocity: 0, on: false });
+    hoisted.tick!();
+    expect(gate.events.at(-1)!.value, 'gate closes on release').toBe(0);
+  });
+
+  it('is a no-op when nothing is queued (held gates are not re-written)', async () => {
+    clearAudition(NODE_ID);
+    seed({ stepDiv: 2, quantize: 0 }, { clips: {} });
+    seedTimelorde(0);
+    const handle = await build(ctx0());
+    const gate = gateOf(handle as never, 0);
+    const before = gate.events.length;
+    hoisted.tick!();
+    hoisted.tick!();
+    expect(gate.events.length, 'empty drain writes nothing').toBe(before);
+  });
+
+  it('a HELD key keeps the gate high across ticks even while the clip PLAYS (no stomp)', async () => {
+    // The bug: scheduled clip playback (emitLaneStep) was zeroing the held
+    // audition voice/gate each step. A held key must hold the gate OPEN.
+    clearAudition(NODE_ID);
+    seed(
+      { stepDiv: 2, quantize: 0, octave: 0, gateLength: 0.9 },
+      { clips: { [clipIndex(0, 0)]: noteClip(60) }, playing: lane8(0, 0, null) },
+    );
+    seedTimelorde(1); // transport RUNNING → the clip is actively scheduled
+    const ctx = ctx0();
+    const handle = await build(ctx);
+    const gate = gateOf(handle as never, 0);
+    run(ctx, 0, 0.2); // playback running (gate toggles per step)
+    // press + HOLD a keyboard note.
+    pushAudition(NODE_ID, { lane: 0, midi: 67, velocity: 110, on: true });
+    hoisted.tick!();
+    const afterOn = gate.events.length;
+    // keep the transport running for many ticks WITHOUT re-pressing.
+    run(ctx, 0.2, 0.8);
+    // no gate event since the note-on may write to 0 — the held gate stays HIGH.
+    const stomped = gate.events.slice(afterOn).some((e) => e.value < 0.5);
+    expect(stomped, 'the held key was NOT stomped to 0 by playback').toBe(false);
+    expect(gate.events.at(-1)!.value, 'gate still high while held').toBe(1);
+    // release → gate closes.
+    pushAudition(NODE_ID, { lane: 0, midi: 67, velocity: 0, on: false });
+    hoisted.tick!();
+    expect(gate.events.at(-1)!.value, 'gate closes on release').toBe(0);
+  });
+});
+
+// A fresh advanceable context per audition test (currentTime already at 0).
+function ctx0(): FakeAudioContext {
+  return new FakeAudioContext();
+}
