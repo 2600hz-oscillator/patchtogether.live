@@ -114,6 +114,22 @@ export interface KickdrumP1Params {
   /** Harmonic-exciter blend 0..1 (default 0.3): saturates a low-passed copy
    *  of the SUB so small speakers reconstruct the missing fundamental. */
   translate: number;
+
+  // ── Phase 4: dynamics ──
+  /** Transient shaper: −1..1 (default 0.2). >0 sharpens the strike onset,
+   *  <0 softens it — threshold-free (fast/slow follower pair). */
+  attack: number;
+  /** Tail shaper: −1..1 (default 0). >0 lifts the decay tail, <0 tucks it. */
+  sustain: number;
+  /** In-voice opto-style compressor 0..1 (default 0.3). The DETECTOR is
+   *  high-passed at ~100 Hz so the 40 Hz sub NEVER pumps the glue. */
+  glue: number;
+  /** End-stage soft-clip lean 0..1 (default 0.5): drives tanh(1+2·ceiling)
+   *  — the voice can sit HOT and stays strictly true-peak-bounded < 1. */
+  ceiling: number;
+  /** Output level, dB (−24..+12, default 0). Applied BEFORE the ceiling so
+   *  hot levels lean into the clip instead of escaping it. */
+  level: number;
 }
 
 export const KICKDRUM_P1_DEFAULTS: KickdrumP1Params = {
@@ -137,6 +153,11 @@ export const KICKDRUM_P1_DEFAULTS: KickdrumP1Params = {
   attackEq: 2,
   tilt: 0,
   translate: 0.3,
+  attack: 0.2,
+  sustain: 0,
+  glue: 0.3,
+  ceiling: 0.5,
+  level: 0,
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -189,6 +210,16 @@ export interface KickdrumState {
   eqTiltLo: Biquad; // 250 Hz shelf (∓)
   eqTiltHi: Biquad; // 2.5 kHz shelf (±)
   exLp: Biquad; // exciter 300 Hz low-pass
+
+  // ── Phase 4: dynamics ──
+  /** Fast/slow |x| followers for the threshold-free transient shaper. */
+  envFast: number;
+  envSlow: number;
+  /** Opto detector: 4th-order 100 Hz HPF (two cascaded biquads — a 2nd-order
+   *  slope still let a 40 Hz sub pump ~18%) + its envelope. */
+  detHp: Biquad;
+  detHp2: Biquad;
+  detEnv: number;
 }
 
 export function makeKickdrumState(): KickdrumState {
@@ -221,6 +252,11 @@ export function makeKickdrumState(): KickdrumState {
     eqTiltLo: makeBiquad(),
     eqTiltHi: makeBiquad(),
     exLp: makeBiquad(),
+    envFast: 0,
+    envSlow: 0,
+    detHp: makeBiquad(),
+    detHp2: makeBiquad(),
+    detEnv: 0,
   };
   // CLEAN (hard=0): tanh soft-clip — the 909-warm character. Pre-gain 1..4.
   s.softFn = (x) => Math.tanh((1 + 3 * s.driveAmt) * x);
@@ -408,5 +444,37 @@ export function kickdrumP1Step(
   eq = biquadStep(s.eqAttack, eq);
   eq = biquadStep(s.eqTiltLo, eq);
   eq = biquadStep(s.eqTiltHi, eq);
-  return eq;
+
+  // ── Phase 4: threshold-free transient shaper (fast/slow follower pair) ──
+  const mag = Math.abs(eq);
+  const kUp = (tauMs: number) => 1 - Math.exp(-1000 / (tauMs * sr));
+  s.envFast += (mag - s.envFast) * (mag > s.envFast ? kUp(1) : kUp(20));
+  s.envSlow += (mag - s.envSlow) * (mag > s.envSlow ? kUp(25) : kUp(120));
+  if (s.envFast < FLUSH) s.envFast = 0;
+  if (s.envSlow < FLUSH) s.envSlow = 0;
+  const transient = clamp((s.envFast - s.envSlow) * 3, 0, 1);
+  const tail = clamp((s.envSlow - s.envFast) * 3, 0, 1);
+  let shaped = eq * clamp(
+    (1 + clamp(p.attack, -1, 1) * 1.2 * transient) *
+      (1 + clamp(p.sustain, -1, 1) * 1.0 * tail),
+    0.25,
+    3,
+  );
+
+  // ── Phase 4: opto glue — detector HPF'd at 100 Hz so the sub can't pump ──
+  const glue = clamp(p.glue, 0, 1);
+  if (glue > 0.001) {
+    updateHighpass(s.detHp, 100, sr);
+    updateHighpass(s.detHp2, 100, sr);
+    const det = Math.abs(biquadStep(s.detHp2, biquadStep(s.detHp, shaped)));
+    s.detEnv += (det - s.detEnv) * (det > s.detEnv ? kUp(5) : kUp(150));
+    if (s.detEnv < FLUSH) s.detEnv = 0;
+    shaped /= 1 + 2.5 * glue * s.detEnv;
+  }
+
+  // ── Phase 4: level (pre-ceiling, so hot settings LEAN into the clip)
+  // then the true-peak ceiling: |tanh| < 1, strictly bounded. ──
+  const lin = Math.pow(10, clamp(p.level, -24, 12) / 20);
+  const g = 1 + 2 * clamp(p.ceiling, 0, 1);
+  return Math.tanh(g * shaped * lin);
 }
