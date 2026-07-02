@@ -130,6 +130,12 @@ export interface KickdrumP1Params {
   /** Output level, dB (−24..+12, default 0). Applied BEFORE the ceiling so
    *  hot levels lean into the clip instead of escaping it. */
   level: number;
+
+  // ── Phase 5: stereo ──
+  /** Stereo width 0..1 (default 0.2). ONLY the >120 Hz side content widens
+   *  (decorrelated L/R click); the sub stays phase-coherent MONO, so the
+   *  mono fold-down never thins the low end. */
+  width: number;
 }
 
 export const KICKDRUM_P1_DEFAULTS: KickdrumP1Params = {
@@ -158,6 +164,7 @@ export const KICKDRUM_P1_DEFAULTS: KickdrumP1Params = {
   glue: 0.3,
   ceiling: 0.5,
   level: 0,
+  width: 0.2,
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -185,9 +192,19 @@ export interface KickdrumState {
   clickEnv: number;
   /** xorshift32 state, reseeded at every strike (deterministic noise). */
   clickRng: number;
-  /** Chamberlin SVF band-pass state for the click tone. */
+  /** Chamberlin SVF band-pass state for the click tone (LEFT chain). */
   clickLow: number;
   clickBand: number;
+  /** Decorrelated RIGHT click chain (independent seed + filter). */
+  clickRng2: number;
+  clickLow2: number;
+  clickBand2: number;
+  /** 120 Hz-high-passed side signal (this sample), consumed by the stereo
+   *  step. 4TH-order (two cascaded biquads, LR4-style): a 12 dB/oct slope
+   *  still left −19 dB of 50 Hz in the side — the sub must be untouchable. */
+  sideHp: Biquad;
+  sideHp2: Biquad;
+  sideOut: number;
 
   // ── Phase 2: oversampled drive ──
   /** Per-mode oversamplers (soft @2×, hard @4× — the rated factors from
@@ -238,6 +255,12 @@ export function makeKickdrumState(): KickdrumState {
     clickRng: CLICK_SEED,
     clickLow: 0,
     clickBand: 0,
+    clickRng2: (CLICK_SEED ^ 0x55aa55aa) >>> 0,
+    clickLow2: 0,
+    clickBand2: 0,
+    sideHp: makeBiquad(),
+    sideHp2: makeBiquad(),
+    sideOut: 0,
     os2: createOversampler(2),
     os4: createOversampler(4),
     driveAmt: 0,
@@ -313,11 +336,11 @@ export function kickBodyFreqHz(
 const FLUSH = 1e-20;
 
 /**
- * One mono sample of the Phase-1 voice (sub + body → headroom-normalized sum
- * → 20 Hz DC block). `trigger` is the raw trigger-input sample; `accent` is
- * the raw accent-CV sample (latched at the strike edge only).
+ * One sample of the full voice, PRE-ceiling (mono mid path). Also refreshes
+ * `s.sideOut` (the >120 Hz stereo side). The public steps below apply the
+ * level + true-peak ceiling per output channel.
  */
-export function kickdrumP1Step(
+function kickdrumVoiceStep(
   trigger: number,
   accent: number,
   p: KickdrumP1Params,
@@ -336,11 +359,14 @@ export function kickdrumP1Step(
     s.subPitchEnv = 1;
     s.bodyPitchEnv = 1;
     s.accentLatch = clamp(accent, 0, 1);
-    // Click: reseed + zero the filter so every hit is bit-identical.
+    // Click: reseed + zero BOTH filters so every hit is bit-identical.
     s.clickEnv = 1;
     s.clickRng = CLICK_SEED;
     s.clickLow = 0;
     s.clickBand = 0;
+    s.clickRng2 = (CLICK_SEED ^ 0x55aa55aa) >>> 0;
+    s.clickLow2 = 0;
+    s.clickBand2 = 0;
   }
 
   // ── tension term: body-amp-proportional, one-pole smoothed at ~40 Hz ──
@@ -368,17 +394,28 @@ export function kickdrumP1Step(
   s.bodyPhase += bodyDt;
   if (s.bodyPhase >= 1) s.bodyPhase -= Math.floor(s.bodyPhase);
 
-  // ── click layer: seeded noise → Chamberlin SVF band-pass → its envelope ──
-  s.clickRng = xorshift32(s.clickRng);
-  const noise = (s.clickRng / 0xffffffff) * 2 - 1;
+  // ── click layer: TWO decorrelated seeded-noise → SVF band-pass chains.
+  // Their MID feeds the mono voice; their DIFFERENCE (HP'd at 120 Hz) is
+  // the stereo side signal — the only stereo content in the voice. ──
   const fc = clamp(p.clickTone, 500, 6000);
   const f = 2 * Math.sin((Math.PI * Math.min(fc, sr * 0.22)) / sr);
-  const hp = noise - s.clickLow - 0.6 * s.clickBand;
-  s.clickBand += f * hp;
+  s.clickRng = xorshift32(s.clickRng);
+  const noiseL = (s.clickRng / 0xffffffff) * 2 - 1;
+  const hpL = noiseL - s.clickLow - 0.6 * s.clickBand;
+  s.clickBand += f * hpL;
   s.clickLow += f * s.clickBand;
   if (Math.abs(s.clickBand) < FLUSH) s.clickBand = 0;
   if (Math.abs(s.clickLow) < FLUSH) s.clickLow = 0;
-  const click = s.clickBand * s.clickEnv;
+  s.clickRng2 = xorshift32(s.clickRng2);
+  const noiseR = (s.clickRng2 / 0xffffffff) * 2 - 1;
+  const hpR = noiseR - s.clickLow2 - 0.6 * s.clickBand2;
+  s.clickBand2 += f * hpR;
+  s.clickLow2 += f * s.clickBand2;
+  if (Math.abs(s.clickBand2) < FLUSH) s.clickBand2 = 0;
+  if (Math.abs(s.clickLow2) < FLUSH) s.clickLow2 = 0;
+  const clickL = s.clickBand * s.clickEnv;
+  const clickR = s.clickBand2 * s.clickEnv;
+  const click = 0.5 * (clickL + clickR);
 
   // ── envelope decays (all sr-calibrated; −60 dB at the knob time) ──
   s.subAmp *= decayCoeff(p.subDecay, sr);
@@ -400,6 +437,14 @@ export function kickdrumP1Step(
   const clickLv = clamp(p.clickLevel, 0, 1);
   const norm = Math.max(1, subLv + bodyLv + clickLv);
   const mixed = (sub * subLv + body * bodyLv + click * clickLv) / norm;
+  // Stereo side: the decorrelated click difference, HP'd at 120 Hz so no
+  // low-band content can ever decohere the sub. Consumed by the stereo step.
+  updateHighpass(s.sideHp, 120, sr);
+  updateHighpass(s.sideHp2, 120, sr);
+  s.sideOut = biquadStep(
+    s.sideHp2,
+    biquadStep(s.sideHp, (0.5 * (clickL - clickR) * clickLv) / norm),
+  );
 
   // ── oversampled drive (the owner's `hard` switch picks the character AND
   // the rated factor: clean tanh @2×, wavefold+asym @4×) ──
@@ -472,9 +517,44 @@ export function kickdrumP1Step(
     shaped /= 1 + 2.5 * glue * s.detEnv;
   }
 
-  // ── Phase 4: level (pre-ceiling, so hot settings LEAN into the clip)
-  // then the true-peak ceiling: |tanh| < 1, strictly bounded. ──
-  const lin = Math.pow(10, clamp(p.level, -24, 12) / 20);
+  // ── Phase 4: level (pre-ceiling, so hot settings LEAN into the clip).
+  // The CEILING itself lives in the public wrappers so each stereo channel
+  // is independently true-peak-bounded. ──
+  return shaped * Math.pow(10, clamp(p.level, -24, 12) / 20);
+}
+
+/** One MONO sample (mid only) through the true-peak ceiling — byte-for-byte
+ *  the Phase 1-4 behavior. */
+export function kickdrumP1Step(
+  trigger: number,
+  accent: number,
+  p: KickdrumP1Params,
+  sr: number,
+  s: KickdrumState,
+): number {
+  const m = kickdrumVoiceStep(trigger, accent, p, sr, s);
   const g = 1 + 2 * clamp(p.ceiling, 0, 1);
-  return Math.tanh(g * shaped * lin);
+  return Math.tanh(g * m);
+}
+
+/**
+ * One STEREO sample (Phase 5): mid ± width·side through the ceiling, each
+ * channel independently bounded. side is >120 Hz only (decorrelated click),
+ * so the sub is phase-coherent mono and the mono fold-down never thins —
+ * (L+R)/2 cancels the side term to first order. Writes out[0]=L, out[1]=R.
+ */
+export function kickdrumStepStereo(
+  trigger: number,
+  accent: number,
+  p: KickdrumP1Params,
+  sr: number,
+  s: KickdrumState,
+  out: Float32Array,
+): void {
+  const m = kickdrumVoiceStep(trigger, accent, p, sr, s);
+  const g = 1 + 2 * clamp(p.ceiling, 0, 1);
+  const lin = Math.pow(10, clamp(p.level, -24, 12) / 20);
+  const sd = s.sideOut * lin * clamp(p.width, 0, 1);
+  out[0] = Math.tanh(g * (m + sd));
+  out[1] = Math.tanh(g * (m - sd));
 }

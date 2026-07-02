@@ -522,3 +522,91 @@ describe('kickdrum P4: dynamics', () => {
     expect(hi / lo).toBeLessThan(2.15);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 5 — stereo (mono-safe sub, decorrelated >120 Hz width)
+// ─────────────────────────────────────────────────────────────────────────
+
+import { kickdrumStepStereo } from './kickdrum-dsp';
+
+function renderStereo(
+  n: number,
+  p: KickdrumP1Params,
+  sr: number,
+): { l: Float32Array; r: Float32Array } {
+  const s = makeKickdrumState();
+  const l = new Float32Array(n);
+  const r = new Float32Array(n);
+  const out = new Float32Array(2);
+  for (let t = 0; t < n; t++) {
+    kickdrumStepStereo(t < 10 ? 1 : 0, 0, p, sr, s, out);
+    l[t] = out[0];
+    r[t] = out[1];
+  }
+  return { l, r };
+}
+
+describe('kickdrum P5: stereo', () => {
+  const sr = 48000;
+
+  it('width=0 → L and R are identical', () => {
+    const { l, r } = renderStereo(4096, P({ width: 0 }), sr);
+    expect(l).toEqual(r);
+  });
+
+  it('width>0 decorrelates ONLY above the crossover: the sub stays mono', () => {
+    // Linear region (ceiling 0, level −12) — at hot settings the ceiling's
+    // tanh legitimately intermodulates side×mid (sech²(g·m) smears click
+    // energy down-band ~−20 dB); the CROSSOVER claim is measured where the
+    // clip is transparent, like every other stage-isolation test.
+    const { l, r } = renderStereo(
+      9600,
+      P({ width: 1, clickLevel: 1, ceiling: 0, level: -12 }),
+      sr,
+    );
+    const diff = new Float32Array(9600);
+    let anyDiff = 0;
+    for (let i = 0; i < 9600; i++) {
+      diff[i] = l[i] - r[i];
+      anyDiff = Math.max(anyDiff, Math.abs(diff[i]));
+    }
+    expect(anyDiff).toBeGreaterThan(1e-4); // genuinely stereo
+    // The L−R (side) signal has ~no energy at 50 Hz vs the click band: the
+    // sub is phase-coherent mono.
+    const sideLow = goertzelMag(diff, 10); // 50 Hz (N=9600 → bin=f/5)
+    const sideHigh = goertzelMag(diff, 560); // 2.8 kHz
+    expect(sideLow / (sideHigh + 1e-12)).toBeLessThan(0.05);
+  });
+
+  it('mono fold-down does not thin the low band ((L+R)/2 ≈ mono at 50 Hz)', () => {
+    const p = P({ width: 1 });
+    const { l, r } = renderStereo(9600, p, sr);
+    const folded = new Float32Array(9600);
+    for (let i = 0; i < 9600; i++) folded[i] = 0.5 * (l[i] + r[i]);
+    const mono = render(9600, p, sr);
+    const ratio = goertzelMag(folded, 10) / (goertzelMag(mono, 10) + 1e-12);
+    expect(ratio).toBeGreaterThan(0.97);
+    expect(ratio).toBeLessThan(1.03);
+  });
+
+  it('each stereo channel is independently true-peak-bounded ≤ 1.0', () => {
+    const { l, r } = renderStereo(
+      24000,
+      P({ width: 1, clickLevel: 1, drive: 1, hard: 1, level: 12, ceiling: 1 }),
+      sr,
+    );
+    let peak = 0;
+    for (let i = 0; i < 24000; i++) {
+      peak = Math.max(peak, Math.abs(l[i]), Math.abs(r[i]));
+    }
+    expect(peak).toBeLessThanOrEqual(1.0);
+    expect(peak).toBeGreaterThan(0.8);
+  });
+
+  it('stereo render is strike-deterministic', () => {
+    const a = renderStereo(4096, P({ width: 0.7 }), sr);
+    const b = renderStereo(4096, P({ width: 0.7 }), sr);
+    expect(a.l).toEqual(b.l);
+    expect(a.r).toEqual(b.r);
+  });
+});
