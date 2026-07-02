@@ -61,7 +61,7 @@ test.describe('feedback UI presence', () => {
   // the Feedback button on the public landing page (it's gated behind
   // an authed dashboard or rackspace).
   test('Feedback button is absent on the public landing page @smoke', async ({ page }) => {
-    const r = await page.goto('/');
+    const r = await page.goto('/rack');
     expect(r?.status(), `landing page must not 500; got ${r?.status()}`).toBeLessThan(500);
     // The trigger has data-testid='feedback-button' — it should not exist
     // here because the public root doesn't mount the FeedbackBox component.

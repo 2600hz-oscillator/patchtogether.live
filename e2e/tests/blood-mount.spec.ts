@@ -30,7 +30,7 @@ test('BLOOD card mounts, idle surface paints, and boots out-of-box from bundled 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   const bloodId = 'blood-mount-smoke';

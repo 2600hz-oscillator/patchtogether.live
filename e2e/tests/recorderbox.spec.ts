@@ -226,7 +226,7 @@ test('RECORDERBOX captures patched audio at an ENCODABLE (AAC-LC) sample rate', 
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Real source chain: an always-on ANALOG VCO (saw) → recorderbox.audio_l.
@@ -350,7 +350,7 @@ test('RECORDERBOX SIZE selector defaults to BALANCED + maps to a smaller profile
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -423,7 +423,7 @@ test('RECORDERBOX RECORD picks a FOLDER (no per-save file prompt)', async ({ pag
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -493,7 +493,7 @@ test.fixme('RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable M
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Real source chain: VCO (audio) → audio_l ; ACIDWARP (video) → in.
@@ -617,7 +617,7 @@ test.fixme('RECORDERBOX records a real VCO + ACIDWARP into a crash-recoverable M
 test('RECORDERBOX destination folder is RE-PICKABLE (CHANGE re-prompts; cancel → subfolder hint)', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'rec', type: 'recorderbox', position: { x: 200, y: 80 }, domain: 'video' },

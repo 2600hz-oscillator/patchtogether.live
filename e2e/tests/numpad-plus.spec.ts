@@ -20,7 +20,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 async function spawnNumpadPlus(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'np', type: 'numpadPlus', position: { x: 200, y: 200 } }]);
   await expect(page.locator('[data-testid="numpad-plus-card"]')).toBeVisible();
@@ -142,7 +142,7 @@ test.describe('NUMPAD+ module', () => {
   });
 
   test('pressing Numpad1 at octave 4 drives l1_pitch ~ 0 V/oct (C4)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -242,7 +242,7 @@ test.describe('NUMPAD+ module', () => {
   });
 
   test('layer-CV input wins over the activeLayer param', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     // JOYSTICK pinned to x=0.75 → cv 0.75 → round(0.75*4) = 3 → L4.
     await spawnPatch(

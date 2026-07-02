@@ -54,7 +54,7 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
   }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const skip = await assetsMissing(page);
@@ -277,7 +277,7 @@ test.describe('DOOM — keyboard routing (arrows reach player, not viewport)', (
     page,
   }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const skip = await assetsMissing(page);

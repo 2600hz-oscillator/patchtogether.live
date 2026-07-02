@@ -35,7 +35,7 @@ test.describe('NIBBLES — deterministic render smoke', () => {
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // NIBBLES is a generated SOURCE (no video input) → OUTPUT so it renders.

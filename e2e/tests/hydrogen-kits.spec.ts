@@ -25,7 +25,7 @@ const KIT_NAMES = [
 ] as const;
 
 async function spawnHydrogen(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'h', type: 'hydrogen', position: { x: 200, y: 200 } },
@@ -93,7 +93,7 @@ test.describe('HYDROGEN: every synth kit produces audio on trigger', () => {
   for (const kitName of ['TR-909', 'FM-PERC', '8BIT', 'CR-78', 'LINN', 'GLITCH', 'HARDCORE'] as const) {
     test(`${kitName}: triggering instrument 0 produces non-zero audio at master out`, async ({ page }) => {
       // Spawn HYDROGEN + a SCOPE so we can tap audio_out via the engine.
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,

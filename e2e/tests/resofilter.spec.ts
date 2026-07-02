@@ -21,7 +21,7 @@ test('RESOFILTER renders + audio flows VCO → filter → AUDIOOUT', async ({ pa
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -69,7 +69,7 @@ test('RESOFILTER renders + audio flows VCO → filter → AUDIOOUT', async ({ pa
 });
 
 test('RESOFILTER mode-name label updates as mode param changes (LP → HP → BP → Notch → Allpass)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -117,7 +117,7 @@ test('RESOFILTER param sweeps (cutoff + resonance + mix) do not crash', async ({
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

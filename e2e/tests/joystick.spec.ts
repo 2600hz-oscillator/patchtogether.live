@@ -15,7 +15,7 @@ test.describe('JOYSTICK — XY CV utility', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -32,7 +32,7 @@ test.describe('JOYSTICK — XY CV utility', () => {
   });
 
   test('drag updates pos_x + pos_y; pointer-up snaps back', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [

@@ -17,7 +17,7 @@ test('ALM renders + audio flows from two LFOs through MIN → VCA → OUTPUT', a
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -86,7 +86,7 @@ test('ALM renders + audio flows from two LFOs through MIN → VCA → OUTPUT', a
 });
 
 test('ALM exposes all 5 output ports + 4 input ports', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

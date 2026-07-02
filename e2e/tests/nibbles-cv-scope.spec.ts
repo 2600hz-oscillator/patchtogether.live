@@ -102,7 +102,7 @@ test.describe('NIBBLES.length_cv → SCOPE.ch1: regression for PR #163', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -188,7 +188,7 @@ test.describe('NIBBLES.length_cv → SCOPE.ch1: regression for PR #163', () => {
     // vrt-composite-scenes.ts; if you change them there, change them here.
     const SWEEP_LENGTHS = [1, 30, 60, 89, 119];
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

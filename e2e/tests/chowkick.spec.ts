@@ -45,7 +45,7 @@ test('CHOWKICK smoke: SEQUENCER → CHOWKICK → AUDIOOUT — card mounts, no er
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -101,7 +101,7 @@ test('CHOWKICK gate → kick envelope: SCOPE sees attack < 5 ms + sustained deca
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // SCOPE timeMs=200 → snapshot window covers ~200 ms; enough to see the
@@ -198,7 +198,7 @@ test('CHOWKICK bounce knob audibly modulates the resonant body', async ({ page }
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

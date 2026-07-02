@@ -212,7 +212,7 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
     // (LINES → identical frame every step) BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, buildNodes(), buildEdges());
@@ -252,7 +252,7 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
 
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Same sources, but route quad.preview → videoOut.in (the secondary output).
@@ -300,7 +300,7 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
 
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, buildNodes(), buildEdges());
     await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);
@@ -355,7 +355,7 @@ test.describe('QUADRALOGICAL — 4-input video mixer (Phase 1)', () => {
 
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, buildNodes(), buildEdges());
     await expect(page.locator('canvas[data-testid="video-out-canvas"]')).toHaveCount(1);

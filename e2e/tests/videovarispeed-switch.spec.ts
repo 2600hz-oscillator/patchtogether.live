@@ -164,7 +164,7 @@ test.describe('VIDEOVARISPEED 7-slot switch path (multi-slot stall regression)',
       if (t.includes('[videovarispeed] createMediaElementSource failed')) keepAliveWarnings.push(t);
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // REAL source chain: clip player → asset_pitch/asset_gate → videovarispeed,

@@ -111,7 +111,7 @@ test('4PLEXER routes the SELECTED input to each output (discrete, cv source)', a
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // JOYSTICK: x=+0.3, y=+0.7, nx=-0.3, ny=-0.7 → four distinguishable DCs.
@@ -159,7 +159,7 @@ test('4PLEXER gate advances a selector to the next input and wraps 4→1', async
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -223,7 +223,7 @@ test('4PLEXER outputs are independent (own selection + own gate)', async ({ page
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -277,7 +277,7 @@ test('4PLEXER routes an AUDIO source identically to a CV source', async ({ page 
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // NOISE white into in1; in2 left silent. Selecting in1 ⇒ audible

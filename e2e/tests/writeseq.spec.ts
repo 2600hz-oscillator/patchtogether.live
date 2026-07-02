@@ -22,7 +22,7 @@ import { readScopeSnapshot, summarize, runFor } from './_module-coverage-helpers
 test.describe.configure({ mode: 'parallel' });
 
 test('writeseq: card renders the step grid + RECORD + OVERDUB buttons', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [{ id: 'ws', type: 'writeseq', params: { isPlaying: 0 } }]);
@@ -43,7 +43,7 @@ test('writeseq: a programmed sequence plays back through a downstream SCOPE', as
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // WRITESEQ.gate → ADSR.gate → VCA, WRITESEQ.pitch → an oscillator so the
@@ -90,7 +90,7 @@ test('writeseq: PASS-THROUGH — a live gate+cv source drives the outputs (stopp
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // A SEQUENCER provides a steady gate+pitch source. Wire its gate+pitch into
@@ -148,7 +148,7 @@ test('writeseq: armed + internal clock captures live gates onto steps', async ({
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // WRITESEQ on its INTERNAL clock (no clock-in patched) — deterministic

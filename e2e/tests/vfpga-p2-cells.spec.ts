@@ -57,7 +57,7 @@ void main() {
 test.describe('vfpga P2 cells compile + link on a real WebGL2 context', () => {
   test('every P2 cell kernel compiles + links', async ({ page }) => {
     test.setTimeout(45_000);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const cellFrags = P2_CELLS.map((c) => ({ key: `${c.type}:${c.op}`, frag: fragFor(c) }));

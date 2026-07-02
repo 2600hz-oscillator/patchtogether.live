@@ -58,7 +58,7 @@ async function sampleCanvas(page: Page): Promise<{ lit: number; total: number; s
 }
 
 async function spawnToybox(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

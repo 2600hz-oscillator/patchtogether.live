@@ -58,7 +58,7 @@ async function installForwardSpy(page: import('@playwright/test').Page, id: stri
 }
 
 async function spawnBloodReady(page: import('@playwright/test').Page): Promise<boolean> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -75,7 +75,7 @@ async function spawnBloodReady(page: import('@playwright/test').Page): Promise<b
 }
 
 test('control: +Add-module palette receives typing with NO blood present', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.getByRole('button', { name: '+ Add module' }).click();
   const inp = page.locator('.module-palette input').first();

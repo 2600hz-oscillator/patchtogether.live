@@ -95,7 +95,7 @@ async function captureCell(
   page: Page,
   params: { threshold?: number; thickness?: number; bits?: number },
 ): Promise<CellStats> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -177,7 +177,7 @@ test.describe('CELLSHADE — cel-shader video processor', () => {
   });
 
   test('CV params route through the patch store (incl. discrete BITS)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,

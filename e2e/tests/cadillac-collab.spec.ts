@@ -26,7 +26,7 @@ async function attach(
 ): Promise<{ page: Page; ctx: import('@playwright/test').BrowserContext }> {
   const ctx = await browser.newContext();
   const page = await ctx.newPage();
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(() => {
     const w = window as unknown as {

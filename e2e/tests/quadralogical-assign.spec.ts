@@ -99,7 +99,7 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
   });
 
   test('send X + Y to a Control Surface → proxies appear, named QUAD X/Y, and drive node.params.pos_x/pos_y', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'quad', type: 'quadralogical', position: { x: 80, y: 80 }, domain: 'video' },
@@ -174,7 +174,7 @@ test.describe('QUADRALOGICAL — joystick X/Y assignable to Control Surface + El
   });
 
   test('send X + Y to an Electra Control (fixed Row × knob slots) → proxies render, named QUAD X/Y, and drive node.params.pos_x/pos_y', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'quad', type: 'quadralogical', position: { x: 80, y: 80 }, domain: 'video' },

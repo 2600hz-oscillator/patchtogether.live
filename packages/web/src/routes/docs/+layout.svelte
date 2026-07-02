@@ -40,7 +40,7 @@
             || (n.href !== '/docs' && path.startsWith(n.href))}
           <a href={n.href} class:active>{n.label}</a>
         {/each}
-        <a class="back" href="/">launch app -&gt;</a>
+        <a class="back" href="/rack">launch app -&gt;</a>
       </nav>
     </header>
 

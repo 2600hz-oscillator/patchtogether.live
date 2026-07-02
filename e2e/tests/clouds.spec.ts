@@ -16,7 +16,7 @@ test('CLOUDS renders + audio flows from VCO through granular cloud to OUTPUT', a
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -82,7 +82,7 @@ test('CLOUDS renders + audio flows from VCO through granular cloud to OUTPUT', a
 });
 
 test('CLOUDS freeze button toggles its active class', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -114,7 +114,7 @@ test('CLOUDS survives extreme-param mutation via __patch (no crashes)', async ({
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

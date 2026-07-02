@@ -20,7 +20,7 @@ test('videovarispeed persists every loaded asset slot to the synced doc', async 
   const pageErrors: string[] = [];
   page.on('pageerror', (e) => pageErrors.push(e.message));
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'vv1', type: 'videovarispeed', domain: 'video', position: { x: 140, y: 80 } }]);
 

@@ -131,7 +131,7 @@ test.describe('DOOM per-type death gates: every new gate routes via forcePulse â
         if (m.type() === 'error') errors.push(m.text());
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       const present = await doomWasmPresent(page);

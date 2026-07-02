@@ -56,7 +56,7 @@ test('lcars-card: VCA card under the LCARS skin (rounded pill + amber glow + spr
 }) => {
   skipIfNoBaseline(test, 'lcars-card');
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await hideJitterers(page);
 

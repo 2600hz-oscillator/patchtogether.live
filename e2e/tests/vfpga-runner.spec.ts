@@ -36,7 +36,7 @@ async function outputStats(page: Page): Promise<{ nonZeroFrac: number; variance:
 test.describe('vfpga-runner host module', () => {
   test('the load-preset menu lists smpte-bars and re-applies it (hot-swap stays valid)', async ({ page }) => {
     test.setTimeout(45_000);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

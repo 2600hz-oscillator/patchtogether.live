@@ -76,7 +76,7 @@ async function captureEdges(
   page: import('@playwright/test').Page,
   edgesParams: { threshold: number; thickness: number },
 ): Promise<{ whiteFrac: number; nonZeroFrac: number; n: number }> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -150,7 +150,7 @@ test.describe('EDGES — Sobel edge-detection processor', () => {
   });
 
   test('CV params route through the patch store', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,

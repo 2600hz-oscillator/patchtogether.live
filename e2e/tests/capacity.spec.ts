@@ -20,7 +20,7 @@ async function openContexts(browser: Browser, n: number): Promise<CapacitySessio
   for (let i = 0; i < n; i++) {
     const ctx = await browser.newContext();
     const p = await ctx.newPage();
-    await p.goto('/');
+    await p.goto('/rack');
     await p.waitForLoadState('networkidle');
     await p.waitForFunction(
       () =>
@@ -129,7 +129,7 @@ test.describe('@capacity', () => {
       // Open a fresh fifth context and attach — should succeed now.
       const ctx = await browser.newContext();
       const p = await ctx.newPage();
-      await p.goto('/');
+      await p.goto('/rack');
       await p.waitForLoadState('networkidle');
       await p.waitForFunction(
         () =>

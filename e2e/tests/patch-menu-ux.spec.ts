@@ -49,7 +49,7 @@ async function carryGateToPicker(page: Page) {
 }
 
 async function spawnSeqAdsr(page: Page) {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
@@ -58,7 +58,7 @@ async function spawnSeqAdsr(page: Page) {
 }
 
 test('clicking the patch-trigger opens the menu; hover alone does not', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
   const trigger = page.locator(
@@ -130,7 +130,7 @@ test('clicking in canvas negative space closes the patch-to picker', async ({ pa
 test('handles for every declared port stay in the card DOM with the panel closed (io-spec parity)', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
   // Panel CLOSED — the per-module-per-port sweep counts handles here.

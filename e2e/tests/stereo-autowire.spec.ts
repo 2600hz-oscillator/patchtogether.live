@@ -87,7 +87,7 @@ async function cascadePatch(
 
 test.describe('stereo L/R auto-wire', () => {
   test('stereo source L → stereo target L auto-wires R too (rings odd/even → cocoadelay inL/inR)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'rings', type: 'rings', position: { x: 80, y: 100 } },
@@ -107,7 +107,7 @@ test.describe('stereo L/R auto-wire', () => {
   });
 
   test('occupied sibling target input is NOT overwritten', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'rings', type: 'rings', position: { x: 80, y: 100 } },
@@ -144,7 +144,7 @@ test.describe('stereo L/R auto-wire', () => {
   });
 
   test('MONO source into a stereo target L leaves the sibling UNPATCHED', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     // analogVco's `saw` is a mono audio output (no stereoPairs) → no auto-wire.
     await spawnPatch(page, [
@@ -163,7 +163,7 @@ test.describe('stereo L/R auto-wire', () => {
   });
 
   test('naming-agnostic target (charlottes-echos L/R): clouds out_l → L auto-wires out_r → R', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'clouds', type: 'clouds', position: { x: 80, y: 100 } },

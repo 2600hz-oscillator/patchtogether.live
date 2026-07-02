@@ -76,7 +76,7 @@ for (const s of SEQUENCERS) {
     }) => {
       // The headline bug fix: clock pulses should drive the sequencer even
       // when isPlaying is 0 and play_cv is unpatched.
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       await spawnPatch(
@@ -133,7 +133,7 @@ for (const s of SEQUENCERS) {
     }) => {
       // Regression: the original "press Play with no patches" path must
       // continue to advance via internal BPM.
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       await spawnPatch(
@@ -164,7 +164,7 @@ for (const s of SEQUENCERS) {
       // We patch BOTH clock AND play_cv and leave play_cv low (the source
       // never sends a rising edge). The sequencer should stay stopped even
       // though clock pulses are arriving.
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       await spawnPatch(

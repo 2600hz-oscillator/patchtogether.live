@@ -111,7 +111,7 @@ test('right-click on a module opens the Docs entry, which opens the per-module d
   page,
   context,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
@@ -140,7 +140,7 @@ test('right-click on a module opens the Docs entry, which opens the per-module d
 test('right-clicking the empty canvas does NOT show a Docs entry (it shows the Add Module palette path instead)', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // Empty canvas — right-click on the SvelteFlow viewport, NOT on a node.
   const viewport = page.locator('.svelte-flow__pane, .svelte-flow__viewport').first();

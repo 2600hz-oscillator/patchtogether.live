@@ -72,7 +72,7 @@ test('REAL CHAIN: MIDI LANE (default mode) → POLYHELM → OUTPUT plays audible
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
   await installMidiMock(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // The exact user patch: MIDI LANE --poly--> POLYHELM --out_l/out_r--> SCOPE
@@ -117,7 +117,7 @@ test('CONTROL: POLYSEQZ chord → POLYHELM.poly → OUTPUT carries audio (workle
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // POLYSEQZ.poly → POLYHELM.poly → SCOPE — a self-running poly source, so this
@@ -166,7 +166,7 @@ test('FALLBACK: mono pitch_cv/gate (SEQUENCER) → POLYHELM still sounds (mono p
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // SEQUENCER.pitch → POLYHELM.pitch_cv + SEQUENCER.gate → POLYHELM.gate — the

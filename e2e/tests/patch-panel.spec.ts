@@ -39,7 +39,7 @@ test.describe('PatchPanel: redesigned menu', () => {
   test('ADSR default state hides jacks; click-open + drill shows verbose labels', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
 
@@ -79,7 +79,7 @@ test.describe('PatchPanel: redesigned menu', () => {
   });
 
   test('Filter drill uses verbose CUTOFF / RESONANCE labels', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'flt', type: 'filter', position: { x: 200, y: 200 } }]);
     await openFrom(page, 'flt', 'left');
@@ -93,7 +93,7 @@ test.describe('PatchPanel: redesigned menu', () => {
   });
 
   test('both triggers open the same menu (shared state)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 200 } }]);
 
@@ -120,7 +120,7 @@ test.describe('PatchPanel: redesigned menu', () => {
   test('edge-alignment: left trigger anchors menu left; right trigger anchors menu right', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 200, y: 160 } }]);
 
@@ -151,7 +151,7 @@ test.describe('PatchPanel: redesigned menu', () => {
   test('cables visually anchor at the affordance corner when the menu is closed', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -196,7 +196,7 @@ test.describe('PatchPanel: redesigned menu', () => {
   test('handles for every declared port stay in the card DOM with the menu closed (io-spec parity)', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', position: { x: 200, y: 200 } }]);
     await expect(chrome(page, 'rg')).toHaveCount(0);

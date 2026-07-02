@@ -46,7 +46,7 @@ async function sampleFaderThumbTops(
 }
 
 test('LFO modulating QBRT cutoff visibly moves the cutoff fader thumb', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -85,7 +85,7 @@ test('LFO modulating QBRT cutoff visibly moves the cutoff fader thumb', async ({
 });
 
 test('LFO modulating DRUMMERGIRL volume visibly moves the volume fader thumb', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

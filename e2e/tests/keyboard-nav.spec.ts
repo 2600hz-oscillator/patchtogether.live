@@ -16,7 +16,7 @@ import { spawnPatch } from './_helpers';
 test.describe.configure({ mode: 'parallel' });
 
 test('keyboard-nav Sequencer: arrow keys never move caret + jump gate<->pitch', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -75,7 +75,7 @@ test('keyboard-nav Sequencer: arrow keys never move caret + jump gate<->pitch', 
 });
 
 test('keyboard-nav Sequencer: rapid-add scenario (type, right, type, right, ...)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -107,7 +107,7 @@ test('keyboard-nav Sequencer: rapid-add scenario (type, right, type, right, ...)
 });
 
 test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell directly above', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [{ id: 'cart', type: 'cartesian', params: { mode: 0 } }]);
@@ -134,7 +134,7 @@ test('keyboard-nav Cartesian: ArrowUp from row-1 cell pitch hits gate of cell di
 });
 
 test('keyboard-nav: caret never moves inside the pitch input on arrow keys', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -158,7 +158,7 @@ test('keyboard-nav: caret never moves inside the pitch input on arrow keys', asy
 });
 
 test('keyboard-nav: default value of new sequencer step is c3', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -174,7 +174,7 @@ test('keyboard-nav: default value of new sequencer step is c3', async ({ page })
 });
 
 test('keyboard-nav: default value of new cartesian cell is c3', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [{ id: 'cart', type: 'cartesian', params: { mode: 0 } }]);

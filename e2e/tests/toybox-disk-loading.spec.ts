@@ -111,7 +111,7 @@ async function spawnToybox(page: Page): Promise<void> {
   // unaffected, so every disk-loaded shader/OBJ render + lit-pixel/colour assertion
   // below still holds, byte-identical.
   await installRenderSmokeHooks(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

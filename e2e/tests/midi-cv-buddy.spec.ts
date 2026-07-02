@@ -24,7 +24,7 @@ test('midi-cv-buddy: drop module → card mounts with no console errors', async 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiCvBuddy');
@@ -38,7 +38,7 @@ test('midi-cv-buddy: drop module → card mounts with no console errors', async 
 });
 
 test('midi-cv-buddy: Connect MIDI… button is visible + interactive', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiCvBuddy');
@@ -54,7 +54,7 @@ test('midi-cv-buddy: clicking Connect does not crash the card', async ({ page })
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: 'midiCvBuddy', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-midiCvBuddy');

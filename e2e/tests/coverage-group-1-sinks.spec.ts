@@ -37,7 +37,7 @@ test('audioOut: master fader sweep changes downstream signal level', async ({ pa
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // noise -> audioOut.L AND noise -> scope.ch1 (the scope is a parallel
@@ -98,7 +98,7 @@ test('destroy: bit-crush / decimate passes audio through to its output', async (
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // noise.white -> destroy.audio -> scope.ch1 -> audioOut.L
@@ -144,7 +144,7 @@ test('scope: ch1 captures wired audio, ch2 is silent when unwired', async ({ pag
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Wire noise.white -> scope.ch1 ONLY. ch2 is intentionally left
@@ -184,7 +184,7 @@ test('scope: ch1_out passthrough emits audio downstream', async ({ page }) => {
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // noise -> scope.ch1 -> scope2.ch1 (chained scopes). Validates that
@@ -232,7 +232,7 @@ test('sticky: meta-domain card renders without engine binding', async ({ page })
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Sticky is meta-domain — spawnPatch passes domain:'meta', the
@@ -282,7 +282,7 @@ test('integration (Group 1): noise -> destroy -> scope -> audioOut chain produce
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // The full sinks+utility chain: every module from Group 1 (minus

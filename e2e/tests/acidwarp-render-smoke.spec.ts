@@ -30,7 +30,7 @@ test.describe('ACIDWARP — deterministic render smoke (Phase-0 foundation proof
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // ACIDWARP (a pure generated source — no decode/getUserMedia/asset) → OUTPUT
