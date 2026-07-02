@@ -146,6 +146,10 @@ const OVERRIDES: Record<string, ModuleDriver> = {
   // ────────── Drum voices — gate-only triggered. ──────────
   drummergirl:  { outputPort: 'audio', gatePort: 'gate' },
   meowbox:      { outputPort: 'L',     gatePort: 'gate', pitchPort: 'pitch' },
+  // KICK DRUM — layered stereo kick voice; trigger_in (edge:'trigger') strikes
+  // it. Gate-only (accent/pitch/choke are optional CV). Silent with no strike,
+  // so the sequencer gate train is required for the outputs-emit dim.
+  kickdrum:     { outputPort: 'audio_l', gatePort: 'trigger_in' },
   // RIOTGIRLS drives the 4-voice DRUMMERGIRL + WT-VCO bank; trig1 fires voice 1.
   riotgirls:    { outputPort: 'outL',  gatePort: 'trig1' },
   // CHOWKICK — ChowKick (chowdsp) kick drum; gate_in rising edge fires the
