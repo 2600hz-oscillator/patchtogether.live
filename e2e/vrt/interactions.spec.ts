@@ -7,7 +7,7 @@
 //   - patch-panel-open      → PatchPanel popout layout regression catch
 //   - node-context-menu     → right-click NodeContextMenu
 //   - port-context-menu     → right-click PortContextMenu (a port handle)
-//   - module-palette        → "+ Add module" topbar dropdown, default view
+//   - module-palette        → Add-module palette (pane right-click), default view
 //   - palette-vcos          → palette drilled into "Audio modules → VCOs"
 //   - saved-groups-picker   → modal overlay (api stubbed for determinism)
 //
@@ -24,7 +24,7 @@
 // sequences, hover-intent timing) and benefit from being declarative.
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from '../tests/_helpers';
+import { spawnPatch, openModulePalette } from '../tests/_helpers';
 
 // Per-test exemption set, keyed `${platform}/${snapshot-stem}`. Each
 // platform's missing baseline is opt-in so a future regression surfaces
@@ -78,7 +78,10 @@ test('module-palette: default nested view', async ({ page }) => {
   skipIfNoBaseline(test, 'module-palette');
   await bootCanvas(page);
 
-  await page.locator('header.topbar button', { hasText: '+ Add module' }).click();
+  // Fixed right-click anchor for determinism (the palette is an ELEMENT
+  // screenshot, so its on-page position doesn't affect the pixels — the
+  // fixed point just keeps the open deterministic on the empty canvas).
+  await openModulePalette(page, { position: { x: 300, y: 200 } });
   const palette = page.locator('.module-palette');
   await palette.waitFor({ state: 'visible', timeout: 5_000 });
   await page.evaluate(
@@ -96,7 +99,7 @@ test('palette-vcos: nested drill-down (Audio → VCOs)', async ({ page }) => {
   skipIfNoBaseline(test, 'palette-vcos');
   await bootCanvas(page);
 
-  await page.locator('header.topbar button', { hasText: '+ Add module' }).click();
+  await openModulePalette(page, { position: { x: 300, y: 200 } });
   const palette = page.locator('.module-palette');
   await palette.waitFor({ state: 'visible', timeout: 5_000 });
 

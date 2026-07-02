@@ -123,7 +123,7 @@
 
 <h2>Quick start (no grid needed)</h2>
 <ol>
-  <li>Add a <strong>clip player</strong> (Add module → Audio → sequencers). It also drops a <strong>TIMELORDE</strong> if your rack doesn't have one.</li>
+  <li>Add a <strong>clip player</strong> (right-click the canvas → Audio → sequencers). It also drops a <strong>TIMELORDE</strong> if your rack doesn't have one.</li>
   <li>
     <strong>Double-click</strong> a pad in the card's 8×8 grid to open its note
     editor. <strong>Click</strong> a cell to place a note, <strong>click again</strong>

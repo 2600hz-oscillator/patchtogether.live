@@ -14,10 +14,14 @@
 // e2e would catch that the unit doesn't). Skipped here.
 
 import { test, expect, type Page } from '@playwright/test';
+import { openModulePalette } from './_helpers';
 
 async function openPalette(page: Page): Promise<void> {
-  await page.getByRole('button', { name: '+ Add module' }).click();
-  await page.locator('.module-palette').waitFor({ state: 'visible' });
+  // Right-click an empty pane spot (the production palette entry point —
+  // the topbar button is gone). The helper scans for an empty spot, which
+  // matters here: each spawned PICTUREBOX lands AT the click point, so a
+  // fixed coordinate would hit a card on the next open.
+  await openModulePalette(page);
 }
 
 async function pickPicturebox(page: Page): Promise<boolean> {

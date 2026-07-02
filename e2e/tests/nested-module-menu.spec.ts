@@ -1,19 +1,21 @@
 // e2e/tests/nested-module-menu.spec.ts
 //
-// Nested "Add module" palette — verifies the 2-level hierarchy renders,
+// Nested "Add module" palette (opened by right-clicking the empty canvas
+// pane) — verifies the 2-level hierarchy renders,
 // drilling into each top category surfaces its sub-categories, and
 // clicking an item spawns the corresponding module. One pass per top
 // category (Audio modules / Video modules / Hybrid) so the basic shape
 // of the menu is covered end-to-end.
 
 import { test, expect } from '@playwright/test';
+import { openModulePalette } from './_helpers';
 
 test.describe.configure({ mode: 'parallel' });
 
 test('nested palette: top-level rows render and are collapsed by default', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  await openModulePalette(page);
   await expect(page.locator('.module-palette')).toBeVisible();
 
   // All three top categories are visible.
@@ -29,7 +31,7 @@ test('nested palette: top-level rows render and are collapsed by default', async
 test('nested palette: Audio modules → VCOs → spawn Analog VCO', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  await openModulePalette(page);
 
   await page.getByTestId('palette-top-audio-modules').click();
   await expect(page.getByTestId('palette-sub-vcos')).toBeVisible();
@@ -43,7 +45,7 @@ test('nested palette: Audio modules → VCOs → spawn Analog VCO', async ({ pag
 test('nested palette: Video modules → Sources → spawn LINES', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  await openModulePalette(page);
 
   await page.getByTestId('palette-top-video-modules').click();
   await expect(page.getByTestId('palette-sub-sources')).toBeVisible();
@@ -56,7 +58,7 @@ test('nested palette: Video modules → Sources → spawn LINES', async ({ page 
 test('nested palette: Hybrid → SCOPE spawns directly (flat sub-list)', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  await openModulePalette(page);
 
   await page.getByTestId('palette-top-hybrid').click();
   // Hybrid is flat — the item shows up without an intermediate sub click.
@@ -68,7 +70,7 @@ test('nested palette: Hybrid → SCOPE spawns directly (flat sub-list)', async (
 test('nested palette: typing flattens to search-mode results', async ({ page }) => {
   await page.goto('/');
   await page.waitForLoadState('networkidle');
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  await openModulePalette(page);
 
   // Drill in first to ensure search clears the drill-down state.
   await page.getByTestId('palette-top-audio-modules').click();

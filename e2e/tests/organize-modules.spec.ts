@@ -24,7 +24,7 @@
 //     per-node menu, not the palette — that behavior is exercised separately).
 
 import { test, expect, type Page } from '@playwright/test';
-import { spawnPatch } from './_helpers';
+import { spawnPatch, openModulePalette } from './_helpers';
 import { SYNC_BUDGET_MS, SYNC_POLL_INTERVALS } from './_collab-helpers';
 
 test.describe.configure({ mode: 'parallel' });
@@ -262,14 +262,15 @@ test('spawn over multiple stacked nodes still lands AT the cursor (overlap allow
   expect(scope!.position).toEqual({ x: 200, y: 200 });
 });
 
-test('palette spawned via topbar + Add module goes through screenToFlowPosition', async ({ page }) => {
+test('palette spawned via pane right-click goes through screenToFlowPosition', async ({ page }) => {
   await ready(page);
-  // Compute the expected flow-space coord for {200, 200} BEFORE spawning so
-  // we don't catch a post-spawn fitView shift. The topbar path always uses
-  // {200, 200} as its synthetic anchor, then runs it through the same
-  // screenToFlowPosition as the right-click path.
-  const expected = await screenToFlow(page, { x: 200, y: 200 });
-  await page.getByRole('button', { name: '+ Add module' }).click();
+  // Compute the expected flow-space coord for the right-click anchor BEFORE
+  // spawning so we don't catch a post-spawn fitView shift. onPaneContextMenu
+  // runs the click's client coords through the same screenToFlowPosition —
+  // the spawned module must land at the clicked point in flow space.
+  const anchor = { x: 200, y: 200 };
+  const expected = await screenToFlow(page, anchor);
+  await openModulePalette(page, { position: anchor });
   await expect(page.locator('.module-palette')).toBeVisible();
   await page.keyboard.type('Reverb');
   await page.keyboard.press('Enter');
