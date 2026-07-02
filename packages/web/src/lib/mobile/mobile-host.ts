@@ -201,7 +201,8 @@ export function spawnModule(
   const id = `${type}-${crypto.randomUUID().slice(0, 8)}`;
   const autoName = nextDefaultName(patch.nodes, type);
   const existing = Object.keys(patch.nodes).length;
-  const data: Record<string, unknown> = { name: autoName, ...initialData };
+  // spawnSeq = the RACK chip-strip ordering key (spawn order, not id order).
+  const data: Record<string, unknown> = { name: autoName, spawnSeq: Date.now(), ...initialData };
   // BENTBOX honours persisted dims — stamp a phone-fit 370px square ONCE at
   // spawn so the card fits the pager natively forever (spec §3 RACK).
   if (type === 'bentbox' && data.width === undefined) {
