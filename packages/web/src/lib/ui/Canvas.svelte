@@ -4411,7 +4411,16 @@
         // mode is persisted per-machine; a mid-session change applies on the
         // next reload (the footer selector shows a "reload to apply" hint).
         const chosenLatencyMode = audioLatencyStore.current;
-        audioCtx = new AudioContext({ latencyHint: audioLatencyStore.latencyHint });
+        // A2a: pin the context to 48 kHz. Every ART baseline, DSP-core unit
+        // test, and worklet time-constant is calibrated at 48 000 Hz; without
+        // the pin a 44.1 kHz-native device (common on Macs) renders a graph
+        // the baselines never verified. The browser resamples to the hardware
+        // rate at the output — transparent, and far cheaper than every module
+        // handling arbitrary rates.
+        audioCtx = new AudioContext({
+          latencyHint: audioLatencyStore.latencyHint,
+          sampleRate: 48000,
+        });
         audioLatencyStore.bootedWith(chosenLatencyMode);
         if (audioCtx.state === 'suspended') await audioCtx.resume();
         const e = new PatchEngine();
