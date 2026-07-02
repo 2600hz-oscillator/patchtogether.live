@@ -60,7 +60,6 @@ export const ART_BACKLOG: readonly string[] = [
   'aquaTank',
   'atlantisCatalyst',
   'attenumix',
-  'bluebox',
   'buggles',
   'callsine',
   'cartesian',
@@ -77,10 +76,8 @@ export const ART_BACKLOG: readonly string[] = [
   'dx7',
   'elements',
   'filter',
-  'flipper',
   'fourplexer',
   'foxy',
-  'gatemaiden',
   'grids',
   'helm',
   'hydrogen',
@@ -98,7 +95,6 @@ export const ART_BACKLOG: readonly string[] = [
   'moog904a',
   'moog904b',
   'moog904c',
-  'moog905',
   'moog907a',
   'moog911',
   'moog911a',
@@ -128,9 +124,7 @@ export const ART_BACKLOG: readonly string[] = [
   'polyhelm',
   'polyseqz',
   'rasterize',
-  'resofilter',
   'reverb',
-  'ringback',
   'rings',
   'riotgirls',
   'samsloop',
@@ -161,4 +155,4 @@ export const ART_BACKLOG: readonly string[] = [
 
 /** The ratchet cap. Lower it (to ART_BACKLOG.length) every time a batch
  *  removes entries; the gate fails if the list ever grows past it. */
-export const ART_BACKLOG_MAX = 101;
+export const ART_BACKLOG_MAX = 95;
