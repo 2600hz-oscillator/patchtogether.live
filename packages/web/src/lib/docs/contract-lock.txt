@@ -1686,6 +1686,39 @@ joystick out x cv
 joystick out y cv
 joystick param pos_x -1..1 linear default=0
 joystick param pos_y -1..1 linear default=0
+kickdrum meta domain=audio schema=1
+kickdrum in accent_in cv
+kickdrum in choke_in gate edge=gate
+kickdrum in pitch_cv cv
+kickdrum in trigger_in gate edge=trigger
+kickdrum out audio_l audio
+kickdrum out audio_r audio
+kickdrum param attack -1..1 linear default=0.2
+kickdrum param attack_eq -12..12 linear default=2 unit=dB
+kickdrum param body_decay 20..400 log default=120 unit=ms
+kickdrum param body_eq -12..12 linear default=3 unit=dB
+kickdrum param body_level 0..1 linear default=0.7
+kickdrum param body_shape 0..1 linear default=0.3
+kickdrum param ceiling 0..1 linear default=0.5
+kickdrum param click_len 2..60 log default=12 unit=ms
+kickdrum param click_level 0..1 linear default=0.4
+kickdrum param click_tone 500..6000 log default=2800 unit=Hz
+kickdrum param drive 0..1 linear default=0.4
+kickdrum param glue 0..1 linear default=0.3
+kickdrum param hard 0..1 discrete default=0
+kickdrum param level -24..12 linear default=0 unit=dB
+kickdrum param pitch_amt 0..48 linear default=24 unit=st
+kickdrum param pitch_time 5..120 log default=30 unit=ms
+kickdrum param sub_decay 50..800 log default=450 unit=ms
+kickdrum param sub_eq -12..12 linear default=0 unit=dB
+kickdrum param sub_level 0..1 linear default=0.9
+kickdrum param sustain -1..1 linear default=0
+kickdrum param tension 0..0.6 linear default=0
+kickdrum param tilt -1..1 linear default=0
+kickdrum param translate 0..1 linear default=0.3
+kickdrum param tune 20..120 log default=50 unit=Hz
+kickdrum param width 0..1 linear default=0.2
+kickdrum stereo audio_l+audio_r
 kria meta domain=audio schema=1
 kria in clock gate edge=trigger
 kria in reset gate edge=trigger

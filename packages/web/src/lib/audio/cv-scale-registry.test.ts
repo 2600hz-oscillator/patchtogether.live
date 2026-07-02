@@ -223,6 +223,13 @@ const PASSTHROUGH_BY_DESIGN: Record<string, string[]> = {
   // pitch CV as its own audio-rate node input + apply the octave map
   // inside the per-sample DSP).
   chowkick: ['pitch_cv'],
+  // KICKDRUM pitch_cv: V/oct consumed directly by the worklet as its own
+  // audio-rate node input (tune × 2^pitch_cv per-sample — an additive
+  // AudioParam cvScale would NOT be 1V/oct). Same shape as chowkick.pitch_cv
+  // / dx7.pitch_cv. accent_in: a raw per-hit 0..1 value SAMPLED at the
+  // trigger edge inside the worklet (a latch input, not a knob modulator —
+  // no paramTarget), so cvScale doesn't apply.
+  kickdrum: ['pitch_cv', 'accent_in'],
   // CUBE pitch: V/oct input consumed directly by the worklet as its own
   // audio-rate node input (freq = C4·2^(pitch + tune/12 + fine/1200), applied
   // per-sample). No paramTarget — same V/oct-fallback shape as dx7.pitch_cv /
