@@ -142,16 +142,6 @@ const EXPECTED_NODE_TYPES = [
 
 
 
-
-
-
-
-
-
-
-
-
-
 ].sort();
 
 function allDefs(): CardDefLike[] {
