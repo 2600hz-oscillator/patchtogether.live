@@ -69,6 +69,20 @@ export function seedSteps(): { on: boolean; midi: number | null; chord: 'mono' }
   return steps;
 }
 
+/**
+ * MIXMSTRS spawns with its volume params EXPLICITLY seeded (not left to the
+ * unset→default fallback). WHY: the reconciler diffs only the params present
+ * in the NEW snapshot, so UNDOING a param's FIRST-EVER write removes the key
+ * and the engine keeps the old value (e.g. a muted-to-0 fader would stay
+ * silent after undo). Seeding at spawn makes every later volume edit — the
+ * MIX mute included — a value CHANGE the reconciler always re-applies.
+ */
+export function mixmstrsSeedParams(): Record<string, number> {
+  const params: Record<string, number> = { master_volume: 0.8 };
+  for (let ch = 1; ch <= 6; ch++) params[`ch${ch}_volume`] = 0.8;
+  return params;
+}
+
 const nodePositions: Record<keyof FirstBleepIds, { x: number; y: number }> = {
   timelorde: { x: 40, y: 40 },
   sequencer: { x: 460, y: 40 },
@@ -97,16 +111,18 @@ export function firstBleepFragment(ids: FirstBleepIds = makeIds(() => 'test')): 
     data: { name: type.toUpperCase(), spawnSeq: seq++, ...(extra?.data ?? {}) },
   });
   const nodes: ModuleNode[] = [
-    mk('timelorde', 'timelorde'),
+    // Sequencer FIRST (spawnSeq 0) so the RACK pager lands on its faceplate
+    // right after FIRST BLEEP — the next tap is a step, not a chip hunt.
     mk('sequencer', 'sequencer', {
       params: { isPlaying: 1, bpm: 118 },
       data: { name: 'SEQUENCER', steps: seedSteps() },
     }),
+    mk('timelorde', 'timelorde'),
     mk('analogVco', 'analogVco'),
     mk('adsr', 'adsr'),
     mk('vca', 'vca'),
     mk('delay', 'delay', { params: { mix: 0.3, feedback: 0.35 } }),
-    mk('mixmstrs', 'mixmstrs'),
+    mk('mixmstrs', 'mixmstrs', { params: mixmstrsSeedParams() }),
     mk('audioOut', 'audioOut'),
   ];
 
@@ -164,7 +180,7 @@ export function emptyRackFragment(idsIn?: { timelorde: string; mixmstrs: string;
       type: 'mixmstrs',
       domain: 'audio',
       position: { x: 460, y: 40 },
-      params: {},
+      params: mixmstrsSeedParams(),
       data: { name: 'MIXMSTRS' },
     },
     {

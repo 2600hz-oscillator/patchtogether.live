@@ -54,6 +54,17 @@ describe('FIRST BLEEP template', () => {
     expect(seedSteps()).toHaveLength(128);
   });
 
+  it('mixmstrs spawns with volume params SEEDED (undo-of-first-write reconciler guard)', () => {
+    // The reconciler only re-applies params PRESENT in the new snapshot —
+    // undoing a param's first-ever write removes the key and the engine
+    // keeps the stale value. Seeding at spawn keeps mute/undo a value change.
+    const mix = firstBleepFragment().nodes.find((n) => n.type === 'mixmstrs')!;
+    for (let ch = 1; ch <= 6; ch++) expect(mix.params[`ch${ch}_volume`]).toBe(0.8);
+    expect(mix.params.master_volume).toBe(0.8);
+    const emptyMix = emptyRackFragment().nodes.find((n) => n.type === 'mixmstrs')!;
+    expect(emptyMix.params.ch1_volume).toBe(0.8);
+  });
+
   it('EMPTY RACK: timelorde + mixmstrs + audioOut with master pre-wired, all valid', () => {
     const fragment = emptyRackFragment();
     const result = validateGraphFragment(fragment, resolveAnyDef);

@@ -22,7 +22,7 @@
 // Side-effect barrel imports are MANDATORY — without them the module
 // registries are empty and every def lookup returns undefined.
 
-import { patch, ydoc, LOCAL_ORIGIN } from '$lib/graph/store';
+import { patch, ydoc, undoManager, LOCAL_ORIGIN } from '$lib/graph/store';
 import type { ModuleNode } from '$lib/graph/types';
 import { AudioEngine, PatchEngine } from '$lib/audio/engine';
 import { attachReconciler } from '$lib/audio/reconciler';
@@ -209,6 +209,16 @@ export function spawnModule(
     data.width = 370;
     data.height = 370;
   }
+  const params: Record<string, number> = { ...initialParams };
+  // MIXMSTRS: seed the volume params so a later mute/undo is always a value
+  // CHANGE (the reconciler skips REMOVED param keys — see first-bleep.ts
+  // mixmstrsSeedParams for the full rationale).
+  if (type === 'mixmstrs') {
+    params.master_volume = params.master_volume ?? 0.8;
+    for (let ch = 1; ch <= 6; ch++) {
+      params[`ch${ch}_volume`] = params[`ch${ch}_volume`] ?? 0.8;
+    }
+  }
   ydoc.transact(() => {
     patch.nodes[id] = {
       id,
@@ -216,7 +226,7 @@ export function spawnModule(
       domain,
       // Simple column layout for desktop-open parity: 2 per row.
       position: { x: 40 + (existing % 2) * 620, y: 40 + Math.floor(existing / 2) * 560 },
-      params: { ...initialParams },
+      params,
       data,
     };
   }, LOCAL_ORIGIN);
@@ -337,6 +347,7 @@ export function installMobileTestHooks(): void {
   g.__ydoc = ydoc;
   g.__engine = () => engine;
   g.__ensureEngine = () => ensureMobileEngine();
+  g.__undoManager = undoManager;
 }
 
 /** Convenience for views: read a node's live param with ParamDef fallback. */
