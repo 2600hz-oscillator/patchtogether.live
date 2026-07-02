@@ -13,7 +13,6 @@
   // appears ONLY inside the #8 logo PNG — every CSS color here is
   // black/blue/white.
   import '$lib/styles/house.css';
-  import { BUILD_INFO } from '$lib/build-info';
 
   // ART + VRT galleries are published to the repo's GitHub Pages site by
   // pages.yml (a SEPARATE deploy from the CF-Pages app). Per owner decision Q4
@@ -97,14 +96,18 @@
             alt="patchtogether logo"
             decoding="async"
           />
-          <span>patchtogether</span>
+          <h1>patchtogether</h1>
         </a>
       </div>
       <nav>
         <a href="/docs">docs</a>
         <a href="/docs/modules">modules</a>
         <a class="signin" href="/sign-in" data-testid="header-signin">sign in</a>
-        <span class="version" data-testid="app-version">v{BUILD_INFO.version}</span>
+        <!-- __APP_VERSION__ = the compile-time define from the ROOT package.json
+             (vite.config.ts), NOT BUILD_INFO.version — that one is the deploy
+             stamp (VITE_APP_VERSION env), which is unset outside the deploy
+             workflows and would prerender as "vdev" (version-heading.spec gate). -->
+        <span class="version" data-testid="app-version">v{__APP_VERSION__}</span>
       </nav>
     </header>
   </div>
@@ -153,6 +156,15 @@
     display: inline-flex;
     align-items: center;
     gap: 10px;
+  }
+  /* The brand word is an <h1> (version-heading.spec expects the site title in
+     `header.topbar h1`) but must render exactly like the plain span it
+     replaced — inherit everything, no heading margins. */
+  .brand h1 {
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
   }
   .logo {
     display: block;

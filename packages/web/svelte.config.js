@@ -13,6 +13,18 @@ const config = {
         include: ['/*'],
         exclude: ['<all>'],
       },
+      // In-memory bindings for the LOCAL emulated platform (dev + `vite
+      // preview`; prod is real Cloudflare and unaffected). With on-disk
+      // persistence, concurrent FIRST requests race the adapter's platform
+      // memoization (`emulated ??= await get_emulated()` caches the value,
+      // not the promise), each spawning a workerd against the same
+      // `.wrangler/state/v3` SQLite → "database is locked: SQLITE_BUSY" →
+      // fatal, killing the whole preview server. e2e tripped this the moment
+      // the landing became prerendered: Playwright's readiness poll of `/`
+      // stopped warming the proxy, so the 4 workers' first hits raced it
+      // (shards 1/4/10 died with ERR_CONNECTION_REFUSED). We keep no state
+      // in the emulated bindings, so in-memory loses nothing.
+      platformProxy: { persist: false },
     }),
     prerender: {
       // Module-face PNGs (/docs/module-faces/<id>.png) are GENERATED from the
