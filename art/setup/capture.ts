@@ -64,6 +64,30 @@ export async function dspSourceSha(...relPaths: string[]): Promise<string> {
   return h.digest('hex').slice(0, 16);
 }
 
+/** Repo root (the directory that contains packages/, art/, e2e/, …). */
+const REPO_ROOT = new URL('../../', import.meta.url).pathname;
+
+/**
+ * Combined source SHA over files given RELATIVE TO THE REPO ROOT — the
+ * dspSourceSha discipline for render paths that live (partly) OUTSIDE
+ * packages/dsp/src. Pure-Web-Audio modules (no worklet) render through a
+ * factory in packages/web (e.g. the moog907a/914 fixed-filter-bank fan of
+ * BiquadFilterNodes), so their profiles pin the factory wiring + the shared
+ * data lib, e.g.:
+ *   repoSourceSha(
+ *     'packages/dsp/src/lib/moog-filterbank-dsp.ts',
+ *     'packages/web/src/lib/audio/modules/moog-filterbank-factory.ts',
+ *   )
+ */
+export async function repoSourceSha(...relPaths: string[]): Promise<string> {
+  if (relPaths.length === 0) throw new Error('repoSourceSha: no source files given');
+  const h = createHash('sha256');
+  for (const rel of relPaths) {
+    h.update(await readFile(join(REPO_ROOT, rel), 'utf8'));
+  }
+  return h.digest('hex').slice(0, 16);
+}
+
 // ---------------------------------------------------------------------------
 // Render loop — drive + capture every signature output
 // ---------------------------------------------------------------------------

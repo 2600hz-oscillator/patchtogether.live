@@ -112,7 +112,7 @@ test.describe('VRT: SCOPE X/Y mode + INTENSITY persistence', () => {
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       // Seed the on-card draw loop with a deterministic phase-locked

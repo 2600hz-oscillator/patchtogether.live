@@ -37,7 +37,7 @@ async function openModuleMenu(page: import('@playwright/test').Page, type: strin
 test('documented module (adsr): Annotate entry toggles a hover popover over a control', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnModule(page, 'adsr', 'adsr');
 
@@ -77,7 +77,7 @@ test('documented module (adsr): Annotate entry toggles a hover popover over a co
 test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV→param dual context', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnModule(page, 'adsr', 'adsr');
 
@@ -113,7 +113,7 @@ test('documented module (adsr): hovering a PATCH PORT shows its doc incl. the CV
 });
 
 test('undocumented module (negativity): NO Annotate entry', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // FIXTURE CHOICE: a currently-undocumented, LIGHTWEIGHT audio module (the
   // `negativity` CV inverter — trivial card, no WebGL). toybox (the permanent

@@ -142,7 +142,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
     // `scene` is a bit-stable frozen frame) BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Clear any stale force-gate from a previous test in the worker.
@@ -262,7 +262,7 @@ test.describe('FREEZEFRAME — video sample & hold + posterize', () => {
 
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await page.evaluate(() => {

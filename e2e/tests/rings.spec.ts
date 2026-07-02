@@ -72,7 +72,7 @@ test('rings: drop module → card mounts with no console errors', async ({ page 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'r', type: 'rings', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-rings');
@@ -88,7 +88,7 @@ test('rings: NOISE exciter into RINGS produces audio at ODD output (sympathetic 
   // route white noise into the RINGS exciter input and tap ODD into a
   // scope to read back; speakers muted (master=0). Just verify the
   // resonator output goes above the silence floor.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -126,7 +126,7 @@ test('rings: STRUM with no external exciter + MODAL produces audio (self-excite)
   // The bug we're fixing: MODAL used to require an external exciter and was
   // silent on STRUM alone. After the fix, STRUM injects a short noise burst
   // into MODAL so the resonator rings out without any audio input patched.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -175,7 +175,7 @@ test('rings: STRUM with no external exciter + MODAL produces audio (self-excite)
 });
 
 test('rings: model button cycles MODAL ↔ SYMPATHETIC and updates label', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'r', type: 'rings', position: { x: 200, y: 200 } }]);
 
@@ -194,7 +194,7 @@ test('rings: model button cycles MODAL ↔ SYMPATHETIC and updates label', async
 test('rings: model switch (MODAL ↔ SYMPATHETIC) — both produce audio', async ({ page }) => {
   // Spawn with MODAL, verify audio; then change model → SYMPATHETIC,
   // verify audio again. Both should be non-silent.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

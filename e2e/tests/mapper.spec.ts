@@ -84,7 +84,7 @@ async function captureMapper(
   page: Page,
   threshold: number,
 ): Promise<{ shownFrac: number; colourFrac: number; n: number }> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -149,7 +149,7 @@ test.describe('MAPPER — video keyer / matte processor', () => {
   });
 
   test('CV param routes through the patch store', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,

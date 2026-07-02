@@ -70,7 +70,7 @@ test('MIDI Learn: right-click a knob → learn → CC drives the param + badge s
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // Isolate from any persisted bindings on this dev origin.
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
@@ -135,7 +135,7 @@ test('MIDI Learn: a Fader (CALLSINE · Level) learns + tracks via simulated CC',
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
 
@@ -182,7 +182,7 @@ test('MIDI Learn: the control menu spawns under the cursor (portalled out of the
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.evaluate(() => window.localStorage.removeItem('pt.midi-bindings.v1'));
 

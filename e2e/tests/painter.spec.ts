@@ -63,7 +63,7 @@ test.describe('PAINTER — interactive draw → synced ops', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'pt', type: 'painter', position: { x: 200, y: 120 }, domain: 'video' },
@@ -95,7 +95,7 @@ test.describe('PAINTER — interactive draw → synced ops', () => {
   });
 
   test('CLEAR empties the op log + returns a blank page', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'pt', type: 'painter', position: { x: 200, y: 120 }, domain: 'video' },
@@ -113,7 +113,7 @@ test.describe('PAINTER — interactive draw → synced ops', () => {
   });
 
   test('the FILL tool floods the canvas with the foreground colour', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'pt', type: 'painter', position: { x: 200, y: 120 }, domain: 'video' },

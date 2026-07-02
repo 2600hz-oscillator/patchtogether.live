@@ -21,7 +21,7 @@ const CARDS = [
 
 for (const c of CARDS) {
   test(`${c.type} multi-panel fits inside the card (no clip/spill)`, async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'n1', type: c.type, domain: c.domain, position: { x: 140, y: 80 } },

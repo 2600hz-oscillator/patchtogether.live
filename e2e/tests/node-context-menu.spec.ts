@@ -30,7 +30,7 @@ async function readNodeState(
 }
 
 test('node context menu: right-click opens, Escape closes', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
@@ -48,7 +48,7 @@ test('node context menu: right-click opens, Escape closes', async ({ page }) => 
 });
 
 test('node context menu: Delete removes the node + all edges touching it', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
@@ -71,7 +71,7 @@ test('node context menu: Delete removes the node + all edges touching it', async
 });
 
 test('node context menu: Unpatch all keeps the node, removes only edges touching it', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
@@ -100,7 +100,7 @@ test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps 
   // Docs / Duplicate assertions pass), but the slow heavy page burns the clock
   // before the final assertion settles. Give the heavy card headroom.
   test.setTimeout(90_000);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -123,7 +123,7 @@ test('node context menu: TOYBOX hides "Unpatch all" (node-map module) but keeps 
 });
 
 test('node context menu: Lock snaps to the HP×U rack grid, marks locked + non-draggable; Unlock reverts', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // Spawn a single module at a DELIBERATELY off-grid position so the snap is
   // observable. The rack grid is ANISOTROPIC (PR #806): X snaps to the 22.5px

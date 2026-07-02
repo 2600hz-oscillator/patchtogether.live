@@ -79,7 +79,7 @@ async function measureVcoAt(
   vcoType: typeof VCO_TYPES[number],
   midi: number,
 ): Promise<number> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Sequencer → VCO.pitch → Scope. SCOPE's snapshot.ch1 mirrors the live

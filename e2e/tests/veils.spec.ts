@@ -16,7 +16,7 @@ test('VEILS renders + audio flows from VCO through one VCA channel to OUTPUT', a
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -63,7 +63,7 @@ test('VEILS renders + audio flows from VCO through one VCA channel to OUTPUT', a
 });
 
 test('VEILS response toggle flips LIN ↔ EXP and writes the param', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -108,7 +108,7 @@ test('VEILS survives extreme-param mutation (no crashes pushing knob+CV past uni
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

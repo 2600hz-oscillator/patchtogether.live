@@ -11,7 +11,7 @@ import { openModulePalette } from './_helpers';
 test.describe.configure({ mode: 'parallel' });
 
 test('palette: pane right-click opens palette and spawns the chosen module', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await openModulePalette(page);
   await expect(page.locator('.module-palette')).toBeVisible();
@@ -23,7 +23,7 @@ test('palette: pane right-click opens palette and spawns the chosen module', asy
 });
 
 test('palette: Escape closes without spawning', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await openModulePalette(page);
   await expect(page.locator('.module-palette')).toBeVisible();
@@ -33,7 +33,7 @@ test('palette: Escape closes without spawning', async ({ page }) => {
 });
 
 test('palette: Enter picks the first filtered match', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await openModulePalette(page);
   // Scope is alphabetically first among Sc-prefix modules (Scope, Score), so
@@ -44,7 +44,7 @@ test('palette: Enter picks the first filtered match', async ({ page }) => {
 });
 
 test('palette: right-click on canvas pane opens at cursor', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // Right-click somewhere on the empty pane.
   const pane = page.locator('.svelte-flow__pane');

@@ -121,7 +121,7 @@ test.describe('VRT: WAVESCULPT BLINK render modes', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       // SHAPES → alpha_in gives the ALPHA layer real content; joystick x=1

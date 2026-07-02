@@ -20,7 +20,7 @@ test('helm: drop module → card mounts with no console errors', async ({ page }
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'h', type: 'helm', position: { x: 200, y: 200 } }]);
   const card = page.locator('[data-testid="helm-card"]');
@@ -30,7 +30,7 @@ test('helm: drop module → card mounts with no console errors', async ({ page }
 });
 
 test('helm: gear icon opens MIDI settings panel', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'h', type: 'helm', position: { x: 200, y: 200 } }]);
   const card = page.locator('[data-testid="helm-card"]');
@@ -66,7 +66,7 @@ test('helm: gear icon opens MIDI settings panel', async ({ page }) => {
 // ----------------------------------------------------------------------------
 
 test('helm: sequencer defaults OFF + transport controls render', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'h', type: 'helm', position: { x: 200, y: 200 } }]);
   const card = page.locator('[data-testid="helm-card"]');
@@ -87,7 +87,7 @@ test('helm: sequencer defaults OFF + transport controls render', async ({ page }
 });
 
 test('helm: toggling SEQ ON updates button + persists to node.data', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'h', type: 'helm', position: { x: 200, y: 200 } }]);
   const card = page.locator('[data-testid="helm-card"]');
@@ -109,7 +109,7 @@ test('helm: toggling SEQ ON updates button + persists to node.data', async ({ pa
 });
 
 test('helm: gate-clocked advance — driving GATE in advances the step pointer + lights the dot', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Source: a SEQUENCER firing a steady gate train. HELM in SEQ ON mode
@@ -189,7 +189,7 @@ test('helm: gate-clocked advance — driving GATE in advances the step pointer +
 });
 
 test('helm: RESET button snaps the dot away (currentStep → -1 = no dot)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -245,7 +245,7 @@ test('helm: RESET button snaps the dot away (currentStep → -1 = no dot)', asyn
 });
 
 test('helm: SEQ OFF — gate-driven sequencer makes no contribution (no dot rendered)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // Default (no toggle click) = SEQ OFF. Drive the gate; the dot should
   // never appear.
@@ -274,7 +274,7 @@ test('helm: knob drag does not crash the card', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'h', type: 'helm', position: { x: 200, y: 200 } }]);
   const card = page.locator('[data-testid="helm-card"]');

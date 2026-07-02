@@ -243,7 +243,7 @@ test.describe('VRT: TOYBOX per-content frozen render', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       await spawnPatch(
@@ -285,7 +285,7 @@ test.describe('VRT: TOYBOX OBJ layer frozen render', () => {
         if (msg.type() === 'error') errors.push(msg.text());
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       await spawnPatch(
@@ -530,7 +530,7 @@ test.describe('VRT: TOYBOX Phase-5 CV-route proof', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,
@@ -638,7 +638,7 @@ test.describe('VRT: TOYBOX Phase-6 presets', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,
@@ -785,7 +785,7 @@ test.describe('VRT: TOYBOX OBJ surface-texture', () => {
         if (msg.type() === 'error') errors.push(msg.text());
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,
@@ -821,7 +821,7 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -854,7 +854,7 @@ test.describe('VRT: TOYBOX Phase-4 combine graph', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -999,7 +999,7 @@ test.describe('VRT: TOYBOX Shadertoy multi-buffer growing peak', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -1117,7 +1117,7 @@ test.describe('VRT: TOYBOX FRAG over a base layer (content-bank)', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -1244,7 +1244,7 @@ test.describe('VRT: TOYBOX feedback (stateful combine op)', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,

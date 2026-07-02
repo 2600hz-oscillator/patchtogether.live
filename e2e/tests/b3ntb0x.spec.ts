@@ -122,7 +122,7 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await freezeB3ntb0x(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -165,7 +165,7 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await freezeB3ntb0x(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // ONE page-load (was two full goto+spawn captures): spawn CLEAN, read a
@@ -256,7 +256,7 @@ test.describe('B3NTB0X — NTSC composite re-arch output', () => {
     // degenerate t=0). One page-load: spawn CLEAN once, read a frozen baseline,
     // then flip ONE control at a time and read again.
     await freezeB3ntb0x(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Clean baseline: every audited control at its inert value, tbc=1 (steady,

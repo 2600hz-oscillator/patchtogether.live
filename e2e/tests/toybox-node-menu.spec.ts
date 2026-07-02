@@ -215,7 +215,7 @@ const menu = (page: Page) => page.locator('[data-testid="toybox-node-menu"]');
  *  seed (the seed only exists AFTER the first mutation). Returns once the src/op/
  *  out testids exist. */
 async function setup(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

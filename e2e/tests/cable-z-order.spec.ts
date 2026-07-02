@@ -23,7 +23,7 @@ import { spawnPatch } from './_helpers';
 
 test.describe('cable z-order: cables under cards in idle, free during drag', () => {
   test('idle: edges layer paints below nodes layer', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Three modules in a row with a cable from the leftmost to the
@@ -75,7 +75,7 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
     // Guard rail: cables-in-front-of-cards during drag is intentional UX.
     // If a future agent globally pins cables under cards, this assertion
     // will fail — flagging the drag-time regression before it ships.
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -137,7 +137,7 @@ test.describe('cable z-order: cables under cards in idle, free during drag', () 
   });
 
   test('OUTPUT card root is fully opaque (no cable bleed-through)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

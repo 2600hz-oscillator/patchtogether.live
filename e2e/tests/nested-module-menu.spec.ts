@@ -13,7 +13,7 @@ import { openModulePalette } from './_helpers';
 test.describe.configure({ mode: 'parallel' });
 
 test('nested palette: top-level rows render and are collapsed by default', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await openModulePalette(page);
   await expect(page.locator('.module-palette')).toBeVisible();
@@ -29,7 +29,7 @@ test('nested palette: top-level rows render and are collapsed by default', async
 });
 
 test('nested palette: Audio modules → VCOs → spawn Analog VCO', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await openModulePalette(page);
 
@@ -43,7 +43,7 @@ test('nested palette: Audio modules → VCOs → spawn Analog VCO', async ({ pag
 });
 
 test('nested palette: Video modules → Sources → spawn LINES', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await openModulePalette(page);
 
@@ -56,7 +56,7 @@ test('nested palette: Video modules → Sources → spawn LINES', async ({ page 
 });
 
 test('nested palette: Hybrid → SCOPE spawns directly (flat sub-list)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await openModulePalette(page);
 
@@ -68,7 +68,7 @@ test('nested palette: Hybrid → SCOPE spawns directly (flat sub-list)', async (
 });
 
 test('nested palette: typing flattens to search-mode results', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await openModulePalette(page);
 

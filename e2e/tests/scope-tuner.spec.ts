@@ -17,7 +17,7 @@ test.describe('SCOPE pitch tuner readout', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -83,7 +83,7 @@ test.describe('SCOPE pitch tuner readout', () => {
   });
 
   test('SCOPE with no signal shows em-dashes', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

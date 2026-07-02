@@ -77,7 +77,7 @@ test.describe('TIMELORDE tap tempo', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -116,7 +116,7 @@ test.describe('TIMELORDE tap tempo', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -153,7 +153,7 @@ test.describe('TIMELORDE tap tempo', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // A gate clock source → TIMELORDE.clock makes it an externally-clocked

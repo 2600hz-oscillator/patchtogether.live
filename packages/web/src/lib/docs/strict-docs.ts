@@ -374,4 +374,8 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // (out_n = rate × (1/3)^(n-1), out9 = rate/6561) sharing one waveform, with a
   // reset trigger. Pure Fader + PatchPanel card (no canvas) — ships documented.
   'ninelives',
+  // KICK DRUM (2026-07-02): the layered stereo kick voice (sub/body/click,
+  // hard-switch drive, translate exciter, glue dynamics, M/S width — build
+  // plan .myrobots/plans/kick-drum-voice-2026-07-01.md). Ships documented.
+  'kickdrum',
 ]);

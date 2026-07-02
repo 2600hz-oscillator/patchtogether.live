@@ -88,7 +88,7 @@ function rectsOverlap(a: { x: number; y: number; w: number; h: number }, b: { x:
 }
 
 async function ready(page: Page) {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(() => {
     const w = window as unknown as { __patch?: unknown; __flow?: unknown };
@@ -519,7 +519,7 @@ test.describe('@collab', () => {
     const pageA = await ctxA.newPage();
     const pageB = await ctxB.newPage();
     for (const p of [pageA, pageB]) {
-      await p.goto('/');
+      await p.goto('/rack');
       await p.waitForLoadState('networkidle');
       await p.waitForFunction(
         () => typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',

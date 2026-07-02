@@ -27,7 +27,7 @@ async function lane0Playing(page: import('@playwright/test').Page) {
 
 /** Spawn a clipplayer and open the editor on lane 0 / slot 0. */
 async function openEditorLane0(page: import('@playwright/test').Page) {
-  await page.goto('/');
+  await page.goto('/rack');
   await spawnPatch(page, [{ id: 'cp1', type: 'clipplayer', domain: 'audio', x: 200, y: 120 }]);
   const card = page.getByTestId('clipplayer-card').first();
   await card.waitFor({ state: 'visible' });

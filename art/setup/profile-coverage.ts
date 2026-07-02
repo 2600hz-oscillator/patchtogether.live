@@ -46,6 +46,7 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
  * Seeded 2026-07-01 from the live registry (126 audio defs − 7 already
  * covered − 16 structural exclusions = 103), minus the 2 Phase-0 pilots
  * (chowkick, adsr) profiled in the same PR → 101 committed entries.
+ * Batch 1 (#1001) −6 → 95; batch 2 (#1002) −6 → 89; batch 3 −6 → 83.
  *
  * RULES (enforced by audio-profile-gate.test.ts):
  *   - a module that gains a baseline MUST be removed from this list;
@@ -67,7 +68,6 @@ export const ART_BACKLOG: readonly string[] = [
   'clipplayer',
   'clouds',
   'cloudseed',
-  'cocoadelay',
   'delay',
   'depolarizer',
   'destroy',
@@ -92,22 +92,13 @@ export const ART_BACKLOG: readonly string[] = [
   'mixmstrs',
   'moog902',
   'moog903a',
-  'moog904a',
-  'moog904b',
-  'moog904c',
-  'moog907a',
-  'moog911',
-  'moog911a',
   'moog912',
-  'moog914',
   'moog921a',
   'moog921b',
-  'moog921Vco',
   'moog923',
   'moog956',
   'moog960',
   'moog961',
-  'moog962',
   'moog984',
   'moog992',
   'moog993',
@@ -115,7 +106,6 @@ export const ART_BACKLOG: readonly string[] = [
   'moog995',
   'moogCp3',
   'negativity',
-  'ninelives',
   'noise',
   'numpadPlus',
   'peaks',
@@ -133,7 +123,6 @@ export const ART_BACKLOG: readonly string[] = [
   'score',
   'sequencer',
   'shimmershine',
-  'sidecar',
   'slewSwitch',
   'stages',
   'stereovca',
@@ -155,4 +144,4 @@ export const ART_BACKLOG: readonly string[] = [
 
 /** The ratchet cap. Lower it (to ART_BACKLOG.length) every time a batch
  *  removes entries; the gate fails if the list ever grows past it. */
-export const ART_BACKLOG_MAX = 95;
+export const ART_BACKLOG_MAX = 83;

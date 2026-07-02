@@ -27,7 +27,7 @@ test.describe('INWARDS — deterministic render smoke', () => {
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // INWARDS is a pure generated source (no decode / getUserMedia / asset) → OUTPUT

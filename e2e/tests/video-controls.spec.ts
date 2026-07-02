@@ -201,7 +201,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     // Pause the rAF loop + pin the clock BEFORE boot — kills LINES auto-scroll
     // (the OLD test's drift confound) so the param is the only thing that moves.
     await installRenderSmokeHooks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -254,7 +254,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     // test had to set speed:0 to fake this; the freeze does it for free + for
     // EVERY frame.time read, not just the one param.)
     await installRenderSmokeHooks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -299,7 +299,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -346,7 +346,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // LUMA is a single-input luminance processor (gamma / contrast / posterize /
@@ -388,7 +388,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // CHROMA is a single-input hue-shifter / colorizer, pure (no frame.time). On
@@ -431,7 +431,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // CHROMAKEY keys on HUE distance, so the FG must carry SATURATED color.
@@ -492,7 +492,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // INWARDS (a denser-pixel source) is FG so the luma key has a varied luma
@@ -539,7 +539,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // COLORIZER maps mono → solid tint (R = mono*tintR, etc), pure (no frame.time).
@@ -586,7 +586,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
   // this file that still uses waitForTimeout. To DRS it later, the module needs
   // a source-level `freeze` pin (same call as VDELAY in video-chain.spec.ts).
   test('FEEDBACK wet knob changes pixel pattern', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -622,7 +622,7 @@ test.describe('video controls drive output (deterministic render smoke)', () => 
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
     await installRenderSmokeHooks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Two visually-distinct, frozen-pure sources (LINES line field + INWARDS
@@ -723,7 +723,7 @@ function statsDifferLegacy(a: LegacyPixelStats, b: LegacyPixelStats): boolean {
 
 test.describe('module palette: VIDEO grouping + V-MIXER visibility', () => {
   test('palette renders AUDIO + VIDEO domain headers and lists V-MIXER', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     // Bootstrap the engine + register video module defs (their
     // registration runs on Canvas mount).

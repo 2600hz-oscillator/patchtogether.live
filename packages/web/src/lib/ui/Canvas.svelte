@@ -525,11 +525,11 @@
   // path.
   //
   // SCOPE: only fires on RACKSPACE mounts (i.e. when a Hocuspocus
-  // provider is bound — `/r/[id]` routes + the `/`+`__attachProvider`
-  // collab-test pattern). The public `/` demo canvas (no provider) stays
+  // provider is bound — `/r/[id]` routes + the `/rack`+`__attachProvider`
+  // collab-test pattern). The scratch `/rack` demo canvas (no provider) stays
   // empty until the user clicks Load example — auto-spawning there would
   // surprise the "demo a fresh engine" workflow and break a lot of e2e
-  // tests that depend on a literally-empty canvas at `goto('/')`.
+  // tests that depend on a literally-empty canvas at `goto('/rack')`.
   // Real patching happens on `/r/[id]`, which is where the user
   // experienced the missing-TIMELORDE pain.
   //

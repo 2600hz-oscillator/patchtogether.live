@@ -53,7 +53,7 @@ test('dx7 master-ADSR: a gated poly note carries audio through the master VCA', 
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Drive DX7 via the poly bus (the proven dx7.spec path): SEQUENCER.pitch →
@@ -98,7 +98,7 @@ test('cube mono TRIGGER gates the per-voice envelope (audio opens on trigger)', 
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -126,7 +126,7 @@ test('cube back-compat: an unpatched TRIGGER keeps CUBE droning (env skipped)', 
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // CUBE with NOTHING patched to TRIGGER (and no poly) → free-running drone.
@@ -152,7 +152,7 @@ test('cube no-stray-drone: a TRIGGER patched but NEVER gated is SILENT (gated, n
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // TRIGGER patched from a sequencer that is NOT playing (gate stays 0) → the
@@ -185,7 +185,7 @@ test('wavecel mono TRIGGER gates the per-voice envelope (audio opens on trigger)
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -213,7 +213,7 @@ test('cube poly chord (POLYSEQZ → poly) drives the per-voice envelopes', async
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

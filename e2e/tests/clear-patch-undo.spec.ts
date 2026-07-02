@@ -45,7 +45,7 @@ async function readGraph(page: Page): Promise<{ nodes: string[]; edges: string[]
 }
 
 test('Clear patch is undoable: Clear empties the rack, undo restores nodes + edge', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // 1. Spawn two real-engine modules + a (cv→cv) edge between them. spawnPatch

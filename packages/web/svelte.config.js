@@ -13,6 +13,18 @@ const config = {
         include: ['/*'],
         exclude: ['<all>'],
       },
+      // In-memory bindings for the LOCAL emulated platform (dev + `vite
+      // preview`; prod is real Cloudflare and unaffected). With on-disk
+      // persistence, concurrent FIRST requests race the adapter's platform
+      // memoization (`emulated ??= await get_emulated()` caches the value,
+      // not the promise), each spawning a workerd against the same
+      // `.wrangler/state/v3` SQLite → "database is locked: SQLITE_BUSY" →
+      // fatal, killing the whole preview server. e2e tripped this the moment
+      // the landing became prerendered: Playwright's readiness poll of `/`
+      // stopped warming the proxy, so the 4 workers' first hits raced it
+      // (shards 1/4/10 died with ERR_CONNECTION_REFUSED). We keep no state
+      // in the emulated bindings, so in-memory loses nothing.
+      platformProxy: { persist: false },
     }),
     prerender: {
       // Module-face PNGs (/docs/module-faces/<id>.png) are GENERATED from the
@@ -24,6 +36,18 @@ const config = {
       handleHttpError: ({ path, referrer, message }) => {
         if (path.startsWith('/docs/module-faces/')) {
           console.warn(`[prerender] missing doc face (non-fatal): ${path}${referrer ? ` (from ${referrer})` : ''}`);
+          return;
+        }
+        // The landing page (and shared nav) link to the Clerk-gated auth/app
+        // routes (/sign-in, /sign-up, /dashboard). Those are fully client-
+        // rendered, and in any build env WITHOUT Clerk secrets (CI + the CF
+        // Pages preview build) hooks.server.ts renders them as a diagnostic
+        // 503 — which the prerender crawler follows and would hard-fail on.
+        // They are never prerendered content, so degrade their crawl errors to
+        // a warning (this turned fatal the moment the landing added a link from
+        // / to /sign-in, breaking the preview build with no site to review).
+        if (/^\/(sign-in|sign-up|dashboard)(\/|$)/.test(path)) {
+          console.warn(`[prerender] skipping client-only auth route (non-fatal): ${path}${referrer ? ` (from ${referrer})` : ''}`);
           return;
         }
         throw new Error(message);

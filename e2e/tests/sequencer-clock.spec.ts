@@ -17,7 +17,7 @@ test.describe.configure({ mode: 'parallel' });
 test('sequencer-clock: external clock advances slower sequencer at the faster rate', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -71,7 +71,7 @@ test('sequencer-clock: external clock advances slower sequencer at the faster ra
 });
 
 test('sequencer-clock: without chain, sequencer uses internal BPM', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

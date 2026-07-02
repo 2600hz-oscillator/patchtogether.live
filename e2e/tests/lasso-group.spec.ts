@@ -30,7 +30,7 @@ interface PatchNode {
 }
 
 async function setupChain(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -47,7 +47,7 @@ async function setupChain(page: Page): Promise<void> {
 }
 
 test('left-drag empty pane pans the SvelteFlow viewport (default behavior restored)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -80,7 +80,7 @@ test('left-drag empty pane pans the SvelteFlow viewport (default behavior restor
 });
 
 test('right-click pane → palette shows "Create group" tool entry', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   const pane = page.locator('.svelte-flow__pane');
   const box = await pane.boundingBox();

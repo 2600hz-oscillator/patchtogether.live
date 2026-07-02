@@ -53,7 +53,7 @@ test.describe('CAMERA → OUTPUT (deterministic render smoke)', () => {
       (window as unknown as { __camerainputTestFrame?: boolean }).__camerainputTestFrame = true;
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -106,7 +106,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -220,7 +220,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       };
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -288,7 +288,7 @@ test.describe('CAMERA → OUTPUT (fake webcam) — getUserMedia integration @cam
       };
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [

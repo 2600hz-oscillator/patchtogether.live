@@ -189,7 +189,7 @@ test.describe('VRT: video→audio CV/gate composite pairs (#414 regression cover
         `${pair.id} on linux: composite baseline pending (capture on linux CI)`,
       );
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       if (pair.gatedOnDoomWasm) {

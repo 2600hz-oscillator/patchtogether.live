@@ -107,7 +107,7 @@ async function isValidConnection(
  *  audio OUTPUT; filter has an `audio` INPUT (audio) and a `cutoff` INPUT
  *  (cv). audioOut gives us a port to exercise the direction check. */
 async function setup(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

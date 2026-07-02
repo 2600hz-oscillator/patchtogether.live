@@ -85,7 +85,7 @@ test('buggles: drop module → card mounts with no console errors', async ({ pag
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'b', type: 'buggles', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-buggles');
@@ -95,7 +95,7 @@ test('buggles: drop module → card mounts with no console errors', async ({ pag
 });
 
 test('buggles: STEPPED output produces varying voltages over time (chaos > 0)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // Set rate fairly high (knob 0.7 → ~10 Hz) so we see lots of steps in
   // the test window. Chaos 0.8 ensures big jumps so peaks are visible.
@@ -125,7 +125,7 @@ test('buggles: STEPPED output produces varying voltages over time (chaos > 0)', 
 });
 
 test('buggles: SMOOTH output produces a slowly-varying voltage', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -150,7 +150,7 @@ test('buggles: SMOOTH output produces a slowly-varying voltage', async ({ page }
 });
 
 test('buggles: CLOCK output triggers ADSR envelope', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -188,7 +188,7 @@ test('buggles: CLOCK output triggers ADSR envelope', async ({ page }) => {
 });
 
 test('buggles: SMOOTH output modulates VCA amplitude', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

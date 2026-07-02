@@ -32,7 +32,7 @@ test('SIDECAR smoke: VCO → SIDECAR → AUDIOOUT — card mounts, no errors', a
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -87,7 +87,7 @@ test('SIDECAR ducker: SC pad is in the mix + dips when the MAIN trigger fires', 
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // VCO pad → SIDECHAIN (always-on signal). NOISE (mutable level) → MAIN
@@ -154,7 +154,7 @@ test('SIDECAR env_inv_out → STEREOVCA.strength_l ducks a second VCO', async ({
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Patch: NOISE (mutable level) → SIDECAR (self-detect, hot);

@@ -28,7 +28,7 @@ const SC_SPACE = 0x39;
 
 test('blood in-game: drive the menu into a level + read the in-game framebuffer', async ({ page }) => {
   test.setTimeout(90_000);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

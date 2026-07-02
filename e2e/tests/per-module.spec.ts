@@ -226,7 +226,7 @@ test.describe('per-module: output-alive smoke', () => {
         if (m.type() === 'error') errors.push(`console: ${m.text()}`);
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       // DOOM-specific: gate on the WASM blob being available. The build

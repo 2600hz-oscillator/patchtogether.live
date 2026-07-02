@@ -38,7 +38,7 @@ async function readModel(page: Page, id: string): Promise<unknown> {
 }
 
 async function spawnMarquee(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

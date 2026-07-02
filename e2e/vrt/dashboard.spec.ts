@@ -1,10 +1,13 @@
 // e2e/vrt/dashboard.spec.ts
 //
-// Public/unauthed dashboard landing snapshot. The root `/` IS the public
-// landing — `/dashboard` redirects to /sign-in for anon users, so a
+// Public/unauthed scratch-canvas snapshot. `/rack` is the scratch canvas
+// (moved off `/` in the landing-page overhaul; `/` is now the static
+// landing). `/dashboard` redirects to /sign-in for anon users, so a
 // signed-out "dashboard" shot would just be the sign-in page. The
 // canvas-empty shot catches topbar / SkinSwitcher / bottombar chrome
-// regressions, which is the actual user-visible signed-out surface.
+// regressions, which is the actual user-visible signed-out surface. The
+// baseline name stays `landing-empty` (the canvas chrome is route-
+// independent, so the darwin pixels are unchanged by the move).
 //
 // Same per-platform layout as the other VRT specs (see vrt.config.ts
 // snapshotPathTemplate). Linux baseline pending — exempted on first land
@@ -49,7 +52,7 @@ test('landing-empty: public canvas with no modules', async ({ page }) => {
   // stable run-to-run and drifts the landing-empty baseline (esp. on the
   // ubuntu linux runner). See e2e/vrt/_fonts.ts for the full writeup.
   await pinVrtFonts(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await awaitVrtFonts(page);
   await hideJitterers(page);

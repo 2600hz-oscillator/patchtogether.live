@@ -34,6 +34,17 @@ describe('isBetaGatePublic', () => {
     expect(isBetaGatePublic('/api/health')).toBe(true);
   });
 
+  it('exempts EXACTLY / (the public landing / front door), never the app under it', () => {
+    // Finding C of the landing-page overhaul: the prerendered landing at `/`
+    // must return 200 to anon/crawlers with the beta gate active, or the whole
+    // "public front door" rationale for moving the canvas off `/` is defeated.
+    expect(isBetaGatePublic('/')).toBe(true);
+    // EXACT match only (BETA_GATE_PUBLIC_PATHS, not a prefix): the moved canvas
+    // at /rack and everything else stay gated.
+    expect(isBetaGatePublic('/rack')).toBe(false);
+    expect(isBetaGatePublic('/rackspaces')).toBe(false);
+  });
+
   it('exempts /docs and every /docs/* descendant', () => {
     expect(isBetaGatePublic('/docs')).toBe(true);
     expect(isBetaGatePublic('/docs/')).toBe(true);
@@ -50,7 +61,7 @@ describe('isBetaGatePublic', () => {
   });
 
   it('does NOT exempt other auth-touched paths', () => {
-    expect(isBetaGatePublic('/')).toBe(false);
+    expect(isBetaGatePublic('/rack')).toBe(false);
     expect(isBetaGatePublic('/dashboard')).toBe(false);
     expect(isBetaGatePublic('/sign-in')).toBe(false);
     expect(isBetaGatePublic('/r/abc123')).toBe(false);

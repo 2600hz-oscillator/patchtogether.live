@@ -29,7 +29,7 @@ async function openSwitcher(page: import('@playwright/test').Page) {
 }
 
 test('skins: switcher renders in topbar with default skin active', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await expect(page.getByTestId('skin-switcher-trigger')).toBeVisible();
   await expect(page.getByTestId('skin-current-id')).toHaveText('default');
@@ -37,7 +37,7 @@ test('skins: switcher renders in topbar with default skin active', async ({ page
 });
 
 test('skins: popover lists all 8 in-tree skins', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await openSwitcher(page);
   for (const id of [
@@ -55,7 +55,7 @@ test('skins: popover lists all 8 in-tree skins', async ({ page }) => {
 });
 
 test('skins: picking terminal-green flips --bg + persists choice', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await openSwitcher(page);
   await page.getByTestId('skin-option-terminal-green').click();
@@ -69,7 +69,7 @@ test('skins: picking terminal-green flips --bg + persists choice', async ({ page
 });
 
 test('skins: choice survives a reload', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await openSwitcher(page);
   await page.getByTestId('skin-option-vaporwave').click();
@@ -85,7 +85,7 @@ test('skins: choice survives a reload', async ({ page }) => {
 });
 
 test('skins: each shipped skin sets the expected --bg', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // Iterate every skin; the trigger re-renders with the new label/id
   // after each pick so the test exercises the complete switch loop.
@@ -116,7 +116,7 @@ test('skins: switching to Vintage renders sprite-based fader handles', async ({ 
   // VCA has both a unipolar Fader (Base, min=0) and a bipolar one
   // (CV Amt, min=-1, max=1) — so the same card exercises the with-hash
   // and without-hash paths in sprite mode.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -167,7 +167,7 @@ test('skins: switching to Vintage renders sprite-based fader handles', async ({ 
 });
 
 test('skins: clicking outside closes the popover without changing skin', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await openSwitcher(page);
   // Click the topbar's h1 — outside the switcher, inside the topbar

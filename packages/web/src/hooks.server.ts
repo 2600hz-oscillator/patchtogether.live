@@ -114,9 +114,17 @@ const conditionalClerk: Handle = async ({ event, resolve }) => {
 // COOP/COEP enable SharedArrayBuffer for Faust's WASM thread, but they also
 // block third-party resources without CORP headers — including Clerk's
 // Turnstile widget on /sign-in/sso-callback. Auth routes don't need SAB,
-// so we scope these headers to routes that DO: the public canvas at `/`
-// and the rack canvas at `/r/`. Everything else (sign-in/up, dashboard,
-// docs, api) gets no isolation headers and can load Clerk's widgets.
+// so we scope these headers to routes that DO: the scratch canvas at `/rack`
+// and the rack canvas at `/r/`. Everything else (the prerendered landing at
+// `/`, sign-in/up, dashboard, docs, api) gets no isolation headers and can
+// load Clerk's widgets.
+//
+// NOTE (landing-page overhaul): isolation is enforced GLOBALLY by
+// packages/web/_headers `/*` (prod / CF Pages) and vite.config.ts
+// `server`/`preview` headers (dev / preview / e2e). The ISOLATED_EXACT set
+// below is route-keyed belt-and-suspenders for the dev/hooks path — it is NOT
+// what makes a route isolated. `/rack` (the moved canvas) is listed here; `/`
+// (the new static landing) is NOT — the landing needs no SharedArrayBuffer.
 //
 // COEP MODE = `credentialless` (NOT `require-corp`). Both keep the page
 // cross-origin-ISOLATED (so `crossOriginIsolated === true` and SharedArrayBuffer
@@ -137,7 +145,7 @@ const conditionalClerk: Handle = async ({ event, resolve }) => {
 //
 // `/present` (the second-display popup sink) ALSO gets COOP `same-origin` here
 // — NOT for SAB, but so the popup shares a browsing-context group with its
-// opener (`/` or `/r/`, both COOP `same-origin`). With a MISMATCHED COOP the
+// opener (`/rack` or `/r/`, both COOP `same-origin`). With a MISMATCHED COOP the
 // browser severs the opener relationship: the popup's `window.opener` becomes
 // null AND the opener loses cross-window DOM access — so the present handshake
 // (popup → opener `present:ready`) and the opener's per-frame canvas blit into
@@ -145,7 +153,10 @@ const conditionalClerk: Handle = async ({ event, resolve }) => {
 // `/*` rule already covered `/present`; this makes DEV match prod so the
 // pipeline works locally + is e2e-testable. See routes/present/+page.svelte.
 const SAB_ROUTES = ['/r/'];
-const ISOLATED_EXACT = new Set(['/', '/present']);
+// `/rack` = the scratch canvas (moved off `/` in the landing-page overhaul);
+// `/present` = the second-display popup sink. `/` is intentionally absent — the
+// static landing that now lives there needs no cross-origin isolation.
+const ISOLATED_EXACT = new Set(['/rack', '/present']);
 const setCoopCoepHeaders: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
   const path = event.url.pathname;
@@ -163,12 +174,18 @@ const setCoopCoepHeaders: Handle = async ({ event, resolve }) => {
 // a non-default username, but `beta` is fine in 99% of cases.
 const BETA_GATE_USER_DEFAULT = 'beta';
 // Carve-outs:
+//   - /                 — the prerendered public landing / front door (the
+//                        canvas moved to /rack in the landing-page overhaul).
+//                        Anon + crawlers must get 200 here, or the SEO/first-
+//                        paint rationale for the whole move is defeated. This is
+//                        an EXACT match (BETA_GATE_PUBLIC_PATHS, not a prefix) —
+//                        it opens ONLY `/`, never the gated app under it.
 //   - /api/health      — uptime monitors + ops smoke probes need this
 //                        reachable without a credential prompt.
 //   - /docs (+ /docs/*) — the in-app docs site is public on every tier so
 //                        prospective users can read it without punching a
 //                        beta-gate password.
-const BETA_GATE_PUBLIC_PATHS = ['/api/health'];
+const BETA_GATE_PUBLIC_PATHS = ['/', '/api/health'];
 const BETA_GATE_PUBLIC_PREFIXES = ['/docs/'];
 
 export function isBetaGatePublic(pathname: string): boolean {

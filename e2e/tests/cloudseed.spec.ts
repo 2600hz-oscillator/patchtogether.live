@@ -14,7 +14,7 @@ test('CLOUDSEED card mounts + audio flows VCO → CLOUDSEED → OUTPUT', async (
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -50,7 +50,7 @@ test('CLOUDSEED card mounts + audio flows VCO → CLOUDSEED → OUTPUT', async (
 });
 
 test('CLOUDSEED preset slots cycle + name and DECAY readout update', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -99,7 +99,7 @@ test('CLOUDSEED survives macro-knob sweeps without console errors', async ({ pag
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
