@@ -69,6 +69,7 @@ import { patch as livePatch } from '$lib/graph/store';
 import { C3_MIDI, midiToVOct } from '$lib/audio/note-entry';
 import { getSchedulerClock, SCHEDULER_TICK_MS } from '$lib/audio/scheduler-clock';
 import { createPlayheadTracker } from './playhead-tracker';
+import { createEdgeCounter } from '$lib/audio/edge-detect';
 import { MACRO_MAX_MODEL } from './macrooscillator';
 import {
   createTransportCv,
@@ -367,14 +368,21 @@ export const macseqDef: AudioModuleDef = {
     const clockInAnalyser = ctx.createAnalyser();
     clockInAnalyser.fftSize = 2048;
     clockInGain.connect(clockInAnalyser);
-    const clockInBuffer = new Float32Array(clockInAnalyser.fftSize);
     const clockInSilence = ctx.createConstantSource();
     clockInSilence.offset.value = 0;
     clockInSilence.start();
     clockInSilence.connect(clockInGain);
-    let lastClockSample = 0;
-    let lastClockSampleTime = ctx.currentTime;
+    // External clock rising-edge detection via the shared WINDOWED counter
+    // ($lib/audio/edge-detect). It owns the elapsed-samples window math so a
+    // 2048-sample AnalyserNode ring can't re-present the same edge on two
+    // consecutive ~25 ms ticks (the NUMPAD+/HYDROGEN double-advance class), and
+    // so this per-module clock scan can't drift from the canonical one.
     const CLOCK_THRESHOLD = 0.5;
+    const clockCounter = createEdgeCounter({
+      ctx,
+      analyser: clockInAnalyser,
+      threshold: CLOCK_THRESHOLD,
+    });
 
     // Shared transport CV inputs (play_cv, reset_cv, queue{1..8}_cv +
     // next/prev/random nav gates) — parity with the base Sequencer.
@@ -409,11 +417,17 @@ export const macseqDef: AudioModuleDef = {
     let alive = true;
     let unsubscribeTick: (() => void) | null = null;
     const LOOKAHEAD_S = 0.2;
+    // #229: a past-due step older than this is DROPPED, not emitted. After a
+    // main-thread stall > LOOKAHEAD_S the internal loop would otherwise emit a
+    // backlog at past timestamps that Web Audio collapses onto "now" = a rushed
+    // double-hit. Mirrors drumseqz.ts's guard.
+    const LATE_DROP_EPS = 0.005;
     void SCHEDULER_TICK_MS; // referenced by the shared scheduler-clock
 
     const playhead = createPlayheadTracker();
     let totalAdvances = 0;
     let totalSequenceEnds = 0;
+    let lateStepsDropped = 0;
     let lastEmittedVOct = 0;
     let lastEmittedGate = 0;
     // Last MODELCV value we actually wrote to modelCvSrc. Used for HOLD-LAST
@@ -557,8 +571,7 @@ export const macseqDef: AudioModuleDef = {
           nextStepTime = ctx.currentTime + 0.05;
           gateSrc.offset.cancelScheduledValues(ctx.currentTime);
           gateSrc.offset.setValueAtTime(0, ctx.currentTime);
-          lastClockSample = 0;
-          lastClockSampleTime = ctx.currentTime;
+          clockCounter.reset();
           transportCv.resetEdges();
           lastTransportPollTime = ctx.currentTime;
         } else if (!shouldRun && prevPlaying) {
@@ -570,38 +583,31 @@ export const macseqDef: AudioModuleDef = {
         if (!shouldRun) return;
 
         if (externalClock) {
-          clockInAnalyser.getFloatTimeDomainData(clockInBuffer);
-          const elapsed = nowAt - lastClockSampleTime;
-          const newSamples = Math.min(
-            clockInBuffer.length,
-            Math.max(1, Math.ceil(elapsed * ctx.sampleRate)),
-          );
-          const start = clockInBuffer.length - newSamples;
+          // One step per external-clock rising edge. The counter windows to the
+          // samples that arrived since the last tick, so no edge is
+          // double-counted. NOTE: a main-thread stall longer than the analyser
+          // ring (~42 ms @ 48 kHz) can still drop edges — the fully stall-immune
+          // fix is a worklet clock (deferred; audio-slowdown plan §3-C2).
+          const edges = clockCounter.poll(nowAt);
           const bpm = readParam('bpm', 120);
           // Clamp to [1, STEP_COUNT] so a stale persisted value (or a
           // post-PR widening default) can't sample past the data array.
           const length = Math.max(1, Math.min(STEP_COUNT, Math.round(readParam('length', 16))));
           const stepDurForGate = 60 / Math.max(1, bpm) / 4;
-          for (let i = start; i < clockInBuffer.length; i++) {
-            const cur = clockInBuffer[i] ?? 0;
-            if (lastClockSample < CLOCK_THRESHOLD && cur >= CLOCK_THRESHOLD) {
-              emitStep(stepIndex, nowAt + 0.005, stepDurForGate);
-              const nextIdx = (stepIndex + 1) % length;
-              if (nextIdx === 0) {
-                // Sequence end: apply any queued slot / nav before advancing.
-                totalSequenceEnds++;
-                if (maybeApplyQueuedSlot()) {
-                  // stepIndex was reset to 0 by the apply; skip the advance.
-                  lastClockSample = cur;
-                  continue;
-                }
+          for (let e = 0; e < edges; e++) {
+            emitStep(stepIndex, nowAt + 0.005, stepDurForGate);
+            const nextIdx = (stepIndex + 1) % length;
+            if (nextIdx === 0) {
+              // Sequence end: apply any queued slot / nav before advancing.
+              totalSequenceEnds++;
+              if (maybeApplyQueuedSlot()) {
+                // stepIndex was reset to 0 by the apply; skip the advance.
+                continue;
               }
-              stepIndex = nextIdx;
-              totalAdvances++;
             }
-            lastClockSample = cur;
+            stepIndex = nextIdx;
+            totalAdvances++;
           }
-          lastClockSampleTime = nowAt;
         } else {
           while (nextStepTime < ctx.currentTime + LOOKAHEAD_S) {
             const bpm = readParam('bpm', 120);
@@ -609,7 +615,12 @@ export const macseqDef: AudioModuleDef = {
           // post-PR widening default) can't sample past the data array.
           const length = Math.max(1, Math.min(STEP_COUNT, Math.round(readParam('length', 16))));
             const stepDur = 60 / bpm / 4; // 16th-note grid
-            emitStep(stepIndex, nextStepTime, stepDur);
+            // #229: drop past-due backlog instead of bunching it onto "now".
+            if (nextStepTime < ctx.currentTime - LATE_DROP_EPS) {
+              lateStepsDropped++;
+            } else {
+              emitStep(stepIndex, nextStepTime, stepDur);
+            }
             const nextIdx = (stepIndex + 1) % length;
             const nextStartTime = nextStepTime + stepDur;
             if (nextIdx === 0) {
@@ -661,6 +672,7 @@ export const macseqDef: AudioModuleDef = {
         if (key === 'currentStep') return playhead.currentAt(ctx.currentTime);
         if (key === 'totalAdvances') return totalAdvances;
         if (key === 'totalSequenceEnds') return totalSequenceEnds;
+        if (key === 'lateStepsDropped') return lateStepsDropped;
         if (key === 'pitchVOct')   return lastEmittedVOct;
         if (key === 'gateValue')   return lastEmittedGate;
         if (key === 'modelCv')     return lastEmittedModelCv;

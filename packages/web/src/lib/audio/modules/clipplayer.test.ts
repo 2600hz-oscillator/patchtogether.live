@@ -49,12 +49,20 @@ class FakeConstantSource {
   offset = new FakeParam();
   start() {}
   stop() {}
-  connect() {}
+  // Track which merger channel this source feeds so tests can reach the per-lane
+  // poly gate/pitch params (createPolySender does gateSrc.connect(merger,0,ch)).
+  connect(target?: unknown, _output?: number, input?: number) {
+    const t = target as { _inputs?: Record<number, FakeConstantSource> } | undefined;
+    if (t && t._inputs && typeof input === 'number') t._inputs[input] = this;
+  }
   disconnect() {}
 }
 class FakeGain {
   gain = new FakeParam();
   injected: Float32Array | null = null;
+  // Populated when this node is used as a ChannelMerger (poly sender output):
+  // channel index → the ConstantSource feeding it.
+  _inputs: Record<number, FakeConstantSource> = {};
   connect(node: unknown) {
     if (node instanceof FakeAnalyser) node._source = this;
   }
@@ -141,6 +149,17 @@ function gateOf(handle: { outputs: Map<string, { node: unknown }> }, lane: numbe
 }
 function hasHighEvent(param: FakeParam): boolean {
   return param.events.some((e) => e.value >= 0.5);
+}
+/** The POLY-bus gate FakeParam for a lane's voice (default voice 0). Reaches the
+ *  per-voice ConstantSource behind the lane's ChannelMerger (pitchN output) via
+ *  the merger-input tracking in FakeConstantSource.connect. */
+function polyGateOf(
+  handle: { outputs: Map<string, { node: unknown }> },
+  lane: number,
+  voice = 0,
+): FakeParam {
+  const merger = handle.outputs.get(`pitch${lane + 1}`)!.node as unknown as FakeGain;
+  return (merger._inputs[voice * 2 + 1] as unknown as FakeConstantSource).offset as unknown as FakeParam;
 }
 async function build(ctx: FakeAudioContext) {
   return clipplayerDef.factory(
@@ -637,6 +656,134 @@ describe('clipplayer: live audition (KEYS)', () => {
     pushAudition(NODE_ID, { lane: 0, midi: 67, velocity: 0, on: false });
     hoisted.tick!();
     expect(gate.events.at(-1)!.value, 'gate closes on release').toBe(0);
+  });
+});
+
+// ===========================================================================
+// TIED-NOTE POLY GATE (gate/held-note plan Phase 1). A held/tied note
+// (lengthSteps>1) must hold its POLY-bus gate across the whole span exactly like
+// its MONO gate — before the fix, poly.scheduleStep re-zeroed the gate on every
+// rest step, so a tied note released a step early into poly synths while the
+// mono bus sustained. Assert the two gates' close schedules AGREE.
+// ===========================================================================
+describe('clipplayer: tied-note poly gate (Phase 1)', () => {
+  it('a tied note holds the POLY gate across its span, matching the MONO gate (no early poly close)', async () => {
+    clearAudition(NODE_ID);
+    // one 2-step tied note at step 0 of a long clip (so the short run stays well
+    // inside it — no loop wrap, no clip-end stop to add unrelated gate events).
+    const tied: NoteClipRecord = {
+      kind: 'note',
+      steps: [{ step: 0, midi: 60, velocity: 127, lengthSteps: 2 }],
+      lengthSteps: 16,
+      root: 48,
+      loop: true,
+    };
+    seed(
+      { stepDiv: 4, quantize: 0, octave: 0, gateLength: 0.9, snh: 1 },
+      { clips: { [clipIndex(0, 0)]: tied }, playing: lane8(0, 0, null) },
+    );
+    seedTimelorde(1); // transport running → the clip is scheduled
+    const ctx = ctx0();
+    const handle = await build(ctx);
+    const mono = gateOf(handle as never, 0);
+    const poly = polyGateOf(handle as never, 0);
+    run(ctx, 0, 0.5); // crosses the tied note's 2 steps + a couple of rests
+    const closes = (p: FakeParam) =>
+      p.events.filter((e) => e.value === 0).map((e) => Math.round(e.time * 1e6) / 1e6);
+    expect(hasHighEvent(poly), 'poly gate opened for the tied note').toBe(true);
+    // The crux: the poly gate must NOT be re-zeroed at the step-1 boundary; its
+    // close schedule must EQUAL the mono gate's (whose rest-step else-branch never
+    // writes). Pre-fix, poly carried an extra 0 one step early.
+    expect(closes(poly), 'poly gate closes agree with the mono gate').toEqual(closes(mono));
+  });
+});
+
+// ===========================================================================
+// STABLE VOICE ALLOCATOR (gate/held-note plan Phase 2a). Held KEYS-audition
+// notes each keep their OWN poly voice-lane for their whole life. Releasing a
+// LOWER held note must free ONLY its voice and NOT shift/re-write a still-held
+// HIGHER note (the old positional repack shifted the survivors down a lane,
+// rewriting pitch on a sounding voice → glitch/retrigger). We assert directly on
+// the per-voice poly params via the merger-input tracking.
+// ===========================================================================
+describe('clipplayer: stable voice allocator (KEYS audition, Phase 2a)', () => {
+  function polyPitchOf(
+    handle: { outputs: Map<string, { node: unknown }> },
+    lane: number,
+    voice = 0,
+  ): FakeParam {
+    const merger = handle.outputs.get(`pitch${lane + 1}`)!.node as unknown as FakeGain;
+    return (merger._inputs[voice * 2] as unknown as FakeConstantSource).offset as unknown as FakeParam;
+  }
+
+  it('releasing a LOWER held note does NOT shift/re-write a still-held HIGHER note', async () => {
+    clearAudition(NODE_ID);
+    // Pure live audition on lane 0 with the transport STOPPED (no clip launched),
+    // so the only writes come from the audition drain.
+    seed({ stepDiv: 2, quantize: 0, octave: 0 }, { clips: {} });
+    seedTimelorde(0);
+    const ctx = ctx0();
+    const handle = await build(ctx);
+
+    // Press A (low, midi 60) then B (higher, midi 64): A → voice 0, B → voice 1.
+    pushAudition(NODE_ID, { lane: 0, midi: 60, velocity: 100, on: true });
+    hoisted.tick!();
+    pushAudition(NODE_ID, { lane: 0, midi: 64, velocity: 100, on: true });
+    hoisted.tick!();
+
+    const v0gate = polyGateOf(handle as never, 0, 0);
+    const v1gate = polyGateOf(handle as never, 0, 1);
+    const v1pitch = polyPitchOf(handle as never, 0, 1);
+    // B is on voice 1 at its own pitch, gate high (it took the SECOND lane, not 0).
+    expect(v1pitch.value).toBeCloseTo(midiToVOct(64), 5);
+    expect(v1gate.value).toBe(1);
+    const v1GateEvents = v1gate.events.length;
+    const v1PitchEvents = v1pitch.events.length;
+
+    // Release the LOWER note A. Its voice (0) falls; B (voice 1) is UNTOUCHED.
+    pushAudition(NODE_ID, { lane: 0, midi: 60, velocity: 0, on: false });
+    hoisted.tick!();
+
+    // A's voice closed cleanly.
+    expect(v0gate.events.at(-1)!.value, "A's voice fell on release").toBe(0);
+    // B's voice: NO new gate or pitch events — not shifted down to voice 0, not
+    // re-written. This is the positional-repack glitch the allocator fixes.
+    expect(v1gate.events.length, 'B gate not re-written').toBe(v1GateEvents);
+    expect(v1pitch.events.length, 'B pitch not re-written').toBe(v1PitchEvents);
+    expect(v1gate.value, 'B still sounding on voice 1').toBe(1);
+    expect(v1pitch.value, 'B still at its own pitch').toBeCloseTo(midiToVOct(64), 5);
+    // B did NOT migrate onto A's freed voice 0 (voice 0 keeps A's stale pitch;
+    // its gate is closed so it is silent).
+    const v0pitch = polyPitchOf(handle as never, 0, 0);
+    expect(v0pitch.value, 'voice 0 not overwritten with B').toBeCloseTo(midiToVOct(60), 5);
+  });
+
+  it('a released voice-lane is REUSED (lowest-free) by the next held note', async () => {
+    clearAudition(NODE_ID);
+    seed({ stepDiv: 2, quantize: 0, octave: 0 }, { clips: {} });
+    seedTimelorde(0);
+    const ctx = ctx0();
+    const handle = await build(ctx);
+    // Hold three notes → voices 0,1,2.
+    for (const m of [60, 64, 67]) {
+      pushAudition(NODE_ID, { lane: 0, midi: m, velocity: 100, on: true });
+      hoisted.tick!();
+    }
+    const v1pitch = polyPitchOf(handle as never, 0, 1);
+    expect(v1pitch.value).toBeCloseTo(midiToVOct(64), 5);
+    // Release the MIDDLE note (voice 1), then press a new note — it takes the
+    // freed voice 1 (lowest free) with a clean rising edge at the new pitch.
+    pushAudition(NODE_ID, { lane: 0, midi: 64, velocity: 0, on: false });
+    hoisted.tick!();
+    expect(polyGateOf(handle as never, 0, 1).events.at(-1)!.value).toBe(0);
+    pushAudition(NODE_ID, { lane: 0, midi: 72, velocity: 100, on: true });
+    hoisted.tick!();
+    // New note landed on the reused voice 1 at its own pitch, gate high.
+    expect(v1pitch.value, 'reused voice 1 now plays the new note').toBeCloseTo(midiToVOct(72), 5);
+    expect(polyGateOf(handle as never, 0, 1).value).toBe(1);
+    // Voices 0 and 2 (60, 67) are untouched — still sounding.
+    expect(polyGateOf(handle as never, 0, 0).value).toBe(1);
+    expect(polyGateOf(handle as never, 0, 2).value).toBe(1);
   });
 });
 
