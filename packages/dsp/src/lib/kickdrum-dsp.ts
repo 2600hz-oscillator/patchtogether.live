@@ -30,6 +30,16 @@
 import { clamp, dcBlockStep, makeDcBlockState, type DcBlockState } from './chowkick-dsp';
 import { moogWaves } from './moog-vco-dsp';
 import { createOversampler, type Oversampler } from './oversample';
+import {
+  makeBiquad,
+  biquadStep,
+  updateHighpass,
+  updateLowShelf,
+  updatePeaking,
+  updateHighShelf,
+  updateLowpass,
+  type Biquad,
+} from './rbj-biquad';
 
 /** Deterministic click-noise seed — reseeded at EVERY strike so hit N is
  *  bit-identical to hit 1 (ART-friendly; no wall-clock randomness). */
@@ -90,6 +100,20 @@ export interface KickdrumP1Params {
    *  1 → wavefold+asym blend @4×, hotter pre-gain, fold depth riding the
    *      body envelope (more drive + fold + bite). */
   hard: number;
+
+  // ── Phase 3: EQ + harmonic exciter (translate) ──
+  /** Sub shelf gain at ~50 Hz, dB (−12..12, default 0). */
+  subEq: number;
+  /** Body bell gain at ~150 Hz, dB (−12..12, default 3). */
+  bodyEq: number;
+  /** Attack bell gain at ~2.8 kHz, dB (−12..12, default 2). */
+  attackEq: number;
+  /** Spectral tilt −1..1 (default 0): negative = darker, positive = brighter
+   *  (∓4 dB shelves at 250 Hz / 2.5 kHz). */
+  tilt: number;
+  /** Harmonic-exciter blend 0..1 (default 0.3): saturates a low-passed copy
+   *  of the SUB so small speakers reconstruct the missing fundamental. */
+  translate: number;
 }
 
 export const KICKDRUM_P1_DEFAULTS: KickdrumP1Params = {
@@ -108,6 +132,11 @@ export const KICKDRUM_P1_DEFAULTS: KickdrumP1Params = {
   clickLevel: 0.4,
   drive: 0.4,
   hard: 0,
+  subEq: 0,
+  bodyEq: 3,
+  attackEq: 2,
+  tilt: 0,
+  translate: 0.3,
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -151,6 +180,15 @@ export interface KickdrumState {
    *  fields above. */
   softFn: (x: number) => number;
   hardFn: (x: number) => number;
+
+  // ── Phase 3: EQ chain + exciter ──
+  eqHp: Biquad; // 22 Hz rumble/DC guard
+  eqSub: Biquad; // 50 Hz shelf
+  eqBody: Biquad; // 150 Hz bell
+  eqAttack: Biquad; // 2.8 kHz bell
+  eqTiltLo: Biquad; // 250 Hz shelf (∓)
+  eqTiltHi: Biquad; // 2.5 kHz shelf (±)
+  exLp: Biquad; // exciter 300 Hz low-pass
 }
 
 export function makeKickdrumState(): KickdrumState {
@@ -176,6 +214,13 @@ export function makeKickdrumState(): KickdrumState {
     // Placeholders — replaced right below once `s` exists to close over.
     softFn: (x) => x,
     hardFn: (x) => x,
+    eqHp: makeBiquad(),
+    eqSub: makeBiquad(),
+    eqBody: makeBiquad(),
+    eqAttack: makeBiquad(),
+    eqTiltLo: makeBiquad(),
+    eqTiltHi: makeBiquad(),
+    exLp: makeBiquad(),
   };
   // CLEAN (hard=0): tanh soft-clip — the 909-warm character. Pre-gain 1..4.
   s.softFn = (x) => Math.tanh((1 + 3 * s.driveAmt) * x);
@@ -332,5 +377,36 @@ export function kickdrumP1Step(
   }
 
   // ── DC block (~20 Hz, POST-drive: strips the asym shaper's offset too) ──
-  return dcBlockStep(driven, s.dc, 20, sr);
+  const clean = dcBlockStep(driven, s.dc, 20, sr);
+
+  // ── Phase 3: harmonic exciter ("translate") — an ASYMMETRIC saturator on a
+  // copy of the SUB (the x² term is what creates the EVEN 2nd harmonic; a
+  // plain tanh is odd and can only make 3rd/5th), low-passed at 300 Hz. For a
+  // 40 Hz tune this synthesizes 80/120/160 Hz so small speakers reconstruct
+  // the missing fundamental. Summed BEFORE the EQ chain so the 22 Hz HPF
+  // strips the x² term's DC offset. ──
+  const tr = clamp(p.translate, 0, 1);
+  let pre = clean;
+  if (tr > 0.001) {
+    updateLowpass(s.exLp, 300, sr);
+    const drySub = sub * subLv;
+    const excited = biquadStep(s.exLp, Math.tanh(2.2 * drySub + 0.9 * drySub * drySub));
+    pre = clean + tr * 0.8 * excited;
+  }
+
+  // ── Phase 3: EQ chain (own-code RBJ; NOT resofilter) ──
+  updateHighpass(s.eqHp, 22, sr);
+  updateLowShelf(s.eqSub, 50, clamp(p.subEq, -12, 12), sr);
+  updatePeaking(s.eqBody, 150, clamp(p.bodyEq, -12, 12), 1.0, sr);
+  updatePeaking(s.eqAttack, 2800, clamp(p.attackEq, -12, 12), 0.8, sr);
+  const tilt = clamp(p.tilt, -1, 1);
+  updateLowShelf(s.eqTiltLo, 250, -4 * tilt, sr);
+  updateHighShelf(s.eqTiltHi, 2500, 4 * tilt, sr);
+  let eq = biquadStep(s.eqHp, pre);
+  eq = biquadStep(s.eqSub, eq);
+  eq = biquadStep(s.eqBody, eq);
+  eq = biquadStep(s.eqAttack, eq);
+  eq = biquadStep(s.eqTiltLo, eq);
+  eq = biquadStep(s.eqTiltHi, eq);
+  return eq;
 }

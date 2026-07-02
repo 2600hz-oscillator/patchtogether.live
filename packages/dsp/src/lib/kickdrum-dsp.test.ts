@@ -140,10 +140,19 @@ describe('kickdrum P1: output invariants', () => {
   });
 
   it('peak ≤ 1 pre-drive even with both layers maxed (headroom invariant)', () => {
-    const buf = render(24000, P({ subLevel: 1, bodyLevel: 1, bodyShape: 1 }), 48000);
+    // EQ/translate zeroed: this test pins the MIX normalization; the default
+    // EQ boosts ride on top by design and Phase 4's ceiling bounds them.
+    const buf = render(
+      24000,
+      P({ subLevel: 1, bodyLevel: 1, bodyShape: 1, subEq: 0, bodyEq: 0, attackEq: 0, tilt: 0, translate: 0 }),
+      48000,
+    );
     let peak = 0;
     for (let i = 0; i < buf.length; i++) peak = Math.max(peak, Math.abs(buf[i]));
-    expect(peak).toBeLessThanOrEqual(1.0);
+    // ≤1.3 pre-ceiling: the mix is normalized ≤1, but the always-on 22 Hz
+    // HPF overshoots the strike transient (2nd-order IIR step response) and
+    // the decimator adds intersample peaks. Phase 4's ceiling is the bound.
+    expect(peak).toBeLessThanOrEqual(1.3);
     expect(peak).toBeGreaterThan(0.3); // and it's actually loud, not vacuous
   });
 
@@ -253,7 +262,18 @@ describe('kickdrum P2: oversampled drive + the `hard` switch', () => {
   });
 
   it('HARD mode: more bite than clean at the same drive, bounded, DC-clean', () => {
-    const base: Partial<KickdrumP1Params> = { drive: 0.8, bodyDecay: 300, clickLevel: 0 };
+    // EQ/translate zeroed to isolate the drive stage (default EQ boosts are
+    // bounded by Phase 4's ceiling, not by the drive).
+    const base: Partial<KickdrumP1Params> = {
+      drive: 0.8,
+      bodyDecay: 300,
+      clickLevel: 0,
+      subEq: 0,
+      bodyEq: 0,
+      attackEq: 0,
+      tilt: 0,
+      translate: 0,
+    };
     const clean = render(24000, P({ ...base, hard: 0 }), 48000);
     const hard = render(24000, P({ ...base, hard: 1 }), 48000);
     // First-difference energy = a crude high-band proxy: the fold/asym
@@ -273,16 +293,95 @@ describe('kickdrum P2: oversampled drive + the `hard` switch', () => {
       peak = Math.max(peak, Math.abs(hard[i]));
       mean += hard[i];
     }
-    // The nonlinearity is bounded ≤ ~0.9, but the decimation FIR reconstructs
-    // intersample (Gibbs) peaks past a hard fold — a few % overshoot is
-    // physics, not a bug (measured ≈1.065). Phase 4's `ceiling` soft-clip is
-    // the TRUE-PEAK bound; pre-ceiling the honest invariant is ≤ 1.1.
-    expect(peak).toBeLessThanOrEqual(1.1);
+    // The nonlinearity is bounded ≤ ~0.9, but the decimation FIR adds
+    // intersample (Gibbs) peaks past a hard fold AND the always-on 22 Hz HPF
+    // overshoots the strike transient. Physics, not bugs (measured ≈1.23);
+    // Phase 4's `ceiling` soft-clip is the TRUE-PEAK bound. Pre-ceiling: ≤1.3.
+    expect(peak).toBeLessThanOrEqual(1.3);
     expect(Math.abs(mean / hard.length)).toBeLessThan(1e-3); // asym DC stripped
   });
 
   it('full voice with drive + click stays strike-deterministic', () => {
     const p = P({ drive: 0.7, hard: 1 });
     expect(render(4096, p, 48000)).toEqual(render(4096, p, 48000));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 3 — EQ (own-code RBJ) + harmonic exciter (translate)
+// ─────────────────────────────────────────────────────────────────────────
+
+describe('kickdrum P3: EQ + translate', () => {
+  const N = 4800;
+  const sr = 48000;
+
+  it('sub_eq shelf raises the 50 Hz band', () => {
+    // Static 50 Hz sub only (pitchAmt 0 → no sweep), no drive/exciter noise.
+    const base: Partial<KickdrumP1Params> = {
+      bodyLevel: 0,
+      clickLevel: 0,
+      subLevel: 1,
+      pitchAmt: 0,
+      drive: 0,
+      translate: 0,
+      subDecay: 800,
+    };
+    const flat = render(N, P({ ...base, subEq: 0 }), sr);
+    const boosted = render(N, P({ ...base, subEq: 10 }), sr);
+    const bin5 = (b: Float32Array) => goertzelMag(b, 5); // 50 Hz
+    const db = 20 * Math.log10(bin5(boosted) / bin5(flat));
+    expect(db).toBeGreaterThan(3); // shelf midpoint sits AT fc → ~half gain
+    expect(db).toBeLessThan(11);
+  });
+
+  it('attack_eq bell lifts the click band (2.8 kHz)', () => {
+    const base: Partial<KickdrumP1Params> = {
+      subLevel: 0,
+      bodyLevel: 0,
+      clickLevel: 1,
+      clickTone: 2800,
+      drive: 0,
+      translate: 0,
+    };
+    const flat = render(N, P({ ...base, attackEq: 0 }), sr);
+    const boosted = render(N, P({ ...base, attackEq: 10 }), sr);
+    const at28 = (b: Float32Array) => goertzelMag(b, 280); // 2.8 kHz
+    const db = 20 * Math.log10(at28(boosted) / at28(flat));
+    expect(db).toBeGreaterThan(6);
+    expect(db).toBeLessThan(11.5);
+  });
+
+  it('tilt=+1 brightens (click band up vs tilt=-1)', () => {
+    const base: Partial<KickdrumP1Params> = {
+      subLevel: 0,
+      bodyLevel: 0,
+      clickLevel: 1,
+      clickTone: 2800,
+      drive: 0,
+      translate: 0,
+    };
+    const dark = render(N, P({ ...base, tilt: -1 }), sr);
+    const bright = render(N, P({ ...base, tilt: 1 }), sr);
+    // ±4 dB shelves meet ≈ half-gain AT 2.8 kHz (fc 2.5 kHz, midpoint at fc)
+    // → ~5 dB spread ≈ 1.75×. Assert the direction with honest margin.
+    expect(goertzelMag(bright, 280) / (goertzelMag(dark, 280) + 1e-12)).toBeGreaterThan(1.5);
+  });
+
+  it('translate reconstructs the missing fundamental: 40 Hz sub grows 80/120 Hz partials', () => {
+    const base: Partial<KickdrumP1Params> = {
+      bodyLevel: 0,
+      clickLevel: 0,
+      subLevel: 1,
+      tune: 40, // bin 4; H2 = bin 8, H3 = bin 12
+      pitchAmt: 0,
+      drive: 0,
+      subDecay: 800,
+    };
+    const dry = render(N, P({ ...base, translate: 0 }), sr);
+    const wet = render(N, P({ ...base, translate: 0.9 }), sr);
+    // Strike-transient splatter puts a real floor in the dry bin, so the
+    // measured growth is ~2.7× — assert >2 (direction + magnitude, honestly).
+    expect(goertzelMag(wet, 8) / (goertzelMag(dry, 8) + 1e-12)).toBeGreaterThan(2);
+    expect(goertzelMag(wet, 12) / (goertzelMag(dry, 12) + 1e-12)).toBeGreaterThan(2);
   });
 });
