@@ -2793,7 +2793,7 @@
       "features": {
         "crest": 105,
         "zcr": 1,
-        "centroid": 106
+        "centroid": 101
       },
       "labels": {
         "peakDb": -0.04,

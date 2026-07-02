@@ -3,13 +3,13 @@
 // KICK DRUM — layered stereo kick-voice AudioWorkletProcessor.
 //
 // Build plan: .myrobots/plans/kick-drum-voice-2026-07-01.md. The per-sample
-// DSP lives in ./lib/kickdrum-dsp.ts (Phases 1–4 today: SUB + BODY + CLICK
-// layers, the oversampled `hard`-switch DRIVE, the own-code RBJ EQ chain +
-// TRANSLATE exciter, and the DYNAMICS block ending in the true-peak
-// ceiling). This file is the worklet wrapper that owns the FULL frozen I/O
-// surface — all 25 params + 4 inputs + the stereo output — so the def/card/
-// contract never change as the remaining phase (the Phase-5 stereo
-// crossover consuming `width`) lands inside the core.
+// DSP lives in ./lib/kickdrum-dsp.ts (the FULL Phases-1–5 chain: SUB +
+// BODY + CLICK layers, the oversampled `hard`-switch DRIVE, the own-code
+// RBJ EQ chain + TRANSLATE exciter, the DYNAMICS block, and the Phase-5
+// stereo stage — mono-safe sub, `width` widening only the >120 Hz side,
+// each channel independently true-peak-ceilinged). This file is the worklet
+// wrapper that owns the frozen I/O surface: all 25 params + 4 inputs + the
+// stereo output.
 //
 // IMPORTANT: this file does NOT `export` anything at the top level —
 // top-level exports leak into the bundled dist/<name>.js + break the ART
@@ -20,7 +20,7 @@
 //
 // Inputs (audio-rate node connections):
 //   inputs[0] = trigger_in (edge:'trigger' — the STRIKE; per-sample rising
-//               edge prev<0.5 && cur>=0.5 detected inside kickdrumP1Step)
+//               edge prev<0.5 && cur>=0.5 detected inside the core step)
 //   inputs[1] = accent_in  (cv 0..1, LATCHED at the strike edge by the core)
 //   inputs[2] = pitch_cv   (1V/oct; transposes the whole voice)
 //   inputs[3] = choke_in   (edge:'gate' — damps WHILE high, short ramp;
@@ -33,16 +33,17 @@
 //
 // Output: outputs[0] = one STEREO (2-channel) output. The web factory fans
 // it into separate audio_l / audio_r ports via a ChannelSplitter (the
-// cube.ts stereo idiom). Phase 1 writes L = R (the stereo crossover + width
-// land in a later phase); the port surface is already stereo so patches
-// survive the upgrade unchanged.
+// cube.ts stereo idiom). L/R come from the core's kickdrumStepStereo:
+// mid ± width·side, where the side is >120 Hz decorrelated click content
+// only — the sub stays phase-coherent mono and a mono fold-down never
+// thins (width=0 → L == R exactly).
 //
 // Every time constant derives from the LIVE sampleRate (audit A2 — no
 // 48 000 literals).
 
 import {
   KICKDRUM_P1_DEFAULTS,
-  kickdrumP1Step,
+  kickdrumStepStereo,
   makeKickdrumState,
   decayCoeff,
   type KickdrumP1Params,
@@ -134,6 +135,9 @@ class KickdrumProcessor extends AudioWorkletProcessor {
   private chokeFall: number;
   private chokeRise: number;
 
+  // Reused per-sample stereo frame for kickdrumStepStereo (no per-sample GC).
+  private lr = new Float32Array(2);
+
   constructor(options?: { processorOptions?: unknown }) {
     super(options);
     this.sr = sampleRate;
@@ -216,13 +220,8 @@ class KickdrumProcessor extends AudioWorkletProcessor {
       p1.sustain    = rd('sustain', 0);
       p1.glue       = rd('glue', 0.3);
       p1.ceiling    = rd('ceiling', 0.5);
+      p1.width      = rd('width', 0.2);
       p1.pitchCv    = inPitch ? (inPitch[s] ?? 0) : 0;
-
-      // `width` is smoothed + read NOW so the knob is already live plumbing,
-      // but the mono-summed voice ignores it until the Phase-5 stereo
-      // crossover lands in the core (sub stays mono by design; width only
-      // ever affects the upper band).
-      rd('width', 0.2);
 
       const driveRaw = rd('drive', 0.4);
       const levelDb = clamp(rd('level', 0), -24, 12);
@@ -237,15 +236,16 @@ class KickdrumProcessor extends AudioWorkletProcessor {
       p1.drive = clamp(driveRaw * (1 + 0.3 * acc), 0, 1);
       p1.level = clamp(levelDb + 4 * acc, -24, 12);
 
-      // ── the voice (strike edge-detect + accent latch inside the core) ──
+      // ── the stereo voice (strike edge-detect + accent latch inside the
+      // core; mid ± width·side, per-channel true-peak ceiling) ──
       const trig = inTrig ? (inTrig[s] ?? 0) : 0;
       const accent = inAccent ? (inAccent[s] ?? 0) : 0;
-      let v = kickdrumP1Step(trig, accent, p1, this.sr, this.st);
+      kickdrumStepStereo(trig, accent, p1, this.sr, this.st, this.lr);
 
       // ── CHOKE (edge:'gate' placeholder): damp WHILE high via a fast
       // multiplicative ramp; recover through a short one-pole on release.
       // Both edges observed per-sample — level-sensitive by construction.
-      // Applied post-ceiling: damp × bounded output stays bounded. ──
+      // Applied post-ceiling to BOTH channels: damp × bounded stays bounded. ──
       const choke = inChoke ? (inChoke[s] ?? 0) : 0;
       if (choke >= 0.5) {
         this.chokeDamp *= this.chokeFall;
@@ -253,12 +253,8 @@ class KickdrumProcessor extends AudioWorkletProcessor {
       } else {
         this.chokeDamp += (1 - this.chokeDamp) * this.chokeRise;
       }
-      v *= this.chokeDamp;
-
-      // Mono-summed for now: L = R (the <120 Hz band is ALWAYS mono by
-      // design; the Phase-5 crossover will widen only the upper band).
-      outL[s] = v;
-      if (outR) outR[s] = v;
+      outL[s] = (this.lr[0] as number) * this.chokeDamp;
+      if (outR) outR[s] = (this.lr[1] as number) * this.chokeDamp;
     }
 
     return true;

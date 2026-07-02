@@ -178,15 +178,34 @@ describe('KICKDRUM worklet — load + wrapper behavior', () => {
     expect(peakOf(l)).toBeLessThan(1e-6);
   });
 
-  it('one strike → finite, audible kick with L identical to R (Phase-1 mono sum)', async () => {
+  it('one strike → finite, audible stereo kick; width=0 → L == R exactly, width=1 → decorrelated', async () => {
     const Proc = await loadProcessor();
-    const { l, r } = runProc(new Proc(), makeParams(), { seconds: 0.5, trigFn: oneStrike });
-    expect(l.every(Number.isFinite)).toBe(true);
-    expect(peakOf(l)).toBeGreaterThan(0.05);
-    // L = R exactly — the stereo surface is live, the content mono for now.
+    // Strike 50 ms in so the 80 Hz knob smoother has settled off the 0.2
+    // width default (else the first-click samples leak a ramping side term).
+    const d = Math.round(0.05 * SR);
+    const strike = (n: number) => (n >= d && n < d + PULSE_N ? 1 : 0);
+    // width = 0: the side term is muted → mono. The 80 Hz one-pole smoother
+    // approaches 0 asymptotically, so allow sub-audible float dust (a real
+    // side term at the 0.2 default measures ~5e-2 — nine orders louder).
+    const mono = runProc(new Proc(), makeParams({ width: 0 }), { seconds: 0.5, trigFn: strike });
+    expect(mono.l.every(Number.isFinite)).toBe(true);
+    expect(peakOf(mono.l)).toBeGreaterThan(0.05);
     let maxDiff = 0;
-    for (let i = 0; i < l.length; i++) maxDiff = Math.max(maxDiff, Math.abs((l[i] ?? 0) - (r[i] ?? 0)));
-    expect(maxDiff).toBe(0);
+    for (let i = 0; i < mono.l.length; i++) {
+      maxDiff = Math.max(maxDiff, Math.abs((mono.l[i] ?? 0) - (mono.r[i] ?? 0)));
+    }
+    expect(maxDiff).toBeLessThan(1e-9);
+    // width = 1: the >120 Hz decorrelated side is in — L and R must differ
+    // (both audible; the mono-safe-sub law itself is pinned in the core's
+    // kickdrum-dsp.test.ts).
+    const wide = runProc(new Proc(), makeParams({ width: 1 }), { seconds: 0.5, trigFn: strike });
+    expect(peakOf(wide.l)).toBeGreaterThan(0.05);
+    expect(peakOf(wide.r)).toBeGreaterThan(0.05);
+    let diff = 0;
+    for (let i = 0; i < wide.l.length; i++) {
+      diff = Math.max(diff, Math.abs((wide.l[i] ?? 0) - (wide.r[i] ?? 0)));
+    }
+    expect(diff).toBeGreaterThan(1e-4);
   });
 
   it('CHOKE damps WHILE high and releases on the falling edge (both-edge gate)', async () => {

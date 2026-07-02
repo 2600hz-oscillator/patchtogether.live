@@ -8,17 +8,17 @@
 // Category: trigger-fired SOURCE. Driver: canonical trigger train — two
 // strikes at 120 BPM over 1.0 s (spec §4.1 wants ≥1.0 s for decay-tail
 // modules so the full sub tail is visible in the gallery). Signature output
-// captured: `audio_l` ONLY — the voice is mono-summed L = R until the
-// Phase-5 stereo crossover lands, so the right lane is byte-identical and
-// pinning it would be a redundant near-identical lane (owner decision
-// §6b.2). When L/R genuinely diverge, add `audio_r`.
+// captured: `audio_l` ONLY — L and R differ only by the ±width·side term
+// (>120 Hz decorrelated click content; the sub is mono by design), so the
+// right lane is a near-identical mirror and pinning it would be redundant
+// (owner decision §6b.2).
 //
 // Rendered from the PURE core (packages/dsp/src/lib/kickdrum-dsp.ts
-// kickdrumP1Step — the full Phases-1–4 chain: sub+body+click → oversampled
-// drive → EQ+translate → dynamics/ceiling) with the def's shipping
-// defaults — deterministic by construction: the strike resets oscillator
-// phases to 0 AND reseeds the click's xorshift32 noise, and the trigger
-// train is epoch-pinned to sample 0.
+// kickdrumStepStereo — the full Phases-1–5 chain: sub+body+click →
+// oversampled drive → EQ+translate → dynamics → stereo/ceiling) with the
+// def's shipping defaults — deterministic by construction: the strike
+// resets oscillator phases to 0 AND reseeds both decorrelated click
+// xorshift32 chains, and the trigger train is epoch-pinned to sample 0.
 //
 // The .sha pin covers the worklet entry AND every -dsp lib the per-sample
 // math flows through (kickdrum-dsp + its moog-vco / chowkick-dsp imports),
@@ -29,7 +29,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   KICKDRUM_P1_DEFAULTS,
-  kickdrumP1Step,
+  kickdrumStepStereo,
   makeKickdrumState,
 } from '../../../packages/dsp/src/lib/kickdrum-dsp';
 import { captureOutputs, dspSourceSha, pinAll, SAMPLE_RATE } from '../../setup/capture';
@@ -38,16 +38,18 @@ import { triggerTrain } from '../../setup/drivers';
 const SR = SAMPLE_RATE;
 const DURATION_S = 1.0;
 
-/** Render the default-patch 2-strike train through the pure Phase-1 core. */
+/** Render the default-patch 2-strike train through the pure full-chain core. */
 function renderProfile(): Record<string, Float32Array> {
   // Two strikes: rising edges at 0 ms and 500 ms (120 BPM), canonical
   // TRIGGER_PULSE_S-wide pulses. Accent unpatched (0).
   const trig = triggerTrain({ totalS: DURATION_S, bpm: 120 });
   const p = { ...KICKDRUM_P1_DEFAULTS };
   const st = makeKickdrumState();
-  return captureOutputs({ durationS: DURATION_S, outputs: ['audio_l'] }, (i) => ({
-    audio_l: kickdrumP1Step(trig[i]!, 0, p, SR, st),
-  }));
+  const lr = new Float32Array(2);
+  return captureOutputs({ durationS: DURATION_S, outputs: ['audio_l'] }, (i) => {
+    kickdrumStepStereo(trig[i]!, 0, p, SR, st, lr);
+    return { audio_l: lr[0]! };
+  });
 }
 
 function rms(b: Float32Array, s = 0, e = b.length): number {
