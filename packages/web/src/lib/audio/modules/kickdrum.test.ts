@@ -215,19 +215,20 @@ describe('KICKDRUM worklet — load + wrapper behavior', () => {
     expect(rmsOf(choked, rWin0, rWin1)).toBeGreaterThan(chokedRms * 2);
   });
 
-  it('ACCENT latched at the strike scales the hit level (per-hit macro)', async () => {
+  it('ACCENT latched at the strike lands a hotter hit (per-hit drive+level macro)', async () => {
     const Proc = await loadProcessor();
-    const quiet = runProc(new Proc(), makeParams(), { seconds: 0.3, trigFn: oneStrike }).l;
-    const hot = runProc(new Proc(), makeParams(), {
+    const quiet = rmsOf(runProc(new Proc(), makeParams(), { seconds: 0.3, trigFn: oneStrike }).l);
+    const hot = rmsOf(runProc(new Proc(), makeParams(), {
       seconds: 0.3,
       trigFn: oneStrike,
       accentFn: () => 1,
-    }).l;
-    // Accent=1 lands ~1.5× hotter (the level component of the accent macro).
-    expect(peakOf(hot)).toBeGreaterThan(peakOf(quiet) * 1.3);
+    }).l);
+    // Accent=1 raises drive ×1.3 + level +4 dB pre-ceiling — the ceiling
+    // tanh compresses the peak, but the hit's energy is clearly hotter.
+    expect(hot).toBeGreaterThan(quiet * 1.15);
   });
 
-  it('LEVEL is a dB stage: +12 dB ≈ 4×, −24 dB ≈ 1/16× the default output', async () => {
+  it('LEVEL (pre-ceiling dB stage) scales the output monotonically', async () => {
     const Proc = await loadProcessor();
     // Strike 50 ms in: the 80 Hz one-pole knob smoother primes to the
     // DEFAULT (0 dB) and needs a few ms to settle on a non-default level —
@@ -237,10 +238,13 @@ describe('KICKDRUM worklet — load + wrapper behavior', () => {
     const unity = rmsOf(runProc(new Proc(), makeParams({ level: 0 }),   { seconds: 0.35, trigFn: lateStrike }).l);
     const hot   = rmsOf(runProc(new Proc(), makeParams({ level: 12 }),  { seconds: 0.35, trigFn: lateStrike }).l);
     const cold  = rmsOf(runProc(new Proc(), makeParams({ level: -24 }), { seconds: 0.35, trigFn: lateStrike }).l);
-    expect(hot / unity).toBeGreaterThan(3.5);
-    expect(hot / unity).toBeLessThan(4.5);
-    expect(cold / unity).toBeGreaterThan(1 / 18);
-    expect(cold / unity).toBeLessThan(1 / 14);
+    // Level is applied BEFORE the true-peak ceiling (hot settings lean into
+    // the tanh), so +12 dB is louder-but-compressed while −24 dB sits in the
+    // linear region (≈ a clean 1/16 of the pre-ceiling signal). The exact
+    // law is pinned in the core's own unit suite (kickdrum-dsp.test.ts).
+    expect(hot).toBeGreaterThan(unity * 1.2);
+    expect(cold).toBeLessThan(unity * 0.15);
+    expect(cold).toBeGreaterThan(0);
   });
 
   it('pitch_cv transposes the voice 1V/oct (period halves at +1)', async () => {

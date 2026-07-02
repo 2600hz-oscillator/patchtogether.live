@@ -8,16 +8,17 @@
 // Category: trigger-fired SOURCE. Driver: canonical trigger train — two
 // strikes at 120 BPM over 1.0 s (spec §4.1 wants ≥1.0 s for decay-tail
 // modules so the full sub tail is visible in the gallery). Signature output
-// captured: `audio_l` ONLY — Phase 1 renders L = R (the mono-summed
-// sub+body voice), so the right lane is byte-identical and pinning it would
-// be a redundant near-identical lane (owner decision §6b.2). When the
-// stereo-crossover phase lands and L/R genuinely diverge, add `audio_r`.
+// captured: `audio_l` ONLY — the voice is mono-summed L = R until the
+// Phase-5 stereo crossover lands, so the right lane is byte-identical and
+// pinning it would be a redundant near-identical lane (owner decision
+// §6b.2). When L/R genuinely diverge, add `audio_r`.
 //
 // Rendered from the PURE core (packages/dsp/src/lib/kickdrum-dsp.ts
-// kickdrumP1Step) with the def's shipping defaults — deterministic by
-// construction: the strike resets both oscillator phases to 0, there is no
-// RNG in the Phase-1 chain, and the trigger train is epoch-pinned to
-// sample 0.
+// kickdrumP1Step — the full Phases-1–4 chain: sub+body+click → oversampled
+// drive → EQ+translate → dynamics/ceiling) with the def's shipping
+// defaults — deterministic by construction: the strike resets oscillator
+// phases to 0 AND reseeds the click's xorshift32 noise, and the trigger
+// train is epoch-pinned to sample 0.
 //
 // The .sha pin covers the worklet entry AND every -dsp lib the per-sample
 // math flows through (kickdrum-dsp + its moog-vco / chowkick-dsp imports),
@@ -61,12 +62,12 @@ describe('ART kickdrum / audio profile (default patch, 2-strike trigger train)',
     const buf = audio_l!;
     expect(buf.length).toBe(Math.round(SR * DURATION_S));
     expect(buf.every(Number.isFinite)).toBe(true);
-    // Audible + headroom-bounded (Phase-1 invariant: peak ≤ 1 pre-drive;
-    // small slack for the DC-block's transient overshoot).
+    // Audible + true-peak bounded (the core ends in the ceiling tanh, so
+    // |out| is STRICTLY < 1 by construction).
     let peak = 0;
     for (const v of buf) peak = Math.max(peak, Math.abs(v));
     expect(peak).toBeGreaterThan(0.2);
-    expect(peak).toBeLessThan(1.05);
+    expect(peak).toBeLessThan(1);
     // BOTH strikes landed: attack-window energy after each rising edge.
     expect(rms(buf, 0, Math.round(0.1 * SR))).toBeGreaterThan(0.01);
     expect(rms(buf, Math.round(0.5 * SR), Math.round(0.6 * SR))).toBeGreaterThan(0.01);
@@ -77,8 +78,8 @@ describe('ART kickdrum / audio profile (default patch, 2-strike trigger train)',
     let sum = 0;
     for (const v of buf) sum += v;
     expect(Math.abs(sum / buf.length)).toBeLessThan(0.01);
-    // Deterministic: a second render is bit-identical (phase-reset strike,
-    // no RNG anywhere in the Phase-1 chain).
+    // Deterministic: a second render is bit-identical (phase-reset strike +
+    // the click noise reseeded at every strike).
     const again = renderProfile().audio_l!;
     let diff = 0;
     for (let i = 0; i < buf.length; i++) diff = Math.max(diff, Math.abs(buf[i]! - again[i]!));
