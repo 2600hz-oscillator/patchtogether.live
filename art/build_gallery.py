@@ -390,6 +390,11 @@ def render_png(x: np.ndarray, out_path: Path) -> None:
         ax_w.plot(t, a, color=WAVE, linewidth=0.7)
     else:
         ax_w.fill_between(t, a, b, color=WAVE, linewidth=0.0)
+        # A held/stepped-CV profile (e.g. a sequencer row) has lo == hi in
+        # every bucket, so the fill has ZERO height and renders invisible —
+        # stroke the envelope line too (for dense audio the thin stroke sits
+        # inside the filled envelope, visually a no-op).
+        ax_w.plot(t, a, color=WAVE, linewidth=0.5)
     peak = float(np.max(np.abs(x))) if n else 0.0
     ylim = max(peak * 1.1, 1e-3)
     ax_w.set_ylim(-ylim, ylim)
