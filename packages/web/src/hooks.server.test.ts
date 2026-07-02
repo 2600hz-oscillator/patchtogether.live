@@ -27,9 +27,45 @@ vi.mock('$lib/observability/sentry-server', () => ({
   captureServerError,
 }));
 
-import { accessLogShipTarget, handleError, isBetaGatePublic } from './hooks.server';
+import {
+  accessLogShipTarget,
+  handleError,
+  isBetaGatePublic,
+  isIsolatedPath,
+} from './hooks.server';
+
+describe('isIsolatedPath — COOP/COEP route scoping', () => {
+  it('isolates the engine-hosting routes: /rack, /present, /r/*, and the mobile pair', () => {
+    expect(isIsolatedPath('/rack')).toBe(true);
+    expect(isIsolatedPath('/present')).toBe(true);
+    expect(isIsolatedPath('/r/abc123')).toBe(true);
+    // Mobile prototype: both engine-hosting routes get the same belt-and-
+    // suspenders isolation headers as /rack (COOP same-origin + COEP
+    // credentialless) so SAB-gated features keep working in dev.
+    expect(isIsolatedPath('/m/cam')).toBe(true);
+    expect(isIsolatedPath('/m/synth')).toBe(true);
+  });
+
+  it('does NOT isolate the static /m chooser, the landing, or auth routes', () => {
+    // /m is a static chooser — no engine, no SAB, and isolation headers on it
+    // would only cost third-party-resource compatibility for no benefit.
+    expect(isIsolatedPath('/m')).toBe(false);
+    expect(isIsolatedPath('/')).toBe(false);
+    expect(isIsolatedPath('/sign-in')).toBe(false);
+    expect(isIsolatedPath('/dashboard')).toBe(false);
+    // Exact-match only — no prefix bleed from the mobile pair.
+    expect(isIsolatedPath('/m/camera')).toBe(false);
+    expect(isIsolatedPath('/m/synth/extra')).toBe(false);
+  });
+});
 
 describe('isBetaGatePublic', () => {
+  it('keeps the mobile routes GATED (not public) — owner opens them with beta creds', () => {
+    expect(isBetaGatePublic('/m')).toBe(false);
+    expect(isBetaGatePublic('/m/cam')).toBe(false);
+    expect(isBetaGatePublic('/m/synth')).toBe(false);
+  });
+
   it('exempts /api/health (uptime probe)', () => {
     expect(isBetaGatePublic('/api/health')).toBe(true);
   });

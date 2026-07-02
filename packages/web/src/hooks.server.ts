@@ -156,12 +156,20 @@ const SAB_ROUTES = ['/r/'];
 // `/rack` = the scratch canvas (moved off `/` in the landing-page overhaul);
 // `/present` = the second-display popup sink. `/` is intentionally absent — the
 // static landing that now lives there needs no cross-origin isolation.
-const ISOLATED_EXACT = new Set(['/rack', '/present']);
+// `/m/cam` + `/m/synth` = the mobile prototype's engine-hosting routes (the
+// `/m` chooser is static and needs no isolation) — parity with `/rack`.
+const ISOLATED_EXACT = new Set(['/rack', '/present', '/m/cam', '/m/synth']);
+
+/** True iff the route gets COOP/COEP isolation headers from this hook.
+ *  Exported for unit tests (hooks.server.test.ts) — the set itself stays
+ *  private so the predicate is the single seam. */
+export function isIsolatedPath(pathname: string): boolean {
+  return ISOLATED_EXACT.has(pathname) || SAB_ROUTES.some((p) => pathname.startsWith(p));
+}
+
 const setCoopCoepHeaders: Handle = async ({ event, resolve }) => {
   const response = await resolve(event);
-  const path = event.url.pathname;
-  const needsIsolation =
-    ISOLATED_EXACT.has(path) || SAB_ROUTES.some((p) => path.startsWith(p));
+  const needsIsolation = isIsolatedPath(event.url.pathname);
   if (needsIsolation) {
     response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
     response.headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
