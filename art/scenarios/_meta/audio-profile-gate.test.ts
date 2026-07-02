@@ -93,12 +93,22 @@ describe('ART audio-profile coverage gate', () => {
     ).toEqual([]);
   });
 
-  it(`RATCHET: ART_BACKLOG can only shrink (length ≤ ${ART_BACKLOG_MAX})`, () => {
+  it(`RATCHET: ART_BACKLOG can only shrink (cap tracks length exactly, = ${ART_BACKLOG_MAX})`, () => {
     expect(
       ART_BACKLOG.length,
       'ART_BACKLOG grew past the ratchet cap. New modules must ship WITH an audio profile ' +
         '(or a reasoned ART_EXCLUDED entry) — never join the backlog.',
     ).toBeLessThanOrEqual(ART_BACKLOG_MAX);
+    // STRICT equality, not just ≤: if the cap merely bounded the length, every
+    // batch that shrinks the list would leave HEADROOM a later addition could
+    // hide in without touching this file's diff. Requiring MAX === length means
+    // adding an id forces a loud, reviewable ART_BACKLOG_MAX bump — and batches
+    // are forced to lower the cap as they land (the ratchet clicks).
+    expect(
+      ART_BACKLOG_MAX,
+      `ART_BACKLOG_MAX (${ART_BACKLOG_MAX}) must equal ART_BACKLOG.length ` +
+        `(${ART_BACKLOG.length}) — lower the cap with every batch; never leave headroom.`,
+    ).toBe(ART_BACKLOG.length);
   });
 
   it('lists are well-formed: real registry ids, unique, and disjoint', () => {
