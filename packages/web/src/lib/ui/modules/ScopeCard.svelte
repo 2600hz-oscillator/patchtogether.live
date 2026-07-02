@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { onMeterFrame } from '$lib/ui/meter-frame';
   import type { NodeProps } from '@xyflow/svelte';
   import Fader from '$lib/ui/controls/Fader.svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
@@ -127,7 +128,10 @@
 
   $effect(() => {
     if (!canvasEl) return;
-    function tick() {
+    // Shared meter ticker + off-screen gate: the scope repaint is expensive
+    // (analyser read + full canvas redraw), so it stops entirely while the
+    // card is scrolled out of view (see $lib/ui/meter-frame).
+    const h = onMeterFrame(canvasEl, () => {
       const eng = engineCtx.get();
       if (eng && node && canvasEl) {
         const seed = vrtSeed();
@@ -136,13 +140,8 @@
           : (eng.read(node, 'snapshot') as ScopeSnapshot | undefined);
         if (snap) draw(canvasEl, snap);
       }
-      raf = requestAnimationFrame(tick);
-    }
-    raf = requestAnimationFrame(tick);
-    return () => {
-      if (raf !== null) cancelAnimationFrame(raf);
-      raf = null;
-    };
+    });
+    return () => h.stop();
   });
 
   $effect(() => {

@@ -19,6 +19,7 @@
   //     "(saved camera not found)" and user picks again.
 
   import { onMount, onDestroy, untrack } from 'svelte';
+  import { acquireCameraStream } from '$lib/ui/camera-acquire';
   import { type NodeProps } from '@xyflow/svelte';
   import PatchPanel from '$lib/ui/PatchPanel.svelte';
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
@@ -164,26 +165,24 @@
     stopStream();
 
     const targetId = selectedDeviceId;
-    const constraints: MediaStreamConstraints = {
-      video: targetId
-        ? {
-            deviceId: { exact: targetId },
-            width: { ideal: 640 },
-            height: { ideal: 360 },
-            frameRate: { ideal: 30 },
-          }
-        : {
-            width: { ideal: 640 },
-            height: { ideal: 360 },
-            frameRate: { ideal: 30 },
-          },
-      audio: false,
-    };
-
-    try {
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
-    } catch (err) {
-      const e = err as DOMException;
+    // Acquisition goes through the retry seam: webcam-friendly constraints
+    // first, then — for a specific device that NotReadableErrors — one BARE
+    // deviceId-only retry at the driver's native format. Exclusive-access
+    // capture drivers (Blackmagic WDM et al.) routinely reject format hints
+    // with the SAME error name as "device busy"; the retry distinguishes a
+    // format-picky driver from a genuinely held device. See camera-acquire.ts.
+    const result = await acquireCameraStream(
+      (c) => navigator.mediaDevices.getUserMedia(c),
+      targetId ?? null,
+    );
+    if (!result.stream) {
+      const e = result.error!;
+      console.warn(
+        '[cameraInput] acquire failed:',
+        e?.name,
+        e?.message,
+        `(bare retry attempted: ${result.usedBareRetry})`,
+      );
       if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
         camState = 'permission-denied';
         errorMsg = 'Camera permission blocked. Grant in browser site settings.';
@@ -192,13 +191,20 @@
         errorMsg = 'No camera matches the selected constraints.';
       } else if (e.name === 'NotReadableError') {
         camState = 'device-in-use';
-        errorMsg = 'Camera is in use by another tab or application.';
+        // NotReadableError is ambiguous: another app holding the device OR the
+        // driver failing to start the source (capture cards need a live input
+        // signal in a format the driver offers). Say both — "in use" alone
+        // sends people hunting for an app that may not exist.
+        errorMsg =
+          'Camera is busy or failed to start. Close other capture apps ' +
+          '(OBS, Desktop Video Setup), and check the device has a live input signal.';
       } else {
         camState = 'error';
         errorMsg = `${e.name}: ${e.message}`;
       }
       return;
     }
+    stream = result.stream;
 
     // Permission granted — re-enumerate to pick up real device labels.
     await refreshDevices();

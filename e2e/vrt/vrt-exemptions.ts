@@ -1294,4 +1294,18 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // wiring) + the per-module-per-port emit/handle sweep (all 9 outputs always
   // emit; reset accepts a gate source).
   'linux/ninelives',
+  // KICK DRUM (2026-07-02): darwin baseline captured locally (the wide 3u
+  // banded kick-voice card is deterministic chrome — SUB·BODY·CLICK /
+  // DRIVE·EQ·TRANSLATE / DYNAMICS·STEREO·OUT fader bands + the HARD toggle
+  // over the PatchPanel TRIG/ACC/V-OCT/CHOKE → OUT L/R drill-down, NO
+  // canvas/animation); linux baseline pending a `vrt-update.yml`
+  // workflow_dispatch on the PR branch (the darwin-first new-module pattern,
+  // same as NINE LIVES / RINGBACK / FEATURECV above). Functional coverage:
+  // packages/dsp/src/lib/kickdrum-dsp.test.ts (the pure Phase-1 core) +
+  // kickdrum.test.ts (def contract + worklet stereo/choke/accent/level) +
+  // the ART audio profile (art/scenarios/kickdrum/profile.test.ts) + the
+  // per-module-per-port sweep + the bespoke real-source-chain
+  // e2e/tests/kickdrum.spec.ts (SEQUENCER → trigger_in → AUDIOOUT, audible
+  // RMS + sub-dominant spectrum).
+  'linux/kickdrum',
 ]);

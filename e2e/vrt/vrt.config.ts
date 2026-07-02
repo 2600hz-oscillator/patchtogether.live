@@ -49,6 +49,7 @@ const FULL_MATCH = [
   'vrt-quadralogical.spec.ts',
   'vrt-toybox.spec.ts',
   'vrt-aspect-16x9.spec.ts',
+  'topbar.spec.ts',
   'playhead.spec.ts',
   'interactions.spec.ts',
   'groups.spec.ts',

@@ -46,7 +46,7 @@ test.describe('AI smoke check', () => {
     await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
-    const h1 = page.locator('h1', { hasText: '2600hz' });
+    const h1 = page.locator('h1', { hasText: 'patchtogether' });
     await expect(h1, 'topbar h1 missing').toBeVisible();
 
     const spawnBtn = page.getByTestId('load-example-select');
