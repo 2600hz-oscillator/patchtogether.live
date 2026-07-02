@@ -83,8 +83,9 @@ test.describe('landing routing', () => {
     const html = await resp!.text();
 
     // Content is present in the INITIAL server HTML → prerendered/SSR, not a
-    // client-only render. (A csr-only page would ship an empty shell.)
-    expect(html).toContain('NEW RACK');
+    // client-only render. (A csr-only page would ship an empty shell.) The
+    // tile label is lowercase in the markup — CSS uppercases it for display.
+    expect(html).toContain('new rack');
     expect(html).toContain('sign in');
 
     // The landing reads NO auth state: none of the canvas's per-request header
