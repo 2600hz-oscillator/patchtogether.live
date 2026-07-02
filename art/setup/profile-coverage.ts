@@ -67,7 +67,6 @@ export const ART_BACKLOG: readonly string[] = [
   'clipplayer',
   'clouds',
   'cloudseed',
-  'cocoadelay',
   'delay',
   'depolarizer',
   'destroy',
@@ -92,14 +91,9 @@ export const ART_BACKLOG: readonly string[] = [
   'mixmstrs',
   'moog902',
   'moog903a',
-  'moog904a',
-  'moog904b',
-  'moog904c',
-  'moog907a',
   'moog911',
   'moog911a',
   'moog912',
-  'moog914',
   'moog921a',
   'moog921b',
   'moog921Vco',
@@ -155,4 +149,4 @@ export const ART_BACKLOG: readonly string[] = [
 
 /** The ratchet cap. Lower it (to ART_BACKLOG.length) every time a batch
  *  removes entries; the gate fails if the list ever grows past it. */
-export const ART_BACKLOG_MAX = 95;
+export const ART_BACKLOG_MAX = 89;
