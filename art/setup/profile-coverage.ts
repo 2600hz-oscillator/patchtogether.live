@@ -1,0 +1,164 @@
+// art/setup/profile-coverage.ts
+//
+// Coverage lists for THE AUDIO-PROFILE GATE (owner decision §6b.1 —
+// .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md): every
+// audio-domain module def must have ≥1 committed ART audio-profile baseline
+// (`art/baselines/<group>/*.f32`) UNLESS it is
+//   (a) structurally excluded (ART_EXCLUDED — cannot be deterministically
+//       profiled offline), or
+//   (b) still on the backfill RATCHET (ART_BACKLOG — shrinks batch by batch,
+//       enforced by scenarios/_meta/audio-profile-gate.test.ts).
+//
+// NEW modules are therefore gated IMMEDIATELY: adding an audio def without a
+// profile (and without an explicit, reasoned exclusion) fails the ART lane.
+
+/**
+ * Structural exclusions (spec §4.4) — modules that CANNOT be deterministically
+ * profiled offline. Every entry carries its reason. Adding to this list is a
+ * design decision, not an escape hatch: prefer a profile wherever a
+ * deterministic pure-TS render exists.
+ *
+ * (The spec's conditional/stretch ideas — seeded scripted-input game captures,
+ * synthetic-input pass-through for mic/MIDI — are explicitly deferred.)
+ */
+export const ART_EXCLUDED: Readonly<Record<string, string>> = {
+  audioIn: 'live getUserMedia mic — output is a pass-through of external signal; no offline source',
+  gamepad: 'HID controller CV — no deterministic offline input',
+  joystick: 'HID controller CV — no deterministic offline input',
+  midiLane: 'live MIDIAccess device stream — no deterministic offline source',
+  midiCvBuddy: 'live MIDIAccess device stream — no deterministic offline source',
+  midiOutBuddy: 'terminal MIDI sink — no audio-family OUTPUT port to capture',
+  midiclock: 'live MIDIAccess device stream — no deterministic offline source',
+  livecode: 'user-authored code evaluated at runtime — no fixed output to pin',
+  pong: 'free-running game audio driven by RNG + gameplay state',
+  modtris: 'free-running game audio driven by RNG + gameplay state',
+  frogger: 'free-running game audio driven by RNG + gameplay state',
+  skifree: 'free-running game audio driven by RNG + gameplay state',
+  qbrt: 'free-running game audio driven by RNG + gameplay state',
+  audioOut: 'terminal sink — no audio-family OUTPUT port to capture',
+  clockedRunner: 'utility with no audio-family OUTPUT port to capture',
+  spectrograph: 'video-only outputs (analysis sink) — video belongs to VRT/WebGL-attest',
+};
+
+/**
+ * THE RATCHET (owner: "gate", implemented like the behavioral quarantine
+ * caps): the audio-domain modules that do not yet have an audio profile.
+ * Seeded 2026-07-01 from the live registry (126 audio defs − 7 already
+ * covered − 16 structural exclusions = 103), minus the 2 Phase-0 pilots
+ * (chowkick, adsr) profiled in the same PR → 101 committed entries.
+ *
+ * RULES (enforced by audio-profile-gate.test.ts):
+ *   - a module that gains a baseline MUST be removed from this list;
+ *   - the list length can only SHRINK (≤ ART_BACKLOG_MAX);
+ *   - entries must be real registry ids, unique, and never in ART_EXCLUDED.
+ *
+ * When a backfill batch lands: delete the profiled ids here AND lower
+ * ART_BACKLOG_MAX to the new length. NEVER raise ART_BACKLOG_MAX.
+ */
+export const ART_BACKLOG: readonly string[] = [
+  'analogLogicMaths',
+  'aquaTank',
+  'atlantisCatalyst',
+  'attenumix',
+  'bluebox',
+  'buggles',
+  'callsine',
+  'cartesian',
+  'charlottesEchos',
+  'clipplayer',
+  'clouds',
+  'cloudseed',
+  'cocoadelay',
+  'delay',
+  'depolarizer',
+  'destroy',
+  'drummergirl',
+  'drumseqz',
+  'dx7',
+  'elements',
+  'filter',
+  'flipper',
+  'fourplexer',
+  'foxy',
+  'gatemaiden',
+  'grids',
+  'helm',
+  'hydrogen',
+  'illogic',
+  'kria',
+  'lfo',
+  'macrooscillator',
+  'macseq',
+  'marbles',
+  'meowbox',
+  'mixer',
+  'mixmstrs',
+  'moog902',
+  'moog903a',
+  'moog904a',
+  'moog904b',
+  'moog904c',
+  'moog905',
+  'moog907a',
+  'moog911',
+  'moog911a',
+  'moog912',
+  'moog914',
+  'moog921a',
+  'moog921b',
+  'moog921Vco',
+  'moog923',
+  'moog956',
+  'moog960',
+  'moog961',
+  'moog962',
+  'moog984',
+  'moog992',
+  'moog993',
+  'moog994',
+  'moog995',
+  'moogCp3',
+  'negativity',
+  'ninelives',
+  'noise',
+  'numpadPlus',
+  'peaks',
+  'pentemelodica',
+  'polarizer',
+  'polyhelm',
+  'polyseqz',
+  'rasterize',
+  'resofilter',
+  'reverb',
+  'ringback',
+  'rings',
+  'riotgirls',
+  'samsloop',
+  'scaler',
+  'scope',
+  'score',
+  'sequencer',
+  'shimmershine',
+  'sidecar',
+  'slewSwitch',
+  'stages',
+  'stereovca',
+  'swolevco',
+  'symbiote',
+  'tides2',
+  'timelorde',
+  'twotracks',
+  'unityscalemathematik',
+  'vca',
+  'veils',
+  'warps',
+  'warrenspectrum',
+  'wavecel',
+  'wavesculpt',
+  'wavetableVco',
+  'writeseq',
+];
+
+/** The ratchet cap. Lower it (to ART_BACKLOG.length) every time a batch
+ *  removes entries; the gate fails if the list ever grows past it. */
+export const ART_BACKLOG_MAX = 101;
