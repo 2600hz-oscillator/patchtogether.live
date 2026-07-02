@@ -1,22 +1,21 @@
 // e2e/tests/landing-links.spec.ts
 //
 // Phase 2 of the landing-page overhaul: the visual front door — a NEW RACK hero
-// CTA above 5 numbered tiles (01 NEW RACK / 02 MY RACKSPACES / 03 MODULES /
-// 04 ART GALLERY / 05 DOCS) plus a smaller VRT-gallery link and a static header
-// "sign in".
+// CTA above 6 tiles (NEW RACK / MY RACKSPACES / MODULES / ART GALLERY / DOCS /
+// VRT GALLERY, no numbers) and a static header "sign in".
 //
-// This spec asserts every tile/link is PRESENT and points at its real
-// destination, and that the internal same-origin links actually navigate
-// (no 404). The ART/VRT gallery links are the existing GitHub-Pages absolute
-// URLs (owner decision Q4), asserted by href — we don't cross-origin navigate
-// them (network-dependent + slow).
+// This spec asserts every tile is PRESENT and points at its real destination,
+// and that the internal same-origin links actually navigate (no 404). The
+// ART/VRT gallery tiles are the existing GitHub-Pages absolute URLs (owner
+// decision Q4), asserted by href — we don't cross-origin navigate them
+// (network-dependent + slow).
 
 import { test, expect } from '@playwright/test';
 
 const GH_PAGES = 'https://2600hz-oscillator.github.io/patchtogether.live';
 
 test.describe('landing links', () => {
-  test('hero + 5 tiles + gallery/sign-in links are present with the right hrefs', async ({
+  test('hero + 6 tiles + sign-in link are present with the right hrefs', async ({
     page,
   }) => {
     await page.goto('/');
@@ -25,23 +24,20 @@ test.describe('landing links', () => {
     await expect(page.getByTestId('hero-new-rack')).toBeVisible();
     await expect(page.getByTestId('hero-new-rack')).toHaveAttribute('href', '/rack');
 
-    // The 5 numbered tiles.
-    await expect(page.getByTestId('tile-01')).toHaveAttribute('href', '/rack');
-    await expect(page.getByTestId('tile-02')).toHaveAttribute('href', '/dashboard');
-    await expect(page.getByTestId('tile-03')).toHaveAttribute('href', '/docs/modules');
-    await expect(page.getByTestId('tile-04')).toHaveAttribute('href', `${GH_PAGES}/art/`);
-    await expect(page.getByTestId('tile-05')).toHaveAttribute('href', '/docs');
+    // The 6 tiles (no numbers) — ART + VRT galleries are cards like the rest.
+    await expect(page.getByTestId('tile-new-rack')).toHaveAttribute('href', '/rack');
+    await expect(page.getByTestId('tile-rackspaces')).toHaveAttribute('href', '/dashboard');
+    await expect(page.getByTestId('tile-modules')).toHaveAttribute('href', '/docs/modules');
+    await expect(page.getByTestId('tile-art')).toHaveAttribute('href', `${GH_PAGES}/art/`);
+    await expect(page.getByTestId('tile-docs')).toHaveAttribute('href', '/docs');
+    await expect(page.getByTestId('tile-vrt')).toHaveAttribute('href', `${GH_PAGES}/vrt/`);
 
-    // Smaller VRT-gallery link + static header sign-in.
-    await expect(page.getByTestId('vrt-gallery-link')).toHaveAttribute(
-      'href',
-      `${GH_PAGES}/vrt/`,
-    );
+    // Static header sign-in.
     await expect(page.getByTestId('header-signin')).toHaveAttribute('href', '/sign-in');
 
-    // All five tiles are actually rendered/visible.
-    for (const n of ['01', '02', '03', '04', '05']) {
-      await expect(page.getByTestId(`tile-${n}`)).toBeVisible();
+    // All six tiles are actually rendered/visible.
+    for (const id of ['new-rack', 'rackspaces', 'modules', 'art', 'docs', 'vrt']) {
+      await expect(page.getByTestId(`tile-${id}`)).toBeVisible();
     }
   });
 
@@ -55,13 +51,13 @@ test.describe('landing links', () => {
   test('internal doc tiles resolve to real routes (no 404)', async ({ page }) => {
     // MODULES → /docs/modules
     await page.goto('/');
-    await page.getByTestId('tile-03').click();
+    await page.getByTestId('tile-modules').click();
     await expect(page).toHaveURL(/\/docs\/modules$/);
     await expect(page.locator('h1, h2').first()).toBeVisible();
 
     // DOCS → /docs
     await page.goto('/');
-    await page.getByTestId('tile-05').click();
+    await page.getByTestId('tile-docs').click();
     await expect(page).toHaveURL(/\/docs$/);
     await expect(page.locator('h1, h2').first()).toBeVisible();
   });

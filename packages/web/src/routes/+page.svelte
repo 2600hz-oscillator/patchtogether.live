@@ -24,7 +24,7 @@
   const VRT_GALLERY = GH_PAGES + '/vrt/';
 
   interface Tile {
-    n: string;
+    id: string;
     label: string;
     href: string;
     blurb: string;
@@ -33,35 +33,42 @@
 
   const tiles: Tile[] = [
     {
-      n: '01',
+      id: 'new-rack',
       label: 'new rack',
       href: '/rack',
       blurb: 'open a fresh scratch canvas — patch modules, make sound.',
     },
     {
-      n: '02',
+      id: 'rackspaces',
       label: 'my rackspaces',
       href: '/dashboard',
       blurb: 'your saved racks and shared multiplayer sessions.',
     },
     {
-      n: '03',
+      id: 'modules',
       label: 'modules',
       href: '/docs/modules',
       blurb: 'the full module catalog — I/O, controls, CV routing.',
     },
     {
-      n: '04',
+      id: 'art',
       label: 'art gallery',
       href: ART_GALLERY,
       blurb: 'waveform + spectrogram of every audio baseline.',
       external: true,
     },
     {
-      n: '05',
+      id: 'docs',
       label: 'docs',
       href: '/docs',
       blurb: 'guides — persistence, testing, deploy, and more.',
+    },
+    {
+      id: 'vrt',
+      label: 'vrt gallery',
+      href: VRT_GALLERY,
+      blurb: 'reference render of every module card — the visual lookbook.',
+      external: true,
     },
   ];
 </script>
@@ -114,15 +121,14 @@
     </a>
 
     <div class="module-grid tiles" data-testid="landing-tiles">
-      {#each tiles as t (t.n)}
+      {#each tiles as t (t.id)}
         <a
           class="mod-card tile"
           href={t.href}
-          data-testid="tile-{t.n}"
+          data-testid="tile-{t.id}"
           rel={t.external ? 'noopener' : undefined}
           target={t.external ? '_blank' : undefined}
         >
-          <span class="tile-num" aria-hidden="true">{t.n}</span>
           <span class="tile-body">
             <span class="tile-label">{t.label}</span>
             <span class="tile-blurb">{t.blurb}</span>
@@ -130,12 +136,6 @@
         </a>
       {/each}
     </div>
-
-    <p class="gallery-links">
-      <a href={VRT_GALLERY} rel="noopener" target="_blank" data-testid="vrt-gallery-link">
-        VRT gallery &rarr;
-      </a>
-    </p>
   </div>
 
   <!-- Footer band: static vertical slices of the #7 "invert" orb — the dim
@@ -266,8 +266,8 @@
     color: var(--doc-fg-dim);
   }
 
-  /* --- Tile grid (numbered 01-05, .mod-card styling). Reassert the full box
-     border at higher specificity than house.css's global 'a' rule. --- */
+  /* --- Tile grid (.mod-card styling). Reassert the full box border at higher
+     specificity than house.css's global 'a' rule. --- */
   .tiles {
     margin: 0 0 10px;
   }
@@ -286,18 +286,6 @@
       inset 0 0 24px rgba(0, 240, 255, 0.05);
     outline: none;
   }
-  .tile-num {
-    font-family: var(--doc-sans);
-    font-size: 1.5rem;
-    line-height: 1;
-    letter-spacing: 0.04em;
-    color: var(--doc-accent-dim);
-    min-width: 2.4ch;
-  }
-  .tile:hover .tile-num,
-  .tile:focus-visible .tile-num {
-    color: var(--doc-accent);
-  }
   .tile-body {
     display: flex;
     flex-direction: column;
@@ -313,11 +301,5 @@
   .tile-blurb {
     font-size: 0.84rem;
     color: var(--doc-fg-dim);
-  }
-
-  /* --- Smaller VRT-gallery link row --- */
-  .gallery-links {
-    margin: 0 0 8px;
-    font-size: 0.86rem;
   }
 </style>
