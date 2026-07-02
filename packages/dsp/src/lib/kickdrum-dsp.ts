@@ -29,6 +29,26 @@
 
 import { clamp, dcBlockStep, makeDcBlockState, type DcBlockState } from './chowkick-dsp';
 import { moogWaves } from './moog-vco-dsp';
+import { createOversampler, type Oversampler } from './oversample';
+
+/** Deterministic click-noise seed — reseeded at EVERY strike so hit N is
+ *  bit-identical to hit 1 (ART-friendly; no wall-clock randomness). */
+const CLICK_SEED = 0x9e3779b9;
+
+function xorshift32(s: number): number {
+  s ^= s << 13;
+  s ^= s >>> 17;
+  s ^= s << 5;
+  return s >>> 0;
+}
+
+/** Reflect-fold into [−1, 1] (period-4 triangle law — the same shape the
+ *  oversampler's proving tests rate). */
+function reflectFold(x: number): number {
+  let y = (x + 1) % 4;
+  if (y < 0) y += 4;
+  return y < 2 ? y - 1 : 3 - y;
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Params (Phase-1 subset of the full plan table; ids match the def's params)
@@ -55,6 +75,21 @@ export interface KickdrumP1Params {
   bodyShape: number;
   /** 1 V/oct transpose applied to the whole voice (0 = as-tuned). */
   pitchCv: number;
+
+  // ── Phase 2: CLICK layer + oversampled DRIVE ──
+  /** Click burst length, ms (2–60, default 12). */
+  clickLen: number;
+  /** Click band-pass center, Hz (500–6000, default 2800). */
+  clickTone: number;
+  /** Click mix level 0–1 (default 0.4). */
+  clickLevel: number;
+  /** Drive amount 0–1 (default 0.4). 0 keeps the stage transparent. */
+  drive: number;
+  /** The owner's single character switch (0/1, default 0 = clean deep):
+   *  0 → tanh soft-clip @2× (clean 909 warmth);
+   *  1 → wavefold+asym blend @4×, hotter pre-gain, fold depth riding the
+   *      body envelope (more drive + fold + bite). */
+  hard: number;
 }
 
 export const KICKDRUM_P1_DEFAULTS: KickdrumP1Params = {
@@ -68,6 +103,11 @@ export const KICKDRUM_P1_DEFAULTS: KickdrumP1Params = {
   bodyLevel: 0.7,
   bodyShape: 0.3,
   pitchCv: 0,
+  clickLen: 12,
+  clickTone: 2800,
+  clickLevel: 0.4,
+  drive: 0.4,
+  hard: 0,
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -89,10 +129,32 @@ export interface KickdrumState {
   /** Accent latched at the strike edge (0–1). */
   accentLatch: number;
   dc: DcBlockState;
+
+  // ── Phase 2: click layer ──
+  /** Click amp envelope, 1 at the strike → decaying to 0 over clickLen. */
+  clickEnv: number;
+  /** xorshift32 state, reseeded at every strike (deterministic noise). */
+  clickRng: number;
+  /** Chamberlin SVF band-pass state for the click tone. */
+  clickLow: number;
+  clickBand: number;
+
+  // ── Phase 2: oversampled drive ──
+  /** Per-mode oversamplers (soft @2×, hard @4× — the rated factors from
+   *  oversample.test.ts). */
+  os2: Oversampler;
+  os4: Oversampler;
+  /** Mutable fields the drive closures read (avoids per-sample allocation). */
+  driveAmt: number;
+  driveFold: number;
+  /** The two nonlinearities, created ONCE per state, closing over the two
+   *  fields above. */
+  softFn: (x: number) => number;
+  hardFn: (x: number) => number;
 }
 
 export function makeKickdrumState(): KickdrumState {
-  return {
+  const s: KickdrumState = {
     subPhase: 0,
     bodyPhase: 0,
     subAmp: 0,
@@ -103,7 +165,29 @@ export function makeKickdrumState(): KickdrumState {
     gatePrev: 0,
     accentLatch: 0,
     dc: makeDcBlockState(),
+    clickEnv: 0,
+    clickRng: CLICK_SEED,
+    clickLow: 0,
+    clickBand: 0,
+    os2: createOversampler(2),
+    os4: createOversampler(4),
+    driveAmt: 0,
+    driveFold: 0,
+    // Placeholders — replaced right below once `s` exists to close over.
+    softFn: (x) => x,
+    hardFn: (x) => x,
   };
+  // CLEAN (hard=0): tanh soft-clip — the 909-warm character. Pre-gain 1..4.
+  s.softFn = (x) => Math.tanh((1 + 3 * s.driveAmt) * x);
+  // HARD (hard=1): wavefold with depth riding the body envelope (driveFold),
+  // then a bounded asymmetric shaper (the x² term adds even-harmonic bite;
+  // the post-drive DC block strips its offset). Pre-gain 1..5.5, hotter.
+  s.hardFn = (x) => {
+    const pre = (1 + 4.5 * s.driveAmt) * (1 + 0.5 * s.driveFold);
+    const f = reflectFold(pre * x);
+    return Math.tanh(1.2 * f + 0.25 * f * f);
+  };
+  return s;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -171,6 +255,11 @@ export function kickdrumP1Step(
     s.subPitchEnv = 1;
     s.bodyPitchEnv = 1;
     s.accentLatch = clamp(accent, 0, 1);
+    // Click: reseed + zero the filter so every hit is bit-identical.
+    s.clickEnv = 1;
+    s.clickRng = CLICK_SEED;
+    s.clickLow = 0;
+    s.clickBand = 0;
   }
 
   // ── tension term: body-amp-proportional, one-pole smoothed at ~40 Hz ──
@@ -198,9 +287,23 @@ export function kickdrumP1Step(
   s.bodyPhase += bodyDt;
   if (s.bodyPhase >= 1) s.bodyPhase -= Math.floor(s.bodyPhase);
 
+  // ── click layer: seeded noise → Chamberlin SVF band-pass → its envelope ──
+  s.clickRng = xorshift32(s.clickRng);
+  const noise = (s.clickRng / 0xffffffff) * 2 - 1;
+  const fc = clamp(p.clickTone, 500, 6000);
+  const f = 2 * Math.sin((Math.PI * Math.min(fc, sr * 0.22)) / sr);
+  const hp = noise - s.clickLow - 0.6 * s.clickBand;
+  s.clickBand += f * hp;
+  s.clickLow += f * s.clickBand;
+  if (Math.abs(s.clickBand) < FLUSH) s.clickBand = 0;
+  if (Math.abs(s.clickLow) < FLUSH) s.clickLow = 0;
+  const click = s.clickBand * s.clickEnv;
+
   // ── envelope decays (all sr-calibrated; −60 dB at the knob time) ──
   s.subAmp *= decayCoeff(p.subDecay, sr);
   s.bodyAmp *= decayCoeff(p.bodyDecay, sr);
+  s.clickEnv *= decayCoeff(clamp(p.clickLen, 2, 60), sr);
+  if (s.clickEnv < FLUSH) s.clickEnv = 0;
   // Pitch envelopes: body at the pitchTime knob; sub settles 3× slower than
   // the body sweep (the "slow settle" of the plan's Layer 1).
   s.bodyPitchEnv *= decayCoeff(clamp(p.pitchTime, 5, 120), sr);
@@ -210,12 +313,24 @@ export function kickdrumP1Step(
   if (s.subPitchEnv < FLUSH) s.subPitchEnv = 0;
   if (s.bodyPitchEnv < FLUSH) s.bodyPitchEnv = 0;
 
-  // ── mix with the Phase-1 headroom invariant: peak ≤ 1 pre-drive ──
+  // ── mix with the headroom invariant: peak ≤ 1 into the drive ──
   const subLv = clamp(p.subLevel, 0, 1);
   const bodyLv = clamp(p.bodyLevel, 0, 1);
-  const norm = Math.max(1, subLv + bodyLv);
-  const mixed = (sub * subLv + body * bodyLv) / norm;
+  const clickLv = clamp(p.clickLevel, 0, 1);
+  const norm = Math.max(1, subLv + bodyLv + clickLv);
+  const mixed = (sub * subLv + body * bodyLv + click * clickLv) / norm;
 
-  // ── DC block (~20 Hz; strips any strike step before the later drive) ──
-  return dcBlockStep(mixed, s.dc, 20, sr);
+  // ── oversampled drive (the owner's `hard` switch picks the character AND
+  // the rated factor: clean tanh @2×, wavefold+asym @4×) ──
+  let driven = mixed;
+  const driveAmt = clamp(p.drive, 0, 1);
+  if (driveAmt > 0.001) {
+    s.driveAmt = driveAmt;
+    s.driveFold = s.bodyAmp; // fold depth rides the body envelope (hard mode)
+    driven =
+      p.hard >= 0.5 ? s.os4.process(mixed, s.hardFn) : s.os2.process(mixed, s.softFn);
+  }
+
+  // ── DC block (~20 Hz, POST-drive: strips the asym shaper's offset too) ──
+  return dcBlockStep(driven, s.dc, 20, sr);
 }

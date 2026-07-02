@@ -178,3 +178,111 @@ describe('kickdrum P1: output invariants', () => {
     expect(peak).toBeGreaterThan(0.3);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Phase 2 — click layer + oversampled drive (`hard` switch)
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Exact single-bin magnitude (rectangular window). */
+function goertzelMag(buf: Float32Array, bin: number): number {
+  const w = (2 * Math.PI * bin) / buf.length;
+  const c = 2 * Math.cos(w);
+  let s1 = 0;
+  let s2 = 0;
+  for (let i = 0; i < buf.length; i++) {
+    const s0 = buf[i] + c * s1 - s2;
+    s2 = s1;
+    s1 = s0;
+  }
+  return Math.sqrt(Math.max(0, s1 * s1 + s2 * s2 - c * s1 * s2));
+}
+
+describe('kickdrum P2: click layer', () => {
+  it('click is band-limited to click_tone and gone within click_len', () => {
+    // Click ONLY (sub/body muted, drive off): energy concentrates near the
+    // BPF center; the burst dies at the knob time.
+    const p = P({
+      subLevel: 0,
+      bodyLevel: 0,
+      clickLevel: 1,
+      drive: 0,
+      clickTone: 2000,
+      clickLen: 12,
+    });
+    const buf = render(4800, p, 48000); // 100 ms, 2000 Hz → bin 200
+    const atTone = goertzelMag(buf, 200);
+    expect(atTone / (goertzelMag(buf, 20) + 1e-12)).toBeGreaterThan(3); // vs 200 Hz
+    expect(atTone / (goertzelMag(buf, 800) + 1e-12)).toBeGreaterThan(3); // vs 8 kHz
+    const rms = (a: number, b: number) => {
+      let acc = 0;
+      for (let i = a; i < b; i++) acc += buf[i] * buf[i];
+      return Math.sqrt(acc / (b - a));
+    };
+    // 30–100 ms is ≪ the first 12 ms burst (−60 dB decay at click_len).
+    expect(rms(1440, 4800) / (rms(0, 576) + 1e-12)).toBeLessThan(0.02);
+  });
+
+  it('click is deterministic per strike (seeded noise, filter re-zeroed)', () => {
+    const p = P({ subLevel: 0, bodyLevel: 0, clickLevel: 1 });
+    expect(render(1024, p, 48000)).toEqual(render(1024, p, 48000));
+  });
+});
+
+describe('kickdrum P2: oversampled drive + the `hard` switch', () => {
+  // Static 100 Hz sine body (pitchAmt 0, shape 0, sub/click muted) so the
+  // 3rd harmonic sits exactly on bin 30 of a 4800-sample window.
+  const driveBase: Partial<KickdrumP1Params> = {
+    subLevel: 0,
+    clickLevel: 0,
+    bodyLevel: 1,
+    bodyShape: 0,
+    pitchAmt: 0,
+    bodyDecay: 400,
+    tension: 0,
+    hard: 0,
+  };
+
+  function h3Ratio(drive: number): number {
+    const buf = render(4800, P({ ...driveBase, drive }), 48000);
+    return goertzelMag(buf, 30) / (goertzelMag(buf, 10) + 1e-12);
+  }
+
+  it('clean mode: drive adds odd harmonics; drive=0 is transparent', () => {
+    expect(h3Ratio(0)).toBeLessThan(0.02); // bypass — no saturation products
+    expect(h3Ratio(0.9)).toBeGreaterThan(0.05); // tanh 3rd harmonic present
+  });
+
+  it('HARD mode: more bite than clean at the same drive, bounded, DC-clean', () => {
+    const base: Partial<KickdrumP1Params> = { drive: 0.8, bodyDecay: 300, clickLevel: 0 };
+    const clean = render(24000, P({ ...base, hard: 0 }), 48000);
+    const hard = render(24000, P({ ...base, hard: 1 }), 48000);
+    // First-difference energy = a crude high-band proxy: the fold/asym
+    // character must measurably out-bite the tanh at equal drive.
+    const hf = (buf: Float32Array) => {
+      let acc = 0;
+      for (let i = 1; i < buf.length; i++) {
+        const d = buf[i] - buf[i - 1];
+        acc += d * d;
+      }
+      return acc;
+    };
+    expect(hf(hard)).toBeGreaterThan(hf(clean) * 1.2);
+    let peak = 0;
+    let mean = 0;
+    for (let i = 0; i < hard.length; i++) {
+      peak = Math.max(peak, Math.abs(hard[i]));
+      mean += hard[i];
+    }
+    // The nonlinearity is bounded ≤ ~0.9, but the decimation FIR reconstructs
+    // intersample (Gibbs) peaks past a hard fold — a few % overshoot is
+    // physics, not a bug (measured ≈1.065). Phase 4's `ceiling` soft-clip is
+    // the TRUE-PEAK bound; pre-ceiling the honest invariant is ≤ 1.1.
+    expect(peak).toBeLessThanOrEqual(1.1);
+    expect(Math.abs(mean / hard.length)).toBeLessThan(1e-3); // asym DC stripped
+  });
+
+  it('full voice with drive + click stays strike-deterministic', () => {
+    const p = P({ drive: 0.7, hard: 1 });
+    expect(render(4096, p, 48000)).toEqual(render(4096, p, 48000));
+  });
+});
