@@ -14,6 +14,7 @@
   import type { PortDescriptor } from '$lib/ui/patch-panel-labels';
   import { patch, ydoc } from '$lib/graph/store';
   import { setNodeParam } from '$lib/graph/mutate';
+  import { onMeterFrame } from '$lib/ui/meter-frame';
   import { useEngine } from '$lib/audio/engine-context';
   import type { ModuleNode } from '$lib/graph/types';
   import { kriaDef } from '$lib/audio/modules/kria';

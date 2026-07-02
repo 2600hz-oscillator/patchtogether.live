@@ -19,6 +19,7 @@ import type { AudioDomainNodeHandle } from '$lib/audio/engine';
 import type { AudioModuleDef } from '$lib/audio/module-registry';
 import { patch as livePatch } from '$lib/graph/store';
 import { createPolySender, POLY_CHANNEL_PAIRS } from '$lib/audio/poly';
+import { createVoiceAllocator, type VoiceAllocator } from '$lib/audio/poly-alloc';
 import { getSchedulerClock } from '$lib/audio/scheduler-clock';
 import { createEdgeCounter } from '$lib/audio/edge-detect';
 import { midiToVOct } from '$lib/audio/note-entry';
@@ -46,6 +47,12 @@ import {
 
 /** steps-per-beat for each stepDiv index (0=1/4 … 3=1/32). */
 const STEP_DIV_SPB = [1, 2, 4, 8] as const;
+
+/** Fall→rise gap (s) when an audition voice-lane changes owner (LRU-steal, or a
+ *  freed lane re-taken in the same drain). Two clean setValueAtTime edges — a
+ *  brief gate dip so the downstream envelope RE-ATTACKS at the new pitch, never a
+ *  silent pitch swap under a held gate (gate/held-note plan §3.2 invariant). */
+const AUDITION_STEAL_GAP_S = 0.003;
 
 export const clipplayerDef: AudioModuleDef = {
   type: 'clipplayer',
@@ -166,11 +173,16 @@ export const clipplayerDef: AudioModuleDef = {
       // Ring of recently-scheduled (audio time → step) for an audio-accurate
       // visual playhead (steps are scheduled LOOKAHEAD_S ahead of currentTime).
       sched: { t: number; idx: number }[];
-      // LIVE AUDITION (KEYS keyboard): the MIDI notes currently held down via
-      // the clip-audition side-channel, in press order — index 0 is the primary
-      // voice (poly→mono pitch pulls lane 0). Rebuilt into the poly voicing on
-      // every drain so the live keyboard sounds immediately, transport or not.
-      audHeld: number[];
+      // LIVE AUDITION (KEYS keyboard). A STABLE per-voice allocator maps each
+      // held MIDI note → a poly voice-lane and KEEPS it until that note is
+      // released (Phase 2a, gate/held-note plan §3.2). Replaces the old
+      // positional repack: releasing a low note no longer shifts the others down
+      // a lane (which rewrote pitch on a still-sounding voice → glitch).
+      alloc: VoiceAllocator;
+      // The MIDI note (or null) currently WRITTEN to each poly voice-lane, so a
+      // drain reconciles ownership → the MINIMUM set of clean gate/pitch edges
+      // (a held voice whose owner is unchanged is never re-written).
+      laneKey: (number | null)[];
       /** velocity 0..1 of the most-recent live-audition note-on. */
       audVel: number;
     }
@@ -193,7 +205,8 @@ export const clipplayerDef: AudioModuleDef = {
         lastGate: 0,
         lastVel: 0,
         sched: [],
-        audHeld: [],
+        alloc: createVoiceAllocator(POLY_CHANNEL_PAIRS),
+        laneKey: new Array<number | null>(POLY_CHANNEL_PAIRS).fill(null),
         audVel: 0,
       };
     });
@@ -331,6 +344,11 @@ export const clipplayerDef: AudioModuleDef = {
       ln.velSrc.offset.cancelScheduledValues(at);
       ln.velSrc.offset.setValueAtTime(0, at);
       ln.poly.silence(at);
+      // A panic/stop zeroes the poly voices in hardware but KEEPS the audition
+      // allocator's ownership (the KEYS keys are still physically held). Clear the
+      // written-state mirror so the next audition drain RE-OPENS every still-held
+      // voice (matches the pre-Phase-2a rebuild-everything recovery).
+      ln.laneKey.fill(null);
       ln.lastGate = 0;
       ln.lastVel = 0;
     }
@@ -400,7 +418,7 @@ export const clipplayerDef: AudioModuleDef = {
       // step move) but DON'T write the poly/gate/vel — otherwise the scheduled
       // clip playback would stomp the held keyboard note's gate open→shut. When
       // no keys are held, playback resumes normally.
-      if (ln.audHeld.length > 0) {
+      if (ln.alloc.activeCount() > 0) {
         ln.sched.push({ t: atTime, idx });
         if (ln.sched.length > 32) ln.sched.shift();
         return;
@@ -428,7 +446,14 @@ export const clipplayerDef: AudioModuleDef = {
       // pitch through a gated step.
       const snh = readParam('snh', 1) >= 0.5;
       const writePitch = r.any || !snh ? true : false;
-      ln.poly.scheduleStep(atTime, voiced, gateOff, { writePitch });
+      // writeGate: r.any — only NOTE steps touch the poly gate; rest steps leave
+      // it untouched so a held/tied note (gateSteps>1) keeps its poly gate HIGH
+      // across the span, exactly like the mono gate below (which the else branch
+      // never re-zeroes). Before this, poly.scheduleStep re-wrote gate=0 on every
+      // rest step → a tied note released a step early on the poly bus while the
+      // mono bus sustained (gate/held-note plan Phase 1). A note self-closes via
+      // gateOff on its own note step, so a skipped rest never sticks a gate high.
+      ln.poly.scheduleStep(atTime, voiced, gateOff, { writePitch, writeGate: r.any });
       ln.sched.push({ t: atTime, idx });
       if (ln.sched.length > 32) ln.sched.shift();
       if (r.any) {
@@ -449,57 +474,98 @@ export const clipplayerDef: AudioModuleDef = {
 
     /**
      * LIVE AUDITION drain (KEYS keyboard). Applies every queued note on/off to
-     * each lane's held-note set, then reschedules that lane's poly voicing +
-     * gate/vel at `now` so a keypress SOUNDS immediately. Held notes fill voices
-     * 0..n-1 (voice 0 = primary, so a poly→mono pitch pull hears it); the lane
-     * gate is high while ANY note is held. Called BEFORE the transport `running`
-     * gate, so keys play with the transport stopped. A no-op when nothing was
-     * queued (the held gates stay high — we never re-write on an empty drain).
+     * each lane's STABLE voice allocator, then reconciles the resulting ownership
+     * map into the MINIMUM set of clean gate/pitch edges at `now` so a keypress
+     * SOUNDS immediately. A held note keeps its OWN voice-lane for its whole life
+     * (Phase 2a, gate/held-note plan §3.2): releasing a low note frees ONLY its
+     * lane; the other voices are NOT re-written (the old positional repack shifted
+     * them down a lane, rewriting pitch on a still-sounding voice → glitch). The
+     * mono gate is high while ANY note is held. Called BEFORE the transport
+     * `running` gate, so keys play with the transport stopped. A no-op when
+     * nothing was queued (held gates stay high — we never re-write on an empty
+     * drain).
      */
     function serviceAudition(): void {
       const events = drainAudition(nodeId);
       if (events.length === 0) return;
+      const now = ctx.currentTime;
       const octave = readParam('octave', 0);
       const touched = new Set<number>();
+      // Whether a lane was IDLE (no held audition voice) before this drain — the
+      // first press on an idle lane must cancel any clip-playback still scheduled
+      // in the lookahead so the held keys take over immediately.
+      const wasEmpty = new Map<number, boolean>();
       for (const ev of events) {
         const L = ev.lane;
         if (L < 0 || L >= LANES) continue;
         const ln = lanes[L];
+        if (!wasEmpty.has(L)) wasEmpty.set(L, ln.alloc.activeCount() === 0);
         if (ev.on) {
-          if (!ln.audHeld.includes(ev.midi)) ln.audHeld.push(ev.midi);
+          ln.alloc.noteOn(ev.midi);
           ln.audVel = Math.max(0, Math.min(1, ev.velocity / 127));
         } else {
-          const i = ln.audHeld.indexOf(ev.midi);
-          if (i >= 0) ln.audHeld.splice(i, 1);
+          // noteOff frees ONLY this note's lane (or is a no-op when its lane was
+          // already stolen / it's unknown — release-after-steal, §3.2). Ownership
+          // is reconciled below from the allocator, so the return value is unused.
+          ln.alloc.noteOff(ev.midi);
         }
         touched.add(L);
       }
-      const now = ctx.currentTime;
       for (const L of touched) {
         const ln = lanes[L];
-        // Cancel any playback events already scheduled in the lookahead window
-        // (from before this key edge) so the held note takes over the gate/pitch
-        // IMMEDIATELY (they'd otherwise fire in the next ~0.2s and cut it off).
-        for (const v of ln.poly.voices) {
-          v.pitchSrc.offset.cancelScheduledValues(now);
-          v.gateSrc.offset.cancelScheduledValues(now);
+        // First press on an idle lane: cancel clip-playback events still scheduled
+        // ahead (~LOOKAHEAD_S) so they don't fire and cut off the held note. While
+        // ANY key is held emitLaneStep goes SILENT, so nothing re-accumulates.
+        if (wasEmpty.get(L) && ln.alloc.activeCount() > 0) {
+          for (const v of ln.poly.voices) {
+            v.pitchSrc.offset.cancelScheduledValues(now);
+            v.gateSrc.offset.cancelScheduledValues(now);
+          }
+          ln.gateSrc.offset.cancelScheduledValues(now);
+          ln.velSrc.offset.cancelScheduledValues(now);
         }
-        ln.gateSrc.offset.cancelScheduledValues(now);
-        ln.velSrc.offset.cancelScheduledValues(now);
-        const voiced = Array.from({ length: POLY_CHANNEL_PAIRS }, (_, i) => {
-          const midi = ln.audHeld[i];
-          return midi === undefined
-            ? { pitch: 0, gate: 0 as const }
-            : { pitch: midiToVOct(midi) + octave, gate: 1 as const };
-        });
-        // gateOff 0 → gates stay HIGH (held) until the next key edge changes them
-        // (while held, emitLaneStep goes SILENT so nothing re-schedules a close).
-        ln.poly.scheduleStep(now, voiced, 0);
-        const anyOn = ln.audHeld.length > 0;
+        // Reconcile per-voice ownership → minimal clean 0/1 edges. A voice whose
+        // owner is UNCHANGED is skipped entirely (held voices are never touched).
+        for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+          const desired = ln.alloc.ownerOf(i); // MIDI note owning this voice, or null
+          const current = ln.laneKey[i]; // what audition last WROTE to this voice
+          if (desired === current) continue; // held / still-free — leave it alone
+          const v = ln.poly.voices[i]!;
+          if (desired === null) {
+            // Freed voice — clean falling edge; pitch holds (gate=0 silences it).
+            v.gateSrc.offset.setValueAtTime(0, now);
+          } else if (current === null) {
+            // New note on a previously-free voice — single clean rising edge.
+            v.pitchSrc.offset.setValueAtTime(midiToVOct(desired) + octave, now);
+            v.gateSrc.offset.setValueAtTime(1, now);
+          } else {
+            // Owner CHANGED (LRU-steal, or a freed lane re-taken this drain) →
+            // fall→rise so the downstream envelope re-attacks at the new pitch;
+            // never a silent pitch swap under a held gate (§3.2 invariant).
+            v.gateSrc.offset.setValueAtTime(0, now);
+            v.pitchSrc.offset.setValueAtTime(midiToVOct(desired) + octave, now + AUDITION_STEAL_GAP_S);
+            v.gateSrc.offset.setValueAtTime(1, now + AUDITION_STEAL_GAP_S);
+          }
+          ln.laneKey[i] = desired;
+        }
+        // Mono gate + velocity (single CV outs; poly→mono is an OR-sum so the mono
+        // gate is high while ANY voice is held). Re-affirming gate=1 while already
+        // high adds no falling edge, so a downstream envelope does not re-attack.
+        const anyOn = ln.alloc.activeCount() > 0;
         ln.gateSrc.offset.setValueAtTime(anyOn ? 1 : 0, now);
         ln.velSrc.offset.setValueAtTime(anyOn ? ln.audVel : 0, now);
         ln.lastGate = anyOn ? 1 : 0;
-        if (anyOn) { ln.lastVel = ln.audVel; ln.lastVOct = voiced[0]!.pitch; }
+        if (anyOn) {
+          ln.lastVel = ln.audVel;
+          // Mono pitch display/pull mirrors the LOWEST occupied voice-lane.
+          for (let i = 0; i < POLY_CHANNEL_PAIRS; i++) {
+            const owner = ln.alloc.ownerOf(i);
+            if (owner !== null) {
+              ln.lastVOct = midiToVOct(owner) + octave;
+              break;
+            }
+          }
+        }
       }
     }
 
