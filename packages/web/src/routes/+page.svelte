@@ -114,12 +114,6 @@
   <div class="band band-header" role="presentation" aria-hidden="true"></div>
 
   <div class="shell">
-    <a class="hero-cta" href="/rack" data-testid="hero-new-rack">
-      <span class="hero-kicker">start patching</span>
-      <span class="hero-title">NEW RACK</span>
-      <span class="hero-sub">open a fresh canvas &rarr;</span>
-    </a>
-
     <div class="module-grid tiles" data-testid="landing-tiles">
       {#each tiles as t (t.id)}
         <a
@@ -201,75 +195,11 @@
     margin: 14px 0 6px;
   }
 
-  /* --- NEW RACK hero CTA (corner-bracket treatment like house.css .hero).
-     Higher specificity than house.css's global 'a' rule so the box border
-     doesn't get overridden to the inline-link underline. --- */
-  :global(.docs-root a.hero-cta) {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    position: relative;
-    padding: 30px 34px;
-    margin: 20px 0 34px;
-    border: 1px solid var(--doc-accent-dim);
-    text-decoration: none;
-    background: linear-gradient(120deg, rgba(0, 240, 255, 0.04), transparent 62%);
-    transition:
-      border-color 160ms,
-      box-shadow 160ms,
-      background 160ms;
-  }
-  :global(.docs-root a.hero-cta:hover),
-  :global(.docs-root a.hero-cta:focus-visible) {
-    border-color: var(--doc-accent);
-    box-shadow:
-      0 0 0 1px var(--doc-accent-glow),
-      inset 0 0 40px rgba(0, 240, 255, 0.06);
-    outline: none;
-  }
-  .hero-cta::before,
-  .hero-cta::after {
-    content: '';
-    position: absolute;
-    width: 14px;
-    height: 14px;
-  }
-  .hero-cta::before {
-    top: -1px;
-    left: -1px;
-    border-top: 1px solid var(--doc-accent);
-    border-left: 1px solid var(--doc-accent);
-  }
-  .hero-cta::after {
-    bottom: -1px;
-    right: -1px;
-    border-bottom: 1px solid var(--doc-accent);
-    border-right: 1px solid var(--doc-accent);
-  }
-  .hero-kicker {
-    font-size: 0.72rem;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    color: var(--doc-fg-dim);
-  }
-  .hero-title {
-    font-family: var(--doc-sans);
-    font-weight: 500;
-    font-size: clamp(2rem, 6vw, 3.4rem);
-    line-height: 1;
-    letter-spacing: 0.05em;
-    color: var(--doc-accent);
-    text-shadow: 0 0 16px var(--doc-accent-glow);
-  }
-  .hero-sub {
-    font-size: 0.9rem;
-    color: var(--doc-fg-dim);
-  }
-
-  /* --- Tile grid (.mod-card styling). Reassert the full box border at higher
-     specificity than house.css's global 'a' rule. --- */
+  /* --- Tile grid (.mod-card styling; the tiles ARE the landing's actions —
+     no separate hero CTA, per owner review). Reassert the full box border at
+     higher specificity than house.css's global 'a' rule. --- */
   .tiles {
-    margin: 0 0 10px;
+    margin: 20px 0 10px;
   }
   :global(.docs-root a.mod-card.tile) {
     display: flex;

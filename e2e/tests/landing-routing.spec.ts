@@ -36,8 +36,9 @@ test.describe('landing routing', () => {
     const resp = await page.goto('/');
     expect(resp!.status()).toBe(200);
 
-    // The hero + the 5 numbered tiles are the landing; the canvas is NOT here.
-    await expect(page.getByTestId('hero-new-rack')).toBeVisible();
+    // The tile grid is the landing (no hero CTA — owner review removed it);
+    // the canvas is NOT here.
+    await expect(page.getByTestId('tile-new-rack')).toBeVisible();
     await expect(page.getByTestId('landing-tiles')).toBeVisible();
     await expect(page.locator('[data-testid="canvas-root"]')).toHaveCount(0);
   });
