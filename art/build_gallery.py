@@ -12,7 +12,9 @@ scenario specs) it renders a single combined PNG:
 
 then emits an `index.html` grouping the cards by scenario, styled to mirror the
 VRT gallery (dark theme, banner header/footer, card grid), with a small stats
-line (peak, RMS, duration) per baseline.
+line per baseline (peak, RMS, crest factor, spectral centroid, spectral
+flatness, duration — the audio-profile fingerprint stats, owner decision §6b.5
+of .myrobots/plans/art-backfill-audio-profiles-2026-07-01.md).
 
 DETERMINISM: fixed figure size + DPI, a fixed STFT (Hann window, 3/4 overlap,
 power-of-two segment), a fixed colormap + dB range, and NO timestamps baked into
@@ -154,10 +156,31 @@ def waveform_xy(x: np.ndarray):
     return np.array(tb), np.array(lo), np.array(hi)
 
 
+def spectral_stats(x: np.ndarray) -> tuple[float, float]:
+    """Deterministic (spectral_centroid_hz, spectral_flatness) over the full
+    signal's rFFT POWER spectrum, DC bin dropped. Centroid = power-weighted
+    mean frequency (brightness); flatness = geometric/arithmetic mean of the
+    power spectrum (0 = pure tone … 1 = white noise). Pure numpy on the raw
+    `.f32` — no windowing knobs, so re-runs are byte-stable."""
+    if x.size < 4:
+        return 0.0, 0.0
+    spec = np.fft.rfft(x.astype(np.float64))
+    power = (spec.real**2 + spec.imag**2)[1:]  # drop DC
+    total = float(power.sum())
+    if not np.isfinite(total) or total <= 0.0:
+        return 0.0, 0.0
+    freqs = np.fft.rfftfreq(x.size, 1.0 / SAMPLE_RATE)[1:]
+    centroid = float((power * freqs).sum() / total)
+    p = np.maximum(power, 1e-20)
+    flatness = float(np.exp(np.mean(np.log(p))) / np.mean(p))
+    return centroid, flatness
+
+
 def stats(x: np.ndarray) -> dict[str, float]:
     n = x.size
     peak = float(np.max(np.abs(x))) if n else 0.0
     rms = float(np.sqrt(np.mean(x.astype(np.float64) ** 2))) if n else 0.0
+    centroid_hz, flatness = spectral_stats(x)
     return {
         "n": n,
         "dur": n / SAMPLE_RATE,
@@ -165,6 +188,10 @@ def stats(x: np.ndarray) -> dict[str, float]:
         "peak_db": 20.0 * np.log10(peak) if peak > 0 else float("-inf"),
         "rms": rms,
         "rms_db": 20.0 * np.log10(rms) if rms > 0 else float("-inf"),
+        # Crest factor (peak/RMS, dB) — transient-ness of the profile.
+        "crest_db": 20.0 * np.log10(peak / rms) if peak > 0 and rms > 0 else float("-inf"),
+        "centroid_hz": centroid_hz,
+        "flatness": flatness,
     }
 
 
@@ -245,6 +272,9 @@ def render_card(scenario: str, f32: Path, img_rel: str, st: dict) -> str:
     stat_line = (
         f"peak {st['peak']:.3f} ({_fmt_db(st['peak_db'])} dBFS) · "
         f"rms {_fmt_db(st['rms_db'])} dBFS · "
+        f"crest {_fmt_db(st['crest_db'])} dB · "
+        f"centroid {st['centroid_hz']:.0f} Hz · "
+        f"flat {st['flatness']:.3f} · "
         f"{st['dur'] * 1000:.0f} ms · {st['n']} smp"
     )
     anchor = html.escape(f"{scenario}--{name}")
