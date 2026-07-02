@@ -42,7 +42,7 @@ async function bg(page: Page, selector: string): Promise<string> {
 }
 
 async function setup(page: Page) {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'cs-1', type: 'controlSurface', position: { x: 700, y: 80 }, domain: 'meta' },

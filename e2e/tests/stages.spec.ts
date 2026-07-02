@@ -18,7 +18,7 @@ test('STAGES card renders + type button cycles through RAMP/HOLD/STEP', async ({
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -50,7 +50,7 @@ test('STAGES link toggle marks adjacent segments as chained', async ({ page }) =
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -78,7 +78,7 @@ test('STAGES routes a triggered envelope through a VCA to AUDIOOUT', async ({ pa
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // SEQUENCER gate → STAGES seg0 GATE.

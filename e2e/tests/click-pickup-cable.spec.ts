@@ -53,7 +53,7 @@ test.describe('PatchPanel: jack-click → pickup carry', () => {
   test('clicking an OUTPUT port row picks up a cable (mode=pickup, menu open)', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'lfo', type: 'lfo', position: { x: 80, y: 120 } },
@@ -89,7 +89,7 @@ test.describe('PatchPanel: jack-click → pickup carry', () => {
   test('handles for every declared port stay in the card DOM (io-spec parity)', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [{ id: 'lfo', type: 'lfo', position: { x: 80, y: 120 } }]);
     // Panel CLOSED.

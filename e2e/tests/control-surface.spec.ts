@@ -32,7 +32,7 @@ async function readSurfaceBindings(page: Page, surfaceId: string) {
 }
 
 async function setup(page: Page) {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'cs-1', type: 'controlSurface', position: { x: 700, y: 80 }, domain: 'meta' },
@@ -193,7 +193,7 @@ async function injectCc(page: Page, channel: number, cc: number, value: number):
 }
 
 test('multiple controls from multiple modules: grouped, lock/unlock + move, MIDI-mapped works on the proxy', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await installSimMidi(page);
   // Two source modules + a surface.
@@ -304,7 +304,7 @@ async function bindControls(page: Page, surfaceId: string): Promise<void> {
 }
 
 test('card grows so ALL groups + knobs render within bounds (locked + unlocked)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'cs-1', type: 'controlSurface', position: { x: 900, y: 40 }, domain: 'meta' },
@@ -451,7 +451,7 @@ async function seedToyboxAndBindings(page: Page): Promise<void> {
 }
 
 test('toybox material + combine params: proxy renders on the surface and drives the live node', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // The TOYBOX card is WIDE (~880px) + tall and has its OWN SCALE knob; place
   // the surface well to the right so its proxy knobs aren't occluded by the
@@ -518,7 +518,7 @@ test('toybox model SCALE on a NON-FIRST layer: card knob → surface drives the 
   // controls well past the default 30s/5s budgets (passes ~8s locally idle).
   // Mirror the sibling toybox specs' CI-robustness timeout.
   test.setTimeout(60_000);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'toybox-1', type: 'toybox', position: { x: 0, y: 0 }, domain: 'video' },

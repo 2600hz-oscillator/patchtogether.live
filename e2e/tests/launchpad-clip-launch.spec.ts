@@ -94,7 +94,7 @@ test('@launchpad a simulated pad press launches a clip → audible RMS at the cl
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -192,7 +192,7 @@ test('@launchpad arming REC on the deck captures a launch to the arrangement; SO
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // The SAME real chain (TIMELORDE-clocked clip → VCO → VCA → SCOPE) so the
@@ -307,7 +307,7 @@ test('@launchpad single-unit: clip view launches (audible), CC-98 flips to contr
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

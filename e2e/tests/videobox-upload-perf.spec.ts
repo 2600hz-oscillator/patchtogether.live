@@ -44,7 +44,7 @@ const SMALL_FIXTURE = fileURLToPath(new URL('../fixtures/lobby-clip.webm', impor
 const FIXTURE = existsSync(LOCAL_CLIP) ? LOCAL_CLIP : SMALL_FIXTURE;
 
 async function setup(page: import('@playwright/test').Page) {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 }
 

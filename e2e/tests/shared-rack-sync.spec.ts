@@ -64,7 +64,7 @@ async function openPair(browser: Browser): Promise<Pair> {
 }
 
 async function bootAndAttach(page: Page, rackId: string): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.waitForFunction(
     () => typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',

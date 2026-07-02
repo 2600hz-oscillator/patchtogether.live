@@ -1,22 +1,247 @@
 <script lang="ts">
-  import Canvas from '$lib/ui/Canvas.svelte';
+  // The public landing / front door (the scratch canvas moved to /rack).
+  //
+  // Reuses the docs "house" stylesheet (black / electric-blue / white Tron
+  // palette) by wrapping the content in a .docs-root element and importing
+  // house.css — same decision as the docs site (see the landing-page overhaul
+  // plan section 2, no new CSS lib). The only landing-specific styling is below
+  // in the scoped style block: the two orb bands, the NEW RACK hero, and the
+  // tile grid. Palette values come from house.css's .docs-root custom props.
+  //
+  // Fully STATIC (prerender=true in +page.ts): reads NO auth state, so the
+  // header is a plain "sign in" link and there is nothing to glitch. Magenta
+  // appears ONLY inside the #8 logo PNG — every CSS color here is
+  // black/blue/white.
+  import '$lib/styles/house.css';
 
-  // `homeAuth` is derived SERVER-SIDE in +layout.server.ts (the public `/`
-  // canvas doesn't mount the client <ClerkProvider> — that would break
-  // SharedArrayBuffer / cross-origin isolation needed by the audio engine).
-  // We feed it to the header so a signed-in user sees their account instead
-  // of "Sign in". It is NOT passed as `currentUserId`: that would flip the
-  // canvas into multi-user layout mode, which `/` must not do.
-  let { data } = $props();
-  let headerAuth = $derived(
-    data?.homeAuth
-      ? {
-          isSignedIn: data.homeAuth.isSignedIn,
-          imageUrl: data.homeAuth.imageUrl,
-          initials: data.homeAuth.initials,
-        }
-      : null,
-  );
+  // ART + VRT galleries are published to the repo's GitHub Pages site by
+  // pages.yml (a SEPARATE deploy from the CF-Pages app). Per owner decision Q4
+  // the landing LINKS to those existing absolute URLs (the native /docs/art
+  // route is a later phase), so they resolve today.
+  const GH_PAGES = 'https://2600hz-oscillator.github.io/patchtogether.live';
+  const ART_GALLERY = GH_PAGES + '/art/';
+  const VRT_GALLERY = GH_PAGES + '/vrt/';
+
+  interface Tile {
+    id: string;
+    label: string;
+    href: string;
+    blurb: string;
+    external?: boolean;
+  }
+
+  const tiles: Tile[] = [
+    {
+      id: 'new-rack',
+      label: 'new rack',
+      href: '/rack',
+      blurb: 'open a fresh scratch canvas — patch modules, make sound.',
+    },
+    {
+      id: 'rackspaces',
+      label: 'my rackspaces',
+      href: '/dashboard',
+      blurb: 'your saved racks and shared multiplayer sessions.',
+    },
+    {
+      id: 'modules',
+      label: 'modules',
+      href: '/docs/modules',
+      blurb: 'the full module catalog — I/O, controls, CV routing.',
+    },
+    {
+      id: 'art',
+      label: 'art gallery',
+      href: ART_GALLERY,
+      blurb: 'waveform + spectrogram of every audio baseline.',
+      external: true,
+    },
+    {
+      id: 'docs',
+      label: 'docs',
+      href: '/docs',
+      blurb: 'guides — persistence, testing, deploy, and more.',
+    },
+    {
+      id: 'vrt',
+      label: 'vrt gallery',
+      href: VRT_GALLERY,
+      blurb: 'reference render of every module card — the visual lookbook.',
+      external: true,
+    },
+  ];
 </script>
 
-<Canvas {headerAuth} />
+<svelte:head>
+  <title>patchtogether.live — a browser modular synthesizer</title>
+  <meta
+    name="description"
+    content="patchtogether.live is a collaborative modular synthesizer that runs in your browser. Patch modules, make sound, share a rack."
+  />
+  <!-- Above-the-fold assets: preload the header band + the logo. -->
+  <link rel="preload" as="image" href="/landing/sun.png" />
+  <link rel="preload" as="image" href="/landing/logo-256.png" />
+</svelte:head>
+
+<div class="docs-root landing">
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <a href="/">
+          <img
+            class="logo"
+            src="/landing/logo-256.png"
+            width="36"
+            height="29"
+            alt="patchtogether logo"
+            decoding="async"
+          />
+          <h1>patchtogether</h1>
+        </a>
+      </div>
+      <nav>
+        <a href="/docs">docs</a>
+        <a href="/docs/modules">modules</a>
+        <a class="signin" href="/sign-in" data-testid="header-signin">sign in</a>
+        <!-- __APP_VERSION__ = the compile-time define from the ROOT package.json
+             (vite.config.ts), NOT BUILD_INFO.version — that one is the deploy
+             stamp (VITE_APP_VERSION env), which is unset outside the deploy
+             workflows and would prerender as "vdev" (version-heading.spec gate). -->
+        <span class="version" data-testid="app-version">v{__APP_VERSION__}</span>
+      </nav>
+    </header>
+  </div>
+
+  <!-- Header band: static vertical slices of the #6 "white sun" orb over
+       black (CSS mask, pixelated, no animation → VRT-deterministic). -->
+  <div class="band band-header" role="presentation" aria-hidden="true"></div>
+
+  <div class="shell">
+    <div class="module-grid tiles" data-testid="landing-tiles">
+      {#each tiles as t (t.id)}
+        <a
+          class="mod-card tile"
+          href={t.href}
+          data-testid="tile-{t.id}"
+          rel={t.external ? 'noopener' : undefined}
+          target={t.external ? '_blank' : undefined}
+        >
+          <span class="tile-body">
+            <span class="tile-label">{t.label}</span>
+            <span class="tile-blurb">{t.blurb}</span>
+          </span>
+        </a>
+      {/each}
+    </div>
+  </div>
+
+  <!-- Footer band: static vertical slices of the #7 "invert" orb — the dim
+       inverse of the header, bracketing the page. -->
+  <div class="band band-footer" role="presentation" aria-hidden="true"></div>
+
+  <div class="shell">
+    <footer class="footer">
+      a browser modular synthesizer ·
+      <a href="https://github.com/2600hz-oscillator/patchtogether.live">repo</a>
+    </footer>
+  </div>
+</div>
+
+<style>
+  /* Landing-specific styling. Palette tokens (--doc-*) come from house.css's
+     .docs-root block; every color below is black / electric-blue / white. */
+
+  /* --- Header nav extras --- */
+  .brand a {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  /* The brand word is an <h1> (version-heading.spec expects the site title in
+     `header.topbar h1`) but must render exactly like the plain span it
+     replaced — inherit everything, no heading margins. */
+  .brand h1 {
+    margin: 0;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+  }
+  .logo {
+    display: block;
+    width: 36px;
+    height: 29px;
+    image-rendering: pixelated;
+  }
+  .version {
+    color: var(--doc-fg-dim);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+  }
+
+  /* --- Orb bands: vertical slices via a static CSS mask --- */
+  .band {
+    width: 100%;
+    height: clamp(84px, 12vw, 148px);
+    margin: 6px 0 14px;
+    background-color: #000;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    /* Upscaled orb keeps hard pixel edges → lo-fi VHS read. */
+    image-rendering: pixelated;
+    /* Opaque 6px slice / transparent 5px gutter, repeated across the band.
+       Fully static (no animation) so the raster is VRT-deterministic. */
+    -webkit-mask-image: repeating-linear-gradient(
+      to right,
+      #000 0 6px,
+      transparent 6px 11px
+    );
+    mask-image: repeating-linear-gradient(to right, #000 0 6px, transparent 6px 11px);
+  }
+  .band-header {
+    background-image: url('/landing/sun.png');
+  }
+  .band-footer {
+    background-image: url('/landing/invert.png');
+    height: clamp(72px, 10vw, 120px);
+    margin: 14px 0 6px;
+  }
+
+  /* --- Tile grid (.mod-card styling; the tiles ARE the landing's actions —
+     no separate hero CTA, per owner review). Reassert the full box border at
+     higher specificity than house.css's global 'a' rule. --- */
+  .tiles {
+    margin: 20px 0 10px;
+  }
+  :global(.docs-root a.mod-card.tile) {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    text-decoration: none;
+    border: 1px solid var(--doc-border-dim);
+  }
+  :global(.docs-root a.mod-card.tile:hover),
+  :global(.docs-root a.mod-card.tile:focus-visible) {
+    border-color: var(--doc-accent);
+    box-shadow:
+      0 0 0 1px var(--doc-accent-glow),
+      inset 0 0 24px rgba(0, 240, 255, 0.05);
+    outline: none;
+  }
+  .tile-body {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .tile-label {
+    font-family: var(--doc-sans);
+    font-size: 1.05rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--doc-accent);
+  }
+  .tile-blurb {
+    font-size: 0.84rem;
+    color: var(--doc-fg-dim);
+  }
+</style>

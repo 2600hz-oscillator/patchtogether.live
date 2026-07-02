@@ -30,7 +30,7 @@ test('KRIA: running pattern clocked by TIMELORDE → VCO+VCA → audible gated R
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

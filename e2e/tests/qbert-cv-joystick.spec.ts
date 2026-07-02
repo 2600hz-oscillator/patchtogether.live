@@ -90,7 +90,7 @@ async function readEventCount(page: Page, nodeId: string): Promise<number> {
 }
 
 test('qbert: ROM present + coin+start+joy_x=+0.8 → evt_move events fire', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   if (!(await isRomPresent(page))) {

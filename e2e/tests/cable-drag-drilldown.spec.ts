@@ -119,7 +119,7 @@ async function dragHandleTo(
  *  IN + OUT) — lightweight, non-WebGL cards that exercise the same drill-down
  *  redirect as the video pair without janking the page on CI. */
 async function spawnVcoFilter(page: Page) {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'vco', type: 'analogVco', position: { x: 80, y: 120 } },
@@ -199,7 +199,7 @@ test('reverse drag — grab an INPUT, drop on a PatchPanel card — picker offer
   // input and dragging to the output is the reverse direction the owner reported
   // as snagging; the picker must offer VCO's compatible OUTPUTS and the
   // resulting edge must run vco.<out> (OUTPUT) → flt.audio (INPUT).
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // VCO is the DROP target, so place it where the forward-drag test drops
   // (x:760) — a proven-visible region away from the left viewport edge.

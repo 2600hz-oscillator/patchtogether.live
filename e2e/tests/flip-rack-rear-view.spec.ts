@@ -23,7 +23,7 @@ test.describe.configure({ mode: 'parallel' });
 test('flip-rack: toggle reveals per-card back panels in place, then hides them', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // A tiny 2-card patch is enough — the toggle is global.
@@ -90,7 +90,7 @@ test('flip-rack: toggle reveals per-card back panels in place, then hides them',
 });
 
 test('flip-rack: the Tab key flips the rack front↔rear', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [{ id: 'adsr', type: 'adsr', position: { x: 120, y: 120 } }], []);

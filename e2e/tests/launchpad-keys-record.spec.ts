@@ -165,7 +165,7 @@ test('@launchpad KEYS live audition — playing a keyboard pad is AUDIBLE (empty
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await buildChain(page, 'k');
   await seedEmptyClip(page, 'k-cp');
@@ -208,7 +208,7 @@ test('@launchpad KEYS record — queue-record captures played notes into the cli
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await buildChain(page, 'r');
   await seedEmptyClip(page, 'r-cp');

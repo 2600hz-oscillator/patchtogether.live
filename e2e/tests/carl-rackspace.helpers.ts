@@ -30,7 +30,7 @@ export async function openCarlContexts(
   for (let i = 0; i < n; i++) {
     const ctx = await browser.newContext();
     const p = await ctx.newPage();
-    await p.goto('/');
+    await p.goto('/rack');
     await p.waitForLoadState('networkidle');
     await p.waitForFunction(
       () =>

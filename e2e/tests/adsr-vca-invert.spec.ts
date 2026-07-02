@@ -51,7 +51,7 @@ async function readScopeBothChannels(page: Page, scopeNodeId: string): Promise<S
 }
 
 test('ADSR: env_inv produces non-zero CV signal that is the unipolar inverse of env', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Sequencer drives a slow envelope cycle so env spends meaningful time
@@ -106,7 +106,7 @@ test('ADSR: env_inv produces non-zero CV signal that is the unipolar inverse of 
 });
 
 test('VCA: audio_inv carries the same envelope-shaped signal as audio, with inverted polarity', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

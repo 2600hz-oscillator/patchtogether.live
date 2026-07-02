@@ -42,7 +42,7 @@ test('DoomCard renders all 9 declared output handles with the expected ids', asy
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   const doomId = 'doom-handle-audit';

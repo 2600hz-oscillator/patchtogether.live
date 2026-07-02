@@ -45,7 +45,7 @@ test('MEOWBOX: gate triggers audible voice on L output', async ({ page }) => {
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -91,7 +91,7 @@ test('TIMELORDE: 1x output emits gate pulses at the configured BPM', async ({ pa
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -144,7 +144,7 @@ test('TIMELORDE: singleton — a duplicate is cleaned up to a single survivor by
   // wait can never be satisfied under 4c (that was the pre-4c assumption that
   // timed out). No provider is attached on `/`, so the cleanup runs as the lone
   // elected deleter.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Bootstrap the engine + clear the doc (empty spawn => no DOM-mount wait).
@@ -232,7 +232,7 @@ test("CHARLOTTE'S ECHOS: passes signal through and produces echo tail", async ({
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -300,7 +300,7 @@ test('MIXMSTRS: passes channel 1 through to master out', async ({ page }) => {
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -328,7 +328,7 @@ test('MIXMSTRS: passes channel 1 through to master out', async ({ page }) => {
 });
 
 test('MIXMSTRS: multiple instances allowed — both materialize in engine', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

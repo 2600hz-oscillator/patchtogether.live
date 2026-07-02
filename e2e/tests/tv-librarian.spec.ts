@@ -59,7 +59,7 @@ async function installMocks(page: import('@playwright/test').Page): Promise<void
 test.describe('TV LIBRARIAN — network-mocked source chain', () => {
   test('country list → channel list → select → card reacts; geo marked; youtube-only filtered @video', async ({ page }) => {
     await installMocks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await spawnPatch(page, [{ id: 'tv1', type: 'tvLibrarian', domain: 'video' }]);
 
     const card = page.getByTestId('tv-librarian-card');
@@ -102,7 +102,7 @@ test.describe('TV LIBRARIAN — network-mocked source chain', () => {
 
   test('selecting persists channel to node.data (syncs to rack-mates) @video', async ({ page }) => {
     await installMocks(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await spawnPatch(page, [{ id: 'tv2', type: 'tvLibrarian', domain: 'video' }]);
 
     await page.getByTestId('tv-view-list').click();

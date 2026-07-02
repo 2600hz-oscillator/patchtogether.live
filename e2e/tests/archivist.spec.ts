@@ -78,7 +78,7 @@ async function mockArchive(
 }
 
 async function gotoApp(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 }
 

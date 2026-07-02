@@ -58,7 +58,7 @@ test.describe('patch-to picker — cv-family interchange', () => {
   test('SEQUENCER.gate → ADSR lists gate + every cv input (attack/decay/sustain/release)', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
@@ -79,7 +79,7 @@ test.describe('patch-to picker — cv-family interchange', () => {
   test('SEQUENCER.pitch → ANALOG VCO lists pitch + cv params (tune/fmAmount), excludes audio', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
@@ -100,7 +100,7 @@ test.describe('patch-to picker — cv-family interchange', () => {
   });
 
   test('reverse: carry ADSR.gate (input) → LFO lists every cv output', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'adsr', type: 'adsr', position: { x: 80, y: 120 } },
@@ -121,7 +121,7 @@ test.describe('patch-to picker — cv-family interchange', () => {
   test('commits a cross-family edge: SEQUENCER.gate → ADSR.attack via the picker', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, [
       { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },

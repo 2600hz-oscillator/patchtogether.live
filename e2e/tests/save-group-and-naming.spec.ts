@@ -67,7 +67,7 @@ test('module palette: "Insert saved group…" is suppressed when no user is sign
   // Default __attachProvider derives an anon token; the page mounts Canvas
   // with currentUserId=undefined unless a clerk JWT is supplied. So the
   // saved-group entry should NOT appear on a fresh load.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // Right-click empty pane to open the palette.
   await page.locator('.svelte-flow__pane').click({ button: 'right', position: { x: 400, y: 300 } });
@@ -76,7 +76,7 @@ test('module palette: "Insert saved group…" is suppressed when no user is sign
 });
 
 test('group rename: double-click label, type new name, persists in patch.nodes data.label', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, []);
 
@@ -105,7 +105,7 @@ test('group rename: double-click label, type new name, persists in patch.nodes d
 });
 
 test('multi-group naming: a second nameless group gets GROUP2 (does not collide with GROUP1)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, []);
 

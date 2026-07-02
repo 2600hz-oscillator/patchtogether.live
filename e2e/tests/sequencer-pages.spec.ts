@@ -16,7 +16,7 @@ import { spawnPatch } from './_helpers';
 test.describe.configure({ mode: 'parallel' });
 
 test('drumseqz: LEN=64 reveals 4 pages of nav', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -30,7 +30,7 @@ test('drumseqz: LEN=64 reveals 4 pages of nav', async ({ page }) => {
 });
 
 test('drumseqz: > / < nav crosses page boundary; per-page edits persist', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -86,7 +86,7 @@ test('drumseqz: > / < nav crosses page boundary; per-page edits persist', async 
 });
 
 test('drumseqz: HOLD freezes visible page while playhead advances', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // BPM=600 so the 16th-note step is 25 ms — playhead crosses page 0 → page 1

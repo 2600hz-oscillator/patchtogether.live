@@ -74,7 +74,7 @@ export interface PerPortDriver {
   /** Extra upstream-source nodes + edges to drive an input the SUT
    *  needs. Spec adds these to the SUT-and-sink graph. */
   upstream?: (sutId: string) => ExtraGraph;
-  /** Page-side initialization to run BEFORE `page.goto('/')` — mocks
+  /** Page-side initialization to run BEFORE `page.goto('/rack')` — mocks
    *  for navigator.getGamepads, navigator.requestMIDIAccess, etc.
    *  Receives the page so it can call addInitScript(). */
   pageSetup?: (page: Page) => Promise<void>;

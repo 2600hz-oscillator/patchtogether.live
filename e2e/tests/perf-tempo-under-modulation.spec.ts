@@ -272,7 +272,7 @@ async function stressFader(
 test('perf-tempo-under-modulation: hand-drag coalesces patch-store commits to â‰¤ rAF rate', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Sequencer at 120 BPM (so tempo backstop has signal) + a VCA whose
@@ -407,7 +407,7 @@ test('perf-tempo-under-modulation: hand-drag coalesces patch-store commits to â‰
 test('perf-tempo-under-modulation: baseline (no drag) advance rate matches BPM', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

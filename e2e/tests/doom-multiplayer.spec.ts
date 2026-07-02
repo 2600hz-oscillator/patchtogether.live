@@ -66,7 +66,7 @@ async function openDoomPair(browser: Browser): Promise<DoomPair> {
   const pageSpec = await ctxSpec.newPage();
 
   for (const p of [pageHost, pageSpec]) {
-    await p.goto('/');
+    await p.goto('/rack');
     await p.waitForLoadState('networkidle');
     await p.waitForFunction(() =>
       typeof (window as unknown as { __attachProvider?: unknown }).__attachProvider === 'function',

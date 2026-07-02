@@ -214,7 +214,7 @@ async function boot(page: Page): Promise<string[]> {
   // calls the spec drives via __toyboxFreeze are unaffected, so every render /
   // ring-alloc / canvas-visible assertion below still holds.
   await installRenderSmokeHooks(page);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'tb', type: 'toybox', position: { x: 80, y: 40 }, domain: 'video' }], []);
   await page.locator('.svelte-flow__node-toybox').first().waitFor({ state: 'visible', timeout: 10_000 });

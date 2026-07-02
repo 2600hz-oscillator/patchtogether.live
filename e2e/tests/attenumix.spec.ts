@@ -16,7 +16,7 @@ test('ATTENUMIX renders + audio flows from NOISE through one channel to OUTPUT',
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -84,7 +84,7 @@ test('ATTENUMIX survives extreme-param mutation (all 4 channels + CV-driven)', a
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

@@ -43,7 +43,7 @@ async function readParam(page: Page, nodeId: string, paramId: string): Promise<n
 }
 
 test('card param edit is undoable: a Fader edit reverts on undo (setNodeParam migration)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // 1. Spawn a reverb with size seeded to a non-default value. The ReverbCard

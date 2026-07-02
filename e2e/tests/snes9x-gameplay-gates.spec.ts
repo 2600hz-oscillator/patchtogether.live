@@ -67,7 +67,7 @@ test.describe('SNES9X gameplay gates (ROM-gated): real SMW stomp -> gate1, death
   test.setTimeout(180_000);
 
   test('a deterministic SMW playthrough pulses gate1 (kill) then gate2 (death)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     if (!(await isRomPresent(page))) {

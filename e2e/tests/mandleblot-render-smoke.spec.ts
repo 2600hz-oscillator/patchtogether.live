@@ -53,7 +53,7 @@ test.describe('MANDLEBLOT — deterministic render smoke', () => {
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // MANDLEBLOT is a pure generated SOURCE (no decode/getUserMedia/asset) →

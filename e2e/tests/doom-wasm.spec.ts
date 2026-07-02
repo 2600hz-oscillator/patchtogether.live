@@ -47,7 +47,7 @@ test.describe('DOOM — WASM gameplay renders real pixels in CI', () => {
       if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Pre-flight: make sure /doom/doom.js exists on the dev server. If

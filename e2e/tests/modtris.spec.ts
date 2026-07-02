@@ -53,7 +53,7 @@ test('modtris: drop module → card mounts with no console errors', async ({ pag
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: 'modtris', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-modtris');
@@ -71,7 +71,7 @@ test('modtris: drop module → card mounts with no console errors', async ({ pag
 });
 
 test('modtris: game-loop ticks (piece spawns + state evolves)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'm', type: 'modtris', position: { x: 200, y: 200 } }]);
 
@@ -97,7 +97,7 @@ test('modtris: game-loop ticks (piece spawns + state evolves)', async ({ page })
 });
 
 test('modtris: BUGGLES.clock patched into drop_fast produces game-state evolution', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // BUGGLES.clock is a real gate source (5 ms pulses at ~2 Hz). Patching
   // it into MODTRIS's drop_fast input should produce hard-drop events,

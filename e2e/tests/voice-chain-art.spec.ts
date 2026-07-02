@@ -90,7 +90,7 @@ function withinTolerance(actual: number, expected: number, tol: number): boolean
 }
 
 test('voice-chain-art: deterministic patch matches fingerprint baseline', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Deterministic voice patch — fixed BPM, fixed step pattern, fixed knobs.

@@ -131,7 +131,7 @@ test.describe('SYNESTHESIA RASTER video-out — deterministic render smoke', () 
       (globalThis as unknown as { __synesthesiaVrtFreeze?: boolean }).__synesthesiaVrtFreeze = true;
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Deterministic AUDIO source → SYNESTHESIA copy A (AUDIO mode, default). A
@@ -196,7 +196,7 @@ test.describe('SYNESTHESIA VIDEO mode — cross-domain colour analysis', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const nodes: SpawnNode[] = [
@@ -254,7 +254,7 @@ test.describe('SYNESTHESIA VIDEO mode — cross-domain colour analysis', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const nodes: SpawnNode[] = [

@@ -59,7 +59,7 @@ async function readData(page: Page, nodeId: string): Promise<CPData> {
 }
 
 test('song mode: arming RECORD captures clip launches into the arrangement', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // quantize off → launches apply immediately (deterministic capture). No
   // TIMELORDE → free-run.
@@ -89,7 +89,7 @@ test('song mode: arming RECORD captures clip launches into the arrangement', asy
 });
 
 test('song mode: the SES/ARR button flips clipMode', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   const modeBtn = page.getByTestId('clipplayer-mode-cp');
@@ -102,7 +102,7 @@ test('song mode: the SES/ARR button flips clipMode', async ({ page }) => {
 });
 
 test('song mode: ARRANGEMENT playback launches lanes from the recorded log', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 8]);
@@ -135,7 +135,7 @@ test('song mode: ARRANGEMENT playback launches lanes from the recorded log', asy
 });
 
 test('song view: renders blocks + select/delete edits the arrangement', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 8]);
@@ -172,7 +172,7 @@ test('song view: renders blocks + select/delete edits the arrangement', async ({
 });
 
 test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping it)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // quantize off → launches apply immediately. No TIMELORDE → free-run.
   await spawnPatch(page, [
@@ -215,7 +215,7 @@ test('song mode: OVERDUB keeps the take + merges new launches (vs REPLACE wiping
 });
 
 test('song mode: REPLACE arming wipes the pre-seeded take (contrast control)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio', params: { quantize: 0 } },
@@ -245,7 +245,7 @@ test('song mode: REPLACE arming wipes the pre-seeded take (contrast control)', a
 });
 
 test('drag-to-move: dragging a block retimes its launch + persists (bar-snapped)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 1]); // lane0/slot0 + lane0/slot1
@@ -296,7 +296,7 @@ test('drag-to-move: dragging a block retimes its launch + persists (bar-snapped)
 });
 
 test('pop-out editor: opens, edits the SAME synced arrangement, closes on Esc', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'cp', type: 'clipplayer', position: { x: 80, y: 80 }, domain: 'audio' }]);
   await seedClips(page, 'cp', [0, 8]);

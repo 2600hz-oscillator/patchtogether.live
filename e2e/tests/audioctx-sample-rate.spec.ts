@@ -11,7 +11,7 @@ import { test, expect } from '@playwright/test';
 import { spawnPatch } from './_helpers';
 
 test('app AudioContext is pinned to 48 kHz', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   // Boot the engine by spawning a trivial node (spawnPatch waits for mount,
   // which requires the engine — and therefore the AudioContext — to exist).
   await spawnPatch(page, [{ id: 'noise-1', type: 'noise', x: 100, y: 100 }]);

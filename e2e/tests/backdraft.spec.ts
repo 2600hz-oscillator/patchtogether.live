@@ -29,7 +29,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -89,7 +89,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
   });
 
   test('FREEZE holds the output still (deterministic capture hook)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -149,7 +149,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     // MEANINGFULLY DIFFERENT frame — proving the transform actually moves
     // where the feedback tap samples (tunnels/spirals), not just brightness.
     async function captureFrame(transform: { zoom: number; rotate: number }): Promise<number[]> {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,
@@ -218,7 +218,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     // representative colour → near-zero spatial variance (a flat block). At
     // pixelate=0 the frame keeps its full structure (HARD INVARIANT: identity).
     async function captureVariance(pixelate: number): Promise<number> {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await spawnPatch(
         page,
@@ -282,7 +282,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Drive the DELAY CLOCK gate input with an LFO (its phase0 CV output is a
@@ -377,7 +377,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
       });
     }
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -539,7 +539,7 @@ test.describe('BACKDRAFT — video feedback generator', () => {
   });
 
   test('faders route through the patch store', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [

@@ -67,7 +67,7 @@ async function waitForStep(page: Page, id: string, target: number, timeoutMs = 8
 }
 
 test('polyseqz: per-step playhead baselines (step 0, 1, 7)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -126,7 +126,7 @@ test('polyseqz: per-step playhead baselines (step 0, 1, 7)', async ({ page }) =>
 });
 
 test('sequencer: per-step playhead baselines (step 0, 1, 15)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -171,7 +171,7 @@ test('drumseqz: per-step playhead baselines (step 0, 1, 15)', async ({ page }) =
   // wipe the highlight. Use a very slow BPM (10 → 1.5 s per step) instead and
   // snapshot mid-step while playback is still running. Animations are frozen
   // for the screenshot capture itself.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [

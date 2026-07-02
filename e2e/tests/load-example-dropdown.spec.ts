@@ -30,7 +30,7 @@ interface NodePos { x: number; y: number }
 interface PatchNode { id: string; type: string; position: NodePos }
 
 async function ready(page: Page) {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // Generous timeout: a cold dev server compiles the canvas route + the
   // large bundled example envelopes on-demand on the first hit of a worker.

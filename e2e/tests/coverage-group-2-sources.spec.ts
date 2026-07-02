@@ -66,7 +66,7 @@ for (const src of SOURCES) {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const nodes: SpawnNode[] = [
@@ -157,7 +157,7 @@ test('integration (Group 2): sequencer drives analogVco + wavetableVco in parall
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Two VCOs in parallel, summed by a Mixer, read by Scope. Both pick

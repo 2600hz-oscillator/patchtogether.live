@@ -28,6 +28,17 @@ export interface SpawnEdge {
 }
 
 /**
+ * Navigate to the scratch canvas. The canvas moved from `/` to `/rack` in the
+ * landing-page overhaul (`/` is now the static landing / front door). Prefer
+ * this helper in NEW specs over a bare `page.goto('/rack')` so a future route
+ * move is a one-line change here instead of another ~800-call codemod across
+ * the suite.
+ */
+export async function gotoCanvas(page: Page): Promise<void> {
+  await page.goto('/rack');
+}
+
+/**
  * Match the Playwright/CDP errors thrown when the page's execution context
  * is torn down out-of-band during an `evaluate` / `waitForFunction` — most
  * commonly because Vite's HMR client lost its websocket under CPU pressure

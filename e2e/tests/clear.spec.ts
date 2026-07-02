@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test('clear after voice demo removes all nodes + edges', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Load example (5 nodes / 6 edges, sequencer auto-playing)

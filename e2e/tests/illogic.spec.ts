@@ -50,7 +50,7 @@ test('illogic: drop module → card mounts with no console errors', async ({ pag
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'il', type: 'illogic', position: { x: 200, y: 200 } }]);
   const card = page.locator('.svelte-flow__node-illogic');
@@ -60,7 +60,7 @@ test('illogic: drop module → card mounts with no console errors', async ({ pag
 });
 
 test('illogic: LFO → in1 → att1 (gain=1) produces audible signal at scope', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -84,7 +84,7 @@ test('illogic: LFO → in1 → att1 (gain=1) produces audible signal at scope', 
 });
 
 test('illogic: att1_amount=0 mutes the att1 output', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -106,7 +106,7 @@ test('illogic: att1_amount=0 mutes the att1 output', async ({ page }) => {
 });
 
 test('illogic: att1_amount=-1 still produces audible signal (sign-flipped)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -129,7 +129,7 @@ test('illogic: att1_amount=-1 still produces audible signal (sign-flipped)', asy
 });
 
 test('illogic: two LFOs → in1+in2 → sum produces summed audible signal', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

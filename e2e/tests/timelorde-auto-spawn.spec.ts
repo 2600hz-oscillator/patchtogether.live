@@ -33,7 +33,7 @@ async function attachFreshRackspace(page: import('@playwright/test').Page, id: s
   let lastErr: unknown = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
       await page.waitForFunction(
         () =>

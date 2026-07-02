@@ -32,7 +32,7 @@ test('AI debug snapshot — Load example flow', async ({ page }) => {
   // ---------- SHELL ----------
   let response;
   try {
-    response = await page.goto('/');
+    response = await page.goto('/rack');
   } catch (err) {
     section('SHELL', `goto failed: ${err}`);
     section('VERDICT', 'fail — page never loaded');

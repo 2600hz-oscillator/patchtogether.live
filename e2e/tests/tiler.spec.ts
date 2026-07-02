@@ -95,7 +95,7 @@ async function captureTiler(
   page: import('@playwright/test').Page,
   tileIndex: number,
 ): Promise<{ grid: number[]; nonZeroFrac: number }> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -146,7 +146,7 @@ test.describe('TILER — video multiscreen / tile processor', () => {
   });
 
   test('TILE CV param routes through the patch store', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,

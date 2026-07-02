@@ -60,7 +60,7 @@ async function sampleTap(page: Page, nodeId: string, portId: string, samples: nu
 
 test.describe('HYDROGEN per-voice CV inputs route LFO → param', () => {
   test('LFO → cv_vol_0 modulates voice-0 volume (linear cvScale)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -82,7 +82,7 @@ test.describe('HYDROGEN per-voice CV inputs route LFO → param', () => {
   });
 
   test('LFO → cv_pi_3 modulates voice-3 pitch (linear cvScale, ±24st range)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -103,7 +103,7 @@ test.describe('HYDROGEN per-voice CV inputs route LFO → param', () => {
   });
 
   test('LFO → cv_r_15 modulates voice-15 release (log cvScale)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
