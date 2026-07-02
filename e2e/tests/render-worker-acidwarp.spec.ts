@@ -100,7 +100,7 @@ test.describe('Fix E render worker — acidwarp', () => {
       (globalThis as unknown as { __videoWorkerEnabled?: boolean }).__videoWorkerEnabled = true;
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -180,7 +180,7 @@ test.describe('Fix E render worker — acidwarp', () => {
 
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(

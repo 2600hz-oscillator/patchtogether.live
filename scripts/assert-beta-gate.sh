@@ -15,10 +15,14 @@
 #   secret_text). This script makes that failure LOUD: it fails the deploy.
 #
 # WHAT IT CHECKS:
-#   curls the deployed origin ROOT `/` WITHOUT credentials and asserts the gate
-#   answers HTTP 401. We hit `/` — NOT /api/health, which is intentionally
-#   gate-EXEMPT (isBetaGatePublic) and would 200 even with the gate fully down,
-#   so it can't witness the regression. /docs/* is exempt too; avoid it.
+#   curls a known-GATED app path (default /rack; override GATE_PROBE_PATH)
+#   WITHOUT credentials and asserts the gate answers HTTP 401. We must probe a
+#   GATED path — NOT `/` (the PUBLIC landing since the landing overhaul), NOT
+#   /api/health, NOT /docs/*: all three are gate-EXEMPT (isBetaGatePublic) and
+#   would 200 even with the gate fully down, so they can't witness the
+#   regression. A fully-wiped BETA_GATE_PASS still serves /rack as 200, so this
+#   guard still fires. Callers pass the tier ORIGIN (…/); the script appends the
+#   gated path.
 #
 # Only call this for tiers that ARE gated (prod / dev / autotest / PR-preview).
 # Do NOT call it on a tier where the gate is legitimately off, or it will
@@ -53,6 +57,13 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 2
 fi
 
+# Probe a GATED path, not the origin root: `/` is the PUBLIC landing
+# (isBetaGatePublic) as of the landing overhaul, so it 200s by design and can no
+# longer witness the gate. /rack is a gated app route; a wiped BETA_GATE_PASS
+# still serves it 200, so the guard still fires. Override via GATE_PROBE_PATH.
+GATE_PROBE_PATH="${GATE_PROBE_PATH:-/rack}"
+PROBE_URL="${URL%/}${GATE_PROBE_PATH}"
+
 # Tunable for tests; defaults give a ~60s window (10 × 6s).
 ATTEMPTS="${ATTEMPTS:-10}"
 SLEEP_SECS="${SLEEP_SECS:-6}"
@@ -60,7 +71,7 @@ SLEEP_SECS="${SLEEP_SECS:-6}"
 # can't blow past a job timeout.
 CURL_MAX_TIME="${CURL_MAX_TIME:-10}"
 
-echo "assert-beta-gate: expecting HTTP 401 (gate UP) at $URL"
+echo "assert-beta-gate: expecting HTTP 401 (gate UP) at $PROBE_URL"
 echo "  window: ${ATTEMPTS} attempts × ${SLEEP_SECS}s sleep (per-request timeout ${CURL_MAX_TIME}s)"
 
 last_status=""
@@ -69,7 +80,7 @@ for ((i = 1; i <= ATTEMPTS; i++)); do
   # NO credentials are sent — we WANT the gate to reject us. On a curl-level
   # failure (DNS, connect, timeout) curl exits non-zero and %{http_code} is
   # "000"; we treat that as "not yet reachable" and keep retrying.
-  status=$(curl -s -o /dev/null -m "$CURL_MAX_TIME" -w '%{http_code}' "$URL" || echo "000")
+  status=$(curl -s -o /dev/null -m "$CURL_MAX_TIME" -w '%{http_code}' "$PROBE_URL" || echo "000")
   last_status="$status"
 
   if [[ "$status" == "401" ]]; then
@@ -79,7 +90,7 @@ for ((i = 1; i <= ATTEMPTS; i++)); do
 
   if [[ "$status" == "200" ]]; then
     # The exact regression we're guarding against: root served with no auth.
-    echo "  [$i/$ATTEMPTS] HTTP 200 — gate is DOWN (root served WITHOUT auth!). retrying to rule out propagation…"
+    echo "  [$i/$ATTEMPTS] HTTP 200 — gate is DOWN (gated path served WITHOUT auth!). retrying to rule out propagation…"
   elif [[ "$status" == "000" ]]; then
     echo "  [$i/$ATTEMPTS] origin not reachable yet (curl error). retrying…"
   else
@@ -91,7 +102,7 @@ for ((i = 1; i <= ATTEMPTS; i++)); do
   fi
 done
 
-echo "::error::assert-beta-gate FAILED for $URL — never observed HTTP 401 within the retry window (last status: HTTP ${last_status})."
+echo "::error::assert-beta-gate FAILED for $PROBE_URL — never observed HTTP 401 within the retry window (last status: HTTP ${last_status})."
 if [[ "$last_status" == "200" ]]; then
   echo "::error::HTTP 200 means the beta gate is DOWN — the tier is serving the app to the public with no auth."
   echo "::error::Most likely cause: BETA_GATE_PASS on this CF Pages project is plain_text and was cleared by 'wrangler pages deploy'. Re-add it as secret_text (Dashboard → project → Settings → Variables and Secrets → Encrypt), then redeploy. See packages/web/wrangler.toml + scripts/sync-secrets.sh."

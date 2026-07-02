@@ -72,7 +72,7 @@ test('@launchpad single-unit ARM ROW: NEW->edit->COPY->PASTE on one device, the 
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -196,7 +196,7 @@ test('@launchpad single-unit DOUBLE-TAP a clip pad -> opens its note editor (con
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

@@ -59,7 +59,7 @@ test.describe('VRT: WAVESCULPT video walls', () => {
         if (m.type() === 'error') errors.push(m.text());
       });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       // SHAPES (a static test pattern) → wall1 (FRONT face). Camera nudged

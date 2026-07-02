@@ -41,7 +41,7 @@ interface PatchEdge {
 }
 
 async function setupChain(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,
@@ -93,7 +93,7 @@ async function createTestGroup(page: Page): Promise<void> {
 }
 
 test('ModulePalette renders tools section without the saved-groups entry for anonymous users', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   const pane = page.locator('.svelte-flow__pane');

@@ -80,7 +80,7 @@ async function readEngineKey(
 test('macseq: drop module → 16-cell grid renders + each cell has a model dropdown', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -112,7 +112,7 @@ test('macseq → macrooscillator: every MODEL_NAMES entry is reachable via MODEL
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Patch: MACSEQ → MACROOSCILLATOR → SCOPE.
@@ -297,7 +297,7 @@ test('macseq → macrooscillator: every MODEL_NAMES entry is reachable via MODEL
 test('macseq: HOLD-LAST policy — null model on a step holds the previous MODELCV value', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Plain MACSEQ → MACROOSCILLATOR with no scope (we read the model param

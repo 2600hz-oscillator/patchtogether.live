@@ -32,7 +32,7 @@ async function readNode(page: Page, id: string): Promise<PatchNode | undefined> 
 }
 
 async function setupChain(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

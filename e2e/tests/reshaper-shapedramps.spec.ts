@@ -59,7 +59,7 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
@@ -104,7 +104,7 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Two separate cards, same LINES feeding each. Output RESHAPER wired
@@ -168,7 +168,7 @@ test.describe('RESHAPER + SHAPEDRAMPS integration', () => {
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Two distinct LINES sources → SHAPEDRAMPS.mix1_a / mix1_b.

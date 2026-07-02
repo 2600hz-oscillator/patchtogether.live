@@ -72,7 +72,7 @@ interface PatchOpts {
 }
 
 async function captureA(page: Page, opts: PatchOpts): Promise<Capture> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   const edges = [
@@ -201,7 +201,7 @@ async function captureMorph(
   page: Page,
   params: Record<string, number>,
 ): Promise<Capture> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

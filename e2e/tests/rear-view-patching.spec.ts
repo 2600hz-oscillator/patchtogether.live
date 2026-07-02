@@ -80,7 +80,7 @@ function backJack(
 /** Spawn adsr + vca (both PatchPanel cards) with NO edges. adsr.env (cv OUT) →
  *  vca.cv (cv IN) is a valid, lightweight, non-WebGL fixture. */
 async function spawnAdsrVca(page: Page) {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'adsr', type: 'adsr', position: { x: 120, y: 140 } },

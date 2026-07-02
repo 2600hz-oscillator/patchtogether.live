@@ -23,7 +23,7 @@ test.describe.configure({ mode: 'parallel' });
 test('drumseqz: drop module → 64-cell grid renders + Eucl sliders default to 0', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -57,7 +57,7 @@ test('drumseqz: drop module → 64-cell grid renders + Eucl sliders default to 0
 test('drumseqz: trk1_euclid=4 → steps 0/4/8/12 light up via Bjorklund rewrite', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -138,7 +138,7 @@ test('drumseqz: trk1_euclid=4 → steps 0/4/8/12 light up via Bjorklund rewrite'
 test('drumseqz → drummergirl → audioOut: gate1 fires audio when trk1 has any pulse', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

@@ -35,7 +35,7 @@ async function readVar(
 }
 
 test('lcars: selectable from switcher + applies Okudagram palette + shape tokens', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await page.getByTestId('skin-switcher-trigger').click();
@@ -83,7 +83,7 @@ test('lcars: selectable from switcher + applies Okudagram palette + shape tokens
 });
 
 test('lcars: choice survives a reload', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.getByTestId('skin-switcher-trigger').click();
   await page.getByTestId('skin-option-lcars').click();
@@ -97,7 +97,7 @@ test('lcars: choice survives a reload', async ({ page }) => {
 });
 
 test('lcars: switching back to default CLEARS the optional shape tokens', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await page.getByTestId('skin-switcher-trigger').click();
@@ -122,7 +122,7 @@ test('lcars: switching back to default CLEARS the optional shape tokens', async 
 test('lcars: switching to LCARS does not disturb the other skins', async ({ page }) => {
   // Cross-check that activating LCARS then another skin produces that other
   // skin's expected palette — i.e. LCARS's vars don't leak across a switch.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await page.getByTestId('skin-switcher-trigger').click();

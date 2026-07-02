@@ -57,7 +57,7 @@ test.describe('TIMELORDE big display: owl ↔ live video + passthrough', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(
       page,
@@ -93,7 +93,7 @@ test.describe('TIMELORDE big display: owl ↔ live video + passthrough', () => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // ACIDWARP (self-running video source) + TIMELORDE; patch the feed in.
@@ -141,7 +141,7 @@ test.describe('TIMELORDE big display: owl ↔ live video + passthrough', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // ACIDWARP → TIMELORDE.video_in → (display) → TIMELORDE.video_out → OUTPUT.

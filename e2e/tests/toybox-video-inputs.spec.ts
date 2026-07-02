@@ -206,7 +206,7 @@ async function resume(page: Page): Promise<void> {
 
 /** Spawn TOYBOX + an ACIDWARP video source patched into `port`. */
 async function spawnWithFeed(page: Page, port: 'inA' | 'inB'): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   const nodes: SpawnNode[] = [
     { id: 'tb', type: 'toybox', position: { x: 360, y: 40 }, domain: 'video' },

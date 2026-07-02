@@ -79,7 +79,7 @@ test.describe('OUTLINES — deterministic render smoke', () => {
     // Pause the engine rAF loop + pin the clock BEFORE boot.
     await installRenderSmokeHooks(page);
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // OUTLINES is a stateful particle SOURCE → its own OUTPUT. We read its

@@ -134,7 +134,7 @@ async function readLastCheat(page: Page, nodeId: string): Promise<string | null>
 test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-char keypress sequence', () => {
   test('rising edge on iddqd_in injects the IDDQD god-mode cheat within ~500ms', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const hasWasm = await doomWasmPresent(page);
@@ -213,7 +213,7 @@ test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-
 
   test('rising edge on idkfa_in injects the IDKFA all-keys-weapons-ammo cheat within ~500ms', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const hasWasm = await doomWasmPresent(page);
@@ -277,7 +277,7 @@ test.describe('DOOM IDDQD / IDKFA cheat gates — rising edge synthesises the 5-
 
   test('holding the iddqd gate HIGH does NOT re-trigger; lowering + raising re-fires', async ({ page }) => {
     page.on('pageerror', (e) => console.error('pageerror:', e.message));
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // This is a structural test — runs even without WASM (the rising-edge

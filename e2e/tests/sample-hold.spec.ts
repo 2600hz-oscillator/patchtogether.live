@@ -31,7 +31,7 @@ test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces 
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -72,7 +72,7 @@ test('SAMPLE & HOLD chain: BUGGLES → S&H (clocked) → VCO → SCOPE produces 
 });
 
 test('SAMPLE & HOLD scale-name label updates as the scale param changes', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -123,7 +123,7 @@ test('SAMPLE & HOLD continuous-quantizer (no gate): cv passes through, VCO sings
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // NO sequencer / gate cable — sampleHold becomes a pure quantizer.

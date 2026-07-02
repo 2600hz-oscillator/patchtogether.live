@@ -12,7 +12,7 @@ test.describe.configure({ mode: 'parallel' });
 
 test.describe('MiniMap', () => {
   test('renders and reflects the canvas viewport', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
@@ -32,7 +32,7 @@ test.describe('MiniMap', () => {
   });
 
   test('toggle button hides and shows the minimap', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const toggle = page.getByTestId('minimap-toggle');
@@ -64,7 +64,7 @@ test.describe('Cable hover affordances', () => {
     // `.cable-hover` class to an edge thickens its stroke. The visual
     // affordance still works in real browsers; only the synthetic pointer
     // path is unreachable.
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__edge')).toHaveCount(6, { timeout: 10_000 });
@@ -86,7 +86,7 @@ test.describe('Cable hover affordances', () => {
   });
 
   test('hovering a card dims unrelated cables', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     // Load example: 5 nodes, 6 edges. The Sequencer (vd-seq) only touches
     // 2 of the 6 edges (seq.pitch→vco and seq.gate→adsr), so the remaining
@@ -126,7 +126,7 @@ test.describe('Cable hover affordances', () => {
 
 test.describe('Undo / redo', () => {
   test('Cmd-Z removes a freshly-spawned module; Cmd-Shift-Z restores it', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(0);
 
@@ -152,7 +152,7 @@ test.describe('Undo / redo', () => {
   });
 
   test('Cmd-Z reverts a node deletion (right-click → Delete)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
@@ -174,7 +174,7 @@ test.describe('Undo / redo', () => {
   });
 
   test('Cmd-Z is ignored while focus is in a text input (no hijack of native undo)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('load-example-select').selectOption('sequenced-vco');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(5, { timeout: 10_000 });
@@ -192,7 +192,7 @@ test.describe('Undo / redo', () => {
   });
 
   test('Cmd-Z on an empty undo stack is a no-op (no crash)', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await expect(page.locator('.svelte-flow__node')).toHaveCount(0);
 

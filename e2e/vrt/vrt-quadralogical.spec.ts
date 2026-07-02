@@ -92,7 +92,7 @@ test.describe('VRT: QUADRALOGICAL per-edge effects', () => {
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-      await page.goto('/');
+      await page.goto('/rack');
       await page.waitForLoadState('networkidle');
 
       // Joystick on the TOP edge (in1↔in2 active); the target effect on edge 1–2.

@@ -68,7 +68,7 @@ export async function openCollab(
     const ctx = await browser.newContext({ baseURL });
     const page = await ctx.newPage();
     // Phase 4+ will read this query param and pass it to attachProvider().
-    await page.goto(`/?canvas=${encodeURIComponent(canvasId)}`);
+    await page.goto(`/rack?canvas=${encodeURIComponent(canvasId)}`);
     await page.waitForLoadState('networkidle');
     contexts.push(ctx);
     pages.push(page);

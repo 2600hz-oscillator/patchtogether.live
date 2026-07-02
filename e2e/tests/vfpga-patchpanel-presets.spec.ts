@@ -75,7 +75,7 @@ async function spawnHostToOutput(page: Page) {
 test.describe('vfpga-runner — PatchPanel + presets', () => {
   test('BUG 1: card uses PatchPanel — no raw side-column jacks; all handles at the corner', async ({ page }) => {
     test.setTimeout(45_000);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnHostToOutput(page);
 
@@ -115,7 +115,7 @@ test.describe('vfpga-runner — PatchPanel + presets', () => {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Renderer probe: only assert pixels when WebGL2 actually renders (CI uses

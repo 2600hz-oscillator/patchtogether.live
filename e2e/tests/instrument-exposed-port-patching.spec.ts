@@ -101,7 +101,7 @@ async function setupInstrumentWithExposedOutput(page: Page): Promise<{
   groupId: string;
   exposedOutId: string;
 }> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // Three real-engine modules: LFO + FILTER (will be grouped) + AUDIOOUT
   // (external — the cable target).
@@ -195,7 +195,7 @@ test('exposed group OUTPUT → external INPUT: cable lands in patch.edges (regre
 });
 
 test('exposed group INPUT ← external SOURCE: cable lands in patch.edges (regression)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   // VCO + FILTER will be grouped (FILTER.cutoff exposed). External LFO
   // will feed the exposed cutoff.
@@ -274,7 +274,7 @@ test('connect with both endpoints on (different) groups: cable still lands (sani
   // exposed OUTPUT → dest group's exposed INPUT. Pre-fix, neither def
   // resolved + the connect bailed. This catches a regression where the
   // fix accidentally short-circuited only one side of the lookup.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

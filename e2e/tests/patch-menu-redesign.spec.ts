@@ -53,7 +53,7 @@ async function openFrom(page: Page, nodeId: string, side: 'left' | 'right') {
 }
 
 async function spawnSeqAdsr(page: Page) {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'seq', type: 'sequencer', position: { x: 80, y: 120 } },
@@ -210,7 +210,7 @@ test('carry → patch to → target module → valid port commits the edge', asy
 test('invalid carry-commit (output→output) makes no edge + closes silently', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'lfo', type: 'lfo', position: { x: 80, y: 120 } },

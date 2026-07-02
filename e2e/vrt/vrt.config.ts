@@ -54,6 +54,7 @@ const FULL_MATCH = [
   'interactions.spec.ts',
   'groups.spec.ts',
   'dashboard.spec.ts',
+  'landing.spec.ts',
   'skin-diner.spec.ts',
   'skin-lcars.spec.ts',
 ];

@@ -41,7 +41,7 @@ function runPair(group: string, patch: PairPatch): void {
       if (m.type() === 'error') errors.push(`console: ${m.text()}`);
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await spawnPatch(page, patch.nodes, patch.edges);
 

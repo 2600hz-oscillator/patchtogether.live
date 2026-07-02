@@ -31,7 +31,7 @@ test('soak: voice patch produces finite, in-range audio over 30s', async ({ page
     if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Voice chain + a Scope tap to read the output stream.

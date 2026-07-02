@@ -72,7 +72,7 @@ async function readEngine<T = unknown>(
 test('polyseqz: playhead matches sounding step (no off-by-one at start)', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // 60 BPM, 8th notes (POLYSEQZ default) → step every 500 ms. Slow enough
@@ -119,7 +119,7 @@ test('polyseqz: playhead matches sounding step (no off-by-one at start)', async 
 test('sequencer: playhead matches sounding step (no off-by-one at start)', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // 10 BPM, 16th notes → step every 1500 ms — slow enough that ctx.suspend() completes within step 0
@@ -165,7 +165,7 @@ test('sequencer: playhead matches sounding step (no off-by-one at start)', async
 test('drumseqz: playhead matches sounding step (no off-by-one at start)', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // 10 BPM, 16th notes → step every 1500 ms — slow enough that ctx.suspend() completes within step 0
@@ -203,7 +203,7 @@ test('drumseqz: playhead matches sounding step (no off-by-one at start)', async 
 test('score: playhead matches sounding 16th-note slot (no off-by-one)', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // 60 BPM → 1 beat = 1 s, 1 16th = 250 ms.
@@ -287,7 +287,7 @@ test('all sequencers: playhead is exposed via engine.read("currentStep") (smoke 
   // Belt-and-suspenders: every sequencer module that has a visual playhead
   // must expose 'currentStep' (or 'currentNoteId' for SCORE) via engine.read.
   // This is a stable contract the per-module Card.svelte files depend on.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Cartesian requires an external clock to advance — give it one via the

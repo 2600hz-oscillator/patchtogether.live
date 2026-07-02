@@ -71,7 +71,7 @@ test('livecode: spawn → run JS produces named modules with cables', async ({ p
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
@@ -97,7 +97,7 @@ test('livecode: spawn → run JS produces named modules with cables', async ({ p
 });
 
 test('livecode: patch() works direction-agnostically (destination-first)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
@@ -119,7 +119,7 @@ test('livecode: patch() works direction-agnostically (destination-first)', async
 });
 
 test('livecode: runtime error surfaces in status + leaves rack stable', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
@@ -147,7 +147,7 @@ test('livecode: runtime error surfaces in status + leaves rack stable', async ({
 });
 
 test('livecode: clocked() spawns a clockedRunner with the body + division', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
@@ -173,7 +173,7 @@ test('livecode: clocked() spawns a clockedRunner with the body + division', asyn
 });
 
 test('livecode: setData writes sequencer step array → node.data.steps', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
@@ -207,7 +207,7 @@ setData('seq', 'steps', [
 });
 
 test('livecode: state.set persists on owning livecode card across two runs', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 100, y: 100 } }]);
 
@@ -225,7 +225,7 @@ test('livecode: state.set persists on owning livecode card across two runs', asy
 });
 
 test('livecode: editable name label — rename + reject duplicate', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'a', type: 'analogVco', position: { x: 100, y: 100 } },
@@ -267,7 +267,7 @@ test('livecode: editable name label — rename + reject duplicate', async ({ pag
 });
 
 test('livecode: JS recreates "Load example" patch → graph-isomorphic', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [{ id: 'lc', type: 'livecode', position: { x: 50, y: 400 } }]);
 
@@ -307,7 +307,7 @@ set('out', 'master',   0.4);`;
 
   const dslSummary = await readPatchSummary(page);
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.getByTestId('load-example-select').selectOption('sequenced-vco');
   await page.waitForFunction(() => {

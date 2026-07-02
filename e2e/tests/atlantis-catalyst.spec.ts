@@ -34,7 +34,7 @@ test('SCENECHANGE card mounts under new display label (type id unchanged)', asyn
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     { id: 'c', type: 'atlantisCatalyst', position: { x: 100, y: 100 } },
@@ -54,7 +54,7 @@ test('SCENECHANGE card mounts under new display label (type id unchanged)', asyn
 });
 
 test('SCENECHANGE: shift+click saves, click recalls live params', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     {
@@ -114,7 +114,7 @@ test('SCENECHANGE: shift+click saves, click recalls live params', async ({ page 
 });
 
 test('SCENECHANGE: clicking an empty slot still triggers a transition (back-compat)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(page, [
     {

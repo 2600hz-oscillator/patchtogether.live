@@ -141,7 +141,7 @@ async function spawnToybox(page: Page): Promise<void> {
   // UV-vs-projective delta / surface-source / projection-map assertion below still
   // reads the SAME real main-thread GPU render as before.
   await installRenderSmokeHooks(page, 1.0);
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

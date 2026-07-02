@@ -54,7 +54,7 @@ test.describe('MILKDROP — deterministic render smoke (butterchurn)', () => {
       g.__milkdropTestAudio = true;  // fixed synthetic sine → audio-reactive frame
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // CAPABILITY PROBE: WebGL2 must be available (the video engine needs it).

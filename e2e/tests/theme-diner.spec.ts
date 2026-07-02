@@ -32,7 +32,7 @@ async function readVar(
 }
 
 test('diner: selectable from switcher + applies vaporwave palette + shape tokens', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await page.getByTestId('skin-switcher-trigger').click();
@@ -79,7 +79,7 @@ test('diner: selectable from switcher + applies vaporwave palette + shape tokens
 });
 
 test('diner: choice survives a reload', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await page.getByTestId('skin-switcher-trigger').click();
   await page.getByTestId('skin-option-diner').click();
@@ -93,7 +93,7 @@ test('diner: choice survives a reload', async ({ page }) => {
 });
 
 test('diner: switching back to default CLEARS the optional shape tokens', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await page.getByTestId('skin-switcher-trigger').click();
@@ -119,7 +119,7 @@ test('diner: the six pre-existing skins never set the optional shape tokens', as
   // Defensive cross-check at the live-DOM layer: cycle each non-DINER skin
   // and assert the optional tokens stay UNSET, so their _module-card.css
   // fallbacks (hard corners, no glow) hold and their VRT baselines don't move.
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   const others = ['terminal-green', 'brutalist', 'vaporwave', 'vintage', 'matrixcowboy', 'default'];
   for (const id of others) {

@@ -2696,7 +2696,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
         // shouldn't have gotten here (modules without outputs are
         // filtered via mod.outputs.length earlier in many specs); if
         // we do, fail loudly so the design gets revisited.
-        await page.goto('/'); // give the test SOMETHING to navigate to before asserting
+        await page.goto('/rack'); // give the test SOMETHING to navigate to before asserting
         expect(
           observed,
           `${mod.type}: no observable output type — module needs a BEHAVIORAL_MODULE_EXEMPT entry or pickObservedOutput extension`,
@@ -2709,8 +2709,8 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
       // next-iter's control...) so each spawn starts from a fresh
       // AudioContext + engine — same determinism story as
       // per-module-per-port.spec.ts's outputs-emit dim. Pattern:
-      //  goto('/') → spawnPatch(control) → settle → read
-      //  goto('/') → spawnPatch(patched) → settle → read → compare
+      //  goto('/rack') → spawnPatch(control) → settle → read
+      //  goto('/rack') → spawnPatch(patched) → settle → read → compare
       const failures: string[] = [];
       const passes: string[] = [];
 
@@ -2728,7 +2728,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
         // ─── CONTROL ─────────────────────────────────────────────────
         // SUT + driver (if needed) + context (effect-shape upstream
         // noise/video) + sink. NO upstream on test input.
-        await page.goto('/');
+        await page.goto('/rack');
         await page.waitForLoadState('networkidle');
 
         const sutNode: SpawnNode = {
@@ -2773,7 +2773,7 @@ test.describe('per-module per-port: BEHAVIORAL input coverage (output changes on
 
         // ─── PATCHED ─────────────────────────────────────────────────
         // Same nodes + edges, PLUS the test-input upstream.
-        await page.goto('/');
+        await page.goto('/rack');
         await page.waitForLoadState('networkidle');
 
         const patchedNodes: SpawnNode[] = [

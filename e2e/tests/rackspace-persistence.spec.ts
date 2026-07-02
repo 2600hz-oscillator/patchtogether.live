@@ -47,7 +47,7 @@ async function readNodesSnapshot(page: Page): Promise<Record<string, unknown>> {
 test('rackspace-persistence: PICTUREBOX bytes + DX7 SYX + sequencer steps survive export → clear → import', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Spawn one of each "asset-bearing" module type. The spawnPatch helper

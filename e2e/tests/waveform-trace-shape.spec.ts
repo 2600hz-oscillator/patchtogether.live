@@ -62,7 +62,7 @@ async function readTraceStats(page: import('@playwright/test').Page): Promise<Tr
 
 test.describe('waveform video trace shape (Bug-2 regression)', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
   });
 

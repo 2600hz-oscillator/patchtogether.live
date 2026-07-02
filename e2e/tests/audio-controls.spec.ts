@@ -114,7 +114,7 @@ test.describe('audio-controls: FILTER cutoff CV actually changes audio', () => {
   test('Filter: cutoff knob moved from 20Hz to 8000Hz changes the captured spectrum', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // VCO saw (default ~261.6 Hz / C4) → Filter (LP, brick wall) → SCOPE
@@ -175,7 +175,7 @@ test.describe('audio-controls: DESTROY bits CV actually changes audio', () => {
   test('Destroy: bits=16 vs bits=1 produces measurably different RMS or peak', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // VCO sine (default ~261.6 Hz / C4) → DESTROY (passthrough at
@@ -221,7 +221,7 @@ test.describe('audio-controls: Audio Out master fader attenuates output', () => 
   test('Audio Out: master=0 silences the destination; master=0.5 produces signal', async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // VCO → AudioOut.L. We tap a SCOPE BEFORE the Out so the test

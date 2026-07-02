@@ -51,7 +51,7 @@ test.describe('BENTBOX — CRT-emulation output', () => {
     });
 
     await freezeBentbox(page);
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // Spawn a SHAPES source feeding into BENTBOX so the bending pipeline has
@@ -115,7 +115,7 @@ test.describe('BENTBOX — CRT-emulation output', () => {
   });
 
   test('CV-bending knobs mutate params via patch store', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [
@@ -169,7 +169,7 @@ test.describe('BENTBOX — CRT-emulation output', () => {
   });
 
   test('resize handle is present + drag grows the card', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(page, [

@@ -48,7 +48,7 @@ const EXPECTED_ADVANCES_MAX = 24; // ceiling — guards against a stuck-firing b
 test('tempo-stability: sequencer keeps tempo under repeated main-thread jank', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -126,7 +126,7 @@ test('tempo-stability: sequencer keeps tempo under repeated main-thread jank', a
 test('tempo-stability: baseline (no jank) sequencer advance rate matches BPM', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -186,7 +186,7 @@ for (const mod of ['sequencer', 'polyseqz', 'drumseqz'] as const) {
   test(`tempo-stability: ${mod} drops the past-due backlog under a stall > lookahead, never bunches (#229/#224)`, async ({
     page,
   }) => {
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     const id = `j_${mod}`;

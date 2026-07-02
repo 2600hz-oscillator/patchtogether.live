@@ -26,7 +26,7 @@ interface PatchEdge {
 }
 
 async function setupScopeGroup(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
   await spawnPatch(
     page,

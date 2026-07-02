@@ -15,7 +15,7 @@ import { spawnPatch } from './_helpers';
 test.describe.configure({ mode: 'parallel' });
 
 test('poly-chord: maj triad on a4 emits 4 gated lanes with M3 + P5 + octave intervals', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -77,7 +77,7 @@ test('poly-chord: maj triad on a4 emits 4 gated lanes with M3 + P5 + octave inte
 });
 
 test('poly-chord: min step on a4 emits c5 (m3) instead of c#5 (M3)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [
@@ -114,7 +114,7 @@ test('poly-chord: min step on a4 emits c5 (m3) instead of c#5 (M3)', async ({ pa
 });
 
 test('poly-chord: backward-compat - polyPitchGate source -> mono pitch sink routes lane 0 (root)', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Sequencer (poly pitch out) → VCO (mono pitch in). The engine's
@@ -172,7 +172,7 @@ test('poly-chord: backward-compat - polyPitchGate source -> mono pitch sink rout
 });
 
 test('poly-chord: chord-picker UI cycles mono -> maj -> min -> mono on click', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [

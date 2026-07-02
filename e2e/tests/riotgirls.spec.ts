@@ -37,7 +37,7 @@ test('RIOTGIRLS: Sequencer-driven trig1 produces audio on outL', async ({ page }
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -86,7 +86,7 @@ test('RIOTGIRLS: __riotgirlsTriggerVoice test hook fires the requested voice', a
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -145,7 +145,7 @@ test('RIOTGIRLS: every input port in the def has a visible handle', async ({ pag
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(page, [{ id: 'rg', type: 'riotgirls', params: {} }], []);
@@ -196,7 +196,7 @@ test('RIOTGIRLS: Sequencer-driven gate1 (alt port) produces audio on outL', asyn
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(

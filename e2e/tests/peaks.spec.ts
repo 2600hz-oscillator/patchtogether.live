@@ -17,7 +17,7 @@ test('PEAKS card renders + mode toggle cycles through KICK/SNARE/HIHAT/ENV/LFO',
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   await spawnPatch(
@@ -60,7 +60,7 @@ test('PEAKS routes audio from KICK channel through to AUDIOOUT', async ({ page }
     if (m.type() === 'error') errors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
   // Sequencer → ch0 gate → PEAKS (ch0=KICK, ch1=LFO) → AUDIOOUT.

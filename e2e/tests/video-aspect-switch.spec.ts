@@ -82,7 +82,7 @@ test.describe('video: OUTPUT aspect switch reallocates IN PLACE (no teardown)', 
       if (m.type() === 'error') errors.push(m.text());
     });
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     // LINES (procedural source) → OUTPUT.
@@ -147,7 +147,7 @@ test.describe('video: OUTPUT aspect switch reallocates IN PLACE (no teardown)', 
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
 
-    await page.goto('/');
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
 
     await spawnPatch(
