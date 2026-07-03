@@ -58,7 +58,9 @@ test.describe('VRT: topbar heading + button layout', () => {
     // (not stable run-to-run) — the documented VRT text-metric flake. See
     // e2e/vrt/_fonts.ts for the full root-cause writeup.
     await pinVrtFonts(page);
-    await page.goto('/');
+    // The overflow-fixed topbar is the CANVAS topbar (Canvas.svelte), on /rack
+    // since the landing move (#995); `/` is the static landing (no load-example).
+    await page.goto('/rack');
     await page.waitForLoadState('networkidle');
     await awaitVrtFonts(page);
 
