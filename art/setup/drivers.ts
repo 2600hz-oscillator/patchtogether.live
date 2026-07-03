@@ -122,6 +122,23 @@ export function vcoTestSignal(opts: VcoTestSignalOptions): Float32Array {
   return buf;
 }
 
+export interface ToneBurstOptions extends VcoTestSignalOptions {
+  /** Burst length in seconds — the VCO tone spans [0, burstS), then silence
+   *  out to totalS. */
+  burstS: number;
+}
+
+/** A short vcoTestSignal burst at t = 0 followed by silence — the canonical
+ *  TRANSIENT driver for FX with an echo/decay tail (the cocoadelay batch-2
+ *  precedent: dry hit, then the ringing tail IS the profile). */
+export function toneBurst(opts: ToneBurstOptions): Float32Array {
+  const sr = opts.sampleRate ?? SAMPLE_RATE;
+  const buf = new Float32Array(n(opts.totalS, sr));
+  const burst = vcoTestSignal({ ...opts, totalS: Math.min(opts.burstS, opts.totalS) });
+  buf.set(burst, 0);
+  return buf;
+}
+
 /** Deterministic seed for profile noise drivers (also the chowkick worklet's
  *  default noise seed). DETERMINISM.md "Random seed (ART audio profiles)". */
 export const PROFILE_NOISE_SEED = 0xc0ffee;
