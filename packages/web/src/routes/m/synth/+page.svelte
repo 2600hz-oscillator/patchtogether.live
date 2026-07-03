@@ -15,6 +15,8 @@
     restoreMobileSession,
     saveMobileSession,
     readParamValue,
+    listTransportNodes,
+    hasBpmParam,
   } from '$lib/mobile/mobile-host';
   import { spawnEmptyRack, spawnFirstBleep } from '$lib/mobile/first-bleep';
   import { provideEngineContext } from '$lib/audio/engine-context';
@@ -34,9 +36,17 @@
   const unsubscribeSnap = getDefaultSnapshotBus().subscribe((s) => (snapshot = s));
 
   let started = $derived(snapshot.nodes.length > 0);
-  let timelorde = $derived(snapshot.nodes.find((n) => n.type === 'timelorde'));
-  let running = $derived(timelorde ? readParamValue(timelorde, 'running') >= 0.5 : false);
-  let bpm = $derived(timelorde ? Math.round(readParamValue(timelorde, 'bpm')) : 120);
+  // ── MASTER transport: drive EVERY transport-bearing node, not just the
+  // (often unwired) TIMELORDE. In FIRST BLEEP the audible clock is the
+  // sequencer's own `isPlaying`, so controlling timelorde alone was inert. ──
+  let transportNodes = $derived(listTransportNodes(snapshot.nodes));
+  let hasTransport = $derived(transportNodes.length > 0);
+  let running = $derived(transportNodes.some(({ node, param }) => readParamValue(node, param) >= 0.5));
+  // Tempo: display + control the AUDIBLE tempo — prefer a sequencer's BPM
+  // (what you hear in FIRST BLEEP), else any bpm-bearing node (timelorde).
+  let bpmNodes = $derived(snapshot.nodes.filter((n) => hasBpmParam(n)));
+  let bpmNode = $derived(bpmNodes.find((n) => n.type === 'sequencer') ?? bpmNodes[0]);
+  let bpm = $derived(bpmNode ? Math.round(readParamValue(bpmNode, 'bpm')) : 120);
 
   // ── Tabs ──
   let activeTab = $state<'rack' | 'patch' | 'mix'>('rack');
@@ -98,15 +108,17 @@
     if (!restoreMobileSession()) toast('could not restore the last session');
   }
 
-  // ── Transport ──
+  // ── Transport ── (drive ALL transport nodes so ■ truly stops the sound and
+  // ▶ resumes it; nudge writes every bpm-bearing node so tempo actually moves)
   function toggleRun() {
-    if (!timelorde) return;
-    setNodeParam(timelorde.id, 'running', running ? 0 : 1);
+    const next = running ? 0 : 1;
+    for (const { node, param } of transportNodes) setNodeParam(node.id, param, next);
   }
   function nudgeBpm(delta: number) {
-    if (!timelorde) return;
-    const next = Math.max(10, Math.min(300, bpm + delta));
-    setNodeParam(timelorde.id, 'bpm', next);
+    // 30..300 is the intersection of the sequencer (30..300) and timelorde
+    // (10..300) BPM ranges — a value both engines accept.
+    const next = Math.max(30, Math.min(300, bpm + delta));
+    for (const n of bpmNodes) setNodeParam(n.id, 'bpm', next);
   }
 
   // ── Session autosave (iOS evicts tabs; the doc is memory-only) ──
@@ -138,7 +150,7 @@
 <div class="synth-root" data-testid="m-synth-root" data-started={started}>
   <header class="topbar">
     <a class="brand" href="/m" data-sveltekit-reload>‹ pocket modular</a>
-    {#if timelorde}
+    {#if hasTransport}
       <div class="transport" data-testid="m-transport">
         <button class="bpm-btn" onclick={() => nudgeBpm(-1)} aria-label="bpm down">−</button>
         <span class="bpm" data-testid="m-bpm">{bpm}</span>
@@ -259,8 +271,8 @@
     gap: 4px;
   }
   .bpm-btn {
-    min-width: 36px;
-    min-height: 36px;
+    min-width: 44px;
+    min-height: 44px;
     border-radius: 8px;
     border: 1px solid #2a2f3a;
     background: none;
@@ -276,7 +288,7 @@
   }
   .run {
     min-width: 44px;
-    min-height: 36px;
+    min-height: 44px;
     border-radius: 8px;
     border: 1px solid #2a2f3a;
     background: none;
@@ -289,7 +301,7 @@
     color: #7fe0a8;
   }
   .undo {
-    min-height: 36px;
+    min-height: 44px;
     padding: 0 12px;
     border-radius: 8px;
     border: 1px solid #2a2f3a;
@@ -384,6 +396,11 @@
     max-width: 86vw;
     text-align: center;
     z-index: 90;
+    /* Purely informational — must NEVER intercept touch on the controls it
+       floats over (it sits at the thumb zone, right on top of the MIX master
+       lane + bottom rails). Without this the master fader was dead for the
+       toast's 2.6s lifetime. */
+    pointer-events: none;
   }
   .pill {
     position: fixed;
@@ -400,9 +417,12 @@
     border-radius: 24px;
     font-size: 13px;
     z-index: 91;
+    /* Only the UNDO button is interactive; the pill body must not block the
+       thumb-zone controls it floats over (same seam as .toast above). */
+    pointer-events: none;
   }
   .pill button {
-    min-height: 40px;
+    min-height: 44px;
     padding: 0 14px;
     border-radius: 20px;
     border: none;
@@ -410,5 +430,6 @@
     color: #dbe2ee;
     font-weight: 800;
     font-size: 12px;
+    pointer-events: auto;
   }
 </style>

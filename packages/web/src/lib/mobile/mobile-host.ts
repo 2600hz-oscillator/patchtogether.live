@@ -350,6 +350,46 @@ export function installMobileTestHooks(): void {
   g.__undoManager = undoManager;
 }
 
+// ---------------- Master transport (run/stop + tempo) ----------------
+//
+// The header transport must control what ACTUALLY makes sound, not an inert
+// node. The FIRST BLEEP scene's audible clock is the SEQUENCER's own
+// free-running transport (`isPlaying`) — it is NOT slaved to TIMELORDE — so
+// driving only `timelorde.running` left ▶/■ and BPM doing nothing (the sound
+// kept playing after "stop", and the header showed timelorde's 120 while the
+// sequencer ran at 118). The fix: a MASTER transport that drives every
+// transport-bearing node in the scene.
+
+/** The transport (run/stop) param a node type exposes, if any: sequencers &
+ *  friends gate on `isPlaying`, the master clock (TIMELORDE) on `running`. */
+export function transportParamId(node: ModuleNode | undefined): 'isPlaying' | 'running' | null {
+  if (!node) return null;
+  const def = resolveAnyDef(node.type) as { params?: readonly { id: string }[] } | undefined;
+  const ids = def?.params?.map((p) => p.id) ?? [];
+  if (ids.includes('isPlaying')) return 'isPlaying';
+  if (ids.includes('running')) return 'running';
+  return null;
+}
+
+/** Nodes in the scene that expose a run/stop transport param, with the id. */
+export function listTransportNodes(
+  nodes: readonly ModuleNode[],
+): { node: ModuleNode; param: 'isPlaying' | 'running' }[] {
+  const out: { node: ModuleNode; param: 'isPlaying' | 'running' }[] = [];
+  for (const n of nodes) {
+    const param = transportParamId(n);
+    if (param) out.push({ node: n, param });
+  }
+  return out;
+}
+
+/** Does the node type expose a `bpm` tempo param? */
+export function hasBpmParam(node: ModuleNode | undefined): boolean {
+  if (!node) return false;
+  const def = resolveAnyDef(node.type) as { params?: readonly { id: string }[] } | undefined;
+  return !!def?.params?.some((p) => p.id === 'bpm');
+}
+
 /** Convenience for views: read a node's live param with ParamDef fallback. */
 export function readParamValue(node: ModuleNode | undefined, paramId: string): number {
   if (!node) return 0;

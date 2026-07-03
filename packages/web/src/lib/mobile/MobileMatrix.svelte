@@ -589,7 +589,7 @@
     gap: 6px;
   }
   .tog {
-    min-height: 36px;
+    min-height: 44px;
     padding: 0 12px;
     border-radius: 18px;
     border: 1px solid #2a2f3a;
@@ -612,7 +612,7 @@
   }
   .sec {
     flex: none;
-    min-height: 36px;
+    min-height: 44px;
     padding: 0 12px;
     border-radius: 8px;
     border: 1px solid #2a2f3a;
