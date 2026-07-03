@@ -40,7 +40,6 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'cube',
   'wavecel',
   'dx7',
-  'helm',
   'rings',
   'elements',
   'wavetableVco',
@@ -182,7 +181,7 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // card installs a document-level capturing keydown listener to own the Numpad
   // keys — both side effects we keep out of the shared doc sandbox (face
   // fallback). POLYSEQZ and NUMPAD+ are POLY: their poly output must feed a real
-  // poly-aware voice (RIOTGIRLS / DX7 / POLYHELM / a module with a poly input),
+  // poly-aware voice (RIOTGIRLS / DX7 / a module with a poly input),
   // noted in their prose.
   'cartesian',
   'drumseqz',
@@ -202,8 +201,8 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // hardware), JOYSTICK (manual XY → four bipolar CV), GAMEPAD (a game controller's
   // 18 axes/buttons → CV/gate), AUDIO IN (system audio capture → stereo L/R), and
   // AUDIO OUT (the terminal stereo sink with DC-block + limiter). MIDI LANE is the
-  // POLY member — its `poly` output must feed a real poly-aware voice (POLYHELM /
-  // DX7 / CUBE / a module with a poly input), noted in its prose. ALL eight stay
+  // POLY member — its `poly` output must feed a real poly-aware voice (DX7 /
+  // CUBE / a module with a poly input), noted in its prose. ALL eight stay
   // STATIC (off INTERACTIVE_DOC_MODULES): the four MIDI cards run Web-MIDI device
   // pickers, AUDIO IN carries a `card:` override + getUserMedia, AUDIO OUT's card
   // enumerates media devices + polls the engine on mount, GAMEPAD's card runs a
@@ -249,7 +248,7 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // audio catalog, 2026-06-26): the previously-deferred large-param modules and
   // the remaining substantive voices/processors — CLOUDSEED (Ghost-Note algo
   // reverb, 7 macro + 38 message-port params), FOXY (hybrid realtime-wavetable
-  // oscillator), POLYHELM (the polyphonic Helm voice), SYMBIOTE (Marbles
+  // oscillator), SYMBIOTE (Marbles
   // alt-firmware Grids+TB-3PO brain), TWOTRACKS (two-reel tape looper), HYPERCUBE
   // (4D-tesseract wavetable oscillator), SYNESTHESIA (dual 4-band audio→CV/video
   // analyser, 48 outputs), WARRENSPECTRUM (8-band ping resonator bank), MIXMSTRS
@@ -259,14 +258,11 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // STATIC: foxy/twotracks/synesthesia/warrenspectrum run a 2D-canvas render in
   // the card, hypercube renders WebGL (rendersWebGL — its docs are wrapped in
   // docs-hash-ignore markers like sibling cube so authoring stays attest-neutral)
-  // and its card adds a file-upload picker, polyhelm mounts a Web-MIDI gear panel,
+  // and its card adds a file-upload picker,
   // and bluebox has no `control-<paramId>` Knob/Fader to probe (its keys are
   // press-and-hold buttons) — so the static face is the right fallback for each.
-  // POLYHELM is POLY: its `poly` input must be fed by a real poly source (MIDI
-  // LANE / POLYSEQZ / a chord sequencer), noted in its prose.
   'cloudseed',
   'foxy',
-  'polyhelm',
   'symbiote',
   'twotracks',
   'hypercube',
@@ -277,23 +273,19 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   // Batch 14 — FINAL audio batch: the last undocumented AUDIO modules, which
   // completes the audio catalog (2026-06-26). The arcade GAME modules FROGGER /
   // MODTRIS / PONG / SKIFREE (gameplay-as-CV: gate inputs steer the game, gate
-  // outputs pulse on its events), the 16-instrument × 16-step drum machine
-  // HYDROGEN, the 4-voice drum/synth + FX-rack RIOTGIRLS, the single-sample loop
-  // player SAMSLOOP, the scrolling-sonogram video generator SPECTROGRAPH, and the
-  // hybrid 4-oscillator 3D video synth WAVESCULPT. Only the CONVENTION-card
-  // pure-Knob/Fader+PatchPanel members go INTERACTIVE: riotgirls (pure
-  // Knob+PatchPanel) and hydrogen (transport buttons + a step grid + PatchPanel,
-  // its currentStep poll no-ops in the engine-less doc sandbox). The rest stay
+  // outputs pulse on its events), the 4-voice drum/synth + FX-rack RIOTGIRLS, the
+  // single-sample loop player SAMSLOOP, the scrolling-sonogram video generator
+  // SPECTROGRAPH, and the hybrid 4-oscillator 3D video synth WAVESCULPT. Only the
+  // CONVENTION-card pure-Knob/Fader+PatchPanel member goes INTERACTIVE: riotgirls
+  // (pure Knob+PatchPanel). The rest stay
   // STATIC: the four games + spectrograph run a 2D-canvas rAF render loop,
   // samsloop adds a waveform canvas + file-upload + mic record, and wavesculpt
   // renders WebGL2 (rendersWebGL — its docs + controlFamilies are wrapped in
   // docs-hash-ignore markers like cube/hypercube so authoring stays
-  // attest-neutral) plus a per-osc .wav file picker. HYDROGEN declares the 16×16
-  // step-pattern grid family (hydrogen-cell); WAVESCULPT declares the per-osc
+  // attest-neutral) plus a per-osc .wav file picker. WAVESCULPT declares the per-osc
   // wavetable-source strip family (wavesculpt-osc). (negativity stays
   // undocumented on purpose — it is the e2e "undocumented module" fixture.)
   'frogger',
-  'hydrogen',
   'modtris',
   'pong',
   'riotgirls',

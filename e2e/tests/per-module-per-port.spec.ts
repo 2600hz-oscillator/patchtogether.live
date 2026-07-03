@@ -59,7 +59,6 @@ import { perPortDriverFor } from './_per-port-drivers';
 // the dedicated specs at the cited paths cover their I/O.
 const SKIP_SPAWN: Record<string, string> = {
   group: 'requires data.children; covered by e2e/tests/grouping-phase1.spec.ts',
-  helm: 'gear-icon settings panel hides MIDI ports; covered by e2e/tests/helm.spec.ts',
   cadillac: 'overlay sprite, not a flow card (zero ports); covered by e2e/tests/cadillac.spec.ts',
 };
 
@@ -81,8 +80,8 @@ const SKIP_SPAWN: Record<string, string> = {
 //   * Self-running clock modules (TIMELORDE, MARBLES, SYMBIOTE, GRIDS,
 //     TIDES2) → just removed (the old "needs upstream clock" comment was
 //     wrong; defaults already self-run).
-//   * Step sequencers (SEQUENCER, SCORE, DRUMSEQZ, POLYSEQZ, MACSEQ,
-//     HYDROGEN) → driver seeds isPlaying=1 + node.data.steps so the
+//   * Step sequencers (SEQUENCER, SCORE, DRUMSEQZ, POLYSEQZ, MACSEQ)
+//     → driver seeds isPlaying=1 + node.data.steps so the
 //     internal scheduler fires.
 //   * CV/gate utilities (ILLOGIC, SLEWSWITCH) → driver wires BUGGLES +
 //     SEQUENCER upstream.
@@ -389,9 +388,9 @@ const EXEMPT_OUTPUT_EMIT: Record<string, string> = {
   //     scope peak-floor can't read (same DC-rail shape as moogCp3 references).
   //     The chord allocation + always-live poly is unit-tested in
   //     midi-lane.test.ts, and the live POLY→synth→audio chain in
-  //     polyhelm-poly-chain.spec.ts, so we keep the driver mono + exempt poly.
+  //     adsr-poly-midilane.spec.ts + pentemelodica.spec.ts, so we keep the driver mono + exempt poly.
   'midiLane.note_gate': 'single ~6 ms one-shot pulse below the scope poll resolution (like midiclock sub-frame gates); by-note→gate logic covered by midi-lane.test.ts',
-  'midiLane.poly':      'poly is always live (#674) but a poly→SCOPE edge reads lane-0 PITCH (steady DC, AC-scope can\'t peak it); always-live behavior covered by midi-lane.test.ts + polyhelm-poly-chain.spec.ts',
+  'midiLane.poly':      'poly is always live (#674) but a poly→SCOPE edge reads lane-0 PITCH (steady DC, AC-scope can\'t peak it); always-live behavior covered by midi-lane.test.ts + adsr-poly-midilane.spec.ts',
   // ── SKIFREE partial: the `gate` output fires ONLY on a crash / eaten-by-
   // yeti event, which requires the skier to actually hit terrain — random
   // obstacle spawns won't reliably land inside the sweep window. The `out`

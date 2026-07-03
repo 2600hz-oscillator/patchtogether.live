@@ -10,7 +10,7 @@
 // (~42 ms @ 48 kHz). If a consumer re-scans the WHOLE buffer every tick, the
 // ~17 ms overlap re-presents the same rising edge on two consecutive ticks and
 // it gets counted twice → a single clock pulse advances a sequencer TWO steps
-// (the NUMPAD+/HYDROGEN/ATLANTIS-CATALYST bug class). The fix is to scan only
+// (the NUMPAD+/ATLANTIS-CATALYST bug class). The fix is to scan only
 // the `elapsed * sampleRate` samples that actually arrived since the previous
 // poll. That windowing math is correct in `transport-cv.ts drainOne` and in
 // `sequencer.ts`, but it was re-implemented per module and drifted. This util

@@ -5,16 +5,17 @@
 // carry image content over the wire. v1 nodes have to load cleanly
 // (with default-null bytes) without surprising the card.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { pictureboxDef, type PictureboxHandleExtras } from './picturebox';
+import type { DecodedGifFrame } from './gif-frames';
 import type { VideoEngineContext } from '$lib/video/engine';
 import type { ModuleNode } from '$lib/graph/types';
 import { ASSET_SLOTS, ASSET_SLOT_NOTES, slotForVOct } from '$lib/video/asset-select';
 import { midiToVOct } from '$lib/audio/note-entry';
 
-describe('PICTUREBOX def — schema v3', () => {
-  it('reports schemaVersion 3', () => {
-    expect(pictureboxDef.schemaVersion).toBe(3);
+describe('PICTUREBOX def — schema v4', () => {
+  it('reports schemaVersion 4', () => {
+    expect(pictureboxDef.schemaVersion).toBe(4);
   });
 
   it('declares maxInstances = 8 (workspace cap mirror)', () => {
@@ -82,17 +83,37 @@ describe('PICTUREBOX migration v1 → v2', () => {
     expect(assets).toEqual(new Array(ASSET_SLOTS).fill(null));
   });
 
-  it('passes through v3 data unchanged (idempotent)', () => {
-    const v3 = {
+  it('v3 → v4 seeds assetMimes parallel to assets (loaded=jpeg, empty=null)', () => {
+    const out = pictureboxDef.migrate?.(
+      {
+        imageBytes: 'BBBB',
+        imageMime: 'image/jpeg',
+        imageName: 'photo.jpg',
+        assets: ['BBBB', null, 'CCCC', null, null, null, null],
+        assetNames: ['photo.jpg', null, 'x.jpg', null, null, null, null],
+      },
+      3,
+    ) as Record<string, unknown>;
+    const mimes = out.assetMimes as (string | null)[];
+    expect(mimes).toHaveLength(ASSET_SLOTS);
+    expect(mimes[0]).toBe('image/jpeg');
+    expect(mimes[1]).toBeNull();
+    expect(mimes[2]).toBe('image/jpeg');
+    expect(mimes.slice(3)).toEqual([null, null, null, null]);
+  });
+
+  it('passes through v4 data unchanged (idempotent)', () => {
+    const v4 = {
       imageBytes: 'BBBB',
-      imageMime: 'image/jpeg',
-      imageName: 'photo.jpg',
+      imageMime: 'image/gif',
+      imageName: 'loop.gif',
       assets: ['BBBB', null, null, null, null, null, null],
-      assetNames: ['photo.jpg', null, null, null, null, null, null],
+      assetNames: ['loop.gif', null, null, null, null, null, null],
+      assetMimes: ['image/gif', null, null, null, null, null, null],
       creatorId: 'u1',
     };
-    const out = pictureboxDef.migrate?.(v3, 3) as Record<string, unknown>;
-    expect(out).toEqual(v3);
+    const out = pictureboxDef.migrate?.(v4, 4) as Record<string, unknown>;
+    expect(out).toEqual(v4);
   });
 });
 
@@ -260,5 +281,90 @@ describe('pictureboxDef.factory — 7-slot asset selection', () => {
     expect(slot).toBeNull();
     if (slot != null && ex.slotHasAsset(slot)) ex.selectSlot(slot);
     expect(ex.activeSlot()).toBe(3); // unchanged
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Animated GIF: frame scheduling on the engine clock + no-leak teardown.
+// draw() only uses frame.gl + frame.time (the rest of the fake ctx is stubbed).
+// ---------------------------------------------------------------------------
+
+/** A fake ImageBitmap with a spy-able close() so leak tests can assert release. */
+function animBitmap(): ImageBitmap {
+  return { close: vi.fn() } as unknown as ImageBitmap;
+}
+function frames(durationsMs: number[]): DecodedGifFrame[] {
+  return durationsMs.map((durationMs) => ({ bitmap: animBitmap(), durationMs }));
+}
+/** Drive one engine draw at a given ctx.time (seconds). */
+function drawAt(h: ReturnType<typeof spawn>, timeSec: number): void {
+  const frame = { gl: makeFakeGl(), time: timeSec } as unknown as Parameters<typeof h.surface.draw>[0];
+  h.surface.draw(frame);
+}
+
+describe('pictureboxDef.factory — animated gif playback', () => {
+  it('installs frames, shows frame 0, and steps by ctx.time (looping)', () => {
+    const h = spawn();
+    const ex = extrasOf(h);
+    ex.setAnimatedImage(frames([100, 100, 100])); // total 300ms
+    expect(h.read?.('hasImage')).toBe(true);
+    expect(h.read?.('activeAnimFrame')).toBe(0);
+
+    drawAt(h, 0); // seeds startTime=0 → frame 0
+    expect(h.read?.('activeAnimFrame')).toBe(0);
+    drawAt(h, 0.15); // 150ms → frame 1
+    expect(h.read?.('activeAnimFrame')).toBe(1);
+    drawAt(h, 0.25); // 250ms → frame 2
+    expect(h.read?.('activeAnimFrame')).toBe(2);
+    drawAt(h, 0.35); // 350ms → 50ms into the loop → frame 0
+    expect(h.read?.('activeAnimFrame')).toBe(0);
+  });
+
+  it('a static image replacing a gif clears the animation', () => {
+    const h = spawn();
+    const ex = extrasOf(h);
+    ex.setAnimatedImage(frames([100, 100]));
+    expect(h.read?.('activeAnimFrame')).toBe(0);
+    ex.setImage(FAKE_BITMAP); // static replaces the animation
+    expect(h.read?.('activeAnimFrame')).toBe(-1);
+    expect(h.read?.('hasImage')).toBe(true); // still shows the static image
+  });
+
+  it('selectSlot restarts the newly-active gif from frame 0', () => {
+    const h = spawn();
+    const ex = extrasOf(h);
+    ex.setAnimatedAtSlot(0, frames([100, 100, 100]));
+    ex.setAnimatedAtSlot(1, frames([100, 100, 100]));
+    // Advance slot 0 to a later frame.
+    drawAt(h, 0);
+    drawAt(h, 0.25);
+    expect(h.read?.('activeAnimFrame')).toBe(2);
+    // Switch to slot 1: it starts fresh at frame 0.
+    expect(ex.selectSlot(1)).toBe(true);
+    expect(h.read?.('activeAnimFrame')).toBe(0);
+    drawAt(h, 5.0); // seeds slot-1 startTime=5.0 → still frame 0 at t=5.0
+    expect(h.read?.('activeAnimFrame')).toBe(0);
+  });
+
+  it('closes every frame bitmap on replace, clear, and dispose (no leak)', () => {
+    const h = spawn();
+    const ex = extrasOf(h);
+    const a = frames([100, 100]);
+    ex.setAnimatedImage(a);
+    // Replacing with a new animation closes the old frames.
+    ex.setAnimatedImage(frames([100]));
+    for (const f of a) expect((f.bitmap as unknown as { close: ReturnType<typeof vi.fn> }).close).toHaveBeenCalled();
+
+    // Clearing closes the current frames.
+    const b = frames([100, 100, 100]);
+    ex.setAnimatedAtSlot(2, b);
+    ex.setAnimatedAtSlot(2, null);
+    for (const f of b) expect((f.bitmap as unknown as { close: ReturnType<typeof vi.fn> }).close).toHaveBeenCalled();
+
+    // Dispose closes whatever remains resident across all slots.
+    const c = frames([100, 100]);
+    ex.setAnimatedAtSlot(3, c);
+    h.dispose();
+    for (const f of c) expect((f.bitmap as unknown as { close: ReturnType<typeof vi.fn> }).close).toHaveBeenCalled();
   });
 });

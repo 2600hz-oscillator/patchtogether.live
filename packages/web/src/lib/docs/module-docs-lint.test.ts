@@ -19,7 +19,7 @@
 //  3. EDGE COHERENCE: a documented trigger/gate port's prose must use the
 //     vocabulary of its declared `edge` (conservative positive-presence check)
 //     — a targeted defense against wrong-but-compiles prose on the one field
-//     with a controlled vocabulary (the NUMPAD+/HYDROGEN class).
+//     with a controlled vocabulary (the NUMPAD+ edge-vocabulary class).
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';

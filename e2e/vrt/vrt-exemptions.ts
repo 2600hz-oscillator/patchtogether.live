@@ -397,14 +397,6 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   livecode: 'CodeMirror caret + syntax-highlight transitions defeat deterministic capture; e2e + unit tests cover behavior',
   // CLOCKED runner — same CodeMirror caret issue as LIVECODE.
   clockedRunner: 'CodeMirror caret + dynamic status (fires-since-mount counter) defeat deterministic capture; e2e + unit tests cover behavior',
-  // HELM is a dense polyphonic synth card (~720px wide, multi-row knob
-  // grid + 16-step pattern + gear-icon-toggled settings panel). Baseline
-  // would need to capture both the main panel and the settings panel
-  // separately, and the settings panel state depends on MIDI device list
-  // (which is non-deterministic on a fresh CI runner). ART + unit + E2E
-  // provide functional coverage; promote to MODULES in a follow-up PR
-  // once we have a way to stub the MIDI device list deterministically.
-  helm: 'VRT baseline pending; complex dense card + MIDI-dependent settings panel; ART + unit + E2E provide coverage.',
   // MIDI-CV-BUDDY card body depends on connected MIDI device (which
   // doesn't exist under VRT) — the "Connect MIDI…" empty state would
   // be the only deterministic baseline, and even that paints differently
@@ -523,12 +515,6 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // card pins time/wave-phase/field-parity) so it now has a real VRT
   // scene (see vrt-scenes.ts: wavesculpt) capturing the ALPHA layer at a
   // non-zero rotation. No longer exempt.
-  // HYDROGEN first-slice PR: card is a wide 16-row × 16-step pattern grid +
-  // transport row + per-row mute/solo. No canvas / animation — the chrome
-  // is static once the playhead is parked at step 0 — but the baseline
-  // needs to be captured on both platforms; promote into MODULES in a
-  // follow-up PR.
-  hydrogen: 'VRT baseline pending; unit + ART + E2E provide coverage. Promote into MODULES + capture darwin + linux pngs in a follow-up PR.',
   // DELAY first-slice PR (PR #228): simple 3-fader card
   // (time / feedback / mix); baseline pending platform-specific
   // capture. Unit + E2E cover the module-def shape + the
@@ -954,15 +940,6 @@ export const EXEMPT_BASELINE_PAIRS = new Set<string>([
   // this branch. Functional coverage is pentemelodica-dsp.test.ts +
   // pentemelodica.test.ts + the per-port sweep + the bespoke e2e.
   'linux/pentemelodica',
-  // POLYHELM: darwin baseline (the dense Helm-style panel — osc / filter / 3
-  // envelopes / LFOs / step sequencer + a POLY input port; static CSS knobs, no
-  // animated canvas) captured locally; linux baseline pending a
-  // `vrt-update.yml` workflow_dispatch on this branch. Functional coverage is
-  // the shared helm-engine.test.ts (poly→voices, chord, release-holds-pitch) +
-  // polyhelm.test.ts (def + bridge) + the per-port sweep + the polyhelm ART
-  // scenario. (HELM itself is fully VRT-exempt for the same dense-card reason;
-  // POLYHELM ships a darwin baseline like the comparable PENTEMELODICA poly card.)
-  'linux/polyhelm',
   'linux/samsloop',
   'linux/stages',
   // SCOPE: this PR re-captures the darwin baseline with deterministic

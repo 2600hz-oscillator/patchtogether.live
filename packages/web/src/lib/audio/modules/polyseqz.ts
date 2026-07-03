@@ -203,7 +203,7 @@ export const polyseqzDef: AudioModuleDef = {
 
   docs: {
     explanation:
-      "A polyphonic CHORD sequencer: instead of one note per step it stores a whole chord — a root note plus a quality (major/minor/etc.), an inversion, and a voicing strategy (closed / open / spread) — and plays the lot at once. It walks a playhead across up to 128 steps (16 per page, 8 pages) on its own BPM clock or an external clock, emitting a 5-voice POLY cable that carries the full chord per step. To hear it you feed that POLY output into a poly-aware voice (RIOTGIRLS, DX7, POLYHELM, or any module with a poly input) so each chord tone gets its own voice; a mono pitch input still works and just receives the chord's root. A convenience mono GATE goes high whenever any voice is sounding (handy for one shared envelope), and a Humanize control adds per-voice timing jitter so chords don't land perfectly machine-tight. Eight quicksave slots and the transport CV inputs let you build and switch chord progressions live.",
+      "A polyphonic CHORD sequencer: instead of one note per step it stores a whole chord — a root note plus a quality (major/minor/etc.), an inversion, and a voicing strategy (closed / open / spread) — and plays the lot at once. It walks a playhead across up to 128 steps (16 per page, 8 pages) on its own BPM clock or an external clock, emitting a 5-voice POLY cable that carries the full chord per step. To hear it you feed that POLY output into a poly-aware voice (RIOTGIRLS, DX7, CUBE, or any module with a poly input) so each chord tone gets its own voice; a mono pitch input still works and just receives the chord's root. A convenience mono GATE goes high whenever any voice is sounding (handy for one shared envelope), and a Humanize control adds per-voice timing jitter so chords don't land perfectly machine-tight. Eight quicksave slots and the transport CV inputs let you build and switch chord progressions live.",
     inputs: {
       clock:
         "External clock: each rising edge advances the playhead exactly one step (one chord). While anything is patched here the internal BPM is ignored and the incoming pulses set the pace (and run the sequencer); unpatch to fall back to the BPM clock.",
@@ -218,7 +218,7 @@ export const polyseqzDef: AudioModuleDef = {
     },
     outputs: {
       poly:
-        "The current step's chord as a 5-voice POLY cable (each lane carries its own pitch CV + gate). Patch into a poly-aware voice (RIOTGIRLS / DX7 / POLYHELM / any module with a poly input) so each chord tone gets its own voice; a mono pitch input automatically receives just lane 0, the chord's root.",
+        "The current step's chord as a 5-voice POLY cable (each lane carries its own pitch CV + gate). Patch into a poly-aware voice (RIOTGIRLS / DX7 / CUBE / any module with a poly input) so each chord tone gets its own voice; a mono pitch input automatically receives just lane 0, the chord's root.",
       gate:
         "A convenience mono gate that goes high while ANY voice of the current chord is sounding and low between chords — drive one shared ADSR/VCA from it without unpacking the poly cable. Its high time within the step follows the gate-length control.",
       clock: "A short ~10 ms pulse on every step advance, regardless of whether the step is on — chain it into another sequencer's clock in.",

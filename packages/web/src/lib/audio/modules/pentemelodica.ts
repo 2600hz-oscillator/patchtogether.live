@@ -59,7 +59,7 @@
 // ── DSP ──────────────────────────────────────────────────────────────────
 //   Worklet: packages/dsp/src/pentemelodica.ts + lib/pentemelodica-dsp.ts.
 //   Own-code: polyBLEP oscillator (lib/moog-vco-dsp), TPT SVF
-//   (lib/resofilter-dsp), helm-style Envelope. The pure-math mirror
+//   (lib/resofilter-dsp), a linear-ADSR Envelope. The pure-math mirror
 //   (`pentemelodicaMath`, re-exported below) is what unit tests + ART exercise
 //   under node where AudioWorkletGlobalScope is unavailable.
 
