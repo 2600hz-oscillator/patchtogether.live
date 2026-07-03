@@ -324,6 +324,8 @@ export const STRICT_DOCS: ReadonlySet<string> = new Set<string>([
   'shapegen',
   // Video batch 4 (2026-06-26): camera source + feedback/datamosh + line/shape gens + OUTPUT sink.
   'cameraInput',
+  // Browser-viewport video source (getDisplayMedia -> GL texture, crop-to-viewport).
+  'loopback',
   'backdraft',
   'destructor',
   'outlines',

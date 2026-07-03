@@ -68,6 +68,7 @@ export const delayDef: AudioModuleDef = {
     { id: 'mix',      label: 'Mix',  defaultValue: 0.35, min: 0,     max: 1,            curve: 'linear' },
   ],
 
+  // docs-hash-ignore:start  -- docs prose is hash-transparent to the ART audio-profile source pin
   docs: {
     explanation:
       "A clean single-tap delay line: input → delay → feedback loop → output, mixed against the dry signal. The canonical topology every delay is built from — feed audio in, it comes back out TIME seconds later, and FEEDBACK decides how many times the echo repeats before fading. TIME is patchable as CV so you can sweep the delay for tape-warble and pitch-bend effects (the read head moves, smoothly crossfaded to avoid clicks). Use it for slapback, rhythmic echoes, or — with high feedback — long ambient washes. The same delay engine backs WAVESCULPT's FX slot, so the character matches when you pull DELAY out into a patch wire. For a thicker, degrading multi-tap delay see CHARLOTTE'S ECHOS.",
@@ -84,6 +85,7 @@ export const delayDef: AudioModuleDef = {
       mix: 'Dry / wet balance (0..1) via an equal-power crossfade: 0 is the untouched dry signal, 1 is echoes only, and halfway keeps both at full perceptual level without sagging.',
     },
   },
+  // docs-hash-ignore:end
 
   async factory(ctx, node): Promise<AudioDomainNodeHandle> {
     const inputGain = ctx.createGain();

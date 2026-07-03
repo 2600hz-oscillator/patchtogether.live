@@ -1759,6 +1759,10 @@ lines param orient 0..1 linear default=0
 lines param phase 0..1 linear default=0
 lines param thickness 0..1 linear default=0.35
 livecode meta domain=audio schema=1
+loopback meta domain=video schema=1 maxInstances=2
+loopback out out video
+loopback param crop 0..1 discrete default=1
+loopback param gain 0..2 linear default=1
 luma meta domain=video schema=2
 luma in bias cv param=bias cvScale=linear
 luma in contrast cv param=contrast cvScale=linear

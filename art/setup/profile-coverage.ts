@@ -47,7 +47,8 @@ export const ART_EXCLUDED: Readonly<Record<string, string>> = {
  * covered − 16 structural exclusions = 103), minus the 2 Phase-0 pilots
  * (chowkick, adsr) profiled in the same PR → 101 committed entries.
  * Batch 1 (#1001) −6 → 95; batch 2 (#1002) −6 → 89; batch 3 (#1005) −6 → 83;
- * batch 4 −8 → 75.
+ * batch 4 −8 → 75; batch 5 −8 → 67 (noise, scaler, polarizer, depolarizer,
+ * negativity, illogic, delay, veils).
  *
  * RULES (enforced by audio-profile-gate.test.ts):
  *   - a module that gains a baseline MUST be removed from this list;
@@ -66,8 +67,6 @@ export const ART_BACKLOG: readonly string[] = [
   'clipplayer',
   'clouds',
   'cloudseed',
-  'delay',
-  'depolarizer',
   'destroy',
   'drummergirl',
   'drumseqz',
@@ -78,7 +77,6 @@ export const ART_BACKLOG: readonly string[] = [
   'grids',
   'helm',
   'hydrogen',
-  'illogic',
   'kria',
   'lfo',
   'macrooscillator',
@@ -100,12 +98,9 @@ export const ART_BACKLOG: readonly string[] = [
   'moog993',
   'moog994',
   'moog995',
-  'negativity',
-  'noise',
   'numpadPlus',
   'peaks',
   'pentemelodica',
-  'polarizer',
   'polyhelm',
   'polyseqz',
   'rasterize',
@@ -113,7 +108,6 @@ export const ART_BACKLOG: readonly string[] = [
   'rings',
   'riotgirls',
   'samsloop',
-  'scaler',
   'scope',
   'score',
   'sequencer',
@@ -126,7 +120,6 @@ export const ART_BACKLOG: readonly string[] = [
   'timelorde',
   'twotracks',
   'vca',
-  'veils',
   'warps',
   'warrenspectrum',
   'wavecel',
@@ -137,4 +130,4 @@ export const ART_BACKLOG: readonly string[] = [
 
 /** The ratchet cap. Lower it (to ART_BACKLOG.length) every time a batch
  *  removes entries; the gate fails if the list ever grows past it. */
-export const ART_BACKLOG_MAX = 75;
+export const ART_BACKLOG_MAX = 67;

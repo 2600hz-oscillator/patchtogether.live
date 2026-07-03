@@ -274,6 +274,12 @@ export const EXEMPT_FROM_VRT: Record<string, string> = {
   // (frame-time clock) that the baseline would flap. Functional coverage
   // is e2e/tests/camera-input.spec.ts.
   cameraInput: 'live MediaStream defeats deterministic capture',
+  // LOOPBACK renders a live getDisplayMedia tab-capture into a recursive
+  // preview (a video-feedback tunnel) — non-deterministic by construction, same
+  // as CAMERA. Functional + render coverage is e2e/tests/loopback.spec.ts
+  // (deterministic synthetic-frame render smoke + crop-toggle + recorderbox
+  // chain) + loopback-crop.test.ts (pure crop math) + loopback.test.ts (def).
+  loopback: 'live getDisplayMedia tab-capture + recursive preview defeat deterministic capture; covered by loopback.spec.ts (synthetic-frame render smoke + crop-toggle + recorderbox chain) + loopback-crop/loopback unit tests',
   // AUDIO IN — system mic / line-in source. Card state depends on
   // getUserMedia permission + presence of audio inputs (both non-
   // deterministic across CI runners); the LED + status text would

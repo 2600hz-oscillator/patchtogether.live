@@ -41,7 +41,7 @@ const EXPECTED_NODE_TYPES = [
   'doom', 'drummergirl', 'drumseqz', 'dx7', 'elements', 'fader', 'feedback', 'filter',
   'featurecv',
   'fourplexer', 'foxy', 'freezeframe', 'frogger', 'gamepad', 'gatemaiden', 'gibribbon', 'graphicEq', 'grids', 'group',
-  'helm', 'hydrogen', 'hypercube', 'illogic', 'inwards', 'joystick', 'kickdrum', 'kria', 'lfo', 'lines', 'livecode',
+  'helm', 'hydrogen', 'hypercube', 'illogic', 'inwards', 'joystick', 'kickdrum', 'kria', 'lfo', 'lines', 'livecode', 'loopback',
   'ninelives',
   'luma', 'lumakey', 'macrooscillator', 'macseq', 'mandleblot', 'mappy', 'marbles', 'matrixMix', 'meowbox',
   'mandelbulb', 'midiCvBuddy', 'midiOutBuddy', 'midiclock', 'mixer', 'mixmstrs', 'modtris',
@@ -57,6 +57,16 @@ const EXPECTED_NODE_TYPES = [
   'videobox', 'videovarispeed', 'warps', 'warrenspectrum', 'wavecel', 'wavesculpt',
   'twotracks', 'wavetableVco', 'writeseq', 'textmarquee', 'tiler', 'spirographs',
   'milkdrop',
+
+
+
+
+
+
+
+
+
+
 
 
 

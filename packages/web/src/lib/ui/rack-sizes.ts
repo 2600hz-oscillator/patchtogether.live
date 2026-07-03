@@ -182,6 +182,7 @@ export const RACK_SIZE_DEFAULTS: Record<string, { size: RackSize; hp: number }> 
   gibribbon: { size: '3u', hp: 5 }, // 398×836px
   inwards: { size: '2u', hp: 2 }, // 280×220px
   lines: { size: '2u', hp: 2 }, // 361×220px
+  loopback: { size: '3u', hp: 2 }, // 280×320px — viewport-capture source (≈ cameraInput)
   luma: { size: '2u', hp: 2 }, // 275×220px
   lumakey: { size: '2u', hp: 2 }, // 287×220px
   mandelbulb: { size: '2u', hp: 2 }, // 362×280px
