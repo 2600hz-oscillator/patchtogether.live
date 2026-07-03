@@ -9,7 +9,7 @@
 // Per spec the file path was "packages/dsp/src/lib/resofilter-dsp.test.ts",
 // but vitest only runs `packages/web/src/**/*.test.ts` (the `packages/dsp`
 // workspace has no vitest target). Sitting the test under `web/` ensures
-// it runs in `task test` — the closest precedent is the cocoadelay test
+// it runs in `task test` — the closest precedent is the cofefve test
 // which imports the core helper via a relative path from `web/` into `dsp/`.
 
 import { describe, it, expect } from 'vitest';

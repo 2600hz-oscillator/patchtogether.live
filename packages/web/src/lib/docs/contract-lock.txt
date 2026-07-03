@@ -625,46 +625,46 @@ cloudseed param tap_length 0..1 linear default=0.98
 cloudseed param tap_predelay 0..1 linear default=0
 cloudseed stereo in_l+in_r
 cloudseed stereo out_l+out_r
-cocoadelay meta domain=audio schema=1
-cocoadelay in clock gate
-cocoadelay in drift_cv cv param=driftAmount cvScale=linear
-cocoadelay in drive_cv cv param=driveGain cvScale=linear
-cocoadelay in duck_cv cv param=duckAmount cvScale=linear
-cocoadelay in feedback_cv cv param=feedback cvScale=linear
-cocoadelay in inL audio
-cocoadelay in inR audio
-cocoadelay in lfo_cv cv param=lfoAmount cvScale=linear
-cocoadelay in mix_cv cv param=wetVolume cvScale=linear
-cocoadelay in pan_cv cv param=pan cvScale=linear
-cocoadelay in time_cv cv param=delayTime cvScale=log
-cocoadelay out outL audio
-cocoadelay out outR audio
-cocoadelay param clockSource 0..1 discrete default=0
-cocoadelay param delayTime 0.001..2 log default=0.2 unit=s
-cocoadelay param driftAmount 0..0.05 linear default=0.001
-cocoadelay param driftSpeed 0.1..10 log default=1
-cocoadelay param driveCutoff 0.01..1 linear default=1
-cocoadelay param driveGain 0..10 linear default=0.1
-cocoadelay param driveIterations 1..16 discrete default=1
-cocoadelay param driveMix 0..1 linear default=1
-cocoadelay param dryVolume 0..2 linear default=1
-cocoadelay param duckAmount 0..10 linear default=0
-cocoadelay param duckAttack 0.1..100 log default=10
-cocoadelay param duckRelease 0.1..100 log default=10
-cocoadelay param feedback -1..1 linear default=0.5
-cocoadelay param filterMode 0..3 discrete default=0
-cocoadelay param highCut 0.001..0.99 linear default=0.001
-cocoadelay param lfoAmount 0..0.5 linear default=0
-cocoadelay param lfoFrequency 0.1..10 log default=2 unit=hz
-cocoadelay param lowCut 0.01..1 linear default=0.75
-cocoadelay param pan -1.5707963267948966..1.5707963267948966 linear default=0
-cocoadelay param panMode 0..2 discrete default=0
-cocoadelay param stereoOffset -0.5..0.5 linear default=0
-cocoadelay param syncPeriod 0..30 linear default=0 unit=s
-cocoadelay param tempoSync 0..19 discrete default=0
-cocoadelay param wetVolume 0..2 linear default=0.5
-cocoadelay stereo inL+inR
-cocoadelay stereo outL+outR
+cofefve meta domain=audio schema=1
+cofefve in clock gate edge=trigger
+cofefve in drift_cv cv param=driftAmount cvScale=linear
+cofefve in drive_cv cv param=driveGain cvScale=linear
+cofefve in duck_cv cv param=duckAmount cvScale=linear
+cofefve in feedback_cv cv param=feedback cvScale=linear
+cofefve in inL audio
+cofefve in inR audio
+cofefve in lfo_cv cv param=lfoAmount cvScale=linear
+cofefve in mix_cv cv param=wetVolume cvScale=linear
+cofefve in pan_cv cv param=pan cvScale=linear
+cofefve in time_cv cv param=delayTime cvScale=log
+cofefve out outL audio
+cofefve out outR audio
+cofefve param clockSource 0..1 discrete default=0
+cofefve param delayTime 0.001..2 log default=0.2 unit=s
+cofefve param driftAmount 0..0.05 linear default=0.001
+cofefve param driftSpeed 0.1..10 log default=1
+cofefve param driveCutoff 0.01..1 linear default=1
+cofefve param driveGain 0..10 linear default=0.1
+cofefve param driveIterations 1..16 discrete default=1
+cofefve param driveMix 0..1 linear default=1
+cofefve param dryVolume 0..2 linear default=1
+cofefve param duckAmount 0..10 linear default=0
+cofefve param duckAttack 0.1..100 log default=10
+cofefve param duckRelease 0.1..100 log default=10
+cofefve param feedback -1..1 linear default=0.5
+cofefve param filterMode 0..3 discrete default=0
+cofefve param highCut 0.001..0.99 linear default=0.001
+cofefve param lfoAmount 0..0.5 linear default=0
+cofefve param lfoFrequency 0.1..10 log default=2 unit=hz
+cofefve param lowCut 0.01..1 linear default=0.75
+cofefve param pan -1.5707963267948966..1.5707963267948966 linear default=0
+cofefve param panMode 0..2 discrete default=0
+cofefve param stereoOffset -0.5..0.5 linear default=0
+cofefve param syncPeriod 0..30 linear default=0 unit=s
+cofefve param tempoSync 0..19 discrete default=0
+cofefve param wetVolume 0..2 linear default=0.5
+cofefve stereo inL+inR
+cofefve stereo outL+outR
 colorizer meta domain=video schema=1
 colorizer in in mono-video
 colorizer in tintB cv param=tintB cvScale=linear

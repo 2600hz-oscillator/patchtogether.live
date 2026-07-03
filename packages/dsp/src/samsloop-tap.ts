@@ -60,7 +60,7 @@ class SamsloopTapProcessor extends AudioWorkletProcessor {
     // L on input[0], R on input[1]. Web Audio reports unpatched inputs
     // as a zero-length channel array (inputs[i] = []), so inputs[i]?.[0]
     // is undefined — that's the signal we use to trigger the L→R fallback.
-    // Matches the stereovca / cocoadelay normalling pattern.
+    // Matches the stereovca / cofefve normalling pattern.
     const lRaw = inputs[0]?.[0];
     const rRaw = inputs[1]?.[0];
     if (!lRaw) return true; // no audio in at all — nothing to record this frame.

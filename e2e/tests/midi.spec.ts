@@ -85,7 +85,7 @@ test('@midi REGRESSION: page load never requests Web-MIDI access', async ({ page
   //     This is the boot+patch path the eager trigger used to fire on.
   await page.getByTestId('load-example-select').selectOption('glitches');
   await expect(page.locator('.svelte-flow__node').first()).toBeVisible({ timeout: 20_000 });
-  // Let factory timers (e.g. COCOA DELAY's 16ms syncPeriod poll, if any) run.
+  // Let factory timers (e.g. COFEFVE DELAY's 16ms syncPeriod poll, if any) run.
   await page.waitForTimeout(300);
 
   const callsAfterPatch = await page.evaluate(() => {
@@ -395,9 +395,9 @@ test('@midi NoteOn / NoteOff drives MIDI-CV-BUDDY gate', async ({ page }) => {
 // midi-clock-source is a separate subscriber (not the midi-learn singleton)
 // that holds its own `access` reference + `onmidimessage` handler. It attaches
 // strictly ON DEMAND: navigator.requestMIDIAccess fires only on the first
-// tempo READ (getBpm()/getBeatPeriodS()), NOT on construction. COCOADELAY only
+// tempo READ (getBpm()/getBeatPeriodS()), NOT on construction. COFEFVE only
 // reads the MIDI tempo when its clockSource is set to MIDI, so merely spawning
-// a default-System COCOADELAY must NOT prompt (the page-load-prompt fix).
+// a default-System COFEFVE must NOT prompt (the page-load-prompt fix).
 //
 // This test therefore explicitly performs the on-demand READ
 // (__midiClockSource().getBpm()) to trigger requestMIDIAccess against our mock,
@@ -424,23 +424,23 @@ test('@midi MIDI Clock pulses drive midi-clock-source BPM derivation', async ({ 
   await page.goto('/rack');
   await page.waitForLoadState('networkidle');
 
-  // COCOADELAY's engine factory constructs the MIDI clock-source singleton,
+  // COFEFVE's engine factory constructs the MIDI clock-source singleton,
   // but on its DEFAULT System clock it must NOT read the tempo and so must NOT
   // call navigator.requestMIDIAccess (the page-load-prompt regression).
   await spawnPatch(
     page,
-    [{ id: 'cd', type: 'cocoadelay', position: { x: 120, y: 120 }, domain: 'audio' }],
+    [{ id: 'cd', type: 'cofefve', position: { x: 120, y: 120 }, domain: 'audio' }],
     [],
   );
-  const card = page.locator('.svelte-flow__node-cocoadelay');
+  const card = page.locator('.svelte-flow__node-cofefve');
   await expect(card).toHaveCount(1, { timeout: 10_000 });
 
-  // REGRESSION: spawning a default-System COCOADELAY alone must not prompt.
+  // REGRESSION: spawning a default-System COFEFVE alone must not prompt.
   const callsAfterSpawn = await page.evaluate(() => {
     const w = window as unknown as { __mockMidi?: { accessCallCount(): number } };
     return w.__mockMidi ? w.__mockMidi.accessCallCount() : -1;
   });
-  expect(callsAfterSpawn, 'spawning a default-System COCOADELAY requested MIDI access (eager-prompt regression)').toBe(0);
+  expect(callsAfterSpawn, 'spawning a default-System COFEFVE requested MIDI access (eager-prompt regression)').toBe(0);
 
   // Now perform the ON-DEMAND tempo read (what selecting MIDI clock / a MIDI
   // consumer does): the first getBpm() triggers requestMIDIAccess against our

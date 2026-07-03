@@ -5,7 +5,7 @@
   // envelope shape + filter peak — honoring the upstream visual
   // convention the user called out in the spec.
   //
-  // Layout (Ports family, matches CocoaDelayCard / SidecarCard chrome):
+  // Layout (Ports family, matches CofefveCard / SidecarCard chrome):
   //
   //   ┌──────────── PULSE SHAPE ────────────────┐
   //   │ [envelope viz]                          │

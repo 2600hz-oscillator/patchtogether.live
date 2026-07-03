@@ -53,7 +53,7 @@ const PROBES: Probe[] = [
   // INTERACTIVE_DOC_MODULES allowlist; this proves the live card mounts cleanly
   // and a control hover updates the pane. A CV→param dual-context check runs only
   // where the module has a CV input with a paramTarget (analogVco, filter, lfo,
-  // cocoadelay); vca/mixer/noise have no CV→param link (cvPort: '' skips it). ---
+  // cofefve); vca/mixer/noise have no CV→param link (cvPort: '' skips it). ---
   {
     id: 'analogVco',
     heading: /analog vco/i,
@@ -102,10 +102,11 @@ const PROBES: Probe[] = [
     cvPort: 'rate', // CV → rate param
     modulates: /modulates/i,
   },
-  // NOTE — cocoadelay is documented + STRICT but NOT on INTERACTIVE_DOC_MODULES
-  // (its `card: 'CocoaDelayCard'` override isn't plumbed through the doc route's
-  // defLite, so the live card can't resolve and the page uses the static
-  // fallback). No live-card probe for it here; see interactive-doc-modules.ts.
+  // NOTE — cofefve (COFEFVE DELAY) is documented + STRICT but intentionally NOT
+  // on INTERACTIVE_DOC_MODULES: its card IS a convention card (CofefveCard) so
+  // the doc route could mount it live, but it is kept static for parity with the
+  // Cocoa Delay module it replaced. No live-card probe for it here; see
+  // interactive-doc-modules.ts.
   // --- Batch 3 — CV utilities & modulation shapers (2026-06-26). Each is on
   // INTERACTIVE_DOC_MODULES; this proves the live card mounts cleanly and a
   // control hover updates the pane. The CV→param dual-context check runs only
