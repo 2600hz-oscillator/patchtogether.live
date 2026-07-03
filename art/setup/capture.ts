@@ -88,6 +88,37 @@ export async function repoSourceSha(...relPaths: string[]): Promise<string> {
   return h.digest('hex').slice(0, 16);
 }
 
+/**
+ * Strip `// docs-hash-ignore:start … // docs-hash-ignore:end` regions — the
+ * SAME marker convention (and regex) the WebGL attest uses to keep co-located
+ * `docs:` prose out of its basis hash (`scripts/webgl-attest-lib.ts`
+ * `stripDocsForHash`; guarded there by webgl-attest-coverage.test.ts).
+ */
+const DOCS_IGNORE_RE =
+  /^[ \t]*\/\/ docs-hash-ignore:start[\s\S]*?^[ \t]*\/\/ docs-hash-ignore:end[ \t]*\r?\n/gm;
+export function stripDocsForPin(src: string): string {
+  return src.replace(DOCS_IGNORE_RE, '');
+}
+
+/**
+ * `repoSourceSha` with docs-hash-ignore regions stripped first — the pin for
+ * modules whose ENTIRE render path is the factory in a DOCS-BEARING def file
+ * (the pure-Web-Audio pattern-3 set: no worklet, no separate factory/lib
+ * file to pin instead). The moog907a/960 precedent holds that docs edits
+ * must NEVER invalidate audio pins, so those defs wrap their co-located
+ * `docs: {…}` block in the markers and the profile pins everything else
+ * (ports, params, the factory's node graph). A def with no markers hashes
+ * unchanged (the strip is a no-op).
+ */
+export async function docsStrippedRepoSourceSha(...relPaths: string[]): Promise<string> {
+  if (relPaths.length === 0) throw new Error('docsStrippedRepoSourceSha: no source files given');
+  const h = createHash('sha256');
+  for (const rel of relPaths) {
+    h.update(stripDocsForPin(await readFile(join(REPO_ROOT, rel), 'utf8')));
+  }
+  return h.digest('hex').slice(0, 16);
+}
+
 // ---------------------------------------------------------------------------
 // Render loop — drive + capture every signature output
 // ---------------------------------------------------------------------------
